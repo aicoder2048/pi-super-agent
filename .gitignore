@@ -2,3 +2,6 @@
 .venv/
 __pycache__/
 .env
+
+# Local symlink to courseware outside the repo (absolute path, machine-specific)
+/docs/super-agent-courseware
