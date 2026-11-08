@@ -28,7 +28,6 @@ import { Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { spawn } from "child_process";
 import { readdirSync, readFileSync, existsSync } from "fs";
 import { join, resolve } from "path";
-import { applyExtensionDefaults } from "./themeMap.ts";
 
 // ── 类型 ─────────────────────────────────────────
 
@@ -84,9 +83,14 @@ function displayDesc(def: ExpertDef): string {
 	return EXPERT_CN[def.name.toLowerCase()]?.desc ?? def.description;
 }
 
+/** 读文本文件并统一成 \n 行尾，CRLF 文件也能被下面的正则解析。 */
+function readText(filePath: string): string {
+	return readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
+}
+
 function parseAgentFile(filePath: string): ExpertDef | null {
 	try {
-		const raw = readFileSync(filePath, "utf-8");
+		const raw = readText(filePath);
 		const match = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
 		if (!match) return null;
 
@@ -116,13 +120,28 @@ function parseAgentFile(filePath: string): ExpertDef | null {
 // 提示词是内容，不写在代码里。中文版不翻译原版提示词，
 // 而是在原版英文提示词末尾追加一段中文语言规则（主智能体和专家共用）。
 
+// 拿不到当前会话模型时，专家子进程用这个。必须是订阅制 provider（openai-codex），不要用按量计费的。
+const FALLBACK_MODEL = "openai-codex/gpt-6.1-sol";
+
+// 这些 provider 走按量计费 API，专家子进程不跟随，改用 FALLBACK_MODEL。
+const PAY_PER_USE_PROVIDERS = new Set(["anthropic"]);
+
+/** 专家子进程用的模型：默认跟随主会话；主会话没选模型或用的是按量计费 provider 时改用 FALLBACK_MODEL。 */
+function expertModel(model: { provider: string; id: string } | undefined): string {
+	if (!model || PAY_PER_USE_PROVIDERS.has(model.provider)) return FALLBACK_MODEL;
+	return `${model.provider}/${model.id}`;
+}
+
+// 子进程 stderr 只保留末尾这么多字符，失败时附在输出里用于排查。
+const STDERR_TAIL_CHARS = 2000;
+
 const ORCHESTRATOR_FILE = join(".pi", "agents", "pi-pi", "pi-orchestrator.md");
 const LANG_RULE_FILE = join(".pi", "agents", "pi-pi-cn", "lang-cn.md");
 
 /** 读取 .md 正文（去掉 frontmatter）。文件不存在返回 null。 */
 function readPromptBody(filePath: string): string | null {
 	if (!existsSync(filePath)) return null;
-	const raw = readFileSync(filePath, "utf-8");
+	const raw = readText(filePath);
 	const match = raw.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
 	return (match ? match[1] : raw).trim();
 }
@@ -287,7 +306,12 @@ export default function (pi: ExtensionAPI) {
 		expertName: string,
 		question: string,
 		ctx: any,
+		signal?: AbortSignal,
 	): Promise<{ output: string; exitCode: number; elapsed: number }> {
+		if (signal?.aborted) {
+			return Promise.resolve({ output: "已取消。", exitCode: 1, elapsed: 0 });
+		}
+
 		const key = expertName.toLowerCase();
 		const state = experts.get(key);
 		if (!state) {
@@ -319,9 +343,7 @@ export default function (pi: ExtensionAPI) {
 			updateWidget();
 		}, 1000);
 
-		const model = ctx.model
-			? `${ctx.model.provider}/${ctx.model.id}`
-			: "openrouter/google/gemini-3-flash-preview";
+		const model = expertModel(ctx.model);
 
 		const langRule = readPromptBody(join(ctx.cwd, LANG_RULE_FILE)) ?? "";
 
@@ -346,6 +368,15 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			let buffer = "";
+			let stderrTail = "";
+			let aborted = false;
+
+			// 用户中断（Esc）时杀掉子进程，否则它会继续跑、继续消耗额度
+			const onAbort = () => {
+				aborted = true;
+				proc.kill("SIGTERM");
+			};
+			signal?.addEventListener("abort", onAbort, { once: true });
 
 			proc.stdout!.setEncoding("utf-8");
 			proc.stdout!.on("data", (chunk: string) => {
@@ -371,9 +402,12 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			proc.stderr!.setEncoding("utf-8");
-			proc.stderr!.on("data", () => {});
+			proc.stderr!.on("data", (chunk: string) => {
+				stderrTail = (stderrTail + chunk).slice(-STDERR_TAIL_CHARS);
+			});
 
 			proc.on("close", (code) => {
+				signal?.removeEventListener("abort", onAbort);
 				if (buffer.trim()) {
 					try {
 						const event = JSON.parse(buffer);
@@ -388,13 +422,25 @@ export default function (pi: ExtensionAPI) {
 				state.elapsed = Date.now() - startTime;
 				state.status = code === 0 ? "done" : "error";
 
-				const full = textChunks.join("");
-				state.lastLine = full.split("\n").filter((l: string) => l.trim()).pop() || "";
+				let full = textChunks.join("");
+				const stderrText = stderrTail.trim();
+				if (aborted) {
+					full += "\n\n[已取消]";
+				} else if (state.status === "error" && stderrText) {
+					full += `\n\n[子进程退出码 ${code}，stderr 末尾]\n${stderrText}`;
+				}
+
+				const lastOf = (s: string) => s.split("\n").filter((l: string) => l.trim()).pop() || "";
+				state.lastLine = aborted ? "已取消"
+					: state.status === "error" && stderrText ? lastOf(stderrText)
+					: lastOf(full);
 				updateWidget();
 
 				ctx.ui.notify(
-					`${displayName(state.def.name)} ${STATUS_CN[state.status]}，用时 ${Math.round(state.elapsed / 1000)} 秒`,
-					state.status === "done" ? "success" : "error"
+					aborted
+						? `${displayName(state.def.name)} 已取消`
+						: `${displayName(state.def.name)} ${STATUS_CN[state.status]}，用时 ${Math.round(state.elapsed / 1000)} 秒`,
+					state.status === "done" ? "info" : aborted ? "warning" : "error"
 				);
 
 				resolve({
@@ -405,6 +451,7 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			proc.on("error", (err) => {
+				signal?.removeEventListener("abort", onAbort);
 				clearInterval(state.timer);
 				state.status = "error";
 				state.lastLine = `错误：${err.message}`;
@@ -454,7 +501,7 @@ export default function (pi: ExtensionAPI) {
 			),
 		}),
 
-		async execute(_toolCallId, params, _signal, onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const { queries } = params as { queries: { expert: string; question: string }[] };
 
 			if (!queries || queries.length === 0) {
@@ -475,7 +522,7 @@ export default function (pi: ExtensionAPI) {
 			// 所有专家并发启动 —— 用 allSettled，一位失败不会丢掉其他人的结果
 			const settled = await Promise.allSettled(
 				queries.map(async ({ expert, question }) => {
-					const result = await queryExpert(expert, question, ctx);
+					const result = await queryExpert(expert, question, ctx, signal);
 					const truncated = result.output.length > 12000
 						? result.output.slice(0, 12000) + "\n\n... [已截断 —— 如需更多请追问]"
 						: result.output;
@@ -631,7 +678,8 @@ export default function (pi: ExtensionAPI) {
 	// ── 会话启动 ─────────────────────────────────
 
 	pi.on("session_start", async (_event, _ctx) => {
-		applyExtensionDefaults(import.meta.url, _ctx);
+		// 终端标题；延迟一点，等 Pi 自己启动时设完标题再覆盖
+		if (_ctx.hasUI) setTimeout(() => _ctx.ui.setTitle("π - pi-pi-cn"), 150);
 		if (widgetCtx) {
 			widgetCtx.ui.setWidget("pi-pi-cn-grid", undefined);
 		}
