@@ -31,7 +31,7 @@ import { join, resolve } from "path";
 
 // ── 类型 ─────────────────────────────────────────
 
-type ExpertStatus = "idle" | "researching" | "done" | "error";
+type ExpertStatus = "idle" | "researching" | "done" | "error" | "cancelled";
 
 interface ExpertDef {
 	name: string;
@@ -71,6 +71,14 @@ const STATUS_CN: Record<ExpertStatus, string> = {
 	researching: "调研中",
 	done: "完成",
 	error: "出错",
+	cancelled: "已取消",
+};
+
+// 工具结果里每位专家的图标和颜色（颜色是 theme token）
+const RESULT_STYLE: Partial<Record<ExpertStatus, { icon: string; color: string }>> = {
+	done: { icon: "✓", color: "success" },
+	error: { icon: "✗", color: "error" },
+	cancelled: { icon: "⊘", color: "warning" },
 };
 
 function displayName(name: string): string {
@@ -213,10 +221,12 @@ export default function (pi: ExtensionAPI) {
 
 		const statusColor = state.status === "idle" ? "dim"
 			: state.status === "researching" ? "accent"
-			: state.status === "done" ? "success" : "error";
+			: state.status === "done" ? "success"
+			: state.status === "cancelled" ? "warning" : "error";
 		const statusIcon = state.status === "idle" ? "○"
 			: state.status === "researching" ? "◉"
-			: state.status === "done" ? "✓" : "✗";
+			: state.status === "done" ? "✓"
+			: state.status === "cancelled" ? "⊘" : "✗";
 
 		const nameText = fit(displayName(state.def.name), w - 1);
 		const nameStr = theme.fg("accent", theme.bold(nameText));
@@ -307,9 +317,9 @@ export default function (pi: ExtensionAPI) {
 		question: string,
 		ctx: any,
 		signal?: AbortSignal,
-	): Promise<{ output: string; exitCode: number; elapsed: number }> {
+	): Promise<{ output: string; exitCode: number; elapsed: number; cancelled?: boolean }> {
 		if (signal?.aborted) {
-			return Promise.resolve({ output: "已取消。", exitCode: 1, elapsed: 0 });
+			return Promise.resolve({ output: "已取消。", exitCode: 1, elapsed: 0, cancelled: true });
 		}
 
 		const key = expertName.toLowerCase();
@@ -420,7 +430,8 @@ export default function (pi: ExtensionAPI) {
 
 				clearInterval(state.timer);
 				state.elapsed = Date.now() - startTime;
-				state.status = code === 0 ? "done" : "error";
+				// 被 kill 的子进程退出码非 0，但这是用户取消，不算出错
+				state.status = aborted ? "cancelled" : code === 0 ? "done" : "error";
 
 				let full = textChunks.join("");
 				const stderrText = stderrTail.trim();
@@ -430,8 +441,9 @@ export default function (pi: ExtensionAPI) {
 					full += `\n\n[子进程退出码 ${code}，stderr 末尾]\n${stderrText}`;
 				}
 
+				// 卡片状态行已经写了"已取消"，最后一行就显示取消前收到的内容
 				const lastOf = (s: string) => s.split("\n").filter((l: string) => l.trim()).pop() || "";
-				state.lastLine = aborted ? "已取消"
+				state.lastLine = aborted ? lastOf(textChunks.join(""))
 					: state.status === "error" && stderrText ? lastOf(stderrText)
 					: lastOf(full);
 				updateWidget();
@@ -447,6 +459,7 @@ export default function (pi: ExtensionAPI) {
 					output: full,
 					exitCode: code ?? 1,
 					elapsed: state.elapsed,
+					cancelled: aborted,
 				});
 			});
 
@@ -526,7 +539,8 @@ export default function (pi: ExtensionAPI) {
 					const truncated = result.output.length > 12000
 						? result.output.slice(0, 12000) + "\n\n... [已截断 —— 如需更多请追问]"
 						: result.output;
-					const status = result.exitCode === 0 ? "done" : "error";
+					const status: ExpertStatus = result.cancelled ? "cancelled"
+						: result.exitCode === 0 ? "done" : "error";
 					return {
 						expert,
 						question,
@@ -545,7 +559,7 @@ export default function (pi: ExtensionAPI) {
 					: {
 						expert: queries[i].expert,
 						question: queries[i].question,
-						status: "error" as const,
+						status: "error" as ExpertStatus,
 						elapsed: 0,
 						exitCode: 1,
 						output: `错误：${(s.reason as any)?.message || s.reason}`,
@@ -555,7 +569,7 @@ export default function (pi: ExtensionAPI) {
 
 			// 拼合返回内容
 			const sections = results.map(r => {
-				const icon = r.status === "done" ? "✓" : "✗";
+				const icon = RESULT_STYLE[r.status]?.icon ?? "✗";
 				return `## [${icon}] ${displayName(r.expert)}（${r.expert}，${Math.round(r.elapsed / 1000)} 秒）\n\n${r.output}`;
 			});
 
@@ -597,8 +611,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			const lines = (details.results as any[]).map((r: any) => {
-				const icon = r.status === "done" ? "✓" : "✗";
-				const color = r.status === "done" ? "success" : "error";
+				const { icon, color } = RESULT_STYLE[r.status as ExpertStatus] ?? RESULT_STYLE.error;
 				const elapsed = typeof r.elapsed === "number" ? Math.round(r.elapsed / 1000) : 0;
 				return theme.fg(color, `${icon} ${displayName(r.expert)}`) +
 					theme.fg("dim", ` ${elapsed}秒`);
