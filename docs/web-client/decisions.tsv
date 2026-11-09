@@ -59,3 +59,4 @@ ts	phase	decision	why	evidence	result
 2026-11-09T18:48:48Z	m3	skills/ 的说明文件叫 README.txt	Pi 的 --skill 目录会把根目录下每个 .md 当成技能加载（pi-coding-agent dist/core/skills.js loadSkillsFromDirInternal）	skills.js 读源码确认	decided
 2026-11-09T18:48:48Z	m3	just modules 的来源状态复用 feedSpecs 和 FeedSpec.status	与宿主走同一段检查（有没有密钥、settings 是否合法），只给来源不给密钥	lane10 输出里没有假密钥	decided
 2026-11-09T18:48:48Z	m3	live lane 实测	临时状态目录跑 10 条 lane；just modules 5 次 0.35 秒	scratchpad m3-live/*.txt；trunk 491 测试，head 510 全绿	PASS
+2026-11-09T18:53:44Z	m3-verdict	M3 复审 PASS；补测试钉住模块名与对象原型属性同名（constructor）时按清单默认；停用模块的来源仍按未知来源交给幕僚长，保持现状	复审：13 处变异 12 处变红，唯一漏网的 hasOwn 现已钉住	tests/modules.test.ts 变异验证	PASS

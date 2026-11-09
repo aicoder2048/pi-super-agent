@@ -102,6 +102,15 @@ test("模块开关：found 列出全部模块和启用原因", () => {
 	]);
 });
 
+test("模块名和对象原型上的属性同名时（constructor、toString），没写开关就按清单默认", () => {
+	const root = moduleRoot({ constructor: { defaultEnabled: false }, toString: {} });
+	const modules = Modules.load([root], undefined, switches({}));
+	assert.deepEqual(modules.found.map((m) => [m.name, m.state]), [
+		["constructor", { enabled: false, by: "manifest" }],
+		["toString", { enabled: true, by: "default" }],
+	]);
+});
+
 test("toy-market 默认关闭，开关打开后它的规则和过滤才生效", () => {
 	assert.deepEqual(Modules.load([repoModules]).modules.map((m) => m.name), ["us-market"]);
 	const on = Modules.load([repoModules], undefined, switches({ "toy-market": true }));
