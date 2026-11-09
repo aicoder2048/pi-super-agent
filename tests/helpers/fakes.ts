@@ -39,6 +39,8 @@ export interface FauxRouterHandle {
 export interface FauxRouterOptions {
 	models?: string[];
 	failOn?: (modelId: string) => string | undefined;
+	persist?: boolean;
+	errorRetryMs?: number[];
 }
 
 export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxRouterHandle {
@@ -54,7 +56,7 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 		const trailing: string[] = [];
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const m = messages[i];
-			if (m.role === "assistant" && m.stopReason === "error") continue;
+			if (m.role === "assistant" && (m.stopReason === "error" || m.stopReason === "aborted")) continue;
 			if (m.role !== "user") break;
 			trailing.unshift(...messageText(m).split(/\n\n(?=\[)/));
 		}
@@ -87,6 +89,8 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 				modelRuntime,
 				models,
 				retry: { maxRetries: 3, baseDelayMs: 1 },
+				sessionDir: options.persist ? join(deps.stateDir, "sessions", "router") : undefined,
+				errorRetryMs: options.errorRetryMs ?? [10, 10, 10],
 				cwd: deps.stateDir,
 				rules: "",
 				afterCommand: deps.afterCommand,

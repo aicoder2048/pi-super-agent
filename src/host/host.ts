@@ -14,7 +14,7 @@ import { HostServer } from "./server.ts";
 import { WorkerExecutor, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 
 export interface RouterLike {
-	inject(notice: RouterNotice): void;
+	inject(notice: RouterNotice, actionId?: string): Promise<void> | void;
 	waitForIdle(): Promise<void>;
 	dispose(): void;
 }
@@ -96,7 +96,7 @@ export class Host {
 		this.dispatcher = new Dispatcher({
 			kernel: this.kernel,
 			handlers: {
-				"router.notify": (notice) => this.router.inject(notice),
+				"router.notify": (notice, actionId) => this.router.inject(notice, actionId),
 				"worker.wake": ({ ticketId }) => this.workers.wake(ticketId),
 				"worker.stop": ({ ticketId }) => this.workers.stop(ticketId),
 				"channel.reply": ({ threadId, text, replyId }) => this.#deliverReply(threadId, text, replyId),

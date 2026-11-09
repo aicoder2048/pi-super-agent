@@ -202,6 +202,7 @@ export interface RouterOptions {
 	onError?: (error: unknown) => void;
 	models: RouterModels;
 	retry?: { maxRetries: number; baseDelayMs?: number };
+	errorRetryMs?: number[];
 }
 
 export interface RouterModels {
@@ -211,24 +212,42 @@ export interface RouterModels {
 
 export type RouterSession = Awaited<ReturnType<typeof createAgentSession>>["session"];
 
+interface PendingCard {
+	card: string;
+	actionId?: string;
+}
+
+const ERROR_RETRY_MS = [5_000, 30_000, 120_000, 600_000, 1_800_000];
+const INTERRUPTED = "[通知] 上一轮没有处理完（宿主重启或模型出错），请继续处理上面还没处理完的消息。";
+
 export class Router {
 	readonly session: RouterSession;
 	readonly #kernel: Kernel;
 	readonly #onError: (error: unknown) => void;
-	#buffer: string[] = [];
+	readonly #models: RouterModels;
+	readonly #errorRetryMs: number[];
+	readonly #acks = new Map<string, () => void>();
+	readonly #delivered = new Set<string>();
+	#buffer: PendingCard[] = [];
 	#flushScheduled = false;
 	#busy = false;
-	readonly #models: RouterModels;
+	#errorStreak = 0;
+	#retryTimer: NodeJS.Timeout | undefined;
 
-	private constructor(session: RouterSession, kernel: Kernel, onError: (error: unknown) => void, models: RouterModels) {
+	private constructor(session: RouterSession, options: RouterOptions) {
 		this.session = session;
-		this.#kernel = kernel;
-		this.#onError = onError;
-		this.#models = models;
+		this.#kernel = options.kernel;
+		this.#onError = options.onError ?? ((e) => console.error("[router]", e));
+		this.#models = options.models;
+		this.#errorRetryMs = options.errorRetryMs ?? ERROR_RETRY_MS;
 		session.subscribe((event) => {
-			if (event.type !== "agent_settled") return;
-			void this.#settled().catch(this.#onError);
+			if (event.type === "message_end" && event.message.role === "custom") {
+				const ids = (event.message as { details?: { actionIds?: string[] } }).details?.actionIds ?? [];
+				for (const id of ids) this.#delivered.add(id);
+			}
+			if (event.type === "agent_settled") void this.#settled().catch(this.#onError);
 		});
+		if (interrupted(session.messages.at(-1))) this.#push(INTERRUPTED);
 	}
 
 	async #settled(): Promise<void> {
@@ -237,17 +256,38 @@ export class Router {
 			const result = this.#models.selector.onError(String(last.errorMessage ?? ""));
 			const current = this.#models.selector.current();
 			if (result.switched) {
-				await this.session.setModel(this.#models.resolve(current.model));
-				this.#buffer.push(result.notify
+				await this.session.setModel(this.#models.resolve(current.model)).catch(this.#onError);
+				this.#errorStreak = 0;
+				this.#buffer.push({ card: result.notify
 					? `[通知] Router 的主模型额度用尽或被限流，已切到回退模型 ${formatModelRef(current.model)}。请用一句话告诉使用者，然后继续处理上面没处理完的消息。`
-					: "[通知] 主模型仍不可用，已回到回退模型。请继续处理上面没处理完的消息。");
+					: "[通知] 主模型仍不可用，已回到回退模型。请继续处理上面没处理完的消息。" });
+			} else {
+				this.#retryAfterError();
 			}
 		} else if (last?.role === "assistant") {
+			this.#errorStreak = 0;
 			this.#models.selector.onSuccess();
+			this.#acknowledgeDelivered();
 		}
 		this.#busy = false;
-		if (last?.role === "custom") this.#buffer.push("[通知] 上面还有未处理的消息，请处理。");
+		if (last?.role === "custom") this.#buffer.push({ card: "[通知] 上面还有未处理的消息，请处理。" });
 		if (this.#buffer.length) this.#schedule();
+	}
+
+	#acknowledgeDelivered(): void {
+		for (const id of this.#delivered) {
+			this.#acks.get(id)?.();
+			this.#acks.delete(id);
+		}
+		this.#delivered.clear();
+	}
+
+	#retryAfterError(): void {
+		const delay = this.#errorRetryMs[Math.min(this.#errorStreak, this.#errorRetryMs.length - 1)];
+		this.#errorStreak++;
+		clearTimeout(this.#retryTimer);
+		this.#retryTimer = setTimeout(() => this.#push(INTERRUPTED), delay);
+		this.#retryTimer.unref();
 	}
 
 	static async create(options: RouterOptions): Promise<Router> {
@@ -270,11 +310,26 @@ export class Router {
 			sessionManager,
 			settingsManager,
 		});
-		return new Router(session, options.kernel, options.onError ?? ((e) => console.error("[router]", e)), options.models);
+		return new Router(session, options);
 	}
 
-	inject(notice: RouterNotice): void {
-		this.#buffer.push(noticeCard(this.#kernel, notice));
+	// Resolves only after a Router turn that saw the card finishes cleanly. The session file is not
+	// written before the first assistant message, so an earlier ack could lose the card in a crash.
+	// The outbox keeps the action pending until then and replays it after a restart.
+	inject(notice: RouterNotice, actionId?: string): Promise<void> {
+		const card = noticeCard(this.#kernel, notice);
+		if (!actionId) {
+			this.#push(card);
+			return Promise.resolve();
+		}
+		return new Promise((resolve) => {
+			this.#acks.set(actionId, resolve);
+			this.#push(card, actionId);
+		});
+	}
+
+	#push(card: string, actionId?: string): void {
+		this.#buffer.push({ card, actionId });
 		this.#schedule();
 	}
 
@@ -303,16 +358,25 @@ export class Router {
 				return;
 			}
 		}
-		const cards = this.#buffer.splice(0);
-		const message = (content: string) => ({ customType: "psa-notice", content, display: false });
-		const send = (content: string, options: { triggerTurn?: boolean; deliverAs?: "steer" }) =>
-			this.session.sendCustomMessage(message(content), options).catch(this.#onError);
+		const pending = this.#buffer.splice(0);
+		const send = (items: PendingCard[], options: { triggerTurn?: boolean; deliverAs?: "steer" }) =>
+			this.session
+				.sendCustomMessage(
+					{
+						customType: "psa-notice",
+						content: items.map((p) => p.card).join("\n\n"),
+						display: false,
+						details: { actionIds: items.flatMap((p) => (p.actionId ? [p.actionId] : [])) },
+					},
+					options,
+				)
+				.catch(this.#onError);
 		if (this.#busy || this.session.isStreaming) {
-			for (const card of cards) void send(card, { deliverAs: "steer" });
+			for (const item of pending) void send([item], { deliverAs: "steer" });
 			return;
 		}
 		this.#busy = true;
-		void send(cards.join("\n\n"), { triggerTurn: true });
+		void send(pending, { triggerTurn: true });
 	}
 
 	async waitForIdle(): Promise<void> {
@@ -320,6 +384,14 @@ export class Router {
 	}
 
 	dispose(): void {
+		clearTimeout(this.#retryTimer);
 		this.session.dispose();
 	}
+}
+
+function interrupted(last: unknown): boolean {
+	const m = last as { role?: string; stopReason?: string } | undefined;
+	if (!m) return false;
+	if (m.role === "custom" || m.role === "toolResult") return true;
+	return m.role === "assistant" && (m.stopReason === "error" || m.stopReason === "aborted" || m.stopReason === "toolUse");
 }

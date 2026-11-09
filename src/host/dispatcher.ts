@@ -1,7 +1,7 @@
 import type { Kernel } from "../kernel/kernel.ts";
 import type { Action, PendingAction } from "../kernel/types.ts";
 
-type Handlers = { [K in Action["kind"]]: (payload: Extract<Action, { kind: K }>["payload"]) => Promise<void> | void };
+type Handlers = { [K in Action["kind"]]: (payload: Extract<Action, { kind: K }>["payload"], actionId: string) => Promise<void> | void };
 
 export interface DispatcherOptions {
 	kernel: Kernel;
@@ -48,7 +48,7 @@ export class Dispatcher {
 
 	async #run(action: PendingAction): Promise<void> {
 		try {
-			await (this.#handlers[action.kind] as (p: unknown) => Promise<void> | void)(action.payload);
+			await (this.#handlers[action.kind] as (p: unknown, id: string) => Promise<void> | void)(action.payload, action.id);
 			this.#kernel.completeAction(action.id);
 		} catch (error) {
 			this.#kernel.failAction(action.id, error instanceof Error ? error.message : String(error));

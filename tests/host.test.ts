@@ -94,7 +94,7 @@ test("Router 推理期间到达的多条汇报在下一步一并注入", async (
 	host.say("慢慢想一下");
 	await until(() => router.batches.some((b) => b.some((c) => c.includes("慢慢想"))), "Router 开始推理");
 	await until(() => workersDone === 3, "三个汇报都已提交");
-	await until(() => host.kernel.dueActions(1).length === 0, "通知都已注入");
+	await new Promise((r) => setTimeout(r, 50));
 	gate();
 	await until(() => router.batches.some((b) => b.filter((c) => c.startsWith("[Worker 汇报]")).length >= 2), "批量注入");
 });
