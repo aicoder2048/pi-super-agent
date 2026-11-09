@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -48,7 +48,7 @@ const DENIED = {
 
 export class WebGateway {
 	readonly #server: Server;
-	readonly #token = randomBytes(32).toString("hex");
+	readonly #token: string;
 	readonly #streams = new Set<ServerResponse>();
 	readonly #watchers = new Map<string, Set<ServerResponse>>();
 	readonly #echoes = new HistoryEchoFilter<ServerResponse>();
@@ -56,8 +56,9 @@ export class WebGateway {
 	readonly #log: (line: string) => void;
 	#port = 0;
 
-	constructor(host: WebHost, log: (line: string) => void) {
+	constructor(host: WebHost, token: string, log: (line: string) => void) {
 		this.#host = host;
+		this.#token = token;
 		this.#log = log;
 		this.#server = createServer((req, res) => this.#guard(req, res, () => this.#handle(req, res)));
 	}

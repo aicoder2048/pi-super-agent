@@ -199,6 +199,14 @@ export async function busyPort(t: TestContext): Promise<number> {
 	return (server.address() as AddressInfo).port;
 }
 
+export async function freePort(): Promise<number> {
+	const probe = createServer();
+	await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
+	const { port } = probe.address() as AddressInfo;
+	await new Promise((r) => probe.close(r));
+	return port;
+}
+
 export async function until(predicate: () => boolean, label: string, timeoutMs = 3000): Promise<void> {
 	const start = Date.now();
 	while (!predicate()) {
