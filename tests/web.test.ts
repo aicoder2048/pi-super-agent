@@ -17,7 +17,7 @@ import { busyPort, ofType, openOnConversation, startHost, tempStateDir, until, w
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
 		id: "tkt_abcd1234", title: "查天气", stage: "running", basis: "request", latestSummary: null, model: "openai-codex/gpt-6.1-sol",
-		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, question: null, ...over,
+		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, question: null, stall: null, ...over,
 	};
 }
 
@@ -83,6 +83,61 @@ test("页面：待你处理的卡片先显示问题，受阻的显示最近汇�
 	assert.deepEqual(left.needsYou.map((c) => [c.latest, c.stage, c.why]), [["用 A 还是 B？", "待回复", "规则触发"], ["缺少权限", "受阻", "主动发现"]]);
 	assert.deepEqual(left.doing.map((c) => [c.latest, c.stage, c.why]), [["已开始，暂无进展", "进行中", "你的请求"], ["读完 3 份", "等待中", "你的请求"]]);
 	assert.deepEqual([...left.needsYou, ...left.doing].map((c) => c.canStop), [false, false, true, true], "只有进行中的能停止");
+});
+
+const MIN = 60_000;
+const asked = (over: Partial<NonNullable<DashboardRow["question"]>> = {}) =>
+	({ reportId: "rpt_q1", text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 10 * MIN, answered: null, ...over });
+
+test("页面：执行中久无进展的任务进待你处理，阶段写「久无进展 · N 分钟」并随时间增加，能停止", () => {
+	const view = withRows([row({ id: "tkt_slow", stage: "running", latestSummary: "在跑回归", stall: { since: 0, minutes: 42 } }), row({ id: "tkt_ok", stage: "running" })]);
+	const left = page.leftColumn(view, 42 * MIN + 5000);
+	assert.deepEqual(left.needsYou.map((c) => [c.id, c.stage, c.latest, c.canStop]), [["tkt_slow", "久无进展 · 42 分钟", "在跑回归", true]]);
+	assert.deepEqual(left.doing.map((c) => c.id), ["tkt_ok"]);
+	assert.equal(page.leftColumn(view, 45 * MIN).needsYou[0].stage, "久无进展 · 45 分钟");
+});
+
+test("页面：等回答且带选项的卡片有一组按钮；任何客户端点过或这里正在发送时全部锁住，标出选了哪个并写「已回答」；开放问题没有按钮", () => {
+	const view = withRows([
+		row({ id: "tkt_a", stage: "awaiting_answer", question: asked() }),
+		row({ id: "tkt_b", stage: "awaiting_answer", question: asked({ reportId: "rpt_q2", answered: 2 }) }),
+		row({ id: "tkt_c", stage: "awaiting_answer", question: asked({ reportId: "rpt_q3", options: [] }) }),
+	]);
+	const [a, b, c] = page.leftColumn(view, 0).needsYou.map((card) => card.choice);
+	assert.deepEqual(a, { reportId: "rpt_q1", buttons: [{ label: "只看营收", option: 0, picked: false }, { label: "营收和利润", option: 1, picked: false }, { label: "先不查", option: 2, picked: false }], locked: false, note: "" });
+	assert.deepEqual([b?.locked, b?.buttons.map((x) => x.picked), b?.note], [true, [false, false, true], "已回答"]);
+	assert.equal(c, null);
+	const sending = page.leftColumn(view, 0, new Map([["rpt_q1", 1]])).needsYou[0].choice;
+	assert.deepEqual([sending?.locked, sending?.buttons.map((x) => x.picked), sending?.note], [true, [false, true, false], "已回答"]);
+});
+
+test("页面：选项按钮也挂在对话里幕僚长转述这个问题的那一句下面：关于这个任务、在提问之后的最后一句；还没转述或问题结束时对话里没有", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, snapshot({ conversation: [
+		{ id: "rpl_old", who: "router", text: "收到", at: 5 * MIN, about: "tkt_a" },
+		{ id: "rpl_q", who: "router", text: "要看哪部分？", at: 11 * MIN, about: "tkt_a" },
+		{ id: "rpl_other", who: "router", text: "别的事", at: 12 * MIN, about: "tkt_b" },
+		{ id: "trg_x", who: "user", text: "嗯", at: 13 * MIN },
+	], board: [row({ id: "tkt_a", stage: "awaiting_answer", question: asked() })] }), 0);
+	const choices = page.choicesInConversation(view, new Map());
+	assert.deepEqual([...choices.keys()], ["rpl_q"]);
+	assert.equal(choices.get("rpl_q")?.reportId, "rpt_q1");
+	page.applyMessage(view, board([row({ id: "tkt_a", stage: "running" })]), 0);
+	assert.equal(page.choicesInConversation(view, new Map()).size, 0);
+	const early = page.emptyView();
+	page.applyMessage(early, snapshot({ conversation: [{ id: "rpl_old", who: "router", text: "收到", at: 5 * MIN, about: "tkt_a" }], board: [row({ id: "tkt_a", stage: "awaiting_answer", question: asked() })] }), 0);
+	assert.equal(page.choicesInConversation(early, new Map()).size, 0, "提问之前的话下面不挂");
+});
+
+test("页面：reply 帧带的 about 留在对话行上", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, { type: "reply", replyId: "rpl_1", text: "要看哪部分？", at: 1, about: "tkt_a" }, 0);
+	assert.equal(view.lines.get("rpl_1")?.about, "tkt_a");
+});
+
+test("页面：点选项发的正文只有 {answer: {reportId, option}}，句子由宿主来写；409 显示固定文案", () => {
+	assert.deepEqual(JSON.parse(page.answerBody("rpt_q1", 2)), { answer: { reportId: "rpt_q1", option: 2 } });
+	assert.equal(page.sayCopy("rejected", 409), "发送失败：这个问题已经回答过，或已不在等待回答。");
 });
 
 test("页面：停止只在输入框里填一句话，含任务标题", () => {

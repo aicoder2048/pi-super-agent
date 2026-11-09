@@ -74,13 +74,42 @@ export function applyMessage(view, message, now) {
 			addLine(view, { id: message.id, who: "user", text: message.text, at: message.at });
 			return ["conversation"];
 		case "reply":
-			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at });
+			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at, ...(message.about ? { about: message.about } : {}) });
 			return ["conversation"];
 		case "board":
 			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, receivedAt: now });
 			return ["left", "header"];
 	}
 	return [];
+}
+
+/** A stalled running task needs the user too. @param {DashboardRow} row @returns {Group} */
+const groupOf = (row) => (row.stall ? "needsYou" : GROUP[row.stage]);
+
+/**
+ * Clicks this page sent and the host has not shown as answered yet: reportId → option.
+ * @typedef {Map<string, number>} Sending
+ */
+
+/**
+ * @typedef {object} Choice
+ * @property {string} reportId
+ * @property {{ label: string, option: number, picked: boolean }[]} buttons
+ * @property {boolean} locked
+ * @property {string} note
+ */
+
+/** @param {DashboardRow} row @param {Sending} sending @returns {Choice | null} */
+function choiceOf(row, sending) {
+	const q = row.question;
+	if (!q || q.options.length === 0) return null;
+	const picked = q.answered ?? sending.get(q.reportId) ?? null;
+	return {
+		reportId: q.reportId,
+		buttons: q.options.map((label, option) => ({ label, option, picked: option === picked })),
+		locked: picked !== null,
+		note: picked === null ? "" : "已回答",
+	};
 }
 
 /**
@@ -91,25 +120,47 @@ export function applyMessage(view, message, now) {
  * @property {string} stage
  * @property {string} latest
  * @property {boolean} canStop
+ * @property {Choice | null} choice
  */
 
-/** @param {DashboardRow} row @returns {TaskCard} */
-function card(row) {
+/** @param {DashboardRow} row @param {number} now @param {Sending} sending @returns {TaskCard} */
+function card(row, now, sending) {
 	return {
 		id: row.id,
 		title: row.title,
 		why: BASIS_PHRASE[row.basis],
-		stage: STAGE_PHRASE[row.stage],
+		stage: row.stall ? `久无进展 · ${Math.floor((now - row.stall.since) / 60_000)} 分钟` : STAGE_PHRASE[row.stage],
 		latest: row.question?.text ?? row.latestSummary ?? "已开始，暂无进展",
 		canStop: GROUP[row.stage] === "doing",
+		choice: choiceOf(row, sending),
 	};
 }
 
-/** @param {View} view */
-export function leftColumn(view) {
+/**
+ * The buttons of each pending question also hang under the 幕僚长 line that relayed it: the last line about that task said after the question.
+ * @param {View} view @param {Sending} sending @returns {Map<string, Choice>} line id → choice
+ */
+export function choicesInConversation(view, sending) {
+	const lines = [...view.lines.values()];
+	/** @type {Map<string, Choice>} */
+	const placed = new Map();
+	for (const row of view.rows) {
+		const choice = choiceOf(row, sending);
+		const askedAt = row.question?.askedAt ?? Infinity;
+		const line = lines.findLast((l) => l.who === "router" && l.about === row.id && l.at >= askedAt);
+		if (choice && line) placed.set(line.id, choice);
+	}
+	return placed;
+}
+
+/** @param {string} reportId @param {number} option */
+export const answerBody = (reportId, option) => JSON.stringify({ answer: { reportId, option } });
+
+/** @param {View} view @param {number} now @param {Sending} [sending] */
+export function leftColumn(view, now, sending = new Map()) {
 	/** @type {Record<Group, TaskCard[]>} */
 	const groups = { needsYou: [], doing: [], done: [] };
-	for (const row of view.rows) groups[GROUP[row.stage]].push(card(row));
+	for (const row of view.rows) groups[groupOf(row)].push(card(row, now, sending));
 	const hits = view.today?.bySource ?? {};
 	return {
 		needsYou: groups.needsYou,
@@ -314,6 +365,7 @@ export const SAY_COPY = {
 const REJECTED_COPY = {
 	400: "发送失败：内容为空或格式不正确。",
 	403: "发送失败：请求来源不被允许。",
+	409: "发送失败：这个问题已经回答过，或已不在等待回答。",
 	413: "发送失败：内容过长，请分几次发送。",
 	415: "发送失败：请求格式不正确。",
 };
