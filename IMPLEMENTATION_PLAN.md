@@ -563,6 +563,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] 副幕僚长的提示词按问题挑看盘专家，合成时写明冲突和报价时间。
 - [x] 第一次现场四位专家全部超时，修正：宿主级专家上限 `maxConcurrentExperts`（默认 4），多出来的排队，页面写「排队中」；时限从专家开始算，排队也限一个时限，牵头人最多等两个时限；回答超过 2000 字截断。
 - [x] 大波动规则只提示行情分析师和技术分析师，个股自己大动且盘面解释不了时副幕僚长再请教新闻研究员；专家先用 lookup，新闻研究员最多读 3 页，回答不超过 600 字。
+- [x] 用过 lookup 的专家答完不退出（Worker 扩展的宿主 socket 一直挂着），改为只在有请求等待时持有 socket；`src/worker/extension.ts`。
 - [x] 页面：幕僚长气泡、任务卡、会诊回答和提交结果按安全的 Markdown 子集渲染（只建节点，不用 innerHTML）；任务卡摘要三行；「今日 N 位」固定在助手条右边。
 
 **You see.**
