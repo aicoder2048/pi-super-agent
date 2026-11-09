@@ -52,7 +52,7 @@ export interface BoardView {
 export function selectRows(rows: DashboardRow[]): { shown: DashboardRow[]; hiddenClosed: number } {
 	const active = rows.filter((r) => !TERMINAL.includes(r.stage));
 	const closed = rows.filter((r) => TERMINAL.includes(r.stage));
-	return { shown: [...active, ...closed.slice(0, CLOSED_SHOWN)], hiddenClosed: Math.max(0, closed.length - CLOSED_SHOWN) };
+	return { shown: [...active, ...closed.slice(-CLOSED_SHOWN)], hiddenClosed: Math.max(0, closed.length - CLOSED_SHOWN) };
 }
 
 export function renderBoard(view: BoardView, width: number, now: number): string[] {

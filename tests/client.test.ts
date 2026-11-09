@@ -108,6 +108,14 @@ test("看板：已结束的任务只显示最近两个，其余折叠成一行",
 	assert.match(text, /未连接/);
 });
 
+test("看板：按创建先后排列的行里，显示最后创建的两个已结束任务", () => {
+	const rows = ["一号旧任务", "二号旧任务", "三号新任务", "四号新任务"].map((title, i) => row({ id: `tkt_${i}`, title, stage: "closed" }));
+	const text = renderBoard({ rows, receivedAt: 0, connected: true }, 100, 0).join("\n");
+	assert.match(text, /三号新任务/);
+	assert.match(text, /四号新任务/);
+	assert.doesNotMatch(text, /一号旧任务|二号旧任务/);
+});
+
 test("过程格式：Worker 文字、工具调用和截断的工具结果", () => {
 	assert.deepEqual(formatTranscriptMessage({ role: "assistant", content: [{ type: "text", text: "先看目录" }, { type: "toolCall", name: "bash", arguments: { command: "ls" } }] }),
 		["【Worker】先看目录", '【工具】bash {"command":"ls"}']);
