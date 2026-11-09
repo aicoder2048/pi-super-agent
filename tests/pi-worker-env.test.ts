@@ -21,7 +21,7 @@ test("Worker 子进程和模块 prepare 拿不到宿主环境里的密钥类变�
 	const dir = mkdtempSync(join(tmpdir(), "psa-env-"));
 	const cliPath = join(dir, "fake-pi.mjs");
 	writeFileSync(cliPath, FAKE_PI);
-	const planted = { MASSIVE_API_KEY: "sk-market", FOO_TOKEN: "tok-foo", DEEPSEEK_API_KEY: "sk-ds", DB_PASSWORD: "pw", SECRET_SAUCE: "s", PSA_KEEP_HOME: "kept" };
+	const planted = { MASSIVE_API_KEY: "sk-market", FINNHUB_API_KEY: "fh-market", FOO_TOKEN: "tok-foo", DEEPSEEK_API_KEY: "sk-ds", DB_PASSWORD: "pw", SECRET_SAUCE: "s", PSA_KEEP_HOME: "kept" };
 	const saved = Object.fromEntries(Object.keys(planted).map((k) => [k, process.env[k]]));
 	Object.assign(process.env, planted);
 	t.after(() => {
@@ -39,12 +39,12 @@ test("Worker 子进程和模块 prepare 拿不到宿主环境里的密钥类变�
 	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", ruleId: null, role: "general", token: "secret-ticket-token", model: { provider: "openai-codex", id: "gpt" } }, events);
 	t.after(() => handle.stop());
 	const env = JSON.parse(readFileSync(join(dir, "worker-env.json"), "utf8")) as Record<string, string>;
-	for (const name of ["MASSIVE_API_KEY", "FOO_TOKEN", "DEEPSEEK_API_KEY", "DB_PASSWORD", "SECRET_SAUCE"]) assert.equal(env[name], undefined, `Worker 环境里不该有 ${name}`);
+	for (const name of ["MASSIVE_API_KEY", "FINNHUB_API_KEY", "FOO_TOKEN", "DEEPSEEK_API_KEY", "DB_PASSWORD", "SECRET_SAUCE"]) assert.equal(env[name], undefined, `Worker 环境里不该有 ${name}`);
 	assert.equal(env.PSA_TOKEN, "secret-ticket-token");
 	assert.equal(env.PSA_KEEP_HOME, "kept");
 	assert.equal(env.PATH, process.env.PATH);
 	const prepared = readFileSync(join(dir, "prepare-env.txt"), "utf8");
-	assert.ok(!/MASSIVE_API_KEY|FOO_TOKEN|DEEPSEEK_API_KEY/.test(prepared), "prepare 环境里不该有密钥类变量");
+	assert.ok(!/MASSIVE_API_KEY|FINNHUB_API_KEY|FOO_TOKEN|DEEPSEEK_API_KEY/.test(prepared), "prepare 环境里不该有密钥类变量");
 });
 
 test("牵头角色的 Worker：提示词和专家名册接在后面，技能先角色后模块，工具白名单经环境变量交给扩展；名册里没有的角色不启动", async (t) => {
