@@ -4,6 +4,21 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Router } from "../../src/host/router.ts";
+import { ModelSelector } from "../../src/model-selector.ts";
+import { formatModelRef } from "../../src/models.ts";
+import type { WorkerModels } from "../../src/host/workers.ts";
+
+export function defaultWorkerModels(): WorkerModels {
+	return {
+		selector: new ModelSelector({
+			primary: { provider: "openai-codex", id: "gpt-6.1-sol" },
+			fallback: { provider: "deepseek", id: "deepseek-flash" },
+			probeEveryMs: 15 * 60_000,
+			clock: { now: () => Date.now() },
+		}),
+		fallbackDailyTokens: Number.POSITIVE_INFINITY,
+	};
+}
 import { Host, type HostDeps, type HostOptions, type RouterLike } from "../../src/host/host.ts";
 import type { WorkerEvents, WorkerHandle, WorkerSpawner, WorkerSpec } from "../../src/host/workers.ts";
 
@@ -21,16 +36,27 @@ export interface FauxRouterHandle {
 	calls: () => number;
 }
 
-export function fauxRouter(brain: Brain): FauxRouterHandle {
+export interface FauxRouterOptions {
+	models?: string[];
+	failOn?: (modelId: string) => string | undefined;
+}
+
+export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxRouterHandle {
 	const batches: string[][] = [];
-	const faux = fauxProvider({ models: [{ id: "router" }] });
+	const modelIds = options.models ?? ["router"];
+	const faux = fauxProvider({ models: modelIds.map((id) => ({ id })) });
 	let callCount = 0;
-	const respond = async (context: any) => {
+	const respond = async (context: any, model: any) => {
 		callCount++;
+		const failure = options.failOn?.(model.id);
+		if (failure) return fauxAssistantMessage("", { stopReason: "error", errorMessage: failure });
 		const messages = context.messages as any[];
 		const trailing: string[] = [];
-		for (let i = messages.length - 1; i >= 0 && messages[i].role === "user"; i--) {
-			trailing.unshift(...messageText(messages[i]).split(/\n\n(?=\[)/));
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const m = messages[i];
+			if (m.role === "assistant" && m.stopReason === "error") continue;
+			if (m.role !== "user") break;
+			trailing.unshift(...messageText(m).split(/\n\n(?=\[)/));
 		}
 		const toolResults: string[] = [];
 		for (let i = messages.length - 1; i >= 0 && messages[i].role === "toolResult"; i--) toolResults.unshift(messageText(messages[i]));
@@ -39,7 +65,7 @@ export function fauxRouter(brain: Brain): FauxRouterHandle {
 		if (calls.length === 0) return fauxAssistantMessage(fauxText("ok"));
 		return fauxAssistantMessage(calls.map((c) => fauxToolCall(c.name, c.args as any)), { stopReason: "toolUse" });
 	};
-	const step = (context: any) => respond(context);
+	const step = (context: any, _o: unknown, _s: unknown, model: any) => respond(context, model);
 	faux.setResponses(Array.from({ length: 500 }, () => step));
 	return {
 		batches,
@@ -51,10 +77,16 @@ export function fauxRouter(brain: Brain): FauxRouterHandle {
 				refreshOnCreate: false,
 			});
 			modelRuntime.registerNativeProvider(faux.provider);
+			const ref = (id: string) => ({ provider: faux.getModel().provider, id });
+			const models = {
+				selector: new ModelSelector({ primary: ref(modelIds[0]), fallback: ref(modelIds.at(1) ?? modelIds[0]), probeEveryMs: 15 * 60_000, clock: { now: () => Date.now() } }),
+				resolve: (r: { id: string }) => faux.getModel(r.id)!,
+			};
 			return Router.create({
 				kernel: deps.kernel,
 				modelRuntime,
-				model: faux.getModel(),
+				models,
+				retry: { maxRetries: 3, baseDelayMs: 1 },
 				cwd: deps.stateDir,
 				rules: "",
 				afterCommand: deps.afterCommand,
@@ -75,9 +107,10 @@ export function openOnConversation(card: string, title = card.split("使用者�
 
 export interface FakeWorker {
 	spec: WorkerSpec;
+	model: string;
 	inputs: string[];
 	report(params: Record<string, unknown>): unknown;
-	settle(): void;
+	settle(error?: string): void;
 	request(method: string, params: unknown): unknown;
 }
 
@@ -99,20 +132,25 @@ export class FakeSpawner implements WorkerSpawner {
 		let alive = true;
 		const worker: FakeWorker = {
 			spec,
+			model: formatModelRef(spec.model),
 			inputs: [],
 			request: (method, params) => this.request(spec.ticketId, spec.token, method, params),
 			report: (params) => worker.request("worker.report", params),
-			settle: () => {
+			settle: (error) => {
 				streaming = false;
-				events.settled();
+				events.settled(error);
 			},
 		};
 		this.workers.set(spec.ticketId, worker);
 		const script = this.#script;
 		return {
-			model: "fake/worker",
-			fellBack: false,
+			get model() {
+				return worker.model;
+			},
 			isStreaming: () => streaming,
+			async setModel(next) {
+				worker.model = formatModelRef(next);
+			},
 			async deliver(text) {
 				worker.inputs.push(text);
 				streaming = true;
@@ -148,6 +186,7 @@ export async function startHost(brain: Brain, script: WorkerScript, options: Par
 		createRouter: router.createRouter,
 		createSpawner: () => spawner,
 		log: () => {},
+		workerModels: defaultWorkerModels(),
 		...options,
 	});
 	spawner.request = (...args) => host.workers.handleRequest(...args);

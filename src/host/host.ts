@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { writeHeartbeat } from "../heartbeat.ts";
+import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
 import { Kernel } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
@@ -9,7 +11,7 @@ import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import { Dispatcher } from "./dispatcher.ts";
 import { HostServer } from "./server.ts";
-import { WorkerExecutor, type WorkerSpawner } from "./workers.ts";
+import { WorkerExecutor, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice): void;
@@ -31,6 +33,8 @@ export interface HostOptions {
 	sourcePolicy?: SourcePolicy;
 	isKnownRule?: (ruleId: string) => boolean;
 	timers?: TimerEntry[];
+	heartbeatMs?: number;
+	workerModels: WorkerModels;
 	createRouter(deps: HostDeps): Promise<RouterLike>;
 	createSpawner(deps: HostDeps): WorkerSpawner;
 	log?: (line: string) => void;
@@ -49,6 +53,7 @@ export class Host {
 	readonly #log: (line: string) => void;
 	readonly #stateDir: string;
 	#boardTimer: NodeJS.Timeout | undefined;
+	#heartbeat: NodeJS.Timeout | undefined;
 
 	private constructor(options: HostOptions) {
 		mkdirSync(options.stateDir, { recursive: true });
@@ -59,7 +64,7 @@ export class Host {
 		this.kernel = new Kernel({
 			db: openStore(join(options.stateDir, "state.db")),
 			clock,
-			sourcePolicy: options.sourcePolicy ?? (() => "candidate"),
+			sourcePolicy: (trigger) => (trigger.source === WATCHDOG_SOURCE ? "notice" : (options.sourcePolicy?.(trigger) ?? "candidate")),
 			isKnownRule: options.isKnownRule,
 			config: options.config,
 		});
@@ -86,6 +91,7 @@ export class Host {
 			afterCommand: deps.afterCommand,
 			onTranscript: (ticketId, event) => this.#transcript(ticketId, event),
 			onError: (ticketId, error) => this.#log(`[worker ${ticketId}] ${String(error)}`),
+			models: options.workerModels,
 		});
 		this.dispatcher = new Dispatcher({
 			kernel: this.kernel,
@@ -116,6 +122,9 @@ export class Host {
 		if (recovered.length) host.#log(`[host] 恢复 ${recovered.length} 个执行中的任务：${recovered.join(", ")}`);
 		host.generic.start();
 		host.timer.start();
+		host.#beat();
+		host.#heartbeat = setInterval(() => host.#beat(), options.heartbeatMs ?? 30_000);
+		host.#heartbeat.unref();
 		host.dispatcher.kick();
 		return host;
 	}
@@ -164,6 +173,10 @@ export class Host {
 			.map((entry) => entry.message);
 	}
 
+	#beat(): void {
+		writeHeartbeat(this.#stateDir, { pid: process.pid, at: Date.now() });
+	}
+
 	#changed(): void {
 		this.dispatcher.kick();
 		if (this.#boardTimer) return;
@@ -183,6 +196,7 @@ export class Host {
 	}
 
 	async stop(): Promise<void> {
+		clearInterval(this.#heartbeat);
 		this.generic.stop();
 		this.timer.stop();
 		this.dispatcher.stop();

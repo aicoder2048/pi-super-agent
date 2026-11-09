@@ -17,6 +17,7 @@ export class Dispatcher {
 	readonly #inFlight = new Set<string>();
 	readonly #idleWaiters: Array<() => void> = [];
 	#scheduled = false;
+	#stopped = false;
 	#timer: NodeJS.Timeout | undefined;
 
 	constructor({ kernel, handlers, retryPollMs = 1000, onError }: DispatcherOptions) {
@@ -28,11 +29,11 @@ export class Dispatcher {
 	}
 
 	kick = (): void => {
-		if (this.#scheduled) return;
+		if (this.#scheduled || this.#stopped) return;
 		this.#scheduled = true;
 		setImmediate(() => {
 			this.#scheduled = false;
-			this.#drain();
+			if (!this.#stopped) this.#drain();
 		});
 	};
 
@@ -72,6 +73,7 @@ export class Dispatcher {
 	}
 
 	stop(): void {
+		this.#stopped = true;
 		clearInterval(this.#timer);
 	}
 }

@@ -134,3 +134,12 @@ test("名额满时新任务排队，使用者的后续消息仍能唤醒已有�
 	await until(() => spawner.spawned.filter((id) => id === byTitle("请求甲")!.id).length === 2, "后续消息重新拉起请求甲");
 	assert.equal(byTitle("规则二")!.stage, "queued");
 });
+
+test("宿主停止后，它的分发器不再执行任何动作", async () => {
+	const { host } = await startHost(() => [], () => {});
+	await host.stop();
+	host.kernel.notifyRouter("停止之后的通知");
+	host.dispatcher.kick();
+	await new Promise((r) => setTimeout(r, 50));
+	assert.equal(host.kernel.dueActions().length, 1);
+});

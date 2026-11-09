@@ -24,6 +24,7 @@ import type {
 	ReadResult,
 	Report,
 	Result,
+	RouterNotice,
 	SourcePolicy,
 	SystemProblem,
 	Thread,
@@ -134,8 +135,9 @@ export class Kernel {
 
 			const threadIds = sub.threads.map((t) => t.id);
 			const isConversation = threadIds.includes(CONVERSATION_THREAD_ID);
-			const ignored = !isConversation && this.#sourcePolicy(sub) === "ignore";
-			const subscribers = isConversation || ignored ? [] : this.#subscribersOf(threadIds);
+			const policy = isConversation ? "candidate" : this.#sourcePolicy(sub);
+			const ignored = policy === "ignore";
+			const subscribers = isConversation || policy !== "candidate" ? [] : this.#subscribersOf(threadIds);
 			const disposition: Disposition = ignored ? "ignored" : subscribers.length > 0 ? "delivered" : "to_router";
 
 			const triggerId = this.#id("trg");
@@ -158,10 +160,9 @@ export class Kernel {
 			if (disposition === "delivered") {
 				for (const ticketId of subscribers) this.#addInput(ticketId, "trigger", sub.body, triggerId);
 			} else if (disposition === "to_router") {
-				this.#enqueue({
-					kind: "router.notify",
-					payload: { kind: isConversation ? "conversation" : "candidate", triggerId },
-				});
+				const payload: RouterNotice =
+					policy === "notice" ? { kind: "notice", body: sub.body } : { kind: isConversation ? "conversation" : "candidate", triggerId };
+				this.#enqueue({ kind: "router.notify", payload });
 			}
 			return { triggerId, duplicate: false };
 		});
@@ -283,6 +284,10 @@ export class Kernel {
 		});
 	}
 
+	notifyRouter(body: string): void {
+		this.#tx(() => this.#enqueue({ kind: "router.notify", payload: { kind: "notice", body } }));
+	}
+
 	addBackgroundResult(ticketId: string, body: string): Result {
 		return this.#tx(() => {
 			const problem = this.#acceptsInput(ticketId);
@@ -357,8 +362,8 @@ export class Kernel {
 	workerExited(ticketId: string): void {
 		this.#tx(() => {
 			const ticket = this.#requireTicket(ticketId);
-			if (ticket.worker_state !== "running") return;
 			const resume = ticket.stopped_at === null && this.#undeliveredCount(ticketId) > 0;
+			if (!resume && ticket.worker_state !== "running") return;
 			this.#run("UPDATE tickets SET worker_state = ?, bg_running = 0 WHERE id = ?", resume ? "queued" : "idle", ticketId);
 			if (resume) this.#wake(ticketId);
 			this.#wakeNextQueued();
@@ -472,6 +477,7 @@ export class Kernel {
 				tokensIn: t.tokensIn,
 				tokensOut: t.tokensOut,
 				elapsedMs: t.startedAt === null ? 0 : end - t.startedAt,
+				lastProgressAt: t.lastProgressAt,
 			};
 		});
 	}

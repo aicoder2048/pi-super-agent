@@ -22,6 +22,10 @@ run := "node --import ./src/pi-runtime.mjs"
 host:
     {{run}} src/host/main.ts
 
+# 启动 Watchdog：宿主没有心跳时把它拉起，任务卡住或动作连续失败时经 Router 通知你。
+watchdog:
+    {{run}} src/watchdog/main.ts
+
 # 打开 TUI 客户端（Pi TUI 只当界面，输入转发给宿主）。
 client:
     pi {{clean}} --no-session --no-context-files --tui-mode regular -e extensions/super-agent.ts

@@ -624,6 +624,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 	kernel.recordWorkerProgress(id);
 	kernel.recordUsage(id, { provider: "deepseek", tokensIn: 1000, tokensOut: 200 });
 	kernel.workerReport(id, { status: "progress", summary: "写了一半" });
+	const reportedAt = clock.t;
 	clock.t += 90_000;
 
 	const [row] = kernel.listTickets();
@@ -641,6 +642,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			tokensIn: 1000,
 			tokensOut: 200,
 			elapsedMs: 90_000,
+			lastProgressAt: reportedAt,
 		},
 	);
 	assert.equal(kernel.usageToday("deepseek"), 1200);
@@ -683,4 +685,19 @@ test("请求任务可以订阅还没出现过的来源线程，之后那条线�
 	assert.equal(good.ok, true);
 	kernel.submitTrigger({ source: "ci", externalId: "b1", threads: [{ id: "thr_ci:build-42" }], sender: "ci", body: "失败", occurredAt: 0 });
 	assert.equal(kernel.triggerLog()[0].disposition, "delivered");
+});
+
+test("Worker 退出窗口里到达的输入不会丢：退出时补一次唤醒", () => {
+	const kernel = new Kernel({ db: openStore(":memory:"), clock: { now: () => 0 }, sourcePolicy: () => "candidate" });
+	const { triggerId } = kernel.submitTrigger({ source: "conversation", externalId: "u", threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body: "盯着", occurredAt: 0 });
+	const [opened] = kernel.route([{ kind: "open_ticket", basis: "request", triggerId, threads: ["thr_ci:b"], title: "盯", brief: "盯" }]);
+	const id = (opened as { ticketId: string }).ticketId;
+	kernel.claimSlot(id);
+	kernel.markInputsDelivered(id, kernel.pendingInputs(id).map((i) => i.id));
+	for (const a of kernel.dueActions()) kernel.completeAction(a.id);
+	kernel.workerTurnEnded(id, { bgRunning: false });
+	kernel.submitTrigger({ source: "ci", externalId: "b1", threads: [{ id: "thr_ci:b" }], sender: "ci", body: "失败", occurredAt: 0 });
+	for (const a of kernel.dueActions()) kernel.completeAction(a.id);
+	kernel.workerExited(id);
+	assert.deepEqual(kernel.dueActions().map((a) => a.kind), ["worker.wake"]);
 });

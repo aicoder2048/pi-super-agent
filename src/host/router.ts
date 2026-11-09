@@ -11,6 +11,8 @@ import {
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import type { Kernel } from "../kernel/kernel.ts";
+import type { ModelSelector } from "../model-selector.ts";
+import { formatModelRef, type ModelRef } from "../models.ts";
 import { CONVERSATION_THREAD_ID, type Decision, type RouterNotice } from "../kernel/types.ts";
 
 export const ROUTER_TOOL_NAMES = ["read", "route", "reply", "note", "ask_status"] as const;
@@ -104,6 +106,7 @@ function time(ms: number): string {
 }
 
 export function noticeCard(kernel: Kernel, notice: RouterNotice): string {
+	if (notice.kind === "notice") return `[通知] ${notice.body}`;
 	if (notice.kind === "conversation" || notice.kind === "candidate") {
 		const found = kernel.read(notice.triggerId);
 		if (found?.type !== "trigger") return `[通知] 触发 ${notice.triggerId} 已不存在`;
@@ -192,12 +195,18 @@ function emptyResources(systemPrompt: string): ResourceLoader {
 export interface RouterOptions {
 	kernel: Kernel;
 	modelRuntime: ModelRuntime;
-	model: NonNullable<Parameters<typeof createAgentSession>[0]>["model"];
 	cwd: string;
 	sessionDir?: string;
 	rules: string;
 	afterCommand: () => void;
 	onError?: (error: unknown) => void;
+	models: RouterModels;
+	retry?: { maxRetries: number; baseDelayMs?: number };
+}
+
+export interface RouterModels {
+	selector: ModelSelector;
+	resolve(ref: ModelRef): NonNullable<Parameters<typeof createAgentSession>[0]>["model"];
 }
 
 export type RouterSession = Awaited<ReturnType<typeof createAgentSession>>["session"];
@@ -209,24 +218,42 @@ export class Router {
 	#buffer: string[] = [];
 	#flushScheduled = false;
 	#busy = false;
+	readonly #models: RouterModels;
 
-	private constructor(session: RouterSession, kernel: Kernel, onError: (error: unknown) => void) {
+	private constructor(session: RouterSession, kernel: Kernel, onError: (error: unknown) => void, models: RouterModels) {
 		this.session = session;
 		this.#kernel = kernel;
 		this.#onError = onError;
+		this.#models = models;
 		session.subscribe((event) => {
 			if (event.type !== "agent_settled") return;
-			this.#busy = false;
-			const last = session.messages.at(-1) as { role?: string } | undefined;
-			if (last?.role === "custom") this.#buffer.push("[通知] 上面还有未处理的消息，请处理。");
-			if (this.#buffer.length) this.#schedule();
+			void this.#settled().catch(this.#onError);
 		});
+	}
+
+	async #settled(): Promise<void> {
+		const last = this.session.messages.at(-1) as { role?: string; stopReason?: string; errorMessage?: string } | undefined;
+		if (last?.role === "assistant" && last.stopReason === "error") {
+			const result = this.#models.selector.onError(String(last.errorMessage ?? ""));
+			const current = this.#models.selector.current();
+			if (result.switched) {
+				await this.session.setModel(this.#models.resolve(current.model));
+				this.#buffer.push(result.notify
+					? `[通知] Router 的主模型额度用尽或被限流，已切到回退模型 ${formatModelRef(current.model)}。请用一句话告诉使用者，然后继续处理上面没处理完的消息。`
+					: "[通知] 主模型仍不可用，已回到回退模型。请继续处理上面没处理完的消息。");
+			}
+		} else if (last?.role === "assistant") {
+			this.#models.selector.onSuccess();
+		}
+		this.#busy = false;
+		if (last?.role === "custom") this.#buffer.push("[通知] 上面还有未处理的消息，请处理。");
+		if (this.#buffer.length) this.#schedule();
 	}
 
 	static async create(options: RouterOptions): Promise<Router> {
 		const settingsManager = SettingsManager.inMemory({
 			compaction: { enabled: true },
-			retry: { enabled: true, maxRetries: 3 },
+			retry: { enabled: true, maxRetries: 3, ...options.retry },
 			steeringMode: "all",
 			followUpMode: "all",
 		});
@@ -235,7 +262,7 @@ export class Router {
 			: SessionManager.inMemory(options.cwd);
 		const { session } = await createAgentSession({
 			cwd: options.cwd,
-			model: options.model,
+			model: options.models.resolve(options.models.selector.current().model),
 			modelRuntime: options.modelRuntime,
 			resourceLoader: emptyResources(routerSystemPrompt(options.rules, options.kernel.config.replyMaxChars)),
 			tools: [...ROUTER_TOOL_NAMES],
@@ -243,7 +270,7 @@ export class Router {
 			sessionManager,
 			settingsManager,
 		});
-		return new Router(session, options.kernel, options.onError ?? ((e) => console.error("[router]", e)));
+		return new Router(session, options.kernel, options.onError ?? ((e) => console.error("[router]", e)), options.models);
 	}
 
 	inject(notice: RouterNotice): void {
@@ -261,8 +288,22 @@ export class Router {
 	// first is starting gets appended after the run, so idle batches go out as one triggering message.
 	#flush(): void {
 		this.#flushScheduled = false;
+		if (this.#buffer.length === 0) return;
+		if (!this.#busy && !this.session.isStreaming) {
+			const choice = this.#models.selector.forTurn();
+			if (!this.session.model || formatModelRef(choice.model) !== formatModelRef(this.session.model)) {
+				this.#busy = true;
+				void this.session
+					.setModel(this.#models.resolve(choice.model))
+					.catch(this.#onError)
+					.finally(() => {
+						this.#busy = false;
+						this.#flush();
+					});
+				return;
+			}
+		}
 		const cards = this.#buffer.splice(0);
-		if (cards.length === 0) return;
 		const message = (content: string) => ({ customType: "psa-notice", content, display: false });
 		const send = (content: string, options: { triggerTurn?: boolean; deliverAs?: "steer" }) =>
 			this.session.sendCustomMessage(message(content), options).catch(this.#onError);

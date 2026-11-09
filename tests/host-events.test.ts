@@ -122,3 +122,13 @@ test("Router 能从一条触发出发，经读取工具逐跳找到相关的线�
 	await until(() => hops.length === 3, "三跳");
 	assert.deepEqual(hops, ["trigger", "thread", "ticket:盯 PR 7"]);
 });
+
+test("Watchdog 投递的触发以 [通知] 卡片交给 Router，不当作候选触发", async (t) => {
+	const { host, router } = await startHost(() => [], () => {});
+	t.after(() => host.stop());
+	host.kernel.submitTrigger({ source: "watchdog", externalId: "stuck:tkt_x:1", threads: [{ id: "thr_watchdog:stuck-tkt_x" }], sender: "watchdog", body: "[Watchdog] 任务 tkt_x 已经 40 分钟没有进展", occurredAt: Date.now() });
+	await until(() => router.batches.length > 0, "Router 收到卡片");
+	const card = router.batches.flat()[0];
+	assert.match(card, /^\[通知\]/);
+	assert.match(card, /40 分钟没有进展/);
+});
