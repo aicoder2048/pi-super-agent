@@ -39,6 +39,7 @@ function hostClient(socketPath: string, hello: Record<string, string>) {
 			const waiter = r.id === undefined ? undefined : pending.get(r.id);
 			if (!waiter) return;
 			pending.delete(r.id!);
+			if (pending.size === 0) s.unref();
 			if (r.ok) waiter.resolve(r.result);
 			else waiter.reject(new Error(r.error ?? "宿主拒绝了请求"));
 		});
@@ -51,8 +52,10 @@ function hostClient(socketPath: string, hello: Record<string, string>) {
 		s.on("close", () => fail(new Error("与宿主的连接已断开")));
 		return s;
 	};
+	// The socket holds the process open only while a request waits; `pi -p` exits by draining its event loop.
 	return (method: string, params: unknown): Promise<unknown> => {
 		socket ??= open();
+		socket.ref();
 		const id = nextId++;
 		return new Promise((resolve, reject) => {
 			pending.set(id, { resolve, reject });

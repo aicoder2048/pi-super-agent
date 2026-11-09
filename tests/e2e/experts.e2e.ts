@@ -32,10 +32,11 @@ test("看盘模块的大波动触发：副幕僚长按规则提示请教行情�
 				worker(
 					HINTED_BRIEF,
 					on("副幕僚长会诊", /^\[任务说明\]/, () => [consult({ expert: "market-analyst", question: MARKET_Q }, { expert: "technical-analyst", question: TECH_Q })]),
-					on("副幕僚长合成", /^\[会诊结果\][\s\S]*SPY 只跌 0\.8%[\s\S]*sma50/, () => [report("ready", REPORT)]),
+					on("副幕僚长合成", /^\[会诊结果\][\s\S]*SPY 只跌 0\.8%[\s\S]*技术分析师[\s\S]*状态：已回答/, () => [report("ready", REPORT)]),
 				),
 				expert(MARKET_Q, "行情分析师回答", "个股行情：SPY 只跌 0.8%，报价时间 15:42 ET（延迟）。", ANSWER_MS),
-				expert(TECH_Q, "技术分析师回答", "收盘价跌破 sma50 172.4，rsi14 38。", ANSWER_MS),
+				// A real expert process that called lookup: it must still exit once it has answered.
+				worker(TECH_Q, on("技术分析师查数据", /^\[会诊问题\]/, () => [{ name: "lookup", args: { source: "us-market", op: "session", args: {} } }], ANSWER_MS)),
 			],
 		},
 		async ({ step, cli }) => {
@@ -58,7 +59,7 @@ test("看盘模块的大波动触发：副幕僚长按规则提示请教行情�
 				await consultStep.locator("summary", { hasText: "会诊明细" }).click();
 				await consultStep.locator(".expert-q", { hasText: `问：${MARKET_Q}` }).waitFor();
 				await consultStep.locator(".expert-a", { hasText: "报价时间 15:42 ET（延迟）" }).waitFor();
-				await consultStep.locator(".expert-a", { hasText: "跌破 sma50 172.4" }).waitFor();
+				await consultStep.locator(".expert-head", { hasText: /^技术分析师 · 已回答/ }).waitFor();
 				assert.doesNotMatch(await consultStep.locator(".consult").textContent() ?? "", /market-analyst|technical-analyst/, "会诊明细只写职称");
 			});
 			await step("幕僚长转告合成的答复，粗体渲染成粗体，不显示星号", async (page) => {
@@ -79,7 +80,7 @@ test("看盘模块的大波动触发：副幕僚长按规则提示请教行情�
 			});
 		},
 		{
-			config: { modulesDirs: [join(REPO, "modules")] },
+			config: { modulesDirs: [join(REPO, "modules")], consultTimeoutSeconds: 20 },
 			env: Object.fromEntries([...KEY_NAMES, ...FINNHUB_KEY_NAMES].map((k) => [k, ""])),
 		},
 	));
