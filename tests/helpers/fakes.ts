@@ -97,6 +97,7 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 				rulesFor: deps.rulesFor,
 				cwd: deps.stateDir,
 				rules: "",
+				teams: "",
 				afterCommand: deps.afterCommand,
 			});
 		},
