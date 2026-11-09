@@ -977,6 +977,19 @@ test("幕僚长忽略点选、或处理完这张卡片却没有转交时，这�
 	}
 });
 
+test("点选回答的那句话里，任务标题最多 40 个字，超出的截断加省略号；看板仍然知道点的是哪一项", () => {
+	const { kernel, clock, open, run, drain } = setup();
+	const title = "把".repeat(45);
+	const ticketId = open("request", { title });
+	run(ticketId);
+	const { reportId } = kernel.workerReport(ticketId, { status: "blocked", summary: "s", question: "选哪个？", options: ["甲", "乙"] });
+	drain();
+	const result = kernel.answerQuestion({ reportId, option: 1, at: clock.t });
+	assert.ok(result.ok);
+	assert.equal(result.text, `回答任务「${"把".repeat(40)}…」：乙`);
+	assert.equal(kernel.listTickets()[0].question?.click?.option, 1);
+});
+
 test("点选回答是幂等的：连点同一项、另一个客户端或超时重试，都得到同一条触发，Router 只收到一次；转交之后再点同一项也一样", () => {
 	const { kernel, ticketId, answer, userLines, notices } = askSetup();
 	const first = answer(0);

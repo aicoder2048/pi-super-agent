@@ -1,3 +1,5 @@
+import { clip } from "../client/board-format.mjs";
+
 export const OPTIONS_MIN = 2;
 export const OPTIONS_MAX = 4;
 export const OPTION_MAX_CHARS = 20;
@@ -49,7 +51,9 @@ export function refusalText(r: AnswerRefusal): string {
 	}
 }
 
-export const answerSentence = (title: string, option: string) => `回答任务「${title}」：${option}`;
+const TITLE_IN_ANSWER_MAX = 40;
+
+export const answerSentence = (title: string, option: string) => `回答任务「${clip(title, TITLE_IN_ANSWER_MAX)}」：${option}`;
 
 const ANSWER_PREFIX = "answer:";
 
