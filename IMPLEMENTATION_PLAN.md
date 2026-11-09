@@ -314,7 +314,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Decisions (使用者选定).**
 
-- [ ] 命名 = 角色名 + 个性化名字，显示为「青檀 · 行情助手 #2」。角色按任务来源：使用者的话 → 对话助手；行情来源（us-market、toy-market 这类 feed）触发的规则 → 行情助手；其他规则 → 规则助手；幕僚长主动发现 → 观察助手。`#N` 按角色、按纽约日期从 1 递增。名字取自约 60 个手选的 2 到 4 字词（如 青檀、弈境、青檀、观澜、知微、拾遗、远山、听松、墨衡、照夜、栖云、砚秋、闻溪），有品味、不用「小林」式人名；同一时刻在岗的助手不重名；名字、角色和序号在建任务时定下并存进状态库，重启不变。
+- [ ] 命名 = 角色名 + 个性化名字，显示为「青檀 · 行情助手 #2」。角色按任务来源：使用者的话 → 对话助手；行情来源（us-market、toy-market 这类 feed）触发的规则 → 行情助手；其他规则 → 规则助手；幕僚长主动发现 → 观察助手。`#N` 按角色、按纽约日期从 1 递增。名字取自约 60 个手选的 2 到 4 字词（如 青檀、观澜、知微、拾遗、远山、听松、墨衡、照夜、栖云、砚秋、闻溪），有品味、不用「小林」式人名；同一时刻在岗的助手不重名；名字、角色和序号在建任务时定下并存进状态库，重启不变。
 - [ ] 位置 = 页头下方一条助手条：每个在岗助手一枚小卡（●运行中 / ◐空闲 / ○排队），写名字、角色序号、已用时、token；点它在右栏打开该任务的执行过程。条尾写「今日 N 位 · X tokens」。没有在岗助手时只留今日合计。
 
 **Files.**
@@ -432,32 +432,32 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `src/teams.ts`（加载与校验成员定义和 `teams.yaml`；从 `psa/roles` 的 `src/roles.ts` 搬来改名）和 `agents/general.md`（内置成员「通用助手」）。
-- [ ] Edit `src/modules.ts`（模块的 `agents/`、`teams.yaml`、规则的 `团队：` 行）、`src/host/config.ts`（状态目录的 `agents/` 和 `teams.yaml`）、`src/host/wiring.ts`。
-- [ ] Edit `src/host/router.ts`（团队名册进幕僚长提示词，`open_ticket` 加 `team`）、`src/kernel/kernel.ts`、`src/kernel/store.ts`、`src/kernel/types.ts`（`tickets.team`、规则钉死的团队由内核校验）。
-- [ ] Edit `src/host/pi-worker.ts`、`src/host/workers.ts`（任务的团队交给助手进程，T2 用）。
-- [ ] Edit `src/kernel/helper-names.ts`（两字名和四字名分成两个池，四字池补到 24 个以上）、`src/client/board-format.mjs`（团队任务显示「四字名 · 团队名 #N」，页面和 TUI 共用）、`src/client/protocol.ts`。
-- [ ] Edit tests（`tests/teams.test.ts` 新建，及 kernel、modules、wiring 相关测试）。
+- [x] Create `src/teams.ts`（加载与校验成员定义和 `teams.yaml`；从 `psa/roles` 的 `src/roles.ts` 搬来改名）和 `agents/general.md`（内置成员「通用助手」）。 证据：1d28b02、c0ebfc7、5b77648。
+- [x] Edit `src/modules.ts`（模块的 `agents/`、`teams.yaml`、规则的 `团队：` 行）、`src/host/config.ts`（状态目录的 `agents/` 和 `teams.yaml`）、`src/host/wiring.ts`。 证据：caf8d83（`团队：` 行）、41869a0（`wiring.ts`）。`modules.ts` 和 `config.ts` 不用认 `agents/` 和 `teams.yaml`：名册把模块目录和状态目录都当成根目录自己读，所以 `config.ts` 没有改动。
+- [x] Edit `src/host/router.ts`（团队名册进幕僚长提示词，`open_ticket` 加 `team`）、`src/kernel/kernel.ts`、`src/kernel/store.ts`、`src/kernel/types.ts`（`tickets.team`、规则钉死的团队由内核校验）。 证据：fd83e97、6d2ed22、fb98796。
+- [x] Edit `src/host/pi-worker.ts`、`src/host/workers.ts`（任务的团队交给助手进程，T2 用）。 证据：8f622bd，`PSA_TEAM`。
+- [x] Edit `src/kernel/helper-names.ts`（两字名和四字名分成两个池，四字池补到 24 个以上）、`src/client/board-format.mjs`（团队任务显示「四字名 · 团队名 #N」，页面和 TUI 共用）、`src/client/protocol.ts`。 证据：1432237、3151237。`protocol.ts` 没有改动：助手身份随 `DashboardRow.helper` 到页面，协议不用加字段。
+- [x] Edit tests（`tests/teams.test.ts` 新建，及 kernel、modules、wiring 相关测试）。 证据：`tests/teams.test.ts`、`tests/helper-names.test.ts`、`tests/router-prompt.test.ts`、`tests/e2e/teams.e2e.ts` 新建；kernel、modules、wiring、host、host-main、pi-worker-env、web、client 各有新增。
 
 **Build.**
 
-- [ ] 成员定义按 ADR-0008：`name`、`title`、`description`、`tools`、`skills`、`model`，正文是系统提示词。没有 `consult` 字段，没有牵头角色。
-- [ ] `teams.yaml` 一个团队三样：名字、`description`（给幕僚长看的一句话）、`members`。只解析这一种两层结构，不为它加依赖；格式不对时报出文件和行号。
-- [ ] 成员和团队各有三处来源（内置、模块、状态目录），同名启动即报错，一行写出两个文件；团队名单里有不存在的成员也报错。
-- [ ] 内置只有「通用助手」和只含它的默认团队。
-- [ ] 幕僚长的提示词多一份团队名册（团队名和说明），不列成员；`open_ticket` 的 `team` 可省略，省略为默认团队；不存在的团队名拒绝该决定并说明。
-- [ ] `rules.md` 支持 `团队：<name>`；启动时校验团队存在；按该规则开的任务必须用它，幕僚长填了别的由内核改回并记一行日志。
-- [ ] `tickets.team` 持久化；旧任务没有团队，读出来按默认团队，不做迁移。
-- [ ] 成员的 `model` 过计费检查（提供方必须是使用者已配置的之一，`anthropic/*` 和 Claude 模型拒绝）；`skills` 按真实路径必须在成员文件所在目录内。
-- [ ] 默认团队的任务沿用 W5 的显示名「两字名 · 行情助手 #N」。带成员的团队的任务从四字池取名，显示「四字名 · 团队名 #N」，#N 按团队在纽约同一天里数。名字在开任务时按团队定下，之后不变。两个池各自轮转，用完后同样加「·二」。
+- [x] 成员定义按 ADR-0008：`name`、`title`、`description`、`tools`、`skills`、`model`，正文是系统提示词。没有 `consult` 字段，没有牵头角色。 证据：`tests/teams.test.ts`「成员文件：frontmatter 是 name、title…」「成员文件写错的字段报错并列出可写的字段；consult 不是字段」；c0ebfc7。
+- [x] `teams.yaml` 一个团队三样：名字、`description`（给幕僚长看的一句话）、`members`。只解析这一种两层结构，不为它加依赖；格式不对时报出文件和行号。 证据：`tests/teams.test.ts`「teams.yaml：每个团队一个名字…」和 15 条「teams.yaml 格式不对时报出文件和行号」；1d28b02、df58abb、5b77648。
+- [x] 成员和团队各有三处来源（内置、模块、状态目录），同名启动即报错，一行写出两个文件；团队名单里有不存在的成员也报错。 证据：`tests/teams.test.ts`「成员和团队来自内置、模块、状态目录三处…」「两处定义了同名成员…」「两处定义了同名团队…」「团队名单里有不存在的成员…」；5b77648。入口：`tests/host-main.test.ts` 三条；41869a0。
+- [x] 内置只有「通用助手」和只含它的默认团队。 证据：`tests/teams.test.ts`「内置只有成员「通用助手」和只含它的默认团队；不存在的目录跳过」；5b77648。默认团队叫「默认」，写在代码里。
+- [x] 幕僚长的提示词多一份团队名册（团队名和说明），不列成员；`open_ticket` 的 `team` 可省略，省略为默认团队；不存在的团队名拒绝该决定并说明。 证据：`tests/router-prompt.test.ts` 三条；`tests/wiring.test.ts`「真实接线：模块目录和状态目录里的团队进了内核的团队簿和幕僚长的提示词…」；`tests/kernel.test.ts`「每个任务都有团队…」「不存在的团队名：拒绝这个决定…」；fd83e97、6d2ed22、41869a0。
+- [x] `rules.md` 支持 `团队：<name>`；启动时校验团队存在；按该规则开的任务必须用它，幕僚长填了别的由内核改回并记一行日志。 证据：`tests/modules.test.ts`「规则的「团队：」行…」；`tests/teams.test.ts`「规则写的团队不存在…」；`tests/kernel.test.ts` 四条「规则钉死团队…」；`tests/host.test.ts`「规则钉死的团队被幕僚长填错时，内核改回的那一行写进宿主日志」；caf8d83、5b77648、6d2ed22、8f622bd。
+- [x] `tickets.team` 持久化；旧任务没有团队，读出来按默认团队，不做迁移。 证据：`tests/kernel.test.ts`「任务的团队存在状态库里：重启后不变…」「旧状态库的任务没有团队…」；6d2ed22。
+- [x] 成员的 `model` 过计费检查（提供方必须是使用者已配置的之一，`anthropic/*` 和 Claude 模型拒绝）；`skills` 按真实路径必须在成员文件所在目录内。 证据：`tests/teams.test.ts` 两条「成员的模型过计费检查…」和三条「成员的技能目录…」；`tests/wiring.test.ts`「真实接线：成员的模型只能用 router 或 worker 的提供方…」；c0ebfc7、41869a0。
+- [x] 默认团队的任务沿用 W5 的显示名「两字名 · 行情助手 #N」。带成员的团队的任务从四字池取名，显示「四字名 · 团队名 #N」，#N 按团队在纽约同一天里数。名字在开任务时按团队定下，之后不变。两个池各自轮转，用完后同样加「·二」。 证据：`tests/helper-names.test.ts` 三条；`tests/kernel.test.ts`「带成员的团队的任务取四字名…」「团队任务的序号按团队在纽约同一天里数…」「两个名字池各自轮转…」「名字在开任务时按团队定下，之后不变…」；`tests/web.test.ts`「页面：团队任务的小卡…」；`tests/client.test.ts`「看板：团队任务的卡片…」；1432237、fb98796、3151237。
 
 **You see.**
 
-- [ ] 在状态目录放一个「新闻队」（一位新闻研究员），问「看下黄仁勋听证会的新闻」，助手条和任务卡上是「高山流水 · 新闻队 #1」这样的四字名；问别的事，任务是默认团队，仍是「青檀 · 对话助手 #1」这样的两字名。
+- [x] 在状态目录放一个「新闻队」（一位新闻研究员），问「看下黄仁勋听证会的新闻」，助手条和任务卡上是「高山流水 · 新闻队 #1」这样的四字名；问别的事，任务是默认团队，仍是「青檀 · 对话助手 #1」这样的两字名。 证据：`tests/e2e/teams.e2e.ts`（真实宿主、助手进程和页面，假模型）；038ed8a。真实模型下的同一幕留给 Verify, live 的 lane 2 和 lane 3。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 加载与同名冲突、`teams.yaml` 解析和报错、名单里的成员必须存在、团队名册进幕僚长提示词、`team` 校验和默认值、规则钉死团队、计费检查、技能路径检查、旧任务按默认团队、重启后团队不变、两个名字池和团队任务的显示名。
+- [x] 加载与同名冲突、`teams.yaml` 解析和报错、名单里的成员必须存在、团队名册进幕僚长提示词、`team` 校验和默认值、规则钉死团队、计费检查、技能路径检查、旧任务按默认团队、重启后团队不变、两个名字池和团队任务的显示名。 证据：以上各条列出的测试；`just test` 502 条通过、`just e2e` 58 条通过，见 decisions.tsv 的 t1 各行。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
