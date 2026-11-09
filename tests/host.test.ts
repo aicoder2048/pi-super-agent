@@ -168,3 +168,21 @@ test("叫停一个 Worker 还在启动中的任务：宿主不崩溃，Worker �
 	assert.deepEqual(spawner.workers.get(id)!.inputs, []);
 	assert.equal(host.kernel.listTickets()[0].stage, "stopped");
 });
+
+test("Worker 一轮以普通模型错误结束：任务汇报失败，使用者经 Router 得知", async (t) => {
+	const { host, said } = await startHost(replyOnReport, (w) => w.settle("500 Internal Server Error"));
+	t.after(() => host.stop());
+	host.say("整理本周账单");
+	await until(() => host.kernel.listTickets()[0]?.stage === "blocked_or_failed", "任务进入失败");
+	assert.match(host.kernel.listTickets()[0].latestSummary!, /500 Internal Server Error/);
+	await until(() => said().some((s) => s.startsWith("结果：")), "Router 转告");
+});
+
+test("Worker 子进程在一轮中途退出：任务汇报失败，使用者经 Router 得知", async (t) => {
+	const { host, said } = await startHost(replyOnReport, (w) => w.crash());
+	t.after(() => host.stop());
+	host.say("备份照片");
+	await until(() => host.kernel.listTickets()[0]?.stage === "blocked_or_failed", "任务进入失败");
+	assert.match(host.kernel.listTickets()[0].latestSummary!, /退出/);
+	await until(() => said().some((s) => s.startsWith("结果：")), "Router 转告");
+});

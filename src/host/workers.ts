@@ -164,7 +164,9 @@ export class WorkerExecutor {
 			settled: (error) => void this.#onSettled(ticketId, live, error).catch((e) => this.#o.onError?.(ticketId, e)).finally(afterCommand),
 			exited: guard(() => {
 				this.#live.delete(ticketId);
-				if (!this.#shuttingDown) kernel.workerExited(ticketId);
+				if (this.#shuttingDown) return;
+				if (live && !live.stopping) kernel.workerReport(ticketId, { status: "failed", summary: "Worker 进程在一轮中途意外退出。" });
+				kernel.workerExited(ticketId);
 			}),
 			transcript: (event) => this.#o.onTranscript?.(ticketId, event),
 		};
@@ -209,6 +211,8 @@ export class WorkerExecutor {
 				await this.#switchModel(ticketId, live, current.model, true);
 				await live.handle.deliver("[通知] 上一轮因模型额度或限流中断，已切换到回退模型。请从中断处继续。");
 				return;
+			} else if (error) {
+				kernel.workerReport(ticketId, { status: "failed", summary: `Worker 这一轮因模型错误中断：${error}` });
 			}
 		}
 		kernel.workerTurnEnded(ticketId, { bgRunning: (live?.bgRunning ?? 0) > 0 });

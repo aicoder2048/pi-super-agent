@@ -115,6 +115,7 @@ export interface FakeWorker {
 	inputs: string[];
 	report(params: Record<string, unknown>): unknown;
 	settle(error?: string): void;
+	crash(): void;
 	request(method: string, params: unknown): unknown;
 }
 
@@ -146,6 +147,10 @@ export class FakeSpawner implements WorkerSpawner {
 			settle: (error) => {
 				streaming = false;
 				events.settled(error);
+			},
+			crash: () => {
+				alive = false;
+				events.exited();
 			},
 		};
 		this.workers.set(spec.ticketId, worker);
