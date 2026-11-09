@@ -254,18 +254,18 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `package.json` and `package-lock.json` (only devDependency `playwright-core@1.59.1`, matching the cached chromium-1217).
-- [ ] Create `tests/e2e/fake-model.ts`, `tests/e2e/harness.ts`, `tests/e2e/story.e2e.ts`, `tests/e2e/dom.e2e.ts`.
-- [ ] Create `demos/` (demo 1 to 5 and their README, moved from the scratchpad and built on the harness).
-- [ ] Edit `.gitignore` and `justfile` (`e2e`, `demo`, `demo-market`).
+- [x] Create `package.json` and `package-lock.json` (only devDependency `playwright-core@1.59.1`, matching the cached chromium-1217).
+- [x] Create `tests/e2e/fake-model.ts`, `tests/e2e/harness.ts`, `tests/e2e/story.e2e.ts`, `tests/e2e/dom.e2e.ts`.
+- [x] Create `demos/` (demo 1 to 5 and their README, moved from the scratchpad and built on the harness).
+- [x] Edit `.gitignore` and `justfile` (`e2e`, `demo`, `demo-market`).
 
 **Build.**
 
-- [ ] 本地假模型 HTTP 服务按脚本回放 Router 和 Worker 的回复，宿主和 Worker 子进程都是真的。
-- [ ] Playwright 测试走完整故事：页面投递触发，看板出现任务，点开看 Worker 过程，Router 在对话里回复。
-- [ ] 同一套测试覆盖页面 DOM 层：宿主在同一状态目录重启后自己回到已连接（token 保持不变），`web-token-rotate` 换过 token 后显示链接失效，对话和看板里的 HTML 原样显示不执行，宿主卡死（SIGSTOP）时用 `page.clock` 快进离开已连接、SIGCONT 后回来。W1 的变异审计证明这几条目前没有自动测试。
-- [ ] 演示 1 到 5 进仓库：`just demo [名字]` 用有界面的浏览器和真实 openai-codex 模型，`just demo-market` 需要行情密钥；只按自己记录的进程组停进程。
-- [ ] `just e2e` 运行它。`just test` 不依赖浏览器，保持现状。
+- [x] 本地假模型 HTTP 服务按脚本回放 Router 和 Worker 的回复，宿主和 Worker 子进程都是真的。
+- [x] Playwright 测试走完整故事：页面投递触发，看板出现任务，点开看 Worker 过程，Router 在对话里回复。
+- [x] 同一套测试覆盖页面 DOM 层：宿主在同一状态目录重启后自己回到已连接（token 保持不变），`web-token-rotate` 换过 token 后显示链接失效，对话和看板里的 HTML 原样显示不执行，宿主卡死（SIGSTOP）时用 `page.clock` 快进离开已连接、SIGCONT 后回来。W1 的变异审计证明这几条目前没有自动测试。
+- [x] 演示 1 到 5 进仓库：`just demo [名字]` 用有界面的浏览器和真实 openai-codex 模型，`just demo-market` 需要行情密钥；只按自己记录的进程组停进程。
+- [x] `just e2e` 运行它。`just test` 不依赖浏览器，保持现状。
 
 **You see.**
 
