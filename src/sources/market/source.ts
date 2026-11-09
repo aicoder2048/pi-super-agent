@@ -6,7 +6,7 @@ import { indicatorReport } from "./indicators.ts";
 import { FinnhubClient } from "./finnhub.ts";
 import { readFinnhubKey, readMarketKey } from "./key.ts";
 import { detect, toTrigger, type MarketCursor, type Move, type Quote } from "./detect.ts";
-import { inPollWindow, MINUTE, nextPollDelay, sessionAt, type Session } from "./session.ts";
+import { inPollWindow, MINUTE, nextPollDelay, sessionAt, shiftDate, type Session } from "./session.ts";
 import { parseMarketSettings, type MarketSettings } from "./settings.ts";
 import { parseSymbol } from "./symbol.ts";
 
@@ -64,10 +64,6 @@ function dateArg(op: string, a: Record<string, unknown>, field: string, required
 	if (a[field] === undefined && !required) return undefined;
 	if (typeof a[field] !== "string" || !DATE.test(a[field])) throw new Error(`${op} 的 ${field} 必须是 YYYY-MM-DD`);
 	return a[field];
-}
-
-function shiftDate(date: string, days: number): string {
-	return new Date(Date.parse(`${date}T12:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 }
 
 function noSessionToday(cursor: MarketCursor | undefined, session: Session, now: number): boolean {
