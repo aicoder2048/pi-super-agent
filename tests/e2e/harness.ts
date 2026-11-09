@@ -248,6 +248,8 @@ export interface StoryOptions {
 	sabotage?: string;
 	/** Role files written into the state dir's roles/ before the host starts, file name → content. */
 	roles?: Record<string, string>;
+	/** Extra environment for the host and every CLI the story runs, over the fake-model world. */
+	env?: Record<string, string>;
 }
 
 let sharedBrowser: Promise<Browser> | undefined;
@@ -299,7 +301,7 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 		throw error;
 	});
 	const root = mkdtempSync(join(tmpdir(), "psa-e2e-"));
-	const env = fakeAgentEnv(fake, join(root, "pi"));
+	const env = { ...fakeAgentEnv(fake, join(root, "pi")), ...options.env };
 	const pages: Page[] = [];
 	const contexts: BrowserContext[] = [];
 	let host: HostRun | undefined;
