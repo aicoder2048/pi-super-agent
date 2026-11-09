@@ -65,12 +65,10 @@ export class HostServer {
 					return;
 				}
 				if (role === "worker") {
-					try {
-						const result = workers(worker!.ticketId, worker!.token, String(r.method), r.params);
-						writeJsonLine(socket, { id: r.id, ok: true, result });
-					} catch (error) {
-						writeJsonLine(socket, { id: r.id, ok: false, error: error instanceof Error ? error.message : String(error) });
-					}
+					new Promise((resolve) => resolve(workers(worker!.ticketId, worker!.token, String(r.method), r.params))).then(
+						(result) => writeJsonLine(socket, { id: r.id, ok: true, result }),
+						(error) => writeJsonLine(socket, { id: r.id, ok: false, error: error instanceof Error ? error.message : String(error) }),
+					);
 					return;
 				}
 				if (r.type === "say" && typeof r.text === "string" && hasVisibleText(r.text)) {

@@ -7,6 +7,7 @@ import { formatModelRef, type ModelRef } from "../models.ts";
 import type { Modules } from "../modules.ts";
 import type { WatchedSource } from "../client/protocol.ts";
 import type { TimerEntry } from "../sources/timer.ts";
+import { FEEDS, type FeedSpec } from "../sources/feeds.ts";
 import type { HostConfig } from "./config.ts";
 import type { HostOptions } from "./host.ts";
 import { PiWorkerSpawner } from "./pi-worker.ts";
@@ -28,11 +29,37 @@ export function watchedSources(modules: Modules, timers: TimerEntry[]): WatchedS
 	const names = new Set([...filters.map((s) => s.name), ...timers.map((t) => t.source!), ...rules.flatMap((r) => r.sources)]);
 	const watched = [...names].filter((source) => !ignored.has(source)).map((source) => ({
 		source,
+		...pick(filters.find((s) => s.name === source)),
 		timers: timers.filter((t) => t.source === source).map((t) => ({ everyMinutes: t.everyMinutes, body: t.body })),
 		rules: rules.filter((r) => r.sources.includes(source)).map((r) => ({ id: r.id, text: r.text, by: userIds.has(r.id) ? ("user" as const) : ("module" as const) })),
 	}));
 	const hasUserRule = (w: WatchedSource) => w.rules.some((r) => r.by === "user");
 	return watched.sort((a, b) => Number(hasUserRule(b)) - Number(hasUserRule(a)) || a.source.localeCompare(b.source));
+}
+
+function pick(filter: { title?: string; description?: string } | undefined) {
+	return { ...(filter?.title && { title: filter.title }), ...(filter?.description && { description: filter.description }) };
+}
+
+export function feedSpecs(config: Pick<HostConfig, "stateDir" | "secretsFile" | "sources">, modules: Modules, log: (line: string) => void, env = process.env): FeedSpec[] {
+	const declared = modules.modules.flatMap((m) => (m.manifest.sources ?? []).filter((s) => s.feed).map((s) => ({ module: m, source: s })));
+	const names = declared.map((d) => d.source.name);
+	const unknown = Object.keys(config.sources).find((name) => !names.includes(name));
+	if (unknown) throw new ConfigError(`${join(config.stateDir, "config.json")}：sources.${unknown} 不是可配置的来源，可配置：${names.join("、") || "（没有）"}`);
+	return declared.map(({ module: m, source: s }) => {
+		const build = FEEDS[s.feed!.kind];
+		if (!build) throw new ConfigError(`${join(m.dir, "module.json")}：来源 ${s.name} 的 feed.kind「${s.feed!.kind}」不存在，可用：${Object.keys(FEEDS).join("、")}`);
+		return build({
+			source: s.name,
+			title: s.title ?? s.name,
+			settings: s.feed!.settings,
+			override: config.sources[s.name],
+			where: `${join(config.stateDir, "config.json")} 的 sources.${s.name} 或 ${join(m.dir, "module.json")}`,
+			secretsFile: config.secretsFile,
+			env,
+			log,
+		});
+	});
 }
 
 export interface HostWiringInput {
@@ -54,6 +81,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 	resolve(config.models.fallback, "fallback");
 	const selectors = modelSelectors(config, clock);
 	const timers = modules.timers();
+	const feeds = feedSpecs(config, modules, log);
 	return {
 		stateDir: config.stateDir,
 		heartbeatMs: config.heartbeatSeconds * 1000,
@@ -65,6 +93,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		rulesFor: modules.rulesFor,
 		timers,
 		watching: watchedSources(modules, timers),
+		feeds,
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
 		createRouter: (deps) =>
 			Router.create({
@@ -84,6 +113,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 				socketPath: deps.socketPath,
 				sessionDir: join(config.stateDir, "sessions", "workers"),
 				bgMaxMs: config.bgMaxMinutes * 60_000,
+				lookupHelp: feeds.map((f) => f.lookupHelp).join("\n") || undefined,
 				moduleFor: (ruleId) => {
 					const mod = modules.moduleForRule(ruleId);
 					return mod && { skillsDir: mod.skillsDir, prepare: mod.manifest.prepare };

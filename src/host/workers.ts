@@ -64,6 +64,7 @@ export interface WorkerExecutorOptions {
 	onTranscript?: (ticketId: string, event: unknown) => void;
 	onError?: (ticketId: string, error: unknown) => void;
 	models: WorkerModels;
+	lookup?: (source: string, op: string, args: unknown) => Promise<unknown>;
 }
 
 export interface WorkerModels {
@@ -261,6 +262,9 @@ export class WorkerExecutor {
 					return { handedBack: true };
 				case "worker.read":
 					return this.#readForWorker(ticketId, typeof p.id === "string" ? p.id : undefined);
+				case "worker.lookup":
+					if (!this.#o.lookup) throw new Error("没有可查询的来源");
+					return this.#o.lookup(String(p.source), String(p.op), p.args);
 				case "worker.bg":
 					live.bgRunning = Number(p.running) || 0;
 					return { ok: true };

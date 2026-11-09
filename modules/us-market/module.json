@@ -1,0 +1,21 @@
+{
+  "name": "us-market",
+  "sources": [
+    {
+      "name": "us-market",
+      "title": "美股行情",
+      "description": "交易时段每分钟看一遍自选股，涨跌到档或放量时提醒",
+      "feed": {
+        "kind": "massive-stocks",
+        "settings": {
+          "watchlist": ["META", "TSLA", "NVDA", "AAPL", "MSFT", "AMZN", "GOOGL", "SPY", "QQQ"],
+          "bands": { "default": [3, 5, 8], "bySymbol": { "SPY": [1.5, 2, 3], "QQQ": [1.5, 2, 3] } },
+          "volumeSpikeX": 5,
+          "everySeconds": 60,
+          "minGapMs": 12000,
+          "baseURL": "https://api.massive.com"
+        }
+      }
+    }
+  ]
+}

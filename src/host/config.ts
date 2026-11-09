@@ -18,6 +18,8 @@ export interface HostConfig {
 	watchdog: { intervalMinutes: number; stuckMinutes: number; staleSeconds: number };
 	modulesDirs: string[];
 	webPort: number;
+	secretsFile?: string;
+	sources: Record<string, unknown>;
 }
 
 export function defaultStateDir(): string {
@@ -38,6 +40,15 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	if (!Number.isInteger(webPort) || webPort < 0 || webPort > 65535) {
 		throw new ConfigError(`${file}：webPort（${JSON.stringify(webPort)}）必须是 0 到 65535 之间的整数，0 表示任意空闲端口`);
 	}
+	if (raw.secretsFile !== undefined && typeof raw.secretsFile !== "string") {
+		throw new ConfigError(`${file}：secretsFile（${JSON.stringify(raw.secretsFile)}）必须是 .env 文件的路径字符串`);
+	}
+	const secretsFile = raw.secretsFile === undefined ? undefined : resolve(stateDir, raw.secretsFile);
+	if (secretsFile && !existsSync(secretsFile)) throw new ConfigError(`${file}：secretsFile 指向的 ${secretsFile} 不存在`);
+	const sources = raw.sources ?? {};
+	if (sources === null || typeof sources !== "object" || Array.isArray(sources)) {
+		throw new ConfigError(`${file}：sources（${JSON.stringify(sources)}）必须是以来源名为键的对象`);
+	}
 	return {
 		stateDir,
 		models: {
@@ -54,5 +65,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		watchdog,
 		modulesDirs: raw.modulesDirs ?? [fileURLToPath(new URL("../../modules", import.meta.url)), join(stateDir, "modules")],
 		webPort,
+		secretsFile,
+		sources,
 	};
 }

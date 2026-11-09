@@ -16,6 +16,9 @@ export interface TodayCounts {
 
 export interface WatchedSource {
 	source: string;
+	title?: string;
+	description?: string;
+	problem?: string;
 	timers: { everyMinutes: number; body: string }[];
 	rules: { id: string; text: string; by: "user" | "module" }[];
 }

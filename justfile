@@ -42,6 +42,10 @@ drop source thread +body:
 toy-feed symbol="TOYX" change="-5.2" volume="12":
     {{run}} modules/toy-market/feed.ts {{symbol}} {{change}} {{volume}}
 
+# 用真实行情接口取一次自选股快照，打印成表（不打印密钥）。密钥来自环境变量或 config.json 的 secretsFile。
+market-smoke:
+    {{run}} src/cli/market-smoke.ts
+
 # 列出最近的触发和它们的去向：just log [条数]
 log limit="30":
     {{run}} src/cli/log.ts {{limit}}

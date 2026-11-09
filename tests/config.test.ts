@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -32,5 +32,27 @@ test("网页端口默认 4517，config.json 可以改，0 表示任意空闲端�
 test("网页端口不是 0 到 65535 的整数时拒绝启动，报错指出 webPort", () => {
 	for (const webPort of [-1, 65536, 1.5, "4517"]) {
 		assert.throws(() => loadConfig(stateWith({ webPort })), (e: Error) => e.name === "ConfigError" && /webPort/.test(e.message), JSON.stringify(webPort));
+	}
+});
+
+test("secretsFile 按状态目录解析成绝对路径；sources 原样交给各自的来源", () => {
+	const dir = stateWith({ secretsFile: "secrets/market.env", sources: { "us-market": { watchlist: ["AMD"] } } });
+	mkdirSync(join(dir, "secrets"));
+	writeFileSync(join(dir, "secrets/market.env"), "");
+	const config = loadConfig(dir);
+	assert.equal(config.secretsFile, join(dir, "secrets/market.env"));
+	assert.deepEqual(config.sources, { "us-market": { watchlist: ["AMD"] } });
+	assert.deepEqual([loadConfig(stateWith({})).secretsFile, loadConfig(stateWith({})).sources], [undefined, {}]);
+});
+
+test("secretsFile 指向不存在的文件、不是字符串，或 sources 不是对象时拒绝启动，报错指出字段", () => {
+	const bad: [object, RegExp][] = [
+		[{ secretsFile: "missing.env" }, /secretsFile.*missing\.env/],
+		[{ secretsFile: 42 }, /secretsFile/],
+		[{ sources: ["us-market"] }, /sources/],
+		[{ sources: "us-market" }, /sources/],
+	];
+	for (const [raw, field] of bad) {
+		assert.throws(() => loadConfig(stateWith(raw)), (e: Error) => e.name === "ConfigError" && field.test(e.message), JSON.stringify(raw));
 	}
 });
