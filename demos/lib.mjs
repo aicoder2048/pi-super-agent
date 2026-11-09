@@ -1,32 +1,39 @@
 // Shared helpers for the visible-browser demos. Processes start and stop through tests/e2e/harness.ts,
 // which signals only the process groups this script started (or that its own watchdog started).
 import { chromium } from "playwright-core";
-import { spawnSync } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 import { writeFileSync, readFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, copyFileSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { REPO, adoptGroup, startGroup, startHost, stopAllGroups, writeConfig } from "../tests/e2e/harness.ts";
+import { readHeartbeat } from "../src/heartbeat.ts";
+import { Kernel } from "../src/kernel/kernel.ts";
+import { HOST_URL, REPO, adoptGroup, groupAlive, runSync, sayInPage, sleep, startGroup, startHost, stopAllGroups, stopGroup, waitStatus, writeConfig } from "../tests/e2e/harness.ts";
 
+export { sleep };
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const FLAGS = new Set(process.argv.slice(2).filter((a) => a.startsWith("--")));
-// Subscription models only; writeConfig refuses anthropic/* and deepseek/*.
+// Subscription models only; writeConfig refuses pay-per-use providers.
 const MODELS = { router: "openai-codex/gpt-6.1-terra", worker: "openai-codex/gpt-6.1-sol", fallback: "openai-codex/gpt-6.1-sol" };
-const RUN = ["--import", "./src/pi-runtime.mjs"];
+export const ACTIVE = ["queued", "running", "idle"];
+export const DONE = ["awaiting_review", "closed"];
+const NO_STATE = { tickets: [], triggers: [], conversation: [], decisions: [], today: [] };
 
-export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** A scene result for a condition outside the demo's control (market moves, model timing). Everything else that does not PASS is a FAIL. */
+export const skip = (evidence) => ({ status: "SKIP", evidence });
 
 export class Demo {
+	#db;
+	#kernel;
+
 	constructor(name, { port, config = {}, dwellMs = 20_000, preload }) {
 		this.name = name;
 		this.dwellMs = dwellMs;
 		this.preload = preload;
-		this.port = port;
 		this.out = join(HERE, "out", name);
 		mkdirSync(this.out, { recursive: true });
 		this.stateDir = mkdtempSync(join(tmpdir(), "psa-demo-"));
 		this.config = { webPort: port, ...config };
-		writeConfig(this.stateDir, MODELS, this.config);
 		this.env = { ...process.env, PSA_STATE_DIR: this.stateDir };
 		this.results = [];
 		this.t0 = Date.now();
@@ -48,18 +55,28 @@ export class Demo {
 		return this.host.url.href;
 	}
 
+	/** The watchdog starts the host itself, so here the demo writes config.json instead of startHost. */
 	startWatchdog() {
-		const wd = startGroup(["src/watchdog/main.ts"], { env: { ...this.env, PSA_RESTART_GRACE_MS: "20000" }, logFile: join(this.out, "watchdog.log") });
-		this.log(`started watchdog group ${wd.pid}`);
-		return wd;
+		writeConfig(this.stateDir, MODELS, this.config);
+		this.watchdog = startGroup(["src/watchdog/main.ts"], { env: { ...this.env, PSA_RESTART_GRACE_MS: "20000" }, logFile: join(this.out, "watchdog.log") });
+		this.log(`started watchdog group ${this.watchdog.pid}`);
 	}
 
-	/** Host pids our own watchdog reported starting; each leads its own process group. */
-	watchdogHosts() {
-		return [...this.watchdogLog().matchAll(/已拉起宿主，pid (\d+)/g)].map((m) => Number(m[1]));
+	/**
+	 * The watchdog starts each host detached, so the host leads its own process group, and the heartbeat in
+	 * this demo's own state dir names the current one. Adopting it puts that group (host and Workers) under cleanup.
+	 */
+	adoptHeartbeatHost() {
+		const pid = readHeartbeat(this.stateDir)?.pid;
+		if (pid && groupAlive(pid)) {
+			adoptGroup(pid);
+			this.log(`adopted heartbeat host group ${pid}`);
+		}
+		return pid;
 	}
 
-	hostLog() {
+	/** The log a watchdog-started host writes into the state dir (startHost's own log is this.host.log()). */
+	stateDirHostLog() {
 		const f = join(this.stateDir, "host.log");
 		return existsSync(f) ? readFileSync(f, "utf8") : "";
 	}
@@ -70,19 +87,11 @@ export class Demo {
 	}
 
 	hostUrls() {
-		return [...this.hostLog().matchAll(/\[host\] 网页 (http\S+)/g)].map((m) => m[1]);
-	}
-
-	heartbeatPid() {
-		try {
-			return JSON.parse(readFileSync(join(this.stateDir, "heartbeat.json"), "utf8")).pid;
-		} catch {
-			return undefined;
-		}
+		return [...this.stateDirHostLog().matchAll(HOST_URL)].map((m) => m[1]);
 	}
 
 	cli(args, label = args[0]) {
-		const r = spawnSync(process.execPath, [...RUN, ...args], { cwd: REPO, env: this.env, encoding: "utf8", timeout: 60_000 });
+		const r = runSync(args, this.env);
 		const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
 		this.log(`$ ${label}: ${out.split("\n").at(-1)}`);
 		return out;
@@ -94,31 +103,57 @@ export class Demo {
 		return child;
 	}
 
+	/** The kernel's view of the host's state.db, through one read-only connection opened on first use. */
 	state() {
-		const r = spawnSync(process.execPath, [...RUN, join(HERE, "inspect.mts")], { cwd: REPO, env: this.env, encoding: "utf8", timeout: 30_000 });
-		try {
-			return JSON.parse(r.stdout);
-		} catch {
-			this.log(`(inspect failed: ${(r.stderr ?? "").split("\n")[0]})`);
-			return { tickets: [], triggers: [], conversation: [], decisions: [], today: [] };
+		const file = join(this.stateDir, "state.db");
+		if (!this.#kernel) {
+			if (!existsSync(file)) return NO_STATE;
+			this.#db = new DatabaseSync(file, { readOnly: true });
+			this.#db.exec("PRAGMA busy_timeout = 5000");
+			this.#kernel = new Kernel({ db: this.#db, clock: { now: () => Date.now() }, sourcePolicy: () => "candidate" });
 		}
+		const kernel = this.#kernel;
+		const tickets = kernel.listTickets().map((r) => {
+			const read = kernel.read(r.id);
+			const ticket = read?.type === "ticket" ? read : undefined;
+			return {
+				id: r.id, title: r.title, stage: r.stage, basis: r.basis, ruleId: kernel.getTicket(r.id)?.ruleId ?? null, toolCalls: r.toolCalls, latest: r.latestSummary,
+				threads: ticket?.threadIds ?? [], inputs: (ticket?.recentInputs ?? []).map((i) => ({ kind: i.kind, triggerId: i.triggerId, body: i.body.slice(0, 120) })),
+			};
+		});
+		return {
+			tickets,
+			triggers: kernel.triggerLog(100).reverse().map((t) => ({ id: t.id, source: t.source, disposition: t.disposition, detail: t.dispositionDetail, body: t.body.slice(0, 120), receivedAt: t.receivedAt })),
+			conversation: kernel.conversation(50).map((m) => ({ who: m.who, text: m.text, at: m.at })),
+			decisions: kernel.decisionLog(50).map((x) => ({ kind: x.decision.kind, ok: x.ok, reason: x.reason, ticketId: x.ticketId, decision: x.decision })),
+			today: kernel.triggerCountsToday(),
+		};
 	}
 
 	triggerLog() {
-		return spawnSync(process.execPath, [...RUN, "src/cli/log.ts", "100"], { cwd: REPO, env: this.env, encoding: "utf8" }).stdout.trim();
+		return runSync(["src/cli/log.ts", "100"], this.env).stdout.trim();
 	}
 
+	/** Polls fn until it returns something truthy; null after ms. Errors from fn propagate and fail the scene. */
 	async until(label, fn, ms, every = 1500) {
 		const end = Date.now() + ms;
-		while (Date.now() < end) {
-			try {
-				const v = await fn();
-				if (v) return v;
-			} catch {}
-			await sleep(every);
+		for (;;) {
+			const v = await fn();
+			if (v) return v;
+			if (Date.now() >= end) break;
+			await sleep(Math.min(every, end - Date.now()));
 		}
 		this.log(`(timeout ${Math.round(ms / 1000)}s: ${label})`);
 		return null;
+	}
+
+	/** Waits until ticket id satisfies pred; returns { st, t } or null after ms. */
+	untilTicket(id, pred, ms, every = 3000) {
+		return this.until(`ticket ${id}`, () => {
+			const st = this.state();
+			const t = st.tickets.find((x) => x.id === id);
+			return t && pred(t) ? { st, t } : null;
+		}, ms, every);
 	}
 
 	async openBrowser(url) {
@@ -130,14 +165,14 @@ export class Demo {
 
 	async goto(url) {
 		await this.page.goto(url);
-		await this.page.waitForFunction(() => document.querySelector("#status")?.dataset.status === "connected", null, { timeout: 30_000 });
+		await waitStatus(this.page, "connected", 30_000);
 		if (this.captionState) await this.#paint(...this.captionState);
 	}
 
 	async caption(title, bot, agent) {
 		this.captionState = [title, bot, agent];
 		this.log(`== ${title} | 普通聊天机器人：${bot} | Pi Super Agent：${agent}`);
-		await this.#paint(title, bot, agent).catch(() => {});
+		if (this.page) await this.#paint(title, bot, agent).catch(() => {});
 	}
 
 	#paint(title, bot, agent) {
@@ -158,20 +193,10 @@ export class Demo {
 		}, [title, bot, agent]);
 	}
 
+	/** Types the sentence on camera and waits for the delivered ack; throws (failing the scene) without one. */
 	async say(text, { delay = 30 } = {}) {
-		const box = this.page.locator("#composer");
-		await box.click();
-		await box.pressSequentially(text, { delay });
-		if ((await box.inputValue()) !== text) {
-			this.log(`(typed text came out as "${(await box.inputValue()).slice(-30)}"; filling the full sentence)`);
-			await box.fill(text);
-		}
-		await sleep(400);
-		await this.page.locator("#send").click();
-		const sentAt = Date.now();
-		const ok = await this.page.waitForFunction(() => document.getElementById("say-status")?.dataset.state === "delivered", null, { timeout: 8_000 }).then(() => true, () => false);
-		this.log(`said "${text.slice(0, 30)}…" ${ok ? `delivered in ${Date.now() - sentAt}ms` : "(no delivered ack)"}`);
-		return ok;
+		await sayInPage(this.page, text, { typeDelayMs: delay });
+		this.log(`said "${text.slice(0, 30)}…" (delivered)`);
 	}
 
 	card(text) {
@@ -194,9 +219,9 @@ export class Demo {
 		let result;
 		try {
 			await this.caption(name, ...captionLines);
-			result = (await fn()) ?? { status: "SKIP", evidence: "scene returned nothing" };
+			result = (await fn()) ?? { status: "FAIL", evidence: "scene returned nothing" };
 		} catch (e) {
-			result = { status: "SKIP", evidence: `error: ${String(e.message).split("\n")[0]}` };
+			result = { status: "FAIL", evidence: `error: ${String(e.message).split("\n")[0]}` };
 		}
 		const left = this.dwellMs - (Date.now() - start);
 		if (left > 0) await sleep(left);
@@ -206,22 +231,33 @@ export class Demo {
 	}
 
 	static check(ok, evidence, why) {
-		return ok ? { status: "PASS", evidence } : { status: "SKIP", evidence: `${why}; observed: ${evidence}` };
+		return ok ? { status: "PASS", evidence } : { status: "FAIL", evidence: `${why}; observed: ${evidence}` };
 	}
 
+	/** The closing caption every demo ends on. */
+	async outro(title, bot, agent) {
+		await this.caption(title, bot, agent);
+		await sleep(8000);
+	}
+
+	/** Returns the process groups that would not stop. */
 	async cleanup() {
 		try {
 			if (this.page) await this.page.screenshot({ path: join(this.out, "final.png") }).catch(() => {});
 			await this.ctx?.close();
 			await this.browser?.close();
 		} catch {}
-		for (const pid of this.watchdogHosts()) adoptGroup(pid);
+		this.#db?.close();
+		// Stop the watchdog first so it cannot start another host, then re-read the heartbeat for the host it left running.
+		if (this.watchdog) await stopGroup(this.watchdog.pid);
+		this.adoptHeartbeatHost();
 		const left = await stopAllGroups();
 		this.log(left.length ? `STILL ALIVE process groups: ${left.join(", ")}` : "every process group this demo started is stopped");
 		for (const f of ["host.log", "heartbeat.json"]) if (existsSync(join(this.stateDir, f))) copyFileSync(join(this.stateDir, f), join(this.out, f === "host.log" ? "host-statedir.log" : f));
 		writeFileSync(join(this.out, "trigger-log.txt"), this.lastTriggerLog ?? "");
 		writeFileSync(join(this.out, "state.json"), JSON.stringify(this.lastState ?? {}, null, 2));
 		if (!left.length) rmSync(this.stateDir, { recursive: true, force: true });
+		return left;
 	}
 
 	summary() {
@@ -238,21 +274,24 @@ export class Demo {
 			process.exit(130);
 		};
 		process.once("SIGINT", stop);
+		let left = [];
 		try {
 			await body();
 		} catch (e) {
 			this.log(`ERROR ${e.stack}`);
+			this.results.push({ name: "(demo script)", status: "FAIL", evidence: String(e.message).split("\n")[0] });
 		} finally {
 			try {
 				this.lastState = this.state();
 				this.lastTriggerLog = this.triggerLog();
-			} catch {}
-			await this.cleanup();
+			} catch (e) {
+				this.log(`(final state not read: ${e.message})`);
+			}
+			left = await this.cleanup();
 			this.summary();
 		}
+		if (left.length || this.results.some((r) => r.status === "FAIL")) process.exitCode = 1;
 	}
 }
-
-export const ticketsWith = (state, pred) => state.tickets.filter(pred);
 export const fmtTicket = (t) => `${t.id}「${t.title}」${t.stage}/${t.basis}${t.ruleId ? `/${t.ruleId}` : ""}`;
 export const fmtTrigger = (t) => `${t.source} ${t.disposition}${t.detail ? `(${t.detail})` : ""} "${t.body.slice(0, 30)}"`;

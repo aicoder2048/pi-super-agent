@@ -1,5 +1,5 @@
 // 主动 + 事件驱动：外部事件进来，小波动不打扰你，来源里的指令当数据，大波动按规则自己开任务，后续行情直达订阅的助手。
-import { Demo, sleep, fmtTicket, fmtTrigger } from "./lib.mjs";
+import { Demo, skip, sleep, fmtTicket, fmtTrigger } from "./lib.mjs";
 
 const d = new Demo("demo-3-proactive", { port: 45193 });
 const todayLine = () => d.page.locator("#today").innerText().catch(() => "");
@@ -43,7 +43,7 @@ await d.run(async () => {
 			return x.tickets.find((t) => t.basis === "rule") ? x : null;
 		}, 150_000);
 		await d.card("规则触发").first().waitFor({ timeout: 20_000 }).catch(() => {});
-		if (!st) return { status: "SKIP", evidence: "no rule ticket in 150s" };
+		if (!st) throw new Error("no rule ticket in 150s");
 		rule = st.tickets.find((t) => t.basis === "rule");
 		await d.openCard(rule.title).catch(() => {});
 		await sleep(4000);
@@ -52,7 +52,7 @@ await d.run(async () => {
 	});
 
 	await d.scene("四 · 后续行情直达那个助手，不再经过幕僚长", ["每条新消息都当新问题，从头再问一遍", "TOYX 又跌到 -6.1%：同一线程的消息直接送到订阅的助手，不开新任务；右栏能看到它「收到新消息」"], async () => {
-		if (!rule) return { status: "SKIP", evidence: "no rule ticket from scene 三" };
+		if (!rule) return skip("no rule ticket from scene 三");
 		const before = d.state().tickets.length;
 		d.cli(["modules/toy-market/feed.ts", "TOYX", "-6.1", "30"], "feed TOYX -6.1");
 		const t = await d.until("delivered", () => d.state().triggers.find((x) => x.source === "toy-market" && x.body.includes("-6.1")), 30_000, 1000);
@@ -65,21 +65,17 @@ await d.run(async () => {
 	});
 
 	await d.scene("五 · 核实结果：值得说才开口", ["你不问，它不会主动告诉你结果", "助手核实完：值得说的，幕僚长才在对话里告诉你；只是噪音，任务自己结束，不打扰你"], async () => {
-		if (!rule) return { status: "SKIP", evidence: "no rule ticket" };
-		const st = await d.until("rule ticket reported", () => {
-			const x = d.state();
-			const t = x.tickets.find((y) => y.id === rule.id);
-			return t?.latest ? x : null;
-		}, 180_000, 3000);
+		if (!rule) return skip("no rule ticket from scene 三");
+		const st = await d.untilTicket(rule.id, (t) => t.latest, 180_000);
 		await sleep(4000);
-		const t = (st ?? d.state()).tickets.find((y) => y.id === rule.id);
-		const reply = (st ?? d.state()).conversation.filter((m) => m.who === "router").at(-1)?.text;
+		const now = st?.st ?? d.state();
+		const t = now.tickets.find((y) => y.id === rule.id);
+		const reply = now.conversation.filter((m) => m.who === "router").at(-1)?.text;
 		const outcome = reply ? `幕僚长说「${reply.slice(0, 60)}」` : "幕僚长没开口（任务按无需处理结束）";
 		await d.caption("五 · 核实结果", "你不问，它不会主动告诉你结果", reply ? `核实有结果，幕僚长在对话里告诉了你` : `助手判断「${(t?.latest ?? "").slice(0, 36)}」，任务自己结束，没有打扰你`);
 		await sleep(6000);
 		return Demo.check(Boolean(st), `${t ? fmtTicket(t) : "?"}; report「${(t?.latest ?? "").slice(0, 60)}」; ${outcome}`, "no report in 180s");
 	});
 
-	await d.caption("小结 · 主动", "你问它才答", "事件驱动：消息自己进来，程序先筛、模型再判，按你的规则主动开工，只在有结果时找你");
-	await sleep(8000);
+	await d.outro("小结 · 主动", "你问它才答", "事件驱动：消息自己进来，程序先筛、模型再判，按你的规则主动开工，只在有结果时找你");
 });
