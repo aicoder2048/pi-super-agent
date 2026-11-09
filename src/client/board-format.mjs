@@ -34,7 +34,7 @@ export const INPUT_LABEL = {
 /** @type {Record<import("../kernel/types.ts").HelperRole, string>} */
 export const HELPER_ROLE_LABEL = { conversation: "对话助手", market: "行情助手", rule: "规则助手", watch: "观察助手" };
 
-/** 「行情助手 #2」 for one helper, 「看盘队 #2」 for a team. @param {Helper} helper */
+/** @param {Helper} helper */
 export const helperLabel = (helper) => `${"team" in helper ? helper.team : HELPER_ROLE_LABEL[helper.role]} #${helper.seq}`;
 
 /** 「青檀 · 行情助手 #2」 or 「高山流水 · 看盘队 #2」; "" for a ticket the host has not named yet. @param {Helper | null} helper */

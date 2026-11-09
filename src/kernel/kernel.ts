@@ -122,7 +122,7 @@ export function nextStallAt(rows: DashboardRow[], stuckMs: number): number | nul
 	return at.length ? Math.min(...at) : null;
 }
 
-// A named ticket with no helper_role shows as a team: the row holds a role or stands for its team, never both.
+const SOLO_HELPER_ROWS = "helper_role IS NOT NULL";
 const TEAM_HELPER_ROWS = "helper_name IS NOT NULL AND helper_role IS NULL";
 
 function toHelper(r: Row): Helper | null {
@@ -142,7 +142,6 @@ export interface KernelOptions {
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	/** A rule ticket from such a source gets a market helper. */
 	isMarketSource?: (source: string) => boolean;
-	/** Only the default team when absent. */
 	teams?: TeamBook;
 	log?: (line: string) => void;
 	config?: Partial<KernelConfig>;
@@ -650,7 +649,7 @@ export class Kernel {
 		const crew = this.#teams.kinds.get(team) === "crew";
 		const unit = crew
 			? { rows: TEAM_HELPER_ROWS, column: "team", value: team, names: TEAM_NAMES }
-			: { rows: "helper_role IS NOT NULL", column: "helper_role", value: role, names: SOLO_NAMES };
+			: { rows: SOLO_HELPER_ROWS, column: "helper_role", value: role, names: SOLO_NAMES };
 		const day = newYorkDate(createdAt);
 		const sameUnit = this.#all(
 			`SELECT created_at FROM tickets WHERE ${unit.rows} AND ${unit.column} = ? AND created_at > ? AND created_at <= ?`,

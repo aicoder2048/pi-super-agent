@@ -150,7 +150,6 @@ test("成员的提示词和说明有长度上限，超了在启动时报错", ()
 	memberFails(`---\nname: m\ntitle: t\ndescription: ${"长".repeat(301)}\n---\n`, /description.*300/);
 });
 
-/** A root is a directory that may hold agents/*.md and teams.yaml, like a module directory or the state directory. */
 function root(files: Record<string, string>): string {
 	const dir = mkdtempSync(join(tmpdir(), "psa-root-"));
 	mkdirSync(join(dir, "agents"));

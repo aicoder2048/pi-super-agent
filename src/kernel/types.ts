@@ -15,7 +15,6 @@ export type HelperRole = (typeof HELPER_ROLES)[number];
  */
 export type Helper = { name: string; seq: number } & ({ role: HelperRole } | { team: string });
 
-/** The built-in team: 通用助手 alone. A ticket row with no team reads as this one. */
 export const DEFAULT_TEAM = "默认";
 
 /** solo: one helper. crew: the team has a member besides 通用助手, so the helper can grow into a team. */
@@ -126,7 +125,6 @@ export type Decision =
 			title: string;
 			basis: Basis;
 			ruleId?: string;
-			/** A team's name; the default team when absent. */
 			team?: string;
 			triggerId?: string;
 			threads?: string[];

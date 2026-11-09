@@ -72,9 +72,8 @@ export interface HostWiringInput {
 }
 
 export function createHostOptions({ config, modules, modelRuntime, log, clock = { now: () => Date.now() } }: HostWiringInput): HostOptions {
-	// A member may only use a provider the router or the worker already runs on; the fallback's provider is pay-per-use.
-	const subscribed = [...new Set([config.models.router.provider, config.models.worker.provider])];
-	const roster = Roster.load([BUILTIN_ROOT, ...modules.modules.map((m) => m.dir), config.stateDir], subscribed);
+	const subscriptionProviders = [...new Set([config.models.router.provider, config.models.worker.provider])];
+	const roster = Roster.load([BUILTIN_ROOT, ...modules.modules.map((m) => m.dir), config.stateDir], subscriptionProviders);
 	const teams = roster.teamBook(modules.allRules());
 	log(`[host] 团队：${[...teams.kinds.keys()].join("、")}`);
 	const resolve = (ref: ModelRef, role?: string) => {
@@ -115,7 +114,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 				cwd: join(config.stateDir, "router"),
 				sessionDir: join(config.stateDir, "sessions", "router"),
 				rules: modules.rulesPrompt(),
-				teams: roster.routerPrompt(),
+				teamRoster: roster.routerPrompt(),
 				rulesFor: deps.rulesFor,
 				afterCommand: deps.afterCommand,
 				onError: (e) => log(`[router] ${String(e)}`),

@@ -22,14 +22,12 @@ export interface Member {
 
 export interface TeamDecl {
 	name: string;
-	/** One sentence for the Router's roster. */
 	description: string;
 	members: readonly string[];
 	file: string;
 	line: number;
 }
 
-// Every team's description is in the Router's prompt on every turn.
 const TEAM_DESCRIPTION_MAX_CHARS = 60;
 
 const unquote = (value: string) => (value.match(/^"(.*)"$|^'(.*)'$/)?.slice(1).find((v) => v !== undefined) ?? value).trim();
@@ -94,7 +92,6 @@ export function parseTeams(file: string, text: string): TeamDecl[] {
 
 const MEMBER_FIELDS = ["name", "title", "description", "tools", "skills", "model"];
 const MEMBER_NAME = /^[a-z][a-z0-9-]*$/;
-// The prompt goes to a Pi process as one argv string; well under macOS's 1 MiB ARG_MAX with room for the rest.
 const PROMPT_MAX_CHARS = 20_000;
 const DESCRIPTION_MAX_CHARS = 300;
 
@@ -144,12 +141,9 @@ export function parseMember(file: string, content: string, allowedProviders: rea
 	return { name, title: text(fm.title, file, "title"), description, tools, skills, model, prompt, file };
 }
 
-/** The repo root: its `agents/` holds the built-in member. */
 export const BUILTIN_ROOT = fileURLToPath(new URL("..", import.meta.url));
-/** The built-in member 通用助手. A team with any other member is a crew. */
 export const GENERAL_MEMBER = "general";
 
-/** A team after loading: its members are full definitions, so no caller looks a name up again. */
 export interface Team {
 	name: string;
 	description: string;
@@ -162,7 +156,6 @@ export interface Team {
 
 const isDirectory = (path: string) => existsSync(path) && statSync(path).isDirectory();
 
-/** Every member and team from the built-in root, the module directories and the state directory. It exists only if all of them are valid. */
 export class Roster {
 	readonly members: readonly Member[];
 	readonly #teams: ReadonlyMap<string, Team>;
@@ -206,7 +199,6 @@ export class Roster {
 		return new Roster([...members.values()], teams);
 	}
 
-	/** By the name stored on a ticket; undefined when that team has since been removed. */
 	team(name: string): Team | undefined {
 		return this.#teams.get(name);
 	}
