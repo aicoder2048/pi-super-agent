@@ -2,7 +2,7 @@
 
 import {
 	STAGE_PHRASE, BASIS_PHRASE, answerBody, applyMessage, applyTranscript, canSend, choicesInConversation, dutyLine, emptyView, emptyWatch,
-	helperTint, isStale, leftColumn, resolveTheme, restartNotice, sayCopy, sayOutcome, settleSay, smallPrint, stopSentence, toggleTheme,
+	helperTint, isStale, leftColumn, resolveTheme, restartNotice, sayCopy, sayOutcome, settleSay, settleSending, smallPrint, stopSentence, toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, isLive } from "../client/board-format.mjs";
 
@@ -266,7 +266,7 @@ function mount(doc) {
 	/** @param {string} reportId @param {number} option */
 	const answer = async (reportId, option) => {
 		if (sending.has(reportId)) return;
-		sending.set(reportId, option);
+		sending.set(reportId, { option });
 		render.left();
 		const abort = new AbortController();
 		const timer = setTimeout(() => abort.abort(), DEFAULT_ACK_TIMEOUT_MS);
@@ -280,7 +280,10 @@ function mount(doc) {
 			});
 			const state = sayOutcome({ status: res.status });
 			if (state === "expired") setStatus("expired");
-			if (state !== "delivered") sending.delete(reportId);
+			if (state === "delivered") {
+				sending.set(reportId, { option, triggerId: (await res.json()).triggerId });
+				settleSending(view, sending);
+			} else sending.delete(reportId);
 			setSay(state, res.status);
 		} catch {
 			sending.delete(reportId);
@@ -330,6 +333,7 @@ function mount(doc) {
 		events.onmessage = (e) => {
 			alive();
 			const panes = applyMessage(view, JSON.parse(e.data), Date.now());
+			if (panes.includes("left")) settleSending(view, sending);
 			for (const pane of panes) render[pane]();
 			if (panes.includes("left")) renderHow();
 		};

@@ -149,6 +149,8 @@ export class Host {
 				"channel.reply": ({ threadId, text, replyId, about }) => this.#deliverReply(threadId, text, replyId, about),
 			},
 			onError: (action, error) => this.#log(`[dispatcher] ${action.kind} 失败（第 ${action.attempts + 1} 次）：${String(error)}`),
+			// A click the Router saw and did not hand over shows as dropped only once its notice is done.
+			onComplete: (action) => action.kind === "router.notify" && this.#changed(),
 		});
 		this.server = new HostServer(
 			{

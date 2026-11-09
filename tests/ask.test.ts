@@ -167,3 +167,37 @@ test("久无进展的阈值超过定时器上限（约 24.8 天）时，宿主�
 	await new Promise((r) => setTimeout(r, 300));
 	assert.ok(ofType(got, "board").length - before < 5, `300 毫秒里多推了 ${ofType(got, "board").length - before} 帧`);
 });
+
+test("幕僚长没有转交点选时，看板帧标出这次点选作废；再点一次是新的一句，转交后任务继续，看板标已回答", async (t) => {
+	let ignoreClicks = true;
+	const brain: Brain = (cards) =>
+		cards.flatMap((card) => {
+			if (card.startsWith("[对话]") && card.includes("点选回答：") && ignoreClicks) return [];
+			return relayAndHandOver([card], 0, []);
+		});
+	const started = await startHost(brain, (w, input) => {
+		if (!input.includes("回答任务")) w.report({ status: "blocked", summary: "两种口径", question: "要看哪部分？", options: OPTIONS });
+		w.settle();
+	});
+	const { host } = started;
+	const got: HostToClient[] = [];
+	const conn = new HostConnection({ socketPath: host.socketPath, onMessage: (m) => got.push(m), retryMs: 30 });
+	conn.open();
+	t.after(async () => { conn.close(); await host.stop(); });
+	await until(() => conn.connected, "连接");
+	host.say("查财报");
+	await until(() => started.said().includes("要看财报的哪部分？"), "问题转达到对话");
+	const { reportId } = host.kernel.listTickets()[0].question!;
+	const first = host.answer(reportId, 0);
+	assert.ok(first.ok);
+	const clickOf = (m: HostToClient) => (m.type === "board" ? m.rows[0]?.question?.click : undefined);
+	await until(() => got.some((m) => clickOf(m)?.state === "dropped"), "看板标出作废");
+	ignoreClicks = false;
+	const second = host.answer(reportId, 1);
+	assert.ok(second.ok);
+	assert.notEqual(second.triggerId, first.triggerId);
+	await until(() => got.some((m) => clickOf(m)?.state === "handed_over" && clickOf(m)?.option === 1), "看板标已回答");
+	const ticketId = host.kernel.listTickets()[0].id;
+	await until(() => started.spawner.workers.get(ticketId)!.inputs.some((i) => i.includes("回答任务「查财报」：营收和利润")), "任务收到这句继续执行");
+	assert.ok(!started.spawner.workers.get(ticketId)!.inputs.some((i) => i.includes("回答任务「查财报」：只看营收")), "作废的那次没有转给任务");
+});

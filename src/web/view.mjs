@@ -86,7 +86,14 @@ export function applyMessage(view, message, now) {
 /** @param {DashboardRow} row @returns {Group} */
 const groupOf = (row) => (row.stall ? "needsYou" : GROUP[row.stage]);
 
-/** @typedef {Map<string, number>} Sending */
+/** A click this page posted, by report id; triggerId arrives with the host's 200. @typedef {Map<string, { option: number, triggerId?: string }>} Sending */
+
+const CHOICE_NOTE = {
+	sending: "发送中…",
+	sent: "已发送，等待幕僚长转交",
+	handed_over: "已回答",
+	dropped: "幕僚长没有转交这次选择，请重选或直接回复",
+};
 
 /**
  * @typedef {object} Choice
@@ -100,13 +107,28 @@ const groupOf = (row) => (row.stall ? "needsYou" : GROUP[row.stage]);
 function choiceOf(row, sending) {
 	const q = row.question;
 	if (!q || q.options.length === 0) return null;
-	const picked = q.clickedOption ?? sending.get(q.reportId) ?? null;
+	const local = sending.get(q.reportId);
+	const click = q.click;
+	const shown = local
+		? { option: local.option, note: CHOICE_NOTE[local.triggerId ? "sent" : "sending"] }
+		: click && click.state !== "dropped"
+			? { option: click.option, note: CHOICE_NOTE[click.state] }
+			: null;
 	return {
 		reportId: q.reportId,
-		buttons: q.options.map((label, option) => ({ label, option, picked: option === picked })),
-		locked: picked !== null,
-		note: picked === null ? "" : "已回答",
+		buttons: q.options.map((label, option) => ({ label, option, picked: option === shown?.option })),
+		locked: shown !== null,
+		note: shown?.note ?? (click?.state === "dropped" ? CHOICE_NOTE.dropped : ""),
 	};
+}
+
+/** Forgets a posted click once the board carries the host's trigger for it, or the question is gone. @param {View} view @param {Sending} sending */
+export function settleSending(view, sending) {
+	for (const [reportId, { triggerId }] of sending) {
+		if (!triggerId) continue;
+		const q = view.rows.find((r) => r.question?.reportId === reportId)?.question;
+		if (!q || q.click?.triggerId === triggerId) sending.delete(reportId);
+	}
 }
 
 /**

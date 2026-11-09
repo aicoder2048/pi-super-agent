@@ -184,7 +184,18 @@ export interface PendingQuestion {
 	text: string;
 	options: string[];
 	askedAt: number;
-	clickedOption: number | null;
+	/** The latest click on one of the options, or null when nobody clicked. */
+	click: QuestionClick | null;
+}
+
+/**
+ * sent: the Router has not finished with the click yet. handed_over: the asking task got it.
+ * dropped: the Router ignored it or ended its turn without handing it over, so the options are open again.
+ */
+export interface QuestionClick {
+	option: number;
+	state: "sent" | "handed_over" | "dropped";
+	triggerId: string;
 }
 
 export interface Stall {

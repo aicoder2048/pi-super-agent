@@ -21,6 +21,7 @@ import type {
 	Decision,
 	DecisionLogEntry,
 	PendingQuestion,
+	QuestionClick,
 	DecisionResult,
 	Disposition,
 	InputKind,
@@ -197,13 +198,12 @@ export class Kernel {
 
 	answerQuestion({ reportId, option, at }: { reportId: string; option: number; at: number }): Result<{ triggerId: string; text: string; duplicate: boolean }> {
 		return this.#tx(() => {
-			const existing = this.#get(
-				"SELECT t.id, t.body FROM answer_clicks c JOIN triggers t ON t.id = c.trigger_id WHERE c.report_id = ? ORDER BY c.rowid DESC LIMIT 1",
-				reportId,
-			);
-			if (existing) return { ok: true, triggerId: existing.id, text: existing.body, duplicate: true };
 			const report = this.#get("SELECT ticket_id, options FROM reports WHERE id = ?", reportId);
 			if (!report) return reject(`unknown report ${reportId}`);
+			const click = this.#latestClick(reportId);
+			if (click && click.state !== "dropped") {
+				return { ok: true, triggerId: click.triggerId, text: this.#get("SELECT body FROM triggers WHERE id = ?", click.triggerId)!.body, duplicate: true };
+			}
 			const ticket = this.#ticket(report.ticket_id)!;
 			if (ticket.stage !== "awaiting_answer" || ticket.latestReport?.id !== reportId) {
 				return reject("这个问题已经回答过，或已不在等待回答");
@@ -212,7 +212,8 @@ export class Kernel {
 			if (options.length === 0) return reject("这个问题没有选项，请直接回复");
 			if (!Number.isInteger(option) || option < 0 || option >= options.length) return reject(`这个问题只有 ${options.length} 个选项`);
 			const text = answerSentence(ticket.title, options[option]);
-			const { triggerId } = this.userSaid({ text, at, externalId: answerExternalId(reportId) });
+			const clicks = this.#get("SELECT COUNT(*) AS n FROM answer_clicks WHERE report_id = ?", reportId)!.n as number;
+			const { triggerId } = this.userSaid({ text, at, externalId: answerExternalId(reportId, clicks + 1) });
 			this.#run("INSERT INTO answer_clicks (trigger_id, report_id, option) VALUES (?, ?, ?)", triggerId, reportId, option);
 			return { ok: true, triggerId, text, duplicate: false };
 		});
@@ -569,7 +570,7 @@ export class Kernel {
 				stage: t.stage,
 				basis: t.basis,
 				latestSummary: t.latestReport?.summary ?? null,
-				question: t.stage === "awaiting_answer" ? this.#pendingQuestion(t.latestReport!) : null,
+				question: this.#pendingQuestion(t),
 				stall: this.#stall(t, now),
 				model: t.model,
 				fellBack: t.fellBack,
@@ -588,9 +589,32 @@ export class Kernel {
 		return quietMs >= this.config.stuckMs ? { since: t.lastProgressAt, minutes: stallMinutes(t.lastProgressAt, now) } : null;
 	}
 
-	#pendingQuestion(report: Report): PendingQuestion {
-		const click = this.#get("SELECT option FROM answer_clicks WHERE report_id = ? ORDER BY rowid DESC LIMIT 1", report.id);
-		return { reportId: report.id, text: report.question!, options: report.options, askedAt: report.createdAt, clickedOption: click?.option ?? null };
+	// A question stays on the board after its click is handed over, so every client can show what was picked.
+	#pendingQuestion(t: Ticket): PendingQuestion | null {
+		const report = t.latestReport;
+		if (!report?.question) return null;
+		const click = this.#latestClick(report.id);
+		if (t.stage !== "awaiting_answer" && click?.state !== "handed_over") return null;
+		return { reportId: report.id, text: report.question, options: report.options, askedAt: report.createdAt, click };
+	}
+
+	#latestClick(reportId: string): QuestionClick | null {
+		const c = this.#get(
+			`SELECT c.trigger_id, c.option, t.disposition FROM answer_clicks c JOIN triggers t ON t.id = c.trigger_id
+			 WHERE c.report_id = ? ORDER BY c.rowid DESC LIMIT 1`,
+			reportId,
+		);
+		if (!c) return null;
+		const state = c.disposition === "handed_over" ? "handed_over" : c.disposition === "to_router" && this.#routerHasYet(c.trigger_id) ? "sent" : "dropped";
+		return { option: c.option, state, triggerId: c.trigger_id };
+	}
+
+	// The Router's notice stays pending until a Router turn that saw it ends cleanly.
+	#routerHasYet(triggerId: string): boolean {
+		return !!this.#get(
+			"SELECT 1 FROM actions WHERE status = 'pending' AND kind = 'router.notify' AND json_extract(payload, '$.triggerId') = ?",
+			triggerId,
+		);
 	}
 
 	#answerOf(triggerId: string): AnswerClick | null {

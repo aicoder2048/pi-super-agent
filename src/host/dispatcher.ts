@@ -8,19 +8,22 @@ export interface DispatcherOptions {
 	handlers: Handlers;
 	retryPollMs?: number;
 	onError?: (action: PendingAction, error: unknown) => void;
+	onComplete?: (action: PendingAction) => void;
 }
 
 export class Dispatcher {
 	readonly #kernel: Kernel;
 	readonly #handlers: Handlers;
 	readonly #onError: (action: PendingAction, error: unknown) => void;
+	readonly #onComplete: (action: PendingAction) => void;
 	readonly #inFlight = new Set<string>();
 	readonly #idleWaiters: Array<() => void> = [];
 	#scheduled = false;
 	#stopped = false;
 	#timer: NodeJS.Timeout | undefined;
 
-	constructor({ kernel, handlers, retryPollMs = 1000, onError }: DispatcherOptions) {
+	constructor({ kernel, handlers, retryPollMs = 1000, onError, onComplete = () => {} }: DispatcherOptions) {
+		this.#onComplete = onComplete;
 		this.#kernel = kernel;
 		this.#handlers = handlers;
 		this.#onError = onError ?? ((action, error) => console.error(`[dispatcher] ${action.kind} ${action.id}:`, error));
@@ -50,6 +53,7 @@ export class Dispatcher {
 		try {
 			await (this.#handlers[action.kind] as (p: unknown, id: string) => Promise<void> | void)(action.payload, action.id);
 			this.#kernel.completeAction(action.id);
+			this.#onComplete(action);
 		} catch (error) {
 			this.#kernel.failAction(action.id, error instanceof Error ? error.message : String(error));
 			this.#onError(action, error);

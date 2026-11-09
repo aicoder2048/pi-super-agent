@@ -25,4 +25,4 @@ export const answerSentence = (title: string, option: string) => `回答任务�
 
 const ANSWER_PREFIX = "answer:";
 
-export const answerExternalId = (reportId: string) => `${ANSWER_PREFIX}${reportId}`;
+export const answerExternalId = (reportId: string, attempt: number) => `${ANSWER_PREFIX}${reportId}:${attempt}`;

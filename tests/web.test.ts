@@ -87,7 +87,7 @@ test("页面：待你处理的卡片先显示问题，受阻的显示最近汇�
 
 const MIN = 60_000;
 const asked = (over: Partial<NonNullable<DashboardRow["question"]>> = {}) =>
-	({ reportId: "rpt_q1", text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 10 * MIN, clickedOption: null, ...over });
+	({ reportId: "rpt_q1", text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 10 * MIN, click: null, ...over });
 
 test("页面：执行中久无进展的任务进待你处理，阶段写「久无进展 · N 分钟」并随时间增加，能停止", () => {
 	const view = withRows([row({ id: "tkt_slow", stage: "running", latestSummary: "在跑回归", stall: { since: 0, minutes: 42 } }), row({ id: "tkt_ok", stage: "running" })]);
@@ -97,18 +97,41 @@ test("页面：执行中久无进展的任务进待你处理，阶段写「久�
 	assert.equal(page.leftColumn(view, 45 * MIN).needsYou[0].stage, "久无进展 · 45 分钟");
 });
 
-test("页面：等回答且带选项的卡片有一组按钮；任何客户端点过或这里正在发送时全部锁住，标出选了哪个并写「已回答」；开放问题没有按钮", () => {
+test("页面：等回答且带选项的卡片有一组按钮；点过的按转交进度锁住并标出选了哪个；开放问题没有按钮", () => {
+	const click = (option: number, state: "sent" | "handed_over" | "dropped") => ({ option, state, triggerId: `trg_${state}` });
 	const view = withRows([
 		row({ id: "tkt_a", stage: "awaiting_answer", question: asked() }),
-		row({ id: "tkt_b", stage: "awaiting_answer", question: asked({ reportId: "rpt_q2", clickedOption: 2 }) }),
-		row({ id: "tkt_c", stage: "awaiting_answer", question: asked({ reportId: "rpt_q3", options: [] }) }),
+		row({ id: "tkt_b", stage: "awaiting_answer", question: asked({ reportId: "rpt_q2", click: click(2, "sent") }) }),
+		row({ id: "tkt_c", stage: "running", question: asked({ reportId: "rpt_q3", click: click(1, "handed_over") }) }),
+		row({ id: "tkt_d", stage: "awaiting_answer", question: asked({ reportId: "rpt_q4", click: click(0, "dropped") }) }),
+		row({ id: "tkt_e", stage: "awaiting_answer", question: asked({ reportId: "rpt_q5", options: [] }) }),
 	]);
-	const [a, b, c] = page.leftColumn(view, 0).needsYou.map((card) => card.choice);
+	const left = page.leftColumn(view, 0);
+	const [a, b, d, e] = left.needsYou.map((card) => card.choice);
+	const [c] = left.doing.map((card) => card.choice);
 	assert.deepEqual(a, { reportId: "rpt_q1", buttons: [{ label: "只看营收", option: 0, picked: false }, { label: "营收和利润", option: 1, picked: false }, { label: "先不查", option: 2, picked: false }], locked: false, note: "" });
-	assert.deepEqual([b?.locked, b?.buttons.map((x) => x.picked), b?.note], [true, [false, false, true], "已回答"]);
-	assert.equal(c, null);
-	const sending = page.leftColumn(view, 0, new Map([["rpt_q1", 1]])).needsYou[0].choice;
-	assert.deepEqual([sending?.locked, sending?.buttons.map((x) => x.picked), sending?.note], [true, [false, true, false], "已回答"]);
+	const seen = (x: typeof a) => [x?.locked, x?.buttons.map((y) => y.picked), x?.note];
+	assert.deepEqual(seen(b), [true, [false, false, true], "已发送，等待幕僚长转交"]);
+	assert.deepEqual(seen(c), [true, [false, true, false], "已回答"]);
+	assert.deepEqual(seen(d), [false, [false, false, false], "幕僚长没有转交这次选择，请重选或直接回复"]);
+	assert.equal(e, null);
+	const posting = page.leftColumn(view, 0, new Map([["rpt_q1", { option: 1 }]])).needsYou[0].choice;
+	assert.deepEqual(seen(posting), [true, [false, true, false], "发送中…"]);
+	const posted = page.leftColumn(view, 0, new Map([["rpt_q4", { option: 2, triggerId: "trg_new" }]])).needsYou[2].choice;
+	assert.deepEqual(seen(posted), [true, [false, false, true], "已发送，等待幕僚长转交"], "宿主收下了，看板还没跟上");
+});
+
+test("页面：本地记着的点选，等看板上出现宿主给的那条触发、或问题已经不在时才放下；发送还没回来时一直留着", () => {
+	const view = withRows([row({ id: "tkt_a", stage: "awaiting_answer", question: asked({ click: { option: 0, state: "dropped", triggerId: "trg_old" } }) })]);
+	const sending = new Map<string, { option: number; triggerId?: string }>([["rpt_q1", { option: 1 }], ["rpt_gone", { option: 0, triggerId: "trg_g" }]]);
+	page.settleSending(view, sending);
+	assert.deepEqual([...sending.keys()], ["rpt_q1"]);
+	sending.set("rpt_q1", { option: 1, triggerId: "trg_new" });
+	page.settleSending(view, sending);
+	assert.deepEqual([...sending.keys()], ["rpt_q1"], "看板上还是旧的那次");
+	page.applyMessage(view, board([row({ id: "tkt_a", stage: "awaiting_answer", question: asked({ click: { option: 1, state: "sent", triggerId: "trg_new" } }) })]), 0);
+	page.settleSending(view, sending);
+	assert.equal(sending.size, 0);
 });
 
 test("页面：选项按钮也挂在对话里幕僚长转述这个问题的那一句下面：关于这个任务、在提问之后的最后一句；还没转述或问题结束时对话里没有", () => {
@@ -790,18 +813,19 @@ async function askedOnHost(host: Awaited<ReturnType<typeof sayHost>>["host"], ti
 
 const answerBody = (reportId: string, option: number) => JSON.stringify({ answer: { reportId, option } });
 
-test("网关：POST /say 带 answer 时，宿主替使用者说出「回答任务「标题」：选项」；连点、重试都返回同一个 triggerId，对话里只有一句", async (t) => {
+test("网关：POST /say 带 answer 时，宿主替使用者说出「回答任务「标题」：选项」；转交之后重试返回同一个 triggerId，对话里只有一句", async (t) => {
 	const { host, post, events, userLines } = await sayHost(t);
-	const { reportId } = await askedOnHost(host);
+	const { ticketId, reportId } = await askedOnHost(host);
 	const stream = events();
 	await until(() => stream.got.length > 0, "快照");
 	const first = await post(answerBody(reportId, 1));
-	const again = await post(answerBody(reportId, 0));
+	assert.ok(host.kernel.route([{ kind: "hand_over", triggerId: JSON.parse(first.body).triggerId, ticketId }])[0].ok);
+	const again = await post(answerBody(reportId, 1));
 	assert.deepEqual([first.status, again.status], [200, 200]);
 	const { triggerId } = JSON.parse(first.body);
 	assert.equal(JSON.parse(again.body).triggerId, triggerId);
 	await until(() => ofType(stream.got, "user").some((m) => m.id === triggerId), "user");
-	await until(() => ofType(stream.got, "board").some((m) => m.rows.some((r) => r.question?.clickedOption === 1)), "看板显示已回答");
+	await until(() => ofType(stream.got, "board").some((m) => m.rows.some((r) => r.question?.click?.option === 1 && r.question.click.state === "handed_over")), "看板显示已回答");
 	assert.deepEqual(ofType(stream.got, "user").map((m) => m.text), ["回答任务「查财报」：营收和利润"]);
 	assert.deepEqual(userLines().filter((l) => l.startsWith("回答任务")), ["回答任务「查财报」：营收和利润"]);
 });
