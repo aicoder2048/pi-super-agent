@@ -273,27 +273,27 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 故意让假模型返回错误回复，`just e2e` 失败并指出步骤。恢复后通过。Run `just e2e` and `just test`.
+- [x] 故意让假模型返回错误回复，`just e2e` 失败并指出步骤。恢复后通过。Run `just e2e` and `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
-- [ ] Lane 1. Regression lane against trunk. trunk 没有 `just e2e`，记录这一点。在 head 上跑 `just test`。Save `w4-regression.png`. Pass when 测试数和 trunk 一样且全绿。
-- [ ] Lane 2. 干净 clone 后跑 `just e2e`。Save `w4-clean-clone.png`. Pass when 自动装好依赖并通过。
-- [ ] Lane 3. 连跑 `just e2e` 20 次。Save `w4-repeat.png`. Pass when 20 次全过。
-- [ ] Lane 4. 让假模型的 Router 回复错误。Save `w4-wrong-reply.png`. Pass when 测试失败并指出「Router 回复」这一步。
-- [ ] Lane 5. 让 Worker 子进程崩溃。Save `w4-worker-crash.png`. Pass when 测试失败并保存截图和日志。
-- [ ] Lane 6. 让端口被占用。Save `w4-port-busy.png`. Pass when 测试换端口或给出清楚的错误。
-- [ ] Lane 7. 机器负载高时跑（同时跑 `just test`）。Save `w4-under-load.png`. Pass when 仍然通过。
-- [ ] Lane 8. 检查跑完后的进程和临时目录。Save `w4-cleanup.png`. Pass when 没有残留宿主或 Worker 进程，临时目录已删除。
-- [ ] Lane 9. 检查假模型收到的请求。Save `w4-no-real-model.png`. Pass when 测试过程中没有请求真实模型的网络流量。
-- [ ] Lane 10. 打开失败报告。Save `w4-report.png`. Pass when 报告含失败步骤的截图和页面控制台日志。
+- [x] Lane 1. Regression lane against trunk. trunk 没有 `just e2e`，记录这一点。在 head 上跑 `just test`。Save `w4-regression.png`. Pass when 测试数和 trunk 一样且全绿。
+- [x] Lane 2. 干净 clone 后跑 `just e2e`。Save `w4-clean-clone.png`. Pass when 自动装好依赖并通过。
+- [x] Lane 3. 连跑 `just e2e` 20 次。Save `w4-repeat.png`. Pass when 20 次全过。
+- [x] Lane 4. 让假模型的 Router 回复错误。Save `w4-wrong-reply.png`. Pass when 测试失败并指出「Router 回复」这一步。
+- [x] Lane 5. 让 Worker 子进程崩溃。Save `w4-worker-crash.png`. Pass when 测试失败并保存截图和日志。
+- [x] Lane 6. 让端口被占用。Save `w4-port-busy.png`. Pass when 测试换端口或给出清楚的错误。
+- [x] Lane 7. 机器负载高时跑（同时跑 `just test`）。Save `w4-under-load.png`. Pass when 仍然通过。
+- [x] Lane 8. 检查跑完后的进程和临时目录。Save `w4-cleanup.png`. Pass when 没有残留宿主或 Worker 进程，临时目录已删除。
+- [x] Lane 9. 检查假模型收到的请求。Save `w4-no-real-model.png`. Pass when 测试过程中没有请求真实模型的网络流量。
+- [x] Lane 10. 打开失败报告。Save `w4-report.png`. Pass when 报告含失败步骤的截图和页面控制台日志。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. trunk 和 head 都量 `just test` 的总耗时。head 另量 `just e2e` 的总耗时。
-- [ ] Probe. 交替在 trunk 和 head 上各跑 5 次。
-- [ ] Baseline. Record the trunk `just test` median first.
-- [ ] Rule. head 的 `just test` 中位数比 trunk 慢 5% 以上算失败。`just e2e` 中位数超过 60 秒算失败。
+- [x] Metric. trunk 和 head 都量 `just test` 的总耗时。head 另量 `just e2e` 的总耗时。
+- [x] Probe. 交替在 trunk 和 head 上各跑 5 次。
+- [x] Baseline. Record the trunk `just test` median first.
+- [x] Rule. head 的 `just test` 中位数比 trunk 慢 5% 以上算失败。`just e2e` 中位数超过 60 秒算失败。
 
 **Review gate.** None. W4 is not review-gated.
 
