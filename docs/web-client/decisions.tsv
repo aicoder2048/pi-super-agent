@@ -65,3 +65,4 @@ ts	phase	decision	why	evidence	result
 2026-11-09T17:14:08Z	live-lane	e2e 收尾每一步限时 10 秒、一步卡住其余照做；关闭浏览器也限时	实测：Mac 维护睡眠 965 秒后浏览器冻住，context.close 永不返回，宿主和假模型没停，run 6 挂了 43 分钟	pmset 日志 08:24-08:40；冻住浏览器复现：修后 302 秒以失败退出、无残留进程和临时目录	fixed
 2026-11-09T19:12:08Z	live-lane	e2e 报告按运行分目录（.out/run-<runner pid>，保留最近 5 次）；临时目录在假模型启动成功后才建	W4 lane 6：同一检出里两次 just e2e 同时跑，后一次清掉前一次的报告目录导致 ENOENT；该失败又在 try 之外，泄漏了临时目录（lane 8）	setup.e2e.ts 新测试先红后绿；两次并发 36/36、36/36	fixed
 2026-11-09T19:13:17Z	w4-lanes	W4 十条实测和性能全部通过（6、8 修后重跑）	首轮被 Mac 睡眠打断已作废；第二轮 caffeinate 下运行	docs/web-client/evidence/w4/*.png；just test 中位数 8.00→7.83s；just e2e 中位数 6.13s	PASS
+2026-11-09T19:16:06Z	w4-verdict	W4 复审 PASS；顺手修两处低概率问题：收尾后不再对已停的进程组发信号；演示的子进程环境删掉行情密钥变量（startHost 支持 baseEnv），只走 secretsFile	复审：pgid 复用可能误杀；shell 导出的密钥会让演示 1-4 轮询真实行情、让 demo-5 误判	实测：有无删除时 us-market 日志分别为「密钥来自环境变量」与「未配置行情密钥」	PASS

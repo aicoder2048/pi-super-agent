@@ -34,7 +34,10 @@ export class Demo {
 		mkdirSync(this.out, { recursive: true });
 		this.stateDir = mkdtempSync(join(tmpdir(), "psa-demo-"));
 		this.config = { webPort: port, ...config };
+		// Market keys only ever come through the host's secretsFile, so a key exported in the shell cannot
+		// make demos 1-4 poll the real market or change where demo-5 reports its key from.
 		this.env = { ...process.env, PSA_STATE_DIR: this.stateDir };
+		for (const name of ["STOCK_HEATMAP_API_KEY", "MASSIVE_API_KEY", "POLYGON_API_KEY", "FINNHUB_API_KEY"]) delete this.env[name];
 		this.results = [];
 		this.t0 = Date.now();
 		this.logFile = join(this.out, "run.log");
@@ -50,7 +53,7 @@ export class Demo {
 	}
 
 	async startHost() {
-		this.host = await startHost({ models: MODELS, stateDir: this.stateDir, logFile: join(this.out, "host.log"), config: this.config, imports: this.preload ? [this.preload] : [], timeoutMs: 90_000 });
+		this.host = await startHost({ models: MODELS, stateDir: this.stateDir, logFile: join(this.out, "host.log"), config: this.config, baseEnv: this.env, imports: this.preload ? [this.preload] : [], timeoutMs: 90_000 });
 		this.log(`started host group ${this.host.pid}`);
 		return this.host.url.href;
 	}

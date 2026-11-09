@@ -27,7 +27,7 @@ export const fakeModels: Models = { router: `${FAKE_PROVIDER}/router`, worker: `
 /** All three roles are always written, so the host never falls back to the default deepseek model. */
 export function writeConfig(stateDir: string, models: Models, config: Record<string, unknown> = {}): void {
 	for (const ref of Object.values(models)) {
-		if (PAY_PER_USE_PROVIDERS.includes(parseModelRef(ref).provider.toLowerCase())) throw new Error(`拒绝使用 ${ref}：按量计费，自动化里禁用`);
+		if (PAY_PER_USE_PROVIDERS.includes(parseModelRef(ref.trim()).provider.trim().toLowerCase())) throw new Error(`拒绝使用 ${ref}：按量计费，自动化里禁用`);
 	}
 	mkdirSync(stateDir, { recursive: true });
 	writeFileSync(join(stateDir, "config.json"), JSON.stringify({ ...config, models }, null, 2));
@@ -115,13 +115,15 @@ export interface StartHostOptions {
 	logFile: string;
 	config?: Record<string, unknown>;
 	env?: Record<string, string>;
+	/** The environment to start from instead of process.env, e.g. with market keys removed. */
+	baseEnv?: NodeJS.ProcessEnv;
 	imports?: string[];
 	timeoutMs?: number;
 }
 
 export async function startHost(options: StartHostOptions): Promise<HostRun> {
 	writeConfig(options.stateDir, options.models, options.config);
-	const env = { ...process.env, ...options.env, PSA_STATE_DIR: options.stateDir };
+	const env = { ...(options.baseEnv ?? process.env), ...options.env, PSA_STATE_DIR: options.stateDir };
 	let text = "";
 	const groups: number[] = [];
 	let current = 0;
@@ -149,9 +151,11 @@ export async function startHost(options: StartHostOptions): Promise<HostRun> {
 			});
 		});
 
+	// Forget groups once they are gone, so a later stop never signals a recycled pgid.
 	const stopAll = async () => {
 		const left: number[] = [];
 		for (const pgid of groups) if (!(await stopGroup(pgid))) left.push(pgid);
+		groups.splice(0, groups.length, ...left);
 		return left;
 	};
 
