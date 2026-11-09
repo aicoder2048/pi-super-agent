@@ -920,3 +920,95 @@ test("看板：等回答的任务带上它在等的问题（汇报 id、文字�
 	handOverUserMessage(asking, "只看营收");
 	assert.equal(rows().查财报, null, "使用者回答后不再等");
 });
+
+function askSetup() {
+	const s = setup();
+	const ticketId = s.open("request", { title: "查财报" });
+	s.run(ticketId);
+	const ask = (options = ["只看营收", "营收和利润", "先不查"]) =>
+		s.kernel.workerReport(ticketId, { status: "blocked", summary: "两种口径", question: "要看哪部分？", options }).reportId;
+	const reportId = ask();
+	s.drain();
+	const answer = (option: number, id = reportId) => s.kernel.answerQuestion({ reportId: id, option, at: s.clock.t });
+	const userLines = () => s.kernel.conversation().filter((l) => l.who === "user").map((l) => l.text);
+	const row = () => s.kernel.listTickets().find((r) => r.id === ticketId)!;
+	return { ...s, ticketId, reportId, ask, answer, userLines, row };
+}
+
+test("点选回答：成为使用者在对话里说的一句「回答任务「标题」：选项」，交给 Router 处理，任务还没收到", () => {
+	const { kernel, ticketId, answer, userLines, notices, row } = askSetup();
+	const result = answer(1);
+	assert.ok(result.ok);
+	assert.equal(result.duplicate, false);
+	assert.equal(result.text, "回答任务「查财报」：营收和利润");
+	assert.deepEqual(userLines().at(-1), "回答任务「查财报」：营收和利润");
+	assert.deepEqual(notices(), [{ kind: "conversation", triggerId: result.triggerId }]);
+	assert.deepEqual(kernel.pendingInputs(ticketId), [], "Router 转交之前任务收不到");
+	assert.equal(row().stage, "awaiting_answer");
+	assert.equal(row().question?.answered, 1, "所有客户端都看得到已经点过哪一个");
+});
+
+test("点选回答是幂等的：连点、换个选项再点、另一个客户端或超时重试，都得到同一条触发，Router 只收到一次；转交之后再点也一样", () => {
+	const { kernel, ticketId, answer, userLines, notices } = askSetup();
+	const first = answer(0);
+	const again = answer(0);
+	const other = answer(2);
+	assert.ok(first.ok && again.ok && other.ok);
+	assert.deepEqual([again.triggerId, other.triggerId], [first.triggerId, first.triggerId]);
+	assert.deepEqual([again.duplicate, other.duplicate], [true, true]);
+	assert.deepEqual(userLines(), ["查财报", "回答任务「查财报」：只看营收"]);
+	assert.equal(notices().length, 1);
+	assert.ok(kernel.route([{ kind: "hand_over", triggerId: first.triggerId, ticketId }])[0].ok);
+	const late = answer(1);
+	assert.ok(late.ok);
+	assert.equal(late.triggerId, first.triggerId);
+});
+
+test("点选回答被拒：问题已经打字回答过、被新问题取代、选项超出范围、问题没有选项、汇报不存在；被拒时对话里不多一句", () => {
+	const typed = askSetup();
+	typed.handOverUserMessage(typed.ticketId, "都看");
+	const superseded = askSetup();
+	superseded.ask(["甲", "乙"]);
+	const range = askSetup();
+	const open = askSetup();
+	const openId = open.kernel.workerReport(open.ticketId, { status: "blocked", summary: "s", question: "你想要什么？" }).reportId;
+	const cases = [
+		[typed, typed.answer(0)],
+		[superseded, superseded.answer(0)],
+		[range, range.answer(3)],
+		[open, open.answer(0, openId)],
+		[range, range.answer(0, "rpt_missing")],
+	] as const;
+	for (const [s, result] of cases) {
+		assert.equal(result.ok, false, JSON.stringify(result));
+		assert.ok(!s.userLines().some((l) => l.startsWith("回答任务")), "被拒时没有新的一句");
+	}
+});
+
+test("点选回答只能转交给它回答的任务：拿去开新任务或转交给别的任务都被拒绝；转交给本任务时 Worker 收到这句使用者的话", () => {
+	const { kernel, ticketId, answer, open } = askSetup();
+	const other = open("request", { title: "写周报" });
+	const { triggerId } = answer(0) as { triggerId: string };
+	const [opened, wrong] = kernel.route([
+		{ kind: "open_ticket", basis: "request", triggerId, title: "只看营收", brief: "只看营收" },
+		{ kind: "hand_over", triggerId, ticketId: other },
+	]);
+	assert.equal(opened.ok, false);
+	assert.equal(wrong.ok, false);
+	assert.match(!opened.ok ? opened.reason : "", new RegExp(ticketId));
+	const [right] = kernel.route([{ kind: "hand_over", triggerId, ticketId }]);
+	assert.ok(right.ok);
+	assert.deepEqual(kernel.pendingInputs(ticketId).map((i) => [i.kind, i.body]), [["user_message", "回答任务「查财报」：只看营收"]]);
+	assert.equal(kernel.getTicket(ticketId)!.stage, "running");
+});
+
+test("读取点选回答的触发时带上它回答的任务、汇报、问题和选项；打字说的话没有", () => {
+	const { kernel, ticketId, reportId, answer, say } = askSetup();
+	const { triggerId } = answer(2) as { triggerId: string };
+	const found = kernel.read(triggerId);
+	assert.ok(found?.type === "trigger");
+	assert.deepEqual(found.answers, { ticketId, reportId, question: "要看哪部分？", option: "先不查" });
+	const typed = kernel.read(say("随便说一句").triggerId);
+	assert.ok(typed?.type === "trigger");
+	assert.equal(typed.answers, null);
+});

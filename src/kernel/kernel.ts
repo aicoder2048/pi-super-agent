@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
+import { answerExternalId, answerSentence, reportIdOfAnswer } from "./question.ts";
 import { deriveStage } from "./stage.ts";
 import { inTransaction } from "./store.ts";
 import {
+	CONVERSATION_SOURCE,
 	CONVERSATION_THREAD_ID,
 	DEFAULT_CONFIG,
 	RETRY_BACKOFF_MS,
@@ -11,6 +13,7 @@ import {
 import type {
 	Action,
 	ActionKind,
+	AnswerClick,
 	Basis,
 	Clock,
 	DashboardRow,
@@ -42,6 +45,9 @@ type Row = Record<string, any>;
 const RECOVERY_NOTE = "process restarted; inspect your workdir before repeating any external action";
 
 const reject = (reason: string) => ({ ok: false as const, reason });
+
+const answerOnly = (triggerId: string, ticketId: string) =>
+	`${triggerId} is the user's click answering ${ticketId}'s question; route hand_over to ${ticketId}`;
 
 function localDayStart(ms: number): number {
 	const d = new Date(ms);
@@ -167,6 +173,37 @@ export class Kernel {
 				this.#enqueue({ kind: "router.notify", payload });
 			}
 			return { triggerId, duplicate: false };
+		});
+	}
+
+	/**
+	 * A click on an option, written as the user's own conversation message for the Router to hand over (ADR-0006).
+	 * A repeat of an accepted click returns that same trigger; only a stale question is refused.
+	 */
+	answerQuestion({ reportId, option, at }: { reportId: string; option: number; at: number }): Result<{ triggerId: string; text: string; duplicate: boolean }> {
+		return this.#tx(() => {
+			const externalId = answerExternalId(reportId);
+			const existing = this.#get("SELECT id, body FROM triggers WHERE source = ? AND external_id = ?", CONVERSATION_SOURCE, externalId);
+			if (existing) return { ok: true, triggerId: existing.id, text: existing.body, duplicate: true };
+			const report = this.#get("SELECT ticket_id, options FROM reports WHERE id = ?", reportId);
+			if (!report) return reject(`unknown report ${reportId}`);
+			const ticket = this.#ticket(report.ticket_id)!;
+			if (ticket.stage !== "awaiting_answer" || ticket.latestReport?.id !== reportId) {
+				return reject("这个问题已经回答过，或已不在等待回答");
+			}
+			const options: string[] = JSON.parse(report.options);
+			if (options.length === 0) return reject("这个问题没有选项，请直接回复");
+			if (!Number.isInteger(option) || option < 0 || option >= options.length) return reject(`这个问题只有 ${options.length} 个选项`);
+			const text = answerSentence(ticket.title, options[option]);
+			const { triggerId } = this.submitTrigger({
+				source: CONVERSATION_SOURCE,
+				externalId,
+				threads: [{ id: CONVERSATION_THREAD_ID, title: "对话" }],
+				sender: "user",
+				body: text,
+				occurredAt: at,
+			});
+			return { ok: true, triggerId, text, duplicate: false };
 		});
 	}
 
@@ -521,7 +558,7 @@ export class Kernel {
 				stage: t.stage,
 				basis: t.basis,
 				latestSummary: t.latestReport?.summary ?? null,
-				question: t.stage === "awaiting_answer" ? this.#pendingQuestion(t.latestReport!) : null,
+				question: t.stage === "awaiting_answer" ? this.#pendingQuestion(t.title, t.latestReport!) : null,
 				model: t.model,
 				fellBack: t.fellBack,
 				toolCalls: t.toolCalls,
@@ -533,8 +570,24 @@ export class Kernel {
 		});
 	}
 
-	#pendingQuestion(report: Report): PendingQuestion {
-		return { reportId: report.id, text: report.question!, options: report.options, askedAt: report.createdAt, answered: null };
+	#pendingQuestion(title: string, report: Report): PendingQuestion {
+		const click = this.#get("SELECT body FROM triggers WHERE source = ? AND external_id = ?", CONVERSATION_SOURCE, answerExternalId(report.id));
+		const picked = click ? report.options.findIndex((o) => answerSentence(title, o) === click.body) : -1;
+		return { reportId: report.id, text: report.question!, options: report.options, askedAt: report.createdAt, answered: picked === -1 ? null : picked };
+	}
+
+	#answerOf(trigger: Trigger): AnswerClick | null {
+		const reportId = trigger.source === CONVERSATION_SOURCE ? reportIdOfAnswer(trigger.externalId) : null;
+		if (!reportId) return null;
+		const r = this.#get("SELECT r.ticket_id, r.question, r.options, t.title FROM reports r JOIN tickets t ON t.id = r.ticket_id WHERE r.id = ?", reportId);
+		if (!r) return null;
+		const option = (JSON.parse(r.options) as string[]).find((o) => answerSentence(r.title, o) === trigger.body) ?? "";
+		return { ticketId: r.ticket_id, reportId, question: r.question, option };
+	}
+
+	#boundTicket(triggerId: string): string | null {
+		const row = this.#get("SELECT * FROM triggers WHERE id = ?", triggerId);
+		return row ? (this.#answerOf(toTrigger(row))?.ticketId ?? null) : null;
 	}
 
 	pendingInputs(ticketId: string): TicketInput[] {
@@ -547,9 +600,11 @@ export class Kernel {
 		if (id.startsWith("trg_")) {
 			const row = this.#get("SELECT * FROM triggers WHERE id = ?", id);
 			if (!row) return undefined;
+			const trigger = toTrigger(row);
 			return {
 				type: "trigger",
-				trigger: toTrigger(row),
+				trigger,
+				answers: this.#answerOf(trigger),
 				threadIds: this.#column("SELECT thread_id AS v FROM trigger_threads WHERE trigger_id = ?", id),
 				ticketIds: this.#column(
 					`SELECT ticket_id AS v FROM ticket_inputs WHERE trigger_id = ?
@@ -655,6 +710,8 @@ export class Kernel {
 				if (!trigger) return reject(`unknown trigger ${d.triggerId}`);
 				const unusable = this.#evidenceProblem(d.triggerId, takenThisRoute);
 				if (unusable) return reject(unusable);
+				const bound = this.#boundTicket(d.triggerId);
+				if (bound && bound !== d.ticketId) return reject(answerOnly(d.triggerId, bound));
 				const problem = this.#acceptsInput(d.ticketId);
 				if (problem) return reject(problem);
 				const kind: InputKind = this.#inConversation(d.triggerId) ? "user_message" : "trigger";
@@ -698,6 +755,8 @@ export class Kernel {
 		if (d.triggerId !== undefined && !trigger) return reject(`unknown trigger ${d.triggerId}`);
 		const unusable = d.triggerId === undefined ? undefined : this.#evidenceProblem(d.triggerId, takenThisRoute);
 		if (unusable) return reject(unusable);
+		const bound = d.triggerId === undefined ? null : this.#boundTicket(d.triggerId);
+		if (bound) return reject(answerOnly(d.triggerId!, bound));
 		if (d.basis === "request" && (d.triggerId === undefined || !this.#inConversation(d.triggerId))) {
 			return reject("basis request requires a conversation trigger from the user");
 		}

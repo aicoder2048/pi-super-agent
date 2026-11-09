@@ -207,8 +207,16 @@ export interface DashboardRow {
 	lastProgressAt: number | null;
 }
 
+/** A conversation trigger made by clicking an option of a ticket's question. */
+export interface AnswerClick {
+	ticketId: string;
+	reportId: string;
+	question: string;
+	option: string;
+}
+
 export type ReadResult =
-	| { type: "trigger"; trigger: Trigger; threadIds: string[]; ticketIds: string[] }
+	| { type: "trigger"; trigger: Trigger; threadIds: string[]; ticketIds: string[]; answers: AnswerClick | null }
 	| { type: "thread"; thread: Thread; recentTriggerIds: string[]; subscribedTicketIds: string[] }
 	| {
 			type: "ticket";
