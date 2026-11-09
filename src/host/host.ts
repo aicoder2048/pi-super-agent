@@ -11,7 +11,8 @@ import type { TriggerSubmission } from "../kernel/types.ts";
 import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import { Dispatcher } from "./dispatcher.ts";
-import { HostServer } from "./server.ts";
+import { HostServer, type Broadcast } from "./server.ts";
+import { WebGateway } from "./web.ts";
 import { ConfigError } from "../config-error.ts";
 import { WorkerExecutor, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 
@@ -42,6 +43,7 @@ export interface HostOptions {
 	createRouter(deps: HostDeps): Promise<RouterLike>;
 	createSpawner(deps: HostDeps): WorkerSpawner;
 	log?: (line: string) => void;
+	webPort?: number;
 }
 
 
@@ -70,6 +72,7 @@ export class Host {
 	readonly #stateDir: string;
 	#boardTimer: NodeJS.Timeout | undefined;
 	#heartbeat: NodeJS.Timeout | undefined;
+	#web: WebGateway | undefined;
 
 	private constructor(options: HostOptions) {
 		this.socketPath = join(options.stateDir, "host.sock");
@@ -133,9 +136,18 @@ export class Host {
 
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
-		const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath, rulesFor: options.rulesFor ?? (() => []) };
-		host.router = await options.createRouter(deps);
-		await host.server.listen(host.socketPath);
+		if (options.webPort !== undefined) {
+			host.#web = new WebGateway(() => host.snapshot());
+			await host.#web.listen(options.webPort);
+		}
+		try {
+			const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath, rulesFor: options.rulesFor ?? (() => []) };
+			host.router = await options.createRouter(deps);
+			await host.server.listen(host.socketPath);
+		} catch (error) {
+			await host.#web?.close();
+			throw error;
+		}
 		const recovered = host.kernel.recoverOnStartup();
 		if (recovered.length) host.#log(`[host] 恢复 ${recovered.length} 个执行中的任务：${recovered.join(", ")}`);
 		host.generic.start();
@@ -145,6 +157,10 @@ export class Host {
 		host.#heartbeat.unref();
 		host.dispatcher.kick();
 		return host;
+	}
+
+	get webUrl(): string | undefined {
+		return this.#web?.url;
 	}
 
 	say(text: string): string {
@@ -157,7 +173,7 @@ export class Host {
 			body: text,
 			occurredAt: at,
 		});
-		this.server.broadcast({ type: "user", id: triggerId, text, at });
+		this.#broadcast({ type: "user", id: triggerId, text, at });
 		this.#changed();
 		return triggerId;
 	}
@@ -168,8 +184,13 @@ export class Host {
 
 	#deliverReply(threadId: string, text: string, replyId: string): void {
 		if (threadId !== CONVERSATION_THREAD_ID) throw new Error(`线程 ${threadId} 没有渠道`);
-		this.server.broadcast({ type: "reply", text, at: Date.now(), replyId });
+		this.#broadcast({ type: "reply", text, at: Date.now(), replyId });
 		this.kernel.markReplyDelivered(replyId);
+	}
+
+	#broadcast(message: Broadcast): void {
+		this.server.broadcast(message);
+		this.#web?.broadcast(message);
 	}
 
 	#transcript(ticketId: string, event: unknown): void {
@@ -200,7 +221,7 @@ export class Host {
 		if (this.#boardTimer) return;
 		this.#boardTimer = setTimeout(() => {
 			this.#boardTimer = undefined;
-			this.server.broadcast({ type: "board", rows: this.kernel.listTickets() });
+			this.#broadcast({ type: "board", rows: this.kernel.listTickets() });
 		}, 100);
 	}
 
@@ -221,6 +242,6 @@ export class Host {
 		clearTimeout(this.#boardTimer);
 		await this.workers.shutdown();
 		this.router.dispose();
-		await this.server.close();
+		await Promise.all([this.server.close(), this.#web?.close()]);
 	}
 }

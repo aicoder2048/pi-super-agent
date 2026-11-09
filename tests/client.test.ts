@@ -11,7 +11,7 @@ import type { HostToClient } from "../src/client/protocol.ts";
 import { formatTranscriptMessage } from "../src/client/transcript.ts";
 import { Host } from "../src/host/host.ts";
 import type { DashboardRow } from "../src/kernel/types.ts";
-import { defaultWorkerModels, FakeSpawner, fauxRouter, openOnConversation, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
+import { defaultWorkerModels, FakeSpawner, fauxRouter, ofType, openOnConversation, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
 
 const brain: Brain = (cards) => cards.flatMap((c) => (c.startsWith("[对话]") ? openOnConversation(c) : []));
 
@@ -29,7 +29,7 @@ function client(socketPath: string) {
 	const got: HostToClient[] = [];
 	const conn = new HostConnection({ socketPath, onMessage: (m) => got.push(m), retryMs: 30 });
 	conn.open();
-	return { conn, got, of: <T extends HostToClient["type"]>(type: T) => got.filter((m) => m.type === type) as Extract<HostToClient, { type: T }>[] };
+	return { conn, got, of: <T extends HostToClient["type"]>(type: T) => ofType(got, type) };
 }
 
 test("协议：连上即收到快照；说一句话后收到回显、回复和看板", async (t) => {

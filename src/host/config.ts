@@ -17,6 +17,7 @@ export interface HostConfig {
 	heartbeatSeconds: number;
 	watchdog: { intervalMinutes: number; stuckMinutes: number; staleSeconds: number };
 	modulesDirs: string[];
+	webPort: number;
 }
 
 export function defaultStateDir(): string {
@@ -33,6 +34,10 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	if (!(watchdog.staleSeconds > 2 * heartbeatSeconds)) {
 		throw new ConfigError(`${file}：watchdog.staleSeconds（${watchdog.staleSeconds}）必须大于 heartbeatSeconds（${heartbeatSeconds}）的两倍，否则 Watchdog 会反复重启健康的宿主`);
 	}
+	const webPort = raw.webPort ?? 4517;
+	if (!Number.isInteger(webPort) || webPort < 0 || webPort > 65535) {
+		throw new ConfigError(`${file}：webPort（${JSON.stringify(webPort)}）必须是 0 到 65535 之间的整数，0 表示任意空闲端口`);
+	}
 	return {
 		stateDir,
 		models: {
@@ -48,5 +53,6 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		heartbeatSeconds,
 		watchdog,
 		modulesDirs: raw.modulesDirs ?? [fileURLToPath(new URL("../../modules", import.meta.url)), join(stateDir, "modules")],
+		webPort,
 	};
 }

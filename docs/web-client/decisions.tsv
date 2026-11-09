@@ -1,0 +1,21 @@
+ts	phase	decision	why	evidence	result
+2026-11-09T06:40:28Z	frame	在 worktree psa/web-gateway 开工，计划走 Multi-phase plan，PR 1 走 Feature	使用者要求写计划并开始第一步，用 PStack，开 worktree	.claude/worktrees/web-gateway @9ad0ddf	open
+2026-11-09T06:40:28Z	frame	deslop 与 control-ui 未安装，分别用内置 simplify 与 Playwright 代替；/loop 1h 巡检跳过	cursor-team-kit 不在本机；使用者在会话中，没有无人值守阶段	ls ~/.claude/plugins/cache/cursor-plugins = pstack only	substituted
+2026-11-09T06:40:42Z	prototype	浏览器推送用 SSE（node:http 内置）加 POST 发话，不用 WebSocket	Node 26 只有 WebSocket 客户端，服务端要自己实现帧协议或引入 ws 依赖；SSE 原型 94ms 收到 3 条事件	scratchpad/sse-proto/sse.mjs 输出	decided
+2026-11-09T06:42:47Z	plan	写四个 PR 的计划 W1 到 W4，执行用 autopilot-stack，使用者合并	使用者要求先写计划；栈式 PR 每个各自可验证	IMPLEMENTATION_PLAN.md; check-plan 0 problems	done
+2026-11-09T06:49:24Z	architect	W1 以 candidate-1 为底：外置 app.mjs 纯函数可在 node 测、CSP script-src self；嫁接 candidate-2 的 HostOptions.web 可选（不传不开网关）和 15 秒 SSE 注释保活；不要 ClientChannel 接口，Host 私有 #broadcast 直接调两处	两个 runner 独立收敛到同一形状（私有 #broadcast、Broadcast 联合类型、token 只走网址、先查 Host 再查 token、start 第一步绑端口报 ConfigError、closeAllConnections）；差异只在页面脚本放哪和测试宿主是否默认开网关	scratchpad/arena-w1/candidate-1, candidate-2	decided
+2026-11-09T06:49:24Z	architect	跳过 cross-judge	arena cross-judge pool 只有 Claude 一族（opus high, inherit-parent），评委必须来自不同族	~/.claude/rules/pstack-models.md	skipped
+2026-11-09T07:03:32Z	simplify	采纳 8 条清理：看板格式化抽成共享 board-format.mjs（静态脚本只查 Host 不要 token）、按消息类型渲染、计时只在有执行中任务时重画、URL 只解析一次、web 选项改 webPort、测试复用 fakes 助手；不采纳默认端口 0、宿主单实例检查、AsyncDisposableStack、通道接口	复制的格式化代码只有部分被漂移测试覆盖，共享模块根除漂移；单实例检查是 W1 之前就有的问题，超出范围	四个 simplify 审查报告	open
+2026-11-09T07:11:37Z	no-comments	接受 Comment Sicko 删掉的 15 条注释；5 条 MUST KILL 中 4 条交给实现者改结构，Host.start 端口先于 socket 的顺序已由 web.test.ts:275 测试锁住，不再改	顺序依赖有测试覆盖就不需要注释；其余 4 条用结构代替注释	web.test.ts:275 断言忙端口时 host.sock 不存在	done
+2026-11-09T07:11:37Z	no-comments	SSE 保活改为页面看得见的 ping 事件，并加页面侧超时判定	Sicko 指出 EventSource 收不到注释行，原来的 : ping 达不到「宿主卡死时页面不再显示已连接」的目的；app.mjs 里没有任何超时判定	src/host/web.ts:92, src/web/app.mjs:136	open
+2026-11-09T07:23:54Z	live	10 个 live lane 用一个 Playwright 脚本跑，不派 10 个代理；lane 1 用 say 命令行代替 TUI	使用者同意用一个脚本；TUI 无法在脚本里驱动，say 与 TUI 走同一 socket 协议	docs/web-client/evidence/lanes.mjs	substituted
+2026-11-09T07:23:54Z	live	第一轮 lane 6 与 lane 10 失败后改判定重跑，全部通过	lane 6 用外部投递建任务，Router 按 ADR-0003 把外部指令当数据忽略，场景错了，改为使用者亲口请求；lane 10 的第二行是正常模块日志，错误本身只有一行	docs/web-client/evidence/w1-lanes.tsv @8679edf	11/11 pass
+2026-11-09T07:23:54Z	perf	say 到 user 帧延迟：trunk socket p95 1.598ms，head socket 1.726ms，head SSE 2.116ms，规则内	交替跑 5 轮各 40 句，限制因素是一次 SQLite 写入加事件循环	docs/web-client/evidence/w1-perf.txt, perf.mts	pass
+2026-11-09T07:23:54Z	review	审查视频留在本地，不进仓库；3 张截图进 docs/web-client/media	870KB 的 webm 会永久加大仓库，gh 不能上传 PR 附件	scratchpad/live-w1/video-w1/*.webm	substituted
+2026-11-09T07:38:47Z	verdict	安全审计证明畸形请求目标让宿主崩溃，已修为 400 并先红后绿	未带 token 的本机进程能停掉宿主，违反 ADR-0004 的防护对象	commit 1357f81; tests/web.test.ts 新增 400 用例	fixed
+2026-11-09T07:38:48Z	verdict	W1 越过计划的文件边界，新增 src/client/board-format.mjs 并改 src/client/board.ts，记为例外并更新计划边界	TUI 和网页共用看板格式，消除复制；规格审计指出此前没有记录	IMPLEMENTATION_PLAN.md Hold the file boundaries	recorded
+2026-11-09T07:38:48Z	verdict	更正证据指针：保活一行指的 app.mjs:136 在拆分后已不存在，现为 src/web/app.mjs 的 isStale 调用与 src/web/view.mjs isStale；顺序一行的 web.test.ts:275 实为忙端口那条测试（按名称「端口被占用时 Host.start 报一行 ConfigError」查找）；lanes @8679edf 不在任何分支，但 8679edf 与 c881646 的 src tests justfile 无差异	规格审计发现指针对不上，日志只追加不改	git diff --stat 8679edf c881646 -- src tests justfile 为空	corrected
+2026-11-09T07:38:48Z	verdict	页面 DOM 层（token 失效提示、textContent 防注入、看门狗）没有自动测试，留给 W4 的 Playwright 测试	变异 M10 M11 全部通过说明无覆盖；这些行为要真实浏览器才测得准	IMPLEMENTATION_PLAN.md W4 Build	deferred
+2026-11-09T07:38:48Z	verdict	停掉一个测试遗留的宿主子进程（PID 36264，状态目录 psa-host-*）	测试失败路径没有清理，规格审计第 2 条；已派实现者修	ps 36264 started 22:58	done
+2026-11-09T07:49:52Z	verdict	a87935f 单验证者 PASS：src 只多了 400 处理，全量 257 两遍全绿，真实宿主上恶意目标全部 4xx 且宿主存活，M3 M8 变异 12.8s 2.8s 内失败退出无残留	上次完整验证后只有小修复，按计划规则用单个验证者	PR #18 @a87935f	PASS
+2026-11-09T07:49:52Z	trail	跳过跨模型族的决策记录复核	本机 pstack 配置只有 Claude 一族，没有其他族的模型可用	~/.claude/rules/pstack-models.md	skipped

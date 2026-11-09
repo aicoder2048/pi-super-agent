@@ -18,7 +18,7 @@ test-now:
 # 状态目录默认 ~/.pi-super-agent，可用 PSA_STATE_DIR 覆盖。
 run := "node --import ./src/pi-runtime.mjs"
 
-# 启动宿主（前台运行，日志写到 stderr）。
+# 启动宿主（前台运行，日志写到 stderr）。日志里的「网页」网址在浏览器里打开就能看对话和看板。
 host:
     {{run}} src/host/main.ts
 

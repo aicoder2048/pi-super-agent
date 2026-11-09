@@ -10,7 +10,7 @@ const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catc
 
 function stateDir() {
 	const dir = mkdtempSync(join(tmpdir(), "psa-wdmain-"));
-	writeFileSync(join(dir, "config.json"), JSON.stringify({ heartbeatSeconds: 0.1, watchdog: { intervalMinutes: 0.005, staleSeconds: 0.5 } }));
+	writeFileSync(join(dir, "config.json"), JSON.stringify({ heartbeatSeconds: 0.1, watchdog: { intervalMinutes: 0.005, staleSeconds: 0.5 }, webPort: 0 }));
 	return dir;
 }
 

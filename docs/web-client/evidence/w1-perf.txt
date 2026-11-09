@@ -1,0 +1,3 @@
+trunk socket n=200 p50=1.041 p95=1.598 ms
+head  socket n=200 p50=1.111 p95=1.726 ms
+head  sse    n=200 p50=1.249 p95=2.116 ms

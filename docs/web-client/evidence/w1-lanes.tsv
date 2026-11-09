@@ -1,0 +1,11 @@
+PASS	lane 2	status=connected
+PASS	lane 3	status=401 body=token 缺失或已失效，请用宿主日志里最新的网址打开。
+PASS	lane 3b	/events without token -> 401
+PASS	lane 4	status=403
+PASS	lane 5	user line shown 53 ms after CLI spawn (includes CLI boot); router reply shown
+PASS	lane 1	trunk has no page (recorded). socket CLI output: 23:21:37 Router> 你好，已收到网页测试 1325。
+PASS	lane 8	conversation equal=true
+PASS	lane 6	cards 1 -> 2; request via say (external drops are data, not authority)
+PASS	lane 9	dialogs=0 injected elements=0
+PASS	lane 10	exit=1 error line: 网页端口 45170 已被占用，可能另一个宿主还在运行。停掉它，或在 config.json 里改 webPort。; first host still connected=true
+PASS	lane 7	down=disconnected after-restart=expired (token 已失效，请用宿主日志里最新的网址打开) new-url=connected

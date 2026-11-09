@@ -1,6 +1,9 @@
 import { createServer, type Server, type Socket } from "node:net";
 import { rmSync } from "node:fs";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
+import type { HostToClient } from "../client/protocol.ts";
+
+export type Broadcast = Extract<HostToClient, { type: "user" | "reply" | "board" }>;
 
 export interface ClientHandlers {
 	onSay(text: string): string;
@@ -74,7 +77,7 @@ export class HostServer {
 		});
 	}
 
-	broadcast(message: object): void {
+	broadcast(message: Broadcast): void {
 		for (const c of this.#clients) writeJsonLine(c.socket, message);
 	}
 

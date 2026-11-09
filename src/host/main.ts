@@ -16,6 +16,7 @@ async function main(): Promise<void> {
 
 	const host = await Host.start(createHostOptions({ config, modules, modelRuntime: await ModelRuntime.create(), log }));
 	log(`[host] 已启动，状态目录 ${config.stateDir}，Router ${formatModelRef(config.models.router)}，Worker ${formatModelRef(config.models.worker)}，回退 ${formatModelRef(config.models.fallback)}`);
+	log(`[host] 网页 ${host.webUrl}`);
 
 	let stopping = false;
 	for (const signal of ["SIGINT", "SIGTERM"] as const) {

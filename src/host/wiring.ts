@@ -39,6 +39,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 	return {
 		stateDir: config.stateDir,
 		heartbeatMs: config.heartbeatSeconds * 1000,
+		webPort: config.webPort,
 		config: config.kernel,
 		log,
 		sourcePolicy: modules.sourcePolicy,
