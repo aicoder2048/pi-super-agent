@@ -344,7 +344,7 @@ test("页面：助手条每位在岗助手一枚小卡（●运行中 ◐空闲 
 	const view = page.emptyView();
 	page.applyMessage(view, board([
 		row({ id: "tkt_run", workerState: "running", elapsedMs: 5000 }),
-		row({ id: "tkt_idl", stage: "idle", workerState: "idle", helper: { name: "雪泥鸿爪", role: "market", seq: 2 }, tokensIn: 0, tokensOut: 0, elapsedMs: 60_000 }),
+		row({ id: "tkt_idl", stage: "idle", workerState: "idle", helper: { name: "远山", role: "market", seq: 2 }, tokensIn: 0, tokensOut: 0, elapsedMs: 60_000 }),
 		row({ id: "tkt_que", stage: "queued", workerState: "queued", helper: { name: "青檀", role: "watch", seq: 1 }, startedAt: null, elapsedMs: 0 }),
 		row({ id: "tkt_ask", stage: "awaiting_answer", workerState: "idle", helper: { name: "观澜", role: "rule", seq: 3 } }),
 		row({ id: "tkt_end", stage: "closed", workerState: "idle", endedAt: 9000, helper: { name: "知微", role: "rule", seq: 1 } }),
@@ -353,7 +353,7 @@ test("页面：助手条每位在岗助手一枚小卡（●运行中 ◐空闲 
 	const strip = page.helperStrip(view, 3000);
 	assert.deepEqual(strip.chips.map(({ id, ...shown }) => shown), [
 		{ duty: "running", mark: "●", state: "运行中", name: "青檀", role: "对话助手 #1", elapsed: "7秒", tokens: "1.5k tokens" },
-		{ duty: "idle", mark: "◐", state: "空闲", name: "雪泥鸿爪", role: "行情助手 #2", elapsed: "1分2秒", tokens: "0 tokens" },
+		{ duty: "idle", mark: "◐", state: "空闲", name: "远山", role: "行情助手 #2", elapsed: "1分2秒", tokens: "0 tokens" },
 		{ duty: "queued", mark: "○", state: "排队", name: "青檀", role: "观察助手 #1", elapsed: "0秒", tokens: "1.5k tokens" },
 		{ duty: "idle", mark: "◐", state: "空闲", name: "观澜", role: "规则助手 #3", elapsed: "7秒", tokens: "1.5k tokens" },
 	]);
