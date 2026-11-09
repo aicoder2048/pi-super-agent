@@ -128,7 +128,7 @@ function mount(doc) {
 		done.open = /** @type {HTMLDetailsElement | null} */ (doc.getElementById("done"))?.open ?? false;
 		const list = el("div", "list");
 		list.append(...left.done.map((c) => taskCard(c, "done")));
-		done.append(el("summary", "", `${left.doneLine} ›`), list);
+		done.append(el("summary", "", left.doneLine), list);
 		$("left").replaceChildren(
 			section(`待你处理 · ${left.needsYou.length}`, left.needsYou.map((c) => taskCard(c, "ask")), "暂无待处理事项。", "warn"),
 			section(`进行中 · ${left.doing.length}`, left.doing.map((c) => taskCard(c, "doing")), "暂无进行中的任务。"),

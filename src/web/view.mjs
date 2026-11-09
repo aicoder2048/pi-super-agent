@@ -142,7 +142,7 @@ export function todayCopy(counts) {
 	if (!counts) return { headline: "", detail: "" };
 	const d = counts.byDisposition;
 	const total = Object.values(d).reduce((a, b) => a + b, 0);
-	if (total === 0) return { headline: "今日暂无消息", detail: "" };
+	if (total === 0) return { headline: "今日暂无来源消息", detail: "" };
 	const handed = d.delivered + d.handed_over;
 	const ignored = d.ignored + d.router_ignored;
 	const clauses = [
@@ -151,7 +151,7 @@ export function todayCopy(counts) {
 		d.to_router && `处理中 ${d.to_router}`,
 		ignored && `无需处理 ${ignored}`,
 	].filter(Boolean);
-	return { headline: `今日消息 · ${total}`, detail: clauses.join(" · ") };
+	return { headline: `今日来源消息 · ${total}`, detail: clauses.join(" · ") };
 }
 
 const RESTART_NOTICE_MS = 30 * 60_000;

@@ -109,14 +109,14 @@ test("页面：关注的来源每一行用来源原名，显示第一条规则�
 	]);
 });
 
-test("页面：今日消息 · N，明细只列不为 0 的去向", () => {
+test("页面：今日来源消息 · N，明细只列不为 0 的去向", () => {
 	const counts = (over: Partial<TodayCounts["byDisposition"]>) => ({ ...zeroToday(), byDisposition: { ...zeroToday().byDisposition, ...over } });
-	assert.deepEqual(page.todayCopy(counts({})), { headline: "今日暂无消息", detail: "" });
+	assert.deepEqual(page.todayCopy(counts({})), { headline: "今日暂无来源消息", detail: "" });
 	assert.deepEqual(page.todayCopy(counts({ opened_ticket: 2, delivered: 1, handed_over: 1, to_router: 1, ignored: 5, router_ignored: 4 })), {
-		headline: "今日消息 · 14",
+		headline: "今日来源消息 · 14",
 		detail: "新建任务 2 · 转入进行中任务 2 · 处理中 1 · 无需处理 9",
 	});
-	assert.deepEqual(page.todayCopy(counts({ opened_ticket: 1 })), { headline: "今日消息 · 1", detail: "新建任务 1" });
+	assert.deepEqual(page.todayCopy(counts({ opened_ticket: 1 })), { headline: "今日来源消息 · 1", detail: "新建任务 1" });
 	assert.deepEqual(page.todayCopy(undefined), { headline: "", detail: "" });
 });
 
