@@ -29,7 +29,7 @@ export function defaultStateDir(): string {
 }
 
 export function loadConfig(stateDir = defaultStateDir()): HostConfig {
-	mkdirSync(stateDir, { recursive: true });
+	mkdirSync(stateDir, { recursive: true, mode: 0o700 });
 	const file = join(stateDir, "config.json");
 	const raw = existsSync(file) ? readJsonFile<Record<string, any>>(file) : {};
 	const models = { ...DEFAULT_MODELS, ...(raw.models ?? {}) };

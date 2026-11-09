@@ -90,7 +90,7 @@ export class Host {
 	private constructor(options: HostOptions) {
 		this.socketPath = join(options.stateDir, "host.sock");
 		assertSocketPathFits(this.socketPath);
-		mkdirSync(options.stateDir, { recursive: true });
+		mkdirSync(options.stateDir, { recursive: true, mode: 0o700 });
 		this.#log = options.log ?? ((line) => console.error(line));
 		if (relocateState(options.stateDir)) this.#log(`[host] 状态目录换了位置，已把会话记录的工作目录改到 ${options.stateDir}`);
 		this.#stateDir = options.stateDir;

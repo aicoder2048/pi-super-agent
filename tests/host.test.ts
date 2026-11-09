@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { ROUTER_TOOL_NAMES } from "../src/host/router.ts";
@@ -216,4 +216,11 @@ test("状态目录路径太长、socket 超出系统上限时，启动前就给�
 	writeFileSync(marker, JSON.stringify({ path: "/somewhere/else" }));
 	await assert.rejects(startHost(() => [], () => {}, { stateDir: long }), /状态目录路径太长.*PSA_STATE_DIR/s);
 	assert.deepEqual(JSON.parse(readFileSync(marker, "utf8")), { path: "/somewhere/else" });
+});
+
+test("宿主启动时状态目录不存在就建成 0700", async (t) => {
+	const stateDir = join(tempStateDir(), "state");
+	const { host } = await startHost(() => [], () => {}, { stateDir });
+	t.after(() => host.stop());
+	assert.equal(statSync(stateDir).mode & 0o777, 0o700);
 });
