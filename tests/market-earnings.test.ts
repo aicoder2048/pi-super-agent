@@ -82,3 +82,27 @@ test("财报：401/403/429/非 JSON/带 error 的响应都变成中文错误，�
 		await assert.rejects(f.client.earnings("NVDA", TODAY), (e: Error) => error.test(e.message) && !e.message.includes(KEY) && !/Invalid|access|忽略|slow/.test(e.message), error.source);
 	}
 });
+
+test("财报 429：按 Retry-After 冷却，冷却结束前不发下一个请求；Retry-After 为 0 时至少冷却 1 秒", async () => {
+	for (const [header, seconds] of [["30", 30], ["0", 1]] as const) {
+		let first = true;
+		const f = fakeHttp(() => {
+			if (!first) return Response.json([]);
+			first = false;
+			return new Response("slow", { status: 429, headers: { "Retry-After": header } });
+		}, 0);
+		const client = new FinnhubClient({ key: KEY, minGapMs: 0, http: f.http, clock: f.clock, sleep: f.sleep });
+		await assert.rejects(client.earnings("NVDA", TODAY), new RegExp(`${seconds} 秒后重试`));
+		await client.earnings("NVDA", TODAY).catch(() => {});
+		assert.ok(f.calls[2]!.at - f.calls[0]!.at >= seconds * 1000, `${header}: ${f.calls.map((c) => c.at)}`);
+	}
+});
+
+test("财报排队上限：排队的请求达到 maxQueued 时新查询直接报「排队已满」，队列空了之后又能查", async () => {
+	const f = finnhub(routes());
+	const client = new FinnhubClient({ key: KEY, minGapMs: 1000, http: f.http, clock: f.clock, sleep: f.sleep, maxQueued: 3 });
+	const [a, b] = await Promise.allSettled([client.earnings("NVDA", TODAY), client.earnings("NVDA", TODAY)]);
+	assert.equal(a.status, "fulfilled");
+	assert.ok(b.status === "rejected" && /排队已满/.test(String(b.reason)));
+	assert.equal((await client.earnings("NVDA", TODAY)).symbol, "NVDA");
+});
