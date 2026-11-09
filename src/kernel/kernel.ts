@@ -923,18 +923,19 @@ export class Kernel {
 				return reject(`unknown thread ${threadId}; new threads must look like thr_<source>:<thread>`);
 			}
 		}
-		if (d.team !== undefined && !this.#teams.kinds.has(d.team)) {
-			return reject(`unknown team ${d.team}; the teams are ${[...this.#teams.kinds.keys()].join(", ")} (omit team for the default one)`);
+		const asked = typeof d.team === "string" && !d.team.trim() ? undefined : d.team;
+		if (asked !== undefined && !this.#teams.kinds.has(asked)) {
+			return reject(`unknown team ${asked}; the teams are ${[...this.#teams.kinds.keys()].join(", ")} (omit team for the default one)`);
 		}
 		const pinned = d.basis === "rule" ? this.#teams.pinned.get(d.ruleId!) : undefined;
-		const team = pinned ?? d.team ?? DEFAULT_TEAM;
+		const team = pinned ?? asked ?? DEFAULT_TEAM;
 		if (d.basis === "inference") {
 			const limitProblem = this.#inferenceDailyLimitProblem();
 			if (limitProblem) return reject(limitProblem);
 		}
 
 		const ticketId = this.#id("tkt");
-		if (d.team !== undefined && d.team !== team) this.#log(`[kernel] 规则 ${d.ruleId} 写明团队「${team}」，幕僚长填的是「${d.team}」，任务 ${ticketId} 已改回「${team}」`);
+		if (asked !== undefined && asked !== team) this.#log(`[kernel] 规则 ${d.ruleId} 写明团队「${team}」，幕僚长填的是「${asked}」，任务 ${ticketId} 已改回「${team}」`);
 		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now(), team);
 		this.#run(
 			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, team)

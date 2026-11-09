@@ -114,3 +114,4 @@ ts	phase	decision	why	evidence	result
 2026-11-09T22:37:19Z	t1-fix	teams.yaml 名单里带引号的成员名去掉引号	原来先去引号再去空格，引号留在名字里，启动时说成员不存在	tests/teams.test.ts「teams.yaml：成员名可以带引号」；红：actual [ '"news-researcher"', "'x'" ]；绿：54c7190	teams.test.ts 41 通过
 2026-11-09T22:37:30Z	t1-fix	teams.yaml 接受全角冒号；空团队名和带控制字符的团队名报文件和行号	rules.md 两种冒号都收，中文输入法打出来的就是全角；空名和控制字符原来悄悄通过	tests/teams.test.ts「冒号可以写成全角的「：」」和 MALFORMED 两条；红：顶层每行应是「团队名:」，这一行是「新闻队：」；两条 Missing expected exception；绿：a39c9c8	teams.test.ts 44 通过
 2026-11-09T22:37:42Z	t1-fix	成员的 tools 写了却是空的（空值、空字符串、空列表）一律在加载时报错；不写这个字段仍是不另设限	原来「tools:」是不设限，「tools: ""」是一个工具都没有，两种空的写法权限相反	tests/teams.test.ts「成员的 tools 写了却是空的…」；红：Missing expected exception；绿：9261066	teams.test.ts 45 通过
+2026-11-09T22:38:15Z	t1-fix	rules.md 里写坏的「团队：」行（团队名带空白、空的、一条规则两行）加载时报错，写出规则文件和规则 id；parseRules 多收一个文件名参数	原来这一行落进规则正文，规则照常加载但没钉住团队，使用者写了却不生效也没有提示	tests/modules.test.ts「规则的「团队：」行写坏了…」；红：Missing expected exception: 团队：新闻 队；绿：61e95cd	modules.test.ts 9 通过

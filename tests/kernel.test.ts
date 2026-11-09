@@ -1275,6 +1275,14 @@ test("每个任务都有团队：open_ticket 省略 team 就是默认团队，�
 	assert.deepEqual(s.logs, []);
 });
 
+test("open_ticket 的 team 是空串或只有空白：当作没填，用默认团队；规则钉死时用规则的团队，不记日志", () => {
+	const s = setup({ teams: TEAMS });
+	assert.equal(teamOf(s.kernel, s.open("request", { team: "" })), DEFAULT_TEAM);
+	assert.equal(teamOf(s.kernel, s.open("request", { team: "  " })), DEFAULT_TEAM);
+	assert.equal(teamOf(s.kernel, s.open("rule", { ruleId: "rule-news", team: "" })), "新闻队");
+	assert.deepEqual(s.logs, []);
+});
+
 test("没有配置任何团队时，内核只认默认团队", () => {
 	const s = setup();
 	assert.equal(teamOf(s.kernel, s.open("request")), DEFAULT_TEAM);
