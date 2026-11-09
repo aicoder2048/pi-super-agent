@@ -85,7 +85,8 @@ export type Action =
 	| { kind: "router.notify"; payload: RouterNotice }
 	| { kind: "worker.wake"; payload: { ticketId: string } }
 	| { kind: "worker.stop"; payload: { ticketId: string } }
-	| { kind: "channel.reply"; payload: { threadId: string; text: string; replyId: string } };
+	/** about: the ticket a reply concerns (its cause was a tkt_), so clients can put that task's options under it. */
+	| { kind: "channel.reply"; payload: { threadId: string; text: string; replyId: string; about: string | null } };
 
 export type PendingAction = Action & { id: string; attempts: number; createdAt: number };
 

@@ -143,7 +143,7 @@ export class Host {
 				"router.notify": (notice, actionId) => this.router.inject(notice, actionId),
 				"worker.wake": ({ ticketId }) => this.workers.wake(ticketId),
 				"worker.stop": ({ ticketId }) => this.workers.stop(ticketId),
-				"channel.reply": ({ threadId, text, replyId }) => this.#deliverReply(threadId, text, replyId),
+				"channel.reply": ({ threadId, text, replyId, about }) => this.#deliverReply(threadId, text, replyId, about),
 			},
 			onError: (action, error) => this.#log(`[dispatcher] ${action.kind} 失败（第 ${action.attempts + 1} 次）：${String(error)}`),
 		});
@@ -217,9 +217,9 @@ export class Host {
 		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty };
 	}
 
-	#deliverReply(threadId: string, text: string, replyId: string): void {
+	#deliverReply(threadId: string, text: string, replyId: string, about: string | null | undefined): void {
 		if (threadId !== CONVERSATION_THREAD_ID) throw new Error(`线程 ${threadId} 没有渠道`);
-		this.#broadcast({ type: "reply", text, at: Date.now(), replyId });
+		this.#broadcast({ type: "reply", text, at: Date.now(), replyId, ...(about ? { about } : {}) });
 		this.kernel.markReplyDelivered(replyId);
 	}
 

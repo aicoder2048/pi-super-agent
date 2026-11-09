@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ids, openOnConversation, startHost, until, type Brain } from "./helpers/fakes.ts";
+import { HostConnection } from "../src/client/connection.ts";
+import type { HostToClient } from "../src/client/protocol.ts";
+import { ids, ofType, openOnConversation, startHost, until, type Brain } from "./helpers/fakes.ts";
 
 const openOnly: Brain = (cards) => cards.flatMap((card) => (card.startsWith("[对话]") ? openOnConversation(card) : []));
 
@@ -94,4 +96,22 @@ test("点选回答的 [对话] 卡片多一行，写明回答的是哪个任务�
 	assert.match(card, new RegExp(`^点选回答：${row.id}「查财报」的问题「要看哪部分？」`, "m"));
 	assert.ok(spawner.workers.get(row.id)!.inputs.some((i) => i.includes("[使用者的话（经 Router 转交）]") && i.includes("回答任务「查财报」：营收和利润")));
 	assert.equal(host.kernel.listTickets()[0].latestSummary, "收到：回答任务「查财报」：营收和利润");
+});
+
+test("客户端收到的幕僚长转述问题那一行带上 about 任务 id，和对话历史里一致", async (t) => {
+	const started = await startHost(relayAndHandOver, (w) => {
+		w.report({ status: "blocked", summary: "两种口径", question: "要看哪部分？", options: OPTIONS });
+		w.settle();
+	});
+	const got: HostToClient[] = [];
+	const conn = new HostConnection({ socketPath: started.host.socketPath, onMessage: (m) => got.push(m), retryMs: 30 });
+	conn.open();
+	t.after(async () => { conn.close(); await started.host.stop(); });
+	await until(() => conn.connected, "连接");
+	started.host.say("查财报");
+	await until(() => ofType(got, "reply").some((m) => m.text === "要看财报的哪部分？"), "转述问题");
+	const ticketId = started.host.kernel.listTickets()[0].id;
+	const replies = ofType(got, "reply").map((m) => [m.text, m.about]);
+	assert.deepEqual(replies, [["收到：查财报", undefined], ["要看财报的哪部分？", ticketId]]);
+	assert.deepEqual(started.host.kernel.conversation().filter((l) => l.who === "router").map((l) => l.about), [undefined, ticketId]);
 });

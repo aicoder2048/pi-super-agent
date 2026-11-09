@@ -1012,3 +1012,14 @@ test("读取点选回答的触发时带上它回答的任务、汇报、问题�
 	assert.ok(typed?.type === "trigger");
 	assert.equal(typed.answers, null);
 });
+
+test("对话历史里幕僚长关于某个任务的回复带上 about 任务 id；回应使用者的话的回复不带", () => {
+	const { kernel, ticketId } = askSetup();
+	const asked = kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "要看哪部分？", cause: ticketId });
+	assert.ok(asked.ok);
+	const lines = kernel.conversation();
+	assert.deepEqual(lines.at(-1), { id: asked.replyId, who: "router", text: "要看哪部分？", at: lines.at(-1)!.at, about: ticketId });
+	const hi = kernel.submitTrigger({ source: "conversation", externalId: "hi", threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body: "在吗", occurredAt: 0 }).triggerId;
+	assert.ok(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "在", cause: hi }).ok);
+	assert.equal("about" in kernel.conversation().at(-1)!, false);
+});

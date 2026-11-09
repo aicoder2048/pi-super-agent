@@ -1,6 +1,7 @@
 import type { DashboardRow, Disposition } from "../kernel/types.ts";
 
-export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number };
+/** about: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
+export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; about?: string };
 
 /** `resumed` counts the running tickets recovered at this start; 0 means a clean start. */
 export interface Duty {
@@ -38,7 +39,7 @@ export type HostToClient =
 	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; watching: WatchedSource[] }
 	| { type: "user"; id: string; text: string; at: number }
 	| { type: "ack"; requestId: string; triggerId: string }
-	| { type: "reply"; text: string; at: number; replyId: string }
+	| { type: "reply"; text: string; at: number; replyId: string; about?: string }
 	| ({ type: "board" } & BoardState)
 	| { type: "transcript_history"; ticketId: string; messages: TranscriptMessage[] }
 	| { type: "transcript"; ticketId: string; message: TranscriptMessage };

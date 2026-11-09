@@ -245,7 +245,7 @@ export class Kernel {
 				text,
 				this.#now(),
 			);
-			this.#enqueue({ kind: "channel.reply", payload: { threadId, text, replyId } });
+			this.#enqueue({ kind: "channel.reply", payload: { threadId, text, replyId, about: cause.startsWith("tkt_") ? cause : null } });
 			return { ok: true, replyId };
 		});
 	}
@@ -665,20 +665,20 @@ export class Kernel {
 		}));
 	}
 
-	conversation(limit = 50): { id: string; who: "user" | "router"; text: string; at: number }[] {
+	conversation(limit = 50): { id: string; who: "user" | "router"; text: string; at: number; about?: string }[] {
 		return this.#all(
 			`SELECT * FROM (
-				SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord FROM triggers t
+				SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord, NULL AS cause FROM triggers t
 				JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ?
 				UNION ALL
-				SELECT r.id, 'router', r.text, r.created_at, r.rowid FROM reply_receipts r WHERE r.thread_id = ?
+				SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause FROM reply_receipts r WHERE r.thread_id = ?
 			) ORDER BY at DESC, who = 'router' DESC, ord DESC LIMIT ?`,
 			CONVERSATION_THREAD_ID,
 			CONVERSATION_THREAD_ID,
 			limit,
 		)
 			.reverse()
-			.map((r) => ({ id: r.id, who: r.who, text: r.text, at: r.at }));
+			.map((r) => ({ id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { about: r.cause } : {}) }));
 	}
 
 	sourceCursor(source: string): string | undefined {
