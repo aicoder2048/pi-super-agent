@@ -118,6 +118,8 @@ export type WorkerScript = (worker: FakeWorker, input: string) => void | Promise
 
 export class FakeSpawner implements WorkerSpawner {
 	readonly spawned: string[] = [];
+	readonly stopped: string[] = [];
+	spawnGate: Promise<void> | undefined;
 	readonly workers = new Map<string, FakeWorker>();
 	request!: (ticketId: string, token: string, method: string, params: unknown) => unknown;
 	readonly #script: WorkerScript;
@@ -128,6 +130,7 @@ export class FakeSpawner implements WorkerSpawner {
 
 	async spawn(spec: WorkerSpec, events: WorkerEvents): Promise<WorkerHandle> {
 		this.spawned.push(spec.ticketId);
+		await this.spawnGate;
 		let streaming = false;
 		let alive = true;
 		const worker: FakeWorker = {
@@ -157,7 +160,8 @@ export class FakeSpawner implements WorkerSpawner {
 				events.turnStarted();
 				setImmediate(() => void script(worker, text));
 			},
-			async stop() {
+			stop: async () => {
+				this.stopped.push(spec.ticketId);
 				if (!alive) return;
 				alive = false;
 				setImmediate(() => events.exited());

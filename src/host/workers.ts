@@ -181,6 +181,11 @@ export class WorkerExecutor {
 		}
 		live = { handle, token, bgRunning: 0, stopping: false };
 		this.#live.set(ticketId, live);
+		if (kernel.getTicket(ticketId)?.stoppedAt != null) {
+			live.stopping = true;
+			await handle.stop();
+			return undefined;
+		}
 		kernel.workerStarted(ticketId, { model: handle.model, fellBack: choice.fellBack });
 		return live;
 	}

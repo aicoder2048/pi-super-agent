@@ -143,3 +143,28 @@ test("宿主停止后，它的分发器不再执行任何动作", async () => {
 	await new Promise((r) => setTimeout(r, 50));
 	assert.equal(host.kernel.dueActions().length, 1);
 });
+
+test("叫停一个 Worker 还在启动中的任务：宿主不崩溃，Worker 启动后立即被停掉，收不到任何输入", async (t) => {
+	const { host, spawner } = await startHost(replyOnReport, (w) => {
+		w.report({ status: "ready", summary: "不该运行" });
+		w.settle();
+	});
+	t.after(() => host.stop());
+	let release!: () => void;
+	spawner.spawnGate = new Promise((r) => (release = r));
+	const errors: unknown[] = [];
+	const onRejection = (e: unknown) => errors.push(e);
+	process.on("unhandledRejection", onRejection);
+	t.after(() => process.off("unhandledRejection", onRejection));
+	host.say("开始整理照片");
+	await until(() => spawner.spawned.length === 1, "Worker 开始启动");
+	const id = host.kernel.listTickets()[0].id;
+	assert.deepEqual(host.kernel.route([{ kind: "stop", ticketId: id }]).map((r) => r.ok), [true]);
+	host.dispatcher.kick();
+	release();
+	await until(() => spawner.stopped.includes(id), "启动完成后被停掉");
+	await new Promise((r) => setTimeout(r, 50));
+	assert.deepEqual(errors, []);
+	assert.deepEqual(spawner.workers.get(id)!.inputs, []);
+	assert.equal(host.kernel.listTickets()[0].stage, "stopped");
+});

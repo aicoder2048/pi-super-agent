@@ -421,14 +421,16 @@ export class Kernel {
 	completeAction(actionId: string): void {
 		this.#tx(() => {
 			const action = this.#pendingAction(actionId);
+			if (!action) return;
 			this.#run("UPDATE actions SET status = 'done', attempts = attempts + 1, last_error = NULL WHERE id = ?", actionId);
 			this.#logAttempt(action, true, null);
 		});
 	}
 
-	failAction(actionId: string, error: string): { nextAttemptAt: number } {
+	failAction(actionId: string, error: string): { nextAttemptAt: number } | undefined {
 		return this.#tx(() => {
 			const action = this.#pendingAction(actionId);
+			if (!action) return undefined;
 			const attempts = (action.attempts as number) + 1;
 			const nextAttemptAt = this.#now() + RETRY_BACKOFF_MS[Math.min(attempts, RETRY_BACKOFF_MS.length) - 1];
 			this.#run(
@@ -824,10 +826,11 @@ export class Kernel {
 		};
 	}
 
-	#pendingAction(actionId: string): Row {
-		const action = this.#get("SELECT * FROM actions WHERE id = ? AND status = 'pending'", actionId);
-		if (!action) throw new Error(`no pending action ${actionId}`);
-		return action;
+	// A stop decided while the action was already running cancels it; finishing it afterwards is a no-op.
+	#pendingAction(actionId: string): Row | undefined {
+		const action = this.#get("SELECT * FROM actions WHERE id = ?", actionId);
+		if (!action) throw new Error(`unknown action ${actionId}`);
+		return action.status === "pending" ? action : undefined;
 	}
 
 	#logAttempt(action: Row, ok: boolean, error: string | null): void {

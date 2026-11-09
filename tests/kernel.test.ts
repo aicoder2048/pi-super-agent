@@ -403,7 +403,7 @@ test("待执行动作失败后按递增间隔重试，封顶 30 分钟", () => {
 	const [action] = due();
 	const expected = [5_000, 30_000, 120_000, 600_000, 1_800_000, 1_800_000];
 	for (const delay of expected) {
-		const { nextAttemptAt } = kernel.failAction(action.id, "boom");
+		const { nextAttemptAt } = kernel.failAction(action.id, "boom")!;
 		assert.equal(nextAttemptAt, clock.t + delay);
 		clock.t += delay - 1;
 		assert.deepEqual(due(), []);
