@@ -1,25 +1,57 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { tempStateDir } from "./helpers/fakes.ts";
 
-function badConfigDir() {
-	const dir = tempStateDir();
-	writeFileSync(join(dir, "config.json"), JSON.stringify({ heartbeatSeconds: 10, watchdog: { staleSeconds: 1 } }));
-	return dir;
+type ModuleFiles = Record<string, unknown>;
+
+function stateWith(config: unknown, roots: Record<string, ModuleFiles> = {}) {
+	return () => {
+		const dir = tempStateDir();
+		const modulesDirs = Object.keys(roots).map((root) => join(dir, root));
+		for (const [root, modules] of Object.entries(roots)) {
+			for (const [name, manifest] of Object.entries(modules)) {
+				mkdirSync(join(dir, root, name), { recursive: true });
+				writeFileSync(join(dir, root, name, "module.json"), typeof manifest === "string" ? manifest : JSON.stringify(manifest));
+			}
+		}
+		const full = typeof config === "string" ? config : JSON.stringify({ ...(config as object), ...(modulesDirs.length ? { modulesDirs } : {}) });
+		writeFileSync(join(dir, "config.json"), full);
+		return dir;
+	};
 }
+
+const HOST = "src/host/main.ts";
+const WATCHDOG = "src/watchdog/main.ts";
+const badInterval = { heartbeatSeconds: 10, watchdog: { staleSeconds: 1 } };
 
 const cases = [
 	{
 		name: "状态目录路径太长时，just host",
-		entry: "src/host/main.ts",
+		entry: HOST,
 		stateDir: () => join(tempStateDir(), "a-really-long-directory-name-to-push-the-socket-path-over-the-unix-limit-xxxxxxxxxxxx"),
 		message: /状态目录路径太长.*PSA_STATE_DIR/,
 	},
-	{ name: "config.json 的 Watchdog 间隔不合理时，just host", entry: "src/host/main.ts", stateDir: badConfigDir, message: /watchdog\.staleSeconds.*heartbeatSeconds/ },
-	{ name: "config.json 的 Watchdog 间隔不合理时，just watchdog", entry: "src/watchdog/main.ts", stateDir: badConfigDir, message: /watchdog\.staleSeconds.*heartbeatSeconds/ },
+	{ name: "config.json 的 Watchdog 间隔不合理时，just host", entry: HOST, stateDir: stateWith(badInterval), message: /watchdog\.staleSeconds.*heartbeatSeconds/ },
+	{ name: "config.json 的 Watchdog 间隔不合理时，just watchdog", entry: WATCHDOG, stateDir: stateWith(badInterval), message: /watchdog\.staleSeconds.*heartbeatSeconds/ },
+	{ name: "config.json 不是合法 JSON 时，just host", entry: HOST, stateDir: stateWith("{bad"), message: /config\.json 不是合法的 JSON/ },
+	{ name: "config.json 不是合法 JSON 时，just watchdog", entry: WATCHDOG, stateDir: stateWith("{bad"), message: /config\.json 不是合法的 JSON/ },
+	{ name: "模型写法缺少 provider 时，just host", entry: HOST, stateDir: stateWith({ models: { router: "gpt" } }), message: /config\.json.*模型写法应为 provider\/id：gpt/ },
+	{ name: "模型用了禁用的提供方时，just host", entry: HOST, stateDir: stateWith({ models: { worker: "anthropic/x" } }), message: /config\.json.*拒绝使用 anthropic\/x/ },
+	{ name: "模型是 Claude 时，just host", entry: HOST, stateDir: stateWith({ models: { fallback: "openai-codex/claude-x" } }), message: /config\.json.*Claude 模型/ },
+	{ name: "找不到配置的模型时，just host", entry: HOST, stateDir: stateWith({ models: { router: "openai-codex/no-such-model" } }), message: /config\.json：models\.router：找不到模型 openai-codex\/no-such-model/ },
+	{ name: "module.json 不是合法 JSON 时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: "{bad" } }), message: /module\.json 不是合法的 JSON/ },
+	{ name: "模块名不等于目录名时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: { name: "other" } } }), message: /name 必须等于目录名 m/ },
+	{ name: "ignore 不是合法正则时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: { name: "m", sources: [{ name: "m", ignore: ["("] }] } } }), message: /module\.json.*ignore.*不是合法的正则/ },
+	{ name: "两个模块重名时，just host", entry: HOST, stateDir: stateWith({}, { a: { m: { name: "m" } }, b: { m: { name: "m" } } }), message: /模块重名：m/ },
+	{
+		name: "定时器 everyMinutes 不大于 0 时，just host",
+		entry: HOST,
+		stateDir: stateWith({}, { mods: { m: { name: "m", timers: [{ id: "t", everyMinutes: 0, thread: "t", body: "b" }] } } }),
+		message: /定时器 m\/t 的 everyMinutes 必须大于 0/,
+	},
 ];
 
 for (const c of cases) {
@@ -29,7 +61,7 @@ for (const c of cases) {
 			encoding: "utf8",
 			timeout: 20_000,
 		});
-		assert.equal(run.status, 1);
+		assert.equal(run.status, 1, run.stderr);
 		assert.match(run.stderr, c.message);
 		assert.doesNotMatch(run.stderr, /^\s+at /m);
 		assert.doesNotMatch(run.stderr, /^file:\/\//m);
