@@ -35,6 +35,8 @@ export interface Rule {
 	id: string;
 	text: string;
 	sources?: string[];
+	/** From a 「团队：」 line: a ticket this rule opens must be on this team. */
+	team?: string;
 }
 
 export interface ScopedRule extends Rule {
@@ -43,14 +45,17 @@ export interface ScopedRule extends Rule {
 
 const RULE_HEADING = /^##\s+([\w-]+)\s*$/;
 const RULE_SOURCES = /^来源\s*[:：]\s*(.+)$/;
+const RULE_TEAM = /^团队\s*[:：]\s*(\S+)$/;
 
 export function parseRules(namespace: string, markdown: string): Rule[] {
 	const rules: Rule[] = [];
 	for (const line of markdown.split("\n")) {
 		const heading = line.match(RULE_HEADING);
 		const sources = line.trim().match(RULE_SOURCES);
+		const team = line.trim().match(RULE_TEAM);
 		if (heading) rules.push({ id: `${namespace}/${heading[1]}`, text: "" });
 		else if (sources && rules.length) rules[rules.length - 1].sources = sources[1].split(/[,，\s]+/).filter(Boolean);
+		else if (team && rules.length) rules[rules.length - 1].team = team[1];
 		else if (rules.length) rules[rules.length - 1].text += line + "\n";
 	}
 	return rules.map((r) => ({ ...r, text: r.text.trim() })).filter((r) => r.text);
@@ -118,8 +123,10 @@ export class Modules {
 	}
 
 	rulesPrompt(): string {
-		return this.allRules().map((r) => `### ${r.id}\n${r.text}`).join("\n\n");
+		return this.allRules().map((r) => `### ${r.id}\n${r.team ? `团队：${r.team}\n` : ""}${r.text}`).join("\n\n");
 	}
+
+	ruleTeam = (ruleId: string): string | undefined => this.allRules().find((r) => r.id === ruleId)?.team;
 
 	ruleAllows = (ruleId: string, triggerSource: string): boolean => {
 		return triggerSource !== CONVERSATION_SOURCE && (this.#scopes.get(ruleId)?.includes(triggerSource) ?? false);
