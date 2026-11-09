@@ -5,7 +5,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
-import { openChoices, renderBoard, shortId, type BoardView } from "../src/client/board.ts";
+import { openChoices, renderBoard, shortId, ticketsMatching, type BoardView } from "../src/client/board.ts";
 import { DEFAULT_ACK_TIMEOUT_MS, HostConnection } from "../src/client/connection.ts";
 import type { ConversationLine, HostToClient } from "../src/client/protocol.ts";
 import type { DashboardRow } from "../src/kernel/types.ts";
@@ -136,7 +136,7 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 		description: "选一个问题的选项作答：/answer <编号> <序号>",
 		handler: async (args, context) => {
 			const [key = "", pick = ""] = args.trim().split(/\s+/);
-			const matches = openChoices(view.rows).filter((r) => shortId(r.id).startsWith(key) || r.id === key);
+			const matches = ticketsMatching(openChoices(view.rows), key);
 			if (!key || matches.length !== 1 || !/^\d+$/.test(pick)) {
 				context.ui.notify(matches.length > 1 ? `编号 ${key} 对应多个问题，请多写几位` : "用法：/answer <编号> <序号>，编号是看板上等回答的任务", "warning");
 				return;
@@ -155,7 +155,7 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 				conn?.watch(undefined);
 				return;
 			}
-			const matches = view.rows.filter((r) => shortId(r.id).startsWith(key) || r.id === key);
+			const matches = ticketsMatching(view.rows, key);
 			if (matches.length !== 1) {
 				context.ui.notify(matches.length ? `编号 ${key} 对应多个任务，请多写几位` : `看板上没有编号 ${key}`, "warning");
 				return;

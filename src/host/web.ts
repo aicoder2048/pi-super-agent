@@ -194,7 +194,7 @@ function parseSay(body: string): SayBody | undefined {
 	if (keys.length !== 1) return undefined;
 	const { text, answer } = parsed as { text?: unknown; answer?: unknown };
 	if (keys[0] === "text") return typeof text === "string" && hasVisibleText(text) ? { kind: "text", text } : undefined;
-	if (keys[0] !== "answer" || typeof answer !== "object" || answer === null) return undefined;
+	if (keys[0] !== "answer" || typeof answer !== "object" || answer === null || Object.keys(answer).length !== 2) return undefined;
 	const { reportId, option } = answer as { reportId?: unknown; option?: unknown };
 	if (typeof reportId !== "string" || !REPORT_ID.test(reportId)) return undefined;
 	if (typeof option !== "number" || !Number.isInteger(option) || option < 0 || option >= OPTIONS_MAX) return undefined;
@@ -221,7 +221,7 @@ function tokenMatches(given: string, token: string): boolean {
 	return got.length === want.length && timingSafeEqual(got, want);
 }
 
-const REFUSED_STATUS: Record<AnswerRefusal["kind"], number> = { no_question: 409, no_options: 409, out_of_range: 409, chosen: 409, spoke: 409, closed: 409 };
+const REFUSED_STATUS: Record<AnswerRefusal["kind"], number> = { no_question: 404, no_options: 409, out_of_range: 409, chosen: 409, spoke: 409, closed: 409 };
 
 // The body is JSON so the page can pick its own copy by `refused`; `reason` is for curl users.
 function refuse(res: ServerResponse, refusal: AnswerRefusal): void {

@@ -863,6 +863,15 @@ test("网关：提问之后先打字再点选项，幕僚长还没处理那句�
 	assert.ok(!userLines().some((l) => l.startsWith("回答任务")));
 });
 
+test("网关：answer 的汇报编号不存在时 404，正文说问题不存在；页面显示固定文案", async (t) => {
+	const { post, userLines } = await sayHost(t);
+	const res = await post(answerBody("rpt_missing", 0));
+	assert.equal(res.status, 404);
+	assert.deepEqual(JSON.parse(res.body), { refused: "no_question", reason: "这个问题不存在" });
+	assert.deepEqual(userLines(), []);
+	assert.equal(page.answerRefusedCopy(404, JSON.parse(res.body), []), "发送失败：这个问题不存在。");
+});
+
 test("网关：问题已经打字回答过时 POST /say 的 answer 返回 409，对话里不多一句", async (t) => {
 	const { host, post, userLines } = await sayHost(t);
 	const { ticketId, reportId } = await askedOnHost(host);
@@ -885,6 +894,7 @@ test("网关：answer 的形状不对时 400：同时带 text、reportId 不像�
 		JSON.stringify({ answer: { reportId, option: "1" } }),
 		JSON.stringify({ answer: { reportId, option: 1.5 } }),
 		JSON.stringify({ answer: null }),
+		JSON.stringify({ answer: { reportId, option: 0, extra: true } }),
 	];
 	for (const body of bodies) assert.equal((await post(body)).status, 400, body);
 	assert.deepEqual(userLines(), ["查财报"]);

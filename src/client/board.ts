@@ -16,6 +16,10 @@ function spread(left: string, right: string, width: number): string {
 	return fit(leftFit + " ".repeat(gap) + rightFit, width);
 }
 
+/** Rows whose id, with or without its tkt_ prefix, starts with key. */
+export const ticketsMatching = (rows: DashboardRow[], key: string) =>
+	key ? rows.filter((r) => r.id.startsWith(key) || r.id.replace(/^tkt_/, "").startsWith(key)) : [];
+
 export const openChoices = (rows: DashboardRow[]) =>
 	rows.filter((r) => r.question && r.question.options.length > 0 && !r.question.spoke && (r.question.click === null || r.question.click.state === "dropped"));
 

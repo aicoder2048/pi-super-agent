@@ -311,6 +311,19 @@ test("客户端：多个问题等回答时数字不猜，提示用 /answer <编�
 	assert.deepEqual(quiet.sent(), [["say", "1"]]);
 });
 
+test("客户端：/answer 和 /watch 的编号写几位都行，只要能唯一认出任务", async (t) => {
+	const { host, ext, sent } = await answeringClient([asking("tkt_cd34ef56", "rpt_1"), asking("tkt_cd99aa00", "rpt_2")]);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await ext.command("answer", "cd34ef 2");
+	await until(() => sent().length === 1, "六位编号作答");
+	assert.deepEqual(sent(), [["answer", "rpt_1", 1]]);
+	await ext.command("watch", "cd99aa0");
+	await until(() => host.fromClient.some((r) => r.type === "watch"), "七位编号查看");
+	assert.equal(host.fromClient.find((r) => r.type === "watch")!.ticketId, "tkt_cd99aa00");
+	await ext.command("answer", "cd 1");
+	assert.match(ext.warnings.at(-1)!, /对应多个问题/);
+});
+
 test("客户端：宿主拒绝回答（问题已回答或已过期）时提醒使用者原因", async (t) => {
 	const { host, ext } = await answeringClient([asking("tkt_ab12", "rpt_1")]);
 	t.after(async () => { await ext.shutdown(); await host.close(); });

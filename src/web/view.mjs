@@ -394,9 +394,15 @@ const REJECTED_COPY = {
 export function answerRefusedCopy(status, body, options) {
 	const label = body?.refused === "chosen" && typeof body.option === "number" ? options[body.option] : undefined;
 	if (label !== undefined) return `发送失败：已选「${label}」。`;
-	if (body?.refused === "spoke") return "发送失败：你刚发了一句话，幕僚长处理完之前不能点选项。";
-	return sayCopy("rejected", status);
+	const refused = body?.refused;
+	return typeof refused === "string" && Object.hasOwn(ANSWER_REFUSED_COPY, refused) ? ANSWER_REFUSED_COPY[refused] : sayCopy("rejected", status);
 }
+
+/** @type {Record<string, string>} */
+const ANSWER_REFUSED_COPY = {
+	spoke: "发送失败：你刚发了一句话，幕僚长处理完之前不能点选项。",
+	no_question: "发送失败：这个问题不存在。",
+};
 
 /** @param {SayState} state @param {number} [status] */
 export function sayCopy(state, status) {
