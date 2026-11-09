@@ -121,3 +121,15 @@ test("上游数据在客户端边界校验：代码不合法或不是请求的�
 	assert.equal(quotes[1].dayVolume, undefined);
 	assert.deepEqual(await c.bars("NVDA", "day", "2026-11-01", "2026-11-09"), [{ t: 1, o: 1, h: 2, l: 0.5, c: 1.5, v: 10 }]);
 });
+
+test("K 线：一天超过 500 根时返回离现在最近的 500 根，按时间正序", async () => {
+	const all = Array.from({ length: 600 }, (_, i) => ({ t: i + 1, o: 1, h: 1, l: 1, c: 1, v: 1 }));
+	const f = fakeHttp((url) => {
+		const q = new URL(url).searchParams;
+		const limit = Number(q.get("limit"));
+		const rows = q.get("sort") === "desc" ? [...all].reverse().slice(0, limit) : all.slice(0, limit);
+		return Response.json({ status: "OK", results: rows });
+	});
+	const bars = await client(f).bars("NVDA", "minute", "2026-11-09", "2026-11-09");
+	assert.deepEqual([bars.length, bars[0].t, bars.at(-1)!.t], [500, 101, 600]);
+});

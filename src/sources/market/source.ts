@@ -15,7 +15,7 @@ const SPANS: Span[] = ["minute", "hour", "day"];
 
 const LOOKUP_HELP = `us-market（美股行情）：
 - quote { symbols: string[] }：最多 10 只股票的最新报价（price、prevClose、changePct、at 毫秒时间戳、delayed）
-- bars { symbol, span: "minute"|"hour"|"day", from: "YYYY-MM-DD", to: "YYYY-MM-DD" }：K 线（t、o、h、l、c、v），最多 500 根
+- bars { symbol, span: "minute"|"hour"|"day", from: "YYYY-MM-DD", to: "YYYY-MM-DD" }：K 线（t、o、h、l、c、v），按时间正序，超过 500 根时只给离 to 最近的 500 根
 - session {}：纽约日期和交易时段（pre、regular、post、closed）`;
 
 export function marketFeed(input: FeedInput): FeedSpec {
