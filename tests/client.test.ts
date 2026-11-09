@@ -498,3 +498,14 @@ test("客户端：成员上限的问题和任务的问题同时在等时数字�
 	await until(() => sent().length === 2, "两个都发出");
 	assert.deepEqual(sent(), [["answer", "ask_cap_2026-11-09", 1], ["answer", "rpt_1", 0]]);
 });
+
+test("客户端：状态目录里有以前留下的凭据但宿主不在时，警告写明它找的是哪个 socket，方便发现两边的状态目录不一致", async (t) => {
+	const stateDir = tempStateDir();
+	writeFileSync(join(stateDir, "client-token"), `${"a".repeat(64)}\n`);
+	const socketPath = join(stateDir, "host.sock");
+	const ext = await runExtension(socketPath);
+	t.after(() => ext.shutdown());
+	await ext.input("你好");
+	assert.equal(ext.warnings.length, 1);
+	assert.ok(ext.warnings[0]!.includes(socketPath), ext.warnings[0]);
+});
