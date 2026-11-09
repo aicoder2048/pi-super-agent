@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { piCliPath } from "../pi-runtime.mjs";
 import type { Basis } from "../kernel/types.ts";
 import type { ModelRef } from "../models.ts";
+import type { Roster } from "../roles.ts";
 import { toolAllowlist } from "../worker/tools.ts";
 import { formatModelRef } from "../models.ts";
 import { WorkerEventTranslator } from "./worker-events.ts";
@@ -35,24 +36,29 @@ export interface WorkerArgsInput {
 	sessionId: string;
 	extension: string;
 	prompt: string;
-	skillsDir?: string;
+	/** The role's skills, then the module's. */
+	skillsDirs: readonly string[];
 	basis: Basis;
+	roleTools?: readonly string[];
+	rolePrompt?: string;
 }
 
 export function workerArgs(input: WorkerArgsInput): string[] {
-	const allowlist = toolAllowlist(input.basis);
+	const allowlist = toolAllowlist(input.basis, input.roleTools);
 	return [
 		"--session-dir", input.sessionDir,
 		"--session-id", input.sessionId,
 		"--no-extensions", "-e", input.extension,
-		"--no-skills", ...(input.skillsDir ? ["--skill", input.skillsDir] : []),
+		"--no-skills", ...input.skillsDirs.flatMap((dir) => ["--skill", dir]),
 		...(allowlist ? ["--tools", allowlist.join(","), "--no-mcp"] : []),
 		"--append-system-prompt", input.prompt,
+		...(input.rolePrompt ? ["--append-system-prompt", input.rolePrompt] : []),
 	];
 }
 
 export interface PiWorkerSpawnerOptions {
 	socketPath: string;
+	roster: Roster;
 	sessionDir: string;
 	moduleFor?: (ruleId: string | null) => { skillsDir?: string; prepare?: string } | undefined;
 	bgMaxMs?: number;
@@ -69,6 +75,8 @@ export class PiWorkerSpawner implements WorkerSpawner {
 
 	async spawn(spec: WorkerSpec, events: WorkerEvents): Promise<WorkerHandle> {
 		const { model } = spec;
+		const role = this.#o.roster.get(spec.role);
+		if (!role) throw new Error(`任务 ${spec.ticketId} 的角色 ${spec.role} 不在名册里（角色文件被删了？），Worker 不启动`);
 		const mod = this.#o.moduleFor?.(spec.ruleId);
 		const marker = join(spec.workdir, ".psa-prepared");
 		if (mod?.prepare && !existsSync(marker)) {
@@ -80,8 +88,10 @@ export class PiWorkerSpawner implements WorkerSpawner {
 			sessionId: spec.sessionId,
 			extension: WORKER_EXTENSION,
 			prompt: WORKER_PROMPT,
-			skillsDir: mod?.skillsDir,
+			skillsDirs: [...role.skills, ...(mod?.skillsDir ? [mod.skillsDir] : [])],
 			basis: spec.basis,
+			roleTools: role.tools,
+			rolePrompt: role.prompt,
 		});
 		const client = new RpcClient({
 			cliPath: this.#o.cliPath ?? piCliPath(),
@@ -95,6 +105,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 				PSA_TICKET: spec.ticketId,
 				PSA_TOKEN: spec.token,
 				PSA_BASIS: spec.basis,
+				...(role.tools && { PSA_ROLE_TOOLS: role.tools.join(",") }),
 				PSA_BG_MAX_MS: String(this.#o.bgMaxMs ?? 120 * 60_000),
 				...(this.#o.lookupHelp && { PSA_LOOKUPS: this.#o.lookupHelp }),
 			},

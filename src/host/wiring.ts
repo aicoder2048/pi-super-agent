@@ -113,7 +113,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		timers,
 		watching: watchedSources(modules, timers),
 		feeds,
-		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
+		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens, roleModel: (name) => roster.get(name)?.model },
 		createRouter: (deps) =>
 			Router.create({
 				kernel: deps.kernel,
@@ -131,6 +131,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		createSpawner: (deps) =>
 			new PiWorkerSpawner({
 				socketPath: deps.socketPath,
+				roster,
 				sessionDir: join(config.stateDir, "sessions", "workers"),
 				bgMaxMs: config.bgMaxMinutes * 60_000,
 				lookupHelp: feeds.map((f) => f.lookupHelp).join("\n") || undefined,

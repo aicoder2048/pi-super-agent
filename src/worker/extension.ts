@@ -67,7 +67,8 @@ const text = (value: unknown) => ({
 
 export default function workerExtension(pi: ExtensionAPI) {
 	const ticketId = env("PSA_TICKET");
-	const allowlist = toolAllowlist(env("PSA_BASIS") as Basis);
+	const basis = env("PSA_BASIS") as Basis;
+	const allowlist = toolAllowlist(basis, process.env.PSA_ROLE_TOOLS?.split(","));
 	const bgMaxMs = Number(process.env.PSA_BG_MAX_MS ?? 120 * 60_000);
 	const call = hostClient(env("PSA_SOCKET"), { ticketId, token: env("PSA_TOKEN") });
 	const lookupHelp = process.env.PSA_LOOKUPS ?? "（宿主没有配置可查询的来源）";
@@ -161,7 +162,7 @@ export default function workerExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	if (!allowlist) registerBackgroundTools();
+	if (!allowlist || allowlist.includes("bg_start")) registerBackgroundTools();
 
 	function registerBackgroundTools(): void {
 		pi.registerTool({
@@ -220,7 +221,8 @@ export default function workerExtension(pi: ExtensionAPI) {
 
 	pi.on("tool_call", async (event) => {
 		if (!allowlist || allowlist.includes(event.toolName)) return;
-		return { block: true, reason: `依据为推断的任务只能读文件、读网页、查数据和汇报，不能用 ${event.toolName}。需要对外动作时写成草稿，用 report 的 drafts 提交。` };
+		const why = toolAllowlist(basis)?.includes(event.toolName) === false ? "依据为推断的任务只能读文件、读网页、查数据和汇报" : "你的角色没有这个工具";
+		return { block: true, reason: `${why}，不能用 ${event.toolName}。需要对外动作时写成草稿，用 report 的 drafts 提交。` };
 	});
 
 	pi.on("agent_start", async () => {

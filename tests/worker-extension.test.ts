@@ -7,7 +7,7 @@ import test from "node:test";
 import { onJsonLines, writeJsonLine } from "../src/jsonl.ts";
 import { until } from "./helpers/fakes.ts";
 
-async function load(basis: string) {
+async function load(basis: string, roleTools?: string) {
 	const dir = mkdtempSync(join(tmpdir(), "psa-wext-"));
 	const socketPath = join(dir, "host.sock");
 	const requests: any[] = [];
@@ -22,7 +22,8 @@ async function load(basis: string) {
 	});
 	await new Promise<void>((resolve) => server.listen(socketPath, resolve));
 	Object.assign(process.env, { PSA_SOCKET: socketPath, PSA_TICKET: "tkt_1", PSA_TOKEN: "tok", PSA_BASIS: basis });
-	const { default: workerExtension } = await import(`../src/worker/extension.ts?basis=${basis}`);
+	if (roleTools !== undefined) process.env.PSA_ROLE_TOOLS = roleTools;
+	const { default: workerExtension } = await import(`../src/worker/extension.ts?basis=${basis}&role=${roleTools}`);
 	const tools = new Map<string, any>();
 	const handlers = new Map<string, any>();
 	const sent: any[] = [];
@@ -68,6 +69,19 @@ test("推断任务的 Worker 只能调用只读工具和汇报类工具，其余
 		assert.equal(await request.handlers.get("tool_call")(call(tool)), undefined, tool);
 	}
 	for (const tool of ["read", "grep", "report", "read_ticket", "web_get"]) assert.equal(await inference.handlers.get("tool_call")(call(tool)), undefined, tool);
+});
+
+test("角色写了工具：只放行角色的工具和汇报类工具，没写 bg_start 就不注册后台命令；推断任务派给带 bash 的角色仍拦 bash", async (t) => {
+	const news = await load("request", "read,web_get");
+	const inference = await load("inference", "read,bash");
+	t.after(() => { news.close(); inference.close(); });
+	const call = (toolName: string) => ({ toolName, input: {} });
+	for (const tool of ["bash", "write", "grep", "mcp__mail__send"]) assert.equal((await news.handlers.get("tool_call")(call(tool)))?.block, true, tool);
+	for (const tool of ["read", "web_get", "report", "hand_back", "read_ticket"]) assert.equal(await news.handlers.get("tool_call")(call(tool)), undefined, tool);
+	assert.equal(news.tools.has("bg_start"), false);
+	assert.equal((await inference.handlers.get("tool_call")(call("bash")))?.block, true);
+	assert.equal(await inference.handlers.get("tool_call")(call("read")), undefined);
+	assert.equal(process.env.PSA_ROLE_TOOLS, undefined);
 });
 
 test("每种依据的 Worker 都有 web_get，它只收一个网址并拒绝非公网地址", async (t) => {

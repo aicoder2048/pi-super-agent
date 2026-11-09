@@ -113,3 +113,32 @@ test("Router 在回退模型上的用量计入每日累计", async (t) => {
 	const provider = (host.router as any).session.model.provider;
 	await until(() => host.kernel.usageToday(provider) > 0, "回退模型用量被计入");
 });
+
+test("角色写了模型：主模型可用时它的 Worker 用角色的模型，再次唤醒也是；回退后用回退模型", async (t) => {
+	const newsModel = { provider: "openai-codex", id: "gpt-6.1-terra" };
+	const roleBrain: Brain = (cards) =>
+		cards.flatMap((card) => {
+			if (!card.startsWith("[对话]")) return [];
+			const triggerId = ids(card, "trg")!;
+			return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", role: "news", triggerId, title: "新闻", brief: "查新闻" }] } }];
+		});
+	const selector = workerSelector();
+	const { host, spawner } = await startHost(roleBrain, (w) => {
+		w.report({ status: "progress", summary: `用 ${w.model}` });
+		w.settle();
+	}, {
+		roles: new Map([["general", "通用助手"], ["news", "新闻研究员"]]),
+		workerModels: { selector, fallbackDailyTokens: 1_000_000, roleModel: (role) => (role === "news" ? newsModel : undefined) },
+	});
+	t.after(() => host.stop());
+	host.say("看新闻");
+	await until(() => host.kernel.listTickets()[0]?.latestSummary === "用 openai-codex/gpt-6.1-terra", "角色模型");
+	const ticketId = host.kernel.listTickets()[0].id;
+	host.kernel.note({ ticketId, text: "再看一眼" });
+	await host.workers.wake(ticketId);
+	await until(() => spawner.spawned.length === 2 && spawner.workers.get(ticketId)!.inputs.length === 1, "第二轮");
+	assert.equal(spawner.workers.get(ticketId)!.model, "openai-codex/gpt-6.1-terra", "第二轮没换成 Worker 主模型");
+	selector.onError("429");
+	host.say("再看新闻");
+	await until(() => host.kernel.listTickets()[1]?.latestSummary === "用 deepseek/deepseek-flash", "回退模型");
+});

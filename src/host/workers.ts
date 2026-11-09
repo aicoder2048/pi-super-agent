@@ -15,6 +15,7 @@ export interface WorkerSpec {
 	workdir: string;
 	basis: Basis;
 	ruleId: string | null;
+	role: string;
 	token: string;
 	model: ModelRef;
 }
@@ -71,6 +72,8 @@ export interface WorkerExecutorOptions {
 export interface WorkerModels {
 	selector: ModelSelector;
 	fallbackDailyTokens: number;
+	/** A role's own model, used instead of the worker primary until the selector falls back. */
+	roleModel?: (role: string) => ModelRef | undefined;
 }
 
 export class WorkerExecutor {
@@ -103,7 +106,7 @@ export class WorkerExecutor {
 			return;
 		}
 		if (current && !live.handle.isStreaming()) {
-			const choice = this.#o.models.selector.forTurn();
+			const choice = this.#forTurn(ticket.role);
 			if (formatModelRef(choice.model) !== live.handle.model) await this.#switchModel(ticketId, live, choice.model, choice.fellBack);
 		}
 		await live.handle.deliver(formatInputs(kernel, inputs));
@@ -131,16 +134,21 @@ export class WorkerExecutor {
 		return started;
 	}
 
+	#forTurn(role: string): { model: ModelRef; fellBack: boolean } {
+		const choice = this.#o.models.selector.forTurn();
+		return choice.fellBack ? choice : { model: this.#o.models.roleModel?.(role) ?? choice.model, fellBack: false };
+	}
+
 	async #spawn(ticketId: string): Promise<Live | undefined> {
 		const { kernel, spawner, stateDir, afterCommand } = this.#o;
-		const choice = this.#o.models.selector.forTurn();
+		const ticket = kernel.getTicket(ticketId)!;
+		const choice = this.#forTurn(ticket.role);
 		if (choice.fellBack && this.#capReached()) {
 			this.#blockForCap(ticketId);
 			afterCommand();
 			return undefined;
 		}
 		if (!kernel.claimSlot(ticketId)) return undefined;
-		const ticket = kernel.getTicket(ticketId)!;
 		const workdir = join(stateDir, "workers", ticketId);
 		mkdirSync(workdir, { recursive: true });
 		const token = randomUUID();
@@ -169,7 +177,7 @@ export class WorkerExecutor {
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ruleId: ticket.ruleId, token, model: choice.model },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ruleId: ticket.ruleId, role: ticket.role, token, model: choice.model },
 				events,
 			);
 		} catch (error) {
