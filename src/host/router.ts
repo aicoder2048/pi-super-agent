@@ -65,14 +65,14 @@ export function routerTools(kernel: Kernel, afterCommand: () => void): ToolDefin
 	const reply = defineTool({
 		name: "reply",
 		label: "回复",
-		description: `通过某个线程的渠道对使用者说话。单条不超过 ${kernel.config.replyMaxChars} 字。说的是某个任务的结果时带上 ticketId。`,
+		description: `通过某个线程的渠道对使用者说话。单条不超过 ${kernel.config.replyMaxChars} 字。cause 填你在回应的卡片开头的 id：对话的 trg_、任务的 tkt_ 或通知的 act_。`,
 		parameters: Type.Object({
 			text: Type.String(),
 			threadId: Type.Optional(Type.String({ description: `默认 ${CONVERSATION_THREAD_ID}` })),
-			ticketId: Type.Optional(Type.String()),
+			cause: Type.String({ description: "回应的对象：trg_（使用者的话）、tkt_（任务结果）或 act_（通知）" }),
 		}),
-		async execute(_id, { text, threadId, ticketId }) {
-			return committed(kernel.reply({ text, threadId: threadId ?? CONVERSATION_THREAD_ID, ticketId }));
+		async execute(_id, { text, threadId, cause }) {
+			return committed(kernel.reply({ text, threadId: threadId ?? CONVERSATION_THREAD_ID, cause }));
 		},
 	});
 	const note = defineTool({
@@ -105,8 +105,8 @@ function time(ms: number): string {
 	return new Date(ms).toLocaleString("zh-CN", { hour12: false });
 }
 
-export function noticeCard(kernel: Kernel, notice: RouterNotice, rulesFor: (source: string) => string[] = () => []): string {
-	if (notice.kind === "notice") return `[通知] ${notice.body}`;
+export function noticeCard(kernel: Kernel, notice: RouterNotice, rulesFor: (source: string) => string[] = () => [], actionId?: string): string {
+	if (notice.kind === "notice") return `[通知]${actionId ? ` ${actionId}` : ""}\n${notice.body}`;
 	if (notice.kind === "conversation" || notice.kind === "candidate") {
 		const found = kernel.read(notice.triggerId);
 		if (found?.type !== "trigger") return `[通知] 触发 ${notice.triggerId} 已不存在`;
@@ -166,7 +166,8 @@ export function routerSystemPrompt(rules: string, replyMaxChars: number): string
 - 需要 Worker 知道一条事实时用 note；note 不构成授权。
 
 ## 怎么说话
-- 只通过 reply 对使用者说话，你的普通文字输出使用者看不到。
+- 只通过 reply 对使用者说话，你的普通文字输出使用者看不到。reply 的 cause 填你在回应的那张卡片开头的 id。
+- 候选触发不能作为 cause：对原始事件不要主动开口，要么开任务，要么忽略。推断任务在有结果之前也不能作为 cause。
 - 每条 reply 不超过 ${replyMaxChars} 字。确认一次之后保持安静，只在有结果、需要使用者做决定、或做不下去时才说话。
 - Worker 提问时，只把那一个具体问题转给使用者。
 - 汇报带草稿时，告诉使用者有待确认的草稿，不要替使用者做决定。
@@ -230,6 +231,7 @@ export class Router {
 	readonly #models: RouterModels;
 	readonly #errorRetryMs: number[];
 	readonly #rulesFor: (triggerSource: string) => string[];
+	readonly #afterCommand: () => void;
 	readonly #acks = new Map<string, () => void>();
 	readonly #delivered = new Set<string>();
 	#buffer: PendingCard[] = [];
@@ -245,6 +247,7 @@ export class Router {
 		this.#models = options.models;
 		this.#errorRetryMs = options.errorRetryMs ?? ERROR_RETRY_MS;
 		this.#rulesFor = options.rulesFor ?? (() => []);
+		this.#afterCommand = options.afterCommand;
 		session.subscribe((event) => {
 			if (event.type === "message_end" && event.message.role === "custom") {
 				const ids = (event.message as { details?: { actionIds?: string[] } }).details?.actionIds ?? [];
@@ -273,9 +276,11 @@ export class Router {
 			if (result.switched) {
 				await this.session.setModel(this.#models.resolve(current.model)).catch(this.#onError);
 				this.#errorStreak = 0;
-				this.#buffer.push({ card: result.notify
-					? `[通知] Router 的主模型额度用尽或被限流，已切到回退模型 ${formatModelRef(current.model)}。请用一句话告诉使用者，然后继续处理上面没处理完的消息。`
-					: "[通知] 主模型仍不可用，已回到回退模型。请继续处理上面没处理完的消息。" });
+				if (result.notify) {
+					this.#kernel.notifyRouter(`Router 的主模型额度用尽或被限流，已切到回退模型 ${formatModelRef(current.model)}。请用一句话告诉使用者。`);
+					this.#afterCommand();
+				}
+				this.#buffer.push({ card: "[通知] 刚才的一轮因模型错误中断，已换模型。请继续处理上面没处理完的消息。" });
 			} else {
 				this.#retryAfterError();
 			}
@@ -332,7 +337,7 @@ export class Router {
 	// written before the first assistant message, so an earlier ack could lose the card in a crash.
 	// The outbox keeps the action pending until then and replays it after a restart.
 	inject(notice: RouterNotice, actionId?: string): Promise<void> {
-		const card = noticeCard(this.#kernel, notice, this.#rulesFor);
+		const card = noticeCard(this.#kernel, notice, this.#rulesFor, actionId);
 		if (!actionId) {
 			this.#push(card);
 			return Promise.resolve();

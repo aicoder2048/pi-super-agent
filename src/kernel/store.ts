@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS reply_receipts (
 	id TEXT PRIMARY KEY,
 	thread_id TEXT NOT NULL REFERENCES threads(id),
 	ticket_id TEXT REFERENCES tickets(id),
+	cause TEXT,
 	text TEXT NOT NULL,
 	created_at INTEGER NOT NULL,
 	delivered_at INTEGER
@@ -154,6 +155,8 @@ export function openStore(path: string): DatabaseSync {
 	db.exec("PRAGMA foreign_keys = ON");
 	if (path !== ":memory:") db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000");
 	db.exec(SCHEMA);
+	const replyColumns = db.prepare("PRAGMA table_info(reply_receipts)").all().map((c) => (c as { name: string }).name);
+	if (!replyColumns.includes("cause")) db.exec("ALTER TABLE reply_receipts ADD COLUMN cause TEXT");
 	return db;
 }
 

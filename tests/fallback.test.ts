@@ -10,8 +10,8 @@ const workerSelector = () => new ModelSelector({ primary, fallback, probeEveryMs
 const brain: Brain = (cards) =>
 	cards.flatMap((card) => {
 		if (card.startsWith("[对话]")) return openOnConversation(card);
-		if (card.startsWith("[通知]")) return [{ name: "reply", args: { text: `通知：${card.slice(5, 40)}` } }];
-		if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `结果：${card.split("\n")[1]}`, ticketId: ids(card, "tkt") } }];
+		if (card.startsWith("[通知] act_")) return [{ name: "reply", args: { text: `通知：${card.split("\n")[1].slice(0, 30)}`, cause: card.match(/act_[\w-]+/)![0] } }];
+		if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `结果：${card.split("\n")[1]}`, cause: ids(card, "tkt") } }];
 		return [];
 	});
 

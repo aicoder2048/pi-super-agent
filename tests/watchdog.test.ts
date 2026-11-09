@@ -50,21 +50,22 @@ test("同一段系统问题只通知一次（Watchdog 重启也不重复），�
 		.filter((id) => id.startsWith("problem:")));
 	const failFor = (minutes: number, wd: Watchdog) => {
 		for (let m = 0; m < minutes; m += 3) {
-			for (const a of kernel.dueActions()) kernel.failAction(a.id, "channel down");
+			for (const a of kernel.dueActions()) if (a.kind === "channel.reply") kernel.failAction(a.id, "channel down");
 			wd.checkOnce();
 			now.t += 3 * MIN;
 		}
 	};
 	writeFileSync(join(stateDir, "heartbeat.json"), JSON.stringify({ pid: 1, at: now.t }));
-	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "第一段" });
+	const said = (body: string) => kernel.submitTrigger({ source: "conversation", externalId: body, threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body, occurredAt: now.t }).triggerId;
+	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "第一段", cause: said("一") });
 	failFor(60, newWatchdog());
 	failFor(60, newWatchdog());
 	assert.equal(problemIds().size, 1);
-	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "送达成功" });
+	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "送达成功", cause: said("二") });
 	for (const a of kernel.dueActions()) kernel.completeAction(a.id);
 	const wd = newWatchdog();
 	wd.checkOnce();
-	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "第二段" });
+	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "第二段", cause: said("三") });
 	failFor(60, wd);
 	assert.equal(problemIds().size, 2);
 });

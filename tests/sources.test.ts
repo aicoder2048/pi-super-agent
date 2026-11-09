@@ -115,10 +115,12 @@ test("通用来源：一直不完整的文件等稳定之后才拒收，不需�
 	t.after(() => g.source.stop());
 	g.source.start();
 	writeFileSync(join(g.inboxDir, "stuck.json"), '{"thread":"ops",');
-	await sleep(30);
+	g.source.scan();
 	assert.deepEqual(readdirSync(join(g.inboxDir, "rejected")), []);
-	await sleep(400);
-	assert.ok(existsSync(join(g.inboxDir, "rejected", "stuck.json.error.txt")));
+	for (let waited = 0; !existsSync(join(g.inboxDir, "rejected", "stuck.json.error.txt")); waited += 20) {
+		assert.ok(waited < 3000, "稳定后被拒收");
+		await sleep(20);
+	}
 });
 
 test("通用来源：同一个 id 投递两次，两次提交的 externalId 相同，由内核去重", () => {

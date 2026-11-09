@@ -106,7 +106,7 @@ export function openOnConversation(card: string, title = card.split("使用者�
 	const triggerId = ids(card, "trg")!;
 	return [
 		{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId, title, brief: title }] } },
-		{ name: "reply", args: { text: `收到：${title}` } },
+		{ name: "reply", args: { text: `收到：${title}`, cause: triggerId } },
 	];
 }
 

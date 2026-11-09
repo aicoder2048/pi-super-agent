@@ -6,7 +6,7 @@ import { ids, openOnConversation, startHost, until, type Brain } from "./helpers
 const replyOnReport: Brain = (cards) =>
 	cards.flatMap((card) => {
 		if (card.startsWith("[对话]")) return openOnConversation(card);
-		if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `结果：${card.split("\n")[1]}`, ticketId: ids(card, "tkt") } }];
+		if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `结果：${card.split("\n")[1]}`, cause: ids(card, "tkt") } }];
 		return [];
 	});
 

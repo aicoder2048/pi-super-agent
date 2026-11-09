@@ -59,7 +59,7 @@ test("没有规则时开出的推断任务：开始时的确认被拒绝，对�
 	const brain: Brain = (cards, _n, results) => {
 		if (results.some((r) => r.includes('"ticketId"'))) {
 			const ticketId = results.join("").match(/tkt_[\w-]+/)![0];
-			return [{ name: "reply", args: { text: "我开始悄悄看一下", ticketId } }];
+			return [{ name: "reply", args: { text: "我开始悄悄看一下", cause: ticketId } }];
 		}
 		return cards.flatMap((card) => card.startsWith("[候选触发]")
 			? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "inference", triggerId: ids(card, "trg"), title: "看看", brief: "看看" }] } }]

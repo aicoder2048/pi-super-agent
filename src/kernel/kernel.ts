@@ -187,33 +187,53 @@ export class Kernel {
 		);
 	}
 
-	reply({ threadId, text, ticketId }: { threadId: string; text: string; ticketId?: string }): Result<{ replyId: string }> {
+	reply({ threadId, text, cause }: { threadId: string; text: string; cause?: string }): Result<{ replyId: string }> {
 		return this.#tx(() => {
 			if (!this.#get("SELECT 1 FROM threads WHERE id = ?", threadId)) return reject(`unknown thread ${threadId}`);
 			const length = [...text].length;
 			if (length > this.config.replyMaxChars) {
 				return reject(`reply has ${length} characters, limit is ${this.config.replyMaxChars}`);
 			}
-			if (ticketId !== undefined) {
-				const ticket = this.#ticketRow(ticketId);
-				if (!ticket) return reject(`unknown ticket ${ticketId}`);
-				const latest = this.#latestReportRow(ticketId);
-				if (ticket.basis === "inference" && (!latest || latest.status === "progress")) {
-					return reject("inference tickets get no confirmation; reply only after a result");
-				}
-			}
+			const problem = this.#causeProblem(cause);
+			if (problem) return reject(problem);
+			const used = this.#get("SELECT COUNT(*) AS n FROM reply_receipts WHERE cause = ?", cause).n as number;
+			if (used >= this.config.repliesPerCause) return reject(`already replied ${used} times about ${cause}`);
 			const replyId = this.#id("rpl");
 			this.#run(
-				"INSERT INTO reply_receipts (id, thread_id, ticket_id, text, created_at) VALUES (?, ?, ?, ?, ?)",
+				"INSERT INTO reply_receipts (id, thread_id, ticket_id, cause, text, created_at) VALUES (?, ?, ?, ?, ?, ?)",
 				replyId,
 				threadId,
-				ticketId ?? null,
+				cause!.startsWith("tkt_") ? cause : null,
+				cause,
 				text,
 				this.#now(),
 			);
 			this.#enqueue({ kind: "channel.reply", payload: { threadId, text, replyId } });
 			return { ok: true, replyId };
 		});
+	}
+
+	// Every reply answers something the user can be told about: their own words, a ticket result, or a notice.
+	#causeProblem(cause: string | undefined): string | undefined {
+		if (!cause) return "a reply needs a cause: the conversation trigger, ticket or notice id it answers";
+		if (cause.startsWith("trg_")) {
+			if (!this.#get("SELECT 1 FROM triggers WHERE id = ?", cause)) return `unknown trigger ${cause}`;
+			return this.#inConversation(cause) ? undefined : "a source trigger is data, not something to answer; open a ticket or ignore it";
+		}
+		if (cause.startsWith("tkt_")) {
+			const ticket = this.#ticketRow(cause);
+			if (!ticket) return `unknown ticket ${cause}`;
+			if (ticket.basis !== "inference") return undefined;
+			const latest = this.#latestReportRow(cause);
+			const answerable = latest && (latest.question || ["ready", "blocked", "failed"].includes(latest.status));
+			return answerable ? undefined : "inference tickets stay quiet until they have a result to report";
+		}
+		if (cause.startsWith("act_")) {
+			const action = this.#get("SELECT kind, payload FROM actions WHERE id = ?", cause);
+			const notice = action?.kind === "router.notify" && JSON.parse(action.payload).kind === "notice";
+			return notice ? undefined : `${cause} is not a notice`;
+		}
+		return `unknown cause ${cause}`;
 	}
 
 	markReplyDelivered(replyId: string): boolean {
@@ -304,6 +324,10 @@ export class Kernel {
 			const ticket = this.#requireTicket(ticketId);
 			if (ticket.stopped_at !== null) return false;
 			if (ticket.worker_state === "running") return true;
+			if (ticket.basis === "inference" && this.#inferenceRunning() >= this.config.inferenceConcurrent) {
+				this.#setState(ticketId, "queued");
+				return false;
+			}
 			const running = this.#get("SELECT COUNT(*) AS n FROM tickets WHERE worker_state = 'running'").n as number;
 			const general = running < this.config.maxWorkers;
 			const reserved =
@@ -701,13 +725,12 @@ export class Kernel {
 		return { ok: true, ticketId };
 	}
 
+	#inferenceRunning(): number {
+		return this.#get("SELECT COUNT(*) AS n FROM tickets WHERE basis = 'inference' AND worker_state = 'running'").n as number;
+	}
+
+	// Concurrency is gated in claimSlot, the only way into running; opening only checks the daily total.
 	#inferenceLimitProblem(): string | null {
-		const active = this.#get(
-			"SELECT COUNT(*) AS n FROM tickets WHERE basis = 'inference' AND stopped_at IS NULL AND closed_at IS NULL",
-		).n as number;
-		if (active >= this.config.inferenceConcurrent) {
-			return `inference limit: ${active} running, at most ${this.config.inferenceConcurrent} at once`;
-		}
 		const today = this.#get(
 			"SELECT COUNT(*) AS n FROM tickets WHERE basis = 'inference' AND created_at >= ?",
 			localDayStart(this.#now()),
@@ -755,11 +778,14 @@ export class Kernel {
 			`SELECT t.id FROM tickets t
 			 WHERE t.worker_state = 'queued' AND t.stopped_at IS NULL
 			   AND EXISTS (SELECT 1 FROM ticket_inputs i WHERE i.ticket_id = t.id AND i.delivered_at IS NULL)
+			   AND NOT (t.basis = 'inference' AND ? >= ?)
 			 ORDER BY
 			   EXISTS (SELECT 1 FROM ticket_inputs i WHERE i.ticket_id = t.id AND i.delivered_at IS NULL AND i.kind = 'user_message') DESC,
 			   t.basis = 'request' DESC,
 			   t.created_at, t.rowid
 			 LIMIT 1`,
+			this.#inferenceRunning(),
+			this.config.inferenceConcurrent,
 		);
 		if (next) this.#wake(next.id);
 	}
