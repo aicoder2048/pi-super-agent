@@ -245,7 +245,28 @@ const launchBrowser = () => (sharedBrowser ??= chromium.launch());
 export async function closeBrowser(): Promise<void> {
 	const browser = sharedBrowser;
 	sharedBrowser = undefined;
-	await (await browser)?.close();
+	const problems = await teardown([["关闭浏览器", async () => (await browser)?.close()]]);
+	if (problems.length) process.stderr.write(`${problems.join("\n")}\n`);
+}
+
+/**
+ * Runs every cleanup step even when one throws or never settles (a browser frozen by a system sleep
+ * never answers close), so the host and fake model are still stopped and the test process can exit.
+ */
+export async function teardown(steps: [name: string, run: () => unknown][], ms = 10_000): Promise<string[]> {
+	const problems: string[] = [];
+	for (const [name, run] of steps) {
+		const timer = new AbortController();
+		const timedOut = delay(ms, undefined, { signal: timer.signal }).then(() => { throw new Error(`${ms} ms 内没有完成`); }, () => {});
+		try {
+			await Promise.race([Promise.resolve().then(run), timedOut]);
+		} catch (error) {
+			problems.push(`${name}：${(error as Error).message}`);
+		} finally {
+			timer.abort();
+		}
+	}
+	return problems;
 }
 
 const slug = (name: string) => name.replace(/[^\p{L}\p{N}-]+/gu, "-").slice(0, 80);
@@ -305,6 +326,7 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 	};
 
 	let left: number[] = [];
+	let cleanup: string[] = [];
 	try {
 		await step("宿主启动，页面已连接", async () => {
 			const webPort = options.fixedPort ? await freePort() : 0;
@@ -319,13 +341,15 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 			assert.deepEqual(fake.leftovers(), { unused: [], unmatched: [], stray: [] });
 		});
 	} finally {
-		for (const context of contexts) await context.close();
-		left = (await host?.stop()) ?? [];
-		consoleStream.end();
-		writeFileSync(join(out, "fake-model.jsonl"), fake.jsonl());
-		await fake.close();
-		rmSync(root, { recursive: true, force: true });
+		cleanup = await teardown([
+			...contexts.map((context, i): [string, () => unknown] => [`关闭页面 ${i + 1}`, () => context.close()]),
+			["停宿主", async () => { left = (await host?.stop()) ?? []; }],
+			["写日志", () => { consoleStream.end(); writeFileSync(join(out, "fake-model.jsonl"), fake.jsonl()); }],
+			["关假模型", () => fake.close()],
+			["删临时目录", () => rmSync(root, { recursive: true, force: true })],
+		]);
 	}
+	assert.deepEqual(cleanup, [], `收尾出错：${cleanup.join("；")}`);
 	assert.deepEqual(left, [], `收尾后仍有进程组存活：${left.join(", ")}`);
 }
 
