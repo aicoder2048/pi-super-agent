@@ -3,10 +3,16 @@ import { openSync } from "node:fs";
 import { readHeartbeat } from "../heartbeat.ts";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig } from "../host/config.ts";
+import { loadConfig, type HostConfig } from "../host/config.ts";
+import { exitOnStartupError } from "../host/startup-error.ts";
 import { Watchdog } from "./watchdog.ts";
 
-const config = loadConfig();
+let config: HostConfig;
+try {
+	config = loadConfig();
+} catch (error) {
+	exitOnStartupError(error);
+}
 const log = (line: string) => console.error(`${new Date().toISOString()} ${line}`);
 const repo = fileURLToPath(new URL("../..", import.meta.url));
 const intervalMs = config.watchdog.intervalMinutes * 60_000;

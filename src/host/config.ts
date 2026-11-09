@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_MODELS, parseModelRef, type ModelRef } from "../models.ts";
 import type { KernelConfig } from "../kernel/types.ts";
+import { StartupError } from "./startup-error.ts";
 
 export interface HostConfig {
 	stateDir: string;
@@ -30,7 +31,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	const heartbeatSeconds = raw.heartbeatSeconds ?? 30;
 	const watchdog = { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120, ...(raw.watchdog ?? {}) };
 	if (!(watchdog.staleSeconds > 2 * heartbeatSeconds)) {
-		throw new Error(`${file}：watchdog.staleSeconds（${watchdog.staleSeconds}）必须大于 heartbeatSeconds（${heartbeatSeconds}）的两倍，否则 Watchdog 会反复重启健康的宿主`);
+		throw new StartupError(`${file}：watchdog.staleSeconds（${watchdog.staleSeconds}）必须大于 heartbeatSeconds（${heartbeatSeconds}）的两倍，否则 Watchdog 会反复重启健康的宿主`);
 	}
 	return {
 		stateDir,

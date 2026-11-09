@@ -4,23 +4,28 @@ import { formatModelRef } from "../models.ts";
 import { Modules } from "../modules.ts";
 import { loadConfig } from "./config.ts";
 import { Host } from "./host.ts";
+import { exitOnStartupError } from "./startup-error.ts";
 import { createHostOptions } from "./wiring.ts";
 
-const config = loadConfig();
-const log = (line: string) => console.error(`${new Date().toISOString()} ${line}`);
-const modules = Modules.load(config.modulesDirs, join(config.stateDir, "rules.md"));
-log(`[host] 模块：${modules.modules.map((m) => m.name).join(", ") || "无"}；规则 ${modules.allRules().length} 条`);
+async function main(): Promise<void> {
+	const config = loadConfig();
+	const log = (line: string) => console.error(`${new Date().toISOString()} ${line}`);
+	const modules = Modules.load(config.modulesDirs, join(config.stateDir, "rules.md"));
+	log(`[host] 模块：${modules.modules.map((m) => m.name).join(", ") || "无"}；规则 ${modules.allRules().length} 条`);
 
-const host = await Host.start(createHostOptions({ config, modules, modelRuntime: await ModelRuntime.create(), log }));
-log(`[host] 已启动，状态目录 ${config.stateDir}，Router ${formatModelRef(config.models.router)}，Worker ${formatModelRef(config.models.worker)}，回退 ${formatModelRef(config.models.fallback)}`);
+	const host = await Host.start(createHostOptions({ config, modules, modelRuntime: await ModelRuntime.create(), log }));
+	log(`[host] 已启动，状态目录 ${config.stateDir}，Router ${formatModelRef(config.models.router)}，Worker ${formatModelRef(config.models.worker)}，回退 ${formatModelRef(config.models.fallback)}`);
 
-let stopping = false;
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-	process.on(signal, async () => {
-		if (stopping) return;
-		stopping = true;
-		log(`[host] 收到 ${signal}，正在停止`);
-		await host.stop();
-		process.exit(0);
-	});
+	let stopping = false;
+	for (const signal of ["SIGINT", "SIGTERM"] as const) {
+		process.on(signal, async () => {
+			if (stopping) return;
+			stopping = true;
+			log(`[host] 收到 ${signal}，正在停止`);
+			await host.stop();
+			process.exit(0);
+		});
+	}
 }
+
+main().catch(exitOnStartupError);
