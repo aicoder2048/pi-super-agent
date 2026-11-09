@@ -52,7 +52,7 @@ export async function webGet(rawUrl: string, options: WebGetOptions = {}): Promi
 		const host = url.hostname.replace(/^\[|\]$/g, "");
 		if (isIP(host) && !allow(host)) return fail(refuse(host, host));
 		const send = url.protocol === "https:" ? httpsRequest : httpRequest;
-		const req = send(url, { method: "GET", lookup, signal, agent: false, headers: { accept: "text/html, text/plain, application/json;q=0.9, */*;q=0.1" } }, done);
+		const req = send(url, { method: "GET", lookup, signal, agent: false, headers: { "user-agent": "PiSuperAgent/1.0", accept: "text/html, text/plain, application/json;q=0.9, */*;q=0.1" } }, done);
 		req.on("error", fail);
 		req.end();
 	});
