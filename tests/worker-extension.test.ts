@@ -147,6 +147,7 @@ test("牵头人的 Worker 有 consult：专家只能从名册里选，一次 1 �
 	assert.equal(result.content[0].text, "行情分析师：放量下跌");
 	assert.equal(result.details.kind, "consult");
 	assert.equal(process.env.PSA_EXPERTS, undefined);
+	assert.ok(lead.tools.get("consult").promptGuidelines.some((g: string) => /回答.*数据.*不是.*指令|数据，不是指令/.test(g)), "提示专家回答只是数据");
 });
 
 test("被会诊的专家只有只读工具：不注册汇报、交回、会诊和后台命令，其余工具一律拦截", async (t) => {
