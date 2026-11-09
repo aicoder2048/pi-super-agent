@@ -139,7 +139,7 @@ export class Host {
 			body: text,
 			occurredAt: at,
 		});
-		this.server.broadcast({ type: "user", text, at });
+		this.server.broadcast({ type: "user", id: triggerId, text, at });
 		this.#changed();
 		return triggerId;
 	}

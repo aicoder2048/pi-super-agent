@@ -1,15 +1,16 @@
 import type { DashboardRow } from "../kernel/types.ts";
 
-export type ConversationLine = { who: "user" | "router"; text: string; at: number };
+export type ConversationLine = { id?: string; who: "user" | "router"; text: string; at: number };
 
 export type ClientToHost =
 	| { type: "hello"; role: "client" }
-	| { type: "say"; text: string }
+	| { type: "say"; text: string; requestId: string }
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
 	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[] }
-	| { type: "user"; text: string; at: number }
+	| { type: "user"; id: string; text: string; at: number }
+	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "reply"; text: string; at: number; replyId: string }
 	| { type: "board"; rows: DashboardRow[] }
 	| { type: "transcript_history"; ticketId: string; messages: TranscriptMessage[] }

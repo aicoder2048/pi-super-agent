@@ -20,7 +20,9 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 	const view: BoardView = { rows: [], receivedAt: Date.now(), connected: false };
 	let ctx: ExtensionContext | undefined;
 	let conn: HostConnection | undefined;
+	const seenIds = new Set<string>();
 	let lastSeenAt = 0;
+	let primed = false;
 	let watching: string | undefined;
 	let ticker: NodeJS.Timeout | undefined;
 
@@ -30,11 +32,18 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 	const drawBoard = () =>
 		ctx?.ui.setWidget("psa-board", () => ({ render: (width: number) => renderBoard(view, width, Date.now()), invalidate() {} }));
 
+	// Snapshot lines carry no id until kernel.conversation() returns one, so they fall back to the time watermark.
+	const isNew = (l: ConversationLine) => (l.id ? !seenIds.has(l.id) : l.at > lastSeenAt);
+	const markSeen = (l: ConversationLine) => {
+		if (l.id) seenIds.add(l.id);
+		lastSeenAt = Math.max(lastSeenAt, l.at);
+	};
+
 	const showConversation = (lines: ConversationLine[]) => {
-		const fresh = lines.filter((l) => l.at > lastSeenAt);
-		const shown = lastSeenAt === 0 ? fresh.slice(-HISTORY_SHOWN) : fresh;
-		for (const l of shown) show(l.who, l.text);
-		if (lines.length) lastSeenAt = Math.max(lastSeenAt, ...lines.map((l) => l.at));
+		const fresh = lines.filter(isNew);
+		for (const l of primed ? fresh : fresh.slice(-HISTORY_SHOWN)) show(l.who, l.text);
+		lines.forEach(markSeen);
+		primed = true;
 	};
 
 	const onMessage = (m: HostToClient) => {
@@ -45,10 +54,14 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 				view.receivedAt = Date.now();
 				break;
 			case "user":
-			case "reply":
-				if (m.at <= lastSeenAt) return;
-				lastSeenAt = m.at;
-				show(m.type === "user" ? "user" : "router", m.text);
+			case "reply": {
+				const line: ConversationLine = { id: m.type === "user" ? m.id : m.replyId, who: m.type === "user" ? "user" : "router", text: m.text, at: m.at };
+				if (!isNew(line)) return;
+				markSeen(line);
+				show(line.who, line.text);
+				return;
+			}
+			case "ack":
 				return;
 			case "board":
 				view.rows = m.rows;
@@ -74,9 +87,13 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, context) => {
 		ctx = context;
+		const ackTimeoutMs = Number(process.env.PSA_ACK_TIMEOUT_MS) || 5000;
 		conn = new HostConnection({
 			socketPath: process.env.PSA_SOCKET ?? join(defaultStateDir(), "host.sock"),
 			onMessage,
+			ackTimeoutMs,
+			onAckMissing: (text) =>
+				ctx?.ui.notify(`宿主 ${ackTimeoutMs / 1000} 秒内没有确认收到「${text}」，这句话可能没送达。宿主可能卡住了，稍后看对话里有没有它，没有就再说一次。`, "warning"),
 			onStatus: (connected) => {
 				view.connected = connected;
 				drawBoard();
