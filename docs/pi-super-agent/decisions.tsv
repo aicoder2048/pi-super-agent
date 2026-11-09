@@ -72,3 +72,4 @@ ts	phase	decision	why	evidence	result
 2026-11-09T03:47:05Z	ship	自底向上 squash 合并 #4 到 #10：每个 PR 先改基到 main、rebase 到合并结果、比对 patch-id 一致后再推送合并，并读回 MERGED 且基为 main	Shipping 第 3、4 步：结论覆盖的是补丁，patch-id 相同才继续有效	main 519487b；main 与验证头 4fce72e 的 git diff 为空	done
 2026-11-09T03:47:05Z	ship	合并后在 main 上全量 198 个测试通过；保留远端 psa/* 与 mvp 分支，因为 squash 后原始 35 个提交只在这些分支上，决策记录引用了它们的 SHA	不让记录里的证据指针失效	origin/psa/*, origin/mvp	done
 2026-11-09T03:47:05Z	followup	验证者提出的后续项：状态目录路径过长时 socket 超出 macOS 104 字节上限导致宿主启动失败（应在启动时给出清楚的报错）；默认回退模型 DeepSeek 为按量计费，按规格保留并设每日上限	合并期间不改分支，留作后续	PR #6 #10 验证评论	open
+2026-11-09T04:24:55Z	handoff	上下文超过 90%，按使用者要求暂停并写交接文档；psa/ship-log 上的两项后续修复已提交，未推送	避免压缩丢失细节，新会话从交接文档接手	docs/pi-super-agent/handoff.md; commit 917f031	paused
