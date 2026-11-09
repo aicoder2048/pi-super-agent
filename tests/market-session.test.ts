@@ -7,7 +7,7 @@ const at = (iso: string) => Date.parse(iso);
 test("交易时段：美东 9:30 前是盘前，9:30 到 16:00 是常规时段，16:00 后是盘后", () => {
 	assert.equal(sessionAt(at("2026-11-09T14:29:59Z")).phase, "pre");
 	const open = sessionAt(at("2026-11-09T14:30:00Z"));
-	assert.deepEqual(open, { nyDate: "2026-11-09", phase: "regular", openAt: at("2026-11-09T14:30:00Z"), closeAt: at("2026-11-09T21:00:00Z") });
+	assert.deepEqual(open, { nyDate: "2026-11-09", weekend: false, phase: "regular", openAt: at("2026-11-09T14:30:00Z"), closeAt: at("2026-11-09T21:00:00Z") });
 	assert.equal(sessionAt(at("2026-11-09T21:00:00Z")).phase, "post");
 });
 

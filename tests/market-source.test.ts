@@ -5,11 +5,11 @@ import { join } from "node:path";
 import test from "node:test";
 import { Kernel } from "../src/kernel/kernel.ts";
 import { openStore } from "../src/kernel/store.ts";
-import { MarketClient, type Http } from "../src/sources/market/client.ts";
+import { MarketClient } from "../src/sources/market/client.ts";
 import { MarketSource } from "../src/sources/market/source.ts";
 import { parseMarketSettings } from "../src/sources/market/settings.ts";
 import { ConfigError } from "../src/config-error.ts";
-import { snapshotBody, tickerRow } from "./helpers/market.ts";
+import { fakeHttp, snapshotBody, tickerRow } from "./helpers/market.ts";
 
 const T = (iso: string) => Date.parse(iso);
 const DEFAULTS = {
@@ -23,20 +23,17 @@ const DEFAULTS = {
 
 function market(options: { dbPath?: string; key?: string; respond?: (url: string, now: number) => Response } = {}) {
 	const dbPath = options.dbPath ?? join(mkdtempSync(join(tmpdir(), "psa-market-")), "state.db");
-	const clock = { t: T("2026-11-09T15:00:00Z"), now() { return this.t; } };
-	const kernel = new Kernel({ db: openStore(dbPath), clock, sourcePolicy: (t) => (t.source === "watchdog" ? "notice" : "candidate") });
 	const prices: Record<string, number> = { NVDA: 100, SPY: 600 };
-	const requests: string[] = [];
-	const http: Http = async (url) => {
-		requests.push(url);
-		if (options.respond) return options.respond(url, clock.t);
-		return Response.json(snapshotBody(Object.entries(prices).map(([s, p]) => tickerRow(s, p, s === "SPY" ? 600 : 100, clock.t - 60_000))));
-	};
+	const { clock, calls, http } = fakeHttp((url, now) =>
+		options.respond ? options.respond(url, now) : Response.json(snapshotBody(Object.entries(prices).map(([s, p]) => tickerRow(s, p, s === "SPY" ? 600 : 100, now - 60_000)))),
+	T("2026-11-09T15:00:00Z"));
+	const kernel = new Kernel({ db: openStore(dbPath), clock, sourcePolicy: (t) => (t.source === "watchdog" ? "notice" : "candidate") });
 	const client = new MarketClient({ key: "key" in options ? options.key : "k", baseURL: DEFAULTS.baseURL, minGapMs: 0, http, clock, sleep: async () => {} });
 	const logs: string[] = [];
 	let failWrite = false;
 	const source = new MarketSource({
 		source: "us-market",
+		title: "美股行情",
 		settings: parseMarketSettings(DEFAULTS, undefined, "test"),
 		client,
 		ctx: {
@@ -54,7 +51,7 @@ function market(options: { dbPath?: string; key?: string; respond?: (url: string
 		},
 	});
 	const triggers = () => kernel.triggerLog().map((t) => ({ source: t.source, externalId: t.externalId, disposition: t.disposition })).reverse();
-	return { source, kernel, clock, prices, requests, logs, triggers, dbPath, crashBeforeCursor: () => { failWrite = true; } };
+	return { source, kernel, clock, prices, requests: calls, logs, triggers, dbPath, crashBeforeCursor: () => { failWrite = true; } };
 }
 
 test("看盘：周末不发任何请求", async () => {
@@ -181,9 +178,9 @@ test("查询：quote 返回数字报价，bars 返回 K 线，session 返回交�
 	assert.deepEqual(await m.source.lookup("quote", { symbols: ["AMD"] }), [
 		{ symbol: "AMD", price: 150, prevClose: 160, changePct: -6.25, at: T("2026-11-09T14:59:00Z"), delayed: true, dayVolume: 5_000_000 },
 	]);
-	assert.ok(m.requests.at(-1)!.endsWith("tickers=AMD"));
+	assert.ok(m.requests.at(-1)!.url.endsWith("tickers=AMD"));
 	assert.deepEqual(await m.source.lookup("bars", { symbol: "AMD", span: "minute", from: "2026-11-09", to: "2026-11-09" }), [{ t: 1, o: 1, h: 2, l: 0.5, c: 1.5, v: 10 }]);
-	assert.ok(m.requests.at(-1)!.includes("/v2/aggs/ticker/AMD/range/1/minute/2026-11-09/2026-11-09"));
+	assert.ok(m.requests.at(-1)!.url.includes("/v2/aggs/ticker/AMD/range/1/minute/2026-11-09/2026-11-09"));
 	assert.deepEqual(await m.source.lookup("session", {}), { nyDate: "2026-11-09", phase: "regular" });
 });
 

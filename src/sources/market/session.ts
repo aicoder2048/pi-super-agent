@@ -2,14 +2,15 @@ export type Phase = "pre" | "regular" | "post" | "closed";
 
 export interface Session {
 	nyDate: string;
+	weekend: boolean;
 	phase: Phase;
 	openAt: number;
 	closeAt: number;
 }
 
-const MINUTE = 60_000;
+export const MINUTE = 60_000;
 // Delayed plans lag about 15 minutes, so the last regular-session quotes arrive after the bell.
-export const DELAY_GRACE_MS = 20 * MINUTE;
+const DELAY_GRACE_MS = 20 * MINUTE;
 const MAX_SLEEP_MS = 15 * MINUTE;
 
 const NY = new Intl.DateTimeFormat("en-US", {
@@ -35,17 +36,22 @@ export function nyDateOf(ms: number): string {
 	return nyWall(ms).nyDate;
 }
 
+export function nyTime(ms: number): string {
+	const { minutes } = nyWall(ms);
+	return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
 export function sessionAt(now: number): Session {
 	const w = nyWall(now);
 	const openAt = w.midnight + (9 * 60 + 30) * MINUTE;
 	const closeAt = w.midnight + 16 * 60 * MINUTE;
 	const phase: Phase = w.weekend || w.minutes < 4 * 60 || w.minutes >= 20 * 60 ? "closed" : now < openAt ? "pre" : now < closeAt ? "regular" : "post";
-	return { nyDate: w.nyDate, phase, openAt, closeAt };
+	return { nyDate: w.nyDate, weekend: w.weekend, phase, openAt, closeAt };
 }
 
 export function inPollWindow(now: number): boolean {
 	const s = sessionAt(now);
-	return !nyWall(now).weekend && now >= s.openAt && now <= s.closeAt + DELAY_GRACE_MS;
+	return !s.weekend && now >= s.openAt && now <= s.closeAt + DELAY_GRACE_MS;
 }
 
 export function nextPollDelay(now: number, everySeconds: number): number {

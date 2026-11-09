@@ -4,16 +4,15 @@ import { threadId } from "../generic.ts";
 import { MarketClient, MarketError, type Span } from "./client.ts";
 import { loadMarketKey } from "./key.ts";
 import { detect, toTrigger, type MarketCursor } from "./detect.ts";
-import { inPollWindow, nextPollDelay, sessionAt } from "./session.ts";
+import { inPollWindow, MINUTE, nextPollDelay, sessionAt } from "./session.ts";
 import { parseMarketSettings, parseSymbol, type MarketSettings } from "./settings.ts";
 
-const MINUTE = 60_000;
 const HOLIDAY_AFTER_OPEN_MS = 30 * MINUTE;
 const NOTICE_AFTER_MS = 15 * MINUTE;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const SPANS: Span[] = ["minute", "hour", "day"];
 
-export const LOOKUP_HELP = `us-market（美股行情）：
+const LOOKUP_HELP = `us-market（美股行情）：
 - quote { symbols: string[] }：最多 10 只股票的最新报价（price、prevClose、changePct、at 毫秒时间戳、delayed）
 - bars { symbol, span: "minute"|"hour"|"day", from: "YYYY-MM-DD", to: "YYYY-MM-DD" }：K 线（t、o、h、l、c、v），最多 500 根
 - session {}：纽约日期和交易时段（pre、regular、post、closed）`;
@@ -32,7 +31,7 @@ export function marketFeed(input: FeedInput): FeedSpec {
 
 export interface MarketSourceOptions {
 	source: string;
-	title?: string;
+	title: string;
 	settings: MarketSettings;
 	client: MarketClient;
 	ctx: FeedContext;
@@ -144,7 +143,7 @@ export class MarketSource implements Feed {
 			externalId: `${source}-failing:${this.#failing.since}`,
 			threads: [{ id: threadId(WATCHDOG_SOURCE, `problem-${source}`) }],
 			sender: source,
-			body: `[${this.#o.title ?? source}] 已经连续 ${minutes} 分钟取不到行情，最近的错误是「${message}」。请告诉使用者。`,
+			body: `[${this.#o.title}] 已经连续 ${minutes} 分钟取不到行情，最近的错误是「${message}」。请告诉使用者。`,
 			occurredAt: now,
 		});
 	}

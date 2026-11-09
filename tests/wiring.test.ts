@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { createHostOptions, modelSelectors, watchedSources } from "../src/host/wiring.ts";
 import { Host } from "../src/host/host.ts";
 import { Modules } from "../src/modules.ts";
+import { KEY_NAMES } from "../src/sources/market/key.ts";
 import { until } from "./helpers/fakes.ts";
 
 const config = {
@@ -103,13 +104,12 @@ test("在替你盯着：每个来源一项，带上管它的规则（使用者�
 });
 
 const REPO_MODULES = new URL("../modules", import.meta.url).pathname;
-const KEY_VARS = ["STOCK_HEATMAP_API_KEY", "MASSIVE_API_KEY", "POLYGON_API_KEY"];
 
 function withoutKeyVars(t: import("node:test").TestContext) {
-	const saved = Object.fromEntries(KEY_VARS.map((k) => [k, process.env[k]]));
-	for (const k of KEY_VARS) delete process.env[k];
+	const saved = Object.fromEntries(KEY_NAMES.map((k) => [k, process.env[k]]));
+	for (const k of KEY_NAMES) delete process.env[k];
 	t.after(() => {
-		for (const k of KEY_VARS) if (saved[k] === undefined) delete process.env[k];
+		for (const k of KEY_NAMES) if (saved[k] === undefined) delete process.env[k];
 		else process.env[k] = saved[k];
 	});
 }

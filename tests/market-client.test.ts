@@ -3,24 +3,15 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { MarketClient, MarketError, type Http } from "../src/sources/market/client.ts";
+import { MarketClient, MarketError } from "../src/sources/market/client.ts";
 import { loadMarketKey } from "../src/sources/market/key.ts";
 import { ConfigError } from "../src/config-error.ts";
-import { snapshotBody, tickerRow } from "./helpers/market.ts";
+import { fakeHttp as fakeHttpOn, snapshotBody, tickerRow } from "./helpers/market.ts";
 
 const KEY = "sk-test-123";
 const tradeAt = Date.parse("2026-11-09T15:42:00Z");
 
-function fakeHttp(respond: (url: string) => Response = () => Response.json(snapshotBody([tickerRow("NVDA", 142.85, 135.65, tradeAt)]))) {
-	const clock = { t: 0, now() { return this.t; } };
-	const calls: { url: string; headers: Record<string, string>; at: number }[] = [];
-	const http: Http = async (url, init) => {
-		calls.push({ url, headers: init.headers, at: clock.t });
-		return respond(url);
-	};
-	const sleep = async (ms: number) => { clock.t += ms; };
-	return { clock, calls, http, sleep };
-}
+const fakeHttp = (respond: (url: string) => Response = () => Response.json(snapshotBody([tickerRow("NVDA", 142.85, 135.65, tradeAt)]))) => fakeHttpOn(respond);
 
 function client(f: ReturnType<typeof fakeHttp>, options: { key?: string } = { key: KEY }) {
 	return new MarketClient({ key: options.key, baseURL: "https://api.massive.com", minGapMs: 12_000, http: f.http, clock: f.clock, sleep: f.sleep });

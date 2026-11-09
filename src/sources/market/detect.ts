@@ -1,6 +1,6 @@
 import type { TriggerSubmission } from "../../kernel/types.ts";
 import { threadId } from "../generic.ts";
-import { nyDateOf, type Session } from "./session.ts";
+import { MINUTE, nyDateOf, nyTime, type Session } from "./session.ts";
 
 export interface Quote {
 	symbol: string;
@@ -39,7 +39,6 @@ export interface Move {
 	signal: Signal;
 }
 
-const MINUTE = 60_000;
 const REGULAR_MINUTES = 390;
 // Opening and closing auctions print huge single minutes that are not news.
 const AUCTION_MS = 10 * MINUTE;
@@ -72,7 +71,6 @@ export function detect(cursor: MarketCursor | undefined, quotes: Quote[], sessio
 	return { moves, cursor: { ...today, fired }, fresh };
 }
 
-const NY_TIME = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hourCycle: "h23", hour: "2-digit", minute: "2-digit" });
 const signed = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 const compact = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n));
 
@@ -90,7 +88,7 @@ export function toTrigger(source: string, move: Move): TriggerSubmission {
 		externalId: `${q.symbol}:${nyDate}:${key}`,
 		threads: [{ id: threadId(source, `${q.symbol}:${nyDate}`), title: `${q.symbol} ${nyDate} 行情` }],
 		sender: source,
-		body: `${describe(move)}现价 ${q.price}，昨收 ${q.prevClose}。报价时间 ${NY_TIME.format(q.at)} ET${q.delayed ? "（延迟行情）" : ""}。`,
+		body: `${describe(move)}现价 ${q.price}，昨收 ${q.prevClose}。报价时间 ${nyTime(q.at)} ET${q.delayed ? "（延迟行情）" : ""}。`,
 		occurredAt: q.at,
 	};
 }
