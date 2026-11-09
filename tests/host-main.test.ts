@@ -67,3 +67,15 @@ for (const c of cases) {
 		assert.doesNotMatch(run.stderr, /^file:\/\//m);
 	});
 }
+
+test("使用者规则没写来源行时，just host 启动时逐条说明它不生效", () => {
+	const stateDir = stateWith({ models: { router: "openai-codex/no-such-model" } })();
+	writeFileSync(join(stateDir, "rules.md"), "## no-source\n有新邮件就看一下\n\n## ok\n来源: ci\nCI 失败时开任务\n");
+	const run = spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], {
+		env: { ...process.env, PSA_STATE_DIR: stateDir },
+		encoding: "utf8",
+		timeout: 20_000,
+	});
+	assert.match(run.stderr, /规则 user\/no-source 没写「来源:」，不生效/);
+	assert.doesNotMatch(run.stderr, /规则 user\/ok 没写/);
+});
