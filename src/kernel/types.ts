@@ -15,6 +15,9 @@ export interface Helper {
 	seq: number;
 }
 
+/** The role a ticket gets when the Router names none: the helper of W5 and before. */
+export const GENERAL_ROLE = "general";
+
 export interface HelpersToday {
 	count: number;
 	tokens: number;

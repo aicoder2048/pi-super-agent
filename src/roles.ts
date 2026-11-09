@@ -1,0 +1,116 @@
+import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { ConfigError } from "./config-error.ts";
+import { GENERAL_ROLE } from "./kernel/types.ts";
+import { PAY_PER_USE_PROVIDERS, parseModelRef, type ModelRef } from "./models.ts";
+import { WORKER_TOOLS } from "./worker/tools.ts";
+
+export const BUILTIN_ROLES_DIR = fileURLToPath(new URL("../roles", import.meta.url));
+
+/** A helper's standing identity, from a `.pi/agents`-style Markdown file. */
+export interface Role {
+	name: string;
+	title: string;
+	description: string;
+	/** Undefined: no limit beyond the task's basis. */
+	tools: readonly string[] | undefined;
+	skills: readonly string[];
+	model: ModelRef | undefined;
+	consult: boolean;
+	prompt: string;
+	file: string;
+}
+
+const FIELDS = ["name", "title", "description", "tools", "skills", "model", "consult"];
+const NAME = /^[a-z][a-z0-9-]*$/;
+
+function list(value: unknown, file: string, field: string): string[] | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (typeof value === "string") return value.split(/[,，\s]+/).filter(Boolean);
+	if (Array.isArray(value) && value.every((v) => typeof v === "string")) return value;
+	throw new ConfigError(`${file}：${field} 应写成逗号分隔的字符串或字符串列表`);
+}
+
+function text(value: unknown, file: string, field: string): string {
+	if (typeof value !== "string" || !value.trim()) throw new ConfigError(`${file}：缺少 ${field}`);
+	return value.trim();
+}
+
+export function parseRole(file: string, content: string): Role {
+	const { frontmatter: fm, body } = parseFrontmatter(content);
+	const unknown = Object.keys(fm).find((k) => !FIELDS.includes(k));
+	if (unknown) throw new ConfigError(`${file}：不认识的字段 ${unknown}，可写：${FIELDS.join("、")}`);
+	const name = text(fm.name, file, "name");
+	if (!NAME.test(name)) throw new ConfigError(`${file}：name「${name}」只能用小写英文字母、数字和连字符，以字母开头`);
+	const tools = list(fm.tools, file, "tools");
+	const badTool = tools?.find((t) => !(WORKER_TOOLS as readonly string[]).includes(t));
+	if (badTool) throw new ConfigError(`${file}：tools 里的 ${badTool} 不是 Worker 的工具，可用：${WORKER_TOOLS.join("、")}`);
+	const skills = (list(fm.skills, file, "skills") ?? []).map((s) => resolve(dirname(file), s));
+	const missing = skills.find((s) => !existsSync(s));
+	if (missing) throw new ConfigError(`${file}：skills 指向的 ${missing} 不存在`);
+	let model: ModelRef | undefined;
+	if (fm.model !== undefined) {
+		model = parseModelRef(text(fm.model, file, "model"), `${file}：model`);
+		if (PAY_PER_USE_PROVIDERS.includes(model.provider.trim().toLowerCase())) {
+			throw new ConfigError(`${file}：model：拒绝使用 ${model.provider}/${model.id}：${model.provider} 走按量计费 API，角色只能用订阅模型`);
+		}
+	}
+	if (fm.consult !== undefined && typeof fm.consult !== "boolean") throw new ConfigError(`${file}：consult 只能写 true 或 false`);
+	return {
+		name,
+		title: text(fm.title, file, "title"),
+		description: text(fm.description, file, "description"),
+		tools,
+		skills,
+		model,
+		consult: fm.consult === true,
+		prompt: body.trim(),
+		file,
+	};
+}
+
+/** Every role the Router can pick, from the built-in, module and state-dir `roles/` folders. */
+export class Roster {
+	readonly #roles: Map<string, Role>;
+
+	constructor(roles: Role[]) {
+		this.#roles = new Map();
+		for (const role of roles) {
+			const other = this.#roles.get(role.name);
+			if (other) throw new ConfigError(`角色重名：${role.name} 同时定义在 ${other.file} 和 ${role.file}`);
+			this.#roles.set(role.name, role);
+		}
+		if (!this.#roles.has(GENERAL_ROLE)) throw new ConfigError(`名册里没有内置角色 ${GENERAL_ROLE}`);
+	}
+
+	static load(dirs: readonly string[]): Roster {
+		const roles: Role[] = [];
+		for (const dir of dirs) {
+			if (!existsSync(dir) || !statSync(dir).isDirectory()) continue;
+			for (const entry of readdirSync(dir).sort()) {
+				const file = join(dir, entry);
+				if (entry.endsWith(".md") && statSync(file).isFile()) roles.push(parseRole(file, readFileSync(file, "utf8")));
+			}
+		}
+		return new Roster(roles);
+	}
+
+	get(name: string): Role | undefined {
+		return this.#roles.get(name);
+	}
+
+	names(): string[] {
+		return [...this.#roles.keys()].sort();
+	}
+
+	/** name → title, all the kernel needs to check a role and show it. */
+	titles(): ReadonlyMap<string, string> {
+		return new Map([...this.#roles.values()].map((r) => [r.name, r.title]));
+	}
+
+	rosterPrompt(): string {
+		return this.names().map((n) => this.#roles.get(n)!).map((r) => `- ${r.name}（${r.title}）：${r.description}`).join("\n");
+	}
+}
