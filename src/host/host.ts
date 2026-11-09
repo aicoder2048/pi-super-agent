@@ -5,7 +5,7 @@ import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
 import { Kernel, nextStallAt } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
-import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type DashboardRow, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
+import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DEFAULT_LEAD, DISPOSITIONS, type Clock, type DashboardRow, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
 import type { TriggerSubmission } from "../kernel/types.ts";
 import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
@@ -188,6 +188,7 @@ export class Host {
 			throw error;
 		}
 		host.kernel.nameUnnamedHelpers();
+		for (const { ticketId, from } of host.kernel.reassignToDefaultLead()) host.#log(`[host] 任务 ${ticketId} 的角色 ${from} 已不是牵头角色，改归 ${DEFAULT_LEAD}`);
 		const recovered = host.kernel.recoverOnStartup();
 		host.#duty = { since: host.#clock.now(), resumed: recovered.length };
 		if (recovered.length) host.#log(`[host] 恢复 ${recovered.length} 个执行中的任务：${recovered.join(", ")}`);

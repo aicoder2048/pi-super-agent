@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { newYorkDate } from "./helper-names.ts";
 import {
 	ACTION_KINDS,
 	ACTION_STATUSES,
@@ -184,8 +185,26 @@ export function openStore(path: string): DatabaseSync {
 			ALTER TABLE tickets ADD COLUMN helper_role TEXT ${oneOf("helper_role", HELPER_ROLES)};
 			ALTER TABLE tickets ADD COLUMN helper_seq INTEGER`);
 	}
-	if (!ticketColumns.includes("role")) db.exec(`ALTER TABLE tickets ADD COLUMN role TEXT NOT NULL DEFAULT '${DEFAULT_LEAD}'`);
+	if (!ticketColumns.includes("role")) {
+		inTransaction(db, () => {
+			db.exec(`ALTER TABLE tickets ADD COLUMN role TEXT NOT NULL DEFAULT '${DEFAULT_LEAD}'`);
+			renumberHelpers(db);
+		});
+	}
 	return db;
+}
+
+// Every pre-role ticket now belongs to the default lead, so W5's numbers (counted per origin) would repeat within a day.
+function renumberHelpers(db: DatabaseSync): void {
+	const rows = db.prepare("SELECT id, created_at FROM tickets WHERE helper_name IS NOT NULL ORDER BY created_at, rowid").all() as { id: string; created_at: number }[];
+	const perDay = new Map<string, number>();
+	const update = db.prepare("UPDATE tickets SET helper_seq = ? WHERE id = ?");
+	for (const r of rows) {
+		const day = newYorkDate(r.created_at);
+		const seq = (perDay.get(day) ?? 0) + 1;
+		perDay.set(day, seq);
+		update.run(seq, r.id);
+	}
 }
 
 export function inTransaction<T>(db: DatabaseSync, fn: () => T): T {

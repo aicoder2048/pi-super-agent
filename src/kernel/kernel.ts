@@ -633,6 +633,25 @@ export class Kernel {
 		});
 	}
 
+	/** Open tickets whose role is no longer a lead (its file removed or its consult dropped) go to the default lead, numbered after that day's others. The host calls it once at start. */
+	reassignToDefaultLead(): { ticketId: string; from: string }[] {
+		return this.#tx(() => {
+			const leads = [...this.#roles.keys()];
+			const orphans = this.#all(
+				`SELECT id, role, created_at FROM tickets WHERE closed_at IS NULL AND stopped_at IS NULL AND role NOT IN (${leads.map(() => "?").join(", ")}) ORDER BY created_at, rowid`,
+				...leads,
+			);
+			for (const r of orphans) {
+				const day = newYorkDate(r.created_at);
+				const taken = this.#all("SELECT helper_seq, created_at FROM tickets WHERE role = ? AND helper_seq IS NOT NULL AND created_at > ? AND created_at < ?", DEFAULT_LEAD, r.created_at - 2 * DAY_MS, r.created_at + 2 * DAY_MS)
+					.filter((t) => newYorkDate(t.created_at) === day)
+					.map((t) => t.helper_seq as number);
+				this.#run("UPDATE tickets SET role = ?, helper_seq = ? WHERE id = ?", DEFAULT_LEAD, Math.max(0, ...taken) + 1, r.id);
+			}
+			return orphans.map((r) => ({ ticketId: r.id, from: r.role }));
+		});
+	}
+
 	#newHelper(basis: Basis, originSource: string | null, createdAt: number, ticketRole: string): Helper {
 		const role = helperRole(basis, originSource, this.#isMarketSource);
 		const day = newYorkDate(createdAt);

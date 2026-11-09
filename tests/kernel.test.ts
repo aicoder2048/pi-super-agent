@@ -1317,3 +1317,38 @@ test("旧状态库没有角色列：打开时补上，旧任务都归副幕僚�
 	assert.equal(roleOf(again.kernel, id), "deputy");
 	assert.equal(helperOf(again.kernel, id)!.title, "副幕僚长");
 });
+
+test("旧状态库补角色列时，已起名的助手按纽约日期和建任务先后重新编号，同一天不会出现两个「副幕僚长 #1」", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path, at: "2026-11-09T04:30:00Z" });
+	const yesterday = first.open("request");
+	first.clock.t += HOUR;
+	const today = [first.open("request"), first.open("rule", { source: "toy-market" }), first.open("request")];
+	const w5Seq = [1, 1, 1, 2];
+	[yesterday, ...today].forEach((id, i) => first.db.prepare("UPDATE tickets SET helper_seq = ? WHERE id = ?").run(w5Seq[i], id));
+	first.db.exec("ALTER TABLE tickets DROP COLUMN role");
+	first.db.close();
+	const again = setup({ path });
+	assert.deepEqual([yesterday, ...today].map((id) => helperOf(again.kernel, id)!.seq), [1, 1, 2, 3]);
+});
+
+test("负责未结束任务的角色不再是牵头角色：重启时改归副幕僚长，编号接在当天副幕僚长之后；已结束的不动", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const lead = (title: string) => {
+		const [r] = first.kernel.route([{ kind: "open_ticket", title, basis: "request", role: "market-lead", triggerId: first.say(title).triggerId, brief: "b" }]);
+		assert.ok(r.ok);
+		return r.ticketId!;
+	};
+	const done = lead("已完成");
+	closeTicket(first, done);
+	const open = lead("进行中");
+	const plain = [first.open("request"), first.open("request")];
+	first.db.close();
+	const clock = { now: () => new Date("2026-11-08T10:00:00").getTime() };
+	const kernel = new Kernel({ db: openStore(path), clock, sourcePolicy: () => "candidate", roles: new Map([["deputy", "副幕僚长"]]) });
+	assert.deepEqual(kernel.reassignToDefaultLead(), [{ ticketId: open, from: "market-lead" }]);
+	assert.deepEqual([kernel.getTicket(open)!.role, kernel.getTicket(done)!.role], ["deputy", "market-lead"]);
+	assert.deepEqual([...plain, open].map((id) => helperOf(kernel, id)!.seq), [1, 2, 3]);
+	assert.deepEqual(kernel.reassignToDefaultLead(), [], "再跑一次什么都不改");
+});
