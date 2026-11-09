@@ -1,8 +1,11 @@
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import { mkdtempSync } from "node:fs";
+import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { TestContext } from "node:test";
+import type { HostToClient } from "../../src/client/protocol.ts";
 import { Router } from "../../src/host/router.ts";
 import { ModelSelector } from "../../src/model-selector.ts";
 import { formatModelRef } from "../../src/models.ts";
@@ -182,6 +185,16 @@ export class FakeSpawner implements WorkerSpawner {
 
 export function tempStateDir(): string {
 	return mkdtempSync(join(tmpdir(), "psa-host-"));
+}
+
+export const ofType = <T extends HostToClient["type"]>(got: HostToClient[], type: T) =>
+	got.filter((m): m is Extract<HostToClient, { type: T }> => m.type === type);
+
+export async function busyPort(t: TestContext): Promise<number> {
+	const server = createServer();
+	await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+	t.after(() => server.close());
+	return (server.address() as AddressInfo).port;
 }
 
 export async function until(predicate: () => boolean, label: string, timeoutMs = 3000): Promise<void> {

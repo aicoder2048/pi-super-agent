@@ -22,3 +22,15 @@ test("过期阈值不大于心跳间隔的两倍时拒绝启动，免得 Watchdo
 	assert.throws(() => loadConfig(stateWith({ heartbeatSeconds: 30, watchdog: { staleSeconds: 60 } })), /staleSeconds/);
 	assert.equal(loadConfig(stateWith({ heartbeatSeconds: 30, watchdog: { staleSeconds: 61 } })).watchdog.staleSeconds, 61);
 });
+
+test("网页端口默认 4517，config.json 可以改，0 表示任意空闲端口", () => {
+	assert.equal(loadConfig(stateWith({})).webPort, 4517);
+	assert.equal(loadConfig(stateWith({ webPort: 4600 })).webPort, 4600);
+	assert.equal(loadConfig(stateWith({ webPort: 0 })).webPort, 0);
+});
+
+test("网页端口不是 0 到 65535 的整数时拒绝启动，报错指出 webPort", () => {
+	for (const webPort of [-1, 65536, 1.5, "4517"]) {
+		assert.throws(() => loadConfig(stateWith({ webPort })), (e: Error) => e.name === "ConfigError" && /webPort/.test(e.message), JSON.stringify(webPort));
+	}
+});
