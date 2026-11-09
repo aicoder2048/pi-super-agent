@@ -860,3 +860,19 @@ test("开任务缺标题或任务说明时，只拒绝这一条决定，同一�
 	assert.deepEqual(results.map((r) => r.ok), [false, true]);
 	assert.equal(kernel.decisionLog().length, 2);
 });
+
+test("今天的触发按来源和去向计数，从本地零点算起，不受条数上限影响", () => {
+	const { kernel, clock, trigger } = setup();
+	clock.t = new Date("2026-11-07T23:59:00").getTime();
+	trigger({ source: "inbox" });
+	clock.t = new Date("2026-11-08T00:00:00").getTime();
+	for (let i = 0; i < 120; i++) trigger({ source: "inbox", threads: [{ id: `thr_${i}` }] });
+	trigger({ source: "noise" });
+	trigger({ source: "noise" });
+	clock.t = new Date("2026-11-08T10:00:00").getTime();
+	const counts = kernel.triggerCountsToday().sort((a, b) => a.source.localeCompare(b.source));
+	assert.deepEqual(counts, [
+		{ source: "inbox", disposition: "to_router", count: 120 },
+		{ source: "noise", disposition: "ignored", count: 2 },
+	]);
+});

@@ -585,6 +585,13 @@ export class Kernel {
 		return this.#all("SELECT * FROM triggers ORDER BY received_at DESC, rowid DESC LIMIT ?", limit).map(toTrigger);
 	}
 
+	triggerCountsToday(): { source: string; disposition: Disposition; count: number }[] {
+		return this.#all(
+			"SELECT source, disposition, COUNT(*) AS count FROM triggers WHERE received_at >= ? GROUP BY source, disposition",
+			localDayStart(this.#now()),
+		).map((r) => ({ source: r.source, disposition: r.disposition, count: r.count }));
+	}
+
 	decisionLog(limit = 100): DecisionLogEntry[] {
 		return this.#all("SELECT * FROM decisions ORDER BY seq DESC LIMIT ?", limit).map((r) => ({
 			decision: JSON.parse(r.decision),
