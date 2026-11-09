@@ -272,6 +272,20 @@ const INPUT_STEP = {
 	bg_result: "后台命令完成",
 };
 
+/** @type {Record<string, string>} */
+const LOOKUP_TITLE = { quote: "查询报价", bars: "查询 K 线", session: "查询交易时段" };
+
+/** @param {Record<string, unknown>} a */
+function lookupStep(a) {
+	const args = a.args && typeof a.args === "object" ? /** @type {Record<string, unknown>} */ (a.args) : {};
+	const op = typeof a.op === "string" ? a.op : "";
+	const symbols = Array.isArray(args.symbols) ? args.symbols : typeof args.symbol === "string" ? [args.symbol] : [];
+	return {
+		title: LOOKUP_TITLE[op] ?? `查询 ${clip(op, 20)}`,
+		detail: clip(symbols.filter((s) => typeof s === "string").join(" "), 60),
+	};
+}
+
 const STEP_BY_LABEL = new Map(/** @type {[InputKind, string][]} */ (Object.entries(INPUT_LABEL)).map(([kind, label]) => [label, INPUT_STEP[kind]]));
 
 /** @type {Record<string, (a: Record<string, unknown>) => { title: string, detail: string }>} */
@@ -284,6 +298,7 @@ const TOOL_STEP = {
 	edit: (a) => ({ title: "修改文件", detail: baseName(a.path) }),
 	write: (a) => ({ title: "写入文件", detail: baseName(a.path) }),
 	web_get: (a) => ({ title: "读取网页", detail: hostOf(a.url) }),
+	lookup: (a) => lookupStep(a),
 	read_ticket: () => ({ title: "查阅任务记录", detail: "" }),
 	hand_back: () => ({ title: "交回幕僚长", detail: "" }),
 	bg_start: (a) => ({ title: "启动后台命令", detail: clip(firstLine(a.command), 60) }),

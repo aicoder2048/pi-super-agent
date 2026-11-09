@@ -248,6 +248,12 @@ test("页面：工具调用写成步骤名称，未知工具写「调用工具 �
 	const steps = watched([tool("web_get", { url: "https://example.com/a?b=1" }), tool("read", { path: "/w/notes/a.md" }), tool("mystery", { x: 1 })]);
 	assert.deepEqual(steps.map((s) => [s.title, s.detail, s.state]), [["读取网页", "example.com", "pending"], ["读取文件", "a.md", "pending"], ["调用工具 mystery", "", "pending"]]);
 	assert.match(steps[0].raw, /web_get/);
+	const lookups = watched([
+		tool("lookup", { source: "us-market", op: "quote", args: { symbols: ["NVDA", "SPY"] } }),
+		tool("lookup", { source: "us-market", op: "bars", args: { symbol: "NVDA", span: "minute", from: "2026-11-09", to: "2026-11-09" } }),
+		tool("lookup", { source: "us-market", op: "session" }),
+	]);
+	assert.deepEqual(lookups.map((s) => [s.title, s.detail]), [["查询报价", "NVDA SPY"], ["查询 K 线", "NVDA"], ["查询交易时段", ""]]);
 	assert.match(steps[0].raw, /https:\/\/example\.com\/a\?b=1/);
 });
 
