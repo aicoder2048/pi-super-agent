@@ -42,6 +42,10 @@ drop source thread +body:
 toy-feed symbol="TOYX" change="-5.2" volume="12":
     {{run}} modules/toy-market/feed.ts {{symbol}} {{change}} {{volume}}
 
+# 列出最近的触发和它们的去向：just log [条数]
+log limit="30":
+    {{run}} src/cli/log.ts {{limit}}
+
 # 持续显示对话。
 tail:
     {{run}} src/cli/say.ts tail
