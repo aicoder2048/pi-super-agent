@@ -43,7 +43,10 @@ function signalGroup(pgid: number, signal: NodeJS.Signals | 0): boolean {
 		process.kill(-pgid, signal);
 		return true;
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+		// ESRCH: no such group. EPERM: on macOS a group holding only zombies, or a pgid now owned by another user.
+		// Neither is a group this run can or should still stop.
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code === "ESRCH" || code === "EPERM") return false;
 		throw error;
 	}
 }

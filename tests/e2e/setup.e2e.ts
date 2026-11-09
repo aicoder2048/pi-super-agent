@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { FakeModel, on, parseSabotage, worker } from "./fake-model.ts";
-import { fakeModels, story, teardown, writeConfig } from "./harness.ts";
+import { fakeModels, groupAlive, stopGroup, story, teardown, writeConfig } from "./harness.ts";
 
 test("writeConfig 拒绝按量计费的提供方", (t) => {
 	const dir = mkdtempSync(join(tmpdir(), "psa-e2e-config-"));
@@ -45,4 +45,15 @@ test("故事在准备阶段出错（假模型拒绝启动）时，不留下临�
 	await assert.rejects(story(t, { router: [], workers: [worker("同一个", step), worker("同一个", step)] }, async () => {}), /同一个 brief/);
 	const leaked = readdirSync(tmpdir()).filter((n) => n.startsWith("psa-e2e-") && !before.has(n));
 	assert.deepEqual(leaked, []);
+});
+
+test("对进程组发信号得到 EPERM（macOS 上只剩僵尸进程，或组号已被别的用户复用）时，按已不在处理，不抛错也不再发信号", async (t) => {
+	const calls: [number, string | number][] = [];
+	t.mock.method(process, "kill", (pid: number, signal: string | number) => {
+		calls.push([pid, signal]);
+		throw Object.assign(new Error("kill EPERM"), { code: "EPERM" });
+	});
+	assert.equal(groupAlive(424242), false);
+	assert.equal(await stopGroup(424242), true);
+	assert.ok(!calls.some(([, s]) => s === "SIGKILL"), "EPERM 的组不再升级成 SIGKILL");
 });
