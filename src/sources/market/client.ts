@@ -93,6 +93,10 @@ export class MarketClient {
 		};
 	}
 
+	get hasKey(): boolean {
+		return !!this.#key;
+	}
+
 	async snapshot(symbols: string[], priority: Priority): Promise<Quote[]> {
 		const data = await this.#request(`/v2/snapshot/locale/us/markets/stocks/tickers?tickers=${symbols.map(encodeURIComponent).join(",")}`, priority);
 		if (!Array.isArray(data.tickers)) throw new MarketError("bad-response", "行情快照缺少 tickers");
