@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
-import { answerExternalId, answerSentence } from "./question.ts";
+import { answerExternalId, answerSentence, type AnswerRefusal } from "./question.ts";
+
+export type AnswerOutcome = { ok: true; triggerId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 import { deriveStage } from "./stage.ts";
 import { stallMinutes } from "../client/board-format.mjs";
 import { inTransaction } from "./store.ts";
@@ -196,21 +198,21 @@ export class Kernel {
 		});
 	}
 
-	answerQuestion({ reportId, option, at }: { reportId: string; option: number; at: number }): Result<{ triggerId: string; text: string; duplicate: boolean }> {
-		return this.#tx(() => {
+	answerQuestion({ reportId, option, at }: { reportId: string; option: number; at: number }): AnswerOutcome {
+		return this.#tx((): AnswerOutcome => {
+			const refuse = (refusal: AnswerRefusal) => ({ ok: false as const, refusal });
 			const report = this.#get("SELECT ticket_id, options FROM reports WHERE id = ?", reportId);
-			if (!report) return reject(`unknown report ${reportId}`);
+			if (!report) return refuse({ kind: "no_question" });
+			const options: string[] = JSON.parse(report.options);
 			const click = this.#latestClick(reportId);
 			if (click && click.state !== "dropped") {
+				if (click.option !== option) return refuse({ kind: "chosen", option: click.option, label: options[click.option] });
 				return { ok: true, triggerId: click.triggerId, text: this.#get("SELECT body FROM triggers WHERE id = ?", click.triggerId)!.body, duplicate: true };
 			}
 			const ticket = this.#ticket(report.ticket_id)!;
-			if (ticket.stage !== "awaiting_answer" || ticket.latestReport?.id !== reportId) {
-				return reject("这个问题已经回答过，或已不在等待回答");
-			}
-			const options: string[] = JSON.parse(report.options);
-			if (options.length === 0) return reject("这个问题没有选项，请直接回复");
-			if (!Number.isInteger(option) || option < 0 || option >= options.length) return reject(`这个问题只有 ${options.length} 个选项`);
+			if (ticket.stage !== "awaiting_answer" || ticket.latestReport?.id !== reportId) return refuse({ kind: "closed" });
+			if (options.length === 0) return refuse({ kind: "no_options" });
+			if (!Number.isInteger(option) || option < 0 || option >= options.length) return refuse({ kind: "out_of_range", count: options.length });
 			const text = answerSentence(ticket.title, options[option]);
 			const clicks = this.#get("SELECT COUNT(*) AS n FROM answer_clicks WHERE report_id = ?", reportId)!.n as number;
 			const { triggerId } = this.userSaid({ text, at, externalId: answerExternalId(reportId, clicks + 1) });

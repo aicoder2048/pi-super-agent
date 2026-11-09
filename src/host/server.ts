@@ -2,10 +2,11 @@ import { createServer, type Server, type Socket } from "node:net";
 import { rmSync } from "node:fs";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
 import type { HostToClient } from "../client/protocol.ts";
+import { refusalText, type AnswerRefusal } from "../kernel/question.ts";
 
 export type Broadcast = Extract<HostToClient, { type: "user" | "reply" | "board" }>;
 
-export type AnswerResult = { ok: true; triggerId: string } | { ok: false; reason: string };
+export type AnswerResult = { ok: true; triggerId: string } | { ok: false; refusal: AnswerRefusal };
 
 export interface ClientHandlers {
 	onSay(text: string): string;
@@ -80,7 +81,7 @@ export class HostServer {
 				}
 				else if (r.type === "answer" && typeof r.reportId === "string" && Number.isInteger(r.option) && typeof r.requestId === "string") {
 					const result = clients.onAnswer(r.reportId, r.option);
-					writeJsonLine(socket, result.ok ? { type: "ack", requestId: r.requestId, triggerId: result.triggerId } : { type: "refused", requestId: r.requestId, reason: result.reason });
+					writeJsonLine(socket, result.ok ? { type: "ack", requestId: r.requestId, triggerId: result.triggerId } : { type: "refused", requestId: r.requestId, reason: refusalText(result.refusal) });
 				}
 				else if (r.type === "watch") {
 					client!.watching = typeof r.ticketId === "string" ? r.ticketId : undefined;

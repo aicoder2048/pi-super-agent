@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { ConfigError } from "../config-error.ts";
-import { OPTIONS_MAX } from "../kernel/question.ts";
+import { OPTIONS_MAX, refusalText, type AnswerRefusal } from "../kernel/question.ts";
 import type { HostToClient, TranscriptMessage } from "../client/protocol.ts";
 import { hasVisibleText, HistoryEchoFilter, type AnswerResult, type Broadcast } from "./server.ts";
 
@@ -43,7 +43,6 @@ const DENIED = {
 	404: "没有这个页面。",
 	405: "这个地址不接受这种请求；发话用 POST /say，其余只接受 GET。",
 	413: "这句话太长了，请分几次说。",
-	409: "这个问题已经回答过，或已不在等待回答。",
 	415: "发话的正文要用 application/json。",
 } as const;
 
@@ -159,7 +158,7 @@ export class WebGateway {
 				const body = parseSay(Buffer.concat(chunks).toString("utf8"));
 				if (body === undefined) return deny(res, 400);
 				const result = body.kind === "text" ? { ok: true as const, triggerId: this.#host.say(body.text) } : this.#host.answer(body.reportId, body.option);
-				if (!result.ok) return deny(res, 409);
+				if (!result.ok) return refuse(res, result.refusal);
 				const { triggerId } = result;
 				res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ triggerId }));
 			}),
@@ -220,6 +219,14 @@ function tokenMatches(given: string, token: string): boolean {
 	const got = Buffer.from(given);
 	const want = Buffer.from(token);
 	return got.length === want.length && timingSafeEqual(got, want);
+}
+
+const REFUSED_STATUS: Record<AnswerRefusal["kind"], number> = { no_question: 409, no_options: 409, out_of_range: 409, chosen: 409, closed: 409 };
+
+// The body is JSON so the page can pick its own copy by `refused`; `reason` is for curl users.
+function refuse(res: ServerResponse, refusal: AnswerRefusal): void {
+	const body = { refused: refusal.kind, ...(refusal.kind === "chosen" ? { option: refusal.option } : {}), reason: refusalText(refusal) };
+	res.writeHead(REFUSED_STATUS[refusal.kind], { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify(body));
 }
 
 function deny(res: ServerResponse, status: keyof typeof DENIED): void {

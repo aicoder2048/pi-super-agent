@@ -830,6 +830,25 @@ test("网关：POST /say 带 answer 时，宿主替使用者说出「回答任�
 	assert.deepEqual(userLines().filter((l) => l.startsWith("回答任务")), ["回答任务「查财报」：营收和利润"]);
 });
 
+test("网关：点过一项后换另一项 POST 返回 409，正文说明已选哪一项；对话里只有第一句", async (t) => {
+	const { host, post, userLines } = await sayHost(t);
+	const { ticketId, reportId } = await askedOnHost(host);
+	const first = await post(answerBody(reportId, 0));
+	assert.ok(host.kernel.route([{ kind: "hand_over", triggerId: JSON.parse(first.body).triggerId, ticketId }])[0].ok);
+	const other = await post(answerBody(reportId, 1));
+	assert.equal(other.status, 409);
+	assert.deepEqual(JSON.parse(other.body), { refused: "chosen", option: 0, reason: "已选「只看营收」" });
+	assert.deepEqual(userLines().filter((l) => l.startsWith("回答任务")), ["回答任务「查财报」：只看营收"]);
+});
+
+test("页面：点选被拒时按原因显示固定文案；已选的那一项用页面自己的选项文字", () => {
+	const options = ["只看营收", "营收和利润"];
+	assert.equal(page.answerRefusedCopy(409, { refused: "chosen", option: 1 }, options), "发送失败：已选「营收和利润」。");
+	assert.equal(page.answerRefusedCopy(409, { refused: "closed" }, options), "发送失败：这个问题已经回答过，或已不在等待回答。");
+	assert.equal(page.answerRefusedCopy(409, { refused: "chosen", option: 9, reason: "<b>x</b>" }, options), "发送失败：这个问题已经回答过，或已不在等待回答。");
+	assert.equal(page.answerRefusedCopy(413, null, options), "发送失败：内容过长，请分几次发送。");
+});
+
 test("网关：问题已经打字回答过时 POST /say 的 answer 返回 409，对话里不多一句", async (t) => {
 	const { host, post, userLines } = await sayHost(t);
 	const { ticketId, reportId } = await askedOnHost(host);
@@ -837,7 +856,8 @@ test("网关：问题已经打字回答过时 POST /say 的 answer 返回 409，
 	assert.ok(host.kernel.route([{ kind: "hand_over", triggerId: typed, ticketId }])[0].ok);
 	const res = await post(answerBody(reportId, 0));
 	assert.equal(res.status, 409);
-	assert.match(res.body, /已经回答过/);
+	assert.equal(JSON.parse(res.body).refused, "closed");
+	assert.match(JSON.parse(res.body).reason, /已经回答过/);
 	assert.ok(!userLines().some((l) => l.startsWith("回答任务")));
 });
 

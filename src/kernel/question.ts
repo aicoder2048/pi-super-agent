@@ -21,6 +21,28 @@ export function parseOptions(raw: unknown, question: string | undefined): string
 	return options;
 }
 
+export type AnswerRefusal =
+	| { kind: "no_question" }
+	| { kind: "no_options" }
+	| { kind: "out_of_range"; count: number }
+	| { kind: "chosen"; option: number; label: string }
+	| { kind: "closed" };
+
+export function refusalText(r: AnswerRefusal): string {
+	switch (r.kind) {
+		case "no_question":
+			return "这个问题不存在";
+		case "no_options":
+			return "这个问题没有选项，请直接回复";
+		case "out_of_range":
+			return `这个问题只有 ${r.count} 个选项`;
+		case "chosen":
+			return `已选「${r.label}」`;
+		case "closed":
+			return "这个问题已经回答过，或已不在等待回答";
+	}
+}
+
 export const answerSentence = (title: string, option: string) => `回答任务「${title}」：${option}`;
 
 const ANSWER_PREFIX = "answer:";

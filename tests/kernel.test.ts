@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Kernel, nextStallAt } from "../src/kernel/kernel.ts";
+import { refusalText } from "../src/kernel/question.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { CONVERSATION_THREAD_ID, DISPOSITIONS } from "../src/kernel/types.ts";
 import type { Basis, KernelConfig, TriggerSubmission } from "../src/kernel/types.ts";
@@ -976,20 +977,29 @@ test("幕僚长忽略点选、或处理完这张卡片却没有转交时，这�
 	}
 });
 
-test("点选回答是幂等的：连点、换个选项再点、另一个客户端或超时重试，都得到同一条触发，Router 只收到一次；转交之后再点也一样", () => {
+test("点选回答是幂等的：连点同一项、另一个客户端或超时重试，都得到同一条触发，Router 只收到一次；转交之后再点同一项也一样", () => {
 	const { kernel, ticketId, answer, userLines, notices } = askSetup();
 	const first = answer(0);
 	const again = answer(0);
-	const other = answer(2);
-	assert.ok(first.ok && again.ok && other.ok);
-	assert.deepEqual([again.triggerId, other.triggerId], [first.triggerId, first.triggerId]);
-	assert.deepEqual([again.duplicate, other.duplicate], [true, true]);
+	assert.ok(first.ok && again.ok);
+	assert.equal(again.triggerId, first.triggerId);
+	assert.equal(again.duplicate, true);
 	assert.deepEqual(userLines(), ["查财报", "回答任务「查财报」：只看营收"]);
 	assert.equal(notices().length, 1);
 	assert.ok(kernel.route([{ kind: "hand_over", triggerId: first.triggerId, ticketId }])[0].ok);
-	const late = answer(1);
+	const late = answer(0);
 	assert.ok(late.ok);
 	assert.equal(late.triggerId, first.triggerId);
+});
+
+test("点过一项之后换另一项再点被拒，说明已选的是哪一项；转交之后也一样；对话里不多一句", () => {
+	const { kernel, ticketId, answer, userLines } = askSetup();
+	const first = answer(0) as { triggerId: string };
+	assert.deepEqual(answer(2), { ok: false, refusal: { kind: "chosen", option: 0, label: "只看营收" } });
+	assert.ok(kernel.route([{ kind: "hand_over", triggerId: first.triggerId, ticketId }])[0].ok);
+	assert.deepEqual(answer(1), { ok: false, refusal: { kind: "chosen", option: 0, label: "只看营收" } });
+	assert.deepEqual(userLines(), ["查财报", "回答任务「查财报」：只看营收"]);
+	assert.equal(refusalText({ kind: "chosen", option: 0, label: "只看营收" }), "已选「只看营收」");
 });
 
 test("点选回答被拒：问题已经打字回答过、被新问题取代、选项超出范围、问题没有选项、汇报不存在；被拒时对话里不多一句", () => {

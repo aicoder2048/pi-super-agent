@@ -386,6 +386,16 @@ const REJECTED_COPY = {
 	415: "发送失败：请求格式不正确。",
 };
 
+/**
+ * @param {number} status @param {{ refused?: unknown, option?: unknown } | null} body the refused answer's JSON, or null
+ * @param {string[]} options the question's options as this page shows them
+ */
+export function answerRefusedCopy(status, body, options) {
+	const label = body?.refused === "chosen" && typeof body.option === "number" ? options[body.option] : undefined;
+	if (label !== undefined) return `发送失败：已选「${label}」。`;
+	return sayCopy("rejected", status);
+}
+
 /** @param {SayState} state @param {number} [status] */
 export function sayCopy(state, status) {
 	return state === "rejected" && status !== undefined ? (REJECTED_COPY[status] ?? SAY_COPY.rejected) : SAY_COPY[state];

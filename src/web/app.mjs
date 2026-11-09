@@ -1,7 +1,7 @@
 // @ts-check
 
 import {
-	STAGE_PHRASE, BASIS_PHRASE, answerBody, applyMessage, applyTranscript, canSend, choicesInConversation, dutyLine, emptyView, emptyWatch,
+	STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canSend, choicesInConversation, dutyLine, emptyView, emptyWatch,
 	helperTint, isStale, leftColumn, resolveTheme, restartNotice, sayCopy, sayOutcome, settleSay, settleSending, smallPrint, stopSentence, toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, isLive } from "../client/board-format.mjs";
@@ -56,11 +56,11 @@ function mount(doc) {
 		status.textContent = STATUS_TEXT[s];
 	};
 
-	/** @param {import("./view.mjs").SayState} state @param {number} [status] */
-	const setSay = (state, status) => {
+	/** @param {import("./view.mjs").SayState} state @param {number} [status] @param {string} [text] */
+	const setSay = (state, status, text = sayCopy(state, status)) => {
 		sayState = state;
 		sayStatus.dataset.state = state;
-		sayStatus.textContent = sayCopy(state, status);
+		sayStatus.textContent = text;
 	};
 
 	const store = {
@@ -283,8 +283,12 @@ function mount(doc) {
 			if (state === "delivered") {
 				sending.set(reportId, { option, triggerId: (await res.json()).triggerId });
 				settleSending(view, sending);
-			} else sending.delete(reportId);
-			setSay(state, res.status);
+				setSay(state);
+			} else {
+				sending.delete(reportId);
+				const options = view.rows.find((r) => r.question?.reportId === reportId)?.question?.options ?? [];
+				setSay(state, res.status, state === "rejected" ? answerRefusedCopy(res.status, await res.json().catch(() => null), options) : undefined);
+			}
 		} catch {
 			sending.delete(reportId);
 			setSay(sayOutcome(abort.signal.aborted ? "timeout" : "network"));
