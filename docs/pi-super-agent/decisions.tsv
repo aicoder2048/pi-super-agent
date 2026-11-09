@@ -66,3 +66,9 @@ ts	phase	decision	why	evidence	result
 2026-11-09T03:24:06Z	fix	open_ticket 缺标题或说明时只拒绝该条：内核测试先红后绿，全量 198 个通过	how.md 列出的未确认行为之一，确认会整批回滚	tests/kernel.test.ts 缺标题	green
 2026-11-09T03:33:22Z	pr	使用者同意后按现有提交切出 7 个分支叠成 PR 栈（#4 到 #10），不改写历史；全部非草稿，基分支逐级相连	Opening a PR 倾向窄 PR；提交本来按阶段排好	https://github.com/aicoder2048/pi-super-agent/pull/4 .. /pull/10	done
 2026-11-09T03:33:22Z	cleanup	使用者同意后删除 6 个代理 worktree（含未提交的复现脚本）、旁支分支 fix/edge-findings 与 test/story-coverage、快照引用 refs/wip/interrogate	均已合并或用完；复现场景都已有回归测试	git worktree list; git branch	done
+2026-11-09T03:35:15Z	ship	使用者要求合并 PR 栈，按 Shipping 规程：7 个独立验证者各验一个 PR，在 PR 上留结论；只合并自底向上连续通过的部分，squash 逐个合并并改基	Shipping：绿不等于安全，合并前要独立结论	https://github.com/aicoder2048/pi-super-agent/pull/4 .. /pull/10	running
+2026-11-09T03:39:52Z	ship	验证结论：#4 #5 #6 #9 为 PASS+NOTES；#6 验证者发现状态目录路径过长时 socket 超出 macOS 长度上限、宿主启动报 listen EINVAL，记为合并后的后续修复	Shipping 合并期间不改分支	PR 评论 #4 #5 #6 #9	open
+2026-11-09T03:47:05Z	ship	7 个独立验证者全部给出 PASS+NOTES：#4 #5 #6 #7 #8 #9 #10，结论以评论形式贴在各 PR 上	Shipping 第 1 步：只有非作者的验证结论算数	PR 评论 issuecomment-6731617010 等	VERIFIED
+2026-11-09T03:47:05Z	ship	自底向上 squash 合并 #4 到 #10：每个 PR 先改基到 main、rebase 到合并结果、比对 patch-id 一致后再推送合并，并读回 MERGED 且基为 main	Shipping 第 3、4 步：结论覆盖的是补丁，patch-id 相同才继续有效	main 519487b；main 与验证头 4fce72e 的 git diff 为空	done
+2026-11-09T03:47:05Z	ship	合并后在 main 上全量 198 个测试通过；保留远端 psa/* 与 mvp 分支，因为 squash 后原始 35 个提交只在这些分支上，决策记录引用了它们的 SHA	不让记录里的证据指针失效	origin/psa/*, origin/mvp	done
+2026-11-09T03:47:05Z	followup	验证者提出的后续项：状态目录路径过长时 socket 超出 macOS 104 字节上限导致宿主启动失败（应在启动时给出清楚的报错）；默认回退模型 DeepSeek 为按量计费，按规格保留并设每日上限	合并期间不改分支，留作后续	PR #6 #10 验证评论	open
