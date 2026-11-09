@@ -123,24 +123,24 @@
 		<span id="restart" class="chip"></span>
 		<span id="status" class="chip" data-status="connecting">连接中…</span>
 		<div class="spacer"></div>
-		<button id="theme" type="button" aria-label="切换浅色或深色"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg></button>
+		<button id="theme" type="button" aria-label="切换浅色/深色主题"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg></button>
 	</header>
 	<div class="columns">
 		<aside id="left" aria-label="概况"></aside>
 		<main aria-label="对话">
-			<div id="conversation"><div class="thread"><div class="welcome">它一直在线：替你盯着消息，在后台让助手办事，只在需要你时来找你。</div></div></div>
+			<div id="conversation"><div class="thread"><div class="welcome">Super Agent 持续关注你的消息来源，在后台安排助手处理任务，只在需要你决定时通知你。</div></div></div>
 			<form id="say" autocomplete="off">
-				<label for="composer" class="sr">交给它一件事</label>
+				<label for="composer" class="sr">新任务</label>
 				<div class="composer">
-					<textarea id="composer" rows="2" placeholder="交给它一件事，比如：帮我读一下 example.com 的网页标题"></textarea>
-					<button id="send" type="submit">交给它</button>
+					<textarea id="composer" rows="2" placeholder="描述要做的事，例如：读取 example.com 的网页标题"></textarea>
+					<button id="send" type="submit">发送</button>
 				</div>
-				<div id="say-status" data-state="idle" aria-live="polite">它会在后台去做，做完或需要你拿主意时再来找你。</div>
+				<div id="say-status" data-state="idle" aria-live="polite">任务在后台进行，完成或需要你决定时会通知你。</div>
 			</form>
 		</main>
-		<aside id="how" aria-label="它是怎么做的">
+		<aside id="how" aria-label="执行过程">
 			<div>
-				<div class="label">它是怎么做的</div>
+				<div class="label">执行过程</div>
 				<div id="how-title"></div>
 				<div id="how-meta"></div>
 			</div>

@@ -9,8 +9,8 @@ import { DEFAULT_ACK_TIMEOUT_MS, isLive } from "../client/board-format.mjs";
 const STATUS_TEXT = {
 	connecting: "连接中…",
 	connected: "",
-	disconnected: "未连接，重试中",
-	expired: "token 已失效，请用宿主日志里最新的网址打开",
+	disconnected: "连接中断，正在重连",
+	expired: "链接已失效，请使用宿主日志中的最新链接",
 };
 
 const THEME_KEY = "psa-theme";
@@ -91,7 +91,7 @@ function mount(doc) {
 		node.append(el("div", "title", card.title), el("div", "why", `${card.why} · ${card.stage}`), el("div", "latest", card.latest));
 		if (card.canStop) {
 			const row = el("div", "row");
-			const stop = el("button", "stop", "叫停");
+			const stop = el("button", "stop", "停止");
 			stop.type = "button";
 			stop.addEventListener("click", (e) => {
 				e.stopPropagation();
@@ -130,15 +130,15 @@ function mount(doc) {
 		list.append(...left.done.map((c) => taskCard(c, "done")));
 		done.append(el("summary", "", `${left.doneLine} ›`), list);
 		$("left").replaceChildren(
-			section(`需要你 · ${left.needsYou.length}`, left.needsYou.map((c) => taskCard(c, "ask")), "现在没有要你拿主意的事。", "warn"),
-			section(`正在替你办 · ${left.doing.length}`, left.doing.map((c) => taskCard(c, "doing")), "现在没有在办的事。交给它一件吧。"),
-			section(`在替你盯着 · ${left.watching.length}`, left.watching.map((w) => {
+			section(`待你处理 · ${left.needsYou.length}`, left.needsYou.map((c) => taskCard(c, "ask")), "暂无待处理事项。", "warn"),
+			section(`进行中 · ${left.doing.length}`, left.doing.map((c) => taskCard(c, "doing")), "暂无进行中的任务。"),
+			section(`关注的来源 · ${left.watching.length}`, left.watching.map((w) => {
 				const node = el("div", "watch");
 				const body = el("div", "");
 				body.append(el("div", "name", w.name), el("div", "rule", [w.rule, w.hits].filter(Boolean).join(" · ")));
 				node.append(body);
 				return node;
-			}), "还没有要盯的来源。"),
+			}), "暂无关注的来源。"),
 			today,
 			done,
 		);
@@ -172,8 +172,8 @@ function mount(doc) {
 
 	const renderSteps = () => {
 		const steps = watching?.watch.steps ?? [];
-		if (!watching) return void $("steps").replaceChildren(el("li", "empty", "点左边的一件事，看助手是怎么一步步做的。"));
-		if (!steps.length) return void $("steps").replaceChildren(el("li", "empty", "还没有步骤。"));
+		if (!watching) return void $("steps").replaceChildren(el("li", "empty", "选择左侧的任务，查看助手的执行过程。"));
+		if (!steps.length) return void $("steps").replaceChildren(el("li", "empty", "暂无步骤。"));
 		const open = new Set([...$("steps").querySelectorAll("details[open]")].map((d) => d.getAttribute("data-i")));
 		$("steps").replaceChildren(...steps.map((step, i) => {
 			const li = el("li", `step ${step.state}`);

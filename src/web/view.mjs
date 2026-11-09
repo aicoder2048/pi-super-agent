@@ -12,18 +12,18 @@
 import { INPUT_LABEL, blocks, clip, formatElapsed, formatTokens, isLive, modelText, shortId, textOf } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
-export const BASIS_PHRASE = { request: "你让我做的", rule: "按你的规则", inference: "我觉得该做的" };
+export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
 
 /** @type {Record<DashboardRow["stage"], string>} */
 export const STAGE_PHRASE = {
-	awaiting_answer: "等你回答",
-	awaiting_review: "等你看一眼",
-	blocked_or_failed: "卡住了",
-	queued: "马上开始",
-	running: "正在办",
-	idle: "在等后续消息",
-	closed: "办完了",
-	stopped: "已叫停",
+	awaiting_answer: "待回复",
+	awaiting_review: "待确认",
+	blocked_or_failed: "受阻",
+	queued: "排队中",
+	running: "进行中",
+	idle: "等待中",
+	closed: "已完成",
+	stopped: "已停止",
 };
 
 /** @typedef {"needsYou" | "doing" | "done"} Group */
@@ -100,7 +100,7 @@ function card(row) {
 		title: row.title,
 		why: BASIS_PHRASE[row.basis],
 		stage: STAGE_PHRASE[row.stage],
-		latest: row.latestQuestion ?? row.latestSummary ?? "刚开始，还没汇报",
+		latest: row.latestQuestion ?? row.latestSummary ?? "已开始，暂无进展",
 		canStop: GROUP[row.stage] === "doing",
 	};
 }
@@ -115,8 +115,8 @@ export function leftColumn(view) {
 		needsYou: groups.needsYou,
 		doing: groups.doing,
 		done: groups.done.reverse(),
-		doneLine: `已结束 ${groups.done.length} 件`,
-		watching: view.watching.map((w) => ({ name: w.source, rule: watchRule(w), hits: hits[w.source] ? `今天 ${hits[w.source]} 次` : "" })),
+		doneLine: `已完成 · ${groups.done.length}`,
+		watching: view.watching.map((w) => ({ name: w.source, rule: watchRule(w), hits: hits[w.source] ? `今日 ${hits[w.source]} 条` : "" })),
 		today: todayCopy(view.today),
 	};
 }
@@ -127,7 +127,7 @@ function watchRule(w) {
 	if (rule) return rule;
 	const timer = w.timers[0];
 	if (timer) return `${every(timer.everyMinutes)}：${timer.body}`;
-	return "有新消息时帮你看一遍";
+	return "收到新消息时处理";
 }
 
 /** @param {number} minutes */
@@ -142,15 +142,16 @@ export function todayCopy(counts) {
 	if (!counts) return { headline: "", detail: "" };
 	const d = counts.byDisposition;
 	const total = Object.values(d).reduce((a, b) => a + b, 0);
-	if (total === 0) return { headline: "今天还没有要替你看的消息", detail: "" };
+	if (total === 0) return { headline: "今日暂无消息", detail: "" };
 	const handed = d.delivered + d.handed_over;
+	const ignored = d.ignored + d.router_ignored;
 	const clauses = [
-		d.opened_ticket && `开了 ${d.opened_ticket} 件任务`,
-		handed && `${handed} 件交给了正在办的事`,
-		d.to_router && `${d.to_router} 件还在想`,
-		d.ignored + d.router_ignored && "其余没打扰你",
+		d.opened_ticket && `新建任务 ${d.opened_ticket}`,
+		handed && `转入进行中任务 ${handed}`,
+		d.to_router && `处理中 ${d.to_router}`,
+		ignored && `无需处理 ${ignored}`,
 	].filter(Boolean);
-	return { headline: `今天替你看了 ${total} 件事`, detail: clauses.join(" · ") };
+	return { headline: `今日消息 · ${total}`, detail: clauses.join(" · ") };
 }
 
 const RESTART_NOTICE_MS = 30 * 60_000;
@@ -159,20 +160,20 @@ const RESTART_NOTICE_MS = 30 * 60_000;
 export function dutyLine(duty, now) {
 	if (!duty) return "";
 	const minutes = Math.floor((now - duty.since) / 60_000);
-	if (minutes < 1) return "在线 · 刚上岗";
+	if (minutes < 1) return "在线 · 刚启动";
 	const days = Math.floor(minutes / 1440);
 	const hours = Math.floor((minutes % 1440) / 60);
 	const span = days ? `${days} 天 ${hours} 小时` : hours ? `${hours} 小时 ${minutes % 60} 分钟` : `${minutes} 分钟`;
-	return `在线 · 已连续值班 ${span}`;
+	return `在线 · 已运行 ${span}`;
 }
 
 /** @param {Duty | undefined} duty @param {number} now */
 export function restartNotice(duty, now) {
-	return duty && duty.resumed > 0 && now - duty.since < RESTART_NOTICE_MS ? "刚刚重启过，正在办的事都接上了" : "";
+	return duty && duty.resumed > 0 && now - duty.since < RESTART_NOTICE_MS ? "已重启，进行中的任务已恢复" : "";
 }
 
 /** @param {string} title */
-export const stopSentence = (title) => `叫停「${title}」`;
+export const stopSentence = (title) => `停止任务「${title}」`;
 
 /**
  * @typedef {object} Step
@@ -185,41 +186,41 @@ export const stopSentence = (title) => `叫停「${title}」`;
 
 /** @type {Record<InputKind, string>} */
 const INPUT_STEP = {
-	brief: "弄清楚要做什么",
+	brief: "接收任务",
 	trigger: "收到新消息",
-	user_message: "收到你的补充",
-	note: "Super Agent 补了一句",
-	status_query: "Super Agent 来问进度",
-	recovery: "重启后接着做",
-	bg_result: "后台的活干完了",
+	user_message: "收到你的补充说明",
+	note: "Super Agent 附加说明",
+	status_query: "进度询问",
+	recovery: "重启后恢复",
+	bg_result: "后台命令完成",
 };
 
 const STEP_BY_LABEL = new Map(/** @type {[InputKind, string][]} */ (Object.entries(INPUT_LABEL)).map(([kind, label]) => [label, INPUT_STEP[kind]]));
 
 /** @type {Record<string, (a: Record<string, unknown>) => { title: string, detail: string }>} */
 const TOOL_STEP = {
-	read: (a) => ({ title: "看了一个文件", detail: baseName(a.path) }),
-	grep: (a) => ({ title: "在文件里找东西", detail: clip(a.pattern, 40) }),
-	find: (a) => ({ title: "找文件", detail: clip(a.pattern, 40) }),
-	ls: (a) => ({ title: "看了看目录", detail: baseName(a.path) }),
-	bash: (a) => ({ title: "运行了一条命令", detail: clip(firstLine(a.command), 60) }),
-	edit: (a) => ({ title: "改了一个文件", detail: baseName(a.path) }),
-	write: (a) => ({ title: "写了一个文件", detail: baseName(a.path) }),
-	web_get: (a) => ({ title: "打开网页", detail: hostOf(a.url) }),
-	read_ticket: () => ({ title: "回看任务记录", detail: "" }),
-	hand_back: () => ({ title: "把不归它管的事交还给 Super Agent", detail: "" }),
-	bg_start: (a) => ({ title: "在后台开始一件长活", detail: clip(firstLine(a.command), 60) }),
-	bg_status: () => ({ title: "看看后台的活", detail: "" }),
-	bg_stop: () => ({ title: "停掉后台的活", detail: "" }),
+	read: (a) => ({ title: "读取文件", detail: baseName(a.path) }),
+	grep: (a) => ({ title: "搜索文件内容", detail: clip(a.pattern, 40) }),
+	find: (a) => ({ title: "查找文件", detail: clip(a.pattern, 40) }),
+	ls: (a) => ({ title: "列出目录", detail: baseName(a.path) }),
+	bash: (a) => ({ title: "执行命令", detail: clip(firstLine(a.command), 60) }),
+	edit: (a) => ({ title: "修改文件", detail: baseName(a.path) }),
+	write: (a) => ({ title: "写入文件", detail: baseName(a.path) }),
+	web_get: (a) => ({ title: "读取网页", detail: hostOf(a.url) }),
+	read_ticket: () => ({ title: "查阅任务记录", detail: "" }),
+	hand_back: () => ({ title: "交回 Super Agent", detail: "" }),
+	bg_start: (a) => ({ title: "启动后台命令", detail: clip(firstLine(a.command), 60) }),
+	bg_status: () => ({ title: "查看后台命令", detail: "" }),
+	bg_stop: () => ({ title: "停止后台命令", detail: "" }),
 	report: (a) => ({ title: reportTitle(a), detail: clip(a.question || a.summary, 120) }),
 };
 
 /** @param {Record<string, unknown>} a */
 function reportTitle(a) {
-	if (a.question) return "问你一个问题";
-	if (a.status === "ready") return "告诉你结果";
-	if (a.status === "blocked" || a.status === "failed") return "卡住了";
-	if (a.status === "no_action") return "看过了，不用做";
+	if (a.question) return "提出问题";
+	if (a.status === "ready") return "提交结果";
+	if (a.status === "blocked" || a.status === "failed") return "报告受阻";
+	if (a.status === "no_action") return "无需处理";
 	return "汇报进度";
 }
 
@@ -229,19 +230,19 @@ const RAW_LIMIT = 2000;
 function stepsFrom(message) {
 	if (message.role === "user" || (message.role === "custom" && message.customType === "psa-bg-result")) {
 		const text = textOf(message);
-		if (message.role === "custom") return [{ title: "后台的活干完了", detail: clip(firstLine(text), 80), state: "ok", raw: clip(text, RAW_LIMIT) }];
+		if (message.role === "custom") return [{ title: "后台命令完成", detail: clip(firstLine(text), 80), state: "ok", raw: clip(text, RAW_LIMIT) }];
 		return text.split(/\n\n(?=\[)/).map((part) => {
 			const label = /^\[([^\]]+)\]/.exec(part)?.[1] ?? "";
 			const body = part.split("\n").slice(1).join("\n");
-			return { title: STEP_BY_LABEL.get(label) ?? "收到新的消息", detail: clip(firstLine(body), 80), state: "ok", raw: clip(part, RAW_LIMIT) };
+			return { title: STEP_BY_LABEL.get(label) ?? "收到新消息", detail: clip(firstLine(body), 80), state: "ok", raw: clip(part, RAW_LIMIT) };
 		});
 	}
 	if (message.role !== "assistant") return [];
 	return blocks(message).flatMap((c) => {
-		if (c.type === "text" && c.text?.trim()) return [{ title: "想法", detail: clip(c.text.trim(), 200), state: /** @type {const} */ ("ok"), raw: clip(c.text, RAW_LIMIT) }];
+		if (c.type === "text" && c.text?.trim()) return [{ title: "思考", detail: clip(c.text.trim(), 200), state: /** @type {const} */ ("ok"), raw: clip(c.text, RAW_LIMIT) }];
 		if (c.type !== "toolCall" || !c.name) return [];
 		const args = typeof c.arguments === "object" && c.arguments !== null ? /** @type {Record<string, unknown>} */ (c.arguments) : {};
-		const known = TOOL_STEP[c.name]?.(args) ?? { title: `用了工具 ${c.name}`, detail: "" };
+		const known = TOOL_STEP[c.name]?.(args) ?? { title: `调用工具 ${c.name}`, detail: "" };
 		return [{ ...known, state: /** @type {const} */ ("pending"), raw: clip(`${c.name} ${JSON.stringify(c.arguments ?? {}, null, 2)}`, RAW_LIMIT), tool: c.name }];
 	});
 }
@@ -284,19 +285,19 @@ export function applyTranscript(watch, message) {
 export function smallPrint(row, now, receivedAt) {
 	if (!row) return "";
 	const elapsed = formatElapsed(row.elapsedMs + (isLive(row) ? now - receivedAt : 0));
-	return `助手 ${modelText(row)} · ${formatTokens(row.tokensIn + row.tokensOut)} tok · 工具 ${row.toolCalls} 次 · 用时 ${elapsed} · #${shortId(row.id)}`;
+	return `模型 ${modelText(row)} · ${formatTokens(row.tokensIn + row.tokensOut)} tokens · 工具调用 ${row.toolCalls} 次 · 用时 ${elapsed} · 编号 ${shortId(row.id)}`;
 }
 
 /** @typedef {"idle" | "sending" | "delivered" | "maybe_lost" | "expired" | "rejected"} SayState */
 
 /** @type {Record<SayState, string>} */
 export const SAY_COPY = {
-	idle: "它会在后台去做，做完或需要你拿主意时再来找你。",
-	sending: "正在送达…",
-	delivered: "已送达",
-	maybe_lost: "可能没送达。看看对话里有没有这句话，没有就再说一次。",
-	expired: "网址已失效，请用宿主日志里最新的网址打开。",
-	rejected: "没发出去：",
+	idle: "任务在后台进行，完成或需要你决定时会通知你。",
+	sending: "发送中…",
+	delivered: "已发送",
+	maybe_lost: "未收到确认。请检查对话中是否已有这条消息，如没有请重新发送。",
+	expired: "链接已失效，请使用宿主日志中的最新链接。",
+	rejected: "发送失败：",
 };
 
 /** @param {{ status: number } | "timeout" | "network"} outcome @returns {SayState} */
