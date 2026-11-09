@@ -18,6 +18,7 @@ const log = (line: string) => console.error(`${new Date().toISOString()} ${line}
 const repo = fileURLToPath(new URL("../..", import.meta.url));
 const intervalMs = config.watchdog.intervalMinutes * 60_000;
 const HOST_ENTRY = "src/host/main.ts";
+const HOST_STOP_MS = 15_000;
 
 function commandOf(pid: number): string | undefined {
 	try {
@@ -47,6 +48,9 @@ function openHostLog(): number {
 	return fd;
 }
 
+// Only the host this watchdog launched; a host the user started elsewhere keeps running on Ctrl+C.
+let launched: { pid: number; exited: Promise<void> } | undefined;
+
 function startHost(): void {
 	killHungHost();
 	const out = openHostLog();
@@ -57,6 +61,10 @@ function startHost(): void {
 		stdio: ["ignore", out, out],
 	});
 	child.unref();
+	const exited = new Promise<void>((r) => child.once("exit", () => r()));
+	const pid = child.pid!;
+	launched = { pid, exited };
+	void exited.then(() => launched?.pid === pid && (launched = undefined));
 	log(`[watchdog] 已拉起宿主，pid ${child.pid}，日志 ${join(config.stateDir, "host.log")}`);
 }
 
@@ -72,10 +80,7 @@ const watchdog = new Watchdog({
 	log,
 });
 
-log(`[watchdog] 已启动，每 ${config.watchdog.intervalMinutes} 分钟检查一次，状态目录 ${config.stateDir}`);
-watchdog.checkOnce();
-const checks = setInterval(() => watchdog.checkOnce(), intervalMs);
-
+let checks: NodeJS.Timeout | undefined;
 let stopping = false;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
 	process.on(signal, async () => {
@@ -85,13 +90,21 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 		}
 		stopping = true;
 		clearInterval(checks);
-		const pid = hostPid();
-		log(`[watchdog] 收到 ${signal}，正在停止${pid ? `宿主 ${pid}` : ""}`);
-		if (pid) {
-			process.kill(pid, "SIGTERM");
-			while (commandOf(pid)) await new Promise((r) => setTimeout(r, 100));
+		const host = launched;
+		log(`[watchdog] 收到 ${signal}，正在停止${host ? `宿主 ${host.pid}` : ""}`);
+		if (host) {
+			process.kill(host.pid, "SIGTERM");
+			const timedOut = await Promise.race([host.exited.then(() => false), new Promise<boolean>((r) => setTimeout(() => r(true), HOST_STOP_MS))]);
+			if (timedOut) {
+				log(`[watchdog] 宿主 ${host.pid} 在 ${HOST_STOP_MS / 1000} 秒内没有停下，不再等它；Watchdog 退出`);
+				process.exit(1);
+			}
 		}
 		log("[watchdog] 已停止");
 		process.exit(0);
 	});
 }
+
+log(`[watchdog] 已启动，每 ${config.watchdog.intervalMinutes} 分钟检查一次，状态目录 ${config.stateDir}`);
+watchdog.checkOnce();
+checks = setInterval(() => watchdog.checkOnce(), intervalMs);
