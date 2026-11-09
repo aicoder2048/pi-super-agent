@@ -492,16 +492,16 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `src/worker/extension.ts`（`consult` 工具）、`src/host/workers.ts` 或新建 `src/host/consult.ts`（起一问一答的子进程、并行、时限、用量记账）。
-- [ ] Edit `src/web/view.mjs`、`src/web/app.mjs`（执行过程展开会诊，助手条列出正在回答的专家）。
-- [ ] Edit tests（`tests/consult.test.ts` 新建，及 web、e2e）。
+- [x] Edit `src/worker/extension.ts`（`consult` 工具）、`src/host/workers.ts` 或新建 `src/host/consult.ts`（起一问一答的子进程、并行、时限、用量记账）。
+- [x] Edit `src/web/view.mjs`、`src/web/app.mjs`（执行过程展开会诊，助手条列出正在回答的专家）。
+- [x] Edit tests（`tests/consult.test.ts` 新建，及 web、e2e）。
 
 **Build.**
 
-- [ ] 只有 `consult: true` 的角色有 `consult`：一次 1 到 4 个问题，并行，结果一起返回；每个问题有时限，超时记为没有回答。
-- [ ] 被问的专家一层、只读（read、grep、find、ls、web_get、lookup，再与其 `tools` 取交集），没有 `consult`。
-- [ ] token 计入任务和当天用量，回退模型每日上限生效。
-- [ ] 执行过程展开每次会诊：问谁、问什么、答了什么、用量；助手条在牵头人下列出正在回答的专家（只写角色名）。
+- [x] 只有 `consult: true` 的角色有 `consult`：一次 1 到 4 个问题，并行，结果一起返回；每个问题有时限，超时记为没有回答。
+- [x] 被问的专家一层、只读（read、grep、find、ls、web_get、lookup，再与其 `tools` 取交集），没有 `consult`。
+- [x] token 计入任务和当天用量，回退模型每日上限生效。
+- [x] 执行过程展开每次会诊：问谁、问什么、答了什么、用量；助手条在牵头人下列出正在回答的专家（只写角色名）。
 
 **You see.**
 
