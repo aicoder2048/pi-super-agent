@@ -40,6 +40,7 @@ function setup({ config, path = ":memory:" }: { config?: Partial<KernelConfig>; 
 	function open(basis: Basis, { threads = [] as string[], title = `${basis} 任务` } = {}) {
 		let triggerId: string | undefined;
 		if (basis === "request") triggerId = say(title).triggerId;
+		if (basis === "rule") triggerId = trigger({ threads: [{ id: `thr_generic:rule-${++n}` }], body: title }).triggerId;
 		for (const id of threads) trigger({ threads: [{ id }] });
 		const [result] = kernel.route([
 			{ kind: "open_ticket", title, basis, ruleId: basis === "rule" ? "rule-1" : undefined, triggerId, threads, brief: title },
@@ -251,9 +252,9 @@ test("阶段：就绪之后又有新输入，不再算等你验收", () => {
 
 test("对话历史按先后列出使用者的话和 Router 的回复", () => {
 	const { kernel, clock } = setup();
-	kernel.submitTrigger({ source: "conversation", externalId: "c1", threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body: "查天气", occurredAt: clock.now() });
+	const { triggerId } = kernel.submitTrigger({ source: "conversation", externalId: "c1", threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body: "查天气", occurredAt: clock.now() });
 	clock.t += 1000;
-	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "好的，去查了。" });
+	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "好的，去查了。", cause: triggerId });
 	assert.deepEqual(kernel.conversation().map((m) => [m.who, m.text]), [["user", "查天气"], ["router", "好的，去查了。"]]);
 });
 
@@ -342,20 +343,16 @@ test("使用者叫停的任务不再接收任何输入", () => {
 	assert.deepEqual(notices(), []);
 });
 
-test("推断任务同时运行数超出上限：开任务被拒绝并留记录", () => {
-	const { kernel, open, run } = setup();
+test("推断任务同时运行数超出上限：可以开任务，但拿不到名额，直到前一个停下", () => {
+	const { kernel, open, run, idle } = setup();
 	const first = open("inference");
-	const [rejected] = kernel.route([{ kind: "open_ticket", title: "第二个", basis: "inference", brief: "b" }]);
-	assert.equal(rejected.ok, false);
-	const [logged] = kernel.decisionLog();
-	assert.equal(logged.ok, false);
-	assert.equal(logged.decision.kind, "open_ticket");
-	assert.match(logged.reason!, /inference/);
-
 	run(first);
+	const second = open("inference");
+	assert.equal(kernel.claimSlot(second), false);
+	assert.equal(kernel.getTicket(second)!.stage, "queued");
 	kernel.workerReport(first, { status: "no_action", summary: "无事" });
-	const [accepted] = kernel.route([{ kind: "open_ticket", title: "第三个", basis: "inference", brief: "b" }]);
-	assert.equal(accepted.ok, true);
+	kernel.workerTurnEnded(first, { bgRunning: false });
+	assert.equal(kernel.claimSlot(second), true);
 });
 
 test("推断任务每日总数超出上限被拒绝，第二天恢复", () => {
@@ -403,7 +400,7 @@ test("待执行动作失败后按递增间隔重试，封顶 30 分钟", () => {
 	const [action] = due();
 	const expected = [5_000, 30_000, 120_000, 600_000, 1_800_000, 1_800_000];
 	for (const delay of expected) {
-		const { nextAttemptAt } = kernel.failAction(action.id, "boom");
+		const { nextAttemptAt } = kernel.failAction(action.id, "boom")!;
 		assert.equal(nextAttemptAt, clock.t + delay);
 		clock.t += delay - 1;
 		assert.deepEqual(due(), []);
@@ -459,17 +456,18 @@ test("关闭再打开数据库后，任务、订阅、待执行动作都还在",
 });
 
 test("回复超过 200 字被拒绝，按字符计数", () => {
-	const { kernel, due } = setup();
-	assert.equal(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "字".repeat(201) }).ok, false);
-	assert.equal(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "🙂".repeat(200) }).ok, true);
+	const { kernel, due, say } = setup();
+	const cause = say("说点什么").triggerId;
+	assert.equal(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "字".repeat(201), cause }).ok, false);
+	assert.equal(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "🙂".repeat(200), cause }).ok, true);
 	const replies = due("channel.reply");
 	assert.equal(replies.length, 1);
 	assert.equal((replies[0].payload as { text: string }).text, "🙂".repeat(200));
 });
 
 test("回复送达后记下回执，重复标记无效", () => {
-	const { kernel } = setup();
-	const result = kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "好的" });
+	const { kernel, say } = setup();
+	const result = kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "好的", cause: say("在吗").triggerId });
 	assert.ok(result.ok);
 	assert.equal(kernel.markReplyDelivered(result.replyId), true);
 	assert.equal(kernel.markReplyDelivered(result.replyId), false);
@@ -478,15 +476,15 @@ test("回复送达后记下回执，重复标记无效", () => {
 test("推断任务不发确认：没有结果时针对它的回复被拒绝", () => {
 	const { kernel, open, run } = setup();
 	const id = open("inference");
-	assert.equal(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "已开始", ticketId: id }).ok, false);
+	assert.equal(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "已开始", cause: id }).ok, false);
 	run(id);
 	kernel.workerReport(id, { status: "progress", summary: "查到一半" });
-	assert.equal(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "进行中", ticketId: id }).ok, false);
+	assert.equal(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "进行中", cause: id }).ok, false);
 	kernel.workerReport(id, { status: "ready", summary: "发现异常", drafts: [{ to: "x", body: "y" }] });
-	assert.equal(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "发现异常", ticketId: id }).ok, true);
+	assert.equal(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "发现异常", cause: id }).ok, true);
 
 	const request = open("request");
-	assert.equal(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "收到", ticketId: request }).ok, true);
+	assert.equal(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "收到", cause: request }).ok, true);
 });
 
 test("名额：3 个执行中时第 4 个规则或推断任务排队，请求任务用保留名额", () => {
@@ -655,7 +653,7 @@ test("依据为规则的任务必须引用使用者写过的规则", () => {
 		db: openStore(":memory:"),
 		clock: { now: () => 0 },
 		sourcePolicy: () => "candidate",
-		isKnownRule: (id) => id === "toy/big-move",
+		ruleAllows: (id) => id === "toy/big-move",
 	});
 	const { triggerId } = kernel.submitTrigger({ source: "toy", externalId: "q1", threads: [{ id: "thr_toy:q" }], sender: "feed", body: "涨 9%", occurredAt: 0 });
 	const [fake, real] = kernel.route([
@@ -700,4 +698,165 @@ test("Worker 退出窗口里到达的输入不会丢：退出时补一次唤醒"
 	for (const a of kernel.dueActions()) kernel.completeAction(a.id);
 	kernel.workerExited(id);
 	assert.deepEqual(kernel.dueActions().map((a) => a.kind), ["worker.wake"]);
+});
+
+test("回退上限造成的受阻：任务记一条受阻汇报并移出排队，空出名额时不会被反复唤醒", () => {
+	const { kernel, open, run, idle } = setup({ maxWorkers: 1, reservedSlots: 0 });
+	const busy = open("request", { title: "占名额" });
+	run(busy);
+	const capped = open("request", { title: "被上限挡住" });
+	kernel.blockForCap(capped, "回退模型今日用量已达上限");
+	assert.equal(kernel.getTicket(capped)!.stage, "blocked_or_failed");
+	kernel.blockForCap(capped, "回退模型今日用量已达上限");
+	assert.equal(kernel.read(capped)!.type === "ticket" && (kernel.read(capped) as any).recentReports.length, 1);
+	for (const a of kernel.dueActions()) kernel.completeAction(a.id);
+	idle(busy);
+	assert.ok(!kernel.dueActions().some((a) => a.kind === "worker.wake" && a.payload.ticketId === capped));
+});
+
+test("Router 的用量也按提供方计入每日累计", () => {
+	const { kernel } = setup();
+	kernel.recordRouterUsage({ provider: "deepseek", tokensIn: 300, tokensOut: 100 });
+	assert.equal(kernel.usageToday("deepseek"), 400);
+});
+
+test("阶段：汇报就绪但附了一个问题时是等你回答，不是已结束", () => {
+	const { kernel, open, run, stage } = setup();
+	const id = open("request");
+	run(id);
+	kernel.workerReport(id, { status: "ready", summary: "草稿好了", question: "可以发吗？" });
+	assert.equal(stage(id), "awaiting_answer");
+});
+
+test("对话历史每一行带稳定的 id：使用者的话是触发 id，Router 的回复是回复 id", () => {
+	const { kernel, clock } = setup();
+	const { triggerId } = kernel.submitTrigger({ source: "conversation", externalId: "c-id", threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body: "查天气", occurredAt: clock.now() });
+	const reply = kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "好的", cause: triggerId });
+	assert.deepEqual(kernel.conversation().map((m) => m.id), [triggerId, reply.ok ? reply.replyId : "-"]);
+});
+
+function authoritySetup() {
+	const kernel = new Kernel({
+		db: openStore(":memory:"),
+		clock: { now: () => 0 },
+		sourcePolicy: (t) => (t.body.includes("噪音") ? "ignore" : "candidate"),
+		ruleAllows: (ruleId, source) => ruleId === "toy/big-move" && source === "toy",
+	});
+	const said = (body: string) => kernel.submitTrigger({ source: "conversation", externalId: body, threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body, occurredAt: 0 }).triggerId;
+	const event = (source: string, body: string) => kernel.submitTrigger({ source, externalId: body, threads: [{ id: `thr_${source}:x` }], sender: source, body, occurredAt: 0 }).triggerId;
+	const open = (basis: "request" | "rule" | "inference", triggerId?: string, ruleId?: string) =>
+		({ kind: "open_ticket" as const, basis, triggerId, ruleId, title: "t", brief: "b" });
+	return { kernel, said, event, open };
+}
+
+test("证据：一条对话可以在同一批决定里开多个任务，但处理过之后不能再支撑新的请求任务", () => {
+	const { kernel, said, open } = authoritySetup();
+	const hi = said("做 A 和 B");
+	assert.deepEqual(kernel.route([open("request", hi), open("request", hi)]).map((r) => r.ok), [true, true]);
+	assert.deepEqual(kernel.route([open("request", hi)]).map((r) => r.ok), [false]);
+});
+
+test("证据：被 Router 忽略过的对话不能再拿来开请求任务", () => {
+	const { kernel, said, open } = authoritySetup();
+	const hi = said("hi");
+	kernel.route([{ kind: "ignore", triggerId: hi, reason: "寒暄" }]);
+	assert.equal(kernel.route([open("request", hi)])[0].ok, false);
+});
+
+test("证据：程序层过滤掉的触发不能开任务，也不能转交", () => {
+	const { kernel, said, event, open } = authoritySetup();
+	const noise = event("toy", "噪音报价");
+	const ticket = (kernel.route([open("request", said("盯着"))])[0] as { ticketId: string }).ticketId;
+	assert.equal(kernel.route([open("inference", noise)])[0].ok, false);
+	assert.equal(kernel.route([{ kind: "hand_over", triggerId: noise, ticketId: ticket }])[0].ok, false);
+});
+
+test("证据：规则依据必须有一条未处理的非对话触发，且来源在规则的适用范围内", () => {
+	const { kernel, said, event, open } = authoritySetup();
+	assert.equal(kernel.route([open("rule", undefined, "toy/big-move")])[0].ok, false);
+	assert.equal(kernel.route([open("rule", said("帮我按规则开"), "toy/big-move")])[0].ok, false);
+	assert.equal(kernel.route([open("rule", event("mail", "邮件"), "toy/big-move")])[0].ok, false);
+	assert.equal(kernel.route([open("rule", event("toy", "跌 6%"), "toy/big-move")])[0].ok, true);
+});
+
+test("推断并发：已结束的推断任务被订阅线程重新打开时，另一个推断任务在跑就拿不到名额，空出后再唤醒", () => {
+	const { kernel, trigger, run, idle, drain } = setup({ config: { inferenceConcurrent: 1, inferenceDaily: 10 } });
+	const openInference = (thread: string) => {
+		const { triggerId } = trigger({ threads: [{ id: thread }] });
+		const [r] = kernel.route([{ kind: "open_ticket", basis: "inference", triggerId, threads: [thread], title: thread, brief: thread }]);
+		assert.ok(r.ok, !r.ok ? r.reason : "");
+		return r.ticketId!;
+	};
+	const a = openInference("thr_feed:a");
+	idle(a);
+	kernel.workerReport(a, { status: "no_action", summary: "不值得做" });
+	const b = openInference("thr_feed:b");
+	run(b);
+	drain();
+	trigger({ threads: [{ id: "thr_feed:a" }], body: "a 的新消息" });
+	assert.equal(kernel.claimSlot(a), false);
+	assert.equal(kernel.getTicket(a)!.stage, "queued");
+	drain();
+	kernel.workerTurnEnded(b, { bgRunning: false });
+	assert.ok(kernel.dueActions().some((x) => x.kind === "worker.wake" && x.payload.ticketId === a));
+	assert.equal(kernel.claimSlot(a), true);
+});
+
+test("回复必须注明原因：对话、可回应的任务结果或通知；每个原因最多两条", () => {
+	const { kernel, say, trigger, open, run, due } = setup();
+	const hi = say("在吗").triggerId;
+	const reply = (text: string, cause?: string) => kernel.reply({ threadId: CONVERSATION_THREAD_ID, text, cause } as any).ok;
+	assert.equal(reply("没有原因"), false);
+	assert.equal(reply("在", hi), true);
+	assert.equal(reply("还在", hi), true);
+	assert.equal(reply("第三条", hi), false);
+	assert.equal(reply("对原始事件开口", trigger({ threads: [{ id: "thr_feed:x" }] }).triggerId), false);
+
+	const { triggerId } = trigger({ threads: [{ id: "thr_feed:y" }] });
+	const inf = kernel.route([{ kind: "open_ticket", basis: "inference", triggerId, title: "看看", brief: "看看" }])[0].ticketId!;
+	assert.equal(reply("我开始悄悄看了", inf), false);
+	run(inf);
+	kernel.workerReport(inf, { status: "progress", summary: "看了一半" });
+	assert.equal(reply("进展", inf), false);
+	kernel.workerReport(inf, { status: "ready", summary: "发现一处异常" });
+	assert.equal(reply("推断任务有结果了", inf), true);
+
+	const req = open("request");
+	assert.equal(reply("请求任务的确认", req), true);
+
+	kernel.notifyRouter("模型已回退");
+	const notice = due("router.notify").find((a) => a.payload.kind === "notice")!;
+	assert.equal(reply("告诉你模型回退了", notice.id), true);
+});
+
+test("推断任务汇报无需处理之后，不能再以它为原因回复", () => {
+	const { kernel, trigger, run } = setup();
+	const { triggerId } = trigger({ threads: [{ id: "thr_feed:z" }] });
+	const inf = kernel.route([{ kind: "open_ticket", basis: "inference", triggerId, title: "看看", brief: "看看" }])[0].ticketId!;
+	run(inf);
+	kernel.workerReport(inf, { status: "no_action", summary: "不值得做" });
+	assert.equal(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "我看过了，没事", cause: inf } as any).ok, false);
+});
+
+test("系统问题的起点是上次成功之后的第一次失败，失败持续期间不变，成功一次后重新算", () => {
+	const { kernel, clock, say } = setup();
+	const failAll = () => { for (const a of kernel.dueActions(1000)) if (a.kind === "channel.reply") kernel.failAction(a.id, "down"); };
+	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "一", cause: say("a").triggerId });
+	const start = clock.t;
+	for (let i = 0; i < 6; i++) { failAll(); clock.t += 31 * 60_000; }
+	assert.equal(kernel.systemProblems().find((p) => p.kind === "channel.reply")!.since, start);
+	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "二", cause: say("b").triggerId });
+	for (const a of kernel.dueActions(1000)) if (a.kind === "channel.reply") kernel.completeAction(a.id);
+	assert.equal(kernel.systemProblems().find((p) => p.kind === "channel.reply"), undefined);
+});
+
+test("开任务缺标题或任务说明时，只拒绝这一条决定，同一批的其他决定和决策日志照常保留", () => {
+	const { kernel, say } = setup();
+	const hi = say("做两件事").triggerId;
+	const results = kernel.route([
+		{ kind: "open_ticket", basis: "request", triggerId: hi, brief: "没有标题" } as any,
+		{ kind: "open_ticket", basis: "request", triggerId: hi, title: "有标题", brief: "正常" },
+	]);
+	assert.deepEqual(results.map((r) => r.ok), [false, true]);
+	assert.equal(kernel.decisionLog().length, 2);
 });

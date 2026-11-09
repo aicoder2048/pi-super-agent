@@ -10,13 +10,13 @@ const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catc
 
 function stateDir() {
 	const dir = mkdtempSync(join(tmpdir(), "psa-wdmain-"));
-	writeFileSync(join(dir, "config.json"), JSON.stringify({ watchdog: { intervalMinutes: 0.005 } }));
+	writeFileSync(join(dir, "config.json"), JSON.stringify({ heartbeatSeconds: 0.1, watchdog: { intervalMinutes: 0.005, staleSeconds: 0.5 } }));
 	return dir;
 }
 
 function startWatchdog(dir: string): ChildProcess {
 	return spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/watchdog/main.ts"], {
-		env: { ...process.env, PSA_STATE_DIR: dir, PSA_HEARTBEAT_STALE_MS: "500" },
+		env: { ...process.env, PSA_STATE_DIR: dir },
 		stdio: "ignore",
 	});
 }

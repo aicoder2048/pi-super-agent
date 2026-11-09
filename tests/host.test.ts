@@ -6,7 +6,7 @@ import { ids, openOnConversation, startHost, until, type Brain } from "./helpers
 const replyOnReport: Brain = (cards) =>
 	cards.flatMap((card) => {
 		if (card.startsWith("[对话]")) return openOnConversation(card);
-		if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `结果：${card.split("\n")[1]}`, ticketId: ids(card, "tkt") } }];
+		if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `结果：${card.split("\n")[1]}`, cause: ids(card, "tkt") } }];
 		return [];
 	});
 
@@ -94,7 +94,7 @@ test("Router 推理期间到达的多条汇报在下一步一并注入", async (
 	host.say("慢慢想一下");
 	await until(() => router.batches.some((b) => b.some((c) => c.includes("慢慢想"))), "Router 开始推理");
 	await until(() => workersDone === 3, "三个汇报都已提交");
-	await until(() => host.kernel.dueActions(1).length === 0, "通知都已注入");
+	await new Promise((r) => setTimeout(r, 50));
 	gate();
 	await until(() => router.batches.some((b) => b.filter((c) => c.startsWith("[Worker 汇报]")).length >= 2), "批量注入");
 });
@@ -142,4 +142,67 @@ test("宿主停止后，它的分发器不再执行任何动作", async () => {
 	host.dispatcher.kick();
 	await new Promise((r) => setTimeout(r, 50));
 	assert.equal(host.kernel.dueActions().length, 1);
+});
+
+test("叫停一个 Worker 还在启动中的任务：宿主不崩溃，Worker 启动后立即被停掉，收不到任何输入", async (t) => {
+	const { host, spawner } = await startHost(replyOnReport, (w) => {
+		w.report({ status: "ready", summary: "不该运行" });
+		w.settle();
+	});
+	t.after(() => host.stop());
+	let release!: () => void;
+	spawner.spawnGate = new Promise((r) => (release = r));
+	const errors: unknown[] = [];
+	const onRejection = (e: unknown) => errors.push(e);
+	process.on("unhandledRejection", onRejection);
+	t.after(() => process.off("unhandledRejection", onRejection));
+	host.say("开始整理照片");
+	await until(() => spawner.spawned.length === 1, "Worker 开始启动");
+	const id = host.kernel.listTickets()[0].id;
+	assert.deepEqual(host.kernel.route([{ kind: "stop", ticketId: id }]).map((r) => r.ok), [true]);
+	host.dispatcher.kick();
+	release();
+	await until(() => spawner.stopped.includes(id), "启动完成后被停掉");
+	await new Promise((r) => setTimeout(r, 50));
+	assert.deepEqual(errors, []);
+	assert.deepEqual(spawner.workers.get(id)!.inputs, []);
+	assert.equal(host.kernel.listTickets()[0].stage, "stopped");
+});
+
+test("Worker 一轮以普通模型错误结束：任务汇报失败，使用者经 Router 得知", async (t) => {
+	const { host, said } = await startHost(replyOnReport, (w) => w.settle("500 Internal Server Error"));
+	t.after(() => host.stop());
+	host.say("整理本周账单");
+	await until(() => host.kernel.listTickets()[0]?.stage === "blocked_or_failed", "任务进入失败");
+	assert.match(host.kernel.listTickets()[0].latestSummary!, /500 Internal Server Error/);
+	await until(() => said().some((s) => s.startsWith("结果：")), "Router 转告");
+});
+
+test("Worker 子进程在一轮中途退出：任务汇报失败，使用者经 Router 得知", async (t) => {
+	const { host, said } = await startHost(replyOnReport, (w) => w.crash());
+	t.after(() => host.stop());
+	host.say("备份照片");
+	await until(() => host.kernel.listTickets()[0]?.stage === "blocked_or_failed", "任务进入失败");
+	assert.match(host.kernel.listTickets()[0].latestSummary!, /退出/);
+	await until(() => said().some((s) => s.startsWith("结果：")), "Router 转告");
+});
+
+test("对话卡片列出进行中的任务，Router 只凭卡片就能把“刚才那个”转交给它", async (t) => {
+	const brain: Brain = (cards) =>
+		cards.flatMap((card) => {
+			if (!card.startsWith("[对话]")) return [];
+			if (card.includes("使用者：帮我整理照片")) return openOnConversation(card, "整理照片");
+			const target = card.match(/(tkt_[\w-]+)「整理照片」/)?.[1];
+			return target ? [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId: ids(card, "trg"), ticketId: target }] } }] : [];
+		});
+	const { host, spawner } = await startHost(brain, (w) => {
+		w.report({ status: "progress", summary: "整理中" });
+		w.settle();
+	});
+	t.after(() => host.stop());
+	host.say("帮我整理照片");
+	await until(() => host.kernel.listTickets()[0]?.stage === "idle", "第一轮结束");
+	host.say("刚才那个改成只要 2024 年的");
+	const id = host.kernel.listTickets()[0].id;
+	await until(() => spawner.workers.get(id)!.inputs.some((i) => i.includes("只要 2024 年")), "后续消息转交给了原任务");
 });

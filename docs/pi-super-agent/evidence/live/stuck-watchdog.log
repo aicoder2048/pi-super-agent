@@ -1,0 +1,3 @@
+2026-11-09T02:59:19.514Z [watchdog] 已启动，每 0.1 分钟检查一次，状态目录 /tmp/psa-wd-live2-NqhX
+2026-11-09T02:59:19.515Z [watchdog] 宿主没有心跳，正在拉起
+2026-11-09T02:59:19.516Z [watchdog] 已拉起宿主，pid 2573，日志 /tmp/psa-wd-live2-NqhX/host.log

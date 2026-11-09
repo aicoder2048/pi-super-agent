@@ -7,7 +7,7 @@ import { dropTrigger } from "../src/sources/generic.ts";
 import { ids, startHost, until, type Brain } from "./helpers/fakes.ts";
 
 const modules = Modules.load([fileURLToPath(new URL("../modules", import.meta.url))]);
-const withModules = { sourcePolicy: modules.sourcePolicy, isKnownRule: modules.isKnownRule };
+const withModules = { sourcePolicy: modules.sourcePolicy, ruleAllows: modules.ruleAllows, rulesFor: modules.rulesFor };
 const threadOf = (card: string) => card.match(/线程 (thr_\S+)/)?.[1];
 
 const ruleBrain: Brain = (cards) =>
@@ -59,7 +59,7 @@ test("没有规则时开出的推断任务：开始时的确认被拒绝，对�
 	const brain: Brain = (cards, _n, results) => {
 		if (results.some((r) => r.includes('"ticketId"'))) {
 			const ticketId = results.join("").match(/tkt_[\w-]+/)![0];
-			return [{ name: "reply", args: { text: "我开始悄悄看一下", ticketId } }];
+			return [{ name: "reply", args: { text: "我开始悄悄看一下", cause: ticketId } }];
 		}
 		return cards.flatMap((card) => card.startsWith("[候选触发]")
 			? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "inference", triggerId: ids(card, "trg"), title: "看看", brief: "看看" }] } }]
@@ -131,4 +131,12 @@ test("Watchdog 投递的触发以 [通知] 卡片交给 Router，不当作候选
 	const card = router.batches.flat()[0];
 	assert.match(card, /^\[通知\]/);
 	assert.match(card, /40 分钟没有进展/);
+});
+
+test("候选触发的卡片列出适用于它的规则", async (t) => {
+	const { host, router } = await startHost(() => [], () => {}, withModules);
+	t.after(() => host.stop());
+	host.kernel.submitTrigger({ source: "toy-market", externalId: "q-rule", threads: [{ id: "thr_toy-market:TOYX" }], sender: "feed", body: "TOYX 价格 94.8，涨跌 -5.2%，成交量 12 股", occurredAt: Date.now() });
+	await until(() => router.batches.length > 0, "Router 收到卡片");
+	assert.match(router.batches.flat()[0], /适用规则：toy-market\/big-move/);
 });

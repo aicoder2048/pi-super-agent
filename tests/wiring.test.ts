@@ -62,7 +62,7 @@ function hostConfig(provider: string, fallbackId = "fallback") {
 	const stateDir = mkdtempSync(join(tmpdir(), "psa-wire-"));
 	return {
 		stateDir, kernel: {}, bgMaxMinutes: 120, fallbackDailyTokens: 1000, retryAttempts: 0, probePrimaryMinutes: 15,
-		watchdog: { intervalMinutes: 3, stuckMinutes: 30 }, modulesDirs: [],
+		heartbeatSeconds: 30, watchdog: { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120 }, modulesDirs: [],
 		models: { router: { provider, id: "router" }, worker: { provider, id: "worker" }, fallback: { provider, id: fallbackId } },
 	};
 }

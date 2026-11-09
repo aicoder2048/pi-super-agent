@@ -37,10 +37,12 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 	const selectors = modelSelectors(config, clock);
 	return {
 		stateDir: config.stateDir,
+		heartbeatMs: config.heartbeatSeconds * 1000,
 		config: config.kernel,
 		log,
 		sourcePolicy: modules.sourcePolicy,
-		isKnownRule: modules.isKnownRule,
+		ruleAllows: modules.ruleAllows,
+		rulesFor: modules.rulesFor,
 		timers: modules.timers(),
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
 		createRouter: (deps) =>
@@ -52,6 +54,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 				cwd: join(config.stateDir, "router"),
 				sessionDir: join(config.stateDir, "sessions", "router"),
 				rules: modules.rulesPrompt(),
+				rulesFor: deps.rulesFor,
 				afterCommand: deps.afterCommand,
 				onError: (e) => log(`[router] ${String(e)}`),
 			}),

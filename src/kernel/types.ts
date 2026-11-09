@@ -54,6 +54,7 @@ export interface KernelConfig {
 	inferenceConcurrent: number;
 	inferenceDaily: number;
 	replyMaxChars: number;
+	repliesPerCause: number;
 }
 
 export const DEFAULT_CONFIG: KernelConfig = {
@@ -62,6 +63,7 @@ export const DEFAULT_CONFIG: KernelConfig = {
 	inferenceConcurrent: 1,
 	inferenceDaily: 24,
 	replyMaxChars: 200,
+	repliesPerCause: 2,
 };
 
 export const RETRY_BACKOFF_MS = [5_000, 30_000, 120_000, 600_000, 1_800_000] as const;

@@ -1,12 +1,17 @@
+import { randomUUID } from "node:crypto";
 import { connect, type Socket } from "node:net";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
 import type { ClientToHost, HostToClient } from "./protocol.ts";
+
+export const DEFAULT_ACK_TIMEOUT_MS = 5000;
 
 export interface HostConnectionOptions {
 	socketPath: string;
 	onMessage(message: HostToClient): void;
 	onStatus?(connected: boolean): void;
+	onAckMissing?(text: string): void;
 	retryMs?: number;
+	ackTimeoutMs?: number;
 }
 
 export class HostConnection {
@@ -16,6 +21,7 @@ export class HostConnection {
 	#closed = false;
 	#watching: string | undefined;
 	#retry: NodeJS.Timeout | undefined;
+	readonly #awaitingAck = new Map<string, NodeJS.Timeout>();
 
 	constructor(options: HostConnectionOptions) {
 		this.#o = options;
@@ -35,7 +41,14 @@ export class HostConnection {
 			if (this.#watching) writeJsonLine(socket, { type: "watch", ticketId: this.#watching } satisfies ClientToHost);
 			this.#o.onStatus?.(true);
 		});
-		onJsonLines(socket, (record) => this.#o.onMessage(record as HostToClient));
+		onJsonLines(socket, (record) => {
+			const message = record as HostToClient;
+			if (message.type === "ack") {
+				clearTimeout(this.#awaitingAck.get(message.requestId));
+				this.#awaitingAck.delete(message.requestId);
+			}
+			this.#o.onMessage(message);
+		});
 		socket.on("error", () => {});
 		socket.on("close", () => {
 			const was = this.#connected;
@@ -47,8 +60,16 @@ export class HostConnection {
 		});
 	}
 
-	say(text: string): boolean {
-		return this.#send({ type: "say", text });
+	say(text: string): string | undefined {
+		const requestId = randomUUID();
+		if (!this.#send({ type: "say", text, requestId })) return undefined;
+		const timer = setTimeout(() => {
+			this.#awaitingAck.delete(requestId);
+			this.#o.onAckMissing?.(text);
+		}, this.#o.ackTimeoutMs ?? DEFAULT_ACK_TIMEOUT_MS);
+		timer.unref();
+		this.#awaitingAck.set(requestId, timer);
+		return requestId;
 	}
 
 	watch(ticketId: string | undefined): void {
@@ -65,6 +86,8 @@ export class HostConnection {
 	close(): void {
 		this.#closed = true;
 		clearTimeout(this.#retry);
+		for (const timer of this.#awaitingAck.values()) clearTimeout(timer);
+		this.#awaitingAck.clear();
 		this.#socket?.destroy();
 	}
 }

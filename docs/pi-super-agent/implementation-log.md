@@ -1,7 +1,7 @@
-# Pi Super Agent MVP 实施计划
+# Pi Super Agent MVP 实施记录
 
 规格见 `docs/pi-super-agent/mvp-spec.md`，术语见 `GLOSSARY.md`，架构决定见 `docs/adr/`。
-每个阶段结束时更新 Status；全部完成后删除本文件。
+六个阶段已全部完成。原为仓库根目录的 `IMPLEMENTATION_PLAN.md`，按开发规范在完成后移出根目录，保留为记录。之后的审计整改见 `figure-it-out.md`。
 
 ## Stage 0: 验证
 
@@ -135,4 +135,6 @@
 - 模型回退：注入模型错误，验证切换、通知、试探和切回；验证每日上限的累计与重置。
 - 手动冒烟：验收演示第 5 步；真实的限流场景视情况补做。
 
-**Status**: Not Started
+**备注**：模型回退、Watchdog、心跳、重启恢复按先红后绿实现（2026-11-08）。真实检查：Watchdog 拉起被 kill -9 的宿主；Worker 90 秒无进展时经 Router 收到通知；修复后验收第 5 步由 Watchdog 自动拉起。真实限流无法有意触发，由真实 Router 会话加假模型的测试覆盖。
+
+**Status**: Complete

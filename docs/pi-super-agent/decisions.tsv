@@ -1,0 +1,68 @@
+ts	phase	decision	why	evidence	result
+2026-11-09T02:06:50Z	start	进入 figure-it-out 审计整改流程；之前 Stage 0 到 4 及 Stage 5 未提交部分没有按 pstack 完整执行	使用者指出只部分使用 pstack 是错误，要求回到 pstack 路径	branch mvp @1e16577	open
+2026-11-09T02:06:50Z	branch	建 mvp 分支承载全部提交，本地 main 退回 e377ad8	按 pstack 走分支加 PR，不直接提交到 main；使用者已同意	git branch -f main e377ad8; mvp @1e16577	done
+2026-11-09T02:08:10Z	frame	写下完成判定 P1 到 P6，风险定为高，规模约 4000 行代码加 134 个测试	无人值守加授权边界属于难以收回的决定，需要高强度的关卡	docs/pi-super-agent/figure-it-out.md	done
+2026-11-09T02:08:10Z	frame	deslop 和 control-cli 未安装，分别用内置 simplify 和自己驱动 tmux 代替	所需的 cursor-team-kit 插件不在本机	ls ~/.claude/plugins/cache/cursor-plugins = pstack only	substituted
+2026-11-09T02:08:10Z	harness	把三处未先写测试的 Stage 5 接线另存为补丁，整改时撤掉重做	这三处违反先红后绿，需要按 tdd 重来	scratchpad/untested-wiring.patch, scratchpad/watchdog-main.ts	open
+2026-11-09T02:08:10Z	how	启动四个只读探查员，分别看触发与内核、Router、Worker 执行、客户端与运维	要一份不以我自己说明为准的独立解读	how 探查员 x4（继承父模型）	running
+2026-11-09T02:08:59Z	interrogate	把工作区打成临时快照提交，挂在 refs/wip/interrogate，不移动 mvp 分支	审查员要在各自的 worktree 里看到未提交的 Stage 5 改动	commit 2f8752f	done
+2026-11-09T02:08:59Z	interrogate	启动两个对抗审查员，各自 worktree，按配置一个 opus high、一个继承父模型	interrogate reviewers 配置为 opus high 加 inherit-parent；只保留有复现命令的发现	interrogate 审查员 x2	running
+2026-11-09T02:09:23Z	how	Router 探查员返回；列出两个疑似问题：切模型窗口里到达的卡片会被搁置、settled 里 setModel 抛错会让 Router 永久卡在 busy	疑似问题留给对抗审查和后续 TDD 验证，不直接改	how 探查员（Router）报告	1/4 returned
+2026-11-09T02:09:37Z	how	内核探查员返回；疑似问题包括 Router 可转交被过滤的触发、同一触发可重复开任务、推断并发按未结束而非执行中计算	疑似问题等审查员复现或 TDD 确认后再定	how 探查员（触发与内核）报告	2/4 returned
+2026-11-09T02:09:37Z	how	Worker 探查员返回；疑似问题包括后台命令结果不进内核、回退前出错的一轮工作丢失、模型选择器被所有 Worker 共享	同上，先确认再修	how 探查员（Worker 执行）报告	3/4 returned
+2026-11-09T02:11:23Z	incident	把只部分使用 pstack 的错误存为记忆警告，并写了事故复盘笔记	使用者要求记录下来，提醒以后的开发	memory/pstack-full-adherence.md, ~/StudyNotes/261108-pstack-partial-use-incident.md	done
+2026-11-09T02:11:23Z	how	四个探查员全部返回，报告原文提取到文件后交给讲解员（opus high）汇总	how 的复杂路径要求先探查再统一讲解	scratchpad/how-findings.md	running
+2026-11-09T02:13:05Z	how	讲解员汇总出独立的系统说明并存档；列出约 30 条疑似问题和 5 个未确认的 Pi 行为	Phase B 第 1 步的产出，后续修复和故事对照以它为参照	docs/pi-super-agent/how.md	done
+2026-11-09T02:13:46Z	tdd	撤回三处未先写测试的接线（main.ts 模型接线、watchdog/main.ts、Router 提示词一句），基线 134 个测试全绿	要按先红后绿重做	git checkout HEAD -- src/host/main.ts; just test	baseline green
+2026-11-09T02:14:47Z	tdd	模型接线抽成 modelSelectors 和 createHostOptions，先写测试（模块不存在，红），再实现（绿），main.ts 改为只调用它	入口接线原先没有测试；抽成函数才能测真实接线下的回退行为	tests/wiring.test.ts 6 pass; src/host/wiring.ts	green
+2026-11-09T02:14:47Z	verify	真实入口冒烟：just host 启动并写出心跳；回退模型配错时启动即报错 找不到模型 deepseek/no-such-model	检查真实产物，不只看测试	/tmp/psa-entry-*/out.log	VERIFIED
+2026-11-09T02:16:14Z	tdd	Watchdog 入口先写三条进程级测试（红），再实现（绿）；杀进程前用 ps 确认是宿主，不误杀复用了 pid 的无关进程	探查员指出按心跳 pid 直接 SIGKILL 有误杀风险	tests/watchdog-main.test.ts 3 pass; src/watchdog/main.ts	green
+2026-11-09T02:16:51Z	tdd	Watchdog 触发改为在代码里渲染成 [通知] 卡片，替代原来提示词里的一句话；先写宿主层测试（红），再改（绿）	提示词里的一句话无法测试真实行为，代码层的卡片类型可以	tests/host-events.test.ts 'Watchdog 投递'; src/host/router.ts noticeCard	green
+2026-11-09T02:17:05Z	no-comments	提交前对 Stage 5 未提交改动跑 no-comments（Comment Sicko）	pstack 规定审查和提交前做删注释检查	comment-sicko 子代理	running
+2026-11-09T02:18:10Z	no-comments	Comment Sicko 删 1 条、留 4 条（都核实为平台或依赖约束）；接受其 MUST KILL，把 workerExited 的条件提成有名字的变量	删注释后用代码本身说明用意	src/kernel/kernel.ts workerExited	done
+2026-11-09T02:18:54Z	interrogate	审查员（继承父模型）报 14 条；重跑其中 13 条全部复现（第 11 条 3 次中 2 次），第 14 条已由 Watchdog 入口的 TDD 单元修掉	interrogate 只保留重跑后确实复现的发现	worktree agent-a0eceffe858faa8df repro/*.ts	13 VERIFIED, 1 already fixed
+2026-11-09T02:18:54Z	commit	测试和实现同提交，先红的证据记在本记录里，不单独提交失败的测试	使用者全局规则要求每个提交都通过全部测试，与 pstack 先提交失败测试的顺序冲突，按使用者规则	~/.claude/CLAUDE.md Code Quality	decided
+2026-11-09T02:19:31Z	simplify	对 Stage 5 未提交改动跑 simplify（代替未安装的 deslop），四个只读审查员分别看复用、简化、效率、修复深度	提交前的去冗余检查	scratchpad/simplify-diff.txt	running
+2026-11-09T02:21:12Z	interrogate	审查员（opus）报 14 条，重跑全部复现；两份结果按根因合并成 A 到 O 共 15 项	interrogate 要求合并同一根因的发现	docs/pi-super-agent/interrogate.md; worktree agent-a96b8643066459461 probes/	14 VERIFIED; merged 15
+2026-11-09T02:21:44Z	simplify	四个审查员返回；不改行为的去冗余项现在改，上限进内核和模型切换逻辑合并两项留到修复阶段按 TDD 做	前者是纯整理，后者会改行为或与 interrogate M 项重合	simplify 审查员 x4 报告	decided
+2026-11-09T02:24:04Z	simplify	应用不改行为的整理：模型选择器必填、删掉硬编码默认模型和无用字段、心跳读写合并到 src/heartbeat.ts、Watchdog 通知由内核定为 notice、看板行带 lastProgressAt、workerExited 合成一条规则、ModelSelector 去掉计数、createHostOptions 改同步、轮询改 10 秒	去冗余检查的结论	src/heartbeat.ts, src/host/{workers,router,host,wiring}.ts, src/kernel/kernel.ts	144 pass x3
+2026-11-09T02:24:17Z	commit	提交 Stage 5 代码与测试	no-comments 和 simplify 都已完成，144 个测试连续三次通过	commit e57c01f	done
+2026-11-09T02:25:17Z	architect	授权四项（D E F G）先跑 architect：用现有 how.md 打底，ADR 0003 作为约束，不另跑 why	跨内核、Router、Worker、socket 的边界，难以反悔；ADR 0003 已写明现有授权规则的理由	docs/pi-super-agent/how.md, docs/adr/0003	decided
+2026-11-09T02:25:17Z	arena	arena 跑方案的是 opus high 加继承父模型两个，每人交两个结构不同的方案；评审池都是 Claude 族，按规则跳过交叉评审，由协调者按评分标准选底	architect runners 和 arena cross-judge pool 的配置	~/.claude/rules/pstack-models.md	decided
+2026-11-09T02:25:17Z	fanout	修复分三条线：arena 设计、外围五项（C J K L N）交一个代理在 worktree 做、核心五项（A B H M I）由协调者串行做	外围文件与核心基本不重叠；核心都改 kernel.ts，必须串行	interrogate.md	decided
+2026-11-09T02:27:03Z	fix-A	叫停启动中的 Worker：先写宿主层测试，红（no pending action）；完成已取消的动作改为无操作，启动后复查叫停	取消正在执行的动作是合法状态，应在处理它的地方接住，而不是加防护	commit 926a745; tests/host.test.ts 还在启动中	green
+2026-11-09T02:37:14Z	fix-B	Router 通知丢失：三条宿主层测试先红；动作改为一轮成功结束后才完成，重启补触发，普通错误退避重试	首版在 message_end 确认，第一条测试仍红，查到会话文件在首条助手消息前不落盘，改为成功结束后确认	commit ed36ced; tests/router-durability.test.ts	green
+2026-11-09T02:38:04Z	fix-H	Worker 出错或崩溃静默空闲：两条宿主层测试先红；执行器替 Worker 记失败汇报	缺少 Worker 失败这一状态转换	commit f25c4f7	green
+2026-11-09T02:42:02Z	fix-M	回退上限：首版测试直接通过（没复现场景），改为轮中来新输入后红（投递 42 次）；每次唤醒检查上限，受阻改为内核命令，Router 用量计入	修复深度审查员指出按汇报开头比对是在状态机外打补丁	commit 99f8bc5	green
+2026-11-09T02:42:20Z	fix-I	就绪附问题显示已结束：内核测试先红，带问题时不关闭任务	规格阶段表等你回答排第一	commit 7ee248a	green
+2026-11-09T02:43:40Z	merge	审阅外围分支 fix/edge-findings 的 5 个提交后摘到 mvp，无冲突	代理的产出由协调者负责审阅	commits 8f89d00..2fc3a45	done
+2026-11-09T02:43:40Z	fix-C	不同意代理的提交失败即拒收：先改测试为留在目录重试（红），再改实现（绿）；同时补上对话行 id（J 的遗留）	字段已在解析时校验，提交失败多为暂时性错误，拒收会丢事件	commit fdf0483	green
+2026-11-09T02:44:35Z	architect	arena 两位设计员的推荐方案收敛，采用共识形状；以 opus 的方案 A 为底，嫁接候选卡片列适用规则；不拆分 socket、不加触发时效	收敛是强一致信号；拆 socket 与时效不增加保证	docs/pi-super-agent/authority-design.md; worktrees agent-af639e33d8aea57d7, agent-a24c50876a97ecd46	decided
+2026-11-09T02:46:41Z	fix-E	依据核验：四条内核测试先红；触发只在使它离开 to_router 的那批决定里有效，规则依据需要来源在范围内的触发；isKnownRule 迁移为 ruleAllows 并一次删掉旧接口	按 authority-design.md 第 1 点；使用者规则不写来源行默认适用所有非对话来源，保持现有规则可用	commit 56b16e5	green
+2026-11-09T02:50:02Z	fix-D	推断并发与回复原因：三条内核测试先红；claimSlot 闸门、回复带 cause、通知卡片印 act id；外围代理的定时测试改为确定性写法	按 authority-design.md 第 2、3 点；sleep(30) 在高负载下超时导致偶发失败	commit 68039f6; 177 pass x3	green
+2026-11-09T02:51:07Z	fix-G-F	推断 Worker 只读：参数与扩展测试先红；一张工具表同时驱动 --tools/--no-mcp 和扩展白名单；删除正则黑名单；清掉 PSA_* 环境变量	按 authority-design.md 第 4、5 点	commit ef03e77	green
+2026-11-09T02:51:56Z	verify	真实 Pi 确认 --tools 生效：推断 Worker 只有 read/grep/find/ls 与汇报工具，请求 Worker 有 bash/edit/write	工具白名单依赖 Pi 执行 --tools，需在真实子进程上确认	会话文件系统消息的 tools 段	VERIFIED
+2026-11-09T02:57:16Z	verify	在两位审查员的 worktree 切到 ef03e77 重跑原复现脚本：A B C D E G H I J K L M N 全部不再复现；O5 探针因黑名单模块删除无法运行，改由真实 Pi 工具列表证明；部分脚本只补了新接口必需的参数（workerModels、cause），场景未改	以审查员自己的复现为最终判据，不只看我写的测试	worktrees agent-a0eceffe858faa8df/repro, agent-a96b8643066459461/probes @ef03e77	VERIFIED
+2026-11-09T02:58:34Z	live	Watchdog 真实拉起被 kill -9 的宿主（13 秒，阈值调短）VERIFIED；卡住通知首轮无效：心跳过期设 10 秒小于宿主 30 秒心跳间隔，Watchdog 反复重启健康的宿主	测试配置错误；同时说明缺一条配置约束：过期阈值必须大于心跳间隔	/tmp/psa-wd-live-Dvop/watchdog.log	restart VERIFIED; stuck INCONCLUSIVE
+2026-11-09T02:59:19Z	tdd	心跳间隔与过期阈值合到 config.json，加载时校验过期阈值大于心跳两倍；先写配置测试（红）再实现（绿）	真实检查暴露的配置约束缺失	commit 8e9aa06	green
+2026-11-09T03:02:20Z	live	卡住通知真实检查：Worker 跑 90 秒无进展，Watchdog 投递通知，Router 用一句话转告，命令结束后回复 done；宿主只启动一次	Stage 5 验收标准：Worker 长时间无进展时使用者经 Router 收到通知	/tmp/psa-wd-live2-NqhX/state.db	VERIFIED
+2026-11-09T03:02:20Z	live	真实限流场景不做：无法有意触发 Codex 限流；由真实 Router 会话加假模型的接线测试和 fallback 测试覆盖	计划写明真实限流视情况补做	tests/wiring.test.ts, tests/fallback.test.ts	skipped with reason
+2026-11-09T03:07:40Z	accept	修复后在真实 TUI（tmux）用真实 Codex 模型重走六步验收，全部通过；第 5 步由 Watchdog 自动拉起被 kill -9 的宿主	P2 完成判定；修复改变了 Router 行为，需重新验收	docs/pi-super-agent/evidence/step*.txt	VERIFIED
+2026-11-09T03:07:40Z	trace	36 条故事对照：20 覆盖、14 部分、1 缺口（36）、1 范围外（35）；只缺测试的交代理写 tests/stories.test.ts，要改代码的（4/17、19、21、36）由协调者做	故事对照代理报告；新文件避免与协调者冲突	story trace agent report	decided
+2026-11-09T03:09:14Z	story-4-17	对话卡片列出进行中和最近的任务；宿主层测试只凭卡片转交，撤掉改动时红、恢复后绿	故事 4、17：找回上下文不应依赖 Router 记住早先的 id	commit 72caa9e	green
+2026-11-09T03:09:45Z	mistake	72caa9e 在全量测试有 4 条失败时提交：测试与提交串在一条命令里，没先看结果	违反每个提交都通过全部测试；以后先单独跑测试、确认全绿再提交	commit 72caa9e	red commit on mvp
+2026-11-09T03:09:45Z	fix	补提交修好测试辅助函数的默认标题，全量 180 个通过	修复上一行的红提交，不改写历史	commit a340cfa	green
+2026-11-09T03:10:34Z	story-19	Worker 事件翻译抽成 WorkerEventTranslator：测试先红（模块不存在），实现后绿，PiWorkerSpawner 迁移过去并删掉内联代码	故事 19：看板计数来自真实事件的路径没有测试	commit 6e62fb8	green
+2026-11-09T03:10:58Z	merge	审阅后摘入故事覆盖测试（7 10 12 20 22 23 27 28 29），首跑全过，没有发现行为缺失；全量 192 个通过	只缺测试的故事由代理在独立文件补齐	commit 61eb557	done
+2026-11-09T03:11:26Z	story-21	just log 列出触发去向：格式化测试先红后绿，并在验收用的真实状态目录上跑通	故事 21：去向有记录但使用者看不到	commit 44d1f95; /tmp/psa-accept-*	green
+2026-11-09T03:16:06Z	story-36	状态目录迁移：真实探针先证明搬目录后 Worker 丢历史；按会话头部改写路径的思路探针验证可行；单元测试先红后绿；真实端到端（A 开任务、搬到 B、续上旧任务并记得暗号）通过	故事 36 是对照里唯一没有证据的一条，探针暴露了真实缺陷	commit f1c9f51; /tmp/psa-migrate-J5nD	VERIFIED
+2026-11-09T03:17:45Z	live	故事 14 真实检查：无规则的安全公告触发，Router 自行以推断依据开任务且不发确认；只读 Worker 汇报进展后因无联网工具汇报受阻，Router 只问一个具体问题	模型判断无法由自动测试证明	/tmp/psa-infer-*/state.db	VERIFIED
+2026-11-09T03:18:30Z	simplify	效率与深度审查：采纳索引、rulesFor 单一路径、批次集合改局部、规则查找表、问题段落改在内核计算；不采纳卡片 N+1、搬目录全文重写、seenIds 增长、Router 用量每条一事务	前者便宜且不改行为；后者在个人规模下量很小，按 YAGNI 暂缓	simplify 审查员（效率与深度）报告	decided
+2026-11-09T03:20:29Z	cleanup	应用 no-comments 与 simplify 的采纳项；问题段落起点改在内核计算（先写测试红再绿）并删除 Watchdog 侧文件；全量 197 个通过	提交前检查；修复深度审查指出侧文件是在症状处打补丁	commit 26e11dc	green
+2026-11-09T03:21:24Z	trace	写 story-trace.md：33 条覆盖、3 条部分（8、17、29，写明接受理由）、1 条范围外；实施计划完成后移到 docs/pi-super-agent/implementation-log.md	P3 完成判定；开发规范要求全部阶段完成后移除根目录的计划文件	docs/pi-super-agent/story-trace.md	done
+2026-11-09T03:21:54Z	verify	P1：分支头 4ca74bf 上全量 197 个测试连续三次通过；没有残留的宿主或 Watchdog 进程	完成判定 P1	just test x3 @4ca74bf	VERIFIED
+2026-11-09T03:21:54Z	review	跨模型复核记录：子代理模型只有 Claude 族可选，改用与执行者不同的 sonnet 复核，并写明这一限制	show-me-your-work 要求换模型族复核，环境不提供其他族	复核子代理	running
+2026-11-09T03:24:06Z	review	跨模型复核（sonnet）返回：采纳补证据、逐条处置 how 疑点和 Pi 行为、修复 open_ticket 缺标题；指出 PSA_* 无测试一条不成立（worker-extension.test.ts 有）	复核结论逐条核对后处理	docs/pi-super-agent/figure-it-out.md Phase E; evidence/live/	done
+2026-11-09T03:24:06Z	fix	open_ticket 缺标题或说明时只拒绝该条：内核测试先红后绿，全量 198 个通过	how.md 列出的未确认行为之一，确认会整批回滚	tests/kernel.test.ts 缺标题	green
+2026-11-09T03:33:22Z	pr	使用者同意后按现有提交切出 7 个分支叠成 PR 栈（#4 到 #10），不改写历史；全部非草稿，基分支逐级相连	Opening a PR 倾向窄 PR；提交本来按阶段排好	https://github.com/aicoder2048/pi-super-agent/pull/4 .. /pull/10	done
+2026-11-09T03:33:22Z	cleanup	使用者同意后删除 6 个代理 worktree（含未提交的复现脚本）、旁支分支 fix/edge-findings 与 test/story-coverage、快照引用 refs/wip/interrogate	均已合并或用完；复现场景都已有回归测试	git worktree list; git branch	done

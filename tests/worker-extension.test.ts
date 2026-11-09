@@ -58,12 +58,20 @@ test("汇报经宿主连接提交", async (t) => {
 	assert.equal(w.requests.at(-1).method, "worker.report");
 });
 
-test("推断任务的对外命令被拦截，请求任务不拦截", async (t) => {
+test("推断任务的 Worker 只能调用只读工具和汇报类工具，其余一律拦截；请求任务不拦", async (t) => {
 	const inference = await load("inference");
 	const request = await load("request");
 	t.after(() => { inference.close(); request.close(); });
-	const call = { toolName: "bash", input: { command: "git push origin main" } };
-	assert.equal((await inference.handlers.get("tool_call")(call)).block, true);
-	assert.equal(await request.handlers.get("tool_call")(call), undefined);
-	await assert.rejects(inference.run("bg_start", { command: "git push" }), /drafts/);
+	const call = (toolName: string) => ({ toolName, input: { command: "git -C . push", path: "x" } });
+	for (const tool of ["bash", "write", "edit", "bg_start", "mcp__mail__send"]) {
+		assert.equal((await inference.handlers.get("tool_call")(call(tool)))?.block, true, tool);
+		assert.equal(await request.handlers.get("tool_call")(call(tool)), undefined, tool);
+	}
+	for (const tool of ["read", "grep", "report", "read_ticket"]) assert.equal(await inference.handlers.get("tool_call")(call(tool)), undefined, tool);
+});
+
+test("扩展读完宿主连接信息后从环境变量里删掉，命令子进程继承不到", async (t) => {
+	const w = await load("request");
+	t.after(w.close);
+	for (const name of ["PSA_SOCKET", "PSA_TOKEN", "PSA_TICKET", "PSA_BASIS"]) assert.equal(process.env[name], undefined, name);
 });

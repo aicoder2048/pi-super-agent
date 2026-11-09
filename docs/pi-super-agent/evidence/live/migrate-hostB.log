@@ -1,0 +1,4 @@
+2026-11-09T03:14:13.953Z [host] 模块：toy-market；规则 1 条
+2026-11-09T03:14:13.965Z [host] 状态目录换了位置，已把会话记录的工作目录改到 /tmp/psa-migrate-J5nD/B
+2026-11-09T03:14:13.970Z [host] 已启动，状态目录 /tmp/psa-migrate-J5nD/B，Router openai-codex/gpt-6.1-terra，Worker openai-codex/gpt-6.1-sol，回退 deepseek/deepseek-flash
+2026-11-09T03:15:44.236Z [host] 收到 SIGTERM，正在停止

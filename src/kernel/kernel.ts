@@ -99,7 +99,7 @@ export interface KernelOptions {
 	db: DatabaseSync;
 	clock: Clock;
 	sourcePolicy: SourcePolicy;
-	isKnownRule?: (ruleId: string) => boolean;
+	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	config?: Partial<KernelConfig>;
 }
 
@@ -107,11 +107,11 @@ export class Kernel {
 	readonly #db: DatabaseSync;
 	readonly #clock: Clock;
 	readonly #sourcePolicy: SourcePolicy;
-	readonly #isKnownRule: (ruleId: string) => boolean;
+	readonly #ruleAllows: (ruleId: string, triggerSource: string) => boolean;
 	readonly config: KernelConfig;
 
-	constructor({ db, clock, sourcePolicy, isKnownRule = () => true, config }: KernelOptions) {
-		this.#isKnownRule = isKnownRule;
+	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, config }: KernelOptions) {
+		this.#ruleAllows = ruleAllows;
 		this.#db = db;
 		this.#clock = clock;
 		this.#sourcePolicy = sourcePolicy;
@@ -169,9 +169,10 @@ export class Kernel {
 	}
 
 	route(decisions: Decision[]): DecisionResult[] {
+		const takenThisRoute = new Set<string>();
 		return this.#tx(() =>
 			decisions.map((decision) => {
-				const result = this.#decide(decision);
+				const result = this.#decide(decision, takenThisRoute);
 				this.#run(
 					"INSERT INTO decisions (decision, ok, reason, ticket_id, created_at) VALUES (?, ?, ?, ?, ?)",
 					JSON.stringify(decision),
@@ -185,33 +186,51 @@ export class Kernel {
 		);
 	}
 
-	reply({ threadId, text, ticketId }: { threadId: string; text: string; ticketId?: string }): Result<{ replyId: string }> {
+	reply({ threadId, text, cause }: { threadId: string; text: string; cause: string }): Result<{ replyId: string }> {
 		return this.#tx(() => {
 			if (!this.#get("SELECT 1 FROM threads WHERE id = ?", threadId)) return reject(`unknown thread ${threadId}`);
 			const length = [...text].length;
 			if (length > this.config.replyMaxChars) {
 				return reject(`reply has ${length} characters, limit is ${this.config.replyMaxChars}`);
 			}
-			if (ticketId !== undefined) {
-				const ticket = this.#ticketRow(ticketId);
-				if (!ticket) return reject(`unknown ticket ${ticketId}`);
-				const latest = this.#latestReportRow(ticketId);
-				if (ticket.basis === "inference" && (!latest || latest.status === "progress")) {
-					return reject("inference tickets get no confirmation; reply only after a result");
-				}
-			}
+			const problem = this.#causeProblem(cause);
+			if (problem) return reject(problem);
+			const used = this.#get("SELECT COUNT(*) AS n FROM reply_receipts WHERE cause = ?", cause).n as number;
+			if (used >= this.config.repliesPerCause) return reject(`already replied ${used} times about ${cause}`);
 			const replyId = this.#id("rpl");
 			this.#run(
-				"INSERT INTO reply_receipts (id, thread_id, ticket_id, text, created_at) VALUES (?, ?, ?, ?, ?)",
+				"INSERT INTO reply_receipts (id, thread_id, cause, text, created_at) VALUES (?, ?, ?, ?, ?)",
 				replyId,
 				threadId,
-				ticketId ?? null,
+				cause,
 				text,
 				this.#now(),
 			);
 			this.#enqueue({ kind: "channel.reply", payload: { threadId, text, replyId } });
 			return { ok: true, replyId };
 		});
+	}
+
+	#causeProblem(cause: string | undefined): string | undefined {
+		if (!cause) return "a reply needs a cause: the conversation trigger, ticket or notice id it answers";
+		if (cause.startsWith("trg_")) {
+			if (!this.#get("SELECT 1 FROM triggers WHERE id = ?", cause)) return `unknown trigger ${cause}`;
+			return this.#inConversation(cause) ? undefined : "a source trigger is data, not something to answer; open a ticket or ignore it";
+		}
+		if (cause.startsWith("tkt_")) {
+			const ticket = this.#ticketRow(cause);
+			if (!ticket) return `unknown ticket ${cause}`;
+			if (ticket.basis !== "inference") return undefined;
+			const latest = this.#latestReportRow(cause);
+			const answerable = latest && (latest.question || ["ready", "blocked", "failed"].includes(latest.status));
+			return answerable ? undefined : "inference tickets stay quiet until they have a result to report";
+		}
+		if (cause.startsWith("act_")) {
+			const action = this.#get("SELECT kind, payload FROM actions WHERE id = ?", cause);
+			const notice = action?.kind === "router.notify" && JSON.parse(action.payload).kind === "notice";
+			return notice ? undefined : `${cause} is not a notice`;
+		}
+		return `unknown cause ${cause}`;
 	}
 
 	markReplyDelivered(replyId: string): boolean {
@@ -271,7 +290,7 @@ export class Kernel {
 			} else if (report.status !== "progress") {
 				this.#enqueue({ kind: "router.notify", payload: { kind: "report", ticketId, reportId } });
 			}
-			if (report.status === "ready" && !report.waiting) this.#close(ticketId);
+			if (report.status === "ready" && !report.waiting && !report.question) this.#close(ticketId);
 			return { reportId };
 		});
 	}
@@ -302,6 +321,10 @@ export class Kernel {
 			const ticket = this.#requireTicket(ticketId);
 			if (ticket.stopped_at !== null) return false;
 			if (ticket.worker_state === "running") return true;
+			if (ticket.basis === "inference" && this.#inferenceRunning() >= this.config.inferenceConcurrent) {
+				this.#setState(ticketId, "queued");
+				return false;
+			}
 			const running = this.#get("SELECT COUNT(*) AS n FROM tickets WHERE worker_state = 'running'").n as number;
 			const general = running < this.config.maxWorkers;
 			const reserved =
@@ -386,13 +409,29 @@ export class Kernel {
 				tokensOut,
 				ticketId,
 			);
-			this.#run(
-				`INSERT INTO usage_daily (day, provider, tokens) VALUES (?, ?, ?)
-				 ON CONFLICT (day, provider) DO UPDATE SET tokens = tokens + excluded.tokens`,
-				localDayKey(this.#now()),
-				provider,
-				tokensIn + tokensOut,
-			);
+			this.#addUsage(provider, tokensIn + tokensOut);
+		});
+	}
+
+	recordRouterUsage({ provider, tokensIn, tokensOut }: { provider: string; tokensIn: number; tokensOut: number }): void {
+		this.#tx(() => this.#addUsage(provider, tokensIn + tokensOut));
+	}
+
+	#addUsage(provider: string, tokens: number): void {
+		this.#run(
+			`INSERT INTO usage_daily (day, provider, tokens) VALUES (?, ?, ?)
+			 ON CONFLICT (day, provider) DO UPDATE SET tokens = tokens + excluded.tokens`,
+			localDayKey(this.#now()),
+			provider,
+			tokens,
+		);
+	}
+
+	blockForCap(ticketId: string, summary: string): void {
+		this.#tx(() => {
+			const latest = this.#latestReportRow(ticketId);
+			if (!(latest?.status === "blocked" && latest.summary === summary)) this.workerReport(ticketId, { status: "blocked", summary });
+			this.#run("UPDATE tickets SET worker_state = 'idle' WHERE id = ? AND worker_state = 'queued'", ticketId);
 		});
 	}
 
@@ -420,15 +459,17 @@ export class Kernel {
 
 	completeAction(actionId: string): void {
 		this.#tx(() => {
-			const action = this.#pendingAction(actionId);
+			const action = this.#stillPendingAction(actionId);
+			if (!action) return;
 			this.#run("UPDATE actions SET status = 'done', attempts = attempts + 1, last_error = NULL WHERE id = ?", actionId);
 			this.#logAttempt(action, true, null);
 		});
 	}
 
-	failAction(actionId: string, error: string): { nextAttemptAt: number } {
+	failAction(actionId: string, error: string): { nextAttemptAt: number } | undefined {
 		return this.#tx(() => {
-			const action = this.#pendingAction(actionId);
+			const action = this.#stillPendingAction(actionId);
+			if (!action) return undefined;
 			const attempts = (action.attempts as number) + 1;
 			const nextAttemptAt = this.#now() + RETRY_BACKOFF_MS[Math.min(attempts, RETRY_BACKOFF_MS.length) - 1];
 			this.#run(
@@ -452,7 +493,13 @@ export class Kernel {
 				SYSTEM_PROBLEM_STREAK,
 			);
 			if (recent.length < SYSTEM_PROBLEM_STREAK || recent.some((r) => r.ok === 1)) return [];
-			return [{ kind, lastError: recent[0].error, since: recent[recent.length - 1].at }];
+			const since = this.#get(
+				`SELECT MIN(at) AS at FROM action_attempts WHERE kind = ?
+				 AND seq > COALESCE((SELECT MAX(seq) FROM action_attempts WHERE kind = ? AND ok = 1), 0)`,
+				kind,
+				kind,
+			).at as number;
+			return [{ kind, lastError: recent[0].error, since }];
 		});
 	}
 
@@ -548,20 +595,20 @@ export class Kernel {
 		}));
 	}
 
-	conversation(limit = 50): { who: "user" | "router"; text: string; at: number }[] {
+	conversation(limit = 50): { id: string; who: "user" | "router"; text: string; at: number }[] {
 		return this.#all(
 			`SELECT * FROM (
-				SELECT 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord FROM triggers t
+				SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord FROM triggers t
 				JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ?
 				UNION ALL
-				SELECT 'router', r.text, r.created_at, r.rowid FROM reply_receipts r WHERE r.thread_id = ?
-			) ORDER BY at DESC, ord DESC LIMIT ?`,
+				SELECT r.id, 'router', r.text, r.created_at, r.rowid FROM reply_receipts r WHERE r.thread_id = ?
+			) ORDER BY at DESC, who = 'router' DESC, ord DESC LIMIT ?`,
 			CONVERSATION_THREAD_ID,
 			CONVERSATION_THREAD_ID,
 			limit,
 		)
 			.reverse()
-			.map((r) => ({ who: r.who, text: r.text, at: r.at }));
+			.map((r) => ({ id: r.id, who: r.who, text: r.text, at: r.at }));
 	}
 
 	sourceCursor(source: string): string | undefined {
@@ -584,22 +631,27 @@ export class Kernel {
 		return this.#get("SELECT tokens FROM usage_daily WHERE day = ? AND provider = ?", localDayKey(this.#now()), provider)?.tokens ?? 0;
 	}
 
-	#decide(d: Decision): DecisionResult {
+	#decide(d: Decision, takenThisRoute: Set<string>): DecisionResult {
 		switch (d.kind) {
 			case "open_ticket":
-				return this.#openTicket(d);
+				return this.#openTicket(d, takenThisRoute);
 			case "hand_over": {
 				const trigger = this.#get("SELECT id, body FROM triggers WHERE id = ?", d.triggerId);
 				if (!trigger) return reject(`unknown trigger ${d.triggerId}`);
+				const unusable = this.#evidenceProblem(d.triggerId, takenThisRoute);
+				if (unusable) return reject(unusable);
 				const problem = this.#acceptsInput(d.ticketId);
 				if (problem) return reject(problem);
 				const kind: InputKind = this.#inConversation(d.triggerId) ? "user_message" : "trigger";
 				this.#addInput(d.ticketId, kind, trigger.body, d.triggerId);
 				this.#setDisposition(d.triggerId, "handed_over", d.ticketId);
+				takenThisRoute.add(d.triggerId);
 				return { ok: true, ticketId: d.ticketId };
 			}
 			case "ignore": {
 				if (!this.#get("SELECT 1 FROM triggers WHERE id = ?", d.triggerId)) return reject(`unknown trigger ${d.triggerId}`);
+				const unusable = this.#evidenceProblem(d.triggerId, takenThisRoute);
+				if (unusable) return reject(unusable);
 				this.#setDisposition(d.triggerId, "router_ignored", d.reason);
 				return { ok: true };
 			}
@@ -618,14 +670,28 @@ export class Kernel {
 		}
 	}
 
-	#openTicket(d: Extract<Decision, { kind: "open_ticket" }>): DecisionResult {
-		if (d.basis === "rule" && !d.ruleId) return reject("basis rule requires a ruleId");
-		if (d.basis === "rule" && !this.#isKnownRule(d.ruleId!)) return reject(`unknown rule ${d.ruleId}; rules come only from the user's rule files`);
-		if (d.triggerId !== undefined && !this.#get("SELECT 1 FROM triggers WHERE id = ?", d.triggerId)) {
-			return reject(`unknown trigger ${d.triggerId}`);
-		}
+	#evidenceProblem(triggerId: string, takenThisRoute: Set<string>): string | undefined {
+		if (takenThisRoute.has(triggerId)) return undefined;
+		const row = this.#get("SELECT disposition FROM triggers WHERE id = ?", triggerId);
+		return row.disposition === "to_router" ? undefined : `trigger ${triggerId} was already handled (${row.disposition}); it cannot back another decision`;
+	}
+
+	#openTicket(d: Extract<Decision, { kind: "open_ticket" }>, takenThisRoute: Set<string>): DecisionResult {
+		if (typeof d.title !== "string" || !d.title.trim()) return reject("open_ticket needs a title");
+		if (typeof d.brief !== "string" || !d.brief.trim()) return reject("open_ticket needs a brief for the worker");
+		const trigger = d.triggerId === undefined ? undefined : this.#get("SELECT id, source FROM triggers WHERE id = ?", d.triggerId);
+		if (d.triggerId !== undefined && !trigger) return reject(`unknown trigger ${d.triggerId}`);
+		const unusable = d.triggerId === undefined ? undefined : this.#evidenceProblem(d.triggerId, takenThisRoute);
+		if (unusable) return reject(unusable);
 		if (d.basis === "request" && (d.triggerId === undefined || !this.#inConversation(d.triggerId))) {
 			return reject("basis request requires a conversation trigger from the user");
+		}
+		if (d.basis === "rule") {
+			if (!d.ruleId) return reject("basis rule requires a ruleId");
+			if (!trigger || this.#inConversation(trigger.id)) return reject("basis rule requires an unhandled trigger from a source, not from the conversation");
+			if (!this.#ruleAllows(d.ruleId, trigger.source)) {
+				return reject(`rule ${d.ruleId} does not exist in the user's rule files or does not apply to source ${trigger.source}`);
+			}
 		}
 		const threads = [...new Set(d.threads ?? [])];
 		for (const threadId of threads) {
@@ -635,7 +701,7 @@ export class Kernel {
 			}
 		}
 		if (d.basis === "inference") {
-			const limitProblem = this.#inferenceLimitProblem();
+			const limitProblem = this.#inferenceDailyLimitProblem();
 			if (limitProblem) return reject(limitProblem);
 		}
 
@@ -657,17 +723,16 @@ export class Kernel {
 			this.#run("INSERT INTO subscriptions (ticket_id, thread_id) VALUES (?, ?)", ticketId, threadId);
 		}
 		this.#addInput(ticketId, "brief", d.brief, d.triggerId ?? null);
+		if (d.triggerId !== undefined) takenThisRoute.add(d.triggerId);
 		if (d.triggerId !== undefined) this.#setDisposition(d.triggerId, "opened_ticket", ticketId);
 		return { ok: true, ticketId };
 	}
 
-	#inferenceLimitProblem(): string | null {
-		const active = this.#get(
-			"SELECT COUNT(*) AS n FROM tickets WHERE basis = 'inference' AND stopped_at IS NULL AND closed_at IS NULL",
-		).n as number;
-		if (active >= this.config.inferenceConcurrent) {
-			return `inference limit: ${active} running, at most ${this.config.inferenceConcurrent} at once`;
-		}
+	#inferenceRunning(): number {
+		return this.#get("SELECT COUNT(*) AS n FROM tickets WHERE basis = 'inference' AND worker_state = 'running'").n as number;
+	}
+
+	#inferenceDailyLimitProblem(): string | null {
 		const today = this.#get(
 			"SELECT COUNT(*) AS n FROM tickets WHERE basis = 'inference' AND created_at >= ?",
 			localDayStart(this.#now()),
@@ -715,11 +780,14 @@ export class Kernel {
 			`SELECT t.id FROM tickets t
 			 WHERE t.worker_state = 'queued' AND t.stopped_at IS NULL
 			   AND EXISTS (SELECT 1 FROM ticket_inputs i WHERE i.ticket_id = t.id AND i.delivered_at IS NULL)
+			   AND NOT (t.basis = 'inference' AND ? >= ?)
 			 ORDER BY
 			   EXISTS (SELECT 1 FROM ticket_inputs i WHERE i.ticket_id = t.id AND i.delivered_at IS NULL AND i.kind = 'user_message') DESC,
 			   t.basis = 'request' DESC,
 			   t.created_at, t.rowid
 			 LIMIT 1`,
+			this.#inferenceRunning(),
+			this.config.inferenceConcurrent,
 		);
 		if (next) this.#wake(next.id);
 	}
@@ -824,10 +892,10 @@ export class Kernel {
 		};
 	}
 
-	#pendingAction(actionId: string): Row {
-		const action = this.#get("SELECT * FROM actions WHERE id = ? AND status = 'pending'", actionId);
-		if (!action) throw new Error(`no pending action ${actionId}`);
-		return action;
+	#stillPendingAction(actionId: string): Row | undefined {
+		const action = this.#get("SELECT * FROM actions WHERE id = ?", actionId);
+		if (!action) throw new Error(`unknown action ${actionId}`);
+		return action.status === "pending" ? action : undefined;
 	}
 
 	#logAttempt(action: Row, ok: boolean, error: string | null): void {

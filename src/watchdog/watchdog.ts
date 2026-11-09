@@ -80,8 +80,9 @@ export class Watchdog {
 		const now = this.#o.clock.now();
 		const kernel = this.#readKernel();
 		const tickets = kernel?.listTickets() ?? [];
+		const problems = kernel?.systemProblems() ?? [];
 		const result = checkWatchdog(
-			{ now, heartbeatAt: readHeartbeat(this.#o.stateDir)?.at, tickets, problems: kernel?.systemProblems() ?? [] },
+			{ now, heartbeatAt: readHeartbeat(this.#o.stateDir)?.at, tickets, problems },
 			this.#o.config,
 		);
 		if (result.restartHost && now - this.#lastRestartAt >= this.#o.config.restartGraceMs) {

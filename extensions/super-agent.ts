@@ -6,7 +6,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
 import { renderBoard, shortId, type BoardView } from "../src/client/board.ts";
-import { HostConnection } from "../src/client/connection.ts";
+import { DEFAULT_ACK_TIMEOUT_MS, HostConnection } from "../src/client/connection.ts";
 import type { ConversationLine, HostToClient } from "../src/client/protocol.ts";
 import { formatTranscriptMessage } from "../src/client/transcript.ts";
 import { defaultStateDir } from "../src/host/config.ts";
@@ -20,7 +20,8 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 	const view: BoardView = { rows: [], receivedAt: Date.now(), connected: false };
 	let ctx: ExtensionContext | undefined;
 	let conn: HostConnection | undefined;
-	let lastSeenAt = 0;
+	const seenIds = new Set<string>();
+	let primed = false;
 	let watching: string | undefined;
 	let ticker: NodeJS.Timeout | undefined;
 
@@ -30,11 +31,14 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 	const drawBoard = () =>
 		ctx?.ui.setWidget("psa-board", () => ({ render: (width: number) => renderBoard(view, width, Date.now()), invalidate() {} }));
 
+	const isNew = (l: ConversationLine) => !seenIds.has(l.id);
+	const markSeen = (l: ConversationLine) => seenIds.add(l.id);
+
 	const showConversation = (lines: ConversationLine[]) => {
-		const fresh = lines.filter((l) => l.at > lastSeenAt);
-		const shown = lastSeenAt === 0 ? fresh.slice(-HISTORY_SHOWN) : fresh;
-		for (const l of shown) show(l.who, l.text);
-		if (lines.length) lastSeenAt = Math.max(lastSeenAt, ...lines.map((l) => l.at));
+		const fresh = lines.filter(isNew);
+		for (const l of primed ? fresh : fresh.slice(-HISTORY_SHOWN)) show(l.who, l.text);
+		lines.forEach(markSeen);
+		primed = true;
 	};
 
 	const onMessage = (m: HostToClient) => {
@@ -45,10 +49,14 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 				view.receivedAt = Date.now();
 				break;
 			case "user":
-			case "reply":
-				if (m.at <= lastSeenAt) return;
-				lastSeenAt = m.at;
-				show(m.type === "user" ? "user" : "router", m.text);
+			case "reply": {
+				const line: ConversationLine = { id: m.type === "user" ? m.id : m.replyId, who: m.type === "user" ? "user" : "router", text: m.text, at: m.at };
+				if (!isNew(line)) return;
+				markSeen(line);
+				show(line.who, line.text);
+				return;
+			}
+			case "ack":
 				return;
 			case "board":
 				view.rows = m.rows;
@@ -74,9 +82,13 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, context) => {
 		ctx = context;
+		const ackTimeoutMs = Number(process.env.PSA_ACK_TIMEOUT_MS) || DEFAULT_ACK_TIMEOUT_MS;
 		conn = new HostConnection({
 			socketPath: process.env.PSA_SOCKET ?? join(defaultStateDir(), "host.sock"),
 			onMessage,
+			ackTimeoutMs,
+			onAckMissing: (text) =>
+				ctx?.ui.notify(`宿主 ${ackTimeoutMs / 1000} 秒内没有确认收到「${text}」，这句话可能没送达。宿主可能卡住了，稍后看对话里有没有它，没有就再说一次。`, "warning"),
 			onStatus: (connected) => {
 				view.connected = connected;
 				drawBoard();

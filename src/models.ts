@@ -22,8 +22,11 @@ export function parseModelRef(ref: string): ModelRef {
 }
 
 export function assertAllowed(model: ModelRef): void {
-	if (BANNED_PROVIDERS.includes(model.provider.toLowerCase())) {
+	if (BANNED_PROVIDERS.includes(model.provider.trim().toLowerCase())) {
 		throw new Error(`拒绝使用 ${model.provider}/${model.id}：${model.provider} 走按量计费 API，Super Agent 禁用该提供方`);
+	}
+	if (/claude|anthropic/i.test(model.id)) {
+		throw new Error(`拒绝使用 ${model.provider}/${model.id}：Claude 模型经任何提供方都走按量计费 API，Super Agent 禁用 Claude 模型`);
 	}
 }
 

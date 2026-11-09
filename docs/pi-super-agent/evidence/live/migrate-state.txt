@@ -1,0 +1,7 @@
+记录暗号并写入 note.txt
+{"kind":"open_ticket","basis":"request","title":"记录暗号并写入 note.txt","brief":"记住暗号 OSPREY-31；在工作目录写一个 note.txt，内容是“第一次”。完成后汇报。"}|0
+{"kind":"open_ticket","triggerId":"trg_96d16ee0-c0e4-424b-aed3-9bdf17cd0328","basis":"request","title":"记录暗号并写入 note.txt","brief":"记住暗号 OSPREY-31；在工作目录写一个 note.txt，内容是“第一次”。完成后汇报。"}|1
+{"kind":"hand_over","ticketId":"tkt_f0be15d6-93cb-46dc-b1b4-d684fb0ff0b5","triggerId":"trg_56552f01-af80-4e0a-a0c1-b764115cde36"}|1
+已开任务，完成后告诉你。
+已记住暗号 OSPREY-31，并在工作目录创建 note.txt，内容为“第一次”。
+暗号是 OSPREY-31。已在 note.txt 追加一行“第二次”。

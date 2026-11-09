@@ -39,6 +39,8 @@ export interface FauxRouterHandle {
 export interface FauxRouterOptions {
 	models?: string[];
 	failOn?: (modelId: string) => string | undefined;
+	persist?: boolean;
+	errorRetryMs?: number[];
 }
 
 export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxRouterHandle {
@@ -54,7 +56,7 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 		const trailing: string[] = [];
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const m = messages[i];
-			if (m.role === "assistant" && m.stopReason === "error") continue;
+			if (m.role === "assistant" && (m.stopReason === "error" || m.stopReason === "aborted")) continue;
 			if (m.role !== "user") break;
 			trailing.unshift(...messageText(m).split(/\n\n(?=\[)/));
 		}
@@ -87,6 +89,9 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 				modelRuntime,
 				models,
 				retry: { maxRetries: 3, baseDelayMs: 1 },
+				sessionDir: options.persist ? join(deps.stateDir, "sessions", "router") : undefined,
+				errorRetryMs: options.errorRetryMs ?? [10, 10, 10],
+				rulesFor: deps.rulesFor,
 				cwd: deps.stateDir,
 				rules: "",
 				afterCommand: deps.afterCommand,
@@ -97,11 +102,11 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 
 export const ids = (card: string, prefix: "trg" | "tkt") => card.match(new RegExp(`${prefix}_[\\w-]+`))?.[0];
 
-export function openOnConversation(card: string, title = card.split("使用者：")[1] ?? "任务"): ToolCallSpec[] {
+export function openOnConversation(card: string, title = card.split("使用者：")[1]?.split("\n")[0] ?? "任务"): ToolCallSpec[] {
 	const triggerId = ids(card, "trg")!;
 	return [
 		{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId, title, brief: title }] } },
-		{ name: "reply", args: { text: `收到：${title}` } },
+		{ name: "reply", args: { text: `收到：${title}`, cause: triggerId } },
 	];
 }
 
@@ -111,6 +116,7 @@ export interface FakeWorker {
 	inputs: string[];
 	report(params: Record<string, unknown>): unknown;
 	settle(error?: string): void;
+	crash(): void;
 	request(method: string, params: unknown): unknown;
 }
 
@@ -118,6 +124,8 @@ export type WorkerScript = (worker: FakeWorker, input: string) => void | Promise
 
 export class FakeSpawner implements WorkerSpawner {
 	readonly spawned: string[] = [];
+	readonly stopped: string[] = [];
+	spawnGate: Promise<void> | undefined;
 	readonly workers = new Map<string, FakeWorker>();
 	request!: (ticketId: string, token: string, method: string, params: unknown) => unknown;
 	readonly #script: WorkerScript;
@@ -128,6 +136,7 @@ export class FakeSpawner implements WorkerSpawner {
 
 	async spawn(spec: WorkerSpec, events: WorkerEvents): Promise<WorkerHandle> {
 		this.spawned.push(spec.ticketId);
+		await this.spawnGate;
 		let streaming = false;
 		let alive = true;
 		const worker: FakeWorker = {
@@ -139,6 +148,10 @@ export class FakeSpawner implements WorkerSpawner {
 			settle: (error) => {
 				streaming = false;
 				events.settled(error);
+			},
+			crash: () => {
+				alive = false;
+				events.exited();
 			},
 		};
 		this.workers.set(spec.ticketId, worker);
@@ -157,7 +170,8 @@ export class FakeSpawner implements WorkerSpawner {
 				events.turnStarted();
 				setImmediate(() => void script(worker, text));
 			},
-			async stop() {
+			stop: async () => {
+				this.stopped.push(spec.ticketId);
 				if (!alive) return;
 				alive = false;
 				setImmediate(() => events.exited());

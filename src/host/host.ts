@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { writeHeartbeat } from "../heartbeat.ts";
+import { relocateState } from "./relocate.ts";
 import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
 import { Kernel } from "../kernel/kernel.ts";
@@ -14,7 +15,7 @@ import { HostServer } from "./server.ts";
 import { WorkerExecutor, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 
 export interface RouterLike {
-	inject(notice: RouterNotice): void;
+	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
 	waitForIdle(): Promise<void>;
 	dispose(): void;
 }
@@ -24,6 +25,7 @@ export interface HostDeps {
 	afterCommand: () => void;
 	stateDir: string;
 	socketPath: string;
+	rulesFor: (triggerSource: string) => string[];
 }
 
 export interface HostOptions {
@@ -31,7 +33,8 @@ export interface HostOptions {
 	clock?: Clock;
 	config?: Partial<KernelConfig>;
 	sourcePolicy?: SourcePolicy;
-	isKnownRule?: (ruleId: string) => boolean;
+	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
+	rulesFor?: (triggerSource: string) => string[];
 	timers?: TimerEntry[];
 	heartbeatMs?: number;
 	workerModels: WorkerModels;
@@ -58,6 +61,7 @@ export class Host {
 	private constructor(options: HostOptions) {
 		mkdirSync(options.stateDir, { recursive: true });
 		this.#log = options.log ?? ((line) => console.error(line));
+		if (relocateState(options.stateDir)) this.#log(`[host] 状态目录换了位置，已把会话记录的工作目录改到 ${options.stateDir}`);
 		this.#stateDir = options.stateDir;
 		this.socketPath = join(options.stateDir, "host.sock");
 		const clock = options.clock ?? { now: () => Date.now() };
@@ -65,7 +69,7 @@ export class Host {
 			db: openStore(join(options.stateDir, "state.db")),
 			clock,
 			sourcePolicy: (trigger) => (trigger.source === WATCHDOG_SOURCE ? "notice" : (options.sourcePolicy?.(trigger) ?? "candidate")),
-			isKnownRule: options.isKnownRule,
+			ruleAllows: options.ruleAllows,
 			config: options.config,
 		});
 		const submit = (trigger: TriggerSubmission) => {
@@ -83,7 +87,7 @@ export class Host {
 			},
 			writeCursor: (at) => this.kernel.setSourceCursor("timer", String(at)),
 		});
-		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath };
+		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []) };
 		this.workers = new WorkerExecutor({
 			kernel: this.kernel,
 			spawner: options.createSpawner(deps),
@@ -96,7 +100,7 @@ export class Host {
 		this.dispatcher = new Dispatcher({
 			kernel: this.kernel,
 			handlers: {
-				"router.notify": (notice) => this.router.inject(notice),
+				"router.notify": (notice, actionId) => this.router.inject(notice, actionId),
 				"worker.wake": ({ ticketId }) => this.workers.wake(ticketId),
 				"worker.stop": ({ ticketId }) => this.workers.stop(ticketId),
 				"channel.reply": ({ threadId, text, replyId }) => this.#deliverReply(threadId, text, replyId),
@@ -115,7 +119,7 @@ export class Host {
 
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
-		const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath };
+		const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath, rulesFor: options.rulesFor ?? (() => []) };
 		host.router = await options.createRouter(deps);
 		await host.server.listen(host.socketPath);
 		const recovered = host.kernel.recoverOnStartup();
@@ -139,7 +143,7 @@ export class Host {
 			body: text,
 			occurredAt: at,
 		});
-		this.server.broadcast({ type: "user", text, at });
+		this.server.broadcast({ type: "user", id: triggerId, text, at });
 		this.#changed();
 		return triggerId;
 	}

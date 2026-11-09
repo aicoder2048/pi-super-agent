@@ -80,8 +80,6 @@ export interface WorkerModels {
 	fallbackDailyTokens: number;
 }
 
-const CAP_PREFIX = "回退模型";
-
 export class WorkerExecutor {
 	readonly #o: WorkerExecutorOptions;
 	readonly #live = new Map<string, Live>();
@@ -106,6 +104,11 @@ export class WorkerExecutor {
 		if (!live) return;
 		const inputs = kernel.pendingInputs(ticketId);
 		if (inputs.length === 0) return;
+		if (this.#capReached()) {
+			this.#blockForCap(ticketId);
+			await this.stop(ticketId);
+			return;
+		}
 		if (current && !live.handle.isStreaming()) {
 			const choice = this.#o.models.selector.forTurn();
 			if (formatModelRef(choice.model) !== live.handle.model) await this.#switchModel(ticketId, live, choice.model, choice.fellBack);
@@ -138,7 +141,7 @@ export class WorkerExecutor {
 	async #spawn(ticketId: string): Promise<Live | undefined> {
 		const { kernel, spawner, stateDir, afterCommand } = this.#o;
 		const choice = this.#o.models.selector.forTurn();
-		if (choice.fellBack && this.#overDailyCap()) {
+		if (choice.fellBack && this.#capReached()) {
 			this.#blockForCap(ticketId);
 			afterCommand();
 			return undefined;
@@ -164,7 +167,9 @@ export class WorkerExecutor {
 			settled: (error) => void this.#onSettled(ticketId, live, error).catch((e) => this.#o.onError?.(ticketId, e)).finally(afterCommand),
 			exited: guard(() => {
 				this.#live.delete(ticketId);
-				if (!this.#shuttingDown) kernel.workerExited(ticketId);
+				if (this.#shuttingDown) return;
+				if (live && !live.stopping) kernel.workerReport(ticketId, { status: "failed", summary: "Worker 进程在一轮中途意外退出。" });
+				kernel.workerExited(ticketId);
 			}),
 			transcript: (event) => this.#o.onTranscript?.(ticketId, event),
 		};
@@ -181,6 +186,10 @@ export class WorkerExecutor {
 		}
 		live = { handle, token, bgRunning: 0, stopping: false };
 		this.#live.set(ticketId, live);
+		if (kernel.getTicket(ticketId)?.stoppedAt != null) {
+			await this.stop(ticketId);
+			return undefined;
+		}
 		kernel.workerStarted(ticketId, { model: handle.model, fellBack: choice.fellBack });
 		return live;
 	}
@@ -198,12 +207,14 @@ export class WorkerExecutor {
 				models.selector.onSuccess();
 			}
 			const current = models.selector.current();
-			if (current.fellBack && this.#overDailyCap()) {
+			if (this.#capReached()) {
 				this.#blockForCap(ticketId);
 			} else if (error && current.fellBack && live.handle.model !== formatModelRef(current.model)) {
 				await this.#switchModel(ticketId, live, current.model, true);
 				await live.handle.deliver("[通知] 上一轮因模型额度或限流中断，已切换到回退模型。请从中断处继续。");
 				return;
+			} else if (error) {
+				kernel.workerReport(ticketId, { status: "failed", summary: `Worker 这一轮因模型错误中断：${error}` });
 			}
 		}
 		kernel.workerTurnEnded(ticketId, { bgRunning: (live?.bgRunning ?? 0) > 0 });
@@ -219,19 +230,18 @@ export class WorkerExecutor {
 		this.#o.kernel.workerStarted(ticketId, { model: formatModelRef(model), fellBack });
 	}
 
-	#overDailyCap(): boolean {
-		const models = this.#o.models;
-		return this.#o.kernel.usageToday(models.selector.current().model.provider) >= models.fallbackDailyTokens;
+	#capReached(): boolean {
+		const { selector, fallbackDailyTokens } = this.#o.models;
+		const current = selector.current();
+		return current.fellBack && this.#o.kernel.usageToday(current.model.provider) >= fallbackDailyTokens;
 	}
 
 	#blockForCap(ticketId: string): void {
-		const models = this.#o.models;
-		const latest = this.#o.kernel.getTicket(ticketId)?.latestReport;
-		if (latest?.status === "blocked" && latest.summary.startsWith(CAP_PREFIX)) return;
-		this.#o.kernel.workerReport(ticketId, {
-			status: "blocked",
-			summary: `${CAP_PREFIX} ${formatModelRef(models.selector.current().model)} 今日用量已达上限（${models.fallbackDailyTokens} token），等主模型恢复或明天再继续。`,
-		});
+		const { kernel, models } = this.#o;
+		kernel.blockForCap(
+			ticketId,
+			`回退模型 ${formatModelRef(models.selector.current().model)} 今日用量已达上限（${models.fallbackDailyTokens} token），等主模型恢复或明天再继续。`,
+		);
 	}
 
 	handleRequest(ticketId: string, token: string, method: string, params: unknown): unknown {

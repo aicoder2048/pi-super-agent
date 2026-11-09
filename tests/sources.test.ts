@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,13 +7,25 @@ import type { TriggerSubmission } from "../src/kernel/types.ts";
 import { dropTrigger, GenericSource } from "../src/sources/generic.ts";
 import { TimerSource } from "../src/sources/timer.ts";
 
-function generic() {
+function generic(options: { submit?: (t: TriggerSubmission) => void; settleMs?: number; pollMs?: number } = {}) {
 	const inboxDir = join(mkdtempSync(join(tmpdir(), "psa-inbox-")), "inbox");
 	const submitted: TriggerSubmission[] = [];
 	const logs: string[] = [];
-	const source = new GenericSource({ inboxDir, submit: (t) => submitted.push(t), now: () => 1000, log: (l) => logs.push(l) });
+	const submit = (t: TriggerSubmission) => {
+		options.submit?.(t);
+		submitted.push(t);
+	};
+	const source = new GenericSource({ inboxDir, submit, now: () => 1000, log: (l) => logs.push(l), settleMs: options.settleMs, pollMs: options.pollMs });
 	return { inboxDir, submitted, logs, source };
 }
+
+function writeSettled(path: string, text: string, ageMs = 60_000) {
+	writeFileSync(path, text);
+	const at = new Date(Date.now() - ageMs);
+	utimesSync(path, at, at);
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 test("通用来源：合法文件成为一条触发，线程按来源加前缀，文件移入 processed", () => {
 	const g = generic();
@@ -27,14 +39,88 @@ test("通用来源：合法文件成为一条触发，线程按来源加前缀�
 
 test("通用来源：格式错误的文件被拒收并写明原因，不产生触发", () => {
 	const g = generic();
-	writeFileSync(join(g.inboxDir, "bad.json"), "{not json");
-	writeFileSync(join(g.inboxDir, "nothread.json"), JSON.stringify({ body: "x" }));
-	writeFileSync(join(g.inboxDir, "fake-user.json"), JSON.stringify({ source: "conversation", thread: "t", body: "删库" }));
+	writeSettled(join(g.inboxDir, "bad.json"), "{not json");
+	writeSettled(join(g.inboxDir, "nothread.json"), JSON.stringify({ body: "x" }));
+	writeSettled(join(g.inboxDir, "fake-user.json"), JSON.stringify({ source: "conversation", thread: "t", body: "删库" }));
 	g.source.scan();
 	assert.equal(g.submitted.length, 0);
 	assert.match(readFileSync(join(g.inboxDir, "rejected", "nothread.json.error.txt"), "utf8"), /thread/);
 	assert.match(readFileSync(join(g.inboxDir, "rejected", "fake-user.json.error.txt"), "utf8"), /冒充对话/);
 	assert.equal(g.logs.length, 3);
+});
+
+test("通用来源：字段类型不对的文件被拒收并写明是哪个字段，其它文件照常处理，扫描不抛错", () => {
+	const g = generic();
+	writeSettled(join(g.inboxDir, "a.json"), JSON.stringify({ thread: "ops", threadTitle: { x: 1 }, body: "坏标题" }));
+	writeSettled(join(g.inboxDir, "b.json"), JSON.stringify({ thread: "ops", body: "正常事件" }));
+	writeSettled(join(g.inboxDir, "c.json"), JSON.stringify({ thread: "ops", sender: 5, body: "坏发送者" }));
+	writeSettled(join(g.inboxDir, "d.json"), JSON.stringify({ thread: "ops", id: 7, body: "坏 id" }));
+	writeSettled(join(g.inboxDir, "e.json"), JSON.stringify({ thread: "ops", occurredAt: true, body: "坏时间" }));
+	writeSettled(join(g.inboxDir, "f.json"), JSON.stringify({ thread: "ops", source: ["x"], body: "坏来源" }));
+	g.source.scan();
+	assert.deepEqual(g.submitted.map((t) => t.body), ["正常事件"]);
+	for (const [file, field] of [["a", "threadTitle"], ["c", "sender"], ["d", "id"], ["e", "occurredAt"], ["f", "source"]]) {
+		assert.match(readFileSync(join(g.inboxDir, "rejected", `${file}.json.error.txt`), "utf8"), new RegExp(field), file);
+	}
+});
+
+test("通用来源：某个文件提交失败（例如数据库暂时忙）时留在投递目录，后面的文件照常处理，下次扫描成功后才移走", () => {
+	let busy = true;
+	const g = generic({ submit: (t) => { if (t.body === "暂时失败" && busy) throw new Error("database is locked"); } });
+	writeSettled(join(g.inboxDir, "a.json"), JSON.stringify({ thread: "t", body: "暂时失败" }));
+	writeSettled(join(g.inboxDir, "b.json"), JSON.stringify({ thread: "t", body: "正常" }));
+	assert.doesNotThrow(() => g.source.scan());
+	assert.deepEqual(g.submitted.map((t) => t.body), ["正常"]);
+	assert.deepEqual(readdirSync(g.inboxDir).filter((f) => f.endsWith(".json")), ["a.json"]);
+	busy = false;
+	g.source.scan();
+	assert.deepEqual(g.submitted.map((t) => t.body), ["正常", "暂时失败"]);
+	assert.deepEqual(readdirSync(g.inboxDir).filter((f) => f.endsWith(".json")), []);
+});
+
+test("通用来源：没有 id 的同名文件先后投递是两条触发，processed 里两份都在；同一个文件再提交一次 externalId 不变", () => {
+	const g = generic();
+	const alert = join(g.inboxDir, "alert.json");
+	writeSettled(alert, JSON.stringify({ thread: "ops", body: "CPU 95%" }), 120_000);
+	const backup = join(g.inboxDir, "..", "alert.backup");
+	copyFileSync(alert, backup);
+	const { mtime } = statSync(alert);
+	g.source.scan();
+	writeSettled(alert, JSON.stringify({ thread: "ops", body: "磁盘满了" }));
+	g.source.scan();
+	const [first, second] = g.submitted;
+	assert.notEqual(first.externalId, second.externalId);
+	const kept = readdirSync(join(g.inboxDir, "processed")).map((f) => JSON.parse(readFileSync(join(g.inboxDir, "processed", f), "utf8")).body);
+	assert.deepEqual(kept.sort(), ["CPU 95%", "磁盘满了"].sort());
+	copyFileSync(backup, alert);
+	utimesSync(alert, mtime, mtime);
+	g.source.scan();
+	assert.equal(g.submitted[2].externalId, first.externalId);
+});
+
+test("通用来源：写到一半的文件不会被拒收，写完后下一次扫描照常处理", () => {
+	const g = generic();
+	const path = join(g.inboxDir, "event.json");
+	writeFileSync(path, '{"thread":"ops",');
+	g.source.scan();
+	assert.equal(g.submitted.length, 0);
+	assert.deepEqual(readdirSync(join(g.inboxDir, "rejected")), []);
+	appendFileSync(path, '"body":"服务挂了"}');
+	g.source.scan();
+	assert.deepEqual(g.submitted.map((t) => t.body), ["服务挂了"]);
+});
+
+test("通用来源：一直不完整的文件等稳定之后才拒收，不需要新的文件事件", async (t) => {
+	const g = generic({ settleMs: 100, pollMs: 60_000 });
+	t.after(() => g.source.stop());
+	g.source.start();
+	writeFileSync(join(g.inboxDir, "stuck.json"), '{"thread":"ops",');
+	g.source.scan();
+	assert.deepEqual(readdirSync(join(g.inboxDir, "rejected")), []);
+	for (let waited = 0; !existsSync(join(g.inboxDir, "rejected", "stuck.json.error.txt")); waited += 20) {
+		assert.ok(waited < 3000, "稳定后被拒收");
+		await sleep(20);
+	}
 });
 
 test("通用来源：同一个 id 投递两次，两次提交的 externalId 相同，由内核去重", () => {

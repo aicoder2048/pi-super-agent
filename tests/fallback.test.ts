@@ -10,8 +10,8 @@ const workerSelector = () => new ModelSelector({ primary, fallback, probeEveryMs
 const brain: Brain = (cards) =>
 	cards.flatMap((card) => {
 		if (card.startsWith("[对话]")) return openOnConversation(card);
-		if (card.startsWith("[通知]")) return [{ name: "reply", args: { text: `通知：${card.slice(5, 40)}` } }];
-		if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `结果：${card.split("\n")[1]}`, ticketId: ids(card, "tkt") } }];
+		if (card.startsWith("[通知] act_")) return [{ name: "reply", args: { text: `通知：${card.split("\n")[1].slice(0, 30)}`, cause: card.match(/act_[\w-]+/)![0] } }];
+		if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `结果：${card.split("\n")[1]}`, cause: ids(card, "tkt") } }];
 		return [];
 	});
 
@@ -84,4 +84,32 @@ test("Router 会话自行开启自动压缩和自动重试，不受全局设置�
 	assert.equal(session.autoCompactionEnabled, true);
 	assert.equal(session.autoRetryEnabled, true);
 	assert.equal(session.steeringMode, "all");
+});
+
+test("已在运行的 Worker 超过回退上限后，不再投递新的输入，任务受阻并停下", async (t) => {
+	const selector = workerSelector();
+	selector.onError("429");
+	const { host, spawner } = await startHost(brain, (w) => {
+		host.kernel.recordUsage(w.spec.ticketId, { provider: "deepseek", tokensIn: 500, tokensOut: 0 });
+		host.kernel.note({ ticketId: w.spec.ticketId, text: "这一轮进行中又来了一条补充" });
+		w.report({ status: "progress", summary: "做了一部分" });
+		w.settle();
+	}, { workerModels: { selector, fallbackDailyTokens: 400 } });
+	t.after(() => host.stop());
+	host.say("大任务");
+	await until(() => host.kernel.listTickets()[0]?.stage === "blocked_or_failed", "受阻");
+	const id = host.kernel.listTickets()[0].id;
+	await new Promise((r) => setTimeout(r, 100));
+	assert.equal(spawner.workers.get(id)!.inputs.length, 1);
+	assert.equal(host.workers.liveCount(), 0);
+});
+
+test("Router 在回退模型上的用量计入每日累计", async (t) => {
+	const router = fauxRouter(brain, { models: ["primary", "fallback"], failOn: (id) => (id === "primary" ? "429 rate limit" : undefined) });
+	const { host } = await startHost(() => [], (w) => w.settle(), { createRouter: router.createRouter });
+	t.after(() => host.stop());
+	host.say("你好");
+	await until(() => (host.router as any).session.model?.id === "fallback", "切到回退模型");
+	const provider = (host.router as any).session.model.provider;
+	await until(() => host.kernel.usageToday(provider) > 0, "回退模型用量被计入");
 });

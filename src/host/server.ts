@@ -3,7 +3,7 @@ import { rmSync } from "node:fs";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
 
 export interface ClientHandlers {
-	onSay(text: string): void;
+	onSay(text: string): string;
 	snapshot(): unknown;
 	transcript?(ticketId: string): unknown[];
 }
@@ -49,7 +49,10 @@ export class HostServer {
 					}
 					return;
 				}
-				if (r.type === "say" && typeof r.text === "string" && r.text.trim()) clients.onSay(r.text);
+				if (r.type === "say" && typeof r.text === "string" && r.text.trim()) {
+					const triggerId = clients.onSay(r.text);
+					if (typeof r.requestId === "string") writeJsonLine(socket, { type: "ack", requestId: r.requestId, triggerId });
+				}
 				else if (r.type === "watch") {
 					client!.watching = typeof r.ticketId === "string" ? r.ticketId : undefined;
 					if (client!.watching && clients.transcript) {
