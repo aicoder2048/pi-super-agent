@@ -143,8 +143,12 @@ export class WorkerExecutor {
 		const live = this.#live.get(ticketId);
 		if (!live) return;
 		live.stopping = true;
-		await this.#desk?.end(ticketId);
-		await live.handle.stop();
+		// The helper goes first: a member stopped while its helper still runs would hand it a result to act on.
+		try {
+			await live.handle.stop();
+		} finally {
+			await this.#desk?.end(ticketId);
+		}
 	}
 
 	// On host shutdown the kernel keeps the running state so restart recovery re-wakes these tickets.

@@ -341,6 +341,18 @@ test("叫停任务：在跑的成员全部中止，派活记为已停止", async
 	assert.equal(live(), undefined);
 });
 
+test("叫停任务时先停助手再停成员：助手不会在被停之前拿到「已停止」的结果接着干", async (t) => {
+	let helperStopsAtAbort = -1;
+	const started = await dispatching(t, async (run) => {
+		run.signal.addEventListener("abort", () => (helperStopsAtAbort = started.spawner.stopped.length));
+		await wait(60_000, run.signal);
+		return "不该做完";
+	}, [two[0]]);
+	await until(() => started.live()?.[0]?.state === "running", "成员在做");
+	await started.host.workers.stop(started.ticketId());
+	assert.equal(helperStopsAtAbort, 1, "成员被中止时助手已经收到停止");
+});
+
 test("宿主停止：在跑的成员全部中止", async (t) => {
 	const aborted: string[] = [];
 	const { host, live } = await dispatching(t, stuck(aborted), two);
