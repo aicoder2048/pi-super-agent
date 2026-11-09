@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { ConfigError } from "../config-error.ts";
 import type { HostToClient, TranscriptMessage } from "../client/protocol.ts";
-import { HistoryEchoFilter, type Broadcast } from "./server.ts";
+import { hasVisibleText, HistoryEchoFilter, type Broadcast } from "./server.ts";
 
 type Snapshot = Omit<Extract<HostToClient, { type: "snapshot" }>, "type">;
 
@@ -176,7 +176,7 @@ function parseSay(body: string): string | undefined {
 	try {
 		const parsed: unknown = JSON.parse(body);
 		const text = (parsed as { text?: unknown } | null)?.text;
-		return typeof text === "string" && text.trim() !== "" ? text : undefined;
+		return typeof text === "string" && hasVisibleText(text) ? text : undefined;
 	} catch {
 		return undefined;
 	}

@@ -127,6 +127,17 @@ test("协议：会话文件最后一行写到一半时，查看任务收到完�
 	await until(() => c.of("user").some((m) => m.text === "还在吗"), "宿主还活着");
 });
 
+test("协议：只有零宽字符的一句话不进对话", async (t) => {
+	const host = await hostAt(tempStateDir());
+	const c = client(host.socketPath);
+	t.after(async () => { c.conn.close(); await host.stop(); });
+	await until(() => c.conn.connected, "连接");
+	c.conn.say("\u200b\ufeff");
+	c.conn.say("真的一句");
+	await until(() => c.of("user").length >= 1, "回显");
+	assert.deepEqual(c.of("user").map((m) => m.text), ["真的一句"]);
+});
+
 function scriptedHost() {
 	const path = join(tempStateDir(), "fake-host.sock");
 	const sockets: Socket[] = [];

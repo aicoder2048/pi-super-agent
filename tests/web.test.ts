@@ -631,6 +631,15 @@ test("网关：POST /say 超过 32 KB 413；正文不是 {text} 或只有空白 
 	assert.equal(userLines().length, 1);
 });
 
+test("网关：POST /say 只有零宽或格式字符（夹着空白也算）时 400，不进对话", async (t) => {
+	const { post, userLines } = await sayHost(t);
+	for (const text of ["\u200b\u200b", "\u200c\u200d", "\u2060", "\ufeff", " \u200b\n\u00ad ", "\u202e\u2066"]) {
+		assert.equal((await post(JSON.stringify({ text }))).status, 400, JSON.stringify(text));
+	}
+	assert.equal((await post(JSON.stringify({ text: "好\u200d的" }))).status, 200, "夹在字中间的零宽字符不影响送达");
+	assert.deepEqual(userLines(), ["好\u200d的"]);
+});
+
 test("网关：GET /say 405；/say 以外的 POST 也是 405", async (t) => {
 	const { at } = await webHost(t);
 	assert.equal((await request(at("/say"))).status, 405);

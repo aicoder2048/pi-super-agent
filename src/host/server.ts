@@ -11,6 +11,11 @@ export interface ClientHandlers {
 	transcript?(ticketId: string): unknown[];
 }
 
+// Zero-width and other format characters (Unicode Cf) render as nothing, so a line of only those is blank.
+export function hasVisibleText(text: string): boolean {
+	return text.replace(/[\s\p{Cf}]/gu, "") !== "";
+}
+
 export class HistoryEchoFilter<K extends object> {
 	readonly #last = new WeakMap<K, string>();
 
@@ -68,7 +73,7 @@ export class HostServer {
 					}
 					return;
 				}
-				if (r.type === "say" && typeof r.text === "string" && r.text.trim()) {
+				if (r.type === "say" && typeof r.text === "string" && hasVisibleText(r.text)) {
 					const triggerId = clients.onSay(r.text);
 					if (typeof r.requestId === "string") writeJsonLine(socket, { type: "ack", requestId: r.requestId, triggerId });
 				}
