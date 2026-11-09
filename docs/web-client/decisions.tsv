@@ -89,3 +89,4 @@ ts	phase	decision	why	evidence	result
 2026-11-09T21:57:14Z	t1	名字池分成两字池和四字池，四字池补到 24 个；helperName 多一个池参数	团队任务用四字名、单个助手用两字名，两个池要各自轮转	tests/helper-names.test.ts 三条；红：四字名只有 5 个；绿：1432237	just test 435 通过
 2026-11-09T21:57:14Z	t1	从名字池去掉「边牧」「弈境」，文档、计划、ADR-0008、测试夹具里的例子改成「青檀」	使用者追加：别的产品在用这两个名字。截图不动，旧的 decisions 行不动	测试「名字池里没有「边牧」和「弈境」」；红：actual ['边牧','弈境']；绿：1432237	just test 435 通过
 2026-11-09T21:59:01Z	t1	teams.yaml 用手写的逐行解析：顶层「团队名:」，下面 description 和 members 名单；其余写法一律报错并带文件和行号	仓库没有 YAML 依赖也不该为这一种两层结构加一个；写错了要在启动时就看见	tests/teams.test.ts 14 条；红：Missing expected exception（桩返回空表）；绿：1d28b02	14 条通过
+2026-11-09T21:59:57Z	t1	规则的「团队：<名>」行从正文取出，Modules.ruleTeam 按规则 id 查；幕僚长看到的规则里也写出这一行	内核要按规则钉死团队；让幕僚长也看见，它填的就和内核要求的一致，少一次改回	tests/modules.test.ts「规则的「团队：」行」；红：text 里还带着 团队：新闻队；绿：caf8d83	8 条通过
