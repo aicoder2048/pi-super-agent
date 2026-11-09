@@ -38,3 +38,25 @@ ts	phase	decision	why	evidence	result
 2026-11-09T02:43:40Z	merge	审阅外围分支 fix/edge-findings 的 5 个提交后摘到 mvp，无冲突	代理的产出由协调者负责审阅	commits 8f89d00..2fc3a45	done
 2026-11-09T02:43:40Z	fix-C	不同意代理的提交失败即拒收：先改测试为留在目录重试（红），再改实现（绿）；同时补上对话行 id（J 的遗留）	字段已在解析时校验，提交失败多为暂时性错误，拒收会丢事件	commit fdf0483	green
 2026-11-09T02:44:35Z	architect	arena 两位设计员的推荐方案收敛，采用共识形状；以 opus 的方案 A 为底，嫁接候选卡片列适用规则；不拆分 socket、不加触发时效	收敛是强一致信号；拆 socket 与时效不增加保证	docs/pi-super-agent/authority-design.md; worktrees agent-af639e33d8aea57d7, agent-a24c50876a97ecd46	decided
+2026-11-09T02:46:41Z	fix-E	依据核验：四条内核测试先红；触发只在使它离开 to_router 的那批决定里有效，规则依据需要来源在范围内的触发；isKnownRule 迁移为 ruleAllows 并一次删掉旧接口	按 authority-design.md 第 1 点；使用者规则不写来源行默认适用所有非对话来源，保持现有规则可用	commit 56b16e5	green
+2026-11-09T02:50:02Z	fix-D	推断并发与回复原因：三条内核测试先红；claimSlot 闸门、回复带 cause、通知卡片印 act id；外围代理的定时测试改为确定性写法	按 authority-design.md 第 2、3 点；sleep(30) 在高负载下超时导致偶发失败	commit 68039f6; 177 pass x3	green
+2026-11-09T02:51:07Z	fix-G-F	推断 Worker 只读：参数与扩展测试先红；一张工具表同时驱动 --tools/--no-mcp 和扩展白名单；删除正则黑名单；清掉 PSA_* 环境变量	按 authority-design.md 第 4、5 点	commit ef03e77	green
+2026-11-09T02:51:56Z	verify	真实 Pi 确认 --tools 生效：推断 Worker 只有 read/grep/find/ls 与汇报工具，请求 Worker 有 bash/edit/write	工具白名单依赖 Pi 执行 --tools，需在真实子进程上确认	会话文件系统消息的 tools 段	VERIFIED
+2026-11-09T02:57:16Z	verify	在两位审查员的 worktree 切到 ef03e77 重跑原复现脚本：A B C D E G H I J K L M N 全部不再复现；O5 探针因黑名单模块删除无法运行，改由真实 Pi 工具列表证明；部分脚本只补了新接口必需的参数（workerModels、cause），场景未改	以审查员自己的复现为最终判据，不只看我写的测试	worktrees agent-a0eceffe858faa8df/repro, agent-a96b8643066459461/probes @ef03e77	VERIFIED
+2026-11-09T02:58:34Z	live	Watchdog 真实拉起被 kill -9 的宿主（13 秒，阈值调短）VERIFIED；卡住通知首轮无效：心跳过期设 10 秒小于宿主 30 秒心跳间隔，Watchdog 反复重启健康的宿主	测试配置错误；同时说明缺一条配置约束：过期阈值必须大于心跳间隔	/tmp/psa-wd-live-Dvop/watchdog.log	restart VERIFIED; stuck INCONCLUSIVE
+2026-11-09T02:59:19Z	tdd	心跳间隔与过期阈值合到 config.json，加载时校验过期阈值大于心跳两倍；先写配置测试（红）再实现（绿）	真实检查暴露的配置约束缺失	commit 8e9aa06	green
+2026-11-09T03:02:20Z	live	卡住通知真实检查：Worker 跑 90 秒无进展，Watchdog 投递通知，Router 用一句话转告，命令结束后回复 done；宿主只启动一次	Stage 5 验收标准：Worker 长时间无进展时使用者经 Router 收到通知	/tmp/psa-wd-live2-NqhX/state.db	VERIFIED
+2026-11-09T03:02:20Z	live	真实限流场景不做：无法有意触发 Codex 限流；由真实 Router 会话加假模型的接线测试和 fallback 测试覆盖	计划写明真实限流视情况补做	tests/wiring.test.ts, tests/fallback.test.ts	skipped with reason
+2026-11-09T03:07:40Z	accept	修复后在真实 TUI（tmux）用真实 Codex 模型重走六步验收，全部通过；第 5 步由 Watchdog 自动拉起被 kill -9 的宿主	P2 完成判定；修复改变了 Router 行为，需重新验收	docs/pi-super-agent/evidence/step*.txt	VERIFIED
+2026-11-09T03:07:40Z	trace	36 条故事对照：20 覆盖、14 部分、1 缺口（36）、1 范围外（35）；只缺测试的交代理写 tests/stories.test.ts，要改代码的（4/17、19、21、36）由协调者做	故事对照代理报告；新文件避免与协调者冲突	story trace agent report	decided
+2026-11-09T03:09:14Z	story-4-17	对话卡片列出进行中和最近的任务；宿主层测试只凭卡片转交，撤掉改动时红、恢复后绿	故事 4、17：找回上下文不应依赖 Router 记住早先的 id	commit 72caa9e	green
+2026-11-09T03:09:45Z	mistake	72caa9e 在全量测试有 4 条失败时提交：测试与提交串在一条命令里，没先看结果	违反每个提交都通过全部测试；以后先单独跑测试、确认全绿再提交	commit 72caa9e	red commit on mvp
+2026-11-09T03:09:45Z	fix	补提交修好测试辅助函数的默认标题，全量 180 个通过	修复上一行的红提交，不改写历史	commit a340cfa	green
+2026-11-09T03:10:34Z	story-19	Worker 事件翻译抽成 WorkerEventTranslator：测试先红（模块不存在），实现后绿，PiWorkerSpawner 迁移过去并删掉内联代码	故事 19：看板计数来自真实事件的路径没有测试	commit 6e62fb8	green
+2026-11-09T03:10:58Z	merge	审阅后摘入故事覆盖测试（7 10 12 20 22 23 27 28 29），首跑全过，没有发现行为缺失；全量 192 个通过	只缺测试的故事由代理在独立文件补齐	commit 61eb557	done
+2026-11-09T03:11:26Z	story-21	just log 列出触发去向：格式化测试先红后绿，并在验收用的真实状态目录上跑通	故事 21：去向有记录但使用者看不到	commit 44d1f95; /tmp/psa-accept-*	green
+2026-11-09T03:16:06Z	story-36	状态目录迁移：真实探针先证明搬目录后 Worker 丢历史；按会话头部改写路径的思路探针验证可行；单元测试先红后绿；真实端到端（A 开任务、搬到 B、续上旧任务并记得暗号）通过	故事 36 是对照里唯一没有证据的一条，探针暴露了真实缺陷	commit f1c9f51; /tmp/psa-migrate-J5nD	VERIFIED
+2026-11-09T03:17:45Z	live	故事 14 真实检查：无规则的安全公告触发，Router 自行以推断依据开任务且不发确认；只读 Worker 汇报进展后因无联网工具汇报受阻，Router 只问一个具体问题	模型判断无法由自动测试证明	/tmp/psa-infer-*/state.db	VERIFIED
+2026-11-09T03:18:30Z	simplify	效率与深度审查：采纳索引、rulesFor 单一路径、批次集合改局部、规则查找表、问题段落改在内核计算；不采纳卡片 N+1、搬目录全文重写、seenIds 增长、Router 用量每条一事务	前者便宜且不改行为；后者在个人规模下量很小，按 YAGNI 暂缓	simplify 审查员（效率与深度）报告	decided
+2026-11-09T03:20:29Z	cleanup	应用 no-comments 与 simplify 的采纳项；问题段落起点改在内核计算（先写测试红再绿）并删除 Watchdog 侧文件；全量 197 个通过	提交前检查；修复深度审查指出侧文件是在症状处打补丁	commit 26e11dc	green
+2026-11-09T03:21:24Z	trace	写 story-trace.md：33 条覆盖、3 条部分（8、17、29，写明接受理由）、1 条范围外；实施计划完成后移到 docs/pi-super-agent/implementation-log.md	P3 完成判定；开发规范要求全部阶段完成后移除根目录的计划文件	docs/pi-super-agent/story-trace.md	done

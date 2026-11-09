@@ -1,6 +1,6 @@
 # MVP 审计整改：figure-it-out 工作设计
 
-使用者的目标：按 `mvp-spec.md` 和 `IMPLEMENTATION_PLAN.md` 交付 Pi Super Agent 的 MVP，并且每一步都留下 pstack 要求的证据。
+使用者的目标：按 `mvp-spec.md` 和 `docs/pi-super-agent/implementation-log.md` 交付 Pi Super Agent 的 MVP，并且每一步都留下 pstack 要求的证据。
 之前 Stage 0 到 4 已有代码和提交，但没有按 pstack 完整执行（没有设计评审、没有先红后绿、没有决策记录、直接提交到 main）。
 这一轮是审计加整改，不推倒重写。决策记录在 `decisions.tsv`。
 

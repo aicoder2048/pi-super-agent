@@ -1,7 +1,7 @@
 # Pi Super Agent MVP 规格
 
 > 状态：已与使用者确认（2026-11-08）。
-> 术语以仓库根目录的 `GLOSSARY.md` 为准，难以反悔的决定见 `docs/adr/`，建造顺序见 `IMPLEMENTATION_PLAN.md`。
+> 术语以仓库根目录的 `GLOSSARY.md` 为准，难以反悔的决定见 `docs/adr/`，建造顺序见 `docs/pi-super-agent/implementation-log.md`。
 > 设计来源：`docs/dsh-super-agent/super-agent-design-exploration.md` 及其开源原型文档。
 
 ## 问题
@@ -278,6 +278,6 @@ MVP 在 MacBook 上验收。之后的第一个里程碑是搬到家里的 Mac mi
 
 ## 备注
 
-- 三件事 Pi 文档没有明确保证，需要在动手前验证：被中断的 Worker 会话能否续上；Pi TUI 能否当薄客户端；Router 的批处理注入是否如预期。任何一项不成立都要回头修改本规格，见 `IMPLEMENTATION_PLAN.md` 第 0 步。
+- 三件事 Pi 文档没有明确保证，需要在动手前验证：被中断的 Worker 会话能否续上；Pi TUI 能否当薄客户端；Router 的批处理注入是否如预期。任何一项不成立都要回头修改本规格，见 `docs/pi-super-agent/implementation-log.md` 第 0 步。
 - 使用者的全局 Pi 设置关闭了自动压缩和自动重试，宿主的会话必须自行开启。
 - Pi 没有内置的跨提供方模型回退、后台命令、调度器，这三样都由本项目实现。
