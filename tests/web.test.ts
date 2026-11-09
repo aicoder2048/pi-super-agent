@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
 import { connect, createServer, type AddressInfo } from "node:net";
@@ -9,6 +9,7 @@ import type { DashboardRow } from "../src/kernel/types.ts";
 import { formatInputs } from "../src/host/workers.ts";
 import { INPUT_KINDS } from "../src/kernel/types.ts";
 import { ConfigError } from "../src/config-error.ts";
+import { WebGateway } from "../src/host/web.ts";
 import * as page from "../src/web/view.mjs";
 import { WATCHDOG_SOURCE } from "../src/watchdog/watchdog.ts";
 import { busyPort, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
@@ -649,19 +650,18 @@ async function watchHost(t: TestContext) {
 		}, `任务 ${title}`);
 		return { id, worker: web.spawner.workers.get(id)! };
 	};
+	const sessionFile = (ticketId: string) => join(stateDir, "sessions", "workers", `2026-11-08T00-00-00_${web.host.kernel.getTicket(ticketId)!.workerSessionId}.jsonl`);
 	const history = (ticketId: string, messages: unknown[]) => {
-		const ticket = web.host.kernel.getTicket(ticketId)!;
-		const dir = join(stateDir, "sessions", "workers");
-		mkdirSync(dir, { recursive: true });
-		const lines = [{ type: "session", id: ticket.workerSessionId }, ...messages.map((message) => ({ type: "message", message }))];
-		writeFileSync(join(dir, `2026-11-08T00-00-00_${ticket.workerSessionId}.jsonl`), lines.map((e) => JSON.stringify(e)).join("\n") + "\n");
+		mkdirSync(join(stateDir, "sessions", "workers"), { recursive: true });
+		const lines = [{ type: "session", id: web.host.kernel.getTicket(ticketId)!.workerSessionId }, ...messages.map((message) => ({ type: "message", message }))];
+		writeFileSync(sessionFile(ticketId), lines.map((e) => JSON.stringify(e)).join("\n") + "\n");
 	};
 	const watch = (ticketId: string, token = web.token) => {
 		const stream = sse(`${web.url.origin}/transcript?token=${token}&ticket=${encodeURIComponent(ticketId)}`);
 		t.after(() => stream.close());
 		return stream;
 	};
-	return { ...web, open, history, watch };
+	return { ...web, open, history, sessionFile, watch };
 }
 
 const said = (text: string) => ({ role: "assistant", content: [{ type: "text", text }] });
@@ -712,6 +712,39 @@ test("网关：两个连接看不同任务，各自只收到自己的；关掉�
 	await until(() => switched.got.length === 2 && b.got.length === 3, "新任务的实时消息");
 	assert.deepEqual(ofType(switched.got, "transcript").map((m) => m.ticketId), [two.id]);
 	assert.equal(a.got.length, 2, "关掉的连接不再收到");
+});
+
+test("网关：Worker 写到一半被杀、会话文件最后一行不完整时，历史只含完整的行，宿主照常服务", async (t) => {
+	const { open, history, sessionFile, watch, at } = await watchHost(t);
+	const { id } = await open("读网页");
+	history(id, [said("先看看"), said("找到了")]);
+	appendFileSync(sessionFile(id), '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"写到一');
+	const stream = watch(id);
+	await until(() => stream.got.length === 1, "历史");
+	assert.deepEqual(stream.got[0], { type: "transcript_history", ticketId: id, messages: [said("先看看"), said("找到了")] });
+	assert.equal((await request(at("/"))).status, 200, "宿主还活着");
+});
+
+test("网关：处理请求时意外出错答 500，不带内部细节，记一行日志，进程不退出", async (t) => {
+	const logs: string[] = [];
+	const boom = () => {
+		throw new Error("内部秘密 /Users/x/state.db");
+	};
+	const gateway = new WebGateway({ snapshot: boom, transcript: boom, say: boom }, (line) => logs.push(line));
+	await gateway.listen(0);
+	t.after(() => gateway.close());
+	const url = new URL(gateway.url);
+	const token = url.searchParams.get("token")!;
+	const got = await request(`${url.origin}/transcript?token=${token}&ticket=tkt_abcd1234`);
+	assert.equal(got.status, 500);
+	assert.equal(got.headers["cache-control"], "no-store");
+	assert.doesNotMatch(got.body, /秘密|Users|Error/);
+	const said = await request(`${url.origin}/say?token=${token}`, { method: "POST", headers: { origin: url.origin, "content-type": "application/json" }, body: JSON.stringify({ text: "你好" }) });
+	assert.equal(said.status, 500);
+	assert.doesNotMatch(said.body, /秘密/);
+	assert.equal(logs.length, 2);
+	assert.match(logs[0], /内部秘密/, "日志里有原因，便于排查");
+	assert.equal((await request(`${url.origin}/?token=${token}`)).status, 200, "之后照常服务");
 });
 
 test("网关：/transcript 没有 token 401；ticket 不像任务编号 400；没有这个任务时历史为空", async (t) => {

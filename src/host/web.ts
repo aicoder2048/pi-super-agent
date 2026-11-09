@@ -28,6 +28,7 @@ const SCRIPTS = new Map([
 const NO_LEAK_HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff" } as const;
 const CSP = "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const KEEPALIVE_MS = 15_000;
+const INTERNAL_ERROR = "宿主内部出错，详情见宿主日志。";
 
 const DENIED = {
 	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"}，或这句话是空的。",
@@ -46,11 +47,13 @@ export class WebGateway {
 	readonly #watchers = new Map<string, Set<ServerResponse>>();
 	readonly #echoes = new HistoryEchoFilter<ServerResponse>();
 	readonly #host: WebHost;
+	readonly #log: (line: string) => void;
 	#port = 0;
 
-	constructor(host: WebHost) {
+	constructor(host: WebHost, log: (line: string) => void) {
 		this.#host = host;
-		this.#server = createServer((req, res) => this.#handle(req, res));
+		this.#log = log;
+		this.#server = createServer((req, res) => this.#guard(req, res, () => this.#handle(req, res)));
 	}
 
 	listen(port: number): Promise<void> {
@@ -92,6 +95,17 @@ export class WebGateway {
 		return closed;
 	}
 
+	// A throw here would escape into the http server's emit and take the whole host down.
+	#guard(req: IncomingMessage, res: ServerResponse, work: () => void): void {
+		try {
+			work();
+		} catch (error) {
+			this.#log(`[web] ${req.method} ${URL.parse(req.url ?? "/", "http://x")?.pathname} 出错：${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+			if (res.headersSent) res.destroy();
+			else res.writeHead(500, { ...NO_LEAK_HEADERS, "content-type": "text/plain; charset=utf-8" }).end(INTERNAL_ERROR);
+		}
+	}
+
 	#handle(req: IncomingMessage, res: ServerResponse): void {
 		const url = URL.parse(req.url ?? "/", "http://x");
 		if (!url) return deny(res, 400);
@@ -109,9 +123,9 @@ export class WebGateway {
 		if (url.pathname === "/transcript") {
 			const ticketId = url.searchParams.get("ticket") ?? "";
 			if (!TICKET_ID.test(ticketId)) return deny(res, 400);
+			const messages = this.#host.transcript(ticketId);
 			const watchers = this.#watchers.get(ticketId) ?? new Set();
 			this.#watchers.set(ticketId, watchers);
-			const messages = this.#host.transcript(ticketId);
 			this.#echoes.opened(res, messages);
 			return this.#openStream(res, { type: "transcript_history", ticketId, messages }, watchers, () => this.#watchers.delete(ticketId));
 		}
@@ -132,13 +146,15 @@ export class WebGateway {
 			if (size > SAY_MAX_BYTES) return tooLarge(req, res);
 			chunks.push(chunk);
 		});
-		req.on("end", () => {
-			if (res.headersSent) return;
-			const text = parseSay(Buffer.concat(chunks).toString("utf8"));
-			if (text === undefined) return deny(res, 400);
-			const triggerId = this.#host.say(text);
-			res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ triggerId }));
-		});
+		req.on("end", () =>
+			this.#guard(req, res, () => {
+				if (res.headersSent) return;
+				const text = parseSay(Buffer.concat(chunks).toString("utf8"));
+				if (text === undefined) return deny(res, 400);
+				const triggerId = this.#host.say(text);
+				res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ triggerId }));
+			}),
+		);
 	}
 
 	#openStream(res: ServerResponse, first: HostToClient, set: Set<ServerResponse>, onEmpty?: () => void): void {

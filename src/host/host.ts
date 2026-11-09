@@ -144,7 +144,7 @@ export class Host {
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text) });
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text) }, host.#log);
 			await host.#web.listen(options.webPort);
 		}
 		try {
@@ -221,8 +221,7 @@ export class Host {
 		if (!file) return [];
 		return readFileSync(join(dir, file), "utf8")
 			.split("\n")
-			.filter(Boolean)
-			.map((line) => JSON.parse(line) as { type: string; message?: { role?: string } })
+			.flatMap((line) => parseSessionLine(line))
 			.filter((entry) => entry.type === "message" && entry.message?.role !== "system")
 			.map((entry) => entry.message as TranscriptMessage);
 	}
@@ -258,6 +257,16 @@ export class Host {
 		await this.workers.shutdown();
 		this.router.dispose();
 		await Promise.all([this.server.close(), this.#web?.close()]);
+	}
+}
+
+// A worker killed mid-write leaves an unterminated last line; Pi skips such lines when it reopens the session, and so do we.
+function parseSessionLine(line: string): { type: string; message?: { role?: string } }[] {
+	if (!line) return [];
+	try {
+		return [JSON.parse(line)];
+	} catch {
+		return [];
 	}
 }
 
