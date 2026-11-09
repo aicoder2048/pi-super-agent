@@ -721,3 +721,11 @@ test("Router 的用量也按提供方计入每日累计", () => {
 	kernel.recordRouterUsage({ provider: "deepseek", tokensIn: 300, tokensOut: 100 });
 	assert.equal(kernel.usageToday("deepseek"), 400);
 });
+
+test("阶段：汇报就绪但附了一个问题时是等你回答，不是已结束", () => {
+	const { kernel, open, run, stage } = setup();
+	const id = open("request");
+	run(id);
+	kernel.workerReport(id, { status: "ready", summary: "草稿好了", question: "可以发吗？" });
+	assert.equal(stage(id), "awaiting_answer");
+});

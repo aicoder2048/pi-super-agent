@@ -271,7 +271,7 @@ export class Kernel {
 			} else if (report.status !== "progress") {
 				this.#enqueue({ kind: "router.notify", payload: { kind: "report", ticketId, reportId } });
 			}
-			if (report.status === "ready" && !report.waiting) this.#close(ticketId);
+			if (report.status === "ready" && !report.waiting && !report.question) this.#close(ticketId);
 			return { reportId };
 		});
 	}
