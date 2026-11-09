@@ -62,11 +62,27 @@ tail:
 test:
     {{run}} --test --test-timeout=30000 tests/*.test.ts tests/*.test.mjs
 
-# 端到端测试：真实宿主、Worker 子进程和无头浏览器，模型换成 tests/e2e/fake-model.ts 的本地假模型，
-# 不请求任何真实模型或行情接口。首次运行自动装 playwright-core 和浏览器。失败报告在 tests/e2e/.out/<测试>/index.html。
+# 真实宿主、Worker 子进程和无头浏览器，模型换成 tests/e2e/fake-model.ts 的本地假模型，不请求任何真实模型或行情接口。
+# 首次运行自动装 playwright-core 和浏览器。失败报告在 tests/e2e/.out/<测试>/index.html。
 # 故意弄坏某一步：PSA_E2E_SABOTAGE="Router 回复" just e2e；让 Worker 崩溃：PSA_E2E_SABOTAGE="Worker 汇报:crash" just e2e
+# 端到端测试（假模型 + 真实宿主 + 浏览器）。
 e2e: _browser
     {{run}} --test --test-reporter=spec --test-timeout=90000 tests/e2e/*.e2e.ts
+
+# 只跑一个：just demo 1-continuous。录屏和 summary.txt 在 demos/out/<名字>/。
+# 演示 1 到 4（连续、高效、主动、持久）：有界面的浏览器，真实 openai-codex 模型（订阅），手动运行。
+demo name="all": (_browser "chromium")
+    #!/usr/bin/env bash
+    set -u; status=0
+    names=({{ if name == "all" { "1-continuous 2-efficient 3-proactive 4-durable" } else { name } }})
+    for d in "${names[@]}"; do {{run}} "demos/demo-$d.mjs" || status=1; done
+    for d in "${names[@]}"; do cat "demos/out/demo-$d/summary.txt" 2>/dev/null; done
+    exit $status
+
+# 行情密钥只经宿主的 secretsFile 读取：用 PSA_DEMO_SECRETS_FILE 指定 .env 路径，未指定时沿用 ~/.pi-super-agent/config.json 里的 secretsFile。
+# 演示 5：真实美股行情模块（us-market），开盘时段运行；加 --dry 只跑开盘前一幕。
+demo-market *flags: (_browser "chromium")
+    {{run}} demos/demo-5-market.mjs {{flags}}
 
 # 装依赖和浏览器；都装好时几乎不花时间。
 _browser kind="chromium-headless-shell":
