@@ -75,6 +75,7 @@ function toReport(r: Row): Report {
 		status: r.status,
 		summary: r.summary,
 		question: r.question,
+		options: JSON.parse(r.options),
 		drafts: JSON.parse(r.drafts),
 		waiting: r.waiting === 1,
 		createdAt: r.created_at,
@@ -266,14 +267,15 @@ export class Kernel {
 			const reportId = this.#id("rpt");
 			const now = this.#now();
 			this.#run(
-				`INSERT INTO reports (id, seq, ticket_id, status, summary, question, drafts, waiting, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				`INSERT INTO reports (id, seq, ticket_id, status, summary, question, options, drafts, waiting, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				reportId,
 				this.#nextSeq(),
 				ticketId,
 				report.status,
 				report.summary,
 				report.question ?? null,
+				JSON.stringify(report.options ?? []),
 				JSON.stringify(report.drafts ?? []),
 				report.waiting ? 1 : 0,
 				now,

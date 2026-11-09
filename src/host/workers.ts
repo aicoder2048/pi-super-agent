@@ -7,6 +7,7 @@ import { REPORT_STATUSES } from "../kernel/types.ts";
 import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import { INPUT_LABEL } from "../client/board-format.mjs";
+import { parseOptions } from "../kernel/question.ts";
 
 export interface WorkerSpec {
 	ticketId: string;
@@ -247,10 +248,12 @@ export class WorkerExecutor {
 					const status = p.status as ReportStatus;
 					if (!REPORT_STATUSES.includes(status)) throw new Error(`未知的汇报状态 ${String(p.status)}`);
 					if (typeof p.summary !== "string" || !p.summary.trim()) throw new Error("汇报需要 summary");
+					const question = typeof p.question === "string" && p.question.trim() ? p.question : undefined;
 					const result = kernel.workerReport(ticketId, {
 						status,
 						summary: p.summary,
-						question: typeof p.question === "string" && p.question.trim() ? p.question : undefined,
+						question,
+						options: parseOptions(p.options, question),
 						drafts: Array.isArray(p.drafts) ? p.drafts : undefined,
 						waiting: p.waiting === true,
 					});

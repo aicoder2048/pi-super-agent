@@ -877,3 +877,28 @@ test("今天的触发按来源和去向计数，从本地零点算起，不受�
 		{ source: "noise", disposition: "ignored", count: 2 },
 	]);
 });
+
+test("Worker 的问题可以带选项，读任务时原样读回；不带选项的汇报读回空列表", () => {
+	const { kernel, open, run } = setup();
+	const id = open("request");
+	run(id);
+	kernel.workerReport(id, { status: "progress", summary: "做了一半" });
+	kernel.workerReport(id, { status: "blocked", summary: "两种口径", question: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"] });
+	const found = kernel.read(id);
+	assert.ok(found?.type === "ticket");
+	assert.deepEqual(found.recentReports.map((r) => r.options), [["只看营收", "营收和利润", "先不查"], []]);
+});
+
+test("旧数据库的汇报表没有选项列：打开时补上，旧汇报读回空列表", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const id = first.open("request");
+	first.run(id);
+	first.kernel.workerReport(id, { status: "progress", summary: "旧汇报" });
+	first.db.exec("ALTER TABLE reports DROP COLUMN options");
+	first.db.close();
+	const again = setup({ path });
+	const found = again.kernel.read(id);
+	assert.ok(found?.type === "ticket");
+	assert.deepEqual(found.recentReports.map((r) => [r.summary, r.options]), [["旧汇报", []]]);
+});

@@ -109,6 +109,8 @@ export interface WorkerReport {
 	status: ReportStatus;
 	summary: string;
 	question?: string;
+	/** Already parsed at the Worker boundary: 2 to 4 short answers, only with a question. */
+	options?: string[];
 	drafts?: unknown[];
 	waiting?: boolean;
 }
@@ -137,6 +139,8 @@ export interface Report {
 	status: ReportStatus;
 	summary: string;
 	question: string | null;
+	/** Empty for an open question or no question. */
+	options: string[];
 	drafts: unknown[];
 	waiting: boolean;
 	createdAt: number;

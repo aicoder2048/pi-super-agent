@@ -5,6 +5,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { connect, type Socket } from "node:net";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
 import type { Basis } from "../kernel/types.ts";
+import { OPTION_MAX_CHARS, OPTIONS_MAX, OPTIONS_MIN } from "../kernel/question.ts";
 import { toolAllowlist } from "./tools.ts";
 import { webGet } from "./web-get.ts";
 
@@ -82,16 +83,25 @@ export default function workerExtension(pi: ExtensionAPI) {
 		name: "report",
 		label: "汇报",
 		description: "向 Router 提交本任务的结构化状态。这是你与使用者沟通的唯一途径。",
-		promptSnippet: "report: 提交进展、就绪、受阻、失败或无需处理，可附带一个问题",
+		promptSnippet: `report: 提交进展、就绪、受阻、失败或无需处理，可附带一个问题和 ${OPTIONS_MIN} 到 ${OPTIONS_MAX} 个选项`,
 		promptGuidelines: [
 			"report 是 Worker 唯一能让使用者看到的输出；推理过程和工具调用不会被转达。",
 			"report 的 question 只放一个具体问题；需要使用者做决定时才填写。",
+			`问题的回答能列举时，用 options 给 ${OPTIONS_MIN} 到 ${OPTIONS_MAX} 个互不相同、可以直接当回答的短选项，每个不超过 ${OPTION_MAX_CHARS} 字；开放问题不填 options。`,
+			"使用者点选项后，你会收到「回答任务「标题」：选项」这句使用者的话；他也可能不选、直接说别的，以他的话为准。",
 			"判断这件事不值得处理时用 report 提交 no_action，任务会安静结束。",
 		],
 		parameters: Type.Object({
 			status: StringEnum(["progress", "ready", "blocked", "failed", "no_action"] as const),
 			summary: Type.String({ description: "一两句话的结论或现状" }),
 			question: Type.Optional(Type.String({ description: "需要使用者回答的一个具体问题" })),
+			options: Type.Optional(
+				Type.Array(Type.String({ maxLength: OPTION_MAX_CHARS }), {
+					minItems: OPTIONS_MIN,
+					maxItems: OPTIONS_MAX,
+					description: "question 的候选回答，使用者点一下即可作答；只能和 question 一起提交",
+				}),
+			),
 			drafts: Type.Optional(Type.Array(Type.String(), { description: "等使用者确认的对外动作草稿" })),
 			waiting: Type.Optional(Type.Boolean({ description: "就绪后仍需等待线程上的后续触发时为 true" })),
 		}),
