@@ -351,14 +351,13 @@ test("页面：助手条每位在岗助手一枚小卡（●运行中 ◐空闲 
 		row({ id: "tkt_stp", stage: "stopped", workerState: "running", endedAt: 9000, helper: { name: "拾遗", role: "rule", seq: 2 } }),
 	], zeroToday(), { count: 6, tokens: 12_345 }), 1000);
 	const strip = page.helperStrip(view, 3000);
-	assert.deepEqual(strip.chips.map(({ id, tint, ...shown }) => shown), [
+	assert.deepEqual(strip.chips.map(({ id, ...shown }) => shown), [
 		{ duty: "running", mark: "●", state: "运行中", name: "边牧", role: "对话助手 #1", elapsed: "7秒", tokens: "1.5k tokens" },
 		{ duty: "idle", mark: "◐", state: "空闲", name: "雪泥鸿爪", role: "行情助手 #2", elapsed: "1分2秒", tokens: "0 tokens" },
 		{ duty: "queued", mark: "○", state: "排队", name: "青檀", role: "观察助手 #1", elapsed: "0秒", tokens: "1.5k tokens" },
 		{ duty: "idle", mark: "◐", state: "空闲", name: "观澜", role: "规则助手 #3", elapsed: "7秒", tokens: "1.5k tokens" },
 	]);
 	assert.deepEqual(strip.chips.map((c) => c.id), ["tkt_run", "tkt_idl", "tkt_que", "tkt_ask"]);
-	assert.equal(strip.chips[0].tint, page.helperTint("tkt_run"), "小卡和任务卡片的助手图标同色");
 	assert.equal(strip.total, "今日 6 位 · 12.3k tokens");
 });
 

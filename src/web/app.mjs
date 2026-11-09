@@ -199,7 +199,7 @@ function mount(doc) {
 		const node = el("button", "helper-chip");
 		node.type = "button";
 		node.dataset.id = chip.id;
-		node.append(helperBadge(chip.id), el("span", "dot"), el("span", "name", chip.name), el("span", "role", chip.role), el("span", "meta"));
+		node.append(el("span", "dot"), el("span", "name", chip.name), el("span", "role", chip.role), el("span", "meta"));
 		node.addEventListener("click", () => watch(chip.id));
 		return node;
 	};
