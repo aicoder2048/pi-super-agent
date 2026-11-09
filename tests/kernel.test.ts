@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { Kernel } from "../src/kernel/kernel.ts";
+import { Kernel, nextStallAt } from "../src/kernel/kernel.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { CONVERSATION_THREAD_ID, DISPOSITIONS } from "../src/kernel/types.ts";
 import type { Basis, KernelConfig, TriggerSubmission } from "../src/kernel/types.ts";
@@ -1049,13 +1049,14 @@ test("久无进展：执行中且距上次进展达到阈值才算，看板行�
 test("下一次久无进展的时刻：执行中、还没久无进展的任务里最早的那个；没有这样的任务时为空", () => {
 	const MIN = 60_000;
 	const { kernel, clock, open, run } = setup({ config: { stuckMs: 10 * MIN } });
-	assert.equal(kernel.nextStallAt(), null);
+	const next = () => nextStallAt(kernel.listTickets(), 10 * MIN);
+	assert.equal(next(), null);
 	const first = open("request", { title: "一" });
 	run(first);
 	const firstAt = clock.t;
 	clock.t += 3 * MIN;
 	run(open("request", { title: "二" }));
-	assert.equal(kernel.nextStallAt(), firstAt + 10 * MIN);
+	assert.equal(next(), firstAt + 10 * MIN);
 	clock.t = firstAt + 11 * MIN;
-	assert.equal(kernel.nextStallAt(), firstAt + 13 * MIN, "已经久无进展的不再排");
+	assert.equal(next(), firstAt + 13 * MIN, "已经久无进展的不再排");
 });

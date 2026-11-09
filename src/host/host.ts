@@ -4,9 +4,9 @@ import { writeHeartbeat } from "../heartbeat.ts";
 import { relocateState } from "./relocate.ts";
 import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
-import { Kernel } from "../kernel/kernel.ts";
+import { Kernel, nextStallAt } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
-import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
+import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type DashboardRow, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
 import type { TriggerSubmission } from "../kernel/types.ts";
 import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
@@ -52,6 +52,8 @@ export interface HostOptions {
 
 
 // sun_path holds 104 bytes on macOS and 108 on Linux, including the terminating NUL.
+// setTimeout fires at once for a longer delay.
+const MAX_TIMER_MS = 2 ** 31 - 1;
 const SOCKET_PATH_MAX_BYTES = process.platform === "darwin" ? 103 : 107;
 
 function assertSocketPathFits(socketPath: string): void {
@@ -78,6 +80,7 @@ export class Host {
 	#boardTimer: NodeJS.Timeout | undefined;
 	#midnightTimer: NodeJS.Timeout | undefined;
 	#stallTimer: NodeJS.Timeout | undefined;
+	#stallAt: number | null = null;
 	#heartbeat: NodeJS.Timeout | undefined;
 	#web: WebGateway | undefined;
 	readonly #watching: WatchedSource[];
@@ -183,7 +186,7 @@ export class Host {
 		host.#heartbeat = setInterval(() => host.#beat(), options.heartbeatMs ?? 30_000);
 		host.#heartbeat.unref();
 		host.#atNextMidnight();
-		host.#atNextStall();
+		host.#pushBoardAtNextStall(host.kernel.listTickets());
 		host.dispatcher.kick();
 		return host;
 	}
@@ -278,17 +281,23 @@ export class Host {
 		this.#midnightTimer.unref();
 	}
 
-	#atNextStall(): void {
+	#pushBoardAtNextStall(rows: DashboardRow[]): void {
+		const at = nextStallAt(rows, this.kernel.config.stuckMs);
+		if (at === this.#stallAt) return;
 		clearTimeout(this.#stallTimer);
-		const at = this.kernel.nextStallAt();
+		this.#stallAt = at;
 		if (at === null) return;
-		this.#stallTimer = setTimeout(() => this.#pushBoard(), Math.max(0, at - this.#clock.now()));
+		this.#stallTimer = setTimeout(() => {
+			this.#stallAt = null;
+			this.#pushBoard();
+		}, Math.min(Math.max(0, at - this.#clock.now()), MAX_TIMER_MS));
 		this.#stallTimer.unref();
 	}
 
 	#pushBoard(): void {
-		this.#broadcast({ type: "board", ...this.#boardState() });
-		this.#atNextStall();
+		const state = this.#boardState();
+		this.#broadcast({ type: "board", ...state });
+		this.#pushBoardAtNextStall(state.rows);
 	}
 
 	#changed(): void {

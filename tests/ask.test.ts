@@ -153,3 +153,17 @@ test("任务久无进展时，即使 Watchdog 没在跑、也没有别的动静�
 	assert.ok(ofType(got, "board").length > runningFrames);
 	assert.equal(ofType(got, "board").at(-1)!.rows[0].stall!.since, host.kernel.listTickets()[0].lastProgressAt);
 });
+
+test("久无进展的阈值超过定时器上限（约 24.8 天）时，宿主不会每毫秒推一帧看板", async (t) => {
+	const { host } = await startHost(openOnly, () => {}, { config: { stuckMs: 3_000_000_000 } });
+	const got: HostToClient[] = [];
+	const conn = new HostConnection({ socketPath: host.socketPath, onMessage: (m) => got.push(m), retryMs: 30 });
+	conn.open();
+	t.after(async () => { conn.close(); await host.stop(); });
+	await until(() => conn.connected, "连接");
+	host.say("一直跑");
+	await until(() => ofType(got, "board").some((m) => m.rows[0]?.stage === "running"), "执行中的看板帧");
+	const before = ofType(got, "board").length;
+	await new Promise((r) => setTimeout(r, 300));
+	assert.ok(ofType(got, "board").length - before < 5, `300 毫秒里多推了 ${ofType(got, "board").length - before} 帧`);
+});

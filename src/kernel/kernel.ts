@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { answerExternalId, answerSentence, reportIdOfAnswer } from "./question.ts";
 import { deriveStage } from "./stage.ts";
+import { stallMinutes } from "../client/board-format.mjs";
 import { inTransaction } from "./store.ts";
 import {
 	CONVERSATION_SOURCE,
@@ -103,6 +104,12 @@ function toInput(r: Row): TicketInput {
 }
 
 const SOURCE_THREAD = /^thr_([\w-]+):.+$/;
+
+/** When the next running task that has not stalled yet will, or null when none is running. */
+export function nextStallAt(rows: DashboardRow[], stuckMs: number): number | null {
+	const at = rows.filter((r) => r.stage === "running" && !r.stall && r.lastProgressAt !== null).map((r) => r.lastProgressAt! + stuckMs);
+	return at.length ? Math.min(...at) : null;
+}
 
 export interface KernelOptions {
 	db: DatabaseSync;
@@ -568,19 +575,10 @@ export class Kernel {
 		});
 	}
 
-	nextStallAt(): number | null {
-		const now = this.#now();
-		const at = this.#all("SELECT id FROM tickets WHERE worker_state = 'running' AND last_progress_at IS NOT NULL")
-			.map((r) => this.#ticket(r.id)!)
-			.filter((t) => t.stage === "running" && !this.#stall(t, now))
-			.map((t) => t.lastProgressAt! + this.config.stuckMs);
-		return at.length ? Math.min(...at) : null;
-	}
-
 	#stall(t: Ticket, now: number): Stall | null {
 		if (t.stage !== "running" || t.lastProgressAt === null) return null;
 		const quietMs = now - t.lastProgressAt;
-		return quietMs >= this.config.stuckMs ? { since: t.lastProgressAt, minutes: Math.floor(quietMs / 60_000) } : null;
+		return quietMs >= this.config.stuckMs ? { since: t.lastProgressAt, minutes: stallMinutes(t.lastProgressAt, now) } : null;
 	}
 
 	#pendingQuestion(title: string, report: Report): PendingQuestion {
