@@ -1,24 +1,44 @@
 // @ts-check
 
-import { applyMessage, boardModel, emptyView, isStale } from "./view.mjs";
+import {
+	ACK_TIMEOUT_MS, SAY_COPY, STAGE_PHRASE, BASIS_PHRASE, applyMessage, applyTranscript, canSend, dutyLine, emptyView, emptyWatch,
+	isStale, leftColumn, resolveTheme, restartNotice, sayOutcome, smallPrint, stopSentence, toggleTheme,
+} from "./view.mjs";
 import { isLive } from "../client/board-format.mjs";
 
 const STATUS_TEXT = {
 	connecting: "连接中…",
-	connected: "已连接",
+	connected: "",
 	disconnected: "未连接，重试中",
 	expired: "token 已失效，请用宿主日志里最新的网址打开",
 };
+
+const THEME_KEY = "psa-theme";
+const MARK = { ok: "✓", error: "!", pending: "…" };
 
 /** @param {Document} doc */
 function mount(doc) {
 	const token = new URL(import.meta.url).searchParams.get("token") ?? "";
 	const query = `token=${encodeURIComponent(token)}`;
 	const view = emptyView();
-	const status = /** @type {HTMLElement} */ (doc.getElementById("status"));
-	const conversation = /** @type {HTMLElement} */ (doc.getElementById("conversation"));
-	const board = /** @type {HTMLElement} */ (doc.getElementById("board"));
+	/** @param {string} id */
+	const $ = (id) => /** @type {HTMLElement} */ (doc.getElementById(id));
+	const status = $("status");
+	const thread = /** @type {HTMLElement} */ ($("conversation").firstElementChild);
+	const composer = /** @type {HTMLTextAreaElement} */ ($("composer"));
+	const send = /** @type {HTMLButtonElement} */ ($("send"));
+	const sayStatus = $("say-status");
 	let rendered = 0;
+	/** @type {{ watch: ReturnType<typeof emptyWatch>, source: EventSource } | undefined} */
+	let watching;
+
+	/** @param {string} tag @param {string} className @param {string} [text] */
+	const el = (tag, className, text = "") => {
+		const node = doc.createElement(tag);
+		node.className = className;
+		node.textContent = text;
+		return node;
+	};
 
 	/** @param {keyof typeof STATUS_TEXT} s */
 	const setStatus = (s) => {
@@ -26,41 +46,157 @@ function mount(doc) {
 		status.textContent = STATUS_TEXT[s];
 	};
 
-	/** @param {string} tag @param {string} className @param {string} text */
-	const el = (tag, className, text) => {
-		const node = doc.createElement(tag);
-		node.className = className;
-		node.textContent = text;
+	/** @param {import("./view.mjs").SayState} state @param {string} [extra] */
+	const setSay = (state, extra = "") => {
+		sayStatus.dataset.state = state;
+		sayStatus.textContent = SAY_COPY[state] + extra;
+	};
+
+	const store = {
+		get: () => {
+			try {
+				return localStorage.getItem(THEME_KEY);
+			} catch {
+				return null;
+			}
+		},
+		/** @param {string} value */
+		set: (value) => {
+			try {
+				localStorage.setItem(THEME_KEY, value);
+			} catch {}
+		},
+	};
+	const systemDark = () => matchMedia("(prefers-color-scheme: dark)").matches;
+	// Only a manual choice sets data-theme; without it the CSS follows prefers-color-scheme.
+	const stored = store.get();
+	if (stored === "light" || stored === "dark") doc.documentElement.dataset.theme = stored;
+	$("theme").addEventListener("click", () => {
+		const next = toggleTheme(resolveTheme(doc.documentElement.dataset.theme ?? store.get(), systemDark()));
+		doc.documentElement.dataset.theme = next;
+		store.set(next);
+	});
+
+	const renderHeader = () => {
+		$("duty").textContent = dutyLine(view.duty, Date.now());
+		$("restart").textContent = restartNotice(view.duty, Date.now());
+	};
+
+	/** @param {import("./view.mjs").TaskCard} card @param {string} tone */
+	const taskCard = (card, tone) => {
+		const node = el("div", `card ${tone}`);
+		node.tabIndex = 0;
+		node.setAttribute("role", "button");
+		node.setAttribute("aria-current", String(watching?.watch.ticketId === card.id));
+		node.append(el("div", "title", card.title), el("div", "why", `${card.why} · ${card.stage}`), el("div", "latest", card.latest));
+		if (card.canStop) {
+			const row = el("div", "row");
+			const stop = el("button", "stop", "叫停");
+			stop.type = "button";
+			stop.addEventListener("click", (e) => {
+				e.stopPropagation();
+				composer.value = stopSentence(card.title);
+				composer.focus();
+			});
+			row.append(el("span", "spacer"), stop);
+			node.append(row);
+		}
+		node.addEventListener("click", () => watch(card.id));
+		node.addEventListener("keydown", (e) => {
+			if (e.target === node && (e.key === "Enter" || e.key === " ")) {
+				e.preventDefault();
+				watch(card.id);
+			}
+		});
 		return node;
 	};
 
+	/** @param {string} heading @param {HTMLElement[]} items @param {string} emptyText @param {string} [headingClass] */
+	const section = (heading, items, emptyText, headingClass = "") => {
+		const node = el("section", "");
+		node.append(el("h2", headingClass, heading), ...(items.length ? items : [el("p", "empty", emptyText)]));
+		return node;
+	};
+
+	const renderLeft = () => {
+		const left = leftColumn(view);
+		const today = el("section", "");
+		today.id = "today";
+		today.append(el("div", "headline", left.today.headline), el("div", "detail", left.today.detail));
+		const done = el("details", "");
+		done.id = "done";
+		done.open = /** @type {HTMLDetailsElement | null} */ (doc.getElementById("done"))?.open ?? false;
+		const list = el("div", "list");
+		list.append(...left.done.map((c) => taskCard(c, "done")));
+		done.append(el("summary", "", `${left.doneLine} ›`), list);
+		$("left").replaceChildren(
+			section(`需要你 · ${left.needsYou.length}`, left.needsYou.map((c) => taskCard(c, "ask")), "现在没有要你拿主意的事。", "warn"),
+			section(`正在替你办 · ${left.doing.length}`, left.doing.map((c) => taskCard(c, "doing")), "现在没有在办的事。交给它一件吧。"),
+			section(`在替你盯着 · ${left.watching.length}`, left.watching.map((w) => {
+				const node = el("div", "watch");
+				const body = el("div", "");
+				body.append(el("div", "name", w.name), el("div", "rule", [w.rule, w.hits].filter(Boolean).join(" · ")));
+				node.append(body);
+				return node;
+			}), "还没有要盯的来源。"),
+			today,
+			done,
+		);
+	};
+
 	const renderConversation = () => {
-		const atBottom = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 40;
+		const box = $("conversation");
+		const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
 		for (const line of [...view.lines.values()].slice(rendered)) {
-			const item = el("div", `line ${line.who}`, "");
-			item.append(el("span", "who", line.who === "user" ? "你" : "Router"), el("span", "text", line.text));
-			conversation.append(item);
+			const item = el("div", `line ${line.who}`);
+			const bubble = el("div", "bubble");
+			bubble.append(el("span", "sr", line.who === "user" ? "你：" : "Super Agent："), doc.createTextNode(line.text));
+			if (line.who === "router") item.append(el("div", "avatar"));
+			item.append(bubble);
+			thread.append(item);
 		}
 		rendered = view.lines.size;
-		if (atBottom) conversation.scrollTop = conversation.scrollHeight;
+		if (atBottom) box.scrollTop = box.scrollHeight;
 	};
 
-	const renderBoard = () => {
-		const model = boardModel(view, Date.now());
-		const nodes = [el("h2", "", `看板 · ${model.active} 个任务进行中`)];
-		for (const card of model.cards) {
-			const node = el("article", `card ${card.stage}`, "");
-			const head = el("div", "head", "");
-			head.append(el("span", "id", card.shortId), el("span", "title", card.title), el("span", "stage", `${card.stageLabel} · ${card.basisLabel}`));
-			node.append(head, el("div", "summary", `最近：${card.summary}`), el("div", "meta", `${card.model} · 工具 ${card.toolCalls} · ${card.tokens} · ${card.elapsed}`));
-			nodes.push(node);
-		}
-		if (model.hiddenClosed) nodes.push(el("p", "hidden", `另有 ${model.hiddenClosed} 个已结束的任务`));
-		if (!model.cards.length) nodes.push(el("p", "empty", "暂无任务"));
-		board.replaceChildren(...nodes);
+	const renderRight = () => {
+		const row = view.rows.find((r) => r.id === watching?.watch.ticketId);
+		$("how-title").textContent = row?.title ?? "";
+		$("how-meta").textContent = row ? `${BASIS_PHRASE[row.basis]} · ${STAGE_PHRASE[row.stage]}` : "";
+		$("small-print").textContent = smallPrint(row, Date.now(), view.receivedAt);
+		const steps = watching?.watch.steps ?? [];
+		if (!watching) return void $("steps").replaceChildren(el("li", "empty", "点左边的一件事，看助手是怎么一步步做的。"));
+		if (!steps.length) return void $("steps").replaceChildren(el("li", "empty", "还没有步骤。"));
+		const open = new Set([...$("steps").querySelectorAll("details[open]")].map((d) => d.getAttribute("data-i")));
+		$("steps").replaceChildren(...steps.map((step, i) => {
+			const li = el("li", `step ${step.state}`);
+			const rail = el("span", "rail");
+			rail.append(el("span", "mark", MARK[step.state]));
+			const body = el("div", "step-body");
+			const raw = el("details", "");
+			raw.setAttribute("data-i", String(i));
+			raw.open = open.has(String(i));
+			raw.append(el("summary", "", "原始记录"), el("pre", "", step.raw));
+			body.append(el("div", "step-title", step.title), el("div", "step-detail", step.detail), raw);
+			li.append(rail, body);
+			return li;
+		}));
 	};
 
-	const render = { conversation: renderConversation, board: renderBoard };
+	const render = { conversation: renderConversation, left: renderLeft, header: renderHeader };
+
+	/** @param {string} ticketId */
+	const watch = (ticketId) => {
+		watching?.source.close();
+		const w = emptyWatch(ticketId);
+		const source = new EventSource(`/transcript?${query}&ticket=${encodeURIComponent(ticketId)}`);
+		source.onmessage = (e) => {
+			if (applyTranscript(w, JSON.parse(e.data))) renderRight();
+		};
+		watching = { watch: w, source };
+		renderLeft();
+		renderRight();
+	};
 
 	const connect = () => {
 		setStatus("connecting");
@@ -86,7 +222,9 @@ function mount(doc) {
 		events.addEventListener("ping", alive);
 		events.onmessage = (e) => {
 			alive();
-			for (const pane of applyMessage(view, JSON.parse(e.data), Date.now())) render[pane]();
+			const panes = applyMessage(view, JSON.parse(e.data), Date.now());
+			for (const pane of panes) render[pane]();
+			if (panes.includes("left")) renderRight();
 		};
 		events.onerror = () => {
 			setStatus("disconnected");
@@ -96,10 +234,50 @@ function mount(doc) {
 		};
 	};
 
-	renderBoard();
+	const say = async () => {
+		const text = composer.value;
+		if (!canSend(text) || send.disabled) return;
+		send.disabled = true;
+		setSay("sending");
+		const abort = new AbortController();
+		const timer = setTimeout(() => abort.abort(), ACK_TIMEOUT_MS);
+		try {
+			const res = await fetch(`/say?${query}`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ text }),
+				signal: abort.signal,
+				cache: "no-store",
+			});
+			const state = sayOutcome({ status: res.status });
+			if (state === "delivered" && composer.value === text) composer.value = "";
+			if (state === "expired") setStatus("expired");
+			setSay(state, state === "rejected" ? await res.text() : "");
+		} catch {
+			// The text stays in the composer: after checking the conversation, saying it again is one press.
+			setSay(sayOutcome(abort.signal.aborted ? "timeout" : "network"));
+		} finally {
+			clearTimeout(timer);
+			send.disabled = false;
+		}
+	};
+
+	$("say").addEventListener("submit", (e) => {
+		e.preventDefault();
+		void say();
+	});
+	composer.addEventListener("keydown", (e) => {
+		if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+		e.preventDefault();
+		void say();
+	});
+
+	renderLeft();
+	renderRight();
 	setInterval(() => {
-		if (view.rows.some(isLive)) renderBoard();
+		if (watching && view.rows.some((r) => r.id === watching?.watch.ticketId && isLive(r))) renderRight();
 	}, 1000);
+	setInterval(renderHeader, 30_000);
 	connect();
 }
 
