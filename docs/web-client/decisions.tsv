@@ -26,3 +26,5 @@ ts	phase	decision	why	evidence	result
 2026-11-09T09:09:03Z	architect	受阻/失败的任务放进「需要你」并写「卡住了」；来源先显示原名；已结束计数写「已结束 N 件」不带今天；重启提示只看本次是否接上了任务	产品原则是做不下去时要找人；显示名要改模块文件，不值得；看板行没有结束时间	candidate-2 design.md 待定问题	decided
 2026-11-09T09:09:03Z	architect	跳过 cross-judge	arena cross-judge pool 只有 Claude 一族	~/.claude/rules/pstack-models.md	skipped
 2026-11-09T09:24:12Z	simplify	W2 采纳 12 条清理：latestQuestion 进 DashboardRow、received_at 索引、右栏每秒只更新耗时、衔接处重复改由宿主去除（TUI 同受益）、截断取正文合成一份、Origin 复用 isLocalHost、conversation 常量、配色只写一份及 4 条小项；不采纳快照字段改名、历史缓存、计数排除挪进 SQL、超时常量共享模块、一行函数内联	改名会破坏 TUI 读的 snapshot.board；其余不采纳项在单用户规模下没有收益	两份 simplify 审查报告	open
+2026-11-09T09:36:20Z	no-comments	W2 接受删掉的 14 条注释；MUST KILL 采纳 4 条（Seams 改名、ACK 超时常量与输入标签挪进共享模块、工具参数改 unknown），不采纳品牌类型 TriggerId 与按阶段的联合类型 DashboardRow	品牌类型只为替代一句注释，收益小；联合类型要动 TUI 与 kernel 的读取，超出 W2，记为未决	Comment Sicko 报告	decided
+2026-11-09T09:41:30Z	copy	网页用语统一：主语只用 Super Agent、助手、你；概念一词一义；去掉口语与拟人化；状态用两到三字固定词	使用者反馈 W2 用语凌乱，要求表意准确、简洁、专业	scratchpad/w2-copy.md	decided
