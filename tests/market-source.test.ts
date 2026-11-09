@@ -269,3 +269,17 @@ test("取不到行情的计时只算轮询窗口内：收盘后一次失败加�
 	assert.match(notices()[0], /连续 15 分钟/);
 	down = false;
 });
+
+test("查询自选股时复用不到一个轮询周期的看盘快照，不多花请求；自选以外的代码和过期的快照才去请求", async () => {
+	const m = market();
+	m.prices.NVDA = 102;
+	await m.source.tick();
+	m.clock.t += 30_000;
+	const [nvda] = (await m.source.lookup("quote", { symbols: ["NVDA"] })) as { symbol: string; price: number }[];
+	assert.deepEqual([nvda.symbol, nvda.price, m.requests.length], ["NVDA", 102, 1]);
+	await m.source.lookup("quote", { symbols: ["NVDA", "AMD"] });
+	assert.deepEqual([m.requests.length, m.requests.at(-1)!.url.endsWith("tickers=AMD")], [2, true]);
+	m.clock.t += 31_000;
+	await m.source.lookup("quote", { symbols: ["NVDA"] });
+	assert.equal(m.requests.length, 3);
+});

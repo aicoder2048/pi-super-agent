@@ -3,7 +3,7 @@ import type { Feed, FeedContext, FeedInput, FeedSpec } from "../feeds.ts";
 import { threadId } from "../generic.ts";
 import { MarketClient, MarketError, type Span } from "./client.ts";
 import { readMarketKey } from "./key.ts";
-import { detect, toTrigger, type MarketCursor, type Move } from "./detect.ts";
+import { detect, toTrigger, type MarketCursor, type Move, type Quote } from "./detect.ts";
 import { inPollWindow, MINUTE, nextPollDelay, sessionAt, type Session } from "./session.ts";
 import { parseMarketSettings, type MarketSettings } from "./settings.ts";
 import { parseSymbol } from "./symbol.ts";
@@ -61,6 +61,7 @@ export class MarketSource implements Feed {
 	#disabled: string | undefined;
 	#failing: { since: number; error: string; noticed: boolean } | undefined;
 	#mood: string | undefined;
+	#lastPoll: { at: number; quotes: Quote[] } | undefined;
 	#timer: NodeJS.Timeout | undefined;
 	#stopped = false;
 
@@ -105,6 +106,7 @@ export class MarketSource implements Feed {
 			return this.#failed(error, now);
 		}
 		this.#failing = undefined;
+		this.#lastPoll = { at: ctx.clock.now(), quotes };
 		const result = detect(cursor, quotes, session, settings);
 		this.#submitThenSaveCursor(result.moves, result.cursor);
 		this.#feel("watching", `开盘中，每 ${settings.everySeconds} 秒看一次自选 ${settings.watchlist.length} 只`);
@@ -127,7 +129,7 @@ export class MarketSource implements Feed {
 				only("symbols");
 				const symbols = Array.isArray(a.symbols) ? a.symbols.map(parseSymbol) : [];
 				if (!symbols.length || symbols.length > 10 || symbols.some((s) => !s)) throw new Error("quote 的 symbols 必须是 1 到 10 个合法的股票代码");
-				const quotes = await this.#o.client.snapshot(symbols as string[], "lookup");
+				const quotes = await this.#quotes(symbols as string[]);
 				return quotes.map(({ minuteVolume: _m, prevVolume: _p, ...q }) => ({ ...q, changePct: Number(q.changePct.toFixed(2)) }));
 			}
 			case "bars": {
@@ -146,6 +148,15 @@ export class MarketSource implements Feed {
 			default:
 				throw new Error(`未知操作 ${op}；可用：quote、bars、session`);
 		}
+	}
+
+	async #quotes(symbols: string[]): Promise<Quote[]> {
+		const poll = this.#lastPoll;
+		const recent = poll && this.#o.ctx.clock.now() - poll.at < this.#o.settings.everySeconds * 1000 ? poll.quotes : [];
+		const cached = recent.filter((q) => symbols.includes(q.symbol));
+		const missing = symbols.filter((s) => !cached.some((q) => q.symbol === s));
+		const fetched = missing.length ? await this.#o.client.snapshot(missing, "lookup") : [];
+		return [...cached, ...fetched].sort((a, b) => symbols.indexOf(a.symbol) - symbols.indexOf(b.symbol));
 	}
 
 	#failed(error: unknown, now: number): void {
