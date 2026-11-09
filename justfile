@@ -22,6 +22,10 @@ run := "node --import ./src/pi-runtime.mjs"
 host:
     {{run}} src/host/main.ts
 
+# 打开 TUI 客户端（Pi TUI 只当界面，输入转发给宿主）。
+client:
+    pi {{clean}} --no-session --no-context-files --tui-mode regular -e extensions/super-agent.ts
+
 # 对 Super Agent 说一句话，打印之后两分钟内的回复。
 say +text:
     {{run}} src/cli/say.ts say {{text}}

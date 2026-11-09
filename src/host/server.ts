@@ -53,7 +53,7 @@ export class HostServer {
 				else if (r.type === "watch") {
 					client!.watching = typeof r.ticketId === "string" ? r.ticketId : undefined;
 					if (client!.watching && clients.transcript) {
-						writeJsonLine(socket, { type: "transcript_history", ticketId: client!.watching, events: clients.transcript(client!.watching) });
+						writeJsonLine(socket, { type: "transcript_history", ticketId: client!.watching, messages: clients.transcript(client!.watching) });
 					}
 				}
 			});
@@ -75,8 +75,8 @@ export class HostServer {
 		for (const c of this.#clients) writeJsonLine(c.socket, message);
 	}
 
-	sendTranscript(ticketId: string, event: unknown): void {
-		for (const c of this.#clients) if (c.watching === ticketId) writeJsonLine(c.socket, { type: "transcript", ticketId, event });
+	sendTranscript(ticketId: string, message: unknown): void {
+		for (const c of this.#clients) if (c.watching === ticketId) writeJsonLine(c.socket, { type: "transcript", ticketId, message });
 	}
 
 	clientCount(): number {
