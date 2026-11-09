@@ -100,7 +100,7 @@ const groupOf = (row) => (row.stall ? "needsYou" : GROUP[row.stage]);
 function choiceOf(row, sending) {
 	const q = row.question;
 	if (!q || q.options.length === 0) return null;
-	const picked = q.answered ?? sending.get(q.reportId) ?? null;
+	const picked = q.clickedOption ?? sending.get(q.reportId) ?? null;
 	return {
 		reportId: q.reportId,
 		buttons: q.options.map((label, option) => ({ label, option, picked: option === picked })),

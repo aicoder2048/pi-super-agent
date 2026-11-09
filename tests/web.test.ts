@@ -75,7 +75,7 @@ test("页面：每个任务恰好进一个分组：待回复、待确认、受�
 
 test("页面：待你处理的卡片先显示问题，受阻的显示最近汇报；进行中的显示最近汇报，没有时说已开始", () => {
 	const left = page.leftColumn(withRows([
-		row({ id: "tkt_ask", stage: "awaiting_answer", basis: "rule", latestSummary: "需要确认", question: { reportId: "rpt_1", text: "用 A 还是 B？", options: [], askedAt: 0, answered: null } }),
+		row({ id: "tkt_ask", stage: "awaiting_answer", basis: "rule", latestSummary: "需要确认", question: { reportId: "rpt_1", text: "用 A 还是 B？", options: [], askedAt: 0, clickedOption: null } }),
 		row({ id: "tkt_stk", stage: "blocked_or_failed", basis: "inference", latestSummary: "缺少权限" }),
 		row({ id: "tkt_run", stage: "running", latestSummary: null }),
 		row({ id: "tkt_idl", stage: "idle", latestSummary: "读完 3 份" }),
@@ -87,7 +87,7 @@ test("页面：待你处理的卡片先显示问题，受阻的显示最近汇�
 
 const MIN = 60_000;
 const asked = (over: Partial<NonNullable<DashboardRow["question"]>> = {}) =>
-	({ reportId: "rpt_q1", text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 10 * MIN, answered: null, ...over });
+	({ reportId: "rpt_q1", text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 10 * MIN, clickedOption: null, ...over });
 
 test("页面：执行中久无进展的任务进待你处理，阶段写「久无进展 · N 分钟」并随时间增加，能停止", () => {
 	const view = withRows([row({ id: "tkt_slow", stage: "running", latestSummary: "在跑回归", stall: { since: 0, minutes: 42 } }), row({ id: "tkt_ok", stage: "running" })]);
@@ -100,7 +100,7 @@ test("页面：执行中久无进展的任务进待你处理，阶段写「久�
 test("页面：等回答且带选项的卡片有一组按钮；任何客户端点过或这里正在发送时全部锁住，标出选了哪个并写「已回答」；开放问题没有按钮", () => {
 	const view = withRows([
 		row({ id: "tkt_a", stage: "awaiting_answer", question: asked() }),
-		row({ id: "tkt_b", stage: "awaiting_answer", question: asked({ reportId: "rpt_q2", answered: 2 }) }),
+		row({ id: "tkt_b", stage: "awaiting_answer", question: asked({ reportId: "rpt_q2", clickedOption: 2 }) }),
 		row({ id: "tkt_c", stage: "awaiting_answer", question: asked({ reportId: "rpt_q3", options: [] }) }),
 	]);
 	const [a, b, c] = page.leftColumn(view, 0).needsYou.map((card) => card.choice);
@@ -801,7 +801,7 @@ test("网关：POST /say 带 answer 时，宿主替使用者说出「回答任�
 	const { triggerId } = JSON.parse(first.body);
 	assert.equal(JSON.parse(again.body).triggerId, triggerId);
 	await until(() => ofType(stream.got, "user").some((m) => m.id === triggerId), "user");
-	await until(() => ofType(stream.got, "board").some((m) => m.rows.some((r) => r.question?.answered === 1)), "看板显示已回答");
+	await until(() => ofType(stream.got, "board").some((m) => m.rows.some((r) => r.question?.clickedOption === 1)), "看板显示已回答");
 	assert.deepEqual(ofType(stream.got, "user").map((m) => m.text), ["回答任务「查财报」：营收和利润"]);
 	assert.deepEqual(userLines().filter((l) => l.startsWith("回答任务")), ["回答任务「查财报」：营收和利润"]);
 });

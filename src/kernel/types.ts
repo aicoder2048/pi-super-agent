@@ -184,7 +184,7 @@ export interface PendingQuestion {
 	text: string;
 	options: string[];
 	askedAt: number;
-	answered: number | null;
+	clickedOption: number | null;
 }
 
 export interface Stall {

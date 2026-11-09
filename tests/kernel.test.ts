@@ -915,7 +915,7 @@ test("看板：等回答的任务带上它在等的问题（汇报 id、文字�
 	clock.t += 1000;
 	const rows = () => Object.fromEntries(kernel.listTickets().map((r) => [r.title, r.question]));
 	assert.deepEqual(rows(), {
-		查财报: { reportId, text: "要看哪部分？", options: ["只看营收", "先不查"], askedAt, answered: null },
+		查财报: { reportId, text: "要看哪部分？", options: ["只看营收", "先不查"], askedAt, clickedOption: null },
 		写周报: null,
 	});
 	handOverUserMessage(asking, "只看营收");
@@ -946,7 +946,7 @@ test("点选回答：成为使用者在对话里说的一句「回答任务「�
 	assert.deepEqual(notices(), [{ kind: "conversation", triggerId: result.triggerId }]);
 	assert.deepEqual(kernel.pendingInputs(ticketId), [], "Router 转交之前任务收不到");
 	assert.equal(row().stage, "awaiting_answer");
-	assert.equal(row().question?.answered, 1, "所有客户端都看得到已经点过哪一个");
+	assert.equal(row().question?.clickedOption, 1, "所有客户端都看得到已经点过哪一个");
 });
 
 test("点选回答是幂等的：连点、换个选项再点、另一个客户端或超时重试，都得到同一条触发，Router 只收到一次；转交之后再点也一样", () => {

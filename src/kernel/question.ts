@@ -26,6 +26,3 @@ export const answerSentence = (title: string, option: string) => `回答任务�
 const ANSWER_PREFIX = "answer:";
 
 export const answerExternalId = (reportId: string) => `${ANSWER_PREFIX}${reportId}`;
-
-export const reportIdOfAnswer = (externalId: string): string | null =>
-	externalId.startsWith(ANSWER_PREFIX) ? externalId.slice(ANSWER_PREFIX.length) : null;

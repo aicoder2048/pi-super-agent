@@ -16,7 +16,7 @@ function spread(left: string, right: string, width: number): string {
 	return fit(leftFit + " ".repeat(gap) + rightFit, width);
 }
 
-export const openChoices = (rows: DashboardRow[]) => rows.filter((r) => r.question && r.question.options.length > 0 && r.question.answered === null);
+export const openChoices = (rows: DashboardRow[]) => rows.filter((r) => r.question && r.question.options.length > 0 && r.question.clickedOption === null);
 
 export interface BoardView {
 	rows: DashboardRow[];
@@ -36,7 +36,7 @@ export function renderBoard(view: BoardView, width: number, now: number): string
 		const q = row.question;
 		if (q) {
 			lines.push(fit(`   问题：${q.text}`, width));
-			if (q.answered !== null) lines.push(fit(`   已回答：${q.options[q.answered]}`, width));
+			if (q.clickedOption !== null) lines.push(fit(`   已回答：${q.options[q.clickedOption]}`, width));
 			else if (q.options.length) lines.push(fit(`   ${q.options.map((o, i) => `${i + 1}. ${o}`).join("   ")}`, width));
 		}
 		lines.push(fit(`   最近：${row.latestSummary ?? "（暂无汇报）"}`, width));

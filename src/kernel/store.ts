@@ -98,6 +98,14 @@ CREATE TABLE IF NOT EXISTS reports (
 	created_at INTEGER NOT NULL
 );
 
+-- A click on an option of the question in report_id; the trigger is the sentence the host wrote for it.
+CREATE TABLE IF NOT EXISTS answer_clicks (
+	trigger_id TEXT PRIMARY KEY REFERENCES triggers(id),
+	report_id TEXT NOT NULL REFERENCES reports(id),
+	option INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS answer_clicks_report ON answer_clicks (report_id);
+
 CREATE TABLE IF NOT EXISTS decisions (
 	seq INTEGER PRIMARY KEY AUTOINCREMENT,
 	decision TEXT NOT NULL,

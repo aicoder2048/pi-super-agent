@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
-import { answerExternalId, answerSentence, reportIdOfAnswer } from "./question.ts";
+import { answerExternalId, answerSentence } from "./question.ts";
 import { deriveStage } from "./stage.ts";
 import { stallMinutes } from "../client/board-format.mjs";
 import { inTransaction } from "./store.ts";
@@ -197,8 +197,10 @@ export class Kernel {
 
 	answerQuestion({ reportId, option, at }: { reportId: string; option: number; at: number }): Result<{ triggerId: string; text: string; duplicate: boolean }> {
 		return this.#tx(() => {
-			const externalId = answerExternalId(reportId);
-			const existing = this.#get("SELECT id, body FROM triggers WHERE source = ? AND external_id = ?", CONVERSATION_SOURCE, externalId);
+			const existing = this.#get(
+				"SELECT t.id, t.body FROM answer_clicks c JOIN triggers t ON t.id = c.trigger_id WHERE c.report_id = ? ORDER BY c.rowid DESC LIMIT 1",
+				reportId,
+			);
 			if (existing) return { ok: true, triggerId: existing.id, text: existing.body, duplicate: true };
 			const report = this.#get("SELECT ticket_id, options FROM reports WHERE id = ?", reportId);
 			if (!report) return reject(`unknown report ${reportId}`);
@@ -210,7 +212,8 @@ export class Kernel {
 			if (options.length === 0) return reject("这个问题没有选项，请直接回复");
 			if (!Number.isInteger(option) || option < 0 || option >= options.length) return reject(`这个问题只有 ${options.length} 个选项`);
 			const text = answerSentence(ticket.title, options[option]);
-			const { triggerId } = this.userSaid({ text, at, externalId });
+			const { triggerId } = this.userSaid({ text, at, externalId: answerExternalId(reportId) });
+			this.#run("INSERT INTO answer_clicks (trigger_id, report_id, option) VALUES (?, ?, ?)", triggerId, reportId, option);
 			return { ok: true, triggerId, text, duplicate: false };
 		});
 	}
@@ -566,7 +569,7 @@ export class Kernel {
 				stage: t.stage,
 				basis: t.basis,
 				latestSummary: t.latestReport?.summary ?? null,
-				question: t.stage === "awaiting_answer" ? this.#pendingQuestion(t.title, t.latestReport!) : null,
+				question: t.stage === "awaiting_answer" ? this.#pendingQuestion(t.latestReport!) : null,
 				stall: this.#stall(t, now),
 				model: t.model,
 				fellBack: t.fellBack,
@@ -585,24 +588,21 @@ export class Kernel {
 		return quietMs >= this.config.stuckMs ? { since: t.lastProgressAt, minutes: stallMinutes(t.lastProgressAt, now) } : null;
 	}
 
-	#pendingQuestion(title: string, report: Report): PendingQuestion {
-		const click = this.#get("SELECT body FROM triggers WHERE source = ? AND external_id = ?", CONVERSATION_SOURCE, answerExternalId(report.id));
-		const picked = click ? report.options.findIndex((o) => answerSentence(title, o) === click.body) : -1;
-		return { reportId: report.id, text: report.question!, options: report.options, askedAt: report.createdAt, answered: picked === -1 ? null : picked };
+	#pendingQuestion(report: Report): PendingQuestion {
+		const click = this.#get("SELECT option FROM answer_clicks WHERE report_id = ? ORDER BY rowid DESC LIMIT 1", report.id);
+		return { reportId: report.id, text: report.question!, options: report.options, askedAt: report.createdAt, clickedOption: click?.option ?? null };
 	}
 
-	#answerOf(trigger: Trigger): AnswerClick | null {
-		const reportId = trigger.source === CONVERSATION_SOURCE ? reportIdOfAnswer(trigger.externalId) : null;
-		if (!reportId) return null;
-		const r = this.#get("SELECT r.ticket_id, r.question, r.options, t.title FROM reports r JOIN tickets t ON t.id = r.ticket_id WHERE r.id = ?", reportId);
-		if (!r) return null;
-		const option = (JSON.parse(r.options) as string[]).find((o) => answerSentence(r.title, o) === trigger.body) ?? "";
-		return { ticketId: r.ticket_id, reportId, question: r.question, option };
+	#answerOf(triggerId: string): AnswerClick | null {
+		const r = this.#get(
+			"SELECT c.report_id, c.option, r.ticket_id, r.question, r.options FROM answer_clicks c JOIN reports r ON r.id = c.report_id WHERE c.trigger_id = ?",
+			triggerId,
+		);
+		return r ? { ticketId: r.ticket_id, reportId: r.report_id, question: r.question, option: JSON.parse(r.options)[r.option] } : null;
 	}
 
 	#boundTicket(triggerId: string): string | null {
-		const row = this.#get("SELECT * FROM triggers WHERE id = ?", triggerId);
-		return row ? (this.#answerOf(toTrigger(row))?.ticketId ?? null) : null;
+		return this.#answerOf(triggerId)?.ticketId ?? null;
 	}
 
 	pendingInputs(ticketId: string): TicketInput[] {
@@ -615,11 +615,10 @@ export class Kernel {
 		if (id.startsWith("trg_")) {
 			const row = this.#get("SELECT * FROM triggers WHERE id = ?", id);
 			if (!row) return undefined;
-			const trigger = toTrigger(row);
 			return {
 				type: "trigger",
-				trigger,
-				answers: this.#answerOf(trigger),
+				trigger: toTrigger(row),
+				answers: this.#answerOf(id),
 				threadIds: this.#column("SELECT thread_id AS v FROM trigger_threads WHERE trigger_id = ?", id),
 				ticketIds: this.#column(
 					`SELECT ticket_id AS v FROM ticket_inputs WHERE trigger_id = ?

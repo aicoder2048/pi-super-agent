@@ -257,10 +257,10 @@ const row = (over: Partial<DashboardRow>): DashboardRow => ({
 });
 
 const asking = (id: string, reportId: string, over: Partial<NonNullable<DashboardRow["question"]>> = {}) =>
-	row({ id, title: `任务${id}`, stage: "awaiting_answer", question: { reportId, text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 0, answered: null, ...over } });
+	row({ id, title: `任务${id}`, stage: "awaiting_answer", question: { reportId, text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 0, clickedOption: null, ...over } });
 
 test("看板：等回答的任务列出问题和编号选项，底部提示怎么作答；点过的写已回答；久无进展的任务标出分钟数", () => {
-	const text = renderBoard({ rows: [asking("tkt_ab12", "rpt_1"), asking("tkt_cd34", "rpt_2", { answered: 1 }), row({ id: "tkt_ef56", stall: { since: 0, minutes: 42 } })], receivedAt: 0, connected: true }, 120, 42 * 60_000).join("\n");
+	const text = renderBoard({ rows: [asking("tkt_ab12", "rpt_1"), asking("tkt_cd34", "rpt_2", { clickedOption: 1 }), row({ id: "tkt_ef56", stall: { since: 0, minutes: 42 } })], receivedAt: 0, connected: true }, 120, 42 * 60_000).join("\n");
 	assert.match(text, /问题：要看哪部分？\n\s+1\. 只看营收   2\. 营收和利润   3\. 先不查/);
 	assert.match(text, /已回答：营收和利润/);
 	assert.match(text, /久无进展 42 分钟/);
@@ -279,7 +279,7 @@ async function answeringClient(rows: DashboardRow[]) {
 }
 
 test("客户端：只有一个问题等回答时，回复一个数字就选那一项；数字超出选项数时提醒，不发出", async (t) => {
-	const { host, ext, sent } = await answeringClient([asking("tkt_ab12", "rpt_1"), asking("tkt_cd34", "rpt_2", { answered: 0 })]);
+	const { host, ext, sent } = await answeringClient([asking("tkt_ab12", "rpt_1"), asking("tkt_cd34", "rpt_2", { clickedOption: 0 })]);
 	t.after(async () => { await ext.shutdown(); await host.close(); });
 	await ext.input("2");
 	await ext.input("4");
