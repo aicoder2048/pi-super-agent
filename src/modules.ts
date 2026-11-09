@@ -126,8 +126,6 @@ export class Modules {
 		return this.allRules().map((r) => `### ${r.id}\n${r.team ? `团队：${r.team}\n` : ""}${r.text}`).join("\n\n");
 	}
 
-	ruleTeam = (ruleId: string): string | undefined => this.allRules().find((r) => r.id === ruleId)?.team;
-
 	ruleAllows = (ruleId: string, triggerSource: string): boolean => {
 		return triggerSource !== CONVERSATION_SOURCE && (this.#scopes.get(ruleId)?.includes(triggerSource) ?? false);
 	};

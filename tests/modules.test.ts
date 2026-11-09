@@ -69,7 +69,7 @@ test("规则的适用来源：来源行里一个来源都没有的使用者规�
 	assert.equal(modules.rulesPrompt(), "");
 });
 
-test("规则的「团队：」行：从正文里取出来，按规则 id 能查到；幕僚长看到的规则里写明团队；没写的规则没有团队", () => {
+test("规则的「团队：」行：从正文里取出来记在规则上；幕僚长看到的规则里写明团队；没写的规则没有团队", () => {
 	assert.deepEqual(parseRules("user", "## news\n来源: rss\n团队：新闻队\n有听证会新闻就查一下\n\n## ci\n来源: ci\nCI 失败时开任务"), [
 		{ id: "user/news", text: "有听证会新闻就查一下", sources: ["rss"], team: "新闻队" },
 		{ id: "user/ci", text: "CI 失败时开任务", sources: ["ci"] },
@@ -77,8 +77,6 @@ test("规则的「团队：」行：从正文里取出来，按规则 id 能查�
 	const file = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
 	writeFileSync(file, "## news\n来源: rss\n团队: 新闻队\n有听证会新闻就查一下\n\n## ci\n来源: ci\nCI 失败时开任务\n");
 	const modules = Modules.load([], file);
-	assert.equal(modules.ruleTeam("user/news"), "新闻队");
-	assert.equal(modules.ruleTeam("user/ci"), undefined);
-	assert.equal(modules.ruleTeam("user/none"), undefined);
+	assert.deepEqual(modules.allRules().map((r) => [r.id, r.team]), [["user/news", "新闻队"], ["user/ci", undefined]]);
 	assert.equal(modules.rulesPrompt(), "### user/news\n团队：新闻队\n有听证会新闻就查一下\n\n### user/ci\nCI 失败时开任务");
 });

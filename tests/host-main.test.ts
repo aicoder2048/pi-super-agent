@@ -23,6 +23,19 @@ function stateWith(config: unknown, roots: Record<string, ModuleFiles> = {}) {
 	};
 }
 
+function stateWithFiles(files: Record<string, string>) {
+	return () => {
+		const dir = stateWith({})();
+		for (const [name, text] of Object.entries(files)) {
+			mkdirSync(join(dir, name, ".."), { recursive: true });
+			writeFileSync(join(dir, name), text);
+		}
+		return dir;
+	};
+}
+const memberFile = (name: string, extra = "") => `---\nname: ${name}\ntitle: 新闻研究员\ndescription: 查新闻\n${extra}---\n`;
+const teamFile = (member: string) => `新闻队:\n  description: 查新闻\n  members:\n    - ${member}\n`;
+
 const HOST = "src/host/main.ts";
 const WATCHDOG = "src/watchdog/main.ts";
 const badInterval = { heartbeatSeconds: 10, watchdog: { staleSeconds: 1 } };
@@ -51,6 +64,31 @@ const cases = [
 		entry: HOST,
 		stateDir: stateWith({}, { mods: { m: { name: "m", timers: [{ id: "t", everyMinutes: 0, thread: "t", body: "b" }] } } }),
 		message: /定时器 m\/t 的 everyMinutes 必须大于 0/,
+	},
+	{
+		name: "两个文件定义了同名成员时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ "agents/a.md": memberFile("news-researcher"), "agents/b.md": memberFile("news-researcher") }),
+		message: /^成员重名：news-researcher 同时定义在 \S+agents\/a\.md 和 \S+agents\/b\.md$/m,
+	},
+	{
+		name: "teams.yaml 名单里的成员不存在时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ "teams.yaml": teamFile("ghost") }),
+		message: /teams\.yaml:1：团队 新闻队 的成员 ghost 不存在/,
+	},
+	{ name: "teams.yaml 格式不对时，just host", entry: HOST, stateDir: stateWithFiles({ "teams.yaml": "新闻队: 查新闻\n" }), message: /teams\.yaml:1：顶层每行应是「团队名:」/ },
+	{
+		name: "成员的模型走按量计费的提供方时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ "agents/a.md": memberFile("news-researcher", "model: deepseek/deepseek-flash\n") }),
+		message: /agents\/a\.md：model：拒绝使用 deepseek\/deepseek-flash/,
+	},
+	{
+		name: "规则写的团队不存在时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ "rules.md": "## news\n来源: rss\n团队：新闻队\n有新闻就查\n" }),
+		message: /规则 user\/news 写了「团队：新闻队」，没有这个团队/,
 	},
 ];
 

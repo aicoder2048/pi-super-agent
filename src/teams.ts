@@ -164,9 +164,11 @@ const isDirectory = (path: string) => existsSync(path) && statSync(path).isDirec
 
 /** Every member and team from the built-in root, the module directories and the state directory. It exists only if all of them are valid. */
 export class Roster {
+	readonly members: readonly Member[];
 	readonly #teams: ReadonlyMap<string, Team>;
 
-	private constructor(teams: ReadonlyMap<string, Team>) {
+	private constructor(members: readonly Member[], teams: ReadonlyMap<string, Team>) {
+		this.members = members;
 		this.#teams = teams;
 	}
 
@@ -201,7 +203,7 @@ export class Roster {
 			});
 			teams.set(decl.name, { name: decl.name, description: decl.description, members: resolved, crew: resolved.filter((m) => m.name !== GENERAL_MEMBER), where });
 		}
-		return new Roster(teams);
+		return new Roster([...members.values()], teams);
 	}
 
 	/** By the name stored on a ticket; undefined when that team has since been removed. */
