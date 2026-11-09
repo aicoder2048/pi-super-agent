@@ -38,3 +38,11 @@ test("角色的提示词接在 Worker 提示词后面；角色技能和模块技
 	assert.deepEqual(all(args, "--skill"), ["/roles/news-skills", "/modules/m/skills"]);
 	assert.deepEqual(all(workerArgs({ ...base, basis: "request" }), "--append-system-prompt"), ["p"]);
 });
+
+test("牵头角色在任何依据下都有 consult，写了工具的牵头角色也有；专家没有", () => {
+	assert.ok(tools(workerArgs({ ...base, basis: "inference", lead: true }))!.includes("consult"));
+	assert.ok(tools(workerArgs({ ...base, basis: "request", roleTools: ["read"], lead: true }))!.includes("consult"));
+	assert.equal(flag(workerArgs({ ...base, basis: "request", lead: true }), "--tools"), undefined, "没有限制时扩展注册的 consult 自然可用");
+	assert.ok(!tools(workerArgs({ ...base, basis: "inference" }))!.includes("consult"));
+	assert.ok(!tools(workerArgs({ ...base, basis: "request", roleTools: ["read"] }))!.includes("consult"));
+});

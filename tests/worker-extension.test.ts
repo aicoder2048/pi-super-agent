@@ -7,7 +7,7 @@ import test from "node:test";
 import { onJsonLines, writeJsonLine } from "../src/jsonl.ts";
 import { until } from "./helpers/fakes.ts";
 
-async function load(basis: string, roleTools?: string) {
+async function load(basis: string, roleTools?: string, extra: Record<string, string> = {}) {
 	const dir = mkdtempSync(join(tmpdir(), "psa-wext-"));
 	const socketPath = join(dir, "host.sock");
 	const requests: any[] = [];
@@ -17,13 +17,15 @@ async function load(basis: string, roleTools?: string) {
 		onJsonLines(socket, (r: any) => {
 			if (r.type !== "request") return;
 			requests.push(r);
-			writeJsonLine(socket, { id: r.id, ok: true, result: { recorded: true } });
+			const result = r.method === "worker.consult" ? { text: "行情分析师：放量下跌", details: { kind: "consult", experts: [{ title: "行情分析师" }] } } : { recorded: true };
+			writeJsonLine(socket, { id: r.id, ok: true, result });
 		});
 	});
 	await new Promise<void>((resolve) => server.listen(socketPath, resolve));
 	Object.assign(process.env, { PSA_SOCKET: socketPath, PSA_TICKET: "tkt_1", PSA_TOKEN: "tok", PSA_BASIS: basis });
 	if (roleTools !== undefined) process.env.PSA_ROLE_TOOLS = roleTools;
-	const { default: workerExtension } = await import(`../src/worker/extension.ts?basis=${basis}&role=${roleTools}`);
+	Object.assign(process.env, extra);
+	const { default: workerExtension } = await import(`../src/worker/extension.ts?basis=${basis}&role=${roleTools}&extra=${Object.keys(extra)}`);
 	const tools = new Map<string, any>();
 	const handlers = new Map<string, any>();
 	const sent: any[] = [];
@@ -128,4 +130,31 @@ test("汇报工具接受问题的 2 到 4 个选项，经宿主连接原样提�
 	assert.deepEqual([options.minItems, options.maxItems, options.items.maxLength], [2, 4, 20]);
 	await w.run("report", { status: "blocked", summary: "要你选", question: "选哪个？", options: ["甲", "乙"] });
 	assert.deepEqual(w.requests.at(-1).params.options, ["甲", "乙"]);
+});
+
+test("牵头人的 Worker 有 consult：专家只能从名册里选，一次 1 到 4 个问题，经宿主连接提交，结果带给页面的明细", async (t) => {
+	const lead = await load("inference", undefined, { PSA_EXPERTS: "market-analyst,news-researcher" });
+	const plain = await load("request");
+	t.after(() => { lead.close(); plain.close(); });
+	assert.equal(plain.tools.has("consult"), false);
+	const questions = lead.tools.get("consult").parameters.properties.questions;
+	assert.deepEqual([questions.minItems, questions.maxItems], [1, 4]);
+	assert.deepEqual(questions.items.properties.expert.enum, ["market-analyst", "news-researcher"]);
+	assert.equal(await lead.handlers.get("tool_call")({ toolName: "consult" }), undefined, "推断任务也能会诊");
+	const params = { questions: [{ expert: "market-analyst", question: "盘面？" }] };
+	const result = await lead.run("consult", params);
+	assert.deepEqual([lead.requests.at(-1).method, lead.requests.at(-1).params], ["worker.consult", params]);
+	assert.equal(result.content[0].text, "行情分析师：放量下跌");
+	assert.equal(result.details.kind, "consult");
+	assert.equal(process.env.PSA_EXPERTS, undefined);
+});
+
+test("被会诊的专家只有只读工具：不注册汇报、交回、会诊和后台命令，其余工具一律拦截", async (t) => {
+	const expert = await load("request", "read,web_get,lookup", { PSA_EXPERT: "1" });
+	t.after(expert.close);
+	for (const tool of ["report", "hand_back", "read_ticket", "consult", "bg_start"]) assert.equal(expert.tools.has(tool), false, tool);
+	const call = (toolName: string) => expert.handlers.get("tool_call")({ toolName, input: {} });
+	for (const tool of ["bash", "write", "edit", "report", "consult", "grep"]) assert.equal((await call(tool))?.block, true, tool);
+	for (const tool of ["read", "web_get", "lookup"]) assert.equal(await call(tool), undefined, tool);
+	assert.equal(process.env.PSA_EXPERT, undefined);
 });

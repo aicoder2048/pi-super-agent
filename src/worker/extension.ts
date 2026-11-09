@@ -6,7 +6,8 @@ import { connect, type Socket } from "node:net";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
 import type { Basis } from "../kernel/types.ts";
 import { OPTION_MAX_CHARS, OPTIONS_MAX, OPTIONS_MIN } from "../kernel/question.ts";
-import { toolAllowlist } from "./tools.ts";
+import { expertTools, toolAllowlist } from "./tools.ts";
+import { CONSULT_MAX } from "../host/consult.ts";
 import { webGet } from "./web-get.ts";
 
 interface BgCommand {
@@ -68,7 +69,11 @@ const text = (value: unknown) => ({
 export default function workerExtension(pi: ExtensionAPI) {
 	const ticketId = env("PSA_TICKET");
 	const basis = env("PSA_BASIS") as Basis;
-	const allowlist = toolAllowlist(basis, process.env.PSA_ROLE_TOOLS?.split(","));
+	const roleTools = process.env.PSA_ROLE_TOOLS?.split(",");
+	const isExpert = process.env.PSA_EXPERT === "1";
+	const experts = process.env.PSA_EXPERTS?.split(",").filter(Boolean) ?? [];
+	const isLead = !isExpert && process.env.PSA_EXPERTS !== undefined;
+	const allowlist = isExpert ? expertTools(roleTools) : toolAllowlist(basis, roleTools, isLead);
 	const bgMaxMs = Number(process.env.PSA_BG_MAX_MS ?? 120 * 60_000);
 	const call = hostClient(env("PSA_SOCKET"), { ticketId, token: env("PSA_TOKEN") });
 	const lookupHelp = process.env.PSA_LOOKUPS ?? "（宿主没有配置可查询的来源）";
@@ -80,56 +85,89 @@ export default function workerExtension(pi: ExtensionAPI) {
 	const runningCount = () => [...bg.values()].filter((c) => c.exitCode === undefined).length;
 	const syncBg = () => call("worker.bg", { running: runningCount() }).catch(() => {});
 
-	pi.registerTool({
-		name: "report",
-		label: "汇报",
-		description: "向 Router 提交本任务的结构化状态。这是你与使用者沟通的唯一途径。",
-		promptSnippet: `report: 提交进展、就绪、受阻、失败或无需处理，可附带一个问题和 ${OPTIONS_MIN} 到 ${OPTIONS_MAX} 个选项`,
-		promptGuidelines: [
-			"report 是 Worker 唯一能让使用者看到的输出；推理过程和工具调用不会被转达。",
-			"report 的 question 只放一个具体问题；需要使用者做决定时才填写。",
-			`问题的回答能列举时，用 options 给 ${OPTIONS_MIN} 到 ${OPTIONS_MAX} 个互不相同、可以直接当回答的短选项，每个不超过 ${OPTION_MAX_CHARS} 字；开放问题不填 options。`,
-			"使用者点选项后，你会收到「回答任务「标题」：选项」这句使用者的话；他也可能不选、直接说别的，以他的话为准。",
-			"判断这件事不值得处理时用 report 提交 no_action，任务会安静结束。",
-		],
-		parameters: Type.Object({
-			status: StringEnum(["progress", "ready", "blocked", "failed", "no_action"] as const),
-			summary: Type.String({ description: "一两句话的结论或现状" }),
-			question: Type.Optional(Type.String({ description: "需要使用者回答的一个具体问题" })),
-			options: Type.Optional(
-				Type.Array(Type.String({ maxLength: OPTION_MAX_CHARS }), {
-					minItems: OPTIONS_MIN,
-					maxItems: OPTIONS_MAX,
-					description: "question 的候选回答，使用者点一下即可作答；只能和 question 一起提交",
-				}),
-			),
-			drafts: Type.Optional(Type.Array(Type.String(), { description: "等使用者确认的对外动作草稿" })),
-			waiting: Type.Optional(Type.Boolean({ description: "就绪后仍需等待线程上的后续触发时为 true" })),
-		}),
-		async execute(_id, params) {
-			return text(await call("worker.report", params));
-		},
-	});
+	if (!isExpert) registerReportingTools();
+	if (isLead) registerConsult();
 
-	pi.registerTool({
-		name: "hand_back",
-		label: "交回",
-		description: "把一条超出本任务范围的输入交还给 Router。",
-		parameters: Type.Object({ body: Type.String({ description: "交回的内容和原因" }) }),
-		async execute(_id, params) {
-			return text(await call("worker.hand_back", params));
-		},
-	});
+	function registerReportingTools(): void {
+		pi.registerTool({
+			name: "report",
+			label: "汇报",
+			description: "向 Router 提交本任务的结构化状态。这是你与使用者沟通的唯一途径。",
+			promptSnippet: `report: 提交进展、就绪、受阻、失败或无需处理，可附带一个问题和 ${OPTIONS_MIN} 到 ${OPTIONS_MAX} 个选项`,
+			promptGuidelines: [
+				"report 是 Worker 唯一能让使用者看到的输出；推理过程和工具调用不会被转达。",
+				"report 的 question 只放一个具体问题；需要使用者做决定时才填写。",
+				`问题的回答能列举时，用 options 给 ${OPTIONS_MIN} 到 ${OPTIONS_MAX} 个互不相同、可以直接当回答的短选项，每个不超过 ${OPTION_MAX_CHARS} 字；开放问题不填 options。`,
+				"使用者点选项后，你会收到「回答任务「标题」：选项」这句使用者的话；他也可能不选、直接说别的，以他的话为准。",
+				"判断这件事不值得处理时用 report 提交 no_action，任务会安静结束。",
+			],
+			parameters: Type.Object({
+				status: StringEnum(["progress", "ready", "blocked", "failed", "no_action"] as const),
+				summary: Type.String({ description: "一两句话的结论或现状" }),
+				question: Type.Optional(Type.String({ description: "需要使用者回答的一个具体问题" })),
+				options: Type.Optional(
+					Type.Array(Type.String({ maxLength: OPTION_MAX_CHARS }), {
+						minItems: OPTIONS_MIN,
+						maxItems: OPTIONS_MAX,
+						description: "question 的候选回答，使用者点一下即可作答；只能和 question 一起提交",
+					}),
+				),
+				drafts: Type.Optional(Type.Array(Type.String(), { description: "等使用者确认的对外动作草稿" })),
+				waiting: Type.Optional(Type.Boolean({ description: "就绪后仍需等待线程上的后续触发时为 true" })),
+			}),
+			async execute(_id, params) {
+				return text(await call("worker.report", params));
+			},
+		});
 
-	pi.registerTool({
-		name: "read_ticket",
-		label: "读取",
-		description: "读取本任务，或本任务线程上的线程和触发。读不到别的任务。",
-		parameters: Type.Object({ id: Type.Optional(Type.String({ description: "thr_ 或 trg_ 开头的 id；省略时读本任务" })) }),
-		async execute(_id, params) {
-			return text(await call("worker.read", params));
-		},
-	});
+		pi.registerTool({
+			name: "hand_back",
+			label: "交回",
+			description: "把一条超出本任务范围的输入交还给 Router。",
+			parameters: Type.Object({ body: Type.String({ description: "交回的内容和原因" }) }),
+			async execute(_id, params) {
+				return text(await call("worker.hand_back", params));
+			},
+		});
+
+		pi.registerTool({
+			name: "read_ticket",
+			label: "读取",
+			description: "读取本任务，或本任务线程上的线程和触发。读不到别的任务。",
+			parameters: Type.Object({ id: Type.Optional(Type.String({ description: "thr_ 或 trg_ 开头的 id；省略时读本任务" })) }),
+			async execute(_id, params) {
+				return text(await call("worker.read", params));
+			},
+		});
+	}
+
+	function registerConsult(): void {
+		pi.registerTool({
+			name: "consult",
+			label: "会诊",
+			description: `同时请教专家名册里的 1 到 ${CONSULT_MAX} 位专家，每位一个问题，全部答完（或超时）后一起返回。专家只读、只回答问题，不做事。`,
+			promptSnippet: "consult: 同时请教几位专家，各问一个问题，结果一起返回",
+			promptGuidelines: [
+				"简单的事自己做，不必会诊；只有需要专家的判断时才请教。",
+				"每个问题只问一件具体的事，写清对象、时间范围和想要的结论形式。",
+				"专家看不到任务说明和你的对话，问题里要带上必要的背景。",
+				"超时或出错的专家没有回答，合成时注明，不要替它编答案。",
+			],
+			parameters: Type.Object({
+				questions: Type.Array(
+					Type.Object({
+						expert: StringEnum(experts as [string, ...string[]], { description: "专家名册里的 name" }),
+						question: Type.String({ description: "问这位专家的一个具体问题，带上必要的背景" }),
+					}),
+					{ minItems: 1, maxItems: CONSULT_MAX },
+				),
+			}),
+			async execute(_id, params) {
+				const result = (await call("worker.consult", params)) as { text: string; details: unknown };
+				return { content: [{ type: "text" as const, text: result.text }], details: result.details };
+			},
+		});
+	}
 
 	pi.registerTool({
 		name: "web_get",
@@ -162,7 +200,7 @@ export default function workerExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	if (!allowlist || allowlist.includes("bg_start")) registerBackgroundTools();
+	if (!isExpert && (!allowlist || allowlist.includes("bg_start"))) registerBackgroundTools();
 
 	function registerBackgroundTools(): void {
 		pi.registerTool({
@@ -221,6 +259,7 @@ export default function workerExtension(pi: ExtensionAPI) {
 
 	pi.on("tool_call", async (event) => {
 		if (!allowlist || allowlist.includes(event.toolName)) return;
+		if (isExpert) return { block: true, reason: `被会诊的专家只能读文件、搜索、读网页和查数据，不能用 ${event.toolName}。请直接回答问题。` };
 		const why = toolAllowlist(basis)?.includes(event.toolName) === false ? "依据为推断的任务只能读文件、读网页、查数据和汇报" : "你的角色没有这个工具";
 		return { block: true, reason: `${why}，不能用 ${event.toolName}。需要对外动作时写成草稿，用 report 的 drafts 提交。` };
 	});
