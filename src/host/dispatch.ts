@@ -71,7 +71,6 @@ export interface MemberRun {
 
 export const memberSessionDir = (stateDir: string, ticketId: string, member: string) => join(stateDir, "workers", ticketId, "team", member);
 
-/** Every member session directory that exists under the state directory. */
 export function memberSessionDirs(stateDir: string): string[] {
 	const subdirs = (dir: string) => (statSync(dir, { throwIfNoEntry: false })?.isDirectory() ? readdirSync(dir).map((name) => join(dir, name)) : []);
 	return subdirs(join(stateDir, "workers")).flatMap((ticket) => subdirs(join(ticket, "team")));
@@ -169,7 +168,9 @@ export interface DeskOptions {
 	onChange(): void;
 }
 
-interface Dispatch extends LiveDispatch {
+interface Dispatch {
+	callId: string;
+	title: string;
 	state: DispatchState;
 	token: string;
 }

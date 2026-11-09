@@ -17,7 +17,6 @@ export interface WorkerSpec {
 	workdir: string;
 	basis: Basis;
 	ruleId: string | null;
-	team: string;
 	/** The members this helper may dispatch to. Empty: it works alone. */
 	crew: readonly Member[];
 	token: string;
@@ -69,7 +68,6 @@ export interface DispatchOptions {
 	/** The members a team's helper may dispatch to; undefined when the team is not in the roster. */
 	crewOf(team: string): readonly Member[] | undefined;
 	timeoutMs: number;
-	/** Host-wide cap on member processes; the rest queue. */
 	maxConcurrent: number;
 }
 
@@ -107,7 +105,6 @@ export class WorkerExecutor {
 		}
 	}
 
-	/** ticketId → the members that helper has at work or waiting right now. */
 	dispatching(): Dispatching {
 		return this.#desk?.live() ?? {};
 	}
@@ -205,7 +202,7 @@ export class WorkerExecutor {
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ruleId: ticket.ruleId, team: ticket.team, crew, token, model: choice.model },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ruleId: ticket.ruleId, crew, token, model: choice.model },
 				events,
 			);
 		} catch (error) {
