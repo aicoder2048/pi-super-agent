@@ -417,6 +417,7 @@ test("网关：首页带 token 的脚本地址，CSP 不允许内联脚本，响
 	assert.doesNotMatch(res.body, /\{\{token\}\}/);
 	const scriptSrc = /script-src ([^;]*)/.exec(String(res.headers["content-security-policy"]))?.[1];
 	assert.equal(scriptSrc, "'self'");
+	assert.equal(/img-src ([^;]*)/.exec(String(res.headers["content-security-policy"]))?.[1], "'self'", "标签页图标 /icon.svg 能加载，其他来源的图片不行");
 	assert.equal(res.headers["cache-control"], "no-store");
 	assert.equal(res.headers["referrer-policy"], "no-referrer");
 	assert.equal(res.headers["x-content-type-options"], "nosniff");
