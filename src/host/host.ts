@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Kernel } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
@@ -36,7 +36,6 @@ export interface HostOptions {
 	log?: (line: string) => void;
 }
 
-const TRANSCRIPT_KEEP = 500;
 
 export class Host {
 	readonly kernel: Kernel;
@@ -47,13 +46,14 @@ export class Host {
 	router!: RouterLike;
 	readonly generic: GenericSource;
 	readonly timer: TimerSource;
-	readonly #transcripts = new Map<string, unknown[]>();
 	readonly #log: (line: string) => void;
+	readonly #stateDir: string;
 	#boardTimer: NodeJS.Timeout | undefined;
 
 	private constructor(options: HostOptions) {
 		mkdirSync(options.stateDir, { recursive: true });
 		this.#log = options.log ?? ((line) => console.error(line));
+		this.#stateDir = options.stateDir;
 		this.socketPath = join(options.stateDir, "host.sock");
 		const clock = options.clock ?? { now: () => Date.now() };
 		this.kernel = new Kernel({
@@ -101,7 +101,7 @@ export class Host {
 			{
 				onSay: (text) => this.say(text),
 				snapshot: () => this.snapshot(),
-				transcript: (ticketId) => this.#transcripts.get(ticketId) ?? [],
+				transcript: (ticketId) => this.transcript(ticketId),
 			},
 			(ticketId, token, method, params) => this.workers.handleRequest(ticketId, token, method, params),
 		);
@@ -146,13 +146,22 @@ export class Host {
 	}
 
 	#transcript(ticketId: string, event: unknown): void {
-		const type = (event as { type?: string }).type;
-		if (type === "message_update" || type === "tool_execution_update") return this.server.sendTranscript(ticketId, event);
-		const list = this.#transcripts.get(ticketId) ?? [];
-		list.push(event);
-		if (list.length > TRANSCRIPT_KEEP) list.splice(0, list.length - TRANSCRIPT_KEEP);
-		this.#transcripts.set(ticketId, list);
-		this.server.sendTranscript(ticketId, event);
+		const e = event as { type?: string; message?: unknown };
+		if (e.type === "message_end" && e.message) this.server.sendTranscript(ticketId, e.message);
+	}
+
+	transcript(ticketId: string): unknown[] {
+		const ticket = this.kernel.getTicket(ticketId);
+		if (!ticket) return [];
+		const dir = join(this.#stateDir, "sessions", "workers");
+		const file = existsSync(dir) ? readdirSync(dir).find((f) => f.endsWith(`_${ticket.workerSessionId}.jsonl`)) : undefined;
+		if (!file) return [];
+		return readFileSync(join(dir, file), "utf8")
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => JSON.parse(line) as { type: string; message?: { role?: string } })
+			.filter((entry) => entry.type === "message" && entry.message?.role !== "system")
+			.map((entry) => entry.message);
 	}
 
 	#changed(): void {

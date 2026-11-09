@@ -1,0 +1,123 @@
+/**
+ * Super Agent 客户端：Pi TUI 只当人机界面，输入转发给宿主，本地模型不参与。
+ * 启动：just client（宿主需先用 just host 启动）。
+ */
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
+import { join } from "node:path";
+import { renderBoard, shortId, type BoardView } from "../src/client/board.ts";
+import { HostConnection } from "../src/client/connection.ts";
+import type { ConversationLine, HostToClient } from "../src/client/protocol.ts";
+import { formatTranscriptMessage } from "../src/client/transcript.ts";
+import { defaultStateDir } from "../src/host/config.ts";
+
+const LINE = "psa-line";
+type Who = "user" | "router" | "worker" | "system";
+const PREFIX: Record<Who, string> = { user: "你", router: "Router", worker: "Worker", system: "·" };
+const HISTORY_SHOWN = 10;
+
+export default function superAgentClient(pi: ExtensionAPI): void {
+	const view: BoardView = { rows: [], receivedAt: Date.now(), connected: false };
+	let ctx: ExtensionContext | undefined;
+	let conn: HostConnection | undefined;
+	let lastSeenAt = 0;
+	let watching: string | undefined;
+	let ticker: NodeJS.Timeout | undefined;
+
+	const show = (who: Who, text: string) =>
+		pi.sendMessage({ customType: LINE, content: `${PREFIX[who]}> ${text}`, display: true, details: { who } });
+
+	const drawBoard = () =>
+		ctx?.ui.setWidget("psa-board", () => ({ render: (width: number) => renderBoard(view, width, Date.now()), invalidate() {} }));
+
+	const showConversation = (lines: ConversationLine[]) => {
+		const fresh = lines.filter((l) => l.at > lastSeenAt);
+		const shown = lastSeenAt === 0 ? fresh.slice(-HISTORY_SHOWN) : fresh;
+		for (const l of shown) show(l.who, l.text);
+		if (lines.length) lastSeenAt = Math.max(lastSeenAt, ...lines.map((l) => l.at));
+	};
+
+	const onMessage = (m: HostToClient) => {
+		switch (m.type) {
+			case "snapshot":
+				showConversation(m.conversation);
+				view.rows = m.board;
+				view.receivedAt = Date.now();
+				break;
+			case "user":
+			case "reply":
+				if (m.at <= lastSeenAt) return;
+				lastSeenAt = m.at;
+				show(m.type === "user" ? "user" : "router", m.text);
+				return;
+			case "board":
+				view.rows = m.rows;
+				view.receivedAt = Date.now();
+				break;
+			case "transcript_history":
+				show("system", `开始只读查看 ${shortId(m.ticketId)} 的 Worker 过程（共 ${m.messages.length} 条消息）`);
+				for (const message of m.messages) for (const line of formatTranscriptMessage(message)) show("worker", line);
+				return;
+			case "transcript":
+				if (m.ticketId !== watching) return;
+				for (const line of formatTranscriptMessage(m.message)) show("worker", line);
+				return;
+		}
+		drawBoard();
+	};
+
+	pi.registerMessageRenderer(LINE, (message, _options, theme) => {
+		const who = ((message.details as { who?: Who } | undefined)?.who ?? "system") as Who;
+		const color = who === "router" ? "accent" : who === "user" ? "text" : "muted";
+		return new Text(theme.fg(color, String(message.content)), 0, 0);
+	});
+
+	pi.on("session_start", async (_event, context) => {
+		ctx = context;
+		conn = new HostConnection({
+			socketPath: process.env.PSA_SOCKET ?? join(defaultStateDir(), "host.sock"),
+			onMessage,
+			onStatus: (connected) => {
+				view.connected = connected;
+				drawBoard();
+			},
+		});
+		conn.open();
+		drawBoard();
+		ticker = setInterval(drawBoard, 5000);
+		ticker.unref();
+	});
+
+	pi.on("session_shutdown", async () => {
+		clearInterval(ticker);
+		conn?.close();
+	});
+
+	pi.on("input", async (event, context) => {
+		if (event.source === "extension") return { action: "continue" };
+		const text = event.text.trim();
+		if (!text) return { action: "handled" };
+		if (!conn?.say(text)) context.ui.notify("宿主未连接，这句话没有发出。先运行 just host。", "warning");
+		return { action: "handled" };
+	});
+
+	pi.registerCommand("watch", {
+		description: "只读查看某个 Worker 的完整过程：/watch <编号>；不带编号时关闭",
+		handler: async (args, context) => {
+			const key = args.trim();
+			if (!key) {
+				if (watching) show("system", `已停止查看 ${shortId(watching)}`);
+				watching = undefined;
+				conn?.watch(undefined);
+				return;
+			}
+			const matches = view.rows.filter((r) => shortId(r.id).startsWith(key) || r.id === key);
+			if (matches.length !== 1) {
+				context.ui.notify(matches.length ? `编号 ${key} 对应多个任务，请多写几位` : `看板上没有编号 ${key}`, "warning");
+				return;
+			}
+			watching = matches[0].id;
+			conn?.watch(watching);
+		},
+	});
+}
