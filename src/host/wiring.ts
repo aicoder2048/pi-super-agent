@@ -6,6 +6,7 @@ import { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import type { Modules } from "../modules.ts";
 import type { WatchedSource } from "../client/protocol.ts";
+import type { TimerEntry } from "../sources/timer.ts";
 import type { HostConfig } from "./config.ts";
 import type { HostOptions } from "./host.ts";
 import { PiWorkerSpawner } from "./pi-worker.ts";
@@ -19,11 +20,10 @@ export function modelSelectors(config: ModelWiringConfig, clock: Clock): { route
 	return { router: make(config.models.router), worker: make(config.models.worker) };
 }
 
-export function watchedSources(modules: Modules): WatchedSource[] {
+export function watchedSources(modules: Modules, timers: TimerEntry[]): WatchedSource[] {
 	const userIds = new Set(modules.userRules.map((r) => r.id));
 	const filters = modules.modules.flatMap((m) => m.manifest.sources ?? []);
 	const ignored = new Set(filters.filter((s) => s.mode === "ignore").map((s) => s.name));
-	const timers = modules.timers();
 	const rules = modules.allRules();
 	const names = new Set([...filters.map((s) => s.name), ...timers.map((t) => t.source!), ...rules.flatMap((r) => r.sources)]);
 	const watched = [...names].filter((source) => !ignored.has(source)).map((source) => ({
@@ -53,6 +53,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 	resolve(config.models.worker, "worker");
 	resolve(config.models.fallback, "fallback");
 	const selectors = modelSelectors(config, clock);
+	const timers = modules.timers();
 	return {
 		stateDir: config.stateDir,
 		heartbeatMs: config.heartbeatSeconds * 1000,
@@ -62,8 +63,8 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		sourcePolicy: modules.sourcePolicy,
 		ruleAllows: modules.ruleAllows,
 		rulesFor: modules.rulesFor,
-		timers: modules.timers(),
-		watching: watchedSources(modules),
+		timers,
+		watching: watchedSources(modules, timers),
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
 		createRouter: (deps) =>
 			Router.create({

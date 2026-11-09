@@ -95,7 +95,7 @@ test("在替你盯着：每个来源一项，带上管它的规则（使用者�
 		[{ id: "user/mail", text: "有人找我先看一遍", sources: ["inbox", "quotes"] }],
 		[],
 	);
-	assert.deepEqual(watchedSources(modules), [
+	assert.deepEqual(watchedSources(modules, modules.timers()), [
 		{ source: "inbox", timers: [], rules: [{ id: "user/mail", text: "有人找我先看一遍", by: "user" }] },
 		{ source: "quotes", timers: [], rules: [{ id: "user/mail", text: "有人找我先看一遍", by: "user" }, { id: "market/drop", text: "跌多了提醒我\n细节", by: "module" }] },
 		{ source: "digest", timers: [{ everyMinutes: 1440, body: "早报" }], rules: [] },

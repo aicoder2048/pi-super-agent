@@ -645,8 +645,11 @@ async function watchHost(t: TestContext) {
 	const web = await webHost(t, brain, { stateDir });
 	const open = async (title: string) => {
 		web.host.say(title);
-		await until(() => web.host.kernel.listTickets().some((r) => r.title === title) && web.spawner.workers.has(web.host.kernel.listTickets().find((r) => r.title === title)!.id), `任务 ${title}`);
-		const id = web.host.kernel.listTickets().find((r) => r.title === title)!.id;
+		let id = "";
+		await until(() => {
+			id = web.host.kernel.listTickets().find((r) => r.title === title)?.id ?? "";
+			return web.spawner.workers.has(id);
+		}, `任务 ${title}`);
 		return { id, worker: web.spawner.workers.get(id)! };
 	};
 	const history = (ticketId: string, messages: unknown[]) => {

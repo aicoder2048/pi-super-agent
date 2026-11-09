@@ -76,7 +76,8 @@ export class Host {
 	#heartbeat: NodeJS.Timeout | undefined;
 	#web: WebGateway | undefined;
 	readonly #watching: WatchedSource[];
-	#duty: Duty;
+	readonly #clock: Clock;
+	#duty!: Duty;
 
 	private constructor(options: HostOptions) {
 		this.socketPath = join(options.stateDir, "host.sock");
@@ -86,8 +87,8 @@ export class Host {
 		if (relocateState(options.stateDir)) this.#log(`[host] 状态目录换了位置，已把会话记录的工作目录改到 ${options.stateDir}`);
 		this.#stateDir = options.stateDir;
 		const clock = options.clock ?? { now: () => Date.now() };
+		this.#clock = clock;
 		this.#watching = options.watching ?? [];
-		this.#duty = { since: clock.now(), resumed: 0 };
 		this.kernel = new Kernel({
 			db: openStore(join(options.stateDir, "state.db")),
 			clock,
@@ -155,7 +156,7 @@ export class Host {
 			throw error;
 		}
 		const recovered = host.kernel.recoverOnStartup();
-		host.#duty = { ...host.#duty, resumed: recovered.length };
+		host.#duty = { since: host.#clock.now(), resumed: recovered.length };
 		if (recovered.length) host.#log(`[host] 恢复 ${recovered.length} 个执行中的任务：${recovered.join(", ")}`);
 		host.generic.start();
 		host.timer.start();

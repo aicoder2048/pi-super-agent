@@ -72,7 +72,7 @@ function mount(doc) {
 	const stored = store.get();
 	if (stored === "light" || stored === "dark") doc.documentElement.dataset.theme = stored;
 	$("theme").addEventListener("click", () => {
-		const next = toggleTheme(resolveTheme(doc.documentElement.dataset.theme ?? store.get(), systemDark()));
+		const next = toggleTheme(resolveTheme(doc.documentElement.dataset.theme ?? null, systemDark()));
 		doc.documentElement.dataset.theme = next;
 		store.set(next);
 	});
