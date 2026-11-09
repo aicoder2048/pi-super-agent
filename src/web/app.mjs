@@ -2,7 +2,7 @@
 
 import {
 	STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canSend, choicesInConversation, dutyLine, emptyView, emptyWatch,
-	helperStrip, helperTint, isStale, leftColumn, lifecycleLine, resolveTheme, restartNotice, sayCopy, sayOutcome, settleSay, settleSending, smallPrint, stopSentence,
+	helperStrip, helperTint, isStale, leftColumn, lifecycleLine, resolveTheme, restartNotice, routeLine, sayCopy, sayOutcome, settleSay, settleSending, smallPrint, stopSentence,
 	toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperFullName } from "../client/board-format.mjs";
@@ -118,6 +118,27 @@ function mount(doc) {
 			box.append(button);
 		}
 		if (choice.note) box.append(el("span", "note", choice.note));
+	};
+
+	// A message's route changes after it is drawn; an unchanged one is left alone so a focused line keeps focus.
+	const renderRoutes = () => {
+		for (const slot of /** @type {NodeListOf<HTMLElement>} */ (thread.querySelectorAll(".route-slot[data-line]"))) {
+			const route = routeLine(view, slot.dataset.line ?? "");
+			const shown = route ? `${route.ticketId ?? ""}|${route.text}` : "";
+			if (slot.dataset.shown === shown) continue;
+			slot.dataset.shown = shown;
+			if (!route) {
+				slot.replaceChildren();
+				continue;
+			}
+			const node = el(route.ticketId ? "button" : "span", "route", route.text);
+			if (route.ticketId) {
+				const { ticketId } = route;
+				/** @type {HTMLButtonElement} */ (node).type = "button";
+				node.addEventListener("click", () => watch(ticketId));
+			}
+			slot.replaceChildren(node);
+		}
 	};
 
 	const renderChoices = () => {
@@ -240,11 +261,16 @@ function mount(doc) {
 				item.append(avatar, said);
 			} else {
 				bubble.prepend(el("span", "sr", "你："));
-				item.append(bubble);
+				const said = el("div", "said");
+				const slot = el("div", "route-slot");
+				slot.dataset.line = line.id;
+				said.append(bubble, slot);
+				item.append(said);
 			}
 			thread.append(item);
 		}
 		rendered = view.lines.size;
+		renderRoutes();
 		renderChoices();
 		if (atBottom) box.scrollTop = box.scrollHeight;
 		settleUnconfirmed();

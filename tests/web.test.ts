@@ -5,7 +5,7 @@ import http from "node:http";
 import { connect, createServer } from "node:net";
 import test, { mock, type TestContext } from "node:test";
 import type { HostToClient, TodayCounts } from "../src/client/protocol.ts";
-import type { DashboardRow } from "../src/kernel/types.ts";
+import type { DashboardRow, Routes } from "../src/kernel/types.ts";
 import { formatInputs } from "../src/host/workers.ts";
 import { INPUT_KINDS } from "../src/kernel/types.ts";
 import { ConfigError } from "../src/config-error.ts";
@@ -13,7 +13,7 @@ import { WebGateway } from "../src/host/web.ts";
 import * as page from "../src/web/view.mjs";
 import { WATCHDOG_SOURCE } from "../src/watchdog/watchdog.ts";
 import { openStore } from "../src/kernel/store.ts";
-import { busyPort, freePort, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
+import { busyPort, freePort, ids, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
@@ -26,8 +26,8 @@ function row(over: Partial<DashboardRow> = {}): DashboardRow {
 const zeroToday = (): TodayCounts => ({ byDisposition: { ignored: 0, delivered: 0, to_router: 0, opened_ticket: 0, handed_over: 0, router_ignored: 0 }, bySource: {} });
 const duty = { since: 0, resumed: 0 };
 const noHelpers = { count: 0, tokens: 0 };
-const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, helpers: noHelpers, watching: [], ...over });
-const board = (rows: DashboardRow[], today = zeroToday(), helpers = noHelpers): HostToClient => ({ type: "board", rows, today, duty, helpers });
+const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, helpers: noHelpers, watching: [], routes: {}, ...over });
+const board = (rows: DashboardRow[], today = zeroToday(), helpers = noHelpers, routes: Routes = {}): HostToClient => ({ type: "board", rows, today, duty, helpers, routes });
 const texts = (view: ReturnType<typeof page.emptyView>) => [...view.lines.values()].map((l) => `${l.who}:${l.text}`);
 const withRows = (rows: DashboardRow[], now = 0) => {
 	const view = page.emptyView();
@@ -63,7 +63,7 @@ test("页面：每种消息只报告它改动的区域", () => {
 	assert.deepEqual(page.applyMessage(view, snapshot(), 0), ["conversation", "left", "header"]);
 	assert.deepEqual(page.applyMessage(view, { type: "user", id: "trg_1", text: "你好", at: 1 }, 0), ["conversation"]);
 	assert.deepEqual(page.applyMessage(view, { type: "reply", replyId: "rpl_1", text: "在", at: 2 }, 0), ["conversation"]);
-	assert.deepEqual(page.applyMessage(view, board([]), 0), ["left", "header"]);
+	assert.deepEqual(page.applyMessage(view, board([]), 0), ["conversation", "left", "header"], "看板带着对话里每句话的去向");
 });
 
 test("页面：每个任务恰好进一个分组：待回复、待确认、受阻进待你处理，排队中、进行中、等待中进进行中，已完成和已停止进已完成", () => {
@@ -359,6 +359,39 @@ test("页面：助手条每位在岗助手一枚小卡（●运行中 ◐空闲 
 	]);
 	assert.deepEqual(strip.chips.map((c) => c.id), ["tkt_run", "tkt_idl", "tkt_que", "tkt_ask"]);
 	assert.equal(strip.total, "今日 6 位 · 12.3k tokens");
+});
+
+test("页面：你的每句话下面写去向，开新任务和交给已有任务的写标题和助手全名、点开那个任务；处理中、直接回答、无需处理只写一句", () => {
+	const view = page.emptyView();
+	const news = row({ id: "tkt_news", title: "NVDA 新闻", helper: { name: "边牧", role: "conversation", seq: 2 } });
+	page.applyMessage(view, snapshot({
+		board: [news],
+		routes: {
+			trg_open: { kind: "opened_ticket", ticketId: "tkt_news" },
+			trg_hand: { kind: "handed_over", ticketId: "tkt_news" },
+			trg_ans: { kind: "answered" },
+			trg_wait: { kind: "pending" },
+			trg_skip: { kind: "router_ignored" },
+			trg_gone: { kind: "handed_over", ticketId: "tkt_missing" },
+		},
+	}), 0);
+	assert.deepEqual(page.routeLine(view, "trg_open"), { text: "已开新任务「NVDA 新闻」 · 边牧 · 对话助手 #2", ticketId: "tkt_news" });
+	assert.deepEqual(page.routeLine(view, "trg_hand"), { text: "已交给 边牧 · 对话助手 #2（NVDA 新闻）", ticketId: "tkt_news" });
+	assert.deepEqual(page.routeLine(view, "trg_ans"), { text: "幕僚长直接回答" });
+	assert.deepEqual(page.routeLine(view, "trg_wait"), { text: "幕僚长处理中" });
+	assert.deepEqual(page.routeLine(view, "trg_skip"), { text: "幕僚长判断无需处理" });
+	assert.deepEqual(page.routeLine(view, "trg_gone"), { text: "已交给助手", ticketId: "tkt_missing" }, "看板上没有那个任务时不写标题");
+	assert.equal(page.routeLine(view, "trg_unknown"), null);
+});
+
+test("页面：看板推送带来新的去向，处理中的那句改写成已交给，不用刷新", () => {
+	const view = page.emptyView();
+	const news = row({ id: "tkt_news", title: "NVDA 新闻" });
+	page.applyMessage(view, snapshot({ conversation: [{ id: "trg_2", who: "user", text: "看下听证会", at: 1 }], board: [news], routes: { trg_2: { kind: "pending" } } }), 0);
+	assert.equal(page.routeLine(view, "trg_2")?.text, "幕僚长处理中");
+	const panes = page.applyMessage(view, board([news], zeroToday(), noHelpers, { trg_2: { kind: "handed_over", ticketId: "tkt_news" } }), 0);
+	assert.ok(panes.includes("conversation"), "看板推送也要重画对话里的去向");
+	assert.equal(page.routeLine(view, "trg_2")?.text, "已交给 边牧 · 对话助手 #1（NVDA 新闻）");
 });
 
 test("页面：没有在岗助手时助手条只有今日合计；还没收到看板时为空", () => {
@@ -660,6 +693,27 @@ test("网关：SSE 第一条是快照，之后转发 user、reply、board，和 
 	await until(() => ofType(stream.got, "user").some((m) => m.id === id && m.text === "查天气"), "user");
 	await until(() => ofType(stream.got, "reply").some((m) => m.text === "收到：查天气"), "reply");
 	await until(() => ofType(stream.got, "board").some((m) => m.rows.some((r) => r.title === "查天气")), "board");
+});
+
+test("网关：快照和看板推送都带上对话里每句话的去向，交给已有任务后不刷新也能看到", async (t) => {
+	let first: string | undefined;
+	const brain = (cards: string[]) => {
+		const card = cards[0] ?? "";
+		if (!card.startsWith("[对话]")) return [];
+		if (!first) return openOnConversation(card);
+		return [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId: ids(card, "trg"), ticketId: first }] } }];
+	};
+	const { host, events } = await webHost(t, brain);
+	const opened = host.say("查 NVDA 新闻");
+	await host.settled();
+	first = host.kernel.listTickets()[0].id;
+	const stream = events();
+	await until(() => stream.got.length > 0, "快照");
+	const [snap] = ofType(stream.got.slice(0, 1), "snapshot");
+	assert.deepEqual(snap.routes[opened], { kind: "opened_ticket", ticketId: first });
+	const handed = host.say("看下听证会");
+	await until(() => ofType(stream.got, "board").some((m) => m.routes[handed]?.kind === "handed_over"), "看板推送带上已交给");
+	assert.deepEqual(ofType(stream.got, "board").at(-1)!.routes[handed], { kind: "handed_over", ticketId: first });
 });
 
 test("网关：两个 SSE 连接收到相同的消息", async (t) => {
