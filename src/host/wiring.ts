@@ -124,6 +124,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 			new PiWorkerSpawner({
 				socketPath: deps.socketPath,
 				sessionDir: join(config.stateDir, "sessions", "workers"),
+				cliPath: process.env.PSA_PI_CLI,
 				bgMaxMs: config.bgMaxMinutes * 60_000,
 				lookupHelp: feeds.map((f) => f.lookupHelp).join("\n") || undefined,
 			}),
