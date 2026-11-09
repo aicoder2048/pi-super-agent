@@ -20,8 +20,8 @@ export interface DetectSettings {
 }
 
 export interface Fired {
-	up: number;
-	down: number;
+	highestUpBand: number;
+	highestDownBand: number;
 	volume: boolean;
 }
 
@@ -51,13 +51,14 @@ export function detect(cursor: MarketCursor | undefined, quotes: Quote[], sessio
 	for (const quote of quotes) {
 		if (nyDateOf(quote.at) !== session.nyDate || quote.at < session.openAt || quote.at > session.closeAt) continue;
 		fresh++;
-		const was = fired[quote.symbol] ?? { up: 0, down: 0, volume: false };
+		const was: Fired = { highestUpBand: 0, highestDownBand: 0, volume: false, ...fired[quote.symbol] };
 		const next = { ...was };
+		const highest = quote.changePct >= 0 ? "highestUpBand" : "highestDownBand";
 		const bands = settings.bands.bySymbol[quote.symbol] ?? settings.bands.default;
 		const dir = quote.changePct >= 0 ? "up" : "down";
 		const reached = Math.max(0, ...bands.filter((b) => Math.abs(quote.changePct) >= b));
-		if (reached > was[dir]) {
-			next[dir] = reached;
+		if (reached > was[highest]) {
+			next[highest] = reached;
 			moves.push({ nyDate: session.nyDate, quote, signal: { kind: "band", dir, pct: reached } });
 		}
 		const ratio = quote.minuteVolume && quote.prevVolume ? quote.minuteVolume / (quote.prevVolume / REGULAR_MINUTES) : 0;
@@ -80,12 +81,15 @@ function describe(move: Move): string {
 	return `${q.symbol} 放量：最近一分钟成交 ${compact(q.minuteVolume!)}，是昨日分钟均量的 ${s.ratio.toFixed(1)} 倍，当前 ${signed(q.changePct)}。`;
 }
 
+export function moveId({ quote, signal, nyDate }: Move): string {
+	return `${quote.symbol}:${nyDate}:${signal.kind === "band" ? `${signal.dir}${signal.pct}` : "volume"}`;
+}
+
 export function toTrigger(source: string, move: Move): TriggerSubmission {
-	const { quote: q, signal: s, nyDate } = move;
-	const key = s.kind === "band" ? `${s.dir}${s.pct}` : "volume";
+	const { quote: q, nyDate } = move;
 	return {
 		source,
-		externalId: `${q.symbol}:${nyDate}:${key}`,
+		externalId: moveId(move),
 		threads: [{ id: threadId(source, `${q.symbol}:${nyDate}`), title: `${q.symbol} ${nyDate} 行情` }],
 		sender: source,
 		body: `${describe(move)}现价 ${q.price}，昨收 ${q.prevClose}。报价时间 ${nyTime(q.at)} ET${q.delayed ? "（延迟行情）" : ""}。`,

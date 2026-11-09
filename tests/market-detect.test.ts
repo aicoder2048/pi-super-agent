@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { detect, toTrigger, type MarketCursor, type Quote } from "../src/sources/market/detect.ts";
+import { detect, moveId, toTrigger, type MarketCursor, type Quote } from "../src/sources/market/detect.ts";
 import { sessionAt } from "../src/sources/market/session.ts";
 
 const settings = { bands: { default: [3, 5, 8], bySymbol: { SPY: [1.5, 2, 3], QQQ: [1.5, 2, 3] } }, volumeSpikeX: 5 };
@@ -13,7 +13,7 @@ function quote(symbol: string, changePct: number, over: Partial<Quote> = {}): Qu
 
 function run(cursor: MarketCursor | undefined, quotes: Quote[], now = tenAm) {
 	const r = detect(cursor, quotes, sessionAt(now), settings);
-	return { ...r, ids: r.moves.map((m) => toTrigger("us-market", m).externalId) };
+	return { ...r, ids: r.moves.map(moveId) };
 }
 
 test("档位只升不降：+3.4% 报 3% 档，+5.3% 报 5% 档，回落到 +4.1% 不再报，跌 3.2% 另算一个方向", () => {
@@ -44,7 +44,7 @@ test("新鲜度：报价时间不在今天的常规时段内（上个交易日�
 });
 
 test("换日后重新计档：昨天报过 5% 档，今天再到 5% 还报，线程按天分开", () => {
-	const yesterday: MarketCursor = { nyDate: "2026-11-06", fired: { NVDA: { up: 5, down: 0, volume: false } } };
+	const yesterday: MarketCursor = { nyDate: "2026-11-06", fired: { NVDA: { highestUpBand: 5, highestDownBand: 0, volume: false } } };
 	const r = run(yesterday, [quote("NVDA", 5.3)]);
 	assert.deepEqual(r.ids, ["NVDA:2026-11-09:up5"]);
 	assert.equal(r.cursor.nyDate, "2026-11-09");

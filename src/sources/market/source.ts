@@ -3,7 +3,7 @@ import type { Feed, FeedContext, FeedInput, FeedSpec } from "../feeds.ts";
 import { threadId } from "../generic.ts";
 import { MarketClient, MarketError, type Span } from "./client.ts";
 import { loadMarketKey } from "./key.ts";
-import { detect, toTrigger, type MarketCursor } from "./detect.ts";
+import { detect, toTrigger, type MarketCursor, type Move } from "./detect.ts";
 import { inPollWindow, MINUTE, nextPollDelay, sessionAt } from "./session.ts";
 import { parseMarketSettings, parseSymbol, type MarketSettings } from "./settings.ts";
 
@@ -81,7 +81,7 @@ export class MarketSource implements Feed {
 	}
 
 	async tick(): Promise<void> {
-		const { ctx, settings, client, source } = this.#o;
+		const { ctx, settings, client } = this.#o;
 		if (this.#disabled) return;
 		const now = ctx.clock.now();
 		const session = sessionAt(now);
@@ -98,9 +98,13 @@ export class MarketSource implements Feed {
 		this.#failing = undefined;
 		const result = detect(cursor, quotes, session, settings);
 		if (Object.keys(result.cursor.fired).length === 0 && now >= session.openAt + HOLIDAY_AFTER_OPEN_MS) result.cursor.holiday = true;
-		for (const move of result.moves) ctx.submit(toTrigger(source, move));
-		ctx.writeCursor(JSON.stringify(result.cursor));
+		this.#submitThenSaveCursor(result.moves, result.cursor);
 		this.#feel("watching", `开盘中，每 ${settings.everySeconds} 秒看一次自选 ${settings.watchlist.length} 只`);
+	}
+
+	#submitThenSaveCursor(moves: Move[], cursor: MarketCursor): void {
+		for (const move of moves) this.#o.ctx.submit(toTrigger(this.#o.source, move));
+		this.#o.ctx.writeCursor(JSON.stringify(cursor));
 	}
 
 	async lookup(op: string, args: unknown): Promise<unknown> {
