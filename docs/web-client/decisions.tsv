@@ -98,5 +98,14 @@ ts	phase	decision	why	evidence	result
 2026-11-09T19:04:05Z	w6a-verdict	W6a 复审三轮后通过：计费改白名单、技能路径按真实路径限定在角色目录、迁移重编号、降级角色的任务启动时交给副幕僚长，守卫都有会变红的测试	复审逐条变异验证；最后两项由 4b2638f 补齐	472/472，e2e 50/50	PASS
 2026-11-09T19:12:08Z	live-lane	e2e 报告按运行分目录（.out/run-<runner pid>，保留最近 5 次）；临时目录在假模型启动成功后才建	W4 lane 6：同一检出里两次 just e2e 同时跑，后一次清掉前一次的报告目录导致 ENOENT；该失败又在 try 之外，泄漏了临时目录（lane 8）	setup.e2e.ts 新测试先红后绿；两次并发 36/36、36/36	fixed
 2026-11-09T19:13:17Z	w4-lanes	W4 十条实测和性能全部通过（6、8 修后重跑）	首轮被 Mac 睡眠打断已作废；第二轮 caffeinate 下运行	docs/web-client/evidence/w4/*.png；just test 中位数 8.00→7.83s；just e2e 中位数 6.13s	PASS
+2026-11-09T19:15:09Z	w6b	会诊在宿主侧跑：Worker 扩展的 consult 只把问题转给宿主（worker.consult），由 WorkerExecutor 起专家子进程	选模型、回退上限、记用量、名册和看板都在宿主；放在 Worker 进程里要另开一套回报协议，且叫停时只杀了牵头人的 pid。两个架构候选（opus、父模型）各自独立得出同一结论	src/host/workers.ts #consult；architect 两个候选方案	decided
+2026-11-09T19:15:09Z	w6b	会诊状态只挂在牵头人的 Live 上（abort、experts、consults），看板帧里的 consulting 由它派生，内核不存	专家只活一次回答，存进内核就要在重启时清理；Live 的生命周期正好等于牵头人进程	src/host/workers.ts consulting()；tests/consult.test.ts 看板用例	decided
+2026-11-09T19:15:09Z	w6b	专家用 pi --mode json -p --no-session，detached 自成进程组，中止时 kill(-pid) TERM、800ms 后 KILL，结束时再 KILL 一次组	X1 的启动器不在本分支；一问一答不需要 RpcClient 的会话和插话。进程组保证专家起的子进程一起结束	tests/consult-process.test.ts 孙进程用例	decided
+2026-11-09T19:15:09Z	w6b	会诊结果放进 consult 工具结果的 details，页面从牵头人的会话记录渲染会诊步骤	Pi 会话文件保存 toolResult.details，实时和刷新后的历史走同一条路，不加新协议	pi-ai ToolResultMessage.details；tests/web.test.ts 会诊步骤用例	decided
+2026-11-09T19:15:09Z	w6b	会诊时限默认 180 秒，config.json 的 consultTimeoutSeconds 可改（大于 0、不超过 1800）	专家要读几个网页再作答；探测 gpt-6.1-sol 打印模式一问一答约 4 秒，带几次 web_get 的研究预计一到两分钟（猜测，现场实测后复核），180 秒留余量又不让牵头人久等	tests/config.test.ts；pi --mode json 探测 4 秒	decided
+2026-11-09T19:15:09Z	w6b	回退模型达到当天上限时整次会诊被拒绝（工具报错），不按题逐个记出错	一处检查即可，这一轮结束后已有的 blockForCap 照常接管任务	tests/consult.test.ts 上限用例	decided
+2026-11-09T19:15:09Z	w6b	专家模型走 #forTurn：角色写了 model 就用它（加载名册时已按 provider 白名单校验），否则用 Worker 模型；回退后一律用回退模型	和 Worker 同一个选择点，provider 白名单不需要第二处检查	tests/consult.test.ts 专家模型用例；src/roles.ts Roster.load(allowedProviders)	decided
+2026-11-09T19:15:09Z	w6b	专家令牌只能调 worker.lookup；专家扩展不注册 report、hand_back、read_ticket、consult、bg_*，tool_call 再拦一层	一层深、只读由三处保证：--tools、扩展注册和拦截、宿主令牌	tests/consult.test.ts 令牌用例；tests/worker-extension.test.ts 专家用例；变异去掉令牌检查后变红	verified
+2026-11-09T19:15:09Z	w6b	consult 工具的 expert 参数是名册专家名字的枚举（PSA_EXPERTS）	模型填不出名册外的名字；宿主仍再校验一次	tests/worker-extension.test.ts consult 用例	decided
 2026-11-09T19:16:06Z	w4-verdict	W4 复审 PASS；顺手修两处低概率问题：收尾后不再对已停的进程组发信号；演示的子进程环境删掉行情密钥变量（startHost 支持 baseEnv），只走 secretsFile	复审：pgid 复用可能误杀；shell 导出的密钥会让演示 1-4 轮询真实行情、让 demo-5 误判	实测：有无删除时 us-market 日志分别为「密钥来自环境变量」与「未配置行情密钥」	PASS
 2026-11-09T20:05:31Z	w4	停进程组时 EPERM 视同已不在	macOS 上只剩僵尸的组或被别的用户复用的组号会回 EPERM，W6c 实测两次因此中断收尾	setup.e2e.ts 新测试先红后绿	fixed
