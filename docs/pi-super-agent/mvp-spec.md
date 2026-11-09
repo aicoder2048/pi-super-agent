@@ -260,7 +260,7 @@ MVP 在 MacBook 上验收。之后的第一个里程碑是搬到家里的 Mac mi
 | 真实模型冒烟 | 验收演示的六步 | 手动运行，不进自动测试 |
 
 - 涉及时间的规则（重试间隔、每日上限、无进展判定）一律通过假时钟测试，测试保持确定性。
-- 先例：`tests/now.test.mjs` 的写法，以及 `tests/pi-runtime.mjs` 解析全局 Pi 依赖的方式。
+- 先例：`tests/now.test.mjs` 的写法，以及 `src/pi-runtime.mjs` 解析全局 Pi 依赖的方式（`tests/pi-runtime.mjs` 只是转发到它）。
 
 ## 不在范围内
 

@@ -44,6 +44,18 @@ export interface HostOptions {
 }
 
 
+// sun_path holds 104 bytes on macOS and 108 on Linux, including the terminating NUL.
+const SOCKET_PATH_MAX_BYTES = process.platform === "darwin" ? 103 : 107;
+
+function assertSocketPathFits(socketPath: string): void {
+	const bytes = Buffer.byteLength(socketPath);
+	if (bytes > SOCKET_PATH_MAX_BYTES) {
+		throw new Error(
+			`状态目录路径太长：socket 路径 ${socketPath} 有 ${bytes} 字节，超过本系统上限 ${SOCKET_PATH_MAX_BYTES}。请把 PSA_STATE_DIR 设到更短的路径（默认 ~/.pi-super-agent）。`,
+		);
+	}
+}
+
 export class Host {
 	readonly kernel: Kernel;
 	readonly socketPath: string;
@@ -59,11 +71,12 @@ export class Host {
 	#heartbeat: NodeJS.Timeout | undefined;
 
 	private constructor(options: HostOptions) {
+		this.socketPath = join(options.stateDir, "host.sock");
+		assertSocketPathFits(this.socketPath);
 		mkdirSync(options.stateDir, { recursive: true });
 		this.#log = options.log ?? ((line) => console.error(line));
 		if (relocateState(options.stateDir)) this.#log(`[host] 状态目录换了位置，已把会话记录的工作目录改到 ${options.stateDir}`);
 		this.#stateDir = options.stateDir;
-		this.socketPath = join(options.stateDir, "host.sock");
 		const clock = options.clock ?? { now: () => Date.now() };
 		this.kernel = new Kernel({
 			db: openStore(join(options.stateDir, "state.db")),

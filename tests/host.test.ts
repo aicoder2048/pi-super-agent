@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import { ROUTER_TOOL_NAMES } from "../src/host/router.ts";
-import { ids, openOnConversation, startHost, until, type Brain } from "./helpers/fakes.ts";
+import { ids, openOnConversation, startHost, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
 
 const replyOnReport: Brain = (cards) =>
 	cards.flatMap((card) => {
@@ -205,4 +207,13 @@ test("对话卡片列出进行中的任务，Router 只凭卡片就能把“刚�
 	host.say("刚才那个改成只要 2024 年的");
 	const id = host.kernel.listTickets()[0].id;
 	await until(() => spawner.workers.get(id)!.inputs.some((i) => i.includes("只要 2024 年")), "后续消息转交给了原任务");
+});
+
+test("状态目录路径太长、socket 超出系统上限时，启动前就给出说得清原因的错误，且不改动已有状态", async () => {
+	const long = join(tempStateDir(), "a-really-long-directory-name-to-push-the-socket-path-over-the-unix-limit", "and-some-more");
+	mkdirSync(long, { recursive: true });
+	const marker = join(long, "location.json");
+	writeFileSync(marker, JSON.stringify({ path: "/somewhere/else" }));
+	await assert.rejects(startHost(() => [], () => {}, { stateDir: long }), /状态目录路径太长.*PSA_STATE_DIR/s);
+	assert.deepEqual(JSON.parse(readFileSync(marker, "utf8")), { path: "/somewhere/else" });
 });
