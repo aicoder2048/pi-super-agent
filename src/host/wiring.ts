@@ -112,6 +112,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 				socketPath: deps.socketPath,
 				sessionDir: join(config.stateDir, "sessions", "workers"),
 				bgMaxMs: config.bgMaxMinutes * 60_000,
+				lookupHelp: feeds.map((f) => f.lookupHelp).join("\n") || undefined,
 				moduleFor: (ruleId) => {
 					const mod = modules.moduleForRule(ruleId);
 					return mod && { skillsDir: mod.skillsDir, prepare: mod.manifest.prepare };

@@ -131,6 +131,11 @@ export class Host {
 			onTranscript: (ticketId, event) => this.#transcript(ticketId, event),
 			onError: (ticketId, error) => this.#log(`[worker ${ticketId}] ${String(error)}`),
 			models: options.workerModels,
+			lookup: async (source, op, args) => {
+				const feed = this.feeds.get(source);
+				if (!feed) throw new Error(`没有来源 ${source} 可查；可查：${[...this.feeds.keys()].join("、") || "无"}`);
+				return feed.lookup(op, args);
+			},
 		});
 		this.dispatcher = new Dispatcher({
 			kernel: this.kernel,

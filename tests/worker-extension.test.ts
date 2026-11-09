@@ -87,3 +87,14 @@ test("扩展读完宿主连接信息后从环境变量里删掉，命令子进�
 	t.after(w.close);
 	for (const name of ["PSA_SOCKET", "PSA_TOKEN", "PSA_TICKET", "PSA_BASIS"]) assert.equal(process.env[name], undefined, name);
 });
+
+test("每种依据（包括推断）都有 lookup：描述里列出宿主给的可查来源，调用经宿主连接发出", async (t) => {
+	process.env.PSA_LOOKUPS = "us-market（美股行情）：quote { symbols }";
+	const w = await load("inference");
+	t.after(w.close);
+	assert.match(w.tools.get("lookup").description, /us-market（美股行情）：quote/);
+	assert.equal(process.env.PSA_LOOKUPS, undefined);
+	await w.run("lookup", { source: "us-market", op: "quote", args: { symbols: ["NVDA"] } });
+	assert.deepEqual([w.requests.at(-1).method, w.requests.at(-1).params], ["worker.lookup", { source: "us-market", op: "quote", args: { symbols: ["NVDA"] } }]);
+	assert.equal(await w.handlers.get("tool_call")({ toolName: "lookup" }), undefined);
+});

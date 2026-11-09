@@ -48,6 +48,7 @@ export interface PiWorkerSpawnerOptions {
 	sessionDir: string;
 	moduleFor?: (ruleId: string | null) => { skillsDir?: string; prepare?: string } | undefined;
 	bgMaxMs?: number;
+	lookupHelp?: string;
 }
 
 export class PiWorkerSpawner implements WorkerSpawner {
@@ -86,6 +87,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 				PSA_TOKEN: spec.token,
 				PSA_BASIS: spec.basis,
 				PSA_BG_MAX_MS: String(this.#o.bgMaxMs ?? 120 * 60_000),
+				...(this.#o.lookupHelp && { PSA_LOOKUPS: this.#o.lookupHelp }),
 			},
 		});
 		let streaming = false;
