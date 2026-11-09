@@ -25,7 +25,20 @@ export function marketFeed(input: FeedInput): FeedSpec {
 	return {
 		source,
 		lookupHelp: LOOKUP_HELP,
-		create: (ctx) => new MarketSource({ source, title, settings, ctx, client: new MarketClient({ key: loaded?.key, baseURL: settings.baseURL, minGapMs: settings.minGapMs }) }),
+		create: (ctx) => loaded
+			? new MarketSource({ source, title, settings, ctx, client: new MarketClient({ key: loaded.key, baseURL: settings.baseURL, minGapMs: settings.minGapMs }) })
+			: disabledFeed(source, "未配置行情密钥"),
+	};
+}
+
+function disabledFeed(source: string, reason: string): Feed {
+	return {
+		start() {},
+		stop() {},
+		problem: () => reason,
+		lookup: async () => {
+			throw new Error(`${source} 已停用：${reason}`);
+		},
 	};
 }
 
@@ -47,7 +60,6 @@ export class MarketSource implements Feed {
 
 	constructor(options: MarketSourceOptions) {
 		this.#o = options;
-		if (!options.client.hasKey) this.#disabled = "未配置行情密钥";
 	}
 
 	start(): void {

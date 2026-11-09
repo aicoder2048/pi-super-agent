@@ -13,8 +13,8 @@ const tradeAt = Date.parse("2026-11-09T15:42:00Z");
 
 const fakeHttp = (respond: (url: string) => Response = () => Response.json(snapshotBody([tickerRow("NVDA", 142.85, 135.65, tradeAt)]))) => fakeHttpOn(respond);
 
-function client(f: ReturnType<typeof fakeHttp>, options: { key?: string } = { key: KEY }) {
-	return new MarketClient({ key: options.key, baseURL: "https://api.massive.com", minGapMs: 12_000, http: f.http, clock: f.clock, sleep: f.sleep });
+function client(f: ReturnType<typeof fakeHttp>) {
+	return new MarketClient({ key: KEY, baseURL: "https://api.massive.com", minGapMs: 12_000, http: f.http, clock: f.clock, sleep: f.sleep });
 }
 
 test("行情请求：Key 只放在 Authorization: Bearer 头里，网址里没有 Key；快照解析成报价", async () => {
@@ -35,12 +35,6 @@ test("行情请求：每日重置时价格全为 0 的占位行被丢掉，不�
 	const zero = { ticker: "AAPL", lastTrade: {}, min: { c: 0, t: 0, v: 0 }, day: { c: 0, v: 0 }, prevDay: { c: 0, v: 0 } };
 	const f = fakeHttp(() => Response.json(snapshotBody([zero])));
 	assert.deepEqual(await client(f).snapshot(["AAPL"], "poll"), []);
-});
-
-test("行情请求：没有 Key 时直接报错，不发任何请求", async () => {
-	const f = fakeHttp();
-	await assert.rejects(client(f, {}).snapshot(["NVDA"], "poll"), (e: MarketError) => e.kind === "no-key" && e.permanent);
-	assert.equal(f.calls.length, 0);
 });
 
 test("额度：任意两次请求之间至少隔 12 秒（每分钟不超过 5 次）", async () => {

@@ -16,23 +16,38 @@ export interface Bar {
 	v: number;
 }
 
-type ErrorKind = "no-key" | "unauthorized" | "forbidden" | "rate-limited" | "network" | "bad-response" | "busy";
+interface ErrorParams {
+	status?: number;
+	seconds?: number;
+}
+
+const MESSAGES = {
+	unauthorized: () => "行情密钥无效或已失效（401）",
+	forbidden: () => "行情套餐没有这项数据的权限（403）",
+	"rate-limited": (p: ErrorParams) => `行情请求达到频率限制，${Math.trunc(p.seconds ?? 60)} 秒后重试`,
+	network: () => "行情请求超时或网络不可用",
+	"http-error": (p: ErrorParams) => `行情服务返回 HTTP ${Math.trunc(p.status ?? 0)}`,
+	"bad-response": () => "行情服务返回的数据不是预期的格式",
+	busy: () => "行情查询排队已满，请稍后再查",
+};
+
+type ErrorKind = keyof typeof MESSAGES;
 
 export class MarketError extends Error {
 	readonly kind: ErrorKind;
 
-	constructor(kind: ErrorKind, message: string) {
-		super(message);
+	constructor(kind: ErrorKind, params: ErrorParams = {}) {
+		super(MESSAGES[kind](params));
 		this.kind = kind;
 	}
 
 	get permanent(): boolean {
-		return this.kind === "no-key" || this.kind === "unauthorized" || this.kind === "forbidden";
+		return this.kind === "unauthorized" || this.kind === "forbidden";
 	}
 }
 
 export interface MarketClientOptions {
-	key: string | undefined;
+	key: string;
 	baseURL: string;
 	minGapMs: number;
 	http?: Http;
@@ -73,7 +88,7 @@ function parseQuote(raw: unknown, delayed: boolean): Quote[] {
 }
 
 export class MarketClient {
-	readonly #key: string | undefined;
+	readonly #key: string;
 	readonly #o: Required<Omit<MarketClientOptions, "key">>;
 	readonly #queue: Job[] = [];
 	readonly #abort = new AbortController();
@@ -92,13 +107,9 @@ export class MarketClient {
 		};
 	}
 
-	get hasKey(): boolean {
-		return !!this.#key;
-	}
-
 	async snapshot(symbols: string[], priority: Priority): Promise<Quote[]> {
 		const data = await this.#request(`/v2/snapshot/locale/us/markets/stocks/tickers?tickers=${symbols.map(encodeURIComponent).join(",")}`, priority);
-		if (!Array.isArray(data.tickers)) throw new MarketError("bad-response", "行情快照缺少 tickers");
+		if (!Array.isArray(data.tickers)) throw new MarketError("bad-response");
 		return data.tickers.flatMap((row: unknown) => parseQuote(row, data.status === "DELAYED"));
 	}
 
@@ -112,9 +123,8 @@ export class MarketClient {
 	}
 
 	#request(path: string, priority: Priority): Promise<Record<string, any>> {
-		if (!this.#key) return Promise.reject(new MarketError("no-key", "未配置行情密钥"));
 		if (priority === "lookup" && this.#queue.filter((j) => j.priority === "lookup").length >= this.#o.maxQueuedLookups) {
-			return Promise.reject(new MarketError("busy", "行情查询排队已满，请稍后再查"));
+			return Promise.reject(new MarketError("busy"));
 		}
 		return new Promise((resolve, reject) => {
 			this.#queue.push({ path, priority, resolve, reject });
@@ -148,24 +158,24 @@ export class MarketClient {
 				signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(20_000)]),
 			});
 		} catch {
-			throw new MarketError("network", "行情请求超时或网络不可用");
+			throw new MarketError("network");
 		}
 		if (response.status === 429) {
 			const header = response.headers.get("Retry-After");
-			const seconds = header && /^\d+$/.test(header) ? Number(header) : 60;
-			this.#cooldownUntil = this.#o.clock.now() + Math.min(Math.max(seconds, 12), 3600) * 1000;
-			throw new MarketError("rate-limited", `行情请求达到频率限制，${seconds} 秒后重试`);
+			const seconds = Math.min(Math.max(header && /^\d+$/.test(header) ? Number(header) : 60, 12), 3600);
+			this.#cooldownUntil = this.#o.clock.now() + seconds * 1000;
+			throw new MarketError("rate-limited", { seconds });
 		}
-		if (response.status === 401) throw new MarketError("unauthorized", "行情密钥无效或已失效（401）");
-		if (response.status === 403) throw new MarketError("forbidden", "行情套餐没有这项数据的权限（403）");
-		if (!response.ok) throw new MarketError("bad-response", `行情服务返回 HTTP ${response.status}`);
+		if (response.status === 401) throw new MarketError("unauthorized");
+		if (response.status === 403) throw new MarketError("forbidden");
+		if (!response.ok) throw new MarketError("http-error", { status: response.status });
 		let data: Record<string, any>;
 		try {
 			data = object(await response.json());
 		} catch {
-			throw new MarketError("bad-response", "行情服务返回的不是 JSON");
+			throw new MarketError("bad-response");
 		}
-		if (data.status !== "OK" && data.status !== "DELAYED") throw new MarketError("bad-response", "行情接口没有返回成功状态");
+		if (data.status !== "OK" && data.status !== "DELAYED") throw new MarketError("bad-response");
 		return data;
 	}
 }

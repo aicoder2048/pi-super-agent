@@ -6,7 +6,7 @@ import test from "node:test";
 import { Kernel } from "../src/kernel/kernel.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { MarketClient } from "../src/sources/market/client.ts";
-import { MarketSource } from "../src/sources/market/source.ts";
+import { MarketSource, marketFeed } from "../src/sources/market/source.ts";
 import { parseMarketSettings } from "../src/sources/market/settings.ts";
 import { ConfigError } from "../src/config-error.ts";
 import { fakeHttp, snapshotBody, tickerRow } from "./helpers/market.ts";
@@ -21,14 +21,14 @@ const DEFAULTS = {
 	baseURL: "https://api.massive.com",
 };
 
-function market(options: { dbPath?: string; key?: string; respond?: (url: string, now: number) => Response } = {}) {
+function market(options: { dbPath?: string; respond?: (url: string, now: number) => Response } = {}) {
 	const dbPath = options.dbPath ?? join(mkdtempSync(join(tmpdir(), "psa-market-")), "state.db");
 	const prices: Record<string, number> = { NVDA: 100, SPY: 600 };
 	const { clock, calls, http } = fakeHttp((url, now) =>
 		options.respond ? options.respond(url, now) : Response.json(snapshotBody(Object.entries(prices).map(([s, p]) => tickerRow(s, p, s === "SPY" ? 600 : 100, now - 60_000)))),
 	T("2026-11-09T15:00:00Z"));
 	const kernel = new Kernel({ db: openStore(dbPath), clock, sourcePolicy: (t) => (t.source === "watchdog" ? "notice" : "candidate") });
-	const client = new MarketClient({ key: "key" in options ? options.key : "k", baseURL: DEFAULTS.baseURL, minGapMs: 0, http, clock, sleep: async () => {} });
+	const client = new MarketClient({ key: "k", baseURL: DEFAULTS.baseURL, minGapMs: 0, http, clock, sleep: async () => {} });
 	const logs: string[] = [];
 	let failWrite = false;
 	const source = new MarketSource({
@@ -131,10 +131,15 @@ test("节假日判断只看今天是否见过新鲜报价：盘中见过之后�
 	assert.equal(m.requests.length, 3);
 });
 
-test("没有密钥：看盘停用，页面上的问题写「未配置行情密钥」，不发请求", async () => {
-	const m = market({ key: undefined });
-	await m.source.tick();
-	assert.deepEqual([m.source.problem(), m.requests.length], ["未配置行情密钥", 0]);
+test("没有密钥：看盘停用，页面上的问题写「未配置行情密钥」，查询直接拒绝", async () => {
+	const logs: string[] = [];
+	const spec = marketFeed({ source: "us-market", title: "美股行情", settings: DEFAULTS, override: undefined, where: "test", secretsFile: undefined, env: {}, log: (l) => logs.push(l) });
+	const feed = spec.create({ clock: { now: () => T("2026-11-09T15:00:00Z") }, submit: () => assert.fail("不该提交"), readCursor: () => undefined, writeCursor: () => {}, log: () => {} });
+	feed.start();
+	assert.equal(feed.problem(), "未配置行情密钥");
+	await assert.rejects(feed.lookup("session", {}), /停用.*未配置行情密钥/);
+	feed.stop();
+	assert.match(logs.join("\n"), /未配置行情密钥/);
 });
 
 test("401：看盘停用、记一行日志、之后不再请求", async () => {
