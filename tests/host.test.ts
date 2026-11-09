@@ -1,0 +1,152 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { Host } from "../src/host/host.ts";
+import { ROUTER_TOOL_NAMES } from "../src/host/router.ts";
+import { FakeSpawner, fauxRouter, ids, openOnConversation, tempStateDir, until, type Brain, type WorkerScript } from "./helpers/fakes.ts";
+
+const replyOnReport: Brain = (cards) =>
+	cards.flatMap((card) => {
+		if (card.startsWith("[对话]")) return openOnConversation(card);
+		if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `结果：${card.split("\n")[1]}`, ticketId: ids(card, "tkt") } }];
+		return [];
+	});
+
+async function startHost(brain: Brain, script: WorkerScript, config = {}) {
+	const router = fauxRouter(brain);
+	const spawner = new FakeSpawner(script);
+	const host = await Host.start({
+		stateDir: tempStateDir(),
+		config,
+		createRouter: router.createRouter,
+		createSpawner: () => spawner,
+		log: () => {},
+	});
+	spawner.request = (...args) => host.workers.handleRequest(...args);
+	const said = () => host.kernel.conversation().filter((m) => m.who === "router").map((m) => m.text);
+	return { host, router, spawner, said };
+}
+
+test("一条请求的完整往返：确认、派出 Worker、汇报后回复结果", async (t) => {
+	const { host, said } = await startHost(replyOnReport, (w) => {
+		w.report({ status: "ready", summary: "明天晴" });
+		w.settle();
+	});
+	t.after(() => host.stop());
+	host.say("查明天天气");
+	await until(() => said().length === 2, "两条回复");
+	assert.deepEqual(said(), ["收到：查明天天气", "结果：明天晴"]);
+	await until(() => host.workers.liveCount() === 0, "Worker 空闲后退出");
+	assert.equal(host.kernel.listTickets()[0].stage, "closed");
+});
+
+test("Router 的工具集里没有执行命令和读写文件的工具", async (t) => {
+	const { host } = await startHost(() => [], () => {});
+	t.after(() => host.stop());
+	const tools = (host.router as any).session.getActiveToolNames();
+	assert.deepEqual([...tools].sort(), [...ROUTER_TOOL_NAMES].sort());
+	for (const forbidden of ["bash", "read_file", "write", "edit", "grep", "find", "ls"]) assert.ok(!tools.includes(forbidden), forbidden);
+});
+
+test("连发两句：两个 Worker 并行，第二句的确认不等第一个任务完成", async (t) => {
+	let releaseA!: () => void;
+	const aDone = new Promise<void>((r) => (releaseA = r));
+	const { host, spawner, said } = await startHost(replyOnReport, async (w, input) => {
+		if (input.includes("A 任务")) await aDone;
+		w.report({ status: "ready", summary: input.includes("A 任务") ? "A 完成" : "B 完成" });
+		w.settle();
+	});
+	t.after(() => host.stop());
+	host.say("A 任务");
+	host.say("B 任务");
+	await until(() => said().includes("结果：B 完成"), "B 先完成");
+	assert.ok(said().includes("收到：A 任务") && said().includes("收到：B 任务"), JSON.stringify([said(), host.kernel.decisionLog(), host.kernel.listTickets()]));
+	assert.ok(!said().includes("结果：A 完成"));
+	assert.equal(spawner.spawned.length, 2);
+	releaseA();
+	await until(() => said().includes("结果：A 完成"), "A 完成");
+});
+
+test("Worker 的推理和工具调用不出现在回复里，只有汇报到达 Router", async (t) => {
+	const { host, router, said } = await startHost(replyOnReport, (w) => {
+		w.report({ status: "progress", summary: "正在跑 bash：curl wttr.in" });
+		w.report({ status: "ready", summary: "明天晴" });
+		w.settle();
+	});
+	t.after(() => host.stop());
+	host.say("查天气");
+	await until(() => said().length === 2, "两条回复");
+	const seen = router.batches.flat().join("\n");
+	assert.doesNotMatch(seen, /curl wttr/);
+	assert.doesNotMatch(said().join("\n"), /curl/);
+});
+
+test("Router 推理期间到达的多条汇报在下一步一并注入", async (t) => {
+	let gate!: () => void;
+	const held = new Promise<void>((r) => (gate = r));
+	let workersDone = 0;
+	const brain: Brain = async (cards) => {
+		if (cards.some((c) => c.includes("[对话]") && c.includes("开三个"))) {
+			const triggerId = ids(cards[0], "trg");
+			return [{
+				name: "route",
+				args: { decisions: ["甲", "乙", "丙"].map((title) => ({ kind: "open_ticket", basis: "request", triggerId, title, brief: title })) },
+			}];
+		}
+		if (cards.some((c) => c.includes("[对话]") && c.includes("慢慢想"))) {
+			await held;
+			return [];
+		}
+		return replyOnReport(cards, 0);
+	};
+	const { host, router } = await startHost(brain, (w) => {
+		w.report({ status: "ready", summary: `${w.spec.ticketId} 完成` });
+		workersDone++;
+		w.settle();
+	});
+	t.after(() => host.stop());
+	host.kernel.config.maxWorkers = 3;
+	host.say("开三个任务");
+	await until(() => host.kernel.listTickets().length === 3, "三个任务");
+	host.say("慢慢想一下");
+	await until(() => router.batches.some((b) => b.some((c) => c.includes("慢慢想"))), "Router 开始推理");
+	await until(() => workersDone === 3, "三个汇报都已提交");
+	await until(() => host.kernel.dueActions(1).length === 0, "通知都已注入");
+	gate();
+	await until(() => router.batches.some((b) => b.filter((c) => c.startsWith("[Worker 汇报]")).length >= 2), "批量注入");
+});
+
+test("名额满时新任务排队，使用者的后续消息仍能唤醒已有任务", async (t) => {
+	const brain: Brain = (cards) =>
+		cards.flatMap((card) => {
+			const trg = ids(card, "trg");
+			if (card.includes("后续")) {
+				const target = host.kernel.listTickets().find((r) => r.title === "请求甲")!;
+				return [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId: trg, ticketId: target.id }] } }];
+			}
+			if (card.startsWith("[对话]")) return openOnConversation(card, "请求甲");
+			if (card.startsWith("[候选触发]")) {
+				return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "rule", ruleId: "r1", triggerId: trg, title: card.includes("x1") ? "规则一" : "规则二", brief: "看一下" }] } }];
+			}
+			return [];
+		});
+	const { host, spawner } = await startHost(brain, (w, input) => {
+		if (w.spec.ticketId && input.includes("看一下")) return;
+		w.report({ status: "progress", summary: "处理中" });
+		w.settle();
+	}, { maxWorkers: 1, reservedSlots: 1 });
+	t.after(() => host.stop());
+	const external = (id: string) =>
+		host.kernel.submitTrigger({ source: "generic", externalId: id, threads: [{ id: `thr_${id}` }], sender: "bot", body: id, occurredAt: Date.now() });
+	const byTitle = (title: string) => host.kernel.listTickets().find((r) => r.title === title);
+
+	external("x1");
+	await until(() => byTitle("规则一")?.stage === "running", "规则一占住普通名额");
+	host.say("请求甲");
+	await until(() => spawner.spawned.includes(byTitle("请求甲")?.id ?? "-"), "请求任务用上保留名额");
+	await until(() => byTitle("请求甲")?.stage === "idle" && host.workers.liveCount() === 1, "请求甲空闲退出");
+	external("x2");
+	await until(() => byTitle("规则二")?.stage === "queued", "规则二排队");
+	host.say("后续：再补充一点");
+	await until(() => spawner.spawned.filter((id) => id === byTitle("请求甲")!.id).length === 2, "后续消息重新拉起请求甲");
+	assert.equal(byTitle("规则二")!.stage, "queued");
+});
