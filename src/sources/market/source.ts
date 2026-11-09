@@ -72,7 +72,7 @@ export class MarketSource implements Feed {
 	start(): void {
 		const loop = async () => {
 			await this.tick().catch((error) => this.#o.ctx.log(`[${this.#o.source}] 本轮看盘出错：${String(error)}`));
-			if (!this.#stopped) this.#timer = setTimeout(loop, nextPollDelay(this.#o.ctx.clock.now(), this.#o.settings.everySeconds)).unref();
+			if (!this.#stopped && !this.#disabled) this.#timer = setTimeout(loop, nextPollDelay(this.#o.ctx.clock.now(), this.#o.settings.everySeconds)).unref();
 		};
 		void loop();
 	}
@@ -91,13 +91,13 @@ export class MarketSource implements Feed {
 		const { ctx, settings, client } = this.#o;
 		if (this.#disabled) return;
 		const now = ctx.clock.now();
-		const session = sessionAt(now);
-		const raw = ctx.readCursor();
-		const cursor = raw === undefined ? undefined : (JSON.parse(raw) as MarketCursor);
 		if (!inPollWindow(now)) {
 			this.#failing = undefined;
 			return this.#feel("resting", "不在交易时段，暂停请求行情");
 		}
+		const session = sessionAt(now);
+		const raw = ctx.readCursor();
+		const cursor = raw === undefined ? undefined : (JSON.parse(raw) as MarketCursor);
 		if (noSessionToday(cursor, session, now)) return this.#feel("holiday", `${session.nyDate} 开盘半小时仍没有当天的报价，按休市处理，今天不再请求`);
 		let quotes;
 		try {
