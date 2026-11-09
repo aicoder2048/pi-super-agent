@@ -37,6 +37,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 	const selectors = modelSelectors(config, clock);
 	return {
 		stateDir: config.stateDir,
+		heartbeatMs: config.heartbeatSeconds * 1000,
 		config: config.kernel,
 		log,
 		sourcePolicy: modules.sourcePolicy,
