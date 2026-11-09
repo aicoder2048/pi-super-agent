@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS triggers (
 	disposition_detail TEXT,
 	UNIQUE (source, external_id)
 );
+-- Covering, so triggerCountsToday uses it even before SQLite has table statistics.
+CREATE INDEX IF NOT EXISTS triggers_today ON triggers (received_at, source, disposition);
 
 CREATE TABLE IF NOT EXISTS threads (
 	id TEXT PRIMARY KEY,
