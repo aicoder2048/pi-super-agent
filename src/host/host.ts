@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { writeHeartbeat } from "../heartbeat.ts";
+import { relocateState } from "./relocate.ts";
 import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
 import { Kernel } from "../kernel/kernel.ts";
@@ -60,6 +61,7 @@ export class Host {
 	private constructor(options: HostOptions) {
 		mkdirSync(options.stateDir, { recursive: true });
 		this.#log = options.log ?? ((line) => console.error(line));
+		if (relocateState(options.stateDir)) this.#log(`[host] 状态目录换了位置，已把会话记录的工作目录改到 ${options.stateDir}`);
 		this.#stateDir = options.stateDir;
 		this.socketPath = join(options.stateDir, "host.sock");
 		const clock = options.clock ?? { now: () => Date.now() };
