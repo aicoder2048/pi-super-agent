@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { ConfigError } from "../config-error.ts";
+import { OPTIONS_MAX } from "../kernel/question.ts";
 import type { HostToClient, TranscriptMessage } from "../client/protocol.ts";
 import { hasVisibleText, HistoryEchoFilter, type AnswerResult, type Broadcast } from "./server.ts";
 
@@ -197,7 +198,7 @@ function parseSay(body: string): SayBody | undefined {
 	if (keys[0] !== "answer" || typeof answer !== "object" || answer === null) return undefined;
 	const { reportId, option } = answer as { reportId?: unknown; option?: unknown };
 	if (typeof reportId !== "string" || !REPORT_ID.test(reportId)) return undefined;
-	if (typeof option !== "number" || !Number.isInteger(option) || option < 0 || option > 3) return undefined;
+	if (typeof option !== "number" || !Number.isInteger(option) || option < 0 || option >= OPTIONS_MAX) return undefined;
 	return { kind: "answer", reportId, option };
 }
 

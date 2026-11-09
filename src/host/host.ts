@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { writeHeartbeat } from "../heartbeat.ts";
 import { relocateState } from "./relocate.ts";
@@ -197,14 +196,7 @@ export class Host {
 
 	say(text: string): string {
 		const at = Date.now();
-		const { triggerId } = this.kernel.submitTrigger({
-			source: CONVERSATION_SOURCE,
-			externalId: randomUUID(),
-			threads: [{ id: CONVERSATION_THREAD_ID, title: "对话" }],
-			sender: "user",
-			body: text,
-			occurredAt: at,
-		});
+		const { triggerId } = this.kernel.userSaid({ text, at });
 		this.#broadcast({ type: "user", id: triggerId, text, at });
 		this.#changed();
 		return triggerId;

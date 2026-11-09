@@ -23,7 +23,9 @@ export function parseOptions(raw: unknown, question: string | undefined): string
 
 export const answerSentence = (title: string, option: string) => `回答任务「${title}」：${option}`;
 
-export const answerExternalId = (reportId: string) => `answer:${reportId}`;
+const ANSWER_PREFIX = "answer:";
+
+export const answerExternalId = (reportId: string) => `${ANSWER_PREFIX}${reportId}`;
 
 export const reportIdOfAnswer = (externalId: string): string | null =>
-	externalId.startsWith("answer:") ? externalId.slice("answer:".length) : null;
+	externalId.startsWith(ANSWER_PREFIX) ? externalId.slice(ANSWER_PREFIX.length) : null;

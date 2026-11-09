@@ -184,6 +184,17 @@ export class Kernel {
 		});
 	}
 
+	userSaid({ text, at, externalId = randomUUID() }: { text: string; at: number; externalId?: string }): { triggerId: string; duplicate: boolean } {
+		return this.submitTrigger({
+			source: CONVERSATION_SOURCE,
+			externalId,
+			threads: [{ id: CONVERSATION_THREAD_ID, title: "对话" }],
+			sender: "user",
+			body: text,
+			occurredAt: at,
+		});
+	}
+
 	answerQuestion({ reportId, option, at }: { reportId: string; option: number; at: number }): Result<{ triggerId: string; text: string; duplicate: boolean }> {
 		return this.#tx(() => {
 			const externalId = answerExternalId(reportId);
@@ -199,14 +210,7 @@ export class Kernel {
 			if (options.length === 0) return reject("这个问题没有选项，请直接回复");
 			if (!Number.isInteger(option) || option < 0 || option >= options.length) return reject(`这个问题只有 ${options.length} 个选项`);
 			const text = answerSentence(ticket.title, options[option]);
-			const { triggerId } = this.submitTrigger({
-				source: CONVERSATION_SOURCE,
-				externalId,
-				threads: [{ id: CONVERSATION_THREAD_ID, title: "对话" }],
-				sender: "user",
-				body: text,
-				occurredAt: at,
-			});
+			const { triggerId } = this.userSaid({ text, at, externalId });
 			return { ok: true, triggerId, text, duplicate: false };
 		});
 	}
