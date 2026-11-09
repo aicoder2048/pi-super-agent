@@ -67,7 +67,19 @@ test("推断任务的 Worker 只能调用只读工具和汇报类工具，其余
 		assert.equal((await inference.handlers.get("tool_call")(call(tool)))?.block, true, tool);
 		assert.equal(await request.handlers.get("tool_call")(call(tool)), undefined, tool);
 	}
-	for (const tool of ["read", "grep", "report", "read_ticket"]) assert.equal(await inference.handlers.get("tool_call")(call(tool)), undefined, tool);
+	for (const tool of ["read", "grep", "report", "read_ticket", "web_get"]) assert.equal(await inference.handlers.get("tool_call")(call(tool)), undefined, tool);
+});
+
+test("每种依据的 Worker 都有 web_get，它只收一个网址并拒绝非公网地址", async (t) => {
+	const inference = await load("inference");
+	const request = await load("request");
+	t.after(() => { inference.close(); request.close(); });
+	for (const w of [inference, request]) {
+		const tool = w.tools.get("web_get");
+		assert.deepEqual(Object.keys(tool.parameters.properties), ["url"]);
+		assert.match(tool.description, /数据/);
+		await assert.rejects(w.run("web_get", { url: "http://127.0.0.1:9/" }), /公网/);
+	}
 });
 
 test("扩展读完宿主连接信息后从环境变量里删掉，命令子进程继承不到", async (t) => {
