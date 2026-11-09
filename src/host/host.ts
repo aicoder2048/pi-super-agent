@@ -6,12 +6,13 @@ import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
 import { Kernel } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
-import { CONVERSATION_THREAD_ID, type Clock, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
+import { CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
 import type { TriggerSubmission } from "../kernel/types.ts";
 import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import { Dispatcher } from "./dispatcher.ts";
 import { HostServer, type Broadcast } from "./server.ts";
+import type { BoardRow, BoardState, Duty, TodayCounts, WatchedSource } from "../client/protocol.ts";
 import { WebGateway } from "./web.ts";
 import { ConfigError } from "../config-error.ts";
 import { WorkerExecutor, type WorkerModels, type WorkerSpawner } from "./workers.ts";
@@ -44,6 +45,7 @@ export interface HostOptions {
 	createSpawner(deps: HostDeps): WorkerSpawner;
 	log?: (line: string) => void;
 	webPort?: number;
+	watching?: WatchedSource[];
 }
 
 
@@ -73,6 +75,8 @@ export class Host {
 	#boardTimer: NodeJS.Timeout | undefined;
 	#heartbeat: NodeJS.Timeout | undefined;
 	#web: WebGateway | undefined;
+	readonly #watching: WatchedSource[];
+	#duty: Duty;
 
 	private constructor(options: HostOptions) {
 		this.socketPath = join(options.stateDir, "host.sock");
@@ -82,6 +86,8 @@ export class Host {
 		if (relocateState(options.stateDir)) this.#log(`[host] 状态目录换了位置，已把会话记录的工作目录改到 ${options.stateDir}`);
 		this.#stateDir = options.stateDir;
 		const clock = options.clock ?? { now: () => Date.now() };
+		this.#watching = options.watching ?? [];
+		this.#duty = { since: clock.now(), resumed: 0 };
 		this.kernel = new Kernel({
 			db: openStore(join(options.stateDir, "state.db")),
 			clock,
@@ -149,6 +155,7 @@ export class Host {
 			throw error;
 		}
 		const recovered = host.kernel.recoverOnStartup();
+		host.#duty = { ...host.#duty, resumed: recovered.length };
 		if (recovered.length) host.#log(`[host] 恢复 ${recovered.length} 个执行中的任务：${recovered.join(", ")}`);
 		host.generic.start();
 		host.timer.start();
@@ -179,7 +186,16 @@ export class Host {
 	}
 
 	snapshot() {
-		return { conversation: this.kernel.conversation(50), board: this.kernel.listTickets() };
+		const { rows, today, duty } = this.#boardState();
+		return { conversation: this.kernel.conversation(50), board: rows, today, duty, watching: this.#watching };
+	}
+
+	#boardState(): BoardState {
+		const rows: BoardRow[] = this.kernel.listTickets().map((row) => ({
+			...row,
+			ask: row.stage === "awaiting_answer" || row.stage === "awaiting_review" ? (this.kernel.getTicket(row.id)?.latestReport?.question ?? null) : null,
+		}));
+		return { rows, today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty };
 	}
 
 	#deliverReply(threadId: string, text: string, replyId: string): void {
@@ -221,7 +237,7 @@ export class Host {
 		if (this.#boardTimer) return;
 		this.#boardTimer = setTimeout(() => {
 			this.#boardTimer = undefined;
-			this.#broadcast({ type: "board", rows: this.kernel.listTickets() });
+			this.#broadcast({ type: "board", ...this.#boardState() });
 		}, 100);
 	}
 
@@ -244,4 +260,15 @@ export class Host {
 		this.router.dispose();
 		await Promise.all([this.server.close(), this.#web?.close()]);
 	}
+}
+
+function todayCounts(rows: { source: string; disposition: Disposition; count: number }[]): TodayCounts {
+	const byDisposition = Object.fromEntries(DISPOSITIONS.map((d) => [d, 0])) as Record<Disposition, number>;
+	const bySource: Record<string, number> = {};
+	for (const { source, disposition, count } of rows) {
+		if (source === "conversation" || source === WATCHDOG_SOURCE) continue;
+		byDisposition[disposition] += count;
+		bySource[source] = (bySource[source] ?? 0) + count;
+	}
+	return { byDisposition, bySource };
 }

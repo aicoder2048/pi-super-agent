@@ -5,6 +5,7 @@ import { ConfigError } from "../config-error.ts";
 import { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import type { Modules } from "../modules.ts";
+import type { WatchedSource } from "../client/protocol.ts";
 import type { HostConfig } from "./config.ts";
 import type { HostOptions } from "./host.ts";
 import { PiWorkerSpawner } from "./pi-worker.ts";
@@ -16,6 +17,22 @@ export function modelSelectors(config: ModelWiringConfig, clock: Clock): { route
 	const make = (primary: ModelRef) =>
 		new ModelSelector({ primary, fallback: config.models.fallback, probeEveryMs: config.probePrimaryMinutes * 60_000, clock });
 	return { router: make(config.models.router), worker: make(config.models.worker) };
+}
+
+export function watchedSources(modules: Modules): WatchedSource[] {
+	const userIds = new Set(modules.userRules.map((r) => r.id));
+	const filters = modules.modules.flatMap((m) => m.manifest.sources ?? []);
+	const ignored = new Set(filters.filter((s) => s.mode === "ignore").map((s) => s.name));
+	const timers = modules.timers();
+	const rules = modules.allRules();
+	const names = new Set([...filters.map((s) => s.name), ...timers.map((t) => t.source!), ...rules.flatMap((r) => r.sources)]);
+	const watched = [...names].filter((source) => !ignored.has(source)).map((source) => ({
+		source,
+		timers: timers.filter((t) => t.source === source).map((t) => ({ everyMinutes: t.everyMinutes, body: t.body })),
+		rules: rules.filter((r) => r.sources.includes(source)).map((r) => ({ id: r.id, text: r.text, by: userIds.has(r.id) ? ("user" as const) : ("module" as const) })),
+	}));
+	const hasUserRule = (w: WatchedSource) => w.rules.some((r) => r.by === "user");
+	return watched.sort((a, b) => Number(hasUserRule(b)) - Number(hasUserRule(a)) || a.source.localeCompare(b.source));
 }
 
 export interface HostWiringInput {
@@ -46,6 +63,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		ruleAllows: modules.ruleAllows,
 		rulesFor: modules.rulesFor,
 		timers: modules.timers(),
+		watching: watchedSources(modules),
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
 		createRouter: (deps) =>
 			Router.create({

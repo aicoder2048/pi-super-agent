@@ -5,7 +5,7 @@ import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createHostOptions, modelSelectors } from "../src/host/wiring.ts";
+import { createHostOptions, modelSelectors, watchedSources } from "../src/host/wiring.ts";
 import { Host } from "../src/host/host.ts";
 import { Modules } from "../src/modules.ts";
 import { until } from "./helpers/fakes.ts";
@@ -82,4 +82,22 @@ test("入口：按真实接线启动的宿主，Router 遇到最终的限流错�
 	t.after(() => host.stop());
 	host.say("你好");
 	await until(() => (host.router as any).session.model?.id === "fallback", "Router 切到回退模型", 5000);
+});
+
+test("在替你盯着：每个来源一项，带上管它的规则（使用者的在前）和定时器，忽略的来源不算", () => {
+	const mod = (name: string, manifest: Partial<import("../src/modules.ts").ModuleManifest>, rules: { id: string; text: string; sources: string[] }[]) =>
+		({ name, dir: `/m/${name}`, manifest: { name, ...manifest }, rules, skillsDir: undefined });
+	const modules = new Modules(
+		[
+			mod("market", { sources: [{ name: "quotes" }, { name: "spam", mode: "ignore" }] }, [{ id: "market/drop", text: "跌多了提醒我\n细节", sources: ["quotes"] }]),
+			mod("digest", { timers: [{ id: "am", everyMinutes: 1440, thread: "thr_am", body: "早报" }] }, []),
+		],
+		[{ id: "user/mail", text: "有人找我先看一遍", sources: ["inbox", "quotes"] }],
+		[],
+	);
+	assert.deepEqual(watchedSources(modules), [
+		{ source: "inbox", timers: [], rules: [{ id: "user/mail", text: "有人找我先看一遍", by: "user" }] },
+		{ source: "quotes", timers: [], rules: [{ id: "user/mail", text: "有人找我先看一遍", by: "user" }, { id: "market/drop", text: "跌多了提醒我\n细节", by: "module" }] },
+		{ source: "digest", timers: [{ everyMinutes: 1440, body: "早报" }], rules: [] },
+	]);
 });

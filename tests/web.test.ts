@@ -7,6 +7,7 @@ import type { HostToClient } from "../src/client/protocol.ts";
 import { ConfigError } from "../src/config-error.ts";
 import type { DashboardRow } from "../src/kernel/types.ts";
 import * as page from "../src/web/view.mjs";
+import { WATCHDOG_SOURCE } from "../src/watchdog/watchdog.ts";
 import { busyPort, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
@@ -347,4 +348,67 @@ test("网关：网关开好之后启动失败，端口被释放", async () => {
 	const again = createServer();
 	await new Promise<void>((resolve, reject) => again.once("error", reject).listen(port, "127.0.0.1", resolve));
 	await new Promise((r) => again.close(r));
+});
+
+test("宿主：快照和 board 帧带今天的计数、值班时间和在盯着；等你回答的任务带上问题", async (t) => {
+	const brain = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
+	const watching = [{ source: "inbox", timers: [], rules: [{ id: "user/mail", text: "有人找我先看一遍", by: "user" as const }] }];
+	const before = Date.now();
+	const started = await startHost(brain, (w) => {
+		w.report({ status: "progress", summary: "需要确认", question: "用 A 还是 B？" });
+		w.settle();
+	}, { webPort: 0, watching });
+	t.after(() => started.host.stop());
+	const { host } = started;
+	const url = new URL(host.webUrl!);
+	const at = (path: string) => `${url.origin}${path}?token=${url.searchParams.get("token")}`;
+	const submit = (source: string, n: number) => host.kernel.submitTrigger({ source, externalId: `${source}${n}`, threads: [{ id: `thr_${source}${n}` }], sender: "s", body: "b", occurredAt: Date.now() });
+	submit("inbox", 1);
+	submit("inbox", 2);
+	submit(WATCHDOG_SOURCE, 1);
+	const live = sse(at("/events"));
+	t.after(() => live.close());
+	await until(() => live.got.length > 0, "快照");
+	host.say("查天气");
+	await until(() => ofType(live.got, "board").some((m) => m.rows.some((r) => r.ask === "用 A 还是 B？")), "board 帧带问题");
+	const frame = ofType(live.got, "board").at(-1)!;
+	assert.deepEqual(frame.today.byDisposition, { ignored: 0, delivered: 0, to_router: 2, opened_ticket: 0, handed_over: 0, router_ignored: 0 });
+	assert.deepEqual(frame.today.bySource, { inbox: 2 });
+	assert.ok(frame.duty.since >= before && frame.duty.since <= Date.now(), "值班从这次启动算起");
+	assert.equal(frame.duty.resumed, 0);
+	const fresh = sse(at("/events"));
+	t.after(() => fresh.close());
+	await until(() => fresh.got.length > 0, "第二个快照");
+	const [snap] = ofType(fresh.got, "snapshot");
+	assert.deepEqual(snap.watching, watching);
+	const settled = (rows: typeof snap.board) => rows.map(({ elapsedMs, ...rest }) => rest);
+	assert.deepEqual({ rows: settled(snap.board), today: snap.today, duty: snap.duty }, { rows: settled(frame.rows), today: frame.today, duty: frame.duty });
+});
+
+test("宿主：其他阶段的任务行 ask 为空；不传在盯着时快照里是空列表", async (t) => {
+	const brain = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
+	const { host } = await startHost(brain, (w) => {
+		w.report({ status: "progress", summary: "做了一半" });
+		w.settle();
+	});
+	t.after(() => host.stop());
+	host.say("查天气");
+	await until(() => host.snapshot().board.some((r) => r.latestSummary === "做了一半"), "汇报");
+	assert.deepEqual(host.snapshot().board.map((r) => [r.stage, r.ask]), [["idle", null]]);
+	assert.deepEqual(host.snapshot().watching, []);
+});
+
+test("宿主：这次启动恢复了执行中的任务，快照里的 duty.resumed 等于恢复数", async (t) => {
+	const stateDir = tempStateDir();
+	const brain = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
+	const first = await startHost(brain, () => {}, { stateDir });
+	first.host.say("一直做");
+	await until(() => first.host.snapshot().board.some((r) => r.stage === "running"), "执行中");
+	await first.host.stop();
+	const second = await startHost(() => [], () => {}, { stateDir });
+	t.after(() => second.host.stop());
+	assert.equal(second.host.snapshot().duty.resumed, 1);
+	const third = await startHost(() => [], () => {}, { stateDir: tempStateDir() });
+	t.after(() => third.host.stop());
+	assert.equal(third.host.snapshot().duty.resumed, 0);
 });
