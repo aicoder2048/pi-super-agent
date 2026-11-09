@@ -95,6 +95,7 @@ ts	phase	decision	why	evidence	result
 2026-11-09T19:00:39Z	w6a-review	补角色列的迁移在同一事务里把已起名的助手按纽约日期和建任务先后重新编号	旧任务都归副幕僚长，W5 按来源数的编号会让同一天出现两个「副幕僚长 #1」	tests/kernel.test.ts 重新编号用例	fixed
 2026-11-09T19:00:39Z	w6a-review	角色从牵头改成专家或被删时，未结束的任务在宿主启动时改归副幕僚长并记一行日志，编号接在当天副幕僚长之后；已结束的任务不动；不拒绝启动	拒绝启动会因为改了一个角色文件让宿主起不来，使用者还停不掉那些任务；改归默认牵头人不放宽权限之外的东西，日志写明谁被改了	src/kernel/kernel.ts reassignToDefaultLead；tests/kernel.test.ts 改归用例	decided
 2026-11-09T19:03:55Z	w6a-review	技能目录的包含检查改用 realpath：先确认存在，再比较角色目录和技能目录的实际位置；宿主启动时改归副幕僚长加宿主级测试	角色目录里指向外面的符号链接能绕过按字面路径的检查；删掉启动调用时原有测试仍全绿	tests/roles.test.ts 符号链接用例；tests/host.test.ts 改归用例，变异：删掉调用后变红	fixed
+2026-11-09T19:04:05Z	w6a-verdict	W6a 复审三轮后通过：计费改白名单、技能路径按真实路径限定在角色目录、迁移重编号、降级角色的任务启动时交给副幕僚长，守卫都有会变红的测试	复审逐条变异验证；最后两项由 4b2638f 补齐	472/472，e2e 50/50	PASS
 2026-11-09T19:12:08Z	live-lane	e2e 报告按运行分目录（.out/run-<runner pid>，保留最近 5 次）；临时目录在假模型启动成功后才建	W4 lane 6：同一检出里两次 just e2e 同时跑，后一次清掉前一次的报告目录导致 ENOENT；该失败又在 try 之外，泄漏了临时目录（lane 8）	setup.e2e.ts 新测试先红后绿；两次并发 36/36、36/36	fixed
 2026-11-09T19:13:17Z	w4-lanes	W4 十条实测和性能全部通过（6、8 修后重跑）	首轮被 Mac 睡眠打断已作废；第二轮 caffeinate 下运行	docs/web-client/evidence/w4/*.png；just test 中位数 8.00→7.83s；just e2e 中位数 6.13s	PASS
 2026-11-09T19:16:06Z	w4-verdict	W4 复审 PASS；顺手修两处低概率问题：收尾后不再对已停的进程组发信号；演示的子进程环境删掉行情密钥变量（startHost 支持 baseEnv），只走 secretsFile	复审：pgid 复用可能误杀；shell 导出的密钥会让演示 1-4 轮询真实行情、让 demo-5 误判	实测：有无删除时 us-market 日志分别为「密钥来自环境变量」与「未配置行情密钥」	PASS
