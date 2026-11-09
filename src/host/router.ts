@@ -182,7 +182,7 @@ export function routerSystemPrompt(rules: string, replyMaxChars: number, domainR
 - 使用者要叫停：route stop。
 - [候选触发] 命中卡片上“适用规则”里的某一条：route open_ticket，basis=rule，ruleId 填那条规则的 id（例如 toy-market/big-move）。
 - 一条触发只能在你第一次处理它的那一批决定里使用；处理过、被忽略或被过滤的触发不能再拿来开任务。
-- 为触发开任务时，把触发所在的线程放进 threads；之后同一线程上的触发会直达这个任务的 Worker，不再经过你。
+- 为触发开任务时，把触发所在的线程放进 threads；任务结束前，同一线程上的触发会直达这个任务的 Worker，不再经过你。任务结束后，这条线程上的新触发又作为 [候选触发] 回到你这里；要交回旧任务，read 线程找到它，再 route hand_over。
 - 使用者要你盯着某个还没出现过的线程时，线程 id 写成 thr_<来源>:<线程>，例如 thr_ci:build-42。
 - [候选触发] 没有命中规则但你判断值得做：basis=inference。推断任务开始时不发确认，等它有结果再说。
 - 不值得做的触发：route ignore，写明理由。
