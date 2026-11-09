@@ -11,9 +11,10 @@ import {
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import type { Kernel } from "../kernel/kernel.ts";
+import { usageOf } from "./worker-events.ts";
 import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
-import { CONVERSATION_THREAD_ID, type Decision, type RouterNotice } from "../kernel/types.ts";
+import { CONVERSATION_THREAD_ID, RETRY_BACKOFF_MS, type Decision, type RouterNotice } from "../kernel/types.ts";
 
 export const ROUTER_TOOL_NAMES = ["read", "route", "reply", "note", "ask_status"] as const;
 const CARD_BODY_LIMIT = 600;
@@ -105,8 +106,8 @@ function time(ms: number): string {
 	return new Date(ms).toLocaleString("zh-CN", { hour12: false });
 }
 
-export function noticeCard(kernel: Kernel, notice: RouterNotice, rulesFor: (source: string) => string[] = () => [], actionId?: string): string {
-	if (notice.kind === "notice") return `[通知]${actionId ? ` ${actionId}` : ""}\n${notice.body}`;
+export function noticeCard(kernel: Kernel, notice: RouterNotice, rulesFor: (source: string) => string[], actionId: string): string {
+	if (notice.kind === "notice") return `[通知] ${actionId}\n${notice.body}`;
 	if (notice.kind === "conversation" || notice.kind === "candidate") {
 		const found = kernel.read(notice.triggerId);
 		if (found?.type !== "trigger") return `[通知] 触发 ${notice.triggerId} 已不存在`;
@@ -141,7 +142,6 @@ const STAGE_NAME = {
 const RECENT_CLOSED = 3;
 const LISTED_TICKETS = 8;
 
-// "刚才那个" needs the Router to see which tickets exist without remembering ids from earlier turns.
 function ticketsLine(kernel: Kernel): string {
 	const rows = kernel.listTickets();
 	const open = rows.filter((r) => r.stage !== "closed" && r.stage !== "stopped");
@@ -238,7 +238,6 @@ interface PendingCard {
 	actionId?: string;
 }
 
-const ERROR_RETRY_MS = [5_000, 30_000, 120_000, 600_000, 1_800_000];
 const INTERRUPTED = "[通知] 上一轮没有处理完（宿主重启或模型出错），请继续处理上面还没处理完的消息。";
 
 export class Router {
@@ -262,7 +261,7 @@ export class Router {
 		this.#kernel = options.kernel;
 		this.#onError = options.onError ?? ((e) => console.error("[router]", e));
 		this.#models = options.models;
-		this.#errorRetryMs = options.errorRetryMs ?? ERROR_RETRY_MS;
+		this.#errorRetryMs = options.errorRetryMs ?? [...RETRY_BACKOFF_MS];
 		this.#rulesFor = options.rulesFor ?? (() => []);
 		this.#afterCommand = options.afterCommand;
 		session.subscribe((event) => {
@@ -271,14 +270,8 @@ export class Router {
 				for (const id of ids) this.#delivered.add(id);
 			}
 			if (event.type === "message_end" && event.message.role === "assistant") {
-				const m = event.message as { provider?: string; usage?: { input?: number; output?: number; cacheRead?: number } };
-				if (m.usage) {
-					this.#kernel.recordRouterUsage({
-						provider: m.provider ?? session.model?.provider ?? "unknown",
-						tokensIn: (m.usage.input ?? 0) + (m.usage.cacheRead ?? 0),
-						tokensOut: m.usage.output ?? 0,
-					});
-				}
+				const usage = usageOf(event.message as Parameters<typeof usageOf>[0], session.model?.provider ?? "unknown");
+				if (usage) this.#kernel.recordRouterUsage(usage);
 			}
 			if (event.type === "agent_settled") void this.#settled().catch(this.#onError);
 		});
@@ -352,13 +345,8 @@ export class Router {
 
 	// Resolves only after a Router turn that saw the card finishes cleanly. The session file is not
 	// written before the first assistant message, so an earlier ack could lose the card in a crash.
-	// The outbox keeps the action pending until then and replays it after a restart.
-	inject(notice: RouterNotice, actionId?: string): Promise<void> {
+	inject(notice: RouterNotice, actionId: string): Promise<void> {
 		const card = noticeCard(this.#kernel, notice, this.#rulesFor, actionId);
-		if (!actionId) {
-			this.#push(card);
-			return Promise.resolve();
-		}
 		return new Promise((resolve) => {
 			this.#acks.set(actionId, resolve);
 			this.#push(card, actionId);

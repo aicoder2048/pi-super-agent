@@ -8,10 +8,13 @@ export interface Heartbeat {
 
 export const heartbeatPath = (stateDir: string) => join(stateDir, "heartbeat.json");
 
+export function writeFileAtomic(path: string, text: string): void {
+	writeFileSync(`${path}.tmp`, text);
+	renameSync(`${path}.tmp`, path);
+}
+
 export function writeHeartbeat(stateDir: string, beat: Heartbeat): void {
-	const file = heartbeatPath(stateDir);
-	writeFileSync(`${file}.tmp`, JSON.stringify(beat));
-	renameSync(`${file}.tmp`, file);
+	writeFileAtomic(heartbeatPath(stateDir), JSON.stringify(beat));
 }
 
 export function readHeartbeat(stateDir: string): Heartbeat | undefined {

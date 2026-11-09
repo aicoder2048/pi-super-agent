@@ -3,6 +3,8 @@ import { connect, type Socket } from "node:net";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
 import type { ClientToHost, HostToClient } from "./protocol.ts";
 
+export const DEFAULT_ACK_TIMEOUT_MS = 5000;
+
 export interface HostConnectionOptions {
 	socketPath: string;
 	onMessage(message: HostToClient): void;
@@ -64,7 +66,7 @@ export class HostConnection {
 		const timer = setTimeout(() => {
 			this.#awaitingAck.delete(requestId);
 			this.#o.onAckMissing?.(text);
-		}, this.#o.ackTimeoutMs ?? 5000);
+		}, this.#o.ackTimeoutMs ?? DEFAULT_ACK_TIMEOUT_MS);
 		timer.unref();
 		this.#awaitingAck.set(requestId, timer);
 		return requestId;

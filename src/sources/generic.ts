@@ -57,6 +57,10 @@ export function parseDrop(fallbackId: string, text: string, now: number): Trigge
 	};
 }
 
+function fileExternalId(file: string, mtimeMs: number, text: string): string {
+	return `${file}@${mtimeMs}#${createHash("sha256").update(text).digest("hex").slice(0, 12)}`;
+}
+
 function freeName(dir: string, file: string): string {
 	const stem = file.replace(/\.json$/, "");
 	let name = file;
@@ -127,16 +131,14 @@ export class GenericSource {
 		}
 	}
 
-	// Submit before moving: a crash in between resubmits the same file, whose name, mtime and content give the same externalId.
 	#take(file: string): void {
 		const path = join(this.#o.inboxDir, file);
 		if (!existsSync(path)) return;
 		const { mtimeMs } = statSync(path);
 		const text = readFileSync(path, "utf8");
-		const hash = createHash("sha256").update(text).digest("hex").slice(0, 12);
 		let trigger: TriggerSubmission;
 		try {
-			trigger = parseDrop(`${file}@${mtimeMs}#${hash}`, text, this.#o.now());
+			trigger = parseDrop(fileExternalId(file, mtimeMs, text), text, this.#o.now());
 		} catch (error) {
 			if (Date.now() - mtimeMs < this.#settleMs) return this.#retryLater();
 			return this.#reject(path, file, (error as Error).message);
@@ -157,7 +159,6 @@ export class GenericSource {
 		this.#o.log(`[generic] 拒收 ${file}：${reason}`);
 	}
 
-	// A file still being written by a non-atomic writer gets no further fs event once it stops changing.
 	#retryLater(): void {
 		if (!this.#poll || this.#retry) return;
 		this.#retry = setTimeout(() => {

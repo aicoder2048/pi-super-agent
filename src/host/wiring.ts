@@ -54,7 +54,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 				cwd: join(config.stateDir, "router"),
 				sessionDir: join(config.stateDir, "sessions", "router"),
 				rules: modules.rulesPrompt(),
-				rulesFor: modules.rulesFor,
+				rulesFor: deps.rulesFor,
 				afterCommand: deps.afterCommand,
 				onError: (e) => log(`[router] ${String(e)}`),
 			}),

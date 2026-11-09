@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Kernel } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
@@ -76,30 +76,11 @@ export class Watchdog {
 		return this.#kernel;
 	}
 
-	#episodes(problems: SystemProblem[]): SystemProblem[] {
-		const path = join(this.#o.stateDir, "watchdog-episodes.json");
-		let started: Record<string, number> = {};
-		if (existsSync(path)) {
-			try {
-				started = JSON.parse(readFileSync(path, "utf8"));
-			} catch (error) {
-				this.#o.log?.(`[watchdog] ${path} 读不出来，系统问题从头记录：${String(error)}`);
-			}
-		}
-		const episodes = problems.map((p) => ({ ...p, since: started[p.kind] ?? p.since }));
-		const next = Object.fromEntries(episodes.map((p) => [p.kind, p.since]));
-		if (JSON.stringify(next) !== JSON.stringify(started)) {
-			writeFileSync(`${path}.tmp`, JSON.stringify(next));
-			renameSync(`${path}.tmp`, path);
-		}
-		return episodes;
-	}
-
 	checkOnce(): void {
 		const now = this.#o.clock.now();
 		const kernel = this.#readKernel();
 		const tickets = kernel?.listTickets() ?? [];
-		const problems = this.#episodes(kernel?.systemProblems() ?? []);
+		const problems = kernel?.systemProblems() ?? [];
 		const result = checkWatchdog(
 			{ now, heartbeatAt: readHeartbeat(this.#o.stateDir)?.at, tickets, problems },
 			this.#o.config,

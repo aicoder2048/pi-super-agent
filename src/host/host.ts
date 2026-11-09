@@ -15,7 +15,7 @@ import { HostServer } from "./server.ts";
 import { WorkerExecutor, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 
 export interface RouterLike {
-	inject(notice: RouterNotice, actionId?: string): Promise<void> | void;
+	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
 	waitForIdle(): Promise<void>;
 	dispose(): void;
 }

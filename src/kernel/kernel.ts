@@ -108,7 +108,6 @@ export class Kernel {
 	readonly #clock: Clock;
 	readonly #sourcePolicy: SourcePolicy;
 	readonly #ruleAllows: (ruleId: string, triggerSource: string) => boolean;
-	#batch = new Set<string>();
 	readonly config: KernelConfig;
 
 	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, config }: KernelOptions) {
@@ -170,10 +169,10 @@ export class Kernel {
 	}
 
 	route(decisions: Decision[]): DecisionResult[] {
-		this.#batch = new Set();
+		const takenThisRoute = new Set<string>();
 		return this.#tx(() =>
 			decisions.map((decision) => {
-				const result = this.#decide(decision);
+				const result = this.#decide(decision, takenThisRoute);
 				this.#run(
 					"INSERT INTO decisions (decision, ok, reason, ticket_id, created_at) VALUES (?, ?, ?, ?, ?)",
 					JSON.stringify(decision),
@@ -187,7 +186,7 @@ export class Kernel {
 		);
 	}
 
-	reply({ threadId, text, cause }: { threadId: string; text: string; cause?: string }): Result<{ replyId: string }> {
+	reply({ threadId, text, cause }: { threadId: string; text: string; cause: string }): Result<{ replyId: string }> {
 		return this.#tx(() => {
 			if (!this.#get("SELECT 1 FROM threads WHERE id = ?", threadId)) return reject(`unknown thread ${threadId}`);
 			const length = [...text].length;
@@ -200,10 +199,9 @@ export class Kernel {
 			if (used >= this.config.repliesPerCause) return reject(`already replied ${used} times about ${cause}`);
 			const replyId = this.#id("rpl");
 			this.#run(
-				"INSERT INTO reply_receipts (id, thread_id, ticket_id, cause, text, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+				"INSERT INTO reply_receipts (id, thread_id, cause, text, created_at) VALUES (?, ?, ?, ?, ?)",
 				replyId,
 				threadId,
-				cause!.startsWith("tkt_") ? cause : null,
 				cause,
 				text,
 				this.#now(),
@@ -213,7 +211,6 @@ export class Kernel {
 		});
 	}
 
-	// Every reply answers something the user can be told about: their own words, a ticket result, or a notice.
 	#causeProblem(cause: string | undefined): string | undefined {
 		if (!cause) return "a reply needs a cause: the conversation trigger, ticket or notice id it answers";
 		if (cause.startsWith("trg_")) {
@@ -462,7 +459,7 @@ export class Kernel {
 
 	completeAction(actionId: string): void {
 		this.#tx(() => {
-			const action = this.#pendingAction(actionId);
+			const action = this.#stillPendingAction(actionId);
 			if (!action) return;
 			this.#run("UPDATE actions SET status = 'done', attempts = attempts + 1, last_error = NULL WHERE id = ?", actionId);
 			this.#logAttempt(action, true, null);
@@ -471,7 +468,7 @@ export class Kernel {
 
 	failAction(actionId: string, error: string): { nextAttemptAt: number } | undefined {
 		return this.#tx(() => {
-			const action = this.#pendingAction(actionId);
+			const action = this.#stillPendingAction(actionId);
 			if (!action) return undefined;
 			const attempts = (action.attempts as number) + 1;
 			const nextAttemptAt = this.#now() + RETRY_BACKOFF_MS[Math.min(attempts, RETRY_BACKOFF_MS.length) - 1];
@@ -496,7 +493,13 @@ export class Kernel {
 				SYSTEM_PROBLEM_STREAK,
 			);
 			if (recent.length < SYSTEM_PROBLEM_STREAK || recent.some((r) => r.ok === 1)) return [];
-			return [{ kind, lastError: recent[0].error, since: recent[recent.length - 1].at }];
+			const since = this.#get(
+				`SELECT MIN(at) AS at FROM action_attempts WHERE kind = ?
+				 AND seq > COALESCE((SELECT MAX(seq) FROM action_attempts WHERE kind = ? AND ok = 1), 0)`,
+				kind,
+				kind,
+			).at as number;
+			return [{ kind, lastError: recent[0].error, since }];
 		});
 	}
 
@@ -628,26 +631,26 @@ export class Kernel {
 		return this.#get("SELECT tokens FROM usage_daily WHERE day = ? AND provider = ?", localDayKey(this.#now()), provider)?.tokens ?? 0;
 	}
 
-	#decide(d: Decision): DecisionResult {
+	#decide(d: Decision, takenThisRoute: Set<string>): DecisionResult {
 		switch (d.kind) {
 			case "open_ticket":
-				return this.#openTicket(d);
+				return this.#openTicket(d, takenThisRoute);
 			case "hand_over": {
 				const trigger = this.#get("SELECT id, body FROM triggers WHERE id = ?", d.triggerId);
 				if (!trigger) return reject(`unknown trigger ${d.triggerId}`);
-				const unusable = this.#evidenceProblem(d.triggerId);
+				const unusable = this.#evidenceProblem(d.triggerId, takenThisRoute);
 				if (unusable) return reject(unusable);
 				const problem = this.#acceptsInput(d.ticketId);
 				if (problem) return reject(problem);
 				const kind: InputKind = this.#inConversation(d.triggerId) ? "user_message" : "trigger";
 				this.#addInput(d.ticketId, kind, trigger.body, d.triggerId);
 				this.#setDisposition(d.triggerId, "handed_over", d.ticketId);
-				this.#batch.add(d.triggerId);
+				takenThisRoute.add(d.triggerId);
 				return { ok: true, ticketId: d.ticketId };
 			}
 			case "ignore": {
 				if (!this.#get("SELECT 1 FROM triggers WHERE id = ?", d.triggerId)) return reject(`unknown trigger ${d.triggerId}`);
-				const unusable = this.#evidenceProblem(d.triggerId);
+				const unusable = this.#evidenceProblem(d.triggerId, takenThisRoute);
 				if (unusable) return reject(unusable);
 				this.#setDisposition(d.triggerId, "router_ignored", d.reason);
 				return { ok: true };
@@ -667,18 +670,16 @@ export class Kernel {
 		}
 	}
 
-	// A trigger backs decisions only in the route batch that takes it off to_router, so an old,
-	// ignored or filtered trigger can never be cited again as the user's request or a rule match.
-	#evidenceProblem(triggerId: string): string | undefined {
-		if (this.#batch.has(triggerId)) return undefined;
+	#evidenceProblem(triggerId: string, takenThisRoute: Set<string>): string | undefined {
+		if (takenThisRoute.has(triggerId)) return undefined;
 		const row = this.#get("SELECT disposition FROM triggers WHERE id = ?", triggerId);
 		return row.disposition === "to_router" ? undefined : `trigger ${triggerId} was already handled (${row.disposition}); it cannot back another decision`;
 	}
 
-	#openTicket(d: Extract<Decision, { kind: "open_ticket" }>): DecisionResult {
+	#openTicket(d: Extract<Decision, { kind: "open_ticket" }>, takenThisRoute: Set<string>): DecisionResult {
 		const trigger = d.triggerId === undefined ? undefined : this.#get("SELECT id, source FROM triggers WHERE id = ?", d.triggerId);
 		if (d.triggerId !== undefined && !trigger) return reject(`unknown trigger ${d.triggerId}`);
-		const unusable = d.triggerId === undefined ? undefined : this.#evidenceProblem(d.triggerId);
+		const unusable = d.triggerId === undefined ? undefined : this.#evidenceProblem(d.triggerId, takenThisRoute);
 		if (unusable) return reject(unusable);
 		if (d.basis === "request" && (d.triggerId === undefined || !this.#inConversation(d.triggerId))) {
 			return reject("basis request requires a conversation trigger from the user");
@@ -698,7 +699,7 @@ export class Kernel {
 			}
 		}
 		if (d.basis === "inference") {
-			const limitProblem = this.#inferenceLimitProblem();
+			const limitProblem = this.#inferenceDailyLimitProblem();
 			if (limitProblem) return reject(limitProblem);
 		}
 
@@ -720,7 +721,7 @@ export class Kernel {
 			this.#run("INSERT INTO subscriptions (ticket_id, thread_id) VALUES (?, ?)", ticketId, threadId);
 		}
 		this.#addInput(ticketId, "brief", d.brief, d.triggerId ?? null);
-		if (d.triggerId !== undefined) this.#batch.add(d.triggerId);
+		if (d.triggerId !== undefined) takenThisRoute.add(d.triggerId);
 		if (d.triggerId !== undefined) this.#setDisposition(d.triggerId, "opened_ticket", ticketId);
 		return { ok: true, ticketId };
 	}
@@ -729,8 +730,7 @@ export class Kernel {
 		return this.#get("SELECT COUNT(*) AS n FROM tickets WHERE basis = 'inference' AND worker_state = 'running'").n as number;
 	}
 
-	// Concurrency is gated in claimSlot, the only way into running; opening only checks the daily total.
-	#inferenceLimitProblem(): string | null {
+	#inferenceDailyLimitProblem(): string | null {
 		const today = this.#get(
 			"SELECT COUNT(*) AS n FROM tickets WHERE basis = 'inference' AND created_at >= ?",
 			localDayStart(this.#now()),
@@ -890,8 +890,7 @@ export class Kernel {
 		};
 	}
 
-	// A stop decided while the action was already running cancels it; finishing it afterwards is a no-op.
-	#pendingAction(actionId: string): Row | undefined {
+	#stillPendingAction(actionId: string): Row | undefined {
 		const action = this.#get("SELECT * FROM actions WHERE id = ?", actionId);
 		if (!action) throw new Error(`unknown action ${actionId}`);
 		return action.status === "pending" ? action : undefined;

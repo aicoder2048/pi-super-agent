@@ -837,3 +837,15 @@ test("推断任务汇报无需处理之后，不能再以它为原因回复", ()
 	kernel.workerReport(inf, { status: "no_action", summary: "不值得做" });
 	assert.equal(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "我看过了，没事", cause: inf } as any).ok, false);
 });
+
+test("系统问题的起点是上次成功之后的第一次失败，失败持续期间不变，成功一次后重新算", () => {
+	const { kernel, clock, say } = setup();
+	const failAll = () => { for (const a of kernel.dueActions(1000)) if (a.kind === "channel.reply") kernel.failAction(a.id, "down"); };
+	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "一", cause: say("a").triggerId });
+	const start = clock.t;
+	for (let i = 0; i < 6; i++) { failAll(); clock.t += 31 * 60_000; }
+	assert.equal(kernel.systemProblems().find((p) => p.kind === "channel.reply")!.since, start);
+	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "二", cause: say("b").triggerId });
+	for (const a of kernel.dueActions(1000)) if (a.kind === "channel.reply") kernel.completeAction(a.id);
+	assert.equal(kernel.systemProblems().find((p) => p.kind === "channel.reply"), undefined);
+});

@@ -80,7 +80,6 @@ export interface WorkerModels {
 	fallbackDailyTokens: number;
 }
 
-
 export class WorkerExecutor {
 	readonly #o: WorkerExecutorOptions;
 	readonly #live = new Map<string, Live>();
@@ -107,8 +106,7 @@ export class WorkerExecutor {
 		if (inputs.length === 0) return;
 		if (this.#capReached()) {
 			this.#blockForCap(ticketId);
-			live.stopping = true;
-			await live.handle.stop();
+			await this.stop(ticketId);
 			return;
 		}
 		if (current && !live.handle.isStreaming()) {
@@ -189,8 +187,7 @@ export class WorkerExecutor {
 		live = { handle, token, bgRunning: 0, stopping: false };
 		this.#live.set(ticketId, live);
 		if (kernel.getTicket(ticketId)?.stoppedAt != null) {
-			live.stopping = true;
-			await handle.stop();
+			await this.stop(ticketId);
 			return undefined;
 		}
 		kernel.workerStarted(ticketId, { model: handle.model, fellBack: choice.fellBack });
@@ -234,8 +231,9 @@ export class WorkerExecutor {
 	}
 
 	#capReached(): boolean {
-		const models = this.#o.models;
-		return models.selector.current().fellBack && this.#o.kernel.usageToday(models.selector.current().model.provider) >= models.fallbackDailyTokens;
+		const { selector, fallbackDailyTokens } = this.#o.models;
+		const current = selector.current();
+		return current.fellBack && this.#o.kernel.usageToday(current.model.provider) >= fallbackDailyTokens;
 	}
 
 	#blockForCap(ticketId: string): void {
@@ -245,7 +243,6 @@ export class WorkerExecutor {
 			`回退模型 ${formatModelRef(models.selector.current().model)} 今日用量已达上限（${models.fallbackDailyTokens} token），等主模型恢复或明天再继续。`,
 		);
 	}
-
 
 	handleRequest(ticketId: string, token: string, method: string, params: unknown): unknown {
 		const live = this.#live.get(ticketId);

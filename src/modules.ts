@@ -66,10 +66,12 @@ function loadModule(dir: string): LoadedModule {
 export class Modules {
 	readonly modules: LoadedModule[];
 	readonly userRules: Rule[];
+	readonly #scopes: Map<string, string[] | undefined>;
 
 	constructor(modules: LoadedModule[], userRules: Rule[]) {
 		this.modules = modules;
 		this.userRules = userRules;
+		this.#scopes = new Map(this.allRules().map((r) => [r.id, r.sources]));
 	}
 
 	static load(dirs: string[], userRulesFile?: string): Modules {
@@ -96,11 +98,13 @@ export class Modules {
 		return this.allRules().map((r) => `### ${r.id}\n${r.text}`).join("\n\n");
 	}
 
-	ruleAllows = (ruleId: string, triggerSource: string): boolean =>
-		triggerSource !== "conversation" &&
-		this.allRules().some((r) => r.id === ruleId && (!r.sources || r.sources.includes(triggerSource)));
+	ruleAllows = (ruleId: string, triggerSource: string): boolean => {
+		if (triggerSource === "conversation" || !this.#scopes.has(ruleId)) return false;
+		const sources = this.#scopes.get(ruleId);
+		return !sources || sources.includes(triggerSource);
+	};
 
-	rulesFor = (triggerSource: string): string[] => this.allRules().filter((r) => this.ruleAllows(r.id, triggerSource)).map((r) => r.id);
+	rulesFor = (triggerSource: string): string[] => [...this.#scopes.keys()].filter((id) => this.ruleAllows(id, triggerSource));
 
 	sourcePolicy: SourcePolicy = (trigger) => {
 		const filter = this.modules.flatMap((m) => m.manifest.sources ?? []).find((s) => s.name === trigger.source);

@@ -5,6 +5,21 @@ interface PiEvent {
 	message?: { role?: string; provider?: string; stopReason?: string; errorMessage?: string; usage?: { input?: number; output?: number; cacheRead?: number } };
 }
 
+export interface Usage {
+	provider: string;
+	tokensIn: number;
+	tokensOut: number;
+}
+
+export function usageOf(message: PiEvent["message"], defaultProvider: string): Usage | undefined {
+	if (!message?.usage) return undefined;
+	return {
+		provider: message.provider ?? defaultProvider,
+		tokensIn: (message.usage.input ?? 0) + (message.usage.cacheRead ?? 0),
+		tokensOut: message.usage.output ?? 0,
+	};
+}
+
 export class WorkerEventTranslator {
 	readonly #events: WorkerEvents;
 	readonly #defaultProvider: string;
@@ -24,13 +39,8 @@ export class WorkerEventTranslator {
 		} else if (event.type === "message_end" && event.message?.role === "assistant") {
 			const m = event.message;
 			this.#lastError = m.stopReason === "error" ? String(m.errorMessage ?? "error") : undefined;
-			if (m.usage) {
-				this.#events.usage({
-					provider: m.provider ?? this.#defaultProvider,
-					tokensIn: (m.usage.input ?? 0) + (m.usage.cacheRead ?? 0),
-					tokensOut: m.usage.output ?? 0,
-				});
-			}
+			const usage = usageOf(m, this.#defaultProvider);
+			if (usage) this.#events.usage(usage);
 		} else if (event.type === "agent_settled") {
 			this.#events.settled(this.#lastError);
 		}

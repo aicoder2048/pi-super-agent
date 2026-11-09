@@ -1,5 +1,8 @@
 # Pi Super Agent MVP 端到端架构说明
 
+> 本文是审计开始时（快照 `2f8752f`）的独立解读，正文描述的是当时的代码。之后的修复改变了其中几处：依据核验与规则适用来源（`ruleAllows`、`rulesFor`）、推断 Worker 的只读工具档位（替代正则黑名单）、回复必须注明 `cause`、通知在 Router 处理完之前保持挂起、状态目录迁移。见 `interrogate.md`、`authority-design.md` 和 `decisions.tsv`。
+
+
 ## Overview
 
 Pi Super Agent 是一个常驻本机的 headless host 进程，入口是 `src/host/main.ts`。用户只和一个 Router 对话。Router 是 host 进程内的一个 Pi `AgentSession`。具体工作交给 Worker 做。每个 Worker 是一个 Pi RPC 子进程，对应一张 ticket。外部事件和用户消息都会先变成 trigger。外部事件包括 inbox 目录里的 JSON 文件和定时器。Kernel 对每个 trigger 做一次分流。它可能被过滤掉，可能直接送给已订阅的 Worker，也可能交给 Router 判断。

@@ -157,6 +157,7 @@ export function openStore(path: string): DatabaseSync {
 	db.exec(SCHEMA);
 	const replyColumns = db.prepare("PRAGMA table_info(reply_receipts)").all().map((c) => (c as { name: string }).name);
 	if (!replyColumns.includes("cause")) db.exec("ALTER TABLE reply_receipts ADD COLUMN cause TEXT");
+	db.exec("CREATE INDEX IF NOT EXISTS reply_receipts_cause ON reply_receipts(cause)");
 	return db;
 }
 

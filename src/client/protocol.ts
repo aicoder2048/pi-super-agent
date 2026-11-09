@@ -1,6 +1,6 @@
 import type { DashboardRow } from "../kernel/types.ts";
 
-export type ConversationLine = { id?: string; who: "user" | "router"; text: string; at: number };
+export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number };
 
 export type ClientToHost =
 	| { type: "hello"; role: "client" }

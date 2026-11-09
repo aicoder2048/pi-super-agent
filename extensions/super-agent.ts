@@ -6,7 +6,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
 import { renderBoard, shortId, type BoardView } from "../src/client/board.ts";
-import { HostConnection } from "../src/client/connection.ts";
+import { DEFAULT_ACK_TIMEOUT_MS, HostConnection } from "../src/client/connection.ts";
 import type { ConversationLine, HostToClient } from "../src/client/protocol.ts";
 import { formatTranscriptMessage } from "../src/client/transcript.ts";
 import { defaultStateDir } from "../src/host/config.ts";
@@ -21,7 +21,6 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 	let ctx: ExtensionContext | undefined;
 	let conn: HostConnection | undefined;
 	const seenIds = new Set<string>();
-	let lastSeenAt = 0;
 	let primed = false;
 	let watching: string | undefined;
 	let ticker: NodeJS.Timeout | undefined;
@@ -32,11 +31,8 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 	const drawBoard = () =>
 		ctx?.ui.setWidget("psa-board", () => ({ render: (width: number) => renderBoard(view, width, Date.now()), invalidate() {} }));
 
-	const isNew = (l: ConversationLine) => (l.id ? !seenIds.has(l.id) : l.at > lastSeenAt);
-	const markSeen = (l: ConversationLine) => {
-		if (l.id) seenIds.add(l.id);
-		lastSeenAt = Math.max(lastSeenAt, l.at);
-	};
+	const isNew = (l: ConversationLine) => !seenIds.has(l.id);
+	const markSeen = (l: ConversationLine) => seenIds.add(l.id);
 
 	const showConversation = (lines: ConversationLine[]) => {
 		const fresh = lines.filter(isNew);
@@ -86,7 +82,7 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, context) => {
 		ctx = context;
-		const ackTimeoutMs = Number(process.env.PSA_ACK_TIMEOUT_MS) || 5000;
+		const ackTimeoutMs = Number(process.env.PSA_ACK_TIMEOUT_MS) || DEFAULT_ACK_TIMEOUT_MS;
 		conn = new HostConnection({
 			socketPath: process.env.PSA_SOCKET ?? join(defaultStateDir(), "host.sock"),
 			onMessage,
