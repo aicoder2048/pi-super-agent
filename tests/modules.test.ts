@@ -69,13 +69,13 @@ test("规则的适用来源：来源行里一个来源都没有的使用者规�
 	assert.equal(modules.rulesPrompt(), "");
 });
 
-test("规则写「角色：」行：指定这条规则开任务用的角色，名册提示里写出来", () => {
+test("规则写「专家：」行：列出建议请教的专家，规则提示里写出来", () => {
 	const file = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
-	writeFileSync(file, "## ci\n来源: ci\n角色：ci-doctor\nCI 失败时开任务\n\n## mail\n来源: mail\n有新邮件就看一下\n");
+	writeFileSync(file, "## ci\n来源: ci\n专家：ci-doctor, log-reader\nCI 失败时开任务\n\n## mail\n来源: mail\n有新邮件就看一下\n");
 	const modules = Modules.load([], file);
-	assert.equal(modules.ruleRole("user/ci"), "ci-doctor");
-	assert.equal(modules.ruleRole("user/mail"), undefined);
-	assert.match(modules.rulesPrompt(), /### user\/ci\n角色：ci-doctor\nCI 失败时开任务/);
+	assert.deepEqual(modules.ruleExperts("user/ci"), ["ci-doctor", "log-reader"]);
+	assert.equal(modules.ruleExperts("user/mail"), undefined);
+	assert.match(modules.rulesPrompt(), /### user\/ci\n专家：ci-doctor、log-reader\nCI 失败时开任务/);
 });
 
 test("模块的 roles 目录随模块发现", () => {

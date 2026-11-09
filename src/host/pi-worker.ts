@@ -91,7 +91,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 			skillsDirs: [...role.skills, ...(mod?.skillsDir ? [mod.skillsDir] : [])],
 			basis: spec.basis,
 			roleTools: role.tools,
-			rolePrompt: role.prompt,
+			rolePrompt: role.kind === "lead" ? `${role.prompt}\n\n## 专家名册\n${this.#o.roster.rosterPrompt("expert")}` : role.prompt,
 		});
 		const client = new RpcClient({
 			cliPath: this.#o.cliPath ?? piCliPath(),

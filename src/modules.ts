@@ -36,8 +36,8 @@ export interface Rule {
 	id: string;
 	text: string;
 	sources?: string[];
-	/** The role a ticket opened under this rule must get. */
-	role?: string;
+	/** Experts the lead should involve, from a 「专家：」 line; a hint, not a pin. */
+	experts?: string[];
 }
 
 export interface ScopedRule extends Rule {
@@ -46,17 +46,17 @@ export interface ScopedRule extends Rule {
 
 const RULE_HEADING = /^##\s+([\w-]+)\s*$/;
 const RULE_SOURCES = /^来源\s*[:：]\s*(.+)$/;
-const RULE_ROLE = /^角色\s*[:：]\s*(\S+)\s*$/;
+const RULE_EXPERTS = /^专家\s*[:：]\s*(.+)$/;
 
 export function parseRules(namespace: string, markdown: string): Rule[] {
 	const rules: Rule[] = [];
 	for (const line of markdown.split("\n")) {
 		const heading = line.match(RULE_HEADING);
 		const sources = line.trim().match(RULE_SOURCES);
-		const role = line.trim().match(RULE_ROLE);
+		const experts = line.trim().match(RULE_EXPERTS);
 		if (heading) rules.push({ id: `${namespace}/${heading[1]}`, text: "" });
 		else if (sources && rules.length) rules[rules.length - 1].sources = sources[1].split(/[,，\s]+/).filter(Boolean);
-		else if (role && rules.length) rules[rules.length - 1].role = role[1];
+		else if (experts && rules.length) rules[rules.length - 1].experts = experts[1].split(/[,，、\s]+/).filter(Boolean);
 		else if (rules.length) rules[rules.length - 1].text += line + "\n";
 	}
 	return rules.map((r) => ({ ...r, text: r.text.trim() })).filter((r) => r.text);
@@ -126,10 +126,10 @@ export class Modules {
 	}
 
 	rulesPrompt(): string {
-		return this.allRules().map((r) => `### ${r.id}\n${r.role ? `角色：${r.role}\n` : ""}${r.text}`).join("\n\n");
+		return this.allRules().map((r) => `### ${r.id}\n${r.experts?.length ? `专家：${r.experts.join("、")}\n` : ""}${r.text}`).join("\n\n");
 	}
 
-	ruleRole = (ruleId: string): string | undefined => this.allRules().find((r) => r.id === ruleId)?.role;
+	ruleExperts = (ruleId: string): readonly string[] | undefined => this.allRules().find((r) => r.id === ruleId)?.experts;
 
 	ruleAllows = (ruleId: string, triggerSource: string): boolean => {
 		return triggerSource !== CONVERSATION_SOURCE && (this.#scopes.get(ruleId)?.includes(triggerSource) ?? false);

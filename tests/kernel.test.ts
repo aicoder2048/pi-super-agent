@@ -12,7 +12,7 @@ import type { Basis, KernelConfig, TriggerSubmission } from "../src/kernel/types
 
 const HOUR = 3_600_000;
 
-const ROLES = new Map([["general", "通用助手"], ["deputy", "副幕僚长"], ["news", "新闻研究员"], ["market-analyst", "行情分析师"]]);
+const LEADS = new Map([["deputy", "副幕僚长"], ["market-lead", "行情主管"]]);
 
 function setup({ config, path = ":memory:", at = "2026-11-08T10:00:00" }: { config?: Partial<KernelConfig>; path?: string; at?: string } = {}) {
 	const clock = { t: new Date(at).getTime(), now() { return this.t; } };
@@ -22,8 +22,8 @@ function setup({ config, path = ":memory:", at = "2026-11-08T10:00:00" }: { conf
 		clock,
 		sourcePolicy: (t) => (t.source === "noise" ? "ignore" : "candidate"),
 		isMarketSource: (source) => source === "toy-market",
-		roles: ROLES,
-		ruleRole: (ruleId) => (ruleId === "toy-market/big-move" ? "market-analyst" : undefined),
+		roles: LEADS,
+		ruleExperts: (ruleId) => (ruleId === "toy-market/big-move" ? ["market-analyst", "technical-analyst"] : undefined),
 		config,
 	});
 	let n = 0;
@@ -673,7 +673,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			tokensOut: 200,
 			elapsedMs: 90_000,
 			lastProgressAt: reportedAt,
-			helper: { name: HELPER_NAMES[0], role: "conversation", seq: 1 },
+			helper: { name: HELPER_NAMES[0], role: "conversation", seq: 1, title: "副幕僚长" },
 			workerState: "running",
 			startedAt: reportedAt,
 			endedAt: null,
@@ -1166,12 +1166,12 @@ const closeTicket = (s: ReturnType<typeof setup>, id: string) => {
 	s.kernel.workerReport(id, { status: "no_action", summary: "无需处理" });
 };
 
-test("助手角色按任务来源：你的话是对话助手，行情来源的规则是行情助手，其他规则是规则助手，主动发现是观察助手；序号按角色从 1 数", () => {
+test("助手的来源照旧记下（对话、行情、规则、观察）；序号不分来源，按牵头角色从 1 数", () => {
 	const s = setup({ config: { inferenceConcurrent: 10 } });
 	const ids = [s.open("request"), s.open("rule"), s.open("rule", { source: "toy-market" }), s.open("inference"), s.open("request"), s.open("rule", { source: "toy-market" })];
 	assert.deepEqual(
 		ids.map((id) => { const h = helperOf(s.kernel, id)!; return `${h.role} #${h.seq}`; }),
-		["conversation #1", "rule #1", "market #1", "watch #1", "conversation #2", "market #2"],
+		["conversation #1", "rule #2", "market #3", "watch #4", "conversation #5", "market #6"],
 	);
 });
 
@@ -1225,15 +1225,15 @@ test("旧状态库没有助手列：打开时补上，补名字时按建任务�
 	assert.deepEqual(
 		ids.map((id) => helperOf(again.kernel, id)),
 		[
-			{ name: HELPER_NAMES[0], role: "conversation", seq: 1 },
-			{ name: HELPER_NAMES[1], role: "market", seq: 1 },
-			{ name: HELPER_NAMES[2], role: "conversation", seq: 2 },
-			{ name: HELPER_NAMES[3], role: "rule", seq: 1 },
+			{ name: HELPER_NAMES[0], role: "conversation", seq: 1, title: "副幕僚长" },
+			{ name: HELPER_NAMES[1], role: "market", seq: 2, title: "副幕僚长" },
+			{ name: HELPER_NAMES[2], role: "conversation", seq: 3, title: "副幕僚长" },
+			{ name: HELPER_NAMES[3], role: "rule", seq: 4, title: "副幕僚长" },
 		],
 	);
 	again.clock.t += 1000;
 	const next = again.open("request");
-	assert.deepEqual(helperOf(again.kernel, next), { name: HELPER_NAMES[4], role: "conversation", seq: 3 });
+	assert.deepEqual(helperOf(again.kernel, next), { name: HELPER_NAMES[4], role: "conversation", seq: 5, title: "副幕僚长" });
 });
 
 test("看板行带结束时间：完成取关闭时刻，停止取停止时刻，进行中为空", () => {
@@ -1264,67 +1264,56 @@ test("今日助手：纽约今天建的任务数和它们的 token 合计；昨�
 
 const roleOf = (kernel: Kernel, id: string) => kernel.getTicket(id)!.role;
 
-test("open_ticket 的 role 省略为通用助手；写了名册里的角色就用它，重启不变", () => {
+test("open_ticket 的 role 省略为副幕僚长；写了别的牵头角色就用它，重启不变", () => {
 	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
 	const s = setup({ path });
 	const plain = s.open("request");
-	const [picked] = s.kernel.route([{ kind: "open_ticket", title: "黄仁勋听证会", basis: "request", role: "news", triggerId: s.say("看下黄仁勋听证会的新闻").triggerId, brief: "查新闻" }]);
+	const [picked] = s.kernel.route([{ kind: "open_ticket", title: "盯盘", basis: "request", role: "market-lead", triggerId: s.say("帮我盯盘").triggerId, brief: "盯盘" }]);
 	assert.ok(picked.ok);
-	assert.deepEqual([roleOf(s.kernel, plain), roleOf(s.kernel, picked.ticketId!)], ["general", "news"]);
+	assert.deepEqual([roleOf(s.kernel, plain), roleOf(s.kernel, picked.ticketId!)], ["deputy", "market-lead"]);
 	s.db.close();
 	const again = setup({ path });
-	assert.equal(roleOf(again.kernel, picked.ticketId!), "news");
+	assert.equal(roleOf(again.kernel, picked.ticketId!), "market-lead");
 });
 
-test("名册里没有的角色：拒绝这个决定，说明有哪些角色，触发还能再用", () => {
+test("不是牵头角色（专家或不存在）不能开任务：拒绝这个决定，说明有哪些牵头角色，触发还能再用", () => {
 	const s = setup();
 	const { triggerId } = s.say("查点东西");
-	const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", role: "astrologer", triggerId, brief: "b" }]);
-	assert.equal(result.ok, false);
-	assert.match(!result.ok ? result.reason : "", /astrologer.*general/);
+	for (const role of ["news", "general"]) {
+		const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", role, triggerId, brief: "b" }]);
+		assert.equal(result.ok, false, role);
+		assert.match(!result.ok ? result.reason : "", /deputy, market-lead/);
+	}
 	const [retry] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", triggerId, brief: "b" }]);
 	assert.ok(retry.ok);
 });
 
-test("规则指定了角色：按这条规则开任务必须用它，省略或换别的都拒绝", () => {
+test("规则写了专家：按这条规则开的任务说明末尾写上建议请教的专家；别的规则不加", () => {
 	const s = setup();
 	const fire = () => s.trigger({ source: "toy-market", threads: [{ id: `thr_toy-market:TOYX-${s.clock.t++}` }], body: "TOYX -5.2%" }).triggerId;
-	const open = (role?: string) => s.kernel.route([{ kind: "open_ticket", title: "t", basis: "rule", ruleId: "toy-market/big-move", role, triggerId: fire(), brief: "b" }])[0];
-	for (const role of [undefined, "news"]) {
-		const r = open(role);
-		assert.equal(r.ok, false, String(role));
-		assert.match(!r.ok ? r.reason : "", /market-analyst/);
-	}
-	const ok = open("market-analyst");
-	assert.ok(ok.ok);
-	assert.equal(roleOf(s.kernel, ok.ticketId!), "market-analyst");
+	const [hinted] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "rule", ruleId: "toy-market/big-move", triggerId: fire(), brief: "核实波动" }]);
+	const [plain] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "rule", ruleId: "rule-1", triggerId: fire(), brief: "核实波动" }]);
+	const brief = (id: string) => s.kernel.pendingInputs(id).find((i) => i.kind === "brief")!.body;
+	assert.equal(brief(hinted.ok ? hinted.ticketId! : ""), "核实波动\n\n规则 toy-market/big-move 建议请教的专家：market-analyst、technical-analyst");
+	assert.equal(brief(plain.ok ? plain.ticketId! : ""), "核实波动");
 });
 
-test("显示名：通用助手按来源起名；其他角色写职称，#N 按职称在纽约同一天里数", () => {
-	const s = setup();
-	const as = (role: string) => {
-		const [r] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", role, triggerId: s.say("x").triggerId, brief: "b" }]);
-		assert.ok(r.ok);
-		return helperOf(s.kernel, r.ticketId!)!;
-	};
-	const general = as("general");
-	assert.equal(general.title, undefined);
-	assert.equal(general.role, "conversation");
-	const [n1, g2, n2, d1] = [as("news"), as("general"), as("news"), as("deputy")];
-	assert.deepEqual([n1, n2, d1].map((h) => `${h.title} #${h.seq}`), ["新闻研究员 #1", "新闻研究员 #2", "副幕僚长 #1"]);
-	assert.equal(g2.seq, 2, "别的角色不占通用助手的序号");
-	const [watched] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "inference", role: "news", triggerId: s.trigger().triggerId, brief: "b" }]);
-	assert.ok(watched.ok);
-	assert.equal(helperOf(s.kernel, watched.ticketId!)!.seq, 3, "同一角色不论来源一起数");
+test("显示名：每个任务的助手写牵头角色的职称，#N 按角色在纽约同一天里数，不分来源", () => {
+	const s = setup({ config: { inferenceConcurrent: 10 } });
+	const ids = [s.open("request"), s.open("rule", { source: "toy-market" }), s.open("inference")];
+	const [lead] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", role: "market-lead", triggerId: s.say("x").triggerId, brief: "b" }]);
+	assert.ok(lead.ok);
+	const text = (id: string) => { const h = helperOf(s.kernel, id)!; return `${h.title} #${h.seq}`; };
+	assert.deepEqual([...ids, lead.ticketId!].map(text), ["副幕僚长 #1", "副幕僚长 #2", "副幕僚长 #3", "行情主管 #1"]);
 });
 
-test("旧状态库没有角色列：打开时补上，旧任务都是通用助手", () => {
+test("旧状态库没有角色列：打开时补上，旧任务都归副幕僚长", () => {
 	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
 	const first = setup({ path });
 	const id = first.open("request");
 	first.db.exec("ALTER TABLE tickets DROP COLUMN role");
 	first.db.close();
 	const again = setup({ path });
-	assert.equal(roleOf(again.kernel, id), "general");
-	assert.equal(helperOf(again.kernel, id)!.title, undefined);
+	assert.equal(roleOf(again.kernel, id), "deputy");
+	assert.equal(helperOf(again.kernel, id)!.title, "副幕僚长");
 });

@@ -19,7 +19,7 @@ function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
 		id: "tkt_abcd1234", title: "查天气", stage: "running", basis: "request", latestSummary: null, model: "openai-codex/gpt-6.1-sol",
 		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, question: null, stall: null,
-		helper: { name: "边牧", role: "conversation", seq: 1 }, workerState: "running", startedAt: 0, endedAt: null, ...over,
+		helper: { name: "边牧", role: "conversation", seq: 1, title: "副幕僚长" }, workerState: "running", startedAt: 0, endedAt: null, ...over,
 	};
 }
 
@@ -344,18 +344,18 @@ test("页面：助手条每位在岗助手一枚小卡（●运行中 ◐空闲 
 	const view = page.emptyView();
 	page.applyMessage(view, board([
 		row({ id: "tkt_run", workerState: "running", elapsedMs: 5000 }),
-		row({ id: "tkt_idl", stage: "idle", workerState: "idle", helper: { name: "雪泥鸿爪", role: "market", seq: 2 }, tokensIn: 0, tokensOut: 0, elapsedMs: 60_000 }),
-		row({ id: "tkt_que", stage: "queued", workerState: "queued", helper: { name: "青檀", role: "watch", seq: 1 }, startedAt: null, elapsedMs: 0 }),
-		row({ id: "tkt_ask", stage: "awaiting_answer", workerState: "idle", helper: { name: "观澜", role: "rule", seq: 3 } }),
-		row({ id: "tkt_end", stage: "closed", workerState: "idle", endedAt: 9000, helper: { name: "知微", role: "rule", seq: 1 } }),
-		row({ id: "tkt_stp", stage: "stopped", workerState: "running", endedAt: 9000, helper: { name: "拾遗", role: "rule", seq: 2 } }),
+		row({ id: "tkt_idl", stage: "idle", workerState: "idle", helper: { name: "雪泥鸿爪", role: "market", seq: 2, title: "副幕僚长" }, tokensIn: 0, tokensOut: 0, elapsedMs: 60_000 }),
+		row({ id: "tkt_que", stage: "queued", workerState: "queued", helper: { name: "青檀", role: "watch", seq: 1, title: "副幕僚长" }, startedAt: null, elapsedMs: 0 }),
+		row({ id: "tkt_ask", stage: "awaiting_answer", workerState: "idle", helper: { name: "观澜", role: "rule", seq: 3, title: "副幕僚长" } }),
+		row({ id: "tkt_end", stage: "closed", workerState: "idle", endedAt: 9000, helper: { name: "知微", role: "rule", seq: 1, title: "副幕僚长" } }),
+		row({ id: "tkt_stp", stage: "stopped", workerState: "running", endedAt: 9000, helper: { name: "拾遗", role: "rule", seq: 2, title: "副幕僚长" } }),
 	], zeroToday(), { count: 6, tokens: 12_345 }), 1000);
 	const strip = page.helperStrip(view, 3000);
 	assert.deepEqual(strip.chips.map(({ id, ...shown }) => shown), [
-		{ duty: "running", mark: "●", state: "运行中", name: "边牧", role: "对话助手 #1", elapsed: "7秒", tokens: "1.5k tokens" },
-		{ duty: "idle", mark: "◐", state: "空闲", name: "雪泥鸿爪", role: "行情助手 #2", elapsed: "1分2秒", tokens: "0 tokens" },
-		{ duty: "queued", mark: "○", state: "排队", name: "青檀", role: "观察助手 #1", elapsed: "0秒", tokens: "1.5k tokens" },
-		{ duty: "idle", mark: "◐", state: "空闲", name: "观澜", role: "规则助手 #3", elapsed: "7秒", tokens: "1.5k tokens" },
+		{ duty: "running", mark: "●", state: "运行中", name: "边牧", role: "副幕僚长 #1", elapsed: "7秒", tokens: "1.5k tokens" },
+		{ duty: "idle", mark: "◐", state: "空闲", name: "雪泥鸿爪", role: "副幕僚长 #2", elapsed: "1分2秒", tokens: "0 tokens" },
+		{ duty: "queued", mark: "○", state: "排队", name: "青檀", role: "副幕僚长 #1", elapsed: "0秒", tokens: "1.5k tokens" },
+		{ duty: "idle", mark: "◐", state: "空闲", name: "观澜", role: "副幕僚长 #3", elapsed: "7秒", tokens: "1.5k tokens" },
 	]);
 	assert.deepEqual(strip.chips.map((c) => c.id), ["tkt_run", "tkt_idl", "tkt_que", "tkt_ask"]);
 	assert.equal(strip.total, "今日 6 位 · 12.3k tokens");
@@ -363,7 +363,7 @@ test("页面：助手条每位在岗助手一枚小卡（●运行中 ◐空闲 
 
 test("页面：你的每句话下面写去向，开新任务和交给已有任务的写标题和助手全名、点开那个任务；处理中、直接回答、无需处理只写一句", () => {
 	const view = page.emptyView();
-	const news = row({ id: "tkt_news", title: "NVDA 新闻", helper: { name: "边牧", role: "conversation", seq: 2 } });
+	const news = row({ id: "tkt_news", title: "NVDA 新闻", helper: { name: "边牧", role: "conversation", seq: 2, title: "副幕僚长" } });
 	page.applyMessage(view, snapshot({
 		board: [news],
 		routes: {
@@ -375,8 +375,8 @@ test("页面：你的每句话下面写去向，开新任务和交给已有任�
 			trg_gone: { kind: "handed_over", ticketId: "tkt_missing" },
 		},
 	}), 0);
-	assert.deepEqual(page.routeLine(view, "trg_open"), { text: "已开新任务「NVDA 新闻」 · 边牧 · 对话助手 #2", ticketId: "tkt_news" });
-	assert.deepEqual(page.routeLine(view, "trg_hand"), { text: "已交给 边牧 · 对话助手 #2（NVDA 新闻）", ticketId: "tkt_news" });
+	assert.deepEqual(page.routeLine(view, "trg_open"), { text: "已开新任务「NVDA 新闻」 · 边牧 · 副幕僚长 #2", ticketId: "tkt_news" });
+	assert.deepEqual(page.routeLine(view, "trg_hand"), { text: "已交给 边牧 · 副幕僚长 #2（NVDA 新闻）", ticketId: "tkt_news" });
 	assert.deepEqual(page.routeLine(view, "trg_ans"), { text: "幕僚长直接回答" });
 	assert.deepEqual(page.routeLine(view, "trg_wait"), { text: "幕僚长处理中" });
 	assert.deepEqual(page.routeLine(view, "trg_skip"), { text: "幕僚长判断无需处理" });
@@ -391,7 +391,7 @@ test("页面：看板推送带来新的去向，处理中的那句改写成已�
 	assert.equal(page.routeLine(view, "trg_2")?.text, "幕僚长处理中");
 	const panes = page.applyMessage(view, board([news], zeroToday(), noHelpers, { trg_2: { kind: "handed_over", ticketId: "tkt_news" } }), 0);
 	assert.ok(panes.includes("conversation"), "看板推送也要重画对话里的去向");
-	assert.equal(page.routeLine(view, "trg_2")?.text, "已交给 边牧 · 对话助手 #1（NVDA 新闻）");
+	assert.equal(page.routeLine(view, "trg_2")?.text, "已交给 边牧 · 副幕僚长 #1（NVDA 新闻）");
 });
 
 test("页面：没有在岗助手时助手条只有今日合计；还没收到看板时为空", () => {
@@ -401,7 +401,7 @@ test("页面：没有在岗助手时助手条只有今日合计；还没收到�
 
 test("页面：任务卡片写助手全名；旧任务还没有助手时不写", () => {
 	const left = page.leftColumn(withRows([row({ id: "tkt_a" }), row({ id: "tkt_b", helper: null })]), 0);
-	assert.deepEqual(left.doing.map((c) => c.helper), ["边牧 · 对话助手 #1", ""]);
+	assert.deepEqual(left.doing.map((c) => c.helper), ["边牧 · 副幕僚长 #1", ""]);
 });
 
 test("页面：执行过程头部的生命周期写开始、结束或进行中、用时、模型（回退时注明）、工具次数和 token 入/出", () => {

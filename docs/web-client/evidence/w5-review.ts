@@ -92,11 +92,11 @@ try {
 	const feed = runSync(["modules/toy-market/feed.ts", "TOYX", "-5.2", "12"], { ...process.env, ...env });
 	assert.equal(feed.status, 0, feed.stderr);
 	await chips(3);
-	await page.locator("#helpers .helper-chip", { hasText: "行情助手 #1" }).waitFor();
+	await page.locator("#helpers .helper-chip", { hasText: "副幕僚长 #3" }).waitFor();
 	await page.waitForTimeout(1500);
 	await shoot("market-helper");
 
-	await page.locator("#helpers .helper-chip", { hasText: "对话助手 #1" }).click();
+	await page.locator("#helpers .helper-chip", { hasText: "副幕僚长 #1" }).click();
 	await page.locator("#how-life").waitFor();
 	await page.locator("#steps .step", { hasText: "按负责人分组" }).waitFor();
 	await shoot("open-how");

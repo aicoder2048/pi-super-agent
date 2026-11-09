@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ConfigError } from "./config-error.ts";
-import { GENERAL_ROLE } from "./kernel/types.ts";
+import { DEFAULT_LEAD, GENERAL_ROLE } from "./kernel/types.ts";
 import { PAY_PER_USE_PROVIDERS, parseModelRef, type ModelRef } from "./models.ts";
 import { WORKER_TOOLS } from "./worker/tools.ts";
 
@@ -85,7 +85,8 @@ export class Roster {
 			if (other) throw new ConfigError(`角色重名：${role.name} 同时定义在 ${other.file} 和 ${role.file}`);
 			this.#roles.set(role.name, role);
 		}
-		if (!this.#roles.has(GENERAL_ROLE)) throw new ConfigError(`名册里没有内置角色 ${GENERAL_ROLE}`);
+		if (this.#roles.get(GENERAL_ROLE)?.kind !== "expert") throw new ConfigError(`名册里没有内置专家 ${GENERAL_ROLE}`);
+		if (this.#roles.get(DEFAULT_LEAD)?.kind !== "lead") throw new ConfigError(`名册里没有内置牵头角色 ${DEFAULT_LEAD}`);
 	}
 
 	static load(dirs: readonly string[]): Roster {
@@ -109,11 +110,12 @@ export class Roster {
 	}
 
 	/** name → title, all the kernel needs to check a role and show it. */
-	titles(): ReadonlyMap<string, string> {
-		return new Map([...this.#roles.values()].map((r) => [r.name, r.title]));
+	titles(kind: RoleKind): ReadonlyMap<string, string> {
+		return new Map(this.names(kind).map((n) => [n, this.#roles.get(n)!.title]));
 	}
 
-	rosterPrompt(): string {
-		return this.names().map((n) => this.#roles.get(n)!).map((r) => `- ${r.name}（${r.title}）：${r.description}`).join("\n");
+	/** One line per role of that kind: name, title, description. Leads go to the Router, experts to a lead. */
+	rosterPrompt(kind: RoleKind): string {
+		return this.names(kind).map((n) => this.#roles.get(n)!).map((r) => `- ${r.name}（${r.title}）：${r.description}`).join("\n");
 	}
 }

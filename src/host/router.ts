@@ -53,7 +53,7 @@ export function routerTools(kernel: Kernel, afterCommand: () => void): ToolDefin
 					title: Type.Optional(Type.String({ description: "open_ticket：任务标题" })),
 					basis: Type.Optional(StringEnum(["request", "rule", "inference"] as const)),
 					ruleId: Type.Optional(Type.String({ description: "basis 为 rule 时命中的规则 id" })),
-					role: Type.Optional(Type.String({ description: "open_ticket：派名册里哪个角色，填它的 name；省略就是 general" })),
+					role: Type.Optional(Type.String({ description: "open_ticket：由哪个牵头角色负责，填名册里的 name；省略就是 deputy" })),
 					threads: Type.Optional(Type.Array(Type.String(), { description: "open_ticket：任务要订阅的线程" })),
 					brief: Type.Optional(Type.String({ description: "open_ticket：交给 Worker 的任务说明" })),
 					reason: Type.Optional(Type.String({ description: "ignore 的理由" })),
@@ -197,14 +197,9 @@ export function routerSystemPrompt(rules: string, replyMaxChars: number, roster:
 - 汇报带草稿时，告诉使用者有待确认的草稿，不要替使用者做决定。
 
 ## 派谁
-开任务时用 role 从下面的名册里选一个角色，填它的 name；省略就是 general。
-- 一件事只涉及一个领域，而名册里有那个领域的角色：派它。
-- 要拆开问几个领域、再合成一份答复：派 deputy。
-- 没有合适的角色：省略 role。
-- 规则写了「角色：」：按这条规则开任务必须用它。
-你只管派人，不拆任务、不汇总结果。
+每个任务由一位牵头角色负责，它自己做简单的事，需要时请教专家，最后合成一份汇报。open_ticket 的 role 省略就是 deputy（副幕僚长）；只有下面的名册里有更合适的牵头角色时才填它的 name。你只管派人，不拆任务、不汇总结果。规则里的「专家：」是给牵头角色的提示，会自动写进任务说明，你不用处理。
 
-## 名册
+## 牵头角色
 ${roster.trim()}
 
 ## 授权

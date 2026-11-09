@@ -91,10 +91,17 @@ test("写错的字段、未知工具、缺字段、找不到的技能目录都�
 	for (const text of bad) assert.throws(() => Roster.load([rolesDir({ "r.md": text })]), ConfigError, text);
 });
 
-test("名册给幕僚长看的只有 name、title、description", () => {
+test("名册分两份：牵头角色给幕僚长，专家给牵头角色；都只有 name、title、description", () => {
 	const dir = rolesDir({ "news.md": NEWS.replace("skills: ./news-skills\n", "") });
-	const prompt = Roster.load([BUILTIN_ROLES_DIR, dir]).rosterPrompt();
-	assert.match(prompt, /news-researcher（新闻研究员）：查新闻、核对报道来源/);
-	assert.match(prompt, /general（通用助手）/);
-	assert.doesNotMatch(prompt, /你是新闻研究员|gpt-6\.1-sol|web_get/);
+	const roster = Roster.load([BUILTIN_ROLES_DIR, dir]);
+	const experts = roster.rosterPrompt("expert");
+	assert.match(experts, /news-researcher（新闻研究员）：查新闻、核对报道来源/);
+	assert.match(experts, /general（通用助手）/);
+	assert.doesNotMatch(experts, /deputy|你是新闻研究员|gpt-6\.1-sol|web_get/);
+	assert.match(roster.rosterPrompt("lead"), /^- deputy（副幕僚长）：[^\n]+$/);
+});
+
+test("内置的通用助手和副幕僚长缺一不可", () => {
+	const lone = rolesDir({ "general.md": "---\nname: general\ntitle: 通用助手\ndescription: d\n---\n" });
+	assert.throws(() => Roster.load([lone]), /deputy/);
 });

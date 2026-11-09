@@ -6,7 +6,7 @@ import {
 	CONVERSATION_SOURCE,
 	CONVERSATION_THREAD_ID,
 	DISPOSITIONS,
-	GENERAL_ROLE,
+	DEFAULT_LEAD,
 	HELPER_ROLES,
 	INPUT_KINDS,
 	REPORT_STATUSES,
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS tickets (
 	helper_name TEXT,
 	helper_role TEXT ${oneOf("helper_role", HELPER_ROLES)},
 	helper_seq INTEGER,
-	role TEXT NOT NULL DEFAULT '${GENERAL_ROLE}',
+	role TEXT NOT NULL DEFAULT '${DEFAULT_LEAD}',
 	CHECK (basis <> 'rule' OR rule_id IS NOT NULL)
 );
 
@@ -184,7 +184,7 @@ export function openStore(path: string): DatabaseSync {
 			ALTER TABLE tickets ADD COLUMN helper_role TEXT ${oneOf("helper_role", HELPER_ROLES)};
 			ALTER TABLE tickets ADD COLUMN helper_seq INTEGER`);
 	}
-	if (!ticketColumns.includes("role")) db.exec(`ALTER TABLE tickets ADD COLUMN role TEXT NOT NULL DEFAULT '${GENERAL_ROLE}'`);
+	if (!ticketColumns.includes("role")) db.exec(`ALTER TABLE tickets ADD COLUMN role TEXT NOT NULL DEFAULT '${DEFAULT_LEAD}'`);
 	return db;
 }
 

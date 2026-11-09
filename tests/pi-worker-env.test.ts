@@ -47,13 +47,14 @@ test("Worker 子进程和模块 prepare 拿不到宿主环境里的密钥类变�
 	assert.ok(!/MASSIVE_API_KEY|FOO_TOKEN|DEEPSEEK_API_KEY/.test(prepared), "prepare 环境里不该有密钥类变量");
 });
 
-test("角色的 Worker：提示词接在后面，技能先角色后模块，工具白名单经环境变量交给扩展；名册里没有的角色不启动", async (t) => {
+test("牵头角色的 Worker：提示词和专家名册接在后面，技能先角色后模块，工具白名单经环境变量交给扩展；名册里没有的角色不启动", async (t) => {
 	const dir = mkdtempSync(join(tmpdir(), "psa-role-"));
 	const cliPath = join(dir, "fake-pi.mjs");
 	writeFileSync(cliPath, FAKE_PI);
 	const roles = join(dir, "roles");
 	mkdirSync(join(roles, "news-skills"), { recursive: true });
-	writeFileSync(join(roles, "news.md"), "---\nname: news\ntitle: 新闻研究员\ndescription: d\ntools: read, web_get\nskills: ./news-skills\n---\n每条结论写出处。\n");
+	writeFileSync(join(roles, "desk.md"), "---\nname: desk-lead\ntitle: 看盘主管\ndescription: d\nconsult: true\ntools: read, web_get\nskills: ./news-skills\n---\n每条结论写出处。\n");
+	writeFileSync(join(roles, "news.md"), "---\nname: news\ntitle: 新闻研究员\ndescription: 查新闻\n---\n不该出现\n");
 	const spawner = new PiWorkerSpawner({
 		socketPath: join(dir, "h.sock"),
 		roster: Roster.load([BUILTIN_ROLES_DIR, roles]),
@@ -62,12 +63,13 @@ test("角色的 Worker：提示词接在后面，技能先角色后模块，工�
 		moduleFor: () => ({ skillsDir: "/modules/m/skills" }),
 	});
 	const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
-	const spec = { ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "rule" as const, ruleId: "m/r", role: "news", token: "tok", model: { provider: "openai-codex", id: "gpt" } };
+	const spec = { ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "rule" as const, ruleId: "m/r", role: "desk-lead", token: "tok", model: { provider: "openai-codex", id: "gpt" } };
 	const handle = await spawner.spawn(spec, events);
 	t.after(() => handle.stop());
 	const argv = JSON.parse(readFileSync(join(dir, "worker-argv.json"), "utf8")) as string[];
 	const all = (name: string) => argv.flatMap((a, i) => (a === name ? [argv[i + 1]] : []));
-	assert.equal(all("--append-system-prompt").at(-1), "每条结论写出处。");
+	const persona = all("--append-system-prompt").at(-1)!;
+	assert.match(persona, /^每条结论写出处。\n\n## 专家名册\n- general（通用助手）：[^\n]+\n- news（新闻研究员）：查新闻$/);
 	assert.deepEqual(all("--skill"), [join(roles, "news-skills"), "/modules/m/skills"]);
 	const env = JSON.parse(readFileSync(join(dir, "worker-env.json"), "utf8")) as Record<string, string>;
 	assert.equal(env.PSA_ROLE_TOOLS, "read,web_get");

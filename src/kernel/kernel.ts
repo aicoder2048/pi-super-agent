@@ -11,7 +11,8 @@ import {
 	CONVERSATION_SOURCE,
 	CONVERSATION_THREAD_ID,
 	DEFAULT_CONFIG,
-	GENERAL_ROLE,
+	DEFAULT_LEAD,
+	DEFAULT_LEAD_TITLE,
 	RETRY_BACKOFF_MS,
 	SYSTEM_PROBLEM_STREAK,
 } from "./types.ts";
@@ -128,10 +129,10 @@ export interface KernelOptions {
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	/** A rule ticket from such a source gets a market helper. */
 	isMarketSource?: (source: string) => boolean;
-	/** The roster as role name → title; a ticket may only get one of these roles. */
+	/** The lead roles as name → title; a ticket's owner must be one of them. */
 	roles?: ReadonlyMap<string, string>;
-	/** The role a rule pins with a 「角色：」 line, if any. */
-	ruleRole?: (ruleId: string) => string | undefined;
+	/** The experts a rule's 「专家：」 line names, added to the brief as a hint. */
+	ruleExperts?: (ruleId: string) => readonly string[] | undefined;
 	config?: Partial<KernelConfig>;
 }
 
@@ -142,14 +143,14 @@ export class Kernel {
 	readonly #ruleAllows: (ruleId: string, triggerSource: string) => boolean;
 	readonly #isMarketSource: (source: string) => boolean;
 	readonly #roles: ReadonlyMap<string, string>;
-	readonly #ruleRole: (ruleId: string) => string | undefined;
+	readonly #ruleExperts: (ruleId: string) => readonly string[] | undefined;
 	readonly config: KernelConfig;
 
-	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, roles, ruleRole = () => undefined, config }: KernelOptions) {
+	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, roles, ruleExperts = () => undefined, config }: KernelOptions) {
 		this.#ruleAllows = ruleAllows;
 		this.#isMarketSource = isMarketSource;
-		this.#roles = roles ?? new Map([[GENERAL_ROLE, GENERAL_ROLE]]);
-		this.#ruleRole = ruleRole;
+		this.#roles = roles ?? new Map([[DEFAULT_LEAD, DEFAULT_LEAD_TITLE]]);
+		this.#ruleExperts = ruleExperts;
 		this.#db = db;
 		this.#clock = clock;
 		this.#sourcePolicy = sourcePolicy;
@@ -622,36 +623,36 @@ export class Kernel {
 	nameUnnamedHelpers(): void {
 		this.#tx(() => {
 			const unnamed = this.#all(
-				`SELECT t.id, t.basis, t.created_at, g.source FROM tickets t LEFT JOIN triggers g ON g.id = t.origin_trigger_id
+				`SELECT t.id, t.basis, t.created_at, t.role, g.source FROM tickets t LEFT JOIN triggers g ON g.id = t.origin_trigger_id
 				 WHERE t.helper_name IS NULL ORDER BY t.created_at, t.rowid`,
 			);
 			for (const r of unnamed) {
-				const h = this.#newHelper(r.basis, r.source, r.created_at, GENERAL_ROLE);
+				const h = this.#newHelper(r.basis, r.source, r.created_at, r.role);
 				this.#run("UPDATE tickets SET helper_name = ?, helper_role = ?, helper_seq = ? WHERE id = ?", h.name, h.role, h.seq, r.id);
 			}
 		});
 	}
 
-	// A general helper counts within its origin role; any other role counts within itself.
 	#newHelper(basis: Basis, originSource: string | null, createdAt: number, ticketRole: string): Helper {
 		const role = helperRole(basis, originSource, this.#isMarketSource);
 		const day = newYorkDate(createdAt);
 		const sameRole = this.#all(
-			`SELECT created_at FROM tickets WHERE created_at > ? AND created_at <= ? AND role = ?
-			 ${ticketRole === GENERAL_ROLE ? "AND helper_role = ?" : ""}`,
+			"SELECT created_at FROM tickets WHERE helper_name IS NOT NULL AND created_at > ? AND created_at <= ? AND role = ?",
 			createdAt - 2 * DAY_MS,
 			createdAt,
 			ticketRole,
-			...(ticketRole === GENERAL_ROLE ? [role] : []),
 		).filter((r) => newYorkDate(r.created_at) === day).length;
 		const ordinal = this.#get("SELECT COUNT(*) AS n FROM tickets WHERE helper_name IS NOT NULL").n as number;
 		const onDuty = new Set(this.#column("SELECT helper_name AS v FROM tickets WHERE helper_name IS NOT NULL AND closed_at IS NULL AND stopped_at IS NULL"));
-		return { name: helperName(ordinal, onDuty), role, seq: sameRole + 1 };
+		return { name: helperName(ordinal, onDuty), role, seq: sameRole + 1, title: this.#title(ticketRole) };
 	}
 
 	#helper(r: Row): Helper {
-		const helper: Helper = { name: r.helper_name, role: r.helper_role, seq: r.helper_seq };
-		return r.role === GENERAL_ROLE ? helper : { ...helper, title: this.#roles.get(r.role) ?? r.role };
+		return { name: r.helper_name, role: r.helper_role, seq: r.helper_seq, title: this.#title(r.role) };
+	}
+
+	#title(role: string): string {
+		return this.#roles.get(role) ?? role;
 	}
 
 	#stall(t: Ticket, now: number): Stall | null {
@@ -914,10 +915,8 @@ export class Kernel {
 				return reject(`unknown thread ${threadId}; new threads must look like thr_<source>:<thread>`);
 			}
 		}
-		const role = d.role ?? GENERAL_ROLE;
-		if (!this.#roles.has(role)) return reject(`unknown role ${role}; the roster has ${[...this.#roles.keys()].join(", ")}`);
-		const pinned = d.basis === "rule" ? this.#ruleRole(d.ruleId!) : undefined;
-		if (pinned && pinned !== role) return reject(`rule ${d.ruleId} pins role ${pinned}; open the ticket with role ${pinned}`);
+		const role = d.role ?? DEFAULT_LEAD;
+		if (!this.#roles.has(role)) return reject(`role ${role} cannot own a ticket; the lead roles are ${[...this.#roles.keys()].join(", ")}`);
 		if (d.basis === "inference") {
 			const limitProblem = this.#inferenceDailyLimitProblem();
 			if (limitProblem) return reject(limitProblem);
@@ -945,7 +944,9 @@ export class Kernel {
 			if (source) this.#run("INSERT INTO threads (id, source, title) VALUES (?, ?, NULL) ON CONFLICT (id) DO NOTHING", threadId, source);
 			this.#run("INSERT INTO subscriptions (ticket_id, thread_id) VALUES (?, ?)", ticketId, threadId);
 		}
-		this.#addInput(ticketId, "brief", d.brief, d.triggerId ?? null);
+		const experts = d.basis === "rule" ? this.#ruleExperts(d.ruleId!) : undefined;
+		const hint = experts?.length ? `\n\n规则 ${d.ruleId} 建议请教的专家：${experts.join("、")}` : "";
+		this.#addInput(ticketId, "brief", d.brief + hint, d.triggerId ?? null);
 		if (d.triggerId !== undefined) takenThisRoute.add(d.triggerId);
 		if (d.triggerId !== undefined) this.#setDisposition(d.triggerId, "opened_ticket", ticketId);
 		return { ok: true, ticketId };

@@ -13,12 +13,15 @@ export interface Helper {
 	name: string;
 	role: HelperRole;
 	seq: number;
-	/** The title of the ticket's role; absent for a general helper, which is shown by its origin role. With it, seq counts that role. */
-	title?: string;
+	/** The title of the ticket's lead role, e.g. 副幕僚长; seq counts within that role. */
+	title: string;
 }
 
-/** The role a ticket gets when the Router names none: the helper of W5 and before. */
+/** The default expert, the helper of W5 and before; a lead may consult it. */
 export const GENERAL_ROLE = "general";
+/** The lead that owns a ticket when the Router names none. */
+export const DEFAULT_LEAD = "deputy";
+export const DEFAULT_LEAD_TITLE = "副幕僚长";
 
 export interface HelpersToday {
 	count: number;
@@ -118,7 +121,7 @@ export type Decision =
 			title: string;
 			basis: Basis;
 			ruleId?: string;
-			/** A roster role name; general when absent. */
+			/** A lead role's name; deputy when absent. */
 			role?: string;
 			triggerId?: string;
 			threads?: string[];

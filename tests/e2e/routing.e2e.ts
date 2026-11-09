@@ -37,12 +37,12 @@ test("幕僚长把第二句交给第一句开的任务：两句话下面各写�
 		async ({ step }) => {
 			await step("页面投递第一句，下面写已开新任务", async (page) => {
 				await sayInPage(page, FIRST);
-				await routeUnder(page, FIRST).filter({ hasText: /^已开新任务「NVDA 新闻」 · \S+ · 对话助手 #1$/ }).waitFor();
+				await routeUnder(page, FIRST).filter({ hasText: /^已开新任务「NVDA 新闻」 · \S+ · 副幕僚长 #1$/ }).waitFor();
 				await page.locator("#left .card", { hasText: "找到三条新闻" }).waitFor();
 			});
 			await step("页面投递第二句，幕僚长转交后下面写已交给", async (page) => {
 				await sayInPage(page, SECOND);
-				await routeUnder(page, SECOND).filter({ hasText: /^已交给 \S+ · 对话助手 #1（NVDA 新闻）$/ }).waitFor();
+				await routeUnder(page, SECOND).filter({ hasText: /^已交给 \S+ · 副幕僚长 #1（NVDA 新闻）$/ }).waitFor();
 				const routes = await page.locator(".line.user .route").allTextContents();
 				assert.equal(routes.length, 2, routes.join(" | "));
 			});

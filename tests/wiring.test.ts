@@ -199,24 +199,31 @@ function moduleWithRole(rule: string) {
 	return root;
 }
 
-test("真实接线：名册来自内置、模块和状态目录三处，进 Router 提示词；内核按名册接受角色", async (t) => {
+test("真实接线：角色来自内置、模块和状态目录三处；Router 提示词只列牵头角色，任务默认归副幕僚长", async (t) => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = hostConfig(provider);
 	roleFile(config.rolesDir, "news-researcher");
-	const modules = Modules.load([moduleWithRole("## move\n角色：desk-analyst\n动了就看\n")]);
+	roleFile(config.rolesDir, "desk-lead", "consult: true\n");
+	const modules = Modules.load([moduleWithRole("## move\n专家：desk-analyst, news-researcher\n动了就看\n")]);
 	const host = await Host.start(createHostOptions({ config, modules, modelRuntime, log: () => {} }));
 	t.after(() => host.stop());
 	const prompt = (host.router as any).session.systemPrompt as string;
-	for (const name of ["general", "deputy", "desk-analyst", "news-researcher"]) assert.match(prompt, new RegExp(`- ${name}（`), name);
-	const { triggerId } = host.kernel.submitTrigger({ source: "conversation", externalId: "x", threads: [{ id: "thr_conversation" }], sender: "user", body: "看新闻", occurredAt: 0 });
-	const [ok] = host.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", role: "news-researcher", triggerId, brief: "b" }]);
-	assert.ok(ok.ok);
-	assert.equal(host.kernel.listTickets().find((r) => r.id === ok.ticketId)!.helper!.title, "news-researcher 职称");
+	for (const name of ["deputy", "desk-lead"]) assert.match(prompt, new RegExp(`- ${name}（`), name);
+	for (const name of ["general", "desk-analyst", "news-researcher"]) assert.doesNotMatch(prompt, new RegExp(`- ${name}（`), name);
+	const say = (externalId: string) => host.kernel.submitTrigger({ source: "conversation", externalId, threads: [{ id: "thr_conversation" }], sender: "user", body: "看新闻", occurredAt: 0 }).triggerId;
+	const [plain, expert, lead] = host.kernel.route([
+		{ kind: "open_ticket", title: "t", basis: "request", triggerId: say("a"), brief: "b" },
+		{ kind: "open_ticket", title: "t", basis: "request", role: "news-researcher", triggerId: say("b"), brief: "b" },
+		{ kind: "open_ticket", title: "t", basis: "request", role: "desk-lead", triggerId: say("c"), brief: "b" },
+	]);
+	assert.equal(expert.ok, false, "专家不能负责任务");
+	const title = (r: typeof plain) => host.kernel.listTickets().find((x) => r.ok && x.id === r.ticketId)!.helper!.title;
+	assert.deepEqual([title(plain), title(lead)], ["副幕僚长", "desk-lead 职称"]);
 });
 
-test("真实接线：规则指定的角色不在名册里，启动前报错并写出规则", async () => {
+test("真实接线：规则写的专家不在专家名册里，启动前报错并写出规则", async () => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
-	const modules = Modules.load([moduleWithRole("## move\n角色：ghost\n动了就看\n")]);
+	const modules = Modules.load([moduleWithRole("## move\n专家：ghost\n动了就看\n")]);
 	assert.throws(() => createHostOptions({ config: hostConfig(provider), modules, modelRuntime, log: () => {} }), (e: Error) => e.name === "ConfigError" && /desk\/move.*ghost/.test(e.message));
 });
 
