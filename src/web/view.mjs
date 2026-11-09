@@ -83,13 +83,10 @@ export function applyMessage(view, message, now) {
 	return [];
 }
 
-/** A stalled running task needs the user too. @param {DashboardRow} row @returns {Group} */
+/** @param {DashboardRow} row @returns {Group} */
 const groupOf = (row) => (row.stall ? "needsYou" : GROUP[row.stage]);
 
-/**
- * Clicks this page sent and the host has not shown as answered yet: reportId → option.
- * @typedef {Map<string, number>} Sending
- */
+/** @typedef {Map<string, number>} Sending */
 
 /**
  * @typedef {object} Choice
@@ -136,10 +133,7 @@ function card(row, now, sending) {
 	};
 }
 
-/**
- * The buttons of each pending question also hang under the 幕僚长 line that relayed it: the last line about that task said after the question.
- * @param {View} view @param {Sending} sending @returns {Map<string, Choice>} line id → choice
- */
+/** @param {View} view @param {Sending} sending @returns {Map<string, Choice>} */
 export function choicesInConversation(view, sending) {
 	const lines = [...view.lines.values()];
 	/** @type {Map<string, Choice>} */

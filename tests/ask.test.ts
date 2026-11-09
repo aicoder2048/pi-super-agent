@@ -51,7 +51,6 @@ test("Worker 汇报的选项不合规时工具报错，说清规则，这份汇�
 
 const OPTIONS = ["只看营收", "营收和利润", "先不查"];
 
-// A Router that relays questions about the task and hands a clicked answer to the ticket named on its card.
 const relayAndHandOver: Brain = (cards) =>
 	cards.flatMap((card) => {
 		const clicked = card.split("\n").find((l) => l.startsWith("点选回答："));

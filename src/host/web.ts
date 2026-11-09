@@ -182,7 +182,6 @@ export class WebGateway {
 
 type SayBody = { kind: "text"; text: string } | { kind: "answer"; reportId: string; option: number };
 
-// The user's words arrive either typed ({text}) or as a click on an option ({answer}); exactly one of the two.
 function parseSay(body: string): SayBody | undefined {
 	let parsed: unknown;
 	try {

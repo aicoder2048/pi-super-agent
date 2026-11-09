@@ -278,7 +278,6 @@ export class Host {
 		this.#midnightTimer.unref();
 	}
 
-	// A stalled ticket changes nothing in the store, so without this no board frame would show 久无进展 until something else happened.
 	#atNextStall(): void {
 		clearTimeout(this.#stallTimer);
 		const at = this.kernel.nextStallAt();

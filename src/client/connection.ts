@@ -68,7 +68,6 @@ export class HostConnection {
 		return requestId;
 	}
 
-	/** A click on an option; repeating it is safe, the host returns the first answer's trigger. */
 	answer(reportId: string, option: number, label = `第 ${option + 1} 个选项`): string | undefined {
 		const requestId = randomUUID();
 		if (!this.#send({ type: "answer", reportId, option, requestId })) return undefined;

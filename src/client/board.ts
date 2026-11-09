@@ -16,7 +16,6 @@ function spread(left: string, right: string, width: number): string {
 	return fit(leftFit + " ".repeat(gap) + rightFit, width);
 }
 
-/** Questions the user can still answer by number: they have options and no client has clicked one yet. */
 export const openChoices = (rows: DashboardRow[]) => rows.filter((r) => r.question && r.question.options.length > 0 && r.question.answered === null);
 
 export interface BoardView {

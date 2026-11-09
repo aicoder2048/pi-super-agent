@@ -177,10 +177,6 @@ export class Kernel {
 		});
 	}
 
-	/**
-	 * A click on an option, written as the user's own conversation message for the Router to hand over (ADR-0006).
-	 * A repeat of an accepted click returns that same trigger; only a stale question is refused.
-	 */
 	answerQuestion({ reportId, option, at }: { reportId: string; option: number; at: number }): Result<{ triggerId: string; text: string; duplicate: boolean }> {
 		return this.#tx(() => {
 			const externalId = answerExternalId(reportId);
@@ -572,7 +568,6 @@ export class Kernel {
 		});
 	}
 
-	/** When the next running ticket becomes stalled, so the host can push a board frame right then. */
 	nextStallAt(): number | null {
 		const now = this.#now();
 		const at = this.#all("SELECT id FROM tickets WHERE worker_state = 'running' AND last_progress_at IS NOT NULL")
@@ -582,7 +577,6 @@ export class Kernel {
 		return at.length ? Math.min(...at) : null;
 	}
 
-	// The only stall comparison: the board, the host's push timer and the watchdog all read its result.
 	#stall(t: Ticket, now: number): Stall | null {
 		if (t.stage !== "running" || t.lastProgressAt === null) return null;
 		const quietMs = now - t.lastProgressAt;

@@ -109,7 +109,6 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 		conn?.close();
 	});
 
-	// A click in the TUI: the host words it as 回答任务「标题」：选项 and repeats are harmless (ADR-0006).
 	const answer = (row: DashboardRow, pick: number, ui: ExtensionContext["ui"]) => {
 		const q = row.question!;
 		if (pick < 1 || pick > q.options.length) return ui.notify(`「${row.title}」只有 ${q.options.length} 个选项`, "warning");

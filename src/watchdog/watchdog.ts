@@ -51,7 +51,6 @@ export interface WatchdogOptions {
 	stateDir: string;
 	clock: Clock;
 	config: WatchdogConfig;
-	/** The host's kernel config, so stalls are judged by the same threshold the host uses. */
 	kernel?: Partial<KernelConfig>;
 	startHost(): void;
 	log?: (line: string) => void;

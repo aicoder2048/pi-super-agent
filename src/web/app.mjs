@@ -263,7 +263,6 @@ function mount(doc) {
 		header: renderHeader,
 	};
 
-	// A click is the user's words for that task (ADR-0006). Resending after a timeout is safe: the host returns the first answer.
 	/** @param {string} reportId @param {number} option */
 	const answer = async (reportId, option) => {
 		if (sending.has(reportId)) return;

@@ -56,7 +56,6 @@ export interface KernelConfig {
 	inferenceDaily: number;
 	replyMaxChars: number;
 	repliesPerCause: number;
-	/** A running ticket this long without progress is stalled. Filled from watchdog.stuckMinutes by loadConfig. */
 	stuckMs: number;
 }
 
@@ -88,7 +87,6 @@ export type Action =
 	| { kind: "router.notify"; payload: RouterNotice }
 	| { kind: "worker.wake"; payload: { ticketId: string } }
 	| { kind: "worker.stop"; payload: { ticketId: string } }
-	/** about: the ticket a reply concerns (its cause was a tkt_), so clients can put that task's options under it. */
 	| { kind: "channel.reply"; payload: { threadId: string; text: string; replyId: string; about: string | null } };
 
 export type PendingAction = Action & { id: string; attempts: number; createdAt: number };
@@ -113,7 +111,6 @@ export interface WorkerReport {
 	status: ReportStatus;
 	summary: string;
 	question?: string;
-	/** Already parsed at the Worker boundary: 2 to 4 short answers, only with a question. */
 	options?: string[];
 	drafts?: unknown[];
 	waiting?: boolean;
@@ -143,7 +140,6 @@ export interface Report {
 	status: ReportStatus;
 	summary: string;
 	question: string | null;
-	/** Empty for an open question or no question. */
 	options: string[];
 	drafts: unknown[];
 	waiting: boolean;
@@ -183,19 +179,14 @@ export interface Ticket {
 	latestReport: Report | null;
 }
 
-/** The question a ticket is waiting on; exists only while its stage is awaiting_answer. */
 export interface PendingQuestion {
-	/** What a click names. Reports never change, so an answer cannot silently land on a newer question. */
 	reportId: string;
 	text: string;
-	/** Empty for an open question, which the user answers by typing. */
 	options: string[];
 	askedAt: number;
-	/** Index of the option already clicked, from any client, while the Router has not handed it over yet. */
 	answered: number | null;
 }
 
-/** A running ticket with no progress since `since` for at least the configured stuckMs. */
 export interface Stall {
 	since: number;
 	minutes: number;
@@ -218,7 +209,6 @@ export interface DashboardRow {
 	lastProgressAt: number | null;
 }
 
-/** A conversation trigger made by clicking an option of a ticket's question. */
 export interface AnswerClick {
 	ticketId: string;
 	reportId: string;
