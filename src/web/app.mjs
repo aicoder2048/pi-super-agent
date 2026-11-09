@@ -2,7 +2,7 @@
 
 import {
 	STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canSend, choicesInConversation, dutyLine, emptyView, emptyWatch,
-	helperStrip, helperTint, isStale, leftColumn, lifecycleLine, resolveTheme, restartNotice, routeLine, sayCopy, sayOutcome, settleSay, settleSending, smallPrint, stopSentence,
+	helperStrip, helperTint, isStale, leftColumn, lifecycleLine, parseMarkdown, resolveTheme, restartNotice, routeLine, sayCopy, sayOutcome, settleSay, settleSending, smallPrint, stopSentence,
 	toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperFullName } from "../client/board-format.mjs";
@@ -48,6 +48,29 @@ function mount(doc) {
 		const node = doc.createElement(tag);
 		node.className = className;
 		node.textContent = text;
+		return node;
+	};
+
+	/** The safe Markdown subset as DOM nodes; every piece of text goes through textContent. @param {string} tag @param {string} className @param {string} text */
+	const md = (tag, className, text) => {
+		const node = el(tag, `${className} md`);
+		const inline = (/** @type {HTMLElement} */ box, /** @type {import("./view.mjs").Span[]} */ spans) =>
+			box.append(...spans.map((s) => (s.code ? el("code", "", s.text) : s.bold ? el("strong", "", s.text) : s.italic ? el("em", "", s.text) : doc.createTextNode(s.text))));
+		for (const block of parseMarkdown(text)) {
+			if (block.kind === "ul" || block.kind === "ol") {
+				const list = el(block.kind, "");
+				for (const item of block.items) {
+					const li = el("li", "");
+					inline(li, item);
+					list.append(li);
+				}
+				node.append(list);
+			} else {
+				const box = el("div", block.kind === "h" ? `md-h md-h${block.level}` : "md-p");
+				inline(box, block.spans);
+				node.append(box);
+			}
+		}
 		return node;
 	};
 
@@ -154,7 +177,7 @@ function mount(doc) {
 		node.setAttribute("aria-current", String(watching?.watch.ticketId === card.id));
 		const head = el("div", "head");
 		head.append(helperBadge(card.id), el("div", "title", card.title));
-		node.append(head, el("div", "by", card.helper), el("div", "why", `${card.why} · ${card.stage}`), el("div", "latest", card.latest));
+		node.append(head, el("div", "by", card.helper), el("div", "why", `${card.why} · ${card.stage}`), md("div", "latest", card.latest));
 		if (card.choice) {
 			const box = el("div", "choices");
 			fillChoices(box, card.choice);
@@ -232,7 +255,9 @@ function mount(doc) {
 		box.hidden = !strip.total && !strip.chips.length;
 		const shown = [...box.querySelectorAll(".helper-chip")].map((n) => /** @type {HTMLElement} */ (n).dataset.id).join();
 		if (shown !== strip.chips.map((c) => c.id).join() || !box.querySelector(".total")) {
-			box.replaceChildren(...strip.chips.map(helperChip), el("span", "total"));
+			const chips = el("div", "chips");
+			chips.append(...strip.chips.map(helperChip));
+			box.replaceChildren(chips, el("span", "total"));
 		}
 		for (const chip of strip.chips) {
 			const node = /** @type {HTMLElement} */ (box.querySelector(`.helper-chip[data-id="${chip.id}"]`));
@@ -259,7 +284,7 @@ function mount(doc) {
 		const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
 		for (const line of [...view.lines.values()].slice(rendered)) {
 			const item = el("div", `line ${line.who}`);
-			const bubble = el("div", "bubble", line.text);
+			const bubble = line.who === "router" ? md("div", "bubble", line.text) : el("div", "bubble", line.text);
 			if (line.who === "router") {
 				const avatar = avatarMark.cloneNode(true);
 				const said = el("div", "said");
@@ -317,7 +342,7 @@ function mount(doc) {
 			raw.setAttribute("data-i", String(i));
 			raw.open = open.has(String(i));
 			raw.append(el("summary", "", "原始记录"), el("pre", "", step.raw));
-			body.append(el("div", "step-title", step.title), el("div", "step-detail", step.detail));
+			body.append(el("div", "step-title", step.title), step.markdown ? md("div", "step-detail", step.detail) : el("div", "step-detail", step.detail));
 			if (step.consult) {
 				const consult = el("details", "consult");
 				consult.setAttribute("data-i", `c${i}`);
@@ -325,7 +350,7 @@ function mount(doc) {
 				consult.append(el("summary", "", "会诊明细"), ...step.consult.map((e) => {
 					const entry = el("div", `expert ${e.status}`);
 					entry.append(el("div", "expert-head", `${e.title} · ${e.statusText} · ${e.tokens}`), el("div", "expert-q", `问：${e.question}`));
-					if (e.answer) entry.append(el("div", "expert-a", e.answer));
+					if (e.answer) entry.append(md("div", "expert-a", e.answer));
 					return entry;
 				}));
 				body.append(consult);

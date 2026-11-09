@@ -282,6 +282,7 @@ export const stopSentence = (title) => `停止任务「${title}」`;
  * @property {string} raw
  * @property {string} [tool]
  * @property {ConsultEntry[]} [consult]
+ * @property {true} [markdown] detail is the helper's own Markdown (a report), shown in full
  */
 
 /**
@@ -358,7 +359,7 @@ const TOOL_STEP = {
 	bg_start: (a) => ({ title: "启动后台命令", detail: clip(firstLine(a.command), 60) }),
 	bg_status: () => ({ title: "查看后台命令", detail: "" }),
 	bg_stop: () => ({ title: "停止后台命令", detail: "" }),
-	report: (a) => ({ title: reportTitle(a), detail: clip(a.question || a.summary, 120) }),
+	report: (a) => ({ title: reportTitle(a), detail: String(a.question || a.summary || ""), markdown: true }),
 	consult: (a) => ({ title: "会诊", detail: `请教 ${Array.isArray(a.questions) ? a.questions.length : 0} 位专家` }),
 };
 
@@ -578,3 +579,63 @@ const baseName = (p) => (typeof p === "string" ? clip(p.split("/").filter(Boolea
 
 /** @param {unknown} u */
 const hostOf = (u) => (typeof u === "string" ? (URL.parse(u)?.host ?? clip(u, 60)) : "");
+
+/**
+ * The safe Markdown subset the page renders, as data the page turns into DOM nodes (never HTML).
+ * @typedef {{ text: string, bold?: true, italic?: true, code?: true }} Span
+ * @typedef {{ kind: "p", spans: Span[] } | { kind: "h", level: number, spans: Span[] } | { kind: "ul" | "ol", items: Span[][] }} MdBlock
+ */
+
+const INLINE = /`([^`\n]+)`|\*\*([^*\n]+)\*\*|__([^_\n]+)__|(?<![\w*])\*([^*\s][^*\n]*?)\*(?![\w*])|\[([^\]\n]+)\]\(([^)\s]+)\)/g;
+
+/** @param {string} text @returns {Span[]} */
+function inlineSpans(text) {
+	/** @type {Span[]} */
+	const spans = [];
+	const plain = (/** @type {string} */ t) => {
+		if (!t) return;
+		const last = spans.at(-1);
+		if (last && Object.keys(last).length === 1) last.text += t;
+		else spans.push({ text: t });
+	};
+	let at = 0;
+	for (const m of text.matchAll(INLINE)) {
+		plain(text.slice(at, m.index));
+		if (m[1] !== undefined) spans.push({ text: m[1], code: true });
+		else if (m[2] !== undefined || m[3] !== undefined) spans.push({ text: m[2] ?? m[3], bold: true });
+		else if (m[4] !== undefined) spans.push({ text: m[4], italic: true });
+		else spans.push({ text: m[5] }, { text: `（${m[6]}）` });
+		at = m.index + m[0].length;
+	}
+	plain(text.slice(at));
+	return spans;
+}
+
+/** @param {string} text @returns {MdBlock[]} */
+export function parseMarkdown(text) {
+	/** @type {MdBlock[]} */
+	const out = [];
+	/** @type {string[]} */
+	let para = [];
+	const flush = () => {
+		if (para.length) out.push({ kind: "p", spans: inlineSpans(para.join("\n")) });
+		para = [];
+	};
+	for (const line of text.split("\n")) {
+		const heading = line.match(/^(#{1,6})\s+(.*)$/);
+		const item = line.match(/^\s*(?:([-*+])|\d+[.)])\s+(.*)$/);
+		if (!line.trim() || /^\s*(-{3,}|\*{3,})\s*$/.test(line)) flush();
+		else if (heading) {
+			flush();
+			out.push({ kind: "h", level: heading[1].length, spans: inlineSpans(heading[2].trim()) });
+		} else if (item) {
+			flush();
+			const kind = item[1] ? "ul" : "ol";
+			const last = out.at(-1);
+			if (last && last.kind === kind) last.items.push(inlineSpans(item[2]));
+			else out.push({ kind, items: [inlineSpans(item[2])] });
+		} else para.push(line);
+	}
+	flush();
+	return out;
+}

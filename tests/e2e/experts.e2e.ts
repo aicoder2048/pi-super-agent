@@ -13,6 +13,7 @@ const HINTED_BRIEF = `${BRIEF}\n\n规则 us-market/big-move 建议请教的专�
 const MARKET_Q = "NVDA 今天跌 6.1%，和 SPY、QQQ、半导体板块比是个股还是大盘行情？";
 const TECH_Q = "NVDA 日线技术面现在在什么位置？";
 const ANSWER_MS = 2500;
+const REPORT = "## 结论\n**个股领跌**，跌破 50 日均线\n\n- SPY 只跌 0.8%\n- 成交量是均量的 3 倍\n- rsi14 38\n- 支撑 165\n- 阻力 172.4\n\n来源：us-market，报价 15:42 ET（延迟）";
 
 const openRuleTicket = (card: string): ToolCall => ({
 	name: "route",
@@ -25,13 +26,13 @@ test("看盘模块的大波动触发：副幕僚长按规则提示请教行情�
 		{
 			router: [
 				on("Router 按大波动规则开任务", /^\[候选触发\][\s\S]*来源 us-market[\s\S]*NVDA/, (c) => [openRuleTicket(c)]),
-				on("Router 转告", /^\[Worker 汇报\][\s\S]*跌破 50 日均线/, (c) => [reply(c, "NVDA 跌 6.1%，个股领跌并跌破 50 日均线")]),
+				on("Router 转告", /^\[Worker 汇报\][\s\S]*跌破 50 日均线/, (c) => [reply(c, "NVDA 跌 6.1%，**个股领跌**并跌破 50 日均线")]),
 			],
 			workers: [
 				worker(
 					HINTED_BRIEF,
 					on("副幕僚长会诊", /^\[任务说明\]/, () => [consult({ expert: "market-analyst", question: MARKET_Q }, { expert: "technical-analyst", question: TECH_Q })]),
-					on("副幕僚长合成", /^\[会诊结果\][\s\S]*SPY 只跌 0\.8%[\s\S]*sma50/, () => [report("ready", "个股领跌并跌破 50 日均线（行情分析师、技术分析师）")]),
+					on("副幕僚长合成", /^\[会诊结果\][\s\S]*SPY 只跌 0\.8%[\s\S]*sma50/, () => [report("ready", REPORT)]),
 				),
 				expert(MARKET_Q, "行情分析师回答", "个股行情：SPY 只跌 0.8%，报价时间 15:42 ET（延迟）。", ANSWER_MS),
 				expert(TECH_Q, "技术分析师回答", "收盘价跌破 sma50 172.4，rsi14 38。", ANSWER_MS),
@@ -43,6 +44,11 @@ test("看盘模块的大波动触发：副幕僚长按规则提示请教行情�
 				const chip = page.locator("#helpers .helper-chip", { hasText: "副幕僚长 #1" });
 				await chip.locator(".expert-chip", { hasText: "行情分析师 ◐" }).waitFor({ timeout: 20_000 });
 				await chip.locator(".expert-chip", { hasText: "技术分析师 ◐" }).waitFor();
+				await page.setViewportSize({ width: 560, height: 800 });
+				const total = await page.locator("#helpers .total").boundingBox();
+				assert.ok(total && total.width > 0 && total.x + total.width <= 560, `窄屏时「今日」总数仍在右边可见：${JSON.stringify(total)}`);
+				assert.ok(await page.locator("#helpers .chips").evaluate((n) => n.scrollWidth > n.clientWidth), "小卡这一段自己横向滚动");
+				await page.setViewportSize({ width: 1280, height: 800 });
 				await chip.click();
 			});
 			await step("执行过程里展开会诊，两位专家的问题和回答都在", async (page) => {
@@ -55,7 +61,22 @@ test("看盘模块的大波动触发：副幕僚长按规则提示请教行情�
 				await consultStep.locator(".expert-a", { hasText: "跌破 sma50 172.4" }).waitFor();
 				assert.doesNotMatch(await consultStep.locator(".consult").textContent() ?? "", /market-analyst|technical-analyst/, "会诊明细只写职称");
 			});
-			await step("幕僚长转告合成的答复", (page) => page.locator(".line.router", { hasText: "跌破 50 日均线" }).waitFor());
+			await step("幕僚长转告合成的答复，粗体渲染成粗体，不显示星号", async (page) => {
+				const bubble = page.locator(".line.router .bubble", { hasText: "跌破 50 日均线" });
+				await bubble.locator("strong", { hasText: "个股领跌" }).waitFor();
+				assert.doesNotMatch(await bubble.innerText(), /\*\*/);
+			});
+			await step("左栏任务卡只露出约三行，完整的报告在执行过程的「提交结果」里，标题和列表已渲染", async (page) => {
+				await page.locator("#done > summary").click();
+				const latest = page.locator("#left .card .latest").first();
+				await latest.locator(".md-h", { hasText: "结论" }).waitFor();
+				const box = await latest.boundingBox();
+				const lineHeight = await latest.evaluate((n) => parseFloat(getComputedStyle(n).lineHeight) || 18);
+				assert.ok(box && box.height <= lineHeight * 3.6, `卡片摘要高 ${box?.height}，行高 ${lineHeight}`);
+				const full = page.locator("#steps .step", { hasText: "提交结果" }).locator(".step-detail");
+				await full.locator("li", { hasText: "阻力 172.4" }).waitFor();
+				assert.doesNotMatch(await full.innerText(), /##|\*\*/);
+			});
 		},
 		{
 			config: { modulesDirs: [join(REPO, "modules")] },

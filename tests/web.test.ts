@@ -1233,3 +1233,19 @@ test("页面：会诊中，助手条在牵头人的小卡后面列出正在回�
 	page.applyMessage(view, board([row({ id: "tkt_lead" }), row({ id: "tkt_other" })]), 0);
 	assert.deepEqual(page.helperStrip(view, 0).chips.map((c) => c.experts), [[], []]);
 });
+
+test("页面：Markdown 只认安全的子集，解析成段落、标题和列表，行内只有粗体、斜体、代码和链接文字，HTML 原样当文字", () => {
+	const blocks = page.parseMarkdown("## 结论\n**个股领跌**，*仍偏空*，看 `sma50`\n\n- 第一条\n- 来源 [路透](https://reuters.com/x)\n1. 甲\n2. 乙\n\n<script>alert(1)</script> 不是标签");
+	assert.deepEqual(blocks, [
+		{ kind: "h", level: 2, spans: [{ text: "结论" }] },
+		{ kind: "p", spans: [{ text: "个股领跌", bold: true }, { text: "，" }, { text: "仍偏空", italic: true }, { text: "，看 " }, { text: "sma50", code: true }] },
+		{ kind: "ul", items: [[{ text: "第一条" }], [{ text: "来源 " }, { text: "路透" }, { text: "（https://reuters.com/x）" }]] },
+		{ kind: "ol", items: [[{ text: "甲" }], [{ text: "乙" }]] },
+		{ kind: "p", spans: [{ text: "<script>alert(1)</script> 不是标签" }] },
+	]);
+});
+
+test("页面：Markdown 里的多行段落保留换行，没有 Markdown 记号的文字原样是一段", () => {
+	assert.deepEqual(page.parseMarkdown("第一行\n第二行"), [{ kind: "p", spans: [{ text: "第一行\n第二行" }] }]);
+	assert.deepEqual(page.parseMarkdown("a*b 和 snake_case_name"), [{ kind: "p", spans: [{ text: "a*b 和 snake_case_name" }] }]);
+});
