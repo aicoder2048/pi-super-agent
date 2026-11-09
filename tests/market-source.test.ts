@@ -111,11 +111,22 @@ test("订阅：任务订阅了当天的线程后，同一只股票的下一档�
 
 test("节假日：开盘半小时后仍没有今天的报价，当天不再请求", async () => {
 	const m = market({ respond: () => Response.json(snapshotBody([tickerRow("NVDA", 110, 100, T("2026-11-06T20:59:00Z"))])) });
-	for (const at of ["14:40", "14:41", "15:00", "15:30", "18:00"]) {
-		m.clock.t = T(`2026-11-09T${at}:00Z`);
+	for (let t = T("2026-11-09T14:30:00Z"); t <= T("2026-11-09T21:00:00Z"); t += 60_000) {
+		m.clock.t = t;
 		await m.source.tick();
 	}
-	assert.deepEqual([m.requests.length, m.triggers()], [3, []]);
+	assert.deepEqual([m.requests.length, m.triggers()], [30, []]);
+});
+
+test("节假日：宿主 10:05 才起来、第一次响应碰巧没有新鲜报价，不会因此当天停看", async () => {
+	let empty = true;
+	const m = market({ respond: (_url, now) => Response.json(snapshotBody(empty ? [] : [tickerRow("NVDA", 105.3, 100, now)])) });
+	m.clock.t = T("2026-11-09T15:05:00Z");
+	await m.source.tick();
+	empty = false;
+	m.clock.t += 60_000;
+	await m.source.tick();
+	assert.deepEqual([m.requests.length, m.triggers().map((t) => t.externalId)], [2, ["NVDA:2026-11-09:up5"]]);
 });
 
 test("节假日判断只看今天是否见过新鲜报价：盘中见过之后，一次空响应不会让当天停看", async () => {

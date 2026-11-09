@@ -27,8 +27,9 @@ export interface Fired {
 
 export interface MarketCursor {
 	nyDate: string;
+	sawFreshQuote: boolean;
+	pollsWithoutFreshQuote: number;
 	fired: Record<string, Fired>;
-	holiday?: boolean;
 }
 
 export type Signal = { kind: "band"; dir: "up" | "down"; pct: number } | { kind: "volume"; ratio: number };
@@ -44,8 +45,8 @@ const BAND_EPSILON = 1e-9;
 // Opening and closing auctions print huge single minutes that are not news.
 const AUCTION_MS = 10 * MINUTE;
 
-export function detect(cursor: MarketCursor | undefined, quotes: Quote[], session: Session, settings: DetectSettings): { moves: Move[]; cursor: MarketCursor; fresh: number } {
-	const today = cursor?.nyDate === session.nyDate ? cursor : { nyDate: session.nyDate, fired: {} };
+export function detect(cursor: MarketCursor | undefined, quotes: Quote[], session: Session, settings: DetectSettings): { moves: Move[]; cursor: MarketCursor } {
+	const today: MarketCursor = cursor?.nyDate === session.nyDate ? cursor : { nyDate: session.nyDate, sawFreshQuote: false, pollsWithoutFreshQuote: 0, fired: {} };
 	const fired: Record<string, Fired> = { ...today.fired };
 	const moves: Move[] = [];
 	let fresh = 0;
@@ -70,7 +71,10 @@ export function detect(cursor: MarketCursor | undefined, quotes: Quote[], sessio
 		}
 		fired[quote.symbol] = next;
 	}
-	return { moves, cursor: { ...today, fired }, fresh };
+	return {
+		moves,
+		cursor: { nyDate: today.nyDate, sawFreshQuote: today.sawFreshQuote || fresh > 0, pollsWithoutFreshQuote: fresh > 0 ? 0 : (today.pollsWithoutFreshQuote ?? 0) + 1, fired },
+	};
 }
 
 const signed = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;

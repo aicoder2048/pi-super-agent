@@ -37,14 +37,17 @@ test("SPY、QQQ 用指数档位：+1.6% 报 1.5% 档；同样幅度的个股不�
 	assert.deepEqual(run(undefined, [quote("SPY", 1.6), quote("NVDA", 1.6), quote("QQQ", -2.1)]).ids, ["SPY:2026-11-09:up1.5", "QQQ:2026-11-09:down2"]);
 });
 
-test("新鲜度：报价时间不在今天的常规时段内（上个交易日、盘前）不算，也不计入新鲜报价数", () => {
+test("新鲜度：报价时间不在今天的常规时段内（上个交易日、盘前）不算，游标记下今天还没见过新鲜报价、连续几轮没见到", () => {
 	const stale = run(undefined, [quote("NVDA", 6, { at: T("2026-11-06T20:59:00Z") }), quote("AAPL", 6, { at: T("2026-11-09T14:00:00Z") })]);
-	assert.deepEqual([stale.ids, stale.fresh], [[], 0]);
-	assert.equal(run(undefined, [quote("NVDA", 0.2)]).fresh, 1);
+	assert.deepEqual([stale.ids, stale.cursor.sawFreshQuote, stale.cursor.pollsWithoutFreshQuote], [[], false, 1]);
+	assert.equal(run(stale.cursor, []).cursor.pollsWithoutFreshQuote, 2);
+	const fresh = run(stale.cursor, [quote("NVDA", 0.2)]).cursor;
+	assert.deepEqual([fresh.sawFreshQuote, fresh.pollsWithoutFreshQuote], [true, 0]);
+	assert.equal(run(fresh, []).cursor.sawFreshQuote, true);
 });
 
 test("换日后重新计档：昨天报过 5% 档，今天再到 5% 还报，线程按天分开", () => {
-	const yesterday: MarketCursor = { nyDate: "2026-11-06", fired: { NVDA: { highestUpBand: 5, highestDownBand: 0, volume: false } } };
+	const yesterday: MarketCursor = { nyDate: "2026-11-06", sawFreshQuote: true, pollsWithoutFreshQuote: 0, fired: { NVDA: { highestUpBand: 5, highestDownBand: 0, volume: false } } };
 	const r = run(yesterday, [quote("NVDA", 5.3)]);
 	assert.deepEqual(r.ids, ["NVDA:2026-11-09:up5"]);
 	assert.equal(r.cursor.nyDate, "2026-11-09");

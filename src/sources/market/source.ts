@@ -4,11 +4,12 @@ import { threadId } from "../generic.ts";
 import { MarketClient, MarketError, type Span } from "./client.ts";
 import { readMarketKey } from "./key.ts";
 import { detect, toTrigger, type MarketCursor, type Move } from "./detect.ts";
-import { inPollWindow, MINUTE, nextPollDelay, sessionAt } from "./session.ts";
+import { inPollWindow, MINUTE, nextPollDelay, sessionAt, type Session } from "./session.ts";
 import { parseMarketSettings, type MarketSettings } from "./settings.ts";
 import { parseSymbol } from "./symbol.ts";
 
 const HOLIDAY_AFTER_OPEN_MS = 30 * MINUTE;
+const HOLIDAY_AFTER_POLLS = 5;
 const NOTICE_AFTER_MS = 15 * MINUTE;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const SPANS: Span[] = ["minute", "hour", "day"];
@@ -30,6 +31,10 @@ export function marketFeed(input: FeedInput): FeedSpec {
 			? new MarketSource({ source, title, settings, ctx, client: new MarketClient({ key: loaded.key, baseURL: settings.baseURL, minGapMs: settings.minGapMs }) })
 			: disabledFeed(source, "未配置行情密钥"),
 	};
+}
+
+function noSessionToday(cursor: MarketCursor | undefined, session: Session, now: number): boolean {
+	return cursor?.nyDate === session.nyDate && !cursor.sawFreshQuote && cursor.pollsWithoutFreshQuote >= HOLIDAY_AFTER_POLLS && now >= session.openAt + HOLIDAY_AFTER_OPEN_MS;
 }
 
 function disabledFeed(source: string, reason: string): Feed {
@@ -92,7 +97,7 @@ export class MarketSource implements Feed {
 			this.#failing = undefined;
 			return this.#feel("resting", "不在交易时段，暂停请求行情");
 		}
-		if (cursor?.nyDate === session.nyDate && cursor.holiday) return this.#feel("holiday", `${session.nyDate} 开盘半小时仍没有当天的报价，按休市处理，今天不再请求`);
+		if (noSessionToday(cursor, session, now)) return this.#feel("holiday", `${session.nyDate} 开盘半小时仍没有当天的报价，按休市处理，今天不再请求`);
 		let quotes;
 		try {
 			quotes = await client.snapshot(settings.watchlist, "poll");
@@ -101,7 +106,6 @@ export class MarketSource implements Feed {
 		}
 		this.#failing = undefined;
 		const result = detect(cursor, quotes, session, settings);
-		if (Object.keys(result.cursor.fired).length === 0 && now >= session.openAt + HOLIDAY_AFTER_OPEN_MS) result.cursor.holiday = true;
 		this.#submitThenSaveCursor(result.moves, result.cursor);
 		this.#feel("watching", `开盘中，每 ${settings.everySeconds} 秒看一次自选 ${settings.watchlist.length} 只`);
 	}
