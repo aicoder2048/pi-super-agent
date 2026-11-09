@@ -1,4 +1,5 @@
 import type { DashboardRow, Disposition, HelpersToday, Routes } from "../kernel/types.ts";
+import type { Dispatching } from "../host/dispatch.ts";
 
 /** ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
 export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string };
@@ -32,6 +33,8 @@ export interface BoardState {
 	helpers: HelpersToday;
 	/** What became of each of the user's recent messages, so a line under it can change without a reload. */
 	routes: Routes;
+	/** ticketId → the members that helper has at work or waiting for a slot right now. */
+	dispatching: Dispatching;
 }
 
 export type ClientToHost =
@@ -42,7 +45,7 @@ export type ClientToHost =
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
-	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; watching: WatchedSource[] }
+	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; watching: WatchedSource[] }
 	| { type: "user"; id: string; text: string; at: number }
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }
@@ -53,8 +56,10 @@ export type HostToClient =
 
 export interface TranscriptMessage {
 	role: string;
-	content?: string | Array<{ type: string; text?: string; name?: string; arguments?: unknown; thinking?: string }>;
+	content?: string | Array<{ type: string; text?: string; id?: string; name?: string; arguments?: unknown; thinking?: string }>;
 	customType?: string;
 	toolName?: string;
+	toolCallId?: string;
 	isError?: boolean;
+	details?: unknown;
 }

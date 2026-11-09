@@ -9,7 +9,7 @@ import { formatModelRef, type ModelRef } from "../models.ts";
 import { INPUT_LABEL } from "../client/board-format.mjs";
 import { parseOptions } from "../kernel/question.ts";
 import type { Member } from "../teams.ts";
-import type { MemberRun } from "./dispatch.ts";
+import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberRun } from "./dispatch.ts";
 
 export interface WorkerSpec {
 	ticketId: string;
@@ -62,6 +62,15 @@ interface Live {
 	token: string;
 	bgRunning: number;
 	stopping: boolean;
+	crew: readonly Member[];
+}
+
+export interface DispatchOptions {
+	/** The members a team's helper may dispatch to; undefined when the team is not in the roster. */
+	crewOf(team: string): readonly Member[] | undefined;
+	timeoutMs: number;
+	/** Host-wide cap on member processes; the rest queue. */
+	maxConcurrent: number;
 }
 
 export interface WorkerExecutorOptions {
@@ -73,6 +82,8 @@ export interface WorkerExecutorOptions {
 	onError?: (ticketId: string, error: unknown) => void;
 	models: WorkerModels;
 	lookup?: (source: string, op: string, args: unknown) => Promise<unknown>;
+	/** Without it every helper works alone. */
+	dispatch?: DispatchOptions;
 }
 
 export interface WorkerModels {
@@ -85,9 +96,20 @@ export class WorkerExecutor {
 	readonly #live = new Map<string, Live>();
 	readonly #spawning = new Map<string, Promise<Live | undefined>>();
 	#shuttingDown = false;
+	readonly #desk: DispatchDesk | undefined;
+	readonly #teamless = new Set<string>();
 
 	constructor(options: WorkerExecutorOptions) {
 		this.#o = options;
+		const { dispatch, spawner } = options;
+		if (dispatch && spawner.runMember) {
+			this.#desk = new DispatchDesk({ timeoutMs: dispatch.timeoutMs, maxConcurrent: dispatch.maxConcurrent, run: (run) => spawner.runMember!(run), onChange: options.afterCommand });
+		}
+	}
+
+	/** ticketId → the members that helper has at work or waiting right now. */
+	dispatching(): Dispatching {
+		return this.#desk?.live() ?? {};
 	}
 
 	liveCount(): number {
@@ -121,6 +143,7 @@ export class WorkerExecutor {
 		const live = this.#live.get(ticketId);
 		if (!live) return;
 		live.stopping = true;
+		await this.#desk?.end(ticketId);
 		await live.handle.stop();
 	}
 
@@ -166,6 +189,7 @@ export class WorkerExecutor {
 			usage: (u) => guard(() => kernel.recordUsage(ticketId, u))(),
 			settled: (error) => void this.#onSettled(ticketId, live, error).catch((e) => this.#o.onError?.(ticketId, e)).finally(afterCommand),
 			exited: guard(() => {
+				void this.#desk?.end(ticketId);
 				this.#live.delete(ticketId);
 				if (this.#shuttingDown) return;
 				if (live && !live.stopping) kernel.workerReport(ticketId, { status: "failed", summary: "Worker 进程在一轮中途意外退出。" });
@@ -173,10 +197,11 @@ export class WorkerExecutor {
 			}),
 			transcript: (event) => this.#o.onTranscript?.(ticketId, event),
 		};
+		const crew = this.#crewOf(ticketId, ticket.team);
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ruleId: ticket.ruleId, team: ticket.team, crew: [], token, model: choice.model },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ruleId: ticket.ruleId, team: ticket.team, crew, token, model: choice.model },
 				events,
 			);
 		} catch (error) {
@@ -184,7 +209,7 @@ export class WorkerExecutor {
 			afterCommand();
 			throw error;
 		}
-		live = { handle, token, bgRunning: 0, stopping: false };
+		live = { handle, token, bgRunning: 0, stopping: false, crew };
 		this.#live.set(ticketId, live);
 		if (kernel.getTicket(ticketId)?.stoppedAt != null) {
 			await this.stop(ticketId);
@@ -246,7 +271,9 @@ export class WorkerExecutor {
 
 	handleRequest(ticketId: string, token: string, method: string, params: unknown): unknown {
 		const live = this.#live.get(ticketId);
-		if (!live || live.token !== token) throw new Error("未知的 Worker 或令牌不符");
+		const member = live !== undefined && live.token !== token && this.#desk?.holds(ticketId, token) === true;
+		if (!live || (live.token !== token && !member)) throw new Error("未知的 Worker 或令牌不符");
+		if (member && method !== "worker.lookup") throw new Error("成员只能经宿主查数据（lookup），不能汇报、交回、读任务或再派活");
 		const { kernel, afterCommand } = this.#o;
 		const p = (params ?? {}) as Record<string, unknown>;
 		try {
@@ -275,6 +302,8 @@ export class WorkerExecutor {
 				case "worker.lookup":
 					if (!this.#o.lookup) throw new Error("没有可查询的来源");
 					return this.#o.lookup(String(p.source), String(p.op), p.args);
+				case "worker.dispatch":
+					return this.#dispatch(ticketId, live, params);
 				case "worker.bg":
 					live.bgRunning = Number(p.running) || 0;
 					return { ok: true };
@@ -284,6 +313,46 @@ export class WorkerExecutor {
 		} finally {
 			afterCommand();
 		}
+	}
+
+	#crewOf(ticketId: string, team: string): readonly Member[] {
+		if (!this.#desk) return [];
+		const crew = this.#o.dispatch!.crewOf(team);
+		if (crew) return crew;
+		if (!this.#teamless.has(ticketId)) {
+			this.#teamless.add(ticketId);
+			this.#o.onError?.(ticketId, `团队「${team}」已不在名册里，这个任务按单个助手运行，不能派活`);
+		}
+		return [];
+	}
+
+	// A member reports no outcome to the selector, so it must not start a probe or ride on the helper's.
+	#memberModel(member: Member): ModelRef {
+		const choice = this.#o.models.selector.steady();
+		return choice.fellBack ? choice.model : (member.model ?? choice.model);
+	}
+
+	#dispatch(ticketId: string, live: Live, params: unknown): Promise<DispatchResult> {
+		if (!this.#desk || live.crew.length === 0) throw new Error("这个任务的团队没有可派的成员");
+		if (live.stopping) throw new Error("任务已停止");
+		const { member, task, callId } = parseDispatch(params, live.crew);
+		if (this.#capReached()) throw new Error(`回退模型 ${formatModelRef(this.#o.models.selector.current().model)} 今日用量已达上限，这次不能派活`);
+		const { kernel, stateDir, afterCommand } = this.#o;
+		return this.#desk.dispatch({
+			ticketId, callId, member, task,
+			basis: kernel.getTicket(ticketId)!.basis,
+			model: this.#memberModel(member),
+			workdir: join(stateDir, "workers", ticketId),
+			sessionDir: memberSessionDir(stateDir, ticketId, member.name),
+			onUsage: (u) => {
+				try {
+					kernel.recordUsage(ticketId, u);
+				} catch (error) {
+					this.#o.onError?.(ticketId, error);
+				}
+				afterCommand();
+			},
+		});
 	}
 
 	#readForWorker(ticketId: string, id: string | undefined): unknown {

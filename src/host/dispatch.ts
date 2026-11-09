@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { formatTokens } from "../client/board-format.mjs";
 import type { Basis } from "../kernel/types.ts";
@@ -147,5 +147,129 @@ export class SlotPool {
 			if (this.#held.has(this.#waiting[i].key)) i++;
 			else this.#waiting.splice(i, 1)[0].grant();
 		}
+	}
+}
+
+export interface DispatchOrder extends Omit<MemberRun, "token" | "signal"> {
+	callId: string;
+}
+
+export interface DeskOptions {
+	/** One dispatch's limit, counted from the member's start; waiting for a slot has the same limit. */
+	timeoutMs: number;
+	maxConcurrent: number;
+	run(run: MemberRun): Promise<string>;
+	onChange(): void;
+}
+
+interface Dispatch extends LiveDispatch {
+	state: DispatchState;
+	token: string;
+}
+
+interface TicketDesk {
+	/** Fired when the ticket stops, the host shuts down or the helper exits. */
+	stop: AbortController;
+	dispatches: Set<Dispatch>;
+	work: Set<Promise<unknown>>;
+}
+
+/** Every dispatch in flight on this host: who waits, who runs, whose token is good, and how each one ends. */
+export class DispatchDesk {
+	readonly #o: DeskOptions;
+	readonly #slots: SlotPool;
+	readonly #tickets = new Map<string, TicketDesk>();
+
+	constructor(options: DeskOptions) {
+		this.#o = options;
+		this.#slots = new SlotPool(options.maxConcurrent);
+	}
+
+	/** Never rejects: a member that fails, times out or is stopped is an outcome. */
+	async dispatch(order: DispatchOrder): Promise<DispatchResult> {
+		let desk = this.#tickets.get(order.ticketId);
+		if (!desk) this.#tickets.set(order.ticketId, (desk = { stop: new AbortController(), dispatches: new Set(), work: new Set() }));
+		const dispatch: Dispatch = { callId: order.callId, title: order.member.title, state: "queued", token: randomUUID() };
+		desk.dispatches.add(dispatch);
+		const work = this.#work(order, dispatch, desk.stop.signal);
+		desk.work.add(work);
+		this.#o.onChange();
+		const details = await work;
+		desk.dispatches.delete(dispatch);
+		desk.work.delete(work);
+		if (desk.dispatches.size === 0 && this.#tickets.get(order.ticketId) === desk) this.#tickets.delete(order.ticketId);
+		this.#o.onChange();
+		return { text: replyEnvelope(details), details };
+	}
+
+	async #work(order: DispatchOrder, dispatch: Dispatch, stop: AbortSignal): Promise<DispatchOutcome> {
+		const { timeoutMs } = this.#o;
+		const { callId: _, ...run } = order;
+		const queuedAt = Date.now();
+		let startedAt = queuedAt;
+		const tokens = { tokensIn: 0, tokensOut: 0 };
+		const move = (to: DispatchState) => {
+			if (!DISPATCH_NEXT[dispatch.state].includes(to)) throw new Error(`派活不能从 ${dispatch.state} 变成 ${to}`);
+			dispatch.state = to;
+		};
+		const end = (state: EndState, reply: string | null, note?: string): DispatchOutcome => {
+			move(state);
+			return { kind: "dispatch", member: order.member.name, title: order.member.title, task: order.task, state, reply, ...(note !== undefined && { note }), ...tokens, ms: Date.now() - startedAt, waitMs: startedAt - queuedAt };
+		};
+		let release: () => void;
+		try {
+			release = await this.#slots.acquire(`${order.ticketId}/${order.member.name}`, AbortSignal.any([stop, AbortSignal.timeout(timeoutMs)]));
+		} catch {
+			startedAt = Date.now();
+			return stop.aborted ? end("stopped", null) : end("timed_out", null, `排队 ${Math.round(timeoutMs / 1000)} 秒还没轮到`);
+		}
+		startedAt = Date.now();
+		move("running");
+		this.#o.onChange();
+		const limit = new AbortController();
+		const timer = setTimeout(() => limit.abort(new Error(`${timeoutMs} ms 内没有做完`)), timeoutMs);
+		try {
+			const reply = await this.#o.run({
+				...run,
+				token: dispatch.token,
+				signal: AbortSignal.any([stop, limit.signal]),
+				onUsage: (u) => {
+					tokens.tokensIn += u.tokensIn;
+					tokens.tokensOut += u.tokensOut;
+					order.onUsage(u);
+				},
+			});
+			return end("done", clipReply(reply));
+		} catch (error) {
+			if (stop.aborted) return end("stopped", null);
+			if (limit.signal.aborted) return end("timed_out", null);
+			return end("failed", null, error instanceof Error ? error.message : String(error));
+		} finally {
+			clearTimeout(timer);
+			release();
+		}
+	}
+
+	/** True while `token` belongs to a member working for this ticket. */
+	holds(ticketId: string, token: string): boolean {
+		return [...(this.#tickets.get(ticketId)?.dispatches ?? [])].some((d) => d.token === token);
+	}
+
+	live(): Dispatching {
+		const out: Dispatching = {};
+		for (const [ticketId, desk] of this.#tickets) {
+			const live = [...desk.dispatches].flatMap(({ callId, title, state }) => (state === "queued" || state === "running" ? [{ callId, title, state }] : []));
+			if (live.length) out[ticketId] = live;
+		}
+		return out;
+	}
+
+	/** Stops every dispatch of the ticket and resolves once their processes are gone. */
+	async end(ticketId: string): Promise<void> {
+		const desk = this.#tickets.get(ticketId);
+		if (!desk) return;
+		this.#tickets.delete(ticketId);
+		desk.stop.abort(new Error("任务已停止"));
+		await Promise.allSettled(desk.work);
 	}
 }

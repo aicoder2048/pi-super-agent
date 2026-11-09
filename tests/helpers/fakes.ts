@@ -24,6 +24,7 @@ export function defaultWorkerModels(): WorkerModels {
 }
 import { Host, type HostDeps, type HostOptions, type RouterLike } from "../../src/host/host.ts";
 import type { WorkerEvents, WorkerHandle, WorkerSpawner, WorkerSpec } from "../../src/host/workers.ts";
+import type { MemberRun } from "../../src/host/dispatch.ts";
 
 export type ToolCallSpec = { name: string; args: Record<string, unknown> };
 export type Brain = (cards: string[], call: number, toolResults: string[]) => ToolCallSpec[] | Promise<ToolCallSpec[]>;
@@ -133,10 +134,17 @@ export class FakeSpawner implements WorkerSpawner {
 	spawnGate: Promise<void> | undefined;
 	readonly workers = new Map<string, FakeWorker>();
 	request!: (ticketId: string, token: string, method: string, params: unknown) => unknown;
+	/** Does a dispatched member's work; a test sets it before its helper dispatches. */
+	runner: ((run: MemberRun) => Promise<string>) | undefined;
 	readonly #script: WorkerScript;
 
 	constructor(script: WorkerScript) {
 		this.#script = script;
+	}
+
+	runMember(run: MemberRun): Promise<string> {
+		if (!this.runner) throw new Error("测试没有设置 runner");
+		return this.runner(run);
 	}
 
 	async spawn(spec: WorkerSpec, events: WorkerEvents): Promise<WorkerHandle> {
