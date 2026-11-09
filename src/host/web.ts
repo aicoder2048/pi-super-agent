@@ -11,12 +11,10 @@ type Snapshot = Omit<Extract<HostToClient, { type: "snapshot" }>, "type">;
 export interface WebHost {
 	snapshot(): Snapshot;
 	transcript(ticketId: string): TranscriptMessage[];
-	/** Returns the triggerId. Callers pass text that is non-empty after trim. */
 	say(text: string): string;
 }
 
 const SAY_MAX_BYTES = 32 * 1024;
-// Bounds the watcher-map keys to plausible ticket ids.
 const TICKET_ID = /^tkt_[A-Za-z0-9_-]{1,64}$/;
 
 const INDEX_HTML = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
@@ -143,7 +141,6 @@ export class WebGateway {
 		});
 	}
 
-	// The first frame and joining the set happen in one synchronous turn, so no live frame can be lost or arrive first.
 	#openStream(res: ServerResponse, first: HostToClient, set: Set<ServerResponse>, onEmpty?: () => void): void {
 		res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "text/event-stream; charset=utf-8", connection: "keep-alive" });
 		res.write("retry: 1000\n\n");

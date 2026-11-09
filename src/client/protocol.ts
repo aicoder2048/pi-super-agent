@@ -20,7 +20,6 @@ export interface WatchedSource {
 	rules: { id: string; text: string; by: "user" | "module" }[];
 }
 
-/** The left column's changing state, sent whole in the snapshot and in every board frame. */
 export interface BoardState {
 	rows: DashboardRow[];
 	today: TodayCounts;

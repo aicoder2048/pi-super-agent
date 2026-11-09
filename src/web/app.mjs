@@ -68,7 +68,6 @@ function mount(doc) {
 		},
 	};
 	const systemDark = () => matchMedia("(prefers-color-scheme: dark)").matches;
-	// Only a manual choice sets data-theme; without it the CSS follows prefers-color-scheme.
 	const stored = store.get();
 	if (stored === "light" || stored === "dark") doc.documentElement.dataset.theme = stored;
 	$("theme").addEventListener("click", () => {
@@ -258,7 +257,6 @@ function mount(doc) {
 			if (state === "expired") setStatus("expired");
 			setSay(state, state === "rejected" ? await res.text() : "");
 		} catch {
-			// The text stays in the composer: after checking the conversation, saying it again is one press.
 			setSay(sayOutcome(abort.signal.aborted ? "timeout" : "network"));
 		} finally {
 			clearTimeout(timer);

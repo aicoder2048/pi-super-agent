@@ -39,7 +39,6 @@ const GROUP = {
 	stopped: "done",
 };
 
-/** Must equal DEFAULT_ACK_TIMEOUT_MS in src/client/connection.ts, which the page cannot import (node:net); a test pins them. */
 export const ACK_TIMEOUT_MS = 5000;
 
 /**
@@ -185,7 +184,6 @@ export const stopSentence = (title) => `叫停「${title}」`;
  * @property {string} [tool]
  */
 
-/** Bracket labels from INPUT_LABEL in src/host/workers.ts; a test feeds every input kind through formatInputs. */
 /** @type {Record<string, string>} */
 const INPUT_STEP = {
 	"任务说明": "弄清楚要做什么",
@@ -197,7 +195,6 @@ const INPUT_STEP = {
 	"后台命令结果": "后台的活干完了",
 };
 
-/** Arguments are untrusted model output; detail functions only pick fields and clip them. */
 /** @type {Record<string, (a: any) => { title: string, detail: string }>} */
 const TOOL_STEP = {
 	read: (a) => ({ title: "看了一个文件", detail: baseName(a?.path) }),
@@ -268,7 +265,6 @@ function append(watch, message) {
 }
 
 /**
- * History replaces the steps, so an EventSource reconnect (which resends history) is idempotent.
  * @param {Watch} watch @param {HostToClient} message @returns {boolean}
  */
 export function applyTranscript(watch, message) {
@@ -301,7 +297,7 @@ export const SAY_COPY = {
 	rejected: "没发出去：",
 };
 
-/** Never leads to an automatic resend. @param {{ status: number } | "timeout" | "network"} outcome @returns {SayState} */
+/** @param {{ status: number } | "timeout" | "network"} outcome @returns {SayState} */
 export function sayOutcome(outcome) {
 	if (typeof outcome === "string") return "maybe_lost";
 	if (outcome.status === 200) return "delivered";

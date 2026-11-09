@@ -11,7 +11,6 @@ export interface ClientHandlers {
 	transcript?(ticketId: string): unknown[];
 }
 
-/** The worker writes its session file before its live event reaches the host, so a watcher's first live message can repeat the last history message. */
 export class Seams<K extends object> {
 	readonly #last = new WeakMap<K, string>();
 
@@ -20,7 +19,6 @@ export class Seams<K extends object> {
 		else this.#last.delete(watcher);
 	}
 
-	/** True only for the first live message after history, and only when it repeats history's last message. */
 	repeats(watcher: K, json: string): boolean {
 		const last = this.#last.get(watcher);
 		this.#last.delete(watcher);
