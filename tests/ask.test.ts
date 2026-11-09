@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { HostConnection } from "../src/client/connection.ts";
 import type { HostToClient } from "../src/client/protocol.ts";
+import { parseOptions } from "../src/kernel/question.ts";
 import { ids, ofType, openOnConversation, startHost, until, type Brain } from "./helpers/fakes.ts";
 
 const openOnly: Brain = (cards) => cards.flatMap((card) => (card.startsWith("[对话]") ? openOnConversation(card) : []));
@@ -47,6 +48,13 @@ test("Worker 汇报的选项不合规时工具报错，说清规则，这份汇�
 	const found = host.kernel.read(host.kernel.listTickets()[0].id);
 	assert.ok(found?.type === "ticket");
 	assert.deepEqual(found.recentReports.map((r) => r.options), [["甲", "乙"]], "只有合规的一份汇报，选项去掉首尾空白");
+});
+
+test("选项里有控制字符、格式字符或换段符时拒绝；去掉首尾空白后必须还有看得见的字", () => {
+	for (const bad of ["a\rb", "a\0b", "a\u202eb", "a\tb", "a\u2028b", "a\u2029b", "a\u200bb", "\u00a0", "\u200b", "\u3000\u200b"]) {
+		assert.throws(() => parseOptions(["好", bad], "选哪个？"), /看不见的字符|不能为空/, JSON.stringify(bad));
+	}
+	assert.deepEqual(parseOptions(["营收 和 利润", " 先\u00a0不查 "], "选哪个？"), ["营收 和 利润", "先\u00a0不查"]);
 });
 
 const OPTIONS = ["只看营收", "营收和利润", "先不查"];

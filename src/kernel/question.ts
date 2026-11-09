@@ -2,6 +2,8 @@ export const OPTIONS_MIN = 2;
 export const OPTIONS_MAX = 4;
 export const OPTION_MAX_CHARS = 20;
 
+const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+
 export function parseOptions(raw: unknown, question: string | undefined): string[] {
 	if (raw === undefined || raw === null) return [];
 	if (!Array.isArray(raw)) throw new Error(`options 要写成 ${OPTIONS_MIN} 到 ${OPTIONS_MAX} 个短选项的列表`);
@@ -12,7 +14,8 @@ export function parseOptions(raw: unknown, question: string | undefined): string
 	const options = raw.map((o) => {
 		if (typeof o !== "string") throw new Error("每个选项都要是一段文字");
 		const option = o.trim();
-		if (!option || option.includes("\n")) throw new Error("选项不能为空，也不能换行");
+		if (!option) throw new Error("选项不能为空");
+		if (INVISIBLE.test(option)) throw new Error("选项里不能有换行、制表、方向控制等看不见的字符");
 		const length = [...option].length;
 		if (length > OPTION_MAX_CHARS) throw new Error(`每个选项不超过 ${OPTION_MAX_CHARS} 个字，「${option}」有 ${length} 个字`);
 		return option;
