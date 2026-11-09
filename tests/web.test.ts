@@ -220,6 +220,18 @@ test("页面：200 是已发送，401 是链接失效，其他状态是发送失
 	assert.match(page.SAY_COPY.maybe_lost, /未收到确认.*对话.*重新发送/);
 });
 
+test("页面：未收到确认的话随后出现在对话里时，改为已发送，输入框里还是这句话就清空", () => {
+	const text = "读取 example.com 的网页标题";
+	const lost = { state: "maybe_lost" as const, text };
+	const mine = { id: "trg_1", who: "user" as const, text, at: 1 };
+	assert.deepEqual(page.settleSay(lost, text, [mine]), { state: "delivered", composer: "" });
+	assert.deepEqual(page.settleSay(lost, "我又改了", [mine]), { state: "delivered", composer: "我又改了" }, "用户已经改了输入框就不动");
+	assert.deepEqual(page.settleSay(lost, text, []), { state: "maybe_lost", composer: text });
+	assert.deepEqual(page.settleSay(lost, text, [{ ...mine, text: "另一句" }]), { state: "maybe_lost", composer: text });
+	assert.deepEqual(page.settleSay(lost, text, [{ ...mine, who: "router" }]), { state: "maybe_lost", composer: text }, "幕僚长说了同样的话不算");
+	assert.deepEqual(page.settleSay({ state: "rejected", text }, text, [mine]), { state: "rejected", composer: text }, "服务器明确拒绝的不改");
+});
+
 test("页面：发送失败时按状态码显示固定文案，不显示服务器正文", () => {
 	const shown = (status: number) => page.sayCopy(page.sayOutcome({ status }), status);
 	assert.equal(shown(400), "发送失败：内容为空或格式不正确。");

@@ -2,7 +2,7 @@
 
 import {
 	STAGE_PHRASE, BASIS_PHRASE, applyMessage, applyTranscript, canSend, dutyLine, emptyView, emptyWatch,
-	isStale, leftColumn, resolveTheme, restartNotice, sayCopy, sayOutcome, smallPrint, stopSentence, toggleTheme,
+	isStale, leftColumn, resolveTheme, restartNotice, sayCopy, sayOutcome, settleSay, smallPrint, stopSentence, toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, isLive } from "../client/board-format.mjs";
 
@@ -30,6 +30,10 @@ function mount(doc) {
 	const sayStatus = $("say-status");
 	const mark = /** @type {Element} */ (doc.querySelector(".logo svg"));
 	let rendered = 0;
+	/** @type {import("./view.mjs").SayState} */
+	let sayState = "idle";
+	/** @type {{ text: string, from: number } | undefined} */
+	let unconfirmed;
 	/** @type {{ watch: ReturnType<typeof emptyWatch>, source: EventSource } | undefined} */
 	let watching;
 
@@ -49,6 +53,7 @@ function mount(doc) {
 
 	/** @param {import("./view.mjs").SayState} state @param {number} [status] */
 	const setSay = (state, status) => {
+		sayState = state;
 		sayStatus.dataset.state = state;
 		sayStatus.textContent = sayCopy(state, status);
 	};
@@ -161,6 +166,16 @@ function mount(doc) {
 		}
 		rendered = view.lines.size;
 		if (atBottom) box.scrollTop = box.scrollHeight;
+		settleUnconfirmed();
+	};
+
+	const settleUnconfirmed = () => {
+		if (!unconfirmed) return;
+		const next = settleSay({ state: sayState, text: unconfirmed.text }, composer.value, [...view.lines.values()].slice(unconfirmed.from));
+		if (next.state === sayState) return;
+		unconfirmed = undefined;
+		composer.value = next.composer;
+		setSay(next.state);
 	};
 
 	const renderHow = () => {
@@ -246,6 +261,8 @@ function mount(doc) {
 		const text = composer.value;
 		if (!canSend(text) || send.disabled) return;
 		send.disabled = true;
+		unconfirmed = undefined;
+		const from = view.lines.size;
 		setSay("sending");
 		const abort = new AbortController();
 		const timer = setTimeout(() => abort.abort(), DEFAULT_ACK_TIMEOUT_MS);
@@ -263,6 +280,8 @@ function mount(doc) {
 			setSay(state, res.status);
 		} catch {
 			setSay(sayOutcome(abort.signal.aborted ? "timeout" : "network"));
+			unconfirmed = { text, from };
+			settleUnconfirmed();
 		} finally {
 			clearTimeout(timer);
 			send.disabled = false;

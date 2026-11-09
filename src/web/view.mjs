@@ -322,6 +322,16 @@ export function sayOutcome(outcome) {
 	return "rejected";
 }
 
+// A timed-out POST may still have reached the host; its echo in the conversation is the confirmation.
+/**
+ * @param {{ state: SayState, text: string }} say @param {string} composer @param {ConversationLine[]} arrived
+ * @returns {{ state: SayState, composer: string }}
+ */
+export function settleSay(say, composer, arrived) {
+	if (say.state !== "maybe_lost" || !arrived.some((line) => line.who === "user" && line.text === say.text)) return { state: say.state, composer };
+	return { state: "delivered", composer: composer === say.text ? "" : composer };
+}
+
 /** @param {string} text */
 export const canSend = (text) => text.trim() !== "";
 
