@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS tickets (
 	helper_name TEXT,
 	helper_role TEXT ${oneOf("helper_role", HELPER_ROLES)},
 	helper_seq INTEGER,
+	team TEXT,
 	CHECK (basis <> 'rule' OR rule_id IS NOT NULL)
 );
 
@@ -182,6 +183,7 @@ export function openStore(path: string): DatabaseSync {
 			ALTER TABLE tickets ADD COLUMN helper_role TEXT ${oneOf("helper_role", HELPER_ROLES)};
 			ALTER TABLE tickets ADD COLUMN helper_seq INTEGER`);
 	}
+	if (!ticketColumns.includes("team")) db.exec("ALTER TABLE tickets ADD COLUMN team TEXT");
 	return db;
 }
 

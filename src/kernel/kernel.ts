@@ -11,6 +11,7 @@ import {
 	CONVERSATION_SOURCE,
 	CONVERSATION_THREAD_ID,
 	DEFAULT_CONFIG,
+	DEFAULT_TEAM,
 	RETRY_BACKOFF_MS,
 	SYSTEM_PROBLEM_STREAK,
 } from "./types.ts";
@@ -29,6 +30,7 @@ import type {
 	Disposition,
 	Helper,
 	HelpersToday,
+	TeamBook,
 	InputKind,
 	KernelConfig,
 	PendingAction,
@@ -120,6 +122,8 @@ export function nextStallAt(rows: DashboardRow[], stuckMs: number): number | nul
 	return at.length ? Math.min(...at) : null;
 }
 
+const ONLY_DEFAULT_TEAM: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"]]), pinned: new Map() };
+
 export interface KernelOptions {
 	db: DatabaseSync;
 	clock: Clock;
@@ -127,6 +131,9 @@ export interface KernelOptions {
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	/** A rule ticket from such a source gets a market helper. */
 	isMarketSource?: (source: string) => boolean;
+	/** Only the default team when absent. */
+	teams?: TeamBook;
+	log?: (line: string) => void;
 	config?: Partial<KernelConfig>;
 }
 
@@ -136,11 +143,15 @@ export class Kernel {
 	readonly #sourcePolicy: SourcePolicy;
 	readonly #ruleAllows: (ruleId: string, triggerSource: string) => boolean;
 	readonly #isMarketSource: (source: string) => boolean;
+	readonly #teams: TeamBook;
+	readonly #log: (line: string) => void;
 	readonly config: KernelConfig;
 
-	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, config }: KernelOptions) {
+	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, teams = ONLY_DEFAULT_TEAM, log = () => {}, config }: KernelOptions) {
 		this.#ruleAllows = ruleAllows;
 		this.#isMarketSource = isMarketSource;
+		this.#teams = teams;
+		this.#log = log;
 		this.#db = db;
 		this.#clock = clock;
 		this.#sourcePolicy = sourcePolicy;
@@ -897,16 +908,22 @@ export class Kernel {
 				return reject(`unknown thread ${threadId}; new threads must look like thr_<source>:<thread>`);
 			}
 		}
+		if (d.team !== undefined && !this.#teams.kinds.has(d.team)) {
+			return reject(`unknown team ${d.team}; the teams are ${[...this.#teams.kinds.keys()].join(", ")} (omit team for the default one)`);
+		}
+		const pinned = d.basis === "rule" ? this.#teams.pinned.get(d.ruleId!) : undefined;
+		const team = pinned ?? d.team ?? DEFAULT_TEAM;
 		if (d.basis === "inference") {
 			const limitProblem = this.#inferenceDailyLimitProblem();
 			if (limitProblem) return reject(limitProblem);
 		}
 
 		const ticketId = this.#id("tkt");
+		if (d.team !== undefined && d.team !== team) this.#log(`[kernel] 规则 ${d.ruleId} 写明团队「${team}」，幕僚长填的是「${d.team}」，任务 ${ticketId} 已改回「${team}」`);
 		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now());
 		this.#run(
-			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
+			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, team)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
 			ticketId,
 			d.title,
 			d.basis,
@@ -917,6 +934,7 @@ export class Kernel {
 			helper.name,
 			helper.role,
 			helper.seq,
+			team,
 		);
 		for (const threadId of threads) {
 			const source = threadId.match(SOURCE_THREAD)?.[1];
@@ -1074,6 +1092,7 @@ export class Kernel {
 			title: r.title,
 			basis: r.basis as Basis,
 			ruleId: r.rule_id,
+			team: r.team ?? DEFAULT_TEAM,
 			originTriggerId: r.origin_trigger_id,
 			createdAt: r.created_at,
 			workerSessionId: r.worker_session_id,

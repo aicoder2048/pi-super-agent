@@ -126,6 +126,8 @@ export type Decision =
 			title: string;
 			basis: Basis;
 			ruleId?: string;
+			/** A team's name; the default team when absent. */
+			team?: string;
 			triggerId?: string;
 			threads?: string[];
 			brief: string;
@@ -190,6 +192,8 @@ export interface Ticket {
 	title: string;
 	basis: Basis;
 	ruleId: string | null;
+	/** Fixed when the ticket opens; it may name a team that has since been removed. */
+	team: string;
 	originTriggerId: string | null;
 	createdAt: number;
 	workerSessionId: string;
