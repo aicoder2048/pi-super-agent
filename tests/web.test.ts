@@ -12,6 +12,7 @@ import { ConfigError } from "../src/config-error.ts";
 import { WebGateway } from "../src/host/web.ts";
 import * as page from "../src/web/view.mjs";
 import { WATCHDOG_SOURCE } from "../src/watchdog/watchdog.ts";
+import { openStore } from "../src/kernel/store.ts";
 import { busyPort, freePort, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
@@ -729,6 +730,42 @@ test("宿主：快照和 board 帧带今天的计数、值班时间和在盯着�
 	assert.deepEqual(snap.watching, watching);
 	const settled = (rows: typeof snap.board) => rows.map(({ elapsedMs, ...rest }) => rest);
 	assert.deepEqual({ rows: settled(snap.board), today: snap.today, duty: snap.duty }, { rows: settled(frame.rows), today: frame.today, duty: frame.duty });
+});
+
+test("宿主：快照和 board 帧带今日助手数和 token 合计；行情来源的规则任务是行情助手", async (t) => {
+	const brain = (cards: string[]) =>
+		cards.flatMap((card) => {
+			const triggerId = card.match(/trg_[\w-]+/)?.[0];
+			if (card.startsWith("[候选触发]")) return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "rule", ruleId: "toy-market/big-move", triggerId, title: "核实 TOYX", brief: "核实" }] } }];
+			return card.startsWith("[对话]") ? openOnConversation(card) : [];
+		});
+	const { host } = await startHost(brain, (w) => {
+		w.report({ status: "progress", summary: "在看" });
+		w.settle();
+	}, { isMarketSource: (s) => s === "toy-market" });
+	t.after(() => host.stop());
+	host.say("查天气");
+	host.kernel.submitTrigger({ source: "toy-market", externalId: "q1", threads: [{ id: "thr_toy-market:TOYX" }], sender: "feed", body: "TOYX 涨跌 -5.2%", occurredAt: Date.now() });
+	await until(() => host.snapshot().board.filter((r) => r.latestSummary === "在看").length === 2, "两个任务都汇报");
+	for (const r of host.snapshot().board) host.kernel.recordUsage(r.id, { provider: "p", tokensIn: 1000, tokensOut: 234 });
+	const snap = host.snapshot();
+	assert.deepEqual(snap.helpers, { count: 2, tokens: 2468 });
+	assert.deepEqual(snap.board.map((r) => r.helper?.role).sort(), ["conversation", "market"]);
+});
+
+test("宿主：启动时给旧状态库里没有助手的任务补上名字", async (t) => {
+	const stateDir = tempStateDir();
+	const brain = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
+	const first = await startHost(brain, (w) => w.settle(), { stateDir });
+	first.host.say("查天气");
+	await until(() => first.host.snapshot().board.length === 1, "任务");
+	await first.host.stop();
+	const db = openStore(join(stateDir, "state.db"));
+	db.exec("UPDATE tickets SET helper_name = NULL, helper_role = NULL, helper_seq = NULL");
+	db.close();
+	const again = await startHost(brain, (w) => w.settle(), { stateDir });
+	t.after(() => again.host.stop());
+	assert.equal(again.host.snapshot().board[0].helper?.role, "conversation");
 });
 
 test("宿主：过了本地午夜即使没有任何动静，也推一帧看板，今日计数归零", async (t) => {
