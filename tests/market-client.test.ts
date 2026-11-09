@@ -99,7 +99,6 @@ test("Key：环境变量没有时读 secretsFile 指向的 .env；都没有时�
 	writeFileSync(file, `# comment\nPOLYGON_API_KEY=${KEY}\nOTHER=1\n`);
 	assert.deepEqual(readMarketKey({}, file), { key: KEY, origin: `secretsFile ${file}` });
 	assert.equal(readMarketKey({}, undefined), undefined);
-	assert.equal(readMarketKey({}, join(dir, "missing.env")), undefined);
 });
 
 test("Key：格式不对时报配置错误，错误里不出现 Key 的内容", () => {

@@ -42,23 +42,24 @@ function pick(filter: { title?: string; description?: string } | undefined) {
 }
 
 export function feedSpecs(config: Pick<HostConfig, "stateDir" | "secretsFile" | "sources">, modules: Modules, log: (line: string) => void, env = process.env): FeedSpec[] {
-	return modules.modules.flatMap((m) =>
-		(m.manifest.sources ?? []).flatMap((s) => {
-			if (!s.feed) return [];
-			const build = FEEDS[s.feed.kind];
-			if (!build) throw new ConfigError(`${join(m.dir, "module.json")}：来源 ${s.name} 的 feed.kind「${s.feed.kind}」不存在，可用：${Object.keys(FEEDS).join("、")}`);
-			return [build({
-				source: s.name,
-				title: s.title ?? s.name,
-				settings: s.feed.settings,
-				override: config.sources[s.name],
-				where: `${join(config.stateDir, "config.json")} 的 sources.${s.name} 或 ${join(m.dir, "module.json")}`,
-				secretsFile: config.secretsFile,
-				env,
-				log,
-			})];
-		}),
-	);
+	const declared = modules.modules.flatMap((m) => (m.manifest.sources ?? []).filter((s) => s.feed).map((s) => ({ module: m, source: s })));
+	const names = declared.map((d) => d.source.name);
+	const unknown = Object.keys(config.sources).find((name) => !names.includes(name));
+	if (unknown) throw new ConfigError(`${join(config.stateDir, "config.json")}：sources.${unknown} 不是可配置的来源，可配置：${names.join("、") || "（没有）"}`);
+	return declared.map(({ module: m, source: s }) => {
+		const build = FEEDS[s.feed!.kind];
+		if (!build) throw new ConfigError(`${join(m.dir, "module.json")}：来源 ${s.name} 的 feed.kind「${s.feed!.kind}」不存在，可用：${Object.keys(FEEDS).join("、")}`);
+		return build({
+			source: s.name,
+			title: s.title ?? s.name,
+			settings: s.feed!.settings,
+			override: config.sources[s.name],
+			where: `${join(config.stateDir, "config.json")} 的 sources.${s.name} 或 ${join(m.dir, "module.json")}`,
+			secretsFile: config.secretsFile,
+			env,
+			log,
+		});
+	});
 }
 
 export interface HostWiringInput {

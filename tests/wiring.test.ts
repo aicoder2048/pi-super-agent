@@ -149,6 +149,13 @@ test("真实接线：config.json 里 sources.us-market 拼错字段时启动前�
 	assert.throws(() => createHostOptions({ config: hostConfig(provider), modules: odd, modelRuntime, log: () => {} }), /carrier-pigeon.*massive-stocks/);
 });
 
+test("真实接线：config.json 的 sources 里写了没有 feed 的来源名时启动前报错，列出可配置的来源", async (t) => {
+	withoutKeyVars(t);
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const config = { ...hostConfig(provider), sources: { "us-markt": { watchlist: ["AMD"] } } };
+	assert.throws(() => createHostOptions({ config, modules: Modules.load([REPO_MODULES]), modelRuntime, log: () => {} }), (e: Error) => e.name === "ConfigError" && /us-markt.*us-market/.test(e.message));
+});
+
 test("宿主运行模块声明的来源：随宿主启停，触发进内核，游标存在自己名下", async (t) => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	let stopped = false;

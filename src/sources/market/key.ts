@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 import { ConfigError } from "../../config-error.ts";
 
@@ -9,7 +9,7 @@ export function readMarketKey(env: Readonly<NodeJS.ProcessEnv>, secretsFile: str
 	const envKey = fromEnv && env[fromEnv];
 	let found: { key: string; origin: string } | undefined;
 	if (envKey) found = { key: envKey, origin: `环境变量 ${fromEnv}` };
-	else if (secretsFile && existsSync(secretsFile)) {
+	else if (secretsFile) {
 		const file = parseEnv(readFileSync(secretsFile, "utf8"));
 		const name = KEY_NAMES.find((n) => file[n]);
 		if (name) found = { key: file[name]!, origin: `secretsFile ${secretsFile}` };
