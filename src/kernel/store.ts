@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS reply_receipts (
 export function openStore(path: string): DatabaseSync {
 	const db = new DatabaseSync(path);
 	db.exec("PRAGMA foreign_keys = ON");
-	if (path !== ":memory:") db.exec("PRAGMA journal_mode = WAL");
+	if (path !== ":memory:") db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000");
 	db.exec(SCHEMA);
 	return db;
 }

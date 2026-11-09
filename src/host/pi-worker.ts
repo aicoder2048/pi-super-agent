@@ -22,7 +22,6 @@ const WORKER_PROMPT = `你是 Super Agent 的一个 Worker，负责一项任务�
 export interface PiWorkerSpawnerOptions {
 	socketPath: string;
 	sessionDir: string;
-	model: () => { model: ModelRef; fellBack: boolean };
 	moduleFor?: (ruleId: string | null) => { skillsDir?: string; prepare?: string } | undefined;
 	bgMaxMs?: number;
 }
@@ -35,7 +34,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 	}
 
 	async spawn(spec: WorkerSpec, events: WorkerEvents): Promise<WorkerHandle> {
-		const { model, fellBack } = this.#o.model();
+		const { model } = spec;
 		const mod = this.#o.moduleFor?.(spec.ruleId);
 		const marker = join(spec.workdir, ".psa-prepared");
 		if (mod?.prepare && !existsSync(marker)) {
@@ -66,19 +65,24 @@ export class PiWorkerSpawner implements WorkerSpawner {
 		});
 		let streaming = false;
 		let exited = false;
+		let current = formatModelRef(model);
+		let lastError: string | undefined;
 		client.onEvent((event: any) => {
 			events.transcript(event);
 			if (event.type === "agent_start") {
 				streaming = true;
+				lastError = undefined;
 				events.turnStarted();
 			} else if (event.type === "tool_execution_start") {
 				events.toolCalled();
-			} else if (event.type === "message_end" && event.message?.role === "assistant" && event.message.usage) {
+			} else if (event.type === "message_end" && event.message?.role === "assistant") {
+				lastError = event.message.stopReason === "error" ? String(event.message.errorMessage ?? "error") : undefined;
 				const u = event.message.usage;
+				if (!u) return;
 				events.usage({ provider: event.message.provider ?? model.provider, tokensIn: (u.input ?? 0) + (u.cacheRead ?? 0), tokensOut: u.output ?? 0 });
 			} else if (event.type === "agent_settled") {
 				streaming = false;
-				events.settled();
+				events.settled(lastError);
 			}
 		});
 		await client.start();
@@ -92,9 +96,14 @@ export class PiWorkerSpawner implements WorkerSpawner {
 		await client.setAutoRetry(true);
 		await client.setSteeringMode("all");
 		return {
-			model: formatModelRef(model),
-			fellBack,
+			get model() {
+				return current;
+			},
 			isStreaming: () => streaming,
+			async setModel(next: ModelRef) {
+				await client.setModel(next.provider, next.id);
+				current = formatModelRef(next);
+			},
 			async deliver(text: string) {
 				if (streaming) await client.steer(text);
 				else {

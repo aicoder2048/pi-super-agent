@@ -46,7 +46,7 @@ export interface TriggerSubmission {
 	occurredAt: number;
 }
 
-export type SourcePolicy = (trigger: TriggerSubmission) => "ignore" | "candidate";
+export type SourcePolicy = (trigger: TriggerSubmission) => "ignore" | "candidate" | "notice";
 
 export interface KernelConfig {
 	maxWorkers: number;
@@ -75,7 +75,8 @@ export type RouterNotice =
 	| { kind: "candidate"; triggerId: string }
 	| { kind: "report"; ticketId: string; reportId: string }
 	| { kind: "question"; ticketId: string; reportId: string }
-	| { kind: "handback"; ticketId: string; body: string };
+	| { kind: "handback"; ticketId: string; body: string }
+	| { kind: "notice"; body: string };
 
 export type Action =
 	| { kind: "router.notify"; payload: RouterNotice }
@@ -183,6 +184,7 @@ export interface DashboardRow {
 	tokensIn: number;
 	tokensOut: number;
 	elapsedMs: number;
+	lastProgressAt: number | null;
 }
 
 export type ReadResult =

@@ -7,7 +7,7 @@ import type { HostToClient } from "../src/client/protocol.ts";
 import { formatTranscriptMessage } from "../src/client/transcript.ts";
 import { Host } from "../src/host/host.ts";
 import type { DashboardRow } from "../src/kernel/types.ts";
-import { FakeSpawner, fauxRouter, openOnConversation, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
+import { defaultWorkerModels, FakeSpawner, fauxRouter, openOnConversation, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
 
 const brain: Brain = (cards) => cards.flatMap((c) => (c.startsWith("[对话]") ? openOnConversation(c) : []));
 
@@ -16,7 +16,7 @@ async function hostAt(stateDir: string) {
 		w.report({ status: "progress", summary: "处理中" });
 		w.settle();
 	});
-	const host = await Host.start({ stateDir, createRouter: fauxRouter(brain).createRouter, createSpawner: () => spawner, log: () => {} });
+	const host = await Host.start({ stateDir, createRouter: fauxRouter(brain).createRouter, createSpawner: () => spawner, log: () => {}, workerModels: defaultWorkerModels() });
 	spawner.request = (...a) => host.workers.handleRequest(...a);
 	return host;
 }

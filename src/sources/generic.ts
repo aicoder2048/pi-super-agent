@@ -46,11 +46,13 @@ export interface GenericSourceOptions {
 	submit(trigger: TriggerSubmission): void;
 	now(): number;
 	log(line: string): void;
+	pollMs?: number;
 }
 
 export class GenericSource {
 	readonly #o: GenericSourceOptions;
 	#watcher: FSWatcher | undefined;
+	#poll: NodeJS.Timeout | undefined;
 	#scanning = false;
 	#rescan = false;
 
@@ -59,13 +61,17 @@ export class GenericSource {
 		for (const sub of ["", "processed", "rejected"]) mkdirSync(join(options.inboxDir, sub), { recursive: true });
 	}
 
+	// fs.watch can delay or drop events under load on macOS, so a slow poll backs it up.
 	start(): void {
 		this.scan();
 		this.#watcher = watch(this.#o.inboxDir, () => this.scan());
+		this.#poll = setInterval(() => this.scan(), this.#o.pollMs ?? 10_000);
+		this.#poll.unref();
 	}
 
 	stop(): void {
 		this.#watcher?.close();
+		clearInterval(this.#poll);
 	}
 
 	scan(): void {
