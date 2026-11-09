@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Kernel } from "../src/kernel/kernel.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { MarketClient } from "../src/sources/market/client.ts";
-import { MarketSource, marketFeed } from "../src/sources/market/source.ts";
+import { FinnhubClient } from "../src/sources/market/finnhub.ts";
+import { MarketSource, marketFeed, type MarketSourceOptions } from "../src/sources/market/source.ts";
 import { parseMarketSettings } from "../src/sources/market/settings.ts";
 import { ConfigError } from "../src/config-error.ts";
 import { fakeHttp, snapshotBody, tickerRow } from "./helpers/market.ts";
@@ -31,7 +32,7 @@ function market(options: { dbPath?: string; respond?: (url: string, now: number)
 	const client = new MarketClient({ key: "k", baseURL: DEFAULTS.baseURL, minGapMs: 0, http, clock, sleep: async () => {} });
 	const logs: string[] = [];
 	let failWrite = false;
-	const source = new MarketSource({
+	const sourceOptions: MarketSourceOptions = {
 		source: "us-market",
 		title: "美股行情",
 		settings: parseMarketSettings(DEFAULTS, undefined, "test"),
@@ -49,9 +50,10 @@ function market(options: { dbPath?: string; respond?: (url: string, now: number)
 			},
 			log: (l) => logs.push(l),
 		},
-	});
+	};
+	const source = new MarketSource(sourceOptions);
 	const triggers = () => kernel.triggerLog().map((t) => ({ source: t.source, externalId: t.externalId, disposition: t.disposition })).reverse();
-	return { source, kernel, clock, prices, requests: calls, logs, triggers, dbPath, crashBeforeCursor: () => { failWrite = true; } };
+	return { source, options: sourceOptions, kernel, clock, prices, requests: calls, logs, triggers, dbPath, crashBeforeCursor: () => { failWrite = true; } };
 }
 
 test("看盘：周末不发任何请求", async () => {
@@ -320,4 +322,32 @@ test("查询：indicators 没有 K 线时报错，参数不合法时不发请求
 	];
 	for (const args of bad) await assert.rejects(m.source.lookup("indicators", args), /indicators/, JSON.stringify(args));
 	assert.equal(m.requests.length, before);
+});
+
+test("查询：earnings 走 Finnhub 客户端，用纽约今天找下次财报；没有 Finnhub 密钥时只有 earnings 报错，其余查询照常", async () => {
+	const m = market({ respond: () => Response.json(snapshotBody([tickerRow("AMD", 150, 160, T("2026-11-09T14:59:00Z"))])) });
+	await assert.rejects(m.source.lookup("earnings", { symbol: "NVDA" }), /未配置 FINNHUB_API_KEY/);
+	assert.equal((await m.source.lookup("quote", { symbols: ["AMD"] }) as unknown[]).length, 1);
+	const f = fakeHttp((url) => Response.json(url.includes("/calendar/") ? { earningsCalendar: [{ date: "2026-11-19", hour: "amc", symbol: "NVDA" }] } : []), T("2026-11-09T15:00:00Z"));
+	const withKey = market();
+	const source = new MarketSource({ ...withKey.options, earnings: new FinnhubClient({ key: "fh", minGapMs: 0, http: f.http, clock: f.clock, sleep: f.sleep }) });
+	assert.deepEqual(await source.lookup("earnings", { symbol: "nvda" }), { symbol: "NVDA", next: { date: "2026-11-19", hour: "amc" }, quarters: [] });
+	assert.ok(f.calls[0]!.url.includes("from=2025-10-05&to=2027-03-09"));
+	await assert.rejects(source.lookup("earnings", { symbol: "NVDA", span: "day" }), /span/);
+	await assert.rejects(source.lookup("earnings", { symbol: "N V" }), /symbol/);
+	assert.equal(f.calls.length, 2);
+});
+
+test("密钥接线：marketFeed 从 secretsFile 读 FINNHUB_API_KEY，日志只写来源；没有时写明 earnings 不可用", (t) => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-fh-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const file = join(dir, ".env");
+	writeFileSync(file, "MASSIVE_API_KEY=mk-secret\nFINNHUB_API_KEY=fh-secret\n");
+	const logs: string[] = [];
+	marketFeed({ source: "us-market", title: "美股行情", settings: DEFAULTS, override: undefined, where: "test", secretsFile: file, env: {}, log: (l) => logs.push(l) });
+	assert.match(logs.join("\n"), /Finnhub 密钥来自 secretsFile/);
+	assert.ok(!/mk-secret|fh-secret/.test(logs.join("\n")));
+	writeFileSync(file, "MASSIVE_API_KEY=mk-secret\n");
+	marketFeed({ source: "us-market", title: "美股行情", settings: DEFAULTS, override: undefined, where: "test", secretsFile: file, env: {}, log: (l) => logs.push(l) });
+	assert.match(logs.at(-1)!, /未配置 FINNHUB_API_KEY/);
 });
