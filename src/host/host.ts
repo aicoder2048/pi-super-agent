@@ -143,7 +143,7 @@ export class Host {
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway(() => host.snapshot());
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), say: (text) => host.say(text) });
 			await host.#web.listen(options.webPort);
 		}
 		try {

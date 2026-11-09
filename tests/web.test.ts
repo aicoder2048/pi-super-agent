@@ -90,9 +90,10 @@ test("页面：超过两个保活间隔（35 秒）没收到任何帧才算断�
 type Got = { status: number; headers: http.IncomingHttpHeaders; body: string };
 
 // node:http rather than fetch, because fetch refuses to send a custom Host header.
-function request(url: string, options: { host?: string; method?: string } = {}): Promise<Got> {
+function request(url: string, options: { host?: string; method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<Got> {
 	return new Promise((resolve, reject) => {
-		const req = http.request(url, { method: options.method ?? "GET", headers: options.host ? { host: options.host } : {} }, (res) => {
+		const headers = { ...(options.host ? { host: options.host } : {}), ...options.headers };
+		const req = http.request(url, { method: options.method ?? "GET", headers }, (res) => {
 			let body = "";
 			res.setEncoding("utf8");
 			res.on("data", (chunk) => (body += chunk));
@@ -100,7 +101,7 @@ function request(url: string, options: { host?: string; method?: string } = {}):
 		});
 		req.on("error", reject);
 		req.setTimeout(3000, () => req.destroy(new Error(`请求 3 秒没有响应：${url}`)));
-		req.end();
+		req.end(options.body);
 	});
 }
 
@@ -411,4 +412,75 @@ test("宿主：这次启动恢复了执行中的任务，快照里的 duty.resum
 	const third = await startHost(() => [], () => {}, { stateDir: tempStateDir() });
 	t.after(() => third.host.stop());
 	assert.equal(third.host.snapshot().duty.resumed, 0);
+});
+
+async function sayHost(t: TestContext) {
+	const web = await webHost(t);
+	const origin = web.url.origin;
+	const post = (body: string, over: { token?: string; origin?: string | null; type?: string; host?: string } = {}) =>
+		request(web.at("/say", over.token ?? web.token), {
+			method: "POST",
+			host: over.host,
+			body,
+			headers: { "content-type": over.type ?? "application/json", ...(over.origin === null ? {} : { origin: over.origin ?? origin }) },
+		});
+	const userLines = () => web.host.kernel.conversation().filter((l) => l.who === "user").map((l) => l.text);
+	return { ...web, post, userLines };
+}
+
+test("网关：正确的 POST /say 返回 triggerId，事件流收到同一句 user", async (t) => {
+	const { post, events, userLines } = await sayHost(t);
+	const stream = events();
+	await until(() => stream.got.length > 0, "快照");
+	const res = await post(JSON.stringify({ text: "帮我读一下 example.com 的网页标题" }));
+	assert.equal(res.status, 200);
+	assert.equal(res.headers["cache-control"], "no-store");
+	const { triggerId } = JSON.parse(res.body);
+	assert.match(triggerId, /^trg_/);
+	await until(() => ofType(stream.got, "user").some((m) => m.id === triggerId && m.text === "帮我读一下 example.com 的网页标题"), "user");
+	assert.deepEqual(userLines(), ["帮我读一下 example.com 的网页标题"]);
+});
+
+test("网关：POST /say 没有 token 401，Host 头不对 403，对话没有新增", async (t) => {
+	const { post, url, userLines } = await sayHost(t);
+	const body = JSON.stringify({ text: "偷偷说" });
+	assert.equal((await post(body, { token: "" })).status, 401);
+	assert.equal((await post(body, { token: "0".repeat(64) })).status, 401);
+	assert.equal((await post(body, { host: `evil.example:${url.port}` })).status, 403);
+	assert.deepEqual(userLines(), []);
+});
+
+test("网关：POST /say 的 Origin 是别的端口、别的域名或缺失，都 403，对话没有新增", async (t) => {
+	const { post, url, userLines } = await sayHost(t);
+	const body = JSON.stringify({ text: "跨站说" });
+	for (const origin of [`http://127.0.0.1:${Number(url.port) + 1}`, "http://evil.example", `https://127.0.0.1:${url.port}`, "null", null]) {
+		assert.equal((await post(body, { origin })).status, 403, String(origin));
+	}
+	assert.equal((await post(body, { origin: `http://localhost:${url.port}` })).status, 200, "localhost 也是本机这个页面");
+	assert.deepEqual(userLines(), ["跨站说"]);
+});
+
+test("网关：POST /say 不是 JSON 时 415，跨站页面不经预检发不出这种请求", async (t) => {
+	const { post, userLines } = await sayHost(t);
+	for (const type of ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x"]) {
+		assert.equal((await post(JSON.stringify({ text: "表单说" }), { type })).status, 415, type);
+	}
+	assert.equal((await post(JSON.stringify({ text: "带字符集" }), { type: "application/json; charset=utf-8" })).status, 200);
+	assert.deepEqual(userLines(), ["带字符集"]);
+});
+
+test("网关：POST /say 超过 32 KB 413；正文不是 {text} 或只有空白 400；都不进对话", async (t) => {
+	const { post, userLines } = await sayHost(t);
+	assert.equal((await post(JSON.stringify({ text: "字".repeat(11_000) }))).status, 413);
+	for (const body of ["", "不是 JSON", "[]", "null", JSON.stringify({ text: 3 }), JSON.stringify({ say: "x" }), JSON.stringify({ text: " \n\t " })]) {
+		assert.equal((await post(body)).status, 400, body);
+	}
+	assert.equal((await post(JSON.stringify({ text: "字".repeat(2000) }))).status, 200, "2000 字照常送达");
+	assert.equal(userLines().length, 1);
+});
+
+test("网关：GET /say 405；/say 以外的 POST 也是 405", async (t) => {
+	const { at } = await webHost(t);
+	assert.equal((await request(at("/say"))).status, 405);
+	assert.equal((await request(at("/"), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 405);
 });
