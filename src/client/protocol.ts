@@ -1,4 +1,4 @@
-import type { DashboardRow, Disposition } from "../kernel/types.ts";
+import type { DashboardRow, Disposition, HelpersToday } from "../kernel/types.ts";
 
 /** ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
 export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string };
@@ -28,6 +28,8 @@ export interface BoardState {
 	rows: DashboardRow[];
 	today: TodayCounts;
 	duty: Duty;
+	/** Helpers opened on today's New York date and their tokens. */
+	helpers: HelpersToday;
 }
 
 export type ClientToHost =
@@ -38,7 +40,7 @@ export type ClientToHost =
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
-	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; watching: WatchedSource[] }
+	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; watching: WatchedSource[] }
 	| { type: "user"; id: string; text: string; at: number }
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }

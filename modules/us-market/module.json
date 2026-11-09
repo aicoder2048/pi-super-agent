@@ -3,6 +3,7 @@
   "sources": [
     {
       "name": "us-market",
+      "market": true,
       "title": "美股行情",
       "description": "交易时段每分钟看一遍自选股，涨跌到档或放量时提醒",
       "feed": {
