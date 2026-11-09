@@ -49,3 +49,13 @@ ts	phase	decision	why	evidence	result
 2026-11-09T12:04:12Z	f1-verdict	不修：卡片按钮早于幕僚长转述约一秒，先点会让回答排在问题前；U+3164 等少数不可见字母仍可作选项	回答送达正确，卡片才是问题的权威来源；剩余字符罕见且不影响授权	复验报告	decided
 2026-11-09T14:56:38Z	m1-live	真实开盘实测：这把 Key 的行情晚约 16 分钟（接口仍回 OK），报价按「比现在晚 10 分钟以上」也标延迟行情	此前以为是实时行情；实测 27 次快照报价都晚 16 分钟，提醒里却没写「延迟行情」，使用者会误以为是即时价	scratchpad/live-w1/demos/out/demo-5-market/market-tap.jsonl; tests/market-client.test.ts 红→绿	fixed
 2026-11-09T14:57:55Z	m1-live-verdict	延迟标记复审 PASS；按建议补 9/11 分钟边界样例和 lookup 说明；收盘宽限只剩约 4 分钟余量，记为已知风险不改	复审确认其他逻辑不依赖实时行情	复审报告；402/402	PASS
+2026-11-09T18:47:23Z	m3	模块开关放在 Modules.load：found 保存全部模块和启用原因，modules 只含启用的	宿主里来源、规则、技能、定时器、feed 都只读 modules，一处过滤就让停用模块什么都不贡献，W6 的角色也读它	tests/modules.test.ts 模块开关两条 红→绿	decided
+2026-11-09T18:47:23Z	m3	停用的模块仍然加载和校验 module.json	just modules 要列出停用模块的规则和技能；坏掉的清单无论开关都早报错	src/modules.ts loadModule	decided
+2026-11-09T18:47:23Z	m3	config.json 的 sources 可以留着停用模块的来源设置	否则关掉 us-market 后 sources.us-market 会被当成未知来源，启动失败	tests/wiring.test.ts 关掉 us-market 一条	fixed
+2026-11-09T18:47:23Z	m3	模块名规则 ^[A-Za-z0-9][\w-]*$，加载和 module-new 共用 moduleNameProblem	名字进目录名、规则 id 前缀和来源名；只拦路径分隔、点开头和空白，现有 toy-market、us-market 不受影响	tests/modules.test.ts 模块名一条	decided
+2026-11-09T18:47:23Z	m3	config.modules 判断用 Object.hasOwn	模块名叫 toString、constructor 时普通下标会读到原型上的函数	src/modules.ts stateOf	fixed
+2026-11-09T18:47:23Z	m3	toy-feed 在 toy-market 关闭时报一行 ConfigError 并以 1 退出，不投递	关闭时投递的假行情不命中任何规则，静默成功会误导	tests/modules-cli.test.ts toy-feed 一条	decided
+2026-11-09T18:48:48Z	m3	module.json 的说明写成 "//" 键，不改成 JSONC	加载用 JSON.parse，"//" 键会被忽略；为注释换解析器不值得	scaffold 生成的模块经 loadModules 干净加载	decided
+2026-11-09T18:48:48Z	m3	skills/ 的说明文件叫 README.txt	Pi 的 --skill 目录会把根目录下每个 .md 当成技能加载（pi-coding-agent dist/core/skills.js loadSkillsFromDirInternal）	skills.js 读源码确认	decided
+2026-11-09T18:48:48Z	m3	just modules 的来源状态复用 feedSpecs 和 FeedSpec.status	与宿主走同一段检查（有没有密钥、settings 是否合法），只给来源不给密钥	lane10 输出里没有假密钥	decided
+2026-11-09T18:48:48Z	m3	live lane 实测	临时状态目录跑 10 条 lane；just modules 5 次 0.35 秒	scratchpad m3-live/*.txt；trunk 491 测试，head 510 全绿	PASS

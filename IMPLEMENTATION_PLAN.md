@@ -309,55 +309,56 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `src/modules.ts`.
-- [ ] Edit `src/host/config.ts`.
-- [ ] Edit `src/host/wiring.ts`.
-- [ ] Edit `src/host/main.ts`.
-- [ ] Edit `src/sources/feeds.ts`.
-- [ ] Edit `src/sources/market/source.ts`.
-- [ ] Create `src/cli/modules.ts`.
-- [ ] Create `src/cli/module-new.ts`.
-- [ ] Edit `modules/toy-market/module.json`.
-- [ ] Edit `modules/toy-market/feed.ts`.
-- [ ] Edit `justfile`.
-- [ ] Edit `tests/modules.test.ts`、`tests/config.test.ts`、`tests/host-events.test.ts`、`tests/wiring.test.ts`。
-- [ ] Create `tests/modules-cli.test.ts`.
-- [ ] Edit `docs/pi-super-agent/how.md`.
+- [x] Edit `src/modules.ts`.
+- [x] Edit `src/host/config.ts`.
+- [x] Edit `src/host/wiring.ts`.
+- [x] Edit `src/host/main.ts`.
+- [x] Edit `src/sources/feeds.ts`.
+- [x] Edit `src/sources/market/source.ts`.
+- [x] Create `src/cli/modules.ts`.
+- [x] Create `src/cli/module-new.ts`.
+- [x] Edit `modules/toy-market/module.json`.
+- [x] Edit `modules/toy-market/feed.ts`.
+- [x] Edit `justfile`.
+- [x] Edit `tests/modules.test.ts`、`tests/config.test.ts`、`tests/host-events.test.ts`、`tests/wiring.test.ts`、`tests/host-main.test.ts`、`tests/lookup.test.ts`。
+- [x] Create `tests/modules-cli.test.ts`.
+- [x] Edit `docs/pi-super-agent/how.md`.
+- [x] Edit `src/cli/market-smoke.ts`、`GLOSSARY.md`。仓库根目录没有 README，不用改。
 
 **Build.**
 
-- [ ] `config.json` 加 `"modules": { "<模块名>": true|false }`。停用的模块不贡献来源、规则、技能、定时器和 feed，以后的角色也走同一个开关。名字不在已发现的模块里时启动报一行 ConfigError。设了 `modulesDirs` 时它仍然替换两个默认目录。
-- [ ] `module.json` 可写 `"defaultEnabled": false`。toy-market 写上它，默认不加载。用到 toy-market 的测试、`just toy-feed`、文档都显式打开它。`just toy-feed` 在模块关闭时告诉使用者怎么打开。
-- [ ] `just modules` 不连宿主，只读加载模块和配置，列出每个模块的名字、目录、启用或停用及原因、来源（feed 类型和能否运行，判断与宿主相同，不打印密钥）、规则 id、技能。列定义放在一张表里，W6 的角色列加一行即可。
-- [ ] `just module-new <名字>` 在 `<stateDir>/modules/<名字>/` 生成带说明的 `module.json`（通用投递来源）、按现有格式写的 `rules.md` 示例、空的 `skills/` 和说明文件。目录已存在时拒绝，名字校验与加载模块时相同。打印生成了什么和下一步。
+- [x] `config.json` 加 `"modules": { "<模块名>": true|false }`。停用的模块不贡献来源、规则、技能、定时器和 feed，以后的角色也走同一个开关。名字不在已发现的模块里时启动报一行 ConfigError。设了 `modulesDirs` 时它仍然替换两个默认目录。
+- [x] `module.json` 可写 `"defaultEnabled": false`。toy-market 写上它，默认不加载。用到 toy-market 的测试、`just toy-feed`、文档都显式打开它。`just toy-feed` 在模块关闭时告诉使用者怎么打开。
+- [x] `just modules` 不连宿主，只读加载模块和配置，列出每个模块的名字、目录、启用或停用及原因、来源（feed 类型和能否运行，判断与宿主相同，不打印密钥）、规则 id、技能。列定义放在一张表里，W6 的角色列加一行即可。
+- [x] `just module-new <名字>` 在 `<stateDir>/modules/<名字>/` 生成带说明的 `module.json`（通用投递来源）、按现有格式写的 `rules.md` 示例、空的 `skills/` 和说明文件。目录已存在时拒绝，名字校验与加载模块时相同。打印生成了什么和下一步。
 
 **You see.**
 
-- [ ] `PSA_STATE_DIR=<临时目录> just modules` 打印 toy-market 停用（模块默认关闭）、us-market 启用且「未配置行情密钥，看盘停用」。`just module-new demo` 之后再跑，demo 出现且启用。
+- [x] `PSA_STATE_DIR=<临时目录> just modules` 打印 toy-market 停用（模块默认关闭）、us-market 启用且「未配置行情密钥，看盘停用」。`just module-new demo` 之后再跑，demo 出现且启用。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 先写失败的测试再实现：开关关掉模块后没有它的规则和来源，`defaultEnabled: false` 默认关闭、配置可打开，未知名字报 ConfigError，列表在假状态目录里输出正确，脚手架生成的模块能干净加载、重复生成被拒绝、非法名字被拒绝。Run `just test`.
+- [x] 先写失败的测试再实现：开关关掉模块后没有它的规则和来源，`defaultEnabled: false` 默认关闭、配置可打开，未知名字报 ConfigError，列表在假状态目录里输出正确，脚手架生成的模块能干净加载、重复生成被拒绝、非法名字被拒绝。Run `just test`.
 
-**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 本 PR 是命令行改动，lane 在本机临时状态目录里跑命令，输出保存为文本，不截图。
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 本 PR 是命令行改动，lane 在本机临时状态目录里跑命令，输出保存为文本，不截图。输出留在本次会话的 scratchpad `m3-live/`，不进仓库。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都跑 `just test`。Save `m3-regression.txt`. Pass when head 全绿，测试数不少于 trunk。
-- [ ] Lane 2. 空临时状态目录跑 `just modules`。Save `m3-defaults.txt`. Pass when toy-market 停用并写明原因，us-market 启用。
-- [ ] Lane 3. 临时状态目录的 `config.json` 写 `"modules": {"toy-market": true}`。Save `m3-enable.txt`. Pass when toy-market 显示启用（配置打开）。
-- [ ] Lane 4. `config.json` 写未知模块名，跑 `just host`。Save `m3-unknown.txt`. Pass when 只打印一行说明并以 1 退出。
-- [ ] Lane 5. `config.json` 写 `"modules": {"us-market": false}`，跑 `just modules`。Save `m3-disable.txt`. Pass when us-market 显示停用（配置关闭），来源写模块停用。
-- [ ] Lane 6. 跑 `just module-new demo`，再跑 `just modules`。Save `m3-scaffold.txt`. Pass when 打印生成的文件和下一步，demo 启用并列出规则 `demo/example`。
-- [ ] Lane 7. 再跑一次 `just module-new demo`。Save `m3-scaffold-exists.txt`. Pass when 拒绝并以 1 退出，文件没变。
-- [ ] Lane 8. 跑 `just module-new ../evil` 和 `just module-new 中文`。Save `m3-scaffold-name.txt`. Pass when 两次都拒绝，状态目录外没有新文件。
-- [ ] Lane 9. toy-market 关闭时跑 `just toy-feed`。Save `m3-toy-off.txt`. Pass when 打印怎么打开并以 1 退出，投递目录没有新文件。
-- [ ] Lane 10. 设一个假的行情密钥环境变量跑 `just modules`。Save `m3-key.txt`. Pass when us-market 写密钥来源，输出里没有密钥本身。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都跑 `just test`。Save `m3-regression.txt`. Pass when head 全绿，测试数不少于 trunk。trunk 491，head 510，全绿。
+- [x] Lane 2. 空临时状态目录跑 `just modules`。Save `m3-defaults.txt`. Pass when toy-market 停用并写明原因，us-market 启用。
+- [x] Lane 3. 临时状态目录的 `config.json` 写 `"modules": {"toy-market": true}`。Save `m3-enable.txt`. Pass when toy-market 显示启用（配置打开）。
+- [x] Lane 4. `config.json` 写未知模块名，跑 `just host`。Save `m3-unknown.txt`. Pass when 只打印一行说明并以 1 退出。
+- [x] Lane 5. `config.json` 写 `"modules": {"us-market": false}`，跑 `just modules`。Save `m3-disable.txt`. Pass when us-market 显示停用（配置关闭），来源写模块停用。
+- [x] Lane 6. 跑 `just module-new demo`，再跑 `just modules`。Save `m3-scaffold.txt`. Pass when 打印生成的文件和下一步，demo 启用并列出规则 `demo/example`。
+- [x] Lane 7. 再跑一次 `just module-new demo`。Save `m3-scaffold-exists.txt`. Pass when 拒绝并以 1 退出，文件没变。
+- [x] Lane 8. 跑 `just module-new ../evil` 和 `just module-new 中文`。Save `m3-scaffold-name.txt`. Pass when 两次都拒绝，状态目录外没有新文件。
+- [x] Lane 9. toy-market 关闭时跑 `just toy-feed`。Save `m3-toy-off.txt`. Pass when 打印怎么打开并以 1 退出，投递目录没有新文件。
+- [x] Lane 10. 设一个假的行情密钥环境变量跑 `just modules`。Save `m3-key.txt`. Pass when us-market 写密钥来源，输出里没有密钥本身。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. head 上 `just modules` 的总耗时。
-- [ ] Probe. 空临时状态目录连跑 5 次。
-- [ ] Baseline. Record the head median first. trunk 没有这个命令。
-- [ ] Rule. 中位数超过 3 秒算失败。
+- [x] Metric. head 上 `just modules` 的总耗时。
+- [x] Probe. 空临时状态目录连跑 5 次。
+- [x] Baseline. Record the head median first. trunk 没有这个命令。
+- [x] Rule. 中位数超过 3 秒算失败。
 
 **Review gate.** None. 使用者已批准这四项，命令行输出贴在报告里。
 
