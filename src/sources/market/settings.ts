@@ -1,6 +1,7 @@
 import { ConfigError } from "../../config-error.ts";
 import { BASE_URLS } from "./client.ts";
 import type { DetectSettings } from "./detect.ts";
+import { parseSymbol } from "./symbol.ts";
 
 export interface MarketSettings extends DetectSettings {
 	watchlist: string[];
@@ -10,14 +11,8 @@ export interface MarketSettings extends DetectSettings {
 }
 
 const FIELDS = ["watchlist", "bands", "volumeSpikeX", "everySeconds", "minGapMs", "baseURL"];
-const SYMBOL = /^[A-Z][A-Z0-9]{0,9}(\.[A-Z0-9]{1,3})?$/;
 const MAX_WATCHLIST = 50;
 const MAX_BANDS = 10;
-
-export function parseSymbol(raw: unknown): string | undefined {
-	const s = typeof raw === "string" ? raw.trim().toUpperCase() : "";
-	return SYMBOL.test(s) ? s : undefined;
-}
 
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 

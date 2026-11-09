@@ -5,7 +5,8 @@ import { MarketClient, MarketError, type Span } from "./client.ts";
 import { readMarketKey } from "./key.ts";
 import { detect, toTrigger, type MarketCursor, type Move } from "./detect.ts";
 import { inPollWindow, MINUTE, nextPollDelay, sessionAt } from "./session.ts";
-import { parseMarketSettings, parseSymbol, type MarketSettings } from "./settings.ts";
+import { parseMarketSettings, type MarketSettings } from "./settings.ts";
+import { parseSymbol } from "./symbol.ts";
 
 const HOLIDAY_AFTER_OPEN_MS = 30 * MINUTE;
 const NOTICE_AFTER_MS = 15 * MINUTE;
