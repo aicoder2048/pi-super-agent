@@ -5,6 +5,7 @@
 /** @typedef {import("../client/protocol.ts").ConversationLine} ConversationLine */
 /** @typedef {import("../client/protocol.ts").Duty} Duty */
 /** @typedef {import("../kernel/types.ts").HelpersToday} HelpersToday */
+/** @typedef {import("../kernel/types.ts").Routes} Routes */
 /** @typedef {import("../client/protocol.ts").HostToClient} HostToClient */
 /** @typedef {import("../client/protocol.ts").TodayCounts} TodayCounts */
 /** @typedef {import("../client/protocol.ts").TranscriptMessage} TranscriptMessage */
@@ -50,11 +51,12 @@ const GROUP = {
  * @property {Duty | undefined} duty
  * @property {HelpersToday | undefined} helpers
  * @property {WatchedSource[]} watching
+ * @property {Routes} routes
  */
 
 /** @returns {View} */
 export function emptyView() {
-	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [] };
+	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {} };
 }
 
 /** @param {View} view @param {ConversationLine} line */
@@ -70,7 +72,7 @@ export function applyMessage(view, message, now) {
 	switch (message.type) {
 		case "snapshot":
 			for (const line of message.conversation) addLine(view, line);
-			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, receivedAt: now });
+			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, receivedAt: now });
 			return ["conversation", "left", "header"];
 		case "user":
 			addLine(view, { id: message.id, who: "user", text: message.text, at: message.at });
@@ -79,8 +81,8 @@ export function applyMessage(view, message, now) {
 			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at, ...(message.ticketId ? { ticketId: message.ticketId } : {}) });
 			return ["conversation"];
 		case "board":
-			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, receivedAt: now });
-			return ["left", "header"];
+			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, routes: message.routes, receivedAt: now });
+			return ["conversation", "left", "header"];
 	}
 	return [];
 }
@@ -172,6 +174,21 @@ export function choicesInConversation(view, sending) {
 		if (choice && line) placed.set(line.id, choice);
 	}
 	return placed;
+}
+
+/** @type {Record<"answered" | "pending" | "router_ignored", string>} */
+const ROUTE_COPY = { answered: "幕僚长直接回答", pending: "幕僚长处理中", router_ignored: "幕僚长判断无需处理" };
+
+/** The line under one of the user's messages; a task's line opens that task. @param {View} view @param {string} lineId @returns {{ text: string, ticketId?: string } | null} */
+export function routeLine(view, lineId) {
+	const route = view.routes[lineId];
+	if (!route) return null;
+	if (route.kind !== "opened_ticket" && route.kind !== "handed_over") return { text: ROUTE_COPY[route.kind] };
+	const row = view.rows.find((r) => r.id === route.ticketId);
+	const { ticketId } = route;
+	const helper = helperFullName(row?.helper ?? null) || "助手";
+	if (route.kind === "opened_ticket") return { text: row ? `已开新任务「${row.title}」 · ${helper}` : "已开新任务", ticketId };
+	return { text: row ? `已交给 ${helper}（${row.title}）` : "已交给助手", ticketId };
 }
 
 /** @param {string} reportId @param {number} option */
