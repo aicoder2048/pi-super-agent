@@ -29,13 +29,15 @@ const fake = await FakeModel.start({
 		on("开纪要", /^\[对话\][\s\S]*纪要/, (c) => [openTicket(c, "整理本周例会纪要", NOTES.minutes), reply(c, "已安排助手整理纪要")]),
 		on("开天气", /^\[对话\][\s\S]*天气/, (c) => [openTicket(c, "查明天上海天气", NOTES.weather), reply(c, "已安排助手查天气")]),
 		on("开行情", /^\[候选触发\][\s\S]*toy-market/, (c) => [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "rule", ruleId: "toy-market/big-move", triggerId: c.match(/trg_[\w-]+/)?.[0], title: "核实 TOYX 跌 5.2%", brief: NOTES.market }] } }]),
+		on("转交纪要补充", /^\[对话\][\s\S]*使用者：纪要里的行动项/, (c) => [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId: c.match(/trg_[\w-]+/)?.[0], ticketId: c.match(/(tkt_[\w-]+)「整理本周例会纪要」/)?.[1] }] } }]),
+		on("直接回答", /^\[对话\][\s\S]*使用者：你在吗/, (c) => [reply(c, "在，两位助手正在处理。")]),
 		on("收尾", /^\[对话\][\s\S]*收尾/, (c) => [...noteAll(c), reply(c, "已通知三位助手收尾")]),
 		on("转述纪要", /^\[Worker 汇报\][\s\S]*行动项/, (c) => [reply(c, "纪要整理好了，共 14 条行动项")]),
 		on("转述天气", /^\[Worker 汇报\][\s\S]*小雨/, (c) => [reply(c, "明天多云转小雨，12 到 17 度")]),
 		on("转述行情", /^\[Worker 汇报\][\s\S]*TOYX/, (c) => [reply(c, "TOYX 跌 5.2% 属实，成交量偏低")]),
 	],
 	workers: [
-		worker(NOTES.minutes, on("纪要", /^\[任务说明\]/, () => progress("读完周一纪要", "读完周三纪要", "读完周五纪要", "合并重复的行动项", "按负责人分组")), finish("纪要已整理，共 14 条行动项")),
+		worker(NOTES.minutes, on("纪要", /^\[任务说明\]/, () => progress("读完周一纪要", "读完周三纪要", "读完周五纪要", "合并重复的行动项", "按负责人分组")), on("纪要补充", /^\[使用者的话/, () => progress("已按负责人重新排序")), finish("纪要已整理，共 14 条行动项")),
 		worker(NOTES.weather, on("天气", /^\[任务说明\]/, () => progress("查到明天多云转小雨")), finish("明天多云转小雨，12 到 17 度")),
 		worker(NOTES.market, on("行情", /^\[任务说明\]/, () => progress("读取 TOYX 最近报价", "对比昨日收盘")), finish("TOYX 跌 5.2% 属实，成交量偏低")),
 	],
@@ -76,6 +78,16 @@ try {
 	await page.locator("#steps").waitFor({ state: "attached" });
 	await page.waitForTimeout(1500);
 	await shoot("two-helpers");
+
+	const routeUnder = (text: string) => page.locator(".line.user", { hasText: text }).locator(".route");
+	await page.locator("#left .card", { hasText: "按负责人分组" }).waitFor();
+	await say("纪要里的行动项按负责人排一下");
+	await routeUnder("纪要里的行动项").filter({ hasText: /^已交给 .+（整理本周例会纪要）$/ }).waitFor();
+	await say("你在吗");
+	await routeUnder("你在吗").filter({ hasText: "幕僚长直接回答" }).waitFor();
+	await routeUnder("帮我整理本周三次例会的纪要").filter({ hasText: /^已开新任务「整理本周例会纪要」 · / }).waitFor();
+	report_.push(`去向：${(await page.locator(".line.user .route").allInnerTexts()).join(" | ")}`);
+	await shoot("routing");
 
 	const feed = runSync(["modules/toy-market/feed.ts", "TOYX", "-5.2", "12"], { ...process.env, ...env });
 	assert.equal(feed.status, 0, feed.stderr);
