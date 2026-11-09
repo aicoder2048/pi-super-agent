@@ -80,3 +80,22 @@ test("已有的 host.log 权限比 0600 宽时，Watchdog 拉起宿主前收紧�
 	await until(() => readFileSync(log, "utf8").includes("token="), "host.log 里有网页网址", 15000);
 	assert.equal(statSync(log).mode & 0o777, 0o600);
 });
+
+test("终端 Ctrl+C：Watchdog 先停掉它拉起的宿主，再打印「已停止」并以 0 退出", async (t) => {
+	const dir = stateDir();
+	const wd = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/watchdog/main.ts"], {
+		env: { ...process.env, PSA_STATE_DIR: dir },
+		stdio: ["ignore", "ignore", "pipe"],
+		detached: true,
+	});
+	t.after(cleanup(dir, wd));
+	const exited = new Promise<number | null>((r) => wd.on("exit", (code) => r(code)));
+	let stderr = "";
+	wd.stderr!.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+	await until(() => { const pid = heartbeatPid(dir); return !!pid && pid !== wd.pid && alive(pid); }, "宿主写出心跳", 15000);
+	const hostPid = heartbeatPid(dir)!;
+	process.kill(-wd.pid!, "SIGINT");
+	assert.equal(await exited, 0, stderr);
+	assert.match(stderr, /\[watchdog\] 已停止/);
+	assert.ok(!alive(hostPid), "宿主应已停止");
+});
