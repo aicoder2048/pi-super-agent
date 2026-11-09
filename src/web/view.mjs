@@ -10,6 +10,8 @@
 /** @typedef {import("../client/protocol.ts").TodayCounts} TodayCounts */
 /** @typedef {import("../client/protocol.ts").TranscriptMessage} TranscriptMessage */
 /** @typedef {import("../client/protocol.ts").WatchedSource} WatchedSource */
+/** @typedef {import("../host/dispatch.ts").Dispatching} Dispatching */
+/** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
 
 import { INPUT_LABEL, blocks, clip, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, shortId, stallMinutes, textOf } from "../client/board-format.mjs";
 
@@ -52,11 +54,12 @@ const GROUP = {
  * @property {HelpersToday | undefined} helpers
  * @property {WatchedSource[]} watching
  * @property {Routes} routes
+ * @property {Dispatching} dispatching
  */
 
 /** @returns {View} */
 export function emptyView() {
-	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {} };
+	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {}, dispatching: {} };
 }
 
 /** @param {View} view @param {ConversationLine} line */
@@ -72,7 +75,7 @@ export function applyMessage(view, message, now) {
 	switch (message.type) {
 		case "snapshot":
 			for (const line of message.conversation) addLine(view, line);
-			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, receivedAt: now });
+			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, dispatching: message.dispatching ?? {}, receivedAt: now });
 			return ["conversation", "left", "header"];
 		case "user":
 			addLine(view, { id: message.id, who: "user", text: message.text, at: message.at });
@@ -81,7 +84,7 @@ export function applyMessage(view, message, now) {
 			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at, ...(message.ticketId ? { ticketId: message.ticketId } : {}) });
 			return ["conversation"];
 		case "board":
-			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, routes: message.routes, receivedAt: now });
+			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, routes: message.routes, dispatching: message.dispatching ?? {}, receivedAt: now });
 			return ["conversation", "left", "header"];
 	}
 	return [];
@@ -280,7 +283,42 @@ export const stopSentence = (title) => `停止任务「${title}」`;
  * @property {"ok" | "error" | "pending"} state
  * @property {string} raw
  * @property {string} [tool]
+ * @property {string} [callId]
+ * @property {DispatchEntry} [dispatch]
  */
+
+/**
+ * One dispatch as the page words it. Only the member's title, never its name.
+ * @typedef {object} DispatchEntry
+ * @property {string} title
+ * @property {string} task
+ * @property {string} reply
+ * @property {DispatchState} state
+ * @property {string} stateText
+ * @property {string} note
+ * @property {string} tokens
+ */
+
+/** @type {Record<DispatchState, string>} */
+const DISPATCH_STATE = { queued: "排队中", running: "进行中", done: "完成", timed_out: "超时", stopped: "已停止", failed: "出错" };
+
+/** @param {Pick<DispatchEntry, "title" | "stateText">} entry */
+const dispatchDetail = (entry) => [entry.title, entry.stateText].filter(Boolean).join(" · ");
+
+/** @param {unknown} details @returns {DispatchEntry | undefined} */
+function dispatchEntry(details) {
+	const d = /** @type {Record<string, any>} */ (details ?? {});
+	if (d.kind !== "dispatch" || !(d.state in DISPATCH_STATE)) return undefined;
+	return {
+		title: String(d.title ?? ""),
+		task: String(d.task ?? ""),
+		reply: typeof d.reply === "string" ? d.reply : "",
+		state: d.state,
+		stateText: DISPATCH_STATE[/** @type {DispatchState} */ (d.state)],
+		note: typeof d.note === "string" ? d.note : "",
+		tokens: `${formatTokens((Number(d.tokensIn) || 0) + (Number(d.tokensOut) || 0))} tokens`,
+	};
+}
 
 /** @type {Record<InputKind, string>} */
 const INPUT_STEP = {
@@ -309,7 +347,7 @@ function lookupStep(a) {
 
 const STEP_BY_LABEL = new Map(/** @type {[InputKind, string][]} */ (Object.entries(INPUT_LABEL)).map(([kind, label]) => [label, INPUT_STEP[kind]]));
 
-/** @type {Record<string, (a: Record<string, unknown>) => { title: string, detail: string }>} */
+/** @type {Record<string, (a: Record<string, unknown>) => { title: string, detail: string, dispatch?: DispatchEntry }>} */
 const TOOL_STEP = {
 	read: (a) => ({ title: "读取文件", detail: baseName(a.path) }),
 	grep: (a) => ({ title: "搜索文件内容", detail: clip(a.pattern, 40) }),
@@ -326,6 +364,7 @@ const TOOL_STEP = {
 	bg_status: () => ({ title: "查看后台命令", detail: "" }),
 	bg_stop: () => ({ title: "停止后台命令", detail: "" }),
 	report: (a) => ({ title: reportTitle(a), detail: clip(a.question || a.summary, 120) }),
+	dispatch_agent: (a) => ({ title: "派活", detail: "", dispatch: { title: "", task: String(a.task ?? ""), reply: "", state: "queued", stateText: DISPATCH_STATE.queued, note: "", tokens: "" } }),
 };
 
 /** @param {Record<string, unknown>} a */
@@ -356,7 +395,7 @@ function stepsFrom(message) {
 		if (c.type !== "toolCall" || !c.name) return [];
 		const args = typeof c.arguments === "object" && c.arguments !== null ? /** @type {Record<string, unknown>} */ (c.arguments) : {};
 		const known = TOOL_STEP[c.name]?.(args) ?? { title: `调用工具 ${c.name}`, detail: "" };
-		return [{ ...known, state: /** @type {const} */ ("pending"), raw: clip(`${c.name} ${JSON.stringify(c.arguments ?? {}, null, 2)}`, RAW_LIMIT), tool: c.name }];
+		return [{ ...known, state: /** @type {const} */ ("pending"), raw: clip(`${c.name} ${JSON.stringify(c.arguments ?? {}, null, 2)}`, RAW_LIMIT), tool: c.name, ...(c.id ? { callId: c.id } : {}) }];
 	});
 }
 
@@ -374,10 +413,34 @@ export function emptyWatch(ticketId) {
 /** @param {Watch} watch @param {TranscriptMessage} message */
 function append(watch, message) {
 	if (message.role !== "toolResult") return void watch.steps.push(...stepsFrom(message));
-	const step = watch.steps.findLast((s) => s.state === "pending" && s.tool === message.toolName);
+	// Parallel calls of one tool finish in any order, so the call id decides when there is one.
+	const step = watch.steps.findLast((s) => s.state === "pending" && (message.toolCallId && s.callId ? s.callId === message.toolCallId : s.tool === message.toolName));
 	if (!step) return;
 	step.state = message.isError ? "error" : "ok";
 	step.raw = clip(`${step.raw}\n\n→ ${textOf(message)}`, RAW_LIMIT);
+	if (!step.dispatch) return;
+	step.dispatch = dispatchEntry(message.details);
+	if (!step.dispatch) return;
+	step.detail = dispatchDetail(step.dispatch);
+	if (step.dispatch.state !== "done") step.state = "error";
+}
+
+/**
+ * The watched steps with each unfinished dispatch in its state on the board. A pending dispatch the board
+ * does not list has not been registered yet, or its helper is gone and it never will finish.
+ * @param {Watch} watch @param {View} view @returns {Step[]}
+ */
+export function liveSteps(watch, view) {
+	const live = new Map((view.dispatching[watch.ticketId] ?? []).map((d) => [d.callId, d]));
+	const helperRunning = view.rows.find((r) => r.id === watch.ticketId)?.workerState === "running";
+	return watch.steps.map((step) => {
+		if (step.state !== "pending" || !step.dispatch) return step;
+		const now = live.get(step.callId ?? "");
+		/** @type {DispatchState} */
+		const state = now?.state ?? (helperRunning ? "queued" : "stopped");
+		const dispatch = { ...step.dispatch, title: now?.title ?? "", state, stateText: DISPATCH_STATE[state] };
+		return { ...step, dispatch, detail: dispatchDetail(dispatch) };
+	});
 }
 
 /**
@@ -418,6 +481,7 @@ const DUTY_MARK = {
  * @property {string} role
  * @property {string} elapsed
  * @property {string} tokens
+ * @property {{ title: string, state: "queued" | "running", label: string }[]} members the team members at work for this helper right now
  */
 
 /** One chip per helper on duty (a ticket not yet ended), then today's total. @param {View} view @param {number} now @returns {{ chips: HelperChip[], total: string }} */
@@ -431,6 +495,7 @@ export function helperStrip(view, now) {
 			role: helperLabel(row.helper),
 			elapsed: elapsedOf(row, now, view.receivedAt),
 			tokens: `${formatTokens(row.tokensIn + row.tokensOut)} tokens`,
+			members: (view.dispatching[row.id] ?? []).map(({ title, state }) => ({ title, state, label: state === "queued" ? `${title} ${DISPATCH_STATE.queued}` : title })),
 		}];
 	});
 	const total = view.helpers ? `今日 ${view.helpers.count} 位 · ${formatTokens(view.helpers.tokens)} tokens` : "";
@@ -540,3 +605,64 @@ const baseName = (p) => (typeof p === "string" ? clip(p.split("/").filter(Boolea
 
 /** @param {unknown} u */
 const hostOf = (u) => (typeof u === "string" ? (URL.parse(u)?.host ?? clip(u, 60)) : "");
+
+/**
+ * The safe Markdown subset the page renders, as data the page turns into DOM nodes (never HTML).
+ * @typedef {{ text: string, bold?: true, italic?: true, code?: true }} Span
+ * @typedef {{ kind: "p", spans: Span[] } | { kind: "h", level: number, spans: Span[] } | { kind: "ul" | "ol", items: Span[][] }} MdBlock
+ */
+
+// Each alternative excludes its own delimiters from its body, so no input makes the match backtrack.
+const INLINE = /`([^`\n]+)`|\*\*([^*\n]+)\*\*|__([^_\n]+)__|(?<![\w*])\*([^*\s][^*\n]*?)\*(?![\w*])|\[([^\[\]\n]+)\]\(([^()\[\]\s]+)\)/g;
+
+/** @param {string} text @returns {Span[]} */
+function inlineSpans(text) {
+	/** @type {Span[]} */
+	const spans = [];
+	const plain = (/** @type {string} */ t) => {
+		if (!t) return;
+		const last = spans.at(-1);
+		if (last && Object.keys(last).length === 1) last.text += t;
+		else spans.push({ text: t });
+	};
+	let at = 0;
+	for (const m of text.matchAll(INLINE)) {
+		plain(text.slice(at, m.index));
+		if (m[1] !== undefined) spans.push({ text: m[1], code: true });
+		else if (m[2] !== undefined || m[3] !== undefined) spans.push({ text: m[2] ?? m[3], bold: true });
+		else if (m[4] !== undefined) spans.push({ text: m[4], italic: true });
+		else spans.push({ text: m[5] }, { text: `（${m[6]}）` });
+		at = m.index + m[0].length;
+	}
+	plain(text.slice(at));
+	return spans;
+}
+
+/** @param {string} text @returns {MdBlock[]} */
+export function parseMarkdown(text) {
+	/** @type {MdBlock[]} */
+	const out = [];
+	/** @type {string[]} */
+	let para = [];
+	const flush = () => {
+		if (para.length) out.push({ kind: "p", spans: inlineSpans(para.join("\n")) });
+		para = [];
+	};
+	for (const line of text.split("\n")) {
+		const heading = line.match(/^(#{1,6})\s+(.*)$/);
+		const item = line.match(/^\s*(?:([-*+])|\d+[.)])\s+(.*)$/);
+		if (!line.trim() || /^\s*(-{3,}|\*{3,})\s*$/.test(line)) flush();
+		else if (heading) {
+			flush();
+			out.push({ kind: "h", level: heading[1].length, spans: inlineSpans(heading[2].trim()) });
+		} else if (item) {
+			flush();
+			const kind = item[1] ? "ul" : "ol";
+			const last = out.at(-1);
+			if (last && last.kind === kind) last.items.push(inlineSpans(item[2]));
+			else out.push({ kind, items: [inlineSpans(item[2])] });
+		} else para.push(line);
+	}
+	flush();
+	return out;
+}

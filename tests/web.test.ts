@@ -6,6 +6,7 @@ import { connect, createServer } from "node:net";
 import test, { mock, type TestContext } from "node:test";
 import type { HostToClient, TodayCounts } from "../src/client/protocol.ts";
 import type { DashboardRow, Routes } from "../src/kernel/types.ts";
+import type { Dispatching } from "../src/host/dispatch.ts";
 import { formatInputs } from "../src/host/workers.ts";
 import { INPUT_KINDS } from "../src/kernel/types.ts";
 import { ConfigError } from "../src/config-error.ts";
@@ -26,8 +27,8 @@ function row(over: Partial<DashboardRow> = {}): DashboardRow {
 const zeroToday = (): TodayCounts => ({ byDisposition: { ignored: 0, delivered: 0, to_router: 0, opened_ticket: 0, handed_over: 0, router_ignored: 0 }, bySource: {} });
 const duty = { since: 0, resumed: 0 };
 const noHelpers = { count: 0, tokens: 0 };
-const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, helpers: noHelpers, watching: [], routes: {}, ...over });
-const board = (rows: DashboardRow[], today = zeroToday(), helpers = noHelpers, routes: Routes = {}): HostToClient => ({ type: "board", rows, today, duty, helpers, routes });
+const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, helpers: noHelpers, watching: [], routes: {}, dispatching: {}, ...over });
+const board = (rows: DashboardRow[], today = zeroToday(), helpers = noHelpers, routes: Routes = {}, dispatching: Dispatching = {}): HostToClient => ({ type: "board", rows, today, duty, helpers, routes, dispatching });
 const texts = (view: ReturnType<typeof page.emptyView>) => [...view.lines.values()].map((l) => `${l.who}:${l.text}`);
 const withRows = (rows: DashboardRow[], now = 0) => {
 	const view = page.emptyView();
@@ -351,7 +352,7 @@ test("页面：助手条每位在岗助手一枚小卡（●运行中 ◐空闲 
 		row({ id: "tkt_stp", stage: "stopped", workerState: "running", endedAt: 9000, helper: { name: "拾遗", role: "rule", seq: 2 } }),
 	], zeroToday(), { count: 6, tokens: 12_345 }), 1000);
 	const strip = page.helperStrip(view, 3000);
-	assert.deepEqual(strip.chips.map(({ id, ...shown }) => shown), [
+	assert.deepEqual(strip.chips.map(({ id, members, ...shown }) => shown), [
 		{ duty: "running", mark: "●", state: "运行中", name: "青檀", role: "对话助手 #1", elapsed: "7秒", tokens: "1.5k tokens" },
 		{ duty: "idle", mark: "◐", state: "空闲", name: "远山", role: "行情助手 #2", elapsed: "1分2秒", tokens: "0 tokens" },
 		{ duty: "queued", mark: "○", state: "排队", name: "青檀", role: "观察助手 #1", elapsed: "0秒", tokens: "1.5k tokens" },
@@ -1215,4 +1216,92 @@ test("网关：/transcript 没有 token 401；ticket 不像任务编号 400；�
 	await until(() => noToken.status === 401 && bad.status === 400, "拒绝");
 	await until(() => empty.got.length === 1, "空历史");
 	assert.deepEqual(empty.got[0], { type: "transcript_history", ticketId: "tkt_nothere", messages: [] });
+});
+
+const dispatchCall = (id: string, agent: string, task: string) => ({ role: "assistant", content: [{ type: "toolCall", id, name: "dispatch_agent", arguments: { agent, task } }] });
+const dispatchResult = (toolCallId: string, details: Record<string, unknown> | undefined, isError = false) => ({ role: "toolResult", toolName: "dispatch_agent", toolCallId, isError, content: [{ type: "text", text: "成员回复 …" }], ...(details && { details }) });
+const outcome = (title: string, state: string, reply: string | null, tokens: number, note?: string) =>
+	({ kind: "dispatch", member: "x-member", title, task: `给${title}的事`, state, reply, tokensIn: tokens, tokensOut: 0, ms: 1000, waitMs: 0, ...(note && { note }) });
+
+test("页面：助手条的小卡带上正在干活的成员，只有职称；排队的写「排队中」；做完后消失；老宿主的帧没有这一项也不出错", () => {
+	const view = page.emptyView();
+	const working = { tkt_team: [{ callId: "c1", title: "行情分析师", state: "running" as const }, { callId: "c2", title: "新闻研究员", state: "queued" as const }] };
+	page.applyMessage(view, board([row({ id: "tkt_team" }), row({ id: "tkt_solo" })], zeroToday(), noHelpers, {}, working), 0);
+	assert.deepEqual(page.helperStrip(view, 0).chips.map((c) => [c.id, c.members]), [
+		["tkt_team", [{ title: "行情分析师", state: "running", label: "行情分析师" }, { title: "新闻研究员", state: "queued", label: "新闻研究员 排队中" }]],
+		["tkt_solo", []],
+	]);
+	page.applyMessage(view, board([row({ id: "tkt_team" }), row({ id: "tkt_solo" })]), 0);
+	assert.deepEqual(page.helperStrip(view, 0).chips.map((c) => c.members), [[], []]);
+	const fromSnapshot = page.emptyView();
+	page.applyMessage(fromSnapshot, snapshot({ board: [row({ id: "tkt_team" })], dispatching: working }), 0);
+	assert.equal(page.helperStrip(fromSnapshot, 0).chips[0].members.length, 2);
+	const old = page.emptyView();
+	page.applyMessage(old, { ...board([row()]), dispatching: undefined } as never, 0);
+	assert.deepEqual(page.helperStrip(old, 0).chips[0].members, []);
+});
+
+test("页面：每次派活是一步；并行的两次派活各自对上自己的结果，展开有成员职称、任务、回复、状态和用量，不出现成员的英文名", () => {
+	const w = page.emptyWatch("tkt_1");
+	page.applyTranscript(w, history("tkt_1", [{ role: "assistant", content: [...dispatchCall("c1", "market-analyst", "看盘面").content, ...dispatchCall("c2", "news-researcher", "查新闻").content] }]));
+	assert.deepEqual(w.steps.map((s) => [s.title, s.state, s.dispatch?.task]), [["派活", "pending", "看盘面"], ["派活", "pending", "查新闻"]]);
+	page.applyTranscript(w, live("tkt_1", dispatchResult("c2", outcome("新闻研究员", "done", "**没有**重大新闻", 300))));
+	page.applyTranscript(w, live("tkt_1", dispatchResult("c1", outcome("行情分析师", "timed_out", null, 1200))));
+	assert.deepEqual(w.steps.map((s) => [s.title, s.detail, s.state]), [["派活", "行情分析师 · 超时", "error"], ["派活", "新闻研究员 · 完成", "ok"]]);
+	assert.deepEqual(w.steps.map((s) => s.dispatch), [
+		{ title: "行情分析师", task: "给行情分析师的事", reply: "", state: "timed_out", stateText: "超时", note: "", tokens: "1.2k tokens" },
+		{ title: "新闻研究员", task: "给新闻研究员的事", reply: "**没有**重大新闻", state: "done", stateText: "完成", note: "", tokens: "300 tokens" },
+	]);
+	assert.doesNotMatch(JSON.stringify(w.steps.map((s) => [s.title, s.detail, s.dispatch])), /market-analyst|news-researcher|x-member/);
+});
+
+test("页面：派活的每种结束状态都有中文说法，出错带上原因；被宿主拒绝的派活就是一步普通的失败", () => {
+	const steps = watched([
+		dispatchCall("c1", "a", "t"), dispatchResult("c1", outcome("甲", "stopped", null, 0)),
+		dispatchCall("c2", "a", "t"), dispatchResult("c2", outcome("乙", "failed", null, 0, "429")),
+		dispatchCall("c3", "nobody", "t"), dispatchResult("c3", undefined, true),
+	]);
+	assert.deepEqual(steps.map((s) => [s.detail, s.state, s.dispatch?.stateText, s.dispatch?.note]), [["甲 · 已停止", "error", "已停止", ""], ["乙 · 出错", "error", "出错", "429"], ["", "error", undefined, undefined]]);
+});
+
+test("页面：还没结束的派活按看板上的状态显示排队中或进行中；看板还没到时算排队中；助手已经不在运行的算已停止", () => {
+	const view = page.emptyView();
+	const w = page.emptyWatch("tkt_1");
+	page.applyTranscript(w, history("tkt_1", [dispatchCall("c1", "market-analyst", "看盘面"), dispatchCall("c2", "news-researcher", "查新闻"), tool("read", { path: "a.md" })]));
+	const shown = () => page.liveSteps(w, view).map((s) => [s.detail, s.dispatch?.state, s.dispatch?.stateText]);
+	page.applyMessage(view, board([row({ id: "tkt_1", workerState: "running" })]), 0);
+	assert.deepEqual(shown(), [["排队中", "queued", "排队中"], ["排队中", "queued", "排队中"], ["a.md", undefined, undefined]]);
+	page.applyMessage(view, board([row({ id: "tkt_1" })], zeroToday(), noHelpers, {}, { tkt_1: [{ callId: "c1", title: "行情分析师", state: "running" }, { callId: "c2", title: "新闻研究员", state: "queued" }] }), 0);
+	assert.deepEqual(shown(), [["行情分析师 · 进行中", "running", "进行中"], ["新闻研究员 · 排队中", "queued", "排队中"], ["a.md", undefined, undefined]]);
+	page.applyMessage(view, board([row({ id: "tkt_1", stage: "stopped", workerState: "idle", endedAt: 5 })]), 0);
+	assert.deepEqual(shown().slice(0, 2), [["已停止", "stopped", "已停止"], ["已停止", "stopped", "已停止"]]);
+	assert.equal(w.steps[0].dispatch?.state, "queued", "liveSteps 不改动记录本身");
+});
+
+test("页面：Markdown 只认安全的子集，解析成段落、标题和列表，行内只有粗体、斜体、代码和链接文字，HTML 原样当文字", () => {
+	const blocks = page.parseMarkdown("## 结论\n**个股领跌**，*仍偏空*，看 `sma50`\n\n- 第一条\n- 来源 [路透](https://reuters.com/x)\n1. 甲\n2. 乙\n\n<script>alert(1)</script> 不是标签");
+	assert.deepEqual(blocks, [
+		{ kind: "h", level: 2, spans: [{ text: "结论" }] },
+		{ kind: "p", spans: [{ text: "个股领跌", bold: true }, { text: "，" }, { text: "仍偏空", italic: true }, { text: "，看 " }, { text: "sma50", code: true }] },
+		{ kind: "ul", items: [[{ text: "第一条" }], [{ text: "来源 " }, { text: "路透" }, { text: "（https://reuters.com/x）" }]] },
+		{ kind: "ol", items: [[{ text: "甲" }], [{ text: "乙" }]] },
+		{ kind: "p", spans: [{ text: "<script>alert(1)</script> 不是标签" }] },
+	]);
+});
+
+test("页面：Markdown 里的多行段落保留换行，没有 Markdown 记号的文字原样是一段", () => {
+	assert.deepEqual(page.parseMarkdown("第一行\n第二行"), [{ kind: "p", spans: [{ text: "第一行\n第二行" }] }]);
+	assert.deepEqual(page.parseMarkdown("a*b 和 snake_case_name"), [{ kind: "p", spans: [{ text: "a*b 和 snake_case_name" }] }]);
+});
+
+test("页面：Markdown 解析对括号密集的长文本仍是线性的，正常链接照常解析", () => {
+	for (const text of ["[".repeat(200_000), "[a](x".repeat(40_000), "[a]".repeat(70_000) + "(", "](".repeat(100_000)]) {
+		const started = performance.now();
+		page.parseMarkdown(text);
+		const ms = performance.now() - started;
+		assert.ok(ms < 100, `${JSON.stringify(text.slice(0, 6))}… ${text.length} 字用了 ${Math.round(ms)} ms`);
+	}
+	assert.deepEqual(page.parseMarkdown("看 [路透](https://reuters.com/a_b?x=1) 和 [官方](https://nvidia.com)")[0], {
+		kind: "p", spans: [{ text: "看 " }, { text: "路透" }, { text: "（https://reuters.com/a_b?x=1） 和 " }, { text: "官方" }, { text: "（https://nvidia.com）" }],
+	});
 });
