@@ -2,6 +2,7 @@ import { WATCHDOG_SOURCE } from "../../watchdog/watchdog.ts";
 import type { Feed, FeedContext, FeedInput, FeedSpec } from "../feeds.ts";
 import { threadId } from "../generic.ts";
 import { MarketClient, MarketError, type Span } from "./client.ts";
+import { indicatorReport } from "./indicators.ts";
 import { readMarketKey } from "./key.ts";
 import { detect, toTrigger, type MarketCursor, type Move, type Quote } from "./detect.ts";
 import { inPollWindow, MINUTE, nextPollDelay, sessionAt, type Session } from "./session.ts";
@@ -13,10 +14,15 @@ const HOLIDAY_AFTER_POLLS = 5;
 const NOTICE_AFTER_MS = 15 * MINUTE;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const SPANS: Span[] = ["minute", "hour", "day"];
+// Calendar days of bars indicators fetch when the caller gives no from: day covers SMA200 and 52 weeks (252 bars).
+const INDICATOR_DAYS: Record<Span, number> = { day: 400, hour: 30, minute: 4 };
+// One minute session with extended hours is 960 bars; this keeps several sessions whole.
+const INDICATOR_LIMIT = 5000;
 
 const LOOKUP_HELP = `us-market（美股行情）：
 - quote { symbols: string[] }：最多 10 只股票的最新报价（price、prevClose、changePct、at 毫秒时间戳、delayed：接口标为延迟或报价比现在晚 10 分钟以上；休市时段的收盘价也会是 true）
 - bars { symbol, span: "minute"|"hour"|"day", from: "YYYY-MM-DD", to: "YYYY-MM-DD" }：K 线（t、o、h、l、c、v），按时间正序，超过 500 根时只给离 to 最近的 500 根
+- indicators { symbol, span: "day"|"hour"|"minute", from?, to? }：程序算好的技术指标，数字直接引用，不要自己重算。to 默认纽约今天，from 默认往前 400 天（day）、30 天（hour）、4 天（minute）。返回 at（最后一根 K 线的开始时间，毫秒）、close、bars（用到的根数），以及 sma20/50/200、ema12/26（以前 n 根 SMA 为种子）、macd { line, signal, histogram }（12,26,9）、rsi14 和 atr14（Wilder 平滑）、bollinger { middle, upper, lower }（20 根，2 倍总体标准差）、week52 { high, low }（仅 day，最近 252 根日线）、vwap（仅 minute，最后一根所在交易日 9:30 起的常规时段，典型价 (h+l+c)/3 按量加权）、swings { resistance, support }（左右各 5 根都更低/更高的摆动高点/低点，取现价上方/下方最近的 3 个，每个含 price 和 t）。根数不够的指标给 { insufficient: { need, have } }
 - session {}：纽约日期和交易时段（pre、regular、post、closed）`;
 
 export function marketFeed(input: FeedInput): FeedSpec {
@@ -31,6 +37,27 @@ export function marketFeed(input: FeedInput): FeedSpec {
 			? new MarketSource({ source, title, settings, ctx, client: new MarketClient({ key: loaded.key, baseURL: settings.baseURL, minGapMs: settings.minGapMs }) })
 			: disabledFeed(source, "未配置行情密钥"),
 	};
+}
+
+function symbolArg(op: string, a: Record<string, unknown>): string {
+	const symbol = parseSymbol(a.symbol);
+	if (!symbol) throw new Error(`${op} 的 symbol 必须是合法的股票代码`);
+	return symbol;
+}
+
+function spanArg(op: string, a: Record<string, unknown>): Span {
+	if (!SPANS.includes(a.span as Span)) throw new Error(`${op} 的 span 只能是 ${SPANS.join("、")}`);
+	return a.span as Span;
+}
+
+function dateArg(op: string, a: Record<string, unknown>, field: string, required = true): string | undefined {
+	if (a[field] === undefined && !required) return undefined;
+	if (typeof a[field] !== "string" || !DATE.test(a[field])) throw new Error(`${op} 的 ${field} 必须是 YYYY-MM-DD`);
+	return a[field];
+}
+
+function shiftDate(date: string, days: number): string {
+	return new Date(Date.parse(`${date}T12:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 }
 
 function noSessionToday(cursor: MarketCursor | undefined, session: Session, now: number): boolean {
@@ -134,11 +161,18 @@ export class MarketSource implements Feed {
 			}
 			case "bars": {
 				only("symbol", "span", "from", "to");
-				const symbol = parseSymbol(a.symbol);
-				if (!symbol) throw new Error("bars 的 symbol 必须是合法的股票代码");
-				if (!SPANS.includes(a.span as Span)) throw new Error(`bars 的 span 只能是 ${SPANS.join("、")}`);
-				for (const field of ["from", "to"]) if (typeof a[field] !== "string" || !DATE.test(a[field] as string)) throw new Error(`bars 的 ${field} 必须是 YYYY-MM-DD`);
-				return this.#o.client.bars(symbol, a.span as Span, a.from as string, a.to as string);
+				const [symbol, span] = [symbolArg(op, a), spanArg(op, a)];
+				return this.#o.client.bars(symbol, span, dateArg(op, a, "from")!, dateArg(op, a, "to")!);
+			}
+			case "indicators": {
+				only("symbol", "span", "from", "to");
+				const [symbol, span] = [symbolArg(op, a), spanArg(op, a)];
+				const to = dateArg(op, a, "to", false) ?? sessionAt(this.#o.ctx.clock.now()).nyDate;
+				const from = dateArg(op, a, "from", false) ?? shiftDate(to, -INDICATOR_DAYS[span]);
+				if (from > to) throw new Error("indicators 的 from 不能晚于 to");
+				const bars = await this.#o.client.bars(symbol, span, from, to, INDICATOR_LIMIT);
+				if (!bars.length) throw new Error(`${symbol} 在 ${from} 到 ${to} 没有 ${span} K 线`);
+				return { symbol, span, from, to, ...indicatorReport(bars, span) };
 			}
 			case "session": {
 				only();
@@ -146,7 +180,7 @@ export class MarketSource implements Feed {
 				return { nyDate, phase };
 			}
 			default:
-				throw new Error(`未知操作 ${op}；可用：quote、bars、session`);
+				throw new Error(`未知操作 ${op}；可用：quote、bars、indicators、session`);
 		}
 	}
 
