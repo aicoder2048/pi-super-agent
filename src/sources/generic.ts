@@ -144,7 +144,8 @@ export class GenericSource {
 		try {
 			this.#o.submit(trigger);
 		} catch (error) {
-			return this.#reject(path, file, `提交失败：${(error as Error).message}`);
+			this.#o.log(`[generic] 提交 ${file} 失败，留在投递目录，下次扫描重试：${(error as Error).message}`);
+			return;
 		}
 		renameSync(path, freeName(join(this.#o.inboxDir, "processed"), file));
 	}

@@ -566,20 +566,20 @@ export class Kernel {
 		}));
 	}
 
-	conversation(limit = 50): { who: "user" | "router"; text: string; at: number }[] {
+	conversation(limit = 50): { id: string; who: "user" | "router"; text: string; at: number }[] {
 		return this.#all(
 			`SELECT * FROM (
-				SELECT 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord FROM triggers t
+				SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord FROM triggers t
 				JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ?
 				UNION ALL
-				SELECT 'router', r.text, r.created_at, r.rowid FROM reply_receipts r WHERE r.thread_id = ?
-			) ORDER BY at DESC, ord DESC LIMIT ?`,
+				SELECT r.id, 'router', r.text, r.created_at, r.rowid FROM reply_receipts r WHERE r.thread_id = ?
+			) ORDER BY at DESC, who = 'router' DESC, ord DESC LIMIT ?`,
 			CONVERSATION_THREAD_ID,
 			CONVERSATION_THREAD_ID,
 			limit,
 		)
 			.reverse()
-			.map((r) => ({ who: r.who, text: r.text, at: r.at }));
+			.map((r) => ({ id: r.id, who: r.who, text: r.text, at: r.at }));
 	}
 
 	sourceCursor(source: string): string | undefined {

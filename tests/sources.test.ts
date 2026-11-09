@@ -64,13 +64,17 @@ test("通用来源：字段类型不对的文件被拒收并写明是哪个字�
 	}
 });
 
-test("通用来源：某个文件提交失败时它被拒收，后面的文件照常处理", () => {
-	const g = generic({ submit: (t) => { if (t.body === "炸") throw new Error("内核拒绝"); } });
-	writeSettled(join(g.inboxDir, "a.json"), JSON.stringify({ thread: "t", body: "炸" }));
+test("通用来源：某个文件提交失败（例如数据库暂时忙）时留在投递目录，后面的文件照常处理，下次扫描成功后才移走", () => {
+	let busy = true;
+	const g = generic({ submit: (t) => { if (t.body === "暂时失败" && busy) throw new Error("database is locked"); } });
+	writeSettled(join(g.inboxDir, "a.json"), JSON.stringify({ thread: "t", body: "暂时失败" }));
 	writeSettled(join(g.inboxDir, "b.json"), JSON.stringify({ thread: "t", body: "正常" }));
 	assert.doesNotThrow(() => g.source.scan());
 	assert.deepEqual(g.submitted.map((t) => t.body), ["正常"]);
-	assert.match(readFileSync(join(g.inboxDir, "rejected", "a.json.error.txt"), "utf8"), /内核拒绝/);
+	assert.deepEqual(readdirSync(g.inboxDir).filter((f) => f.endsWith(".json")), ["a.json"]);
+	busy = false;
+	g.source.scan();
+	assert.deepEqual(g.submitted.map((t) => t.body), ["正常", "暂时失败"]);
 	assert.deepEqual(readdirSync(g.inboxDir).filter((f) => f.endsWith(".json")), []);
 });
 

@@ -32,7 +32,6 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 	const drawBoard = () =>
 		ctx?.ui.setWidget("psa-board", () => ({ render: (width: number) => renderBoard(view, width, Date.now()), invalidate() {} }));
 
-	// Snapshot lines carry no id until kernel.conversation() returns one, so they fall back to the time watermark.
 	const isNew = (l: ConversationLine) => (l.id ? !seenIds.has(l.id) : l.at > lastSeenAt);
 	const markSeen = (l: ConversationLine) => {
 		if (l.id) seenIds.add(l.id);

@@ -729,3 +729,10 @@ test("阶段：汇报就绪但附了一个问题时是等你回答，不是已�
 	kernel.workerReport(id, { status: "ready", summary: "草稿好了", question: "可以发吗？" });
 	assert.equal(stage(id), "awaiting_answer");
 });
+
+test("对话历史每一行带稳定的 id：使用者的话是触发 id，Router 的回复是回复 id", () => {
+	const { kernel, clock } = setup();
+	const { triggerId } = kernel.submitTrigger({ source: "conversation", externalId: "c-id", threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body: "查天气", occurredAt: clock.now() });
+	const reply = kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "好的" });
+	assert.deepEqual(kernel.conversation().map((m) => m.id), [triggerId, reply.ok ? reply.replyId : "-"]);
+});
