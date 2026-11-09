@@ -1,11 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { spawn, type ChildProcess } from "node:child_process";
 import { connect, type Socket } from "node:net";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
-import { blockedExternalAction } from "./external-actions.ts";
+import type { Basis } from "../kernel/types.ts";
+import { toolAllowlist } from "./tools.ts";
 
 interface BgCommand {
 	id: string;
@@ -65,9 +65,10 @@ const text = (value: unknown) => ({
 
 export default function workerExtension(pi: ExtensionAPI) {
 	const ticketId = env("PSA_TICKET");
-	const basis = env("PSA_BASIS");
+	const allowlist = toolAllowlist(env("PSA_BASIS") as Basis);
 	const bgMaxMs = Number(process.env.PSA_BG_MAX_MS ?? 120 * 60_000);
 	const call = hostClient(env("PSA_SOCKET"), { ticketId, token: env("PSA_TOKEN") });
+	for (const name of Object.keys(process.env)) if (name.startsWith("PSA_")) delete process.env[name];
 	const bg = new Map<string, BgCommand>();
 	let bgSeq = 0;
 	let deadline: NodeJS.Timeout | undefined;
@@ -123,8 +124,6 @@ export default function workerExtension(pi: ExtensionAPI) {
 		description: "启动一条长时间运行的命令并立即返回。命令结束时，结果会作为新输入送回给你。",
 		parameters: Type.Object({ command: Type.String() }),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
-			const blocked = basis === "inference" ? blockedExternalAction(params.command) : undefined;
-			if (blocked) throw new Error(blocked);
 			const id = `bg${++bgSeq}`;
 			const child = spawn("bash", ["-lc", params.command], { cwd: ctx.cwd, stdio: ["ignore", "pipe", "pipe"] });
 			const entry: BgCommand = { id, command: params.command, child, output: "", startedAt: Date.now(), exitCode: undefined };
@@ -173,9 +172,8 @@ export default function workerExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", async (event) => {
-		if (basis !== "inference" || !isToolCallEventType("bash", event)) return;
-		const reason = blockedExternalAction(event.input.command);
-		if (reason) return { block: true, reason };
+		if (!allowlist || allowlist.includes(event.toolName)) return;
+		return { block: true, reason: `依据为推断的任务只能读和汇报，不能用 ${event.toolName}。需要对外动作时写成草稿，用 report 的 drafts 提交。` };
 	});
 
 	pi.on("agent_start", async () => {
