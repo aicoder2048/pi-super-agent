@@ -1,4 +1,5 @@
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { constants } from "node:os";
 import { formatModelRef } from "../models.ts";
 import { Modules } from "../modules.ts";
 import { loadConfig, memberProviders } from "./config.ts";
@@ -20,10 +21,14 @@ async function main(): Promise<void> {
 	let stopping = false;
 	for (const signal of ["SIGINT", "SIGTERM"] as const) {
 		process.on(signal, async () => {
-			if (stopping) return;
+			if (stopping) {
+				log(`[host] 再次收到 ${signal}，立即退出`);
+				process.exit(128 + constants.signals[signal]);
+			}
 			stopping = true;
-			log(`[host] 收到 ${signal}，正在停止`);
+			log(`[host] 收到 ${signal}，正在停止${signal === "SIGINT" ? "（再按一次 Ctrl+C 立即退出）" : ""}`);
 			await host.stop();
+			log("[host] 已停止");
 			process.exit(0);
 		});
 	}
