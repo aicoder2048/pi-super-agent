@@ -28,6 +28,7 @@ function mount(doc) {
 	const composer = /** @type {HTMLTextAreaElement} */ ($("composer"));
 	const send = /** @type {HTMLButtonElement} */ ($("send"));
 	const sayStatus = $("say-status");
+	const mark = /** @type {Element} */ (doc.querySelector(".logo svg"));
 	let rendered = 0;
 	/** @type {{ watch: ReturnType<typeof emptyWatch>, source: EventSource } | undefined} */
 	let watching;
@@ -150,7 +151,11 @@ function mount(doc) {
 			const item = el("div", `line ${line.who}`);
 			const bubble = el("div", "bubble");
 			bubble.append(el("span", "sr", line.who === "user" ? "你：" : "Super Agent："), doc.createTextNode(line.text));
-			if (line.who === "router") item.append(el("div", "avatar"));
+			if (line.who === "router") {
+				const avatar = el("div", "avatar");
+				avatar.append(mark.cloneNode(true));
+				item.append(avatar);
+			}
 			item.append(bubble);
 			thread.append(item);
 		}
