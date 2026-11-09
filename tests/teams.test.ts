@@ -35,6 +35,12 @@ test("teams.yaml：成员名可以带引号", () => {
 	assert.deepEqual(team.members, ["news-researcher", "x"]);
 });
 
+test("teams.yaml：冒号可以写成全角的「：」，和 rules.md 一样", () => {
+	assert.deepEqual(parseTeams(FILE, "新闻队：\n  description：查新闻：只看来源\n  members：\n    - a\n"), [
+		{ name: "新闻队", description: "查新闻：只看来源", members: ["a"], file: FILE, line: 1 },
+	]);
+});
+
 const MALFORMED: [name: string, text: string, line: number, message: RegExp][] = [
 	["顶层不是「团队名:」", "新闻队: 查新闻\n", 1, /团队名/],
 	["成员写在团队外面", "- news-researcher\n", 1, /团队名/],
@@ -51,6 +57,8 @@ const MALFORMED: [name: string, text: string, line: number, message: RegExp][] =
 	["说明超过 60 字", `新闻队:\n  description: ${"长".repeat(61)}\n  members:\n    - a\n`, 2, /60 字/],
 	["团队名里有空白", "新 闻队:\n  description: d\n  members:\n    - a\n", 1, /空白/],
 	["用 Tab 缩进", "新闻队:\n\tdescription: d\n", 2, /Tab/],
+	["团队名是空的", '"":\n  description: d\n  members:\n    - a\n', 1, /团队名不能为空/],
+	["团队名里有控制字符", "新\u0007闻队:\n  description: d\n  members:\n    - a\n", 1, /控制字符/],
 ];
 
 for (const [name, text, line, message] of MALFORMED) {

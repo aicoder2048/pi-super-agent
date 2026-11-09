@@ -55,11 +55,13 @@ export function parseTeams(file: string, text: string): TeamDecl[] {
 		if (!body || body.startsWith("#")) return;
 		if (/^ *\t/.test(raw)) fail(line, "缩进请用空格，不要用 Tab");
 		if (!raw.startsWith(" ")) {
-			const header = body.startsWith("-") ? null : body.match(/^(.+?)\s*:$/);
+			const header = body.startsWith("-") ? null : body.match(/^(.+?)\s*[:：]$/);
 			if (!header) fail(line, `顶层每行应是「团队名:」，这一行是「${body}」`);
 			finish();
 			const name = unquote(header![1]);
+			if (!name) fail(line, "团队名不能为空");
 			if (/\s/.test(name)) fail(line, `团队名「${name}」里不能有空白`);
+			if (/\p{Cc}/u.test(name)) fail(line, `团队名 ${JSON.stringify(name)} 里不能有控制字符`);
 			if (teams.some((t) => t.name === name)) fail(line, `团队 ${name} 在这个文件里写了两次`);
 			draft = { name, line };
 			inMembers = false;
@@ -74,7 +76,7 @@ export function parseTeams(file: string, text: string): TeamDecl[] {
 			draft.members!.push(member);
 			return;
 		}
-		const [, key, value] = body.match(/^([^:\s]+)\s*:\s*(.*)$/) ?? fail(line, `看不懂这一行「${body}」，团队里只能写 description 和 members`);
+		const [, key, value] = body.match(/^([^:：\s]+)\s*[:：]\s*(.*)$/) ?? fail(line, `看不懂这一行「${body}」，团队里只能写 description 和 members`);
 		if (key !== "description" && key !== "members") fail(line, `不认识的键 ${key}，团队里只能写 description 和 members`);
 		if (draft[key as "description" | "members"] !== undefined) fail(line, `${key} 写了两次`);
 		inMembers = key === "members";
