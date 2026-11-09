@@ -58,3 +58,5 @@ ts	phase	decision	why	evidence	result
 2026-11-09T18:51:15Z	m2	FINNHUB_API_KEY 格式不对只停用 earnings，整个 us-market 照常	复审：ConfigError 让整个来源启动失败	tests/market-source.test.ts 坏密钥用例先红后绿	fixed
 2026-11-09T18:51:15Z	m2	复审指出的 6 处变异（另加 partial 宽限）逐一改代码确认变红再还原	原测试在这些变异下仍绿	14/14 变异变红；522/522	PASS
 2026-11-09T18:52:47Z	m2-verdict	M2 复审第二轮 PASS：6 处补测变红、未收盘 K 线标记、盘前 VWAP 回退上一交易日、Finnhub 密钥格式错只停 earnings	复审 16 处变异全部变红	30736a5 复审报告；522/522	PASS
+2026-11-09T19:49:36Z	m2	宿主内 LookupCache：按请求参数做键，TTL + LRU 200 条，进行中的相同请求合用；结果带 fromCache 和 cachedAgeMs；quote/bars 改为 { quotes } / { bars } 对象	开盘时十几个专家加每分钟轮询挤在 12 秒一个请求的 Massive 队列上全部超时，很多请求相同；数组没法带新鲜度字段，且还没有消费方	tests/market-cache.test.ts、market-source.test.ts 缓存用例；去掉合用/LRU/TTL 的变异都变红	decided
+2026-11-09T19:49:36Z	m2	每次查询写一行日志：操作、参数摘要、来源（上游/合用/缓存/现算）、排队等待、总耗时；minGapMs 默认不变	慢的会诊要能从 host.log 看出是排队还是上游慢；套餐待使用者确认	日志用例：第二个请求排队 12000ms	decided

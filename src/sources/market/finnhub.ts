@@ -1,5 +1,5 @@
 import type { Clock } from "../../kernel/types.ts";
-import type { Http } from "./client.ts";
+import type { Http, Trace } from "./client.ts";
 import { shiftDate } from "./session.ts";
 
 export const FINNHUB_URL = "https://finnhub.io/api/v1";
@@ -161,11 +161,11 @@ export class FinnhubClient {
 		};
 	}
 
-	async earnings(symbol: string, today: string): Promise<EarningsReport> {
+	async earnings(symbol: string, today: string, trace?: Trace): Promise<EarningsReport> {
 		const s = encodeURIComponent(symbol);
 		const [calendar, history] = await Promise.all([
-			this.#get(`/calendar/earnings?from=${shiftDate(today, -CALENDAR_BACK_DAYS)}&to=${shiftDate(today, CALENDAR_AHEAD_DAYS)}&symbol=${s}`),
-			this.#get(`/stock/earnings?symbol=${s}`),
+			this.#get(`/calendar/earnings?from=${shiftDate(today, -CALENDAR_BACK_DAYS)}&to=${shiftDate(today, CALENDAR_AHEAD_DAYS)}&symbol=${s}`, trace),
+			this.#get(`/stock/earnings?symbol=${s}`, trace),
 		]);
 		return earningsReport(symbol, today, parseCalendar(object(calendar), symbol), parseHistory(history, symbol));
 	}
@@ -174,12 +174,14 @@ export class FinnhubClient {
 		this.#abort.abort();
 	}
 
-	#get(path: string): Promise<unknown> {
+	#get(path: string, trace?: Trace): Promise<unknown> {
 		if (this.#queued >= this.#o.maxQueued) return Promise.reject(new FinnhubError("busy"));
 		this.#queued++;
+		const enqueuedAt = this.#o.clock.now();
 		const run = this.#tail.then(async () => {
 			const wait = Math.max(this.#nextAt, this.#cooldownUntil) - this.#o.clock.now();
 			if (wait > 0) await this.#o.sleep(wait);
+			if (trace) trace.queuedMs += this.#o.clock.now() - enqueuedAt;
 			this.#nextAt = this.#o.clock.now() + this.#o.minGapMs;
 			return this.#fetch(path);
 		});
