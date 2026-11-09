@@ -19,3 +19,6 @@ ts	phase	decision	why	evidence	result
 2026-11-09T07:38:48Z	verdict	停掉一个测试遗留的宿主子进程（PID 36264，状态目录 psa-host-*）	测试失败路径没有清理，规格审计第 2 条；已派实现者修	ps 36264 started 22:58	done
 2026-11-09T07:49:52Z	verdict	a87935f 单验证者 PASS：src 只多了 400 处理，全量 257 两遍全绿，真实宿主上恶意目标全部 4xx 且宿主存活，M3 M8 变异 12.8s 2.8s 内失败退出无残留	上次完整验证后只有小修复，按计划规则用单个验证者	PR #18 @a87935f	PASS
 2026-11-09T07:49:52Z	trail	跳过跨模型族的决策记录复核	本机 pstack 配置只有 Claude 一族，没有其他族的模型可用	~/.claude/rules/pstack-models.md	skipped
+2026-11-09T08:23:28Z	w2-layout	W1 合并后在 Claude Design 画布上做三个完整布局：A 三栏控制台、B 看板优先（深色）、C 统一时间线，等使用者选	使用者觉得 W1 页面简陋、缺少专业设计感；计划规定 W2 先定布局再写代码	https://claude.ai/artifact/HUaH5gAKbLfXvvsNYA2Zo3; main ac70ec6	open
+2026-11-09T08:52:42Z	w2-layout	使用者选 A 布局加浅色深色主题；按 A2 改为产品化文案：Router 即 Super Agent，Worker 叫助手，左栏按需要你、正在办、在盯着排	使用者觉得界面机械、看不出与 ChatGPT 的区别；设计文档要求用户只面对一个 Super-agent，面板先列需要人的事	画布 A2 两张; docs/dsh-super-agent/super-agent-design-exploration.md 第 2 节; prototype-docs/005-panel.md	decided
+2026-11-09T08:52:42Z	w2-scope	W2 加入：启动时间与重启提示、在盯着列表、今天替你看了 N 件事、叫停按钮填输入框；进度条改为最近汇报；带选项提问另开 PR 排在 W3 之后	前四项数据现成或很小；进度没有数据来源；带选项提问要改 Router 工具与提示词	使用者 2026-11-09 同意	decided
