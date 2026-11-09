@@ -543,18 +543,23 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 ## Ship the first expert roles (W6c)
 
-**Depends on.** W6b (stacked on it).
+**Depends on.** W6b (stacked on it). 指标和财报查询（`lookup indicators`、`lookup earnings`）在 PR #26（`psa/market-data`），本分支先 cherry-pick 它的提交，#26 合并后 rebase 去重，见决策记录。
 
 **Files.**
 
-- [ ] Create `modules/us-market/roles/market-analyst.md`（行情分析师）、`modules/us-market/roles/technical-analyst.md`（技术分析师）、`roles/news-researcher.md`（新闻研究员，内置）、`roles/earnings-reader.md`（财报解读，内置）。
-- [ ] Create `modules/pi-pi/`，原样导入 `.pi/agents/pi-pi/*.md` 为角色（只补 `title`）。
-- [ ] Edit `modules/us-market/rules.md`（大波动规则写「专家：market-analyst, technical-analyst」）。
+- [x] Cherry-pick PR #26 的提交（`git log origin/main..origin/psa/market-data`）。
+- [x] Create `modules/us-market/roles/market-analyst.md`（行情分析师）、`technical-analyst.md`（技术分析师）、`news-researcher.md`（新闻研究员）、`earnings-reader.md`（财报解读），四位都是看盘模块的专家，不是内置角色。
+- [x] Create `modules/pi-pi/module.json`（没有来源）和 `modules/pi-pi/roles/`，原样导入 `.pi/agents/pi-pi/*.md` 的九位专家（只补中文 `title`），不导入 `pi-orchestrator`，不改 `.pi/agents`。
+- [x] Edit `modules/us-market/rules.md`（big-move 写「专家：market-analyst, technical-analyst, news-researcher」）。现有来源里没有财报触发，不加财报周规则。
+- [x] Edit `roles/deputy.md`（行情问题该请教谁、一般两三位、冲突明写、报价写时间和来源）。
+- [x] Create `tests/expert-roles.test.ts`，edit `tests/modules.test.ts`。
+- [x] Create `tests/e2e/experts.e2e.ts`，edit `tests/e2e/harness.ts`（StoryOptions 加 `env`）。
 
 **Build.**
 
-- [ ] 三个角色各有清楚的职责、工具白名单、汇报格式（结论、证据、来源和时间）。
-- [ ] pi-pi 专家作为模块角色，可被副幕僚长会诊。
+- [x] 四个角色各有清楚的职责、最小的工具白名单、汇报格式（结论、证据、来源和时间），行情一律写报价时间。技术分析师只引用 `lookup indicators` 的数字，标出 `lastBar.partial`；财报解读读 `lookup earnings`。
+- [x] pi-pi 专家作为模块角色，可被副幕僚长会诊。
+- [x] 副幕僚长的提示词按问题挑看盘专家，合成时写明冲突和报价时间。
 
 **You see.**
 
