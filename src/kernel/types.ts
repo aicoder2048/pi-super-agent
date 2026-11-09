@@ -277,3 +277,8 @@ export interface SystemProblem {
 	lastError: string;
 	since: number;
 }
+
+/** What became of one of the user's messages: a task took it, the Router answered it, is still on it, or set it aside. */
+export type Routing = { kind: "opened_ticket" | "handed_over"; ticketId: string } | { kind: "answered" | "pending" | "router_ignored" };
+/** By conversation trigger id. A message the Router saw and left without a decision or a reply has no entry. */
+export type Routes = Record<string, Routing>;

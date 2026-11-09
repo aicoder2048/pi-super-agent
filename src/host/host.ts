@@ -55,6 +55,7 @@ export interface HostOptions {
 // sun_path holds 104 bytes on macOS and 108 on Linux, including the terminating NUL.
 // setTimeout fires at once for a longer delay.
 const MAX_TIMER_MS = 2 ** 31 - 1;
+const CONVERSATION_LINES = 50;
 const SOCKET_PATH_MAX_BYTES = process.platform === "darwin" ? 103 : 107;
 
 function assertSocketPathFits(socketPath: string): void {
@@ -221,16 +222,16 @@ export class Host {
 	}
 
 	snapshot() {
-		const { rows, today, duty, helpers } = this.#boardState();
+		const { rows, today, duty, helpers, routes } = this.#boardState();
 		const watching = this.#watching.map((w) => {
 			const problem = this.feeds.get(w.source)?.problem();
 			return problem ? { ...w, problem } : w;
 		});
-		return { conversation: this.kernel.conversation(50), board: rows, today, duty, helpers, watching };
+		return { conversation: this.kernel.conversation(CONVERSATION_LINES), board: rows, today, duty, helpers, routes, watching };
 	}
 
 	#boardState(): BoardState {
-		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday() };
+		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES) };
 	}
 
 	#deliverReply(threadId: string, text: string, replyId: string, ticketId: string | null | undefined): void {
