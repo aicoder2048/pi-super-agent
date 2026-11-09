@@ -1,6 +1,6 @@
 // @ts-check
 
-/** @typedef {import("../client/protocol.ts").BoardRow} BoardRow */
+/** @typedef {import("../kernel/types.ts").DashboardRow} DashboardRow */
 /** @typedef {import("../client/protocol.ts").ConversationLine} ConversationLine */
 /** @typedef {import("../client/protocol.ts").Duty} Duty */
 /** @typedef {import("../client/protocol.ts").HostToClient} HostToClient */
@@ -10,10 +10,10 @@
 
 import { formatElapsed, formatTokens, isLive, modelText, shortId } from "../client/board-format.mjs";
 
-/** @type {Record<BoardRow["basis"], string>} */
+/** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你让我做的", rule: "按你的规则", inference: "我觉得该做的" };
 
-/** @type {Record<BoardRow["stage"], string>} */
+/** @type {Record<DashboardRow["stage"], string>} */
 export const STAGE_PHRASE = {
 	awaiting_answer: "等你回答",
 	awaiting_review: "等你看一眼",
@@ -27,7 +27,7 @@ export const STAGE_PHRASE = {
 
 /** @typedef {"needsYou" | "doing" | "done"} Group */
 
-/** @type {Record<BoardRow["stage"], Group>} */
+/** @type {Record<DashboardRow["stage"], Group>} */
 const GROUP = {
 	awaiting_answer: "needsYou",
 	awaiting_review: "needsYou",
@@ -45,7 +45,7 @@ export const ACK_TIMEOUT_MS = 5000;
 /**
  * @typedef {object} View
  * @property {Map<string, ConversationLine>} lines
- * @property {BoardRow[]} rows
+ * @property {DashboardRow[]} rows
  * @property {number} receivedAt
  * @property {TodayCounts | undefined} today
  * @property {Duty | undefined} duty
@@ -95,14 +95,14 @@ export function applyMessage(view, message, now) {
  * @property {boolean} canStop
  */
 
-/** @param {BoardRow} row @returns {TaskCard} */
+/** @param {DashboardRow} row @returns {TaskCard} */
 function card(row) {
 	return {
 		id: row.id,
 		title: row.title,
 		why: BASIS_PHRASE[row.basis],
 		stage: STAGE_PHRASE[row.stage],
-		latest: row.ask ?? row.latestSummary ?? "刚开始，还没汇报",
+		latest: row.latestQuestion ?? row.latestSummary ?? "刚开始，还没汇报",
 		canStop: GROUP[row.stage] === "doing",
 	};
 }
@@ -290,7 +290,7 @@ export function applyTranscript(watch, message) {
 	return true;
 }
 
-/** @param {BoardRow | undefined} row @param {number} now @param {number} receivedAt */
+/** @param {DashboardRow | undefined} row @param {number} now @param {number} receivedAt */
 export function smallPrint(row, now, receivedAt) {
 	if (!row) return "";
 	const elapsed = formatElapsed(row.elapsedMs + (isLive(row) ? now - receivedAt : 0));

@@ -518,6 +518,7 @@ export class Kernel {
 				stage: t.stage,
 				basis: t.basis,
 				latestSummary: t.latestReport?.summary ?? null,
+				latestQuestion: t.stage === "awaiting_answer" || t.stage === "awaiting_review" ? (t.latestReport?.question ?? null) : null,
 				model: t.model,
 				fellBack: t.fellBack,
 				toolCalls: t.toolCalls,

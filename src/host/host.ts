@@ -12,7 +12,7 @@ import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import { Dispatcher } from "./dispatcher.ts";
 import { HostServer, type Broadcast } from "./server.ts";
-import type { BoardRow, BoardState, Duty, TodayCounts, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
+import type { BoardState, Duty, TodayCounts, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
 import { WebGateway } from "./web.ts";
 import { ConfigError } from "../config-error.ts";
 import { WorkerExecutor, type WorkerModels, type WorkerSpawner } from "./workers.ts";
@@ -191,11 +191,7 @@ export class Host {
 	}
 
 	#boardState(): BoardState {
-		const rows: BoardRow[] = this.kernel.listTickets().map((row) => ({
-			...row,
-			ask: row.stage === "awaiting_answer" || row.stage === "awaiting_review" ? (this.kernel.getTicket(row.id)?.latestReport?.question ?? null) : null,
-		}));
-		return { rows, today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty };
+		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty };
 	}
 
 	#deliverReply(threadId: string, text: string, replyId: string): void {

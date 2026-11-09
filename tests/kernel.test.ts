@@ -634,6 +634,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			stage: "running",
 			basis: "request",
 			latestSummary: "写了一半",
+			latestQuestion: null,
 			model: "openai-codex/gpt-6.1-sol",
 			fellBack: false,
 			toolCalls: 2,

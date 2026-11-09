@@ -4,7 +4,8 @@ import { join } from "node:path";
 import http from "node:http";
 import { connect, createServer, type AddressInfo } from "node:net";
 import test, { mock, type TestContext } from "node:test";
-import type { BoardRow, HostToClient, TodayCounts } from "../src/client/protocol.ts";
+import type { HostToClient, TodayCounts } from "../src/client/protocol.ts";
+import type { DashboardRow } from "../src/kernel/types.ts";
 import { DEFAULT_ACK_TIMEOUT_MS } from "../src/client/connection.ts";
 import { formatInputs } from "../src/host/workers.ts";
 import { INPUT_KINDS } from "../src/kernel/types.ts";
@@ -13,19 +14,19 @@ import * as page from "../src/web/view.mjs";
 import { WATCHDOG_SOURCE } from "../src/watchdog/watchdog.ts";
 import { busyPort, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
 
-function row(over: Partial<BoardRow> = {}): BoardRow {
+function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
 		id: "tkt_abcd1234", title: "查天气", stage: "running", basis: "request", latestSummary: null, model: "openai-codex/gpt-6.1-sol",
-		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, ask: null, ...over,
+		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, latestQuestion: null, ...over,
 	};
 }
 
 const zeroToday = (): TodayCounts => ({ byDisposition: { ignored: 0, delivered: 0, to_router: 0, opened_ticket: 0, handed_over: 0, router_ignored: 0 }, bySource: {} });
 const duty = { since: 0, resumed: 0 };
 const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, watching: [], ...over });
-const board = (rows: BoardRow[], today = zeroToday()): HostToClient => ({ type: "board", rows, today, duty });
+const board = (rows: DashboardRow[], today = zeroToday()): HostToClient => ({ type: "board", rows, today, duty });
 const texts = (view: ReturnType<typeof page.emptyView>) => [...view.lines.values()].map((l) => `${l.who}:${l.text}`);
-const withRows = (rows: BoardRow[], now = 0) => {
+const withRows = (rows: DashboardRow[], now = 0) => {
 	const view = page.emptyView();
 	page.applyMessage(view, board(rows), now);
 	return view;
@@ -63,7 +64,7 @@ test("页面：每种消息只报告它改动的区域", () => {
 });
 
 test("页面：每个任务恰好进一个分组：等你回答、等你看、卡住了进需要你，排队、执行、空闲进正在替你办，结束和叫停进已结束", () => {
-	const stages: BoardRow["stage"][] = ["awaiting_answer", "awaiting_review", "blocked_or_failed", "queued", "running", "idle", "closed", "stopped"];
+	const stages: DashboardRow["stage"][] = ["awaiting_answer", "awaiting_review", "blocked_or_failed", "queued", "running", "idle", "closed", "stopped"];
 	const left = page.leftColumn(withRows(stages.map((stage) => row({ id: `tkt_${stage}`, stage }))), 0);
 	const ids = (cards: { id: string }[]) => cards.map((c) => c.id.slice(4));
 	assert.deepEqual(ids(left.needsYou), ["awaiting_answer", "awaiting_review", "blocked_or_failed"]);
@@ -74,7 +75,7 @@ test("页面：每个任务恰好进一个分组：等你回答、等你看、�
 
 test("页面：需要你的卡片先显示问题，卡住的显示最近汇报；正在办的显示最近汇报，没有时说刚开始", () => {
 	const left = page.leftColumn(withRows([
-		row({ id: "tkt_ask", stage: "awaiting_answer", basis: "rule", latestSummary: "需要确认", ask: "用 A 还是 B？" }),
+		row({ id: "tkt_ask", stage: "awaiting_answer", basis: "rule", latestSummary: "需要确认", latestQuestion: "用 A 还是 B？" }),
 		row({ id: "tkt_stk", stage: "blocked_or_failed", basis: "inference", latestSummary: "缺少权限" }),
 		row({ id: "tkt_run", stage: "running", latestSummary: null }),
 		row({ id: "tkt_idl", stage: "idle", latestSummary: "读完 3 份" }),
@@ -524,7 +525,7 @@ test("宿主：快照和 board 帧带今天的计数、值班时间和在盯着�
 	t.after(() => live.close());
 	await until(() => live.got.length > 0, "快照");
 	host.say("查天气");
-	await until(() => ofType(live.got, "board").some((m) => m.rows.some((r) => r.ask === "用 A 还是 B？")), "board 帧带问题");
+	await until(() => ofType(live.got, "board").some((m) => m.rows.some((r) => r.latestQuestion === "用 A 还是 B？")), "board 帧带问题");
 	const frame = ofType(live.got, "board").at(-1)!;
 	assert.deepEqual(frame.today.byDisposition, { ignored: 0, delivered: 0, to_router: 2, opened_ticket: 0, handed_over: 0, router_ignored: 0 });
 	assert.deepEqual(frame.today.bySource, { inbox: 2 });
@@ -539,7 +540,7 @@ test("宿主：快照和 board 帧带今天的计数、值班时间和在盯着�
 	assert.deepEqual({ rows: settled(snap.board), today: snap.today, duty: snap.duty }, { rows: settled(frame.rows), today: frame.today, duty: frame.duty });
 });
 
-test("宿主：其他阶段的任务行 ask 为空；不传在盯着时快照里是空列表", async (t) => {
+test("宿主：其他阶段的任务行 latestQuestion 为空；不传在盯着时快照里是空列表", async (t) => {
 	const brain = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
 	const { host } = await startHost(brain, (w) => {
 		w.report({ status: "progress", summary: "做了一半" });
@@ -548,7 +549,7 @@ test("宿主：其他阶段的任务行 ask 为空；不传在盯着时快照里
 	t.after(() => host.stop());
 	host.say("查天气");
 	await until(() => host.snapshot().board.some((r) => r.latestSummary === "做了一半"), "汇报");
-	assert.deepEqual(host.snapshot().board.map((r) => [r.stage, r.ask]), [["idle", null]]);
+	assert.deepEqual(host.snapshot().board.map((r) => [r.stage, r.latestQuestion]), [["idle", null]]);
 	assert.deepEqual(host.snapshot().watching, []);
 });
 

@@ -2,11 +2,6 @@ import type { DashboardRow, Disposition } from "../kernel/types.ts";
 
 export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number };
 
-/** `ask` is the latest report's question, set only while the ticket waits on the user. */
-export interface BoardRow extends DashboardRow {
-	ask: string | null;
-}
-
 /** `resumed` counts the running tickets recovered at this start; 0 means a clean start. */
 export interface Duty {
 	since: number;
@@ -27,7 +22,7 @@ export interface WatchedSource {
 
 /** The left column's changing state, sent whole in the snapshot and in every board frame. */
 export interface BoardState {
-	rows: BoardRow[];
+	rows: DashboardRow[];
 	today: TodayCounts;
 	duty: Duty;
 }
@@ -38,7 +33,7 @@ export type ClientToHost =
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
-	| { type: "snapshot"; conversation: ConversationLine[]; board: BoardRow[]; today: TodayCounts; duty: Duty; watching: WatchedSource[] }
+	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; watching: WatchedSource[] }
 	| { type: "user"; id: string; text: string; at: number }
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "reply"; text: string; at: number; replyId: string }

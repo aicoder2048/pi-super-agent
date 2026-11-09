@@ -215,7 +215,7 @@ test("客户端：宿主收下但不回 ack（卡住了）时提醒使用者这�
 const row = (over: Partial<DashboardRow>): DashboardRow => ({
 	id: "tkt_3f2a9c", title: "整理本周的会议纪要并发给团队", stage: "running", basis: "request",
 	latestSummary: "已经读完五份纪要，正在合并重复的行动项，预计还要两分钟", model: "openai-codex/gpt-6.1-sol",
-	fellBack: false, toolCalls: 12, tokensIn: 3200, tokensOut: 800, elapsedMs: 312_000, ...over,
+	fellBack: false, toolCalls: 12, tokensIn: 3200, tokensOut: 800, elapsedMs: 312_000, latestQuestion: null, lastProgressAt: null, ...over,
 });
 
 test("看板：任意终端宽度下每行都不超宽（含中文双宽字符）", () => {

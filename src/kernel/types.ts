@@ -180,6 +180,8 @@ export interface DashboardRow {
 	stage: Stage;
 	basis: Basis;
 	latestSummary: string | null;
+	/** The latest report's question, set only while the ticket waits on the user. */
+	latestQuestion: string | null;
 	model: string | null;
 	fellBack: boolean;
 	toolCalls: number;
