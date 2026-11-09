@@ -69,51 +69,51 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `src/host/web.ts`.
-- [ ] Create `src/web/index.html`.
-- [ ] Edit `src/host/host.ts`.
-- [ ] Edit `src/host/config.ts`.
-- [ ] Create `tests/web.test.ts`.
-- [ ] Create `docs/adr/0004-web-client-on-localhost-with-a-token.md`.
+- [x] Create `src/host/web.ts`.
+- [x] Create `src/web/index.html`.
+- [x] Edit `src/host/host.ts`.
+- [x] Edit `src/host/config.ts`.
+- [x] Create `tests/web.test.ts`.
+- [x] Create `docs/adr/0004-web-client-on-localhost-with-a-token.md`.
 
 **Build.**
 
-- [ ] 宿主启动时在 `127.0.0.1` 上开 HTTP 网关，端口取 `config.json` 的 `webPort`（默认 4517），每次启动生成新 token，日志打印带 token 的网址。
-- [ ] 网关校验 token 和 `Host` 头，推送用 SSE。先发 `snapshot`，之后转发 `user`、`reply`、`board`，和 Unix socket 客户端收到的消息相同。
-- [ ] 页面左边显示对话，右边显示看板（阶段、标题、依据、模型、用量、耗时），断线时显示「未连接」并自动重连。
+- [x] 宿主启动时在 `127.0.0.1` 上开 HTTP 网关，端口取 `config.json` 的 `webPort`（默认 4517），每次启动生成新 token，日志打印带 token 的网址。
+- [x] 网关校验 token 和 `Host` 头，推送用 SSE。先发 `snapshot`，之后转发 `user`、`reply`、`board`，和 Unix socket 客户端收到的消息相同。
+- [x] 页面左边显示对话，右边显示看板（阶段、标题、依据、模型、用量、耗时），断线时显示「未连接」并自动重连。
 
 **You see.**
 
-- [ ] 宿主日志出现 `[host] 网页 http://127.0.0.1:4517/?token=...`，打开后看到最近对话和看板。`just say 你好` 后页面一秒内出现这句话和之后的 Router 回复。
+- [x] 宿主日志出现 `[host] 网页 http://127.0.0.1:4517/?token=...`，打开后看到最近对话和看板。`just say 你好` 后页面一秒内出现这句话和之后的 Router 回复。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/web.test.ts` 覆盖：无 token 或错 token 返回 401，`Host` 头不是本机返回 403，SSE 先收到 snapshot，`host.say()` 后收到 `user`，看板变化后收到 `board`，`host.stop()` 关闭网关。Run `just test`.
+- [x] `tests/web.test.ts` 覆盖：无 token 或错 token 返回 401，`Host` 头不是本机返回 403，SSE 先收到 snapshot，`host.say()` 后收到 `user`，看板变化后收到 `board`，`host.stop()` 关闭网关。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
-- [ ] Lane 1. Regression lane against trunk. trunk 没有网页，记录这一点。在 head 上用 `just client` 发一句话，确认 TUI 照常工作，同时网页也显示这句话。Save `w1-regression.png`. Pass when TUI 和网页都显示这句话和 Router 回复。
-- [ ] Lane 2. 打开日志里的网址。Save `w1-first-load.png`. Pass when 页面显示最近对话和看板，状态是「已连接」。
-- [ ] Lane 3. 去掉网址里的 token 再打开。Save `w1-no-token.png`. Pass when 返回 401，页面不显示任何对话内容。
-- [ ] Lane 4. 用 `curl -H 'Host: evil.example:4517'` 带正确 token 请求。Save `w1-bad-host.png`. Pass when 返回 403。
-- [ ] Lane 5. 页面打开时运行 `just say 你好`。Save `w1-live-say.png`. Pass when 一秒内出现「你> 你好」，之后出现 Router 回复。
-- [ ] Lane 6. 用 `just drop` 投递一条会建任务的触发。Save `w1-board-update.png`. Pass when 看板出现新任务，阶段随任务推进变化。
-- [ ] Lane 7. 页面打开时停掉宿主，再启动。Save `w1-reconnect.png`. Pass when 停掉后显示「未连接」，宿主重启并换新 token 后页面提示 token 失效，用新网址打开后恢复。
-- [ ] Lane 8. 同时开两个标签页。Save `w1-two-tabs.png`. Pass when 两个标签页显示相同的对话和看板。
-- [ ] Lane 9. 投递正文含 `<script>alert(1)</script>` 和换行的触发。Save `w1-escape.png`. Pass when 页面原样显示文字，不执行脚本，不弹框。
-- [ ] Lane 10. 端口被占用时启动宿主。Save `w1-port-busy.png`. Pass when 宿主打印一行说明端口被占用并退出，不留下半启动状态。
+- [x] Lane 1. Regression lane against trunk. trunk 没有网页，记录这一点。在 head 上用 `just client` 发一句话，确认 TUI 照常工作，同时网页也显示这句话。Save `w1-regression.png`. Pass when TUI 和网页都显示这句话和 Router 回复。
+- [x] Lane 2. 打开日志里的网址。Save `w1-first-load.png`. Pass when 页面显示最近对话和看板，状态是「已连接」。
+- [x] Lane 3. 去掉网址里的 token 再打开。Save `w1-no-token.png`. Pass when 返回 401，页面不显示任何对话内容。
+- [x] Lane 4. 用 `curl -H 'Host: evil.example:4517'` 带正确 token 请求。Save `w1-bad-host.png`. Pass when 返回 403。
+- [x] Lane 5. 页面打开时运行 `just say 你好`。Save `w1-live-say.png`. Pass when 一秒内出现「你> 你好」，之后出现 Router 回复。
+- [x] Lane 6. 用 `just drop` 投递一条会建任务的触发。Save `w1-board-update.png`. Pass when 看板出现新任务，阶段随任务推进变化。
+- [x] Lane 7. 页面打开时停掉宿主，再启动。Save `w1-reconnect.png`. Pass when 停掉后显示「未连接」，宿主重启并换新 token 后页面提示 token 失效，用新网址打开后恢复。
+- [x] Lane 8. 同时开两个标签页。Save `w1-two-tabs.png`. Pass when 两个标签页显示相同的对话和看板。
+- [x] Lane 9. 投递正文含 `<script>alert(1)</script>` 和换行的触发。Save `w1-escape.png`. Pass when 页面原样显示文字，不执行脚本，不弹框。
+- [x] Lane 10. 端口被占用时启动宿主。Save `w1-port-busy.png`. Pass when 宿主打印一行说明端口被占用并退出，不留下半启动状态。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. trunk 和 head 都量 `host.say()` 到 Unix socket 客户端收到 `user` 的延迟。head 另量到 SSE 客户端收到 `user` 的延迟。
-- [ ] Probe. 一个脚本交替在 trunk 和 head 上启动测试宿主，各发 200 句，记录每句的两种延迟。
-- [ ] Baseline. Record the trunk socket p50 and p95 first.
-- [ ] Rule. head 的 socket p95 比 trunk 慢 2 毫秒以上算失败。SSE p95 超过 50 毫秒算失败。
+- [x] Metric. trunk 和 head 都量 `host.say()` 到 Unix socket 客户端收到 `user` 的延迟。head 另量到 SSE 客户端收到 `user` 的延迟。
+- [x] Probe. 一个脚本交替在 trunk 和 head 上启动测试宿主，各发 200 句，记录每句的两种延迟。
+- [x] Baseline. Record the trunk socket p50 and p95 first.
+- [x] Rule. head 的 socket p95 比 trunk 慢 2 毫秒以上算失败。SSE p95 超过 50 毫秒算失败。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 2, 5, 6 screenshots into `docs/web-client/media/w1-review-<slug>.png`.
-- [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/web-client/media/w1-review.mp4`.
+- [x] Copy lane 2, 5, 6 screenshots into `docs/web-client/media/w1-review-<slug>.png`.
+- [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/web-client/media/w1-review.mp4`. 已录 webm 留在本地，不进仓库，见决策记录。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
@@ -132,9 +132,13 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [ ] Edit `src/host/web.ts`.
 - [ ] Edit `src/web/index.html`.
 - [ ] Edit `tests/web.test.ts`.
+- [ ] Edit `src/web/app.mjs`.
+- [ ] Create `docs/web-client/media/w2-layout-<variant>.png`.
 
 **Build.**
 
+- [ ] 先定完整界面的布局，再写代码。按 `pstack/skills/poteto-mode/playbooks/prototype.md`，用 Artifact 工具的 Design 类型做两到三个布局方案，覆盖 W1 到 W3 的全部元素（对话、看板、底部输入框、Worker 过程侧栏、测试工具面板），放在一个可切换的原型里。目标是使用者一眼看出现在在干什么，结果不乱。使用者选定一个方案后，W2 按它实现，W3 沿用。
+  - [ ] 各方案截图存到 `docs/web-client/media/w2-layout-<variant>.png`，选定结果和理由记进 `docs/web-client/decisions.tsv`。
 - [ ] `POST /say` 调 `onSay`，返回 `triggerId`。所有 POST 要求 token 加同源 `Origin`，防跨站请求。
 - [ ] 点看板上的任务，侧栏打开它的 Worker 过程，先显示历史，再实时追加。一个连接同时只看一个任务，和 `/watch` 一致。
 - [ ] 页面底部输入框发话，发出后显示「已送达」或超时提示，规则和 TUI 的确认超时相同。
