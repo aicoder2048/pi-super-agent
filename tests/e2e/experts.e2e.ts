@@ -9,7 +9,7 @@ import { closeBrowser, REPO, story } from "./harness.ts";
 after(closeBrowser);
 
 const BRIEF = "核实 NVDA 跌 6.1% 的原因和技术面位置";
-const HINTED_BRIEF = `${BRIEF}\n\n规则 us-market/big-move 建议请教的专家：market-analyst、technical-analyst、news-researcher`;
+const HINTED_BRIEF = `${BRIEF}\n\n规则 us-market/big-move 建议请教的专家：market-analyst、technical-analyst`;
 const MARKET_Q = "NVDA 今天跌 6.1%，和 SPY、QQQ、半导体板块比是个股还是大盘行情？";
 const TECH_Q = "NVDA 日线技术面现在在什么位置？";
 const ANSWER_MS = 2500;

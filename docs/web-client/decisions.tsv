@@ -138,4 +138,5 @@ ts	phase	decision	why	evidence	result
 2026-11-09T19:47:02Z	w6c-fix	宿主级专家槽位 ExpertSlots（先来先到），config maxConcurrentExperts 默认 4（1 到 16 的整数）；排队的专家在看板上是 state=queued，页面写「排队中」	现场 6 个副幕僚长同时请教十几位专家，全部超时；槽位挂在 WorkerExecutor 上，一个宿主一份，不进内核	tests/consult.test.ts 上限用例；旧代码上 4 个新用例全红，新代码 534/534	decided
 2026-11-09T19:47:02Z	w6c-fix	每个问题的时限从专家真正开始时算；排队也限一个时限，排不上记 timed_out 并写「排队 N 秒还没轮到」。所以牵头人一次会诊最多等两个时限（默认 360 秒）	比整体截止时间更简单：轮到的专家总有完整时限，不会开始没多久就被截止砍掉；上界仍是固定的 2×consultTimeoutSeconds	tests/consult.test.ts 排队时限用例；ExpertOutcome 新增 waitMs，ms 只算开始后的时间	decided
 2026-11-09T19:47:02Z	w6c-fix	专家回答超过 2000 字时宿主截断并注明「已截断」，提示词里再要求简短	提示词管不住的时候还有硬上限，一个啰嗦的专家撑不爆牵头人的上下文	tests/consult.test.ts 长度用例	decided
+2026-11-09T19:47:31Z	w6c-fix	大波动规则只提示 market-analyst、technical-analyst；副幕僚长只在行情分析师判断是个股自己大动且盘面解释不了时再单独请教新闻研究员。专家提示词：先用 lookup，新闻研究员最多读 3 个网页，财报解读最多读 1 页，每位回答不超过 600 字	盘中一个波动大的日子会同时触发好几个规则任务，每个任务少问一位、少读网页，专家总量和 Massive 额度压力都小；新闻研究员两次现场都烧掉约 100k tokens	tests/expert-roles.test.ts 规则用例；tests/e2e/experts.e2e.ts	decided
 2026-11-09T20:05:31Z	w4	停进程组时 EPERM 视同已不在	macOS 上只剩僵尸的组或被别的用户复用的组号会回 EPERM，W6c 实测两次因此中断收尾	setup.e2e.ts 新测试先红后绿	fixed

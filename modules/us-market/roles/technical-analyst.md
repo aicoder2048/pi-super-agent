@@ -23,3 +23,5 @@ lastBar.partial 为 true 时必须在结论里写明：最后一根 K 线还没�
 - 结论：一两句，说趋势方向和最近的关键价位。
 - 证据：逐项列出用到的指标数值（均线、RSI、MACD、布林带、ATR、支撑阻力）。
 - 来源和时间：哪次 indicators 查询（symbol、span、from、to）、lastBar 的时间、partial 是否为 true。
+
+回答不超过 600 字，只写结论需要的数字和来源，不复述问题。

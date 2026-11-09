@@ -31,9 +31,9 @@ test("看盘专家被会诊时拿到的工具就是它自己那份最小清单",
 	assert.deepEqual(tools("earnings-reader"), ["web_get", "lookup"]);
 });
 
-test("大波动规则建议请教行情分析师、技术分析师和新闻研究员，名字都在专家名册里", () => {
+test("大波动规则只建议请教行情分析师和技术分析师，名字都在专家名册里", () => {
 	const experts = modules.ruleExperts("us-market/big-move");
-	assert.deepEqual(experts, ["market-analyst", "technical-analyst", "news-researcher"]);
+	assert.deepEqual(experts, ["market-analyst", "technical-analyst"]);
 	for (const name of experts!) assert.equal(roster.get(name)?.kind, "expert", name);
 });
 
