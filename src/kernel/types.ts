@@ -56,6 +56,8 @@ export interface KernelConfig {
 	inferenceDaily: number;
 	replyMaxChars: number;
 	repliesPerCause: number;
+	/** A running ticket this long without progress is stalled. Filled from watchdog.stuckMinutes by loadConfig. */
+	stuckMs: number;
 }
 
 export const DEFAULT_CONFIG: KernelConfig = {
@@ -65,6 +67,7 @@ export const DEFAULT_CONFIG: KernelConfig = {
 	inferenceDaily: 24,
 	replyMaxChars: 200,
 	repliesPerCause: 2,
+	stuckMs: 30 * 60_000,
 };
 
 export const RETRY_BACKOFF_MS = [5_000, 30_000, 120_000, 600_000, 1_800_000] as const;
@@ -192,6 +195,12 @@ export interface PendingQuestion {
 	answered: number | null;
 }
 
+/** A running ticket with no progress since `since` for at least the configured stuckMs. */
+export interface Stall {
+	since: number;
+	minutes: number;
+}
+
 export interface DashboardRow {
 	id: string;
 	title: string;
@@ -199,6 +208,7 @@ export interface DashboardRow {
 	basis: Basis;
 	latestSummary: string | null;
 	question: PendingQuestion | null;
+	stall: Stall | null;
 	model: string | null;
 	fellBack: boolean;
 	toolCalls: number;

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Kernel } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
-import type { Clock, Stage, SystemProblem } from "../kernel/types.ts";
+import type { Clock, KernelConfig, Stall, SystemProblem } from "../kernel/types.ts";
 import { readHeartbeat } from "../heartbeat.ts";
 import { dropTrigger } from "../sources/generic.ts";
 
@@ -10,14 +10,13 @@ export const WATCHDOG_SOURCE = "watchdog";
 
 export interface WatchdogConfig {
 	heartbeatStaleMs: number;
-	stuckMs: number;
 	restartGraceMs: number;
 }
 
 export interface WatchdogInput {
 	now: number;
 	heartbeatAt: number | undefined;
-	tickets: { id: string; title: string; stage: Stage; lastProgressAt: number | null }[];
+	tickets: { id: string; title: string; stall: Stall | null }[];
 	problems: SystemProblem[];
 }
 
@@ -31,13 +30,11 @@ export function checkWatchdog(input: WatchdogInput, config: WatchdogConfig): { r
 	const restartHost = input.heartbeatAt === undefined || input.now - input.heartbeatAt > config.heartbeatStaleMs;
 	const notices: WatchdogNotice[] = [];
 	for (const t of input.tickets) {
-		if (t.stage !== "running" || t.lastProgressAt === null) continue;
-		const quietMs = input.now - t.lastProgressAt;
-		if (quietMs < config.stuckMs) continue;
+		if (!t.stall) continue;
 		notices.push({
-			id: `stuck:${t.id}:${t.lastProgressAt}`,
+			id: `stuck:${t.id}:${t.stall.since}`,
 			thread: `stuck-${t.id}`,
-			body: `[Watchdog] 任务 ${t.id}「${t.title}」已经 ${Math.floor(quietMs / 60_000)} 分钟没有进展，可能卡住了。请告诉使用者。`,
+			body: `[Watchdog] 任务 ${t.id}「${t.title}」已经 ${t.stall.minutes} 分钟没有进展，可能卡住了。请告诉使用者。`,
 		});
 	}
 	for (const p of input.problems) {
@@ -54,6 +51,8 @@ export interface WatchdogOptions {
 	stateDir: string;
 	clock: Clock;
 	config: WatchdogConfig;
+	/** The host's kernel config, so stalls are judged by the same threshold the host uses. */
+	kernel?: Partial<KernelConfig>;
 	startHost(): void;
 	log?: (line: string) => void;
 }
@@ -72,7 +71,7 @@ export class Watchdog {
 		if (this.#kernel) return this.#kernel;
 		const db = join(this.#o.stateDir, "state.db");
 		if (!existsSync(db)) return undefined;
-		this.#kernel = new Kernel({ db: openStore(db), clock: this.#o.clock, sourcePolicy: () => "candidate" });
+		this.#kernel = new Kernel({ db: openStore(db), clock: this.#o.clock, sourcePolicy: () => "candidate", config: this.#o.kernel });
 		return this.#kernel;
 	}
 

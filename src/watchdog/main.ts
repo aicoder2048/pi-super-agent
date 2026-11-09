@@ -52,9 +52,9 @@ const watchdog = new Watchdog({
 	clock: { now: () => Date.now() },
 	config: {
 		heartbeatStaleMs: config.watchdog.staleSeconds * 1000,
-		stuckMs: config.watchdog.stuckMinutes * 60_000,
 		restartGraceMs: Math.max(intervalMs, Number(process.env.PSA_RESTART_GRACE_MS ?? 60_000)),
 	},
+	kernel: config.kernel,
 	startHost,
 	log,
 });

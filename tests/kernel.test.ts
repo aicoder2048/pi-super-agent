@@ -635,6 +635,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			basis: "request",
 			latestSummary: "写了一半",
 			question: null,
+			stall: null,
 			model: "openai-codex/gpt-6.1-sol",
 			fellBack: false,
 			toolCalls: 2,
@@ -1022,4 +1023,39 @@ test("对话历史里幕僚长关于某个任务的回复带上 about 任务 id�
 	const hi = kernel.submitTrigger({ source: "conversation", externalId: "hi", threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body: "在吗", occurredAt: 0 }).triggerId;
 	assert.ok(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "在", cause: hi }).ok);
 	assert.equal("about" in kernel.conversation().at(-1)!, false);
+});
+
+test("久无进展：执行中且距上次进展达到阈值才算，看板行带开始时间和分钟数；有新进展就清除；空闲、排队、等回答的不算", () => {
+	const MIN = 60_000;
+	const { kernel, clock, open, run, idle } = setup({ config: { stuckMs: 10 * MIN } });
+	const busy = open("request", { title: "跑回归" });
+	run(busy);
+	const since = clock.t;
+	const quiet = open("request", { title: "空闲的" });
+	idle(quiet);
+	const asking = open("request", { title: "等回答" });
+	run(asking);
+	kernel.workerReport(asking, { status: "blocked", summary: "s", question: "选哪个？" });
+	open("request", { title: "排队的" });
+	const stalls = () => Object.fromEntries(kernel.listTickets().map((r) => [r.title, r.stall]));
+	clock.t = since + 10 * MIN - 1;
+	assert.equal(stalls().跑回归, null);
+	clock.t = since + 42 * MIN;
+	assert.deepEqual(stalls(), { 跑回归: { since, minutes: 42 }, 空闲的: null, 等回答: null, 排队的: null });
+	kernel.recordWorkerProgress(busy);
+	assert.equal(stalls().跑回归, null);
+});
+
+test("下一次久无进展的时刻：执行中、还没久无进展的任务里最早的那个；没有这样的任务时为空", () => {
+	const MIN = 60_000;
+	const { kernel, clock, open, run } = setup({ config: { stuckMs: 10 * MIN } });
+	assert.equal(kernel.nextStallAt(), null);
+	const first = open("request", { title: "一" });
+	run(first);
+	const firstAt = clock.t;
+	clock.t += 3 * MIN;
+	run(open("request", { title: "二" }));
+	assert.equal(kernel.nextStallAt(), firstAt + 10 * MIN);
+	clock.t = firstAt + 11 * MIN;
+	assert.equal(kernel.nextStallAt(), firstAt + 13 * MIN, "已经久无进展的不再排");
 });

@@ -30,6 +30,7 @@ import type {
 	Result,
 	RouterNotice,
 	SourcePolicy,
+	Stall,
 	SystemProblem,
 	Thread,
 	Ticket,
@@ -559,6 +560,7 @@ export class Kernel {
 				basis: t.basis,
 				latestSummary: t.latestReport?.summary ?? null,
 				question: t.stage === "awaiting_answer" ? this.#pendingQuestion(t.title, t.latestReport!) : null,
+				stall: this.#stall(t, now),
 				model: t.model,
 				fellBack: t.fellBack,
 				toolCalls: t.toolCalls,
@@ -568,6 +570,23 @@ export class Kernel {
 				lastProgressAt: t.lastProgressAt,
 			};
 		});
+	}
+
+	/** When the next running ticket becomes stalled, so the host can push a board frame right then. */
+	nextStallAt(): number | null {
+		const now = this.#now();
+		const at = this.#all("SELECT id FROM tickets WHERE worker_state = 'running' AND last_progress_at IS NOT NULL")
+			.map((r) => this.#ticket(r.id)!)
+			.filter((t) => t.stage === "running" && !this.#stall(t, now))
+			.map((t) => t.lastProgressAt! + this.config.stuckMs);
+		return at.length ? Math.min(...at) : null;
+	}
+
+	// The only stall comparison: the board, the host's push timer and the watchdog all read its result.
+	#stall(t: Ticket, now: number): Stall | null {
+		if (t.stage !== "running" || t.lastProgressAt === null) return null;
+		const quietMs = now - t.lastProgressAt;
+		return quietMs >= this.config.stuckMs ? { since: t.lastProgressAt, minutes: Math.floor(quietMs / 60_000) } : null;
 	}
 
 	#pendingQuestion(title: string, report: Report): PendingQuestion {

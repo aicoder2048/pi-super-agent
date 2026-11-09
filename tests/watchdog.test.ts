@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -9,7 +9,7 @@ import { CONVERSATION_THREAD_ID } from "../src/kernel/types.ts";
 import { checkWatchdog, Watchdog } from "../src/watchdog/watchdog.ts";
 
 const MIN = 60_000;
-const config = { heartbeatStaleMs: 2 * MIN, stuckMs: 30 * MIN, restartGraceMs: 3 * MIN };
+const config = { heartbeatStaleMs: 2 * MIN, restartGraceMs: 3 * MIN };
 const base = { now: 100 * MIN, heartbeatAt: 99 * MIN, tickets: [], problems: [] };
 
 test("心跳新鲜、没有卡住的任务和系统问题时，什么也不做", () => {
@@ -22,14 +22,13 @@ test("宿主没有心跳或心跳过期时要求重启", () => {
 	assert.equal(checkWatchdog({ ...base, heartbeatAt: 98.5 * MIN }, config).restartHost, false);
 });
 
-test("执行中的任务 30 分钟没有进展时发一条通知，同一段停滞只对应一个触发 id", () => {
-	const stuck = { id: "tkt_a", title: "跑回归", stage: "running" as const, lastProgressAt: 60 * MIN };
-	const fresh = { id: "tkt_b", title: "刚开始", stage: "running" as const, lastProgressAt: 90 * MIN };
-	const idle = { id: "tkt_c", title: "空闲", stage: "idle" as const, lastProgressAt: 10 * MIN };
-	const { notices } = checkWatchdog({ ...base, tickets: [stuck, fresh, idle] }, config);
+test("看板行标着久无进展的任务发一条通知，同一段停滞只对应一个触发 id", () => {
+	const stuck = { id: "tkt_a", title: "跑回归", stall: { since: 60 * MIN, minutes: 40 } };
+	const fresh = { id: "tkt_b", title: "刚开始", stall: null };
+	const { notices } = checkWatchdog({ ...base, tickets: [stuck, fresh] }, config);
 	assert.equal(notices.length, 1);
 	assert.match(notices[0].body, /跑回归.*40 分钟没有进展/);
-	const later = checkWatchdog({ ...base, now: 110 * MIN, heartbeatAt: 109 * MIN, tickets: [stuck] }, config);
+	const later = checkWatchdog({ ...base, now: 110 * MIN, heartbeatAt: 109 * MIN, tickets: [{ ...stuck, stall: { since: 60 * MIN, minutes: 50 } }] }, config);
 	assert.equal(later.notices[0].id, notices[0].id);
 });
 
@@ -99,4 +98,19 @@ test("Watchdog 一次检查：心跳过期就拉起宿主，卡住的任务投�
 	now.t += 3 * MIN;
 	wd.checkOnce();
 	assert.equal(restarts, 2);
+});
+
+test("Watchdog 用内核配置里的阈值判断久无进展：阈值 10 分钟时，11 分钟没有进展就通知", () => {
+	const now = { t: 0 };
+	const stateDir = stateWithStuckTicket(now);
+	writeFileSync(join(stateDir, "heartbeat.json"), JSON.stringify({ pid: 1, at: 11 * MIN }));
+	const wd = new Watchdog({ stateDir, clock: { now: () => now.t }, config, kernel: { stuckMs: 10 * MIN }, startHost: () => {} });
+	now.t = 9 * MIN;
+	wd.checkOnce();
+	assert.equal(existsSync(join(stateDir, "inbox")), false, "9 分钟还不算");
+	now.t = 11 * MIN;
+	wd.checkOnce();
+	const drops = readdirSync(join(stateDir, "inbox")).filter((f) => f.endsWith(".json"));
+	assert.equal(drops.length, 1);
+	assert.match(JSON.parse(readFileSync(join(stateDir, "inbox", drops[0]), "utf8")).body, /跑回归.*11 分钟/);
 });

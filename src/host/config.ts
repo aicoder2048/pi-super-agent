@@ -56,7 +56,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 			worker: parseModelRef(models.worker, `${file}：models.worker`),
 			fallback: parseModelRef(models.fallback, `${file}：models.fallback`),
 		},
-		kernel: raw.kernel ?? {},
+		kernel: { ...(raw.kernel ?? {}), stuckMs: watchdog.stuckMinutes * 60_000 },
 		bgMaxMinutes: raw.bgMaxMinutes ?? 120,
 		fallbackDailyTokens: raw.fallbackDailyTokens ?? 8_000_000,
 		retryAttempts: raw.retryAttempts ?? 3,

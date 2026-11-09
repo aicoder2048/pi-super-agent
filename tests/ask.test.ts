@@ -138,3 +138,19 @@ test("TUI 的连接：answer 消息回 ack 带触发 id，重复的回同一个�
 	assert.match(refused.reason, /已经回答过|不在等待回答/);
 	assert.equal(ofType(got, "ack").length, 2);
 });
+
+test("任务久无进展时，即使 Watchdog 没在跑、也没有别的动静，宿主到点推一帧看板，行上标着久无进展", async (t) => {
+	const { host } = await startHost(openOnly, () => {}, { config: { stuckMs: 300 } });
+	const got: HostToClient[] = [];
+	const conn = new HostConnection({ socketPath: host.socketPath, onMessage: (m) => got.push(m), retryMs: 30 });
+	conn.open();
+	t.after(async () => { conn.close(); await host.stop(); });
+	await until(() => conn.connected, "连接");
+	host.say("一直跑");
+	await until(() => ofType(got, "board").some((m) => m.rows[0]?.stage === "running"), "执行中的看板帧");
+	const runningFrames = ofType(got, "board").length;
+	assert.equal(ofType(got, "board").at(-1)!.rows[0].stall, null);
+	await until(() => ofType(got, "board").some((m) => m.rows[0]?.stall !== null && m.rows[0]?.stall !== undefined), "久无进展的看板帧", 2000);
+	assert.ok(ofType(got, "board").length > runningFrames);
+	assert.equal(ofType(got, "board").at(-1)!.rows[0].stall!.since, host.kernel.listTickets()[0].lastProgressAt);
+});

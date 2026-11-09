@@ -77,6 +77,7 @@ export class Host {
 	readonly #stateDir: string;
 	#boardTimer: NodeJS.Timeout | undefined;
 	#midnightTimer: NodeJS.Timeout | undefined;
+	#stallTimer: NodeJS.Timeout | undefined;
 	#heartbeat: NodeJS.Timeout | undefined;
 	#web: WebGateway | undefined;
 	readonly #watching: WatchedSource[];
@@ -182,6 +183,7 @@ export class Host {
 		host.#heartbeat = setInterval(() => host.#beat(), options.heartbeatMs ?? 30_000);
 		host.#heartbeat.unref();
 		host.#atNextMidnight();
+		host.#atNextStall();
 		host.dispatcher.kick();
 		return host;
 	}
@@ -270,10 +272,24 @@ export class Host {
 		const midnight = new Date(now);
 		midnight.setHours(24, 0, 0, 0);
 		this.#midnightTimer = setTimeout(() => {
-			this.#broadcast({ type: "board", ...this.#boardState() });
+			this.#pushBoard();
 			this.#atNextMidnight();
 		}, midnight.getTime() - now);
 		this.#midnightTimer.unref();
+	}
+
+	// A stalled ticket changes nothing in the store, so without this no board frame would show 久无进展 until something else happened.
+	#atNextStall(): void {
+		clearTimeout(this.#stallTimer);
+		const at = this.kernel.nextStallAt();
+		if (at === null) return;
+		this.#stallTimer = setTimeout(() => this.#pushBoard(), Math.max(0, at - this.#clock.now()));
+		this.#stallTimer.unref();
+	}
+
+	#pushBoard(): void {
+		this.#broadcast({ type: "board", ...this.#boardState() });
+		this.#atNextStall();
 	}
 
 	#changed(): void {
@@ -281,7 +297,7 @@ export class Host {
 		if (this.#boardTimer) return;
 		this.#boardTimer = setTimeout(() => {
 			this.#boardTimer = undefined;
-			this.#broadcast({ type: "board", ...this.#boardState() });
+			this.#pushBoard();
 		}, 100);
 	}
 
@@ -302,6 +318,7 @@ export class Host {
 		this.dispatcher.stop();
 		clearTimeout(this.#boardTimer);
 		clearTimeout(this.#midnightTimer);
+		clearTimeout(this.#stallTimer);
 		await this.workers.shutdown();
 		this.router.dispose();
 		await Promise.all([this.server.close(), this.#web?.close()]);

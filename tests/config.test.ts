@@ -56,3 +56,9 @@ test("secretsFile 指向不存在的文件、不是字符串，或 sources 不�
 		assert.throws(() => loadConfig(stateWith(raw)), (e: Error) => e.name === "ConfigError" && field.test(e.message), JSON.stringify(raw));
 	}
 });
+
+test("久无进展的阈值只有 watchdog.stuckMinutes 一个设置：内核的 stuckMs 由它换算，config 里另写的 kernel.stuckMs 不起作用", () => {
+	assert.equal(loadConfig(stateWith({})).kernel.stuckMs, 30 * 60_000);
+	assert.equal(loadConfig(stateWith({ watchdog: { stuckMinutes: 5 }, kernel: { stuckMs: 1, maxWorkers: 2 } })).kernel.stuckMs, 5 * 60_000);
+	assert.equal(loadConfig(stateWith({ kernel: { maxWorkers: 2 } })).kernel.maxWorkers, 2);
+});
