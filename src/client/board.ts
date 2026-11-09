@@ -17,7 +17,7 @@ function spread(left: string, right: string, width: number): string {
 }
 
 export const openChoices = (rows: DashboardRow[]) =>
-	rows.filter((r) => r.question && r.question.options.length > 0 && (r.question.click === null || r.question.click.state === "dropped"));
+	rows.filter((r) => r.question && r.question.options.length > 0 && !r.question.spoke && (r.question.click === null || r.question.click.state === "dropped"));
 
 export interface BoardView {
 	rows: DashboardRow[];
@@ -42,7 +42,8 @@ export function renderBoard(view: BoardView, width: number, now: number): string
 			else if (c?.state === "sent") lines.push(fit(`   已选「${q.options[c.option]}」，等待幕僚长转交`, width));
 			else if (q.options.length) {
 				lines.push(fit(`   ${q.options.map((o, i) => `${i + 1}. ${o}`).join("   ")}`, width));
-				if (c?.state === "dropped") lines.push(fit("   幕僚长没有转交上次的选择，可以重选", width));
+				if (q.spoke) lines.push(fit("   你刚发了一句话，等幕僚长处理完再选", width));
+				else if (c?.state === "dropped") lines.push(fit("   幕僚长没有转交上次的选择，可以重选", width));
 			}
 		}
 		lines.push(fit(`   最近：${row.latestSummary ?? "（暂无汇报）"}`, width));

@@ -257,7 +257,7 @@ const row = (over: Partial<DashboardRow>): DashboardRow => ({
 });
 
 const asking = (id: string, reportId: string, over: Partial<NonNullable<DashboardRow["question"]>> = {}) =>
-	row({ id, title: `任务${id}`, stage: "awaiting_answer", question: { reportId, text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 0, click: null, ...over } });
+	row({ id, title: `任务${id}`, stage: "awaiting_answer", question: { reportId, text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 0, click: null, spoke: false, ...over } });
 
 test("看板：等回答的任务列出问题和编号选项，底部提示怎么作答；点过的按转交进度写明；久无进展的任务标出分钟数", () => {
 	const click = (option: number, state: "sent" | "handed_over" | "dropped") => ({ click: { option, state, triggerId: "trg_1" } });
@@ -268,6 +268,8 @@ test("看板：等回答的任务列出问题和编号选项，底部提示怎�
 	assert.match(text, /已选「先不查」，等待幕僚长转交/);
 	assert.match(text, /幕僚长没有转交上次的选择，可以重选/);
 	assert.deepEqual(openChoices(rows).map((r) => r.id), ["tkt_ab12", "tkt_ij90"]);
+	assert.deepEqual(openChoices([asking("tkt_kl12", "rpt_5", { spoke: true })]), [], "刚打过字的问题不接数字");
+	assert.match(renderBoard({ rows: [asking("tkt_kl12", "rpt_5", { spoke: true })], receivedAt: 0, connected: true }, 120, 0).join("\n"), /你刚发了一句话，等幕僚长处理完再选/);
 	assert.match(text, /久无进展 42 分钟/);
 	assert.match(text, /回复数字作答；多个问题等回答时用 \/answer <编号> <序号>/);
 });

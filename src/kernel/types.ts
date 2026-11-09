@@ -186,6 +186,8 @@ export interface PendingQuestion {
 	askedAt: number;
 	/** The latest click on one of the options, or null when nobody clicked. */
 	click: QuestionClick | null;
+	/** The user said something after the question and the Router has not finished with it; a click now could contradict it. */
+	spoke: boolean;
 }
 
 /**

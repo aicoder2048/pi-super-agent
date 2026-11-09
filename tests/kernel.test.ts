@@ -916,7 +916,7 @@ test("看板：等回答的任务带上它在等的问题（汇报 id、文字�
 	clock.t += 1000;
 	const rows = () => Object.fromEntries(kernel.listTickets().map((r) => [r.title, r.question]));
 	assert.deepEqual(rows(), {
-		查财报: { reportId, text: "要看哪部分？", options: ["只看营收", "先不查"], askedAt, click: null },
+		查财报: { reportId, text: "要看哪部分？", options: ["只看营收", "先不查"], askedAt, click: null, spoke: false },
 		写周报: null,
 	});
 	handOverUserMessage(asking, "只看营收");
@@ -1000,6 +1000,22 @@ test("点过一项之后换另一项再点被拒，说明已选的是哪一项�
 	assert.deepEqual(answer(1), { ok: false, refusal: { kind: "chosen", option: 0, label: "只看营收" } });
 	assert.deepEqual(userLines(), ["查财报", "回答任务「查财报」：只看营收"]);
 	assert.equal(refusalText({ kind: "chosen", option: 0, label: "只看营收" }), "已选「只看营收」");
+});
+
+test("提问之后使用者又发了一句话、幕僚长还没处理完时，点选被拒，看板标出这一点；幕僚长把那句话交给别处或处理完之后，又可以点", () => {
+	for (const end of ["elsewhere", "turn"] as const) {
+		const { kernel, clock, answer, row, say, due, userLines } = askSetup();
+		clock.t += 1000;
+		const typed = say("顺便查一下天气").triggerId;
+		assert.equal(row().question?.spoke, true, end);
+		assert.deepEqual(answer(0), { ok: false, refusal: { kind: "spoke" } }, end);
+		assert.ok(!userLines().some((l) => l.startsWith("回答任务")), end);
+		if (end === "elsewhere") assert.ok(kernel.route([{ kind: "open_ticket", basis: "request", triggerId: typed, title: "查天气", brief: "查天气" }])[0].ok);
+		else for (const a of due("router.notify")) kernel.completeAction(a.id);
+		assert.equal(row().question?.spoke, false, end);
+		assert.ok(answer(0).ok, end);
+	}
+	assert.match(refusalText({ kind: "spoke" }), /幕僚长处理完之前不能点选项/);
 });
 
 test("点选回答被拒：问题已经打字回答过、被新问题取代、选项超出范围、问题没有选项、汇报不存在；被拒时对话里不多一句", () => {

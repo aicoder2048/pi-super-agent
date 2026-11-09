@@ -93,6 +93,7 @@ const CHOICE_NOTE = {
 	sent: "已发送，等待幕僚长转交",
 	handed_over: "已回答",
 	dropped: "幕僚长没有转交这次选择，请重选或直接回复",
+	spoke: "你刚发了一句话，等幕僚长处理完再点",
 };
 
 /**
@@ -117,8 +118,8 @@ function choiceOf(row, sending) {
 	return {
 		reportId: q.reportId,
 		buttons: q.options.map((label, option) => ({ label, option, picked: option === shown?.option })),
-		locked: shown !== null,
-		note: shown?.note ?? (click?.state === "dropped" ? CHOICE_NOTE.dropped : ""),
+		locked: shown !== null || q.spoke,
+		note: shown?.note ?? (q.spoke ? CHOICE_NOTE.spoke : click?.state === "dropped" ? CHOICE_NOTE.dropped : ""),
 	};
 }
 
@@ -393,6 +394,7 @@ const REJECTED_COPY = {
 export function answerRefusedCopy(status, body, options) {
 	const label = body?.refused === "chosen" && typeof body.option === "number" ? options[body.option] : undefined;
 	if (label !== undefined) return `发送失败：已选「${label}」。`;
+	if (body?.refused === "spoke") return "发送失败：你刚发了一句话，幕僚长处理完之前不能点选项。";
 	return sayCopy("rejected", status);
 }
 

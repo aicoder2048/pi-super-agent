@@ -87,7 +87,7 @@ test("页面：待你处理的卡片先显示问题，受阻的显示最近汇�
 
 const MIN = 60_000;
 const asked = (over: Partial<NonNullable<DashboardRow["question"]>> = {}) =>
-	({ reportId: "rpt_q1", text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 10 * MIN, click: null, ...over });
+	({ reportId: "rpt_q1", text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 10 * MIN, click: null, spoke: false, ...over });
 
 test("页面：执行中久无进展的任务进待你处理，阶段写「久无进展 · N 分钟」并随时间增加，能停止", () => {
 	const view = withRows([row({ id: "tkt_slow", stage: "running", latestSummary: "在跑回归", stall: { since: 0, minutes: 42 } }), row({ id: "tkt_ok", stage: "running" })]);
@@ -115,6 +115,8 @@ test("页面：等回答且带选项的卡片有一组按钮；点过的按转�
 	assert.deepEqual(seen(c), [true, [false, true, false], "已回答"]);
 	assert.deepEqual(seen(d), [false, [false, false, false], "幕僚长没有转交这次选择，请重选或直接回复"]);
 	assert.equal(e, null);
+	const spoke = page.leftColumn(withRows([row({ stage: "awaiting_answer", question: asked({ spoke: true }) })]), 0).needsYou[0].choice;
+	assert.deepEqual(seen(spoke), [true, [false, false, false], "你刚发了一句话，等幕僚长处理完再点"]);
 	const posting = page.leftColumn(view, 0, new Map([["rpt_q1", { option: 1 }]])).needsYou[0].choice;
 	assert.deepEqual(seen(posting), [true, [false, true, false], "发送中…"]);
 	const posted = page.leftColumn(view, 0, new Map([["rpt_q4", { option: 2, triggerId: "trg_new" }]])).needsYou[2].choice;
@@ -847,6 +849,18 @@ test("页面：点选被拒时按原因显示固定文案；已选的那一项�
 	assert.equal(page.answerRefusedCopy(409, { refused: "closed" }, options), "发送失败：这个问题已经回答过，或已不在等待回答。");
 	assert.equal(page.answerRefusedCopy(409, { refused: "chosen", option: 9, reason: "<b>x</b>" }, options), "发送失败：这个问题已经回答过，或已不在等待回答。");
 	assert.equal(page.answerRefusedCopy(413, null, options), "发送失败：内容过长，请分几次发送。");
+	assert.equal(page.answerRefusedCopy(409, { refused: "spoke" }, options), "发送失败：你刚发了一句话，幕僚长处理完之前不能点选项。");
+});
+
+test("网关：提问之后先打字再点选项，幕僚长还没处理那句话时点选返回 409，正文说明原因", async (t) => {
+	const { host, post, userLines } = await sayHost(t);
+	const { reportId } = await askedOnHost(host);
+	await new Promise((r) => setTimeout(r, 5));
+	host.kernel.userSaid({ text: "两个都要", at: Date.now() });
+	const res = await post(answerBody(reportId, 0));
+	assert.equal(res.status, 409);
+	assert.equal(JSON.parse(res.body).refused, "spoke");
+	assert.ok(!userLines().some((l) => l.startsWith("回答任务")));
 });
 
 test("网关：问题已经打字回答过时 POST /say 的 answer 返回 409，对话里不多一句", async (t) => {

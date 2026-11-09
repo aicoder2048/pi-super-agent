@@ -26,6 +26,7 @@ export type AnswerRefusal =
 	| { kind: "no_options" }
 	| { kind: "out_of_range"; count: number }
 	| { kind: "chosen"; option: number; label: string }
+	| { kind: "spoke" }
 	| { kind: "closed" };
 
 export function refusalText(r: AnswerRefusal): string {
@@ -38,6 +39,8 @@ export function refusalText(r: AnswerRefusal): string {
 			return `这个问题只有 ${r.count} 个选项`;
 		case "chosen":
 			return `已选「${r.label}」`;
+		case "spoke":
+			return "你刚发了一句话，幕僚长处理完之前不能点选项";
 		case "closed":
 			return "这个问题已经回答过，或已不在等待回答";
 	}

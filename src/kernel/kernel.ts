@@ -211,6 +211,7 @@ export class Kernel {
 			}
 			const ticket = this.#ticket(report.ticket_id)!;
 			if (ticket.stage !== "awaiting_answer" || ticket.latestReport?.id !== reportId) return refuse({ kind: "closed" });
+			if (this.#spokeSince(ticket.latestReport.createdAt)) return refuse({ kind: "spoke" });
 			if (options.length === 0) return refuse({ kind: "no_options" });
 			if (!Number.isInteger(option) || option < 0 || option >= options.length) return refuse({ kind: "out_of_range", count: options.length });
 			const text = answerSentence(ticket.title, options[option]);
@@ -597,7 +598,18 @@ export class Kernel {
 		if (!report?.question) return null;
 		const click = this.#latestClick(report.id);
 		if (t.stage !== "awaiting_answer" && click?.state !== "handed_over") return null;
-		return { reportId: report.id, text: report.question, options: report.options, askedAt: report.createdAt, click };
+		return { reportId: report.id, text: report.question, options: report.options, askedAt: report.createdAt, click, spoke: this.#spokeSince(report.createdAt) };
+	}
+
+	#spokeSince(at: number): boolean {
+		const said = this.#column(
+			`SELECT t.id AS v FROM triggers t JOIN trigger_threads tt ON tt.trigger_id = t.id
+			 WHERE tt.thread_id = ? AND t.received_at > ? AND t.disposition = 'to_router'
+			   AND NOT EXISTS (SELECT 1 FROM answer_clicks c WHERE c.trigger_id = t.id)`,
+			CONVERSATION_THREAD_ID,
+			at,
+		);
+		return said.some((id) => this.#routerHasYet(id));
 	}
 
 	#latestClick(reportId: string): QuestionClick | null {
