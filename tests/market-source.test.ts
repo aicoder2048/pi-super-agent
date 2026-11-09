@@ -298,7 +298,8 @@ test("查询：indicators 用默认窗口取 K 线（日线 400 天、小时线 
 	assert.equal(r.from, "2025-10-05");
 	assert.equal(r.to, "2026-11-09");
 	assert.equal(r.bars, 60);
-	assert.equal(r.at, results.at(-1)!.t);
+	assert.deepEqual(r.lastBar, { start: results.at(-1)!.t, end: results.at(-1)!.t + 16 * 3_600_000, partial: false });
+	assert.equal(r.lastPrice, 159);
 	assert.equal(r.sma20, 149.5);
 	assert.deepEqual(r.sma200, { insufficient: { need: 200, have: 60 } });
 	await m.source.lookup("indicators", { symbol: "NVDA", span: "hour" });
@@ -350,4 +351,20 @@ test("密钥接线：marketFeed 从 secretsFile 读 FINNHUB_API_KEY，日志只�
 	writeFileSync(file, "MASSIVE_API_KEY=mk-secret\n");
 	marketFeed({ source: "us-market", title: "美股行情", settings: DEFAULTS, override: undefined, where: "test", secretsFile: file, env: {}, log: (l) => logs.push(l) });
 	assert.match(logs.at(-1)!, /未配置 FINNHUB_API_KEY/);
+});
+
+test("Finnhub 密钥格式不对：只有 earnings 停用并说明原因，美股行情其余查询照常，日志和错误里没有密钥", async (t) => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-fh-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const file = join(dir, ".env");
+	writeFileSync(file, "MASSIVE_API_KEY=mk-secret\nFINNHUB_API_KEY=\"fh bad-secret\"\n");
+	const logs: string[] = [];
+	const spec = marketFeed({ source: "us-market", title: "美股行情", settings: DEFAULTS, override: undefined, where: "test", secretsFile: file, env: {}, log: (l) => logs.push(l) });
+	const feed = spec.create({ clock: { now: () => T("2026-11-09T15:00:00Z") }, submit: () => {}, readCursor: () => undefined, writeCursor: () => {}, log: () => {} });
+	t.after(() => feed.stop());
+	assert.equal(feed.problem(), undefined);
+	assert.deepEqual(await feed.lookup("session", {}), { nyDate: "2026-11-09", phase: "regular" });
+	await assert.rejects(feed.lookup("earnings", { symbol: "NVDA" }), (e: Error) => /earnings 不可用.*Finnhub 密钥.*空白/.test(e.message) && !e.message.includes("bad-secret"));
+	assert.match(logs.join("\n"), /Finnhub 密钥.*空白/);
+	assert.ok(!/bad-secret|mk-secret/.test(logs.join("\n")));
 });
