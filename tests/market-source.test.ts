@@ -283,3 +283,41 @@ test("查询自选股时复用不到一个轮询周期的看盘快照，不多�
 	await m.source.lookup("quote", { symbols: ["NVDA"] });
 	assert.equal(m.requests.length, 3);
 });
+
+test("查询：indicators 用默认窗口取 K 线（日线 400 天、小时线 30 天、分钟线 4 天，截至纽约今天）并返回程序算好的指标", async () => {
+	const day = 86_400_000;
+	const results = Array.from({ length: 60 }, (_, i) => ({ t: T("2026-08-01T04:00:00Z") + i * day, o: 100 + i, h: 101 + i, l: 99 + i, c: 100 + i, v: 1000 }));
+	const m = market({ respond: () => Response.json({ status: "OK", results: [...results].reverse() }) });
+	const r = (await m.source.lookup("indicators", { symbol: "nvda", span: "day" })) as Record<string, unknown>;
+	assert.ok(m.requests.at(-1)!.url.includes("/v2/aggs/ticker/NVDA/range/1/day/2025-10-05/2026-11-09?"));
+	assert.ok(m.requests.at(-1)!.url.includes("limit=5000"));
+	assert.equal(r.symbol, "NVDA");
+	assert.equal(r.span, "day");
+	assert.equal(r.from, "2025-10-05");
+	assert.equal(r.to, "2026-11-09");
+	assert.equal(r.bars, 60);
+	assert.equal(r.at, results.at(-1)!.t);
+	assert.equal(r.sma20, 149.5);
+	assert.deepEqual(r.sma200, { insufficient: { need: 200, have: 60 } });
+	await m.source.lookup("indicators", { symbol: "NVDA", span: "hour" });
+	assert.ok(m.requests.at(-1)!.url.includes("/range/1/hour/2026-10-10/2026-11-09?"));
+	await m.source.lookup("indicators", { symbol: "NVDA", span: "minute", to: "2026-11-06" });
+	assert.ok(m.requests.at(-1)!.url.includes("/range/1/minute/2026-11-02/2026-11-06?"));
+	await m.source.lookup("indicators", { symbol: "NVDA", span: "day", from: "2026-01-02", to: "2026-03-02" });
+	assert.ok(m.requests.at(-1)!.url.includes("/range/1/day/2026-01-02/2026-03-02?"));
+});
+
+test("查询：indicators 没有 K 线时报错，参数不合法时不发请求", async () => {
+	const m = market({ respond: () => Response.json({ status: "OK", results: [] }) });
+	await assert.rejects(m.source.lookup("indicators", { symbol: "NVDA", span: "day" }), /没有.*K 线/);
+	const before = m.requests.length;
+	const bad: unknown[] = [
+		{ symbol: "NVDA", span: "week" },
+		{ symbol: "NV/DA", span: "day" },
+		{ symbol: "NVDA", span: "day", from: "2026-1-2" },
+		{ symbol: "NVDA", span: "day", limit: 5 },
+		{ symbol: "NVDA", span: "day", from: "2026-11-09", to: "2026-11-01" },
+	];
+	for (const args of bad) await assert.rejects(m.source.lookup("indicators", args), /indicators/, JSON.stringify(args));
+	assert.equal(m.requests.length, before);
+});

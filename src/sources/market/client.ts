@@ -122,8 +122,8 @@ export class MarketClient {
 		return data.tickers.flatMap((row: unknown) => parseQuote(row, symbols, data.status === "DELAYED", this.#o.clock.now()));
 	}
 
-	async bars(symbol: string, span: Span, from: string, to: string): Promise<Bar[]> {
-		const data = await this.#request(`/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/1/${span}/${from}/${to}?adjusted=true&sort=desc&limit=500`, "lookup");
+	async bars(symbol: string, span: Span, from: string, to: string, limit = 500): Promise<Bar[]> {
+		const data = await this.#request(`/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/1/${span}/${from}/${to}?adjusted=true&sort=desc&limit=${limit}`, "lookup");
 		return (Array.isArray(data.results) ? data.results : []).flatMap(parseBar).reverse();
 	}
 
