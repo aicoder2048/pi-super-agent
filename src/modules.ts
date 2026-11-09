@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { ConfigError, readJsonFile } from "./config-error.ts";
-import type { SourcePolicy } from "./kernel/types.ts";
+import { CONVERSATION_SOURCE, type SourcePolicy } from "./kernel/types.ts";
 import type { TimerEntry } from "./sources/timer.ts";
 
 export interface SourceFilter {
@@ -116,7 +116,7 @@ export class Modules {
 	}
 
 	ruleAllows = (ruleId: string, triggerSource: string): boolean => {
-		return triggerSource !== "conversation" && (this.#scopes.get(ruleId)?.includes(triggerSource) ?? false);
+		return triggerSource !== CONVERSATION_SOURCE && (this.#scopes.get(ruleId)?.includes(triggerSource) ?? false);
 	};
 
 	rulesFor = (triggerSource: string): string[] => [...this.#scopes.keys()].filter((id) => this.ruleAllows(id, triggerSource));

@@ -31,6 +31,7 @@ export const STAGES = [
 ] as const;
 export type Stage = (typeof STAGES)[number];
 
+export const CONVERSATION_SOURCE = "conversation";
 export const CONVERSATION_THREAD_ID = "thr_conversation";
 
 export interface Clock {

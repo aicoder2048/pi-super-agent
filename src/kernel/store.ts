@@ -3,6 +3,7 @@ import {
 	ACTION_KINDS,
 	ACTION_STATUSES,
 	BASES,
+	CONVERSATION_SOURCE,
 	CONVERSATION_THREAD_ID,
 	DISPOSITIONS,
 	INPUT_KINDS,
@@ -37,7 +38,7 @@ CREATE TABLE IF NOT EXISTS threads (
 	source TEXT NOT NULL,
 	title TEXT
 );
-INSERT OR IGNORE INTO threads (id, source, title) VALUES ('${CONVERSATION_THREAD_ID}', 'conversation', '对话');
+INSERT OR IGNORE INTO threads (id, source, title) VALUES ('${CONVERSATION_THREAD_ID}', '${CONVERSATION_SOURCE}', '对话');
 
 CREATE TABLE IF NOT EXISTS trigger_threads (
 	trigger_id TEXT NOT NULL REFERENCES triggers(id),

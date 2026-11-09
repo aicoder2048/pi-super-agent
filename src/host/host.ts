@@ -6,7 +6,7 @@ import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
 import { Kernel } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
-import { CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
+import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
 import type { TriggerSubmission } from "../kernel/types.ts";
 import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
@@ -173,7 +173,7 @@ export class Host {
 	say(text: string): string {
 		const at = Date.now();
 		const { triggerId } = this.kernel.submitTrigger({
-			source: "conversation",
+			source: CONVERSATION_SOURCE,
 			externalId: randomUUID(),
 			threads: [{ id: CONVERSATION_THREAD_ID, title: "对话" }],
 			sender: "user",
@@ -264,7 +264,7 @@ function todayCounts(rows: { source: string; disposition: Disposition; count: nu
 	const byDisposition = Object.fromEntries(DISPOSITIONS.map((d) => [d, 0])) as Record<Disposition, number>;
 	const bySource: Record<string, number> = {};
 	for (const { source, disposition, count } of rows) {
-		if (source === "conversation" || source === WATCHDOG_SOURCE) continue;
+		if (source === CONVERSATION_SOURCE || source === WATCHDOG_SOURCE) continue;
 		byDisposition[disposition] += count;
 		bySource[source] = (bySource[source] ?? 0) + count;
 	}
