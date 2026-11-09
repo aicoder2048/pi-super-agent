@@ -49,3 +49,7 @@ ts	phase	decision	why	evidence	result
 2026-11-09T12:04:12Z	f1-verdict	不修：卡片按钮早于幕僚长转述约一秒，先点会让回答排在问题前；U+3164 等少数不可见字母仍可作选项	回答送达正确，卡片才是问题的权威来源；剩余字符罕见且不影响授权	复验报告	decided
 2026-11-09T14:56:38Z	m1-live	真实开盘实测：这把 Key 的行情晚约 16 分钟（接口仍回 OK），报价按「比现在晚 10 分钟以上」也标延迟行情	此前以为是实时行情；实测 27 次快照报价都晚 16 分钟，提醒里却没写「延迟行情」，使用者会误以为是即时价	scratchpad/live-w1/demos/out/demo-5-market/market-tap.jsonl; tests/market-client.test.ts 红→绿	fixed
 2026-11-09T14:57:55Z	m1-live-verdict	延迟标记复审 PASS；按建议补 9/11 分钟边界样例和 lookup 说明；收盘宽限只剩约 4 分钟余量，记为已知风险不改	复审确认其他逻辑不依赖实时行情	复审报告；402/402	PASS
+2026-11-09T12:28:30Z	incident	W4 architect runner 1 在实验中用 pgrep | head -1 找宿主，误向使用者自己的宿主 PID 68967 发 SIGTERM，宿主已退出；未替使用者重启	宿主正常停止不丢状态；不知道它原来的启动方式，用新代码打开使用者的状态目录会改其数据库结构；之后的简报一律只允许按自己记下的 PID 停进程	candidate-1 报告	open
+2026-11-09T15:27:27Z	w4-order	W4 先于 W3，叠在 psa/stable-token 上；#23/#24 重新叠到 #22 之上，PR 成一条线	W3 改交互要等使用者看；W4 的 token 失效测试依赖 stable-token；两条叠栈分叉会让 W4 无基可依	重叠后 413/413	decided
+2026-11-09T15:27:27Z	w4-architect	以 runner 1 为底：按卡片内容认领的具名步骤、PSA_E2E_SABOTAGE、leftovers、失败报告页、无凭据+PI_OFFLINE+代理绊线、演示建在 harness 上并拒绝 anthropic/deepseek；取 runner 2 的 page.clock 卡死测试和收尾残留进程判失败	两份可行性都实测通过；runner 1 的匹配方式不受分批和重试影响，runner 2 的时钟快进把 35 秒压到约 2 秒	arena-w4/candidate-1/design.md, candidate-2/design.md	decided
+2026-11-09T15:27:27Z	w4-architect	演示并入 W4，不拆 W5；playwright-core 用 1.59.1 对上本机缓存的 chromium-1217	演示和 e2e 共用 harness 的进程组清理；拆开会先合一份靠 ps 找进程的旧清理	candidate-1 待定问题	decided
