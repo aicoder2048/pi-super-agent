@@ -228,3 +228,38 @@ test("规则写的团队不存在：启动报一行错，写出规则、团队�
 	const dir = root({ "teams.yaml": team("杂务队", "general") });
 	oneLine(() => loadRoster(dir).teamBook([{ id: "user/news", team: "新闻队" }]), /规则 user\/news/, /新闻队/, /默认、杂务队/);
 });
+
+test("成员文件的 frontmatter 不是合法的 YAML：报一行错，以文件名开头", () => {
+	for (const frontmatter of ["name: m\ntitle: t\ndescription: 注意: 只看新闻\n", "name: m\nname: n\ntitle: t\ndescription: d\n"]) {
+		const dir = root({ "agents/bad.md": `---\n${frontmatter}---\n` });
+		assert.throws(() => loadRoster(dir), (e: Error) => {
+			assert.ok(e instanceof ConfigError, String(e));
+			assert.ok(e.message.startsWith(join(dir, "agents/bad.md")), e.message);
+			assert.ok(!e.message.includes("\n"), e.message);
+			assert.match(e.message, /YAML/);
+			return true;
+		});
+	}
+});
+
+test("agents 下的符号链接指向不存在的文件：报一行错，以那个链接的路径开头", () => {
+	const dir = root({});
+	symlinkSync(join(dir, "gone.md"), join(dir, "agents/news.md"));
+	assert.throws(() => loadRoster(dir), (e: Error) => {
+		assert.ok(e instanceof ConfigError, String(e));
+		assert.ok(e.message.startsWith(join(dir, "agents/news.md")), e.message);
+		assert.ok(!e.message.includes("\n"), e.message);
+		return true;
+	});
+});
+
+test("teams.yaml 是个目录：报一行错，以它的路径开头", () => {
+	const dir = root({});
+	mkdirSync(join(dir, "teams.yaml"));
+	assert.throws(() => loadRoster(dir), (e: Error) => {
+		assert.ok(e instanceof ConfigError, String(e));
+		assert.ok(e.message.startsWith(join(dir, "teams.yaml")), e.message);
+		assert.ok(!e.message.includes("\n"), e.message);
+		return true;
+	});
+});

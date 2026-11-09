@@ -112,9 +112,17 @@ function text(value: unknown, file: string, field: string): string {
 	return value.trim();
 }
 
+function frontmatterOf(file: string, content: string) {
+	try {
+		return parseFrontmatter(content);
+	} catch (error) {
+		throw new ConfigError(`${file}：frontmatter 不是合法的 YAML：${(error as Error).message.split("\n")[0]}`);
+	}
+}
+
 /** allowedProviders: the providers the user already runs the router or the worker on; a member may only use these. */
 export function parseMember(file: string, content: string, allowedProviders: readonly string[]): Member {
-	const { frontmatter: fm, body } = parseFrontmatter(content);
+	const { frontmatter: fm, body } = frontmatterOf(file, content);
 	const unknown = Object.keys(fm).find((k) => !MEMBER_FIELDS.includes(k));
 	if (unknown) throw new ConfigError(`${file}：不认识的字段 ${unknown}，可写：${MEMBER_FIELDS.join("、")}`);
 	const name = text(fm.name, file, "name");
@@ -154,7 +162,15 @@ export interface Team {
 	where: string;
 }
 
-const isDirectory = (path: string) => existsSync(path) && statSync(path).isDirectory();
+const isDirectory = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() ?? false;
+
+function readText(file: string): string {
+	try {
+		return readFileSync(file, "utf8");
+	} catch (error) {
+		throw new ConfigError(`${file}：读不了：${(error as Error).message}`);
+	}
+}
 
 export class Roster {
 	readonly members: readonly Member[];
@@ -173,14 +189,14 @@ export class Roster {
 			const agents = join(root, "agents");
 			for (const entry of isDirectory(agents) ? readdirSync(agents).sort() : []) {
 				const file = join(agents, entry);
-				if (!entry.endsWith(".md") || !statSync(file).isFile()) continue;
-				const member = parseMember(file, readFileSync(file, "utf8"), allowedProviders);
+				if (!entry.endsWith(".md") || isDirectory(file)) continue;
+				const member = parseMember(file, readText(file), allowedProviders);
 				const other = members.get(member.name);
 				if (other) throw new ConfigError(`成员重名：${member.name} 同时定义在 ${other.file} 和 ${file}`);
 				members.set(member.name, member);
 			}
 			const teamsFile = join(root, "teams.yaml");
-			if (existsSync(teamsFile)) decls.push(...parseTeams(teamsFile, readFileSync(teamsFile, "utf8")));
+			if (existsSync(teamsFile)) decls.push(...parseTeams(teamsFile, readText(teamsFile)));
 		}
 		const general = members.get(GENERAL_MEMBER);
 		if (!general) throw new ConfigError(`没有内置成员 ${GENERAL_MEMBER}（${join(BUILTIN_ROOT, "agents", "general.md")}）`);
