@@ -394,7 +394,6 @@ const DUTY_MARK = {
 /**
  * @typedef {object} HelperChip
  * @property {string} id
- * @property {number} tint
  * @property {"running" | "idle" | "queued"} duty
  * @property {string} mark
  * @property {string} state
@@ -410,7 +409,6 @@ export function helperStrip(view, now) {
 		if (row.endedAt !== null || !row.helper) return [];
 		return [{
 			id: row.id,
-			tint: helperTint(row.id),
 			...DUTY_MARK[row.workerState],
 			name: row.helper.name,
 			role: helperRoleText(row.helper),
