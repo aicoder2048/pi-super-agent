@@ -3,7 +3,7 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Pi Super Agent</title>
+	<title>白宫 · Pi Super Agent</title>
 	<link rel="icon" href="/icon.svg" type="image/svg+xml">
 	<style>
 		:root {
@@ -30,7 +30,7 @@
 		.mark-bg { fill: var(--brand); }
 		.logo { width: 36px; height: 36px; border-radius: 9px; box-shadow: 0 0 0 1px var(--brand-ring); flex: none; }
 		.brand { display: flex; flex-direction: column; }
-		.brand strong { font-size: 16px; }
+		.brand strong { font-size: 18px; font-weight: 800; letter-spacing: 0.06em; line-height: 1.3; }
 		.brand span { font-size: 12px; color: var(--muted); }
 		.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 12px; border-radius: 999px; }
 		.chip:empty { display: none; }
@@ -198,8 +198,8 @@
 </head>
 <body>
 	<header>
-		<svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect class="mark-bg" width="64" height="64" rx="16"></rect><path d="M18 24h28M26 24v18M39 24v14c0 3 1.5 4.5 4 4.5" stroke="#fff" stroke-width="4.5" stroke-linecap="round" fill="none"></path><circle cx="48" cy="16" r="4.5" fill="#f59f00"></circle></svg>
-		<div class="brand"><strong>Pi Super Agent</strong><span>你的 24 小时助理</span></div>
+		<svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect class="mark-bg" width="64" height="64" rx="16"></rect><ellipse cx="32" cy="33" rx="19" ry="14" stroke="#fff" stroke-width="5.5" fill="none"></ellipse><circle cx="32" cy="33" r="5" fill="#f59f00"></circle></svg>
+		<div class="brand"><strong>白宫</strong><span>Pi Super Agent · 你的 24 小时幕僚</span></div>
 		<span id="duty" class="chip"></span>
 		<span id="restart" class="chip"></span>
 		<span id="status" class="chip" data-status="connecting">连接中…</span>
@@ -233,6 +233,7 @@
 		</aside>
 	</div>
 	<template id="router-avatar"><svg class="avatar" viewBox="0 0 72 72" aria-hidden="true"><circle class="mark-bg" cx="36" cy="36" r="36"></circle><path d="M22 30h28M30 30v16M42 30v12c0 2.5 1.2 4 3.5 4" stroke="#fff" stroke-width="4.5" stroke-linecap="round" fill="none"></path><circle cx="52" cy="20" r="5" fill="#f59f00"></circle></svg></template>
+	<template id="user-avatar"><svg class="avatar you" viewBox="0 0 72 72" aria-hidden="true"><circle class="mark-bg" cx="36" cy="36" r="36"></circle><ellipse cx="36" cy="36" rx="25" ry="19" stroke="#f59f00" stroke-width="2.4" fill="none"></ellipse><path d="M36 22l3.6 7.6 8.3 1-6.1 5.7 1.6 8.2L36 40.4l-7.4 4.1 1.6-8.2-6.1-5.7 8.3-1z" fill="#f59f00"></path></svg></template>
 	<template id="helper-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.1-.4-.4-2.1z"></path></svg></template>
 	<script type="module" src="/app.mjs?token={{token}}"></script>
 </body>

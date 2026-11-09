@@ -32,6 +32,7 @@ function mount(doc) {
 	/** @param {string} id */
 	const template = (id) => /** @type {Element} */ (/** @type {HTMLTemplateElement} */ ($(id)).content.firstElementChild);
 	const avatarMark = template("router-avatar");
+	const youMark = template("user-avatar");
 	const wrench = template("helper-icon");
 	let rendered = 0;
 	/** @type {import("./view.mjs").SayState} */
@@ -324,7 +325,7 @@ function mount(doc) {
 				const slot = el("div", "route-slot");
 				slot.dataset.line = line.id;
 				said.append(bubble, slot);
-				item.append(said);
+				item.append(said, youMark.cloneNode(true));
 			}
 			thread.append(item);
 		}
