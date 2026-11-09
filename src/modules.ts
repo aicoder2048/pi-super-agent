@@ -47,7 +47,6 @@ const RULE_HEADING = /^##\s+([\w-]+)\s*$/;
 const RULE_SOURCES = /^来源\s*[:：]\s*(.+)$/;
 const RULE_TEAM = /^团队\s*[:：]\s*(.*)$/;
 
-/** file only names the rules file in an error. */
 export function parseRules(file: string, namespace: string, markdown: string): Rule[] {
 	const rules: Rule[] = [];
 	for (const line of markdown.split("\n")) {
