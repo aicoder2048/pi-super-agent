@@ -34,3 +34,5 @@ ts	phase	decision	why	evidence	result
 2026-11-09T09:56:29Z	autonomy	使用者去睡觉并要求把活干完；进入无人值守：W2 做到 merge-ready 并开 PR 不合并，完成 4 个演示脚本，之后按计划叠做 W3 与 W4，均不合并	使用者原话「我睡觉去了，你要把活干完」；autopilot-stack 规定合并由使用者做	对话 2026-11-09	open
 2026-11-09T09:56:29Z	brand	默认采用 L1（π 加琥珀光点）与幕僚长头像 A3；产品名 Pi Super Agent，Router 在界面上叫幕僚长，Worker 叫助手且不起人名	使用者已定命名，Logo 未选；L1 与 A3 同源最统一，小尺寸清楚；可随时替换	画布 HUaH5gAKbLfXvvsNYA2Zo3 Brand.dc.html	decided
 2026-11-09T09:59:12Z	verdict	W2 审计修复完成：截断会话行跳过并且网关异常回 500、零宽字符拒收（HTTP 与 socket）、发送失败显示固定文案、零点推送看板，均先红后绿；live lanes 十条与性能在 fb80c70 全部通过	安全与规格审计证明的问题；live 验证者独立给出 PASS	commits 79d9968 a9762c3 772753a e4db916; scratchpad/live-w2/out/results.json	fixed
+2026-11-09T10:16:47Z	verdict	W2 在 c7dd561 终验 PASS：全量 296 两遍全过、十条 live lane 通过、CSP 与图标、命名、重发修复、截断行与 500 保护实测通过	完整验证后又加了审计修复与品牌改动，按规则在新头上复验	scratchpad/live-w2/final/; docs/web-client/evidence/w2-lanes.mjs	PASS
+2026-11-09T10:16:47Z	followup	socket watch 读不到会话文件时宿主崩溃，main 上已存在，另开 worktree 修	无人值守的宿主不能被一次 watch 打倒	scratchpad/live-w2/final/host-extra.log	open

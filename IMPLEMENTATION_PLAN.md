@@ -151,35 +151,35 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **You see.**
 
-- [ ] 在页面输入「帮我读一下 example.com 的网页标题」，对话里出现这句话和 Super Agent 的回复，左栏「进行中」出现这件事。点它，右栏实时显示助手每一步。
+- [x] 在页面输入「帮我读一下 example.com 的网页标题」，对话里出现这句话和 Super Agent 的回复，左栏「进行中」出现这件事。点它，右栏实时显示助手每一步。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/web.test.ts` 加：POST `/say` 缺 token 401，跨源 `Origin` 403，正确请求返回 `triggerId` 并广播 `user`。查看任务先收到历史再收到实时消息，切换任务后不再收到旧任务的消息。Run `just test`.
+- [x] `tests/web.test.ts` 加：POST `/say` 缺 token 401，跨源 `Origin` 403，正确请求返回 `triggerId` 并广播 `user`。查看任务先收到历史再收到实时消息，切换任务后不再收到旧任务的消息。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
-- [ ] Lane 1. Regression lane against trunk. 在 trunk（含 W1）和 head 上都用 `just say` 发同一句话。Save `w2-regression.png`. Pass when 两边网页都显示这句话和回复。
-- [ ] Lane 2. 在页面输入框发一句话。Save `w2-say.png`. Pass when 对话出现这句话，显示「已送达」，之后出现回复。
-- [ ] Lane 3. 发一句会建 Worker 任务的话，点看板上的新任务。Save `w2-watch.png`. Pass when 侧栏显示历史，并实时追加工具调用。
-- [ ] Lane 4. 查看中切到另一个任务。Save `w2-switch.png`. Pass when 侧栏只显示新任务的消息。
-- [ ] Lane 5. 从另一个本机端口的页面用 `fetch` 向 `/say` 发 POST。Save `w2-csrf.png`. Pass when 返回 403，对话没有新增。
-- [ ] Lane 6. 发空白输入。Save `w2-empty.png`. Pass when 不发出，不新增对话。
-- [ ] Lane 7. 暂停宿主进程（`kill -STOP`）后发话。Save `w2-ack-timeout.png`. Pass when 页面显示没送达的提示，恢复后对话里能看到或提示重发。
-- [ ] Lane 8. 网页和 TUI 同时在线，各发一句。Save `w2-mixed-clients.png`. Pass when 两边都按顺序显示两句话。
-- [ ] Lane 9. 查看一个已结束的任务。Save `w2-closed-ticket.png`. Pass when 侧栏显示完整历史，没有报错。
-- [ ] Lane 10. 发一句含 HTML 和 2000 字的话。Save `w2-long-text.png`. Pass when 原样显示，页面不卡，布局不撑破。
+- [x] Lane 1. Regression lane against trunk. 在 trunk（含 W1）和 head 上都用 `just say` 发同一句话。Save `w2-regression.png`. Pass when 两边网页都显示这句话和回复。
+- [x] Lane 2. 在页面输入框发一句话。Save `w2-say.png`. Pass when 对话出现这句话，显示「已送达」，之后出现回复。
+- [x] Lane 3. 发一句会建 Worker 任务的话，点看板上的新任务。Save `w2-watch.png`. Pass when 侧栏显示历史，并实时追加工具调用。
+- [x] Lane 4. 查看中切到另一个任务。Save `w2-switch.png`. Pass when 侧栏只显示新任务的消息。
+- [x] Lane 5. 从另一个本机端口的页面用 `fetch` 向 `/say` 发 POST。Save `w2-csrf.png`. Pass when 返回 403，对话没有新增。
+- [x] Lane 6. 发空白输入。Save `w2-empty.png`. Pass when 不发出，不新增对话。
+- [x] Lane 7. 暂停宿主进程（`kill -STOP`）后发话。Save `w2-ack-timeout.png`. Pass when 页面显示没送达的提示，恢复后对话里能看到或提示重发。
+- [x] Lane 8. 网页和 TUI 同时在线，各发一句。Save `w2-mixed-clients.png`. Pass when 两边都按顺序显示两句话。
+- [x] Lane 9. 查看一个已结束的任务。Save `w2-closed-ticket.png`. Pass when 侧栏显示完整历史，没有报错。
+- [x] Lane 10. 发一句含 HTML 和 2000 字的话。Save `w2-long-text.png`. Pass when 原样显示，页面不卡，布局不撑破。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. trunk（含 W1）和 head 都量 `just say` 到页面显示的延迟。head 另量页面 POST `/say` 到收到 `ack` 的延迟。
-- [ ] Probe. Playwright 脚本交替在 trunk 和 head 上各发 50 句并读取页面时间戳。
-- [ ] Baseline. Record the trunk p95 first.
-- [ ] Rule. head 的 `just say` 路径 p95 比 trunk 慢 20 毫秒以上算失败。POST 到 ack 的 p95 超过 100 毫秒算失败。
+- [x] Metric. trunk（含 W1）和 head 都量 `just say` 到页面显示的延迟。head 另量页面 POST `/say` 到收到 `ack` 的延迟。
+- [x] Probe. Playwright 脚本交替在 trunk 和 head 上各发 50 句并读取页面时间戳。
+- [x] Baseline. Record the trunk p95 first.
+- [x] Rule. head 的 `just say` 路径 p95 比 trunk 慢 20 毫秒以上算失败。POST 到 ack 的 p95 超过 100 毫秒算失败。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 2, 3, 4 screenshots into `docs/web-client/media/w2-review-<slug>.png`.
+- [x] Copy lane 2, 3, 4 screenshots into `docs/web-client/media/w2-review-<slug>.png`.
 - [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/web-client/media/w2-review.mp4`.
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
