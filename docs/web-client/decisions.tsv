@@ -72,6 +72,7 @@ ts	phase	decision	why	evidence	result
 2026-11-09T18:00:58Z	w5	行情来源由模块清单的来源项标 "market": true 判定（toy-market、us-market 都标），不按 feed kind	toy-market 没有 feed（由 just toy-feed 经 inbox 投递），按 feed kind 判不到它；一个显式字段两处通用，加新行情模块只改清单	modules/*/module.json；tests/modules.test.ts 行情来源用例	decided
 2026-11-09T18:04:01Z	w5	生命周期行搬进执行过程头部后，右栏小字只留编号；模型、用量、工具、用时不在两处重复	同一组数字出现两次会让人以为是两件事；头部行已经是完整的生命周期	tests/web.test.ts 右栏小字用例改为只写编号	decided
 2026-11-09T18:04:01Z	w5	小卡每秒原地更新文字，只有在岗名单变化时才重建；用时对已开始未结束的任务在本地累加（含空闲），排队未开始的不累加	整条重建会让聚焦或按下一半的小卡丢失；宿主的 elapsedMs 对空闲任务也在增长，本地累加要和它一致	tests/web.test.ts 助手条用例：空闲 1分0秒+2秒=1分2秒，排队 0秒	decided
+2026-11-09T18:05:53Z	w5	审阅截图用假模型和真实宿主、toy-market 模块和 just toy-feed 同一脚本生成，状态在 scratchpad，PSA_STATE_DIR 用 $TMPDIR 下的短符号链接指过去	scratchpad 路径加 host.sock 是 127 字节，超过 macOS sun_path 的 103；假模型不花钱、可重跑	docs/web-client/evidence/w5-review.ts；8 张图每张前检查 scrollHeight=innerHeight；假模型剩余为空；残留进程组无	verified
 2026-11-09T19:12:08Z	live-lane	e2e 报告按运行分目录（.out/run-<runner pid>，保留最近 5 次）；临时目录在假模型启动成功后才建	W4 lane 6：同一检出里两次 just e2e 同时跑，后一次清掉前一次的报告目录导致 ENOENT；该失败又在 try 之外，泄漏了临时目录（lane 8）	setup.e2e.ts 新测试先红后绿；两次并发 36/36、36/36	fixed
 2026-11-09T19:13:17Z	w4-lanes	W4 十条实测和性能全部通过（6、8 修后重跑）	首轮被 Mac 睡眠打断已作废；第二轮 caffeinate 下运行	docs/web-client/evidence/w4/*.png；just test 中位数 8.00→7.83s；just e2e 中位数 6.13s	PASS
 2026-11-09T19:16:06Z	w4-verdict	W4 复审 PASS；顺手修两处低概率问题：收尾后不再对已停的进程组发信号；演示的子进程环境删掉行情密钥变量（startHost 支持 baseEnv），只走 secretsFile	复审：pgid 复用可能误杀；shell 导出的密钥会让演示 1-4 轮询真实行情、让 demo-5 误判	实测：有无删除时 us-market 日志分别为「密钥来自环境变量」与「未配置行情密钥」	PASS
