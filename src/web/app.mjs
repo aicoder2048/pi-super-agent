@@ -1,10 +1,10 @@
 // @ts-check
 
 import {
-	ACK_TIMEOUT_MS, SAY_COPY, STAGE_PHRASE, BASIS_PHRASE, applyMessage, applyTranscript, canSend, dutyLine, emptyView, emptyWatch,
+	SAY_COPY, STAGE_PHRASE, BASIS_PHRASE, applyMessage, applyTranscript, canSend, dutyLine, emptyView, emptyWatch,
 	isStale, leftColumn, resolveTheme, restartNotice, sayOutcome, smallPrint, stopSentence, toggleTheme,
 } from "./view.mjs";
-import { isLive } from "../client/board-format.mjs";
+import { DEFAULT_ACK_TIMEOUT_MS, isLive } from "../client/board-format.mjs";
 
 const STATUS_TEXT = {
 	connecting: "连接中…",
@@ -243,7 +243,7 @@ function mount(doc) {
 		send.disabled = true;
 		setSay("sending");
 		const abort = new AbortController();
-		const timer = setTimeout(() => abort.abort(), ACK_TIMEOUT_MS);
+		const timer = setTimeout(() => abort.abort(), DEFAULT_ACK_TIMEOUT_MS);
 		try {
 			const res = await fetch(`/say?${query}`, {
 				method: "POST",

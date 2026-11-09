@@ -18,6 +18,8 @@ export const STAGE_LABEL = {
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_LABEL = { request: "请求", rule: "规则", inference: "推断" };
 
+export const DEFAULT_ACK_TIMEOUT_MS = 5000;
+
 const TERMINAL = ["closed", "stopped"];
 const CLOSED_SHOWN = 2;
 

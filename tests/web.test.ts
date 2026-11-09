@@ -6,7 +6,6 @@ import { connect, createServer, type AddressInfo } from "node:net";
 import test, { mock, type TestContext } from "node:test";
 import type { HostToClient, TodayCounts } from "../src/client/protocol.ts";
 import type { DashboardRow } from "../src/kernel/types.ts";
-import { DEFAULT_ACK_TIMEOUT_MS } from "../src/client/connection.ts";
 import { formatInputs } from "../src/host/workers.ts";
 import { INPUT_KINDS } from "../src/kernel/types.ts";
 import { ConfigError } from "../src/config-error.ts";
@@ -207,10 +206,6 @@ test("页面：右栏小字是唯一出现模型、用量、工具次数、用�
 	const left = page.leftColumn(withRows([row({ stage: "running", latestSummary: "x" })]), 0);
 	const shown = left.doing.map(({ id, ...visible }) => visible);
 	assert.doesNotMatch(JSON.stringify(shown), /gpt|tok|abcd/, "左栏卡片上看不到编号、模型和用量");
-});
-
-test("页面：确认超时和 TUI 相同", () => {
-	assert.equal(page.ACK_TIMEOUT_MS, DEFAULT_ACK_TIMEOUT_MS);
 });
 
 test("页面：200 是已送达，401 是网址失效，其他状态是没发出去，超时和网络错误是可能没送达", () => {

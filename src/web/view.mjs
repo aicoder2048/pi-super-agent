@@ -39,8 +39,6 @@ const GROUP = {
 	stopped: "done",
 };
 
-export const ACK_TIMEOUT_MS = 5000;
-
 /**
  * @typedef {object} View
  * @property {Map<string, ConversationLine>} lines
