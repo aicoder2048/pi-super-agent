@@ -35,8 +35,8 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
   - [ ] W1 is first. It branches from `main`.
   - [ ] W2 after W1, based on `psa/web-gateway`.
   - [ ] W3 after W2.
-  - [ ] W4 after W3.
-- [ ] Hold the file boundaries. W1 to W3 touch only `src/host/`, `src/web/`, `src/client/board-format.mjs`, `src/client/board.ts`, `tests/`, `justfile`, `docs/`. W1 起加入 `src/client/` 两个文件，让 TUI 和网页共用看板格式，见决策记录。 W4 adds `package.json`, `tests/e2e/`, and `justfile`.
+  - [ ] W4 after W2 and the M1/F1 PRs, stacked on `psa/stable-token` (#24). W3 moved after W4: it changes the page and waits for the user's review; W4 does not depend on it. 见决策记录 w4-order。
+- [ ] Hold the file boundaries. W1 to W3 touch only `src/host/`, `src/web/`, `src/client/board-format.mjs`, `src/client/board.ts`, `tests/`, `justfile`, `docs/`. W1 起加入 `src/client/` 两个文件，让 TUI 和网页共用看板格式，见决策记录。 W4 adds `package.json`, `package-lock.json`, `.gitignore`, `tests/e2e/`, `demos/`, and `justfile`.
 - [ ] Hold the review gate. W1, W2, W3 change an interaction. They wait for the operator's review in chat with screenshots and a video before merge. W4 changes no interaction.
 
 ### PR mechanics, for every PR
@@ -250,20 +250,21 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 ## Run an end-to-end browser test against a fake model (W4)
 
-**Depends on.** W3.
+**Depends on.** W2 and the M1/F1 stack (base `psa/stable-token`).
 
 **Files.**
 
-- [ ] Create `package.json`.
-- [ ] Create `tests/e2e/web.e2e.ts`.
-- [ ] Create `tests/e2e/fake-model.ts`.
-- [ ] Edit `justfile`.
+- [ ] Create `package.json` and `package-lock.json` (only devDependency `playwright-core@1.59.1`, matching the cached chromium-1217).
+- [ ] Create `tests/e2e/fake-model.ts`, `tests/e2e/harness.ts`, `tests/e2e/story.e2e.ts`, `tests/e2e/dom.e2e.ts`.
+- [ ] Create `demos/` (demo 1 to 5 and their README, moved from the scratchpad and built on the harness).
+- [ ] Edit `.gitignore` and `justfile` (`e2e`, `demo`, `demo-market`).
 
 **Build.**
 
 - [ ] 本地假模型 HTTP 服务按脚本回放 Router 和 Worker 的回复，宿主和 Worker 子进程都是真的。
 - [ ] Playwright 测试走完整故事：页面投递触发，看板出现任务，点开看 Worker 过程，Router 在对话里回复。
-- [ ] 同一套测试覆盖页面 DOM 层：宿主在同一状态目录重启后自己回到已连接，换过 token 后显示链接失效，对话和看板里的 HTML 原样显示不执行，宿主卡死时离开已连接。W1 的变异审计证明这几条目前没有自动测试。
+- [ ] 同一套测试覆盖页面 DOM 层：宿主在同一状态目录重启后自己回到已连接（token 保持不变），`web-token-rotate` 换过 token 后显示链接失效，对话和看板里的 HTML 原样显示不执行，宿主卡死（SIGSTOP）时用 `page.clock` 快进离开已连接、SIGCONT 后回来。W1 的变异审计证明这几条目前没有自动测试。
+- [ ] 演示 1 到 5 进仓库：`just demo [名字]` 用有界面的浏览器和真实 openai-codex 模型，`just demo-market` 需要行情密钥；只按自己记录的进程组停进程。
 - [ ] `just e2e` 运行它。`just test` 不依赖浏览器，保持现状。
 
 **You see.**
@@ -313,7 +314,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 推送方式用 SSE，不用 WebSocket。Node 26.5 只有 WebSocket 客户端，服务端要自己写帧协议或引入 `ws` 依赖。SSE 原型用 `node:http`，94 毫秒收到 3 条事件。原型在本次会话的 scratchpad `sse-proto/sse.mjs`，是一次性的，没有提交。
 
-尚未证明的事项是假模型能否同时驱动 Router 和 Worker 子进程。W4 开工前用原型确认。
+假模型能同时驱动 Router 和 Worker 子进程，W4 两个 architect runner 都已用原型证明：临时 `PI_CODING_AGENT_DIR` 里的 `models.json` 定义 openai-completions 的本地 provider，宿主和 Worker 都读它，无需改产品代码（scratchpad `arena-w4/candidate-1/spike/`、`candidate-2/proto/`）。
 
 ## Appendix B. Alternatives rejected
 
