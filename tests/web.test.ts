@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
 import { connect, createServer, type AddressInfo } from "node:net";
@@ -183,14 +183,14 @@ test("页面：关注的来源每一行用来源原名，显示第一条规则�
 		],
 	}), 0);
 	assert.deepEqual(page.leftColumn(view).watching, [
-		{ name: "inbox", rule: "有人找我先看一遍", hits: "今日 2 条" },
-		{ name: "digest", rule: "每 1 天：早报", hits: "" },
-		{ name: "pager", rule: "每 30 分钟：看看", hits: "" },
-		{ name: "quotes", rule: "收到新消息时处理", hits: "" },
+		{ name: "inbox", rule: "有人找我先看一遍", hits: "今日 2 条", problem: false },
+		{ name: "digest", rule: "每 1 天：早报", hits: "", problem: false },
+		{ name: "pager", rule: "每 30 分钟：看看", hits: "", problem: false },
+		{ name: "quotes", rule: "收到新消息时处理", hits: "", problem: false },
 	]);
 });
 
-test("页面：带标题的来源显示标题和一句说明；看不了盘时把问题写在说明前面", () => {
+test("页面：带标题的来源显示标题和一句说明；看不了盘时把问题写在说明前面，标成有问题", () => {
 	const view = page.emptyView();
 	const rules = [{ id: "us-market/big-move", text: "涨多了查一查", by: "module" as const }];
 	page.applyMessage(view, snapshot({
@@ -200,9 +200,15 @@ test("页面：带标题的来源显示标题和一句说明；看不了盘时�
 		],
 	}), 0);
 	assert.deepEqual(page.leftColumn(view).watching, [
-		{ name: "美股行情", rule: "未配置行情密钥 · 交易时段每分钟看一遍自选股", hits: "" },
-		{ name: "港股行情", rule: "盘中看一遍", hits: "" },
+		{ name: "美股行情", rule: "未配置行情密钥 · 交易时段每分钟看一遍自选股", hits: "", problem: true },
+		{ name: "港股行情", rule: "盘中看一遍", hits: "", problem: false },
 	]);
+});
+
+test("页面：有问题的来源圆点用警示色，亮色和暗色主题都有", () => {
+	const html = readFileSync(new URL("../src/web/index.html", import.meta.url), "utf8");
+	assert.match(html, /\.watch\.problem::before \{ background: var\(--warn\); \}/);
+	assert.match(html, /--warn: light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\)/);
 });
 
 test("页面：今日来源消息 · N，明细只列不为 0 的去向", () => {

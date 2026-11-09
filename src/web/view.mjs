@@ -184,7 +184,7 @@ export function leftColumn(view, now, sending = new Map()) {
 		doing: groups.doing,
 		done: groups.done.reverse(),
 		doneLine: `已完成 · ${groups.done.length}`,
-		watching: view.watching.map((w) => ({ name: w.title ?? w.source, rule: [w.problem, w.description ?? watchRule(w)].filter(Boolean).join(" · "), hits: hits[w.source] ? `今日 ${hits[w.source]} 条` : "" })),
+		watching: view.watching.map((w) => ({ name: w.title ?? w.source, rule: [w.problem, w.description ?? watchRule(w)].filter(Boolean).join(" · "), hits: hits[w.source] ? `今日 ${hits[w.source]} 条` : "", problem: !!w.problem })),
 		today: todayCopy(view.today),
 	};
 }

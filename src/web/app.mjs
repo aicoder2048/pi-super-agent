@@ -181,7 +181,7 @@ function mount(doc) {
 			section(`待你处理 · ${left.needsYou.length}`, left.needsYou.map((c) => taskCard(c, "ask")), "暂无待处理事项。", "warn"),
 			section(`进行中 · ${left.doing.length}`, left.doing.map((c) => taskCard(c, "doing")), "暂无进行中的任务。"),
 			section(`关注的来源 · ${left.watching.length}`, left.watching.map((w) => {
-				const node = el("div", "watch");
+				const node = el("div", w.problem ? "watch problem" : "watch");
 				const body = el("div", "");
 				body.append(el("div", "name", w.name), el("div", "rule", [w.rule, w.hits].filter(Boolean).join(" · ")));
 				node.append(body);
