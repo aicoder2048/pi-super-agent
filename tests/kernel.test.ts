@@ -240,6 +240,23 @@ test("阶段：最近一条汇报是就绪时等你验收", () => {
 	assert.equal(stage(id), "awaiting_review");
 });
 
+test("阶段：就绪之后又有新输入，不再算等你验收", () => {
+	const { kernel, open, run, stage, handOverUserMessage } = setup();
+	const id = open("request");
+	run(id);
+	kernel.workerReport(id, { status: "ready", summary: "做完了", waiting: true });
+	handOverUserMessage(id, "再加一个图表");
+	assert.notEqual(stage(id), "awaiting_review");
+});
+
+test("对话历史按先后列出使用者的话和 Router 的回复", () => {
+	const { kernel, clock } = setup();
+	kernel.submitTrigger({ source: "conversation", externalId: "c1", threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body: "查天气", occurredAt: clock.now() });
+	clock.t += 1000;
+	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "好的，去查了。" });
+	assert.deepEqual(kernel.conversation().map((m) => [m.who, m.text]), [["user", "查天气"], ["router", "好的，去查了。"]]);
+});
+
 test("阶段：受阻或失败，直到使用者再说话", () => {
 	const { kernel, open, idle, stage, handOverUserMessage } = setup();
 	const blocked = open("request");

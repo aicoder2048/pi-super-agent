@@ -537,6 +537,22 @@ export class Kernel {
 		}));
 	}
 
+	conversation(limit = 50): { who: "user" | "router"; text: string; at: number }[] {
+		return this.#all(
+			`SELECT * FROM (
+				SELECT 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord FROM triggers t
+				JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ?
+				UNION ALL
+				SELECT 'router', r.text, r.created_at, r.rowid FROM reply_receipts r WHERE r.thread_id = ?
+			) ORDER BY at DESC, ord DESC LIMIT ?`,
+			CONVERSATION_THREAD_ID,
+			CONVERSATION_THREAD_ID,
+			limit,
+		)
+			.reverse()
+			.map((r) => ({ who: r.who, text: r.text, at: r.at }));
+	}
+
 	usageToday(provider: string): number {
 		return this.#get("SELECT tokens FROM usage_daily WHERE day = ? AND provider = ?", localDayKey(this.#now()), provider)?.tokens ?? 0;
 	}
@@ -742,7 +758,10 @@ export class Kernel {
 				ticketId,
 				latest.seq,
 			);
+		const inputAfterLatestReport =
+			latest !== undefined && !!this.#get("SELECT 1 FROM ticket_inputs WHERE ticket_id = ? AND seq > ?", ticketId, latest.seq);
 		const stage = deriveStage({
+			inputAfterLatestReport,
 			stopped: r.stopped_at !== null,
 			closed: r.closed_at !== null,
 			workerState: r.worker_state,
