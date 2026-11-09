@@ -17,3 +17,5 @@ ts	phase	decision	why	evidence	result
 2026-11-09T07:38:48Z	verdict	更正证据指针：保活一行指的 app.mjs:136 在拆分后已不存在，现为 src/web/app.mjs 的 isStale 调用与 src/web/view.mjs isStale；顺序一行的 web.test.ts:275 实为忙端口那条测试（按名称「端口被占用时 Host.start 报一行 ConfigError」查找）；lanes @8679edf 不在任何分支，但 8679edf 与 c881646 的 src tests justfile 无差异	规格审计发现指针对不上，日志只追加不改	git diff --stat 8679edf c881646 -- src tests justfile 为空	corrected
 2026-11-09T07:38:48Z	verdict	页面 DOM 层（token 失效提示、textContent 防注入、看门狗）没有自动测试，留给 W4 的 Playwright 测试	变异 M10 M11 全部通过说明无覆盖；这些行为要真实浏览器才测得准	IMPLEMENTATION_PLAN.md W4 Build	deferred
 2026-11-09T07:38:48Z	verdict	停掉一个测试遗留的宿主子进程（PID 36264，状态目录 psa-host-*）	测试失败路径没有清理，规格审计第 2 条；已派实现者修	ps 36264 started 22:58	done
+2026-11-09T07:49:52Z	verdict	a87935f 单验证者 PASS：src 只多了 400 处理，全量 257 两遍全绿，真实宿主上恶意目标全部 4xx 且宿主存活，M3 M8 变异 12.8s 2.8s 内失败退出无残留	上次完整验证后只有小修复，按计划规则用单个验证者	PR #18 @a87935f	PASS
+2026-11-09T07:49:52Z	trail	跳过跨模型族的决策记录复核	本机 pstack 配置只有 Claude 一族，没有其他族的模型可用	~/.claude/rules/pstack-models.md	skipped
