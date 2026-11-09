@@ -461,28 +461,28 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
-- [ ] Lane 1. 没有任何自定义成员和团队。Save `t1-default.png`. Pass when 每个任务是默认团队，页面和行为与 W5 相同（卡片上仍是「行情助手」）。
-- [ ] Lane 2. 状态目录放「新闻队」，问新闻。Save `t1-pick.png`. Pass when 幕僚长开的任务团队是新闻队，助手显示「四字名 · 新闻队 #1」。
-- [ ] Lane 3. 同一配置下问股价。Save `t1-no-pick.png`. Pass when 任务是默认团队，助手是两字名。
-- [ ] Lane 4. 规则写「团队：新闻队」，toy-feed 触发。Save `t1-rule-team.png`. Pass when 任务团队是新闻队。
-- [ ] Lane 5. 幕僚长提示词。Save `t1-roster.png`. Pass when 名册只有团队名和说明，没有成员名。
-- [ ] Lane 6. 同名成员两处定义。Save `t1-conflict.png`. Pass when 启动报一行错并退出。
-- [ ] Lane 7. 成员 `model: deepseek/...`。Save `t1-billing.png`. Pass when 启动报错。
-- [ ] Lane 8. `teams.yaml` 名单里写了不存在的成员。Save `t1-missing-member.png`. Pass when 启动报错并写出团队和成员名。
-- [ ] Lane 9. 开两个任务后重启。Save `t1-restart.png`. Pass when 两个任务的团队和名字不变。
-- [ ] Lane 10. 用 W5 的状态目录（任务没有团队）启动。Save `t1-old-tickets.png`. Pass when 旧任务正常显示，按默认团队继续。
+- [x] Lane 1. 没有任何自定义成员和团队。Save `t1-default.png`. Pass when 每个任务是默认团队，页面和行为与 W5 相同（卡片上仍是「行情助手」）。 2026-11-09 在 8dfeaa5 上通过：「青檀 · 对话助手 #1」「观澜 · 行情助手 #1」，团队都是默认（`/tmp/swarm-t1/worker-1/`）。
+- [x] Lane 2. 状态目录放「新闻队」，问新闻。Save `t1-pick.png`. Pass when 幕僚长开的任务团队是新闻队，助手显示「四字名 · 新闻队 #1」。 2026-11-09 在 8dfeaa5 上通过：「雪泥鸿爪 · 新闻队 #1」，同一句话四次都选了新闻队（`/tmp/swarm-t1/worker-2/`）。
+- [x] Lane 3. 同一配置下问股价。Save `t1-no-pick.png`. Pass when 任务是默认团队，助手是两字名。 2026-11-09 在 8dfeaa5 上通过：「青檀 · 对话助手 #1」，团队默认（`/tmp/swarm-t1/worker-3/`）。
+- [x] Lane 4. 规则写「团队：新闻队」，toy-feed 触发。Save `t1-rule-team.png`. Pass when 任务团队是新闻队。 2026-11-09 在 8dfeaa5 上通过：规则任务团队新闻队；幕僚长自己填对了，内核改回那条路只有单元测试（`/tmp/swarm-t1/worker-4/`）。
+- [x] Lane 5. 幕僚长提示词。Save `t1-roster.png`. Pass when 名册只有团队名和说明，没有成员名。 2026-11-09 在 8dfeaa5 上通过：名册只有「- 新闻队：…」一行，成员名出现 0 次（`/tmp/swarm-t1/worker-5/`）。
+- [x] Lane 6. 同名成员两处定义。Save `t1-conflict.png`. Pass when 启动报一行错并退出。 2026-11-09 在 8dfeaa5 上通过：退出码 1，一行写出两个文件（`/tmp/swarm-t1/worker-6/`）。
+- [x] Lane 7. 成员 `model: deepseek/...`。Save `t1-billing.png`. Pass when 启动报错。 2026-11-09 在 8dfeaa5 上通过：退出码 1，拒绝 deepseek（`/tmp/swarm-t1/worker-7/`）。
+- [x] Lane 8. `teams.yaml` 名单里写了不存在的成员。Save `t1-missing-member.png`. Pass when 启动报错并写出团队和成员名。 2026-11-09 在 8dfeaa5 上通过：退出码 1，写出团队和成员名（`/tmp/swarm-t1/worker-8/`）。
+- [x] Lane 9. 开两个任务后重启。Save `t1-restart.png`. Pass when 两个任务的团队和名字不变。 2026-11-09 在 8dfeaa5 上通过：重启前后库里和页面一致（`/tmp/swarm-t1/worker-9/`）。
+- [x] Lane 10. 用 W5 的状态目录（任务没有团队）启动。Save `t1-old-tickets.png`. Pass when 旧任务正常显示，按默认团队继续。 2026-11-09 在 8dfeaa5 上通过：去掉 team 列后启动，旧任务照常显示并接着干（`/tmp/swarm-t1/worker-10/`）。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 幕僚长第一轮的输入 token（团队名册增加的开销）。
-- [ ] Probe. 0 个和 10 个自定义团队各量 5 次。
-- [ ] Baseline. Record the 0-team median first.
-- [ ] Rule. 10 个团队时中位数增加超过 1000 token 算失败。
+- [x] Metric. 幕僚长第一轮的输入 token（团队名册增加的开销）。
+- [x] Probe. 0 个和 10 个自定义团队各量 5 次。 各 5 次交替跑，同一句话，数字取路由会话第一条回复的 usage.input + cacheRead。
+- [x] Baseline. Record the 0-team median first. 0 个团队中位数 1795 token。
+- [x] Rule. 10 个团队时中位数增加超过 1000 token 算失败。 10 个团队中位数 2020，多 225，通过（`/tmp/swarm-t1/perf/results.jsonl`）。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 1, 2, 4 screenshots into `docs/web-client/media/t1-review-<slug>.png`.
-- [ ] Record a 30 to 60 second video of a team ticket and a single-helper ticket side by side. Keep it local as webm, as in W1.
+- [x] Copy lane 1, 2, 4 screenshots into `docs/web-client/media/t1-review-<slug>.png`. `t1-review-default.png`、`t1-review-pick.png`、`t1-review-rule-team.png`。
+- [x] Record a 30 to 60 second video of a team ticket and a single-helper ticket side by side. Keep it local as webm, as in W1. 37 秒，`/tmp/swarm-t1/t1-review.webm`，两个任务先后开出，不是同屏并排。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
