@@ -1,5 +1,6 @@
 import type { Clock } from "../../kernel/types.ts";
 import type { Http } from "./client.ts";
+import { shiftDate } from "./session.ts";
 
 export const FINNHUB_URL = "https://finnhub.io/api/v1";
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -71,10 +72,6 @@ const defined = <T extends object>(o: T): T => Object.fromEntries(Object.entries
 function surprisePct(actual: number | undefined, estimate: number | undefined): number | undefined {
 	if (actual === undefined || estimate === undefined || estimate === 0) return undefined;
 	return Number((((actual - estimate) / Math.abs(estimate)) * 100).toFixed(2));
-}
-
-function shiftDate(day: string, days: number): string {
-	return new Date(Date.parse(`${day}T12:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 }
 
 interface CalendarRow {
