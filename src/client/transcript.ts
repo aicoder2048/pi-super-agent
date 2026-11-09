@@ -1,15 +1,11 @@
+import { blocks, clip, textOf } from "./board-format.mjs";
 import type { TranscriptMessage } from "./protocol.ts";
 
 const TOOL_RESULT_LIMIT = 400;
 
-function clip(text: string, limit: number): string {
-	const chars = [...text];
-	return chars.length <= limit ? text : `${chars.slice(0, limit).join("")}…`;
-}
-
 export function formatTranscriptMessage(message: TranscriptMessage): string[] {
-	const content = typeof message.content === "string" ? [{ type: "text", text: message.content }] : (message.content ?? []);
-	const text = content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n").trim();
+	const content = blocks(message);
+	const text = textOf(message);
 	switch (message.role) {
 		case "user":
 		case "custom":

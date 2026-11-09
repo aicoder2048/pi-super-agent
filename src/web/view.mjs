@@ -8,7 +8,7 @@
 /** @typedef {import("../client/protocol.ts").TranscriptMessage} TranscriptMessage */
 /** @typedef {import("../client/protocol.ts").WatchedSource} WatchedSource */
 
-import { formatElapsed, formatTokens, isLive, modelText, shortId } from "../client/board-format.mjs";
+import { blocks, clip, formatElapsed, formatTokens, isLive, modelText, shortId, textOf } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你让我做的", rule: "按你的规则", inference: "我觉得该做的" };
@@ -227,14 +227,6 @@ function reportTitle(a) {
 
 const RAW_LIMIT = 2000;
 
-/** @param {TranscriptMessage} message */
-function blocks(message) {
-	return typeof message.content === "string" ? [{ type: "text", text: message.content }] : (message.content ?? []);
-}
-
-/** @param {TranscriptMessage} message */
-const textOf = (message) => blocks(message).filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n").trim();
-
 /** @param {TranscriptMessage} message @returns {Step[]} */
 function stepsFrom(message) {
 	if (message.role === "user" || (message.role === "custom" && message.customType === "psa-bg-result")) {
@@ -336,13 +328,6 @@ const STALE_AFTER_MS = 35_000;
 /** @param {number} lastFrameAt @param {number} now */
 export function isStale(lastFrameAt, now) {
 	return now - lastFrameAt > STALE_AFTER_MS;
-}
-
-/** @param {unknown} s @param {number} n */
-function clip(s, n) {
-	if (typeof s !== "string") return "";
-	const chars = [...s];
-	return chars.length <= n ? s : `${chars.slice(0, n).join("")}…`;
 }
 
 /** @param {unknown} s */

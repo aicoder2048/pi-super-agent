@@ -1,3 +1,4 @@
+import { clip } from "../client/board-format.mjs";
 import type { Disposition, Trigger } from "../kernel/types.ts";
 
 const BODY_SHOWN = 40;
@@ -15,9 +16,7 @@ export function formatTriggerLog(triggers: Trigger[]): string {
 	return triggers
 		.map((t) => {
 			const at = new Date(t.receivedAt).toLocaleString("zh-CN", { hour12: false });
-			const chars = [...t.body.replace(/\s+/g, " ")];
-			const body = chars.length > BODY_SHOWN ? `${chars.slice(0, BODY_SHOWN).join("")}…` : chars.join("");
-			return `${at}  ${t.source}  ${WHERE[t.disposition](t.dispositionDetail)}  ${body}`;
+			return `${at}  ${t.source}  ${WHERE[t.disposition](t.dispositionDetail)}  ${clip(t.body.replace(/\s+/g, " "), BODY_SHOWN)}`;
 		})
 		.join("\n");
 }

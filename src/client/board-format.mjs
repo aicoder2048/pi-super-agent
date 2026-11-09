@@ -1,6 +1,7 @@
 // @ts-check
 
 /** @typedef {import("../kernel/types.ts").DashboardRow} DashboardRow */
+/** @typedef {import("./protocol.ts").TranscriptMessage} TranscriptMessage */
 
 /** @type {Record<DashboardRow["stage"], string>} */
 export const STAGE_LABEL = {
@@ -50,3 +51,18 @@ export function formatElapsed(ms) {
 	if (s < 3600) return `${Math.floor(s / 60)}分${s % 60}秒`;
 	return `${Math.floor(s / 3600)}时${Math.floor((s % 3600) / 60)}分`;
 }
+
+/** Counts code points, so a surrogate pair is never split. @param {unknown} s @param {number} n */
+export function clip(s, n) {
+	if (typeof s !== "string") return "";
+	const chars = [...s];
+	return chars.length <= n ? s : `${chars.slice(0, n).join("")}…`;
+}
+
+/** @param {TranscriptMessage} message */
+export function blocks(message) {
+	return typeof message.content === "string" ? [{ type: "text", text: message.content }] : (message.content ?? []);
+}
+
+/** @param {TranscriptMessage} message */
+export const textOf = (message) => blocks(message).filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n").trim();
