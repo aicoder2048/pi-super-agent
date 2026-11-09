@@ -297,8 +297,22 @@ export const SAY_COPY = {
 	delivered: "已发送",
 	maybe_lost: "未收到确认。请检查对话中是否已有这条消息，如没有请重新发送。",
 	expired: "链接已失效，请使用宿主日志中的最新链接。",
-	rejected: "发送失败：",
+	rejected: "发送失败，请稍后重试。",
 };
+
+// The server's own bodies are written for curl users; the page names the cause in its own words.
+/** @type {Record<number, string>} */
+const REJECTED_COPY = {
+	400: "发送失败：内容为空或格式不正确。",
+	403: "发送失败：请求来源不被允许。",
+	413: "发送失败：内容过长，请分几次发送。",
+	415: "发送失败：请求格式不正确。",
+};
+
+/** @param {SayState} state @param {number} [status] */
+export function sayCopy(state, status) {
+	return state === "rejected" && status !== undefined ? (REJECTED_COPY[status] ?? SAY_COPY.rejected) : SAY_COPY[state];
+}
 
 /** @param {{ status: number } | "timeout" | "network"} outcome @returns {SayState} */
 export function sayOutcome(outcome) {

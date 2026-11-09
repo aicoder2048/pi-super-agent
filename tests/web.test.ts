@@ -220,6 +220,18 @@ test("页面：200 是已发送，401 是链接失效，其他状态是发送失
 	assert.match(page.SAY_COPY.maybe_lost, /未收到确认.*对话.*重新发送/);
 });
 
+test("页面：发送失败时按状态码显示固定文案，不显示服务器正文", () => {
+	const shown = (status: number) => page.sayCopy(page.sayOutcome({ status }), status);
+	assert.equal(shown(400), "发送失败：内容为空或格式不正确。");
+	assert.equal(shown(401), page.SAY_COPY.expired);
+	assert.equal(shown(403), "发送失败：请求来源不被允许。");
+	assert.equal(shown(413), "发送失败：内容过长，请分几次发送。");
+	assert.equal(shown(415), "发送失败：请求格式不正确。");
+	for (const status of [404, 405, 500, 502]) assert.equal(shown(status), "发送失败，请稍后重试。", String(status));
+	assert.equal(shown(200), page.SAY_COPY.delivered);
+	assert.equal(page.sayCopy("maybe_lost"), page.SAY_COPY.maybe_lost);
+});
+
 test("页面：只含空白的话不能发", () => {
 	assert.equal(page.canSend(" \n\t "), false);
 	assert.equal(page.canSend(" 好 "), true);

@@ -1,8 +1,8 @@
 // @ts-check
 
 import {
-	SAY_COPY, STAGE_PHRASE, BASIS_PHRASE, applyMessage, applyTranscript, canSend, dutyLine, emptyView, emptyWatch,
-	isStale, leftColumn, resolveTheme, restartNotice, sayOutcome, smallPrint, stopSentence, toggleTheme,
+	STAGE_PHRASE, BASIS_PHRASE, applyMessage, applyTranscript, canSend, dutyLine, emptyView, emptyWatch,
+	isStale, leftColumn, resolveTheme, restartNotice, sayCopy, sayOutcome, smallPrint, stopSentence, toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, isLive } from "../client/board-format.mjs";
 
@@ -47,10 +47,10 @@ function mount(doc) {
 		status.textContent = STATUS_TEXT[s];
 	};
 
-	/** @param {import("./view.mjs").SayState} state @param {string} [extra] */
-	const setSay = (state, extra = "") => {
+	/** @param {import("./view.mjs").SayState} state @param {number} [status] */
+	const setSay = (state, status) => {
 		sayStatus.dataset.state = state;
-		sayStatus.textContent = SAY_COPY[state] + extra;
+		sayStatus.textContent = sayCopy(state, status);
 	};
 
 	const store = {
@@ -260,7 +260,7 @@ function mount(doc) {
 			const state = sayOutcome({ status: res.status });
 			if (state === "delivered" && composer.value === text) composer.value = "";
 			if (state === "expired") setStatus("expired");
-			setSay(state, state === "rejected" ? await res.text() : "");
+			setSay(state, res.status);
 		} catch {
 			setSay(sayOutcome(abort.signal.aborted ? "timeout" : "network"));
 		} finally {
