@@ -51,6 +51,7 @@ drop source thread +body:
     {{run}} src/cli/drop.ts {{source}} {{thread}} {{body}}
 
 # 玩具行情模块投递一条假行情：just toy-feed TOYX -5.2 12
+# toy-market 默认关闭，先在 config.json 写 "modules": { "toy-market": true } 并重启宿主。
 toy-feed symbol="TOYX" change="-5.2" volume="12":
     {{run}} modules/toy-market/feed.ts {{symbol}} {{change}} {{volume}}
 
@@ -73,3 +74,11 @@ tail:
 # 内核、宿主组装点和其余全部自动测试。
 test:
     {{run}} --test --test-timeout=30000 tests/*.test.ts tests/*.test.mjs
+
+# 列出找到的模块：启用还是停用、为什么、来源、规则、技能。不需要宿主在运行。
+modules:
+    {{run}} src/cli/modules.ts
+
+# 在状态目录的 modules/ 下生成一个新模块骨架：just module-new <模块名>
+module-new name:
+    {{run}} src/cli/module-new.ts {{name}}
