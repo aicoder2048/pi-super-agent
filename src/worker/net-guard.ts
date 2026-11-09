@@ -1,4 +1,4 @@
-import { BlockList, isIP, isIPv4 } from "node:net";
+import { BlockList, isIP } from "node:net";
 
 const BLOCKED_V4 = [
 	"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12",
@@ -6,7 +6,10 @@ const BLOCKED_V4 = [
 	"224.0.0.0/4", "240.0.0.0/4",
 ];
 
-const BLOCKED_V6 = ["::/96", "fc00::/7", "fe80::/10", "ff00::/8", "2001:db8::/32", "2002::/16", "64:ff9b::/96"];
+const BLOCKED_V6 = [
+	"::/96", "::ffff:0:0:0/96", "100::/64", "2001::/32", "2001:db8::/32", "2002::/16", "64:ff9b::/96", "64:ff9b:1::/48",
+	"fc00::/7", "fe80::/10", "fec0::/10", "ff00::/8",
+];
 
 const blocked = new BlockList();
 for (const cidr of BLOCKED_V4) addSubnet(cidr, "ipv4");
@@ -17,22 +20,10 @@ function addSubnet(cidr: string, family: "ipv4" | "ipv6"): void {
 	blocked.addSubnet(network!, Number(prefix), family);
 }
 
-function unwrapMapped(ip: string): string {
-	const lower = ip.toLowerCase();
-	if (!lower.startsWith("::ffff:")) return ip;
-	const rest = lower.slice(7);
-	if (isIPv4(rest)) return rest;
-	const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(rest);
-	if (!hex) return ip;
-	const n = (parseInt(hex[1]!, 16) << 16) | parseInt(hex[2]!, 16);
-	return [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join(".");
-}
-
 export function isPublicAddress(ip: string): boolean {
-	const address = unwrapMapped(ip);
-	const family = isIP(address);
+	const family = isIP(ip);
 	if (family === 0) return false;
-	return !blocked.check(address, family === 4 ? "ipv4" : "ipv6");
+	return !blocked.check(ip, family === 4 ? "ipv4" : "ipv6");
 }
 
 export function checkUrl(raw: string): URL {
