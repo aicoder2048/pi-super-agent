@@ -527,9 +527,9 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
 - [ ] Metric. 两位专家会诊的总耗时。
-- [ ] Probe. 并行与串行各量 5 次。
-- [ ] Baseline. Record the serial median first.
-- [ ] Rule. 并行中位数不低于串行的 70% 算失败（并行没有生效）。
+- [ ] Probe. 同一组两个问题：两位专家各自单独跑一次取较慢者，再并行跑一次，各量 5 次。
+- [ ] Baseline. Record the median of the slower single-expert run first.
+- [ ] Rule. 并行中位数超过较慢单人中位数的 110% 算失败（说明专家在排队，没有并行）。
 
 **Review gate.** The operator reviews before merge.
 
