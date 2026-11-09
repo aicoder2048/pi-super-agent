@@ -318,20 +318,20 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `src/kernel/kernel.ts`, `src/kernel/types.ts` (tickets 加 helper_name、helper_role、helper_seq 三列，迁移旧库；DashboardRow 带上它们和 `startedAt`、`endedAt`、`workerState`)。
-- [ ] Create `src/kernel/helper-names.ts`（名字池与分配，纯函数）。
-- [ ] Edit `src/client/protocol.ts`, `src/host/host.ts`（看板带今日助手合计）。
-- [ ] Edit `src/web/index.html`, `src/web/app.mjs`, `src/web/view.mjs`, `src/client/board-format.mjs`（TUI 卡片也写助手名）。
-- [ ] Edit `docs/web-client/copy.md`（助手条、执行过程头部的用词）。
-- [ ] Edit `tests/kernel*.test.ts`, `tests/web.test.ts`, `tests/e2e/*.e2e.ts`。
+- [x] Edit `src/kernel/kernel.ts`, `src/kernel/types.ts` (tickets 加 helper_name、helper_role、helper_seq 三列，迁移旧库；DashboardRow 带上它们和 `startedAt`、`endedAt`、`workerState`)。
+- [x] Create `src/kernel/helper-names.ts`（名字池与分配，纯函数）。
+- [x] Edit `src/client/protocol.ts`, `src/host/host.ts`（看板带今日助手合计）。
+- [x] Edit `src/web/index.html`, `src/web/app.mjs`, `src/web/view.mjs`, `src/client/board-format.mjs`（TUI 卡片也写助手名）。
+- [x] Edit `docs/web-client/copy.md`（助手条、执行过程头部的用词）。
+- [x] Edit `tests/kernel*.test.ts`, `tests/web.test.ts`, `tests/e2e/*.e2e.ts`。
 
 **Build.**
 
-- [ ] 内核：建任务时分配角色、当日序号和名字；同一时刻在岗（未关闭且 worker 不是 none）的助手不重名，池用完时名字后加「·二」这类后缀；旧库迁移后已有任务按创建顺序补齐。
-- [ ] 看板：每行带助手名、角色、序号、`workerState`、`startedAt`、结束时间（closedAt 或 stoppedAt）、token；整体带「今日助手数、今日 token 合计」。
-- [ ] 页面：页头下助手条；任务卡片和执行过程头部写助手全名；执行过程头部加一行生命周期「开始 HH:MM · 结束 HH:MM 或 进行中 · 用时 · 模型（回退时注明）· 工具 N 次 · token 入/出」。
-- [ ] 页面高度：三栏恰好占满窗口，各栏自己滚动，整页不滚动、底部不留白（根因：`.columns` 网格没有定行高，长内容撑开）。
-- [ ] 文案进 `docs/web-client/copy.md`，主语仍只用 幕僚长、助手、你。
+- [x] 内核：建任务时分配角色、当日序号和名字；同一时刻在岗（未关闭且 worker 不是 none）的助手不重名，池用完时名字后加「·二」这类后缀；旧库迁移后已有任务按创建顺序补齐。
+- [x] 看板：每行带助手名、角色、序号、`workerState`、`startedAt`、结束时间（closedAt 或 stoppedAt）、token；整体带「今日助手数、今日 token 合计」。
+- [x] 页面：页头下助手条；任务卡片和执行过程头部写助手全名；执行过程头部加一行生命周期「开始 HH:MM · 结束 HH:MM 或 进行中 · 用时 · 模型（回退时注明）· 工具 N 次 · token 入/出」。
+- [x] 页面高度：三栏恰好占满窗口，各栏自己滚动，整页不滚动、底部不留白（实测根因：对话气泡里读屏用的 `.sr` 绝对定位、没有定位祖先，落在窗口下方撑高整页；网格行高不是原因，见 decisions.tsv）。
+- [x] 文案进 `docs/web-client/copy.md`，主语仍只用 幕僚长、助手、你。
 
 **You see.**
 
