@@ -235,22 +235,22 @@ Watchdog（`src/watchdog/`，未提交）是另一个进程，用 `just watchdog
 
 | 路径 | 内容 |
 |---|---|
-| `/Users/szou/Python/Playground/PiSuperAgent/src/kernel/kernel.ts` | 所有领域逻辑。`submitTrigger`、`route`、`reply`、`claimSlot`、`workerReport`、`recoverOnStartup`、outbox。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/src/kernel/types.ts`, `stage.ts`, `store.ts` | 类型与默认值、stage 规则、schema 与事务。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/src/host/host.ts` | 组装根。启动顺序、action handler、`say`、`#deliverReply`、心跳、snapshot、transcript。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/src/host/main.ts` | 真正的入口。加载 config 和 modules，创建模型与 selector，处理信号。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/src/host/dispatcher.ts` | outbox 执行器。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/src/host/router.ts` | Router、工具、卡片、系统提示。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/src/host/workers.ts`, `pi-worker.ts` | Worker 生命周期，以及 Pi RPC spawner 和 `WORKER_PROMPT`。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/src/worker/extension.ts`, `external-actions.ts` | Worker 内的工具、后台命令、inference 黑名单。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/src/host/server.ts`, `src/jsonl.ts` | socket 服务和 JSON lines 分帧。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/src/sources/`, `src/modules.ts` | trigger 来源、模块和规则加载、过滤策略。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/src/model-selector.ts`, `src/models.ts`, `src/host/config.ts` | 模型切换、默认模型、配置默认值。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/src/watchdog/` | Watchdog 判定函数和进程入口。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/extensions/super-agent.ts`, `src/client/` | TUI client、协议、看板、transcript 格式化。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/modules/toy-market/` | 示例模块。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/docs/pi-super-agent/mvp-spec.md`, `docs/adr/0001-0003` | 规格与架构决策。 |
-| `/Users/szou/Python/Playground/PiSuperAgent/tests/` | `kernel`、`host`、`recovery`、`fallback`、`watchdog`、`client` 测试。`helpers/fakes.ts` 提供 `fauxRouter` 和 `FakeSpawner`。 |
+| `src/kernel/kernel.ts` | 所有领域逻辑。`submitTrigger`、`route`、`reply`、`claimSlot`、`workerReport`、`recoverOnStartup`、outbox。 |
+| `src/kernel/types.ts`, `stage.ts`, `store.ts` | 类型与默认值、stage 规则、schema 与事务。 |
+| `src/host/host.ts` | 组装根。启动顺序、action handler、`say`、`#deliverReply`、心跳、snapshot、transcript。 |
+| `src/host/main.ts` | 真正的入口。加载 config 和 modules，创建模型与 selector，处理信号。 |
+| `src/host/dispatcher.ts` | outbox 执行器。 |
+| `src/host/router.ts` | Router、工具、卡片、系统提示。 |
+| `src/host/workers.ts`, `pi-worker.ts` | Worker 生命周期，以及 Pi RPC spawner 和 `WORKER_PROMPT`。 |
+| `src/worker/extension.ts`, `external-actions.ts` | Worker 内的工具、后台命令、inference 黑名单。 |
+| `src/host/server.ts`, `src/jsonl.ts` | socket 服务和 JSON lines 分帧。 |
+| `src/sources/`, `src/modules.ts` | trigger 来源、模块和规则加载、过滤策略。 |
+| `src/model-selector.ts`, `src/models.ts`, `src/host/config.ts` | 模型切换、默认模型、配置默认值。 |
+| `src/watchdog/` | Watchdog 判定函数和进程入口。 |
+| `extensions/super-agent.ts`, `src/client/` | TUI client、协议、看板、transcript 格式化。 |
+| `modules/toy-market/` | 示例模块。 |
+| `docs/pi-super-agent/mvp-spec.md`, `docs/adr/0001-0003` | 规格与架构决策。 |
+| `tests/` | `kernel`、`host`、`recovery`、`fallback`、`watchdog`、`client` 测试。`helpers/fakes.ts` 提供 `fauxRouter` 和 `FakeSpawner`。 |
 
 ## Gotchas
 
