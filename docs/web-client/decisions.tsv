@@ -107,3 +107,6 @@ ts	phase	decision	why	evidence	result
 2026-11-09T22:15:19Z	t1	没改 src/host/config.ts 和 src/client/protocol.ts；src/modules.ts 只加了规则的「团队：」行	名册自己认「根目录下的 agents/ 和 teams.yaml」这个布局，状态目录和模块目录原样传进去就行；Helper 经 DashboardRow 到页面，协议不用动	41869a0；计划 Files 一栏列了这两个文件	和计划的出入，已在计划里写明
 2026-11-09T22:16:21Z	t1	浏览器测试：状态目录放新闻队，新闻任务显示「四字名 · 新闻队 #1」，天气任务仍是两字名的对话助手；story 多一个 files 选项，启动前把文件写进状态目录	计划的 You see 一条要在真实宿主和页面上看见；原来的测试架只能写 config.json	tests/e2e/teams.e2e.ts；红：步骤「页面投递两件事，各有一枚小卡」超时（内核拒绝了不存在的团队）；绿：038ed8a	just e2e 58 通过
 2026-11-09T22:18:13Z	t1	收尾前自己做了一遍精简（没有装 deslop）：loadRoster 并回唯一的调用处；#newHelper 里四处三元合成一个局部表；加一条测试防止 WORKER_TOOLS 和助手扩展注册的工具对不上	单一调用者的包装和散开的分支增加阅读负担；两份手工对齐的清单要让测试来盯	tests/worker-extension.test.ts「成员定义里可写的工具清单…」；变异检查：去掉 bg_stop 后失败（actual ['bg_stop']）；9a43fff	just test 503 通过
+2026-11-09T22:22:33Z	t1	no-comments：comment-sicko 删了 16 条复述代码的注释；按它的标记把三个名字改清楚（subscriptionProviders、teamRoster、SOLO_HELPER_ROWS）	注释在替名字解释时，改名字比留注释好	5d2f2fb	just test 503 通过
+2026-11-09T22:22:33Z	t1	comment-sicko 的两条标记没有照做：行里加显式的 kind 列；PROMPT_MAX_CHARS 的来由	前一条是 architect 里比过后没选的方案（候选 A），理由在上面 architect 一行；后一条要等 T2 真把成员提示词交给进程时才说得清	comment-sicko 的报告；candidate-a/rationale.md	留给根判断
+2026-11-09T22:22:33Z	t1	T1 写完：just test 503 条通过，just e2e 58 条通过，check-plan 0 problems；Verify live、perf、Review gate、Merge 没有动	这几栏归根	5d2f2fb 上跑的两套测试	等根评审
