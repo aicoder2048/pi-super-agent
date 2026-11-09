@@ -32,6 +32,11 @@ export class ModelSelector {
 		return this.#mode === "fallback" ? { model: this.#o.fallback, fellBack: true } : { model: this.#o.primary, fellBack: false };
 	}
 
+	/** For a side task such as a dispatched member, which reports no outcome here: the fallback unless the primary is settled. Never starts a probe. */
+	steady(): { model: ModelRef; fellBack: boolean } {
+		return this.#mode === "primary" ? { model: this.#o.primary, fellBack: false } : { model: this.#o.fallback, fellBack: true };
+	}
+
 	forTurn(): { model: ModelRef; fellBack: boolean; probing: boolean } {
 		if (this.#mode === "fallback" && this.#o.clock.now() - this.#lastSwitchOrProbe >= this.#o.probeEveryMs) {
 			this.#mode = "probing";

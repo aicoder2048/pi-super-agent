@@ -12,6 +12,10 @@ export interface HostConfig {
 	kernel: Partial<KernelConfig>;
 	bgMaxMinutes: number;
 	fallbackDailyTokens: number;
+	/** One dispatch's time limit, counted from when the member starts. */
+	dispatchTimeoutSeconds: number;
+	/** Member processes running at once across the host; the rest queue. */
+	maxConcurrentExperts: number;
 	retryAttempts: number;
 	probePrimaryMinutes: number;
 	heartbeatSeconds: number;
@@ -23,6 +27,7 @@ export interface HostConfig {
 }
 
 const STUCK_MINUTES_MAX = 1440;
+const DISPATCH_TIMEOUT_MAX = 1800;
 
 export function defaultStateDir(): string {
 	return resolve(process.env.PSA_STATE_DIR ?? join(homedir(), ".pi-super-agent"));
@@ -54,6 +59,14 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	}
 	const secretsFile = raw.secretsFile === undefined ? undefined : resolve(stateDir, raw.secretsFile);
 	if (secretsFile && !existsSync(secretsFile)) throw new ConfigError(`${file}：secretsFile 指向的 ${secretsFile} 不存在`);
+	const dispatchTimeoutSeconds = raw.dispatchTimeoutSeconds === undefined ? 300 : raw.dispatchTimeoutSeconds;
+	if (typeof dispatchTimeoutSeconds !== "number" || !(dispatchTimeoutSeconds > 0 && dispatchTimeoutSeconds <= DISPATCH_TIMEOUT_MAX)) {
+		throw new ConfigError(`${file}：dispatchTimeoutSeconds（${JSON.stringify(dispatchTimeoutSeconds)}）必须是大于 0、不超过 ${DISPATCH_TIMEOUT_MAX} 的秒数`);
+	}
+	const maxConcurrentExperts = raw.maxConcurrentExperts === undefined ? 4 : raw.maxConcurrentExperts;
+	if (!Number.isInteger(maxConcurrentExperts) || maxConcurrentExperts < 1 || maxConcurrentExperts > 16) {
+		throw new ConfigError(`${file}：maxConcurrentExperts（${JSON.stringify(maxConcurrentExperts)}）必须是 1 到 16 的整数`);
+	}
 	const sources = raw.sources ?? {};
 	if (sources === null || typeof sources !== "object" || Array.isArray(sources)) {
 		throw new ConfigError(`${file}：sources（${JSON.stringify(sources)}）必须是以来源名为键的对象`);
@@ -68,6 +81,8 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		kernel: { ...(raw.kernel ?? {}), stuckMs: stuckMinutes * 60_000 },
 		bgMaxMinutes: raw.bgMaxMinutes ?? 120,
 		fallbackDailyTokens: raw.fallbackDailyTokens ?? 8_000_000,
+		dispatchTimeoutSeconds,
+		maxConcurrentExperts,
 		retryAttempts: raw.retryAttempts ?? 3,
 		probePrimaryMinutes: raw.probePrimaryMinutes ?? 15,
 		heartbeatSeconds,

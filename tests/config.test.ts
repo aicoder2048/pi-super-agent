@@ -83,3 +83,20 @@ test("状态目录不存在时建成 0700，只有自己能进；已有的目录
 	loadConfig(chosen);
 	assert.equal(statSync(chosen).mode & 0o777, 0o755);
 });
+
+test("派活的两个设置有默认值：同时运行的成员最多 4 位，每次派活限时 300 秒；config.json 可以改", () => {
+	const defaults = loadConfig(stateWith({}));
+	assert.equal(defaults.maxConcurrentExperts, 4);
+	assert.equal(defaults.dispatchTimeoutSeconds, 300);
+	const set = loadConfig(stateWith({ maxConcurrentExperts: 2, dispatchTimeoutSeconds: 60 }));
+	assert.deepEqual([set.maxConcurrentExperts, set.dispatchTimeoutSeconds], [2, 60]);
+});
+
+test("maxConcurrentExperts 不是 1 到 16 的整数、dispatchTimeoutSeconds 不是 0 到 1800 之间的正数时拒绝启动，报错指出字段", () => {
+	for (const value of [0, 17, 1.5, "4", null]) {
+		assert.throws(() => loadConfig(stateWith({ maxConcurrentExperts: value })), (e: Error) => e.name === "ConfigError" && /maxConcurrentExperts/.test(e.message), JSON.stringify(value));
+	}
+	for (const value of [0, -1, 1801, "60", null]) {
+		assert.throws(() => loadConfig(stateWith({ dispatchTimeoutSeconds: value })), (e: Error) => e.name === "ConfigError" && /dispatchTimeoutSeconds/.test(e.message), JSON.stringify(value));
+	}
+});
