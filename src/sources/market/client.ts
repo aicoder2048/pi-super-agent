@@ -76,7 +76,7 @@ function epochMs(v: unknown): number | undefined {
 
 const STALE_MS = 10 * 60_000;
 
-function parseQuote(raw: unknown, requested: string[], statusDelayed: boolean, now: number): Quote[] {
+export function parseQuote(raw: unknown, requested: string[], statusDelayed: boolean, now: number): Quote[] {
 	const r = object(raw);
 	if (!requested.includes(r.ticker)) return [];
 	const trade = object(r.lastTrade), minute = object(r.min), day = object(r.day), prev = object(r.prevDay);

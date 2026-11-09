@@ -1,19 +1,16 @@
 // 真实美股：没人开口，宿主自己每分钟看一遍自选股；程序只把「到档」交给幕僚长；大波动开任务查数据；同一只股票的下一档直达已订阅的助手。
 // 开盘时段运行：just demo-market；加 --dry（just demo-market --dry）只跑开盘前一幕。
 import { existsSync, readFileSync, readdirSync, appendFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Demo, FLAGS, sleep, fmtTicket, fmtTrigger } from "./lib.mjs";
+import { defaultStateDir, loadConfig } from "../src/host/config.ts";
+import { nyTime as et, sessionAt } from "../src/sources/market/session.ts";
+import { Demo, FLAGS, skip, sleep, fmtTicket, fmtTrigger } from "./lib.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Only the path is handed to the host's secretsFile; this script never opens the file.
-const SECRETS = secretsFilePath();
-function secretsFilePath() {
-	if (process.env.PSA_DEMO_SECRETS_FILE) return resolve(process.env.PSA_DEMO_SECRETS_FILE);
-	const home = join(homedir(), ".pi-super-agent");
-	const configured = existsSync(join(home, "config.json")) ? JSON.parse(readFileSync(join(home, "config.json"), "utf8")).secretsFile : undefined;
-	if (typeof configured === "string") return resolve(home, configured);
+const SECRETS = process.env.PSA_DEMO_SECRETS_FILE ? resolve(process.env.PSA_DEMO_SECRETS_FILE) : loadConfig(defaultStateDir()).secretsFile;
+if (!SECRETS) {
 	console.error("demo-market 需要行情密钥文件：设 PSA_DEMO_SECRETS_FILE=<.env 路径>，或在 ~/.pi-super-agent/config.json 写 secretsFile。");
 	process.exit(2);
 }
@@ -23,18 +20,7 @@ const MINUTE = 60_000;
 const RUN_AFTER_OPEN_MS = 25 * MINUTE;
 const DRY = FLAGS.has("--dry");
 
-const ET = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-const etParts = (ms) => Object.fromEntries(ET.formatToParts(ms).map((p) => [p.type, Number(p.value)]));
-const et = (ms) => {
-	const p = etParts(ms);
-	return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
-};
-function openAtOf(now) {
-	const p = etParts(now);
-	const offset = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - Math.floor(now / 1000) * 1000;
-	return Date.UTC(p.year, p.month - 1, p.day, 9, 30) - offset;
-}
-const OPEN_AT = openAtOf(Date.now());
+const OPEN_AT = sessionAt(Date.now()).openAt;
 const DEADLINE = OPEN_AT + RUN_AFTER_OPEN_MS;
 const left = () => DEADLINE - Date.now();
 
@@ -53,7 +39,9 @@ const isPoll = (e) => e.kind === "snapshot" && (e.tickers ?? "").split(",").leng
 const polls = () => tap().filter(isPoll);
 const lookups = () => tap().filter((e) => !isPoll(e));
 const marketTriggers = (st) => st.triggers.filter((t) => t.source === "us-market");
-const hostLog = () => (existsSync(join(d.out, "host.log")) ? readFileSync(join(d.out, "host.log"), "utf8") : "");
+// The latest kernel state, re-read at most every 5 s by the painter and on demand by the scenes.
+let lastSeen = { triggers: [], tickets: [], conversation: [] };
+let seenAt = 0;
 
 const BAND = /^(\S+) (?:涨|跌) [+-][\d.]+%，到达 ([+-][\d.]+)% 档/;
 function band(t) {
@@ -91,7 +79,7 @@ function workerLookups() {
 async function paintTap() {
 	const ps = polls();
 	const last = ps.at(-1);
-	const st = d.lastSeen ?? { triggers: [] };
+	const st = lastSeen;
 	const today = await d.page.locator("#today").innerText().catch(() => "");
 	const lines = [
 		`美股行情 · 宿主自己的请求\n（演示脚本只旁听，不另外请求）`,
@@ -118,9 +106,9 @@ async function paintTap() {
 }
 
 function refresh() {
-	d.lastSeen = d.state();
-	d.seenAt = Date.now();
-	return d.lastSeen;
+	lastSeen = d.state();
+	seenAt = Date.now();
+	return lastSeen;
 }
 
 await d.run(async () => {
@@ -129,7 +117,7 @@ await d.run(async () => {
 	await d.openBrowser(url);
 	refresh();
 	const painter = setInterval(() => {
-		if (Date.now() - (d.seenAt ?? 0) > 5000) refresh();
+		if (Date.now() - seenAt > 5000) refresh();
 		void paintTap();
 	}, 3000);
 	try {
@@ -140,7 +128,7 @@ await d.run(async () => {
 			const text = (await row.innerText()).replace(/\s+/g, " ");
 			const problem = await row.evaluate((n) => n.classList.contains("problem"));
 			await sleep(DRY ? 15_000 : 4_000);
-			const log = hostLog();
+			const log = d.host.log();
 			const keyLine = /\[us-market\] 美股行情：([^\n]*)/.exec(log)?.[1] ?? "";
 			const resting = /\[us-market\] 不在交易时段，暂停请求行情/.test(log);
 			const n = tap().length;
@@ -153,7 +141,7 @@ await d.run(async () => {
 			if (Date.now() < OPEN_AT) await d.until("open", () => Date.now() >= OPEN_AT, OPEN_AT - Date.now() + 5_000, 1000);
 			const first = await d.until("first poll", () => polls()[0], 3 * MINUTE, 2000);
 			const before = tap().filter((e) => e.at < OPEN_AT).length;
-			if (!first) return { status: "SKIP", evidence: `no poll by ${et(Date.now())} ET; requests before open=${before}; host.log tail「${hostLog().split("\n").filter((l) => l.includes("us-market")).at(-1) ?? ""}」` };
+			if (!first) return skip(`no poll by ${et(Date.now())} ET; requests before open=${before}; host.log tail「${d.host.log().split("\n").filter((l) => l.includes("us-market")).at(-1) ?? ""}」`);
 			return Demo.check(before === 0 && first.at >= OPEN_AT, `requests before open=${before}; first poll ${new Date(first.at).toISOString()} (${et(first.at)} ET) status=${first.status}/${first.apiStatus}; ${first.quotes?.length ?? 0} quotes`, "requests happened before the open");
 		});
 
@@ -166,13 +154,13 @@ await d.run(async () => {
 			const ps = polls();
 			const fresh = ps.filter((p) => (p.quotes ?? []).some((q) => q.at >= OPEN_AT)).length;
 			const evidence = `polls=${ps.length} (with today's quotes ${fresh}, api ${[...new Set(ps.map((p) => p.apiStatus))].join("/")}); polls that produced a message=${pollsWithTriggers(x)}; first trigger「${marketTriggers(x)[0]?.body.slice(0, 50) ?? "none"}」`;
-			if (!ps.length) return { status: "SKIP", evidence };
+			if (!ps.length) return skip(evidence);
 			return Demo.check(ps.length >= 2 && pollsWithTriggers(x) <= Math.ceil(ps.length / 2), evidence, st ? "most polls produced messages" : "no band reached before the scene deadline");
 		});
 
 		await d.scene("三 · 第一次到档：交给幕僚长判断", ["每条提醒都原样推给你", "到档消息先到幕僚长：按模块规则，个股 5% 档以上、SPY/QQQ 2% 档以上开任务核实；3% 档只是背景，记一笔不打扰你"], async () => {
 			const batch = marketTriggers(refresh());
-			if (!batch.length) return { status: "SKIP", evidence: `no us-market trigger by ${et(Date.now())} ET` };
+			if (!batch.length) return skip(`no us-market trigger by ${et(Date.now())} ET`);
 			const firstAt = batch[0].receivedAt;
 			const ids = batch.filter((t) => t.receivedAt - firstAt < 30_000).map((t) => t.id);
 			const st = await d.until("router decided", () => {
@@ -187,7 +175,7 @@ await d.run(async () => {
 			await d.caption("三 · 第一次到档：交给幕僚长判断", "每条提醒都原样推给你", ts.map((t) => `${band(t).symbol} ${band(t).pct ?? "放量"}${band(t).pct === null ? "" : "% 档"}：${t.disposition === "opened_ticket" ? "开任务核实" : t.disposition === "router_ignored" ? "只是背景，不打扰你" : t.disposition}`).join("；"));
 			await sleep(6000);
 			const evidence = `${ts.map(describe).join("; ")}; 幕僚长 conversation lines=${routerLines}`;
-			if (!st) return { status: "SKIP", evidence: `幕僚长 had not decided in time: ${evidence}` };
+			if (!st) return skip(`幕僚长 had not decided before the demo deadline: ${evidence}`);
 			return Demo.check(ts.every(fits), evidence, "a decision did not match modules/us-market/rules.md");
 		});
 
@@ -199,7 +187,7 @@ await d.run(async () => {
 			}, Math.max(0, left() - 4 * MINUTE), 3000);
 			if (!st) {
 				const bands = marketTriggers(refresh()).map(describe).join("; ") || "none";
-				return { status: "SKIP", evidence: `no rule ticket by ${et(Date.now())} ET (no stock reached 5%, no index 2%); triggers: ${bands}` };
+				return skip(`no rule ticket by ${et(Date.now())} ET (no stock reached 5%, no index 2%); triggers: ${bands}`);
 			}
 			rule = st.tickets.find((t) => t.basis === "rule");
 			await d.card("规则触发").first().waitFor({ timeout: 20_000 }).catch(() => {});
@@ -213,23 +201,23 @@ await d.run(async () => {
 			const done = await d.until("rule ticket report", () => refresh().tickets.find((t) => t.id === rule.id && t.latest), Math.min(3 * MINUTE, Math.max(20_000, left())), 3000);
 			await sleep(4000);
 			const calls = workerLookups();
-			const trg = marketTriggers(d.lastSeen).find((t) => t.detail === rule.id);
+			const trg = marketTriggers(lastSeen).find((t) => t.detail === rule.id);
 			return Demo.check(calls.length > 0, `${fmtTicket(done ?? rule)}; threads=${rule.threads.join(",")}; trigger ${trg ? fmtTrigger(trg) : "?"}; lookup calls [${calls.join("; ")}]; host-side lookup requests=${lookups().length}; report「${(done?.latest ?? "").slice(0, 80)}」`, "helper did not call lookup");
 		});
 
 		await d.scene("五 · 同一只股票的下一档：直达已订阅的助手", ["每条新提醒都当新问题，从头再问", "任务订阅了这只股票当天的行情线程；它再到下一档时，消息不经过幕僚长，直接送到那个助手（disposition delivered）"], async () => {
-			if (!rule) return { status: "SKIP", evidence: "no rule ticket, so nothing subscribed" };
+			if (!rule) return skip("no rule ticket, so nothing subscribed");
 			const before = refresh().tickets.length;
 			const t = await d.until("delivered trigger", () => marketTriggers(refresh()).find((x) => x.disposition === "delivered"), Math.max(0, left()), 3000);
 			if (!t) {
 				const sym = rule.threads.join(",");
-				return { status: "SKIP", evidence: `no further band on ${sym} by ${et(Date.now())} ET; tickets=${d.lastSeen.tickets.length}` };
+				return skip(`no further band on ${sym} by ${et(Date.now())} ET; tickets=${lastSeen.tickets.length}`);
 			}
 			await d.openCard(rule.title).catch(() => {});
 			const shown = await d.until("收到新消息 step", () => d.page.locator("#steps .step-title", { hasText: "收到新消息" }).count(), 60_000, 1500);
 			await d.page.locator("#steps .step-title", { hasText: "收到新消息" }).last().scrollIntoViewIfNeeded().catch(() => {});
 			await sleep(4000);
-			return Demo.check(d.lastSeen.tickets.length === before, `trigger ${fmtTrigger(t)}; tickets ${before}->${d.lastSeen.tickets.length}; right panel 收到新消息 shown=${Boolean(shown)}`, "a new ticket was opened instead");
+			return Demo.check(lastSeen.tickets.length === before, `trigger ${fmtTrigger(t)}; tickets ${before}->${lastSeen.tickets.length}; right panel 收到新消息 shown=${Boolean(shown)}`, "a new ticket was opened instead");
 		});
 
 		await d.scene("回看 · 噪音由程序挡掉，只在要紧时开口", ["每次刷新都是一次「回答」，无论有没有变化", "整段开盘：看盘次数、真正变成消息的次数、幕僚长开口的次数，都在下面"], async () => {
@@ -244,8 +232,7 @@ await d.run(async () => {
 			return Demo.check(ps.length > 0 && n <= ps.length / 2, `polls=${ps.length}; polls with messages=${n}; messages=${marketTriggers(x).length}; tickets=${x.tickets.length}; 幕僚长 lines=${routerLines}; log.ts us-market lines=${log.length}`, "no polls, or most polls produced messages");
 		});
 
-		await d.caption("小结 · 主动、事件驱动、订阅、面向人", "你问一句，它查一次，答一句", "没人开口它也在看；程序筛噪音，到档才交给幕僚长；大波动开任务，后续直达订阅的助手；只在要紧时找你");
-		await sleep(8000);
+		await d.outro("小结 · 主动、事件驱动、订阅、面向人", "你问一句，它查一次，答一句", "没人开口它也在看；程序筛噪音，到档才交给幕僚长；大波动开任务，后续直达订阅的助手；只在要紧时找你");
 	} finally {
 		clearInterval(painter);
 	}
