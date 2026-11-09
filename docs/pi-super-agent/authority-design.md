@@ -21,7 +21,7 @@ kernel.reply({ text: "查到了：明天晴。", cause: "tkt_任务" });
 kernel.reply({ text: "Codex 限流，已切到 DeepSeek。", cause: "act_通知" });
 
 // 执行器按依据决定 Worker 的工具档位
-workerArgs({ basis: "inference", ... }); // --tools read,grep,find,ls,report,hand_back,read_ticket --no-mcp
+workerArgs({ basis: "inference", ... }); // --tools read,grep,find,ls,report,hand_back,read_ticket,web_get --no-mcp
 ```
 
 ## Shape
@@ -36,7 +36,8 @@ workerArgs({ basis: "inference", ... }); // --tools read,grep,find,ls,report,han
    - 任务 `tkt_`：任务的最近汇报必须是可以回应的结果。推断任务只有就绪、受阻、失败或带问题时可回应；进展和无需处理都不行；
    - 通知 `act_`：`router.notify` 里 kind 为 notice 的动作，卡片上印出它的 id。
    每个 cause 最多回复 2 条（`repliesPerCause`）。候选触发不能作为 cause：Router 不能为一条原始事件主动开口，只能开推断任务等结果。
-4. **推断 Worker 只读（G、F）。** 依据为推断的任务，Worker 只拿 Pi 的 `read, grep, find, ls` 和 `report, hand_back, read_ticket`，并加 `--no-mcp`。扩展里再按工具名白名单拦一次，两层有一层生效即可。没有 bash、不能写文件、没有后台命令，也就连不上宿主 socket，正则黑名单 `external-actions.ts` 删除。
+4. **推断 Worker 只读（G、F）。** 依据为推断的任务，Worker 只拿 Pi 的 `read, grep, find, ls`、读网页的 `web_get` 和 `report, hand_back, read_ticket`，并加 `--no-mcp`。扩展里再按工具名白名单拦一次，两层有一层生效即可。没有 bash、不能写文件、没有后台命令，也就连不上宿主 socket，正则黑名单 `external-actions.ts` 删除。
+   - `web_get` 只发 GET，只收一个网址。程序自己解析域名，解析出的地址只要有一个不是公网（本机、内网、链路本地、云元数据、保留段）就不发请求；每次重定向和直接写 IP 的网址都重新检查。整次调用限时 15 秒，最多读 1 MB、返回 2 万字，只接受文本类内容。返回的网页内容只当数据。
 5. **环境变量只在扩展里用一次（F 的补充）。** 扩展加载时读完 `PSA_*` 就从 `process.env` 删掉，请求和规则 Worker 的 bash 子进程不再继承 socket 路径和令牌。
 
 ## Synthesis decision
@@ -49,7 +50,8 @@ workerArgs({ basis: "inference", ... }); // --tools read,grep,find,ls,report,han
 
 ## Tradeoffs accepted
 
-- 我们接受推断任务不能联网、不能跑命令，换来“推断任务不能对外”由工具集保证，而不是由黑名单猜测。
+- 我们接受推断任务不能跑命令，换来“推断任务不能对外”由工具集保证，而不是由黑名单猜测。
+- 我们接受推断任务能用 `web_get` 读公网网页，而 GET 的网址本身能把数据带出去（例如把任务内容拼进查询参数）。使用者认可这个风险，换来推断任务能自己核实网上的信息，不再因为查不了而受阻。程序仍然挡住本机和内网地址，限制时间和大小。
 - 我们接受 Router 不能为原始事件主动开口，换来推断任务真正安静。
 - 我们接受同用户的进程（包括请求和规则 Worker）仍能冒充使用者、伪造来源、改规则文件；只有操作系统沙箱能关掉，规格已把沙箱列为接入第一个外部内容模块前的前置条件。
 
@@ -60,8 +62,8 @@ workerArgs({ basis: "inference", ... }); // --tools read,grep,find,ls,report,han
 
 ## Open questions and risks
 
-- Pi 是否严格遵守 `--tools` 和 `--no-mcp`：用真实 Pi 冒烟确认工具列表恰好是那 7 个（Phase C 第 6 步）。
-- 推断任务是否需要一个只读联网工具（例如只能 GET）？本轮不加，留给使用者决定。
+- Pi 是否严格遵守 `--tools` 和 `--no-mcp`：用真实 Pi 冒烟确认工具列表恰好是那 8 个（Phase C 第 6 步）。
+- 推断任务的只读联网工具：使用者决定加，即 `web_get`（只 GET，只读公网地址）。剩下的风险是网址带出数据，以及网页里的指令诱导 Worker；后者靠“网页内容只是数据”和推断任务没有对外动作工具兜底。
 
 ## Next implementation step
 
