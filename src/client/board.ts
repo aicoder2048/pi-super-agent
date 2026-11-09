@@ -1,20 +1,23 @@
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { replaceControlCharacters, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { DashboardRow } from "../kernel/types.ts";
 import type { MemberCapBoard } from "./protocol.ts";
 import { BASIS_LABEL, HOST_SOURCE, STAGE_LABEL, formatElapsed, formatTokens, helperFullName, isLive, modelText, selectRows, shortId, stallMinutes } from "./board-format.mjs";
 
 export { shortId };
 
-function fit(text: string, width: number): string {
+function clip(text: string, width: number): string {
 	if (width <= 0) return "";
 	return visibleWidth(text) <= width ? text : truncateToWidth(text, width, "…");
 }
+
+/** pi-tui draws each string as one terminal row, so a newline in a report would push the rest of the board down. */
+const fit = (text: string, width: number) => clip(replaceControlCharacters(text), width);
 
 function spread(left: string, right: string, width: number): string {
 	const rightFit = fit(right, Math.max(0, Math.floor(width / 2)));
 	const leftFit = fit(left, Math.max(0, width - visibleWidth(rightFit) - 1));
 	const gap = Math.max(1, width - visibleWidth(leftFit) - visibleWidth(rightFit));
-	return fit(leftFit + " ".repeat(gap) + rightFit, width);
+	return clip(leftFit + " ".repeat(gap) + rightFit, width);
 }
 
 /** Rows or questions whose id, with or without its tkt_ prefix, starts with key. */
@@ -56,8 +59,9 @@ export interface BoardView {
 export function renderBoard(view: BoardView, width: number, now: number): string[] {
 	if (width <= 0) return [];
 	const { shown, hiddenClosed, active } = selectRows(view.rows);
+	const running = view.rows.filter((r) => r.stage === "running").length;
 	const status = view.connected ? "已连接" : "未连接，重试中";
-	const lines = [fit(`── Super Agent · ${active} 个任务进行中 · ${status} ──`, width)];
+	const lines = [fit(`── Super Agent · ${active} 个未结束 · ${running} 个在跑 · ${status} ──`, width)];
 	const cap = view.memberCap?.question;
 	if (cap) {
 		lines.push(spread(`${CAP_ID} ${CAP_TITLE}`, `${STAGE_LABEL.awaiting_answer} · ${HOST_SOURCE}`, width));
