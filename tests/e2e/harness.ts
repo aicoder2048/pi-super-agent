@@ -246,6 +246,8 @@ export interface StoryOptions {
 	fakeClock?: boolean;
 	/** See parseSabotage in fake-model.ts. Defaults to PSA_E2E_SABOTAGE. */
 	sabotage?: string;
+	/** Role files written into the state dir's roles/ before the host starts, file name → content. */
+	roles?: Record<string, string>;
 }
 
 let sharedBrowser: Promise<Browser> | undefined;
@@ -342,6 +344,10 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 	try {
 		await step("宿主启动，页面已连接", async () => {
 			const webPort = options.fixedPort ? await freePort() : 0;
+			if (options.roles) {
+				mkdirSync(join(root, "s", "roles"), { recursive: true });
+				for (const [file, content] of Object.entries(options.roles)) writeFileSync(join(root, "s", "roles", file), content);
+			}
 			const started = startHost({ models: fakeModels, stateDir: join(root, "s"), logFile: join(out, "host.log"), config: { webPort, modulesDirs: [], ...options.config }, env });
 			const [run] = await Promise.all([started.then((h) => (host = h)), launchBrowser()]);
 			await waitStatus(await open(run.url, { fakeClock: options.fakeClock }), "connected");
