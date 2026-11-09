@@ -634,7 +634,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			stage: "running",
 			basis: "request",
 			latestSummary: "写了一半",
-			latestQuestion: null,
+			question: null,
 			model: "openai-codex/gpt-6.1-sol",
 			fellBack: false,
 			toolCalls: 2,
@@ -901,4 +901,22 @@ test("旧数据库的汇报表没有选项列：打开时补上，旧汇报读�
 	const found = again.kernel.read(id);
 	assert.ok(found?.type === "ticket");
 	assert.deepEqual(found.recentReports.map((r) => [r.summary, r.options]), [["旧汇报", []]]);
+});
+
+test("看板：等回答的任务带上它在等的问题（汇报 id、文字、选项、提问时间、还没回答）；其他阶段没有问题", () => {
+	const { kernel, clock, open, run, idle, handOverUserMessage } = setup();
+	const asking = open("request", { title: "查财报" });
+	run(asking);
+	const { reportId } = kernel.workerReport(asking, { status: "blocked", summary: "两种口径", question: "要看哪部分？", options: ["只看营收", "先不查"] });
+	const askedAt = clock.t;
+	const open2 = open("request", { title: "写周报" });
+	idle(open2);
+	clock.t += 1000;
+	const rows = () => Object.fromEntries(kernel.listTickets().map((r) => [r.title, r.question]));
+	assert.deepEqual(rows(), {
+		查财报: { reportId, text: "要看哪部分？", options: ["只看营收", "先不查"], askedAt, answered: null },
+		写周报: null,
+	});
+	handOverUserMessage(asking, "只看营收");
+	assert.equal(rows().查财报, null, "使用者回答后不再等");
 });

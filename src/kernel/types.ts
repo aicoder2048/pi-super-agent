@@ -179,13 +179,25 @@ export interface Ticket {
 	latestReport: Report | null;
 }
 
+/** The question a ticket is waiting on; exists only while its stage is awaiting_answer. */
+export interface PendingQuestion {
+	/** What a click names. Reports never change, so an answer cannot silently land on a newer question. */
+	reportId: string;
+	text: string;
+	/** Empty for an open question, which the user answers by typing. */
+	options: string[];
+	askedAt: number;
+	/** Index of the option already clicked, from any client, while the Router has not handed it over yet. */
+	answered: number | null;
+}
+
 export interface DashboardRow {
 	id: string;
 	title: string;
 	stage: Stage;
 	basis: Basis;
 	latestSummary: string | null;
-	latestQuestion: string | null;
+	question: PendingQuestion | null;
 	model: string | null;
 	fellBack: boolean;
 	toolCalls: number;

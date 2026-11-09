@@ -17,7 +17,7 @@ import { busyPort, ofType, openOnConversation, startHost, tempStateDir, until, w
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
 		id: "tkt_abcd1234", title: "查天气", stage: "running", basis: "request", latestSummary: null, model: "openai-codex/gpt-6.1-sol",
-		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, latestQuestion: null, ...over,
+		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, question: null, ...over,
 	};
 }
 
@@ -75,7 +75,7 @@ test("页面：每个任务恰好进一个分组：待回复、待确认、受�
 
 test("页面：待你处理的卡片先显示问题，受阻的显示最近汇报；进行中的显示最近汇报，没有时说已开始", () => {
 	const left = page.leftColumn(withRows([
-		row({ id: "tkt_ask", stage: "awaiting_answer", basis: "rule", latestSummary: "需要确认", latestQuestion: "用 A 还是 B？" }),
+		row({ id: "tkt_ask", stage: "awaiting_answer", basis: "rule", latestSummary: "需要确认", question: { reportId: "rpt_1", text: "用 A 还是 B？", options: [], askedAt: 0, answered: null } }),
 		row({ id: "tkt_stk", stage: "blocked_or_failed", basis: "inference", latestSummary: "缺少权限" }),
 		row({ id: "tkt_run", stage: "running", latestSummary: null }),
 		row({ id: "tkt_idl", stage: "idle", latestSummary: "读完 3 份" }),
@@ -585,7 +585,7 @@ test("宿主：快照和 board 帧带今天的计数、值班时间和在盯着�
 	t.after(() => live.close());
 	await until(() => live.got.length > 0, "快照");
 	host.say("查天气");
-	await until(() => ofType(live.got, "board").some((m) => m.rows.some((r) => r.latestQuestion === "用 A 还是 B？")), "board 帧带问题");
+	await until(() => ofType(live.got, "board").some((m) => m.rows.some((r) => r.question?.text === "用 A 还是 B？")), "board 帧带问题");
 	const frame = ofType(live.got, "board").at(-1)!;
 	assert.deepEqual(frame.today.byDisposition, { ignored: 0, delivered: 0, to_router: 2, opened_ticket: 0, handed_over: 0, router_ignored: 0 });
 	assert.deepEqual(frame.today.bySource, { inbox: 2 });
@@ -617,7 +617,7 @@ test("宿主：午夜推完看板后排好下一次", async (t) => {
 	await until(() => ofType(stream.got, "board").length >= 2, "连续两个午夜的看板帧");
 });
 
-test("宿主：其他阶段的任务行 latestQuestion 为空；不传在盯着时快照里是空列表", async (t) => {
+test("宿主：其他阶段的任务行 question 为空；不传在盯着时快照里是空列表", async (t) => {
 	const brain = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
 	const { host } = await startHost(brain, (w) => {
 		w.report({ status: "progress", summary: "做了一半" });
@@ -626,7 +626,7 @@ test("宿主：其他阶段的任务行 latestQuestion 为空；不传在盯着�
 	t.after(() => host.stop());
 	host.say("查天气");
 	await until(() => host.snapshot().board.some((r) => r.latestSummary === "做了一半"), "汇报");
-	assert.deepEqual(host.snapshot().board.map((r) => [r.stage, r.latestQuestion]), [["idle", null]]);
+	assert.deepEqual(host.snapshot().board.map((r) => [r.stage, r.question]), [["idle", null]]);
 	assert.deepEqual(host.snapshot().watching, []);
 });
 

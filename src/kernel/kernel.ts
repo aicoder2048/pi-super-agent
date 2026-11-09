@@ -16,6 +16,7 @@ import type {
 	DashboardRow,
 	Decision,
 	DecisionLogEntry,
+	PendingQuestion,
 	DecisionResult,
 	Disposition,
 	InputKind,
@@ -520,7 +521,7 @@ export class Kernel {
 				stage: t.stage,
 				basis: t.basis,
 				latestSummary: t.latestReport?.summary ?? null,
-				latestQuestion: t.stage === "awaiting_answer" || t.stage === "awaiting_review" ? (t.latestReport?.question ?? null) : null,
+				question: t.stage === "awaiting_answer" ? this.#pendingQuestion(t.latestReport!) : null,
 				model: t.model,
 				fellBack: t.fellBack,
 				toolCalls: t.toolCalls,
@@ -530,6 +531,10 @@ export class Kernel {
 				lastProgressAt: t.lastProgressAt,
 			};
 		});
+	}
+
+	#pendingQuestion(report: Report): PendingQuestion {
+		return { reportId: report.id, text: report.question!, options: report.options, askedAt: report.createdAt, answered: null };
 	}
 
 	pendingInputs(ticketId: string): TicketInput[] {

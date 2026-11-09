@@ -100,7 +100,7 @@ function card(row) {
 		title: row.title,
 		why: BASIS_PHRASE[row.basis],
 		stage: STAGE_PHRASE[row.stage],
-		latest: row.latestQuestion ?? row.latestSummary ?? "已开始，暂无进展",
+		latest: row.question?.text ?? row.latestSummary ?? "已开始，暂无进展",
 		canStop: GROUP[row.stage] === "doing",
 	};
 }
