@@ -450,7 +450,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **You see.**
 
-- [ ] 在状态目录的 `roles/` 放一个「新闻研究员」专家，问「看下黄仁勋听证会的新闻」，助手条写「某某 · 副幕僚长 #1」，那位副幕僚长的提示词里有新闻研究员；问股价时副幕僚长自己查。
+- [x] 在状态目录的 `roles/` 放一个「新闻研究员」专家，问「看下黄仁勋听证会的新闻」，助手条写「某某 · 副幕僚长 #1」，那位副幕僚长的提示词里有新闻研究员；问股价时副幕僚长自己查。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
