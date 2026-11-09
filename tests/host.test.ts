@@ -4,6 +4,9 @@ import { join } from "node:path";
 import test from "node:test";
 import { ROUTER_TOOL_NAMES } from "../src/host/router.ts";
 import { ids, openOnConversation, startHost, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
+import { Kernel } from "../src/kernel/kernel.ts";
+import { openStore } from "../src/kernel/store.ts";
+import { CONVERSATION_THREAD_ID } from "../src/kernel/types.ts";
 
 const replyOnReport: Brain = (cards) =>
 	cards.flatMap((card) => {
@@ -223,4 +226,19 @@ test("宿主启动时状态目录不存在就建成 0700", async (t) => {
 	const { host } = await startHost(() => [], () => {}, { stateDir });
 	t.after(() => host.stop());
 	assert.equal(statSync(stateDir).mode & 0o777, 0o700);
+});
+
+test("宿主启动时，角色已不是牵头角色的未结束任务改归副幕僚长，日志写一行", async (t) => {
+	const stateDir = tempStateDir();
+	const db = openStore(join(stateDir, "state.db"));
+	const old = new Kernel({ db, clock: { now: () => Date.now() }, sourcePolicy: () => "candidate", roles: new Map([["deputy", "副幕僚长"], ["market-lead", "行情主管"]]) });
+	const { triggerId } = old.submitTrigger({ source: "conversation", externalId: "x", threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body: "盯盘", occurredAt: Date.now() });
+	const [opened] = old.route([{ kind: "open_ticket", title: "盯盘", basis: "request", role: "market-lead", triggerId, brief: "盯盘" }]);
+	assert.ok(opened.ok);
+	db.close();
+	const logs: string[] = [];
+	const { host } = await startHost(() => [], () => {}, { stateDir, log: (l) => logs.push(l) });
+	t.after(() => host.stop());
+	assert.equal(host.kernel.getTicket(opened.ticketId!)!.role, "deputy");
+	assert.ok(logs.some((l) => l.includes(opened.ticketId!) && l.includes("market-lead")), logs.join("\n"));
 });

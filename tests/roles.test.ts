@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -108,6 +108,14 @@ test("技能目录不能跑出角色文件所在的目录", () => {
 	const dir = rolesDir({ "r.md": role("skills: ../\n") });
 	assert.throws(() => load(dir), /技能目录必须在 .* 里面/);
 	fails(role("skills: /etc\n"), /技能目录必须在/);
+});
+
+test("技能目录经符号链接指到角色目录外面也不行", () => {
+	const outside = mkdtempSync(join(tmpdir(), "psa-outside-"));
+	mkdirSync(join(outside, "sk"));
+	const dir = rolesDir({ "r.md": role("skills: link/sk\n") });
+	symlinkSync(outside, join(dir, "link"));
+	assert.throws(() => load(dir), /技能目录必须在/);
 });
 
 test("提示词和描述有长度上限，超了在启动时报错而不是起 Worker 时失败", () => {

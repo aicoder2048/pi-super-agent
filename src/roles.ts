@@ -1,5 +1,5 @@
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ConfigError } from "./config-error.ts";
@@ -60,10 +60,10 @@ export function parseRole(file: string, content: string, allowedProviders: reado
 	const badTool = tools?.find((t) => !(WORKER_TOOLS as readonly string[]).includes(t));
 	if (badTool) throw new ConfigError(`${file}：tools 里的 ${badTool} 不是 Worker 的工具，可用：${WORKER_TOOLS.join("、")}`);
 	const skills = (list(fm.skills, file, "skills") ?? []).map((s) => resolve(dirname(file), s));
-	const outside = skills.find((s) => !inside(dirname(file), s));
-	if (outside) throw new ConfigError(`${file}：skills 的 ${outside} 不行，技能目录必须在 ${dirname(file)} 里面`);
 	const missing = skills.find((s) => !existsSync(s));
 	if (missing) throw new ConfigError(`${file}：skills 指向的 ${missing} 不存在`);
+	const outside = skills.find((s) => !inside(realpathSync(dirname(file)), realpathSync(s)));
+	if (outside) throw new ConfigError(`${file}：skills 的 ${outside} 不行，技能目录必须在 ${dirname(file)} 里面（符号链接按实际位置算）`);
 	let model: ModelRef | undefined;
 	if (fm.model !== undefined) {
 		model = parseModelRef(text(fm.model, file, "model"), `${file}：model`);
