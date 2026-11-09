@@ -159,11 +159,14 @@ function mount(doc) {
 		if (atBottom) box.scrollTop = box.scrollHeight;
 	};
 
-	const renderRight = () => {
+	const renderHow = () => {
 		const row = view.rows.find((r) => r.id === watching?.watch.ticketId);
 		$("how-title").textContent = row?.title ?? "";
 		$("how-meta").textContent = row ? `${BASIS_PHRASE[row.basis]} · ${STAGE_PHRASE[row.stage]}` : "";
 		$("small-print").textContent = smallPrint(row, Date.now(), view.receivedAt);
+	};
+
+	const renderSteps = () => {
 		const steps = watching?.watch.steps ?? [];
 		if (!watching) return void $("steps").replaceChildren(el("li", "empty", "点左边的一件事，看助手是怎么一步步做的。"));
 		if (!steps.length) return void $("steps").replaceChildren(el("li", "empty", "还没有步骤。"));
@@ -191,11 +194,12 @@ function mount(doc) {
 		const w = emptyWatch(ticketId);
 		const source = new EventSource(`/transcript?${query}&ticket=${encodeURIComponent(ticketId)}`);
 		source.onmessage = (e) => {
-			if (applyTranscript(w, JSON.parse(e.data))) renderRight();
+			if (applyTranscript(w, JSON.parse(e.data))) renderSteps();
 		};
 		watching = { watch: w, source };
 		renderLeft();
-		renderRight();
+		renderHow();
+		renderSteps();
 	};
 
 	const connect = () => {
@@ -224,7 +228,7 @@ function mount(doc) {
 			alive();
 			const panes = applyMessage(view, JSON.parse(e.data), Date.now());
 			for (const pane of panes) render[pane]();
-			if (panes.includes("left")) renderRight();
+			if (panes.includes("left")) renderHow();
 		};
 		events.onerror = () => {
 			setStatus("disconnected");
@@ -273,9 +277,9 @@ function mount(doc) {
 	});
 
 	renderLeft();
-	renderRight();
+	renderSteps();
 	setInterval(() => {
-		if (watching && view.rows.some((r) => r.id === watching?.watch.ticketId && isLive(r))) renderRight();
+		if (watching && view.rows.some((r) => r.id === watching?.watch.ticketId && isLive(r))) renderHow();
 	}, 1000);
 	setInterval(renderHeader, 30_000);
 	connect();
