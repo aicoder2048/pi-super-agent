@@ -74,7 +74,7 @@ export function applyMessage(view, message, now) {
 			addLine(view, { id: message.id, who: "user", text: message.text, at: message.at });
 			return ["conversation"];
 		case "reply":
-			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at, ...(message.about ? { about: message.about } : {}) });
+			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at, ...(message.ticketId ? { ticketId: message.ticketId } : {}) });
 			return ["conversation"];
 		case "board":
 			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, receivedAt: now });
@@ -164,7 +164,7 @@ export function choicesInConversation(view, sending) {
 	for (const row of view.rows) {
 		const choice = choiceOf(row, sending);
 		const askedAt = row.question?.askedAt ?? Infinity;
-		const line = lines.findLast((l) => l.who === "router" && l.about === row.id && l.at >= askedAt);
+		const line = lines.findLast((l) => l.who === "router" && l.ticketId === row.id && l.at >= askedAt);
 		if (choice && line) placed.set(line.id, choice);
 	}
 	return placed;

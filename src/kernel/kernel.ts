@@ -260,7 +260,7 @@ export class Kernel {
 				text,
 				this.#now(),
 			);
-			this.#enqueue({ kind: "channel.reply", payload: { threadId, text, replyId, about: cause.startsWith("tkt_") ? cause : null } });
+			this.#enqueue({ kind: "channel.reply", payload: { threadId, text, replyId, ticketId: cause.startsWith("tkt_") ? cause : null } });
 			return { ok: true, replyId };
 		});
 	}
@@ -717,7 +717,7 @@ export class Kernel {
 		}));
 	}
 
-	conversation(limit = 50): { id: string; who: "user" | "router"; text: string; at: number; about?: string }[] {
+	conversation(limit = 50): { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string }[] {
 		return this.#all(
 			`SELECT * FROM (
 				SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord, NULL AS cause FROM triggers t
@@ -730,7 +730,7 @@ export class Kernel {
 			limit,
 		)
 			.reverse()
-			.map((r) => ({ id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { about: r.cause } : {}) }));
+			.map((r) => ({ id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { ticketId: r.cause } : {}) }));
 	}
 
 	sourceCursor(source: string): string | undefined {

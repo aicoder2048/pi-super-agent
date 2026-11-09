@@ -139,9 +139,9 @@ test("页面：本地记着的点选，等看板上出现宿主给的那条触�
 test("页面：选项按钮也挂在对话里幕僚长转述这个问题的那一句下面：关于这个任务、在提问之后的最后一句；还没转述或问题结束时对话里没有", () => {
 	const view = page.emptyView();
 	page.applyMessage(view, snapshot({ conversation: [
-		{ id: "rpl_old", who: "router", text: "收到", at: 5 * MIN, about: "tkt_a" },
-		{ id: "rpl_q", who: "router", text: "要看哪部分？", at: 11 * MIN, about: "tkt_a" },
-		{ id: "rpl_other", who: "router", text: "别的事", at: 12 * MIN, about: "tkt_b" },
+		{ id: "rpl_old", who: "router", text: "收到", at: 5 * MIN, ticketId: "tkt_a" },
+		{ id: "rpl_q", who: "router", text: "要看哪部分？", at: 11 * MIN, ticketId: "tkt_a" },
+		{ id: "rpl_other", who: "router", text: "别的事", at: 12 * MIN, ticketId: "tkt_b" },
 		{ id: "trg_x", who: "user", text: "嗯", at: 13 * MIN },
 	], board: [row({ id: "tkt_a", stage: "awaiting_answer", question: asked() })] }), 0);
 	const choices = page.choicesInConversation(view, new Map());
@@ -150,14 +150,14 @@ test("页面：选项按钮也挂在对话里幕僚长转述这个问题的那�
 	page.applyMessage(view, board([row({ id: "tkt_a", stage: "running" })]), 0);
 	assert.equal(page.choicesInConversation(view, new Map()).size, 0);
 	const early = page.emptyView();
-	page.applyMessage(early, snapshot({ conversation: [{ id: "rpl_old", who: "router", text: "收到", at: 5 * MIN, about: "tkt_a" }], board: [row({ id: "tkt_a", stage: "awaiting_answer", question: asked() })] }), 0);
+	page.applyMessage(early, snapshot({ conversation: [{ id: "rpl_old", who: "router", text: "收到", at: 5 * MIN, ticketId: "tkt_a" }], board: [row({ id: "tkt_a", stage: "awaiting_answer", question: asked() })] }), 0);
 	assert.equal(page.choicesInConversation(early, new Map()).size, 0, "提问之前的话下面不挂");
 });
 
-test("页面：reply 帧带的 about 留在对话行上", () => {
+test("页面：reply 帧带的 ticketId 留在对话行上", () => {
 	const view = page.emptyView();
-	page.applyMessage(view, { type: "reply", replyId: "rpl_1", text: "要看哪部分？", at: 1, about: "tkt_a" }, 0);
-	assert.equal(view.lines.get("rpl_1")?.about, "tkt_a");
+	page.applyMessage(view, { type: "reply", replyId: "rpl_1", text: "要看哪部分？", at: 1, ticketId: "tkt_a" }, 0);
+	assert.equal(view.lines.get("rpl_1")?.ticketId, "tkt_a");
 });
 
 test("页面：点选项发的正文只有 {answer: {reportId, option}}，句子由宿主来写；409 显示固定文案", () => {

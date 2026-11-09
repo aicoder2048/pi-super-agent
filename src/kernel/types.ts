@@ -87,7 +87,7 @@ export type Action =
 	| { kind: "router.notify"; payload: RouterNotice }
 	| { kind: "worker.wake"; payload: { ticketId: string } }
 	| { kind: "worker.stop"; payload: { ticketId: string } }
-	| { kind: "channel.reply"; payload: { threadId: string; text: string; replyId: string; about: string | null } };
+	| { kind: "channel.reply"; payload: { threadId: string; text: string; replyId: string; ticketId: string | null } };
 
 export type PendingAction = Action & { id: string; attempts: number; createdAt: number };
 

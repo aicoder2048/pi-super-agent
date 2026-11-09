@@ -155,7 +155,7 @@ export class WebGateway {
 		req.on("end", () =>
 			this.#guard(req, res, () => {
 				if (res.headersSent) return;
-				const body = parseSay(Buffer.concat(chunks).toString("utf8"));
+				const body = parseSayBody(Buffer.concat(chunks).toString("utf8"));
 				if (body === undefined) return deny(res, 400);
 				const result = body.kind === "text" ? { ok: true as const, triggerId: this.#host.say(body.text) } : this.#host.answer(body.reportId, body.option);
 				if (!result.ok) return refuse(res, result.refusal);
@@ -182,7 +182,7 @@ export class WebGateway {
 
 type SayBody = { kind: "text"; text: string } | { kind: "answer"; reportId: string; option: number };
 
-function parseSay(body: string): SayBody | undefined {
+function parseSayBody(body: string): SayBody | undefined {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(body);

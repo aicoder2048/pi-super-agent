@@ -105,7 +105,7 @@ test("点选回答的 [对话] 卡片多一行，写明回答的是哪个任务�
 	assert.equal(host.kernel.listTickets()[0].latestSummary, "收到：回答任务「查财报」：营收和利润");
 });
 
-test("客户端收到的幕僚长转述问题那一行带上 about 任务 id，和对话历史里一致", async (t) => {
+test("客户端收到的幕僚长转述问题那一行带上 ticketId 任务 id，和对话历史里一致", async (t) => {
 	const started = await startHost(relayAndHandOver, (w) => {
 		w.report({ status: "blocked", summary: "两种口径", question: "要看哪部分？", options: OPTIONS });
 		w.settle();
@@ -118,9 +118,9 @@ test("客户端收到的幕僚长转述问题那一行带上 about 任务 id，�
 	started.host.say("查财报");
 	await until(() => ofType(got, "reply").some((m) => m.text === "要看财报的哪部分？"), "转述问题");
 	const ticketId = started.host.kernel.listTickets()[0].id;
-	const replies = ofType(got, "reply").map((m) => [m.text, m.about]);
+	const replies = ofType(got, "reply").map((m) => [m.text, m.ticketId]);
 	assert.deepEqual(replies, [["收到：查财报", undefined], ["要看财报的哪部分？", ticketId]]);
-	assert.deepEqual(started.host.kernel.conversation().filter((l) => l.who === "router").map((l) => l.about), [undefined, ticketId]);
+	assert.deepEqual(started.host.kernel.conversation().filter((l) => l.who === "router").map((l) => l.ticketId), [undefined, ticketId]);
 });
 
 test("TUI 的连接：answer 消息回 ack 带触发 id，重复的回同一个；换一项再点、问题被新问题取代时回 refused 并说明原因", async (t) => {
