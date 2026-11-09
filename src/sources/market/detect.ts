@@ -19,7 +19,6 @@ export interface DetectSettings {
 	volumeSpikeX: number;
 }
 
-/** Highest band reached today per direction, not a set of bands, so a retrace never fires again. */
 export interface Fired {
 	up: number;
 	down: number;
@@ -83,10 +82,6 @@ function describe(move: Move): string {
 	return `${q.symbol} 放量：最近一分钟成交 ${compact(q.minuteVolume!)}，是昨日分钟均量的 ${s.ratio.toFixed(1)} 倍，当前 ${signed(q.changePct)}。`;
 }
 
-/**
- * One trigger per signal with an id derived only from symbol, day and signal, so a poll replayed
- * after a crash between submit and cursor write resubmits the same id and the kernel keeps one.
- */
 export function toTrigger(source: string, move: Move): TriggerSubmission {
 	const { quote: q, signal: s, nyDate } = move;
 	const key = s.kind === "band" ? `${s.dir}${s.pct}` : "volume";

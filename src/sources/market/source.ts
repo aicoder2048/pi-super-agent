@@ -18,7 +18,6 @@ export const LOOKUP_HELP = `us-market（美股行情）：
 - bars { symbol, span: "minute"|"hour"|"day", from: "YYYY-MM-DD", to: "YYYY-MM-DD" }：K 线（t、o、h、l、c、v），最多 500 根
 - session {}：纽约日期和交易时段（pre、regular、post、closed）`;
 
-/** Runs at host startup, before any Worker spawns, so the key leaves process.env first. */
 export function marketFeed(input: FeedInput): FeedSpec {
 	const { source, title } = input;
 	const settings = parseMarketSettings(input.settings, input.override, input.where);
@@ -70,7 +69,6 @@ export class MarketSource implements Feed {
 		return this.#disabled ?? (this.#failing && `暂时取不到行情：${this.#failing.error}`);
 	}
 
-	/** One poll. Triggers are submitted before the cursor is written; a replay after a crash resubmits the same external ids. */
 	async tick(): Promise<void> {
 		const { ctx, settings, client, source } = this.#o;
 		if (this.#disabled) return;
@@ -88,7 +86,6 @@ export class MarketSource implements Feed {
 		}
 		this.#failing = undefined;
 		const result = detect(cursor, quotes, session, settings);
-		// `fired` gets an entry for every symbol with a fresh quote, so an empty map means nothing fresh all day.
 		if (Object.keys(result.cursor.fired).length === 0 && now >= session.openAt + HOLIDAY_AFTER_OPEN_MS) result.cursor.holiday = true;
 		for (const move of result.moves) ctx.submit(toTrigger(source, move));
 		ctx.writeCursor(JSON.stringify(result.cursor));

@@ -19,7 +19,6 @@ export function parseSymbol(raw: unknown): string | undefined {
 
 const isBands = (v: unknown) => Array.isArray(v) && v.length > 0 && v.every((n, i) => typeof n === "number" && n > 0 && (i === 0 || n > v[i - 1]));
 
-/** Module defaults, overridden field by field by stateDir/config.json `sources.<name>`. */
 export function parseMarketSettings(defaults: unknown, override: unknown, where: string): MarketSettings {
 	const raw = { ...(defaults as object), ...(override as object) } as Record<string, any>;
 	const fail = (field: string, need: string) => {

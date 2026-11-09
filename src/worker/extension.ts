@@ -135,7 +135,6 @@ export default function workerExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	// The catalog lives in the description, not in a module skill: inference tasks have no rule and load no skills.
 	pi.registerTool({
 		name: "lookup",
 		label: "查数据",

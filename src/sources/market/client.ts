@@ -18,7 +18,6 @@ export interface Bar {
 
 type ErrorKind = "no-key" | "unauthorized" | "forbidden" | "rate-limited" | "network" | "bad-response" | "busy";
 
-/** Messages are fixed Chinese text: never the URL, a header or the response body. */
 export class MarketError extends Error {
 	readonly kind: ErrorKind;
 

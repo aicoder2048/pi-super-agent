@@ -4,10 +4,6 @@ import { ConfigError } from "../../config-error.ts";
 
 export const KEY_NAMES = ["STOCK_HEATMAP_API_KEY", "MASSIVE_API_KEY", "POLYGON_API_KEY"] as const;
 
-/**
- * Reads the key from the environment, then from the secrets file. Deletes every KEY_NAMES entry from
- * `env` either way: Worker subprocesses are spawned with the host's process.env and must not inherit it.
- */
 export function loadMarketKey(env: NodeJS.ProcessEnv, secretsFile: string | undefined): { key: string; origin: string } | undefined {
 	const fromEnv = KEY_NAMES.find((name) => env[name]);
 	const envKey = fromEnv && env[fromEnv];

@@ -18,9 +18,7 @@ export interface HostConfig {
 	watchdog: { intervalMinutes: number; stuckMinutes: number; staleSeconds: number };
 	modulesDirs: string[];
 	webPort: number;
-	/** A dotenv file holding source credentials, e.g. the market key; only its path is configured. */
 	secretsFile?: string;
-	/** Per-source overrides, parsed by the source that owns them. */
 	sources: Record<string, unknown>;
 }
 
