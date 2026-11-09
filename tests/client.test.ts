@@ -509,3 +509,21 @@ test("客户端：状态目录里有以前留下的凭据但宿主不在时，�
 	assert.equal(ext.warnings.length, 1);
 	assert.ok(ext.warnings[0]!.includes(socketPath), ext.warnings[0]);
 });
+
+test("看板：汇报和标题里的换行、制表符不会把卡片撑成多行，每张卡片恰好三行", () => {
+	const rows = [
+		row({ id: "tkt_t1", title: "统计\t文件数", latestSummary: "统计结果：\n| 目录 | 文件数 |\n|---|---:|\n| src/cli/ | 4 |" }),
+		row({ id: "tkt_t2", latestSummary: "核实结果：消息部分准确。\n\n• 最新公告预告 11 月 11 日发布\r\n• 来源：https://nodejs.org" }),
+	];
+	const lines = renderBoard({ rows, receivedAt: 0, connected: true }, 100, 0);
+	for (const line of lines) assert.doesNotMatch(line, /[\n\r\t]/, JSON.stringify(line));
+	assert.equal(lines.length, 1 + rows.length * 3 + 1);
+	assert.ok(lines.some((l) => l.includes("统计结果： | 目录 |")), lines.join("\n"));
+});
+
+test("看板：标题行分开显示未结束的任务数和其中真正在跑的任务数", () => {
+	const rows = [row({ id: "tkt_i1", stage: "idle" }), row({ id: "tkt_a1", stage: "awaiting_answer" }), row({ id: "tkt_r1", stage: "running" })];
+	const header = renderBoard({ rows, receivedAt: 0, connected: true }, 120, 0)[0]!;
+	assert.match(header, /3 个未结束/);
+	assert.match(header, /1 个在跑/);
+});
