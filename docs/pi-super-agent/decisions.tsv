@@ -75,3 +75,6 @@ ts	phase	decision	why	evidence	result
 2026-11-09T04:24:55Z	handoff	上下文超过 90%，按使用者要求暂停并写交接文档；psa/ship-log 上的两项后续修复已提交，未推送	避免压缩丢失细节，新会话从交接文档接手	docs/pi-super-agent/handoff.md; commit 917f031	paused
 2026-11-09T04:27:26Z	followup	socket 路径检查挪到 Host 构造函数第一行	真实入口发现：检查前 relocateState 已写 location.json，状态目录换到超长路径时失败的启动会改写会话记录	just host 留下 location.json；新测试先红（location.json 被改写）后绿；全量 200 个通过，just host 失败后状态目录无文件	done
 2026-11-09T04:27:26Z	followup	跟进完成，开 PR，不合并	使用者只要求开 PR	no-comments 与 simplify（代替未安装的 deslop）已跑	done
+2026-11-09T04:38:06Z	followup	用户能自己修的启动错误改为 StartupError，入口只打印一句；其他错误照常带堆栈	PR #11 验证者指出超长路径报错先打印源码片段和堆栈；两个设计 runner 独立推荐同一方案（类型化错误，入口只捕获它）	tests/host-main.test.ts 在测试提交上 3 个全红、修复后全绿；just host/watchdog 实测；state.db 是目录时仍有完整堆栈	done
+2026-11-09T04:38:06Z	followup	同一修复覆盖 config.json 的 staleSeconds 校验和 watchdog 入口	复现确认同一机制：loadConfig 的错误在 host 与 watchdog 入口都打印堆栈	just host / just watchdog 配置错误实测	done
+2026-11-09T04:38:06Z	followup	其他 9 处可由配置触发的启动错误（模型名、config.json 语法、模块重名等）不在本 PR	使用者要的是小 PR，这些尚未复现；审查建议在 loadConfig、Modules.load、createHostOptions 三处边界统一转成 StartupError	simplify altitude 审查	open
