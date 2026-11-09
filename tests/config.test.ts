@@ -84,6 +84,14 @@ test("状态目录不存在时建成 0700，只有自己能进；已有的目录
 	assert.equal(statSync(chosen).mode & 0o777, 0o755);
 });
 
+test("同时回答的专家默认最多 4 位，config.json 的 maxConcurrentExperts 可以改；不是 1 到 16 的整数时拒绝启动", () => {
+	assert.equal(loadConfig(stateWith({})).maxConcurrentExperts, 4);
+	assert.equal(loadConfig(stateWith({ maxConcurrentExperts: 2 })).maxConcurrentExperts, 2);
+	for (const maxConcurrentExperts of [0, 17, 2.5, "4"]) {
+		assert.throws(() => loadConfig(stateWith({ maxConcurrentExperts })), (e: Error) => e.name === "ConfigError" && /maxConcurrentExperts/.test(e.message), JSON.stringify(maxConcurrentExperts));
+	}
+});
+
 test("会诊每个问题的时限默认 180 秒，config.json 的 consultTimeoutSeconds 可以改；不是 1 到 1800 秒时拒绝启动", () => {
 	assert.equal(loadConfig(stateWith({})).consultTimeoutSeconds, 180);
 	assert.equal(loadConfig(stateWith({ consultTimeoutSeconds: 60 })).consultTimeoutSeconds, 60);

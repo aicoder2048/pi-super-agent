@@ -12,7 +12,7 @@ const MARKET_MODEL = { provider: "openai-codex", id: "gpt-market" };
 type Asker = (a: ExpertAsk) => Promise<string>;
 
 /** Starts a host whose lead Worker consults once on its first turn and keeps the result. */
-async function consulting(asker: Asker, params: unknown, options: { timeoutMs?: number; selector?: ModelSelector; fallbackDailyTokens?: number } = {}) {
+async function consulting(asker: Asker, params: unknown, options: { timeoutMs?: number; maxConcurrent?: number; selector?: ModelSelector; fallbackDailyTokens?: number } = {}) {
 	let settled: Promise<{ value: unknown } | { error: unknown }> | undefined;
 	let lead: FakeWorker | undefined;
 	const started = await startHost(brain, (w) => {
@@ -21,7 +21,7 @@ async function consulting(asker: Asker, params: unknown, options: { timeoutMs?: 
 			.then(() => w.request("worker.consult", params))
 			.then((value) => ({ value }), (error) => ({ error }));
 	}, {
-		consult: { experts: EXPERTS, timeoutMs: options.timeoutMs ?? 5000 },
+		consult: { experts: EXPERTS, timeoutMs: options.timeoutMs ?? 5000, maxConcurrent: options.maxConcurrent ?? 4 },
 		workerModels: {
 			selector: options.selector ?? new ModelSelector({ primary: { provider: "openai-codex", id: "gpt-6.1-sol" }, fallback: { provider: "openai-codex", id: "gpt-fallback" }, probeEveryMs: 60_000, clock: { now: () => Date.now() } }),
 			fallbackDailyTokens: options.fallbackDailyTokens ?? 1_000_000,
@@ -194,7 +194,7 @@ test("会诊中：看板在牵头人的任务上列出正在回答的专家，�
 	t.after(() => host.stop());
 	const answering = () => host.snapshot().consulting[host.kernel.listTickets()[0].id];
 	await until(() => answering()?.length === 1, "只剩新闻研究员在回答");
-	assert.deepEqual(answering(), ["新闻研究员"]);
+	assert.deepEqual(answering(), [{ title: "新闻研究员", state: "answering" }]);
 	release();
 	await result;
 	await until(() => answering() === undefined, "答完去掉");
@@ -265,3 +265,49 @@ test("专家只能经宿主查数据；它的令牌不能汇报、不能会诊",
 	assert.doesNotMatch(replies["worker.lookup"], /专家只能|令牌/);
 });
 
+
+test("同时回答的专家有上限：多出来的排队，看板写排队中；轮到时才开始计时", async (t) => {
+	let running = 0;
+	let most = 0;
+	const { host, result } = await consulting(async (a) => {
+		most = Math.max(most, ++running);
+		try {
+			await wait(300, a.signal);
+			return `${a.title}的回答`;
+		} finally {
+			running--;
+		}
+	}, two, { maxConcurrent: 1, timeoutMs: 450 });
+	t.after(() => host.stop());
+	const answering = () => host.snapshot().consulting[host.kernel.listTickets()[0]?.id];
+	await until(() => answering()?.length === 2, "一位在答一位在排队");
+	assert.deepEqual(answering(), [{ title: "行情分析师", state: "answering" }, { title: "新闻研究员", state: "queued" }]);
+	const out = (await result) as ConsultResult;
+	assert.equal(most, 1);
+	assert.deepEqual(out.details.experts.map((e) => e.status), ["answered", "answered"], "第二位排队 300 ms 后才开始，450 ms 时限从开始算");
+	assert.ok(out.details.experts[1].waitMs >= 250, `第二位排队 ${out.details.experts[1].waitMs} ms`);
+	assert.ok(out.details.experts[1].ms < 450, `第二位用时从开始算：${out.details.experts[1].ms} ms`);
+});
+
+test("排队也有时限：排队超过一个问题的时限还没轮到，记为超时并说明在排队，牵头人最多等两个时限", async (t) => {
+	const { host, result } = await consulting(async (a) => {
+		if (a.expert === "market-analyst") await new Promise((done) => setTimeout(done, 1500));
+		if (a.signal.aborted) throw a.signal.reason;
+		return "答";
+	}, two, { maxConcurrent: 1, timeoutMs: 300 });
+	t.after(() => host.stop());
+	const started = Date.now();
+	const out = (await result) as ConsultResult;
+	const news = out.details.experts[1];
+	assert.equal(news.status, "timed_out");
+	assert.match(news.error ?? "", /排队/);
+	assert.ok(Date.now() - started < 1700, "第一位不理会中止时，牵头人等它结束");
+});
+
+test("专家的回答有长度上限，超出的截断并注明", async (t) => {
+	const { host, result } = await consulting(async () => "很".repeat(5000), { questions: [{ expert: "general", question: "长篇" }] });
+	t.after(() => host.stop());
+	const answer = ((await result) as ConsultResult).details.experts[0].answer!;
+	assert.ok([...answer].length < 2100, `回答 ${[...answer].length} 字`);
+	assert.match(answer, /已截断/);
+});

@@ -52,7 +52,7 @@ const GROUP = {
  * @property {HelpersToday | undefined} helpers
  * @property {WatchedSource[]} watching
  * @property {Routes} routes
- * @property {Record<string, string[]>} consulting
+ * @property {import("../client/protocol.ts").Consulting} consulting
  */
 
 /** @returns {View} */
@@ -454,7 +454,7 @@ const DUTY_MARK = {
  * @property {string} role
  * @property {string} elapsed
  * @property {string} tokens
- * @property {string[]} experts titles of the experts answering this lead right now
+ * @property {{ title: string, state: "queued" | "answering" }[]} experts the experts this lead is consulting right now
  */
 
 /** One chip per helper on duty (a ticket not yet ended), then today's total. @param {View} view @param {number} now @returns {{ chips: HelperChip[], total: string }} */

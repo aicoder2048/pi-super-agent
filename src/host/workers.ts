@@ -9,7 +9,7 @@ import { formatModelRef, type ModelRef } from "../models.ts";
 import { INPUT_LABEL } from "../client/board-format.mjs";
 import { parseOptions } from "../kernel/question.ts";
 import { DEFAULT_LEAD } from "../kernel/types.ts";
-import { askOne, consultText, parseConsult, type ConsultQuestion, type ConsultResult, type ExpertAsk } from "./consult.ts";
+import { askOne, consultText, ExpertSlots, parseConsult, type ConsultQuestion, type ConsultResult, type ExpertAsk } from "./consult.ts";
 
 export interface WorkerSpec {
 	ticketId: string;
@@ -58,7 +58,11 @@ export function formatInputs(kernel: Kernel, inputs: TicketInput[]): string {
 interface LiveExpert {
 	title: string;
 	token: string;
+	state: ExpertState;
 }
+
+/** queued: waiting for a free expert slot; answering: its process is running. */
+export type ExpertState = "queued" | "answering";
 
 interface Live {
 	handle: WorkerHandle;
@@ -75,6 +79,8 @@ export interface ConsultOptions {
 	/** Expert role name → title. */
 	experts: ReadonlyMap<string, string>;
 	timeoutMs: number;
+	/** Host-wide cap on experts answering at once; the rest queue. */
+	maxConcurrent: number;
 }
 
 export interface WorkerExecutorOptions {
@@ -103,9 +109,11 @@ export class WorkerExecutor {
 	readonly #live = new Map<string, Live>();
 	readonly #spawning = new Map<string, Promise<Live | undefined>>();
 	#shuttingDown = false;
+	readonly #slots: ExpertSlots;
 
 	constructor(options: WorkerExecutorOptions) {
 		this.#o = options;
+		this.#slots = new ExpertSlots(options.consult?.maxConcurrent ?? 1);
 	}
 
 	liveCount(): number {
@@ -143,10 +151,10 @@ export class WorkerExecutor {
 		await live.handle.stop();
 	}
 
-	/** ticketId → titles of the experts answering that lead right now. */
-	consulting(): Record<string, string[]> {
-		const out: Record<string, string[]> = {};
-		for (const [ticketId, live] of this.#live) if (live.experts.size) out[ticketId] = [...live.experts].map((e) => e.title);
+	/** ticketId → the experts that lead is consulting right now, answering or queued. */
+	consulting(): Record<string, { title: string; state: ExpertState }[]> {
+		const out: Record<string, { title: string; state: ExpertState }[]> = {};
+		for (const [ticketId, live] of this.#live) if (live.experts.size) out[ticketId] = [...live.experts].map(({ title, state }) => ({ title, state }));
 		return out;
 	}
 
@@ -352,12 +360,16 @@ export class WorkerExecutor {
 
 	async #ask(ticketId: string, live: Live, q: ConsultQuestion, timeoutMs: number) {
 		const { kernel, spawner, stateDir, afterCommand } = this.#o;
-		const expert: LiveExpert = { title: q.title, token: randomUUID() };
+		const expert: LiveExpert = { title: q.title, token: randomUUID(), state: "queued" };
 		const model = this.#expertModel(q.expert);
 		live.experts.add(expert);
 		afterCommand();
 		try {
-			return await askOne(q, timeoutMs, live.abort.signal, (signal, tally) =>
+			const onStart = () => {
+				expert.state = "answering";
+				afterCommand();
+			};
+			return await askOne(q, timeoutMs, live.abort.signal, this.#slots, onStart, (signal, tally) =>
 				spawner.ask!({
 					...q, ticketId, token: expert.token, model, workdir: join(stateDir, "workers", ticketId), signal,
 					onUsage: (u) => {

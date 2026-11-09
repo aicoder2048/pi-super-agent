@@ -4,7 +4,7 @@ import { join } from "node:path";
 import http from "node:http";
 import { connect, createServer } from "node:net";
 import test, { mock, type TestContext } from "node:test";
-import type { HostToClient, TodayCounts } from "../src/client/protocol.ts";
+import type { Consulting, HostToClient, TodayCounts } from "../src/client/protocol.ts";
 import type { DashboardRow, Routes } from "../src/kernel/types.ts";
 import { formatInputs } from "../src/host/workers.ts";
 import { INPUT_KINDS } from "../src/kernel/types.ts";
@@ -27,7 +27,7 @@ const zeroToday = (): TodayCounts => ({ byDisposition: { ignored: 0, delivered: 
 const duty = { since: 0, resumed: 0 };
 const noHelpers = { count: 0, tokens: 0 };
 const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, helpers: noHelpers, watching: [], routes: {}, consulting: {}, ...over });
-const board = (rows: DashboardRow[], today = zeroToday(), helpers = noHelpers, routes: Routes = {}, consulting: Record<string, string[]> = {}): HostToClient => ({ type: "board", rows, today, duty, helpers, routes, consulting });
+const board = (rows: DashboardRow[], today = zeroToday(), helpers = noHelpers, routes: Routes = {}, consulting: Consulting = {}): HostToClient => ({ type: "board", rows, today, duty, helpers, routes, consulting });
 const texts = (view: ReturnType<typeof page.emptyView>) => [...view.lines.values()].map((l) => `${l.who}:${l.text}`);
 const withRows = (rows: DashboardRow[], now = 0) => {
 	const view = page.emptyView();
@@ -1228,8 +1228,8 @@ test("页面：会诊是一步，等待时写请教几位专家；结果回来�
 
 test("页面：会诊中，助手条在牵头人的小卡后面列出正在回答的专家职称；答完后消失", () => {
 	const view = page.emptyView();
-	page.applyMessage(view, board([row({ id: "tkt_lead" }), row({ id: "tkt_other" })], zeroToday(), noHelpers, {}, { tkt_lead: ["行情分析师", "新闻研究员"] }), 0);
-	assert.deepEqual(page.helperStrip(view, 0).chips.map((c) => [c.id, c.experts]), [["tkt_lead", ["行情分析师", "新闻研究员"]], ["tkt_other", []]]);
+	page.applyMessage(view, board([row({ id: "tkt_lead" }), row({ id: "tkt_other" })], zeroToday(), noHelpers, {}, { tkt_lead: [{ title: "行情分析师", state: "answering" }, { title: "新闻研究员", state: "queued" }] }), 0);
+	assert.deepEqual(page.helperStrip(view, 0).chips.map((c) => [c.id, c.experts]), [["tkt_lead", [{ title: "行情分析师", state: "answering" }, { title: "新闻研究员", state: "queued" }]], ["tkt_other", []]]);
 	page.applyMessage(view, board([row({ id: "tkt_lead" }), row({ id: "tkt_other" })]), 0);
 	assert.deepEqual(page.helperStrip(view, 0).chips.map((c) => c.experts), [[], []]);
 });

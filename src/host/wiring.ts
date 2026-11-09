@@ -116,7 +116,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		timers,
 		watching: watchedSources(modules, timers),
 		feeds,
-		consult: { experts: roster.titles("expert"), timeoutMs: config.consultTimeoutSeconds * 1000 },
+		consult: { experts: roster.titles("expert"), timeoutMs: config.consultTimeoutSeconds * 1000, maxConcurrent: config.maxConcurrentExperts },
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens, roleModel: (name) => roster.get(name)?.model },
 		createRouter: (deps) =>
 			Router.create({

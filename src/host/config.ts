@@ -14,6 +14,8 @@ export interface HostConfig {
 	fallbackDailyTokens: number;
 	/** Each consult question's time limit. */
 	consultTimeoutSeconds: number;
+	/** Experts answering at once across the host; the rest queue. */
+	maxConcurrentExperts: number;
 	retryAttempts: number;
 	probePrimaryMinutes: number;
 	heartbeatSeconds: number;
@@ -63,6 +65,10 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	if (typeof consultTimeoutSeconds !== "number" || !(consultTimeoutSeconds > 0 && consultTimeoutSeconds <= CONSULT_TIMEOUT_MAX)) {
 		throw new ConfigError(`${file}：consultTimeoutSeconds（${JSON.stringify(consultTimeoutSeconds)}）必须是大于 0、不超过 ${CONSULT_TIMEOUT_MAX} 的秒数`);
 	}
+	const maxConcurrentExperts = raw.maxConcurrentExperts ?? 4;
+	if (!Number.isInteger(maxConcurrentExperts) || maxConcurrentExperts < 1 || maxConcurrentExperts > 16) {
+		throw new ConfigError(`${file}：maxConcurrentExperts（${JSON.stringify(maxConcurrentExperts)}）必须是 1 到 16 的整数`);
+	}
 	const sources = raw.sources ?? {};
 	if (sources === null || typeof sources !== "object" || Array.isArray(sources)) {
 		throw new ConfigError(`${file}：sources（${JSON.stringify(sources)}）必须是以来源名为键的对象`);
@@ -78,6 +84,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		bgMaxMinutes: raw.bgMaxMinutes ?? 120,
 		fallbackDailyTokens: raw.fallbackDailyTokens ?? 8_000_000,
 		consultTimeoutSeconds,
+		maxConcurrentExperts,
 		retryAttempts: raw.retryAttempts ?? 3,
 		probePrimaryMinutes: raw.probePrimaryMinutes ?? 15,
 		heartbeatSeconds,

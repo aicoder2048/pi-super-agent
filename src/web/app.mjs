@@ -242,11 +242,13 @@ function mount(doc) {
 			/** @type {HTMLElement} */ (node.querySelector(".meta")).textContent = `${chip.elapsed} · ${chip.tokens}`;
 			node.setAttribute("aria-current", String(watching?.watch.ticketId === chip.id));
 			const experts = /** @type {HTMLElement} */ (node.querySelector(".experts"));
-			if (experts.dataset.shown !== chip.experts.join()) {
-				experts.dataset.shown = chip.experts.join();
-				experts.replaceChildren(...chip.experts.map((title) => el("span", "expert-chip", `${title} ◐`)));
+			const shown = chip.experts.map((e) => `${e.title}:${e.state}`).join();
+			if (experts.dataset.shown !== shown) {
+				experts.dataset.shown = shown;
+				experts.replaceChildren(...chip.experts.map((e) => el("span", `expert-chip ${e.state}`, e.state === "queued" ? `${e.title} 排队中` : `${e.title} ◐`)));
 			}
-			const answering = chip.experts.length ? `，正在请教 ${chip.experts.join("、")}` : "";
+			const titles = (state) => chip.experts.filter((e) => e.state === state).map((e) => e.title).join("、");
+			const answering = [titles("answering") && `，正在请教 ${titles("answering")}`, titles("queued") && `，排队中 ${titles("queued")}`].join("");
 			node.setAttribute("aria-label", `${chip.name} · ${chip.role}，${chip.state}，用时 ${chip.elapsed}，${chip.tokens}${answering}`);
 		}
 		/** @type {HTMLElement} */ (box.querySelector(".total")).textContent = strip.total;

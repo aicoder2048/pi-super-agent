@@ -1,5 +1,8 @@
 import type { DashboardRow, Disposition, HelpersToday, Routes } from "../kernel/types.ts";
 
+/** ticketId → the experts that lead is consulting; a queued one waits for a free expert slot. */
+export type Consulting = Record<string, { title: string; state: "queued" | "answering" }[]>;
+
 /** ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
 export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string };
 
@@ -32,8 +35,8 @@ export interface BoardState {
 	helpers: HelpersToday;
 	/** What became of each of the user's recent messages, so a line under it can change without a reload. */
 	routes: Routes;
-	/** ticketId → titles of the experts answering that lead right now. */
-	consulting: Record<string, string[]>;
+	/** ticketId → the experts that lead is consulting right now; queued ones wait for a free slot. */
+	consulting: Consulting;
 }
 
 export type ClientToHost =
@@ -44,7 +47,7 @@ export type ClientToHost =
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
-	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; consulting: Record<string, string[]>; watching: WatchedSource[] }
+	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; consulting: Consulting; watching: WatchedSource[] }
 	| { type: "user"; id: string; text: string; at: number }
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }
