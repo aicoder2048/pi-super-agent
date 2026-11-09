@@ -83,3 +83,5 @@ ts	phase	decision	why	evidence	result
 2026-11-09T19:16:06Z	w4-verdict	W4 复审 PASS；顺手修两处低概率问题：收尾后不再对已停的进程组发信号；演示的子进程环境删掉行情密钥变量（startHost 支持 baseEnv），只走 secretsFile	复审：pgid 复用可能误杀；shell 导出的密钥会让演示 1-4 轮询真实行情、让 demo-5 误判	实测：有无删除时 us-market 日志分别为「密钥来自环境变量」与「未配置行情密钥」	PASS
 2026-11-09T20:05:31Z	w4	停进程组时 EPERM 视同已不在	macOS 上只剩僵尸的组或被别的用户复用的组号会回 EPERM，W6c 实测两次因此中断收尾	setup.e2e.ts 新测试先红后绿	fixed
 2026-11-09T21:28:24Z	t-frame	撤回副幕僚长一层，回到幕僚长↔助手两层；拆解和汇总下沉到助手，助手按需扩展成 Agent Team（ADR-0008 取代 ADR-0007）	使用者 2026-11-09 决定，并同意四点：助手自带 dispatch_agent 且保留工具、团队来自模块和使用者、成员任务内有记忆、权限只收窄且一层	docs/adr/0008；参考 pi-vs-claude-code/extensions/agent-team.ts	decided
+2026-11-09T21:38:02Z	t-plan	ADR-0008 获批；计划加 T1（成员、团队、open_ticket 的 team）、T2（dispatch_agent 和任务内成员会话）、T3（看盘队和 pi-pi 队），取代 W6a 到 W6c	使用者 2026-11-09 批准 ADR-0008；psa/teams 从 psa/helpers 切出，计划里原本没有 W6 段，所以是新增三段	check-plan：9 PR sections, 0 problems	planned
+2026-11-09T21:52:24Z	t-naming	团队任务用四字名加团队名（「高山流水 · 看盘队 #2」），单个助手保持两字名加角色；按开任务时的团队定名，不看是否派过活；T3 只带看盘队和 pi-pi 队	使用者 2026-11-09 提出团队四字、单人两字，并认同按团队定名和用团队名代替角色的建议；参考实现其余团队是写代码用的，提示词只有一两句，使用者同意暂不带	ADR-0008 命名一段；计划 T1 加名字池和评审；check-plan 0 problems	decided
