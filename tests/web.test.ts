@@ -1249,3 +1249,21 @@ test("页面：Markdown 里的多行段落保留换行，没有 Markdown 记号�
 	assert.deepEqual(page.parseMarkdown("第一行\n第二行"), [{ kind: "p", spans: [{ text: "第一行\n第二行" }] }]);
 	assert.deepEqual(page.parseMarkdown("a*b 和 snake_case_name"), [{ kind: "p", spans: [{ text: "a*b 和 snake_case_name" }] }]);
 });
+
+test("页面：Markdown 解析对括号密集的长文本仍是线性的，正常链接照常解析", () => {
+	for (const text of ["[".repeat(200_000), "[a](x".repeat(40_000), "[a]".repeat(70_000) + "(", "](".repeat(100_000)]) {
+		const started = performance.now();
+		page.parseMarkdown(text);
+		const ms = performance.now() - started;
+		assert.ok(ms < 100, `${JSON.stringify(text.slice(0, 6))}… ${text.length} 字用了 ${Math.round(ms)} ms`);
+	}
+	assert.deepEqual(page.parseMarkdown("看 [路透](https://reuters.com/a_b?x=1) 和 [官方](https://nvidia.com)")[0], {
+		kind: "p", spans: [{ text: "看 " }, { text: "路透" }, { text: "（https://reuters.com/a_b?x=1） 和 " }, { text: "官方" }, { text: "（https://nvidia.com）" }],
+	});
+});
+
+test("页面：提交结果显示完整报告，但超长的报告截到 4000 字", () => {
+	const [step] = watched([tool("report", { status: "ready", summary: "很".repeat(10_000) })]);
+	assert.ok([...step.detail].length <= 4001, `${[...step.detail].length} 字`);
+	assert.ok([...step.detail].length >= 4000);
+});

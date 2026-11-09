@@ -359,9 +359,12 @@ const TOOL_STEP = {
 	bg_start: (a) => ({ title: "启动后台命令", detail: clip(firstLine(a.command), 60) }),
 	bg_status: () => ({ title: "查看后台命令", detail: "" }),
 	bg_stop: () => ({ title: "停止后台命令", detail: "" }),
-	report: (a) => ({ title: reportTitle(a), detail: String(a.question || a.summary || ""), markdown: true }),
+	report: (a) => ({ title: reportTitle(a), detail: clip(String(a.question || a.summary || ""), REPORT_DETAIL_MAX), markdown: true }),
 	consult: (a) => ({ title: "会诊", detail: `请教 ${Array.isArray(a.questions) ? a.questions.length : 0} 位专家` }),
 };
+
+/** The 提交结果 step shows the whole report up to this many characters. */
+const REPORT_DETAIL_MAX = 4000;
 
 /** @param {Record<string, unknown>} a */
 function reportTitle(a) {
@@ -586,7 +589,7 @@ const hostOf = (u) => (typeof u === "string" ? (URL.parse(u)?.host ?? clip(u, 60
  * @typedef {{ kind: "p", spans: Span[] } | { kind: "h", level: number, spans: Span[] } | { kind: "ul" | "ol", items: Span[][] }} MdBlock
  */
 
-const INLINE = /`([^`\n]+)`|\*\*([^*\n]+)\*\*|__([^_\n]+)__|(?<![\w*])\*([^*\s][^*\n]*?)\*(?![\w*])|\[([^\]\n]+)\]\(([^)\s]+)\)/g;
+const INLINE = /`([^`\n]+)`|\*\*([^*\n]+)\*\*|__([^_\n]+)__|(?<![\w*])\*([^*\s][^*\n]*?)\*(?![\w*])|\[([^\[\]\n]+)\]\(([^()\[\]\s]+)\)/g;
 
 /** @param {string} text @returns {Span[]} */
 function inlineSpans(text) {

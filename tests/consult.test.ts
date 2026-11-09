@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ConsultResult, ExpertAsk } from "../src/host/consult.ts";
+import { ExpertSlots, type ConsultResult, type ExpertAsk } from "../src/host/consult.ts";
 import { ModelSelector } from "../src/model-selector.ts";
 import { openOnConversation, startHost, until, type Brain, type FakeWorker } from "./helpers/fakes.ts";
 
@@ -310,4 +310,24 @@ test("专家的回答有长度上限，超出的截断并注明", async (t) => {
 	const answer = ((await result) as ConsultResult).details.experts[0].answer!;
 	assert.ok([...answer].length < 2100, `回答 ${[...answer].length} 字`);
 	assert.match(answer, /已截断/);
+});
+
+test("专家槽位：排队的那位被取消后不占名额，下一位立刻拿到槽位，名额数不变", async () => {
+	const slots = new ExpertSlots(1);
+	const releaseA = await slots.acquire(new AbortController().signal);
+	const b = new AbortController();
+	const queuedB = slots.acquire(b.signal);
+	b.abort(new Error("B 的牵头人停了"));
+	await assert.rejects(queuedB, /B 的牵头人停了/);
+	let gotC = false;
+	const queuedC = slots.acquire(new AbortController().signal).then((release) => ((gotC = true), release));
+	releaseA();
+	const releaseC = await Promise.race([queuedC, new Promise<undefined>((done) => setTimeout(done, 100))]);
+	assert.ok(gotC && releaseC, "A 放手后 C 立刻轮到");
+	let gotD = false;
+	const queuedD = slots.acquire(new AbortController().signal).then((release) => ((gotD = true), release));
+	await new Promise((done) => setTimeout(done, 20));
+	assert.equal(gotD, false, "C 还占着，D 要排队：只有一个名额");
+	releaseC!();
+	(await queuedD)();
 });
