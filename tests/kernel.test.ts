@@ -647,3 +647,40 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 	clock.t += 24 * HOUR;
 	assert.equal(kernel.usageToday("deepseek"), 0);
 });
+
+test("依据为规则的任务必须引用使用者写过的规则", () => {
+	const kernel = new Kernel({
+		db: openStore(":memory:"),
+		clock: { now: () => 0 },
+		sourcePolicy: () => "candidate",
+		isKnownRule: (id) => id === "toy/big-move",
+	});
+	const { triggerId } = kernel.submitTrigger({ source: "toy", externalId: "q1", threads: [{ id: "thr_toy:q" }], sender: "feed", body: "涨 9%", occurredAt: 0 });
+	const [fake, real] = kernel.route([
+		{ kind: "open_ticket", basis: "rule", ruleId: "made-up", triggerId, title: "x", brief: "x" },
+		{ kind: "open_ticket", basis: "rule", ruleId: "toy/big-move", triggerId, title: "x", brief: "x" },
+	]);
+	assert.equal(fake.ok, false);
+	assert.equal(real.ok, true);
+});
+
+test("来源的读取位置跨重启保存", () => {
+	const kernel = new Kernel({ db: openStore(":memory:"), clock: { now: () => 0 }, sourcePolicy: () => "candidate" });
+	assert.equal(kernel.sourceCursor("timer"), undefined);
+	kernel.setSourceCursor("timer", "100");
+	kernel.setSourceCursor("timer", "200");
+	assert.equal(kernel.sourceCursor("timer"), "200");
+});
+
+test("请求任务可以订阅还没出现过的来源线程，之后那条线程上的触发直达它", () => {
+	const kernel = new Kernel({ db: openStore(":memory:"), clock: { now: () => 0 }, sourcePolicy: () => "candidate" });
+	const { triggerId } = kernel.submitTrigger({ source: "conversation", externalId: "u1", threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body: "盯着 build-42", occurredAt: 0 });
+	const [bad, good] = kernel.route([
+		{ kind: "open_ticket", basis: "request", triggerId, threads: ["build-42"], title: "x", brief: "x" },
+		{ kind: "open_ticket", basis: "request", triggerId, threads: ["thr_ci:build-42"], title: "盯 CI", brief: "盯" },
+	]);
+	assert.equal(bad.ok, false);
+	assert.equal(good.ok, true);
+	kernel.submitTrigger({ source: "ci", externalId: "b1", threads: [{ id: "thr_ci:build-42" }], sender: "ci", body: "失败", occurredAt: 0 });
+	assert.equal(kernel.triggerLog()[0].disposition, "delivered");
+});

@@ -10,6 +10,7 @@ export interface WorkerSpec {
 	sessionId: string;
 	workdir: string;
 	basis: Basis;
+	ruleId: string | null;
 	token: string;
 }
 
@@ -156,7 +157,7 @@ export class WorkerExecutor {
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, token },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ruleId: ticket.ruleId, token },
 				events,
 			);
 		} catch (error) {

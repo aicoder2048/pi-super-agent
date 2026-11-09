@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DEFAULT_MODELS, parseModelRef, type ModelRef } from "../models.ts";
 import type { KernelConfig } from "../kernel/types.ts";
 
@@ -34,6 +35,6 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		retryAttempts: raw.retryAttempts ?? 3,
 		probePrimaryMinutes: raw.probePrimaryMinutes ?? 15,
 		watchdog: { intervalMinutes: 3, stuckMinutes: 30, ...(raw.watchdog ?? {}) },
-		modulesDirs: raw.modulesDirs ?? [join(stateDir, "modules")],
+		modulesDirs: raw.modulesDirs ?? [fileURLToPath(new URL("../../modules", import.meta.url)), join(stateDir, "modules")],
 	};
 }

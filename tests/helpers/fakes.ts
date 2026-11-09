@@ -4,11 +4,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Router } from "../../src/host/router.ts";
-import type { HostDeps, RouterLike } from "../../src/host/host.ts";
+import { Host, type HostDeps, type HostOptions, type RouterLike } from "../../src/host/host.ts";
 import type { WorkerEvents, WorkerHandle, WorkerSpawner, WorkerSpec } from "../../src/host/workers.ts";
 
 export type ToolCallSpec = { name: string; args: Record<string, unknown> };
-export type Brain = (cards: string[], call: number) => ToolCallSpec[] | Promise<ToolCallSpec[]>;
+export type Brain = (cards: string[], call: number, toolResults: string[]) => ToolCallSpec[] | Promise<ToolCallSpec[]>;
 
 function messageText(m: any): string {
 	if (typeof m.content === "string") return m.content;
@@ -32,9 +32,10 @@ export function fauxRouter(brain: Brain): FauxRouterHandle {
 		for (let i = messages.length - 1; i >= 0 && messages[i].role === "user"; i--) {
 			trailing.unshift(...messageText(messages[i]).split(/\n\n(?=\[)/));
 		}
-		if (trailing.length === 0) return fauxAssistantMessage(fauxText("ok"));
-		batches.push(trailing);
-		const calls = await brain(trailing, callCount);
+		const toolResults: string[] = [];
+		for (let i = messages.length - 1; i >= 0 && messages[i].role === "toolResult"; i--) toolResults.unshift(messageText(messages[i]));
+		if (trailing.length) batches.push(trailing);
+		const calls = trailing.length || toolResults.length ? await brain(trailing, callCount, toolResults) : [];
 		if (calls.length === 0) return fauxAssistantMessage(fauxText("ok"));
 		return fauxAssistantMessage(calls.map((c) => fauxToolCall(c.name, c.args as any)), { stopReason: "toolUse" });
 	};
@@ -137,4 +138,19 @@ export async function until(predicate: () => boolean, label: string, timeoutMs =
 		if (Date.now() - start > timeoutMs) throw new Error(`等待超时：${label}`);
 		await new Promise((r) => setTimeout(r, 5));
 	}
+}
+
+export async function startHost(brain: Brain, script: WorkerScript, options: Partial<HostOptions> = {}) {
+	const router = fauxRouter(brain);
+	const spawner = new FakeSpawner(script);
+	const host = await Host.start({
+		stateDir: tempStateDir(),
+		createRouter: router.createRouter,
+		createSpawner: () => spawner,
+		log: () => {},
+		...options,
+	});
+	spawner.request = (...args) => host.workers.handleRequest(...args);
+	const said = () => host.kernel.conversation().filter((m) => m.who === "router").map((m) => m.text);
+	return { host, router, spawner, said };
 }

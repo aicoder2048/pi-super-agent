@@ -92,10 +92,13 @@ function toInput(r: Row): TicketInput {
 	};
 }
 
+const SOURCE_THREAD = /^thr_([\w-]+):.+$/;
+
 export interface KernelOptions {
 	db: DatabaseSync;
 	clock: Clock;
 	sourcePolicy: SourcePolicy;
+	isKnownRule?: (ruleId: string) => boolean;
 	config?: Partial<KernelConfig>;
 }
 
@@ -103,9 +106,11 @@ export class Kernel {
 	readonly #db: DatabaseSync;
 	readonly #clock: Clock;
 	readonly #sourcePolicy: SourcePolicy;
+	readonly #isKnownRule: (ruleId: string) => boolean;
 	readonly config: KernelConfig;
 
-	constructor({ db, clock, sourcePolicy, config }: KernelOptions) {
+	constructor({ db, clock, sourcePolicy, isKnownRule = () => true, config }: KernelOptions) {
+		this.#isKnownRule = isKnownRule;
 		this.#db = db;
 		this.#clock = clock;
 		this.#sourcePolicy = sourcePolicy;
@@ -553,6 +558,22 @@ export class Kernel {
 			.map((r) => ({ who: r.who, text: r.text, at: r.at }));
 	}
 
+	sourceCursor(source: string): string | undefined {
+		return this.#get("SELECT cursor FROM source_cursors WHERE source = ?", source)?.cursor;
+	}
+
+	setSourceCursor(source: string, cursor: string): void {
+		this.#tx(() => {
+			this.#run(
+				`INSERT INTO source_cursors (source, cursor, updated_at) VALUES (?, ?, ?)
+				 ON CONFLICT (source) DO UPDATE SET cursor = excluded.cursor, updated_at = excluded.updated_at`,
+				source,
+				cursor,
+				this.#now(),
+			);
+		});
+	}
+
 	usageToday(provider: string): number {
 		return this.#get("SELECT tokens FROM usage_daily WHERE day = ? AND provider = ?", localDayKey(this.#now()), provider)?.tokens ?? 0;
 	}
@@ -593,6 +614,7 @@ export class Kernel {
 
 	#openTicket(d: Extract<Decision, { kind: "open_ticket" }>): DecisionResult {
 		if (d.basis === "rule" && !d.ruleId) return reject("basis rule requires a ruleId");
+		if (d.basis === "rule" && !this.#isKnownRule(d.ruleId!)) return reject(`unknown rule ${d.ruleId}; rules come only from the user's rule files`);
 		if (d.triggerId !== undefined && !this.#get("SELECT 1 FROM triggers WHERE id = ?", d.triggerId)) {
 			return reject(`unknown trigger ${d.triggerId}`);
 		}
@@ -602,7 +624,9 @@ export class Kernel {
 		const threads = [...new Set(d.threads ?? [])];
 		for (const threadId of threads) {
 			if (threadId === CONVERSATION_THREAD_ID) return reject("the conversation thread cannot be subscribed");
-			if (!this.#get("SELECT 1 FROM threads WHERE id = ?", threadId)) return reject(`unknown thread ${threadId}`);
+			if (!this.#get("SELECT 1 FROM threads WHERE id = ?", threadId) && !SOURCE_THREAD.test(threadId)) {
+				return reject(`unknown thread ${threadId}; new threads must look like thr_<source>:<thread>`);
+			}
 		}
 		if (d.basis === "inference") {
 			const limitProblem = this.#inferenceLimitProblem();
@@ -622,6 +646,8 @@ export class Kernel {
 			randomUUID(),
 		);
 		for (const threadId of threads) {
+			const source = threadId.match(SOURCE_THREAD)?.[1];
+			if (source) this.#run("INSERT INTO threads (id, source, title) VALUES (?, ?, NULL) ON CONFLICT (id) DO NOTHING", threadId, source);
 			this.#run("INSERT INTO subscriptions (ticket_id, thread_id) VALUES (?, ?)", ticketId, threadId);
 		}
 		this.#addInput(ticketId, "brief", d.brief, d.triggerId ?? null);
