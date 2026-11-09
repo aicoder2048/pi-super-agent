@@ -4,6 +4,22 @@ export type Basis = (typeof BASES)[number];
 export const WORKER_STATES = ["none", "queued", "running", "idle"] as const;
 export type WorkerState = (typeof WORKER_STATES)[number];
 
+/** conversation: the user's own words; market: a rule fired by a market source; rule: any other rule; watch: the Router's own inference. */
+export const HELPER_ROLES = ["conversation", "market", "rule", "watch"] as const;
+export type HelperRole = (typeof HELPER_ROLES)[number];
+
+/** The helper (worker) a ticket gets when it opens: a name from the pool, its role, and its number within the role that New York day. */
+export interface Helper {
+	name: string;
+	role: HelperRole;
+	seq: number;
+}
+
+export interface HelpersToday {
+	count: number;
+	tokens: number;
+}
+
 export const REPORT_STATUSES = ["progress", "ready", "blocked", "failed", "no_action"] as const;
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
 
@@ -175,6 +191,8 @@ export interface Ticket {
 	toolCalls: number;
 	tokensIn: number;
 	tokensOut: number;
+	/** Null only on a ticket from before helpers existed that the host has not named yet. */
+	helper: Helper | null;
 	stage: Stage;
 	latestReport: Report | null;
 }
@@ -220,6 +238,11 @@ export interface DashboardRow {
 	tokensOut: number;
 	elapsedMs: number;
 	lastProgressAt: number | null;
+	helper: Helper | null;
+	workerState: WorkerState;
+	startedAt: number | null;
+	/** closedAt, or stoppedAt for a stopped ticket; null while the ticket is open. */
+	endedAt: number | null;
 }
 
 export interface AnswerClick {
