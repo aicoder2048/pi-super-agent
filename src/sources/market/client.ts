@@ -74,7 +74,9 @@ function epochMs(v: unknown): number | undefined {
 	return Math.floor(n > 1e17 ? n / 1e6 : n > 1e14 ? n / 1e3 : n < 1e11 ? n * 1000 : n);
 }
 
-function parseQuote(raw: unknown, requested: string[], delayed: boolean): Quote[] {
+const STALE_MS = 10 * 60_000;
+
+function parseQuote(raw: unknown, requested: string[], statusDelayed: boolean, now: number): Quote[] {
 	const r = object(raw);
 	if (!requested.includes(r.ticker)) return [];
 	const trade = object(r.lastTrade), minute = object(r.min), day = object(r.day), prev = object(r.prevDay);
@@ -83,7 +85,7 @@ function parseQuote(raw: unknown, requested: string[], delayed: boolean): Quote[
 	const at = (positive(trade.p) && epochMs(trade.t)) || (positive(minute.c) && epochMs(minute.t)) || epochMs(r.updated);
 	if (!price || !prevClose || !at) return [];
 	return [{
-		symbol: r.ticker, price, prevClose, changePct: (price / prevClose - 1) * 100, at, delayed,
+		symbol: r.ticker, price, prevClose, changePct: (price / prevClose - 1) * 100, at, delayed: statusDelayed || now - at > STALE_MS,
 		dayVolume: count(day.v), minuteVolume: count(minute.v), prevVolume: count(prev.v),
 	}];
 }
@@ -117,7 +119,7 @@ export class MarketClient {
 	async snapshot(symbols: string[], priority: Priority): Promise<Quote[]> {
 		const data = await this.#request(`/v2/snapshot/locale/us/markets/stocks/tickers?tickers=${symbols.map(encodeURIComponent).join(",")}`, priority);
 		if (!Array.isArray(data.tickers)) throw new MarketError("bad-response");
-		return data.tickers.flatMap((row: unknown) => parseQuote(row, symbols, data.status === "DELAYED"));
+		return data.tickers.flatMap((row: unknown) => parseQuote(row, symbols, data.status === "DELAYED", this.#o.clock.now()));
 	}
 
 	async bars(symbol: string, span: Span, from: string, to: string): Promise<Bar[]> {

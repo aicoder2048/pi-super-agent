@@ -45,3 +45,4 @@ ts	phase	decision	why	evidence	result
 2026-11-09T11:10:15Z	f1-architect	接受推断任务的选项可被注入的风险，写进 ADR	推断任务不能对外行动只出草稿；选项文字在使用者眼前，点击是使用者的选择	candidate-1 待定问题	decided
 2026-11-09T12:04:12Z	f1-verdict	F1 在 5797632 复验 PASS：审计 7 项按意图修好，真实浏览器走通点选、等待转交、已回答、久无进展与警示圆点，TUI 19/19	审计后改了 12 项，按规则在新头复验	scratchpad/rvf1/; scratchpad/f1-shots/verify-*.png	PASS
 2026-11-09T12:04:12Z	f1-verdict	不修：卡片按钮早于幕僚长转述约一秒，先点会让回答排在问题前；U+3164 等少数不可见字母仍可作选项	回答送达正确，卡片才是问题的权威来源；剩余字符罕见且不影响授权	复验报告	decided
+2026-11-09T14:56:38Z	m1-live	真实开盘实测：这把 Key 的行情晚约 16 分钟（接口仍回 OK），报价按「比现在晚 10 分钟以上」也标延迟行情	此前以为是实时行情；实测 27 次快照报价都晚 16 分钟，提醒里却没写「延迟行情」，使用者会误以为是即时价	scratchpad/live-w1/demos/out/demo-5-market/market-tap.jsonl; tests/market-client.test.ts 红→绿	fixed
