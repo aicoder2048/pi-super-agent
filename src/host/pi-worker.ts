@@ -8,6 +8,7 @@ import type { Basis } from "../kernel/types.ts";
 import type { ModelRef } from "../models.ts";
 import { toolAllowlist } from "../worker/tools.ts";
 import { formatModelRef } from "../models.ts";
+import { WorkerEventTranslator } from "./worker-events.ts";
 import type { WorkerEvents, WorkerHandle, WorkerSpawner, WorkerSpec } from "./workers.ts";
 
 const WORKER_EXTENSION = fileURLToPath(new URL("../worker/extension.ts", import.meta.url));
@@ -90,24 +91,12 @@ export class PiWorkerSpawner implements WorkerSpawner {
 		let streaming = false;
 		let exited = false;
 		let current = formatModelRef(model);
-		let lastError: string | undefined;
+		const translator = new WorkerEventTranslator(events, model.provider);
 		client.onEvent((event: any) => {
 			events.transcript(event);
-			if (event.type === "agent_start") {
-				streaming = true;
-				lastError = undefined;
-				events.turnStarted();
-			} else if (event.type === "tool_execution_start") {
-				events.toolCalled();
-			} else if (event.type === "message_end" && event.message?.role === "assistant") {
-				lastError = event.message.stopReason === "error" ? String(event.message.errorMessage ?? "error") : undefined;
-				const u = event.message.usage;
-				if (!u) return;
-				events.usage({ provider: event.message.provider ?? model.provider, tokensIn: (u.input ?? 0) + (u.cacheRead ?? 0), tokensOut: u.output ?? 0 });
-			} else if (event.type === "agent_settled") {
-				streaming = false;
-				events.settled(lastError);
-			}
+			if (event.type === "agent_start") streaming = true;
+			else if (event.type === "agent_settled") streaming = false;
+			translator.feed(event);
 		});
 		await client.start();
 		const child = (client as unknown as { process?: { once(e: "exit", f: () => void): void } }).process;
