@@ -271,3 +271,7 @@ ts	phase	decision	why	evidence	result
 2026-11-09T18:07:29Z	x1	测试 491 到 495，全绿	新增 4 条：终端 Ctrl+C、No project 过滤、第二次 Ctrl+C、Watchdog Ctrl+C	just test	PASS
 2026-11-09T18:07:29Z	x1	实测：带任务 Ctrl+C 退出码 0、无 error 行、有已停止、任务 running、无残留；重启后恢复并重新跑 sleep 600	pty 里按 Ctrl+C 驱动 just host，按记录的 pid 探活	scratchpad live-busy.txt live-resume.txt	PASS
 2026-11-09T18:07:29Z	x1	性能：Ctrl+C 到退出中位数 head 0.014s，trunk 0.010s（trunk 退出码 130 带 error 行）	规则 5 秒；Pi 收到 SIGTERM 约 10ms 内退出，所以停止很快	scratchpad perf-head-*.txt perf-trunk-*.txt	PASS
+2026-11-09T18:15:57Z	x1-review	Watchdog 只停自己拉起的宿主，等最多 15 秒；信号处理提前到首次检查前	按心跳找宿主会停掉使用者另开的宿主；新测试还暴露了启动早期按 Ctrl+C 会直接杀掉 Watchdog	tests/watchdog-main.test.ts 先红后绿；改回按心跳找时断言「使用者自己启动的宿主不能被停掉」失败	fixed
+2026-11-09T18:15:57Z	x1-review	恢复的任务找不到原 Pi 会话时，宿主日志写一行说明上下文丢了；新会话仍不显示；没加 kernel 记录	Spawner 用 ticket.startedAt 判断是否恢复；写 kernel 记录要新增汇报类型，不便宜	tests/host-main.test.ts 先红后绿	fixed
+2026-11-09T18:15:57Z	x1-review	补测 800ms 组 SIGKILL 和 Pi 退出后组 SIGKILL	删掉任一条，对应测试就失败	tests/pi-worker-launcher.test.ts 变异检查	PASS
+2026-11-09T18:15:57Z	x1-review	测试 495 到 499；一次全量跑时 web.test.ts 的 409 用例失败，单独跑 3 次、全量重跑 2 次都通过	失败的是本次没改的网页代码，判为不稳定测试	just test	PASS
