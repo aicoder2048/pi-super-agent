@@ -11,6 +11,26 @@ export interface ClientHandlers {
 	transcript?(ticketId: string): unknown[];
 }
 
+// Zero-width and other format characters (Unicode Cf) render as nothing, so a line of only those is blank.
+export function hasVisibleText(text: string): boolean {
+	return text.replace(/[\s\p{Cf}]/gu, "") !== "";
+}
+
+export class HistoryEchoFilter<K extends object> {
+	readonly #last = new WeakMap<K, string>();
+
+	opened(watcher: K, history: unknown[]): void {
+		if (history.length) this.#last.set(watcher, JSON.stringify(history.at(-1)));
+		else this.#last.delete(watcher);
+	}
+
+	isEcho(watcher: K, json: string): boolean {
+		const last = this.#last.get(watcher);
+		this.#last.delete(watcher);
+		return last === json;
+	}
+}
+
 export interface WorkerRequestHandler {
 	(ticketId: string, token: string, method: string, params: unknown): unknown;
 }
@@ -23,6 +43,7 @@ interface ClientConn {
 export class HostServer {
 	readonly #server: Server;
 	readonly #clients = new Set<ClientConn>();
+	readonly #echoes = new HistoryEchoFilter<ClientConn>();
 
 	constructor(clients: ClientHandlers, workers: WorkerRequestHandler) {
 		this.#server = createServer((socket) => {
@@ -52,14 +73,16 @@ export class HostServer {
 					}
 					return;
 				}
-				if (r.type === "say" && typeof r.text === "string" && r.text.trim()) {
+				if (r.type === "say" && typeof r.text === "string" && hasVisibleText(r.text)) {
 					const triggerId = clients.onSay(r.text);
 					if (typeof r.requestId === "string") writeJsonLine(socket, { type: "ack", requestId: r.requestId, triggerId });
 				}
 				else if (r.type === "watch") {
 					client!.watching = typeof r.ticketId === "string" ? r.ticketId : undefined;
 					if (client!.watching && clients.transcript) {
-						writeJsonLine(socket, { type: "transcript_history", ticketId: client!.watching, messages: clients.transcript(client!.watching) });
+						const messages = clients.transcript(client!.watching);
+						this.#echoes.opened(client!, messages);
+						writeJsonLine(socket, { type: "transcript_history", ticketId: client!.watching, messages });
 					}
 				}
 			});
@@ -82,7 +105,10 @@ export class HostServer {
 	}
 
 	sendTranscript(ticketId: string, message: unknown): void {
-		for (const c of this.#clients) if (c.watching === ticketId) writeJsonLine(c.socket, { type: "transcript", ticketId, message });
+		const json = JSON.stringify(message);
+		for (const c of this.#clients) {
+			if (c.watching === ticketId && !this.#echoes.isEcho(c, json)) writeJsonLine(c.socket, { type: "transcript", ticketId, message });
+		}
 	}
 
 	clientCount(): number {

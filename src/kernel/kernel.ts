@@ -518,6 +518,7 @@ export class Kernel {
 				stage: t.stage,
 				basis: t.basis,
 				latestSummary: t.latestReport?.summary ?? null,
+				latestQuestion: t.stage === "awaiting_answer" || t.stage === "awaiting_review" ? (t.latestReport?.question ?? null) : null,
 				model: t.model,
 				fellBack: t.fellBack,
 				toolCalls: t.toolCalls,
@@ -583,6 +584,13 @@ export class Kernel {
 
 	triggerLog(limit = 100): Trigger[] {
 		return this.#all("SELECT * FROM triggers ORDER BY received_at DESC, rowid DESC LIMIT ?", limit).map(toTrigger);
+	}
+
+	triggerCountsToday(): { source: string; disposition: Disposition; count: number }[] {
+		return this.#all(
+			"SELECT source, disposition, COUNT(*) AS count FROM triggers WHERE received_at >= ? GROUP BY source, disposition",
+			localDayStart(this.#now()),
+		).map((r) => ({ source: r.source, disposition: r.disposition, count: r.count }));
 	}
 
 	decisionLog(limit = 100): DecisionLogEntry[] {

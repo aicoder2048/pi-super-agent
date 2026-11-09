@@ -121,6 +121,7 @@ export interface FakeWorker {
 	settle(error?: string): void;
 	crash(): void;
 	request(method: string, params: unknown): unknown;
+	transcript(message: unknown): void;
 }
 
 export type WorkerScript = (worker: FakeWorker, input: string) => void | Promise<void>;
@@ -156,6 +157,7 @@ export class FakeSpawner implements WorkerSpawner {
 				alive = false;
 				events.exited();
 			},
+			transcript: (message) => events.transcript({ type: "message_end", message }),
 		};
 		this.workers.set(spec.ticketId, worker);
 		const script = this.#script;

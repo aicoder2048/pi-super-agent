@@ -6,12 +6,13 @@ import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
 import { Kernel } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
-import { CONVERSATION_THREAD_ID, type Clock, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
+import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
 import type { TriggerSubmission } from "../kernel/types.ts";
 import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import { Dispatcher } from "./dispatcher.ts";
 import { HostServer, type Broadcast } from "./server.ts";
+import type { BoardState, Duty, TodayCounts, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
 import { WebGateway } from "./web.ts";
 import { ConfigError } from "../config-error.ts";
 import { WorkerExecutor, type WorkerModels, type WorkerSpawner } from "./workers.ts";
@@ -44,6 +45,7 @@ export interface HostOptions {
 	createSpawner(deps: HostDeps): WorkerSpawner;
 	log?: (line: string) => void;
 	webPort?: number;
+	watching?: WatchedSource[];
 }
 
 
@@ -71,8 +73,12 @@ export class Host {
 	readonly #log: (line: string) => void;
 	readonly #stateDir: string;
 	#boardTimer: NodeJS.Timeout | undefined;
+	#midnightTimer: NodeJS.Timeout | undefined;
 	#heartbeat: NodeJS.Timeout | undefined;
 	#web: WebGateway | undefined;
+	readonly #watching: WatchedSource[];
+	readonly #clock: Clock;
+	#duty!: Duty;
 
 	private constructor(options: HostOptions) {
 		this.socketPath = join(options.stateDir, "host.sock");
@@ -82,6 +88,8 @@ export class Host {
 		if (relocateState(options.stateDir)) this.#log(`[host] 状态目录换了位置，已把会话记录的工作目录改到 ${options.stateDir}`);
 		this.#stateDir = options.stateDir;
 		const clock = options.clock ?? { now: () => Date.now() };
+		this.#clock = clock;
+		this.#watching = options.watching ?? [];
 		this.kernel = new Kernel({
 			db: openStore(join(options.stateDir, "state.db")),
 			clock,
@@ -137,7 +145,7 @@ export class Host {
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway(() => host.snapshot());
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text) }, host.#log);
 			await host.#web.listen(options.webPort);
 		}
 		try {
@@ -149,12 +157,14 @@ export class Host {
 			throw error;
 		}
 		const recovered = host.kernel.recoverOnStartup();
+		host.#duty = { since: host.#clock.now(), resumed: recovered.length };
 		if (recovered.length) host.#log(`[host] 恢复 ${recovered.length} 个执行中的任务：${recovered.join(", ")}`);
 		host.generic.start();
 		host.timer.start();
 		host.#beat();
 		host.#heartbeat = setInterval(() => host.#beat(), options.heartbeatMs ?? 30_000);
 		host.#heartbeat.unref();
+		host.#atNextMidnight();
 		host.dispatcher.kick();
 		return host;
 	}
@@ -166,7 +176,7 @@ export class Host {
 	say(text: string): string {
 		const at = Date.now();
 		const { triggerId } = this.kernel.submitTrigger({
-			source: "conversation",
+			source: CONVERSATION_SOURCE,
 			externalId: randomUUID(),
 			threads: [{ id: CONVERSATION_THREAD_ID, title: "对话" }],
 			sender: "user",
@@ -179,7 +189,12 @@ export class Host {
 	}
 
 	snapshot() {
-		return { conversation: this.kernel.conversation(50), board: this.kernel.listTickets() };
+		const { rows, today, duty } = this.#boardState();
+		return { conversation: this.kernel.conversation(50), board: rows, today, duty, watching: this.#watching };
+	}
+
+	#boardState(): BoardState {
+		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty };
 	}
 
 	#deliverReply(threadId: string, text: string, replyId: string): void {
@@ -194,11 +209,13 @@ export class Host {
 	}
 
 	#transcript(ticketId: string, event: unknown): void {
-		const e = event as { type?: string; message?: unknown };
-		if (e.type === "message_end" && e.message) this.server.sendTranscript(ticketId, e.message);
+		const e = event as { type?: string; message?: TranscriptMessage };
+		if (e.type !== "message_end" || !e.message) return;
+		this.server.sendTranscript(ticketId, e.message);
+		this.#web?.sendTranscript(ticketId, e.message);
 	}
 
-	transcript(ticketId: string): unknown[] {
+	transcript(ticketId: string): TranscriptMessage[] {
 		const ticket = this.kernel.getTicket(ticketId);
 		if (!ticket) return [];
 		const dir = join(this.#stateDir, "sessions", "workers");
@@ -206,14 +223,25 @@ export class Host {
 		if (!file) return [];
 		return readFileSync(join(dir, file), "utf8")
 			.split("\n")
-			.filter(Boolean)
-			.map((line) => JSON.parse(line) as { type: string; message?: { role?: string } })
+			.flatMap((line) => parseSessionLine(line))
 			.filter((entry) => entry.type === "message" && entry.message?.role !== "system")
-			.map((entry) => entry.message);
+			.map((entry) => entry.message as TranscriptMessage);
 	}
 
 	#beat(): void {
 		writeHeartbeat(this.#stateDir, { pid: process.pid, at: Date.now() });
+	}
+
+	// Today's counts change at local midnight even when nothing happens, and board frames otherwise go out only on #changed().
+	#atNextMidnight(): void {
+		const now = this.#clock.now();
+		const midnight = new Date(now);
+		midnight.setHours(24, 0, 0, 0);
+		this.#midnightTimer = setTimeout(() => {
+			this.#broadcast({ type: "board", ...this.#boardState() });
+			this.#atNextMidnight();
+		}, midnight.getTime() - now);
+		this.#midnightTimer.unref();
 	}
 
 	#changed(): void {
@@ -221,7 +249,7 @@ export class Host {
 		if (this.#boardTimer) return;
 		this.#boardTimer = setTimeout(() => {
 			this.#boardTimer = undefined;
-			this.#broadcast({ type: "board", rows: this.kernel.listTickets() });
+			this.#broadcast({ type: "board", ...this.#boardState() });
 		}, 100);
 	}
 
@@ -240,8 +268,30 @@ export class Host {
 		this.timer.stop();
 		this.dispatcher.stop();
 		clearTimeout(this.#boardTimer);
+		clearTimeout(this.#midnightTimer);
 		await this.workers.shutdown();
 		this.router.dispose();
 		await Promise.all([this.server.close(), this.#web?.close()]);
 	}
+}
+
+// A worker killed mid-write leaves an unterminated last line; Pi skips such lines when it reopens the session, and so do we.
+function parseSessionLine(line: string): { type: string; message?: { role?: string } }[] {
+	if (!line) return [];
+	try {
+		return [JSON.parse(line)];
+	} catch {
+		return [];
+	}
+}
+
+function todayCounts(rows: { source: string; disposition: Disposition; count: number }[]): TodayCounts {
+	const byDisposition = Object.fromEntries(DISPOSITIONS.map((d) => [d, 0])) as Record<Disposition, number>;
+	const bySource: Record<string, number> = {};
+	for (const { source, disposition, count } of rows) {
+		if (source === CONVERSATION_SOURCE || source === WATCHDOG_SOURCE) continue;
+		byDisposition[disposition] += count;
+		bySource[source] = (bySource[source] ?? 0) + count;
+	}
+	return { byDisposition, bySource };
 }

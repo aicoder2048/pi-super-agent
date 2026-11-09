@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import superAgentClient from "../extensions/super-agent.ts";
@@ -11,7 +12,7 @@ import type { HostToClient } from "../src/client/protocol.ts";
 import { formatTranscriptMessage } from "../src/client/transcript.ts";
 import { Host } from "../src/host/host.ts";
 import type { DashboardRow } from "../src/kernel/types.ts";
-import { defaultWorkerModels, FakeSpawner, fauxRouter, ofType, openOnConversation, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
+import { defaultWorkerModels, FakeSpawner, fauxRouter, ofType, openOnConversation, startHost, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
 
 const brain: Brain = (cards) => cards.flatMap((c) => (c.startsWith("[对话]") ? openOnConversation(c) : []));
 
@@ -78,6 +79,63 @@ test("协议：只读查看某个任务时收到它的过程，看不到别的�
 	(host as any).server.sendTranscript("tkt_other", { role: "assistant", content: [{ type: "text", text: "别人的" }] });
 	await until(() => c.of("transcript").length === 1, "实时过程");
 	assert.equal(c.of("transcript")[0].ticketId, id);
+});
+
+test("协议：开始查看时，紧跟历史的第一条实时消息若和历史最后一条相同只收到一次", async (t) => {
+	const stateDir = tempStateDir();
+	const { host, spawner } = await startHost(brain, () => {}, { stateDir });
+	const c = client(host.socketPath);
+	t.after(async () => { c.conn.close(); await host.stop(); });
+	await until(() => c.conn.connected, "连接");
+	host.say("读网页");
+	await until(() => host.kernel.listTickets().length === 1 && spawner.workers.size === 1, "Worker 起来");
+	const id = host.kernel.listTickets()[0].id;
+	const last = { role: "assistant", content: [{ type: "text", text: "先看看" }] };
+	const next = { role: "assistant", content: [{ type: "text", text: "找到了" }] };
+	const dir = join(stateDir, "sessions", "workers");
+	mkdirSync(dir, { recursive: true });
+	const session = host.kernel.getTicket(id)!.workerSessionId;
+	writeFileSync(join(dir, `2026-11-08T00-00-00_${session}.jsonl`), [{ type: "session", id: session }, { type: "message", message: last }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+	c.conn.watch(id);
+	await until(() => c.of("transcript_history").length === 1, "过程历史");
+	spawner.workers.get(id)!.transcript(last);
+	spawner.workers.get(id)!.transcript(next);
+	spawner.workers.get(id)!.transcript(last);
+	await until(() => c.of("transcript").length >= 2, "实时过程");
+	assert.deepEqual(c.of("transcript").map((m) => m.message), [next, last]);
+});
+
+test("协议：会话文件最后一行写到一半时，查看任务收到完整的行，宿主照常服务", async (t) => {
+	const stateDir = tempStateDir();
+	const { host, spawner } = await startHost(brain, () => {}, { stateDir });
+	const c = client(host.socketPath);
+	t.after(async () => { c.conn.close(); await host.stop(); });
+	await until(() => c.conn.connected, "连接");
+	host.say("读网页");
+	await until(() => host.kernel.listTickets().length === 1 && spawner.workers.size === 1, "Worker 起来");
+	const id = host.kernel.listTickets()[0].id;
+	const good = { role: "assistant", content: [{ type: "text", text: "先看看" }] };
+	const dir = join(stateDir, "sessions", "workers");
+	mkdirSync(dir, { recursive: true });
+	const session = host.kernel.getTicket(id)!.workerSessionId;
+	const lines = [{ type: "session", id: session }, { type: "message", message: good }].map((e) => JSON.stringify(e)).join("\n");
+	writeFileSync(join(dir, `2026-11-08T00-00-00_${session}.jsonl`), `${lines}\n{"type":"message","message":{"role":"assi`);
+	c.conn.watch(id);
+	await until(() => c.of("transcript_history").length === 1, "过程历史");
+	assert.deepEqual(c.of("transcript_history")[0].messages, [good]);
+	assert.ok(c.conn.say("还在吗"));
+	await until(() => c.of("user").some((m) => m.text === "还在吗"), "宿主还活着");
+});
+
+test("协议：只有零宽字符的一句话不进对话", async (t) => {
+	const host = await hostAt(tempStateDir());
+	const c = client(host.socketPath);
+	t.after(async () => { c.conn.close(); await host.stop(); });
+	await until(() => c.conn.connected, "连接");
+	c.conn.say("\u200b\ufeff");
+	c.conn.say("真的一句");
+	await until(() => c.of("user").length >= 1, "回显");
+	assert.deepEqual(c.of("user").map((m) => m.text), ["真的一句"]);
 });
 
 function scriptedHost() {
@@ -190,7 +248,7 @@ test("客户端：宿主收下但不回 ack（卡住了）时提醒使用者这�
 const row = (over: Partial<DashboardRow>): DashboardRow => ({
 	id: "tkt_3f2a9c", title: "整理本周的会议纪要并发给团队", stage: "running", basis: "request",
 	latestSummary: "已经读完五份纪要，正在合并重复的行动项，预计还要两分钟", model: "openai-codex/gpt-6.1-sol",
-	fellBack: false, toolCalls: 12, tokensIn: 3200, tokensOut: 800, elapsedMs: 312_000, ...over,
+	fellBack: false, toolCalls: 12, tokensIn: 3200, tokensOut: 800, elapsedMs: 312_000, latestQuestion: null, lastProgressAt: null, ...over,
 });
 
 test("看板：任意终端宽度下每行都不超宽（含中文双宽字符）", () => {

@@ -1,24 +1,52 @@
 // @ts-check
 
-import { applyMessage, boardModel, emptyView, isStale } from "./view.mjs";
-import { isLive } from "../client/board-format.mjs";
+import {
+	STAGE_PHRASE, BASIS_PHRASE, applyMessage, applyTranscript, canSend, dutyLine, emptyView, emptyWatch,
+	helperTint, isStale, leftColumn, resolveTheme, restartNotice, sayCopy, sayOutcome, settleSay, smallPrint, stopSentence, toggleTheme,
+} from "./view.mjs";
+import { DEFAULT_ACK_TIMEOUT_MS, isLive } from "../client/board-format.mjs";
 
 const STATUS_TEXT = {
 	connecting: "连接中…",
-	connected: "已连接",
-	disconnected: "未连接，重试中",
-	expired: "token 已失效，请用宿主日志里最新的网址打开",
+	connected: "",
+	disconnected: "连接中断，正在重连",
+	expired: "链接已失效，请使用宿主日志中的最新链接",
 };
+
+const THEME_KEY = "psa-theme";
+const MARK = { ok: "✓", error: "!", pending: "…" };
 
 /** @param {Document} doc */
 function mount(doc) {
 	const token = new URL(import.meta.url).searchParams.get("token") ?? "";
 	const query = `token=${encodeURIComponent(token)}`;
 	const view = emptyView();
-	const status = /** @type {HTMLElement} */ (doc.getElementById("status"));
-	const conversation = /** @type {HTMLElement} */ (doc.getElementById("conversation"));
-	const board = /** @type {HTMLElement} */ (doc.getElementById("board"));
+	/** @param {string} id */
+	const $ = (id) => /** @type {HTMLElement} */ (doc.getElementById(id));
+	const status = $("status");
+	const thread = /** @type {HTMLElement} */ ($("conversation").firstElementChild);
+	const composer = /** @type {HTMLTextAreaElement} */ ($("composer"));
+	const send = /** @type {HTMLButtonElement} */ ($("send"));
+	const sayStatus = $("say-status");
+	/** @param {string} id */
+	const template = (id) => /** @type {Element} */ (/** @type {HTMLTemplateElement} */ ($(id)).content.firstElementChild);
+	const avatarMark = template("router-avatar");
+	const wrench = template("helper-icon");
 	let rendered = 0;
+	/** @type {import("./view.mjs").SayState} */
+	let sayState = "idle";
+	/** @type {{ text: string, from: number } | undefined} */
+	let unconfirmed;
+	/** @type {{ watch: ReturnType<typeof emptyWatch>, source: EventSource } | undefined} */
+	let watching;
+
+	/** @param {string} tag @param {string} className @param {string} [text] */
+	const el = (tag, className, text = "") => {
+		const node = doc.createElement(tag);
+		node.className = className;
+		node.textContent = text;
+		return node;
+	};
 
 	/** @param {keyof typeof STATUS_TEXT} s */
 	const setStatus = (s) => {
@@ -26,41 +54,188 @@ function mount(doc) {
 		status.textContent = STATUS_TEXT[s];
 	};
 
-	/** @param {string} tag @param {string} className @param {string} text */
-	const el = (tag, className, text) => {
-		const node = doc.createElement(tag);
-		node.className = className;
-		node.textContent = text;
+	/** @param {import("./view.mjs").SayState} state @param {number} [status] */
+	const setSay = (state, status) => {
+		sayState = state;
+		sayStatus.dataset.state = state;
+		sayStatus.textContent = sayCopy(state, status);
+	};
+
+	const store = {
+		get: () => {
+			try {
+				return localStorage.getItem(THEME_KEY);
+			} catch {
+				return null;
+			}
+		},
+		/** @param {string} value */
+		set: (value) => {
+			try {
+				localStorage.setItem(THEME_KEY, value);
+			} catch {}
+		},
+	};
+	const systemDark = () => matchMedia("(prefers-color-scheme: dark)").matches;
+	const stored = store.get();
+	if (stored === "light" || stored === "dark") doc.documentElement.dataset.theme = stored;
+	$("theme").addEventListener("click", () => {
+		const next = toggleTheme(resolveTheme(doc.documentElement.dataset.theme ?? null, systemDark()));
+		doc.documentElement.dataset.theme = next;
+		store.set(next);
+	});
+
+	const renderHeader = () => {
+		$("duty").textContent = dutyLine(view.duty, Date.now());
+		$("restart").textContent = restartNotice(view.duty, Date.now());
+	};
+
+	/** @param {string} ticketId */
+	const helperBadge = (ticketId) => {
+		const badge = el("span", `helper tint-${helperTint(ticketId)}`);
+		badge.setAttribute("aria-hidden", "true");
+		badge.append(wrench.cloneNode(true));
+		return badge;
+	};
+
+	/** @param {import("./view.mjs").TaskCard} card @param {string} tone */
+	const taskCard = (card, tone) => {
+		const node = el("div", `card ${tone}`);
+		node.tabIndex = 0;
+		node.setAttribute("role", "button");
+		node.setAttribute("aria-current", String(watching?.watch.ticketId === card.id));
+		const head = el("div", "head");
+		head.append(helperBadge(card.id), el("div", "title", card.title));
+		node.append(head, el("div", "why", `${card.why} · ${card.stage}`), el("div", "latest", card.latest));
+		if (card.canStop) {
+			const row = el("div", "row");
+			const stop = el("button", "stop", "停止");
+			stop.type = "button";
+			stop.addEventListener("click", (e) => {
+				e.stopPropagation();
+				composer.value = stopSentence(card.title);
+				composer.focus();
+			});
+			row.append(el("span", "spacer"), stop);
+			node.append(row);
+		}
+		node.addEventListener("click", () => watch(card.id));
+		node.addEventListener("keydown", (e) => {
+			if (e.target === node && (e.key === "Enter" || e.key === " ")) {
+				e.preventDefault();
+				watch(card.id);
+			}
+		});
 		return node;
 	};
 
+	/** @param {string} heading @param {HTMLElement[]} items @param {string} emptyText @param {string} [headingClass] */
+	const section = (heading, items, emptyText, headingClass = "") => {
+		const node = el("section", "");
+		node.append(el("h2", headingClass, heading), ...(items.length ? items : [el("p", "empty", emptyText)]));
+		return node;
+	};
+
+	const renderLeft = () => {
+		const left = leftColumn(view);
+		const today = el("section", "");
+		today.id = "today";
+		today.append(el("div", "headline", left.today.headline), el("div", "detail", left.today.detail));
+		const done = el("details", "");
+		done.id = "done";
+		done.open = /** @type {HTMLDetailsElement | null} */ (doc.getElementById("done"))?.open ?? false;
+		const list = el("div", "list");
+		list.append(...left.done.map((c) => taskCard(c, "done")));
+		done.append(el("summary", "", left.doneLine), list);
+		$("left").replaceChildren(
+			section(`待你处理 · ${left.needsYou.length}`, left.needsYou.map((c) => taskCard(c, "ask")), "暂无待处理事项。", "warn"),
+			section(`进行中 · ${left.doing.length}`, left.doing.map((c) => taskCard(c, "doing")), "暂无进行中的任务。"),
+			section(`关注的来源 · ${left.watching.length}`, left.watching.map((w) => {
+				const node = el("div", "watch");
+				const body = el("div", "");
+				body.append(el("div", "name", w.name), el("div", "rule", [w.rule, w.hits].filter(Boolean).join(" · ")));
+				node.append(body);
+				return node;
+			}), "暂无关注的来源。"),
+			today,
+			done,
+		);
+	};
+
 	const renderConversation = () => {
-		const atBottom = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 40;
+		const box = $("conversation");
+		const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
 		for (const line of [...view.lines.values()].slice(rendered)) {
-			const item = el("div", `line ${line.who}`, "");
-			item.append(el("span", "who", line.who === "user" ? "你" : "Router"), el("span", "text", line.text));
-			conversation.append(item);
+			const item = el("div", `line ${line.who}`);
+			const bubble = el("div", "bubble", line.text);
+			if (line.who === "router") {
+				const avatar = avatarMark.cloneNode(true);
+				const said = el("div", "said");
+				said.append(el("div", "who", "幕僚长"), bubble);
+				item.append(avatar, said);
+			} else {
+				bubble.prepend(el("span", "sr", "你："));
+				item.append(bubble);
+			}
+			thread.append(item);
 		}
 		rendered = view.lines.size;
-		if (atBottom) conversation.scrollTop = conversation.scrollHeight;
+		if (atBottom) box.scrollTop = box.scrollHeight;
+		settleUnconfirmed();
 	};
 
-	const renderBoard = () => {
-		const model = boardModel(view, Date.now());
-		const nodes = [el("h2", "", `看板 · ${model.active} 个任务进行中`)];
-		for (const card of model.cards) {
-			const node = el("article", `card ${card.stage}`, "");
-			const head = el("div", "head", "");
-			head.append(el("span", "id", card.shortId), el("span", "title", card.title), el("span", "stage", `${card.stageLabel} · ${card.basisLabel}`));
-			node.append(head, el("div", "summary", `最近：${card.summary}`), el("div", "meta", `${card.model} · 工具 ${card.toolCalls} · ${card.tokens} · ${card.elapsed}`));
-			nodes.push(node);
-		}
-		if (model.hiddenClosed) nodes.push(el("p", "hidden", `另有 ${model.hiddenClosed} 个已结束的任务`));
-		if (!model.cards.length) nodes.push(el("p", "empty", "暂无任务"));
-		board.replaceChildren(...nodes);
+	const settleUnconfirmed = () => {
+		if (!unconfirmed) return;
+		const next = settleSay({ state: sayState, text: unconfirmed.text }, composer.value, [...view.lines.values()].slice(unconfirmed.from));
+		if (next.state === sayState) return;
+		unconfirmed = undefined;
+		composer.value = next.composer;
+		setSay(next.state);
 	};
 
-	const render = { conversation: renderConversation, board: renderBoard };
+	const renderHow = () => {
+		const row = view.rows.find((r) => r.id === watching?.watch.ticketId);
+		$("how-badge").replaceChildren(...(row ? [helperBadge(row.id)] : []));
+		$("how-title").textContent = row?.title ?? "";
+		$("how-meta").textContent = row ? `${BASIS_PHRASE[row.basis]} · ${STAGE_PHRASE[row.stage]}` : "";
+		$("small-print").textContent = smallPrint(row, Date.now(), view.receivedAt);
+	};
+
+	const renderSteps = () => {
+		const steps = watching?.watch.steps ?? [];
+		if (!watching) return void $("steps").replaceChildren(el("li", "empty", "选择左侧的任务，查看助手的执行过程。"));
+		if (!steps.length) return void $("steps").replaceChildren(el("li", "empty", "暂无步骤。"));
+		const open = new Set([...$("steps").querySelectorAll("details[open]")].map((d) => d.getAttribute("data-i")));
+		$("steps").replaceChildren(...steps.map((step, i) => {
+			const li = el("li", `step ${step.state}`);
+			const rail = el("span", "rail");
+			rail.append(el("span", "mark", MARK[step.state]));
+			const body = el("div", "step-body");
+			const raw = el("details", "");
+			raw.setAttribute("data-i", String(i));
+			raw.open = open.has(String(i));
+			raw.append(el("summary", "", "原始记录"), el("pre", "", step.raw));
+			body.append(el("div", "step-title", step.title), el("div", "step-detail", step.detail), raw);
+			li.append(rail, body);
+			return li;
+		}));
+	};
+
+	const render = { conversation: renderConversation, left: renderLeft, header: renderHeader };
+
+	/** @param {string} ticketId */
+	const watch = (ticketId) => {
+		watching?.source.close();
+		const w = emptyWatch(ticketId);
+		const source = new EventSource(`/transcript?${query}&ticket=${encodeURIComponent(ticketId)}`);
+		source.onmessage = (e) => {
+			if (applyTranscript(w, JSON.parse(e.data))) renderSteps();
+		};
+		watching = { watch: w, source };
+		renderLeft();
+		renderHow();
+		renderSteps();
+	};
 
 	const connect = () => {
 		setStatus("connecting");
@@ -86,7 +261,9 @@ function mount(doc) {
 		events.addEventListener("ping", alive);
 		events.onmessage = (e) => {
 			alive();
-			for (const pane of applyMessage(view, JSON.parse(e.data), Date.now())) render[pane]();
+			const panes = applyMessage(view, JSON.parse(e.data), Date.now());
+			for (const pane of panes) render[pane]();
+			if (panes.includes("left")) renderHow();
 		};
 		events.onerror = () => {
 			setStatus("disconnected");
@@ -96,10 +273,53 @@ function mount(doc) {
 		};
 	};
 
-	renderBoard();
+	const say = async () => {
+		const text = composer.value;
+		if (!canSend(text) || send.disabled) return;
+		send.disabled = true;
+		unconfirmed = undefined;
+		const from = view.lines.size;
+		setSay("sending");
+		const abort = new AbortController();
+		const timer = setTimeout(() => abort.abort(), DEFAULT_ACK_TIMEOUT_MS);
+		try {
+			const res = await fetch(`/say?${query}`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ text }),
+				signal: abort.signal,
+				cache: "no-store",
+			});
+			const state = sayOutcome({ status: res.status });
+			if (state === "delivered" && composer.value === text) composer.value = "";
+			if (state === "expired") setStatus("expired");
+			setSay(state, res.status);
+		} catch {
+			setSay(sayOutcome(abort.signal.aborted ? "timeout" : "network"));
+			unconfirmed = { text, from };
+			settleUnconfirmed();
+		} finally {
+			clearTimeout(timer);
+			send.disabled = false;
+		}
+	};
+
+	$("say").addEventListener("submit", (e) => {
+		e.preventDefault();
+		void say();
+	});
+	composer.addEventListener("keydown", (e) => {
+		if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+		e.preventDefault();
+		void say();
+	});
+
+	renderLeft();
+	renderSteps();
 	setInterval(() => {
-		if (view.rows.some(isLive)) renderBoard();
+		if (watching && view.rows.some((r) => r.id === watching?.watch.ticketId && isLive(r))) renderHow();
 	}, 1000);
+	setInterval(renderHeader, 30_000);
 	connect();
 }
 

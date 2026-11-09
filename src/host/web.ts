@@ -3,41 +3,60 @@ import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { ConfigError } from "../config-error.ts";
-import type { HostToClient } from "../client/protocol.ts";
-import type { Broadcast } from "./server.ts";
+import type { HostToClient, TranscriptMessage } from "../client/protocol.ts";
+import { hasVisibleText, HistoryEchoFilter, type Broadcast } from "./server.ts";
 
 type Snapshot = Omit<Extract<HostToClient, { type: "snapshot" }>, "type">;
 
+export interface WebHost {
+	snapshot(): Snapshot;
+	transcript(ticketId: string): TranscriptMessage[];
+	say(text: string): string;
+}
+
+const SAY_MAX_BYTES = 32 * 1024;
+const TICKET_ID = /^tkt_[A-Za-z0-9_-]{1,64}$/;
+
 const INDEX_HTML = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
-// No user data in these, so they need only the Host check. A relative module import would drop the token anyway.
-const SCRIPTS = new Map([
-	["/app.mjs", readFileSync(new URL("../web/app.mjs", import.meta.url))],
-	["/view.mjs", readFileSync(new URL("../web/view.mjs", import.meta.url))],
-	["/client/board-format.mjs", readFileSync(new URL("../client/board-format.mjs", import.meta.url))],
+const SCRIPT = "text/javascript; charset=utf-8";
+// No user data in these, so they need only the Host check. A relative module import or a favicon request would drop the token anyway.
+const STATIC = new Map([
+	["/app.mjs", { type: SCRIPT, body: readFileSync(new URL("../web/app.mjs", import.meta.url)) }],
+	["/view.mjs", { type: SCRIPT, body: readFileSync(new URL("../web/view.mjs", import.meta.url)) }],
+	["/client/board-format.mjs", { type: SCRIPT, body: readFileSync(new URL("../client/board-format.mjs", import.meta.url)) }],
+	["/icon.svg", { type: "image/svg+xml", body: readFileSync(new URL("../web/icon.svg", import.meta.url)) }],
 ]);
 
 const NO_LEAK_HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff" } as const;
-const CSP = "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+// img-src exists only for the tab icon: browsers apply default-src to the favicon request.
+const CSP = "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const KEEPALIVE_MS = 15_000;
+const INTERNAL_ERROR = "宿主内部出错，详情见宿主日志。";
 
 const DENIED = {
-	400: "请求地址无法解析。",
+	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"}，或这句话是空的。",
 	401: "token 缺失或已失效，请用宿主日志里最新的网址打开。",
-	403: "只接受 127.0.0.1 或 localhost 访问。",
+	403: "只接受本机这个页面（127.0.0.1 或 localhost）发来的请求。",
 	404: "没有这个页面。",
-	405: "只读页面，只接受 GET。",
+	405: "这个地址不接受这种请求；发话用 POST /say，其余只接受 GET。",
+	413: "这句话太长了，请分几次说。",
+	415: "发话的正文要用 application/json。",
 } as const;
 
 export class WebGateway {
 	readonly #server: Server;
 	readonly #token = randomBytes(32).toString("hex");
 	readonly #streams = new Set<ServerResponse>();
-	readonly #snapshot: () => Snapshot;
+	readonly #watchers = new Map<string, Set<ServerResponse>>();
+	readonly #echoes = new HistoryEchoFilter<ServerResponse>();
+	readonly #host: WebHost;
+	readonly #log: (line: string) => void;
 	#port = 0;
 
-	constructor(snapshot: () => Snapshot) {
-		this.#snapshot = snapshot;
-		this.#server = createServer((req, res) => this.#handle(req, res));
+	constructor(host: WebHost, log: (line: string) => void) {
+		this.#host = host;
+		this.#log = log;
+		this.#server = createServer((req, res) => this.#guard(req, res, () => this.#handle(req, res)));
 	}
 
 	listen(port: number): Promise<void> {
@@ -63,6 +82,14 @@ export class WebGateway {
 		for (const res of this.#streams) res.write(frame);
 	}
 
+	sendTranscript(ticketId: string, message: TranscriptMessage): void {
+		const watchers = this.#watchers.get(ticketId);
+		if (!watchers) return;
+		const frame = sseFrame({ type: "transcript", ticketId, message });
+		const json = JSON.stringify(message);
+		for (const res of watchers) if (!this.#echoes.isEcho(res, json)) res.write(frame);
+	}
+
 	close(): Promise<void> {
 		if (!this.#server.listening) return Promise.resolve();
 		const closed = new Promise<void>((resolve) => this.#server.close(() => resolve()));
@@ -71,34 +98,96 @@ export class WebGateway {
 		return closed;
 	}
 
+	// A throw here would escape into the http server's emit and take the whole host down.
+	#guard(req: IncomingMessage, res: ServerResponse, work: () => void): void {
+		try {
+			work();
+		} catch (error) {
+			this.#log(`[web] ${req.method} ${URL.parse(req.url ?? "/", "http://x")?.pathname} 出错：${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+			if (res.headersSent) res.destroy();
+			else res.writeHead(500, { ...NO_LEAK_HEADERS, "content-type": "text/plain; charset=utf-8" }).end(INTERNAL_ERROR);
+		}
+	}
+
 	#handle(req: IncomingMessage, res: ServerResponse): void {
 		const url = URL.parse(req.url ?? "/", "http://x");
 		if (!url) return deny(res, 400);
 		if (!isLocalHost(req.headers.host, this.#port)) return deny(res, 403);
-		const script = SCRIPTS.get(url.pathname);
-		if (!script && !tokenMatches(url.searchParams.get("token") ?? "", this.#token)) return deny(res, 401);
+		const file = STATIC.get(url.pathname);
+		if (!file && !tokenMatches(url.searchParams.get("token") ?? "", this.#token)) return deny(res, 401);
+		if (url.pathname === "/say") return req.method === "POST" ? this.#say(req, res) : deny(res, 405);
 		if (req.method !== "GET") return deny(res, 405);
-		if (script) return void res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "text/javascript; charset=utf-8" }).end(script);
+		if (file) return void res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": file.type }).end(file.body);
 		if (url.pathname === "/") {
 			res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "text/html; charset=utf-8", "content-security-policy": CSP });
 			return void res.end(INDEX_HTML.replace("{{token}}", this.#token));
 		}
-		if (url.pathname === "/events") return this.#openStream(res);
+		if (url.pathname === "/events") return this.#openStream(res, { type: "snapshot", ...this.#host.snapshot() }, this.#streams);
+		if (url.pathname === "/transcript") {
+			const ticketId = url.searchParams.get("ticket") ?? "";
+			if (!TICKET_ID.test(ticketId)) return deny(res, 400);
+			const messages = this.#host.transcript(ticketId);
+			const watchers = this.#watchers.get(ticketId) ?? new Set();
+			this.#watchers.set(ticketId, watchers);
+			this.#echoes.opened(res, messages);
+			return this.#openStream(res, { type: "transcript_history", ticketId, messages }, watchers, () => this.#watchers.delete(ticketId));
+		}
 		deny(res, 404);
 	}
 
-	#openStream(res: ServerResponse): void {
+	// The token stops other local pages; Origin and the JSON content type each stop cross-site form posts,
+	// since a cross-origin JSON POST needs a CORS preflight that this server never answers.
+	#say(req: IncomingMessage, res: ServerResponse): void {
+		const origin = req.headers.origin?.toLowerCase();
+		if (!origin?.startsWith("http://") || !isLocalHost(origin.slice("http://".length), this.#port)) return deny(res, 403);
+		if (req.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json") return deny(res, 415);
+		if (Number(req.headers["content-length"] ?? 0) > SAY_MAX_BYTES) return tooLarge(req, res);
+		const chunks: Buffer[] = [];
+		let size = 0;
+		req.on("data", (chunk: Buffer) => {
+			size += chunk.length;
+			if (size > SAY_MAX_BYTES) return tooLarge(req, res);
+			chunks.push(chunk);
+		});
+		req.on("end", () =>
+			this.#guard(req, res, () => {
+				if (res.headersSent) return;
+				const text = parseSay(Buffer.concat(chunks).toString("utf8"));
+				if (text === undefined) return deny(res, 400);
+				const triggerId = this.#host.say(text);
+				res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ triggerId }));
+			}),
+		);
+	}
+
+	#openStream(res: ServerResponse, first: HostToClient, set: Set<ServerResponse>, onEmpty?: () => void): void {
 		res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "text/event-stream; charset=utf-8", connection: "keep-alive" });
 		res.write("retry: 1000\n\n");
-		res.write(sseFrame({ type: "snapshot", ...this.#snapshot() }));
-		this.#streams.add(res);
+		res.write(sseFrame(first));
+		set.add(res);
 		const keepalive = setInterval(() => res.write("event: ping\ndata: \n\n"), KEEPALIVE_MS);
 		keepalive.unref();
 		res.on("close", () => {
 			clearInterval(keepalive);
-			this.#streams.delete(res);
+			set.delete(res);
+			if (set.size === 0) onEmpty?.();
 		});
 	}
+}
+
+function parseSay(body: string): string | undefined {
+	try {
+		const parsed: unknown = JSON.parse(body);
+		const text = (parsed as { text?: unknown } | null)?.text;
+		return typeof text === "string" && hasVisibleText(text) ? text : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function tooLarge(req: IncomingMessage, res: ServerResponse): void {
+	if (res.headersSent) return void req.destroy();
+	res.writeHead(413, { ...NO_LEAK_HEADERS, "content-type": "text/plain; charset=utf-8", connection: "close" }).end(DENIED[413], () => req.destroy());
 }
 
 function sseFrame(message: HostToClient): string {

@@ -16,5 +16,5 @@ token 放在网址里，不放 cookie。cookie 不按端口隔离：`127.0.0.1` 
 
 ## Consequences
 
-- W2 加发言（POST）时，再校验 `Origin` 头必须是本机这个端口，和 token 一起防 CSRF。
+- 唯一的写入口是 `POST /say`。它在 Host 头和 token 之外，还要求 `Origin` 恰好是本机这个端口的页面（缺失也拒绝，403），正文必须是 `application/json`（否则 415）。跨站页面发 JSON 要先过 CORS 预检，而网关从不回应预检，所以这是 `Origin` 之后的第二道墙。
 - 第二个 `just host` 会因为端口被占用而退出，不再抢走正在运行的宿主的 `host.sock`。启动宿主的测试一律用 `webPort: 0`。

@@ -19,3 +19,20 @@ ts	phase	decision	why	evidence	result
 2026-11-09T07:38:48Z	verdict	停掉一个测试遗留的宿主子进程（PID 36264，状态目录 psa-host-*）	测试失败路径没有清理，规格审计第 2 条；已派实现者修	ps 36264 started 22:58	done
 2026-11-09T07:49:52Z	verdict	a87935f 单验证者 PASS：src 只多了 400 处理，全量 257 两遍全绿，真实宿主上恶意目标全部 4xx 且宿主存活，M3 M8 变异 12.8s 2.8s 内失败退出无残留	上次完整验证后只有小修复，按计划规则用单个验证者	PR #18 @a87935f	PASS
 2026-11-09T07:49:52Z	trail	跳过跨模型族的决策记录复核	本机 pstack 配置只有 Claude 一族，没有其他族的模型可用	~/.claude/rules/pstack-models.md	skipped
+2026-11-09T08:23:28Z	w2-layout	W1 合并后在 Claude Design 画布上做三个完整布局：A 三栏控制台、B 看板优先（深色）、C 统一时间线，等使用者选	使用者觉得 W1 页面简陋、缺少专业设计感；计划规定 W2 先定布局再写代码	https://claude.ai/artifact/HUaH5gAKbLfXvvsNYA2Zo3; main ac70ec6	open
+2026-11-09T08:52:42Z	w2-layout	使用者选 A 布局加浅色深色主题；按 A2 改为产品化文案：Router 即 Super Agent，Worker 叫助手，左栏按需要你、正在办、在盯着排	使用者觉得界面机械、看不出与 ChatGPT 的区别；设计文档要求用户只面对一个 Super-agent，面板先列需要人的事	画布 A2 两张; docs/dsh-super-agent/super-agent-design-exploration.md 第 2 节; prototype-docs/005-panel.md	decided
+2026-11-09T08:52:42Z	w2-scope	W2 加入：启动时间与重启提示、在盯着列表、今天替你看了 N 件事、叫停按钮填输入框；进度条改为最近汇报；带选项提问另开 PR 排在 W3 之后	前四项数据现成或很小；进度没有数据来源；带选项提问要改 Router 工具与提示词	使用者 2026-11-09 同意	decided
+2026-11-09T09:09:03Z	architect	W2 以 candidate-2 为底：左栏数据合成一个 BoardState{rows,today,duty} 随快照和每个 board 帧下发，ask 由 Host 从 latestReport 补，kernel 只加今日按来源和去向计数的查询；嫁接 candidate-1 的输入法组字回车不发送，不做恢复后补发 board（token 要等 start 返回才出现在日志里）	两个 runner 收敛：POST /say 只收 JSON 并查 Origin、32KB 上限、GET /transcript 按任务开流、wiring 纯函数描述在盯着什么、view.mjs 纯函数、历史整份替换；candidate-2 不动 DashboardRow，越界更小	scratchpad/arena-w2/candidate-1, candidate-2	decided
+2026-11-09T09:09:03Z	architect	受阻/失败的任务放进「需要你」并写「卡住了」；来源先显示原名；已结束计数写「已结束 N 件」不带今天；重启提示只看本次是否接上了任务	产品原则是做不下去时要找人；显示名要改模块文件，不值得；看板行没有结束时间	candidate-2 design.md 待定问题	decided
+2026-11-09T09:09:03Z	architect	跳过 cross-judge	arena cross-judge pool 只有 Claude 一族	~/.claude/rules/pstack-models.md	skipped
+2026-11-09T09:24:12Z	simplify	W2 采纳 12 条清理：latestQuestion 进 DashboardRow、received_at 索引、右栏每秒只更新耗时、衔接处重复改由宿主去除（TUI 同受益）、截断取正文合成一份、Origin 复用 isLocalHost、conversation 常量、配色只写一份及 4 条小项；不采纳快照字段改名、历史缓存、计数排除挪进 SQL、超时常量共享模块、一行函数内联	改名会破坏 TUI 读的 snapshot.board；其余不采纳项在单用户规模下没有收益	两份 simplify 审查报告	open
+2026-11-09T09:36:20Z	no-comments	W2 接受删掉的 14 条注释；MUST KILL 采纳 4 条（Seams 改名、ACK 超时常量与输入标签挪进共享模块、工具参数改 unknown），不采纳品牌类型 TriggerId 与按阶段的联合类型 DashboardRow	品牌类型只为替代一句注释，收益小；联合类型要动 TUI 与 kernel 的读取，超出 W2，记为未决	Comment Sicko 报告	decided
+2026-11-09T09:41:30Z	copy	网页用语统一：主语只用 Super Agent、助手、你；概念一词一义；去掉口语与拟人化；状态用两到三字固定词	使用者反馈 W2 用语凌乱，要求表意准确、简洁、专业	scratchpad/w2-copy.md	decided
+2026-11-09T09:45:37Z	copy	今日计数改称今日来源消息，去掉已完成后多余的箭头；测试断言与文案同一提交修改，未单独先红	计数不含使用者自己的话，原称呼会让人以为刚发的话没被记上	git log -1	done
+2026-11-09T09:53:04Z	verdict	更正 W2 决策行的证据指针：005-panel.md 实为 docs/dsh-super-agent/prototype-docs/005-panel.md；用语规范收进仓库 docs/web-client/copy.md（含今日来源消息的改动）；今日来源消息那一行指的是提交 fb80c70；simplify 与 Comment Sicko 报告只存在于本次会话的子代理输出，未落盘；w2-scope 的使用者同意来自对话	规格审计发现这些指针对不上，日志只追加不改	docs/web-client/copy.md; commit fb80c70	corrected
+2026-11-09T09:53:04Z	verdict	W2 审计：安全审计发现截断的会话行让宿主崩溃、零宽字符可提交；规格审计发现错误原文直出、午夜后计数不刷新、计划与文档未更新；代码交实现者先红后绿修复，文档由我更新	崩溃会让无人值守的宿主停摆；其余为文案与规格一致性	两份审计报告; IMPLEMENTATION_PLAN.md W2	open
+2026-11-09T09:56:29Z	autonomy	使用者去睡觉并要求把活干完；进入无人值守：W2 做到 merge-ready 并开 PR 不合并，完成 4 个演示脚本，之后按计划叠做 W3 与 W4，均不合并	使用者原话「我睡觉去了，你要把活干完」；autopilot-stack 规定合并由使用者做	对话 2026-11-09	open
+2026-11-09T09:56:29Z	brand	默认采用 L1（π 加琥珀光点）与幕僚长头像 A3；产品名 Pi Super Agent，Router 在界面上叫幕僚长，Worker 叫助手且不起人名	使用者已定命名，Logo 未选；L1 与 A3 同源最统一，小尺寸清楚；可随时替换	画布 HUaH5gAKbLfXvvsNYA2Zo3 Brand.dc.html	decided
+2026-11-09T09:59:12Z	verdict	W2 审计修复完成：截断会话行跳过并且网关异常回 500、零宽字符拒收（HTTP 与 socket）、发送失败显示固定文案、零点推送看板，均先红后绿；live lanes 十条与性能在 fb80c70 全部通过	安全与规格审计证明的问题；live 验证者独立给出 PASS	commits 79d9968 a9762c3 772753a e4db916; scratchpad/live-w2/out/results.json	fixed
+2026-11-09T10:16:47Z	verdict	W2 在 c7dd561 终验 PASS：全量 296 两遍全过、十条 live lane 通过、CSP 与图标、命名、重发修复、截断行与 500 保护实测通过	完整验证后又加了审计修复与品牌改动，按规则在新头上复验	scratchpad/live-w2/final/; docs/web-client/evidence/w2-lanes.mjs	PASS
+2026-11-09T10:16:47Z	followup	socket watch 读不到会话文件时宿主崩溃，main 上已存在，另开 worktree 修	无人值守的宿主不能被一次 watch 打倒	scratchpad/live-w2/final/host-extra.log	open

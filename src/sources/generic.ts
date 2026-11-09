@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { join } from "node:path";
-import type { TriggerSubmission } from "../kernel/types.ts";
+import { CONVERSATION_SOURCE, type TriggerSubmission } from "../kernel/types.ts";
 
 export interface GenericDrop {
 	source?: string;
@@ -38,7 +38,7 @@ export function parseDrop(fallbackId: string, text: string, now: number): Trigge
 	if (!thread?.trim()) throw new Error("缺少 thread（线程标识）");
 	if (!body?.trim()) throw new Error("缺少 body（正文）");
 	const source = optionalString(d, "source")?.trim() || "generic";
-	if (source === "conversation") throw new Error("通用来源不能冒充对话");
+	if (source === CONVERSATION_SOURCE) throw new Error("通用来源不能冒充对话");
 	const id = optionalString(d, "id");
 	const threadTitle = optionalString(d, "threadTitle");
 	const sender = optionalString(d, "sender");

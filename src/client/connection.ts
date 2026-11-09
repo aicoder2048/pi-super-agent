@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { connect, type Socket } from "node:net";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
+import { DEFAULT_ACK_TIMEOUT_MS } from "./board-format.mjs";
 import type { ClientToHost, HostToClient } from "./protocol.ts";
 
-export const DEFAULT_ACK_TIMEOUT_MS = 5000;
+export { DEFAULT_ACK_TIMEOUT_MS };
 
 export interface HostConnectionOptions {
 	socketPath: string;

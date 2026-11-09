@@ -129,51 +129,57 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `src/host/web.ts`.
-- [ ] Edit `src/web/index.html`.
-- [ ] Edit `tests/web.test.ts`.
-- [ ] Edit `src/web/app.mjs`.
-- [ ] Create `docs/web-client/media/w2-layout-<variant>.png`.
+- [x] Edit `src/host/web.ts`.
+- [x] Edit `src/web/index.html`.
+- [x] Edit `tests/web.test.ts`.
+- [x] Edit `src/web/app.mjs`.
+- [x] Edit `src/web/view.mjs`.
+- [x] Edit `src/host/host.ts`.
+- [x] Create `docs/web-client/media/w2-layout-<variant>.png`. 布局在 Claude Design 画布上，见下一条。
 
 **Build.**
 
-- [ ] 先定完整界面的布局，再写代码。按 `pstack/skills/poteto-mode/playbooks/prototype.md`，用 Artifact 工具的 Design 类型做两到三个布局方案，覆盖 W1 到 W3 的全部元素（对话、看板、底部输入框、Worker 过程侧栏、测试工具面板），放在一个可切换的原型里。目标是使用者一眼看出现在在干什么，结果不乱。使用者选定一个方案后，W2 按它实现，W3 沿用。
-  - [ ] 各方案截图存到 `docs/web-client/media/w2-layout-<variant>.png`，选定结果和理由记进 `docs/web-client/decisions.tsv`。
-- [ ] `POST /say` 调 `onSay`，返回 `triggerId`。所有 POST 要求 token 加同源 `Origin`，防跨站请求。
-- [ ] 点看板上的任务，侧栏打开它的 Worker 过程，先显示历史，再实时追加。一个连接同时只看一个任务，和 `/watch` 一致。
-- [ ] 页面底部输入框发话，发出后显示「已送达」或超时提示，规则和 TUI 的确认超时相同。
+- [x] 先定完整界面的布局，再写代码。按 `pstack/skills/poteto-mode/playbooks/prototype.md`，用 Artifact 工具的 Design 类型做两到三个布局方案，覆盖 W1 到 W3 的全部元素（对话、看板、底部输入框、Worker 过程侧栏、测试工具面板），放在一个可切换的原型里。目标是使用者一眼看出现在在干什么，结果不乱。使用者选定一个方案后，W2 按它实现，W3 沿用。
+  - [x] 三个方案和选定的 A2 在画布 https://claude.ai/artifact/HUaH5gAKbLfXvvsNYA2Zo3 上。使用者选 A 的三栏布局，要浅色和深色两套主题，要求少一点技术味、讲清它和普通聊天软件的区别。结果记进 `docs/web-client/decisions.tsv`。
+- [x] 按 A2 重做页面。顶部写明「你的 24 小时助理」和已运行多久。左栏依次是「待你处理」「进行中」「关注的来源」和「今日来源消息」。中间是对话和输入框。右栏是「执行过程」。用语按 `docs/web-client/copy.md`。浅色和深色跟随系统，也能手动切换。
+- [x] 界面用产品化的说法。Router 就叫 Super Agent，Worker 叫「助手」。依据写成「你的请求」「规则触发」「主动发现」。任务编号、模型、用量只在右栏底部小字出现。
+- [x] 宿主在快照里多给三样数据：启动时间（算运行时长，重启后显示「已重启，进行中的任务已恢复」），各模块的来源和规则（「关注的来源」），今天的触发计数和去向（「今日来源消息」）。
+- [x] 任务卡显示最近一次汇报，不做进度条。进行中的任务有「停止」按钮，按下只在输入框里填好「停止任务「标题」」，由使用者发出。
+- [x] `POST /say` 调 `onSay`，返回 `triggerId`。所有 POST 要求 token 加同源 `Origin`，防跨站请求。
+- [x] 点任务，右栏打开「执行过程」，先显示历史，再实时追加。步骤写成大白话，原始工具调用可以展开看。一个连接同时只看一个任务，和 `/watch` 一致。
+- [x] 页面底部输入框发话，发出后显示「已送达」或超时提示，规则和 TUI 的确认超时相同。
 
 **You see.**
 
-- [ ] 在页面输入「查一下今天的天气」，对话里出现这句话和 Router 回复。点新任务，侧栏实时显示工具调用和输出。
+- [x] 在页面输入「帮我读一下 example.com 的网页标题」，对话里出现这句话和 Super Agent 的回复，左栏「进行中」出现这件事。点它，右栏实时显示助手每一步。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/web.test.ts` 加：POST `/say` 缺 token 401，跨源 `Origin` 403，正确请求返回 `triggerId` 并广播 `user`。查看任务先收到历史再收到实时消息，切换任务后不再收到旧任务的消息。Run `just test`.
+- [x] `tests/web.test.ts` 加：POST `/say` 缺 token 401，跨源 `Origin` 403，正确请求返回 `triggerId` 并广播 `user`。查看任务先收到历史再收到实时消息，切换任务后不再收到旧任务的消息。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
-- [ ] Lane 1. Regression lane against trunk. 在 trunk（含 W1）和 head 上都用 `just say` 发同一句话。Save `w2-regression.png`. Pass when 两边网页都显示这句话和回复。
-- [ ] Lane 2. 在页面输入框发一句话。Save `w2-say.png`. Pass when 对话出现这句话，显示「已送达」，之后出现回复。
-- [ ] Lane 3. 发一句会建 Worker 任务的话，点看板上的新任务。Save `w2-watch.png`. Pass when 侧栏显示历史，并实时追加工具调用。
-- [ ] Lane 4. 查看中切到另一个任务。Save `w2-switch.png`. Pass when 侧栏只显示新任务的消息。
-- [ ] Lane 5. 从另一个本机端口的页面用 `fetch` 向 `/say` 发 POST。Save `w2-csrf.png`. Pass when 返回 403，对话没有新增。
-- [ ] Lane 6. 发空白输入。Save `w2-empty.png`. Pass when 不发出，不新增对话。
-- [ ] Lane 7. 暂停宿主进程（`kill -STOP`）后发话。Save `w2-ack-timeout.png`. Pass when 页面显示没送达的提示，恢复后对话里能看到或提示重发。
-- [ ] Lane 8. 网页和 TUI 同时在线，各发一句。Save `w2-mixed-clients.png`. Pass when 两边都按顺序显示两句话。
-- [ ] Lane 9. 查看一个已结束的任务。Save `w2-closed-ticket.png`. Pass when 侧栏显示完整历史，没有报错。
-- [ ] Lane 10. 发一句含 HTML 和 2000 字的话。Save `w2-long-text.png`. Pass when 原样显示，页面不卡，布局不撑破。
+- [x] Lane 1. Regression lane against trunk. 在 trunk（含 W1）和 head 上都用 `just say` 发同一句话。Save `w2-regression.png`. Pass when 两边网页都显示这句话和回复。
+- [x] Lane 2. 在页面输入框发一句话。Save `w2-say.png`. Pass when 对话出现这句话，显示「已送达」，之后出现回复。
+- [x] Lane 3. 发一句会建 Worker 任务的话，点看板上的新任务。Save `w2-watch.png`. Pass when 侧栏显示历史，并实时追加工具调用。
+- [x] Lane 4. 查看中切到另一个任务。Save `w2-switch.png`. Pass when 侧栏只显示新任务的消息。
+- [x] Lane 5. 从另一个本机端口的页面用 `fetch` 向 `/say` 发 POST。Save `w2-csrf.png`. Pass when 返回 403，对话没有新增。
+- [x] Lane 6. 发空白输入。Save `w2-empty.png`. Pass when 不发出，不新增对话。
+- [x] Lane 7. 暂停宿主进程（`kill -STOP`）后发话。Save `w2-ack-timeout.png`. Pass when 页面显示没送达的提示，恢复后对话里能看到或提示重发。
+- [x] Lane 8. 网页和 TUI 同时在线，各发一句。Save `w2-mixed-clients.png`. Pass when 两边都按顺序显示两句话。
+- [x] Lane 9. 查看一个已结束的任务。Save `w2-closed-ticket.png`. Pass when 侧栏显示完整历史，没有报错。
+- [x] Lane 10. 发一句含 HTML 和 2000 字的话。Save `w2-long-text.png`. Pass when 原样显示，页面不卡，布局不撑破。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. trunk（含 W1）和 head 都量 `just say` 到页面显示的延迟。head 另量页面 POST `/say` 到收到 `ack` 的延迟。
-- [ ] Probe. Playwright 脚本交替在 trunk 和 head 上各发 50 句并读取页面时间戳。
-- [ ] Baseline. Record the trunk p95 first.
-- [ ] Rule. head 的 `just say` 路径 p95 比 trunk 慢 20 毫秒以上算失败。POST 到 ack 的 p95 超过 100 毫秒算失败。
+- [x] Metric. trunk（含 W1）和 head 都量 `just say` 到页面显示的延迟。head 另量页面 POST `/say` 到收到 `ack` 的延迟。
+- [x] Probe. Playwright 脚本交替在 trunk 和 head 上各发 50 句并读取页面时间戳。
+- [x] Baseline. Record the trunk p95 first.
+- [x] Rule. head 的 `just say` 路径 p95 比 trunk 慢 20 毫秒以上算失败。POST 到 ack 的 p95 超过 100 毫秒算失败。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 2, 3, 4 screenshots into `docs/web-client/media/w2-review-<slug>.png`.
+- [x] Copy lane 2, 3, 4 screenshots into `docs/web-client/media/w2-review-<slug>.png`.
 - [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/web-client/media/w2-review.mp4`.
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
