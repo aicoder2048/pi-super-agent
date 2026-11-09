@@ -646,19 +646,21 @@ export class Kernel {
 	}
 
 	#newHelper(basis: Basis, originSource: string | null, createdAt: number, team: string): Helper {
-		const crew = this.#teams.kinds.get(team) === "crew";
 		const role = helperRole(basis, originSource, this.#isMarketSource);
-		const pool = crew ? TEAM_HELPER_ROWS : "helper_role IS NOT NULL";
+		const crew = this.#teams.kinds.get(team) === "crew";
+		const unit = crew
+			? { rows: TEAM_HELPER_ROWS, column: "team", value: team, names: TEAM_NAMES }
+			: { rows: "helper_role IS NOT NULL", column: "helper_role", value: role, names: SOLO_NAMES };
 		const day = newYorkDate(createdAt);
 		const sameUnit = this.#all(
-			`SELECT created_at FROM tickets WHERE ${pool} AND ${crew ? "team" : "helper_role"} = ? AND created_at > ? AND created_at <= ?`,
-			crew ? team : role,
+			`SELECT created_at FROM tickets WHERE ${unit.rows} AND ${unit.column} = ? AND created_at > ? AND created_at <= ?`,
+			unit.value,
 			createdAt - 2 * DAY_MS,
 			createdAt,
 		).filter((r) => newYorkDate(r.created_at) === day).length;
-		const ordinal = this.#get(`SELECT COUNT(*) AS n FROM tickets WHERE ${pool}`).n as number;
-		const onDuty = new Set(this.#column(`SELECT helper_name AS v FROM tickets WHERE ${pool} AND closed_at IS NULL AND stopped_at IS NULL`));
-		const identity = { name: helperName(crew ? TEAM_NAMES : SOLO_NAMES, ordinal, onDuty), seq: sameUnit + 1 };
+		const ordinal = this.#get(`SELECT COUNT(*) AS n FROM tickets WHERE ${unit.rows}`).n as number;
+		const onDuty = new Set(this.#column(`SELECT helper_name AS v FROM tickets WHERE ${unit.rows} AND closed_at IS NULL AND stopped_at IS NULL`));
+		const identity = { name: helperName(unit.names, ordinal, onDuty), seq: sameUnit + 1 };
 		return crew ? { ...identity, team } : { ...identity, role };
 	}
 

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { onJsonLines, writeJsonLine } from "../src/jsonl.ts";
+import { WORKER_TOOLS } from "../src/worker/tools.ts";
 import { until } from "./helpers/fakes.ts";
 
 async function load(basis: string) {
@@ -116,4 +117,10 @@ test("Worker 的工具跑的命令，环境里没有任何 PSA_ 变量：拿不�
 	await w.run("bg_start", { command: "env | grep -E '^PSA_|host\\.sock|psa-state-for-env-test' || echo 干净" });
 	await until(() => w.sent.length === 1, "结果送回");
 	assert.equal(w.sent[0].message.content.split("输出末尾：\n")[1], "干净\n");
+});
+
+test("成员定义里可写的工具清单包含助手扩展注册的每一个工具", async (t) => {
+	const w = await load("request");
+	t.after(w.close);
+	assert.deepEqual([...w.tools.keys()].filter((name) => !(WORKER_TOOLS as readonly string[]).includes(name)), []);
 });

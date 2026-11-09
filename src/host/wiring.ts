@@ -63,12 +63,6 @@ export function feedSpecs(config: Pick<HostConfig, "stateDir" | "secretsFile" | 
 	});
 }
 
-/** A member may only use a provider the user already runs the router or the worker on; the fallback's provider is pay-per-use. */
-export function loadRoster(config: Pick<HostConfig, "stateDir" | "models">, modules: Modules): Roster {
-	const providers = [...new Set([config.models.router.provider, config.models.worker.provider])];
-	return Roster.load([BUILTIN_ROOT, ...modules.modules.map((m) => m.dir), config.stateDir], providers);
-}
-
 export interface HostWiringInput {
 	config: HostConfig;
 	modules: Modules;
@@ -78,7 +72,9 @@ export interface HostWiringInput {
 }
 
 export function createHostOptions({ config, modules, modelRuntime, log, clock = { now: () => Date.now() } }: HostWiringInput): HostOptions {
-	const roster = loadRoster(config, modules);
+	// A member may only use a provider the router or the worker already runs on; the fallback's provider is pay-per-use.
+	const subscribed = [...new Set([config.models.router.provider, config.models.worker.provider])];
+	const roster = Roster.load([BUILTIN_ROOT, ...modules.modules.map((m) => m.dir), config.stateDir], subscribed);
 	const teams = roster.teamBook(modules.allRules());
 	log(`[host] 团队：${[...teams.kinds.keys()].join("、")}`);
 	const resolve = (ref: ModelRef, role?: string) => {
