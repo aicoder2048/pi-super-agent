@@ -28,3 +28,6 @@ ts	phase	decision	why	evidence	result
 2026-11-09T09:24:12Z	simplify	W2 采纳 12 条清理：latestQuestion 进 DashboardRow、received_at 索引、右栏每秒只更新耗时、衔接处重复改由宿主去除（TUI 同受益）、截断取正文合成一份、Origin 复用 isLocalHost、conversation 常量、配色只写一份及 4 条小项；不采纳快照字段改名、历史缓存、计数排除挪进 SQL、超时常量共享模块、一行函数内联	改名会破坏 TUI 读的 snapshot.board；其余不采纳项在单用户规模下没有收益	两份 simplify 审查报告	open
 2026-11-09T09:36:20Z	no-comments	W2 接受删掉的 14 条注释；MUST KILL 采纳 4 条（Seams 改名、ACK 超时常量与输入标签挪进共享模块、工具参数改 unknown），不采纳品牌类型 TriggerId 与按阶段的联合类型 DashboardRow	品牌类型只为替代一句注释，收益小；联合类型要动 TUI 与 kernel 的读取，超出 W2，记为未决	Comment Sicko 报告	decided
 2026-11-09T09:41:30Z	copy	网页用语统一：主语只用 Super Agent、助手、你；概念一词一义；去掉口语与拟人化；状态用两到三字固定词	使用者反馈 W2 用语凌乱，要求表意准确、简洁、专业	scratchpad/w2-copy.md	decided
+2026-11-09T09:45:37Z	copy	今日计数改称今日来源消息，去掉已完成后多余的箭头；测试断言与文案同一提交修改，未单独先红	计数不含使用者自己的话，原称呼会让人以为刚发的话没被记上	git log -1	done
+2026-11-09T09:53:04Z	verdict	更正 W2 决策行的证据指针：005-panel.md 实为 docs/dsh-super-agent/prototype-docs/005-panel.md；用语规范收进仓库 docs/web-client/copy.md（含今日来源消息的改动）；今日来源消息那一行指的是提交 fb80c70；simplify 与 Comment Sicko 报告只存在于本次会话的子代理输出，未落盘；w2-scope 的使用者同意来自对话	规格审计发现这些指针对不上，日志只追加不改	docs/web-client/copy.md; commit fb80c70	corrected
+2026-11-09T09:53:04Z	verdict	W2 审计：安全审计发现截断的会话行让宿主崩溃、零宽字符可提交；规格审计发现错误原文直出、午夜后计数不刷新、计划与文档未更新；代码交实现者先红后绿修复，文档由我更新	崩溃会让无人值守的宿主停摆；其余为文案与规格一致性	两份审计报告; IMPLEMENTATION_PLAN.md W2	open

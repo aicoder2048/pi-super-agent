@@ -129,29 +129,29 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `src/host/web.ts`.
-- [ ] Edit `src/web/index.html`.
-- [ ] Edit `tests/web.test.ts`.
-- [ ] Edit `src/web/app.mjs`.
-- [ ] Edit `src/web/view.mjs`.
-- [ ] Edit `src/host/host.ts`.
+- [x] Edit `src/host/web.ts`.
+- [x] Edit `src/web/index.html`.
+- [x] Edit `tests/web.test.ts`.
+- [x] Edit `src/web/app.mjs`.
+- [x] Edit `src/web/view.mjs`.
+- [x] Edit `src/host/host.ts`.
 - [x] Create `docs/web-client/media/w2-layout-<variant>.png`. 布局在 Claude Design 画布上，见下一条。
 
 **Build.**
 
-- [ ] 先定完整界面的布局，再写代码。按 `pstack/skills/poteto-mode/playbooks/prototype.md`，用 Artifact 工具的 Design 类型做两到三个布局方案，覆盖 W1 到 W3 的全部元素（对话、看板、底部输入框、Worker 过程侧栏、测试工具面板），放在一个可切换的原型里。目标是使用者一眼看出现在在干什么，结果不乱。使用者选定一个方案后，W2 按它实现，W3 沿用。
+- [x] 先定完整界面的布局，再写代码。按 `pstack/skills/poteto-mode/playbooks/prototype.md`，用 Artifact 工具的 Design 类型做两到三个布局方案，覆盖 W1 到 W3 的全部元素（对话、看板、底部输入框、Worker 过程侧栏、测试工具面板），放在一个可切换的原型里。目标是使用者一眼看出现在在干什么，结果不乱。使用者选定一个方案后，W2 按它实现，W3 沿用。
   - [x] 三个方案和选定的 A2 在画布 https://claude.ai/artifact/HUaH5gAKbLfXvvsNYA2Zo3 上。使用者选 A 的三栏布局，要浅色和深色两套主题，要求少一点技术味、讲清它和普通聊天软件的区别。结果记进 `docs/web-client/decisions.tsv`。
-- [ ] 按 A2 重做页面。顶部写明「你的 24 小时助理」和已连续值班多久。左栏依次是「需要你」「正在替你办」「在替你盯着」和「今天替你看了 N 件事」。中间是对话和输入框。右栏是「它是怎么做的」。浅色和深色跟随系统，也能手动切换。
-- [ ] 界面用产品化的说法。Router 就叫 Super Agent，Worker 叫「助手」。依据写成「你让我做的」「按你的规则」「我觉得该做的」。任务编号、模型、用量只在右栏底部小字出现。
-- [ ] 宿主在快照里多给三样数据：启动时间（算值班时长，重启后显示「刚刚重启过，正在办的事都接上了」），各模块的来源和规则（「在替你盯着」），今天的触发计数和去向（「今天替你看了 N 件事」）。
-- [ ] 任务卡显示最近一次汇报，不做进度条。正在办的任务有「叫停」按钮，按下只在输入框里填好叫停的话，由使用者发给 Super Agent。
-- [ ] `POST /say` 调 `onSay`，返回 `triggerId`。所有 POST 要求 token 加同源 `Origin`，防跨站请求。
-- [ ] 点任务，右栏打开「它是怎么做的」，先显示历史，再实时追加。步骤写成大白话，原始工具调用可以展开看。一个连接同时只看一个任务，和 `/watch` 一致。
-- [ ] 页面底部输入框发话，发出后显示「已送达」或超时提示，规则和 TUI 的确认超时相同。
+- [x] 按 A2 重做页面。顶部写明「你的 24 小时助理」和已运行多久。左栏依次是「待你处理」「进行中」「关注的来源」和「今日来源消息」。中间是对话和输入框。右栏是「执行过程」。用语按 `docs/web-client/copy.md`。浅色和深色跟随系统，也能手动切换。
+- [x] 界面用产品化的说法。Router 就叫 Super Agent，Worker 叫「助手」。依据写成「你的请求」「规则触发」「主动发现」。任务编号、模型、用量只在右栏底部小字出现。
+- [x] 宿主在快照里多给三样数据：启动时间（算运行时长，重启后显示「已重启，进行中的任务已恢复」），各模块的来源和规则（「关注的来源」），今天的触发计数和去向（「今日来源消息」）。
+- [x] 任务卡显示最近一次汇报，不做进度条。进行中的任务有「停止」按钮，按下只在输入框里填好「停止任务「标题」」，由使用者发出。
+- [x] `POST /say` 调 `onSay`，返回 `triggerId`。所有 POST 要求 token 加同源 `Origin`，防跨站请求。
+- [x] 点任务，右栏打开「执行过程」，先显示历史，再实时追加。步骤写成大白话，原始工具调用可以展开看。一个连接同时只看一个任务，和 `/watch` 一致。
+- [x] 页面底部输入框发话，发出后显示「已送达」或超时提示，规则和 TUI 的确认超时相同。
 
 **You see.**
 
-- [ ] 在页面输入「帮我读一下 example.com 的网页标题」，对话里出现这句话和 Super Agent 的回复，左栏「正在替你办」出现这件事。点它，右栏实时显示助手每一步。
+- [ ] 在页面输入「帮我读一下 example.com 的网页标题」，对话里出现这句话和 Super Agent 的回复，左栏「进行中」出现这件事。点它，右栏实时显示助手每一步。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
