@@ -63,7 +63,7 @@ function hostConfig(provider: string, fallbackId = "fallback") {
 	const stateDir = mkdtempSync(join(tmpdir(), "psa-wire-"));
 	return {
 		stateDir, kernel: {}, bgMaxMinutes: 120, fallbackDailyTokens: 1000, retryAttempts: 0, probePrimaryMinutes: 15,
-		heartbeatSeconds: 30, watchdog: { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120 }, modulesDirs: [], webPort: 0, sources: {}, rolesDir: join(stateDir, "roles"),
+		consultTimeoutSeconds: 90, heartbeatSeconds: 30, watchdog: { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120 }, modulesDirs: [], webPort: 0, sources: {}, rolesDir: join(stateDir, "roles"),
 		models: { router: { provider, id: "router" }, worker: { provider, id: "worker" }, fallback: { provider, id: fallbackId } },
 	};
 }
@@ -239,4 +239,12 @@ test("真实接线：角色的模型提供方不是 router 或 worker 在用的�
 	const config = hostConfig(provider);
 	roleFile(config.rolesDir, "spender", "model: openrouter/deepseek/deepseek-chat\n");
 	assert.throws(() => createHostOptions({ config, modules: Modules.load([]), modelRuntime, log: () => {} }), new RegExp(`spender\\.md.*只能用.*${provider}`));
+});
+
+test("接线：会诊用名册里的专家（name → 职称）和 config 的时限，牵头角色交给宿主", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([]), modelRuntime, log: () => {} });
+	assert.deepEqual([...options.consult!.experts], [["general", "通用助手"]]);
+	assert.equal(options.consult!.timeoutMs, 90_000);
+	assert.deepEqual([...options.roles!.keys()], ["deputy"]);
 });

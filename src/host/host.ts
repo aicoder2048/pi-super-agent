@@ -16,7 +16,7 @@ import type { BoardState, Duty, TodayCounts, TranscriptMessage, WatchedSource } 
 import { WebGateway } from "./web.ts";
 import { loadWebToken } from "./web-token.ts";
 import { ConfigError } from "../config-error.ts";
-import { WorkerExecutor, type WorkerModels, type WorkerSpawner } from "./workers.ts";
+import { WorkerExecutor, type ConsultOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -46,6 +46,7 @@ export interface HostOptions {
 	timers?: TimerEntry[];
 	heartbeatMs?: number;
 	workerModels: WorkerModels;
+	consult?: ConsultOptions;
 	createRouter(deps: HostDeps): Promise<RouterLike>;
 	createSpawner(deps: HostDeps): WorkerSpawner;
 	log?: (line: string) => void;
@@ -143,6 +144,8 @@ export class Host {
 			onTranscript: (ticketId, event) => this.#transcript(ticketId, event),
 			onError: (ticketId, error) => this.#log(`[worker ${ticketId}] ${String(error)}`),
 			models: options.workerModels,
+			leads: options.roles,
+			consult: options.consult,
 			lookup: async (source, op, args) => {
 				const feed = this.feeds.get(source);
 				if (!feed) throw new Error(`没有来源 ${source} 可查；可查：${[...this.feeds.keys()].join("、") || "无"}`);
@@ -228,16 +231,16 @@ export class Host {
 	}
 
 	snapshot() {
-		const { rows, today, duty, helpers, routes } = this.#boardState();
+		const { rows, today, duty, helpers, routes, consulting } = this.#boardState();
 		const watching = this.#watching.map((w) => {
 			const problem = this.feeds.get(w.source)?.problem();
 			return problem ? { ...w, problem } : w;
 		});
-		return { conversation: this.kernel.conversation(CONVERSATION_LINES), board: rows, today, duty, helpers, routes, watching };
+		return { conversation: this.kernel.conversation(CONVERSATION_LINES), board: rows, today, duty, helpers, routes, consulting, watching };
 	}
 
 	#boardState(): BoardState {
-		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES) };
+		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), consulting: this.workers.consulting() };
 	}
 
 	#deliverReply(threadId: string, text: string, replyId: string, ticketId: string | null | undefined): void {

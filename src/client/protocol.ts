@@ -32,6 +32,8 @@ export interface BoardState {
 	helpers: HelpersToday;
 	/** What became of each of the user's recent messages, so a line under it can change without a reload. */
 	routes: Routes;
+	/** ticketId → titles of the experts answering that lead right now. */
+	consulting: Record<string, string[]>;
 }
 
 export type ClientToHost =
@@ -42,7 +44,7 @@ export type ClientToHost =
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
-	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; watching: WatchedSource[] }
+	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; consulting: Record<string, string[]>; watching: WatchedSource[] }
 	| { type: "user"; id: string; text: string; at: number }
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }
@@ -57,4 +59,5 @@ export interface TranscriptMessage {
 	customType?: string;
 	toolName?: string;
 	isError?: boolean;
+	details?: unknown;
 }

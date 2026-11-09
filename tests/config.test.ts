@@ -83,3 +83,11 @@ test("状态目录不存在时建成 0700，只有自己能进；已有的目录
 	loadConfig(chosen);
 	assert.equal(statSync(chosen).mode & 0o777, 0o755);
 });
+
+test("会诊每个问题的时限默认 180 秒，config.json 的 consultTimeoutSeconds 可以改；不是 1 到 1800 秒时拒绝启动", () => {
+	assert.equal(loadConfig(stateWith({})).consultTimeoutSeconds, 180);
+	assert.equal(loadConfig(stateWith({ consultTimeoutSeconds: 60 })).consultTimeoutSeconds, 60);
+	for (const consultTimeoutSeconds of [0, -5, 1801, "60"]) {
+		assert.throws(() => loadConfig(stateWith({ consultTimeoutSeconds })), (e: Error) => e.name === "ConfigError" && /consultTimeoutSeconds/.test(e.message), JSON.stringify(consultTimeoutSeconds));
+	}
+});

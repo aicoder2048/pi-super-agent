@@ -8,6 +8,8 @@ import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import { INPUT_LABEL } from "../client/board-format.mjs";
 import { parseOptions } from "../kernel/question.ts";
+import { DEFAULT_LEAD } from "../kernel/types.ts";
+import { askOne, consultText, parseConsult, type ConsultQuestion, type ConsultResult, type ExpertAsk } from "./consult.ts";
 
 export interface WorkerSpec {
 	ticketId: string;
@@ -39,6 +41,8 @@ export interface WorkerHandle {
 
 export interface WorkerSpawner {
 	spawn(spec: WorkerSpec, events: WorkerEvents): Promise<WorkerHandle>;
+	/** Runs one consult question as a one-shot expert. A spawner without it cannot host consults. */
+	ask?(a: ExpertAsk): Promise<string>;
 }
 
 export function formatInputs(kernel: Kernel, inputs: TicketInput[]): string {
@@ -51,11 +55,26 @@ export function formatInputs(kernel: Kernel, inputs: TicketInput[]): string {
 		.join("\n\n");
 }
 
+interface LiveExpert {
+	title: string;
+	token: string;
+}
+
 interface Live {
 	handle: WorkerHandle;
 	token: string;
 	bgRunning: number;
 	stopping: boolean;
+	/** Aborts every expert this lead is consulting; fired by a stop, a shutdown or the lead's exit. */
+	abort: AbortController;
+	experts: Set<LiveExpert>;
+	consults: Set<Promise<unknown>>;
+}
+
+export interface ConsultOptions {
+	/** Expert role name → title. */
+	experts: ReadonlyMap<string, string>;
+	timeoutMs: number;
 }
 
 export interface WorkerExecutorOptions {
@@ -67,6 +86,9 @@ export interface WorkerExecutorOptions {
 	onError?: (ticketId: string, error: unknown) => void;
 	models: WorkerModels;
 	lookup?: (source: string, op: string, args: unknown) => Promise<unknown>;
+	/** Lead role names; without it only the built-in deputy leads. */
+	leads?: ReadonlyMap<string, string>;
+	consult?: ConsultOptions;
 }
 
 export interface WorkerModels {
@@ -117,7 +139,20 @@ export class WorkerExecutor {
 		const live = this.#live.get(ticketId);
 		if (!live) return;
 		live.stopping = true;
+		await this.#endConsults(live);
 		await live.handle.stop();
+	}
+
+	/** ticketId → titles of the experts answering that lead right now. */
+	consulting(): Record<string, string[]> {
+		const out: Record<string, string[]> = {};
+		for (const [ticketId, live] of this.#live) if (live.experts.size) out[ticketId] = [...live.experts].map((e) => e.title);
+		return out;
+	}
+
+	async #endConsults(live: Live): Promise<void> {
+		live.abort.abort(new Error("任务已停止"));
+		await Promise.allSettled(live.consults);
 	}
 
 	// On host shutdown the kernel keeps the running state so restart recovery re-wakes these tickets.
@@ -167,6 +202,7 @@ export class WorkerExecutor {
 			usage: (u) => guard(() => kernel.recordUsage(ticketId, u))(),
 			settled: (error) => void this.#onSettled(ticketId, live, error).catch((e) => this.#o.onError?.(ticketId, e)).finally(afterCommand),
 			exited: guard(() => {
+				if (live) void this.#endConsults(live);
 				this.#live.delete(ticketId);
 				if (this.#shuttingDown) return;
 				if (live && !live.stopping) kernel.workerReport(ticketId, { status: "failed", summary: "Worker 进程在一轮中途意外退出。" });
@@ -185,7 +221,7 @@ export class WorkerExecutor {
 			afterCommand();
 			throw error;
 		}
-		live = { handle, token, bgRunning: 0, stopping: false };
+		live = { handle, token, bgRunning: 0, stopping: false, abort: new AbortController(), experts: new Set(), consults: new Set() };
 		this.#live.set(ticketId, live);
 		if (kernel.getTicket(ticketId)?.stoppedAt != null) {
 			await this.stop(ticketId);
@@ -247,7 +283,9 @@ export class WorkerExecutor {
 
 	handleRequest(ticketId: string, token: string, method: string, params: unknown): unknown {
 		const live = this.#live.get(ticketId);
-		if (!live || live.token !== token) throw new Error("未知的 Worker 或令牌不符");
+		const expert = live !== undefined && [...live.experts].some((e) => e.token === token);
+		if (!live || (live.token !== token && !expert)) throw new Error("未知的 Worker 或令牌不符");
+		if (expert && method !== "worker.lookup") throw new Error("专家只能经宿主查数据（lookup），不能汇报、交回或会诊");
 		const { kernel, afterCommand } = this.#o;
 		const p = (params ?? {}) as Record<string, unknown>;
 		try {
@@ -276,6 +314,8 @@ export class WorkerExecutor {
 				case "worker.lookup":
 					if (!this.#o.lookup) throw new Error("没有可查询的来源");
 					return this.#o.lookup(String(p.source), String(p.op), p.args);
+				case "worker.consult":
+					return this.#consult(ticketId, live, params);
 				case "worker.bg":
 					live.bgRunning = Number(p.running) || 0;
 					return { ok: true };
@@ -283,6 +323,50 @@ export class WorkerExecutor {
 					throw new Error(`未知方法 ${method}`);
 			}
 		} finally {
+			afterCommand();
+		}
+	}
+
+	async #consult(ticketId: string, live: Live, params: unknown): Promise<ConsultResult> {
+		const consult = this.#o.consult;
+		const role = this.#o.kernel.getTicket(ticketId)!.role;
+		if (!(this.#o.leads ? this.#o.leads.has(role) : role === DEFAULT_LEAD)) throw new Error("只有牵头角色能会诊");
+		if (!consult || !this.#o.spawner.ask) throw new Error("这个宿主没有配置会诊");
+		const questions = parseConsult(params, consult.experts);
+		if (this.#capReached()) throw new Error(`回退模型 ${formatModelRef(this.#o.models.selector.current().model)} 今日用量已达上限，这次不能会诊`);
+		const running = Promise.all(questions.map((q) => this.#ask(ticketId, live, q, consult.timeoutMs)));
+		live.consults.add(running);
+		try {
+			const outcomes = await running;
+			return { text: consultText(outcomes), details: { kind: "consult", experts: outcomes } };
+		} finally {
+			live.consults.delete(running);
+		}
+	}
+
+	async #ask(ticketId: string, live: Live, q: ConsultQuestion, timeoutMs: number) {
+		const { kernel, spawner, stateDir, afterCommand } = this.#o;
+		const expert: LiveExpert = { title: q.title, token: randomUUID() };
+		const model = this.#forTurn(q.expert).model;
+		live.experts.add(expert);
+		afterCommand();
+		try {
+			return await askOne(q, timeoutMs, live.abort.signal, (signal, tally) =>
+				spawner.ask!({
+					...q, ticketId, token: expert.token, model, workdir: join(stateDir, "workers", ticketId), signal,
+					onUsage: (u) => {
+						tally(u);
+						try {
+							kernel.recordUsage(ticketId, u);
+						} catch (error) {
+							this.#o.onError?.(ticketId, error);
+						}
+						afterCommand();
+					},
+				}),
+			);
+		} finally {
+			live.experts.delete(expert);
 			afterCommand();
 		}
 	}

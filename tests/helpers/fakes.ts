@@ -25,6 +25,7 @@ export function defaultWorkerModels(): WorkerModels {
 }
 import { Host, type HostDeps, type HostOptions, type RouterLike } from "../../src/host/host.ts";
 import type { WorkerEvents, WorkerHandle, WorkerSpawner, WorkerSpec } from "../../src/host/workers.ts";
+import type { ExpertAsk } from "../../src/host/consult.ts";
 
 export type ToolCallSpec = { name: string; args: Record<string, unknown> };
 export type Brain = (cards: string[], call: number, toolResults: string[]) => ToolCallSpec[] | Promise<ToolCallSpec[]>;
@@ -134,10 +135,17 @@ export class FakeSpawner implements WorkerSpawner {
 	spawnGate: Promise<void> | undefined;
 	readonly workers = new Map<string, FakeWorker>();
 	request!: (ticketId: string, token: string, method: string, params: unknown) => unknown;
+	/** Answers consult questions; a test sets it before its lead consults. */
+	asker: ((a: ExpertAsk) => Promise<string>) | undefined;
 	readonly #script: WorkerScript;
 
 	constructor(script: WorkerScript) {
 		this.#script = script;
+	}
+
+	ask(a: ExpertAsk): Promise<string> {
+		if (!this.asker) throw new Error("测试没有设置 asker");
+		return this.asker(a);
 	}
 
 	async spawn(spec: WorkerSpec, events: WorkerEvents): Promise<WorkerHandle> {

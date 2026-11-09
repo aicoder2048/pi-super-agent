@@ -43,7 +43,7 @@ async function fauxRuntime() {
 
 function wiringConfig(provider: string, retryAttempts = 3) {
 	return {
-		stateDir: tempStateDir(), kernel: {}, bgMaxMinutes: 120, fallbackDailyTokens: 1000, retryAttempts, probePrimaryMinutes: 15,
+		stateDir: tempStateDir(), kernel: {}, bgMaxMinutes: 120, fallbackDailyTokens: 1000, consultTimeoutSeconds: 180, retryAttempts, probePrimaryMinutes: 15,
 		heartbeatSeconds: 30, watchdog: { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120 }, modulesDirs: [], webPort: 0, sources: {},
 		models: { router: { provider, id: "router" }, worker: { provider, id: "worker" }, fallback: { provider, id: "fallback" } },
 	};
