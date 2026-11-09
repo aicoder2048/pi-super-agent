@@ -3,7 +3,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { busyPort, tempStateDir, until } from "./helpers/fakes.ts";
+import { busyPort, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 type ModuleFiles = Record<string, unknown>;
 
@@ -60,6 +60,7 @@ for (const c of cases) {
 			env: { ...process.env, PSA_STATE_DIR: c.stateDir() },
 			encoding: "utf8",
 			timeout: 20_000,
+			killSignal: "SIGKILL",
 		});
 		assert.equal(run.status, 1, run.stderr);
 		assert.match(run.stderr, c.message);
@@ -75,6 +76,7 @@ test("使用者规则没写来源行时，just host 启动时逐条说明它不�
 		env: { ...process.env, PSA_STATE_DIR: stateDir },
 		encoding: "utf8",
 		timeout: 20_000,
+		killSignal: "SIGKILL",
 	});
 	assert.match(run.stderr, /规则 user\/no-source 没写「来源:」，不生效/);
 	assert.doesNotMatch(run.stderr, /规则 user\/ok 没写/);
@@ -87,7 +89,7 @@ test("just host 启动后打印带 token 的网页网址，打开能看到页面
 	host.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
 	await until(() => /\[host\] 网页 http:\/\/127\.0\.0\.1:\d+\/\?token=[0-9a-f]{64}\n/.test(stderr), `日志里的网页网址：${stderr}`, 20_000);
 	const url = /\[host\] 网页 (\S+)/.exec(stderr)![1];
-	const res = await fetch(url);
+	const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
 	assert.equal(res.status, 200);
 	assert.match(await res.text(), /Super Agent/);
 });
@@ -98,7 +100,7 @@ test("网页端口被占用时，just host 只打印一句说明并以 1 退出�
 	t.after(() => run.kill("SIGKILL"));
 	let stderr = "";
 	run.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
-	const status = await new Promise((r) => run.on("exit", r));
+	const status = await within(new Promise((r) => run.on("exit", r)), 20_000, "just host 退出");
 	assert.equal(status, 1, stderr);
 	assert.match(stderr, new RegExp(`网页端口 ${port} 已被占用.*webPort`));
 	assert.doesNotMatch(stderr, /^\s+at /m);

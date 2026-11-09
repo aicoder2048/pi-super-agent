@@ -205,6 +205,16 @@ export async function until(predicate: () => boolean, label: string, timeoutMs =
 	}
 }
 
+export async function within<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+	let timer: NodeJS.Timeout | undefined;
+	const timeout = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error(`${ms}ms 内没有结束：${label}`)), ms)));
+	try {
+		return await Promise.race([work, timeout]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 export async function startHost(brain: Brain, script: WorkerScript, options: Partial<HostOptions> = {}) {
 	const router = fauxRouter(brain);
 	const spawner = new FakeSpawner(script);

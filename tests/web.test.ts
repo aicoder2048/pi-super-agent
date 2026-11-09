@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import http from "node:http";
 import { connect, createServer, type AddressInfo } from "node:net";
-import test, { mock } from "node:test";
+import test, { mock, type TestContext } from "node:test";
 import type { HostToClient } from "../src/client/protocol.ts";
 import { ConfigError } from "../src/config-error.ts";
 import type { DashboardRow } from "../src/kernel/types.ts";
 import * as page from "../src/web/view.mjs";
-import { busyPort, ofType, openOnConversation, startHost, tempStateDir, until } from "./helpers/fakes.ts";
+import { busyPort, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
@@ -98,6 +98,7 @@ function request(url: string, options: { host?: string; method?: string } = {}):
 			res.on("end", () => resolve({ status: res.statusCode!, headers: res.headers, body }));
 		});
 		req.on("error", reject);
+		req.setTimeout(3000, () => req.destroy(new Error(`请求 3 秒没有响应：${url}`)));
 		req.end();
 	});
 }
@@ -120,12 +121,25 @@ function sse(url: string) {
 	return stream;
 }
 
-async function webHost(brain: Parameters<typeof startHost>[0] = () => []) {
+// Streams close before the host stops: server.close() waits on open connections, so a broken stop() fails here instead of hanging the run.
+async function webHost(t: TestContext, brain: Parameters<typeof startHost>[0] = () => []) {
 	const started = await startHost(brain, () => {}, { webPort: 0 });
+	const streams: ReturnType<typeof sse>[] = [];
+	let stopping: Promise<void> | undefined;
+	const stop = () => (stopping ??= started.host.stop());
+	t.after(async () => {
+		for (const s of streams) s.close();
+		await within(stop(), 5000, "清理时 host.stop()");
+	});
 	const url = new URL(started.host.webUrl!);
 	const token = url.searchParams.get("token")!;
 	const at = (path: string, t = token) => `${url.origin}${path}${t === "" ? "" : `?token=${t}`}`;
-	return { ...started, url, token, at };
+	const events = () => {
+		const stream = sse(at("/events"));
+		streams.push(stream);
+		return stream;
+	};
+	return { ...started, url, token, at, events, stop };
 }
 
 async function freePort(): Promise<number> {
@@ -137,17 +151,14 @@ async function freePort(): Promise<number> {
 }
 
 test("网关：网址是 127.0.0.1 加 64 位十六进制 token，每次启动换新 token", async (t) => {
-	const a = await webHost();
-	t.after(() => a.host.stop());
-	const b = await webHost();
-	t.after(() => b.host.stop());
+	const a = await webHost(t);
+	const b = await webHost(t);
 	assert.match(a.host.webUrl!, /^http:\/\/127\.0\.0\.1:\d+\/\?token=[0-9a-f]{64}$/);
 	assert.notEqual(a.token, b.token);
 });
 
 test("网关：没有 token 或 token 错误时，首页和事件流返回 401，正文不含对话内容", async (t) => {
-	const { host, at } = await webHost();
-	t.after(() => host.stop());
+	const { host, at } = await webHost(t);
 	host.say("机密的一句话");
 	for (const path of ["/", "/events"]) {
 		for (const token of ["", "0".repeat(64), "short"]) {
@@ -159,8 +170,7 @@ test("网关：没有 token 或 token 错误时，首页和事件流返回 401�
 });
 
 test("网关：静态脚本不含数据，不带 token 也能取到，但 Host 头不对仍然 403", async (t) => {
-	const { host, at, url } = await webHost();
-	t.after(() => host.stop());
+	const { host, at, url } = await webHost(t);
 	for (const path of ["/app.mjs", "/view.mjs", "/client/board-format.mjs"]) {
 		const res = await request(at(path, ""));
 		assert.equal(res.status, 200, path);
@@ -171,8 +181,7 @@ test("网关：静态脚本不含数据，不带 token 也能取到，但 Host �
 });
 
 test("网关：页面加载的每个模块，它 import 的路径网关都不带 token 就能给出", async (t) => {
-	const { host, at, url } = await webHost();
-	t.after(() => host.stop());
+	const { host, at, url } = await webHost(t);
 	const seen = new Set<string>();
 	const pending = ["/app.mjs"];
 	while (pending.length) {
@@ -191,8 +200,7 @@ test("网关：页面加载的每个模块，它 import 的路径网关都不带
 });
 
 test("网关：Host 头不是本机这个端口时返回 403，即使 token 正确", async (t) => {
-	const { host, at, url } = await webHost();
-	t.after(() => host.stop());
+	const { host, at, url } = await webHost(t);
 	for (const forged of ["evil.example:" + url.port, "127.0.0.1:1", "evil.example"]) {
 		assert.equal((await request(at("/events"), { host: forged })).status, 403, forged);
 	}
@@ -201,8 +209,7 @@ test("网关：Host 头不是本机这个端口时返回 403，即使 token 正�
 });
 
 test("网关：首页带 token 的脚本地址，CSP 不允许内联脚本，响应不缓存、不带 referrer", async (t) => {
-	const { host, at, token } = await webHost();
-	t.after(() => host.stop());
+	const { host, at, token } = await webHost(t);
 	const res = await request(at("/"));
 	assert.equal(res.status, 200);
 	assert.match(res.headers["content-type"]!, /^text\/html/);
@@ -226,12 +233,12 @@ function rawRequest(port: number, head: string): Promise<string> {
 		socket.on("data", (chunk: string) => (got += chunk));
 		socket.on("end", () => resolve(got));
 		socket.on("error", reject);
+		socket.setTimeout(3000, () => socket.destroy(new Error("原始请求 3 秒没有响应")));
 	});
 }
 
 test("网关：请求目标解析不了时返回 400，宿主照常服务", async (t) => {
-	const { host, at, url } = await webHost();
-	t.after(() => host.stop());
+	const { host, at, url } = await webHost(t);
 	const res = await rawRequest(Number(url.port), "GET //[ HTTP/1.1\r\nHost: evil.com\r\nConnection: close\r\n\r\n");
 	assert.match(res, /^HTTP\/1\.1 400 /);
 	assert.match(res, /\r\ncache-control: no-store\r\n/i);
@@ -239,20 +246,17 @@ test("网关：请求目标解析不了时返回 400，宿主照常服务", asyn
 });
 
 test("网关：只读，非 GET 返回 405；未知路径返回 404", async (t) => {
-	const { host, at } = await webHost();
-	t.after(() => host.stop());
+	const { host, at } = await webHost(t);
 	assert.equal((await request(at("/events"), { method: "POST" })).status, 405);
 	assert.equal((await request(at("/nope"))).status, 404);
 });
 
 test("网关：SSE 第一条是快照，之后转发 user、reply、board，和 socket 客户端收到的相同", async (t) => {
 	const brain = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
-	const { host, at } = await webHost(brain);
-	t.after(() => host.stop());
+	const { host, events } = await webHost(t, brain);
 	host.say("早");
 	await host.settled();
-	const stream = sse(at("/events"));
-	t.after(() => stream.close());
+	const stream = events();
 	await until(() => stream.got.length > 0, "快照");
 	assert.equal(stream.status, 200);
 	const [first] = ofType(stream.got.slice(0, 1), "snapshot");
@@ -266,11 +270,9 @@ test("网关：SSE 第一条是快照，之后转发 user、reply、board，和 
 });
 
 test("网关：两个 SSE 连接收到相同的消息", async (t) => {
-	const { host, at } = await webHost();
-	t.after(() => host.stop());
-	const a = sse(at("/events"));
-	const b = sse(at("/events"));
-	t.after(() => (a.close(), b.close()));
+	const { host, events } = await webHost(t);
+	const a = events();
+	const b = events();
 	await until(() => a.got.length > 0 && b.got.length > 0, "两个快照");
 	host.say("一");
 	host.say("二");
@@ -279,10 +281,8 @@ test("网关：两个 SSE 连接收到相同的消息", async (t) => {
 });
 
 test("网关：正文含 <script> 和换行时，原样作为一行 data 传输", async (t) => {
-	const { host, at } = await webHost();
-	t.after(() => host.stop());
-	const stream = sse(at("/events"));
-	t.after(() => stream.close());
+	const { host, events } = await webHost(t);
+	const stream = events();
 	await until(() => stream.got.length > 0, "快照");
 	const text = "<script>alert(1)</script>\n第二行\r\n第三行";
 	host.say(text);
@@ -293,12 +293,10 @@ test("网关：正文含 <script> 和换行时，原样作为一行 data 传输"
 });
 
 test("网关：每个 SSE 连接每 15 秒收到一条页面看得见的 ping 事件", async (t) => {
-	const { host, at } = await webHost();
-	t.after(() => host.stop());
+	const { host, events } = await webHost(t);
 	mock.timers.enable({ apis: ["setInterval"] });
 	t.after(() => mock.timers.reset());
-	const stream = sse(at("/events"));
-	t.after(() => stream.close());
+	const stream = events();
 	await until(() => stream.got.length > 0, "快照");
 	mock.timers.tick(14_999);
 	await new Promise((r) => setTimeout(r, 50));
@@ -308,11 +306,10 @@ test("网关：每个 SSE 连接每 15 秒收到一条页面看得见的 ping �
 });
 
 test("网关：SSE 连着时 host.stop() 仍然结束，流被关掉，之后连不上", async (t) => {
-	const { host, at } = await webHost();
-	const stream = sse(at("/events"));
-	t.after(() => stream.close());
+	const { at, events, stop } = await webHost(t);
+	const stream = events();
 	await until(() => stream.got.length > 0, "快照");
-	await host.stop();
+	await within(stop(), 2000, "SSE 连着时 host.stop()");
 	await until(() => stream.ended, "流被关掉");
 	await assert.rejects(request(at("/")), /ECONNREFUSED/);
 });
