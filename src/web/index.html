@@ -6,34 +6,16 @@
 	<title>Super Agent</title>
 	<style>
 		:root {
-			--bg: #f7f5f0; --panel: #fff; --ink: #1c1b19; --muted: #5f5c56; --line: #e6e2d9; --track: #ece8df;
-			--accent: #3b5bdb; --accent-ink: #2b44a8; --accent-bg: #edf1ff;
-			--ok: #2f9e44; --ok-ink: #22703a; --ok-bg: #eaf6ec;
-			--warn: #e8590c; --warn-ink: #a3400a; --warn-bg: #fff4ea; --warn-line: #f8cfae;
-			--bad-ink: #b3261e; --bad-bg: #fdecea;
-			--shadow: 0 2px 10px rgba(28, 27, 25, 0.06);
-			color-scheme: light;
+			color-scheme: light dark;
+			--bg: light-dark(#f7f5f0, #15161a); --panel: light-dark(#fff, #1e2026); --ink: light-dark(#1c1b19, #ecebe7); --muted: light-dark(#5f5c56, #a9a7a1); --line: light-dark(#e6e2d9, #30323a); --track: light-dark(#ece8df, #2b2d34);
+			--accent: light-dark(#3b5bdb, #5c7cfa); --accent-ink: light-dark(#2b44a8, #b4c3ff); --accent-bg: light-dark(#edf1ff, #262c45);
+			--ok: light-dark(#2f9e44, #51cf66); --ok-ink: light-dark(#22703a, #a6e9b1); --ok-bg: light-dark(#eaf6ec, #1f3326);
+			--warn: light-dark(#e8590c, #ff8a3d); --warn-ink: light-dark(#a3400a, #ffb98a); --warn-bg: light-dark(#fff4ea, #2e2219); --warn-line: light-dark(#f8cfae, #5a3a22);
+			--bad-ink: light-dark(#b3261e, #f2867e); --bad-bg: light-dark(#fdecea, #3a1f1d);
+			--shadow: 0 2px 10px light-dark(rgba(28, 27, 25, 0.06), transparent);
 		}
-		@media (prefers-color-scheme: dark) {
-			:root:not([data-theme="light"]) {
-				--bg: #15161a; --panel: #1e2026; --ink: #ecebe7; --muted: #a9a7a1; --line: #30323a; --track: #2b2d34;
-				--accent: #5c7cfa; --accent-ink: #b4c3ff; --accent-bg: #262c45;
-				--ok: #51cf66; --ok-ink: #a6e9b1; --ok-bg: #1f3326;
-				--warn: #ff8a3d; --warn-ink: #ffb98a; --warn-bg: #2e2219; --warn-line: #5a3a22;
-				--bad-ink: #f2867e; --bad-bg: #3a1f1d;
-				--shadow: none;
-				color-scheme: dark;
-			}
-		}
-		:root[data-theme="dark"] {
-			--bg: #15161a; --panel: #1e2026; --ink: #ecebe7; --muted: #a9a7a1; --line: #30323a; --track: #2b2d34;
-			--accent: #5c7cfa; --accent-ink: #b4c3ff; --accent-bg: #262c45;
-			--ok: #51cf66; --ok-ink: #a6e9b1; --ok-bg: #1f3326;
-			--warn: #ff8a3d; --warn-ink: #ffb98a; --warn-bg: #2e2219; --warn-line: #5a3a22;
-			--bad-ink: #f2867e; --bad-bg: #3a1f1d;
-			--shadow: none;
-			color-scheme: dark;
-		}
+		:root[data-theme="light"] { color-scheme: light; }
+		:root[data-theme="dark"] { color-scheme: dark; }
 		* { box-sizing: border-box; }
 		html, body { height: 100%; margin: 0; }
 		body { display: flex; flex-direction: column; background: var(--bg); color: var(--ink); font: 14px/1.6 -apple-system, "PingFang SC", "Noto Sans SC", "Helvetica Neue", system-ui, sans-serif; }
