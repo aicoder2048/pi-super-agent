@@ -12,7 +12,7 @@ import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import { Dispatcher } from "./dispatcher.ts";
 import { HostServer, type Broadcast } from "./server.ts";
-import type { BoardRow, BoardState, Duty, TodayCounts, WatchedSource } from "../client/protocol.ts";
+import type { BoardRow, BoardState, Duty, TodayCounts, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
 import { WebGateway } from "./web.ts";
 import { ConfigError } from "../config-error.ts";
 import { WorkerExecutor, type WorkerModels, type WorkerSpawner } from "./workers.ts";
@@ -143,7 +143,7 @@ export class Host {
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway({ snapshot: () => host.snapshot(), say: (text) => host.say(text) });
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text) });
 			await host.#web.listen(options.webPort);
 		}
 		try {
@@ -210,11 +210,13 @@ export class Host {
 	}
 
 	#transcript(ticketId: string, event: unknown): void {
-		const e = event as { type?: string; message?: unknown };
-		if (e.type === "message_end" && e.message) this.server.sendTranscript(ticketId, e.message);
+		const e = event as { type?: string; message?: TranscriptMessage };
+		if (e.type !== "message_end" || !e.message) return;
+		this.server.sendTranscript(ticketId, e.message);
+		this.#web?.sendTranscript(ticketId, e.message);
 	}
 
-	transcript(ticketId: string): unknown[] {
+	transcript(ticketId: string): TranscriptMessage[] {
 		const ticket = this.kernel.getTicket(ticketId);
 		if (!ticket) return [];
 		const dir = join(this.#stateDir, "sessions", "workers");
@@ -225,7 +227,7 @@ export class Host {
 			.filter(Boolean)
 			.map((line) => JSON.parse(line) as { type: string; message?: { role?: string } })
 			.filter((entry) => entry.type === "message" && entry.message?.role !== "system")
-			.map((entry) => entry.message);
+			.map((entry) => entry.message as TranscriptMessage);
 	}
 
 	#beat(): void {

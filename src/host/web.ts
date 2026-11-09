@@ -3,18 +3,21 @@ import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { ConfigError } from "../config-error.ts";
-import type { HostToClient } from "../client/protocol.ts";
+import type { HostToClient, TranscriptMessage } from "../client/protocol.ts";
 import type { Broadcast } from "./server.ts";
 
 type Snapshot = Omit<Extract<HostToClient, { type: "snapshot" }>, "type">;
 
 export interface WebHost {
 	snapshot(): Snapshot;
+	transcript(ticketId: string): TranscriptMessage[];
 	/** Returns the triggerId. Callers pass text that is non-empty after trim. */
 	say(text: string): string;
 }
 
 const SAY_MAX_BYTES = 32 * 1024;
+// Bounds the watcher-map keys to plausible ticket ids.
+const TICKET_ID = /^tkt_[A-Za-z0-9_-]{1,64}$/;
 
 const INDEX_HTML = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
 // No user data in these, so they need only the Host check. A relative module import would drop the token anyway.
@@ -42,6 +45,7 @@ export class WebGateway {
 	readonly #server: Server;
 	readonly #token = randomBytes(32).toString("hex");
 	readonly #streams = new Set<ServerResponse>();
+	readonly #watchers = new Map<string, Set<ServerResponse>>();
 	readonly #host: WebHost;
 	#port = 0;
 
@@ -73,6 +77,13 @@ export class WebGateway {
 		for (const res of this.#streams) res.write(frame);
 	}
 
+	sendTranscript(ticketId: string, message: TranscriptMessage): void {
+		const watchers = this.#watchers.get(ticketId);
+		if (!watchers) return;
+		const frame = sseFrame({ type: "transcript", ticketId, message });
+		for (const res of watchers) res.write(frame);
+	}
+
 	close(): Promise<void> {
 		if (!this.#server.listening) return Promise.resolve();
 		const closed = new Promise<void>((resolve) => this.#server.close(() => resolve()));
@@ -94,7 +105,14 @@ export class WebGateway {
 			res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "text/html; charset=utf-8", "content-security-policy": CSP });
 			return void res.end(INDEX_HTML.replace("{{token}}", this.#token));
 		}
-		if (url.pathname === "/events") return this.#openStream(res);
+		if (url.pathname === "/events") return this.#openStream(res, { type: "snapshot", ...this.#host.snapshot() }, this.#streams);
+		if (url.pathname === "/transcript") {
+			const ticketId = url.searchParams.get("ticket") ?? "";
+			if (!TICKET_ID.test(ticketId)) return deny(res, 400);
+			const watchers = this.#watchers.get(ticketId) ?? new Set();
+			this.#watchers.set(ticketId, watchers);
+			return this.#openStream(res, { type: "transcript_history", ticketId, messages: this.#host.transcript(ticketId) }, watchers, () => this.#watchers.delete(ticketId));
+		}
 		deny(res, 404);
 	}
 
@@ -121,16 +139,18 @@ export class WebGateway {
 		});
 	}
 
-	#openStream(res: ServerResponse): void {
+	// The first frame and joining the set happen in one synchronous turn, so no live frame can be lost or arrive first.
+	#openStream(res: ServerResponse, first: HostToClient, set: Set<ServerResponse>, onEmpty?: () => void): void {
 		res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "text/event-stream; charset=utf-8", connection: "keep-alive" });
 		res.write("retry: 1000\n\n");
-		res.write(sseFrame({ type: "snapshot", ...this.#host.snapshot() }));
-		this.#streams.add(res);
+		res.write(sseFrame(first));
+		set.add(res);
 		const keepalive = setInterval(() => res.write("event: ping\ndata: \n\n"), KEEPALIVE_MS);
 		keepalive.unref();
 		res.on("close", () => {
 			clearInterval(keepalive);
-			this.#streams.delete(res);
+			set.delete(res);
+			if (set.size === 0) onEmpty?.();
 		});
 	}
 }

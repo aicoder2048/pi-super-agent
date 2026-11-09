@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import http from "node:http";
 import { connect, createServer, type AddressInfo } from "node:net";
 import test, { mock, type TestContext } from "node:test";
@@ -124,8 +125,8 @@ function sse(url: string) {
 }
 
 // Streams close before the host stops: server.close() waits on open connections, so a broken stop() fails here instead of hanging the run.
-async function webHost(t: TestContext, brain: Parameters<typeof startHost>[0] = () => []) {
-	const started = await startHost(brain, () => {}, { webPort: 0 });
+async function webHost(t: TestContext, brain: Parameters<typeof startHost>[0] = () => [], options: Parameters<typeof startHost>[2] = {}) {
+	const started = await startHost(brain, () => {}, { webPort: 0, ...options });
 	const streams: ReturnType<typeof sse>[] = [];
 	let stopping: Promise<void> | undefined;
 	const stop = () => (stopping ??= started.host.stop());
@@ -483,4 +484,76 @@ test("网关：GET /say 405；/say 以外的 POST 也是 405", async (t) => {
 	const { at } = await webHost(t);
 	assert.equal((await request(at("/say"))).status, 405);
 	assert.equal((await request(at("/"), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 405);
+});
+
+async function watchHost(t: TestContext) {
+	const brain = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
+	const stateDir = tempStateDir();
+	const web = await webHost(t, brain, { stateDir });
+	const open = async (title: string) => {
+		web.host.say(title);
+		await until(() => web.host.kernel.listTickets().some((r) => r.title === title) && web.spawner.workers.has(web.host.kernel.listTickets().find((r) => r.title === title)!.id), `任务 ${title}`);
+		const id = web.host.kernel.listTickets().find((r) => r.title === title)!.id;
+		return { id, worker: web.spawner.workers.get(id)! };
+	};
+	const history = (ticketId: string, messages: unknown[]) => {
+		const ticket = web.host.kernel.getTicket(ticketId)!;
+		const dir = join(stateDir, "sessions", "workers");
+		mkdirSync(dir, { recursive: true });
+		const lines = [{ type: "session", id: ticket.workerSessionId }, ...messages.map((message) => ({ type: "message", message }))];
+		writeFileSync(join(dir, `2026-11-08T00-00-00_${ticket.workerSessionId}.jsonl`), lines.map((e) => JSON.stringify(e)).join("\n") + "\n");
+	};
+	const watch = (ticketId: string, token = web.token) => {
+		const stream = sse(`${web.url.origin}/transcript?token=${token}&ticket=${encodeURIComponent(ticketId)}`);
+		t.after(() => stream.close());
+		return stream;
+	};
+	return { ...web, open, history, watch };
+}
+
+const said = (text: string) => ({ role: "assistant", content: [{ type: "text", text }] });
+
+test("网关：查看任务先收到 transcript_history，再收到实时 transcript；系统消息不出现", async (t) => {
+	const { open, history, watch } = await watchHost(t);
+	const { id, worker } = await open("读网页");
+	history(id, [{ role: "system", content: "你是 Worker" }, said("先看看")]);
+	const stream = watch(id);
+	await until(() => stream.got.length === 1, "历史");
+	assert.equal(stream.status, 200);
+	assert.deepEqual(stream.got[0], { type: "transcript_history", ticketId: id, messages: [said("先看看")] });
+	worker.transcript(said("找到标题了"));
+	await until(() => stream.got.length === 2, "实时");
+	assert.deepEqual(stream.got[1], { type: "transcript", ticketId: id, message: said("找到标题了") });
+});
+
+test("网关：两个连接看不同任务，各自只收到自己的；关掉旧连接改看新任务后，旧任务的消息不再到达", async (t) => {
+	const { open, watch } = await watchHost(t);
+	const one = await open("任务一");
+	const two = await open("任务二");
+	const a = watch(one.id);
+	const b = watch(two.id);
+	await until(() => a.got.length === 1 && b.got.length === 1, "两份历史");
+	one.worker.transcript(said("一的进展"));
+	two.worker.transcript(said("二的进展"));
+	await until(() => a.got.length === 2 && b.got.length === 2, "各自的实时消息");
+	assert.deepEqual(ofType(a.got, "transcript").map((m) => m.ticketId), [one.id]);
+	assert.deepEqual(ofType(b.got, "transcript").map((m) => m.ticketId), [two.id]);
+	a.close();
+	const switched = watch(two.id);
+	await until(() => switched.got.length === 1, "新任务的历史");
+	one.worker.transcript(said("一的后续"));
+	two.worker.transcript(said("二的后续"));
+	await until(() => switched.got.length === 2 && b.got.length === 3, "新任务的实时消息");
+	assert.deepEqual(ofType(switched.got, "transcript").map((m) => m.ticketId), [two.id]);
+	assert.equal(a.got.length, 2, "关掉的连接不再收到");
+});
+
+test("网关：/transcript 没有 token 401；ticket 不像任务编号 400；没有这个任务时历史为空", async (t) => {
+	const { watch, token } = await watchHost(t);
+	const noToken = watch("tkt_abc", "");
+	const bad = watch("../etc", token);
+	const empty = watch("tkt_nothere", token);
+	await until(() => noToken.status === 401 && bad.status === 400, "拒绝");
+	await until(() => empty.got.length === 1, "空历史");
+	assert.deepEqual(empty.got[0], { type: "transcript_history", ticketId: "tkt_nothere", messages: [] });
 });
