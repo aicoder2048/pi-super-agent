@@ -4,6 +4,7 @@ import { answerExternalId, answerSentence, type AnswerRefusal } from "./question
 
 export type AnswerOutcome = { ok: true; triggerId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 import { deriveStage } from "./stage.ts";
+import { helperName, helperRole, newYorkDate } from "./helper-names.ts";
 import { stallMinutes } from "../client/board-format.mjs";
 import { inTransaction } from "./store.ts";
 import {
@@ -26,6 +27,8 @@ import type {
 	QuestionClick,
 	DecisionResult,
 	Disposition,
+	Helper,
+	HelpersToday,
 	InputKind,
 	KernelConfig,
 	PendingAction,
@@ -46,6 +49,8 @@ import type {
 } from "./types.ts";
 
 type Row = Record<string, any>;
+
+const DAY_MS = 86_400_000;
 
 const RECOVERY_NOTE = "process restarted; inspect your workdir before repeating any external action";
 
@@ -119,6 +124,8 @@ export interface KernelOptions {
 	clock: Clock;
 	sourcePolicy: SourcePolicy;
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
+	/** A rule ticket from such a source gets a market helper. */
+	isMarketSource?: (source: string) => boolean;
 	config?: Partial<KernelConfig>;
 }
 
@@ -127,10 +134,12 @@ export class Kernel {
 	readonly #clock: Clock;
 	readonly #sourcePolicy: SourcePolicy;
 	readonly #ruleAllows: (ruleId: string, triggerSource: string) => boolean;
+	readonly #isMarketSource: (source: string) => boolean;
 	readonly config: KernelConfig;
 
-	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, config }: KernelOptions) {
+	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, config }: KernelOptions) {
 		this.#ruleAllows = ruleAllows;
+		this.#isMarketSource = isMarketSource;
 		this.#db = db;
 		this.#clock = clock;
 		this.#sourcePolicy = sourcePolicy;
@@ -582,8 +591,49 @@ export class Kernel {
 				tokensOut: t.tokensOut,
 				elapsedMs: t.startedAt === null ? 0 : end - t.startedAt,
 				lastProgressAt: t.lastProgressAt,
+				helper: t.helper,
+				workerState: t.workerState,
+				startedAt: t.startedAt,
+				endedAt: t.stoppedAt ?? t.closedAt,
 			};
 		});
+	}
+
+	/** Tickets opened on today's New York date and the tokens they used. */
+	helpersToday(): HelpersToday {
+		const now = this.#now();
+		const today = newYorkDate(now);
+		const rows = this.#all("SELECT created_at, tokens_in + tokens_out AS tokens FROM tickets WHERE created_at > ?", now - 2 * DAY_MS)
+			.filter((r) => newYorkDate(r.created_at) === today);
+		return { count: rows.length, tokens: rows.reduce((sum, r) => sum + r.tokens, 0) };
+	}
+
+	/** Names tickets from a state db older than helpers, in the order they were opened. The host calls it once at start, since only it knows the market sources. */
+	nameUnnamedHelpers(): void {
+		this.#tx(() => {
+			const unnamed = this.#all(
+				`SELECT t.id, t.basis, t.created_at, g.source FROM tickets t LEFT JOIN triggers g ON g.id = t.origin_trigger_id
+				 WHERE t.helper_name IS NULL ORDER BY t.created_at, t.rowid`,
+			);
+			for (const r of unnamed) {
+				const h = this.#newHelper(r.basis, r.source, r.created_at);
+				this.#run("UPDATE tickets SET helper_name = ?, helper_role = ?, helper_seq = ? WHERE id = ?", h.name, h.role, h.seq, r.id);
+			}
+		});
+	}
+
+	#newHelper(basis: Basis, originSource: string | null, createdAt: number): Helper {
+		const role = helperRole(basis, originSource, this.#isMarketSource);
+		const day = newYorkDate(createdAt);
+		const sameRole = this.#all(
+			"SELECT created_at FROM tickets WHERE helper_role = ? AND created_at > ? AND created_at <= ?",
+			role,
+			createdAt - 2 * DAY_MS,
+			createdAt,
+		).filter((r) => newYorkDate(r.created_at) === day).length;
+		const ordinal = this.#get("SELECT COUNT(*) AS n FROM tickets WHERE helper_name IS NOT NULL").n as number;
+		const onDuty = new Set(this.#column("SELECT helper_name AS v FROM tickets WHERE helper_name IS NOT NULL AND closed_at IS NULL AND stopped_at IS NULL"));
+		return { name: helperName(ordinal, onDuty), role, seq: sameRole + 1 };
 	}
 
 	#stall(t: Ticket, now: number): Stall | null {
@@ -832,9 +882,10 @@ export class Kernel {
 		}
 
 		const ticketId = this.#id("tkt");
+		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now());
 		this.#run(
-			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued')`,
+			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
 			ticketId,
 			d.title,
 			d.basis,
@@ -842,6 +893,9 @@ export class Kernel {
 			d.triggerId ?? null,
 			this.#now(),
 			randomUUID(),
+			helper.name,
+			helper.role,
+			helper.seq,
 		);
 		for (const threadId of threads) {
 			const source = threadId.match(SOURCE_THREAD)?.[1];
@@ -1013,6 +1067,7 @@ export class Kernel {
 			toolCalls: r.tool_calls,
 			tokensIn: r.tokens_in,
 			tokensOut: r.tokens_out,
+			helper: r.helper_name === null ? null : { name: r.helper_name, role: r.helper_role, seq: r.helper_seq },
 			stage,
 			latestReport: latest ? toReport(latest) : null,
 		};

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Kernel, nextStallAt } from "../src/kernel/kernel.ts";
+import { HELPER_NAMES } from "../src/kernel/helper-names.ts";
 import { refusalText } from "../src/kernel/question.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { CONVERSATION_THREAD_ID, DISPOSITIONS } from "../src/kernel/types.ts";
@@ -11,20 +12,21 @@ import type { Basis, KernelConfig, TriggerSubmission } from "../src/kernel/types
 
 const HOUR = 3_600_000;
 
-function setup({ config, path = ":memory:" }: { config?: Partial<KernelConfig>; path?: string } = {}) {
-	const clock = { t: new Date("2026-11-08T10:00:00").getTime(), now() { return this.t; } };
+function setup({ config, path = ":memory:", at = "2026-11-08T10:00:00" }: { config?: Partial<KernelConfig>; path?: string; at?: string } = {}) {
+	const clock = { t: new Date(at).getTime(), now() { return this.t; } };
 	const db = openStore(path);
 	const kernel = new Kernel({
 		db,
 		clock,
 		sourcePolicy: (t) => (t.source === "noise" ? "ignore" : "candidate"),
+		isMarketSource: (source) => source === "toy-market",
 		config,
 	});
 	let n = 0;
 	const trigger = (over: Partial<TriggerSubmission> = {}) =>
 		kernel.submitTrigger({
 			source: "generic",
-			externalId: `e${++n}`,
+			externalId: `e${++n}-${clock.t}`,
 			threads: [{ id: "thr_misc" }],
 			sender: "script",
 			body: "外部事件",
@@ -38,10 +40,10 @@ function setup({ config, path = ":memory:" }: { config?: Partial<KernelConfig>; 
 	const wakes = () => due("worker.wake").map((a) => (a.payload as { ticketId: string }).ticketId);
 	const drain = () => { for (const a of kernel.dueActions(1000)) kernel.completeAction(a.id); };
 
-	function open(basis: Basis, { threads = [] as string[], title = `${basis} 任务` } = {}) {
+	function open(basis: Basis, { threads = [] as string[], title = `${basis} 任务`, source = "generic" } = {}) {
 		let triggerId: string | undefined;
 		if (basis === "request") triggerId = say(title).triggerId;
-		if (basis === "rule") triggerId = trigger({ threads: [{ id: `thr_generic:rule-${++n}` }], body: title }).triggerId;
+		if (basis === "rule") triggerId = trigger({ source, threads: [{ id: `thr_${source}:rule-${++n}` }], body: title }).triggerId;
 		for (const id of threads) trigger({ threads: [{ id }] });
 		const [result] = kernel.route([
 			{ kind: "open_ticket", title, basis, ruleId: basis === "rule" ? "rule-1" : undefined, triggerId, threads, brief: title },
@@ -644,6 +646,10 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			tokensOut: 200,
 			elapsedMs: 90_000,
 			lastProgressAt: reportedAt,
+			helper: { name: HELPER_NAMES[0], role: "conversation", seq: 1 },
+			workerState: "running",
+			startedAt: reportedAt,
+			endedAt: null,
 		},
 	);
 	assert.equal(kernel.usageToday("deepseek"), 1200);
@@ -1125,4 +1131,106 @@ test("下一次久无进展的时刻：执行中、还没久无进展的任务�
 	assert.equal(next(), firstAt + 10 * MIN);
 	clock.t = firstAt + 11 * MIN;
 	assert.equal(next(), firstAt + 13 * MIN, "已经久无进展的不再排");
+});
+
+const helperOf = (kernel: Kernel, id: string) => kernel.listTickets().find((r) => r.id === id)!.helper;
+const closeTicket = (s: ReturnType<typeof setup>, id: string) => {
+	s.run(id);
+	s.kernel.workerReport(id, { status: "no_action", summary: "无需处理" });
+};
+
+test("助手角色按任务来源：你的话是对话助手，行情来源的规则是行情助手，其他规则是规则助手，主动发现是观察助手；序号按角色从 1 数", () => {
+	const s = setup({ config: { inferenceConcurrent: 10 } });
+	const ids = [s.open("request"), s.open("rule"), s.open("rule", { source: "toy-market" }), s.open("inference"), s.open("request"), s.open("rule", { source: "toy-market" })];
+	assert.deepEqual(
+		ids.map((id) => { const h = helperOf(s.kernel, id)!; return `${h.role} #${h.seq}`; }),
+		["conversation #1", "rule #1", "market #1", "watch #1", "conversation #2", "market #2"],
+	);
+});
+
+test("助手序号按纽约日期分天：纽约午夜之后同一角色从 1 重新数", () => {
+	const s = setup({ at: "2026-11-09T04:30:00Z" });
+	const lateNight = s.open("request");
+	s.clock.t += HOUR;
+	const nextDay = [s.open("request"), s.open("request")];
+	assert.deepEqual([lateNight, ...nextDay].map((id) => helperOf(s.kernel, id)!.seq), [1, 1, 2]);
+});
+
+test("助手名字按建任务的先后从名字池里依次取，在岗的助手不重名；池用完时加「·二」", () => {
+	const s = setup();
+	const ids = HELPER_NAMES.map(() => s.open("request"));
+	assert.deepEqual(ids.map((id) => helperOf(s.kernel, id)!.name), [...HELPER_NAMES]);
+	const overflow = s.open("request");
+	assert.equal(helperOf(s.kernel, overflow)!.name, `${HELPER_NAMES[0]}·二`);
+	closeTicket(s, ids[4]);
+	assert.equal(helperOf(s.kernel, s.open("request"))!.name, HELPER_NAMES[4], "下一位从第二个名字往后找，第一个空出来的是刚完成的那位");
+});
+
+test("完成或停止的助手让出名字：之后轮到这个名字时可以再用", () => {
+	const s = setup();
+	const first = s.open("request");
+	closeTicket(s, first);
+	const rest = HELPER_NAMES.slice(1).map(() => s.open("request"));
+	assert.equal(rest.length, HELPER_NAMES.length - 1);
+	assert.equal(helperOf(s.kernel, s.open("request"))!.name, HELPER_NAMES[0]);
+});
+
+test("助手名字、角色和序号存在状态库里，重启后不变", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const ids = [first.open("request"), first.open("rule", { source: "toy-market" })];
+	const before = ids.map((id) => helperOf(first.kernel, id));
+	first.db.close();
+	const again = setup({ path });
+	assert.deepEqual(ids.map((id) => helperOf(again.kernel, id)), before);
+});
+
+test("旧状态库没有助手列：打开时补上，补名字时按建任务的先后，角色看依据和来源", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const ids = [first.open("request"), first.open("rule", { source: "toy-market" }), first.open("request"), first.open("rule")];
+	closeTicket(first, ids[0]);
+	for (const column of ["helper_name", "helper_role", "helper_seq"]) first.db.exec(`ALTER TABLE tickets DROP COLUMN ${column}`);
+	first.db.close();
+	const again = setup({ path });
+	assert.deepEqual(ids.map((id) => helperOf(again.kernel, id)), ids.map(() => null), "宿主补名字之前没有助手");
+	again.kernel.nameUnnamedHelpers();
+	assert.deepEqual(
+		ids.map((id) => helperOf(again.kernel, id)),
+		[
+			{ name: HELPER_NAMES[0], role: "conversation", seq: 1 },
+			{ name: HELPER_NAMES[1], role: "market", seq: 1 },
+			{ name: HELPER_NAMES[2], role: "conversation", seq: 2 },
+			{ name: HELPER_NAMES[3], role: "rule", seq: 1 },
+		],
+	);
+	again.clock.t += 1000;
+	const next = again.open("request");
+	assert.deepEqual(helperOf(again.kernel, next), { name: HELPER_NAMES[4], role: "conversation", seq: 3 });
+});
+
+test("看板行带结束时间：完成取关闭时刻，停止取停止时刻，进行中为空", () => {
+	const s = setup();
+	const [done, stopped, live] = [s.open("request"), s.open("request"), s.open("request")];
+	closeTicket(s, done);
+	const closedAt = s.clock.t;
+	s.clock.t += 1000;
+	s.kernel.route([{ kind: "stop", ticketId: stopped }]);
+	const rows = new Map(s.kernel.listTickets().map((r) => [r.id, r]));
+	assert.deepEqual([done, stopped, live].map((id) => rows.get(id)!.endedAt), [closedAt, closedAt + 1000, null]);
+});
+
+test("今日助手：纽约今天建的任务数和它们的 token 合计；昨天建的不算", () => {
+	const s = setup({ at: "2026-11-09T04:30:00Z" });
+	const yesterday = s.open("request");
+	s.run(yesterday);
+	s.kernel.recordUsage(yesterday, { provider: "p", tokensIn: 5000, tokensOut: 5000 });
+	s.clock.t += HOUR;
+	assert.deepEqual(s.kernel.helpersToday(), { count: 0, tokens: 0 });
+	const [a, b] = [s.open("request"), s.open("rule", { source: "toy-market" })];
+	s.run(a);
+	s.kernel.recordUsage(a, { provider: "p", tokensIn: 1000, tokensOut: 200 });
+	s.kernel.recordUsage(yesterday, { provider: "p", tokensIn: 7, tokensOut: 0 });
+	assert.deepEqual(s.kernel.helpersToday(), { count: 2, tokens: 1200 });
+	assert.ok(b);
 });
