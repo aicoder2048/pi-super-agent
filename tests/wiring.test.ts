@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHostOptions, modelSelectors, watchedSources } from "../src/host/wiring.ts";
@@ -63,7 +63,7 @@ function hostConfig(provider: string, fallbackId = "fallback") {
 	const stateDir = mkdtempSync(join(tmpdir(), "psa-wire-"));
 	return {
 		stateDir, kernel: {}, bgMaxMinutes: 120, fallbackDailyTokens: 1000, retryAttempts: 0, probePrimaryMinutes: 15,
-		heartbeatSeconds: 30, watchdog: { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120 }, modulesDirs: [], webPort: 0, sources: {},
+		heartbeatSeconds: 30, watchdog: { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120 }, modulesDirs: [], webPort: 0, sources: {}, rolesDir: join(stateDir, "roles"),
 		models: { router: { provider, id: "router" }, worker: { provider, id: "worker" }, fallback: { provider, id: fallbackId } },
 	};
 }
@@ -183,4 +183,46 @@ test("宿主运行模块声明的来源：随宿主启停，触发进内核，�
 	await host.stop();
 	hostStopped = true;
 	assert.ok(stopped);
+});
+
+function roleFile(dir: string, name: string, extra = "") {
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, `${name}.md`), `---\nname: ${name}\ntitle: ${name} 职称\ndescription: ${name} 擅长的事\n${extra}---\n${name} 的提示词\n`);
+}
+
+function moduleWithRole(rule: string) {
+	const root = mkdtempSync(join(tmpdir(), "psa-mods-"));
+	mkdirSync(join(root, "desk"));
+	writeFileSync(join(root, "desk", "module.json"), '{"name":"desk","sources":[{"name":"desk"}]}');
+	writeFileSync(join(root, "desk", "rules.md"), rule);
+	roleFile(join(root, "desk", "roles"), "desk-analyst");
+	return root;
+}
+
+test("真实接线：名册来自内置、模块和状态目录三处，进 Router 提示词；内核按名册接受角色", async (t) => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const config = hostConfig(provider);
+	roleFile(config.rolesDir, "news-researcher");
+	const modules = Modules.load([moduleWithRole("## move\n角色：desk-analyst\n动了就看\n")]);
+	const host = await Host.start(createHostOptions({ config, modules, modelRuntime, log: () => {} }));
+	t.after(() => host.stop());
+	const prompt = (host.router as any).session.systemPrompt as string;
+	for (const name of ["general", "deputy", "desk-analyst", "news-researcher"]) assert.match(prompt, new RegExp(`- ${name}（`), name);
+	const { triggerId } = host.kernel.submitTrigger({ source: "conversation", externalId: "x", threads: [{ id: "thr_conversation" }], sender: "user", body: "看新闻", occurredAt: 0 });
+	const [ok] = host.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", role: "news-researcher", triggerId, brief: "b" }]);
+	assert.ok(ok.ok);
+	assert.equal(host.kernel.listTickets().find((r) => r.id === ok.ticketId)!.helper!.title, "news-researcher 职称");
+});
+
+test("真实接线：规则指定的角色不在名册里，启动前报错并写出规则", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const modules = Modules.load([moduleWithRole("## move\n角色：ghost\n动了就看\n")]);
+	assert.throws(() => createHostOptions({ config: hostConfig(provider), modules, modelRuntime, log: () => {} }), (e: Error) => e.name === "ConfigError" && /desk\/move.*ghost/.test(e.message));
+});
+
+test("真实接线：角色的模型找不到时启动前报错并写出角色文件", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const config = hostConfig(provider);
+	roleFile(config.rolesDir, "picky", `model: ${provider}/nope\n`);
+	assert.throws(() => createHostOptions({ config, modules: Modules.load([]), modelRuntime, log: () => {} }), /picky\.md.*找不到模型/);
 });

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { TestContext } from "node:test";
 import type { HostToClient } from "../../src/client/protocol.ts";
 import { Router } from "../../src/host/router.ts";
+import { BUILTIN_ROLES_DIR, Roster } from "../../src/roles.ts";
 import { ModelSelector } from "../../src/model-selector.ts";
 import { formatModelRef } from "../../src/models.ts";
 import type { WorkerModels } from "../../src/host/workers.ts";
@@ -97,6 +98,7 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 				rulesFor: deps.rulesFor,
 				cwd: deps.stateDir,
 				rules: "",
+				roster: Roster.load([BUILTIN_ROLES_DIR]).rosterPrompt(),
 				afterCommand: deps.afterCommand,
 			});
 		},

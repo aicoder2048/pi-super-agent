@@ -39,6 +39,9 @@ export interface HostOptions {
 	sourcePolicy?: SourcePolicy;
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	isMarketSource?: (source: string) => boolean;
+	/** The roster as role name → title. */
+	roles?: ReadonlyMap<string, string>;
+	ruleRole?: (ruleId: string) => string | undefined;
 	rulesFor?: (triggerSource: string) => string[];
 	timers?: TimerEntry[];
 	heartbeatMs?: number;
@@ -105,6 +108,8 @@ export class Host {
 			sourcePolicy: (trigger) => (trigger.source === WATCHDOG_SOURCE ? "notice" : (options.sourcePolicy?.(trigger) ?? "candidate")),
 			ruleAllows: options.ruleAllows,
 			isMarketSource: options.isMarketSource,
+			roles: options.roles,
+			ruleRole: options.ruleRole,
 			config: options.config,
 		});
 		const submit = (trigger: TriggerSubmission) => {

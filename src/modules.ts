@@ -29,12 +29,15 @@ export interface LoadedModule {
 	manifest: ModuleManifest;
 	rules: ScopedRule[];
 	skillsDir: string | undefined;
+	rolesDir?: string;
 }
 
 export interface Rule {
 	id: string;
 	text: string;
 	sources?: string[];
+	/** The role a ticket opened under this rule must get. */
+	role?: string;
 }
 
 export interface ScopedRule extends Rule {
@@ -43,14 +46,17 @@ export interface ScopedRule extends Rule {
 
 const RULE_HEADING = /^##\s+([\w-]+)\s*$/;
 const RULE_SOURCES = /^来源\s*[:：]\s*(.+)$/;
+const RULE_ROLE = /^角色\s*[:：]\s*(\S+)\s*$/;
 
 export function parseRules(namespace: string, markdown: string): Rule[] {
 	const rules: Rule[] = [];
 	for (const line of markdown.split("\n")) {
 		const heading = line.match(RULE_HEADING);
 		const sources = line.trim().match(RULE_SOURCES);
+		const role = line.trim().match(RULE_ROLE);
 		if (heading) rules.push({ id: `${namespace}/${heading[1]}`, text: "" });
 		else if (sources && rules.length) rules[rules.length - 1].sources = sources[1].split(/[,，\s]+/).filter(Boolean);
+		else if (role && rules.length) rules[rules.length - 1].role = role[1];
 		else if (rules.length) rules[rules.length - 1].text += line + "\n";
 	}
 	return rules.map((r) => ({ ...r, text: r.text.trim() })).filter((r) => r.text);
@@ -71,6 +77,7 @@ function loadModule(dir: string): LoadedModule {
 	}
 	const rulesPath = join(dir, "rules.md");
 	const skillsDir = join(dir, "skills");
+	const rolesDir = join(dir, "roles");
 	const moduleSources = [manifest.name, ...(manifest.sources ?? []).map((s) => s.name), ...(manifest.timers ?? []).map((t) => t.source ?? manifest.name)];
 	const rules = existsSync(rulesPath) ? parseRules(manifest.name, readFileSync(rulesPath, "utf8")) : [];
 	return {
@@ -79,6 +86,7 @@ function loadModule(dir: string): LoadedModule {
 		manifest,
 		rules: rules.map((r) => ({ ...r, sources: r.sources ?? [...new Set(moduleSources)] })),
 		skillsDir: existsSync(skillsDir) ? skillsDir : undefined,
+		rolesDir: existsSync(rolesDir) ? rolesDir : undefined,
 	};
 }
 
@@ -118,8 +126,10 @@ export class Modules {
 	}
 
 	rulesPrompt(): string {
-		return this.allRules().map((r) => `### ${r.id}\n${r.text}`).join("\n\n");
+		return this.allRules().map((r) => `### ${r.id}\n${r.role ? `角色：${r.role}\n` : ""}${r.text}`).join("\n\n");
 	}
+
+	ruleRole = (ruleId: string): string | undefined => this.allRules().find((r) => r.id === ruleId)?.role;
 
 	ruleAllows = (ruleId: string, triggerSource: string): boolean => {
 		return triggerSource !== CONVERSATION_SOURCE && (this.#scopes.get(ruleId)?.includes(triggerSource) ?? false);

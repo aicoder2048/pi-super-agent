@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,4 +67,23 @@ test("规则的适用来源：来源行里一个来源都没有的使用者规�
 	assert.ok(!modules.ruleAllows("user/empty", "mail"));
 	assert.deepEqual(modules.skippedUserRules, ["user/empty"]);
 	assert.equal(modules.rulesPrompt(), "");
+});
+
+test("规则写「角色：」行：指定这条规则开任务用的角色，名册提示里写出来", () => {
+	const file = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
+	writeFileSync(file, "## ci\n来源: ci\n角色：ci-doctor\nCI 失败时开任务\n\n## mail\n来源: mail\n有新邮件就看一下\n");
+	const modules = Modules.load([], file);
+	assert.equal(modules.ruleRole("user/ci"), "ci-doctor");
+	assert.equal(modules.ruleRole("user/mail"), undefined);
+	assert.match(modules.rulesPrompt(), /### user\/ci\n角色：ci-doctor\nCI 失败时开任务/);
+});
+
+test("模块的 roles 目录随模块发现", () => {
+	const root = mkdtempSync(join(tmpdir(), "psa-mods-"));
+	mkdirSync(join(root, "news", "roles"), { recursive: true });
+	writeFileSync(join(root, "news", "module.json"), '{"name":"news"}');
+	mkdirSync(join(root, "plain"));
+	writeFileSync(join(root, "plain", "module.json"), '{"name":"plain"}');
+	const modules = Modules.load([root]);
+	assert.deepEqual(modules.modules.map((m) => m.rolesDir), [join(root, "news", "roles"), undefined]);
 });

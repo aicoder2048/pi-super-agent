@@ -5,6 +5,7 @@ import { ConfigError } from "../config-error.ts";
 import { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import type { Modules } from "../modules.ts";
+import { BUILTIN_ROLES_DIR, Roster } from "../roles.ts";
 import type { WatchedSource } from "../client/protocol.ts";
 import type { TimerEntry } from "../sources/timer.ts";
 import { FEEDS, type FeedSpec } from "../sources/feeds.ts";
@@ -62,6 +63,15 @@ export function feedSpecs(config: Pick<HostConfig, "stateDir" | "secretsFile" | 
 	});
 }
 
+/** The built-in roles, then each module's, then the user's; a rule's pinned role must be on it. */
+export function loadRoster(config: Pick<HostConfig, "rolesDir">, modules: Modules): Roster {
+	const roster = Roster.load([BUILTIN_ROLES_DIR, ...modules.modules.flatMap((m) => (m.rolesDir ? [m.rolesDir] : [])), config.rolesDir]);
+	for (const rule of modules.allRules()) {
+		if (rule.role && !roster.get(rule.role)) throw new ConfigError(`规则 ${rule.id} 写的角色 ${rule.role} 不在名册里，名册有：${roster.names().join("、")}`);
+	}
+	return roster;
+}
+
 export interface HostWiringInput {
 	config: HostConfig;
 	modules: Modules;
@@ -79,6 +89,12 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 	resolve(config.models.router, "router");
 	resolve(config.models.worker, "worker");
 	resolve(config.models.fallback, "fallback");
+	const roster = loadRoster(config, modules);
+	log(`[host] 名册：${roster.names().join("、")}`);
+	for (const name of roster.names()) {
+		const role = roster.get(name)!;
+		if (role.model && !modelRuntime.getModel(role.model.provider, role.model.id)) throw new ConfigError(`${role.file}：model：找不到模型 ${formatModelRef(role.model)}`);
+	}
 	const selectors = modelSelectors(config, clock);
 	const timers = modules.timers();
 	const feeds = feedSpecs(config, modules, log);
@@ -91,6 +107,8 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		sourcePolicy: modules.sourcePolicy,
 		ruleAllows: modules.ruleAllows,
 		isMarketSource: modules.isMarketSource,
+		roles: roster.titles(),
+		ruleRole: modules.ruleRole,
 		rulesFor: modules.rulesFor,
 		timers,
 		watching: watchedSources(modules, timers),
@@ -105,6 +123,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 				cwd: join(config.stateDir, "router"),
 				sessionDir: join(config.stateDir, "sessions", "router"),
 				rules: modules.rulesPrompt(),
+				roster: roster.rosterPrompt(),
 				rulesFor: deps.rulesFor,
 				afterCommand: deps.afterCommand,
 				onError: (e) => log(`[router] ${String(e)}`),

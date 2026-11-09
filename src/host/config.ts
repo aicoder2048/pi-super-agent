@@ -17,6 +17,8 @@ export interface HostConfig {
 	heartbeatSeconds: number;
 	watchdog: { intervalMinutes: number; stuckMinutes: number; staleSeconds: number };
 	modulesDirs: string[];
+	/** The user's own role files. */
+	rolesDir: string;
 	webPort: number;
 	secretsFile?: string;
 	sources: Record<string, unknown>;
@@ -73,6 +75,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		heartbeatSeconds,
 		watchdog,
 		modulesDirs: raw.modulesDirs ?? [fileURLToPath(new URL("../../modules", import.meta.url)), join(stateDir, "modules")],
+		rolesDir: join(stateDir, "roles"),
 		webPort,
 		secretsFile,
 		sources,
