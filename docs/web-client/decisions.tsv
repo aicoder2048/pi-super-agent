@@ -82,3 +82,4 @@ ts	phase	decision	why	evidence	result
 2026-11-09T19:13:17Z	w4-lanes	W4 十条实测和性能全部通过（6、8 修后重跑）	首轮被 Mac 睡眠打断已作废；第二轮 caffeinate 下运行	docs/web-client/evidence/w4/*.png；just test 中位数 8.00→7.83s；just e2e 中位数 6.13s	PASS
 2026-11-09T19:16:06Z	w4-verdict	W4 复审 PASS；顺手修两处低概率问题：收尾后不再对已停的进程组发信号；演示的子进程环境删掉行情密钥变量（startHost 支持 baseEnv），只走 secretsFile	复审：pgid 复用可能误杀；shell 导出的密钥会让演示 1-4 轮询真实行情、让 demo-5 误判	实测：有无删除时 us-market 日志分别为「密钥来自环境变量」与「未配置行情密钥」	PASS
 2026-11-09T20:05:31Z	w4	停进程组时 EPERM 视同已不在	macOS 上只剩僵尸的组或被别的用户复用的组号会回 EPERM，W6c 实测两次因此中断收尾	setup.e2e.ts 新测试先红后绿	fixed
+2026-11-09T21:28:24Z	t-frame	撤回副幕僚长一层，回到幕僚长↔助手两层；拆解和汇总下沉到助手，助手按需扩展成 Agent Team（ADR-0008 取代 ADR-0007）	使用者 2026-11-09 决定，并同意四点：助手自带 dispatch_agent 且保留工具、团队来自模块和使用者、成员任务内有记忆、权限只收窄且一层	docs/adr/0008；参考 pi-vs-claude-code/extensions/agent-team.ts	decided
