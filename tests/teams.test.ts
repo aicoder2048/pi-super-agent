@@ -1,0 +1,54 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { ConfigError } from "../src/config-error.ts";
+import { parseTeams } from "../src/teams.ts";
+
+const FILE = "/state/teams.yaml";
+
+const NEWS_TEAM = `# 使用者自己的团队
+新闻队:
+  description: 查新闻、核对报道来源
+  members:
+    - news-researcher
+
+看盘队:
+  description: "盯行情：技术面、新闻和财报"
+  members:
+  - market-analyst
+  - news-researcher
+`;
+
+test("teams.yaml：每个团队一个名字、一句说明和成员名单，空行和 # 注释跳过，说明可以带引号", () => {
+	assert.deepEqual(parseTeams(FILE, NEWS_TEAM), [
+		{ name: "新闻队", description: "查新闻、核对报道来源", members: ["news-researcher"], file: FILE, line: 2 },
+		{ name: "看盘队", description: "盯行情：技术面、新闻和财报", members: ["market-analyst", "news-researcher"], file: FILE, line: 7 },
+	]);
+	assert.deepEqual(parseTeams(FILE, "\n# 还没有团队\n"), []);
+});
+
+const MALFORMED: [name: string, text: string, line: number, message: RegExp][] = [
+	["顶层不是「团队名:」", "新闻队: 查新闻\n", 1, /团队名/],
+	["成员写在团队外面", "- news-researcher\n", 1, /团队名/],
+	["团队里有不认识的键", "新闻队:\n  description: d\n  lead: x\n  members:\n    - a\n", 3, /lead/],
+	["members 写成一行", "新闻队:\n  description: d\n  members: [a, b]\n", 3, /每行一个/],
+	["名单项前面没有 members", "新闻队:\n  description: d\n    - a\n", 3, /members/],
+	["说明是空的", "新闻队:\n  description:\n  members:\n    - a\n", 2, /description/],
+	["缺说明", "新闻队:\n  members:\n    - a\n", 1, /缺少 description/],
+	["缺名单", "新闻队:\n  description: d\n看盘队:\n  description: d\n  members:\n    - a\n", 1, /缺少 members/],
+	["名单是空的", "新闻队:\n  description: d\n  members:\n", 1, /缺少 members/],
+	["同一个键写了两次", "新闻队:\n  description: d\n  description: e\n  members:\n    - a\n", 3, /description 写了两次/],
+	["同一个成员写了两次", "新闻队:\n  description: d\n  members:\n    - a\n    - a\n", 5, /a 写了两次/],
+	["同一个文件里团队重名", "新闻队:\n  description: d\n  members:\n    - a\n新闻队:\n  description: d\n  members:\n    - a\n", 5, /新闻队/],
+	["用 Tab 缩进", "新闻队:\n\tdescription: d\n", 2, /Tab/],
+];
+
+for (const [name, text, line, message] of MALFORMED) {
+	test(`teams.yaml 格式不对时报出文件和行号：${name}`, () => {
+		assert.throws(() => parseTeams(FILE, text), (e: Error) => {
+			assert.ok(e instanceof ConfigError, String(e));
+			assert.ok(e.message.startsWith(`${FILE}:${line}：`), e.message);
+			assert.match(e.message, message);
+			return true;
+		});
+	});
+}

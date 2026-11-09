@@ -86,3 +86,5 @@ ts	phase	decision	why	evidence	result
 2026-11-09T21:38:02Z	t-plan	ADR-0008 获批；计划加 T1（成员、团队、open_ticket 的 team）、T2（dispatch_agent 和任务内成员会话）、T3（看盘队和 pi-pi 队），取代 W6a 到 W6c	使用者 2026-11-09 批准 ADR-0008；psa/teams 从 psa/helpers 切出，计划里原本没有 W6 段，所以是新增三段	check-plan：9 PR sections, 0 problems	planned
 2026-11-09T21:52:24Z	t-naming	团队任务用四字名加团队名（「高山流水 · 看盘队 #2」），单个助手保持两字名加角色；按开任务时的团队定名，不看是否派过活；T3 只带看盘队和 pi-pi 队	使用者 2026-11-09 提出团队四字、单人两字，并认同按团队定名和用团队名代替角色的建议；参考实现其余团队是写代码用的，提示词只有一两句，使用者同意暂不带	ADR-0008 命名一段；计划 T1 加名字池和评审；check-plan 0 problems	decided
 2026-11-09T21:55:36Z	start	T1 的负责人开始干活：Feature 流程（how、architect、四项检查点、红绿提交）	根交给我 T1；之前到 2026-11-09T21:52:24Z 的各行不是这一轮写的	T1 owner agent，分支 psa/teams 头 3e3d69f	open
+2026-11-09T21:57:14Z	t1	名字池分成两字池和四字池，四字池补到 24 个；helperName 多一个池参数	团队任务用四字名、单个助手用两字名，两个池要各自轮转	tests/helper-names.test.ts 三条；红：四字名只有 5 个；绿：1432237	just test 435 通过
+2026-11-09T21:57:14Z	t1	从名字池去掉「边牧」「弈境」，文档、计划、ADR-0008、测试夹具里的例子改成「青檀」	使用者追加：别的产品在用这两个名字。截图不动，旧的 decisions 行不动	测试「名字池里没有「边牧」和「弈境」」；红：actual ['边牧','弈境']；绿：1432237	just test 435 通过
