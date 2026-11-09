@@ -160,6 +160,7 @@ export class Host {
 				transcript: (ticketId) => this.transcript(ticketId),
 			},
 			(ticketId, token, method, params) => this.workers.handleRequest(ticketId, token, method, params),
+			this.#log,
 		);
 	}
 

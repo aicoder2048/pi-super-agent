@@ -48,8 +48,10 @@ export class HostServer {
 	readonly #server: Server;
 	readonly #clients = new Set<ClientConn>();
 	readonly #echoes = new HistoryEchoFilter<ClientConn>();
+	readonly #log: (line: string) => void;
 
-	constructor(clients: ClientHandlers, workers: WorkerRequestHandler) {
+	constructor(clients: ClientHandlers, workers: WorkerRequestHandler, log: (line: string) => void) {
+		this.#log = log;
 		this.#server = createServer((socket) => {
 			socket.on("error", () => {});
 			let role: "client" | "worker" | undefined;
@@ -64,7 +66,7 @@ export class HostServer {
 					else {
 						client = { socket, watching: undefined };
 						this.#clients.add(client);
-						writeJsonLine(socket, { type: "snapshot", ...(clients.snapshot() as object) });
+						this.#guard("hello", () => writeJsonLine(socket, { type: "snapshot", ...(clients.snapshot() as object) }), () => socket.destroy());
 					}
 					return;
 				}
@@ -75,20 +77,27 @@ export class HostServer {
 					);
 					return;
 				}
+				const c = client!;
 				if (r.type === "say" && typeof r.text === "string" && hasVisibleText(r.text)) {
-					const triggerId = clients.onSay(r.text);
-					if (typeof r.requestId === "string") writeJsonLine(socket, { type: "ack", requestId: r.requestId, triggerId });
+					// No ack on failure: the client already warns that an unacked line may not have arrived.
+					this.#guard("say", () => {
+						const triggerId = clients.onSay(r.text);
+						if (typeof r.requestId === "string") writeJsonLine(socket, { type: "ack", requestId: r.requestId, triggerId });
+					}, () => {});
 				}
 				else if (r.type === "answer" && typeof r.reportId === "string" && Number.isInteger(r.option) && typeof r.requestId === "string") {
 					const result = clients.onAnswer(r.reportId, r.option);
 					writeJsonLine(socket, result.ok ? { type: "ack", requestId: r.requestId, triggerId: result.triggerId } : { type: "refused", requestId: r.requestId, reason: refusalText(result.refusal) });
 				}
 				else if (r.type === "watch") {
-					client!.watching = typeof r.ticketId === "string" ? r.ticketId : undefined;
-					if (client!.watching && clients.transcript) {
-						const messages = clients.transcript(client!.watching);
-						this.#echoes.opened(client!, messages);
-						writeJsonLine(socket, { type: "transcript_history", ticketId: client!.watching, messages });
+					c.watching = typeof r.ticketId === "string" ? r.ticketId : undefined;
+					if (c.watching && clients.transcript) {
+						const ticketId = c.watching;
+						this.#guard("watch", () => {
+							const messages = clients.transcript!(ticketId);
+							this.#echoes.opened(c, messages);
+							writeJsonLine(socket, { type: "transcript_history", ticketId, messages });
+						}, () => writeJsonLine(socket, { type: "transcript_history", ticketId, messages: [] }));
 					}
 				}
 			});
@@ -96,6 +105,16 @@ export class HostServer {
 				if (client) this.#clients.delete(client);
 			});
 		});
+	}
+
+	// One client's failed request must not reach the socket's data handler, where it would kill the host.
+	#guard(what: string, work: () => void, answerFailure: () => void): void {
+		try {
+			work();
+		} catch (error) {
+			this.#log(`[socket] 客户端 ${what} 出错：${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+			answerFailure();
+		}
 	}
 
 	listen(path: string): Promise<void> {

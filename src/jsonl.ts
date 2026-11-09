@@ -1,7 +1,7 @@
 import type { Socket } from "node:net";
 
 // readline also splits on U+2028/U+2029, which are legal inside JSON strings.
-export function onJsonLines(socket: Socket, handle: (record: unknown) => void): void {
+export function onJsonLines(socket: Socket, handle: (record: Record<string, unknown>) => void): void {
 	let buffer = "";
 	socket.setEncoding("utf8");
 	socket.on("data", (chunk: string) => {
@@ -18,7 +18,11 @@ export function onJsonLines(socket: Socket, handle: (record: unknown) => void): 
 					socket.destroy(new Error(`收到无法解析的 JSON 行：${line.slice(0, 80)}`));
 					return;
 				}
-				handle(record);
+				if (typeof record !== "object" || record === null || Array.isArray(record)) {
+					socket.destroy(new Error(`收到的 JSON 行不是对象：${line.slice(0, 80)}`));
+					return;
+				}
+				handle(record as Record<string, unknown>);
 			}
 			newline = buffer.indexOf("\n");
 		}

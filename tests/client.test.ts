@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { createServer, type Socket } from "node:net";
+import { connect, createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import superAgentClient from "../extensions/super-agent.ts";
 import { onJsonLines, writeJsonLine } from "../src/jsonl.ts";
@@ -125,6 +125,53 @@ test("协议：会话文件最后一行写到一半时，查看任务收到完�
 	assert.deepEqual(c.of("transcript_history")[0].messages, [good]);
 	assert.ok(c.conn.say("还在吗"));
 	await until(() => c.of("user").some((m) => m.text === "还在吗"), "宿主还活着");
+});
+
+test("协议：会话文件读不了时，查看任务收到空的过程历史并记一行日志，宿主照常服务", async (t) => {
+	const stateDir = tempStateDir();
+	const logs: string[] = [];
+	const { host, spawner } = await startHost(brain, () => {}, { stateDir, log: (line) => logs.push(line) });
+	const c = client(host.socketPath);
+	t.after(async () => { c.conn.close(); await host.stop(); });
+	await until(() => c.conn.connected, "连接");
+	host.say("读网页");
+	await until(() => host.kernel.listTickets().length === 1 && spawner.workers.size === 1, "Worker 起来");
+	const id = host.kernel.listTickets()[0].id;
+	const session = host.kernel.getTicket(id)!.workerSessionId;
+	mkdirSync(join(stateDir, "sessions", "workers", `2026-11-08T00-00-00_${session}.jsonl`), { recursive: true });
+	c.conn.watch(id);
+	await until(() => c.of("transcript_history").length === 1, "过程历史");
+	assert.deepEqual(c.of("transcript_history")[0], { type: "transcript_history", ticketId: id, messages: [] });
+	assert.equal(logs.filter((l) => l.includes("watch") && l.includes("EISDIR")).length, 1);
+	assert.ok(c.conn.say("还在吗"));
+	await until(() => c.of("user").some((m) => m.text === "还在吗"), "宿主还活着");
+	const fresh = client(host.socketPath);
+	t.after(() => fresh.conn.close());
+	await until(() => fresh.of("snapshot").length === 1, "新客户端拿到快照");
+});
+
+function rawLines(socketPath: string, lines: string[]): Promise<void> {
+	return new Promise((resolve) => {
+		const socket = connect(socketPath);
+		socket.on("error", () => {});
+		socket.resume();
+		socket.on("close", () => resolve());
+		socket.on("connect", () => socket.write(lines.map((l) => l + "\n").join("")));
+	});
+}
+
+test("协议：客户端发来合法 JSON 但不是对象（null、数字、字符串、数组）时只断开它，宿主照常服务", async (t) => {
+	const host = await hostAt(tempStateDir());
+	t.after(() => host.stop());
+	const hellos = { first: [], client: ['{"type":"hello","role":"client"}'], worker: ['{"type":"hello","role":"worker","ticketId":"x","token":"y"}'] };
+	for (const [where, before] of Object.entries(hellos)) {
+		for (const value of ["null", "42", '"x"', "[]"]) {
+			await rawLines(host.socketPath, [...before, value]);
+			const fresh = client(host.socketPath);
+			await until(() => fresh.of("snapshot").length === 1, `${where} 之后发 ${value}，新客户端拿到快照`);
+			fresh.conn.close();
+		}
+	}
 });
 
 test("协议：只有零宽字符的一句话不进对话", async (t) => {
