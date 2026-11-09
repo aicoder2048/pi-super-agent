@@ -80,7 +80,6 @@ export interface WorkerModels {
 	fallbackDailyTokens: number;
 }
 
-const CAP_PREFIX = "回退模型";
 
 export class WorkerExecutor {
 	readonly #o: WorkerExecutorOptions;
@@ -106,6 +105,12 @@ export class WorkerExecutor {
 		if (!live) return;
 		const inputs = kernel.pendingInputs(ticketId);
 		if (inputs.length === 0) return;
+		if (this.#capReached()) {
+			this.#blockForCap(ticketId);
+			live.stopping = true;
+			await live.handle.stop();
+			return;
+		}
 		if (current && !live.handle.isStreaming()) {
 			const choice = this.#o.models.selector.forTurn();
 			if (formatModelRef(choice.model) !== live.handle.model) await this.#switchModel(ticketId, live, choice.model, choice.fellBack);
@@ -138,7 +143,7 @@ export class WorkerExecutor {
 	async #spawn(ticketId: string): Promise<Live | undefined> {
 		const { kernel, spawner, stateDir, afterCommand } = this.#o;
 		const choice = this.#o.models.selector.forTurn();
-		if (choice.fellBack && this.#overDailyCap()) {
+		if (choice.fellBack && this.#capReached()) {
 			this.#blockForCap(ticketId);
 			afterCommand();
 			return undefined;
@@ -205,7 +210,7 @@ export class WorkerExecutor {
 				models.selector.onSuccess();
 			}
 			const current = models.selector.current();
-			if (current.fellBack && this.#overDailyCap()) {
+			if (this.#capReached()) {
 				this.#blockForCap(ticketId);
 			} else if (error && current.fellBack && live.handle.model !== formatModelRef(current.model)) {
 				await this.#switchModel(ticketId, live, current.model, true);
@@ -228,20 +233,19 @@ export class WorkerExecutor {
 		this.#o.kernel.workerStarted(ticketId, { model: formatModelRef(model), fellBack });
 	}
 
-	#overDailyCap(): boolean {
+	#capReached(): boolean {
 		const models = this.#o.models;
-		return this.#o.kernel.usageToday(models.selector.current().model.provider) >= models.fallbackDailyTokens;
+		return models.selector.current().fellBack && this.#o.kernel.usageToday(models.selector.current().model.provider) >= models.fallbackDailyTokens;
 	}
 
 	#blockForCap(ticketId: string): void {
-		const models = this.#o.models;
-		const latest = this.#o.kernel.getTicket(ticketId)?.latestReport;
-		if (latest?.status === "blocked" && latest.summary.startsWith(CAP_PREFIX)) return;
-		this.#o.kernel.workerReport(ticketId, {
-			status: "blocked",
-			summary: `${CAP_PREFIX} ${formatModelRef(models.selector.current().model)} 今日用量已达上限（${models.fallbackDailyTokens} token），等主模型恢复或明天再继续。`,
-		});
+		const { kernel, models } = this.#o;
+		kernel.blockForCap(
+			ticketId,
+			`回退模型 ${formatModelRef(models.selector.current().model)} 今日用量已达上限（${models.fallbackDailyTokens} token），等主模型恢复或明天再继续。`,
+		);
 	}
+
 
 	handleRequest(ticketId: string, token: string, method: string, params: unknown): unknown {
 		const live = this.#live.get(ticketId);

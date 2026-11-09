@@ -386,13 +386,29 @@ export class Kernel {
 				tokensOut,
 				ticketId,
 			);
-			this.#run(
-				`INSERT INTO usage_daily (day, provider, tokens) VALUES (?, ?, ?)
-				 ON CONFLICT (day, provider) DO UPDATE SET tokens = tokens + excluded.tokens`,
-				localDayKey(this.#now()),
-				provider,
-				tokensIn + tokensOut,
-			);
+			this.#addUsage(provider, tokensIn + tokensOut);
+		});
+	}
+
+	recordRouterUsage({ provider, tokensIn, tokensOut }: { provider: string; tokensIn: number; tokensOut: number }): void {
+		this.#tx(() => this.#addUsage(provider, tokensIn + tokensOut));
+	}
+
+	#addUsage(provider: string, tokens: number): void {
+		this.#run(
+			`INSERT INTO usage_daily (day, provider, tokens) VALUES (?, ?, ?)
+			 ON CONFLICT (day, provider) DO UPDATE SET tokens = tokens + excluded.tokens`,
+			localDayKey(this.#now()),
+			provider,
+			tokens,
+		);
+	}
+
+	blockForCap(ticketId: string, summary: string): void {
+		this.#tx(() => {
+			const latest = this.#latestReportRow(ticketId);
+			if (!(latest?.status === "blocked" && latest.summary === summary)) this.workerReport(ticketId, { status: "blocked", summary });
+			this.#run("UPDATE tickets SET worker_state = 'idle' WHERE id = ? AND worker_state = 'queued'", ticketId);
 		});
 	}
 

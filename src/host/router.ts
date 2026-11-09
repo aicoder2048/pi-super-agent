@@ -245,6 +245,16 @@ export class Router {
 				const ids = (event.message as { details?: { actionIds?: string[] } }).details?.actionIds ?? [];
 				for (const id of ids) this.#delivered.add(id);
 			}
+			if (event.type === "message_end" && event.message.role === "assistant") {
+				const m = event.message as { provider?: string; usage?: { input?: number; output?: number; cacheRead?: number } };
+				if (m.usage) {
+					this.#kernel.recordRouterUsage({
+						provider: m.provider ?? session.model?.provider ?? "unknown",
+						tokensIn: (m.usage.input ?? 0) + (m.usage.cacheRead ?? 0),
+						tokensOut: m.usage.output ?? 0,
+					});
+				}
+			}
 			if (event.type === "agent_settled") void this.#settled().catch(this.#onError);
 		});
 		if (interrupted(session.messages.at(-1))) this.#push(INTERRUPTED);

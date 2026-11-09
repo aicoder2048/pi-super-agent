@@ -701,3 +701,23 @@ test("Worker 退出窗口里到达的输入不会丢：退出时补一次唤醒"
 	kernel.workerExited(id);
 	assert.deepEqual(kernel.dueActions().map((a) => a.kind), ["worker.wake"]);
 });
+
+test("回退上限造成的受阻：任务记一条受阻汇报并移出排队，空出名额时不会被反复唤醒", () => {
+	const { kernel, open, run, idle } = setup({ maxWorkers: 1, reservedSlots: 0 });
+	const busy = open("request", { title: "占名额" });
+	run(busy);
+	const capped = open("request", { title: "被上限挡住" });
+	kernel.blockForCap(capped, "回退模型今日用量已达上限");
+	assert.equal(kernel.getTicket(capped)!.stage, "blocked_or_failed");
+	kernel.blockForCap(capped, "回退模型今日用量已达上限");
+	assert.equal(kernel.read(capped)!.type === "ticket" && (kernel.read(capped) as any).recentReports.length, 1);
+	for (const a of kernel.dueActions()) kernel.completeAction(a.id);
+	idle(busy);
+	assert.ok(!kernel.dueActions().some((a) => a.kind === "worker.wake" && a.payload.ticketId === capped));
+});
+
+test("Router 的用量也按提供方计入每日累计", () => {
+	const { kernel } = setup();
+	kernel.recordRouterUsage({ provider: "deepseek", tokensIn: 300, tokensOut: 100 });
+	assert.equal(kernel.usageToday("deepseek"), 400);
+});
