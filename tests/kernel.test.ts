@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Kernel, nextStallAt } from "../src/kernel/kernel.ts";
-import { HELPER_NAMES } from "../src/kernel/helper-names.ts";
+import { SOLO_NAMES } from "../src/kernel/helper-names.ts";
 import { refusalText } from "../src/kernel/question.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { CONVERSATION_THREAD_ID, DISPOSITIONS } from "../src/kernel/types.ts";
@@ -669,7 +669,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			tokensOut: 200,
 			elapsedMs: 90_000,
 			lastProgressAt: reportedAt,
-			helper: { name: HELPER_NAMES[0], role: "conversation", seq: 1 },
+			helper: { name: SOLO_NAMES[0], role: "conversation", seq: 1 },
 			workerState: "running",
 			startedAt: reportedAt,
 			endedAt: null,
@@ -1181,21 +1181,21 @@ test("助手序号按纽约日期分天：纽约午夜之后同一角色从 1 �
 
 test("助手名字按建任务的先后从名字池里依次取，在岗的助手不重名；池用完时加「·二」", () => {
 	const s = setup();
-	const ids = HELPER_NAMES.map(() => s.open("request"));
-	assert.deepEqual(ids.map((id) => helperOf(s.kernel, id)!.name), [...HELPER_NAMES]);
+	const ids = SOLO_NAMES.map(() => s.open("request"));
+	assert.deepEqual(ids.map((id) => helperOf(s.kernel, id)!.name), [...SOLO_NAMES]);
 	const overflow = s.open("request");
-	assert.equal(helperOf(s.kernel, overflow)!.name, `${HELPER_NAMES[0]}·二`);
+	assert.equal(helperOf(s.kernel, overflow)!.name, `${SOLO_NAMES[0]}·二`);
 	closeTicket(s, ids[4]);
-	assert.equal(helperOf(s.kernel, s.open("request"))!.name, HELPER_NAMES[4], "下一位从第二个名字往后找，第一个空出来的是刚完成的那位");
+	assert.equal(helperOf(s.kernel, s.open("request"))!.name, SOLO_NAMES[4], "下一位从第二个名字往后找，第一个空出来的是刚完成的那位");
 });
 
 test("完成或停止的助手让出名字：之后轮到这个名字时可以再用", () => {
 	const s = setup();
 	const first = s.open("request");
 	closeTicket(s, first);
-	const rest = HELPER_NAMES.slice(1).map(() => s.open("request"));
-	assert.equal(rest.length, HELPER_NAMES.length - 1);
-	assert.equal(helperOf(s.kernel, s.open("request"))!.name, HELPER_NAMES[0]);
+	const rest = SOLO_NAMES.slice(1).map(() => s.open("request"));
+	assert.equal(rest.length, SOLO_NAMES.length - 1);
+	assert.equal(helperOf(s.kernel, s.open("request"))!.name, SOLO_NAMES[0]);
 });
 
 test("助手名字、角色和序号存在状态库里，重启后不变", () => {
@@ -1221,15 +1221,15 @@ test("旧状态库没有助手列：打开时补上，补名字时按建任务�
 	assert.deepEqual(
 		ids.map((id) => helperOf(again.kernel, id)),
 		[
-			{ name: HELPER_NAMES[0], role: "conversation", seq: 1 },
-			{ name: HELPER_NAMES[1], role: "market", seq: 1 },
-			{ name: HELPER_NAMES[2], role: "conversation", seq: 2 },
-			{ name: HELPER_NAMES[3], role: "rule", seq: 1 },
+			{ name: SOLO_NAMES[0], role: "conversation", seq: 1 },
+			{ name: SOLO_NAMES[1], role: "market", seq: 1 },
+			{ name: SOLO_NAMES[2], role: "conversation", seq: 2 },
+			{ name: SOLO_NAMES[3], role: "rule", seq: 1 },
 		],
 	);
 	again.clock.t += 1000;
 	const next = again.open("request");
-	assert.deepEqual(helperOf(again.kernel, next), { name: HELPER_NAMES[4], role: "conversation", seq: 3 });
+	assert.deepEqual(helperOf(again.kernel, next), { name: SOLO_NAMES[4], role: "conversation", seq: 3 });
 });
 
 test("看板行带结束时间：完成取关闭时刻，停止取停止时刻，进行中为空", () => {

@@ -4,7 +4,7 @@ import { answerExternalId, answerSentence, type AnswerRefusal } from "./question
 
 export type AnswerOutcome = { ok: true; triggerId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 import { deriveStage } from "./stage.ts";
-import { helperName, helperRole, newYorkDate } from "./helper-names.ts";
+import { SOLO_NAMES, helperName, helperRole, newYorkDate } from "./helper-names.ts";
 import { stallMinutes } from "../client/board-format.mjs";
 import { inTransaction } from "./store.ts";
 import {
@@ -634,7 +634,7 @@ export class Kernel {
 		).filter((r) => newYorkDate(r.created_at) === day).length;
 		const ordinal = this.#get("SELECT COUNT(*) AS n FROM tickets WHERE helper_name IS NOT NULL").n as number;
 		const onDuty = new Set(this.#column("SELECT helper_name AS v FROM tickets WHERE helper_name IS NOT NULL AND closed_at IS NULL AND stopped_at IS NULL"));
-		return { name: helperName(ordinal, onDuty), role, seq: sameRole + 1 };
+		return { name: helperName(SOLO_NAMES, ordinal, onDuty), role, seq: sameRole + 1 };
 	}
 
 	#stall(t: Ticket, now: number): Stall | null {

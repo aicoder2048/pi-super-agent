@@ -37,7 +37,7 @@ export const HELPER_ROLE_LABEL = { conversation: "对话助手", market: "行情
 /** @param {Helper} helper */
 export const helperRoleText = (helper) => `${HELPER_ROLE_LABEL[helper.role]} #${helper.seq}`;
 
-/** 「边牧 · 行情助手 #2」, or "" for a ticket the host has not named yet. @param {Helper | null} helper */
+/** 「青檀 · 行情助手 #2」, or "" for a ticket the host has not named yet. @param {Helper | null} helper */
 export const helperFullName = (helper) => (helper ? `${helper.name} · ${helperRoleText(helper)}` : "");
 
 export const DEFAULT_ACK_TIMEOUT_MS = 5000;
