@@ -64,3 +64,5 @@ ts	phase	decision	why	evidence	result
 2026-11-09T03:21:54Z	review	跨模型复核记录：子代理模型只有 Claude 族可选，改用与执行者不同的 sonnet 复核，并写明这一限制	show-me-your-work 要求换模型族复核，环境不提供其他族	复核子代理	running
 2026-11-09T03:24:06Z	review	跨模型复核（sonnet）返回：采纳补证据、逐条处置 how 疑点和 Pi 行为、修复 open_ticket 缺标题；指出 PSA_* 无测试一条不成立（worker-extension.test.ts 有）	复核结论逐条核对后处理	docs/pi-super-agent/figure-it-out.md Phase E; evidence/live/	done
 2026-11-09T03:24:06Z	fix	open_ticket 缺标题或说明时只拒绝该条：内核测试先红后绿，全量 198 个通过	how.md 列出的未确认行为之一，确认会整批回滚	tests/kernel.test.ts 缺标题	green
+2026-11-09T03:33:22Z	pr	使用者同意后按现有提交切出 7 个分支叠成 PR 栈（#4 到 #10），不改写历史；全部非草稿，基分支逐级相连	Opening a PR 倾向窄 PR；提交本来按阶段排好	https://github.com/aicoder2048/pi-super-agent/pull/4 .. /pull/10	done
+2026-11-09T03:33:22Z	cleanup	使用者同意后删除 6 个代理 worktree（含未提交的复现脚本）、旁支分支 fix/edge-findings 与 test/story-coverage、快照引用 refs/wip/interrogate	均已合并或用完；复现场景都已有回归测试	git worktree list; git branch	done
