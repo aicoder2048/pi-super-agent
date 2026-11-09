@@ -18,14 +18,16 @@ import { busyPort, freePort, ofType, openOnConversation, startHost, tempStateDir
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
 		id: "tkt_abcd1234", title: "查天气", stage: "running", basis: "request", latestSummary: null, model: "openai-codex/gpt-6.1-sol",
-		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, question: null, stall: null, ...over,
+		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, question: null, stall: null,
+		helper: { name: "边牧", role: "conversation", seq: 1 }, workerState: "running", startedAt: 0, endedAt: null, ...over,
 	};
 }
 
 const zeroToday = (): TodayCounts => ({ byDisposition: { ignored: 0, delivered: 0, to_router: 0, opened_ticket: 0, handed_over: 0, router_ignored: 0 }, bySource: {} });
 const duty = { since: 0, resumed: 0 };
-const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, watching: [], ...over });
-const board = (rows: DashboardRow[], today = zeroToday()): HostToClient => ({ type: "board", rows, today, duty });
+const noHelpers = { count: 0, tokens: 0 };
+const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, helpers: noHelpers, watching: [], ...over });
+const board = (rows: DashboardRow[], today = zeroToday(), helpers = noHelpers): HostToClient => ({ type: "board", rows, today, duty, helpers });
 const texts = (view: ReturnType<typeof page.emptyView>) => [...view.lines.values()].map((l) => `${l.who}:${l.text}`);
 const withRows = (rows: DashboardRow[], now = 0) => {
 	const view = page.emptyView();
@@ -327,13 +329,57 @@ test("页面：历史替换步骤，重连再来一次结果不变；别的任�
 	assert.equal(w.steps.length, 1);
 });
 
-test("页面：右栏小字是唯一出现模型、用量、工具次数、用时和编号的地方，执行中的用时在本地累加", () => {
-	assert.equal(page.smallPrint(row({ fellBack: true }), 65_000, 0), "模型 gpt-6.1-sol（已回退） · 1.5k tokens · 工具调用 2 次 · 用时 1分10秒 · 编号 abcd");
-	assert.equal(page.smallPrint(row({ stage: "idle", model: null }), 65_000, 0), "模型 未启动 · 1.5k tokens · 工具调用 2 次 · 用时 5秒 · 编号 abcd");
-	assert.equal(page.smallPrint(undefined, 0, 0), "");
+test("页面：右栏小字只写编号；左栏卡片上看不到编号、模型和用量", () => {
+	assert.equal(page.smallPrint(row()), "编号 abcd");
+	assert.equal(page.smallPrint(undefined), "");
 	const left = page.leftColumn(withRows([row({ stage: "running", latestSummary: "x" })]), 0);
 	const shown = left.doing.map(({ id, ...visible }) => visible);
 	assert.doesNotMatch(JSON.stringify(shown), /gpt|tok|abcd/, "左栏卡片上看不到编号、模型和用量");
+});
+
+const at = (hhmm: string) => new Date(`2026-11-09T${hhmm}:00-05:00`).getTime();
+const NY = "America/New_York";
+
+test("页面：助手条每位在岗助手一枚小卡（●运行中 ◐空闲 ○排队），写名字、角色序号、用时和 token，开始后没结束的用时在本地累加；完成和停止的不上条；条尾写今日合计", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, board([
+		row({ id: "tkt_run", workerState: "running", elapsedMs: 5000 }),
+		row({ id: "tkt_idl", stage: "idle", workerState: "idle", helper: { name: "雪泥鸿爪", role: "market", seq: 2 }, tokensIn: 0, tokensOut: 0, elapsedMs: 60_000 }),
+		row({ id: "tkt_que", stage: "queued", workerState: "queued", helper: { name: "青檀", role: "watch", seq: 1 }, startedAt: null, elapsedMs: 0 }),
+		row({ id: "tkt_ask", stage: "awaiting_answer", workerState: "idle", helper: { name: "观澜", role: "rule", seq: 3 } }),
+		row({ id: "tkt_end", stage: "closed", workerState: "idle", endedAt: 9000, helper: { name: "知微", role: "rule", seq: 1 } }),
+		row({ id: "tkt_stp", stage: "stopped", workerState: "running", endedAt: 9000, helper: { name: "拾遗", role: "rule", seq: 2 } }),
+	], zeroToday(), { count: 6, tokens: 12_345 }), 1000);
+	const strip = page.helperStrip(view, 3000);
+	assert.deepEqual(strip.chips.map(({ id, tint, ...shown }) => shown), [
+		{ duty: "running", mark: "●", state: "运行中", name: "边牧", role: "对话助手 #1", elapsed: "7秒", tokens: "1.5k tokens" },
+		{ duty: "idle", mark: "◐", state: "空闲", name: "雪泥鸿爪", role: "行情助手 #2", elapsed: "1分2秒", tokens: "0 tokens" },
+		{ duty: "queued", mark: "○", state: "排队", name: "青檀", role: "观察助手 #1", elapsed: "0秒", tokens: "1.5k tokens" },
+		{ duty: "idle", mark: "◐", state: "空闲", name: "观澜", role: "规则助手 #3", elapsed: "7秒", tokens: "1.5k tokens" },
+	]);
+	assert.deepEqual(strip.chips.map((c) => c.id), ["tkt_run", "tkt_idl", "tkt_que", "tkt_ask"]);
+	assert.equal(strip.chips[0].tint, page.helperTint("tkt_run"), "小卡和任务卡片的助手图标同色");
+	assert.equal(strip.total, "今日 6 位 · 12.3k tokens");
+});
+
+test("页面：没有在岗助手时助手条只有今日合计；还没收到看板时为空", () => {
+	assert.deepEqual(page.helperStrip(withRows([row({ stage: "closed", endedAt: 1 })]), 0), { chips: [], total: "今日 0 位 · 0 tokens" });
+	assert.deepEqual(page.helperStrip(page.emptyView(), 0), { chips: [], total: "" });
+});
+
+test("页面：任务卡片写助手全名；旧任务还没有助手时不写", () => {
+	const left = page.leftColumn(withRows([row({ id: "tkt_a" }), row({ id: "tkt_b", helper: null })]), 0);
+	assert.deepEqual(left.doing.map((c) => c.helper), ["边牧 · 对话助手 #1", ""]);
+});
+
+test("页面：执行过程头部的生命周期写开始、结束或进行中、用时、模型（回退时注明）、工具次数和 token 入/出", () => {
+	const ended = row({ stage: "closed", startedAt: at("10:02"), endedAt: at("10:07"), elapsedMs: 300_000 });
+	assert.equal(page.lifecycleLine(ended, 0, 0, NY), "开始 10:02 · 结束 10:07 · 用时 5分0秒 · 模型 gpt-6.1-sol · 工具 2 次 · tokens 入 1.2k / 出 300");
+	const live = row({ startedAt: at("09:58"), fellBack: true, elapsedMs: 60_000 });
+	assert.equal(page.lifecycleLine(live, 2000, 0, NY), "开始 09:58 · 进行中 · 用时 1分2秒 · 模型 gpt-6.1-sol（已回退） · 工具 2 次 · tokens 入 1.2k / 出 300");
+	const waiting = row({ stage: "queued", workerState: "queued", startedAt: null, model: null, toolCalls: 0, tokensIn: 0, tokensOut: 0, elapsedMs: 0 });
+	assert.equal(page.lifecycleLine(waiting, 2000, 0, NY), "尚未开始 · 模型 未启动 · 工具 0 次 · tokens 入 0 / 出 0");
+	assert.equal(page.lifecycleLine(undefined, 0, 0, NY), "");
 });
 
 test("页面：200 是已发送，401 是链接失效，其他状态是发送失败，超时和网络错误是未收到确认", () => {

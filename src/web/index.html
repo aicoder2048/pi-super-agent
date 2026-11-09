@@ -43,6 +43,16 @@
 		.spacer { flex: 1; }
 		#theme { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--muted); display: flex; align-items: center; justify-content: center; }
 
+		#helpers { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 28px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: thin; }
+		#helpers .total { margin-left: auto; flex: none; font-size: 12px; color: var(--muted); white-space: nowrap; }
+		.helper-chip { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px 3px 3px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-size: 12px; white-space: nowrap; }
+		.helper-chip[aria-current="true"] { border-color: var(--accent); background: var(--accent-bg); }
+		.helper-chip .name { font-size: 13px; font-weight: 600; }
+		.helper-chip .role, .helper-chip .meta { color: var(--muted); }
+		.helper-chip .dot { font-size: 11px; color: var(--muted); }
+		.helper-chip .dot[data-duty="running"] { color: var(--ok); }
+		.helper-chip .dot[data-duty="idle"] { color: var(--accent); }
+
 		.columns { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(300px, 380px); }
 		#left { overflow-y: auto; padding: 22px 18px; display: flex; flex-direction: column; gap: 22px; border-right: 1px solid var(--line); }
 		#left section { display: flex; flex-direction: column; gap: 10px; }
@@ -62,6 +72,8 @@
 		.tint-5 { background: light-dark(#fff0f6, #3a1d2a); color: light-dark(#c2255c, #faa2c1); }
 		.card .head { display: flex; align-items: flex-start; gap: 8px; }
 		.card .title { font-size: 14px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+		.card .by { font-size: 12px; color: var(--accent-ink); margin-top: 4px; }
+		.card .by:empty, #how-helper:empty, #how-life:empty { display: none; }
 		.card .why, .card .latest { font-size: 12px; color: var(--muted); margin-top: 6px; overflow-wrap: anywhere; white-space: pre-wrap; }
 		.card.ask .latest { color: var(--ink); font-size: 13px; }
 		.card .row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
@@ -115,6 +127,8 @@
 		#how-title { font-size: 16px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; min-width: 0; }
 		#how-title:empty, #how-meta:empty { display: none; }
 		#how-meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+		#how-helper { font-size: 13px; font-weight: 600; color: var(--accent-ink); margin-top: 4px; }
+		#how-life { font-size: 12px; color: var(--muted); margin-top: 6px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; line-height: 1.6; }
 		#steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 		.step { display: flex; gap: 12px; }
 		.rail { display: flex; flex-direction: column; align-items: center; }
@@ -137,7 +151,7 @@
 			#left, #how { border: 0; border-bottom: 1px solid var(--line); overflow: visible; }
 			#conversation { overflow: visible; padding: 16px; }
 			main { min-height: 70vh; }
-			header, form { padding-left: 16px; padding-right: 16px; }
+			header, form, #helpers { padding-left: 16px; padding-right: 16px; }
 		}
 	</style>
 </head>
@@ -151,6 +165,7 @@
 		<div class="spacer"></div>
 		<button id="theme" type="button" aria-label="切换浅色/深色主题"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg></button>
 	</header>
+	<nav id="helpers" aria-label="在岗助手" hidden></nav>
 	<div class="columns">
 		<aside id="left" aria-label="概况"></aside>
 		<main aria-label="对话">
@@ -168,7 +183,9 @@
 			<div>
 				<div class="label">执行过程</div>
 				<div class="how-head"><span id="how-badge"></span><div id="how-title"></div></div>
+				<div id="how-helper"></div>
 				<div id="how-meta"></div>
+				<div id="how-life"></div>
 			</div>
 			<ol id="steps"></ol>
 			<div id="small-print"></div>
