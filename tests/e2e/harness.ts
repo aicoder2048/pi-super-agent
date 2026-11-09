@@ -4,7 +4,7 @@ import { createWriteStream, mkdirSync, mkdtempSync, rmSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { stripVTControlCharacters } from "node:util";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { TestContext } from "node:test";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { PAY_PER_USE_PROVIDERS, parseModelRef } from "../../src/models.ts";
@@ -240,6 +240,8 @@ export interface Story {
 
 export interface StoryOptions {
 	config?: Record<string, unknown>;
+	/** Files written into the state dir before the host starts, by path relative to it, e.g. teams.yaml and agents/news.md. */
+	files?: Record<string, string>;
 	/** Pins webPort so a restarted host serves the same origin as the open page. */
 	fixedPort?: boolean;
 	/** Installs page.clock before the first load so a test can fast-forward the page's timers. */
@@ -342,6 +344,10 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 	try {
 		await step("宿主启动，页面已连接", async () => {
 			const webPort = options.fixedPort ? await freePort() : 0;
+			for (const [name, text] of Object.entries(options.files ?? {})) {
+				mkdirSync(dirname(join(root, "s", name)), { recursive: true });
+				writeFileSync(join(root, "s", name), text);
+			}
 			const started = startHost({ models: fakeModels, stateDir: join(root, "s"), logFile: join(out, "host.log"), config: { webPort, modulesDirs: [], ...options.config }, env });
 			const [run] = await Promise.all([started.then((h) => (host = h)), launchBrowser()]);
 			await waitStatus(await open(run.url, { fakeClock: options.fakeClock }), "connected");
