@@ -8,6 +8,8 @@ import { nyDateOf, nyTime, sessionAt, shiftDate } from "../sources/market/sessio
 import { parseMarketSettings } from "../sources/market/settings.ts";
 
 const SOURCE = "us-market";
+// The clients' default sleep is unref'd for the host; a one-shot CLI would exit mid rate-limit gap.
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 async function main(): Promise<void> {
 	const config = loadConfig();
@@ -18,7 +20,7 @@ async function main(): Promise<void> {
 	if (!loaded) throw new Error("未配置行情密钥：设置 MASSIVE_API_KEY，或在 config.json 里用 secretsFile 指向 .env");
 	const session = sessionAt(Date.now());
 	console.log(`密钥来自 ${loaded.origin}；${settings.baseURL}；纽约 ${session.nyDate} ${session.phase}`);
-	const client = new MarketClient({ key: loaded.key, baseURL: settings.baseURL, minGapMs: settings.minGapMs });
+	const client = new MarketClient({ key: loaded.key, baseURL: settings.baseURL, minGapMs: settings.minGapMs, sleep });
 	const quotes = await client.snapshot(settings.watchlist, "poll");
 	console.log(["代码", "现价", "昨收", "涨跌%", "报价时间(ET)", "延迟"].join("\t"));
 	for (const q of quotes) console.log([q.symbol, q.price, q.prevClose, q.changePct.toFixed(2), `${nyDateOf(q.at)} ${nyTime(q.at)}`, q.delayed ? "是" : "否"].join("\t"));
@@ -32,7 +34,7 @@ async function main(): Promise<void> {
 
 	const finnhub = readFinnhubKey(process.env, config.secretsFile);
 	if (!finnhub) return console.log("财报：未配置 FINNHUB_API_KEY，跳过");
-	const earnings = new FinnhubClient({ key: finnhub.key, minGapMs: 1000 });
+	const earnings = new FinnhubClient({ key: finnhub.key, minGapMs: 1000, sleep });
 	console.log(`财报 ${symbol}（Finnhub 密钥来自 ${finnhub.origin}）：${JSON.stringify(await earnings.earnings(symbol, session.nyDate))}`);
 }
 
