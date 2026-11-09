@@ -116,7 +116,7 @@ export function leftColumn(view) {
 		doing: groups.doing,
 		done: groups.done.reverse(),
 		doneLine: `已完成 · ${groups.done.length}`,
-		watching: view.watching.map((w) => ({ name: w.source, rule: watchRule(w), hits: hits[w.source] ? `今日 ${hits[w.source]} 条` : "" })),
+		watching: view.watching.map((w) => ({ name: w.title ?? w.source, rule: [w.problem, w.description ?? watchRule(w)].filter(Boolean).join(" · "), hits: hits[w.source] ? `今日 ${hits[w.source]} 条` : "" })),
 		today: todayCopy(view.today),
 	};
 }

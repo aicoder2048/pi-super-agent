@@ -10,6 +10,7 @@ import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, 
 import type { TriggerSubmission } from "../kernel/types.ts";
 import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
+import type { Feed, FeedSpec } from "../sources/feeds.ts";
 import { Dispatcher } from "./dispatcher.ts";
 import { HostServer, type Broadcast } from "./server.ts";
 import type { BoardState, Duty, TodayCounts, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
@@ -46,6 +47,7 @@ export interface HostOptions {
 	log?: (line: string) => void;
 	webPort?: number;
 	watching?: WatchedSource[];
+	feeds?: FeedSpec[];
 }
 
 
@@ -70,6 +72,7 @@ export class Host {
 	router!: RouterLike;
 	readonly generic: GenericSource;
 	readonly timer: TimerSource;
+	readonly feeds: Map<string, Feed>;
 	readonly #log: (line: string) => void;
 	readonly #stateDir: string;
 	#boardTimer: NodeJS.Timeout | undefined;
@@ -112,6 +115,13 @@ export class Host {
 			},
 			writeCursor: (at) => this.kernel.setSourceCursor("timer", String(at)),
 		});
+		this.feeds = new Map((options.feeds ?? []).map((spec) => [spec.source, spec.create({
+			clock,
+			submit,
+			readCursor: () => this.kernel.sourceCursor(spec.source),
+			writeCursor: (value) => this.kernel.setSourceCursor(spec.source, value),
+			log: this.#log,
+		})]));
 		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []) };
 		this.workers = new WorkerExecutor({
 			kernel: this.kernel,
@@ -161,6 +171,7 @@ export class Host {
 		if (recovered.length) host.#log(`[host] 恢复 ${recovered.length} 个执行中的任务：${recovered.join(", ")}`);
 		host.generic.start();
 		host.timer.start();
+		for (const feed of host.feeds.values()) feed.start();
 		host.#beat();
 		host.#heartbeat = setInterval(() => host.#beat(), options.heartbeatMs ?? 30_000);
 		host.#heartbeat.unref();
@@ -190,7 +201,11 @@ export class Host {
 
 	snapshot() {
 		const { rows, today, duty } = this.#boardState();
-		return { conversation: this.kernel.conversation(50), board: rows, today, duty, watching: this.#watching };
+		const watching = this.#watching.map((w) => {
+			const problem = this.feeds.get(w.source)?.problem();
+			return problem ? { ...w, problem } : w;
+		});
+		return { conversation: this.kernel.conversation(50), board: rows, today, duty, watching };
 	}
 
 	#boardState(): BoardState {
@@ -266,6 +281,7 @@ export class Host {
 		clearInterval(this.#heartbeat);
 		this.generic.stop();
 		this.timer.stop();
+		for (const feed of this.feeds.values()) feed.stop();
 		this.dispatcher.stop();
 		clearTimeout(this.#boardTimer);
 		clearTimeout(this.#midnightTimer);

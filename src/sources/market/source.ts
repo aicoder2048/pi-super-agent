@@ -1,10 +1,11 @@
 import { WATCHDOG_SOURCE } from "../../watchdog/watchdog.ts";
-import type { FeedContext, Feed } from "../feeds.ts";
+import type { Feed, FeedContext, FeedInput, FeedSpec } from "../feeds.ts";
 import { threadId } from "../generic.ts";
-import { MarketError, type MarketClient, type Span } from "./client.ts";
+import { MarketClient, MarketError, type Span } from "./client.ts";
+import { loadMarketKey } from "./key.ts";
 import { detect, toTrigger, type MarketCursor } from "./detect.ts";
 import { inPollWindow, nextPollDelay, sessionAt } from "./session.ts";
-import { parseSymbol, type MarketSettings } from "./settings.ts";
+import { parseMarketSettings, parseSymbol, type MarketSettings } from "./settings.ts";
 
 const MINUTE = 60_000;
 const HOLIDAY_AFTER_OPEN_MS = 30 * MINUTE;
@@ -16,6 +17,19 @@ export const LOOKUP_HELP = `us-market（美股行情）：
 - quote { symbols: string[] }：最多 10 只股票的最新报价（price、prevClose、changePct、at 毫秒时间戳、delayed）
 - bars { symbol, span: "minute"|"hour"|"day", from: "YYYY-MM-DD", to: "YYYY-MM-DD" }：K 线（t、o、h、l、c、v），最多 500 根
 - session {}：纽约日期和交易时段（pre、regular、post、closed）`;
+
+/** Runs at host startup, before any Worker spawns, so the key leaves process.env first. */
+export function marketFeed(input: FeedInput): FeedSpec {
+	const { source, title } = input;
+	const settings = parseMarketSettings(input.settings, input.override, input.where);
+	const loaded = loadMarketKey(input.env, input.secretsFile);
+	input.log(`[${source}] ${title}：${loaded ? `密钥来自 ${loaded.origin}` : "未配置行情密钥，看盘停用"}；自选 ${settings.watchlist.join(" ")}`);
+	return {
+		source,
+		lookupHelp: LOOKUP_HELP,
+		create: (ctx) => new MarketSource({ source, title, settings, ctx, client: new MarketClient({ key: loaded?.key, baseURL: settings.baseURL, minGapMs: settings.minGapMs }) }),
+	};
+}
 
 export interface MarketSourceOptions {
 	source: string;

@@ -6,6 +6,10 @@ import type { TimerEntry } from "./sources/timer.ts";
 
 export interface SourceFilter {
 	name: string;
+	title?: string;
+	description?: string;
+	/** A source the host runs itself; kind must be a key of FEEDS. */
+	feed?: { kind: string; settings?: unknown };
 	mode?: "candidate" | "ignore";
 	ignore?: string[];
 }

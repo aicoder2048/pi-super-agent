@@ -34,3 +34,11 @@ test("网页端口不是 0 到 65535 的整数时拒绝启动，报错指出 web
 		assert.throws(() => loadConfig(stateWith({ webPort })), (e: Error) => e.name === "ConfigError" && /webPort/.test(e.message), JSON.stringify(webPort));
 	}
 });
+
+test("secretsFile 按状态目录解析成绝对路径；sources 原样交给各自的来源", () => {
+	const dir = stateWith({ secretsFile: "secrets/market.env", sources: { "us-market": { watchlist: ["AMD"] } } });
+	const config = loadConfig(dir);
+	assert.equal(config.secretsFile, join(dir, "secrets/market.env"));
+	assert.deepEqual(config.sources, { "us-market": { watchlist: ["AMD"] } });
+	assert.deepEqual([loadConfig(stateWith({})).secretsFile, loadConfig(stateWith({})).sources], [undefined, {}]);
+});

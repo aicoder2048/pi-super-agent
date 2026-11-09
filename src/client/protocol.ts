@@ -16,6 +16,10 @@ export interface TodayCounts {
 
 export interface WatchedSource {
 	source: string;
+	title?: string;
+	description?: string;
+	/** Why a host-run source cannot watch right now, e.g. 未配置行情密钥. */
+	problem?: string;
 	timers: { everyMinutes: number; body: string }[];
 	rules: { id: string; text: string; by: "user" | "module" }[];
 }

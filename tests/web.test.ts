@@ -110,6 +110,21 @@ test("页面：关注的来源每一行用来源原名，显示第一条规则�
 	]);
 });
 
+test("页面：带标题的来源显示标题和一句说明；看不了盘时把问题写在说明前面", () => {
+	const view = page.emptyView();
+	const rules = [{ id: "us-market/big-move", text: "涨多了查一查", by: "module" as const }];
+	page.applyMessage(view, snapshot({
+		watching: [
+			{ source: "us-market", title: "美股行情", description: "交易时段每分钟看一遍自选股", problem: "未配置行情密钥", timers: [], rules },
+			{ source: "us-market-2", title: "港股行情", description: "盘中看一遍", timers: [], rules },
+		],
+	}), 0);
+	assert.deepEqual(page.leftColumn(view).watching, [
+		{ name: "美股行情", rule: "未配置行情密钥 · 交易时段每分钟看一遍自选股", hits: "" },
+		{ name: "港股行情", rule: "盘中看一遍", hits: "" },
+	]);
+});
+
 test("页面：今日来源消息 · N，明细只列不为 0 的去向", () => {
 	const counts = (over: Partial<TodayCounts["byDisposition"]>) => ({ ...zeroToday(), byDisposition: { ...zeroToday().byDisposition, ...over } });
 	assert.deepEqual(page.todayCopy(counts({})), { headline: "今日暂无来源消息", detail: "" });

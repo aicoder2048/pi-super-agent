@@ -62,7 +62,7 @@ function hostConfig(provider: string, fallbackId = "fallback") {
 	const stateDir = mkdtempSync(join(tmpdir(), "psa-wire-"));
 	return {
 		stateDir, kernel: {}, bgMaxMinutes: 120, fallbackDailyTokens: 1000, retryAttempts: 0, probePrimaryMinutes: 15,
-		heartbeatSeconds: 30, watchdog: { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120 }, modulesDirs: [], webPort: 0,
+		heartbeatSeconds: 30, watchdog: { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120 }, modulesDirs: [], webPort: 0, sources: {},
 		models: { router: { provider, id: "router" }, worker: { provider, id: "worker" }, fallback: { provider, id: fallbackId } },
 	};
 }
@@ -100,4 +100,81 @@ test("在替你盯着：每个来源一项，带上管它的规则（使用者�
 		{ source: "quotes", timers: [], rules: [{ id: "user/mail", text: "有人找我先看一遍", by: "user" }, { id: "market/drop", text: "跌多了提醒我\n细节", by: "module" }] },
 		{ source: "digest", timers: [{ everyMinutes: 1440, body: "早报" }], rules: [] },
 	]);
+});
+
+const REPO_MODULES = new URL("../modules", import.meta.url).pathname;
+const KEY_VARS = ["STOCK_HEATMAP_API_KEY", "MASSIVE_API_KEY", "POLYGON_API_KEY"];
+
+function withoutKeyVars(t: import("node:test").TestContext) {
+	const saved = Object.fromEntries(KEY_VARS.map((k) => [k, process.env[k]]));
+	for (const k of KEY_VARS) delete process.env[k];
+	t.after(() => {
+		for (const k of KEY_VARS) if (saved[k] === undefined) delete process.env[k];
+		else process.env[k] = saved[k];
+	});
+}
+
+test("真实接线：美股行情出现在关注的来源里，用人话标题和一句说明；没有密钥时写明「未配置行情密钥」", async (t) => {
+	withoutKeyVars(t);
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const logs: string[] = [];
+	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([REPO_MODULES]), modelRuntime, log: (l) => logs.push(l) });
+	const host = await Host.start(options);
+	t.after(() => host.stop());
+	const entry = host.snapshot().watching.find((w) => w.source === "us-market")!;
+	assert.deepEqual(
+		{ title: entry.title, description: entry.description, problem: entry.problem },
+		{ title: "美股行情", description: "交易时段每分钟看一遍自选股，涨跌到档或放量时提醒", problem: "未配置行情密钥" },
+	);
+	assert.equal(logs.filter((l) => l.includes("未配置行情密钥")).length, 1);
+});
+
+test("真实接线：密钥读进宿主后从 process.env 删掉，Worker 子进程继承不到；日志只写来源不写密钥", async (t) => {
+	withoutKeyVars(t);
+	process.env.MASSIVE_API_KEY = "sk-wire-secret";
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const logs: string[] = [];
+	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([REPO_MODULES]), modelRuntime, log: (l) => logs.push(l) });
+	assert.equal(process.env.MASSIVE_API_KEY, undefined);
+	assert.deepEqual(options.feeds?.map((f) => f.source), ["us-market"]);
+	assert.ok(logs.some((l) => l.includes("环境变量 MASSIVE_API_KEY")));
+	assert.ok(!logs.some((l) => l.includes("sk-wire-secret")));
+});
+
+test("真实接线：config.json 里 sources.us-market 拼错字段时启动前报错；模块写了未知的 feed kind 也报错并列出可用的", async (t) => {
+	withoutKeyVars(t);
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const config = { ...hostConfig(provider), sources: { "us-market": { watchlst: ["AMD"] } } };
+	assert.throws(() => createHostOptions({ config, modules: Modules.load([REPO_MODULES]), modelRuntime, log: () => {} }), /config\.json.*watchlst/);
+	const odd = new Modules([{ name: "odd", dir: "/m/odd", manifest: { name: "odd", sources: [{ name: "odd", feed: { kind: "carrier-pigeon" } }] }, rules: [], skillsDir: undefined }], [], []);
+	assert.throws(() => createHostOptions({ config: hostConfig(provider), modules: odd, modelRuntime, log: () => {} }), /carrier-pigeon.*massive-stocks/);
+});
+
+test("宿主运行模块声明的来源：随宿主启停，触发进内核，游标存在自己名下", async (t) => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	let stopped = false;
+	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([]), modelRuntime, log: () => {} });
+	const host = await Host.start({
+		...options,
+		feeds: [{
+			source: "fake",
+			lookupHelp: "",
+			create: (ctx) => ({
+				start() {
+					ctx.submit({ source: "fake", externalId: "e1", threads: [{ id: "thr_fake:a" }], sender: "fake", body: "动了", occurredAt: ctx.clock.now() });
+					ctx.writeCursor("c1");
+				},
+				stop() { stopped = true; },
+				problem: () => undefined,
+				lookup: async () => 0,
+			}),
+		}],
+	});
+	let hostStopped = false;
+	t.after(() => (hostStopped ? undefined : host.stop()));
+	assert.deepEqual(host.kernel.triggerLog().map((x) => [x.source, x.externalId]), [["fake", "e1"]]);
+	assert.equal(host.kernel.sourceCursor("fake"), "c1");
+	await host.stop();
+	hostStopped = true;
+	assert.ok(stopped);
 });
