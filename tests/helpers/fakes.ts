@@ -102,7 +102,7 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 
 export const ids = (card: string, prefix: "trg" | "tkt") => card.match(new RegExp(`${prefix}_[\\w-]+`))?.[0];
 
-export function openOnConversation(card: string, title = card.split("使用者：")[1] ?? "任务"): ToolCallSpec[] {
+export function openOnConversation(card: string, title = card.split("使用者：")[1]?.split("\n")[0] ?? "任务"): ToolCallSpec[] {
 	const triggerId = ids(card, "trg")!;
 	return [
 		{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId, title, brief: title }] } },
