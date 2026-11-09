@@ -174,6 +174,12 @@ export class WorkerExecutor {
 		return choice.fellBack ? choice : { model: this.#o.models.roleModel?.(role) ?? choice.model, fellBack: false };
 	}
 
+	// Experts report no outcome to the selector, so they must not start a probe or ride on the lead's.
+	#expertModel(role: string): ModelRef {
+		const choice = this.#o.models.selector.steady();
+		return choice.fellBack ? choice.model : (this.#o.models.roleModel?.(role) ?? choice.model);
+	}
+
 	async #spawn(ticketId: string): Promise<Live | undefined> {
 		const { kernel, spawner, stateDir, afterCommand } = this.#o;
 		const ticket = kernel.getTicket(ticketId)!;
@@ -347,7 +353,7 @@ export class WorkerExecutor {
 	async #ask(ticketId: string, live: Live, q: ConsultQuestion, timeoutMs: number) {
 		const { kernel, spawner, stateDir, afterCommand } = this.#o;
 		const expert: LiveExpert = { title: q.title, token: randomUUID() };
-		const model = this.#forTurn(q.expert).model;
+		const model = this.#expertModel(q.expert);
 		live.experts.add(expert);
 		afterCommand();
 		try {
