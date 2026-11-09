@@ -151,3 +151,4 @@ ts	phase	decision	why	evidence	result
 2026-11-09T20:05:31Z	w4	停进程组时 EPERM 视同已不在	macOS 上只剩僵尸的组或被别的用户复用的组号会回 EPERM，W6c 实测两次因此中断收尾	setup.e2e.ts 新测试先红后绿	fixed
 2026-11-09T20:16:12Z	w6c-review	Markdown 链接正则改为 \[([^\[\]\n]+)\]\(([^()\[\]\s]+)\)，「提交结果」说明截到 4000 字	旧正则在括号密集的长文本上二次回溯，20 万个 [ 要 15.6 秒，每次渲染都卡住页面；报告没有长度上限	tests/web.test.ts 线性用例：旧正则 15571 ms 红，新正则 2 ms；截断用例旧代码红	fixed
 2026-11-09T20:16:12Z	w6c-review	补专家槽位取消用例：上限 1，A 在答、B 排队后取消、A 放手，C 立刻拿到槽位，D 仍要排队	复审发现删掉 onAbort 里的 splice 全部测试仍绿	tests/consult.test.ts 槽位用例；变异删 splice 后红；just test 549/549，just e2e 66/66	fixed
+2026-11-09T20:16:30Z	w6c-verdict	W6c 复审后通过：链接正则改为线性（200k 个 [ 从 15.6s 降到 2ms，限时测试钉住）；排队专家取消后槽位正确释放有测试	复审变异：五处会红，剩余两处由 79297ce 补齐	549/549，e2e 66/66；实测 7 位专家全部按时作答	PASS
