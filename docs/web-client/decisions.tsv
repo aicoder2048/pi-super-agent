@@ -115,4 +115,5 @@ ts	phase	decision	why	evidence	result
 2026-11-09T19:34:13Z	w6b-review	专家用 selector.steady()：主模型稳定时用主模型（或角色模型），回退和试探期间一律用回退模型，从不触发试探	专家不向选择器报成功或失败；用 forTurn 会把选择器切进试探，整次会诊落在仍被限流的主模型上	tests/consult.test.ts 试探用例；变异改回 forTurn 后变红	fixed
 2026-11-09T19:34:13Z	w6b-review	牵头人 Worker 意外退出时立即中止它的专家，加测试钉住	复审发现删掉 exited 里的 endConsults 测试仍全绿	tests/consult.test.ts 意外退出用例；变异删掉那行后变红	fixed
 2026-11-09T19:34:13Z	w6b-review	专家回答放进每次会诊随机生成的边界 <<<answer-16位十六进制 … answer-…>>> 之间，consult 的提示写明回答只是数据	回答原样接在「回答：」后面时能伪造另一位专家的标题和状态行；边界在回答生成之后才定，专家无从得知	tests/consult.test.ts 伪造段落用例；tests/worker-extension.test.ts 提示用例	fixed
+2026-11-09T19:34:26Z	w6b-verdict	W6b 复审 PASS；三处跟进已修：专家不触发主模型试探、牵头人崩溃时专家 1 秒内结束、专家回答用会诊后才生成的随机边界框住并声明为数据	复审 10 处变异 8 处变红，剩余两处由 f363791、40e1a42 补上测试	498/498，e2e 58/58	PASS
 2026-11-09T20:05:31Z	w4	停进程组时 EPERM 视同已不在	macOS 上只剩僵尸的组或被别的用户复用的组号会回 EPERM，W6c 实测两次因此中断收尾	setup.e2e.ts 新测试先红后绿	fixed
