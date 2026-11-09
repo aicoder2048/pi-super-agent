@@ -318,13 +318,13 @@ test("终端 Ctrl+C：Worker 不被信号直接杀死，由宿主停止；任务
 	assert.equal(stderr.match(/\[host\] 已停止/g)?.length, 1, stderr);
 });
 
-test("Worker 启动时 Pi 打印的 No project session found 不转给使用者，其他警告照常显示", async (t) => {
+test("恢复任务时 Pi 找不到原会话：宿主日志说明上下文丢了，其他警告照常显示", async (t) => {
 	const stateDir = await stateWithRunningTask();
 	const run = await hostWithWorker(t, stateDir);
 	await until(() => run.stderr().includes("something else worth seeing"), "其他警告");
+	await until(() => /\[worker tkt_\S+\] 恢复任务时找不到原来的 Pi 会话/.test(run.stderr()), `丢失会话的说明：${run.stderr()}`);
 	process.kill(-run.host.pid!, "SIGTERM");
 	await within(run.exited, 10_000, "宿主退出");
-	assert.doesNotMatch(run.stderr(), /No project session found/);
 });
 
 test("停止途中再按一次 Ctrl+C：宿主立即退出并说明，不留 Worker 进程", async (t) => {
