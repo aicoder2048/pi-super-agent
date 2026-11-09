@@ -196,30 +196,30 @@ const INPUT_STEP = {
 
 const STEP_BY_LABEL = new Map(/** @type {[InputKind, string][]} */ (Object.entries(INPUT_LABEL)).map(([kind, label]) => [label, INPUT_STEP[kind]]));
 
-/** @type {Record<string, (a: any) => { title: string, detail: string }>} */
+/** @type {Record<string, (a: Record<string, unknown>) => { title: string, detail: string }>} */
 const TOOL_STEP = {
-	read: (a) => ({ title: "看了一个文件", detail: baseName(a?.path) }),
-	grep: (a) => ({ title: "在文件里找东西", detail: clip(a?.pattern, 40) }),
-	find: (a) => ({ title: "找文件", detail: clip(a?.pattern, 40) }),
-	ls: (a) => ({ title: "看了看目录", detail: baseName(a?.path) }),
-	bash: (a) => ({ title: "运行了一条命令", detail: clip(firstLine(a?.command), 60) }),
-	edit: (a) => ({ title: "改了一个文件", detail: baseName(a?.path) }),
-	write: (a) => ({ title: "写了一个文件", detail: baseName(a?.path) }),
-	web_get: (a) => ({ title: "打开网页", detail: hostOf(a?.url) }),
+	read: (a) => ({ title: "看了一个文件", detail: baseName(a.path) }),
+	grep: (a) => ({ title: "在文件里找东西", detail: clip(a.pattern, 40) }),
+	find: (a) => ({ title: "找文件", detail: clip(a.pattern, 40) }),
+	ls: (a) => ({ title: "看了看目录", detail: baseName(a.path) }),
+	bash: (a) => ({ title: "运行了一条命令", detail: clip(firstLine(a.command), 60) }),
+	edit: (a) => ({ title: "改了一个文件", detail: baseName(a.path) }),
+	write: (a) => ({ title: "写了一个文件", detail: baseName(a.path) }),
+	web_get: (a) => ({ title: "打开网页", detail: hostOf(a.url) }),
 	read_ticket: () => ({ title: "回看任务记录", detail: "" }),
 	hand_back: () => ({ title: "把不归它管的事交还给 Super Agent", detail: "" }),
-	bg_start: (a) => ({ title: "在后台开始一件长活", detail: clip(firstLine(a?.command), 60) }),
+	bg_start: (a) => ({ title: "在后台开始一件长活", detail: clip(firstLine(a.command), 60) }),
 	bg_status: () => ({ title: "看看后台的活", detail: "" }),
 	bg_stop: () => ({ title: "停掉后台的活", detail: "" }),
-	report: (a) => ({ title: reportTitle(a), detail: clip(a?.question || a?.summary, 120) }),
+	report: (a) => ({ title: reportTitle(a), detail: clip(a.question || a.summary, 120) }),
 };
 
-/** @param {any} a */
+/** @param {Record<string, unknown>} a */
 function reportTitle(a) {
-	if (a?.question) return "问你一个问题";
-	if (a?.status === "ready") return "告诉你结果";
-	if (a?.status === "blocked" || a?.status === "failed") return "卡住了";
-	if (a?.status === "no_action") return "看过了，不用做";
+	if (a.question) return "问你一个问题";
+	if (a.status === "ready") return "告诉你结果";
+	if (a.status === "blocked" || a.status === "failed") return "卡住了";
+	if (a.status === "no_action") return "看过了，不用做";
 	return "汇报进度";
 }
 
@@ -240,7 +240,8 @@ function stepsFrom(message) {
 	return blocks(message).flatMap((c) => {
 		if (c.type === "text" && c.text?.trim()) return [{ title: "想法", detail: clip(c.text.trim(), 200), state: /** @type {const} */ ("ok"), raw: clip(c.text, RAW_LIMIT) }];
 		if (c.type !== "toolCall" || !c.name) return [];
-		const known = TOOL_STEP[c.name]?.(c.arguments) ?? { title: `用了工具 ${c.name}`, detail: "" };
+		const args = typeof c.arguments === "object" && c.arguments !== null ? /** @type {Record<string, unknown>} */ (c.arguments) : {};
+		const known = TOOL_STEP[c.name]?.(args) ?? { title: `用了工具 ${c.name}`, detail: "" };
 		return [{ ...known, state: /** @type {const} */ ("pending"), raw: clip(`${c.name} ${JSON.stringify(c.arguments ?? {}, null, 2)}`, RAW_LIMIT), tool: c.name }];
 	});
 }
