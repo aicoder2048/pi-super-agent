@@ -39,7 +39,6 @@ export interface Move {
 	signal: Signal;
 }
 
-const REGULAR_MINUTES = 390;
 // Prices are cents, so a real move of exactly a band can compute a hair below it (609 / 600 → 1.4999…%).
 const BAND_EPSILON = 1e-9;
 // Opening and closing auctions print huge single minutes that are not news.
@@ -63,7 +62,7 @@ export function detect(cursor: MarketCursor | undefined, quotes: Quote[], sessio
 			next[highest] = reached;
 			moves.push({ nyDate: session.nyDate, quote, signal: { kind: "band", dir, pct: reached } });
 		}
-		const ratio = quote.minuteVolume && quote.prevVolume ? quote.minuteVolume / (quote.prevVolume / REGULAR_MINUTES) : 0;
+		const ratio = quote.minuteVolume && quote.prevVolume ? quote.minuteVolume / (quote.prevVolume / session.previousSessionMinutes) : 0;
 		const outsideAuctions = quote.at >= session.openAt + AUCTION_MS && quote.at <= session.closeAt - AUCTION_MS;
 		if (!was.volume && outsideAuctions && ratio >= settings.volumeSpikeX) {
 			next.volume = true;

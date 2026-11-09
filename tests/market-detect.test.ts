@@ -76,3 +76,13 @@ test("正好到档：609 对 600 是 +1.5%，算到 1.5% 档；不被浮点误�
 	const exact = (symbol: string, price: number, prevClose: number) => quote(symbol, (price / prevClose - 1) * 100, { price, prevClose });
 	assert.deepEqual(run(undefined, [exact("SPY", 609, 600), exact("NVDA", 103, 100), exact("AAPL", 95, 100)]).ids, ["SPY:2026-11-09:up1.5", "NVDA:2026-11-09:up3", "AAPL:2026-11-09:down5"]);
 });
+
+test("提前收盘日：13:00 以后的成交不算常规时段，不报档；第二天的放量按前一日 210 分钟算均量", () => {
+	const afterHalfClose = T("2026-11-27T19:00:00Z");
+	assert.deepEqual(run(undefined, [quote("NVDA", 6, { at: afterHalfClose })], afterHalfClose).ids, []);
+	const volume = (at: number) => quote("AAPL", 0.5, { at, minuteVolume: 400_000, prevVolume: 21_000_000 });
+	const mondayAfterHalfDay = T("2026-11-30T16:00:00Z");
+	assert.deepEqual(run(undefined, [volume(mondayAfterHalfDay)], mondayAfterHalfDay).ids, []);
+	const ordinaryDay = T("2026-11-10T16:00:00Z");
+	assert.deepEqual(run(undefined, [volume(ordinaryDay)], ordinaryDay).ids, ["AAPL:2026-11-10:volume"]);
+});
