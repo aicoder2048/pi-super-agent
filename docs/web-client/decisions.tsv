@@ -96,6 +96,7 @@ ts	phase	decision	why	evidence	result
 2026-11-09T18:51:15Z	m2	VWAP 锚定最近一个有常规时段成交的交易日，不是今天时 note 写明，没有时 { unavailable }，不再给 insufficient need 1	复审：开盘前报 need 1 / have 3000 会误导	开盘前用例；半天日 13:00、EDT、盘后用例	fixed
 2026-11-09T18:51:15Z	m2	FINNHUB_API_KEY 格式不对只停用 earnings，整个 us-market 照常	复审：ConfigError 让整个来源启动失败	tests/market-source.test.ts 坏密钥用例先红后绿	fixed
 2026-11-09T18:51:15Z	m2	复审指出的 6 处变异（另加 partial 宽限）逐一改代码确认变红再还原	原测试在这些变异下仍绿	14/14 变异变红；522/522	PASS
+2026-11-09T18:52:47Z	m2-verdict	M2 复审第二轮 PASS：6 处补测变红、未收盘 K 线标记、盘前 VWAP 回退上一交易日、Finnhub 密钥格式错只停 earnings	复审 16 处变异全部变红	30736a5 复审报告；522/522	PASS
 2026-11-09T18:53:29Z	w6a	真实宿主实测（openai-codex/gpt-6.1-terra 幕僚长，gpt-6.1-sol Worker 和回退）：问黄仁勋听证会开的是「边牧 · 副幕僚长 #1」，Worker 会话里的系统提示词带专家名册（general、news-researcher）；问 NVDA 股价开「弈境 · 副幕僚长 #2」，lookup 因未配置行情密钥失败后自己用 web_get 查到报价	W6a 拓扑乙下的两个现场判定；会诊工具在 W6b，副幕僚长这时不会请教专家	docs/web-client/media/w6a-review-news-deputy.png、w6a-review-stock-deputy.png；工具次数 web_get 32/bash 6/report 2 与 lookup 1/web_get 2/bash 2/report 1；收尾无残留进程组	verified
 2026-11-09T18:59:35Z	w6a-review	角色 model 改白名单：提供方必须是 config.json 里 router 或 worker 在用的（默认 openai-codex），原有的 anthropic/Claude 禁令保留	黑名单放过了 openrouter/deepseek/... 和 openai/gpt-5.1；角色模型不算回退，没有每日上限，只有订阅提供方能无人值守地跑	tests/roles.test.ts 白名单用例；tests/wiring.test.ts；变异：去掉检查后变红	fixed
 2026-11-09T18:59:35Z	w6a-review	技能目录必须在角色文件所在目录里面，模块角色也一样，不放宽到模块目录	最小的边界，一条规则覆盖三处来源；模块自己的 skills/ 已经按规则任务加载，角色不需要伸到外面	src/roles.ts inside()；tests/roles.test.ts 技能目录用例	decided
