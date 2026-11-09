@@ -88,7 +88,10 @@ export class MarketSource implements Feed {
 		const session = sessionAt(now);
 		const raw = ctx.readCursor();
 		const cursor = raw === undefined ? undefined : (JSON.parse(raw) as MarketCursor);
-		if (!inPollWindow(now)) return this.#feel("resting", "不在交易时段，暂停请求行情");
+		if (!inPollWindow(now)) {
+			this.#failing = undefined;
+			return this.#feel("resting", "不在交易时段，暂停请求行情");
+		}
 		if (cursor?.nyDate === session.nyDate && cursor.holiday) return this.#feel("holiday", `${session.nyDate} 开盘半小时仍没有当天的报价，按休市处理，今天不再请求`);
 		let quotes;
 		try {

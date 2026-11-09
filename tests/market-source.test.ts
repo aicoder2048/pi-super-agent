@@ -234,3 +234,27 @@ test("设置：数字字段必须是有限的数、该是整数的是整数、�
 	}
 	assert.deepEqual(parseMarketSettings(DEFAULTS, { everySeconds: 15, minGapMs: 12000, volumeSpikeX: 2.5 }, "x").everySeconds, 15);
 });
+
+test("取不到行情的计时只算轮询窗口内：收盘后一次失败加第二天开盘一次失败不发通知，第二天连续 15 分钟才发；跨收盘的故障第二天还会再通知", async () => {
+	let down = true;
+	const m = market({ respond: (_url, now) => (down ? new Response("", { status: 502 }) : Response.json(snapshotBody([tickerRow("NVDA", 100, 100, now)]))) });
+	const notices = () => m.kernel.triggerLog().filter((t) => t.source === "watchdog").map((t) => t.body);
+	const tickAt = async (iso: string) => {
+		m.clock.t = T(iso);
+		await m.source.tick();
+	};
+	await tickAt("2026-11-09T21:15:00Z");
+	await tickAt("2026-11-09T21:30:00Z");
+	await tickAt("2026-11-10T14:30:00Z");
+	assert.deepEqual(notices(), []);
+	for (let minute = 31; minute <= 45; minute++) await tickAt(`2026-11-10T14:${minute}:00Z`);
+	assert.equal(notices().length, 1);
+	assert.match(notices()[0], /连续 15 分钟/);
+	await tickAt("2026-11-10T20:40:00Z");
+	await tickAt("2026-11-10T21:00:00Z");
+	await tickAt("2026-11-10T21:30:00Z");
+	for (let minute = 30; minute <= 45; minute++) await tickAt(`2026-11-11T14:${minute}:00Z`);
+	assert.equal(notices().length, 2);
+	assert.match(notices()[0], /连续 15 分钟/);
+	down = false;
+});
