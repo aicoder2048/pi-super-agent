@@ -1,6 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { formatTokens } from "../client/board-format.mjs";
+import type { Basis } from "../kernel/types.ts";
+import type { ModelRef } from "../models.ts";
+import type { Member } from "../teams.ts";
+import type { Usage } from "./worker-events.ts";
 
 /** One dispatch from the helper's call to its result. `DISPATCH_NEXT` is the only way a state changes. */
 export type DispatchState = "queued" | "running" | "done" | "timed_out" | "stopped" | "failed";
@@ -47,6 +51,21 @@ export interface DispatchOutcome {
 export interface DispatchResult {
 	text: string;
 	details: DispatchOutcome;
+}
+
+/** One piece of work for one member. Resolves with its reply; rejects on a model error and with `signal.reason` once aborted. */
+export interface MemberRun {
+	ticketId: string;
+	member: Member;
+	task: string;
+	basis: Basis;
+	/** Lets the member's `lookup` through the host, and nothing else. */
+	token: string;
+	model: ModelRef;
+	workdir: string;
+	sessionDir: string;
+	signal: AbortSignal;
+	onUsage(u: Usage): void;
 }
 
 export const memberSessionDir = (stateDir: string, ticketId: string, member: string) => join(stateDir, "workers", ticketId, "team", member);

@@ -34,3 +34,23 @@ test("成员的工具 = 任务依据允许的工具 ∩ 成员自己的 tools；
 	assert.deepEqual(memberTools("inference", ["bash"]), []);
 	for (const basis of ["request", "rule", "inference"] as const) assert.ok(!memberTools(basis, undefined).includes("dispatch_agent"));
 });
+
+test("默认团队的助手：启动参数和现在一模一样，提示词只有那一段", () => {
+	assert.deepEqual(workerArgs({ ...base, basis: "request", crew: [] }), ["--session-dir", "/s", "--session-id", "sid", "--no-extensions", "-e", "/ext.ts", "--no-skills", "--append-system-prompt", "p"]);
+	assert.deepEqual(workerArgs({ ...base, basis: "request", crew: [] }), workerArgs({ ...base, basis: "request" }));
+	assert.deepEqual(workerArgs({ ...base, basis: "inference", crew: [] }), workerArgs({ ...base, basis: "inference" }));
+});
+
+test("本队有成员的助手：提示词末尾多一段本队名册（名字、职称、说明），写明简单的事自己做、需要专门判断或可以并行时才派；推断任务的工具清单多一个 dispatch_agent", () => {
+	const crew = [{ name: "market-analyst", title: "行情分析师", description: "看盘面和大盘" }, { name: "news-researcher", title: "新闻研究员", description: "查新闻、核对来源" }];
+	const args = workerArgs({ ...base, basis: "inference", crew });
+	const roster = args.at(-1)!;
+	assert.deepEqual(args.slice(-4, -1), ["--append-system-prompt", "p", "--append-system-prompt"]);
+	assert.match(roster, /market-analyst · 行情分析师：看盘面和大盘\n- news-researcher · 新闻研究员：查新闻、核对来源$/);
+	assert.match(roster, /简单的事自己做/);
+	assert.match(roster, /专门判断/);
+	assert.match(roster, /并行/);
+	assert.match(roster, /dispatch_agent/);
+	assert.ok(flag(args, "--tools")!.split(",").includes("dispatch_agent"));
+	assert.equal(flag(workerArgs({ ...base, basis: "request", crew }), "--tools"), undefined, "请求任务的助手保留全部工具");
+});

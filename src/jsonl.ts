@@ -1,7 +1,8 @@
 import type { Socket } from "node:net";
+import type { Readable } from "node:stream";
 
 // readline also splits on U+2028/U+2029, which are legal inside JSON strings.
-export function onJsonLines(socket: Socket, handle: (record: Record<string, unknown>) => void): void {
+export function onJsonLines(socket: Socket | Readable, handle: (record: Record<string, unknown>) => void): void {
 	let buffer = "";
 	socket.setEncoding("utf8");
 	socket.on("data", (chunk: string) => {

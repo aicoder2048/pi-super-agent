@@ -8,6 +8,8 @@ import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import { INPUT_LABEL } from "../client/board-format.mjs";
 import { parseOptions } from "../kernel/question.ts";
+import type { Member } from "../teams.ts";
+import type { MemberRun } from "./dispatch.ts";
 
 export interface WorkerSpec {
 	ticketId: string;
@@ -16,6 +18,8 @@ export interface WorkerSpec {
 	basis: Basis;
 	ruleId: string | null;
 	team: string;
+	/** The members this helper may dispatch to. Empty: it works alone. */
+	crew: readonly Member[];
 	token: string;
 	model: ModelRef;
 }
@@ -39,6 +43,8 @@ export interface WorkerHandle {
 
 export interface WorkerSpawner {
 	spawn(spec: WorkerSpec, events: WorkerEvents): Promise<WorkerHandle>;
+	/** Runs one dispatch as a one-shot member process. A spawner without it cannot host a team. */
+	runMember?(run: MemberRun): Promise<string>;
 }
 
 export function formatInputs(kernel: Kernel, inputs: TicketInput[]): string {
@@ -170,7 +176,7 @@ export class WorkerExecutor {
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ruleId: ticket.ruleId, team: ticket.team, token, model: choice.model },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ruleId: ticket.ruleId, team: ticket.team, crew: [], token, model: choice.model },
 				events,
 			);
 		} catch (error) {

@@ -1,0 +1,151 @@
+import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test, { type TestContext } from "node:test";
+import { memberSessionDir, type MemberRun } from "../src/host/dispatch.ts";
+import { PiWorkerSpawner } from "../src/host/pi-worker.ts";
+import type { Basis } from "../src/kernel/types.ts";
+import type { Member } from "../src/teams.ts";
+import { until, within } from "./helpers/fakes.ts";
+
+// Stands in for `pi --mode json -p`: records how it was started, optionally leaves a grandchild in its
+// process group, waits, then prints the JSON events Pi prints and exits.
+const FAKE_PI = `
+import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+const argv = process.argv.slice(2);
+const tag = argv.at(-1).split("\\n")[1];
+writeFileSync(\`argv-\${tag}.json\`, JSON.stringify(argv));
+writeFileSync(\`env-\${tag}.json\`, JSON.stringify(process.env));
+writeFileSync(\`pid-\${tag}\`, String(process.pid));
+if (process.env.FAKE_PI_GRANDCHILD) {
+	const grandchild = spawn("sleep", ["30"], { stdio: process.env.FAKE_PI_GRANDCHILD === "holds-stdout" ? ["ignore", "inherit", "ignore"] : "ignore" });
+	grandchild.unref();
+	writeFileSync(\`grandchild-\${tag}.pid\`, String(grandchild.pid));
+}
+const say = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+setTimeout(() => {
+	say({ type: "agent_start" });
+	const usage = { input: 90, output: 10, cacheRead: 10 };
+	say({ type: "message_end", message: { role: "assistant", provider: "openai-codex", content: [{ type: "text", text: "先查一下" }], usage, stopReason: "toolUse" } });
+	const final = tag === "broken"
+		? { role: "assistant", provider: "openai-codex", content: [], usage, stopReason: "error", errorMessage: "429 Too Many Requests" }
+		: { role: "assistant", provider: "openai-codex", content: [{ type: "text", text: \`\${tag} 的回复\` }], usage, stopReason: "stop" };
+	say({ type: "message_end", message: final });
+	say({ type: "agent_settled" });
+}, Number(process.env.FAKE_PI_DELAY_MS ?? 0));
+`;
+
+const member = (over: Partial<Member>): Member => ({ name: "news-researcher", title: "新闻研究员", description: "查新闻", tools: undefined, skills: [], model: undefined, prompt: "你是新闻研究员。", file: "/agents/news.md", ...over });
+const MARKET = member({ name: "market-analyst", title: "行情分析师", tools: ["web_get", "bash", "read"], prompt: "你是行情分析师。" });
+const NEWS = member({});
+
+function setup(t: TestContext, env: Record<string, string> = {}) {
+	const dir = mkdtempSync(join(tmpdir(), "psa-member-"));
+	const cliPath = join(dir, "fake-pi.mjs");
+	writeFileSync(cliPath, FAKE_PI);
+	const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+	Object.assign(process.env, env);
+	t.after(() => {
+		for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k];
+		else process.env[k] = v;
+	});
+	const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath, lookupHelp: "us-market quote" });
+	const usage: number[] = [];
+	const run = (who: Member, tag: string, basis: Basis = "request", signal = new AbortController().signal) =>
+		spawner.runMember({
+			ticketId: "tkt_helper", member: who, task: `${tag}\n细节`, basis, token: `token-${tag}`, workdir: dir, sessionDir: memberSessionDir(dir, "tkt_helper", who.name), signal,
+			model: { provider: "openai-codex", id: "gpt-6.1-sol" },
+			onUsage: (u) => usage.push(u.tokensIn + u.tokensOut),
+		} satisfies MemberRun);
+	const read = (file: string) => JSON.parse(readFileSync(join(dir, file), "utf8"));
+	return { dir, run, usage, read };
+}
+
+const flag = (args: string[], name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
+const alive = (pid: number) => {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+};
+
+test("成员做一件事：Pi 打印模式，会话放在任务里这位成员自己的目录并接着上次，工具取交集，回复取最后一条，用量逐条上报", async (t) => {
+	const { dir, run, usage, read } = setup(t);
+	assert.equal(await run(MARKET, "m"), "m 的回复");
+	const args: string[] = read("argv-m.json");
+	assert.equal(flag(args, "--mode"), "json");
+	assert.ok(args.includes("-p") && args.includes("--no-mcp") && args.includes("--no-extensions") && args.includes("--no-skills"));
+	assert.equal(flag(args, "--session-dir"), join(dir, "workers", "tkt_helper", "team", "market-analyst"));
+	assert.ok(args.includes("--continue"), "同一任务再派给它时接着上次的会话");
+	assert.ok(!args.includes("--no-session"));
+	assert.equal(flag(args, "--model"), "openai-codex/gpt-6.1-sol");
+	assert.deepEqual(flag(args, "--tools")!.split(","), ["read", "bash", "web_get"]);
+	assert.ok(args.includes("你是行情分析师。"));
+	assert.deepEqual(args.slice(-2), ["--", "[派活] 行情分析师\nm\n细节"]);
+	assert.deepEqual(usage, [110, 110]);
+	await run(NEWS, "n");
+	assert.equal(flag(read("argv-n.json"), "--session-dir"), join(dir, "workers", "tkt_helper", "team", "news-researcher"), "每位成员各有会话目录");
+	assert.deepEqual(flag(read("argv-n.json"), "--tools")!.split(","), ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup"]);
+});
+
+test("推断任务里的成员即使写了 bash 也只读；交集为空时一个工具也没有", async (t) => {
+	const { run, read } = setup(t);
+	await run(MARKET, "m", "inference");
+	assert.deepEqual(flag(read("argv-m.json"), "--tools")!.split(","), ["read", "web_get"]);
+	await run(member({ name: "runner", tools: ["bash"] }), "r", "inference");
+	const args: string[] = read("argv-r.json");
+	assert.ok(args.includes("--no-tools") && !args.includes("--tools"));
+});
+
+test("成员进程拿不到密钥类变量；扩展以成员身份运行：带任务、自己的令牌和算好的工具清单，没有本队名册", async (t) => {
+	const { run, read } = setup(t, { MASSIVE_API_KEY: "sk-market", FOO_TOKEN: "tok" });
+	await run(MARKET, "m", "inference");
+	const env = read("env-m.json");
+	assert.equal(env.MASSIVE_API_KEY, undefined);
+	assert.equal(env.FOO_TOKEN, undefined);
+	assert.equal(env.PSA_MEMBER_TOOLS, "read,web_get");
+	assert.equal(env.PSA_TICKET, "tkt_helper");
+	assert.equal(env.PSA_TOKEN, "token-m");
+	assert.equal(env.PSA_BASIS, "inference");
+	assert.equal(env.PSA_LOOKUPS, "us-market quote");
+	assert.equal(env.PSA_CREW, undefined, "成员不能再往下派");
+});
+
+test("模型出错时这次派活失败并带上错误", async (t) => {
+	const { run } = setup(t);
+	await assert.rejects(run(NEWS, "broken"), /429/);
+});
+
+test("三位成员并行：总耗时远小于各自耗时之和", async (t) => {
+	const { run } = setup(t, { FAKE_PI_DELAY_MS: "600" });
+	const started = Date.now();
+	await Promise.all([MARKET, NEWS, member({ name: "earnings" })].map((who, i) => run(who, `p${i}`)));
+	const wall = Date.now() - started;
+	assert.ok(wall < 1500, `串行至少 1800 ms，并行实际 ${wall} ms`);
+});
+
+test("中止一次派活：成员进程连同它起的子进程一起结束，不留孤儿", async (t) => {
+	const { dir, run } = setup(t, { FAKE_PI_DELAY_MS: "30000", FAKE_PI_GRANDCHILD: "1" });
+	const stop = new AbortController();
+	const reply = run(NEWS, "g", "request", stop.signal);
+	const pidFile = join(dir, "grandchild-g.pid");
+	await until(() => existsSync(pidFile) && readFileSync(pidFile, "utf8").length > 0, "成员起了子进程", 10_000);
+	const grandchild = Number(readFileSync(pidFile, "utf8"));
+	const pid = Number(readFileSync(join(dir, "pid-g"), "utf8"));
+	assert.ok(alive(grandchild) && alive(pid));
+	stop.abort(new Error("任务已停止"));
+	await assert.rejects(reply, /任务已停止/);
+	assert.equal(alive(pid), false, "派活结束时成员进程已经没了");
+	await until(() => !alive(grandchild), "子进程随进程组结束", 3000);
+});
+
+test("成员正常做完后，它留在进程组里的子进程也被清掉，哪怕那个子进程还占着成员的输出管道", async (t) => {
+	const { dir, run } = setup(t, { FAKE_PI_GRANDCHILD: "holds-stdout" });
+	assert.equal(await within(run(NEWS, "d"), 5000, "成员退出后派活就该结束"), "d 的回复");
+	const grandchild = Number(readFileSync(join(dir, "grandchild-d.pid"), "utf8"));
+	await until(() => !alive(grandchild), "子进程随进程组结束", 3000);
+});
