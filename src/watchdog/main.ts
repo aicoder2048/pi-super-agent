@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { fchmodSync, fstatSync, openSync } from "node:fs";
 import { readHeartbeat } from "../heartbeat.ts";
+import { constants } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, type HostConfig } from "../host/config.ts";
@@ -27,9 +28,14 @@ function commandOf(pid: number): string | undefined {
 }
 
 // The pid in heartbeat.json may have been reused by an unrelated process since the host died.
-function killHungHost(): void {
+function hostPid(): number | undefined {
 	const pid = readHeartbeat(config.stateDir)?.pid;
-	if (!pid || pid === process.pid || !commandOf(pid)?.includes(HOST_ENTRY)) return;
+	return pid && pid !== process.pid && commandOf(pid)?.includes(HOST_ENTRY) ? pid : undefined;
+}
+
+function killHungHost(): void {
+	const pid = hostPid();
+	if (!pid) return;
 	process.kill(pid, "SIGKILL");
 	log(`[watchdog] 已结束没有心跳的宿主进程 ${pid}`);
 }
@@ -68,4 +74,24 @@ const watchdog = new Watchdog({
 
 log(`[watchdog] 已启动，每 ${config.watchdog.intervalMinutes} 分钟检查一次，状态目录 ${config.stateDir}`);
 watchdog.checkOnce();
-setInterval(() => watchdog.checkOnce(), intervalMs);
+const checks = setInterval(() => watchdog.checkOnce(), intervalMs);
+
+let stopping = false;
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+	process.on(signal, async () => {
+		if (stopping) {
+			log(`[watchdog] 再次收到 ${signal}，立即退出`);
+			process.exit(128 + constants.signals[signal]);
+		}
+		stopping = true;
+		clearInterval(checks);
+		const pid = hostPid();
+		log(`[watchdog] 收到 ${signal}，正在停止${pid ? `宿主 ${pid}` : ""}`);
+		if (pid) {
+			process.kill(pid, "SIGTERM");
+			while (commandOf(pid)) await new Promise((r) => setTimeout(r, 100));
+		}
+		log("[watchdog] 已停止");
+		process.exit(0);
+	});
+}
