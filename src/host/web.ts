@@ -18,11 +18,13 @@ const SAY_MAX_BYTES = 32 * 1024;
 const TICKET_ID = /^tkt_[A-Za-z0-9_-]{1,64}$/;
 
 const INDEX_HTML = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
-// No user data in these, so they need only the Host check. A relative module import would drop the token anyway.
-const SCRIPTS = new Map([
-	["/app.mjs", readFileSync(new URL("../web/app.mjs", import.meta.url))],
-	["/view.mjs", readFileSync(new URL("../web/view.mjs", import.meta.url))],
-	["/client/board-format.mjs", readFileSync(new URL("../client/board-format.mjs", import.meta.url))],
+const SCRIPT = "text/javascript; charset=utf-8";
+// No user data in these, so they need only the Host check. A relative module import or a favicon request would drop the token anyway.
+const STATIC = new Map([
+	["/app.mjs", { type: SCRIPT, body: readFileSync(new URL("../web/app.mjs", import.meta.url)) }],
+	["/view.mjs", { type: SCRIPT, body: readFileSync(new URL("../web/view.mjs", import.meta.url)) }],
+	["/client/board-format.mjs", { type: SCRIPT, body: readFileSync(new URL("../client/board-format.mjs", import.meta.url)) }],
+	["/icon.svg", { type: "image/svg+xml", body: readFileSync(new URL("../web/icon.svg", import.meta.url)) }],
 ]);
 
 const NO_LEAK_HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff" } as const;
@@ -110,11 +112,11 @@ export class WebGateway {
 		const url = URL.parse(req.url ?? "/", "http://x");
 		if (!url) return deny(res, 400);
 		if (!isLocalHost(req.headers.host, this.#port)) return deny(res, 403);
-		const script = SCRIPTS.get(url.pathname);
-		if (!script && !tokenMatches(url.searchParams.get("token") ?? "", this.#token)) return deny(res, 401);
+		const file = STATIC.get(url.pathname);
+		if (!file && !tokenMatches(url.searchParams.get("token") ?? "", this.#token)) return deny(res, 401);
 		if (url.pathname === "/say") return req.method === "POST" ? this.#say(req, res) : deny(res, 405);
 		if (req.method !== "GET") return deny(res, 405);
-		if (script) return void res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "text/javascript; charset=utf-8" }).end(script);
+		if (file) return void res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": file.type }).end(file.body);
 		if (url.pathname === "/") {
 			res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "text/html; charset=utf-8", "content-security-policy": CSP });
 			return void res.end(INDEX_HTML.replace("{{token}}", this.#token));

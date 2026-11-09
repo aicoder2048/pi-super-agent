@@ -28,7 +28,7 @@ function mount(doc) {
 	const composer = /** @type {HTMLTextAreaElement} */ ($("composer"));
 	const send = /** @type {HTMLButtonElement} */ ($("send"));
 	const sayStatus = $("say-status");
-	const mark = /** @type {Element} */ (doc.querySelector(".logo svg"));
+	const avatarMark = /** @type {Element} */ (/** @type {HTMLTemplateElement} */ ($("router-avatar")).content.firstElementChild);
 	let rendered = 0;
 	/** @type {import("./view.mjs").SayState} */
 	let sayState = "idle";
@@ -156,8 +156,7 @@ function mount(doc) {
 			const item = el("div", `line ${line.who}`);
 			const bubble = el("div", "bubble", line.text);
 			if (line.who === "router") {
-				const avatar = el("div", "avatar");
-				avatar.append(mark.cloneNode(true));
+				const avatar = avatarMark.cloneNode(true);
 				const said = el("div", "said");
 				said.append(el("div", "who", "幕僚长"), bubble);
 				item.append(avatar, said);

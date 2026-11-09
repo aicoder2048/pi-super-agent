@@ -364,6 +364,12 @@ test("网关：静态脚本不含数据，不带 token 也能取到，但 Host �
 		assert.equal((await request(at(path, ""), { host: `evil.example:${url.port}` })).status, 403, path);
 	}
 	assert.match((await request(at("/client/board-format.mjs", ""))).body, /export const STAGE_LABEL/);
+	const icon = await request(at("/icon.svg", ""));
+	assert.equal(icon.status, 200);
+	assert.match(icon.headers["content-type"]!, /^image\/svg\+xml/);
+	assert.match(icon.body, /^<svg /);
+	assert.equal((await request(at("/icon.svg", ""), { host: `evil.example:${url.port}` })).status, 403);
+	assert.match((await request(at("/"))).body, /<link rel="icon" href="\/icon\.svg"/);
 });
 
 test("网关：页面加载的每个模块，它 import 的路径网关都不带 token 就能给出", async (t) => {
