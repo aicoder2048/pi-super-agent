@@ -115,3 +115,26 @@ test("客户端收到的幕僚长转述问题那一行带上 about 任务 id，�
 	assert.deepEqual(replies, [["收到：查财报", undefined], ["要看财报的哪部分？", ticketId]]);
 	assert.deepEqual(started.host.kernel.conversation().filter((l) => l.who === "router").map((l) => l.about), [undefined, ticketId]);
 });
+
+test("TUI 的连接：answer 消息回 ack 带触发 id，重复的回同一个；问题被新问题取代时回 refused 并说明原因", async (t) => {
+	const { host, row } = await askingHost();
+	const got: HostToClient[] = [];
+	const conn = new HostConnection({ socketPath: host.socketPath, onMessage: (m) => got.push(m), retryMs: 30 });
+	conn.open();
+	t.after(async () => { conn.close(); await host.stop(); });
+	await until(() => conn.connected, "连接");
+	const first = conn.answer(row.question!.reportId, 0)!;
+	const second = conn.answer(row.question!.reportId, 2)!;
+	await until(() => ofType(got, "ack").length === 2, "两个 ack");
+	const acks = ofType(got, "ack");
+	assert.deepEqual(acks.map((a) => a.requestId), [first, second]);
+	assert.equal(acks[0].triggerId, acks[1].triggerId);
+	const replaced = host.kernel.workerReport(row.id, { status: "blocked", summary: "又要选", question: "发给谁？", options: ["甲", "乙"] }).reportId;
+	host.kernel.workerReport(row.id, { status: "blocked", summary: "改问", question: "几点发？", options: ["现在", "明早"] });
+	const stale = conn.answer(replaced, 1)!;
+	await until(() => ofType(got, "refused").length === 1, "refused");
+	const [refused] = ofType(got, "refused");
+	assert.equal(refused.requestId, stale);
+	assert.match(refused.reason, /已经回答过|不在等待回答/);
+	assert.equal(ofType(got, "ack").length, 2);
+});

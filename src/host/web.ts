@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { ConfigError } from "../config-error.ts";
 import type { HostToClient, TranscriptMessage } from "../client/protocol.ts";
-import { hasVisibleText, HistoryEchoFilter, type Broadcast } from "./server.ts";
+import { hasVisibleText, HistoryEchoFilter, type AnswerResult, type Broadcast } from "./server.ts";
 
 type Snapshot = Omit<Extract<HostToClient, { type: "snapshot" }>, "type">;
 
@@ -12,10 +12,12 @@ export interface WebHost {
 	snapshot(): Snapshot;
 	transcript(ticketId: string): TranscriptMessage[];
 	say(text: string): string;
+	answer(reportId: string, option: number): AnswerResult;
 }
 
 const SAY_MAX_BYTES = 32 * 1024;
 const TICKET_ID = /^tkt_[A-Za-z0-9_-]{1,64}$/;
+const REPORT_ID = /^rpt_[A-Za-z0-9_-]{1,64}$/;
 
 const INDEX_HTML = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
 const SCRIPT = "text/javascript; charset=utf-8";
@@ -34,12 +36,13 @@ const KEEPALIVE_MS = 15_000;
 const INTERNAL_ERROR = "宿主内部出错，详情见宿主日志。";
 
 const DENIED = {
-	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"}，或这句话是空的。",
+	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"} 或 {\"answer\": {\"reportId\": \"rpt_…\", \"option\": 0}}，或这句话是空的。",
 	401: "token 缺失或已失效，请用宿主日志里最新的网址打开。",
 	403: "只接受本机这个页面（127.0.0.1 或 localhost）发来的请求。",
 	404: "没有这个页面。",
 	405: "这个地址不接受这种请求；发话用 POST /say，其余只接受 GET。",
 	413: "这句话太长了，请分几次说。",
+	409: "这个问题已经回答过，或已不在等待回答。",
 	415: "发话的正文要用 application/json。",
 } as const;
 
@@ -152,9 +155,11 @@ export class WebGateway {
 		req.on("end", () =>
 			this.#guard(req, res, () => {
 				if (res.headersSent) return;
-				const text = parseSay(Buffer.concat(chunks).toString("utf8"));
-				if (text === undefined) return deny(res, 400);
-				const triggerId = this.#host.say(text);
+				const body = parseSay(Buffer.concat(chunks).toString("utf8"));
+				if (body === undefined) return deny(res, 400);
+				const result = body.kind === "text" ? { ok: true as const, triggerId: this.#host.say(body.text) } : this.#host.answer(body.reportId, body.option);
+				if (!result.ok) return deny(res, 409);
+				const { triggerId } = result;
 				res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ triggerId }));
 			}),
 		);
@@ -175,14 +180,26 @@ export class WebGateway {
 	}
 }
 
-function parseSay(body: string): string | undefined {
+type SayBody = { kind: "text"; text: string } | { kind: "answer"; reportId: string; option: number };
+
+// The user's words arrive either typed ({text}) or as a click on an option ({answer}); exactly one of the two.
+function parseSay(body: string): SayBody | undefined {
+	let parsed: unknown;
 	try {
-		const parsed: unknown = JSON.parse(body);
-		const text = (parsed as { text?: unknown } | null)?.text;
-		return typeof text === "string" && hasVisibleText(text) ? text : undefined;
+		parsed = JSON.parse(body);
 	} catch {
 		return undefined;
 	}
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+	const keys = Object.keys(parsed);
+	if (keys.length !== 1) return undefined;
+	const { text, answer } = parsed as { text?: unknown; answer?: unknown };
+	if (keys[0] === "text") return typeof text === "string" && hasVisibleText(text) ? { kind: "text", text } : undefined;
+	if (keys[0] !== "answer" || typeof answer !== "object" || answer === null) return undefined;
+	const { reportId, option } = answer as { reportId?: unknown; option?: unknown };
+	if (typeof reportId !== "string" || !REPORT_ID.test(reportId)) return undefined;
+	if (typeof option !== "number" || !Number.isInteger(option) || option < 0 || option > 3) return undefined;
+	return { kind: "answer", reportId, option };
 }
 
 function tooLarge(req: IncomingMessage, res: ServerResponse): void {

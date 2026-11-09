@@ -12,7 +12,7 @@ import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import type { Feed, FeedSpec } from "../sources/feeds.ts";
 import { Dispatcher } from "./dispatcher.ts";
-import { HostServer, type Broadcast } from "./server.ts";
+import { HostServer, type AnswerResult, type Broadcast } from "./server.ts";
 import type { BoardState, Duty, TodayCounts, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
 import { WebGateway } from "./web.ts";
 import { ConfigError } from "../config-error.ts";
@@ -150,6 +150,7 @@ export class Host {
 		this.server = new HostServer(
 			{
 				onSay: (text) => this.say(text),
+				onAnswer: (reportId, option) => this.answer(reportId, option),
 				snapshot: () => this.snapshot(),
 				transcript: (ticketId) => this.transcript(ticketId),
 			},
@@ -160,7 +161,7 @@ export class Host {
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text) }, host.#log);
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), answer: (reportId, option) => host.answer(reportId, option) }, host.#log);
 			await host.#web.listen(options.webPort);
 		}
 		try {
@@ -202,6 +203,17 @@ export class Host {
 		this.#broadcast({ type: "user", id: triggerId, text, at });
 		this.#changed();
 		return triggerId;
+	}
+
+	answer(reportId: string, option: number): AnswerResult {
+		const at = Date.now();
+		const result = this.kernel.answerQuestion({ reportId, option, at });
+		if (!result.ok) return result;
+		if (!result.duplicate) {
+			this.#broadcast({ type: "user", id: result.triggerId, text: result.text, at });
+			this.#changed();
+		}
+		return { ok: true, triggerId: result.triggerId };
 	}
 
 	snapshot() {

@@ -33,12 +33,16 @@ export interface BoardState {
 export type ClientToHost =
 	| { type: "hello"; role: "client" }
 	| { type: "say"; text: string; requestId: string }
+	/** A click on option `option` of the question in report `reportId`; the host words it as the user's message. */
+	| { type: "answer"; reportId: string; option: number; requestId: string }
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
 	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; watching: WatchedSource[] }
 	| { type: "user"; id: string; text: string; at: number }
 	| { type: "ack"; requestId: string; triggerId: string }
+	/** The question was already answered by typing or replaced by a newer one. */
+	| { type: "refused"; requestId: string; reason: string }
 	| { type: "reply"; text: string; at: number; replyId: string; about?: string }
 	| ({ type: "board" } & BoardState)
 	| { type: "transcript_history"; ticketId: string; messages: TranscriptMessage[] }

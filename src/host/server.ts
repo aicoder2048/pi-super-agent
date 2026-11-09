@@ -5,8 +5,11 @@ import type { HostToClient } from "../client/protocol.ts";
 
 export type Broadcast = Extract<HostToClient, { type: "user" | "reply" | "board" }>;
 
+export type AnswerResult = { ok: true; triggerId: string } | { ok: false; reason: string };
+
 export interface ClientHandlers {
 	onSay(text: string): string;
+	onAnswer(reportId: string, option: number): AnswerResult;
 	snapshot(): unknown;
 	transcript?(ticketId: string): unknown[];
 }
@@ -74,6 +77,10 @@ export class HostServer {
 				if (r.type === "say" && typeof r.text === "string" && hasVisibleText(r.text)) {
 					const triggerId = clients.onSay(r.text);
 					if (typeof r.requestId === "string") writeJsonLine(socket, { type: "ack", requestId: r.requestId, triggerId });
+				}
+				else if (r.type === "answer" && typeof r.reportId === "string" && Number.isInteger(r.option) && typeof r.requestId === "string") {
+					const result = clients.onAnswer(r.reportId, r.option);
+					writeJsonLine(socket, result.ok ? { type: "ack", requestId: r.requestId, triggerId: result.triggerId } : { type: "refused", requestId: r.requestId, reason: result.reason });
 				}
 				else if (r.type === "watch") {
 					client!.watching = typeof r.ticketId === "string" ? r.ticketId : undefined;

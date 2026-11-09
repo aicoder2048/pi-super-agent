@@ -725,6 +725,58 @@ test("网关：GET /say 405；/say 以外的 POST 也是 405", async (t) => {
 	assert.equal((await request(at("/"), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 405);
 });
 
+async function askedOnHost(host: Awaited<ReturnType<typeof sayHost>>["host"], title = "查财报") {
+	const { triggerId } = host.kernel.submitTrigger({ source: "conversation", externalId: title, threads: [{ id: "thr_conversation" }], sender: "user", body: title, occurredAt: Date.now() });
+	const [opened] = host.kernel.route([{ kind: "open_ticket", basis: "request", triggerId, title, brief: title }]);
+	const ticketId = (opened as { ticketId: string }).ticketId;
+	const { reportId } = host.kernel.workerReport(ticketId, { status: "blocked", summary: "两种口径", question: "要看哪部分？", options: ["只看营收", "营收和利润"] });
+	return { ticketId, reportId };
+}
+
+const answerBody = (reportId: string, option: number) => JSON.stringify({ answer: { reportId, option } });
+
+test("网关：POST /say 带 answer 时，宿主替使用者说出「回答任务「标题」：选项」；连点、重试都返回同一个 triggerId，对话里只有一句", async (t) => {
+	const { host, post, events, userLines } = await sayHost(t);
+	const { reportId } = await askedOnHost(host);
+	const stream = events();
+	await until(() => stream.got.length > 0, "快照");
+	const first = await post(answerBody(reportId, 1));
+	const again = await post(answerBody(reportId, 0));
+	assert.deepEqual([first.status, again.status], [200, 200]);
+	const { triggerId } = JSON.parse(first.body);
+	assert.equal(JSON.parse(again.body).triggerId, triggerId);
+	await until(() => ofType(stream.got, "user").some((m) => m.id === triggerId), "user");
+	await until(() => ofType(stream.got, "board").some((m) => m.rows.some((r) => r.question?.answered === 1)), "看板显示已回答");
+	assert.deepEqual(ofType(stream.got, "user").map((m) => m.text), ["回答任务「查财报」：营收和利润"]);
+	assert.deepEqual(userLines().filter((l) => l.startsWith("回答任务")), ["回答任务「查财报」：营收和利润"]);
+});
+
+test("网关：问题已经打字回答过时 POST /say 的 answer 返回 409，对话里不多一句", async (t) => {
+	const { host, post, userLines } = await sayHost(t);
+	const { ticketId, reportId } = await askedOnHost(host);
+	const typed = host.say("两个都要");
+	assert.ok(host.kernel.route([{ kind: "hand_over", triggerId: typed, ticketId }])[0].ok);
+	const res = await post(answerBody(reportId, 0));
+	assert.equal(res.status, 409);
+	assert.match(res.body, /已经回答过/);
+	assert.ok(!userLines().some((l) => l.startsWith("回答任务")));
+});
+
+test("网关：answer 的形状不对时 400：同时带 text、reportId 不像汇报编号、option 不是 0 到 3 的整数", async (t) => {
+	const { host, post, userLines } = await sayHost(t);
+	const { reportId } = await askedOnHost(host);
+	const bodies = [
+		JSON.stringify({ text: "x", answer: { reportId, option: 0 } }),
+		JSON.stringify({ answer: { reportId: "tkt_1", option: 0 } }),
+		JSON.stringify({ answer: { reportId, option: 7 } }),
+		JSON.stringify({ answer: { reportId, option: "1" } }),
+		JSON.stringify({ answer: { reportId, option: 1.5 } }),
+		JSON.stringify({ answer: null }),
+	];
+	for (const body of bodies) assert.equal((await post(body)).status, 400, body);
+	assert.deepEqual(userLines(), ["查财报"]);
+});
+
 async function watchHost(t: TestContext) {
 	const brain = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
 	const stateDir = tempStateDir();
