@@ -228,6 +228,7 @@ test("页面：运行时长粗略到天、小时、分钟；只有这次启动�
 	assert.equal(page.dutyLine({ since: 0, resumed: 0 }, 2 * H + 5 * 60_000), "在线 · 已运行 2 小时 5 分钟");
 	assert.equal(page.dutyLine({ since: 0, resumed: 0 }, 30_000), "在线 · 刚启动");
 	assert.equal(page.dutyLine(undefined, 0), "");
+	assert.equal(page.dutyLine({ since: 0, resumed: 0 }, 2 * H, false), "", "断线时不再显示「在线」");
 	assert.equal(page.restartNotice({ since: 0, resumed: 2 }, 29 * 60_000), "已重启，进行中的任务已恢复");
 	assert.equal(page.restartNotice({ since: 0, resumed: 2 }, 31 * 60_000), "");
 	assert.equal(page.restartNotice({ since: 0, resumed: 0 }, 60_000), "");

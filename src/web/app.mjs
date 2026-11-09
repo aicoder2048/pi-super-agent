@@ -54,6 +54,7 @@ function mount(doc) {
 	const setStatus = (s) => {
 		status.dataset.status = s;
 		status.textContent = STATUS_TEXT[s];
+		renderHeader();
 	};
 
 	/** @param {import("./view.mjs").SayState} state @param {number} [status] @param {string} [text] */
@@ -88,7 +89,7 @@ function mount(doc) {
 	});
 
 	const renderHeader = () => {
-		$("duty").textContent = dutyLine(view.duty, Date.now());
+		$("duty").textContent = dutyLine(view.duty, Date.now(), status.dataset.status === "connected");
 		$("restart").textContent = restartNotice(view.duty, Date.now());
 	};
 
