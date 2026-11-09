@@ -110,3 +110,4 @@ ts	phase	decision	why	evidence	result
 2026-11-09T22:22:33Z	t1	no-comments：comment-sicko 删了 16 条复述代码的注释；按它的标记把三个名字改清楚（subscriptionProviders、teamRoster、SOLO_HELPER_ROWS）	注释在替名字解释时，改名字比留注释好	5d2f2fb	just test 503 通过
 2026-11-09T22:22:33Z	t1	comment-sicko 的两条标记没有照做：行里加显式的 kind 列；PROMPT_MAX_CHARS 的来由	前一条是 architect 里比过后没选的方案（候选 A），理由在上面 architect 一行；后一条要等 T2 真把成员提示词交给进程时才说得清	comment-sicko 的报告；candidate-a/rationale.md	留给根判断
 2026-11-09T22:22:33Z	t1	T1 写完：just test 503 条通过，just e2e 58 条通过，check-plan 0 problems；Verify live、perf、Review gate、Merge 没有动	这几栏归根	5d2f2fb 上跑的两套测试	等根评审
+2026-11-09T22:37:03Z	t1-fix	成员文件的 frontmatter 不是合法 YAML、agents 下的悬空符号链接、teams.yaml 是目录：都改成以文件路径开头的一行 ConfigError	原来是 YAMLParseError、ENOENT、EISDIR 的原始堆栈，看不出该改哪个文件	tests/teams.test.ts 三条；红：YAMLParseError: Nested mappings are not allowed…、ENOENT … stat、EISDIR: illegal operation on a directory, read；绿：d985f73	teams.test.ts 40 通过

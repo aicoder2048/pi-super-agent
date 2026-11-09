@@ -30,6 +30,11 @@ test("teams.yaml：每个团队一个名字、一句说明和成员名单，空�
 	assert.deepEqual(parseTeams(FILE, "\n# 还没有团队\n"), []);
 });
 
+test("teams.yaml：成员名可以带引号", () => {
+	const [team] = parseTeams(FILE, `新闻队:\n  description: d\n  members:\n    - "news-researcher"\n    - 'x'\n`);
+	assert.deepEqual(team.members, ["news-researcher", "x"]);
+});
+
 const MALFORMED: [name: string, text: string, line: number, message: RegExp][] = [
 	["顶层不是「团队名:」", "新闻队: 查新闻\n", 1, /团队名/],
 	["成员写在团队外面", "- news-researcher\n", 1, /团队名/],

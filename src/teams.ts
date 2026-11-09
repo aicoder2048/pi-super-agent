@@ -68,7 +68,7 @@ export function parseTeams(file: string, text: string): TeamDecl[] {
 		if (!draft) return fail(line, "先写「团队名:」，再缩进写它的 description 和 members");
 		if (body.startsWith("-")) {
 			if (!inMembers) fail(line, "「- 名字」只能写在 members: 下面");
-			const member = unquote(body.slice(1));
+			const member = unquote(body.slice(1).trim());
 			if (!member) fail(line, "「-」后面要写成员的名字");
 			if (draft.members!.includes(member)) fail(line, `成员 ${member} 写了两次`);
 			draft.members!.push(member);
