@@ -1,0 +1,29 @@
+ts	phase	decision	why	evidence	result
+2026-11-09T02:06:50Z	start	进入 figure-it-out 审计整改流程；之前 Stage 0 到 4 及 Stage 5 未提交部分没有按 pstack 完整执行	使用者指出只部分使用 pstack 是错误，要求回到 pstack 路径	branch mvp @1e16577	open
+2026-11-09T02:06:50Z	branch	建 mvp 分支承载全部提交，本地 main 退回 e377ad8	按 pstack 走分支加 PR，不直接提交到 main；使用者已同意	git branch -f main e377ad8; mvp @1e16577	done
+2026-11-09T02:08:10Z	frame	写下完成判定 P1 到 P6，风险定为高，规模约 4000 行代码加 134 个测试	无人值守加授权边界属于难以收回的决定，需要高强度的关卡	docs/pi-super-agent/figure-it-out.md	done
+2026-11-09T02:08:10Z	frame	deslop 和 control-cli 未安装，分别用内置 simplify 和自己驱动 tmux 代替	所需的 cursor-team-kit 插件不在本机	ls ~/.claude/plugins/cache/cursor-plugins = pstack only	substituted
+2026-11-09T02:08:10Z	harness	把三处未先写测试的 Stage 5 接线另存为补丁，整改时撤掉重做	这三处违反先红后绿，需要按 tdd 重来	scratchpad/untested-wiring.patch, scratchpad/watchdog-main.ts	open
+2026-11-09T02:08:10Z	how	启动四个只读探查员，分别看触发与内核、Router、Worker 执行、客户端与运维	要一份不以我自己说明为准的独立解读	how 探查员 x4（继承父模型）	running
+2026-11-09T02:08:59Z	interrogate	把工作区打成临时快照提交，挂在 refs/wip/interrogate，不移动 mvp 分支	审查员要在各自的 worktree 里看到未提交的 Stage 5 改动	commit 2f8752f	done
+2026-11-09T02:08:59Z	interrogate	启动两个对抗审查员，各自 worktree，按配置一个 opus high、一个继承父模型	interrogate reviewers 配置为 opus high 加 inherit-parent；只保留有复现命令的发现	interrogate 审查员 x2	running
+2026-11-09T02:09:23Z	how	Router 探查员返回；列出两个疑似问题：切模型窗口里到达的卡片会被搁置、settled 里 setModel 抛错会让 Router 永久卡在 busy	疑似问题留给对抗审查和后续 TDD 验证，不直接改	how 探查员（Router）报告	1/4 returned
+2026-11-09T02:09:37Z	how	内核探查员返回；疑似问题包括 Router 可转交被过滤的触发、同一触发可重复开任务、推断并发按未结束而非执行中计算	疑似问题等审查员复现或 TDD 确认后再定	how 探查员（触发与内核）报告	2/4 returned
+2026-11-09T02:09:37Z	how	Worker 探查员返回；疑似问题包括后台命令结果不进内核、回退前出错的一轮工作丢失、模型选择器被所有 Worker 共享	同上，先确认再修	how 探查员（Worker 执行）报告	3/4 returned
+2026-11-09T02:11:23Z	incident	把只部分使用 pstack 的错误存为记忆警告，并写了事故复盘笔记	使用者要求记录下来，提醒以后的开发	memory/pstack-full-adherence.md, ~/StudyNotes/261108-pstack-partial-use-incident.md	done
+2026-11-09T02:11:23Z	how	四个探查员全部返回，报告原文提取到文件后交给讲解员（opus high）汇总	how 的复杂路径要求先探查再统一讲解	scratchpad/how-findings.md	running
+2026-11-09T02:13:05Z	how	讲解员汇总出独立的系统说明并存档；列出约 30 条疑似问题和 5 个未确认的 Pi 行为	Phase B 第 1 步的产出，后续修复和故事对照以它为参照	docs/pi-super-agent/how.md	done
+2026-11-09T02:13:46Z	tdd	撤回三处未先写测试的接线（main.ts 模型接线、watchdog/main.ts、Router 提示词一句），基线 134 个测试全绿	要按先红后绿重做	git checkout HEAD -- src/host/main.ts; just test	baseline green
+2026-11-09T02:14:47Z	tdd	模型接线抽成 modelSelectors 和 createHostOptions，先写测试（模块不存在，红），再实现（绿），main.ts 改为只调用它	入口接线原先没有测试；抽成函数才能测真实接线下的回退行为	tests/wiring.test.ts 6 pass; src/host/wiring.ts	green
+2026-11-09T02:14:47Z	verify	真实入口冒烟：just host 启动并写出心跳；回退模型配错时启动即报错 找不到模型 deepseek/no-such-model	检查真实产物，不只看测试	/tmp/psa-entry-*/out.log	VERIFIED
+2026-11-09T02:16:14Z	tdd	Watchdog 入口先写三条进程级测试（红），再实现（绿）；杀进程前用 ps 确认是宿主，不误杀复用了 pid 的无关进程	探查员指出按心跳 pid 直接 SIGKILL 有误杀风险	tests/watchdog-main.test.ts 3 pass; src/watchdog/main.ts	green
+2026-11-09T02:16:51Z	tdd	Watchdog 触发改为在代码里渲染成 [通知] 卡片，替代原来提示词里的一句话；先写宿主层测试（红），再改（绿）	提示词里的一句话无法测试真实行为，代码层的卡片类型可以	tests/host-events.test.ts 'Watchdog 投递'; src/host/router.ts noticeCard	green
+2026-11-09T02:17:05Z	no-comments	提交前对 Stage 5 未提交改动跑 no-comments（Comment Sicko）	pstack 规定审查和提交前做删注释检查	comment-sicko 子代理	running
+2026-11-09T02:18:10Z	no-comments	Comment Sicko 删 1 条、留 4 条（都核实为平台或依赖约束）；接受其 MUST KILL，把 workerExited 的条件提成有名字的变量	删注释后用代码本身说明用意	src/kernel/kernel.ts workerExited	done
+2026-11-09T02:18:54Z	interrogate	审查员（继承父模型）报 14 条；重跑其中 13 条全部复现（第 11 条 3 次中 2 次），第 14 条已由 Watchdog 入口的 TDD 单元修掉	interrogate 只保留重跑后确实复现的发现	worktree agent-a0eceffe858faa8df repro/*.ts	13 VERIFIED, 1 already fixed
+2026-11-09T02:18:54Z	commit	测试和实现同提交，先红的证据记在本记录里，不单独提交失败的测试	使用者全局规则要求每个提交都通过全部测试，与 pstack 先提交失败测试的顺序冲突，按使用者规则	~/.claude/CLAUDE.md Code Quality	decided
+2026-11-09T02:19:31Z	simplify	对 Stage 5 未提交改动跑 simplify（代替未安装的 deslop），四个只读审查员分别看复用、简化、效率、修复深度	提交前的去冗余检查	scratchpad/simplify-diff.txt	running
+2026-11-09T02:21:12Z	interrogate	审查员（opus）报 14 条，重跑全部复现；两份结果按根因合并成 A 到 O 共 15 项	interrogate 要求合并同一根因的发现	docs/pi-super-agent/interrogate.md; worktree agent-a96b8643066459461 probes/	14 VERIFIED; merged 15
+2026-11-09T02:21:44Z	simplify	四个审查员返回；不改行为的去冗余项现在改，上限进内核和模型切换逻辑合并两项留到修复阶段按 TDD 做	前者是纯整理，后者会改行为或与 interrogate M 项重合	simplify 审查员 x4 报告	decided
+2026-11-09T02:24:04Z	simplify	应用不改行为的整理：模型选择器必填、删掉硬编码默认模型和无用字段、心跳读写合并到 src/heartbeat.ts、Watchdog 通知由内核定为 notice、看板行带 lastProgressAt、workerExited 合成一条规则、ModelSelector 去掉计数、createHostOptions 改同步、轮询改 10 秒	去冗余检查的结论	src/heartbeat.ts, src/host/{workers,router,host,wiring}.ts, src/kernel/kernel.ts	144 pass x3
+2026-11-09T02:24:17Z	commit	提交 Stage 5 代码与测试	no-comments 和 simplify 都已完成，144 个测试连续三次通过	commit e57c01f	done
