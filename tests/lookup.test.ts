@@ -45,6 +45,7 @@ test("Worker 的 lookup 经宿主交给对应来源，结果原样回给 Worker�
 			feeds: [{
 				source: "us-market",
 				lookupHelp: "",
+				status: "运行",
 				create: () => ({ start() {}, stop() {}, problem: () => undefined, lookup: async (op, args) => (asked.push([op, args]), [{ symbol: "NVDA", price: 142.85 }]) }),
 			}],
 		},

@@ -45,6 +45,7 @@ const cases = [
 	{ name: "module.json 不是合法 JSON 时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: "{bad" } }), message: /module\.json 不是合法的 JSON/ },
 	{ name: "模块名不等于目录名时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: { name: "other" } } }), message: /name 必须等于目录名 m/ },
 	{ name: "ignore 不是合法正则时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: { name: "m", sources: [{ name: "m", ignore: ["("] }] } } }), message: /module\.json.*ignore.*不是合法的正则/ },
+	{ name: "config.json 的 modules 写了没发现的模块时，just host", entry: HOST, stateDir: stateWith({ modules: { nope: true } }, { mods: { m: { name: "m" } } }), message: /config\.json：modules\.nope 不是已发现的模块/ },
 	{ name: "两个模块重名时，just host", entry: HOST, stateDir: stateWith({}, { a: { m: { name: "m" } }, b: { m: { name: "m" } } }), message: /模块重名：m/ },
 	{
 		name: "定时器 everyMinutes 不大于 0 时，just host",

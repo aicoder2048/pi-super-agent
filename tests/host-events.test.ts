@@ -6,7 +6,7 @@ import { Modules } from "../src/modules.ts";
 import { dropTrigger } from "../src/sources/generic.ts";
 import { ids, startHost, until, type Brain } from "./helpers/fakes.ts";
 
-const modules = Modules.load([fileURLToPath(new URL("../modules", import.meta.url))]);
+const modules = Modules.load([fileURLToPath(new URL("../modules", import.meta.url))], undefined, { values: { "toy-market": true }, file: "config.json" });
 const withModules = { sourcePolicy: modules.sourcePolicy, ruleAllows: modules.ruleAllows, rulesFor: modules.rulesFor };
 const threadOf = (card: string) => card.match(/线程 (thr_\S+)/)?.[1];
 

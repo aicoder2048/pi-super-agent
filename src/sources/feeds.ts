@@ -18,6 +18,8 @@ export interface Feed {
 
 export interface FeedSpec {
 	source: string;
+	/** One line saying whether the feed can run, e.g. why it is off. Never contains a secret. */
+	status: string;
 	lookupHelp: string;
 	create(ctx: FeedContext): Feed;
 }

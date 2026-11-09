@@ -1,5 +1,4 @@
-import { loadConfig } from "../host/config.ts";
-import { Modules } from "../modules.ts";
+import { loadConfig, loadModules } from "../host/config.ts";
 import { MarketClient } from "../sources/market/client.ts";
 import { readMarketKey } from "../sources/market/key.ts";
 import { nyDateOf, nyTime, sessionAt } from "../sources/market/session.ts";
@@ -9,7 +8,7 @@ const SOURCE = "us-market";
 
 async function main(): Promise<void> {
 	const config = loadConfig();
-	const filter = Modules.load(config.modulesDirs).modules.flatMap((m) => m.manifest.sources ?? []).find((s) => s.name === SOURCE);
+	const filter = loadModules(config).modules.flatMap((m) => m.manifest.sources ?? []).find((s) => s.name === SOURCE);
 	if (!filter?.feed) throw new Error(`没有找到声明了 feed 的来源 ${SOURCE}`);
 	const settings = parseMarketSettings(filter.feed.settings, config.sources[SOURCE], `sources.${SOURCE}`);
 	const loaded = readMarketKey(process.env, config.secretsFile);

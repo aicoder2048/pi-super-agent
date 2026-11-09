@@ -16,6 +16,7 @@ export interface SourceFilter {
 
 export interface ModuleManifest {
 	name: string;
+	defaultEnabled?: boolean;
 	sources?: SourceFilter[];
 	timers?: TimerEntry[];
 	prepare?: string;
@@ -27,6 +28,23 @@ export interface LoadedModule {
 	manifest: ModuleManifest;
 	rules: ScopedRule[];
 	skillsDir: string | undefined;
+	state: ModuleState;
+}
+
+export interface ModuleState {
+	enabled: boolean;
+	by: "config" | "manifest" | "default";
+}
+
+export interface ModuleSwitches {
+	values: Record<string, boolean>;
+	file: string;
+}
+
+const MODULE_NAME = /^[A-Za-z0-9][\w-]*$/;
+
+export function moduleNameProblem(name: string): string | undefined {
+	return MODULE_NAME.test(name) ? undefined : `模块名「${name}」只能用字母、数字、- 和 _，并以字母或数字开头`;
 }
 
 export interface Rule {
@@ -54,10 +72,20 @@ export function parseRules(namespace: string, markdown: string): Rule[] {
 	return rules.map((r) => ({ ...r, text: r.text.trim() })).filter((r) => r.text);
 }
 
-function loadModule(dir: string): LoadedModule {
+function stateOf(manifest: ModuleManifest, switches: Record<string, boolean>): ModuleState {
+	if (Object.hasOwn(switches, manifest.name)) return { enabled: switches[manifest.name], by: "config" };
+	return manifest.defaultEnabled === false ? { enabled: false, by: "manifest" } : { enabled: true, by: "default" };
+}
+
+function loadModule(dir: string, switches: Record<string, boolean>): LoadedModule {
 	const manifestPath = join(dir, "module.json");
 	const manifest = readJsonFile<ModuleManifest>(manifestPath);
 	if (!manifest.name || manifest.name !== basename(dir)) throw new ConfigError(`${manifestPath}：name 必须等于目录名 ${basename(dir)}`);
+	const nameProblem = moduleNameProblem(manifest.name);
+	if (nameProblem) throw new ConfigError(`${manifestPath}：${nameProblem}`);
+	if (manifest.defaultEnabled !== undefined && typeof manifest.defaultEnabled !== "boolean") {
+		throw new ConfigError(`${manifestPath}：defaultEnabled（${JSON.stringify(manifest.defaultEnabled)}）只能是 true 或 false`);
+	}
 	for (const s of manifest.sources ?? []) {
 		for (const pattern of s.ignore ?? []) {
 			try {
@@ -77,34 +105,40 @@ function loadModule(dir: string): LoadedModule {
 		manifest,
 		rules: rules.map((r) => ({ ...r, sources: r.sources ?? [...new Set(moduleSources)] })),
 		skillsDir: existsSync(skillsDir) ? skillsDir : undefined,
+		state: stateOf(manifest, switches),
 	};
 }
 
 export class Modules {
+	readonly found: LoadedModule[];
+	/** Enabled only. Everything the host runs reads these, so a disabled module contributes nothing. */
 	readonly modules: LoadedModule[];
 	readonly userRules: ScopedRule[];
 	readonly skippedUserRules: string[];
 	readonly #scopes: Map<string, string[]>;
 
-	constructor(modules: LoadedModule[], userRules: ScopedRule[], skippedUserRules: string[]) {
-		this.modules = modules;
+	constructor(found: LoadedModule[], userRules: ScopedRule[], skippedUserRules: string[]) {
+		this.found = found;
+		this.modules = found.filter((m) => m.state.enabled);
 		this.userRules = userRules;
 		this.skippedUserRules = skippedUserRules;
 		this.#scopes = new Map(this.allRules().map((r) => [r.id, r.sources]));
 	}
 
-	static load(dirs: string[], userRulesFile?: string): Modules {
+	static load(dirs: string[], userRulesFile?: string, switches: ModuleSwitches = { values: {}, file: "config.json" }): Modules {
 		const modules: LoadedModule[] = [];
 		for (const root of dirs) {
 			if (!existsSync(root)) continue;
 			for (const entry of readdirSync(root).sort()) {
 				const dir = join(root, entry);
-				if (statSync(dir).isDirectory() && existsSync(join(dir, "module.json"))) modules.push(loadModule(dir));
+				if (statSync(dir).isDirectory() && existsSync(join(dir, "module.json"))) modules.push(loadModule(dir, switches.values));
 			}
 		}
 		const names = modules.map((m) => m.name);
 		const dup = names.find((n, i) => names.indexOf(n) !== i);
 		if (dup) throw new ConfigError(`模块重名：${dup}`);
+		const unknown = Object.keys(switches.values).find((name) => !names.includes(name));
+		if (unknown) throw new ConfigError(`${switches.file}：modules.${unknown} 不是已发现的模块，已发现：${names.join("、") || "（没有）"}`);
 		const parsed = userRulesFile && existsSync(userRulesFile) ? parseRules("user", readFileSync(userRulesFile, "utf8")) : [];
 		const userRules = parsed.filter((r): r is ScopedRule => !!r.sources?.length);
 		const skipped = parsed.filter((r) => !r.sources?.length).map((r) => r.id);
