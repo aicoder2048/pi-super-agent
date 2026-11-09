@@ -15,6 +15,19 @@ export interface Helper {
 	seq: number;
 }
 
+/** The built-in team: 通用助手 alone. A ticket row with no team reads as this one. */
+export const DEFAULT_TEAM = "默认";
+
+/** solo: one helper. crew: the team has a member besides 通用助手, so the helper can grow into a team. */
+export type TeamKind = "solo" | "crew";
+
+/** All the kernel knows about teams, built once at startup. Every team in `pinned` is a key of `kinds`. */
+export interface TeamBook {
+	kinds: ReadonlyMap<string, TeamKind>;
+	/** Rule id to the team its 「团队：」 line names. */
+	pinned: ReadonlyMap<string, string>;
+}
+
 export interface HelpersToday {
 	count: number;
 	tokens: number;

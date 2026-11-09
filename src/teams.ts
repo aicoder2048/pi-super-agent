@@ -1,7 +1,9 @@
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
-import { existsSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ConfigError } from "./config-error.ts";
+import { DEFAULT_TEAM, type TeamBook } from "./kernel/types.ts";
 import { parseModelRef, type ModelRef } from "./models.ts";
 import { WORKER_TOOLS } from "./worker/tools.ts";
 
@@ -18,7 +20,7 @@ export interface Member {
 	file: string;
 }
 
-export interface Team {
+export interface TeamDecl {
 	name: string;
 	/** One sentence for the Router's roster. */
 	description: string;
@@ -27,14 +29,17 @@ export interface Team {
 	line: number;
 }
 
+// Every team's description is in the Router's prompt on every turn.
+const TEAM_DESCRIPTION_MAX_CHARS = 60;
+
 const unquote = (value: string) => (value.match(/^"(.*)"$|^'(.*)'$/)?.slice(1).find((v) => v !== undefined) ?? value).trim();
 
 /**
  * Reads the one shape teams.yaml has: a top-level `团队名:`, under it `description: 一句话` and `members:` with one `- 名字` per line.
  * Anything else is an error with the file and line, so no YAML library is needed.
  */
-export function parseTeams(file: string, text: string): Team[] {
-	const teams: Team[] = [];
+export function parseTeams(file: string, text: string): TeamDecl[] {
+	const teams: TeamDecl[] = [];
 	let draft: { name: string; line: number; description?: string; members?: string[] } | undefined;
 	let inMembers = false;
 	const fail = (line: number, message: string): never => {
@@ -80,6 +85,7 @@ export function parseTeams(file: string, text: string): Team[] {
 			draft.members = [];
 		} else {
 			draft.description = unquote(value) || fail(line, "description 不能为空，写一句给幕僚长看的说明");
+			if ([...draft.description].length > TEAM_DESCRIPTION_MAX_CHARS) fail(line, `description 超过 ${TEAM_DESCRIPTION_MAX_CHARS} 字，只写一句给幕僚长看的说明`);
 		}
 	});
 	finish();
@@ -136,4 +142,85 @@ export function parseMember(file: string, content: string, allowedProviders: rea
 	const prompt = body.trim();
 	if ([...prompt].length > PROMPT_MAX_CHARS) throw new ConfigError(`${file}：正文（系统提示词）超过 ${PROMPT_MAX_CHARS} 字`);
 	return { name, title: text(fm.title, file, "title"), description, tools, skills, model, prompt, file };
+}
+
+/** The repo root: its `agents/` holds the built-in member. */
+export const BUILTIN_ROOT = fileURLToPath(new URL("..", import.meta.url));
+/** The built-in member 通用助手. A team with any other member is a crew. */
+export const GENERAL_MEMBER = "general";
+
+/** A team after loading: its members are full definitions, so no caller looks a name up again. */
+export interface Team {
+	name: string;
+	description: string;
+	members: readonly Member[];
+	/** The members besides 通用助手. Empty means the ticket is one helper. */
+	crew: readonly Member[];
+	/** 内置, or the file and line of the teams.yaml entry. */
+	where: string;
+}
+
+const isDirectory = (path: string) => existsSync(path) && statSync(path).isDirectory();
+
+/** Every member and team from the built-in root, the module directories and the state directory. It exists only if all of them are valid. */
+export class Roster {
+	readonly #teams: ReadonlyMap<string, Team>;
+
+	private constructor(teams: ReadonlyMap<string, Team>) {
+		this.#teams = teams;
+	}
+
+	/** A root is a directory that may hold `agents/*.md` and `teams.yaml`. A missing root, folder or file is skipped. */
+	static load(roots: readonly string[], allowedProviders: readonly string[]): Roster {
+		const members = new Map<string, Member>();
+		const decls: TeamDecl[] = [];
+		for (const root of roots) {
+			const agents = join(root, "agents");
+			for (const entry of isDirectory(agents) ? readdirSync(agents).sort() : []) {
+				const file = join(agents, entry);
+				if (!entry.endsWith(".md") || !statSync(file).isFile()) continue;
+				const member = parseMember(file, readFileSync(file, "utf8"), allowedProviders);
+				const other = members.get(member.name);
+				if (other) throw new ConfigError(`成员重名：${member.name} 同时定义在 ${other.file} 和 ${file}`);
+				members.set(member.name, member);
+			}
+			const teamsFile = join(root, "teams.yaml");
+			if (existsSync(teamsFile)) decls.push(...parseTeams(teamsFile, readFileSync(teamsFile, "utf8")));
+		}
+		const general = members.get(GENERAL_MEMBER);
+		if (!general) throw new ConfigError(`没有内置成员 ${GENERAL_MEMBER}（${join(BUILTIN_ROOT, "agents", "general.md")}）`);
+		const teams = new Map<string, Team>([[DEFAULT_TEAM, { name: DEFAULT_TEAM, description: general.description, members: [general], crew: [], where: "内置" }]]);
+		for (const decl of decls) {
+			const where = `${decl.file}:${decl.line}`;
+			const other = teams.get(decl.name);
+			if (other) throw new ConfigError(`团队重名：${decl.name} 同时定义在 ${other.where} 和 ${where}`);
+			const resolved = decl.members.map((name) => {
+				const member = members.get(name);
+				if (!member) throw new ConfigError(`${where}：团队 ${decl.name} 的成员 ${name} 不存在，现有成员：${[...members.keys()].join("、")}`);
+				return member;
+			});
+			teams.set(decl.name, { name: decl.name, description: decl.description, members: resolved, crew: resolved.filter((m) => m.name !== GENERAL_MEMBER), where });
+		}
+		return new Roster(teams);
+	}
+
+	/** By the name stored on a ticket; undefined when that team has since been removed. */
+	team(name: string): Team | undefined {
+		return this.#teams.get(name);
+	}
+
+	/** One line per team the Router may pick besides the default: name and description, never a member. */
+	routerPrompt(): string {
+		return [...this.#teams.values()].filter((t) => t.name !== DEFAULT_TEAM).map((t) => `- ${t.name}：${t.description}`).join("\n");
+	}
+
+	teamBook(rules: readonly { id: string; team?: string }[]): TeamBook {
+		const pinned = new Map<string, string>();
+		for (const rule of rules) {
+			if (rule.team === undefined) continue;
+			if (!this.#teams.has(rule.team)) throw new ConfigError(`规则 ${rule.id} 写了「团队：${rule.team}」，没有这个团队，现有团队：${[...this.#teams.keys()].join("、")}`);
+			pinned.set(rule.id, rule.team);
+		}
+		return { kinds: new Map([...this.#teams.values()].map((t) => [t.name, t.crew.length ? "crew" : "solo"])), pinned };
+	}
 }

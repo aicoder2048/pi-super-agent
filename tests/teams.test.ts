@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ConfigError } from "../src/config-error.ts";
-import { parseMember, parseTeams } from "../src/teams.ts";
+import { DEFAULT_TEAM } from "../src/kernel/types.ts";
+import { BUILTIN_ROOT, Roster, parseMember, parseTeams } from "../src/teams.ts";
 
 const FILE = "/state/teams.yaml";
 
@@ -42,6 +43,7 @@ const MALFORMED: [name: string, text: string, line: number, message: RegExp][] =
 	["同一个键写了两次", "新闻队:\n  description: d\n  description: e\n  members:\n    - a\n", 3, /description 写了两次/],
 	["同一个成员写了两次", "新闻队:\n  description: d\n  members:\n    - a\n    - a\n", 5, /a 写了两次/],
 	["同一个文件里团队重名", "新闻队:\n  description: d\n  members:\n    - a\n新闻队:\n  description: d\n  members:\n    - a\n", 5, /新闻队/],
+	["说明超过 60 字", `新闻队:\n  description: ${"长".repeat(61)}\n  members:\n    - a\n`, 2, /60 字/],
 	["团队名里有空白", "新 闻队:\n  description: d\n  members:\n    - a\n", 1, /空白/],
 	["用 Tab 缩进", "新闻队:\n\tdescription: d\n", 2, /Tab/],
 ];
@@ -146,4 +148,84 @@ test("成员的技能目录经符号链接指到外面也不行：按真实路�
 test("成员的提示词和说明有长度上限，超了在启动时报错", () => {
 	memberFails(member("", "长".repeat(20_001)), /正文.*20000/);
 	memberFails(`---\nname: m\ntitle: t\ndescription: ${"长".repeat(301)}\n---\n`, /description.*300/);
+});
+
+/** A root is a directory that may hold agents/*.md and teams.yaml, like a module directory or the state directory. */
+function root(files: Record<string, string>): string {
+	const dir = mkdtempSync(join(tmpdir(), "psa-root-"));
+	mkdirSync(join(dir, "agents"));
+	for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
+	return dir;
+}
+const person = (name: string, title: string) => `---\nname: ${name}\ntitle: ${title}\ndescription: ${title}的说明\n---\n你是${title}。\n`;
+const team = (name: string, ...members: string[]) => `${name}:\n  description: ${name}的说明\n  members:\n${members.map((m) => `    - ${m}\n`).join("")}`;
+const loadRoster = (...roots: string[]) => Roster.load([BUILTIN_ROOT, ...roots], ALLOWED);
+const oneLine = (fn: () => unknown, ...parts: (string | RegExp)[]) =>
+	assert.throws(fn, (e: Error) => {
+		assert.ok(e instanceof ConfigError, String(e));
+		assert.ok(!e.message.includes("\n"), e.message);
+		for (const part of parts) typeof part === "string" ? assert.ok(e.message.includes(part), e.message) : assert.match(e.message, part);
+		return true;
+	});
+
+test("内置只有成员「通用助手」和只含它的默认团队；不存在的目录跳过", () => {
+	const roster = loadRoster(join(tmpdir(), "psa-no-such-root"));
+	const builtin = roster.team(DEFAULT_TEAM)!;
+	assert.deepEqual(builtin.members.map((m) => [m.name, m.title]), [["general", "通用助手"]]);
+	assert.deepEqual(builtin.crew, []);
+	assert.deepEqual([...roster.teamBook([]).kinds], [[DEFAULT_TEAM, "solo"]]);
+	assert.equal(roster.team("新闻队"), undefined);
+});
+
+test("成员和团队来自内置、模块、状态目录三处：团队可以用别处定义的成员，成员解析成完整的定义", () => {
+	const module = root({ "agents/analyst.md": person("market-analyst", "行情分析师"), "teams.yaml": team("看盘队", "market-analyst", "general") });
+	const state = root({ "agents/news.md": person("news-researcher", "新闻研究员"), "teams.yaml": team("新闻队", "news-researcher") + team("研究队", "news-researcher", "market-analyst") });
+	const roster = loadRoster(module, state);
+	assert.deepEqual(roster.team("看盘队")!.members.map((m) => m.title), ["行情分析师", "通用助手"]);
+	assert.deepEqual(roster.team("看盘队")!.crew.map((m) => m.name), ["market-analyst"]);
+	assert.deepEqual(roster.team("研究队")!.crew.map((m) => m.prompt), ["你是新闻研究员。", "你是行情分析师。"]);
+	assert.equal(roster.team("新闻队")!.description, "新闻队的说明");
+});
+
+test("两处定义了同名成员：启动报一行错，写出两个文件；和内置的通用助手同名也一样", () => {
+	const a = root({ "agents/x.md": person("analyst", "甲") });
+	const b = root({ "agents/y.md": person("analyst", "乙") });
+	oneLine(() => loadRoster(a, b), join(a, "agents/x.md"), join(b, "agents/y.md"), /成员重名：analyst/);
+	const mine = root({ "agents/general.md": person("general", "我的通用") });
+	oneLine(() => loadRoster(mine), join(BUILTIN_ROOT, "agents/general.md"), join(mine, "agents/general.md"));
+});
+
+test("两处定义了同名团队：启动报一行错，写出两个文件和行号；不能重新定义默认团队", () => {
+	const a = root({ "teams.yaml": team("新闻队", "general") });
+	const b = root({ "teams.yaml": `# 我的\n${team("新闻队", "general")}` });
+	oneLine(() => loadRoster(a, b), `${join(a, "teams.yaml")}:1`, `${join(b, "teams.yaml")}:2`, /团队重名：新闻队/);
+	oneLine(() => loadRoster(root({ "teams.yaml": team(DEFAULT_TEAM, "general") })), /团队重名：默认/, "内置");
+});
+
+test("团队名单里有不存在的成员：启动报错，写出文件、行号、团队和成员名", () => {
+	const dir = root({ "teams.yaml": team("新闻队", "news-researcher") });
+	oneLine(() => loadRoster(dir), `${join(dir, "teams.yaml")}:1`, /团队 新闻队 的成员 news-researcher 不存在/);
+});
+
+test("成员文件有错时，加载名册就报出那个文件", () => {
+	const dir = root({ "agents/bad.md": person("bad", "坏").replace("---\n你", "model: deepseek/deepseek-flash\n---\n你") });
+	oneLine(() => loadRoster(dir), join(dir, "agents/bad.md"), /只能用/);
+});
+
+test("给幕僚长的名册只有团队名和说明，没有成员；默认团队不列", () => {
+	const dir = root({ "agents/news.md": person("news-researcher", "新闻研究员"), "teams.yaml": team("新闻队", "news-researcher") + team("杂务队", "general") });
+	assert.equal(loadRoster(dir).routerPrompt(), "- 新闻队：新闻队的说明\n- 杂务队：杂务队的说明");
+	assert.equal(loadRoster().routerPrompt(), "");
+});
+
+test("给内核的团队簿：除通用助手外还有成员的是成队，只有通用助手的是单人；规则钉死的团队按规则 id 记下", () => {
+	const dir = root({ "agents/news.md": person("news-researcher", "新闻研究员"), "teams.yaml": team("新闻队", "news-researcher") + team("杂务队", "general") });
+	const book = loadRoster(dir).teamBook([{ id: "user/news", team: "新闻队" }, { id: "user/ci" }]);
+	assert.deepEqual([...book.kinds], [[DEFAULT_TEAM, "solo"], ["新闻队", "crew"], ["杂务队", "solo"]]);
+	assert.deepEqual([...book.pinned], [["user/news", "新闻队"]]);
+});
+
+test("规则写的团队不存在：启动报一行错，写出规则、团队名和现有的团队", () => {
+	const dir = root({ "teams.yaml": team("杂务队", "general") });
+	oneLine(() => loadRoster(dir).teamBook([{ id: "user/news", team: "新闻队" }]), /规则 user\/news/, /新闻队/, /默认、杂务队/);
 });
