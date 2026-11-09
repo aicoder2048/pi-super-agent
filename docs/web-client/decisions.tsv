@@ -41,3 +41,7 @@ ts	phase	decision	why	evidence	result
 2026-11-09T10:08:32Z	m1-architect	线程按股票加纽约交易日（如 us-market:NVDA:2026-11-09），档位个股从 3% 起 [3,5,8]、指数 [1.5,2,3]、放量 5 倍；M1 叠在 W2 上，让页面「关注的来源」显示「美股行情」	按股票的线程会把明天的波动直送昨天的任务；2% 档进 Router 多半被忽略只增噪音	两个 runner 的待定问题	decided
 2026-11-09T11:02:05Z	m1-verdict	M1 在 43bdab5 复验 PASS：审计 9 项按意图复现均已修好，真实宿主中 Worker 环境无密钥变量，状态目录与日志扫描 0 命中	审计后又改了 15 项，按规则在新头复验	scratchpad/m1/probe-v2.ts, procenv.py	PASS
 2026-11-09T11:02:05Z	m1-verdict	不修三条小问题：Mac 睡眠跨收盘的误报、minGapMs 可被使用者设小、lookup 日期只校验格式	Mac mini 常开；默认值正确且有 429 兜底；最坏只浪费一次额度	复验报告	decided
+2026-11-09T11:10:15Z	f1-architect	F1 以 candidate-1 为底：点击发 POST /say {answer:{reportId,option}}，内核拼「回答任务「标题」：选项」作为使用者的话，externalId=answer:<reportId> 靠唯一约束去重，内核拒绝把它开新任务或转给别的任务；DashboardRow.question 取代 latestQuestion；久无进展只在内核 #stall 判断，Watchdog 改读 row.stall；嫁接 candidate-2 的选项校验（2 到 4 个、每个至多 20 字、不重复、只随问题）	candidate-1 的去重与路由兜底在服务端，不靠提示词；candidate-2 的重复回答靠 Router 提示词识别更脆弱	scratchpad/arena-f1/candidate-1, candidate-2	decided
+2026-11-09T11:10:15Z	f1-architect	接受推断任务的选项可被注入的风险，写进 ADR	推断任务不能对外行动只出草稿；选项文字在使用者眼前，点击是使用者的选择	candidate-1 待定问题	decided
+2026-11-09T12:04:12Z	f1-verdict	F1 在 5797632 复验 PASS：审计 7 项按意图修好，真实浏览器走通点选、等待转交、已回答、久无进展与警示圆点，TUI 19/19	审计后改了 12 项，按规则在新头复验	scratchpad/rvf1/; scratchpad/f1-shots/verify-*.png	PASS
+2026-11-09T12:04:12Z	f1-verdict	不修：卡片按钮早于幕僚长转述约一秒，先点会让回答排在问题前；U+3164 等少数不可见字母仍可作选项	回答送达正确，卡片才是问题的权威来源；剩余字符罕见且不影响授权	复验报告	decided
