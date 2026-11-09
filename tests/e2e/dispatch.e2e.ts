@@ -123,6 +123,15 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 				assert.equal(sessions("market-analyst").length, 1, "两次派活接在同一份会话上");
 				assert.equal(sessions("news-researcher").length, 1);
 			});
+			await step("刷新页面后重新打开任务，三次派活的状态和回复还在（来自助手的会话记录）", async (page) => {
+				await page.reload();
+				await waitStatus(page, "connected");
+				await page.locator("#helpers .helper-chip", { hasText: "看盘队 #1" }).click();
+				await page.waitForFunction(() => [...document.querySelectorAll("#steps .step-detail")].filter((n) => n.textContent === "行情分析师 · 完成").length === 2);
+				const news = page.locator("#steps .step", { hasText: "新闻研究员 · 完成" });
+				await news.locator("summary", { hasText: "派活明细" }).click();
+				assert.equal(await news.locator(".dispatch-reply").textContent(), NEWS_REPLY);
+			});
 			await step("成员的用量计入任务：执行过程头部的 token 数等于助手和成员每次模型请求之和", async (page) => {
 				const requests = fake.exchanges.filter((e) => e.model === "worker").length;
 				assert.match(await page.locator("#how-life").textContent() ?? "", new RegExp(`tokens 入 ${requests * 10} / 出 ${requests * 5}$`));
