@@ -11,7 +11,7 @@ const quote = (body: string) => ({ source: "toy-market", externalId: "x", thread
 
 test("仓库里的模块都被发现，规则带模块前缀", () => {
 	const modules = Modules.load([repoModules]);
-	assert.deepEqual(modules.modules.map((m) => m.name), ["toy-market", "us-market"]);
+	assert.deepEqual(modules.modules.map((m) => m.name), ["pi-pi", "toy-market", "us-market"]);
 	assert.ok(modules.ruleAllows("toy-market/big-move", "toy-market"));
 	assert.ok(!modules.ruleAllows("big-move", "toy-market"));
 	assert.match(modules.rulesPrompt(), /### toy-market\/big-move/);
