@@ -50,6 +50,10 @@ export function nyDateOf(ms: number): string {
 	return nyWall(ms).nyDate;
 }
 
+export function shiftDate(date: string, days: number): string {
+	return new Date(Date.parse(`${date}T12:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
 export function nyTime(ms: number): string {
 	const { minutes } = nyWall(ms);
 	return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;

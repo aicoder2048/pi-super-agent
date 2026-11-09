@@ -42,7 +42,7 @@ drop source thread +body:
 toy-feed symbol="TOYX" change="-5.2" volume="12":
     {{run}} modules/toy-market/feed.ts {{symbol}} {{change}} {{volume}}
 
-# 用真实行情接口取一次自选股快照，打印成表（不打印密钥）。密钥来自环境变量或 config.json 的 secretsFile。
+# 用真实行情接口取一次自选股快照打印成表，再打印第一只自选股的日线指标和 Finnhub 财报（不打印密钥）。密钥来自环境变量或 config.json 的 secretsFile。
 market-smoke:
     {{run}} src/cli/market-smoke.ts
 
