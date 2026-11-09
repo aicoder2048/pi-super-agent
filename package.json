@@ -1,0 +1,10 @@
+{
+  "name": "pi-super-agent",
+  "private": true,
+  "type": "module",
+  "description": "Only for just e2e and just demo. Pi itself is still resolved from the global install by src/pi-runtime.mjs.",
+  "engines": { "node": ">=22.18" },
+  "devDependencies": {
+    "playwright-core": "1.59.1"
+  }
+}

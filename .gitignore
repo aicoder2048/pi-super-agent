@@ -5,3 +5,6 @@ __pycache__/
 
 # Local symlink to courseware outside the repo (absolute path, machine-specific)
 /docs/super-agent-courseware
+node_modules/
+tests/e2e/.out/
+demos/out/

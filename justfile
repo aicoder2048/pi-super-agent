@@ -77,3 +77,14 @@ tail:
 # 内核、宿主组装点和其余全部自动测试。
 test:
     {{run}} --test --test-timeout=30000 tests/*.test.ts tests/*.test.mjs
+
+# 端到端测试：真实宿主、Worker 子进程和无头浏览器，模型换成 tests/e2e/fake-model.ts 的本地假模型，
+# 不请求任何真实模型或行情接口。首次运行自动装 playwright-core 和浏览器。失败报告在 tests/e2e/.out/<测试>/index.html。
+# 故意弄坏某一步：PSA_E2E_SABOTAGE="Router 回复" just e2e；让 Worker 崩溃：PSA_E2E_SABOTAGE="Worker 汇报:crash" just e2e
+e2e: _browser
+    {{run}} --test --test-reporter=spec --test-timeout=90000 tests/e2e/*.e2e.ts
+
+# 装依赖和浏览器；都装好时几乎不花时间。
+_browser kind="chromium-headless-shell":
+    @[ -d node_modules/playwright-core ] || npm ci --no-audit --no-fund --loglevel=error
+    @npx --no-install playwright-core install {{kind}} >/dev/null
