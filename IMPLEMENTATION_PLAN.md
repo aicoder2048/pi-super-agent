@@ -554,12 +554,16 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] Edit `roles/deputy.md`（行情问题该请教谁、一般两三位、冲突明写、报价写时间和来源）。
 - [x] Create `tests/expert-roles.test.ts`，edit `tests/modules.test.ts`。
 - [x] Create `tests/e2e/experts.e2e.ts`，edit `tests/e2e/harness.ts`（StoryOptions 加 `env`）。
+- [x] 修正轮：cherry-pick #26 的缓存提交（064ad28、7f2314d）；edit `src/host/consult.ts`、`src/host/workers.ts`、`src/host/config.ts`、`src/host/wiring.ts`、`src/client/protocol.ts`（专家槽位和排队）；edit `src/web/view.mjs`、`src/web/app.mjs`、`src/web/index.html`（Markdown、卡片三行、助手条总数固定）。
 
 **Build.**
 
 - [x] 四个角色各有清楚的职责、最小的工具白名单、汇报格式（结论、证据、来源和时间），行情一律写报价时间。技术分析师只引用 `lookup indicators` 的数字，标出 `lastBar.partial`；财报解读读 `lookup earnings`。
 - [x] pi-pi 专家作为模块角色，可被副幕僚长会诊。
 - [x] 副幕僚长的提示词按问题挑看盘专家，合成时写明冲突和报价时间。
+- [x] 第一次现场四位专家全部超时，修正：宿主级专家上限 `maxConcurrentExperts`（默认 4），多出来的排队，页面写「排队中」；时限从专家开始算，排队也限一个时限，牵头人最多等两个时限；回答超过 2000 字截断。
+- [x] 大波动规则只提示行情分析师和技术分析师，个股自己大动且盘面解释不了时副幕僚长再请教新闻研究员；专家先用 lookup，新闻研究员最多读 3 页，回答不超过 600 字。
+- [x] 页面：幕僚长气泡、任务卡、会诊回答和提交结果按安全的 Markdown 子集渲染（只建节点，不用 innerHTML）；任务卡摘要三行；「今日 N 位」固定在助手条右边。
 
 **You see.**
 
