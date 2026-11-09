@@ -300,7 +300,8 @@ test("客户端：宿主收下但不回 ack（卡住了）时提醒使用者这�
 const row = (over: Partial<DashboardRow>): DashboardRow => ({
 	id: "tkt_3f2a9c", title: "整理本周的会议纪要并发给团队", stage: "running", basis: "request",
 	latestSummary: "已经读完五份纪要，正在合并重复的行动项，预计还要两分钟", model: "openai-codex/gpt-6.1-sol",
-	fellBack: false, toolCalls: 12, tokensIn: 3200, tokensOut: 800, elapsedMs: 312_000, question: null, stall: null, lastProgressAt: null, ...over,
+	fellBack: false, toolCalls: 12, tokensIn: 3200, tokensOut: 800, elapsedMs: 312_000, question: null, stall: null, lastProgressAt: null,
+	helper: { name: "听松", role: "market", seq: 2 }, workerState: "running", startedAt: 0, endedAt: null, ...over,
 });
 
 const asking = (id: string, reportId: string, over: Partial<NonNullable<DashboardRow["question"]>> = {}) =>
@@ -392,7 +393,7 @@ test("看板：任意终端宽度下每行都不超宽（含中文双宽字符�
 
 test("看板：卡片带齐标题、阶段、依据、最近汇报、模型、工具次数、token 和时长", () => {
 	const lines = renderBoard({ rows: [row({ fellBack: true })], receivedAt: 0, connected: true }, 120, 10_000).join("\n");
-	for (const part of ["3f2a", "整理本周", "执行中", "请求", "已经读完", "gpt-6.1-sol（已回退）", "工具 12", "4.0k tok", "5分22秒"]) {
+	for (const part of ["3f2a", "整理本周", "执行中", "请求", "已经读完", "听松 · 行情助手 #2", "gpt-6.1-sol（已回退）", "工具 12", "4.0k tok", "5分22秒"]) {
 		assert.ok(lines.includes(part), part);
 	}
 	assert.equal(shortId("tkt_3f2a9c"), "3f2a");

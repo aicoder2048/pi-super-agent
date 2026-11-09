@@ -1,6 +1,6 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { DashboardRow } from "../kernel/types.ts";
-import { BASIS_LABEL, STAGE_LABEL, formatElapsed, formatTokens, isLive, modelText, selectRows, shortId, stallMinutes } from "./board-format.mjs";
+import { BASIS_LABEL, STAGE_LABEL, formatElapsed, formatTokens, helperFullName, isLive, modelText, selectRows, shortId, stallMinutes } from "./board-format.mjs";
 
 export { shortId };
 
@@ -51,7 +51,7 @@ export function renderBoard(view: BoardView, width: number, now: number): string
 			}
 		}
 		lines.push(fit(`   最近：${row.latestSummary ?? "（暂无汇报）"}`, width));
-		lines.push(fit(`   ${modelText(row)} · 工具 ${row.toolCalls} · ${formatTokens(row.tokensIn + row.tokensOut)} tok · ${formatElapsed(elapsed)}`, width));
+		lines.push(fit(`   ${[helperFullName(row.helper), modelText(row)].filter(Boolean).join(" · ")} · 工具 ${row.toolCalls} · ${formatTokens(row.tokensIn + row.tokensOut)} tok · ${formatElapsed(elapsed)}`, width));
 	}
 	if (hiddenClosed) lines.push(fit(`   另有 ${hiddenClosed} 个已结束的任务`, width));
 	if (openChoices(view.rows).length) lines.push(fit("   回复数字作答；多个问题等回答时用 /answer <编号> <序号>", width));
