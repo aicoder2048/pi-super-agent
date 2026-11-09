@@ -11,15 +11,15 @@ export interface ClientHandlers {
 	transcript?(ticketId: string): unknown[];
 }
 
-export class Seams<K extends object> {
+export class HistoryEchoFilter<K extends object> {
 	readonly #last = new WeakMap<K, string>();
 
-	open(watcher: K, history: unknown[]): void {
+	opened(watcher: K, history: unknown[]): void {
 		if (history.length) this.#last.set(watcher, JSON.stringify(history.at(-1)));
 		else this.#last.delete(watcher);
 	}
 
-	repeats(watcher: K, json: string): boolean {
+	isEcho(watcher: K, json: string): boolean {
 		const last = this.#last.get(watcher);
 		this.#last.delete(watcher);
 		return last === json;
@@ -38,7 +38,7 @@ interface ClientConn {
 export class HostServer {
 	readonly #server: Server;
 	readonly #clients = new Set<ClientConn>();
-	readonly #seams = new Seams<ClientConn>();
+	readonly #echoes = new HistoryEchoFilter<ClientConn>();
 
 	constructor(clients: ClientHandlers, workers: WorkerRequestHandler) {
 		this.#server = createServer((socket) => {
@@ -76,7 +76,7 @@ export class HostServer {
 					client!.watching = typeof r.ticketId === "string" ? r.ticketId : undefined;
 					if (client!.watching && clients.transcript) {
 						const messages = clients.transcript(client!.watching);
-						this.#seams.open(client!, messages);
+						this.#echoes.opened(client!, messages);
 						writeJsonLine(socket, { type: "transcript_history", ticketId: client!.watching, messages });
 					}
 				}
@@ -102,7 +102,7 @@ export class HostServer {
 	sendTranscript(ticketId: string, message: unknown): void {
 		const json = JSON.stringify(message);
 		for (const c of this.#clients) {
-			if (c.watching === ticketId && !this.#seams.repeats(c, json)) writeJsonLine(c.socket, { type: "transcript", ticketId, message });
+			if (c.watching === ticketId && !this.#echoes.isEcho(c, json)) writeJsonLine(c.socket, { type: "transcript", ticketId, message });
 		}
 	}
 

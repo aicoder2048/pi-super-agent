@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { ConfigError } from "../config-error.ts";
 import type { HostToClient, TranscriptMessage } from "../client/protocol.ts";
-import { Seams, type Broadcast } from "./server.ts";
+import { HistoryEchoFilter, type Broadcast } from "./server.ts";
 
 type Snapshot = Omit<Extract<HostToClient, { type: "snapshot" }>, "type">;
 
@@ -44,7 +44,7 @@ export class WebGateway {
 	readonly #token = randomBytes(32).toString("hex");
 	readonly #streams = new Set<ServerResponse>();
 	readonly #watchers = new Map<string, Set<ServerResponse>>();
-	readonly #seams = new Seams<ServerResponse>();
+	readonly #echoes = new HistoryEchoFilter<ServerResponse>();
 	readonly #host: WebHost;
 	#port = 0;
 
@@ -81,7 +81,7 @@ export class WebGateway {
 		if (!watchers) return;
 		const frame = sseFrame({ type: "transcript", ticketId, message });
 		const json = JSON.stringify(message);
-		for (const res of watchers) if (!this.#seams.repeats(res, json)) res.write(frame);
+		for (const res of watchers) if (!this.#echoes.isEcho(res, json)) res.write(frame);
 	}
 
 	close(): Promise<void> {
@@ -112,7 +112,7 @@ export class WebGateway {
 			const watchers = this.#watchers.get(ticketId) ?? new Set();
 			this.#watchers.set(ticketId, watchers);
 			const messages = this.#host.transcript(ticketId);
-			this.#seams.open(res, messages);
+			this.#echoes.opened(res, messages);
 			return this.#openStream(res, { type: "transcript_history", ticketId, messages }, watchers, () => this.#watchers.delete(ticketId));
 		}
 		deny(res, 404);
