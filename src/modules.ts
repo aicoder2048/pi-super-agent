@@ -21,7 +21,7 @@ export interface LoadedModule {
 	name: string;
 	dir: string;
 	manifest: ModuleManifest;
-	rules: Rule[];
+	rules: ScopedRule[];
 	skillsDir: string | undefined;
 }
 
@@ -29,6 +29,10 @@ export interface Rule {
 	id: string;
 	text: string;
 	sources?: string[];
+}
+
+export interface ScopedRule extends Rule {
+	sources: string[];
 }
 
 const RULE_HEADING = /^##\s+([\w-]+)\s*$/;
@@ -74,12 +78,14 @@ function loadModule(dir: string): LoadedModule {
 
 export class Modules {
 	readonly modules: LoadedModule[];
-	readonly userRules: Rule[];
-	readonly #scopes: Map<string, string[] | undefined>;
+	readonly userRules: ScopedRule[];
+	readonly skippedUserRules: string[];
+	readonly #scopes: Map<string, string[]>;
 
-	constructor(modules: LoadedModule[], userRules: Rule[]) {
+	constructor(modules: LoadedModule[], userRules: ScopedRule[], skippedUserRules: string[]) {
 		this.modules = modules;
 		this.userRules = userRules;
+		this.skippedUserRules = skippedUserRules;
 		this.#scopes = new Map(this.allRules().map((r) => [r.id, r.sources]));
 	}
 
@@ -95,11 +101,13 @@ export class Modules {
 		const names = modules.map((m) => m.name);
 		const dup = names.find((n, i) => names.indexOf(n) !== i);
 		if (dup) throw new ConfigError(`模块重名：${dup}`);
-		const userRules = userRulesFile && existsSync(userRulesFile) ? parseRules("user", readFileSync(userRulesFile, "utf8")) : [];
-		return new Modules(modules, userRules);
+		const parsed = userRulesFile && existsSync(userRulesFile) ? parseRules("user", readFileSync(userRulesFile, "utf8")) : [];
+		const userRules = parsed.filter((r): r is ScopedRule => !!r.sources?.length);
+		const skipped = parsed.filter((r) => !r.sources?.length).map((r) => r.id);
+		return new Modules(modules, userRules, skipped);
 	}
 
-	allRules(): Rule[] {
+	allRules(): ScopedRule[] {
 		return [...this.userRules, ...this.modules.flatMap((m) => m.rules)];
 	}
 
@@ -108,9 +116,7 @@ export class Modules {
 	}
 
 	ruleAllows = (ruleId: string, triggerSource: string): boolean => {
-		if (triggerSource === "conversation" || !this.#scopes.has(ruleId)) return false;
-		const sources = this.#scopes.get(ruleId);
-		return !sources || sources.includes(triggerSource);
+		return triggerSource !== "conversation" && (this.#scopes.get(ruleId)?.includes(triggerSource) ?? false);
 	};
 
 	rulesFor = (triggerSource: string): string[] => [...this.#scopes.keys()].filter((id) => this.ruleAllows(id, triggerSource));

@@ -40,13 +40,26 @@ test("规则的适用来源：模块规则只适用于模块声明的来源", ()
 	assert.deepEqual(modules.rulesFor("mail"), []);
 });
 
-test("规则的适用来源：使用者规则不写来源行时适用于所有非对话来源，写了就只适用于列出的来源", () => {
+test("规则的适用来源：使用者规则必须写来源行才生效，写了就只适用于列出的来源", () => {
 	const dir = mkdtempSync(join(tmpdir(), "psa-rules-"));
 	const file = join(dir, "rules.md");
 	writeFileSync(file, "## any\n有新邮件就看一下\n\n## ci-only\n来源: ci, github\nCI 失败时开任务\n");
 	const modules = Modules.load([], file);
-	assert.ok(modules.ruleAllows("user/any", "mail"));
-	assert.ok(!modules.ruleAllows("user/any", "conversation"));
+	assert.ok(!modules.ruleAllows("user/any", "mail"));
+	assert.deepEqual(modules.rulesFor("mail"), []);
+	assert.doesNotMatch(modules.rulesPrompt(), /user\/any/);
+	assert.deepEqual(modules.skippedUserRules, ["user/any"]);
 	assert.ok(modules.ruleAllows("user/ci-only", "github"));
 	assert.ok(!modules.ruleAllows("user/ci-only", "mail"));
+	assert.ok(!modules.ruleAllows("user/ci-only", "conversation"));
+	assert.match(modules.rulesPrompt(), /### user\/ci-only/);
+});
+
+test("规则的适用来源：来源行里一个来源都没有的使用者规则同样不生效", () => {
+	const file = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
+	writeFileSync(file, "## empty\n来源: ，\n有新邮件就看一下\n");
+	const modules = Modules.load([], file);
+	assert.ok(!modules.ruleAllows("user/empty", "mail"));
+	assert.deepEqual(modules.skippedUserRules, ["user/empty"]);
+	assert.equal(modules.rulesPrompt(), "");
 });

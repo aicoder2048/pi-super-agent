@@ -81,3 +81,7 @@ ts	phase	decision	why	evidence	result
 2026-11-09T04:54:26Z	followup	StartupError 改名 ConfigError 并移到 src/，其余 9 处可由配置触发的错误（另含 module.json 语法错误）改抛 ConfigError	models、modules、timer 不在 src/host 下；两个设计 runner 独立推荐同一方案：在检查处直接抛，try 只包 JSON.parse 与 new RegExp，模型错误用 where 参数带上配置键	tests/host-main.test.ts 在测试提交上 11 红、修复后 14 绿；just host/watchdog 实测；state.db 是目录时仍有完整堆栈	done
 2026-11-09T04:54:26Z	followup	撤掉 host-main 测试表的并发	并发让 host-events.test.ts:22 在 5 次里失败 3 次（main 上 5 次全过，关掉并发 5 次全过）；全量耗时并发 4.8s、串行 4.9s，几乎没有收益，因为测试文件之间本来就并行	5 次对照运行	done
 2026-11-09T04:54:26Z	followup	仍未覆盖：配置里类型写错（模型名不是字符串、sources/timers/ignore 不是数组、kernel 与数值字段未校验）会以 TypeError 带堆栈崩溃；modules.ts 的 classify 每次触发都重新编译 ignore 正则	超出本 PR：需要单独做类型校验；正则重复编译是 PR 之前就有的热路径问题	simplify 的 altitude 与 efficiency 审查	open
+2026-11-09T05:12:39Z	decide	回退模型保持 deepseek/deepseek-flash，每日上限仍只管 Worker	使用者 2026-11-08 选择按建议：预充值，最坏情况是花完余额；Router 不受上限是已知取舍	使用者在对话里的答复	done
+2026-11-09T05:12:39Z	decide	推断 Worker 增加只读联网工具（只允许 GET）	使用者 2026-11-08 决定加；接受 URL 可能带出数据的风险；程序仍拦非公网地址、限时、限大小	使用者在对话里的答复	open
+2026-11-09T05:12:39Z	decide	使用者规则必须写明 来源: 才生效	使用者 2026-11-08 选择；不写来源的规则不再适用于所有非对话来源	使用者在对话里的答复	open
+2026-11-09T05:17:48Z	rule-sources	使用者规则缺 来源 时在加载阶段丢弃，记入 skippedUserRules，宿主启动时逐条警告；删掉 ruleAllows 里全部放行的分支	两个设计 runner 独立推荐同一方案；保留不生效的规则会让 Router 引用后被内核拒绝	modules 测试先红后绿；host-main 子进程测试看到警告；真实入口正常启动时日志有警告且规则计数不含被跳过的规则	done
