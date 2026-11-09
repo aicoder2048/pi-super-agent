@@ -45,18 +45,24 @@ export interface ScopedRule extends Rule {
 
 const RULE_HEADING = /^##\s+([\w-]+)\s*$/;
 const RULE_SOURCES = /^来源\s*[:：]\s*(.+)$/;
-const RULE_TEAM = /^团队\s*[:：]\s*(\S+)$/;
+const RULE_TEAM = /^团队\s*[:：]\s*(.*)$/;
 
-export function parseRules(namespace: string, markdown: string): Rule[] {
+/** file only names the rules file in an error. */
+export function parseRules(file: string, namespace: string, markdown: string): Rule[] {
 	const rules: Rule[] = [];
 	for (const line of markdown.split("\n")) {
 		const heading = line.match(RULE_HEADING);
 		const sources = line.trim().match(RULE_SOURCES);
 		const team = line.trim().match(RULE_TEAM);
+		const rule = rules.at(-1);
 		if (heading) rules.push({ id: `${namespace}/${heading[1]}`, text: "" });
-		else if (sources && rules.length) rules[rules.length - 1].sources = sources[1].split(/[,，\s]+/).filter(Boolean);
-		else if (team && rules.length) rules[rules.length - 1].team = team[1];
-		else if (rules.length) rules[rules.length - 1].text += line + "\n";
+		else if (!rule) continue;
+		else if (sources) rule.sources = sources[1].split(/[,，\s]+/).filter(Boolean);
+		else if (team) {
+			if (rule.team !== undefined) throw new ConfigError(`${file}：规则 ${rule.id} 写了两行「团队：」，一条规则只能交给一个团队`);
+			if (!team[1] || /\s/.test(team[1])) throw new ConfigError(`${file}：规则 ${rule.id} 的「团队：」后面要写一个团队名，中间不能有空白，这一行是「${line.trim()}」`);
+			rule.team = team[1];
+		} else rule.text += line + "\n";
 	}
 	return rules.map((r) => ({ ...r, text: r.text.trim() })).filter((r) => r.text);
 }
@@ -77,7 +83,7 @@ function loadModule(dir: string): LoadedModule {
 	const rulesPath = join(dir, "rules.md");
 	const skillsDir = join(dir, "skills");
 	const moduleSources = [manifest.name, ...(manifest.sources ?? []).map((s) => s.name), ...(manifest.timers ?? []).map((t) => t.source ?? manifest.name)];
-	const rules = existsSync(rulesPath) ? parseRules(manifest.name, readFileSync(rulesPath, "utf8")) : [];
+	const rules = existsSync(rulesPath) ? parseRules(rulesPath, manifest.name, readFileSync(rulesPath, "utf8")) : [];
 	return {
 		name: manifest.name,
 		dir,
@@ -112,7 +118,7 @@ export class Modules {
 		const names = modules.map((m) => m.name);
 		const dup = names.find((n, i) => names.indexOf(n) !== i);
 		if (dup) throw new ConfigError(`模块重名：${dup}`);
-		const parsed = userRulesFile && existsSync(userRulesFile) ? parseRules("user", readFileSync(userRulesFile, "utf8")) : [];
+		const parsed = userRulesFile && existsSync(userRulesFile) ? parseRules(userRulesFile, "user", readFileSync(userRulesFile, "utf8")) : [];
 		const userRules = parsed.filter((r): r is ScopedRule => !!r.sources?.length);
 		const skipped = parsed.filter((r) => !r.sources?.length).map((r) => r.id);
 		return new Modules(modules, userRules, skipped);

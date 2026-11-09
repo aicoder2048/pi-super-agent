@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { ConfigError } from "../src/config-error.ts";
 import { Modules, parseRules } from "../src/modules.ts";
 
 const repoModules = fileURLToPath(new URL("../modules", import.meta.url));
@@ -31,7 +32,7 @@ test("行情来源：模块里标了 market 的来源（玩具行情、美股行
 });
 
 test("规则文件按二级标题切分，空规则不算", () => {
-	assert.deepEqual(parseRules("user", "# 标题\n## a\n第一条\n\n## b\n\n## c\n第三条"), [
+	assert.deepEqual(parseRules("rules.md", "user", "# 标题\n## a\n第一条\n\n## b\n\n## c\n第三条"), [
 		{ id: "user/a", text: "第一条" },
 		{ id: "user/c", text: "第三条" },
 	]);
@@ -70,7 +71,7 @@ test("规则的适用来源：来源行里一个来源都没有的使用者规�
 });
 
 test("规则的「团队：」行：从正文里取出来记在规则上；幕僚长看到的规则里写明团队；没写的规则没有团队", () => {
-	assert.deepEqual(parseRules("user", "## news\n来源: rss\n团队：新闻队\n有听证会新闻就查一下\n\n## ci\n来源: ci\nCI 失败时开任务"), [
+	assert.deepEqual(parseRules("rules.md", "user", "## news\n来源: rss\n团队：新闻队\n有听证会新闻就查一下\n\n## ci\n来源: ci\nCI 失败时开任务"), [
 		{ id: "user/news", text: "有听证会新闻就查一下", sources: ["rss"], team: "新闻队" },
 		{ id: "user/ci", text: "CI 失败时开任务", sources: ["ci"] },
 	]);
@@ -79,4 +80,23 @@ test("规则的「团队：」行：从正文里取出来记在规则上；幕�
 	const modules = Modules.load([], file);
 	assert.deepEqual(modules.allRules().map((r) => [r.id, r.team]), [["user/news", "新闻队"], ["user/ci", undefined]]);
 	assert.equal(modules.rulesPrompt(), "### user/news\n团队：新闻队\n有听证会新闻就查一下\n\n### user/ci\nCI 失败时开任务");
+});
+
+test("规则的「团队：」行写坏了（团队名里有空白、没写团队名、一条规则写了两行）：加载时报错，写出规则文件和规则 id", () => {
+	for (const [lines, message] of [
+		["团队：新闻 队", /团队名/],
+		["团队：", /团队名/],
+		["团队：新闻队\n团队: 看盘队", /两行/],
+	] as const) {
+		const file = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
+		writeFileSync(file, `## ci\n来源: ci\nCI 失败时开任务\n\n## news\n来源: rss\n${lines}\n有听证会新闻就查一下\n`);
+		assert.throws(() => Modules.load([], file), (e: Error) => {
+			assert.ok(e instanceof ConfigError, String(e));
+			assert.ok(e.message.startsWith(file), e.message);
+			assert.ok(!e.message.includes("\n"), e.message);
+			assert.match(e.message, /user\/news/);
+			assert.match(e.message, message);
+			return true;
+		}, lines);
+	}
 });
