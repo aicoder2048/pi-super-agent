@@ -24,6 +24,7 @@ export interface HostDeps {
 	afterCommand: () => void;
 	stateDir: string;
 	socketPath: string;
+	rulesFor: (triggerSource: string) => string[];
 }
 
 export interface HostOptions {
@@ -31,7 +32,8 @@ export interface HostOptions {
 	clock?: Clock;
 	config?: Partial<KernelConfig>;
 	sourcePolicy?: SourcePolicy;
-	isKnownRule?: (ruleId: string) => boolean;
+	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
+	rulesFor?: (triggerSource: string) => string[];
 	timers?: TimerEntry[];
 	heartbeatMs?: number;
 	workerModels: WorkerModels;
@@ -65,7 +67,7 @@ export class Host {
 			db: openStore(join(options.stateDir, "state.db")),
 			clock,
 			sourcePolicy: (trigger) => (trigger.source === WATCHDOG_SOURCE ? "notice" : (options.sourcePolicy?.(trigger) ?? "candidate")),
-			isKnownRule: options.isKnownRule,
+			ruleAllows: options.ruleAllows,
 			config: options.config,
 		});
 		const submit = (trigger: TriggerSubmission) => {
@@ -83,7 +85,7 @@ export class Host {
 			},
 			writeCursor: (at) => this.kernel.setSourceCursor("timer", String(at)),
 		});
-		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath };
+		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []) };
 		this.workers = new WorkerExecutor({
 			kernel: this.kernel,
 			spawner: options.createSpawner(deps),
@@ -115,7 +117,7 @@ export class Host {
 
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
-		const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath };
+		const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath, rulesFor: options.rulesFor ?? (() => []) };
 		host.router = await options.createRouter(deps);
 		await host.server.listen(host.socketPath);
 		const recovered = host.kernel.recoverOnStartup();

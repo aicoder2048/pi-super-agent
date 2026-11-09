@@ -40,7 +40,8 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		config: config.kernel,
 		log,
 		sourcePolicy: modules.sourcePolicy,
-		isKnownRule: modules.isKnownRule,
+		ruleAllows: modules.ruleAllows,
+		rulesFor: modules.rulesFor,
 		timers: modules.timers(),
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
 		createRouter: (deps) =>
@@ -52,6 +53,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 				cwd: join(config.stateDir, "router"),
 				sessionDir: join(config.stateDir, "sessions", "router"),
 				rules: modules.rulesPrompt(),
+				rulesFor: modules.rulesFor,
 				afterCommand: deps.afterCommand,
 				onError: (e) => log(`[router] ${String(e)}`),
 			}),

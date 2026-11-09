@@ -99,7 +99,7 @@ export interface KernelOptions {
 	db: DatabaseSync;
 	clock: Clock;
 	sourcePolicy: SourcePolicy;
-	isKnownRule?: (ruleId: string) => boolean;
+	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	config?: Partial<KernelConfig>;
 }
 
@@ -107,11 +107,12 @@ export class Kernel {
 	readonly #db: DatabaseSync;
 	readonly #clock: Clock;
 	readonly #sourcePolicy: SourcePolicy;
-	readonly #isKnownRule: (ruleId: string) => boolean;
+	readonly #ruleAllows: (ruleId: string, triggerSource: string) => boolean;
+	#batch = new Set<string>();
 	readonly config: KernelConfig;
 
-	constructor({ db, clock, sourcePolicy, isKnownRule = () => true, config }: KernelOptions) {
-		this.#isKnownRule = isKnownRule;
+	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, config }: KernelOptions) {
+		this.#ruleAllows = ruleAllows;
 		this.#db = db;
 		this.#clock = clock;
 		this.#sourcePolicy = sourcePolicy;
@@ -169,6 +170,7 @@ export class Kernel {
 	}
 
 	route(decisions: Decision[]): DecisionResult[] {
+		this.#batch = new Set();
 		return this.#tx(() =>
 			decisions.map((decision) => {
 				const result = this.#decide(decision);
@@ -609,15 +611,20 @@ export class Kernel {
 			case "hand_over": {
 				const trigger = this.#get("SELECT id, body FROM triggers WHERE id = ?", d.triggerId);
 				if (!trigger) return reject(`unknown trigger ${d.triggerId}`);
+				const unusable = this.#evidenceProblem(d.triggerId);
+				if (unusable) return reject(unusable);
 				const problem = this.#acceptsInput(d.ticketId);
 				if (problem) return reject(problem);
 				const kind: InputKind = this.#inConversation(d.triggerId) ? "user_message" : "trigger";
 				this.#addInput(d.ticketId, kind, trigger.body, d.triggerId);
 				this.#setDisposition(d.triggerId, "handed_over", d.ticketId);
+				this.#batch.add(d.triggerId);
 				return { ok: true, ticketId: d.ticketId };
 			}
 			case "ignore": {
 				if (!this.#get("SELECT 1 FROM triggers WHERE id = ?", d.triggerId)) return reject(`unknown trigger ${d.triggerId}`);
+				const unusable = this.#evidenceProblem(d.triggerId);
+				if (unusable) return reject(unusable);
 				this.#setDisposition(d.triggerId, "router_ignored", d.reason);
 				return { ok: true };
 			}
@@ -636,14 +643,28 @@ export class Kernel {
 		}
 	}
 
+	// A trigger backs decisions only in the route batch that takes it off to_router, so an old,
+	// ignored or filtered trigger can never be cited again as the user's request or a rule match.
+	#evidenceProblem(triggerId: string): string | undefined {
+		if (this.#batch.has(triggerId)) return undefined;
+		const row = this.#get("SELECT disposition FROM triggers WHERE id = ?", triggerId);
+		return row.disposition === "to_router" ? undefined : `trigger ${triggerId} was already handled (${row.disposition}); it cannot back another decision`;
+	}
+
 	#openTicket(d: Extract<Decision, { kind: "open_ticket" }>): DecisionResult {
-		if (d.basis === "rule" && !d.ruleId) return reject("basis rule requires a ruleId");
-		if (d.basis === "rule" && !this.#isKnownRule(d.ruleId!)) return reject(`unknown rule ${d.ruleId}; rules come only from the user's rule files`);
-		if (d.triggerId !== undefined && !this.#get("SELECT 1 FROM triggers WHERE id = ?", d.triggerId)) {
-			return reject(`unknown trigger ${d.triggerId}`);
-		}
+		const trigger = d.triggerId === undefined ? undefined : this.#get("SELECT id, source FROM triggers WHERE id = ?", d.triggerId);
+		if (d.triggerId !== undefined && !trigger) return reject(`unknown trigger ${d.triggerId}`);
+		const unusable = d.triggerId === undefined ? undefined : this.#evidenceProblem(d.triggerId);
+		if (unusable) return reject(unusable);
 		if (d.basis === "request" && (d.triggerId === undefined || !this.#inConversation(d.triggerId))) {
 			return reject("basis request requires a conversation trigger from the user");
+		}
+		if (d.basis === "rule") {
+			if (!d.ruleId) return reject("basis rule requires a ruleId");
+			if (!trigger || this.#inConversation(trigger.id)) return reject("basis rule requires an unhandled trigger from a source, not from the conversation");
+			if (!this.#ruleAllows(d.ruleId, trigger.source)) {
+				return reject(`rule ${d.ruleId} does not exist in the user's rule files or does not apply to source ${trigger.source}`);
+			}
 		}
 		const threads = [...new Set(d.threads ?? [])];
 		for (const threadId of threads) {
@@ -675,6 +696,7 @@ export class Kernel {
 			this.#run("INSERT INTO subscriptions (ticket_id, thread_id) VALUES (?, ?)", ticketId, threadId);
 		}
 		this.#addInput(ticketId, "brief", d.brief, d.triggerId ?? null);
+		if (d.triggerId !== undefined) this.#batch.add(d.triggerId);
 		if (d.triggerId !== undefined) this.#setDisposition(d.triggerId, "opened_ticket", ticketId);
 		return { ok: true, ticketId };
 	}

@@ -91,6 +91,7 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 				retry: { maxRetries: 3, baseDelayMs: 1 },
 				sessionDir: options.persist ? join(deps.stateDir, "sessions", "router") : undefined,
 				errorRetryMs: options.errorRetryMs ?? [10, 10, 10],
+				rulesFor: deps.rulesFor,
 				cwd: deps.stateDir,
 				rules: "",
 				afterCommand: deps.afterCommand,

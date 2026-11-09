@@ -40,6 +40,7 @@ function setup({ config, path = ":memory:" }: { config?: Partial<KernelConfig>; 
 	function open(basis: Basis, { threads = [] as string[], title = `${basis} 任务` } = {}) {
 		let triggerId: string | undefined;
 		if (basis === "request") triggerId = say(title).triggerId;
+		if (basis === "rule") triggerId = trigger({ threads: [{ id: `thr_generic:rule-${++n}` }], body: title }).triggerId;
 		for (const id of threads) trigger({ threads: [{ id }] });
 		const [result] = kernel.route([
 			{ kind: "open_ticket", title, basis, ruleId: basis === "rule" ? "rule-1" : undefined, triggerId, threads, brief: title },
@@ -655,7 +656,7 @@ test("依据为规则的任务必须引用使用者写过的规则", () => {
 		db: openStore(":memory:"),
 		clock: { now: () => 0 },
 		sourcePolicy: () => "candidate",
-		isKnownRule: (id) => id === "toy/big-move",
+		ruleAllows: (id) => id === "toy/big-move",
 	});
 	const { triggerId } = kernel.submitTrigger({ source: "toy", externalId: "q1", threads: [{ id: "thr_toy:q" }], sender: "feed", body: "涨 9%", occurredAt: 0 });
 	const [fake, real] = kernel.route([
@@ -735,4 +736,48 @@ test("对话历史每一行带稳定的 id：使用者的话是触发 id，Route
 	const { triggerId } = kernel.submitTrigger({ source: "conversation", externalId: "c-id", threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body: "查天气", occurredAt: clock.now() });
 	const reply = kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "好的" });
 	assert.deepEqual(kernel.conversation().map((m) => m.id), [triggerId, reply.ok ? reply.replyId : "-"]);
+});
+
+function authoritySetup() {
+	const kernel = new Kernel({
+		db: openStore(":memory:"),
+		clock: { now: () => 0 },
+		sourcePolicy: (t) => (t.body.includes("噪音") ? "ignore" : "candidate"),
+		ruleAllows: (ruleId, source) => ruleId === "toy/big-move" && source === "toy",
+	});
+	const said = (body: string) => kernel.submitTrigger({ source: "conversation", externalId: body, threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body, occurredAt: 0 }).triggerId;
+	const event = (source: string, body: string) => kernel.submitTrigger({ source, externalId: body, threads: [{ id: `thr_${source}:x` }], sender: source, body, occurredAt: 0 }).triggerId;
+	const open = (basis: "request" | "rule" | "inference", triggerId?: string, ruleId?: string) =>
+		({ kind: "open_ticket" as const, basis, triggerId, ruleId, title: "t", brief: "b" });
+	return { kernel, said, event, open };
+}
+
+test("证据：一条对话可以在同一批决定里开多个任务，但处理过之后不能再支撑新的请求任务", () => {
+	const { kernel, said, open } = authoritySetup();
+	const hi = said("做 A 和 B");
+	assert.deepEqual(kernel.route([open("request", hi), open("request", hi)]).map((r) => r.ok), [true, true]);
+	assert.deepEqual(kernel.route([open("request", hi)]).map((r) => r.ok), [false]);
+});
+
+test("证据：被 Router 忽略过的对话不能再拿来开请求任务", () => {
+	const { kernel, said, open } = authoritySetup();
+	const hi = said("hi");
+	kernel.route([{ kind: "ignore", triggerId: hi, reason: "寒暄" }]);
+	assert.equal(kernel.route([open("request", hi)])[0].ok, false);
+});
+
+test("证据：程序层过滤掉的触发不能开任务，也不能转交", () => {
+	const { kernel, said, event, open } = authoritySetup();
+	const noise = event("toy", "噪音报价");
+	const ticket = (kernel.route([open("request", said("盯着"))])[0] as { ticketId: string }).ticketId;
+	assert.equal(kernel.route([open("inference", noise)])[0].ok, false);
+	assert.equal(kernel.route([{ kind: "hand_over", triggerId: noise, ticketId: ticket }])[0].ok, false);
+});
+
+test("证据：规则依据必须有一条未处理的非对话触发，且来源在规则的适用范围内", () => {
+	const { kernel, said, event, open } = authoritySetup();
+	assert.equal(kernel.route([open("rule", undefined, "toy/big-move")])[0].ok, false);
+	assert.equal(kernel.route([open("rule", said("帮我按规则开"), "toy/big-move")])[0].ok, false);
+	assert.equal(kernel.route([open("rule", event("mail", "邮件"), "toy/big-move")])[0].ok, false);
+	assert.equal(kernel.route([open("rule", event("toy", "跌 6%"), "toy/big-move")])[0].ok, true);
 });
