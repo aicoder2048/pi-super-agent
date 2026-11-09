@@ -31,6 +31,14 @@ test("行情请求：Key 只放在 Authorization: Bearer 头里，网址里没�
 	);
 });
 
+test("行情请求：接口回 OK 但报价比现在晚 10 分钟以上，也标成延迟行情；10 分钟以内的不标", async () => {
+	const now = Date.parse("2026-11-09T14:46:05Z");
+	const rows = [tickerRow("NVDA", 171.8, 186.64, Date.parse("2026-11-09T14:30:00Z")), tickerRow("SPY", 680, 674, now - 30_000), tickerRow("QQQ", 666, 656, now - 9 * 60_000), tickerRow("AAPL", 270, 268, now - 11 * 60_000)];
+	const f = fakeHttpOn(() => Response.json(snapshotBody(rows, "OK")), now);
+	const quotes = await client(f).snapshot(["NVDA", "SPY", "QQQ", "AAPL"], "poll");
+	assert.deepEqual(quotes.map((q) => [q.symbol, q.delayed]), [["NVDA", true], ["SPY", false], ["QQQ", false], ["AAPL", true]]);
+});
+
 test("行情请求：每日重置时价格全为 0 的占位行被丢掉，不编造报价", async () => {
 	const zero = { ticker: "AAPL", lastTrade: {}, min: { c: 0, t: 0, v: 0 }, day: { c: 0, v: 0 }, prevDay: { c: 0, v: 0 } };
 	const f = fakeHttp(() => Response.json(snapshotBody([zero])));
