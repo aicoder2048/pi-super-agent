@@ -47,6 +47,17 @@ test("两个助手同时在岗：页头两枚小卡，点小卡打开执行过�
 				const size = await page.evaluate(() => ({ scroll: document.scrollingElement!.scrollHeight, inner: innerHeight }));
 				assert.equal(size.scroll, size.inner, `整页高 ${size.scroll}，窗口高 ${size.inner}`);
 			});
+			await step("手机宽度下长对话不压住下面的执行过程，也不横向滚动", async (page) => {
+				await page.setViewportSize({ width: 390, height: 844 });
+				const box = await page.evaluate(() => ({
+					formBottom: document.querySelector("#say")!.getBoundingClientRect().bottom,
+					howTop: document.querySelector("#how")!.getBoundingClientRect().top,
+					extraWidth: document.scrollingElement!.scrollWidth - innerWidth,
+				}));
+				await page.setViewportSize({ width: 1280, height: 720 });
+				assert.ok(box.formBottom <= box.howTop, `输入框底边 ${box.formBottom}，执行过程顶边 ${box.howTop}`);
+				assert.equal(box.extraWidth, 0);
+			});
 			await step("页头出现两枚小卡，名字不同", async (page) => {
 				const chips = page.locator("#helpers .helper-chip");
 				await page.waitForFunction(() => document.querySelectorAll("#helpers .helper-chip").length === 2);
