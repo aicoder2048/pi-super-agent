@@ -58,6 +58,9 @@ export function formatTokens(n) {
 	return `${(n / 1_000_000).toFixed(2)}M`;
 }
 
+/** @param {number} since @param {number} now */
+export const stallMinutes = (since, now) => Math.floor((now - since) / 60_000);
+
 /** @param {number} ms */
 export function formatElapsed(ms) {
 	const s = Math.max(0, Math.floor(ms / 1000));

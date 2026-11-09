@@ -3,7 +3,8 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { Kernel } from "../src/kernel/kernel.ts";
+import { Kernel, nextStallAt } from "../src/kernel/kernel.ts";
+import { refusalText } from "../src/kernel/question.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { CONVERSATION_THREAD_ID, DISPOSITIONS } from "../src/kernel/types.ts";
 import type { Basis, KernelConfig, TriggerSubmission } from "../src/kernel/types.ts";
@@ -634,7 +635,8 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			stage: "running",
 			basis: "request",
 			latestSummary: "写了一半",
-			latestQuestion: null,
+			question: null,
+			stall: null,
 			model: "openai-codex/gpt-6.1-sol",
 			fellBack: false,
 			toolCalls: 2,
@@ -876,4 +878,251 @@ test("今天的触发按来源和去向计数，从本地零点算起，不受�
 		{ source: "inbox", disposition: "to_router", count: 120 },
 		{ source: "noise", disposition: "ignored", count: 2 },
 	]);
+});
+
+test("Worker 的问题可以带选项，读任务时原样读回；不带选项的汇报读回空列表", () => {
+	const { kernel, open, run } = setup();
+	const id = open("request");
+	run(id);
+	kernel.workerReport(id, { status: "progress", summary: "做了一半" });
+	kernel.workerReport(id, { status: "blocked", summary: "两种口径", question: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"] });
+	const found = kernel.read(id);
+	assert.ok(found?.type === "ticket");
+	assert.deepEqual(found.recentReports.map((r) => r.options), [["只看营收", "营收和利润", "先不查"], []]);
+});
+
+test("旧数据库的汇报表没有选项列：打开时补上，旧汇报读回空列表", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const id = first.open("request");
+	first.run(id);
+	first.kernel.workerReport(id, { status: "progress", summary: "旧汇报" });
+	first.db.exec("ALTER TABLE reports DROP COLUMN options");
+	first.db.close();
+	const again = setup({ path });
+	const found = again.kernel.read(id);
+	assert.ok(found?.type === "ticket");
+	assert.deepEqual(found.recentReports.map((r) => [r.summary, r.options]), [["旧汇报", []]]);
+});
+
+test("看板：等回答的任务带上它在等的问题（汇报 id、文字、选项、提问时间、还没回答）；其他阶段没有问题", () => {
+	const { kernel, clock, open, run, idle, handOverUserMessage } = setup();
+	const asking = open("request", { title: "查财报" });
+	run(asking);
+	const { reportId } = kernel.workerReport(asking, { status: "blocked", summary: "两种口径", question: "要看哪部分？", options: ["只看营收", "先不查"] });
+	const askedAt = clock.t;
+	const open2 = open("request", { title: "写周报" });
+	idle(open2);
+	clock.t += 1000;
+	const rows = () => Object.fromEntries(kernel.listTickets().map((r) => [r.title, r.question]));
+	assert.deepEqual(rows(), {
+		查财报: { reportId, text: "要看哪部分？", options: ["只看营收", "先不查"], askedAt, click: null, spoke: false },
+		写周报: null,
+	});
+	handOverUserMessage(asking, "只看营收");
+	assert.equal(rows().查财报, null, "使用者回答后不再等");
+});
+
+function askSetup() {
+	const s = setup();
+	const ticketId = s.open("request", { title: "查财报" });
+	s.run(ticketId);
+	const ask = (options = ["只看营收", "营收和利润", "先不查"]) =>
+		s.kernel.workerReport(ticketId, { status: "blocked", summary: "两种口径", question: "要看哪部分？", options }).reportId;
+	const reportId = ask();
+	s.drain();
+	const answer = (option: number, id = reportId) => s.kernel.answerQuestion({ reportId: id, option, at: s.clock.t });
+	const userLines = () => s.kernel.conversation().filter((l) => l.who === "user").map((l) => l.text);
+	const row = () => s.kernel.listTickets().find((r) => r.id === ticketId)!;
+	return { ...s, ticketId, reportId, ask, answer, userLines, row };
+}
+
+test("点选回答：成为使用者在对话里说的一句「回答任务「标题」：选项」，交给 Router 处理，任务还没收到", () => {
+	const { kernel, ticketId, answer, userLines, notices, row } = askSetup();
+	const result = answer(1);
+	assert.ok(result.ok);
+	assert.equal(result.duplicate, false);
+	assert.equal(result.text, "回答任务「查财报」：营收和利润");
+	assert.deepEqual(userLines().at(-1), "回答任务「查财报」：营收和利润");
+	assert.deepEqual(notices(), [{ kind: "conversation", triggerId: result.triggerId }]);
+	assert.deepEqual(kernel.pendingInputs(ticketId), [], "Router 转交之前任务收不到");
+	assert.equal(row().stage, "awaiting_answer");
+	assert.deepEqual(row().question?.click, { option: 1, state: "sent", triggerId: result.triggerId }, "所有客户端都看得到点了哪一个、还在等幕僚长转交");
+});
+
+test("点选回答转交给任务之后才算已回答：任务继续执行，看板上这个问题留着、标着点了哪一个，直到任务下一次汇报", () => {
+	const { kernel, ticketId, answer, row } = askSetup();
+	const { triggerId } = answer(2) as { triggerId: string };
+	assert.ok(kernel.route([{ kind: "hand_over", triggerId, ticketId }])[0].ok);
+	assert.equal(row().stage, "running");
+	assert.deepEqual(row().question?.click, { option: 2, state: "handed_over", triggerId });
+	kernel.workerReport(ticketId, { status: "progress", summary: "在查利润" });
+	assert.equal(row().question, null);
+});
+
+test("幕僚长忽略点选、或处理完这张卡片却没有转交时，这次点选作废：按钮重新可点，再点是一条新的触发", () => {
+	for (const end of ["ignore", "turn"] as const) {
+		const { kernel, ticketId, answer, row, due, notices } = askSetup();
+		const first = answer(0) as { triggerId: string };
+		if (end === "ignore") assert.ok(kernel.route([{ kind: "ignore", triggerId: first.triggerId, reason: "看不懂" }])[0].ok);
+		else for (const a of due("router.notify")) kernel.completeAction(a.id);
+		assert.equal(row().stage, "awaiting_answer", end);
+		assert.deepEqual(row().question?.click, { option: 0, state: "dropped", triggerId: first.triggerId }, end);
+		const again = answer(1);
+		assert.ok(again.ok && !again.duplicate, end);
+		assert.notEqual(again.triggerId, first.triggerId, end);
+		assert.deepEqual(row().question?.click, { option: 1, state: "sent", triggerId: again.triggerId }, end);
+		assert.deepEqual(notices().at(-1), { kind: "conversation", triggerId: again.triggerId }, end);
+		assert.ok(kernel.route([{ kind: "hand_over", triggerId: again.triggerId, ticketId }])[0].ok, end);
+	}
+});
+
+test("点选回答的那句话里，任务标题最多 40 个字，超出的截断加省略号；看板仍然知道点的是哪一项", () => {
+	const { kernel, clock, open, run, drain } = setup();
+	const title = "把".repeat(45);
+	const ticketId = open("request", { title });
+	run(ticketId);
+	const { reportId } = kernel.workerReport(ticketId, { status: "blocked", summary: "s", question: "选哪个？", options: ["甲", "乙"] });
+	drain();
+	const result = kernel.answerQuestion({ reportId, option: 1, at: clock.t });
+	assert.ok(result.ok);
+	assert.equal(result.text, `回答任务「${"把".repeat(40)}…」：乙`);
+	assert.equal(kernel.listTickets()[0].question?.click?.option, 1);
+});
+
+test("点选回答是幂等的：连点同一项、另一个客户端或超时重试，都得到同一条触发，Router 只收到一次；转交之后再点同一项也一样", () => {
+	const { kernel, ticketId, answer, userLines, notices } = askSetup();
+	const first = answer(0);
+	const again = answer(0);
+	assert.ok(first.ok && again.ok);
+	assert.equal(again.triggerId, first.triggerId);
+	assert.equal(again.duplicate, true);
+	assert.deepEqual(userLines(), ["查财报", "回答任务「查财报」：只看营收"]);
+	assert.equal(notices().length, 1);
+	assert.ok(kernel.route([{ kind: "hand_over", triggerId: first.triggerId, ticketId }])[0].ok);
+	const late = answer(0);
+	assert.ok(late.ok);
+	assert.equal(late.triggerId, first.triggerId);
+});
+
+test("点过一项之后换另一项再点被拒，说明已选的是哪一项；转交之后也一样；对话里不多一句", () => {
+	const { kernel, ticketId, answer, userLines } = askSetup();
+	const first = answer(0) as { triggerId: string };
+	assert.deepEqual(answer(2), { ok: false, refusal: { kind: "chosen", option: 0, label: "只看营收" } });
+	assert.ok(kernel.route([{ kind: "hand_over", triggerId: first.triggerId, ticketId }])[0].ok);
+	assert.deepEqual(answer(1), { ok: false, refusal: { kind: "chosen", option: 0, label: "只看营收" } });
+	assert.deepEqual(userLines(), ["查财报", "回答任务「查财报」：只看营收"]);
+	assert.equal(refusalText({ kind: "chosen", option: 0, label: "只看营收" }), "已选「只看营收」");
+});
+
+test("提问之后使用者又发了一句话、幕僚长还没处理完时，点选被拒，看板标出这一点；幕僚长把那句话交给别处或处理完之后，又可以点", () => {
+	for (const end of ["elsewhere", "turn"] as const) {
+		const { kernel, clock, answer, row, say, due, userLines } = askSetup();
+		clock.t += 1000;
+		const typed = say("顺便查一下天气").triggerId;
+		assert.equal(row().question?.spoke, true, end);
+		assert.deepEqual(answer(0), { ok: false, refusal: { kind: "spoke" } }, end);
+		assert.ok(!userLines().some((l) => l.startsWith("回答任务")), end);
+		if (end === "elsewhere") assert.ok(kernel.route([{ kind: "open_ticket", basis: "request", triggerId: typed, title: "查天气", brief: "查天气" }])[0].ok);
+		else for (const a of due("router.notify")) kernel.completeAction(a.id);
+		assert.equal(row().question?.spoke, false, end);
+		assert.ok(answer(0).ok, end);
+	}
+	assert.match(refusalText({ kind: "spoke" }), /幕僚长处理完之前不能点选项/);
+});
+
+test("点选回答被拒：问题已经打字回答过、被新问题取代、选项超出范围、问题没有选项、汇报不存在；被拒时对话里不多一句", () => {
+	const typed = askSetup();
+	typed.handOverUserMessage(typed.ticketId, "都看");
+	const superseded = askSetup();
+	superseded.ask(["甲", "乙"]);
+	const range = askSetup();
+	const open = askSetup();
+	const openId = open.kernel.workerReport(open.ticketId, { status: "blocked", summary: "s", question: "你想要什么？" }).reportId;
+	const cases = [
+		[typed, typed.answer(0)],
+		[superseded, superseded.answer(0)],
+		[range, range.answer(3)],
+		[open, open.answer(0, openId)],
+		[range, range.answer(0, "rpt_missing")],
+	] as const;
+	for (const [s, result] of cases) {
+		assert.equal(result.ok, false, JSON.stringify(result));
+		assert.ok(!s.userLines().some((l) => l.startsWith("回答任务")), "被拒时没有新的一句");
+	}
+});
+
+test("点选回答只能转交给它回答的任务：拿去开新任务或转交给别的任务都被拒绝；转交给本任务时 Worker 收到这句使用者的话", () => {
+	const { kernel, ticketId, answer, open } = askSetup();
+	const other = open("request", { title: "写周报" });
+	const { triggerId } = answer(0) as { triggerId: string };
+	const [opened, wrong] = kernel.route([
+		{ kind: "open_ticket", basis: "request", triggerId, title: "只看营收", brief: "只看营收" },
+		{ kind: "hand_over", triggerId, ticketId: other },
+	]);
+	assert.equal(opened.ok, false);
+	assert.equal(wrong.ok, false);
+	assert.match(!opened.ok ? opened.reason : "", new RegExp(ticketId));
+	const [right] = kernel.route([{ kind: "hand_over", triggerId, ticketId }]);
+	assert.ok(right.ok);
+	assert.deepEqual(kernel.pendingInputs(ticketId).map((i) => [i.kind, i.body]), [["user_message", "回答任务「查财报」：只看营收"]]);
+	assert.equal(kernel.getTicket(ticketId)!.stage, "running");
+});
+
+test("读取点选回答的触发时带上它回答的任务、汇报、问题和选项；打字说的话没有", () => {
+	const { kernel, ticketId, reportId, answer, say } = askSetup();
+	const { triggerId } = answer(2) as { triggerId: string };
+	const found = kernel.read(triggerId);
+	assert.ok(found?.type === "trigger");
+	assert.deepEqual(found.answers, { ticketId, reportId, question: "要看哪部分？", option: "先不查" });
+	const typed = kernel.read(say("随便说一句").triggerId);
+	assert.ok(typed?.type === "trigger");
+	assert.equal(typed.answers, null);
+});
+
+test("对话历史里幕僚长关于某个任务的回复带上 ticketId 任务 id；回应使用者的话的回复不带", () => {
+	const { kernel, ticketId } = askSetup();
+	const asked = kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "要看哪部分？", cause: ticketId });
+	assert.ok(asked.ok);
+	const lines = kernel.conversation();
+	assert.deepEqual(lines.at(-1), { id: asked.replyId, who: "router", text: "要看哪部分？", at: lines.at(-1)!.at, ticketId: ticketId });
+	const hi = kernel.submitTrigger({ source: "conversation", externalId: "hi", threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body: "在吗", occurredAt: 0 }).triggerId;
+	assert.ok(kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "在", cause: hi }).ok);
+	assert.equal("ticketId" in kernel.conversation().at(-1)!, false);
+});
+
+test("久无进展：执行中且距上次进展达到阈值才算，看板行带开始时间和分钟数；有新进展就清除；空闲、排队、等回答的不算", () => {
+	const MIN = 60_000;
+	const { kernel, clock, open, run, idle } = setup({ config: { stuckMs: 10 * MIN } });
+	const busy = open("request", { title: "跑回归" });
+	run(busy);
+	const since = clock.t;
+	const quiet = open("request", { title: "空闲的" });
+	idle(quiet);
+	const asking = open("request", { title: "等回答" });
+	run(asking);
+	kernel.workerReport(asking, { status: "blocked", summary: "s", question: "选哪个？" });
+	open("request", { title: "排队的" });
+	const stalls = () => Object.fromEntries(kernel.listTickets().map((r) => [r.title, r.stall]));
+	clock.t = since + 10 * MIN - 1;
+	assert.equal(stalls().跑回归, null);
+	clock.t = since + 42 * MIN;
+	assert.deepEqual(stalls(), { 跑回归: { since, minutes: 42 }, 空闲的: null, 等回答: null, 排队的: null });
+	kernel.recordWorkerProgress(busy);
+	assert.equal(stalls().跑回归, null);
+});
+
+test("下一次久无进展的时刻：执行中、还没久无进展的任务里最早的那个；没有这样的任务时为空", () => {
+	const MIN = 60_000;
+	const { kernel, clock, open, run } = setup({ config: { stuckMs: 10 * MIN } });
+	const next = () => nextStallAt(kernel.listTickets(), 10 * MIN);
+	assert.equal(next(), null);
+	const first = open("request", { title: "一" });
+	run(first);
+	const firstAt = clock.t;
+	clock.t += 3 * MIN;
+	run(open("request", { title: "二" }));
+	assert.equal(next(), firstAt + 10 * MIN);
+	clock.t = firstAt + 11 * MIN;
+	assert.equal(next(), firstAt + 13 * MIN, "已经久无进展的不再排");
 });

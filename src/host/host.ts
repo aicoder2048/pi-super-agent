@@ -1,18 +1,17 @@
-import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { writeHeartbeat } from "../heartbeat.ts";
 import { relocateState } from "./relocate.ts";
 import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
-import { Kernel } from "../kernel/kernel.ts";
+import { Kernel, nextStallAt } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
-import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
+import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type DashboardRow, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
 import type { TriggerSubmission } from "../kernel/types.ts";
 import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import type { Feed, FeedSpec } from "../sources/feeds.ts";
 import { Dispatcher } from "./dispatcher.ts";
-import { HostServer, type Broadcast } from "./server.ts";
+import { HostServer, type AnswerResult, type Broadcast } from "./server.ts";
 import type { BoardState, Duty, TodayCounts, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
 import { WebGateway } from "./web.ts";
 import { ConfigError } from "../config-error.ts";
@@ -52,6 +51,8 @@ export interface HostOptions {
 
 
 // sun_path holds 104 bytes on macOS and 108 on Linux, including the terminating NUL.
+// setTimeout fires at once for a longer delay.
+const MAX_TIMER_MS = 2 ** 31 - 1;
 const SOCKET_PATH_MAX_BYTES = process.platform === "darwin" ? 103 : 107;
 
 function assertSocketPathFits(socketPath: string): void {
@@ -77,6 +78,8 @@ export class Host {
 	readonly #stateDir: string;
 	#boardTimer: NodeJS.Timeout | undefined;
 	#midnightTimer: NodeJS.Timeout | undefined;
+	#stallTimer: NodeJS.Timeout | undefined;
+	#stallAt: number | null = null;
 	#heartbeat: NodeJS.Timeout | undefined;
 	#web: WebGateway | undefined;
 	readonly #watching: WatchedSource[];
@@ -143,13 +146,16 @@ export class Host {
 				"router.notify": (notice, actionId) => this.router.inject(notice, actionId),
 				"worker.wake": ({ ticketId }) => this.workers.wake(ticketId),
 				"worker.stop": ({ ticketId }) => this.workers.stop(ticketId),
-				"channel.reply": ({ threadId, text, replyId }) => this.#deliverReply(threadId, text, replyId),
+				"channel.reply": ({ threadId, text, replyId, ticketId }) => this.#deliverReply(threadId, text, replyId, ticketId),
 			},
 			onError: (action, error) => this.#log(`[dispatcher] ${action.kind} 失败（第 ${action.attempts + 1} 次）：${String(error)}`),
+			// A click the Router saw and did not hand over shows as dropped only once its notice is done.
+			onComplete: (action) => action.kind === "router.notify" && this.#changed(),
 		});
 		this.server = new HostServer(
 			{
 				onSay: (text) => this.say(text),
+				onAnswer: (reportId, option) => this.answer(reportId, option),
 				snapshot: () => this.snapshot(),
 				transcript: (ticketId) => this.transcript(ticketId),
 			},
@@ -160,7 +166,7 @@ export class Host {
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text) }, host.#log);
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), answer: (reportId, option) => host.answer(reportId, option) }, host.#log);
 			await host.#web.listen(options.webPort);
 		}
 		try {
@@ -181,6 +187,7 @@ export class Host {
 		host.#heartbeat = setInterval(() => host.#beat(), options.heartbeatMs ?? 30_000);
 		host.#heartbeat.unref();
 		host.#atNextMidnight();
+		host.#pushBoardAtNextStall(host.kernel.listTickets());
 		host.dispatcher.kick();
 		return host;
 	}
@@ -191,17 +198,21 @@ export class Host {
 
 	say(text: string): string {
 		const at = Date.now();
-		const { triggerId } = this.kernel.submitTrigger({
-			source: CONVERSATION_SOURCE,
-			externalId: randomUUID(),
-			threads: [{ id: CONVERSATION_THREAD_ID, title: "对话" }],
-			sender: "user",
-			body: text,
-			occurredAt: at,
-		});
+		const { triggerId } = this.kernel.userSaid({ text, at });
 		this.#broadcast({ type: "user", id: triggerId, text, at });
 		this.#changed();
 		return triggerId;
+	}
+
+	answer(reportId: string, option: number): AnswerResult {
+		const at = Date.now();
+		const result = this.kernel.answerQuestion({ reportId, option, at });
+		if (!result.ok) return result;
+		if (!result.duplicate) {
+			this.#broadcast({ type: "user", id: result.triggerId, text: result.text, at });
+			this.#changed();
+		}
+		return { ok: true, triggerId: result.triggerId };
 	}
 
 	snapshot() {
@@ -217,9 +228,9 @@ export class Host {
 		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty };
 	}
 
-	#deliverReply(threadId: string, text: string, replyId: string): void {
+	#deliverReply(threadId: string, text: string, replyId: string, ticketId: string | null | undefined): void {
 		if (threadId !== CONVERSATION_THREAD_ID) throw new Error(`线程 ${threadId} 没有渠道`);
-		this.#broadcast({ type: "reply", text, at: Date.now(), replyId });
+		this.#broadcast({ type: "reply", text, at: Date.now(), replyId, ...(ticketId ? { ticketId } : {}) });
 		this.kernel.markReplyDelivered(replyId);
 	}
 
@@ -258,10 +269,29 @@ export class Host {
 		const midnight = new Date(now);
 		midnight.setHours(24, 0, 0, 0);
 		this.#midnightTimer = setTimeout(() => {
-			this.#broadcast({ type: "board", ...this.#boardState() });
+			this.#pushBoard();
 			this.#atNextMidnight();
 		}, midnight.getTime() - now);
 		this.#midnightTimer.unref();
+	}
+
+	#pushBoardAtNextStall(rows: DashboardRow[]): void {
+		const at = nextStallAt(rows, this.kernel.config.stuckMs);
+		if (at === this.#stallAt) return;
+		clearTimeout(this.#stallTimer);
+		this.#stallAt = at;
+		if (at === null) return;
+		this.#stallTimer = setTimeout(() => {
+			this.#stallAt = null;
+			this.#pushBoard();
+		}, Math.min(Math.max(0, at - this.#clock.now()), MAX_TIMER_MS));
+		this.#stallTimer.unref();
+	}
+
+	#pushBoard(): void {
+		const state = this.#boardState();
+		this.#broadcast({ type: "board", ...state });
+		this.#pushBoardAtNextStall(state.rows);
 	}
 
 	#changed(): void {
@@ -269,7 +299,7 @@ export class Host {
 		if (this.#boardTimer) return;
 		this.#boardTimer = setTimeout(() => {
 			this.#boardTimer = undefined;
-			this.#broadcast({ type: "board", ...this.#boardState() });
+			this.#pushBoard();
 		}, 100);
 	}
 
@@ -290,6 +320,7 @@ export class Host {
 		this.dispatcher.stop();
 		clearTimeout(this.#boardTimer);
 		clearTimeout(this.#midnightTimer);
+		clearTimeout(this.#stallTimer);
 		await this.workers.shutdown();
 		this.router.dispose();
 		await Promise.all([this.server.close(), this.#web?.close()]);

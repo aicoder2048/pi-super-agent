@@ -5,9 +5,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
-import { renderBoard, shortId, type BoardView } from "../src/client/board.ts";
+import { openChoices, renderBoard, shortId, ticketsMatching, type BoardView } from "../src/client/board.ts";
 import { DEFAULT_ACK_TIMEOUT_MS, HostConnection } from "../src/client/connection.ts";
 import type { ConversationLine, HostToClient } from "../src/client/protocol.ts";
+import type { DashboardRow } from "../src/kernel/types.ts";
 import { formatTranscriptMessage } from "../src/client/transcript.ts";
 import { defaultStateDir } from "../src/host/config.ts";
 
@@ -58,6 +59,9 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 			}
 			case "ack":
 				return;
+			case "refused":
+				ctx?.ui.notify(m.reason, "warning");
+				return;
 			case "board":
 				view.rows = m.rows;
 				view.receivedAt = Date.now();
@@ -105,12 +109,40 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 		conn?.close();
 	});
 
+	const answer = (row: DashboardRow, pick: number, ui: ExtensionContext["ui"]) => {
+		const q = row.question!;
+		if (pick < 1 || pick > q.options.length) return ui.notify(`「${row.title}」只有 ${q.options.length} 个选项`, "warning");
+		if (!conn?.answer(q.reportId, pick - 1, q.options[pick - 1])) ui.notify("宿主未连接，回答没有发出。先运行 just host。", "warning");
+	};
+
 	pi.on("input", async (event, context) => {
 		if (event.source === "extension") return { action: "continue" };
 		const text = event.text.trim();
 		if (!text) return { action: "handled" };
+		const open = /^[1-9]$/.test(text) ? openChoices(view.rows) : [];
+		if (open.length === 1) {
+			answer(open[0], Number(text), context.ui);
+			return { action: "handled" };
+		}
+		if (open.length > 1) {
+			context.ui.notify(`有 ${open.length} 个问题在等回答，请用 /answer <编号> <序号>，例如 /answer ${shortId(open[0].id)} ${text}`, "warning");
+			return { action: "handled" };
+		}
 		if (!conn?.say(text)) context.ui.notify("宿主未连接，这句话没有发出。先运行 just host。", "warning");
 		return { action: "handled" };
+	});
+
+	pi.registerCommand("answer", {
+		description: "选一个问题的选项作答：/answer <编号> <序号>",
+		handler: async (args, context) => {
+			const [key = "", pick = ""] = args.trim().split(/\s+/);
+			const matches = ticketsMatching(openChoices(view.rows), key);
+			if (!key || matches.length !== 1 || !/^\d+$/.test(pick)) {
+				context.ui.notify(matches.length > 1 ? `编号 ${key} 对应多个问题，请多写几位` : "用法：/answer <编号> <序号>，编号是看板上等回答的任务", "warning");
+				return;
+			}
+			answer(matches[0], Number(pick), context.ui);
+		},
 	});
 
 	pi.registerCommand("watch", {
@@ -123,7 +155,7 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 				conn?.watch(undefined);
 				return;
 			}
-			const matches = view.rows.filter((r) => shortId(r.id).startsWith(key) || r.id === key);
+			const matches = ticketsMatching(view.rows, key);
 			if (matches.length !== 1) {
 				context.ui.notify(matches.length ? `编号 ${key} 对应多个任务，请多写几位` : `看板上没有编号 ${key}`, "warning");
 				return;

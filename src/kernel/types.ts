@@ -56,6 +56,7 @@ export interface KernelConfig {
 	inferenceDaily: number;
 	replyMaxChars: number;
 	repliesPerCause: number;
+	stuckMs: number;
 }
 
 export const DEFAULT_CONFIG: KernelConfig = {
@@ -65,6 +66,7 @@ export const DEFAULT_CONFIG: KernelConfig = {
 	inferenceDaily: 24,
 	replyMaxChars: 200,
 	repliesPerCause: 2,
+	stuckMs: 30 * 60_000,
 };
 
 export const RETRY_BACKOFF_MS = [5_000, 30_000, 120_000, 600_000, 1_800_000] as const;
@@ -85,7 +87,7 @@ export type Action =
 	| { kind: "router.notify"; payload: RouterNotice }
 	| { kind: "worker.wake"; payload: { ticketId: string } }
 	| { kind: "worker.stop"; payload: { ticketId: string } }
-	| { kind: "channel.reply"; payload: { threadId: string; text: string; replyId: string } };
+	| { kind: "channel.reply"; payload: { threadId: string; text: string; replyId: string; ticketId: string | null } };
 
 export type PendingAction = Action & { id: string; attempts: number; createdAt: number };
 
@@ -109,6 +111,7 @@ export interface WorkerReport {
 	status: ReportStatus;
 	summary: string;
 	question?: string;
+	options?: string[];
 	drafts?: unknown[];
 	waiting?: boolean;
 }
@@ -137,6 +140,7 @@ export interface Report {
 	status: ReportStatus;
 	summary: string;
 	question: string | null;
+	options: string[];
 	drafts: unknown[];
 	waiting: boolean;
 	createdAt: number;
@@ -175,13 +179,40 @@ export interface Ticket {
 	latestReport: Report | null;
 }
 
+export interface PendingQuestion {
+	reportId: string;
+	text: string;
+	options: string[];
+	askedAt: number;
+	/** The latest click on one of the options, or null when nobody clicked. */
+	click: QuestionClick | null;
+	/** The user said something after the question and the Router has not finished with it; a click now could contradict it. */
+	spoke: boolean;
+}
+
+/**
+ * sent: the Router has not finished with the click yet. handed_over: the asking task got it.
+ * dropped: the Router ignored it or ended its turn without handing it over, so the options are open again.
+ */
+export interface QuestionClick {
+	option: number;
+	state: "sent" | "handed_over" | "dropped";
+	triggerId: string;
+}
+
+export interface Stall {
+	since: number;
+	minutes: number;
+}
+
 export interface DashboardRow {
 	id: string;
 	title: string;
 	stage: Stage;
 	basis: Basis;
 	latestSummary: string | null;
-	latestQuestion: string | null;
+	question: PendingQuestion | null;
+	stall: Stall | null;
 	model: string | null;
 	fellBack: boolean;
 	toolCalls: number;
@@ -191,8 +222,15 @@ export interface DashboardRow {
 	lastProgressAt: number | null;
 }
 
+export interface AnswerClick {
+	ticketId: string;
+	reportId: string;
+	question: string;
+	option: string;
+}
+
 export type ReadResult =
-	| { type: "trigger"; trigger: Trigger; threadIds: string[]; ticketIds: string[] }
+	| { type: "trigger"; trigger: Trigger; threadIds: string[]; ticketIds: string[]; answers: AnswerClick | null }
 	| { type: "thread"; thread: Thread; recentTriggerIds: string[]; subscribedTicketIds: string[] }
 	| {
 			type: "ticket";

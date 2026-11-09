@@ -9,7 +9,7 @@
 /** @typedef {import("../client/protocol.ts").TranscriptMessage} TranscriptMessage */
 /** @typedef {import("../client/protocol.ts").WatchedSource} WatchedSource */
 
-import { INPUT_LABEL, blocks, clip, formatElapsed, formatTokens, isLive, modelText, shortId, textOf } from "../client/board-format.mjs";
+import { INPUT_LABEL, blocks, clip, formatElapsed, formatTokens, isLive, modelText, shortId, stallMinutes, textOf } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -74,13 +74,62 @@ export function applyMessage(view, message, now) {
 			addLine(view, { id: message.id, who: "user", text: message.text, at: message.at });
 			return ["conversation"];
 		case "reply":
-			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at });
+			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at, ...(message.ticketId ? { ticketId: message.ticketId } : {}) });
 			return ["conversation"];
 		case "board":
 			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, receivedAt: now });
 			return ["left", "header"];
 	}
 	return [];
+}
+
+/** @param {DashboardRow} row @returns {Group} */
+const groupOf = (row) => (row.stall ? "needsYou" : GROUP[row.stage]);
+
+/** A click this page posted, by report id; triggerId arrives with the host's 200. @typedef {Map<string, { option: number, triggerId?: string }>} Sending */
+
+const CHOICE_NOTE = {
+	sending: "发送中…",
+	sent: "已发送，等待幕僚长转交",
+	handed_over: "已回答",
+	dropped: "幕僚长没有转交这次选择，请重选或直接回复",
+	spoke: "你刚发了一句话，等幕僚长处理完再点",
+};
+
+/**
+ * @typedef {object} Choice
+ * @property {string} reportId
+ * @property {{ label: string, option: number, picked: boolean }[]} buttons
+ * @property {boolean} locked
+ * @property {string} note
+ */
+
+/** @param {DashboardRow} row @param {Sending} sending @returns {Choice | null} */
+function choiceOf(row, sending) {
+	const q = row.question;
+	if (!q || q.options.length === 0) return null;
+	const local = sending.get(q.reportId);
+	const click = q.click;
+	const shown = local
+		? { option: local.option, note: CHOICE_NOTE[local.triggerId ? "sent" : "sending"] }
+		: click && click.state !== "dropped"
+			? { option: click.option, note: CHOICE_NOTE[click.state] }
+			: null;
+	return {
+		reportId: q.reportId,
+		buttons: q.options.map((label, option) => ({ label, option, picked: option === shown?.option })),
+		locked: shown !== null || q.spoke,
+		note: shown?.note ?? (q.spoke ? CHOICE_NOTE.spoke : click?.state === "dropped" ? CHOICE_NOTE.dropped : ""),
+	};
+}
+
+/** Forgets a posted click once the board carries the host's trigger for it, or the question is gone. @param {View} view @param {Sending} sending */
+export function settleSending(view, sending) {
+	for (const [reportId, { triggerId }] of sending) {
+		if (!triggerId) continue;
+		const q = view.rows.find((r) => r.question?.reportId === reportId)?.question;
+		if (!q || q.click?.triggerId === triggerId) sending.delete(reportId);
+	}
 }
 
 /**
@@ -91,32 +140,51 @@ export function applyMessage(view, message, now) {
  * @property {string} stage
  * @property {string} latest
  * @property {boolean} canStop
+ * @property {Choice | null} choice
  */
 
-/** @param {DashboardRow} row @returns {TaskCard} */
-function card(row) {
+/** @param {DashboardRow} row @param {number} now @param {Sending} sending @returns {TaskCard} */
+function card(row, now, sending) {
 	return {
 		id: row.id,
 		title: row.title,
 		why: BASIS_PHRASE[row.basis],
-		stage: STAGE_PHRASE[row.stage],
-		latest: row.latestQuestion ?? row.latestSummary ?? "已开始，暂无进展",
+		stage: row.stall ? `久无进展 · ${stallMinutes(row.stall.since, now)} 分钟` : STAGE_PHRASE[row.stage],
+		latest: row.question?.text ?? row.latestSummary ?? "已开始，暂无进展",
 		canStop: GROUP[row.stage] === "doing",
+		choice: choiceOf(row, sending),
 	};
 }
 
-/** @param {View} view */
-export function leftColumn(view) {
+/** @param {View} view @param {Sending} sending @returns {Map<string, Choice>} */
+export function choicesInConversation(view, sending) {
+	const lines = [...view.lines.values()];
+	/** @type {Map<string, Choice>} */
+	const placed = new Map();
+	for (const row of view.rows) {
+		const choice = choiceOf(row, sending);
+		const askedAt = row.question?.askedAt ?? Infinity;
+		const line = lines.findLast((l) => l.who === "router" && l.ticketId === row.id && l.at >= askedAt);
+		if (choice && line) placed.set(line.id, choice);
+	}
+	return placed;
+}
+
+/** @param {string} reportId @param {number} option */
+export const answerBody = (reportId, option) => JSON.stringify({ answer: { reportId, option } });
+
+/** @param {View} view @param {number} now @param {Sending} [sending] */
+export function leftColumn(view, now, sending = new Map()) {
 	/** @type {Record<Group, TaskCard[]>} */
 	const groups = { needsYou: [], doing: [], done: [] };
-	for (const row of view.rows) groups[GROUP[row.stage]].push(card(row));
+	for (const row of view.rows) groups[groupOf(row)].push(card(row, now, sending));
 	const hits = view.today?.bySource ?? {};
 	return {
 		needsYou: groups.needsYou,
 		doing: groups.doing,
 		done: groups.done.reverse(),
 		doneLine: `已完成 · ${groups.done.length}`,
-		watching: view.watching.map((w) => ({ name: w.title ?? w.source, rule: [w.problem, w.description ?? watchRule(w)].filter(Boolean).join(" · "), hits: hits[w.source] ? `今日 ${hits[w.source]} 条` : "" })),
+		watching: view.watching.map((w) => ({ name: w.title ?? w.source, rule: [w.problem, w.description ?? watchRule(w)].filter(Boolean).join(" · "), hits: hits[w.source] ? `今日 ${hits[w.source]} 条` : "", problem: !!w.problem })),
 		today: todayCopy(view.today),
 	};
 }
@@ -204,6 +272,20 @@ const INPUT_STEP = {
 	bg_result: "后台命令完成",
 };
 
+/** @type {Record<string, string>} */
+const LOOKUP_TITLE = { quote: "查询报价", bars: "查询 K 线", session: "查询交易时段" };
+
+/** @param {Record<string, unknown>} a */
+function lookupStep(a) {
+	const args = a.args && typeof a.args === "object" ? /** @type {Record<string, unknown>} */ (a.args) : {};
+	const op = typeof a.op === "string" ? a.op : "";
+	const symbols = Array.isArray(args.symbols) ? args.symbols : typeof args.symbol === "string" ? [args.symbol] : [];
+	return {
+		title: LOOKUP_TITLE[op] ?? `查询 ${clip(op, 20)}`,
+		detail: clip(symbols.filter((s) => typeof s === "string").join(" "), 60),
+	};
+}
+
 const STEP_BY_LABEL = new Map(/** @type {[InputKind, string][]} */ (Object.entries(INPUT_LABEL)).map(([kind, label]) => [label, INPUT_STEP[kind]]));
 
 /** @type {Record<string, (a: Record<string, unknown>) => { title: string, detail: string }>} */
@@ -216,6 +298,7 @@ const TOOL_STEP = {
 	edit: (a) => ({ title: "修改文件", detail: baseName(a.path) }),
 	write: (a) => ({ title: "写入文件", detail: baseName(a.path) }),
 	web_get: (a) => ({ title: "读取网页", detail: hostOf(a.url) }),
+	lookup: (a) => lookupStep(a),
 	read_ticket: () => ({ title: "查阅任务记录", detail: "" }),
 	hand_back: () => ({ title: "交回幕僚长", detail: "" }),
 	bg_start: (a) => ({ title: "启动后台命令", detail: clip(firstLine(a.command), 60) }),
@@ -314,8 +397,26 @@ export const SAY_COPY = {
 const REJECTED_COPY = {
 	400: "发送失败：内容为空或格式不正确。",
 	403: "发送失败：请求来源不被允许。",
+	409: "发送失败：这个问题已经回答过，或已不在等待回答。",
 	413: "发送失败：内容过长，请分几次发送。",
 	415: "发送失败：请求格式不正确。",
+};
+
+/**
+ * @param {number} status @param {{ refused?: unknown, option?: unknown } | null} body the refused answer's JSON, or null
+ * @param {string[]} options the question's options as this page shows them
+ */
+export function answerRefusedCopy(status, body, options) {
+	const label = body?.refused === "chosen" && typeof body.option === "number" ? options[body.option] : undefined;
+	if (label !== undefined) return `发送失败：已选「${label}」。`;
+	const refused = body?.refused;
+	return typeof refused === "string" && Object.hasOwn(ANSWER_REFUSED_COPY, refused) ? ANSWER_REFUSED_COPY[refused] : sayCopy("rejected", status);
+}
+
+/** @type {Record<string, string>} */
+const ANSWER_REFUSED_COPY = {
+	spoke: "发送失败：你刚发了一句话，幕僚长处理完之前不能点选项。",
+	no_question: "发送失败：这个问题不存在。",
 };
 
 /** @param {SayState} state @param {number} [status] */

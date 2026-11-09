@@ -98,3 +98,12 @@ test("每种依据（包括推断）都有 lookup：描述里列出宿主给的�
 	assert.deepEqual([w.requests.at(-1).method, w.requests.at(-1).params], ["worker.lookup", { source: "us-market", op: "quote", args: { symbols: ["NVDA"] } }]);
 	assert.equal(await w.handlers.get("tool_call")({ toolName: "lookup" }), undefined);
 });
+
+test("汇报工具接受问题的 2 到 4 个选项，经宿主连接原样提交", async (t) => {
+	const w = await load("inference");
+	t.after(w.close);
+	const options = w.tools.get("report").parameters.properties.options;
+	assert.deepEqual([options.minItems, options.maxItems, options.items.maxLength], [2, 4, 20]);
+	await w.run("report", { status: "blocked", summary: "要你选", question: "选哪个？", options: ["甲", "乙"] });
+	assert.deepEqual(w.requests.at(-1).params.options, ["甲", "乙"]);
+});

@@ -6,7 +6,7 @@ import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import superAgentClient from "../extensions/super-agent.ts";
 import { onJsonLines, writeJsonLine } from "../src/jsonl.ts";
-import { renderBoard, shortId } from "../src/client/board.ts";
+import { openChoices, renderBoard, shortId } from "../src/client/board.ts";
 import { HostConnection } from "../src/client/connection.ts";
 import type { HostToClient } from "../src/client/protocol.ts";
 import { formatTranscriptMessage } from "../src/client/transcript.ts";
@@ -144,6 +144,7 @@ function scriptedHost() {
 	const fromClient: Record<string, any>[] = [];
 	let onHello: (socket: Socket) => void = () => {};
 	let onSay: (socket: Socket, record: Record<string, any>) => void = () => {};
+	let onAnswer: (socket: Socket, record: Record<string, any>) => void = () => {};
 	const server = createServer((socket) => {
 		sockets.push(socket);
 		socket.on("error", () => {});
@@ -152,6 +153,7 @@ function scriptedHost() {
 			fromClient.push(record);
 			if (record.type === "hello") onHello(socket);
 			if (record.type === "say") onSay(socket, record);
+			if (record.type === "answer") onAnswer(socket, record);
 		});
 	});
 	return {
@@ -159,6 +161,7 @@ function scriptedHost() {
 		fromClient,
 		hello(fn: typeof onHello) { onHello = fn; },
 		onSay(fn: typeof onSay) { onSay = fn; },
+		onAnswer(fn: typeof onAnswer) { onAnswer = fn; },
 		listen: () => new Promise<void>((resolve) => server.listen(path, resolve)),
 		dropClients() { for (const s of sockets.splice(0)) s.destroy(); },
 		close: () => new Promise<void>((resolve) => { for (const s of sockets) s.destroy(); server.close(() => resolve()); }),
@@ -170,11 +173,12 @@ async function runExtension(socketPath: string) {
 	const shown: string[] = [];
 	const warnings: string[] = [];
 	const handlers: Record<string, Function> = {};
+	const commands: Record<string, { handler: Function }> = {};
 	const ui = { setWidget() {}, notify: (text: string, level: string) => { if (level === "warning") warnings.push(text); } };
 	superAgentClient({
 		sendMessage: (m: any) => shown.push(String(m.content)),
 		registerMessageRenderer() {},
-		registerCommand() {},
+		registerCommand: (name: string, command: { handler: Function }) => (commands[name] = command),
 		on: (name: string, fn: Function) => (handlers[name] = fn),
 	} as any);
 	await handlers.session_start({}, { ui });
@@ -182,6 +186,7 @@ async function runExtension(socketPath: string) {
 		shown,
 		warnings,
 		input: (text: string) => handlers.input({ text, source: "interactive" }, { ui }),
+		command: (name: string, args: string) => commands[name].handler(args, { ui }),
 		shutdown: () => handlers.session_shutdown(),
 	};
 }
@@ -248,7 +253,83 @@ test("客户端：宿主收下但不回 ack（卡住了）时提醒使用者这�
 const row = (over: Partial<DashboardRow>): DashboardRow => ({
 	id: "tkt_3f2a9c", title: "整理本周的会议纪要并发给团队", stage: "running", basis: "request",
 	latestSummary: "已经读完五份纪要，正在合并重复的行动项，预计还要两分钟", model: "openai-codex/gpt-6.1-sol",
-	fellBack: false, toolCalls: 12, tokensIn: 3200, tokensOut: 800, elapsedMs: 312_000, latestQuestion: null, lastProgressAt: null, ...over,
+	fellBack: false, toolCalls: 12, tokensIn: 3200, tokensOut: 800, elapsedMs: 312_000, question: null, stall: null, lastProgressAt: null, ...over,
+});
+
+const asking = (id: string, reportId: string, over: Partial<NonNullable<DashboardRow["question"]>> = {}) =>
+	row({ id, title: `任务${id}`, stage: "awaiting_answer", question: { reportId, text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 0, click: null, spoke: false, ...over } });
+
+test("看板：等回答的任务列出问题和编号选项，底部提示怎么作答；点过的按转交进度写明；久无进展的任务标出分钟数", () => {
+	const click = (option: number, state: "sent" | "handed_over" | "dropped") => ({ click: { option, state, triggerId: "trg_1" } });
+	const rows = [asking("tkt_ab12", "rpt_1"), asking("tkt_cd34", "rpt_2", click(1, "handed_over")), asking("tkt_gh78", "rpt_3", click(2, "sent")), asking("tkt_ij90", "rpt_4", click(0, "dropped")), row({ id: "tkt_ef56", stall: { since: 0, minutes: 42 } })];
+	const text = renderBoard({ rows, receivedAt: 0, connected: true }, 120, 42 * 60_000).join("\n");
+	assert.match(text, /问题：要看哪部分？\n\s+1\. 只看营收   2\. 营收和利润   3\. 先不查/);
+	assert.match(text, /已回答：营收和利润/);
+	assert.match(text, /已选「先不查」，等待幕僚长转交/);
+	assert.match(text, /幕僚长没有转交上次的选择，可以重选/);
+	assert.deepEqual(openChoices(rows).map((r) => r.id), ["tkt_ab12", "tkt_ij90"]);
+	assert.deepEqual(openChoices([asking("tkt_kl12", "rpt_5", { spoke: true })]), [], "刚打过字的问题不接数字");
+	assert.match(renderBoard({ rows: [asking("tkt_kl12", "rpt_5", { spoke: true })], receivedAt: 0, connected: true }, 120, 0).join("\n"), /你刚发了一句话，等幕僚长处理完再选/);
+	assert.match(text, /久无进展 42 分钟/);
+	assert.match(text, /回复数字作答；多个问题等回答时用 \/answer <编号> <序号>/);
+});
+
+async function answeringClient(rows: DashboardRow[]) {
+	const host = scriptedHost();
+	host.hello((s) => writeJsonLine(s, { type: "snapshot", conversation: [], board: rows }));
+	await host.listen();
+	const ext = await runExtension(host.path);
+	await until(() => host.fromClient.some((r) => r.type === "hello"), "连接");
+	await new Promise((r) => setTimeout(r, 50));
+	const sent = () => host.fromClient.filter((r) => r.type === "answer" || r.type === "say").map((r) => (r.type === "answer" ? [r.type, r.reportId, r.option] : [r.type, r.text]));
+	return { host, ext, sent };
+}
+
+test("客户端：只有一个问题等回答时，回复一个数字就选那一项；数字超出选项数时提醒，不发出", async (t) => {
+	const { host, ext, sent } = await answeringClient([asking("tkt_ab12", "rpt_1"), asking("tkt_cd34", "rpt_2", { click: { option: 0, state: "sent", triggerId: "trg_1" } })]);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await ext.input("2");
+	await ext.input("4");
+	await until(() => sent().length === 1, "发出回答");
+	await new Promise((r) => setTimeout(r, 50));
+	assert.deepEqual(sent(), [["answer", "rpt_1", 1]]);
+	assert.match(ext.warnings.join("\n"), /只有 3 个选项/);
+});
+
+test("客户端：多个问题等回答时数字不猜，提示用 /answer <编号> <序号>；/answer 按编号作答；没有问题时数字照常当一句话发", async (t) => {
+	const { host, ext, sent } = await answeringClient([asking("tkt_ab12", "rpt_1"), asking("tkt_cd34", "rpt_2")]);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await ext.input("1");
+	assert.match(ext.warnings.at(-1)!, /\/answer <编号> <序号>/);
+	await ext.command("answer", "cd34 3");
+	await until(() => sent().length === 1, "按编号发出");
+	assert.deepEqual(sent(), [["answer", "rpt_2", 2]]);
+	const quiet = await answeringClient([row({})]);
+	t.after(async () => { await quiet.ext.shutdown(); await quiet.host.close(); });
+	await quiet.ext.input("1");
+	await until(() => quiet.sent().length === 1, "当一句话发");
+	assert.deepEqual(quiet.sent(), [["say", "1"]]);
+});
+
+test("客户端：/answer 和 /watch 的编号写几位都行，只要能唯一认出任务", async (t) => {
+	const { host, ext, sent } = await answeringClient([asking("tkt_cd34ef56", "rpt_1"), asking("tkt_cd99aa00", "rpt_2")]);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await ext.command("answer", "cd34ef 2");
+	await until(() => sent().length === 1, "六位编号作答");
+	assert.deepEqual(sent(), [["answer", "rpt_1", 1]]);
+	await ext.command("watch", "cd99aa0");
+	await until(() => host.fromClient.some((r) => r.type === "watch"), "七位编号查看");
+	assert.equal(host.fromClient.find((r) => r.type === "watch")!.ticketId, "tkt_cd99aa00");
+	await ext.command("answer", "cd 1");
+	assert.match(ext.warnings.at(-1)!, /对应多个问题/);
+});
+
+test("客户端：宿主拒绝回答（问题已回答或已过期）时提醒使用者原因", async (t) => {
+	const { host, ext } = await answeringClient([asking("tkt_ab12", "rpt_1")]);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	host.onAnswer((s, r) => writeJsonLine(s, { type: "refused", requestId: r.requestId, reason: "这个问题已经回答过，或已不在等待回答" }));
+	await ext.input("1");
+	await until(() => ext.warnings.some((w) => w.includes("已经回答过")), "提醒原因");
 });
 
 test("看板：任意终端宽度下每行都不超宽（含中文双宽字符）", () => {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
 import { connect, createServer, type AddressInfo } from "node:net";
@@ -17,7 +17,7 @@ import { busyPort, ofType, openOnConversation, startHost, tempStateDir, until, w
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
 		id: "tkt_abcd1234", title: "查天气", stage: "running", basis: "request", latestSummary: null, model: "openai-codex/gpt-6.1-sol",
-		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, latestQuestion: null, ...over,
+		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, question: null, stall: null, ...over,
 	};
 }
 
@@ -75,7 +75,7 @@ test("页面：每个任务恰好进一个分组：待回复、待确认、受�
 
 test("页面：待你处理的卡片先显示问题，受阻的显示最近汇报；进行中的显示最近汇报，没有时说已开始", () => {
 	const left = page.leftColumn(withRows([
-		row({ id: "tkt_ask", stage: "awaiting_answer", basis: "rule", latestSummary: "需要确认", latestQuestion: "用 A 还是 B？" }),
+		row({ id: "tkt_ask", stage: "awaiting_answer", basis: "rule", latestSummary: "需要确认", question: { reportId: "rpt_1", text: "用 A 还是 B？", options: [], askedAt: 0, clickedOption: null } }),
 		row({ id: "tkt_stk", stage: "blocked_or_failed", basis: "inference", latestSummary: "缺少权限" }),
 		row({ id: "tkt_run", stage: "running", latestSummary: null }),
 		row({ id: "tkt_idl", stage: "idle", latestSummary: "读完 3 份" }),
@@ -83,6 +83,86 @@ test("页面：待你处理的卡片先显示问题，受阻的显示最近汇�
 	assert.deepEqual(left.needsYou.map((c) => [c.latest, c.stage, c.why]), [["用 A 还是 B？", "待回复", "规则触发"], ["缺少权限", "受阻", "主动发现"]]);
 	assert.deepEqual(left.doing.map((c) => [c.latest, c.stage, c.why]), [["已开始，暂无进展", "进行中", "你的请求"], ["读完 3 份", "等待中", "你的请求"]]);
 	assert.deepEqual([...left.needsYou, ...left.doing].map((c) => c.canStop), [false, false, true, true], "只有进行中的能停止");
+});
+
+const MIN = 60_000;
+const asked = (over: Partial<NonNullable<DashboardRow["question"]>> = {}) =>
+	({ reportId: "rpt_q1", text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 10 * MIN, click: null, spoke: false, ...over });
+
+test("页面：执行中久无进展的任务进待你处理，阶段写「久无进展 · N 分钟」并随时间增加，能停止", () => {
+	const view = withRows([row({ id: "tkt_slow", stage: "running", latestSummary: "在跑回归", stall: { since: 0, minutes: 42 } }), row({ id: "tkt_ok", stage: "running" })]);
+	const left = page.leftColumn(view, 42 * MIN + 5000);
+	assert.deepEqual(left.needsYou.map((c) => [c.id, c.stage, c.latest, c.canStop]), [["tkt_slow", "久无进展 · 42 分钟", "在跑回归", true]]);
+	assert.deepEqual(left.doing.map((c) => c.id), ["tkt_ok"]);
+	assert.equal(page.leftColumn(view, 45 * MIN).needsYou[0].stage, "久无进展 · 45 分钟");
+});
+
+test("页面：等回答且带选项的卡片有一组按钮；点过的按转交进度锁住并标出选了哪个；开放问题没有按钮", () => {
+	const click = (option: number, state: "sent" | "handed_over" | "dropped") => ({ option, state, triggerId: `trg_${state}` });
+	const view = withRows([
+		row({ id: "tkt_a", stage: "awaiting_answer", question: asked() }),
+		row({ id: "tkt_b", stage: "awaiting_answer", question: asked({ reportId: "rpt_q2", click: click(2, "sent") }) }),
+		row({ id: "tkt_c", stage: "running", question: asked({ reportId: "rpt_q3", click: click(1, "handed_over") }) }),
+		row({ id: "tkt_d", stage: "awaiting_answer", question: asked({ reportId: "rpt_q4", click: click(0, "dropped") }) }),
+		row({ id: "tkt_e", stage: "awaiting_answer", question: asked({ reportId: "rpt_q5", options: [] }) }),
+	]);
+	const left = page.leftColumn(view, 0);
+	const [a, b, d, e] = left.needsYou.map((card) => card.choice);
+	const [c] = left.doing.map((card) => card.choice);
+	assert.deepEqual(a, { reportId: "rpt_q1", buttons: [{ label: "只看营收", option: 0, picked: false }, { label: "营收和利润", option: 1, picked: false }, { label: "先不查", option: 2, picked: false }], locked: false, note: "" });
+	const seen = (x: typeof a) => [x?.locked, x?.buttons.map((y) => y.picked), x?.note];
+	assert.deepEqual(seen(b), [true, [false, false, true], "已发送，等待幕僚长转交"]);
+	assert.deepEqual(seen(c), [true, [false, true, false], "已回答"]);
+	assert.deepEqual(seen(d), [false, [false, false, false], "幕僚长没有转交这次选择，请重选或直接回复"]);
+	assert.equal(e, null);
+	const spoke = page.leftColumn(withRows([row({ stage: "awaiting_answer", question: asked({ spoke: true }) })]), 0).needsYou[0].choice;
+	assert.deepEqual(seen(spoke), [true, [false, false, false], "你刚发了一句话，等幕僚长处理完再点"]);
+	const posting = page.leftColumn(view, 0, new Map([["rpt_q1", { option: 1 }]])).needsYou[0].choice;
+	assert.deepEqual(seen(posting), [true, [false, true, false], "发送中…"]);
+	const posted = page.leftColumn(view, 0, new Map([["rpt_q4", { option: 2, triggerId: "trg_new" }]])).needsYou[2].choice;
+	assert.deepEqual(seen(posted), [true, [false, false, true], "已发送，等待幕僚长转交"], "宿主收下了，看板还没跟上");
+});
+
+test("页面：本地记着的点选，等看板上出现宿主给的那条触发、或问题已经不在时才放下；发送还没回来时一直留着", () => {
+	const view = withRows([row({ id: "tkt_a", stage: "awaiting_answer", question: asked({ click: { option: 0, state: "dropped", triggerId: "trg_old" } }) })]);
+	const sending = new Map<string, { option: number; triggerId?: string }>([["rpt_q1", { option: 1 }], ["rpt_gone", { option: 0, triggerId: "trg_g" }]]);
+	page.settleSending(view, sending);
+	assert.deepEqual([...sending.keys()], ["rpt_q1"]);
+	sending.set("rpt_q1", { option: 1, triggerId: "trg_new" });
+	page.settleSending(view, sending);
+	assert.deepEqual([...sending.keys()], ["rpt_q1"], "看板上还是旧的那次");
+	page.applyMessage(view, board([row({ id: "tkt_a", stage: "awaiting_answer", question: asked({ click: { option: 1, state: "sent", triggerId: "trg_new" } }) })]), 0);
+	page.settleSending(view, sending);
+	assert.equal(sending.size, 0);
+});
+
+test("页面：选项按钮也挂在对话里幕僚长转述这个问题的那一句下面：关于这个任务、在提问之后的最后一句；还没转述或问题结束时对话里没有", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, snapshot({ conversation: [
+		{ id: "rpl_old", who: "router", text: "收到", at: 5 * MIN, ticketId: "tkt_a" },
+		{ id: "rpl_q", who: "router", text: "要看哪部分？", at: 11 * MIN, ticketId: "tkt_a" },
+		{ id: "rpl_other", who: "router", text: "别的事", at: 12 * MIN, ticketId: "tkt_b" },
+		{ id: "trg_x", who: "user", text: "嗯", at: 13 * MIN },
+	], board: [row({ id: "tkt_a", stage: "awaiting_answer", question: asked() })] }), 0);
+	const choices = page.choicesInConversation(view, new Map());
+	assert.deepEqual([...choices.keys()], ["rpl_q"]);
+	assert.equal(choices.get("rpl_q")?.reportId, "rpt_q1");
+	page.applyMessage(view, board([row({ id: "tkt_a", stage: "running" })]), 0);
+	assert.equal(page.choicesInConversation(view, new Map()).size, 0);
+	const early = page.emptyView();
+	page.applyMessage(early, snapshot({ conversation: [{ id: "rpl_old", who: "router", text: "收到", at: 5 * MIN, ticketId: "tkt_a" }], board: [row({ id: "tkt_a", stage: "awaiting_answer", question: asked() })] }), 0);
+	assert.equal(page.choicesInConversation(early, new Map()).size, 0, "提问之前的话下面不挂");
+});
+
+test("页面：reply 帧带的 ticketId 留在对话行上", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, { type: "reply", replyId: "rpl_1", text: "要看哪部分？", at: 1, ticketId: "tkt_a" }, 0);
+	assert.equal(view.lines.get("rpl_1")?.ticketId, "tkt_a");
+});
+
+test("页面：点选项发的正文只有 {answer: {reportId, option}}，句子由宿主来写；409 显示固定文案", () => {
+	assert.deepEqual(JSON.parse(page.answerBody("rpt_q1", 2)), { answer: { reportId: "rpt_q1", option: 2 } });
+	assert.equal(page.sayCopy("rejected", 409), "发送失败：这个问题已经回答过，或已不在等待回答。");
 });
 
 test("页面：停止只在输入框里填一句话，含任务标题", () => {
@@ -103,14 +183,14 @@ test("页面：关注的来源每一行用来源原名，显示第一条规则�
 		],
 	}), 0);
 	assert.deepEqual(page.leftColumn(view).watching, [
-		{ name: "inbox", rule: "有人找我先看一遍", hits: "今日 2 条" },
-		{ name: "digest", rule: "每 1 天：早报", hits: "" },
-		{ name: "pager", rule: "每 30 分钟：看看", hits: "" },
-		{ name: "quotes", rule: "收到新消息时处理", hits: "" },
+		{ name: "inbox", rule: "有人找我先看一遍", hits: "今日 2 条", problem: false },
+		{ name: "digest", rule: "每 1 天：早报", hits: "", problem: false },
+		{ name: "pager", rule: "每 30 分钟：看看", hits: "", problem: false },
+		{ name: "quotes", rule: "收到新消息时处理", hits: "", problem: false },
 	]);
 });
 
-test("页面：带标题的来源显示标题和一句说明；看不了盘时把问题写在说明前面", () => {
+test("页面：带标题的来源显示标题和一句说明；看不了盘时把问题写在说明前面，标成有问题", () => {
 	const view = page.emptyView();
 	const rules = [{ id: "us-market/big-move", text: "涨多了查一查", by: "module" as const }];
 	page.applyMessage(view, snapshot({
@@ -120,9 +200,15 @@ test("页面：带标题的来源显示标题和一句说明；看不了盘时�
 		],
 	}), 0);
 	assert.deepEqual(page.leftColumn(view).watching, [
-		{ name: "美股行情", rule: "未配置行情密钥 · 交易时段每分钟看一遍自选股", hits: "" },
-		{ name: "港股行情", rule: "盘中看一遍", hits: "" },
+		{ name: "美股行情", rule: "未配置行情密钥 · 交易时段每分钟看一遍自选股", hits: "", problem: true },
+		{ name: "港股行情", rule: "盘中看一遍", hits: "", problem: false },
 	]);
+});
+
+test("页面：有问题的来源圆点用警示色，亮色和暗色主题都有", () => {
+	const html = readFileSync(new URL("../src/web/index.html", import.meta.url), "utf8");
+	assert.match(html, /\.watch\.problem::before \{ background: var\(--warn\); \}/);
+	assert.match(html, /--warn: light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\)/);
 });
 
 test("页面：今日来源消息 · N，明细只列不为 0 的去向", () => {
@@ -162,6 +248,12 @@ test("页面：工具调用写成步骤名称，未知工具写「调用工具 �
 	const steps = watched([tool("web_get", { url: "https://example.com/a?b=1" }), tool("read", { path: "/w/notes/a.md" }), tool("mystery", { x: 1 })]);
 	assert.deepEqual(steps.map((s) => [s.title, s.detail, s.state]), [["读取网页", "example.com", "pending"], ["读取文件", "a.md", "pending"], ["调用工具 mystery", "", "pending"]]);
 	assert.match(steps[0].raw, /web_get/);
+	const lookups = watched([
+		tool("lookup", { source: "us-market", op: "quote", args: { symbols: ["NVDA", "SPY"] } }),
+		tool("lookup", { source: "us-market", op: "bars", args: { symbol: "NVDA", span: "minute", from: "2026-11-09", to: "2026-11-09" } }),
+		tool("lookup", { source: "us-market", op: "session" }),
+	]);
+	assert.deepEqual(lookups.map((s) => [s.title, s.detail]), [["查询报价", "NVDA SPY"], ["查询 K 线", "NVDA"], ["查询交易时段", ""]]);
 	assert.match(steps[0].raw, /https:\/\/example\.com\/a\?b=1/);
 });
 
@@ -585,7 +677,7 @@ test("宿主：快照和 board 帧带今天的计数、值班时间和在盯着�
 	t.after(() => live.close());
 	await until(() => live.got.length > 0, "快照");
 	host.say("查天气");
-	await until(() => ofType(live.got, "board").some((m) => m.rows.some((r) => r.latestQuestion === "用 A 还是 B？")), "board 帧带问题");
+	await until(() => ofType(live.got, "board").some((m) => m.rows.some((r) => r.question?.text === "用 A 还是 B？")), "board 帧带问题");
 	const frame = ofType(live.got, "board").at(-1)!;
 	assert.deepEqual(frame.today.byDisposition, { ignored: 0, delivered: 0, to_router: 2, opened_ticket: 0, handed_over: 0, router_ignored: 0 });
 	assert.deepEqual(frame.today.bySource, { inbox: 2 });
@@ -617,7 +709,7 @@ test("宿主：午夜推完看板后排好下一次", async (t) => {
 	await until(() => ofType(stream.got, "board").length >= 2, "连续两个午夜的看板帧");
 });
 
-test("宿主：其他阶段的任务行 latestQuestion 为空；不传在盯着时快照里是空列表", async (t) => {
+test("宿主：其他阶段的任务行 question 为空；不传在盯着时快照里是空列表", async (t) => {
 	const brain = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
 	const { host } = await startHost(brain, (w) => {
 		w.report({ status: "progress", summary: "做了一半" });
@@ -626,7 +718,7 @@ test("宿主：其他阶段的任务行 latestQuestion 为空；不传在盯着�
 	t.after(() => host.stop());
 	host.say("查天气");
 	await until(() => host.snapshot().board.some((r) => r.latestSummary === "做了一半"), "汇报");
-	assert.deepEqual(host.snapshot().board.map((r) => [r.stage, r.latestQuestion]), [["idle", null]]);
+	assert.deepEqual(host.snapshot().board.map((r) => [r.stage, r.question]), [["idle", null]]);
 	assert.deepEqual(host.snapshot().watching, []);
 });
 
@@ -723,6 +815,101 @@ test("网关：GET /say 405；/say 以外的 POST 也是 405", async (t) => {
 	const { at } = await webHost(t);
 	assert.equal((await request(at("/say"))).status, 405);
 	assert.equal((await request(at("/"), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 405);
+});
+
+async function askedOnHost(host: Awaited<ReturnType<typeof sayHost>>["host"], title = "查财报") {
+	const { triggerId } = host.kernel.submitTrigger({ source: "conversation", externalId: title, threads: [{ id: "thr_conversation" }], sender: "user", body: title, occurredAt: Date.now() });
+	const [opened] = host.kernel.route([{ kind: "open_ticket", basis: "request", triggerId, title, brief: title }]);
+	const ticketId = (opened as { ticketId: string }).ticketId;
+	const { reportId } = host.kernel.workerReport(ticketId, { status: "blocked", summary: "两种口径", question: "要看哪部分？", options: ["只看营收", "营收和利润"] });
+	return { ticketId, reportId };
+}
+
+const answerBody = (reportId: string, option: number) => JSON.stringify({ answer: { reportId, option } });
+
+test("网关：POST /say 带 answer 时，宿主替使用者说出「回答任务「标题」：选项」；转交之后重试返回同一个 triggerId，对话里只有一句", async (t) => {
+	const { host, post, events, userLines } = await sayHost(t);
+	const { ticketId, reportId } = await askedOnHost(host);
+	const stream = events();
+	await until(() => stream.got.length > 0, "快照");
+	const first = await post(answerBody(reportId, 1));
+	assert.ok(host.kernel.route([{ kind: "hand_over", triggerId: JSON.parse(first.body).triggerId, ticketId }])[0].ok);
+	const again = await post(answerBody(reportId, 1));
+	assert.deepEqual([first.status, again.status], [200, 200]);
+	const { triggerId } = JSON.parse(first.body);
+	assert.equal(JSON.parse(again.body).triggerId, triggerId);
+	await until(() => ofType(stream.got, "user").some((m) => m.id === triggerId), "user");
+	await until(() => ofType(stream.got, "board").some((m) => m.rows.some((r) => r.question?.click?.option === 1 && r.question.click.state === "handed_over")), "看板显示已回答");
+	assert.deepEqual(ofType(stream.got, "user").map((m) => m.text), ["回答任务「查财报」：营收和利润"]);
+	assert.deepEqual(userLines().filter((l) => l.startsWith("回答任务")), ["回答任务「查财报」：营收和利润"]);
+});
+
+test("网关：点过一项后换另一项 POST 返回 409，正文说明已选哪一项；对话里只有第一句", async (t) => {
+	const { host, post, userLines } = await sayHost(t);
+	const { ticketId, reportId } = await askedOnHost(host);
+	const first = await post(answerBody(reportId, 0));
+	assert.ok(host.kernel.route([{ kind: "hand_over", triggerId: JSON.parse(first.body).triggerId, ticketId }])[0].ok);
+	const other = await post(answerBody(reportId, 1));
+	assert.equal(other.status, 409);
+	assert.deepEqual(JSON.parse(other.body), { refused: "chosen", option: 0, reason: "已选「只看营收」" });
+	assert.deepEqual(userLines().filter((l) => l.startsWith("回答任务")), ["回答任务「查财报」：只看营收"]);
+});
+
+test("页面：点选被拒时按原因显示固定文案；已选的那一项用页面自己的选项文字", () => {
+	const options = ["只看营收", "营收和利润"];
+	assert.equal(page.answerRefusedCopy(409, { refused: "chosen", option: 1 }, options), "发送失败：已选「营收和利润」。");
+	assert.equal(page.answerRefusedCopy(409, { refused: "closed" }, options), "发送失败：这个问题已经回答过，或已不在等待回答。");
+	assert.equal(page.answerRefusedCopy(409, { refused: "chosen", option: 9, reason: "<b>x</b>" }, options), "发送失败：这个问题已经回答过，或已不在等待回答。");
+	assert.equal(page.answerRefusedCopy(413, null, options), "发送失败：内容过长，请分几次发送。");
+	assert.equal(page.answerRefusedCopy(409, { refused: "spoke" }, options), "发送失败：你刚发了一句话，幕僚长处理完之前不能点选项。");
+});
+
+test("网关：提问之后先打字再点选项，幕僚长还没处理那句话时点选返回 409，正文说明原因", async (t) => {
+	const { host, post, userLines } = await sayHost(t);
+	const { reportId } = await askedOnHost(host);
+	await new Promise((r) => setTimeout(r, 5));
+	host.kernel.userSaid({ text: "两个都要", at: Date.now() });
+	const res = await post(answerBody(reportId, 0));
+	assert.equal(res.status, 409);
+	assert.equal(JSON.parse(res.body).refused, "spoke");
+	assert.ok(!userLines().some((l) => l.startsWith("回答任务")));
+});
+
+test("网关：answer 的汇报编号不存在时 404，正文说问题不存在；页面显示固定文案", async (t) => {
+	const { post, userLines } = await sayHost(t);
+	const res = await post(answerBody("rpt_missing", 0));
+	assert.equal(res.status, 404);
+	assert.deepEqual(JSON.parse(res.body), { refused: "no_question", reason: "这个问题不存在" });
+	assert.deepEqual(userLines(), []);
+	assert.equal(page.answerRefusedCopy(404, JSON.parse(res.body), []), "发送失败：这个问题不存在。");
+});
+
+test("网关：问题已经打字回答过时 POST /say 的 answer 返回 409，对话里不多一句", async (t) => {
+	const { host, post, userLines } = await sayHost(t);
+	const { ticketId, reportId } = await askedOnHost(host);
+	const typed = host.say("两个都要");
+	assert.ok(host.kernel.route([{ kind: "hand_over", triggerId: typed, ticketId }])[0].ok);
+	const res = await post(answerBody(reportId, 0));
+	assert.equal(res.status, 409);
+	assert.equal(JSON.parse(res.body).refused, "closed");
+	assert.match(JSON.parse(res.body).reason, /已经回答过/);
+	assert.ok(!userLines().some((l) => l.startsWith("回答任务")));
+});
+
+test("网关：answer 的形状不对时 400：同时带 text、reportId 不像汇报编号、option 不是 0 到 3 的整数", async (t) => {
+	const { host, post, userLines } = await sayHost(t);
+	const { reportId } = await askedOnHost(host);
+	const bodies = [
+		JSON.stringify({ text: "x", answer: { reportId, option: 0 } }),
+		JSON.stringify({ answer: { reportId: "tkt_1", option: 0 } }),
+		JSON.stringify({ answer: { reportId, option: 7 } }),
+		JSON.stringify({ answer: { reportId, option: "1" } }),
+		JSON.stringify({ answer: { reportId, option: 1.5 } }),
+		JSON.stringify({ answer: null }),
+		JSON.stringify({ answer: { reportId, option: 0, extra: true } }),
+	];
+	for (const body of bodies) assert.equal((await post(body)).status, 400, body);
+	assert.deepEqual(userLines(), ["查财报"]);
 });
 
 async function watchHost(t: TestContext) {

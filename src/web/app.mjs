@@ -1,8 +1,8 @@
 // @ts-check
 
 import {
-	STAGE_PHRASE, BASIS_PHRASE, applyMessage, applyTranscript, canSend, dutyLine, emptyView, emptyWatch,
-	helperTint, isStale, leftColumn, resolveTheme, restartNotice, sayCopy, sayOutcome, settleSay, smallPrint, stopSentence, toggleTheme,
+	STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canSend, choicesInConversation, dutyLine, emptyView, emptyWatch,
+	helperTint, isStale, leftColumn, resolveTheme, restartNotice, sayCopy, sayOutcome, settleSay, settleSending, smallPrint, stopSentence, toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, isLive } from "../client/board-format.mjs";
 
@@ -39,6 +39,8 @@ function mount(doc) {
 	let unconfirmed;
 	/** @type {{ watch: ReturnType<typeof emptyWatch>, source: EventSource } | undefined} */
 	let watching;
+	/** @type {import("./view.mjs").Sending} */
+	const sending = new Map();
 
 	/** @param {string} tag @param {string} className @param {string} [text] */
 	const el = (tag, className, text = "") => {
@@ -54,11 +56,11 @@ function mount(doc) {
 		status.textContent = STATUS_TEXT[s];
 	};
 
-	/** @param {import("./view.mjs").SayState} state @param {number} [status] */
-	const setSay = (state, status) => {
+	/** @param {import("./view.mjs").SayState} state @param {number} [status] @param {string} [text] */
+	const setSay = (state, status, text = sayCopy(state, status)) => {
 		sayState = state;
 		sayStatus.dataset.state = state;
-		sayStatus.textContent = sayCopy(state, status);
+		sayStatus.textContent = text;
 	};
 
 	const store = {
@@ -98,6 +100,29 @@ function mount(doc) {
 		return badge;
 	};
 
+	/** @param {HTMLElement} box @param {import("./view.mjs").Choice | null | undefined} choice */
+	const fillChoices = (box, choice) => {
+		box.replaceChildren();
+		if (!choice) return;
+		for (const b of choice.buttons) {
+			const button = el("button", "", b.label);
+			button.type = "button";
+			button.disabled = choice.locked;
+			button.setAttribute("aria-pressed", String(b.picked));
+			button.addEventListener("click", (e) => {
+				e.stopPropagation();
+				void answer(choice.reportId, b.option);
+			});
+			box.append(button);
+		}
+		if (choice.note) box.append(el("span", "note", choice.note));
+	};
+
+	const renderChoices = () => {
+		const placed = choicesInConversation(view, sending);
+		for (const box of thread.querySelectorAll(".choices[data-line]")) fillChoices(/** @type {HTMLElement} */ (box), placed.get(box.getAttribute("data-line") ?? ""));
+	};
+
 	/** @param {import("./view.mjs").TaskCard} card @param {string} tone */
 	const taskCard = (card, tone) => {
 		const node = el("div", `card ${tone}`);
@@ -107,6 +132,11 @@ function mount(doc) {
 		const head = el("div", "head");
 		head.append(helperBadge(card.id), el("div", "title", card.title));
 		node.append(head, el("div", "why", `${card.why} · ${card.stage}`), el("div", "latest", card.latest));
+		if (card.choice) {
+			const box = el("div", "choices");
+			fillChoices(box, card.choice);
+			node.append(box);
+		}
 		if (card.canStop) {
 			const row = el("div", "row");
 			const stop = el("button", "stop", "停止");
@@ -137,7 +167,7 @@ function mount(doc) {
 	};
 
 	const renderLeft = () => {
-		const left = leftColumn(view);
+		const left = leftColumn(view, Date.now(), sending);
 		const today = el("section", "");
 		today.id = "today";
 		today.append(el("div", "headline", left.today.headline), el("div", "detail", left.today.detail));
@@ -151,7 +181,7 @@ function mount(doc) {
 			section(`待你处理 · ${left.needsYou.length}`, left.needsYou.map((c) => taskCard(c, "ask")), "暂无待处理事项。", "warn"),
 			section(`进行中 · ${left.doing.length}`, left.doing.map((c) => taskCard(c, "doing")), "暂无进行中的任务。"),
 			section(`关注的来源 · ${left.watching.length}`, left.watching.map((w) => {
-				const node = el("div", "watch");
+				const node = el("div", w.problem ? "watch problem" : "watch");
 				const body = el("div", "");
 				body.append(el("div", "name", w.name), el("div", "rule", [w.rule, w.hits].filter(Boolean).join(" · ")));
 				node.append(body);
@@ -171,7 +201,9 @@ function mount(doc) {
 			if (line.who === "router") {
 				const avatar = avatarMark.cloneNode(true);
 				const said = el("div", "said");
-				said.append(el("div", "who", "幕僚长"), bubble);
+				const choices = el("div", "choices");
+				choices.dataset.line = line.id;
+				said.append(el("div", "who", "幕僚长"), bubble, choices);
 				item.append(avatar, said);
 			} else {
 				bubble.prepend(el("span", "sr", "你："));
@@ -180,6 +212,7 @@ function mount(doc) {
 			thread.append(item);
 		}
 		rendered = view.lines.size;
+		renderChoices();
 		if (atBottom) box.scrollTop = box.scrollHeight;
 		settleUnconfirmed();
 	};
@@ -221,7 +254,49 @@ function mount(doc) {
 		}));
 	};
 
-	const render = { conversation: renderConversation, left: renderLeft, header: renderHeader };
+	const render = {
+		conversation: renderConversation,
+		left: () => {
+			renderLeft();
+			renderChoices();
+		},
+		header: renderHeader,
+	};
+
+	/** @param {string} reportId @param {number} option */
+	const answer = async (reportId, option) => {
+		if (sending.has(reportId)) return;
+		sending.set(reportId, { option });
+		render.left();
+		const abort = new AbortController();
+		const timer = setTimeout(() => abort.abort(), DEFAULT_ACK_TIMEOUT_MS);
+		try {
+			const res = await fetch(`/say?${query}`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: answerBody(reportId, option),
+				signal: abort.signal,
+				cache: "no-store",
+			});
+			const state = sayOutcome({ status: res.status });
+			if (state === "expired") setStatus("expired");
+			if (state === "delivered") {
+				sending.set(reportId, { option, triggerId: (await res.json()).triggerId });
+				settleSending(view, sending);
+				setSay(state);
+			} else {
+				sending.delete(reportId);
+				const options = view.rows.find((r) => r.question?.reportId === reportId)?.question?.options ?? [];
+				setSay(state, res.status, state === "rejected" ? answerRefusedCopy(res.status, await res.json().catch(() => null), options) : undefined);
+			}
+		} catch {
+			sending.delete(reportId);
+			setSay(sayOutcome(abort.signal.aborted ? "timeout" : "network"));
+		} finally {
+			clearTimeout(timer);
+			render.left();
+		}
+	};
 
 	/** @param {string} ticketId */
 	const watch = (ticketId) => {
@@ -262,6 +337,7 @@ function mount(doc) {
 		events.onmessage = (e) => {
 			alive();
 			const panes = applyMessage(view, JSON.parse(e.data), Date.now());
+			if (panes.includes("left")) settleSending(view, sending);
 			for (const pane of panes) render[pane]();
 			if (panes.includes("left")) renderHow();
 		};
@@ -319,7 +395,10 @@ function mount(doc) {
 	setInterval(() => {
 		if (watching && view.rows.some((r) => r.id === watching?.watch.ticketId && isLive(r))) renderHow();
 	}, 1000);
-	setInterval(renderHeader, 30_000);
+	setInterval(() => {
+		renderHeader();
+		if (view.rows.some((r) => r.stall)) renderLeft();
+	}, 30_000);
 	connect();
 }
 

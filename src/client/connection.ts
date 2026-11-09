@@ -44,7 +44,7 @@ export class HostConnection {
 		});
 		onJsonLines(socket, (record) => {
 			const message = record as HostToClient;
-			if (message.type === "ack") {
+			if (message.type === "ack" || message.type === "refused") {
 				clearTimeout(this.#awaitingAck.get(message.requestId));
 				this.#awaitingAck.delete(message.requestId);
 			}
@@ -64,13 +64,24 @@ export class HostConnection {
 	say(text: string): string | undefined {
 		const requestId = randomUUID();
 		if (!this.#send({ type: "say", text, requestId })) return undefined;
+		this.#expectAck(requestId, text);
+		return requestId;
+	}
+
+	answer(reportId: string, option: number, label = `第 ${option + 1} 个选项`): string | undefined {
+		const requestId = randomUUID();
+		if (!this.#send({ type: "answer", reportId, option, requestId })) return undefined;
+		this.#expectAck(requestId, label);
+		return requestId;
+	}
+
+	#expectAck(requestId: string, text: string): void {
 		const timer = setTimeout(() => {
 			this.#awaitingAck.delete(requestId);
 			this.#o.onAckMissing?.(text);
 		}, this.#o.ackTimeoutMs ?? DEFAULT_ACK_TIMEOUT_MS);
 		timer.unref();
 		this.#awaitingAck.set(requestId, timer);
-		return requestId;
 	}
 
 	watch(ticketId: string | undefined): void {

@@ -92,10 +92,19 @@ CREATE TABLE IF NOT EXISTS reports (
 	status TEXT NOT NULL ${oneOf("status", REPORT_STATUSES)},
 	summary TEXT NOT NULL,
 	question TEXT,
+	options TEXT NOT NULL DEFAULT '[]',
 	drafts TEXT NOT NULL,
 	waiting INTEGER NOT NULL,
 	created_at INTEGER NOT NULL
 );
+
+-- A click on an option of the question in report_id; the trigger is the sentence the host wrote for it.
+CREATE TABLE IF NOT EXISTS answer_clicks (
+	trigger_id TEXT PRIMARY KEY REFERENCES triggers(id),
+	report_id TEXT NOT NULL REFERENCES reports(id),
+	option INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS answer_clicks_report ON answer_clicks (report_id);
 
 CREATE TABLE IF NOT EXISTS decisions (
 	seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,6 +170,8 @@ export function openStore(path: string): DatabaseSync {
 	const replyColumns = db.prepare("PRAGMA table_info(reply_receipts)").all().map((c) => (c as { name: string }).name);
 	if (!replyColumns.includes("cause")) db.exec("ALTER TABLE reply_receipts ADD COLUMN cause TEXT");
 	db.exec("CREATE INDEX IF NOT EXISTS reply_receipts_cause ON reply_receipts(cause)");
+	const reportColumns = db.prepare("PRAGMA table_info(reports)").all().map((c) => (c as { name: string }).name);
+	if (!reportColumns.includes("options")) db.exec("ALTER TABLE reports ADD COLUMN options TEXT NOT NULL DEFAULT '[]'");
 	return db;
 }
 

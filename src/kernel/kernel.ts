@@ -1,8 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
+import { answerExternalId, answerSentence, type AnswerRefusal } from "./question.ts";
+
+export type AnswerOutcome = { ok: true; triggerId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 import { deriveStage } from "./stage.ts";
+import { stallMinutes } from "../client/board-format.mjs";
 import { inTransaction } from "./store.ts";
 import {
+	CONVERSATION_SOURCE,
 	CONVERSATION_THREAD_ID,
 	DEFAULT_CONFIG,
 	RETRY_BACKOFF_MS,
@@ -11,11 +16,14 @@ import {
 import type {
 	Action,
 	ActionKind,
+	AnswerClick,
 	Basis,
 	Clock,
 	DashboardRow,
 	Decision,
 	DecisionLogEntry,
+	PendingQuestion,
+	QuestionClick,
 	DecisionResult,
 	Disposition,
 	InputKind,
@@ -26,6 +34,7 @@ import type {
 	Result,
 	RouterNotice,
 	SourcePolicy,
+	Stall,
 	SystemProblem,
 	Thread,
 	Ticket,
@@ -41,6 +50,9 @@ type Row = Record<string, any>;
 const RECOVERY_NOTE = "process restarted; inspect your workdir before repeating any external action";
 
 const reject = (reason: string) => ({ ok: false as const, reason });
+
+const answerOnly = (triggerId: string, ticketId: string) =>
+	`${triggerId} is the user's click answering ${ticketId}'s question; route hand_over to ${ticketId}`;
 
 function localDayStart(ms: number): number {
 	const d = new Date(ms);
@@ -75,6 +87,7 @@ function toReport(r: Row): Report {
 		status: r.status,
 		summary: r.summary,
 		question: r.question,
+		options: JSON.parse(r.options),
 		drafts: JSON.parse(r.drafts),
 		waiting: r.waiting === 1,
 		createdAt: r.created_at,
@@ -94,6 +107,12 @@ function toInput(r: Row): TicketInput {
 }
 
 const SOURCE_THREAD = /^thr_([\w-]+):.+$/;
+
+/** When the next running task that has not stalled yet will, or null when none is running. */
+export function nextStallAt(rows: DashboardRow[], stuckMs: number): number | null {
+	const at = rows.filter((r) => r.stage === "running" && !r.stall && r.lastProgressAt !== null).map((r) => r.lastProgressAt! + stuckMs);
+	return at.length ? Math.min(...at) : null;
+}
 
 export interface KernelOptions {
 	db: DatabaseSync;
@@ -168,6 +187,41 @@ export class Kernel {
 		});
 	}
 
+	userSaid({ text, at, externalId = randomUUID() }: { text: string; at: number; externalId?: string }): { triggerId: string; duplicate: boolean } {
+		return this.submitTrigger({
+			source: CONVERSATION_SOURCE,
+			externalId,
+			threads: [{ id: CONVERSATION_THREAD_ID, title: "对话" }],
+			sender: "user",
+			body: text,
+			occurredAt: at,
+		});
+	}
+
+	answerQuestion({ reportId, option, at }: { reportId: string; option: number; at: number }): AnswerOutcome {
+		return this.#tx((): AnswerOutcome => {
+			const refuse = (refusal: AnswerRefusal) => ({ ok: false as const, refusal });
+			const report = this.#get("SELECT ticket_id, options FROM reports WHERE id = ?", reportId);
+			if (!report) return refuse({ kind: "no_question" });
+			const options: string[] = JSON.parse(report.options);
+			const click = this.#latestClick(reportId);
+			if (click && click.state !== "dropped") {
+				if (click.option !== option) return refuse({ kind: "chosen", option: click.option, label: options[click.option] });
+				return { ok: true, triggerId: click.triggerId, text: this.#get("SELECT body FROM triggers WHERE id = ?", click.triggerId)!.body, duplicate: true };
+			}
+			const ticket = this.#ticket(report.ticket_id)!;
+			if (ticket.stage !== "awaiting_answer" || ticket.latestReport?.id !== reportId) return refuse({ kind: "closed" });
+			if (this.#spokeSince(ticket.latestReport.createdAt)) return refuse({ kind: "spoke" });
+			if (options.length === 0) return refuse({ kind: "no_options" });
+			if (!Number.isInteger(option) || option < 0 || option >= options.length) return refuse({ kind: "out_of_range", count: options.length });
+			const text = answerSentence(ticket.title, options[option]);
+			const clicks = this.#get("SELECT COUNT(*) AS n FROM answer_clicks WHERE report_id = ?", reportId)!.n as number;
+			const { triggerId } = this.userSaid({ text, at, externalId: answerExternalId(reportId, clicks + 1) });
+			this.#run("INSERT INTO answer_clicks (trigger_id, report_id, option) VALUES (?, ?, ?)", triggerId, reportId, option);
+			return { ok: true, triggerId, text, duplicate: false };
+		});
+	}
+
 	route(decisions: Decision[]): DecisionResult[] {
 		const takenThisRoute = new Set<string>();
 		return this.#tx(() =>
@@ -206,7 +260,7 @@ export class Kernel {
 				text,
 				this.#now(),
 			);
-			this.#enqueue({ kind: "channel.reply", payload: { threadId, text, replyId } });
+			this.#enqueue({ kind: "channel.reply", payload: { threadId, text, replyId, ticketId: cause.startsWith("tkt_") ? cause : null } });
 			return { ok: true, replyId };
 		});
 	}
@@ -266,14 +320,15 @@ export class Kernel {
 			const reportId = this.#id("rpt");
 			const now = this.#now();
 			this.#run(
-				`INSERT INTO reports (id, seq, ticket_id, status, summary, question, drafts, waiting, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				`INSERT INTO reports (id, seq, ticket_id, status, summary, question, options, drafts, waiting, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				reportId,
 				this.#nextSeq(),
 				ticketId,
 				report.status,
 				report.summary,
 				report.question ?? null,
+				JSON.stringify(report.options ?? []),
 				JSON.stringify(report.drafts ?? []),
 				report.waiting ? 1 : 0,
 				now,
@@ -518,7 +573,8 @@ export class Kernel {
 				stage: t.stage,
 				basis: t.basis,
 				latestSummary: t.latestReport?.summary ?? null,
-				latestQuestion: t.stage === "awaiting_answer" || t.stage === "awaiting_review" ? (t.latestReport?.question ?? null) : null,
+				question: this.#pendingQuestion(t),
+				stall: this.#stall(t, now),
 				model: t.model,
 				fellBack: t.fellBack,
 				toolCalls: t.toolCalls,
@@ -528,6 +584,63 @@ export class Kernel {
 				lastProgressAt: t.lastProgressAt,
 			};
 		});
+	}
+
+	#stall(t: Ticket, now: number): Stall | null {
+		if (t.stage !== "running" || t.lastProgressAt === null) return null;
+		const quietMs = now - t.lastProgressAt;
+		return quietMs >= this.config.stuckMs ? { since: t.lastProgressAt, minutes: stallMinutes(t.lastProgressAt, now) } : null;
+	}
+
+	// A question stays on the board after its click is handed over, so every client can show what was picked.
+	#pendingQuestion(t: Ticket): PendingQuestion | null {
+		const report = t.latestReport;
+		if (!report?.question) return null;
+		const click = this.#latestClick(report.id);
+		if (t.stage !== "awaiting_answer" && click?.state !== "handed_over") return null;
+		return { reportId: report.id, text: report.question, options: report.options, askedAt: report.createdAt, click, spoke: this.#spokeSince(report.createdAt) };
+	}
+
+	#spokeSince(at: number): boolean {
+		const said = this.#column(
+			`SELECT t.id AS v FROM triggers t JOIN trigger_threads tt ON tt.trigger_id = t.id
+			 WHERE tt.thread_id = ? AND t.received_at > ? AND t.disposition = 'to_router'
+			   AND NOT EXISTS (SELECT 1 FROM answer_clicks c WHERE c.trigger_id = t.id)`,
+			CONVERSATION_THREAD_ID,
+			at,
+		);
+		return said.some((id) => this.#routerHasYet(id));
+	}
+
+	#latestClick(reportId: string): QuestionClick | null {
+		const c = this.#get(
+			`SELECT c.trigger_id, c.option, t.disposition FROM answer_clicks c JOIN triggers t ON t.id = c.trigger_id
+			 WHERE c.report_id = ? ORDER BY c.rowid DESC LIMIT 1`,
+			reportId,
+		);
+		if (!c) return null;
+		const state = c.disposition === "handed_over" ? "handed_over" : c.disposition === "to_router" && this.#routerHasYet(c.trigger_id) ? "sent" : "dropped";
+		return { option: c.option, state, triggerId: c.trigger_id };
+	}
+
+	// The Router's notice stays pending until a Router turn that saw it ends cleanly.
+	#routerHasYet(triggerId: string): boolean {
+		return !!this.#get(
+			"SELECT 1 FROM actions WHERE status = 'pending' AND kind = 'router.notify' AND json_extract(payload, '$.triggerId') = ?",
+			triggerId,
+		);
+	}
+
+	#answerOf(triggerId: string): AnswerClick | null {
+		const r = this.#get(
+			"SELECT c.report_id, c.option, r.ticket_id, r.question, r.options FROM answer_clicks c JOIN reports r ON r.id = c.report_id WHERE c.trigger_id = ?",
+			triggerId,
+		);
+		return r ? { ticketId: r.ticket_id, reportId: r.report_id, question: r.question, option: JSON.parse(r.options)[r.option] } : null;
+	}
+
+	#boundTicket(triggerId: string): string | null {
+		return this.#answerOf(triggerId)?.ticketId ?? null;
 	}
 
 	pendingInputs(ticketId: string): TicketInput[] {
@@ -543,6 +656,7 @@ export class Kernel {
 			return {
 				type: "trigger",
 				trigger: toTrigger(row),
+				answers: this.#answerOf(id),
 				threadIds: this.#column("SELECT thread_id AS v FROM trigger_threads WHERE trigger_id = ?", id),
 				ticketIds: this.#column(
 					`SELECT ticket_id AS v FROM ticket_inputs WHERE trigger_id = ?
@@ -603,20 +717,20 @@ export class Kernel {
 		}));
 	}
 
-	conversation(limit = 50): { id: string; who: "user" | "router"; text: string; at: number }[] {
+	conversation(limit = 50): { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string }[] {
 		return this.#all(
 			`SELECT * FROM (
-				SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord FROM triggers t
+				SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord, NULL AS cause FROM triggers t
 				JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ?
 				UNION ALL
-				SELECT r.id, 'router', r.text, r.created_at, r.rowid FROM reply_receipts r WHERE r.thread_id = ?
+				SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause FROM reply_receipts r WHERE r.thread_id = ?
 			) ORDER BY at DESC, who = 'router' DESC, ord DESC LIMIT ?`,
 			CONVERSATION_THREAD_ID,
 			CONVERSATION_THREAD_ID,
 			limit,
 		)
 			.reverse()
-			.map((r) => ({ id: r.id, who: r.who, text: r.text, at: r.at }));
+			.map((r) => ({ id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { ticketId: r.cause } : {}) }));
 	}
 
 	sourceCursor(source: string): string | undefined {
@@ -648,6 +762,8 @@ export class Kernel {
 				if (!trigger) return reject(`unknown trigger ${d.triggerId}`);
 				const unusable = this.#evidenceProblem(d.triggerId, takenThisRoute);
 				if (unusable) return reject(unusable);
+				const bound = this.#boundTicket(d.triggerId);
+				if (bound && bound !== d.ticketId) return reject(answerOnly(d.triggerId, bound));
 				const problem = this.#acceptsInput(d.ticketId);
 				if (problem) return reject(problem);
 				const kind: InputKind = this.#inConversation(d.triggerId) ? "user_message" : "trigger";
@@ -691,6 +807,8 @@ export class Kernel {
 		if (d.triggerId !== undefined && !trigger) return reject(`unknown trigger ${d.triggerId}`);
 		const unusable = d.triggerId === undefined ? undefined : this.#evidenceProblem(d.triggerId, takenThisRoute);
 		if (unusable) return reject(unusable);
+		const bound = d.triggerId === undefined ? null : this.#boundTicket(d.triggerId);
+		if (bound) return reject(answerOnly(d.triggerId!, bound));
 		if (d.basis === "request" && (d.triggerId === undefined || !this.#inConversation(d.triggerId))) {
 			return reject("basis request requires a conversation trigger from the user");
 		}

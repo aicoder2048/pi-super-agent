@@ -22,6 +22,8 @@ export interface HostConfig {
 	sources: Record<string, unknown>;
 }
 
+const STUCK_MINUTES_MAX = 1440;
+
 export function defaultStateDir(): string {
 	return resolve(process.env.PSA_STATE_DIR ?? join(homedir(), ".pi-super-agent"));
 }
@@ -35,6 +37,13 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	const watchdog = { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120, ...(raw.watchdog ?? {}) };
 	if (!(watchdog.staleSeconds > 2 * heartbeatSeconds)) {
 		throw new ConfigError(`${file}：watchdog.staleSeconds（${watchdog.staleSeconds}）必须大于 heartbeatSeconds（${heartbeatSeconds}）的两倍，否则 Watchdog 会反复重启健康的宿主`);
+	}
+	const { stuckMinutes } = watchdog;
+	if (typeof stuckMinutes !== "number" || !(stuckMinutes > 0 && stuckMinutes <= STUCK_MINUTES_MAX)) {
+		throw new ConfigError(`${file}：watchdog.stuckMinutes（${JSON.stringify(stuckMinutes)}）必须是大于 0、不超过 ${STUCK_MINUTES_MAX} 的分钟数`);
+	}
+	if (raw.kernel?.stuckMs !== undefined) {
+		throw new ConfigError(`${file}：不要写 kernel.stuckMs，久无进展的阈值只用 watchdog.stuckMinutes 设置`);
 	}
 	const webPort = raw.webPort ?? 4517;
 	if (!Number.isInteger(webPort) || webPort < 0 || webPort > 65535) {
@@ -56,7 +65,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 			worker: parseModelRef(models.worker, `${file}：models.worker`),
 			fallback: parseModelRef(models.fallback, `${file}：models.fallback`),
 		},
-		kernel: raw.kernel ?? {},
+		kernel: { ...(raw.kernel ?? {}), stuckMs: stuckMinutes * 60_000 },
 		bgMaxMinutes: raw.bgMaxMinutes ?? 120,
 		fallbackDailyTokens: raw.fallbackDailyTokens ?? 8_000_000,
 		retryAttempts: raw.retryAttempts ?? 3,

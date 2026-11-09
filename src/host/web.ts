@@ -3,8 +3,9 @@ import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { ConfigError } from "../config-error.ts";
+import { OPTIONS_MAX, refusalText, type AnswerRefusal } from "../kernel/question.ts";
 import type { HostToClient, TranscriptMessage } from "../client/protocol.ts";
-import { hasVisibleText, HistoryEchoFilter, type Broadcast } from "./server.ts";
+import { hasVisibleText, HistoryEchoFilter, type AnswerResult, type Broadcast } from "./server.ts";
 
 type Snapshot = Omit<Extract<HostToClient, { type: "snapshot" }>, "type">;
 
@@ -12,10 +13,12 @@ export interface WebHost {
 	snapshot(): Snapshot;
 	transcript(ticketId: string): TranscriptMessage[];
 	say(text: string): string;
+	answer(reportId: string, option: number): AnswerResult;
 }
 
 const SAY_MAX_BYTES = 32 * 1024;
 const TICKET_ID = /^tkt_[A-Za-z0-9_-]{1,64}$/;
+const REPORT_ID = /^rpt_[A-Za-z0-9_-]{1,64}$/;
 
 const INDEX_HTML = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
 const SCRIPT = "text/javascript; charset=utf-8";
@@ -34,7 +37,7 @@ const KEEPALIVE_MS = 15_000;
 const INTERNAL_ERROR = "宿主内部出错，详情见宿主日志。";
 
 const DENIED = {
-	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"}，或这句话是空的。",
+	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"} 或 {\"answer\": {\"reportId\": \"rpt_…\", \"option\": 0}}，或这句话是空的。",
 	401: "token 缺失或已失效，请用宿主日志里最新的网址打开。",
 	403: "只接受本机这个页面（127.0.0.1 或 localhost）发来的请求。",
 	404: "没有这个页面。",
@@ -152,9 +155,11 @@ export class WebGateway {
 		req.on("end", () =>
 			this.#guard(req, res, () => {
 				if (res.headersSent) return;
-				const text = parseSay(Buffer.concat(chunks).toString("utf8"));
-				if (text === undefined) return deny(res, 400);
-				const triggerId = this.#host.say(text);
+				const body = parseSayBody(Buffer.concat(chunks).toString("utf8"));
+				if (body === undefined) return deny(res, 400);
+				const result = body.kind === "text" ? { ok: true as const, triggerId: this.#host.say(body.text) } : this.#host.answer(body.reportId, body.option);
+				if (!result.ok) return refuse(res, result.refusal);
+				const { triggerId } = result;
 				res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ triggerId }));
 			}),
 		);
@@ -175,14 +180,25 @@ export class WebGateway {
 	}
 }
 
-function parseSay(body: string): string | undefined {
+type SayBody = { kind: "text"; text: string } | { kind: "answer"; reportId: string; option: number };
+
+function parseSayBody(body: string): SayBody | undefined {
+	let parsed: unknown;
 	try {
-		const parsed: unknown = JSON.parse(body);
-		const text = (parsed as { text?: unknown } | null)?.text;
-		return typeof text === "string" && hasVisibleText(text) ? text : undefined;
+		parsed = JSON.parse(body);
 	} catch {
 		return undefined;
 	}
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+	const keys = Object.keys(parsed);
+	if (keys.length !== 1) return undefined;
+	const { text, answer } = parsed as { text?: unknown; answer?: unknown };
+	if (keys[0] === "text") return typeof text === "string" && hasVisibleText(text) ? { kind: "text", text } : undefined;
+	if (keys[0] !== "answer" || typeof answer !== "object" || answer === null || Object.keys(answer).length !== 2) return undefined;
+	const { reportId, option } = answer as { reportId?: unknown; option?: unknown };
+	if (typeof reportId !== "string" || !REPORT_ID.test(reportId)) return undefined;
+	if (typeof option !== "number" || !Number.isInteger(option) || option < 0 || option >= OPTIONS_MAX) return undefined;
+	return { kind: "answer", reportId, option };
 }
 
 function tooLarge(req: IncomingMessage, res: ServerResponse): void {
@@ -203,6 +219,14 @@ function tokenMatches(given: string, token: string): boolean {
 	const got = Buffer.from(given);
 	const want = Buffer.from(token);
 	return got.length === want.length && timingSafeEqual(got, want);
+}
+
+const REFUSED_STATUS: Record<AnswerRefusal["kind"], number> = { no_question: 404, no_options: 409, out_of_range: 409, chosen: 409, spoke: 409, closed: 409 };
+
+// The body is JSON so the page can pick its own copy by `refused`; `reason` is for curl users.
+function refuse(res: ServerResponse, refusal: AnswerRefusal): void {
+	const body = { refused: refusal.kind, ...(refusal.kind === "chosen" ? { option: refusal.option } : {}), reason: refusalText(refusal) };
+	res.writeHead(REFUSED_STATUS[refusal.kind], { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify(body));
 }
 
 function deny(res: ServerResponse, status: keyof typeof DENIED): void {
