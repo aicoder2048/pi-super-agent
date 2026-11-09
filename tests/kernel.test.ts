@@ -261,6 +261,29 @@ test("对话历史按先后列出使用者的话和 Router 的回复", () => {
 	assert.deepEqual(kernel.conversation().map((m) => [m.who, m.text]), [["user", "查天气"], ["router", "好的，去查了。"]]);
 });
 
+test("对话去向：开了新任务、交给已有任务、幕僚长直接回答、幕僚长处理中、判断无需处理；幕僚长看过却什么都没做的不写", () => {
+	const { kernel, say, drain } = setup();
+	const opened = say("查天气").triggerId;
+	const [first] = kernel.route([{ kind: "open_ticket", title: "查天气", basis: "request", triggerId: opened, brief: "查天气" }]);
+	const handed = say("顺便看看明天").triggerId;
+	kernel.route([{ kind: "hand_over", triggerId: handed, ticketId: first.ticketId! }]);
+	const answered = say("在吗").triggerId;
+	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "在。", cause: answered });
+	const dismissed = say("谢谢").triggerId;
+	kernel.route([{ kind: "ignore", triggerId: dismissed, reason: "客套话" }]);
+	const dropped = say("嗯").triggerId;
+	drain();
+	const pending = say("再查一下 NVDA").triggerId;
+	assert.deepEqual(kernel.conversationRoutes(), {
+		[opened]: { kind: "opened_ticket", ticketId: first.ticketId },
+		[handed]: { kind: "handed_over", ticketId: first.ticketId },
+		[answered]: { kind: "answered" },
+		[dismissed]: { kind: "router_ignored" },
+		[pending]: { kind: "pending" },
+	});
+	assert.equal(dropped in kernel.conversationRoutes(), false);
+});
+
 test("阶段：受阻或失败，直到使用者再说话", () => {
 	const { kernel, open, idle, stage, handOverUserMessage } = setup();
 	const blocked = open("request");

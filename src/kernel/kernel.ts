@@ -36,6 +36,7 @@ import type {
 	Report,
 	Result,
 	RouterNotice,
+	Routes,
 	SourcePolicy,
 	Stall,
 	SystemProblem,
@@ -781,6 +782,26 @@ export class Kernel {
 		)
 			.reverse()
 			.map((r) => ({ id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { ticketId: r.cause } : {}) }));
+	}
+
+	conversationRoutes(limit = 50): Routes {
+		const seeing = new Set(this.#column(
+			"SELECT json_extract(payload, '$.triggerId') AS v FROM actions WHERE status = 'pending' AND kind = 'router.notify'",
+		));
+		const rows = this.#all(
+			`SELECT t.id, t.disposition, t.disposition_detail AS detail, EXISTS (SELECT 1 FROM reply_receipts r WHERE r.cause = t.id) AS answered
+			 FROM triggers t JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ? ORDER BY t.rowid DESC LIMIT ?`,
+			CONVERSATION_THREAD_ID,
+			limit,
+		);
+		const routes: Routes = {};
+		for (const r of rows) {
+			if (r.disposition === "opened_ticket" || r.disposition === "handed_over") routes[r.id] = { kind: r.disposition, ticketId: r.detail };
+			else if (r.disposition === "router_ignored") routes[r.id] = { kind: "router_ignored" };
+			else if (r.answered) routes[r.id] = { kind: "answered" };
+			else if (seeing.has(r.id)) routes[r.id] = { kind: "pending" };
+		}
+		return routes;
 	}
 
 	sourceCursor(source: string): string | undefined {
