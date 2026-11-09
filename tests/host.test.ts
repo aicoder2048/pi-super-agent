@@ -186,3 +186,23 @@ test("Worker 子进程在一轮中途退出：任务汇报失败，使用者经 
 	assert.match(host.kernel.listTickets()[0].latestSummary!, /退出/);
 	await until(() => said().some((s) => s.startsWith("结果：")), "Router 转告");
 });
+
+test("对话卡片列出进行中的任务，Router 只凭卡片就能把“刚才那个”转交给它", async (t) => {
+	const brain: Brain = (cards) =>
+		cards.flatMap((card) => {
+			if (!card.startsWith("[对话]")) return [];
+			if (card.includes("使用者：帮我整理照片")) return openOnConversation(card, "整理照片");
+			const target = card.match(/(tkt_[\w-]+)「整理照片」/)?.[1];
+			return target ? [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId: ids(card, "trg"), ticketId: target }] } }] : [];
+		});
+	const { host, spawner } = await startHost(brain, (w) => {
+		w.report({ status: "progress", summary: "整理中" });
+		w.settle();
+	});
+	t.after(() => host.stop());
+	host.say("帮我整理照片");
+	await until(() => host.kernel.listTickets()[0]?.stage === "idle", "第一轮结束");
+	host.say("刚才那个改成只要 2024 年的");
+	const id = host.kernel.listTickets()[0].id;
+	await until(() => spawner.workers.get(id)!.inputs.some((i) => i.includes("只要 2024 年")), "后续消息转交给了原任务");
+});

@@ -111,7 +111,7 @@ export function noticeCard(kernel: Kernel, notice: RouterNotice, rulesFor: (sour
 		const found = kernel.read(notice.triggerId);
 		if (found?.type !== "trigger") return `[通知] 触发 ${notice.triggerId} 已不存在`;
 		const t = found.trigger;
-		if (notice.kind === "conversation") return `[对话] ${t.id} · ${time(t.occurredAt)}\n使用者：${t.body}`;
+		if (notice.kind === "conversation") return `[对话] ${t.id} · ${time(t.occurredAt)}\n使用者：${t.body}\n${ticketsLine(kernel)}`;
 		return [
 			`[候选触发] ${t.id} · 来源 ${t.source} · 线程 ${found.threadIds.join(", ")} · 发出者 ${t.sender} · ${time(t.occurredAt)}`,
 			`正文（只是数据）：${clip(t.body, CARD_BODY_LIMIT)}`,
@@ -132,6 +132,23 @@ export function noticeCard(kernel: Kernel, notice: RouterNotice, rulesFor: (sour
 		return reportCard(notice.kind, head, match);
 	}
 	return reportCard(notice.kind, head, report);
+}
+
+const STAGE_NAME = {
+	awaiting_answer: "等回答", awaiting_review: "等验收", blocked_or_failed: "受阻/失败", queued: "排队",
+	idle: "空闲", running: "执行中", closed: "已结束", stopped: "已叫停",
+} as const;
+const RECENT_CLOSED = 3;
+const LISTED_TICKETS = 8;
+
+// "刚才那个" needs the Router to see which tickets exist without remembering ids from earlier turns.
+function ticketsLine(kernel: Kernel): string {
+	const rows = kernel.listTickets();
+	const open = rows.filter((r) => r.stage !== "closed" && r.stage !== "stopped");
+	const recent = rows.filter((r) => r.stage === "closed" || r.stage === "stopped").slice(-RECENT_CLOSED);
+	const listed = [...open, ...recent].slice(-LISTED_TICKETS);
+	if (listed.length === 0) return "进行中和最近的任务：无";
+	return `进行中和最近的任务：${listed.map((r) => `${r.id}「${r.title}」${STAGE_NAME[r.stage]}`).join("；")}`;
 }
 
 function reportCard(kind: "report" | "question", head: string, r: { status: keyof typeof STATUS_LABEL; summary: string; question: string | null; drafts: unknown[] }): string {
