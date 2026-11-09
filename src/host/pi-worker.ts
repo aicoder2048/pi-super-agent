@@ -96,6 +96,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 				PSA_TICKET: spec.ticketId,
 				PSA_TOKEN: spec.token,
 				PSA_BASIS: spec.basis,
+				PSA_TEAM: spec.team,
 				PSA_BG_MAX_MS: String(this.#o.bgMaxMs ?? 120 * 60_000),
 				...(this.#o.lookupHelp && { PSA_LOOKUPS: this.#o.lookupHelp }),
 			},

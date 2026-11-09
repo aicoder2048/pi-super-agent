@@ -15,6 +15,7 @@ export interface WorkerSpec {
 	workdir: string;
 	basis: Basis;
 	ruleId: string | null;
+	team: string;
 	token: string;
 	model: ModelRef;
 }
@@ -169,7 +170,7 @@ export class WorkerExecutor {
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ruleId: ticket.ruleId, token, model: choice.model },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ruleId: ticket.ruleId, team: ticket.team, token, model: choice.model },
 				events,
 			);
 		} catch (error) {
