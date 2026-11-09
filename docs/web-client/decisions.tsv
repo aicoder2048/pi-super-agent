@@ -1,0 +1,5 @@
+ts	phase	decision	why	evidence	result
+2026-11-09T06:40:28Z	frame	在 worktree psa/web-gateway 开工，计划走 Multi-phase plan，PR 1 走 Feature	使用者要求写计划并开始第一步，用 PStack，开 worktree	.claude/worktrees/web-gateway @9ad0ddf	open
+2026-11-09T06:40:28Z	frame	deslop 与 control-ui 未安装，分别用内置 simplify 与 Playwright 代替；/loop 1h 巡检跳过	cursor-team-kit 不在本机；使用者在会话中，没有无人值守阶段	ls ~/.claude/plugins/cache/cursor-plugins = pstack only	substituted
+2026-11-09T06:40:42Z	prototype	浏览器推送用 SSE（node:http 内置）加 POST 发话，不用 WebSocket	Node 26 只有 WebSocket 客户端，服务端要自己实现帧协议或引入 ws 依赖；SSE 原型 94ms 收到 3 条事件	scratchpad/sse-proto/sse.mjs 输出	decided
+2026-11-09T06:42:47Z	plan	写四个 PR 的计划 W1 到 W4，执行用 autopilot-stack，使用者合并	使用者要求先写计划；栈式 PR 每个各自可验证	IMPLEMENTATION_PLAN.md; check-plan 0 problems	done
