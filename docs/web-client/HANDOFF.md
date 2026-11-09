@@ -17,11 +17,15 @@ The user said "让我们一步一步来": do one step, show it, wait. Sketches f
 
 ## Next step
 
-The user has not yet read ADR-0008. Show it and wait for approval. Then:
+ADR-0008 is approved and T1 is built: PR #35 (`psa/teams`, on #29) is at merge-ready and waits for the user's screenshot review. The user also decided the naming rule (a team ticket shows a four-character name and its team; a single helper keeps a two-character name and role), removed 边牧 and 弈境 from the pool, and chose to ship only the 看盘队 and the pi-pi team in T3.
 
-1. Rewrite the W6 sections of `IMPLEMENTATION_PLAN.md` as T1 (members, teams, `team` on `open_ticket`), T2 (`dispatch_agent` with per-ticket member sessions), T3 (the 看盘队 and the pi-pi team). Keep check-plan at 0 problems.
-2. Build on `psa/teams`, reusing code from `psa/roles`, `psa/consult`, `psa/market-experts` (the ADR's last section lists what to keep, drop and write new).
-3. Open the new PRs, restack #33 (brand) onto them, then close #30, #31, #32. Do not close them before the replacements exist.
+Wait for the user's go before T2. Then:
+
+1. T2 (`dispatch_agent`, per-ticket member sessions) on a new branch cut from `psa/teams`, per the T2 section of `IMPLEMENTATION_PLAN.md`. The helper process gets `PSA_TEAM` but the worker extension clears every `PSA_*` variable at start, so read it before that. Handle a ticket whose team is no longer in the roster.
+2. T3 (看盘队, pi-pi 队) on T2.
+3. Restack #33 (brand) onto T3, then close #30, #31, #32. Do not close them before T2 and T3 PRs exist.
+
+The user asked for a spoken progress report every 15 minutes while work runs (edge-tts, voice `zh-CN-XiaoyiNeural`, via `uvx edge-tts`; no names, paths or code identifiers in the spoken text).
 
 ## Open PRs
 
@@ -33,6 +37,7 @@ The user has not yet read ADR-0008. Show it and wait for approval. Then:
 | #28 | psa/e2e | W4 e2e + demos. Ready |
 | #34 | psa/flaky-spoke | flaky 409 test. Ready |
 | #29 | psa/helpers | W5 helper strip, names, route lines. Stays. Needs the user's screenshot review |
+| #35 | psa/teams | T1: teams on tickets, four-character team names. Merge-ready, needs the user's screenshot review |
 | #30, #31, #32 | psa/roles, psa/consult, psa/market-experts | 副幕僚长 design. To be replaced |
 | #33 | psa/brand | 白宫 name, W1 logo, U2 user avatar. Stays; restack later |
 | #17 | psa/trial-fixes | old, untouched |

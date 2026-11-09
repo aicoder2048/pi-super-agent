@@ -483,7 +483,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 - [x] Copy lane 1, 2, 4 screenshots into `docs/web-client/media/t1-review-<slug>.png`. `t1-review-default.png`、`t1-review-pick.png`、`t1-review-rule-team.png`。
 - [x] Record a 30 to 60 second video of a team ticket and a single-helper ticket side by side. Keep it local as webm, as in W1. 37 秒，`/tmp/swarm-t1/t1-review.webm`，两个任务先后开出，不是同屏并排。
-- [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
+- [x] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click. PR #35，2026-11-09 已报告。
 
 **Merge.**
 
