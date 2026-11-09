@@ -26,8 +26,8 @@ function row(over: Partial<DashboardRow> = {}): DashboardRow {
 const zeroToday = (): TodayCounts => ({ byDisposition: { ignored: 0, delivered: 0, to_router: 0, opened_ticket: 0, handed_over: 0, router_ignored: 0 }, bySource: {} });
 const duty = { since: 0, resumed: 0 };
 const noHelpers = { count: 0, tokens: 0 };
-const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, helpers: noHelpers, watching: [], routes: {}, ...over });
-const board = (rows: DashboardRow[], today = zeroToday(), helpers = noHelpers, routes: Routes = {}): HostToClient => ({ type: "board", rows, today, duty, helpers, routes });
+const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, helpers: noHelpers, watching: [], routes: {}, consulting: {}, ...over });
+const board = (rows: DashboardRow[], today = zeroToday(), helpers = noHelpers, routes: Routes = {}, consulting: Record<string, string[]> = {}): HostToClient => ({ type: "board", rows, today, duty, helpers, routes, consulting });
 const texts = (view: ReturnType<typeof page.emptyView>) => [...view.lines.values()].map((l) => `${l.who}:${l.text}`);
 const withRows = (rows: DashboardRow[], now = 0) => {
 	const view = page.emptyView();
@@ -351,7 +351,7 @@ test("页面：助手条每位在岗助手一枚小卡（●运行中 ◐空闲 
 		row({ id: "tkt_stp", stage: "stopped", workerState: "running", endedAt: 9000, helper: { name: "拾遗", role: "rule", seq: 2, title: "副幕僚长" } }),
 	], zeroToday(), { count: 6, tokens: 12_345 }), 1000);
 	const strip = page.helperStrip(view, 3000);
-	assert.deepEqual(strip.chips.map(({ id, ...shown }) => shown), [
+	assert.deepEqual(strip.chips.map(({ id, experts, ...shown }) => shown), [
 		{ duty: "running", mark: "●", state: "运行中", name: "边牧", role: "副幕僚长 #1", elapsed: "7秒", tokens: "1.5k tokens" },
 		{ duty: "idle", mark: "◐", state: "空闲", name: "雪泥鸿爪", role: "副幕僚长 #2", elapsed: "1分2秒", tokens: "0 tokens" },
 		{ duty: "queued", mark: "○", state: "排队", name: "青檀", role: "副幕僚长 #1", elapsed: "0秒", tokens: "1.5k tokens" },
@@ -1205,4 +1205,31 @@ test("网关：/transcript 没有 token 401；ticket 不像任务编号 400；�
 	await until(() => noToken.status === 401 && bad.status === 400, "拒绝");
 	await until(() => empty.got.length === 1, "空历史");
 	assert.deepEqual(empty.got[0], { type: "transcript_history", ticketId: "tkt_nothere", messages: [] });
+});
+
+test("页面：会诊是一步，等待时写请教几位专家；结果回来后列出每位专家（只写职称）的问题、回答、状态和 token", () => {
+	const questions = [{ expert: "market-analyst", question: "盘面怎么样？" }, { expert: "news-researcher", question: "有什么新闻？" }];
+	const pending = watched([tool("consult", { questions })]);
+	assert.deepEqual(pending.map((s) => [s.title, s.detail, s.state]), [["会诊", "请教 2 位专家", "pending"]]);
+	const outcome = (title: string, status: string, answer: string | null, tokens: number, error?: string) =>
+		({ expert: "x", title, question: `问${title}`, status, answer, tokensIn: tokens, tokensOut: 0, ms: 1000, ...(error && { error }) });
+	const steps = watched([
+		tool("consult", { questions }),
+		{ ...result("consult", "文本"), details: { kind: "consult", experts: [outcome("行情分析师", "answered", "放量下跌", 1200), outcome("新闻研究员", "timed_out", null, 300), outcome("财报解读", "error", null, 0, "429")] } },
+	]);
+	assert.deepEqual(steps.map((s) => [s.title, s.detail, s.state]), [["会诊", "行情分析师、新闻研究员、财报解读", "ok"]]);
+	assert.deepEqual(steps[0].consult, [
+		{ title: "行情分析师", question: "问行情分析师", answer: "放量下跌", status: "answered", statusText: "已回答", tokens: "1.2k tokens" },
+		{ title: "新闻研究员", question: "问新闻研究员", answer: "", status: "timed_out", statusText: "没有回答（超时）", tokens: "300 tokens" },
+		{ title: "财报解读", question: "问财报解读", answer: "", status: "error", statusText: "出错：429", tokens: "0 tokens" },
+	]);
+	assert.doesNotMatch(JSON.stringify(steps[0].consult), /market-analyst|news-researcher/);
+});
+
+test("页面：会诊中，助手条在牵头人的小卡后面列出正在回答的专家职称；答完后消失", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, board([row({ id: "tkt_lead" }), row({ id: "tkt_other" })], zeroToday(), noHelpers, {}, { tkt_lead: ["行情分析师", "新闻研究员"] }), 0);
+	assert.deepEqual(page.helperStrip(view, 0).chips.map((c) => [c.id, c.experts]), [["tkt_lead", ["行情分析师", "新闻研究员"]], ["tkt_other", []]]);
+	page.applyMessage(view, board([row({ id: "tkt_lead" }), row({ id: "tkt_other" })]), 0);
+	assert.deepEqual(page.helperStrip(view, 0).chips.map((c) => c.experts), [[], []]);
 });

@@ -220,7 +220,7 @@ function mount(doc) {
 		const node = el("button", "helper-chip");
 		node.type = "button";
 		node.dataset.id = chip.id;
-		node.append(el("span", "dot"), el("span", "name", chip.name), el("span", "role", chip.role), el("span", "meta"));
+		node.append(el("span", "dot"), el("span", "name", chip.name), el("span", "role", chip.role), el("span", "meta"), el("span", "experts"));
 		node.addEventListener("click", () => watch(chip.id));
 		return node;
 	};
@@ -241,7 +241,13 @@ function mount(doc) {
 			dot.dataset.duty = chip.duty;
 			/** @type {HTMLElement} */ (node.querySelector(".meta")).textContent = `${chip.elapsed} · ${chip.tokens}`;
 			node.setAttribute("aria-current", String(watching?.watch.ticketId === chip.id));
-			node.setAttribute("aria-label", `${chip.name} · ${chip.role}，${chip.state}，用时 ${chip.elapsed}，${chip.tokens}`);
+			const experts = /** @type {HTMLElement} */ (node.querySelector(".experts"));
+			if (experts.dataset.shown !== chip.experts.join()) {
+				experts.dataset.shown = chip.experts.join();
+				experts.replaceChildren(...chip.experts.map((title) => el("span", "expert-chip", `${title} ◐`)));
+			}
+			const answering = chip.experts.length ? `，正在请教 ${chip.experts.join("、")}` : "";
+			node.setAttribute("aria-label", `${chip.name} · ${chip.role}，${chip.state}，用时 ${chip.elapsed}，${chip.tokens}${answering}`);
 		}
 		/** @type {HTMLElement} */ (box.querySelector(".total")).textContent = strip.total;
 	};
@@ -309,7 +315,20 @@ function mount(doc) {
 			raw.setAttribute("data-i", String(i));
 			raw.open = open.has(String(i));
 			raw.append(el("summary", "", "原始记录"), el("pre", "", step.raw));
-			body.append(el("div", "step-title", step.title), el("div", "step-detail", step.detail), raw);
+			body.append(el("div", "step-title", step.title), el("div", "step-detail", step.detail));
+			if (step.consult) {
+				const consult = el("details", "consult");
+				consult.setAttribute("data-i", `c${i}`);
+				consult.open = open.has(`c${i}`);
+				consult.append(el("summary", "", "会诊明细"), ...step.consult.map((e) => {
+					const entry = el("div", `expert ${e.status}`);
+					entry.append(el("div", "expert-head", `${e.title} · ${e.statusText} · ${e.tokens}`), el("div", "expert-q", `问：${e.question}`));
+					if (e.answer) entry.append(el("div", "expert-a", e.answer));
+					return entry;
+				}));
+				body.append(consult);
+			}
+			body.append(raw);
 			li.append(rail, body);
 			return li;
 		}));

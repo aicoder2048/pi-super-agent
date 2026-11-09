@@ -52,11 +52,12 @@ const GROUP = {
  * @property {HelpersToday | undefined} helpers
  * @property {WatchedSource[]} watching
  * @property {Routes} routes
+ * @property {Record<string, string[]>} consulting
  */
 
 /** @returns {View} */
 export function emptyView() {
-	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {} };
+	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {}, consulting: {} };
 }
 
 /** @param {View} view @param {ConversationLine} line */
@@ -72,7 +73,7 @@ export function applyMessage(view, message, now) {
 	switch (message.type) {
 		case "snapshot":
 			for (const line of message.conversation) addLine(view, line);
-			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, receivedAt: now });
+			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, consulting: message.consulting ?? {}, receivedAt: now });
 			return ["conversation", "left", "header"];
 		case "user":
 			addLine(view, { id: message.id, who: "user", text: message.text, at: message.at });
@@ -81,7 +82,7 @@ export function applyMessage(view, message, now) {
 			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at, ...(message.ticketId ? { ticketId: message.ticketId } : {}) });
 			return ["conversation"];
 		case "board":
-			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, routes: message.routes, receivedAt: now });
+			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, routes: message.routes, consulting: message.consulting ?? {}, receivedAt: now });
 			return ["conversation", "left", "header"];
 	}
 	return [];
@@ -280,7 +281,39 @@ export const stopSentence = (title) => `停止任务「${title}」`;
  * @property {"ok" | "error" | "pending"} state
  * @property {string} raw
  * @property {string} [tool]
+ * @property {ConsultEntry[]} [consult]
  */
+
+/**
+ * One expert's part of a consult step, worded for the page. Only the role title, never the role's id.
+ * @typedef {object} ConsultEntry
+ * @property {string} title
+ * @property {string} question
+ * @property {string} answer
+ * @property {"answered" | "timed_out" | "error"} status
+ * @property {string} statusText
+ * @property {string} tokens
+ */
+
+/** @type {Record<ConsultEntry["status"], string>} */
+const CONSULT_STATUS = { answered: "已回答", timed_out: "没有回答（超时）", error: "出错" };
+
+/** @param {unknown} details @returns {ConsultEntry[] | undefined} */
+function consultEntries(details) {
+	const experts = /** @type {{ kind?: string, experts?: unknown }} */ (details ?? {}).kind === "consult" ? /** @type {{ experts?: unknown }} */ (details).experts : undefined;
+	if (!Array.isArray(experts)) return undefined;
+	return experts.map((/** @type {Record<string, any>} */ e) => {
+		const status = e.status in CONSULT_STATUS ? e.status : "error";
+		return {
+			title: String(e.title ?? ""),
+			question: String(e.question ?? ""),
+			answer: typeof e.answer === "string" ? e.answer : "",
+			status,
+			statusText: status === "error" && e.error ? `出错：${e.error}` : CONSULT_STATUS[/** @type {ConsultEntry["status"]} */ (status)],
+			tokens: `${formatTokens((Number(e.tokensIn) || 0) + (Number(e.tokensOut) || 0))} tokens`,
+		};
+	});
+}
 
 /** @type {Record<InputKind, string>} */
 const INPUT_STEP = {
@@ -326,6 +359,7 @@ const TOOL_STEP = {
 	bg_status: () => ({ title: "查看后台命令", detail: "" }),
 	bg_stop: () => ({ title: "停止后台命令", detail: "" }),
 	report: (a) => ({ title: reportTitle(a), detail: clip(a.question || a.summary, 120) }),
+	consult: (a) => ({ title: "会诊", detail: `请教 ${Array.isArray(a.questions) ? a.questions.length : 0} 位专家` }),
 };
 
 /** @param {Record<string, unknown>} a */
@@ -378,6 +412,8 @@ function append(watch, message) {
 	if (!step) return;
 	step.state = message.isError ? "error" : "ok";
 	step.raw = clip(`${step.raw}\n\n→ ${textOf(message)}`, RAW_LIMIT);
+	const consult = message.toolName === "consult" ? consultEntries(message.details) : undefined;
+	if (consult) Object.assign(step, { consult, detail: consult.map((e) => e.title).join("、") });
 }
 
 /**
@@ -418,6 +454,7 @@ const DUTY_MARK = {
  * @property {string} role
  * @property {string} elapsed
  * @property {string} tokens
+ * @property {string[]} experts titles of the experts answering this lead right now
  */
 
 /** One chip per helper on duty (a ticket not yet ended), then today's total. @param {View} view @param {number} now @returns {{ chips: HelperChip[], total: string }} */
@@ -431,6 +468,7 @@ export function helperStrip(view, now) {
 			role: helperRoleText(row.helper),
 			elapsed: elapsedOf(row, now, view.receivedAt),
 			tokens: `${formatTokens(row.tokensIn + row.tokensOut)} tokens`,
+			experts: view.consulting[row.id] ?? [],
 		}];
 	});
 	const total = view.helpers ? `今日 ${view.helpers.count} 位 · ${formatTokens(view.helpers.tokens)} tokens` : "";
