@@ -11,6 +11,23 @@ export interface ClientHandlers {
 	transcript?(ticketId: string): unknown[];
 }
 
+/** The worker writes its session file before its live event reaches the host, so a watcher's first live message can repeat the last history message. */
+export class Seams<K extends object> {
+	readonly #last = new WeakMap<K, string>();
+
+	open(watcher: K, history: unknown[]): void {
+		if (history.length) this.#last.set(watcher, JSON.stringify(history.at(-1)));
+		else this.#last.delete(watcher);
+	}
+
+	/** True only for the first live message after history, and only when it repeats history's last message. */
+	repeats(watcher: K, json: string): boolean {
+		const last = this.#last.get(watcher);
+		this.#last.delete(watcher);
+		return last === json;
+	}
+}
+
 export interface WorkerRequestHandler {
 	(ticketId: string, token: string, method: string, params: unknown): unknown;
 }
@@ -23,6 +40,7 @@ interface ClientConn {
 export class HostServer {
 	readonly #server: Server;
 	readonly #clients = new Set<ClientConn>();
+	readonly #seams = new Seams<ClientConn>();
 
 	constructor(clients: ClientHandlers, workers: WorkerRequestHandler) {
 		this.#server = createServer((socket) => {
@@ -59,7 +77,9 @@ export class HostServer {
 				else if (r.type === "watch") {
 					client!.watching = typeof r.ticketId === "string" ? r.ticketId : undefined;
 					if (client!.watching && clients.transcript) {
-						writeJsonLine(socket, { type: "transcript_history", ticketId: client!.watching, messages: clients.transcript(client!.watching) });
+						const messages = clients.transcript(client!.watching);
+						this.#seams.open(client!, messages);
+						writeJsonLine(socket, { type: "transcript_history", ticketId: client!.watching, messages });
 					}
 				}
 			});
@@ -82,7 +102,10 @@ export class HostServer {
 	}
 
 	sendTranscript(ticketId: string, message: unknown): void {
-		for (const c of this.#clients) if (c.watching === ticketId) writeJsonLine(c.socket, { type: "transcript", ticketId, message });
+		const json = JSON.stringify(message);
+		for (const c of this.#clients) {
+			if (c.watching === ticketId && !this.#seams.repeats(c, json)) writeJsonLine(c.socket, { type: "transcript", ticketId, message });
+		}
 	}
 
 	clientCount(): number {

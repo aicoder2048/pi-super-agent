@@ -259,13 +259,11 @@ function stepsFrom(message) {
  * @typedef {object} Watch
  * @property {string} ticketId
  * @property {Step[]} steps
- * @property {string} lastKey
- * @property {boolean} afterHistory
  */
 
 /** @param {string} ticketId @returns {Watch} */
 export function emptyWatch(ticketId) {
-	return { ticketId, steps: [], lastKey: "", afterHistory: false };
+	return { ticketId, steps: [] };
 }
 
 /** @param {Watch} watch @param {TranscriptMessage} message */
@@ -279,8 +277,6 @@ function append(watch, message) {
 
 /**
  * History replaces the steps, so an EventSource reconnect (which resends history) is idempotent.
- * The worker writes its session file before the live event reaches the host, so the first live
- * message can repeat the last history message; that one is dropped.
  * @param {Watch} watch @param {HostToClient} message @returns {boolean}
  */
 export function applyTranscript(watch, message) {
@@ -288,14 +284,8 @@ export function applyTranscript(watch, message) {
 	if (message.type === "transcript_history") {
 		watch.steps = [];
 		for (const m of message.messages) append(watch, m);
-		watch.lastKey = JSON.stringify(message.messages.at(-1) ?? null);
-		watch.afterHistory = true;
 		return true;
 	}
-	const key = JSON.stringify(message.message);
-	const seamDuplicate = watch.afterHistory && key === watch.lastKey;
-	watch.afterHistory = false;
-	if (seamDuplicate) return false;
 	append(watch, message.message);
 	return true;
 }

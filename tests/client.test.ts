@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import superAgentClient from "../extensions/super-agent.ts";
@@ -11,7 +12,7 @@ import type { HostToClient } from "../src/client/protocol.ts";
 import { formatTranscriptMessage } from "../src/client/transcript.ts";
 import { Host } from "../src/host/host.ts";
 import type { DashboardRow } from "../src/kernel/types.ts";
-import { defaultWorkerModels, FakeSpawner, fauxRouter, ofType, openOnConversation, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
+import { defaultWorkerModels, FakeSpawner, fauxRouter, ofType, openOnConversation, startHost, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
 
 const brain: Brain = (cards) => cards.flatMap((c) => (c.startsWith("[对话]") ? openOnConversation(c) : []));
 
@@ -78,6 +79,30 @@ test("协议：只读查看某个任务时收到它的过程，看不到别的�
 	(host as any).server.sendTranscript("tkt_other", { role: "assistant", content: [{ type: "text", text: "别人的" }] });
 	await until(() => c.of("transcript").length === 1, "实时过程");
 	assert.equal(c.of("transcript")[0].ticketId, id);
+});
+
+test("协议：开始查看时，紧跟历史的第一条实时消息若和历史最后一条相同只收到一次", async (t) => {
+	const stateDir = tempStateDir();
+	const { host, spawner } = await startHost(brain, () => {}, { stateDir });
+	const c = client(host.socketPath);
+	t.after(async () => { c.conn.close(); await host.stop(); });
+	await until(() => c.conn.connected, "连接");
+	host.say("读网页");
+	await until(() => host.kernel.listTickets().length === 1 && spawner.workers.size === 1, "Worker 起来");
+	const id = host.kernel.listTickets()[0].id;
+	const last = { role: "assistant", content: [{ type: "text", text: "先看看" }] };
+	const next = { role: "assistant", content: [{ type: "text", text: "找到了" }] };
+	const dir = join(stateDir, "sessions", "workers");
+	mkdirSync(dir, { recursive: true });
+	const session = host.kernel.getTicket(id)!.workerSessionId;
+	writeFileSync(join(dir, `2026-11-08T00-00-00_${session}.jsonl`), [{ type: "session", id: session }, { type: "message", message: last }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+	c.conn.watch(id);
+	await until(() => c.of("transcript_history").length === 1, "过程历史");
+	spawner.workers.get(id)!.transcript(last);
+	spawner.workers.get(id)!.transcript(next);
+	spawner.workers.get(id)!.transcript(last);
+	await until(() => c.of("transcript").length >= 2, "实时过程");
+	assert.deepEqual(c.of("transcript").map((m) => m.message), [next, last]);
 });
 
 function scriptedHost() {

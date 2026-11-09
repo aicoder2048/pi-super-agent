@@ -187,11 +187,10 @@ test("页面：每种任务输入（formatInputs 生成的方括号标签）都�
 	assert.deepEqual(watched([{ role: "custom", customType: "psa-bg-result", content: "[后台命令结束] bg_1 退出码 0" }]).map((s) => s.title), ["后台的活干完了"]);
 });
 
-test("页面：历史替换步骤，重连再来一次结果不变；历史之后紧跟的同一条消息只算一次；别的任务的帧被忽略", () => {
+test("页面：历史替换步骤，重连再来一次结果不变；别的任务的帧被忽略", () => {
 	const w = page.emptyWatch("tkt_1");
 	const first = tool("web_get", { url: "https://a.example" });
 	assert.equal(page.applyTranscript(w, history("tkt_1", [first])), true);
-	assert.equal(page.applyTranscript(w, live("tkt_1", first)), false, "接缝处的重复");
 	assert.equal(page.applyTranscript(w, live("tkt_1", result("web_get", "ok"))), true);
 	page.applyTranscript(w, history("tkt_1", [first, result("web_get", "ok")]));
 	assert.deepEqual(w.steps.map((s) => [s.title, s.state]), [["打开网页", "ok"]]);
@@ -677,6 +676,19 @@ test("网关：查看任务先收到 transcript_history，再收到实时 transc
 	worker.transcript(said("找到标题了"));
 	await until(() => stream.got.length === 2, "实时");
 	assert.deepEqual(stream.got[1], { type: "transcript", ticketId: id, message: said("找到标题了") });
+});
+
+test("网关：开始查看时，紧跟历史的第一条实时消息若和历史最后一条相同只收到一次", async (t) => {
+	const { open, history, watch } = await watchHost(t);
+	const { id, worker } = await open("读网页");
+	history(id, [said("先看看")]);
+	const stream = watch(id);
+	await until(() => stream.got.length === 1, "历史");
+	worker.transcript(said("先看看"));
+	worker.transcript(said("找到了"));
+	worker.transcript(said("先看看"));
+	await until(() => stream.got.length >= 3, "实时");
+	assert.deepEqual(ofType(stream.got, "transcript").map((m) => m.message), [said("找到了"), said("先看看")]);
 });
 
 test("网关：两个连接看不同任务，各自只收到自己的；关掉旧连接改看新任务后，旧任务的消息不再到达", async (t) => {
