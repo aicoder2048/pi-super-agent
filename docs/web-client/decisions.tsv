@@ -57,3 +57,4 @@ ts	phase	decision	why	evidence	result
 2026-11-09T18:51:15Z	m2	VWAP 锚定最近一个有常规时段成交的交易日，不是今天时 note 写明，没有时 { unavailable }，不再给 insufficient need 1	复审：开盘前报 need 1 / have 3000 会误导	开盘前用例；半天日 13:00、EDT、盘后用例	fixed
 2026-11-09T18:51:15Z	m2	FINNHUB_API_KEY 格式不对只停用 earnings，整个 us-market 照常	复审：ConfigError 让整个来源启动失败	tests/market-source.test.ts 坏密钥用例先红后绿	fixed
 2026-11-09T18:51:15Z	m2	复审指出的 6 处变异（另加 partial 宽限）逐一改代码确认变红再还原	原测试在这些变异下仍绿	14/14 变异变红；522/522	PASS
+2026-11-09T18:52:47Z	m2-verdict	M2 复审第二轮 PASS：6 处补测变红、未收盘 K 线标记、盘前 VWAP 回退上一交易日、Finnhub 密钥格式错只停 earnings	复审 16 处变异全部变红	30736a5 复审报告；522/522	PASS
