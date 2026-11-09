@@ -457,7 +457,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [x] 加载与同名冲突、`teams.yaml` 解析和报错、名单里的成员必须存在、团队名册进幕僚长提示词、`team` 校验和默认值、规则钉死团队、计费检查、技能路径检查、旧任务按默认团队、重启后团队不变、两个名字池和团队任务的显示名。 证据：以上各条列出的测试；`just test` 503 条通过、`just e2e` 58 条通过（5d2f2fb），见 decisions.tsv 的 t1 各行。
+- [x] 加载与同名冲突、`teams.yaml` 解析和报错、名单里的成员必须存在、团队名册进幕僚长提示词、`team` 校验和默认值、规则钉死团队、计费检查、技能路径检查、旧任务按默认团队、重启后团队不变、两个名字池和团队任务的显示名。 证据：以上各条列出的测试；`just test` 514 条通过、`just e2e` 58 条通过（e431993，含 t1-fix 一轮），见 decisions.tsv 的 t1 各行。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 

@@ -117,3 +117,7 @@ ts	phase	decision	why	evidence	result
 2026-11-09T22:38:15Z	t1-fix	rules.md 里写坏的「团队：」行（团队名带空白、空的、一条规则两行）加载时报错，写出规则文件和规则 id；parseRules 多收一个文件名参数	原来这一行落进规则正文，规则照常加载但没钉住团队，使用者写了却不生效也没有提示	tests/modules.test.ts「规则的「团队：」行写坏了…」；红：Missing expected exception: 团队：新闻 队；绿：61e95cd	modules.test.ts 9 通过
 2026-11-09T22:38:44Z	t1-fix	open_ticket 的 team 是空串或只有空白时当作没填	模型会把可选字段填成空串；内核把它当成名叫空串的团队拒掉，而空的 ruleId 一直按没填算	tests/kernel.test.ts「open_ticket 的 team 是空串或只有空白…」；红：open_ticket rejected: unknown team ; the teams are 默认, 新闻队, 看盘队, 杂务队；绿：cdc8726	kernel.test.ts 101 通过
 2026-11-09T22:39:03Z	t1-fix	取名时的在岗名单不分池：所有在岗助手的名字都算；每个池自己的轮转位置和 #N 不变	这个 PR 之前开的任务可能带着四字名和角色还在岗，四字池只看团队行，新团队任务会和它重名	tests/kernel.test.ts「在岗的名字不分池…」；红：actual name '雪泥鸿爪' expected '高山流水'；绿：ddafe25	kernel.test.ts 102 通过
+2026-11-09T22:39:12Z	t1-fix	tests/web.test.ts 助手条的样例里，带角色的单个助手改用两字名「远山」	四字名现在只属于团队任务，样例里的四字名加角色是内核不会再产生的组合	只改样例，没有红；dcc7860	web.test.ts 通过
+2026-11-09T22:41:02Z	t1-fix	文档：ADR-0008 写明默认团队叫「默认」、内置成员 name 是 general、加载时的各项限制、规则钉死时团队不存在则拒绝；GLOSSARY 不再用现在时说助手能派活；计划 Build 一行加上同一个例外	照着 ADR 写 teams.yaml 的人原来要猜这些；派活是 T2 的事	41c7dfc；check-plan：9 PR sections, 0 problems	文档与代码一致
+2026-11-09T22:41:02Z	t1-fix	用 docs/web-client/evidence/w5-review.ts 重新生成 10 张 w5-review 截图	已提交的图里还是退役的名字边牧和弈境	e876401；脚本一次跑通，假模型剩余为空，残留进程组无；看了 market-helper-light 和 open-how-dark：青檀、观澜、知微，三栏布局完整	10 张已更新
+2026-11-09T22:41:02Z	t1-fix	no-comments：comment-sicko 只找到本轮新增的一条注释（parseRules 上说明 file 参数的那条），删掉；没有 MUST KILL	签名已经看得出 file 只用于报错，parseTeams 同样写法也没有注释	e431993	just test 514 通过，just e2e 58 通过，check-plan 0 problems
