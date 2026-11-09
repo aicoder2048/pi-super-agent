@@ -20,7 +20,9 @@ const RUN_AFTER_OPEN_MS = 25 * MINUTE;
 const DRY = FLAGS.has("--dry");
 
 const OPEN_AT = sessionAt(Date.now()).openAt;
-const DEADLINE = OPEN_AT + RUN_AFTER_OPEN_MS;
+// Started mid-session, the first poll reports every band already crossed today, so it is catch-up, not noise.
+const CATCH_UP = Date.now() > OPEN_AT;
+const DEADLINE = Math.max(OPEN_AT, Date.now()) + RUN_AFTER_OPEN_MS;
 const left = () => DEADLINE - Date.now();
 
 process.env.PSA_MARKET_TAP = join(HERE, "out", "demo-5-market", "market-tap.jsonl");
@@ -55,8 +57,10 @@ const describe = (t) => {
 const pollsWithTriggers = (st) => {
 	const ps = polls();
 	const ts = marketTriggers(st);
-	return ps.filter((p, i) => ts.some((t) => t.receivedAt >= p.at && t.receivedAt < (ps[i + 1]?.at ?? Infinity))).length;
+	const loud = ps.map((p, i) => ts.some((t) => t.receivedAt >= p.at && t.receivedAt < (ps[i + 1]?.at ?? Infinity)));
+	return (CATCH_UP ? loud.slice(1) : loud).filter(Boolean).length;
 };
+const steadyPolls = () => polls().length - (CATCH_UP ? 1 : 0);
 
 function workerLookups() {
 	const dir = join(d.stateDir, "sessions", "workers");
@@ -82,7 +86,7 @@ async function paintTap() {
 	const today = await d.page.locator("#today").innerText().catch(() => "");
 	const lines = [
 		`美股行情 · 宿主自己的请求\n（演示脚本只旁听，不另外请求）`,
-		`ET 现在 ${et(Date.now())}，开盘 09:30，演示到 ${et(DEADLINE)}`,
+		`ET 现在 ${et(Date.now())}，开盘 09:30${CATCH_UP ? "（开盘后启动）" : ""}，演示到 ${et(DEADLINE)}`,
 		`看盘 ${ps.length} 次，其中产生消息 ${pollsWithTriggers(st)} 次\n到档消息 ${marketTriggers(st).length} 条 · 助手查数据 ${lookups().length} 次`,
 	];
 	if (last) {
@@ -147,14 +151,14 @@ await d.run(async () => {
 		await d.scene("二 · 每分钟看一遍，没到档就不出声", ["要么你自己盯盘，要么每个数字都推给你", "程序先筛：9 只股票每分钟一遍，只有第一次到达某一档（个股 3/5/8%，SPY、QQQ 1.5/2/3%）才变成一条消息；其余什么都不说"], async () => {
 			const st = await d.until("first us-market trigger", () => {
 				const x = refresh();
-				return marketTriggers(x).length ? x : null;
+				return marketTriggers(x).length && (!CATCH_UP || steadyPolls() >= 2) ? x : null;
 			}, Math.max(0, left() - 6 * MINUTE), 3000);
 			const x = st ?? refresh();
 			const ps = polls();
 			const fresh = ps.filter((p) => (p.quotes ?? []).some((q) => q.at >= OPEN_AT)).length;
 			const evidence = `polls=${ps.length} (with today's quotes ${fresh}, api ${[...new Set(ps.map((p) => p.apiStatus))].join("/")}); polls that produced a message=${pollsWithTriggers(x)}; first trigger「${marketTriggers(x)[0]?.body.slice(0, 50) ?? "none"}」`;
 			if (!ps.length) return skip(evidence);
-			return Demo.check(ps.length >= 2 && pollsWithTriggers(x) <= Math.ceil(ps.length / 2), evidence, st ? "most polls produced messages" : "no band reached before the scene deadline");
+			return Demo.check(steadyPolls() >= 2 && pollsWithTriggers(x) <= Math.ceil(steadyPolls() / 2), evidence, st ? "most polls produced messages" : "no band reached before the scene deadline");
 		});
 
 		await d.scene("三 · 第一次到档：交给幕僚长判断", ["每条提醒都原样推给你", "到档消息先到幕僚长：按模块规则，个股 5% 档以上、SPY/QQQ 2% 档以上开任务核实；3% 档只是背景，记一笔不打扰你"], async () => {
@@ -228,7 +232,7 @@ await d.run(async () => {
 			d.log(`trigger log (src/cli/log.ts), us-market lines:\n${log.join("\n")}`);
 			await d.caption("回看 · 噪音由程序挡掉，只在要紧时开口", "每次刷新都是一次「回答」，无论有没有变化", `看盘 ${ps.length} 次，${n} 次产生消息，共 ${marketTriggers(x).length} 条；任务 ${x.tickets.length} 个；幕僚长开口 ${routerLines} 次`);
 			await sleep(8000);
-			return Demo.check(ps.length > 0 && n <= ps.length / 2, `polls=${ps.length}; polls with messages=${n}; messages=${marketTriggers(x).length}; tickets=${x.tickets.length}; 幕僚长 lines=${routerLines}; log.ts us-market lines=${log.length}`, "no polls, or most polls produced messages");
+			return Demo.check(steadyPolls() > 0 && n <= steadyPolls() / 2, `polls=${ps.length}${CATCH_UP ? " (first is catch-up)" : ""}; polls with messages=${n}; messages=${marketTriggers(x).length}; tickets=${x.tickets.length}; 幕僚长 lines=${routerLines}; log.ts us-market lines=${log.length}`, "no polls, or most polls produced messages");
 		});
 
 		await d.outro("小结 · 主动、事件驱动、订阅、面向人", "你问一句，它查一次，答一句", "没人开口它也在看；程序筛噪音，到档才交给幕僚长；大波动开任务，后续直达订阅的助手；只在要紧时找你");
