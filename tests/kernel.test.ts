@@ -302,16 +302,81 @@ test("阶段：受阻或失败，直到使用者再说话", () => {
 	assert.equal(stage(failed), "blocked_or_failed");
 });
 
-test("阶段：就绪且不再等待时任务结束，订阅的线程来新触发会重新打开", () => {
-	const { kernel, trigger, open, idle, stage } = setup();
+test("阶段：就绪且不再等待时任务结束，保留订阅记录", () => {
+	const { kernel, open, idle, stage } = setup();
 	const id = open("rule", { threads: ["thr_pr"] });
 	idle(id);
 	kernel.workerReport(id, { status: "ready", summary: "已合并" });
 	assert.equal(stage(id), "closed");
+	const found = kernel.read("thr_pr");
+	assert.ok(found?.type === "thread");
+	assert.deepEqual(found.subscribedTicketIds, [id]);
+});
 
-	trigger({ threads: [{ id: "thr_pr" }], body: "PR 有新评论" });
+test("已结束任务订阅过的线程来新触发：不直达它，作为候选交给 Router，任务保持结束", () => {
+	const { kernel, trigger, open, idle, drain, notices, wakes, stage } = setup();
+	const id = open("rule", { threads: ["thr_pr"] });
+	idle(id);
+	kernel.workerReport(id, { status: "ready", summary: "已合并" });
+	drain();
+
+	const { triggerId } = trigger({ threads: [{ id: "thr_pr" }], body: "PR 有新评论" });
+
+	assert.equal(kernel.triggerLog()[0].disposition, "to_router");
+	assert.deepEqual(notices(), [{ kind: "candidate", triggerId }]);
+	assert.deepEqual(wakes(), []);
+	assert.equal(stage(id), "closed");
+	assert.deepEqual(kernel.pendingInputs(id), []);
+});
+
+test("已结束任务订阅过的线程来新触发：Router 可以凭它开规则任务", () => {
+	const { kernel, trigger, open, idle } = setup();
+	const old = open("rule", { threads: ["thr_toy-market:TOYX"] });
+	idle(old);
+	kernel.workerReport(old, { status: "ready", summary: "报了一次价" });
+
+	const { triggerId } = trigger({ source: "toy-market", threads: [{ id: "thr_toy-market:TOYX" }], body: "TOYX 跌 6%" });
+	const [result] = kernel.route([
+		{ kind: "open_ticket", basis: "rule", ruleId: "toy-market/big-move", triggerId, threads: ["thr_toy-market:TOYX"], title: "核实", brief: "核实" },
+	]);
+
+	assert.ok(result.ok, !result.ok ? result.reason : "");
+	assert.notEqual(result.ticketId, old);
+	assert.equal(kernel.getTicket(old)!.stage, "closed");
+});
+
+test("已结束任务订阅过的线程来新触发：Router 可以把它转交回旧任务，旧任务重新打开", () => {
+	const { kernel, trigger, open, idle, wakes, drain, stage } = setup();
+	const id = open("rule", { threads: ["thr_pr"] });
+	idle(id);
+	kernel.workerReport(id, { status: "ready", summary: "已合并" });
+	drain();
+	const { triggerId } = trigger({ threads: [{ id: "thr_pr" }], body: "PR 被回滚了" });
+
+	const [result] = kernel.route([{ kind: "hand_over", triggerId, ticketId: id }]);
+
+	assert.ok(result.ok, !result.ok ? result.reason : "");
 	assert.notEqual(stage(id), "closed");
-	assert.equal(kernel.pendingInputs(id).length, 1);
+	assert.deepEqual(wakes(), [id]);
+	assert.deepEqual(kernel.pendingInputs(id).map((i) => [i.kind, i.triggerId]), [["trigger", triggerId]]);
+	trigger({ threads: [{ id: "thr_pr" }], body: "又有新评论" });
+	assert.equal(kernel.triggerLog()[0].disposition, "delivered");
+});
+
+test("同一线程上既有已结束任务又有未结束任务：只直达未结束的那个", () => {
+	const { kernel, trigger, open, idle, drain, notices, wakes } = setup();
+	const closed = open("rule", { threads: ["thr_pr"] });
+	idle(closed);
+	kernel.workerReport(closed, { status: "no_action", summary: "无事" });
+	const live = open("rule", { threads: ["thr_pr"] });
+	idle(live);
+	drain();
+
+	trigger({ threads: [{ id: "thr_pr" }], body: "CI 失败了" });
+
+	assert.deepEqual(notices(), []);
+	assert.deepEqual(wakes(), [live]);
+	assert.deepEqual(kernel.pendingInputs(closed), []);
 });
 
 test("汇报就绪、受阻、失败时通知 Router；进展不通知", () => {
@@ -814,7 +879,7 @@ test("证据：规则依据必须有一条未处理的非对话触发，且来�
 	assert.equal(kernel.route([open("rule", event("toy", "跌 6%"), "toy/big-move")])[0].ok, true);
 });
 
-test("推断并发：已结束的推断任务被订阅线程重新打开时，另一个推断任务在跑就拿不到名额，空出后再唤醒", () => {
+test("推断并发：已结束的推断任务被 Router 转交重新打开时，另一个推断任务在跑就拿不到名额，空出后再唤醒", () => {
 	const { kernel, trigger, run, idle, drain } = setup({ config: { inferenceConcurrent: 1, inferenceDaily: 10 } });
 	const openInference = (thread: string) => {
 		const { triggerId } = trigger({ threads: [{ id: thread }] });
@@ -828,7 +893,8 @@ test("推断并发：已结束的推断任务被订阅线程重新打开时，�
 	const b = openInference("thr_feed:b");
 	run(b);
 	drain();
-	trigger({ threads: [{ id: "thr_feed:a" }], body: "a 的新消息" });
+	const { triggerId } = trigger({ threads: [{ id: "thr_feed:a" }], body: "a 的新消息" });
+	assert.ok(kernel.route([{ kind: "hand_over", triggerId, ticketId: a }])[0].ok);
 	assert.equal(kernel.claimSlot(a), false);
 	assert.equal(kernel.getTicket(a)!.stage, "queued");
 	drain();
