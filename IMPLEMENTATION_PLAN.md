@@ -36,6 +36,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
   - [ ] W2 after W1, based on `psa/web-gateway`.
   - [ ] W3 after W2.
   - [ ] W5 after W4, stacked on `psa/e2e`. X1 branches from `main`.
+  - [ ] W6a after W5, stacked on `psa/helpers`; W6b on W6a; W6c on W6b. Design in ADR-0007.
   - [ ] W4 after W2 and the M1/F1 PRs, stacked on `psa/stable-token` (#24). W3 moved after W4, because it changes the page and waits for the user's review; W4 does not depend on it. 见决策记录 w4-order。
 - [ ] Hold the file boundaries. W1 to W3 touch only `src/host/`, `src/web/`, `src/client/board-format.mjs`, `src/client/board.ts`, `tests/`, `justfile`, `docs/`. W1 起加入 `src/client/` 两个文件，让 TUI 和网页共用看板格式，见决策记录。 W4 adds `package.json`, `package-lock.json`, `.gitignore`, `tests/e2e/`, `demos/`, and `justfile`.
 - [ ] Hold the review gate. W1, W2, W3 change an interaction. They wait for the operator's review in chat with screenshots and a video before merge. W4 changes no interaction.
@@ -420,6 +421,173 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [ ] Rule. head 中位数超过 5 秒算失败。
 
 **Review gate.** None. X1 does not change the page.
+
+**Merge.**
+
+- [ ] 使用者合并。
+
+## Give helpers roles and let the Router pick from a roster (W6a)
+
+**Depends on.** W5 (stacked on `psa/helpers`). Design is in `docs/adr/0007-helpers-have-roles-and-a-deputy-leads-consults.md`.
+
+**Files.**
+
+- [ ] Create `src/roles.ts`（加载与校验角色定义）和 `roles/general.md`、`roles/deputy.md`（内置角色）。
+- [ ] Edit `src/modules.ts`（模块的 `roles/`）、`src/host/config.ts`（状态目录的 `roles/`）、`src/host/wiring.ts`。
+- [ ] Edit `src/host/router.ts`（名册进提示词，`open_ticket` 加 `role`）、`src/kernel/kernel.ts`、`src/kernel/types.ts`（`tickets.role`、迁移、规则指定角色的校验）。
+- [ ] Edit `src/host/pi-worker.ts`、`src/worker/tools.ts`（角色的提示词、工具交集、技能、模型）。
+- [ ] Edit `src/web/view.mjs`、`src/client/board-format.mjs`（显示「名字 · 角色职称 #N」）。
+- [ ] Edit tests（`tests/roles.test.ts` 新建，及 kernel、router、pi-worker、web 相关测试）。
+
+**Build.**
+
+- [ ] 角色定义格式按 ADR-0007：`name`、`title`、`description`、`tools`、`skills`、`model`、`consult`，正文是系统提示词。三处来源同名启动即报错，报错一行说清文件和字段。
+- [ ] 名册（name、title、description）进幕僚长提示词；`open_ticket` 的 `role` 可省略，省略为通用助手；未知角色拒绝该决定并说明。
+- [ ] `rules.md` 支持 `角色：<name>`；按该规则开任务必须用它，内核校验。
+- [ ] 工具 = 依据允许 ∩ 角色 `tools` ∪ 汇报类工具；`model` 过计费检查；`skills` 叠加模块技能。
+- [ ] `tickets.role` 持久化，旧任务视为通用助手；通用助手沿用 W5 的来源角色名，其他角色用 `title`。
+
+**You see.**
+
+- [ ] 在 `~/.pi-super-agent/roles/` 放一个「新闻研究员」，问「看下黄仁勋听证会的新闻」，助手条写「某某 · 新闻研究员 #1」，执行过程头部写角色。
+
+**Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] 加载与冲突、名册进提示词、`role` 校验、规则指定角色、工具交集（推断任务派给带 bash 的角色仍只读）、计费检查、迁移、显示名。
+
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+
+- [ ] Lane 1. 没有任何自定义角色。Save `w6a-default.png`. Pass when 行为与 W5 相同。
+- [ ] Lane 2. 状态目录放「新闻研究员」，问新闻。Save `w6a-pick.png`. Pass when 幕僚长选它。
+- [ ] Lane 3. 问股价（不相关）。Save `w6a-no-pick.png`. Pass when 不选新闻研究员。
+- [ ] Lane 4. 规则写「角色：market-analyst」，toy-feed 触发。Save `w6a-rule-role.png`. Pass when 任务用该角色。
+- [ ] Lane 5. 同名角色两处定义。Save `w6a-conflict.png`. Pass when 启动报一行错并退出。
+- [ ] Lane 6. 角色 `model: deepseek/...`。Save `w6a-billing.png`. Pass when 启动报错。
+- [ ] Lane 7. 推断任务派给带 bash 的角色。Save `w6a-readonly.png`. Pass when 仍然只读。
+- [ ] Lane 8. 重启。Save `w6a-restart.png`. Pass when 任务角色不变。
+- [ ] Lane 9. 角色技能。Save `w6a-skills.png`. Pass when 执行过程显示读了该技能。
+- [ ] Lane 10. 角色提示词生效。Save `w6a-persona.png`. Pass when 汇报风格符合角色正文要求。
+
+**Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] Metric. 幕僚长一轮的输入 token（名册增加的开销）。
+- [ ] Probe. 0 个和 10 个自定义角色各量 5 次。
+- [ ] Baseline. Record the 0-role median first.
+- [ ] Rule. 10 个角色时中位数增加超过 1500 token 算失败。
+
+**Review gate.** The operator reviews before merge.
+
+- [ ] Copy lane 2, 4, 7 screenshots into `docs/web-client/media/w6a-review-<slug>.png`.
+- [ ] Record a 30 to 60 second video of the Router picking a role. Keep it local as webm, as in W1.
+- [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
+
+**Merge.**
+
+- [ ] 使用者合并。
+
+## Let the deputy lead a consult (W6b)
+
+**Depends on.** W6a (stacked on it).
+
+**Files.**
+
+- [ ] Edit `src/worker/extension.ts`（`consult` 工具）、`src/host/workers.ts` 或新建 `src/host/consult.ts`（起一问一答的子进程、并行、时限、用量记账）。
+- [ ] Edit `src/web/view.mjs`、`src/web/app.mjs`（执行过程展开会诊，助手条列出正在回答的专家）。
+- [ ] Edit tests（`tests/consult.test.ts` 新建，及 web、e2e）。
+
+**Build.**
+
+- [ ] 只有 `consult: true` 的角色有 `consult`：一次 1 到 4 个问题，并行，结果一起返回；每个问题有时限，超时记为没有回答。
+- [ ] 被问的专家一层、只读（read、grep、find、ls、web_get、lookup，再与其 `tools` 取交集），没有 `consult`。
+- [ ] token 计入任务和当天用量，回退模型每日上限生效。
+- [ ] 执行过程展开每次会诊：问谁、问什么、答了什么、用量；助手条在牵头人下列出正在回答的专家（只写角色名）。
+
+**You see.**
+
+- [ ] 问「NVDA 今天为什么跌」，幕僚长派副幕僚长；执行过程里看到它同时问了行情分析师和新闻研究员，最后给出一份合成的答复。
+
+**Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] 并行、时限、只读、一层、用量记账、非牵头角色没有 consult、渲染。
+
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+
+- [ ] Lane 1. 跨领域问题。Save `w6b-consult.png`. Pass when 副幕僚长并行问两位专家并合成。
+- [ ] Lane 2. 单领域问题。Save `w6b-direct.png`. Pass when 幕僚长直接派专家，不经副幕僚长。
+- [ ] Lane 3. 专家超时。Save `w6b-timeout.png`. Pass when 其余结果照常返回并注明。
+- [ ] Lane 4. 专家试图执行命令。Save `w6b-readonly.png`. Pass when 被拒。
+- [ ] Lane 5. 专家试图会诊。Save `w6b-depth.png`. Pass when 没有该工具。
+- [ ] Lane 6. 用量。Save `w6b-usage.png`. Pass when 任务 token 含会诊。
+- [ ] Lane 7. 会诊中叫停任务。Save `w6b-stop.png`. Pass when 专家子进程全部结束。
+- [ ] Lane 8. 会诊中宿主 Ctrl+C。Save `w6b-shutdown.png`. Pass when 无残留进程。
+- [ ] Lane 9. 四位专家同时。Save `w6b-four.png`. Pass when 助手条和执行过程都不溢出。
+- [ ] Lane 10. 回退模型上限。Save `w6b-cap.png`. Pass when 会诊受上限约束。
+
+**Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] Metric. 两位专家会诊的总耗时。
+- [ ] Probe. 并行与串行各量 5 次。
+- [ ] Baseline. Record the serial median first.
+- [ ] Rule. 并行中位数不低于串行的 70% 算失败（并行没有生效）。
+
+**Review gate.** The operator reviews before merge.
+
+- [ ] Copy lane 1, 3, 9 screenshots into `docs/web-client/media/w6b-review-<slug>.png`.
+- [ ] Record a 30 to 60 second video of a consult. Keep it local as webm, as in W1.
+- [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
+
+**Merge.**
+
+- [ ] 使用者合并。
+
+## Ship the first expert roles (W6c)
+
+**Depends on.** W6b (stacked on it).
+
+**Files.**
+
+- [ ] Create `modules/us-market/roles/market-analyst.md`（行情分析师）、`roles/news-researcher.md`（新闻研究员，内置）、`roles/earnings-reader.md`（财报解读，内置）。
+- [ ] Create `modules/pi-pi/`，原样导入 `.pi/agents/pi-pi/*.md` 为角色（只补 `title`）。
+- [ ] Edit `modules/us-market/rules.md`（大波动规则指定行情分析师）。
+
+**Build.**
+
+- [ ] 三个角色各有清楚的职责、工具白名单、汇报格式（结论、证据、来源和时间）。
+- [ ] pi-pi 专家作为模块角色，可被副幕僚长会诊。
+
+**You see.**
+
+- [ ] 行情大波动时任务写「某某 · 行情分析师 #N」；问财报时派财报解读。
+
+**Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] 所有角色文件通过加载校验；规则指定的角色存在。
+
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+
+- [ ] Lane 1. 行情大波动（真实行情或 toy-feed）。Save `w6c-market.png`. Pass when 用行情分析师并给出报价时间。
+- [ ] Lane 2. 新闻问题。Save `w6c-news.png`. Pass when 用新闻研究员并核对日期来源。
+- [ ] Lane 3. 财报问题。Save `w6c-earnings.png`. Pass when 用财报解读。
+- [ ] Lane 4. 跨领域问题。Save `w6c-deputy.png`. Pass when 副幕僚长会诊其中两位。
+- [ ] Lane 5. 问 Pi 扩展怎么写。Save `w6c-pi-pi.png`. Pass when 会诊 pi-pi 专家。
+- [ ] Lane 6. 名册。Save `w6c-roster.png`. Pass when 幕僚长提示词里列出全部角色。
+- [ ] Lane 7. 卸掉 us-market 模块。Save `w6c-no-module.png`. Pass when 行情分析师从名册消失，规则报错清楚。
+- [ ] Lane 8. 推断任务派给行情分析师。Save `w6c-inference.png`. Pass when 只读。
+- [ ] Lane 9. 汇报格式。Save `w6c-format.png`. Pass when 每个角色都有结论、证据、来源和时间。
+- [ ] Lane 10. 深浅主题截图。Save `w6c-themes.png`. Pass when 显示正确。
+
+**Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] Metric. 幕僚长一轮的输入 token。
+- [ ] Probe. 装与不装 pi-pi 模块各量 5 次。
+- [ ] Baseline. Record the without-pi-pi median first.
+- [ ] Rule. 增加超过 1500 token 算失败。
+
+**Review gate.** The operator reviews before merge.
+
+- [ ] Copy lane 1, 2, 4 screenshots into `docs/web-client/media/w6c-review-<slug>.png`.
+- [ ] Record a 30 to 60 second video of the three roles at work. Keep it local as webm, as in W1.
+- [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
 
