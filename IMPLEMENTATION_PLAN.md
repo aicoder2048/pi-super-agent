@@ -263,7 +263,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 - [ ] 本地假模型 HTTP 服务按脚本回放 Router 和 Worker 的回复，宿主和 Worker 子进程都是真的。
 - [ ] Playwright 测试走完整故事：页面投递触发，看板出现任务，点开看 Worker 过程，Router 在对话里回复。
-- [ ] 同一套测试覆盖页面 DOM 层：宿主重启后显示 token 失效，对话和看板里的 HTML 原样显示不执行，宿主卡死时离开已连接。W1 的变异审计证明这三条目前没有自动测试。
+- [ ] 同一套测试覆盖页面 DOM 层：宿主在同一状态目录重启后自己回到已连接，换过 token 后显示链接失效，对话和看板里的 HTML 原样显示不执行，宿主卡死时离开已连接。W1 的变异审计证明这几条目前没有自动测试。
 - [ ] `just e2e` 运行它。`just test` 不依赖浏览器，保持现状。
 
 **You see.**
