@@ -10,6 +10,18 @@ pi-pi-cn:
 now:
     pi {{clean}} -e extensions/now.ts
 
+# 启动股票热力图，进入 Pi 后输入 /stock-heatmap。
+stock-heatmap:
+    pi {{clean}} -e extensions/stock-heatmap/index.ts
+
+# 无网络、无真实 API Key 的股票热力图测试。
+test-stock-heatmap:
+    node --test tests/stock-heatmap.test.mjs
+
+# 财报日历、EPS、历史行情及共享视图专项测试（离线）。
+test-stock-earnings:
+    node --test tests/stock-earnings.test.mjs
+
 # 需要 Node.js 22.18+ 或 24+，以及已安装的 Pi（本地或全局依赖）。
 test-now:
     node --test tests/now.test.mjs
