@@ -21,6 +21,7 @@ const CSP = "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; c
 const KEEPALIVE_MS = 15_000;
 
 const DENIED = {
+	400: "请求地址无法解析。",
 	401: "token 缺失或已失效，请用宿主日志里最新的网址打开。",
 	403: "只接受 127.0.0.1 或 localhost 访问。",
 	404: "没有这个页面。",
@@ -71,7 +72,8 @@ export class WebGateway {
 	}
 
 	#handle(req: IncomingMessage, res: ServerResponse): void {
-		const url = new URL(req.url ?? "/", "http://x");
+		const url = URL.parse(req.url ?? "/", "http://x");
+		if (!url) return deny(res, 400);
 		if (!isLocalHost(req.headers.host, this.#port)) return deny(res, 403);
 		const script = SCRIPTS.get(url.pathname);
 		if (!script && !tokenMatches(url.searchParams.get("token") ?? "", this.#token)) return deny(res, 401);

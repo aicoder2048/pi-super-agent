@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import http from "node:http";
-import { createServer, type AddressInfo } from "node:net";
+import { connect, createServer, type AddressInfo } from "node:net";
 import test, { mock } from "node:test";
 import type { HostToClient } from "../src/client/protocol.ts";
 import { ConfigError } from "../src/config-error.ts";
@@ -216,6 +216,26 @@ test("网关：首页带 token 的脚本地址，CSP 不允许内联脚本，响
 	const app = await request(at("/app.mjs"));
 	assert.equal(app.status, 200);
 	assert.match(app.headers["content-type"]!, /^text\/javascript/);
+});
+
+function rawRequest(port: number, head: string): Promise<string> {
+	return new Promise((resolve, reject) => {
+		let got = "";
+		const socket = connect(port, "127.0.0.1", () => socket.end(head));
+		socket.setEncoding("utf8");
+		socket.on("data", (chunk: string) => (got += chunk));
+		socket.on("end", () => resolve(got));
+		socket.on("error", reject);
+	});
+}
+
+test("网关：请求目标解析不了时返回 400，宿主照常服务", async (t) => {
+	const { host, at, url } = await webHost();
+	t.after(() => host.stop());
+	const res = await rawRequest(Number(url.port), "GET //[ HTTP/1.1\r\nHost: evil.com\r\nConnection: close\r\n\r\n");
+	assert.match(res, /^HTTP\/1\.1 400 /);
+	assert.match(res, /\r\ncache-control: no-store\r\n/i);
+	assert.equal((await request(at("/"))).status, 200);
 });
 
 test("网关：只读，非 GET 返回 405；未知路径返回 404", async (t) => {
