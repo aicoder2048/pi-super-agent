@@ -130,6 +130,7 @@ export function parseMember(file: string, content: string, allowedProviders: rea
 	const name = text(fm.name, file, "name");
 	if (!MEMBER_NAME.test(name)) throw new ConfigError(`${file}：name「${name}」只能用小写英文字母、数字和连字符，以字母开头`);
 	const tools = list(fm.tools, file, "tools");
+	if ("tools" in fm && !tools?.length) throw new ConfigError(`${file}：tools 是空的；不想另设限就去掉这一行，要限制就至少写一个工具`);
 	const badTool = tools?.find((t) => !(WORKER_TOOLS as readonly string[]).includes(t));
 	if (badTool) throw new ConfigError(`${file}：tools 里的 ${badTool} 不是助手的工具，可用：${WORKER_TOOLS.join("、")}`);
 	const skills = (list(fm.skills, file, "skills") ?? []).map((s) => resolve(dirname(file), s));

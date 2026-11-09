@@ -112,3 +112,4 @@ ts	phase	decision	why	evidence	result
 2026-11-09T22:22:33Z	t1	T1 写完：just test 503 条通过，just e2e 58 条通过，check-plan 0 problems；Verify live、perf、Review gate、Merge 没有动	这几栏归根	5d2f2fb 上跑的两套测试	等根评审
 2026-11-09T22:37:03Z	t1-fix	成员文件的 frontmatter 不是合法 YAML、agents 下的悬空符号链接、teams.yaml 是目录：都改成以文件路径开头的一行 ConfigError	原来是 YAMLParseError、ENOENT、EISDIR 的原始堆栈，看不出该改哪个文件	tests/teams.test.ts 三条；红：YAMLParseError: Nested mappings are not allowed…、ENOENT … stat、EISDIR: illegal operation on a directory, read；绿：d985f73	teams.test.ts 40 通过
 2026-11-09T22:37:19Z	t1-fix	teams.yaml 名单里带引号的成员名去掉引号	原来先去引号再去空格，引号留在名字里，启动时说成员不存在	tests/teams.test.ts「teams.yaml：成员名可以带引号」；红：actual [ '"news-researcher"', "'x'" ]；绿：54c7190	teams.test.ts 41 通过
+2026-11-09T22:37:30Z	t1-fix	teams.yaml 接受全角冒号；空团队名和带控制字符的团队名报文件和行号	rules.md 两种冒号都收，中文输入法打出来的就是全角；空名和控制字符原来悄悄通过	tests/teams.test.ts「冒号可以写成全角的「：」」和 MALFORMED 两条；红：顶层每行应是「团队名:」，这一行是「新闻队：」；两条 Missing expected exception；绿：a39c9c8	teams.test.ts 44 通过

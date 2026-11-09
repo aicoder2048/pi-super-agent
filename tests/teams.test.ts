@@ -141,6 +141,9 @@ test("成员文件写错的字段报错并列出可写的字段；consult 不是
 	memberFails(member("consult: true\n"), /不认识的字段 consult/);
 });
 test("成员的 tools 里有助手没有的工具时报错并列出可用工具", () => memberFails(member("tools: read, rm\n"), /rm 不是助手的工具/));
+test("成员的 tools 写了却是空的：报错，说明去掉这一行或至少写一个工具", () => {
+	for (const tools of ["tools:\n", 'tools: ""\n', "tools: []\n"]) memberFails(member(tools), /tools 是空的.*去掉.*至少写一个/);
+});
 test("成员文件缺 title 报错", () => memberFails("---\nname: m\ndescription: d\n---\n", /缺少 title/));
 test("成员的 name 只能是小写英文、数字和连字符", () => memberFails("---\nname: R 1\ntitle: t\ndescription: d\n---\n", /name「R 1」/));
 test("成员的技能目录不存在时报错", () => memberFails(member("skills: ./missing\n"), /不存在/));
