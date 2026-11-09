@@ -2,7 +2,7 @@
 
 import {
 	STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canSend, choicesInConversation, dutyLine, emptyView, emptyWatch,
-	helperStrip, helperTint, isStale, leftColumn, lifecycleLine, resolveTheme, restartNotice, routeLine, sayCopy, sayOutcome, settleSay, settleSending, smallPrint, stopSentence,
+	helperStrip, helperTint, isStale, leftColumn, lifecycleLine, liveSteps, parseMarkdown, resolveTheme, restartNotice, routeLine, sayCopy, sayOutcome, settleSay, settleSending, smallPrint, stopSentence,
 	toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperFullName } from "../client/board-format.mjs";
@@ -48,6 +48,29 @@ function mount(doc) {
 		const node = doc.createElement(tag);
 		node.className = className;
 		node.textContent = text;
+		return node;
+	};
+
+	/** The safe Markdown subset as DOM nodes; every piece of text goes in through textContent. @param {string} className @param {string} text */
+	const md = (className, text) => {
+		const node = el("div", `${className} md`);
+		const inline = (/** @type {HTMLElement} */ box, /** @type {import("./view.mjs").Span[]} */ spans) =>
+			box.append(...spans.map((s) => (s.code ? el("code", "", s.text) : s.bold ? el("strong", "", s.text) : s.italic ? el("em", "", s.text) : doc.createTextNode(s.text))));
+		for (const block of parseMarkdown(text)) {
+			if (block.kind === "ul" || block.kind === "ol") {
+				const list = el(block.kind, "");
+				for (const item of block.items) {
+					const li = el("li", "");
+					inline(li, item);
+					list.append(li);
+				}
+				node.append(list);
+			} else {
+				const box = el("div", block.kind === "h" ? "md-h" : "md-p");
+				inline(box, block.spans);
+				node.append(box);
+			}
+		}
 		return node;
 	};
 
@@ -222,7 +245,9 @@ function mount(doc) {
 		node.dataset.id = chip.id;
 		node.append(el("span", "dot"), el("span", "name", chip.name), el("span", "role", chip.role), el("span", "meta"));
 		node.addEventListener("click", () => watch(chip.id));
-		return node;
+		const slot = el("div", "helper-slot");
+		slot.append(node, el("div", "members"));
+		return slot;
 	};
 
 	// Chips tick every second; they are updated in place so a focused or half-clicked chip survives.
@@ -241,7 +266,13 @@ function mount(doc) {
 			dot.dataset.duty = chip.duty;
 			/** @type {HTMLElement} */ (node.querySelector(".meta")).textContent = `${chip.elapsed} · ${chip.tokens}`;
 			node.setAttribute("aria-current", String(watching?.watch.ticketId === chip.id));
-			node.setAttribute("aria-label", `${chip.name} · ${chip.role}，${chip.state}，用时 ${chip.elapsed}，${chip.tokens}`);
+			const members = /** @type {HTMLElement} */ (node.nextElementSibling);
+			const labels = chip.members.map((m) => m.label);
+			if (members.dataset.shown !== labels.join()) {
+				members.dataset.shown = labels.join();
+				members.replaceChildren(...chip.members.map((m) => el("span", `member-chip ${m.state}`, m.label)));
+			}
+			node.setAttribute("aria-label", `${chip.name} · ${chip.role}，${chip.state}，用时 ${chip.elapsed}，${chip.tokens}${labels.length ? `，成员：${labels.join("、")}` : ""}`);
 		}
 		/** @type {HTMLElement} */ (box.querySelector(".total")).textContent = strip.total;
 	};
@@ -295,8 +326,15 @@ function mount(doc) {
 		$("small-print").textContent = smallPrint(row);
 	};
 
+	let stepsShown = "";
+	// A board frame can move a dispatch from 排队中 to 进行中 without any new transcript message.
+	const renderStepsIfMoved = () => {
+		if (watching && stepsShown !== JSON.stringify(liveSteps(watching.watch, view).map((s) => [s.state, s.detail]))) renderSteps();
+	};
+
 	const renderSteps = () => {
-		const steps = watching?.watch.steps ?? [];
+		const steps = watching ? liveSteps(watching.watch, view) : [];
+		stepsShown = JSON.stringify(steps.map((s) => [s.state, s.detail]));
 		if (!watching) return void $("steps").replaceChildren(el("li", "empty", "选择左侧的任务，查看助手的执行过程。"));
 		if (!steps.length) return void $("steps").replaceChildren(el("li", "empty", "暂无步骤。"));
 		const open = new Set([...$("steps").querySelectorAll("details[open]")].map((d) => d.getAttribute("data-i")));
@@ -309,7 +347,18 @@ function mount(doc) {
 			raw.setAttribute("data-i", String(i));
 			raw.open = open.has(String(i));
 			raw.append(el("summary", "", "原始记录"), el("pre", "", step.raw));
-			body.append(el("div", "step-title", step.title), el("div", "step-detail", step.detail), raw);
+			body.append(el("div", "step-title", step.title), el("div", "step-detail", step.detail));
+			if (step.dispatch) {
+				const d = step.dispatch;
+				const box = el("details", "dispatch");
+				box.setAttribute("data-i", `d${i}`);
+				box.open = open.has(`d${i}`);
+				box.append(el("summary", "", "派活明细"), el("div", "dispatch-head", [d.title, d.stateText, d.tokens].filter(Boolean).join(" · ")), el("div", "dispatch-task", `任务：${d.task}`));
+				if (d.note) box.append(el("div", "dispatch-note", d.note));
+				if (d.reply) box.append(md("dispatch-reply", d.reply));
+				body.append(box);
+			}
+			body.append(raw);
 			li.append(rail, body);
 			return li;
 		}));
@@ -321,6 +370,7 @@ function mount(doc) {
 			renderLeft();
 			renderChoices();
 			renderHelpers();
+			renderStepsIfMoved();
 		},
 		header: renderHeader,
 	};

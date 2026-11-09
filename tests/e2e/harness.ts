@@ -231,6 +231,7 @@ export interface Story {
 	page: Page;
 	host: HostRun;
 	fake: FakeModel;
+	stateDir: string;
 	/** One node:test subtest. After a failed step the rest are skipped and the report names the step. */
 	step(name: string, body: (page: Page) => Promise<unknown>): Promise<void>;
 	/** Opens another page whose console also goes into the report. */
@@ -352,7 +353,7 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 			const [run] = await Promise.all([started.then((h) => (host = h)), launchBrowser()]);
 			await waitStatus(await open(run.url, { fakeClock: options.fakeClock }), "connected");
 		});
-		if (!failed) await body({ page: pages[0], host: host!, fake, step, open, cli });
+		if (!failed) await body({ page: pages[0], host: host!, fake, stateDir: join(root, "s"), step, open, cli });
 		await step("假模型脚本用完", async () => {
 			const timeout = new AbortController();
 			await Promise.race([fake.drained, delay(10_000, undefined, { signal: timeout.signal }).catch(() => {})]).finally(() => timeout.abort());

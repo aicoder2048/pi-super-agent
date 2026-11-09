@@ -16,16 +16,21 @@ export interface Step {
 	/** Matched against one message card ("[对话] …", "[Worker 汇报] …", "[任务说明] …"). */
 	match: RegExp;
 	answer: (card: string) => Answer;
+	/** Holds the reply this long, so the page can be seen while the model is still answering. */
+	delayMs?: number;
 }
 
-/** The Router has one conversation. Workers are told apart by the brief the Router wrote into open_ticket. */
+/**
+ * The Router has one conversation. Workers are told apart by the brief the Router wrote into open_ticket,
+ * and a team member by the first task its helper dispatched to it: later dispatches continue that conversation.
+ */
 export interface Script {
 	router: Step[];
 	workers?: WorkerScript[];
 }
 export type WorkerScript = { brief: string; steps: Step[] };
 
-export const on = (label: string, match: RegExp, answer: (card: string) => Answer): Step => ({ label, match, answer });
+export const on = (label: string, match: RegExp, answer: (card: string) => Answer, delayMs?: number): Step => ({ label, match, answer, ...(delayMs && { delayMs }) });
 export const worker = (brief: string, ...steps: Step[]): WorkerScript => ({ brief, steps });
 
 // Tool names and arguments follow src/host/router.ts and src/worker/extension.ts.
@@ -34,6 +39,7 @@ export const openTicket = (card: string, title: string, brief = title): ToolCall
 	args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg") ?? "trg_missing", title, brief }] },
 });
 export const reply = (card: string, text: string): ToolCall => ({ name: "reply", args: { text, cause: card.match(/\b(trg|tkt|act)_[\w-]+/)?.[0] } });
+export const dispatch = (agent: string, task: string): ToolCall => ({ name: "dispatch_agent", args: { agent, task } });
 export const report = (status: "progress" | "ready" | "blocked" | "failed" | "no_action", summary: string): ToolCall => ({ name: "report", args: { status, summary } });
 /** Crashes the current Worker for real: inside the bash tool, $PPID is the Pi process. */
 export const crashWorker = (): ToolCall => ({ name: "bash", args: { command: "kill -9 $PPID" } });
@@ -45,6 +51,8 @@ export interface Exchange {
 	cards: string[];
 	steps: string[];
 	unmatched: string[];
+	/** The tools the request offered the model. */
+	tools: string[];
 	answer: Answer;
 }
 
@@ -128,18 +136,20 @@ export class FakeModel {
 		}
 		let raw = "";
 		for await (const chunk of req) raw += chunk;
-		const body = JSON.parse(raw) as { model: string; messages: Message[] };
-		const exchange = this.#decide(body.model, body.messages);
+		const body = JSON.parse(raw) as { model: string; messages: Message[]; tools?: { function?: { name?: string } }[] };
+		const { delayMs, ...decided } = this.#decide(body.model, body.messages);
+		const exchange = { ...decided, tools: (body.tools ?? []).map((t) => t.function?.name ?? "") };
 		this.exchanges.push(exchange);
+		if (delayMs) await new Promise((done) => setTimeout(done, delayMs));
 		stream(res, exchange.answer);
 	}
 
 	// Each trailing user card claims the first unused step that matches it, in any order, so the result
 	// does not depend on how the Router batches cards or on automatic retries.
-	#decide(model: string, messages: Message[]): Exchange {
+	#decide(model: string, messages: Message[]): Omit<Exchange, "tools"> & { delayMs: number } {
 		const conversation = model === "router" || model === "fallback" ? "router" : briefOf(messages);
 		const cards = trailingCards(messages);
-		const base = { at: Date.now(), model, conversation, cards, steps: [] as string[], unmatched: [] as string[] };
+		const base = { at: Date.now(), model, conversation, cards, steps: [] as string[], unmatched: [] as string[], delayMs: 0 };
 		if (cards.length === 0) return { ...base, answer: "好。" };
 		const pending = this.#pending.get(conversation) ?? [];
 		const calls: ToolCall[] = [];
@@ -152,6 +162,7 @@ export class FakeModel {
 			const [step] = pending.splice(i, 1);
 			this.#checkDrained();
 			base.steps.push(step.label);
+			base.delayMs = Math.max(base.delayMs, step.delayMs ?? 0);
 			const answer = this.#sabotaged(step) ?? step.answer(card);
 			if (!Array.isArray(answer)) return { ...base, answer };
 			calls.push(...answer);
@@ -172,13 +183,19 @@ export class FakeModel {
 type Message = { role: string; content?: string | { type: string; text?: string }[] };
 const textOf = (m: Message) => (typeof m.content === "string" ? m.content : (m.content ?? []).map((c) => c.text ?? "").join(""));
 
+/** The user cards after the last assistant turn. A member's reply to a dispatch counts as one card, "[成员回复] …", so a helper can be scripted past it. */
 function trailingCards(messages: Message[]): string[] {
 	const out: string[] = [];
-	for (let i = messages.length - 1; i >= 0 && messages[i].role === "user"; i--) out.unshift(...textOf(messages[i]).split(/\n\n(?=\[)/));
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i];
+		if (m.role === "user") out.unshift(...textOf(m).split(/\n\n(?=\[)/));
+		else if (m.role === "tool" && textOf(m).startsWith("成员回复")) out.unshift(`[成员回复] ${textOf(m)}`);
+		else break;
+	}
 	return out;
 }
 
-/** A Worker's first user message is "[任务说明] trg_… · …\n<brief>". */
+/** A Worker's first user message is "[任务说明] trg_… · …\n<brief>"; a member's is "[派活] <title>\n<task>". */
 function briefOf(messages: Message[]): string {
 	const first = textOf(messages.find((m) => m.role === "user") ?? { role: "user" });
 	return first.slice(first.indexOf("\n") + 1).trim();
