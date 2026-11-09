@@ -124,7 +124,7 @@ export class WebGateway {
 	// since a cross-origin JSON POST needs a CORS preflight that this server never answers.
 	#say(req: IncomingMessage, res: ServerResponse): void {
 		const origin = req.headers.origin?.toLowerCase();
-		if (origin !== `http://127.0.0.1:${this.#port}` && origin !== `http://localhost:${this.#port}`) return deny(res, 403);
+		if (!origin?.startsWith("http://") || !isLocalHost(origin.slice("http://".length), this.#port)) return deny(res, 403);
 		if (req.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json") return deny(res, 415);
 		if (Number(req.headers["content-length"] ?? 0) > SAY_MAX_BYTES) return tooLarge(req, res);
 		const chunks: Buffer[] = [];
