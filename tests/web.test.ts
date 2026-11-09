@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
-import { connect, createServer, type AddressInfo } from "node:net";
+import { connect, createServer } from "node:net";
 import test, { mock, type TestContext } from "node:test";
 import type { HostToClient, TodayCounts } from "../src/client/protocol.ts";
 import type { DashboardRow } from "../src/kernel/types.ts";
@@ -12,7 +12,7 @@ import { ConfigError } from "../src/config-error.ts";
 import { WebGateway } from "../src/host/web.ts";
 import * as page from "../src/web/view.mjs";
 import { WATCHDOG_SOURCE } from "../src/watchdog/watchdog.ts";
-import { busyPort, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
+import { busyPort, freePort, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
@@ -228,6 +228,7 @@ test("页面：运行时长粗略到天、小时、分钟；只有这次启动�
 	assert.equal(page.dutyLine({ since: 0, resumed: 0 }, 2 * H + 5 * 60_000), "在线 · 已运行 2 小时 5 分钟");
 	assert.equal(page.dutyLine({ since: 0, resumed: 0 }, 30_000), "在线 · 刚启动");
 	assert.equal(page.dutyLine(undefined, 0), "");
+	assert.equal(page.dutyLine({ since: 0, resumed: 0 }, 2 * H, false), "", "断线时不再显示「在线」");
 	assert.equal(page.restartNotice({ since: 0, resumed: 2 }, 29 * 60_000), "已重启，进行中的任务已恢复");
 	assert.equal(page.restartNotice({ since: 0, resumed: 2 }, 31 * 60_000), "");
 	assert.equal(page.restartNotice({ since: 0, resumed: 0 }, 60_000), "");
@@ -443,19 +444,57 @@ async function webHost(t: TestContext, brain: Parameters<typeof startHost>[0] = 
 	return { ...started, url, token, at, events, stop };
 }
 
-async function freePort(): Promise<number> {
-	const probe = createServer();
-	await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
-	const { port } = probe.address() as AddressInfo;
-	await new Promise((r) => probe.close(r));
-	return port;
-}
-
-test("网关：网址是 127.0.0.1 加 64 位十六进制 token，每次启动换新 token", async (t) => {
+test("网关：网址是 127.0.0.1 加 64 位十六进制 token，不同状态目录的 token 不同", async (t) => {
 	const a = await webHost(t);
 	const b = await webHost(t);
 	assert.match(a.host.webUrl!, /^http:\/\/127\.0\.0\.1:\d+\/\?token=[0-9a-f]{64}$/);
 	assert.notEqual(a.token, b.token);
+});
+
+test("网关：同一状态目录重启后网址不变，token 存在 web-token 里，权限 0600", async (t) => {
+	const stateDir = tempStateDir();
+	const webPort = await freePort();
+	const first = await webHost(t, () => [], { stateDir, webPort });
+	await first.stop();
+	const second = await webHost(t, () => [], { stateDir, webPort });
+	assert.equal(second.host.webUrl, first.host.webUrl);
+	assert.equal(readFileSync(join(stateDir, "web-token"), "utf8").trim(), first.token);
+	assert.equal(statSync(join(stateDir, "web-token")).mode & 0o777, 0o600);
+});
+
+test("网关：web-token 内容不是 64 位十六进制时换成新 token，权限 0600", async (t) => {
+	const stateDir = tempStateDir();
+	writeFileSync(join(stateDir, "web-token"), "not-a-token\n", { mode: 0o600 });
+	const { token } = await webHost(t, () => [], { stateDir });
+	assert.match(token, /^[0-9a-f]{64}$/);
+	assert.equal(readFileSync(join(stateDir, "web-token"), "utf8").trim(), token);
+	assert.equal(statSync(join(stateDir, "web-token")).mode & 0o777, 0o600);
+});
+
+test("网关：web-token 权限比 0600 宽时收紧到 0600，token 照用，日志说一次", async (t) => {
+	const stateDir = tempStateDir();
+	const kept = "ab".repeat(32);
+	writeFileSync(join(stateDir, "web-token"), `${kept}\n`);
+	chmodSync(join(stateDir, "web-token"), 0o644);
+	const lines: string[] = [];
+	const { token } = await webHost(t, () => [], { stateDir, log: (line) => lines.push(line) });
+	assert.equal(token, kept);
+	assert.equal(statSync(join(stateDir, "web-token")).mode & 0o777, 0o600);
+	assert.equal(lines.filter((l) => l.includes("web-token")).length, 1, lines.join("\n"));
+});
+
+test("网关：宿主在同一状态目录重启后，旧网址直接连上事件流，收到快照", async (t) => {
+	const stateDir = tempStateDir();
+	const webPort = await freePort();
+	const first = await webHost(t, () => [], { stateDir, webPort });
+	const old = first.at("/events");
+	await first.stop();
+	await webHost(t, () => [], { stateDir, webPort });
+	const stream = sse(old);
+	t.after(() => stream.close());
+	await until(() => stream.got.length > 0, "重启后用旧网址收到快照");
+	assert.equal(stream.status, 200);
+	assert.equal(stream.got[0].type, "snapshot");
 });
 
 test("网关：没有 token 或 token 错误时，首页和事件流返回 401，正文不含对话内容", async (t) => {
@@ -1005,7 +1044,7 @@ test("网关：处理请求时意外出错答 500，不带内部细节，记一�
 	const boom = () => {
 		throw new Error("内部秘密 /Users/x/state.db");
 	};
-	const gateway = new WebGateway({ snapshot: boom, transcript: boom, say: boom }, (line) => logs.push(line));
+	const gateway = new WebGateway({ snapshot: boom, transcript: boom, say: boom }, "ab".repeat(32), (line) => logs.push(line));
 	await gateway.listen(0);
 	t.after(() => gateway.close());
 	const url = new URL(gateway.url);

@@ -224,9 +224,9 @@ export function todayCopy(counts) {
 
 const RESTART_NOTICE_MS = 30 * 60_000;
 
-/** @param {Duty | undefined} duty @param {number} now */
-export function dutyLine(duty, now) {
-	if (!duty) return "";
+/** @param {Duty | undefined} duty @param {number} now @param {boolean} [connected] */
+export function dutyLine(duty, now, connected = true) {
+	if (!duty || !connected) return "";
 	const minutes = Math.floor((now - duty.since) / 60_000);
 	if (minutes < 1) return "在线 · 刚启动";
 	const days = Math.floor(minutes / 1440);

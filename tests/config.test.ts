@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -72,4 +72,14 @@ test("watchdog.stuckMinutes 不是 0 到 1440 之间的正数时拒绝启动，�
 
 test("config 里手写 kernel.stuckMs 时拒绝启动，指向 watchdog.stuckMinutes，免得两处设置一处被悄悄覆盖", () => {
 	assert.throws(() => loadConfig(stateWith({ kernel: { stuckMs: 1 } })), (e: Error) => e.name === "ConfigError" && /kernel\.stuckMs/.test(e.message) && /watchdog\.stuckMinutes/.test(e.message));
+});
+
+test("状态目录不存在时建成 0700，只有自己能进；已有的目录权限不动", () => {
+	const fresh = join(mkdtempSync(join(tmpdir(), "psa-config-")), "state");
+	loadConfig(fresh);
+	assert.equal(statSync(fresh).mode & 0o777, 0o700);
+	const chosen = join(mkdtempSync(join(tmpdir(), "psa-config-")), "chosen");
+	mkdirSync(chosen, { mode: 0o755 });
+	loadConfig(chosen);
+	assert.equal(statSync(chosen).mode & 0o777, 0o755);
 });

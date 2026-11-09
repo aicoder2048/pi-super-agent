@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { openSync } from "node:fs";
+import { fchmodSync, fstatSync, openSync } from "node:fs";
 import { readHeartbeat } from "../heartbeat.ts";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,9 +34,16 @@ function killHungHost(): void {
 	log(`[watchdog] 已结束没有心跳的宿主进程 ${pid}`);
 }
 
+// The host prints its web token URL, so the log is as private as the web-token file.
+function openHostLog(): number {
+	const fd = openSync(join(config.stateDir, "host.log"), "a", 0o600);
+	if (fstatSync(fd).mode & 0o077) fchmodSync(fd, 0o600);
+	return fd;
+}
+
 function startHost(): void {
 	killHungHost();
-	const out = openSync(join(config.stateDir, "host.log"), "a");
+	const out = openHostLog();
 	const child = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST_ENTRY], {
 		cwd: repo,
 		env: { ...process.env, PSA_STATE_DIR: config.stateDir },

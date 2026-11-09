@@ -50,6 +50,10 @@ market-smoke:
 log limit="30":
     {{run}} src/cli/log.ts {{limit}}
 
+# 换网页 token：删掉状态目录里的 web-token，宿主下次启动生成新的。正在运行的宿主重启前沿用旧 token。
+web-token-rotate:
+    {{run}} src/cli/web-token-rotate.ts
+
 # 持续显示对话。
 tail:
     {{run}} src/cli/say.ts tail

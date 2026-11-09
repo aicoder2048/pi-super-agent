@@ -3,7 +3,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { busyPort, tempStateDir, until, within } from "./helpers/fakes.ts";
+import { busyPort, freePort, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 type ModuleFiles = Record<string, unknown>;
 
@@ -92,6 +92,37 @@ test("just host 启动后打印带 token 的网页网址，打开能看到页面
 	const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
 	assert.equal(res.status, 200);
 	assert.match(await res.text(), /Super Agent/);
+});
+
+async function hostUrlOnce(stateDir: string): Promise<string> {
+	const host = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], { env: { ...process.env, PSA_STATE_DIR: stateDir } });
+	const exited = new Promise((r) => host.on("exit", r));
+	let stderr = "";
+	host.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+	try {
+		await until(() => /\[host\] 网页 \S+\n/.test(stderr), `日志里的网页网址：${stderr}`, 20_000);
+		return /\[host\] 网页 (\S+)/.exec(stderr)![1];
+	} finally {
+		host.kill("SIGTERM");
+		await within(exited, 10_000, "just host 停下");
+	}
+}
+
+test("just host 重启后网址不变；just web-token-rotate 之后下一次启动换新 token", async () => {
+	const stateDir = stateWith({ webPort: await freePort() })();
+	const first = await hostUrlOnce(stateDir);
+	assert.equal(await hostUrlOnce(stateDir), first);
+	const rotate = spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/cli/web-token-rotate.ts"], {
+		env: { ...process.env, PSA_STATE_DIR: stateDir },
+		encoding: "utf8",
+		timeout: 20_000,
+	});
+	assert.equal(rotate.status, 0, rotate.stderr);
+	assert.match(rotate.stdout, /重启/);
+	const token = (url: string) => new URL(url).searchParams.get("token");
+	const rotated = await hostUrlOnce(stateDir);
+	assert.match(token(rotated)!, /^[0-9a-f]{64}$/);
+	assert.notEqual(token(rotated), token(first));
 });
 
 test("网页端口被占用时，just host 只打印一句说明并以 1 退出，不打印堆栈", async (t) => {
