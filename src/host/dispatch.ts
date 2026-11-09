@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { formatTokens } from "../client/board-format.mjs";
 import type { Basis } from "../kernel/types.ts";
@@ -69,6 +70,12 @@ export interface MemberRun {
 }
 
 export const memberSessionDir = (stateDir: string, ticketId: string, member: string) => join(stateDir, "workers", ticketId, "team", member);
+
+/** Every member session directory that exists under the state directory. */
+export function memberSessionDirs(stateDir: string): string[] {
+	const subdirs = (dir: string) => (statSync(dir, { throwIfNoEntry: false })?.isDirectory() ? readdirSync(dir).map((name) => join(dir, name)) : []);
+	return subdirs(join(stateDir, "workers")).flatMap((ticket) => subdirs(join(ticket, "team")));
+}
 
 export function parseDispatch<M extends { name: string }>(raw: unknown, crew: readonly M[]): { member: M; task: string; callId: string } {
 	const { agent, task, callId } = (raw ?? {}) as { agent?: unknown; task?: unknown; callId?: unknown };
