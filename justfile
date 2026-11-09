@@ -67,6 +67,7 @@ test:
 # 故意弄坏某一步：PSA_E2E_SABOTAGE="Router 回复" just e2e；让 Worker 崩溃：PSA_E2E_SABOTAGE="Worker 汇报:crash" just e2e
 # 端到端测试（假模型 + 真实宿主 + 浏览器）。
 e2e: _browser
+    @ls -dt tests/e2e/.out/run-* 2>/dev/null | tail -n +6 | xargs rm -rf
     {{run}} --test --test-reporter=spec --test-timeout=90000 tests/e2e/*.e2e.ts
 
 # 只跑一个：just demo 1-continuous。录屏和 summary.txt 在 demos/out/<名字>/。

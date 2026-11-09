@@ -12,7 +12,9 @@ import { freePort } from "../helpers/fakes.ts";
 import { FAKE_PROVIDER, FakeModel, type Script } from "./fake-model.ts";
 
 export const REPO = resolve(import.meta.dirname, "../..");
-const OUT = join(REPO, "tests/e2e/.out");
+// One folder per `just e2e` run, so two runs in the same checkout never clear each other's reports.
+// node --test runs each file as a child of one runner, so the runner pid names the run when PSA_E2E_RUN is unset.
+const OUT = join(REPO, "tests/e2e/.out", process.env.PSA_E2E_RUN || `run-${process.ppid}`);
 const RUN = ["--import", "./src/pi-runtime.mjs"];
 /** The line the host prints once its web page is up; the trailing whitespace makes sure the URL is complete. */
 export const HOST_URL = /\[host\] 网页 (\S+)\s/g;
@@ -280,11 +282,14 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 	const out = join(OUT, slug(t.name));
 	rmSync(out, { recursive: true, force: true });
 	mkdirSync(out, { recursive: true });
-	const root = mkdtempSync(join(tmpdir(), "psa-e2e-"));
 	const consoleLog = join(out, "page-console.log");
 	writeFileSync(consoleLog, "");
 	const consoleStream = createWriteStream(consoleLog);
-	const fake = await FakeModel.start(script, options.sabotage);
+	const fake = await FakeModel.start(script, options.sabotage).catch((error) => {
+		consoleStream.end();
+		throw error;
+	});
+	const root = mkdtempSync(join(tmpdir(), "psa-e2e-"));
 	const env = fakeAgentEnv(fake, join(root, "pi"));
 	const pages: Page[] = [];
 	const contexts: BrowserContext[] = [];
