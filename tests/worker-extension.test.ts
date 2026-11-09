@@ -84,6 +84,14 @@ test("角色写了工具：只放行角色的工具和汇报类工具，没写 b
 	assert.equal(process.env.PSA_ROLE_TOOLS, undefined);
 });
 
+test("角色写了 bg_start：请求任务注册后台命令；推断任务即使角色写了也不注册", async (t) => {
+	const request = await load("request", "read,bg_start,bg_status");
+	const inference = await load("inference", "read,bg_start");
+	t.after(() => { request.close(); inference.close(); });
+	assert.equal(request.tools.has("bg_start"), true);
+	assert.equal(inference.tools.has("bg_start"), false);
+});
+
 test("每种依据的 Worker 都有 web_get，它只收一个网址并拒绝非公网地址", async (t) => {
 	const inference = await load("inference");
 	const request = await load("request");

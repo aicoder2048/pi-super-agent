@@ -1,10 +1,10 @@
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ConfigError } from "./config-error.ts";
 import { DEFAULT_LEAD, GENERAL_ROLE } from "./kernel/types.ts";
-import { PAY_PER_USE_PROVIDERS, parseModelRef, type ModelRef } from "./models.ts";
+import { parseModelRef, type ModelRef } from "./models.ts";
 import { WORKER_TOOLS } from "./worker/tools.ts";
 
 export const BUILTIN_ROLES_DIR = fileURLToPath(new URL("../roles", import.meta.url));
@@ -28,6 +28,14 @@ export interface Role {
 
 const FIELDS = ["name", "title", "description", "tools", "skills", "model", "consult"];
 const NAME = /^[a-z][a-z0-9-]*$/;
+// The prompt goes to the Worker as one argv string; well under macOS's 1 MiB ARG_MAX with room for the rest.
+const PROMPT_MAX_CHARS = 20_000;
+const DESCRIPTION_MAX_CHARS = 300;
+
+const inside = (dir: string, path: string) => {
+	const rel = relative(dir, path);
+	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+};
 
 function list(value: unknown, file: string, field: string): string[] | undefined {
 	if (value === undefined || value === null) return undefined;
@@ -41,7 +49,8 @@ function text(value: unknown, file: string, field: string): string {
 	return value.trim();
 }
 
-export function parseRole(file: string, content: string): Role {
+/** allowedProviders: the providers the user already runs router or worker on; a role may only use these. */
+export function parseRole(file: string, content: string, allowedProviders: readonly string[]): Role {
 	const { frontmatter: fm, body } = parseFrontmatter(content);
 	const unknown = Object.keys(fm).find((k) => !FIELDS.includes(k));
 	if (unknown) throw new ConfigError(`${file}：不认识的字段 ${unknown}，可写：${FIELDS.join("、")}`);
@@ -51,25 +60,31 @@ export function parseRole(file: string, content: string): Role {
 	const badTool = tools?.find((t) => !(WORKER_TOOLS as readonly string[]).includes(t));
 	if (badTool) throw new ConfigError(`${file}：tools 里的 ${badTool} 不是 Worker 的工具，可用：${WORKER_TOOLS.join("、")}`);
 	const skills = (list(fm.skills, file, "skills") ?? []).map((s) => resolve(dirname(file), s));
+	const outside = skills.find((s) => !inside(dirname(file), s));
+	if (outside) throw new ConfigError(`${file}：skills 的 ${outside} 不行，技能目录必须在 ${dirname(file)} 里面`);
 	const missing = skills.find((s) => !existsSync(s));
 	if (missing) throw new ConfigError(`${file}：skills 指向的 ${missing} 不存在`);
 	let model: ModelRef | undefined;
 	if (fm.model !== undefined) {
 		model = parseModelRef(text(fm.model, file, "model"), `${file}：model`);
-		if (PAY_PER_USE_PROVIDERS.includes(model.provider.trim().toLowerCase())) {
-			throw new ConfigError(`${file}：model：拒绝使用 ${model.provider}/${model.id}：${model.provider} 走按量计费 API，角色只能用订阅模型`);
+		if (!allowedProviders.includes(model.provider)) {
+			throw new ConfigError(`${file}：model：拒绝使用 ${model.provider}/${model.id}，角色只能用 config.json 里 router 或 worker 已经在用的提供方：${allowedProviders.join("、")}`);
 		}
 	}
 	if (fm.consult !== undefined && typeof fm.consult !== "boolean") throw new ConfigError(`${file}：consult 只能写 true 或 false`);
+	const description = text(fm.description, file, "description");
+	if ([...description].length > DESCRIPTION_MAX_CHARS) throw new ConfigError(`${file}：description 超过 ${DESCRIPTION_MAX_CHARS} 字，名册里每个角色只写一句`);
+	const prompt = body.trim();
+	if ([...prompt].length > PROMPT_MAX_CHARS) throw new ConfigError(`${file}：正文（系统提示词）超过 ${PROMPT_MAX_CHARS} 字`);
 	return {
 		name,
 		title: text(fm.title, file, "title"),
-		description: text(fm.description, file, "description"),
+		description,
 		tools,
 		skills,
 		model,
 		kind: fm.consult === true ? "lead" : "expert",
-		prompt: body.trim(),
+		prompt,
 		file,
 	};
 }
@@ -89,13 +104,13 @@ export class Roster {
 		if (this.#roles.get(DEFAULT_LEAD)?.kind !== "lead") throw new ConfigError(`名册里没有内置牵头角色 ${DEFAULT_LEAD}`);
 	}
 
-	static load(dirs: readonly string[]): Roster {
+	static load(allowedProviders: readonly string[], dirs: readonly string[]): Roster {
 		const roles: Role[] = [];
 		for (const dir of dirs) {
 			if (!existsSync(dir) || !statSync(dir).isDirectory()) continue;
 			for (const entry of readdirSync(dir).sort()) {
 				const file = join(dir, entry);
-				if (entry.endsWith(".md") && statSync(file).isFile()) roles.push(parseRole(file, readFileSync(file, "utf8")));
+				if (entry.endsWith(".md") && statSync(file).isFile()) roles.push(parseRole(file, readFileSync(file, "utf8"), allowedProviders));
 			}
 		}
 		return new Roster(roles);

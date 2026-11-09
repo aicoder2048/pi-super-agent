@@ -30,7 +30,7 @@ test("Worker 子进程和模块 prepare 拿不到宿主环境里的密钥类变�
 	});
 	const spawner = new PiWorkerSpawner({
 		socketPath: join(dir, "h.sock"),
-		roster: Roster.load([BUILTIN_ROLES_DIR]),
+		roster: Roster.load(["openai-codex"], [BUILTIN_ROLES_DIR]),
 		sessionDir: join(dir, "sessions"),
 		cliPath,
 		moduleFor: () => ({ prepare: "env > prepare-env.txt" }),
@@ -57,7 +57,7 @@ test("牵头角色的 Worker：提示词和专家名册接在后面，技能先�
 	writeFileSync(join(roles, "news.md"), "---\nname: news\ntitle: 新闻研究员\ndescription: 查新闻\n---\n不该出现\n");
 	const spawner = new PiWorkerSpawner({
 		socketPath: join(dir, "h.sock"),
-		roster: Roster.load([BUILTIN_ROLES_DIR, roles]),
+		roster: Roster.load(["openai-codex"], [BUILTIN_ROLES_DIR, roles]),
 		sessionDir: join(dir, "sessions"),
 		cliPath,
 		moduleFor: () => ({ skillsDir: "/modules/m/skills" }),

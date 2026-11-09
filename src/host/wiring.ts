@@ -64,8 +64,9 @@ export function feedSpecs(config: Pick<HostConfig, "stateDir" | "secretsFile" | 
 }
 
 /** The built-in roles, then each module's, then the user's; the experts a rule names must be on it. */
-export function loadRoster(config: Pick<HostConfig, "rolesDir">, modules: Modules): Roster {
-	const roster = Roster.load([BUILTIN_ROLES_DIR, ...modules.modules.flatMap((m) => (m.rolesDir ? [m.rolesDir] : [])), config.rolesDir]);
+export function loadRoster(config: Pick<HostConfig, "rolesDir" | "models">, modules: Modules): Roster {
+	const subscribed = [...new Set([config.models.router.provider, config.models.worker.provider])];
+	const roster = Roster.load(subscribed, [BUILTIN_ROLES_DIR, ...modules.modules.flatMap((m) => (m.rolesDir ? [m.rolesDir] : [])), config.rolesDir]);
 	const experts = roster.names("expert");
 	for (const rule of modules.allRules()) {
 		const unknown = rule.experts?.find((e) => !experts.includes(e));

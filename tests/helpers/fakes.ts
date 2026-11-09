@@ -98,7 +98,7 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 				rulesFor: deps.rulesFor,
 				cwd: deps.stateDir,
 				rules: "",
-				roster: Roster.load([BUILTIN_ROLES_DIR]).rosterPrompt("lead"),
+				roster: Roster.load(["openai-codex"], [BUILTIN_ROLES_DIR]).rosterPrompt("lead"),
 				afterCommand: deps.afterCommand,
 			});
 		},

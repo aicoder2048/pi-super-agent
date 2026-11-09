@@ -233,3 +233,10 @@ test("真实接线：角色的模型找不到时启动前报错并写出角色�
 	roleFile(config.rolesDir, "picky", `model: ${provider}/nope\n`);
 	assert.throws(() => createHostOptions({ config, modules: Modules.load([]), modelRuntime, log: () => {} }), /picky\.md.*找不到模型/);
 });
+
+test("真实接线：角色的模型提供方不是 router 或 worker 在用的，启动前报错并列出允许的提供方", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const config = hostConfig(provider);
+	roleFile(config.rolesDir, "spender", "model: openrouter/deepseek/deepseek-chat\n");
+	assert.throws(() => createHostOptions({ config, modules: Modules.load([]), modelRuntime, log: () => {} }), new RegExp(`spender\\.md.*只能用.*${provider}`));
+});
