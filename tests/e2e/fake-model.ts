@@ -69,7 +69,6 @@ export class FakeModel {
 	readonly #sabotage: { label: string; crash: boolean } | undefined;
 	#server!: Server;
 	#drained!: () => void;
-	/** Resolves once every scripted step has been claimed. */
 	readonly drained = new Promise<void>((done) => (this.#drained = done));
 	baseUrl = "";
 

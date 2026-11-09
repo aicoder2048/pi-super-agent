@@ -1,5 +1,3 @@
-// Shared by the e2e tests and the demos: start the real host in its own process group, drive a
-// browser step by step, keep evidence when a step fails, and stop exactly the groups it started.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createWriteStream, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -33,10 +31,7 @@ export function writeConfig(stateDir: string, models: Models, config: Record<str
 	writeFileSync(join(stateDir, "config.json"), JSON.stringify({ ...config, models }, null, 2));
 }
 
-// ---- process groups ----
-
 const liveGroups = new Set<number>();
-// If the runner itself dies, take our groups with it rather than leave hosts and Workers behind.
 process.on("exit", () => {
 	for (const pgid of liveGroups) signalGroup(pgid, "SIGKILL");
 });
@@ -53,7 +48,6 @@ function signalGroup(pgid: number, signal: NodeJS.Signals | 0): boolean {
 
 export const groupAlive = (pgid: number) => signalGroup(pgid, 0);
 
-/** SIGTERM the whole group, SIGKILL whatever is left after 3 s. Returns whether the group is gone. */
 export async function stopGroup(pgid: number): Promise<boolean> {
 	signalGroup(pgid, "SIGCONT");
 	signalGroup(pgid, "SIGTERM");
@@ -95,14 +89,11 @@ export function adoptGroup(pgid: number): void {
 	liveGroups.add(pgid);
 }
 
-/** Stops every group this process started or adopted; returns the ones that would not die. */
 export async function stopAllGroups(): Promise<number[]> {
 	const left: number[] = [];
 	for (const pgid of [...liveGroups]) if (!(await stopGroup(pgid))) left.push(pgid);
 	return left;
 }
-
-// ---- the host ----
 
 export interface HostRun {
 	readonly url: URL;
@@ -122,7 +113,6 @@ export interface StartHostOptions {
 	logFile: string;
 	config?: Record<string, unknown>;
 	env?: Record<string, string>;
-	/** Extra `--import` modules for the host process (the market demo's request tap). */
 	imports?: string[];
 	timeoutMs?: number;
 }
@@ -208,8 +198,6 @@ export function fakeAgentEnv(fake: FakeModel, agentDir: string): Record<string, 
 	};
 }
 
-// ---- the page ----
-
 export type Status = "connecting" | "connected" | "disconnected" | "expired";
 
 /** The page's connection state lives on #status[data-status]; the connected chip is hidden, so this reads the attribute. */
@@ -230,8 +218,6 @@ export async function sayInPage(page: Page, text: string, { typeDelayMs }: { typ
 	await page.waitForFunction(() => document.getElementById("say-status")?.dataset.state === "delivered", null, { timeout: 8_000 });
 }
 
-// ---- the story ----
-
 export interface Story {
 	page: Page;
 	host: HostRun;
@@ -240,7 +226,6 @@ export interface Story {
 	step(name: string, body: (page: Page) => Promise<unknown>): Promise<void>;
 	/** Opens another page whose console also goes into the report. */
 	open(url: URL, options?: { fakeClock?: boolean }): Promise<Page>;
-	/** Runs a repo CLI against this host's state dir, the way the user would. */
 	cli(args: string[]): Promise<string>;
 }
 

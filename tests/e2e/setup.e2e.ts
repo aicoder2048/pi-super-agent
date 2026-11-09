@@ -1,4 +1,3 @@
-// Guards that fire before any process starts: billing, script shape and the sabotage switch.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

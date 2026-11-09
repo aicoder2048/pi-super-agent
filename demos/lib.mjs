@@ -234,7 +234,6 @@ export class Demo {
 		return ok ? { status: "PASS", evidence } : { status: "FAIL", evidence: `${why}; observed: ${evidence}` };
 	}
 
-	/** The closing caption every demo ends on. */
 	async outro(title, bot, agent) {
 		await this.caption(title, bot, agent);
 		await sleep(8000);

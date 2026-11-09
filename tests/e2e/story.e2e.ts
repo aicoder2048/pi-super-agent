@@ -1,4 +1,3 @@
-// The whole story with a real host, Router, Worker subprocess and browser; only the model is scripted.
 import test, { after } from "node:test";
 import { on, openTicket, reply, report, worker } from "./fake-model.ts";
 import { closeBrowser, sayInPage, story } from "./harness.ts";
