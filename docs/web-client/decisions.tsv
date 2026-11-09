@@ -230,3 +230,7 @@ ts	phase	decision	why	evidence	result
 2026-11-09T18:45:47Z	m2	indicators 默认窗口：day 400 天、hour 30 天、minute 4 天；取 K 线上限 5000 根	day 要够 SMA200 和 252 根；一个分钟交易日含盘前盘后最多 960 根，500 根会截掉 VWAP 需要的开盘段	真实 NVDA 日线 276 根，sma200 和 week52 都有值	decided
 2026-11-09T18:45:47Z	m2	earnings 用 Finnhub 两个接口：calendar/earnings 给下次日期和营收，stock/earnings 给最近 4 季 EPS；超预期百分比程序自算	免费档 stock/earnings 有 EPS 历史；自算口径和 stock-heatmap 一致	实测：日历只回未来两条（2026-11-17、2027-02-23），stock/earnings 回 4 季，营收历史不可得	decided
 2026-11-09T18:45:47Z	m2	market-smoke 给两个客户端传不 unref 的 sleep	首次实测：12 秒限速间隔里 unref 的定时器让 CLI 静默退出（exit 0，没有指标行）	scratchpad/market-data-live.txt 第二次运行三行齐全	fixed
+2026-11-09T18:51:15Z	m2	indicators 用 lastBar { start, end, partial } 和 lastPrice 取代 at/close；partial 时带 note 说明是盘中价；收盘后 20 分钟内仍算 partial	复审：今天没走完的日线会被当成收盘价；延迟行情约晚 16 分钟	tests/market-indicators.test.ts partial 用例；去掉宽限的变异变红	fixed
+2026-11-09T18:51:15Z	m2	VWAP 锚定最近一个有常规时段成交的交易日，不是今天时 note 写明，没有时 { unavailable }，不再给 insufficient need 1	复审：开盘前报 need 1 / have 3000 会误导	开盘前用例；半天日 13:00、EDT、盘后用例	fixed
+2026-11-09T18:51:15Z	m2	FINNHUB_API_KEY 格式不对只停用 earnings，整个 us-market 照常	复审：ConfigError 让整个来源启动失败	tests/market-source.test.ts 坏密钥用例先红后绿	fixed
+2026-11-09T18:51:15Z	m2	复审指出的 6 处变异（另加 partial 宽限）逐一改代码确认变红再还原	原测试在这些变异下仍绿	14/14 变异变红；522/522	PASS

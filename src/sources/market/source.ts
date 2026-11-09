@@ -4,7 +4,8 @@ import { threadId } from "../generic.ts";
 import { MarketClient, MarketError, type Span } from "./client.ts";
 import { indicatorReport } from "./indicators.ts";
 import { FinnhubClient } from "./finnhub.ts";
-import { readFinnhubKey, readMarketKey } from "./key.ts";
+import { ConfigError } from "../../config-error.ts";
+import { readFinnhubKey, readMarketKey, type LoadedKey } from "./key.ts";
 import { detect, toTrigger, type MarketCursor, type Move, type Quote } from "./detect.ts";
 import { inPollWindow, MINUTE, nextPollDelay, sessionAt, shiftDate, type Session } from "./session.ts";
 import { parseMarketSettings, type MarketSettings } from "./settings.ts";
@@ -25,7 +26,7 @@ const INDICATOR_LIMIT = 5000;
 const LOOKUP_HELP = `us-market（美股行情）：
 - quote { symbols: string[] }：最多 10 只股票的最新报价（price、prevClose、changePct、at 毫秒时间戳、delayed：接口标为延迟或报价比现在晚 10 分钟以上；休市时段的收盘价也会是 true）
 - bars { symbol, span: "minute"|"hour"|"day", from: "YYYY-MM-DD", to: "YYYY-MM-DD" }：K 线（t、o、h、l、c、v），按时间正序，超过 500 根时只给离 to 最近的 500 根
-- indicators { symbol, span: "day"|"hour"|"minute", from?, to? }：程序算好的技术指标，数字直接引用，不要自己重算。to 默认纽约今天，from 默认往前 400 天（day）、30 天（hour）、4 天（minute）。返回 at（最后一根 K 线的开始时间，毫秒）、close、bars（用到的根数），以及 sma20/50/200、ema12/26（以前 n 根 SMA 为种子）、macd { line, signal, histogram }（12,26,9）、rsi14 和 atr14（Wilder 平滑）、bollinger { middle, upper, lower }（20 根，2 倍总体标准差）、week52 { high, low }（仅 day，最近 252 根日线）、vwap（仅 minute，最后一根所在交易日 9:30 起的常规时段，典型价 (h+l+c)/3 按量加权）、swings { resistance, support }（左右各 5 根都更低/更高的摆动高点/低点，取现价上方/下方最近的 3 个，每个含 price 和 t）。根数不够的指标给 { insufficient: { need, have } }
+- indicators { symbol, span: "day"|"hour"|"minute", from?, to? }：程序算好的技术指标，数字直接引用，不要自己重算。to 默认纽约今天，from 默认往前 400 天（day）、30 天（hour）、4 天（minute）。返回 bars（用到的根数）、lastPrice（最后一根的收盘价）、lastBar { start, end, partial }（最后一根 K 线的开始和应结束时间，毫秒；收盘或整点后 20 分钟内仍算没走完，partial 为 true，此时会带 note：lastPrice 是盘中价，不是收盘价，含这根的指标会变，不要当成收盘数据），以及 sma20/50/200、ema12/26（以前 n 根 SMA 为种子）、macd { line, signal, histogram }（12,26,9）、rsi14 和 atr14（Wilder 平滑）、bollinger { middle, upper, lower }（20 根，2 倍总体标准差）、week52 { high, low }（仅 day，最近 252 根日线）、vwap（仅 minute）{ value, session, note? }：最近一个有常规时段成交的交易日 [9:30, 收盘) 的分钟线，典型价 (h+l+c)/3 按量加权；session 不是今天时 note 会写明（比如今天还没开盘，给的是上一交易日）；没有常规时段成交时是 { unavailable }、swings { resistance, support }（左右各 5 根都更低/更高的摆动高点/低点，取现价上方/下方最近的 3 个，每个含 price 和 t）。根数不够的指标给 { insufficient: { need, have } }
 - earnings { symbol }：Finnhub 财报。next 是下次财报 { date, hour: "bmo" 盘前|"amc" 盘后|"dmh" 盘中|"unknown", year, quarter, epsEstimate, revenueEstimate }，没有排期时为 null；quarters 是最近 4 个已公布季度（新到旧）{ year, quarter, period, reportDate, epsActual, epsEstimate, epsSurprisePct, revenueActual, revenueEstimate, revenueSurprisePct }，超预期百分比 = (实际 - 预期) / |预期| × 100，由程序算好；接口没给的字段不出现（Finnhub 免费档的财报日历不给历史，所以通常没有 reportDate 和营收）
 - session {}：纽约日期和交易时段（pre、regular、post、closed）`;
 
@@ -33,9 +34,9 @@ export function marketFeed(input: FeedInput): FeedSpec {
 	const { source, title } = input;
 	const settings = parseMarketSettings(input.settings, input.override, input.where);
 	const loaded = readMarketKey(input.env, input.secretsFile);
-	const finnhub = readFinnhubKey(input.env, input.secretsFile);
+	const earnings = earningsClient(input);
 	input.log(`[${source}] ${title}：${loaded ? `密钥来自 ${loaded.origin}` : "未配置行情密钥，看盘停用"}；自选 ${settings.watchlist.join(" ")}`);
-	input.log(`[${source}] ${finnhub ? `Finnhub 密钥来自 ${finnhub.origin}` : "未配置 FINNHUB_API_KEY，earnings 查询不可用"}`);
+	input.log(`[${source}] ${typeof earnings === "string" ? `earnings 查询不可用：${earnings}` : `Finnhub 密钥来自 ${earnings.origin}`}`);
 	return {
 		source,
 		lookupHelp: LOOKUP_HELP,
@@ -43,10 +44,20 @@ export function marketFeed(input: FeedInput): FeedSpec {
 			? new MarketSource({
 				source, title, settings, ctx,
 				client: new MarketClient({ key: loaded.key, baseURL: settings.baseURL, minGapMs: settings.minGapMs }),
-				earnings: finnhub && new FinnhubClient({ key: finnhub.key, minGapMs: FINNHUB_GAP_MS }),
+				earnings: typeof earnings === "string" ? earnings : new FinnhubClient({ key: earnings.key, minGapMs: FINNHUB_GAP_MS }),
 			})
 			: disabledFeed(source, "未配置行情密钥"),
 	};
+}
+
+// A bad Finnhub key only turns off earnings; the rest of the feed does not depend on it.
+function earningsClient(input: FeedInput): LoadedKey | string {
+	try {
+		return readFinnhubKey(input.env, input.secretsFile) ?? "未配置 FINNHUB_API_KEY";
+	} catch (error) {
+		if (error instanceof ConfigError) return error.message;
+		throw error;
+	}
 }
 
 function symbolArg(op: string, a: Record<string, unknown>): string {
@@ -86,7 +97,8 @@ export interface MarketSourceOptions {
 	title: string;
 	settings: MarketSettings;
 	client: MarketClient;
-	earnings?: FinnhubClient;
+	/** A string is the reason earnings is off. */
+	earnings?: FinnhubClient | string;
 	ctx: FeedContext;
 }
 
@@ -115,7 +127,7 @@ export class MarketSource implements Feed {
 		this.#stopped = true;
 		clearTimeout(this.#timer);
 		this.#o.client.dispose();
-		this.#o.earnings?.dispose();
+		if (this.#o.earnings instanceof FinnhubClient) this.#o.earnings.dispose();
 	}
 
 	problem(): string | undefined {
@@ -180,13 +192,14 @@ export class MarketSource implements Feed {
 				if (from > to) throw new Error("indicators 的 from 不能晚于 to");
 				const bars = await this.#o.client.bars(symbol, span, from, to, INDICATOR_LIMIT);
 				if (!bars.length) throw new Error(`${symbol} 在 ${from} 到 ${to} 没有 ${span} K 线`);
-				return { symbol, span, from, to, ...indicatorReport(bars, span) };
+				return { symbol, span, from, to, ...indicatorReport(bars, span, this.#o.ctx.clock.now()) };
 			}
 			case "earnings": {
 				only("symbol");
 				const symbol = symbolArg(op, a);
-				if (!this.#o.earnings) throw new Error("earnings 不可用：未配置 FINNHUB_API_KEY");
-				return this.#o.earnings.earnings(symbol, sessionAt(this.#o.ctx.clock.now()).nyDate);
+				const earnings = this.#o.earnings ?? "未配置 FINNHUB_API_KEY";
+				if (typeof earnings === "string") throw new Error(`earnings 不可用：${earnings}`);
+				return earnings.earnings(symbol, sessionAt(this.#o.ctx.clock.now()).nyDate);
 			}
 			case "session": {
 				only();

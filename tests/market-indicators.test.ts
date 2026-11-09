@@ -35,6 +35,23 @@ test("MACD(12,26,9)：线 = EMA12 - EMA26，信号 = MACD 线的 EMA9（SMA 种�
 	assert.ok(macd(range(34)));
 });
 
+test("MACD 信号线 = MACD 线（从第 26 根起）的 EMA9，以前 9 个 MACD 值的 SMA 为种子：非线性序列对照逐步手写的参考算法", () => {
+	const closes = range(60).map((i) => 100 + 10 * Math.sin(i / 3) + i * 0.5);
+	const emaRef = (xs: number[], n: number) => {
+		const k = 2 / (n + 1);
+		const out = [xs.slice(0, n).reduce((a, b) => a + b, 0) / n];
+		for (let i = n; i < xs.length; i++) out.push(xs[i]! * k + out[out.length - 1]! * (1 - k));
+		return out;
+	};
+	const e12 = emaRef(closes, 12), e26 = emaRef(closes, 26);
+	const line = e26.map((slow, j) => e12[j + 14]! - slow);
+	const signal = emaRef(line, 9).at(-1)!;
+	const m = macd(closes)!;
+	near(m.line, line.at(-1)!);
+	near(m.signal, signal);
+	near(m.histogram, line.at(-1)! - signal);
+});
+
 test("RSI（Wilder）：首个平均涨跌 = 前 n 个变动的简单平均，之后 avg = (prev*(n-1) + cur)/n；1,2,3,2 的 RSI2 = 50", () => {
 	assert.equal(rsi([1, 2, 3, 2], 2), 50);
 	assert.equal(rsi(range(15), 14), 100);
@@ -50,6 +67,13 @@ test("ATR（Wilder）：TR = max(h-l, |h-前收|, |l-前收|)，首个 ATR = 前
 	];
 	assert.equal(atr(bars, 2), 3);
 	assert.equal(atr(bars.slice(0, 2), 2), undefined);
+});
+
+test("ATR 的 TR 含跳空项：向上跳空取 |h-前收|，向下跳空取 |l-前收|，都大于当根 h-l", () => {
+	const up: Bar[] = [{ t: 1, o: 10, h: 10.5, l: 9.5, c: 10, v: 1 }, { t: 2, o: 19.5, h: 20, l: 19, c: 19.5, v: 1 }];
+	const down: Bar[] = [{ t: 1, o: 20, h: 20.5, l: 19.5, c: 20, v: 1 }, { t: 2, o: 11.5, h: 12, l: 11, c: 11.5, v: 1 }];
+	assert.equal(atr(up, 1), 10);
+	assert.equal(atr(down, 1), 9);
 });
 
 test("Bollinger(20, 2σ) 用总体标准差：1..20 的中轨 10.5，σ = √33.25", () => {
@@ -71,16 +95,50 @@ test("52 周高低 = 最近 252 根日线的最高 h 和最低 l，更早的不�
 	assert.equal(week52(bars.slice(0, 251)), undefined);
 });
 
-test("VWAP = Σ(典型价 (h+l+c)/3 × v) / Σv，只算最后一根所在纽约日期的常规时段（9:30 起）分钟线", () => {
-	const bar = (iso: string, h: number, l: number, c: number, v: number): Bar => ({ t: T(iso), o: c, h, l, c, v });
+const minute = (iso: string, h: number, l: number, c: number, v: number): Bar => ({ t: T(iso), o: c, h, l, c, v });
+
+test("VWAP = Σ(典型价 (h+l+c)/3 × v) / Σv，只算常规时段 [9:30, 16:00) 的分钟线；盘前和更早的交易日不算", () => {
 	const bars = [
-		bar("2026-11-06T20:59:00Z", 500, 500, 500, 999),
-		bar("2026-11-09T14:29:00Z", 300, 300, 300, 999),
-		bar("2026-11-09T14:30:00Z", 12, 9, 9, 100),
-		bar("2026-11-09T14:31:00Z", 13, 10, 13, 300),
+		minute("2026-11-06T20:59:00Z", 500, 500, 500, 999),
+		minute("2026-11-09T14:29:00Z", 300, 300, 300, 999),
+		minute("2026-11-09T14:30:00Z", 12, 9, 9, 100),
+		minute("2026-11-09T14:31:00Z", 13, 10, 13, 300),
 	];
-	assert.equal(vwap(bars), (10 * 100 + 12 * 300) / 400);
-	assert.equal(vwap(bars.slice(0, 2)), undefined);
+	assert.deepEqual(vwap(bars, T("2026-11-09T15:00:00Z")), { value: (10 * 100 + 12 * 300) / 400, session: "2026-11-09" });
+});
+
+test("VWAP 收盘边界：16:00 那根和盘后分钟线都不算（夏令时 EDT 的 9:30 是 13:30Z）", () => {
+	const bars = [
+		minute("2026-07-15T13:29:00Z", 900, 900, 900, 999),
+		minute("2026-07-15T13:30:00Z", 10, 10, 10, 100),
+		minute("2026-07-15T19:59:00Z", 20, 20, 20, 100),
+		minute("2026-07-15T20:00:00Z", 900, 900, 900, 999),
+		minute("2026-07-15T22:00:00Z", 900, 900, 900, 999),
+	];
+	assert.deepEqual(vwap(bars, T("2026-07-15T23:00:00Z")), { value: 15, session: "2026-07-15" });
+});
+
+test("VWAP 半天交易日 13:00 收盘：13:00 那根和之后的都不算", () => {
+	const bars = [
+		minute("2026-11-27T14:30:00Z", 10, 10, 10, 100),
+		minute("2026-11-27T17:59:00Z", 20, 20, 20, 100),
+		minute("2026-11-27T18:00:00Z", 900, 900, 900, 999),
+		minute("2026-11-27T21:00:00Z", 900, 900, 900, 999),
+	];
+	assert.deepEqual(vwap(bars, T("2026-11-27T22:00:00Z")), { value: 15, session: "2026-11-27" });
+});
+
+test("VWAP 开盘前：不报 insufficient，回到上一个交易日的常规时段并写明今天还没开盘", () => {
+	const bars = [
+		minute("2026-11-06T20:58:00Z", 10, 10, 10, 100),
+		minute("2026-11-06T20:59:00Z", 20, 20, 20, 100),
+		minute("2026-11-06T22:00:00Z", 900, 900, 900, 999),
+		minute("2026-11-09T13:00:00Z", 900, 900, 900, 999),
+	];
+	const r = vwap(bars, T("2026-11-09T13:05:00Z"));
+	assert.ok("value" in r && r.value === 15 && r.session === "2026-11-06", JSON.stringify(r));
+	assert.match(r.note!, /2026-11-09.*还没开盘.*2026-11-06/);
+	assert.deepEqual(Object.keys(vwap(bars.slice(2), T("2026-11-09T13:05:00Z"))), ["unavailable"]);
 });
 
 test("摆动支撑阻力：左右各 k 根都更低的高点是阻力（右侧允许相等），取现价上方最近的 3 个；低点同理给支撑", () => {
@@ -91,12 +149,21 @@ test("摆动支撑阻力：左右各 k 根都更低的高点是阻力（右侧�
 	assert.deepEqual(s.support, [{ price: 4, t: 8 }, { price: 3, t: 4 }, { price: 1, t: 15 }]);
 });
 
-test("报告：给出最后一根的时间和收盘价、用到的根数；不足的指标写 insufficient 并说明需要几根", () => {
+test("摆动点的平顶/平底：左侧持平不算、右侧持平算，所以连续两根同价只记第一根", () => {
+	const highs = [1, 2, 5, 5, 2, 1, 3, 2];
+	const lows = [9, 8, 5, 5, 8, 9, 7, 8];
+	const bars: Bar[] = highs.map((h, i) => ({ t: i, o: 4, h, l: lows[i]!, c: 4, v: 1 }));
+	assert.deepEqual(swings(bars, 4, 2).resistance, [{ price: 5, t: 2 }]);
+	assert.deepEqual(swings(bars, 6, 2).support, [{ price: 5, t: 2 }]);
+});
+
+test("报告：给出最后一根的起止时间和价格、用到的根数；不足的指标写 insufficient 并说明需要几根", () => {
 	const bars = dayBars(range(60, 100));
-	const r = indicatorReport(bars, "day");
+	const r = indicatorReport(bars, "day", bars.at(-1)!.t + 30 * DAY);
 	assert.equal(r.bars, 60);
-	assert.equal(r.at, bars.at(-1)!.t);
-	assert.equal(r.close, 159);
+	assert.deepEqual(r.lastBar, { start: bars.at(-1)!.t, end: bars.at(-1)!.t + 16 * 3_600_000, partial: false });
+	assert.equal(r.lastPrice, 159);
+	assert.equal("note" in r, false);
 	assert.equal(r.sma20, 149.5);
 	assert.equal(r.sma50, 134.5);
 	assert.deepEqual(r.sma200, { insufficient: { need: 200, have: 60 } });
@@ -110,10 +177,24 @@ test("报告：给出最后一根的时间和收盘价、用到的根数；不�
 test("报告：VWAP 只出现在分钟线，52 周只出现在日线；数值保留 4 位小数", () => {
 	const start = T("2026-11-09T14:30:00Z");
 	const bars: Bar[] = range(30).map((i) => ({ t: start + i * 60_000, o: 10, h: 10 + i / 3, l: 10, c: 10, v: 7 }));
-	const r = indicatorReport(bars, "minute");
+	const later = T("2026-11-10T00:00:00Z");
+	const r = indicatorReport(bars, "minute", later);
 	assert.equal("week52" in r, false);
-	assert.equal(typeof r.vwap, "number");
-	assert.equal(r.vwap, Number((r.vwap as number).toFixed(4)));
-	assert.equal(r.vwap, 11.7222);
-	assert.equal("vwap" in indicatorReport(bars, "hour"), false);
+	assert.deepEqual(r.vwap, { value: 11.7222, session: "2026-11-09" });
+	assert.equal("vwap" in indicatorReport(bars, "hour", later), false);
+});
+
+test("报告：最后一根 K 线还没走完（含 20 分钟延迟宽限）时标 partial，并写明 lastPrice 是盘中价不是收盘价", () => {
+	const dayStart = T("2026-11-09T05:00:00Z");
+	const close = T("2026-11-09T21:00:00Z");
+	const bars = dayBars(range(30, 100), dayStart - 29 * DAY);
+	const intraday = indicatorReport(bars, "day", T("2026-11-09T18:00:00Z"));
+	assert.deepEqual(intraday.lastBar, { start: dayStart, end: close, partial: true });
+	assert.match(intraday.note!, /没走完.*盘中价.*不是收盘价/);
+	assert.equal(indicatorReport(bars, "day", close + 19 * 60_000).lastBar.partial, true);
+	assert.equal(indicatorReport(bars, "day", close + 21 * 60_000).lastBar.partial, false);
+	const halfDay = dayBars([1, 2], T("2026-11-26T05:00:00Z"));
+	assert.equal(indicatorReport(halfDay, "day", T("2026-11-27T19:00:00Z")).lastBar.end, T("2026-11-27T18:00:00Z"));
+	const hourBars = dayBars([1, 2], T("2026-11-09T14:00:00Z") - DAY);
+	assert.deepEqual(indicatorReport(hourBars, "hour", T("2026-11-09T14:30:00Z")).lastBar, { start: T("2026-11-09T14:00:00Z"), end: T("2026-11-09T15:00:00Z"), partial: true });
 });
