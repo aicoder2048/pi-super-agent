@@ -1,7 +1,7 @@
 import { loadConfig } from "../host/config.ts";
 import { Modules } from "../modules.ts";
 import { MarketClient } from "../sources/market/client.ts";
-import { loadMarketKey } from "../sources/market/key.ts";
+import { readMarketKey } from "../sources/market/key.ts";
 import { nyDateOf, nyTime, sessionAt } from "../sources/market/session.ts";
 import { parseMarketSettings } from "../sources/market/settings.ts";
 
@@ -12,7 +12,7 @@ async function main(): Promise<void> {
 	const filter = Modules.load(config.modulesDirs).modules.flatMap((m) => m.manifest.sources ?? []).find((s) => s.name === SOURCE);
 	if (!filter?.feed) throw new Error(`没有找到声明了 feed 的来源 ${SOURCE}`);
 	const settings = parseMarketSettings(filter.feed.settings, config.sources[SOURCE], `sources.${SOURCE}`);
-	const loaded = loadMarketKey(process.env, config.secretsFile);
+	const loaded = readMarketKey(process.env, config.secretsFile);
 	if (!loaded) throw new Error("未配置行情密钥：设置 MASSIVE_API_KEY，或在 config.json 里用 secretsFile 指向 .env");
 	const session = sessionAt(Date.now());
 	console.log(`密钥来自 ${loaded.origin}；${settings.baseURL}；纽约 ${session.nyDate} ${session.phase}`);

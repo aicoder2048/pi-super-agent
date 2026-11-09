@@ -2,7 +2,7 @@ import { WATCHDOG_SOURCE } from "../../watchdog/watchdog.ts";
 import type { Feed, FeedContext, FeedInput, FeedSpec } from "../feeds.ts";
 import { threadId } from "../generic.ts";
 import { MarketClient, MarketError, type Span } from "./client.ts";
-import { loadMarketKey } from "./key.ts";
+import { readMarketKey } from "./key.ts";
 import { detect, toTrigger, type MarketCursor, type Move } from "./detect.ts";
 import { inPollWindow, MINUTE, nextPollDelay, sessionAt } from "./session.ts";
 import { parseMarketSettings, parseSymbol, type MarketSettings } from "./settings.ts";
@@ -20,7 +20,7 @@ const LOOKUP_HELP = `us-market（美股行情）：
 export function marketFeed(input: FeedInput): FeedSpec {
 	const { source, title } = input;
 	const settings = parseMarketSettings(input.settings, input.override, input.where);
-	const loaded = loadMarketKey(input.env, input.secretsFile);
+	const loaded = readMarketKey(input.env, input.secretsFile);
 	input.log(`[${source}] ${title}：${loaded ? `密钥来自 ${loaded.origin}` : "未配置行情密钥，看盘停用"}；自选 ${settings.watchlist.join(" ")}`);
 	return {
 		source,

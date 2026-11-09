@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { MarketClient, MarketError } from "../src/sources/market/client.ts";
-import { loadMarketKey } from "../src/sources/market/key.ts";
+import { readMarketKey } from "../src/sources/market/key.ts";
 import { ConfigError } from "../src/config-error.ts";
 import { fakeHttp as fakeHttpOn, snapshotBody, tickerRow } from "./helpers/market.ts";
 
@@ -89,22 +89,19 @@ test("网络错误的信息里不带网址和 Key", async () => {
 	await assert.rejects(c.snapshot(["NVDA"], "poll"), (e: MarketError) => e.kind === "network" && !e.message.includes(KEY) && !e.message.includes("massive"));
 });
 
-test("Key：先读环境变量，读完从 process 环境里删掉三个变量名，Worker 子进程继承不到", () => {
-	const env: NodeJS.ProcessEnv = { MASSIVE_API_KEY: KEY, POLYGON_API_KEY: "other", PATH: "/bin" };
-	const loaded = loadMarketKey(env, undefined);
-	assert.deepEqual(loaded, { key: KEY, origin: "环境变量 MASSIVE_API_KEY" });
-	assert.deepEqual(env, { PATH: "/bin" });
+test("Key：先读环境变量，按 KEY_NAMES 的顺序取第一个", () => {
+	assert.deepEqual(readMarketKey({ POLYGON_API_KEY: "other", MASSIVE_API_KEY: KEY, PATH: "/bin" }, undefined), { key: KEY, origin: "环境变量 MASSIVE_API_KEY" });
 });
 
 test("Key：环境变量没有时读 secretsFile 指向的 .env；都没有时返回空", () => {
 	const dir = mkdtempSync(join(tmpdir(), "psa-key-"));
 	const file = join(dir, ".env");
 	writeFileSync(file, `# comment\nPOLYGON_API_KEY=${KEY}\nOTHER=1\n`);
-	assert.deepEqual(loadMarketKey({}, file), { key: KEY, origin: `secretsFile ${file}` });
-	assert.equal(loadMarketKey({}, undefined), undefined);
-	assert.equal(loadMarketKey({}, join(dir, "missing.env")), undefined);
+	assert.deepEqual(readMarketKey({}, file), { key: KEY, origin: `secretsFile ${file}` });
+	assert.equal(readMarketKey({}, undefined), undefined);
+	assert.equal(readMarketKey({}, join(dir, "missing.env")), undefined);
 });
 
 test("Key：格式不对时报配置错误，错误里不出现 Key 的内容", () => {
-	assert.throws(() => loadMarketKey({ MASSIVE_API_KEY: "has space-secret" }, undefined), (e: Error) => e instanceof ConfigError && !e.message.includes("space-secret"));
+	assert.throws(() => readMarketKey({ MASSIVE_API_KEY: "has space-secret" }, undefined), (e: Error) => e instanceof ConfigError && !e.message.includes("space-secret"));
 });

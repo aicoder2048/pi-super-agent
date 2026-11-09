@@ -4,10 +4,9 @@ import { ConfigError } from "../../config-error.ts";
 
 export const KEY_NAMES = ["STOCK_HEATMAP_API_KEY", "MASSIVE_API_KEY", "POLYGON_API_KEY"] as const;
 
-export function loadMarketKey(env: NodeJS.ProcessEnv, secretsFile: string | undefined): { key: string; origin: string } | undefined {
+export function readMarketKey(env: Readonly<NodeJS.ProcessEnv>, secretsFile: string | undefined): { key: string; origin: string } | undefined {
 	const fromEnv = KEY_NAMES.find((name) => env[name]);
 	const envKey = fromEnv && env[fromEnv];
-	for (const name of KEY_NAMES) delete env[name];
 	let found: { key: string; origin: string } | undefined;
 	if (envKey) found = { key: envKey, origin: `环境变量 ${fromEnv}` };
 	else if (secretsFile && existsSync(secretsFile)) {

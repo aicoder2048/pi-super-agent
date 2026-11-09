@@ -129,13 +129,12 @@ test("真实接线：美股行情出现在关注的来源里，用人话标题�
 	assert.equal(logs.filter((l) => l.includes("未配置行情密钥")).length, 1);
 });
 
-test("真实接线：密钥读进宿主后从 process.env 删掉，Worker 子进程继承不到；日志只写来源不写密钥", async (t) => {
+test("真实接线：宿主从环境变量读到密钥，日志只写来源不写密钥", async (t) => {
 	withoutKeyVars(t);
 	process.env.MASSIVE_API_KEY = "sk-wire-secret";
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const logs: string[] = [];
 	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([REPO_MODULES]), modelRuntime, log: (l) => logs.push(l) });
-	assert.equal(process.env.MASSIVE_API_KEY, undefined);
 	assert.deepEqual(options.feeds?.map((f) => f.source), ["us-market"]);
 	assert.ok(logs.some((l) => l.includes("环境变量 MASSIVE_API_KEY")));
 	assert.ok(!logs.some((l) => l.includes("sk-wire-secret")));
