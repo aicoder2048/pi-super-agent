@@ -36,7 +36,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
   - [ ] W2 after W1, based on `psa/web-gateway`.
   - [ ] W3 after W2.
   - [ ] W4 after W3.
-- [ ] Hold the file boundaries. W1 to W3 touch only `src/host/`, `src/web/`, `tests/`, `justfile`, `docs/`. W4 adds `package.json`, `tests/e2e/`, and `justfile`.
+- [ ] Hold the file boundaries. W1 to W3 touch only `src/host/`, `src/web/`, `src/client/board-format.mjs`, `src/client/board.ts`, `tests/`, `justfile`, `docs/`. W1 起加入 `src/client/` 两个文件，让 TUI 和网页共用看板格式，见决策记录。 W4 adds `package.json`, `tests/e2e/`, and `justfile`.
 - [ ] Hold the review gate. W1, W2, W3 change an interaction. They wait for the operator's review in chat with screenshots and a video before merge. W4 changes no interaction.
 
 ### PR mechanics, for every PR
@@ -92,12 +92,12 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
-- [x] Lane 1. Regression lane against trunk. trunk 没有网页，记录这一点。在 head 上用 `just client` 发一句话，确认 TUI 照常工作，同时网页也显示这句话。Save `w1-regression.png`. Pass when TUI 和网页都显示这句话和 Router 回复。
-- [x] Lane 2. 打开日志里的网址。Save `w1-first-load.png`. Pass when 页面显示最近对话和看板，状态是「已连接」。
+- [x] Lane 1. Regression lane against trunk. trunk 没有网页，记录这一点。在 head 上用 `just client` 发一句话，确认 TUI 照常工作，同时网页也显示这句话。Save `w1-regression.png`. Pass when TUI 和网页都显示这句话和 Router 回复。脚本用 `say` 命令行代替 TUI，判定只看命令行收到回复。真 TUI 与网页同时收到同一句话由规格审计在 tmux 里手动跑过。
+- [x] Lane 2. 打开日志里的网址。Save `w1-first-load.png`. Pass when 页面显示最近对话和看板，状态是「已连接」。脚本用的是空状态目录，只验证了已连接和看板存在。重连后补齐对话由 SIGSTOP 探测验证。
 - [x] Lane 3. 去掉网址里的 token 再打开。Save `w1-no-token.png`. Pass when 返回 401，页面不显示任何对话内容。
 - [x] Lane 4. 用 `curl -H 'Host: evil.example:4517'` 带正确 token 请求。Save `w1-bad-host.png`. Pass when 返回 403。
 - [x] Lane 5. 页面打开时运行 `just say 你好`。Save `w1-live-say.png`. Pass when 一秒内出现「你> 你好」，之后出现 Router 回复。
-- [x] Lane 6. 用 `just drop` 投递一条会建任务的触发。Save `w1-board-update.png`. Pass when 看板出现新任务，阶段随任务推进变化。
+- [x] Lane 6. 用 `just drop` 投递一条会建任务的触发。Save `w1-board-update.png`. Pass when 看板出现新任务，阶段随任务推进变化。外部投递按 ADR-0003 不能建任务，脚本改用使用者发话，判定只看卡片数增加，阶段变化只在截图里可见。
 - [x] Lane 7. 页面打开时停掉宿主，再启动。Save `w1-reconnect.png`. Pass when 停掉后显示「未连接」，宿主重启并换新 token 后页面提示 token 失效，用新网址打开后恢复。
 - [x] Lane 8. 同时开两个标签页。Save `w1-two-tabs.png`. Pass when 两个标签页显示相同的对话和看板。
 - [x] Lane 9. 投递正文含 `<script>alert(1)</script>` 和换行的触发。Save `w1-escape.png`. Pass when 页面原样显示文字，不执行脚本，不弹框。
@@ -257,6 +257,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 - [ ] 本地假模型 HTTP 服务按脚本回放 Router 和 Worker 的回复，宿主和 Worker 子进程都是真的。
 - [ ] Playwright 测试走完整故事：页面投递触发，看板出现任务，点开看 Worker 过程，Router 在对话里回复。
+- [ ] 同一套测试覆盖页面 DOM 层：宿主重启后显示 token 失效，对话和看板里的 HTML 原样显示不执行，宿主卡死时离开已连接。W1 的变异审计证明这三条目前没有自动测试。
 - [ ] `just e2e` 运行它。`just test` 不依赖浏览器，保持现状。
 
 **You see.**
