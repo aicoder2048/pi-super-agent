@@ -7,9 +7,9 @@ import { webGet } from "../src/worker/web-get.ts";
 type Handler = (req: IncomingMessage, res: ServerResponse) => void;
 
 async function serve(t: test.TestContext, handler: Handler) {
-	const seen: { method: string; url: string }[] = [];
+	const seen: { method: string; url: string; userAgent?: string }[] = [];
 	const server = createServer((req, res) => {
-		seen.push({ method: req.method!, url: req.url! });
+		seen.push({ method: req.method!, url: req.url!, userAgent: req.headers["user-agent"] });
 		handler(req, res);
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -47,7 +47,7 @@ test("只用 GET 取回页面，HTML 去掉脚本、样式和标签", async (t) 
 	assert.match(page.contentType, /text\/html/);
 	assert.equal(page.text, "标题 正文 & 内容");
 	assert.equal(page.truncated, false);
-	assert.deepEqual(s.seen, [{ method: "GET", url: "/doc" }]);
+	assert.deepEqual(s.seen, [{ method: "GET", url: "/doc", userAgent: "PiSuperAgent/1.0" }]);
 });
 
 test("重定向到元数据地址被拒绝", async (t) => {
