@@ -9,6 +9,9 @@ import { WORKER_TOOLS } from "./worker/tools.ts";
 
 export const BUILTIN_ROLES_DIR = fileURLToPath(new URL("../roles", import.meta.url));
 
+/** lead: owns a ticket and may consult (frontmatter `consult: true`); expert: answers a lead's questions. */
+export type RoleKind = "lead" | "expert";
+
 /** A helper's standing identity, from a `.pi/agents`-style Markdown file. */
 export interface Role {
 	name: string;
@@ -18,7 +21,7 @@ export interface Role {
 	tools: readonly string[] | undefined;
 	skills: readonly string[];
 	model: ModelRef | undefined;
-	consult: boolean;
+	kind: RoleKind;
 	prompt: string;
 	file: string;
 }
@@ -65,7 +68,7 @@ export function parseRole(file: string, content: string): Role {
 		tools,
 		skills,
 		model,
-		consult: fm.consult === true,
+		kind: fm.consult === true ? "lead" : "expert",
 		prompt: body.trim(),
 		file,
 	};
@@ -101,8 +104,8 @@ export class Roster {
 		return this.#roles.get(name);
 	}
 
-	names(): string[] {
-		return [...this.#roles.keys()].sort();
+	names(kind?: RoleKind): string[] {
+		return [...this.#roles.values()].filter((r) => !kind || r.kind === kind).map((r) => r.name).sort();
 	}
 
 	/** name → title, all the kernel needs to check a role and show it. */

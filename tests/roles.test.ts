@@ -23,13 +23,21 @@ model: openai-codex/gpt-6.1-sol
 你是新闻研究员。每条结论都写出处。
 `;
 
-test("内置名册有通用助手和副幕僚长，副幕僚长牵头会诊", () => {
+test("内置名册有通用助手和副幕僚长：副幕僚长是牵头角色，通用助手是专家", () => {
 	const roster = Roster.load([BUILTIN_ROLES_DIR]);
 	assert.deepEqual(roster.names(), ["deputy", "general"]);
 	assert.equal(roster.get("deputy")?.title, "副幕僚长");
-	assert.equal(roster.get("deputy")?.consult, true);
-	assert.equal(roster.get("general")?.consult, false);
+	assert.deepEqual(roster.names("lead"), ["deputy"]);
+	assert.deepEqual(roster.names("expert"), ["general"]);
 	assert.equal(roster.get("general")?.tools, undefined);
+});
+
+test("consult: true 的角色是牵头角色，其余是专家", () => {
+	const dir = rolesDir({ "a.md": "---\nname: market-lead\ntitle: 行情主管\ndescription: d\nconsult: true\n---\n", "b.md": NEWS.replace(/skills:.*\n/, "") });
+	const roster = Roster.load([BUILTIN_ROLES_DIR, dir]);
+	assert.deepEqual(roster.names("lead"), ["deputy", "market-lead"]);
+	assert.deepEqual(roster.names("expert"), ["general", "news-researcher"]);
+	assert.equal(roster.get("market-lead")?.kind, "lead");
 });
 
 test("角色文件：frontmatter 是字段，正文是提示词，技能目录相对角色文件", () => {
