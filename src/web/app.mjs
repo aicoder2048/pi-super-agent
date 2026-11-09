@@ -154,14 +154,17 @@ function mount(doc) {
 		const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
 		for (const line of [...view.lines.values()].slice(rendered)) {
 			const item = el("div", `line ${line.who}`);
-			const bubble = el("div", "bubble");
-			bubble.append(el("span", "sr", line.who === "user" ? "你：" : "Super Agent："), doc.createTextNode(line.text));
+			const bubble = el("div", "bubble", line.text);
 			if (line.who === "router") {
 				const avatar = el("div", "avatar");
 				avatar.append(mark.cloneNode(true));
-				item.append(avatar);
+				const said = el("div", "said");
+				said.append(el("div", "who", "幕僚长"), bubble);
+				item.append(avatar, said);
+			} else {
+				bubble.prepend(el("span", "sr", "你："));
+				item.append(bubble);
 			}
-			item.append(bubble);
 			thread.append(item);
 		}
 		rendered = view.lines.size;

@@ -3,7 +3,7 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Super Agent</title>
+	<title>Pi Super Agent</title>
 	<style>
 		:root {
 			color-scheme: light dark;
@@ -72,6 +72,9 @@
 		.avatar svg { width: 17px; height: 17px; }
 		.bubble { max-width: 78%; padding: 11px 16px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 		.user .bubble { background: var(--accent); color: #fff; border-radius: 18px 18px 6px 18px; }
+		.who { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+		.router .said { min-width: 0; max-width: 78%; }
+		.router .bubble { max-width: none; }
 		.router .bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 6px 18px 18px 18px; }
 		.welcome { text-align: center; font-size: 12px; color: var(--muted); }
 		form { padding: 12px 32px 24px; max-width: 844px; width: 100%; margin: 0 auto; }
@@ -118,7 +121,7 @@
 <body>
 	<header>
 		<div class="logo" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></div>
-		<div class="brand"><strong>Super Agent</strong><span>你的 24 小时助理</span></div>
+		<div class="brand"><strong>Pi Super Agent</strong><span>你的 24 小时助理</span></div>
 		<span id="duty" class="chip"></span>
 		<span id="restart" class="chip"></span>
 		<span id="status" class="chip" data-status="connecting">连接中…</span>
@@ -128,7 +131,7 @@
 	<div class="columns">
 		<aside id="left" aria-label="概况"></aside>
 		<main aria-label="对话">
-			<div id="conversation"><div class="thread"><div class="welcome">Super Agent 持续关注你的消息来源，在后台安排助手处理任务，只在需要你决定时通知你。</div></div></div>
+			<div id="conversation"><div class="thread"><div class="welcome">幕僚长持续关注你的消息来源，在后台安排助手处理任务，只在需要你决定时通知你。</div></div></div>
 			<form id="say" autocomplete="off">
 				<label for="composer" class="sr">新任务</label>
 				<div class="composer">
