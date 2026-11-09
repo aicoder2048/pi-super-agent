@@ -1,5 +1,4 @@
 // 真实美股：没人开口，宿主自己每分钟看一遍自选股；程序只把「到档」交给幕僚长；大波动开任务查数据；同一只股票的下一档直达已订阅的助手。
-// 开盘时段运行：just demo-market；加 --dry（just demo-market --dry）只跑开盘前一幕。
 import { existsSync, readFileSync, readdirSync, appendFileSync, writeFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

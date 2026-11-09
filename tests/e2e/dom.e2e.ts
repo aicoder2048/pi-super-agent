@@ -1,5 +1,3 @@
-// Page-level behavior the W1 mutation audit found untested: escaping, reconnecting after a restart,
-// the expired link after a token rotation, and leaving "connected" when the host hangs.
 import assert from "node:assert/strict";
 import test, { after } from "node:test";
 import type { Page } from "playwright-core";
