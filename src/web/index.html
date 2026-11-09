@@ -50,6 +50,15 @@
 		.card { display: block; width: 100%; text-align: left; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
 		.card.ask { background: var(--warn-bg); border-color: var(--warn-line); }
 		.card[aria-current="true"] { outline: 2px solid var(--accent); outline-offset: -1px; }
+		.helper { width: 22px; height: 22px; border-radius: 999px; display: flex; align-items: center; justify-content: center; flex: none; }
+		.helper svg { width: 13px; height: 13px; }
+		.tint-0 { background: light-dark(#e7ecff, #262c45); color: light-dark(#3b5bdb, #91a7ff); }
+		.tint-1 { background: light-dark(#fff0e0, #3a2618); color: light-dark(#d9480f, #ffa94d); }
+		.tint-2 { background: light-dark(#e6f6ea, #1f3326); color: light-dark(#2b8a3e, #69db7c); }
+		.tint-3 { background: light-dark(#f3f0ff, #2c2445); color: light-dark(#7048e8, #b197fc); }
+		.tint-4 { background: light-dark(#e3fafc, #163236); color: light-dark(#0c8599, #66d9e8); }
+		.tint-5 { background: light-dark(#fff0f6, #3a1d2a); color: light-dark(#c2255c, #faa2c1); }
+		.card .head { display: flex; align-items: flex-start; gap: 8px; }
 		.card .title { font-size: 14px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
 		.card .why, .card .latest { font-size: 12px; color: var(--muted); margin-top: 6px; overflow-wrap: anywhere; white-space: pre-wrap; }
 		.card.ask .latest { color: var(--ink); font-size: 13px; }
@@ -91,7 +100,10 @@
 
 		#how { overflow-y: auto; border-left: 1px solid var(--line); padding: 22px 20px; display: flex; flex-direction: column; gap: 16px; }
 		.label { font-size: 12px; color: var(--muted); }
-		#how-title { font-size: 16px; font-weight: 700; margin-top: 4px; line-height: 1.4; overflow-wrap: anywhere; }
+		.how-head { display: flex; align-items: flex-start; gap: 8px; margin-top: 4px; }
+		.how-head:has(#how-title:empty) { display: none; }
+		.how-head .helper { margin-top: 1px; }
+		#how-title { font-size: 16px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; min-width: 0; }
 		#how-title:empty, #how-meta:empty { display: none; }
 		#how-meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
 		#steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
@@ -146,7 +158,7 @@
 		<aside id="how" aria-label="执行过程">
 			<div>
 				<div class="label">执行过程</div>
-				<div id="how-title"></div>
+				<div class="how-head"><span id="how-badge"></span><div id="how-title"></div></div>
 				<div id="how-meta"></div>
 			</div>
 			<ol id="steps"></ol>
@@ -154,6 +166,7 @@
 		</aside>
 	</div>
 	<template id="router-avatar"><svg class="avatar" viewBox="0 0 72 72" aria-hidden="true"><circle class="mark-bg" cx="36" cy="36" r="36"></circle><path d="M22 30h28M30 30v16M42 30v12c0 2.5 1.2 4 3.5 4" stroke="#fff" stroke-width="4.5" stroke-linecap="round" fill="none"></path><circle cx="52" cy="20" r="5" fill="#f59f00"></circle></svg></template>
+	<template id="helper-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.1-.4-.4-2.1z"></path></svg></template>
 	<script type="module" src="/app.mjs?token={{token}}"></script>
 </body>
 </html>

@@ -158,6 +158,14 @@ test("页面：产品叫 Pi Super Agent，和你对话的叫幕僚长，执行�
 	assert.deepEqual(watched([tool("hand_back", { reason: "不归我管" })]).map((s) => s.title), ["交回幕僚长"]);
 });
 
+test("页面：助手图标的颜色由任务编号固定决定，并行的任务分得开", () => {
+	const ids = Array.from({ length: 60 }, (_, i) => `tkt_${(i * 7919 + 104729).toString(36)}x${i}`);
+	const tints = ids.map(page.helperTint);
+	assert.deepEqual(ids.map(page.helperTint), tints, "同一个编号每次取同一种颜色");
+	assert.ok(tints.every((n) => Number.isInteger(n) && n >= 0 && n < page.HELPER_TINTS), String(tints));
+	assert.equal(new Set(tints).size, page.HELPER_TINTS, "六种颜色都会用到");
+});
+
 test("页面：report 带问题是提出问题，ready 是提交结果，blocked 和 failed 是报告受阻", () => {
 	const steps = watched([
 		tool("report", { status: "progress", summary: "需要确认", question: "用 A 还是 B？" }),

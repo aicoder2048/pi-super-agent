@@ -172,6 +172,15 @@ export function restartNotice(duty, now) {
 	return duty && duty.resumed > 0 && now - duty.since < RESTART_NOTICE_MS ? "已重启，进行中的任务已恢复" : "";
 }
 
+export const HELPER_TINTS = 6;
+
+/** FNV-1a over the ticket id, so a task keeps its helper colour across reloads. @param {string} ticketId */
+export function helperTint(ticketId) {
+	let hash = 0x811c9dc5;
+	for (let i = 0; i < ticketId.length; i++) hash = Math.imul(hash ^ ticketId.charCodeAt(i), 0x01000193);
+	return (hash >>> 0) % HELPER_TINTS;
+}
+
 /** @param {string} title */
 export const stopSentence = (title) => `停止任务「${title}」`;
 

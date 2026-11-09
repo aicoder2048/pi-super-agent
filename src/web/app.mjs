@@ -2,7 +2,7 @@
 
 import {
 	STAGE_PHRASE, BASIS_PHRASE, applyMessage, applyTranscript, canSend, dutyLine, emptyView, emptyWatch,
-	isStale, leftColumn, resolveTheme, restartNotice, sayCopy, sayOutcome, settleSay, smallPrint, stopSentence, toggleTheme,
+	helperTint, isStale, leftColumn, resolveTheme, restartNotice, sayCopy, sayOutcome, settleSay, smallPrint, stopSentence, toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, isLive } from "../client/board-format.mjs";
 
@@ -28,7 +28,10 @@ function mount(doc) {
 	const composer = /** @type {HTMLTextAreaElement} */ ($("composer"));
 	const send = /** @type {HTMLButtonElement} */ ($("send"));
 	const sayStatus = $("say-status");
-	const avatarMark = /** @type {Element} */ (/** @type {HTMLTemplateElement} */ ($("router-avatar")).content.firstElementChild);
+	/** @param {string} id */
+	const template = (id) => /** @type {Element} */ (/** @type {HTMLTemplateElement} */ ($(id)).content.firstElementChild);
+	const avatarMark = template("router-avatar");
+	const wrench = template("helper-icon");
 	let rendered = 0;
 	/** @type {import("./view.mjs").SayState} */
 	let sayState = "idle";
@@ -87,13 +90,23 @@ function mount(doc) {
 		$("restart").textContent = restartNotice(view.duty, Date.now());
 	};
 
+	/** @param {string} ticketId */
+	const helperBadge = (ticketId) => {
+		const badge = el("span", `helper tint-${helperTint(ticketId)}`);
+		badge.setAttribute("aria-hidden", "true");
+		badge.append(wrench.cloneNode(true));
+		return badge;
+	};
+
 	/** @param {import("./view.mjs").TaskCard} card @param {string} tone */
 	const taskCard = (card, tone) => {
 		const node = el("div", `card ${tone}`);
 		node.tabIndex = 0;
 		node.setAttribute("role", "button");
 		node.setAttribute("aria-current", String(watching?.watch.ticketId === card.id));
-		node.append(el("div", "title", card.title), el("div", "why", `${card.why} · ${card.stage}`), el("div", "latest", card.latest));
+		const head = el("div", "head");
+		head.append(helperBadge(card.id), el("div", "title", card.title));
+		node.append(head, el("div", "why", `${card.why} · ${card.stage}`), el("div", "latest", card.latest));
 		if (card.canStop) {
 			const row = el("div", "row");
 			const stop = el("button", "stop", "停止");
@@ -182,6 +195,7 @@ function mount(doc) {
 
 	const renderHow = () => {
 		const row = view.rows.find((r) => r.id === watching?.watch.ticketId);
+		$("how-badge").replaceChildren(...(row ? [helperBadge(row.id)] : []));
 		$("how-title").textContent = row?.title ?? "";
 		$("how-meta").textContent = row ? `${BASIS_PHRASE[row.basis]} · ${STAGE_PHRASE[row.stage]}` : "";
 		$("small-print").textContent = smallPrint(row, Date.now(), view.receivedAt);
