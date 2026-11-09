@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { Kernel } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
 import { CONVERSATION_THREAD_ID, type Clock, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
+import type { TriggerSubmission } from "../kernel/types.ts";
+import { GenericSource } from "../sources/generic.ts";
+import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import { Dispatcher } from "./dispatcher.ts";
 import { HostServer } from "./server.ts";
 import { WorkerExecutor, type WorkerSpawner } from "./workers.ts";
@@ -26,6 +29,8 @@ export interface HostOptions {
 	clock?: Clock;
 	config?: Partial<KernelConfig>;
 	sourcePolicy?: SourcePolicy;
+	isKnownRule?: (ruleId: string) => boolean;
+	timers?: TimerEntry[];
 	createRouter(deps: HostDeps): Promise<RouterLike>;
 	createSpawner(deps: HostDeps): WorkerSpawner;
 	log?: (line: string) => void;
@@ -40,6 +45,8 @@ export class Host {
 	readonly workers: WorkerExecutor;
 	readonly server: HostServer;
 	router!: RouterLike;
+	readonly generic: GenericSource;
+	readonly timer: TimerSource;
 	readonly #transcripts = new Map<string, unknown[]>();
 	readonly #log: (line: string) => void;
 	#boardTimer: NodeJS.Timeout | undefined;
@@ -53,7 +60,23 @@ export class Host {
 			db: openStore(join(options.stateDir, "state.db")),
 			clock,
 			sourcePolicy: options.sourcePolicy ?? (() => "candidate"),
+			isKnownRule: options.isKnownRule,
 			config: options.config,
+		});
+		const submit = (trigger: TriggerSubmission) => {
+			this.kernel.submitTrigger(trigger);
+			this.#changed();
+		};
+		this.generic = new GenericSource({ inboxDir: join(options.stateDir, "inbox"), submit, now: clock.now, log: this.#log });
+		this.timer = new TimerSource({
+			entries: options.timers ?? [],
+			submit,
+			now: clock.now,
+			readCursor: () => {
+				const cursor = this.kernel.sourceCursor("timer");
+				return cursor === undefined ? undefined : Number(cursor);
+			},
+			writeCursor: (at) => this.kernel.setSourceCursor("timer", String(at)),
 		});
 		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath };
 		this.workers = new WorkerExecutor({
@@ -91,6 +114,8 @@ export class Host {
 		await host.server.listen(host.socketPath);
 		const recovered = host.kernel.recoverOnStartup();
 		if (recovered.length) host.#log(`[host] 恢复 ${recovered.length} 个执行中的任务：${recovered.join(", ")}`);
+		host.generic.start();
+		host.timer.start();
 		host.dispatcher.kick();
 		return host;
 	}
@@ -149,6 +174,8 @@ export class Host {
 	}
 
 	async stop(): Promise<void> {
+		this.generic.stop();
+		this.timer.stop();
 		this.dispatcher.stop();
 		clearTimeout(this.#boardTimer);
 		await this.workers.shutdown();

@@ -1,4 +1,7 @@
 import { RpcClient } from "@earendil-works/pi-coding-agent";
+import { execFileSync } from "node:child_process";
+import { existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { piCliPath } from "../pi-runtime.mjs";
 import type { ModelRef } from "../models.ts";
@@ -19,7 +22,7 @@ export interface PiWorkerSpawnerOptions {
 	socketPath: string;
 	sessionDir: string;
 	model: () => { model: ModelRef; fellBack: boolean };
-	skills?: string[];
+	moduleFor?: (ruleId: string | null) => { skillsDir?: string; prepare?: string } | undefined;
 	bgMaxMs?: number;
 }
 
@@ -32,11 +35,17 @@ export class PiWorkerSpawner implements WorkerSpawner {
 
 	async spawn(spec: WorkerSpec, events: WorkerEvents): Promise<WorkerHandle> {
 		const { model, fellBack } = this.#o.model();
+		const mod = this.#o.moduleFor?.(spec.ruleId);
+		const marker = join(spec.workdir, ".psa-prepared");
+		if (mod?.prepare && !existsSync(marker)) {
+			execFileSync("bash", ["-lc", mod.prepare], { cwd: spec.workdir, stdio: "ignore", timeout: 10 * 60_000 });
+			writeFileSync(marker, new Date().toISOString());
+		}
 		const args = [
 			"--session-dir", this.#o.sessionDir,
 			"--session-id", spec.sessionId,
 			"--no-extensions", "-e", WORKER_EXTENSION,
-			"--no-skills", ...(this.#o.skills ?? []).flatMap((s) => ["--skill", s]),
+			"--no-skills", ...(mod?.skillsDir ? ["--skill", mod.skillsDir] : []),
 			"--append-system-prompt", WORKER_PROMPT,
 		];
 		const client = new RpcClient({

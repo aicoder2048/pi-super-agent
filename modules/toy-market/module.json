@@ -1,0 +1,6 @@
+{
+  "name": "toy-market",
+  "sources": [
+    { "name": "toy-market", "ignore": ["涨跌 [+-]0(\\.\\d+)?%"] }
+  ]
+}

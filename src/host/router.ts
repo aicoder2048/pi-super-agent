@@ -152,7 +152,9 @@ export function routerSystemPrompt(rules: string, replyMaxChars: number): string
 - [对话] 是新的工作：用 route 开任务（basis=request），然后用 reply 一句话确认。
 - [对话] 指向已有任务（例如“刚才那个改成方案 B”、回答 Worker 的问题）：先 read 找到任务，再 route hand_over 把这条对话转交给它，不要新开任务。
 - 使用者要叫停：route stop。
-- [候选触发] 命中下面某条规则：route open_ticket，basis=rule，ruleId 填规则 id。
+- [候选触发] 命中下面某条规则：route open_ticket，basis=rule，ruleId 填规则标题里的 id（例如 toy-market/big-move）。
+- 为触发开任务时，把触发所在的线程放进 threads；之后同一线程上的触发会直达这个任务的 Worker，不再经过你。
+- 使用者要你盯着某个还没出现过的线程时，线程 id 写成 thr_<来源>:<线程>，例如 thr_ci:build-42。
 - [候选触发] 没有命中规则但你判断值得做：basis=inference。推断任务开始时不发确认，等它有结果再说。
 - 不值得做的触发：route ignore，写明理由。
 - 使用者提到旧事时，用 read 从触发、线程、任务逐跳找回上下文。

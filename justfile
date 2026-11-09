@@ -26,6 +26,14 @@ host:
 say +text:
     {{run}} src/cli/say.ts say {{text}}
 
+# 通过通用来源投递一条触发：just drop <来源> <线程> <正文>
+drop source thread +body:
+    {{run}} src/cli/drop.ts {{source}} {{thread}} {{body}}
+
+# 玩具行情模块投递一条假行情：just toy-feed TOYX -5.2 12
+toy-feed symbol="TOYX" change="-5.2" volume="12":
+    {{run}} modules/toy-market/feed.ts {{symbol}} {{change}} {{volume}}
+
 # 持续显示对话。
 tail:
     {{run}} src/cli/say.ts tail

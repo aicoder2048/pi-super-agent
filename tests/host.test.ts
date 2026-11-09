@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Host } from "../src/host/host.ts";
 import { ROUTER_TOOL_NAMES } from "../src/host/router.ts";
-import { FakeSpawner, fauxRouter, ids, openOnConversation, tempStateDir, until, type Brain, type WorkerScript } from "./helpers/fakes.ts";
+import { ids, openOnConversation, startHost, until, type Brain } from "./helpers/fakes.ts";
 
 const replyOnReport: Brain = (cards) =>
 	cards.flatMap((card) => {
@@ -10,21 +9,6 @@ const replyOnReport: Brain = (cards) =>
 		if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `结果：${card.split("\n")[1]}`, ticketId: ids(card, "tkt") } }];
 		return [];
 	});
-
-async function startHost(brain: Brain, script: WorkerScript, config = {}) {
-	const router = fauxRouter(brain);
-	const spawner = new FakeSpawner(script);
-	const host = await Host.start({
-		stateDir: tempStateDir(),
-		config,
-		createRouter: router.createRouter,
-		createSpawner: () => spawner,
-		log: () => {},
-	});
-	spawner.request = (...args) => host.workers.handleRequest(...args);
-	const said = () => host.kernel.conversation().filter((m) => m.who === "router").map((m) => m.text);
-	return { host, router, spawner, said };
-}
 
 test("一条请求的完整往返：确认、派出 Worker、汇报后回复结果", async (t) => {
 	const { host, said } = await startHost(replyOnReport, (w) => {
@@ -133,7 +117,7 @@ test("名额满时新任务排队，使用者的后续消息仍能唤醒已有�
 		if (w.spec.ticketId && input.includes("看一下")) return;
 		w.report({ status: "progress", summary: "处理中" });
 		w.settle();
-	}, { maxWorkers: 1, reservedSlots: 1 });
+	}, { config: { maxWorkers: 1, reservedSlots: 1 } });
 	t.after(() => host.stop());
 	const external = (id: string) =>
 		host.kernel.submitTrigger({ source: "generic", externalId: id, threads: [{ id: `thr_${id}` }], sender: "bot", body: id, occurredAt: Date.now() });

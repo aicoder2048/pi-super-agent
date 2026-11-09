@@ -1,7 +1,7 @@
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { formatModelRef } from "../models.ts";
+import { Modules } from "../modules.ts";
 import { loadConfig } from "./config.ts";
 import { Host } from "./host.ts";
 import { PiWorkerSpawner } from "./pi-worker.ts";
@@ -9,8 +9,8 @@ import { Router } from "./router.ts";
 
 const config = loadConfig();
 const log = (line: string) => console.error(`${new Date().toISOString()} ${line}`);
-const rulesFile = join(config.stateDir, "rules.md");
-const rules = existsSync(rulesFile) ? readFileSync(rulesFile, "utf8") : "";
+const modules = Modules.load(config.modulesDirs, join(config.stateDir, "rules.md"));
+log(`[host] 模块：${modules.modules.map((m) => m.name).join(", ") || "无"}；规则 ${modules.allRules().length} 条`);
 
 const modelRuntime = await ModelRuntime.create();
 const routerModel = modelRuntime.getModel(config.models.router.provider, config.models.router.id);
@@ -20,6 +20,9 @@ const host = await Host.start({
 	stateDir: config.stateDir,
 	config: config.kernel,
 	log,
+	sourcePolicy: modules.sourcePolicy,
+	isKnownRule: modules.isKnownRule,
+	timers: modules.timers(),
 	createRouter: (deps) =>
 		Router.create({
 			kernel: deps.kernel,
@@ -27,7 +30,7 @@ const host = await Host.start({
 			model: routerModel,
 			cwd: join(config.stateDir, "router"),
 			sessionDir: join(config.stateDir, "sessions", "router"),
-			rules,
+			rules: modules.rulesPrompt(),
 			afterCommand: deps.afterCommand,
 			onError: (e) => log(`[router] ${String(e)}`),
 		}),
@@ -37,6 +40,10 @@ const host = await Host.start({
 			sessionDir: join(config.stateDir, "sessions", "workers"),
 			model: () => ({ model: config.models.worker, fellBack: false }),
 			bgMaxMs: config.bgMaxMinutes * 60_000,
+			moduleFor: (ruleId) => {
+				const mod = modules.moduleForRule(ruleId);
+				return mod && { skillsDir: mod.skillsDir, prepare: mod.manifest.prepare };
+			},
 		}),
 });
 
