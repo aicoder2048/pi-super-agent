@@ -6,8 +6,10 @@ import { createInterface } from "node:readline";
 
 // Below RpcClient.stop's 1 s SIGKILL of this launcher, which would leave Pi running without it.
 const KILL_AFTER_MS = 800;
-// Pi prints this for every new Worker session, which is the normal case here.
+// Pi prints this whenever the session file is missing. That is normal for a new Worker; for a
+// resumed one it means Pi silently started an empty session and the task lost its context.
 const NEW_SESSION_WARNING = /No project session found with id /;
+const LOST_SESSION = `[worker ${process.env.PSA_TICKET}] 恢复任务时找不到原来的 Pi 会话，Pi 新建了空会话，这个任务之前的上下文丢了`;
 
 const pi = spawn(process.execPath, [process.env.PSA_PI_CLI, ...process.argv.slice(2)], {
 	detached: true,
@@ -28,6 +30,7 @@ for (const signal of ["SIGTERM", "SIGHUP"]) {
 }
 createInterface({ input: pi.stderr }).on("line", (line) => {
 	if (!NEW_SESSION_WARNING.test(line)) process.stderr.write(`${line}\n`);
+	else if (process.env.PSA_WORKER_RESUME) process.stderr.write(`${new Date().toISOString()} ${LOST_SESSION}\n`);
 });
 pi.on("exit", () => signalGroup("SIGKILL"));
-pi.on("close", (code, signal) => process.exit(code ?? 128 + constants.signals[signal]));
+pi.on("close", (code, signal) => process.stderr.write("", () => process.exit(code ?? 128 + constants.signals[signal])));

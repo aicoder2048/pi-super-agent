@@ -120,9 +120,10 @@ export class PiWorkerSpawner implements WorkerSpawner {
 			args,
 			env: {
 				...workerEnv(process.env),
-				PSA_PI_CLI: this.#o.cliPath ?? piCliPath(),
+				PSA_PI_CLI: this.#o.cliPath || piCliPath(),
 				PSA_SOCKET: this.#o.socketPath,
 				PSA_TICKET: spec.ticketId,
+				...(spec.resume && { PSA_WORKER_RESUME: "1" }),
 				PSA_TOKEN: spec.token,
 				PSA_BASIS: spec.basis,
 				...(spec.crew.length && { PSA_CREW: spec.crew.map((m) => m.name).join(",") }),

@@ -21,6 +21,7 @@ export interface WorkerSpec extends DomainKit {
 	basis: Basis;
 	token: string;
 	model: ModelRef;
+	resume: boolean;
 }
 
 export interface WorkerEvents {
@@ -221,7 +222,7 @@ export class WorkerExecutor {
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ...kit, token, model: choice.model },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ...kit, token, model: choice.model, resume: ticket.startedAt !== null },
 				events,
 			);
 		} catch (error) {
