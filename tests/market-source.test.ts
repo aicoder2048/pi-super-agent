@@ -210,3 +210,27 @@ test("设置：config.json 的覆盖按字段替换模块默认值；拼错字�
 	assert.throws(() => parseMarketSettings(DEFAULTS, { watchlist: ["NV DA"] }, "x"), ConfigError);
 	assert.throws(() => parseMarketSettings(DEFAULTS, { bands: { default: [] } }, "x"), ConfigError);
 });
+
+test("设置：数字字段必须是有限的数、该是整数的是整数、在上下限之内；字符串数字、超大值、错类型都报配置错误并写出字段路径", () => {
+	const bad: [unknown, RegExp][] = [
+		[{ minGapMs: "12000" }, /minGapMs/],
+		[{ minGapMs: 12000.5 }, /minGapMs/],
+		[{ minGapMs: 3e9 }, /minGapMs/],
+		[{ everySeconds: 3e6 }, /everySeconds/],
+		[{ everySeconds: "60" }, /everySeconds/],
+		[{ everySeconds: 30.5 }, /everySeconds/],
+		[{ volumeSpikeX: "6" }, /volumeSpikeX/],
+		[{ volumeSpikeX: Number.POSITIVE_INFINITY }, /volumeSpikeX/],
+		[{ bands: { default: ["3", 5] } }, /bands\.default/],
+		[{ bands: { default: [3, 1e9] } }, /bands\.default/],
+		[{ bands: { default: [3, 5], bySymbol: { SPY: [1, "2"] } } }, /bands\.bySymbol\.SPY/],
+		[{ bands: { default: [3, 5], bySymbol: { "S P Y": [1, 2] } } }, /bands\.bySymbol/],
+		[{ bands: { default: [3, 5], bySymbol: [] } }, /bands\.bySymbol/],
+		[{ watchlist: Array.from({ length: 51 }, (_, i) => `S${i}`) }, /watchlist/],
+		["watchlist", /sources/],
+	];
+	for (const [override, field] of bad) {
+		assert.throws(() => parseMarketSettings(DEFAULTS, override, "sources.us-market"), (e: Error) => e instanceof ConfigError && field.test(e.message), JSON.stringify(override));
+	}
+	assert.deepEqual(parseMarketSettings(DEFAULTS, { everySeconds: 15, minGapMs: 12000, volumeSpikeX: 2.5 }, "x").everySeconds, 15);
+});

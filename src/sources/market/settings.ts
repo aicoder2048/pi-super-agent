@@ -11,27 +11,55 @@ export interface MarketSettings extends DetectSettings {
 
 const FIELDS = ["watchlist", "bands", "volumeSpikeX", "everySeconds", "minGapMs", "baseURL"];
 const SYMBOL = /^[A-Z][A-Z0-9]{0,9}(\.[A-Z0-9]{1,3})?$/;
+const MAX_WATCHLIST = 50;
+const MAX_BANDS = 10;
 
 export function parseSymbol(raw: unknown): string | undefined {
 	const s = typeof raw === "string" ? raw.trim().toUpperCase() : "";
 	return SYMBOL.test(s) ? s : undefined;
 }
 
-const isBands = (v: unknown) => Array.isArray(v) && v.length > 0 && v.every((n, i) => typeof n === "number" && n > 0 && (i === 0 || n > v[i - 1]));
+const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 
 export function parseMarketSettings(defaults: unknown, override: unknown, where: string): MarketSettings {
-	const raw = { ...(defaults as object), ...(override as object) } as Record<string, any>;
-	const fail = (field: string, need: string) => {
-		throw new ConfigError(`${where}：行情设置 ${field}（${JSON.stringify(raw[field])}）${need}`);
+	const fail = (path: string, value: unknown, need: string): never => {
+		throw new ConfigError(`${where}：行情设置 ${path}（${JSON.stringify(value)}）${need}`);
 	};
-	for (const field of Object.keys(raw)) if (!FIELDS.includes(field)) fail(field, `不是可用字段，可用：${FIELDS.join("、")}`);
-	const watchlist = Array.isArray(raw.watchlist) ? raw.watchlist.map(parseSymbol) : [];
-	if (!watchlist.length || watchlist.some((s) => !s)) fail("watchlist", "必须是非空的股票代码列表");
-	const bands = raw.bands ?? {};
-	if (!isBands(bands.default) || !Object.values(bands.bySymbol ?? {}).every(isBands)) fail("bands", "的每组档位必须是递增的正数");
-	if (!(raw.volumeSpikeX > 1)) fail("volumeSpikeX", "必须大于 1");
-	if (!(raw.everySeconds >= 15)) fail("everySeconds", "不能小于 15");
-	if (!(raw.minGapMs >= 0)) fail("minGapMs", "不能小于 0");
-	if (!BASE_URLS.includes(raw.baseURL)) fail("baseURL", `只能是 ${BASE_URLS.join(" 或 ")}`);
-	return { ...raw, watchlist: watchlist as string[], bands: { default: bands.default, bySymbol: bands.bySymbol ?? {} } } as MarketSettings;
+	if (override !== undefined && !isObject(override)) fail("sources 下的这一项", override, "必须是对象");
+	const raw: Record<string, unknown> = { ...(defaults as object), ...(override as object) };
+	for (const field of Object.keys(raw)) if (!FIELDS.includes(field)) fail(field, raw[field], `不是可用字段，可用：${FIELDS.join("、")}`);
+
+	const number = (path: string, value: unknown, min: number, max: number, integer: boolean): number => {
+		const ok = typeof value === "number" && Number.isFinite(value) && (!integer || Number.isInteger(value)) && value >= min && value <= max;
+		return ok ? value : fail(path, value, `必须是 ${min} 到 ${max} 之间的${integer ? "整数" : "数"}`);
+	};
+	const bands = (path: string, value: unknown): number[] => {
+		if (!Array.isArray(value) || value.length === 0 || value.length > MAX_BANDS) return fail(path, value, `必须是 1 到 ${MAX_BANDS} 个档位`);
+		const list = value.map((n, i) => number(`${path}[${i}]`, n, 0.01, 100, false));
+		if (list.some((n, i) => i > 0 && n <= list[i - 1])) fail(path, value, "必须递增");
+		return list;
+	};
+
+	const rawList = raw.watchlist;
+	const watchlist = Array.isArray(rawList) ? rawList.map(parseSymbol) : [];
+	if (!watchlist.length || watchlist.length > MAX_WATCHLIST || watchlist.some((s) => !s)) fail("watchlist", rawList, `必须是 1 到 ${MAX_WATCHLIST} 个股票代码`);
+	const rawBands = raw.bands;
+	if (!isObject(rawBands)) return fail("bands", rawBands, "必须是 { default, bySymbol } 对象");
+	const rawBySymbol = rawBands.bySymbol ?? {};
+	if (!isObject(rawBySymbol)) return fail("bands.bySymbol", rawBySymbol, "必须是以股票代码为键的对象");
+	const bySymbol: Record<string, number[]> = {};
+	for (const [key, value] of Object.entries(rawBySymbol)) {
+		const symbol = parseSymbol(key);
+		if (!symbol) fail(`bands.bySymbol.${key}`, key, "的键必须是股票代码");
+		bySymbol[symbol!] = bands(`bands.bySymbol.${key}`, value);
+	}
+	if (!BASE_URLS.includes(raw.baseURL as never)) fail("baseURL", raw.baseURL, `只能是 ${BASE_URLS.join(" 或 ")}`);
+	return {
+		watchlist: watchlist as string[],
+		bands: { default: bands("bands.default", rawBands.default), bySymbol },
+		volumeSpikeX: number("volumeSpikeX", raw.volumeSpikeX, 1.01, 1000, false),
+		everySeconds: number("everySeconds", raw.everySeconds, 15, 3600, true),
+		minGapMs: number("minGapMs", raw.minGapMs, 0, 60_000, true),
+		baseURL: raw.baseURL as MarketSettings["baseURL"],
+	};
 }
