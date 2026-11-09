@@ -84,7 +84,7 @@ demo name="all": (_browser "chromium")
 demo-market *flags: (_browser "chromium")
     {{run}} demos/demo-5-market.mjs {{flags}}
 
-# 装依赖和浏览器；都装好时几乎不花时间。
+# 装依赖和浏览器：缺什么才装什么。浏览器目录按 playwright-core 的 browsers.json 定位。
 _browser kind="chromium-headless-shell":
     @[ -d node_modules/playwright-core ] || npm ci --no-audit --no-fund --loglevel=error
-    @npx --no-install playwright-core install {{kind}} >/dev/null
+    @[ -d "$(node -p 'const os = require("os"); const rev = require("./node_modules/playwright-core/browsers.json").browsers.find((b) => b.name === "{{kind}}").revision; (process.env.PLAYWRIGHT_BROWSERS_PATH || require("path").join(os.homedir(), os.platform() === "darwin" ? "Library/Caches" : ".cache", "ms-playwright")) + "/{{replace(kind, "-", "_")}}-" + rev')" ] || npx --no-install playwright-core install {{kind}} >/dev/null

@@ -1,10 +1,12 @@
 // Page-level behavior the W1 mutation audit found untested: escaping, reconnecting after a restart,
 // the expired link after a token rotation, and leaving "connected" when the host hangs.
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { after } from "node:test";
 import type { Page } from "playwright-core";
-import { on, openTicket, reply, report } from "./fake-model.ts";
-import { sayInPage, story, waitStatus } from "./harness.ts";
+import { on, openTicket, reply, report, worker } from "./fake-model.ts";
+import { closeBrowser, sayInPage, story, waitStatus } from "./harness.ts";
+
+after(closeBrowser);
 
 const HTML = `<img src=x onerror="window.__psaXss=1"><b>粗</b>`;
 const BRIEF = "什么都不做，汇报无需处理";
@@ -23,7 +25,7 @@ test("对话和看板里的 HTML 原样显示，不执行", (t) =>
 		t,
 		{
 			router: [on("Router 开任务并回 HTML", /^\[对话\]/, (c) => [openTicket(c, HTML, BRIEF), reply(c, HTML)])],
-			workers: { [BRIEF]: [on("Worker 无需处理", /^\[任务说明\]/, () => [report("no_action", "无事可做")])] },
+			workers: [worker(BRIEF, on("Worker 无需处理", /^\[任务说明\]/, () => [report("no_action", "无事可做")]))],
 		},
 		async ({ step }) => {
 			await step("页面投递一段 HTML", (page) => sayInPage(page, HTML));

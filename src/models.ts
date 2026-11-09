@@ -8,6 +8,8 @@ export interface ModelRef {
 }
 
 export const BANNED_PROVIDERS: readonly string[] = ["anthropic"];
+/** Pay-per-use API providers. The host bans only anthropic (deepseek is its paid fallback); unattended runs refuse them all. */
+export const PAY_PER_USE_PROVIDERS: readonly string[] = [...BANNED_PROVIDERS, "deepseek"];
 
 export const DEFAULT_MODELS: Readonly<Record<Role | "fallback", string>> = {
 	router: "openai-codex/gpt-6.1-terra",
