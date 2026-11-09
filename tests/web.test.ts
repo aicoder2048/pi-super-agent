@@ -550,6 +550,23 @@ test("宿主：快照和 board 帧带今天的计数、值班时间和在盯着�
 	assert.deepEqual({ rows: settled(snap.board), today: snap.today, duty: snap.duty }, { rows: settled(frame.rows), today: frame.today, duty: frame.duty });
 });
 
+test("宿主：过了本地午夜即使没有任何动静，也推一帧看板，今日计数归零", async (t) => {
+	let now = new Date(2026, 10, 9, 23, 59, 59, 800).getTime();
+	const { host, events } = await webHost(t, () => [], { clock: { now: () => now } });
+	host.kernel.submitTrigger({ source: "inbox", externalId: "e1", threads: [{ id: "thr_1" }], sender: "s", body: "b", occurredAt: now });
+	assert.deepEqual(host.snapshot().today.bySource, { inbox: 1 });
+	const stream = events();
+	now = new Date(2026, 10, 10, 0, 0, 0, 0).getTime();
+	await until(() => ofType(stream.got, "board").length > 0, "午夜的看板帧");
+	assert.deepEqual(ofType(stream.got, "board")[0].today.bySource, {});
+});
+
+test("宿主：午夜推完看板后排好下一次", async (t) => {
+	const { events } = await webHost(t, () => [], { clock: { now: () => new Date(2026, 10, 9, 23, 59, 59, 950).getTime() } });
+	const stream = events();
+	await until(() => ofType(stream.got, "board").length >= 2, "连续两个午夜的看板帧");
+});
+
 test("宿主：其他阶段的任务行 latestQuestion 为空；不传在盯着时快照里是空列表", async (t) => {
 	const brain = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
 	const { host } = await startHost(brain, (w) => {

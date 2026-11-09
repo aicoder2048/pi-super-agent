@@ -73,6 +73,7 @@ export class Host {
 	readonly #log: (line: string) => void;
 	readonly #stateDir: string;
 	#boardTimer: NodeJS.Timeout | undefined;
+	#midnightTimer: NodeJS.Timeout | undefined;
 	#heartbeat: NodeJS.Timeout | undefined;
 	#web: WebGateway | undefined;
 	readonly #watching: WatchedSource[];
@@ -163,6 +164,7 @@ export class Host {
 		host.#beat();
 		host.#heartbeat = setInterval(() => host.#beat(), options.heartbeatMs ?? 30_000);
 		host.#heartbeat.unref();
+		host.#atNextMidnight();
 		host.dispatcher.kick();
 		return host;
 	}
@@ -230,6 +232,18 @@ export class Host {
 		writeHeartbeat(this.#stateDir, { pid: process.pid, at: Date.now() });
 	}
 
+	// Today's counts change at local midnight even when nothing happens, and board frames otherwise go out only on #changed().
+	#atNextMidnight(): void {
+		const now = this.#clock.now();
+		const midnight = new Date(now);
+		midnight.setHours(24, 0, 0, 0);
+		this.#midnightTimer = setTimeout(() => {
+			this.#broadcast({ type: "board", ...this.#boardState() });
+			this.#atNextMidnight();
+		}, midnight.getTime() - now);
+		this.#midnightTimer.unref();
+	}
+
 	#changed(): void {
 		this.dispatcher.kick();
 		if (this.#boardTimer) return;
@@ -254,6 +268,7 @@ export class Host {
 		this.timer.stop();
 		this.dispatcher.stop();
 		clearTimeout(this.#boardTimer);
+		clearTimeout(this.#midnightTimer);
 		await this.workers.shutdown();
 		this.router.dispose();
 		await Promise.all([this.server.close(), this.#web?.close()]);
