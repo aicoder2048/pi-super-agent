@@ -2,12 +2,13 @@
 // calls a test scripted. The Router inside the host and every Worker subprocess reach it through a
 // models.json in a throwaway PI_CODING_AGENT_DIR (see fakeAgentEnv in harness.ts).
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { ids, type ToolCallSpec } from "../helpers/fakes.ts";
 
 export const FAKE_PROVIDER = "psa-fake";
 
-export type ToolCall = { name: string; args: Record<string, unknown> };
-/** Tool calls (the turn ends in tool_calls), plain text (the turn ends), or a model error with an HTTP status. */
-export type Answer = ToolCall[] | string | { error: string; status?: number };
+export type ToolCall = ToolCallSpec;
+/** Tool calls (the turn ends in tool_calls) or plain text (the turn ends). */
+export type Answer = ToolCall[] | string;
 
 export interface Step {
 	/** Same name as the browser step it feeds, so a failure report and PSA_E2E_SABOTAGE can name it. */
@@ -20,16 +21,17 @@ export interface Step {
 /** The Router has one conversation. Workers are told apart by the brief the Router wrote into open_ticket. */
 export interface Script {
 	router: Step[];
-	workers?: Record<string, Step[]>;
+	workers?: WorkerScript[];
 }
+export type WorkerScript = { brief: string; steps: Step[] };
 
 export const on = (label: string, match: RegExp, answer: (card: string) => Answer): Step => ({ label, match, answer });
+export const worker = (brief: string, ...steps: Step[]): WorkerScript => ({ brief, steps });
 
 // Tool names and arguments follow src/host/router.ts and src/worker/extension.ts.
-const idIn = (card: string, prefix: "trg" | "tkt") => card.match(new RegExp(`${prefix}_[\\w-]+`))?.[0] ?? `${prefix}_missing`;
 export const openTicket = (card: string, title: string, brief = title): ToolCall => ({
 	name: "route",
-	args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: idIn(card, "trg"), title, brief }] },
+	args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg") ?? "trg_missing", title, brief }] },
 });
 export const reply = (card: string, text: string): ToolCall => ({ name: "reply", args: { text, cause: card.match(/\b(trg|tkt|act)_[\w-]+/)?.[0] } });
 export const report = (status: "progress" | "ready" | "blocked" | "failed" | "no_action", summary: string): ToolCall => ({ name: "report", args: { status, summary } });
@@ -52,24 +54,35 @@ export interface Leftovers {
 	stray: string[];
 }
 
+/** "<label>" answers that step wrongly; "<label>:crash" makes its Worker kill its own Pi process. The label may contain colons. */
+export function parseSabotage(value: string | undefined): { label: string; crash: boolean } | undefined {
+	if (!value) return undefined;
+	const crash = value.endsWith(":crash");
+	return { label: crash ? value.slice(0, -":crash".length) : value, crash };
+}
+
 export class FakeModel {
 	readonly exchanges: Exchange[] = [];
 	/** Every request that is not POST /v1/chat/completions, including CONNECTs through the proxy tripwire. */
 	readonly stray: string[] = [];
-	readonly #pending: Map<string, Step[]>;
+	readonly #pending = new Map<string, Step[]>();
 	readonly #sabotage: { label: string; crash: boolean } | undefined;
 	#server!: Server;
+	#drained!: () => void;
+	/** Resolves once every scripted step has been claimed. */
+	readonly drained = new Promise<void>((done) => (this.#drained = done));
 	baseUrl = "";
 
 	private constructor(script: Script, sabotage: string | undefined) {
-		this.#pending = new Map<string, Step[]>([["router", [...script.router]], ...Object.entries(script.workers ?? {}).map(([brief, steps]): [string, Step[]] => [brief, [...steps]])]);
-		if (sabotage) {
-			const [label, mode] = sabotage.split(":");
-			this.#sabotage = { label, crash: mode === "crash" };
+		this.#pending.set("router", [...script.router]);
+		for (const { brief, steps } of script.workers ?? []) {
+			if (this.#pending.has(brief)) throw new Error(`两个 Worker 脚本用了同一个 brief：${brief}`);
+			this.#pending.set(brief, [...steps]);
 		}
+		this.#sabotage = parseSabotage(sabotage);
+		this.#checkDrained();
 	}
 
-	/** PSA_E2E_SABOTAGE="<label>" answers that step wrongly; "<label>:crash" makes the Worker kill its own Pi process. */
 	static async start(script: Script, sabotage = process.env.PSA_E2E_SABOTAGE): Promise<FakeModel> {
 		const fake = new FakeModel(script, sabotage);
 		fake.#server = createServer((req, res) => void fake.#handle(req, res));
@@ -138,12 +151,17 @@ export class FakeModel {
 				continue;
 			}
 			const [step] = pending.splice(i, 1);
+			this.#checkDrained();
 			base.steps.push(step.label);
 			const answer = this.#sabotaged(step) ?? step.answer(card);
 			if (!Array.isArray(answer)) return { ...base, answer };
 			calls.push(...answer);
 		}
 		return { ...base, answer: calls.length ? calls : "好。" };
+	}
+
+	#checkDrained(): void {
+		if ([...this.#pending.values()].every((steps) => steps.length === 0)) this.#drained();
 	}
 
 	#sabotaged(step: Step): Answer | undefined {
@@ -168,10 +186,6 @@ function briefOf(messages: Message[]): string {
 }
 
 function stream(res: ServerResponse, answer: Answer): void {
-	if (typeof answer === "object" && !Array.isArray(answer)) {
-		res.writeHead(answer.status ?? 500, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: answer.error } }));
-		return;
-	}
 	const send = (body: object) => res.write(`data: ${JSON.stringify({ id: "fake", object: "chat.completion.chunk", created: 0, model: "fake", ...body })}\n\n`);
 	res.writeHead(200, { "content-type": "text/event-stream" });
 	if (typeof answer === "string") {

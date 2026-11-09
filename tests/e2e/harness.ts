@@ -1,21 +1,23 @@
 // Shared by the e2e tests and the demos: start the real host in its own process group, drive a
 // browser step by step, keep evidence when a step fails, and stop exactly the groups it started.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
+import { spawn, spawnSync } from "node:child_process";
+import { createWriteStream, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 import { stripVTControlCharacters } from "node:util";
 import { join, resolve } from "node:path";
 import type { TestContext } from "node:test";
-import { chromium, type Browser, type Page } from "playwright-core";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
+import { PAY_PER_USE_PROVIDERS, parseModelRef } from "../../src/models.ts";
+import { freePort } from "../helpers/fakes.ts";
 import { FAKE_PROVIDER, FakeModel, type Script } from "./fake-model.ts";
 
 export const REPO = resolve(import.meta.dirname, "../..");
 const OUT = join(REPO, "tests/e2e/.out");
-// Billing rule: these providers are pay-per-use API keys and never run from automation.
-const BILLED = /^(anthropic|deepseek)\//i;
-const HOST_URL = /\[host\] 网页 (\S+)/g;
+const RUN = ["--import", "./src/pi-runtime.mjs"];
+/** The line the host prints once its web page is up; the trailing whitespace makes sure the URL is complete. */
+export const HOST_URL = /\[host\] 网页 (\S+)\s/g;
 
 export const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
@@ -24,7 +26,9 @@ export const fakeModels: Models = { router: `${FAKE_PROVIDER}/router`, worker: `
 
 /** All three roles are always written, so the host never falls back to the default deepseek model. */
 export function writeConfig(stateDir: string, models: Models, config: Record<string, unknown> = {}): void {
-	for (const ref of Object.values(models)) if (BILLED.test(ref)) throw new Error(`拒绝使用 ${ref}：按量计费，自动化里禁用`);
+	for (const ref of Object.values(models)) {
+		if (PAY_PER_USE_PROVIDERS.includes(parseModelRef(ref).provider.toLowerCase())) throw new Error(`拒绝使用 ${ref}：按量计费，自动化里禁用`);
+	}
 	mkdirSync(stateDir, { recursive: true });
 	writeFileSync(join(stateDir, "config.json"), JSON.stringify({ ...config, models }, null, 2));
 }
@@ -66,17 +70,24 @@ export async function stopGroup(pgid: number): Promise<boolean> {
  * Its pid is the group id, and every child it spawns (Workers included) stays in that group.
  */
 export function startGroup(args: string[], options: { env: NodeJS.ProcessEnv; logFile: string; onOutput?: (text: string) => void }): { pid: number; exited: Promise<number | null> } {
-	const child = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", ...args], { cwd: REPO, env: options.env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+	const child = spawn(process.execPath, [...RUN, ...args], { cwd: REPO, env: options.env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
 	if (!child.pid) throw new Error(`无法启动 ${args.join(" ")}`);
 	const pid = child.pid;
 	liveGroups.add(pid);
+	const log = createWriteStream(options.logFile, { flags: "a" });
 	for (const stream of [child.stdout, child.stderr]) {
 		stream.setEncoding("utf8").on("data", (text: string) => {
-			appendFileSync(options.logFile, text);
+			log.write(text);
 			options.onOutput?.(text);
 		});
 	}
+	child.once("close", () => log.end());
 	return { pid, exited: new Promise((done) => child.once("exit", (code) => done(code))) };
+}
+
+/** Runs a short repo CLI to completion (not in its own group; the timeout bounds it). */
+export function runSync(args: string[], env: NodeJS.ProcessEnv, timeoutMs = 60_000) {
+	return spawnSync(process.execPath, [...RUN, ...args], { cwd: REPO, env, encoding: "utf8", timeout: timeoutMs });
 }
 
 /** Adopts a group that a process we started has started (the watchdog's hosts), so cleanup reaches it. */
@@ -96,7 +107,6 @@ export async function stopAllGroups(): Promise<number[]> {
 export interface HostRun {
 	readonly url: URL;
 	readonly pid: number;
-	readonly stateDir: string;
 	log(): string;
 	/** Stops the group and starts the host again on the same state dir. */
 	restart(): Promise<URL>;
@@ -125,22 +135,27 @@ export async function startHost(options: StartHostOptions): Promise<HostRun> {
 	let current = 0;
 	let url!: URL;
 
-	const boot = async (): Promise<URL> => {
-		const from = text.length;
-		const proc = startGroup([...(options.imports ?? []).flatMap((f) => ["--import", f]), "src/host/main.ts"], { env, logFile: options.logFile, onOutput: (t) => (text += t) });
-		groups.push(proc.pid);
-		current = proc.pid;
-		let exitCode: number | null | undefined;
-		void proc.exited.then((code) => (exitCode = code));
-		const deadline = Date.now() + (options.timeoutMs ?? 30_000);
-		while (Date.now() < deadline) {
-			const found = [...text.slice(from).matchAll(HOST_URL)][0];
-			if (found) return (url = new URL(found[1]));
-			if (exitCode !== undefined) throw new Error(`宿主启动失败（退出码 ${exitCode}）：${text.slice(from).trim().split("\n").slice(-3).join(" ")}`);
-			await sleep(50);
-		}
-		throw new Error(`宿主 ${Math.round((options.timeoutMs ?? 30_000) / 1000)} 秒内没有打印网址，日志：${options.logFile}`);
-	};
+	const timeoutMs = options.timeoutMs ?? 30_000;
+	const boot = () =>
+		new Promise<URL>((done, fail) => {
+			let own = "";
+			const timer = setTimeout(() => fail(new Error(`宿主 ${Math.round(timeoutMs / 1000)} 秒内没有打印网址，日志：${options.logFile}`)), timeoutMs);
+			const onOutput = (t: string) => {
+				text += t;
+				own += t;
+				const found = new RegExp(HOST_URL.source).exec(own);
+				if (!found) return;
+				clearTimeout(timer);
+				done((url = new URL(found[1])));
+			};
+			const proc = startGroup([...(options.imports ?? []).flatMap((f) => ["--import", f]), "src/host/main.ts"], { env, logFile: options.logFile, onOutput });
+			groups.push(proc.pid);
+			current = proc.pid;
+			void proc.exited.then((code) => {
+				clearTimeout(timer);
+				fail(new Error(`宿主启动失败（退出码 ${code}）：${own.trim().split("\n").slice(-3).join(" ")}`));
+			});
+		});
 
 	const stopAll = async () => {
 		const left: number[] = [];
@@ -161,7 +176,6 @@ export async function startHost(options: StartHostOptions): Promise<HostRun> {
 		get pid() {
 			return current;
 		},
-		stateDir: options.stateDir,
 		log: () => text,
 		async restart() {
 			const left = await stopAll();
@@ -194,16 +208,6 @@ export function fakeAgentEnv(fake: FakeModel, agentDir: string): Record<string, 
 	};
 }
 
-export function freePort(): Promise<number> {
-	return new Promise((done, fail) => {
-		const server = createServer().once("error", fail);
-		server.listen(0, "127.0.0.1", () => {
-			const { port } = server.address() as { port: number };
-			server.close(() => done(port));
-		});
-	});
-}
-
 // ---- the page ----
 
 export type Status = "connecting" | "connected" | "disconnected" | "expired";
@@ -213,8 +217,15 @@ export function waitStatus(page: Page, status: Status, timeoutMs = 15_000): Prom
 	return page.waitForFunction((s) => document.querySelector("#status")?.getAttribute("data-status") === s, status, { timeout: timeoutMs });
 }
 
-export async function sayInPage(page: Page, text: string): Promise<void> {
-	await page.fill("#composer", text);
+/** Sends one sentence from the composer and waits for the delivered ack. `typeDelayMs` types it key by key, for recordings. */
+export async function sayInPage(page: Page, text: string, { typeDelayMs }: { typeDelayMs?: number } = {}): Promise<void> {
+	const box = page.locator("#composer");
+	if (typeDelayMs === undefined) await box.fill(text);
+	else {
+		await box.click();
+		await box.pressSequentially(text, { delay: typeDelayMs });
+		if ((await box.inputValue()) !== text) await box.fill(text);
+	}
 	await page.click("#send");
 	await page.waitForFunction(() => document.getElementById("say-status")?.dataset.state === "delivered", null, { timeout: 8_000 });
 }
@@ -239,6 +250,17 @@ export interface StoryOptions {
 	fixedPort?: boolean;
 	/** Installs page.clock before the first load so a test can fast-forward the page's timers. */
 	fakeClock?: boolean;
+	/** See parseSabotage in fake-model.ts. Defaults to PSA_E2E_SABOTAGE. */
+	sabotage?: string;
+}
+
+let sharedBrowser: Promise<Browser> | undefined;
+/** One headless Chromium per test file, launched by the first story. Each file closes it with after(closeBrowser). */
+const launchBrowser = () => (sharedBrowser ??= chromium.launch());
+export async function closeBrowser(): Promise<void> {
+	const browser = sharedBrowser;
+	sharedBrowser = undefined;
+	await (await browser)?.close();
 }
 
 const slug = (name: string) => name.replace(/[^\p{L}\p{N}-]+/gu, "-").slice(0, 80);
@@ -255,20 +277,22 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 	const root = mkdtempSync(join(tmpdir(), "psa-e2e-"));
 	const consoleLog = join(out, "page-console.log");
 	writeFileSync(consoleLog, "");
-	const fake = await FakeModel.start(script);
+	const consoleStream = createWriteStream(consoleLog);
+	const fake = await FakeModel.start(script, options.sabotage);
 	const env = fakeAgentEnv(fake, join(root, "pi"));
 	const pages: Page[] = [];
-	let browser: Browser | undefined;
+	const contexts: BrowserContext[] = [];
 	let host: HostRun | undefined;
 	let failed = false;
 
 	const open = async (url: URL, opts: { fakeClock?: boolean } = {}) => {
-		browser ??= await chromium.launch();
-		const page = await (await browser.newContext()).newPage();
+		const context = await (await launchBrowser()).newContext();
+		contexts.push(context);
+		const page = await context.newPage();
 		page.setDefaultTimeout(10_000);
 		const n = pages.push(page);
-		page.on("console", (m) => appendFileSync(consoleLog, `[page ${n}] ${m.type()} ${m.text()}\n`));
-		page.on("pageerror", (e) => appendFileSync(consoleLog, `[page ${n}] pageerror ${e.message}\n`));
+		page.on("console", (m) => consoleStream.write(`[page ${n}] ${m.type()} ${m.text()}\n`));
+		page.on("pageerror", (e) => consoleStream.write(`[page ${n}] pageerror ${e.message}\n`));
 		if (opts.fakeClock) await page.clock.install();
 		await page.goto(url.href);
 		return page;
@@ -299,17 +323,20 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 	try {
 		await step("宿主启动，页面已连接", async () => {
 			const webPort = options.fixedPort ? await freePort() : 0;
-			host = await startHost({ models: fakeModels, stateDir: join(root, "s"), logFile: join(out, "host.log"), config: { webPort, modulesDirs: [], ...options.config }, env });
-			await waitStatus(await open(host.url, { fakeClock: options.fakeClock }), "connected");
+			const started = startHost({ models: fakeModels, stateDir: join(root, "s"), logFile: join(out, "host.log"), config: { webPort, modulesDirs: [], ...options.config }, env });
+			const [run] = await Promise.all([started.then((h) => (host = h)), launchBrowser()]);
+			await waitStatus(await open(run.url, { fakeClock: options.fakeClock }), "connected");
 		});
 		if (!failed) await body({ page: pages[0], host: host!, fake, step, open, cli });
 		await step("假模型脚本用完", async () => {
-			for (let waited = 0; waited < 10_000 && fake.leftovers().unused.length; waited += 100) await sleep(100);
+			const timeout = new AbortController();
+			await Promise.race([fake.drained, delay(10_000, undefined, { signal: timeout.signal }).catch(() => {})]).finally(() => timeout.abort());
 			assert.deepEqual(fake.leftovers(), { unused: [], unmatched: [], stray: [] });
 		});
 	} finally {
-		await browser?.close();
+		for (const context of contexts) await context.close();
 		left = (await host?.stop()) ?? [];
+		consoleStream.end();
 		writeFileSync(join(out, "fake-model.jsonl"), fake.jsonl());
 		await fake.close();
 		rmSync(root, { recursive: true, force: true });
