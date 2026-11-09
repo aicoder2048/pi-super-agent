@@ -677,6 +677,8 @@ export class Kernel {
 	}
 
 	#openTicket(d: Extract<Decision, { kind: "open_ticket" }>, takenThisRoute: Set<string>): DecisionResult {
+		if (typeof d.title !== "string" || !d.title.trim()) return reject("open_ticket needs a title");
+		if (typeof d.brief !== "string" || !d.brief.trim()) return reject("open_ticket needs a brief for the worker");
 		const trigger = d.triggerId === undefined ? undefined : this.#get("SELECT id, source FROM triggers WHERE id = ?", d.triggerId);
 		if (d.triggerId !== undefined && !trigger) return reject(`unknown trigger ${d.triggerId}`);
 		const unusable = d.triggerId === undefined ? undefined : this.#evidenceProblem(d.triggerId, takenThisRoute);

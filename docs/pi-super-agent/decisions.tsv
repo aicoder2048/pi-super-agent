@@ -60,3 +60,7 @@ ts	phase	decision	why	evidence	result
 2026-11-09T03:18:30Z	simplify	效率与深度审查：采纳索引、rulesFor 单一路径、批次集合改局部、规则查找表、问题段落改在内核计算；不采纳卡片 N+1、搬目录全文重写、seenIds 增长、Router 用量每条一事务	前者便宜且不改行为；后者在个人规模下量很小，按 YAGNI 暂缓	simplify 审查员（效率与深度）报告	decided
 2026-11-09T03:20:29Z	cleanup	应用 no-comments 与 simplify 的采纳项；问题段落起点改在内核计算（先写测试红再绿）并删除 Watchdog 侧文件；全量 197 个通过	提交前检查；修复深度审查指出侧文件是在症状处打补丁	commit 26e11dc	green
 2026-11-09T03:21:24Z	trace	写 story-trace.md：33 条覆盖、3 条部分（8、17、29，写明接受理由）、1 条范围外；实施计划完成后移到 docs/pi-super-agent/implementation-log.md	P3 完成判定；开发规范要求全部阶段完成后移除根目录的计划文件	docs/pi-super-agent/story-trace.md	done
+2026-11-09T03:21:54Z	verify	P1：分支头 4ca74bf 上全量 197 个测试连续三次通过；没有残留的宿主或 Watchdog 进程	完成判定 P1	just test x3 @4ca74bf	VERIFIED
+2026-11-09T03:21:54Z	review	跨模型复核记录：子代理模型只有 Claude 族可选，改用与执行者不同的 sonnet 复核，并写明这一限制	show-me-your-work 要求换模型族复核，环境不提供其他族	复核子代理	running
+2026-11-09T03:24:06Z	review	跨模型复核（sonnet）返回：采纳补证据、逐条处置 how 疑点和 Pi 行为、修复 open_ticket 缺标题；指出 PSA_* 无测试一条不成立（worker-extension.test.ts 有）	复核结论逐条核对后处理	docs/pi-super-agent/figure-it-out.md Phase E; evidence/live/	done
+2026-11-09T03:24:06Z	fix	open_ticket 缺标题或说明时只拒绝该条：内核测试先红后绿，全量 198 个通过	how.md 列出的未确认行为之一，确认会整批回滚	tests/kernel.test.ts 缺标题	green

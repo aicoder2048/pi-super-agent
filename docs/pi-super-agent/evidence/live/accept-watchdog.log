@@ -1,0 +1,6 @@
+node --import ./src/pi-runtime.mjs src/watchdog/main.ts
+2026-11-09T03:02:35.157Z [watchdog] 已启动，每 0.1 分钟检查一次，状态目录 /tmp/psa-accept-HCq0
+2026-11-09T03:02:35.158Z [watchdog] 宿主没有心跳，正在拉起
+2026-11-09T03:02:35.159Z [watchdog] 已拉起宿主，pid 3272，日志 /tmp/psa-accept-HCq0/host.log
+2026-11-09T03:05:41.210Z [watchdog] 宿主没有心跳，正在拉起
+2026-11-09T03:05:41.218Z [watchdog] 已拉起宿主，pid 4503，日志 /tmp/psa-accept-HCq0/host.log

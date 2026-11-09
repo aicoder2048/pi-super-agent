@@ -1,0 +1,5 @@
+conversation|用 bash 直接跑 sleep 90（不要用后台命令），跑完告诉我 done|opened_ticket
+watchdog|[Watchdog] 任务 tkt_6e464e64-d883-4bc2-b288-8476c4982251「前台运行 sleep 90」已经 0 分钟没有进展，可能卡住了。请告诉使用者。|to_router
+好的，我会前台运行，完成后告诉你。
+系统提示 sleep 90 任务可能卡住；目前尚未确认运行完成。
+done

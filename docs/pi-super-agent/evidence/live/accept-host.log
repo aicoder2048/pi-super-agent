@@ -1,0 +1,10 @@
+2026-11-09T03:02:35.484Z [host] 模块：toy-market；规则 1 条
+2026-11-09T03:02:35.502Z [host] 已启动，状态目录 /tmp/psa-accept-HCq0，Router openai-codex/gpt-6.1-terra，Worker openai-codex/gpt-6.1-sol，回退 deepseek/deepseek-flash
+Warning: No project session found with id '4f24b9fa-aa78-4d3e-be26-4b2ecdc9430e'; creating a new session with that id.
+Warning: No project session found with id '576967f2-ed2e-40f2-8426-8282d1e7e027'; creating a new session with that id.
+Warning: No project session found with id 'f3bdd684-27ea-456d-92c5-d924ef439b46'; creating a new session with that id.
+2026-11-09T03:05:41.565Z [host] 模块：toy-market；规则 1 条
+2026-11-09T03:05:41.577Z [host] 恢复 1 个执行中的任务：tkt_d35e9fe0-a23d-4e00-bdfe-480d1057de11
+2026-11-09T03:05:41.578Z [host] 已启动，状态目录 /tmp/psa-accept-HCq0，Router openai-codex/gpt-6.1-terra，Worker openai-codex/gpt-6.1-sol，回退 deepseek/deepseek-flash
+Warning: No project session found with id 'd9fff486-11b7-4e76-a2d7-9f78448bbd9a'; creating a new session with that id.
+2026-11-09T03:07:40.623Z [host] 收到 SIGTERM，正在停止

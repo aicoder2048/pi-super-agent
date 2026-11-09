@@ -849,3 +849,14 @@ test("系统问题的起点是上次成功之后的第一次失败，失败持�
 	for (const a of kernel.dueActions(1000)) if (a.kind === "channel.reply") kernel.completeAction(a.id);
 	assert.equal(kernel.systemProblems().find((p) => p.kind === "channel.reply"), undefined);
 });
+
+test("开任务缺标题或任务说明时，只拒绝这一条决定，同一批的其他决定和决策日志照常保留", () => {
+	const { kernel, say } = setup();
+	const hi = say("做两件事").triggerId;
+	const results = kernel.route([
+		{ kind: "open_ticket", basis: "request", triggerId: hi, brief: "没有标题" } as any,
+		{ kind: "open_ticket", basis: "request", triggerId: hi, title: "有标题", brief: "正常" },
+	]);
+	assert.deepEqual(results.map((r) => r.ok), [false, true]);
+	assert.equal(kernel.decisionLog().length, 2);
+});
