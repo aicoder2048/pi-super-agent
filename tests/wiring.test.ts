@@ -9,7 +9,7 @@ import { createHostOptions, modelSelectors, watchedSources } from "../src/host/w
 import { memberProviders } from "../src/host/config.ts";
 import { Host } from "../src/host/host.ts";
 import { Modules } from "../src/modules.ts";
-import { KEY_NAMES } from "../src/sources/market/key.ts";
+import { FINNHUB_KEY_NAMES, KEY_NAMES } from "../src/sources/market/key.ts";
 import { until } from "./helpers/fakes.ts";
 
 const config = {
@@ -107,10 +107,11 @@ test("在替你盯着：每个来源一项，带上管它的规则（使用者�
 const REPO_MODULES = new URL("../modules", import.meta.url).pathname;
 
 function withoutKeyVars(t: import("node:test").TestContext) {
-	const saved = Object.fromEntries(KEY_NAMES.map((k) => [k, process.env[k]]));
-	for (const k of KEY_NAMES) delete process.env[k];
+	const names = [...KEY_NAMES, ...FINNHUB_KEY_NAMES];
+	const saved = Object.fromEntries(names.map((k) => [k, process.env[k]]));
+	for (const k of names) delete process.env[k];
 	t.after(() => {
-		for (const k of KEY_NAMES) if (saved[k] === undefined) delete process.env[k];
+		for (const k of names) if (saved[k] === undefined) delete process.env[k];
 		else process.env[k] = saved[k];
 	});
 }
