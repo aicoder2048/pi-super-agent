@@ -1,6 +1,7 @@
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 import type { Clock } from "../kernel/types.ts";
+import { ConfigError } from "../config-error.ts";
 import { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import type { Modules } from "../modules.ts";
@@ -26,14 +27,14 @@ export interface HostWiringInput {
 }
 
 export function createHostOptions({ config, modules, modelRuntime, log, clock = { now: () => Date.now() } }: HostWiringInput): HostOptions {
-	const resolve = (ref: ModelRef) => {
+	const resolve = (ref: ModelRef, role?: string) => {
 		const model = modelRuntime.getModel(ref.provider, ref.id);
-		if (!model) throw new Error(`找不到模型 ${formatModelRef(ref)}`);
+		if (!model) throw new ConfigError(`${role ? `${join(config.stateDir, "config.json")}：models.${role}：` : ""}找不到模型 ${formatModelRef(ref)}`);
 		return model;
 	};
-	resolve(config.models.router);
-	resolve(config.models.worker);
-	resolve(config.models.fallback);
+	resolve(config.models.router, "router");
+	resolve(config.models.worker, "worker");
+	resolve(config.models.fallback, "fallback");
 	const selectors = modelSelectors(config, clock);
 	return {
 		stateDir: config.stateDir,

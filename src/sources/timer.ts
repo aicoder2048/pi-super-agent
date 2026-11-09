@@ -1,4 +1,5 @@
 import type { TriggerSubmission } from "../kernel/types.ts";
+import { ConfigError } from "../config-error.ts";
 import { threadId } from "./generic.ts";
 
 export interface TimerEntry {
@@ -25,7 +26,7 @@ export class TimerSource {
 
 	constructor(options: TimerSourceOptions) {
 		for (const e of options.entries) {
-			if (!(e.everyMinutes > 0)) throw new Error(`定时器 ${e.id} 的 everyMinutes 必须大于 0`);
+			if (!(e.everyMinutes > 0)) throw new ConfigError(`定时器 ${e.id} 的 everyMinutes 必须大于 0`);
 		}
 		this.#o = options;
 	}

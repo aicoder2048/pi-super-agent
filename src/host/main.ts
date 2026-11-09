@@ -4,7 +4,7 @@ import { formatModelRef } from "../models.ts";
 import { Modules } from "../modules.ts";
 import { loadConfig } from "./config.ts";
 import { Host } from "./host.ts";
-import { exitOnStartupError } from "./startup-error.ts";
+import { exitOnConfigError } from "../config-error.ts";
 import { createHostOptions } from "./wiring.ts";
 
 async function main(): Promise<void> {
@@ -28,4 +28,4 @@ async function main(): Promise<void> {
 	}
 }
 
-main().catch(exitOnStartupError);
+main().catch(exitOnConfigError);
