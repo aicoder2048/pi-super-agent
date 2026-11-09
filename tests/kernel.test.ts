@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Kernel, nextStallAt } from "../src/kernel/kernel.ts";
-import { SOLO_NAMES } from "../src/kernel/helper-names.ts";
+import { SOLO_NAMES, TEAM_NAMES } from "../src/kernel/helper-names.ts";
 import { refusalText } from "../src/kernel/question.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { CONVERSATION_THREAD_ID, DEFAULT_TEAM, DISPOSITIONS } from "../src/kernel/types.ts";
@@ -1345,4 +1345,45 @@ test("旧状态库的任务没有团队：打开时补上 team 列，旧任务�
 	assert.deepEqual(again.db.prepare("SELECT team FROM tickets").all().map((r) => r.team), [null]);
 	again.clock.t += 1000;
 	assert.equal(teamOf(again.kernel, again.open("request", { team: "新闻队" })), "新闻队");
+});
+
+test("带成员的团队的任务取四字名，身份是名字、团队名和序号；默认团队和只有通用助手的团队仍是两字名加角色", () => {
+	const s = setup({ teams: TEAMS });
+	const ids = [s.open("request", { team: "新闻队" }), s.open("request"), s.open("request", { team: "杂务队" }), s.open("rule", { team: "看盘队", source: "toy-market" })];
+	assert.deepEqual(ids.map((id) => helperOf(s.kernel, id)), [
+		{ name: TEAM_NAMES[0], team: "新闻队", seq: 1 },
+		{ name: SOLO_NAMES[0], role: "conversation", seq: 1 },
+		{ name: SOLO_NAMES[1], role: "conversation", seq: 2 },
+		{ name: TEAM_NAMES[1], team: "看盘队", seq: 1 },
+	]);
+});
+
+test("团队任务的序号按团队在纽约同一天里数：各队数各的，不占单个助手的序号，过了纽约午夜从 1 重新数", () => {
+	const s = setup({ teams: TEAMS, at: "2026-11-09T04:30:00Z" });
+	const seqs = (ids: string[]) => ids.map((id) => helperOf(s.kernel, id)!.seq);
+	const lateNight = [s.open("request", { team: "新闻队" }), s.open("request", { team: "新闻队" }), s.open("request", { team: "看盘队" }), s.open("request")];
+	assert.deepEqual(seqs(lateNight), [1, 2, 1, 1]);
+	s.clock.t += HOUR;
+	assert.deepEqual(seqs([s.open("request", { team: "新闻队" }), s.open("request")]), [1, 1]);
+});
+
+test("两个名字池各自轮转：团队任务不推进两字池，四字池整池在岗时加「·二」", () => {
+	const s = setup({ teams: TEAMS });
+	const teamIds = TEAM_NAMES.map(() => s.open("request", { team: "新闻队" }));
+	assert.deepEqual(teamIds.map((id) => helperOf(s.kernel, id)!.name), [...TEAM_NAMES]);
+	assert.equal(helperOf(s.kernel, s.open("request"))!.name, SOLO_NAMES[0]);
+	assert.equal(helperOf(s.kernel, s.open("request", { team: "看盘队" }))!.name, `${TEAM_NAMES[0]}·二`);
+	assert.equal(helperOf(s.kernel, s.open("request"))!.name, SOLO_NAMES[1]);
+});
+
+test("名字在开任务时按团队定下，之后不变：重启后团队没了成员或被拿掉，任务仍是原来的四字名和团队名", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path, teams: TEAMS });
+	const ids = [first.open("request", { team: "新闻队" }), first.open("request", { team: "杂务队" })];
+	const before = ids.map((id) => helperOf(first.kernel, id));
+	assert.deepEqual(before, [{ name: TEAM_NAMES[0], team: "新闻队", seq: 1 }, { name: SOLO_NAMES[0], role: "conversation", seq: 1 }]);
+	first.db.close();
+	const flipped: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"], ["新闻队", "solo"], ["杂务队", "crew"]]), pinned: new Map() };
+	assert.deepEqual(ids.map((id) => helperOf(setup({ path, teams: flipped }).kernel, id)), before);
+	assert.deepEqual(ids.map((id) => helperOf(setup({ path }).kernel, id)), before);
 });

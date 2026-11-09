@@ -4,7 +4,7 @@ import { answerExternalId, answerSentence, type AnswerRefusal } from "./question
 
 export type AnswerOutcome = { ok: true; triggerId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 import { deriveStage } from "./stage.ts";
-import { SOLO_NAMES, helperName, helperRole, newYorkDate } from "./helper-names.ts";
+import { SOLO_NAMES, TEAM_NAMES, helperName, helperRole, newYorkDate } from "./helper-names.ts";
 import { stallMinutes } from "../client/board-format.mjs";
 import { inTransaction } from "./store.ts";
 import {
@@ -121,6 +121,17 @@ export function nextStallAt(rows: DashboardRow[], stuckMs: number): number | nul
 	const at = rows.filter((r) => r.stage === "running" && !r.stall && r.lastProgressAt !== null).map((r) => r.lastProgressAt! + stuckMs);
 	return at.length ? Math.min(...at) : null;
 }
+
+// A named ticket with no helper_role shows as a team: the row holds a role or stands for its team, never both.
+const TEAM_HELPER_ROWS = "helper_name IS NOT NULL AND helper_role IS NULL";
+
+function toHelper(r: Row): Helper | null {
+	if (r.helper_name === null) return null;
+	const identity = { name: r.helper_name, seq: r.helper_seq };
+	return r.helper_role === null ? { ...identity, team: r.team } : { ...identity, role: r.helper_role };
+}
+
+const storedRole = (helper: Helper) => ("role" in helper ? helper.role : null);
 
 const ONLY_DEFAULT_TEAM: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"]]), pinned: new Map() };
 
@@ -628,24 +639,27 @@ export class Kernel {
 				 WHERE t.helper_name IS NULL ORDER BY t.created_at, t.rowid`,
 			);
 			for (const r of unnamed) {
-				const h = this.#newHelper(r.basis, r.source, r.created_at);
-				this.#run("UPDATE tickets SET helper_name = ?, helper_role = ?, helper_seq = ? WHERE id = ?", h.name, h.role, h.seq, r.id);
+				const h = this.#newHelper(r.basis, r.source, r.created_at, DEFAULT_TEAM);
+				this.#run("UPDATE tickets SET helper_name = ?, helper_role = ?, helper_seq = ? WHERE id = ?", h.name, storedRole(h), h.seq, r.id);
 			}
 		});
 	}
 
-	#newHelper(basis: Basis, originSource: string | null, createdAt: number): Helper {
+	#newHelper(basis: Basis, originSource: string | null, createdAt: number, team: string): Helper {
+		const crew = this.#teams.kinds.get(team) === "crew";
 		const role = helperRole(basis, originSource, this.#isMarketSource);
+		const pool = crew ? TEAM_HELPER_ROWS : "helper_role IS NOT NULL";
 		const day = newYorkDate(createdAt);
-		const sameRole = this.#all(
-			"SELECT created_at FROM tickets WHERE helper_role = ? AND created_at > ? AND created_at <= ?",
-			role,
+		const sameUnit = this.#all(
+			`SELECT created_at FROM tickets WHERE ${pool} AND ${crew ? "team" : "helper_role"} = ? AND created_at > ? AND created_at <= ?`,
+			crew ? team : role,
 			createdAt - 2 * DAY_MS,
 			createdAt,
 		).filter((r) => newYorkDate(r.created_at) === day).length;
-		const ordinal = this.#get("SELECT COUNT(*) AS n FROM tickets WHERE helper_name IS NOT NULL").n as number;
-		const onDuty = new Set(this.#column("SELECT helper_name AS v FROM tickets WHERE helper_name IS NOT NULL AND closed_at IS NULL AND stopped_at IS NULL"));
-		return { name: helperName(SOLO_NAMES, ordinal, onDuty), role, seq: sameRole + 1 };
+		const ordinal = this.#get(`SELECT COUNT(*) AS n FROM tickets WHERE ${pool}`).n as number;
+		const onDuty = new Set(this.#column(`SELECT helper_name AS v FROM tickets WHERE ${pool} AND closed_at IS NULL AND stopped_at IS NULL`));
+		const identity = { name: helperName(crew ? TEAM_NAMES : SOLO_NAMES, ordinal, onDuty), seq: sameUnit + 1 };
+		return crew ? { ...identity, team } : { ...identity, role };
 	}
 
 	#stall(t: Ticket, now: number): Stall | null {
@@ -920,7 +934,7 @@ export class Kernel {
 
 		const ticketId = this.#id("tkt");
 		if (d.team !== undefined && d.team !== team) this.#log(`[kernel] 规则 ${d.ruleId} 写明团队「${team}」，幕僚长填的是「${d.team}」，任务 ${ticketId} 已改回「${team}」`);
-		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now());
+		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now(), team);
 		this.#run(
 			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, team)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
@@ -932,7 +946,7 @@ export class Kernel {
 			this.#now(),
 			randomUUID(),
 			helper.name,
-			helper.role,
+			storedRole(helper),
 			helper.seq,
 			team,
 		);
@@ -1107,7 +1121,7 @@ export class Kernel {
 			toolCalls: r.tool_calls,
 			tokensIn: r.tokens_in,
 			tokensOut: r.tokens_out,
-			helper: r.helper_name === null ? null : { name: r.helper_name, role: r.helper_role, seq: r.helper_seq },
+			helper: toHelper(r),
 			stage,
 			latestReport: latest ? toReport(latest) : null,
 		};

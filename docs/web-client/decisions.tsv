@@ -99,3 +99,4 @@ ts	phase	decision	why	evidence	result
 2026-11-09T22:06:07Z	t1	默认团队叫「默认」，写在代码里（DEFAULT_TEAM），不放进 teams.yaml	内核要用这个名字处理省略的 team 和旧任务；放文件里就得和常量手工对齐。两份候选都选了「默认」	candidate-a、candidate-b 的 rationale.md	定稿
 2026-11-09T22:06:07Z	t1	四项检查点：先行步骤=how、architect、基线 432 条通过；独立工作流=加载、内核、显示、助手进程四块文件不重叠但共用 Helper 和 TeamBook 两个类型；共享状态=一个工作树、一份 decisions.tsv、一份计划，只留一个写入者；最小拆分=我一个人按单元串行红绿提交	每个单元不到一百行，并行的写手会在 kernel.test.ts 和日志上相撞，省不下时间	playbooks/feature.md 第 3 步	按单元推进
 2026-11-09T22:07:29Z	t1	Roster.load 读三处根目录（内置、模块、状态目录）的 agents/*.md 和 teams.yaml；同名、名单里缺成员、规则写了不存在的团队都报一行 ConfigError；团队说明上限 60 字；新增 agents/general.md	按 architect 定稿；说明每轮都进幕僚长提示词，要有上限	tests/teams.test.ts 名册 9 条加「说明超过 60 字」；红：桩返回空名册，10 条失败；绿：5b77648	just test 通过
+2026-11-09T22:08:57Z	t1	tickets.team：open_ticket 的 team 省略为默认团队，不存在的名字拒绝并列出团队；规则钉死的团队由内核改回并记一行日志；新列可空，旧任务读成默认团队，不迁移	按决定 4、5、6；规则钉死时填了不存在的名字照样拒绝，不悄悄改回	tests/kernel.test.ts 团队 9 条；红：team 读出来是 undefined，9 条失败；绿：6d2ed22	just test 485 通过
