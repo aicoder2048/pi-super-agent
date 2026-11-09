@@ -30,7 +30,7 @@ async function main(): Promise<void> {
 	const symbol = settings.watchlist[0]!;
 	const from = shiftDate(session.nyDate, -400);
 	const bars = await client.bars(symbol, "day", from, session.nyDate, 5000);
-	console.log(`指标 ${symbol} 日线 ${from}～${session.nyDate}：${bars.length ? JSON.stringify(indicatorReport(bars, "day")) : "没有 K 线"}`);
+	console.log(`指标 ${symbol} 日线 ${from}～${session.nyDate}：${bars.length ? JSON.stringify(indicatorReport(bars, "day", Date.now())) : "没有 K 线"}`);
 
 	const finnhub = readFinnhubKey(process.env, config.secretsFile);
 	if (!finnhub) return console.log("财报：未配置 FINNHUB_API_KEY，跳过");
