@@ -53,3 +53,9 @@ ts	phase	decision	why	evidence	result
 2026-11-09T15:27:27Z	w4-order	W4 先于 W3，叠在 psa/stable-token 上；#23/#24 重新叠到 #22 之上，PR 成一条线	W3 改交互要等使用者看；W4 的 token 失效测试依赖 stable-token；两条叠栈分叉会让 W4 无基可依	重叠后 413/413	decided
 2026-11-09T15:27:27Z	w4-architect	以 runner 1 为底：按卡片内容认领的具名步骤、PSA_E2E_SABOTAGE、leftovers、失败报告页、无凭据+PI_OFFLINE+代理绊线、演示建在 harness 上并拒绝 anthropic/deepseek；取 runner 2 的 page.clock 卡死测试和收尾残留进程判失败	两份可行性都实测通过；runner 1 的匹配方式不受分批和重试影响，runner 2 的时钟快进把 35 秒压到约 2 秒	arena-w4/candidate-1/design.md, candidate-2/design.md	decided
 2026-11-09T15:27:27Z	w4-architect	演示并入 W4，不拆 W5；playwright-core 用 1.59.1 对上本机缓存的 chromium-1217	演示和 e2e 共用 harness 的进程组清理；拆开会先合一份靠 ps 找进程的旧清理	candidate-1 待定问题	decided
+2026-11-09T15:36:56Z	w4-build	收尾残留检查按自己记录的进程组（kill -pgid 0），不用 runner 2 的 pgrep -f 状态目录	安全规则禁止用 pgrep 选进程；Worker 和宿主同组，组探测覆盖全部	tests/e2e/harness.ts stopGroup/groupAlive	decided
+2026-11-09T15:36:56Z	w4-build	「Worker 汇报:crash」失败在「点开看 Worker 过程」而不是「Router 回复」	那一步是第一个需要 Worker 汇报的浏览器步骤；报告里写明 Router 收到「Worker 进程在一轮中途意外退出」	tests/e2e/.out/<story>/summary.txt	accepted
+2026-11-09T15:36:56Z	w4-build	「假模型脚本用完」先等最多 10 秒再断言	页面检查做完时 Worker 可能还没发出请求，首轮在 HTML 用例上报 unused=Worker 无需处理	首轮 just e2e 失败 1/5 用例	fixed
+2026-11-09T15:36:56Z	w4-build	四条页面检查各做一次变异：innerHTML、token 不持久、401 不判失效、陈旧阈值调大，各自让对应用例变红	证明新测试能失败；源文件用 git checkout 恢复	四次 just e2e 各 fail 2（用例+步骤）	verified
+2026-11-09T15:36:56Z	w4-demos	演示保持 .mjs，只把 lib 改成调用 harness 的 startHost/startGroup/stopAllGroups；demo-4 收尾时收养自己 Watchdog 日志里报告拉起的宿主进程组	改 .ts 不带来行为；Watchdog 用 detached 起宿主，宿主不在 Watchdog 的组里	demos/lib.mjs cleanup	decided
+2026-11-09T15:36:56Z	w4-demos	demo-market 的密钥文件路径取 PSA_DEMO_SECRETS_FILE，没设时取 ~/.pi-super-agent/config.json 的 secretsFile；不再写死 stock-heatmap/.env	只经 secretsFile 机制；脚本只读配置拿路径，从不打开密钥文件	demos/demo-5-market.mjs secretsFilePath	decided
