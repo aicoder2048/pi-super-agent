@@ -57,8 +57,19 @@ test("secretsFile 指向不存在的文件、不是字符串，或 sources 不�
 	}
 });
 
-test("久无进展的阈值只有 watchdog.stuckMinutes 一个设置：内核的 stuckMs 由它换算，config 里另写的 kernel.stuckMs 不起作用", () => {
+test("久无进展的阈值只有 watchdog.stuckMinutes 一个设置，内核的 stuckMs 由它换算", () => {
 	assert.equal(loadConfig(stateWith({})).kernel.stuckMs, 30 * 60_000);
-	assert.equal(loadConfig(stateWith({ watchdog: { stuckMinutes: 5 }, kernel: { stuckMs: 1, maxWorkers: 2 } })).kernel.stuckMs, 5 * 60_000);
+	assert.equal(loadConfig(stateWith({ watchdog: { stuckMinutes: 5 }, kernel: { maxWorkers: 2 } })).kernel.stuckMs, 5 * 60_000);
+	assert.equal(loadConfig(stateWith({ watchdog: { stuckMinutes: 0.5 } })).kernel.stuckMs, 30_000);
 	assert.equal(loadConfig(stateWith({ kernel: { maxWorkers: 2 } })).kernel.maxWorkers, 2);
+});
+
+test("watchdog.stuckMinutes 不是 0 到 1440 之间的正数时拒绝启动，报错指出字段", () => {
+	for (const stuckMinutes of [0, -5, null, "abc", "30", 50_000, Number.NaN, 1441]) {
+		assert.throws(() => loadConfig(stateWith({ watchdog: { stuckMinutes } })), (e: Error) => e.name === "ConfigError" && /watchdog\.stuckMinutes/.test(e.message), JSON.stringify(stuckMinutes));
+	}
+});
+
+test("config 里手写 kernel.stuckMs 时拒绝启动，指向 watchdog.stuckMinutes，免得两处设置一处被悄悄覆盖", () => {
+	assert.throws(() => loadConfig(stateWith({ kernel: { stuckMs: 1 } })), (e: Error) => e.name === "ConfigError" && /kernel\.stuckMs/.test(e.message) && /watchdog\.stuckMinutes/.test(e.message));
 });
