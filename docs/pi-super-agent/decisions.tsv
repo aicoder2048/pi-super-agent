@@ -27,3 +27,14 @@ ts	phase	decision	why	evidence	result
 2026-11-09T02:21:44Z	simplify	四个审查员返回；不改行为的去冗余项现在改，上限进内核和模型切换逻辑合并两项留到修复阶段按 TDD 做	前者是纯整理，后者会改行为或与 interrogate M 项重合	simplify 审查员 x4 报告	decided
 2026-11-09T02:24:04Z	simplify	应用不改行为的整理：模型选择器必填、删掉硬编码默认模型和无用字段、心跳读写合并到 src/heartbeat.ts、Watchdog 通知由内核定为 notice、看板行带 lastProgressAt、workerExited 合成一条规则、ModelSelector 去掉计数、createHostOptions 改同步、轮询改 10 秒	去冗余检查的结论	src/heartbeat.ts, src/host/{workers,router,host,wiring}.ts, src/kernel/kernel.ts	144 pass x3
 2026-11-09T02:24:17Z	commit	提交 Stage 5 代码与测试	no-comments 和 simplify 都已完成，144 个测试连续三次通过	commit e57c01f	done
+2026-11-09T02:25:17Z	architect	授权四项（D E F G）先跑 architect：用现有 how.md 打底，ADR 0003 作为约束，不另跑 why	跨内核、Router、Worker、socket 的边界，难以反悔；ADR 0003 已写明现有授权规则的理由	docs/pi-super-agent/how.md, docs/adr/0003	decided
+2026-11-09T02:25:17Z	arena	arena 跑方案的是 opus high 加继承父模型两个，每人交两个结构不同的方案；评审池都是 Claude 族，按规则跳过交叉评审，由协调者按评分标准选底	architect runners 和 arena cross-judge pool 的配置	~/.claude/rules/pstack-models.md	decided
+2026-11-09T02:25:17Z	fanout	修复分三条线：arena 设计、外围五项（C J K L N）交一个代理在 worktree 做、核心五项（A B H M I）由协调者串行做	外围文件与核心基本不重叠；核心都改 kernel.ts，必须串行	interrogate.md	decided
+2026-11-09T02:27:03Z	fix-A	叫停启动中的 Worker：先写宿主层测试，红（no pending action）；完成已取消的动作改为无操作，启动后复查叫停	取消正在执行的动作是合法状态，应在处理它的地方接住，而不是加防护	commit 926a745; tests/host.test.ts 还在启动中	green
+2026-11-09T02:37:14Z	fix-B	Router 通知丢失：三条宿主层测试先红；动作改为一轮成功结束后才完成，重启补触发，普通错误退避重试	首版在 message_end 确认，第一条测试仍红，查到会话文件在首条助手消息前不落盘，改为成功结束后确认	commit ed36ced; tests/router-durability.test.ts	green
+2026-11-09T02:38:04Z	fix-H	Worker 出错或崩溃静默空闲：两条宿主层测试先红；执行器替 Worker 记失败汇报	缺少 Worker 失败这一状态转换	commit f25c4f7	green
+2026-11-09T02:42:02Z	fix-M	回退上限：首版测试直接通过（没复现场景），改为轮中来新输入后红（投递 42 次）；每次唤醒检查上限，受阻改为内核命令，Router 用量计入	修复深度审查员指出按汇报开头比对是在状态机外打补丁	commit 99f8bc5	green
+2026-11-09T02:42:20Z	fix-I	就绪附问题显示已结束：内核测试先红，带问题时不关闭任务	规格阶段表等你回答排第一	commit 7ee248a	green
+2026-11-09T02:43:40Z	merge	审阅外围分支 fix/edge-findings 的 5 个提交后摘到 mvp，无冲突	代理的产出由协调者负责审阅	commits 8f89d00..2fc3a45	done
+2026-11-09T02:43:40Z	fix-C	不同意代理的提交失败即拒收：先改测试为留在目录重试（红），再改实现（绿）；同时补上对话行 id（J 的遗留）	字段已在解析时校验，提交失败多为暂时性错误，拒收会丢事件	commit fdf0483	green
+2026-11-09T02:44:35Z	architect	arena 两位设计员的推荐方案收敛，采用共识形状；以 opus 的方案 A 为底，嫁接候选卡片列适用规则；不拆分 socket、不加触发时效	收敛是强一致信号；拆 socket 与时效不增加保证	docs/pi-super-agent/authority-design.md; worktrees agent-af639e33d8aea57d7, agent-a24c50876a97ecd46	decided
