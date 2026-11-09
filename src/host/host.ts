@@ -12,7 +12,7 @@ import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import { Dispatcher } from "./dispatcher.ts";
 import { HostServer } from "./server.ts";
-import { StartupError } from "./startup-error.ts";
+import { ConfigError } from "../config-error.ts";
 import { WorkerExecutor, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 
 export interface RouterLike {
@@ -51,7 +51,7 @@ const SOCKET_PATH_MAX_BYTES = process.platform === "darwin" ? 103 : 107;
 function assertSocketPathFits(socketPath: string): void {
 	const bytes = Buffer.byteLength(socketPath);
 	if (bytes > SOCKET_PATH_MAX_BYTES) {
-		throw new StartupError(
+		throw new ConfigError(
 			`状态目录路径太长：socket 路径 ${socketPath} 有 ${bytes} 字节，超过本系统上限 ${SOCKET_PATH_MAX_BYTES}。请把 PSA_STATE_DIR 设到更短的路径（默认 ~/.pi-super-agent）。`,
 		);
 	}

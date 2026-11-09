@@ -4,14 +4,14 @@ import { readHeartbeat } from "../heartbeat.ts";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, type HostConfig } from "../host/config.ts";
-import { exitOnStartupError } from "../host/startup-error.ts";
+import { exitOnConfigError } from "../config-error.ts";
 import { Watchdog } from "./watchdog.ts";
 
 let config: HostConfig;
 try {
 	config = loadConfig();
 } catch (error) {
-	exitOnStartupError(error);
+	exitOnConfigError(error);
 }
 const log = (line: string) => console.error(`${new Date().toISOString()} ${line}`);
 const repo = fileURLToPath(new URL("../..", import.meta.url));

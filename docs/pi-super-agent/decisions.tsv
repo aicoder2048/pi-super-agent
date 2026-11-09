@@ -78,3 +78,6 @@ ts	phase	decision	why	evidence	result
 2026-11-09T04:38:06Z	followup	用户能自己修的启动错误改为 StartupError，入口只打印一句；其他错误照常带堆栈	PR #11 验证者指出超长路径报错先打印源码片段和堆栈；两个设计 runner 独立推荐同一方案（类型化错误，入口只捕获它）	tests/host-main.test.ts 在测试提交上 3 个全红、修复后全绿；just host/watchdog 实测；state.db 是目录时仍有完整堆栈	done
 2026-11-09T04:38:06Z	followup	同一修复覆盖 config.json 的 staleSeconds 校验和 watchdog 入口	复现确认同一机制：loadConfig 的错误在 host 与 watchdog 入口都打印堆栈	just host / just watchdog 配置错误实测	done
 2026-11-09T04:38:06Z	followup	其他 9 处可由配置触发的启动错误（模型名、config.json 语法、模块重名等）不在本 PR	使用者要的是小 PR，这些尚未复现；审查建议在 loadConfig、Modules.load、createHostOptions 三处边界统一转成 StartupError	simplify altitude 审查	open
+2026-11-09T04:54:26Z	followup	StartupError 改名 ConfigError 并移到 src/，其余 9 处可由配置触发的错误（另含 module.json 语法错误）改抛 ConfigError	models、modules、timer 不在 src/host 下；两个设计 runner 独立推荐同一方案：在检查处直接抛，try 只包 JSON.parse 与 new RegExp，模型错误用 where 参数带上配置键	tests/host-main.test.ts 在测试提交上 11 红、修复后 14 绿；just host/watchdog 实测；state.db 是目录时仍有完整堆栈	done
+2026-11-09T04:54:26Z	followup	撤掉 host-main 测试表的并发	并发让 host-events.test.ts:22 在 5 次里失败 3 次（main 上 5 次全过，关掉并发 5 次全过）；全量耗时并发 4.8s、串行 4.9s，几乎没有收益，因为测试文件之间本来就并行	5 次对照运行	done
+2026-11-09T04:54:26Z	followup	仍未覆盖：配置里类型写错（模型名不是字符串、sources/timers/ignore 不是数组、kernel 与数值字段未校验）会以 TypeError 带堆栈崩溃；modules.ts 的 classify 每次触发都重新编译 ignore 正则	超出本 PR：需要单独做类型校验；正则重复编译是 PR 之前就有的热路径问题	simplify 的 altitude 与 efficiency 审查	open

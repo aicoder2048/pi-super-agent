@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
+import { ConfigError, readJsonFile } from "./config-error.ts";
 import type { SourcePolicy } from "./kernel/types.ts";
 import type { TimerEntry } from "./sources/timer.ts";
 
@@ -47,9 +48,17 @@ export function parseRules(namespace: string, markdown: string): Rule[] {
 
 function loadModule(dir: string): LoadedModule {
 	const manifestPath = join(dir, "module.json");
-	const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as ModuleManifest;
-	if (!manifest.name || manifest.name !== basename(dir)) throw new Error(`${manifestPath}：name 必须等于目录名 ${basename(dir)}`);
-	for (const s of manifest.sources ?? []) for (const pattern of s.ignore ?? []) new RegExp(pattern);
+	const manifest = readJsonFile<ModuleManifest>(manifestPath);
+	if (!manifest.name || manifest.name !== basename(dir)) throw new ConfigError(`${manifestPath}：name 必须等于目录名 ${basename(dir)}`);
+	for (const s of manifest.sources ?? []) {
+		for (const pattern of s.ignore ?? []) {
+			try {
+				new RegExp(pattern);
+			} catch (error) {
+				throw new ConfigError(`${manifestPath}：sources 里 ${s.name} 的 ignore「${pattern}」不是合法的正则：${(error as Error).message}`);
+			}
+		}
+	}
 	const rulesPath = join(dir, "rules.md");
 	const skillsDir = join(dir, "skills");
 	const moduleSources = [manifest.name, ...(manifest.sources ?? []).map((s) => s.name), ...(manifest.timers ?? []).map((t) => t.source ?? manifest.name)];
@@ -85,7 +94,7 @@ export class Modules {
 		}
 		const names = modules.map((m) => m.name);
 		const dup = names.find((n, i) => names.indexOf(n) !== i);
-		if (dup) throw new Error(`模块重名：${dup}`);
+		if (dup) throw new ConfigError(`模块重名：${dup}`);
 		const userRules = userRulesFile && existsSync(userRulesFile) ? parseRules("user", readFileSync(userRulesFile, "utf8")) : [];
 		return new Modules(modules, userRules);
 	}
