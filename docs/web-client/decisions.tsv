@@ -49,3 +49,7 @@ ts	phase	decision	why	evidence	result
 2026-11-09T12:04:12Z	f1-verdict	不修：卡片按钮早于幕僚长转述约一秒，先点会让回答排在问题前；U+3164 等少数不可见字母仍可作选项	回答送达正确，卡片才是问题的权威来源；剩余字符罕见且不影响授权	复验报告	decided
 2026-11-09T14:56:38Z	m1-live	真实开盘实测：这把 Key 的行情晚约 16 分钟（接口仍回 OK），报价按「比现在晚 10 分钟以上」也标延迟行情	此前以为是实时行情；实测 27 次快照报价都晚 16 分钟，提醒里却没写「延迟行情」，使用者会误以为是即时价	scratchpad/live-w1/demos/out/demo-5-market/market-tap.jsonl; tests/market-client.test.ts 红→绿	fixed
 2026-11-09T14:57:55Z	m1-live-verdict	延迟标记复审 PASS；按建议补 9/11 分钟边界样例和 lookup 说明；收盘宽限只剩约 4 分钟余量，记为已知风险不改	复审确认其他逻辑不依赖实时行情	复审报告；402/402	PASS
+2026-11-09T18:45:47Z	m2	指标在纯函数模块里按表计算；EMA 用前 n 根 SMA 作种子，RSI/ATR 用 Wilder 平滑，Bollinger 用总体标准差，52 周 = 最近 252 根日线	使用者要求数字由程序算；这些是最常见的口径，便于和行情软件对照	tests/market-indicators.test.ts 12 个手算样例	decided
+2026-11-09T18:45:47Z	m2	indicators 默认窗口：day 400 天、hour 30 天、minute 4 天；取 K 线上限 5000 根	day 要够 SMA200 和 252 根；一个分钟交易日含盘前盘后最多 960 根，500 根会截掉 VWAP 需要的开盘段	真实 NVDA 日线 276 根，sma200 和 week52 都有值	decided
+2026-11-09T18:45:47Z	m2	earnings 用 Finnhub 两个接口：calendar/earnings 给下次日期和营收，stock/earnings 给最近 4 季 EPS；超预期百分比程序自算	免费档 stock/earnings 有 EPS 历史；自算口径和 stock-heatmap 一致	实测：日历只回未来两条（2026-11-17、2027-02-23），stock/earnings 回 4 季，营收历史不可得	decided
+2026-11-09T18:45:47Z	m2	market-smoke 给两个客户端传不 unref 的 sleep	首次实测：12 秒限速间隔里 unref 的定时器让 CLI 静默退出（exit 0，没有指标行）	scratchpad/market-data-live.txt 第二次运行三行齐全	fixed
