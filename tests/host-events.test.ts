@@ -24,6 +24,7 @@ test("投递目录里的文件进入系统，命中规则时 Router 开出依据
 	t.after(() => host.stop());
 	const inbox = join((host as any).socketPath, "..", "inbox");
 	dropTrigger(inbox, { source: "toy-market", thread: "TOYX", body: "TOYX 价格 94.8，涨跌 -5.2%，成交量 12 股" });
+	host.generic.scan();
 	await until(() => host.kernel.listTickets().length === 1, "开出任务");
 	assert.equal(host.kernel.listTickets()[0].basis, "rule");
 });
