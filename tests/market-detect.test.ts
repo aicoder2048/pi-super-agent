@@ -71,3 +71,8 @@ test("触发：按代码按天的线程、稳定的外部 id、正文写明幅�
 	);
 	assert.equal(trigger.body, "NVDA 涨 +5.31%，到达 +5% 档。现价 142.85，昨收 135.65。报价时间 10:42 ET（延迟行情）。");
 });
+
+test("正好到档：609 对 600 是 +1.5%，算到 1.5% 档；不被浮点误差漏掉", () => {
+	const exact = (symbol: string, price: number, prevClose: number) => quote(symbol, (price / prevClose - 1) * 100, { price, prevClose });
+	assert.deepEqual(run(undefined, [exact("SPY", 609, 600), exact("NVDA", 103, 100), exact("AAPL", 95, 100)]).ids, ["SPY:2026-11-09:up1.5", "NVDA:2026-11-09:up3", "AAPL:2026-11-09:down5"]);
+});

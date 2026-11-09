@@ -40,6 +40,8 @@ export interface Move {
 }
 
 const REGULAR_MINUTES = 390;
+// Prices are cents, so a real move of exactly a band can compute a hair below it (609 / 600 → 1.4999…%).
+const BAND_EPSILON = 1e-9;
 // Opening and closing auctions print huge single minutes that are not news.
 const AUCTION_MS = 10 * MINUTE;
 
@@ -56,7 +58,7 @@ export function detect(cursor: MarketCursor | undefined, quotes: Quote[], sessio
 		const highest = quote.changePct >= 0 ? "highestUpBand" : "highestDownBand";
 		const bands = settings.bands.bySymbol[quote.symbol] ?? settings.bands.default;
 		const dir = quote.changePct >= 0 ? "up" : "down";
-		const reached = Math.max(0, ...bands.filter((b) => Math.abs(quote.changePct) >= b));
+		const reached = Math.max(0, ...bands.filter((b) => Math.abs(quote.changePct) >= b - BAND_EPSILON));
 		if (reached > was[highest]) {
 			next[highest] = reached;
 			moves.push({ nyDate: session.nyDate, quote, signal: { kind: "band", dir, pct: reached } });
