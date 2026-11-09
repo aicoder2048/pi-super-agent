@@ -32,10 +32,17 @@ run := "node --import ./src/pi-runtime.mjs"
 
 # 启动宿主（前台运行，日志写到 stderr）。日志里的「网页」网址在浏览器里打开就能看对话和看板。
 host:
+    #!/usr/bin/env bash
+    # 有终端时开 job control，宿主自成终端的前台进程组：Ctrl+C 只发给它，just 不再报 interrupted by SIGINT。
+    # 没有终端时开它会让 bash 被信号杀掉、留下孤儿宿主，所以只在有终端时开。
+    if [ -t 0 ]; then set -m; fi
     {{run}} src/host/main.ts
 
 # 启动 Watchdog：宿主没有心跳时把它拉起，任务卡住或动作连续失败时经 Router 通知你。
 watchdog:
+    #!/usr/bin/env bash
+    # 同 host：有终端时 Ctrl+C 只发给 Watchdog。
+    if [ -t 0 ]; then set -m; fi
     {{run}} src/watchdog/main.ts
 
 # 打开 TUI 客户端（Pi TUI 只当界面，输入转发给宿主）。连接时读状态目录里的 client-token。
