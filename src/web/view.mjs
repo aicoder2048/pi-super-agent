@@ -9,7 +9,7 @@
 /** @typedef {import("../client/protocol.ts").TranscriptMessage} TranscriptMessage */
 /** @typedef {import("../client/protocol.ts").WatchedSource} WatchedSource */
 
-import { INPUT_LABEL, blocks, clip, formatElapsed, formatTokens, isLive, modelText, shortId, textOf } from "../client/board-format.mjs";
+import { INPUT_LABEL, blocks, clip, formatElapsed, formatTokens, isLive, modelText, shortId, stallMinutes, textOf } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -126,7 +126,7 @@ function card(row, now, sending) {
 		id: row.id,
 		title: row.title,
 		why: BASIS_PHRASE[row.basis],
-		stage: row.stall ? `久无进展 · ${Math.floor((now - row.stall.since) / 60_000)} 分钟` : STAGE_PHRASE[row.stage],
+		stage: row.stall ? `久无进展 · ${stallMinutes(row.stall.since, now)} 分钟` : STAGE_PHRASE[row.stage],
 		latest: row.question?.text ?? row.latestSummary ?? "已开始，暂无进展",
 		canStop: GROUP[row.stage] === "doing",
 		choice: choiceOf(row, sending),

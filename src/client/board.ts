@@ -1,6 +1,6 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { DashboardRow } from "../kernel/types.ts";
-import { BASIS_LABEL, STAGE_LABEL, formatElapsed, formatTokens, isLive, modelText, selectRows, shortId } from "./board-format.mjs";
+import { BASIS_LABEL, STAGE_LABEL, formatElapsed, formatTokens, isLive, modelText, selectRows, shortId, stallMinutes } from "./board-format.mjs";
 
 export { shortId };
 
@@ -31,7 +31,7 @@ export function renderBoard(view: BoardView, width: number, now: number): string
 	const lines = [fit(`── Super Agent · ${active} 个任务进行中 · ${status} ──`, width)];
 	for (const row of shown) {
 		const elapsed = row.elapsedMs + (isLive(row) ? now - view.receivedAt : 0);
-		const stage = row.stall ? `久无进展 ${Math.floor((now - row.stall.since) / 60_000)} 分钟` : STAGE_LABEL[row.stage];
+		const stage = row.stall ? `久无进展 ${stallMinutes(row.stall.since, now)} 分钟` : STAGE_LABEL[row.stage];
 		lines.push(spread(`${shortId(row.id)} ${row.title}`, `${stage} · ${BASIS_LABEL[row.basis]}`, width));
 		const q = row.question;
 		if (q) {
