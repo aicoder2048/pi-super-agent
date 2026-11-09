@@ -275,3 +275,4 @@ ts	phase	decision	why	evidence	result
 2026-11-09T18:15:57Z	x1-review	恢复的任务找不到原 Pi 会话时，宿主日志写一行说明上下文丢了；新会话仍不显示；没加 kernel 记录	Spawner 用 ticket.startedAt 判断是否恢复；写 kernel 记录要新增汇报类型，不便宜	tests/host-main.test.ts 先红后绿	fixed
 2026-11-09T18:15:57Z	x1-review	补测 800ms 组 SIGKILL 和 Pi 退出后组 SIGKILL	删掉任一条，对应测试就失败	tests/pi-worker-launcher.test.ts 变异检查	PASS
 2026-11-09T18:15:57Z	x1-review	测试 495 到 499；一次全量跑时 web.test.ts 的 409 用例失败，单独跑 3 次、全量重跑 2 次都通过	失败的是本次没改的网页代码，判为不稳定测试	just test	PASS
+2026-11-09T18:20:59Z	x1-verdict	复审第二轮：修好「新 Worker 也报会话丢失」（claimSlot 先写了 startedAt），其余 4 项 PASS；web.test.ts:906 的 409 偶发失败与本分支无关，记为后续	复审用真实 Host + FakeSpawner 复现 resume 恒为 true	tests/recovery.test.ts 先红后绿；全量 499/499	PASS

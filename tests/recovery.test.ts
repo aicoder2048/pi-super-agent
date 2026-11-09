@@ -33,13 +33,16 @@ test("重启恢复：执行中的任务带恢复说明重新拉起，空闲、�
 	const stageOf = (h: Host, title: string) => h.kernel.listTickets().find((r) => r.title === title)?.stage;
 	await until(() => stageOf(first.host, "执行中") === "running" && stageOf(first.host, "空闲") === "idle"
 		&& stageOf(first.host, "等回答") === "awaiting_answer" && stageOf(first.host, "受阻") === "blocked_or_failed", "四种状态就位");
+	const firstResume = [...first.spawner.workers.values()].map((w) => w.spec.resume);
 	await first.host.stop();
+	assert.deepEqual(firstResume, [false, false, false, false], "新任务第一次拉起不算恢复会话");
 
 	const second = await start(stateDir, (w) => { w.report({ status: "ready", summary: "恢复后完成" }); w.settle(); });
 	t.after(() => second.host.stop());
 	const runningId = second.host.kernel.listTickets().find((r) => r.title === "执行中")!.id;
 	await until(() => second.spawner.workers.get(runningId)?.inputs.length === 1, "执行中的任务被重新拉起");
 	assert.match(second.spawner.workers.get(runningId)!.inputs[0], /恢复说明/);
+	assert.equal(second.spawner.workers.get(runningId)!.spec.resume, true, "重启后拉起已经起过的任务算恢复会话");
 	await second.host.settled();
 	assert.deepEqual(second.spawner.spawned, [runningId]);
 	assert.equal(stageOf(second.host, "空闲"), "idle");
