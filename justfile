@@ -13,3 +13,23 @@ now:
 # 需要 Node.js 22.18+ 或 24+，以及已安装的 Pi（本地或全局依赖）。
 test-now:
     node --test tests/now.test.mjs
+
+# ---- Pi Super Agent ----
+# 状态目录默认 ~/.pi-super-agent，可用 PSA_STATE_DIR 覆盖。
+run := "node --import ./src/pi-runtime.mjs"
+
+# 启动宿主（前台运行，日志写到 stderr）。
+host:
+    {{run}} src/host/main.ts
+
+# 对 Super Agent 说一句话，打印之后两分钟内的回复。
+say +text:
+    {{run}} src/cli/say.ts say {{text}}
+
+# 持续显示对话。
+tail:
+    {{run}} src/cli/say.ts tail
+
+# 内核、宿主组装点和其余全部自动测试。
+test:
+    {{run}} --test --test-timeout=30000 tests/*.test.ts tests/*.test.mjs
