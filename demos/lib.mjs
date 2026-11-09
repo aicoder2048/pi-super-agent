@@ -174,7 +174,7 @@ export class Demo {
 
 	async caption(title, bot, agent) {
 		this.captionState = [title, bot, agent];
-		this.log(`== ${title} | 普通聊天机器人：${bot} | Pi Super Agent：${agent}`);
+		this.log(`== ${title} | 普通聊天机器人：${bot} | 白宫：${agent}`);
 		if (this.page) await this.#paint(title, bot, agent).catch(() => {});
 	}
 
@@ -191,7 +191,7 @@ export class Demo {
 			box.replaceChildren(
 				line(t, "font-weight:700;font-size:17px;margin-bottom:4px;text-align:center"),
 				line(`普通聊天机器人：${b}`, "opacity:.7"),
-				line(`Pi Super Agent：${a}`, "color:#7dd3fc;font-weight:600"),
+				line(`白宫：${a}`, "color:#7dd3fc;font-weight:600"),
 			);
 		}, [title, bot, agent]);
 	}

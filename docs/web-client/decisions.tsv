@@ -257,3 +257,5 @@ ts	phase	decision	why	evidence	result
 2026-11-09T20:28:08Z	brand	你的头像圆底用 .mark-bg，不写死 #1F2A44	和幕僚长头像、页头标志同一机制，深色主题下底色变亮（#34456f）加描边，不会糊进 #15161a 的背景	src/web/index.html user-avatar 模板；截图 brand-review-dark.png	fixed
 2026-11-09T20:28:08Z	brand	你的头像只断言存在、在气泡右侧、aria-hidden、读屏前缀仍是「你：」，加在 helpers.e2e.ts 的长对话用例里	头像是浏览器里看得见的行为，单元测试不跑 DOM；放进长对话用例，同一页面上紧接着做整页不滚动检查	helpers.e2e.ts 先红（fed6bd5）后绿	fixed
 2026-11-09T20:29:49Z	brand	手机宽度下 main 加 flex: none，不再被压到 70vh	审 390 宽截图发现长对话盖住下面的执行过程：窄屏时 .columns 是纵向 flex，main 的 min-height 70vh 取代了 auto 下限，被压缩后内容溢出到 #how 上；推断早于本分支（本分支没改这段布局），未在 trunk 上复现	helpers.e2e.ts 新步骤：输入框底边 2716 > 执行过程顶边 1414 红，修正后绿	fixed
+2026-11-09T20:30:15Z	brand	演示字幕的对照行改为「白宫：…」；justfile 不改	字幕会出现在录屏里给人看；justfile 里的 Pi Super Agent 只在分节注释里，just --list 不显示，属于开发者文字	demos/lib.mjs 两处；grep justfile 只有 '# ---- Pi Super Agent ----' 一行	fixed
+2026-11-09T20:30:15Z	brand	GLOSSARY、how.md、demos/README 只改标题和加一句产品名说明，正文里的 Super Agent 架构术语不动	Super Agent 在词汇表里是架构概念（连续 Agent），不是界面上的产品名；how.md 是审计快照，只加前言说明	git diff GLOSSARY.md docs/pi-super-agent/how.md demos/README.md	fixed

@@ -1,4 +1,6 @@
-# Pi Super Agent MVP 端到端架构说明
+# 白宫（Pi Super Agent）MVP 端到端架构说明
+
+> 产品面向使用者的名字是「白宫」，「Pi Super Agent」是副标题，见 `docs/web-client/copy.md`。本文讲架构，沿用 Pi Super Agent 和代码里的名字。
 
 > 本文是审计开始时（快照 `2f8752f`）的独立解读，正文描述的是当时的代码。之后的修复改变了其中几处：依据核验与规则适用来源（`ruleAllows`、`rulesFor`）、推断 Worker 的只读工具档位（替代正则黑名单）、回复必须注明 `cause`、通知在 Router 处理完之前保持挂起、状态目录迁移。见 `interrogate.md`、`authority-design.md` 和 `decisions.tsv`。
 

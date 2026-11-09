@@ -1,6 +1,6 @@
-# Pi Super Agent 演示脚本
+# 白宫（Pi Super Agent）演示脚本
 
-五个脚本，每个都打开一个看得见的浏览器，连真实宿主（openai-codex 模型），录屏到 `demos/out/<名字>/`（已在 .gitignore 里）。画面底部的字幕每幕两行：一行说普通聊天机器人会怎样，一行说 Pi Super Agent 实际做了什么。页面用语按 `docs/web-client/copy.md`（幕僚长、进行中、关注的来源、停止）。每幕结束后脚本读宿主的状态库和触发日志（`src/cli/log.ts`），给出 PASS、FAIL 或 SKIP 和看到的证据，汇总写在 `demos/out/<名字>/summary.txt`。SKIP 只用于脚本管不了的条件（行情没到档、依赖的前一幕没成）；超时、断言不成立、脚本抛错都记 FAIL，有 FAIL 时脚本以非零退出码结束。
+五个脚本，每个都打开一个看得见的浏览器，连真实宿主（openai-codex 模型），录屏到 `demos/out/<名字>/`（已在 .gitignore 里）。画面底部的字幕每幕两行：一行说普通聊天机器人会怎样，一行说白宫实际做了什么。页面用语按 `docs/web-client/copy.md`（白宫、幕僚长、进行中、关注的来源、停止）。每幕结束后脚本读宿主的状态库和触发日志（`src/cli/log.ts`），给出 PASS、FAIL 或 SKIP 和看到的证据，汇总写在 `demos/out/<名字>/summary.txt`。SKIP 只用于脚本管不了的条件（行情没到档、依赖的前一幕没成）；超时、断言不成立、脚本抛错都记 FAIL，有 FAIL 时脚本以非零退出码结束。
 
 | 脚本 | 基本特征 | 模块 | 画面上发生什么 |
 |---|---|---|---|
