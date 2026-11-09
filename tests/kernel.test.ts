@@ -12,6 +12,8 @@ import type { Basis, KernelConfig, TriggerSubmission } from "../src/kernel/types
 
 const HOUR = 3_600_000;
 
+const ROLES = new Map([["general", "通用助手"], ["deputy", "副幕僚长"], ["news", "新闻研究员"], ["market-analyst", "行情分析师"]]);
+
 function setup({ config, path = ":memory:", at = "2026-11-08T10:00:00" }: { config?: Partial<KernelConfig>; path?: string; at?: string } = {}) {
 	const clock = { t: new Date(at).getTime(), now() { return this.t; } };
 	const db = openStore(path);
@@ -20,6 +22,8 @@ function setup({ config, path = ":memory:", at = "2026-11-08T10:00:00" }: { conf
 		clock,
 		sourcePolicy: (t) => (t.source === "noise" ? "ignore" : "candidate"),
 		isMarketSource: (source) => source === "toy-market",
+		roles: ROLES,
+		ruleRole: (ruleId) => (ruleId === "toy-market/big-move" ? "market-analyst" : undefined),
 		config,
 	});
 	let n = 0;
@@ -1256,4 +1260,71 @@ test("今日助手：纽约今天建的任务数和它们的 token 合计；昨�
 	s.kernel.recordUsage(yesterday, { provider: "p", tokensIn: 7, tokensOut: 0 });
 	assert.deepEqual(s.kernel.helpersToday(), { count: 2, tokens: 1200 });
 	assert.ok(b);
+});
+
+const roleOf = (kernel: Kernel, id: string) => kernel.getTicket(id)!.role;
+
+test("open_ticket 的 role 省略为通用助手；写了名册里的角色就用它，重启不变", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const s = setup({ path });
+	const plain = s.open("request");
+	const [picked] = s.kernel.route([{ kind: "open_ticket", title: "黄仁勋听证会", basis: "request", role: "news", triggerId: s.say("看下黄仁勋听证会的新闻").triggerId, brief: "查新闻" }]);
+	assert.ok(picked.ok);
+	assert.deepEqual([roleOf(s.kernel, plain), roleOf(s.kernel, picked.ticketId!)], ["general", "news"]);
+	s.db.close();
+	const again = setup({ path });
+	assert.equal(roleOf(again.kernel, picked.ticketId!), "news");
+});
+
+test("名册里没有的角色：拒绝这个决定，说明有哪些角色，触发还能再用", () => {
+	const s = setup();
+	const { triggerId } = s.say("查点东西");
+	const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", role: "astrologer", triggerId, brief: "b" }]);
+	assert.equal(result.ok, false);
+	assert.match(!result.ok ? result.reason : "", /astrologer.*general/);
+	const [retry] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", triggerId, brief: "b" }]);
+	assert.ok(retry.ok);
+});
+
+test("规则指定了角色：按这条规则开任务必须用它，省略或换别的都拒绝", () => {
+	const s = setup();
+	const fire = () => s.trigger({ source: "toy-market", threads: [{ id: `thr_toy-market:TOYX-${s.clock.t++}` }], body: "TOYX -5.2%" }).triggerId;
+	const open = (role?: string) => s.kernel.route([{ kind: "open_ticket", title: "t", basis: "rule", ruleId: "toy-market/big-move", role, triggerId: fire(), brief: "b" }])[0];
+	for (const role of [undefined, "news"]) {
+		const r = open(role);
+		assert.equal(r.ok, false, String(role));
+		assert.match(!r.ok ? r.reason : "", /market-analyst/);
+	}
+	const ok = open("market-analyst");
+	assert.ok(ok.ok);
+	assert.equal(roleOf(s.kernel, ok.ticketId!), "market-analyst");
+});
+
+test("显示名：通用助手按来源起名；其他角色写职称，#N 按职称在纽约同一天里数", () => {
+	const s = setup();
+	const as = (role: string) => {
+		const [r] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", role, triggerId: s.say("x").triggerId, brief: "b" }]);
+		assert.ok(r.ok);
+		return helperOf(s.kernel, r.ticketId!)!;
+	};
+	const general = as("general");
+	assert.equal(general.title, undefined);
+	assert.equal(general.role, "conversation");
+	const [n1, g2, n2, d1] = [as("news"), as("general"), as("news"), as("deputy")];
+	assert.deepEqual([n1, n2, d1].map((h) => `${h.title} #${h.seq}`), ["新闻研究员 #1", "新闻研究员 #2", "副幕僚长 #1"]);
+	assert.equal(g2.seq, 2, "别的角色不占通用助手的序号");
+	const [watched] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "inference", role: "news", triggerId: s.trigger().triggerId, brief: "b" }]);
+	assert.ok(watched.ok);
+	assert.equal(helperOf(s.kernel, watched.ticketId!)!.seq, 3, "同一角色不论来源一起数");
+});
+
+test("旧状态库没有角色列：打开时补上，旧任务都是通用助手", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const id = first.open("request");
+	first.db.exec("ALTER TABLE tickets DROP COLUMN role");
+	first.db.close();
+	const again = setup({ path });
+	assert.equal(roleOf(again.kernel, id), "general");
+	assert.equal(helperOf(again.kernel, id)!.title, undefined);
 });

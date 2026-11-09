@@ -11,6 +11,7 @@ import {
 	CONVERSATION_SOURCE,
 	CONVERSATION_THREAD_ID,
 	DEFAULT_CONFIG,
+	GENERAL_ROLE,
 	RETRY_BACKOFF_MS,
 	SYSTEM_PROBLEM_STREAK,
 } from "./types.ts";
@@ -127,6 +128,10 @@ export interface KernelOptions {
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	/** A rule ticket from such a source gets a market helper. */
 	isMarketSource?: (source: string) => boolean;
+	/** The roster as role name → title; a ticket may only get one of these roles. */
+	roles?: ReadonlyMap<string, string>;
+	/** The role a rule pins with a 「角色：」 line, if any. */
+	ruleRole?: (ruleId: string) => string | undefined;
 	config?: Partial<KernelConfig>;
 }
 
@@ -136,11 +141,15 @@ export class Kernel {
 	readonly #sourcePolicy: SourcePolicy;
 	readonly #ruleAllows: (ruleId: string, triggerSource: string) => boolean;
 	readonly #isMarketSource: (source: string) => boolean;
+	readonly #roles: ReadonlyMap<string, string>;
+	readonly #ruleRole: (ruleId: string) => string | undefined;
 	readonly config: KernelConfig;
 
-	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, config }: KernelOptions) {
+	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, roles, ruleRole = () => undefined, config }: KernelOptions) {
 		this.#ruleAllows = ruleAllows;
 		this.#isMarketSource = isMarketSource;
+		this.#roles = roles ?? new Map([[GENERAL_ROLE, GENERAL_ROLE]]);
+		this.#ruleRole = ruleRole;
 		this.#db = db;
 		this.#clock = clock;
 		this.#sourcePolicy = sourcePolicy;
@@ -617,24 +626,32 @@ export class Kernel {
 				 WHERE t.helper_name IS NULL ORDER BY t.created_at, t.rowid`,
 			);
 			for (const r of unnamed) {
-				const h = this.#newHelper(r.basis, r.source, r.created_at);
+				const h = this.#newHelper(r.basis, r.source, r.created_at, GENERAL_ROLE);
 				this.#run("UPDATE tickets SET helper_name = ?, helper_role = ?, helper_seq = ? WHERE id = ?", h.name, h.role, h.seq, r.id);
 			}
 		});
 	}
 
-	#newHelper(basis: Basis, originSource: string | null, createdAt: number): Helper {
+	// A general helper counts within its origin role; any other role counts within itself.
+	#newHelper(basis: Basis, originSource: string | null, createdAt: number, ticketRole: string): Helper {
 		const role = helperRole(basis, originSource, this.#isMarketSource);
 		const day = newYorkDate(createdAt);
 		const sameRole = this.#all(
-			"SELECT created_at FROM tickets WHERE helper_role = ? AND created_at > ? AND created_at <= ?",
-			role,
+			`SELECT created_at FROM tickets WHERE created_at > ? AND created_at <= ? AND role = ?
+			 ${ticketRole === GENERAL_ROLE ? "AND helper_role = ?" : ""}`,
 			createdAt - 2 * DAY_MS,
 			createdAt,
+			ticketRole,
+			...(ticketRole === GENERAL_ROLE ? [role] : []),
 		).filter((r) => newYorkDate(r.created_at) === day).length;
 		const ordinal = this.#get("SELECT COUNT(*) AS n FROM tickets WHERE helper_name IS NOT NULL").n as number;
 		const onDuty = new Set(this.#column("SELECT helper_name AS v FROM tickets WHERE helper_name IS NOT NULL AND closed_at IS NULL AND stopped_at IS NULL"));
 		return { name: helperName(ordinal, onDuty), role, seq: sameRole + 1 };
+	}
+
+	#helper(r: Row): Helper {
+		const helper: Helper = { name: r.helper_name, role: r.helper_role, seq: r.helper_seq };
+		return r.role === GENERAL_ROLE ? helper : { ...helper, title: this.#roles.get(r.role) ?? r.role };
 	}
 
 	#stall(t: Ticket, now: number): Stall | null {
@@ -897,20 +914,25 @@ export class Kernel {
 				return reject(`unknown thread ${threadId}; new threads must look like thr_<source>:<thread>`);
 			}
 		}
+		const role = d.role ?? GENERAL_ROLE;
+		if (!this.#roles.has(role)) return reject(`unknown role ${role}; the roster has ${[...this.#roles.keys()].join(", ")}`);
+		const pinned = d.basis === "rule" ? this.#ruleRole(d.ruleId!) : undefined;
+		if (pinned && pinned !== role) return reject(`rule ${d.ruleId} pins role ${pinned}; open the ticket with role ${pinned}`);
 		if (d.basis === "inference") {
 			const limitProblem = this.#inferenceDailyLimitProblem();
 			if (limitProblem) return reject(limitProblem);
 		}
 
 		const ticketId = this.#id("tkt");
-		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now());
+		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now(), role);
 		this.#run(
-			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
+			`INSERT INTO tickets (id, title, basis, rule_id, role, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
 			ticketId,
 			d.title,
 			d.basis,
 			d.ruleId ?? null,
+			role,
 			d.triggerId ?? null,
 			this.#now(),
 			randomUUID(),
@@ -1074,6 +1096,7 @@ export class Kernel {
 			title: r.title,
 			basis: r.basis as Basis,
 			ruleId: r.rule_id,
+			role: r.role,
 			originTriggerId: r.origin_trigger_id,
 			createdAt: r.created_at,
 			workerSessionId: r.worker_session_id,
@@ -1088,7 +1111,7 @@ export class Kernel {
 			toolCalls: r.tool_calls,
 			tokensIn: r.tokens_in,
 			tokensOut: r.tokens_out,
-			helper: r.helper_name === null ? null : { name: r.helper_name, role: r.helper_role, seq: r.helper_seq },
+			helper: r.helper_name === null ? null : this.#helper(r),
 			stage,
 			latestReport: latest ? toReport(latest) : null,
 		};

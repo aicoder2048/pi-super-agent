@@ -13,6 +13,8 @@ export interface Helper {
 	name: string;
 	role: HelperRole;
 	seq: number;
+	/** The title of the ticket's role; absent for a general helper, which is shown by its origin role. With it, seq counts that role. */
+	title?: string;
 }
 
 /** The role a ticket gets when the Router names none: the helper of W5 and before. */
@@ -116,6 +118,8 @@ export type Decision =
 			title: string;
 			basis: Basis;
 			ruleId?: string;
+			/** A roster role name; general when absent. */
+			role?: string;
 			triggerId?: string;
 			threads?: string[];
 			brief: string;
@@ -180,6 +184,7 @@ export interface Ticket {
 	title: string;
 	basis: Basis;
 	ruleId: string | null;
+	role: string;
 	originTriggerId: string | null;
 	createdAt: number;
 	workerSessionId: string;
