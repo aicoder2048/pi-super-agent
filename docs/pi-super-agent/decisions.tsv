@@ -73,3 +73,5 @@ ts	phase	decision	why	evidence	result
 2026-11-09T03:47:05Z	ship	合并后在 main 上全量 198 个测试通过；保留远端 psa/* 与 mvp 分支，因为 squash 后原始 35 个提交只在这些分支上，决策记录引用了它们的 SHA	不让记录里的证据指针失效	origin/psa/*, origin/mvp	done
 2026-11-09T03:47:05Z	followup	验证者提出的后续项：状态目录路径过长时 socket 超出 macOS 104 字节上限导致宿主启动失败（应在启动时给出清楚的报错）；默认回退模型 DeepSeek 为按量计费，按规格保留并设每日上限	合并期间不改分支，留作后续	PR #6 #10 验证评论	open
 2026-11-09T04:24:55Z	handoff	上下文超过 90%，按使用者要求暂停并写交接文档；psa/ship-log 上的两项后续修复已提交，未推送	避免压缩丢失细节，新会话从交接文档接手	docs/pi-super-agent/handoff.md; commit 917f031	paused
+2026-11-09T04:27:26Z	followup	socket 路径检查挪到 Host 构造函数第一行	真实入口发现：检查前 relocateState 已写 location.json，状态目录换到超长路径时失败的启动会改写会话记录	just host 留下 location.json；新测试先红（location.json 被改写）后绿；全量 200 个通过，just host 失败后状态目录无文件	done
+2026-11-09T04:27:26Z	followup	跟进完成，开 PR，不合并	使用者只要求开 PR	no-comments 与 simplify（代替未安装的 deslop）已跑	done
