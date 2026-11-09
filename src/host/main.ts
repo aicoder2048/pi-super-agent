@@ -12,6 +12,7 @@ async function main(): Promise<void> {
 	const log = (line: string) => console.error(`${new Date().toISOString()} ${line}`);
 	const modules = Modules.load(config.modulesDirs, join(config.stateDir, "rules.md"));
 	log(`[host] 模块：${modules.modules.map((m) => m.name).join(", ") || "无"}；规则 ${modules.allRules().length} 条`);
+	for (const id of modules.skippedUserRules) log(`[host] 规则 ${id} 没写「来源:」，不生效`);
 
 	const host = await Host.start(createHostOptions({ config, modules, modelRuntime: await ModelRuntime.create(), log }));
 	log(`[host] 已启动，状态目录 ${config.stateDir}，Router ${formatModelRef(config.models.router)}，Worker ${formatModelRef(config.models.worker)}，回退 ${formatModelRef(config.models.fallback)}`);
