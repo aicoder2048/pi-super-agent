@@ -32,6 +32,17 @@ test("两个助手同时在岗：页头两枚小卡，点小卡打开执行过�
 				await page.locator("#left .card", { hasText: LONG.title }).first().click();
 				await page.locator("#steps .step", { hasText: `第 ${PROGRESS_STEPS} 条已整理` }).waitFor();
 			});
+			await step("你的每条消息右侧都有你的头像", async (page) => {
+				const lines = await page.locator(".line.user").evaluateAll((nodes) =>
+					nodes.map((n) => {
+						const avatar = n.querySelector(":scope > .avatar.you");
+						const bubble = n.querySelector(".bubble")!.getBoundingClientRect();
+						return { avatar: !!avatar, right: avatar ? avatar.getBoundingClientRect().left >= bubble.right : false, hidden: avatar?.getAttribute("aria-hidden"), sr: n.querySelector(".bubble > .sr")?.textContent };
+					}),
+				);
+				assert.equal(lines.length, 2);
+				for (const line of lines) assert.deepEqual(line, { avatar: true, right: true, hidden: "true", sr: "你：" });
+			});
 			await step("对话和执行过程很长时整页不滚动，三栏占满窗口", async (page) => {
 				const size = await page.evaluate(() => ({ scroll: document.scrollingElement!.scrollHeight, inner: innerHeight }));
 				assert.equal(size.scroll, size.inner, `整页高 ${size.scroll}，窗口高 ${size.inner}`);
