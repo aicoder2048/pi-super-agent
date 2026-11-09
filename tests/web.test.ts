@@ -394,6 +394,16 @@ test("页面：看板推送带来新的去向，处理中的那句改写成已�
 	assert.equal(page.routeLine(view, "trg_2")?.text, "已交给 青檀 · 对话助手 #1（NVDA 新闻）");
 });
 
+test("页面：团队任务的小卡、任务卡片和去向都写四字名和团队名，团队名在角色的位置上，序号是这个团队当天的第几个", () => {
+	const view = page.emptyView();
+	const watch = row({ id: "tkt_team", title: "NVDA 听证会", helper: { name: "高山流水", team: "看盘队", seq: 2 } });
+	page.applyMessage(view, snapshot({ board: [watch, row({ id: "tkt_solo" })], routes: { trg_open: { kind: "opened_ticket", ticketId: "tkt_team" }, trg_hand: { kind: "handed_over", ticketId: "tkt_team" } } }), 0);
+	assert.deepEqual(page.helperStrip(view, 0).chips.map((c) => [c.name, c.role]), [["高山流水", "看盘队 #2"], ["青檀", "对话助手 #1"]]);
+	assert.deepEqual(page.leftColumn(view, 0).doing.map((c) => c.helper), ["高山流水 · 看盘队 #2", "青檀 · 对话助手 #1"]);
+	assert.equal(page.routeLine(view, "trg_open")?.text, "已开新任务「NVDA 听证会」 · 高山流水 · 看盘队 #2");
+	assert.equal(page.routeLine(view, "trg_hand")?.text, "已交给 高山流水 · 看盘队 #2（NVDA 听证会）");
+});
+
 test("页面：没有在岗助手时助手条只有今日合计；还没收到看板时为空", () => {
 	assert.deepEqual(page.helperStrip(withRows([row({ stage: "closed", endedAt: 1 })]), 0), { chips: [], total: "今日 0 位 · 0 tokens" });
 	assert.deepEqual(page.helperStrip(page.emptyView(), 0), { chips: [], total: "" });

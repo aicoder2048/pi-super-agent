@@ -11,7 +11,7 @@
 /** @typedef {import("../client/protocol.ts").TranscriptMessage} TranscriptMessage */
 /** @typedef {import("../client/protocol.ts").WatchedSource} WatchedSource */
 
-import { INPUT_LABEL, blocks, clip, formatElapsed, formatTokens, helperFullName, helperRoleText, modelText, shortId, stallMinutes, textOf } from "../client/board-format.mjs";
+import { INPUT_LABEL, blocks, clip, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, shortId, stallMinutes, textOf } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -428,7 +428,7 @@ export function helperStrip(view, now) {
 			id: row.id,
 			...DUTY_MARK[row.workerState],
 			name: row.helper.name,
-			role: helperRoleText(row.helper),
+			role: helperLabel(row.helper),
 			elapsed: elapsedOf(row, now, view.receivedAt),
 			tokens: `${formatTokens(row.tokensIn + row.tokensOut)} tokens`,
 		}];
