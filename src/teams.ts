@@ -56,6 +56,7 @@ export function parseTeams(file: string, text: string): Team[] {
 			if (!header) fail(line, `顶层每行应是「团队名:」，这一行是「${body}」`);
 			finish();
 			const name = unquote(header![1]);
+			if (/\s/.test(name)) fail(line, `团队名「${name}」里不能有空白`);
 			if (teams.some((t) => t.name === name)) fail(line, `团队 ${name} 在这个文件里写了两次`);
 			draft = { name, line };
 			inMembers = false;

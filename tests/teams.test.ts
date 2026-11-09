@@ -42,6 +42,7 @@ const MALFORMED: [name: string, text: string, line: number, message: RegExp][] =
 	["同一个键写了两次", "新闻队:\n  description: d\n  description: e\n  members:\n    - a\n", 3, /description 写了两次/],
 	["同一个成员写了两次", "新闻队:\n  description: d\n  members:\n    - a\n    - a\n", 5, /a 写了两次/],
 	["同一个文件里团队重名", "新闻队:\n  description: d\n  members:\n    - a\n新闻队:\n  description: d\n  members:\n    - a\n", 5, /新闻队/],
+	["团队名里有空白", "新 闻队:\n  description: d\n  members:\n    - a\n", 1, /空白/],
 	["用 Tab 缩进", "新闻队:\n\tdescription: d\n", 2, /Tab/],
 ];
 
