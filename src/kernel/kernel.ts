@@ -658,7 +658,7 @@ export class Kernel {
 			createdAt,
 		).filter((r) => newYorkDate(r.created_at) === day).length;
 		const ordinal = this.#get(`SELECT COUNT(*) AS n FROM tickets WHERE ${unit.rows}`).n as number;
-		const onDuty = new Set(this.#column(`SELECT helper_name AS v FROM tickets WHERE ${unit.rows} AND closed_at IS NULL AND stopped_at IS NULL`));
+		const onDuty = new Set(this.#column("SELECT helper_name AS v FROM tickets WHERE helper_name IS NOT NULL AND closed_at IS NULL AND stopped_at IS NULL"));
 		const identity = { name: helperName(unit.names, ordinal, onDuty), seq: sameUnit + 1 };
 		return crew ? { ...identity, team } : { ...identity, role };
 	}

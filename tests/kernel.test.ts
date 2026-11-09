@@ -1384,6 +1384,15 @@ test("两个名字池各自轮转：团队任务不推进两字池，四字池�
 	assert.equal(helperOf(s.kernel, s.open("request"))!.name, SOLO_NAMES[1]);
 });
 
+test("在岗的名字不分池：旧版本开的任务带着四字名和角色还在岗时，新的团队任务不取同一个名字", () => {
+	const s = setup({ teams: TEAMS });
+	const old = s.open("request");
+	s.db.prepare("UPDATE tickets SET helper_name = ? WHERE id = ?").run(TEAM_NAMES[0], old);
+	assert.deepEqual(helperOf(s.kernel, old), { name: TEAM_NAMES[0], role: "conversation", seq: 1 });
+	assert.deepEqual(helperOf(s.kernel, s.open("request", { team: "新闻队" })), { name: TEAM_NAMES[1], team: "新闻队", seq: 1 });
+	assert.deepEqual(helperOf(s.kernel, s.open("request")), { name: SOLO_NAMES[1], role: "conversation", seq: 2 });
+});
+
 test("名字在开任务时按团队定下，之后不变：重启后团队没了成员或被拿掉，任务仍是原来的四字名和团队名", () => {
 	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
 	const first = setup({ path, teams: TEAMS });
