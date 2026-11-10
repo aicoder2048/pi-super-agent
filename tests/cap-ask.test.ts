@@ -11,7 +11,9 @@ import type { Member } from "../src/teams.ts";
 import { domainsOf, ids, ofType, startHost, tempStateDir, until, type Brain, type FakeWorker, type ToolCallSpec } from "./helpers/fakes.ts";
 
 const NOON = Date.UTC(2026, 10, 9, 17, 0);
+const MIDNIGHT = Date.UTC(2026, 10, 10, 5, 0);
 const NEXT_DAY = Date.UTC(2026, 10, 10, 5, 30);
+const DAY_MS = 86_400_000;
 const ASK = "ask_cap_2026-11-09";
 const SAID = "回答成员上限：今天放宽到 10";
 
@@ -19,7 +21,7 @@ const member = (name: string, title: string): Member => ({ name, title, descript
 const CREW = [member("market-analyst", "行情分析师"), member("news-researcher", "新闻研究员"), member("chart-reader", "技术分析师")];
 const DOMAINS = domainsOf({ watch: { team: "看盘队", crew: CREW } });
 
-interface Options { configured?: number; stateDir?: string; clock?: { at: number; now(): number }; webPort?: number; onCard?: (card: string) => ToolCallSpec[]; crew?: Member[] }
+interface Options { configured?: number; stateDir?: string; clock?: { at: number; now(): number }; webPort?: number; onCard?: (card: string) => ToolCallSpec[]; crew?: Member[]; after?: HostOptions["after"] }
 
 async function wholeCrewDispatched(t: TestContext, options: Options = {}) {
 	const crew = options.crew ?? CREW;
@@ -46,6 +48,7 @@ async function wholeCrewDispatched(t: TestContext, options: Options = {}) {
 		dispatch: { timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: options.configured ?? 1 },
 		...(options.stateDir && { stateDir: options.stateDir }),
 		...(options.webPort !== undefined && { webPort: options.webPort }),
+		...(options.after && { after: options.after }),
 	} satisfies Partial<HostOptions>);
 	let stopped = false;
 	const stop = async () => {
@@ -78,6 +81,15 @@ async function watching(t: TestContext, host: { socketPath: string }) {
 	await until(() => conn.connected, "连接");
 	await new Promise((r) => setTimeout(r, 250));
 	return { got, boards: () => ofType(got, "board") };
+}
+
+function handTimers() {
+	const timers: { ms: number; run(): void }[] = [];
+	const after: NonNullable<HostOptions["after"]> = (ms, run) => {
+		timers.push({ ms, run });
+		return () => {};
+	};
+	return { timers, after };
 }
 
 test("名额用完、有成员排队：看板带上宿主的问题和现在的上限，排队的照常等；这个问题不经过幕僚长", async (t) => {
@@ -253,6 +265,53 @@ test("网页：不带 token 或来源不对的点选被拒，上限不变；带�
 	assert.equal(cap()?.limit, 10);
 	const other = await post(url.search, url.origin, 1);
 	assert.deepEqual([other.status, JSON.parse(other.body).refused], [409, "chosen"]);
+});
+
+test("纽约零点一到：宿主推一帧看板，放宽到期那一行当时就记下，并为下一个零点重新定时", async (t) => {
+	const { timers, after } = handTimers();
+	const s = await wholeCrewDispatched(t, { after });
+	await until(() => s.count("queued") === 2, "一位在做两位排队");
+	assert.deepEqual(timers.map((x) => x.ms), [MIDNIGHT - NOON], "启动时定到纽约零点");
+	s.host.answer(ASK, 0);
+	await until(() => s.count("running") === 3, "三位都在做");
+	const { boards } = await watching(t, s.host);
+	const frames = boards().length;
+	s.clock.at = MIDNIGHT;
+	assert.equal(s.capLogs().length, 2, "零点到了、定时器还没响，没有人读上限，到期还没记");
+	timers[0].run();
+	assert.deepEqual(s.capLogs().slice(2), ["[host] 成员上限：纽约 2026-11-09 的放宽已到期，上限回到 1"]);
+	await until(() => boards().length > frames, "零点推了一帧看板");
+	assert.deepEqual(boards().at(-1)!.memberCap, { limit: 1, question: null });
+	assert.deepEqual(timers.map((x) => x.ms), [MIDNIGHT - NOON, DAY_MS], "再定到下一个纽约零点");
+	s.clock.at = MIDNIGHT + DAY_MS;
+	timers[1].run();
+	assert.equal(timers.length, 3, "每过一个零点都再定一次");
+});
+
+test("过了纽约零点还有成员在等名额：宿主为新的一天再问一次，不用等下一次派活", async (t) => {
+	const { timers, after } = handTimers();
+	const s = await wholeCrewDispatched(t, { after });
+	await until(() => s.count("queued") === 2, "一位在做两位排队");
+	s.host.answer(ASK, 1);
+	const { boards } = await watching(t, s.host);
+	s.clock.at = MIDNIGHT;
+	timers[0].run();
+	const asked = { reportId: "ask_cap_2026-11-10", text: "现在有 2 位成员在排队，同时运行的成员上限是 1。今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 1"], askedAt: MIDNIGHT };
+	assert.deepEqual(s.cap(), { limit: 1, question: asked });
+	await until(() => boards().at(-1)?.memberCap?.question?.reportId === asked.reportId, "这一帧看板带着新一天的问题");
+	assert.deepEqual(s.capLogs().slice(2), ["[host] 成员上限：2 位成员在排队，上限 1，已问使用者今天是否放宽到 10"]);
+	assert.deepEqual(s.host.answer(asked.reportId, 0), { ok: true, triggerId: asked.reportId });
+	await until(() => s.count("running") === 3, "点了新一天的放宽，排队的马上开始", 500);
+});
+
+test("零点时没有成员在等名额：不问", async (t) => {
+	const { timers, after } = handTimers();
+	const s = await wholeCrewDispatched(t, { after, configured: 3 });
+	await until(() => s.count("running") === 3, "三位都在做");
+	s.clock.at = MIDNIGHT;
+	timers[0].run();
+	assert.deepEqual(s.cap(), { limit: 3, question: null });
+	assert.deepEqual(s.capLogs(), []);
 });
 
 test("问题记不进状态库：这次派活不受影响，照常排队、轮到、做完；日志里记一行", async (t) => {

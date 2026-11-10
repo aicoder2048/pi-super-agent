@@ -59,7 +59,15 @@ export interface HostOptions {
 	webPort?: number;
 	watching?: WatchedSource[];
 	feeds?: FeedSpec[];
+	/** Runs `run` once, `ms` from now, and returns its cancel. The host waits for the New York day change with it; tests pass their own to make that moment arrive. */
+	after?: (ms: number, run: () => void) => () => void;
 }
+
+const afterRealTime: NonNullable<HostOptions["after"]> = (ms, run) => {
+	const timer = setTimeout(run, ms);
+	timer.unref();
+	return () => clearTimeout(timer);
+};
 
 
 // sun_path holds 104 bytes on macOS and 108 on Linux, including the terminating NUL.
@@ -99,7 +107,8 @@ export class Host {
 	readonly #clock: Clock;
 	readonly #kitFor: Domains["kitFor"] | undefined;
 	readonly #memberCap: MemberCap | undefined;
-	#newYorkDayTimer: NodeJS.Timeout | undefined;
+	readonly #after: NonNullable<HostOptions["after"]>;
+	#cancelNewYorkDay: (() => void) | undefined;
 	#duty!: Duty;
 
 	private constructor(options: HostOptions) {
@@ -111,6 +120,7 @@ export class Host {
 		this.#stateDir = options.stateDir;
 		const clock = options.clock ?? { now: () => Date.now() };
 		this.#clock = clock;
+		this.#after = options.after ?? afterRealTime;
 		this.#watching = options.watching ?? [];
 		this.#kitFor = options.domains?.kitFor;
 		this.kernel = new Kernel({
@@ -217,7 +227,7 @@ export class Host {
 		host.#heartbeat = setInterval(() => host.#beat(), options.heartbeatMs ?? 30_000);
 		host.#heartbeat.unref();
 		host.#atNextMidnight();
-		if (host.#memberCap) host.#atNextNewYorkDay();
+		if (host.#memberCap) host.#atNextNewYorkDay(host.#memberCap);
 		host.#pushBoardAtNextStall(host.kernel.listTickets());
 		host.dispatcher.kick();
 		return host;
@@ -332,12 +342,13 @@ export class Host {
 		this.#midnightTimer.unref();
 	}
 
-	#atNextNewYorkDay(): void {
-		this.#newYorkDayTimer = setTimeout(() => {
+	// The day's grant and question end at New York midnight even when nothing happens. A member that still waits then got no answer for the new day, and no new dispatch has to arrive for the host to ask.
+	#atNextNewYorkDay(cap: MemberCap): void {
+		this.#cancelNewYorkDay = this.#after(Math.min(msUntilNextNewYorkDay(this.#clock.now()), MAX_TIMER_MS), () => {
+			this.#atNextNewYorkDay(cap);
+			this.#askAboutMemberCap(cap, this.workers.membersWaitingForSlot());
 			this.#pushBoard();
-			this.#atNextNewYorkDay();
-		}, Math.min(msUntilNextNewYorkDay(this.#clock.now()), MAX_TIMER_MS));
-		this.#newYorkDayTimer.unref();
+		});
 	}
 
 	#pushBoardAtNextStall(rows: DashboardRow[]): void {
@@ -385,7 +396,7 @@ export class Host {
 		this.dispatcher.stop();
 		clearTimeout(this.#boardTimer);
 		clearTimeout(this.#midnightTimer);
-		clearTimeout(this.#newYorkDayTimer);
+		this.#cancelNewYorkDay?.();
 		clearTimeout(this.#stallTimer);
 		await this.workers.shutdown();
 		this.router.dispose();
