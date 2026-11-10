@@ -152,7 +152,7 @@ test("just host 启动时列出加载的模块，有成员的模块后面写队�
 		timeout: 20_000,
 		killSignal: "SIGKILL",
 	});
-	assert.match(run.stderr, /\[host\] 模块：toy-market, us-market, mail, news（新闻队）；规则 \d+ 条/);
+	assert.match(run.stderr, /\[host\] 模块：pi-pi（Pi专家队）, toy-market, us-market（看盘队）, mail, news（新闻队）；规则 \d+ 条/);
 });
 
 test("使用者规则没写来源行时，just host 启动时逐条说明它不生效", () => {

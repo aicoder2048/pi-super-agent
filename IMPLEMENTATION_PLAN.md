@@ -690,55 +690,60 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 ## Ship the 看盘队 and the pi-pi team (T3)
 
-**Depends on.** D1 (stacked on it; D1 is on T2). 团队的来源按 ADR-0009：队伍是模块 `agents/` 里的成员，队名写在 `module.json` 的 `team`。取代 W6c（#32）。指标和财报查询（`lookup indicators`、`lookup earnings`）在 PR #26（`psa/market-data`），本分支先 cherry-pick 它的提交，#26 合并后 rebase 去重。
+**Depends on.** D1 (stacked on it; D1 is on T2). 团队的来源按 ADR-0009：队伍是模块 `agents/` 里的成员，队名写在 `module.json` 的 `team`，领域经验放模块的 `skills/`，成员的提示词只写角色、判断和汇报格式。取代 W6c（#32）。指标和财报查询（`lookup indicators`、`lookup earnings`）在 PR #26（`psa/market-data`），本分支先 cherry-pick 它的提交，#26 合并后 rebase 去重。
 
 **Files.**
 
-- [ ] Cherry-pick PR #26 的提交（`git log origin/main..origin/psa/market-data`）。
-- [ ] Create `modules/us-market/agents/market-analyst.md`（行情分析师）、`technical-analyst.md`（技术分析师）、`news-researcher.md`（新闻研究员）、`earnings-reader.md`（财报解读），从 `psa/market-experts` 的 `modules/us-market/roles/` 搬来；edit `modules/us-market/module.json`（`team` 写「看盘队」）。
-- [ ] Create `modules/pi-pi/module.json`（没有来源；写 `title`、`description` 和 `team`「pi-pi 队」）和 `modules/pi-pi/agents/`（`psa/market-experts` 上已补中文 `title` 的九位专家）。不导入 `pi-orchestrator`，不改 `.pi/agents`。
-- [ ] `modules/us-market/rules.md` 不用改：big-move 是看盘模块的规则，它开的任务自动属于 us-market 领域（ADR-0009），规则里不写「团队：」。现有来源里没有财报触发，不加财报周规则。
-- [ ] Create `tests/first-teams.test.ts`、`tests/e2e/teams.e2e.ts`，edit `tests/modules.test.ts`。
+- [x] Cherry-pick PR #26 的提交（`git log origin/main..origin/psa/market-data`，13 个）。 证据：4c108e3 到 d13d675；两处冲突（`tests/pi-worker-env.test.ts`、`docs/web-client/decisions.tsv`）都是两边各留；之后 `just test` 666 条通过。
+- [x] Create `modules/us-market/agents/market-analyst.md`（行情分析师）、`technical-analyst.md`（技术分析师）、`news-researcher.md`（新闻研究员）、`earnings-reader.md`（财报解读），从 `psa/market-experts` 的 `modules/us-market/roles/` 改写；create `modules/us-market/skills/us-market-desk/SKILL.md`；edit `modules/us-market/module.json`（`team` 写「看盘队」，`description` 加上技术面、财报和新闻）。 证据：af477b5。
+- [x] Create `modules/pi-pi/module.json`（没有来源；`title`「Pi 开发」、`description`、`team`「Pi专家队」）和 `modules/pi-pi/agents/`（`psa/market-experts` 上已补中文 `title` 的九位专家，正文不改）。不导入 `pi-orchestrator`，不改 `.pi/agents`。 证据：af477b5。队名不写成「Pi 专家队」：队名里不能有空白（ADR-0008）。
+- [x] Edit `modules/us-market/rules.md`：big-move 不写「团队：」，它开的任务自动属于 us-market 领域（ADR-0009）；规则正文改成任务要确定什么，谁来做由助手定。现有来源里没有财报触发，不加财报周规则。 证据：af477b5。
+- [x] Create `tests/first-teams.test.ts`、`tests/e2e/first-teams.e2e.ts`；edit `tests/modules.test.ts`、`tests/host-main.test.ts`、`tests/e2e/harness.ts`（`story` 的 `env` 选项，用来清空行情密钥）。 证据：af477b5、08bbf6a。`tests/e2e/teams.e2e.ts` 是 T1 的文件，没有动。
+- [x] 修正一轮（十条真实 lane 之后）：create `modules/pi-pi/skills/pi-pi-desk/SKILL.md`、`modules/pi-pi/NOTICE.md`；edit `modules/pi-pi/agents/` 九个文件（`tools` 和「First Action」一节）、`modules/us-market/skills/us-market-desk/SKILL.md`、`modules/us-market/rules.md`、`modules/us-market/agents/` 四个文件、`tests/first-teams.test.ts`、`tests/e2e/first-teams.e2e.ts`。 证据：7f6236f、d9ba7b7、07c54f4。
 
 **Build.**
 
-- [ ] 四位看盘成员各有清楚的职责、最小的工具白名单、汇报格式（结论、证据、来源和时间），行情一律写报价时间。技术分析师只引用 `lookup indicators` 的数字，标出 `lastBar.partial`；财报解读读 `lookup earnings`。
-- [ ] 成员先用 `lookup`；新闻研究员最多读 3 页；回复不超过 600 字。
-- [ ] us-market 模块的 `description` 让幕僚长在行情、个股、财报、相关新闻的问题上选这个领域；原来写在 `roles/deputy.md` 里的要点（一般派两三位、冲突明写、报价写时间和来源、大波动先派行情分析师和技术分析师）改放进看盘模块的技能，助手读得到。
-- [ ] pi-pi 模块的 `description` 让幕僚长在「怎么写 Pi 扩展、主题、技能、配置」的问题上选这个领域。
+- [x] 四位看盘成员各有清楚的职责、最小的工具白名单、汇报格式（结论、证据、来源和时间）。行情分析师、新闻研究员、财报解读是 `read, lookup, web_get`，技术分析师是 `read, lookup`；都没有 `bash`、`write`、`edit`。`read` 是读技能用的：Pi 只把技能写进有工具读它的进程的提示词。 证据：`tests/first-teams.test.ts`「看盘队每位成员只列它用得上的只读工具」「仓库自带的成员都写了工具清单…」「看盘队每位成员的提示词都写了汇报格式…」；`tests/e2e/first-teams.e2e.ts`「模型看到的工具…」；去掉技术分析师的 `read` 后端到端「…提示词里都有看盘模块的技能」一步变红。
+- [x] 所有人共用的做法放在技能 `us-market-desk`，成员提示词不重复：行情数字只来自 `lookup`、先查 `session`、指标和超预期百分比照抄不重算、每个价格写报价时间和来源、行情可能延迟 15 分钟、`lastBar.partial` 要写明、回复不超过 600 字、意见冲突怎么写。原来写在 `roles/deputy.md` 里的要点（只问价格自己查、一般派两三位、什么问题派给谁、大波动先派行情分析师和技术分析师、盘面解释不了再派新闻研究员、汇总答复的写法）也在这份技能里，助手读得到。 证据：`modules/us-market/skills/us-market-desk/SKILL.md`；`tests/first-teams.test.ts`「看盘模块的经验放在它的技能里…」；端到端里助手和两位成员的系统提示词都有这份技能。
+- [x] us-market 模块的 `description` 让幕僚长在行情、个股、财报、相关新闻的问题上选这个领域；pi-pi 模块的 `description` 让幕僚长在「怎么写 Pi 的扩展、主题、技能、配置、提示模板、终端界面组件」的问题上选这个领域。 证据：`tests/first-teams.test.ts`「幕僚长的名册里有这两个领域…」；`tests/modules.test.ts`「仓库里的三个模块都有领域名和给幕僚长的说明…」。
+- [x] 九位 Pi 专家的工具是 `read,grep,find,ls,web_get`，没有 `bash`、`write`、`edit`。原文的「First Action」让专家在 shell 里跑 `firecrawl scrape … || curl …` 把文档下到 `/tmp`；真实 lane 里每次派活都这样做，花 Firecrawl 额度、写 `/tmp`、按能写代码的成员限时 60 分钟，一次派活用了 219k token。现在这一节改成：先用 `read`、`grep` 读系统提示词里列出的本机 Pi 文档，读不到再用 `web_get` 取同一个网址。`web_get` 只给长网页的开头（`extensions.md` 约 156 KB），所以本机文档排在前面。`cli-expert` 不能再跑 `pi --help`，改读 README、`cli.md`、`usage.md`。出处和改动记在 `modules/pi-pi/NOTICE.md`（`pi-vs-claude-code`，MIT，© 2026 IndyDevDan）。 证据：7f6236f；`tests/first-teams.test.ts`「…九位 Pi 专家都是读文件和读网页」「仓库自带的十三位成员…没有一位能执行命令、写文件或改文件」「仓库自带的成员提示词不让成员跑 firecrawl 或 curl」（先红后绿）；`tests/e2e/first-teams.e2e.ts`「助手派给扩展专家…模型看到的工具只有读文件和读网页」。
+- [x] pi-pi 模块有自己的技能 `pi-pi-desk`，写给助手：九位专家各管什么；问「怎么给 Pi 做某样东西」就派给管它的专家，只问一个主题也派，因为专家会核对当前文档；只有不需要文档的事才自己答；一次最多两三位；合并时写明哪位专家说了什么。真实 lane 里单主题的 Pi 问题 3 次都是助手自己答的。 证据：7f6236f；`tests/first-teams.test.ts`「Pi 模块的经验放在它的技能里…」（先红后绿）；端到端里 Pi 助手和扩展专家的系统提示词都有这份技能（拿掉技能后这一步变红）。
+- [x] 技能 `us-market-desk` 加三样。查 K 线：`bars` 的 `span` 只有 `minute`、`hour`、`day`，`from`、`to` 只能填日期，一次最多 500 根；问「今天怎么走的」用 `hour`，`minute` 只查被问到的那一只，对比用的代码不查 `minute`。查询不能指定几点到几点，也没有 5 分钟线，所以只约束粒度和代码数，查询的代码这一轮不改。一次发几个查询：同时在途最多两个，遇到「行情查询排队已满」重试一次，拿不到的代码要在回复里写明。助手汇总：成员查过的来源不再读一遍，引用成员的答复。 证据：d9ba7b7；`src/sources/market/source.ts` 的 `bars`（`only("symbol", "span", "from", "to")`，固定 500 根）。这三样是内容，没有测试守着，留给 Verify, live。
+- [x] 大波动规则要任务说明照抄触发里的代码、涨跌幅、档位、现价和报价时间，任务要写明现在的报价和触发是否一致；技能里助手的部分写了先查一次 `quote` 对一遍。真实 lane 里触发是 15:42 的 −6%，现价是 −3.29%，任务说明丢了触发的数字，没人发现。 证据：d9ba7b7；`tests/first-teams.test.ts`「大波动规则要任务说明照抄触发里的…」（先红后绿）。
+- [x] 四位看盘成员的汇报格式改成三行要填的标题（结论、证据、来源和时间），上面一行写全文不超过 600 字、链接不计。真实 lane 的 16 条成员回复里只有 5 条在 600 字以内，3 条缺「证据」。汇报格式属于成员提示词，这两行有意和技能重复。财报解读只读公司自己发的新闻稿或文件，最多 2 页；新闻研究员的 3 页只读报道原文和官方公告，搜索引擎的结果页不算来源；行情分析师不再默认查分钟线。 证据：07c54f4；`tests/first-teams.test.ts`「看盘队每位成员的汇报格式是三行要填的标题…」「…写了全文不超过 600 字，链接不计」（先红后绿）。页数上限是内容，没有测试守着。
 
 **You see.**
 
-- [ ] 行情大波动时任务属于 us-market 领域，显示看盘队，助手派给行情分析师和技术分析师；问财报时派给财报解读；问 Pi 扩展怎么写，任务属于 pi-pi 领域，显示 pi-pi 队。
+- [x] 行情大波动时任务属于 us-market 领域，显示看盘队，助手派给行情分析师和技术分析师；问财报时派给财报解读；问 Pi 扩展怎么写，任务属于 pi-pi 领域，显示 Pi专家队。 假模型下的这一幕见 `tests/e2e/first-teams.e2e.ts`；真实模型留给 Verify, live。 真实模型见 Verify, live 的 lane 1、3、5。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 两个模块的清单和所有成员文件通过加载校验；看盘规则开的任务属于 us-market 领域；卸掉模块后它的领域、团队和成员一起消失。
+- [x] 两个模块的清单和十三位成员用默认配置的提供方通过真实加载；看盘规则开的任务属于 us-market 领域；us-market 的技能交给助手和每位成员；拿掉 us-market 模块后它的领域、团队和成员一起消失，启动不报错。 证据：`tests/first-teams.test.ts` 八条（先红后绿）；`tests/host-main.test.ts`「just host 启动时列出加载的模块…」（真实入口，默认模块目录）；`tests/e2e/first-teams.e2e.ts`；`just test` 674 条通过、`just e2e` 108 条通过（08bbf6a），见 decisions.tsv 的 t3 各行。修正一轮后 `tests/first-teams.test.ts` 是 12 条，`just test` 732 条通过、`just e2e` 120 条通过（07c54f4），见 decisions.tsv 的 t3-fix 各行。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
-- [ ] Lane 1. 行情大波动（真实行情或 toy-feed）。Save `t3-market.png`. Pass when 任务属于 us-market 领域、显示看盘队，助手派给行情分析师并给出报价时间。
-- [ ] Lane 2. 新闻问题。Save `t3-news.png`. Pass when 派给新闻研究员并核对日期来源。
-- [ ] Lane 3. 财报问题。Save `t3-earnings.png`. Pass when 派给财报解读。
-- [ ] Lane 4. 跨领域问题。Save `t3-two.png`. Pass when 助手并行派给其中两位并写明冲突。
-- [ ] Lane 5. 问 Pi 扩展怎么写。Save `t3-pi-pi.png`. Pass when 任务属于 pi-pi 领域、显示 pi-pi 队，助手派给扩展专家。
-- [ ] Lane 6. 只问一个股价。Save `t3-direct.png`. Pass when 看盘队的助手自己用 `lookup` 查完，没有派活。
-- [ ] Lane 7. 关掉 us-market 模块。Save `t3-no-module.png`. Pass when us-market 领域从幕僚长的名册消失，启动不报错。
-- [ ] Lane 8. 推断任务里助手派给行情分析师。Save `t3-inference.png`. Pass when 两者都只读。
-- [ ] Lane 9. 汇报格式。Save `t3-format.png`. Pass when 每位成员的回复都有结论、证据、来源和时间。
-- [ ] Lane 10. 深浅主题截图。Save `t3-themes.png`. Pass when 显示正确。
+- [x] Lane 1. 行情大波动（真实行情或 toy-feed）。Save `t3-market.png`. Pass when 任务属于 us-market 领域、显示看盘队，助手派给行情分析师并给出报价时间。 2026-11-09 在 2f94c71 上：手工投递的大波动，任务属于 us-market、显示「雪泥鸿爪 · 看盘队 #1」，先派行情分析师和技术分析师，再派新闻研究员，报价写了时间；19a0ad1 上复验时任务说明带上了触发的五项，汇报写明触发和现价不一致（`/tmp/swarm-t3b/C/`）。
+- [x] Lane 2. 新闻问题。Save `t3-news.png`. Pass when 派给新闻研究员并核对日期来源。 2026-11-09 在 2f94c71 上：只派新闻研究员，写明公告日期和出处。
+- [x] Lane 3. 财报问题。Save `t3-earnings.png`. Pass when 派给财报解读。 2026-11-09 在 2f94c71 上只派财报解读；19a0ad1 上复验时财报解读没有读网页，回复 337 字（`/tmp/swarm-t3b/D/`）。
+- [x] Lane 4. 跨领域问题。Save `t3-two.png`. Pass when 助手并行派给其中两位并写明冲突。 2026-11-09 在 2f94c71 上：三位并行，写明了数据上的不一致；没有出现成员间的冲突，「写明冲突」没有真正走到；19a0ad1 上两次「为什么跌」各派两位（`/tmp/swarm-t3b/B/`）。
+- [x] Lane 5. 问「Pi 的扩展怎么写？我想给 Pi 注册一个自定义工具。」Save `t3-pi-pi.png`. Pass when 任务属于 pi-pi 领域、显示 Pi专家队，这个单主题的问题助手也派给扩展专家（ext-expert），专家没有执行命令，也没有写文件。 2026-11-09 在 2f94c71 上 0/3 没有派活，修正后在 19a0ad1 上 3/3 派给扩展专家，专家工具只有 read、grep、find、ls、web_get，没有执行命令也没有写文件，答案对照本机文档核对正确（`/tmp/swarm-t3b/A/`）。
+- [x] Lane 6. 只问一个股价。Save `t3-direct.png`. Pass when 看盘队的助手自己用 `lookup` 查完，没有派活。 2026-11-09 在 2f94c71 上：助手自己用 lookup 查完，没有派活，写明休市和报价时间。
+- [x] Lane 7. 关掉 us-market 模块。Save `t3-no-module.png`. Pass when us-market 领域从幕僚长的名册消失，启动不报错。 2026-11-09 在 2f94c71 上：拿掉 us-market 后启动不报错，名册里没有它。
+- [x] Lane 8. 推断任务里助手派给行情分析师。Save `t3-inference.png`. Pass when 两者都只读。 2026-11-09 在 2f94c71 上：推断任务归看盘队，助手和成员都没有调用执行命令、写文件、改文件。
+- [x] Lane 9. 汇报格式。Save `t3-format.png`. Pass when 每位成员的回复都有结论、证据、来源和时间。 2026-11-09 在 19a0ad1 上复验：10 份成员回复全部在 600 字以内（链接不计），三个标题齐全；2f94c71 上是 5/16 和 13/16。
+- [x] Lane 10. 深浅主题截图。Save `t3-themes.png`. Pass when 显示正确。 2026-11-09 在 2f94c71 上：深浅两种主题都正常，没有横向溢出。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 助手第一轮的输入 token（本队名册增加的开销）。
-- [ ] Probe. 没有领域的助手和 pi-pi 队（九位成员）的助手各量 5 次。
-- [ ] Baseline. Record the no-domain median first.
-- [ ] Rule. 增加超过 1500 token 算失败。
+- [x] Metric. 助手第一轮的输入 token（本队名册增加的开销）。
+- [x] Probe. 没有领域的助手和 Pi专家队（九位成员）的助手各量 5 次。
+- [x] Baseline. Record the no-domain median first. 没有领域的助手中位数 3121 token。
+- [x] Rule. 增加超过 1500 token 算失败。 Pi专家队的助手中位数 3927，多 806，通过（`/tmp/swarm-t3/perf/results.txt`，在 2f94c71 上量）。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 1, 4, 5 screenshots into `docs/web-client/media/t3-review-<slug>.png`.
-- [ ] Record a 30 to 60 second video of the 看盘队 at work. Keep it local as webm, as in W1.
+- [x] Copy lane 1, 4, 5 screenshots into `docs/web-client/media/t3-review-<slug>.png`. `t3-review-market.png`、`t3-review-two.png`、`t3-review-pi-pi.png`（lane 5 用修正后的复验截图）。
+- [x] Record a 30 to 60 second video of the 看盘队 at work. Keep it local as webm, as in W1. 49 秒，两倍速，`/tmp/swarm-t3b/t3-review.webm`，在 19a0ad1 上录。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**

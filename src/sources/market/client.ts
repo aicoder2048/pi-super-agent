@@ -7,6 +7,11 @@ export type Http = (url: string, init: { headers: Record<string, string>; redire
 export type Priority = "poll" | "lookup";
 export type Span = "minute" | "hour" | "day";
 
+/** Filled in by the client: how long this lookup's requests waited in the rate-limit queue. */
+export interface Trace {
+	queuedMs: number;
+}
+
 export interface Bar {
 	t: number;
 	o: number;
@@ -59,6 +64,8 @@ export interface MarketClientOptions {
 interface Job {
 	path: string;
 	priority: Priority;
+	enqueuedAt: number;
+	trace?: Trace;
 	resolve(data: Record<string, any>): void;
 	reject(error: unknown): void;
 }
@@ -116,14 +123,14 @@ export class MarketClient {
 		};
 	}
 
-	async snapshot(symbols: string[], priority: Priority): Promise<Quote[]> {
-		const data = await this.#request(`/v2/snapshot/locale/us/markets/stocks/tickers?tickers=${symbols.map(encodeURIComponent).join(",")}`, priority);
+	async snapshot(symbols: string[], priority: Priority, trace?: Trace): Promise<Quote[]> {
+		const data = await this.#request(`/v2/snapshot/locale/us/markets/stocks/tickers?tickers=${symbols.map(encodeURIComponent).join(",")}`, priority, trace);
 		if (!Array.isArray(data.tickers)) throw new MarketError("bad-response");
 		return data.tickers.flatMap((row: unknown) => parseQuote(row, symbols, data.status === "DELAYED", this.#o.clock.now()));
 	}
 
-	async bars(symbol: string, span: Span, from: string, to: string): Promise<Bar[]> {
-		const data = await this.#request(`/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/1/${span}/${from}/${to}?adjusted=true&sort=desc&limit=500`, "lookup");
+	async bars(symbol: string, span: Span, from: string, to: string, limit = 500, trace?: Trace): Promise<Bar[]> {
+		const data = await this.#request(`/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/1/${span}/${from}/${to}?adjusted=true&sort=desc&limit=${limit}`, "lookup", trace);
 		return (Array.isArray(data.results) ? data.results : []).flatMap(parseBar).reverse();
 	}
 
@@ -131,12 +138,12 @@ export class MarketClient {
 		this.#abort.abort();
 	}
 
-	#request(path: string, priority: Priority): Promise<Record<string, any>> {
+	#request(path: string, priority: Priority, trace?: Trace): Promise<Record<string, any>> {
 		if (priority === "lookup" && this.#queue.filter((j) => j.priority === "lookup").length >= this.#o.maxQueuedLookups) {
 			return Promise.reject(new MarketError("busy"));
 		}
 		return new Promise((resolve, reject) => {
-			this.#queue.push({ path, priority, resolve, reject });
+			this.#queue.push({ path, priority, enqueuedAt: this.#o.clock.now(), trace, resolve, reject });
 			void this.#pump();
 		});
 	}
@@ -150,6 +157,7 @@ export class MarketClient {
 				if (wait > 0) await this.#o.sleep(wait);
 				const poll = this.#queue.findIndex((j) => j.priority === "poll");
 				const [job] = this.#queue.splice(poll >= 0 ? poll : 0, 1);
+				if (job.trace) job.trace.queuedMs += this.#o.clock.now() - job.enqueuedAt;
 				this.#nextAt = this.#o.clock.now() + this.#o.minGapMs;
 				await this.#fetch(job.path).then(job.resolve, job.reject);
 			}

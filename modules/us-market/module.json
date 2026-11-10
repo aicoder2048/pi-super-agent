@@ -1,7 +1,8 @@
 {
   "name": "us-market",
   "title": "美股行情",
-  "description": "美股个股和大盘的行情、涨跌和波动原因",
+  "description": "美股行情、个股涨跌和原因、技术面、财报和相关新闻",
+  "team": "看盘队",
   "sources": [
     {
       "name": "us-market",

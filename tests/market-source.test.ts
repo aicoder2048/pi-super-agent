@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Kernel } from "../src/kernel/kernel.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { MarketClient } from "../src/sources/market/client.ts";
-import { MarketSource, marketFeed } from "../src/sources/market/source.ts";
+import { FinnhubClient } from "../src/sources/market/finnhub.ts";
+import { MarketSource, marketFeed, type MarketSourceOptions } from "../src/sources/market/source.ts";
 import { parseMarketSettings } from "../src/sources/market/settings.ts";
 import { ConfigError } from "../src/config-error.ts";
 import { fakeHttp, snapshotBody, tickerRow } from "./helpers/market.ts";
@@ -21,17 +22,17 @@ const DEFAULTS = {
 	baseURL: "https://api.massive.com",
 };
 
-function market(options: { dbPath?: string; respond?: (url: string, now: number) => Response } = {}) {
+function market(options: { dbPath?: string; respond?: (url: string, now: number) => Response; paced?: boolean } = {}) {
 	const dbPath = options.dbPath ?? join(mkdtempSync(join(tmpdir(), "psa-market-")), "state.db");
 	const prices: Record<string, number> = { NVDA: 100, SPY: 600 };
-	const { clock, calls, http } = fakeHttp((url, now) =>
+	const { clock, calls, http, sleep } = fakeHttp((url, now) =>
 		options.respond ? options.respond(url, now) : Response.json(snapshotBody(Object.entries(prices).map(([s, p]) => tickerRow(s, p, s === "SPY" ? 600 : 100, now - 60_000)))),
 	T("2026-11-09T15:00:00Z"));
 	const kernel = new Kernel({ db: openStore(dbPath), clock, sourcePolicy: (t) => (t.source === "watchdog" ? "notice" : "candidate") });
-	const client = new MarketClient({ key: "k", baseURL: DEFAULTS.baseURL, minGapMs: 0, http, clock, sleep: async () => {} });
+	const client = new MarketClient({ key: "sk-test-secret", baseURL: DEFAULTS.baseURL, minGapMs: options.paced ? 12_000 : 0, http, clock, sleep: options.paced ? sleep : async () => {} });
 	const logs: string[] = [];
 	let failWrite = false;
-	const source = new MarketSource({
+	const sourceOptions: MarketSourceOptions = {
 		source: "us-market",
 		title: "美股行情",
 		settings: parseMarketSettings(DEFAULTS, undefined, "test"),
@@ -49,9 +50,10 @@ function market(options: { dbPath?: string; respond?: (url: string, now: number)
 			},
 			log: (l) => logs.push(l),
 		},
-	});
+	};
+	const source = new MarketSource(sourceOptions);
 	const triggers = () => kernel.triggerLog().map((t) => ({ source: t.source, externalId: t.externalId, disposition: t.disposition })).reverse();
-	return { source, kernel, clock, prices, requests: calls, logs, triggers, dbPath, crashBeforeCursor: () => { failWrite = true; } };
+	return { source, options: sourceOptions, kernel, clock, prices, requests: calls, logs, triggers, dbPath, crashBeforeCursor: () => { failWrite = true; } };
 }
 
 test("看盘：周末不发任何请求", async () => {
@@ -191,13 +193,15 @@ test("查询：quote 返回数字报价，bars 返回 K 线，session 返回交�
 			? Response.json({ status: "OK", results: [{ t: 1, o: 1, h: 2, l: 0.5, c: 1.5, v: 10, vw: 1.2, n: 3 }] })
 			: Response.json(snapshotBody([tickerRow("AMD", 150, 160, T("2026-11-09T14:59:00Z"))])),
 	});
-	assert.deepEqual(await m.source.lookup("quote", { symbols: ["AMD"] }), [
-		{ symbol: "AMD", price: 150, prevClose: 160, changePct: -6.25, at: T("2026-11-09T14:59:00Z"), delayed: true, dayVolume: 5_000_000 },
-	]);
+	assert.deepEqual(await m.source.lookup("quote", { symbols: ["AMD"] }), {
+		quotes: [{ symbol: "AMD", price: 150, prevClose: 160, changePct: -6.25, at: T("2026-11-09T14:59:00Z"), delayed: true, dayVolume: 5_000_000 }],
+		fromCache: false,
+		cachedAgeMs: 0,
+	});
 	assert.ok(m.requests.at(-1)!.url.endsWith("tickers=AMD"));
-	assert.deepEqual(await m.source.lookup("bars", { symbol: "AMD", span: "minute", from: "2026-11-09", to: "2026-11-09" }), [{ t: 1, o: 1, h: 2, l: 0.5, c: 1.5, v: 10 }]);
+	assert.deepEqual(await m.source.lookup("bars", { symbol: "AMD", span: "minute", from: "2026-11-09", to: "2026-11-09" }), { bars: [{ t: 1, o: 1, h: 2, l: 0.5, c: 1.5, v: 10 }], fromCache: false, cachedAgeMs: 0 });
 	assert.ok(m.requests.at(-1)!.url.includes("/v2/aggs/ticker/AMD/range/1/minute/2026-11-09/2026-11-09"));
-	assert.deepEqual(await m.source.lookup("session", {}), { nyDate: "2026-11-09", phase: "regular" });
+	assert.deepEqual(await m.source.lookup("session", {}), { nyDate: "2026-11-09", phase: "regular", fromCache: false, cachedAgeMs: 0 });
 });
 
 test("查询：参数严格校验，不合法的代码、日期、多余字段和未知操作都直接拒绝且不发请求", async () => {
@@ -275,11 +279,190 @@ test("查询自选股时复用不到一个轮询周期的看盘快照，不多�
 	m.prices.NVDA = 102;
 	await m.source.tick();
 	m.clock.t += 30_000;
-	const [nvda] = (await m.source.lookup("quote", { symbols: ["NVDA"] })) as { symbol: string; price: number }[];
-	assert.deepEqual([nvda.symbol, nvda.price, m.requests.length], ["NVDA", 102, 1]);
+	const { quotes: [nvda], fromCache, cachedAgeMs } = (await m.source.lookup("quote", { symbols: ["NVDA"] })) as { quotes: { symbol: string; price: number }[]; fromCache: boolean; cachedAgeMs: number };
+	assert.deepEqual([nvda.symbol, nvda.price, m.requests.length, fromCache, cachedAgeMs], ["NVDA", 102, 1, true, 30_000]);
 	await m.source.lookup("quote", { symbols: ["NVDA", "AMD"] });
 	assert.deepEqual([m.requests.length, m.requests.at(-1)!.url.endsWith("tickers=AMD")], [2, true]);
 	m.clock.t += 31_000;
 	await m.source.lookup("quote", { symbols: ["NVDA"] });
 	assert.equal(m.requests.length, 3);
+});
+
+test("查询：indicators 用默认窗口取 K 线（日线 400 天、小时线 30 天、分钟线 4 天，截至纽约今天）并返回程序算好的指标", async () => {
+	const day = 86_400_000;
+	const results = Array.from({ length: 60 }, (_, i) => ({ t: T("2026-08-01T04:00:00Z") + i * day, o: 100 + i, h: 101 + i, l: 99 + i, c: 100 + i, v: 1000 }));
+	const m = market({ respond: () => Response.json({ status: "OK", results: [...results].reverse() }) });
+	const r = (await m.source.lookup("indicators", { symbol: "nvda", span: "day" })) as Record<string, unknown>;
+	assert.ok(m.requests.at(-1)!.url.includes("/v2/aggs/ticker/NVDA/range/1/day/2025-10-05/2026-11-09?"));
+	assert.ok(m.requests.at(-1)!.url.includes("limit=5000"));
+	assert.equal(r.symbol, "NVDA");
+	assert.equal(r.span, "day");
+	assert.equal(r.from, "2025-10-05");
+	assert.equal(r.to, "2026-11-09");
+	assert.equal(r.bars, 60);
+	assert.deepEqual(r.lastBar, { start: results.at(-1)!.t, end: results.at(-1)!.t + 16 * 3_600_000, partial: false });
+	assert.equal(r.lastPrice, 159);
+	assert.equal(r.sma20, 149.5);
+	assert.deepEqual(r.sma200, { insufficient: { need: 200, have: 60 } });
+	await m.source.lookup("indicators", { symbol: "NVDA", span: "hour" });
+	assert.ok(m.requests.at(-1)!.url.includes("/range/1/hour/2026-10-10/2026-11-09?"));
+	await m.source.lookup("indicators", { symbol: "NVDA", span: "minute", to: "2026-11-06" });
+	assert.ok(m.requests.at(-1)!.url.includes("/range/1/minute/2026-11-02/2026-11-06?"));
+	await m.source.lookup("indicators", { symbol: "NVDA", span: "day", from: "2026-01-02", to: "2026-03-02" });
+	assert.ok(m.requests.at(-1)!.url.includes("/range/1/day/2026-01-02/2026-03-02?"));
+});
+
+test("查询：indicators 没有 K 线时报错，参数不合法时不发请求", async () => {
+	const m = market({ respond: () => Response.json({ status: "OK", results: [] }) });
+	await assert.rejects(m.source.lookup("indicators", { symbol: "NVDA", span: "day" }), /没有.*K 线/);
+	const before = m.requests.length;
+	const bad: unknown[] = [
+		{ symbol: "NVDA", span: "week" },
+		{ symbol: "NV/DA", span: "day" },
+		{ symbol: "NVDA", span: "day", from: "2026-1-2" },
+		{ symbol: "NVDA", span: "day", limit: 5 },
+		{ symbol: "NVDA", span: "day", from: "2026-11-09", to: "2026-11-01" },
+	];
+	for (const args of bad) await assert.rejects(m.source.lookup("indicators", args), /indicators/, JSON.stringify(args));
+	assert.equal(m.requests.length, before);
+});
+
+test("查询：earnings 走 Finnhub 客户端，用纽约今天找下次财报；没有 Finnhub 密钥时只有 earnings 报错，其余查询照常", async () => {
+	const m = market({ respond: () => Response.json(snapshotBody([tickerRow("AMD", 150, 160, T("2026-11-09T14:59:00Z"))])) });
+	await assert.rejects(m.source.lookup("earnings", { symbol: "NVDA" }), /未配置 FINNHUB_API_KEY/);
+	assert.equal((await m.source.lookup("quote", { symbols: ["AMD"] }) as { quotes: unknown[] }).quotes.length, 1);
+	const f = fakeHttp((url) => Response.json(url.includes("/calendar/") ? { earningsCalendar: [{ date: "2026-11-19", hour: "amc", symbol: "NVDA" }] } : []), T("2026-11-09T15:00:00Z"));
+	const withKey = market();
+	const source = new MarketSource({ ...withKey.options, earnings: new FinnhubClient({ key: "fh", minGapMs: 0, http: f.http, clock: f.clock, sleep: f.sleep }) });
+	assert.deepEqual(await source.lookup("earnings", { symbol: "nvda" }), { symbol: "NVDA", next: { date: "2026-11-19", hour: "amc" }, quarters: [], fromCache: false, cachedAgeMs: 0 });
+	assert.ok(f.calls[0]!.url.includes("from=2025-10-05&to=2027-03-09"));
+	await assert.rejects(source.lookup("earnings", { symbol: "NVDA", span: "day" }), /span/);
+	await assert.rejects(source.lookup("earnings", { symbol: "N V" }), /symbol/);
+	assert.equal(f.calls.length, 2);
+});
+
+test("密钥接线：marketFeed 从 secretsFile 读 FINNHUB_API_KEY，日志只写来源；没有时写明 earnings 不可用", (t) => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-fh-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const file = join(dir, ".env");
+	writeFileSync(file, "MASSIVE_API_KEY=mk-secret\nFINNHUB_API_KEY=fh-secret\n");
+	const logs: string[] = [];
+	marketFeed({ source: "us-market", title: "美股行情", settings: DEFAULTS, override: undefined, where: "test", secretsFile: file, env: {}, log: (l) => logs.push(l) });
+	assert.match(logs.join("\n"), /Finnhub 密钥来自 secretsFile/);
+	assert.ok(!/mk-secret|fh-secret/.test(logs.join("\n")));
+	writeFileSync(file, "MASSIVE_API_KEY=mk-secret\n");
+	marketFeed({ source: "us-market", title: "美股行情", settings: DEFAULTS, override: undefined, where: "test", secretsFile: file, env: {}, log: (l) => logs.push(l) });
+	assert.match(logs.at(-1)!, /未配置 FINNHUB_API_KEY/);
+});
+
+test("Finnhub 密钥格式不对：只有 earnings 停用并说明原因，美股行情其余查询照常，日志和错误里没有密钥", async (t) => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-fh-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const file = join(dir, ".env");
+	writeFileSync(file, "MASSIVE_API_KEY=mk-secret\nFINNHUB_API_KEY=\"fh bad-secret\"\n");
+	const logs: string[] = [];
+	const spec = marketFeed({ source: "us-market", title: "美股行情", settings: DEFAULTS, override: undefined, where: "test", secretsFile: file, env: {}, log: (l) => logs.push(l) });
+	const feed = spec.create({ clock: { now: () => T("2026-11-09T15:00:00Z") }, submit: () => {}, readCursor: () => undefined, writeCursor: () => {}, log: () => {} });
+	t.after(() => feed.stop());
+	assert.equal(feed.problem(), undefined);
+	assert.deepEqual(await feed.lookup("session", {}), { nyDate: "2026-11-09", phase: "regular", fromCache: false, cachedAgeMs: 0 });
+	await assert.rejects(feed.lookup("earnings", { symbol: "NVDA" }), (e: Error) => /earnings 不可用.*Finnhub 密钥.*空白/.test(e.message) && !e.message.includes("bad-secret"));
+	assert.match(logs.join("\n"), /Finnhub 密钥.*空白/);
+	assert.ok(!/bad-secret|mk-secret/.test(logs.join("\n")));
+});
+
+const BARS = { status: "OK", results: [{ t: T("2026-11-06T05:00:00Z"), o: 1, h: 2, l: 0.5, c: 1.5, v: 10 }] };
+type Fresh = { fromCache: boolean; cachedAgeMs: number };
+
+test("缓存：同时来的 5 个相同 indicators 查询只发 1 个请求，都拿到结果", async () => {
+	const m = market({ respond: () => Response.json(BARS) });
+	const results = (await Promise.all([1, 2, 3, 4, 5].map(() => m.source.lookup("indicators", { symbol: "NVDA", span: "day" })))) as { lastPrice: number }[];
+	assert.equal(m.requests.length, 1);
+	assert.deepEqual(results.map((r) => r.lastPrice), [1.5, 1.5, 1.5, 1.5, 1.5]);
+});
+
+test("缓存 TTL：bars/indicators 日线 10 分钟、小时线 2 分钟、分钟线 60 秒；indicators 复用缓存的 K 线；结果写明是否来自缓存和年龄", async () => {
+	for (const [span, ttl] of [["day", 600_000], ["hour", 120_000], ["minute", 60_000]] as const) {
+		for (const op of ["indicators", "bars"]) {
+			const m = market({ respond: () => Response.json(BARS) });
+			const args = op === "bars" ? { symbol: "NVDA", span, from: "2026-11-02", to: "2026-11-06" } : { symbol: "NVDA", span };
+			assert.deepEqual(pick(await m.source.lookup(op, args)), { fromCache: false, cachedAgeMs: 0 });
+			m.clock.t += ttl - 1;
+			assert.deepEqual(pick(await m.source.lookup(op, args)), { fromCache: true, cachedAgeMs: ttl - 1 }, `${op} ${span}`);
+			assert.equal(m.requests.length, 1, `${op} ${span}`);
+			m.clock.t += 1;
+			assert.deepEqual(pick(await m.source.lookup(op, args)), { fromCache: false, cachedAgeMs: 0 });
+			assert.equal(m.requests.length, 2, `${op} ${span}`);
+		}
+	}
+});
+
+const pick = (r: unknown) => ({ fromCache: (r as Fresh).fromCache, cachedAgeMs: (r as Fresh).cachedAgeMs });
+
+test("缓存 TTL：quote 不在轮询快照里时缓存 30 秒；earnings 缓存 6 小时；session 现算不发请求", async () => {
+	const m = market({ respond: () => Response.json(snapshotBody([tickerRow("AMD", 150, 160, T("2026-11-09T14:59:00Z"))])) });
+	await m.source.lookup("quote", { symbols: ["AMD"] });
+	m.clock.t += 29_999;
+	assert.deepEqual(pick(await m.source.lookup("quote", { symbols: ["AMD"] })), { fromCache: true, cachedAgeMs: 29_999 });
+	m.clock.t += 1;
+	await m.source.lookup("quote", { symbols: ["AMD"] });
+	assert.equal(m.requests.length, 2);
+	await m.source.lookup("session", {});
+	assert.equal(m.requests.length, 2);
+
+	const f = fakeHttp((url) => Response.json(url.includes("/calendar/") ? { earningsCalendar: [] } : []), T("2026-11-09T15:00:00Z"));
+	const e = market();
+	const source = new MarketSource({ ...e.options, earnings: new FinnhubClient({ key: "fh", minGapMs: 0, http: f.http, clock: f.clock, sleep: f.sleep }) });
+	await source.lookup("earnings", { symbol: "NVDA" });
+	e.clock.t += 6 * 3_600_000 - 1;
+	assert.deepEqual(pick(await source.lookup("earnings", { symbol: "NVDA" })), { fromCache: true, cachedAgeMs: 6 * 3_600_000 - 1 });
+	await source.lookup("earnings", { symbol: "AMD" });
+	assert.equal(f.calls.length, 4);
+	e.clock.t += 1;
+	await source.lookup("earnings", { symbol: "NVDA" });
+	assert.equal(f.calls.length, 6);
+});
+
+test("缓存键：每个参数不同都是不同的请求；参数相同才复用", async () => {
+	const m = market({ respond: () => Response.json(BARS) });
+	const base = { symbol: "NVDA", span: "minute", from: "2026-11-02", to: "2026-11-06" };
+	for (const args of [base, { ...base, symbol: "AMD" }, { ...base, span: "hour" }, { ...base, from: "2026-11-03" }, { ...base, to: "2026-11-05" }]) await m.source.lookup("bars", args);
+	assert.equal(m.requests.length, 5);
+	await m.source.lookup("bars", { ...base });
+	await m.source.lookup("indicators", { symbol: "NVDA", span: "minute", from: "2026-11-02", to: "2026-11-06" });
+	await m.source.lookup("indicators", { symbol: "NVDA", span: "minute", from: "2026-11-02", to: "2026-11-05" });
+	assert.equal(m.requests.length, 7);
+	const q = market();
+	for (const symbols of [["AMD"], ["AMD", "TSLA"], ["TSLA"], ["TSLA", "AMD"]]) await q.source.lookup("quote", { symbols });
+	assert.equal(q.requests.length, 3);
+});
+
+test("缓存上限：最多 200 条，最久没用的先淘汰", async () => {
+	const m = market({ respond: () => Response.json(BARS) });
+	const day = (i: number) => new Date(T("2026-01-01T12:00:00Z") + i * 86_400_000).toISOString().slice(0, 10);
+	for (let i = 0; i <= 200; i++) await m.source.lookup("bars", { symbol: "NVDA", span: "day", from: day(i), to: day(i) });
+	assert.equal(m.requests.length, 201);
+	await m.source.lookup("bars", { symbol: "NVDA", span: "day", from: day(200), to: day(200) });
+	assert.equal(m.requests.length, 201);
+	await m.source.lookup("bars", { symbol: "NVDA", span: "day", from: day(0), to: day(0) });
+	assert.equal(m.requests.length, 202);
+});
+
+test("日志：每次查询一行，写操作、来源（缓存/合用/上游）、排队等待和总耗时，不写密钥", async () => {
+	const m = market({ paced: true, respond: () => Response.json(BARS) });
+	m.logs.length = 0;
+	await Promise.all([
+		m.source.lookup("bars", { symbol: "NVDA", span: "day", from: "2026-11-02", to: "2026-11-06" }),
+		m.source.lookup("bars", { symbol: "AMD", span: "day", from: "2026-11-02", to: "2026-11-06" }),
+		m.source.lookup("bars", { symbol: "AMD", span: "day", from: "2026-11-02", to: "2026-11-06" }),
+	]);
+	await m.source.lookup("bars", { symbol: "NVDA", span: "day", from: "2026-11-02", to: "2026-11-06" });
+	await m.source.lookup("quote", { symbols: ["NV/DA"] }).catch(() => {});
+	assert.equal(m.logs.length, 5, m.logs.join("\n"));
+	assert.match(m.logs[0]!, /lookup bars NVDA day 2026-11-02～2026-11-06：上游，排队 0ms，总计 \d+ms/);
+	assert.match(m.logs[1]!, /lookup bars AMD day .*：上游，排队 12000ms，总计 12000ms/);
+	assert.match(m.logs[2]!, /lookup bars AMD day .*：合用进行中的请求，排队 0ms，总计 12000ms/);
+	assert.match(m.logs[3]!, /lookup bars NVDA day .*：缓存（\d+ms 前），排队 0ms，总计 0ms/);
+	assert.match(m.logs[4]!, /lookup quote：失败（quote 的 symbols 必须是/);
+	assert.ok(!m.logs.join("\n").includes("sk-test-secret"));
 });

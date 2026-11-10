@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { MarketClient, MarketError } from "../src/sources/market/client.ts";
-import { readMarketKey } from "../src/sources/market/key.ts";
+import { readFinnhubKey, readMarketKey } from "../src/sources/market/key.ts";
 import { ConfigError } from "../src/config-error.ts";
 import { fakeHttp as fakeHttpOn, snapshotBody, tickerRow } from "./helpers/market.ts";
 
@@ -107,6 +107,18 @@ test("Key：环境变量没有时读 secretsFile 指向的 .env；都没有时�
 	writeFileSync(file, `# comment\nPOLYGON_API_KEY=${KEY}\nOTHER=1\n`);
 	assert.deepEqual(readMarketKey({}, file), { key: KEY, origin: `secretsFile ${file}` });
 	assert.equal(readMarketKey({}, undefined), undefined);
+});
+
+test("Finnhub Key：和行情密钥同一套读取方式，变量名 FINNHUB_API_KEY；行情密钥不会被当成 Finnhub 密钥", (t) => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-key-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const file = join(dir, ".env");
+	writeFileSync(file, `POLYGON_API_KEY=${KEY}\nFINNHUB_API_KEY=fh-file\n`);
+	assert.deepEqual(readFinnhubKey({ FINNHUB_API_KEY: "fh-env" }, file), { key: "fh-env", origin: "环境变量 FINNHUB_API_KEY" });
+	assert.deepEqual(readFinnhubKey({}, file), { key: "fh-file", origin: `secretsFile ${file}` });
+	writeFileSync(file, `POLYGON_API_KEY=${KEY}\n`);
+	assert.equal(readFinnhubKey({ MASSIVE_API_KEY: KEY }, file), undefined);
+	assert.throws(() => readFinnhubKey({ FINNHUB_API_KEY: "fh space-secret" }, undefined), (e: Error) => e instanceof ConfigError && /Finnhub/.test(e.message) && !e.message.includes("space-secret"));
 });
 
 test("Key：格式不对时报配置错误，错误里不出现 Key 的内容", () => {
