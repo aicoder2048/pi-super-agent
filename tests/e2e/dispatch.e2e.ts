@@ -305,7 +305,7 @@ test("一次派给四位成员、同时只能跑两位：小卡下两位在干�
 			await step("问一句，四位成员都列在助手小卡下：两位在干活，两位写排队中", async (page) => {
 				await sayInPage(page, ASK);
 				await page.waitForFunction(() => document.querySelectorAll("#helpers .member-chip.running").length === 2 && document.querySelectorAll("#helpers .member-chip.queued").length === 2);
-				for (const label of await page.locator("#helpers .member-chip.queued").allTextContents()) assert.match(label, /^(行情分析师|新闻研究员|财报解读|技术分析师) · 排队中$/);
+				for (const label of await page.locator("#helpers .member-chip.queued").allTextContents()) assert.match(label, /^(行情分析师|新闻研究员|财报解读|技术分析师) · 排队中 · 上限 2$/);
 			});
 			await step("手机宽度（390 px）下四位成员换行显示，每一位都在屏幕里", async (page) => {
 				await page.setViewportSize({ width: 390, height: 844 });

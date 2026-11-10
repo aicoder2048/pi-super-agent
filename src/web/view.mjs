@@ -8,13 +8,15 @@
 /** @typedef {import("../kernel/types.ts").Routes} Routes */
 /** @typedef {import("../client/protocol.ts").HostToClient} HostToClient */
 /** @typedef {import("../client/protocol.ts").TodayCounts} TodayCounts */
+/** @typedef {import("../client/protocol.ts").MemberCapBoard} MemberCapBoard */
+/** @typedef {import("../kernel/types.ts").CapQuestion} CapQuestion */
 /** @typedef {import("../client/protocol.ts").TranscriptMessage} TranscriptMessage */
 /** @typedef {import("../client/protocol.ts").WatchedSource} WatchedSource */
 /** @typedef {import("../host/dispatch.ts").Dispatching} Dispatching */
 /** @typedef {import("../host/dispatch.ts").BoardDispatch} BoardDispatch */
 /** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
 
-import { INPUT_LABEL, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, shortId, stallMinutes, textOf, toolStep } from "../client/board-format.mjs";
+import { HOST_SOURCE, INPUT_LABEL, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, shortId, stallMinutes, textOf, toolStep } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -56,12 +58,13 @@ const GROUP = {
  * @property {WatchedSource[]} watching
  * @property {Routes} routes
  * @property {Dispatching} dispatching
+ * @property {MemberCapBoard} memberCap null from a host that cannot dispatch, or one older than this field
  * @property {Map<string, Map<string, BoardDispatch>>} lastOnBoard each unfinished ticket's dispatches as the board last listed them, by ticket then call id
  */
 
 /** @returns {View} */
 export function emptyView() {
-	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {}, dispatching: {}, lastOnBoard: new Map() };
+	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {}, dispatching: {}, memberCap: null, lastOnBoard: new Map() };
 }
 
 /** @param {View} view @param {Dispatching | undefined} dispatching */
@@ -90,7 +93,7 @@ export function applyMessage(view, message, now) {
 	switch (message.type) {
 		case "snapshot":
 			for (const line of message.conversation) addLine(view, line);
-			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, receivedAt: now });
+			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, memberCap: message.memberCap ?? null, receivedAt: now });
 			setDispatching(view, message.dispatching);
 			return ["conversation", "left", "header"];
 		case "user":
@@ -100,7 +103,7 @@ export function applyMessage(view, message, now) {
 			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at, ...(message.ticketId ? { ticketId: message.ticketId } : {}) });
 			return ["conversation"];
 		case "board":
-			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, routes: message.routes, receivedAt: now });
+			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, routes: message.routes, memberCap: message.memberCap ?? null, receivedAt: now });
 			setDispatching(view, message.dispatching);
 			return ["conversation", "left", "header"];
 	}
@@ -128,22 +131,27 @@ const CHOICE_NOTE = {
  * @property {string} note
  */
 
-/** @param {DashboardRow} row @param {Sending} sending @returns {Choice | null} */
-function choiceOf(row, sending) {
-	const q = row.question;
+const CAP_SENT_NOTE = "已发送";
+
+/**
+ * @param {(CapQuestion & Partial<Pick<NonNullable<DashboardRow["question"]>, "click" | "spoke">>) | null | undefined} q a helper's question, or the host's own, which is never clicked on the board and never locked
+ * @param {Sending} sending @param {string} [sentNote] @returns {Choice | null}
+ */
+function choiceOf(q, sending, sentNote = CHOICE_NOTE.sent) {
 	if (!q || q.options.length === 0) return null;
 	const local = sending.get(q.reportId);
-	const click = q.click;
+	const click = q.click ?? null;
+	const spoke = q.spoke ?? false;
 	const shown = local
-		? { option: local.option, note: CHOICE_NOTE[local.triggerId ? "sent" : "sending"] }
+		? { option: local.option, note: local.triggerId ? sentNote : CHOICE_NOTE.sending }
 		: click && click.state !== "dropped"
 			? { option: click.option, note: CHOICE_NOTE[click.state] }
 			: null;
 	return {
 		reportId: q.reportId,
 		buttons: q.options.map((label, option) => ({ label, option, picked: option === shown?.option })),
-		locked: shown !== null || q.spoke,
-		note: shown?.note ?? (q.spoke ? CHOICE_NOTE.spoke : click?.state === "dropped" ? CHOICE_NOTE.dropped : ""),
+		locked: shown !== null || spoke,
+		note: shown?.note ?? (spoke ? CHOICE_NOTE.spoke : click?.state === "dropped" ? CHOICE_NOTE.dropped : ""),
 	};
 }
 
@@ -151,9 +159,15 @@ function choiceOf(row, sending) {
 export function settleSending(view, sending) {
 	for (const [reportId, { triggerId }] of sending) {
 		if (!triggerId) continue;
-		const q = view.rows.find((r) => r.question?.reportId === reportId)?.question;
-		if (!q || q.click?.triggerId === triggerId) sending.delete(reportId);
+		const q = questionOf(view, reportId);
+		if (!q || ("click" in q && q.click?.triggerId === triggerId)) sending.delete(reportId);
 	}
+}
+
+/** The open question with this id: a helper's, or the host's own. @param {View} view @param {string} reportId */
+export function questionOf(view, reportId) {
+	const cap = view.memberCap?.question;
+	return cap?.reportId === reportId ? cap : view.rows.find((r) => r.question?.reportId === reportId)?.question;
 }
 
 /**
@@ -178,8 +192,17 @@ function card(row, now, sending) {
 		stage: row.stall ? `久无进展 · ${stallMinutes(row.stall.since, now)} 分钟` : STAGE_PHRASE[row.stage],
 		latest: row.question?.text ?? row.latestSummary ?? "已开始，暂无进展",
 		canStop: GROUP[row.stage] === "doing",
-		choice: choiceOf(row, sending),
+		choice: choiceOf(row.question, sending),
 	};
+}
+
+/** The host's question about the member cap. It belongs to no task, so it has no helper and nothing to open; `source` stands where a task card names its helper. @typedef {{ title: string, source: string, stage: string, latest: string, choice: Choice }} CapCard */
+
+/** @param {View} view @param {Sending} sending @returns {CapCard | null} */
+function capCard(view, sending) {
+	const q = view.memberCap?.question;
+	const choice = choiceOf(q, sending, CAP_SENT_NOTE);
+	return q && choice ? { title: "成员上限", source: HOST_SOURCE, stage: STAGE_PHRASE.awaiting_answer, latest: q.text, choice } : null;
 }
 
 /** @param {View} view @param {Sending} sending @returns {Map<string, Choice>} */
@@ -188,7 +211,7 @@ export function choicesInConversation(view, sending) {
 	/** @type {Map<string, Choice>} */
 	const placed = new Map();
 	for (const row of view.rows) {
-		const choice = choiceOf(row, sending);
+		const choice = choiceOf(row.question, sending);
 		const askedAt = row.question?.askedAt ?? Infinity;
 		const line = lines.findLast((l) => l.who === "router" && l.ticketId === row.id && l.at >= askedAt);
 		if (choice && line) placed.set(line.id, choice);
@@ -220,7 +243,10 @@ export function leftColumn(view, now, sending = new Map()) {
 	const groups = { needsYou: [], doing: [], done: [] };
 	for (const row of view.rows) groups[groupOf(row)].push(card(row, now, sending));
 	const hits = view.today?.bySource ?? {};
+	const cap = capCard(view, sending);
 	return {
+		capCard: cap,
+		needsYouLine: `待你处理 · ${groups.needsYou.length + (cap ? 1 : 0)}`,
 		needsYou: groups.needsYou,
 		doing: groups.doing,
 		done: groups.done.reverse(),
@@ -554,6 +580,7 @@ function runningFor(ms) {
 
 /** One chip per helper on duty (a ticket not yet ended), then today's total. @param {View} view @param {number} now @returns {{ chips: HelperChip[], total: string }} */
 export function helperStrip(view, now) {
+	const queued = view.memberCap ? `${DISPATCH_STATE.queued} · 上限 ${view.memberCap.limit}` : DISPATCH_STATE.queued;
 	const chips = view.rows.flatMap((row) => {
 		if (row.endedAt !== null || !row.helper) return [];
 		return [{
@@ -564,7 +591,7 @@ export function helperStrip(view, now) {
 			elapsed: elapsedOf(row, now, view.receivedAt),
 			tokens: `${formatTokens(row.tokensIn + row.tokensOut)} tokens`,
 			members: (view.dispatching[row.id] ?? []).flatMap((d) => {
-				if (d.state === "queued") return [{ title: d.title, state: d.state, label: `${d.title} · ${DISPATCH_STATE.queued}` }];
+				if (d.state === "queued") return [{ title: d.title, state: d.state, label: `${d.title} · ${queued}` }];
 				if (d.state !== "running") return [];
 				const sinceFrame = now - view.receivedAt;
 				const when = d.toolMs === undefined ? ago(d.quietMs + sinceFrame) : runningFor(d.toolMs + sinceFrame);

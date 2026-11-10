@@ -39,3 +39,16 @@ const NEW_YORK_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_
 
 /** The New York calendar date (YYYY-MM-DD) a helper number counts in. */
 export const newYorkDate = (ms: number) => NEW_YORK_DATE.format(ms);
+
+const NEW_YORK_CLOCK = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hourCycle: "h23", hour: "numeric", minute: "numeric", second: "numeric" });
+const HOUR_MS = 3_600_000;
+
+/** How long until `newYorkDate` changes. The wall clock gives the answer except on a day a clock change makes 23 or 25 hours long, which the two loops correct. */
+export function msUntilNextNewYorkDay(ms: number): number {
+	const part = Object.fromEntries(NEW_YORK_CLOCK.formatToParts(ms).map((p) => [p.type, Number(p.value)]));
+	const day = newYorkDate(ms);
+	let at = ms + 24 * HOUR_MS - (part.hour * HOUR_MS + part.minute * 60_000 + part.second * 1000 + (ms % 1000));
+	while (newYorkDate(at - 1) !== day) at -= HOUR_MS;
+	while (newYorkDate(at) === day) at += HOUR_MS;
+	return at - ms;
+}

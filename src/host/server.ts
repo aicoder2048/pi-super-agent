@@ -11,6 +11,8 @@ export type Broadcast = Extract<HostToClient, { type: "user" | "reply" | "board"
 
 export type AnswerResult = { ok: true; triggerId: string } | { ok: false; refusal: AnswerRefusal };
 
+const ANSWER_FAILED = "宿主内部出错，这次点选没有生效，请再点一次；详情见宿主日志。";
+
 export interface ClientHandlers {
 	onSay(text: string): string;
 	onAnswer(reportId: string, option: number): AnswerResult;
@@ -99,8 +101,10 @@ export class HostServer {
 					}, () => {});
 				}
 				else if (r.type === "answer" && typeof r.reportId === "string" && Number.isInteger(r.option) && typeof r.requestId === "string") {
-					const result = clients.onAnswer(r.reportId, r.option);
-					writeJsonLine(socket, result.ok ? { type: "ack", requestId: r.requestId, triggerId: result.triggerId } : { type: "refused", requestId: r.requestId, reason: refusalText(result.refusal) });
+					this.#guard("answer", () => {
+						const result = clients.onAnswer(r.reportId, r.option);
+						writeJsonLine(socket, result.ok ? { type: "ack", requestId: r.requestId, triggerId: result.triggerId } : { type: "refused", requestId: r.requestId, reason: refusalText(result.refusal) });
+					}, () => writeJsonLine(socket, { type: "refused", requestId: r.requestId, reason: ANSWER_FAILED }));
 				}
 				else if (r.type === "watch") {
 					c.watching = typeof r.ticketId === "string" ? r.ticketId : undefined;

@@ -20,6 +20,9 @@ export const STAGE_LABEL = {
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_LABEL = { request: "请求", rule: "规则", inference: "推断" };
 
+/** Who asks the member-cap question. No helper's name, role or team can read like this, so a helper's look-alike question cannot carry it. */
+export const HOST_SOURCE = "白宫 · 系统";
+
 /** @type {Record<InputKind, string>} */
 export const INPUT_LABEL = {
 	brief: "任务说明",

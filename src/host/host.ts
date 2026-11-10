@@ -4,6 +4,8 @@ import { relocateState } from "./relocate.ts";
 import { endLeftoverMembers } from "./member-ledger.ts";
 import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
+import { isCapAskId } from "../kernel/cap-ask.ts";
+import { msUntilNextNewYorkDay } from "../kernel/helper-names.ts";
 import { Kernel, nextStallAt } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
 import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type DashboardRow, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
@@ -13,11 +15,12 @@ import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import type { Feed, FeedSpec } from "../sources/feeds.ts";
 import { Dispatcher } from "./dispatcher.ts";
 import { HostServer, type AnswerResult, type Broadcast } from "./server.ts";
-import type { BoardState, Duty, TodayCounts, TranscriptHistory, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
+import type { BoardState, Duty, MemberCapBoard, TodayCounts, TranscriptHistory, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
 import { readSessionEntries } from "../jsonl.ts";
 import { memberTranscripts } from "./dispatch.ts";
 import { WebGateway } from "./web.ts";
 import { loadToken } from "./web-token.ts";
+import { MemberCap } from "./member-cap.ts";
 import { ConfigError } from "../config-error.ts";
 import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 import type { Domains } from "../modules.ts";
@@ -56,7 +59,15 @@ export interface HostOptions {
 	webPort?: number;
 	watching?: WatchedSource[];
 	feeds?: FeedSpec[];
+	/** Runs `run` once, `ms` from now, and returns its cancel. The host waits for the New York day change with it; tests pass their own to make that moment arrive. */
+	after?: (ms: number, run: () => void) => () => void;
 }
+
+const afterRealTime: NonNullable<HostOptions["after"]> = (ms, run) => {
+	const timer = setTimeout(run, ms);
+	timer.unref();
+	return () => clearTimeout(timer);
+};
 
 
 // sun_path holds 104 bytes on macOS and 108 on Linux, including the terminating NUL.
@@ -95,6 +106,9 @@ export class Host {
 	readonly #watching: WatchedSource[];
 	readonly #clock: Clock;
 	readonly #kitFor: Domains["kitFor"] | undefined;
+	readonly #memberCap: MemberCap | undefined;
+	readonly #after: NonNullable<HostOptions["after"]>;
+	#cancelNewYorkDay: (() => void) | undefined;
 	#duty!: Duty;
 
 	private constructor(options: HostOptions) {
@@ -106,6 +120,7 @@ export class Host {
 		this.#stateDir = options.stateDir;
 		const clock = options.clock ?? { now: () => Date.now() };
 		this.#clock = clock;
+		this.#after = options.after ?? afterRealTime;
 		this.#watching = options.watching ?? [];
 		this.#kitFor = options.domains?.kitFor;
 		this.kernel = new Kernel({
@@ -141,6 +156,8 @@ export class Host {
 			log: this.#log,
 		})]));
 		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []) };
+		const memberCap = options.dispatch && new MemberCap({ configured: options.dispatch.maxConcurrent, clock, store: this.kernel.capAsks, log: this.#log });
+		this.#memberCap = memberCap;
 		this.workers = new WorkerExecutor({
 			kernel: this.kernel,
 			spawner: options.createSpawner(deps),
@@ -151,7 +168,7 @@ export class Host {
 			onError: (ticketId, error) => this.#log(`[worker ${ticketId}] ${String(error)}`),
 			models: options.workerModels,
 			kitFor: this.#kitFor,
-			dispatch: options.dispatch,
+			dispatch: memberCap && { ...options.dispatch!, cap: { limit: () => memberCap.limit(), membersWaiting: (waiting) => this.#askAboutMemberCap(memberCap, waiting) } },
 			lookup: async (source, op, args) => {
 				const feed = this.feeds.get(source);
 				if (!feed) throw new Error(`没有来源 ${source} 可查；可查：${[...this.feeds.keys()].join("、") || "无"}`);
@@ -210,6 +227,7 @@ export class Host {
 		host.#heartbeat = setInterval(() => host.#beat(), options.heartbeatMs ?? 30_000);
 		host.#heartbeat.unref();
 		host.#atNextMidnight();
+		if (host.#memberCap) host.#atNextNewYorkDay(host.#memberCap);
 		host.#pushBoardAtNextStall(host.kernel.listTickets());
 		host.dispatcher.kick();
 		return host;
@@ -227,7 +245,9 @@ export class Host {
 		return triggerId;
 	}
 
+	/** Only the user's front ends reach this: the web gateway after its token and origin checks, and a socket connection that said hello as a client. */
 	answer(reportId: string, option: number): AnswerResult {
+		if (isCapAskId(reportId)) return this.#answerCapAsk(reportId, option);
 		const at = Date.now();
 		const result = this.kernel.answerQuestion({ reportId, option, at });
 		if (!result.ok) return result;
@@ -238,17 +258,41 @@ export class Host {
 		return { ok: true, triggerId: result.triggerId };
 	}
 
+	#askAboutMemberCap(cap: MemberCap, waiting: number): void {
+		try {
+			cap.membersWaiting(waiting);
+		} catch (error) {
+			this.#log(`[host] 成员上限：没能记下要问使用者的问题：${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	#answerCapAsk(reportId: string, option: number): AnswerResult {
+		const result = this.#memberCap?.answer(reportId, option) ?? { ok: false as const, refusal: { kind: "closed" as const } };
+		if (!result.ok) return result;
+		if (!result.duplicate) {
+			this.#broadcast({ type: "user", id: result.lineId, text: result.text, at: this.#clock.now() });
+			this.workers.recheckMemberSlots();
+			this.#changed();
+		}
+		return { ok: true, triggerId: result.lineId };
+	}
+
 	snapshot() {
-		const { rows, today, duty, helpers, routes, dispatching } = this.#boardState();
+		const { rows, today, duty, helpers, routes, dispatching, memberCap } = this.#boardState();
 		const watching = this.#watching.map((w) => {
 			const problem = this.feeds.get(w.source)?.problem();
 			return problem ? { ...w, problem } : w;
 		});
-		return { conversation: this.kernel.conversation(CONVERSATION_LINES), board: rows, today, duty, helpers, routes, dispatching, watching };
+		return { conversation: this.kernel.conversation(CONVERSATION_LINES), board: rows, today, duty, helpers, routes, dispatching, memberCap, watching };
 	}
 
 	#boardState(): BoardState {
-		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching() };
+		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard() };
+	}
+
+	#memberCapBoard(): MemberCapBoard {
+		const cap = this.#memberCap;
+		return cap ? { limit: cap.limit(), question: cap.question(this.workers.membersWaitingForSlot()) } : null;
 	}
 
 	#deliverReply(threadId: string, text: string, replyId: string, ticketId: string | null | undefined): void {
@@ -298,6 +342,15 @@ export class Host {
 		this.#midnightTimer.unref();
 	}
 
+	// The day's grant and question end at New York midnight even when nothing happens. A member that still waits then got no answer for the new day, and no new dispatch has to arrive for the host to ask.
+	#atNextNewYorkDay(cap: MemberCap): void {
+		this.#cancelNewYorkDay = this.#after(Math.min(msUntilNextNewYorkDay(this.#clock.now()), MAX_TIMER_MS), () => {
+			this.#atNextNewYorkDay(cap);
+			this.#askAboutMemberCap(cap, this.workers.membersWaitingForSlot());
+			this.#pushBoard();
+		});
+	}
+
 	#pushBoardAtNextStall(rows: DashboardRow[]): void {
 		const at = nextStallAt(rows, this.kernel.config.stuckMs);
 		if (at === this.#stallAt) return;
@@ -343,6 +396,7 @@ export class Host {
 		this.dispatcher.stop();
 		clearTimeout(this.#boardTimer);
 		clearTimeout(this.#midnightTimer);
+		this.#cancelNewYorkDay?.();
 		clearTimeout(this.#stallTimer);
 		await this.workers.shutdown();
 		this.router.dispose();

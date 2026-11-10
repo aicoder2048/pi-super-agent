@@ -6,9 +6,9 @@ import { connect, createServer, type Socket } from "node:net";
 import { dirname, join } from "node:path";
 import superAgentClient from "../extensions/super-agent.ts";
 import { onJsonLines, writeJsonLine } from "../src/jsonl.ts";
-import { openChoices, renderBoard, shortId } from "../src/client/board.ts";
+import { openChoices, openQuestions, renderBoard, shortId } from "../src/client/board.ts";
 import { HostConnection } from "../src/client/connection.ts";
-import type { HostToClient } from "../src/client/protocol.ts";
+import type { HostToClient, MemberCapBoard } from "../src/client/protocol.ts";
 import { formatTranscriptMessage } from "../src/client/transcript.ts";
 import { Host } from "../src/host/host.ts";
 import type { DashboardRow } from "../src/kernel/types.ts";
@@ -334,9 +334,9 @@ test("看板：等回答的任务列出问题和编号选项，底部提示怎�
 	assert.match(text, /回复数字作答；多个问题等回答时用 \/answer <编号> <序号>/);
 });
 
-async function answeringClient(rows: DashboardRow[]) {
+async function answeringClient(rows: DashboardRow[], memberCap?: MemberCapBoard) {
 	const host = scriptedHost();
-	host.hello((s) => writeJsonLine(s, { type: "snapshot", conversation: [], board: rows }));
+	host.hello((s) => writeJsonLine(s, { type: "snapshot", conversation: [], board: rows, memberCap }));
 	await host.listen();
 	const ext = await runExtension(host.path);
 	await until(() => host.fromClient.some((r) => r.type === "hello"), "连接");
@@ -437,4 +437,64 @@ test("过程格式：Worker 文字、工具调用和截断的工具结果", () =
 	const [result] = formatTranscriptMessage({ role: "toolResult", content: [{ type: "text", text: "x".repeat(1000) }] });
 	assert.ok([...result].length < 450);
 	assert.deepEqual(formatTranscriptMessage({ role: "system", content: "s" }), []);
+});
+
+test("看板：宿主关于成员上限的问题列在最前面，编号是 cap，带编号选项；和任务的问题一起算等回答的问题", () => {
+	const memberCap = { limit: 4, question: { reportId: "ask_cap_2026-11-09", text: "现在有 2 位成员在排队，同时运行的成员上限是 4。今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 4"], askedAt: 0 } };
+	const lines = renderBoard({ rows: [], memberCap, receivedAt: 0, connected: true }, 120, 0);
+	assert.match(lines.join("\n"), /cap 成员上限\s+等你回答 · 白宫 · 系统\n\s+问题：现在有 2 位成员在排队，同时运行的成员上限是 4。今天放宽到 10 吗？\n\s+1\. 今天放宽到 10   2\. 保持 4\n\s+回复数字作答/);
+	assert.deepEqual(openQuestions({ rows: [], memberCap }), [{ id: "cap", title: "成员上限", reportId: "ask_cap_2026-11-09", options: ["今天放宽到 10", "保持 4"] }]);
+	const both = openQuestions({ rows: [asking("tkt_ab12", "rpt_1")], memberCap });
+	assert.deepEqual(both.map((q) => [q.id, q.reportId]), [["cap", "ask_cap_2026-11-09"], ["tkt_ab12", "rpt_1"]]);
+	assert.deepEqual(openQuestions({ rows: [asking("tkt_ab12", "rpt_1")], memberCap: { limit: 10, question: null } }).map((q) => q.id), ["tkt_ab12"]);
+	assert.deepEqual(openQuestions({ rows: [asking("tkt_ab12", "rpt_1")] }).map((q) => q.title), ["任务tkt_ab12"], "老宿主的帧没有成员上限");
+	assert.doesNotMatch(renderBoard({ rows: [], memberCap: { limit: 10, question: null }, receivedAt: 0, connected: true }, 120, 0).join("\n"), /成员上限/);
+	for (const width of [20, 40]) for (const line of renderBoard({ rows: [], memberCap, receivedAt: 0, connected: true }, width, 0)) assert.ok(visibleWidth(line) <= width, line);
+});
+
+test("看板：助手照着成员上限提的问题仍是任务那一行：右边写的是它为什么存在，不是「白宫 · 系统」，标题里写了这几个字也一样", () => {
+	const memberCap = { limit: 4, question: { reportId: "ask_cap_2026-11-09", text: "今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 4"], askedAt: 0 } };
+	const copy = (title: string) => row({ id: "tkt_cafe01", title, stage: "awaiting_answer", question: { reportId: "rpt_1", text: "今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 4"], askedAt: 0, click: null, spoke: false } });
+	for (const width of [60, 100, 160]) {
+		for (const title of ["成员上限", `成员上限${" ".repeat(width)}等你回答 · 白宫 · 系统`, "cap 成员上限 · 白宫 · 系统"]) {
+			const lines = renderBoard({ rows: [copy(title)], memberCap, receivedAt: 0, connected: true }, width, 0);
+			const fromHost = lines.filter((line) => line.trimEnd().endsWith("白宫 · 系统"));
+			assert.equal(fromHost.length, 1, lines.join("\n"));
+			assert.match(fromHost[0], /^cap 成员上限 /);
+			assert.match(lines.find((line) => line.startsWith("cafe "))!, /等你回答 · 请求$/);
+		}
+	}
+});
+
+const CAP_ASKING: MemberCapBoard = { limit: 4, question: { reportId: "ask_cap_2026-11-09", text: "现在有 2 位成员在排队，同时运行的成员上限是 4。今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 4"], askedAt: 0 } };
+
+test("客户端：只有成员上限的问题在等时，回复数字就答它；数字超出两项时提醒；看板帧里问题没了，数字又当一句话发", async (t) => {
+	const { host, ext, sent } = await answeringClient([], CAP_ASKING);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await ext.input("3");
+	assert.match(ext.warnings.at(-1)!, /「成员上限」只有 2 个选项/);
+	await ext.input("1");
+	await until(() => sent().length === 1, "发出回答");
+	assert.deepEqual(sent(), [["answer", "ask_cap_2026-11-09", 0]]);
+	host.dropClients();
+	host.hello((s) => {
+		writeJsonLine(s, { type: "snapshot", conversation: [], board: [], memberCap: CAP_ASKING });
+		writeJsonLine(s, { type: "board", rows: [], memberCap: { limit: 10, question: null } });
+	});
+	await until(() => host.fromClient.filter((r) => r.type === "hello").length === 2, "重连", 5000);
+	await new Promise((r) => setTimeout(r, 50));
+	await ext.input("1");
+	await until(() => sent().length === 2, "当一句话发");
+	assert.deepEqual(sent()[1], ["say", "1"]);
+});
+
+test("客户端：成员上限的问题和任务的问题同时在等时数字不猜；/answer cap <序号> 答成员上限", async (t) => {
+	const { host, ext, sent } = await answeringClient([asking("tkt_ab12", "rpt_1")], CAP_ASKING);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await ext.input("1");
+	assert.match(ext.warnings.at(-1)!, /有 2 个问题在等回答，请用 \/answer <编号> <序号>，例如 \/answer cap 1/);
+	await ext.command("answer", "cap 2");
+	await ext.command("answer", "ab 1");
+	await until(() => sent().length === 2, "两个都发出");
+	assert.deepEqual(sent(), [["answer", "ask_cap_2026-11-09", 1], ["answer", "rpt_1", 0]]);
 });

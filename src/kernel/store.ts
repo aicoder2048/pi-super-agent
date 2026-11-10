@@ -111,6 +111,17 @@ CREATE TABLE IF NOT EXISTS answer_clicks (
 );
 CREATE INDEX IF NOT EXISTS answer_clicks_report ON answer_clicks (report_id);
 
+-- One row per New York day on which the host asked the user to raise the member cap. said is the user's sentence for the answer.
+CREATE TABLE IF NOT EXISTS cap_asks (
+	day TEXT PRIMARY KEY,
+	state TEXT NOT NULL CHECK (state IN ('asked', 'granted', 'declined')),
+	asked_at INTEGER NOT NULL,
+	answered_at INTEGER,
+	said TEXT,
+	expired_at INTEGER,
+	CHECK ((state = 'asked') = (answered_at IS NULL) AND (state = 'asked') = (said IS NULL))
+);
+
 CREATE TABLE IF NOT EXISTS decisions (
 	seq INTEGER PRIMARY KEY AUTOINCREMENT,
 	decision TEXT NOT NULL,

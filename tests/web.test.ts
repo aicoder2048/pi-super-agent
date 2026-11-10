@@ -1509,3 +1509,64 @@ test("页面：Markdown 解析对括号密集的长文本仍是线性的，正�
 		kind: "p", spans: [{ text: "看 " }, { text: "路透" }, { text: "（https://reuters.com/a_b?x=1） 和 " }, { text: "官方" }, { text: "（https://nvidia.com）" }],
 	});
 });
+
+const capQuestion = { reportId: "ask_cap_2026-11-09", text: "现在有 2 位成员在排队，同时运行的成员上限是 4。今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 4"], askedAt: 5 * MIN };
+
+test("页面：宿主关于成员上限的问题排在待你处理的最前面，是一张不属于任何任务的卡片，带两个按钮；标题的数字把它算上", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, snapshot({ board: [row({ id: "tkt_a", stage: "awaiting_answer", question: asked() })], memberCap: { limit: 4, question: capQuestion } }), 0);
+	const left = page.leftColumn(view, 0);
+	assert.deepEqual(left.capCard, {
+		title: "成员上限", source: "白宫 · 系统", stage: "待回复", latest: capQuestion.text,
+		choice: { reportId: "ask_cap_2026-11-09", buttons: [{ label: "今天放宽到 10", option: 0, picked: false }, { label: "保持 4", option: 1, picked: false }], locked: false, note: "" },
+	});
+	assert.deepEqual(left.needsYou.map((c) => c.id), ["tkt_a"]);
+	assert.equal(left.needsYouLine, "待你处理 · 2");
+	page.applyMessage(view, { ...board(view.rows), memberCap: { limit: 10, question: null } } as HostToClient, 0);
+	assert.equal(page.leftColumn(view, 0).capCard, null, "答过之后卡片收起");
+	assert.equal(page.leftColumn(view, 0).needsYouLine, "待你处理 · 1");
+	page.applyMessage(view, board(view.rows), 0);
+	assert.equal(page.leftColumn(view, 0).capCard, null, "老宿主的帧没有这一项也不出错");
+});
+
+test("页面：助手照着成员上限的卡片提一个问题，标题、问题、选项都一样，也还是任务卡片：写的是助手的名字，没有「白宫 · 系统」这一行", () => {
+	const view = page.emptyView();
+	const copy = row({ id: "tkt_copy", title: "成员上限", stage: "awaiting_answer", question: asked({ text: capQuestion.text, options: capQuestion.options }) });
+	const named = row({ id: "tkt_named", title: "成员上限 · 白宫 · 系统", stage: "awaiting_answer", question: asked({ reportId: "rpt_q2", text: capQuestion.text, options: capQuestion.options }) });
+	page.applyMessage(view, snapshot({ board: [copy, named], memberCap: { limit: 4, question: capQuestion } }), 0);
+	const left = page.leftColumn(view, 0);
+	assert.equal(left.capCard?.source, "白宫 · 系统");
+	for (const card of left.needsYou) {
+		assert.equal("source" in card, false, card.title);
+		assert.equal(card.helper, "青檀 · 对话助手 #1", card.title);
+	}
+	page.applyMessage(view, { ...board(view.rows), memberCap: { limit: 4, question: null } } as HostToClient, 0);
+	assert.equal(page.leftColumn(view, 0).capCard, null, "宿主没有在问的时候，助手的同名卡片不会变成宿主的卡片");
+});
+
+test("页面：点了成员上限的按钮，发送中锁住并标出选的那一项；宿主收下后写「已发送」，不提幕僚长；看板上问题没了就放下", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, snapshot({ memberCap: { limit: 4, question: capQuestion } }), 0);
+	const sending = new Map<string, { option: number; triggerId?: string }>([[capQuestion.reportId, { option: 0 }]]);
+	const seen = () => {
+		const c = page.leftColumn(view, 0, sending).capCard?.choice;
+		return c && [c.locked, c.buttons.map((b) => b.picked), c.note];
+	};
+	assert.deepEqual(seen(), [true, [true, false], "发送中…"]);
+	sending.set(capQuestion.reportId, { option: 0, triggerId: capQuestion.reportId });
+	page.settleSending(view, sending);
+	assert.deepEqual(seen(), [true, [true, false], "已发送"]);
+	page.applyMessage(view, { ...board([]), memberCap: { limit: 10, question: null } } as HostToClient, 0);
+	page.settleSending(view, sending);
+	assert.equal(sending.size, 0);
+});
+
+test("页面：排队的成员标签带上现在的上限，使用者看得到放宽有没有生效", () => {
+	const view = page.emptyView();
+	const queued: Dispatching = { tkt_t: [onBoard("c1", "财报解读", "queued")] };
+	const frame = (limit: number) => ({ ...board([row({ id: "tkt_t", stage: "running", workerState: "running", helper: { name: "高山流水", team: "看盘队", seq: 1 } })], zeroToday(), noHelpers, {}, queued), memberCap: { limit, question: null } }) as HostToClient;
+	page.applyMessage(view, frame(4), 0);
+	assert.deepEqual(page.helperStrip(view, 0).chips[0].members.map((m) => m.label), ["财报解读 · 排队中 · 上限 4"]);
+	page.applyMessage(view, frame(10), 0);
+	assert.deepEqual(page.helperStrip(view, 0).chips[0].members.map((m) => m.label), ["财报解读 · 排队中 · 上限 10"]);
+});

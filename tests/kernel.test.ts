@@ -1461,3 +1461,62 @@ test("T1 开的团队任务只有四字名、没有领域：读出来队名的�
 	s.db.prepare("UPDATE tickets SET domain = NULL WHERE id = ?").run(id);
 	assert.deepEqual(helperOf(s.kernel, id), { name: TEAM_NAMES[0], team: "团队", seq: 1 });
 });
+
+test("成员上限的问答记在状态库里：重开数据库读得回来，记了到期的放宽不再读出", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-cap-"));
+	try {
+		const path = join(dir, "state.db");
+		const first = setup({ path });
+		assert.deepEqual(first.kernel.capAsks.latest(), { state: "none" });
+		first.kernel.capAsks.save({ state: "asked", day: "2026-11-08", askedAt: 100 });
+		assert.deepEqual(first.kernel.capAsks.latest(), { state: "asked", day: "2026-11-08", askedAt: 100 });
+		first.kernel.capAsks.save({ state: "granted", day: "2026-11-08", askedAt: 100, answeredAt: 200 }, "回答成员上限：今天放宽到 10");
+		first.db.close();
+		const second = setup({ path });
+		assert.deepEqual(second.kernel.capAsks.latest(), { state: "granted", day: "2026-11-08", askedAt: 100, answeredAt: 200 });
+		second.kernel.capAsks.expire("2026-11-08", 300);
+		assert.deepEqual(second.kernel.capAsks.latest(), { state: "none" });
+		second.kernel.capAsks.save({ state: "declined", day: "2026-11-09", askedAt: 400, answeredAt: 500 }, "回答成员上限：保持 4");
+		assert.deepEqual(second.kernel.capAsks.latest(), { state: "declined", day: "2026-11-09", askedAt: 400, answeredAt: 500 });
+		second.db.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("成员上限：记了到期的那一天又被问起（时钟往回拨过了零点），到期的记号清掉，之后的放宽重启后读得回来", () => {
+	const { kernel } = setup();
+	const day = "2026-11-08";
+	kernel.capAsks.save({ state: "asked", day, askedAt: 100 });
+	kernel.capAsks.save({ state: "granted", day, askedAt: 100, answeredAt: 200 }, "回答成员上限：今天放宽到 10");
+	kernel.capAsks.expire(day, 300);
+	kernel.capAsks.save({ state: "asked", day, askedAt: 400 });
+	assert.deepEqual(kernel.capAsks.latest(), { state: "asked", day, askedAt: 400 }, "重新问的问题读得回来，提问时间是这一次的");
+	kernel.capAsks.save({ state: "granted", day, askedAt: 400, answeredAt: 500 }, "回答成员上限：今天放宽到 10");
+	assert.deepEqual(kernel.capAsks.latest(), { state: "granted", day, askedAt: 400, answeredAt: 500 });
+});
+
+test("成员上限：状态库不收对不上的记录。回答必须带使用者的那句话，没答的问题不能带", () => {
+	const { kernel } = setup();
+	const day = "2026-11-08";
+	assert.throws(() => kernel.capAsks.save({ state: "granted", day, askedAt: 100, answeredAt: 200 }), /CHECK constraint failed/, "放宽没有那句话");
+	assert.throws(() => kernel.capAsks.save({ state: "declined", day, askedAt: 100, answeredAt: 200 }), /CHECK constraint failed/, "保持没有那句话");
+	assert.throws(() => kernel.capAsks.save({ state: "asked", day, askedAt: 100 }, "回答成员上限：今天放宽到 10"), /CHECK constraint failed/, "没答的问题带着一句话");
+	assert.deepEqual(kernel.capAsks.latest(), { state: "none" });
+});
+
+test("使用者对成员上限的回答是对话里他自己的一句话，但不是触发：幕僚长收不到通知，也没有可转交的东西", () => {
+	const { kernel, say } = setup();
+	const { triggerId } = say("查天气");
+	const pending = kernel.dueActions().length;
+	kernel.capAsks.save({ state: "asked", day: "2026-11-08", askedAt: Date.parse("2026-11-08T10:00:01") });
+	assert.deepEqual(kernel.conversation().map((l) => l.id), [triggerId], "问了还没答，对话里没有这句话");
+	kernel.capAsks.save({ state: "granted", day: "2026-11-08", askedAt: Date.parse("2026-11-08T10:00:01"), answeredAt: Date.parse("2026-11-08T10:00:02") }, "回答成员上限：今天放宽到 10");
+	assert.deepEqual(kernel.conversation().map((l) => [l.id, l.who, l.text, l.at]), [
+		[triggerId, "user", "查天气", Date.parse("2026-11-08T10:00:00")],
+		["ask_cap_2026-11-08", "user", "回答成员上限：今天放宽到 10", Date.parse("2026-11-08T10:00:02")],
+	]);
+	assert.equal(kernel.dueActions().length, pending, "没有给幕僚长的新通知");
+	assert.equal(kernel.read("ask_cap_2026-11-08"), undefined);
+	assert.equal(kernel.triggerLog().length, 1);
+});

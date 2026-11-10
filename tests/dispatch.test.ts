@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { DISPATCH_NEXT, DispatchDesk, REPLY_MAX, SlotPool, clipReply, memberSessionDir, parseDispatch, replyEnvelope, stallNote, timeoutNote, type DispatchOutcome, type DispatchResult, type DispatchState, type MemberRun } from "../src/host/dispatch.ts";
+import { DISPATCH_NEXT, DispatchDesk, REPLY_MAX, SlotPool, clipReply, memberSessionDir, parseDispatch, replyEnvelope, stallNote, timeoutNote, type DispatchOutcome, type DispatchResult, type DispatchState, type MemberLimit, type MemberRun } from "../src/host/dispatch.ts";
 import { HostConnection } from "../src/client/connection.ts";
 import { ModelSelector } from "../src/model-selector.ts";
 import type { Member } from "../src/teams.ts";
@@ -24,7 +24,7 @@ test("派活的状态只有一条路：排队 → 进行 → 完成、超时、�
 });
 
 test("槽位池：同一成员同一时刻只发一个，第二个请求排在它后面", async () => {
-	const pool = new SlotPool(4);
+	const pool = new SlotPool(() => 4);
 	const first = await pool.acquire("tkt_1/news", never());
 	let second: (() => void) | undefined;
 	void pool.acquire("tkt_1/news", never()).then((release) => (second = release));
@@ -37,7 +37,7 @@ test("槽位池：同一成员同一时刻只发一个，第二个请求排在�
 });
 
 test("槽位池：全宿主同时最多 max 个，其余按先后排队；排在前面但成员正忙的请求不挡后面别的成员", async () => {
-	const pool = new SlotPool(2);
+	const pool = new SlotPool(() => 2);
 	const a = await pool.acquire("t/a", never());
 	const got: string[] = [];
 	const want = (key: string) => pool.acquire(key, never()).then((release) => (got.push(key), release));
@@ -57,7 +57,7 @@ test("槽位池：全宿主同时最多 max 个，其余按先后排队；排在
 });
 
 test("槽位池：排队的请求被取消后不占名额，下一位立刻拿到；放手两次只算一次", async () => {
-	const pool = new SlotPool(1);
+	const pool = new SlotPool(() => 1);
 	const a = await pool.acquire("t/a", never());
 	const stop = new AbortController();
 	const b = pool.acquire("t/b", stop.signal);
@@ -75,6 +75,37 @@ test("槽位池：排队的请求被取消后不占名额，下一位立刻拿�
 	assert.equal(d, false, "只有一个名额，c 还占着");
 	await assert.rejects(pool.acquire("t/e", AbortSignal.abort(new Error("早就停了"))), /早就停了/);
 });
+
+test("槽位池：上限每次现算。放宽后重排，等名额的马上拿到；收回后在跑的不动，新来的照新上限排", async () => {
+	let max = 1;
+	const pool = new SlotPool(() => max);
+	const a = await pool.acquire("t/a", never());
+	const got: string[] = [];
+	const want = (key: string) => pool.acquire(key, never()).then((release) => (got.push(key), release));
+	const [a2, b, c] = [want("t/a"), want("t/b"), want("t/c")];
+	await tick();
+	assert.deepEqual(got, []);
+	assert.equal(pool.waitingForSlot(), 2, "a2 等的是 a 自己，不算等名额");
+	max = 3;
+	pool.recheck();
+	await tick();
+	assert.deepEqual(got, ["t/b", "t/c"]);
+	assert.equal(pool.waitingForSlot(), 0);
+	max = 1;
+	const d = want("t/d");
+	a();
+	await tick();
+	assert.deepEqual(got, ["t/b", "t/c"], "上限收回到 1，b 和 c 还在跑，a2 和 d 都得等");
+	assert.equal(pool.waitingForSlot(), 2);
+	(await b)();
+	(await c)();
+	await tick();
+	assert.deepEqual(got, ["t/b", "t/c", "t/a"]);
+	(await a2)();
+	(await d)();
+});
+
+const fixedCap = (max: number): MemberLimit => ({ limit: () => max, membersWaiting() {} });
 
 const outcome = (over: Partial<DispatchOutcome> = {}): DispatchOutcome => ({
 	kind: "dispatch", member: "market-analyst", title: "行情分析师", task: "看盘面", state: "done", reply: "放量下跌", tokensIn: 1200, tokensOut: 300, ms: 900, waitMs: 0, ...over,
@@ -470,7 +501,7 @@ test("成员的动静推给页面有节流：一次派活大约一秒最多推�
 	let progress = 0;
 	let finish!: () => void;
 	const desk = new DispatchDesk({
-		queueTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4, onChange: () => changes++,
+		queueTimeoutMs: 5000, stallMs: 5000, cap: fixedCap(4), onChange: () => changes++,
 		run: async (run) => {
 			for (let i = 0; i < 30; i++) {
 				run.onActivity(`第 ${i} 步`);
@@ -490,6 +521,36 @@ test("成员的动静推给页面有节流：一次派活大约一秒最多推�
 	assert.equal(desk.live().tkt_1[0].step, "第 29 步");
 	finish();
 	await result;
+});
+
+test("名额用完、有派活在等名额时，派活台告诉管上限的一方有几位在等；上限放宽后重排，等着的马上开始", async () => {
+	const waits: number[] = [];
+	let max = 1;
+	const finish: Record<string, () => void> = {};
+	const desk = new DispatchDesk({
+		queueTimeoutMs: 5000, stallMs: 5000, onChange() {},
+		cap: { limit: () => max, membersWaiting: (n) => void waits.push(n) },
+		run: (run) => new Promise((done) => (finish[run.callId] = () => done("答"))),
+	});
+	const order = (callId: string, member: Member) => desk.dispatch({ ticketId: "tkt_1", callId, member, task: "x", basis: "request", model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {}, onMessage() {}, onProgress() {} });
+	const first = order("c1", CREW[0]);
+	const again = order("c2", CREW[0]);
+	await tick();
+	assert.deepEqual(waits, [], "一位在跑、同一位成员的第二件事排在它后面：没有谁在等名额");
+	const second = order("c3", CREW[1]);
+	const third = order("c4", READER);
+	await tick();
+	assert.deepEqual(waits, [1, 2]);
+	assert.equal(desk.waitingForSlot(), 2);
+	max = 10;
+	desk.recheck();
+	await tick();
+	assert.deepEqual(desk.live().tkt_1.map((d) => [d.callId, d.state]), [["c1", "running"], ["c2", "queued"], ["c3", "running"], ["c4", "running"]]);
+	assert.equal(desk.waitingForSlot(), 0);
+	for (const id of ["c1", "c3", "c4"]) finish[id]();
+	await tick();
+	finish.c2();
+	await Promise.all([first, again, second, third]);
 });
 
 test("派活的状态一变就推一帧看板：排队的轮到了、先做完的写完成、整批回来后清空", async (t) => {
@@ -702,7 +763,7 @@ test("助手崩溃后马上停宿主：宿主等那些成员进程没了才停�
 
 test("结束一个任务的派活可以调两次：两次都等到成员进程没了才返回，之后同一任务还能再派", async () => {
 	const gone: string[] = [];
-	const desk = new DispatchDesk({ queueTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4, onChange() {}, run: slowToDie(150, gone) });
+	const desk = new DispatchDesk({ queueTimeoutMs: 5000, stallMs: 5000, cap: fixedCap(4), onChange() {}, run: slowToDie(150, gone) });
 	const order = { ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", basis: "request" as const, model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {}, onProgress() {}, onMessage() {} };
 	const first = desk.dispatch(order);
 	await tick();

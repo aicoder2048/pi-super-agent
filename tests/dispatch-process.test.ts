@@ -260,7 +260,7 @@ test("真的 Pi 进程：成员跑一条比无进展时限还久、一声不吭�
 	const dir = mkdtempSync(join(tmpdir(), "psa-member-pi-"));
 	withEnv(t, fakeAgentEnv(fake, join(dir, "pi")));
 	const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions") });
-	const desk = new DispatchDesk({ queueTimeoutMs: 5000, stallMs: STALL_MS, maxConcurrent: 1, run: (run) => spawner.runMember(run), onChange() {} });
+	const desk = new DispatchDesk({ queueTimeoutMs: 5000, stallMs: STALL_MS, cap: { limit: () => 1, membersWaiting() {} }, run: (run) => spawner.runMember(run), onChange() {} });
 	const coder = member({ name: "coder", title: "程序员", tools: ["bash"], prompt: "你是程序员。" });
 	const { details } = await desk.dispatch({
 		ticketId: "tkt_helper", callId: "call-quiet", member: coder, task, basis: "request", model: { provider: FAKE_PROVIDER, id: "worker" },
