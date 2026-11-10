@@ -37,6 +37,7 @@ You have no shell and you write no files. Read the documentation this way:
 Also search the local codebase (.pi/themes/) for existing theme examples.
 
 ## How to Respond
+- Keep the whole reply under 1800 characters. The helper receives at most 2000 and the rest is cut off. Give the smallest working example first, then name the documentation file you read.
 - Provide COMPLETE theme JSON with ALL 51 color tokens (no partial themes)
 - Use vars for palette consistency
 - Include the $schema for validation

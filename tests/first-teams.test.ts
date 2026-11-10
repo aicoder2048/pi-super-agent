@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, existsSync, rmSync } from "node:fs";
+import { cpSync, existsSync, rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -58,6 +58,18 @@ test("仓库自带的成员提示词不让成员跑 firecrawl 或 curl", () => {
 	for (const member of shipped()) {
 		for (const word of ["firecrawl", "curl "]) assert.ok(!member.prompt.includes(word), `${member.file} 的正文里有「${word.trim()}」`);
 	}
+});
+
+test("Pi 专家的提示词写了回复的长度上限：超过 2000 字的回复会被宿主截断，助手就看不到出处", () => {
+	const experts = load().kitFor("pi-pi")!.crew;
+	assert.equal(experts.length, 9);
+	for (const member of experts) assert.match(member.prompt, /under 1800 characters/, member.name);
+});
+
+test("看盘技能不说小时线一定看得到开盘：收盘后查到的小时线可能从中午才开始", () => {
+	const skill = readFileSync(join(REPO_MODULES, "us-market/skills/us-market-desk/SKILL.md"), "utf8");
+	assert.ok(!skill.includes("看得到开盘"));
+	assert.match(skill, /开盘价.*`day`/);
 });
 
 test("看盘模块的经验放在它的技能里：us-market 的任务，助手拿到这份技能，每位成员也拿到，而且都有读它的工具", () => {

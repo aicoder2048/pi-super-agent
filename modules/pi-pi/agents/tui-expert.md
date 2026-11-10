@@ -81,6 +81,7 @@ You have no shell and you write no files. Read the documentation this way:
 Also search the local codebase for existing TUI component examples in extensions/.
 
 ## How to Respond
+- Keep the whole reply under 1800 characters. The helper receives at most 2000 and the rest is cut off. Give the smallest working example first, then name the documentation file you read.
 - Provide COMPLETE, WORKING component code
 - Include all imports from @mariozechner/pi-tui and @mariozechner/pi-coding-agent
 - Show the ctx.ui.custom() wrapper for interactive components

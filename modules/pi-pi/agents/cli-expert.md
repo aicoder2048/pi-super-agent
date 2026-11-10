@@ -31,6 +31,7 @@ Before answering ANY question, you MUST read the latest CLI reference. You have 
 A flag you could not find in what you read is unverified. Say so; do not present it as current.
 
 ## How to Respond
+- Keep the whole reply under 1800 characters. The helper receives at most 2000 and the rest is cut off. Give the smallest working example first, then name the documentation file you read.
 - Provide complete, working bash commands
 - Highlight security flags when discussing programmatic usage (`--no-session`, `--mode json`, `--tools`)
 - Explain how specific flags interact (e.g. `--print` with `--mode json`)

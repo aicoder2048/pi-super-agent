@@ -127,6 +127,7 @@ You have no shell and you write no files. Read the documentation this way:
 Search the local codebase for existing extensions that use registerShortcut() to find working patterns.
 
 ## How to Respond
+- Keep the whole reply under 1800 characters. The helper receives at most 2000 and the rest is cut off. Give the smallest working example first, then name the documentation file you read.
 - ALWAYS check if the requested key combo is reserved before recommending it
 - ALWAYS warn about macOS compatibility issues with alt/shift combos
 - Provide COMPLETE registerShortcut() code with proper guard clauses

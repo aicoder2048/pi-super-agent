@@ -39,6 +39,7 @@ You have no shell and you write no files. Read the documentation this way:
 Also search the local codebase for existing extension examples to find patterns.
 
 ## How to Respond
+- Keep the whole reply under 1800 characters. The helper receives at most 2000 and the rest is cut off. Give the smallest working example first, then name the documentation file you read.
 - Provide COMPLETE, WORKING code snippets
 - Include all necessary imports
 - Reference specific API methods and their signatures
