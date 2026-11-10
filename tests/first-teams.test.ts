@@ -6,6 +6,7 @@ import test from "node:test";
 import { loadConfig, memberProviders } from "../src/host/config.ts";
 import { Modules } from "../src/modules.ts";
 import { memberTools } from "../src/worker/tools.ts";
+import { piPackageRoot } from "../src/pi-runtime.mjs";
 import { tempStateDir } from "./helpers/fakes.ts";
 
 const REPO_MODULES = fileURLToPath(new URL("../modules", import.meta.url));
@@ -89,6 +90,64 @@ test("Pi 模块的派活技能：写代码的任务由助手自己读文档、�
 	assert.match(skill, /代码由你写/);
 	assert.doesNotMatch(skill, /答复也短/, "长回复现在有文件出路，不能再说专家的答复短");
 	assert.match(skill, /一位专家一次问全/);
+});
+
+const PI_EXTENSION_SKILL = join(REPO_MODULES, "pi-pi/skills/pi-extension-basics/SKILL.md");
+
+/** The members of one `export interface` in Pi's extension types, read from the installed Pi. */
+function piInterface(name: string): Set<string> {
+	const types = readFileSync(join(piPackageRoot(), "dist/core/extensions/types.d.ts"), "utf8").split("\n");
+	const start = types.findIndex((l) => l.startsWith(`export interface ${name} `));
+	assert.ok(start >= 0, `Pi 的类型定义里没有 ${name}`);
+	const end = types.findIndex((l, i) => i > start && l === "}");
+	return new Set(types.slice(start + 1, end).flatMap((l) => /^ {4}(?:readonly )?([a-zA-Z]+)[?<(:]/.exec(l)?.[1] ?? []));
+}
+
+test("Pi 扩展的常用知识提炼成 pi-pi 的技能：助手和九位专家都拿得到，写明依据哪个 Pi 版本的哪份文档", () => {
+	const skill = readFileSync(PI_EXTENSION_SKILL, "utf8");
+	assert.match(skill, /^---\nname: pi-extension-basics\ndescription: .+\n---\n/);
+	assert.match(skill, /pi-coding-agent 1\.\d+\.\d+/);
+	assert.match(skill, /docs\/extensions\.md/);
+	const kit = load().kitFor("pi-pi")!;
+	assert.ok(PI_EXTENSION_SKILL.startsWith(kit.skillsDir!));
+	for (const member of kit.crew) assert.ok(member.skills.includes(kit.skillsDir!), member.name);
+});
+
+test("Pi 扩展技能里写到的每个 pi.*、ctx.* 和 ctx.ui.* 接口，本机安装的 Pi 的类型定义里都有", () => {
+	const skill = readFileSync(PI_EXTENSION_SKILL, "utf8");
+	const named = (pattern: RegExp) => new Set([...skill.matchAll(pattern)].map((m) => m[1]));
+	const api = piInterface("ExtensionAPI");
+	const ctx = new Set([...piInterface("ExtensionContext"), ...piInterface("ExtensionCommandContext"), ...piInterface("ExtensionToolContext")]);
+	const ui = piInterface("ExtensionUIContext");
+	const piNames = named(/\bpi\.([a-zA-Z]+)\b/g);
+	assert.ok(piNames.size >= 10, `技能只写到 ${piNames.size} 个 pi.* 接口`);
+	for (const name of piNames) assert.ok(api.has(name), `pi.${name} 不在 ExtensionAPI 里`);
+	for (const name of named(/\bctx\.(?!ui\.)([a-zA-Z]+)\b/g)) assert.ok(ctx.has(name), `ctx.${name} 不在 ExtensionContext 里`);
+	for (const name of named(/\bctx\.ui\.([a-zA-Z]+)\b/g)) assert.ok(ui.has(name), `ctx.ui.${name} 不在 ExtensionUIContext 里`);
+});
+
+test("Pi 扩展技能的原文索引：每一项都是本机 extensions.md 里的标题；教的 grep 写法用 ripgrep 的正则，真能找到标题", () => {
+	const skill = readFileSync(PI_EXTENSION_SKILL, "utf8");
+	const doc = readFileSync(join(piPackageRoot(), "docs/extensions.md"), "utf8").split("\n");
+	const headings = doc.flatMap((l) => /^#{2,4} (.+)$/.exec(l)?.[1] ?? []);
+	const index = skill.slice(skill.indexOf("\n下面每一项都是"));
+	const items = [...index.matchAll(/^- [^：]+：(.+)$/gm)].flatMap((m) => [...m[1].split("（")[0].matchAll(/`([^`]+)`/g)].map((x) => x[1]));
+	assert.ok(items.length >= 50, `索引只有 ${items.length} 项`);
+	for (const item of items) {
+		const found = /^(pi|ctx)\./.test(item) ? headings.some((h) => h.startsWith(item)) : headings.includes(item);
+		assert.ok(found, `extensions.md 里没有标题「${item}」`);
+	}
+	assert.ok(!skill.includes("\\|"), "ripgrep 里 \\| 是字面的竖线，不是「或」");
+	const example = /`(\^#\{2,4\} \([^`]+\))`/.exec(skill)?.[1];
+	assert.ok(example, "技能里有一次找几个标题的例子");
+	const hits = doc.filter((l) => new RegExp(example).test(l));
+	assert.ok(hits.length >= 2, `例子 ${example} 只找到 ${hits.length} 个标题`);
+});
+
+test("写扩展和界面的两位专家、派活技能都先指向扩展技能，不够时再读原文", () => {
+	const crew = load().kitFor("pi-pi")!.crew;
+	for (const name of ["ext-expert", "tui-expert"]) assert.match(crew.find((m) => m.name === name)!.prompt, /pi-extension-basics/, name);
+	assert.match(readFileSync(join(REPO_MODULES, "pi-pi/skills/pi-pi-desk/SKILL.md"), "utf8"), /pi-extension-basics/);
 });
 
 test("看盘技能不说小时线一定看得到开盘：收盘后查到的小时线可能从中午才开始", () => {
