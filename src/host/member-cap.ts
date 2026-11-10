@@ -32,12 +32,11 @@ export class MemberCap {
 		return this.#today().state === "granted" ? MEMBER_CAP_MAX : this.#o.configured;
 	}
 
-	/** Called when `waiting` dispatches cannot start because every slot is taken. */
+	/** Called when `waiting` dispatches cannot start because every slot is taken. Throws when the question cannot be recorded, and then it counts as not asked. */
 	membersWaiting(waiting: number): void {
-		const { configured, clock, store, log } = this.#o;
-		if (waiting < 1 || configured >= MEMBER_CAP_MAX || this.#today().state !== "none") return;
-		const asked = this.#move({ state: "asked", day: newYorkDate(clock.now()), askedAt: clock.now() });
-		store.save(asked);
+		const { configured, clock, log } = this.#o;
+		if (waiting < 1 || configured >= MEMBER_CAP_MAX) return;
+		if (!this.#move({ state: "asked", day: newYorkDate(clock.now()), askedAt: clock.now() })) return;
 		log(`[host] 成员上限：${waiting} 位成员在排队，上限 ${configured}，已问使用者今天是否放宽到 ${MEMBER_CAP_MAX}`);
 	}
 
@@ -49,22 +48,21 @@ export class MemberCap {
 		return { reportId: capAskId(ask.day), text: `${queue}，同时运行的成员上限是 ${this.#o.configured}。今天放宽到 ${MEMBER_CAP_MAX} 吗？`, options: this.#choices().map((c) => c.label), askedAt: ask.askedAt };
 	}
 
+	/** Throws when the answer cannot be recorded: the cap stays as it was and the question stays open. */
 	answer(reportId: string, option: number): CapAnswerOutcome {
-		const { clock, store, log } = this.#o;
+		const { clock, log } = this.#o;
 		const refuse = (refusal: AnswerRefusal) => ({ ok: false as const, refusal });
 		const ask = this.#today();
 		if (ask.state === "none" || reportId !== capAskId(ask.day)) return refuse({ kind: "closed" });
 		const choices = this.#choices();
 		const said = (label: string) => `回答成员上限：${label}`;
-		if (ask.state !== "asked") {
-			const chosen = choices.findIndex((c) => c.state === ask.state);
-			if (option !== chosen) return refuse({ kind: "chosen", option: chosen, label: choices[chosen].label });
-			return { ok: true, lineId: reportId, text: said(choices[chosen].label), duplicate: true };
-		}
+		const chosen = choices.findIndex((c) => c.state === ask.state);
+		if (chosen >= 0 && option === chosen) return { ok: true, lineId: reportId, text: said(choices[chosen].label), duplicate: true };
 		const choice = Number.isInteger(option) ? choices[option] : undefined;
-		if (!choice) return refuse({ kind: "out_of_range", count: choices.length });
-		const answered = this.#move({ state: choice.state, day: ask.day, askedAt: ask.askedAt, answeredAt: clock.now() });
-		store.save(answered, said(choice.label));
+		if (!choice && chosen < 0) return refuse({ kind: "out_of_range", count: choices.length });
+		if (!choice || !this.#move({ state: choice.state, day: ask.day, askedAt: ask.askedAt, answeredAt: clock.now() }, said(choice.label))) {
+			return refuse({ kind: "chosen", option: chosen, label: choices[chosen].label });
+		}
 		log(`[host] 成员上限：使用者选了「${choice.label}」，纽约 ${ask.day} 这一天${choice.effect}`);
 		return { ok: true, lineId: reportId, text: said(choice.label), duplicate: false };
 	}
@@ -76,10 +74,12 @@ export class MemberCap {
 		];
 	}
 
-	#move<A extends RecordedCapAsk>(to: A): A {
-		if (!CAP_ASK_NEXT[this.#ask.state].includes(to.state)) throw new Error(`成员上限的问题不能从 ${this.#ask.state} 变成 ${to.state}`);
+	/** False when today's state cannot become `to`. The record is saved before it takes effect, so a grant that is not on disk is not a grant. */
+	#move(to: RecordedCapAsk, said?: string): boolean {
+		if (!CAP_ASK_NEXT[this.#today().state].includes(to.state)) return false;
+		this.#o.store.save(to, said);
 		this.#ask = to;
-		return to;
+		return true;
 	}
 
 	#today(): CapAsk {
@@ -87,8 +87,14 @@ export class MemberCap {
 		const ask = this.#ask;
 		if (ask.state === "none" || ask.day === newYorkDate(clock.now())) return ask;
 		if (ask.state === "granted") {
-			store.expire(ask.day, clock.now());
-			log(`[host] 成员上限：纽约 ${ask.day} 的放宽已到期，上限回到 ${configured}`);
+			const expired = `[host] 成员上限：纽约 ${ask.day} 的放宽已到期，上限回到 ${configured}`;
+			try {
+				store.expire(ask.day, clock.now());
+				log(expired);
+			} catch (error) {
+				// The pool and the board read the limit with no handler. The row stays unexpired, so the next start records it.
+				log(`${expired}；到期没能记进状态库：${error instanceof Error ? error.message : String(error)}`);
+			}
 		}
 		return (this.#ask = { state: "none" });
 	}

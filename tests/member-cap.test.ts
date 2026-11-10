@@ -10,6 +10,8 @@ const TODAY = "ask_cap_2026-11-09";
 
 class MemoryStore implements CapAskStore {
 	rows = new Map<string, Exclude<CapAsk, { state: "none" }> & { said?: string; expiredAt?: number }>();
+	/** While set, every write throws it, as a full disk or a locked database would. */
+	broken: Error | undefined;
 
 	latest(): CapAsk {
 		const row = [...this.rows.values()].sort((a, b) => a.day.localeCompare(b.day)).at(-1);
@@ -17,10 +19,12 @@ class MemoryStore implements CapAskStore {
 	}
 
 	save(ask: Exclude<CapAsk, { state: "none" }>, said?: string): void {
+		if (this.broken) throw this.broken;
 		this.rows.set(ask.day, { ...ask, ...(said !== undefined && { said }) });
 	}
 
 	expire(day: string, at: number): void {
+		if (this.broken) throw this.broken;
 		this.rows.get(day)!.expiredAt = at;
 	}
 }
@@ -129,6 +133,49 @@ test("宿主重启后同一个纽约日里放宽还在、开着的问题还在�
 	const again = setup(4, first.store, NEXT_DAY);
 	assert.equal(again.cap.limit(), 4);
 	assert.deepEqual(again.lines, []);
+});
+
+test("回答记不进状态库：上限不变，问题还开着，不记日志；状态库好了再点同一项，照常记下并放宽", () => {
+	const { cap, lines, store } = setup();
+	cap.membersWaiting(2);
+	store.broken = new Error("SQLITE_FULL: database or disk is full");
+	assert.throws(() => cap.answer(TODAY, 0), /SQLITE_FULL/);
+	assert.equal(cap.limit(), 4, "没记下的放宽不生效");
+	assert.equal(cap.question(2)?.reportId, TODAY, "问题还开着");
+	assert.equal(lines.length, 1, lines.join("\n"));
+	store.broken = undefined;
+	assert.deepEqual(cap.answer(TODAY, 0), { ok: true, lineId: TODAY, text: "回答成员上限：今天放宽到 10", duplicate: false }, "重点一次不算重复");
+	assert.equal(store.rows.get("2026-11-09")?.said, "回答成员上限：今天放宽到 10");
+	assert.equal(cap.limit(), 10);
+	assert.equal(setup(4, store).cap.limit(), 10, "重启后放宽还在");
+});
+
+test("问题记不进状态库：不算问过，不记日志；下一次有成员排队时再问", () => {
+	const { cap, lines, store } = setup();
+	store.broken = new Error("SQLITE_BUSY: database is locked");
+	assert.throws(() => cap.membersWaiting(2), /SQLITE_BUSY/);
+	assert.equal(cap.question(2), null);
+	assert.deepEqual(lines, []);
+	store.broken = undefined;
+	cap.membersWaiting(3);
+	assert.equal(cap.question(3)?.reportId, TODAY);
+	assert.equal(lines.length, 1);
+});
+
+test("到期记不进状态库：读上限不出错，回到配置值，只记一行；宿主下次启动时补记到期", () => {
+	const { cap, clock, lines, store } = setup();
+	cap.membersWaiting(2);
+	cap.answer(TODAY, 0);
+	clock.at = NEXT_DAY;
+	store.broken = new Error("SQLITE_BUSY: database is locked");
+	assert.equal(cap.limit(), 4);
+	assert.equal(cap.limit(), 4);
+	assert.deepEqual(lines.slice(2), ["[host] 成员上限：纽约 2026-11-09 的放宽已到期，上限回到 4；到期没能记进状态库：SQLITE_BUSY: database is locked"]);
+	store.broken = undefined;
+	const restarted = setup(4, store, NEXT_DAY);
+	assert.equal(restarted.cap.limit(), 4);
+	assert.deepEqual(restarted.lines, ["[host] 成员上限：纽约 2026-11-09 的放宽已到期，上限回到 4"]);
+	assert.deepEqual(setup(4, store, NEXT_DAY).lines, [], "补记过就不再记");
 });
 
 test("配置的上限已经是 10：从不问，也没有可答的问题", () => {
