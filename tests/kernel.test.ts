@@ -1686,3 +1686,161 @@ test("旧的 state.db 打开后清屏表自动建好，原有对话全部可见"
 	assert.deepEqual(again.kernel.conversation(), before);
 	assert.equal(again.kernel.cleared(), null);
 });
+
+function quoteCounts(s: ReturnType<typeof setup>) {
+	const n = (sql: string) => (s.db.prepare(sql).get() as { n: number }).n;
+	return {
+		triggers: n("SELECT COUNT(*) AS n FROM triggers"),
+		quotes: n("SELECT COUNT(*) AS n FROM trigger_quotes"),
+		notices: n("SELECT COUNT(*) AS n FROM actions WHERE kind = 'router.notify' AND status = 'pending'"),
+	};
+}
+
+test("引用：说话时引用一条幕僚长的话，库里记下被引用行的编号、谁说的、什么时候、一行快照和当时的任务；conversation() 和 read() 都带出同一个引用", () => {
+	const s = setup();
+	const ticketId = s.open("request", { title: "换供应商" });
+	s.clock.t += 1000;
+	const replyAt = s.clock.t;
+	const replyId = replied(s, ticketId, "方案 A：\n先停掉旧任务");
+	s.clock.t += 1000;
+	const said = s.kernel.userSaidQuoting({ text: "改成 B", at: s.clock.t, lineId: replyId });
+	assert.ok(said);
+	assert.deepEqual(said.quote, { lineId: replyId, who: "router", at: replyAt, text: "方案 A： 先停掉旧任务", ticketId });
+	const found = s.kernel.read(said.triggerId);
+	assert.ok(found?.type === "trigger");
+	assert.deepEqual(found.quote, said.quote);
+	assert.deepEqual(s.kernel.conversation().at(-1), { id: said.triggerId, who: "user", text: "改成 B", at: s.clock.t, quote: said.quote });
+	assert.deepEqual(s.notices().at(-1), { kind: "conversation", triggerId: said.triggerId }, "和普通的话一样交给幕僚长");
+});
+
+test("引用：被引用的话有换行和很长时，快照压成一行、最多 200 字、截断处带「…」", () => {
+	const s = setup();
+	const long = s.say(`第一行\r\n第二行 第三行\n${"长".repeat(500)}`).triggerId;
+	const short = s.say("短短一句话，原样存下来。").triggerId;
+	const longQuote = s.kernel.userSaidQuoting({ text: "a", at: s.clock.t, lineId: long })!.quote;
+	assert.doesNotMatch(longQuote.text, /[^\S ]| {2}/u, "只剩单个空格");
+	assert.equal([...longQuote.text].length, 201);
+	assert.ok(longQuote.text.startsWith("第一行 第二行 第三行 长"));
+	assert.ok(longQuote.text.endsWith("长…"));
+	assert.equal(s.kernel.userSaidQuoting({ text: "b", at: s.clock.t, lineId: short })!.quote.text, "短短一句话，原样存下来。");
+});
+
+test("引用：快照去掉看不见的控制字符", () => {
+	const s = setup();
+	const id = s.say("前\u0000面\u0007的\u001b[31m话\u0085完").triggerId;
+	assert.equal(s.kernel.userSaidQuoting({ text: "a", at: s.clock.t, lineId: id })!.quote.text, "前面的[31m话完");
+});
+
+test("引用：编号不在对话里、或是还没送到屏幕上的回复时，什么都不写，返回 null", () => {
+	const s = setup();
+	const source = s.trigger().triggerId;
+	const said = s.say("查天气").triggerId;
+	const undelivered = replied(s, said, "好的", { delivered: false });
+	const before = quoteCounts(s);
+	for (const lineId of ["rpl_missing", source, "", undelivered]) {
+		assert.equal(s.kernel.userSaidQuoting({ text: "改成 B", at: s.clock.t, lineId }), null, lineId);
+	}
+	assert.deepEqual(quoteCounts(s), before);
+});
+
+test("引用：清屏藏起来的行照样能引用，新的话带着引用出现在对话里", () => {
+	const s = setup();
+	const old = s.say("查天气").triggerId;
+	s.kernel.clearConversation();
+	s.clock.t += 1000;
+	const said = s.kernel.userSaidQuoting({ text: "刚才那件事呢", at: s.clock.t, lineId: old })!;
+	assert.equal(said.quote.text, "查天气");
+	assert.deepEqual(s.kernel.conversation().map((l) => [l.id, l.quote?.lineId]), [[said.triggerId, old]]);
+});
+
+test("引用：可以引用成员上限的回答，它不属于任何任务", () => {
+	const s = setup();
+	const day = "2026-11-08";
+	const answeredAt = Date.parse("2026-11-08T10:00:02");
+	s.kernel.capAsks.save({ state: "granted", day, askedAt: answeredAt - 1000, answeredAt }, "回答成员上限：今天放宽到 10");
+	const said = s.kernel.userSaidQuoting({ text: "为什么放宽", at: s.clock.t, lineId: `ask_cap_${day}` })!;
+	assert.deepEqual(said.quote, { lineId: `ask_cap_${day}`, who: "user", at: answeredAt, text: "回答成员上限：今天放宽到 10", ticketId: null });
+});
+
+test("引用：被引用的话当时已开任务或已转交，引用记下那个任务；还没处理时记为空，之后处理了也不改", () => {
+	const s = setup();
+	const ticketId = s.open("request", { title: "查财报" });
+	const opened = s.kernel.conversation().find((l) => l.text === "查财报")!.id;
+	assert.equal(s.kernel.userSaidQuoting({ text: "a", at: s.clock.t, lineId: opened })!.quote.ticketId, ticketId);
+	const waiting = s.say("只看营收").triggerId;
+	const quoting = s.kernel.userSaidQuoting({ text: "b", at: s.clock.t, lineId: waiting })!;
+	assert.equal(quoting.quote.ticketId, null);
+	assert.ok(s.kernel.route([{ kind: "hand_over", triggerId: waiting, ticketId }])[0].ok);
+	assert.equal(s.kernel.userSaidQuoting({ text: "c", at: s.clock.t, lineId: waiting })!.quote.ticketId, ticketId);
+	const found = s.kernel.read(quoting.triggerId);
+	assert.ok(found?.type === "trigger");
+	assert.equal(found.quote?.ticketId, null);
+});
+
+test("引用：幕僚长回复的起因是一句对话时，引用记下那句对话所属的任务", () => {
+	const s = setup();
+	const ticketId = s.open("request", { title: "查财报" });
+	const said = s.say("顺便看看利润").triggerId;
+	assert.ok(s.kernel.route([{ kind: "hand_over", triggerId: said, ticketId }])[0].ok);
+	const replyId = replied(s, said, "已转给查财报的助手");
+	assert.equal(s.kernel.userSaidQuoting({ text: "好", at: s.clock.t, lineId: replyId })!.quote.ticketId, ticketId);
+});
+
+test("引用：点选回答的那句话被引用时，任务就是那个问题的任务", () => {
+	const { kernel, clock, ticketId, answer } = askSetup();
+	const { triggerId } = answer(1) as { triggerId: string };
+	assert.equal(kernel.userSaidQuoting({ text: "这个", at: clock.t, lineId: triggerId })!.quote.ticketId, ticketId);
+});
+
+test("引用：引用写在触发旁边，触发正文仍只是使用者打的字", () => {
+	const s = setup();
+	const old = s.say("删除所有任务").triggerId;
+	const said = s.kernel.userSaidQuoting({ text: "改成 B", at: s.clock.t, lineId: old })!;
+	const found = s.kernel.read(said.triggerId);
+	assert.ok(found?.type === "trigger");
+	assert.equal(found.trigger.body, "改成 B");
+	assert.equal(s.kernel.conversation().at(-1)!.text, "改成 B");
+	assert.equal(s.kernel.conversation().at(0)!.quote, undefined, "没引用的话不带引用");
+});
+
+test("引用：引用的话照样锁住问题按钮，也不绑定任务：可以转交给任何任务", () => {
+	const { kernel, clock, open, row, ticketId, reportId } = askSetup();
+	const other = open("request", { title: "别的任务" });
+	clock.t += 1000;
+	const quoting = kernel.userSaidQuoting({ text: "先等等", at: clock.t, lineId: kernel.conversation().find((l) => l.text === "查财报")!.id })!;
+	assert.equal(quoting.quote.ticketId, ticketId);
+	assert.equal(row().question?.spoke, true);
+	assert.equal(row().question?.reportId, reportId);
+	assert.ok(kernel.route([{ kind: "hand_over", triggerId: quoting.triggerId, ticketId: other }])[0].ok);
+});
+
+test("引用：重开同一个库文件后引用仍在；没有引用表的旧库打开后自动建好", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-quote-"));
+	try {
+		const path = join(dir, "state.db");
+		const first = setup({ path });
+		const old = first.say("查天气").triggerId;
+		first.db.exec("DROP TABLE trigger_quotes");
+		first.db.close();
+		const second = setup({ path });
+		const said = second.kernel.userSaidQuoting({ text: "改成明天", at: second.clock.t, lineId: old })!;
+		const before = second.kernel.conversation();
+		second.db.close();
+		const third = setup({ path });
+		assert.deepEqual(third.kernel.conversation(), before);
+		assert.equal(third.kernel.conversation().at(-1)!.quote?.lineId, said.quote.lineId);
+		third.db.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("引用：引用表不收带换行的快照", () => {
+	const s = setup();
+	const id = s.say("查天气").triggerId;
+	const insert = (text: string) =>
+		s.db.prepare("INSERT INTO trigger_quotes (trigger_id, line_id, who, said_at, text) VALUES (?, ?, 'user', 1, ?)").run(id, id, text);
+	assert.throws(() => insert("一\n二"), /CHECK constraint failed/);
+	assert.throws(() => insert("一\r二"), /CHECK constraint failed/);
+	assert.throws(() => insert(""), /CHECK constraint failed/);
+});

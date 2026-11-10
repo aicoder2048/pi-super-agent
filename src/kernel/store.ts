@@ -111,6 +111,17 @@ CREATE TABLE IF NOT EXISTS answer_clicks (
 );
 CREATE INDEX IF NOT EXISTS answer_clicks_report ON answer_clicks (report_id);
 
+-- The line the user quoted when saying trigger_id, frozen then: it reads the same after the line scrolls off every screen,
+-- is hidden by 清屏, or its trigger is routed. line_id spans triggers, reply_receipts and cap_asks, so it has no foreign key.
+CREATE TABLE IF NOT EXISTS trigger_quotes (
+	trigger_id TEXT PRIMARY KEY REFERENCES triggers(id),
+	line_id TEXT NOT NULL,
+	who TEXT NOT NULL CHECK (who IN ('user', 'router')),
+	said_at INTEGER NOT NULL,
+	text TEXT NOT NULL CHECK (length(text) > 0 AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0),
+	ticket_id TEXT REFERENCES tickets(id)
+);
+
 -- One row per New York day on which the host asked the user to raise the member cap. said is the user's sentence for the answer.
 CREATE TABLE IF NOT EXISTS cap_asks (
 	day TEXT PRIMARY KEY,

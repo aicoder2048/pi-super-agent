@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { CAP_ASK_PREFIX, type CapAsk, type CapAskStore } from "./cap-ask.ts";
 import { answerExternalId, answerSentence, type AnswerRefusal } from "./question.ts";
+import { quoteSnapshot } from "./quote.ts";
 
 export type AnswerOutcome = { ok: true; triggerId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 import { deriveStage } from "./stage.ts";
@@ -29,6 +30,7 @@ import type {
 	DecisionLogEntry,
 	PendingQuestion,
 	QuestionClick,
+	Quote,
 	DecisionResult,
 	Disposition,
 	DomainBook,
@@ -253,6 +255,48 @@ export class Kernel {
 			body: text,
 			occurredAt: at,
 		});
+	}
+
+	/**
+	 * The user's sentence pointing at an earlier shown line of the conversation, hidden lines included.
+	 * Null, and nothing written, when lineId names no such line. The quote row commits with the trigger and its Router notice,
+	 * so the Router's card always sees it. It binds no ticket and backs no decision: the trigger is routed like any typed sentence.
+	 */
+	userSaidQuoting({ text, at, lineId }: { text: string; at: number; lineId: string }): { triggerId: string; quote: Quote } | null {
+		return this.#tx(() => {
+			const line = this.#get(`SELECT id, who, text, at, cause FROM (${LINES}) WHERE id = ? AND shown`, ...LINES_PARAMS, lineId);
+			const snapshot = line && quoteSnapshot(line.text);
+			if (!snapshot) return null;
+			const quote: Quote = { lineId, who: line.who, at: line.at, text: snapshot, ticketId: this.#ticketOfLine(lineId, line.cause) };
+			const { triggerId } = this.userSaid({ text, at });
+			this.#run(
+				"INSERT INTO trigger_quotes (trigger_id, line_id, who, said_at, text, ticket_id) VALUES (?, ?, ?, ?, ?, ?)",
+				triggerId,
+				quote.lineId,
+				quote.who,
+				quote.at,
+				quote.text,
+				quote.ticketId,
+			);
+			return { triggerId, quote };
+		});
+	}
+
+	// rpl_ follows its cause one level; ask_cap_ and act_ causes belong to no ticket.
+	#ticketOfLine(id: string, cause: string | null): string | null {
+		if (id.startsWith("trg_")) {
+			const t = this.#get("SELECT disposition, disposition_detail FROM triggers WHERE id = ?", id);
+			const routed = t.disposition === "opened_ticket" || t.disposition === "handed_over" ? t.disposition_detail : null;
+			return this.#answerOf(id)?.ticketId ?? routed;
+		}
+		if (cause?.startsWith("tkt_")) return cause;
+		if (cause?.startsWith("trg_")) return this.#ticketOfLine(cause, null);
+		return null;
+	}
+
+	#quoteOf(triggerId: string): Quote | null {
+		const r = this.#get("SELECT line_id, who, said_at, text, ticket_id FROM trigger_quotes WHERE trigger_id = ?", triggerId);
+		return r ? { lineId: r.line_id, who: r.who, at: r.said_at, text: r.text, ticketId: r.ticket_id } : null;
 	}
 
 	answerQuestion({ reportId, option, at }: { reportId: string; option: number; at: number }): AnswerOutcome {
@@ -774,6 +818,7 @@ export class Kernel {
 				type: "trigger",
 				trigger: toTrigger(row),
 				answers: this.#answerOf(id),
+				quote: this.#quoteOf(id),
 				threadIds: this.#column("SELECT thread_id AS v FROM trigger_threads WHERE trigger_id = ?", id),
 				ticketIds: this.#column(
 					`SELECT ticket_id AS v FROM ticket_inputs WHERE trigger_id = ?
@@ -873,7 +918,10 @@ export class Kernel {
 			limit,
 		)
 			.reverse()
-			.map((r) => ({ id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { ticketId: r.cause } : {}) }));
+			.map((r) => {
+				const quote = r.id.startsWith("trg_") ? this.#quoteOf(r.id) : null;
+				return { id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { ticketId: r.cause } : {}), ...(quote ? { quote } : {}) };
+			});
 	}
 
 	conversationRoutes(limit = 50): Routes {

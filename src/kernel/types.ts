@@ -267,8 +267,26 @@ export interface DashboardRow {
 	endedAt: number | null;
 }
 
-/** One line of the 对话 column. ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
-export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string };
+/**
+ * The line the user pointed at when saying something, frozen by the kernel then and never changed.
+ * `text` is one line of at most QUOTE_MAX_CHARS characters; `ticketId` is the task that line was about then.
+ * A quote is context, never the user's words (ADR-0011).
+ */
+export interface Quote {
+	/** trg_…, rpl_… or ask_cap_<day>: any shown line of the 对话 column, hidden ones included. */
+	lineId: string;
+	who: "user" | "router";
+	/** When the quoted line was said. */
+	at: number;
+	text: string;
+	ticketId: string | null;
+}
+
+/**
+ * One line of the 对话 column. ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line.
+ * quote: on a user line that pointed at an earlier line.
+ */
+export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string; quote?: Quote };
 
 /**
  * The latest 清屏. `at` is when it happened, and also its identity: every effective 清屏 has a strictly later `at` than the one before.
@@ -287,7 +305,7 @@ export interface AnswerClick {
 }
 
 export type ReadResult =
-	| { type: "trigger"; trigger: Trigger; threadIds: string[]; ticketIds: string[]; answers: AnswerClick | null }
+	| { type: "trigger"; trigger: Trigger; threadIds: string[]; ticketIds: string[]; answers: AnswerClick | null; quote: Quote | null }
 	| { type: "thread"; thread: Thread; recentTriggerIds: string[]; subscribedTicketIds: string[] }
 	| {
 			type: "ticket";
