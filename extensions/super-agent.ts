@@ -5,10 +5,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
-import { openChoices, renderBoard, shortId, ticketsMatching, type BoardView } from "../src/client/board.ts";
+import { openQuestions, renderBoard, shortId, ticketsMatching, type BoardView, type OpenQuestion } from "../src/client/board.ts";
 import { DEFAULT_ACK_TIMEOUT_MS, HostConnection } from "../src/client/connection.ts";
 import type { ConversationLine, HostToClient } from "../src/client/protocol.ts";
-import type { DashboardRow } from "../src/kernel/types.ts";
 import { formatTranscriptMessage } from "../src/client/transcript.ts";
 import { defaultStateDir } from "../src/host/config.ts";
 
@@ -47,6 +46,7 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 			case "snapshot":
 				showConversation(m.conversation);
 				view.rows = m.board;
+				view.memberCap = m.memberCap;
 				view.receivedAt = Date.now();
 				break;
 			case "user":
@@ -64,6 +64,7 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 				return;
 			case "board":
 				view.rows = m.rows;
+				view.memberCap = m.memberCap;
 				view.receivedAt = Date.now();
 				break;
 			case "transcript_history":
@@ -110,9 +111,8 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 		conn?.close();
 	});
 
-	const answer = (row: DashboardRow, pick: number, ui: ExtensionContext["ui"]) => {
-		const q = row.question!;
-		if (pick < 1 || pick > q.options.length) return ui.notify(`「${row.title}」只有 ${q.options.length} 个选项`, "warning");
+	const answer = (q: OpenQuestion, pick: number, ui: ExtensionContext["ui"]) => {
+		if (pick < 1 || pick > q.options.length) return ui.notify(`「${q.title}」只有 ${q.options.length} 个选项`, "warning");
 		if (!conn?.answer(q.reportId, pick - 1, q.options[pick - 1])) ui.notify("宿主未连接，回答没有发出。先运行 just host。", "warning");
 	};
 
@@ -120,7 +120,7 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 		if (event.source === "extension") return { action: "continue" };
 		const text = event.text.trim();
 		if (!text) return { action: "handled" };
-		const open = /^[1-9]$/.test(text) ? openChoices(view.rows) : [];
+		const open = /^[1-9]$/.test(text) ? openQuestions(view) : [];
 		if (open.length === 1) {
 			answer(open[0], Number(text), context.ui);
 			return { action: "handled" };
@@ -137,9 +137,9 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 		description: "选一个问题的选项作答：/answer <编号> <序号>",
 		handler: async (args, context) => {
 			const [key = "", pick = ""] = args.trim().split(/\s+/);
-			const matches = ticketsMatching(openChoices(view.rows), key);
+			const matches = ticketsMatching(openQuestions(view), key);
 			if (!key || matches.length !== 1 || !/^\d+$/.test(pick)) {
-				context.ui.notify(matches.length > 1 ? `编号 ${key} 对应多个问题，请多写几位` : "用法：/answer <编号> <序号>，编号是看板上等回答的任务", "warning");
+				context.ui.notify(matches.length > 1 ? `编号 ${key} 对应多个问题，请多写几位` : "用法：/answer <编号> <序号>，编号是看板上等回答的任务，成员上限的问题是 cap", "warning");
 				return;
 			}
 			answer(matches[0], Number(pick), context.ui);
