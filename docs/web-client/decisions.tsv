@@ -311,3 +311,14 @@ ts	phase	decision	why	evidence	result
 2026-11-10T08:58:45Z	implement	清屏保持普通字重，不和发送一样加粗	次要操作加粗会像第二个主按钮	src/web/index.html #clear	decided
 2026-11-10T08:58:45Z	verify	just test 888/888；just e2e 154/154；真实宿主加假模型截图，在使用者 Mac 上打开	使用者看过后说可以	/Users/szou/.claude/jobs/66e5cbed/tmp/shots5/*.png; e2e5.log	PASS
 2026-11-10T08:58:45Z	review	跳过 how、architect、interrogate、Comment Sicko 和 simplify	只改样式和标记，布局由使用者逐步选定，diff 不加注释	git diff main --stat	skipped
+2026-11-10T09:09:37Z	start	新一轮：对话里引用前面的话（像微信）；之前的行都是本会话写的	使用者要求加引用功能，五点设计都按我的建议	本会话 66e5cbed，worktree psa/quote @8dbc7ee	open
+2026-11-10T09:09:37Z	frame	范围：对话栏里你和幕僚长的每一句都能引用（含清屏后展开的旧行）；悬停出现「引用」，输入框上方引用条可取消；你的气泡下挂灰色引用，刷新后仍在；TUI 前加一行 ↪；存行 id 加文字快照；给幕僚长的卡片多一行「引用（只是上下文）」并带关联任务；引用内容不是指令	使用者本轮回复：都按你的建议	上一轮回复的五点	decided
+2026-11-10T09:09:37Z	frame	走 figure-it-out：跨内核、协议、宿主、页面、TUI，且碰到权限原则（ADR-0003），严格度偏高：how、architect 两版设计、先红后绿、对抗评审、真实页面截图	跨层的大活按记下的教训要走 figure-it-out	memory pstack-full-adherence	decided
+2026-11-10T09:12:08Z	frame	写下完成标准 8 条、范围约 10 到 12 个文件 5 到 6 个单元、严格度高；另写一份短 ADR 记下「引用只是上下文，不是使用者的话」	碰到权限原则；探索发现转交给助手时只传正文，引用必须一起传过去	/Users/szou/.claude/jobs/66e5cbed/tmp/quote/frame.md	decided
+2026-11-10T09:14:11Z	how	三路探索加一份汇总：引用要放在单独一张表、不进正文；转交给助手时要一起带上；卡片自己的 trg_ 要排第一	正文会原样显示在对话栏和助手的输入里；测试辅助按第一个 trg_ 取 id	/Users/szou/.claude/jobs/66e5cbed/tmp/quote/how.md	done
+2026-11-10T09:23:34Z	architect	两版设计取候选 1 做底：另加 userSaidQuoting 和 sayQuoting，不改现有 say；新开任务时助手也能看到引用	两版主体一致；候选 1 改动面小，候选 2 要改 108 处调用	/Users/szou/.claude/jobs/66e5cbed/tmp/quote/synthesis.md	decided
+2026-11-10T09:23:34Z	architect	从候选 2 移植：库里检查快照不含换行并去掉控制字符、只能引用已显示的行、user 帧整行展开不再手抄字段	结构上堵住伪造卡片行；页面看不到的行不该能被引用；手抄字段以后容易漏	synthesis.md Grafts	decided
+2026-11-10T09:23:34Z	architect	交叉评审跳过，底版由我按评分表挑	评审池只有 Claude	~/.claude/rules/pstack-models.md	skipped
+2026-11-10T09:31:28Z	implement	后端三个单元完成：内核存引用、卡片和助手输入的引用行与两份提示词、发话接口接受被引用行 id；每个单元先红后绿	按合成设计实现；我审过 diff，核对了冻结、单一来源和授权句	commits 6da43d8, 1068ecc, 5e477c4; just test 914/914	done
+2026-11-10T09:43:12Z	implement	前端三个单元完成：页面引用按钮、引用条和气泡下的引用；TUI 和 just tail 打印引用行；端到端证明幕僚长和助手收到的请求里有引用行；E5、E6 一写就绿，子代理临时去掉那一行后确认会变红	后端已经做完行为，端到端只是证明	commits bb836e8, 4f004b2, f90f278; just test 923/923; just e2e 179/179	done
+2026-11-10T09:43:12Z	verify	真实宿主加假模型截图：悬停出现引用、引用条、发出后气泡下的灰色引用（浅色深色）、手机点气泡出现引用	子代理只截过一次性的桌面图	/Users/szou/.claude/jobs/66e5cbed/tmp/qshots/*.png	PASS
