@@ -162,7 +162,7 @@ export class Kernel {
 		save: (ask, said) => {
 			this.#run(
 				`INSERT INTO cap_asks (day, state, asked_at, answered_at, said) VALUES (?, ?, ?, ?, ?)
-				 ON CONFLICT (day) DO UPDATE SET state = excluded.state, answered_at = excluded.answered_at, said = excluded.said`,
+				 ON CONFLICT (day) DO UPDATE SET state = excluded.state, asked_at = excluded.asked_at, answered_at = excluded.answered_at, said = excluded.said, expired_at = NULL`,
 				ask.day, ask.state, ask.askedAt, ask.state === "asked" ? null : ask.answeredAt, said ?? null,
 			);
 		},

@@ -1484,6 +1484,27 @@ test("成员上限的问答记在状态库里：重开数据库读得回来，�
 	}
 });
 
+test("成员上限：记了到期的那一天又被问起（时钟往回拨过了零点），到期的记号清掉，之后的放宽重启后读得回来", () => {
+	const { kernel } = setup();
+	const day = "2026-11-08";
+	kernel.capAsks.save({ state: "asked", day, askedAt: 100 });
+	kernel.capAsks.save({ state: "granted", day, askedAt: 100, answeredAt: 200 }, "回答成员上限：今天放宽到 10");
+	kernel.capAsks.expire(day, 300);
+	kernel.capAsks.save({ state: "asked", day, askedAt: 400 });
+	assert.deepEqual(kernel.capAsks.latest(), { state: "asked", day, askedAt: 400 }, "重新问的问题读得回来，提问时间是这一次的");
+	kernel.capAsks.save({ state: "granted", day, askedAt: 400, answeredAt: 500 }, "回答成员上限：今天放宽到 10");
+	assert.deepEqual(kernel.capAsks.latest(), { state: "granted", day, askedAt: 400, answeredAt: 500 });
+});
+
+test("成员上限：状态库不收对不上的记录。回答必须带使用者的那句话，没答的问题不能带", () => {
+	const { kernel } = setup();
+	const day = "2026-11-08";
+	assert.throws(() => kernel.capAsks.save({ state: "granted", day, askedAt: 100, answeredAt: 200 }), /CHECK constraint failed/, "放宽没有那句话");
+	assert.throws(() => kernel.capAsks.save({ state: "declined", day, askedAt: 100, answeredAt: 200 }), /CHECK constraint failed/, "保持没有那句话");
+	assert.throws(() => kernel.capAsks.save({ state: "asked", day, askedAt: 100 }, "回答成员上限：今天放宽到 10"), /CHECK constraint failed/, "没答的问题带着一句话");
+	assert.deepEqual(kernel.capAsks.latest(), { state: "none" });
+});
+
 test("使用者对成员上限的回答是对话里他自己的一句话，但不是触发：幕僚长收不到通知，也没有可转交的东西", () => {
 	const { kernel, say } = setup();
 	const { triggerId } = say("查天气");
