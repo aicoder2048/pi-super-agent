@@ -1,7 +1,7 @@
 // @ts-check
 
 import {
-	STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canSend, choicesInConversation, dutyLine, emptyView, emptyWatch,
+	STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canSend, choicesInConversation, dutyLine, emptyView, emptyWatch, questionOf,
 	helperStrip, helperTint, isStale, leftColumn, lifecycleLine, liveSteps, parseMarkdown, resolveTheme, restartNotice, routeLine, sayCopy, sayOutcome, settleSay, settleSending, smallPrint, stopSentence,
 	toggleTheme,
 } from "./view.mjs";
@@ -224,6 +224,15 @@ function mount(doc) {
 		return node;
 	};
 
+	/** @param {import("./view.mjs").CapCard} card */
+	const capCard = (card) => {
+		const node = el("div", "card ask cap");
+		const box = el("div", "choices");
+		fillChoices(box, card.choice);
+		node.append(el("div", "title", card.title), el("div", "why", card.stage), el("div", "latest", card.latest), box);
+		return node;
+	};
+
 	/** @param {string} heading @param {HTMLElement[]} items @param {string} emptyText @param {string} [headingClass] */
 	const section = (heading, items, emptyText, headingClass = "") => {
 		const node = el("section", "");
@@ -243,7 +252,7 @@ function mount(doc) {
 		list.append(...left.done.map((c) => taskCard(c, "done")));
 		done.append(el("summary", "", left.doneLine), list);
 		$("left").replaceChildren(
-			section(`待你处理 · ${left.needsYou.length}`, left.needsYou.map((c) => taskCard(c, "ask")), "暂无待处理事项。", "warn"),
+			section(left.needsYouLine, [...(left.capCard ? [capCard(left.capCard)] : []), ...left.needsYou.map((c) => taskCard(c, "ask"))], "暂无待处理事项。", "warn"),
 			section(`进行中 · ${left.doing.length}`, left.doing.map((c) => taskCard(c, "doing")), "暂无进行中的任务。"),
 			section(`关注的来源 · ${left.watching.length}`, left.watching.map((w) => {
 				const node = el("div", w.problem ? "watch problem" : "watch");
@@ -427,7 +436,7 @@ function mount(doc) {
 				setSay(state);
 			} else {
 				sending.delete(reportId);
-				const options = view.rows.find((r) => r.question?.reportId === reportId)?.question?.options ?? [];
+				const options = questionOf(view, reportId)?.options ?? [];
 				setSay(state, res.status, state === "rejected" ? answerRefusedCopy(res.status, await res.json().catch(() => null), options) : undefined);
 			}
 		} catch {
