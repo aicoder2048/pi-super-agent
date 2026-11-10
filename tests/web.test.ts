@@ -1279,7 +1279,7 @@ test("页面：成员的工具还在跑时，小卡下写这一步已经跑了�
 	assert.equal(label(1000), "技术分析师 · 执行命令 · 已 2 分钟");
 	assert.equal(label(1000 + 65_000), "技术分析师 · 执行命令 · 已 3 分钟", "没有新帧时页面自己往后数");
 	page.applyMessage(view, frame({ quietMs: 0, toolMs: 0 }), 1000);
-	assert.deepEqual([label(1000), label(1000 + 42_000)], ["技术分析师 · 执行命令 · 已 0 秒", "技术分析师 · 执行命令 · 已 42 秒"]);
+	assert.deepEqual([label(1000), label(1999), label(2000), label(1000 + 42_000)], ["技术分析师 · 执行命令 · 刚刚", "技术分析师 · 执行命令 · 刚刚", "技术分析师 · 执行命令 · 已 1 秒", "技术分析师 · 执行命令 · 已 42 秒"], "不到一秒不写「已 0 秒」");
 	page.applyMessage(view, frame({ quietMs: 12_000 }), 1000);
 	assert.equal(label(1000), "技术分析师 · 执行命令 · 12 秒前");
 });

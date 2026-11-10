@@ -512,6 +512,7 @@ function ago(ms) {
 /** @param {number} ms */
 function runningFor(ms) {
 	const seconds = Math.floor(ms / 1000);
+	if (seconds < 1) return "刚刚";
 	return seconds < 60 ? `已 ${seconds} 秒` : `已 ${Math.floor(seconds / 60)} 分钟`;
 }
 
