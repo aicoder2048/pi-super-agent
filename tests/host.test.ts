@@ -244,6 +244,17 @@ test("宿主把领域簿交给内核，任务的领域决定启动助手时交�
 	assert.deepEqual(seen, [["news", "新闻队", ["news-researcher"]], ["mail", false, []], [null, false, []]]);
 });
 
+test("幕僚长经 route 工具把 domain 填成 null 或两头带空白：null 当没填，空白去掉", async (t) => {
+	const brain: Brain = (cards) =>
+		cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg"), title: "t", brief: "b", domain: card.includes("新闻") ? " news " : null }] } }] : []));
+	const { host, spawner } = await startHost(brain, (w) => w.settle(), { domains: NEWS_DOMAINS });
+	t.after(() => host.stop());
+	host.say("看下听证会的新闻");
+	host.say("查明天天气");
+	await until(() => spawner.workers.size === 2, "两个助手都启动");
+	assert.deepEqual(host.kernel.listTickets().map((row) => host.kernel.getTicket(row.id)!.domain), ["news", null]);
+});
+
 test("知识跟着领域走：对话里开的任务属于哪个领域，助手就拿到那个模块的技能目录和 prepare；没有领域的助手什么都不带", async (t) => {
 	const brain: Brain = (cards) =>
 		cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg"), title: "t", brief: "b", ...(card.includes("新闻") && { domain: "news" }), ...(card.includes("邮件") && { domain: "mail" }) }] } }] : []));

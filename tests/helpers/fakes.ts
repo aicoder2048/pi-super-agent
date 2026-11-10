@@ -32,7 +32,7 @@ type FakeModule = { skillsDir?: string; prepare?: string } & ({ team: string; cr
 
 export function domainsOf(modules: Record<string, FakeModule>): Domains {
 	return {
-		book: new Map(Object.entries(modules).map(([name, m]) => [name, { team: m.team ?? null }])),
+		book: new Map(Object.entries(modules).map(([name, m]) => [name, { team: m.team ?? null, onRoster: true }])),
 		kitFor: (domain) => (domain in modules ? { skillsDir: modules[domain].skillsDir, prepare: modules[domain].prepare, crew: modules[domain].crew ?? [] } : undefined),
 	};
 }

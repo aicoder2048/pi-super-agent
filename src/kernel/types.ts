@@ -19,6 +19,8 @@ export type Helper = { name: string; seq: number } & ({ role: HelperRole } | { t
 export interface DomainEntry {
 	/** The team's name when the module has members. Null: its helper works alone. */
 	team: string | null;
+	/** The 幕僚长 was offered this domain. False: only the module's own rules put a ticket in it. */
+	onRoster: boolean;
 }
 
 /** All the kernel knows about domains, built once at startup: one entry per loaded module, by the module's name. */
@@ -126,8 +128,8 @@ export type Decision =
 			title: string;
 			basis: Basis;
 			ruleId?: string;
-			/** A module's name. Omitted or blank: the ticket has no domain. */
-			domain?: string;
+			/** A module's name. Omitted, null or blank: the ticket has no domain. */
+			domain?: string | null;
 			triggerId?: string;
 			threads?: string[];
 			brief: string;

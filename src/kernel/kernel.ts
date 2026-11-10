@@ -932,12 +932,10 @@ export class Kernel {
 				return reject(`unknown thread ${threadId}; new threads must look like thr_<source>:<thread>`);
 			}
 		}
-		const asked = typeof d.domain === "string" && !d.domain.trim() ? undefined : d.domain;
-		if (asked !== undefined && !this.#domains.has(asked)) {
-			const known = [...this.#domains.keys()];
-			return reject(`unknown domain ${asked}; ${known.length ? `the domains are ${known.join(", ")} (omit domain when none fits)` : "there are no domains (omit domain)"}`);
-		}
+		const asked = typeof d.domain === "string" ? d.domain.trim() || undefined : (d.domain ?? undefined);
 		const ruled = d.basis === "rule" ? this.#domainOfRule(d.ruleId!) : null;
+		const unpickable = asked === undefined || asked === ruled ? undefined : this.#whyNotPickable(asked);
+		if (unpickable) return reject(unpickable);
 		const domain = ruled ?? asked ?? null;
 		if (d.basis === "inference") {
 			const limitProblem = this.#inferenceDailyLimitProblem();
@@ -971,6 +969,14 @@ export class Kernel {
 		if (d.triggerId !== undefined) takenThisRoute.add(d.triggerId);
 		if (d.triggerId !== undefined) this.#setDisposition(d.triggerId, "opened_ticket", ticketId);
 		return { ok: true, ticketId };
+	}
+
+	#whyNotPickable(domain: string): string | undefined {
+		const entry = this.#domains.get(domain);
+		if (entry?.onRoster) return undefined;
+		const roster = [...this.#domains].filter(([, e]) => e.onRoster).map(([name]) => name);
+		const why = entry ? `domain ${domain} is not on your roster (its module has no description), so you cannot pick it` : `unknown domain ${domain}`;
+		return `${why}; ${roster.length ? `the domains are ${roster.join(", ")} (omit domain when none fits)` : "there are no domains (omit domain)"}`;
 	}
 
 	#domainOfRule(ruleId: string): string | null {

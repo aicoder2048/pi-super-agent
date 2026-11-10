@@ -167,6 +167,8 @@ function rejectModuleWithoutManifest(root: string, dir: string): void {
 	if (parts.length) throw new ConfigError(`${dir}：有 ${parts.join("、")} 却没有 module.json，这个文件夹不会被当成模块。加上 ${join(dir, "module.json")}，至少写 {"name": "${basename(dir)}"}；不是模块就把它移出 ${root}`);
 }
 
+const onRoster = (module: LoadedModule) => module.manifest.description !== undefined;
+
 export class Modules implements Domains {
 	readonly modules: LoadedModule[];
 	readonly userRules: ScopedRule[];
@@ -178,7 +180,7 @@ export class Modules implements Domains {
 		this.modules = modules;
 		this.userRules = userRules;
 		this.skippedUserRules = skippedUserRules;
-		this.book = new Map(modules.map((m) => [m.name, { team: m.team?.name ?? null }]));
+		this.book = new Map(modules.map((m) => [m.name, { team: m.team?.name ?? null, onRoster: onRoster(m) }]));
 		this.#scopes = new Map(this.allRules().map((r) => [r.id, r.sources]));
 	}
 
@@ -216,7 +218,7 @@ export class Modules implements Domains {
 	}
 
 	rosterPrompt(): string {
-		return this.modules.filter((m) => m.manifest.description).map((m) => `- ${m.name}（${m.manifest.title}）：${m.manifest.description}`).join("\n");
+		return this.modules.filter(onRoster).map((m) => `- ${m.name}（${m.manifest.title}）：${m.manifest.description}`).join("\n");
 	}
 
 	kitFor = (domain: string): DomainKit | undefined => {

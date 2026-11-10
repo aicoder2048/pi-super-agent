@@ -43,7 +43,7 @@ function setup({ config, path = ":memory:", at = "2026-11-08T10:00:00", domains 
 	const wakes = () => due("worker.wake").map((a) => (a.payload as { ticketId: string }).ticketId);
 	const drain = () => { for (const a of kernel.dueActions(1000)) kernel.completeAction(a.id); };
 
-	function open(basis: Basis, { threads = [] as string[], title = `${basis} 任务`, source = "generic", domain = undefined as string | undefined, ruleId = "rule-1" } = {}) {
+	function open(basis: Basis, { threads = [] as string[], title = `${basis} 任务`, source = "generic", domain = undefined as string | null | undefined, ruleId = "rule-1" } = {}) {
 		let triggerId: string | undefined;
 		if (basis === "request") triggerId = say(title).triggerId;
 		if (basis === "rule") triggerId = trigger({ source, threads: [{ id: `thr_${source}:rule-${++n}` }], body: title }).triggerId;
@@ -1261,7 +1261,8 @@ test("今日助手：纽约今天建的任务数和它们的 token 合计；昨�
 	assert.ok(b);
 });
 
-const DOMAINS: DomainBook = new Map([["news", { team: "新闻队" }], ["watch", { team: "看盘队" }], ["mail", { team: null }]]);
+const DOMAINS: DomainBook = new Map([["news", { team: "新闻队", onRoster: true }], ["watch", { team: "看盘队", onRoster: true }], ["mail", { team: null, onRoster: true }]]);
+const WITH_UNLISTED: DomainBook = new Map([...DOMAINS, ["quiet", { team: "安静队", onRoster: false }]]);
 const domainOf = (kernel: Kernel, id: string) => kernel.getTicket(id)!.domain;
 
 test("任务最多属于一个领域：open_ticket 省略 domain 就是没有领域，填了领域簿里的模块名就记在任务上", () => {
@@ -1276,6 +1277,42 @@ test("open_ticket 的 domain 是空串或只有空白：当作没填，任务没
 	const s = setup({ domains: DOMAINS });
 	assert.equal(domainOf(s.kernel, s.open("request", { domain: "" })), null);
 	assert.equal(domainOf(s.kernel, s.open("request", { domain: "  " })), null);
+});
+
+test("open_ticket 的 domain 是 null：当作没填；按规则开的任务照样归规则所在的模块", () => {
+	const s = setup({ domains: DOMAINS });
+	assert.equal(domainOf(s.kernel, s.open("request", { domain: null })), null);
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "news/breaking", domain: null })), "news");
+	assert.deepEqual(s.logs, []);
+});
+
+test("open_ticket 的 domain 两头的空白去掉再认；大小写不同不算同一个领域", () => {
+	const s = setup({ domains: DOMAINS });
+	assert.equal(domainOf(s.kernel, s.open("request", { domain: " news\n" })), "news");
+	const [shouted] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", triggerId: s.say("查新闻").triggerId, domain: "NEWS", brief: "b" }]);
+	assert.deepEqual(shouted, { ok: false, reason: "unknown domain NEWS; the domains are news, watch, mail (omit domain when none fits)" });
+});
+
+test("不在名册上的领域幕僚长不能选：拒绝并说明原因，列出的只有名册上的领域；它的规则开的任务照样归它", () => {
+	const s = setup({ domains: WITH_UNLISTED });
+	const decision = { kind: "open_ticket", title: "t", basis: "request", triggerId: s.say("安静一下").triggerId, brief: "b" } as const;
+	const [picked] = s.kernel.route([{ ...decision, domain: "quiet" }]);
+	assert.deepEqual(picked, { ok: false, reason: "domain quiet is not on your roster (its module has no description), so you cannot pick it; the domains are news, watch, mail (omit domain when none fits)" });
+	const [typo] = s.kernel.route([{ ...decision, domain: "quite" }]);
+	assert.deepEqual(typo, { ok: false, reason: "unknown domain quite; the domains are news, watch, mail (omit domain when none fits)" });
+	const [byUserRule] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "rule", ruleId: "user/ci", triggerId: s.trigger({ threads: [{ id: "thr_generic:u" }] }).triggerId, domain: "quiet", brief: "b" }]);
+	assert.equal(byUserRule.ok, false);
+	const ruled = s.open("rule", { ruleId: "quiet/hush" });
+	assert.equal(domainOf(s.kernel, ruled), "quiet");
+	assert.deepEqual(helperOf(s.kernel, ruled), { name: TEAM_NAMES[0], team: "安静队", seq: 1 });
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "quiet/hush", domain: "quiet" })), "quiet", "填的正是规则所在的模块：没有选，照开");
+	assert.deepEqual(s.logs, []);
+});
+
+test("加载的模块都不在名册上时，幕僚长没有可选的领域", () => {
+	const s = setup({ domains: new Map([["quiet", { team: null, onRoster: false }]]) });
+	const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", triggerId: s.say("x").triggerId, domain: "quite", brief: "b" }]);
+	assert.deepEqual(result, { ok: false, reason: "unknown domain quite; there are no domains (omit domain)" });
 });
 
 test("没有加载任何模块时，内核不认任何领域", () => {
@@ -1413,8 +1450,8 @@ test("名字和四字还是两字在开任务时定下，之后不变；队名�
 	first.db.close();
 	const helpers = (domains?: DomainBook) => ids.map((id) => helperOf(setup({ path, domains }).kernel, id));
 	const solo = { name: SOLO_NAMES[0], role: "conversation", seq: 1 };
-	assert.deepEqual(helpers(new Map([["news", { team: "要闻队" }], ["mail", { team: "邮件队" }]])), [{ name: TEAM_NAMES[0], team: "要闻队", seq: 1 }, solo], "模块改了队名、另一个模块后来有了成员");
-	assert.deepEqual(helpers(new Map([["news", { team: null }]])), [{ name: TEAM_NAMES[0], team: "news", seq: 1 }, solo], "模块没了成员：写模块名");
+	assert.deepEqual(helpers(new Map([["news", { team: "要闻队", onRoster: true }], ["mail", { team: "邮件队", onRoster: true }]])), [{ name: TEAM_NAMES[0], team: "要闻队", seq: 1 }, solo], "模块改了队名、另一个模块后来有了成员");
+	assert.deepEqual(helpers(new Map([["news", { team: null, onRoster: true }]])), [{ name: TEAM_NAMES[0], team: "news", seq: 1 }, solo], "模块没了成员：写模块名");
 	assert.deepEqual(helpers(), [{ name: TEAM_NAMES[0], team: "news", seq: 1 }, solo], "模块拿掉了：写模块名");
 });
 
