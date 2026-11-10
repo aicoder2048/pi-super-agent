@@ -111,11 +111,9 @@ CREATE TABLE IF NOT EXISTS answer_clicks (
 );
 CREATE INDEX IF NOT EXISTS answer_clicks_report ON answer_clicks (report_id);
 
--- The line the user quoted when saying trigger_id, frozen then: it reads the same after the line scrolls off every screen,
--- is hidden by 清屏, or its trigger is routed. line_id spans triggers, reply_receipts and cap_asks, so it has no foreign key.
 CREATE TABLE IF NOT EXISTS trigger_quotes (
 	trigger_id TEXT PRIMARY KEY REFERENCES triggers(id),
-	line_id TEXT NOT NULL,
+	line_id TEXT NOT NULL CHECK (line_id GLOB 'trg_*' OR line_id GLOB 'rpl_*' OR line_id GLOB 'ask_cap_*'),
 	who TEXT NOT NULL CHECK (who IN ('user', 'router')),
 	said_at INTEGER NOT NULL,
 	text TEXT NOT NULL CHECK (length(text) > 0 AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0),

@@ -1844,3 +1844,13 @@ test("引用：引用表不收带换行的快照", () => {
 	assert.throws(() => insert("一\r二"), /CHECK constraint failed/);
 	assert.throws(() => insert(""), /CHECK constraint failed/);
 });
+
+test("引用：引用表只收对话里三种行的编号", () => {
+	const s = setup();
+	const id = s.say("查天气").triggerId;
+	const insert = (lineId: string) =>
+		s.db.prepare("INSERT INTO trigger_quotes (trigger_id, line_id, who, said_at, text) VALUES (?, ?, 'user', 1, '查天气')").run(id, lineId);
+	assert.throws(() => insert("tkt_1"), /CHECK constraint failed/);
+	assert.throws(() => insert("act_1"), /CHECK constraint failed/);
+	insert("ask_cap_2026-11-10");
+});

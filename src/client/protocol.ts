@@ -42,7 +42,6 @@ export interface BoardState {
 
 export type ClientToHost =
 	| { type: "hello"; role: "client"; token: string }
-	/** A typed sentence. Socket clients cannot quote; only the web page can, and its gateway resolves the quoted line. */
 	| { type: "say"; text: string; requestId: string }
 	/** A click on option `option` of the question `reportId`: a helper's report, or the host's own question about the member cap. The host words it as the user's message. */
 	| { type: "answer"; reportId: string; option: number; requestId: string }
@@ -50,7 +49,6 @@ export type ClientToHost =
 
 export type HostToClient =
 	| { type: "snapshot"; conversation: ConversationLine[]; cleared: Cleared | null; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; memberCap: MemberCapBoard; watching: WatchedSource[] }
-	/** The user's new line, exactly as it reads in the conversation. */
 	| ({ type: "user" } & ConversationLine & { who: "user" })
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }

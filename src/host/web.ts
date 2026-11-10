@@ -14,7 +14,6 @@ export interface WebHost {
 	snapshot(): Snapshot;
 	transcript(ticketId: string): TranscriptHistory;
 	say(text: string): string;
-	/** Null when lineId names no conversation line; nothing is written then. */
 	sayQuoting(text: string, lineId: string): string | null;
 	answer(reportId: string, option: number): AnswerResult;
 	clear(): void;

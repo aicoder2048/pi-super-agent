@@ -267,25 +267,15 @@ export interface DashboardRow {
 	endedAt: number | null;
 }
 
-/**
- * The line the user pointed at when saying something, frozen by the kernel then and never changed.
- * `text` is one line of at most QUOTE_MAX_CHARS characters; `ticketId` is the task that line was about then.
- * A quote is context, never the user's words (ADR-0011).
- */
 export interface Quote {
-	/** trg_…, rpl_… or ask_cap_<day>: any shown line of the 对话 column, hidden ones included. */
 	lineId: string;
 	who: "user" | "router";
-	/** When the quoted line was said. */
 	at: number;
 	text: string;
 	ticketId: string | null;
 }
 
-/**
- * One line of the 对话 column. ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line.
- * quote: on a user line that pointed at an earlier line.
- */
+/** One line of the 对话 column. ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
 export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string; quote?: Quote };
 
 /**

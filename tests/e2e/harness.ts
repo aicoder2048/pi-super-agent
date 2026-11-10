@@ -214,7 +214,7 @@ export interface Story {
 	stateDir: string;
 	/** One node:test subtest. After a failed step the rest are skipped and the report names the step. */
 	step(name: string, body: (page: Page) => Promise<unknown>): Promise<void>;
-	/** Opens another page whose console also goes into the report. `context` sets up its browser, e.g. a touch phone. */
+	/** Opens another page whose console also goes into the report. */
 	open(url: URL, options?: { fakeClock?: boolean; context?: BrowserContextOptions }): Promise<Page>;
 	cli(args: string[]): Promise<string>;
 }

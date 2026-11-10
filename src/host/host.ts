@@ -245,7 +245,6 @@ export class Host {
 		return triggerId;
 	}
 
-	/** The web gateway's sentence that quotes a conversation line. Null, and nothing written or sent, when lineId names no such line. */
 	sayQuoting(text: string, lineId: string): string | null {
 		const at = Date.now();
 		const said = this.kernel.userSaidQuoting({ text, at, lineId });

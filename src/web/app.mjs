@@ -43,7 +43,7 @@ function mount(doc) {
 	let sayState = "idle";
 	/** @type {(import("./view.mjs").Draft & { idsAtSay: Set<string> }) | undefined} */
 	let unconfirmed;
-	/** The line the composer quotes; the strip shows it and the next say sends its id. @type {import("./view.mjs").ConversationLine | null} */
+	/** @type {import("./view.mjs").ConversationLine | null} */
 	let quoting = null;
 	const quoteStrip = $("quote-strip");
 	const touch = matchMedia("(hover: none)");
@@ -326,7 +326,6 @@ function mount(doc) {
 			/** @type {HTMLElement} */ (quoteStrip.querySelector(".quote-who")).textContent = `引用 ${shown.who}：`;
 			/** @type {HTMLElement} */ (quoteStrip.querySelector(".quote-text")).textContent = shown.text;
 		}
-		// The strip takes height from the conversation; keep its last line in view.
 		if (atBottom) box.scrollTop = box.scrollHeight;
 	};
 
@@ -644,7 +643,6 @@ function mount(doc) {
 		void say();
 	});
 	$("quote-cancel").addEventListener("click", () => setQuote(null));
-	// On a touch screen there is no hover, so a tap on a bubble reveals its 「引用」.
 	thread.addEventListener("click", (e) => {
 		const target = /** @type {Element} */ (e.target);
 		if (!touch.matches || target.closest(".choices, .route, a, button")) return;

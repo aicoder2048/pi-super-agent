@@ -257,11 +257,6 @@ export class Kernel {
 		});
 	}
 
-	/**
-	 * The user's sentence pointing at an earlier shown line of the conversation, hidden lines included.
-	 * Null, and nothing written, when lineId names no such line. The quote row commits with the trigger and its Router notice,
-	 * so the Router's card always sees it. It binds no ticket and backs no decision: the trigger is routed like any typed sentence.
-	 */
 	userSaidQuoting({ text, at, lineId }: { text: string; at: number; lineId: string }): { triggerId: string; quote: Quote } | null {
 		return this.#tx(() => {
 			const line = this.#get(`SELECT id, who, text, at, cause FROM (${LINES}) WHERE id = ? AND shown`, ...LINES_PARAMS, lineId);
@@ -282,7 +277,6 @@ export class Kernel {
 		});
 	}
 
-	// rpl_ follows its cause one level; ask_cap_ and act_ causes belong to no ticket.
 	#ticketOfLine(id: string, cause: string | null): string | null {
 		if (id.startsWith("trg_")) {
 			const t = this.#get("SELECT disposition, disposition_detail FROM triggers WHERE id = ?", id);

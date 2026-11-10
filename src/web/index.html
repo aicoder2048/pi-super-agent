@@ -138,12 +138,10 @@
 		.cleared-bar::before, .cleared-bar::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
 		.cleared-bar:hover { color: var(--accent-ink); }
 		.said { position: relative; }
-		/* Sits in the gap below the line, so revealing it never moves the conversation. */
 		.quote-btn { position: absolute; top: 100%; left: 0; padding: 0 4px; border: 0; background: none; font-size: 12px; line-height: 16px; color: var(--muted); opacity: 0; pointer-events: none; }
 		.user .quote-btn { left: auto; right: 0; }
 		.quote-btn:hover { color: var(--accent-ink); text-decoration: underline; }
 		.quote-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
-		/* A hidden 引用 takes no taps or clicks; Tab still reaches it, and focus shows it. */
 		.line:hover .quote-btn, .line:focus-within .quote-btn, .line.picked .quote-btn { opacity: 1; pointer-events: auto; }
 		@media (hover: none) { .line:hover .quote-btn { opacity: 0; pointer-events: none; } .line.picked .quote-btn { opacity: 1; pointer-events: auto; } }
 		.quoted, .quote-strip { font-size: 12px; line-height: 1.5; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }

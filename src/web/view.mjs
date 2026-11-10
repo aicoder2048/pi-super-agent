@@ -718,12 +718,12 @@ export function sayOutcome(outcome) {
 	return "rejected";
 }
 
-/** What the composer will send: the text and the line it quotes. The quote strip and the textarea are one draft. @typedef {{ text: string, quoteOf: string | null }} Draft */
+/** @typedef {{ text: string, quoteOf: string | null }} Draft */
 
-/** The POST /say body. @param {Draft} draft */
+/** @param {Draft} draft */
 export const sayBody = (draft) => JSON.stringify(draft.quoteOf ? { text: draft.text, quoteOf: draft.quoteOf } : { text: draft.text });
 
-/** After a send is confirmed the draft empties, but only if neither its text nor its quote changed since. @param {Draft} draft @param {Draft} sent @returns {Draft} */
+/** @param {Draft} draft @param {Draft} sent @returns {Draft} */
 export const clearSent = (draft, sent) => (draft.text === sent.text && draft.quoteOf === sent.quoteOf ? { text: "", quoteOf: null } : draft);
 
 // A timed-out POST may still have reached the host; its echo in the conversation is the confirmation.
@@ -740,18 +740,14 @@ export function settleSay(say, draft, arrived) {
 /** @param {Span[]} spans */
 const spanText = (spans) => spans.map((s) => s.text).join("");
 
-/** The words of markdown without its marks, blocks and cells joined with a space. @param {string} text */
+/** @param {string} text */
 const plainText = (text) =>
 	parseMarkdown(text)
 		.flatMap((b) => (b.kind === "p" || b.kind === "h" ? [b.spans] : b.kind === "table" ? [...b.head, ...b.rows.flat()] : b.items))
 		.map(spanText)
 		.join(" ");
 
-/**
- * How a quote reads on the page, in the strip above the composer and under a bubble: who, and the words on one line.
- * The 幕僚长's markdown loses its marks; your own words show as typed, like your bubble. The two-line limit is CSS.
- * @param {{ who: "user" | "router", text: string }} said
- */
+/** @param {{ who: "user" | "router", text: string }} said */
 export const quoteShown = (said) => ({
 	who: QUOTE_WHO[said.who],
 	text: (said.who === "router" ? plainText(said.text) : said.text).replace(/\s+/gu, " ").trim(),
