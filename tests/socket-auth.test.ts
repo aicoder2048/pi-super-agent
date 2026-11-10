@@ -212,3 +212,9 @@ test("socket：升级前就开着的旧客户端每秒重连一次，宿主一�
 	assert.equal(lines.filter((l) => l.startsWith("[socket]")).length, 1, lines.join("\n"));
 	assert.deepEqual(host.kernel.conversation(), []);
 });
+
+test("凭据比较：空凭据永远不算对，哪怕要比的那一方也是空的", async () => {
+	const { tokenMatches } = await import("../src/host/web-token.ts");
+	assert.equal(tokenMatches("", ""), false);
+	assert.equal(tokenMatches("a", "a"), true);
+});

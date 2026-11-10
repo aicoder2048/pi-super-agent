@@ -33,7 +33,7 @@ export function removeToken(stateDir: string, file: TokenFile): void {
 export function tokenMatches(given: string, token: string): boolean {
 	const got = Buffer.from(given);
 	const want = Buffer.from(token);
-	return got.length === want.length && timingSafeEqual(got, want);
+	return want.length > 0 && got.length === want.length && timingSafeEqual(got, want);
 }
 
 // Created 0600 rather than chmod-ed afterwards, so the token is never readable by others even for a moment.
