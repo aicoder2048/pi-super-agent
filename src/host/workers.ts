@@ -370,7 +370,6 @@ export class WorkerExecutor {
 				afterCommand();
 			},
 			onMessage: (message, index) => this.#o.onMemberTranscript?.(ticketId, { callId, index }, message),
-			// A helper waiting on a member makes no tool call of its own; the member's activity is the ticket's progress.
 			onProgress: () => {
 				try {
 					kernel.recordMemberProgress(ticketId);

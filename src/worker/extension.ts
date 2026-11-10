@@ -86,7 +86,6 @@ export default function workerExtension(pi: ExtensionAPI) {
 	const syncBg = () => call("worker.bg", { running: runningCount() }).catch(() => {});
 
 	if (!memberTools) registerHelperTools();
-	// The host reads a member's steps for one dispatch back from its session by this mark.
 	if (memberTools && callId) pi.on("session_start", async () => pi.appendEntry(DISPATCH_MARK, { callId }));
 
 	function registerHelperTools(): void {

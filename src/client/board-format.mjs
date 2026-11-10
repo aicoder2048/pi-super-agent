@@ -147,8 +147,7 @@ function reportTitle(a) {
 }
 
 /**
- * One tool call as a step of 执行过程. The page and the host share these words: the host uses the title
- * to say what a team member is doing right now.
+ * One tool call as a step of 执行过程.
  * @param {string} name @param {Record<string, unknown>} args @returns {{ title: string, detail: string }}
  */
 export const toolStep = (name, args) => TOOL_STEP[name]?.(args) ?? { title: `调用工具 ${name}`, detail: "" };

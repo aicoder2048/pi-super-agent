@@ -56,18 +56,18 @@ const GROUP = {
  * @property {WatchedSource[]} watching
  * @property {Routes} routes
  * @property {Dispatching} dispatching
- * @property {Map<string, BoardDispatch>} dispatchSeen each dispatch as a board frame last showed it, by call id: the board drops a batch a moment before its results reach the transcript
+ * @property {Map<string, BoardDispatch>} lastOnBoard
  */
 
 /** @returns {View} */
 export function emptyView() {
-	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {}, dispatching: {}, dispatchSeen: new Map() };
+	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {}, dispatching: {}, lastOnBoard: new Map() };
 }
 
 /** @param {View} view @param {Dispatching | undefined} dispatching */
 function setDispatching(view, dispatching) {
 	view.dispatching = dispatching ?? {};
-	for (const d of Object.values(view.dispatching).flat()) view.dispatchSeen.set(d.callId, d);
+	for (const d of Object.values(view.dispatching).flat()) view.lastOnBoard.set(d.callId, d);
 }
 
 /** @param {View} view @param {ConversationLine} line */
@@ -309,7 +309,7 @@ export const stopSentence = (title) => `停止任务「${title}」`;
  * @property {string} stateText
  * @property {string} note
  * @property {string} tokens
- * @property {Step[]} steps the member's own steps in this dispatch
+ * @property {Step[]} steps
  */
 
 /** @type {Record<DispatchState, string>} */
@@ -400,11 +400,15 @@ function stopped(step) {
 	return { ...step, state: "stopped", dispatch, detail: dispatchDetail(dispatch) };
 }
 
+/** New input reaches a helper only after every call of its last turn has a result. @param {Step[]} steps */
+function stopUnanswered(steps) {
+	for (const [i, step] of steps.entries()) if (step.state === "pending") steps[i] = stopped(step);
+}
+
 /** @param {Step[]} steps @param {TranscriptMessage} message @param {Record<string, string>} titles */
 function append(steps, message, titles) {
 	if (message.role !== "toolResult") {
-		// A helper takes new input only once every call of its last turn has a result, so a call still waiting here never got one.
-		if (message.role !== "assistant") for (const [i, step] of steps.entries()) if (step.state === "pending") steps[i] = stopped(step);
+		if (message.role !== "assistant") stopUnanswered(steps);
 		return void steps.push(...stepsFrom(message, titles));
 	}
 	// Parallel calls of one tool finish in any order, so the call id decides when there is one.
@@ -418,13 +422,15 @@ function append(steps, message, titles) {
 	if (step.dispatch) step.state = DISPATCH_STEP_STATE[step.dispatch.state];
 }
 
-/** @param {Watch} watch @param {string | undefined} callId @param {boolean} over the dispatch has ended @returns {Step[]} */
-function memberSteps(watch, callId, over) {
+/** A member's message without a tool call ends its turn, so its text is the reply. @param {TranscriptMessage} message */
+const isMemberReply = (message) => message.role === "assistant" && !blocks(message).some((c) => c.type === "toolCall");
+
+/** @param {Watch} watch @param {string | undefined} callId @param {boolean} dispatchEnded @returns {Step[]} */
+function memberSteps(watch, callId, dispatchEnded) {
 	/** @type {Step[]} */
 	const steps = [];
-	// A member's message without a tool call ends its turn: that text is its reply, which the dispatch already shows.
-	for (const message of watch.members.get(callId ?? "") ?? []) if (message && (message.role !== "assistant" || blocks(message).some((c) => c.type === "toolCall"))) append(steps, message, {});
-	return over ? steps.map((s) => (s.state === "pending" ? stopped(s) : s)) : steps;
+	for (const message of watch.members.get(callId ?? "") ?? []) if (message && !isMemberReply(message)) append(steps, message, {});
+	return dispatchEnded ? steps.map((s) => (s.state === "pending" ? stopped(s) : s)) : steps;
 }
 
 /**
@@ -442,7 +448,7 @@ export function liveSteps(watch, view) {
 		if (step.state !== "pending") return step.dispatch ? { ...step, dispatch: { ...step.dispatch, steps: memberSteps(watch, step.callId, true) } } : step;
 		const dead = helperGone || (step.at ?? Infinity) < hostSince;
 		if (!step.dispatch) return dead ? stopped(step) : step;
-		const seen = onBoard.get(step.callId ?? "") ?? view.dispatchSeen.get(step.callId ?? "");
+		const seen = onBoard.get(step.callId ?? "") ?? view.lastOnBoard.get(step.callId ?? "");
 		const last = seen?.state ?? "queued";
 		/** @type {DispatchState} */
 		const state = dead && (last === "queued" || last === "running") ? "stopped" : last;
@@ -496,7 +502,7 @@ const DUTY_MARK = {
 	none: { duty: "queued", mark: "○", state: "排队" },
 };
 
-/** How long ago, in the chip's words. @param {number} ms */
+/** @param {number} ms */
 function ago(ms) {
 	const seconds = Math.floor(ms / 1000);
 	if (seconds < 5) return "刚刚";
@@ -665,7 +671,7 @@ function inlineSpans(text) {
 	return spans;
 }
 
-/** @param {string} line the raw cells of a table row, or null when the line is not one */
+/** @param {string} line */
 function tableCells(line) {
 	const row = line.trim();
 	return row.length > 1 && row.startsWith("|") && row.endsWith("|") ? row.slice(1, -1).split("|").map((cell) => cell.trim()) : null;

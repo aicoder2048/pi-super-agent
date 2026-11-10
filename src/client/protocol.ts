@@ -33,7 +33,7 @@ export interface BoardState {
 	helpers: HelpersToday;
 	/** What became of each of the user's recent messages, so a line under it can change without a reload. */
 	routes: Routes;
-	/** ticketId → the members that helper has at work or waiting for a slot right now. */
+	/** ticketId → that helper's dispatches: waiting, running, and ended ones until its whole batch is back. */
 	dispatching: Dispatching;
 }
 

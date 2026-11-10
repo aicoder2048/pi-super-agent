@@ -554,7 +554,6 @@ test("叫停任务时先停助手再停成员：助手不会在被停之前拿�
 	assert.equal(helperStopsAtAbort, 1, "成员被中止时助手已经收到停止");
 });
 
-/** A member whose process needs `ms` to die after it is told to stop, like Pi between SIGTERM and exit. */
 const slowToDie = (ms: number, gone: string[]): Runner => (run) =>
 	new Promise((_, fail) => run.signal.addEventListener("abort", () => setTimeout(() => (gone.push(run.member.name), fail(run.signal.reason)), ms)));
 

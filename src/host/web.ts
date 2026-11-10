@@ -91,8 +91,8 @@ export class WebGateway {
 		if (!watchers) return;
 		const frame = sseFrame({ type: "transcript", ticketId, message, ...(member && { member }) });
 		const json = JSON.stringify(message);
-		// A member's message carries its index, so the page puts a repeat in the same place.
-		for (const res of watchers) if (member || !this.#echoes.isEcho(res, json)) res.write(frame);
+		const alreadyInHistory = (res: ServerResponse) => !member && this.#echoes.isEcho(res, json);
+		for (const res of watchers) if (!alreadyInHistory(res)) res.write(frame);
 	}
 
 	close(): Promise<void> {

@@ -348,7 +348,6 @@ function mount(doc) {
 	let stepsShown = "";
 	/** @param {import("./view.mjs").Step[]} steps */
 	const stepsKey = (steps) => JSON.stringify(steps.map((s) => [s.state, s.detail, s.dispatch && [s.dispatch.tokens, s.dispatch.note, s.dispatch.steps.map((m) => [m.state, m.title, m.detail])]]));
-	// A board frame can move a dispatch, or a step whose helper stopped, without any new transcript message.
 	const renderStepsIfMoved = () => {
 		if (watching && stepsShown !== stepsKey(liveSteps(watching.watch, view))) renderSteps();
 	};

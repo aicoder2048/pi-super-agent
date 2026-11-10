@@ -196,7 +196,9 @@ test("成员进程在跑时，它的会话目录里记着进程号；进程没�
 	const ledger = join(memberSessionDir(dir, "tkt_helper", "news-researcher"), "running.json");
 	const reply = run(NEWS, "l");
 	await until(() => existsSync(join(dir, "pid-l")) && readFileSync(join(dir, "pid-l"), "utf8").length > 0, "成员进程起来了", 10_000);
-	assert.equal(JSON.parse(readFileSync(ledger, "utf8")).pid, Number(readFileSync(join(dir, "pid-l"), "utf8")));
+	assert.equal(JSON.parse(readFileSync(ledger, "utf8")).pgid, Number(readFileSync(join(dir, "pid-l"), "utf8")));
+	await assert.rejects(run(NEWS, "second"), /新闻研究员在这个任务里的上一个进程还没结束/);
+	assert.equal(existsSync(join(dir, "pid-second")), false, "不起第二个进程去写同一份会话");
 	await reply;
 	assert.equal(existsSync(ledger), false);
 });

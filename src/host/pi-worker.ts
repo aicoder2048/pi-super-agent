@@ -13,7 +13,7 @@ import { onJsonLines } from "../jsonl.ts";
 import { isMemberMessage, type MemberRun } from "./dispatch.ts";
 import type { TranscriptMessage } from "../client/protocol.ts";
 import { formatModelRef } from "../models.ts";
-import { clearMember, recordMember } from "./member-ledger.ts";
+import { clearMember, isRecorded, recordMember } from "./member-ledger.ts";
 import { usageOf, WorkerEventTranslator } from "./worker-events.ts";
 import type { WorkerEvents, WorkerHandle, WorkerSpawner, WorkerSpec } from "./workers.ts";
 
@@ -45,8 +45,7 @@ function teamPrompt(crew: readonly RosterEntry[]): string {
 ${crew.map((m) => `- ${m.name} · ${m.title}：${m.description}`).join("\n")}`;
 }
 
-// Long enough for Pi to flush its session and exit on SIGTERM; a member that has not exited by then is killed.
-const MEMBER_KILL_AFTER_MS = 800;
+const SIGTERM_GRACE_MS = 800;
 
 const SECRET_NAME = /(_API_KEY|_ACCESS_KEY|_TOKEN|_SECRET|_PASSWORD)$|^SECRET_/i;
 
@@ -201,7 +200,6 @@ export class PiWorkerSpawner implements WorkerSpawner {
 	}
 }
 
-/** One line of `pi --mode json`, as far as the host reads it. */
 interface PiJsonEvent {
 	type?: string;
 	toolName?: string;
@@ -210,7 +208,6 @@ interface PiJsonEvent {
 	message?: { role?: string; stopReason?: string; errorMessage?: string; content?: { type: string; text?: string }[] };
 }
 
-/** The step of 执行过程 this event starts, if it starts one. */
 function stepStarted(e: PiJsonEvent): string | undefined {
 	if (e.type === "tool_execution_start" && e.toolName) return toolStep(e.toolName, typeof e.args === "object" && e.args !== null ? (e.args as Record<string, unknown>) : {}).title;
 	if (e.type === "message_update" && /^(text|thinking)_/.test(e.assistantMessageEvent?.type ?? "")) return "思考";
@@ -220,6 +217,7 @@ function stepStarted(e: PiJsonEvent): string | undefined {
 function runMemberProcess(args: string[], env: Record<string, string>, run: MemberRun): Promise<string> {
 	return new Promise((resolve, reject) => {
 		if (run.signal.aborted) return reject(run.signal.reason);
+		if (isRecorded(run.sessionDir)) return reject(new Error(`${run.member.title}在这个任务里的上一个进程还没结束，不能再起一个去写同一份会话`));
 		const child = spawn(process.execPath, args, { cwd: run.workdir, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
 		if (child.pid) recordMember(run.sessionDir, child.pid);
 		const signalGroup = (signal: NodeJS.Signals) => {
@@ -230,7 +228,7 @@ function runMemberProcess(args: string[], env: Record<string, string>, run: Memb
 		let killTimer: NodeJS.Timeout | undefined;
 		const abort = () => {
 			signalGroup("SIGTERM");
-			killTimer = setTimeout(() => signalGroup("SIGKILL"), MEMBER_KILL_AFTER_MS);
+			killTimer = setTimeout(() => signalGroup("SIGKILL"), SIGTERM_GRACE_MS);
 		};
 		run.signal.addEventListener("abort", abort, { once: true });
 		let reply: string | undefined;

@@ -229,8 +229,7 @@ export interface DeskOptions {
 	onChange(): void;
 }
 
-/** A member's activity reaches the board at most this often per dispatch. */
-const PROGRESS_EVERY_MS = 1000;
+const BOARD_PUSH_MIN_INTERVAL_MS = 1000;
 
 interface Dispatch {
 	callId: string;
@@ -243,8 +242,7 @@ interface Dispatch {
 	note?: string;
 }
 
-/** Why the desk itself ended a running member. */
-class Cut extends Error {
+class EndedByDesk extends Error {
 	readonly state: "timed_out" | "stalled";
 
 	constructor(state: "timed_out" | "stalled", note: string) {
@@ -267,8 +265,7 @@ export class DispatchDesk {
 	readonly #o: DeskOptions;
 	readonly #slots: SlotPool;
 	readonly #tickets = new Map<string, TicketDesk>();
-	/** ticketId → the stopped dispatches whose processes are still going away. */
-	readonly #ending = new Map<string, Promise<void>>();
+	readonly #stillExiting = new Map<string, Promise<void>>();
 
 	constructor(options: DeskOptions) {
 		this.#o = options;
@@ -321,8 +318,8 @@ export class DispatchDesk {
 		move("running");
 		this.#o.onChange();
 		const cut = new AbortController();
-		const limit = setTimeout(() => cut.abort(new Cut("timed_out", timeoutNote(limitMs))), limitMs);
-		const stall = setTimeout(() => cut.abort(new Cut("stalled", stallNote(stallMs))), stallMs);
+		const limit = setTimeout(() => cut.abort(new EndedByDesk("timed_out", timeoutNote(limitMs))), limitMs);
+		const stall = setTimeout(() => cut.abort(new EndedByDesk("stalled", stallNote(stallMs))), stallMs);
 		let pushedAt = 0;
 		let push: NodeJS.Timeout | undefined;
 		const pushSoon = () => {
@@ -331,7 +328,7 @@ export class DispatchDesk {
 				pushedAt = Date.now();
 				onProgress();
 				this.#o.onChange();
-			}, Math.max(0, pushedAt + PROGRESS_EVERY_MS - Date.now()));
+			}, Math.max(0, pushedAt + BOARD_PUSH_MIN_INTERVAL_MS - Date.now()));
 		};
 		try {
 			const reply = await this.#o.run({
@@ -355,7 +352,7 @@ export class DispatchDesk {
 			return end("done", clipReply(reply));
 		} catch (error) {
 			if (stop.aborted) return end("stopped", null);
-			if (cut.signal.aborted) return end((cut.signal.reason as Cut).state, null, (cut.signal.reason as Cut).message);
+			if (cut.signal.aborted) return end((cut.signal.reason as EndedByDesk).state, null, (cut.signal.reason as EndedByDesk).message);
 			return end("failed", null, error instanceof Error ? error.message : String(error));
 		} finally {
 			clearTimeout(limit);
@@ -394,15 +391,15 @@ export class DispatchDesk {
 		if (desk) {
 			this.#tickets.delete(ticketId);
 			desk.stop.abort(new Error("任务已停止"));
-			const gone = Promise.all([this.#ending.get(ticketId), Promise.allSettled(desk.work)]).then(() => {
-				if (this.#ending.get(ticketId) === gone) this.#ending.delete(ticketId);
+			const gone = Promise.all([this.#stillExiting.get(ticketId), Promise.allSettled(desk.work)]).then(() => {
+				if (this.#stillExiting.get(ticketId) === gone) this.#stillExiting.delete(ticketId);
 			});
-			this.#ending.set(ticketId, gone);
+			this.#stillExiting.set(ticketId, gone);
 		}
-		return this.#ending.get(ticketId) ?? Promise.resolve();
+		return this.#stillExiting.get(ticketId) ?? Promise.resolve();
 	}
 
 	async endAll(): Promise<void> {
-		await Promise.all([...this.#tickets.keys(), ...this.#ending.keys()].map((ticketId) => this.end(ticketId)));
+		await Promise.all([...this.#tickets.keys(), ...this.#stillExiting.keys()].map((ticketId) => this.end(ticketId)));
 	}
 }

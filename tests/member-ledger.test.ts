@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { memberSessionDir } from "../src/host/dispatch.ts";
-import { clearMember, endLeftoverMembers, recordMember } from "../src/host/member-ledger.ts";
+import { clearMember, endLeftoverMembers, isRecorded, recordMember } from "../src/host/member-ledger.ts";
 import { FakeSpawner, defaultWorkerModels, fauxRouter, ids, startHost, until } from "./helpers/fakes.ts";
 import { Host } from "../src/host/host.ts";
 
@@ -18,7 +18,6 @@ const alive = (pid: number) => {
 	}
 };
 
-/** A process shaped like a member the host started: its own group, a child in the group, and Pi's habit of replacing its command line with its name. */
 async function leftover(t: TestContext, sessionDir: string, script = "") {
 	mkdirSync(sessionDir, { recursive: true });
 	const childPid = join(sessionDir, "child.pid");
@@ -43,7 +42,7 @@ test("上一个宿主留下的成员：按宿主自己记下的 pid 结束它和
 	const { pid, child } = await leftover(t, sessionDir);
 	recordMember(sessionDir, pid);
 	const recorded = JSON.parse(readFileSync(ledger(sessionDir), "utf8"));
-	assert.equal(recorded.pid, pid);
+	assert.equal(recorded.pgid, pid);
 	assert.match(recorded.startedAt, /\d{2}:\d{2}:\d{2}/, "记下进程的启动时间，用来认出它");
 	const logs: string[] = [];
 	await endLeftoverMembers(stateDir, (line) => logs.push(line));
@@ -69,8 +68,8 @@ test("记录里的 pid 现在是别的进程（启动时间对不上）：不发
 	const other = await leftover(t, join(stateDir, "somewhere-else"));
 	mkdirSync(reused, { recursive: true });
 	mkdirSync(gone, { recursive: true });
-	writeFileSync(ledger(reused), JSON.stringify({ pid: other.pid, startedAt: "Mon Jan  1 00:00:00 2024" }));
-	writeFileSync(ledger(gone), JSON.stringify({ pid: 2 ** 22 + 12345, startedAt: "Mon Jan  1 00:00:00 2024" }));
+	writeFileSync(ledger(reused), JSON.stringify({ pgid: other.pid, startedAt: "Mon Jan  1 00:00:00 2024" }));
+	writeFileSync(ledger(gone), JSON.stringify({ pgid: 2 ** 22 + 12345, startedAt: "Mon Jan  1 00:00:00 2024" }));
 	const logs: string[] = [];
 	await endLeftoverMembers(stateDir, (line) => logs.push(line));
 	assert.equal(alive(other.pid), true, "别人的进程不动");
@@ -81,10 +80,11 @@ test("记录里的 pid 现在是别的进程（启动时间对不上）：不发
 
 test("成员做完后清掉自己的记录；清两次不出错", () => {
 	const sessionDir = join(mkdtempSync(join(tmpdir(), "psa-ledger-")), "team", "m");
-	recordMember(sessionDir, 4242);
+	recordMember(sessionDir, process.pid);
+	assert.equal(isRecorded(sessionDir), true);
 	clearMember(sessionDir);
 	clearMember(sessionDir);
-	assert.equal(existsSync(ledger(sessionDir)), false);
+	assert.equal(isRecorded(sessionDir), false);
 });
 
 test("宿主重启：先结束上一个宿主留下的成员，再恢复任务、起助手", async (t) => {

@@ -28,7 +28,6 @@ export function memberTools(basis: Basis, own: readonly string[] | undefined): s
 
 const CODING_TOOLS: readonly string[] = ["write", "edit", "bash"];
 
-/** A member that can change files or run commands in this ticket does coding work, which gets the long time limit. */
 export const canCode = (tools: readonly string[]) => tools.some((t) => CODING_TOOLS.includes(t));
 
 /** The custom entry a member's session gets at the start of each dispatch; its data is `{ callId }`, the helper's tool call. */

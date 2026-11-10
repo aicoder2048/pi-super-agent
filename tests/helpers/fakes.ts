@@ -188,7 +188,7 @@ export class FakeSpawner implements WorkerSpawner {
 				this.stopped.push(spec.ticketId);
 				if (!alive) return;
 				alive = false;
-				// Pi's RpcClient resolves stop() only after the process has exited, so `exited` comes first.
+				// Pi's RpcClient resolves stop() only after the process has exited or it has sent SIGKILL, so `exited` comes first.
 				events.exited();
 			},
 		};
