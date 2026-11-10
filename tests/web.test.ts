@@ -1371,10 +1371,10 @@ test("页面：展开一次派活能看到成员自己的步骤：干活时一�
 	assert.equal(page.applyTranscript(w, fromMember("tkt_1", "c1", 1, got)), true);
 	page.applyTranscript(w, fromMember("tkt_1", "c1", 1, got));
 	page.applyTranscript(w, fromMember("tkt_1", "c1", 2, said("没有重大新闻")));
-	assert.deepEqual(inside(), [["思考", "先看新闻", "ok"], ["读取网页", "example.com", "ok"], ["思考", "没有重大新闻", "ok"]]);
+	assert.deepEqual(inside(), [["思考", "先看新闻", "ok"], ["读取网页", "example.com", "ok"]], "成员最后那段不带工具调用的话就是它的回复，回复框里已经有了，不再算一步");
 	assert.equal(w.steps.length, 1, "成员的消息不混进助手自己的步骤");
 	page.applyTranscript(w, live("tkt_1", dispatchResult("c1", outcome("新闻研究员", "done", "没有重大新闻", 300))));
-	assert.deepEqual(inside().length, 3, "做完后步骤还在");
+	assert.deepEqual(inside().length, 2, "做完后步骤还在");
 	const cut = page.emptyWatch("tkt_2");
 	page.applyTranscript(cut, teamHistory("tkt_2", [dispatchCall("c1", "news-researcher", "查新闻"), dispatchResult("c1", outcome("新闻研究员", "stalled", null, 0, "3 分钟没有进展"))], { c1: [get] }));
 	assert.deepEqual(page.liveSteps(cut, view)[0].dispatch!.steps.map((s) => s.state), ["ok", "stopped"], "成员被结束时没做完的那一步也停下");

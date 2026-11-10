@@ -138,7 +138,7 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 				assert.notEqual(await page.title(), "被注入");
 				const news = page.locator("#steps .step", { hasText: "新闻研究员 · 完成" });
 				assert.equal(await news.locator(".dispatch-reply").textContent(), NEWS_REPLY, "干活时展开的明细，做完后还开着");
-				assert.deepEqual(await news.locator(".member-step.ok .member-step-title").allTextContents(), ["执行命令", "思考"], "成员自己的步骤做完后还在");
+				assert.deepEqual(await news.locator(".member-step.ok .member-step-title").allTextContents(), ["执行命令"], "成员自己的步骤做完后还在");
 				assert.doesNotMatch(await page.locator("#steps .dispatch").first().textContent() ?? "", /market-analyst|news-researcher/, "明细只写职称");
 			});
 			await step("追问一句，同一位成员接着上次的话答", async (page) => {
@@ -164,7 +164,7 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 				const news = page.locator("#steps .step", { hasText: "新闻研究员 · 完成" });
 				await news.locator("summary", { hasText: "派活明细" }).click();
 				assert.equal(await news.locator(".dispatch-reply").textContent(), NEWS_REPLY);
-				assert.deepEqual(await news.locator(".member-step.ok .member-step-title").allTextContents(), ["执行命令", "思考"], "成员的步骤来自它自己的会话文件");
+				assert.deepEqual(await news.locator(".member-step.ok .member-step-title").allTextContents(), ["执行命令"], "成员的步骤来自它自己的会话文件");
 			});
 			await step("成员的用量计入任务：执行过程头部的 token 数等于助手和成员每次模型请求之和", async (page) => {
 				const requests = fake.exchanges.filter((e) => e.model === "worker").length;

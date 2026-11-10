@@ -422,7 +422,8 @@ function append(steps, message, titles) {
 function memberSteps(watch, callId, over) {
 	/** @type {Step[]} */
 	const steps = [];
-	for (const message of watch.members.get(callId ?? "") ?? []) if (message) append(steps, message, {});
+	// A member's message without a tool call ends its turn: that text is its reply, which the dispatch already shows.
+	for (const message of watch.members.get(callId ?? "") ?? []) if (message && (message.role !== "assistant" || blocks(message).some((c) => c.type === "toolCall"))) append(steps, message, {});
 	return over ? steps.map((s) => (s.state === "pending" ? stopped(s) : s)) : steps;
 }
 

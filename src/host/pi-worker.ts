@@ -201,11 +201,13 @@ export class PiWorkerSpawner implements WorkerSpawner {
 	}
 }
 
+/** One line of `pi --mode json`, as far as the host reads it. */
 interface PiJsonEvent {
 	type?: string;
 	toolName?: string;
 	args?: unknown;
 	assistantMessageEvent?: { type?: string };
+	message?: { role?: string; stopReason?: string; errorMessage?: string; content?: { type: string; text?: string }[] };
 }
 
 /** The step of 执行过程 this event starts, if it starts one. */
@@ -236,11 +238,11 @@ function runMemberProcess(args: string[], env: Record<string, string>, run: Memb
 		let stderr = "";
 		child.stderr!.setEncoding("utf8").on("data", (text: string) => (stderr = (stderr + text).slice(-2000)));
 		onJsonLines(child.stdout!, (event) => {
-			run.onActivity(stepStarted(event as PiJsonEvent));
-			const e = event as { type?: string; message?: { role?: string; stopReason?: string; errorMessage?: string; content?: { type: string; text?: string }[] } };
-			if (e.type !== "message_end" || !isMemberMessage(e.message)) return;
+			const e = event as PiJsonEvent;
+			run.onActivity(stepStarted(e));
+			if (e.type !== "message_end" || !e.message || !isMemberMessage(e.message)) return;
 			run.onMessage(e.message as TranscriptMessage);
-			if (e.message?.role !== "assistant") return;
+			if (e.message.role !== "assistant") return;
 			const usage = usageOf(e.message as Parameters<typeof usageOf>[0], run.model.provider);
 			if (usage) run.onUsage(usage);
 			const m = e.message;
