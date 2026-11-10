@@ -150,6 +150,23 @@ function rejectLooseTeamFiles(stateDir: string): void {
 	if (existsSync(agentsDir)) throw new ConfigError(`${agentsDir}：不再读取状态目录下零散的成员。把它们搬到 ${home}agents/，并在 ${home}module.json 写 team（队名）`);
 }
 
+const MODULE_PARTS = ["agents", "teams.yaml", "rules.md", "skills"];
+
+function rejectFilesOutsideAnyModule(root: string, entries: readonly string[]): void {
+	const home = `${root}/<名字>/`;
+	const teamsFile = join(root, "teams.yaml");
+	if (entries.includes("teams.yaml")) throw new ConfigError(`${teamsFile}：不再读取 teams.yaml。团队就是一个模块 agents/ 里的全部成员：成员放进 ${home}agents/，队名写在 ${home}module.json 的 team。删掉这个文件`);
+	const agentsDir = join(root, "agents");
+	if (entries.includes("agents") && !existsSync(join(agentsDir, "module.json")) && statSync(agentsDir).isDirectory() && readdirSync(agentsDir).some((e) => e.endsWith(".md"))) {
+		throw new ConfigError(`${agentsDir}：模块目录下零散的成员不会被读取，成员只属于一个模块。把它们搬到 ${home}agents/，并在 ${home}module.json 写 team（队名）`);
+	}
+}
+
+function rejectModuleWithoutManifest(root: string, dir: string): void {
+	const parts = MODULE_PARTS.filter((part) => existsSync(join(dir, part)));
+	if (parts.length) throw new ConfigError(`${dir}：有 ${parts.join("、")} 却没有 module.json，这个文件夹不会被当成模块。加上 ${join(dir, "module.json")}，至少写 {"name": "${basename(dir)}"}；不是模块就把它移出 ${root}`);
+}
+
 export class Modules implements Domains {
 	readonly modules: LoadedModule[];
 	readonly userRules: ScopedRule[];
@@ -171,9 +188,13 @@ export class Modules implements Domains {
 		const modules: LoadedModule[] = [];
 		for (const root of dirs) {
 			if (!existsSync(root)) continue;
-			for (const entry of readdirSync(root).sort()) {
+			const entries = readdirSync(root).sort();
+			rejectFilesOutsideAnyModule(root, entries);
+			for (const entry of entries) {
 				const dir = join(root, entry);
-				if (statSync(dir).isDirectory() && existsSync(join(dir, "module.json"))) modules.push(loadModule(dir, allowedProviders));
+				if (!statSync(dir).isDirectory()) continue;
+				if (existsSync(join(dir, "module.json"))) modules.push(loadModule(dir, allowedProviders));
+				else rejectModuleWithoutManifest(root, dir);
 			}
 		}
 		for (const [i, module] of modules.entries()) {

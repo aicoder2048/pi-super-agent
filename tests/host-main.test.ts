@@ -91,6 +91,24 @@ const cases = [
 		message: /^\S+modules\/news\/teams\.yaml：不再读取 teams\.yaml。.*module\.json 的 team/m,
 	},
 	{
+		name: "状态目录的 modules/ 里直接放了 teams.yaml 时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ "modules/teams.yaml": "新闻队:\n  members:\n    - news-researcher\n" }),
+		message: /^\S+modules\/teams\.yaml：不再读取 teams\.yaml。.*module\.json 的 team/m,
+	},
+	{
+		name: "状态目录的 modules/ 里直接放了成员文件时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ "modules/agents/a.md": memberFile("news-researcher") }),
+		message: /^\S+modules\/agents：.*不会被读取.*modules\/<名字>\/agents\//m,
+	},
+	{
+		name: "模块文件夹有成员却没有 module.json 时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ "modules/news/agents/a.md": memberFile("news-researcher") }),
+		message: /^\S+modules\/news：.*没有 module\.json/m,
+	},
+	{
 		name: "状态目录里有零散的 agents/ 时，just host",
 		entry: HOST,
 		stateDir: stateWithFiles({ "agents/a.md": memberFile("news-researcher") }),

@@ -293,3 +293,25 @@ test("module.json 的 name、title、description 里有换行或别的控制字�
 	const root = writeFiles(mkdtempSync(join(tmpdir(), "psa-mods-")), { "a\u0007b/module.json": JSON.stringify({ name: "a\u0007b" }) });
 	oneLine(() => load(root), startsWith(`${join(root, "a\u0007b/module.json")}：name`), /控制字符/);
 });
+
+test("模块目录里直接放了 teams.yaml：启动报一行错，以它的路径开头，说明成员和队名写到哪里", () => {
+	const root = writeFiles(modulesRoot({ mail: {} }), { "teams.yaml": "新闻队:\n  members:\n    - a\n" });
+	oneLine(() => load(root), startsWith(join(root, "teams.yaml")), /不再读取/, `${root}/<名字>/agents/`, /module\.json 的 team/);
+});
+
+test("模块目录里直接放了装着成员文件的 agents/：启动报一行错，以它的路径开头，说明搬到哪里", () => {
+	const root = writeFiles(modulesRoot({ mail: {} }), { "agents/news.md": person("news-researcher", "新闻研究员") });
+	oneLine(() => load(root), startsWith(join(root, "agents")), /不会被读取/, `${root}/<名字>/agents/`, /team/);
+});
+
+test("模块目录下的文件夹有 agents/、teams.yaml、rules.md 或 skills/ 却没有 module.json：启动报一行错，以这个文件夹开头，说明要加 module.json", () => {
+	for (const file of ["agents/news.md", "teams.yaml", "rules.md", "skills/cite/SKILL.md"]) {
+		const root = writeFiles(modulesRoot({ mail: {} }), { [`news/${file}`]: "内容" });
+		oneLine(() => load(root), startsWith(`${join(root, "news")}：`), file.split("/")[0], /没有 module\.json/, join(root, "news/module.json"));
+	}
+});
+
+test("模块目录下不像模块的文件夹和文件照旧不管", () => {
+	const root = writeFiles(modulesRoot({ mail: {} }), { "notes/readme.md": "随手记", "agents/readme.txt": "这里不放成员", "README.md": "说明", ".git/config": "x" });
+	assert.deepEqual(load(root).modules.map((m) => m.name), ["mail"]);
+});
