@@ -165,9 +165,9 @@ test("team 不是一个干净的队名（空的、有空白、有控制字符、
 	}
 });
 
-test("同一个模块里两个文件定义了同名成员：启动报一行错，写出两个文件；不同模块的成员可以同名", () => {
+test("同一个模块里两个文件定义了同名成员：启动报一行错，以先读到的文件开头，写出另一个文件；不同模块的成员可以同名", () => {
 	const twice = modulesRoot({ a: { manifest: { team: "甲队" }, "agents/x.md": person("analyst", "甲"), "agents/y.md": person("analyst", "乙") } });
-	oneLine(() => load(twice), join(twice, "a/agents/x.md"), join(twice, "a/agents/y.md"), /^成员重名：analyst/);
+	oneLine(() => load(twice), startsWith(`${join(twice, "a/agents/x.md")}：成员重名：analyst`), join(twice, "a/agents/y.md"));
 	const apart = modulesRoot({ a: { manifest: { team: "甲队" }, "agents/x.md": person("analyst", "甲") }, b: { manifest: { team: "乙队" }, "agents/x.md": person("analyst", "乙") } });
 	assert.deepEqual(load(apart).modules.map((m) => m.team!.members[0].title), ["甲", "乙"]);
 });
@@ -265,4 +265,16 @@ test("给幕僚长的领域名册：写了 description 的模块每个一行「�
 	});
 	assert.equal(load(root).rosterPrompt(), "- mail（邮件）：收发和整理邮件\n- watch（看盘）：行情、个股和相关新闻");
 	assert.equal(Modules.load([]).rosterPrompt(), "");
+});
+
+test("两个模块目录里有同名的模块：启动报一行错，以先读到的那个模块文件夹开头，写出另一个", () => {
+	const [first, second] = [modulesRoot({ news: {} }), modulesRoot({ mail: {}, news: {} })];
+	oneLine(() => Modules.load([first, second]), startsWith(`${join(first, "news")}：模块重名：news`), join(second, "news"));
+});
+
+test("module.json 不是一个 JSON 对象，或不是合法的 JSON：启动报一行错，以 module.json 开头", () => {
+	for (const [text, message] of [["null", /JSON 对象/], ["[]", /JSON 对象/], ['"news"', /JSON 对象/], ["7", /JSON 对象/], ["{\n\tname: news,\n}\n", /不是合法的 JSON/]] as const) {
+		const root = writeFiles(mkdtempSync(join(tmpdir(), "psa-mods-")), { "news/module.json": text });
+		oneLine(() => load(root), startsWith(join(root, "news/module.json")), message);
+	}
 });

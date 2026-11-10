@@ -104,7 +104,7 @@ function loadMembers(agentsDir: string, allowedProviders: readonly string[]): Me
 		if (!entry.endsWith(".md") || isDirectory(file)) continue;
 		const member = parseMember(file, readText(file), allowedProviders);
 		const other = members.find((m) => m.name === member.name);
-		if (other) throw new ConfigError(`成员重名：${member.name} 同时定义在 ${other.file} 和 ${file}`);
+		if (other) throw new ConfigError(`${other.file}：成员重名：${member.name} 也定义在 ${file}。给其中一位改 name，或删掉一个文件`);
 		members.push(member);
 	}
 	return members;

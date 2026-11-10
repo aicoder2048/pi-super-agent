@@ -102,6 +102,7 @@ export function parseRules(file: string, namespace: string, markdown: string): R
 function loadModule(dir: string, allowedProviders: readonly string[]): LoadedModule {
 	const manifestPath = join(dir, "module.json");
 	const manifest = readJsonFile<ModuleManifest>(manifestPath);
+	if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) throw new ConfigError(`${manifestPath}：要写成一个 JSON 对象，例如 {"name": "${basename(dir)}"}，现在写的是 ${JSON.stringify(manifest)}`);
 	if (!manifest.name || manifest.name !== basename(dir)) throw new ConfigError(`${manifestPath}：name 必须等于目录名 ${basename(dir)}`);
 	if (manifest.name === USER_NAMESPACE) throw new ConfigError(`${manifestPath}：模块不能叫 ${USER_NAMESPACE}，这个名字留给状态目录 rules.md 里你自己的规则。给模块目录换个名字`);
 	for (const key of ["title", "description"] as const) {
@@ -169,9 +170,10 @@ export class Modules implements Domains {
 				if (statSync(dir).isDirectory() && existsSync(join(dir, "module.json"))) modules.push(loadModule(dir, allowedProviders));
 			}
 		}
-		const names = modules.map((m) => m.name);
-		const dup = names.find((n, i) => names.indexOf(n) !== i);
-		if (dup) throw new ConfigError(`模块重名：${dup}`);
+		for (const [i, module] of modules.entries()) {
+			const first = modules.slice(0, i).find((m) => m.name === module.name);
+			if (first) throw new ConfigError(`${first.dir}：模块重名：${module.name} 也定义在 ${module.dir}。给其中一个文件夹改名（module.json 的 name 跟着改），或删掉一个`);
+		}
 		const parsed = userRulesFile && existsSync(userRulesFile) ? parseRules(userRulesFile, USER_NAMESPACE, readFileSync(userRulesFile, "utf8")) : [];
 		const userRules = parsed.filter((r): r is ScopedRule => !!r.sources?.length);
 		const skipped = parsed.filter((r) => !r.sources?.length).map((r) => r.id);

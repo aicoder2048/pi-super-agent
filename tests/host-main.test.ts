@@ -56,9 +56,10 @@ const cases = [
 	{ name: "模型是 Claude 时，just host", entry: HOST, stateDir: stateWith({ models: { fallback: "openai-codex/claude-x" } }), message: /config\.json.*Claude 模型/ },
 	{ name: "找不到配置的模型时，just host", entry: HOST, stateDir: stateWith({ models: { router: "openai-codex/no-such-model" } }), message: /config\.json：models\.router：找不到模型 openai-codex\/no-such-model/ },
 	{ name: "module.json 不是合法 JSON 时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: "{bad" } }), message: /module\.json 不是合法的 JSON/ },
+	{ name: "module.json 不是 JSON 对象时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: "null" } }), message: /^\S+\/mods\/m\/module\.json：.*JSON 对象/m },
 	{ name: "模块名不等于目录名时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: { name: "other" } } }), message: /name 必须等于目录名 m/ },
 	{ name: "ignore 不是合法正则时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: { name: "m", sources: [{ name: "m", ignore: ["("] }] } } }), message: /module\.json.*ignore.*不是合法的正则/ },
-	{ name: "两个模块重名时，just host", entry: HOST, stateDir: stateWith({}, { a: { m: { name: "m" } }, b: { m: { name: "m" } } }), message: /模块重名：m/ },
+	{ name: "两个模块重名时，just host", entry: HOST, stateDir: stateWith({}, { a: { m: { name: "m" } }, b: { m: { name: "m" } } }), message: /^\S+\/a\/m：模块重名：m 也定义在 \S+\/b\/m。/m },
 	{
 		name: "定时器 everyMinutes 不大于 0 时，just host",
 		entry: HOST,
@@ -69,7 +70,7 @@ const cases = [
 		name: "同一个模块里两个文件定义了同名成员时，just host",
 		entry: HOST,
 		stateDir: stateWithFiles({ ...NEWS_MODULE, "modules/news/agents/b.md": memberFile("news-researcher") }),
-		message: /^成员重名：news-researcher 同时定义在 \S+modules\/news\/agents\/a\.md 和 \S+modules\/news\/agents\/b\.md$/m,
+		message: /^\S+modules\/news\/agents\/a\.md：成员重名：news-researcher 也定义在 \S+modules\/news\/agents\/b\.md。/m,
 	},
 	{
 		name: "模块有成员却没写 team 时，just host",
