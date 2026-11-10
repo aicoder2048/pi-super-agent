@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CAP_ASK_NEXT, MemberCap, capAskId, isCapAskId, type CapAsk, type CapAskStore } from "../src/host/member-cap.ts";
+import { MemberCap } from "../src/host/member-cap.ts";
+import { CAP_ASK_NEXT, capAskId, isCapAskId, type CapAsk, type CapAskStore } from "../src/kernel/cap-ask.ts";
 
 const NOON = Date.UTC(2026, 10, 9, 17, 0);
 const LATE = Date.UTC(2026, 10, 10, 4, 30);

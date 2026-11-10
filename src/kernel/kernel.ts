@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
+import { CAP_ASK_PREFIX, type CapAsk, type CapAskStore } from "./cap-ask.ts";
 import { answerExternalId, answerSentence, type AnswerRefusal } from "./question.ts";
 
 export type AnswerOutcome = { ok: true; triggerId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
@@ -151,6 +152,24 @@ export class Kernel {
 	readonly #domains: DomainBook;
 	readonly #log: (line: string) => void;
 	readonly config: KernelConfig;
+	readonly capAsks: CapAskStore = {
+		latest: (): CapAsk => {
+			const r = this.#get("SELECT * FROM cap_asks ORDER BY day DESC LIMIT 1");
+			if (!r || r.expired_at !== null) return { state: "none" };
+			const asked = { day: r.day as string, askedAt: r.asked_at as number };
+			return r.state === "asked" ? { state: "asked", ...asked } : { state: r.state, ...asked, answeredAt: r.answered_at };
+		},
+		save: (ask, said) => {
+			this.#run(
+				`INSERT INTO cap_asks (day, state, asked_at, answered_at, said) VALUES (?, ?, ?, ?, ?)
+				 ON CONFLICT (day) DO UPDATE SET state = excluded.state, answered_at = excluded.answered_at, said = excluded.said`,
+				ask.day, ask.state, ask.askedAt, ask.state === "asked" ? null : ask.answeredAt, said ?? null,
+			);
+		},
+		expire: (day, at) => {
+			this.#run("UPDATE cap_asks SET expired_at = ? WHERE day = ?", at, day);
+		},
+	};
 
 	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, domains = new Map(), log = () => {}, config }: KernelOptions) {
 		this.#ruleAllows = ruleAllows;
@@ -810,9 +829,12 @@ export class Kernel {
 				JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ?
 				UNION ALL
 				SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause FROM reply_receipts r WHERE r.thread_id = ?
+				UNION ALL
+				SELECT ? || c.day, 'user', c.said, c.answered_at, c.rowid, NULL FROM cap_asks c WHERE c.said IS NOT NULL
 			) ORDER BY at DESC, who = 'router' DESC, ord DESC LIMIT ?`,
 			CONVERSATION_THREAD_ID,
 			CONVERSATION_THREAD_ID,
+			CAP_ASK_PREFIX,
 			limit,
 		)
 			.reverse()

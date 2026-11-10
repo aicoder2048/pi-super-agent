@@ -1,3 +1,4 @@
+import { CAP_ASK_NEXT, capAskId, type CapAnswer, type CapAsk, type CapAskStore, type OpenCapAsk } from "../kernel/cap-ask.ts";
 import { newYorkDate } from "../kernel/helper-names.ts";
 import type { AnswerRefusal } from "../kernel/question.ts";
 import type { CapQuestion, Clock } from "../kernel/types.ts";
@@ -6,40 +7,8 @@ export const MEMBER_CAP_DEFAULT = 4;
 /** No config key and no answer lets more member processes than this run at once. */
 export const MEMBER_CAP_MAX = 10;
 
-export type CapAnswer = "granted" | "declined";
-
-/**
- * Whether the host asked the user to raise the member cap on one New York day, and what the user said.
- * `CAP_ASK_NEXT` is the only way a state changes within a day; a record of an earlier day counts as "none".
- */
-export type CapAsk =
-	| { state: "none" }
-	| { state: "asked"; day: string; askedAt: number }
-	| { state: CapAnswer; day: string; askedAt: number; answeredAt: number };
-
-export type OpenCapAsk = Exclude<CapAsk, { state: "none" }>;
-
-export const CAP_ASK_NEXT: Record<CapAsk["state"], readonly CapAsk["state"][]> = {
-	none: ["asked"],
-	asked: ["granted", "declined"],
-	granted: [],
-	declined: [],
-};
-
+/** By option index: the first button grants, the second declines. */
 const ANSWERS: readonly CapAnswer[] = ["granted", "declined"];
-
-const CAP_ASK_ID = /^ask_cap_\d{4}-\d{2}-\d{2}$/;
-
-export const capAskId = (day: string) => `ask_cap_${day}`;
-export const isCapAskId = (id: string) => CAP_ASK_ID.test(id);
-
-export interface CapAskStore {
-	/** The most recent ask, or none when there is no ask or it is a grant already recorded as expired. */
-	latest(): CapAsk;
-	/** `said` is the user's sentence for an answer. */
-	save(ask: OpenCapAsk, said?: string): void;
-	expire(day: string, at: number): void;
-}
 
 export type CapAnswerOutcome = { ok: true; lineId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 
