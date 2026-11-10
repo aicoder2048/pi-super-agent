@@ -387,9 +387,9 @@ test("成员自己的模型就是回退模型：主模型正常时它的用量�
 
 /** A team whose members bring their own models, with a helper that waits for the test to dispatch. */
 async function ownModels(t: TestContext, crew: Member[], runner: Runner, maxConcurrent = 4) {
-	const started = await startHost(openOn("自带队"), () => {}, {
-		teams: { kinds: new Map([["默认", "solo"], ["自带队", "crew"]]), pinned: new Map() },
-		dispatch: { crewOf: () => crew, timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent },
+	const started = await startHost(openOn("own"), () => {}, {
+		domains: domainsOf({ own: { team: "自带队", crew } }),
+		dispatch: { timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent },
 		workerModels: { selector: selectorWith(FALLBACK), fallbackDailyTokens: 150 },
 	});
 	t.after(() => started.host.stop());
