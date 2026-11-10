@@ -207,10 +207,8 @@ test("真实接线：仓库模块目录和状态目录 modules/ 里的模块都�
 		...moduleFiles("watch", { title: "看盘", description: "盯行情", team: "看盘队", sources: [{ name: "quotes" }] }, { "rules.md": "## drop\n跌多了开任务\n", "agents/analyst.md": memberFile("market-analyst", "行情分析师") }),
 		...moduleFiles("mail", { sources: [{ name: "mail" }] }),
 	});
-	const logs: string[] = [];
-	const options = createHostOptions({ config, modules: loadWith(config, modulesDir), modelRuntime, log: (line) => logs.push(line) });
+	const options = createHostOptions({ config, modules: loadWith(config, modulesDir), modelRuntime, log: () => {} });
 	assert.deepEqual([...options.domains!.book], [["mail", null], ["watch", "看盘队"], ["news", "新闻队"]]);
-	assert.ok(logs.includes("[host] 领域：mail、watch（看盘队）、news（新闻队）"), logs.join("\n"));
 	const host = await Host.start(options);
 	t.after(() => host.stop());
 	const prompt: string = (host.router as any).session.systemPrompt;
@@ -220,10 +218,8 @@ test("真实接线：仓库模块目录和状态目录 modules/ 里的模块都�
 
 test("真实接线：没有任何模块时没有领域", async () => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
-	const logs: string[] = [];
-	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([]), modelRuntime, log: (line) => logs.push(line) });
+	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([]), modelRuntime, log: () => {} });
 	assert.deepEqual([...options.domains!.book], []);
-	assert.ok(logs.includes("[host] 领域：无"), logs.join("\n"));
 });
 
 test("真实接线：成员的模型只能用 router 或 worker 的提供方，回退模型的提供方不算；提供方对了但模型不存在也在启动前报错", async () => {

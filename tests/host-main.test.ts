@@ -124,6 +124,18 @@ for (const c of cases) {
 	});
 }
 
+test("just host 启动时列出加载的模块，有成员的模块后面写队名", () => {
+	const stateDir = stateWithFiles({ ...NEWS_MODULE, "modules/mail/module.json": JSON.stringify({ name: "mail" }) })();
+	writeFileSync(join(stateDir, "config.json"), JSON.stringify({ webPort: 0, models: { router: "openai-codex/no-such-model" } }));
+	const run = spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], {
+		env: { ...process.env, PSA_STATE_DIR: stateDir },
+		encoding: "utf8",
+		timeout: 20_000,
+		killSignal: "SIGKILL",
+	});
+	assert.match(run.stderr, /\[host\] 模块：toy-market, us-market, mail, news（新闻队）；规则 \d+ 条/);
+});
+
 test("使用者规则没写来源行时，just host 启动时逐条说明它不生效", () => {
 	const stateDir = stateWith({ models: { router: "openai-codex/no-such-model" } })();
 	writeFileSync(join(stateDir, "rules.md"), "## no-source\n有新邮件就看一下\n\n## ok\n来源: ci\nCI 失败时开任务\n");

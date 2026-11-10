@@ -71,7 +71,6 @@ export interface HostWiringInput {
 }
 
 export function createHostOptions({ config, modules, modelRuntime, log, clock = { now: () => Date.now() } }: HostWiringInput): HostOptions {
-	log(`[host] 领域：${modules.modules.map((m) => (m.team ? `${m.name}（${m.team.name}）` : m.name)).join("、") || "无"}`);
 	const resolve = (ref: ModelRef, role?: string) => {
 		const model = modelRuntime.getModel(ref.provider, ref.id);
 		if (!model) throw new ConfigError(`${role ? `${join(config.stateDir, "config.json")}：models.${role}：` : ""}找不到模型 ${formatModelRef(ref)}`);
