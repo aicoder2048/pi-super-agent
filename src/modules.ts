@@ -68,6 +68,8 @@ export interface ModulesLoadOptions {
 
 const DESCRIPTION_MAX_CHARS = 60;
 const USER_NAMESPACE = "user";
+/** These fields are pasted into the 幕僚长's prompt and into log lines; a line break in one could pass for a heading of its own. */
+const LINE_BREAK_OR_CONTROL = /[\p{Cc}\u2028\u2029]/u;
 
 export interface Rule {
 	id: string;
@@ -103,6 +105,10 @@ function loadModule(dir: string, allowedProviders: readonly string[]): LoadedMod
 	const manifestPath = join(dir, "module.json");
 	const manifest = readJsonFile<ModuleManifest>(manifestPath);
 	if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) throw new ConfigError(`${manifestPath}：要写成一个 JSON 对象，例如 {"name": "${basename(dir)}"}，现在写的是 ${JSON.stringify(manifest)}`);
+	for (const key of ["name", "title", "description"] as const) {
+		const value: unknown = manifest[key];
+		if (typeof value === "string" && LINE_BREAK_OR_CONTROL.test(value)) throw new ConfigError(`${manifestPath}：${key}（${JSON.stringify(value)}）里有换行或别的控制字符，写成一行普通文字`);
+	}
 	if (!manifest.name || manifest.name !== basename(dir)) throw new ConfigError(`${manifestPath}：name 必须等于目录名 ${basename(dir)}`);
 	if (manifest.name === USER_NAMESPACE) throw new ConfigError(`${manifestPath}：模块不能叫 ${USER_NAMESPACE}，这个名字留给状态目录 rules.md 里你自己的规则。给模块目录换个名字`);
 	for (const key of ["title", "description"] as const) {
