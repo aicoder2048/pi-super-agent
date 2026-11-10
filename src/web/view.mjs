@@ -17,7 +17,7 @@
 /** @typedef {import("../host/dispatch.ts").BoardDispatch} BoardDispatch */
 /** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
 
-import { HOST_SOURCE, INPUT_LABEL, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, shortId, stallMinutes, textOf, toolStep } from "../client/board-format.mjs";
+import { HOST_SOURCE, INPUT_LABEL, QUOTE_WHO, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, oneLine, shortId, stallMinutes, textOf, toolStep } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -112,9 +112,11 @@ export function applyMessage(view, message, now) {
 		case "cleared":
 			resetConversation(view, message.conversation, message.cleared);
 			return ["conversation"];
-		case "user":
-			addLine(view, { id: message.id, who: "user", text: message.text, at: message.at });
+		case "user": {
+			const { type, ...line } = message;
+			addLine(view, line);
 			return ["conversation"];
+		}
 		case "reply":
 			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at, ...(message.ticketId ? { ticketId: message.ticketId } : {}) });
 			return ["conversation"];
@@ -716,15 +718,36 @@ export function sayOutcome(outcome) {
 	return "rejected";
 }
 
+/** @typedef {{ text: string, quoteOf: string | null }} Said */
+
+/** @param {Said} said */
+export const sayBody = (said) => JSON.stringify(said.quoteOf ? { text: said.text, quoteOf: said.quoteOf } : { text: said.text });
+
+/** @param {Said} sent @param {Said} now */
+export const sameAsSent = (sent, now) => now.text === sent.text && now.quoteOf === sent.quoteOf;
+
 // A timed-out POST may still have reached the host; its echo in the conversation is the confirmation.
-/**
- * @param {{ state: SayState, text: string }} say @param {string} composer @param {ConversationLine[]} arrived
- * @returns {{ state: SayState, composer: string }}
- */
-export function settleSay(say, composer, arrived) {
-	if (say.state !== "maybe_lost" || !arrived.some((line) => line.who === "user" && line.text === say.text)) return { state: say.state, composer };
-	return { state: "delivered", composer: composer === say.text ? "" : composer };
+/** @param {{ state: SayState } & Said} say @param {ConversationLine[]} arrived @returns {SayState} */
+export function settleSay(say, arrived) {
+	const echoed = arrived.some((line) => line.who === "user" && line.text === say.text && (line.quote?.lineId ?? null) === say.quoteOf);
+	return say.state === "maybe_lost" && echoed ? "delivered" : say.state;
 }
+
+/** @param {Span[]} spans */
+const spanText = (spans) => spans.map((s) => s.text).join("");
+
+/** @param {string} text */
+const plainText = (text) =>
+	parseMarkdown(text)
+		.flatMap((b) => (b.kind === "p" || b.kind === "h" ? [b.spans] : b.kind === "table" ? [...b.head, ...b.rows.flat()] : b.items))
+		.map(spanText)
+		.join(" ");
+
+/** @param {{ who: "user" | "router", text: string }} said */
+export const quoteShown = (said) => ({
+	who: QUOTE_WHO[said.who],
+	text: oneLine(said.who === "router" ? plainText(said.text) : said.text),
+});
 
 /** @param {string} text */
 export const canSend = (text) => text.trim() !== "";

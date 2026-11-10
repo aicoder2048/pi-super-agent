@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { CAP_ASK_PREFIX, type CapAsk, type CapAskStore } from "./cap-ask.ts";
 import { answerExternalId, answerSentence, type AnswerRefusal } from "./question.ts";
+import { quoteSnapshot } from "./quote.ts";
 
 export type AnswerOutcome = { ok: true; triggerId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 import { deriveStage } from "./stage.ts";
 import { SOLO_NAMES, TEAM_NAMES, helperName, helperRole, newYorkDate } from "./helper-names.ts";
-import { stallMinutes } from "../client/board-format.mjs";
+import { oneLine, stallMinutes } from "../client/board-format.mjs";
 import { inTransaction } from "./store.ts";
 import {
 	CONVERSATION_SOURCE,
@@ -29,6 +30,7 @@ import type {
 	DecisionLogEntry,
 	PendingQuestion,
 	QuestionClick,
+	Quote,
 	DecisionResult,
 	Disposition,
 	DomainBook,
@@ -253,6 +255,42 @@ export class Kernel {
 			body: text,
 			occurredAt: at,
 		});
+	}
+
+	userSaidQuoting({ text, at, lineId }: { text: string; at: number; lineId: string }): { triggerId: string; quote: Quote } | null {
+		return this.#tx(() => {
+			const line = this.#get(`SELECT id, who, text, at, cause FROM (${LINES}) WHERE id = ? AND shown`, ...LINES_PARAMS, lineId);
+			const snapshot = line && quoteSnapshot(line.text);
+			if (!snapshot) return null;
+			const quote: Quote = { lineId, who: line.who, at: line.at, text: snapshot, ticketId: this.#ticketOfLine(lineId, line.cause) };
+			const { triggerId } = this.userSaid({ text, at });
+			this.#run(
+				"INSERT INTO trigger_quotes (trigger_id, line_id, who, said_at, text, ticket_id) VALUES (?, ?, ?, ?, ?, ?)",
+				triggerId,
+				quote.lineId,
+				quote.who,
+				quote.at,
+				quote.text,
+				quote.ticketId,
+			);
+			return { triggerId, quote };
+		});
+	}
+
+	#ticketOfLine(id: string, cause: string | null): string | null {
+		if (id.startsWith("trg_")) return this.#answerOf(id)?.ticketId ?? this.#routedTicket(this.#get("SELECT disposition, disposition_detail FROM triggers WHERE id = ?", id)!);
+		if (cause?.startsWith("tkt_")) return cause;
+		if (cause?.startsWith("trg_")) return this.#ticketOfLine(cause, null);
+		return null;
+	}
+
+	#routedTicket(trigger: Row): string | null {
+		return trigger.disposition === "opened_ticket" || trigger.disposition === "handed_over" ? trigger.disposition_detail : null;
+	}
+
+	#quoteOf(triggerId: string): Quote | null {
+		const r = this.#get("SELECT line_id, who, said_at, text, ticket_id FROM trigger_quotes WHERE trigger_id = ?", triggerId);
+		return r ? { lineId: r.line_id, who: r.who, at: r.said_at, text: r.text, ticketId: r.ticket_id } : null;
 	}
 
 	answerQuestion({ reportId, option, at }: { reportId: string; option: number; at: number }): AnswerOutcome {
@@ -774,6 +812,7 @@ export class Kernel {
 				type: "trigger",
 				trigger: toTrigger(row),
 				answers: this.#answerOf(id),
+				quote: this.#quoteOf(id),
 				threadIds: this.#column("SELECT thread_id AS v FROM trigger_threads WHERE trigger_id = ?", id),
 				ticketIds: this.#column(
 					`SELECT ticket_id AS v FROM ticket_inputs WHERE trigger_id = ?
@@ -873,7 +912,10 @@ export class Kernel {
 			limit,
 		)
 			.reverse()
-			.map((r) => ({ id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { ticketId: r.cause } : {}) }));
+			.map((r) => {
+				const quote = r.id.startsWith("trg_") ? this.#quoteOf(r.id) : null;
+				return { id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { ticketId: r.cause } : {}), ...(quote ? { quote } : {}) };
+			});
 	}
 
 	conversationRoutes(limit = 50): Routes {
@@ -881,14 +923,15 @@ export class Kernel {
 			"SELECT json_extract(payload, '$.triggerId') AS v FROM actions WHERE status = 'pending' AND kind = 'router.notify'",
 		));
 		const rows = this.#all(
-			`SELECT t.id, t.disposition, t.disposition_detail AS detail, EXISTS (SELECT 1 FROM reply_receipts r WHERE r.cause = t.id) AS answered
+			`SELECT t.id, t.disposition, t.disposition_detail, EXISTS (SELECT 1 FROM reply_receipts r WHERE r.cause = t.id) AS answered
 			 FROM triggers t JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ? ORDER BY t.rowid DESC LIMIT ?`,
 			CONVERSATION_THREAD_ID,
 			limit,
 		);
 		const routes: Routes = {};
 		for (const r of rows) {
-			if (r.disposition === "opened_ticket" || r.disposition === "handed_over") routes[r.id] = { kind: r.disposition, ticketId: r.detail };
+			const ticketId = this.#routedTicket(r);
+			if (ticketId) routes[r.id] = { kind: r.disposition, ticketId };
 			else if (r.disposition === "router_ignored") routes[r.id] = { kind: "router_ignored" };
 			else if (r.answered) routes[r.id] = { kind: "answered" };
 			else if (seeing.has(r.id)) routes[r.id] = { kind: "pending" };
@@ -964,7 +1007,8 @@ export class Kernel {
 	}
 
 	#openTicket(d: Extract<Decision, { kind: "open_ticket" }>, takenThisRoute: Set<string>): DecisionResult {
-		if (typeof d.title !== "string" || !d.title.trim()) return reject("open_ticket needs a title");
+		const title = typeof d.title === "string" ? oneLine(d.title) : "";
+		if (!title) return reject("open_ticket needs a title");
 		if (typeof d.brief !== "string" || !d.brief.trim()) return reject("open_ticket needs a brief for the worker");
 		const trigger = d.triggerId === undefined ? undefined : this.#get("SELECT id, source FROM triggers WHERE id = ?", d.triggerId);
 		if (d.triggerId !== undefined && !trigger) return reject(`unknown trigger ${d.triggerId}`);
@@ -1006,7 +1050,7 @@ export class Kernel {
 			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, domain)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
 			ticketId,
-			d.title,
+			title,
 			d.basis,
 			d.ruleId ?? null,
 			d.triggerId ?? null,

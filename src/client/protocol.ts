@@ -1,7 +1,7 @@
 import type { CapQuestion, Cleared, ConversationLine, DashboardRow, Disposition, HelpersToday, Routes } from "../kernel/types.ts";
 import type { Dispatching } from "../host/dispatch.ts";
 
-export type { Cleared, ConversationLine } from "../kernel/types.ts";
+export type { Cleared, ConversationLine, Quote } from "../kernel/types.ts";
 
 /** `resumed` counts the running tickets recovered at this start; 0 means a clean start. */
 export interface Duty {
@@ -49,7 +49,7 @@ export type ClientToHost =
 
 export type HostToClient =
 	| { type: "snapshot"; conversation: ConversationLine[]; cleared: Cleared | null; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; memberCap: MemberCapBoard; watching: WatchedSource[] }
-	| { type: "user"; id: string; text: string; at: number }
+	| ({ type: "user" } & ConversationLine & { who: "user" })
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }
 	| { type: "reply"; text: string; at: number; replyId: string; ticketId?: string }

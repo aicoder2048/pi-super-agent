@@ -280,6 +280,24 @@ test("TUI：收到网页清屏的 cleared 帧时什么都不打印，已经打�
 	assert.deepEqual(ext.warnings, []);
 });
 
+test("终端：带引用的话前面先打一行「↪ 引用 幕僚长：…」，快照里的历史和实时的都一样", async (t) => {
+	const quote = (lineId: string, who: "user" | "router", text: string) => ({ lineId, who, at: 4, text, ticketId: null });
+	const host = scriptedHost();
+	host.hello((s) => {
+		writeJsonLine(s, { type: "snapshot", board: [], conversation: [
+			{ id: "rpl_1", who: "router", text: "方案 A： 先停掉旧任务", at: 4 },
+			{ id: "trg_2", who: "user", text: "改成 B", at: 5, quote: quote("rpl_1", "router", "方案 A： 先停掉旧任务") },
+		] });
+		writeJsonLine(s, { type: "user", who: "user", id: "trg_3", text: "再想想", at: 6, quote: quote("trg_2", "user", "改成 B") });
+		writeJsonLine(s, { type: "user", who: "user", id: "trg_4", text: "好", at: 7 });
+	});
+	await host.listen();
+	const ext = await runExtension(host.path);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await until(() => ext.shown.some((l) => l === "你> 好"), "最后一句");
+	assert.deepEqual(ext.shown, ["Router> 方案 A： 先停掉旧任务", "↪ 引用 幕僚长：方案 A： 先停掉旧任务", "你> 改成 B", "↪ 引用 你：改成 B", "你> 再想想", "你> 好"]);
+});
+
 test("TUI：状态目录里没有 client-token 时提醒一次先启动宿主，不发 hello", async (t) => {
 	const host = scriptedHost();
 	rmSync(join(dirname(host.path), "client-token"));

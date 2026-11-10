@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { connect } from "node:net";
+import { connect, createServer } from "node:net";
 import { join } from "node:path";
 import test from "node:test";
 import { HostConnection } from "../src/client/connection.ts";
@@ -171,6 +171,17 @@ function runSay(stateDir: string, args: string[]) {
 	return within(exited, 20_000, "just say 退出").finally(() => child.kill());
 }
 
+function tailSay(stateDir: string) {
+	const child = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/cli/say.ts", "tail"], { env: { ...process.env, PSA_STATE_DIR: stateDir } });
+	let stdout = "";
+	child.stdout.on("data", (d) => (stdout += d));
+	return {
+		output: () => stdout,
+		lines: () => stdout.trim().split("\n").map((l) => l.replace(/^\d\d:\d\d:\d\d /, "TIME ")),
+		stop: () => child.kill(),
+	};
+}
+
 test("just say：对着真实宿主说一句话，这句话进了对话，退出码 0", async (t) => {
 	const stateDir = tempStateDir();
 	const { host } = await startHost(() => [], () => {}, { stateDir });
@@ -238,4 +249,46 @@ test("socket 客户端也收到 cleared 帧；清屏后新 hello 的快照和网
 	assert.deepEqual(snap.cleared, web.cleared);
 	assert.deepEqual(snap.cleared?.lines.map((l) => l.text), ["早"]);
 	assert.equal(ofType(c.got, "cleared").length, 1);
+});
+
+test("just tail：带引用的话前面先打一行「↪ 引用 …」", async (t) => {
+	const stateDir = tempStateDir();
+	const { host } = await startHost(() => [], () => {}, { stateDir });
+	t.after(() => host.stop());
+	const first = host.say("方案 A 先停掉旧任务");
+	host.sayQuoting("改成 B", first);
+	const tail = tailSay(stateDir);
+	t.after(tail.stop);
+	await until(() => tail.output().includes("你> 改成 B"), "tail 打出引用的那句", 15_000);
+	host.sayQuoting("再想想", first);
+	await until(() => tail.output().includes("你> 再想想"), "实时的那句", 5000);
+	assert.deepEqual(tail.lines(), ["TIME 你> 方案 A 先停掉旧任务", "TIME ↪ 引用 你：方案 A 先停掉旧任务", "TIME 你> 改成 B", "TIME ↪ 引用 你：方案 A 先停掉旧任务", "TIME 你> 再想想"]);
+});
+
+test("just say：socket 的 say 多带一个 quote 键时照常当一句话说，不带引用", async (t) => {
+	const stateDir = tempStateDir();
+	const { host } = await startHost(() => [], () => {}, { stateDir });
+	t.after(() => host.stop());
+	const first = host.say("方案 A");
+	await within(rawSession(host.socketPath, [{ type: "hello", role: "client", token: readToken(stateDir) }, { ...SAY, quote: first, quoteOf: first }]), 3000, "收到确认");
+	const said = host.kernel.conversation().at(-1);
+	assert.equal(said?.text, SAY.text);
+	assert.equal(said && "quote" in said, false);
+});
+
+test("just tail：旧版宿主发来不带 who 的 user 帧，照样打成「你>」", async (t) => {
+	const stateDir = tempStateDir();
+	writeFileSync(tokenFile(stateDir), "tok\n");
+	const server = createServer((socket) => {
+		socket.once("data", () => {
+			socket.write(`${JSON.stringify({ type: "snapshot", conversation: [{ id: "trg_1", who: "user", text: "早", at: 1 }], cleared: null, board: [], today: {}, duty: {}, helpers: {}, routes: {}, dispatching: {}, memberCap: null, watching: [] })}\n`);
+			socket.write(`${JSON.stringify({ type: "user", id: "trg_2", text: "旧宿主的一句", at: 2 })}\n`);
+		});
+	});
+	await new Promise<void>((resolve) => server.listen(join(stateDir, "host.sock"), resolve));
+	t.after(() => server.close());
+	const tail = tailSay(stateDir);
+	t.after(tail.stop);
+	await until(() => tail.output().includes("旧宿主的一句"), "tail 打出旧宿主的那句", 15_000);
+	assert.deepEqual(tail.lines(), ["TIME 你> 早", "TIME 你> 旧宿主的一句"]);
 });

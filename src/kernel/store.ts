@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { oneLine } from "../client/board-format.mjs";
 import {
 	ACTION_KINDS,
 	ACTION_STATUSES,
@@ -111,6 +112,15 @@ CREATE TABLE IF NOT EXISTS answer_clicks (
 );
 CREATE INDEX IF NOT EXISTS answer_clicks_report ON answer_clicks (report_id);
 
+CREATE TABLE IF NOT EXISTS trigger_quotes (
+	trigger_id TEXT PRIMARY KEY REFERENCES triggers(id),
+	line_id TEXT NOT NULL CHECK (line_id GLOB 'trg_*' OR line_id GLOB 'rpl_*' OR line_id GLOB 'ask_cap_*'),
+	who TEXT NOT NULL CHECK (who IN ('user', 'router')),
+	said_at INTEGER NOT NULL,
+	text TEXT NOT NULL CHECK (length(text) > 0 AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0),
+	ticket_id TEXT REFERENCES tickets(id)
+);
+
 -- One row per New York day on which the host asked the user to raise the member cap. said is the user's sentence for the answer.
 CREATE TABLE IF NOT EXISTS cap_asks (
 	day TEXT PRIMARY KEY,
@@ -201,6 +211,10 @@ export function openStore(path: string): DatabaseSync {
 			ALTER TABLE tickets ADD COLUMN helper_seq INTEGER`);
 	}
 	if (!ticketColumns.includes("domain")) db.exec("ALTER TABLE tickets ADD COLUMN domain TEXT");
+	const retitle = db.prepare("UPDATE tickets SET title = ? WHERE id = ?");
+	for (const { id, title } of db.prepare("SELECT id, title FROM tickets").all() as { id: string; title: string }[]) {
+		if (oneLine(title) !== title) retitle.run(oneLine(title), id);
+	}
 	return db;
 }
 

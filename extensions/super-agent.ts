@@ -6,6 +6,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
 import { openQuestions, renderBoard, shortId, ticketsMatching, type BoardView, type OpenQuestion } from "../src/client/board.ts";
+import { quoteMark } from "../src/client/board-format.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, HostConnection } from "../src/client/connection.ts";
 import type { ConversationLine, HostToClient } from "../src/client/protocol.ts";
 import { formatTranscriptMessage } from "../src/client/transcript.ts";
@@ -29,6 +30,11 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 	const show = (who: Who, text: string) =>
 		pi.sendMessage({ customType: LINE, content: `${PREFIX[who]}> ${text}`, display: true, details: { who } });
 
+	const showLine = (l: ConversationLine) => {
+		if (l.quote) pi.sendMessage({ customType: LINE, content: quoteMark(l.quote), display: true, details: { who: "system" } });
+		show(l.who, l.text);
+	};
+
 	const drawBoard = () =>
 		ctx?.ui.setWidget("psa-board", () => ({ render: (width: number) => renderBoard(view, width, Date.now()), invalidate() {} }));
 
@@ -37,7 +43,7 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 
 	const showConversation = (lines: ConversationLine[]) => {
 		const fresh = lines.filter(isNew);
-		for (const l of primed ? fresh : fresh.slice(-HISTORY_SHOWN)) show(l.who, l.text);
+		for (const l of primed ? fresh : fresh.slice(-HISTORY_SHOWN)) showLine(l);
 		lines.forEach(markSeen);
 		primed = true;
 	};
@@ -52,10 +58,10 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 				break;
 			case "user":
 			case "reply": {
-				const line: ConversationLine = { id: m.type === "user" ? m.id : m.replyId, who: m.type === "user" ? "user" : "router", text: m.text, at: m.at };
+				const line: ConversationLine = m.type === "user" ? { ...m, who: "user" } : { id: m.replyId, who: "router", text: m.text, at: m.at };
 				if (!isNew(line)) return;
 				markSeen(line);
-				show(line.who, line.text);
+				showLine(line);
 				return;
 			}
 			case "ack":

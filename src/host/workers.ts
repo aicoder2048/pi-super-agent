@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Kernel } from "../kernel/kernel.ts";
-import type { Basis, ReportStatus, TicketInput } from "../kernel/types.ts";
+import type { Basis, Quote, ReportStatus, TicketInput } from "../kernel/types.ts";
 import { REPORT_STATUSES } from "../kernel/types.ts";
 import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
-import { INPUT_LABEL } from "../client/board-format.mjs";
+import { INPUT_LABEL, quoteContext } from "../client/board-format.mjs";
 import { parseOptions } from "../kernel/question.ts";
 import { NO_DOMAIN, type DomainKit } from "../modules.ts";
 import type { Member } from "../teams.ts";
@@ -47,12 +47,16 @@ export interface WorkerSpawner {
 	runMember?(run: MemberRun): Promise<string>;
 }
 
+export function quoteSuffix(kernel: Kernel, quote: Quote | null): string {
+	return quote ? `\n${quoteContext(quote, quote.ticketId ? kernel.getTicket(quote.ticketId)?.title : undefined)}` : "";
+}
+
 export function formatInputs(kernel: Kernel, inputs: TicketInput[]): string {
 	return inputs
 		.map((input) => {
 			const found = input.triggerId ? kernel.read(input.triggerId) : undefined;
 			const meta = found?.type === "trigger" ? ` ${found.trigger.id} · 来源 ${found.trigger.source} · 发出者 ${found.trigger.sender}` : "";
-			return `[${INPUT_LABEL[input.kind]}]${meta}\n${input.body}`;
+			return `[${INPUT_LABEL[input.kind]}]${meta}\n${input.body}${quoteSuffix(kernel, found?.type === "trigger" ? found.quote : null)}`;
 		})
 		.join("\n\n");
 }

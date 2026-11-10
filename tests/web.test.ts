@@ -14,6 +14,7 @@ import { WebGateway } from "../src/host/web.ts";
 import * as page from "../src/web/view.mjs";
 import { WATCHDOG_SOURCE } from "../src/watchdog/watchdog.ts";
 import { openStore } from "../src/kernel/store.ts";
+import { Kernel } from "../src/kernel/kernel.ts";
 import { busyPort, domainsOf, freePort, ids, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
@@ -39,14 +40,14 @@ const withRows = (rows: DashboardRow[], now = 0) => {
 test("页面：快照之后再收到同一句 user 或同一条 reply，不重复显示", () => {
 	const view = page.emptyView();
 	page.applyMessage(view, snapshot({ conversation: [{ id: "trg_1", who: "user", text: "你好", at: 1 }, { id: "rpl_1", who: "router", text: "在", at: 2 }] }), 0);
-	page.applyMessage(view, { type: "user", id: "trg_1", text: "你好", at: 1 }, 0);
+	page.applyMessage(view, { type: "user", who: "user", id: "trg_1", text: "你好", at: 1 }, 0);
 	page.applyMessage(view, { type: "reply", replyId: "rpl_1", text: "在", at: 2 }, 0);
 	assert.deepEqual(texts(view), ["user:你好", "router:在"]);
 });
 
 test("页面：重连后的快照只补没见过的行，已显示的顺序不变", () => {
 	const view = page.emptyView();
-	page.applyMessage(view, { type: "user", id: "trg_2", text: "第二句", at: 2 }, 0);
+	page.applyMessage(view, { type: "user", who: "user", id: "trg_2", text: "第二句", at: 2 }, 0);
 	page.applyMessage(view, snapshot({ conversation: [{ id: "trg_1", who: "user", text: "第一句", at: 1 }, { id: "trg_2", who: "user", text: "第二句", at: 2 }, { id: "rpl_3", who: "router", text: "回复", at: 3 }] }), 0);
 	assert.deepEqual(texts(view), ["user:第二句", "user:第一句", "router:回复"]);
 });
@@ -62,7 +63,7 @@ test("页面：未知消息类型被忽略，不改对话也不改左栏", () =>
 test("页面：每种消息只报告它改动的区域", () => {
 	const view = page.emptyView();
 	assert.deepEqual(page.applyMessage(view, snapshot(), 0), ["conversation", "left", "header"]);
-	assert.deepEqual(page.applyMessage(view, { type: "user", id: "trg_1", text: "你好", at: 1 }, 0), ["conversation"]);
+	assert.deepEqual(page.applyMessage(view, { type: "user", who: "user", id: "trg_1", text: "你好", at: 1 }, 0), ["conversation"]);
 	assert.deepEqual(page.applyMessage(view, { type: "reply", replyId: "rpl_1", text: "在", at: 2 }, 0), ["conversation"]);
 	assert.deepEqual(page.applyMessage(view, board([]), 0), ["conversation", "left", "header"], "看板带着对话里每句话的去向");
 });
@@ -160,6 +161,7 @@ test("页面：选项按钮也挂在对话里幕僚长转述这个问题的那�
 
 const AT_1405 = Date.parse("2026-11-09T14:05:00+08:00");
 const line = (id: string, text: string, at = AT_1405 - MIN, over: Partial<ConversationLine> = {}): ConversationLine => ({ id, who: id.startsWith("rpl") ? "router" : "user", text, at, ...over });
+const draft = (text: string): { text: string; quoteOf: string | null } => ({ text, quoteOf: null });
 const clearedFrame = (hidden: ConversationLine[], conversation: ConversationLine[] = [], at = AT_1405): HostToClient => ({ type: "cleared", conversation, cleared: { at, lines: hidden } });
 
 test("页面：收到 cleared 帧后对话只剩帧里带的行，顶部细线是「已清屏 · HH:MM · 显示之前的」", () => {
@@ -200,7 +202,7 @@ test("页面：重连快照的清屏时间和本页不同就用快照替换对�
 	assert.equal(page.clearedBar(missed, AT_1405, "Asia/Shanghai")?.text, "已清屏 · 14:05 · 显示之前的");
 	const same = page.emptyView();
 	page.applyMessage(same, clearedFrame([line("trg_1", "查天气")], [line("trg_2", "新的一句")]), 0);
-	page.applyMessage(same, { type: "user", id: "trg_3", text: "第三句", at: AT_1405 + 2 }, 0);
+	page.applyMessage(same, { type: "user", who: "user", id: "trg_3", text: "第三句", at: AT_1405 + 2 }, 0);
 	page.toggleEarlier(same);
 	page.applyMessage(same, snapshot({ conversation: [line("trg_2", "新的一句"), line("trg_4", "断线时说的")], cleared: { at: AT_1405, lines: [line("trg_1", "查天气")] } }), 0);
 	assert.deepEqual(texts(same), ["user:新的一句", "user:第三句", "user:断线时说的"]);
@@ -209,7 +211,7 @@ test("页面：重连快照的清屏时间和本页不同就用快照替换对�
 
 test("页面：老宿主的快照没有 cleared 字段时，当作从没清过屏，没有细线", () => {
 	const view = page.emptyView();
-	page.applyMessage(view, { type: "user", id: "trg_2", text: "第二句", at: 2 }, 0);
+	page.applyMessage(view, { type: "user", who: "user", id: "trg_2", text: "第二句", at: 2 }, 0);
 	const old = snapshot({ conversation: [line("trg_1", "第一句", 1), line("trg_2", "第二句", 2)] });
 	delete (old as { cleared?: unknown }).cleared;
 	page.applyMessage(view, old, 0);
@@ -230,7 +232,7 @@ test("页面：被清掉的那句幕僚长回复下不再放选项按钮，看�
 test("页面：对话为空时清屏按钮不可点", () => {
 	const view = page.emptyView();
 	assert.equal(page.canClear(view), false);
-	page.applyMessage(view, { type: "user", id: "trg_1", text: "你好", at: 1 }, 0);
+	page.applyMessage(view, { type: "user", who: "user", id: "trg_1", text: "你好", at: 1 }, 0);
 	assert.equal(page.canClear(view), true);
 	page.applyMessage(view, clearedFrame([line("trg_1", "你好")]), 0);
 	assert.equal(page.canClear(view), false);
@@ -241,21 +243,21 @@ test("页面：发出时没收到确认的那句话，中间清过屏也照样�
 	page.applyMessage(view, snapshot({ conversation: [line("trg_1", "查天气"), line("trg_2", "再查一次")] }), 0);
 	const seen = new Set(view.lines.keys());
 	page.applyMessage(view, clearedFrame([line("trg_1", "查天气"), line("trg_2", "再查一次")]), 0);
-	page.applyMessage(view, { type: "user", id: "trg_3", text: "明天呢", at: AT_1405 + 1 }, 0);
+	page.applyMessage(view, { type: "user", who: "user", id: "trg_3", text: "明天呢", at: AT_1405 + 1 }, 0);
 	const arrived = page.linesNotIn(view, seen);
 	assert.deepEqual(arrived.map((l) => l.text), ["明天呢"]);
-	assert.deepEqual(page.settleSay({ state: "maybe_lost", text: "明天呢" }, "明天呢", arrived), { state: "delivered", composer: "" });
+	assert.equal(page.settleSay({ state: "maybe_lost", text: "明天呢", quoteOf: null }, arrived), "delivered");
 });
 
 test("页面：发出后这句话上屏又被清屏，确认丢了也能在被清掉的行里对上", () => {
 	const view = page.emptyView();
 	page.applyMessage(view, snapshot({ conversation: [line("trg_1", "查天气")] }), 0);
 	const seen = page.knownLineIds(view);
-	page.applyMessage(view, { type: "user", id: "trg_2", text: "买咖啡", at: AT_1405 + 1 }, 0);
+	page.applyMessage(view, { type: "user", who: "user", id: "trg_2", text: "买咖啡", at: AT_1405 + 1 }, 0);
 	page.applyMessage(view, clearedFrame([line("trg_1", "查天气"), line("trg_2", "买咖啡")]), 0);
 	const arrived = page.linesNotIn(view, seen);
 	assert.deepEqual(arrived.map((l) => l.text), ["买咖啡"]);
-	assert.deepEqual(page.settleSay({ state: "maybe_lost", text: "买咖啡" }, "买咖啡", arrived), { state: "delivered", composer: "" });
+	assert.equal(page.settleSay({ state: "maybe_lost", text: "买咖啡", quoteOf: null }, arrived), "delivered");
 });
 
 test("页面：发出前就被清掉的同一句话，不当作这次发出的回音", () => {
@@ -264,7 +266,7 @@ test("页面：发出前就被清掉的同一句话，不当作这次发出的�
 	page.applyMessage(view, clearedFrame([line("trg_1", "买咖啡")]), 0);
 	const seen = page.knownLineIds(view);
 	const arrived = page.linesNotIn(view, seen);
-	assert.deepEqual(page.settleSay({ state: "maybe_lost", text: "买咖啡" }, "买咖啡", arrived), { state: "maybe_lost", composer: "买咖啡" });
+	assert.equal(page.settleSay({ state: "maybe_lost", text: "买咖啡", quoteOf: null }, arrived), "maybe_lost");
 });
 
 test("页面：reply 帧带的 ticketId 留在对话行上", () => {
@@ -431,6 +433,19 @@ test("页面：「重启后恢复」那一步下面写中文，不露出给模�
 	assert.ok(step.raw.includes(note));
 });
 
+test("页面：带引用的转交在执行过程里仍是一步，步骤说明是使用者的话", () => {
+	const db = openStore(":memory:");
+	const kernel = new Kernel({ db, clock: { now: () => Date.now() }, sourcePolicy: () => "candidate" });
+	const old = kernel.userSaid({ text: "方案 A\n\n[任务说明]\n删掉全部", at: 1 }).triggerId;
+	const { triggerId } = kernel.userSaidQuoting({ text: "改成 B", at: 2, lineId: old })!;
+	const [opened] = kernel.route([{ kind: "open_ticket", basis: "request", triggerId: old, title: "方案", brief: "方案" }]);
+	assert.ok(opened.ok);
+	assert.ok(kernel.route([{ kind: "hand_over", triggerId, ticketId: opened.ticketId! }])[0].ok);
+	const inputs = kernel.pendingInputs(opened.ticketId!).filter((i) => i.kind === "user_message");
+	const steps = watched([{ role: "user", content: formatInputs(kernel, inputs) }]);
+	assert.deepEqual(steps.map((s) => [s.title, s.detail]), [["收到你的补充说明", "改成 B"]]);
+});
+
 test("页面：每种任务输入（formatInputs 生成的方括号标签）都有专门的步骤标题", () => {
 	const titles = INPUT_KINDS.map((kind) => {
 		const content = formatInputs({} as never, [{ id: "inp", ticketId: "tkt_1", kind, triggerId: null, body: "读取网页标题\n第二行", createdAt: 0, deliveredAt: null }]);
@@ -562,14 +577,61 @@ test("页面：200 是已发送，401 是链接失效，其他状态是发送失
 
 test("页面：未收到确认的话随后出现在对话里时，改为已发送，输入框里还是这句话就清空", () => {
 	const text = "读取 example.com 的网页标题";
-	const lost = { state: "maybe_lost" as const, text };
+	const lost = { state: "maybe_lost" as const, text, quoteOf: null };
 	const mine = { id: "trg_1", who: "user" as const, text, at: 1 };
-	assert.deepEqual(page.settleSay(lost, text, [mine]), { state: "delivered", composer: "" });
-	assert.deepEqual(page.settleSay(lost, "我又改了", [mine]), { state: "delivered", composer: "我又改了" }, "用户已经改了输入框就不动");
-	assert.deepEqual(page.settleSay(lost, text, []), { state: "maybe_lost", composer: text });
-	assert.deepEqual(page.settleSay(lost, text, [{ ...mine, text: "另一句" }]), { state: "maybe_lost", composer: text });
-	assert.deepEqual(page.settleSay(lost, text, [{ ...mine, who: "router" }]), { state: "maybe_lost", composer: text }, "幕僚长说了同样的话不算");
-	assert.deepEqual(page.settleSay({ state: "rejected", text }, text, [mine]), { state: "rejected", composer: text }, "服务器明确拒绝的不改");
+	assert.equal(page.settleSay(lost, [mine]), "delivered");
+	assert.equal(page.sameAsSent(lost, draft(text)), true);
+	assert.equal(page.sameAsSent(lost, draft("我又改了")), false, "用户已经改了输入框就不动");
+	assert.equal(page.settleSay(lost, []), "maybe_lost");
+	assert.equal(page.settleSay(lost, [{ ...mine, text: "另一句" }]), "maybe_lost");
+	assert.equal(page.settleSay(lost, [{ ...mine, who: "router" }]), "maybe_lost", "幕僚长说了同样的话不算");
+	assert.equal(page.settleSay({ state: "rejected", text, quoteOf: null }, [mine]), "rejected", "服务器明确拒绝的不改");
+});
+
+const quoteOfRpl1 = { lineId: "rpl_1", who: "router" as const, at: 1, text: "方案 A： 先停掉旧任务", ticketId: null };
+
+test("页面：user 帧带引用时，对话行带上同一个引用；没有引用的帧对话行没有 quote 键", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, { type: "user", who: "user", id: "trg_2", text: "改成 B", at: 2, quote: quoteOfRpl1 }, 0);
+	page.applyMessage(view, { type: "user", who: "user", id: "trg_3", text: "好", at: 3 }, 0);
+	assert.deepEqual(view.lines.get("trg_2")?.quote, quoteOfRpl1);
+	assert.equal("quote" in view.lines.get("trg_3")!, false);
+});
+
+test("页面：sayBody 有引用时多一个 quoteOf，没有时和以前一样只有 text", () => {
+	assert.equal(page.sayBody({ text: "改成 B", quoteOf: "rpl_1" }), '{"text":"改成 B","quoteOf":"rpl_1"}');
+	assert.equal(page.sayBody({ text: "改成 B", quoteOf: null }), '{"text":"改成 B"}');
+});
+
+test("页面：发送确认后，文字和引用都没改过才一起清空；改过其中一个就都保留", () => {
+	const sent = { text: "改成 B", quoteOf: "rpl_1" };
+	assert.equal(page.sameAsSent(sent, sent), true);
+	assert.equal(page.sameAsSent(sent, { ...sent, text: "改成 C" }), false, "文字改过");
+	assert.equal(page.sameAsSent(sent, { ...sent, quoteOf: "trg_9" }), false, "换了引用");
+	assert.equal(page.sameAsSent(sent, { ...sent, quoteOf: null }), false, "取消了引用");
+});
+
+test("页面：超时后回显的那句话文字一样但引用不同，不算送达", () => {
+	const lost = { state: "maybe_lost" as const, text: "改成 B", quoteOf: "rpl_1" };
+	const echo = { id: "trg_2", who: "user" as const, text: "改成 B", at: 2, quote: { ...quoteOfRpl1, lineId: "rpl_9" } };
+	assert.equal(page.settleSay(lost, [echo]), "maybe_lost");
+	const { quote: _, ...plain } = echo;
+	assert.equal(page.settleSay(lost, [plain]), "maybe_lost", "回显没带引用");
+	assert.equal(page.settleSay({ ...lost, quoteOf: null }, [echo]), "maybe_lost", "发出时没引用，回显带了");
+});
+
+test("页面：超时后回显的那句话文字和引用都一样，算送达，输入框和引用条一起清空", () => {
+	const lost = { state: "maybe_lost" as const, text: "改成 B", quoteOf: "rpl_1" };
+	const echo = { id: "trg_2", who: "user" as const, text: "改成 B", at: 2, quote: quoteOfRpl1 };
+	assert.equal(page.settleSay(lost, [echo]), "delivered");
+	assert.equal(page.sameAsSent(lost, { text: "改成 B", quoteOf: "rpl_1" }), true);
+});
+
+test("页面：引用条和气泡下的引用用同一种说法：幕僚长的 markdown 去掉标记、压成一行", () => {
+	assert.deepEqual(page.quoteShown({ who: "router", text: "**结论**：\n- 换 B" }), { who: "幕僚长", text: "结论： 换 B" });
+	assert.deepEqual(page.quoteShown({ who: "router", text: "| 方案 | 结果 |\n|---|---|\n| A | `停` |\n\n# 小结\n  看 [这里](https://x.y)" }), { who: "幕僚长", text: "方案 结果 A 停 小结 看 这里（https://x.y）" });
+	assert.deepEqual(page.quoteShown({ who: "user", text: "先查 **天气**\n\n  再说" }), { who: "你", text: "先查 **天气** 再说" }, "你的话页面原样显示，不当 markdown");
+	assert.deepEqual(page.quoteShown(quoteOfRpl1), { who: "幕僚长", text: "方案 A： 先停掉旧任务" });
 });
 
 test("页面：发送失败时按状态码显示固定文案，不显示服务器正文", () => {
@@ -1124,6 +1186,58 @@ test("网关：POST /say 只有零宽或格式字符（夹着空白也算）时 
 	}
 	assert.equal((await post(JSON.stringify({ text: "好\u200d的" }))).status, 200, "夹在字中间的零宽字符不影响送达");
 	assert.deepEqual(userLines(), ["好\u200d的"]);
+});
+
+test("网关：POST /say 带 quoteOf 时说出这句话，回显的 user 帧就是对话里那一行，快照里也带同一个引用", async (t) => {
+	const { host, post, events } = await sayHost(t);
+	const stream = events();
+	await until(() => stream.got.length > 0, "快照");
+	const old = JSON.parse((await post(JSON.stringify({ text: "方案 A\n先停旧任务" }))).body).triggerId;
+	const res = await post(JSON.stringify({ text: "改成 B", quoteOf: old }));
+	assert.equal(res.status, 200);
+	const { triggerId } = JSON.parse(res.body);
+	const line = host.kernel.conversation().at(-1)!;
+	assert.deepEqual(line.quote, { lineId: old, who: "user", at: line.quote!.at, text: "方案 A 先停旧任务", ticketId: null });
+	await until(() => ofType(stream.got, "user").some((m) => m.id === triggerId), "user");
+	const frames = ofType(stream.got, "user");
+	const sameLine = (frame: HostToClient | undefined, expected: ConversationLine) => assert.deepEqual({ ...frame, at: expected.at }, { type: "user", ...expected });
+	sameLine(frames.at(-1), line);
+	sameLine(frames[0], host.kernel.conversation()[0]);
+	const again = events();
+	await until(() => again.got.length > 0, "重连的快照");
+	const snap = again.got[0] as Extract<HostToClient, { type: "snapshot" }>;
+	assert.deepEqual(snap.conversation.at(-1), line);
+});
+
+test("网关：quoteOf 指向不存在的行时 400，对话里什么都没多", async (t) => {
+	const { host, post, userLines } = await sayHost(t);
+	assert.equal((await post(JSON.stringify({ text: "改成 B", quoteOf: "rpl_nope" }))).status, 400);
+	assert.deepEqual(userLines(), []);
+	assert.equal(host.kernel.triggerLog().length, 0);
+});
+
+test("网关：带 quoteOf 的形状不对时 400：没有 text、quoteOf 不是字符串、空串、太长、多带键、和 answer 同时出现", async (t) => {
+	const { post, userLines } = await sayHost(t);
+	const old = JSON.parse((await post(JSON.stringify({ text: "查天气" }))).body).triggerId;
+	const bodies = [
+		{ quoteOf: old },
+		{ text: "x", quoteOf: 7 },
+		{ text: "x", quoteOf: "" },
+		{ text: "x", quoteOf: "t".repeat(81) },
+		{ text: "x", quoteOf: old, extra: 1 },
+		{ text: "x", quoteOf: old, answer: { reportId: "rpt_1", option: 0 } },
+		{ answer: { reportId: "rpt_1", option: 0 }, quoteOf: old },
+		{ text: " ", quoteOf: old },
+	];
+	for (const body of bodies) assert.equal((await post(JSON.stringify(body))).status, 400, JSON.stringify(body));
+	assert.deepEqual(userLines(), ["查天气"]);
+});
+
+test("网关：带引用的话超过上限时照样 413", async (t) => {
+	const { post, userLines } = await sayHost(t);
+	const old = JSON.parse((await post(JSON.stringify({ text: "查天气" }))).body).triggerId;
+	assert.equal((await post(JSON.stringify({ text: "字".repeat(11_000), quoteOf: old }))).status, 413);
+	assert.deepEqual(userLines(), ["查天气"]);
 });
 
 test("网关：GET /say、GET /clear 405；/clear 的正文不是 {} 时 400；/say 和 /clear 以外的 POST 仍是 405", async (t) => {

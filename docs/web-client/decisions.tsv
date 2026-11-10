@@ -311,3 +311,24 @@ ts	phase	decision	why	evidence	result
 2026-11-10T08:58:45Z	implement	清屏保持普通字重，不和发送一样加粗	次要操作加粗会像第二个主按钮	src/web/index.html #clear	decided
 2026-11-10T08:58:45Z	verify	just test 888/888；just e2e 154/154；真实宿主加假模型截图，在使用者 Mac 上打开	使用者看过后说可以	/Users/szou/.claude/jobs/66e5cbed/tmp/shots5/*.png; e2e5.log	PASS
 2026-11-10T08:58:45Z	review	跳过 how、architect、interrogate、Comment Sicko 和 simplify	只改样式和标记，布局由使用者逐步选定，diff 不加注释	git diff main --stat	skipped
+2026-11-10T09:09:37Z	start	新一轮：对话里引用前面的话（像微信）；之前的行都是本会话写的	使用者要求加引用功能，五点设计都按我的建议	本会话 66e5cbed，worktree psa/quote @8dbc7ee	open
+2026-11-10T09:09:37Z	frame	范围：对话栏里你和幕僚长的每一句都能引用（含清屏后展开的旧行）；悬停出现「引用」，输入框上方引用条可取消；你的气泡下挂灰色引用，刷新后仍在；TUI 前加一行 ↪；存行 id 加文字快照；给幕僚长的卡片多一行「引用（只是上下文）」并带关联任务；引用内容不是指令	使用者本轮回复：都按你的建议	上一轮回复的五点	decided
+2026-11-10T09:09:37Z	frame	走 figure-it-out：跨内核、协议、宿主、页面、TUI，且碰到权限原则（ADR-0003），严格度偏高：how、architect 两版设计、先红后绿、对抗评审、真实页面截图	跨层的大活按记下的教训要走 figure-it-out	memory pstack-full-adherence	decided
+2026-11-10T09:12:08Z	frame	写下完成标准 8 条、范围约 10 到 12 个文件 5 到 6 个单元、严格度高；另写一份短 ADR 记下「引用只是上下文，不是使用者的话」	碰到权限原则；探索发现转交给助手时只传正文，引用必须一起传过去	/Users/szou/.claude/jobs/66e5cbed/tmp/quote/frame.md	decided
+2026-11-10T09:14:11Z	how	三路探索加一份汇总：引用要放在单独一张表、不进正文；转交给助手时要一起带上；卡片自己的 trg_ 要排第一	正文会原样显示在对话栏和助手的输入里；测试辅助按第一个 trg_ 取 id	/Users/szou/.claude/jobs/66e5cbed/tmp/quote/how.md	done
+2026-11-10T09:23:34Z	architect	两版设计取候选 1 做底：另加 userSaidQuoting 和 sayQuoting，不改现有 say；新开任务时助手也能看到引用	两版主体一致；候选 1 改动面小，候选 2 要改 108 处调用	/Users/szou/.claude/jobs/66e5cbed/tmp/quote/synthesis.md	decided
+2026-11-10T09:23:34Z	architect	从候选 2 移植：库里检查快照不含换行并去掉控制字符、只能引用已显示的行、user 帧整行展开不再手抄字段	结构上堵住伪造卡片行；页面看不到的行不该能被引用；手抄字段以后容易漏	synthesis.md Grafts	decided
+2026-11-10T09:23:34Z	architect	交叉评审跳过，底版由我按评分表挑	评审池只有 Claude	~/.claude/rules/pstack-models.md	skipped
+2026-11-10T09:31:28Z	implement	后端三个单元完成：内核存引用、卡片和助手输入的引用行与两份提示词、发话接口接受被引用行 id；每个单元先红后绿	按合成设计实现；我审过 diff，核对了冻结、单一来源和授权句	commits 6da43d8, 1068ecc, 5e477c4; just test 914/914	done
+2026-11-10T09:43:12Z	implement	前端三个单元完成：页面引用按钮、引用条和气泡下的引用；TUI 和 just tail 打印引用行；端到端证明幕僚长和助手收到的请求里有引用行；E5、E6 一写就绿，子代理临时去掉那一行后确认会变红	后端已经做完行为，端到端只是证明	commits bb836e8, 4f004b2, f90f278; just test 923/923; just e2e 179/179	done
+2026-11-10T09:43:12Z	verify	真实宿主加假模型截图：悬停出现引用、引用条、发出后气泡下的灰色引用（浅色深色）、手机点气泡出现引用	子代理只截过一次性的桌面图	/Users/szou/.claude/jobs/66e5cbed/tmp/qshots/*.png	PASS
+2026-11-10T09:48:15Z	interrogate	评审二证实两个问题：手机上透明的引用按钮不先点气泡也能点中；新版 just tail 连旧宿主时实时的使用者行被标成 Router	我在评审的 worktree（同一提交 119a5cb）重跑两个复现，输出一致	.claude/worktrees/agent-a68a2e505a76d300e/tests/e2e/probe-quote.e2e.ts, r/oldhost.mjs	confirmed
+2026-11-10T09:48:46Z	interrogate	评审一证实三个问题：任务标题带换行能在引用行和助手输入里冒充使用者行；被引用原文里的」能伪造第二个关于任务；零宽和方向控制等格式字符没被去掉。重跑还发现卡片原有的任务列表行有同一个标题换行的洞	我在评审的 worktree（同一提交 119a5cb）重跑 probe.test.ts，三条失败，输出一致	.claude/worktrees/agent-a5a82eb9f2f882d98/tests/adv/probe.test.ts	confirmed
+2026-11-10T09:48:46Z	interrogate	修法：开任务时标题压成一行，显示时（引用行和任务列表行）再压一次；引用行先写关于任务、原文放最后；快照去掉 Cf 格式字符；手机上未显示的引用按钮不接收点击；tail 实时帧缺 who 时当作使用者	根上修标题，再挡住库里已有的旧标题；任务列表那个洞同因同卡，一起修并在 PR 写明	synthesis.md; frame.md 第 3、5 条	decided
+2026-11-10T09:56:33Z	interrogate	五个问题修好：标题入库时压成一行、显示时再压；引用行改成先写关于任务、原文放在说：之后；快照去掉格式字符；隐藏的引用按钮不接收点击；tail 把旧宿主的使用者帧当作你	按根因修；两位评审的原复现放到修复后的分支上重跑	commits 1441698, b28c471; just test 930/930	fixed
+2026-11-10T09:56:33Z	interrogate	原复现 P2（整行只能出现一次关于任务）仍不过，接受：真任务在说：之前，原文在之后，提示词写明说：之后都是旧话；要让它过就得改写使用者引用的原文	引用不绑定任务，转交仍按使用者那一行判断，剩余风险低；快照要忠实于原话	probe 输出 QUOTE LINE；src/host/router.ts 引用条目	accepted
+2026-11-10T10:00:33Z	no-comments	Comment Sicko 删 29 处注释全部接受；六个标记接受两个（库里检查 line_id 只收三种前缀、正则改名），拒绝四个：tail 的旧宿主兼容（使用者的宿主重启前要靠它，有测试）、引用行顺序（F2 测试已固定）、lineId 模板类型（没有类型检查）、at 改名 saidAt（改动面大，和对话行一致）	按 no-comments 第 2 步逐条判断	git log -1; just test 931/931	done
+2026-11-10T10:02:22Z	simplify	四个审查去重后接受：库里旧标题在打开时一次压成一行并删掉显示时的压缩（ADR 说的「旧标题开不出新行」原先只在两处成立）、引用行收成一个函数、快照用 clip、页面复用 oneLine、路由任务规则共用、页面送达清空改成一个布尔、说话人叫法一张表、tail 测试辅助	改动深度审查指出点选回答行和汇报卡片仍原样打印旧标题；其余是重复和多余状态	/Users/szou/.claude/jobs/66e5cbed/tmp/quote/review.diff	decided
+2026-11-10T10:02:22Z	simplify	拒绝：合并两个发话入口、联表取引用、统一三处不可见字符定义、时间格式换系统函数、合并测试构造函数	设计时比较过或规模下无收益；三处语义不同；格式有测试固定	simplify 四份报告	skipped
+2026-11-10T10:10:01Z	simplify	简化修复完成：打开状态库时把旧标题压成一行（先红：库里多行标题重开后仍是多行，点选回答卡片出现两行使用者），其余七条重构	改动深度审查指出的漏洞补上，ADR-0011 的说法才成立	commits c19bd95, a966df9; just test 931/931	done
+2026-11-10T10:10:01Z	verify	完整 just e2e 185 个，2 个失败都是 HANDOFF 里记的不稳定用例（点小卡时第二个助手还没报模型，读到模型 未启动）；单独重跑 helpers.e2e.ts 10/10 通过	失败输出和已知问题一致，与引用无关	/Users/szou/.claude/jobs/66e5cbed/tmp/e2e-quote.log	PASS
