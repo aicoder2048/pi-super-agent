@@ -100,3 +100,9 @@ test("模块不能叫 user：这个名字留给使用者自己的规则，加载
 	writeFileSync(join(root, "user", "module.json"), JSON.stringify({ name: "user" }));
 	assert.throws(() => Modules.load([root]), (e: Error) => e instanceof ConfigError && e.message.startsWith(join(root, "user/module.json")) && /不能叫 user/.test(e.message) && !e.message.includes("\n"));
 });
+
+test("仓库里的两个行情模块都有领域名和给幕僚长的说明，出现在领域名册里；都还没有成员", () => {
+	const modules = Modules.load([repoModules]);
+	assert.equal(modules.rosterPrompt(), "- toy-market（玩具行情）：演示用的假行情，只管玩具代码（如 TOYX）的波动\n- us-market（美股行情）：美股个股和大盘的行情、涨跌和波动原因");
+	assert.deepEqual([...modules.book], [["toy-market", null], ["us-market", null]]);
+});
