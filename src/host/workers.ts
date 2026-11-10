@@ -328,21 +328,26 @@ export class WorkerExecutor {
 	}
 
 	// A member reports no outcome to the selector, so it must not start a probe or ride on the helper's.
-	#memberModel(member: Member): ModelRef {
-		const choice = this.#o.models.selector.steady();
-		return choice.fellBack ? choice.model : (member.model ?? choice.model);
+	#memberModel(member: Member): { model: ModelRef; onFallback: boolean } {
+		const { selector } = this.#o.models;
+		const steady = selector.steady();
+		if (steady.fellBack || !member.model) return { model: steady.model, onFallback: steady.fellBack };
+		return { model: member.model, onFallback: formatModelRef(member.model) === formatModelRef(selector.fallback) };
 	}
 
 	#dispatch(ticketId: string, live: Live, params: unknown): Promise<DispatchResult> {
 		if (!this.#desk || live.crew.length === 0) throw new Error("这个任务的团队没有可派的成员");
 		if (live.stopping) throw new Error("任务已停止");
 		const { member, task, callId } = parseDispatch(params, live.crew);
-		if (this.#capReached()) throw new Error(`回退模型 ${formatModelRef(this.#o.models.selector.current().model)} 今日用量已达上限，这次不能派活`);
+		const { model, onFallback } = this.#memberModel(member);
+		if (onFallback && this.#o.kernel.usageToday(model.provider) >= this.#o.models.fallbackDailyTokens) {
+			throw new Error(`回退模型 ${formatModelRef(model)} 今日用量已达上限，这次不能派活`);
+		}
 		const { kernel, stateDir, afterCommand } = this.#o;
 		return this.#desk.dispatch({
 			ticketId, callId, member, task,
 			basis: kernel.getTicket(ticketId)!.basis,
-			model: this.#memberModel(member),
+			model,
 			workdir: join(stateDir, "workers", ticketId),
 			sessionDir: memberSessionDir(stateDir, ticketId, member.name),
 			onUsage: (u) => {

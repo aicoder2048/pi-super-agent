@@ -28,6 +28,10 @@ export class ModelSelector {
 		this.#o = options;
 	}
 
+	get fallback(): ModelRef {
+		return this.#o.fallback;
+	}
+
 	current(): { model: ModelRef; fellBack: boolean } {
 		return this.#mode === "fallback" ? { model: this.#o.fallback, fellBack: true } : { model: this.#o.primary, fellBack: false };
 	}

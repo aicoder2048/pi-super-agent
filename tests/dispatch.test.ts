@@ -311,6 +311,48 @@ test("回退模型今日用量已达上限：派活被拒绝，不起成员进�
 	assert.equal(ran, 2);
 });
 
+const FALLBACK = { provider: "fallback-co", id: "cheap" };
+const selectorWith = (fallback: typeof FALLBACK, now = () => Date.now()) =>
+	new ModelSelector({ primary: { provider: "openai-codex", id: "gpt-6.1-sol" }, fallback, probeEveryMs: 60_000, clock: { now } });
+
+test("助手正在试探主模型时，成员仍用回退模型：回退模型今日用量已达上限就拒绝派活", async (t) => {
+	let now = 1_000_000;
+	const selector = selectorWith(FALLBACK, () => now);
+	selector.onError("429");
+	now += 120_000;
+	const models: string[] = [];
+	const { host, helper, ticketId } = await dispatching(t, async (run) => (models.push(run.model.provider), "答"), [], { selector, fallbackDailyTokens: 150 });
+	assert.equal(helper().model, "openai-codex/gpt-6.1-sol", "助手这一轮在试探主模型");
+	host.kernel.recordUsage(ticketId(), { provider: FALLBACK.provider, tokensIn: 150, tokensOut: 0 });
+	assert.throws(() => helper().request("worker.dispatch", { ...two[1], callId: "call_9" }), /回退模型 fallback-co\/cheap 今日用量已达上限/);
+	assert.deepEqual(models, [], "没有起成员进程");
+});
+
+test("成员自己的模型就是回退模型：主模型正常时它的用量也算进回退上限，到了上限只拒绝它", async (t) => {
+	const own = [member("market-analyst", "行情分析师", { model: FALLBACK }), CREW[1]];
+	const ran: string[] = [];
+	const started = await startHost(openOn("自带队"), () => {}, {
+		teams: { kinds: new Map([["默认", "solo"], ["自带队", "crew"]]), pinned: new Map() },
+		dispatch: { crewOf: () => own, timeoutMs: 5000, maxConcurrent: 4 },
+		workerModels: { selector: selectorWith(FALLBACK), fallbackDailyTokens: 150 },
+	});
+	t.after(() => started.host.stop());
+	started.spawner.runner = async (run) => {
+		ran.push(`${run.member.name} ${run.model.provider}/${run.model.id}`);
+		run.onUsage({ provider: run.model.provider, tokensIn: 150, tokensOut: 0 });
+		return "答";
+	};
+	started.host.say("看一下");
+	await until(() => started.spawner.workers.size === 1, "助手开始工作");
+	const [helper] = started.spawner.workers.values();
+	const send = (call: Call, callId: string) => helper.request("worker.dispatch", { ...call, callId }) as Promise<DispatchResult>;
+	assert.equal((await send(two[0], "c1")).details.state, "done");
+	assert.equal(started.host.kernel.usageToday(FALLBACK.provider), 150);
+	assert.throws(() => send(two[0], "c2"), /回退模型 fallback-co\/cheap 今日用量已达上限/);
+	assert.equal((await send(two[1], "c3")).details.state, "done", "用主模型的成员照常派");
+	assert.deepEqual(ran, ["market-analyst fallback-co/cheap", "news-researcher openai-codex/gpt-6.1-sol"]);
+});
+
 test("看板在助手的任务上列出在跑的成员（只有职称和状态），做完就去掉", async (t) => {
 	let release!: () => void;
 	const gate = new Promise<void>((done) => (release = done));
