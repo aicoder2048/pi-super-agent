@@ -131,7 +131,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 				PSA_BASIS: spec.basis,
 				...(spec.crew.length && { PSA_CREW: spec.crew.map((m) => m.name).join(",") }),
 				PSA_BG_MAX_MS: String(this.#o.bgMaxMs ?? 120 * 60_000),
-				...this.#lookupEnv(spec.lookup),
+				...this.#lookupEnv(spec.mayLookup),
 			},
 		});
 		let streaming = false;
@@ -204,7 +204,6 @@ export class PiWorkerSpawner implements WorkerSpawner {
 		return runMemberProcess(args, env, run);
 	}
 
-	/** PSA_LOOKUPS is both the grant and the help text: only a process that may look up gets it. */
 	#lookupEnv(granted: boolean): { PSA_LOOKUPS?: string } {
 		return granted ? { PSA_LOOKUPS: this.#o.lookupHelp || "（宿主没有配置可查询的来源）" } : {};
 	}

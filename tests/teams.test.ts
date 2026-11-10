@@ -253,7 +253,7 @@ test("按领域取助手要的东西：模块的 skills/、prepare 和成员；�
 	const watch = kitFor("watch")!;
 	assert.deepEqual([watch.skillsDir, watch.prepare], [shared, "npm ci"]);
 	assert.deepEqual(watch.crew.map((m) => [m.name, m.title, m.skills]), [["market-analyst", "行情分析师", [shared]], ["news-researcher", "新闻研究员", [shared, join(root, "watch/agents/own")]]]);
-	assert.deepEqual(kitFor("mail"), { skillsDir: join(root, "mail/skills"), prepare: undefined, crew: [], lookup: false });
+	assert.deepEqual(kitFor("mail"), { skillsDir: join(root, "mail/skills"), prepare: undefined, crew: [], mayLookup: false });
 	assert.deepEqual([kitFor("bare")!.skillsDir, kitFor("bare")!.crew[0].skills], [undefined, []]);
 	assert.equal(kitFor("gone"), undefined);
 });
@@ -322,18 +322,18 @@ const withTools = (text: string, tools: string) => text.replace("---\n你", `too
 test("module.json 的 tools 写成 [\"lookup\"]：这个领域的助手能查数据，成员的工具清单原样不动", () => {
 	const root = modulesRoot({ watch: { manifest: { team: "看盘队", tools: ["lookup"] }, "agents/a.md": person("market-analyst", "行情分析师"), "agents/b.md": withTools(person("chart-reader", "看图"), "read, lookup") } });
 	const kit = load(root).kitFor("watch")!;
-	assert.equal(kit.lookup, true);
+	assert.equal(kit.mayLookup, true);
 	assert.deepEqual(kit.crew.map((m) => [m.name, m.tools]), [["market-analyst", undefined], ["chart-reader", ["read", "lookup"]]]);
 });
 
 test("module.json 没写 tools：这个领域的助手不能查数据，没写工具清单的成员拿到除 lookup 以外的全部成员工具", () => {
 	const root = modulesRoot({ mail: { manifest: { team: "邮件队" }, "agents/a.md": person("clerk", "文书"), "agents/b.md": withTools(person("reader", "读信"), "read, web_get") } });
 	const kit = load(root).kitFor("mail")!;
-	assert.equal(kit.lookup, false);
+	assert.equal(kit.mayLookup, false);
 	assert.deepEqual(kit.crew.map((m) => [m.name, m.tools]), [["clerk", MEMBER_TOOLS.filter((t) => t !== "lookup")], ["reader", ["read", "web_get"]]]);
 });
 
-test("没有领域的任务不能查数据", () => assert.equal(NO_DOMAIN.lookup, false));
+test("没有领域的任务不能查数据", () => assert.equal(NO_DOMAIN.mayLookup, false));
 
 test("module.json 的 tools 写错（不是列表、空列表、不能由模块开的工具、不是字符串）：启动报一行错，以 module.json 开头，说明能开的只有 lookup", () => {
 	for (const tools of ["lookup", [], ["bash"], [1], ["lookup", "web_get"]]) {

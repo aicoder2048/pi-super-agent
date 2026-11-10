@@ -120,7 +120,7 @@ test("助手的领域开了 lookup，宿主才把可查来源交给它；没配�
 		writeFileSync(cliPath, FAKE_PI);
 		const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath, lookupHelp });
 		const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
-		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", skillsDir: undefined, prepare: undefined, crew: [], lookup, token: "tok", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
+		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", skillsDir: undefined, prepare: undefined, crew: [], mayLookup: lookup, token: "tok", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
 		t.after(() => handle.stop());
 		return JSON.parse(readFileSync(join(dir, "worker-env.json"), "utf8")) as Record<string, string>;
 	};

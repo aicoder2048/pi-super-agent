@@ -4,7 +4,7 @@ import { ConfigError, readJsonFile } from "./config-error.ts";
 import { CONVERSATION_SOURCE, ruleId, type DomainBook, type SourcePolicy } from "./kernel/types.ts";
 import type { TimerEntry } from "./sources/timer.ts";
 import { loadTeam, type Member, type Team } from "./teams.ts";
-import { MEMBER_TOOLS, MODULE_TOOLS, type ModuleTool } from "./worker/tools.ts";
+import { MEMBER_TOOLS, DOMAIN_GATED_TOOLS, type DomainGatedTool } from "./worker/tools.ts";
 
 export interface SourceFilter {
 	name: string;
@@ -27,7 +27,7 @@ export interface ModuleManifest {
 	/** The team's display name. Written exactly when `agents/` holds a member. */
 	team?: string;
 	/** The tools this domain turns on for its helper and members. Absent: none. */
-	tools?: ModuleTool[];
+	tools?: DomainGatedTool[];
 	sources?: SourceFilter[];
 	timers?: TimerEntry[];
 	prepare?: string;
@@ -50,12 +50,11 @@ export interface DomainKit {
 	prepare: string | undefined;
 	/** The module's members the helper may dispatch to, each with the module's `skills/` ahead of its own and `tools` capped by what the domain turns on. Empty: it works alone. */
 	crew: readonly Member[];
-	/** The helper may look things up through the host: module.json `tools` lists lookup. */
-	lookup: boolean;
+	mayLookup: boolean;
 }
 
 /** The kit of a ticket with no domain, or whose module is gone. */
-export const NO_DOMAIN: DomainKit = { skillsDir: undefined, prepare: undefined, crew: [], lookup: false };
+export const NO_DOMAIN: DomainKit = { skillsDir: undefined, prepare: undefined, crew: [], mayLookup: false };
 
 /** The loaded modules as the host uses them once tickets belong to them. `Modules` is the real one. */
 export interface Domains {
@@ -107,20 +106,19 @@ export function parseRules(file: string, namespace: string, markdown: string): R
 }
 
 function checkModuleTools(manifestPath: string, tools: unknown, team: Team | undefined): void {
-	const isModuleTool = (t: unknown) => (MODULE_TOOLS as readonly unknown[]).includes(t);
-	if (tools !== undefined && (!Array.isArray(tools) || !tools.length || !tools.every(isModuleTool))) {
-		throw new ConfigError(`${manifestPath}：tools（${JSON.stringify(tools)}）写成要开的工具列表，例如 ["lookup"]；能开的只有 ${MODULE_TOOLS.join("、")}，不开就去掉这个字段`);
+	const isGated = (t: unknown) => (DOMAIN_GATED_TOOLS as readonly unknown[]).includes(t);
+	if (tools !== undefined && (!Array.isArray(tools) || !tools.length || !tools.every(isGated))) {
+		throw new ConfigError(`${manifestPath}：tools（${JSON.stringify(tools)}）写成要开的工具列表，例如 ["lookup"]；能开的只有 ${DOMAIN_GATED_TOOLS.join("、")}，不开就去掉这个字段`);
 	}
 	const granted: readonly unknown[] = tools ?? [];
 	for (const member of team?.members ?? []) {
-		const withheld = member.tools?.find((t) => isModuleTool(t) && !granted.includes(t));
+		const withheld = member.tools?.find((t) => isGated(t) && !granted.includes(t));
 		if (withheld) throw new ConfigError(`${member.file}：tools 里的 ${withheld} 要模块开了才有：在 ${manifestPath} 写 "tools": ["${withheld}"]，或从这位成员的 tools 去掉`);
 	}
 }
 
-/** A member's tools under its domain: the module tools the domain did not turn on are taken out. */
-function cappedTools(own: readonly string[] | undefined, granted: readonly ModuleTool[]): readonly string[] | undefined {
-	const withheld: readonly string[] = MODULE_TOOLS.filter((t) => !granted.includes(t));
+function cappedTools(own: readonly string[] | undefined, granted: readonly DomainGatedTool[]): readonly string[] | undefined {
+	const withheld: readonly string[] = DOMAIN_GATED_TOOLS.filter((t) => !granted.includes(t));
 	return withheld.length ? (own ?? MEMBER_TOOLS).filter((t) => !withheld.includes(t)) : own;
 }
 
@@ -256,7 +254,7 @@ export class Modules implements Domains {
 			skillsDir,
 			prepare: module.manifest.prepare,
 			crew: (module.team?.members ?? []).map((m) => ({ ...m, skills: [...shared, ...m.skills], tools: cappedTools(m.tools, granted) })),
-			lookup: granted.includes("lookup"),
+			mayLookup: granted.includes("lookup"),
 		};
 	};
 
