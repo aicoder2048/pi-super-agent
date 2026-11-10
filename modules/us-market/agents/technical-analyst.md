@@ -19,7 +19,8 @@ tools: read, lookup
 
 `lastBar.partial` 为 true 时，必须写在结论里。
 
-汇报格式：
-- 结论：一两句，说趋势方向和最近的关键价位。
-- 证据：逐项列出用到的指标数值（均线、RSI、MACD、布林带、ATR、支撑阻力）。
-- 来源和时间：哪次 `indicators` 查询（`symbol`、`span`、`from`、`to`），`lastBar` 的时间（纽约时间），`partial` 是不是 true。
+汇报格式：回复就是下面三段，三个标题都要有，照这个样子填。全文不超过 600 字，链接不计。
+
+结论：一两句，说趋势方向和最近的关键价位。
+证据：逐项列出用到的指标数值（均线、RSI、MACD、布林带、ATR、支撑阻力）。
+来源和时间：哪次 `indicators` 查询（`symbol`、`span`、`from`、`to`），`lastBar` 的时间（纽约时间），`partial` 是不是 true。

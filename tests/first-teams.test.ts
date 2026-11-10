@@ -82,9 +82,17 @@ test("Pi 模块的经验放在它的技能里：pi-pi 的任务，助手拿到�
 	}
 });
 
-test("看盘队每位成员的提示词都写了汇报格式：结论、证据、来源和时间", () => {
+test("看盘队每位成员的汇报格式是三行要填的标题：结论、证据、来源和时间", () => {
 	for (const member of teamOf(load(), "us-market")!.members) {
-		for (const part of ["结论", "证据", "来源和时间"]) assert.ok(member.prompt.includes(part), `${member.name} 的汇报格式有「${part}」`);
+		const format = member.prompt.slice(member.prompt.indexOf("汇报格式"));
+		for (const heading of ["结论：", "证据：", "来源和时间："]) assert.ok(format.split("\n").some((line) => line.startsWith(heading)), `${member.name} 的汇报格式有一行以「${heading}」开头`);
+	}
+});
+
+test("看盘队每位成员的汇报格式写了全文不超过 600 字，链接不计", () => {
+	for (const member of teamOf(load(), "us-market")!.members) {
+		const format = member.prompt.slice(member.prompt.indexOf("汇报格式"));
+		assert.match(format, /全文不超过 600 字，链接不计/, member.name);
 	}
 });
 
