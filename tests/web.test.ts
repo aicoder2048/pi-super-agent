@@ -292,6 +292,15 @@ test("页面：report 带问题是提出问题，ready 是提交结果，blocked
 	]);
 });
 
+test("页面：汇报那一步用整段话渲染 Markdown：超过 120 字的汇报里表格和链接不被从中间截断", () => {
+	const summary = `${"先说结论，这段话有意写得很长。".repeat(8)}\n\n| 指标 | NVDA |\n|--|--|\n| 跌幅 | 4.2% |\n\n来源 [路透](https://reuters.com/markets/nvda)`;
+	const [step] = watched([tool("report", { status: "progress", summary })]);
+	assert.equal(step.markdown, true);
+	const blocks = page.parseMarkdown(step.detail);
+	assert.deepEqual(blocks.map((b) => b.kind), ["p", "table", "p"]);
+	assert.deepEqual(blocks[2], { kind: "p", spans: [{ text: "来源 " }, { text: "路透" }, { text: "（https://reuters.com/markets/nvda）" }] });
+});
+
 test("页面：工具结果并进最近一个同名的待完成步骤，出错的标成 error；思考步骤里不出现 thinking", () => {
 	const steps = watched([
 		{ role: "assistant", content: [{ type: "thinking", thinking: "内心独白" }, { type: "text", text: "我先打开网页" }, { type: "toolCall", name: "web_get", arguments: { url: "https://a.example" } }] },

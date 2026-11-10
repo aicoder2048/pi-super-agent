@@ -117,6 +117,7 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 				const reported = page.locator("#steps .step", { hasText: "汇报进度" }).locator(".step-detail");
 				assert.equal(await reported.locator("strong").textContent(), "个股领跌");
 				assert.equal(await reported.textContent(), REPORT);
+				assert.deepEqual(await reported.evaluate((n) => [getComputedStyle(n).maxHeight, getComputedStyle(n).overflowY]), ["240px", "auto"], "长汇报按高度收住，在框里滚动");
 			});
 			await step("展开一步派活：成员职称、任务、状态、用量和回复；回复按安全的 Markdown 显示，里面的标签只是文字", async (page) => {
 				const market = page.locator("#steps .step", { hasText: "行情分析师 · 完成" });

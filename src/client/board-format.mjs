@@ -133,7 +133,8 @@ const TOOL_STEP = {
 	bg_start: (a) => ({ title: "启动后台命令", detail: clip(firstLine(a.command), 60) }),
 	bg_status: () => ({ title: "查看后台命令", detail: "" }),
 	bg_stop: () => ({ title: "停止后台命令", detail: "" }),
-	report: (a) => ({ title: reportTitle(a), detail: clip(a.question || a.summary, 120) }),
+	// Shown as Markdown, so the page limits it by height: cutting the text would cut a table or a link in half.
+	report: (a) => ({ title: reportTitle(a), detail: typeof a.question === "string" && a.question ? a.question : typeof a.summary === "string" ? a.summary : "" }),
 	dispatch_agent: () => ({ title: "派活", detail: "" }),
 };
 
