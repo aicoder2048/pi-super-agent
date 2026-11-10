@@ -1391,6 +1391,50 @@ test("页面：Markdown 只认安全的子集，解析成段落、标题和列�
 	]);
 });
 
+test("页面：Markdown 表格解析成表头和行，单元格里照样认粗体和代码；没有分隔行的竖线只是文字", () => {
+	const blocks = page.parseMarkdown("对比如下：\n| 指标 | NVDA | SPY |\n|:--|--:|:-:|\n| 跌幅 | **4.2%** | 0.8% |\n| 量能 | `1.8x` |\n\n之后的话");
+	assert.deepEqual(blocks, [
+		{ kind: "p", spans: [{ text: "对比如下：" }] },
+		{ kind: "table", head: [[{ text: "指标" }], [{ text: "NVDA" }], [{ text: "SPY" }]], rows: [
+			[[{ text: "跌幅" }], [{ text: "4.2%", bold: true }], [{ text: "0.8%" }]],
+			[[{ text: "量能" }], [{ text: "1.8x", code: true }], []],
+		] },
+		{ kind: "p", spans: [{ text: "之后的话" }] },
+	]);
+	assert.deepEqual(page.parseMarkdown("| 只是 | 一行 |\n下一行"), [{ kind: "p", spans: [{ text: "| 只是 | 一行 |\n下一行" }] }]);
+	const started = performance.now();
+	page.parseMarkdown("| a | b |\n|--|--|\n" + "| x | y |\n".repeat(20_000) + "|".repeat(100_000));
+	assert.ok(performance.now() - started < 300, "大表格和成串的竖线也是线性时间");
+});
+
+test("页面：Markdown 的粗体、斜体、代码、链接和表格里夹着像 HTML 的内容时，原样留在文字里，解析结果里没有任何标签结构", () => {
+	const payload = '<img src=x onerror="alert(1)">';
+	const blocks = page.parseMarkdown(`**${payload}** 和 *<i>斜</i>* 和 \`${payload}\` 和 [<u>链</u>](https://e.com/<x>)\n\n| <b>头</b> |\n|--|\n| ${payload} |`);
+	assert.deepEqual(blocks, [
+		{ kind: "p", spans: [{ text: payload, bold: true }, { text: " 和 " }, { text: "<i>斜</i>", italic: true }, { text: " 和 " }, { text: payload, code: true }, { text: " 和 " }, { text: "<u>链</u>" }, { text: "（https://e.com/<x>）" }] },
+		{ kind: "table", head: [[{ text: "<b>头</b>" }]], rows: [[[{ text: payload }]]] },
+	]);
+	const kinds = new Set<string>();
+	const walk = (value: unknown): void => {
+		if (Array.isArray(value)) return value.forEach(walk);
+		if (value && typeof value === "object") for (const [key, v] of Object.entries(value)) (kinds.add(key), walk(v));
+	};
+	walk(blocks);
+	assert.deepEqual([...kinds].sort(), ["bold", "code", "head", "italic", "kind", "rows", "spans", "text"], "解析结果只有这几种字段，页面只会把 text 放进文本节点");
+});
+
+test("页面的脚本从不把字符串当 HTML 写进文档：成员回复、幕僚长的话和汇报都只经文本节点显示", () => {
+	for (const file of ["app.mjs", "view.mjs"]) {
+		const source = readFileSync(new URL(`../src/web/${file}`, import.meta.url), "utf8");
+		assert.doesNotMatch(source, /innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|DOMParser|\.srcdoc/, file);
+	}
+});
+
+test("页面：助手的汇报这一步按 Markdown 显示，别的步骤不是", () => {
+	const steps = watched([tool("report", { status: "ready", summary: "**结论**：个股领跌" }), tool("bash", { command: "echo **不是 Markdown**" })]);
+	assert.deepEqual(steps.map((s) => [s.title, s.detail, s.markdown ?? false]), [["提交结果", "**结论**：个股领跌", true], ["执行命令", "echo **不是 Markdown**", false]]);
+});
+
 test("页面：Markdown 里的多行段落保留换行，没有 Markdown 记号的文字原样是一段", () => {
 	assert.deepEqual(page.parseMarkdown("第一行\n第二行"), [{ kind: "p", spans: [{ text: "第一行\n第二行" }] }]);
 	assert.deepEqual(page.parseMarkdown("a*b 和 snake_case_name"), [{ kind: "p", spans: [{ text: "a*b 和 snake_case_name" }] }]);

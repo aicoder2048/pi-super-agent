@@ -295,6 +295,7 @@ export const stopSentence = (title) => `停止任务「${title}」`;
  * @property {string} [tool]
  * @property {string} [callId]
  * @property {number} [at] when the helper issued it
+ * @property {true} [markdown] the detail is the helper's own prose, shown as Markdown
  * @property {DispatchEntry} [dispatch]
  */
 
@@ -375,7 +376,7 @@ function stepsFrom(message, titles) {
 		const args = typeof c.arguments === "object" && c.arguments !== null ? /** @type {Record<string, unknown>} */ (c.arguments) : {};
 		const dispatch = c.name === "dispatch_agent" ? pendingDispatch(args, titles) : undefined;
 		const known = dispatch ? { title: toolStep(c.name, args).title, detail: dispatchDetail(dispatch), dispatch } : toolStep(c.name, args);
-		return [{ ...known, state: /** @type {const} */ ("pending"), raw: clip(`${c.name} ${JSON.stringify(c.arguments ?? {}, null, 2)}`, RAW_LIMIT), tool: c.name, ...(c.id ? { callId: c.id } : {}), ...(message.timestamp !== undefined ? { at: message.timestamp } : {}) }];
+		return [{ ...known, state: /** @type {const} */ ("pending"), raw: clip(`${c.name} ${JSON.stringify(c.arguments ?? {}, null, 2)}`, RAW_LIMIT), tool: c.name, ...(c.id ? { callId: c.id } : {}), ...(message.timestamp !== undefined ? { at: message.timestamp } : {}), ...(c.name === "report" ? { markdown: /** @type {const} */ (true) } : {}) }];
 	});
 }
 
@@ -634,7 +635,7 @@ export function isStale(lastFrameAt, now) {
 /**
  * The safe Markdown subset the page renders, as data the page turns into DOM nodes (never HTML).
  * @typedef {{ text: string, bold?: true, italic?: true, code?: true }} Span
- * @typedef {{ kind: "p", spans: Span[] } | { kind: "h", level: number, spans: Span[] } | { kind: "ul" | "ol", items: Span[][] }} MdBlock
+ * @typedef {{ kind: "p", spans: Span[] } | { kind: "h", level: number, spans: Span[] } | { kind: "ul" | "ol", items: Span[][] } | { kind: "table", head: Span[][], rows: Span[][][] }} MdBlock
  */
 
 // Each alternative excludes its own delimiters from its body, so no input makes the match backtrack.
@@ -663,6 +664,15 @@ function inlineSpans(text) {
 	return spans;
 }
 
+/** @param {string} line the raw cells of a table row, or null when the line is not one */
+function tableCells(line) {
+	const row = line.trim();
+	return row.length > 1 && row.startsWith("|") && row.endsWith("|") ? row.slice(1, -1).split("|").map((cell) => cell.trim()) : null;
+}
+
+/** @param {string | undefined} line */
+const isTableRule = (line) => tableCells(line ?? "")?.every((cell) => /^:?-+:?$/.test(cell)) ?? false;
+
 /** @param {string} text @returns {MdBlock[]} */
 export function parseMarkdown(text) {
 	/** @type {MdBlock[]} */
@@ -673,7 +683,19 @@ export function parseMarkdown(text) {
 		if (para.length) out.push({ kind: "p", spans: inlineSpans(para.join("\n")) });
 		para = [];
 	};
-	for (const line of text.split("\n")) {
+	const lines = text.split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		const head = tableCells(line);
+		if (head && isTableRule(lines[i + 1])) {
+			flush();
+			/** @type {Span[][][]} */
+			const rows = [];
+			for (let cells = tableCells(lines[i + 2] ?? ""); cells; cells = tableCells(lines[++i + 2] ?? "")) rows.push(head.map((_, k) => inlineSpans(cells[k] ?? "")));
+			i++;
+			out.push({ kind: "table", head: head.map(inlineSpans), rows });
+			continue;
+		}
 		const heading = line.match(/^(#{1,6})\s+(.*)$/);
 		const item = line.match(/^\s*(?:([-*+])|\d+[.)])\s+(.*)$/);
 		if (!line.trim() || /^\s*(-{3,}|\*{3,})\s*$/.test(line)) flush();

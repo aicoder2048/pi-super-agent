@@ -57,7 +57,26 @@ function mount(doc) {
 		const inline = (/** @type {HTMLElement} */ box, /** @type {import("./view.mjs").Span[]} */ spans) =>
 			box.append(...spans.map((s) => (s.code ? el("code", "", s.text) : s.bold ? el("strong", "", s.text) : s.italic ? el("em", "", s.text) : doc.createTextNode(s.text))));
 		for (const block of parseMarkdown(text)) {
-			if (block.kind === "ul" || block.kind === "ol") {
+			if (block.kind === "table") {
+				const table = el("table", "");
+				const row = (/** @type {string} */ tag, /** @type {import("./view.mjs").Span[][]} */ cells) => {
+					const tr = el("tr", "");
+					for (const cell of cells) {
+						const box = el(tag, "");
+						inline(box, cell);
+						tr.append(box);
+					}
+					return tr;
+				};
+				const head = el("thead", "");
+				head.append(row("th", block.head));
+				const body = el("tbody", "");
+				body.append(...block.rows.map((cells) => row("td", cells)));
+				table.append(head, body);
+				const scroll = el("div", "md-table");
+				scroll.append(table);
+				node.append(scroll);
+			} else if (block.kind === "ul" || block.kind === "ol") {
 				const list = el(block.kind, "");
 				for (const item of block.items) {
 					const li = el("li", "");
@@ -177,7 +196,7 @@ function mount(doc) {
 		node.setAttribute("aria-current", String(watching?.watch.ticketId === card.id));
 		const head = el("div", "head");
 		head.append(helperBadge(card.id), el("div", "title", card.title));
-		node.append(head, el("div", "by", card.helper), el("div", "why", `${card.why} · ${card.stage}`), el("div", "latest", card.latest));
+		node.append(head, el("div", "by", card.helper), el("div", "why", `${card.why} · ${card.stage}`), md("latest", card.latest));
 		if (card.choice) {
 			const box = el("div", "choices");
 			fillChoices(box, card.choice);
@@ -282,7 +301,7 @@ function mount(doc) {
 		const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
 		for (const line of [...view.lines.values()].slice(rendered)) {
 			const item = el("div", `line ${line.who}`);
-			const bubble = el("div", "bubble", line.text);
+			const bubble = line.who === "router" ? md("bubble", line.text) : el("div", "bubble", line.text);
 			if (line.who === "router") {
 				const avatar = avatarMark.cloneNode(true);
 				const said = el("div", "said");
@@ -349,7 +368,7 @@ function mount(doc) {
 			raw.setAttribute("data-i", String(i));
 			raw.open = open.has(String(i));
 			raw.append(el("summary", "", "原始记录"), el("pre", "", step.raw));
-			body.append(el("div", "step-title", step.title), el("div", "step-detail", step.detail));
+			body.append(el("div", "step-title", step.title), step.markdown ? md("step-detail", step.detail) : el("div", "step-detail", step.detail));
 			if (step.dispatch) {
 				const d = step.dispatch;
 				const box = el("details", "dispatch");

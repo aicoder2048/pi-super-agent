@@ -14,10 +14,12 @@ const FOLLOW_UP = "追问一句：支撑位在哪";
 const MARKET_TASK = "看 NVDA 今天的盘面：跌幅、量能、大盘对比";
 const NEWS_TASK = "查 NVDA 今天有没有重大新闻";
 const SUPPORT_TASK = "追问：按你刚才看的盘面，支撑位在哪";
-const MARKET_REPLY = "## 结论\n**个股领跌**：NVDA 跌 4.2%，SPY 只跌 0.8%。\n- 量能是 20 日均量的 1.8 倍\n<script>document.title = '被注入'</script>";
+const IMG = `<img src=x onerror="document.title='被注入'">`;
+const MARKET_REPLY = `## 结论\n**个股领跌**：NVDA 跌 4.2%，SPY 只跌 0.8%。\n- 量能是 20 日均量的 1.8 倍\n\n| 指标 | 数值 |\n|--|--|\n| 跌幅 | **<b>4.2%</b>** |\n\n*<i>偏空</i>*，见 \`${IMG}\` 和 [<u>来源</u>](https://example.com/a)\n<script>document.title = '被注入'</script>`;
 const NEWS_REPLY = "没有重大新闻，只有一条听证会的旧闻。";
 const SUPPORT_REPLY = "接着上次的盘面：支撑位在 172 附近。";
 const REPORT = "个股领跌，没有新的利空消息。";
+const REPORT_MD = "**个股领跌**，没有新的利空消息。";
 const WORKING_MS = 2500;
 const NEWS_COMMAND_S = 9;
 
@@ -42,7 +44,7 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 		t,
 		{
 			router: [
-				on("Router 把问题交给看盘队", /^\[对话\][\s\S]*为什么跌/, (c) => [openOnTeam(c, "看盘队"), reply(c, "已交给看盘队")]),
+				on("Router 把问题交给看盘队", /^\[对话\][\s\S]*为什么跌/, (c) => [openOnTeam(c, "看盘队"), reply(c, "已交给**看盘队**，稍等。")]),
 				on("Router 把追问交给同一个任务", /^\[对话\][\s\S]*追问/, handOverTo(TASK.title)),
 				on("Router 开天气任务", /^\[对话\][\s\S]*天气/, (c) => [openTicket(c, WEATHER.title, WEATHER.brief), reply(c, "已安排")]),
 			],
@@ -51,7 +53,7 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 					TASK.brief,
 					on("助手同时派给两位成员", /^\[任务说明\]/, () => [dispatch("market-analyst", MARKET_TASK), dispatch("news-researcher", NEWS_TASK)]),
 					on("助手收到行情分析师的回复", /^\[成员回复\] 成员回复 · 行情分析师（market-analyst） · 完成[\s\S]*个股领跌/, () => []),
-					on("助手收到新闻研究员的回复后合成", /^\[成员回复\] 成员回复 · 新闻研究员（news-researcher） · 完成[\s\S]*没有重大新闻/, () => [report("progress", REPORT)]),
+					on("助手收到新闻研究员的回复后合成", /^\[成员回复\] 成员回复 · 新闻研究员（news-researcher） · 完成[\s\S]*没有重大新闻/, () => [report("progress", REPORT_MD)]),
 					on("助手把追问派给行情分析师", /^\[使用者的话/, () => [dispatch("market-analyst", SUPPORT_TASK)]),
 					on("助手转述追问的回复", /^\[成员回复\][\s\S]*接着上次的盘面/, () => [report("progress", "支撑位在 172 附近。")]),
 				),
@@ -106,16 +108,31 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 				assert.equal(await page.locator("#helpers .helper-chip", { hasText: "看盘队 #1" }).locator(".name").textContent(), helperName);
 				assert.equal(await page.locator("#how-helper").textContent(), `${helperName} · 看盘队 #1`);
 			});
+			await step("幕僚长的话、任务卡上的结论和汇报那一步都按 Markdown 显示，不露出星号", async (page) => {
+				const bubble = page.locator("#conversation .line.router .bubble", { hasText: "已交给" });
+				assert.equal(await bubble.locator("strong").textContent(), "看盘队");
+				assert.equal(await bubble.textContent(), "已交给看盘队，稍等。");
+				const latest = page.locator("#left .card .latest", { hasText: REPORT });
+				assert.equal(await latest.locator("strong").textContent(), "个股领跌");
+				const reported = page.locator("#steps .step", { hasText: "汇报进度" }).locator(".step-detail");
+				assert.equal(await reported.locator("strong").textContent(), "个股领跌");
+				assert.equal(await reported.textContent(), REPORT);
+			});
 			await step("展开一步派活：成员职称、任务、状态、用量和回复；回复按安全的 Markdown 显示，里面的标签只是文字", async (page) => {
 				const market = page.locator("#steps .step", { hasText: "行情分析师 · 完成" });
 				await market.locator("summary", { hasText: "派活明细" }).click();
 				assert.match(await market.locator(".dispatch-head").textContent() ?? "", /^行情分析师 · 完成 · \d+ tokens$/);
 				assert.equal(await market.locator(".dispatch-task").textContent(), `任务：${MARKET_TASK}`);
 				const answer = market.locator(".dispatch-reply");
-				assert.equal(await answer.locator("strong").textContent(), "个股领跌");
+				assert.deepEqual(await answer.locator("strong").allTextContents(), ["个股领跌", "<b>4.2%</b>"]);
 				assert.equal(await answer.locator(".md-h").textContent(), "结论");
 				assert.equal(await answer.locator("li").count(), 1);
-				assert.equal(await answer.locator("script").count(), 0, "成员回复里的标签不变成元素");
+				assert.deepEqual(await answer.locator("table th").allTextContents(), ["指标", "数值"]);
+				assert.deepEqual(await answer.locator("table td").allTextContents(), ["跌幅", "<b>4.2%</b>"]);
+				assert.equal(await answer.locator("em").textContent(), "<i>偏空</i>");
+				assert.equal(await answer.locator("code").textContent(), IMG);
+				assert.equal(await answer.locator("script, img, b, i, u, a").count(), 0, "成员回复里的标签不变成元素，粗体、斜体、代码、链接和表格里的也一样");
+				assert.match(await answer.textContent() ?? "", /<u>来源<\/u>（https:\/\/example\.com\/a）/);
 				assert.match(await answer.textContent() ?? "", /<script>document\.title = '被注入'<\/script>/);
 				assert.doesNotMatch(await answer.textContent() ?? "", /\*\*/);
 				assert.notEqual(await page.title(), "被注入");
