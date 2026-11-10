@@ -21,6 +21,8 @@ Paused on 2026-11-09 at about 16:55 because the user took the machine home. Resu
 
 **State.** T1 is PR #35 (`psa/teams`), reviewed and approved by the user in chat ("通过"), not merged; the user merges. T2 is on `psa/dispatch` (worktree `.claude/worktrees/dispatch`, cut from `psa/teams`, not pushed, no PR). Its first build passed two audits and ten live lanes at `eac2f5e`; a fix round was in progress when the pause came. Read the last `t2-fix` rows of `docs/web-client/decisions.tsv` on that branch and `git log eac2f5e..HEAD` there to see how far it got. If the head commit is `wip:`, its body says what is unfinished.
 
+**Status at 18:35 on 2026-11-09 (newest first; the paragraphs below are older).** Work resumed under the user's standing grant. T2 is PR #37 (`psa/dispatch` on `psa/teams`), head `f01985c`, `just test` 630/630 and `just e2e` 90/90, merge-ready, not merged. The socket fix was PR #36 and the user merged it (`main` is `1248e55`); the feature stack predates it and will conflict on the renamed token functions and the extra `listen` argument when it is restacked onto `main`. Domain unification is being built on `psa/domains` (worktree `.claude/worktrees/domains`, ADR-0009 at `55463bd`), cut from `psa/dispatch` at `1e1b36c`; it must be rebased onto `f01985c` before its PR. Then T2b, T3, restack #33, close #30 to #32. Follow-ups left out of T2 on purpose: the helper strip scrolls sideways at 390 px, a helper's own tool steps in the same batch as dispatches stay pending until the batch returns, no token budget per dispatch, `recordMember` records nothing when `ps` gives no start time.
+
 **Second pause, 2026-11-09 about 17:25.** The user paused this session to run Claude from another app (Orca). Before that they said, through `/loop`: go to dinner for an hour, finish steps 1 to 5 without stopping for per-step approval, and fix the socket problem on a separate branch. Treat that as the standing grant when work resumes: build, verify, open each PR and continue to the next step; never merge; closing #30 to #32 at the end is part of the approved order.
 
 What was in flight when the pause came (each owner was told to commit and stop; check `git log` and `git status` in each worktree, a `wip:` head says what is unfinished):
@@ -65,6 +67,7 @@ What was in flight when the pause came (each owner was told to commit and stop; 
 | #28 | psa/e2e | W4 e2e + demos. Ready |
 | #34 | psa/flaky-spoke | flaky 409 test. Ready |
 | #29 | psa/helpers | W5 helper strip, names, route lines. Stays. Needs the user's screenshot review |
+| #37 | psa/dispatch | T2: dispatch_agent, time limits, progress. Merge-ready |
 | #35 | psa/teams | T1: teams on tickets, four-character team names. Merge-ready, needs the user's screenshot review |
 | #30, #31, #32 | psa/roles, psa/consult, psa/market-experts | 副幕僚长 design. To be replaced |
 | #33 | psa/brand | 白宫 name, W1 logo, U2 user avatar. Stays; restack later |
