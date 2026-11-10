@@ -13,6 +13,7 @@ import {
 	DEFAULT_CONFIG,
 	RETRY_BACKOFF_MS,
 	SYSTEM_PROBLEM_STREAK,
+	ruleNamespace,
 } from "./types.ts";
 import type {
 	Action,
@@ -124,8 +125,7 @@ export function nextStallAt(rows: DashboardRow[], stuckMs: number): number | nul
 const SOLO_HELPER_ROWS = "helper_role IS NOT NULL";
 const TEAM_HELPER_ROWS = "helper_name IS NOT NULL AND helper_role IS NULL";
 
-/** Stands where the team name goes on a team ticket opened before tickets recorded a domain. */
-const FORMER_TEAM_LABEL = "团队";
+const TEAM_LABEL_BEFORE_DOMAINS = "团队";
 
 const storedRole = (helper: Helper) => ("role" in helper ? helper.role : null);
 
@@ -669,7 +669,7 @@ export class Kernel {
 		if (r.helper_name === null) return null;
 		const identity = { name: r.helper_name, seq: r.helper_seq };
 		if (r.helper_role !== null) return { ...identity, role: r.helper_role };
-		return { ...identity, team: this.#domains.get(r.domain) ?? r.domain ?? FORMER_TEAM_LABEL };
+		return { ...identity, team: this.#domains.get(r.domain) ?? r.domain ?? TEAM_LABEL_BEFORE_DOMAINS };
 	}
 
 	#stall(t: Ticket, now: number): Stall | null {
@@ -973,9 +973,8 @@ export class Kernel {
 		return { ok: true, ticketId };
 	}
 
-	/** A rule id is `<namespace>/<rule>`; a module's rules carry its name as the namespace, the user's own rules carry `user`. */
 	#domainOfRule(ruleId: string): string | null {
-		const namespace = ruleId.split("/")[0];
+		const namespace = ruleNamespace(ruleId);
 		return this.#domains.has(namespace) ? namespace : null;
 	}
 

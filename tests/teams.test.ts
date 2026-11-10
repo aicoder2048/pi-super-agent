@@ -114,7 +114,6 @@ function writeFiles(dir: string, files: Record<string, string>): string {
 	}
 	return dir;
 }
-/** A modules root holding one module per key; each module's files are given by path inside it, module.json as an object. */
 function modulesRoot(modules: Record<string, { manifest?: object } & Record<string, string | object | undefined>>): string {
 	const root = mkdtempSync(join(tmpdir(), "psa-mods-"));
 	for (const [name, { manifest, ...files }] of Object.entries(modules)) {

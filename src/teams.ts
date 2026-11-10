@@ -110,14 +110,13 @@ function loadMembers(agentsDir: string, allowedProviders: readonly string[]): Me
 	return members;
 }
 
-/** `team` is the raw value of module.json's `team`; it must be written exactly when `<moduleDir>/agents/` holds a member. */
-export function loadTeam(moduleDir: string, manifestPath: string, team: unknown, allowedProviders: readonly string[]): Team | undefined {
+export function loadTeam(moduleDir: string, manifestPath: string, manifestTeam: unknown, allowedProviders: readonly string[]): Team | undefined {
 	const [first, ...rest] = loadMembers(join(moduleDir, "agents"), allowedProviders);
 	if (!first) {
-		if (team !== undefined) throw new ConfigError(`${manifestPath}：写了 team「${String(team)}」，但 agents/ 里没有成员；加上成员，或去掉 team`);
+		if (manifestTeam !== undefined) throw new ConfigError(`${manifestPath}：写了 team「${String(manifestTeam)}」，但 agents/ 里没有成员；加上成员，或去掉 team`);
 		return undefined;
 	}
-	if (team === undefined) throw new ConfigError(`${manifestPath}：agents/ 里有成员，要写 team（队名，例如「看盘队」）`);
-	if (typeof team !== "string" || !team || /\s|\p{Cc}/u.test(team)) throw new ConfigError(`${manifestPath}：team（${JSON.stringify(team)}）要写成一个队名，不能为空，中间不能有空白或控制字符`);
-	return { name: team, members: [first, ...rest] };
+	if (manifestTeam === undefined) throw new ConfigError(`${manifestPath}：agents/ 里有成员，要写 team（队名，例如「看盘队」）`);
+	if (typeof manifestTeam !== "string" || !manifestTeam || /\s|\p{Cc}/u.test(manifestTeam)) throw new ConfigError(`${manifestPath}：team（${JSON.stringify(manifestTeam)}）要写成一个队名，不能为空，中间不能有空白或控制字符`);
+	return { name: manifestTeam, members: [first, ...rest] };
 }

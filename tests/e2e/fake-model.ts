@@ -114,7 +114,6 @@ export class FakeModel {
 		};
 	}
 
-	/** The system prompt of the latest request in a conversation: "router", a helper's brief, or a member's task. */
 	systemPromptOf(conversation: string): string {
 		const prompt = this.#systemPrompts.get(conversation);
 		if (prompt === undefined) throw new Error(`假模型没有收到过「${conversation}」的请求`);

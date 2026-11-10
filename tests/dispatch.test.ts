@@ -134,10 +134,9 @@ const CREW = [member("market-analyst", "行情分析师", { model: MARKET_MODEL 
 const READER = member("reader", "资料员", { tools: ["read", "web_get", "lookup"] });
 const CODER = member("coder", "程序员", { tools: ["read", "bash", "edit"] });
 const LOADED = domainsOf({ watch: { team: "看盘队", crew: CREW }, dev: { team: "开发队", crew: [READER, CODER] } });
-/** `old` is a module the kernel still knows by name but whose folder is gone. */
-const DOMAINS = { book: new Map([...LOADED.book, ["old", "旧队"]]), kitFor: LOADED.kitFor };
+const REMOVED_MODULE = "old";
+const DOMAINS = { book: new Map([...LOADED.book, [REMOVED_MODULE, "旧队"]]), kitFor: LOADED.kitFor };
 
-/** Opens a ticket in `domain` (none when undefined) for the first thing the user says and hands everything after it to that ticket. */
 function openOn(domain: string | undefined): Brain {
 	let opened = false;
 	let ticket = "";
@@ -866,7 +865,7 @@ test("没有领域的助手没有成员可派：进程拿到的本队名单是�
 });
 
 test("任务的领域的模块后来拿掉了：助手照常启动，按没有领域的单个助手运行，不能派活，日志只记一行", async (t) => {
-	const { host, result, helper, logs, ticketId, spawner } = await dispatching(t, async () => "答", [two[0]], { domain: "old" });
+	const { host, result, helper, logs, ticketId, spawner } = await dispatching(t, async () => "答", [two[0]], { domain: REMOVED_MODULE });
 	assert.deepEqual(helper().spec.crew, []);
 	await assert.rejects(result(0), /没有可派的成员/);
 	helper().report({ status: "progress", summary: "自己做" });

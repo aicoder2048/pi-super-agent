@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { ConfigError, readJsonFile } from "./config-error.ts";
-import { CONVERSATION_SOURCE, type DomainBook, type SourcePolicy } from "./kernel/types.ts";
+import { CONVERSATION_SOURCE, ruleId, type DomainBook, type SourcePolicy } from "./kernel/types.ts";
 import type { TimerEntry } from "./sources/timer.ts";
 import { loadTeam, type Member, type Team } from "./teams.ts";
 
@@ -42,7 +42,6 @@ export interface LoadedModule {
 
 /** What a helper is handed from its ticket's domain, however the ticket was opened. */
 export interface DomainKit {
-	/** The module's `skills/`. */
 	skillsDir: string | undefined;
 	/** Runs once in the ticket's workdir before the helper first starts. */
 	prepare: string | undefined;
@@ -68,7 +67,6 @@ export interface ModulesLoadOptions {
 }
 
 const DESCRIPTION_MAX_CHARS = 60;
-/** The namespace of the rules in the state dir's rules.md. No module may take it, or the user's rules would land in that module's domain. */
 const USER_NAMESPACE = "user";
 
 export interface Rule {
@@ -91,7 +89,7 @@ export function parseRules(file: string, namespace: string, markdown: string): R
 		const heading = line.match(RULE_HEADING);
 		const sources = line.trim().match(RULE_SOURCES);
 		const rule = rules.at(-1);
-		if (heading) rules.push({ id: `${namespace}/${heading[1]}`, text: "" });
+		if (heading) rules.push({ id: ruleId(namespace, heading[1]), text: "" });
 		else if (!rule) continue;
 		else if (sources) rule.sources = sources[1].split(/[,，\s]+/).filter(Boolean);
 		else if (RULE_TEAM.test(line.trim())) {
@@ -188,7 +186,6 @@ export class Modules implements Domains {
 		return this.allRules().map((r) => `### ${r.id}\n${r.text}`).join("\n\n");
 	}
 
-	/** One line per module the 幕僚长 may choose as a domain: the ones with a description. Never a member. */
 	rosterPrompt(): string {
 		return this.modules.filter((m) => m.manifest.description).map((m) => `- ${m.name}（${m.manifest.title}）：${m.manifest.description}`).join("\n");
 	}

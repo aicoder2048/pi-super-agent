@@ -22,6 +22,10 @@ export type Helper = { name: string; seq: number } & ({ role: HelperRole } | { t
  */
 export type DomainBook = ReadonlyMap<string, string | null>;
 
+/** A rule's id is its namespace and its heading: a module's name for the module's rules, `user` for the user's own. */
+export const ruleId = (namespace: string, heading: string) => `${namespace}/${heading}`;
+export const ruleNamespace = (id: string) => id.split("/")[0];
+
 export interface HelpersToday {
 	count: number;
 	tokens: number;

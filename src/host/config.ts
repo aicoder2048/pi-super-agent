@@ -35,7 +35,6 @@ const DISPATCH_TIMEOUT_MIN = 1;
 const DISPATCH_TIMEOUT_MAX = 3600;
 const DISPATCH_STALL_MIN = 30;
 
-/** The providers a member's `model` may use: the ones the user already runs the router or the worker on. */
 export function memberProviders(config: Pick<HostConfig, "models">): string[] {
 	return [...new Set([config.models.router.provider, config.models.worker.provider])];
 }
