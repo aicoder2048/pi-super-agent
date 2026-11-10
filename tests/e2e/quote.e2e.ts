@@ -242,3 +242,61 @@ test("引用：幕僚长这一轮的模型请求里有引用那一行，标明�
 			});
 		},
 	));
+
+test("引用：幕僚长那句话的「引用」在气泡右下角，不压住下面的选项按钮；我那句话的「引用」位置不变", (t) =>
+	story(
+		t,
+		{
+			router: [
+				on("Router 开任务查天气", /^\[对话\][\s\S]*查天气/, (c) => [openTicket(c, "查天气", "查天气任务"), reply(c, "好的，去查了。")]),
+				on("Router 把助手的问题转给使用者", /^\[Worker 提问\][\s\S]*查哪个城市/, (c) => [reply(c, "查哪个城市？")]),
+			],
+			workers: [
+				worker(
+					"查天气任务",
+					on("助手问城市", /^\[任务说明\]/, () => [{ name: "report", args: { status: "blocked", summary: "要你定", question: "查哪个城市？", options: ["北京市朝阳区望京街道", "上海市浦东新区陆家嘴", "广州市天河区珠江新城"] } }]),
+				),
+			],
+		},
+		async ({ step }) => {
+			const edges = (line: ReturnType<Page["locator"]>) =>
+				line.evaluate((l) => {
+					const box = (n: Element | null) => n!.getBoundingClientRect();
+					const b = box(l.querySelector(".quote-btn"));
+					return {
+						button: { left: b.left, right: b.right, top: b.top, bottom: b.bottom },
+						bubble: box(l.querySelector(".bubble")),
+						said: box(l.querySelector(".said")),
+						choices: [...l.querySelectorAll(".choices button")].map((c) => box(c)),
+					};
+				});
+			const hit = (a: DOMRect | { left: number; right: number; top: number; bottom: number }, c: DOMRect) => a.left < c.right && c.left < a.right && a.top < c.bottom && c.top < a.bottom;
+			await step("说「查天气」，幕僚长回答，又把助手的问题带着选项转过来", async (page) => {
+				await sayInPage(page, "查天气");
+				await page.locator(".thread > .line.router", { hasText: "查哪个城市？" }).locator(".choices button").first().waitFor();
+			});
+			await step("悬停没有选项的那句：「引用」的右边和气泡右边对齐，在气泡下面", async (page) => {
+				const line = page.locator(".thread > .line.router", { hasText: "好的，去查了。" });
+				await line.locator(".bubble").hover();
+				const e = await edges(line);
+				assert.ok(Math.abs(e.button.right - e.bubble.right) <= 1, `「引用」右边 ${e.button.right}，气泡右边 ${e.bubble.right}`);
+				assert.ok(e.button.top >= e.bubble.bottom - 0.5, `「引用」顶 ${e.button.top}，气泡底 ${e.bubble.bottom}`);
+			});
+			await step("悬停带选项的那句：「引用」和气泡右边对齐，在气泡下面，不压住任何选项按钮", async (page) => {
+				const line = page.locator(".thread > .line.router", { hasText: "查哪个城市？" });
+				await line.locator(".bubble").hover();
+				const e = await edges(line);
+				assert.ok(Math.abs(e.button.right - e.bubble.right) <= 1, `「引用」右边 ${e.button.right}，气泡右边 ${e.bubble.right}`);
+				assert.ok(e.button.top >= e.bubble.bottom - 0.5, `「引用」顶 ${e.button.top}，气泡底 ${e.bubble.bottom}`);
+				assert.ok(e.choices.length === 3);
+				for (const c of e.choices) assert.equal(hit(e.button, c), false, `「引用」${JSON.stringify(e.button)} 压住了选项 ${JSON.stringify(c)}`);
+			});
+			await step("悬停我说的「查天气」：「引用」仍在我这句的右下角", async (page) => {
+				const line = page.locator(".thread > .line.user", { hasText: "查天气" });
+				await line.locator(".bubble").hover();
+				const e = await edges(line);
+				assert.ok(Math.abs(e.button.right - e.said.right) <= 1, `「引用」右边 ${e.button.right}，我这句右边 ${e.said.right}`);
+				assert.ok(e.button.top >= e.said.bottom - 0.5, `「引用」顶 ${e.button.top}，我这句底 ${e.said.bottom}`);
+			});
+		},
+	));
