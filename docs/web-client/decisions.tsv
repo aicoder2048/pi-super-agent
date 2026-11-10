@@ -336,3 +336,5 @@ ts	phase	decision	why	evidence	result
 2026-11-10T10:26:53Z	implement	先红后绿：引用右边缘对齐气泡（改前差 100px）；子代理有选项时让引用占一行，截图看出气泡和选项之间多一条空行，我加断言（改前 26px）后改成放在选项下方靠右	隐藏时占位的空行看起来像排版松了；选项和气泡等宽，放在选项下方右边照样对齐	commits 23775ad + 后续; /Users/szou/.claude/jobs/66e5cbed/tmp/btn-choices.png	done
 2026-11-10T10:26:53Z	verify	just test 931/931；just e2e 192 个里 2 个失败是已知不稳定用例（模型 未启动），单独重跑 helpers 10/10	和已知问题输出一致	/Users/szou/.claude/jobs/66e5cbed/tmp/e2e-btn.log	PASS
 2026-11-10T10:26:53Z	review	跳过 how、architect、interrogate、simplify	只改一个按钮的位置，布局由使用者选定；diff 不加注释	git diff main --stat	skipped
+2026-11-10T10:30:54Z	implement	幕僚长那句的引用下移 4px、行高 16 改 14：先红（引用顶和气泡底差 0px），再改；不碰下一句的名字	使用者说文字太贴气泡底边	src/web/index.html .router .quote-btn; /Users/szou/.claude/jobs/66e5cbed/tmp/gap-plain.png	done
+2026-11-10T10:30:54Z	verify	just test 931/931；just e2e 192/192	改样式后全量确认	/Users/szou/.claude/jobs/66e5cbed/tmp/e2e-gap.log	PASS
