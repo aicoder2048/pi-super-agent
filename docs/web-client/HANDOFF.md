@@ -21,6 +21,8 @@ Paused on 2026-11-09 at about 16:55 because the user took the machine home. Resu
 
 **State.** T1 is PR #35 (`psa/teams`), reviewed and approved by the user in chat ("通过"), not merged; the user merges. T2 is on `psa/dispatch` (worktree `.claude/worktrees/dispatch`, cut from `psa/teams`, not pushed, no PR). Its first build passed two audits and ten live lanes at `eac2f5e`; a fix round was in progress when the pause came. Read the last `t2-fix` rows of `docs/web-client/decisions.tsv` on that branch and `git log eac2f5e..HEAD` there to see how far it got. If the head commit is `wip:`, its body says what is unfinished.
 
+**Update at the pause.** The fix round finished: `psa/dispatch` head `72632f7`, tree clean, owner reports `just test` 611/611 and `just e2e` 89/89 (the root has not re-run them or read this diff yet). All brief items are done. One open design point to raise with the user before the PR: the stall rule counts only process events, and the bash tool emits none while a command is silent, so a coding member running a quiet command longer than `dispatchStallSeconds` (180) is ended as 无进展; counting "a tool call is in flight" as activity would fix it and is not built. Owner's screenshots: `/tmp/t2fix/shot-*.png` (may be gone after a reboot).
+
 **First action on resume.** In `.claude/worktrees/dispatch`: run `just test` and `caffeinate -i just e2e`, compare the commits against the fix-round list below, hand whatever is left to a fresh `pstack:poteto-agent`, then re-run the live lanes the fix round touched (time limit, progress line, stop, restart mid-dispatch, a 390 px screenshot), read the diff, and open the T2 PR based on `psa/teams`.
 
 **T2 fix round scope** (the brief the owner had):
