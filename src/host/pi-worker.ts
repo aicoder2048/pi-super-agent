@@ -11,6 +11,7 @@ import type { Member } from "../teams.ts";
 import { onJsonLines } from "../jsonl.ts";
 import type { MemberRun } from "./dispatch.ts";
 import { formatModelRef } from "../models.ts";
+import { clearMember, recordMember } from "./member-ledger.ts";
 import { usageOf, WorkerEventTranslator } from "./worker-events.ts";
 import type { WorkerEvents, WorkerHandle, WorkerSpawner, WorkerSpec } from "./workers.ts";
 
@@ -201,6 +202,7 @@ function runMemberProcess(args: string[], env: Record<string, string>, run: Memb
 	return new Promise((resolve, reject) => {
 		if (run.signal.aborted) return reject(run.signal.reason);
 		const child = spawn(process.execPath, args, { cwd: run.workdir, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+		if (child.pid) recordMember(run.sessionDir, child.pid);
 		const signalGroup = (signal: NodeJS.Signals) => {
 			try {
 				process.kill(-child.pid!, signal);
@@ -236,6 +238,7 @@ function runMemberProcess(args: string[], env: Record<string, string>, run: Memb
 			signalGroup("SIGKILL");
 		});
 		child.once("close", (code) => {
+			clearMember(run.sessionDir);
 			run.signal.removeEventListener("abort", abort);
 			if (run.signal.aborted) reject(run.signal.reason);
 			else if (failure) reject(new Error(failure));

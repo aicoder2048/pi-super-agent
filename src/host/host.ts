@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { writeHeartbeat } from "../heartbeat.ts";
 import { relocateState } from "./relocate.ts";
+import { endLeftoverMembers } from "./member-ledger.ts";
 import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
 import { Kernel, nextStallAt } from "../kernel/kernel.ts";
@@ -182,6 +183,7 @@ export class Host {
 		try {
 			const clientToken = loadToken(options.stateDir, "client-token", host.#log);
 			const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath, rulesFor: options.rulesFor ?? (() => []) };
+			await endLeftoverMembers(options.stateDir, host.#log);
 			host.router = await options.createRouter(deps);
 			await host.server.listen(host.socketPath, clientToken);
 		} catch (error) {

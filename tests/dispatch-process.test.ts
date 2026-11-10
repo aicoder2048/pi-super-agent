@@ -177,3 +177,13 @@ test("成员进程退出后不再往它的进程组发信号", async (t) => {
 	kill.mock.restore();
 	assert.deepEqual(late.filter(([target]) => target === -pid), [], "进程组已经没了，那个 pid 可能已经是别的进程");
 });
+
+test("成员进程在跑时，它的会话目录里记着进程号；进程没了记录也清掉", async (t) => {
+	const { dir, run } = setup(t, { FAKE_PI_DELAY_MS: "400" });
+	const ledger = join(memberSessionDir(dir, "tkt_helper", "news-researcher"), "running.json");
+	const reply = run(NEWS, "l");
+	await until(() => existsSync(join(dir, "pid-l")) && readFileSync(join(dir, "pid-l"), "utf8").length > 0, "成员进程起来了", 10_000);
+	assert.deepEqual(JSON.parse(readFileSync(ledger, "utf8")), { pid: Number(readFileSync(join(dir, "pid-l"), "utf8")) });
+	await reply;
+	assert.equal(existsSync(ledger), false);
+});
