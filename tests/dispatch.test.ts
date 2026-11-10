@@ -135,7 +135,7 @@ const READER = member("reader", "资料员", { tools: ["read", "web_get", "looku
 const CODER = member("coder", "程序员", { tools: ["read", "bash", "edit"] });
 const LOADED = domainsOf({ watch: { team: "看盘队", crew: CREW }, dev: { team: "开发队", crew: [READER, CODER] } });
 const REMOVED_MODULE = "old";
-const DOMAINS = { book: new Map([...LOADED.book, [REMOVED_MODULE, "旧队"]]), kitFor: LOADED.kitFor };
+const DOMAINS = { book: new Map([...LOADED.book, [REMOVED_MODULE, { team: "旧队" }]]), kitFor: LOADED.kitFor };
 
 function openOn(domain: string | undefined): Brain {
 	let opened = false;

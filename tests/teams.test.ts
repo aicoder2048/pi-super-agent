@@ -232,7 +232,7 @@ test("module.json 的 title 和 description：description 最多 60 字，写了
 
 test("给内核的领域簿：每个模块一项，有成员的记队名，没有成员的记空", () => {
 	const root = modulesRoot({ watch: { manifest: { team: "看盘队" }, "agents/a.md": person("market-analyst", "行情分析师") }, mail: {} });
-	assert.deepEqual([...load(root).book], [["mail", null], ["watch", "看盘队"]]);
+	assert.deepEqual([...load(root).book], [["mail", { team: null }], ["watch", { team: "看盘队" }]]);
 });
 
 test("按领域取助手要的东西：模块的 skills/、prepare 和成员；每位成员带上模块的 skills/，再加自己的；没有这个模块就答不上来", () => {

@@ -104,5 +104,5 @@ test("模块不能叫 user：这个名字留给使用者自己的规则，加载
 test("仓库里的两个行情模块都有领域名和给幕僚长的说明，出现在领域名册里；都还没有成员", () => {
 	const modules = Modules.load([repoModules]);
 	assert.equal(modules.rosterPrompt(), "- toy-market（玩具行情）：演示用的假行情，只管玩具代码（如 TOYX）的波动\n- us-market（美股行情）：美股个股和大盘的行情、涨跌和波动原因");
-	assert.deepEqual([...modules.book], [["toy-market", null], ["us-market", null]]);
+	assert.deepEqual([...modules.book], [["toy-market", { team: null }], ["us-market", { team: null }]]);
 });

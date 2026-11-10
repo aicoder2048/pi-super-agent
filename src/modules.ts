@@ -178,7 +178,7 @@ export class Modules implements Domains {
 		this.modules = modules;
 		this.userRules = userRules;
 		this.skippedUserRules = skippedUserRules;
-		this.book = new Map(modules.map((m) => [m.name, m.team?.name ?? null]));
+		this.book = new Map(modules.map((m) => [m.name, { team: m.team?.name ?? null }]));
 		this.#scopes = new Map(this.allRules().map((r) => [r.id, r.sources]));
 	}
 

@@ -208,7 +208,7 @@ test("真实接线：仓库模块目录和状态目录 modules/ 里的模块都�
 		...moduleFiles("mail", { sources: [{ name: "mail" }] }),
 	});
 	const options = createHostOptions({ config, modules: loadWith(config, modulesDir), modelRuntime, log: () => {} });
-	assert.deepEqual([...options.domains!.book], [["mail", null], ["watch", "看盘队"], ["news", "新闻队"]]);
+	assert.deepEqual([...options.domains!.book], [["mail", { team: null }], ["watch", { team: "看盘队" }], ["news", { team: "新闻队" }]]);
 	const host = await Host.start(options);
 	t.after(() => host.stop());
 	const prompt: string = (host.router as any).session.systemPrompt;

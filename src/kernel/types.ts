@@ -16,11 +16,13 @@ export type HelperRole = (typeof HELPER_ROLES)[number];
  */
 export type Helper = { name: string; seq: number } & ({ role: HelperRole } | { team: string });
 
-/**
- * All the kernel knows about domains, built once at startup: every loaded module's name,
- * with its team's name when it has members and null when its helper works alone.
- */
-export type DomainBook = ReadonlyMap<string, string | null>;
+export interface DomainEntry {
+	/** The team's name when the module has members. Null: its helper works alone. */
+	team: string | null;
+}
+
+/** All the kernel knows about domains, built once at startup: one entry per loaded module, by the module's name. */
+export type DomainBook = ReadonlyMap<string, DomainEntry>;
 
 /** A rule's id is its namespace and its heading: a module's name for the module's rules, `user` for the user's own. */
 export const ruleId = (namespace: string, heading: string) => `${namespace}/${heading}`;

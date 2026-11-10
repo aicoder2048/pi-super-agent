@@ -1261,7 +1261,7 @@ test("今日助手：纽约今天建的任务数和它们的 token 合计；昨�
 	assert.ok(b);
 });
 
-const DOMAINS: DomainBook = new Map([["news", "新闻队"], ["watch", "看盘队"], ["mail", null]]);
+const DOMAINS: DomainBook = new Map([["news", { team: "新闻队" }], ["watch", { team: "看盘队" }], ["mail", { team: null }]]);
 const domainOf = (kernel: Kernel, id: string) => kernel.getTicket(id)!.domain;
 
 test("任务最多属于一个领域：open_ticket 省略 domain 就是没有领域，填了领域簿里的模块名就记在任务上", () => {
@@ -1413,8 +1413,8 @@ test("名字和四字还是两字在开任务时定下，之后不变；队名�
 	first.db.close();
 	const helpers = (domains?: DomainBook) => ids.map((id) => helperOf(setup({ path, domains }).kernel, id));
 	const solo = { name: SOLO_NAMES[0], role: "conversation", seq: 1 };
-	assert.deepEqual(helpers(new Map([["news", "要闻队"], ["mail", "邮件队"]])), [{ name: TEAM_NAMES[0], team: "要闻队", seq: 1 }, solo], "模块改了队名、另一个模块后来有了成员");
-	assert.deepEqual(helpers(new Map([["news", null]])), [{ name: TEAM_NAMES[0], team: "news", seq: 1 }, solo], "模块没了成员：写模块名");
+	assert.deepEqual(helpers(new Map([["news", { team: "要闻队" }], ["mail", { team: "邮件队" }]])), [{ name: TEAM_NAMES[0], team: "要闻队", seq: 1 }, solo], "模块改了队名、另一个模块后来有了成员");
+	assert.deepEqual(helpers(new Map([["news", { team: null }]])), [{ name: TEAM_NAMES[0], team: "news", seq: 1 }, solo], "模块没了成员：写模块名");
 	assert.deepEqual(helpers(), [{ name: TEAM_NAMES[0], team: "news", seq: 1 }, solo], "模块拿掉了：写模块名");
 });
 

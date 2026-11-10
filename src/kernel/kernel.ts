@@ -648,7 +648,7 @@ export class Kernel {
 
 	#newHelper(basis: Basis, originSource: string | null, createdAt: number, domain: string | null): Helper {
 		const role = helperRole(basis, originSource, this.#isMarketSource);
-		const team = domain === null ? null : (this.#domains.get(domain) ?? null);
+		const team = domain === null ? null : (this.#domains.get(domain)?.team ?? null);
 		const unit = team !== null
 			? { rows: TEAM_HELPER_ROWS, column: "domain", value: domain, names: TEAM_NAMES }
 			: { rows: SOLO_HELPER_ROWS, column: "helper_role", value: role, names: SOLO_NAMES };
@@ -669,7 +669,7 @@ export class Kernel {
 		if (r.helper_name === null) return null;
 		const identity = { name: r.helper_name, seq: r.helper_seq };
 		if (r.helper_role !== null) return { ...identity, role: r.helper_role };
-		return { ...identity, team: this.#domains.get(r.domain) ?? r.domain ?? TEAM_LABEL_BEFORE_DOMAINS };
+		return { ...identity, team: this.#domains.get(r.domain)?.team ?? r.domain ?? TEAM_LABEL_BEFORE_DOMAINS };
 	}
 
 	#stall(t: Ticket, now: number): Stall | null {
