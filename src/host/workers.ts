@@ -12,7 +12,7 @@ import { NO_DOMAIN, type DomainKit } from "../modules.ts";
 import type { Member } from "../teams.ts";
 import type { TranscriptMessage } from "../client/protocol.ts";
 import { canCode, memberTools } from "../worker/tools.ts";
-import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberRun } from "./dispatch.ts";
+import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberLimit, type MemberRun } from "./dispatch.ts";
 
 export interface WorkerSpec extends DomainKit {
 	ticketId: string;
@@ -71,8 +71,11 @@ export interface DispatchOptions {
 	codingTimeoutMs: number;
 	/** A running member with no event of any kind for this long is ended. */
 	stallMs: number;
+	/** `maxConcurrentExperts`: the cap until the user raises it for a day. */
 	maxConcurrent: number;
 }
+
+export type DeskDispatchOptions = Omit<DispatchOptions, "maxConcurrent"> & { cap: MemberLimit };
 
 export interface WorkerExecutorOptions {
 	kernel: Kernel;
@@ -88,7 +91,7 @@ export interface WorkerExecutorOptions {
 	/** The lookup by a ticket's domain. Without it every ticket runs as if it had no domain. */
 	kitFor?: (domain: string) => DomainKit | undefined;
 	/** Without it every helper works alone. */
-	dispatch?: DispatchOptions;
+	dispatch?: DeskDispatchOptions;
 }
 
 export interface WorkerModels {
@@ -108,12 +111,21 @@ export class WorkerExecutor {
 		this.#o = options;
 		const { dispatch, spawner } = options;
 		if (dispatch && spawner.runMember) {
-			this.#desk = new DispatchDesk({ queueTimeoutMs: dispatch.timeoutMs, stallMs: dispatch.stallMs, maxConcurrent: dispatch.maxConcurrent, run: (run) => spawner.runMember!(run), onChange: options.afterCommand });
+			this.#desk = new DispatchDesk({ queueTimeoutMs: dispatch.timeoutMs, stallMs: dispatch.stallMs, cap: dispatch.cap, run: (run) => spawner.runMember!(run), onChange: options.afterCommand });
 		}
 	}
 
 	dispatching(): Dispatching {
 		return this.#desk?.live() ?? {};
+	}
+
+	membersWaitingForSlot(): number {
+		return this.#desk?.waitingForSlot() ?? 0;
+	}
+
+	/** Starts the waiting members that fit; call it after the member cap went up. */
+	recheckMemberSlots(): void {
+		this.#desk?.recheck();
 	}
 
 	liveCount(): number {

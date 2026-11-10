@@ -151,7 +151,7 @@ export class Host {
 			onError: (ticketId, error) => this.#log(`[worker ${ticketId}] ${String(error)}`),
 			models: options.workerModels,
 			kitFor: this.#kitFor,
-			dispatch: options.dispatch,
+			dispatch: options.dispatch && { ...options.dispatch, cap: { limit: () => options.dispatch!.maxConcurrent, membersWaiting() {} } },
 			lookup: async (source, op, args) => {
 				const feed = this.feeds.get(source);
 				if (!feed) throw new Error(`没有来源 ${source} 可查；可查：${[...this.feeds.keys()].join("、") || "无"}`);
