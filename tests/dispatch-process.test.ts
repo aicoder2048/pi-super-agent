@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -206,6 +206,23 @@ test("成员进程在跑时，它的会话目录里记着进程号；进程没�
 	assert.equal(existsSync(join(dir, "pid-second")), false, "不起第二个进程去写同一份会话");
 	await reply;
 	assert.equal(existsSync(ledger), false);
+});
+
+test("成员的进程号记不下来（会话目录不可写）：这次派活失败并写明是哪个文件，成员进程不留下", async (t) => {
+	const { dir, run } = setup(t, { FAKE_PI_DELAY_MS: "30000" });
+	const sessionDir = memberSessionDir(dir, "tkt_helper", "news-researcher");
+	mkdirSync(sessionDir, { recursive: true });
+	chmodSync(sessionDir, 0o500);
+	const pidFile = join(dir, "pid-w");
+	t.after(() => {
+		chmodSync(sessionDir, 0o700);
+		if (existsSync(pidFile)) try {
+			process.kill(Number(readFileSync(pidFile, "utf8")), "SIGKILL");
+		} catch {}
+	});
+	await assert.rejects(within(run(NEWS, "w"), 3000, "记不下来时派活马上失败"), (e: Error) => e.message.includes(`成员进程记录 ${join(sessionDir, "running.json")}`));
+	await new Promise((done) => setTimeout(done, 1000));
+	assert.ok(!existsSync(pidFile) || !alive(Number(readFileSync(pidFile, "utf8"))), "派活失败后成员进程还在跑");
 });
 
 test("成员进程的每个事件都是一次动静；开始用工具或模型开始出字时带上这一步的中文说法", async (t) => {

@@ -227,7 +227,6 @@ function runMemberProcess(args: string[], env: Record<string, string>, run: Memb
 		if (run.signal.aborted) return reject(run.signal.reason);
 		if (isRecorded(run.sessionDir)) return reject(new Error(`${run.member.title}在这个任务里的上一个进程还没结束，不能再起一个去写同一份会话`));
 		const child = spawn(process.execPath, args, { cwd: run.workdir, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
-		if (child.pid) recordMember(run.sessionDir, child.pid);
 		const signalGroup = (signal: NodeJS.Signals) => {
 			try {
 				process.kill(-child.pid!, signal);
@@ -239,6 +238,7 @@ function runMemberProcess(args: string[], env: Record<string, string>, run: Memb
 			killTimer = setTimeout(() => signalGroup("SIGKILL"), SIGTERM_GRACE_MS);
 		};
 		run.signal.addEventListener("abort", abort, { once: true });
+		let unrecorded: Error | undefined;
 		let reply: string | undefined;
 		let failure: string | undefined;
 		let stderr = "";
@@ -268,10 +268,18 @@ function runMemberProcess(args: string[], env: Record<string, string>, run: Memb
 		child.once("close", (code) => {
 			clearMember(run.sessionDir);
 			run.signal.removeEventListener("abort", abort);
-			if (run.signal.aborted) reject(run.signal.reason);
+			if (unrecorded) reject(unrecorded);
+			else if (run.signal.aborted) reject(run.signal.reason);
 			else if (failure) reject(new Error(failure));
 			else if (reply !== undefined) resolve(reply);
 			else reject(new Error(`成员进程退出（${code}）却没有给出回复${stderr ? `：${stderr.trim().split("\n").at(-1)}` : ""}`));
 		});
+		// A member the host has no record of would outlive a killed host, so it does not get to run.
+		try {
+			if (child.pid) recordMember(run.sessionDir, child.pid);
+		} catch (error) {
+			unrecorded = error as Error;
+			abort();
+		}
 	});
 }

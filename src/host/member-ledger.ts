@@ -25,8 +25,13 @@ function startTime(pid: number): string | undefined {
 export function recordMember(sessionDir: string, pgid: number): void {
 	const startedAt = startTime(pgid);
 	if (!startedAt) return;
-	mkdirSync(sessionDir, { recursive: true });
-	writeFileAtomic(join(sessionDir, LEDGER), JSON.stringify({ pgid, startedAt } satisfies Running));
+	const file = join(sessionDir, LEDGER);
+	try {
+		mkdirSync(sessionDir, { recursive: true });
+		writeFileAtomic(file, JSON.stringify({ pgid, startedAt } satisfies Running));
+	} catch (error) {
+		throw new Error(`写不了成员进程记录 ${file}：${error instanceof Error ? error.message : String(error)}`, { cause: error });
+	}
 }
 
 function readRunning(file: string): Running | undefined {
