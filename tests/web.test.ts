@@ -314,11 +314,18 @@ test("页面：工具结果并进最近一个同名的待完成步骤，出错�
 	assert.doesNotMatch(JSON.stringify(steps), /内心独白/);
 });
 
+test("页面：「重启后恢复」那一步下面写中文，不露出给模型看的英文说明；英文原话留在原始记录里", () => {
+	const note = "process restarted; inspect your workdir before repeating any external action";
+	const [step] = watched([{ role: "user", content: formatInputs({} as never, [{ id: "inp", ticketId: "tkt_1", kind: "recovery", triggerId: null, body: note, createdAt: 0, deliveredAt: null }]) }]);
+	assert.deepEqual([step.title, step.detail], ["重启后恢复", "宿主重启过，助手先看看做到哪了再接着做"]);
+	assert.ok(step.raw.includes(note));
+});
+
 test("页面：每种任务输入（formatInputs 生成的方括号标签）都有专门的步骤标题", () => {
 	const titles = INPUT_KINDS.map((kind) => {
 		const content = formatInputs({} as never, [{ id: "inp", ticketId: "tkt_1", kind, triggerId: null, body: "读取网页标题\n第二行", createdAt: 0, deliveredAt: null }]);
 		const [step] = watched([{ role: "user", content }]);
-		assert.equal(step.detail, "读取网页标题", kind);
+		if (kind !== "recovery") assert.equal(step.detail, "读取网页标题", kind);
 		return step.title;
 	});
 	assert.equal(new Set(titles).size, INPUT_KINDS.length, "每种输入各有标题；若有一种落到兜底，会和 trigger 的「收到新消息」重复");

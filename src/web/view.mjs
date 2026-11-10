@@ -354,7 +354,10 @@ const INPUT_STEP = {
 	bg_result: "后台命令完成",
 };
 
-const STEP_BY_LABEL = new Map(/** @type {[InputKind, string][]} */ (Object.entries(INPUT_LABEL)).map(([kind, label]) => [label, INPUT_STEP[kind]]));
+const KIND_BY_LABEL = new Map(/** @type {[InputKind, string][]} */ (Object.entries(INPUT_LABEL)).map(([kind, label]) => [label, kind]));
+
+// The host writes this input's body in English for the model.
+const RECOVERY_DETAIL = "宿主重启过，助手先看看做到哪了再接着做";
 
 const RAW_LIMIT = 2000;
 
@@ -366,7 +369,8 @@ function stepsFrom(message, titles) {
 		return text.split(/\n\n(?=\[)/).map((part) => {
 			const label = /^\[([^\]]+)\]/.exec(part)?.[1] ?? "";
 			const body = part.split("\n").slice(1).join("\n");
-			return { title: STEP_BY_LABEL.get(label) ?? "收到新消息", detail: clip(firstLine(body), 80), state: "ok", raw: clip(part, RAW_LIMIT) };
+			const kind = KIND_BY_LABEL.get(label) ?? "trigger";
+			return { title: INPUT_STEP[kind], detail: kind === "recovery" ? RECOVERY_DETAIL : clip(firstLine(body), 80), state: "ok", raw: clip(part, RAW_LIMIT) };
 		});
 	}
 	if (message.role !== "assistant") return [];
