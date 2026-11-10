@@ -32,24 +32,31 @@ test("幕僚长的名册里有这两个领域：行情、个股、财报和相�
 	for (const word of ["Pi", "扩展", "主题", "技能", "配置", "提示模板", "界面组件"]) assert.ok(line("pi-pi").includes(word), `pi-pi 的说明提到${word}：${line("pi-pi")}`);
 });
 
-test("看盘队每位成员只列它用得上的只读工具", () => {
-	const tools = Object.fromEntries(teamOf(load(), "us-market")!.members.map((m) => [m.name, m.tools]));
-	assert.deepEqual(tools, {
+test("看盘队每位成员只列它用得上的只读工具；九位 Pi 专家都是读文件和读网页", () => {
+	const tools = (module: string) => Object.fromEntries(teamOf(load(), module)!.members.map((m) => [m.name, m.tools]));
+	assert.deepEqual(tools("us-market"), {
 		"earnings-reader": ["read", "lookup", "web_get"],
 		"market-analyst": ["read", "lookup", "web_get"],
 		"news-researcher": ["read", "lookup", "web_get"],
 		"technical-analyst": ["read", "lookup"],
 	});
+	assert.deepEqual(tools("pi-pi"), Object.fromEntries(PI_EXPERTS.map((name) => [name, ["read", "grep", "find", "ls", "web_get"]])));
 });
 
-test("仓库自带的成员都写了工具清单，没有一位能写文件或改文件；看盘队的成员也不能执行命令", () => {
-	const modules = load();
-	const all = modules.modules.flatMap((m) => (m.team?.members ?? []).map((member) => ({ module: m.name, member })));
+const shipped = () => load().modules.flatMap((m) => m.team?.members ?? []);
+
+test("仓库自带的十三位成员都写了工具清单，没有一位能执行命令、写文件或改文件", () => {
+	const all = shipped();
 	assert.equal(all.length, 13);
-	for (const { module, member } of all) {
+	for (const member of all) {
 		assert.ok(member.tools, `${member.file} 写了 tools`);
-		const usable = memberTools("request", member.tools);
-		assert.deepEqual(usable.filter((t) => t === "write" || t === "edit" || (module === "us-market" && t === "bash")), [], member.file);
+		assert.deepEqual(memberTools("request", member.tools).filter((t) => ["bash", "write", "edit"].includes(t)), [], member.file);
+	}
+});
+
+test("仓库自带的成员提示词不让成员跑 firecrawl 或 curl", () => {
+	for (const member of shipped()) {
+		for (const word of ["firecrawl", "curl "]) assert.ok(!member.prompt.includes(word), `${member.file} 的正文里有「${word.trim()}」`);
 	}
 });
 
@@ -61,6 +68,17 @@ test("看盘模块的经验放在它的技能里：us-market 的任务，助手�
 	for (const member of kit.crew) {
 		assert.deepEqual(member.skills, [kit.skillsDir], member.name);
 		assert.ok(memberTools("inference", member.tools).includes("read"), `${member.name} 没有 read 就读不到技能，Pi 也不会把技能写进它的提示词`);
+	}
+});
+
+test("Pi 模块的经验放在它的技能里：pi-pi 的任务，助手拿到这份技能，九位专家也拿到，而且都有读它的工具", () => {
+	const kit = load().kitFor("pi-pi")!;
+	assert.equal(kit.skillsDir, join(REPO_MODULES, "pi-pi/skills"));
+	assert.ok(existsSync(join(REPO_MODULES, "pi-pi/skills/pi-pi-desk/SKILL.md")));
+	assert.equal(kit.crew.length, 9);
+	for (const member of kit.crew) {
+		assert.deepEqual(member.skills, [kit.skillsDir], member.name);
+		assert.ok(memberTools("inference", member.tools).includes("read"), member.name);
 	}
 });
 
