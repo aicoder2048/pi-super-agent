@@ -1,8 +1,8 @@
 // @ts-check
 
 import {
-	CLEAR_FAILED, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
-	questionOf, helperStrip, helperTint, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, resolveTheme, restartNotice, routeLine, sayCopy, sayOutcome, settleSay, settleSending,
+	CLEAR_FAILED, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canClear, canSend, choicesInConversation, clearSent, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
+	questionOf, helperStrip, helperTint, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sayOutcome, settleSay, settleSending,
 	smallPrint, stopSentence, toggleEarlier, toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperFullName } from "../client/board-format.mjs";
@@ -41,8 +41,12 @@ function mount(doc) {
 	let earlierShown = false;
 	/** @type {import("./view.mjs").SayState} */
 	let sayState = "idle";
-	/** @type {{ text: string, idsAtSay: Set<string> } | undefined} */
+	/** @type {(import("./view.mjs").Draft & { idsAtSay: Set<string> }) | undefined} */
 	let unconfirmed;
+	/** The line the composer quotes; the strip shows it and the next say sends its id. @type {import("./view.mjs").ConversationLine | null} */
+	let quoting = null;
+	const quoteStrip = $("quote-strip");
+	const touch = matchMedia("(hover: none)");
 	/** @type {{ watch: ReturnType<typeof emptyWatch>, source: EventSource } | undefined} */
 	let watching;
 	/** @type {import("./view.mjs").Sending} */
@@ -310,6 +314,56 @@ function mount(doc) {
 		/** @type {HTMLElement} */ (box.querySelector(".total")).textContent = strip.total;
 	};
 
+	/** @returns {import("./view.mjs").Draft} */
+	const currentDraft = () => ({ text: composer.value, quoteOf: quoting?.id ?? null });
+
+	const renderQuoteStrip = () => {
+		const box = $("conversation");
+		const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+		quoteStrip.hidden = !quoting;
+		if (quoting) {
+			const shown = quoteShown(quoting);
+			/** @type {HTMLElement} */ (quoteStrip.querySelector(".quote-who")).textContent = `引用 ${shown.who}：`;
+			/** @type {HTMLElement} */ (quoteStrip.querySelector(".quote-text")).textContent = shown.text;
+		}
+		// The strip takes height from the conversation; keep its last line in view.
+		if (atBottom) box.scrollTop = box.scrollHeight;
+	};
+
+	/** @param {import("./view.mjs").Draft} draft */
+	const applyDraft = (draft) => {
+		composer.value = draft.text;
+		if (draft.quoteOf === null) quoting = null;
+		renderQuoteStrip();
+	};
+
+	/** @param {import("./view.mjs").ConversationLine | null} line */
+	const setQuote = (line) => {
+		quoting = line;
+		for (const picked of thread.querySelectorAll(".line.picked")) picked.classList.remove("picked");
+		renderQuoteStrip();
+		composer.focus();
+	};
+
+	/** @param {import("../kernel/types.ts").Quote} quote */
+	const quotedNode = (quote) => {
+		const shown = quoteShown(quote);
+		const node = el("div", "quoted");
+		node.append(el("span", "sr", "引用 "), el("span", "quote-text", `${shown.who}：${shown.text}`));
+		return node;
+	};
+
+	/** @param {import("./view.mjs").ConversationLine} line */
+	const quoteButton = (line) => {
+		const button = el("button", "quote-btn", "引用");
+		button.type = "button";
+		button.addEventListener("click", (e) => {
+			e.stopPropagation();
+			setQuote(line);
+		});
+		return button;
+	};
+
 	/** @param {import("./view.mjs").ConversationLine} line @param {boolean} withChoices */
 	const lineNode = (line, withChoices) => {
 		const item = el("div", `line ${line.who}`);
@@ -323,13 +377,14 @@ function mount(doc) {
 				choices.dataset.line = line.id;
 				said.append(choices);
 			}
+			said.append(quoteButton(line));
 			item.append(avatar, said);
 		} else {
 			bubble.prepend(el("span", "sr", "你："));
 			const said = el("div", "said");
 			const slot = el("div", "route-slot");
 			slot.dataset.line = line.id;
-			said.append(bubble, slot);
+			said.append(bubble, ...(line.quote ? [quotedNode(line.quote)] : []), slot, quoteButton(line));
 			item.append(said, youMark.cloneNode(true));
 		}
 		return item;
@@ -377,10 +432,10 @@ function mount(doc) {
 
 	const settleUnconfirmed = () => {
 		if (!unconfirmed) return;
-		const next = settleSay({ state: sayState, text: unconfirmed.text }, composer.value, linesNotIn(view, unconfirmed.idsAtSay));
+		const next = settleSay({ state: sayState, ...unconfirmed }, currentDraft(), linesNotIn(view, unconfirmed.idsAtSay));
 		if (next.state === sayState) return;
 		unconfirmed = undefined;
-		composer.value = next.composer;
+		applyDraft(next.draft);
 		setSay(next.state);
 	};
 
@@ -541,8 +596,8 @@ function mount(doc) {
 	};
 
 	const say = async () => {
-		const text = composer.value;
-		if (!canSend(text) || send.disabled) return;
+		const sent = currentDraft();
+		if (!canSend(sent.text) || send.disabled) return;
 		send.disabled = true;
 		unconfirmed = undefined;
 		const idsAtSay = knownLineIds(view);
@@ -553,17 +608,17 @@ function mount(doc) {
 			const res = await fetch(`/say?${query}`, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ text }),
+				body: sayBody(sent),
 				signal: abort.signal,
 				cache: "no-store",
 			});
 			const state = sayOutcome({ status: res.status });
-			if (state === "delivered" && composer.value === text) composer.value = "";
+			if (state === "delivered") applyDraft(clearSent(currentDraft(), sent));
 			if (state === "expired") setStatus("expired");
 			setSay(state, res.status);
 		} catch {
 			setSay(sayOutcome(abort.signal.aborted ? "timeout" : "network"));
-			unconfirmed = { text, idsAtSay };
+			unconfirmed = { ...sent, idsAtSay };
 			settleUnconfirmed();
 		} finally {
 			clearTimeout(timer);
@@ -588,7 +643,23 @@ function mount(doc) {
 		e.preventDefault();
 		void say();
 	});
+	$("quote-cancel").addEventListener("click", () => setQuote(null));
+	// On a touch screen there is no hover, so a tap on a bubble reveals its 「引用」.
+	thread.addEventListener("click", (e) => {
+		const target = /** @type {Element} */ (e.target);
+		if (!touch.matches || target.closest(".choices, .route, a, button")) return;
+		const line = target.closest(".bubble")?.closest(".line");
+		if (!line) return;
+		const wasPicked = line.classList.contains("picked");
+		for (const picked of thread.querySelectorAll(".line.picked")) picked.classList.remove("picked");
+		line.classList.toggle("picked", !wasPicked);
+	});
 	composer.addEventListener("keydown", (e) => {
+		if (e.key === "Escape" && quoting && !e.isComposing && e.keyCode !== 229) {
+			e.preventDefault();
+			setQuote(null);
+			return;
+		}
 		if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.keyCode === 229) return;
 		e.preventDefault();
 		void say();

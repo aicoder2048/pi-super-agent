@@ -17,7 +17,7 @@
 /** @typedef {import("../host/dispatch.ts").BoardDispatch} BoardDispatch */
 /** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
 
-import { HOST_SOURCE, INPUT_LABEL, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, shortId, stallMinutes, textOf, toolStep } from "../client/board-format.mjs";
+import { HOST_SOURCE, INPUT_LABEL, QUOTE_WHO, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, shortId, stallMinutes, textOf, toolStep } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -718,15 +718,44 @@ export function sayOutcome(outcome) {
 	return "rejected";
 }
 
+/** What the composer will send: the text and the line it quotes. The quote strip and the textarea are one draft. @typedef {{ text: string, quoteOf: string | null }} Draft */
+
+/** The POST /say body. @param {Draft} draft */
+export const sayBody = (draft) => JSON.stringify(draft.quoteOf ? { text: draft.text, quoteOf: draft.quoteOf } : { text: draft.text });
+
+/** After a send is confirmed the draft empties, but only if neither its text nor its quote changed since. @param {Draft} draft @param {Draft} sent @returns {Draft} */
+export const clearSent = (draft, sent) => (draft.text === sent.text && draft.quoteOf === sent.quoteOf ? { text: "", quoteOf: null } : draft);
+
 // A timed-out POST may still have reached the host; its echo in the conversation is the confirmation.
 /**
- * @param {{ state: SayState, text: string }} say @param {string} composer @param {ConversationLine[]} arrived
- * @returns {{ state: SayState, composer: string }}
+ * @param {{ state: SayState } & Draft} say @param {Draft} draft @param {ConversationLine[]} arrived
+ * @returns {{ state: SayState, draft: Draft }}
  */
-export function settleSay(say, composer, arrived) {
-	if (say.state !== "maybe_lost" || !arrived.some((line) => line.who === "user" && line.text === say.text)) return { state: say.state, composer };
-	return { state: "delivered", composer: composer === say.text ? "" : composer };
+export function settleSay(say, draft, arrived) {
+	const echoed = arrived.some((line) => line.who === "user" && line.text === say.text && (line.quote?.lineId ?? null) === say.quoteOf);
+	if (say.state !== "maybe_lost" || !echoed) return { state: say.state, draft };
+	return { state: "delivered", draft: clearSent(draft, say) };
 }
+
+/** @param {Span[]} spans */
+const spanText = (spans) => spans.map((s) => s.text).join("");
+
+/** The words of markdown without its marks, blocks and cells joined with a space. @param {string} text */
+const plainText = (text) =>
+	parseMarkdown(text)
+		.flatMap((b) => (b.kind === "p" || b.kind === "h" ? [b.spans] : b.kind === "table" ? [...b.head, ...b.rows.flat()] : b.items))
+		.map(spanText)
+		.join(" ");
+
+/**
+ * How a quote reads on the page, in the strip above the composer and under a bubble: who, and the words on one line.
+ * The 幕僚长's markdown loses its marks; your own words show as typed, like your bubble. The two-line limit is CSS.
+ * @param {{ who: "user" | "router", text: string }} said
+ */
+export const quoteShown = (said) => ({
+	who: QUOTE_WHO[said.who],
+	text: (said.who === "router" ? plainText(said.text) : said.text).replace(/\s+/gu, " ").trim(),
+});
 
 /** @param {string} text */
 export const canSend = (text) => text.trim() !== "";

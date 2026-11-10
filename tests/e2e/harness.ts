@@ -6,7 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { stripVTControlCharacters } from "node:util";
 import { dirname, join, resolve } from "node:path";
 import type { TestContext } from "node:test";
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
+import { chromium, type Browser, type BrowserContext, type BrowserContextOptions, type Page } from "playwright-core";
 import { PAY_PER_USE_PROVIDERS, parseModelRef } from "../../src/models.ts";
 import { freePort } from "../helpers/fakes.ts";
 import { FAKE_PROVIDER, FakeModel, fakeAgentEnv, type Script } from "./fake-model.ts";
@@ -214,8 +214,8 @@ export interface Story {
 	stateDir: string;
 	/** One node:test subtest. After a failed step the rest are skipped and the report names the step. */
 	step(name: string, body: (page: Page) => Promise<unknown>): Promise<void>;
-	/** Opens another page whose console also goes into the report. */
-	open(url: URL, options?: { fakeClock?: boolean }): Promise<Page>;
+	/** Opens another page whose console also goes into the report. `context` sets up its browser, e.g. a touch phone. */
+	open(url: URL, options?: { fakeClock?: boolean; context?: BrowserContextOptions }): Promise<Page>;
 	cli(args: string[]): Promise<string>;
 }
 
@@ -287,8 +287,8 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 	let host: HostRun | undefined;
 	let failed = false;
 
-	const open = async (url: URL, opts: { fakeClock?: boolean } = {}) => {
-		const context = await (await launchBrowser()).newContext();
+	const open: Story["open"] = async (url, opts = {}) => {
+		const context = await (await launchBrowser()).newContext(opts.context);
 		contexts.push(context);
 		const page = await context.newPage();
 		page.setDefaultTimeout(10_000);

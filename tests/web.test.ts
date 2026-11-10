@@ -161,6 +161,7 @@ test("页面：选项按钮也挂在对话里幕僚长转述这个问题的那�
 
 const AT_1405 = Date.parse("2026-11-09T14:05:00+08:00");
 const line = (id: string, text: string, at = AT_1405 - MIN, over: Partial<ConversationLine> = {}): ConversationLine => ({ id, who: id.startsWith("rpl") ? "router" : "user", text, at, ...over });
+const draft = (text: string): { text: string; quoteOf: string | null } => ({ text, quoteOf: null });
 const clearedFrame = (hidden: ConversationLine[], conversation: ConversationLine[] = [], at = AT_1405): HostToClient => ({ type: "cleared", conversation, cleared: { at, lines: hidden } });
 
 test("页面：收到 cleared 帧后对话只剩帧里带的行，顶部细线是「已清屏 · HH:MM · 显示之前的」", () => {
@@ -245,7 +246,7 @@ test("页面：发出时没收到确认的那句话，中间清过屏也照样�
 	page.applyMessage(view, { type: "user", who: "user", id: "trg_3", text: "明天呢", at: AT_1405 + 1 }, 0);
 	const arrived = page.linesNotIn(view, seen);
 	assert.deepEqual(arrived.map((l) => l.text), ["明天呢"]);
-	assert.deepEqual(page.settleSay({ state: "maybe_lost", text: "明天呢" }, "明天呢", arrived), { state: "delivered", composer: "" });
+	assert.deepEqual(page.settleSay({ state: "maybe_lost", text: "明天呢", quoteOf: null }, draft("明天呢"), arrived), { state: "delivered", draft: draft("") });
 });
 
 test("页面：发出后这句话上屏又被清屏，确认丢了也能在被清掉的行里对上", () => {
@@ -256,7 +257,7 @@ test("页面：发出后这句话上屏又被清屏，确认丢了也能在被�
 	page.applyMessage(view, clearedFrame([line("trg_1", "查天气"), line("trg_2", "买咖啡")]), 0);
 	const arrived = page.linesNotIn(view, seen);
 	assert.deepEqual(arrived.map((l) => l.text), ["买咖啡"]);
-	assert.deepEqual(page.settleSay({ state: "maybe_lost", text: "买咖啡" }, "买咖啡", arrived), { state: "delivered", composer: "" });
+	assert.deepEqual(page.settleSay({ state: "maybe_lost", text: "买咖啡", quoteOf: null }, draft("买咖啡"), arrived), { state: "delivered", draft: draft("") });
 });
 
 test("页面：发出前就被清掉的同一句话，不当作这次发出的回音", () => {
@@ -265,7 +266,7 @@ test("页面：发出前就被清掉的同一句话，不当作这次发出的�
 	page.applyMessage(view, clearedFrame([line("trg_1", "买咖啡")]), 0);
 	const seen = page.knownLineIds(view);
 	const arrived = page.linesNotIn(view, seen);
-	assert.deepEqual(page.settleSay({ state: "maybe_lost", text: "买咖啡" }, "买咖啡", arrived), { state: "maybe_lost", composer: "买咖啡" });
+	assert.deepEqual(page.settleSay({ state: "maybe_lost", text: "买咖啡", quoteOf: null }, draft("买咖啡"), arrived), { state: "maybe_lost", draft: draft("买咖啡") });
 });
 
 test("页面：reply 帧带的 ticketId 留在对话行上", () => {
@@ -576,14 +577,60 @@ test("页面：200 是已发送，401 是链接失效，其他状态是发送失
 
 test("页面：未收到确认的话随后出现在对话里时，改为已发送，输入框里还是这句话就清空", () => {
 	const text = "读取 example.com 的网页标题";
-	const lost = { state: "maybe_lost" as const, text };
+	const lost = { state: "maybe_lost" as const, text, quoteOf: null };
 	const mine = { id: "trg_1", who: "user" as const, text, at: 1 };
-	assert.deepEqual(page.settleSay(lost, text, [mine]), { state: "delivered", composer: "" });
-	assert.deepEqual(page.settleSay(lost, "我又改了", [mine]), { state: "delivered", composer: "我又改了" }, "用户已经改了输入框就不动");
-	assert.deepEqual(page.settleSay(lost, text, []), { state: "maybe_lost", composer: text });
-	assert.deepEqual(page.settleSay(lost, text, [{ ...mine, text: "另一句" }]), { state: "maybe_lost", composer: text });
-	assert.deepEqual(page.settleSay(lost, text, [{ ...mine, who: "router" }]), { state: "maybe_lost", composer: text }, "幕僚长说了同样的话不算");
-	assert.deepEqual(page.settleSay({ state: "rejected", text }, text, [mine]), { state: "rejected", composer: text }, "服务器明确拒绝的不改");
+	assert.deepEqual(page.settleSay(lost, draft(text), [mine]), { state: "delivered", draft: draft("") });
+	assert.deepEqual(page.settleSay(lost, draft("我又改了"), [mine]), { state: "delivered", draft: draft("我又改了") }, "用户已经改了输入框就不动");
+	assert.deepEqual(page.settleSay(lost, draft(text), []), { state: "maybe_lost", draft: draft(text) });
+	assert.deepEqual(page.settleSay(lost, draft(text), [{ ...mine, text: "另一句" }]), { state: "maybe_lost", draft: draft(text) });
+	assert.deepEqual(page.settleSay(lost, draft(text), [{ ...mine, who: "router" }]), { state: "maybe_lost", draft: draft(text) }, "幕僚长说了同样的话不算");
+	assert.deepEqual(page.settleSay({ state: "rejected", text, quoteOf: null }, draft(text), [mine]), { state: "rejected", draft: draft(text) }, "服务器明确拒绝的不改");
+});
+
+const quoteOfRpl1 = { lineId: "rpl_1", who: "router" as const, at: 1, text: "方案 A： 先停掉旧任务", ticketId: null };
+
+test("页面：user 帧带引用时，对话行带上同一个引用；没有引用的帧对话行没有 quote 键", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, { type: "user", who: "user", id: "trg_2", text: "改成 B", at: 2, quote: quoteOfRpl1 }, 0);
+	page.applyMessage(view, { type: "user", who: "user", id: "trg_3", text: "好", at: 3 }, 0);
+	assert.deepEqual(view.lines.get("trg_2")?.quote, quoteOfRpl1);
+	assert.equal("quote" in view.lines.get("trg_3")!, false);
+});
+
+test("页面：sayBody 有引用时多一个 quoteOf，没有时和以前一样只有 text", () => {
+	assert.equal(page.sayBody({ text: "改成 B", quoteOf: "rpl_1" }), '{"text":"改成 B","quoteOf":"rpl_1"}');
+	assert.equal(page.sayBody({ text: "改成 B", quoteOf: null }), '{"text":"改成 B"}');
+});
+
+test("页面：发送确认后，文字和引用都没改过才一起清空；改过其中一个就都保留", () => {
+	const sent = { text: "改成 B", quoteOf: "rpl_1" };
+	assert.deepEqual(page.clearSent(sent, sent), draft(""));
+	assert.deepEqual(page.clearSent({ ...sent, text: "改成 C" }, sent), { ...sent, text: "改成 C" }, "文字改过");
+	assert.deepEqual(page.clearSent({ ...sent, quoteOf: "trg_9" }, sent), { ...sent, quoteOf: "trg_9" }, "换了引用");
+	assert.deepEqual(page.clearSent({ ...sent, quoteOf: null }, sent), { ...sent, quoteOf: null }, "取消了引用");
+});
+
+test("页面：超时后回显的那句话文字一样但引用不同，不算送达", () => {
+	const lost = { state: "maybe_lost" as const, text: "改成 B", quoteOf: "rpl_1" };
+	const echo = { id: "trg_2", who: "user" as const, text: "改成 B", at: 2, quote: { ...quoteOfRpl1, lineId: "rpl_9" } };
+	const sent = { text: "改成 B", quoteOf: "rpl_1" };
+	assert.deepEqual(page.settleSay(lost, sent, [echo]), { state: "maybe_lost", draft: sent });
+	const { quote: _, ...plain } = echo;
+	assert.deepEqual(page.settleSay(lost, sent, [plain]), { state: "maybe_lost", draft: sent }, "回显没带引用");
+	assert.deepEqual(page.settleSay({ ...lost, quoteOf: null }, draft("改成 B"), [echo]), { state: "maybe_lost", draft: draft("改成 B") }, "发出时没引用，回显带了");
+});
+
+test("页面：超时后回显的那句话文字和引用都一样，算送达，输入框和引用条一起清空", () => {
+	const lost = { state: "maybe_lost" as const, text: "改成 B", quoteOf: "rpl_1" };
+	const echo = { id: "trg_2", who: "user" as const, text: "改成 B", at: 2, quote: quoteOfRpl1 };
+	assert.deepEqual(page.settleSay(lost, { text: "改成 B", quoteOf: "rpl_1" }, [echo]), { state: "delivered", draft: draft("") });
+});
+
+test("页面：引用条和气泡下的引用用同一种说法：幕僚长的 markdown 去掉标记、压成一行", () => {
+	assert.deepEqual(page.quoteShown({ who: "router", text: "**结论**：\n- 换 B" }), { who: "幕僚长", text: "结论： 换 B" });
+	assert.deepEqual(page.quoteShown({ who: "router", text: "| 方案 | 结果 |\n|---|---|\n| A | `停` |\n\n# 小结\n  看 [这里](https://x.y)" }), { who: "幕僚长", text: "方案 结果 A 停 小结 看 这里（https://x.y）" });
+	assert.deepEqual(page.quoteShown({ who: "user", text: "先查 **天气**\n\n  再说" }), { who: "你", text: "先查 **天气** 再说" }, "你的话页面原样显示，不当 markdown");
+	assert.deepEqual(page.quoteShown(quoteOfRpl1), { who: "幕僚长", text: "方案 A： 先停掉旧任务" });
 });
 
 test("页面：发送失败时按状态码显示固定文案，不显示服务器正文", () => {

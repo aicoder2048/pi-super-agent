@@ -137,6 +137,24 @@
 		.cleared-bar { display: flex; align-items: center; gap: 10px; width: 100%; padding: 0; border: 0; background: none; font-size: 12px; color: var(--muted); }
 		.cleared-bar::before, .cleared-bar::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
 		.cleared-bar:hover { color: var(--accent-ink); }
+		.said { position: relative; }
+		/* Sits in the gap below the line, so revealing it never moves the conversation. */
+		.quote-btn { position: absolute; top: 100%; left: 0; padding: 0 4px; border: 0; background: none; font-size: 12px; line-height: 16px; color: var(--muted); opacity: 0; }
+		.user .quote-btn { left: auto; right: 0; }
+		.quote-btn:hover { color: var(--accent-ink); text-decoration: underline; }
+		.quote-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+		.line:hover .quote-btn, .line:focus-within .quote-btn, .line.picked .quote-btn { opacity: 1; }
+		@media (hover: none) { .line:hover .quote-btn { opacity: 0; } .line.picked .quote-btn { opacity: 1; } }
+		.quoted, .quote-strip { font-size: 12px; line-height: 1.5; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+		/* Clamp an inner element: a clamped box with padding would show part of the third line in its padding. */
+		.quote-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+		.quoted { max-width: 100%; }
+		.quote-strip { display: flex; align-items: flex-start; margin-bottom: 8px; }
+		.quote-strip[hidden] { display: none; }
+		.quote-strip .quote-who { flex: none; }
+		.quote-strip .quote-text { flex: 1; min-width: 0; }
+		#quote-cancel { flex: none; margin-left: 6px; padding: 0 4px; border: 0; background: none; font-size: 12px; line-height: 1.5; color: var(--muted); }
+		#quote-cancel:hover { color: var(--ink); }
 		.earlier { display: flex; flex-direction: column; gap: 16px; }
 		.earlier:empty { display: none; }
 		.earlier .line { opacity: 0.6; }
@@ -225,6 +243,7 @@
 			<div id="conversation"><div class="thread"><div class="welcome">幕僚长持续关注你的消息来源，在后台安排助手处理任务，只在需要你决定时通知你。</div></div></div>
 			<form id="say" autocomplete="off">
 				<label for="composer" class="sr">新任务</label>
+				<div id="quote-strip" class="quote-strip" hidden><span class="quote-who"></span><span class="quote-text"></span><button id="quote-cancel" type="button" aria-label="取消引用">✕</button></div>
 				<div class="composer">
 					<textarea id="composer" rows="2" placeholder="描述要做的事，例如：读取 example.com 的网页标题"></textarea>
 					<button id="send" type="submit">发送</button>
