@@ -9,8 +9,8 @@ const NEWS = { title: "听证会新闻", brief: "汇总黄仁勋听证会的新�
 const WEATHER = { title: "查天气", brief: "查明天的天气" };
 
 const STATE_FILES = {
-	"agents/news.md": "---\nname: news-researcher\ntitle: 新闻研究员\ndescription: 查新闻、核对报道来源\n---\n你是新闻研究员。\n",
-	"teams.yaml": "新闻队:\n  description: 查新闻、核对报道来源\n  members:\n    - news-researcher\n",
+	"modules/news/module.json": JSON.stringify({ name: "news", title: "新闻", description: "查新闻、核对报道来源", team: "新闻队" }),
+	"modules/news/agents/news.md": "---\nname: news-researcher\ntitle: 新闻研究员\ndescription: 查新闻、核对报道来源\n---\n你是新闻研究员。\n",
 };
 
 const openOnTeam = (card: string, team: string): ToolCall => {
@@ -18,7 +18,7 @@ const openOnTeam = (card: string, team: string): ToolCall => {
 	return { ...call, args: { decisions: (call.args.decisions as object[]).map((d) => ({ ...d, team })) } };
 };
 
-test("状态目录里放一个新闻队：幕僚长把新闻交给它，助手是四字名加团队名；别的事仍是两字名的对话助手", (t) =>
+test("状态目录的 modules/ 里放一个带成员的新闻模块：幕僚长把新闻交给它，助手是四字名加团队名；别的事仍是两字名的对话助手", (t) =>
 	story(
 		t,
 		{

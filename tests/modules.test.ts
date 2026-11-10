@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { ConfigError } from "../src/config-error.ts";
@@ -50,7 +50,7 @@ test("规则的适用来源：使用者规则必须写来源行才生效，写�
 	const dir = mkdtempSync(join(tmpdir(), "psa-rules-"));
 	const file = join(dir, "rules.md");
 	writeFileSync(file, "## any\n有新邮件就看一下\n\n## ci-only\n来源: ci, github\nCI 失败时开任务\n");
-	const modules = Modules.load([], file);
+	const modules = Modules.load([], { stateDir: dirname(file) });
 	assert.ok(!modules.ruleAllows("user/any", "mail"));
 	assert.deepEqual(modules.rulesFor("mail"), []);
 	assert.doesNotMatch(modules.rulesPrompt(), /user\/any/);
@@ -64,7 +64,7 @@ test("规则的适用来源：使用者规则必须写来源行才生效，写�
 test("规则的适用来源：来源行里一个来源都没有的使用者规则同样不生效", () => {
 	const file = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
 	writeFileSync(file, "## empty\n来源: ，\n有新邮件就看一下\n");
-	const modules = Modules.load([], file);
+	const modules = Modules.load([], { stateDir: dirname(file) });
 	assert.ok(!modules.ruleAllows("user/empty", "mail"));
 	assert.deepEqual(modules.skippedUserRules, ["user/empty"]);
 	assert.equal(modules.rulesPrompt(), "");
@@ -75,7 +75,7 @@ test("规则里写了「团队：」行：加载时报一行错，以规则文�
 		const dir = mkdtempSync(join(tmpdir(), "psa-rules-"));
 		const file = join(dir, "rules.md");
 		writeFileSync(file, `## ci\n来源: ci\nCI 失败时开任务\n\n## news\n来源: rss\n${line}\n有听证会新闻就查一下\n`);
-		assert.throws(() => Modules.load([], file), (e: Error) => {
+		assert.throws(() => Modules.load([], { stateDir: dirname(file) }), (e: Error) => {
 			assert.ok(e instanceof ConfigError, String(e));
 			assert.ok(e.message.startsWith(file), e.message);
 			assert.ok(!e.message.includes("\n"), e.message);
@@ -91,5 +91,5 @@ test("规则里写了「团队：」行：加载时报一行错，以规则文�
 test("幕僚长看到的规则只有编号和正文", () => {
 	const file = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
 	writeFileSync(file, "## news\n来源: rss\n有听证会新闻就查一下\n\n## ci\n来源: ci\nCI 失败时开任务\n");
-	assert.equal(Modules.load([], file).rulesPrompt(), "### user/news\n有听证会新闻就查一下\n\n### user/ci\nCI 失败时开任务");
+	assert.equal(Modules.load([], { stateDir: dirname(file) }).rulesPrompt(), "### user/news\n有听证会新闻就查一下\n\n### user/ci\nCI 失败时开任务");
 });

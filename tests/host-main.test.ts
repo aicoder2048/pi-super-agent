@@ -34,7 +34,7 @@ function stateWithFiles(files: Record<string, string>) {
 	};
 }
 const memberFile = (name: string, extra = "") => `---\nname: ${name}\ntitle: 新闻研究员\ndescription: 查新闻\n${extra}---\n`;
-const teamFile = (member: string) => `新闻队:\n  description: 查新闻\n  members:\n    - ${member}\n`;
+const NEWS_MODULE = { "modules/news/module.json": JSON.stringify({ name: "news", team: "新闻队" }), "modules/news/agents/a.md": memberFile("news-researcher") };
 
 const HOST = "src/host/main.ts";
 const WATCHDOG = "src/watchdog/main.ts";
@@ -66,23 +66,40 @@ const cases = [
 		message: /定时器 m\/t 的 everyMinutes 必须大于 0/,
 	},
 	{
-		name: "两个文件定义了同名成员时，just host",
+		name: "同一个模块里两个文件定义了同名成员时，just host",
 		entry: HOST,
-		stateDir: stateWithFiles({ "agents/a.md": memberFile("news-researcher"), "agents/b.md": memberFile("news-researcher") }),
-		message: /^成员重名：news-researcher 同时定义在 \S+agents\/a\.md 和 \S+agents\/b\.md$/m,
+		stateDir: stateWithFiles({ ...NEWS_MODULE, "modules/news/agents/b.md": memberFile("news-researcher") }),
+		message: /^成员重名：news-researcher 同时定义在 \S+modules\/news\/agents\/a\.md 和 \S+modules\/news\/agents\/b\.md$/m,
 	},
 	{
-		name: "teams.yaml 名单里的成员不存在时，just host",
+		name: "模块有成员却没写 team 时，just host",
 		entry: HOST,
-		stateDir: stateWithFiles({ "teams.yaml": teamFile("ghost") }),
-		message: /teams\.yaml:1：团队 新闻队 的成员 ghost 不存在/,
+		stateDir: stateWithFiles({ ...NEWS_MODULE, "modules/news/module.json": JSON.stringify({ name: "news" }) }),
+		message: /modules\/news\/module\.json：agents\/ 里有成员，要写 team/,
 	},
-	{ name: "teams.yaml 格式不对时，just host", entry: HOST, stateDir: stateWithFiles({ "teams.yaml": "新闻队: 查新闻\n" }), message: /teams\.yaml:1：顶层每行应是「团队名:」/ },
+	{
+		name: "状态目录里有 teams.yaml 时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ "teams.yaml": "新闻队:\n  description: 查新闻\n  members:\n    - news-researcher\n" }),
+		message: /^\S+\/teams\.yaml：不再读取状态目录下的 teams\.yaml。.*modules\/<名字>\/agents\/.*module\.json 的 team/m,
+	},
+	{
+		name: "模块目录里有 teams.yaml 时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ ...NEWS_MODULE, "modules/news/teams.yaml": "新闻队:\n  description: 查新闻\n  members:\n    - news-researcher\n" }),
+		message: /^\S+modules\/news\/teams\.yaml：不再读取 teams\.yaml。.*module\.json 的 team/m,
+	},
+	{
+		name: "状态目录里有零散的 agents/ 时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ "agents/a.md": memberFile("news-researcher") }),
+		message: /^\S+\/agents：不再读取状态目录下零散的成员。.*modules\/<名字>\/agents\//m,
+	},
 	{
 		name: "成员的模型走按量计费的提供方时，just host",
 		entry: HOST,
-		stateDir: stateWithFiles({ "agents/a.md": memberFile("news-researcher", "model: deepseek/deepseek-flash\n") }),
-		message: /agents\/a\.md：model：拒绝使用 deepseek\/deepseek-flash/,
+		stateDir: stateWithFiles({ ...NEWS_MODULE, "modules/news/agents/a.md": memberFile("news-researcher", "model: deepseek/deepseek-flash\n") }),
+		message: /modules\/news\/agents\/a\.md：model：拒绝使用 deepseek\/deepseek-flash/,
 	},
 	{
 		name: "规则里写了「团队：」行时，just host",

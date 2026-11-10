@@ -23,10 +23,11 @@ const REPORT_MD = "**个股领跌**，没有新的利空消息。";
 const WORKING_MS = 2500;
 const NEWS_COMMAND_S = 9;
 
+const WATCH_MANIFEST = JSON.stringify({ name: "watch", title: "看盘", description: "看盘面、查新闻", team: "看盘队" });
 const STATE_FILES = {
-	"agents/market.md": "---\nname: market-analyst\ntitle: 行情分析师\ndescription: 看盘面、量能和大盘对比\ntools: read, lookup, web_get\n---\n你是行情分析师。\n",
-	"agents/news.md": "---\nname: news-researcher\ntitle: 新闻研究员\ndescription: 查新闻、核对报道来源\n---\n你是新闻研究员。\n",
-	"teams.yaml": "看盘队:\n  description: 看盘面、查新闻\n  members:\n    - market-analyst\n    - news-researcher\n",
+	"modules/watch/module.json": WATCH_MANIFEST,
+	"modules/watch/agents/market.md": "---\nname: market-analyst\ntitle: 行情分析师\ndescription: 看盘面、量能和大盘对比\ntools: read, lookup, web_get\n---\n你是行情分析师。\n",
+	"modules/watch/agents/news.md": "---\nname: news-researcher\ntitle: 新闻研究员\ndescription: 查新闻、核对报道来源\n---\n你是新闻研究员。\n",
 };
 
 const openOnTeam = (card: string, team: string): ToolCall => {
@@ -281,8 +282,8 @@ test("派过一次后重启宿主再追问，成员仍接着上次的会话；�
 
 const FOUR = [["market-analyst", "行情分析师"], ["news-researcher", "新闻研究员"], ["earnings-reader", "财报解读"], ["chart-reader", "技术分析师"]];
 const FOUR_FILES = {
-	...Object.fromEntries(FOUR.map(([name, title]) => [`agents/${name}.md`, `---\nname: ${name}\ntitle: ${title}\ndescription: ${title}的活\ntools: read\n---\n你是${title}。\n`])),
-	"teams.yaml": `看盘队:\n  description: 四个人看盘\n  members:\n${FOUR.map(([name]) => `    - ${name}`).join("\n")}\n`,
+	"modules/watch/module.json": WATCH_MANIFEST,
+	...Object.fromEntries(FOUR.map(([name, title]) => [`modules/watch/agents/${name}.md`, `---\nname: ${name}\ntitle: ${title}\ndescription: ${title}的活\ntools: read\n---\n你是${title}。\n`])),
 };
 
 test("一次派给四位成员、同时只能跑两位：小卡下两位在干活、两位写排队中；手机宽度下成员换行，不用横向滚动", (t) =>

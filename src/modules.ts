@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import { ConfigError, readJsonFile } from "./config-error.ts";
 import { CONVERSATION_SOURCE, type SourcePolicy } from "./kernel/types.ts";
 import type { TimerEntry } from "./sources/timer.ts";
+import { loadTeam, type Team } from "./teams.ts";
 
 export interface SourceFilter {
 	name: string;
@@ -18,6 +19,12 @@ export interface SourceFilter {
 
 export interface ModuleManifest {
 	name: string;
+	/** The domain's Chinese name. Required when `description` is written. */
+	title?: string;
+	/** One sentence for the 幕僚长. A module without it is not offered to the 幕僚长. */
+	description?: string;
+	/** The team's display name. Written exactly when `agents/` holds a member. */
+	team?: string;
 	sources?: SourceFilter[];
 	timers?: TimerEntry[];
 	prepare?: string;
@@ -29,7 +36,18 @@ export interface LoadedModule {
 	manifest: ModuleManifest;
 	rules: ScopedRule[];
 	skillsDir: string | undefined;
+	/** The members in `agents/`. Absent: a ticket of this module is one helper. */
+	team?: Team;
 }
+
+export interface ModulesLoadOptions {
+	/** Its `rules.md` holds the user's rules. Omitted: no user rules, and the state dir is not checked for leftovers. */
+	stateDir?: string;
+	/** The providers a member's `model` may use. Empty: a member that names a model is rejected. */
+	allowedProviders?: readonly string[];
+}
+
+const DESCRIPTION_MAX_CHARS = 60;
 
 export interface Rule {
 	id: string;
@@ -61,10 +79,18 @@ export function parseRules(file: string, namespace: string, markdown: string): R
 	return rules.map((r) => ({ ...r, text: r.text.trim() })).filter((r) => r.text);
 }
 
-function loadModule(dir: string): LoadedModule {
+function loadModule(dir: string, allowedProviders: readonly string[]): LoadedModule {
 	const manifestPath = join(dir, "module.json");
 	const manifest = readJsonFile<ModuleManifest>(manifestPath);
 	if (!manifest.name || manifest.name !== basename(dir)) throw new ConfigError(`${manifestPath}：name 必须等于目录名 ${basename(dir)}`);
+	for (const key of ["title", "description"] as const) {
+		const value: unknown = manifest[key];
+		if (value !== undefined && (typeof value !== "string" || !value.trim())) throw new ConfigError(`${manifestPath}：${key}（${JSON.stringify(value)}）要写成一句不为空的话`);
+	}
+	if (manifest.description !== undefined && manifest.title === undefined) throw new ConfigError(`${manifestPath}：写了 description 就要写 title（领域的中文名），幕僚长的名册两样都列`);
+	if ([...(manifest.description ?? "")].length > DESCRIPTION_MAX_CHARS) throw new ConfigError(`${manifestPath}：description 超过 ${DESCRIPTION_MAX_CHARS} 字，只写一句给幕僚长看的说明`);
+	const teamsFile = join(dir, "teams.yaml");
+	if (existsSync(teamsFile)) throw new ConfigError(`${teamsFile}：不再读取 teams.yaml。团队就是这个模块 agents/ 里的全部成员，队名写在 module.json 的 team。删掉这个文件`);
 	for (const s of manifest.sources ?? []) {
 		for (const pattern of s.ignore ?? []) {
 			try {
@@ -84,7 +110,16 @@ function loadModule(dir: string): LoadedModule {
 		manifest,
 		rules: rules.map((r) => ({ ...r, sources: r.sources ?? [...new Set(moduleSources)] })),
 		skillsDir: existsSync(skillsDir) ? skillsDir : undefined,
+		team: loadTeam(dir, manifestPath, manifest.team, allowedProviders),
 	};
+}
+
+function rejectLooseTeamFiles(stateDir: string): void {
+	const home = `${join(stateDir, "modules")}/<名字>/`;
+	const teamsFile = join(stateDir, "teams.yaml");
+	if (existsSync(teamsFile)) throw new ConfigError(`${teamsFile}：不再读取状态目录下的 teams.yaml。把团队做成模块：成员放进 ${home}agents/，队名写在 ${home}module.json 的 team。删掉这个文件`);
+	const agentsDir = join(stateDir, "agents");
+	if (existsSync(agentsDir)) throw new ConfigError(`${agentsDir}：不再读取状态目录下零散的成员。把它们搬到 ${home}agents/，并在 ${home}module.json 写 team（队名）`);
 }
 
 export class Modules {
@@ -100,13 +135,15 @@ export class Modules {
 		this.#scopes = new Map(this.allRules().map((r) => [r.id, r.sources]));
 	}
 
-	static load(dirs: string[], userRulesFile?: string): Modules {
+	static load(dirs: readonly string[], { stateDir, allowedProviders = [] }: ModulesLoadOptions = {}): Modules {
+		if (stateDir !== undefined) rejectLooseTeamFiles(stateDir);
+		const userRulesFile = stateDir === undefined ? undefined : join(stateDir, "rules.md");
 		const modules: LoadedModule[] = [];
 		for (const root of dirs) {
 			if (!existsSync(root)) continue;
 			for (const entry of readdirSync(root).sort()) {
 				const dir = join(root, entry);
-				if (statSync(dir).isDirectory() && existsSync(join(dir, "module.json"))) modules.push(loadModule(dir));
+				if (statSync(dir).isDirectory() && existsSync(join(dir, "module.json"))) modules.push(loadModule(dir, allowedProviders));
 			}
 		}
 		const names = modules.map((m) => m.name);

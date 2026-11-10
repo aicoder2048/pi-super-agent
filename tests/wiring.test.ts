@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHostOptions, modelSelectors, watchedSources } from "../src/host/wiring.ts";
+import { memberProviders } from "../src/host/config.ts";
 import { Host } from "../src/host/host.ts";
 import { Modules } from "../src/modules.ts";
 import { DEFAULT_TEAM } from "../src/kernel/types.ts";
@@ -194,22 +195,21 @@ function writeFiles(dir: string, files: Record<string, string>): string {
 	return dir;
 }
 const memberFile = (name: string, title: string, extra = "") => `---\nname: ${name}\ntitle: ${title}\ndescription: ${title}的说明\n${extra}---\n`;
-const NEWS_FILES = {
-	"agents/news.md": memberFile("news-researcher", "新闻研究员"),
-	"teams.yaml": "新闻队:\n  description: 查新闻、核对报道来源\n  members:\n    - news-researcher\n",
-};
+const moduleFiles = (name: string, manifest: object, files: Record<string, string> = {}) =>
+	Object.fromEntries(Object.entries({ "module.json": JSON.stringify({ name, ...manifest }), ...files }).map(([path, text]) => [`${name}/${path}`, text]));
+const NEWS_MODULE = moduleFiles("news", { title: "新闻", description: "查新闻、核对报道来源", team: "新闻队" }, { "agents/news.md": memberFile("news-researcher", "新闻研究员") });
+const loadWith = (config: ReturnType<typeof hostConfig>, ...dirs: string[]) => Modules.load([...dirs, join(config.stateDir, "modules")], { stateDir: config.stateDir, allowedProviders: memberProviders(config) });
 
-test("真实接线：模块目录和状态目录里的团队进了内核的团队簿和幕僚长的提示词；提示词里没有成员", async (t) => {
+test("真实接线：仓库模块目录和状态目录 modules/ 里带成员的模块各是一支团队，进了内核的团队簿和幕僚长的提示词；提示词里没有成员", async (t) => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = hostConfig(provider);
-	writeFiles(config.stateDir, NEWS_FILES);
+	writeFiles(join(config.stateDir, "modules"), NEWS_MODULE);
 	const modulesDir = writeFiles(mkdtempSync(join(tmpdir(), "psa-mods-")), {
-		"watch/module.json": JSON.stringify({ name: "watch", sources: [{ name: "quotes" }] }),
-		"watch/agents/analyst.md": memberFile("market-analyst", "行情分析师"),
-		"watch/teams.yaml": "看盘队:\n  description: 盯行情\n  members:\n    - market-analyst\n    - general\n",
+		...moduleFiles("watch", { title: "看盘", description: "盯行情", team: "看盘队", sources: [{ name: "quotes" }] }, { "rules.md": "## drop\n跌多了开任务\n", "agents/analyst.md": memberFile("market-analyst", "行情分析师") }),
+		...moduleFiles("mail", { sources: [{ name: "mail" }] }),
 	});
 	const logs: string[] = [];
-	const options = createHostOptions({ config, modules: Modules.load([modulesDir]), modelRuntime, log: (line) => logs.push(line) });
+	const options = createHostOptions({ config, modules: loadWith(config, modulesDir), modelRuntime, log: (line) => logs.push(line) });
 	assert.deepEqual([...options.teams!.kinds], [[DEFAULT_TEAM, "solo"], ["看盘队", "crew"], ["新闻队", "crew"]]);
 	assert.ok(logs.includes("[host] 团队：默认、看盘队、新闻队"), logs.join("\n"));
 	const host = await Host.start(options);
@@ -219,7 +219,7 @@ test("真实接线：模块目录和状态目录里的团队进了内核的团�
 	assert.doesNotMatch(prompt, /news-researcher|新闻研究员|market-analyst|行情分析师/);
 });
 
-test("真实接线：没有任何自定义成员和团队时，团队簿里只有默认团队", async () => {
+test("真实接线：没有任何带成员的模块时，团队簿里只有默认团队", async () => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([]), modelRuntime, log: () => {} });
 	assert.deepEqual([...options.teams!.kinds], [[DEFAULT_TEAM, "solo"]]);
@@ -230,23 +230,20 @@ test("真实接线：成员的模型只能用 router 或 worker 的提供方，�
 	const withModel = (model: string) => {
 		const config = hostConfig(provider);
 		config.models.fallback = { provider: "deepseek", id: "deepseek-flash" };
-		writeFiles(config.stateDir, { "agents/news.md": memberFile("news-researcher", "新闻研究员", `model: ${model}\n`) });
-		return { config, file: join(config.stateDir, "agents/news.md") };
+		writeFiles(join(config.stateDir, "modules"), moduleFiles("news", { team: "新闻队" }, { "agents/news.md": memberFile("news-researcher", "新闻研究员", `model: ${model}\n`) }));
+		return { config, file: join(config.stateDir, "modules/news/agents/news.md") };
 	};
 	const paid = withModel("deepseek/deepseek-flash");
-	assert.throws(() => createHostOptions({ config: paid.config, modules: Modules.load([]), modelRuntime, log: () => {} }), (e: Error) => e.message.startsWith(paid.file) && /拒绝使用 deepseek\/deepseek-flash/.test(e.message));
+	assert.throws(() => loadWith(paid.config), (e: Error) => e.message.startsWith(paid.file) && /拒绝使用 deepseek\/deepseek-flash/.test(e.message));
 	const missing = withModel(`${provider}/no-such-model`);
-	assert.throws(() => createHostOptions({ config: missing.config, modules: Modules.load([]), modelRuntime, log: () => {} }), (e: Error) => e.message.startsWith(missing.file) && /找不到模型 .*no-such-model/.test(e.message));
+	assert.throws(() => createHostOptions({ config: missing.config, modules: loadWith(missing.config), modelRuntime, log: () => {} }), (e: Error) => e.message.startsWith(missing.file) && /找不到模型 .*no-such-model/.test(e.message));
 });
 
-test("真实接线：宿主知道每个团队能派给谁（通用助手不算），时限和并发上限取自配置；名册里没有的团队答不上来", async () => {
+test("真实接线：宿主知道每个团队能派给谁，时限和并发上限取自配置；名册里没有的团队答不上来", async () => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = hostConfig(provider);
-	writeFiles(config.stateDir, {
-		"agents/news.md": memberFile("news-researcher", "新闻研究员"),
-		"teams.yaml": "新闻队:\n  description: 查新闻\n  members:\n    - general\n    - news-researcher\n",
-	});
-	const { dispatch } = createHostOptions({ config, modules: Modules.load([]), modelRuntime, log: () => {} });
+	writeFiles(join(config.stateDir, "modules"), NEWS_MODULE);
+	const { dispatch } = createHostOptions({ config, modules: loadWith(config), modelRuntime, log: () => {} });
 	assert.deepEqual(dispatch!.crewOf("新闻队")!.map((m) => [m.name, m.title]), [["news-researcher", "新闻研究员"]]);
 	assert.deepEqual(dispatch!.crewOf(DEFAULT_TEAM), []);
 	assert.equal(dispatch!.crewOf("旧队"), undefined);

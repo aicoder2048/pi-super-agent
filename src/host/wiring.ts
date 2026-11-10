@@ -1,11 +1,10 @@
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
-import type { Clock } from "../kernel/types.ts";
+import { DEFAULT_TEAM, type Clock, type TeamBook } from "../kernel/types.ts";
 import { ConfigError } from "../config-error.ts";
 import { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import type { Modules } from "../modules.ts";
-import { BUILTIN_ROOT, Roster } from "../teams.ts";
 import type { WatchedSource } from "../client/protocol.ts";
 import type { TimerEntry } from "../sources/timer.ts";
 import { FEEDS, type FeedSpec } from "../sources/feeds.ts";
@@ -72,9 +71,8 @@ export interface HostWiringInput {
 }
 
 export function createHostOptions({ config, modules, modelRuntime, log, clock = { now: () => Date.now() } }: HostWiringInput): HostOptions {
-	const subscriptionProviders = [...new Set([config.models.router.provider, config.models.worker.provider])];
-	const roster = Roster.load([BUILTIN_ROOT, ...modules.modules.map((m) => m.dir), config.stateDir], subscriptionProviders);
-	const teams = roster.teamBook();
+	const withTeam = modules.modules.flatMap((m) => (m.team ? [{ ...m, team: m.team }] : []));
+	const teams: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"], ...withTeam.map((m) => [m.team.name, "crew"] as const)]) };
 	log(`[host] 团队：${[...teams.kinds.keys()].join("、")}`);
 	const resolve = (ref: ModelRef, role?: string) => {
 		const model = modelRuntime.getModel(ref.provider, ref.id);
@@ -84,7 +82,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 	resolve(config.models.router, "router");
 	resolve(config.models.worker, "worker");
 	resolve(config.models.fallback, "fallback");
-	for (const member of roster.members) {
+	for (const member of withTeam.flatMap((m) => m.team.members)) {
 		if (member.model && !modelRuntime.getModel(member.model.provider, member.model.id)) throw new ConfigError(`${member.file}：model：找不到模型 ${formatModelRef(member.model)}`);
 	}
 	const selectors = modelSelectors(config, clock);
@@ -106,7 +104,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		feeds,
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
 		dispatch: {
-			crewOf: (team) => roster.team(team)?.crew,
+			crewOf: (team) => (team === DEFAULT_TEAM ? [] : withTeam.find((m) => m.team.name === team)?.team.members),
 			timeoutMs: config.dispatchTimeoutSeconds * 1000,
 			codingTimeoutMs: config.dispatchCodingTimeoutSeconds * 1000,
 			stallMs: config.dispatchStallSeconds * 1000,
@@ -121,7 +119,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 				cwd: join(config.stateDir, "router"),
 				sessionDir: join(config.stateDir, "sessions", "router"),
 				rules: modules.rulesPrompt(),
-				teamRoster: roster.routerPrompt(),
+				teamRoster: withTeam.map((m) => `- ${m.team.name}：${m.manifest.description ?? ""}`).join("\n"),
 				rulesFor: deps.rulesFor,
 				afterCommand: deps.afterCommand,
 				onError: (e) => log(`[router] ${String(e)}`),
