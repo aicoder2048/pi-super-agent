@@ -15,6 +15,7 @@ export interface WebHost {
 	transcript(ticketId: string): TranscriptHistory;
 	say(text: string): string;
 	answer(reportId: string, option: number): AnswerResult;
+	clear(): void;
 }
 
 const SAY_MAX_BYTES = 32 * 1024;
@@ -38,11 +39,11 @@ const KEEPALIVE_MS = 15_000;
 const INTERNAL_ERROR = "宿主内部出错，详情见宿主日志。";
 
 const DENIED = {
-	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"} 或 {\"answer\": {\"reportId\": \"rpt_…\", \"option\": 0}}，或这句话是空的。",
+	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"} 或 {\"answer\": {\"reportId\": \"rpt_…\", \"option\": 0}}，或这句话是空的；清屏的正文是 {}。",
 	401: "token 缺失或已失效，请用宿主日志里最新的网址打开。",
 	403: "只接受本机这个页面（127.0.0.1 或 localhost）发来的请求。",
 	404: "没有这个页面。",
-	405: "这个地址不接受这种请求；发话用 POST /say，其余只接受 GET。",
+	405: "这个地址不接受这种请求；发话用 POST /say，清屏用 POST /clear，其余只接受 GET。",
 	413: "这句话太长了，请分几次说。",
 	415: "发话的正文要用 application/json。",
 } as const;
@@ -56,6 +57,10 @@ export class WebGateway {
 	readonly #host: WebHost;
 	readonly #log: (line: string) => void;
 	#port = 0;
+	readonly #posts = new Map<string, (body: string, res: ServerResponse) => void>([
+		["/say", (body, res) => this.#say(body, res)],
+		["/clear", (body, res) => this.#clear(body, res)],
+	]);
 
 	constructor(host: WebHost, token: string, log: (line: string) => void) {
 		this.#host = host;
@@ -121,7 +126,8 @@ export class WebGateway {
 		if (!isLocalHost(req.headers.host, this.#port)) return deny(res, 403);
 		const file = STATIC.get(url.pathname);
 		if (!file && !tokenMatches(url.searchParams.get("token") ?? "", this.#token)) return deny(res, 401);
-		if (url.pathname === "/say") return req.method === "POST" ? this.#say(req, res) : deny(res, 405);
+		const post = this.#posts.get(url.pathname);
+		if (post) return req.method === "POST" ? this.#post(req, res, post) : deny(res, 405);
 		if (req.method !== "GET") return deny(res, 405);
 		if (file) return void res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": file.type }).end(file.body);
 		if (url.pathname === "/") {
@@ -143,7 +149,7 @@ export class WebGateway {
 
 	// The token stops other local pages; Origin and the JSON content type each stop cross-site form posts,
 	// since a cross-origin JSON POST needs a CORS preflight that this server never answers.
-	#say(req: IncomingMessage, res: ServerResponse): void {
+	#post(req: IncomingMessage, res: ServerResponse, handle: (body: string, res: ServerResponse) => void): void {
 		const origin = req.headers.origin?.toLowerCase();
 		if (!origin?.startsWith("http://") || !isLocalHost(origin.slice("http://".length), this.#port)) return deny(res, 403);
 		if (req.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json") return deny(res, 415);
@@ -158,14 +164,24 @@ export class WebGateway {
 		req.on("end", () =>
 			this.#guard(req, res, () => {
 				if (res.headersSent) return;
-				const body = parseSayBody(Buffer.concat(chunks).toString("utf8"));
-				if (body === undefined) return deny(res, 400);
-				const result = body.kind === "text" ? { ok: true as const, triggerId: this.#host.say(body.text) } : this.#host.answer(body.reportId, body.option);
-				if (!result.ok) return refuse(res, result.refusal);
-				const { triggerId } = result;
-				res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ triggerId }));
+				handle(Buffer.concat(chunks).toString("utf8"), res);
 			}),
 		);
+	}
+
+	#say(text: string, res: ServerResponse): void {
+		const body = parseSayBody(text);
+		if (body === undefined) return deny(res, 400);
+		const result = body.kind === "text" ? { ok: true as const, triggerId: this.#host.say(body.text) } : this.#host.answer(body.reportId, body.option);
+		if (!result.ok) return refuse(res, result.refusal);
+		const { triggerId } = result;
+		res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ triggerId }));
+	}
+
+	#clear(body: string, res: ServerResponse): void {
+		if (!isEmptyObject(body)) return deny(res, 400);
+		this.#host.clear();
+		res.writeHead(204, NO_LEAK_HEADERS).end();
 	}
 
 	#openStream(res: ServerResponse, first: HostToClient, set: Set<ServerResponse>, onEmpty?: () => void): void {
@@ -185,14 +201,19 @@ export class WebGateway {
 
 type SayBody = { kind: "text"; text: string } | { kind: "answer"; reportId: string; option: number };
 
-function parseSayBody(body: string): SayBody | undefined {
+function parseObject(body: string): object | undefined {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(body);
 	} catch {
 		return undefined;
 	}
-	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+	return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : undefined;
+}
+
+function parseSayBody(body: string): SayBody | undefined {
+	const parsed = parseObject(body);
+	if (parsed === undefined) return undefined;
 	const keys = Object.keys(parsed);
 	if (keys.length !== 1) return undefined;
 	const { text, answer } = parsed as { text?: unknown; answer?: unknown };
@@ -202,6 +223,11 @@ function parseSayBody(body: string): SayBody | undefined {
 	if (typeof reportId !== "string" || !(REPORT_ID.test(reportId) || isCapAskId(reportId))) return undefined;
 	if (typeof option !== "number" || !Number.isInteger(option) || option < 0 || option >= OPTIONS_MAX) return undefined;
 	return { kind: "answer", reportId, option };
+}
+
+function isEmptyObject(body: string): boolean {
+	const parsed = parseObject(body);
+	return parsed !== undefined && Object.keys(parsed).length === 0;
 }
 
 function tooLarge(req: IncomingMessage, res: ServerResponse): void {

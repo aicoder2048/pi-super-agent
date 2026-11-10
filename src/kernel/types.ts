@@ -267,6 +267,18 @@ export interface DashboardRow {
 	endedAt: number | null;
 }
 
+/** One line of the 对话 column. ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
+export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string };
+
+/**
+ * The latest 清屏. `at` is when it happened, and also its identity: every effective 清屏 has a strictly later `at` than the one before.
+ * `lines` holds the newest hidden lines from every 清屏 so far, oldest first. Never empty: a 清屏 that hid nothing is not recorded.
+ */
+export interface Cleared {
+	at: number;
+	lines: ConversationLine[];
+}
+
 export interface AnswerClick {
 	ticketId: string;
 	reportId: string;

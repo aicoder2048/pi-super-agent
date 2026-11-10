@@ -1,8 +1,7 @@
-import type { CapQuestion, DashboardRow, Disposition, HelpersToday, Routes } from "../kernel/types.ts";
+import type { CapQuestion, Cleared, ConversationLine, DashboardRow, Disposition, HelpersToday, Routes } from "../kernel/types.ts";
 import type { Dispatching } from "../host/dispatch.ts";
 
-/** ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
-export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string };
+export type { Cleared, ConversationLine } from "../kernel/types.ts";
 
 /** `resumed` counts the running tickets recovered at this start; 0 means a clean start. */
 export interface Duty {
@@ -49,12 +48,14 @@ export type ClientToHost =
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
-	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; memberCap: MemberCapBoard; watching: WatchedSource[] }
+	| { type: "snapshot"; conversation: ConversationLine[]; cleared: Cleared | null; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; memberCap: MemberCapBoard; watching: WatchedSource[] }
 	| { type: "user"; id: string; text: string; at: number }
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }
 	| { type: "reply"; text: string; at: number; replyId: string; ticketId?: string }
 	| ({ type: "board" } & BoardState)
+	/** A 清屏 on the host: every front end's conversation is now exactly `conversation`, and `cleared` is what it took away. */
+	| { type: "cleared"; conversation: ConversationLine[]; cleared: Cleared }
 	| ({ type: "transcript_history"; ticketId: string } & TranscriptHistory)
 	/** `member`: the message is from the member at work on that dispatch, and is that dispatch's `index`-th message. */
 	| { type: "transcript"; ticketId: string; message: TranscriptMessage; member?: { callId: string; index: number } };

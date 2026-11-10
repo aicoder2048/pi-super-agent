@@ -264,6 +264,22 @@ test("客户端：同一毫秒到达的多条对话都显示，同一个 id 只�
 	assert.deepEqual(ext.shown, ["你> 问", "Router> 答一", "Router> 答二", "Router> 答三"]);
 });
 
+test("TUI：收到网页清屏的 cleared 帧时什么都不打印，已经打印的行留着，之后的新行照常打印", async (t) => {
+	const host = scriptedHost();
+	host.hello((s) => {
+		writeJsonLine(s, { type: "snapshot", conversation: [{ id: "trg_1", who: "user", text: "问", at: 5 }], board: [], cleared: null });
+		writeJsonLine(s, { type: "cleared", conversation: [], cleared: { at: 6, lines: [{ id: "trg_1", who: "user", text: "问", at: 5 }] } });
+		writeJsonLine(s, { type: "user", id: "trg_2", text: "又问", at: 7 });
+	});
+	await host.listen();
+	const ext = await runExtension(host.path);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await until(() => ext.shown.length >= 2, "清屏后的新行");
+	await new Promise((r) => setTimeout(r, 100));
+	assert.deepEqual(ext.shown, ["你> 问", "你> 又问"]);
+	assert.deepEqual(ext.warnings, []);
+});
+
 test("TUI：状态目录里没有 client-token 时提醒一次先启动宿主，不发 hello", async (t) => {
 	const host = scriptedHost();
 	rmSync(join(dirname(host.path), "client-token"));

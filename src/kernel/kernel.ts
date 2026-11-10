@@ -18,6 +18,8 @@ import {
 } from "./types.ts";
 import type {
 	Action,
+	Cleared,
+	ConversationLine,
 	ActionKind,
 	AnswerClick,
 	Basis,
@@ -142,6 +144,16 @@ export interface KernelOptions {
 	log?: (line: string) => void;
 	config?: Partial<KernelConfig>;
 }
+
+const LINES = `
+	SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord, NULL AS cause, 1 AS shown FROM triggers t
+	JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ?
+	UNION ALL
+	SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause, r.delivered_at IS NOT NULL FROM reply_receipts r WHERE r.thread_id = ?
+	UNION ALL
+	SELECT ? || c.day, 'user', c.said, c.answered_at, c.rowid, NULL, 1 FROM cap_asks c WHERE c.said IS NOT NULL`;
+const LINES_PARAMS = [CONVERSATION_THREAD_ID, CONVERSATION_THREAD_ID, CAP_ASK_PREFIX] as const;
+const HIDDEN = "id IN (SELECT line_id FROM conversation_hidden)";
 
 export class Kernel {
 	readonly #db: DatabaseSync;
@@ -822,19 +834,42 @@ export class Kernel {
 		}));
 	}
 
-	conversation(limit = 50): { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string }[] {
+	/** The visible conversation: the newest `limit` lines no 清屏 has hidden, oldest first. */
+	conversation(limit = 50): ConversationLine[] {
+		return this.#lines(`NOT ${HIDDEN}`, limit);
+	}
+
+	/** The latest 清屏 and the newest `limit` lines hidden so far, or null if there was never an effective 清屏. */
+	cleared(limit = 50): Cleared | null {
+		const at = this.#lastClearAt();
+		return at === null ? null : { at, lines: this.#lines(HIDDEN, limit) };
+	}
+
+	/**
+	 * 清屏: hides every line that is on the screens now. It writes no trigger, wakes no one and changes no conversation row.
+	 * Returns null when nothing on screen was left to hide, and then writes nothing.
+	 */
+	clearConversation(limit = 50): Cleared | null {
+		return this.#tx(() => {
+			const last = this.#lastClearAt();
+			const at = last === null ? this.#now() : Math.max(this.#now(), last + 1);
+			const { changes } = this.#run(
+				`INSERT OR IGNORE INTO conversation_hidden (line_id, hidden_at) SELECT id, ? FROM (${LINES}) WHERE shown`,
+				at,
+				...LINES_PARAMS,
+			);
+			return changes > 0 ? { at, lines: this.#lines(HIDDEN, limit) } : null;
+		});
+	}
+
+	#lastClearAt(): number | null {
+		return this.#get("SELECT MAX(hidden_at) AS at FROM conversation_hidden")?.at ?? null;
+	}
+
+	#lines(where: string, limit: number): ConversationLine[] {
 		return this.#all(
-			`SELECT * FROM (
-				SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord, NULL AS cause FROM triggers t
-				JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ?
-				UNION ALL
-				SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause FROM reply_receipts r WHERE r.thread_id = ?
-				UNION ALL
-				SELECT ? || c.day, 'user', c.said, c.answered_at, c.rowid, NULL FROM cap_asks c WHERE c.said IS NOT NULL
-			) ORDER BY at DESC, who = 'router' DESC, ord DESC LIMIT ?`,
-			CONVERSATION_THREAD_ID,
-			CONVERSATION_THREAD_ID,
-			CAP_ASK_PREFIX,
+			`SELECT * FROM (${LINES}) WHERE ${where} ORDER BY at DESC, who = 'router' DESC, ord DESC LIMIT ?`,
+			...LINES_PARAMS,
 			limit,
 		)
 			.reverse()

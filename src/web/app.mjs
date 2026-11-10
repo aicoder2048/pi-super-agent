@@ -1,9 +1,9 @@
 // @ts-check
 
 import {
-	STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canSend, choicesInConversation, dutyLine, emptyView, emptyWatch, questionOf,
-	helperStrip, helperTint, isStale, leftColumn, lifecycleLine, liveSteps, parseMarkdown, resolveTheme, restartNotice, routeLine, sayCopy, sayOutcome, settleSay, settleSending, smallPrint, stopSentence,
-	toggleTheme,
+	CLEAR_FAILED, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
+	questionOf, helperStrip, helperTint, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, resolveTheme, restartNotice, routeLine, sayCopy, sayOutcome, settleSay, settleSending,
+	smallPrint, stopSentence, toggleEarlier, toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperFullName } from "../client/board-format.mjs";
 
@@ -29,15 +29,19 @@ function mount(doc) {
 	const composer = /** @type {HTMLTextAreaElement} */ ($("composer"));
 	const send = /** @type {HTMLButtonElement} */ ($("send"));
 	const sayStatus = $("say-status");
+	const clearButton = /** @type {HTMLButtonElement} */ ($("clear"));
 	/** @param {string} id */
 	const template = (id) => /** @type {Element} */ (/** @type {HTMLTemplateElement} */ ($(id)).content.firstElementChild);
 	const avatarMark = template("router-avatar");
 	const youMark = template("user-avatar");
 	const wrench = template("helper-icon");
 	let rendered = 0;
+	/** @type {number | null} */
+	let renderedClearAt = null;
+	let earlierShown = false;
 	/** @type {import("./view.mjs").SayState} */
 	let sayState = "idle";
-	/** @type {{ text: string, from: number } | undefined} */
+	/** @type {{ text: string, idsAtSay: Set<string> } | undefined} */
 	let unconfirmed;
 	/** @type {{ watch: ReturnType<typeof emptyWatch>, source: EventSource } | undefined} */
 	let watching;
@@ -306,30 +310,65 @@ function mount(doc) {
 		/** @type {HTMLElement} */ (box.querySelector(".total")).textContent = strip.total;
 	};
 
+	/** @param {import("./view.mjs").ConversationLine} line @param {boolean} withChoices */
+	const lineNode = (line, withChoices) => {
+		const item = el("div", `line ${line.who}`);
+		const bubble = line.who === "router" ? md("bubble", line.text) : el("div", "bubble", line.text);
+		if (line.who === "router") {
+			const avatar = avatarMark.cloneNode(true);
+			const said = el("div", "said");
+			said.append(el("div", "who", "幕僚长"), bubble);
+			if (withChoices) {
+				const choices = el("div", "choices");
+				choices.dataset.line = line.id;
+				said.append(choices);
+			}
+			item.append(avatar, said);
+		} else {
+			bubble.prepend(el("span", "sr", "你："));
+			const said = el("div", "said");
+			const slot = el("div", "route-slot");
+			slot.dataset.line = line.id;
+			said.append(bubble, slot);
+			item.append(said, youMark.cloneNode(true));
+		}
+		return item;
+	};
+
+	const clearedBarNode = () => {
+		const node = el("button", "cleared-bar");
+		node.type = "button";
+		node.addEventListener("click", () => {
+			toggleEarlier(view);
+			renderConversation();
+		});
+		return node;
+	};
+
 	const renderConversation = () => {
 		const box = $("conversation");
 		const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-		for (const line of [...view.lines.values()].slice(rendered)) {
-			const item = el("div", `line ${line.who}`);
-			const bubble = line.who === "router" ? md("bubble", line.text) : el("div", "bubble", line.text);
-			if (line.who === "router") {
-				const avatar = avatarMark.cloneNode(true);
-				const said = el("div", "said");
-				const choices = el("div", "choices");
-				choices.dataset.line = line.id;
-				said.append(el("div", "who", "幕僚长"), bubble, choices);
-				item.append(avatar, said);
-			} else {
-				bubble.prepend(el("span", "sr", "你："));
-				const said = el("div", "said");
-				const slot = el("div", "route-slot");
-				slot.dataset.line = line.id;
-				said.append(bubble, slot);
-				item.append(said, youMark.cloneNode(true));
-			}
-			thread.append(item);
+		const clearAt = view.cleared?.at ?? null;
+		if (clearAt !== renderedClearAt) {
+			for (const node of thread.querySelectorAll(":scope > .line, :scope > .cleared-bar, :scope > .earlier")) node.remove();
+			rendered = 0;
+			renderedClearAt = clearAt;
+			earlierShown = false;
+			if (view.cleared) thread.append(clearedBarNode(), el("div", "earlier"));
 		}
+		const top = clearedBar(view, Date.now());
+		const barNode = thread.querySelector(".cleared-bar");
+		if (top && barNode) {
+			barNode.textContent = top.text;
+			barNode.setAttribute("aria-expanded", String(top.expanded));
+		}
+		if (view.showEarlier !== earlierShown) {
+			thread.querySelector(".earlier")?.replaceChildren(...earlierLines(view).map((line) => lineNode(line, false)));
+			earlierShown = view.showEarlier;
+		}
+		for (const line of [...view.lines.values()].slice(rendered)) thread.append(lineNode(line, true));
 		rendered = view.lines.size;
+		clearButton.disabled = !canClear(view);
 		renderRoutes();
 		renderChoices();
 		if (atBottom) box.scrollTop = box.scrollHeight;
@@ -338,7 +377,7 @@ function mount(doc) {
 
 	const settleUnconfirmed = () => {
 		if (!unconfirmed) return;
-		const next = settleSay({ state: sayState, text: unconfirmed.text }, composer.value, [...view.lines.values()].slice(unconfirmed.from));
+		const next = settleSay({ state: sayState, text: unconfirmed.text }, composer.value, linesNotIn(view, unconfirmed.idsAtSay));
 		if (next.state === sayState) return;
 		unconfirmed = undefined;
 		composer.value = next.composer;
@@ -506,7 +545,7 @@ function mount(doc) {
 		if (!canSend(text) || send.disabled) return;
 		send.disabled = true;
 		unconfirmed = undefined;
-		const from = view.lines.size;
+		const idsAtSay = knownLineIds(view);
 		setSay("sending");
 		const abort = new AbortController();
 		const timer = setTimeout(() => abort.abort(), DEFAULT_ACK_TIMEOUT_MS);
@@ -524,13 +563,26 @@ function mount(doc) {
 			setSay(state, res.status);
 		} catch {
 			setSay(sayOutcome(abort.signal.aborted ? "timeout" : "network"));
-			unconfirmed = { text, from };
+			unconfirmed = { text, idsAtSay };
 			settleUnconfirmed();
 		} finally {
 			clearTimeout(timer);
 			send.disabled = false;
 		}
 	};
+
+	clearButton.addEventListener("click", async () => {
+		clearButton.disabled = true;
+		try {
+			const res = await fetch(`/clear?${query}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", cache: "no-store", signal: AbortSignal.timeout(DEFAULT_ACK_TIMEOUT_MS) });
+			if (res.status === 401) setStatus("expired");
+			else if (!res.ok) setSay("rejected", res.status, CLEAR_FAILED);
+		} catch {
+			setSay("rejected", undefined, CLEAR_FAILED);
+		} finally {
+			clearButton.disabled = !canClear(view);
+		}
+	});
 
 	$("say").addEventListener("submit", (e) => {
 		e.preventDefault();
