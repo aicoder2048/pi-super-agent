@@ -286,7 +286,6 @@ export class Host {
 		return { conversation: this.kernel.conversation(CONVERSATION_LINES), cleared: this.kernel.cleared(CONVERSATION_LINES), board: rows, today, duty, helpers, routes, dispatching, memberCap, watching };
 	}
 
-	/** 清屏 from a front end. It is not the user's words, so there is no trigger, and the board does not change. */
 	clearConversation(): void {
 		const cleared = this.kernel.clearConversation(CONVERSATION_LINES);
 		if (cleared) this.#broadcast({ type: "cleared", conversation: this.kernel.conversation(CONVERSATION_LINES), cleared });

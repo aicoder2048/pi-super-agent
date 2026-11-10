@@ -102,7 +102,6 @@ function resetConversation(view, lines, cleared) {
 export function applyMessage(view, message, now) {
 	switch (message.type) {
 		case "snapshot": {
-			// A host older than this field has never cleared.
 			const cleared = message.cleared ?? null;
 			if (cleared?.at !== view.cleared?.at) resetConversation(view, message.conversation, cleared);
 			else for (const line of message.conversation) addLine(view, line);
@@ -647,7 +646,7 @@ export const canClear = (view) => view.lines.size > 0;
 
 export const CLEAR_FAILED = "清屏没有成功，请稍后再试。";
 
-/** Hidden lines count too: a say's echo can arrive and be cleared before its ack is lost. @param {View} view */
+/** @param {View} view */
 const knownLines = (view) => [...(view.cleared?.lines ?? []), ...view.lines.values()];
 
 /** @param {View} view */

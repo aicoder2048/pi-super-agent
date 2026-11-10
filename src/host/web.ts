@@ -57,7 +57,6 @@ export class WebGateway {
 	readonly #host: WebHost;
 	readonly #log: (line: string) => void;
 	#port = 0;
-	// One table behind one guard, so a new POST route cannot skip the Origin, content-type and size checks.
 	readonly #posts = new Map<string, (body: string, res: ServerResponse) => void>([
 		["/say", (body, res) => this.#say(body, res)],
 		["/clear", (body, res) => this.#clear(body, res)],

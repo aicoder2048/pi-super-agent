@@ -36,12 +36,12 @@ function mount(doc) {
 	const youMark = template("user-avatar");
 	const wrench = template("helper-icon");
 	let rendered = 0;
-	/** The 清屏 this conversation DOM was built after; Cleared.at names it. @type {number | null} */
+	/** @type {number | null} */
 	let renderedClearAt = null;
 	let earlierShown = false;
 	/** @type {import("./view.mjs").SayState} */
 	let sayState = "idle";
-	/** `seen`: the line ids on the page when the say was posted. @type {{ text: string, seen: Set<string> } | undefined} */
+	/** @type {{ text: string, idsAtSay: Set<string> } | undefined} */
 	let unconfirmed;
 	/** @type {{ watch: ReturnType<typeof emptyWatch>, source: EventSource } | undefined} */
 	let watching;
@@ -310,15 +310,15 @@ function mount(doc) {
 		/** @type {HTMLElement} */ (box.querySelector(".total")).textContent = strip.total;
 	};
 
-	/** @param {import("./view.mjs").ConversationLine} line @param {boolean} live false for an expanded hidden line */
-	const lineNode = (line, live) => {
+	/** @param {import("./view.mjs").ConversationLine} line @param {boolean} withChoices */
+	const lineNode = (line, withChoices) => {
 		const item = el("div", `line ${line.who}`);
 		const bubble = line.who === "router" ? md("bubble", line.text) : el("div", "bubble", line.text);
 		if (line.who === "router") {
 			const avatar = avatarMark.cloneNode(true);
 			const said = el("div", "said");
 			said.append(el("div", "who", "幕僚长"), bubble);
-			if (live) {
+			if (withChoices) {
 				const choices = el("div", "choices");
 				choices.dataset.line = line.id;
 				said.append(choices);
@@ -377,7 +377,7 @@ function mount(doc) {
 
 	const settleUnconfirmed = () => {
 		if (!unconfirmed) return;
-		const next = settleSay({ state: sayState, text: unconfirmed.text }, composer.value, linesNotIn(view, unconfirmed.seen));
+		const next = settleSay({ state: sayState, text: unconfirmed.text }, composer.value, linesNotIn(view, unconfirmed.idsAtSay));
 		if (next.state === sayState) return;
 		unconfirmed = undefined;
 		composer.value = next.composer;
@@ -545,7 +545,7 @@ function mount(doc) {
 		if (!canSend(text) || send.disabled) return;
 		send.disabled = true;
 		unconfirmed = undefined;
-		const seen = knownLineIds(view);
+		const idsAtSay = knownLineIds(view);
 		setSay("sending");
 		const abort = new AbortController();
 		const timer = setTimeout(() => abort.abort(), DEFAULT_ACK_TIMEOUT_MS);
@@ -563,7 +563,7 @@ function mount(doc) {
 			setSay(state, res.status);
 		} catch {
 			setSay(sayOutcome(abort.signal.aborted ? "timeout" : "network"));
-			unconfirmed = { text, seen };
+			unconfirmed = { text, idsAtSay };
 			settleUnconfirmed();
 		} finally {
 			clearTimeout(timer);
@@ -571,7 +571,6 @@ function mount(doc) {
 		}
 	};
 
-	// No confirm dialog: the thin line brings the lines back. The cleared frame changes the DOM, in this tab like every other.
 	clearButton.addEventListener("click", async () => {
 		clearButton.disabled = true;
 		try {

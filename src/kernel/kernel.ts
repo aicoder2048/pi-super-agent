@@ -145,11 +145,6 @@ export interface KernelOptions {
 	config?: Partial<KernelConfig>;
 }
 
-/**
- * Every conversation line, with whether it has reached the screens.
- * User lines and answered cap asks are broadcast as they are written; a reply only once channel.reply delivered it.
- * Params, in order: CONVERSATION_THREAD_ID, CONVERSATION_THREAD_ID, CAP_ASK_PREFIX.
- */
 const LINES = `
 	SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord, NULL AS cause, 1 AS shown FROM triggers t
 	JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ?
@@ -157,6 +152,7 @@ const LINES = `
 	SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause, r.delivered_at IS NOT NULL FROM reply_receipts r WHERE r.thread_id = ?
 	UNION ALL
 	SELECT ? || c.day, 'user', c.said, c.answered_at, c.rowid, NULL, 1 FROM cap_asks c WHERE c.said IS NOT NULL`;
+const LINES_PARAMS = [CONVERSATION_THREAD_ID, CONVERSATION_THREAD_ID, CAP_ASK_PREFIX] as const;
 const HIDDEN = "id IN (SELECT line_id FROM conversation_hidden)";
 
 export class Kernel {
@@ -853,7 +849,6 @@ export class Kernel {
 	/**
 	 * 清屏: hides every line that is on the screens now. It writes no trigger, wakes no one and changes no conversation row.
 	 * Returns null when nothing on screen was left to hide, and then writes nothing.
-	 * `at` is at least the previous 清屏's + 1, so it identifies this 清屏 even under a frozen clock.
 	 */
 	clearConversation(limit = 50): Cleared | null {
 		return this.#tx(() => {
@@ -862,9 +857,7 @@ export class Kernel {
 			const { changes } = this.#run(
 				`INSERT OR IGNORE INTO conversation_hidden (line_id, hidden_at) SELECT id, ? FROM (${LINES}) WHERE shown`,
 				at,
-				CONVERSATION_THREAD_ID,
-				CONVERSATION_THREAD_ID,
-				CAP_ASK_PREFIX,
+				...LINES_PARAMS,
 			);
 			return changes > 0 ? this.cleared(limit) : null;
 		});
@@ -873,9 +866,7 @@ export class Kernel {
 	#lines(where: string, limit: number): ConversationLine[] {
 		return this.#all(
 			`SELECT * FROM (${LINES}) WHERE ${where} ORDER BY at DESC, who = 'router' DESC, ord DESC LIMIT ?`,
-			CONVERSATION_THREAD_ID,
-			CONVERSATION_THREAD_ID,
-			CAP_ASK_PREFIX,
+			...LINES_PARAMS,
 			limit,
 		)
 			.reverse()

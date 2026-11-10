@@ -51,7 +51,6 @@ export interface Exchange {
 	model: string;
 	conversation: string;
 	cards: string[];
-	/** Every user message in the request, oldest first: what the model's session still remembers. */
 	userTexts: string[];
 	steps: string[];
 	unmatched: string[];
