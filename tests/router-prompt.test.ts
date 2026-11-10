@@ -34,3 +34,18 @@ test("route 工具的 open_ticket 可以带 domain，原样交给内核；没有
 	await (route.execute as any)("call", { decisions: [decision] });
 	assert.deepEqual(seen, [[decision]]);
 });
+
+test("幕僚长的提示词：使用者打字要放宽成员上限、或助手提出这样的请求时，只把他指向「待你处理」里的「成员上限」卡片；不开任务、不转交、不说会去安排", () => {
+	const prompt = routerSystemPrompt("", 200, ROSTER);
+	const section = prompt.slice(prompt.indexOf("## 成员上限"), prompt.indexOf("## 领域"));
+	assert.match(section, /^## 成员上限\n/);
+	assert.match(section, /你没有放宽上限的工具/);
+	assert.match(section, /\[对话\]/);
+	assert.match(section, /\[Worker 汇报\]、\[Worker 提问\] 或 \[Worker 交回\]/);
+	assert.match(section, /只有「待你处理」里的「成员上限」卡片能放宽今天的上限/);
+	assert.match(section, /有成员排队时才出现/);
+	assert.match(section, /config\.json 里的 maxConcurrentExperts 改成 1 到 10/);
+	assert.match(section, /不要为这件事开任务/);
+	assert.match(section, /不要把这句话转交给任何任务/);
+	assert.match(section, /不要说你会去安排、处理或转达/);
+});
