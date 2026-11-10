@@ -8,11 +8,12 @@ const volume = Number(volumeArg);
 if (Number.isNaN(change) || Number.isNaN(volume)) throw new Error("用法：just toy-feed <代码> <涨跌幅%> <成交量>");
 const price = +(100 * (1 + change / 100)).toFixed(2);
 const sign = change >= 0 ? "+" : "";
-const file = dropTrigger(join(defaultStateDir(), "inbox"), {
+const inbox = join(defaultStateDir(), "inbox");
+const file = dropTrigger(inbox, {
 	source: "toy-market",
 	thread: symbol,
 	threadTitle: `${symbol} 行情`,
 	sender: "toy-feed",
 	body: `${symbol} 价格 ${price}，涨跌 ${sign}${change}%，成交量 ${volume} 股`,
 });
-console.log(`投递 ${file}：${symbol} ${price}（${sign}${change}%，成交量 ${volume} 股）`);
+console.log(`投递 ${join(inbox, file)}：${symbol} ${price}（${sign}${change}%，成交量 ${volume} 股）`);

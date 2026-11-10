@@ -201,7 +201,7 @@ export class Kernel {
 			const isConversation = threadIds.includes(CONVERSATION_THREAD_ID);
 			const policy = isConversation ? "candidate" : this.#sourcePolicy(sub);
 			const ignored = policy === "ignore";
-			const subscribers = isConversation || policy !== "candidate" ? [] : this.#subscribersOf(threadIds);
+			const subscribers = isConversation || policy !== "candidate" ? [] : this.#openSubscribersOf(threadIds);
 			const disposition: Disposition = ignored ? "ignored" : subscribers.length > 0 ? "delivered" : "to_router";
 
 			const triggerId = this.#id("trg");
@@ -1082,11 +1082,11 @@ export class Kernel {
 		this.#run("UPDATE triggers SET disposition = ?, disposition_detail = ? WHERE id = ?", disposition, detail, triggerId);
 	}
 
-	#subscribersOf(threadIds: string[]): string[] {
+	#openSubscribersOf(threadIds: string[]): string[] {
 		if (threadIds.length === 0) return [];
 		return this.#column(
 			`SELECT DISTINCT s.ticket_id AS v FROM subscriptions s JOIN tickets t ON t.id = s.ticket_id
-			 WHERE t.stopped_at IS NULL AND s.thread_id IN (${threadIds.map(() => "?").join(", ")})
+			 WHERE t.stopped_at IS NULL AND t.closed_at IS NULL AND s.thread_id IN (${threadIds.map(() => "?").join(", ")})
 			 ORDER BY t.created_at`,
 			...threadIds,
 		);

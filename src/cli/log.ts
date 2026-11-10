@@ -6,4 +6,4 @@ import { formatTriggerLog } from "./trigger-log.ts";
 
 const limit = Number(process.argv[2] ?? 30);
 const kernel = new Kernel({ db: openStore(join(defaultStateDir(), "state.db")), clock: { now: () => Date.now() }, sourcePolicy: () => "candidate" });
-console.log(formatTriggerLog(kernel.triggerLog(limit).reverse()) || "还没有触发。");
+console.log(formatTriggerLog(kernel.triggerLog(limit).reverse()) || `还没有触发（状态目录 ${defaultStateDir()}）。`);

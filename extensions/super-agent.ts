@@ -20,6 +20,7 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 	const view: BoardView = { rows: [], receivedAt: Date.now(), connected: false };
 	let ctx: ExtensionContext | undefined;
 	let conn: HostConnection | undefined;
+	let socketPath = "";
 	const seenIds = new Set<string>();
 	let primed = false;
 	let watching: string | undefined;
@@ -88,8 +89,9 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, context) => {
 		ctx = context;
 		const ackTimeoutMs = Number(process.env.PSA_ACK_TIMEOUT_MS) || DEFAULT_ACK_TIMEOUT_MS;
+		socketPath = process.env.PSA_SOCKET ?? join(defaultStateDir(), "host.sock");
 		conn = new HostConnection({
-			socketPath: process.env.PSA_SOCKET ?? join(defaultStateDir(), "host.sock"),
+			socketPath,
 			onMessage,
 			ackTimeoutMs,
 			onAckMissing: (text) =>
@@ -129,7 +131,7 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 			context.ui.notify(`有 ${open.length} 个问题在等回答，请用 /answer <编号> <序号>，例如 /answer ${shortId(open[0].id)} ${text}`, "warning");
 			return { action: "handled" };
 		}
-		if (!conn?.say(text)) context.ui.notify("宿主未连接，这句话没有发出。先运行 just host。", "warning");
+		if (!conn?.say(text)) context.ui.notify(`连不上宿主（${socketPath}），这句话没有发出。先运行 just host，并确认各个终端的 PSA_STATE_DIR 相同。`, "warning");
 		return { action: "handled" };
 	});
 
