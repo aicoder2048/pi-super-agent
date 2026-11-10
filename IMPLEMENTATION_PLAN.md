@@ -37,6 +37,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
   - [ ] W3 after W2.
   - [ ] W5 after W4, stacked on `psa/e2e`. X1 branches from `main`.
   - [ ] T1 after W5, on `psa/teams` cut from `psa/helpers`; T2 on T1; T3 on T2. Design in ADR-0008. T1 到 T3 取代没有合并的 W6a 到 W6c（#30、#31、#32）。
+  - [ ] D1 sits between T2 and T2b, on `psa/domains` cut from `psa/dispatch` (T2). Design in ADR-0009（使用者 2026-11-09 决定）. A ticket belongs to one domain and the domain is a module. T2b and T3 stack on D1.
   - [ ] The user approved this order after T1 on 2026-11-09. T2 first. Then a socket-auth fix PR, because the host socket accepts `role: "client"` without a token, so a process with bash can speak as the user. The T2 audit found it and it predates T2. Then T2b, which asks the user when members queue, and on a yes raises the member cap to 10 for that New York day. Then T3. Then restack #33 and close #30 to #32.
   - [ ] W4 after W2 and the M1/F1 PRs, stacked on `psa/stable-token` (#24). W3 moved after W4, because it changes the page and waits for the user's review; W4 does not depend on it. 见决策记录 w4-order。
 - [ ] Hold the file boundaries. W1 to W3 touch only `src/host/`, `src/web/`, `src/client/board-format.mjs`, `src/client/board.ts`, `tests/`, `justfile`, `docs/`. W1 起加入 `src/client/` 两个文件，让 TUI 和网页共用看板格式，见决策记录。 W4 adds `package.json`, `package-lock.json`, `.gitignore`, `tests/e2e/`, `demos/`, and `justfile`.
@@ -556,42 +557,108 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 - [ ] 使用者合并。
 
+## Make the module the domain (D1)
+
+**Depends on.** T2 (branch `psa/domains`, cut from `psa/dispatch`). Design is in `docs/adr/0009-a-ticket-belongs-to-one-domain-and-the-domain-is-a-module.md`（使用者 2026-11-09 决定）。改写 ADR-0008 里团队来源的部分；T2b 和 T3 叠在它上面。
+
+**Files.**
+
+- [x] Edit `src/modules.ts`（`module.json` 的 `title`、`description`、`team`；成员随模块加载；`Domains`、`DomainKit`、`kitFor`、`rosterPrompt`；三种旧写法报错）和 `src/teams.ts`（只留成员文件的解析和 `loadTeam`）；delete `agents/general.md`。 证据：fe00234、eb9d6f9、1d0ff25、5a95dd6。
+- [x] Edit `src/kernel/kernel.ts`、`src/kernel/store.ts`、`src/kernel/types.ts`（`tickets.domain`、`Decision.domain`、`Ticket.domain`、`DomainBook`，规则任务的领域按规则编号的前缀定）。 证据：1d0ff25、213cf86。`src/kernel/helper-names.ts` 没有改动：两个名字池和角色的规则不变。
+- [x] Edit `src/host/router.ts`（`domain` 参数和「领域」一节）、`src/host/wiring.ts`、`src/host/host.ts`、`src/host/workers.ts`、`src/host/pi-worker.ts`、`src/host/config.ts`（`memberProviders`）、`src/host/main.ts`、`src/cli/market-smoke.ts`。 证据：eb9d6f9、1d0ff25、5a95dd6、ca8ccc3。`src/host/dispatch.ts` 和 `src/client/board-format.mjs` 没有改动：成员带的技能在 `kitFor` 里拼好，`Helper` 的形状不变。
+- [x] Edit `modules/us-market/module.json`、`modules/toy-market/module.json`（`title` 和 `description`）。 证据：06b25cb。us-market 的成员留给 T3。
+- [x] Edit tests（kernel、modules、teams、wiring、host、host-main、dispatch、web、router-prompt、pi-worker-env、`tests/helpers/fakes.ts`、`tests/e2e/harness.ts`、`teams.e2e.ts`、`dispatch.e2e.ts`）；create `tests/e2e/domains.e2e.ts`。 证据：各提交；声明团队的夹具都从 `teams.yaml` 和状态目录的 `agents/` 搬进状态目录的 `modules/<名字>/`。
+- [x] Edit `docs/adr/0008-…`（被改写的小节开头各加一句）、`docs/adr/0009-…`（「实现时补充」一节）、`GLOSSARY.md`（领域、团队、成员）、`docs/web-client/copy.md`、`docs/pi-super-agent/how.md`（「怎么写一个模块」一节）。 证据：本节所在的文档提交。
+
+**Build.**
+
+- [x] 任务上只记一个领域：`tickets.domain` 存模块的 `name`，空值是没有领域；`tickets.team` 不再读写，旧列留在原处，不做迁移。 证据：`tests/kernel.test.ts`「任务最多属于一个领域…」「任务的领域存在状态库里：重启后不变…」「旧状态库的任务没有领域…」「新建的状态库没有 team 列」；1d0ff25。
+- [x] `open_ticket` 的可选参数是 `domain`，填模块的 `name`；省略或留空就是没有领域；不存在的领域拒绝该决定并列出现有领域，触发还能再用。没有 `team` 参数。 证据：`tests/kernel.test.ts`「open_ticket 的 domain 是空串或只有空白…」「不存在的领域：拒绝这个决定…」「没有加载任何模块时，内核不认任何领域」；`tests/router-prompt.test.ts`「route 工具的 open_ticket 可以带 domain…没有 team 参数」；1d0ff25。
+- [x] 模块规则开的任务属于规则所在的模块，由内核按规则编号的前缀定；幕僚长填了别的领域时记一行日志；`user/` 开头的规则没有自己的领域，幕僚长填的算数；模块不能叫 `user`。 证据：`tests/kernel.test.ts`「模块规则开的任务属于规则所在的模块…」「幕僚长给模块规则的任务填了别的领域…」「模块规则的任务填了不存在的领域，照样拒绝…」「使用者自己的规则和不属于任何已加载模块的规则没有自己的领域…」「规则的归属只管按规则开的任务…」；`tests/host.test.ts`「幕僚长给模块规则的任务填了别的领域时…」；`tests/modules.test.ts`「模块不能叫 user…」；213cf86。
+- [x] 团队就是模块 `agents/` 里的全部成员，队名写在 `module.json` 的 `team`：有成员必须写，没有成员不能写，队名里不能有空白和控制字符。成员重名只在一个模块内查。成员文件的各项校验不变。 证据：`tests/teams.test.ts`「模块 agents/ 里的全部成员就是它的团队…」「agents/ 里有成员却没写 team…」「写了 team 却没有成员…」「team 不是一个干净的队名…」「同一个模块里两个文件定义了同名成员…不同模块的成员可以同名」和原有的成员文件各条；eb9d6f9。
+- [x] `module.json` 多 `title` 和 `description`：`description` 最多 60 字，写了就要写 `title`。幕僚长的名册只列写了 `description` 的模块，每行「- 名字（领域名）：说明」，不列成员；没写的模块不在名册里，它的规则照样把任务放进它的领域。 证据：`tests/teams.test.ts`「module.json 的 title 和 description…」「给幕僚长的领域名册…」；`tests/router-prompt.test.ts`「幕僚长的提示词有一份领域名册…」「没有可选的领域时…」；`tests/wiring.test.ts`「真实接线：仓库模块目录和状态目录 modules/ 里的模块都是领域…」；eb9d6f9、1d0ff25。
+- [x] 三种旧写法各报一行启动错误，以文件开头并说明改法：`rules.md` 里的「团队：」行、模块或状态目录里的 `teams.yaml`、状态目录下零散的 `agents/`。 证据：`tests/modules.test.ts`「规则里写了「团队：」行…」；`tests/teams.test.ts`「模块目录里有 teams.yaml…」「状态目录里有 teams.yaml…」「状态目录里有零散的 agents/…」；`tests/host-main.test.ts` 四条（经真实入口 `just host`）；fe00234、eb9d6f9。
+- [x] 知识跟着领域走：任务属于哪个领域，助手就拿到那个模块的 `skills/` 和 `prepare`，规则触发的和对话里开的一样；成员拿到模块的 `skills/`，再加自己定义里的 `skills`。按规则编号查模块的接线（`WorkerSpec.ruleId`、`moduleFor`、`moduleForRule`）删掉。 证据：`tests/teams.test.ts`「按领域取助手要的东西…」；`tests/host.test.ts`「知识跟着领域走…」；`tests/pi-worker-env.test.ts`「…领域的技能目录交给助手进程，全局技能不加载」；`tests/wiring.test.ts`「真实接线：仓库里的玩具行情模块按领域交出自己的 skills/」；`tests/e2e/domains.e2e.ts`；5a95dd6。
+- [x] 领域有成员的任务显示「四字名 · 队名 #N」，#N 按领域在纽约同一天里数；没有领域和领域没有成员的任务仍是两字名加角色。四字还是两字、名字和 #N 开任务时定下；队名读任务时取模块现在写的 `team`，模块没了成员或被拿掉时写模块名。 证据：`tests/kernel.test.ts`「领域有成员的任务取四字名…」「团队任务的序号按领域在纽约同一天里数…」「两个名字池各自轮转…」「名字和四字还是两字在开任务时定下…」「T1 开的团队任务只有四字名、没有领域…」；1d0ff25。
+- [x] 成员定义在宿主启动时读入并校验（工具、技能路径、计费检查、模型存在、同模块重名）；成员进程仍在派活时才启动。加载方没有交代可用的提供方时，写了 `model` 的成员一律被拒。 证据：`tests/teams.test.ts`「成员文件有错时，加载模块就报出那个文件」「没有交代可用的提供方时，写了 model 的成员一律被拒」；`tests/wiring.test.ts`「真实接线：成员的模型只能用 router 或 worker 的提供方…」；`tests/host-main.test.ts`「成员的模型走按量计费的提供方时…」；eb9d6f9。
+- [x] 任务的领域的模块后来不在了：助手照常启动，按没有领域的单个助手继续，没有领域的技能，不能派活，同一个任务只记一行日志。 证据：`tests/dispatch.test.ts`「任务的领域的模块后来拿掉了…」；1d0ff25、5a95dd6。
+- [x] 去掉 `parseTeams`、`Roster`、内置成员 `general` 和 `agents/general.md`、`DEFAULT_TEAM`、`TeamKind`、`TeamBook`（连同 `pinned`）、`team` 参数、`dispatch.crewOf`。 证据：`grep -rn "parseTeams\|Roster\b\|DEFAULT_TEAM\|TeamBook\|crewOf\|moduleFor" src tests` 只剩 `pi-worker.ts` 里无关的 `RosterEntry`；fe00234、eb9d6f9、1d0ff25、5a95dd6。
+- [x] us-market 和 toy-market 写上 `title` 和 `description`，进了幕僚长的名册；都没有成员。 证据：`tests/modules.test.ts`「仓库里的两个行情模块都有领域名和给幕僚长的说明…」；06b25cb。
+
+**You see.**
+
+- [x] 在状态目录的 `modules/` 里放一个新闻模块（一位新闻研究员、一条规则、一个技能）和一个没有成员的邮件模块。问新闻，任务是「四字名 · 新闻队 #1」，助手和它派的成员都带着新闻模块的技能；问邮件，是两字名的对话助手，带着邮件模块的技能；问天气，是不带任何模块技能的普通助手；rss 来一条报道，幕僚长按新闻模块的规则开任务、没填领域，任务是「新闻队 #2」。 证据：`tests/e2e/domains.e2e.ts`（真实宿主、助手进程、成员进程和页面，假模型）；5a95dd6。真实模型下的同一幕留给 Verify, live。
+
+**Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [x] 领域的校验和默认值、规则任务的归属、三种旧写法的报错、模块里的成员和队名、名册、技能按领域送达、成员带模块技能、模块不在了、旧状态库、两个名字池和显示名。 证据：以上各条列出的测试；`just test` 613 条通过、`just e2e` 98 条通过（3a6f381），见 decisions.tsv 的 d1 各行。
+
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+
+- [ ] Lane 1. 状态目录的 `modules/` 里放一个带技能的模块，在对话里问它管的事。Save `d1-conversation-skill.png`. Pass when 任务的领域是这个模块，助手用上了模块的技能。
+- [ ] Lane 2. 模块自己的规则被来源触发，`rules.md` 里没有「团队：」行。Save `d1-rule-domain.png`. Pass when 任务的领域是规则所在的模块。
+- [ ] Lane 3. 模块有两位成员。Save `d1-crew.png`. Pass when 任务显示「四字名 · 队名 #1」，助手能派活，成员用上了模块的技能。
+- [ ] Lane 4. 模块没有成员、有技能。Save `d1-solo-skills.png`. Pass when 任务是两字名加角色的单个助手，用上了模块的技能，没有派活工具。
+- [ ] Lane 5. 问一件哪个领域都不沾的事。Save `d1-no-domain.png`. Pass when 任务没有领域，是普通助手，页面和 W5 相同。
+- [ ] Lane 6. `rules.md` 里写一行「团队：新闻队」。Save `d1-error-rule-line.png`. Pass when 启动报一行错，写出文件、规则编号和改法，退出码 1。
+- [ ] Lane 7. 状态目录或某个模块里放一个 `teams.yaml`。Save `d1-error-teams-yaml.png`. Pass when 启动报一行错，以这个文件开头并说明改法，退出码 1。
+- [ ] Lane 8. 状态目录下放零散的 `agents/`。Save `d1-error-loose-agents.png`. Pass when 启动报一行错，说明搬到 `modules/<名字>/agents/`，退出码 1。
+- [ ] Lane 9. 开一个有成员的领域的任务和一个没有领域的任务后重启。Save `d1-restart.png`. Pass when 两个任务的领域、名字和序号不变，前一个任务的助手仍能派活。
+- [ ] Lane 10. 开一个有成员的领域的任务后拿掉那个模块再重启。Save `d1-module-removed.png`. Pass when 任务按单个助手继续，日志只有一行说明，四字名不变，队名的位置写模块名。
+
+**Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] Metric. 幕僚长第一轮的输入 token（领域名册和「领域」一节的开销）。
+- [ ] Probe. 0 个和 10 个写了 `description` 的模块各量 5 次，交替跑，同一句话，取路由会话第一条回复的 usage.input + cacheRead。
+- [ ] Baseline. Record the 0-module median first, and compare it with T1 的 0 个团队中位数 1795 token。
+- [ ] Rule. 10 个模块时中位数增加超过 1000 token 算失败。
+
+**Review gate.** The operator reviews before merge.
+
+- [ ] Copy lane 1, 3, 10 screenshots into `docs/web-client/media/d1-review-<slug>.png`.
+- [ ] Record a 30 to 60 second video of a domain ticket with members and a ticket with no domain. Keep it local as webm, as in W1.
+- [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
+
+**Merge.**
+
+- [ ] 使用者合并。
+
 ## Ship the 看盘队 and the pi-pi team (T3)
 
-**Depends on.** T2 (stacked on it). 取代 W6c（#32）。指标和财报查询（`lookup indicators`、`lookup earnings`）在 PR #26（`psa/market-data`），本分支先 cherry-pick 它的提交，#26 合并后 rebase 去重。
+**Depends on.** D1 (stacked on it; D1 is on T2). 团队的来源按 ADR-0009：队伍是模块 `agents/` 里的成员，队名写在 `module.json` 的 `team`。取代 W6c（#32）。指标和财报查询（`lookup indicators`、`lookup earnings`）在 PR #26（`psa/market-data`），本分支先 cherry-pick 它的提交，#26 合并后 rebase 去重。
 
 **Files.**
 
 - [ ] Cherry-pick PR #26 的提交（`git log origin/main..origin/psa/market-data`）。
-- [ ] Create `modules/us-market/agents/market-analyst.md`（行情分析师）、`technical-analyst.md`（技术分析师）、`news-researcher.md`（新闻研究员）、`earnings-reader.md`（财报解读），从 `psa/market-experts` 的 `modules/us-market/roles/` 搬来；create `modules/us-market/teams.yaml`（看盘队）。
-- [ ] Create `modules/pi-pi/module.json`（没有来源）、`modules/pi-pi/agents/`（`psa/market-experts` 上已补中文 `title` 的九位专家）和 `modules/pi-pi/teams.yaml`（pi-pi 队）。不导入 `pi-orchestrator`，不改 `.pi/agents`。
-- [ ] Edit `modules/us-market/rules.md`（big-move 写「团队：看盘队」）。现有来源里没有财报触发，不加财报周规则。
+- [ ] Create `modules/us-market/agents/market-analyst.md`（行情分析师）、`technical-analyst.md`（技术分析师）、`news-researcher.md`（新闻研究员）、`earnings-reader.md`（财报解读），从 `psa/market-experts` 的 `modules/us-market/roles/` 搬来；edit `modules/us-market/module.json`（`team` 写「看盘队」）。
+- [ ] Create `modules/pi-pi/module.json`（没有来源；写 `title`、`description` 和 `team`「pi-pi 队」）和 `modules/pi-pi/agents/`（`psa/market-experts` 上已补中文 `title` 的九位专家）。不导入 `pi-orchestrator`，不改 `.pi/agents`。
+- [ ] `modules/us-market/rules.md` 不用改：big-move 是看盘模块的规则，它开的任务自动属于 us-market 领域（ADR-0009），规则里不写「团队：」。现有来源里没有财报触发，不加财报周规则。
 - [ ] Create `tests/first-teams.test.ts`、`tests/e2e/teams.e2e.ts`，edit `tests/modules.test.ts`。
 
 **Build.**
 
 - [ ] 四位看盘成员各有清楚的职责、最小的工具白名单、汇报格式（结论、证据、来源和时间），行情一律写报价时间。技术分析师只引用 `lookup indicators` 的数字，标出 `lastBar.partial`；财报解读读 `lookup earnings`。
 - [ ] 成员先用 `lookup`；新闻研究员最多读 3 页；回复不超过 600 字。
-- [ ] 看盘队的说明让幕僚长在行情、个股、财报、相关新闻的问题上选它；原来写在 `roles/deputy.md` 里的要点（一般派两三位、冲突明写、报价写时间和来源、大波动先派行情分析师和技术分析师）改放进看盘模块的技能，助手读得到。
-- [ ] pi-pi 队的说明让幕僚长在「怎么写 Pi 扩展、主题、技能、配置」的问题上选它。
+- [ ] us-market 模块的 `description` 让幕僚长在行情、个股、财报、相关新闻的问题上选这个领域；原来写在 `roles/deputy.md` 里的要点（一般派两三位、冲突明写、报价写时间和来源、大波动先派行情分析师和技术分析师）改放进看盘模块的技能，助手读得到。
+- [ ] pi-pi 模块的 `description` 让幕僚长在「怎么写 Pi 扩展、主题、技能、配置」的问题上选这个领域。
 
 **You see.**
 
-- [ ] 行情大波动时任务是看盘队，助手派给行情分析师和技术分析师；问财报时派给财报解读；问 Pi 扩展怎么写，任务是 pi-pi 队。
+- [ ] 行情大波动时任务属于 us-market 领域，显示看盘队，助手派给行情分析师和技术分析师；问财报时派给财报解读；问 Pi 扩展怎么写，任务属于 pi-pi 领域，显示 pi-pi 队。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 所有成员文件和两份 `teams.yaml` 通过加载校验；规则钉的团队存在；卸掉模块后它的团队和成员一起消失。
+- [ ] 两个模块的清单和所有成员文件通过加载校验；看盘规则开的任务属于 us-market 领域；卸掉模块后它的领域、团队和成员一起消失。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
-- [ ] Lane 1. 行情大波动（真实行情或 toy-feed）。Save `t3-market.png`. Pass when 任务是看盘队，助手派给行情分析师并给出报价时间。
+- [ ] Lane 1. 行情大波动（真实行情或 toy-feed）。Save `t3-market.png`. Pass when 任务属于 us-market 领域、显示看盘队，助手派给行情分析师并给出报价时间。
 - [ ] Lane 2. 新闻问题。Save `t3-news.png`. Pass when 派给新闻研究员并核对日期来源。
 - [ ] Lane 3. 财报问题。Save `t3-earnings.png`. Pass when 派给财报解读。
 - [ ] Lane 4. 跨领域问题。Save `t3-two.png`. Pass when 助手并行派给其中两位并写明冲突。
-- [ ] Lane 5. 问 Pi 扩展怎么写。Save `t3-pi-pi.png`. Pass when 任务是 pi-pi 队，助手派给扩展专家。
+- [ ] Lane 5. 问 Pi 扩展怎么写。Save `t3-pi-pi.png`. Pass when 任务属于 pi-pi 领域、显示 pi-pi 队，助手派给扩展专家。
 - [ ] Lane 6. 只问一个股价。Save `t3-direct.png`. Pass when 看盘队的助手自己用 `lookup` 查完，没有派活。
-- [ ] Lane 7. 关掉 us-market 模块。Save `t3-no-module.png`. Pass when 看盘队从幕僚长的名册消失，启动不报错。
+- [ ] Lane 7. 关掉 us-market 模块。Save `t3-no-module.png`. Pass when us-market 领域从幕僚长的名册消失，启动不报错。
 - [ ] Lane 8. 推断任务里助手派给行情分析师。Save `t3-inference.png`. Pass when 两者都只读。
 - [ ] Lane 9. 汇报格式。Save `t3-format.png`. Pass when 每位成员的回复都有结论、证据、来源和时间。
 - [ ] Lane 10. 深浅主题截图。Save `t3-themes.png`. Pass when 显示正确。
@@ -599,8 +666,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
 - [ ] Metric. 助手第一轮的输入 token（本队名册增加的开销）。
-- [ ] Probe. 默认团队和 pi-pi 队（九位成员）的助手各量 5 次。
-- [ ] Baseline. Record the default-team median first.
+- [ ] Probe. 没有领域的助手和 pi-pi 队（九位成员）的助手各量 5 次。
+- [ ] Baseline. Record the no-domain median first.
 - [ ] Rule. 增加超过 1500 token 算失败。
 
 **Review gate.** The operator reviews before merge.
