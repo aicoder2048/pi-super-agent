@@ -162,7 +162,7 @@ test("中止一次派活：成员进程连同它起的子进程一起结束，�
 	await until(() => !alive(grandchild), "子进程随进程组结束", 3000);
 });
 
-test("成员正常做完后，它留在进程组里的子进程也被清掉，哪怕那个子进程还占着成员的输出管道", async (t) => {
+test("成员正常做完后，还留在它自己进程组里的子进程被清掉，派活不等那个子进程放开成员的输出管道（真的 Pi 让每条命令自成一组，那样的后台命令不在此列）", async (t) => {
 	const { dir, run } = setup(t, { FAKE_PI_GRANDCHILD: "holds-stdout" });
 	assert.equal(await within(run(NEWS, "d"), 5000, "成员退出后派活就该结束"), "d 的回复");
 	const grandchild = Number(readFileSync(join(dir, "grandchild-d.pid"), "utf8"));
