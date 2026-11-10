@@ -1,8 +1,7 @@
-import type { CapQuestion, DashboardRow, Disposition, HelpersToday, Routes } from "../kernel/types.ts";
+import type { CapQuestion, Cleared, ConversationLine, DashboardRow, Disposition, HelpersToday, Routes } from "../kernel/types.ts";
 import type { Dispatching } from "../host/dispatch.ts";
 
-/** ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
-export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string };
+export type { Cleared, ConversationLine } from "../kernel/types.ts";
 
 /** `resumed` counts the running tickets recovered at this start; 0 means a clean start. */
 export interface Duty {

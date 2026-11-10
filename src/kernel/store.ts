@@ -176,6 +176,11 @@ CREATE TABLE IF NOT EXISTS reply_receipts (
 	created_at INTEGER NOT NULL,
 	delivered_at INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS conversation_hidden (
+	line_id TEXT PRIMARY KEY,
+	hidden_at INTEGER NOT NULL
+);
 `;
 
 export function openStore(path: string): DatabaseSync {

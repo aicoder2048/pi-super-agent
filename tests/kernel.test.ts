@@ -1586,3 +1586,103 @@ test("使用者对成员上限的回答是对话里他自己的一句话，但�
 	assert.equal(kernel.read("ask_cap_2026-11-08"), undefined);
 	assert.equal(kernel.triggerLog().length, 1);
 });
+
+function replied(s: ReturnType<typeof setup>, cause: string, text: string, { delivered = true } = {}) {
+	const result = s.kernel.reply({ threadId: CONVERSATION_THREAD_ID, text, cause });
+	assert.ok(result.ok, `reply rejected: ${!result.ok && result.reason}`);
+	if (delivered) s.kernel.markReplyDelivered(result.replyId);
+	return result.replyId;
+}
+
+test("清屏后对话只列清屏之后的话；被清掉的行仍在库里，kernel.read 照常读得到", () => {
+	const s = setup();
+	const old = s.say("查天气").triggerId;
+	replied(s, old, "好的，去查了。");
+	s.clock.t += 1000;
+	s.kernel.clearConversation();
+	s.clock.t += 1000;
+	const now = s.say("刚才那件事呢").triggerId;
+	assert.deepEqual(s.kernel.conversation().map((l) => l.id), [now]);
+	const found = s.kernel.read(old);
+	assert.ok(found?.type === "trigger", "清掉的触发仍读得到");
+	assert.equal(found.trigger.body, "查天气");
+	assert.equal(s.kernel.triggerLog().length, 2);
+});
+
+test("清屏只收走已经送到屏幕上的回复：还没投递的回复清屏后仍在对话里", () => {
+	const s = setup();
+	const said = s.say("查天气").triggerId;
+	const pending = replied(s, said, "好的，去查了。", { delivered: false });
+	s.kernel.clearConversation();
+	assert.deepEqual(s.kernel.conversation().map((l) => l.id), [pending]);
+	assert.deepEqual(s.kernel.cleared()!.lines.map((l) => l.id), [said]);
+});
+
+test("cleared() 给出最近一次清屏的时间和最新的被清掉的行，按对话顺序，最多 limit 条", () => {
+	const s = setup();
+	for (let i = 0; i < 60; i++) {
+		s.say(`第 ${i} 句`);
+		s.clock.t += 10;
+	}
+	const before = s.kernel.conversation(100);
+	const at = s.clock.t;
+	s.kernel.clearConversation();
+	const cleared = s.kernel.cleared(50)!;
+	assert.equal(cleared.at, at);
+	assert.equal(cleared.lines.length, 50);
+	assert.deepEqual(cleared.lines, before.slice(-50));
+});
+
+test("没有可清的行时清屏什么都不做：返回 null，清屏时间不变，库里不多写", () => {
+	const s = setup();
+	assert.equal(s.kernel.clearConversation(), null);
+	assert.equal(s.kernel.cleared(), null);
+	s.say("查天气");
+	const first = s.kernel.clearConversation();
+	assert.ok(first);
+	s.clock.t += 1000;
+	assert.equal(s.kernel.clearConversation(), null);
+	assert.equal(s.kernel.cleared()!.at, first.at);
+});
+
+test("时钟不动时连清两次屏，第二次的时间也严格更晚", () => {
+	const s = setup();
+	s.say("一");
+	const first = s.kernel.clearConversation()!;
+	s.say("二");
+	const second = s.kernel.clearConversation()!;
+	assert.equal(second.at, first.at + 1);
+	assert.deepEqual(s.kernel.conversation(), []);
+});
+
+test("清屏不产生触发，也不排任何动作，幕僚长不会被叫醒", () => {
+	const s = setup();
+	s.say("查天气");
+	const triggers = s.kernel.triggerLog().length;
+	const actions = s.kernel.dueActions(10);
+	s.kernel.clearConversation();
+	assert.equal(s.kernel.triggerLog().length, triggers);
+	assert.deepEqual(s.kernel.dueActions(10), actions);
+});
+
+test("答过的成员上限问题那句话随清屏收走，还没答的不算", () => {
+	const s = setup();
+	const day = "2026-11-08";
+	s.kernel.capAsks.save({ state: "granted", day, askedAt: Date.parse("2026-11-08T10:00:01"), answeredAt: Date.parse("2026-11-08T10:00:02") }, "回答成员上限：今天放宽到 10");
+	s.kernel.capAsks.save({ state: "asked", day: "2026-11-09", askedAt: Date.parse("2026-11-08T10:00:03") });
+	s.kernel.clearConversation();
+	assert.deepEqual(s.kernel.cleared()!.lines.map((l) => l.id), [`ask_cap_${day}`]);
+	assert.deepEqual(s.kernel.conversation(), []);
+});
+
+test("旧的 state.db 打开后清屏表自动建好，原有对话全部可见", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	first.say("查天气");
+	const before = first.kernel.conversation();
+	first.db.exec("DROP TABLE IF EXISTS conversation_hidden");
+	first.db.close();
+	const again = setup({ path });
+	assert.deepEqual(again.kernel.conversation(), before);
+	assert.equal(again.kernel.cleared(), null);
+});
