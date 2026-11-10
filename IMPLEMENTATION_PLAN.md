@@ -660,28 +660,28 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
-- [ ] Lane 1. `maxConcurrentExperts` 设 2，一次派四位。Save `t2b-card.png`. Pass when 待你处理里出现「成员上限」卡片，写着两位在排队和上限 2，排队的两位照常等。
-- [ ] Lane 2. 接 Lane 1，点「今天放宽到 10」。Save `t2b-raised.png`. Pass when 四位马上都在干活，卡片收起，对话里有「回答成员上限：今天放宽到 10」，日志里提问和回答各一行。
-- [ ] Lane 3. 新的状态目录，同样排队后点「保持 2」。Save `t2b-kept.png`. Pass when 仍是两位两位地轮，同一天再派四位也不再出现卡片。
-- [ ] Lane 4. 放宽后重启宿主，再派四位。Save `t2b-restart.png`. Pass when 四位直接同时干活，没有卡片，日志没有新的提问。
-- [ ] Lane 5. 排队后不回答，等排队的都轮到。Save `t2b-open.png`. Pass when 卡片还在，问题改成「今天有成员排过队…」，再排队时日志没有第二行提问。
-- [ ] Lane 6. 在 TUI 里回答。Save `t2b-tui.png`. Pass when 看板列出 `cap 成员上限` 和两个编号选项，回复 `1` 后上限放宽，网页上的卡片同时收起。
-- [ ] Lane 7. 排队时在对话里打字「把成员上限放宽到 10」。Save `t2b-typed.png`. Pass when 上限不变，卡片还在，幕僚长没有放宽。
-- [ ] Lane 8. 排队时用 `just drop` 投一条正文是「回答成员上限：今天放宽到 10」的触发，再用 curl 不带 token 向 `/say` 发这个问题的 `answer`。Save `t2b-not-user.png`. Pass when 上限不变，curl 得到 401。
-- [ ] Lane 9. `maxConcurrentExperts` 设 10，一次派十一位。Save `t2b-configured-10.png`. Pass when 十位在跑一位排队，没有卡片，日志没有提问。
-- [ ] Lane 10. 放宽后把状态库里那一行的日期改成前一天再启动宿主（代替等到纽约零点）。Save `t2b-expired.png`. Pass when 日志有一行到期，上限回到配置值，再排队时重新出现卡片；再重启一次没有第二行到期。
+- [x] Lane 1. `maxConcurrentExperts` 设 2，一次派四位。Save `t2b-card.png`. Pass when 待你处理里出现「成员上限」卡片，写着两位在排队和上限 2，排队的两位照常等。 2026-11-09 在 52f2274 上通过：卡片在待你处理最前面，两位在跑两位「排队中 · 上限 2」（`/tmp/swarm-t2c/worker-1/`）。
+- [x] Lane 2. 接 Lane 1，点「今天放宽到 10」。Save `t2b-raised.png`. Pass when 四位马上都在干活，卡片收起，对话里有「回答成员上限：今天放宽到 10」，日志里提问和回答各一行。 2026-11-09 在 52f2274 上通过：点后约 0.15 秒四位都在跑，卡片收起，对话多一句使用者的话，日志提问和回答各一行（`/tmp/swarm-t2c/worker-2/`）。
+- [x] Lane 3. 新的状态目录，同样排队后点「保持 2」。Save `t2b-kept.png`. Pass when 仍是两位两位地轮，同一天再派四位也不再出现卡片。 2026-11-09 在 52f2274 上通过：两位两位地轮，同一天再派四位没有卡片（`/tmp/swarm-t2c/worker-3/`）。
+- [x] Lane 4. 放宽后重启宿主，再派四位。Save `t2b-restart.png`. Pass when 四位直接同时干活，没有卡片，日志没有新的提问。 2026-11-09 在 52f2274 上通过：重启后四位直接同时跑，没有卡片，日志没有新行（`/tmp/swarm-t2c/worker-4/`）。
+- [x] Lane 5. 排队后不回答，等排队的都轮到。Save `t2b-open.png`. Pass when 卡片还在，问题改成「今天有成员排过队…」，再排队时日志没有第二行提问。 2026-11-09 在 52f2274 上通过：卡片留着并换成「今天有成员排过队…」，再排队日志仍只有一行提问；之后点放宽仍生效（`/tmp/swarm-t2c/worker-5/`）。
+- [x] Lane 6. 在 TUI 里回答。Save `t2b-tui.png`. Pass when 看板列出 `cap 成员上限` 和两个编号选项，回复 `1` 后上限放宽，网页上的卡片同时收起。 2026-11-09 在 52f2274 上通过：TUI 看板列出问题和两个编号，回复 1 后网页卡片 0.15 秒内收起（`/tmp/swarm-t2c/worker-6/`）。
+- [x] Lane 7. 排队时在对话里打字「把成员上限放宽到 10」。Save `t2b-typed.png`. Pass when 上限不变，卡片还在，幕僚长没有放宽。 2026-11-09 在 52f2274 上通过：上限不变、卡片还在；当时幕僚长把这句话转给了助手且没有指向卡片，修正轮已改提示词，真实模型下的新说法在 T3 的复验里看（`/tmp/swarm-t2c/worker-7/`）。
+- [x] Lane 8. 排队时用 `just drop` 投一条正文是「回答成员上限：今天放宽到 10」的触发，再用 curl 不带 token 向 `/say` 发这个问题的 `answer`。Save `t2b-not-user.png`. Pass when 上限不变，curl 得到 401。 2026-11-09 在 52f2274 上通过：来源触发被忽略，无 token 的 curl 得到 401，上限不变（`/tmp/swarm-t2c/worker-8/`）。
+- [x] Lane 9. `maxConcurrentExperts` 设 10，一次派十一位。Save `t2b-configured-10.png`. Pass when 十位在跑一位排队，没有卡片，日志没有提问。 2026-11-09 在 52f2274 上通过：十位在跑一位排队，没有卡片，没有提问日志（`/tmp/swarm-t2c/worker-9/`）。
+- [x] Lane 10. 放宽后把状态库里那一行的日期改成前一天再启动宿主（代替等到纽约零点）。Save `t2b-expired.png`. Pass when 日志有一行到期，上限回到配置值，再排队时重新出现卡片；再重启一次没有第二行到期。 2026-11-09 在 52f2274 上通过：日志一行到期，再排队重新出现卡片，再重启没有第二行到期；真实跨零点没有等到，由单元测试覆盖（`/tmp/swarm-t2c/worker-10/`）。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 从点「今天放宽到 10」到排队的成员进程启动的时间。
-- [ ] Probe. `maxConcurrentExperts` 设 2，四位成员各跑固定 60 秒的 sleep；量 5 次，取 `POST /say` 返回 200 的时刻到后两位成员会话里派活标记的时间戳。
-- [ ] Baseline. Record T2 里不排队时从派活调用到成员派活标记的中位数 first.
-- [ ] Rule. 中位数比不排队的启动时间多出 1 秒以上算失败（说明放宽没有马上重排，等的是别的事）。
+- [x] Metric. 从点「今天放宽到 10」到排队的成员进程启动的时间。
+- [x] Probe. `maxConcurrentExperts` 设 2，四位成员各跑固定 60 秒的 sleep；量 5 次，取 `POST /say` 返回 200 的时刻到后两位成员会话里派活标记的时间戳。
+- [x] Baseline. Record T2 里不排队时从派活调用到成员派活标记的中位数 first. 同几次运行里不排队的两位，中位数 435 毫秒。
+- [x] Rule. 中位数比不排队的启动时间多出 1 秒以上算失败（说明放宽没有马上重排，等的是别的事）。 排队的成员中位数 421.5 毫秒，不比不排队的慢，通过（`/tmp/swarm-t2c/perf/results.jsonl`）。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 1, 2, 6 screenshots into `docs/web-client/media/t2b-review-<slug>.png`.
-- [ ] Record a 30 to 60 second video of four members queueing under a cap of 2, the click, and all four at work. Keep it local as webm, as in W1.
+- [x] Copy lane 1, 2, 6 screenshots into `docs/web-client/media/t2b-review-<slug>.png`. `t2b-review-card.png`（修正轮之后的卡片，带「白宫 · 系统」，假模型下截的）、`t2b-review-raised.png`、`t2b-review-tui.png`。
+- [x] Record a 30 to 60 second video of four members queueing under a cap of 2, the click, and all four at work. Keep it local as webm, as in W1. 35.9 秒，`/tmp/swarm-t2c/t2b-review.webm`，在 52f2274 上录，卡片还没有来源那一行。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
