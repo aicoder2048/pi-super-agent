@@ -307,6 +307,7 @@ interface Dispatch {
 	tokens: number;
 	tokensCached: number;
 	note?: string;
+	member: Member;
 }
 
 class EndedByDesk extends Error {
@@ -343,7 +344,7 @@ export class DispatchDesk {
 	async dispatch(order: DispatchOrder): Promise<DispatchResult> {
 		let desk = this.#tickets.get(order.ticketId);
 		if (!desk) this.#tickets.set(order.ticketId, (desk = { stop: new AbortController(), dispatches: new Set(), work: new Set() }));
-		const dispatch: Dispatch = { callId: order.callId, title: order.member.title, state: "queued", token: randomUUID(), step: "", lastEventAt: 0, tools: new Map(), tokens: 0, tokensCached: 0 };
+		const dispatch: Dispatch = { callId: order.callId, title: order.member.title, state: "queued", token: randomUUID(), step: "", lastEventAt: 0, tools: new Map(), tokens: 0, tokensCached: 0, member: order.member };
 		desk.dispatches.add(dispatch);
 		const work = this.#work(order, dispatch, desk.stop.signal);
 		desk.work.add(work);
@@ -466,9 +467,9 @@ export class DispatchDesk {
 		this.#slots.recheck();
 	}
 
-	/** True while `token` belongs to a member at work for this ticket. */
-	holds(ticketId: string, token: string): boolean {
-		return [...(this.#tickets.get(ticketId)?.dispatches ?? [])].some((d) => d.token === token && d.state === "running");
+	/** The member at work for this ticket whose token this is; undefined once its run ends. */
+	holder(ticketId: string, token: string): Member | undefined {
+		return [...(this.#tickets.get(ticketId)?.dispatches ?? [])].find((d) => d.token === token && d.state === "running")?.member;
 	}
 
 	live(): Dispatching {

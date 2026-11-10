@@ -298,9 +298,9 @@ export class WorkerExecutor {
 
 	handleRequest(ticketId: string, token: string, method: string, params: unknown): unknown {
 		const live = this.#live.get(ticketId);
-		const member = live !== undefined && live.token !== token && this.#desk?.holds(ticketId, token) === true;
-		if (!live || (live.token !== token && !member)) throw new Error("未知的 Worker 或令牌不符");
-		if (member && method !== "worker.lookup") throw new Error("成员只能经宿主查数据（lookup），不能汇报、交回、读任务或再派活");
+		const holder = live !== undefined && live.token !== token ? this.#desk?.holder(ticketId, token) : undefined;
+		if (!live || (live.token !== token && !holder)) throw new Error("未知的 Worker 或令牌不符");
+		if (holder && method !== "worker.lookup") throw new Error("成员只能经宿主查数据（lookup），不能汇报、交回、读任务或再派活");
 		const { kernel, afterCommand } = this.#o;
 		const p = (params ?? {}) as Record<string, unknown>;
 		try {
@@ -327,6 +327,7 @@ export class WorkerExecutor {
 				case "worker.read":
 					return this.#readForWorker(ticketId, typeof p.id === "string" ? p.id : undefined);
 				case "worker.lookup":
+					if (!this.#mayLookup(ticketId, holder)) throw new Error("这项任务里不能用 lookup：任务的领域没有在 module.json 的 tools 里开 lookup，或这位成员的 tools 没写 lookup");
 					if (!this.#o.lookup) throw new Error("没有可查询的来源");
 					return this.#o.lookup(String(p.source), String(p.op), p.args);
 				case "worker.dispatch":
@@ -340,6 +341,11 @@ export class WorkerExecutor {
 		} finally {
 			afterCommand();
 		}
+	}
+
+	#mayLookup(ticketId: string, holder: Member | undefined): boolean {
+		const { basis, domain } = this.#o.kernel.getTicket(ticketId)!;
+		return holder ? memberTools(basis, holder.tools).includes("lookup") : this.#kitFor(ticketId, domain).lookup;
 	}
 
 	#kitFor(ticketId: string, domain: string | null): DomainKit {
