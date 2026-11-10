@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { workerArgs } from "../src/host/pi-worker.ts";
-import { memberTools, toolAllowlist } from "../src/worker/tools.ts";
+import { canCode, memberTools, toolAllowlist } from "../src/worker/tools.ts";
 
 const base = { sessionDir: "/s", sessionId: "sid", extension: "/ext.ts", prompt: "p" };
 const flag = (args: string[], name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
@@ -53,4 +53,12 @@ test("本队有成员的助手：提示词末尾多一段本队名册（名字�
 	assert.match(roster, /dispatch_agent/);
 	assert.ok(flag(args, "--tools")!.split(",").includes("dispatch_agent"));
 	assert.equal(flag(workerArgs({ ...base, basis: "request", crew }), "--tools"), undefined, "请求任务的助手保留全部工具");
+});
+
+test("能写文件、改文件或执行命令的成员算写代码的：按这次任务里实际能用的工具判断", () => {
+	assert.equal(canCode(memberTools("request", undefined)), true);
+	for (const tool of ["write", "edit", "bash"]) assert.equal(canCode(memberTools("request", ["read", tool])), true, tool);
+	assert.equal(canCode(memberTools("request", ["read", "grep", "web_get", "lookup"])), false);
+	assert.equal(canCode(memberTools("inference", ["read", "bash", "write"])), false, "推断任务里它只读");
+	assert.equal(canCode([]), false);
 });

@@ -84,19 +84,23 @@ test("状态目录不存在时建成 0700，只有自己能进；已有的目录
 	assert.equal(statSync(chosen).mode & 0o777, 0o755);
 });
 
-test("派活的两个设置有默认值：同时运行的成员最多 4 位，每次派活限时 300 秒；config.json 可以改", () => {
+test("派活的设置有默认值：同时运行的成员最多 4 位，不写代码的成员限时 15 分钟，能写代码的 60 分钟；config.json 可以改", () => {
 	const defaults = loadConfig(stateWith({}));
 	assert.equal(defaults.maxConcurrentExperts, 4);
-	assert.equal(defaults.dispatchTimeoutSeconds, 300);
-	const set = loadConfig(stateWith({ maxConcurrentExperts: 2, dispatchTimeoutSeconds: 60 }));
-	assert.deepEqual([set.maxConcurrentExperts, set.dispatchTimeoutSeconds], [2, 60]);
+	assert.equal(defaults.dispatchTimeoutSeconds, 900);
+	assert.equal(defaults.dispatchCodingTimeoutSeconds, 3600);
+	const set = loadConfig(stateWith({ maxConcurrentExperts: 2, dispatchTimeoutSeconds: 60, dispatchCodingTimeoutSeconds: 600 }));
+	assert.deepEqual([set.maxConcurrentExperts, set.dispatchTimeoutSeconds, set.dispatchCodingTimeoutSeconds], [2, 60, 600]);
+	assert.equal(loadConfig(stateWith({ dispatchTimeoutSeconds: 3600 })).dispatchTimeoutSeconds, 3600, "两个时限最长都是 60 分钟");
 });
 
-test("maxConcurrentExperts 不是 1 到 16 的整数、dispatchTimeoutSeconds 不是 0 到 1800 之间的正数时拒绝启动，报错指出字段", () => {
+test("maxConcurrentExperts 不是 1 到 16 的整数、两个派活时限不是 0 到 3600 之间的正数时拒绝启动，报错指出字段", () => {
 	for (const value of [0, 17, 1.5, "4", null]) {
 		assert.throws(() => loadConfig(stateWith({ maxConcurrentExperts: value })), (e: Error) => e.name === "ConfigError" && /maxConcurrentExperts/.test(e.message), JSON.stringify(value));
 	}
-	for (const value of [0, -1, 1801, "60", null]) {
-		assert.throws(() => loadConfig(stateWith({ dispatchTimeoutSeconds: value })), (e: Error) => e.name === "ConfigError" && /dispatchTimeoutSeconds/.test(e.message), JSON.stringify(value));
+	for (const key of ["dispatchTimeoutSeconds", "dispatchCodingTimeoutSeconds"]) {
+		for (const value of [0, -1, 3601, "60", null]) {
+			assert.throws(() => loadConfig(stateWith({ [key]: value })), (e: Error) => e.name === "ConfigError" && e.message.includes(`${key}（`) && /不超过 3600/.test(e.message), `${key} ${JSON.stringify(value)}`);
+		}
 	}
 });

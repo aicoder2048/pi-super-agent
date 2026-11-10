@@ -93,6 +93,10 @@ export function clipReply(reply: string): string {
 	return chars.length <= REPLY_MAX ? reply : `${chars.slice(0, REPLY_MAX).join("")}\n…（回复超过 ${REPLY_MAX} 字，已截断）`;
 }
 
+const span = (ms: number) => (ms % 60_000 === 0 ? `${ms / 60_000} 分钟` : `${+(ms / 1000).toFixed(1)} 秒`);
+
+export const timeoutNote = (limitMs: number) => `超过 ${span(limitMs)}的时限`;
+
 const NO_REPLY: Record<EndState, string> = { done: "没有回复", timed_out: "没有回复（超时）", stopped: "没有回复（已停止）", failed: "没有回复，出错" };
 
 /**
@@ -158,11 +162,13 @@ export class SlotPool {
 
 export interface DispatchOrder extends Omit<MemberRun, "token" | "signal"> {
 	callId: string;
+	/** This dispatch's time limit, counted from the member's start. */
+	limitMs: number;
 }
 
 export interface DeskOptions {
-	/** One dispatch's limit, counted from the member's start; waiting for a slot has the same limit. */
-	timeoutMs: number;
+	/** The longest a dispatch waits for a slot. */
+	queueTimeoutMs: number;
 	maxConcurrent: number;
 	run(run: MemberRun): Promise<string>;
 	onChange(): void;
@@ -213,8 +219,8 @@ export class DispatchDesk {
 	}
 
 	async #work(order: DispatchOrder, dispatch: Dispatch, stop: AbortSignal): Promise<DispatchOutcome> {
-		const { timeoutMs } = this.#o;
-		const { callId: _, ...run } = order;
+		const { queueTimeoutMs } = this.#o;
+		const { callId: _, limitMs, ...run } = order;
 		const queuedAt = Date.now();
 		let startedAt = queuedAt;
 		const tokens = { tokensIn: 0, tokensOut: 0 };
@@ -228,16 +234,16 @@ export class DispatchDesk {
 		};
 		let release: () => void;
 		try {
-			release = await this.#slots.acquire(`${order.ticketId}/${order.member.name}`, AbortSignal.any([stop, AbortSignal.timeout(timeoutMs)]));
+			release = await this.#slots.acquire(`${order.ticketId}/${order.member.name}`, AbortSignal.any([stop, AbortSignal.timeout(queueTimeoutMs)]));
 		} catch {
 			startedAt = Date.now();
-			return stop.aborted ? end("stopped", null) : end("timed_out", null, `排队 ${Math.round(timeoutMs / 1000)} 秒还没轮到`);
+			return stop.aborted ? end("stopped", null) : end("timed_out", null, `排队 ${span(queueTimeoutMs)}还没轮到`);
 		}
 		startedAt = Date.now();
 		move("running");
 		this.#o.onChange();
 		const limit = new AbortController();
-		const timer = setTimeout(() => limit.abort(new Error(`${timeoutMs} ms 内没有做完`)), timeoutMs);
+		const timer = setTimeout(() => limit.abort(new Error(timeoutNote(limitMs))), limitMs);
 		try {
 			const reply = await this.#o.run({
 				...run,
@@ -252,7 +258,7 @@ export class DispatchDesk {
 			return end("done", clipReply(reply));
 		} catch (error) {
 			if (stop.aborted) return end("stopped", null);
-			if (limit.signal.aborted) return end("timed_out", null);
+			if (limit.signal.aborted) return end("timed_out", null, timeoutNote(limitMs));
 			return end("failed", null, error instanceof Error ? error.message : String(error));
 		} finally {
 			clearTimeout(timer);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { join } from "node:path";
-import { DISPATCH_NEXT, DispatchDesk, REPLY_MAX, SlotPool, clipReply, memberSessionDir, parseDispatch, replyEnvelope, type DispatchOutcome, type DispatchResult, type DispatchState, type MemberRun } from "../src/host/dispatch.ts";
+import { DISPATCH_NEXT, DispatchDesk, REPLY_MAX, SlotPool, clipReply, memberSessionDir, parseDispatch, replyEnvelope, timeoutNote, type DispatchOutcome, type DispatchResult, type DispatchState, type MemberRun } from "../src/host/dispatch.ts";
 import type { TeamBook } from "../src/kernel/types.ts";
 import { ModelSelector } from "../src/model-selector.ts";
 import type { Member } from "../src/teams.ts";
@@ -129,8 +129,10 @@ test("派活的请求：成员必须在本队名册里，任务不能是空的�
 const MARKET_MODEL = { provider: "openai-codex", id: "gpt-market" };
 const member = (name: string, title: string, over: Partial<Member> = {}): Member => ({ name, title, description: `${title}的说明`, tools: undefined, skills: [], model: undefined, prompt: `你是${title}。`, file: `/agents/${name}.md`, ...over });
 const CREW = [member("market-analyst", "行情分析师", { model: MARKET_MODEL }), member("news-researcher", "新闻研究员")];
-const TEAMS: TeamBook = { kinds: new Map([["默认", "solo"], ["看盘队", "crew"], ["旧队", "crew"]]), pinned: new Map() };
-const crewOf = (team: string) => (team === "看盘队" ? CREW : team === "默认" ? [] : undefined);
+const READER = member("reader", "资料员", { tools: ["read", "web_get", "lookup"] });
+const CODER = member("coder", "程序员", { tools: ["read", "bash", "edit"] });
+const TEAMS: TeamBook = { kinds: new Map([["默认", "solo"], ["看盘队", "crew"], ["开发队", "crew"], ["旧队", "crew"]]), pinned: new Map() };
+const crewOf = (team: string) => (team === "看盘队" ? CREW : team === "开发队" ? [READER, CODER] : team === "默认" ? [] : undefined);
 
 /** Opens a ticket on `team` for the first thing the user says and hands everything after it to that ticket. */
 function openOn(team: string): Brain {
@@ -149,7 +151,7 @@ function openOn(team: string): Brain {
 
 type Runner = (run: MemberRun) => Promise<string>;
 type Call = { agent: string; task: string; callId?: string };
-interface Options { team?: string; timeoutMs?: number; maxConcurrent?: number; selector?: ModelSelector; fallbackDailyTokens?: number; say?: string }
+interface Options { team?: string; timeoutMs?: number; codingTimeoutMs?: number; maxConcurrent?: number; selector?: ModelSelector; fallbackDailyTokens?: number; say?: string }
 
 const newSelector = (now = () => Date.now()) =>
 	new ModelSelector({ primary: { provider: "openai-codex", id: "gpt-6.1-sol" }, fallback: { provider: "openai-codex", id: "gpt-fallback" }, probeEveryMs: 60_000, clock: { now } });
@@ -166,7 +168,7 @@ async function dispatching(t: TestContext, runner: Runner, calls: Call[], option
 	}, {
 		teams: TEAMS,
 		log: (line) => logs.push(line),
-		dispatch: { crewOf, timeoutMs: options.timeoutMs ?? 5000, maxConcurrent: options.maxConcurrent ?? 4 },
+		dispatch: { crewOf, timeoutMs: options.timeoutMs ?? 5000, codingTimeoutMs: options.codingTimeoutMs ?? options.timeoutMs ?? 5000, maxConcurrent: options.maxConcurrent ?? 4 },
 		workerModels: { selector: options.selector ?? newSelector(), fallbackDailyTokens: options.fallbackDailyTokens ?? 1_000_000 },
 	});
 	t.after(() => started.host.stop());
@@ -251,6 +253,27 @@ test("超时的成员记为没有回复，它的进程被中止；其余结果�
 	assert.deepEqual(aborted, ["news-researcher"]);
 });
 
+const devPair: Call[] = [{ agent: "reader", task: "查资料" }, { agent: "coder", task: "改代码" }];
+
+test("时限按成员在这个任务里能做什么定：能写文件、改文件或执行命令的用长的那一档，其余用短的", async (t) => {
+	const { results } = await dispatching(t, async (run) => (await wait(400, run.signal), "做完了"), devPair, { team: "开发队", timeoutMs: 200, codingTimeoutMs: 2000 });
+	const out = await results();
+	assert.deepEqual(out.map((r) => [r.details.title, r.details.state]), [["资料员", "timed_out"], ["程序员", "done"]]);
+	assert.equal(out[0].details.note, "超过 0.2 秒的时限");
+	assert.match(out[0].text, /资料员（reader） · 没有回复（超时）：超过 0.2 秒的时限/);
+});
+
+test("推断任务里成员只读，写了 bash 的成员也按短的那一档限时", async (t) => {
+	const { results } = await dispatching(t, async (run) => (await wait(400, run.signal), "做完了"), [devPair[1]], { team: "开发队", timeoutMs: 150, codingTimeoutMs: 2000, say: "推断：盯一下" });
+	assert.deepEqual((await results()).map((r) => r.details.state), ["timed_out"]);
+});
+
+test("时限的说法：整分钟写分钟，否则写秒", () => {
+	assert.match(replyEnvelope(outcome({ state: "timed_out", reply: null, note: timeoutNote(900_000) })), /没有回复（超时）：超过 15 分钟的时限/);
+	assert.equal(timeoutNote(3_600_000), "超过 60 分钟的时限");
+	assert.equal(timeoutNote(30_000), "超过 30 秒的时限");
+});
+
 test("成员出错时这一次记为出错并带上原因，其余照常返回", async (t) => {
 	const { host, results } = await dispatching(t, async (run) => {
 		if (run.member.name === "market-analyst") throw new Error("模型返回 500");
@@ -333,7 +356,7 @@ test("成员自己的模型就是回退模型：主模型正常时它的用量�
 	const ran: string[] = [];
 	const started = await startHost(openOn("自带队"), () => {}, {
 		teams: { kinds: new Map([["默认", "solo"], ["自带队", "crew"]]), pinned: new Map() },
-		dispatch: { crewOf: () => own, timeoutMs: 5000, maxConcurrent: 4 },
+		dispatch: { crewOf: () => own, timeoutMs: 5000, codingTimeoutMs: 5000, maxConcurrent: 4 },
 		workerModels: { selector: selectorWith(FALLBACK), fallbackDailyTokens: 150 },
 	});
 	t.after(() => started.host.stop());
@@ -418,8 +441,8 @@ test("助手崩溃后马上停宿主：宿主等那些成员进程没了才停�
 
 test("结束一个任务的派活可以调两次：两次都等到成员进程没了才返回，之后同一任务还能再派", async () => {
 	const gone: string[] = [];
-	const desk = new DispatchDesk({ timeoutMs: 5000, maxConcurrent: 4, onChange() {}, run: slowToDie(150, gone) });
-	const order = { ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", basis: "request" as const, model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", onUsage() {} };
+	const desk = new DispatchDesk({ queueTimeoutMs: 5000, maxConcurrent: 4, onChange() {}, run: slowToDie(150, gone) });
+	const order = { ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", basis: "request" as const, model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {} };
 	const first = desk.dispatch(order);
 	await tick();
 	const ends = [desk.end("tkt_1"), desk.end("tkt_1")];
@@ -473,15 +496,16 @@ test("全宿主同时运行的成员有上限：多出来的排队，看板写�
 	assert.ok(out[1].details.ms < 450, `第二位用时从开始算：${out[1].details.ms} ms`);
 });
 
-test("排队也有时限：排了一个时限还没轮到，记为超时并说明在排队", async (t) => {
+test("排队也有时限，对谁都是短的那一档：排了这么久还没轮到，记为超时并说明在排队", async (t) => {
 	const { host, results } = await dispatching(t, async (run) => {
 		if (run.member.name === "market-analyst") await new Promise((done) => setTimeout(done, 1500));
 		if (run.signal.aborted) throw run.signal.reason;
 		return "答";
-	}, two, { maxConcurrent: 1, timeoutMs: 300 });
+	}, two, { maxConcurrent: 1, timeoutMs: 300, codingTimeoutMs: 5000 });
 	const out = await results();
+	assert.equal(out[0].details.state, "done", "在跑的那位按长的一档，1.5 秒不算超时");
 	assert.equal(out[1].details.state, "timed_out");
-	assert.match(out[1].details.note ?? "", /排队/);
+	assert.equal(out[1].details.note, "排队 0.3 秒还没轮到");
 });
 
 test("派活的请求不合规时拒绝，不起成员进程：不在本队、派给通用助手、任务是空的", async (t) => {

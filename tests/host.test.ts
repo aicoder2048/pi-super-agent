@@ -231,6 +231,7 @@ const NEWS_BOOK: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"], ["新闻�
 const NEWS_DISPATCH = {
 	crewOf: (team: string) => (team === "新闻队" ? [{ name: "news-researcher", title: "新闻研究员", description: "查新闻", tools: undefined, skills: [], model: undefined, prompt: "", file: "/agents/news.md" }] : []),
 	timeoutMs: 1000,
+	codingTimeoutMs: 1000,
 	maxConcurrent: 1,
 };
 

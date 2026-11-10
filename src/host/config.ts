@@ -12,8 +12,10 @@ export interface HostConfig {
 	kernel: Partial<KernelConfig>;
 	bgMaxMinutes: number;
 	fallbackDailyTokens: number;
-	/** One dispatch's time limit, counted from when the member starts. */
+	/** One dispatch's time limit for a member that cannot write, edit or run commands in the ticket, counted from when it starts. Also how long a dispatch may wait for a slot. */
 	dispatchTimeoutSeconds: number;
+	/** The same limit for a member that can. */
+	dispatchCodingTimeoutSeconds: number;
 	/** Member processes running at once across the host; the rest queue. */
 	maxConcurrentExperts: number;
 	retryAttempts: number;
@@ -27,7 +29,7 @@ export interface HostConfig {
 }
 
 const STUCK_MINUTES_MAX = 1440;
-const DISPATCH_TIMEOUT_MAX = 1800;
+const DISPATCH_TIMEOUT_MAX = 3600;
 
 export function defaultStateDir(): string {
 	return resolve(process.env.PSA_STATE_DIR ?? join(homedir(), ".pi-super-agent"));
@@ -59,10 +61,15 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	}
 	const secretsFile = raw.secretsFile === undefined ? undefined : resolve(stateDir, raw.secretsFile);
 	if (secretsFile && !existsSync(secretsFile)) throw new ConfigError(`${file}：secretsFile 指向的 ${secretsFile} 不存在`);
-	const dispatchTimeoutSeconds = raw.dispatchTimeoutSeconds === undefined ? 300 : raw.dispatchTimeoutSeconds;
-	if (typeof dispatchTimeoutSeconds !== "number" || !(dispatchTimeoutSeconds > 0 && dispatchTimeoutSeconds <= DISPATCH_TIMEOUT_MAX)) {
-		throw new ConfigError(`${file}：dispatchTimeoutSeconds（${JSON.stringify(dispatchTimeoutSeconds)}）必须是大于 0、不超过 ${DISPATCH_TIMEOUT_MAX} 的秒数`);
-	}
+	const seconds = (key: string, fallback: number): number => {
+		const value = raw[key] === undefined ? fallback : raw[key];
+		if (typeof value !== "number" || !(value > 0 && value <= DISPATCH_TIMEOUT_MAX)) {
+			throw new ConfigError(`${file}：${key}（${JSON.stringify(value)}）必须是大于 0、不超过 ${DISPATCH_TIMEOUT_MAX} 的秒数`);
+		}
+		return value;
+	};
+	const dispatchTimeoutSeconds = seconds("dispatchTimeoutSeconds", 900);
+	const dispatchCodingTimeoutSeconds = seconds("dispatchCodingTimeoutSeconds", 3600);
 	const maxConcurrentExperts = raw.maxConcurrentExperts === undefined ? 4 : raw.maxConcurrentExperts;
 	if (!Number.isInteger(maxConcurrentExperts) || maxConcurrentExperts < 1 || maxConcurrentExperts > 16) {
 		throw new ConfigError(`${file}：maxConcurrentExperts（${JSON.stringify(maxConcurrentExperts)}）必须是 1 到 16 的整数`);
@@ -82,6 +89,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		bgMaxMinutes: raw.bgMaxMinutes ?? 120,
 		fallbackDailyTokens: raw.fallbackDailyTokens ?? 8_000_000,
 		dispatchTimeoutSeconds,
+		dispatchCodingTimeoutSeconds,
 		maxConcurrentExperts,
 		retryAttempts: raw.retryAttempts ?? 3,
 		probePrimaryMinutes: raw.probePrimaryMinutes ?? 15,

@@ -9,6 +9,7 @@ import { formatModelRef, type ModelRef } from "../models.ts";
 import { INPUT_LABEL } from "../client/board-format.mjs";
 import { parseOptions } from "../kernel/question.ts";
 import type { Member } from "../teams.ts";
+import { canCode, memberTools } from "../worker/tools.ts";
 import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberRun } from "./dispatch.ts";
 
 export interface WorkerSpec {
@@ -67,7 +68,10 @@ interface Live {
 export interface DispatchOptions {
 	/** The members a team's helper may dispatch to; undefined when the team is not in the roster. */
 	crewOf(team: string): readonly Member[] | undefined;
+	/** One dispatch's limit for a member that cannot write, edit or run commands in the ticket; also the longest wait for a slot. */
 	timeoutMs: number;
+	/** One dispatch's limit for a member that can. */
+	codingTimeoutMs: number;
 	maxConcurrent: number;
 }
 
@@ -101,7 +105,7 @@ export class WorkerExecutor {
 		this.#o = options;
 		const { dispatch, spawner } = options;
 		if (dispatch && spawner.runMember) {
-			this.#desk = new DispatchDesk({ timeoutMs: dispatch.timeoutMs, maxConcurrent: dispatch.maxConcurrent, run: (run) => spawner.runMember!(run), onChange: options.afterCommand });
+			this.#desk = new DispatchDesk({ queueTimeoutMs: dispatch.timeoutMs, maxConcurrent: dispatch.maxConcurrent, run: (run) => spawner.runMember!(run), onChange: options.afterCommand });
 		}
 	}
 
@@ -344,9 +348,11 @@ export class WorkerExecutor {
 			throw new Error(`回退模型 ${formatModelRef(model)} 今日用量已达上限，这次不能派活`);
 		}
 		const { kernel, stateDir, afterCommand } = this.#o;
+		const { basis } = kernel.getTicket(ticketId)!;
+		const { timeoutMs, codingTimeoutMs } = this.#o.dispatch!;
 		return this.#desk.dispatch({
-			ticketId, callId, member, task,
-			basis: kernel.getTicket(ticketId)!.basis,
+			ticketId, callId, member, task, basis,
+			limitMs: canCode(memberTools(basis, member.tools)) ? codingTimeoutMs : timeoutMs,
 			model,
 			workdir: join(stateDir, "workers", ticketId),
 			sessionDir: memberSessionDir(stateDir, ticketId, member.name),
