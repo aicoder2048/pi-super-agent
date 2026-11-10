@@ -280,7 +280,20 @@ test("引用：幕僚长那句话的「引用」在气泡右下角，不压住�
 				await line.locator(".bubble").hover();
 				const e = await edges(line);
 				assert.ok(Math.abs(e.button.right - e.bubble.right) <= 1, `「引用」右边 ${e.button.right}，气泡右边 ${e.bubble.right}`);
-				assert.ok(e.button.top >= e.bubble.bottom + 3, `「引用」顶 ${e.button.top}，气泡底 ${e.bubble.bottom}：离气泡太近`);
+				assert.ok(Math.abs(e.button.top - e.bubble.bottom) <= 1, `「引用」顶 ${e.button.top}，气泡底 ${e.bubble.bottom}：中间不能有鼠标会掉进去的缝`);
+				const padTop = await line.locator(".quote-btn").evaluate((b) => parseFloat(getComputedStyle(b).paddingTop));
+				assert.ok(padTop >= 3, `「引用」文字离气泡底边只有 ${padTop}px`);
+			});
+			await step("鼠标停在幕僚长的话上，往下慢慢移到「引用」再点，引用条出现", async (page) => {
+				const line = page.locator(".thread > .line.router", { hasText: "好的，去查了。" });
+				const bubble = (await line.locator(".bubble").boundingBox())!;
+				await page.mouse.move(bubble.x + bubble.width - 12, bubble.y + bubble.height / 2);
+				const btn = (await line.locator(".quote-btn").boundingBox())!;
+				await page.mouse.move(btn.x + btn.width / 2, btn.y + btn.height - 4, { steps: 60 });
+				await page.mouse.down();
+				await page.mouse.up();
+				assert.equal(await page.locator("#quote-strip").isHidden(), false, "鼠标移到「引用」时它已经消失，点不到");
+				await page.locator("#quote-cancel").click();
 			});
 			await step("悬停带选项的那句：「引用」和气泡右边对齐，在气泡下面，不压住任何选项按钮", async (page) => {
 				const line = page.locator(".thread > .line.router", { hasText: "查哪个城市？" });
