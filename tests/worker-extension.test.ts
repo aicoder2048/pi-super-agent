@@ -107,3 +107,13 @@ test("汇报工具接受问题的 2 到 4 个选项，经宿主连接原样提�
 	await w.run("report", { status: "blocked", summary: "要你选", question: "选哪个？", options: ["甲", "乙"] });
 	assert.deepEqual(w.requests.at(-1).params.options, ["甲", "乙"]);
 });
+
+test("Worker 的工具跑的命令，环境里没有任何 PSA_ 变量：拿不到 socket 路径、任务凭据和状态目录", async (t) => {
+	process.env.PSA_STATE_DIR = "/tmp/psa-state-for-env-test";
+	const w = await load("request");
+	t.after(w.close);
+	assert.deepEqual(Object.keys(process.env).filter((name) => name.startsWith("PSA_")), []);
+	await w.run("bg_start", { command: "env | grep -E '^PSA_|host\\.sock|psa-state-for-env-test' || echo 干净" });
+	await until(() => w.sent.length === 1, "结果送回");
+	assert.equal(w.sent[0].message.content.split("输出末尾：\n")[1], "干净\n");
+});

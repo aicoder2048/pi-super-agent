@@ -26,8 +26,9 @@ const SECRET_NAME = /(_API_KEY|_ACCESS_KEY|_TOKEN|_SECRET|_PASSWORD)$|^SECRET_/i
 
 // RpcClient spreads the host's process.env under the env it is given; an undefined value masks
 // a name there because spawn drops undefined entries.
+// PSA_STATE_DIR goes too: a host started by the watchdog carries it, and it names the directory that holds client-token.
 export function workerEnv(host: NodeJS.ProcessEnv): Record<string, string> {
-	return Object.fromEntries(Object.keys(host).map((name) => [name, SECRET_NAME.test(name) ? undefined : host[name]])) as Record<string, string>;
+	return Object.fromEntries(Object.keys(host).map((name) => [name, SECRET_NAME.test(name) || name === "PSA_STATE_DIR" ? undefined : host[name]])) as Record<string, string>;
 }
 
 export interface WorkerArgsInput {
