@@ -128,7 +128,7 @@ Router 的普通文字输出不会发到任何地方。系统提示里也明确�
 4. 按 ticket 的 `domain` 取它的模块交给 Worker 的东西（`#kitFor`，结果是 `DomainKit`：模块的 `skills/`、`prepare` 和成员），放进 `WorkerSpec`。没有领域就是空的一份。领域的模块已经不在时也按空的处理，并记一行日志，同一个任务只记一次。
 5. 调 `PiWorkerSpawner.spawn`。spawn 抛错就调 `kernel.workerExited` 后重新抛出。成功则记录 `Live` 并调 `kernel.workerStarted`。
 
-**`PiWorkerSpawner.spawn`**（`src/host/pi-worker.ts`）。`WorkerSpec` 里带着 `prepare` 且没有 `.psa-prepared` 标记时，先在 workdir 里执行 `bash -lc prepare`，超时 10 分钟。然后用 `RpcClient` 启动 `pi`，`WorkerSpec` 里有 `skillsDir` 就加 `--skill <模块>/skills`。技能和 `prepare` 跟着 ticket 的领域走，规则触发的和对话里开的 ticket 一样；spawner 自己不查模块。参数里 `--session-id` 是 ticket 的 `workerSessionId`，所以重启后进程会接上同一个 session。`--no-extensions -e src/worker/extension.ts` 只加载 Worker extension。`--append-system-prompt` 追加 `WORKER_PROMPT`。环境变量传入 `PSA_SOCKET/TICKET/TOKEN/BASIS/BG_MAX_MS`；任务的领域（模块）有成员时再加 `PSA_CREW`（成员名单），提示词末尾多一段本队名册，Worker 多一个 `dispatch_agent` 工具。一次派活由 `PiWorkerSpawner.runMember` 起一个 `pi -p --mode json` 进程，自成进程组，`--session-dir` 是 `<state>/workers/<ticketId>/team/<成员>`，带 `--continue`，所以同一任务里再派给它会接上原来的 session；成员的 `--skill` 先是模块的 `skills/`，再是它自己定义里的 `skills`；排队、时限、无进展和结果的状态在 `src/host/dispatch.ts` 的 `DispatchDesk`；成员进程打印的每个事件都算一次动静，用来显示它在做什么和判断无进展；工具调用开始和返回的事件（`tool_execution_start`、`tool_execution_end`）还用来记哪些调用没返回，有调用没返回时不算无进展。在跑的成员进程记在它 session 目录的 `running.json` 里（`src/host/member-ledger.ts`），宿主启动时先结束上一个宿主留下的成员。
+**`PiWorkerSpawner.spawn`**（`src/host/pi-worker.ts`）。`WorkerSpec` 里带着 `prepare`、任务的 basis 不是 `inference`、且没有 `.psa-prepared` 标记时，先在 workdir 里执行 `bash -lc prepare`，超时 10 分钟。然后用 `RpcClient` 启动 `pi`，`WorkerSpec` 里有 `skillsDir` 就加 `--skill <模块>/skills`。技能和 `prepare` 跟着 ticket 的领域走，规则触发的和对话里开的 ticket 一样；spawner 自己不查模块。参数里 `--session-id` 是 ticket 的 `workerSessionId`，所以重启后进程会接上同一个 session。`--no-extensions -e src/worker/extension.ts` 只加载 Worker extension。`--append-system-prompt` 追加 `WORKER_PROMPT`。环境变量传入 `PSA_SOCKET/TICKET/TOKEN/BASIS/BG_MAX_MS`；任务的领域（模块）有成员时再加 `PSA_CREW`（成员名单），提示词末尾多一段本队名册，Worker 多一个 `dispatch_agent` 工具。一次派活由 `PiWorkerSpawner.runMember` 起一个 `pi -p --mode json` 进程，自成进程组，`--session-dir` 是 `<state>/workers/<ticketId>/team/<成员>`，带 `--continue`，所以同一任务里再派给它会接上原来的 session；成员的 `--skill` 先是模块的 `skills/`，再是它自己定义里的 `skills`；排队、时限、无进展和结果的状态在 `src/host/dispatch.ts` 的 `DispatchDesk`；成员进程打印的每个事件都算一次动静，用来显示它在做什么和判断无进展；工具调用开始和返回的事件（`tool_execution_start`、`tool_execution_end`）还用来记哪些调用没返回，有调用没返回时不算无进展。在跑的成员进程记在它 session 目录的 `running.json` 里（`src/host/member-ledger.ts`），宿主启动时先结束上一个宿主留下的成员。
 
 Worker 的常驻进程（`RpcClient` 那一个）打开 auto-compaction 和 auto-retry，steering mode 设为 `"all"`；成员的一次性进程不设这些。Worker 的 Pi 事件映射如下。
 
@@ -279,7 +279,8 @@ Watchdog（`src/watchdog/`，未提交）是另一个进程，用 `just watchdog
 | `title` | 领域的中文名。写了 `description` 就必须写。 |
 | `description` | 给幕僚长看的一句话，最多 60 字。幕僚长靠它决定对话里的一件事归不归这个领域。不写的话幕僚长的名册里没有这个模块，但它的规则开的任务照样属于它。 |
 | `team` | 队名，例如「调研队」，不能有空白。`agents/` 里有成员就必须写，没有成员就不能写。 |
-| `sources`、`timers`、`prepare` | 和以前一样。`prepare` 是助手第一次启动前在任务工作目录里跑一次的命令。 |
+| `sources`、`timers` | 和以前一样。 |
+| `prepare` | 助手第一次启动前，宿主在任务工作目录里用 `bash -lc` 跑一次的命令。它跟着领域走：规则开的和对话里开的任务都跑。幕僚长自己推断开的任务不跑，这类任务只读，助手仍然拿到模块的技能。 |
 
 `rules.md` 里每个二级标题是一条规则。规则开的任务自动属于这个模块，不用也不能写「团队：」。
 

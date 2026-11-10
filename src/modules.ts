@@ -43,7 +43,7 @@ export interface LoadedModule {
 /** What a helper is handed from its ticket's domain, however the ticket was opened. */
 export interface DomainKit {
 	skillsDir: string | undefined;
-	/** Runs once in the ticket's workdir before the helper first starts. */
+	/** Runs once in the ticket's workdir before the helper first starts. Never for an inference ticket. */
 	prepare: string | undefined;
 	/** The module's members the helper may dispatch to, each with the module's `skills/` ahead of its own. Empty: it works alone. */
 	crew: readonly Member[];

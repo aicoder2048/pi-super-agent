@@ -97,7 +97,8 @@ export class PiWorkerSpawner implements WorkerSpawner {
 	async spawn(spec: WorkerSpec, events: WorkerEvents): Promise<WorkerHandle> {
 		const { model } = spec;
 		const marker = join(spec.workdir, ".psa-prepared");
-		if (spec.prepare && !existsSync(marker)) {
+		// An inference ticket is read-only (ADR-0003): no shell command runs for it, the module's included.
+		if (spec.prepare && spec.basis !== "inference" && !existsSync(marker)) {
 			execFileSync("bash", ["-lc", spec.prepare], { cwd: spec.workdir, env: workerEnv(process.env), stdio: "ignore", timeout: 10 * 60_000 });
 			writeFileSync(marker, new Date().toISOString());
 		}

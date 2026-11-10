@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -96,4 +96,20 @@ test("本队有成员时，成员名单经 PSA_CREW 交给助手进程；没有�
 	const solo = await envOf([]);
 	assert.equal(solo.PSA_CREW, undefined);
 	assert.equal(solo.PSA_MEMBER_TOOLS, undefined);
+});
+
+test("推断开的任务只读：领域的 prepare 不跑，领域的技能目录照样交给助手；别的任务照跑 prepare", async (t) => {
+	const start = async (basis: "inference" | "request") => {
+		const dir = mkdtempSync(join(tmpdir(), "psa-prepare-"));
+		const cliPath = join(dir, "fake-pi.mjs");
+		writeFileSync(cliPath, FAKE_PI);
+		const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath });
+		const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
+		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis, skillsDir: "/modules/news/skills", prepare: "echo ran > prepared.txt", crew: [], token: "t", model: { provider: "openai-codex", id: "gpt" } }, events);
+		t.after(() => handle.stop());
+		const argv = JSON.parse(readFileSync(join(dir, "worker-argv.json"), "utf8")) as string[];
+		return { prepared: existsSync(join(dir, "prepared.txt")), skills: argv.flatMap((a, i) => (a === "--skill" ? [argv[i + 1]] : [])) };
+	};
+	assert.deepEqual(await start("inference"), { prepared: false, skills: ["/modules/news/skills"] });
+	assert.deepEqual(await start("request"), { prepared: true, skills: ["/modules/news/skills"] });
 });
