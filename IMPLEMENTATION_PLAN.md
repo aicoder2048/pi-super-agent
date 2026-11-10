@@ -690,30 +690,30 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 ## Ship the 看盘队 and the pi-pi team (T3)
 
-**Depends on.** D1 (stacked on it; D1 is on T2). 团队的来源按 ADR-0009：队伍是模块 `agents/` 里的成员，队名写在 `module.json` 的 `team`。取代 W6c（#32）。指标和财报查询（`lookup indicators`、`lookup earnings`）在 PR #26（`psa/market-data`），本分支先 cherry-pick 它的提交，#26 合并后 rebase 去重。
+**Depends on.** D1 (stacked on it; D1 is on T2). 团队的来源按 ADR-0009：队伍是模块 `agents/` 里的成员，队名写在 `module.json` 的 `team`，领域经验放模块的 `skills/`，成员的提示词只写角色、判断和汇报格式。取代 W6c（#32）。指标和财报查询（`lookup indicators`、`lookup earnings`）在 PR #26（`psa/market-data`），本分支先 cherry-pick 它的提交，#26 合并后 rebase 去重。
 
 **Files.**
 
-- [ ] Cherry-pick PR #26 的提交（`git log origin/main..origin/psa/market-data`）。
-- [ ] Create `modules/us-market/agents/market-analyst.md`（行情分析师）、`technical-analyst.md`（技术分析师）、`news-researcher.md`（新闻研究员）、`earnings-reader.md`（财报解读），从 `psa/market-experts` 的 `modules/us-market/roles/` 搬来；edit `modules/us-market/module.json`（`team` 写「看盘队」）。
-- [ ] Create `modules/pi-pi/module.json`（没有来源；写 `title`、`description` 和 `team`「pi-pi 队」）和 `modules/pi-pi/agents/`（`psa/market-experts` 上已补中文 `title` 的九位专家）。不导入 `pi-orchestrator`，不改 `.pi/agents`。
-- [ ] `modules/us-market/rules.md` 不用改：big-move 是看盘模块的规则，它开的任务自动属于 us-market 领域（ADR-0009），规则里不写「团队：」。现有来源里没有财报触发，不加财报周规则。
-- [ ] Create `tests/first-teams.test.ts`、`tests/e2e/teams.e2e.ts`，edit `tests/modules.test.ts`。
+- [x] Cherry-pick PR #26 的提交（`git log origin/main..origin/psa/market-data`，13 个）。 证据：ad571d1 到 b2b1ef7；两处冲突（`tests/pi-worker-env.test.ts`、`docs/web-client/decisions.tsv`）都是两边各留；之后 `just test` 666 条通过。
+- [x] Create `modules/us-market/agents/market-analyst.md`（行情分析师）、`technical-analyst.md`（技术分析师）、`news-researcher.md`（新闻研究员）、`earnings-reader.md`（财报解读），从 `psa/market-experts` 的 `modules/us-market/roles/` 改写；create `modules/us-market/skills/us-market-desk/SKILL.md`；edit `modules/us-market/module.json`（`team` 写「看盘队」，`description` 加上技术面、财报和新闻）。 证据：a25bbde。
+- [x] Create `modules/pi-pi/module.json`（没有来源；`title`「Pi 开发」、`description`、`team`「Pi专家队」）和 `modules/pi-pi/agents/`（`psa/market-experts` 上已补中文 `title` 的九位专家，正文不改）。不导入 `pi-orchestrator`，不改 `.pi/agents`。 证据：a25bbde。队名不写成「Pi 专家队」：队名里不能有空白（ADR-0008）。
+- [x] Edit `modules/us-market/rules.md`：big-move 不写「团队：」，它开的任务自动属于 us-market 领域（ADR-0009）；规则正文改成任务要确定什么，谁来做由助手定。现有来源里没有财报触发，不加财报周规则。 证据：a25bbde。
+- [x] Create `tests/first-teams.test.ts`、`tests/e2e/first-teams.e2e.ts`；edit `tests/modules.test.ts`、`tests/host-main.test.ts`、`tests/e2e/harness.ts`（`story` 的 `env` 选项，用来清空行情密钥）。 证据：a25bbde、feed129。`tests/e2e/teams.e2e.ts` 是 T1 的文件，没有动。
 
 **Build.**
 
-- [ ] 四位看盘成员各有清楚的职责、最小的工具白名单、汇报格式（结论、证据、来源和时间），行情一律写报价时间。技术分析师只引用 `lookup indicators` 的数字，标出 `lastBar.partial`；财报解读读 `lookup earnings`。
-- [ ] 成员先用 `lookup`；新闻研究员最多读 3 页；回复不超过 600 字。
-- [ ] us-market 模块的 `description` 让幕僚长在行情、个股、财报、相关新闻的问题上选这个领域；原来写在 `roles/deputy.md` 里的要点（一般派两三位、冲突明写、报价写时间和来源、大波动先派行情分析师和技术分析师）改放进看盘模块的技能，助手读得到。
-- [ ] pi-pi 模块的 `description` 让幕僚长在「怎么写 Pi 扩展、主题、技能、配置」的问题上选这个领域。
+- [x] 四位看盘成员各有清楚的职责、最小的工具白名单、汇报格式（结论、证据、来源和时间）。行情分析师、新闻研究员、财报解读是 `read, lookup, web_get`，技术分析师是 `read, lookup`；都没有 `bash`、`write`、`edit`。`read` 是读技能用的：Pi 只把技能写进有工具读它的进程的提示词。 证据：`tests/first-teams.test.ts`「看盘队每位成员只列它用得上的只读工具」「仓库自带的成员都写了工具清单…」「看盘队每位成员的提示词都写了汇报格式…」；`tests/e2e/first-teams.e2e.ts`「模型看到的工具…」；去掉技术分析师的 `read` 后端到端「…提示词里都有看盘模块的技能」一步变红。
+- [x] 所有人共用的做法放在技能 `us-market-desk`，成员提示词不重复：行情数字只来自 `lookup`、先查 `session`、指标和超预期百分比照抄不重算、每个价格写报价时间和来源、行情可能延迟 15 分钟、`lastBar.partial` 要写明、新闻研究员最多读 3 页、回复不超过 600 字、意见冲突怎么写。原来写在 `roles/deputy.md` 里的要点（只问价格自己查、一般派两三位、什么问题派给谁、大波动先派行情分析师和技术分析师、盘面解释不了再派新闻研究员、汇总答复的写法）也在这份技能里，助手读得到。 证据：`modules/us-market/skills/us-market-desk/SKILL.md`；`tests/first-teams.test.ts`「看盘模块的经验放在它的技能里…」；端到端里助手和两位成员的系统提示词都有这份技能。
+- [x] us-market 模块的 `description` 让幕僚长在行情、个股、财报、相关新闻的问题上选这个领域；pi-pi 模块的 `description` 让幕僚长在「怎么写 Pi 的扩展、主题、技能、配置、提示模板、终端界面组件」的问题上选这个领域。 证据：`tests/first-teams.test.ts`「幕僚长的名册里有这两个领域…」；`tests/modules.test.ts`「仓库里的三个模块都有领域名和给幕僚长的说明…」。
+- [x] 九位 Pi 专家的工具照原文是 `read,grep,find,ls,bash`，没有 `write` 和 `edit`。 证据：`tests/first-teams.test.ts`「仓库自带的成员都写了工具清单…」。`bash` 在使用者请求的任务里可以执行命令（专家用它取 Pi 的文档），推断任务里只读（ADR-0003）。
 
 **You see.**
 
-- [ ] 行情大波动时任务属于 us-market 领域，显示看盘队，助手派给行情分析师和技术分析师；问财报时派给财报解读；问 Pi 扩展怎么写，任务属于 pi-pi 领域，显示 pi-pi 队。
+- [ ] 行情大波动时任务属于 us-market 领域，显示看盘队，助手派给行情分析师和技术分析师；问财报时派给财报解读；问 Pi 扩展怎么写，任务属于 pi-pi 领域，显示 Pi专家队。 假模型下的这一幕见 `tests/e2e/first-teams.e2e.ts`；真实模型留给 Verify, live。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 两个模块的清单和所有成员文件通过加载校验；看盘规则开的任务属于 us-market 领域；卸掉模块后它的领域、团队和成员一起消失。
+- [x] 两个模块的清单和十三位成员用默认配置的提供方通过真实加载；看盘规则开的任务属于 us-market 领域；us-market 的技能交给助手和每位成员；拿掉 us-market 模块后它的领域、团队和成员一起消失，启动不报错。 证据：`tests/first-teams.test.ts` 八条（先红后绿）；`tests/host-main.test.ts`「just host 启动时列出加载的模块…」（真实入口，默认模块目录）；`tests/e2e/first-teams.e2e.ts`；`just test` 674 条通过、`just e2e` 108 条通过（feed129），见 decisions.tsv 的 t3 各行。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
@@ -721,7 +721,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [ ] Lane 2. 新闻问题。Save `t3-news.png`. Pass when 派给新闻研究员并核对日期来源。
 - [ ] Lane 3. 财报问题。Save `t3-earnings.png`. Pass when 派给财报解读。
 - [ ] Lane 4. 跨领域问题。Save `t3-two.png`. Pass when 助手并行派给其中两位并写明冲突。
-- [ ] Lane 5. 问 Pi 扩展怎么写。Save `t3-pi-pi.png`. Pass when 任务属于 pi-pi 领域、显示 pi-pi 队，助手派给扩展专家。
+- [ ] Lane 5. 问 Pi 扩展怎么写。Save `t3-pi-pi.png`. Pass when 任务属于 pi-pi 领域、显示 Pi专家队，助手派给扩展专家。
 - [ ] Lane 6. 只问一个股价。Save `t3-direct.png`. Pass when 看盘队的助手自己用 `lookup` 查完，没有派活。
 - [ ] Lane 7. 关掉 us-market 模块。Save `t3-no-module.png`. Pass when us-market 领域从幕僚长的名册消失，启动不报错。
 - [ ] Lane 8. 推断任务里助手派给行情分析师。Save `t3-inference.png`. Pass when 两者都只读。
@@ -731,7 +731,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
 - [ ] Metric. 助手第一轮的输入 token（本队名册增加的开销）。
-- [ ] Probe. 没有领域的助手和 pi-pi 队（九位成员）的助手各量 5 次。
+- [ ] Probe. 没有领域的助手和 Pi专家队（九位成员）的助手各量 5 次。
 - [ ] Baseline. Record the no-domain median first.
 - [ ] Rule. 增加超过 1500 token 算失败。
 

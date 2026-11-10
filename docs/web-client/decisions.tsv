@@ -237,3 +237,10 @@ ts	phase	decision	why	evidence	result
 2026-11-09T18:52:47Z	m2-verdict	M2 复审第二轮 PASS：6 处补测变红、未收盘 K 线标记、盘前 VWAP 回退上一交易日、Finnhub 密钥格式错只停 earnings	复审 16 处变异全部变红	30736a5 复审报告；522/522	PASS
 2026-11-09T19:49:36Z	m2	宿主内 LookupCache：按请求参数做键，TTL + LRU 200 条，进行中的相同请求合用；结果带 fromCache 和 cachedAgeMs；quote/bars 改为 { quotes } / { bars } 对象	开盘时十几个专家加每分钟轮询挤在 12 秒一个请求的 Massive 队列上全部超时，很多请求相同；数组没法带新鲜度字段，且还没有消费方	tests/market-cache.test.ts、market-source.test.ts 缓存用例；去掉合用/LRU/TTL 的变异都变红	decided
 2026-11-09T19:49:36Z	m2	每次查询写一行日志：操作、参数摘要、来源（上游/合用/缓存/现算）、排队等待、总耗时；minGapMs 默认不变	慢的会诊要能从 host.log 看出是排队还是上游慢；套餐待使用者确认	日志用例：第二个请求排队 12000ms	decided
+2026-11-10T02:41:43Z	t3	cherry-pick PR #26 的 13 个提交（ad571d1 到 b2b1ef7），不带 main 上的 #36 和 stock-heatmap	技术分析师和财报解读要 lookup indicators 和 earnings；本分支基于 psa/domains，不含 origin/main 的两个提交	冲突两处：pi-worker-env.test.ts 留本分支的断言并加 FINNHUB_API_KEY，decisions.tsv 两边的行都留；just test 666/666	decided
+2026-11-10T02:41:43Z	t3	看盘成员的 tools 都带 read	Pi 只把技能写进有工具读它的进程的提示词（system-prompt.js：skillFileReadTool）；没有 read 的成员拿不到模块技能	去掉技术分析师的 read 后 first-teams.e2e「提示词里都有看盘模块的技能」变红，加回变绿	decided
+2026-11-10T02:41:43Z	t3	共用做法放技能 us-market-desk，成员提示词只留分工、判断和汇报格式，加一句「动手前先读技能」	使用者的规则：可复用的经验放模块技能；deputy.md 的派活要点没有副幕僚长可放，也进技能	modules/us-market/skills/us-market-desk/SKILL.md；tests/first-teams.test.ts 八条先红后绿	decided
+2026-11-10T02:41:43Z	t3	pi-pi 的队名写成 Pi专家队，不带空格	loadTeam 拒绝含空白的队名（ADR-0008），根给的「Pi 专家队」加载不了；决定 5 不改 loader	tests/first-teams.test.ts 第一条；host-main 启动行「pi-pi（Pi专家队）」	decided
+2026-11-10T02:41:43Z	t3	九位 Pi 专家保留原文的 bash	正文不改，专家用 bash 取 Pi 文档；没有 write 和 edit；推断任务里只读	tests/first-teams.test.ts「仓库自带的成员都写了工具清单…」	decided，留给使用者复核
+2026-11-10T02:41:43Z	t3	端到端用仓库的 modules 目录跑真实宿主，story 加 env 选项清空行情密钥	不请求真实行情；只有真实宿主能证明技能送到了助手和成员进程	just test 674/674；just e2e 108/108（feed129）	PASS
+2026-11-10T02:41:43Z	t3	简化检查自己做：deslop 技能没有安装；no-comments 没有起 Comment Sicko	本 PR 新增的代码只有两个测试文件和 harness 的一个选项，新增注释 0 行	git diff b2b1ef7 -- tests src 里新增的注释只有改正过的一句 harness 说明	done
