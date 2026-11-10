@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_MODELS, parseModelRef, type ModelRef } from "../models.ts";
 import type { KernelConfig } from "../kernel/types.ts";
 import { ConfigError, readJsonFile } from "../config-error.ts";
+import { MEMBER_CAP_DEFAULT, MEMBER_CAP_MAX } from "./member-cap.ts";
 
 export interface HostConfig {
 	stateDir: string;
@@ -18,7 +19,7 @@ export interface HostConfig {
 	dispatchCodingTimeoutSeconds: number;
 	/** A running member with no event of any kind for this long is ended. */
 	dispatchStallSeconds: number;
-	/** Member processes running at once across the host; the rest queue. */
+	/** Member processes running at once across the host until the user raises it for a day; the rest queue. */
 	maxConcurrentExperts: number;
 	retryAttempts: number;
 	probePrimaryMinutes: number;
@@ -87,9 +88,9 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		}
 		throw new ConfigError(`${shown}必须是 ${DISPATCH_STALL_MIN} 到 ${longestDispatch} 之间的秒数：不短于 ${DISPATCH_STALL_MIN} 秒，不长于最长的派活时限`);
 	}
-	const maxConcurrentExperts = raw.maxConcurrentExperts === undefined ? 4 : raw.maxConcurrentExperts;
-	if (!Number.isInteger(maxConcurrentExperts) || maxConcurrentExperts < 1 || maxConcurrentExperts > 16) {
-		throw new ConfigError(`${file}：maxConcurrentExperts（${JSON.stringify(maxConcurrentExperts)}）必须是 1 到 16 的整数`);
+	const maxConcurrentExperts = raw.maxConcurrentExperts === undefined ? MEMBER_CAP_DEFAULT : raw.maxConcurrentExperts;
+	if (!Number.isInteger(maxConcurrentExperts) || maxConcurrentExperts < 1 || maxConcurrentExperts > MEMBER_CAP_MAX) {
+		throw new ConfigError(`${file}：maxConcurrentExperts（${JSON.stringify(maxConcurrentExperts)}）必须是 1 到 ${MEMBER_CAP_MAX} 的整数`);
 	}
 	const sources = raw.sources ?? {};
 	if (sources === null || typeof sources !== "object" || Array.isArray(sources)) {

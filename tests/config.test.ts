@@ -120,10 +120,11 @@ test("两个派活时限不到 1 秒时拒绝启动", () => {
 	}
 });
 
-test("maxConcurrentExperts 不是 1 到 16 的整数、两个派活时限不是 1 到 3600 之间的数时拒绝启动，报错指出字段", () => {
-	for (const value of [0, 17, 1.5, "4", null]) {
-		assert.throws(() => loadConfig(stateWith({ maxConcurrentExperts: value })), (e: Error) => e.name === "ConfigError" && /maxConcurrentExperts/.test(e.message), JSON.stringify(value));
+test("maxConcurrentExperts 不是 1 到 10 的整数、两个派活时限不是 1 到 3600 之间的数时拒绝启动，报错指出字段", () => {
+	for (const value of [0, 11, 16, 1.5, "4", null]) {
+		assert.throws(() => loadConfig(stateWith({ maxConcurrentExperts: value })), (e: Error) => e.name === "ConfigError" && /maxConcurrentExperts.*1 到 10 的整数/.test(e.message), JSON.stringify(value));
 	}
+	assert.equal(loadConfig(stateWith({ maxConcurrentExperts: 10 })).maxConcurrentExperts, 10);
 	for (const key of ["dispatchTimeoutSeconds", "dispatchCodingTimeoutSeconds"]) {
 		for (const value of [0, -1, 3601, "60", null]) {
 			assert.throws(() => loadConfig(stateWith({ [key]: value })), (e: Error) => e.name === "ConfigError" && e.message.includes(`${key}（`) && /不超过 3600/.test(e.message), `${key} ${JSON.stringify(value)}`);
