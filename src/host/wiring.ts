@@ -5,6 +5,7 @@ import { ConfigError } from "../config-error.ts";
 import { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import type { Modules } from "../modules.ts";
+import { BUILTIN_ROOT, Roster } from "../teams.ts";
 import type { WatchedSource } from "../client/protocol.ts";
 import type { TimerEntry } from "../sources/timer.ts";
 import { FEEDS, type FeedSpec } from "../sources/feeds.ts";
@@ -71,6 +72,10 @@ export interface HostWiringInput {
 }
 
 export function createHostOptions({ config, modules, modelRuntime, log, clock = { now: () => Date.now() } }: HostWiringInput): HostOptions {
+	const subscriptionProviders = [...new Set([config.models.router.provider, config.models.worker.provider])];
+	const roster = Roster.load([BUILTIN_ROOT, ...modules.modules.map((m) => m.dir), config.stateDir], subscriptionProviders);
+	const teams = roster.teamBook(modules.allRules());
+	log(`[host] 团队：${[...teams.kinds.keys()].join("、")}`);
 	const resolve = (ref: ModelRef, role?: string) => {
 		const model = modelRuntime.getModel(ref.provider, ref.id);
 		if (!model) throw new ConfigError(`${role ? `${join(config.stateDir, "config.json")}：models.${role}：` : ""}找不到模型 ${formatModelRef(ref)}`);
@@ -79,6 +84,9 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 	resolve(config.models.router, "router");
 	resolve(config.models.worker, "worker");
 	resolve(config.models.fallback, "fallback");
+	for (const member of roster.members) {
+		if (member.model && !modelRuntime.getModel(member.model.provider, member.model.id)) throw new ConfigError(`${member.file}：model：找不到模型 ${formatModelRef(member.model)}`);
+	}
 	const selectors = modelSelectors(config, clock);
 	const timers = modules.timers();
 	const feeds = feedSpecs(config, modules, log);
@@ -91,6 +99,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		sourcePolicy: modules.sourcePolicy,
 		ruleAllows: modules.ruleAllows,
 		isMarketSource: modules.isMarketSource,
+		teams,
 		rulesFor: modules.rulesFor,
 		timers,
 		watching: watchedSources(modules, timers),
@@ -105,6 +114,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 				cwd: join(config.stateDir, "router"),
 				sessionDir: join(config.stateDir, "sessions", "router"),
 				rules: modules.rulesPrompt(),
+				teamRoster: roster.routerPrompt(),
 				rulesFor: deps.rulesFor,
 				afterCommand: deps.afterCommand,
 				onError: (e) => log(`[router] ${String(e)}`),

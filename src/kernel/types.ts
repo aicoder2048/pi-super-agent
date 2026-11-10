@@ -8,11 +8,23 @@ export type WorkerState = (typeof WORKER_STATES)[number];
 export const HELPER_ROLES = ["conversation", "market", "rule", "watch"] as const;
 export type HelperRole = (typeof HELPER_ROLES)[number];
 
-/** The helper (worker) a ticket gets when it opens: a name from the pool, its role, and its number within the role that New York day. */
-export interface Helper {
-	name: string;
-	role: HelperRole;
-	seq: number;
+/**
+ * Who a ticket shows as, fixed when it opens. One helper has a role and counts within that role: 「青檀 · 行情助手 #2」.
+ * A helper whose team has members to dispatch carries the team's name instead and counts within that team: 「高山流水 · 看盘队 #2」.
+ * Both count within one New York day.
+ */
+export type Helper = { name: string; seq: number } & ({ role: HelperRole } | { team: string });
+
+export const DEFAULT_TEAM = "默认";
+
+/** solo: one helper. crew: the team has a member besides 通用助手, so the helper can grow into a team. */
+export type TeamKind = "solo" | "crew";
+
+/** All the kernel knows about teams, built once at startup. Every team in `pinned` is a key of `kinds`. */
+export interface TeamBook {
+	kinds: ReadonlyMap<string, TeamKind>;
+	/** Rule id to the team its 「团队：」 line names. */
+	pinned: ReadonlyMap<string, string>;
 }
 
 export interface HelpersToday {
@@ -113,6 +125,7 @@ export type Decision =
 			title: string;
 			basis: Basis;
 			ruleId?: string;
+			team?: string;
 			triggerId?: string;
 			threads?: string[];
 			brief: string;
@@ -177,6 +190,8 @@ export interface Ticket {
 	title: string;
 	basis: Basis;
 	ruleId: string | null;
+	/** Fixed when the ticket opens; it may name a team that has since been removed. */
+	team: string;
 	originTriggerId: string | null;
 	createdAt: number;
 	workerSessionId: string;

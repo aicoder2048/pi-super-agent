@@ -5,7 +5,7 @@ import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
 import { Kernel, nextStallAt } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
-import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type DashboardRow, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
+import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type DashboardRow, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy, type TeamBook } from "../kernel/types.ts";
 import type { TriggerSubmission } from "../kernel/types.ts";
 import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
@@ -39,6 +39,7 @@ export interface HostOptions {
 	sourcePolicy?: SourcePolicy;
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	isMarketSource?: (source: string) => boolean;
+	teams?: TeamBook;
 	rulesFor?: (triggerSource: string) => string[];
 	timers?: TimerEntry[];
 	heartbeatMs?: number;
@@ -105,6 +106,8 @@ export class Host {
 			sourcePolicy: (trigger) => (trigger.source === WATCHDOG_SOURCE ? "notice" : (options.sourcePolicy?.(trigger) ?? "candidate")),
 			ruleAllows: options.ruleAllows,
 			isMarketSource: options.isMarketSource,
+			teams: options.teams,
+			log: this.#log,
 			config: options.config,
 		});
 		const submit = (trigger: TriggerSubmission) => {

@@ -4,13 +4,14 @@ import { answerExternalId, answerSentence, type AnswerRefusal } from "./question
 
 export type AnswerOutcome = { ok: true; triggerId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 import { deriveStage } from "./stage.ts";
-import { helperName, helperRole, newYorkDate } from "./helper-names.ts";
+import { SOLO_NAMES, TEAM_NAMES, helperName, helperRole, newYorkDate } from "./helper-names.ts";
 import { stallMinutes } from "../client/board-format.mjs";
 import { inTransaction } from "./store.ts";
 import {
 	CONVERSATION_SOURCE,
 	CONVERSATION_THREAD_ID,
 	DEFAULT_CONFIG,
+	DEFAULT_TEAM,
 	RETRY_BACKOFF_MS,
 	SYSTEM_PROBLEM_STREAK,
 } from "./types.ts";
@@ -29,6 +30,7 @@ import type {
 	Disposition,
 	Helper,
 	HelpersToday,
+	TeamBook,
 	InputKind,
 	KernelConfig,
 	PendingAction,
@@ -120,6 +122,19 @@ export function nextStallAt(rows: DashboardRow[], stuckMs: number): number | nul
 	return at.length ? Math.min(...at) : null;
 }
 
+const SOLO_HELPER_ROWS = "helper_role IS NOT NULL";
+const TEAM_HELPER_ROWS = "helper_name IS NOT NULL AND helper_role IS NULL";
+
+function toHelper(r: Row): Helper | null {
+	if (r.helper_name === null) return null;
+	const identity = { name: r.helper_name, seq: r.helper_seq };
+	return r.helper_role === null ? { ...identity, team: r.team } : { ...identity, role: r.helper_role };
+}
+
+const storedRole = (helper: Helper) => ("role" in helper ? helper.role : null);
+
+const ONLY_DEFAULT_TEAM: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"]]), pinned: new Map() };
+
 export interface KernelOptions {
 	db: DatabaseSync;
 	clock: Clock;
@@ -127,6 +142,8 @@ export interface KernelOptions {
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	/** A rule ticket from such a source gets a market helper. */
 	isMarketSource?: (source: string) => boolean;
+	teams?: TeamBook;
+	log?: (line: string) => void;
 	config?: Partial<KernelConfig>;
 }
 
@@ -136,11 +153,15 @@ export class Kernel {
 	readonly #sourcePolicy: SourcePolicy;
 	readonly #ruleAllows: (ruleId: string, triggerSource: string) => boolean;
 	readonly #isMarketSource: (source: string) => boolean;
+	readonly #teams: TeamBook;
+	readonly #log: (line: string) => void;
 	readonly config: KernelConfig;
 
-	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, config }: KernelOptions) {
+	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, teams = ONLY_DEFAULT_TEAM, log = () => {}, config }: KernelOptions) {
 		this.#ruleAllows = ruleAllows;
 		this.#isMarketSource = isMarketSource;
+		this.#teams = teams;
+		this.#log = log;
 		this.#db = db;
 		this.#clock = clock;
 		this.#sourcePolicy = sourcePolicy;
@@ -617,24 +638,29 @@ export class Kernel {
 				 WHERE t.helper_name IS NULL ORDER BY t.created_at, t.rowid`,
 			);
 			for (const r of unnamed) {
-				const h = this.#newHelper(r.basis, r.source, r.created_at);
-				this.#run("UPDATE tickets SET helper_name = ?, helper_role = ?, helper_seq = ? WHERE id = ?", h.name, h.role, h.seq, r.id);
+				const h = this.#newHelper(r.basis, r.source, r.created_at, DEFAULT_TEAM);
+				this.#run("UPDATE tickets SET helper_name = ?, helper_role = ?, helper_seq = ? WHERE id = ?", h.name, storedRole(h), h.seq, r.id);
 			}
 		});
 	}
 
-	#newHelper(basis: Basis, originSource: string | null, createdAt: number): Helper {
+	#newHelper(basis: Basis, originSource: string | null, createdAt: number, team: string): Helper {
 		const role = helperRole(basis, originSource, this.#isMarketSource);
+		const crew = this.#teams.kinds.get(team) === "crew";
+		const unit = crew
+			? { rows: TEAM_HELPER_ROWS, column: "team", value: team, names: TEAM_NAMES }
+			: { rows: SOLO_HELPER_ROWS, column: "helper_role", value: role, names: SOLO_NAMES };
 		const day = newYorkDate(createdAt);
-		const sameRole = this.#all(
-			"SELECT created_at FROM tickets WHERE helper_role = ? AND created_at > ? AND created_at <= ?",
-			role,
+		const sameUnit = this.#all(
+			`SELECT created_at FROM tickets WHERE ${unit.rows} AND ${unit.column} = ? AND created_at > ? AND created_at <= ?`,
+			unit.value,
 			createdAt - 2 * DAY_MS,
 			createdAt,
 		).filter((r) => newYorkDate(r.created_at) === day).length;
-		const ordinal = this.#get("SELECT COUNT(*) AS n FROM tickets WHERE helper_name IS NOT NULL").n as number;
+		const ordinal = this.#get(`SELECT COUNT(*) AS n FROM tickets WHERE ${unit.rows}`).n as number;
 		const onDuty = new Set(this.#column("SELECT helper_name AS v FROM tickets WHERE helper_name IS NOT NULL AND closed_at IS NULL AND stopped_at IS NULL"));
-		return { name: helperName(ordinal, onDuty), role, seq: sameRole + 1 };
+		const identity = { name: helperName(unit.names, ordinal, onDuty), seq: sameUnit + 1 };
+		return crew ? { ...identity, team } : { ...identity, role };
 	}
 
 	#stall(t: Ticket, now: number): Stall | null {
@@ -897,16 +923,23 @@ export class Kernel {
 				return reject(`unknown thread ${threadId}; new threads must look like thr_<source>:<thread>`);
 			}
 		}
+		const asked = typeof d.team === "string" && !d.team.trim() ? undefined : d.team;
+		if (asked !== undefined && !this.#teams.kinds.has(asked)) {
+			return reject(`unknown team ${asked}; the teams are ${[...this.#teams.kinds.keys()].join(", ")} (omit team for the default one)`);
+		}
+		const pinned = d.basis === "rule" ? this.#teams.pinned.get(d.ruleId!) : undefined;
+		const team = pinned ?? asked ?? DEFAULT_TEAM;
 		if (d.basis === "inference") {
 			const limitProblem = this.#inferenceDailyLimitProblem();
 			if (limitProblem) return reject(limitProblem);
 		}
 
 		const ticketId = this.#id("tkt");
-		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now());
+		if (asked !== undefined && asked !== team) this.#log(`[kernel] 规则 ${d.ruleId} 写明团队「${team}」，幕僚长填的是「${asked}」，任务 ${ticketId} 已改回「${team}」`);
+		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now(), team);
 		this.#run(
-			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
+			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, team)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
 			ticketId,
 			d.title,
 			d.basis,
@@ -915,8 +948,9 @@ export class Kernel {
 			this.#now(),
 			randomUUID(),
 			helper.name,
-			helper.role,
+			storedRole(helper),
 			helper.seq,
+			team,
 		);
 		for (const threadId of threads) {
 			const source = threadId.match(SOURCE_THREAD)?.[1];
@@ -1074,6 +1108,7 @@ export class Kernel {
 			title: r.title,
 			basis: r.basis as Basis,
 			ruleId: r.rule_id,
+			team: r.team ?? DEFAULT_TEAM,
 			originTriggerId: r.origin_trigger_id,
 			createdAt: r.created_at,
 			workerSessionId: r.worker_session_id,
@@ -1088,7 +1123,7 @@ export class Kernel {
 			toolCalls: r.tool_calls,
 			tokensIn: r.tokens_in,
 			tokensOut: r.tokens_out,
-			helper: r.helper_name === null ? null : { name: r.helper_name, role: r.helper_role, seq: r.helper_seq },
+			helper: toHelper(r),
 			stage,
 			latestReport: latest ? toReport(latest) : null,
 		};

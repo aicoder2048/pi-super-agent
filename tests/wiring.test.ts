@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHostOptions, modelSelectors, watchedSources } from "../src/host/wiring.ts";
 import { Host } from "../src/host/host.ts";
 import { Modules } from "../src/modules.ts";
+import { DEFAULT_TEAM } from "../src/kernel/types.ts";
 import { KEY_NAMES } from "../src/sources/market/key.ts";
 import { until } from "./helpers/fakes.ts";
 
@@ -183,4 +184,59 @@ test("宿主运行模块声明的来源：随宿主启停，触发进内核，�
 	await host.stop();
 	hostStopped = true;
 	assert.ok(stopped);
+});
+
+function writeFiles(dir: string, files: Record<string, string>): string {
+	for (const [name, text] of Object.entries(files)) {
+		mkdirSync(join(dir, name, ".."), { recursive: true });
+		writeFileSync(join(dir, name), text);
+	}
+	return dir;
+}
+const memberFile = (name: string, title: string, extra = "") => `---\nname: ${name}\ntitle: ${title}\ndescription: ${title}的说明\n${extra}---\n`;
+const NEWS_FILES = {
+	"agents/news.md": memberFile("news-researcher", "新闻研究员"),
+	"teams.yaml": "新闻队:\n  description: 查新闻、核对报道来源\n  members:\n    - news-researcher\n",
+};
+
+test("真实接线：模块目录和状态目录里的团队进了内核的团队簿和幕僚长的提示词，规则钉死的团队记下；提示词里没有成员", async (t) => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const config = hostConfig(provider);
+	writeFiles(config.stateDir, NEWS_FILES);
+	const modulesDir = writeFiles(mkdtempSync(join(tmpdir(), "psa-mods-")), {
+		"watch/module.json": JSON.stringify({ name: "watch", sources: [{ name: "quotes" }] }),
+		"watch/rules.md": "## drop\n团队：看盘队\n跌多了开任务\n",
+		"watch/agents/analyst.md": memberFile("market-analyst", "行情分析师"),
+		"watch/teams.yaml": "看盘队:\n  description: 盯行情\n  members:\n    - market-analyst\n    - general\n",
+	});
+	const logs: string[] = [];
+	const options = createHostOptions({ config, modules: Modules.load([modulesDir]), modelRuntime, log: (line) => logs.push(line) });
+	assert.deepEqual([...options.teams!.kinds], [[DEFAULT_TEAM, "solo"], ["看盘队", "crew"], ["新闻队", "crew"]]);
+	assert.deepEqual([...options.teams!.pinned], [["watch/drop", "看盘队"]]);
+	assert.ok(logs.includes("[host] 团队：默认、看盘队、新闻队"), logs.join("\n"));
+	const host = await Host.start(options);
+	t.after(() => host.stop());
+	const prompt: string = (host.router as any).session.systemPrompt;
+	assert.ok(prompt.includes("\n- 看盘队：盯行情\n- 新闻队：查新闻、核对报道来源\n"), prompt);
+	assert.doesNotMatch(prompt, /news-researcher|新闻研究员|market-analyst|行情分析师/);
+});
+
+test("真实接线：没有任何自定义成员和团队时，团队簿里只有默认团队", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([]), modelRuntime, log: () => {} });
+	assert.deepEqual([...options.teams!.kinds], [[DEFAULT_TEAM, "solo"]]);
+});
+
+test("真实接线：成员的模型只能用 router 或 worker 的提供方，回退模型的提供方不算；提供方对了但模型不存在也在启动前报错", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const withModel = (model: string) => {
+		const config = hostConfig(provider);
+		config.models.fallback = { provider: "deepseek", id: "deepseek-flash" };
+		writeFiles(config.stateDir, { "agents/news.md": memberFile("news-researcher", "新闻研究员", `model: ${model}\n`) });
+		return { config, file: join(config.stateDir, "agents/news.md") };
+	};
+	const paid = withModel("deepseek/deepseek-flash");
+	assert.throws(() => createHostOptions({ config: paid.config, modules: Modules.load([]), modelRuntime, log: () => {} }), (e: Error) => e.message.startsWith(paid.file) && /拒绝使用 deepseek\/deepseek-flash/.test(e.message));
+	const missing = withModel(`${provider}/no-such-model`);
+	assert.throws(() => createHostOptions({ config: missing.config, modules: Modules.load([]), modelRuntime, log: () => {} }), (e: Error) => e.message.startsWith(missing.file) && /找不到模型 .*no-such-model/.test(e.message));
 });

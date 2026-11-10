@@ -4,18 +4,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Kernel, nextStallAt } from "../src/kernel/kernel.ts";
-import { HELPER_NAMES } from "../src/kernel/helper-names.ts";
+import { SOLO_NAMES, TEAM_NAMES } from "../src/kernel/helper-names.ts";
 import { refusalText } from "../src/kernel/question.ts";
 import { openStore } from "../src/kernel/store.ts";
-import { CONVERSATION_THREAD_ID, DISPOSITIONS } from "../src/kernel/types.ts";
-import type { Basis, KernelConfig, TriggerSubmission } from "../src/kernel/types.ts";
+import { CONVERSATION_THREAD_ID, DEFAULT_TEAM, DISPOSITIONS } from "../src/kernel/types.ts";
+import type { Basis, KernelConfig, TeamBook, TriggerSubmission } from "../src/kernel/types.ts";
 
 const HOUR = 3_600_000;
 
-function setup({ config, path = ":memory:", at = "2026-11-08T10:00:00" }: { config?: Partial<KernelConfig>; path?: string; at?: string } = {}) {
+function setup({ config, path = ":memory:", at = "2026-11-08T10:00:00", teams }: { config?: Partial<KernelConfig>; path?: string; at?: string; teams?: TeamBook } = {}) {
 	const clock = { t: new Date(at).getTime(), now() { return this.t; } };
 	const db = openStore(path);
+	const logs: string[] = [];
 	const kernel = new Kernel({
+		teams,
+		log: (line) => logs.push(line),
 		db,
 		clock,
 		sourcePolicy: (t) => (t.source === "noise" ? "ignore" : "candidate"),
@@ -40,13 +43,13 @@ function setup({ config, path = ":memory:", at = "2026-11-08T10:00:00" }: { conf
 	const wakes = () => due("worker.wake").map((a) => (a.payload as { ticketId: string }).ticketId);
 	const drain = () => { for (const a of kernel.dueActions(1000)) kernel.completeAction(a.id); };
 
-	function open(basis: Basis, { threads = [] as string[], title = `${basis} 任务`, source = "generic" } = {}) {
+	function open(basis: Basis, { threads = [] as string[], title = `${basis} 任务`, source = "generic", team = undefined as string | undefined, ruleId = "rule-1" } = {}) {
 		let triggerId: string | undefined;
 		if (basis === "request") triggerId = say(title).triggerId;
 		if (basis === "rule") triggerId = trigger({ source, threads: [{ id: `thr_${source}:rule-${++n}` }], body: title }).triggerId;
 		for (const id of threads) trigger({ threads: [{ id }] });
 		const [result] = kernel.route([
-			{ kind: "open_ticket", title, basis, ruleId: basis === "rule" ? "rule-1" : undefined, triggerId, threads, brief: title },
+			{ kind: "open_ticket", title, basis, ruleId: basis === "rule" ? ruleId : undefined, team, triggerId, threads, brief: title },
 		]);
 		assert.ok(result.ok, `open_ticket rejected: ${!result.ok && result.reason}`);
 		return result.ticketId!;
@@ -71,7 +74,7 @@ function setup({ config, path = ":memory:", at = "2026-11-08T10:00:00" }: { conf
 
 	const stage = (ticketId: string) => kernel.getTicket(ticketId)!.stage;
 
-	return { db, kernel, clock, trigger, say, due, notices, wakes, drain, open, run, idle, handOverUserMessage, stage };
+	return { db, kernel, clock, logs, trigger, say, due, notices, wakes, drain, open, run, idle, handOverUserMessage, stage };
 }
 
 test("内核不引用任何 Pi 的包", () => {
@@ -669,7 +672,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			tokensOut: 200,
 			elapsedMs: 90_000,
 			lastProgressAt: reportedAt,
-			helper: { name: HELPER_NAMES[0], role: "conversation", seq: 1 },
+			helper: { name: SOLO_NAMES[0], role: "conversation", seq: 1 },
 			workerState: "running",
 			startedAt: reportedAt,
 			endedAt: null,
@@ -1181,21 +1184,21 @@ test("助手序号按纽约日期分天：纽约午夜之后同一角色从 1 �
 
 test("助手名字按建任务的先后从名字池里依次取，在岗的助手不重名；池用完时加「·二」", () => {
 	const s = setup();
-	const ids = HELPER_NAMES.map(() => s.open("request"));
-	assert.deepEqual(ids.map((id) => helperOf(s.kernel, id)!.name), [...HELPER_NAMES]);
+	const ids = SOLO_NAMES.map(() => s.open("request"));
+	assert.deepEqual(ids.map((id) => helperOf(s.kernel, id)!.name), [...SOLO_NAMES]);
 	const overflow = s.open("request");
-	assert.equal(helperOf(s.kernel, overflow)!.name, `${HELPER_NAMES[0]}·二`);
+	assert.equal(helperOf(s.kernel, overflow)!.name, `${SOLO_NAMES[0]}·二`);
 	closeTicket(s, ids[4]);
-	assert.equal(helperOf(s.kernel, s.open("request"))!.name, HELPER_NAMES[4], "下一位从第二个名字往后找，第一个空出来的是刚完成的那位");
+	assert.equal(helperOf(s.kernel, s.open("request"))!.name, SOLO_NAMES[4], "下一位从第二个名字往后找，第一个空出来的是刚完成的那位");
 });
 
 test("完成或停止的助手让出名字：之后轮到这个名字时可以再用", () => {
 	const s = setup();
 	const first = s.open("request");
 	closeTicket(s, first);
-	const rest = HELPER_NAMES.slice(1).map(() => s.open("request"));
-	assert.equal(rest.length, HELPER_NAMES.length - 1);
-	assert.equal(helperOf(s.kernel, s.open("request"))!.name, HELPER_NAMES[0]);
+	const rest = SOLO_NAMES.slice(1).map(() => s.open("request"));
+	assert.equal(rest.length, SOLO_NAMES.length - 1);
+	assert.equal(helperOf(s.kernel, s.open("request"))!.name, SOLO_NAMES[0]);
 });
 
 test("助手名字、角色和序号存在状态库里，重启后不变", () => {
@@ -1221,15 +1224,15 @@ test("旧状态库没有助手列：打开时补上，补名字时按建任务�
 	assert.deepEqual(
 		ids.map((id) => helperOf(again.kernel, id)),
 		[
-			{ name: HELPER_NAMES[0], role: "conversation", seq: 1 },
-			{ name: HELPER_NAMES[1], role: "market", seq: 1 },
-			{ name: HELPER_NAMES[2], role: "conversation", seq: 2 },
-			{ name: HELPER_NAMES[3], role: "rule", seq: 1 },
+			{ name: SOLO_NAMES[0], role: "conversation", seq: 1 },
+			{ name: SOLO_NAMES[1], role: "market", seq: 1 },
+			{ name: SOLO_NAMES[2], role: "conversation", seq: 2 },
+			{ name: SOLO_NAMES[3], role: "rule", seq: 1 },
 		],
 	);
 	again.clock.t += 1000;
 	const next = again.open("request");
-	assert.deepEqual(helperOf(again.kernel, next), { name: HELPER_NAMES[4], role: "conversation", seq: 3 });
+	assert.deepEqual(helperOf(again.kernel, next), { name: SOLO_NAMES[4], role: "conversation", seq: 3 });
 });
 
 test("看板行带结束时间：完成取关闭时刻，停止取停止时刻，进行中为空", () => {
@@ -1256,4 +1259,148 @@ test("今日助手：纽约今天建的任务数和它们的 token 合计；昨�
 	s.kernel.recordUsage(yesterday, { provider: "p", tokensIn: 7, tokensOut: 0 });
 	assert.deepEqual(s.kernel.helpersToday(), { count: 2, tokens: 1200 });
 	assert.ok(b);
+});
+
+const TEAMS: TeamBook = {
+	kinds: new Map([[DEFAULT_TEAM, "solo"], ["新闻队", "crew"], ["看盘队", "crew"], ["杂务队", "solo"]]),
+	pinned: new Map([["rule-news", "新闻队"]]),
+};
+const teamOf = (kernel: Kernel, id: string) => kernel.getTicket(id)!.team;
+
+test("每个任务都有团队：open_ticket 省略 team 就是默认团队，填了团队簿里的团队就记在任务上", () => {
+	const s = setup({ teams: TEAMS });
+	assert.equal(teamOf(s.kernel, s.open("request")), DEFAULT_TEAM);
+	assert.equal(teamOf(s.kernel, s.open("request", { team: "新闻队" })), "新闻队");
+	assert.equal(teamOf(s.kernel, s.open("rule", { team: "看盘队" })), "看盘队");
+	assert.deepEqual(s.logs, []);
+});
+
+test("open_ticket 的 team 是空串或只有空白：当作没填，用默认团队；规则钉死时用规则的团队，不记日志", () => {
+	const s = setup({ teams: TEAMS });
+	assert.equal(teamOf(s.kernel, s.open("request", { team: "" })), DEFAULT_TEAM);
+	assert.equal(teamOf(s.kernel, s.open("request", { team: "  " })), DEFAULT_TEAM);
+	assert.equal(teamOf(s.kernel, s.open("rule", { ruleId: "rule-news", team: "" })), "新闻队");
+	assert.deepEqual(s.logs, []);
+});
+
+test("没有配置任何团队时，内核只认默认团队", () => {
+	const s = setup();
+	assert.equal(teamOf(s.kernel, s.open("request")), DEFAULT_TEAM);
+	const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", triggerId: s.say("查新闻").triggerId, team: "新闻队", brief: "b" }]);
+	assert.equal(result.ok, false);
+});
+
+test("不存在的团队名：拒绝这个决定，理由里写出有哪些团队；这条触发还能再用", () => {
+	const s = setup({ teams: TEAMS });
+	const { triggerId } = s.say("看下财报");
+	const decision = { kind: "open_ticket", title: "t", basis: "request", triggerId, brief: "b" } as const;
+	const [typo] = s.kernel.route([{ ...decision, team: "财报队" }]);
+	assert.deepEqual(typo, { ok: false, reason: "unknown team 财报队; the teams are 默认, 新闻队, 看盘队, 杂务队 (omit team for the default one)" });
+	const [notText] = s.kernel.route([{ ...decision, team: 7 as unknown as string }]);
+	assert.equal(notText.ok, false);
+	assert.equal(s.kernel.listTickets().length, 0);
+	const [retry] = s.kernel.route([{ ...decision, team: "新闻队" }]);
+	assert.ok(retry.ok);
+});
+
+test("规则钉死团队：按这条规则开的任务用规则写的团队，幕僚长省略或填对了都不记日志", () => {
+	const s = setup({ teams: TEAMS });
+	assert.equal(teamOf(s.kernel, s.open("rule", { ruleId: "rule-news" })), "新闻队");
+	assert.equal(teamOf(s.kernel, s.open("rule", { ruleId: "rule-news", team: "新闻队" })), "新闻队");
+	assert.deepEqual(s.logs, []);
+});
+
+test("规则钉死团队：幕僚长填了别的团队，内核改回规则写的团队并记一行日志", () => {
+	const s = setup({ teams: TEAMS });
+	const id = s.open("rule", { ruleId: "rule-news", team: "看盘队" });
+	assert.equal(teamOf(s.kernel, id), "新闻队");
+	assert.deepEqual(s.logs, [`[kernel] 规则 rule-news 写明团队「新闻队」，幕僚长填的是「看盘队」，任务 ${id} 已改回「新闻队」`]);
+});
+
+test("规则钉死团队时填了不存在的团队名，照样拒绝，不悄悄改回", () => {
+	const s = setup({ teams: TEAMS });
+	const { triggerId } = s.trigger({ threads: [{ id: "thr_generic:r" }] });
+	const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "rule", ruleId: "rule-news", triggerId, team: "财报队", brief: "b" }]);
+	assert.equal(result.ok, false);
+	assert.deepEqual(s.logs, []);
+});
+
+test("规则的钉死只管按规则开的任务：使用者开口要的任务可以自由选团队", () => {
+	const s = setup({ teams: TEAMS });
+	const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", ruleId: "rule-news", triggerId: s.say("看盘").triggerId, team: "看盘队", brief: "b" }]);
+	assert.equal(teamOf(s.kernel, result.ticketId!), "看盘队");
+});
+
+test("任务的团队存在状态库里：重启后不变，即使那个团队已经从配置里拿掉", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path, teams: TEAMS });
+	const ids = [first.open("request", { team: "新闻队" }), first.open("request")];
+	first.db.close();
+	const again = setup({ path });
+	assert.deepEqual(ids.map((id) => teamOf(again.kernel, id)), ["新闻队", DEFAULT_TEAM]);
+});
+
+test("旧状态库的任务没有团队：打开时补上 team 列，旧任务读出来是默认团队，不做迁移", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const old = first.open("request");
+	const before = helperOf(first.kernel, old);
+	first.db.exec("ALTER TABLE tickets DROP COLUMN team");
+	first.db.close();
+	const again = setup({ path, teams: TEAMS });
+	assert.equal(teamOf(again.kernel, old), DEFAULT_TEAM);
+	assert.deepEqual(helperOf(again.kernel, old), before);
+	assert.deepEqual(again.db.prepare("SELECT team FROM tickets").all().map((r) => r.team), [null]);
+	again.clock.t += 1000;
+	assert.equal(teamOf(again.kernel, again.open("request", { team: "新闻队" })), "新闻队");
+});
+
+test("带成员的团队的任务取四字名，身份是名字、团队名和序号；默认团队和只有通用助手的团队仍是两字名加角色", () => {
+	const s = setup({ teams: TEAMS });
+	const ids = [s.open("request", { team: "新闻队" }), s.open("request"), s.open("request", { team: "杂务队" }), s.open("rule", { team: "看盘队", source: "toy-market" })];
+	assert.deepEqual(ids.map((id) => helperOf(s.kernel, id)), [
+		{ name: TEAM_NAMES[0], team: "新闻队", seq: 1 },
+		{ name: SOLO_NAMES[0], role: "conversation", seq: 1 },
+		{ name: SOLO_NAMES[1], role: "conversation", seq: 2 },
+		{ name: TEAM_NAMES[1], team: "看盘队", seq: 1 },
+	]);
+});
+
+test("团队任务的序号按团队在纽约同一天里数：各队数各的，不占单个助手的序号，过了纽约午夜从 1 重新数", () => {
+	const s = setup({ teams: TEAMS, at: "2026-11-09T04:30:00Z" });
+	const seqs = (ids: string[]) => ids.map((id) => helperOf(s.kernel, id)!.seq);
+	const lateNight = [s.open("request", { team: "新闻队" }), s.open("request", { team: "新闻队" }), s.open("request", { team: "看盘队" }), s.open("request")];
+	assert.deepEqual(seqs(lateNight), [1, 2, 1, 1]);
+	s.clock.t += HOUR;
+	assert.deepEqual(seqs([s.open("request", { team: "新闻队" }), s.open("request")]), [1, 1]);
+});
+
+test("两个名字池各自轮转：团队任务不推进两字池，四字池整池在岗时加「·二」", () => {
+	const s = setup({ teams: TEAMS });
+	const teamIds = TEAM_NAMES.map(() => s.open("request", { team: "新闻队" }));
+	assert.deepEqual(teamIds.map((id) => helperOf(s.kernel, id)!.name), [...TEAM_NAMES]);
+	assert.equal(helperOf(s.kernel, s.open("request"))!.name, SOLO_NAMES[0]);
+	assert.equal(helperOf(s.kernel, s.open("request", { team: "看盘队" }))!.name, `${TEAM_NAMES[0]}·二`);
+	assert.equal(helperOf(s.kernel, s.open("request"))!.name, SOLO_NAMES[1]);
+});
+
+test("在岗的名字不分池：旧版本开的任务带着四字名和角色还在岗时，新的团队任务不取同一个名字", () => {
+	const s = setup({ teams: TEAMS });
+	const old = s.open("request");
+	s.db.prepare("UPDATE tickets SET helper_name = ? WHERE id = ?").run(TEAM_NAMES[0], old);
+	assert.deepEqual(helperOf(s.kernel, old), { name: TEAM_NAMES[0], role: "conversation", seq: 1 });
+	assert.deepEqual(helperOf(s.kernel, s.open("request", { team: "新闻队" })), { name: TEAM_NAMES[1], team: "新闻队", seq: 1 });
+	assert.deepEqual(helperOf(s.kernel, s.open("request")), { name: SOLO_NAMES[1], role: "conversation", seq: 2 });
+});
+
+test("名字在开任务时按团队定下，之后不变：重启后团队没了成员或被拿掉，任务仍是原来的四字名和团队名", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path, teams: TEAMS });
+	const ids = [first.open("request", { team: "新闻队" }), first.open("request", { team: "杂务队" })];
+	const before = ids.map((id) => helperOf(first.kernel, id));
+	assert.deepEqual(before, [{ name: TEAM_NAMES[0], team: "新闻队", seq: 1 }, { name: SOLO_NAMES[0], role: "conversation", seq: 1 }]);
+	first.db.close();
+	const flipped: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"], ["新闻队", "solo"], ["杂务队", "crew"]]), pinned: new Map() };
+	assert.deepEqual(ids.map((id) => helperOf(setup({ path, teams: flipped }).kernel, id)), before);
+	assert.deepEqual(ids.map((id) => helperOf(setup({ path }).kernel, id)), before);
 });

@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { ROUTER_TOOL_NAMES } from "../src/host/router.ts";
+import { DEFAULT_TEAM, type TeamBook } from "../src/kernel/types.ts";
 import { ids, openOnConversation, startHost, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
 
 const replyOnReport: Brain = (cards) =>
@@ -223,4 +224,30 @@ test("宿主启动时状态目录不存在就建成 0700", async (t) => {
 	const { host } = await startHost(() => [], () => {}, { stateDir });
 	t.after(() => host.stop());
 	assert.equal(statSync(stateDir).mode & 0o777, 0o700);
+});
+
+const NEWS_BOOK: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"], ["新闻队", "crew"], ["看盘队", "crew"]]), pinned: new Map([["feeds/news", "新闻队"]]) };
+
+test("宿主把团队簿交给内核，任务的团队跟着任务交给启动助手的那一方", async (t) => {
+	const brain: Brain = (cards) =>
+		cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg"), title: "t", brief: "b", ...(card.includes("新闻") && { team: "新闻队" }) }] } }] : []));
+	const { host, spawner } = await startHost(brain, (w) => w.settle(), { teams: NEWS_BOOK });
+	t.after(() => host.stop());
+	host.say("看下听证会的新闻");
+	host.say("查明天天气");
+	await until(() => spawner.workers.size === 2, "两个助手都启动");
+	const teams = host.kernel.listTickets().map((row) => [row.title && row.helper && "team" in row.helper, spawner.workers.get(row.id)!.spec.team]);
+	assert.deepEqual(teams, [[true, "新闻队"], [false, DEFAULT_TEAM]]);
+});
+
+test("规则钉死的团队被幕僚长填错时，内核改回的那一行写进宿主日志", async (t) => {
+	const logs: string[] = [];
+	const brain: Brain = (cards) =>
+		cards.flatMap((card) => (card.startsWith("[候选触发]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "rule", ruleId: "feeds/news", team: "看盘队", triggerId: ids(card, "trg"), title: "t", brief: "b" }] } }] : []));
+	const { host, spawner } = await startHost(brain, (w) => w.settle(), { teams: NEWS_BOOK, ruleAllows: () => true, log: (line) => logs.push(line) });
+	t.after(() => host.stop());
+	host.kernel.submitTrigger({ source: "feeds", externalId: "n1", threads: [{ id: "thr_feeds:n1" }], sender: "rss", body: "听证会", occurredAt: Date.now() });
+	await until(() => spawner.workers.size === 1, "助手启动");
+	assert.equal([...spawner.workers.values()][0].spec.team, "新闻队");
+	assert.equal(logs.filter((line) => line.startsWith("[kernel] 规则 feeds/news 写明团队「新闻队」")).length, 1, logs.join("\n"));
 });

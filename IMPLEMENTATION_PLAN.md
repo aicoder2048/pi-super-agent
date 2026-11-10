@@ -36,6 +36,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
   - [ ] W2 after W1, based on `psa/web-gateway`.
   - [ ] W3 after W2.
   - [ ] W5 after W4, stacked on `psa/e2e`. X1 branches from `main`.
+  - [ ] T1 after W5, on `psa/teams` cut from `psa/helpers`; T2 on T1; T3 on T2. Design in ADR-0008. T1 到 T3 取代没有合并的 W6a 到 W6c（#30、#31、#32）。
   - [ ] W4 after W2 and the M1/F1 PRs, stacked on `psa/stable-token` (#24). W3 moved after W4, because it changes the page and waits for the user's review; W4 does not depend on it. 见决策记录 w4-order。
 - [ ] Hold the file boundaries. W1 to W3 touch only `src/host/`, `src/web/`, `src/client/board-format.mjs`, `src/client/board.ts`, `tests/`, `justfile`, `docs/`. W1 起加入 `src/client/` 两个文件，让 TUI 和网页共用看板格式，见决策记录。 W4 adds `package.json`, `package-lock.json`, `.gitignore`, `tests/e2e/`, `demos/`, and `justfile`.
 - [ ] Hold the review gate. W1, W2, W3 change an interaction. They wait for the operator's review in chat with screenshots and a video before merge. W4 changes no interaction.
@@ -313,7 +314,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Decisions (使用者选定).**
 
-- [ ] 命名 = 角色名 + 个性化名字，显示为「边牧 · 行情助手 #2」。角色按任务来源：使用者的话 → 对话助手；行情来源（us-market、toy-market 这类 feed）触发的规则 → 行情助手；其他规则 → 规则助手；幕僚长主动发现 → 观察助手。`#N` 按角色、按纽约日期从 1 递增。名字取自约 60 个手选的 2 到 4 字词（如 边牧、弈境、青檀、观澜、知微、拾遗、远山、听松、墨衡、照夜、栖云、砚秋、闻溪），有品味、不用「小林」式人名；同一时刻在岗的助手不重名；名字、角色和序号在建任务时定下并存进状态库，重启不变。
+- [ ] 命名 = 角色名 + 个性化名字，显示为「青檀 · 行情助手 #2」。角色按任务来源：使用者的话 → 对话助手；行情来源（us-market、toy-market 这类 feed）触发的规则 → 行情助手；其他规则 → 规则助手；幕僚长主动发现 → 观察助手。`#N` 按角色、按纽约日期从 1 递增。名字取自约 60 个手选的 2 到 4 字词（如 青檀、观澜、知微、拾遗、远山、听松、墨衡、照夜、栖云、砚秋、闻溪），有品味、不用「小林」式人名；同一时刻在岗的助手不重名；名字、角色和序号在建任务时定下并存进状态库，重启不变。
 - [ ] 位置 = 页头下方一条助手条：每个在岗助手一枚小卡（●运行中 / ◐空闲 / ○排队），写名字、角色序号、已用时、token；点它在右栏打开该任务的执行过程。条尾写「今日 N 位 · X tokens」。没有在岗助手时只留今日合计。
 
 **Files.**
@@ -424,6 +425,190 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Merge.**
 
 - [ ] 使用者合并。
+
+## Give every ticket a team (T1)
+
+**Depends on.** W5 (branch `psa/teams`, cut from `psa/helpers`). Design is in `docs/adr/0008-a-helper-can-grow-into-an-agent-team.md`（使用者 2026-11-09 批准）。取代 W6a（#30）。
+
+**Files.**
+
+- [x] Create `src/teams.ts`（加载与校验成员定义和 `teams.yaml`；从 `psa/roles` 的 `src/roles.ts` 搬来改名）和 `agents/general.md`（内置成员「通用助手」）。 证据：1d28b02、c0ebfc7、5b77648。
+- [x] Edit `src/modules.ts`（模块的 `agents/`、`teams.yaml`、规则的 `团队：` 行）、`src/host/config.ts`（状态目录的 `agents/` 和 `teams.yaml`）、`src/host/wiring.ts`。 证据：caf8d83（`团队：` 行）、41869a0（`wiring.ts`）。`modules.ts` 和 `config.ts` 不用认 `agents/` 和 `teams.yaml`：名册把模块目录和状态目录都当成根目录自己读，所以 `config.ts` 没有改动。
+- [x] Edit `src/host/router.ts`（团队名册进幕僚长提示词，`open_ticket` 加 `team`）、`src/kernel/kernel.ts`、`src/kernel/store.ts`、`src/kernel/types.ts`（`tickets.team`、规则钉死的团队由内核校验）。 证据：fd83e97、6d2ed22、fb98796。
+- [x] Edit `src/host/pi-worker.ts`、`src/host/workers.ts`（任务的团队交给助手进程，T2 用）。 证据：8f622bd，`PSA_TEAM`。
+- [x] Edit `src/kernel/helper-names.ts`（两字名和四字名分成两个池，四字池补到 24 个以上）、`src/client/board-format.mjs`（团队任务显示「四字名 · 团队名 #N」，页面和 TUI 共用）、`src/client/protocol.ts`。 证据：1432237、3151237。`protocol.ts` 没有改动：助手身份随 `DashboardRow.helper` 到页面，协议不用加字段。
+- [x] Edit tests（`tests/teams.test.ts` 新建，及 kernel、modules、wiring 相关测试）。 证据：`tests/teams.test.ts`、`tests/helper-names.test.ts`、`tests/router-prompt.test.ts`、`tests/e2e/teams.e2e.ts` 新建；kernel、modules、wiring、host、host-main、pi-worker-env、web、client 各有新增。
+
+**Build.**
+
+- [x] 成员定义按 ADR-0008：`name`、`title`、`description`、`tools`、`skills`、`model`，正文是系统提示词。没有 `consult` 字段，没有牵头角色。 证据：`tests/teams.test.ts`「成员文件：frontmatter 是 name、title…」「成员文件写错的字段报错并列出可写的字段；consult 不是字段」；c0ebfc7。
+- [x] `teams.yaml` 一个团队三样：名字、`description`（给幕僚长看的一句话）、`members`。只解析这一种两层结构，不为它加依赖；格式不对时报出文件和行号。 证据：`tests/teams.test.ts`「teams.yaml：每个团队一个名字…」和 15 条「teams.yaml 格式不对时报出文件和行号」；1d28b02、df58abb、5b77648。
+- [x] 成员和团队各有三处来源（内置、模块、状态目录），同名启动即报错，一行写出两个文件；团队名单里有不存在的成员也报错。 证据：`tests/teams.test.ts`「成员和团队来自内置、模块、状态目录三处…」「两处定义了同名成员…」「两处定义了同名团队…」「团队名单里有不存在的成员…」；5b77648。入口：`tests/host-main.test.ts` 三条；41869a0。
+- [x] 内置只有「通用助手」和只含它的默认团队。 证据：`tests/teams.test.ts`「内置只有成员「通用助手」和只含它的默认团队；不存在的目录跳过」；5b77648。默认团队叫「默认」，写在代码里。
+- [x] 幕僚长的提示词多一份团队名册（团队名和说明），不列成员；`open_ticket` 的 `team` 可省略，省略为默认团队；不存在的团队名拒绝该决定并说明。 证据：`tests/router-prompt.test.ts` 三条；`tests/wiring.test.ts`「真实接线：模块目录和状态目录里的团队进了内核的团队簿和幕僚长的提示词…」；`tests/kernel.test.ts`「每个任务都有团队…」「不存在的团队名：拒绝这个决定…」；fd83e97、6d2ed22、41869a0。
+- [x] `rules.md` 支持 `团队：<name>`；启动时校验团队存在；按该规则开的任务必须用它，幕僚长填了别的由内核改回并记一行日志；例外：填的团队不存在时拒绝这个决定，不改回。 证据：`tests/modules.test.ts`「规则的「团队：」行…」；`tests/teams.test.ts`「规则写的团队不存在…」；`tests/kernel.test.ts` 四条「规则钉死团队…」；`tests/host.test.ts`「规则钉死的团队被幕僚长填错时，内核改回的那一行写进宿主日志」；caf8d83、5b77648、6d2ed22、8f622bd。
+- [x] `tickets.team` 持久化；旧任务没有团队，读出来按默认团队，不做迁移。 证据：`tests/kernel.test.ts`「任务的团队存在状态库里：重启后不变…」「旧状态库的任务没有团队…」；6d2ed22。
+- [x] 成员的 `model` 过计费检查（提供方必须是使用者已配置的之一，`anthropic/*` 和 Claude 模型拒绝）；`skills` 按真实路径必须在成员文件所在目录内。 证据：`tests/teams.test.ts` 两条「成员的模型过计费检查…」和三条「成员的技能目录…」；`tests/wiring.test.ts`「真实接线：成员的模型只能用 router 或 worker 的提供方…」；c0ebfc7、41869a0。
+- [x] 默认团队的任务沿用 W5 的显示名「两字名 · 行情助手 #N」。带成员的团队的任务从四字池取名，显示「四字名 · 团队名 #N」，#N 按团队在纽约同一天里数。名字在开任务时按团队定下，之后不变。两个池各自轮转，用完后同样加「·二」。 证据：`tests/helper-names.test.ts` 三条；`tests/kernel.test.ts`「带成员的团队的任务取四字名…」「团队任务的序号按团队在纽约同一天里数…」「两个名字池各自轮转…」「名字在开任务时按团队定下，之后不变…」；`tests/web.test.ts`「页面：团队任务的小卡…」；`tests/client.test.ts`「看板：团队任务的卡片…」；1432237、fb98796、3151237。
+
+**You see.**
+
+- [x] 在状态目录放一个「新闻队」（一位新闻研究员），问「看下黄仁勋听证会的新闻」，助手条和任务卡上是「高山流水 · 新闻队 #1」这样的四字名；问别的事，任务是默认团队，仍是「青檀 · 对话助手 #1」这样的两字名。 证据：`tests/e2e/teams.e2e.ts`（真实宿主、助手进程和页面，假模型）；038ed8a。真实模型下的同一幕留给 Verify, live 的 lane 2 和 lane 3。
+
+**Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [x] 加载与同名冲突、`teams.yaml` 解析和报错、名单里的成员必须存在、团队名册进幕僚长提示词、`team` 校验和默认值、规则钉死团队、计费检查、技能路径检查、旧任务按默认团队、重启后团队不变、两个名字池和团队任务的显示名。 证据：以上各条列出的测试；`just test` 514 条通过、`just e2e` 58 条通过（e431993，含 t1-fix 一轮），见 decisions.tsv 的 t1 各行。
+
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+
+- [x] Lane 1. 没有任何自定义成员和团队。Save `t1-default.png`. Pass when 每个任务是默认团队，页面和行为与 W5 相同（卡片上仍是「行情助手」）。 2026-11-09 在 8dfeaa5 上通过：「青檀 · 对话助手 #1」「观澜 · 行情助手 #1」，团队都是默认（`/tmp/swarm-t1/worker-1/`）。
+- [x] Lane 2. 状态目录放「新闻队」，问新闻。Save `t1-pick.png`. Pass when 幕僚长开的任务团队是新闻队，助手显示「四字名 · 新闻队 #1」。 2026-11-09 在 8dfeaa5 上通过：「雪泥鸿爪 · 新闻队 #1」，同一句话四次都选了新闻队（`/tmp/swarm-t1/worker-2/`）。
+- [x] Lane 3. 同一配置下问股价。Save `t1-no-pick.png`. Pass when 任务是默认团队，助手是两字名。 2026-11-09 在 8dfeaa5 上通过：「青檀 · 对话助手 #1」，团队默认（`/tmp/swarm-t1/worker-3/`）。
+- [x] Lane 4. 规则写「团队：新闻队」，toy-feed 触发。Save `t1-rule-team.png`. Pass when 任务团队是新闻队。 2026-11-09 在 8dfeaa5 上通过：规则任务团队新闻队；幕僚长自己填对了，内核改回那条路只有单元测试（`/tmp/swarm-t1/worker-4/`）。
+- [x] Lane 5. 幕僚长提示词。Save `t1-roster.png`. Pass when 名册只有团队名和说明，没有成员名。 2026-11-09 在 8dfeaa5 上通过：名册只有「- 新闻队：…」一行，成员名出现 0 次（`/tmp/swarm-t1/worker-5/`）。
+- [x] Lane 6. 同名成员两处定义。Save `t1-conflict.png`. Pass when 启动报一行错并退出。 2026-11-09 在 8dfeaa5 上通过：退出码 1，一行写出两个文件（`/tmp/swarm-t1/worker-6/`）。
+- [x] Lane 7. 成员 `model: deepseek/...`。Save `t1-billing.png`. Pass when 启动报错。 2026-11-09 在 8dfeaa5 上通过：退出码 1，拒绝 deepseek（`/tmp/swarm-t1/worker-7/`）。
+- [x] Lane 8. `teams.yaml` 名单里写了不存在的成员。Save `t1-missing-member.png`. Pass when 启动报错并写出团队和成员名。 2026-11-09 在 8dfeaa5 上通过：退出码 1，写出团队和成员名（`/tmp/swarm-t1/worker-8/`）。
+- [x] Lane 9. 开两个任务后重启。Save `t1-restart.png`. Pass when 两个任务的团队和名字不变。 2026-11-09 在 8dfeaa5 上通过：重启前后库里和页面一致（`/tmp/swarm-t1/worker-9/`）。
+- [x] Lane 10. 用 W5 的状态目录（任务没有团队）启动。Save `t1-old-tickets.png`. Pass when 旧任务正常显示，按默认团队继续。 2026-11-09 在 8dfeaa5 上通过：去掉 team 列后启动，旧任务照常显示并接着干（`/tmp/swarm-t1/worker-10/`）。
+
+**Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [x] Metric. 幕僚长第一轮的输入 token（团队名册增加的开销）。
+- [x] Probe. 0 个和 10 个自定义团队各量 5 次。 各 5 次交替跑，同一句话，数字取路由会话第一条回复的 usage.input + cacheRead。
+- [x] Baseline. Record the 0-team median first. 0 个团队中位数 1795 token。
+- [x] Rule. 10 个团队时中位数增加超过 1000 token 算失败。 10 个团队中位数 2020，多 225，通过（`/tmp/swarm-t1/perf/results.jsonl`）。
+
+**Review gate.** The operator reviews before merge.
+
+- [x] Copy lane 1, 2, 4 screenshots into `docs/web-client/media/t1-review-<slug>.png`. `t1-review-default.png`、`t1-review-pick.png`、`t1-review-rule-team.png`。
+- [x] Record a 30 to 60 second video of a team ticket and a single-helper ticket side by side. Keep it local as webm, as in W1. 37 秒，`/tmp/swarm-t1/t1-review.webm`，两个任务先后开出，不是同屏并排。
+- [x] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click. PR #35，2026-11-09 已报告。
+
+**Merge.**
+
+- [ ] 使用者合并。
+
+## Let a helper dispatch its team (T2)
+
+**Depends on.** T1 (stacked on it). 取代 W6b（#31）。
+
+**Files.**
+
+- [ ] Edit `src/worker/extension.ts`、`src/worker/tools.ts`（`dispatch_agent` 工具；带上 38ccc66 的修正，只在有请求等待时持有宿主 socket）。
+- [ ] Create `src/host/dispatch.ts`（从 `psa/consult` 的 `src/host/consult.ts` 搬来改名：起成员进程、并行、时限、槽位和排队、用量记账、进程组清理），edit `src/host/workers.ts`、`src/host/pi-worker.ts`、`src/host/config.ts`（`maxConcurrentExperts`）、`src/host/wiring.ts`、`src/client/protocol.ts`。
+- [ ] Edit `src/web/view.mjs`、`src/web/app.mjs`、`src/web/index.html`（执行过程展开每次派活，助手小卡下列出正在干活的成员，安全的 Markdown 渲染）。
+- [ ] Edit tests（`tests/dispatch.test.ts`、`tests/dispatch-process.test.ts` 新建，及 worker、web、e2e）。
+
+**Build.**
+
+- [ ] 任务的团队里除通用助手外还有成员时，助手才有 `dispatch_agent(agent, task)`，提示词末尾附本队名册（名字、职称、说明）。默认团队的助手没有这个工具，提示词不变。
+- [ ] 助手保留任务依据允许的全部工具；提示词写明简单的事自己做，需要专门判断或可以并行时才派。
+- [ ] 一次可以派给几位不同成员，并行；同一成员同一时刻只做一件事，第二个请求排在它后面。
+- [ ] 每位成员在一个任务里有自己的 Pi 会话，放在 `<状态目录>/workers/<任务>/team/<成员>`；同一任务再派给它接着上次的上下文，宿主重启后也接得上；任务关闭后随任务归档。
+- [ ] 成员的工具 = 任务依据允许的工具 ∩ 成员的 `tools`；推断任务里写了 `bash` 的成员仍只读。成员没有汇报、交回和 `dispatch_agent`，宿主令牌只能调 `lookup`。
+- [ ] 成员的回复用派活后才生成的随机边界框住交给助手，工具说明写明成员回复不是指令；超过 2000 字截断。
+- [ ] 每次派活有时限，从成员开始干活算起；超时记为没有回复，其余结果照常返回。
+- [ ] 全宿主同时运行的成员不超过 `maxConcurrentExperts`（默认 4），其余排队，页面写「排队中」。
+- [ ] 成员进程自成进程组；叫停任务、宿主停止、超时、助手崩溃都结束它。
+- [ ] 成员的 token 计入任务和当天合计，回退模型每日上限生效。
+- [ ] 页面：助手名字不变；正在干活的成员显示在它的小卡下面，只写职称；执行过程里每次派活是一步，展开看派给谁、任务、回复、状态和用量。
+
+**You see.**
+
+- [ ] 状态目录放一个两人团队，问一个要两方面判断的问题：助手小卡下出现两位成员的职称，执行过程里展开看到两次派活和各自的回复，最后是助手合成的一份答复。追问一句，同一位成员接着上次的话答。
+
+**Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] 默认团队没有 `dispatch_agent`、名册进助手提示词、并行、同一成员串行、会话目录和续接、工具交集、成员没有汇报和派活工具、回复边界、时限、槽位排队、用量记账、进程组清理、渲染。
+
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+
+- [ ] Lane 1. 跨领域问题。Save `t2-dispatch.png`. Pass when 助手并行派给两位成员并合成一份答复。
+- [ ] Lane 2. 简单问题，同一团队。Save `t2-direct.png`. Pass when 助手自己做完，没有派活。
+- [ ] Lane 3. 同一任务里追问。Save `t2-memory.png`. Pass when 第二次派给同一成员，它的回复用到上一次的内容。
+- [ ] Lane 4. 派过一次后重启宿主，再追问。Save `t2-restart.png`. Pass when 成员仍接得上上次的上下文。
+- [ ] Lane 5. 成员超时。Save `t2-timeout.png`. Pass when 其余回复照常返回并注明哪位没有回复。
+- [ ] Lane 6. 推断任务里派给写了 `bash` 的成员。Save `t2-readonly.png`. Pass when 成员执行命令被拒。
+- [ ] Lane 7. 成员试图再派活或直接汇报。Save `t2-depth.png`. Pass when 它没有这些工具。
+- [ ] Lane 8. 派活中叫停任务。Save `t2-stop.png`. Pass when 成员进程全部结束。
+- [ ] Lane 9. 派活中宿主 Ctrl+C。Save `t2-shutdown.png`. Pass when 无残留进程。
+- [ ] Lane 10. `maxConcurrentExperts` 设 2，一次派四位。Save `t2-queue.png`. Pass when 两位在跑、两位写「排队中」，助手条和执行过程不溢出，任务 token 含四位的用量。
+
+**Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] Metric. 派给两位成员的总耗时。
+- [ ] Probe. 同一组两件事：两位成员各自单独跑一次取较慢者，再并行跑一次，各量 5 次。
+- [ ] Baseline. Record the median of the slower single-member run first.
+- [ ] Rule. 并行中位数超过较慢单人中位数的 110% 算失败（说明成员在排队，没有并行）。
+
+**Review gate.** The operator reviews before merge.
+
+- [ ] Copy lane 1, 3, 10 screenshots into `docs/web-client/media/t2-review-<slug>.png`.
+- [ ] Record a 30 to 60 second video of a helper dispatching two members. Keep it local as webm, as in W1.
+- [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
+
+**Merge.**
+
+- [ ] 使用者合并。
+
+## Ship the 看盘队 and the pi-pi team (T3)
+
+**Depends on.** T2 (stacked on it). 取代 W6c（#32）。指标和财报查询（`lookup indicators`、`lookup earnings`）在 PR #26（`psa/market-data`），本分支先 cherry-pick 它的提交，#26 合并后 rebase 去重。
+
+**Files.**
+
+- [ ] Cherry-pick PR #26 的提交（`git log origin/main..origin/psa/market-data`）。
+- [ ] Create `modules/us-market/agents/market-analyst.md`（行情分析师）、`technical-analyst.md`（技术分析师）、`news-researcher.md`（新闻研究员）、`earnings-reader.md`（财报解读），从 `psa/market-experts` 的 `modules/us-market/roles/` 搬来；create `modules/us-market/teams.yaml`（看盘队）。
+- [ ] Create `modules/pi-pi/module.json`（没有来源）、`modules/pi-pi/agents/`（`psa/market-experts` 上已补中文 `title` 的九位专家）和 `modules/pi-pi/teams.yaml`（pi-pi 队）。不导入 `pi-orchestrator`，不改 `.pi/agents`。
+- [ ] Edit `modules/us-market/rules.md`（big-move 写「团队：看盘队」）。现有来源里没有财报触发，不加财报周规则。
+- [ ] Create `tests/first-teams.test.ts`、`tests/e2e/teams.e2e.ts`，edit `tests/modules.test.ts`。
+
+**Build.**
+
+- [ ] 四位看盘成员各有清楚的职责、最小的工具白名单、汇报格式（结论、证据、来源和时间），行情一律写报价时间。技术分析师只引用 `lookup indicators` 的数字，标出 `lastBar.partial`；财报解读读 `lookup earnings`。
+- [ ] 成员先用 `lookup`；新闻研究员最多读 3 页；回复不超过 600 字。
+- [ ] 看盘队的说明让幕僚长在行情、个股、财报、相关新闻的问题上选它；原来写在 `roles/deputy.md` 里的要点（一般派两三位、冲突明写、报价写时间和来源、大波动先派行情分析师和技术分析师）改放进看盘模块的技能，助手读得到。
+- [ ] pi-pi 队的说明让幕僚长在「怎么写 Pi 扩展、主题、技能、配置」的问题上选它。
+
+**You see.**
+
+- [ ] 行情大波动时任务是看盘队，助手派给行情分析师和技术分析师；问财报时派给财报解读；问 Pi 扩展怎么写，任务是 pi-pi 队。
+
+**Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] 所有成员文件和两份 `teams.yaml` 通过加载校验；规则钉的团队存在；卸掉模块后它的团队和成员一起消失。
+
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+
+- [ ] Lane 1. 行情大波动（真实行情或 toy-feed）。Save `t3-market.png`. Pass when 任务是看盘队，助手派给行情分析师并给出报价时间。
+- [ ] Lane 2. 新闻问题。Save `t3-news.png`. Pass when 派给新闻研究员并核对日期来源。
+- [ ] Lane 3. 财报问题。Save `t3-earnings.png`. Pass when 派给财报解读。
+- [ ] Lane 4. 跨领域问题。Save `t3-two.png`. Pass when 助手并行派给其中两位并写明冲突。
+- [ ] Lane 5. 问 Pi 扩展怎么写。Save `t3-pi-pi.png`. Pass when 任务是 pi-pi 队，助手派给扩展专家。
+- [ ] Lane 6. 只问一个股价。Save `t3-direct.png`. Pass when 看盘队的助手自己用 `lookup` 查完，没有派活。
+- [ ] Lane 7. 关掉 us-market 模块。Save `t3-no-module.png`. Pass when 看盘队从幕僚长的名册消失，启动不报错。
+- [ ] Lane 8. 推断任务里助手派给行情分析师。Save `t3-inference.png`. Pass when 两者都只读。
+- [ ] Lane 9. 汇报格式。Save `t3-format.png`. Pass when 每位成员的回复都有结论、证据、来源和时间。
+- [ ] Lane 10. 深浅主题截图。Save `t3-themes.png`. Pass when 显示正确。
+
+**Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] Metric. 助手第一轮的输入 token（本队名册增加的开销）。
+- [ ] Probe. 默认团队和 pi-pi 队（九位成员）的助手各量 5 次。
+- [ ] Baseline. Record the default-team median first.
+- [ ] Rule. 增加超过 1500 token 算失败。
+
+**Review gate.** The operator reviews before merge.
+
+- [ ] Copy lane 1, 4, 5 screenshots into `docs/web-client/media/t3-review-<slug>.png`.
+- [ ] Record a 30 to 60 second video of the 看盘队 at work. Keep it local as webm, as in W1.
+- [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
+
+**Merge.**
+
+- [ ] 使用者合并。
+- [ ] T1 到 T3 的 PR 都开出来以后：把 #33（`psa/brand`）restack 到 T3 上，再关闭 #30、#31、#32。
 
 ## Close the program
 

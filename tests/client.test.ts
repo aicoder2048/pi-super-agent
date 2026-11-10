@@ -403,6 +403,11 @@ test("看板：任意终端宽度下每行都不超宽（含中文双宽字符�
 	}
 });
 
+test("看板：团队任务的卡片写四字名和团队名，和页面同一种写法", () => {
+	const lines = renderBoard({ rows: [row({ helper: { name: "高山流水", team: "看盘队", seq: 2 } })], receivedAt: 0, connected: true }, 120, 10_000).join("\n");
+	assert.ok(lines.includes("高山流水 · 看盘队 #2 · gpt-6.1-sol"), lines);
+});
+
 test("看板：卡片带齐标题、阶段、依据、最近汇报、模型、工具次数、token 和时长", () => {
 	const lines = renderBoard({ rows: [row({ fellBack: true })], receivedAt: 0, connected: true }, 120, 10_000).join("\n");
 	for (const part of ["3f2a", "整理本周", "执行中", "请求", "已经读完", "听松 · 行情助手 #2", "gpt-6.1-sol（已回退）", "工具 12", "4.0k tok", "5分22秒"]) {
