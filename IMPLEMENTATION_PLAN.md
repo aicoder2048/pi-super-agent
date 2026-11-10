@@ -714,7 +714,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **You see.**
 
-- [ ] 行情大波动时任务属于 us-market 领域，显示看盘队，助手派给行情分析师和技术分析师；问财报时派给财报解读；问 Pi 扩展怎么写，任务属于 pi-pi 领域，显示 Pi专家队。 假模型下的这一幕见 `tests/e2e/first-teams.e2e.ts`；真实模型留给 Verify, live。
+- [x] 行情大波动时任务属于 us-market 领域，显示看盘队，助手派给行情分析师和技术分析师；问财报时派给财报解读；问 Pi 扩展怎么写，任务属于 pi-pi 领域，显示 Pi专家队。 假模型下的这一幕见 `tests/e2e/first-teams.e2e.ts`；真实模型留给 Verify, live。 真实模型见 Verify, live 的 lane 1、3、5。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -722,28 +722,28 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
-- [ ] Lane 1. 行情大波动（真实行情或 toy-feed）。Save `t3-market.png`. Pass when 任务属于 us-market 领域、显示看盘队，助手派给行情分析师并给出报价时间。
-- [ ] Lane 2. 新闻问题。Save `t3-news.png`. Pass when 派给新闻研究员并核对日期来源。
-- [ ] Lane 3. 财报问题。Save `t3-earnings.png`. Pass when 派给财报解读。
-- [ ] Lane 4. 跨领域问题。Save `t3-two.png`. Pass when 助手并行派给其中两位并写明冲突。
-- [ ] Lane 5. 问「Pi 的扩展怎么写？我想给 Pi 注册一个自定义工具。」Save `t3-pi-pi.png`. Pass when 任务属于 pi-pi 领域、显示 Pi专家队，这个单主题的问题助手也派给扩展专家（ext-expert），专家没有执行命令，也没有写文件。
-- [ ] Lane 6. 只问一个股价。Save `t3-direct.png`. Pass when 看盘队的助手自己用 `lookup` 查完，没有派活。
-- [ ] Lane 7. 关掉 us-market 模块。Save `t3-no-module.png`. Pass when us-market 领域从幕僚长的名册消失，启动不报错。
-- [ ] Lane 8. 推断任务里助手派给行情分析师。Save `t3-inference.png`. Pass when 两者都只读。
-- [ ] Lane 9. 汇报格式。Save `t3-format.png`. Pass when 每位成员的回复都有结论、证据、来源和时间。
-- [ ] Lane 10. 深浅主题截图。Save `t3-themes.png`. Pass when 显示正确。
+- [x] Lane 1. 行情大波动（真实行情或 toy-feed）。Save `t3-market.png`. Pass when 任务属于 us-market 领域、显示看盘队，助手派给行情分析师并给出报价时间。 2026-11-09 在 2f94c71 上：手工投递的大波动，任务属于 us-market、显示「雪泥鸿爪 · 看盘队 #1」，先派行情分析师和技术分析师，再派新闻研究员，报价写了时间；19a0ad1 上复验时任务说明带上了触发的五项，汇报写明触发和现价不一致（`/tmp/swarm-t3b/C/`）。
+- [x] Lane 2. 新闻问题。Save `t3-news.png`. Pass when 派给新闻研究员并核对日期来源。 2026-11-09 在 2f94c71 上：只派新闻研究员，写明公告日期和出处。
+- [x] Lane 3. 财报问题。Save `t3-earnings.png`. Pass when 派给财报解读。 2026-11-09 在 2f94c71 上只派财报解读；19a0ad1 上复验时财报解读没有读网页，回复 337 字（`/tmp/swarm-t3b/D/`）。
+- [x] Lane 4. 跨领域问题。Save `t3-two.png`. Pass when 助手并行派给其中两位并写明冲突。 2026-11-09 在 2f94c71 上：三位并行，写明了数据上的不一致；没有出现成员间的冲突，「写明冲突」没有真正走到；19a0ad1 上两次「为什么跌」各派两位（`/tmp/swarm-t3b/B/`）。
+- [x] Lane 5. 问「Pi 的扩展怎么写？我想给 Pi 注册一个自定义工具。」Save `t3-pi-pi.png`. Pass when 任务属于 pi-pi 领域、显示 Pi专家队，这个单主题的问题助手也派给扩展专家（ext-expert），专家没有执行命令，也没有写文件。 2026-11-09 在 2f94c71 上 0/3 没有派活，修正后在 19a0ad1 上 3/3 派给扩展专家，专家工具只有 read、grep、find、ls、web_get，没有执行命令也没有写文件，答案对照本机文档核对正确（`/tmp/swarm-t3b/A/`）。
+- [x] Lane 6. 只问一个股价。Save `t3-direct.png`. Pass when 看盘队的助手自己用 `lookup` 查完，没有派活。 2026-11-09 在 2f94c71 上：助手自己用 lookup 查完，没有派活，写明休市和报价时间。
+- [x] Lane 7. 关掉 us-market 模块。Save `t3-no-module.png`. Pass when us-market 领域从幕僚长的名册消失，启动不报错。 2026-11-09 在 2f94c71 上：拿掉 us-market 后启动不报错，名册里没有它。
+- [x] Lane 8. 推断任务里助手派给行情分析师。Save `t3-inference.png`. Pass when 两者都只读。 2026-11-09 在 2f94c71 上：推断任务归看盘队，助手和成员都没有调用执行命令、写文件、改文件。
+- [x] Lane 9. 汇报格式。Save `t3-format.png`. Pass when 每位成员的回复都有结论、证据、来源和时间。 2026-11-09 在 19a0ad1 上复验：10 份成员回复全部在 600 字以内（链接不计），三个标题齐全；2f94c71 上是 5/16 和 13/16。
+- [x] Lane 10. 深浅主题截图。Save `t3-themes.png`. Pass when 显示正确。 2026-11-09 在 2f94c71 上：深浅两种主题都正常，没有横向溢出。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 助手第一轮的输入 token（本队名册增加的开销）。
-- [ ] Probe. 没有领域的助手和 Pi专家队（九位成员）的助手各量 5 次。
-- [ ] Baseline. Record the no-domain median first.
-- [ ] Rule. 增加超过 1500 token 算失败。
+- [x] Metric. 助手第一轮的输入 token（本队名册增加的开销）。
+- [x] Probe. 没有领域的助手和 Pi专家队（九位成员）的助手各量 5 次。
+- [x] Baseline. Record the no-domain median first. 没有领域的助手中位数 3121 token。
+- [x] Rule. 增加超过 1500 token 算失败。 Pi专家队的助手中位数 3927，多 806，通过（`/tmp/swarm-t3/perf/results.txt`，在 2f94c71 上量）。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 1, 4, 5 screenshots into `docs/web-client/media/t3-review-<slug>.png`.
-- [ ] Record a 30 to 60 second video of the 看盘队 at work. Keep it local as webm, as in W1.
+- [x] Copy lane 1, 4, 5 screenshots into `docs/web-client/media/t3-review-<slug>.png`. `t3-review-market.png`、`t3-review-two.png`、`t3-review-pi-pi.png`（lane 5 用修正后的复验截图）。
+- [x] Record a 30 to 60 second video of the 看盘队 at work. Keep it local as webm, as in W1. 49 秒，两倍速，`/tmp/swarm-t3b/t3-review.webm`，在 19a0ad1 上录。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
