@@ -78,6 +78,30 @@ test("记录里的 pid 现在是别的进程（启动时间对不上）：不发
 	assert.deepEqual(logs, []);
 });
 
+test("读不出来的记录（空的、写了一半、不是记录）认不出任何进程：日志记一行写明是哪个文件，清掉它，照常继续", async () => {
+	for (const content of ["", '{"pgid":12', "null", "[]"]) {
+		const stateDir = mkdtempSync(join(tmpdir(), "psa-ledger-"));
+		const sessionDir = memberSessionDir(stateDir, "tkt_1", "news-researcher");
+		mkdirSync(sessionDir, { recursive: true });
+		writeFileSync(ledger(sessionDir), content);
+		const logs: string[] = [];
+		await endLeftoverMembers(stateDir, (line) => logs.push(line));
+		assert.equal(existsSync(ledger(sessionDir)), false, JSON.stringify(content));
+		assert.equal(logs.length, 1, JSON.stringify(content));
+		assert.ok(logs[0].includes(ledger(sessionDir)), logs[0]);
+	}
+});
+
+test("成员记录是空文件时宿主照常启动", async (t) => {
+	const stateDir = mkdtempSync(join(tmpdir(), "psa-ledger-"));
+	const sessionDir = memberSessionDir(stateDir, "tkt_1", "news-researcher");
+	mkdirSync(sessionDir, { recursive: true });
+	writeFileSync(ledger(sessionDir), "");
+	const host = await Host.start({ stateDir, createRouter: fauxRouter(() => []).createRouter, createSpawner: () => new FakeSpawner(() => {}), log: () => {}, workerModels: defaultWorkerModels() });
+	t.after(() => host.stop());
+	assert.equal(existsSync(ledger(sessionDir)), false);
+});
+
 test("成员做完后清掉自己的记录；清两次不出错", () => {
 	const sessionDir = join(mkdtempSync(join(tmpdir(), "psa-ledger-")), "team", "m");
 	recordMember(sessionDir, process.pid);

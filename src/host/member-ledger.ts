@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { writeFileAtomic } from "../heartbeat.ts";
 import { memberSessionDirs } from "./dispatch.ts";
 
 const LEDGER = "running.json";
@@ -25,7 +26,15 @@ export function recordMember(sessionDir: string, pgid: number): void {
 	const startedAt = startTime(pgid);
 	if (!startedAt) return;
 	mkdirSync(sessionDir, { recursive: true });
-	writeFileSync(join(sessionDir, LEDGER), JSON.stringify({ pgid, startedAt } satisfies Running));
+	writeFileAtomic(join(sessionDir, LEDGER), JSON.stringify({ pgid, startedAt } satisfies Running));
+}
+
+function readRunning(file: string): Running | undefined {
+	try {
+		const { pgid, startedAt } = JSON.parse(readFileSync(file, "utf8")) as Partial<Running>;
+		if (typeof pgid === "number" && Number.isInteger(pgid) && pgid > 1 && typeof startedAt === "string") return { pgid, startedAt };
+	} catch {}
+	return undefined;
 }
 
 export const isRecorded = (sessionDir: string) => existsSync(join(sessionDir, LEDGER));
@@ -61,8 +70,10 @@ async function gone(pid: number, withinMs: number): Promise<boolean> {
  */
 export async function endLeftoverMembers(stateDir: string, log: (line: string) => void, killAfterMs = 800): Promise<void> {
 	await Promise.all(memberSessionDirs(stateDir).filter(isRecorded).map(async (sessionDir) => {
-		const { pgid, startedAt } = JSON.parse(readFileSync(join(sessionDir, LEDGER), "utf8")) as Partial<Running>;
-		if (typeof pgid === "number" && Number.isInteger(pgid) && pgid > 1 && typeof startedAt === "string" && startTime(pgid) === startedAt) {
+		const running = readRunning(join(sessionDir, LEDGER));
+		if (!running) log(`[host] 成员进程记录 ${join(sessionDir, LEDGER)} 读不出来，认不出它记的是哪个进程，已清掉`);
+		else if (startTime(running.pgid) === running.startedAt) {
+			const { pgid } = running;
 			signalGroup(pgid, "SIGTERM");
 			if (!(await gone(pgid, killAfterMs))) signalGroup(pgid, "SIGKILL");
 			if (!(await gone(pgid, GONE_WITHIN_MS))) throw new Error(`停不掉上一个宿主留下的成员进程 ${pgid}（${sessionDir}）`);
