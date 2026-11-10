@@ -51,6 +51,8 @@ export interface Exchange {
 	model: string;
 	conversation: string;
 	cards: string[];
+	/** Every user message in the request, oldest first: what the model's session still remembers. */
+	userTexts: string[];
 	steps: string[];
 	unmatched: string[];
 	/** The tools the request offered the model. */
@@ -159,7 +161,8 @@ export class FakeModel {
 	#decide(model: string, messages: Message[]): Omit<Exchange, "tools"> & { delayMs: number } {
 		const conversation = model === "router" || model === "fallback" ? "router" : briefOf(messages);
 		const cards = trailingCards(messages);
-		const base = { at: Date.now(), model, conversation, cards, steps: [] as string[], unmatched: [] as string[], delayMs: 0 };
+		const userTexts = messages.filter((m) => m.role === "user").map(textOf);
+		const base = { at: Date.now(), model, conversation, cards, userTexts, steps: [] as string[], unmatched: [] as string[], delayMs: 0 };
 		if (cards.length === 0) return { ...base, answer: "好。" };
 		const pending = this.#pending.get(conversation) ?? [];
 		const calls: ToolCall[] = [];
