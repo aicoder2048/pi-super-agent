@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { type TestContext } from "node:test";
 import { Host } from "../src/host/host.ts";
-import { busyPort, defaultWorkerModels, FakeSpawner, fauxRouter, freePort, ids, tempStateDir, until, within } from "./helpers/fakes.ts";
+import { memberSessionDir } from "../src/host/dispatch.ts";
+import { busyPort, defaultWorkerModels, domainsOf, FakeSpawner, fauxRouter, freePort, ids, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 type ModuleFiles = Record<string, unknown>;
 
@@ -273,10 +274,17 @@ const alive = (pid: number) => {
 	}
 };
 
+// A real Pi started by mistake finds no credentials and stays offline, so no test reaches a model.
+function offlinePi(stateDir: string): Record<string, string> {
+	const agentDir = join(stateDir, "pi-agent");
+	mkdirSync(agentDir, { recursive: true });
+	return { PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: "1" };
+}
+
 // Detached so the host leads its own process group, as `just host` does in a terminal; a signal to -pid is a Ctrl+C.
 async function hostWithWorker(t: TestContext, stateDir: string, env: Record<string, string> = {}) {
 	const host = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], {
-		env: { ...process.env, PSA_STATE_DIR: stateDir, PSA_PI_CLI: join(stateDir, "fake-pi.mjs"), FAKE_PI_DIR: stateDir, ...env },
+		env: { ...process.env, ...offlinePi(stateDir), PSA_STATE_DIR: stateDir, PSA_PI_CLI: join(stateDir, "fake-pi.mjs"), FAKE_PI_DIR: stateDir, ...env },
 		detached: true,
 	});
 	const exited = new Promise<number | null>((r) => host.on("exit", (code) => r(code)));
@@ -339,4 +347,71 @@ test("停止途中再按一次 Ctrl+C：宿主立即退出并说明，不留 Wor
 	assert.equal(code, 130);
 	assert.match(run.stderr(), /再次收到 SIGINT，立即退出/);
 	await until(() => !alive(run.piPid), "Worker 进程已结束", 5000);
+});
+
+// Stands in for Pi in both roles: as the helper (`--mode rpc`) it dispatches its team over the host socket on
+// the first prompt; as the member (`--mode json -p`) it records its pid and works until it is stopped.
+const FAKE_TEAM_PI = `
+import { writeFileSync } from "node:fs";
+import { connect } from "node:net";
+import { createInterface } from "node:readline";
+const dir = process.env.FAKE_PI_DIR;
+const argv = process.argv.slice(2);
+if (argv[argv.indexOf("--mode") + 1] === "json") {
+	writeFileSync(dir + "/member.pid", String(process.pid));
+	setInterval(() => {}, 1000);
+} else {
+	writeFileSync(dir + "/pi.pid", String(process.pid));
+	const send = (o) => process.stdout.write(JSON.stringify(o) + "\\n");
+	const input = createInterface({ input: process.stdin });
+	input.on("line", (line) => {
+		const { id, type } = JSON.parse(line);
+		send({ type: "response", id, command: type, success: true, data: { disposition: "started" } });
+		if (type !== "prompt") return;
+		send({ type: "agent_start" });
+		const host = connect(process.env.PSA_SOCKET);
+		host.write(JSON.stringify({ type: "hello", role: "worker", ticketId: process.env.PSA_TICKET, token: process.env.PSA_TOKEN }) + "\\n");
+		host.write(JSON.stringify({ type: "request", id: 1, method: "worker.dispatch", params: { callId: "c1", agent: "news-researcher", task: "查" } }) + "\\n");
+		host.on("error", () => {});
+	});
+	input.on("close", () => process.exit(0));
+}
+`;
+
+test("终端 Ctrl+C 时成员正在干活：宿主停下后不留成员进程，也不留成员记录 running.json", async (t) => {
+	const stateDir = stateWithFiles(NEWS_MODULE)();
+	const crew = [{ name: "news-researcher", title: "新闻研究员", description: "查新闻", tools: undefined, skills: [], model: undefined, prompt: "", file: "/agents/a.md" }];
+	const brain = (cards: string[]) => cards.flatMap((card) => card.startsWith("[对话]")
+		? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg"), title: "执行中", brief: "执行中", domain: "news" }] } }]
+		: []);
+	const first = await Host.start({ stateDir, createRouter: fauxRouter(brain).createRouter, createSpawner: () => new FakeSpawner(() => {}), log: () => {}, workerModels: defaultWorkerModels(), domains: domainsOf({ news: { team: "新闻队", crew } }) });
+	first.say("开个任务");
+	await until(() => first.kernel.listTickets()[0]?.stage === "running", "任务在执行中");
+	const ticketId = first.kernel.listTickets()[0].id;
+	await first.stop();
+	writeFileSync(join(stateDir, "fake-pi.mjs"), FAKE_TEAM_PI);
+	const host = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], {
+		env: { ...process.env, ...offlinePi(stateDir), PSA_STATE_DIR: stateDir, PSA_PI_CLI: join(stateDir, "fake-pi.mjs"), FAKE_PI_DIR: stateDir },
+		detached: true,
+	});
+	const pidIn = (file: string) => (existsSync(join(stateDir, file)) ? Number(readFileSync(join(stateDir, file), "utf8")) : undefined);
+	t.after(() => {
+		for (const target of [-host.pid!, pidIn("pi.pid"), pidIn("member.pid")]) {
+			try {
+				if (target) process.kill(target, "SIGKILL");
+			} catch {}
+		}
+	});
+	const exited = new Promise<number | null>((r) => host.on("exit", (code) => r(code)));
+	let stderr = "";
+	host.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+	const ledger = join(memberSessionDir(stateDir, ticketId, "news-researcher"), "running.json");
+	await until(() => pidIn("member.pid") !== undefined && existsSync(ledger), `成员在干活并有记录：${stderr}`, 20_000);
+	const [helperPid, memberPid] = [pidIn("pi.pid")!, pidIn("member.pid")!];
+	process.kill(-host.pid!, "SIGINT");
+	assert.equal(await within(exited, 10_000, "宿主退出"), 0, stderr);
+	assert.equal(stderr.match(/\[host\] 已停止/g)?.length, 1, stderr);
+	assert.equal(alive(memberPid), false, "宿主停下时成员进程已经没了");
+	assert.equal(existsSync(ledger), false, "成员记录 running.json 已清掉");
+	await until(() => !alive(helperPid), "助手进程已结束");
 });
