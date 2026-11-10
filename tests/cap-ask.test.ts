@@ -213,6 +213,28 @@ test("以 Worker 身份连上宿主的连接发 answer 不算数：不管是助�
 	assert.deepEqual([cap()?.limit, cap()?.question?.reportId, count("running")], [1, ASK, 1]);
 });
 
+test("TUI 连接不带客户端凭据就点不了放宽：不带、带错的 hello 都被断开，拿不到回执，上限不变、问题还开着；带对的凭据才算", async (t) => {
+	const { host, count, cap } = await wholeCrewDispatched(t);
+	await until(() => count("queued") === 2, "一位在做两位排队");
+	for (const hello of [{ type: "hello", role: "client" }, { type: "hello", role: "client", token: "ab".repeat(32) }]) {
+		const socket = connect(host.socketPath);
+		const replies: Record<string, unknown>[] = [];
+		onJsonLines(socket, (r) => replies.push(r as Record<string, unknown>));
+		const closed = new Promise((done) => socket.once("close", done));
+		await new Promise((done) => socket.once("connect", done));
+		writeJsonLine(socket, hello);
+		writeJsonLine(socket, { type: "answer", reportId: ASK, option: 0, requestId: "r1" });
+		await Promise.race([closed, until(() => replies.some((r) => r.requestId === "r1"), "宿主断开或回了这次点选")]);
+		socket.destroy();
+		assert.deepEqual(replies, [], JSON.stringify(hello));
+	}
+	assert.deepEqual([cap()?.limit, cap()?.question?.reportId, count("running")], [1, ASK, 1]);
+	assert.deepEqual(host.snapshot().conversation.filter((l) => l.id === ASK), []);
+	assert.equal((await answerOverSocket(host.socketPath, clientHello(host.socketPath), "r2")).type, "ack");
+	await until(() => count("running") === 3, "三位都在做", 500);
+	assert.equal(cap()?.limit, 10);
+});
+
 test("来源触发没有放宽的路：正文和编号都照着这个问题写，也只是一条数据", async (t) => {
 	const { host, count, cap } = await wholeCrewDispatched(t);
 	await until(() => count("queued") === 2, "一位在做两位排队");
