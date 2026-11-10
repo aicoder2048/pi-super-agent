@@ -251,6 +251,14 @@ test("派过一次后重启宿主再追问，成员仍接着上次的会话；�
 				await waitStatus(page, "connected");
 				await page.locator("#steps .step.stopped", { hasText: "新闻研究员 · 已停止" }).waitFor();
 			});
+			await step("刷新页面后，被强杀打断的那次派活仍带着成员用掉的 token", async (page) => {
+				await page.reload();
+				await waitStatus(page, "connected");
+				await page.locator("#left .card", { hasText: TASK.title }).first().click();
+				const cut = page.locator("#steps .step.stopped", { hasText: "新闻研究员 · 已停止" }).first();
+				await cut.locator("summary", { hasText: "派活明细" }).click();
+				assert.match(await cut.locator(".dispatch-head").textContent() ?? "", /^新闻研究员 · 已停止 · [1-9]\d* tokens$/);
+			});
 			await step("恢复后的助手再派一次，成员又在干活", async (page) => {
 				await page.locator("#steps .step.pending", { hasText: "新闻研究员 · 进行中" }).waitFor();
 				memberGroup = await memberGroupFrom("member2.pid");

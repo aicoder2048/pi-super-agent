@@ -1380,6 +1380,21 @@ test("页面：宿主重启前发出、没等到结果的步骤一打开就是�
 	assert.deepEqual(shown(page.liveSteps(w, view)), [["新闻研究员 · 已停止", "stopped"], ["新闻研究员 · 排队中", "pending"]]);
 });
 
+test("页面：宿主被杀时还在跑的派活，重启后写已停止，仍带着成员用掉的 token：从成员自己的消息里的用量加出来", () => {
+	const view = page.emptyView();
+	const w = page.emptyWatch("tkt_1");
+	page.applyMessage(view, { ...board([row({ id: "tkt_1", workerState: "running" })]), duty: { since: 5000, resumed: 1 } } as HostToClient, 0);
+	const used = (input: number, output: number, cacheRead: number, content: unknown[]) => ({ role: "assistant", content, usage: { input, output, cacheRead } });
+	page.applyTranscript(w, teamHistory("tkt_1", [dispatchCall("c1", "news-researcher", "查新闻", 4000), dispatchCall("c2", "market-analyst", "看盘面", 4000)], { c1: [
+		used(900, 100, 200, [{ type: "toolCall", id: "m1", name: "web_get", arguments: { url: "https://example.com/n" } }]),
+		{ role: "toolResult", toolCallId: "m1", toolName: "web_get", content: [{ type: "text", text: "网页" }] },
+		used(250, 50, 0, [{ type: "toolCall", id: "m2", name: "web_get", arguments: { url: "https://example.com/m" } }]),
+	] }));
+	assert.deepEqual(page.liveSteps(w, view).map((s) => [s.detail, s.dispatch?.tokens]), [["新闻研究员 · 已停止", "1.5k tokens"], ["行情分析师 · 已停止", ""]], "没来得及出一条消息的那位不写用量");
+	page.applyTranscript(w, live("tkt_1", { role: "user", content: "[恢复说明]\nprocess restarted" }));
+	assert.deepEqual(page.liveSteps(w, view).slice(0, 2).map((s) => [s.detail, s.dispatch?.tokens]), [["新闻研究员 · 已停止", "1.5k tokens"], ["行情分析师 · 已停止", ""]], "恢复后的助手开始下一轮，那一步定成已停止，用量还在");
+});
+
 test("页面：助手收到新的输入开始下一轮时，上一轮没等到结果的步骤就此停下（助手进程中途退出过）", () => {
 	const w = page.emptyWatch("tkt_1");
 	page.applyTranscript(w, teamHistory("tkt_1", [dispatchCall("c1", "news-researcher", "查新闻"), tool("bash", { command: "sleep 300" })]));

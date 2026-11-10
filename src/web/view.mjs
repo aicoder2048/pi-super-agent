@@ -437,6 +437,13 @@ function memberSteps(watch, callId, dispatchEnded) {
 	return dispatchEnded ? steps.map((s) => (s.state === "pending" ? stopped(s) : s)) : steps;
 }
 
+/** What a dispatch's member has used, input plus output, by its own messages. @param {Watch} watch @param {string | undefined} callId */
+function memberTokens(watch, callId) {
+	let tokens = 0;
+	for (const message of watch.members.get(callId ?? "") ?? []) tokens += (message?.usage?.input ?? 0) + (message?.usage?.cacheRead ?? 0) + (message?.usage?.output ?? 0);
+	return tokens;
+}
+
 /**
  * The watched steps as they stand now. An unfinished dispatch takes its state from the board. A step
  * that can no longer finish reads as stopped: its helper is not running, or it was issued before this
@@ -448,8 +455,13 @@ export function liveSteps(watch, view) {
 	const row = view.rows.find((r) => r.id === watch.ticketId);
 	const helperGone = row?.workerState !== "running" || row.endedAt !== null;
 	const hostSince = view.duty?.since ?? 0;
+	// A dispatch cut off by a stop or a killed host has no result to carry its count, and after a restart no board entry either.
+	const used = (/** @type {string | undefined} */ callId, /** @type {number | undefined} */ counted) => {
+		const tokens = counted ?? memberTokens(watch, callId);
+		return counted !== undefined || tokens > 0 ? tokensText(tokens) : "";
+	};
 	return watch.steps.map((step) => {
-		if (step.state !== "pending") return step.dispatch ? { ...step, dispatch: { ...step.dispatch, steps: memberSteps(watch, step.callId, true) } } : step;
+		if (step.state !== "pending") return step.dispatch ? { ...step, dispatch: { ...step.dispatch, tokens: step.dispatch.tokens || used(step.callId), steps: memberSteps(watch, step.callId, true) } } : step;
 		const dead = helperGone || (step.at ?? Infinity) < hostSince;
 		if (!step.dispatch) return dead ? stopped(step) : step;
 		const seen = onBoard.get(step.callId ?? "") ?? view.lastOnBoard.get(step.callId ?? "");
@@ -462,7 +474,7 @@ export function liveSteps(watch, view) {
 			state,
 			stateText: DISPATCH_STATE[state],
 			note: seen?.note ?? "",
-			tokens: seen ? tokensText(seen.tokens) : "",
+			tokens: used(step.callId, seen?.tokens),
 			steps: memberSteps(watch, step.callId, DISPATCH_STEP_STATE[state] !== "pending"),
 		};
 		return { ...step, state: DISPATCH_STEP_STATE[state], dispatch, detail: dispatchDetail(dispatch) };

@@ -73,4 +73,6 @@ export interface TranscriptMessage {
 	details?: unknown;
 	/** When Pi finished the message, in ms. */
 	timestamp?: number;
+	/** On an assistant message: what the model call used. */
+	usage?: { input?: number; output?: number; cacheRead?: number };
 }
