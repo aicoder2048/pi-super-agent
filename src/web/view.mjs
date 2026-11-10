@@ -4,12 +4,14 @@
 /** @typedef {import("../kernel/types.ts").InputKind} InputKind */
 /** @typedef {import("../client/protocol.ts").ConversationLine} ConversationLine */
 /** @typedef {import("../client/protocol.ts").Duty} Duty */
+/** @typedef {import("../kernel/types.ts").HelpersToday} HelpersToday */
+/** @typedef {import("../kernel/types.ts").Routes} Routes */
 /** @typedef {import("../client/protocol.ts").HostToClient} HostToClient */
 /** @typedef {import("../client/protocol.ts").TodayCounts} TodayCounts */
 /** @typedef {import("../client/protocol.ts").TranscriptMessage} TranscriptMessage */
 /** @typedef {import("../client/protocol.ts").WatchedSource} WatchedSource */
 
-import { INPUT_LABEL, blocks, clip, formatElapsed, formatTokens, isLive, modelText, shortId, stallMinutes, textOf } from "../client/board-format.mjs";
+import { INPUT_LABEL, blocks, clip, formatElapsed, formatTokens, helperFullName, helperRoleText, modelText, shortId, stallMinutes, textOf } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -47,12 +49,14 @@ const GROUP = {
  * @property {number} receivedAt
  * @property {TodayCounts | undefined} today
  * @property {Duty | undefined} duty
+ * @property {HelpersToday | undefined} helpers
  * @property {WatchedSource[]} watching
+ * @property {Routes} routes
  */
 
 /** @returns {View} */
 export function emptyView() {
-	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, watching: [] };
+	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {} };
 }
 
 /** @param {View} view @param {ConversationLine} line */
@@ -68,7 +72,7 @@ export function applyMessage(view, message, now) {
 	switch (message.type) {
 		case "snapshot":
 			for (const line of message.conversation) addLine(view, line);
-			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, watching: message.watching, receivedAt: now });
+			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, receivedAt: now });
 			return ["conversation", "left", "header"];
 		case "user":
 			addLine(view, { id: message.id, who: "user", text: message.text, at: message.at });
@@ -77,8 +81,8 @@ export function applyMessage(view, message, now) {
 			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at, ...(message.ticketId ? { ticketId: message.ticketId } : {}) });
 			return ["conversation"];
 		case "board":
-			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, receivedAt: now });
-			return ["left", "header"];
+			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, routes: message.routes, receivedAt: now });
+			return ["conversation", "left", "header"];
 	}
 	return [];
 }
@@ -136,6 +140,7 @@ export function settleSending(view, sending) {
  * @typedef {object} TaskCard
  * @property {string} id
  * @property {string} title
+ * @property {string} helper
  * @property {string} why
  * @property {string} stage
  * @property {string} latest
@@ -148,6 +153,7 @@ function card(row, now, sending) {
 	return {
 		id: row.id,
 		title: row.title,
+		helper: helperFullName(row.helper),
 		why: BASIS_PHRASE[row.basis],
 		stage: row.stall ? `久无进展 · ${stallMinutes(row.stall.since, now)} 分钟` : STAGE_PHRASE[row.stage],
 		latest: row.question?.text ?? row.latestSummary ?? "已开始，暂无进展",
@@ -168,6 +174,21 @@ export function choicesInConversation(view, sending) {
 		if (choice && line) placed.set(line.id, choice);
 	}
 	return placed;
+}
+
+/** @type {Record<"answered" | "pending" | "router_ignored", string>} */
+const ROUTE_COPY = { answered: "幕僚长直接回答", pending: "幕僚长处理中", router_ignored: "幕僚长判断无需处理" };
+
+/** The line under one of the user's messages; a task's line opens that task. @param {View} view @param {string} lineId @returns {{ text: string, ticketId?: string } | null} */
+export function routeLine(view, lineId) {
+	const route = view.routes[lineId];
+	if (!route) return null;
+	if (route.kind !== "opened_ticket" && route.kind !== "handed_over") return { text: ROUTE_COPY[route.kind] };
+	const row = view.rows.find((r) => r.id === route.ticketId);
+	const { ticketId } = route;
+	const helper = helperFullName(row?.helper ?? null) || "助手";
+	if (route.kind === "opened_ticket") return { text: row ? `已开新任务「${row.title}」 · ${helper}` : "已开新任务", ticketId };
+	return { text: row ? `已交给 ${helper}（${row.title}）` : "已交给助手", ticketId };
 }
 
 /** @param {string} reportId @param {number} option */
@@ -373,11 +394,59 @@ export function applyTranscript(watch, message) {
 	return true;
 }
 
-/** @param {DashboardRow | undefined} row @param {number} now @param {number} receivedAt */
-export function smallPrint(row, now, receivedAt) {
+/** @param {DashboardRow | undefined} row */
+export const smallPrint = (row) => (row ? `编号 ${shortId(row.id)}` : "");
+
+/** The host's elapsed time grows until the ticket ends, so the page adds the time since the frame arrived. @param {DashboardRow} row @param {number} now @param {number} receivedAt */
+const elapsedOf = (row, now, receivedAt) => formatElapsed(row.elapsedMs + (row.startedAt !== null && row.endedAt === null ? now - receivedAt : 0));
+
+/** @type {Record<DashboardRow["workerState"], { duty: "running" | "idle" | "queued", mark: string, state: string }>} */
+const DUTY_MARK = {
+	running: { duty: "running", mark: "●", state: "运行中" },
+	idle: { duty: "idle", mark: "◐", state: "空闲" },
+	queued: { duty: "queued", mark: "○", state: "排队" },
+	none: { duty: "queued", mark: "○", state: "排队" },
+};
+
+/**
+ * @typedef {object} HelperChip
+ * @property {string} id
+ * @property {"running" | "idle" | "queued"} duty
+ * @property {string} mark
+ * @property {string} state
+ * @property {string} name
+ * @property {string} role
+ * @property {string} elapsed
+ * @property {string} tokens
+ */
+
+/** One chip per helper on duty (a ticket not yet ended), then today's total. @param {View} view @param {number} now @returns {{ chips: HelperChip[], total: string }} */
+export function helperStrip(view, now) {
+	const chips = view.rows.flatMap((row) => {
+		if (row.endedAt !== null || !row.helper) return [];
+		return [{
+			id: row.id,
+			...DUTY_MARK[row.workerState],
+			name: row.helper.name,
+			role: helperRoleText(row.helper),
+			elapsed: elapsedOf(row, now, view.receivedAt),
+			tokens: `${formatTokens(row.tokensIn + row.tokensOut)} tokens`,
+		}];
+	});
+	const total = view.helpers ? `今日 ${view.helpers.count} 位 · ${formatTokens(view.helpers.tokens)} tokens` : "";
+	return { chips, total };
+}
+
+/** @param {number} ms @param {string} [timeZone] the page's own zone when omitted */
+const clockTime = (ms, timeZone) => new Date(ms).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone });
+
+/** @param {DashboardRow | undefined} row @param {number} now @param {number} receivedAt @param {string} [timeZone] */
+export function lifecycleLine(row, now, receivedAt, timeZone) {
 	if (!row) return "";
-	const elapsed = formatElapsed(row.elapsedMs + (isLive(row) ? now - receivedAt : 0));
-	return `模型 ${modelText(row)} · ${formatTokens(row.tokensIn + row.tokensOut)} tokens · 工具调用 ${row.toolCalls} 次 · 用时 ${elapsed} · 编号 ${shortId(row.id)}`;
+	const span = row.startedAt === null
+		? ["尚未开始"]
+		: [`开始 ${clockTime(row.startedAt, timeZone)}`, row.endedAt === null ? "进行中" : `结束 ${clockTime(row.endedAt, timeZone)}`, `用时 ${elapsedOf(row, now, receivedAt)}`];
+	return [...span, `模型 ${modelText(row)}`, `工具 ${row.toolCalls} 次`, `tokens 入 ${formatTokens(row.tokensIn)} / 出 ${formatTokens(row.tokensOut)}`].join(" · ");
 }
 
 /** @typedef {"idle" | "sending" | "delivered" | "maybe_lost" | "expired" | "rejected"} SayState */

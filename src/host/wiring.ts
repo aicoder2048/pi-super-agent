@@ -90,6 +90,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		log,
 		sourcePolicy: modules.sourcePolicy,
 		ruleAllows: modules.ruleAllows,
+		isMarketSource: modules.isMarketSource,
 		rulesFor: modules.rulesFor,
 		timers,
 		watching: watchedSources(modules, timers),

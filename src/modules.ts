@@ -11,6 +11,8 @@ export interface SourceFilter {
 	/** A source the host runs itself; kind must be a key of FEEDS. */
 	feed?: { kind: string; settings?: unknown };
 	mode?: "candidate" | "ignore";
+	/** Market quotes: a rule ticket opened from this source gets a 行情助手. */
+	market?: boolean;
 	ignore?: string[];
 }
 
@@ -131,6 +133,9 @@ export class Modules {
 		if (filter.mode === "ignore") return "ignore";
 		return (filter.ignore ?? []).some((p) => new RegExp(p).test(trigger.body)) ? "ignore" : "candidate";
 	};
+
+	isMarketSource = (source: string): boolean =>
+		this.modules.some((m) => (m.manifest.sources ?? []).some((s) => s.name === source && s.market === true));
 
 	timers(): TimerEntry[] {
 		return this.modules.flatMap((m) => (m.manifest.timers ?? []).map((t) => ({ ...t, id: `${m.name}/${t.id}`, source: t.source ?? m.name })));

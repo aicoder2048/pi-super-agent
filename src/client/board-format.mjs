@@ -3,6 +3,7 @@
 /** @typedef {import("../kernel/types.ts").DashboardRow} DashboardRow */
 /** @typedef {import("./protocol.ts").TranscriptMessage} TranscriptMessage */
 /** @typedef {import("../kernel/types.ts").InputKind} InputKind */
+/** @typedef {import("../kernel/types.ts").Helper} Helper */
 
 /** @type {Record<DashboardRow["stage"], string>} */
 export const STAGE_LABEL = {
@@ -29,6 +30,15 @@ export const INPUT_LABEL = {
 	recovery: "恢复说明",
 	bg_result: "后台命令结果",
 };
+
+/** @type {Record<Helper["role"], string>} */
+export const HELPER_ROLE_LABEL = { conversation: "对话助手", market: "行情助手", rule: "规则助手", watch: "观察助手" };
+
+/** @param {Helper} helper */
+export const helperRoleText = (helper) => `${HELPER_ROLE_LABEL[helper.role]} #${helper.seq}`;
+
+/** 「边牧 · 行情助手 #2」, or "" for a ticket the host has not named yet. @param {Helper | null} helper */
+export const helperFullName = (helper) => (helper ? `${helper.name} · ${helperRoleText(helper)}` : "");
 
 export const DEFAULT_ACK_TIMEOUT_MS = 5000;
 

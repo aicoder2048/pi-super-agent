@@ -38,6 +38,7 @@ export interface HostOptions {
 	config?: Partial<KernelConfig>;
 	sourcePolicy?: SourcePolicy;
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
+	isMarketSource?: (source: string) => boolean;
 	rulesFor?: (triggerSource: string) => string[];
 	timers?: TimerEntry[];
 	heartbeatMs?: number;
@@ -54,6 +55,7 @@ export interface HostOptions {
 // sun_path holds 104 bytes on macOS and 108 on Linux, including the terminating NUL.
 // setTimeout fires at once for a longer delay.
 const MAX_TIMER_MS = 2 ** 31 - 1;
+const CONVERSATION_LINES = 50;
 const SOCKET_PATH_MAX_BYTES = process.platform === "darwin" ? 103 : 107;
 
 function assertSocketPathFits(socketPath: string): void {
@@ -102,6 +104,7 @@ export class Host {
 			clock,
 			sourcePolicy: (trigger) => (trigger.source === WATCHDOG_SOURCE ? "notice" : (options.sourcePolicy?.(trigger) ?? "candidate")),
 			ruleAllows: options.ruleAllows,
+			isMarketSource: options.isMarketSource,
 			config: options.config,
 		});
 		const submit = (trigger: TriggerSubmission) => {
@@ -180,6 +183,7 @@ export class Host {
 			await host.#web?.close();
 			throw error;
 		}
+		host.kernel.nameUnnamedHelpers();
 		const recovered = host.kernel.recoverOnStartup();
 		host.#duty = { since: host.#clock.now(), resumed: recovered.length };
 		if (recovered.length) host.#log(`[host] 恢复 ${recovered.length} 个执行中的任务：${recovered.join(", ")}`);
@@ -219,16 +223,16 @@ export class Host {
 	}
 
 	snapshot() {
-		const { rows, today, duty } = this.#boardState();
+		const { rows, today, duty, helpers, routes } = this.#boardState();
 		const watching = this.#watching.map((w) => {
 			const problem = this.feeds.get(w.source)?.problem();
 			return problem ? { ...w, problem } : w;
 		});
-		return { conversation: this.kernel.conversation(50), board: rows, today, duty, watching };
+		return { conversation: this.kernel.conversation(CONVERSATION_LINES), board: rows, today, duty, helpers, routes, watching };
 	}
 
 	#boardState(): BoardState {
-		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty };
+		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES) };
 	}
 
 	#deliverReply(threadId: string, text: string, replyId: string, ticketId: string | null | undefined): void {

@@ -2,9 +2,10 @@
 
 import {
 	STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canSend, choicesInConversation, dutyLine, emptyView, emptyWatch,
-	helperTint, isStale, leftColumn, resolveTheme, restartNotice, sayCopy, sayOutcome, settleSay, settleSending, smallPrint, stopSentence, toggleTheme,
+	helperStrip, helperTint, isStale, leftColumn, lifecycleLine, resolveTheme, restartNotice, routeLine, sayCopy, sayOutcome, settleSay, settleSending, smallPrint, stopSentence,
+	toggleTheme,
 } from "./view.mjs";
-import { DEFAULT_ACK_TIMEOUT_MS, isLive } from "../client/board-format.mjs";
+import { DEFAULT_ACK_TIMEOUT_MS, helperFullName } from "../client/board-format.mjs";
 
 const STATUS_TEXT = {
 	connecting: "连接中…",
@@ -119,6 +120,27 @@ function mount(doc) {
 		if (choice.note) box.append(el("span", "note", choice.note));
 	};
 
+	// A message's route changes after it is drawn; an unchanged one is left alone so a focused line keeps focus.
+	const renderRoutes = () => {
+		for (const slot of /** @type {NodeListOf<HTMLElement>} */ (thread.querySelectorAll(".route-slot[data-line]"))) {
+			const route = routeLine(view, slot.dataset.line ?? "");
+			const shown = route ? `${route.ticketId ?? ""}|${route.text}` : "";
+			if (slot.dataset.shown === shown) continue;
+			slot.dataset.shown = shown;
+			if (!route) {
+				slot.replaceChildren();
+				continue;
+			}
+			const node = el(route.ticketId ? "button" : "span", "route", route.text);
+			if (route.ticketId) {
+				const { ticketId } = route;
+				/** @type {HTMLButtonElement} */ (node).type = "button";
+				node.addEventListener("click", () => watch(ticketId));
+			}
+			slot.replaceChildren(node);
+		}
+	};
+
 	const renderChoices = () => {
 		const placed = choicesInConversation(view, sending);
 		for (const box of thread.querySelectorAll(".choices[data-line]")) fillChoices(/** @type {HTMLElement} */ (box), placed.get(box.getAttribute("data-line") ?? ""));
@@ -132,7 +154,7 @@ function mount(doc) {
 		node.setAttribute("aria-current", String(watching?.watch.ticketId === card.id));
 		const head = el("div", "head");
 		head.append(helperBadge(card.id), el("div", "title", card.title));
-		node.append(head, el("div", "why", `${card.why} · ${card.stage}`), el("div", "latest", card.latest));
+		node.append(head, el("div", "by", card.helper), el("div", "why", `${card.why} · ${card.stage}`), el("div", "latest", card.latest));
 		if (card.choice) {
 			const box = el("div", "choices");
 			fillChoices(box, card.choice);
@@ -193,6 +215,37 @@ function mount(doc) {
 		);
 	};
 
+	/** @param {import("./view.mjs").HelperChip} chip */
+	const helperChip = (chip) => {
+		const node = el("button", "helper-chip");
+		node.type = "button";
+		node.dataset.id = chip.id;
+		node.append(el("span", "dot"), el("span", "name", chip.name), el("span", "role", chip.role), el("span", "meta"));
+		node.addEventListener("click", () => watch(chip.id));
+		return node;
+	};
+
+	// Chips tick every second; they are updated in place so a focused or half-clicked chip survives.
+	const renderHelpers = () => {
+		const strip = helperStrip(view, Date.now());
+		const box = $("helpers");
+		box.hidden = !strip.total && !strip.chips.length;
+		const shown = [...box.querySelectorAll(".helper-chip")].map((n) => /** @type {HTMLElement} */ (n).dataset.id).join();
+		if (shown !== strip.chips.map((c) => c.id).join() || !box.querySelector(".total")) {
+			box.replaceChildren(...strip.chips.map(helperChip), el("span", "total"));
+		}
+		for (const chip of strip.chips) {
+			const node = /** @type {HTMLElement} */ (box.querySelector(`.helper-chip[data-id="${chip.id}"]`));
+			const dot = /** @type {HTMLElement} */ (node.querySelector(".dot"));
+			dot.textContent = chip.mark;
+			dot.dataset.duty = chip.duty;
+			/** @type {HTMLElement} */ (node.querySelector(".meta")).textContent = `${chip.elapsed} · ${chip.tokens}`;
+			node.setAttribute("aria-current", String(watching?.watch.ticketId === chip.id));
+			node.setAttribute("aria-label", `${chip.name} · ${chip.role}，${chip.state}，用时 ${chip.elapsed}，${chip.tokens}`);
+		}
+		/** @type {HTMLElement} */ (box.querySelector(".total")).textContent = strip.total;
+	};
+
 	const renderConversation = () => {
 		const box = $("conversation");
 		const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
@@ -208,11 +261,16 @@ function mount(doc) {
 				item.append(avatar, said);
 			} else {
 				bubble.prepend(el("span", "sr", "你："));
-				item.append(bubble);
+				const said = el("div", "said");
+				const slot = el("div", "route-slot");
+				slot.dataset.line = line.id;
+				said.append(bubble, slot);
+				item.append(said);
 			}
 			thread.append(item);
 		}
 		rendered = view.lines.size;
+		renderRoutes();
 		renderChoices();
 		if (atBottom) box.scrollTop = box.scrollHeight;
 		settleUnconfirmed();
@@ -231,8 +289,10 @@ function mount(doc) {
 		const row = view.rows.find((r) => r.id === watching?.watch.ticketId);
 		$("how-badge").replaceChildren(...(row ? [helperBadge(row.id)] : []));
 		$("how-title").textContent = row?.title ?? "";
+		$("how-helper").textContent = helperFullName(row?.helper ?? null);
 		$("how-meta").textContent = row ? `${BASIS_PHRASE[row.basis]} · ${STAGE_PHRASE[row.stage]}` : "";
-		$("small-print").textContent = smallPrint(row, Date.now(), view.receivedAt);
+		$("how-life").textContent = lifecycleLine(row, Date.now(), view.receivedAt);
+		$("small-print").textContent = smallPrint(row);
 	};
 
 	const renderSteps = () => {
@@ -260,6 +320,7 @@ function mount(doc) {
 		left: () => {
 			renderLeft();
 			renderChoices();
+			renderHelpers();
 		},
 		header: renderHeader,
 	};
@@ -309,6 +370,7 @@ function mount(doc) {
 		};
 		watching = { watch: w, source };
 		renderLeft();
+		renderHelpers();
 		renderHow();
 		renderSteps();
 	};
@@ -394,7 +456,8 @@ function mount(doc) {
 	renderLeft();
 	renderSteps();
 	setInterval(() => {
-		if (watching && view.rows.some((r) => r.id === watching?.watch.ticketId && isLive(r))) renderHow();
+		renderHelpers();
+		if (watching) renderHow();
 	}, 1000);
 	setInterval(() => {
 		renderHeader();

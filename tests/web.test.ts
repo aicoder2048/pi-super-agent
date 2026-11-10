@@ -5,26 +5,29 @@ import http from "node:http";
 import { connect, createServer } from "node:net";
 import test, { mock, type TestContext } from "node:test";
 import type { HostToClient, TodayCounts } from "../src/client/protocol.ts";
-import type { DashboardRow } from "../src/kernel/types.ts";
+import type { DashboardRow, Routes } from "../src/kernel/types.ts";
 import { formatInputs } from "../src/host/workers.ts";
 import { INPUT_KINDS } from "../src/kernel/types.ts";
 import { ConfigError } from "../src/config-error.ts";
 import { WebGateway } from "../src/host/web.ts";
 import * as page from "../src/web/view.mjs";
 import { WATCHDOG_SOURCE } from "../src/watchdog/watchdog.ts";
-import { busyPort, freePort, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
+import { openStore } from "../src/kernel/store.ts";
+import { busyPort, freePort, ids, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
 		id: "tkt_abcd1234", title: "查天气", stage: "running", basis: "request", latestSummary: null, model: "openai-codex/gpt-6.1-sol",
-		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, question: null, stall: null, ...over,
+		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, question: null, stall: null,
+		helper: { name: "边牧", role: "conversation", seq: 1 }, workerState: "running", startedAt: 0, endedAt: null, ...over,
 	};
 }
 
 const zeroToday = (): TodayCounts => ({ byDisposition: { ignored: 0, delivered: 0, to_router: 0, opened_ticket: 0, handed_over: 0, router_ignored: 0 }, bySource: {} });
 const duty = { since: 0, resumed: 0 };
-const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, watching: [], ...over });
-const board = (rows: DashboardRow[], today = zeroToday()): HostToClient => ({ type: "board", rows, today, duty });
+const noHelpers = { count: 0, tokens: 0 };
+const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, helpers: noHelpers, watching: [], routes: {}, ...over });
+const board = (rows: DashboardRow[], today = zeroToday(), helpers = noHelpers, routes: Routes = {}): HostToClient => ({ type: "board", rows, today, duty, helpers, routes });
 const texts = (view: ReturnType<typeof page.emptyView>) => [...view.lines.values()].map((l) => `${l.who}:${l.text}`);
 const withRows = (rows: DashboardRow[], now = 0) => {
 	const view = page.emptyView();
@@ -60,7 +63,7 @@ test("页面：每种消息只报告它改动的区域", () => {
 	assert.deepEqual(page.applyMessage(view, snapshot(), 0), ["conversation", "left", "header"]);
 	assert.deepEqual(page.applyMessage(view, { type: "user", id: "trg_1", text: "你好", at: 1 }, 0), ["conversation"]);
 	assert.deepEqual(page.applyMessage(view, { type: "reply", replyId: "rpl_1", text: "在", at: 2 }, 0), ["conversation"]);
-	assert.deepEqual(page.applyMessage(view, board([]), 0), ["left", "header"]);
+	assert.deepEqual(page.applyMessage(view, board([]), 0), ["conversation", "left", "header"], "看板带着对话里每句话的去向");
 });
 
 test("页面：每个任务恰好进一个分组：待回复、待确认、受阻进待你处理，排队中、进行中、等待中进进行中，已完成和已停止进已完成", () => {
@@ -326,13 +329,89 @@ test("页面：历史替换步骤，重连再来一次结果不变；别的任�
 	assert.equal(w.steps.length, 1);
 });
 
-test("页面：右栏小字是唯一出现模型、用量、工具次数、用时和编号的地方，执行中的用时在本地累加", () => {
-	assert.equal(page.smallPrint(row({ fellBack: true }), 65_000, 0), "模型 gpt-6.1-sol（已回退） · 1.5k tokens · 工具调用 2 次 · 用时 1分10秒 · 编号 abcd");
-	assert.equal(page.smallPrint(row({ stage: "idle", model: null }), 65_000, 0), "模型 未启动 · 1.5k tokens · 工具调用 2 次 · 用时 5秒 · 编号 abcd");
-	assert.equal(page.smallPrint(undefined, 0, 0), "");
+test("页面：右栏小字只写编号；左栏卡片上看不到编号、模型和用量", () => {
+	assert.equal(page.smallPrint(row()), "编号 abcd");
+	assert.equal(page.smallPrint(undefined), "");
 	const left = page.leftColumn(withRows([row({ stage: "running", latestSummary: "x" })]), 0);
 	const shown = left.doing.map(({ id, ...visible }) => visible);
 	assert.doesNotMatch(JSON.stringify(shown), /gpt|tok|abcd/, "左栏卡片上看不到编号、模型和用量");
+});
+
+const at = (hhmm: string) => new Date(`2026-11-09T${hhmm}:00-05:00`).getTime();
+const NY = "America/New_York";
+
+test("页面：助手条每位在岗助手一枚小卡（●运行中 ◐空闲 ○排队），写名字、角色序号、用时和 token，开始后没结束的用时在本地累加；完成和停止的不上条；条尾写今日合计", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, board([
+		row({ id: "tkt_run", workerState: "running", elapsedMs: 5000 }),
+		row({ id: "tkt_idl", stage: "idle", workerState: "idle", helper: { name: "雪泥鸿爪", role: "market", seq: 2 }, tokensIn: 0, tokensOut: 0, elapsedMs: 60_000 }),
+		row({ id: "tkt_que", stage: "queued", workerState: "queued", helper: { name: "青檀", role: "watch", seq: 1 }, startedAt: null, elapsedMs: 0 }),
+		row({ id: "tkt_ask", stage: "awaiting_answer", workerState: "idle", helper: { name: "观澜", role: "rule", seq: 3 } }),
+		row({ id: "tkt_end", stage: "closed", workerState: "idle", endedAt: 9000, helper: { name: "知微", role: "rule", seq: 1 } }),
+		row({ id: "tkt_stp", stage: "stopped", workerState: "running", endedAt: 9000, helper: { name: "拾遗", role: "rule", seq: 2 } }),
+	], zeroToday(), { count: 6, tokens: 12_345 }), 1000);
+	const strip = page.helperStrip(view, 3000);
+	assert.deepEqual(strip.chips.map(({ id, ...shown }) => shown), [
+		{ duty: "running", mark: "●", state: "运行中", name: "边牧", role: "对话助手 #1", elapsed: "7秒", tokens: "1.5k tokens" },
+		{ duty: "idle", mark: "◐", state: "空闲", name: "雪泥鸿爪", role: "行情助手 #2", elapsed: "1分2秒", tokens: "0 tokens" },
+		{ duty: "queued", mark: "○", state: "排队", name: "青檀", role: "观察助手 #1", elapsed: "0秒", tokens: "1.5k tokens" },
+		{ duty: "idle", mark: "◐", state: "空闲", name: "观澜", role: "规则助手 #3", elapsed: "7秒", tokens: "1.5k tokens" },
+	]);
+	assert.deepEqual(strip.chips.map((c) => c.id), ["tkt_run", "tkt_idl", "tkt_que", "tkt_ask"]);
+	assert.equal(strip.total, "今日 6 位 · 12.3k tokens");
+});
+
+test("页面：你的每句话下面写去向，开新任务和交给已有任务的写标题和助手全名、点开那个任务；处理中、直接回答、无需处理只写一句", () => {
+	const view = page.emptyView();
+	const news = row({ id: "tkt_news", title: "NVDA 新闻", helper: { name: "边牧", role: "conversation", seq: 2 } });
+	page.applyMessage(view, snapshot({
+		board: [news],
+		routes: {
+			trg_open: { kind: "opened_ticket", ticketId: "tkt_news" },
+			trg_hand: { kind: "handed_over", ticketId: "tkt_news" },
+			trg_ans: { kind: "answered" },
+			trg_wait: { kind: "pending" },
+			trg_skip: { kind: "router_ignored" },
+			trg_gone: { kind: "handed_over", ticketId: "tkt_missing" },
+		},
+	}), 0);
+	assert.deepEqual(page.routeLine(view, "trg_open"), { text: "已开新任务「NVDA 新闻」 · 边牧 · 对话助手 #2", ticketId: "tkt_news" });
+	assert.deepEqual(page.routeLine(view, "trg_hand"), { text: "已交给 边牧 · 对话助手 #2（NVDA 新闻）", ticketId: "tkt_news" });
+	assert.deepEqual(page.routeLine(view, "trg_ans"), { text: "幕僚长直接回答" });
+	assert.deepEqual(page.routeLine(view, "trg_wait"), { text: "幕僚长处理中" });
+	assert.deepEqual(page.routeLine(view, "trg_skip"), { text: "幕僚长判断无需处理" });
+	assert.deepEqual(page.routeLine(view, "trg_gone"), { text: "已交给助手", ticketId: "tkt_missing" }, "看板上没有那个任务时不写标题");
+	assert.equal(page.routeLine(view, "trg_unknown"), null);
+});
+
+test("页面：看板推送带来新的去向，处理中的那句改写成已交给，不用刷新", () => {
+	const view = page.emptyView();
+	const news = row({ id: "tkt_news", title: "NVDA 新闻" });
+	page.applyMessage(view, snapshot({ conversation: [{ id: "trg_2", who: "user", text: "看下听证会", at: 1 }], board: [news], routes: { trg_2: { kind: "pending" } } }), 0);
+	assert.equal(page.routeLine(view, "trg_2")?.text, "幕僚长处理中");
+	const panes = page.applyMessage(view, board([news], zeroToday(), noHelpers, { trg_2: { kind: "handed_over", ticketId: "tkt_news" } }), 0);
+	assert.ok(panes.includes("conversation"), "看板推送也要重画对话里的去向");
+	assert.equal(page.routeLine(view, "trg_2")?.text, "已交给 边牧 · 对话助手 #1（NVDA 新闻）");
+});
+
+test("页面：没有在岗助手时助手条只有今日合计；还没收到看板时为空", () => {
+	assert.deepEqual(page.helperStrip(withRows([row({ stage: "closed", endedAt: 1 })]), 0), { chips: [], total: "今日 0 位 · 0 tokens" });
+	assert.deepEqual(page.helperStrip(page.emptyView(), 0), { chips: [], total: "" });
+});
+
+test("页面：任务卡片写助手全名；旧任务还没有助手时不写", () => {
+	const left = page.leftColumn(withRows([row({ id: "tkt_a" }), row({ id: "tkt_b", helper: null })]), 0);
+	assert.deepEqual(left.doing.map((c) => c.helper), ["边牧 · 对话助手 #1", ""]);
+});
+
+test("页面：执行过程头部的生命周期写开始、结束或进行中、用时、模型（回退时注明）、工具次数和 token 入/出", () => {
+	const ended = row({ stage: "closed", startedAt: at("10:02"), endedAt: at("10:07"), elapsedMs: 300_000 });
+	assert.equal(page.lifecycleLine(ended, 0, 0, NY), "开始 10:02 · 结束 10:07 · 用时 5分0秒 · 模型 gpt-6.1-sol · 工具 2 次 · tokens 入 1.2k / 出 300");
+	const live = row({ startedAt: at("09:58"), fellBack: true, elapsedMs: 60_000 });
+	assert.equal(page.lifecycleLine(live, 2000, 0, NY), "开始 09:58 · 进行中 · 用时 1分2秒 · 模型 gpt-6.1-sol（已回退） · 工具 2 次 · tokens 入 1.2k / 出 300");
+	const waiting = row({ stage: "queued", workerState: "queued", startedAt: null, model: null, toolCalls: 0, tokensIn: 0, tokensOut: 0, elapsedMs: 0 });
+	assert.equal(page.lifecycleLine(waiting, 2000, 0, NY), "尚未开始 · 模型 未启动 · 工具 0 次 · tokens 入 0 / 出 0");
+	assert.equal(page.lifecycleLine(undefined, 0, 0, NY), "");
 });
 
 test("页面：200 是已发送，401 是链接失效，其他状态是发送失败，超时和网络错误是未收到确认", () => {
@@ -616,6 +695,27 @@ test("网关：SSE 第一条是快照，之后转发 user、reply、board，和 
 	await until(() => ofType(stream.got, "board").some((m) => m.rows.some((r) => r.title === "查天气")), "board");
 });
 
+test("网关：快照和看板推送都带上对话里每句话的去向，交给已有任务后不刷新也能看到", async (t) => {
+	let first: string | undefined;
+	const brain = (cards: string[]) => {
+		const card = cards[0] ?? "";
+		if (!card.startsWith("[对话]")) return [];
+		if (!first) return openOnConversation(card);
+		return [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId: ids(card, "trg"), ticketId: first }] } }];
+	};
+	const { host, events } = await webHost(t, brain);
+	const opened = host.say("查 NVDA 新闻");
+	await host.settled();
+	first = host.kernel.listTickets()[0].id;
+	const stream = events();
+	await until(() => stream.got.length > 0, "快照");
+	const [snap] = ofType(stream.got.slice(0, 1), "snapshot");
+	assert.deepEqual(snap.routes[opened], { kind: "opened_ticket", ticketId: first });
+	const handed = host.say("看下听证会");
+	await until(() => ofType(stream.got, "board").some((m) => m.routes[handed]?.kind === "handed_over"), "看板推送带上已交给");
+	assert.deepEqual(ofType(stream.got, "board").at(-1)!.routes[handed], { kind: "handed_over", ticketId: first });
+});
+
 test("网关：两个 SSE 连接收到相同的消息", async (t) => {
 	const { host, events } = await webHost(t);
 	const a = events();
@@ -729,6 +829,42 @@ test("宿主：快照和 board 帧带今天的计数、值班时间和在盯着�
 	assert.deepEqual(snap.watching, watching);
 	const settled = (rows: typeof snap.board) => rows.map(({ elapsedMs, ...rest }) => rest);
 	assert.deepEqual({ rows: settled(snap.board), today: snap.today, duty: snap.duty }, { rows: settled(frame.rows), today: frame.today, duty: frame.duty });
+});
+
+test("宿主：快照和 board 帧带今日助手数和 token 合计；行情来源的规则任务是行情助手", async (t) => {
+	const brain = (cards: string[]) =>
+		cards.flatMap((card) => {
+			const triggerId = card.match(/trg_[\w-]+/)?.[0];
+			if (card.startsWith("[候选触发]")) return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "rule", ruleId: "toy-market/big-move", triggerId, title: "核实 TOYX", brief: "核实" }] } }];
+			return card.startsWith("[对话]") ? openOnConversation(card) : [];
+		});
+	const { host } = await startHost(brain, (w) => {
+		w.report({ status: "progress", summary: "在看" });
+		w.settle();
+	}, { isMarketSource: (s) => s === "toy-market" });
+	t.after(() => host.stop());
+	host.say("查天气");
+	host.kernel.submitTrigger({ source: "toy-market", externalId: "q1", threads: [{ id: "thr_toy-market:TOYX" }], sender: "feed", body: "TOYX 涨跌 -5.2%", occurredAt: Date.now() });
+	await until(() => host.snapshot().board.filter((r) => r.latestSummary === "在看").length === 2, "两个任务都汇报");
+	for (const r of host.snapshot().board) host.kernel.recordUsage(r.id, { provider: "p", tokensIn: 1000, tokensOut: 234 });
+	const snap = host.snapshot();
+	assert.deepEqual(snap.helpers, { count: 2, tokens: 2468 });
+	assert.deepEqual(snap.board.map((r) => r.helper?.role).sort(), ["conversation", "market"]);
+});
+
+test("宿主：启动时给旧状态库里没有助手的任务补上名字", async (t) => {
+	const stateDir = tempStateDir();
+	const brain = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
+	const first = await startHost(brain, (w) => w.settle(), { stateDir });
+	first.host.say("查天气");
+	await until(() => first.host.snapshot().board.length === 1, "任务");
+	await first.host.stop();
+	const db = openStore(join(stateDir, "state.db"));
+	db.exec("UPDATE tickets SET helper_name = NULL, helper_role = NULL, helper_seq = NULL");
+	db.close();
+	const again = await startHost(brain, (w) => w.settle(), { stateDir });
+	t.after(() => again.host.stop());
+	assert.equal(again.host.snapshot().board[0].helper?.role, "conversation");
 });
 
 test("宿主：过了本地午夜即使没有任何动静，也推一帧看板，今日计数归零", async (t) => {

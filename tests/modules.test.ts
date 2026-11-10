@@ -25,6 +25,11 @@ test("程序层过滤：小于 1% 的波动在调用模型前被筛掉", () => {
 	assert.equal(sourcePolicy({ ...quote("anything"), source: "other" }), "candidate");
 });
 
+test("行情来源：模块里标了 market 的来源（玩具行情、美股行情）是，其他来源不是", () => {
+	const { isMarketSource } = Modules.load([repoModules]);
+	assert.deepEqual(["toy-market", "us-market", "mail", "conversation"].map(isMarketSource), [true, true, false, false]);
+});
+
 test("规则文件按二级标题切分，空规则不算", () => {
 	assert.deepEqual(parseRules("user", "# 标题\n## a\n第一条\n\n## b\n\n## c\n第三条"), [
 		{ id: "user/a", text: "第一条" },

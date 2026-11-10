@@ -6,6 +6,7 @@ import {
 	CONVERSATION_SOURCE,
 	CONVERSATION_THREAD_ID,
 	DISPOSITIONS,
+	HELPER_ROLES,
 	INPUT_KINDS,
 	REPORT_STATUSES,
 	WORKER_STATES,
@@ -65,6 +66,9 @@ CREATE TABLE IF NOT EXISTS tickets (
 	tool_calls INTEGER NOT NULL DEFAULT 0,
 	tokens_in INTEGER NOT NULL DEFAULT 0,
 	tokens_out INTEGER NOT NULL DEFAULT 0,
+	helper_name TEXT,
+	helper_role TEXT ${oneOf("helper_role", HELPER_ROLES)},
+	helper_seq INTEGER,
 	CHECK (basis <> 'rule' OR rule_id IS NOT NULL)
 );
 
@@ -172,6 +176,12 @@ export function openStore(path: string): DatabaseSync {
 	db.exec("CREATE INDEX IF NOT EXISTS reply_receipts_cause ON reply_receipts(cause)");
 	const reportColumns = db.prepare("PRAGMA table_info(reports)").all().map((c) => (c as { name: string }).name);
 	if (!reportColumns.includes("options")) db.exec("ALTER TABLE reports ADD COLUMN options TEXT NOT NULL DEFAULT '[]'");
+	const ticketColumns = db.prepare("PRAGMA table_info(tickets)").all().map((c) => (c as { name: string }).name);
+	if (!ticketColumns.includes("helper_name")) {
+		db.exec(`ALTER TABLE tickets ADD COLUMN helper_name TEXT;
+			ALTER TABLE tickets ADD COLUMN helper_role TEXT ${oneOf("helper_role", HELPER_ROLES)};
+			ALTER TABLE tickets ADD COLUMN helper_seq INTEGER`);
+	}
 	return db;
 }
 

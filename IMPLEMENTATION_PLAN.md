@@ -35,6 +35,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
   - [ ] W1 is first. It branches from `main`.
   - [ ] W2 after W1, based on `psa/web-gateway`.
   - [ ] W3 after W2.
+  - [ ] W5 after W4, stacked on `psa/e2e`. X1 branches from `main`.
   - [ ] W4 after W2 and the M1/F1 PRs, stacked on `psa/stable-token` (#24). W3 moved after W4, because it changes the page and waits for the user's review; W4 does not depend on it. 见决策记录 w4-order。
 - [ ] Hold the file boundaries. W1 to W3 touch only `src/host/`, `src/web/`, `src/client/board-format.mjs`, `src/client/board.ts`, `tests/`, `justfile`, `docs/`. W1 起加入 `src/client/` 两个文件，让 TUI 和网页共用看板格式，见决策记录。 W4 adds `package.json`, `package-lock.json`, `.gitignore`, `tests/e2e/`, `demos/`, and `justfile`.
 - [ ] Hold the review gate. W1, W2, W3 change an interaction. They wait for the operator's review in chat with screenshots and a video before merge. W4 changes no interaction.
@@ -302,6 +303,126 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [ ] Root's clean verdict at the exact head SHA.
 - [ ] Bugbot triage done.
 - [ ] Rebased onto current trunk after the verdict, patch-id unchanged.
+- [ ] 使用者合并。
+
+## Show the helpers working, and fill the window (W5)
+
+**Depends on.** W4 (stacked on `psa/e2e`; the new page checks run in `just e2e`).
+
+**Why.** 使用者 2026-11-09 试用后指出：看不到有几个助手在工作，界面上看不出助手存在过（起止时间、名字、token 用量、当前状态）；页面底部有一条空白。内核早已记录每个任务的 `startedAt`、`closedAt`/`stoppedAt`、`workerState`、`model`、`fellBack`、`toolCalls`、`tokensIn`/`tokensOut`，看板消息也带着大部分字段，只是页面没显示。
+
+**Decisions (使用者选定).**
+
+- [ ] 命名 = 角色名 + 个性化名字，显示为「边牧 · 行情助手 #2」。角色按任务来源：使用者的话 → 对话助手；行情来源（us-market、toy-market 这类 feed）触发的规则 → 行情助手；其他规则 → 规则助手；幕僚长主动发现 → 观察助手。`#N` 按角色、按纽约日期从 1 递增。名字取自约 60 个手选的 2 到 4 字词（如 边牧、弈境、青檀、观澜、知微、拾遗、远山、听松、墨衡、照夜、栖云、砚秋、闻溪），有品味、不用「小林」式人名；同一时刻在岗的助手不重名；名字、角色和序号在建任务时定下并存进状态库，重启不变。
+- [ ] 位置 = 页头下方一条助手条：每个在岗助手一枚小卡（●运行中 / ◐空闲 / ○排队），写名字、角色序号、已用时、token；点它在右栏打开该任务的执行过程。条尾写「今日 N 位 · X tokens」。没有在岗助手时只留今日合计。
+
+**Files.**
+
+- [x] Edit `src/kernel/kernel.ts`, `src/kernel/types.ts` (tickets 加 helper_name、helper_role、helper_seq 三列，迁移旧库；DashboardRow 带上它们和 `startedAt`、`endedAt`、`workerState`)。
+- [x] Create `src/kernel/helper-names.ts`（名字池与分配，纯函数）。
+- [x] Edit `src/client/protocol.ts`, `src/host/host.ts`（看板带今日助手合计）。
+- [x] Edit `src/web/index.html`, `src/web/app.mjs`, `src/web/view.mjs`, `src/client/board-format.mjs`（TUI 卡片也写助手名）。
+- [x] Edit `docs/web-client/copy.md`（助手条、执行过程头部的用词）。
+- [x] Edit `tests/kernel*.test.ts`, `tests/web.test.ts`, `tests/e2e/*.e2e.ts`。
+
+**Build.**
+
+- [x] 内核：建任务时分配角色、当日序号和名字；同一时刻在岗（未关闭且 worker 不是 none）的助手不重名，池用完时名字后加「·二」这类后缀；旧库迁移后已有任务按创建顺序补齐。
+- [x] 看板：每行带助手名、角色、序号、`workerState`、`startedAt`、结束时间（closedAt 或 stoppedAt）、token；整体带「今日助手数、今日 token 合计」。
+- [x] 页面：页头下助手条；任务卡片和执行过程头部写助手全名；执行过程头部加一行生命周期「开始 HH:MM · 结束 HH:MM 或 进行中 · 用时 · 模型（回退时注明）· 工具 N 次 · token 入/出」。
+- [x] 页面高度：三栏恰好占满窗口，各栏自己滚动，整页不滚动、底部不留白（实测根因：对话气泡里读屏用的 `.sr` 绝对定位、没有定位祖先，落在窗口下方撑高整页；网格行高不是原因，见 decisions.tsv）。
+- [x] 文案进 `docs/web-client/copy.md`，主语仍只用 幕僚长、助手、你。
+- [x] 对话里你的每句话下面一行去向，取自这条触发记下的去向（triggers 表的 disposition 和 disposition_detail）：开了新任务写「已开新任务「标题」 · 助手全名」，交给已有任务写「已交给 助手全名（标题）」，幕僚长只回复没开任务写「幕僚长直接回答」，还在处理写「幕僚长处理中」，幕僚长判断不用处理写「幕僚长判断无需处理」。点这一行在右栏打开那个任务的执行过程。宿主在快照和每次看板推送里带上最近对话的去向，页面不刷新也会更新。原因：使用者 2026-11-09 发现幕僚长把「看下黄仁勋听证会的新闻」交给已有的 NVDA 新闻任务时，对话里没有任何回应，开新任务时却有。
+- [x] 助手条小卡只留状态点（● ◐ ○），去掉扳手图标。
+
+**You see.**
+
+- [ ] 让幕僚长同时办两件事，页头出现两枚小卡，各写名字、角色序号、用时和 token；完成后小卡消失，「今日 N 位」加一；点小卡右栏打开对应执行过程，头部写生命周期。窗口拉高拉低，页面都不出现整页滚动和底部空白。
+
+**Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] 名字分配：确定性、在岗不重名、池用完加后缀、序号按角色按纽约日期递增、迁移补齐。看板字段。view.mjs 渲染助手条和生命周期行。e2e：两个任务时出现两枚小卡、点小卡打开执行过程、`document.scrollingElement.scrollHeight === innerHeight`（长执行过程下）。
+
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe, as one Playwright script on a real host with real openai-codex models.
+
+- [ ] Lane 1. 同时提两件事。Save `w5-two-helpers.png`. Pass when 页头两枚小卡，名字不同，状态和用时在走。
+- [ ] Lane 2. 行情触发开任务（toy-feed）。Save `w5-market-helper.png`. Pass when 角色写「行情助手」。
+- [ ] Lane 3. 任务完成。Save `w5-done.png`. Pass when 小卡消失，今日合计加一，token 合计等于各任务之和。
+- [ ] Lane 4. 点小卡。Save `w5-open-how.png`. Pass when 右栏打开该任务，生命周期行完整。
+- [ ] Lane 5. 宿主重启。Save `w5-restart.png`. Pass when 名字、角色、序号不变。
+- [ ] Lane 6. 旧状态库（W4 之前的 state.db 副本）启动。Save `w5-migrate.png`. Pass when 迁移成功，旧任务有名字。
+- [ ] Lane 7. 长执行过程，窗口 1440×900 和 1440×1400。Save `w5-full-height.png`. Pass when 整页不滚动、无底部空白。
+- [ ] Lane 8. 窄屏 390 宽。Save `w5-narrow.png`. Pass when 助手条换行或横向滚动，不撑破页面。
+- [ ] Lane 9. 深色和浅色主题。Save `w5-themes.png`. Pass when 两套主题对比度足够。
+- [ ] Lane 10. 九个在岗助手（maxWorkers 调大）。Save `w5-many.png`. Pass when 名字不重复，助手条不溢出页头。
+
+**Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] Metric. 50 个任务时看板消息的字节数和页面渲染一次看板的耗时。
+- [ ] Probe. trunk 和 head 各量 5 次。
+- [ ] Baseline. Record the trunk median first.
+- [ ] Rule. head 中位数比 trunk 多 20% 以上算失败。
+
+**Review gate.** The operator reviews before merge.
+
+- [ ] Copy lane 1, 4, 7 screenshots into `docs/web-client/media/w5-review-<slug>.png`.
+- [ ] Record a 30 to 60 second video of two helpers working and finishing. Keep it local as webm, as in W1.
+- [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
+
+**Merge.**
+
+- [ ] 使用者合并。
+
+## Stop cleanly on Ctrl+C (X1)
+
+**Depends on.** main（独立小 PR）。
+
+**Why.** 使用者 2026-11-09 报告：`just host` 按 Ctrl+C 后只看到「收到 SIGINT，正在停止」和 just 的 `error: interrupted by SIGINT`，看不出是否停好。代码里宿主会停止并以 0 退出，但没有「已停止」一行；Worker（`pi --mode rpc`）和宿主同在终端的前台进程组，Ctrl+C 会直接打到 Worker，可能在宿主有序停止前就把它杀掉，任务被记成「Worker 意外退出」。另有 Pi 恢复会话时打印的 `Warning: No project session found…` 噪音。
+
+**Files.**
+
+- [ ] Edit `src/host/pi-worker.ts`、`src/host/main.ts`、`src/watchdog/main.ts`（如需要）、`justfile`、`tests/host-main.test.ts`、`tests/pi-worker*.test.ts`。
+
+**Build.**
+
+- [ ] 先写会失败的测试复现：给宿主进程组发 SIGINT（模拟终端），断言 Worker 不是被信号直接杀死、任务状态是停止而不是失败、宿主打印「已停止」并以 0 退出。
+- [ ] Worker 放进自己的进程组（或忽略终端 SIGINT），只由宿主停止。
+- [ ] 停止完成后打印「已停止」；第二次 Ctrl+C 立即退出并说明。
+- [ ] `just host`、`just watchdog` 按 Ctrl+C 不再出现 just 的 error 行（若 just 本身无法避免，记录原因和替代命令）。
+- [ ] 不再把 Pi 的 `No project session found` 警告转给使用者。
+
+**You see.**
+
+- [ ] `just host` 有一个任务在跑时按 Ctrl+C：打印「收到 SIGINT，正在停止」和「已停止」，回到提示符，没有 error 行。
+
+**Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] 进程组 SIGINT 复现测试先红后绿；全量测试通过。
+
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+
+- [ ] Lane 1. `just host` 空闲时 Ctrl+C。Save `x1-idle.png`. Pass when 「已停止」、退出码 0、无 error 行。
+- [ ] Lane 2. 有任务在跑时 Ctrl+C。Save `x1-busy.png`. Pass when 任务记为停止或可恢复，不是失败。
+- [ ] Lane 3. 停止后再启动。Save `x1-resume.png`. Pass when 被打断的任务恢复继续。
+- [ ] Lane 4. 连按两次 Ctrl+C。Save `x1-double.png`. Pass when 立即退出并说明，无残留进程。
+- [ ] Lane 5. `just watchdog` 下 Ctrl+C。Save `x1-watchdog.png`. Pass when Watchdog 和宿主都停，无残留。
+- [ ] Lane 6. SIGTERM（kill）。Save `x1-sigterm.png`. Pass when 同 lane 2。
+- [ ] Lane 7. 停止时 Worker 正在跑后台命令。Save `x1-bg.png`. Pass when 后台命令被停掉，无残留。
+- [ ] Lane 8. 检查进程。Save `x1-procs.png`. Pass when 没有宿主、Worker、pi 残留进程。
+- [ ] Lane 9. 日志。Save `x1-log.png`. Pass when 没有 `No project session found` 警告。
+- [ ] Lane 10. `just client` 连着时宿主 Ctrl+C。Save `x1-client.png`. Pass when 客户端说明宿主已停止，不崩。
+
+**Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] Metric. 从 Ctrl+C 到宿主退出的耗时。
+- [ ] Probe. 有一个任务在跑，量 5 次。
+- [ ] Baseline. Record the trunk median first.
+- [ ] Rule. head 中位数超过 5 秒算失败。
+
+**Review gate.** None. X1 does not change the page.
+
+**Merge.**
+
 - [ ] 使用者合并。
 
 ## Close the program
