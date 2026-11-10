@@ -57,7 +57,7 @@
 - 能用 `write`、`edit` 或 `bash` 的算写代码，最多 `dispatchCodingTimeoutSeconds`（默认 3600 秒，即 60 分钟）。
 - 其余最多 `dispatchTimeoutSeconds`（默认 900 秒，即 15 分钟）。推断任务里成员只读，所以都按这一档。
 
-排队对谁都按 `dispatchTimeoutSeconds` 限时。两个时限都必须大于 0、不超过 3600 秒。超时的派活写明超过了哪个时限。
+排队对谁都按 `dispatchTimeoutSeconds` 限时。两个时限都必须不小于 1 秒、不超过 3600 秒。超时的派活写明超过了哪个时限。
 
 ## 成员干活时看得见进展
 

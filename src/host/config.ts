@@ -31,6 +31,7 @@ export interface HostConfig {
 }
 
 const STUCK_MINUTES_MAX = 1440;
+const DISPATCH_TIMEOUT_MIN = 1;
 const DISPATCH_TIMEOUT_MAX = 3600;
 const DISPATCH_STALL_MIN = 30;
 
@@ -66,8 +67,8 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	if (secretsFile && !existsSync(secretsFile)) throw new ConfigError(`${file}：secretsFile 指向的 ${secretsFile} 不存在`);
 	const seconds = (key: string, fallback: number): number => {
 		const value = raw[key] === undefined ? fallback : raw[key];
-		if (typeof value !== "number" || !(value > 0 && value <= DISPATCH_TIMEOUT_MAX)) {
-			throw new ConfigError(`${file}：${key}（${JSON.stringify(value)}）必须是大于 0、不超过 ${DISPATCH_TIMEOUT_MAX} 的秒数`);
+		if (typeof value !== "number" || !(value >= DISPATCH_TIMEOUT_MIN && value <= DISPATCH_TIMEOUT_MAX)) {
+			throw new ConfigError(`${file}：${key}（${JSON.stringify(value)}）必须是不小于 ${DISPATCH_TIMEOUT_MIN}、不超过 ${DISPATCH_TIMEOUT_MAX} 的秒数`);
 		}
 		return value;
 	};
@@ -76,7 +77,11 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	const longestDispatch = Math.max(dispatchTimeoutSeconds, dispatchCodingTimeoutSeconds);
 	const dispatchStallSeconds = raw.dispatchStallSeconds === undefined ? Math.min(180, longestDispatch) : raw.dispatchStallSeconds;
 	if (raw.dispatchStallSeconds !== undefined && (typeof dispatchStallSeconds !== "number" || !(dispatchStallSeconds >= DISPATCH_STALL_MIN && dispatchStallSeconds <= longestDispatch))) {
-		throw new ConfigError(`${file}：dispatchStallSeconds（${JSON.stringify(dispatchStallSeconds)}）必须是 ${DISPATCH_STALL_MIN} 到 ${longestDispatch} 之间的秒数：不短于 ${DISPATCH_STALL_MIN} 秒，不长于最长的派活时限`);
+		const shown = `${file}：dispatchStallSeconds（${JSON.stringify(dispatchStallSeconds)}）`;
+		if (longestDispatch < DISPATCH_STALL_MIN) {
+			throw new ConfigError(`${shown}没有可写的值：最长的派活时限现在是 ${longestDispatch} 秒，而它必须不短于 ${DISPATCH_STALL_MIN} 秒、不长于最长的派活时限。把 dispatchTimeoutSeconds 或 dispatchCodingTimeoutSeconds 调到 ${DISPATCH_STALL_MIN} 秒以上，或者去掉 dispatchStallSeconds`);
+		}
+		throw new ConfigError(`${shown}必须是 ${DISPATCH_STALL_MIN} 到 ${longestDispatch} 之间的秒数：不短于 ${DISPATCH_STALL_MIN} 秒，不长于最长的派活时限`);
 	}
 	const maxConcurrentExperts = raw.maxConcurrentExperts === undefined ? 4 : raw.maxConcurrentExperts;
 	if (!Number.isInteger(maxConcurrentExperts) || maxConcurrentExperts < 1 || maxConcurrentExperts > 16) {
