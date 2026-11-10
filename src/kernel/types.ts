@@ -227,6 +227,9 @@ export interface PendingQuestion {
 	spoke: boolean;
 }
 
+/** The host's own question about the member cap. `reportId` is its id on the answer wire, never a report's. */
+export type CapQuestion = Pick<PendingQuestion, "reportId" | "text" | "options" | "askedAt">;
+
 /**
  * sent: the Router has not finished with the click yet. handed_over: the asking task got it.
  * dropped: the Router ignored it or ended its turn without handing it over, so the options are open again.
