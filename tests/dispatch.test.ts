@@ -7,7 +7,7 @@ import { HostConnection } from "../src/client/connection.ts";
 import type { TeamBook } from "../src/kernel/types.ts";
 import { ModelSelector } from "../src/model-selector.ts";
 import type { Member } from "../src/teams.ts";
-import { ids, startHost, until, type Brain, type FakeWorker } from "./helpers/fakes.ts";
+import { ids, startHost, until, type Brain, type FakeSpawner, type FakeWorker } from "./helpers/fakes.ts";
 
 const never = () => new AbortController().signal;
 const tick = (ms = 20) => new Promise((done) => setTimeout(done, ms));
@@ -154,7 +154,7 @@ function openOn(team: string): Brain {
 
 type Runner = (run: MemberRun) => Promise<string>;
 type Call = { agent: string; task: string; callId?: string };
-interface Options { team?: string; timeoutMs?: number; codingTimeoutMs?: number; stallMs?: number; maxConcurrent?: number; selector?: ModelSelector; fallbackDailyTokens?: number; say?: string }
+interface Options { team?: string; timeoutMs?: number; codingTimeoutMs?: number; stallMs?: number; beforeSay?: (spawner: FakeSpawner) => void; maxConcurrent?: number; selector?: ModelSelector; fallbackDailyTokens?: number; say?: string }
 
 const newSelector = (now = () => Date.now()) =>
 	new ModelSelector({ primary: { provider: "openai-codex", id: "gpt-6.1-sol" }, fallback: { provider: "openai-codex", id: "gpt-fallback" }, probeEveryMs: 60_000, clock: { now } });
@@ -176,6 +176,7 @@ async function dispatching(t: TestContext, runner: Runner, calls: Call[], option
 	});
 	t.after(() => started.host.stop());
 	started.spawner.runner = runner;
+	options.beforeSay?.(started.spawner);
 	started.host.say(options.say ?? "NVDA 今天为什么跌");
 	await until(() => helper !== undefined, "助手开始工作");
 	await new Promise((done) => setImmediate(done));
@@ -591,6 +592,57 @@ test("结束一个任务的派活可以调两次：两次都等到成员进程�
 	assert.deepEqual(desk.live().tkt_1.map((d) => [d.callId, d.state]), [["c2", "running"]], "停完之后的新派活不受上一次停止影响");
 	await desk.end("tkt_1");
 	assert.equal((await again).details.state, "stopped");
+});
+
+test("任务正在停的时候发来的派活被拒绝，不起成员进程", async (t) => {
+	let helperMayExit!: () => void;
+	const gate = new Promise<void>((done) => (helperMayExit = done));
+	let ran = 0;
+	const { host, helper, ticketId } = await dispatching(t, async () => (ran++, "答"), [], {
+		beforeSay: (spawner) => {
+			const spawn = spawner.spawn.bind(spawner);
+			spawner.spawn = async (spec, events) => {
+				const handle = await spawn(spec, events);
+				return { isStreaming: handle.isStreaming, setModel: handle.setModel, deliver: handle.deliver, get model() { return handle.model; }, stop: () => gate.then(() => handle.stop()) };
+			};
+		},
+	});
+	const stopping = host.workers.stop(ticketId());
+	try {
+		assert.throws(() => helper().request("worker.dispatch", { ...two[0], callId: "late" }), /任务已停止/);
+	} finally {
+		helperMayExit();
+	}
+	await stopping;
+	assert.equal(ran, 0);
+});
+
+test("同名成员在两个任务里互不相让：各自的任务里同时在跑", async (t) => {
+	const helpers: FakeWorker[] = [];
+	const perMessage: Brain = (cards) => cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg"), title: card.includes("甲") ? "甲" : "乙", brief: "b", team: "看盘队" }] } }] : []));
+	const { host, spawner } = await startHost(perMessage, (w) => void helpers.push(w), { teams: TEAMS, dispatch: { crewOf, timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4 } });
+	t.after(() => host.stop());
+	const running = new Set<string>();
+	let most = 0;
+	const gates: (() => void)[] = [];
+	spawner.runner = async (run) => {
+		running.add(run.ticketId);
+		most = Math.max(most, running.size);
+		await new Promise<void>((done, fail) => {
+			gates.push(done);
+			run.signal.addEventListener("abort", () => fail(run.signal.reason));
+		});
+		running.delete(run.ticketId);
+		return "答";
+	};
+	host.say("甲");
+	host.say("乙");
+	await until(() => helpers.length === 2, "两个任务的助手都在运行");
+	const results = helpers.map((w) => w.request("worker.dispatch", { ...two[1], callId: "c1" }) as Promise<DispatchResult>);
+	await until(() => gates.length === 2, "两个任务里的新闻研究员同时在跑", 1000);
+	assert.equal(most, 2);
+	for (const open of gates) open();
+	assert.deepEqual((await Promise.all(results)).map((r) => r.details.state), ["done", "done"]);
 });
 
 test("宿主停止：在跑的成员全部中止", async (t) => {

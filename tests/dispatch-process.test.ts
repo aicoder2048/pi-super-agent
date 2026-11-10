@@ -212,3 +212,13 @@ test("成员自己说的话和工具结果逐条交给宿主，派给它的那�
 	await run(NEWS, "t");
 	assert.deepEqual(messages.map((m) => [m.role, m.toolName ?? (m.content as { text: string }[])[0].text]), [["assistant", "先查一下"], ["toolResult", "web_get"], ["assistant", "t 的回复"]]);
 });
+
+test("成员定义里的技能目录交给它的进程，全局技能仍然不加载", async (t) => {
+	const { run, read } = setup(t);
+	await run(member({ name: "skilled", skills: ["/agents/skills/charts", "/agents/skills/filings"] }), "k");
+	const args: string[] = read("argv-k.json");
+	assert.ok(args.includes("--no-skills"));
+	assert.deepEqual(args.flatMap((a, i) => (a === "--skill" ? [args[i + 1]] : [])), ["/agents/skills/charts", "/agents/skills/filings"]);
+	await run(NEWS, "n");
+	assert.ok(!read("argv-n.json").includes("--skill"), "没写技能的成员不带");
+});
