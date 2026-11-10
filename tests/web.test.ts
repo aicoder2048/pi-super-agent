@@ -940,8 +940,8 @@ test("宿主：这次启动恢复了执行中的任务，快照里的 duty.resum
 	assert.equal(third.host.snapshot().duty.resumed, 0);
 });
 
-async function sayHost(t: TestContext) {
-	const web = await webHost(t);
+async function sayHost(t: TestContext, brain?: Parameters<typeof webHost>[1]) {
+	const web = await webHost(t, brain);
 	const origin = web.url.origin;
 	const post = (body: string, over: { token?: string; origin?: string | null; type?: string; host?: string } = {}) =>
 		request(web.at("/say", over.token ?? web.token), {
@@ -1068,14 +1068,28 @@ test("页面：点选被拒时按原因显示固定文案；已选的那一项�
 });
 
 test("网关：提问之后先打字再点选项，幕僚长还没处理那句话时点选返回 409，正文说明原因", async (t) => {
-	const { host, post, userLines } = await sayHost(t);
+	let routerHolds = false;
+	let release!: () => void;
+	const released = new Promise<void>((r) => (release = r));
+	const { host, post, userLines } = await sayHost(t, async (cards) => {
+		if (cards.some((c) => c.includes("两个都要"))) {
+			routerHolds = true;
+			await released;
+		}
+		return [];
+	});
+	t.after(release);
 	const { reportId } = await askedOnHost(host);
 	await new Promise((r) => setTimeout(r, 5));
-	host.kernel.userSaid({ text: "两个都要", at: Date.now() });
+	assert.equal((await post(JSON.stringify({ text: "两个都要" }))).status, 200);
+	await until(() => routerHolds, "幕僚长正在处理那句话");
 	const res = await post(answerBody(reportId, 0));
 	assert.equal(res.status, 409);
 	assert.equal(JSON.parse(res.body).refused, "spoke");
 	assert.ok(!userLines().some((l) => l.startsWith("回答任务")));
+	release();
+	await host.dispatcher.settled();
+	assert.equal((await post(answerBody(reportId, 0))).status, 200, "幕僚长处理完之后可以点选");
 });
 
 test("网关：answer 的汇报编号不存在时 404，正文说问题不存在；页面显示固定文案", async (t) => {
