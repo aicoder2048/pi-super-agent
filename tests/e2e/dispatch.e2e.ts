@@ -82,7 +82,7 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 			await step("助手小卡下同时出现两位成员：职称、正在做什么、多久前有动静，不写英文名", async (page) => {
 				const members = page.locator("#helpers .helper-slot", { hasText: "看盘队 #1" }).locator(".member-chip");
 				await page.waitForFunction(() => document.querySelectorAll("#helpers .member-chip.running").length === 2);
-				for (const label of await members.allTextContents()) assert.match(label, /^(行情分析师|新闻研究员) · .+ · (刚刚|\d+ 秒前)$/);
+				for (const label of await members.allTextContents()) assert.match(label, /^(行情分析师|新闻研究员) · .+ · (刚刚|\d+ 秒前|已 \d+ 秒)$/);
 				assert.match(await page.locator("#helpers .helper-chip", { hasText: "看盘队 #1" }).getAttribute("aria-label") ?? "", /成员：/);
 			});
 			await step("执行过程里两次派活各是一步，成员还在做时写进行中", async (page) => {
@@ -95,8 +95,8 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 				assert.equal(await page.locator("#steps .step.pending", { hasText: "新闻研究员 · 进行中" }).count(), 1, "整批还没回来");
 				assert.equal(await page.locator("#steps .step-detail", { hasText: /^排队中$/ }).count(), 0, "没有不带职称的排队中");
 			});
-			await step("新闻研究员在跑命令：小卡下写「新闻研究员 · 执行命令 · N 秒前」，展开派活看到它自己的步骤", async (page) => {
-				await page.locator("#helpers .member-chip.running", { hasText: /^新闻研究员 · 执行命令 · \d+ 秒前$/ }).waitFor();
+			await step("新闻研究员在跑命令：小卡下写「新闻研究员 · 执行命令 · 已 N 秒」，展开派活看到它自己的步骤", async (page) => {
+				await page.locator("#helpers .member-chip.running", { hasText: /^新闻研究员 · 执行命令 · 已 [5-9] 秒$/ }).waitFor();
 				assert.equal(await page.locator("#helpers .member-chip").count(), 1, "做完的行情分析师不再列在小卡下");
 				const news = page.locator("#steps .step", { hasText: "新闻研究员 · 进行中" });
 				await news.locator("summary", { hasText: "派活明细" }).click();

@@ -1262,6 +1262,19 @@ const teamHistory = (ticketId: string, messages: unknown[], steps: Record<string
 const fromMember = (ticketId: string, callId: string, index: number, message: unknown): HostToClient => ({ type: "transcript", ticketId, message: message as never, member: { callId, index } });
 const shown = (steps: page.Step[]) => steps.map((s) => [s.detail, s.state]);
 
+test("页面：成员的工具还在跑时，小卡下写这一步已经跑了多久，不写多久前有动静；工具返回后换回多久前", () => {
+	const view = page.emptyView();
+	const frame = (over: Partial<Dispatching[string][number]>) => board([row({ id: "tkt_team" })], zeroToday(), noHelpers, {}, { tkt_team: [onBoard("c1", "技术分析师", "running", { step: "执行命令", ...over })] });
+	const label = (now: number) => page.helperStrip(view, now).chips[0].members[0].label;
+	page.applyMessage(view, frame({ quietMs: 119_000, toolMs: 120_000 }), 1000);
+	assert.equal(label(1000), "技术分析师 · 执行命令 · 已 2 分钟");
+	assert.equal(label(1000 + 65_000), "技术分析师 · 执行命令 · 已 3 分钟", "没有新帧时页面自己往后数");
+	page.applyMessage(view, frame({ quietMs: 0, toolMs: 0 }), 1000);
+	assert.deepEqual([label(1000), label(1000 + 42_000)], ["技术分析师 · 执行命令 · 已 0 秒", "技术分析师 · 执行命令 · 已 42 秒"]);
+	page.applyMessage(view, frame({ quietMs: 12_000 }), 1000);
+	assert.equal(label(1000), "技术分析师 · 执行命令 · 12 秒前");
+});
+
 test("页面：助手条的小卡下列出在干活和在排队的成员：干活的写职称、正在做什么、多久前有动静，排队的写「排队中」；做完的不列；老宿主的帧没有这一项也不出错", () => {
 	const view = page.emptyView();
 	const working = { tkt_team: [

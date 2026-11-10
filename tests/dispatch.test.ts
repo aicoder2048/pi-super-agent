@@ -188,6 +188,11 @@ async function dispatching(t: TestContext, runner: Runner, calls: Call[], option
 }
 
 const two: Call[] = [{ agent: "market-analyst", task: "盘面怎么样？" }, { agent: "news-researcher", task: "有什么新闻？" }];
+const held = (signal: AbortSignal, keep: (release: () => void) => void) =>
+	new Promise<void>((done, fail) => {
+		keep(done);
+		signal.addEventListener("abort", () => fail(signal.reason));
+	});
 const wait = (ms: number, signal: AbortSignal) =>
 	new Promise<void>((done, fail) => {
 		const timer = setTimeout(done, ms);
@@ -484,6 +489,68 @@ test("成员多久没有任何动静就算无进展：结束它，结果写明�
 	assert.match(replyEnvelope(outcome({ state: "stalled", reply: null, note: stallNote(180_000) })), /没有回复（3 分钟没有进展）/);
 });
 
+test("成员在跑一个工具时不算无进展：工具没返回前再安静也不结束它；工具返回后又安静了这么久才结束", async (t) => {
+	const { results } = await dispatching(t, async (run) => {
+		run.onActivity("执行命令", { id: "tool_1", edge: "start" });
+		await wait(500, run.signal);
+		run.onActivity(undefined, { id: "tool_1", edge: "end" });
+		if (run.member.name === "news-researcher") await wait(60_000, run.signal);
+		return "命令跑完了";
+	}, two, { stallMs: 200 });
+	const out = await results();
+	assert.deepEqual(out.map((r) => [r.details.state, r.details.reply, r.details.note ?? null]), [["done", "命令跑完了", null], ["stalled", null, "0.2 秒没有进展"]]);
+	assert.ok(out[1].details.ms >= 700, `工具在跑的那 500 ms 不算，实际 ${out[1].details.ms} ms`);
+});
+
+test("两个工具同时在跑：先返回一个不算数，都返回了才重新计无进展", async (t) => {
+	const { results } = await dispatching(t, async (run) => {
+		run.onActivity("读取网页", { id: "tool_1", edge: "start" });
+		run.onActivity("执行命令", { id: "tool_2", edge: "start" });
+		run.onActivity(undefined, { id: "tool_1", edge: "end" });
+		await wait(500, run.signal);
+		run.onActivity(undefined, { id: "tool_2", edge: "end" });
+		return "都跑完了";
+	}, [two[1]], { stallMs: 200 });
+	assert.deepEqual((await results()).map((r) => [r.details.state, r.details.reply]), [["done", "都跑完了"]]);
+});
+
+test("一直不返回的工具由派活的时限结束，记为超时，不记无进展", async (t) => {
+	const aborted: string[] = [];
+	const { results } = await dispatching(t, async (run) => {
+		run.signal.addEventListener("abort", () => aborted.push(run.member.name));
+		run.onActivity("执行命令", { id: "tool_1", edge: "start" });
+		await wait(60_000, run.signal);
+		return "不会走到这里";
+	}, [two[1]], { stallMs: 100, timeoutMs: 600 });
+	const [out] = await results();
+	assert.deepEqual([out.details.state, out.details.note], ["timed_out", "超过 0.6 秒的时限"]);
+	assert.match(out.text, /新闻研究员（news-researcher） · 没有回复（超时）：超过 0.6 秒的时限/);
+	assert.deepEqual(aborted, ["news-researcher"]);
+});
+
+test("看板上正在跑工具的成员带着这一步已经跑了多久；两个同时在跑时写先开始的那个；都返回后不再带", async (t) => {
+	let finish!: () => void;
+	const { results, board } = await dispatching(t, async (run) => {
+		run.onActivity("执行命令", { id: "tool_1", edge: "start" });
+		await tick(80);
+		run.onActivity("读取网页", { id: "tool_2", edge: "start" });
+		await held(run.signal, (done) => (finish = done));
+		run.onActivity(undefined, { id: "tool_1", edge: "end" });
+		run.onActivity(undefined, { id: "tool_2", edge: "end" });
+		await held(run.signal, (done) => (finish = done));
+		return "答";
+	}, [two[1]]);
+	await until(() => (board()?.[0]?.toolMs ?? 0) >= 80 && board()[0].quietMs < board()[0].toolMs!, "第二个工具也开始了");
+	const [running] = board();
+	assert.equal(running.step, "执行命令", "先开始的那个还没返回");
+	assert.ok(running.toolMs! >= 80 && running.toolMs! < 1000, `这一步已经跑了 ${running.toolMs} ms`);
+	finish();
+	await until(() => board()?.[0]?.toolMs === undefined, "工具都返回了");
+	assert.deepEqual({ ...board()[0], quietMs: 0 }, { callId: "call_0", title: "新闻研究员", state: "running", step: "读取网页", quietMs: 0, tokens: 0 });
+	finish();
+	await results();
+});
+
 const entry = (message: unknown) => ({ type: "message", message });
 const mark = (callId: string) => ({ type: "custom", customType: "psa-dispatch", data: { callId } });
 const said = (text: string) => ({ role: "assistant", content: [{ type: "text", text }] });
@@ -522,6 +589,22 @@ test("成员有动静就算助手有进展：助手等着成员时任务不会�
 	const before = host.kernel.listTickets()[0];
 	await until(() => (host.kernel.getTicket(ticketId())!.lastProgressAt ?? 0) > (before.lastProgressAt ?? 0), "成员的动静记成了任务的进展");
 	assert.equal(host.kernel.listTickets()[0].toolCalls, before.toolCalls, "成员的动静不算助手的工具调用");
+	finish();
+	await results();
+});
+
+test("成员的工具在跑也算助手有进展：命令一声不吭时任务的进展时间照样往后走，不会被当成久无进展", async (t) => {
+	let finish!: () => void;
+	const { host, results, ticketId } = await dispatching(t, async (run) => {
+		run.onActivity("执行命令", { id: "tool_1", edge: "start" });
+		await held(run.signal, (done) => (finish = done));
+		return "答";
+	}, [two[1]]);
+	const progressAt = () => host.kernel.getTicket(ticketId())!.lastProgressAt ?? 0;
+	const atStart = progressAt();
+	await until(() => progressAt() > atStart, "工具开始记成了任务的进展");
+	const afterStart = progressAt();
+	await until(() => progressAt() > afterStart, "工具开始后成员再没有任何事件，任务的进展时间还在往后走");
 	finish();
 	await results();
 });

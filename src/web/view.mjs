@@ -509,6 +509,12 @@ function ago(ms) {
 	return seconds < 60 ? `${seconds} 秒前` : `${Math.floor(seconds / 60)} 分钟前`;
 }
 
+/** @param {number} ms */
+function runningFor(ms) {
+	const seconds = Math.floor(ms / 1000);
+	return seconds < 60 ? `已 ${seconds} 秒` : `已 ${Math.floor(seconds / 60)} 分钟`;
+}
+
 /**
  * @typedef {object} HelperChip
  * @property {string} id
@@ -519,7 +525,7 @@ function ago(ms) {
  * @property {string} role
  * @property {string} elapsed
  * @property {string} tokens
- * @property {{ title: string, state: "queued" | "running", label: string }[]} members the team members at work or waiting for this helper right now; a working one reads 「新闻研究员 · 读取网页 · 12 秒前」
+ * @property {{ title: string, state: "queued" | "running", label: string }[]} members the team members at work or waiting for this helper right now; a working one reads 「新闻研究员 · 读取网页 · 12 秒前」, or 「新闻研究员 · 执行命令 · 已 2 分钟」 while a tool call is in flight
  */
 
 /** One chip per helper on duty (a ticket not yet ended), then today's total. @param {View} view @param {number} now @returns {{ chips: HelperChip[], total: string }} */
@@ -536,7 +542,9 @@ export function helperStrip(view, now) {
 			members: (view.dispatching[row.id] ?? []).flatMap((d) => {
 				if (d.state === "queued") return [{ title: d.title, state: d.state, label: `${d.title} · ${DISPATCH_STATE.queued}` }];
 				if (d.state !== "running") return [];
-				return [{ title: d.title, state: d.state, label: `${d.title} · ${d.step || "启动中"} · ${ago(d.quietMs + now - view.receivedAt)}` }];
+				const sinceFrame = now - view.receivedAt;
+				const when = d.toolMs === undefined ? ago(d.quietMs + sinceFrame) : runningFor(d.toolMs + sinceFrame);
+				return [{ title: d.title, state: d.state, label: `${d.title} · ${d.step || "启动中"} · ${when}` }];
 			}),
 		}];
 	});

@@ -1,7 +1,9 @@
 // A local fake model that speaks the OpenAI chat-completions streaming protocol and replays the tool
 // calls a test scripted. The Router inside the host and every Worker subprocess reach it through a
-// models.json in a throwaway PI_CODING_AGENT_DIR (see fakeAgentEnv in harness.ts).
+// models.json in a throwaway PI_CODING_AGENT_DIR (see fakeAgentEnv below).
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { join } from "node:path";
 import { ids, type ToolCallSpec } from "../helpers/fakes.ts";
 
 export const FAKE_PROVIDER = "psa-fake";
@@ -220,4 +222,24 @@ function stream(res: ServerResponse, answer: Answer): void {
 	}
 	send({ choices: [], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } });
 	res.end("data: [DONE]\n\n");
+}
+
+/** A Pi world with only the fake provider and no credentials, plus a proxy tripwire for stray traffic. */
+export function fakeAgentEnv(fake: FakeModel, agentDir: string): Record<string, string> {
+	mkdirSync(agentDir, { recursive: true });
+	writeFileSync(join(agentDir, "models.json"), JSON.stringify(fake.modelsJson()));
+	writeFileSync(join(agentDir, "auth.json"), "{}");
+	const tripwire = fake.baseUrl.replace(/\/v1$/, "");
+	return {
+		PI_CODING_AGENT_DIR: agentDir,
+		PI_OFFLINE: "1",
+		PI_SKIP_VERSION_CHECK: "1",
+		PI_TELEMETRY: "0",
+		HTTPS_PROXY: tripwire,
+		HTTP_PROXY: tripwire,
+		https_proxy: tripwire,
+		http_proxy: tripwire,
+		NO_PROXY: "127.0.0.1,localhost",
+		no_proxy: "127.0.0.1,localhost",
+	};
 }

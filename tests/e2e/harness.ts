@@ -9,7 +9,7 @@ import type { TestContext } from "node:test";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { PAY_PER_USE_PROVIDERS, parseModelRef } from "../../src/models.ts";
 import { freePort } from "../helpers/fakes.ts";
-import { FAKE_PROVIDER, FakeModel, type Script } from "./fake-model.ts";
+import { FAKE_PROVIDER, FakeModel, fakeAgentEnv, type Script } from "./fake-model.ts";
 
 export const REPO = resolve(import.meta.dirname, "../..");
 // One folder per `just e2e` run, so two runs in the same checkout never clear each other's reports.
@@ -184,26 +184,6 @@ export async function startHost(options: StartHostOptions): Promise<HostRun> {
 		freeze: () => void signalGroup(current, "SIGSTOP"),
 		thaw: () => void signalGroup(current, "SIGCONT"),
 		stop: stopAll,
-	};
-}
-
-/** A Pi world with only the fake provider and no credentials, plus a proxy tripwire for stray traffic. */
-export function fakeAgentEnv(fake: FakeModel, agentDir: string): Record<string, string> {
-	mkdirSync(agentDir, { recursive: true });
-	writeFileSync(join(agentDir, "models.json"), JSON.stringify(fake.modelsJson()));
-	writeFileSync(join(agentDir, "auth.json"), "{}");
-	const tripwire = fake.baseUrl.replace(/\/v1$/, "");
-	return {
-		PI_CODING_AGENT_DIR: agentDir,
-		PI_OFFLINE: "1",
-		PI_SKIP_VERSION_CHECK: "1",
-		PI_TELEMETRY: "0",
-		HTTPS_PROXY: tripwire,
-		HTTP_PROXY: tripwire,
-		https_proxy: tripwire,
-		http_proxy: tripwire,
-		NO_PROXY: "127.0.0.1,localhost",
-		no_proxy: "127.0.0.1,localhost",
 	};
 }
 

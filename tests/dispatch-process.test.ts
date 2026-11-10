@@ -3,11 +3,12 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
-import { memberSessionDir, type MemberRun } from "../src/host/dispatch.ts";
+import { DispatchDesk, memberSessionDir, type MemberRun } from "../src/host/dispatch.ts";
 import { PiWorkerSpawner } from "../src/host/pi-worker.ts";
 import type { TranscriptMessage } from "../src/client/protocol.ts";
 import type { Basis } from "../src/kernel/types.ts";
 import type { Member } from "../src/teams.ts";
+import { FAKE_PROVIDER, FakeModel, fakeAgentEnv, on, worker } from "./e2e/fake-model.ts";
 import { until, within } from "./helpers/fakes.ts";
 
 // Stands in for `pi --mode json -p`: records how it was started, optionally leaves a grandchild in its
@@ -49,16 +50,20 @@ const member = (over: Partial<Member>): Member => ({ name: "news-researcher", ti
 const MARKET = member({ name: "market-analyst", title: "行情分析师", tools: ["web_get", "bash", "read"], prompt: "你是行情分析师。" });
 const NEWS = member({});
 
-function setup(t: TestContext, env: Record<string, string> = {}) {
-	const dir = mkdtempSync(join(tmpdir(), "psa-member-"));
-	const cliPath = join(dir, "fake-pi.mjs");
-	writeFileSync(cliPath, FAKE_PI);
+function withEnv(t: TestContext, env: Record<string, string>): void {
 	const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
 	Object.assign(process.env, env);
 	t.after(() => {
 		for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k];
 		else process.env[k] = v;
 	});
+}
+
+function setup(t: TestContext, env: Record<string, string> = {}) {
+	const dir = mkdtempSync(join(tmpdir(), "psa-member-"));
+	const cliPath = join(dir, "fake-pi.mjs");
+	writeFileSync(cliPath, FAKE_PI);
+	withEnv(t, env);
 	const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath, lookupHelp: "us-market quote" });
 	const usage: number[] = [];
 	const activity: (string | undefined)[] = [];
@@ -223,4 +228,28 @@ test("成员定义里的技能目录交给它的进程，全局技能仍然不�
 	assert.deepEqual(args.flatMap((a, i) => (a === "--skill" ? [args[i + 1]] : [])), ["/agents/skills/charts", "/agents/skills/filings"]);
 	await run(NEWS, "n");
 	assert.ok(!read("argv-n.json").includes("--skill"), "没写技能的成员不带");
+});
+
+test("真的 Pi 进程：成员跑一条比无进展时限还久、一声不吭的命令，照常做完，不被当成无进展", async (t) => {
+	const QUIET_S = 5;
+	const STALL_MS = 3000;
+	const task = "跑一条安静的命令";
+	const fake = await FakeModel.start({ router: [], workers: [worker(
+		task,
+		on("程序员跑一条安静的命令", /^\[派活\] 程序员\n/, () => [{ name: "bash", args: { command: `sleep ${QUIET_S}; echo '[命令输出] 跑完了'` } }]),
+		on("程序员回复", /^\[命令输出\] 跑完了/, () => "命令跑完了，没有报错。"),
+	)] });
+	t.after(() => fake.close());
+	const dir = mkdtempSync(join(tmpdir(), "psa-member-pi-"));
+	withEnv(t, fakeAgentEnv(fake, join(dir, "pi")));
+	const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions") });
+	const desk = new DispatchDesk({ queueTimeoutMs: 5000, stallMs: STALL_MS, maxConcurrent: 1, run: (run) => spawner.runMember(run), onChange() {} });
+	const coder = member({ name: "coder", title: "程序员", tools: ["bash"], prompt: "你是程序员。" });
+	const { details } = await desk.dispatch({
+		ticketId: "tkt_helper", callId: "call-quiet", member: coder, task, basis: "request", model: { provider: FAKE_PROVIDER, id: "worker" },
+		workdir: dir, sessionDir: memberSessionDir(dir, "tkt_helper", coder.name), limitMs: 25_000, onUsage() {}, onMessage() {}, onProgress() {},
+	});
+	assert.deepEqual([details.state, details.reply, details.note ?? null], ["done", "命令跑完了，没有报错。", null]);
+	assert.ok(details.ms >= QUIET_S * 1000, `命令安静地跑了 ${QUIET_S} 秒，超过 ${STALL_MS} ms 的无进展时限，实际 ${details.ms} ms`);
+	assert.deepEqual(fake.leftovers(), { unused: [], unmatched: [], stray: [] });
 });

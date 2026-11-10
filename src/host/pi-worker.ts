@@ -10,7 +10,7 @@ import type { ModelRef } from "../models.ts";
 import { memberTools, toolAllowlist } from "../worker/tools.ts";
 import type { Member } from "../teams.ts";
 import { onJsonLines } from "../jsonl.ts";
-import { isMemberMessage, type MemberRun } from "./dispatch.ts";
+import { isMemberMessage, type MemberRun, type ToolEdge } from "./dispatch.ts";
 import type { TranscriptMessage } from "../client/protocol.ts";
 import { formatModelRef } from "../models.ts";
 import { clearMember, isRecorded, recordMember } from "./member-ledger.ts";
@@ -202,6 +202,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 
 interface PiJsonEvent {
 	type?: string;
+	toolCallId?: string;
 	toolName?: string;
 	args?: unknown;
 	assistantMessageEvent?: { type?: string };
@@ -211,6 +212,13 @@ interface PiJsonEvent {
 function stepStarted(e: PiJsonEvent): string | undefined {
 	if (e.type === "tool_execution_start" && e.toolName) return toolStep(e.toolName, typeof e.args === "object" && e.args !== null ? (e.args as Record<string, unknown>) : {}).title;
 	if (e.type === "message_update" && /^(text|thinking)_/.test(e.assistantMessageEvent?.type ?? "")) return "思考";
+	return undefined;
+}
+
+function toolEdge(e: PiJsonEvent): ToolEdge | undefined {
+	if (!e.toolCallId) return undefined;
+	if (e.type === "tool_execution_start") return { id: e.toolCallId, edge: "start" };
+	if (e.type === "tool_execution_end") return { id: e.toolCallId, edge: "end" };
 	return undefined;
 }
 
@@ -237,7 +245,7 @@ function runMemberProcess(args: string[], env: Record<string, string>, run: Memb
 		child.stderr!.setEncoding("utf8").on("data", (text: string) => (stderr = (stderr + text).slice(-2000)));
 		onJsonLines(child.stdout!, (event) => {
 			const e = event as PiJsonEvent;
-			run.onActivity(stepStarted(e));
+			run.onActivity(stepStarted(e), toolEdge(e));
 			if (e.type !== "message_end" || !e.message || !isMemberMessage(e.message)) return;
 			run.onMessage(e.message as TranscriptMessage);
 			if (e.message.role !== "assistant") return;

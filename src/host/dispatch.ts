@@ -38,6 +38,8 @@ export interface BoardDispatch {
 	step: string;
 	/** How long before this frame the member's last event of any kind arrived. 0 unless it is running. */
 	quietMs: number;
+	/** How long the oldest tool call still in flight has run; `step` then names that call. Absent between tool calls. */
+	toolMs?: number;
 	/** Input plus output tokens so far. */
 	tokens: number;
 	/** Why it ended without a reply. */
@@ -70,6 +72,12 @@ export interface DispatchResult {
 	details: DispatchOutcome;
 }
 
+/** A member's tool call starting or returning; `id` pairs the two. */
+export interface ToolEdge {
+	id: string;
+	edge: "start" | "end";
+}
+
 /** One piece of work for one member. Resolves with its reply; rejects on a model error and with `signal.reason` once aborted. */
 export interface MemberRun {
 	ticketId: string;
@@ -85,8 +93,8 @@ export interface MemberRun {
 	sessionDir: string;
 	signal: AbortSignal;
 	onUsage(u: Usage): void;
-	/** Every event the member's process emits is a sign of life; `step` names the step an event starts. */
-	onActivity(step?: string): void;
+	/** Every event the member's process emits is a sign of life; `step` names the step an event starts, `tool` the tool call it starts or ends. */
+	onActivity(step?: string, tool?: ToolEdge): void;
 	/** Each message the member itself produces, as it finishes. */
 	onMessage(message: TranscriptMessage): void;
 }
@@ -213,7 +221,7 @@ export class SlotPool {
 export interface DispatchOrder extends Omit<MemberRun, "token" | "signal" | "onActivity" | "onMessage"> {
 	/** This dispatch's time limit, counted from the member's start. */
 	limitMs: number;
-	/** Called while the member shows signs of life, about once a second at most. */
+	/** Called while the member shows signs of life or has a tool call in flight, about once a second at most. */
 	onProgress(): void;
 	/** `index` counts this dispatch's messages from 0, so a message delivered twice lands in one place. */
 	onMessage(message: TranscriptMessage, index: number): void;
@@ -222,7 +230,7 @@ export interface DispatchOrder extends Omit<MemberRun, "token" | "signal" | "onA
 export interface DeskOptions {
 	/** The longest a dispatch waits for a slot. */
 	queueTimeoutMs: number;
-	/** A running member with no event of any kind for this long is ended as stalled. */
+	/** A running member with no tool call in flight and no event of any kind for this long is ended as stalled. */
 	stallMs: number;
 	maxConcurrent: number;
 	run(run: MemberRun): Promise<string>;
@@ -230,6 +238,8 @@ export interface DeskOptions {
 }
 
 const BOARD_PUSH_MIN_INTERVAL_MS = 1000;
+// Pi prints nothing while a tool runs, so the desk reports progress for it.
+const TOOL_HEARTBEAT_MS = 1000;
 
 interface Dispatch {
 	callId: string;
@@ -238,6 +248,8 @@ interface Dispatch {
 	token: string;
 	step: string;
 	lastEventAt: number;
+	/** Tool calls in flight by id, oldest first. */
+	tools: Map<string, { step: string; startedAt: number }>;
 	tokens: number;
 	note?: string;
 }
@@ -276,7 +288,7 @@ export class DispatchDesk {
 	async dispatch(order: DispatchOrder): Promise<DispatchResult> {
 		let desk = this.#tickets.get(order.ticketId);
 		if (!desk) this.#tickets.set(order.ticketId, (desk = { stop: new AbortController(), dispatches: new Set(), work: new Set() }));
-		const dispatch: Dispatch = { callId: order.callId, title: order.member.title, state: "queued", token: randomUUID(), step: "", lastEventAt: 0, tokens: 0 };
+		const dispatch: Dispatch = { callId: order.callId, title: order.member.title, state: "queued", token: randomUUID(), step: "", lastEventAt: 0, tools: new Map(), tokens: 0 };
 		desk.dispatches.add(dispatch);
 		const work = this.#work(order, dispatch, desk.stop.signal);
 		desk.work.add(work);
@@ -319,7 +331,20 @@ export class DispatchDesk {
 		this.#o.onChange();
 		const cut = new AbortController();
 		const limit = setTimeout(() => cut.abort(new EndedByDesk("timed_out", timeoutNote(limitMs))), limitMs);
-		const stall = setTimeout(() => cut.abort(new EndedByDesk("stalled", stallNote(stallMs))), stallMs);
+		let stall: NodeJS.Timeout | undefined;
+		let heartbeat: NodeJS.Timeout | undefined;
+		const watchForStall = () => {
+			clearTimeout(stall);
+			stall = dispatch.tools.size ? undefined : setTimeout(() => cut.abort(new EndedByDesk("stalled", stallNote(stallMs))), stallMs);
+		};
+		const reportToolProgress = () => {
+			if (dispatch.tools.size) heartbeat ??= setInterval(onProgress, TOOL_HEARTBEAT_MS);
+			else {
+				clearInterval(heartbeat);
+				heartbeat = undefined;
+			}
+		};
+		watchForStall();
 		let pushedAt = 0;
 		let push: NodeJS.Timeout | undefined;
 		const pushSoon = () => {
@@ -342,10 +367,13 @@ export class DispatchDesk {
 					order.onUsage(u);
 				},
 				onMessage: (message) => onMessage(message, messages++),
-				onActivity: (step) => {
+				onActivity: (step, tool) => {
 					dispatch.lastEventAt = Date.now();
 					if (step) dispatch.step = step;
-					stall.refresh();
+					if (tool?.edge === "start" && !dispatch.tools.has(tool.id)) dispatch.tools.set(tool.id, { step: dispatch.step, startedAt: dispatch.lastEventAt });
+					else if (tool?.edge === "end") dispatch.tools.delete(tool.id);
+					watchForStall();
+					reportToolProgress();
 					pushSoon();
 				},
 			});
@@ -357,7 +385,9 @@ export class DispatchDesk {
 		} finally {
 			clearTimeout(limit);
 			clearTimeout(stall);
+			clearInterval(heartbeat);
 			clearTimeout(push);
+			dispatch.tools.clear();
 			release();
 		}
 	}
@@ -372,12 +402,16 @@ export class DispatchDesk {
 		const out: Dispatching = {};
 		for (const [ticketId, desk] of this.#tickets) {
 			if (desk.dispatches.size === 0) continue;
-			out[ticketId] = [...desk.dispatches].map((d) => ({
-				callId: d.callId, title: d.title, state: d.state, step: d.step,
-				quietMs: d.state === "running" ? now - d.lastEventAt : 0,
-				tokens: d.tokens,
-				...(d.note !== undefined && { note: d.note }),
-			}));
+			out[ticketId] = [...desk.dispatches].map((d) => {
+				const [oldest] = d.tools.values();
+				return {
+					callId: d.callId, title: d.title, state: d.state, step: oldest?.step ?? d.step,
+					quietMs: d.state === "running" ? now - d.lastEventAt : 0,
+					...(oldest && { toolMs: now - oldest.startedAt }),
+					tokens: d.tokens,
+					...(d.note !== undefined && { note: d.note }),
+				};
+			});
 		}
 		return out;
 	}
