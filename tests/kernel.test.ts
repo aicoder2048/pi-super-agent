@@ -1263,7 +1263,6 @@ test("今日助手：纽约今天建的任务数和它们的 token 合计；昨�
 
 const TEAMS: TeamBook = {
 	kinds: new Map([[DEFAULT_TEAM, "solo"], ["新闻队", "crew"], ["看盘队", "crew"], ["杂务队", "solo"]]),
-	pinned: new Map([["rule-news", "新闻队"]]),
 };
 const teamOf = (kernel: Kernel, id: string) => kernel.getTicket(id)!.team;
 
@@ -1275,12 +1274,10 @@ test("每个任务都有团队：open_ticket 省略 team 就是默认团队，�
 	assert.deepEqual(s.logs, []);
 });
 
-test("open_ticket 的 team 是空串或只有空白：当作没填，用默认团队；规则钉死时用规则的团队，不记日志", () => {
+test("open_ticket 的 team 是空串或只有空白：当作没填，用默认团队", () => {
 	const s = setup({ teams: TEAMS });
 	assert.equal(teamOf(s.kernel, s.open("request", { team: "" })), DEFAULT_TEAM);
 	assert.equal(teamOf(s.kernel, s.open("request", { team: "  " })), DEFAULT_TEAM);
-	assert.equal(teamOf(s.kernel, s.open("rule", { ruleId: "rule-news", team: "" })), "新闻队");
-	assert.deepEqual(s.logs, []);
 });
 
 test("没有配置任何团队时，内核只认默认团队", () => {
@@ -1301,34 +1298,6 @@ test("不存在的团队名：拒绝这个决定，理由里写出有哪些团�
 	assert.equal(s.kernel.listTickets().length, 0);
 	const [retry] = s.kernel.route([{ ...decision, team: "新闻队" }]);
 	assert.ok(retry.ok);
-});
-
-test("规则钉死团队：按这条规则开的任务用规则写的团队，幕僚长省略或填对了都不记日志", () => {
-	const s = setup({ teams: TEAMS });
-	assert.equal(teamOf(s.kernel, s.open("rule", { ruleId: "rule-news" })), "新闻队");
-	assert.equal(teamOf(s.kernel, s.open("rule", { ruleId: "rule-news", team: "新闻队" })), "新闻队");
-	assert.deepEqual(s.logs, []);
-});
-
-test("规则钉死团队：幕僚长填了别的团队，内核改回规则写的团队并记一行日志", () => {
-	const s = setup({ teams: TEAMS });
-	const id = s.open("rule", { ruleId: "rule-news", team: "看盘队" });
-	assert.equal(teamOf(s.kernel, id), "新闻队");
-	assert.deepEqual(s.logs, [`[kernel] 规则 rule-news 写明团队「新闻队」，幕僚长填的是「看盘队」，任务 ${id} 已改回「新闻队」`]);
-});
-
-test("规则钉死团队时填了不存在的团队名，照样拒绝，不悄悄改回", () => {
-	const s = setup({ teams: TEAMS });
-	const { triggerId } = s.trigger({ threads: [{ id: "thr_generic:r" }] });
-	const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "rule", ruleId: "rule-news", triggerId, team: "财报队", brief: "b" }]);
-	assert.equal(result.ok, false);
-	assert.deepEqual(s.logs, []);
-});
-
-test("规则的钉死只管按规则开的任务：使用者开口要的任务可以自由选团队", () => {
-	const s = setup({ teams: TEAMS });
-	const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", ruleId: "rule-news", triggerId: s.say("看盘").triggerId, team: "看盘队", brief: "b" }]);
-	assert.equal(teamOf(s.kernel, result.ticketId!), "看盘队");
 });
 
 test("任务的团队存在状态库里：重启后不变，即使那个团队已经从配置里拿掉", () => {
@@ -1400,7 +1369,7 @@ test("名字在开任务时按团队定下，之后不变：重启后团队没�
 	const before = ids.map((id) => helperOf(first.kernel, id));
 	assert.deepEqual(before, [{ name: TEAM_NAMES[0], team: "新闻队", seq: 1 }, { name: SOLO_NAMES[0], role: "conversation", seq: 1 }]);
 	first.db.close();
-	const flipped: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"], ["新闻队", "solo"], ["杂务队", "crew"]]), pinned: new Map() };
+	const flipped: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"], ["新闻队", "solo"], ["杂务队", "crew"]]) };
 	assert.deepEqual(ids.map((id) => helperOf(setup({ path, teams: flipped }).kernel, id)), before);
 	assert.deepEqual(ids.map((id) => helperOf(setup({ path }).kernel, id)), before);
 });

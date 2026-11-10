@@ -226,7 +226,7 @@ test("宿主启动时状态目录不存在就建成 0700", async (t) => {
 	assert.equal(statSync(stateDir).mode & 0o777, 0o700);
 });
 
-const NEWS_BOOK: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"], ["新闻队", "crew"], ["看盘队", "crew"]]), pinned: new Map([["feeds/news", "新闻队"]]) };
+const NEWS_BOOK: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"], ["新闻队", "crew"], ["看盘队", "crew"]]) };
 
 const NEWS_DISPATCH = {
 	crewOf: (team: string) => (team === "新闻队" ? [{ name: "news-researcher", title: "新闻研究员", description: "查新闻", tools: undefined, skills: [], model: undefined, prompt: "", file: "/agents/news.md" }] : []),
@@ -246,16 +246,4 @@ test("宿主把团队簿交给内核，任务的团队决定启动助手时交�
 	await until(() => spawner.workers.size === 2, "两个助手都启动");
 	const teams = host.kernel.listTickets().map((row) => [row.title && row.helper && "team" in row.helper, spawner.workers.get(row.id)!.spec.crew.map((m) => m.name)]);
 	assert.deepEqual(teams, [[true, ["news-researcher"]], [false, []]]);
-});
-
-test("规则钉死的团队被幕僚长填错时，内核改回的那一行写进宿主日志", async (t) => {
-	const logs: string[] = [];
-	const brain: Brain = (cards) =>
-		cards.flatMap((card) => (card.startsWith("[候选触发]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "rule", ruleId: "feeds/news", team: "看盘队", triggerId: ids(card, "trg"), title: "t", brief: "b" }] } }] : []));
-	const { host, spawner } = await startHost(brain, (w) => w.settle(), { teams: NEWS_BOOK, dispatch: NEWS_DISPATCH, ruleAllows: () => true, log: (line) => logs.push(line) });
-	t.after(() => host.stop());
-	host.kernel.submitTrigger({ source: "feeds", externalId: "n1", threads: [{ id: "thr_feeds:n1" }], sender: "rss", body: "听证会", occurredAt: Date.now() });
-	await until(() => spawner.workers.size === 1, "助手启动");
-	assert.deepEqual([...spawner.workers.values()][0].spec.crew.map((m) => m.name), ["news-researcher"], "助手拿到的是规则写明的新闻队的成员");
-	assert.equal(logs.filter((line) => line.startsWith("[kernel] 规则 feeds/news 写明团队「新闻队」")).length, 1, logs.join("\n"));
 });

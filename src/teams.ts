@@ -230,13 +230,7 @@ export class Roster {
 		return [...this.#teams.values()].filter((t) => t.name !== DEFAULT_TEAM).map((t) => `- ${t.name}：${t.description}`).join("\n");
 	}
 
-	teamBook(rules: readonly { id: string; team?: string }[]): TeamBook {
-		const pinned = new Map<string, string>();
-		for (const rule of rules) {
-			if (rule.team === undefined) continue;
-			if (!this.#teams.has(rule.team)) throw new ConfigError(`规则 ${rule.id} 写了「团队：${rule.team}」，没有这个团队，现有团队：${[...this.#teams.keys()].join("、")}`);
-			pinned.set(rule.id, rule.team);
-		}
-		return { kinds: new Map([...this.#teams.values()].map((t) => [t.name, t.crew.length ? "crew" : "solo"])), pinned };
+	teamBook(): TeamBook {
+		return { kinds: new Map([...this.#teams.values()].map((t) => [t.name, t.crew.length ? "crew" : "solo"])) };
 	}
 }

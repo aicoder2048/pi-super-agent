@@ -133,7 +133,7 @@ function toHelper(r: Row): Helper | null {
 
 const storedRole = (helper: Helper) => ("role" in helper ? helper.role : null);
 
-const ONLY_DEFAULT_TEAM: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"]]), pinned: new Map() };
+const ONLY_DEFAULT_TEAM: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"]]) };
 
 export interface KernelOptions {
 	db: DatabaseSync;
@@ -934,15 +934,13 @@ export class Kernel {
 		if (asked !== undefined && !this.#teams.kinds.has(asked)) {
 			return reject(`unknown team ${asked}; the teams are ${[...this.#teams.kinds.keys()].join(", ")} (omit team for the default one)`);
 		}
-		const pinned = d.basis === "rule" ? this.#teams.pinned.get(d.ruleId!) : undefined;
-		const team = pinned ?? asked ?? DEFAULT_TEAM;
+		const team = asked ?? DEFAULT_TEAM;
 		if (d.basis === "inference") {
 			const limitProblem = this.#inferenceDailyLimitProblem();
 			if (limitProblem) return reject(limitProblem);
 		}
 
 		const ticketId = this.#id("tkt");
-		if (asked !== undefined && asked !== team) this.#log(`[kernel] 规则 ${d.ruleId} 写明团队「${team}」，幕僚长填的是「${asked}」，任务 ${ticketId} 已改回「${team}」`);
 		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now(), team);
 		this.#run(
 			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, team)

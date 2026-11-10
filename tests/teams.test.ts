@@ -194,7 +194,7 @@ test("内置只有成员「通用助手」和只含它的默认团队；不存�
 	const builtin = roster.team(DEFAULT_TEAM)!;
 	assert.deepEqual(builtin.members.map((m) => [m.name, m.title]), [["general", "通用助手"]]);
 	assert.deepEqual(builtin.crew, []);
-	assert.deepEqual([...roster.teamBook([]).kinds], [[DEFAULT_TEAM, "solo"]]);
+	assert.deepEqual([...roster.teamBook().kinds], [[DEFAULT_TEAM, "solo"]]);
 	assert.equal(roster.team("新闻队"), undefined);
 });
 
@@ -239,16 +239,9 @@ test("给幕僚长的名册只有团队名和说明，没有成员；默认团�
 	assert.equal(loadRoster().routerPrompt(), "");
 });
 
-test("给内核的团队簿：除通用助手外还有成员的是成队，只有通用助手的是单人；规则钉死的团队按规则 id 记下", () => {
+test("给内核的团队簿：除通用助手外还有成员的是成队，只有通用助手的是单人", () => {
 	const dir = root({ "agents/news.md": person("news-researcher", "新闻研究员"), "teams.yaml": team("新闻队", "news-researcher") + team("杂务队", "general") });
-	const book = loadRoster(dir).teamBook([{ id: "user/news", team: "新闻队" }, { id: "user/ci" }]);
-	assert.deepEqual([...book.kinds], [[DEFAULT_TEAM, "solo"], ["新闻队", "crew"], ["杂务队", "solo"]]);
-	assert.deepEqual([...book.pinned], [["user/news", "新闻队"]]);
-});
-
-test("规则写的团队不存在：启动报一行错，写出规则、团队名和现有的团队", () => {
-	const dir = root({ "teams.yaml": team("杂务队", "general") });
-	oneLine(() => loadRoster(dir).teamBook([{ id: "user/news", team: "新闻队" }]), /规则 user\/news/, /新闻队/, /默认、杂务队/);
+	assert.deepEqual([...loadRoster(dir).teamBook().kinds], [[DEFAULT_TEAM, "solo"], ["新闻队", "crew"], ["杂务队", "solo"]]);
 });
 
 test("成员文件的 frontmatter 不是合法的 YAML：报一行错，以文件名开头", () => {

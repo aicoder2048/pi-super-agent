@@ -1195,7 +1195,7 @@ test("网关：成员干活时它的每条消息实时送到正在看这个任�
 	const crew = [{ name: "news-researcher", title: "新闻研究员", description: "查新闻", tools: undefined, skills: [], model: undefined, prompt: "", file: "/agents/news.md" }];
 	const brain = (cards: string[]) => cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: card.match(/trg_[\w-]+/)![0], title: card.includes("新闻") ? "查新闻" : "别的事", brief: "b", team: card.includes("新闻") ? "新闻队" : "默认" }] } }] : []));
 	const web = await webHost(t, brain, {
-		teams: { kinds: new Map([["默认", "solo"], ["新闻队", "crew"]]), pinned: new Map() },
+		teams: { kinds: new Map([["默认", "solo"], ["新闻队", "crew"]]) },
 		dispatch: { crewOf: (team) => (team === "新闻队" ? crew : []), timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4 },
 	});
 	web.host.say("查新闻");

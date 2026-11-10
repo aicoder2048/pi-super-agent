@@ -134,7 +134,7 @@ const member = (name: string, title: string, over: Partial<Member> = {}): Member
 const CREW = [member("market-analyst", "行情分析师", { model: MARKET_MODEL }), member("news-researcher", "新闻研究员")];
 const READER = member("reader", "资料员", { tools: ["read", "web_get", "lookup"] });
 const CODER = member("coder", "程序员", { tools: ["read", "bash", "edit"] });
-const TEAMS: TeamBook = { kinds: new Map([["默认", "solo"], ["看盘队", "crew"], ["开发队", "crew"], ["旧队", "crew"]]), pinned: new Map() };
+const TEAMS: TeamBook = { kinds: new Map([["默认", "solo"], ["看盘队", "crew"], ["开发队", "crew"], ["旧队", "crew"]]) };
 const crewOf = (team: string) => (team === "看盘队" ? CREW : team === "开发队" ? [READER, CODER] : team === "默认" ? [] : undefined);
 
 /** Opens a ticket on `team` for the first thing the user says and hands everything after it to that ticket. */
@@ -365,7 +365,7 @@ test("成员自己的模型就是回退模型：主模型正常时它的用量�
 	const own = [member("market-analyst", "行情分析师", { model: FALLBACK }), CREW[1]];
 	const ran: string[] = [];
 	const started = await startHost(openOn("自带队"), () => {}, {
-		teams: { kinds: new Map([["默认", "solo"], ["自带队", "crew"]]), pinned: new Map() },
+		teams: { kinds: new Map([["默认", "solo"], ["自带队", "crew"]]) },
 		dispatch: { crewOf: () => own, timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4 },
 		workerModels: { selector: selectorWith(FALLBACK), fallbackDailyTokens: 150 },
 	});

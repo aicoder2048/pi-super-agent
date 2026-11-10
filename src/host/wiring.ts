@@ -74,7 +74,7 @@ export interface HostWiringInput {
 export function createHostOptions({ config, modules, modelRuntime, log, clock = { now: () => Date.now() } }: HostWiringInput): HostOptions {
 	const subscriptionProviders = [...new Set([config.models.router.provider, config.models.worker.provider])];
 	const roster = Roster.load([BUILTIN_ROOT, ...modules.modules.map((m) => m.dir), config.stateDir], subscriptionProviders);
-	const teams = roster.teamBook(modules.allRules());
+	const teams = roster.teamBook();
 	log(`[host] 团队：${[...teams.kinds.keys()].join("、")}`);
 	const resolve = (ref: ModelRef, role?: string) => {
 		const model = modelRuntime.getModel(ref.provider, ref.id);

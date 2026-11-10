@@ -85,10 +85,10 @@ const cases = [
 		message: /agents\/a\.md：model：拒绝使用 deepseek\/deepseek-flash/,
 	},
 	{
-		name: "规则写的团队不存在时，just host",
+		name: "规则里写了「团队：」行时，just host",
 		entry: HOST,
 		stateDir: stateWithFiles({ "rules.md": "## news\n来源: rss\n团队：新闻队\n有新闻就查\n" }),
-		message: /规则 user\/news 写了「团队：新闻队」，没有这个团队/,
+		message: /rules\.md：规则 user\/news 写了「团队：」.*删掉这一行/,
 	},
 ];
 

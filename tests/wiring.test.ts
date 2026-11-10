@@ -199,20 +199,18 @@ const NEWS_FILES = {
 	"teams.yaml": "新闻队:\n  description: 查新闻、核对报道来源\n  members:\n    - news-researcher\n",
 };
 
-test("真实接线：模块目录和状态目录里的团队进了内核的团队簿和幕僚长的提示词，规则钉死的团队记下；提示词里没有成员", async (t) => {
+test("真实接线：模块目录和状态目录里的团队进了内核的团队簿和幕僚长的提示词；提示词里没有成员", async (t) => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = hostConfig(provider);
 	writeFiles(config.stateDir, NEWS_FILES);
 	const modulesDir = writeFiles(mkdtempSync(join(tmpdir(), "psa-mods-")), {
 		"watch/module.json": JSON.stringify({ name: "watch", sources: [{ name: "quotes" }] }),
-		"watch/rules.md": "## drop\n团队：看盘队\n跌多了开任务\n",
 		"watch/agents/analyst.md": memberFile("market-analyst", "行情分析师"),
 		"watch/teams.yaml": "看盘队:\n  description: 盯行情\n  members:\n    - market-analyst\n    - general\n",
 	});
 	const logs: string[] = [];
 	const options = createHostOptions({ config, modules: Modules.load([modulesDir]), modelRuntime, log: (line) => logs.push(line) });
 	assert.deepEqual([...options.teams!.kinds], [[DEFAULT_TEAM, "solo"], ["看盘队", "crew"], ["新闻队", "crew"]]);
-	assert.deepEqual([...options.teams!.pinned], [["watch/drop", "看盘队"]]);
 	assert.ok(logs.includes("[host] 团队：默认、看盘队、新闻队"), logs.join("\n"));
 	const host = await Host.start(options);
 	t.after(() => host.stop());

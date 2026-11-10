@@ -35,8 +35,6 @@ export interface Rule {
 	id: string;
 	text: string;
 	sources?: string[];
-	/** From a 「团队：」 line: a ticket this rule opens must be on this team. */
-	team?: string;
 }
 
 export interface ScopedRule extends Rule {
@@ -45,22 +43,19 @@ export interface ScopedRule extends Rule {
 
 const RULE_HEADING = /^##\s+([\w-]+)\s*$/;
 const RULE_SOURCES = /^来源\s*[:：]\s*(.+)$/;
-const RULE_TEAM = /^团队\s*[:：]\s*(.*)$/;
+const RULE_TEAM = /^团队\s*[:：]/;
 
 export function parseRules(file: string, namespace: string, markdown: string): Rule[] {
 	const rules: Rule[] = [];
 	for (const line of markdown.split("\n")) {
 		const heading = line.match(RULE_HEADING);
 		const sources = line.trim().match(RULE_SOURCES);
-		const team = line.trim().match(RULE_TEAM);
 		const rule = rules.at(-1);
 		if (heading) rules.push({ id: `${namespace}/${heading[1]}`, text: "" });
 		else if (!rule) continue;
 		else if (sources) rule.sources = sources[1].split(/[,，\s]+/).filter(Boolean);
-		else if (team) {
-			if (rule.team !== undefined) throw new ConfigError(`${file}：规则 ${rule.id} 写了两行「团队：」，一条规则只能交给一个团队`);
-			if (!team[1] || /\s/.test(team[1])) throw new ConfigError(`${file}：规则 ${rule.id} 的「团队：」后面要写一个团队名，中间不能有空白，这一行是「${line.trim()}」`);
-			rule.team = team[1];
+		else if (RULE_TEAM.test(line.trim())) {
+			throw new ConfigError(`${file}：规则 ${rule.id} 写了「团队：」。规则不再指定团队，模块规则开的任务属于规则所在的模块，队伍是模块 agents/ 里的成员，使用者规则的任务由幕僚长选领域。删掉这一行`);
 		} else rule.text += line + "\n";
 	}
 	return rules.map((r) => ({ ...r, text: r.text.trim() })).filter((r) => r.text);
@@ -128,7 +123,7 @@ export class Modules {
 	}
 
 	rulesPrompt(): string {
-		return this.allRules().map((r) => `### ${r.id}\n${r.team ? `团队：${r.team}\n` : ""}${r.text}`).join("\n\n");
+		return this.allRules().map((r) => `### ${r.id}\n${r.text}`).join("\n\n");
 	}
 
 	ruleAllows = (ruleId: string, triggerSource: string): boolean => {
