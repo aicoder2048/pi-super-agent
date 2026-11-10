@@ -8,7 +8,7 @@ description: 写 Pi 扩展最常用的知识：最小骨架、导入包名、放
 依据 `@earendil-works/pi-coding-agent 1.5.0` 的 `docs/extensions.md`（约 3300 行、156 KB）。这里只收最常用的部分，代码照抄原文的写法。
 
 - 先核对版本：本机 Pi 的版本写在安装目录的 `package.json`（安装目录就是系统提示词「Pi documentation」一节里 README 所在的目录）。不是 1.5.0 时，用到的接口以原文为准。
-- 这里没有的，按文末「原文索引」用 `grep -n "^### 标题" <docs>/extensions.md` 找到行号，只读那一节。
+- 这里没有的，按文末「原文索引」找到标题，用 `grep` 工具定位、`read` 只读那一节，见文末的做法。
 - 终端界面组件（`Text`、`Box`、`Container`、自定义组件）的细节在 `docs/tui.md`，快捷键在 `docs/keybindings.md`。
 
 ## 最小骨架
@@ -266,12 +266,14 @@ renderResult(result, { expanded, isPartial }, theme, context) {
 
 ## 原文索引
 
-`docs/extensions.md` 的二级、三级标题，用 `grep -n "^## 标题\|^### 标题"` 定位后只读那一节：
+怎么只读一节：调用 `grep` 工具，`path` 写 `<docs>/extensions.md`，`pattern` 写 `^#{2,4} Custom Rendering`；一次找几个用 `^#{2,4} (Custom Rendering|Tool Events)`。`grep` 工具用的是 ripgrep 的正则，「或」直接写 `|`，前面不加反斜杠。标题里有括号、问号的（接口那几节），`pattern` 只写到括号前，例如 `^### pi\.registerTool`。拿到行号后，用 `read` 的 `offset` 和 `limit` 读到下一个同级标题为止。
 
-- 入门：`Quick Start`、`Extension Locations`、`Available Imports`、`Tool parameter schemas and TypeBox`、`Writing an Extension`、`Long-lived resources and shutdown`、`Extension Styles`
-- 事件：`Lifecycle Overview`、`Handler Composition`、`Session Events`、`Agent Events`、`Model Events`、`Tool Events`、`User Bash Events`、`Input Events`
-- 上下文：`ExtensionContext`（`ctx.ui`、`ctx.mode`、`ctx.hasUI`、`ctx.sessionManager`、`ctx.modelRegistry / ctx.model …`、`ctx.signal`、`ctx.compact()`）、`ExtensionCommandContext`（`ctx.newSession`、`ctx.fork`、`ctx.reload()` 等）
-- 接口：`ExtensionAPI Methods`（`pi.registerTool`、`pi.sendMessage`、`pi.sendUserMessage`、`pi.appendEntry`、`pi.registerCommand`、`pi.registerMessageRenderer`、`pi.registerEntryRenderer`、`pi.registerShortcut`、`pi.registerFlag`、`pi.exec`、`pi.setActiveTools`、`pi.setModel`、`pi.events`、`pi.registerProvider`）
+下面每一项都是 `docs/extensions.md` 里一个标题的原文（接口写的是标题开头）：
+
+- 入门：`Quick Start`、`Extension Locations`、`Available Imports`、`Tool parameter schemas and TypeBox`、`Writing an Extension`、`Async factory functions`、`Long-lived resources and shutdown`、`Extension Styles`
+- 事件：`Lifecycle Overview`、`Handler Composition`、`Session Events`、`Agent Events`、`Model Events`、`Tool Events`、`Typing custom tool input`、`User Bash Events`、`Input Events`
+- 上下文：`ExtensionContext`、`ExtensionCommandContext`、`Session replacement lifecycle and footguns`、`Streaming model calls`，以及 `ctx.ui`、`ctx.mode`、`ctx.hasUI`、`ctx.sessionManager`、`ctx.modelRegistry`、`ctx.signal`、`ctx.compact`、`ctx.newSession`、`ctx.fork`、`ctx.reload`
+- 接口：`ExtensionAPI Methods`，以及 `pi.registerTool`、`pi.sendMessage`、`pi.sendUserMessage`、`pi.appendEntry`、`pi.registerCommand`、`pi.registerMessageRenderer`、`pi.registerEntryRenderer`、`pi.registerShortcut`、`pi.registerFlag`、`pi.exec`、`pi.getActiveTools`、`pi.setModel`、`pi.events`、`pi.registerProvider`
 - 工具：`State Management`、`Custom Tools`、`Tool Definition`、`Overriding Built-in Tools`、`Output Truncation`、`Custom Rendering`、`Dynamic Tool Loading`、`Tool Exposure`、`Calling Other Tools`
 - 界面：`Custom UI`、`Dialogs`、`Widgets, Status, and Footer`、`Autocomplete Providers`、`Custom Components`、`Custom Editor`、`Message and Entry Rendering`、`Theme Colors`
 - 收尾：`Error Handling`、`Mode Behavior`、`Examples Reference`（`examples/extensions/` 里每个例子用到哪些接口）

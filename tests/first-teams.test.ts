@@ -126,6 +126,24 @@ test("Pi 扩展技能里写到的每个 pi.*、ctx.* 和 ctx.ui.* 接口，本�
 	for (const name of named(/\bctx\.ui\.([a-zA-Z]+)\b/g)) assert.ok(ui.has(name), `ctx.ui.${name} 不在 ExtensionUIContext 里`);
 });
 
+test("Pi 扩展技能的原文索引：每一项都是本机 extensions.md 里的标题；教的 grep 写法用 ripgrep 的正则，真能找到标题", () => {
+	const skill = readFileSync(PI_EXTENSION_SKILL, "utf8");
+	const doc = readFileSync(join(piPackageRoot(), "docs/extensions.md"), "utf8").split("\n");
+	const headings = doc.flatMap((l) => /^#{2,4} (.+)$/.exec(l)?.[1] ?? []);
+	const index = skill.slice(skill.indexOf("\n下面每一项都是"));
+	const items = [...index.matchAll(/^- [^：]+：(.+)$/gm)].flatMap((m) => [...m[1].split("（")[0].matchAll(/`([^`]+)`/g)].map((x) => x[1]));
+	assert.ok(items.length >= 50, `索引只有 ${items.length} 项`);
+	for (const item of items) {
+		const found = /^(pi|ctx)\./.test(item) ? headings.some((h) => h.startsWith(item)) : headings.includes(item);
+		assert.ok(found, `extensions.md 里没有标题「${item}」`);
+	}
+	assert.ok(!skill.includes("\\|"), "ripgrep 里 \\| 是字面的竖线，不是「或」");
+	const example = /`(\^#\{2,4\} \([^`]+\))`/.exec(skill)?.[1];
+	assert.ok(example, "技能里有一次找几个标题的例子");
+	const hits = doc.filter((l) => new RegExp(example).test(l));
+	assert.ok(hits.length >= 2, `例子 ${example} 只找到 ${hits.length} 个标题`);
+});
+
 test("写扩展和界面的两位专家、派活技能都先指向扩展技能，不够时再读原文", () => {
 	const crew = load().kitFor("pi-pi")!.crew;
 	for (const name of ["ext-expert", "tui-expert"]) assert.match(crew.find((m) => m.name === name)!.prompt, /pi-extension-basics/, name);
