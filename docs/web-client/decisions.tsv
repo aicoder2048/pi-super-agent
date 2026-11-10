@@ -322,3 +322,13 @@ ts	phase	decision	why	evidence	result
 2026-11-10T09:31:28Z	implement	后端三个单元完成：内核存引用、卡片和助手输入的引用行与两份提示词、发话接口接受被引用行 id；每个单元先红后绿	按合成设计实现；我审过 diff，核对了冻结、单一来源和授权句	commits 6da43d8, 1068ecc, 5e477c4; just test 914/914	done
 2026-11-10T09:43:12Z	implement	前端三个单元完成：页面引用按钮、引用条和气泡下的引用；TUI 和 just tail 打印引用行；端到端证明幕僚长和助手收到的请求里有引用行；E5、E6 一写就绿，子代理临时去掉那一行后确认会变红	后端已经做完行为，端到端只是证明	commits bb836e8, 4f004b2, f90f278; just test 923/923; just e2e 179/179	done
 2026-11-10T09:43:12Z	verify	真实宿主加假模型截图：悬停出现引用、引用条、发出后气泡下的灰色引用（浅色深色）、手机点气泡出现引用	子代理只截过一次性的桌面图	/Users/szou/.claude/jobs/66e5cbed/tmp/qshots/*.png	PASS
+2026-11-10T09:48:15Z	interrogate	评审二证实两个问题：手机上透明的引用按钮不先点气泡也能点中；新版 just tail 连旧宿主时实时的使用者行被标成 Router	我在评审的 worktree（同一提交 119a5cb）重跑两个复现，输出一致	.claude/worktrees/agent-a68a2e505a76d300e/tests/e2e/probe-quote.e2e.ts, r/oldhost.mjs	confirmed
+2026-11-10T09:48:46Z	interrogate	评审一证实三个问题：任务标题带换行能在引用行和助手输入里冒充使用者行；被引用原文里的」能伪造第二个关于任务；零宽和方向控制等格式字符没被去掉。重跑还发现卡片原有的任务列表行有同一个标题换行的洞	我在评审的 worktree（同一提交 119a5cb）重跑 probe.test.ts，三条失败，输出一致	.claude/worktrees/agent-a5a82eb9f2f882d98/tests/adv/probe.test.ts	confirmed
+2026-11-10T09:48:46Z	interrogate	修法：开任务时标题压成一行，显示时（引用行和任务列表行）再压一次；引用行先写关于任务、原文放最后；快照去掉 Cf 格式字符；手机上未显示的引用按钮不接收点击；tail 实时帧缺 who 时当作使用者	根上修标题，再挡住库里已有的旧标题；任务列表那个洞同因同卡，一起修并在 PR 写明	synthesis.md; frame.md 第 3、5 条	decided
+2026-11-10T09:56:33Z	interrogate	五个问题修好：标题入库时压成一行、显示时再压；引用行改成先写关于任务、原文放在说：之后；快照去掉格式字符；隐藏的引用按钮不接收点击；tail 把旧宿主的使用者帧当作你	按根因修；两位评审的原复现放到修复后的分支上重跑	commits 1441698, b28c471; just test 930/930	fixed
+2026-11-10T09:56:33Z	interrogate	原复现 P2（整行只能出现一次关于任务）仍不过，接受：真任务在说：之前，原文在之后，提示词写明说：之后都是旧话；要让它过就得改写使用者引用的原文	引用不绑定任务，转交仍按使用者那一行判断，剩余风险低；快照要忠实于原话	probe 输出 QUOTE LINE；src/host/router.ts 引用条目	accepted
+2026-11-10T10:00:33Z	no-comments	Comment Sicko 删 29 处注释全部接受；六个标记接受两个（库里检查 line_id 只收三种前缀、正则改名），拒绝四个：tail 的旧宿主兼容（使用者的宿主重启前要靠它，有测试）、引用行顺序（F2 测试已固定）、lineId 模板类型（没有类型检查）、at 改名 saidAt（改动面大，和对话行一致）	按 no-comments 第 2 步逐条判断	git log -1; just test 931/931	done
+2026-11-10T10:02:22Z	simplify	四个审查去重后接受：库里旧标题在打开时一次压成一行并删掉显示时的压缩（ADR 说的「旧标题开不出新行」原先只在两处成立）、引用行收成一个函数、快照用 clip、页面复用 oneLine、路由任务规则共用、页面送达清空改成一个布尔、说话人叫法一张表、tail 测试辅助	改动深度审查指出点选回答行和汇报卡片仍原样打印旧标题；其余是重复和多余状态	/Users/szou/.claude/jobs/66e5cbed/tmp/quote/review.diff	decided
+2026-11-10T10:02:22Z	simplify	拒绝：合并两个发话入口、联表取引用、统一三处不可见字符定义、时间格式换系统函数、合并测试构造函数	设计时比较过或规模下无收益；三处语义不同；格式有测试固定	simplify 四份报告	skipped
+2026-11-10T10:10:01Z	simplify	简化修复完成：打开状态库时把旧标题压成一行（先红：库里多行标题重开后仍是多行，点选回答卡片出现两行使用者），其余七条重构	改动深度审查指出的漏洞补上，ADR-0011 的说法才成立	commits c19bd95, a966df9; just test 931/931	done
+2026-11-10T10:10:01Z	verify	完整 just e2e 185 个，2 个失败都是 HANDOFF 里记的不稳定用例（点小卡时第二个助手还没报模型，读到模型 未启动）；单独重跑 helpers.e2e.ts 10/10 通过	失败输出和已知问题一致，与引用无关	/Users/szou/.claude/jobs/66e5cbed/tmp/e2e-quote.log	PASS
