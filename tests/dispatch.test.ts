@@ -333,16 +333,18 @@ test("成员的回复超过 2000 字时截断后才交给助手", async (t) => {
 
 test("成员用的 token 计入任务和当天合计，超时的成员也算", async (t) => {
 	const { host, results } = await dispatching(t, async (run) => {
-		run.onUsage({ provider: "openai-codex", tokensIn: 100, tokensOut: 20 });
+		run.onUsage({ provider: "openai-codex", tokensIn: 100, tokensCached: 70, tokensOut: 20 });
 		if (run.member.name === "news-researcher") await wait(60_000, run.signal);
 		return "答";
 	}, two, { timeoutMs: 150 });
 	const out = await results();
 	const ticket = host.kernel.listTickets()[0];
 	assert.equal(ticket.tokensIn, 200);
+	assert.equal(ticket.tokensCached, 140);
 	assert.equal(ticket.tokensOut, 40);
 	assert.equal(host.kernel.usageToday("openai-codex"), 240);
 	assert.deepEqual(out.map((r) => r.details.tokensIn + r.details.tokensOut), [120, 120]);
+	assert.deepEqual(out.map((r) => r.details.tokensCached), [70, 70]);
 });
 
 test("成员的模型：自己写了就用自己的，否则用助手的模型；回退后一律用回退模型，而且派活不触发试探主模型", async (t) => {

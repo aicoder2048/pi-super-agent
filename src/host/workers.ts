@@ -8,6 +8,7 @@ import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import { INPUT_LABEL, quoteContext } from "../client/board-format.mjs";
 import { parseOptions } from "../kernel/question.ts";
+import type { Usage } from "./worker-events.ts";
 import { NO_DOMAIN, type DomainKit } from "../modules.ts";
 import type { Member } from "../teams.ts";
 import type { TranscriptMessage } from "../client/protocol.ts";
@@ -27,7 +28,7 @@ export interface WorkerSpec extends DomainKit {
 export interface WorkerEvents {
 	turnStarted(): void;
 	toolCalled(): void;
-	usage(u: { provider: string; tokensIn: number; tokensOut: number }): void;
+	usage(u: Usage): void;
 	settled(error?: string): void;
 	exited(): void;
 	transcript(event: unknown): void;

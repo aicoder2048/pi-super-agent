@@ -59,7 +59,10 @@ export interface DispatchOutcome {
 	reply: string | null;
 	/** Why there is no reply. */
 	note?: string;
+	/** All input: new input plus cache reads. */
 	tokensIn: number;
+	/** The part of `tokensIn` read from the prompt cache. */
+	tokensCached: number;
 	tokensOut: number;
 	/** From the member's start, not counting the queue. */
 	ms: number;
@@ -327,7 +330,7 @@ export class DispatchDesk {
 		let messages = 0;
 		const queuedAt = Date.now();
 		let startedAt = queuedAt;
-		const tokens = { tokensIn: 0, tokensOut: 0 };
+		const tokens = { tokensIn: 0, tokensCached: 0, tokensOut: 0 };
 		const move = (to: DispatchState) => {
 			if (!DISPATCH_NEXT[dispatch.state].includes(to)) throw new Error(`派活不能从 ${dispatch.state} 变成 ${to}`);
 			dispatch.state = to;
@@ -385,6 +388,7 @@ export class DispatchDesk {
 				signal: AbortSignal.any([stop, cut.signal]),
 				onUsage: (u) => {
 					tokens.tokensIn += u.tokensIn;
+					tokens.tokensCached += u.tokensCached ?? 0;
 					tokens.tokensOut += u.tokensOut;
 					dispatch.tokens = tokens.tokensIn + tokens.tokensOut;
 					order.onUsage(u);

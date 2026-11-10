@@ -208,7 +208,10 @@ export interface Ticket {
 	model: string | null;
 	fellBack: boolean;
 	toolCalls: number;
+	/** All input: new input plus cache reads. */
 	tokensIn: number;
+	/** The part of `tokensIn` read from the provider's prompt cache. */
+	tokensCached: number;
 	tokensOut: number;
 	/** Null only on a ticket from before helpers existed that the host has not named yet. */
 	helper: Helper | null;
@@ -256,7 +259,10 @@ export interface DashboardRow {
 	model: string | null;
 	fellBack: boolean;
 	toolCalls: number;
+	/** All input: new input plus cache reads. */
 	tokensIn: number;
+	/** The part of `tokensIn` read from the provider's prompt cache. */
+	tokensCached: number;
 	tokensOut: number;
 	elapsedMs: number;
 	lastProgressAt: number | null;
