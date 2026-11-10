@@ -164,6 +164,14 @@ test("清屏按钮在对话栏顶部标题行，挨着「对话」，对话很�
 				assert.deepEqual(layout.rowHeading, ["对话"], "清屏和「对话」在同一行");
 				assert.equal(layout.aboveThread, true, "标题行在对话上方，不跟着对话滚动");
 			});
+			await step("「对话」和左栏「待你处理」、右栏「执行过程」三个栏目标题在同一条线上", async (page) => {
+				const tops = await page.evaluate(() => {
+					const top = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().top;
+					return { conversation: top(".conversation-head .label"), how: top("#how .label"), left: top("#left h2") };
+				});
+				assert.ok(Math.abs(tops.conversation - tops.how) <= 1, `「对话」${tops.conversation} 和「执行过程」${tops.how} 对齐`);
+				assert.ok(Math.abs(tops.conversation - tops.left) <= 1, `「对话」${tops.conversation} 和「待你处理」${tops.left} 对齐`);
+			});
 			await step("对话滚到底，清屏按钮的位置不变", async (page) => {
 				const before = (await clear(page).boundingBox())!;
 				const scrolled = await page.evaluate(() => {
