@@ -69,6 +69,17 @@ async function wholeCrewDispatched(t: TestContext, options: Options = {}) {
 	return { ...started, helper: () => helper!, finish, runs, clock, logs, capLogs, count, cap, stop };
 }
 
+/** A connected client, after the frames already on their way have arrived. */
+async function watching(t: TestContext, host: { socketPath: string }) {
+	const got: HostToClient[] = [];
+	const conn = new HostConnection({ socketPath: host.socketPath, onMessage: (m) => got.push(m), retryMs: 30 });
+	conn.open();
+	t.after(() => conn.close());
+	await until(() => conn.connected, "连接");
+	await new Promise((r) => setTimeout(r, 250));
+	return { got, boards: () => ofType(got, "board") };
+}
+
 test("名额用完、有成员排队：看板带上宿主的问题和现在的上限，排队的照常等；这个问题不经过幕僚长", async (t) => {
 	const { host, count, cap, capLogs, router } = await wholeCrewDispatched(t);
 	await until(() => count("queued") === 2, "一位在做两位排队");
@@ -93,17 +104,20 @@ test("使用者点「今天放宽到 10」：上限马上是 10，排队的成�
 	assert.deepEqual(host.answer(ASK, 0), { ok: true, triggerId: ASK });
 	assert.deepEqual(host.answer(ASK, 1), { ok: false, refusal: { kind: "chosen", option: 0, label: "今天放宽到 10" } });
 	assert.deepEqual(host.snapshot().conversation.filter((l) => l.id === ASK).map((l) => [l.who, l.text]), [["user", SAID]]);
-	await until(() => ofType(got, "user").length > 0, "客户端收到这句话");
-	assert.deepEqual(ofType(got, "user").map((m) => [m.id, m.text]), [[ASK, SAID]]);
+	host.say("后面一句");
+	await until(() => ofType(got, "user").some((m) => m.text === "后面一句"), "客户端收到后面那句话");
+	assert.deepEqual(ofType(got, "user").map((m) => m.text), [SAID, "后面一句"], "再点一次和换项被拒都不再播这句话");
 	assert.equal(capLogs().length, 2, capLogs().join("\n"));
 });
 
 test("使用者点「保持」：上限不变，排队的按原来的上限一位一位轮；这个纽约日里不再问", async (t) => {
 	const { host, count, cap, finish, capLogs } = await wholeCrewDispatched(t);
 	await until(() => count("queued") === 2, "一位在做两位排队");
+	const { boards } = await watching(t, host);
 	assert.deepEqual(host.answer(ASK, 1), { ok: true, triggerId: ASK });
 	assert.deepEqual(cap(), { limit: 1, question: null });
 	assert.equal(count("running"), 1);
+	await until(() => boards().at(-1)?.memberCap?.question === null, "回答之后客户端收到一帧问题已经收起的看板");
 	finish.get("market-analyst")!();
 	await until(() => finish.has("news-researcher"), "第二位轮到");
 	assert.equal(count("running"), 1);
@@ -239,6 +253,25 @@ test("网页：不带 token 或来源不对的点选被拒，上限不变；带�
 	assert.equal(cap()?.limit, 10);
 	const other = await post(url.search, url.origin, 1);
 	assert.deepEqual([other.status, JSON.parse(other.body).refused], [409, "chosen"]);
+});
+
+test("问题记不进状态库：这次派活不受影响，照常排队、轮到、做完；日志里记一行", async (t) => {
+	const s = await wholeCrewDispatched(t);
+	await until(() => s.count("queued") === 2, "一位在做两位排队");
+	s.clock.at = NEXT_DAY;
+	storeBroken(s.host, new Error("SQLITE_BUSY: database is locked"));
+	const late = Promise.resolve(s.helper().request("worker.dispatch", { callId: "call_late", agent: "market-analyst", task: "再看一下" })) as Promise<{ details: { state: string } }>;
+	const outcome = late.then((r) => r.details.state, (error) => `派活出错：${String(error)}`);
+	await until(() => s.count("queued") === 3, "新的一次派活也在排队");
+	assert.deepEqual(s.capLogs().slice(1), ["[host] 成员上限：没能记下要问使用者的问题：SQLITE_BUSY: database is locked"]);
+	assert.equal(s.cap()?.question, null);
+	for (const name of ["market-analyst", "news-researcher", "chart-reader", "market-analyst"]) {
+		await until(() => s.finish.has(name), `${name} 轮到`);
+		const done = s.finish.get(name)!;
+		s.finish.delete(name);
+		done();
+	}
+	assert.equal(await outcome, "done");
 });
 
 function storeBroken(host: { kernel: { capAsks: { save: unknown } } }, error: Error) {
