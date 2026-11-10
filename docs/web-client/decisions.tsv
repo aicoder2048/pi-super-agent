@@ -279,3 +279,15 @@ ts	phase	decision	why	evidence	result
 2026-11-10T05:07:07Z	x1-rebase	X1 重新叠到 main 5693691：冲突只在 import、WorkerSpec 字段和 decisions.tsv；resume 并入 main 的 `...kit`，去掉已删的 ruleId；成员停止沿用 main 的 shutdown（先助手、后成员、等进程没了），不另写	main 的成员早已自成进程组、记在 running.json，终端 Ctrl+C 打不到它们；宿主 stop 已按顺序结束它们，X1 只需不让 Worker 先被 SIGINT 打死	git log origin/main..psa/clean-exit；tests/host-main.test.ts 成员用例	decided
 2026-11-10T05:07:07Z	x1-incident	在 origin/main 上跑红测试时连测试入口一起退回，main 的 wiring 不读 PSA_PI_CLI，3 个用例的恢复任务拉起了真实 pi（使用者的 openai-codex 订阅），20 秒后随宿主进程组被 SIGKILL；之后测试给 Pi 空的 PI_CODING_AGENT_DIR 并设 PI_OFFLINE	红测试应在测试入口 5b4cc08 之上跑；误起的真实 Pi 没有凭据也不联网，就碰不到模型	ps 只读查看无残留 pi；9ff90c0	fixed
 2026-11-10T05:07:07Z	x1-live	实测（tmux 伪终端、假模型、真实宿主和 Pi）：just host 下 Router 开看盘队任务，助手派成员跑 sleep 600，Ctrl+C 后 19ms 打印已停止、无 just error 行、回到提示符；just、bash、宿主、启动器、助手 Pi、成员 Pi、成员 sleep 共 7 个 pid 全部 kill -0 不在，running.json 清掉，任务仍 running 无失败汇报。just watchdog 同样：Watchdog 停宿主 60475 后已停止，8 个 pid 全不在	计划 You see 和 Lane 2、5、8、9 要求的现象	/tmp/psa-wKlk、/tmp/psa-9NWe 的 state.db 和 host.log；pane 截取见 PR #25 正文	PASS
+2026-11-10T05:39:39Z	start	新一轮：网页清屏（Backlog 第 1 项）；此前的行 2026-11-09T06:40 至 2026-11-10T05:07 不是本轮写的	接手 HANDOFF.md，使用者同意三条建议后开工	本会话 66e5cbed，worktree psa/clear-screen @931c445	open
+2026-11-10T05:39:39Z	frame	清屏点放在宿主、所有前端共用；TUI 暂不加命令；对话栏顶部一条细线可临时展开已隐藏的行，不撤销	使用者要搬到 Mac mini，多设备打开时看到的应一致；手滑点错可以展开看	使用者本轮回复：都按你的建议	decided
+2026-11-10T05:39:39Z	frame	deslop 和 control-ui 仍未安装，沿用内置 simplify 与 Playwright e2e 代替	cursor-team-kit 不在本机	ls ~/.claude/plugins/cache/cursor-plugins	substituted
+2026-11-10T05:42:00Z	how	幕僚长的记忆只来自它自己的 Pi session 和按 id 的 kernel.read，conversation() 只被宿主快照调用；清屏标记只过滤给前端的对话，不碰 kernel.read	使用者要求清屏后幕僚长仍接得上「刚才那件事」	src/host/host.ts:286,290; src/host/router.ts:349; grep 无其他调用	verified
+2026-11-10T05:42:00Z	how	已打开的页面只会加行不会删行，所以清屏必须推一个实时帧让所有打开的页面去掉旧行；TUI 已打印的行收不回，只对新连接生效	how 讲解者读了 view.mjs addLine、app.mjs renderConversation、super-agent.ts showConversation	src/web/view.mjs:84; src/web/app.mjs:309; extensions/super-agent.ts:38	constraint
+2026-11-10T05:51:24Z	architect	两版设计取候选 1 做底：标记是一张被隐藏行 id 的表，清屏只收走已送达的行	按显示顺序切（候选 2）在同一毫秒时会把用户没看到的一句藏掉；候选 1 不改 conversation() 的签名，请求正文是空对象	/Users/szou/.claude/jobs/66e5cbed/tmp/arena-clear/synthesis.md; src/host/host.ts:298-301	decided
+2026-11-10T05:51:24Z	architect	从候选 2 移植：e2e 覆盖刷新和第二个浏览器、未确认发话改用已见 id 集合、POST 路由一张表、TUI 忽略 cleared 帧的测试	补上候选 1 的盲点	synthesis.md Grafts	decided
+2026-11-10T05:51:24Z	architect	没有交叉评审员，底版由我按评分表挑	配置的评审池只有 Claude，规则要求评审员和我不同系列	~/.claude/rules/pstack-models.md arena cross-judge pool	skipped
+2026-11-10T05:51:24Z	architect	小的界面问题我先定默认值：按钮在发话状态行、非今天显示日期、展开最多 50 行、不弹确认框、TUI 不提示、不写新 ADR	都可逆，先做出来给使用者看再改	synthesis.md Decisions	default
+2026-11-10T06:03:35Z	implement	子代理按层写完 5 个提交，每层先红后绿；TUI 的 cleared 分支没有经过红（原 switch 本来就忽略未知帧），只加了固定行为的测试	按合成设计实现	git log main..psa/clear-screen ecec770..656c7f3	done
+2026-11-10T06:03:35Z	verify	我亲自跑 just test	核对子代理的报告	886/886 pass	PASS
+2026-11-10T06:03:35Z	verify	一次性假模型脚本截图：清屏后只剩细线、新对话在细线下、展开后旧行变淡、深色和 390 宽正常	子代理没有看过浅色深色的实际样子	/Users/szou/.claude/jobs/66e5cbed/tmp/shots/*.png	PASS
