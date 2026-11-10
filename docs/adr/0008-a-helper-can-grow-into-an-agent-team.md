@@ -23,7 +23,7 @@
 
 成员定义沿用 `.pi/agents/*.md` 格式：`name`、`title`（中文职称）、`description`、`tools`、`skills`、`model`，正文是系统提示词。团队是一个名字加一份成员名单，另有一句给幕僚长看的说明。
 
-成员和团队都来自三处，同名启动时报错：内置（一个成员，`name` 是 `general`，职称是通用助手；和只含它的团队「默认」）、模块（`modules/<模块>/agents/*.md` 和 `teams.yaml`）、使用者（`<状态目录>/agents/` 和 `teams.yaml`）。看盘模块自带「看盘队」：行情分析师、技术分析师、新闻研究员、财报解读。
+成员和团队都来自三处，同名启动时报错：内置（一个成员，`name` 是 `general`，职称是通用助手；和只含它的团队「默认」）、模块（`modules/<模块>/agents/*.md` 和 `teams.yaml`）、使用者（`<状态目录>/agents/` 和 `teams.yaml`）。看盘模块将来自带「看盘队」（行情分析师、技术分析师、新闻研究员、财报解读），写这份 ADR 时还没有做。
 
 `teams.yaml` 的名单写成员的 `name`，所以想把通用助手编进团队时写 `general`。
 

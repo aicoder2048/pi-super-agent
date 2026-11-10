@@ -25,7 +25,7 @@ Pi Super Agent 是一个常驻本机的 headless host 进程，入口是 `src/ho
 | RouterNotice | `router.notify` 的 payload。kind 有 `conversation`、`candidate`、`report`、`question`、`handback`、`notice`。`notice` 是工作区里新加的，尚未提交。 |
 | Report | Worker 通过 `report` 工具交回的状态。status 有 `progress`、`ready`、`blocked`、`failed`、`no_action`，可以带 `question` 和 `waiting`。 |
 | Module | `modules/<name>/` 下的 `module.json`（领域名和说明、队名、source 过滤器、timers、prepare）、`rules.md`、`skills/` 和 `agents/`（成员）。用户自己的模块放在 `<state>/modules/<name>/`，用户规则放在 `<state>/rules.md`。写法见「怎么写一个模块」。 |
-| Domain | ticket 所属的模块，存在 `tickets.domain`（模块的 `name`，可空）。模块规则开的 ticket 属于规则所在的模块，由 Kernel 按规则编号的前缀定；其余由 Router 用 `open_ticket` 的 `domain` 选，省略就是没有领域。Worker 的技能、`prepare` 和可派的成员都按它取（`Modules.kitFor`）。见 ADR-0009。 |
+| Domain | ticket 所属的模块，存在 `tickets.domain`（模块的 `name`，可空）。模块规则开的 ticket 属于规则所在的模块，由 Kernel 按规则编号的前缀定；其余由 Router 用 `open_ticket` 的 `domain` 选，只能选名册上的（模块写了 `description`），省略就是没有领域。Worker 的技能、`prepare` 和可派的成员都按它取（`Modules.kitFor`）。见 ADR-0009。 |
 | `ModelSelector` | 主模型、fallback、probing 三态状态机（`src/model-selector.ts`，未提交）。Router 一个实例，所有 Worker 共用另一个实例。 |
 
 ## How It Works
@@ -302,6 +302,18 @@ tools: read, web_get
 你是检索员。每条资料写明来源和日期，找不到就直说。
 ```
 
+`agents/checker.md` 是另一位成员，写法一样。
+
+```markdown
+---
+name: checker
+title: 核对员
+description: 逐条核对摘要里的说法和它引用的出处是否一致
+tools: read, web_get
+---
+你是核对员。逐条打开出处，写明一致、不一致还是打不开，不替原文补充内容。
+```
+
 写好以后是这样的。
 
 - 幕僚长的名册多一行「- research（资料调研）：查公开资料、核对出处、写成带来源的摘要」。你在对话里说的事合适时，它开任务会填 `domain: research`。
@@ -309,7 +321,16 @@ tools: read, web_get
 - 没有 `agents/` 的模块，任务是一个带技能的助手，显示两字名加角色。
 - 一个模块最多一支队伍，一位成员只属于它所在的模块。不同模块的成员可以同名，同一个模块里不行。
 
-写错了宿主不启动，只打印一行，开头是出错的文件。旧的写法也会报错并说明改法：`rules.md` 里的「团队：」行、模块或状态目录里的 `teams.yaml`、状态目录下零散的 `agents/`。
+写错了宿主不启动，只打印一行说明。清单、规则和成员的错误以出错的文件或文件夹的路径开头；定时器的错误写的是「模块名/定时器 id」，不带路径。`name`、`title`、`description` 里不能有换行和别的控制字符。
+
+旧的写法和放错位置的文件也会报错并说明改法：
+
+- `rules.md` 里的「团队：」行。
+- `teams.yaml`，不管放在模块里、模块目录下还是状态目录下。
+- 不在任何模块里的成员文件：状态目录下的 `agents/`，或直接放在模块目录下的 `agents/`。
+- 有 `agents/`、`teams.yaml`、`rules.md` 或 `skills/` 却没有 `module.json` 的文件夹。这四样都没有的文件夹宿主不管。
+
+模块没有开关。想停用一个模块，删掉它的文件夹，或让它所在的目录不再列在 `config.json` 的 `modulesDirs` 里。已经属于它的任务按没有领域的单个助手继续。
 
 ## Where Things Live
 
