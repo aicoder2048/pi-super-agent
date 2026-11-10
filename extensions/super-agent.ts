@@ -60,6 +60,9 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 			}
 			case "ack":
 				return;
+			// A terminal cannot take back lines it already printed; a new connection's snapshot is already filtered.
+			case "cleared":
+				return;
 			case "refused":
 				ctx?.ui.notify(m.reason, "warning");
 				return;

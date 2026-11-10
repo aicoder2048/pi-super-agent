@@ -48,12 +48,14 @@ export type ClientToHost =
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
-	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; memberCap: MemberCapBoard; watching: WatchedSource[] }
+	| { type: "snapshot"; conversation: ConversationLine[]; cleared: Cleared | null; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; memberCap: MemberCapBoard; watching: WatchedSource[] }
 	| { type: "user"; id: string; text: string; at: number }
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }
 	| { type: "reply"; text: string; at: number; replyId: string; ticketId?: string }
 	| ({ type: "board" } & BoardState)
+	/** A 清屏 on the host: every front end's conversation is now exactly `conversation`, and `cleared` is what it took away. */
+	| { type: "cleared"; conversation: ConversationLine[]; cleared: Cleared }
 	| ({ type: "transcript_history"; ticketId: string } & TranscriptHistory)
 	/** `member`: the message is from the member at work on that dispatch, and is that dispatch's `index`-th message. */
 	| { type: "transcript"; ticketId: string; message: TranscriptMessage; member?: { callId: string; index: number } };

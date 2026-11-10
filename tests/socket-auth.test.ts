@@ -218,3 +218,24 @@ test("凭据比较：空凭据永远不算对，哪怕要比的那一方也是�
 	assert.equal(tokenMatches("", ""), false);
 	assert.equal(tokenMatches("a", "a"), true);
 });
+
+test("socket 客户端也收到 cleared 帧；清屏后新 hello 的快照和网页快照相同", async (t) => {
+	const { host } = await startHost(() => [], () => {}, { webPort: 0 });
+	t.after(() => host.stop());
+	const c = client(host.socketPath);
+	t.after(() => c.conn.close());
+	await until(() => ofType(c.got, "snapshot").length === 1, "快照");
+	host.say("早");
+	await until(() => ofType(c.got, "user").length === 1, "user");
+	host.clearConversation();
+	await until(() => ofType(c.got, "cleared").length === 1, "cleared 帧");
+	const late = client(host.socketPath);
+	t.after(() => late.conn.close());
+	await until(() => ofType(late.got, "snapshot").length === 1, "新连接的快照");
+	const [snap] = ofType(late.got, "snapshot");
+	const web = host.snapshot();
+	assert.deepEqual(snap.conversation, web.conversation);
+	assert.deepEqual(snap.cleared, web.cleared);
+	assert.deepEqual(snap.cleared?.lines.map((l) => l.text), ["早"]);
+	assert.equal(ofType(c.got, "cleared").length, 1);
+});

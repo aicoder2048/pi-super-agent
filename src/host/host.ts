@@ -202,7 +202,7 @@ export class Host {
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), answer: (reportId, option) => host.answer(reportId, option) }, loadToken(options.stateDir, "web-token", host.#log), host.#log);
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation() }, loadToken(options.stateDir, "web-token", host.#log), host.#log);
 			await host.#web.listen(options.webPort);
 		}
 		try {
@@ -283,7 +283,13 @@ export class Host {
 			const problem = this.feeds.get(w.source)?.problem();
 			return problem ? { ...w, problem } : w;
 		});
-		return { conversation: this.kernel.conversation(CONVERSATION_LINES), board: rows, today, duty, helpers, routes, dispatching, memberCap, watching };
+		return { conversation: this.kernel.conversation(CONVERSATION_LINES), cleared: this.kernel.cleared(CONVERSATION_LINES), board: rows, today, duty, helpers, routes, dispatching, memberCap, watching };
+	}
+
+	/** 清屏 from a front end. It is not the user's words, so there is no trigger, and the board does not change. */
+	clearConversation(): void {
+		const cleared = this.kernel.clearConversation(CONVERSATION_LINES);
+		if (cleared) this.#broadcast({ type: "cleared", conversation: this.kernel.conversation(CONVERSATION_LINES), cleared });
 	}
 
 	#boardState(): BoardState {

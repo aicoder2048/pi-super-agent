@@ -943,15 +943,18 @@ test("宿主：这次启动恢复了执行中的任务，快照里的 duty.resum
 async function sayHost(t: TestContext, brain?: Parameters<typeof webHost>[1]) {
 	const web = await webHost(t, brain);
 	const origin = web.url.origin;
-	const post = (body: string, over: { token?: string; origin?: string | null; type?: string; host?: string } = {}) =>
-		request(web.at("/say", over.token ?? web.token), {
+	type Over = { token?: string; origin?: string | null; type?: string; host?: string };
+	const postTo = (path: string, body: string, over: Over = {}) =>
+		request(web.at(path, over.token ?? web.token), {
 			method: "POST",
 			host: over.host,
 			body,
 			headers: { "content-type": over.type ?? "application/json", ...(over.origin === null ? {} : { origin: over.origin ?? origin }) },
 		});
+	const post = (body: string, over: Over = {}) => postTo("/say", body, over);
+	const clear = (body = "{}", over: Over = {}) => postTo("/clear", body, over);
 	const userLines = () => web.host.kernel.conversation().filter((l) => l.who === "user").map((l) => l.text);
-	return { ...web, post, userLines };
+	return { ...web, post, clear, userLines };
 }
 
 test("网关：正确的 POST /say 返回 triggerId，事件流收到同一句 user", async (t) => {
@@ -1014,10 +1017,65 @@ test("网关：POST /say 只有零宽或格式字符（夹着空白也算）时 
 	assert.deepEqual(userLines(), ["好\u200d的"]);
 });
 
-test("网关：GET /say 405；/say 以外的 POST 也是 405", async (t) => {
-	const { at } = await webHost(t);
+test("网关：GET /say、GET /clear 405；/clear 的正文不是 {} 时 400；/say 和 /clear 以外的 POST 仍是 405", async (t) => {
+	const { at, clear, host } = await sayHost(t);
 	assert.equal((await request(at("/say"))).status, 405);
-	assert.equal((await request(at("/"), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 405);
+	assert.equal((await request(at("/clear"))).status, 405);
+	host.say("早");
+	for (const body of ['{"x":1}', "[]", "", "null"]) assert.equal((await clear(body)).status, 400, JSON.stringify(body));
+	assert.equal(host.snapshot().cleared, null);
+	const res = await request(at("/"), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+	assert.equal(res.status, 405);
+	assert.match(res.body, /POST \/clear/);
+});
+
+const replyOnConversation = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
+
+test("网关：POST /clear 之后，打开着的页面收到 cleared 帧，新连上的页面快照只带清屏之后的行和被清掉的行", async (t) => {
+	const { host, events, clear } = await sayHost(t, replyOnConversation);
+	host.say("早");
+	await host.settled();
+	const a = events();
+	await until(() => a.got.length > 0, "快照");
+	const res = await clear();
+	assert.equal(res.status, 204);
+	assert.equal(res.headers["cache-control"], "no-store");
+	await until(() => ofType(a.got, "cleared").length === 1, "cleared 帧");
+	const [frame] = ofType(a.got, "cleared");
+	assert.deepEqual(frame.conversation, []);
+	assert.deepEqual(frame.cleared.lines.map((l) => l.text), ["早", "收到：早"]);
+	host.say("晚");
+	await host.settled();
+	const b = events();
+	await until(() => b.got.length > 0, "新页面的快照");
+	const [snap] = ofType(b.got, "snapshot");
+	assert.deepEqual(snap.conversation.map((l) => l.text), ["晚", "收到：晚"]);
+	assert.equal(snap.cleared?.at, frame.cleared.at);
+	assert.deepEqual(snap.cleared?.lines.map((l) => l.text), ["早", "收到：早"]);
+});
+
+test("网关：POST /clear 和 /say 一样要 token、本机 Origin、JSON 正文；不合格时 401/403/415，且不清屏", async (t) => {
+	const { host, clear, url } = await sayHost(t);
+	host.say("早");
+	assert.equal((await clear("{}", { token: "" })).status, 401);
+	assert.equal((await clear("{}", { token: "0".repeat(64) })).status, 401);
+	assert.equal((await clear("{}", { host: `evil.example:${url.port}` })).status, 403);
+	assert.equal((await clear("{}", { origin: null })).status, 403);
+	assert.equal((await clear("{}", { origin: "http://evil.example" })).status, 403);
+	assert.equal((await clear("{}", { type: "text/plain" })).status, 415);
+	assert.equal(host.snapshot().cleared, null);
+	assert.deepEqual(host.snapshot().conversation.map((l) => l.text), ["早"]);
+});
+
+test("网关：没有可清的行时 POST /clear 也回 204，不推 cleared 帧", async (t) => {
+	const { host, events, clear } = await sayHost(t);
+	const stream = events();
+	await until(() => stream.got.length > 0, "快照");
+	assert.equal((await clear()).status, 204);
+	host.say("之后");
+	await until(() => ofType(stream.got, "user").length === 1, "之后的 user");
+	assert.deepEqual(ofType(stream.got, "cleared"), []);
+	assert.equal(host.snapshot().cleared, null);
 });
 
 async function askedOnHost(host: Awaited<ReturnType<typeof sayHost>>["host"], title = "查财报") {
