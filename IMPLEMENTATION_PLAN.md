@@ -528,28 +528,28 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
-- [ ] Lane 1. 跨领域问题。Save `t2-dispatch.png`. Pass when 助手并行派给两位成员并合成一份答复。
-- [ ] Lane 2. 简单问题，同一团队。Save `t2-direct.png`. Pass when 助手自己做完，没有派活。
-- [ ] Lane 3. 同一任务里追问。Save `t2-memory.png`. Pass when 第二次派给同一成员，它的回复用到上一次的内容。
-- [ ] Lane 4. 派过一次后重启宿主，再追问。Save `t2-restart.png`. Pass when 成员仍接得上上次的上下文。
-- [ ] Lane 5. 成员超时。Save `t2-timeout.png`. Pass when 其余回复照常返回并注明哪位没有回复。
-- [ ] Lane 6. 推断任务里派给写了 `bash` 的成员。Save `t2-readonly.png`. Pass when 成员执行命令被拒。
-- [ ] Lane 7. 成员试图再派活或直接汇报。Save `t2-depth.png`. Pass when 它没有这些工具。
-- [ ] Lane 8. 派活中叫停任务。Save `t2-stop.png`. Pass when 成员进程全部结束。
-- [ ] Lane 9. 派活中宿主 Ctrl+C。Save `t2-shutdown.png`. Pass when 无残留进程。
-- [ ] Lane 10. `maxConcurrentExperts` 设 2，一次派四位。Save `t2-queue.png`. Pass when 两位在跑、两位写「排队中」，助手条和执行过程不溢出，任务 token 含四位的用量。
+- [x] Lane 1. 跨领域问题。Save `t2-dispatch.png`. Pass when 助手并行派给两位成员并合成一份答复。 2026-11-09 在 eac2f5e 上通过：两次派活在同一条消息里发出，成员各跑 44.1 秒和 69.2 秒，区间重叠，合成一份答复（`/tmp/swarm-t2/worker-1/`）。
+- [x] Lane 2. 简单问题，同一团队。Save `t2-direct.png`. Pass when 助手自己做完，没有派活。 2026-11-09 在 eac2f5e 上通过：助手自己查完，没有派活步骤，没有 team 目录（`/tmp/swarm-t2/worker-2/`）。
+- [x] Lane 3. 同一任务里追问。Save `t2-memory.png`. Pass when 第二次派给同一成员，它的回复用到上一次的内容。 2026-11-09 在 eac2f5e 上通过：同一成员的会话文件一个头、两条提问（`/tmp/swarm-t2/worker-3/`）。
+- [x] Lane 4. 派过一次后重启宿主，再追问。Save `t2-restart.png`. Pass when 成员仍接得上上次的上下文。 2026-11-09 在 eac2f5e 上通过：重启后同一会话文件续写，第二次回复没有再调工具（`/tmp/swarm-t2/worker-4/`）。
+- [x] Lane 5. 成员超时。Save `t2-timeout.png`. Pass when 其余回复照常返回并注明哪位没有回复。 2026-11-09 在 eac2f5e 上通过：一位完成，一位「没有回复（超时）」，其余照常返回（`/tmp/swarm-t2/worker-5/`）。
+- [x] Lane 6. 推断任务里派给写了 `bash` 的成员。Save `t2-readonly.png`. Pass when 成员执行命令被拒。 2026-11-09 在 eac2f5e 上通过：成员以 --tools read,web_get 启动，没有 bash（`/tmp/swarm-t2/worker-6/`）。
+- [x] Lane 7. 成员试图再派活或直接汇报。Save `t2-depth.png`. Pass when 它没有这些工具。 2026-11-09 在 eac2f5e 上通过：成员工具只有 read、web_get、lookup，没有汇报和派活（`/tmp/swarm-t2/worker-7/`）。
+- [x] Lane 8. 派活中叫停任务。Save `t2-stop.png`. Pass when 成员进程全部结束。 2026-11-09 在 eac2f5e 上通过：两位成员进程 2.3 秒内退出，宿主仍在（`/tmp/swarm-t2/worker-8/`）。
+- [x] Lane 9. 派活中宿主 Ctrl+C。Save `t2-shutdown.png`. Pass when 无残留进程。 2026-11-09 在 eac2f5e 上通过：SIGINT 后 0.3 秒成员、助手、宿主全部退出（`/tmp/swarm-t2/worker-9/`）。
+- [x] Lane 10. `maxConcurrentExperts` 设 2，一次派四位。Save `t2-queue.png`. Pass when 两位在跑、两位写「排队中」，助手条和执行过程不溢出，任务 token 含四位的用量。 2026-11-09 在 eac2f5e 上通过：两位在跑、两位排队中，等了 57 秒和 59 秒；任务 token 等于助手加四位成员之和（`/tmp/swarm-t2/worker-10/`）。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 派给两位成员的总耗时。
-- [ ] Probe. 同一组两件事：两位成员各自单独跑一次取较慢者，再并行跑一次，各量 5 次。
-- [ ] Baseline. Record the median of the slower single-member run first.
-- [ ] Rule. 并行中位数超过较慢单人中位数的 110% 算失败（说明成员在排队，没有并行）。
+- [x] Metric. 派给两位成员的总耗时。
+- [x] Probe. 同一组两件事：两位成员各自单独跑一次取较慢者，再并行跑一次，各量 5 次。 两位成员各跑固定时长的 sleep（15 秒和 25 秒），计时取助手会话里派活调用到结果返回的时间。
+- [x] Baseline. Record the median of the slower single-member run first. 较慢那位单独跑的中位数 31018 毫秒。
+- [x] Rule. 并行中位数超过较慢单人中位数的 110% 算失败（说明成员在排队，没有并行）。 并行中位数 31060 毫秒，是 100.1%，通过（`/tmp/swarm-t2/perf/results.jsonl`）。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 1, 3, 10 screenshots into `docs/web-client/media/t2-review-<slug>.png`.
-- [ ] Record a 30 to 60 second video of a helper dispatching two members. Keep it local as webm, as in W1.
+- [x] Copy lane 1, 3, 10 screenshots into `docs/web-client/media/t2-review-<slug>.png`. 改用修正轮之后的截图：`t2-review-progress.png`、`t2-review-quiet-command.png`、`t2-review-queue.png`、`t2-review-after-kill.png`。
+- [x] Record a 30 to 60 second video of a helper dispatching two members. Keep it local as webm, as in W1. 59.9 秒，`/tmp/swarm-t2b/t2-review.webm`，在 1e1b36c 上录。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
