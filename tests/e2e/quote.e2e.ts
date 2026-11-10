@@ -280,7 +280,7 @@ test("引用：幕僚长那句话的「引用」在气泡右下角，不压住�
 				await line.locator(".bubble").hover();
 				const e = await edges(line);
 				assert.ok(Math.abs(e.button.right - e.bubble.right) <= 1, `「引用」右边 ${e.button.right}，气泡右边 ${e.bubble.right}`);
-				assert.ok(e.button.top >= e.bubble.bottom - 0.5, `「引用」顶 ${e.button.top}，气泡底 ${e.bubble.bottom}`);
+				assert.ok(e.button.top >= e.bubble.bottom + 3, `「引用」顶 ${e.button.top}，气泡底 ${e.bubble.bottom}：离气泡太近`);
 			});
 			await step("悬停带选项的那句：「引用」和气泡右边对齐，在气泡下面，不压住任何选项按钮", async (page) => {
 				const line = page.locator(".thread > .line.router", { hasText: "查哪个城市？" });
