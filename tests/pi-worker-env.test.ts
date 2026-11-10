@@ -112,3 +112,19 @@ test("推断开的任务只读：领域的 prepare 不跑，领域的技能目�
 	assert.deepEqual(await start("inference"), { prepared: false, skills: ["/modules/news/skills"] });
 	assert.deepEqual(await start("request"), { prepared: true, skills: ["/modules/news/skills"] });
 });
+
+test("助手的领域开了 lookup，宿主才把可查来源交给它；没配来源时给一句说明；领域没开就不给，即使宿主配了来源", async (t) => {
+	const helperEnv = async (lookup: boolean, lookupHelp: string | undefined) => {
+		const dir = mkdtempSync(join(tmpdir(), "psa-env-"));
+		const cliPath = join(dir, "fake-pi.mjs");
+		writeFileSync(cliPath, FAKE_PI);
+		const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath, lookupHelp });
+		const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
+		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", skillsDir: undefined, prepare: undefined, crew: [], lookup, token: "tok", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
+		t.after(() => handle.stop());
+		return JSON.parse(readFileSync(join(dir, "worker-env.json"), "utf8")) as Record<string, string>;
+	};
+	assert.equal((await helperEnv(true, "us-market quote")).PSA_LOOKUPS, "us-market quote");
+	assert.equal((await helperEnv(true, undefined)).PSA_LOOKUPS, "（宿主没有配置可查询的来源）");
+	assert.equal((await helperEnv(false, "us-market quote")).PSA_LOOKUPS, undefined);
+});

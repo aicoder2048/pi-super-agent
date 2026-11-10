@@ -97,15 +97,24 @@ test("扩展读完宿主连接信息后从环境变量里删掉，命令子进�
 	for (const name of ["PSA_SOCKET", "PSA_TOKEN", "PSA_TICKET", "PSA_BASIS"]) assert.equal(process.env[name], undefined, name);
 });
 
-test("每种依据（包括推断）都有 lookup：描述里列出宿主给的可查来源，调用经宿主连接发出", async (t) => {
-	process.env.PSA_LOOKUPS = "us-market（美股行情）：quote { symbols }";
-	const w = await load("inference");
-	t.after(w.close);
-	assert.match(w.tools.get("lookup").description, /us-market（美股行情）：quote/);
-	assert.equal(process.env.PSA_LOOKUPS, undefined);
-	await w.run("lookup", { source: "us-market", op: "quote", args: { symbols: ["NVDA"] } });
-	assert.deepEqual([w.requests.at(-1).method, w.requests.at(-1).params], ["worker.lookup", { source: "us-market", op: "quote", args: { symbols: ["NVDA"] } }]);
-	assert.equal(await w.handlers.get("tool_call")({ toolName: "lookup" }), undefined);
+test("宿主给了可查来源（PSA_LOOKUPS）的助手，不论哪种依据都有 lookup：描述里列出这些来源，调用经宿主连接发出", async (t) => {
+	for (const basis of ["inference", "request"]) {
+		const w = await load(basis, { PSA_LOOKUPS: "us-market（美股行情）：quote { symbols }" });
+		t.after(w.close);
+		assert.match(w.tools.get("lookup").description, /us-market（美股行情）：quote/, basis);
+		assert.equal(process.env.PSA_LOOKUPS, undefined);
+		await w.run("lookup", { source: "us-market", op: "quote", args: { symbols: ["NVDA"] } });
+		assert.deepEqual([w.requests.at(-1).method, w.requests.at(-1).params], ["worker.lookup", { source: "us-market", op: "quote", args: { symbols: ["NVDA"] } }]);
+		assert.equal(await w.handlers.get("tool_call")({ toolName: "lookup" }), undefined);
+	}
+});
+
+test("宿主没给 PSA_LOOKUPS 的助手和成员都没有 lookup", async (t) => {
+	const inference = await load("inference");
+	const request = await load("request");
+	const member = await load("request", { PSA_MEMBER_TOOLS: "read,web_get,lookup" });
+	t.after(() => { inference.close(); request.close(); member.close(); });
+	for (const w of [inference, request, member]) assert.equal(w.tools.has("lookup"), false);
 });
 
 test("汇报工具接受问题的 2 到 4 个选项，经宿主连接原样提交", async (t) => {
@@ -133,7 +142,7 @@ test("助手的工具清单包含助手扩展注册的每一个工具，带着�
 	assert.deepEqual([...w.tools.keys()].filter((name) => !(WORKER_TOOLS as readonly string[]).includes(name)), []);
 });
 
-const HELPER_TOOLS = ["report", "hand_back", "read_ticket", "web_get", "lookup", "bg_start", "bg_status", "bg_stop"];
+const HELPER_TOOLS = ["report", "hand_back", "read_ticket", "web_get", "bg_start", "bg_status", "bg_stop"];
 
 test("没有成员可派的助手：工具和单个助手一样，没有 dispatch_agent", async (t) => {
 	const request = await load("request");
@@ -162,7 +171,7 @@ test("本队有成员的助手多一个 dispatch_agent：一次派给名册里�
 });
 
 test("成员只有宿主给它的那几个工具：不注册汇报、交回、读任务、派活和后台命令，清单外的一律拦截", async (t) => {
-	const member = await load("request", { PSA_MEMBER_TOOLS: "read,web_get,lookup", PSA_CREW: "market-analyst" });
+	const member = await load("request", { PSA_MEMBER_TOOLS: "read,web_get,lookup", PSA_LOOKUPS: "us-market quote", PSA_CREW: "market-analyst" });
 	const none = await load("inference", { PSA_MEMBER_TOOLS: "" });
 	t.after(() => { member.close(); none.close(); });
 	assert.deepEqual([...member.tools.keys()], ["web_get", "lookup"]);
@@ -208,7 +217,7 @@ test("一次性进程用过 lookup 后能自己退出：扩展只在有请求等
 		process.stdout.write(result.content[0].text);
 	`);
 	const child = spawn(process.execPath, ["--import", fileURLToPath(new URL("../src/pi-runtime.mjs", import.meta.url)), script], {
-		env: { ...process.env, PSA_SOCKET: socketPath, PSA_TICKET: "tkt_1", PSA_TOKEN: "tok", PSA_BASIS: "inference", PSA_MEMBER_TOOLS: "lookup" },
+		env: { ...process.env, PSA_SOCKET: socketPath, PSA_TICKET: "tkt_1", PSA_TOKEN: "tok", PSA_BASIS: "inference", PSA_MEMBER_TOOLS: "lookup", PSA_LOOKUPS: "us-market quote" },
 		stdio: ["ignore", "pipe", "inherit"],
 	});
 	let out = "";
