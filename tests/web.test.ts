@@ -1658,6 +1658,8 @@ test("页面：还没结束的派活一开始就写成员的职称；状态跟�
 	frame(onBoard("c1", "行情分析师", "done", { tokens: 1500 }), onBoard("c2", "新闻研究员", "running"));
 	assert.deepEqual(now().slice(0, 2), [["行情分析师 · 完成", "ok"], ["新闻研究员 · 进行中", "pending"]]);
 	assert.equal(page.liveSteps(w, view)[0].dispatch?.tokens, "1.5k tokens");
+	frame(onBoard("c1", "行情分析师", "done", { tokens: 1500, tokensCached: 1000 }), onBoard("c2", "新闻研究员", "running"));
+	assert.equal(page.liveSteps(w, view)[0].dispatch?.tokens, "1.5k tokens（其中缓存 1.0k）", "看板带着缓存读取时，结果到之前也写出其中多少是缓存");
 	frame(onBoard("c1", "行情分析师", "done", { tokens: 1500 }), onBoard("c2", "新闻研究员", "timed_out", { note: "超过 15 分钟的时限" }));
 	frame();
 	assert.deepEqual(now().slice(0, 2), [["行情分析师 · 完成", "ok"], ["新闻研究员 · 超时", "error"]], "整批回来、结果还没到的那一瞬间，页面记得最后看到的状态");

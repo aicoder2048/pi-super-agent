@@ -208,7 +208,7 @@ export interface Ticket {
 	model: string | null;
 	fellBack: boolean;
 	toolCalls: number;
-	/** All input: new input plus cache reads. */
+	/** New input plus cache reads. Cache writes are not counted. */
 	tokensIn: number;
 	/** The part of `tokensIn` read from the provider's prompt cache. */
 	tokensCached: number;
@@ -259,7 +259,7 @@ export interface DashboardRow {
 	model: string | null;
 	fellBack: boolean;
 	toolCalls: number;
-	/** All input: new input plus cache reads. */
+	/** New input plus cache reads. Cache writes are not counted. */
 	tokensIn: number;
 	/** The part of `tokensIn` read from the provider's prompt cache. */
 	tokensCached: number;

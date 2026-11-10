@@ -7,7 +7,7 @@ interface PiEvent {
 
 export interface Usage {
 	provider: string;
-	/** All input: new input plus cache reads. */
+	/** New input plus cache reads. Cache writes are not counted. */
 	tokensIn: number;
 	/** The part of `tokensIn` read from the provider's prompt cache. Absent: none reported. */
 	tokensCached?: number;

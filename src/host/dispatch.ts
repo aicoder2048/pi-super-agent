@@ -42,6 +42,8 @@ export interface BoardDispatch {
 	toolMs?: number;
 	/** Input plus output tokens so far. */
 	tokens: number;
+	/** The part of `tokens` read from the prompt cache. */
+	tokensCached: number;
 	/** Why it ended without a reply. */
 	note?: string;
 }
@@ -59,7 +61,7 @@ export interface DispatchOutcome {
 	reply: string | null;
 	/** Why there is no reply. */
 	note?: string;
-	/** All input: new input plus cache reads. */
+	/** New input plus cache reads. Cache writes are not counted. */
 	tokensIn: number;
 	/** The part of `tokensIn` read from the prompt cache. */
 	tokensCached: number;
@@ -270,6 +272,7 @@ interface Dispatch {
 	/** Tool calls in flight by id, oldest first. */
 	tools: Map<string, { step: string; startedAt: number }>;
 	tokens: number;
+	tokensCached: number;
 	note?: string;
 }
 
@@ -307,7 +310,7 @@ export class DispatchDesk {
 	async dispatch(order: DispatchOrder): Promise<DispatchResult> {
 		let desk = this.#tickets.get(order.ticketId);
 		if (!desk) this.#tickets.set(order.ticketId, (desk = { stop: new AbortController(), dispatches: new Set(), work: new Set() }));
-		const dispatch: Dispatch = { callId: order.callId, title: order.member.title, state: "queued", token: randomUUID(), step: "", lastEventAt: 0, tools: new Map(), tokens: 0 };
+		const dispatch: Dispatch = { callId: order.callId, title: order.member.title, state: "queued", token: randomUUID(), step: "", lastEventAt: 0, tools: new Map(), tokens: 0, tokensCached: 0 };
 		desk.dispatches.add(dispatch);
 		const work = this.#work(order, dispatch, desk.stop.signal);
 		desk.work.add(work);
@@ -391,6 +394,7 @@ export class DispatchDesk {
 					tokens.tokensCached += u.tokensCached ?? 0;
 					tokens.tokensOut += u.tokensOut;
 					dispatch.tokens = tokens.tokensIn + tokens.tokensOut;
+					dispatch.tokensCached = tokens.tokensCached;
 					order.onUsage(u);
 				},
 				onMessage: (message) => onMessage(message, messages++),
@@ -445,6 +449,7 @@ export class DispatchDesk {
 					quietMs: d.state === "running" ? now - d.lastEventAt : 0,
 					...(oldest && { toolMs: now - oldest.startedAt }),
 					tokens: d.tokens,
+					tokensCached: d.tokensCached,
 					...(d.note !== undefined && { note: d.note }),
 				};
 			});

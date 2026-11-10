@@ -514,10 +514,10 @@ export function liveSteps(watch, view) {
 	const helperGone = row?.workerState !== "running" || row.endedAt !== null;
 	const hostSince = view.duty?.since ?? 0;
 	// A dispatch cut off by a stop or a killed host has no result to carry its count, and after a restart no board entry either.
-	const used = (/** @type {string | undefined} */ callId, /** @type {number | undefined} */ counted) => {
-		if (counted !== undefined) return tokensText(counted);
-		const { tokens, cached } = memberTokens(watch, callId);
-		return tokens > 0 ? tokensText(tokens, cached) : "";
+	const used = (/** @type {string | undefined} */ callId, /** @type {number | undefined} */ counted, /** @type {number | undefined} */ cached) => {
+		if (counted !== undefined) return tokensText(counted, cached);
+		const own = memberTokens(watch, callId);
+		return own.tokens > 0 ? tokensText(own.tokens, own.cached) : "";
 	};
 	return watch.steps.map((step) => {
 		if (step.state !== "pending") return step.dispatch ? { ...step, dispatch: { ...step.dispatch, tokens: step.dispatch.tokens || used(step.callId), steps: memberSteps(watch, step.callId, true) } } : step;
@@ -533,7 +533,7 @@ export function liveSteps(watch, view) {
 			state,
 			stateText: DISPATCH_STATE[state],
 			note: seen?.note ?? "",
-			tokens: used(step.callId, seen?.tokens),
+			tokens: used(step.callId, seen?.tokens, seen?.tokensCached),
 			steps: memberSteps(watch, step.callId, DISPATCH_STEP_STATE[state] !== "pending"),
 		};
 		return { ...step, state: DISPATCH_STEP_STATE[state], dispatch, detail: dispatchDetail(dispatch) };

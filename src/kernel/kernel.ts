@@ -557,7 +557,7 @@ export class Kernel {
 		});
 	}
 
-	/** `tokensIn` is all input; `tokensCached` is the part of it read from the prompt cache. */
+	/** `tokensIn` is new input plus cache reads; `tokensCached` is the cache-read part of it. */
 	recordUsage(ticketId: string, { provider, tokensIn, tokensCached = 0, tokensOut }: { provider: string; tokensIn: number; tokensCached?: number; tokensOut: number }): void {
 		this.#tx(() => {
 			this.#requireTicket(ticketId);
