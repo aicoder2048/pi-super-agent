@@ -241,6 +241,45 @@ test("网页：不带 token 或来源不对的点选被拒，上限不变；带�
 	assert.deepEqual([other.status, JSON.parse(other.body).refused], [409, "chosen"]);
 });
 
+function storeBroken(host: { kernel: { capAsks: { save: unknown } } }, error: Error) {
+	const { capAsks } = host.kernel;
+	const save = capAsks.save;
+	capAsks.save = () => {
+		throw error;
+	};
+	return () => void (capAsks.save = save);
+}
+
+async function answerOverSocket(socketPath: string, hello: object, requestId: string, option = 0) {
+	const socket = connect(socketPath);
+	const replies: Record<string, unknown>[] = [];
+	onJsonLines(socket, (r) => replies.push(r as Record<string, unknown>));
+	await new Promise((done) => socket.once("connect", done));
+	writeJsonLine(socket, hello);
+	writeJsonLine(socket, { type: "answer", reportId: ASK, option, requestId });
+	await until(() => replies.some((r) => r.requestId === requestId), "宿主回了这次点选");
+	socket.destroy();
+	return replies.find((r) => r.requestId === requestId)!;
+}
+
+test("点了放宽而状态库写不进去：宿主照常运行，TUI 和网页都收到失败，上限不变、问题还开着、对话里没有这句话；状态库好了再点才放宽", async (t) => {
+	const { host, count, cap, capLogs, logs } = await wholeCrewDispatched(t, { webPort: 0 });
+	await until(() => count("queued") === 2, "一位在做两位排队");
+	const mend = storeBroken(host, new Error("SQLITE_FULL: database or disk is full"));
+	assert.deepEqual(await answerOverSocket(host.socketPath, { type: "hello", role: "client" }, "r1"), { type: "refused", requestId: "r1", reason: "宿主内部出错，这次点选没有生效，请再点一次；详情见宿主日志。" });
+	const url = new URL(host.webUrl!);
+	const post = () => fetch(`${url.origin}/say${url.search}`, { method: "POST", headers: { "content-type": "application/json", origin: url.origin }, body: JSON.stringify({ answer: { reportId: ASK, option: 0 } }) });
+	assert.equal((await post()).status, 500);
+	assert.deepEqual([cap()?.limit, cap()?.question?.reportId, count("running")], [1, ASK, 1]);
+	assert.deepEqual(host.snapshot().conversation.filter((l) => l.id === ASK), []);
+	assert.equal(capLogs().length, 1, capLogs().join("\n"));
+	assert.equal(logs.filter((l) => l.startsWith("[socket] 客户端 answer 出错：") && l.includes("SQLITE_FULL")).length, 1, logs.join("\n"));
+	mend();
+	assert.equal((await answerOverSocket(host.socketPath, { type: "hello", role: "client" }, "r2")).type, "ack");
+	await until(() => count("running") === 3, "三位都在做", 500);
+	assert.deepEqual(host.snapshot().conversation.filter((l) => l.id === ASK).map((l) => l.text), [SAID]);
+});
+
 test("配置的上限已经是 10：成员排队也不问", async (t) => {
 	const crew = Array.from({ length: 11 }, (_, i) => member(`m${i}`, `成员${i}`));
 	const { count, cap, capLogs } = await wholeCrewDispatched(t, { configured: 10, crew });
