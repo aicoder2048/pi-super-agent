@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { connect } from "node:net";
+import { connect, createServer } from "node:net";
 import { join } from "node:path";
 import test from "node:test";
 import { HostConnection } from "../src/client/connection.ts";
@@ -266,4 +266,24 @@ test("just say：socket 的 say 多带一个 quote 键时照常当一句话说�
 	const said = host.kernel.conversation().at(-1);
 	assert.equal(said?.text, SAY.text);
 	assert.equal(said && "quote" in said, false);
+});
+
+test("just tail：旧版宿主发来不带 who 的 user 帧，照样打成「你>」", async (t) => {
+	const stateDir = tempStateDir();
+	writeFileSync(tokenFile(stateDir), "tok\n");
+	const server = createServer((socket) => {
+		socket.once("data", () => {
+			socket.write(`${JSON.stringify({ type: "snapshot", conversation: [{ id: "trg_1", who: "user", text: "早", at: 1 }], cleared: null, board: [], today: {}, duty: {}, helpers: {}, routes: {}, dispatching: {}, memberCap: null, watching: [] })}\n`);
+			socket.write(`${JSON.stringify({ type: "user", id: "trg_2", text: "旧宿主的一句", at: 2 })}\n`);
+		});
+	});
+	await new Promise<void>((resolve) => server.listen(join(stateDir, "host.sock"), resolve));
+	t.after(() => server.close());
+	const child = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/cli/say.ts", "tail"], { env: { ...process.env, PSA_STATE_DIR: stateDir } });
+	t.after(() => child.kill());
+	let stdout = "";
+	child.stdout.on("data", (d) => (stdout += d));
+	await until(() => stdout.includes("旧宿主的一句"), "tail 打出旧宿主的那句", 15_000);
+	const lines = stdout.trim().split("\n").map((l) => l.replace(/^\d\d:\d\d:\d\d /, "TIME "));
+	assert.deepEqual(lines, ["TIME 你> 早", "TIME 你> 旧宿主的一句"]);
 });

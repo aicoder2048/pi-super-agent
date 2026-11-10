@@ -43,7 +43,8 @@ onJsonLines(socket, (record) => {
 		if (mode === "tail") r.conversation.slice(-10).forEach(printLine);
 		if (mode === "say") writeJsonLine(socket, { type: "say", text });
 	} else if (r.type === "reply") print("Router", r.text, r.at);
-	else if (r.type === "user" && mode === "tail") printLine(r);
+	// A host older than quoting sends a user frame without who.
+	else if (r.type === "user" && mode === "tail") printLine({ ...r, who: "user" });
 	else if (r.type === "board" && mode === "board") {
 		for (const row of r.rows) console.log(`${row.stage.padEnd(18)} ${row.basis.padEnd(9)} ${row.title} · ${row.latestSummary ?? ""}`);
 		console.log("---");

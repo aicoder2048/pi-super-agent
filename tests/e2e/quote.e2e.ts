@@ -37,7 +37,20 @@ test("引用：悬停出现「引用」，引用条可用 ✕ 和 Esc 取消；�
 				assert.equal(await opacity(routerLine(page)), "1");
 				assert.equal(await strip(page).isHidden(), true, "还没点，引用条不出现");
 			});
+			await step("鼠标移开后用 Tab 能走到「引用」，走到时它显示出来", async (page) => {
+				await page.mouse.move(0, 0);
+				await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+				let reached = false;
+				for (let i = 0; i < 30 && !reached; i++) {
+					await page.keyboard.press("Tab");
+					reached = await page.evaluate(() => document.activeElement?.classList.contains("quote-btn") ?? false);
+				}
+				assert.equal(reached, true, "Tab 走到了「引用」");
+				const shown = await page.evaluate(() => getComputedStyle(document.activeElement!).opacity);
+				assert.equal(shown, "1");
+			});
 			await step("点「引用」，输入框上方出现灰色引用条，写着「引用 幕僚长：」和去掉标记的原话", async (page) => {
+				await routerLine(page).locator(".bubble").hover();
 				await quoteButton(routerLine(page)).click();
 				await strip(page).waitFor();
 				assert.match(await stripText(page), /^引用 幕僚长：好的，去查了。明天多云转晴/);
@@ -50,12 +63,14 @@ test("引用：悬停出现「引用」，引用条可用 ✕ 和 Esc 取消；�
 				await strip(page).waitFor({ state: "hidden" });
 			});
 			await step("再引用一次，在输入框里按 Esc 取消", async (page) => {
+				await routerLine(page).locator(".bubble").hover();
 				await quoteButton(routerLine(page)).click();
 				await strip(page).waitFor();
 				await page.locator("#composer").press("Escape");
 				await strip(page).waitFor({ state: "hidden" });
 			});
 			await step("引用后发「改成 B」：引用条清空，我的气泡下灰色显示引用，最多两行", async (page) => {
+				await routerLine(page).locator(".bubble").hover();
 				await quoteButton(routerLine(page)).click();
 				await sayInPage(page, "改成 B");
 				await strip(page).waitFor({ state: "hidden" });
@@ -135,6 +150,38 @@ test("引用：窄屏触屏上点一下气泡出现「引用」，点气泡外�
 				await line.locator(".route").tap();
 				assert.equal(await line.evaluate((l) => l.classList.contains("picked")), false);
 				assert.equal(await opacity(line), "0");
+			});
+		},
+	));
+
+test("引用：触屏上没点气泡，手指点在看不见的「引用」那块空白上，引用条不出现", (t) =>
+	story(
+		t,
+		{
+			router: [
+				on("Router 回答查天气", /^\[对话\][\s\S]*查天气/, (c) => [reply(c, "好的，去查了。")]),
+				on("Router 回答第二句", /^\[对话\][\s\S]*第二句/, (c) => [reply(c, "第二个回答")]),
+			],
+		},
+		async ({ step, host, open }) => {
+			let phone!: Page;
+			await step("说两句，幕僚长各回一句；手机上打开页面", async (page) => {
+				await sayInPage(page, "查天气");
+				await page.locator(".line.router .bubble", { hasText: "好的，去查了。" }).waitFor();
+				await sayInPage(page, "第二句");
+				await page.locator(".line.router .bubble", { hasText: "第二个回答" }).waitFor();
+				phone = await open(host.url, { context: { viewport: { width: 390, height: 844 }, hasTouch: true } });
+				await waitStatus(phone, "connected");
+				await phone.locator(".line.router .bubble", { hasText: "第二个回答" }).waitFor();
+			});
+			await step("点第一句幕僚长回答下面「引用」所在的地方，引用条不出现", async () => {
+				const button = quoteButton(phone.locator(".line.router").first());
+				await button.scrollIntoViewIfNeeded();
+				const box = (await button.boundingBox())!;
+				assert.ok(box.y >= 0 && box.y + box.height <= 844, `「引用」在屏幕内：${JSON.stringify(box)}`);
+				await phone.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+				await phone.evaluate(() => new Promise(requestAnimationFrame));
+				assert.equal(await strip(phone).isHidden(), true, "看不见的「引用」不该被点中");
 			});
 		},
 	));
