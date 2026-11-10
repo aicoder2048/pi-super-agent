@@ -56,7 +56,7 @@ const GROUP = {
  * @property {WatchedSource[]} watching
  * @property {Routes} routes
  * @property {Dispatching} dispatching
- * @property {Map<string, BoardDispatch>} lastOnBoard
+ * @property {Map<string, Map<string, BoardDispatch>>} lastOnBoard each unfinished ticket's dispatches as the board last listed them, by ticket then call id
  */
 
 /** @returns {View} */
@@ -67,7 +67,14 @@ export function emptyView() {
 /** @param {View} view @param {Dispatching | undefined} dispatching */
 function setDispatching(view, dispatching) {
 	view.dispatching = dispatching ?? {};
-	for (const d of Object.values(view.dispatching).flat()) view.lastOnBoard.set(d.callId, d);
+	const unfinished = new Set(view.rows.filter((r) => r.endedAt === null).map((r) => r.id));
+	for (const ticketId of view.lastOnBoard.keys()) if (!unfinished.has(ticketId)) view.lastOnBoard.delete(ticketId);
+	for (const [ticketId, listed] of Object.entries(view.dispatching)) {
+		if (!unfinished.has(ticketId)) continue;
+		const calls = view.lastOnBoard.get(ticketId) ?? new Map();
+		for (const d of listed) calls.set(d.callId, d);
+		view.lastOnBoard.set(ticketId, calls);
+	}
 }
 
 /** @param {View} view @param {ConversationLine} line */
@@ -464,7 +471,7 @@ export function liveSteps(watch, view) {
 		if (step.state !== "pending") return step.dispatch ? { ...step, dispatch: { ...step.dispatch, tokens: step.dispatch.tokens || used(step.callId), steps: memberSteps(watch, step.callId, true) } } : step;
 		const dead = helperGone || (step.at ?? Infinity) < hostSince;
 		if (!step.dispatch) return dead ? stopped(step) : step;
-		const seen = onBoard.get(step.callId ?? "") ?? view.lastOnBoard.get(step.callId ?? "");
+		const seen = onBoard.get(step.callId ?? "") ?? view.lastOnBoard.get(watch.ticketId)?.get(step.callId ?? "");
 		const last = seen?.state ?? "queued";
 		/** @type {DispatchState} */
 		const state = dead && (last === "queued" || last === "running") ? "stopped" : last;

@@ -1362,7 +1362,8 @@ test("页面：还没结束的派活一开始就写成员的职称；状态跟�
 test("页面：任务被叫停后，没做完的步骤不再转圈：派活写成员职称和已停止，别的步骤也算已停止", () => {
 	const view = page.emptyView();
 	const w = page.emptyWatch("tkt_1");
-	page.applyTranscript(w, teamHistory("tkt_1", [dispatchCall("c1", "news-researcher", "查新闻"), tool("bash", { command: "sleep 300" })]));
+	const memberSaid = { role: "assistant", content: [{ type: "toolCall", id: "m1", name: "web_get", arguments: { url: "https://example.com/n" } }], usage: { input: 600, output: 100 } };
+	page.applyTranscript(w, teamHistory("tkt_1", [dispatchCall("c1", "news-researcher", "查新闻"), tool("bash", { command: "sleep 300" })], { c1: [memberSaid] }));
 	page.applyMessage(view, board([row({ id: "tkt_1", workerState: "running" })], zeroToday(), noHelpers, {}, { tkt_1: [onBoard("c1", "新闻研究员", "running", { tokens: 700 })] }), 0);
 	page.applyMessage(view, board([row({ id: "tkt_1", stage: "stopped", workerState: "idle", endedAt: 5 })]), 0);
 	const steps = page.liveSteps(w, view);
@@ -1378,6 +1379,19 @@ test("页面：宿主重启前发出、没等到结果的步骤一打开就是�
 	assert.deepEqual(shown(page.liveSteps(w, view)), [["新闻研究员 · 已停止", "stopped"]]);
 	page.applyTranscript(w, live("tkt_1", dispatchCall("c2", "news-researcher", "再查", 6000)));
 	assert.deepEqual(shown(page.liveSteps(w, view)), [["新闻研究员 · 已停止", "stopped"], ["新闻研究员 · 排队中", "pending"]]);
+});
+
+test("页面：记下的派活最后状态只留到任务结束：任务结束或不在看板上了，它的那些记录就丢掉，不随标签页一直攒着", () => {
+	const view = page.emptyView();
+	const rows = (ended: number | null) => [row({ id: "tkt_a", endedAt: ended, stage: ended === null ? "running" : "stopped" }), row({ id: "tkt_b" })];
+	const kept = () => [...view.lastOnBoard].map(([ticketId, calls]) => [ticketId, [...calls.keys()]]);
+	page.applyMessage(view, board(rows(null), zeroToday(), noHelpers, {}, { tkt_a: [onBoard("a1", "新闻研究员", "running")], tkt_b: [onBoard("b1", "行情分析师", "running")] }), 0);
+	page.applyMessage(view, board(rows(null), zeroToday(), noHelpers, {}, { tkt_a: [onBoard("a2", "新闻研究员", "done")] }), 0);
+	assert.deepEqual(kept(), [["tkt_a", ["a1", "a2"]], ["tkt_b", ["b1"]]], "任务还在做时，离开看板的派活仍记着，等它的结果到");
+	page.applyMessage(view, board(rows(5000)), 0);
+	assert.deepEqual(kept(), [["tkt_b", ["b1"]]]);
+	page.applyMessage(view, snapshot({ board: [] }), 0);
+	assert.deepEqual(kept(), []);
 });
 
 test("页面：宿主被杀时还在跑的派活，重启后写已停止，仍带着成员用掉的 token：从成员自己的消息里的用量加出来", () => {
