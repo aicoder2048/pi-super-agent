@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -92,4 +92,11 @@ test("幕僚长看到的规则只有编号和正文", () => {
 	const file = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
 	writeFileSync(file, "## news\n来源: rss\n有听证会新闻就查一下\n\n## ci\n来源: ci\nCI 失败时开任务\n");
 	assert.equal(Modules.load([], { stateDir: dirname(file) }).rulesPrompt(), "### user/news\n有听证会新闻就查一下\n\n### user/ci\nCI 失败时开任务");
+});
+
+test("模块不能叫 user：这个名字留给使用者自己的规则，加载时报一行错，以 module.json 开头", () => {
+	const root = mkdtempSync(join(tmpdir(), "psa-mods-"));
+	mkdirSync(join(root, "user"));
+	writeFileSync(join(root, "user", "module.json"), JSON.stringify({ name: "user" }));
+	assert.throws(() => Modules.load([root]), (e: Error) => e instanceof ConfigError && e.message.startsWith(join(root, "user/module.json")) && /不能叫 user/.test(e.message) && !e.message.includes("\n"));
 });

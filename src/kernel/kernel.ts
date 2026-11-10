@@ -937,13 +937,15 @@ export class Kernel {
 			const known = [...this.#domains.keys()];
 			return reject(`unknown domain ${asked}; ${known.length ? `the domains are ${known.join(", ")} (omit domain when none fits)` : "there are no domains (omit domain)"}`);
 		}
-		const domain = asked ?? null;
+		const ruled = d.basis === "rule" ? this.#domainOfRule(d.ruleId!) : null;
+		const domain = ruled ?? asked ?? null;
 		if (d.basis === "inference") {
 			const limitProblem = this.#inferenceDailyLimitProblem();
 			if (limitProblem) return reject(limitProblem);
 		}
 
 		const ticketId = this.#id("tkt");
+		if (ruled !== null && asked !== undefined && asked !== ruled) this.#log(`[kernel] 规则 ${d.ruleId} 属于领域「${ruled}」，幕僚长填的是「${asked}」，任务 ${ticketId} 按「${ruled}」开`);
 		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now(), domain);
 		this.#run(
 			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, domain)
@@ -969,6 +971,12 @@ export class Kernel {
 		if (d.triggerId !== undefined) takenThisRoute.add(d.triggerId);
 		if (d.triggerId !== undefined) this.#setDisposition(d.triggerId, "opened_ticket", ticketId);
 		return { ok: true, ticketId };
+	}
+
+	/** A rule id is `<namespace>/<rule>`; a module's rules carry its name as the namespace, the user's own rules carry `user`. */
+	#domainOfRule(ruleId: string): string | null {
+		const namespace = ruleId.split("/")[0];
+		return this.#domains.has(namespace) ? namespace : null;
 	}
 
 	#inferenceRunning(): number {

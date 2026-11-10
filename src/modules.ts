@@ -64,6 +64,8 @@ export interface ModulesLoadOptions {
 }
 
 const DESCRIPTION_MAX_CHARS = 60;
+/** The namespace of the rules in the state dir's rules.md. No module may take it, or the user's rules would land in that module's domain. */
+const USER_NAMESPACE = "user";
 
 export interface Rule {
 	id: string;
@@ -99,6 +101,7 @@ function loadModule(dir: string, allowedProviders: readonly string[]): LoadedMod
 	const manifestPath = join(dir, "module.json");
 	const manifest = readJsonFile<ModuleManifest>(manifestPath);
 	if (!manifest.name || manifest.name !== basename(dir)) throw new ConfigError(`${manifestPath}：name 必须等于目录名 ${basename(dir)}`);
+	if (manifest.name === USER_NAMESPACE) throw new ConfigError(`${manifestPath}：模块不能叫 ${USER_NAMESPACE}，这个名字留给状态目录 rules.md 里你自己的规则。给模块目录换个名字`);
 	for (const key of ["title", "description"] as const) {
 		const value: unknown = manifest[key];
 		if (value !== undefined && (typeof value !== "string" || !value.trim())) throw new ConfigError(`${manifestPath}：${key}（${JSON.stringify(value)}）要写成一句不为空的话`);
@@ -167,7 +170,7 @@ export class Modules implements Domains {
 		const names = modules.map((m) => m.name);
 		const dup = names.find((n, i) => names.indexOf(n) !== i);
 		if (dup) throw new ConfigError(`模块重名：${dup}`);
-		const parsed = userRulesFile && existsSync(userRulesFile) ? parseRules(userRulesFile, "user", readFileSync(userRulesFile, "utf8")) : [];
+		const parsed = userRulesFile && existsSync(userRulesFile) ? parseRules(userRulesFile, USER_NAMESPACE, readFileSync(userRulesFile, "utf8")) : [];
 		const userRules = parsed.filter((r): r is ScopedRule => !!r.sources?.length);
 		const skipped = parsed.filter((r) => !r.sources?.length).map((r) => r.id);
 		return new Modules(modules, userRules, skipped);

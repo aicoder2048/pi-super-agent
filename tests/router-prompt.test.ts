@@ -12,6 +12,8 @@ test("幕僚长的提示词有一份领域名册：原样列出，并说明 doma
 	assert.ok(section.endsWith(`${ROSTER}\n\n`), section);
 	assert.match(section, /填 domain/);
 	assert.match(section, /省略就是不属于任何领域/);
+	assert.match(section, /模块规则（规则编号以模块名开头）开的任务属于那个模块，不用填 domain/);
+	assert.match(section, /user\/ 开头/);
 	assert.doesNotMatch(prompt, /团队|team/);
 });
 

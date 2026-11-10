@@ -1298,6 +1298,46 @@ test("不存在的领域：拒绝这个决定，理由里写出有哪些领域�
 	assert.ok(retry.ok);
 });
 
+test("模块规则开的任务属于规则所在的模块：幕僚长省略或填对了都不记日志；模块没有成员也一样归它", () => {
+	const s = setup({ domains: DOMAINS });
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "news/breaking" })), "news");
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "news/breaking", domain: "news" })), "news");
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "news/breaking", domain: " " })), "news");
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "mail/new" })), "mail");
+	assert.deepEqual(s.logs, []);
+});
+
+test("幕僚长给模块规则的任务填了别的领域：内核按规则所在的模块定，并记一行日志", () => {
+	const s = setup({ domains: DOMAINS });
+	const id = s.open("rule", { ruleId: "news/breaking", domain: "watch" });
+	assert.equal(domainOf(s.kernel, id), "news");
+	assert.deepEqual(helperOf(s.kernel, id), { name: TEAM_NAMES[0], team: "新闻队", seq: 1 });
+	assert.deepEqual(s.logs, [`[kernel] 规则 news/breaking 属于领域「news」，幕僚长填的是「watch」，任务 ${id} 按「news」开`]);
+});
+
+test("模块规则的任务填了不存在的领域，照样拒绝，不悄悄改回", () => {
+	const s = setup({ domains: DOMAINS });
+	const { triggerId } = s.trigger({ threads: [{ id: "thr_generic:r" }] });
+	const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "rule", ruleId: "news/breaking", triggerId, domain: "财报", brief: "b" }]);
+	assert.equal(result.ok, false);
+	assert.deepEqual(s.logs, []);
+});
+
+test("使用者自己的规则和不属于任何已加载模块的规则没有自己的领域：幕僚长填的算数，不填就没有领域", () => {
+	const s = setup({ domains: DOMAINS });
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "user/ci" })), null);
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "user/ci", domain: "watch" })), "watch");
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "gone/old", domain: "news" })), "news");
+	assert.deepEqual(s.logs, []);
+});
+
+test("规则的归属只管按规则开的任务：使用者开口要的任务即使带着规则编号，也由幕僚长选领域", () => {
+	const s = setup({ domains: DOMAINS });
+	const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", ruleId: "news/breaking", triggerId: s.say("看盘").triggerId, domain: "watch", brief: "b" }]);
+	assert.equal(domainOf(s.kernel, result.ticketId!), "watch");
+	assert.deepEqual(s.logs, []);
+});
+
 test("任务的领域存在状态库里：重启后不变，即使那个模块已经拿掉", () => {
 	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
 	const first = setup({ path, domains: DOMAINS });

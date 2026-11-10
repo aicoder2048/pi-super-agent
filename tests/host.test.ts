@@ -243,3 +243,15 @@ test("宿主把领域簿交给内核，任务的领域决定启动助手时交�
 	const seen = host.kernel.listTickets().map((row) => [host.kernel.getTicket(row.id)!.domain, "team" in row.helper! && row.helper.team, spawner.workers.get(row.id)!.spec.crew.map((m) => m.name)]);
 	assert.deepEqual(seen, [["news", "新闻队", ["news-researcher"]], ["mail", false, []], [null, false, []]]);
 });
+
+test("幕僚长给模块规则的任务填了别的领域时，助手拿到的是规则所在模块的成员，内核记的那一行写进宿主日志", async (t) => {
+	const logs: string[] = [];
+	const brain: Brain = (cards) =>
+		cards.flatMap((card) => (card.startsWith("[候选触发]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "rule", ruleId: "news/breaking", domain: "mail", triggerId: ids(card, "trg"), title: "t", brief: "b" }] } }] : []));
+	const { host, spawner } = await startHost(brain, (w) => w.settle(), { domains: NEWS_DOMAINS, dispatch: DISPATCH, ruleAllows: () => true, log: (line) => logs.push(line) });
+	t.after(() => host.stop());
+	host.kernel.submitTrigger({ source: "feeds", externalId: "n1", threads: [{ id: "thr_feeds:n1" }], sender: "rss", body: "听证会", occurredAt: Date.now() });
+	await until(() => spawner.workers.size === 1, "助手启动");
+	assert.deepEqual([...spawner.workers.values()][0].spec.crew.map((m) => m.name), ["news-researcher"]);
+	assert.equal(logs.filter((line) => line.startsWith("[kernel] 规则 news/breaking 属于领域「news」，幕僚长填的是「mail」")).length, 1, logs.join("\n"));
+});
