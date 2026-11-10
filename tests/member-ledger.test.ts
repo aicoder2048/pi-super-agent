@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { connect } from "node:net";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -131,4 +132,22 @@ test("宿主重启：先结束上一个宿主留下的成员，再恢复任务�
 	assert.equal(alive(pid), false, "宿主启动完成时留下的成员已经没了");
 	await until(() => aliveAtSpawn.length === 1, "恢复的任务重新起了助手");
 	assert.deepEqual(aliveAtSpawn, [false]);
+});
+
+test("同一个状态目录上再起一个宿主：它启动失败并说明已有宿主在运行，不动在跑的宿主的成员、记录和 socket", async (t) => {
+	const first = await startHost(() => [], () => {});
+	t.after(() => first.host.stop());
+	const stateDir = first.host.socketPath.replace(/\/host\.sock$/, "");
+	const sessionDir = memberSessionDir(stateDir, "tkt_1", "news-researcher");
+	const { pid } = await leftover(t, sessionDir);
+	recordMember(sessionDir, pid);
+	const second = Host.start({ stateDir, createRouter: fauxRouter(() => []).createRouter, createSpawner: () => new FakeSpawner(() => {}), log: () => {}, workerModels: defaultWorkerModels() });
+	second.then((host) => host.stop(), () => {});
+	await assert.rejects(second, (e: Error) => e.name === "ConfigError" && /已经有一个宿主在运行/.test(e.message) && e.message.includes(stateDir));
+	assert.equal(alive(pid), true, "在跑的宿主的成员没有被结束");
+	assert.equal(isRecorded(sessionDir), true);
+	await new Promise<void>((done, fail) => connect(first.host.socketPath).once("connect", function (this: import("node:net").Socket) {
+		this.destroy();
+		done();
+	}).once("error", fail));
 });

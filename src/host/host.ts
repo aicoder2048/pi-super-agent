@@ -188,11 +188,12 @@ export class Host {
 		try {
 			const clientToken = loadToken(options.stateDir, "client-token", host.#log);
 			const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath, rulesFor: options.rulesFor ?? (() => []) };
+			// The socket bind is what turns a second host on this state directory away; with webPort 0 the web port does not.
+			await host.server.listen(host.socketPath, clientToken);
 			await endLeftoverMembers(options.stateDir, host.#log);
 			host.router = await options.createRouter(deps);
-			await host.server.listen(host.socketPath, clientToken);
 		} catch (error) {
-			await host.#web?.close();
+			await Promise.all([host.server.close(), host.#web?.close()]);
 			throw error;
 		}
 		host.kernel.nameUnnamedHelpers();
