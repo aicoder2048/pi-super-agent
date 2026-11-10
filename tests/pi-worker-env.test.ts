@@ -64,10 +64,9 @@ test("Worker 子进程和模块 prepare 的环境里没有客户端凭据，也�
 		socketPath: join(stateDir, "host.sock"),
 		sessionDir: join(stateDir, "sessions"),
 		cliPath,
-		moduleFor: () => ({ prepare: "env > prepare-env.txt" }),
 	});
 	const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
-	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir, basis: "request", ruleId: null, crew: [], token: "secret-ticket-token", model: { provider: "openai-codex", id: "gpt" } }, events);
+	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir, basis: "request", prepare: "env > prepare-env.txt", crew: [], token: "secret-ticket-token", model: { provider: "openai-codex", id: "gpt" } }, events);
 	t.after(() => handle.stop());
 	const env = JSON.parse(readFileSync(join(workdir, "worker-env.json"), "utf8")) as Record<string, string>;
 	const prepared = readFileSync(join(workdir, "prepare-env.txt"), "utf8");
