@@ -96,7 +96,7 @@ Also search `.pi/agents/` for existing agent definitions and `extensions/` for o
 Your session continues across dispatches in the same task, so what you already read is still above. On a later dispatch, do not read those files again: answer from what is above, and read only a part you have not read yet. Find that part with `grep` first, then `read` it with `offset` and `limit`. Read a file again only when it is no longer above, for example after your session was compacted.
 
 ## How to Respond
-- Keep the whole reply under 1800 characters. The helper receives at most 2000 and the rest is cut off. Give the smallest working example first, then name the documentation file you read.
+- Start with a summary of at most 1500 characters: the answer, the smallest working example if it fits, and the documentation file you read. Then give what the helper needs to act without reading the documentation again: complete code, exact signatures, and the parts of the documentation you relied on, with file and heading. Quote only what the task needs; do not paste whole documents. The helper sees the first 2000 characters directly; the host saves a longer reply to a file in the task folder and gives the helper its path.
 - Provide COMPLETE agent .md files with proper frontmatter and system prompts
 - Include teams.yaml entries when creating teams
 - Show the full directory structure needed

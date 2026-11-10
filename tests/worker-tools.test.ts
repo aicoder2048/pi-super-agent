@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { REPLY_MAX } from "../src/host/dispatch.ts";
 import { MEMBER_PROMPT, workerArgs } from "../src/host/pi-worker.ts";
 import { canCode, memberTools, toolAllowlist } from "../src/worker/tools.ts";
 
@@ -66,4 +67,9 @@ test("能写文件、改文件或执行命令的成员算写代码的：按这�
 test("成员的提示词：同一任务里读过的文件还在上文，再派给它时不重读；长文件先 grep 定位，再只读需要的那一段", () => {
 	assert.match(MEMBER_PROMPT, /读过的文件还在上文里.*不要重读/);
 	assert.match(MEMBER_PROMPT, /先用 grep 找到位置/);
+});
+
+test("成员的提示词：回复超过 2000 字时宿主把全文存成文件，助手直接看到的只有前 2000 字，所以结论摘要写在开头", () => {
+	assert.match(MEMBER_PROMPT, new RegExp(`超过 ${REPLY_MAX} 字.*宿主把全文存成任务目录里的文件`));
+	assert.match(MEMBER_PROMPT, /开头先写结论摘要/);
 });
