@@ -105,3 +105,31 @@ test("清屏后问「刚才那件事」，幕僚长这一轮的模型请求里�
 			});
 		},
 	));
+
+test("发出的话上屏后被清屏，确认又丢了，页面仍显示已发送，不让用户重发", (t) =>
+	story(
+		t,
+		{ router: [on("Router 回答买咖啡", /^\[对话\][\s\S]*买咖啡/, (c) => [reply(c, "收到咖啡。")])] },
+		async ({ step }) => {
+			await step("宿主收到「买咖啡」，页面等不到确认；这句话上屏后点清屏", async (page) => {
+				let release!: () => void;
+				const held = new Promise<void>((done) => (release = done));
+				await page.route("**/say?*", async (route) => {
+					await route.fetch();
+					await held;
+					await route.abort().catch(() => {});
+				});
+				await page.fill("#composer", "买咖啡");
+				await page.click("#send");
+				await page.locator(".thread > .line.user .bubble", { hasText: "买咖啡" }).waitFor();
+				await page.click("#clear");
+				await bar(page).waitFor();
+				await page.waitForFunction(() => document.getElementById("say-status")?.dataset.state !== "sending", null, { timeout: 10_000 });
+				release();
+				await page.unroute("**/say?*");
+				const state = await page.evaluate(() => document.getElementById("say-status")!.dataset.state);
+				assert.equal(state, "delivered", `输入框：${JSON.stringify(await page.inputValue("#composer"))}`);
+				assert.equal(await page.inputValue("#composer"), "");
+			});
+		},
+	));

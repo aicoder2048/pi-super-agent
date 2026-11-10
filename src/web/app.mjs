@@ -2,7 +2,7 @@
 
 import {
 	CLEAR_FAILED, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
-	questionOf, helperStrip, helperTint, isStale, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, resolveTheme, restartNotice, routeLine, sayCopy, sayOutcome, settleSay, settleSending,
+	questionOf, helperStrip, helperTint, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, resolveTheme, restartNotice, routeLine, sayCopy, sayOutcome, settleSay, settleSending,
 	smallPrint, stopSentence, toggleEarlier, toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperFullName } from "../client/board-format.mjs";
@@ -545,7 +545,7 @@ function mount(doc) {
 		if (!canSend(text) || send.disabled) return;
 		send.disabled = true;
 		unconfirmed = undefined;
-		const seen = new Set(view.lines.keys());
+		const seen = knownLineIds(view);
 		setSay("sending");
 		const abort = new AbortController();
 		const timer = setTimeout(() => abort.abort(), DEFAULT_ACK_TIMEOUT_MS);

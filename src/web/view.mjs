@@ -647,8 +647,14 @@ export const canClear = (view) => view.lines.size > 0;
 
 export const CLEAR_FAILED = "清屏没有成功，请稍后再试。";
 
+/** Hidden lines count too: a say's echo can arrive and be cleared before its ack is lost. @param {View} view */
+const knownLines = (view) => [...(view.cleared?.lines ?? []), ...view.lines.values()];
+
+/** @param {View} view */
+export const knownLineIds = (view) => new Set(knownLines(view).map((l) => l.id));
+
 /** @param {View} view @param {Set<string>} seen */
-export const linesNotIn = (view, seen) => [...view.lines.values()].filter((l) => !seen.has(l.id));
+export const linesNotIn = (view, seen) => knownLines(view).filter((l) => !seen.has(l.id));
 
 /** @param {DashboardRow | undefined} row @param {number} now @param {number} receivedAt @param {string} [timeZone] */
 export function lifecycleLine(row, now, receivedAt, timeZone) {

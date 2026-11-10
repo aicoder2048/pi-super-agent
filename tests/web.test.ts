@@ -247,6 +247,26 @@ test("页面：发出时没收到确认的那句话，中间清过屏也照样�
 	assert.deepEqual(page.settleSay({ state: "maybe_lost", text: "明天呢" }, "明天呢", arrived), { state: "delivered", composer: "" });
 });
 
+test("页面：发出后这句话上屏又被清屏，确认丢了也能在被清掉的行里对上", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, snapshot({ conversation: [line("trg_1", "查天气")] }), 0);
+	const seen = page.knownLineIds(view);
+	page.applyMessage(view, { type: "user", id: "trg_2", text: "买咖啡", at: AT_1405 + 1 }, 0);
+	page.applyMessage(view, clearedFrame([line("trg_1", "查天气"), line("trg_2", "买咖啡")]), 0);
+	const arrived = page.linesNotIn(view, seen);
+	assert.deepEqual(arrived.map((l) => l.text), ["买咖啡"]);
+	assert.deepEqual(page.settleSay({ state: "maybe_lost", text: "买咖啡" }, "买咖啡", arrived), { state: "delivered", composer: "" });
+});
+
+test("页面：发出前就被清掉的同一句话，不当作这次发出的回音", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, snapshot({ conversation: [line("trg_1", "买咖啡")] }), 0);
+	page.applyMessage(view, clearedFrame([line("trg_1", "买咖啡")]), 0);
+	const seen = page.knownLineIds(view);
+	const arrived = page.linesNotIn(view, seen);
+	assert.deepEqual(page.settleSay({ state: "maybe_lost", text: "买咖啡" }, "买咖啡", arrived), { state: "maybe_lost", composer: "买咖啡" });
+});
+
 test("页面：reply 帧带的 ticketId 留在对话行上", () => {
 	const view = page.emptyView();
 	page.applyMessage(view, { type: "reply", replyId: "rpl_1", text: "要看哪部分？", at: 1, ticketId: "tkt_a" }, 0);
