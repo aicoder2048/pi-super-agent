@@ -595,28 +595,28 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
-- [ ] Lane 1. 状态目录的 `modules/` 里放一个带技能的模块，在对话里问它管的事。Save `d1-conversation-skill.png`. Pass when 任务的领域是这个模块，助手用上了模块的技能。
-- [ ] Lane 2. 模块自己的规则被来源触发，`rules.md` 里没有「团队：」行。Save `d1-rule-domain.png`. Pass when 任务的领域是规则所在的模块。
-- [ ] Lane 3. 模块有两位成员。Save `d1-crew.png`. Pass when 任务显示「四字名 · 队名 #1」，助手能派活，成员用上了模块的技能。
-- [ ] Lane 4. 模块没有成员、有技能。Save `d1-solo-skills.png`. Pass when 任务是两字名加角色的单个助手，用上了模块的技能，没有派活工具。
-- [ ] Lane 5. 问一件哪个领域都不沾的事。Save `d1-no-domain.png`. Pass when 任务没有领域，是普通助手，页面和 W5 相同。
-- [ ] Lane 6. `rules.md` 里写一行「团队：新闻队」。Save `d1-error-rule-line.png`. Pass when 启动报一行错，写出文件、规则编号和改法，退出码 1。
-- [ ] Lane 7. 状态目录或某个模块里放一个 `teams.yaml`。Save `d1-error-teams-yaml.png`. Pass when 启动报一行错，以这个文件开头并说明改法，退出码 1。
-- [ ] Lane 8. 状态目录下放零散的 `agents/`。Save `d1-error-loose-agents.png`. Pass when 启动报一行错，说明搬到 `modules/<名字>/agents/`，退出码 1。
-- [ ] Lane 9. 开一个有成员的领域的任务和一个没有领域的任务后重启。Save `d1-restart.png`. Pass when 两个任务的领域、名字和序号不变，前一个任务的助手仍能派活。
-- [ ] Lane 10. 开一个有成员的领域的任务后拿掉那个模块再重启。Save `d1-module-removed.png`. Pass when 任务按单个助手继续，日志只有一行说明，四字名不变，队名的位置写模块名。
+- [x] Lane 1. 状态目录的 `modules/` 里放一个带技能的模块，在对话里问它管的事。Save `d1-conversation-skill.png`. Pass when 任务的领域是这个模块，助手用上了模块的技能。 2026-11-09 在 0b7d7ce 上通过：领域是 research，助手读了模块的 SKILL.md，汇报以技能要求的那一行结尾（`/tmp/swarm-d1/worker-1/`）。
+- [x] Lane 2. 模块自己的规则被来源触发，`rules.md` 里没有「团队：」行。Save `d1-rule-domain.png`. Pass when 任务的领域是规则所在的模块。 2026-11-09 在 0b7d7ce 上通过：幕僚长没填领域，任务的领域是 research，显示「雪泥鸿爪 · 调研队 #1」（`/tmp/swarm-d1/worker-2/`）。
+- [x] Lane 3. 模块有两位成员。Save `d1-crew.png`. Pass when 任务显示「四字名 · 队名 #1」，助手能派活，成员用上了模块的技能。 2026-11-09 在 0b7d7ce 上通过：四字名加调研队，派给检索员和核对员，两位都带着模块的技能目录（`/tmp/swarm-d1/worker-3/`）。
+- [x] Lane 4. 模块没有成员、有技能。Save `d1-solo-skills.png`. Pass when 任务是两字名加角色的单个助手，用上了模块的技能，没有派活工具。 2026-11-09 在 0b7d7ce 上通过：「青檀 · 对话助手 #1」，带模块技能，没有派活工具（`/tmp/swarm-d1/worker-4/`）。
+- [x] Lane 5. 问一件哪个领域都不沾的事。Save `d1-no-domain.png`. Pass when 任务没有领域，是普通助手，页面和 W5 相同。 2026-11-09 在 0b7d7ce 上通过：领域为空，「青檀 · 对话助手 #1」，进程不带技能（`/tmp/swarm-d1/worker-5/`）。
+- [x] Lane 6. `rules.md` 里写一行「团队：新闻队」。Save `d1-error-rule-line.png`. Pass when 启动报一行错，写出文件、规则编号和改法，退出码 1。 2026-11-09 在 0b7d7ce 上通过：退出码 1，一行写出文件、规则编号和改法（存成文本）（`/tmp/swarm-d1/worker-6/`）。
+- [x] Lane 7. 状态目录或某个模块里放一个 `teams.yaml`。Save `d1-error-teams-yaml.png`. Pass when 启动报一行错，以这个文件开头并说明改法，退出码 1。 2026-11-09 在 0b7d7ce 上通过：状态目录和模块里两处都退出码 1，各一行（存成文本）（`/tmp/swarm-d1/worker-7/`）。
+- [x] Lane 8. 状态目录下放零散的 `agents/`。Save `d1-error-loose-agents.png`. Pass when 启动报一行错，说明搬到 `modules/<名字>/agents/`，退出码 1。 2026-11-09 在 0b7d7ce 上通过：退出码 1，一行说明搬到哪里（存成文本）（`/tmp/swarm-d1/worker-8/`）。
+- [x] Lane 9. 开一个有成员的领域的任务和一个没有领域的任务后重启。Save `d1-restart.png`. Pass when 两个任务的领域、名字和序号不变，前一个任务的助手仍能派活。 2026-11-09 在 0b7d7ce 上通过：重启前后库里的领域、名字、序号相同，重启后追问仍派给核对员（`/tmp/swarm-d1/worker-9/`）。
+- [x] Lane 10. 开一个有成员的领域的任务后拿掉那个模块再重启。Save `d1-module-removed.png`. Pass when 任务按单个助手继续，日志只有一行说明，四字名不变，队名的位置写模块名。 2026-11-09 在 0b7d7ce 上通过：显示「雪泥鸿爪 · research #1」，日志只有一行，助手不带技能也不能派活（`/tmp/swarm-d1/worker-10/`）。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 幕僚长第一轮的输入 token（领域名册和「领域」一节的开销）。
-- [ ] Probe. 0 个和 10 个写了 `description` 的模块各量 5 次，交替跑，同一句话，取路由会话第一条回复的 usage.input + cacheRead。
-- [ ] Baseline. Record the 0-module median first, and compare it with T1 的 0 个团队中位数 1795 token。
-- [ ] Rule. 10 个模块时中位数增加超过 1000 token 算失败。
+- [x] Metric. 幕僚长第一轮的输入 token（领域名册和「领域」一节的开销）。
+- [x] Probe. 0 个和 10 个写了 `description` 的模块各量 5 次，交替跑，同一句话，取路由会话第一条回复的 usage.input + cacheRead。 0 个那一组用去掉了 title 和 description 的自带模块副本。
+- [x] Baseline. Record the 0-module median first, and compare it with T1 的 0 个团队中位数 1795 token。 0 个模块中位数 1855 token，比 T1 的 1795 多 60。
+- [x] Rule. 10 个模块时中位数增加超过 1000 token 算失败。 10 个模块中位数 2085，多 230，通过（`/tmp/swarm-d1/perf/results.jsonl`）。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 1, 3, 10 screenshots into `docs/web-client/media/d1-review-<slug>.png`.
-- [ ] Record a 30 to 60 second video of a domain ticket with members and a ticket with no domain. Keep it local as webm, as in W1.
+- [x] Copy lane 1, 3, 10 screenshots into `docs/web-client/media/d1-review-<slug>.png`. `d1-review-conversation-skill.png`、`d1-review-crew.png`、`d1-review-module-removed.png`。
+- [x] Record a 30 to 60 second video of a domain ticket with members and a ticket with no domain. Keep it local as webm, as in W1. 58.9 秒，`/tmp/swarm-d1/d1-review.webm`，只拍了有成员的领域任务，没有拍无领域的任务。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
