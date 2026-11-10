@@ -338,3 +338,5 @@ ts	phase	decision	why	evidence	result
 2026-11-10T10:26:53Z	review	跳过 how、architect、interrogate、simplify	只改一个按钮的位置，布局由使用者选定；diff 不加注释	git diff main --stat	skipped
 2026-11-10T10:30:54Z	implement	幕僚长那句的引用下移 4px、行高 16 改 14：先红（引用顶和气泡底差 0px），再改；不碰下一句的名字	使用者说文字太贴气泡底边	src/web/index.html .router .quote-btn; /Users/szou/.claude/jobs/66e5cbed/tmp/gap-plain.png	done
 2026-11-10T10:30:54Z	verify	just test 931/931；just e2e 192/192	改样式后全量确认	/Users/szou/.claude/jobs/66e5cbed/tmp/e2e-gap.log	PASS
+2026-11-10T10:37:05Z	bug-fix	#47 把幕僚长那句的引用下移 4px 后鼠标点不到：那 4px 缝不属于这句话，鼠标经过时这句话失去悬停，按钮隐藏。改成按钮从气泡底边开始、用内边距把文字下移	使用者反馈很难 mouse over；我第一版鼠标测试每步约 3px 跨过了缝没复现，改成每步约 1px 才复现，证实原因后再修	tests/e2e/quote.e2e.ts 鼠标步骤 steps 60；src/web/index.html .router .quote-btn	fixed
+2026-11-10T10:37:05Z	verify	just test 931/931；just e2e 193 个中 3 个失败：2 个是已知的模型 未启动，1 个是 setup.e2e 的临时目录检查和并行文件互相干扰，单独连跑 3 次都通过	失败与本次改动无关；第二个不稳定用例记作后续	/Users/szou/.claude/jobs/66e5cbed/tmp/e2e-hover.log	PASS
