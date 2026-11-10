@@ -12,7 +12,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import type { Kernel } from "../kernel/kernel.ts";
 import { usageOf } from "./worker-events.ts";
-import { oneLine, quoteContext } from "../client/board-format.mjs";
+import { quoteContext } from "../client/board-format.mjs";
 import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import { CONVERSATION_THREAD_ID, RETRY_BACKOFF_MS, type Decision, type RouterNotice } from "../kernel/types.ts";
@@ -156,7 +156,7 @@ function ticketsLine(kernel: Kernel): string {
 	const recent = rows.filter((r) => r.stage === "closed" || r.stage === "stopped").slice(-RECENT_CLOSED);
 	const listed = [...open, ...recent].slice(-LISTED_TICKETS);
 	if (listed.length === 0) return "进行中和最近的任务：无";
-	return `进行中和最近的任务：${listed.map((r) => `${r.id}「${oneLine(r.title)}」${STAGE_NAME[r.stage]}`).join("；")}`;
+	return `进行中和最近的任务：${listed.map((r) => `${r.id}「${r.title}」${STAGE_NAME[r.stage]}`).join("；")}`;
 }
 
 function reportCard(kind: "report" | "question", head: string, r: { status: keyof typeof STATUS_LABEL; summary: string; question: string | null; options: string[]; drafts: unknown[] }): string {

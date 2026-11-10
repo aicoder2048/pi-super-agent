@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { oneLine } from "../client/board-format.mjs";
 import {
 	ACTION_KINDS,
 	ACTION_STATUSES,
@@ -210,6 +211,10 @@ export function openStore(path: string): DatabaseSync {
 			ALTER TABLE tickets ADD COLUMN helper_seq INTEGER`);
 	}
 	if (!ticketColumns.includes("domain")) db.exec("ALTER TABLE tickets ADD COLUMN domain TEXT");
+	const retitle = db.prepare("UPDATE tickets SET title = ? WHERE id = ?");
+	for (const { id, title } of db.prepare("SELECT id, title FROM tickets").all() as { id: string; title: string }[]) {
+		if (oneLine(title) !== title) retitle.run(oneLine(title), id);
+	}
 	return db;
 }
 
