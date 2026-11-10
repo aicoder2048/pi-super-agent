@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { ConfigError } from "../src/config-error.ts";
@@ -16,7 +16,7 @@ test("仓库里的模块都被发现，规则带模块前缀", () => {
 	assert.ok(modules.ruleAllows("toy-market/big-move", "toy-market"));
 	assert.ok(!modules.ruleAllows("big-move", "toy-market"));
 	assert.match(modules.rulesPrompt(), /### toy-market\/big-move/);
-	assert.ok(modules.moduleForRule("toy-market/big-move")?.skillsDir);
+	assert.equal(modules.kitFor("toy-market")?.skillsDir, join(repoModules, "toy-market/skills"));
 });
 
 test("程序层过滤：小于 1% 的波动在调用模型前被筛掉", () => {
@@ -50,7 +50,7 @@ test("规则的适用来源：使用者规则必须写来源行才生效，写�
 	const dir = mkdtempSync(join(tmpdir(), "psa-rules-"));
 	const file = join(dir, "rules.md");
 	writeFileSync(file, "## any\n有新邮件就看一下\n\n## ci-only\n来源: ci, github\nCI 失败时开任务\n");
-	const modules = Modules.load([], file);
+	const modules = Modules.load([], { stateDir: dirname(file) });
 	assert.ok(!modules.ruleAllows("user/any", "mail"));
 	assert.deepEqual(modules.rulesFor("mail"), []);
 	assert.doesNotMatch(modules.rulesPrompt(), /user\/any/);
@@ -64,39 +64,45 @@ test("规则的适用来源：使用者规则必须写来源行才生效，写�
 test("规则的适用来源：来源行里一个来源都没有的使用者规则同样不生效", () => {
 	const file = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
 	writeFileSync(file, "## empty\n来源: ，\n有新邮件就看一下\n");
-	const modules = Modules.load([], file);
+	const modules = Modules.load([], { stateDir: dirname(file) });
 	assert.ok(!modules.ruleAllows("user/empty", "mail"));
 	assert.deepEqual(modules.skippedUserRules, ["user/empty"]);
 	assert.equal(modules.rulesPrompt(), "");
 });
 
-test("规则的「团队：」行：从正文里取出来记在规则上；幕僚长看到的规则里写明团队；没写的规则没有团队", () => {
-	assert.deepEqual(parseRules("rules.md", "user", "## news\n来源: rss\n团队：新闻队\n有听证会新闻就查一下\n\n## ci\n来源: ci\nCI 失败时开任务"), [
-		{ id: "user/news", text: "有听证会新闻就查一下", sources: ["rss"], team: "新闻队" },
-		{ id: "user/ci", text: "CI 失败时开任务", sources: ["ci"] },
-	]);
-	const file = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
-	writeFileSync(file, "## news\n来源: rss\n团队: 新闻队\n有听证会新闻就查一下\n\n## ci\n来源: ci\nCI 失败时开任务\n");
-	const modules = Modules.load([], file);
-	assert.deepEqual(modules.allRules().map((r) => [r.id, r.team]), [["user/news", "新闻队"], ["user/ci", undefined]]);
-	assert.equal(modules.rulesPrompt(), "### user/news\n团队：新闻队\n有听证会新闻就查一下\n\n### user/ci\nCI 失败时开任务");
-});
-
-test("规则的「团队：」行写坏了（团队名里有空白、没写团队名、一条规则写了两行）：加载时报错，写出规则文件和规则 id", () => {
-	for (const [lines, message] of [
-		["团队：新闻 队", /团队名/],
-		["团队：", /团队名/],
-		["团队：新闻队\n团队: 看盘队", /两行/],
-	] as const) {
-		const file = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
-		writeFileSync(file, `## ci\n来源: ci\nCI 失败时开任务\n\n## news\n来源: rss\n${lines}\n有听证会新闻就查一下\n`);
-		assert.throws(() => Modules.load([], file), (e: Error) => {
+test("规则里写了「团队：」行：加载时报一行错，以规则文件开头，写出规则 id 和改法；模块规则和使用者规则都一样", () => {
+	for (const line of ["团队：新闻队", "团队: 新闻队", "团队："]) {
+		const dir = mkdtempSync(join(tmpdir(), "psa-rules-"));
+		const file = join(dir, "rules.md");
+		writeFileSync(file, `## ci\n来源: ci\nCI 失败时开任务\n\n## news\n来源: rss\n${line}\n有听证会新闻就查一下\n`);
+		assert.throws(() => Modules.load([], { stateDir: dirname(file) }), (e: Error) => {
 			assert.ok(e instanceof ConfigError, String(e));
 			assert.ok(e.message.startsWith(file), e.message);
 			assert.ok(!e.message.includes("\n"), e.message);
-			assert.match(e.message, /user\/news/);
-			assert.match(e.message, message);
+			assert.match(e.message, /规则 user\/news 写了「团队：」/);
+			assert.match(e.message, /删掉这一行/);
+			assert.match(e.message, /agents\//);
 			return true;
-		}, lines);
+		}, line);
 	}
+	assert.throws(() => parseRules("/m/watch/rules.md", "watch", "## drop\n团队：看盘队\n跌多了开任务\n"), (e: Error) => e.message.startsWith("/m/watch/rules.md：规则 watch/drop 写了「团队：」"));
+});
+
+test("幕僚长看到的规则只有编号和正文", () => {
+	const file = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
+	writeFileSync(file, "## news\n来源: rss\n有听证会新闻就查一下\n\n## ci\n来源: ci\nCI 失败时开任务\n");
+	assert.equal(Modules.load([], { stateDir: dirname(file) }).rulesPrompt(), "### user/news\n有听证会新闻就查一下\n\n### user/ci\nCI 失败时开任务");
+});
+
+test("模块不能叫 user：这个名字留给使用者自己的规则，加载时报一行错，以 module.json 开头", () => {
+	const root = mkdtempSync(join(tmpdir(), "psa-mods-"));
+	mkdirSync(join(root, "user"));
+	writeFileSync(join(root, "user", "module.json"), JSON.stringify({ name: "user" }));
+	assert.throws(() => Modules.load([root]), (e: Error) => e instanceof ConfigError && e.message.startsWith(join(root, "user/module.json")) && /不能叫 user/.test(e.message) && !e.message.includes("\n"));
+});
+
+test("仓库里的两个行情模块都有领域名和给幕僚长的说明，出现在领域名册里；都还没有成员", () => {
+	const modules = Modules.load([repoModules]);
+	assert.equal(modules.rosterPrompt(), "- toy-market（玩具行情）：演示用的假行情，只管玩具代码（如 TOYX）的波动\n- us-market（美股行情）：美股个股和大盘的行情、涨跌和波动原因");
+	assert.deepEqual([...modules.book], [["toy-market", { team: null, onRoster: true }], ["us-market", { team: null, onRoster: true }]]);
 });

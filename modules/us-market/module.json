@@ -1,5 +1,7 @@
 {
   "name": "us-market",
+  "title": "美股行情",
+  "description": "美股个股和大盘的行情、涨跌和波动原因",
   "sources": [
     {
       "name": "us-market",

@@ -9,21 +9,21 @@ const NEWS = { title: "听证会新闻", brief: "汇总黄仁勋听证会的新�
 const WEATHER = { title: "查天气", brief: "查明天的天气" };
 
 const STATE_FILES = {
-	"agents/news.md": "---\nname: news-researcher\ntitle: 新闻研究员\ndescription: 查新闻、核对报道来源\n---\n你是新闻研究员。\n",
-	"teams.yaml": "新闻队:\n  description: 查新闻、核对报道来源\n  members:\n    - news-researcher\n",
+	"modules/news/module.json": JSON.stringify({ name: "news", title: "新闻", description: "查新闻、核对报道来源", team: "新闻队" }),
+	"modules/news/agents/news.md": "---\nname: news-researcher\ntitle: 新闻研究员\ndescription: 查新闻、核对报道来源\n---\n你是新闻研究员。\n",
 };
 
-const openOnTeam = (card: string, team: string): ToolCall => {
+const openInDomain = (card: string, domain: string): ToolCall => {
 	const call = openTicket(card, NEWS.title, NEWS.brief);
-	return { ...call, args: { decisions: (call.args.decisions as object[]).map((d) => ({ ...d, team })) } };
+	return { ...call, args: { decisions: (call.args.decisions as object[]).map((d) => ({ ...d, domain })) } };
 };
 
-test("状态目录里放一个新闻队：幕僚长把新闻交给它，助手是四字名加团队名；别的事仍是两字名的对话助手", (t) =>
+test("状态目录的 modules/ 里放一个带成员的新闻模块：幕僚长把新闻交给它，助手是四字名加团队名；别的事仍是两字名的对话助手", (t) =>
 	story(
 		t,
 		{
 			router: [
-				on("Router 把新闻交给新闻队", /^\[对话\][\s\S]*听证会/, (c) => [openOnTeam(c, "新闻队"), reply(c, "已交给新闻队")]),
+				on("Router 把新闻交给新闻队", /^\[对话\][\s\S]*听证会/, (c) => [openInDomain(c, "news"), reply(c, "已交给新闻队")]),
 				on("Router 开天气任务", /^\[对话\][\s\S]*天气/, (c) => [openTicket(c, WEATHER.title, WEATHER.brief), reply(c, "已安排")]),
 			],
 			workers: [
@@ -47,7 +47,7 @@ test("状态目录里放一个新闻队：幕僚长把新闻交给它，助手�
 				await page.locator("#how-title", { hasText: NEWS.title }).waitFor();
 				assert.equal(await page.locator("#how-helper").textContent(), `${name} · 新闻队 #1`);
 			});
-			await step("天气任务在默认团队，小卡是两字名加「对话助手 #1」", async (page) => {
+			await step("天气任务没有领域，小卡是两字名加「对话助手 #1」", async (page) => {
 				const chip = page.locator("#helpers .helper-chip", { hasText: "对话助手 #1" });
 				const name = (await chip.locator(".name").textContent()) ?? "";
 				assert.equal([...name].length, 2, name);

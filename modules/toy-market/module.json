@@ -1,5 +1,7 @@
 {
   "name": "toy-market",
+  "title": "玩具行情",
+  "description": "演示用的假行情，只管玩具代码（如 TOYX）的波动",
   "sources": [
     { "name": "toy-market", "market": true, "ignore": ["涨跌 [+-]0(\\.\\d+)?%"] }
   ]

@@ -9,23 +9,26 @@ export const HELPER_ROLES = ["conversation", "market", "rule", "watch"] as const
 export type HelperRole = (typeof HELPER_ROLES)[number];
 
 /**
- * Who a ticket shows as, fixed when it opens. One helper has a role and counts within that role: 「青檀 · 行情助手 #2」.
- * A helper whose team has members to dispatch carries the team's name instead and counts within that team: 「高山流水 · 看盘队 #2」.
- * Both count within one New York day.
+ * Who a ticket shows as. The name, the number and which of the two forms it takes are fixed when the ticket opens.
+ * One helper has a role and counts within that role: 「青檀 · 行情助手 #2」.
+ * A helper whose domain has members to dispatch to carries the module's team name instead and counts within that domain: 「高山流水 · 看盘队 #2」.
+ * Both count within one New York day. `team` is read from the module each time: its current team name, or the module's name once it has no members or is gone.
  */
 export type Helper = { name: string; seq: number } & ({ role: HelperRole } | { team: string });
 
-export const DEFAULT_TEAM = "默认";
-
-/** solo: one helper. crew: the team has a member besides 通用助手, so the helper can grow into a team. */
-export type TeamKind = "solo" | "crew";
-
-/** All the kernel knows about teams, built once at startup. Every team in `pinned` is a key of `kinds`. */
-export interface TeamBook {
-	kinds: ReadonlyMap<string, TeamKind>;
-	/** Rule id to the team its 「团队：」 line names. */
-	pinned: ReadonlyMap<string, string>;
+export interface DomainEntry {
+	/** The team's name when the module has members. Null: its helper works alone. */
+	team: string | null;
+	/** The 幕僚长 was offered this domain. False: only the module's own rules put a ticket in it. */
+	onRoster: boolean;
 }
+
+/** All the kernel knows about domains, built once at startup: one entry per loaded module, by the module's name. */
+export type DomainBook = ReadonlyMap<string, DomainEntry>;
+
+/** A rule's id is its namespace and its heading: a module's name for the module's rules, `user` for the user's own. */
+export const ruleId = (namespace: string, heading: string) => `${namespace}/${heading}`;
+export const ruleNamespace = (id: string) => id.split("/")[0];
 
 export interface HelpersToday {
 	count: number;
@@ -125,7 +128,8 @@ export type Decision =
 			title: string;
 			basis: Basis;
 			ruleId?: string;
-			team?: string;
+			/** A module's name. Omitted, null or blank: the ticket has no domain. */
+			domain?: string | null;
 			triggerId?: string;
 			threads?: string[];
 			brief: string;
@@ -190,8 +194,8 @@ export interface Ticket {
 	title: string;
 	basis: Basis;
 	ruleId: string | null;
-	/** Fixed when the ticket opens; it may name a team that has since been removed. */
-	team: string;
+	/** The module this ticket belongs to, fixed when it opens. Null: no domain. The module may have been removed since. */
+	domain: string | null;
 	originTriggerId: string | null;
 	createdAt: number;
 	workerSessionId: string;

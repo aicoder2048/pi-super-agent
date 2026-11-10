@@ -221,7 +221,7 @@ export interface Story {
 
 export interface StoryOptions {
 	config?: Record<string, unknown>;
-	/** Files written into the state dir before the host starts, by path relative to it, e.g. teams.yaml and agents/news.md. */
+	/** Files written into the state dir before the host starts, by path relative to it, e.g. modules/news/module.json. The only modules the host loads are the ones under its modules/. */
 	files?: Record<string, string>;
 	/** Pins webPort so a restarted host serves the same origin as the open page. */
 	fixedPort?: boolean;
@@ -329,7 +329,7 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 				mkdirSync(dirname(join(root, "s", name)), { recursive: true });
 				writeFileSync(join(root, "s", name), text);
 			}
-			const started = startHost({ models: fakeModels, stateDir: join(root, "s"), logFile: join(out, "host.log"), config: { webPort, modulesDirs: [], ...options.config }, env });
+			const started = startHost({ models: fakeModels, stateDir: join(root, "s"), logFile: join(out, "host.log"), config: { webPort, modulesDirs: [join(root, "s", "modules")], ...options.config }, env });
 			const [run] = await Promise.all([started.then((h) => (host = h)), launchBrowser()]);
 			await waitStatus(await open(run.url, { fakeClock: options.fakeClock }), "connected");
 		});

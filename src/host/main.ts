@@ -1,8 +1,7 @@
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { join } from "node:path";
 import { formatModelRef } from "../models.ts";
 import { Modules } from "../modules.ts";
-import { loadConfig } from "./config.ts";
+import { loadConfig, memberProviders } from "./config.ts";
 import { Host } from "./host.ts";
 import { exitOnConfigError } from "../config-error.ts";
 import { createHostOptions } from "./wiring.ts";
@@ -10,8 +9,8 @@ import { createHostOptions } from "./wiring.ts";
 async function main(): Promise<void> {
 	const config = loadConfig();
 	const log = (line: string) => console.error(`${new Date().toISOString()} ${line}`);
-	const modules = Modules.load(config.modulesDirs, join(config.stateDir, "rules.md"));
-	log(`[host] 模块：${modules.modules.map((m) => m.name).join(", ") || "无"}；规则 ${modules.allRules().length} 条`);
+	const modules = Modules.load(config.modulesDirs, { stateDir: config.stateDir, allowedProviders: memberProviders(config) });
+	log(`[host] 模块：${modules.modules.map((m) => (m.team ? `${m.name}（${m.team.name}）` : m.name)).join(", ") || "无"}；规则 ${modules.allRules().length} 条`);
 	for (const id of modules.skippedUserRules) log(`[host] 规则 ${id} 没写「来源:」，不生效`);
 
 	const host = await Host.start(createHostOptions({ config, modules, modelRuntime: await ModelRuntime.create(), log }));

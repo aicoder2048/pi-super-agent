@@ -34,7 +34,7 @@ function stateWithFiles(files: Record<string, string>) {
 	};
 }
 const memberFile = (name: string, extra = "") => `---\nname: ${name}\ntitle: 新闻研究员\ndescription: 查新闻\n${extra}---\n`;
-const teamFile = (member: string) => `新闻队:\n  description: 查新闻\n  members:\n    - ${member}\n`;
+const NEWS_MODULE = { "modules/news/module.json": JSON.stringify({ name: "news", team: "新闻队" }), "modules/news/agents/a.md": memberFile("news-researcher") };
 
 const HOST = "src/host/main.ts";
 const WATCHDOG = "src/watchdog/main.ts";
@@ -56,9 +56,10 @@ const cases = [
 	{ name: "模型是 Claude 时，just host", entry: HOST, stateDir: stateWith({ models: { fallback: "openai-codex/claude-x" } }), message: /config\.json.*Claude 模型/ },
 	{ name: "找不到配置的模型时，just host", entry: HOST, stateDir: stateWith({ models: { router: "openai-codex/no-such-model" } }), message: /config\.json：models\.router：找不到模型 openai-codex\/no-such-model/ },
 	{ name: "module.json 不是合法 JSON 时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: "{bad" } }), message: /module\.json 不是合法的 JSON/ },
+	{ name: "module.json 不是 JSON 对象时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: "null" } }), message: /^\S+\/mods\/m\/module\.json：.*JSON 对象/m },
 	{ name: "模块名不等于目录名时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: { name: "other" } } }), message: /name 必须等于目录名 m/ },
 	{ name: "ignore 不是合法正则时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: { name: "m", sources: [{ name: "m", ignore: ["("] }] } } }), message: /module\.json.*ignore.*不是合法的正则/ },
-	{ name: "两个模块重名时，just host", entry: HOST, stateDir: stateWith({}, { a: { m: { name: "m" } }, b: { m: { name: "m" } } }), message: /模块重名：m/ },
+	{ name: "两个模块重名时，just host", entry: HOST, stateDir: stateWith({}, { a: { m: { name: "m" } }, b: { m: { name: "m" } } }), message: /^\S+\/a\/m：模块重名：m 也定义在 \S+\/b\/m。/m },
 	{
 		name: "定时器 everyMinutes 不大于 0 时，just host",
 		entry: HOST,
@@ -66,29 +67,64 @@ const cases = [
 		message: /定时器 m\/t 的 everyMinutes 必须大于 0/,
 	},
 	{
-		name: "两个文件定义了同名成员时，just host",
+		name: "同一个模块里两个文件定义了同名成员时，just host",
 		entry: HOST,
-		stateDir: stateWithFiles({ "agents/a.md": memberFile("news-researcher"), "agents/b.md": memberFile("news-researcher") }),
-		message: /^成员重名：news-researcher 同时定义在 \S+agents\/a\.md 和 \S+agents\/b\.md$/m,
+		stateDir: stateWithFiles({ ...NEWS_MODULE, "modules/news/agents/b.md": memberFile("news-researcher") }),
+		message: /^\S+modules\/news\/agents\/a\.md：成员重名：news-researcher 也定义在 \S+modules\/news\/agents\/b\.md。/m,
 	},
 	{
-		name: "teams.yaml 名单里的成员不存在时，just host",
+		name: "模块有成员却没写 team 时，just host",
 		entry: HOST,
-		stateDir: stateWithFiles({ "teams.yaml": teamFile("ghost") }),
-		message: /teams\.yaml:1：团队 新闻队 的成员 ghost 不存在/,
+		stateDir: stateWithFiles({ ...NEWS_MODULE, "modules/news/module.json": JSON.stringify({ name: "news" }) }),
+		message: /modules\/news\/module\.json：agents\/ 里有成员，要写 team/,
 	},
-	{ name: "teams.yaml 格式不对时，just host", entry: HOST, stateDir: stateWithFiles({ "teams.yaml": "新闻队: 查新闻\n" }), message: /teams\.yaml:1：顶层每行应是「团队名:」/ },
+	{
+		name: "状态目录里有 teams.yaml 时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ "teams.yaml": "新闻队:\n  description: 查新闻\n  members:\n    - news-researcher\n" }),
+		message: /^\S+\/teams\.yaml：不再读取状态目录下的 teams\.yaml。.*modules\/<名字>\/agents\/.*module\.json 的 team/m,
+	},
+	{
+		name: "模块目录里有 teams.yaml 时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ ...NEWS_MODULE, "modules/news/teams.yaml": "新闻队:\n  description: 查新闻\n  members:\n    - news-researcher\n" }),
+		message: /^\S+modules\/news\/teams\.yaml：不再读取 teams\.yaml。.*module\.json 的 team/m,
+	},
+	{
+		name: "状态目录的 modules/ 里直接放了 teams.yaml 时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ "modules/teams.yaml": "新闻队:\n  members:\n    - news-researcher\n" }),
+		message: /^\S+modules\/teams\.yaml：不再读取 teams\.yaml。.*module\.json 的 team/m,
+	},
+	{
+		name: "状态目录的 modules/ 里直接放了成员文件时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ "modules/agents/a.md": memberFile("news-researcher") }),
+		message: /^\S+modules\/agents：.*不会被读取.*modules\/<名字>\/agents\//m,
+	},
+	{
+		name: "模块文件夹有成员却没有 module.json 时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ "modules/news/agents/a.md": memberFile("news-researcher") }),
+		message: /^\S+modules\/news：.*没有 module\.json/m,
+	},
+	{
+		name: "状态目录里有零散的 agents/ 时，just host",
+		entry: HOST,
+		stateDir: stateWithFiles({ "agents/a.md": memberFile("news-researcher") }),
+		message: /^\S+\/agents：不再读取状态目录下零散的成员。.*modules\/<名字>\/agents\//m,
+	},
 	{
 		name: "成员的模型走按量计费的提供方时，just host",
 		entry: HOST,
-		stateDir: stateWithFiles({ "agents/a.md": memberFile("news-researcher", "model: deepseek/deepseek-flash\n") }),
-		message: /agents\/a\.md：model：拒绝使用 deepseek\/deepseek-flash/,
+		stateDir: stateWithFiles({ ...NEWS_MODULE, "modules/news/agents/a.md": memberFile("news-researcher", "model: deepseek/deepseek-flash\n") }),
+		message: /modules\/news\/agents\/a\.md：model：拒绝使用 deepseek\/deepseek-flash/,
 	},
 	{
-		name: "规则写的团队不存在时，just host",
+		name: "规则里写了「团队：」行时，just host",
 		entry: HOST,
 		stateDir: stateWithFiles({ "rules.md": "## news\n来源: rss\n团队：新闻队\n有新闻就查\n" }),
-		message: /规则 user\/news 写了「团队：新闻队」，没有这个团队/,
+		message: /rules\.md：规则 user\/news 写了「团队：」.*删掉这一行/,
 	},
 ];
 
@@ -106,6 +142,18 @@ for (const c of cases) {
 		assert.doesNotMatch(run.stderr, /^file:\/\//m);
 	});
 }
+
+test("just host 启动时列出加载的模块，有成员的模块后面写队名", () => {
+	const stateDir = stateWithFiles({ ...NEWS_MODULE, "modules/mail/module.json": JSON.stringify({ name: "mail" }) })();
+	writeFileSync(join(stateDir, "config.json"), JSON.stringify({ webPort: 0, models: { router: "openai-codex/no-such-model" } }));
+	const run = spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], {
+		env: { ...process.env, PSA_STATE_DIR: stateDir },
+		encoding: "utf8",
+		timeout: 20_000,
+		killSignal: "SIGKILL",
+	});
+	assert.match(run.stderr, /\[host\] 模块：toy-market, us-market, mail, news（新闻队）；规则 \d+ 条/);
+});
 
 test("使用者规则没写来源行时，just host 启动时逐条说明它不生效", () => {
 	const stateDir = stateWith({ models: { router: "openai-codex/no-such-model" } })();

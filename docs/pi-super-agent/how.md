@@ -24,7 +24,8 @@ Pi Super Agent 是一个常驻本机的 headless host 进程，入口是 `src/ho
 | Action | outbox 行，共 4 种。`router.notify`、`worker.wake`、`worker.stop`、`channel.reply`。 |
 | RouterNotice | `router.notify` 的 payload。kind 有 `conversation`、`candidate`、`report`、`question`、`handback`、`notice`。`notice` 是工作区里新加的，尚未提交。 |
 | Report | Worker 通过 `report` 工具交回的状态。status 有 `progress`、`ready`、`blocked`、`failed`、`no_action`，可以带 `question` 和 `waiting`。 |
-| Module | `modules/<name>/` 下的 `module.json`（source 过滤器、timers、prepare）、`rules.md` 和 skills。用户规则放在 `<state>/rules.md`。 |
+| Module | `modules/<name>/` 下的 `module.json`（领域名和说明、队名、source 过滤器、timers、prepare）、`rules.md`、`skills/` 和 `agents/`（成员）。用户自己的模块放在 `<state>/modules/<name>/`，用户规则放在 `<state>/rules.md`。写法见「怎么写一个模块」。 |
+| Domain | ticket 所属的模块，存在 `tickets.domain`（模块的 `name`，可空）。模块规则开的 ticket 属于规则所在的模块，由 Kernel 按规则编号的前缀定；其余由 Router 用 `open_ticket` 的 `domain` 选，只能选名册上的（模块写了 `description`），省略就是没有领域。Worker 的技能、`prepare` 和可派的成员都按它取（`Modules.kitFor`）。见 ADR-0009。 |
 | `ModelSelector` | 主模型、fallback、probing 三态状态机（`src/model-selector.ts`，未提交）。Router 一个实例，所有 Worker 共用另一个实例。 |
 
 ## How It Works
@@ -95,7 +96,7 @@ trigger 有三个来源。最终都调用 `Host` 的 `submit`。`submit` 执行 
 
 ### 5. Router 的一轮
 
-`Router`（`src/host/router.ts`）包着一个进程内的 Pi `AgentSession`。session 用 `SessionManager.continueRecent` 存在 `<state>/sessions/router`，重启后会接着用。`emptyResources()` 让 Router 不加载任何 extension、skill 或 AGENTS 文件。系统提示由 `routerSystemPrompt()` 生成，末尾拼上规则文本。
+`Router`（`src/host/router.ts`）包着一个进程内的 Pi `AgentSession`。session 用 `SessionManager.continueRecent` 存在 `<state>/sessions/router`，重启后会接着用。`emptyResources()` 让 Router 不加载任何 extension、skill 或 AGENTS 文件。系统提示由 `routerSystemPrompt()` 生成，里面有一节「领域」列出写了 `description` 的模块（`Modules.rosterPrompt()`，每行「- 名字（领域名）：说明」，不列成员），末尾拼上规则文本。
 
 **收消息**。`inject(notice)` 是同步的。它调 `noticeCard()`，按当前 Kernel 状态生成带标签的文本卡片，标签有 `[对话]`、`[候选触发]`、`[Worker 汇报]`、`[Worker 提问]`、`[Worker 交回]`、`[通知]`。候选触发的正文截到 600 字符。卡片放进 `#buffer`，再用 `setImmediate` 安排一次 `#flush`。
 
@@ -124,9 +125,10 @@ Router 的普通文字输出不会发到任何地方。系统提示里也明确�
 1. 用 `forTurn()` 选模型。如果在用 fallback 且今天的用量超过 `fallbackDailyTokens`（默认 8M），就调 `#blockForCap`，不占 slot，直接返回。
 2. `kernel.claimSlot`。running 数小于 `maxWorkers`（默认 3）时走通用池。如果 running 数小于 `maxWorkers + reservedSlots`（默认 1），并且 ticket 是 `request` basis 或有未投递的 `user_message`，就走预留 slot。两者都不满足时，ticket 设为 `queued`，返回 false。
 3. 创建 `<state>/workers/<ticketId>` 作为 workdir，并生成一个新的 `randomUUID()` token。
-4. 调 `PiWorkerSpawner.spawn`。spawn 抛错就调 `kernel.workerExited` 后重新抛出。成功则记录 `Live` 并调 `kernel.workerStarted`。
+4. 按 ticket 的 `domain` 取它的模块交给 Worker 的东西（`#kitFor`，结果是 `DomainKit`：模块的 `skills/`、`prepare` 和成员），放进 `WorkerSpec`。没有领域就是空的一份。领域的模块已经不在时也按空的处理，并记一行日志，同一个任务只记一次。
+5. 调 `PiWorkerSpawner.spawn`。spawn 抛错就调 `kernel.workerExited` 后重新抛出。成功则记录 `Live` 并调 `kernel.workerStarted`。
 
-**`PiWorkerSpawner.spawn`**（`src/host/pi-worker.ts`）。模块有 `prepare` 命令且没有 `.psa-prepared` 标记时，先在 workdir 里执行 `bash -lc prepare`，超时 10 分钟。然后用 `RpcClient` 启动 `pi`。参数里 `--session-id` 是 ticket 的 `workerSessionId`，所以重启后进程会接上同一个 session。`--no-extensions -e src/worker/extension.ts` 只加载 Worker extension。`--append-system-prompt` 追加 `WORKER_PROMPT`。环境变量传入 `PSA_SOCKET/TICKET/TOKEN/BASIS/BG_MAX_MS`；任务的团队里有可派的成员时再加 `PSA_CREW`（成员名单），提示词末尾多一段本队名册，Worker 多一个 `dispatch_agent` 工具。一次派活由 `PiWorkerSpawner.runMember` 起一个 `pi -p --mode json` 进程，自成进程组，`--session-dir` 是 `<state>/workers/<ticketId>/team/<成员>`，带 `--continue`，所以同一任务里再派给它会接上原来的 session；排队、时限、无进展和结果的状态在 `src/host/dispatch.ts` 的 `DispatchDesk`；成员进程打印的每个事件都算一次动静，用来显示它在做什么和判断无进展；工具调用开始和返回的事件（`tool_execution_start`、`tool_execution_end`）还用来记哪些调用没返回，有调用没返回时不算无进展。在跑的成员进程记在它 session 目录的 `running.json` 里（`src/host/member-ledger.ts`），宿主启动时先结束上一个宿主留下的成员。
+**`PiWorkerSpawner.spawn`**（`src/host/pi-worker.ts`）。`WorkerSpec` 里带着 `prepare`、任务的 basis 不是 `inference`、且没有 `.psa-prepared` 标记时，先在 workdir 里执行 `bash -lc prepare`，超时 10 分钟。然后用 `RpcClient` 启动 `pi`，`WorkerSpec` 里有 `skillsDir` 就加 `--skill <模块>/skills`。技能和 `prepare` 跟着 ticket 的领域走，规则触发的和对话里开的 ticket 一样；spawner 自己不查模块。参数里 `--session-id` 是 ticket 的 `workerSessionId`，所以重启后进程会接上同一个 session。`--no-extensions -e src/worker/extension.ts` 只加载 Worker extension。`--append-system-prompt` 追加 `WORKER_PROMPT`。环境变量传入 `PSA_SOCKET/TICKET/TOKEN/BASIS/BG_MAX_MS`；任务的领域（模块）有成员时再加 `PSA_CREW`（成员名单），提示词末尾多一段本队名册，Worker 多一个 `dispatch_agent` 工具。一次派活由 `PiWorkerSpawner.runMember` 起一个 `pi -p --mode json` 进程，自成进程组，`--session-dir` 是 `<state>/workers/<ticketId>/team/<成员>`，带 `--continue`，所以同一任务里再派给它会接上原来的 session；成员的 `--skill` 先是模块的 `skills/`，再是它自己定义里的 `skills`；排队、时限、无进展和结果的状态在 `src/host/dispatch.ts` 的 `DispatchDesk`；成员进程打印的每个事件都算一次动静，用来显示它在做什么和判断无进展；工具调用开始和返回的事件（`tool_execution_start`、`tool_execution_end`）还用来记哪些调用没返回，有调用没返回时不算无进展。在跑的成员进程记在它 session 目录的 `running.json` 里（`src/host/member-ledger.ts`），宿主启动时先结束上一个宿主留下的成员。
 
 Worker 的常驻进程（`RpcClient` 那一个）打开 auto-compaction 和 auto-retry，steering mode 设为 `"all"`；成员的一次性进程不设这些。Worker 的 Pi 事件映射如下。
 
@@ -233,6 +235,103 @@ Watchdog（`src/watchdog/`，未提交）是另一个进程，用 `just watchdog
 - **读取范围**。`#readForWorker` 只允许 Worker 读自己的 ticket、自己订阅的 thread、这些 thread 上的 trigger，以及最近 20 条 input 引用到的 trigger。
 - **身份**。Worker 的身份完全靠每次 spawn 新生成的 token。client 要在 `hello` 里出示 `<state>/client-token` 的内容。能读状态目录的进程仍然能拿到它，这个边界写在 ADR 0007。client 协议里没有直接对 Worker 说话的消息。
 
+## 怎么写一个模块
+
+一个模块是一个文件夹，也是一个领域。文件夹的名字就是领域的 `name`。仓库自带的模块在 `modules/`。你自己的模块放在 `<状态目录>/modules/<名字>/`，状态目录默认是 `~/.pi-super-agent`。宿主启动时读一遍，改完要重启宿主。
+
+一个模块最多装五样，每样都可以不写。
+
+| 放什么 | 写在哪里 | 谁用，做什么 |
+|---|---|---|
+| 清单 | `module.json` | 宿主。模块叫什么，幕僚长怎么认它，队伍叫什么。 |
+| 来源和定时器 | `module.json` 的 `sources`、`timers` | 宿主。事件从哪里来，哪些在调用模型之前就筛掉。 |
+| 规则 | `rules.md` | 幕僚长。哪类事件值得开任务。 |
+| 技能 | `skills/<技能名>/SKILL.md` | 助手和成员。这个领域里可复用的经验和资料。 |
+| 成员 | `agents/<名字>.md` | 助手。它能把事派给谁。 |
+
+下面是一个带两位成员的模块。
+
+```
+~/.pi-super-agent/modules/research/
+├── module.json
+├── rules.md
+├── skills/cite-sources/SKILL.md
+└── agents/
+    ├── searcher.md
+    └── checker.md
+```
+
+`module.json`：
+
+```json
+{
+	"name": "research",
+	"title": "资料调研",
+	"description": "查公开资料、核对出处、写成带来源的摘要",
+	"team": "调研队",
+	"sources": [{ "name": "papers" }]
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `name` | 必填，必须等于文件夹名。不能叫 `user`，这个名字留给 `<状态目录>/rules.md` 里你自己的规则。 |
+| `title` | 领域的中文名。写了 `description` 就必须写。 |
+| `description` | 给幕僚长看的一句话，最多 60 字。幕僚长靠它决定对话里的一件事归不归这个领域。不写的话幕僚长的名册里没有这个模块，但它的规则开的任务照样属于它。 |
+| `team` | 队名，例如「调研队」，不能有空白。`agents/` 里有成员就必须写，没有成员就不能写。 |
+| `sources`、`timers` | 和以前一样。 |
+| `prepare` | 助手第一次启动前，宿主在任务工作目录里用 `bash -lc` 跑一次的命令。它跟着领域走：规则开的和对话里开的任务都跑。幕僚长自己推断开的任务不跑，这类任务只读，助手仍然拿到模块的技能。 |
+
+`rules.md` 里每个二级标题是一条规则。规则开的任务自动属于这个模块，不用也不能写「团队：」。
+
+```markdown
+## new-paper
+来源: papers
+有新论文时开任务，读摘要，判断和我关心的方向有没有关系。
+```
+
+`agents/searcher.md` 是一位成员。frontmatter 写 `name`、`title`（中文职称）、`description`，可选 `tools`、`skills`、`model`，正文是它的提示词。提示词只写角色、判断标准和汇报格式，可复用的经验放进模块的 `skills/`。
+
+```markdown
+---
+name: searcher
+title: 检索员
+description: 找公开资料，给出链接和发布日期
+tools: read, web_get
+---
+你是检索员。每条资料写明来源和日期，找不到就直说。
+```
+
+`agents/checker.md` 是另一位成员，写法一样。
+
+```markdown
+---
+name: checker
+title: 核对员
+description: 逐条核对摘要里的说法和它引用的出处是否一致
+tools: read, web_get
+---
+你是核对员。逐条打开出处，写明一致、不一致还是打不开，不替原文补充内容。
+```
+
+写好以后是这样的。
+
+- 幕僚长的名册多一行「- research（资料调研）：查公开资料、核对出处、写成带来源的摘要」。你在对话里说的事合适时，它开任务会填 `domain: research`。
+- 这个领域的任务显示成四字名加队名，例如「高山流水 · 调研队 #1」。助手带着 `skills/` 里的技能，可以用 `dispatch_agent` 把事派给检索员和核对员。两位成员也带着同一份技能，再加各自定义里的 `skills`。
+- 没有 `agents/` 的模块，任务是一个带技能的助手，显示两字名加角色。
+- 一个模块最多一支队伍，一位成员只属于它所在的模块。不同模块的成员可以同名，同一个模块里不行。
+
+写错了宿主不启动，只打印一行说明。清单、规则和成员的错误以出错的文件或文件夹的路径开头；定时器的错误写的是「模块名/定时器 id」，不带路径。`name`、`title`、`description` 里不能有换行和别的控制字符。
+
+旧的写法和放错位置的文件也会报错并说明改法：
+
+- `rules.md` 里的「团队：」行。
+- `teams.yaml`，不管放在模块里、模块目录下还是状态目录下。
+- 不在任何模块里的成员文件：状态目录下的 `agents/`，或直接放在模块目录下的 `agents/`。
+- 有 `agents/`、`teams.yaml`、`rules.md` 或 `skills/` 却没有 `module.json` 的文件夹。这四样都没有的文件夹宿主不管。
+
+模块没有开关。想停用一个模块，删掉它的文件夹，或让它所在的目录不再列在 `config.json` 的 `modulesDirs` 里。已经属于它的任务按没有领域的单个助手继续。
+
 ## Where Things Live
 
 | 路径 | 内容 |
@@ -247,11 +346,11 @@ Watchdog（`src/watchdog/`，未提交）是另一个进程，用 `just watchdog
 | `src/worker/extension.ts`, `external-actions.ts` | Worker 内的工具、后台命令、inference 黑名单。 |
 | `src/host/server.ts`, `src/jsonl.ts` | socket 服务和 JSON lines 分帧。 |
 | `src/host/web-token.ts`, `src/client/client-token.ts` | 两个凭据文件的读写，以及 client 这边的读取。 |
-| `src/sources/`, `src/modules.ts` | trigger 来源、模块和规则加载、过滤策略。 |
+| `src/sources/`, `src/modules.ts`, `src/teams.ts` | trigger 来源；模块的加载（清单、规则、技能目录、成员）和过滤策略，`Modules` 同时是宿主用的 `Domains`（`book` 给 Kernel，`kitFor` 给 Worker）；成员文件的解析和校验。 |
 | `src/model-selector.ts`, `src/models.ts`, `src/host/config.ts` | 模型切换、默认模型、配置默认值。 |
 | `src/watchdog/` | Watchdog 判定函数和进程入口。 |
 | `extensions/super-agent.ts`, `src/client/` | TUI client、协议、看板、transcript 格式化。 |
-| `modules/toy-market/` | 示例模块。 |
+| `modules/toy-market/`, `modules/us-market/` | 玩具行情（示例）和美股行情两个模块。 |
 | `docs/pi-super-agent/mvp-spec.md`, `docs/adr/0001-0003` | 规格与架构决策。 |
 | `tests/` | `kernel`、`host`、`recovery`、`fallback`、`watchdog`、`client` 测试。`helpers/fakes.ts` 提供 `fauxRouter` 和 `FakeSpawner`。 |
 

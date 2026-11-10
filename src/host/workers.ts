@@ -8,19 +8,17 @@ import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import { INPUT_LABEL } from "../client/board-format.mjs";
 import { parseOptions } from "../kernel/question.ts";
+import { NO_DOMAIN, type DomainKit } from "../modules.ts";
 import type { Member } from "../teams.ts";
 import type { TranscriptMessage } from "../client/protocol.ts";
 import { canCode, memberTools } from "../worker/tools.ts";
 import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberRun } from "./dispatch.ts";
 
-export interface WorkerSpec {
+export interface WorkerSpec extends DomainKit {
 	ticketId: string;
 	sessionId: string;
 	workdir: string;
 	basis: Basis;
-	ruleId: string | null;
-	/** The members this helper may dispatch to. Empty: it works alone. */
-	crew: readonly Member[];
 	token: string;
 	model: ModelRef;
 }
@@ -67,8 +65,6 @@ interface Live {
 }
 
 export interface DispatchOptions {
-	/** The members a team's helper may dispatch to; undefined when the team is not in the roster. */
-	crewOf(team: string): readonly Member[] | undefined;
 	/** One dispatch's limit for a member that cannot write, edit or run commands in the ticket; also the longest wait for a slot. */
 	timeoutMs: number;
 	/** One dispatch's limit for a member that can. */
@@ -89,6 +85,8 @@ export interface WorkerExecutorOptions {
 	onError?: (ticketId: string, error: unknown) => void;
 	models: WorkerModels;
 	lookup?: (source: string, op: string, args: unknown) => Promise<unknown>;
+	/** The lookup by a ticket's domain. Without it every ticket runs as if it had no domain. */
+	kitFor?: (domain: string) => DomainKit | undefined;
 	/** Without it every helper works alone. */
 	dispatch?: DispatchOptions;
 }
@@ -104,7 +102,7 @@ export class WorkerExecutor {
 	readonly #spawning = new Map<string, Promise<Live | undefined>>();
 	#shuttingDown = false;
 	readonly #desk: DispatchDesk | undefined;
-	readonly #teamless = new Set<string>();
+	readonly #domainless = new Set<string>();
 
 	constructor(options: WorkerExecutorOptions) {
 		this.#o = options;
@@ -207,11 +205,11 @@ export class WorkerExecutor {
 			}),
 			transcript: (event) => this.#o.onTranscript?.(ticketId, event),
 		};
-		const crew = this.#crewOf(ticketId, ticket.team);
+		const kit = this.#kitFor(ticketId, ticket.domain);
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ruleId: ticket.ruleId, crew, token, model: choice.model },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ...kit, token, model: choice.model },
 				events,
 			);
 		} catch (error) {
@@ -219,7 +217,7 @@ export class WorkerExecutor {
 			afterCommand();
 			throw error;
 		}
-		live = { handle, token, bgRunning: 0, stopping: false, crew };
+		live = { handle, token, bgRunning: 0, stopping: false, crew: kit.crew };
 		this.#live.set(ticketId, live);
 		if (kernel.getTicket(ticketId)?.stoppedAt != null) {
 			await this.stop(ticketId);
@@ -325,15 +323,15 @@ export class WorkerExecutor {
 		}
 	}
 
-	#crewOf(ticketId: string, team: string): readonly Member[] {
-		if (!this.#desk) return [];
-		const crew = this.#o.dispatch!.crewOf(team);
-		if (crew) return crew;
-		if (!this.#teamless.has(ticketId)) {
-			this.#teamless.add(ticketId);
-			this.#o.onError?.(ticketId, `团队「${team}」已不在名册里，这个任务按单个助手运行，不能派活`);
+	#kitFor(ticketId: string, domain: string | null): DomainKit {
+		if (domain === null) return NO_DOMAIN;
+		const kit = this.#o.kitFor?.(domain);
+		if (kit) return this.#desk ? kit : { ...kit, crew: [] };
+		if (!this.#domainless.has(ticketId)) {
+			this.#domainless.add(ticketId);
+			this.#o.onError?.(ticketId, `领域「${domain}」的模块已不在，这个任务按没有领域的单个助手继续，没有这个领域的技能，也不能派活`);
 		}
-		return [];
+		return NO_DOMAIN;
 	}
 
 	// A member reports no outcome to the selector, so it must not start a probe or ride on the helper's.
@@ -345,7 +343,7 @@ export class WorkerExecutor {
 	}
 
 	#dispatch(ticketId: string, live: Live, params: unknown): Promise<DispatchResult> {
-		if (!this.#desk || live.crew.length === 0) throw new Error("这个任务的团队没有可派的成员");
+		if (!this.#desk || live.crew.length === 0) throw new Error("这个任务的领域没有可派的成员");
 		if (live.stopping) throw new Error("任务已停止");
 		const { member, task, callId } = parseDispatch(params, live.crew);
 		const { model, onFallback } = this.#memberModel(member);

@@ -135,7 +135,7 @@ test("助手的工具清单包含助手扩展注册的每一个工具，带着�
 
 const HELPER_TOOLS = ["report", "hand_back", "read_ticket", "web_get", "lookup", "bg_start", "bg_status", "bg_stop"];
 
-test("默认团队的助手：工具和现在一样，没有 dispatch_agent", async (t) => {
+test("没有成员可派的助手：工具和单个助手一样，没有 dispatch_agent", async (t) => {
 	const request = await load("request");
 	const inference = await load("inference");
 	t.after(() => { request.close(); inference.close(); });

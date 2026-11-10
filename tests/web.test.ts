@@ -14,7 +14,7 @@ import { WebGateway } from "../src/host/web.ts";
 import * as page from "../src/web/view.mjs";
 import { WATCHDOG_SOURCE } from "../src/watchdog/watchdog.ts";
 import { openStore } from "../src/kernel/store.ts";
-import { busyPort, freePort, ids, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
+import { busyPort, domainsOf, freePort, ids, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
@@ -1193,10 +1193,10 @@ test("网关：两个连接看不同任务，各自只收到自己的；关掉�
 
 test("网关：成员干活时它的每条消息实时送到正在看这个任务的页面，带着是哪次派活的第几条；别的任务的页面收不到", async (t) => {
 	const crew = [{ name: "news-researcher", title: "新闻研究员", description: "查新闻", tools: undefined, skills: [], model: undefined, prompt: "", file: "/agents/news.md" }];
-	const brain = (cards: string[]) => cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: card.match(/trg_[\w-]+/)![0], title: card.includes("新闻") ? "查新闻" : "别的事", brief: "b", team: card.includes("新闻") ? "新闻队" : "默认" }] } }] : []));
+	const brain = (cards: string[]) => cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: card.match(/trg_[\w-]+/)![0], title: card.includes("新闻") ? "查新闻" : "别的事", brief: "b", ...(card.includes("新闻") && { domain: "news" }) }] } }] : []));
 	const web = await webHost(t, brain, {
-		teams: { kinds: new Map([["默认", "solo"], ["新闻队", "crew"]]), pinned: new Map() },
-		dispatch: { crewOf: (team) => (team === "新闻队" ? crew : []), timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4 },
+		domains: domainsOf({ news: { team: "新闻队", crew } }),
+		dispatch: { timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4 },
 	});
 	web.host.say("查新闻");
 	web.host.say("别的事");
