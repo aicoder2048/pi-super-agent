@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { join } from "node:path";
-import { DISPATCH_NEXT, DispatchDesk, REPLY_MAX, SlotPool, clipReply, memberSessionDir, parseDispatch, replyEnvelope, timeoutNote, type DispatchOutcome, type DispatchResult, type DispatchState, type MemberRun } from "../src/host/dispatch.ts";
+import { DISPATCH_NEXT, DispatchDesk, REPLY_MAX, SlotPool, clipReply, memberSessionDir, parseDispatch, replyEnvelope, stallNote, timeoutNote, type DispatchOutcome, type DispatchResult, type DispatchState, type MemberRun } from "../src/host/dispatch.ts";
+import { HostConnection } from "../src/client/connection.ts";
 import type { TeamBook } from "../src/kernel/types.ts";
 import { ModelSelector } from "../src/model-selector.ts";
 import type { Member } from "../src/teams.ts";
@@ -10,12 +11,13 @@ import { ids, startHost, until, type Brain, type FakeWorker } from "./helpers/fa
 const never = () => new AbortController().signal;
 const tick = (ms = 20) => new Promise((done) => setTimeout(done, ms));
 
-test("派活的状态只有一条路：排队 → 进行 → 完成、超时、已停止或出错；排队时也可能超时或被停；结束后不再变", () => {
+test("派活的状态只有一条路：排队 → 进行 → 完成、超时、无进展、已停止或出错；排队时也可能超时或被停；结束后不再变", () => {
 	assert.deepEqual(DISPATCH_NEXT, {
 		queued: ["running", "timed_out", "stopped"],
-		running: ["done", "timed_out", "stopped", "failed"],
+		running: ["done", "timed_out", "stalled", "stopped", "failed"],
 		done: [],
 		timed_out: [],
+		stalled: [],
 		stopped: [],
 		failed: [],
 	} satisfies Record<DispatchState, readonly DispatchState[]>);
@@ -151,7 +153,7 @@ function openOn(team: string): Brain {
 
 type Runner = (run: MemberRun) => Promise<string>;
 type Call = { agent: string; task: string; callId?: string };
-interface Options { team?: string; timeoutMs?: number; codingTimeoutMs?: number; maxConcurrent?: number; selector?: ModelSelector; fallbackDailyTokens?: number; say?: string }
+interface Options { team?: string; timeoutMs?: number; codingTimeoutMs?: number; stallMs?: number; maxConcurrent?: number; selector?: ModelSelector; fallbackDailyTokens?: number; say?: string }
 
 const newSelector = (now = () => Date.now()) =>
 	new ModelSelector({ primary: { provider: "openai-codex", id: "gpt-6.1-sol" }, fallback: { provider: "openai-codex", id: "gpt-fallback" }, probeEveryMs: 60_000, clock: { now } });
@@ -168,7 +170,7 @@ async function dispatching(t: TestContext, runner: Runner, calls: Call[], option
 	}, {
 		teams: TEAMS,
 		log: (line) => logs.push(line),
-		dispatch: { crewOf, timeoutMs: options.timeoutMs ?? 5000, codingTimeoutMs: options.codingTimeoutMs ?? options.timeoutMs ?? 5000, maxConcurrent: options.maxConcurrent ?? 4 },
+		dispatch: { crewOf, timeoutMs: options.timeoutMs ?? 5000, codingTimeoutMs: options.codingTimeoutMs ?? options.timeoutMs ?? 5000, stallMs: options.stallMs ?? 5000, maxConcurrent: options.maxConcurrent ?? 4 },
 		workerModels: { selector: options.selector ?? newSelector(), fallbackDailyTokens: options.fallbackDailyTokens ?? 1_000_000 },
 	});
 	t.after(() => started.host.stop());
@@ -178,8 +180,9 @@ async function dispatching(t: TestContext, runner: Runner, calls: Call[], option
 	await new Promise((done) => setImmediate(done));
 	const result = (i: number) => settled[i].then((r) => ("error" in r ? Promise.reject(r.error) : (r.value as DispatchResult)));
 	const ticketId = () => started.host.kernel.listTickets()[0].id;
-	const live = () => started.host.snapshot().dispatching[ticketId()];
-	return { ...started, result, results: () => Promise.all(calls.map((_, i) => result(i))), helper: () => helper!, ticketId, live, logs };
+	const board = () => started.host.snapshot().dispatching[ticketId()];
+	const live = () => board()?.map(({ callId, title, state }) => ({ callId, title, state }));
+	return { ...started, result, results: () => Promise.all(calls.map((_, i) => result(i))), helper: () => helper!, ticketId, live, board, logs };
 }
 
 const two: Call[] = [{ agent: "market-analyst", task: "盘面怎么样？" }, { agent: "news-researcher", task: "有什么新闻？" }];
@@ -356,7 +359,7 @@ test("成员自己的模型就是回退模型：主模型正常时它的用量�
 	const ran: string[] = [];
 	const started = await startHost(openOn("自带队"), () => {}, {
 		teams: { kinds: new Map([["默认", "solo"], ["自带队", "crew"]]), pinned: new Map() },
-		dispatch: { crewOf: () => own, timeoutMs: 5000, codingTimeoutMs: 5000, maxConcurrent: 4 },
+		dispatch: { crewOf: () => own, timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4 },
 		workerModels: { selector: selectorWith(FALLBACK), fallbackDailyTokens: 150 },
 	});
 	t.after(() => started.host.stop());
@@ -376,18 +379,122 @@ test("成员自己的模型就是回退模型：主模型正常时它的用量�
 	assert.deepEqual(ran, ["market-analyst fallback-co/cheap", "news-researcher openai-codex/gpt-6.1-sol"]);
 });
 
-test("看板在助手的任务上列出在跑的成员（只有职称和状态），做完就去掉", async (t) => {
+test("一批里先做完的那位，看板上马上写完成、令牌作废；整批都回来才从看板去掉", async (t) => {
 	let release!: () => void;
 	const gate = new Promise<void>((done) => (release = done));
-	const { host, results, live } = await dispatching(t, async (run) => {
+	const tokens: Record<string, string> = {};
+	const { host, results, live, ticketId } = await dispatching(t, async (run) => {
+		tokens[run.member.name] = run.token;
 		if (run.member.name === "news-researcher") await gate;
 		return "答";
 	}, two);
-	await until(() => live()?.length === 1, "只剩新闻研究员在做");
-	assert.deepEqual(live(), [{ callId: "call_1", title: "新闻研究员", state: "running" }]);
+	await until(() => live()?.[0]?.state === "done", "行情分析师做完");
+	assert.deepEqual(live(), [{ callId: "call_0", title: "行情分析师", state: "done" }, { callId: "call_1", title: "新闻研究员", state: "running" }]);
+	assert.throws(() => host.workers.handleRequest(ticketId(), tokens["market-analyst"], "worker.lookup", {}), /令牌不符/, "做完的成员令牌作废");
+	assert.doesNotMatch(String(await Promise.resolve().then(() => host.workers.handleRequest(ticketId(), tokens["news-researcher"], "worker.lookup", { source: "x", op: "y" })).catch((e) => e)), /令牌不符/);
 	release();
 	await results();
-	await until(() => live() === undefined, "做完去掉");
+	await until(() => live() === undefined, "整批回来后去掉");
+});
+
+test("看板上在跑的成员带着它正在做什么、多久没有动静和已经用掉的 token", async (t) => {
+	let finish!: () => void;
+	const { results, board } = await dispatching(t, async (run) => {
+		run.onActivity();
+		run.onActivity("读取网页");
+		run.onUsage({ provider: "openai-codex", tokensIn: 100, tokensOut: 20 });
+		await new Promise<void>((done) => (finish = done));
+		return "答";
+	}, [two[1]]);
+	await until(() => board()?.[0]?.step === "读取网页", "看板写出成员在做什么");
+	await tick(60);
+	const [entry] = board();
+	assert.deepEqual({ ...entry, quietMs: 0 }, { callId: "call_0", title: "新闻研究员", state: "running", step: "读取网页", quietMs: 0, tokens: 120 });
+	assert.ok(entry.quietMs >= 50 && entry.quietMs < 1000, `离上一次动静 ${entry.quietMs} ms`);
+	finish();
+	await results();
+});
+
+test("成员的动静推给页面有节流：一次派活大约一秒最多推一帧，最后一次动静也会推出去", async () => {
+	let changes = 0;
+	let progress = 0;
+	let finish!: () => void;
+	const desk = new DispatchDesk({
+		queueTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4, onChange: () => changes++,
+		run: async (run) => {
+			for (let i = 0; i < 30; i++) {
+				run.onActivity(`第 ${i} 步`);
+				await tick(10);
+			}
+			await new Promise<void>((done) => (finish = done));
+			return "答";
+		},
+	});
+	const result = desk.dispatch({ ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", basis: "request", model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {}, onProgress: () => progress++ });
+	await tick(350);
+	const afterBurst = changes;
+	assert.equal(progress, 1, "30 次动静只推了开头那一次");
+	await tick(900);
+	assert.equal(progress, 2, "一秒后补推最后一次动静");
+	assert.equal(changes - afterBurst, 1);
+	assert.equal(desk.live().tkt_1[0].step, "第 29 步");
+	finish();
+	await result;
+});
+
+test("派活的状态一变就推一帧看板：排队的轮到了、先做完的写完成、整批回来后清空", async (t) => {
+	const gates: (() => void)[] = [];
+	const { host, results, ticketId } = await dispatching(t, (run) => new Promise<string>((done) => gates.push(() => done(run.task))), [{ agent: "news-researcher", task: "第一件" }, { agent: "news-researcher", task: "第二件" }]);
+	const frames: string[] = [];
+	const conn = new HostConnection({ socketPath: host.socketPath, retryMs: 30, onMessage: (m) => {
+		if (m.type === "board") frames.push((m.dispatching[ticketId()] ?? []).map((d) => d.state).join(","));
+	} });
+	conn.open();
+	t.after(() => conn.close());
+	await until(() => conn.connected && gates.length === 1, "第一件在做");
+	await tick(150);
+	frames.length = 0;
+	gates[0]();
+	await until(() => frames.includes("done,running"), "第一件完成、第二件轮到，各有一帧");
+	await until(() => gates.length === 2, "第二件在做");
+	gates[1]();
+	await results();
+	await until(() => frames.at(-1) === "", "整批回来后看板清空");
+});
+
+test("成员多久没有任何动静就算无进展：结束它，结果写明多久没有进展；一直有动静的不算", async (t) => {
+	const aborted: string[] = [];
+	const { results } = await dispatching(t, async (run) => {
+		run.signal.addEventListener("abort", () => aborted.push(run.member.name));
+		const beats = run.member.name === "news-researcher" ? 3 : 12;
+		for (let i = 0; i < beats; i++) {
+			run.onActivity("思考");
+			await wait(50, run.signal);
+		}
+		if (run.member.name === "news-researcher") await wait(60_000, run.signal);
+		return "一直在动";
+	}, two, { stallMs: 200 });
+	const out = await results();
+	assert.deepEqual(out.map((r) => [r.details.state, r.details.note ?? null]), [["done", null], ["stalled", "0.2 秒没有进展"]]);
+	assert.match(out[1].text, /新闻研究员（news-researcher） · 没有回复（0.2 秒没有进展）/);
+	assert.ok(out[1].details.ms >= 300, `有动静的那 150 ms 不算，实际 ${out[1].details.ms} ms`);
+	assert.deepEqual(aborted, ["news-researcher"]);
+	assert.match(replyEnvelope(outcome({ state: "stalled", reply: null, note: stallNote(180_000) })), /没有回复（3 分钟没有进展）/);
+});
+
+test("成员有动静就算助手有进展：助手等着成员时任务不会被当成久无进展", async (t) => {
+	let finish!: () => void;
+	const { host, results, ticketId } = await dispatching(t, async (run) => {
+		await tick(80);
+		run.onActivity("读取网页");
+		await new Promise<void>((done) => (finish = done));
+		return "答";
+	}, [two[1]]);
+	const before = host.kernel.listTickets()[0];
+	await until(() => (host.kernel.getTicket(ticketId())!.lastProgressAt ?? 0) > (before.lastProgressAt ?? 0), "成员的动静记成了任务的进展");
+	assert.equal(host.kernel.listTickets()[0].toolCalls, before.toolCalls, "成员的动静不算助手的工具调用");
+	finish();
+	await results();
 });
 
 const stuck = (aborted: string[]): Runner => async (run) => {
@@ -441,8 +548,8 @@ test("助手崩溃后马上停宿主：宿主等那些成员进程没了才停�
 
 test("结束一个任务的派活可以调两次：两次都等到成员进程没了才返回，之后同一任务还能再派", async () => {
 	const gone: string[] = [];
-	const desk = new DispatchDesk({ queueTimeoutMs: 5000, maxConcurrent: 4, onChange() {}, run: slowToDie(150, gone) });
-	const order = { ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", basis: "request" as const, model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {} };
+	const desk = new DispatchDesk({ queueTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4, onChange() {}, run: slowToDie(150, gone) });
+	const order = { ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", basis: "request" as const, model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {}, onProgress() {} };
 	const first = desk.dispatch(order);
 	await tick();
 	const ends = [desk.end("tkt_1"), desk.end("tkt_1")];
@@ -453,7 +560,7 @@ test("结束一个任务的派活可以调两次：两次都等到成员进程�
 	await desk.end("tkt_1");
 	const again = desk.dispatch({ ...order, callId: "c2" });
 	await tick();
-	assert.deepEqual(desk.live(), { tkt_1: [{ callId: "c2", title: "新闻研究员", state: "running" }] }, "停完之后的新派活不受上一次停止影响");
+	assert.deepEqual(desk.live().tkt_1.map((d) => [d.callId, d.state]), [["c2", "running"]], "停完之后的新派活不受上一次停止影响");
 	await desk.end("tkt_1");
 	assert.equal((await again).details.state, "stopped");
 });

@@ -94,6 +94,17 @@ test("派活的设置有默认值：同时运行的成员最多 4 位，不写�
 	assert.equal(loadConfig(stateWith({ dispatchTimeoutSeconds: 3600 })).dispatchTimeoutSeconds, 3600, "两个时限最长都是 60 分钟");
 });
 
+test("成员多久没有动静算无进展：默认 180 秒，可以改；必须在 30 秒和最长的派活时限之间", () => {
+	assert.equal(loadConfig(stateWith({})).dispatchStallSeconds, 180);
+	assert.equal(loadConfig(stateWith({ dispatchStallSeconds: 30 })).dispatchStallSeconds, 30);
+	assert.equal(loadConfig(stateWith({ dispatchStallSeconds: 3600 })).dispatchStallSeconds, 3600);
+	assert.equal(loadConfig(stateWith({ dispatchTimeoutSeconds: 60, dispatchCodingTimeoutSeconds: 600, dispatchStallSeconds: 600 })).dispatchStallSeconds, 600);
+	for (const config of [{ dispatchStallSeconds: 29 }, { dispatchStallSeconds: 3601 }, { dispatchStallSeconds: "180" }, { dispatchStallSeconds: null }, { dispatchTimeoutSeconds: 60, dispatchCodingTimeoutSeconds: 600, dispatchStallSeconds: 601 }]) {
+		assert.throws(() => loadConfig(stateWith(config)), (e: Error) => e.name === "ConfigError" && /dispatchStallSeconds（.*必须是 30 到 \d+ 之间的秒数/.test(e.message), JSON.stringify(config));
+	}
+	assert.equal(loadConfig(stateWith({ dispatchTimeoutSeconds: 60, dispatchCodingTimeoutSeconds: 90 })).dispatchStallSeconds, 90, "没写时不超过最长的时限");
+});
+
 test("maxConcurrentExperts 不是 1 到 16 的整数、两个派活时限不是 0 到 3600 之间的正数时拒绝启动，报错指出字段", () => {
 	for (const value of [0, 17, 1.5, "4", null]) {
 		assert.throws(() => loadConfig(stateWith({ maxConcurrentExperts: value })), (e: Error) => e.name === "ConfigError" && /maxConcurrentExperts/.test(e.message), JSON.stringify(value));

@@ -4,6 +4,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { piCliPath } from "../pi-runtime.mjs";
+import { toolStep } from "../client/board-format.mjs";
 import type { Basis } from "../kernel/types.ts";
 import type { ModelRef } from "../models.ts";
 import { memberTools, toolAllowlist } from "../worker/tools.ts";
@@ -198,6 +199,20 @@ export class PiWorkerSpawner implements WorkerSpawner {
 	}
 }
 
+interface PiJsonEvent {
+	type?: string;
+	toolName?: string;
+	args?: unknown;
+	assistantMessageEvent?: { type?: string };
+}
+
+/** The step of 执行过程 this event starts, if it starts one. */
+function stepStarted(e: PiJsonEvent): string | undefined {
+	if (e.type === "tool_execution_start" && e.toolName) return toolStep(e.toolName, typeof e.args === "object" && e.args !== null ? (e.args as Record<string, unknown>) : {}).title;
+	if (e.type === "message_update" && /^(text|thinking)_/.test(e.assistantMessageEvent?.type ?? "")) return "思考";
+	return undefined;
+}
+
 function runMemberProcess(args: string[], env: Record<string, string>, run: MemberRun): Promise<string> {
 	return new Promise((resolve, reject) => {
 		if (run.signal.aborted) return reject(run.signal.reason);
@@ -219,6 +234,7 @@ function runMemberProcess(args: string[], env: Record<string, string>, run: Memb
 		let stderr = "";
 		child.stderr!.setEncoding("utf8").on("data", (text: string) => (stderr = (stderr + text).slice(-2000)));
 		onJsonLines(child.stdout!, (event) => {
+			run.onActivity(stepStarted(event as PiJsonEvent));
 			const e = event as { type?: string; message?: { role?: string; stopReason?: string; errorMessage?: string; content?: { type: string; text?: string }[] } };
 			if (e.type !== "message_end" || e.message?.role !== "assistant") return;
 			const usage = usageOf(e.message as Parameters<typeof usageOf>[0], run.model.provider);

@@ -16,6 +16,8 @@ export interface HostConfig {
 	dispatchTimeoutSeconds: number;
 	/** The same limit for a member that can. */
 	dispatchCodingTimeoutSeconds: number;
+	/** A running member with no event of any kind for this long is ended. */
+	dispatchStallSeconds: number;
 	/** Member processes running at once across the host; the rest queue. */
 	maxConcurrentExperts: number;
 	retryAttempts: number;
@@ -30,6 +32,7 @@ export interface HostConfig {
 
 const STUCK_MINUTES_MAX = 1440;
 const DISPATCH_TIMEOUT_MAX = 3600;
+const DISPATCH_STALL_MIN = 30;
 
 export function defaultStateDir(): string {
 	return resolve(process.env.PSA_STATE_DIR ?? join(homedir(), ".pi-super-agent"));
@@ -70,6 +73,11 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	};
 	const dispatchTimeoutSeconds = seconds("dispatchTimeoutSeconds", 900);
 	const dispatchCodingTimeoutSeconds = seconds("dispatchCodingTimeoutSeconds", 3600);
+	const longestDispatch = Math.max(dispatchTimeoutSeconds, dispatchCodingTimeoutSeconds);
+	const dispatchStallSeconds = raw.dispatchStallSeconds === undefined ? Math.min(180, longestDispatch) : raw.dispatchStallSeconds;
+	if (raw.dispatchStallSeconds !== undefined && (typeof dispatchStallSeconds !== "number" || !(dispatchStallSeconds >= DISPATCH_STALL_MIN && dispatchStallSeconds <= longestDispatch))) {
+		throw new ConfigError(`${file}：dispatchStallSeconds（${JSON.stringify(dispatchStallSeconds)}）必须是 ${DISPATCH_STALL_MIN} 到 ${longestDispatch} 之间的秒数：不短于 ${DISPATCH_STALL_MIN} 秒，不长于最长的派活时限`);
+	}
 	const maxConcurrentExperts = raw.maxConcurrentExperts === undefined ? 4 : raw.maxConcurrentExperts;
 	if (!Number.isInteger(maxConcurrentExperts) || maxConcurrentExperts < 1 || maxConcurrentExperts > 16) {
 		throw new ConfigError(`${file}：maxConcurrentExperts（${JSON.stringify(maxConcurrentExperts)}）必须是 1 到 16 的整数`);
@@ -90,6 +98,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		fallbackDailyTokens: raw.fallbackDailyTokens ?? 8_000_000,
 		dispatchTimeoutSeconds,
 		dispatchCodingTimeoutSeconds,
+		dispatchStallSeconds,
 		maxConcurrentExperts,
 		retryAttempts: raw.retryAttempts ?? 3,
 		probePrimaryMinutes: raw.probePrimaryMinutes ?? 15,

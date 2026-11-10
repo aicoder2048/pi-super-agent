@@ -29,7 +29,11 @@ const say = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
 setTimeout(() => {
 	say({ type: "agent_start" });
 	const usage = { input: 90, output: 10, cacheRead: 10 };
+	say({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "先" } });
+	say({ type: "message_update", assistantMessageEvent: { type: "toolcall_delta" } });
 	say({ type: "message_end", message: { role: "assistant", provider: "openai-codex", content: [{ type: "text", text: "先查一下" }], usage, stopReason: "toolUse" } });
+	say({ type: "tool_execution_start", toolCallId: "c1", toolName: "web_get", args: { url: "https://example.com/a" } });
+	say({ type: "tool_execution_end", toolCallId: "c1", toolName: "web_get", result: {}, isError: false });
 	const final = tag === "broken"
 		? { role: "assistant", provider: "openai-codex", content: [], usage, stopReason: "error", errorMessage: "429 Too Many Requests" }
 		: { role: "assistant", provider: "openai-codex", content: [{ type: "text", text: \`\${tag} 的回复\` }], usage, stopReason: "stop" };
@@ -54,14 +58,16 @@ function setup(t: TestContext, env: Record<string, string> = {}) {
 	});
 	const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath, lookupHelp: "us-market quote" });
 	const usage: number[] = [];
+	const activity: (string | undefined)[] = [];
 	const run = (who: Member, tag: string, basis: Basis = "request", signal = new AbortController().signal) =>
 		spawner.runMember({
 			ticketId: "tkt_helper", member: who, task: `${tag}\n细节`, basis, token: `token-${tag}`, workdir: dir, sessionDir: memberSessionDir(dir, "tkt_helper", who.name), signal,
 			model: { provider: "openai-codex", id: "gpt-6.1-sol" },
 			onUsage: (u) => usage.push(u.tokensIn + u.tokensOut),
+			onActivity: (step) => activity.push(step),
 		} satisfies MemberRun);
 	const read = (file: string) => JSON.parse(readFileSync(join(dir, file), "utf8"));
-	return { dir, run, usage, read };
+	return { dir, run, usage, activity, read };
 }
 
 const flag = (args: string[], name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
@@ -186,4 +192,10 @@ test("成员进程在跑时，它的会话目录里记着进程号；进程没�
 	assert.deepEqual(JSON.parse(readFileSync(ledger, "utf8")), { pid: Number(readFileSync(join(dir, "pid-l"), "utf8")) });
 	await reply;
 	assert.equal(existsSync(ledger), false);
+});
+
+test("成员进程的每个事件都是一次动静；开始用工具或模型开始出字时带上这一步的中文说法", async (t) => {
+	const { run, activity } = setup(t);
+	await run(NEWS, "a");
+	assert.deepEqual(activity, [undefined, "思考", undefined, undefined, "读取网页", undefined, undefined, undefined]);
 });

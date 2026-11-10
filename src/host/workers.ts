@@ -72,6 +72,8 @@ export interface DispatchOptions {
 	timeoutMs: number;
 	/** One dispatch's limit for a member that can. */
 	codingTimeoutMs: number;
+	/** A running member with no event of any kind for this long is ended. */
+	stallMs: number;
 	maxConcurrent: number;
 }
 
@@ -105,7 +107,7 @@ export class WorkerExecutor {
 		this.#o = options;
 		const { dispatch, spawner } = options;
 		if (dispatch && spawner.runMember) {
-			this.#desk = new DispatchDesk({ queueTimeoutMs: dispatch.timeoutMs, maxConcurrent: dispatch.maxConcurrent, run: (run) => spawner.runMember!(run), onChange: options.afterCommand });
+			this.#desk = new DispatchDesk({ queueTimeoutMs: dispatch.timeoutMs, stallMs: dispatch.stallMs, maxConcurrent: dispatch.maxConcurrent, run: (run) => spawner.runMember!(run), onChange: options.afterCommand });
 		}
 	}
 
@@ -363,6 +365,14 @@ export class WorkerExecutor {
 					this.#o.onError?.(ticketId, error);
 				}
 				afterCommand();
+			},
+			// A helper waiting on a member makes no tool call of its own; the member's activity is the ticket's progress.
+			onProgress: () => {
+				try {
+					kernel.recordMemberProgress(ticketId);
+				} catch (error) {
+					this.#o.onError?.(ticketId, error);
+				}
 			},
 		});
 	}

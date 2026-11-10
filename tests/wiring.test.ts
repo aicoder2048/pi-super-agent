@@ -63,7 +63,7 @@ async function fauxRuntime(failOn: (id: string) => boolean) {
 function hostConfig(provider: string, fallbackId = "fallback") {
 	const stateDir = mkdtempSync(join(tmpdir(), "psa-wire-"));
 	return {
-		stateDir, kernel: {}, bgMaxMinutes: 120, fallbackDailyTokens: 1000, dispatchTimeoutSeconds: 60, dispatchCodingTimeoutSeconds: 600, maxConcurrentExperts: 2, retryAttempts: 0, probePrimaryMinutes: 15,
+		stateDir, kernel: {}, bgMaxMinutes: 120, fallbackDailyTokens: 1000, dispatchTimeoutSeconds: 60, dispatchCodingTimeoutSeconds: 600, dispatchStallSeconds: 45, maxConcurrentExperts: 2, retryAttempts: 0, probePrimaryMinutes: 15,
 		heartbeatSeconds: 30, watchdog: { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120 }, modulesDirs: [], webPort: 0, sources: {},
 		models: { router: { provider, id: "router" }, worker: { provider, id: "worker" }, fallback: { provider, id: fallbackId } },
 	};
@@ -252,5 +252,5 @@ test("真实接线：宿主知道每个团队能派给谁（通用助手不算�
 	assert.deepEqual(dispatch!.crewOf("新闻队")!.map((m) => [m.name, m.title]), [["news-researcher", "新闻研究员"]]);
 	assert.deepEqual(dispatch!.crewOf(DEFAULT_TEAM), []);
 	assert.equal(dispatch!.crewOf("旧队"), undefined);
-	assert.deepEqual([dispatch!.timeoutMs, dispatch!.codingTimeoutMs, dispatch!.maxConcurrent], [60_000, 600_000, 2]);
+	assert.deepEqual([dispatch!.timeoutMs, dispatch!.codingTimeoutMs, dispatch!.stallMs, dispatch!.maxConcurrent], [60_000, 600_000, 45_000, 2]);
 });
