@@ -746,9 +746,14 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] Record a 30 to 60 second video of the 看盘队 at work. Keep it local as webm, as in W1. 49 秒，两倍速，`/tmp/swarm-t3b/t3-review.webm`，在 19a0ad1 上录。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
+**Merge.**
+
+- [ ] 使用者合并。
+- [ ] T1 到 T3 的 PR 都开出来以后：把 #33（`psa/brand`）restack 到 T3 上，再关闭 #30、#31、#32。
+
 ## Name the product 白宫 and give you an avatar (brand)
 
-**Depends on.** W6c (stacked on `psa/market-experts` at `bc501f2`).
+**Depends on.** T3 (stacked on `psa/first-teams`). It was first cut on W6c (`psa/market-experts` at `bc501f2`); T3 replaced W6c, so its commits moved onto T3.
 
 **Why.** 使用者在设计画布上选定产品名「白宫」、页头标志 W1 和使用者头像 U2。「Pi Super Agent」退为副标题。只用名字，不用任何官方标识（总统印章、白头鹰、建筑剪影）；图形全部是原创的椭圆环加圆点、椭圆环加五角星。
 
@@ -803,8 +808,6 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Merge.**
 
 - [ ] 使用者合并。
-- [ ] T1 到 T3 的 PR 都开出来以后：把 #33（`psa/brand`）restack 到 T3 上，再关闭 #30、#31、#32。
-
 
 ## Close the program
 
