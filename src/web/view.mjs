@@ -16,7 +16,7 @@
 /** @typedef {import("../host/dispatch.ts").BoardDispatch} BoardDispatch */
 /** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
 
-import { INPUT_LABEL, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, shortId, stallMinutes, textOf, toolStep } from "../client/board-format.mjs";
+import { HOST_SOURCE, INPUT_LABEL, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, shortId, stallMinutes, textOf, toolStep } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -196,13 +196,13 @@ function card(row, now, sending) {
 	};
 }
 
-/** The host's question about the member cap. It belongs to no task, so it has no helper and nothing to open. @typedef {{ title: string, stage: string, latest: string, choice: Choice }} CapCard */
+/** The host's question about the member cap. It belongs to no task, so it has no helper and nothing to open; `source` stands where a task card names its helper. @typedef {{ title: string, source: string, stage: string, latest: string, choice: Choice }} CapCard */
 
 /** @param {View} view @param {Sending} sending @returns {CapCard | null} */
 function capCard(view, sending) {
 	const q = view.memberCap?.question;
 	const choice = choiceOf(q, sending, CAP_SENT_NOTE);
-	return q && choice ? { title: "成员上限", stage: STAGE_PHRASE.awaiting_answer, latest: q.text, choice } : null;
+	return q && choice ? { title: "成员上限", source: HOST_SOURCE, stage: STAGE_PHRASE.awaiting_answer, latest: q.text, choice } : null;
 }
 
 /** @param {View} view @param {Sending} sending @returns {Map<string, Choice>} */

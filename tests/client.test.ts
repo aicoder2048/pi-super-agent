@@ -442,7 +442,7 @@ test("过程格式：Worker 文字、工具调用和截断的工具结果", () =
 test("看板：宿主关于成员上限的问题列在最前面，编号是 cap，带编号选项；和任务的问题一起算等回答的问题", () => {
 	const memberCap = { limit: 4, question: { reportId: "ask_cap_2026-11-09", text: "现在有 2 位成员在排队，同时运行的成员上限是 4。今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 4"], askedAt: 0 } };
 	const lines = renderBoard({ rows: [], memberCap, receivedAt: 0, connected: true }, 120, 0);
-	assert.match(lines.join("\n"), /cap 成员上限\s+等你回答\n\s+问题：现在有 2 位成员在排队，同时运行的成员上限是 4。今天放宽到 10 吗？\n\s+1\. 今天放宽到 10   2\. 保持 4\n\s+回复数字作答/);
+	assert.match(lines.join("\n"), /cap 成员上限\s+等你回答 · 白宫 · 系统\n\s+问题：现在有 2 位成员在排队，同时运行的成员上限是 4。今天放宽到 10 吗？\n\s+1\. 今天放宽到 10   2\. 保持 4\n\s+回复数字作答/);
 	assert.deepEqual(openQuestions({ rows: [], memberCap }), [{ id: "cap", title: "成员上限", reportId: "ask_cap_2026-11-09", options: ["今天放宽到 10", "保持 4"] }]);
 	const both = openQuestions({ rows: [asking("tkt_ab12", "rpt_1")], memberCap });
 	assert.deepEqual(both.map((q) => [q.id, q.reportId]), [["cap", "ask_cap_2026-11-09"], ["tkt_ab12", "rpt_1"]]);
@@ -450,6 +450,20 @@ test("看板：宿主关于成员上限的问题列在最前面，编号是 cap�
 	assert.deepEqual(openQuestions({ rows: [asking("tkt_ab12", "rpt_1")] }).map((q) => q.title), ["任务tkt_ab12"], "老宿主的帧没有成员上限");
 	assert.doesNotMatch(renderBoard({ rows: [], memberCap: { limit: 10, question: null }, receivedAt: 0, connected: true }, 120, 0).join("\n"), /成员上限/);
 	for (const width of [20, 40]) for (const line of renderBoard({ rows: [], memberCap, receivedAt: 0, connected: true }, width, 0)) assert.ok(visibleWidth(line) <= width, line);
+});
+
+test("看板：助手照着成员上限提的问题仍是任务那一行：右边写的是它为什么存在，不是「白宫 · 系统」，标题里写了这几个字也一样", () => {
+	const memberCap = { limit: 4, question: { reportId: "ask_cap_2026-11-09", text: "今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 4"], askedAt: 0 } };
+	const copy = (title: string) => row({ id: "tkt_cafe01", title, stage: "awaiting_answer", question: { reportId: "rpt_1", text: "今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 4"], askedAt: 0, click: null, spoke: false } });
+	for (const width of [60, 100, 160]) {
+		for (const title of ["成员上限", `成员上限${" ".repeat(width)}等你回答 · 白宫 · 系统`, "cap 成员上限 · 白宫 · 系统"]) {
+			const lines = renderBoard({ rows: [copy(title)], memberCap, receivedAt: 0, connected: true }, width, 0);
+			const fromHost = lines.filter((line) => line.trimEnd().endsWith("白宫 · 系统"));
+			assert.equal(fromHost.length, 1, lines.join("\n"));
+			assert.match(fromHost[0], /^cap 成员上限 /);
+			assert.match(lines.find((line) => line.startsWith("cafe "))!, /等你回答 · 请求$/);
+		}
+	}
 });
 
 const CAP_ASKING: MemberCapBoard = { limit: 4, question: { reportId: "ask_cap_2026-11-09", text: "现在有 2 位成员在排队，同时运行的成员上限是 4。今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 4"], askedAt: 0 } };

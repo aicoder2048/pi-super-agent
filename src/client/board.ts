@@ -1,7 +1,7 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { DashboardRow } from "../kernel/types.ts";
 import type { MemberCapBoard } from "./protocol.ts";
-import { BASIS_LABEL, STAGE_LABEL, formatElapsed, formatTokens, helperFullName, isLive, modelText, selectRows, shortId, stallMinutes } from "./board-format.mjs";
+import { BASIS_LABEL, HOST_SOURCE, STAGE_LABEL, formatElapsed, formatTokens, helperFullName, isLive, modelText, selectRows, shortId, stallMinutes } from "./board-format.mjs";
 
 export { shortId };
 
@@ -60,7 +60,7 @@ export function renderBoard(view: BoardView, width: number, now: number): string
 	const lines = [fit(`── Super Agent · ${active} 个任务进行中 · ${status} ──`, width)];
 	const cap = view.memberCap?.question;
 	if (cap) {
-		lines.push(spread(`${CAP_ID} ${CAP_TITLE}`, STAGE_LABEL.awaiting_answer, width));
+		lines.push(spread(`${CAP_ID} ${CAP_TITLE}`, `${STAGE_LABEL.awaiting_answer} · ${HOST_SOURCE}`, width));
 		lines.push(fit(`   问题：${cap.text}`, width));
 		lines.push(fit(`   ${numbered(cap.options)}`, width));
 	}

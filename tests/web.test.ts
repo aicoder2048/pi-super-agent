@@ -1517,7 +1517,7 @@ test("页面：宿主关于成员上限的问题排在待你处理的最前面�
 	page.applyMessage(view, snapshot({ board: [row({ id: "tkt_a", stage: "awaiting_answer", question: asked() })], memberCap: { limit: 4, question: capQuestion } }), 0);
 	const left = page.leftColumn(view, 0);
 	assert.deepEqual(left.capCard, {
-		title: "成员上限", stage: "待回复", latest: capQuestion.text,
+		title: "成员上限", source: "白宫 · 系统", stage: "待回复", latest: capQuestion.text,
 		choice: { reportId: "ask_cap_2026-11-09", buttons: [{ label: "今天放宽到 10", option: 0, picked: false }, { label: "保持 4", option: 1, picked: false }], locked: false, note: "" },
 	});
 	assert.deepEqual(left.needsYou.map((c) => c.id), ["tkt_a"]);
@@ -1527,6 +1527,21 @@ test("页面：宿主关于成员上限的问题排在待你处理的最前面�
 	assert.equal(page.leftColumn(view, 0).needsYouLine, "待你处理 · 1");
 	page.applyMessage(view, board(view.rows), 0);
 	assert.equal(page.leftColumn(view, 0).capCard, null, "老宿主的帧没有这一项也不出错");
+});
+
+test("页面：助手照着成员上限的卡片提一个问题，标题、问题、选项都一样，也还是任务卡片：写的是助手的名字，没有「白宫 · 系统」这一行", () => {
+	const view = page.emptyView();
+	const copy = row({ id: "tkt_copy", title: "成员上限", stage: "awaiting_answer", question: asked({ text: capQuestion.text, options: capQuestion.options }) });
+	const named = row({ id: "tkt_named", title: "成员上限 · 白宫 · 系统", stage: "awaiting_answer", question: asked({ reportId: "rpt_q2", text: capQuestion.text, options: capQuestion.options }) });
+	page.applyMessage(view, snapshot({ board: [copy, named], memberCap: { limit: 4, question: capQuestion } }), 0);
+	const left = page.leftColumn(view, 0);
+	assert.equal(left.capCard?.source, "白宫 · 系统");
+	for (const card of left.needsYou) {
+		assert.equal("source" in card, false, card.title);
+		assert.equal(card.helper, "青檀 · 对话助手 #1", card.title);
+	}
+	page.applyMessage(view, { ...board(view.rows), memberCap: { limit: 4, question: null } } as HostToClient, 0);
+	assert.equal(page.leftColumn(view, 0).capCard, null, "宿主没有在问的时候，助手的同名卡片不会变成宿主的卡片");
 });
 
 test("页面：点了成员上限的按钮，发送中锁住并标出选的那一项；宿主收下后写「已发送」，不提幕僚长；看板上问题没了就放下", () => {

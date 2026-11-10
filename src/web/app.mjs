@@ -229,7 +229,7 @@ function mount(doc) {
 		const node = el("div", "card ask cap");
 		const box = el("div", "choices");
 		fillChoices(box, card.choice);
-		node.append(el("div", "title", card.title), el("div", "why", card.stage), el("div", "latest", card.latest), box);
+		node.append(el("div", "title", card.title), el("div", "by", card.source), el("div", "why", card.stage), el("div", "latest", card.latest), box);
 		return node;
 	};
 
