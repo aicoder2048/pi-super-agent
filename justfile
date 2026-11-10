@@ -38,11 +38,11 @@ host:
 watchdog:
     {{run}} src/watchdog/main.ts
 
-# 打开 TUI 客户端（Pi TUI 只当界面，输入转发给宿主）。
+# 打开 TUI 客户端（Pi TUI 只当界面，输入转发给宿主）。连接时读状态目录里的 client-token。
 client:
     pi {{clean}} --no-session --no-context-files --tui-mode regular -e extensions/super-agent.ts
 
-# 对 Super Agent 说一句话，打印之后两分钟内的回复。
+# 对 Super Agent 说一句话，打印之后两分钟内的回复。连接时读状态目录里的 client-token，没有就先运行 just host。
 say +text:
     {{run}} src/cli/say.ts say {{text}}
 

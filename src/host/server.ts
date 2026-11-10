@@ -71,7 +71,6 @@ export class HostServer {
 						worker = { ticketId: String(r.ticketId), token: String(r.token) };
 						return;
 					}
-					// A client speaks as the user (ADR-0003), so knowing the socket path is not enough to be one.
 					if (!tokenMatches(typeof r.token === "string" ? r.token : "", this.#clientToken)) {
 						this.#logRefusal();
 						return socket.destroy();
@@ -119,7 +118,6 @@ export class HostServer {
 		});
 	}
 
-	// A client opened before the upgrade retries every second without the credential; one line a minute keeps host.log readable.
 	#logRefusal(): void {
 		const now = Date.now();
 		if (now - this.#refusalLoggedAt < REFUSAL_LOG_EVERY_MS) return;

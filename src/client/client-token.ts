@@ -1,9 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-// Read from the socket's own directory on every connect: a client follows a rotated credential by itself,
-// and one state directory's credential is never sent to another's socket.
-export function readClientToken(socketPath: string): string {
+export function clientTokenBeside(socketPath: string): string {
 	const path = join(dirname(socketPath), "client-token");
 	try {
 		return readFileSync(path, "utf8").trim();

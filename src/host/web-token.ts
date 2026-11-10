@@ -4,13 +4,10 @@ import { join } from "node:path";
 
 const TOKEN = /^[0-9a-f]{64}$/;
 
-// Two credentials, because the web token is printed in the host log and sits in the browser's address bar,
-// while the client token never leaves its file.
 export type TokenFile = "web-token" | "client-token";
 
 export const tokenPath = (stateDir: string, file: TokenFile) => join(stateDir, file);
 
-// Reused across restarts so an open page or client reconnects by itself after the watchdog restarts the host.
 export function loadToken(stateDir: string, file: TokenFile, log: (line: string) => void): string {
 	const path = tokenPath(stateDir, file);
 	let text: string;

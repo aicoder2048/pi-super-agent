@@ -1,6 +1,6 @@
 import { connect } from "node:net";
 import { join } from "node:path";
-import { readClientToken } from "../client/client-token.ts";
+import { clientTokenBeside } from "../client/client-token.ts";
 import { defaultStateDir } from "../host/config.ts";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
 
@@ -14,7 +14,7 @@ const fail = (line: string): never => {
 };
 function tokenOrExit(): string {
 	try {
-		return readClientToken(socketPath);
+		return clientTokenBeside(socketPath);
 	} catch (error) {
 		return fail((error as Error).message);
 	}

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { connect, type Socket } from "node:net";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
 import { DEFAULT_ACK_TIMEOUT_MS } from "./board-format.mjs";
-import { readClientToken } from "./client-token.ts";
+import { clientTokenBeside } from "./client-token.ts";
 import type { ClientToHost, HostToClient } from "./protocol.ts";
 
 export { DEFAULT_ACK_TIMEOUT_MS };
@@ -24,7 +24,7 @@ export class HostConnection {
 	#closed = false;
 	#watching: string | undefined;
 	#retry: NodeJS.Timeout | undefined;
-	#reported: string | undefined;
+	#lastReported: string | undefined;
 	readonly #awaitingAck = new Map<string, NodeJS.Timeout>();
 
 	constructor(options: HostConnectionOptions) {
@@ -39,12 +39,12 @@ export class HostConnection {
 		if (this.#closed) return;
 		let token: string;
 		try {
-			token = readClientToken(this.#o.socketPath);
+			token = clientTokenBeside(this.#o.socketPath);
 		} catch (error) {
-			this.#report((error as Error).message);
+			this.#reportOnce((error as Error).message);
 			return this.#retryLater();
 		}
-		this.#reported = undefined;
+		this.#lastReported = undefined;
 		const socket = connect(this.#o.socketPath);
 		this.#socket = socket;
 		socket.on("connect", () => {
@@ -76,10 +76,9 @@ export class HostConnection {
 		this.#retry.unref();
 	}
 
-	// Retries hit the same failure every second; say it once until it changes or clears.
-	#report(line: string): void {
-		if (line === this.#reported) return;
-		this.#reported = line;
+	#reportOnce(line: string): void {
+		if (line === this.#lastReported) return;
+		this.#lastReported = line;
 		this.#o.onError?.(line);
 	}
 
