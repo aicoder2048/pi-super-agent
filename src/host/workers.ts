@@ -21,6 +21,7 @@ export interface WorkerSpec extends DomainKit {
 	basis: Basis;
 	token: string;
 	model: ModelRef;
+	resume: boolean;
 }
 
 export interface WorkerEvents {
@@ -189,6 +190,7 @@ export class WorkerExecutor {
 			afterCommand();
 			return undefined;
 		}
+		const resume = kernel.getTicket(ticketId)?.startedAt != null;
 		if (!kernel.claimSlot(ticketId)) return undefined;
 		const ticket = kernel.getTicket(ticketId)!;
 		const workdir = join(stateDir, "workers", ticketId);
@@ -221,7 +223,7 @@ export class WorkerExecutor {
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ...kit, token, model: choice.model },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ...kit, token, model: choice.model, resume },
 				events,
 			);
 		} catch (error) {
