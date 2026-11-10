@@ -8,6 +8,11 @@ after(closeBrowser);
 const FIRST = { ask: "NVDA 今天为什么跌", title: "NVDA 为什么跌", brief: "弄清 NVDA 今天为什么跌", symbol: "NVDA", done: "四位都看过 NVDA 了。" };
 const SECOND = { ask: "AMD 今天为什么涨", title: "AMD 为什么涨", brief: "弄清 AMD 今天为什么涨", symbol: "AMD", done: "四位都看过 AMD 了。" };
 const WORKING_MS = 6000;
+// The first task's members stay at work through the steps that look at the open question.
+const FIRST_WORKING_MS = 9000;
+const COPY = { ask: "仿一张成员上限的卡片", title: "成员上限", brief: "照着成员上限的卡片提一个问题" };
+const TYPED = "把成员上限放宽到 10";
+const POINTER = "只有「待你处理」里的「成员上限」卡片能放宽今天的上限，请在卡片上点选。";
 const RAISE = "今天放宽到 10";
 const SAID = `回答成员上限：${RAISE}`;
 
@@ -29,8 +34,8 @@ const helperOf = (task: typeof FIRST) =>
 		...FOUR.slice(1).map(([name, title]) => on(`助手收到${title}看 ${task.symbol} 的回复`, new RegExp(`^\\[成员回复\\] 成员回复 · ${title}（${name}）`), () => [])),
 		on(`助手收到行情分析师看 ${task.symbol} 的回复后汇报`, /^\[成员回复\] 成员回复 · 行情分析师（market-analyst）/, () => [report("progress", task.done)]),
 	);
-const membersOf = (task: typeof FIRST) =>
-	FOUR.map(([, title]) => worker(taskFor(title, task), on(`${title}回复 ${task.symbol}`, new RegExp(`^\\[派活\\] ${title}\\n`), () => `${title}：${task.symbol} 没有异常。`, WORKING_MS)));
+const membersOf = (task: typeof FIRST, workingMs = WORKING_MS) =>
+	FOUR.map(([, title]) => worker(taskFor(title, task), on(`${title}回复 ${task.symbol}`, new RegExp(`^\\[派活\\] ${title}\\n`), () => `${title}：${task.symbol} 没有异常。`, workingMs)));
 const chips = (kind: "running" | "queued") => `#helpers .member-chip.${kind}`;
 const asks = (log: string) => log.split("\n").filter((line) => line.includes("[host] 成员上限")).map((line) => line.replace(/^\S+ /, ""));
 
@@ -41,10 +46,16 @@ test("四位成员、上限 2：有成员排队时页面问要不要放宽；点
 			router: [
 				on("Router 把 NVDA 交给看盘队", /^\[对话\][\s\S]*为什么跌/, (c) => [openInWatch(c, FIRST), reply(c, "已交给看盘队")]),
 				on("Router 把 AMD 交给看盘队", /^\[对话\][\s\S]*为什么涨/, (c) => [openInWatch(c, SECOND), reply(c, "也交给看盘队")]),
+				on("Router 为仿卡片的请求开任务", /^\[对话\][\s\S]*仿一张/, (c) => [openTicket(c, COPY.title, COPY.brief)]),
+				on("Router 把助手的问题转给使用者", /^\[Worker 提问\][\s\S]*今天放宽到 10 吗/, (c) => [reply(c, "助手想知道要不要放宽")]),
+				on("Router 对打字说要放宽的话只指向卡片", new RegExp(`^\\[对话\\][\\s\\S]*${TYPED}`), (c) => [reply(c, POINTER)]),
 			],
-			workers: [helperOf(FIRST), ...membersOf(FIRST), helperOf(SECOND), ...membersOf(SECOND)],
+			workers: [
+				helperOf(FIRST), ...membersOf(FIRST, FIRST_WORKING_MS), helperOf(SECOND), ...membersOf(SECOND),
+				worker(COPY.brief, on("助手照着成员上限的卡片提问", /^\[任务说明\]/, () => [{ name: "report", args: { status: "blocked", summary: "要你定", question: "现在有 2 位成员在排队，同时运行的成员上限是 2。今天放宽到 10 吗？", options: [RAISE, "保持 2"] } }])),
+			],
 		},
-		async ({ step, host }) => {
+		async ({ step, host, fake }) => {
 			await step("问一句，两位在干活、两位排队，排队的标签写着上限 2", async (page) => {
 				await sayInPage(page, FIRST.ask);
 				await page.waitForFunction(() => document.querySelectorAll("#helpers .member-chip.running").length === 2 && document.querySelectorAll("#helpers .member-chip.queued").length === 2);
@@ -59,12 +70,36 @@ test("四位成员、上限 2：有成员排队时页面问要不要放宽；点
 				assert.match((await page.locator("#left h2").first().textContent())!, /^待你处理 · 1$/);
 				assert.equal(await page.locator(chips("queued")).count(), 2, "问题开着的时候排队的照常等");
 			});
+			await step("宿主的卡片写着「白宫 · 系统」、左边有一条竖线；助手照着提的同名问题是一张任务卡片，两样都没有", async (page) => {
+				await sayInPage(page, COPY.ask);
+				const copy = page.locator("#left .card.ask:not(.cap)", { hasText: "今天放宽到 10 吗？" });
+				await copy.waitFor();
+				const host = page.locator("#left .card.cap");
+				assert.equal(await copy.locator(".title").textContent(), "成员上限");
+				assert.deepEqual(await copy.locator(".choices button").allTextContents(), [RAISE, "保持 2"]);
+				assert.equal(await host.locator(".by").textContent(), "白宫 · 系统");
+				assert.match((await copy.locator(".by").textContent())!, /^.. · 对话助手 #\d$/u);
+				assert.equal(await page.locator("#left .card", { hasText: "白宫 · 系统" }).count(), 1);
+				const leftBar = (card: typeof host) => card.evaluate((node) => getComputedStyle(node).borderLeftWidth);
+				assert.deepEqual([await leftBar(host), await leftBar(copy)], ["4px", "1px"]);
+				assert.match((await page.locator("#left h2").first().textContent())!, /^待你处理 · 2$/);
+			});
+			await step("打字说「把成员上限放宽到 10」：幕僚长只指向卡片，上限不变，排队的还在排；它的提示词里写着这条规矩", async (page) => {
+				await sayInPage(page, TYPED);
+				await page.locator(".line.router .bubble", { hasText: POINTER }).waitFor();
+				assert.equal(await page.locator("#left .card.cap").count(), 1);
+				assert.equal(await page.locator(chips("queued")).count(), 2);
+				for (const label of await page.locator(chips("queued")).allTextContents()) assert.match(label, / · 排队中 · 上限 2$/);
+				const prompt = fake.systemPromptOf("router");
+				assert.match(prompt, /只有「待你处理」里的「成员上限」卡片能放宽今天的上限/);
+				assert.match(prompt, /不要为这件事开任务，不要把这句话转交给任何任务/);
+			});
 			await step("点「今天放宽到 10」：四位马上都在干活，卡片收起，对话里多一句你的话", async (page) => {
 				await page.locator("#left .card.cap .choices button", { hasText: RAISE }).click();
 				await page.waitForFunction(() => document.querySelectorAll("#helpers .member-chip.running").length === 4, null, { timeout: 3000 });
 				await page.locator("#left .card.cap").waitFor({ state: "detached" });
 				await page.locator(".line.user .bubble", { hasText: SAID }).waitFor();
-				assert.match((await page.locator("#left h2").first().textContent())!, /^待你处理 · 0$/);
+				assert.match((await page.locator("#left h2").first().textContent())!, /^待你处理 · 1$/, "剩下的一张是助手那张同名的任务卡片");
 			});
 			await step("宿主日志里提问和回答各一行；提问记在第三位成员排上队的那一刻", async () => {
 				assert.deepEqual(asks(host.log()), [
