@@ -751,6 +751,64 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [ ] 使用者合并。
 - [ ] T1 到 T3 的 PR 都开出来以后：把 #33（`psa/brand`）restack 到 T3 上，再关闭 #30、#31、#32。
 
+## Name the product 白宫 and give you an avatar (brand)
+
+**Depends on.** T3 (stacked on `psa/first-teams`). It was first cut on W6c (`psa/market-experts` at `bc501f2`); T3 replaced W6c, so its commits moved onto T3.
+
+**Why.** 使用者在设计画布上选定产品名「白宫」、页头标志 W1 和使用者头像 U2。「Pi Super Agent」退为副标题。只用名字，不用任何官方标识（总统印章、白头鹰、建筑剪影）；图形全部是原创的椭圆环加圆点、椭圆环加五角星。
+
+**Files.**
+
+- [x] Edit `src/web/index.html`（页面标题、页头标志和名字、`<template id="user-avatar">`）、`src/web/icon.svg`（标签页图标换成 W1）、`src/web/app.mjs`（你的消息右侧挂头像）。
+- [x] Edit `docs/web-client/copy.md`（命名一节）、`GLOSSARY.md`、`demos/README.md`、`docs/pi-super-agent/how.md`、`demos/lib.mjs`（演示字幕里的产品名）。
+- [x] Edit `tests/web.test.ts`、`tests/e2e/helpers.e2e.ts`。
+- [x] Create `docs/web-client/evidence/brand-review.ts`，产出 `docs/web-client/media/brand-review-<slug>.png`。
+
+**Build.**
+
+- [x] 页面标题「白宫 · Pi Super Agent」；页头写「白宫」（字距 0.06em，字重 800），副标题「Pi Super Agent · 你的 24 小时幕僚」。
+- [x] 标志 W1：底色仍走 `.mark-bg`（`var(--brand)`），深色主题照旧变亮；小尺寸用加粗的笔画。
+- [x] 你的每句话右侧显示 U2 头像，和幕僚长消息左侧的头像对称；读屏前缀「你：」和 W5 的整页不滚动修正保持不变。
+- [x] 不改代码标识符、命令、包名、状态目录和 `just` 配方。
+
+**You see.**
+
+- [x] 页头写「白宫」，下面一行「Pi Super Agent · 你的 24 小时幕僚」；对话里你的消息右侧是深蓝圆底、琥珀色椭圆环和五角星的头像，深浅主题和手机宽度下都对齐。
+
+**Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [x] `tests/web.test.ts` 的命名用例改为期望新标题和页头，先红后绿；`tests/e2e/helpers.e2e.ts` 断言每条你的消息都带头像、头像在气泡右侧，消息很多时整页仍不滚动。`just test` 和 `just e2e` 全绿（552/552、70/70）。另加一步：390 宽时长对话不压住执行过程（先红，`dec9ec2` 修正）。
+
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, all in one script on the fake model, `docs/web-client/evidence/brand-review.ts`.
+
+- [x] Lane 1. 1440×900 浅色，你和幕僚长各说几句。Save `brand-review-light.png`. Pass when 页头写白宫和副标题，你和幕僚长的头像都在，整页不滚动。
+- [x] Lane 2. 同一画面深色。Save `brand-review-dark.png`. Pass when 标志和两个头像的底色在深色背景上看得清。
+- [x] Lane 3. 390 宽浅色。Save `brand-review-phone-light.png`. Pass when 页头不溢出，头像不挤压气泡，没有横向滚动。
+- [x] Lane 4. 390 宽深色。Save `brand-review-phone-dark.png`. Pass when 同上。
+- [x] Lane 5. 标签页图标按 16、32、64 像素渲染，浅色和深色系统主题。Save `brand-review-favicon.png`. Pass when 16 像素下椭圆环和圆点仍分得清。
+- [x] Lane 6. 你说 30 句后。Save `brand-review-many.png`. Pass when 每条你的消息都有头像，整页仍不滚动。
+- [x] Lane 7. 页头特写，浅色。Save `brand-review-header-light.png`. Pass when 名字字距和字重符合设计稿。
+- [x] Lane 8. 页头特写，深色。Save `brand-review-header-dark.png`. Pass when 同上。
+- [x] Lane 9. 你的一条消息放大两倍。Save `brand-review-avatar.png`. Pass when 五角星和椭圆环清楚，头像底边和气泡对齐方式与幕僚长一侧一致。
+- [x] Lane 10. 不设 data-theme，系统深色。Save `brand-review-system-dark.png`. Pass when 跟随系统主题，和手动深色一致。
+
+**Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [x] Metric. 宿主给出的 `/` 页面字节数。
+- [x] Probe. trunk（`bc501f2`）和 head 各取一次 `src/web/index.html` 的字节数，页面是静态文件，一次即确定值。
+- [x] Baseline. Record the trunk size first.
+- [x] Rule. head 比 trunk 多 2 KB 以上算失败。实测 trunk 17511 字节，head 17939 字节（+428），通过。
+
+**Review gate.** The operator reviews before merge.
+
+- [x] Copy lanes 1, 2, 3 screenshots into `docs/web-client/media/brand-review-<slug>.png`（脚本直接写在那里）。
+- [ ] No video. 改动是静态的标志、名字和头像，截图已经覆盖；the operator can ask for one.
+- [ ] Post the screenshots in chat. Stop at merge-ready. Wait for the operator's click.
+
+**Merge.**
+
+- [ ] 使用者合并。
+
 ## Close the program
 
 - [ ] Every box above is checked with its evidence.

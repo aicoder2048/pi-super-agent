@@ -1,10 +1,14 @@
-# Pi Super Agent
+# 白宫（Pi Super Agent）
 
-在 Pi Agent Harness 上实现的 Super Agent：一个持续在线、由事件驱动、同时推进多项任务的个人 Agent。
+在 Pi Agent Harness 上实现的 Super Agent：一个持续在线、由事件驱动、同时推进多项任务的个人 Agent。面向使用者的产品名是「白宫」，「Pi Super Agent」是副标题；代码、命令、包名和状态目录仍用 Pi Super Agent 的旧名。
 
 ## Language
 
 ### 结构
+
+**白宫**：
+产品面向使用者的名字，出现在网页页头、标签页标题和演示字幕里，副标题写「Pi Super Agent」。只用这个名字，不用任何官方标识（印章、白头鹰、建筑剪影）。
+_Avoid_：在界面上单写 Pi Super Agent 或 Super Agent 称呼产品
 
 **Super Agent**：
 一个跨会话保持上下文、同时推进多项任务的连续 Agent。使用者感觉始终只面对一个 Agent，不需要知道底层有多少个会话。

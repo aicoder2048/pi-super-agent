@@ -32,9 +32,31 @@ test("两个助手同时在岗：页头两枚小卡，点小卡打开执行过�
 				await page.locator("#left .card", { hasText: LONG.title }).first().click();
 				await page.locator("#steps .step", { hasText: `第 ${PROGRESS_STEPS} 条已整理` }).waitFor();
 			});
+			await step("你的每条消息右侧都有你的头像", async (page) => {
+				const lines = await page.locator(".line.user").evaluateAll((nodes) =>
+					nodes.map((n) => {
+						const avatar = n.querySelector(":scope > .avatar.you");
+						const bubble = n.querySelector(".bubble")!.getBoundingClientRect();
+						return { avatar: !!avatar, right: avatar ? avatar.getBoundingClientRect().left >= bubble.right : false, hidden: avatar?.getAttribute("aria-hidden"), sr: n.querySelector(".bubble > .sr")?.textContent };
+					}),
+				);
+				assert.equal(lines.length, 2);
+				for (const line of lines) assert.deepEqual(line, { avatar: true, right: true, hidden: "true", sr: "你：" });
+			});
 			await step("对话和执行过程很长时整页不滚动，三栏占满窗口", async (page) => {
 				const size = await page.evaluate(() => ({ scroll: document.scrollingElement!.scrollHeight, inner: innerHeight }));
 				assert.equal(size.scroll, size.inner, `整页高 ${size.scroll}，窗口高 ${size.inner}`);
+			});
+			await step("手机宽度下长对话不压住下面的执行过程，也不横向滚动", async (page) => {
+				await page.setViewportSize({ width: 390, height: 844 });
+				const box = await page.evaluate(() => ({
+					formBottom: document.querySelector("#say")!.getBoundingClientRect().bottom,
+					howTop: document.querySelector("#how")!.getBoundingClientRect().top,
+					extraWidth: document.scrollingElement!.scrollWidth - innerWidth,
+				}));
+				await page.setViewportSize({ width: 1280, height: 720 });
+				assert.ok(box.formBottom <= box.howTop, `输入框底边 ${box.formBottom}，执行过程顶边 ${box.howTop}`);
+				assert.equal(box.extraWidth, 0);
 			});
 			await step("页头出现两枚小卡，名字不同", async (page) => {
 				const chips = page.locator("#helpers .helper-chip");

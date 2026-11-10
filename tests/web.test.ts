@@ -262,10 +262,11 @@ test("页面：工具调用写成步骤名称，未知工具写「调用工具 �
 	assert.match(steps[0].raw, /https:\/\/example\.com\/a\?b=1/);
 });
 
-test("页面：产品叫 Pi Super Agent，和你对话的叫幕僚长，执行任务的叫助手", async (t) => {
+test("页面：产品叫白宫，副标题是 Pi Super Agent，和你对话的叫幕僚长，执行任务的叫助手", async (t) => {
 	const { at } = await webHost(t);
 	const served = await Promise.all(["/", "/app.mjs", "/view.mjs"].map(async (path) => (await request(at(path))).body));
-	assert.match(served[0], /<title>Pi Super Agent<\/title>/);
+	assert.match(served[0], /<title>白宫 · Pi Super Agent<\/title>/);
+	assert.match(served[0], /<div class="brand"><strong>白宫<\/strong><span>Pi Super Agent · 你的 24 小时幕僚<\/span><\/div>/);
 	for (const [i, body] of served.entries()) assert.doesNotMatch(body, /(?<!Pi )Super Agent/, `第 ${i} 个文件仍把幕僚长叫作 Super Agent`);
 	assert.deepEqual(watched([tool("hand_back", { reason: "不归我管" })]).map((s) => s.title), ["交回幕僚长"]);
 });
