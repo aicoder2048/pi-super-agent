@@ -574,7 +574,7 @@ function mount(doc) {
 	clearButton.addEventListener("click", async () => {
 		clearButton.disabled = true;
 		try {
-			const res = await fetch(`/clear?${query}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", cache: "no-store" });
+			const res = await fetch(`/clear?${query}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", cache: "no-store", signal: AbortSignal.timeout(DEFAULT_ACK_TIMEOUT_MS) });
 			if (res.status === 401) setStatus("expired");
 			else if (!res.ok) setSay("rejected", res.status, CLEAR_FAILED);
 		} catch {

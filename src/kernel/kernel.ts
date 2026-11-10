@@ -841,9 +841,8 @@ export class Kernel {
 
 	/** The latest 清屏 and the newest `limit` lines hidden so far, or null if there was never an effective 清屏. */
 	cleared(limit = 50): Cleared | null {
-		const at = this.#get("SELECT MAX(hidden_at) AS at FROM conversation_hidden")?.at;
-		if (at === null || at === undefined) return null;
-		return { at, lines: this.#lines(HIDDEN, limit) };
+		const at = this.#lastClearAt();
+		return at === null ? null : { at, lines: this.#lines(HIDDEN, limit) };
 	}
 
 	/**
@@ -852,15 +851,19 @@ export class Kernel {
 	 */
 	clearConversation(limit = 50): Cleared | null {
 		return this.#tx(() => {
-			const last = this.#get("SELECT MAX(hidden_at) AS at FROM conversation_hidden")?.at;
-			const at = last === null || last === undefined ? this.#now() : Math.max(this.#now(), last + 1);
+			const last = this.#lastClearAt();
+			const at = last === null ? this.#now() : Math.max(this.#now(), last + 1);
 			const { changes } = this.#run(
 				`INSERT OR IGNORE INTO conversation_hidden (line_id, hidden_at) SELECT id, ? FROM (${LINES}) WHERE shown`,
 				at,
 				...LINES_PARAMS,
 			);
-			return changes > 0 ? this.cleared(limit) : null;
+			return changes > 0 ? { at, lines: this.#lines(HIDDEN, limit) } : null;
 		});
+	}
+
+	#lastClearAt(): number | null {
+		return this.#get("SELECT MAX(hidden_at) AS at FROM conversation_hidden")?.at ?? null;
 	}
 
 	#lines(where: string, limit: number): ConversationLine[] {

@@ -1138,10 +1138,10 @@ test("网关：GET /say、GET /clear 405；/clear 的正文不是 {} 时 400；/
 	assert.match(res.body, /POST \/clear/);
 });
 
-const replyOnConversation = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
+const openTicketOnConversation = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);
 
 test("网关：POST /clear 之后，打开着的页面收到 cleared 帧，新连上的页面快照只带清屏之后的行和被清掉的行", async (t) => {
-	const { host, events, clear } = await sayHost(t, replyOnConversation);
+	const { host, events, clear } = await sayHost(t, openTicketOnConversation);
 	host.say("早");
 	await host.settled();
 	const a = events();

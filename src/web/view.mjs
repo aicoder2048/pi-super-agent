@@ -622,14 +622,14 @@ export function helperStrip(view, now) {
 /** @param {number} ms @param {string} [timeZone] the page's own zone when omitted */
 const clockTime = (ms, timeZone) => new Date(ms).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone });
 
-/** @param {number} ms @param {string} [timeZone] */
-const dayOf = (ms, timeZone) => new Date(ms).toLocaleDateString("zh-CN", { timeZone });
+/** @param {number} ms @param {string} [timeZone] @param {Intl.DateTimeFormatOptions} [options] */
+const dayOf = (ms, timeZone, options = {}) => new Date(ms).toLocaleDateString("zh-CN", { ...options, timeZone });
 
 /** @param {View} view @param {number} now @param {string} [timeZone] @returns {{ text: string, expanded: boolean } | null} */
 export function clearedBar(view, now, timeZone) {
 	if (!view.cleared) return null;
 	const { at } = view.cleared;
-	const day = dayOf(at, timeZone) === dayOf(now, timeZone) ? "" : `${new Date(at).toLocaleDateString("zh-CN", { month: "long", day: "numeric", timeZone })} `;
+	const day = dayOf(at, timeZone) === dayOf(now, timeZone) ? "" : `${dayOf(at, timeZone, { month: "long", day: "numeric" })} `;
 	return { text: `已清屏 · ${day}${clockTime(at, timeZone)} · ${view.showEarlier ? "收起" : "显示之前的"}`, expanded: view.showEarlier };
 }
 

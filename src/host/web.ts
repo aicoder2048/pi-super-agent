@@ -201,14 +201,19 @@ export class WebGateway {
 
 type SayBody = { kind: "text"; text: string } | { kind: "answer"; reportId: string; option: number };
 
-function parseSayBody(body: string): SayBody | undefined {
+function parseObject(body: string): object | undefined {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(body);
 	} catch {
 		return undefined;
 	}
-	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+	return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : undefined;
+}
+
+function parseSayBody(body: string): SayBody | undefined {
+	const parsed = parseObject(body);
+	if (parsed === undefined) return undefined;
 	const keys = Object.keys(parsed);
 	if (keys.length !== 1) return undefined;
 	const { text, answer } = parsed as { text?: unknown; answer?: unknown };
@@ -221,12 +226,8 @@ function parseSayBody(body: string): SayBody | undefined {
 }
 
 function isEmptyObject(body: string): boolean {
-	try {
-		const parsed: unknown = JSON.parse(body);
-		return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) && Object.keys(parsed).length === 0;
-	} catch {
-		return false;
-	}
+	const parsed = parseObject(body);
+	return parsed !== undefined && Object.keys(parsed).length === 0;
 }
 
 function tooLarge(req: IncomingMessage, res: ServerResponse): void {
