@@ -629,34 +629,34 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [x] Create `src/kernel/cap-ask.ts`（`CapAsk`、`CAP_ASK_NEXT`、`CapAskStore`、问题的编号）和 `src/host/member-cap.ts`（`MemberCap`、`MEMBER_CAP_MAX`）。 证据：e7a50ee、a34715a。
-- [x] Edit `src/kernel/store.ts`（`cap_asks` 表）、`src/kernel/kernel.ts`（`capAsks`，对话里并入回答的那句话）、`src/kernel/types.ts`（`CapQuestion`）、`src/kernel/helper-names.ts`（`msUntilNextNewYorkDay`）。 证据：a34715a、23e4883。`src/kernel/question.ts` 没有改动：拒绝的种类和说法原样沿用。
-- [x] Edit `src/host/config.ts`（1 到 10）、`src/host/dispatch.ts`（`MemberLimit`，名额池现问上限、报等名额的人数、可重排）、`src/host/workers.ts`、`src/host/host.ts`（`MemberCap` 接线、`answer` 分流、看板带 `memberCap`、纽约零点推一帧）、`src/host/web.ts`（`answer` 认这个编号）。 证据：e0c1eb3、e2e03ce、23e4883。`src/host/server.ts`、`src/host/wiring.ts` 没有改动：socket 的 `answer` 消息和 `dispatch.maxConcurrent` 原样够用。
-- [x] Edit `src/client/protocol.ts`（`MemberCapBoard`）、`src/client/board.ts`、`extensions/super-agent.ts`、`src/web/view.mjs`、`src/web/app.mjs`。 证据：e8b810c、3be4e98。`src/client/board-format.mjs` 和 `src/web/index.html` 没有改动：卡片用现有的 `.card.ask` 和 `.choices` 样式。
+- [x] Create `src/kernel/cap-ask.ts`（`CapAsk`、`CAP_ASK_NEXT`、`CapAskStore`、问题的编号）和 `src/host/member-cap.ts`（`MemberCap`、`MEMBER_CAP_MAX`）。 证据：2475d38、0a0a12c。
+- [x] Edit `src/kernel/store.ts`（`cap_asks` 表）、`src/kernel/kernel.ts`（`capAsks`，对话里并入回答的那句话）、`src/kernel/types.ts`（`CapQuestion`）、`src/kernel/helper-names.ts`（`msUntilNextNewYorkDay`）。 证据：0a0a12c、4eaa1bc；修正轮 f7d4532（同一天再问时清掉到期的记号）。`src/kernel/question.ts` 没有改动：拒绝的种类和说法原样沿用。
+- [x] Edit `src/host/config.ts`（1 到 10）、`src/host/dispatch.ts`（`MemberLimit`，名额池现问上限、报等名额的人数、可重排）、`src/host/workers.ts`、`src/host/host.ts`（`MemberCap` 接线、`answer` 分流、看板带 `memberCap`、纽约零点推一帧）、`src/host/web.ts`（`answer` 认这个编号）。 证据：9f010ab、3ce8518、4eaa1bc。`src/host/wiring.ts` 没有改动：`dispatch.maxConcurrent` 原样够用。修正轮改了 `src/host/member-cap.ts`（3d18bdf）、`src/host/server.ts`（`answer` 放进 `#guard`，3c9d518）、`src/host/host.ts`（零点再问、定时器可注入，8861412）、`src/host/router.ts`（提示词「成员上限」一节，559be90）。
+- [x] Edit `src/client/protocol.ts`（`MemberCapBoard`）、`src/client/board.ts`、`extensions/super-agent.ts`、`src/web/view.mjs`、`src/web/app.mjs`。 证据：beb6aef、af164a0。修正轮改了 `src/client/board-format.mjs`（`HOST_SOURCE`）和 `src/web/index.html`（`.card.cap` 的竖线和加粗的来源行），33792ae。
 - [x] Create `tests/member-cap.test.ts`、`tests/cap-ask.test.ts`、`tests/e2e/cap.e2e.ts`；edit tests（config、kernel、helper-names、dispatch、dispatch-process、web、client、`tests/e2e/dispatch.e2e.ts`）。 证据：各提交。
 - [x] Create `docs/adr/0010-…`；edit `docs/adr/0006-…`、`docs/adr/0008-…`（各加一句指向 ADR-0010，0008 的范围改成 1 到 10）、`GLOSSARY.md`（成员上限）、`docs/web-client/copy.md`（「T2b 新增」）、`docs/pi-super-agent/how.md`。 证据：本节所在的文档提交。
 
 **Build.**
 
-- [x] `maxConcurrentExperts` 可设 1 到 10 的整数，默认 4；11 到 16 现在是启动错误。硬上限 10 只有一个名字（`MEMBER_CAP_MAX`），没有配置项能让上限超过它。 证据：`tests/config.test.ts`「maxConcurrentExperts 不是 1 到 10 的整数…」；e0c1eb3。
-- [x] 问题在一个纽约日里是一个状态机：没问 → 问了 → 放宽或保持，答过不再变；别的日子的记录当作没问。上限是算出来的：今天的记录是放宽就是 10，否则是配置值。 证据：`tests/member-cap.test.ts` 12 条；e7a50ee。
-- [x] 一次派活因为名额用完而排队、上限还是配置值、今天还没问过时，宿主问一次；问题开着时不问第二次；排在自己那位成员后面的派活不算等名额；配置成 10 从不问。 证据：`tests/member-cap.test.ts`「成员因为名额用完开始排队…」「配置的上限已经是 10…」；`tests/dispatch.test.ts`「槽位池：上限每次现算…」「名额用完、有派活在等名额时…」；`tests/cap-ask.test.ts`「名额用完、有成员排队…」「配置的上限已经是 10：成员排队也不问」；e2e03ce、23e4883。
-- [x] 问题由宿主拼出文字，随看板帧（`memberCap`）送到网页和 TUI，不写成触发，不通知幕僚长。 证据：`tests/cap-ask.test.ts`「名额用完、有成员排队：…这个问题不经过幕僚长」；`tests/kernel.test.ts`「使用者对成员上限的回答是对话里他自己的一句话，但不是触发…」；23e4883、a34715a。
-- [x] 回答走原来的 `answer` 线路，按编号 `ask_cap_<纽约日期>` 分到 `MemberCap`。点「今天放宽到 10」后上限马上是 10，等名额的成员立刻开始；点「保持」后上限不变，当天不再问。同一项再点仍成功、不重复记；换另一项被拒，回已选的那一项；别的日子的编号被拒。 证据：`tests/cap-ask.test.ts`「使用者点「今天放宽到 10」…」「使用者点「保持」…」；`tests/member-cap.test.ts`「同一项再点一次…」「放宽只到纽约当天结束…」；23e4883。
-- [x] 助手、成员、以 Worker 身份连上的连接、来源触发、幕僚长的模型都没有放宽的路；使用者打字说同一句话也不算；网页不带 token 或 Origin 不对的点选被拒。 证据：`tests/cap-ask.test.ts`「助手没有放宽的路…」「成员没有放宽的路…」「以 Worker 身份连上宿主的连接发 answer 不算数…」「来源触发没有放宽的路…」「幕僚长的模型没有放宽的路…」「网页：不带 token 或来源不对的点选被拒…」；23e4883。
-- [x] 放宽和问答记在 `state.db` 的 `cap_asks` 表里，宿主重启后同一个纽约日里还在；过了这一天上限回到配置值，在跑的成员做完，新开始的按配置值；隔天再排队重新问。 证据：`tests/kernel.test.ts`「成员上限的问答记在状态库里…」；`tests/cap-ask.test.ts`「宿主在同一个纽约日里重启，放宽还在…」「放宽到期时在跑的成员照常做完…」；a34715a、23e4883。
-- [x] 提问、回答、到期各记一行日志；宿主在到期时没在运行的，下次启动补记一次，之后不再记。纽约零点推一帧看板，让到期那行准时出现。 证据：`tests/member-cap.test.ts`「宿主重启后同一个纽约日里放宽还在…隔天启动时到期只记一次」；`tests/helper-names.test.ts`「离下一个纽约日还有多久…」；`tests/e2e/cap.e2e.ts`「宿主日志里提问和回答各一行…」；e7a50ee、23e4883。
-- [x] 使用者的回答是对话里他自己的一句话「回答成员上限：今天放宽到 10」，刷新页面和重启宿主后还在。 证据：`tests/kernel.test.ts` 同上一条；`tests/cap-ask.test.ts`「使用者点「今天放宽到 10」…这句话记进对话…」；`tests/e2e/cap.e2e.ts`「重启宿主，页面自己连回来，对话里那句话还在」；a34715a、23e4883。
-- [x] 网页：问题是待你处理最前面的一张卡片，不属于任何任务，算进标题的数字；按钮沿用选项按钮；排队成员的小标签写现在的上限。 证据：`tests/web.test.ts`「页面：宿主关于成员上限的问题排在待你处理的最前面…」「页面：点了成员上限的按钮…」「页面：排队的成员标签带上现在的上限…」；e8b810c。
-- [x] TUI：看板最前面列出这个问题，编号 `cap`；只有它在等时回复数字作答，否则 `/answer cap <序号>`。 证据：`tests/client.test.ts`「看板：宿主关于成员上限的问题列在最前面…」「客户端：只有成员上限的问题在等时…」「客户端：成员上限的问题和任务的问题同时在等时…」；3be4e98。
+- [x] `maxConcurrentExperts` 可设 1 到 10 的整数，默认 4；11 到 16 现在是启动错误。硬上限 10 只有一个名字（`MEMBER_CAP_MAX`），没有配置项能让上限超过它。 证据：`tests/config.test.ts`「maxConcurrentExperts 不是 1 到 10 的整数…」；9f010ab。
+- [x] 问题在一个纽约日里是一个状态机：没问 → 问了 → 放宽或保持，答过不再变；别的日子的记录当作没问。上限是算出来的：今天的记录是放宽就是 10，否则是配置值。 状态只在 `MemberCap` 的一处变：先查 `CAP_ASK_NEXT`，再写状态库，写成了才生效。 证据：`tests/member-cap.test.ts` 15 条；2475d38、3d18bdf（去掉查表那一行，`tests/member-cap.test.ts` 和 `tests/cap-ask.test.ts` 共 7 条失败）。
+- [x] 一次派活因为名额用完而排队、上限还是配置值、今天还没问过时，宿主问一次；问题开着时不问第二次；排在自己那位成员后面的派活不算等名额；配置成 10 从不问。纽约零点时还有派活在等名额的，宿主当时为新的一天再问一次。 证据：`tests/cap-ask.test.ts`「过了纽约零点还有成员在等名额…」「零点时没有成员在等名额：不问」（8861412）；`tests/member-cap.test.ts`「成员因为名额用完开始排队…」「配置的上限已经是 10…」；`tests/dispatch.test.ts`「槽位池：上限每次现算…」「名额用完、有派活在等名额时…」；`tests/cap-ask.test.ts`「名额用完、有成员排队…」「配置的上限已经是 10：成员排队也不问」；3ce8518、4eaa1bc。
+- [x] 问题由宿主拼出文字，随看板帧（`memberCap`）送到网页和 TUI，不写成触发，不通知幕僚长。 证据：`tests/cap-ask.test.ts`「名额用完、有成员排队：…这个问题不经过幕僚长」；`tests/kernel.test.ts`「使用者对成员上限的回答是对话里他自己的一句话，但不是触发…」；4eaa1bc、0a0a12c。
+- [x] 回答走原来的 `answer` 线路，按编号 `ask_cap_<纽约日期>` 分到 `MemberCap`。点「今天放宽到 10」后上限马上是 10，等名额的成员立刻开始；点「保持」后上限不变，当天不再问。同一项再点仍成功、不重复记；换另一项被拒，回已选的那一项；别的日子的编号被拒。回答先记进状态库再生效：记不进去时上限不变、问题还开着，点选以失败回给前端（网页 500，TUI 收到拒绝），宿主照常运行。 证据：`tests/member-cap.test.ts`「回答记不进状态库…」（3d18bdf）；`tests/cap-ask.test.ts`「点了放宽而状态库写不进去…」（3c9d518）、「使用者点「保持」…」里回答之后的那一帧看板（7c7b547）；`tests/cap-ask.test.ts`「使用者点「今天放宽到 10」…」「使用者点「保持」…」；`tests/member-cap.test.ts`「同一项再点一次…」「放宽只到纽约当天结束…」；4eaa1bc。
+- [x] 助手、成员、以 Worker 身份连上的连接、来源触发、幕僚长的模型都没有放宽的路；使用者打字说同一句话也不算；网页不带 token 或 Origin 不对的点选被拒。幕僚长的提示词要求它对「放宽成员上限」的话只指向「待你处理」里的卡片，不开任务、不转交、不说会去安排。 证据：`tests/router-prompt.test.ts`「幕僚长的提示词：使用者打字要放宽成员上限…」（559be90）；`tests/e2e/cap.e2e.ts`「打字说「把成员上限放宽到 10」…」（da01c24）；`tests/cap-ask.test.ts`「助手没有放宽的路…」「成员没有放宽的路…」「以 Worker 身份连上宿主的连接发 answer 不算数…」「来源触发没有放宽的路…」「幕僚长的模型没有放宽的路…」「网页：不带 token 或来源不对的点选被拒…」；4eaa1bc。
+- [x] 放宽和问答记在 `state.db` 的 `cap_asks` 表里，宿主重启后同一个纽约日里还在；过了这一天上限回到配置值，在跑的成员做完，新开始的按配置值；隔天再排队重新问。 证据：`tests/kernel.test.ts`「成员上限的问答记在状态库里…」「成员上限：记了到期的那一天又被问起…」「成员上限：状态库不收对不上的记录…」（f7d4532）；`tests/cap-ask.test.ts`「宿主在同一个纽约日里重启，放宽还在…」「放宽到期时在跑的成员照常做完…」；0a0a12c、4eaa1bc。
+- [x] 提问、回答、到期各记一行日志，提问记不进状态库时记第四行「没能记下要问使用者的问题」，那次派活不受影响；宿主在到期时没在运行的，下次启动补记一次，之后不再记；到期记不进状态库时读上限不出错，那一行后面写原因。纽约零点推一帧看板，让到期那行准时出现，并为下一个零点重新定时。 证据：`tests/member-cap.test.ts`「问题记不进状态库…」「到期记不进状态库…」（3d18bdf）；`tests/cap-ask.test.ts`「问题记不进状态库：这次派活不受影响…」（7c7b547）、「纽约零点一到：宿主推一帧看板…」（8861412）；`tests/member-cap.test.ts`「宿主重启后同一个纽约日里放宽还在…隔天启动时到期只记一次」；`tests/helper-names.test.ts`「离下一个纽约日还有多久…」；`tests/e2e/cap.e2e.ts`「宿主日志里提问和回答各一行…」；2475d38、4eaa1bc。
+- [x] 使用者的回答是对话里他自己的一句话「回答成员上限：今天放宽到 10」，刷新页面和重启宿主后还在。 证据：`tests/kernel.test.ts` 同上一条；`tests/cap-ask.test.ts`「使用者点「今天放宽到 10」…这句话记进对话，再点一次不重复」（再点一次不重播，7c7b547）；`tests/e2e/cap.e2e.ts`「重启宿主，页面自己连回来，对话里那句话还在」；0a0a12c、4eaa1bc。
+- [x] 网页：问题是待你处理最前面的一张卡片，不属于任何任务，算进标题的数字；按钮沿用选项按钮；排队成员的小标签写现在的上限。卡片在任务卡片写助手名字的位置写「白宫 · 系统」，左边有一条竖线；助手提的同名问题没有这两样。 证据：`tests/web.test.ts`「页面：助手照着成员上限的卡片提一个问题…」（33792ae）；`tests/e2e/cap.e2e.ts`「宿主的卡片写着「白宫 · 系统」…」（da01c24）；`tests/web.test.ts`「页面：宿主关于成员上限的问题排在待你处理的最前面…」「页面：点了成员上限的按钮…」「页面：排队的成员标签带上现在的上限…」；beb6aef。
+- [x] TUI：看板最前面列出这个问题，编号 `cap`；只有它在等时回复数字作答，否则 `/answer cap <序号>`。那一行的行尾写「白宫 · 系统」，任务那一行的行尾不会是这几个字。 证据：`tests/client.test.ts`「看板：助手照着成员上限提的问题仍是任务那一行…」（33792ae）；`tests/client.test.ts`「看板：宿主关于成员上限的问题列在最前面…」「客户端：只有成员上限的问题在等时…」「客户端：成员上限的问题和任务的问题同时在等时…」；af164a0。
 
 **You see.**
 
-- [x] `maxConcurrentExperts` 设 2，一次派四位。两位在干活，两位的小标签写「排队中 · 上限 2」；待你处理里出现「成员上限」卡片：「现在有 2 位成员在排队，同时运行的成员上限是 2。今天放宽到 10 吗？」和两个按钮。点「今天放宽到 10」，四位马上都在干活，卡片收起，对话里多一句「回答成员上限：今天放宽到 10」。重启宿主后再问一句，四位直接同时干活，没有卡片。 证据：`tests/e2e/cap.e2e.ts`（真实宿主、助手进程、成员进程和页面，假模型）；e8b810c。真实模型下的同一幕留给 Verify, live。
+- [x] `maxConcurrentExperts` 设 2，一次派四位。两位在干活，两位的小标签写「排队中 · 上限 2」；待你处理里出现「成员上限」卡片：「现在有 2 位成员在排队，同时运行的成员上限是 2。今天放宽到 10 吗？」和两个按钮。点「今天放宽到 10」，四位马上都在干活，卡片收起，对话里多一句「回答成员上限：今天放宽到 10」。重启宿主后再问一句，四位直接同时干活，没有卡片。 证据：`tests/e2e/cap.e2e.ts`（真实宿主、助手进程、成员进程和页面，假模型）；beb6aef。真实模型下的同一幕留给 Verify, live。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [x] 配置范围、状态机、名额池现算上限和重排、提问的条件、点选的各种结果、五种不是使用者的来路、重启和到期、三行日志、对话里的那句话、网页卡片和标签、TUI。 证据：以上各条列出的测试；`just test` 和 `just e2e` 的条数见 decisions.tsv 的 t2b 各行。
+- [x] 配置范围、状态机、名额池现算上限和重排、提问的条件、点选的各种结果、五种不是使用者的来路、重启和到期、四行日志、状态库写不进去时的三种情况、纽约零点的定时和再问、对话里的那句话、网页卡片和标签、TUI。 证据：以上各条列出的测试；`just test` 和 `just e2e` 的条数见 decisions.tsv 的 t2b-fix 最后一行；t2b 各行里的提交号是 rebase 之前的，对照见 t2b-fix 的第一行。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
