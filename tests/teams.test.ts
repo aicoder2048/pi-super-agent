@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ConfigError } from "../src/config-error.ts";
-import { Modules } from "../src/modules.ts";
+import { Modules, NO_DOMAIN } from "../src/modules.ts";
 import { parseMember } from "../src/teams.ts";
+import { MEMBER_TOOLS } from "../src/worker/tools.ts";
 
 function agentsDir(files: Record<string, string>): string {
 	const dir = mkdtempSync(join(tmpdir(), "psa-agents-"));
@@ -252,7 +253,7 @@ test("按领域取助手要的东西：模块的 skills/、prepare 和成员；�
 	const watch = kitFor("watch")!;
 	assert.deepEqual([watch.skillsDir, watch.prepare], [shared, "npm ci"]);
 	assert.deepEqual(watch.crew.map((m) => [m.name, m.title, m.skills]), [["market-analyst", "行情分析师", [shared]], ["news-researcher", "新闻研究员", [shared, join(root, "watch/agents/own")]]]);
-	assert.deepEqual(kitFor("mail"), { skillsDir: join(root, "mail/skills"), prepare: undefined, crew: [] });
+	assert.deepEqual(kitFor("mail"), { skillsDir: join(root, "mail/skills"), prepare: undefined, crew: [], lookup: false });
 	assert.deepEqual([kitFor("bare")!.skillsDir, kitFor("bare")!.crew[0].skills], [undefined, []]);
 	assert.equal(kitFor("gone"), undefined);
 });
@@ -314,4 +315,37 @@ test("模块目录下的文件夹有 agents/、teams.yaml、rules.md 或 skills/
 test("模块目录下不像模块的文件夹和文件照旧不管", () => {
 	const root = writeFiles(modulesRoot({ mail: {} }), { "notes/readme.md": "随手记", "agents/readme.txt": "这里不放成员", "README.md": "说明", ".git/config": "x" });
 	assert.deepEqual(load(root).modules.map((m) => m.name), ["mail"]);
+});
+
+const withTools = (text: string, tools: string) => text.replace("---\n你", `tools: ${tools}\n---\n你`);
+
+test("module.json 的 tools 写成 [\"lookup\"]：这个领域的助手能查数据，成员的工具清单原样不动", () => {
+	const root = modulesRoot({ watch: { manifest: { team: "看盘队", tools: ["lookup"] }, "agents/a.md": person("market-analyst", "行情分析师"), "agents/b.md": withTools(person("chart-reader", "看图"), "read, lookup") } });
+	const kit = load(root).kitFor("watch")!;
+	assert.equal(kit.lookup, true);
+	assert.deepEqual(kit.crew.map((m) => [m.name, m.tools]), [["market-analyst", undefined], ["chart-reader", ["read", "lookup"]]]);
+});
+
+test("module.json 没写 tools：这个领域的助手不能查数据，没写工具清单的成员拿到除 lookup 以外的全部成员工具", () => {
+	const root = modulesRoot({ mail: { manifest: { team: "邮件队" }, "agents/a.md": person("clerk", "文书"), "agents/b.md": withTools(person("reader", "读信"), "read, web_get") } });
+	const kit = load(root).kitFor("mail")!;
+	assert.equal(kit.lookup, false);
+	assert.deepEqual(kit.crew.map((m) => [m.name, m.tools]), [["clerk", MEMBER_TOOLS.filter((t) => t !== "lookup")], ["reader", ["read", "web_get"]]]);
+});
+
+test("没有领域的任务不能查数据", () => assert.equal(NO_DOMAIN.lookup, false));
+
+test("module.json 的 tools 写错（不是列表、空列表、不能由模块开的工具、不是字符串）：启动报一行错，以 module.json 开头，说明能开的只有 lookup", () => {
+	for (const tools of ["lookup", [], ["bash"], [1], ["lookup", "web_get"]]) {
+		const root = modulesRoot({ watch: { manifest: { tools } } });
+		oneLine(() => load(root), startsWith(join(root, "watch/module.json")), /tools/, /lookup/);
+	}
+});
+
+test("成员的 tools 写了 lookup，模块却没开：启动报一行错，以成员文件开头，说明在 module.json 开或从成员去掉；模块开了就能加载", () => {
+	const lister = withTools(person("market-analyst", "行情分析师"), "read, lookup");
+	const off = modulesRoot({ watch: { manifest: { team: "看盘队" }, "agents/a.md": lister } });
+	oneLine(() => load(off), startsWith(join(off, "watch/agents/a.md")), /lookup/, join(off, "watch/module.json"), /"tools": \["lookup"\]/);
+	const on = modulesRoot({ watch: { manifest: { team: "看盘队", tools: ["lookup"] }, "agents/a.md": lister } });
+	assert.deepEqual(load(on).kitFor("watch")!.crew[0].tools, ["read", "lookup"]);
 });

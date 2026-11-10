@@ -26,6 +26,10 @@ export function memberTools(basis: Basis, own: readonly string[] | undefined): s
 	return MEMBER_TOOLS.filter((t) => allowed.includes(t) && (!own || own.includes(t)));
 }
 
+/** Tools a helper or member gets only when its domain's module.json lists them in `tools`. */
+export const MODULE_TOOLS = ["lookup"] as const;
+export type ModuleTool = (typeof MODULE_TOOLS)[number];
+
 const CODING_TOOLS: readonly string[] = ["write", "edit", "bash"];
 
 export const canCode = (tools: readonly string[]) => tools.some((t) => CODING_TOOLS.includes(t));
