@@ -31,7 +31,7 @@ export interface BoardState {
 }
 
 export type ClientToHost =
-	| { type: "hello"; role: "client" }
+	| { type: "hello"; role: "client"; token: string }
 	| { type: "say"; text: string; requestId: string }
 	/** A click on option `option` of the question in report `reportId`; the host words it as the user's message. */
 	| { type: "answer"; reportId: string; option: number; requestId: string }

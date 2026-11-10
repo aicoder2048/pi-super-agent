@@ -173,10 +173,10 @@ export class Host {
 		}
 		try {
 			// After the web port binds: a second host that exits on a busy port must not touch the running host's credential.
-			loadToken(options.stateDir, "client-token", host.#log);
+			const clientToken = loadToken(options.stateDir, "client-token", host.#log);
 			const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath, rulesFor: options.rulesFor ?? (() => []) };
 			host.router = await options.createRouter(deps);
-			await host.server.listen(host.socketPath);
+			await host.server.listen(host.socketPath, clientToken);
 		} catch (error) {
 			await host.#web?.close();
 			throw error;

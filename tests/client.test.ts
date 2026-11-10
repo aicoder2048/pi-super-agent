@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { connect, createServer, type Socket } from "node:net";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import superAgentClient from "../extensions/super-agent.ts";
 import { onJsonLines, writeJsonLine } from "../src/jsonl.ts";
 import { openChoices, renderBoard, shortId } from "../src/client/board.ts";
@@ -163,7 +163,7 @@ function rawLines(socketPath: string, lines: string[]): Promise<void> {
 test("协议：客户端发来合法 JSON 但不是对象（null、数字、字符串、数组）时只断开它，宿主照常服务", async (t) => {
 	const host = await hostAt(tempStateDir());
 	t.after(() => host.stop());
-	const hellos = { first: [], client: ['{"type":"hello","role":"client"}'], worker: ['{"type":"hello","role":"worker","ticketId":"x","token":"y"}'] };
+	const hellos = { first: [], client: [JSON.stringify({ type: "hello", role: "client", token: readFileSync(join(dirname(host.socketPath), "client-token"), "utf8").trim() })], worker: ['{"type":"hello","role":"worker","ticketId":"x","token":"y"}'] };
 	for (const [where, before] of Object.entries(hellos)) {
 		for (const value of ["null", "42", '"x"', "[]"]) {
 			await rawLines(host.socketPath, [...before, value]);
@@ -187,6 +187,7 @@ test("协议：只有零宽字符的一句话不进对话", async (t) => {
 
 function scriptedHost() {
 	const path = join(tempStateDir(), "fake-host.sock");
+	writeFileSync(join(dirname(path), "client-token"), "ab".repeat(32));
 	const sockets: Socket[] = [];
 	const fromClient: Record<string, any>[] = [];
 	let onHello: (socket: Socket) => void = () => {};
@@ -261,6 +262,17 @@ test("客户端：同一毫秒到达的多条对话都显示，同一个 id 只�
 	await until(() => ext.shown.some((l) => l.includes("答三")), "重连后补上答三", 5000);
 	await new Promise((r) => setTimeout(r, 100));
 	assert.deepEqual(ext.shown, ["你> 问", "Router> 答一", "Router> 答二", "Router> 答三"]);
+});
+
+test("TUI：状态目录里没有 client-token 时提醒一次先启动宿主，不发 hello", async (t) => {
+	const host = scriptedHost();
+	rmSync(join(dirname(host.path), "client-token"));
+	await host.listen();
+	const ext = await runExtension(host.path);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await until(() => ext.warnings.length === 1, "提醒");
+	assert.match(ext.warnings[0], /client-token.*just host/);
+	assert.deepEqual(host.fromClient, []);
 });
 
 test("客户端：说的话带请求 id，宿主回 ack 并附上触发 id，和回显的用户行 id 一致", async (t) => {

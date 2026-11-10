@@ -3,6 +3,7 @@ import { rmSync } from "node:fs";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
 import type { HostToClient } from "../client/protocol.ts";
 import { refusalText, type AnswerRefusal } from "../kernel/question.ts";
+import { tokenMatches } from "./web-token.ts";
 
 export type Broadcast = Extract<HostToClient, { type: "user" | "reply" | "board" }>;
 
@@ -49,6 +50,7 @@ export class HostServer {
 	readonly #clients = new Set<ClientConn>();
 	readonly #echoes = new HistoryEchoFilter<ClientConn>();
 	readonly #log: (line: string) => void;
+	#clientToken = "";
 
 	constructor(clients: ClientHandlers, workers: WorkerRequestHandler, log: (line: string) => void) {
 		this.#log = log;
@@ -61,13 +63,20 @@ export class HostServer {
 				const r = record as Record<string, any>;
 				if (!role) {
 					if (r.type !== "hello") return socket.destroy();
-					role = r.role === "worker" ? "worker" : "client";
-					if (role === "worker") worker = { ticketId: String(r.ticketId), token: String(r.token) };
-					else {
-						client = { socket, watching: undefined };
-						this.#clients.add(client);
-						this.#guard("hello", () => writeJsonLine(socket, { type: "snapshot", ...(clients.snapshot() as object) }), () => socket.destroy());
+					if (r.role === "worker") {
+						role = "worker";
+						worker = { ticketId: String(r.ticketId), token: String(r.token) };
+						return;
 					}
+					// A client speaks as the user (ADR-0003), so knowing the socket path is not enough to be one.
+					if (!tokenMatches(typeof r.token === "string" ? r.token : "", this.#clientToken)) {
+						this.#log("[socket] 拒绝了一个客户端连接：hello 没带对的 client-token。TUI、just say 和 just tail 会自己带上；宿主换过凭据就重开它们。");
+						return socket.destroy();
+					}
+					role = "client";
+					client = { socket, watching: undefined };
+					this.#clients.add(client);
+					this.#guard("hello", () => writeJsonLine(socket, { type: "snapshot", ...(clients.snapshot() as object) }), () => socket.destroy());
 					return;
 				}
 				if (role === "worker") {
@@ -117,7 +126,8 @@ export class HostServer {
 		}
 	}
 
-	listen(path: string): Promise<void> {
+	listen(path: string, clientToken: string): Promise<void> {
+		this.#clientToken = clientToken;
 		rmSync(path, { force: true });
 		return new Promise((resolve, reject) => {
 			this.#server.once("error", reject);
