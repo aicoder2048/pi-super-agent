@@ -1175,6 +1175,40 @@ test("网关：两个连接看不同任务，各自只收到自己的；关掉�
 	assert.equal(a.got.length, 2, "关掉的连接不再收到");
 });
 
+test("网关：成员干活时它的每条消息实时送到正在看这个任务的页面，带着是哪次派活的第几条；别的任务的页面收不到", async (t) => {
+	const crew = [{ name: "news-researcher", title: "新闻研究员", description: "查新闻", tools: undefined, skills: [], model: undefined, prompt: "", file: "/agents/news.md" }];
+	const brain = (cards: string[]) => cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: card.match(/trg_[\w-]+/)![0], title: card.includes("新闻") ? "查新闻" : "别的事", brief: "b", team: card.includes("新闻") ? "新闻队" : "默认" }] } }] : []));
+	const web = await webHost(t, brain, {
+		teams: { kinds: new Map([["默认", "solo"], ["新闻队", "crew"]]), pinned: new Map() },
+		dispatch: { crewOf: (team) => (team === "新闻队" ? crew : []), timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4 },
+	});
+	web.host.say("查新闻");
+	web.host.say("别的事");
+	await until(() => web.spawner.workers.size === 2, "两个助手");
+	const id = (title: string) => web.host.kernel.listTickets().find((r) => r.title === title)!.id;
+	const watch = (ticketId: string) => sse(`${web.url.origin}/transcript?token=${web.token}&ticket=${ticketId}`);
+	const [news, other] = [watch(id("查新闻")), watch(id("别的事"))];
+	t.after(() => { news.close(); other.close(); });
+	await until(() => news.got.length === 1 && other.got.length === 1, "两份历史");
+	assert.deepEqual(news.got[0], { type: "transcript_history", ticketId: id("查新闻"), messages: [], team: { titles: { "news-researcher": "新闻研究员" }, steps: {} } });
+	let finish!: () => void;
+	web.spawner.runner = async (run) => {
+		run.onMessage(said("成员先看看"));
+		run.onMessage(said("成员找到了"));
+		await new Promise<void>((done) => (finish = done));
+		return "答";
+	};
+	const result = web.spawner.workers.get(id("查新闻"))!.request("worker.dispatch", { agent: "news-researcher", task: "查", callId: "c9" });
+	await until(() => news.got.length === 3, "两条成员消息");
+	assert.deepEqual(news.got.slice(1), [
+		{ type: "transcript", ticketId: id("查新闻"), message: said("成员先看看"), member: { callId: "c9", index: 0 } },
+		{ type: "transcript", ticketId: id("查新闻"), message: said("成员找到了"), member: { callId: "c9", index: 1 } },
+	]);
+	assert.equal(other.got.length, 1);
+	finish();
+	await result;
+});
+
 test("网关：Worker 写到一半被杀、会话文件最后一行不完整时，历史只含完整的行，宿主照常服务", async (t) => {
 	const { open, history, sessionFile, watch, at } = await watchHost(t);
 	const { id } = await open("读网页");

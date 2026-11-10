@@ -6,7 +6,7 @@ import { connect, type Socket } from "node:net";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
 import type { Basis } from "../kernel/types.ts";
 import { OPTION_MAX_CHARS, OPTIONS_MAX, OPTIONS_MIN } from "../kernel/question.ts";
-import { toolAllowlist } from "./tools.ts";
+import { DISPATCH_MARK, toolAllowlist } from "./tools.ts";
 import { webGet } from "./web-get.ts";
 
 interface BgCommand {
@@ -72,6 +72,7 @@ export default function workerExtension(pi: ExtensionAPI) {
 	const ticketId = env("PSA_TICKET");
 	const crew = process.env.PSA_CREW?.split(",").filter(Boolean) ?? [];
 	const memberTools = process.env.PSA_MEMBER_TOOLS?.split(",").filter(Boolean);
+	const callId = process.env.PSA_CALL_ID;
 	const allowlist = memberTools ?? toolAllowlist(env("PSA_BASIS") as Basis, crew.length > 0);
 	const bgMaxMs = Number(process.env.PSA_BG_MAX_MS ?? 120 * 60_000);
 	const call = hostClient(env("PSA_SOCKET"), { ticketId, token: env("PSA_TOKEN") });
@@ -85,6 +86,8 @@ export default function workerExtension(pi: ExtensionAPI) {
 	const syncBg = () => call("worker.bg", { running: runningCount() }).catch(() => {});
 
 	if (!memberTools) registerHelperTools();
+	// The host reads a member's steps for one dispatch back from its session by this mark.
+	if (memberTools && callId) pi.on("session_start", async () => pi.appendEntry(DISPATCH_MARK, { callId }));
 
 	function registerHelperTools(): void {
 		pi.registerTool({

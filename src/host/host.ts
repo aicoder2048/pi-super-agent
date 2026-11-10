@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { writeHeartbeat } from "../heartbeat.ts";
 import { relocateState } from "./relocate.ts";
 import { endLeftoverMembers } from "./member-ledger.ts";
@@ -13,7 +13,9 @@ import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import type { Feed, FeedSpec } from "../sources/feeds.ts";
 import { Dispatcher } from "./dispatcher.ts";
 import { HostServer, type AnswerResult, type Broadcast } from "./server.ts";
-import type { BoardState, Duty, TodayCounts, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
+import type { BoardState, Duty, TodayCounts, TranscriptHistory, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
+import { readSessionEntries } from "../jsonl.ts";
+import { memberTranscripts } from "./dispatch.ts";
 import { WebGateway } from "./web.ts";
 import { loadToken } from "./web-token.ts";
 import { ConfigError } from "../config-error.ts";
@@ -90,6 +92,7 @@ export class Host {
 	#web: WebGateway | undefined;
 	readonly #watching: WatchedSource[];
 	readonly #clock: Clock;
+	readonly #crewOf: DispatchOptions["crewOf"] | undefined;
 	#duty!: Duty;
 
 	private constructor(options: HostOptions) {
@@ -102,6 +105,7 @@ export class Host {
 		const clock = options.clock ?? { now: () => Date.now() };
 		this.#clock = clock;
 		this.#watching = options.watching ?? [];
+		this.#crewOf = options.dispatch?.crewOf;
 		this.kernel = new Kernel({
 			db: openStore(join(options.stateDir, "state.db")),
 			clock,
@@ -141,6 +145,7 @@ export class Host {
 			stateDir: options.stateDir,
 			afterCommand: deps.afterCommand,
 			onTranscript: (ticketId, event) => this.#transcript(ticketId, event),
+			onMemberTranscript: (ticketId, member, message) => this.#web?.sendTranscript(ticketId, message, member),
 			onError: (ticketId, error) => this.#log(`[worker ${ticketId}] ${String(error)}`),
 			models: options.workerModels,
 			dispatch: options.dispatch,
@@ -167,7 +172,7 @@ export class Host {
 				onSay: (text) => this.say(text),
 				onAnswer: (reportId, option) => this.answer(reportId, option),
 				snapshot: () => this.snapshot(),
-				transcript: (ticketId) => this.transcript(ticketId),
+				transcript: (ticketId) => this.transcript(ticketId).messages,
 			},
 			(ticketId, token, method, params) => this.workers.handleRequest(ticketId, token, method, params),
 			this.#log,
@@ -260,17 +265,16 @@ export class Host {
 		this.#web?.sendTranscript(ticketId, e.message);
 	}
 
-	transcript(ticketId: string): TranscriptMessage[] {
+	transcript(ticketId: string): TranscriptHistory {
 		const ticket = this.kernel.getTicket(ticketId);
-		if (!ticket) return [];
+		if (!ticket) return { messages: [] };
 		const dir = join(this.#stateDir, "sessions", "workers");
 		const file = existsSync(dir) ? readdirSync(dir).find((f) => f.endsWith(`_${ticket.workerSessionId}.jsonl`)) : undefined;
-		if (!file) return [];
-		return readFileSync(join(dir, file), "utf8")
-			.split("\n")
-			.flatMap((line) => parseSessionLine(line))
-			.filter((entry) => entry.type === "message" && entry.message?.role !== "system")
-			.map((entry) => entry.message as TranscriptMessage);
+		const messages = file ? readSessionEntries(join(dir, file)).filter((entry) => entry.type === "message" && entry.message?.role !== "system").map((entry) => entry.message as TranscriptMessage) : [];
+		const titles = Object.fromEntries((this.#crewOf?.(ticket.team) ?? []).map((m) => [m.name, m.title]));
+		const steps = memberTranscripts(this.#stateDir, ticketId);
+		const hasTeam = Object.keys(titles).length > 0 || Object.keys(steps).length > 0;
+		return { messages, ...(hasTeam && { team: { titles, steps } }) };
 	}
 
 	#beat(): void {
@@ -338,16 +342,6 @@ export class Host {
 		await this.workers.shutdown();
 		this.router.dispose();
 		await Promise.all([this.server.close(), this.#web?.close()]);
-	}
-}
-
-// A worker killed mid-write leaves an unterminated last line; Pi skips such lines when it reopens the session, and so do we.
-function parseSessionLine(line: string): { type: string; message?: { role?: string } }[] {
-	if (!line) return [];
-	try {
-		return [JSON.parse(line)];
-	} catch {
-		return [];
 	}
 }
 

@@ -33,13 +33,15 @@ async function load(basis: string, extra: Record<string, string> = {}) {
 	const tools = new Map<string, any>();
 	const handlers = new Map<string, any>();
 	const sent: any[] = [];
+	const entries: { customType: string; data: unknown }[] = [];
 	workerExtension({
 		registerTool: (def: any) => tools.set(def.name, def),
 		on: (event: string, fn: any) => handlers.set(event, fn),
 		sendMessage: (message: any, options: any) => sent.push({ message, options }),
+		appendEntry: (customType: string, data: unknown) => entries.push({ customType, data }),
 	});
 	const run = (name: string, params: any, callId = "call") => tools.get(name).execute(callId, params, undefined, undefined, { cwd: dir });
-	return { tools, handlers, sent, requests, run, close: () => { for (const s of sockets) s.destroy(); server.close(); } };
+	return { tools, handlers, sent, entries, requests, run, close: () => { for (const s of sockets) s.destroy(); server.close(); } };
 }
 
 test("后台命令启动后立即返回，结束时结果作为新输入送回", async (t) => {
@@ -173,6 +175,18 @@ test("成员只有宿主给它的那几个工具：不注册汇报、交回、�
 	}
 	for (const tool of ["read", "web_get", "lookup"]) assert.equal(await call(member, tool), undefined, tool);
 	for (const tool of ["read", "lookup", "bash"]) assert.equal((await call(none, tool))?.block, true, tool);
+});
+
+test("成员开始一次派活时在自己的会话里记下这次派活的调用编号，之后这一段的消息都算这次派活的；助手不记", async (t) => {
+	const member = await load("request", { PSA_MEMBER_TOOLS: "read", PSA_CALL_ID: "call_7" });
+	const helper = await load("request");
+	t.after(() => { member.close(); helper.close(); });
+	assert.equal(process.env.PSA_CALL_ID, undefined);
+	assert.deepEqual(member.entries, []);
+	await member.handlers.get("session_start")({}, {});
+	assert.deepEqual(member.entries, [{ customType: "psa-dispatch", data: { callId: "call_7" } }]);
+	await helper.handlers.get("session_start")?.({}, {});
+	assert.deepEqual(helper.entries, []);
 });
 
 test("一次性进程用过 lookup 后能自己退出：扩展只在有请求等待时占着宿主连接", async (t) => {

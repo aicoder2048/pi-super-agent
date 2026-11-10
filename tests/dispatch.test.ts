@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DISPATCH_NEXT, DispatchDesk, REPLY_MAX, SlotPool, clipReply, memberSessionDir, parseDispatch, replyEnvelope, stallNote, timeoutNote, type DispatchOutcome, type DispatchResult, type DispatchState, type MemberRun } from "../src/host/dispatch.ts";
 import { HostConnection } from "../src/client/connection.ts";
@@ -430,7 +431,7 @@ test("成员的动静推给页面有节流：一次派活大约一秒最多推�
 			return "答";
 		},
 	});
-	const result = desk.dispatch({ ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", basis: "request", model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {}, onProgress: () => progress++ });
+	const result = desk.dispatch({ ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", basis: "request", model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {}, onMessage() {}, onProgress: () => progress++ });
 	await tick(350);
 	const afterBurst = changes;
 	assert.equal(progress, 1, "30 次动静只推了开头那一次");
@@ -480,6 +481,33 @@ test("成员多久没有任何动静就算无进展：结束它，结果写明�
 	assert.ok(out[1].details.ms >= 300, `有动静的那 150 ms 不算，实际 ${out[1].details.ms} ms`);
 	assert.deepEqual(aborted, ["news-researcher"]);
 	assert.match(replyEnvelope(outcome({ state: "stalled", reply: null, note: stallNote(180_000) })), /没有回复（3 分钟没有进展）/);
+});
+
+const entry = (message: unknown) => ({ type: "message", message });
+const mark = (callId: string) => ({ type: "custom", customType: "psa-dispatch", data: { callId } });
+const said = (text: string) => ({ role: "assistant", content: [{ type: "text", text }] });
+
+test("查看任务的执行过程时带上本队成员的职称，和每次派活里成员自己的步骤：从成员的会话文件按调用编号读出来", async (t) => {
+	const { host, results, ticketId, spawner } = await dispatching(t, async () => "答", [two[1]]);
+	await results();
+	const stateDir = spawner.workers.get(ticketId())!.spec.workdir.split("/workers/")[0];
+	const dir = memberSessionDir(stateDir, ticketId(), "news-researcher");
+	mkdirSync(dir, { recursive: true });
+	const used = { role: "toolResult", toolCallId: "t1", toolName: "web_get", content: [{ type: "text", text: "网页" }] };
+	const lines = [
+		{ type: "session", id: "s" }, mark("call_0"), entry({ role: "system", content: "你是成员" }), entry({ role: "user", content: "[派活] 新闻研究员\n有什么新闻？" }), entry(said("先查")), entry(used), entry(said("没有重大新闻")),
+		mark("call_5"), entry({ role: "user", content: "[派活] 新闻研究员\n再查" }), entry(said("接着查")),
+	];
+	writeFileSync(join(dir, "2026-11-09T00-00-00_s.jsonl"), lines.map((l) => JSON.stringify(l)).join("\n") + '\n{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"写到一');
+	assert.deepEqual(host.transcript(ticketId()).team, {
+		titles: { "market-analyst": "行情分析师", "news-researcher": "新闻研究员" },
+		steps: { call_0: [said("先查"), used, said("没有重大新闻")], call_5: [said("接着查")] },
+	});
+});
+
+test("默认团队的任务：执行过程里没有团队这一项", async (t) => {
+	const { host, ticketId } = await dispatching(t, async () => "答", [], { team: "默认" });
+	assert.deepEqual(host.transcript(ticketId()), { messages: [] });
 });
 
 test("成员有动静就算助手有进展：助手等着成员时任务不会被当成久无进展", async (t) => {
@@ -549,7 +577,7 @@ test("助手崩溃后马上停宿主：宿主等那些成员进程没了才停�
 test("结束一个任务的派活可以调两次：两次都等到成员进程没了才返回，之后同一任务还能再派", async () => {
 	const gone: string[] = [];
 	const desk = new DispatchDesk({ queueTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4, onChange() {}, run: slowToDie(150, gone) });
-	const order = { ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", basis: "request" as const, model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {}, onProgress() {} };
+	const order = { ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", basis: "request" as const, model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {}, onProgress() {}, onMessage() {} };
 	const first = desk.dispatch(order);
 	await tick();
 	const ends = [desk.end("tkt_1"), desk.end("tkt_1")];

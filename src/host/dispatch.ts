@@ -5,6 +5,9 @@ import { formatTokens } from "../client/board-format.mjs";
 import type { Basis } from "../kernel/types.ts";
 import type { ModelRef } from "../models.ts";
 import type { Member } from "../teams.ts";
+import { DISPATCH_MARK } from "../worker/tools.ts";
+import type { TranscriptMessage } from "../client/protocol.ts";
+import { readSessionEntries } from "../jsonl.ts";
 import type { Usage } from "./worker-events.ts";
 
 /** One dispatch from the helper's call to its result. `DISPATCH_NEXT` is the only way a state changes. */
@@ -70,6 +73,8 @@ export interface DispatchResult {
 /** One piece of work for one member. Resolves with its reply; rejects on a model error and with `signal.reason` once aborted. */
 export interface MemberRun {
 	ticketId: string;
+	/** The helper's tool call this run answers. */
+	callId: string;
 	member: Member;
 	task: string;
 	basis: Basis;
@@ -82,6 +87,8 @@ export interface MemberRun {
 	onUsage(u: Usage): void;
 	/** Every event the member's process emits is a sign of life; `step` names the step an event starts. */
 	onActivity(step?: string): void;
+	/** Each message the member itself produces, as it finishes. */
+	onMessage(message: TranscriptMessage): void;
 }
 
 export const memberSessionDir = (stateDir: string, ticketId: string, member: string) => join(stateDir, "workers", ticketId, "team", member);
@@ -90,6 +97,26 @@ export function memberSessionDirs(stateDir: string): string[] {
 	const subdirs = (dir: string) => (statSync(dir, { throwIfNoEntry: false })?.isDirectory() ? readdirSync(dir).map((name) => join(dir, name)) : []);
 	return subdirs(join(stateDir, "workers")).flatMap((ticket) => subdirs(join(ticket, "team")));
 }
+
+/** Each dispatch's own messages, by the helper's call id, read from the ticket's member sessions. */
+export function memberTranscripts(stateDir: string, ticketId: string): Record<string, TranscriptMessage[]> {
+	const out: Record<string, TranscriptMessage[]> = {};
+	const team = join(stateDir, "workers", ticketId, "team");
+	if (!statSync(team, { throwIfNoEntry: false })?.isDirectory()) return out;
+	for (const member of readdirSync(team)) {
+		for (const file of readdirSync(join(team, member)).filter((f) => f.endsWith(".jsonl")).sort()) {
+			let callId: string | undefined;
+			for (const entry of readSessionEntries(join(team, member, file))) {
+				if (entry.type === "custom" && entry.customType === DISPATCH_MARK) callId = (entry.data as { callId?: string } | undefined)?.callId;
+				else if (callId && entry.type === "message" && isMemberMessage(entry.message)) (out[callId] ??= []).push(entry.message as TranscriptMessage);
+			}
+		}
+	}
+	return out;
+}
+
+/** What a member says and what its tools return; the task it was handed is already on the dispatch. */
+export const isMemberMessage = (message: { role?: string } | undefined) => message?.role === "assistant" || message?.role === "toolResult";
 
 export function parseDispatch<M extends { name: string }>(raw: unknown, crew: readonly M[]): { member: M; task: string; callId: string } {
 	const { agent, task, callId } = (raw ?? {}) as { agent?: unknown; task?: unknown; callId?: unknown };
@@ -183,12 +210,13 @@ export class SlotPool {
 	}
 }
 
-export interface DispatchOrder extends Omit<MemberRun, "token" | "signal" | "onActivity"> {
-	callId: string;
+export interface DispatchOrder extends Omit<MemberRun, "token" | "signal" | "onActivity" | "onMessage"> {
 	/** This dispatch's time limit, counted from the member's start. */
 	limitMs: number;
 	/** Called while the member shows signs of life, about once a second at most. */
 	onProgress(): void;
+	/** `index` counts this dispatch's messages from 0, so a message delivered twice lands in one place. */
+	onMessage(message: TranscriptMessage, index: number): void;
 }
 
 export interface DeskOptions {
@@ -268,7 +296,8 @@ export class DispatchDesk {
 
 	async #work(order: DispatchOrder, dispatch: Dispatch, stop: AbortSignal): Promise<DispatchOutcome> {
 		const { queueTimeoutMs, stallMs } = this.#o;
-		const { callId: _, limitMs, onProgress, ...run } = order;
+		const { limitMs, onProgress, onMessage, ...run } = order;
+		let messages = 0;
 		const queuedAt = Date.now();
 		let startedAt = queuedAt;
 		const tokens = { tokensIn: 0, tokensOut: 0 };
@@ -315,6 +344,7 @@ export class DispatchDesk {
 					dispatch.tokens = tokens.tokensIn + tokens.tokensOut;
 					order.onUsage(u);
 				},
+				onMessage: (message) => onMessage(message, messages++),
 				onActivity: (step) => {
 					dispatch.lastEventAt = Date.now();
 					if (step) dispatch.step = step;

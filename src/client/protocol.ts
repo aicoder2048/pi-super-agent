@@ -51,8 +51,17 @@ export type HostToClient =
 	| { type: "refused"; requestId: string; reason: string }
 	| { type: "reply"; text: string; at: number; replyId: string; ticketId?: string }
 	| ({ type: "board" } & BoardState)
-	| { type: "transcript_history"; ticketId: string; messages: TranscriptMessage[] }
-	| { type: "transcript"; ticketId: string; message: TranscriptMessage };
+	| ({ type: "transcript_history"; ticketId: string } & TranscriptHistory)
+	/** `member`: the message is from the member at work on that dispatch, and is that dispatch's `index`-th message. */
+	| { type: "transcript"; ticketId: string; message: TranscriptMessage; member?: { callId: string; index: number } };
+
+/** A ticket's 执行过程 so far. */
+export interface TranscriptHistory {
+	/** The helper's own messages. */
+	messages: TranscriptMessage[];
+	/** Only for a ticket whose helper has members: each member's title by name, and each dispatch's own messages by the helper's call id. */
+	team?: { titles: Record<string, string>; steps: Record<string, TranscriptMessage[]> };
+}
 
 export interface TranscriptMessage {
 	role: string;

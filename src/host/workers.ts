@@ -9,6 +9,7 @@ import { formatModelRef, type ModelRef } from "../models.ts";
 import { INPUT_LABEL } from "../client/board-format.mjs";
 import { parseOptions } from "../kernel/question.ts";
 import type { Member } from "../teams.ts";
+import type { TranscriptMessage } from "../client/protocol.ts";
 import { canCode, memberTools } from "../worker/tools.ts";
 import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberRun } from "./dispatch.ts";
 
@@ -83,6 +84,8 @@ export interface WorkerExecutorOptions {
 	stateDir: string;
 	afterCommand: () => void;
 	onTranscript?: (ticketId: string, event: unknown) => void;
+	/** One message of a member at work on dispatch `callId`; `index` is its place among that dispatch's messages. */
+	onMemberTranscript?: (ticketId: string, member: { callId: string; index: number }, message: TranscriptMessage) => void;
 	onError?: (ticketId: string, error: unknown) => void;
 	models: WorkerModels;
 	lookup?: (source: string, op: string, args: unknown) => Promise<unknown>;
@@ -366,6 +369,7 @@ export class WorkerExecutor {
 				}
 				afterCommand();
 			},
+			onMessage: (message, index) => this.#o.onMemberTranscript?.(ticketId, { callId, index }, message),
 			// A helper waiting on a member makes no tool call of its own; the member's activity is the ticket's progress.
 			onProgress: () => {
 				try {

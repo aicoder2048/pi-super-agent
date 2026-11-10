@@ -10,7 +10,8 @@ import type { ModelRef } from "../models.ts";
 import { memberTools, toolAllowlist } from "../worker/tools.ts";
 import type { Member } from "../teams.ts";
 import { onJsonLines } from "../jsonl.ts";
-import type { MemberRun } from "./dispatch.ts";
+import { isMemberMessage, type MemberRun } from "./dispatch.ts";
+import type { TranscriptMessage } from "../client/protocol.ts";
 import { formatModelRef } from "../models.ts";
 import { clearMember, recordMember } from "./member-ledger.ts";
 import { usageOf, WorkerEventTranslator } from "./worker-events.ts";
@@ -193,6 +194,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 			PSA_TOKEN: run.token,
 			PSA_BASIS: run.basis,
 			PSA_MEMBER_TOOLS: tools.join(","),
+			PSA_CALL_ID: run.callId,
 			...(this.#o.lookupHelp && { PSA_LOOKUPS: this.#o.lookupHelp }),
 		};
 		return runMemberProcess(args, env, run);
@@ -236,7 +238,9 @@ function runMemberProcess(args: string[], env: Record<string, string>, run: Memb
 		onJsonLines(child.stdout!, (event) => {
 			run.onActivity(stepStarted(event as PiJsonEvent));
 			const e = event as { type?: string; message?: { role?: string; stopReason?: string; errorMessage?: string; content?: { type: string; text?: string }[] } };
-			if (e.type !== "message_end" || e.message?.role !== "assistant") return;
+			if (e.type !== "message_end" || !isMemberMessage(e.message)) return;
+			run.onMessage(e.message as TranscriptMessage);
+			if (e.message?.role !== "assistant") return;
 			const usage = usageOf(e.message as Parameters<typeof usageOf>[0], run.model.provider);
 			if (usage) run.onUsage(usage);
 			const m = e.message;
