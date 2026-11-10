@@ -351,7 +351,7 @@ tools: read, web_get
 | `src/model-selector.ts`, `src/models.ts`, `src/host/config.ts` | 模型切换、默认模型、配置默认值。 |
 | `src/watchdog/` | Watchdog 判定函数和进程入口。 |
 | `extensions/super-agent.ts`, `src/client/` | TUI client、协议、看板、transcript 格式化。 |
-| `modules/toy-market/`, `modules/us-market/`, `modules/pi-pi/` | 仓库自带的三个模块。玩具行情是示例，没有成员。美股行情带看盘队（行情分析师、技术分析师、新闻研究员、财报解读）和技能 `us-market-desk`。pi-pi 带 Pi专家队（九位 Pi 开发专家），没有来源和规则。 |
+| `modules/toy-market/`, `modules/us-market/`, `modules/pi-pi/` | 仓库自带的三个模块。玩具行情是示例，没有成员。美股行情带看盘队（行情分析师、技术分析师、新闻研究员、财报解读）和技能 `us-market-desk`。pi-pi 带 Pi专家队（九位 Pi 开发专家，只读文件和网页，出处见 `modules/pi-pi/NOTICE.md`）和技能 `pi-pi-desk`，没有来源和规则。 |
 | `docs/pi-super-agent/mvp-spec.md`, `docs/adr/0001-0003` | 规格与架构决策。 |
 | `tests/` | `kernel`、`host`、`recovery`、`fallback`、`watchdog`、`client` 测试。`helpers/fakes.ts` 提供 `fauxRouter` 和 `FakeSpawner`。 |
 
