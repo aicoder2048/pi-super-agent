@@ -88,6 +88,13 @@ test("看盘队每位成员的提示词都写了汇报格式：结论、证据�
 	}
 });
 
+test("大波动规则要任务说明照抄触发里的代码、涨跌幅、档位、现价和报价时间，并写明现在的报价和触发是否一致", () => {
+	const rule = load().allRules().find((r) => r.id === "us-market/big-move")!.text;
+	for (const field of ["代码", "涨跌幅", "档位", "现价", "报价时间"]) assert.ok(rule.includes(field), `任务说明要带触发的${field}`);
+	assert.match(rule, /照抄/);
+	assert.match(rule, /是否一致/);
+});
+
 test("大波动规则不写「团队：」，它开的任务属于 us-market 领域，也就归看盘队", () => {
 	const modules = load();
 	assert.ok(modules.ruleAllows("us-market/big-move", "us-market"));
