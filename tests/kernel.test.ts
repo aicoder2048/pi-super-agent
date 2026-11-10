@@ -714,7 +714,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 	run(id);
 	kernel.recordWorkerProgress(id);
 	kernel.recordWorkerProgress(id);
-	kernel.recordUsage(id, { provider: "deepseek", tokensIn: 1000, tokensOut: 200 });
+	kernel.recordUsage(id, { provider: "deepseek", tokensIn: 1000, tokensCached: 600, tokensOut: 200 });
 	kernel.workerReport(id, { status: "progress", summary: "写了一半" });
 	const reportedAt = clock.t;
 	clock.t += 90_000;
@@ -734,6 +734,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			fellBack: false,
 			toolCalls: 2,
 			tokensIn: 1000,
+			tokensCached: 600,
 			tokensOut: 200,
 			elapsedMs: 90_000,
 			lastProgressAt: reportedAt,
@@ -1001,6 +1002,31 @@ test("旧数据库的汇报表没有选项列：打开时补上，旧汇报读�
 	const found = again.kernel.read(id);
 	assert.ok(found?.type === "ticket");
 	assert.deepEqual(found.recentReports.map((r) => [r.summary, r.options]), [["旧汇报", []]]);
+});
+
+test("记账把缓存读取和新输入分开：输入仍是两者之和，缓存读取另记；不报缓存的用量记 0；当天合计不变", () => {
+	const { kernel, open } = setup();
+	const id = open("request");
+	kernel.recordUsage(id, { provider: "deepseek", tokensIn: 1000, tokensCached: 900, tokensOut: 50 });
+	kernel.recordUsage(id, { provider: "deepseek", tokensIn: 300, tokensOut: 10 });
+	const [row] = kernel.listTickets();
+	assert.deepEqual([row.tokensIn, row.tokensCached, row.tokensOut], [1300, 900, 60]);
+	const found = kernel.read(id);
+	assert.ok(found?.type === "ticket");
+	assert.equal(found.ticket.tokensCached, 900);
+	assert.equal(kernel.usageToday("deepseek"), 1360);
+});
+
+test("旧数据库的任务表没有缓存读取列：打开时补上，旧任务记 0", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const id = first.open("request");
+	first.kernel.recordUsage(id, { provider: "deepseek", tokensIn: 500, tokensOut: 5 });
+	first.db.exec("ALTER TABLE tickets DROP COLUMN tokens_cached");
+	first.db.close();
+	const again = setup({ path });
+	const [row] = again.kernel.listTickets();
+	assert.deepEqual([row.tokensIn, row.tokensCached, row.tokensOut], [500, 0, 5]);
 });
 
 test("看板：等回答的任务带上它在等的问题（汇报 id、文字、选项、提问时间、还没回答）；其他阶段没有问题", () => {

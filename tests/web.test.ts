@@ -564,6 +564,8 @@ test("页面：执行过程头部的生命周期写开始、结束或进行中�
 	const waiting = row({ stage: "queued", workerState: "queued", startedAt: null, model: null, toolCalls: 0, tokensIn: 0, tokensOut: 0, elapsedMs: 0 });
 	assert.equal(page.lifecycleLine(waiting, 2000, 0, NY), "尚未开始 · 模型 未启动 · 工具 0 次 · tokens 入 0 / 出 0");
 	assert.equal(page.lifecycleLine(undefined, 0, 0, NY), "");
+	const cached = row({ stage: "closed", startedAt: at("10:02"), endedAt: at("10:07"), elapsedMs: 300_000, tokensIn: 3_890_000, tokensCached: 3_620_000, tokensOut: 32_000 });
+	assert.equal(page.lifecycleLine(cached, 0, 0, NY), "开始 10:02 · 结束 10:07 · 用时 5分0秒 · 模型 gpt-6.1-sol · 工具 2 次 · tokens 入 3.89M（其中缓存 3.62M）/ 出 32.0k", "有缓存读取时写出其中多少是缓存");
 });
 
 test("页面：200 是已发送，401 是链接失效，其他状态是发送失败，超时和网络错误是未收到确认", () => {
@@ -1623,6 +1625,14 @@ test("页面：每次派活是一步；并行的两次派活按调用编号各�
 	assert.doesNotMatch(JSON.stringify(w.steps.map((s) => [s.title, s.detail, s.dispatch])), /market-analyst|news-researcher|x-member/);
 });
 
+test("页面：派活的用量写出其中多少是缓存读取；没有缓存读取时和以前一样", () => {
+	const w = page.emptyWatch("tkt_1");
+	page.applyTranscript(w, history("tkt_1", [dispatchCall("c1", "market-analyst", "看盘面"), dispatchCall("c2", "news-researcher", "查新闻")]));
+	page.applyTranscript(w, live("tkt_1", dispatchResult("c1", { ...outcome("行情分析师", "done", "答", 1200, undefined, 300), tokensCached: 1000 })));
+	page.applyTranscript(w, live("tkt_1", dispatchResult("c2", outcome("新闻研究员", "done", "答", 300))));
+	assert.deepEqual(w.steps.map((s) => s.dispatch?.tokens), ["1.5k tokens（其中缓存 1.0k）", "300 tokens"]);
+});
+
 test("页面：派活的每种结束状态都有中文说法，超时、无进展和出错带上原因；被宿主拒绝的派活就是一步普通的失败", () => {
 	const steps = watched([
 		dispatchCall("c1", "a", "t"), dispatchResult("c1", outcome("甲", "stopped", null, 0)),
@@ -1648,6 +1658,8 @@ test("页面：还没结束的派活一开始就写成员的职称；状态跟�
 	frame(onBoard("c1", "行情分析师", "done", { tokens: 1500 }), onBoard("c2", "新闻研究员", "running"));
 	assert.deepEqual(now().slice(0, 2), [["行情分析师 · 完成", "ok"], ["新闻研究员 · 进行中", "pending"]]);
 	assert.equal(page.liveSteps(w, view)[0].dispatch?.tokens, "1.5k tokens");
+	frame(onBoard("c1", "行情分析师", "done", { tokens: 1500, tokensCached: 1000 }), onBoard("c2", "新闻研究员", "running"));
+	assert.equal(page.liveSteps(w, view)[0].dispatch?.tokens, "1.5k tokens（其中缓存 1.0k）", "看板带着缓存读取时，结果到之前也写出其中多少是缓存");
 	frame(onBoard("c1", "行情分析师", "done", { tokens: 1500 }), onBoard("c2", "新闻研究员", "timed_out", { note: "超过 15 分钟的时限" }));
 	frame();
 	assert.deepEqual(now().slice(0, 2), [["行情分析师 · 完成", "ok"], ["新闻研究员 · 超时", "error"]], "整批回来、结果还没到的那一瞬间，页面记得最后看到的状态");
@@ -1700,9 +1712,9 @@ test("页面：宿主被杀时还在跑的派活，重启后写已停止，仍�
 		{ role: "toolResult", toolCallId: "m1", toolName: "web_get", content: [{ type: "text", text: "网页" }] },
 		used(250, 50, 0, [{ type: "toolCall", id: "m2", name: "web_get", arguments: { url: "https://example.com/m" } }]),
 	] }));
-	assert.deepEqual(page.liveSteps(w, view).map((s) => [s.detail, s.dispatch?.tokens]), [["新闻研究员 · 已停止", "1.5k tokens"], ["行情分析师 · 已停止", ""]], "没来得及出一条消息的那位不写用量");
+	assert.deepEqual(page.liveSteps(w, view).map((s) => [s.detail, s.dispatch?.tokens]), [["新闻研究员 · 已停止", "1.5k tokens（其中缓存 200）"], ["行情分析师 · 已停止", ""]], "没来得及出一条消息的那位不写用量");
 	page.applyTranscript(w, live("tkt_1", { role: "user", content: "[恢复说明]\nprocess restarted" }));
-	assert.deepEqual(page.liveSteps(w, view).slice(0, 2).map((s) => [s.detail, s.dispatch?.tokens]), [["新闻研究员 · 已停止", "1.5k tokens"], ["行情分析师 · 已停止", ""]], "恢复后的助手开始下一轮，那一步定成已停止，用量还在");
+	assert.deepEqual(page.liveSteps(w, view).slice(0, 2).map((s) => [s.detail, s.dispatch?.tokens]), [["新闻研究员 · 已停止", "1.5k tokens（其中缓存 200）"], ["行情分析师 · 已停止", ""]], "恢复后的助手开始下一轮，那一步定成已停止，用量还在");
 });
 
 test("页面：助手收到新的输入开始下一轮时，上一轮没等到结果的步骤就此停下（助手进程中途退出过）", () => {

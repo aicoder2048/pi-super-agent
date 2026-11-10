@@ -372,8 +372,11 @@ const DISPATCH_STEP_STATE = { queued: "pending", running: "pending", done: "ok",
 /** @param {Pick<DispatchEntry, "title" | "stateText">} entry */
 const dispatchDetail = (entry) => [entry.title, entry.stateText].filter(Boolean).join(" · ");
 
-/** @param {number} tokens */
-const tokensText = (tokens) => `${formatTokens(tokens)} tokens`;
+/** The part of a token count read from the prompt cache, "" when none. @param {number | undefined} cached */
+const cachedText = (cached) => (cached ? `（其中缓存 ${formatTokens(cached)}）` : "");
+
+/** @param {number} tokens @param {number} [cached] */
+const tokensText = (tokens, cached = 0) => `${formatTokens(tokens)} tokens${cachedText(cached)}`;
 
 /** @param {unknown} details @returns {DispatchEntry | undefined} */
 function dispatchEntry(details) {
@@ -386,7 +389,7 @@ function dispatchEntry(details) {
 		state: d.state,
 		stateText: DISPATCH_STATE[/** @type {DispatchState} */ (d.state)],
 		note: typeof d.note === "string" ? d.note : "",
-		tokens: tokensText((Number(d.tokensIn) || 0) + (Number(d.tokensOut) || 0)),
+		tokens: tokensText((Number(d.tokensIn) || 0) + (Number(d.tokensOut) || 0), Number(d.tokensCached) || 0),
 		steps: [],
 	};
 }
@@ -488,11 +491,15 @@ function memberSteps(watch, callId, dispatchEnded) {
 	return dispatchEnded ? steps.map((s) => (s.state === "pending" ? stopped(s) : s)) : steps;
 }
 
-/** What a dispatch's member has used, input plus output, by its own messages. @param {Watch} watch @param {string | undefined} callId */
+/** What a dispatch's member has used, input plus output, and the part of it read from the cache, by its own messages. @param {Watch} watch @param {string | undefined} callId */
 function memberTokens(watch, callId) {
 	let tokens = 0;
-	for (const message of watch.members.get(callId ?? "") ?? []) tokens += (message?.usage?.input ?? 0) + (message?.usage?.cacheRead ?? 0) + (message?.usage?.output ?? 0);
-	return tokens;
+	let cached = 0;
+	for (const message of watch.members.get(callId ?? "") ?? []) {
+		tokens += (message?.usage?.input ?? 0) + (message?.usage?.cacheRead ?? 0) + (message?.usage?.output ?? 0);
+		cached += message?.usage?.cacheRead ?? 0;
+	}
+	return { tokens, cached };
 }
 
 /**
@@ -507,9 +514,10 @@ export function liveSteps(watch, view) {
 	const helperGone = row?.workerState !== "running" || row.endedAt !== null;
 	const hostSince = view.duty?.since ?? 0;
 	// A dispatch cut off by a stop or a killed host has no result to carry its count, and after a restart no board entry either.
-	const used = (/** @type {string | undefined} */ callId, /** @type {number | undefined} */ counted) => {
-		const tokens = counted ?? memberTokens(watch, callId);
-		return counted !== undefined || tokens > 0 ? tokensText(tokens) : "";
+	const used = (/** @type {string | undefined} */ callId, /** @type {number | undefined} */ counted, /** @type {number | undefined} */ cached) => {
+		if (counted !== undefined) return tokensText(counted, cached);
+		const own = memberTokens(watch, callId);
+		return own.tokens > 0 ? tokensText(own.tokens, own.cached) : "";
 	};
 	return watch.steps.map((step) => {
 		if (step.state !== "pending") return step.dispatch ? { ...step, dispatch: { ...step.dispatch, tokens: step.dispatch.tokens || used(step.callId), steps: memberSteps(watch, step.callId, true) } } : step;
@@ -525,7 +533,7 @@ export function liveSteps(watch, view) {
 			state,
 			stateText: DISPATCH_STATE[state],
 			note: seen?.note ?? "",
-			tokens: used(step.callId, seen?.tokens),
+			tokens: used(step.callId, seen?.tokens, seen?.tokensCached),
 			steps: memberSteps(watch, step.callId, DISPATCH_STEP_STATE[state] !== "pending"),
 		};
 		return { ...step, state: DISPATCH_STEP_STATE[state], dispatch, detail: dispatchDetail(dispatch) };
@@ -663,7 +671,7 @@ export function lifecycleLine(row, now, receivedAt, timeZone) {
 	const span = row.startedAt === null
 		? ["尚未开始"]
 		: [`开始 ${clockTime(row.startedAt, timeZone)}`, row.endedAt === null ? "进行中" : `结束 ${clockTime(row.endedAt, timeZone)}`, `用时 ${elapsedOf(row, now, receivedAt)}`];
-	return [...span, `模型 ${modelText(row)}`, `工具 ${row.toolCalls} 次`, `tokens 入 ${formatTokens(row.tokensIn)} / 出 ${formatTokens(row.tokensOut)}`].join(" · ");
+	return [...span, `模型 ${modelText(row)}`, `工具 ${row.toolCalls} 次`, `tokens 入 ${formatTokens(row.tokensIn)}${cachedText(row.tokensCached) || " "}/ 出 ${formatTokens(row.tokensOut)}`].join(" · ");
 }
 
 /** @typedef {"idle" | "sending" | "delivered" | "maybe_lost" | "expired" | "rejected"} SayState */

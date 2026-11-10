@@ -557,12 +557,14 @@ export class Kernel {
 		});
 	}
 
-	recordUsage(ticketId: string, { provider, tokensIn, tokensOut }: { provider: string; tokensIn: number; tokensOut: number }): void {
+	/** `tokensIn` is new input plus cache reads; `tokensCached` is the cache-read part of it. */
+	recordUsage(ticketId: string, { provider, tokensIn, tokensCached = 0, tokensOut }: { provider: string; tokensIn: number; tokensCached?: number; tokensOut: number }): void {
 		this.#tx(() => {
 			this.#requireTicket(ticketId);
 			this.#run(
-				"UPDATE tickets SET tokens_in = tokens_in + ?, tokens_out = tokens_out + ? WHERE id = ?",
+				"UPDATE tickets SET tokens_in = tokens_in + ?, tokens_cached = tokens_cached + ?, tokens_out = tokens_out + ? WHERE id = ?",
 				tokensIn,
+				tokensCached,
 				tokensOut,
 				ticketId,
 			);
@@ -681,6 +683,7 @@ export class Kernel {
 				fellBack: t.fellBack,
 				toolCalls: t.toolCalls,
 				tokensIn: t.tokensIn,
+				tokensCached: t.tokensCached,
 				tokensOut: t.tokensOut,
 				elapsedMs: t.startedAt === null ? 0 : end - t.startedAt,
 				lastProgressAt: t.lastProgressAt,
@@ -1244,6 +1247,7 @@ export class Kernel {
 			fellBack: r.fell_back === 1,
 			toolCalls: r.tool_calls,
 			tokensIn: r.tokens_in,
+			tokensCached: r.tokens_cached,
 			tokensOut: r.tokens_out,
 			helper: this.#helperOf(r),
 			stage,

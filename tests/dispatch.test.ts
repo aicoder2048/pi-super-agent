@@ -333,16 +333,30 @@ test("成员的回复超过 2000 字时截断后才交给助手", async (t) => {
 
 test("成员用的 token 计入任务和当天合计，超时的成员也算", async (t) => {
 	const { host, results } = await dispatching(t, async (run) => {
-		run.onUsage({ provider: "openai-codex", tokensIn: 100, tokensOut: 20 });
+		run.onUsage({ provider: "openai-codex", tokensIn: 100, tokensCached: 70, tokensOut: 20 });
 		if (run.member.name === "news-researcher") await wait(60_000, run.signal);
 		return "答";
 	}, two, { timeoutMs: 150 });
 	const out = await results();
 	const ticket = host.kernel.listTickets()[0];
 	assert.equal(ticket.tokensIn, 200);
+	assert.equal(ticket.tokensCached, 140);
 	assert.equal(ticket.tokensOut, 40);
 	assert.equal(host.kernel.usageToday("openai-codex"), 240);
 	assert.deepEqual(out.map((r) => r.details.tokensIn + r.details.tokensOut), [120, 120]);
+	assert.deepEqual(out.map((r) => r.details.tokensCached), [70, 70]);
+});
+
+test("看板上进行中的派活带着缓存读取：用量来一条加一条", async (t) => {
+	let release!: () => void;
+	const { board } = await dispatching(t, async (run) => {
+		run.onUsage({ provider: "openai-codex", tokensIn: 100, tokensCached: 70, tokensOut: 20 });
+		await held(run.signal, (r) => (release = r));
+		return "答";
+	}, [two[0]]);
+	await until(() => board()?.[0]?.tokens === 120, "看板记上用量");
+	assert.equal(board()![0].tokensCached, 70);
+	release();
 });
 
 test("成员的模型：自己写了就用自己的，否则用助手的模型；回退后一律用回退模型，而且派活不触发试探主模型", async (t) => {
@@ -490,7 +504,7 @@ test("看板上在跑的成员带着它正在做什么、多久没有动静和�
 	await until(() => board()?.[0]?.step === "读取网页", "看板写出成员在做什么");
 	await tick(60);
 	const [entry] = board();
-	assert.deepEqual({ ...entry, quietMs: 0 }, { callId: "call_0", title: "新闻研究员", state: "running", step: "读取网页", quietMs: 0, tokens: 120 });
+	assert.deepEqual({ ...entry, quietMs: 0 }, { callId: "call_0", title: "新闻研究员", state: "running", step: "读取网页", quietMs: 0, tokens: 120, tokensCached: 0 });
 	assert.ok(entry.quietMs >= 50 && entry.quietMs < 1000, `离上一次动静 ${entry.quietMs} ms`);
 	finish();
 	await results();
@@ -650,7 +664,7 @@ test("看板上正在跑工具的成员带着这一步已经跑了多久；两�
 	assert.ok(running.toolMs! >= 80 && running.toolMs! < 1000, `这一步已经跑了 ${running.toolMs} ms`);
 	finish();
 	await until(() => board()?.[0]?.toolMs === undefined, "工具都返回了");
-	assert.deepEqual({ ...board()[0], quietMs: 0 }, { callId: "call_0", title: "新闻研究员", state: "running", step: "读取网页", quietMs: 0, tokens: 0 });
+	assert.deepEqual({ ...board()[0], quietMs: 0 }, { callId: "call_0", title: "新闻研究员", state: "running", step: "读取网页", quietMs: 0, tokens: 0, tokensCached: 0 });
 	finish();
 	await results();
 });
