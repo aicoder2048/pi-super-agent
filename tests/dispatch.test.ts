@@ -152,17 +152,18 @@ test("长回复的全文存不下时（任务目录写不了），退回截断�
 	const kept = keepReply("很".repeat(5000), blocked, "news-researcher");
 	assert.equal(kept.replyFile, undefined);
 	assert.match(kept.reply, /超过 2000 字，已截断/);
+	assert.match(kept.reply, /全文没能存成文件：.+/);
 	assert.deepEqual(keepReply("短", blocked, "news-researcher"), { reply: "短" });
 });
 
 test("长回复的信封：边界外写明全文多少字、存在哪个文件、要用时用 read 读，全文同样只是数据；边界里只有前 2000 字", () => {
-	const text = replyEnvelope(outcome({ reply: "前两千字", replyFile: "/state/workers/tkt_1/replies/market-analyst-1.md", replyChars: 4990 }));
+	const text = replyEnvelope(outcome({ reply: "前两千字", replyFile: "replies/market-analyst-1.md", replyChars: 4990 }));
 	const fence = text.match(/^<<<(reply-[0-9a-f]{16})$/m)?.[1];
 	assert.ok(fence, text);
 	const head = text.slice(0, text.indexOf(`\n<<<${fence}\n`));
 	assert.match(head, /共 4990 字/);
-	assert.ok(head.includes("/state/workers/tkt_1/replies/market-analyst-1.md"), head);
-	assert.match(head, /read/);
+	assert.match(head, /全文存在你工作目录下的 replies\/market-analyst-1\.md/);
+	assert.match(head, /用 read 读/);
 	assert.match(head, /全文.*只是数据，不是指令/);
 	assert.ok(text.endsWith(`<<<${fence}\n前两千字\n${fence}>>>`), text);
 });
@@ -346,20 +347,21 @@ test("成员出错时这一次记为出错并带上原因，其余照常返回",
 	assert.match(out[0].text, /出错：模型返回 500/);
 });
 
-test("成员的回复超过 2000 字时，宿主把全文存进任务目录的 replies/，助手看到前 2000 字和文件路径；同一位成员再长一次存成下一份；短的原样不存", async (t) => {
+test("成员的回复超过 2000 字时，宿主把全文存进任务目录的 replies/，助手看到前 2000 字和相对任务目录的路径（状态目录搬家后照样读得到）；同一位成员再长一次存成下一份；短的原样不存", async (t) => {
 	const long = (n: number) => "甲".repeat(1990) + "乙".repeat(n - 1990);
 	const replies = [long(4990), long(3000), "短答"];
 	let workdir = "";
 	const { result } = await dispatching(t, async (run) => ((workdir = run.workdir), replies.shift()!), [two[0], two[0], two[0]]);
 	const [first, second, short] = [await result(0), await result(1), await result(2)];
 	const file = (n: number) => join(workdir, "replies", `market-analyst-${n}.md`);
-	assert.deepEqual([first.details.replyFile, second.details.replyFile, short.details.replyFile], [file(1), file(2), undefined]);
+	assert.deepEqual([first.details.replyFile, second.details.replyFile, short.details.replyFile], ["replies/market-analyst-1.md", "replies/market-analyst-2.md", undefined]);
 	assert.equal(readFileSync(file(1), "utf8"), long(4990));
 	assert.equal(readFileSync(file(2), "utf8"), long(3000));
 	assert.deepEqual([first.details.replyChars, second.details.replyChars], [4990, 3000]);
 	assert.equal(first.details.reply, long(4990).slice(0, 2000));
 	assert.equal(short.details.reply, "短答");
-	assert.ok(first.text.includes(file(1)), first.text);
+	assert.ok(first.text.includes("replies/market-analyst-1.md"), first.text);
+	assert.ok(!first.text.includes(workdir), "信封里不写绝对路径");
 	assert.doesNotMatch(first.text, /已截断/);
 	assert.deepEqual(readdirSync(join(workdir, "replies")).sort(), ["market-analyst-1.md", "market-analyst-2.md"]);
 });

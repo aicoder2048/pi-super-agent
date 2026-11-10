@@ -87,6 +87,7 @@ test("Pi 模块的派活技能写明是给助手的，成员不用读", () => {
 test("Pi 模块的派活技能：写代码的任务由助手自己读文档、自己写，只把拿不准的具体疑点派给专家，一位专家一次问全", () => {
 	const skill = readFileSync(join(REPO_MODULES, "pi-pi/skills/pi-pi-desk/SKILL.md"), "utf8");
 	assert.match(skill, /代码由你写/);
+	assert.doesNotMatch(skill, /答复也短/, "长回复现在有文件出路，不能再说专家的答复短");
 	assert.match(skill, /一位专家一次问全/);
 });
 

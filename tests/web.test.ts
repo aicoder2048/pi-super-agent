@@ -1636,8 +1636,8 @@ test("页面：派活的用量写出其中多少是缓存读取；没有缓存�
 test("页面：成员的长回复只显示前 2000 字，末尾写明全文多少字、存在哪个文件", () => {
 	const w = page.emptyWatch("tkt_1");
 	page.applyTranscript(w, history("tkt_1", [dispatchCall("c1", "market-analyst", "看盘面")]));
-	page.applyTranscript(w, live("tkt_1", dispatchResult("c1", { ...outcome("行情分析师", "done", "前两千字", 300), replyFile: "/s/workers/tkt_1/replies/market-analyst-1.md", replyChars: 4990 })));
-	assert.equal(w.steps[0].dispatch?.reply, "前两千字\n\n…（全文 4990 字，存在 /s/workers/tkt_1/replies/market-analyst-1.md）");
+	page.applyTranscript(w, live("tkt_1", dispatchResult("c1", { ...outcome("行情分析师", "done", "前两千字", 300), replyFile: "replies/market-analyst-1.md", replyChars: 4990 })));
+	assert.equal(w.steps[0].dispatch?.reply, "前两千字\n\n…（全文 4990 字，存在任务目录的 replies/market-analyst-1.md）");
 });
 
 test("页面：派活的每种结束状态都有中文说法，超时、无进展和出错带上原因；被宿主拒绝的派活就是一步普通的失败", () => {
