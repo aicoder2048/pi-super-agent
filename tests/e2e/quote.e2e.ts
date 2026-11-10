@@ -282,7 +282,7 @@ test("引用：幕僚长那句话的「引用」在气泡右下角，不压住�
 				assert.ok(Math.abs(e.button.right - e.bubble.right) <= 1, `「引用」右边 ${e.button.right}，气泡右边 ${e.bubble.right}`);
 				assert.ok(Math.abs(e.button.top - e.bubble.bottom) <= 1, `「引用」顶 ${e.button.top}，气泡底 ${e.bubble.bottom}：中间不能有鼠标会掉进去的缝`);
 				const padTop = await line.locator(".quote-btn").evaluate((b) => parseFloat(getComputedStyle(b).paddingTop));
-				assert.ok(padTop >= 3, `「引用」文字离气泡底边只有 ${padTop}px`);
+				assert.ok(padTop >= 7, `「引用」文字离气泡底边只有 ${padTop}px，比我那边的「引用」离上一行近`);
 			});
 			await step("鼠标停在幕僚长的话上，往下慢慢移到「引用」再点，引用条出现", async (page) => {
 				const line = page.locator(".thread > .line.router", { hasText: "好的，去查了。" });
