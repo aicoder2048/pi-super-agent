@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DISPATCH_NEXT, DispatchDesk, REPLY_MAX, SlotPool, clipReply, memberSessionDir, parseDispatch, replyEnvelope, stallNote, timeoutNote, type DispatchOutcome, type DispatchResult, type DispatchState, type MemberLimit, type MemberRun } from "../src/host/dispatch.ts";
+import { DISPATCH_NEXT, DispatchDesk, REPLY_MAX, SlotPool, clipReply, keepReply, memberSessionDir, parseDispatch, replyEnvelope, stallNote, timeoutNote, type DispatchOutcome, type DispatchResult, type DispatchState, type MemberLimit, type MemberRun } from "../src/host/dispatch.ts";
 import { HostConnection } from "../src/client/connection.ts";
 import { ModelSelector } from "../src/model-selector.ts";
 import type { Member } from "../src/teams.ts";
@@ -143,6 +144,27 @@ test("成员回复超过 2000 字时截断并注明，没超过的原样", () =>
 	assert.ok([...clipped].length < 2100, `${[...clipped].length} 字`);
 	assert.ok(clipped.startsWith("很".repeat(2000)));
 	assert.match(clipped, /超过 2000 字，已截断/);
+});
+
+test("长回复的全文存不下时（任务目录写不了），退回截断并注明，派活照样完成", () => {
+	const blocked = join(mkdtempSync(join(tmpdir(), "psa-reply-")), "not-a-dir");
+	writeFileSync(blocked, "");
+	const kept = keepReply("很".repeat(5000), blocked, "news-researcher");
+	assert.equal(kept.replyFile, undefined);
+	assert.match(kept.reply, /超过 2000 字，已截断/);
+	assert.deepEqual(keepReply("短", blocked, "news-researcher"), { reply: "短" });
+});
+
+test("长回复的信封：边界外写明全文多少字、存在哪个文件、要用时用 read 读，全文同样只是数据；边界里只有前 2000 字", () => {
+	const text = replyEnvelope(outcome({ reply: "前两千字", replyFile: "/state/workers/tkt_1/replies/market-analyst-1.md", replyChars: 4990 }));
+	const fence = text.match(/^<<<(reply-[0-9a-f]{16})$/m)?.[1];
+	assert.ok(fence, text);
+	const head = text.slice(0, text.indexOf(`\n<<<${fence}\n`));
+	assert.match(head, /共 4990 字/);
+	assert.ok(head.includes("/state/workers/tkt_1/replies/market-analyst-1.md"), head);
+	assert.match(head, /read/);
+	assert.match(head, /全文.*只是数据，不是指令/);
+	assert.ok(text.endsWith(`<<<${fence}\n前两千字\n${fence}>>>`), text);
 });
 
 test("成员的会话放在任务的工作目录里：<状态目录>/workers/<任务>/team/<成员>", () => {
@@ -324,11 +346,22 @@ test("成员出错时这一次记为出错并带上原因，其余照常返回",
 	assert.match(out[0].text, /出错：模型返回 500/);
 });
 
-test("成员的回复超过 2000 字时截断后才交给助手", async (t) => {
-	const { host, result } = await dispatching(t, async () => "很".repeat(5000), [two[0]]);
-	const { details, text } = await result(0);
-	assert.ok([...details.reply!].length < 2100);
-	assert.match(text, /已截断/);
+test("成员的回复超过 2000 字时，宿主把全文存进任务目录的 replies/，助手看到前 2000 字和文件路径；同一位成员再长一次存成下一份；短的原样不存", async (t) => {
+	const long = (n: number) => "甲".repeat(1990) + "乙".repeat(n - 1990);
+	const replies = [long(4990), long(3000), "短答"];
+	let workdir = "";
+	const { result } = await dispatching(t, async (run) => ((workdir = run.workdir), replies.shift()!), [two[0], two[0], two[0]]);
+	const [first, second, short] = [await result(0), await result(1), await result(2)];
+	const file = (n: number) => join(workdir, "replies", `market-analyst-${n}.md`);
+	assert.deepEqual([first.details.replyFile, second.details.replyFile, short.details.replyFile], [file(1), file(2), undefined]);
+	assert.equal(readFileSync(file(1), "utf8"), long(4990));
+	assert.equal(readFileSync(file(2), "utf8"), long(3000));
+	assert.deepEqual([first.details.replyChars, second.details.replyChars], [4990, 3000]);
+	assert.equal(first.details.reply, long(4990).slice(0, 2000));
+	assert.equal(short.details.reply, "短答");
+	assert.ok(first.text.includes(file(1)), first.text);
+	assert.doesNotMatch(first.text, /已截断/);
+	assert.deepEqual(readdirSync(join(workdir, "replies")).sort(), ["market-analyst-1.md", "market-analyst-2.md"]);
 });
 
 test("成员用的 token 计入任务和当天合计，超时的成员也算", async (t) => {

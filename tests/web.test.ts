@@ -1633,6 +1633,13 @@ test("页面：派活的用量写出其中多少是缓存读取；没有缓存�
 	assert.deepEqual(w.steps.map((s) => s.dispatch?.tokens), ["1.5k tokens（其中缓存 1.0k）", "300 tokens"]);
 });
 
+test("页面：成员的长回复只显示前 2000 字，末尾写明全文多少字、存在哪个文件", () => {
+	const w = page.emptyWatch("tkt_1");
+	page.applyTranscript(w, history("tkt_1", [dispatchCall("c1", "market-analyst", "看盘面")]));
+	page.applyTranscript(w, live("tkt_1", dispatchResult("c1", { ...outcome("行情分析师", "done", "前两千字", 300), replyFile: "/s/workers/tkt_1/replies/market-analyst-1.md", replyChars: 4990 })));
+	assert.equal(w.steps[0].dispatch?.reply, "前两千字\n\n…（全文 4990 字，存在 /s/workers/tkt_1/replies/market-analyst-1.md）");
+});
+
 test("页面：派活的每种结束状态都有中文说法，超时、无进展和出错带上原因；被宿主拒绝的派活就是一步普通的失败", () => {
 	const steps = watched([
 		dispatchCall("c1", "a", "t"), dispatchResult("c1", outcome("甲", "stopped", null, 0)),

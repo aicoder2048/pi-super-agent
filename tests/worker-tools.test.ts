@@ -67,3 +67,8 @@ test("成员的提示词：同一任务里读过的文件还在上文，再派�
 	assert.match(MEMBER_PROMPT, /读过的文件还在上文里.*不要重读/);
 	assert.match(MEMBER_PROMPT, /先用 grep 找到位置/);
 });
+
+test("成员的提示词：回复超过 2000 字时宿主把全文存成文件，助手直接看到的只有前 2000 字，所以结论摘要写在开头", () => {
+	assert.match(MEMBER_PROMPT, /超过 2000 字.*宿主把全文存成任务目录里的文件/);
+	assert.match(MEMBER_PROMPT, /开头先写结论摘要/);
+});

@@ -385,7 +385,7 @@ function dispatchEntry(details) {
 	return {
 		title: String(d.title ?? ""),
 		task: String(d.task ?? ""),
-		reply: typeof d.reply === "string" ? d.reply : "",
+		reply: typeof d.reply === "string" ? `${d.reply}${typeof d.replyFile === "string" ? `\n\n…（全文 ${Number(d.replyChars) || 0} 字，存在 ${d.replyFile}）` : ""}` : "",
 		state: d.state,
 		stateText: DISPATCH_STATE[/** @type {DispatchState} */ (d.state)],
 		note: typeof d.note === "string" ? d.note : "",

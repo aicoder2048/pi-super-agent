@@ -60,10 +60,14 @@ test("仓库自带的成员提示词不让成员跑 firecrawl 或 curl", () => {
 	}
 });
 
-test("Pi 专家的提示词写了回复的长度上限：超过 2000 字的回复会被宿主截断，助手就看不到出处", () => {
+test("Pi 专家的回复先写不超过 1500 字的摘要，再写完整内容：助手直接看到前 2000 字，更长的全文由宿主存成文件交给助手", () => {
 	const experts = load().kitFor("pi-pi")!.crew;
 	assert.equal(experts.length, 9);
-	for (const member of experts) assert.match(member.prompt, /under 1800 characters/, member.name);
+	for (const member of experts) {
+		assert.doesNotMatch(member.prompt, /under 1800 characters/, member.name);
+		assert.match(member.prompt, /Start with a summary of at most 1500 characters/, member.name);
+		assert.match(member.prompt, /the host saves a longer reply to a file/, member.name);
+	}
 });
 
 test("Pi 专家只在一项任务里第一次被派活时读文档：同一任务里读过的还在上文里，再派给它时不从头重读", () => {
