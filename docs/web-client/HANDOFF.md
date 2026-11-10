@@ -1,99 +1,79 @@
-# Handoff: 白宫 (Pi Super Agent), 2026-11-09
+# Handoff: 白宫 (Pi Super Agent), 2026-11-10
 
-For a new session picking this work up. Reply to the user in Chinese; English for technical terms.
+For a new session picking this work up. Reply to the user in Chinese; English for technical terms. This file replaces the older handoff notes; everything below is current as of `main` at `931c445`.
 
-## What the user just decided
+## Where things stand
 
-Roll back the 副幕僚长 design. The structure returns to two layers, 幕僚长 ↔ 助手. Task decomposition and synthesis move down into the Worker: a helper grows into an **Agent Team** when it needs to. The design is `docs/adr/0008-a-helper-can-grow-into-an-agent-team.md` on this branch (`psa/teams`, cut from `psa/helpers`). The user agreed to all four points in it:
+The Agent Teams program is done and merged. The structure is two layers, 幕僚长 ↔ 助手, and a helper grows into a team when its ticket's domain has members. Read the ADRs in this order to understand it: 0003 (authority comes only from the user), 0007 (socket clients present a credential), 0008 (a helper can grow into an Agent Team), 0009 (a ticket belongs to one domain and the domain is a module), 0010 (the user raises the member cap for a day).
 
-1. The helper always has `dispatch_agent` when its ticket's team has members, keeps its own tools, and decides itself whether to dispatch.
-2. Teams come from modules and the user's state dir. A rule can pin one (`团队：<name>`); otherwise the 幕僚长 picks a team name when it opens the ticket; there is a default team.
-3. Members keep their own Pi session within one ticket.
-4. Member tools = basis ∩ member's own list. One level only.
+Merged to `main` on 2026-11-09, bottom-up, squash:
 
-Reference implementation: `/Users/szou/Python/Playground/LearnTopEngSkills/practice/harness-dual-loops/vendor/pi-vs-claude-code/extensions/agent-team.ts`.
+| PR | What it delivered |
+|---|---|
+| #36 | Socket client credential `client-token` (ADR-0007) |
+| #28 | W4 browser e2e on a fake model, demos |
+| #29 | W5 helper strip, helper names, route lines |
+| #35 | T1 every ticket has a team; four-character names for team tickets |
+| #37 | T2 `dispatch_agent`, member sessions per ticket, 15 / 60 minute limits, live progress, stall rule, member ledger |
+| #38 | D1 the module is the domain; team = the module's `agents/`; skills follow the domain |
+| #39 | T2b host-raised question 「成员上限」, cap 4 → 10 for a New York day on the user's click |
+| #40 | T3 看盘队 (us-market, four read-only members, skill `us-market-desk`) and Pi专家队 (pi-pi, nine experts, no shell) |
+| #33 | Brand: 白宫, Pi Super Agent as subtitle, user avatar |
+| #34 | Deterministic typed-then-click 409 test |
+| #17 | First manual trial fixes: a closed ticket no longer receives its thread's triggers directly; TUI board rows; CLI messages name the state dir |
+| #25 | Ctrl+C stops the host, workers and members cleanly; the Watchdog stops only the host it launched |
 
-The user said "让我们一步一步来": do one step, show it, wait. Sketches from the user are discussion until they say they have decided.
+Closed without merge: #30, #31, #32 (the 副幕僚长 design, superseded) and #26 (its code reached `main` through #40).
 
-## Next step
+Still open: **#27** module switches (`just modules`, `just module-new`, toy-market off by default). It conflicts heavily with D1 and with ADR-0009's statement that a module is switched off only by removing it or leaving it out of `modulesDirs`. Do not rebase it blindly; ask the user how switches should fit the domain roster, then rebuild it on `main` as a new PR and close #27.
 
-Paused on 2026-11-09 at about 16:55 because the user took the machine home. Resume here.
+`main` at `931c445`: `just test` 866/866 on the merge result. The user's local `main` checkout was last pulled at `f67e7c2`; it needs `git pull --ff-only` (with the host stopped) to get #25.
 
-**State.** T1 is PR #35 (`psa/teams`), reviewed and approved by the user in chat ("通过"), not merged; the user merges. T2 is on `psa/dispatch` (worktree `.claude/worktrees/dispatch`, cut from `psa/teams`, not pushed, no PR). Its first build passed two audits and ten live lanes at `eac2f5e`; a fix round was in progress when the pause came. Read the last `t2-fix` rows of `docs/web-client/decisions.tsv` on that branch and `git log eac2f5e..HEAD` there to see how far it got. If the head commit is `wip:`, its body says what is unfinished.
+## The user's own host
 
-**Status at 19:50 on 2026-11-09 (newest first).** D1 is PR #38 (`psa/domains` on `psa/dispatch`); the user read it and approved it for merge. They chose to land the whole stack at the end, not now: once the T2b and T3 PRs are open, restack the chain onto current `main` in one pass (resolving the conflict with #36: renamed token functions and the extra `listen` argument), then merge bottom-up only on the user's confirmation: #28, #29, #35, #37, #38, then T2b and T3. #29 was still waiting for the user's screenshot review and the user has not said they read #37, so ask about those two before merging. T2b is built on `psa/cap-ask` (head `52f2274`, 679/110 green) and T3 on `psa/first-teams` (head `2f94c71`, 728/119 green), both rebased onto `psa/domains`; a review of T2b and live lanes for both were running.
+- Runs from the main checkout with `just host`, state dir `~/.pi-super-agent` (default), web on `127.0.0.1:4517`.
+- `~/.pi-super-agent/config.json` was created on 2026-11-09 at the user's request: router `openai-codex/gpt-6.1-terra`, worker and fallback `openai-codex/gpt-6.1-sol`, `secretsFile` pointing at `extensions/stock-heatmap/.env`, `sources.us-market.minGapMs` 250. Before that the file did not exist and the fallback silently defaulted to pay-per-use `deepseek/deepseek-flash`.
+- The market key works now; a 看盘队 ticket answered a plain price question without dispatching, which is the skill's intended behavior. A "why did it move" question dispatches members.
+- `.psa-trial/` (the 2026-11-08 trial state dir) was deleted at the user's request.
+- The main checkout has an uncommitted one-line `.gitignore` change (`extensions/stock-heatmap/.env`) that this session did not make. It is redundant with the `.env` line above it. Leave it to the user.
+- The user plans to run the host on a **Mac mini**. When that happens, remote reach is the first design question (web listens on 127.0.0.1 only; TUI and `just say` use a Unix socket), and the market key should move to a secrets file in the state dir.
 
-**Status at 18:35 on 2026-11-09 (newest first; the paragraphs below are older).** Work resumed under the user's standing grant. T2 is PR #37 (`psa/dispatch` on `psa/teams`), head `f01985c`, `just test` 630/630 and `just e2e` 90/90, merge-ready, not merged. The socket fix was PR #36 and the user merged it (`main` is `1248e55`); the feature stack predates it and will conflict on the renamed token functions and the extra `listen` argument when it is restacked onto `main`. Domain unification is being built on `psa/domains` (worktree `.claude/worktrees/domains`, ADR-0009 at `55463bd`), cut from `psa/dispatch` at `1e1b36c`; it must be rebased onto `f01985c` before its PR. Then T2b, T3, restack #33, close #30 to #32. Follow-ups left out of T2 on purpose: the helper strip scrolls sideways at 390 px, a helper's own tool steps in the same batch as dispatches stay pending until the batch returns, no token budget per dispatch, `recordMember` records nothing when `ps` gives no start time.
+## Backlog, in the order I would propose it
 
-**Second pause, 2026-11-09 about 17:25.** The user paused this session to run Claude from another app (Orca). Before that they said, through `/loop`: go to dinner for an hour, finish steps 1 to 5 without stopping for per-step approval, and fix the socket problem on a separate branch. Treat that as the standing grant when work resumes: build, verify, open each PR and continue to the next step; never merge; closing #30 to #32 at the end is part of the approved order.
+Ask the user before starting any of these; they like to discuss first, then decide, then do one step and see it.
 
-What was in flight when the pause came (each owner was told to commit and stop; check `git log` and `git status` in each worktree, a `wip:` head says what is unfinished):
-- `.claude/worktrees/dispatch` (`psa/dispatch`, base head `72632f7`, root re-ran `just test` 611/611 and `just e2e` 89/89 there): one more fix, a member is stalled only when it is silent and no tool call is in flight; the page line reads 「技术分析师 · 运行命令 · 已 2 分钟」 while a tool runs. After it: one independent audit of `eac2f5e..HEAD` (ledger of leftover members, stall rule, cap check, stop order) and the live lanes the fix round touched (time limit, progress line, stop, SIGKILL then restart, 390 px), then open the T2 PR on `psa/teams`.
-  At the pause this fix stopped at `7f4dfdc`, a `wip:` commit on `72632f7` that holds only the new tests, never run, so `just test` is expected red there. Pi's json stream does give the events: `tool_execution_start` (with `toolCallId`, before the tool runs) and `tool_execution_end`, with nothing in between for a silent command. Left to do: confirm the new tests are red; in `src/host/dispatch.ts` let `onActivity` take a tool-call start or end, keep a table of calls in flight per dispatch, stop the stall clock while it is non-empty and restart it when it empties, and add `toolMs` to the board item; pass the two events from `src/host/pi-worker.ts`; in `src/web/view.mjs` write 「已 N 秒」 or 「已 N 分钟」 when `toolMs` is set; docs, check-plan, a trail row, then `just test` and `just e2e`. Also noted and not in scope: a member's silent tool call does not count as the helper's progress for `watchdog.stuckMinutes`, so a ticket could still be flagged 久无进展 during a long quiet command; fix it in the same change by counting an in-flight tool call as progress.
-- `.claude/worktrees/socket-auth` (`psa/socket-auth`, cut from `origin/main` `a91e908`): the client role of the host socket must present a credential kept in a 0600 file in the state dir, front ends read it, workers never get it, plus an ADR that states the limit (a same-user process can still read the file; an OS sandbox for worker tool commands is the real fix and is not built). The owner was to push and open the PR on `main`.
-  At the pause the socket owner had only read the code: `psa/socket-auth` is still `a91e908`, tree clean, baseline `just test` 491/491, nothing pushed. Its design so far, not yet in code: a second file `client-token` (the web token shows up in logs and browser history, this one never leaves the file), with `src/host/web-token.ts` parameterised by file name and a `just client-token-rotate`; the host creates it in `Host.start` after the web port binds; clients read `dirname(socketPath)/client-token` on every reconnect; a non-worker `hello` needs the right token, constant-time compare, one log line and disconnect otherwise; `workerEnv` also drops `PSA_STATE_DIR`. Clients to change: `HostConnection` (TUI), `src/cli/say.ts` (say and tail), and the bare `hello` in `docs/web-client/evidence/perf.mts`; the Watchdog, `drop`, `log` and `market-smoke` do not use the socket. Limit to state in the ADR: the worker must have `PSA_SOCKET`, the credential sits in that same directory, and a tool command can read `../../client-token` from its workdir, so only the environment can be kept clean. ADR number on that branch would be 0007; the feature stack uses 0008 and the draft 0009.
-- Domain unification: the ADR draft is at `/Users/szou/Python/Playground/PiSuperAgent/.claude/drafts/0009-a-ticket-belongs-to-one-domain-and-the-domain-is-a-module.md` (untracked, outside every branch). The user has not read it; under the grant, cut `psa/domains` from `psa/dispatch` once T2's PR is open, commit the ADR there and build to it. 'Ahead of time' is written as: definitions loaded and validated at startup, processes started at dispatch, no pre-started members.
+1. **清屏 on the web page** (the user asked for this, 2026-11-09). A control that hides the conversation lines the page currently shows. The database and the 幕僚长's memory are untouched, so it can still resolve 「刚才那件事」. After a reload the hidden lines stay hidden; new lines appear as usual. The user explicitly chose this over a new 幕僚长 session (breaks continuity) and over wiping the state dir. Open questions to settle with the user: whether the TUI gets the same command, whether it is per browser or shared by all front ends, and whether there is a way to show the hidden lines again. Small PR: page and possibly a host-side marker; red-first tests and an e2e step.
+2. **Blocked tickets read as running.** A ticket whose helper reported 受阻 shows a running timer on its chip and 「进行中」 in the 执行过程 header, while it is actually idle in 待你处理. Show 「受阻 · 等你处理」 and stop the clock at the block. Then ask the user whether a blocked ticket nobody answers should be reminded about or closed after some time (today it waits forever, at no cost; the helper process is already stopped).
+3. **#27 module switches**, rebuilt on D1 after the user decides how switches and the domain roster fit together.
+4. **Remote reach for the Mac mini**: SSH port forwarding works today; a real design extends ADR-0004 and ADR-0007 (who counts as the user from another machine).
+5. **`bars` time window or a 5-minute span** in the us-market lookup. Today `bars` takes only dates and returns the last 500 bars, so after the close hour bars may start at noon and the open is not visible.
+6. **Page details**: code fences render as literal ``` on task cards; a long Pi expert answer is relayed by the 幕僚长 as two bubbles with a cut code block; the helper strip scrolls sideways at 390 px and with eleven chips; a helper's own tool steps in a dispatch batch stay pending until the batch returns.
+7. **Multi-channel** (email, IM, GitHub) as its own project, starting with an ADR on who counts as the user on a channel. Channels must not be declared by modules.
+8. **Module data slot** (`data/` for case libraries, game records): design when the user has data to put there.
+9. **OS sandbox for helper commands**: deferred by the user (2026-11-09). A helper with `bash` runs as the host's user and can read `client-token` and `state.db`; ADR-0007 and ADR-0010 state this limit. The user's note on it: `~/SecondBrain/04_areas/002_knowledge_dots/agent-harness/same-user-agent-can-read-the-keys.md`. Do not start it unless the user asks.
 
-**Update at the pause.** The fix round finished: `psa/dispatch` head `72632f7`, tree clean, owner reports `just test` 611/611 and `just e2e` 89/89 (the root has not re-run them or read this diff yet). All brief items are done. One open design point to raise with the user before the PR: the stall rule counts only process events, and the bash tool emits none while a command is silent, so a coding member running a quiet command longer than `dispatchStallSeconds` (180) is ended as 无进展; counting "a tool call is in flight" as activity would fix it and is not built. Owner's screenshots: `/tmp/t2fix/shot-*.png` (may be gone after a reboot).
+Smaller known follow-ups recorded in the ADRs and the trail: no token budget per dispatch (one live dispatch used about 700k input tokens); a command a member puts in the background outlives it; a second Ctrl+C while a member runs leaves that member until the next host start (the user agreed to keep this).
 
-**First action on resume.** In `.claude/worktrees/dispatch`: run `just test` and `caffeinate -i just e2e`, compare the commits against the fix-round list below, hand whatever is left to a fresh `pstack:poteto-agent`, then re-run the live lanes the fix round touched (time limit, progress line, stop, restart mid-dispatch, a 390 px screenshot), read the diff, and open the T2 PR based on `psa/teams`.
+## Known rough edges in the repo
 
-**T2 fix round scope** (the brief the owner had):
-- A1 fallback daily cap checked against the model the member really runs on (blocker).
-- B2 a restarted host ends members a SIGKILLed host left; B3 stop returns only after members are gone and the test fake follows the real exit order; B4 clear the late SIGKILL timer.
-- C5 time limits: 60 minutes if the member's effective tools include `write`, `edit` or `bash`, else 15; keys `dispatchTimeoutSeconds` (900) and `dispatchCodingTimeoutSeconds` (3600); queue wait 15 minutes. C6 progress: 「新闻研究员 · 读取网页 · 12 秒前」 under the chip, member steps inside the dispatch step, a `stalled` end state after `dispatchStallSeconds` (180) with no event, member activity counts as the helper's progress. C7 member sessions stay in `workers/<ticket>/team/<member>`; no archive.
-- D8 to D13 page defects from the live lanes (finished member shown as 排队中, stopped steps without a title, ghost step after restart, timeout reason, member row wrap, Markdown tables and Markdown in 幕僚长 bubbles, cards and reports).
-- E test gaps from the mutation audit. F docs.
+- `IMPLEMENTATION_PLAN.md` and `docs/web-client/decisions.tsv` cite commit SHAs from before the final restack and squash merges; most no longer exist on `main`. The plan's evidence is still true; only the SHAs are stale. Fix in one docs PR if the user wants it.
+- One e2e test is flaky: `tests/e2e/helpers.e2e.ts` 「点小卡，右栏打开那个任务…」 sometimes reads 「模型 未启动」 because it clicks before the second helper reports its model. Add a wait.
+- `just test` once showed a single unidentified failure on the T3 branch and passed on three reruns.
+- `IMPLEMENTATION_PLAN.md` is the program plan run with pstack poteto-mode; `node ~/.claude/plugins/cache/cursor-plugins/pstack/0.15.36/skills/poteto-mode/scripts/check-plan.mjs IMPLEMENTATION_PLAN.md` must stay at 0 problems.
 
-**Order the user confirmed on 2026-11-09** (one step, show it, wait for the go):
-1. T2.
-2. 领域归一, a small PR on top of T2 and before T3. A ticket belongs to one domain and the domain is the module. The 幕僚长's roster lists domains. A rule's ticket belongs to the module whose `rules.md` holds the rule, so the `团队：` line goes away. The team is the members in the module's `agents/`, so `teams.yaml` goes away; one module has at most one team; a user-defined team is a module under `<state dir>/modules/`. Skills follow the domain: the helper and every member get the module's skills whether the ticket came from a rule or from the conversation (today skills reach a helper only when a rule of that module opened the ticket). A member's prompt holds its role, judgment and report format; reusable knowledge goes in skills. Before any code: rewrite ADR-0008 point 2, show the user, wait for approval.
-   The user added on 2026-11-09 evening: member definitions move into the module, so the module needs a structured design that serves two consumers. The event-driven layer (host and 幕僚长) reads its sources, timers, rules and the domain's one-line description. The Agent Team side (helper and members) reads its skills, member definitions and later data, and must be able to instantiate expert members when a team needs them or ahead of time. The ADR rewrite must lay out both faces and say what 'ahead of time' means (definitions loaded and validated at startup; whether any member process is pre-started is an open question to put to the user).
-3. T2b: when members queue for a slot, ask the user with a one-click question card; on yes the member cap rises from 4 to 10 host-wide for that New York day; on no, do not ask again that day; hard maximum 10.
-4. T3: 看盘队 and pi-pi 队 in the unified form. Raise with the user then: drop the `market: true` source flag that makes the kernel say 行情助手; whether `us-market` ships its team by default (my recommendation: yes).
-5. Restack #33 (白宫 brand) onto T3, then close #30, #31, #32.
+## How the user likes to work
 
-**Socket fix, separate branch from `main`.** The host's Unix socket accepts `role: "client"` with no token (`src/host/server.ts` about lines 63 to 70), so a worker with `bash` can `say` as the user; the T2 audit proved it; it predates T2. The user agreed to a separate PR off `main`. A token alone may not close it, because the worker runs as the same OS user and may read whatever file holds the token. An investigation agent on Opus was stopped by the model's safety filter before it reported anything, so nothing is known beyond the audit finding. On resume, tell the user and ask how they want to proceed (for example a narrower design task on the session model: require a token on the client role and keep the socket path and token out of the worker's environment); do not retry the same investigation prompt.
-
-**Later, own project.** Multi-channel (email, IM, GitHub): after this round, starting with an ADR on who counts as the user on a channel. A `data/` slot in a module: design when the user has data to put there.
-
-**Voice reports.** While work runs the user wants a spoken report every 15 minutes: `uvx edge-tts --voice zh-CN-XiaoyiNeural`, played with `afplay`; no names, paths or code identifiers in the spoken text. The cron job is session-only and is cancelled now; recreate it when work restarts.
-
-## Open PRs
-
-| PR | Branch | State |
-|---|---|---|
-| #25 | psa/clean-exit | Ctrl+C. Ready to merge |
-| #26 | psa/market-data | indicators, earnings, lookup cache. Ready |
-| #27 | psa/modules-admin | module switches, `just modules`, `just module-new`. Ready |
-| #28 | psa/e2e | W4 e2e + demos. Ready |
-| #34 | psa/flaky-spoke | flaky 409 test. Ready |
-| #29 | psa/helpers | W5 helper strip, names, route lines. Stays. Needs the user's screenshot review |
-| #37 | psa/dispatch | T2: dispatch_agent, time limits, progress. Merge-ready |
-| #35 | psa/teams | T1: teams on tickets, four-character team names. Merge-ready, needs the user's screenshot review |
-| #30, #31, #32 | psa/roles, psa/consult, psa/market-experts | 副幕僚长 design. To be replaced |
-| #33 | psa/brand | 白宫 name, W1 logo, U2 user avatar. Stays; restack later |
-| #17 | psa/trial-fixes | old, untouched |
-
-The user merges. Never merge unless they ask in that turn. If #27 merges before #28, the e2e and demo configs need `"modules": {"toy-market": true}`.
-
-## Not done
-
-- Full 10-lane live runs for W5 (and for whatever replaces W6). None have run. W5 lane 2 expects 「行情助手」 on the card, which holds again after the rollback.
-- A design review on Fable against `docs/dsh-super-agent/super-agent-design-exploration.md` (five modules, four traits). The user asked for it before the rollback; the brief must be rewritten for the two-layer + Agent Team structure. Ask before starting it.
-- W3 (dev test-tools panel): deferred.
-
-## Facts worth knowing
-
-- The user's Massive plan is Stocks Starter: unlimited calls, 15-minute delayed. They should set `sources.us-market.minGapMs` to 250, `secretsFile` to `extensions/stock-heatmap/.env`, and `models.fallback` to `openai-codex/gpt-6.1-sol` in `~/.pi-super-agent/config.json`. They may not have done so yet.
-- The first live expert run timed out because one-shot `pi -p` processes never exited after using `lookup` (fixed in 38ccc66 on psa/market-experts). Carry that fix over.
-- Product name 白宫: use the name only, never official White House marks.
+- One step at a time: show it, wait for the go. Sketches from the user are discussion until they say they have decided. Present tradeoffs and a recommendation.
+- The user merges. Merge only when they ask in that turn.
+- pstack poteto-mode in full for code work: a todolist with the playbook steps, red-first tests, a decision trail in `docs/web-client/decisions.tsv` via `show-me-your-work/scripts/log.sh`, independent review and live lanes on real models before a PR.
+- During long runs they want a spoken progress report every 15 minutes: `uvx edge-tts --voice zh-CN-XiaoyiNeural`, played with `afplay`; no names, paths or code identifiers in the spoken text. Set it up with CronCreate and cancel it when nothing runs.
 
 ## Rules
 
-- pstack poteto-mode in full: plan section, red-first tests, decision trail (`docs/web-client/decisions.tsv` via `show-me-your-work/scripts/log.sh`), cleanup, independent review before any PR.
-- Never `anthropic/*` or `deepseek/*` models in Pi; use `openai-codex/*`.
+- Models in Pi: only `openai-codex/*` (subscription). Never `anthropic/*` or `deepseek/*` without asking.
 - Never read or print `extensions/stock-heatmap/.env`; pass its path only.
-- Never touch the user's host (port 4517, `~/.pi-super-agent`). Stop only processes you started, by recorded PID or group; never pgrep/pkill.
-- The Mac sleeps when unattended: wrap long runs in `caffeinate -i`. Background agents can stall on permission prompts; check their last activity.
-- Tests: `just test`, `just e2e`. Work in worktrees under `.claude/worktrees/`.
+- Never touch the user's running host (port 4517) or write into `~/.pi-super-agent` unless the user asks for that specific change. Stop only processes you started, by recorded PID or group; never `pgrep`/`pkill`.
+- Tests that start a host must not reach a real model: use the fake-model harness, `PSA_PI_CLI`, and an empty `PI_CODING_AGENT_DIR` with `PI_OFFLINE=1`. (A rebase check once started the real Pi on the user's subscription for about a minute.)
+- Work in worktrees under `.claude/worktrees/`; never commit to `main` directly. Use `--force-with-lease` pinned to the last pushed SHA on your own PR branches only.
+- The Mac sleeps when unattended: wrap long runs in `caffeinate -i`.
+- Subagents on Opus have been stopped by the model's safety filter when the brief asked them to enumerate ways to impersonate the user; brief security work as defensive fixes with a concrete design.
