@@ -182,13 +182,14 @@ export class FakeSpawner implements WorkerSpawner {
 				worker.inputs.push(text);
 				streaming = true;
 				events.turnStarted();
-				setImmediate(() => void script(worker, text));
+				setImmediate(() => alive && void script(worker, text));
 			},
 			stop: async () => {
 				this.stopped.push(spec.ticketId);
 				if (!alive) return;
 				alive = false;
-				setImmediate(() => events.exited());
+				// Pi's RpcClient resolves stop() only after the process has exited, so `exited` comes first.
+				events.exited();
 			},
 		};
 	}

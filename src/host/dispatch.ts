@@ -187,6 +187,8 @@ export class DispatchDesk {
 	readonly #o: DeskOptions;
 	readonly #slots: SlotPool;
 	readonly #tickets = new Map<string, TicketDesk>();
+	/** ticketId → the stopped dispatches whose processes are still going away. */
+	readonly #ending = new Map<string, Promise<void>>();
 
 	constructor(options: DeskOptions) {
 		this.#o = options;
@@ -272,12 +274,24 @@ export class DispatchDesk {
 		return out;
 	}
 
-	/** Stops every dispatch of the ticket and resolves once their processes are gone. */
-	async end(ticketId: string): Promise<void> {
+	/**
+	 * Stops every dispatch of the ticket and resolves once their processes are gone. Safe to call again:
+	 * a later call waits for the same processes, and a dispatch issued after it starts on a clean desk.
+	 */
+	end(ticketId: string): Promise<void> {
 		const desk = this.#tickets.get(ticketId);
-		if (!desk) return;
-		this.#tickets.delete(ticketId);
-		desk.stop.abort(new Error("任务已停止"));
-		await Promise.allSettled(desk.work);
+		if (desk) {
+			this.#tickets.delete(ticketId);
+			desk.stop.abort(new Error("任务已停止"));
+			const gone = Promise.all([this.#ending.get(ticketId), Promise.allSettled(desk.work)]).then(() => {
+				if (this.#ending.get(ticketId) === gone) this.#ending.delete(ticketId);
+			});
+			this.#ending.set(ticketId, gone);
+		}
+		return this.#ending.get(ticketId) ?? Promise.resolve();
+	}
+
+	async endAll(): Promise<void> {
+		await Promise.all([...this.#tickets.keys(), ...this.#ending.keys()].map((ticketId) => this.end(ticketId)));
 	}
 }

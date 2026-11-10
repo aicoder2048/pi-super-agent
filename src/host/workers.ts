@@ -138,11 +138,10 @@ export class WorkerExecutor {
 
 	async stop(ticketId: string): Promise<void> {
 		const live = this.#live.get(ticketId);
-		if (!live) return;
-		live.stopping = true;
+		if (live) live.stopping = true;
 		// The helper goes first: a member stopped while its helper still runs would hand it a result to act on.
 		try {
-			await live.handle.stop();
+			await live?.handle.stop();
 		} finally {
 			await this.#desk?.end(ticketId);
 		}
@@ -152,6 +151,7 @@ export class WorkerExecutor {
 	async shutdown(): Promise<void> {
 		this.#shuttingDown = true;
 		await Promise.all([...this.#live.keys()].map((id) => this.stop(id)));
+		await this.#desk?.endAll();
 	}
 
 	#start(ticketId: string): Promise<Live | undefined> {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { join } from "node:path";
-import { DISPATCH_NEXT, REPLY_MAX, SlotPool, clipReply, memberSessionDir, parseDispatch, replyEnvelope, type DispatchOutcome, type DispatchResult, type DispatchState, type MemberRun } from "../src/host/dispatch.ts";
+import { DISPATCH_NEXT, DispatchDesk, REPLY_MAX, SlotPool, clipReply, memberSessionDir, parseDispatch, replyEnvelope, type DispatchOutcome, type DispatchResult, type DispatchState, type MemberRun } from "../src/host/dispatch.ts";
 import type { TeamBook } from "../src/kernel/types.ts";
 import { ModelSelector } from "../src/model-selector.ts";
 import type { Member } from "../src/teams.ts";
@@ -393,6 +393,46 @@ test("叫停任务时先停助手再停成员：助手不会在被停之前拿�
 	await until(() => started.live()?.[0]?.state === "running", "成员在做");
 	await started.host.workers.stop(started.ticketId());
 	assert.equal(helperStopsAtAbort, 1, "成员被中止时助手已经收到停止");
+});
+
+/** A member whose process needs `ms` to die after it is told to stop, like Pi between SIGTERM and exit. */
+const slowToDie = (ms: number, gone: string[]): Runner => (run) =>
+	new Promise((_, fail) => run.signal.addEventListener("abort", () => setTimeout(() => (gone.push(run.member.name), fail(run.signal.reason)), ms)));
+
+test("叫停任务要等成员进程真的没了才算停完，哪怕助手进程先退出", async (t) => {
+	const gone: string[] = [];
+	const { host, live, ticketId } = await dispatching(t, slowToDie(200, gone), two);
+	await until(() => live()?.filter((d) => d.state === "running").length === 2, "两位都在做");
+	await host.workers.stop(ticketId());
+	assert.deepEqual(gone.sort(), ["market-analyst", "news-researcher"], "stop() 返回时两位成员的进程都已经结束");
+});
+
+test("助手崩溃后马上停宿主：宿主等那些成员进程没了才停完", async (t) => {
+	const gone: string[] = [];
+	const { host, helper, live } = await dispatching(t, slowToDie(200, gone), [two[0]]);
+	await until(() => live()?.[0]?.state === "running", "成员在做");
+	helper().crash();
+	await host.stop();
+	assert.deepEqual(gone, ["market-analyst"]);
+});
+
+test("结束一个任务的派活可以调两次：两次都等到成员进程没了才返回，之后同一任务还能再派", async () => {
+	const gone: string[] = [];
+	const desk = new DispatchDesk({ timeoutMs: 5000, maxConcurrent: 4, onChange() {}, run: slowToDie(150, gone) });
+	const order = { ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", basis: "request" as const, model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", onUsage() {} };
+	const first = desk.dispatch(order);
+	await tick();
+	const ends = [desk.end("tkt_1"), desk.end("tkt_1")];
+	await ends[1];
+	assert.deepEqual(gone, ["news-researcher"], "第二次调用也要等");
+	await ends[0];
+	assert.equal((await first).details.state, "stopped");
+	await desk.end("tkt_1");
+	const again = desk.dispatch({ ...order, callId: "c2" });
+	await tick();
+	assert.deepEqual(desk.live(), { tkt_1: [{ callId: "c2", title: "新闻研究员", state: "running" }] }, "停完之后的新派活不受上一次停止影响");
+	await desk.end("tkt_1");
+	assert.equal((await again).details.state, "stopped");
 });
 
 test("宿主停止：在跑的成员全部中止", async (t) => {
