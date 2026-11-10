@@ -127,7 +127,17 @@
 		#composer { flex: 1; border: 0; outline: none; resize: none; font: inherit; font-size: 14px; line-height: 1.6; background: transparent; color: var(--ink); max-height: 30vh; }
 		#send { font-size: 14px; font-weight: 600; min-height: 44px; padding: 0 20px; border-radius: 12px; border: 0; background: var(--accent); color: #fff; }
 		#send:disabled { opacity: 0.6; cursor: default; }
-		#say-status { font-size: 12px; color: var(--muted); margin-top: 8px; }
+		.say-row { display: flex; align-items: baseline; gap: 12px; margin-top: 8px; }
+		#say-status { font-size: 12px; color: var(--muted); }
+		#clear { margin-left: auto; flex: none; font-size: 12px; padding: 2px 8px; border: 0; border-radius: 6px; background: none; color: var(--muted); }
+		#clear:hover:not(:disabled) { color: var(--accent-ink); background: var(--accent-bg); }
+		#clear:disabled { opacity: 0.5; cursor: default; }
+		.cleared-bar { display: flex; align-items: center; gap: 10px; width: 100%; padding: 0; border: 0; background: none; font-size: 12px; color: var(--muted); }
+		.cleared-bar::before, .cleared-bar::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+		.cleared-bar:hover { color: var(--accent-ink); }
+		.earlier { display: flex; flex-direction: column; gap: 16px; }
+		.earlier:empty { display: none; }
+		.earlier .line { opacity: 0.6; }
 		#say-status[data-state="delivered"] { color: var(--ok-ink); }
 		#say-status[data-state="maybe_lost"], #say-status[data-state="rejected"] { color: var(--warn-ink); }
 		#say-status[data-state="expired"] { color: var(--bad-ink); }
@@ -217,7 +227,10 @@
 					<textarea id="composer" rows="2" placeholder="描述要做的事，例如：读取 example.com 的网页标题"></textarea>
 					<button id="send" type="submit">发送</button>
 				</div>
-				<div id="say-status" data-state="idle" aria-live="polite">任务在后台进行，完成或需要你决定时会通知你。</div>
+				<div class="say-row">
+					<div id="say-status" data-state="idle" aria-live="polite">任务在后台进行，完成或需要你决定时会通知你。</div>
+					<button id="clear" type="button" disabled>清屏</button>
+				</div>
 			</form>
 		</main>
 		<aside id="how" aria-label="执行过程">

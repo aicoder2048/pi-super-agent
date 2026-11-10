@@ -4,7 +4,7 @@ import { join } from "node:path";
 import http from "node:http";
 import { connect, createServer } from "node:net";
 import test, { mock, type TestContext } from "node:test";
-import type { HostToClient, TodayCounts } from "../src/client/protocol.ts";
+import type { ConversationLine, HostToClient, TodayCounts } from "../src/client/protocol.ts";
 import type { DashboardRow, Routes } from "../src/kernel/types.ts";
 import type { Dispatching } from "../src/host/dispatch.ts";
 import { formatInputs } from "../src/host/workers.ts";
@@ -156,6 +156,95 @@ test("页面：选项按钮也挂在对话里幕僚长转述这个问题的那�
 	const early = page.emptyView();
 	page.applyMessage(early, snapshot({ conversation: [{ id: "rpl_old", who: "router", text: "收到", at: 5 * MIN, ticketId: "tkt_a" }], board: [row({ id: "tkt_a", stage: "awaiting_answer", question: asked() })] }), 0);
 	assert.equal(page.choicesInConversation(early, new Map()).size, 0, "提问之前的话下面不挂");
+});
+
+const AT_1405 = Date.parse("2026-11-09T14:05:00+08:00");
+const line = (id: string, text: string, at = AT_1405 - MIN, over: Partial<ConversationLine> = {}): ConversationLine => ({ id, who: id.startsWith("rpl") ? "router" : "user", text, at, ...over });
+const clearedFrame = (hidden: ConversationLine[], conversation: ConversationLine[] = [], at = AT_1405): HostToClient => ({ type: "cleared", conversation, cleared: { at, lines: hidden } });
+
+test("页面：收到 cleared 帧后对话只剩帧里带的行，顶部细线是「已清屏 · HH:MM · 显示之前的」", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, snapshot({ conversation: [line("trg_1", "查天气"), line("rpl_1", "好的")], cleared: null }), 0);
+	assert.equal(page.clearedBar(view, AT_1405, "Asia/Shanghai"), null);
+	assert.deepEqual(page.applyMessage(view, clearedFrame([line("trg_1", "查天气"), line("rpl_1", "好的")], [line("rpl_2", "还在路上的回复")]), 0), ["conversation"]);
+	assert.deepEqual(texts(view), ["router:还在路上的回复"]);
+	assert.deepEqual(page.clearedBar(view, AT_1405 + 60 * MIN, "Asia/Shanghai"), { text: "已清屏 · 14:05 · 显示之前的", expanded: false });
+	assert.equal(page.clearedBar(view, AT_1405 + 24 * 60 * MIN, "Asia/Shanghai")?.text, "已清屏 · 11月9日 14:05 · 显示之前的", "不是今天清的屏写上日期");
+});
+
+test("页面：点细线只在本页展开被清掉的行，再点收起；新的清屏把展开收回", () => {
+	const view = page.emptyView();
+	const hidden = [line("trg_1", "查天气"), line("rpl_1", "好的")];
+	page.applyMessage(view, clearedFrame(hidden), 0);
+	assert.deepEqual(page.earlierLines(view), []);
+	page.toggleEarlier(view);
+	assert.deepEqual(page.earlierLines(view), hidden);
+	assert.equal(page.clearedBar(view, AT_1405, "Asia/Shanghai")?.text, "已清屏 · 14:05 · 收起");
+	assert.equal(page.clearedBar(view, AT_1405, "Asia/Shanghai")?.expanded, true);
+	page.toggleEarlier(view);
+	assert.deepEqual(page.earlierLines(view), []);
+	page.toggleEarlier(view);
+	page.applyMessage(view, clearedFrame([...hidden, line("trg_2", "又一句")], [], AT_1405 + 1), 0);
+	assert.deepEqual(page.earlierLines(view), []);
+	assert.equal(page.clearedBar(view, AT_1405, "Asia/Shanghai")?.expanded, false);
+	const never = page.emptyView();
+	page.toggleEarlier(never);
+	assert.deepEqual(page.earlierLines(never), [], "从没清过屏时没有可展开的");
+});
+
+test("页面：重连快照的清屏时间和本页不同就用快照替换对话，相同就照旧只补没见过的行", () => {
+	const missed = page.emptyView();
+	page.applyMessage(missed, snapshot({ conversation: [line("trg_1", "查天气")], cleared: null }), 0);
+	page.applyMessage(missed, snapshot({ conversation: [line("trg_2", "新的一句")], cleared: { at: AT_1405, lines: [line("trg_1", "查天气")] } }), 0);
+	assert.deepEqual(texts(missed), ["user:新的一句"]);
+	assert.equal(page.clearedBar(missed, AT_1405, "Asia/Shanghai")?.text, "已清屏 · 14:05 · 显示之前的");
+	const same = page.emptyView();
+	page.applyMessage(same, clearedFrame([line("trg_1", "查天气")], [line("trg_2", "新的一句")]), 0);
+	page.applyMessage(same, { type: "user", id: "trg_3", text: "第三句", at: AT_1405 + 2 }, 0);
+	page.toggleEarlier(same);
+	page.applyMessage(same, snapshot({ conversation: [line("trg_2", "新的一句"), line("trg_4", "断线时说的")], cleared: { at: AT_1405, lines: [line("trg_1", "查天气")] } }), 0);
+	assert.deepEqual(texts(same), ["user:新的一句", "user:第三句", "user:断线时说的"]);
+	assert.equal(page.earlierLines(same).length, 1, "同一次清屏，本页的展开不收回");
+});
+
+test("页面：老宿主的快照没有 cleared 字段时，当作从没清过屏，没有细线", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, { type: "user", id: "trg_2", text: "第二句", at: 2 }, 0);
+	const old = snapshot({ conversation: [line("trg_1", "第一句", 1), line("trg_2", "第二句", 2)] });
+	delete (old as { cleared?: unknown }).cleared;
+	page.applyMessage(view, old, 0);
+	assert.equal(page.clearedBar(view, AT_1405), null);
+	assert.deepEqual(texts(view), ["user:第二句", "user:第一句"]);
+});
+
+test("页面：被清掉的那句幕僚长回复下不再放选项按钮，看板卡片上仍有", () => {
+	const view = page.emptyView();
+	const question = line("rpl_q", "要看哪部分？", 11 * MIN, { ticketId: "tkt_a" });
+	page.applyMessage(view, snapshot({ conversation: [question], board: [row({ id: "tkt_a", stage: "awaiting_answer", question: asked() })] }), 0);
+	assert.equal(page.choicesInConversation(view, new Map()).size, 1);
+	page.applyMessage(view, clearedFrame([question]), 0);
+	assert.equal(page.choicesInConversation(view, new Map()).size, 0);
+	assert.notEqual(page.leftColumn(view, 0).needsYou[0].choice, null);
+});
+
+test("页面：对话为空时清屏按钮不可点", () => {
+	const view = page.emptyView();
+	assert.equal(page.canClear(view), false);
+	page.applyMessage(view, { type: "user", id: "trg_1", text: "你好", at: 1 }, 0);
+	assert.equal(page.canClear(view), true);
+	page.applyMessage(view, clearedFrame([line("trg_1", "你好")]), 0);
+	assert.equal(page.canClear(view), false);
+});
+
+test("页面：发出时没收到确认的那句话，中间清过屏也照样在之后到达的行里对上", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, snapshot({ conversation: [line("trg_1", "查天气"), line("trg_2", "再查一次")] }), 0);
+	const seen = new Set(view.lines.keys());
+	page.applyMessage(view, clearedFrame([line("trg_1", "查天气"), line("trg_2", "再查一次")]), 0);
+	page.applyMessage(view, { type: "user", id: "trg_3", text: "明天呢", at: AT_1405 + 1 }, 0);
+	const arrived = page.linesNotIn(view, seen);
+	assert.deepEqual(arrived.map((l) => l.text), ["明天呢"]);
+	assert.deepEqual(page.settleSay({ state: "maybe_lost", text: "明天呢" }, "明天呢", arrived), { state: "delivered", composer: "" });
 });
 
 test("页面：reply 帧带的 ticketId 留在对话行上", () => {

@@ -3,6 +3,7 @@
 /** @typedef {import("../kernel/types.ts").DashboardRow} DashboardRow */
 /** @typedef {import("../kernel/types.ts").InputKind} InputKind */
 /** @typedef {import("../client/protocol.ts").ConversationLine} ConversationLine */
+/** @typedef {import("../client/protocol.ts").Cleared} Cleared */
 /** @typedef {import("../client/protocol.ts").Duty} Duty */
 /** @typedef {import("../kernel/types.ts").HelpersToday} HelpersToday */
 /** @typedef {import("../kernel/types.ts").Routes} Routes */
@@ -60,11 +61,13 @@ const GROUP = {
  * @property {Dispatching} dispatching
  * @property {MemberCapBoard} memberCap null from a host that cannot dispatch, or one older than this field
  * @property {Map<string, Map<string, BoardDispatch>>} lastOnBoard each unfinished ticket's dispatches as the board last listed them, by ticket then call id
+ * @property {Cleared | null} cleared the host's latest 清屏 (its `at` names it), or null
+ * @property {boolean} showEarlier this tab shows the lines that 清屏 hid; only this tab, until the next 清屏 or a reload
  */
 
 /** @returns {View} */
 export function emptyView() {
-	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {}, dispatching: {}, memberCap: null, lastOnBoard: new Map() };
+	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {}, dispatching: {}, memberCap: null, lastOnBoard: new Map(), cleared: null, showEarlier: false };
 }
 
 /** @param {View} view @param {Dispatching | undefined} dispatching */
@@ -85,17 +88,31 @@ function addLine(view, line) {
 	if (!view.lines.has(line.id)) view.lines.set(line.id, line);
 }
 
+/** @param {View} view @param {ConversationLine[]} lines @param {Cleared | null} cleared */
+function resetConversation(view, lines, cleared) {
+	view.lines = new Map(lines.map((l) => [l.id, l]));
+	view.cleared = cleared;
+	view.showEarlier = false;
+}
+
 /**
  * @param {View} view @param {HostToClient} message @param {number} now
  * @returns {("conversation" | "left" | "header")[]}
  */
 export function applyMessage(view, message, now) {
 	switch (message.type) {
-		case "snapshot":
-			for (const line of message.conversation) addLine(view, line);
+		case "snapshot": {
+			// A host older than this field has never cleared.
+			const cleared = message.cleared ?? null;
+			if (cleared?.at !== view.cleared?.at) resetConversation(view, message.conversation, cleared);
+			else for (const line of message.conversation) addLine(view, line);
 			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, memberCap: message.memberCap ?? null, receivedAt: now });
 			setDispatching(view, message.dispatching);
 			return ["conversation", "left", "header"];
+		}
+		case "cleared":
+			resetConversation(view, message.conversation, message.cleared);
+			return ["conversation"];
 		case "user":
 			addLine(view, { id: message.id, who: "user", text: message.text, at: message.at });
 			return ["conversation"];
@@ -605,6 +622,36 @@ export function helperStrip(view, now) {
 
 /** @param {number} ms @param {string} [timeZone] the page's own zone when omitted */
 const clockTime = (ms, timeZone) => new Date(ms).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone });
+
+/** @param {number} ms @param {string} [timeZone] */
+const dayOf = (ms, timeZone) => new Date(ms).toLocaleDateString("zh-CN", { timeZone });
+
+/**
+ * The thin line at the top of the conversation after a 清屏, or null.
+ * @param {View} view @param {number} now @param {string} [timeZone] @returns {{ text: string, expanded: boolean } | null}
+ */
+export function clearedBar(view, now, timeZone) {
+	if (!view.cleared) return null;
+	const { at } = view.cleared;
+	const day = dayOf(at, timeZone) === dayOf(now, timeZone) ? "" : `${new Date(at).toLocaleDateString("zh-CN", { month: "long", day: "numeric", timeZone })} `;
+	return { text: `已清屏 · ${day}${clockTime(at, timeZone)} · ${view.showEarlier ? "收起" : "显示之前的"}`, expanded: view.showEarlier };
+}
+
+/** The hidden lines this tab shows above the conversation, oldest first; empty unless expanded. @param {View} view */
+export const earlierLines = (view) => (view.showEarlier && view.cleared ? view.cleared.lines : []);
+
+/** @param {View} view */
+export const toggleEarlier = (view) => {
+	view.showEarlier = view.cleared !== null && !view.showEarlier;
+};
+
+/** @param {View} view */
+export const canClear = (view) => view.lines.size > 0;
+
+export const CLEAR_FAILED = "清屏没有成功，请稍后再试。";
+
+/** The lines the page shows now whose id is not in `seen`, in order. @param {View} view @param {Set<string>} seen */
+export const linesNotIn = (view, seen) => [...view.lines.values()].filter((l) => !seen.has(l.id));
 
 /** @param {DashboardRow | undefined} row @param {number} now @param {number} receivedAt @param {string} [timeZone] */
 export function lifecycleLine(row, now, receivedAt, timeZone) {
