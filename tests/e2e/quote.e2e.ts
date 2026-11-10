@@ -290,6 +290,8 @@ test("引用：幕僚长那句话的「引用」在气泡右下角，不压住�
 				assert.ok(e.button.top >= e.bubble.bottom - 0.5, `「引用」顶 ${e.button.top}，气泡底 ${e.bubble.bottom}`);
 				assert.ok(e.choices.length === 3);
 				for (const c of e.choices) assert.equal(hit(e.button, c), false, `「引用」${JSON.stringify(e.button)} 压住了选项 ${JSON.stringify(c)}`);
+				const gap = Math.min(...e.choices.map((c) => c.top)) - e.bubble.bottom;
+				assert.ok(gap <= 12, `选项离气泡 ${gap}px，「引用」不该在气泡和选项之间占一行`);
 			});
 			await step("悬停我说的「查天气」：「引用」仍在我这句的右下角", async (page) => {
 				const line = page.locator(".thread > .line.user", { hasText: "查天气" });
