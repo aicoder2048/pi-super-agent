@@ -13,7 +13,7 @@
 /** @typedef {import("../host/dispatch.ts").Dispatching} Dispatching */
 /** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
 
-import { INPUT_LABEL, blocks, clip, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, shortId, stallMinutes, textOf } from "../client/board-format.mjs";
+import { INPUT_LABEL, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, shortId, stallMinutes, textOf, toolStep } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -320,6 +320,9 @@ function dispatchEntry(details) {
 	};
 }
 
+/** @param {Record<string, unknown>} a @returns {DispatchEntry} */
+const pendingDispatch = (a) => ({ title: "", task: String(a.task ?? ""), reply: "", state: "queued", stateText: DISPATCH_STATE.queued, note: "", tokens: "" });
+
 /** @type {Record<InputKind, string>} */
 const INPUT_STEP = {
 	brief: "接收任务",
@@ -331,50 +334,7 @@ const INPUT_STEP = {
 	bg_result: "后台命令完成",
 };
 
-/** @type {Record<string, string>} */
-const LOOKUP_TITLE = { quote: "查询报价", bars: "查询 K 线", session: "查询交易时段" };
-
-/** @param {Record<string, unknown>} a */
-function lookupStep(a) {
-	const args = a.args && typeof a.args === "object" ? /** @type {Record<string, unknown>} */ (a.args) : {};
-	const op = typeof a.op === "string" ? a.op : "";
-	const symbols = Array.isArray(args.symbols) ? args.symbols : typeof args.symbol === "string" ? [args.symbol] : [];
-	return {
-		title: LOOKUP_TITLE[op] ?? `查询 ${clip(op, 20)}`,
-		detail: clip(symbols.filter((s) => typeof s === "string").join(" "), 60),
-	};
-}
-
 const STEP_BY_LABEL = new Map(/** @type {[InputKind, string][]} */ (Object.entries(INPUT_LABEL)).map(([kind, label]) => [label, INPUT_STEP[kind]]));
-
-/** @type {Record<string, (a: Record<string, unknown>) => { title: string, detail: string, dispatch?: DispatchEntry }>} */
-const TOOL_STEP = {
-	read: (a) => ({ title: "读取文件", detail: baseName(a.path) }),
-	grep: (a) => ({ title: "搜索文件内容", detail: clip(a.pattern, 40) }),
-	find: (a) => ({ title: "查找文件", detail: clip(a.pattern, 40) }),
-	ls: (a) => ({ title: "列出目录", detail: baseName(a.path) }),
-	bash: (a) => ({ title: "执行命令", detail: clip(firstLine(a.command), 60) }),
-	edit: (a) => ({ title: "修改文件", detail: baseName(a.path) }),
-	write: (a) => ({ title: "写入文件", detail: baseName(a.path) }),
-	web_get: (a) => ({ title: "读取网页", detail: hostOf(a.url) }),
-	lookup: (a) => lookupStep(a),
-	read_ticket: () => ({ title: "查阅任务记录", detail: "" }),
-	hand_back: () => ({ title: "交回幕僚长", detail: "" }),
-	bg_start: (a) => ({ title: "启动后台命令", detail: clip(firstLine(a.command), 60) }),
-	bg_status: () => ({ title: "查看后台命令", detail: "" }),
-	bg_stop: () => ({ title: "停止后台命令", detail: "" }),
-	report: (a) => ({ title: reportTitle(a), detail: clip(a.question || a.summary, 120) }),
-	dispatch_agent: (a) => ({ title: "派活", detail: "", dispatch: { title: "", task: String(a.task ?? ""), reply: "", state: "queued", stateText: DISPATCH_STATE.queued, note: "", tokens: "" } }),
-};
-
-/** @param {Record<string, unknown>} a */
-function reportTitle(a) {
-	if (a.question) return "提出问题";
-	if (a.status === "ready") return "提交结果";
-	if (a.status === "blocked" || a.status === "failed") return "报告受阻";
-	if (a.status === "no_action") return "无需处理";
-	return "汇报进度";
-}
 
 const RAW_LIMIT = 2000;
 
@@ -394,7 +354,7 @@ function stepsFrom(message) {
 		if (c.type === "text" && c.text?.trim()) return [{ title: "思考", detail: clip(c.text.trim(), 200), state: /** @type {const} */ ("ok"), raw: clip(c.text, RAW_LIMIT) }];
 		if (c.type !== "toolCall" || !c.name) return [];
 		const args = typeof c.arguments === "object" && c.arguments !== null ? /** @type {Record<string, unknown>} */ (c.arguments) : {};
-		const known = TOOL_STEP[c.name]?.(args) ?? { title: `调用工具 ${c.name}`, detail: "" };
+		const known = c.name === "dispatch_agent" ? { ...toolStep(c.name, args), dispatch: pendingDispatch(args) } : toolStep(c.name, args);
 		return [{ ...known, state: /** @type {const} */ ("pending"), raw: clip(`${c.name} ${JSON.stringify(c.arguments ?? {}, null, 2)}`, RAW_LIMIT), tool: c.name, ...(c.id ? { callId: c.id } : {}) }];
 	});
 }
@@ -596,15 +556,6 @@ const STALE_AFTER_MS = 35_000;
 export function isStale(lastFrameAt, now) {
 	return now - lastFrameAt > STALE_AFTER_MS;
 }
-
-/** @param {unknown} s */
-const firstLine = (s) => (typeof s === "string" ? (s.split("\n").find((l) => l.trim()) ?? "").trim() : "");
-
-/** @param {unknown} p */
-const baseName = (p) => (typeof p === "string" ? clip(p.split("/").filter(Boolean).pop() ?? p, 60) : "");
-
-/** @param {unknown} u */
-const hostOf = (u) => (typeof u === "string" ? (URL.parse(u)?.host ?? clip(u, 60)) : "");
 
 /**
  * The safe Markdown subset the page renders, as data the page turns into DOM nodes (never HTML).
