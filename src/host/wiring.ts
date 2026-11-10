@@ -105,6 +105,13 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		watching: watchedSources(modules, timers),
 		feeds,
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
+		dispatch: {
+			crewOf: (team) => roster.team(team)?.crew,
+			timeoutMs: config.dispatchTimeoutSeconds * 1000,
+			codingTimeoutMs: config.dispatchCodingTimeoutSeconds * 1000,
+			stallMs: config.dispatchStallSeconds * 1000,
+			maxConcurrent: config.maxConcurrentExperts,
+		},
 		createRouter: (deps) =>
 			Router.create({
 				kernel: deps.kernel,

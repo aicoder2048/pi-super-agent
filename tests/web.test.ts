@@ -6,6 +6,7 @@ import { connect, createServer } from "node:net";
 import test, { mock, type TestContext } from "node:test";
 import type { HostToClient, TodayCounts } from "../src/client/protocol.ts";
 import type { DashboardRow, Routes } from "../src/kernel/types.ts";
+import type { Dispatching } from "../src/host/dispatch.ts";
 import { formatInputs } from "../src/host/workers.ts";
 import { INPUT_KINDS } from "../src/kernel/types.ts";
 import { ConfigError } from "../src/config-error.ts";
@@ -26,8 +27,8 @@ function row(over: Partial<DashboardRow> = {}): DashboardRow {
 const zeroToday = (): TodayCounts => ({ byDisposition: { ignored: 0, delivered: 0, to_router: 0, opened_ticket: 0, handed_over: 0, router_ignored: 0 }, bySource: {} });
 const duty = { since: 0, resumed: 0 };
 const noHelpers = { count: 0, tokens: 0 };
-const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, helpers: noHelpers, watching: [], routes: {}, ...over });
-const board = (rows: DashboardRow[], today = zeroToday(), helpers = noHelpers, routes: Routes = {}): HostToClient => ({ type: "board", rows, today, duty, helpers, routes });
+const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, helpers: noHelpers, watching: [], routes: {}, dispatching: {}, ...over });
+const board = (rows: DashboardRow[], today = zeroToday(), helpers = noHelpers, routes: Routes = {}, dispatching: Dispatching = {}): HostToClient => ({ type: "board", rows, today, duty, helpers, routes, dispatching });
 const texts = (view: ReturnType<typeof page.emptyView>) => [...view.lines.values()].map((l) => `${l.who}:${l.text}`);
 const withRows = (rows: DashboardRow[], now = 0) => {
 	const view = page.emptyView();
@@ -291,6 +292,15 @@ test("页面：report 带问题是提出问题，ready 是提交结果，blocked
 	]);
 });
 
+test("页面：汇报那一步用整段话渲染 Markdown：超过 120 字的汇报里表格和链接不被从中间截断", () => {
+	const summary = `${"先说结论，这段话有意写得很长。".repeat(8)}\n\n| 指标 | NVDA |\n|--|--|\n| 跌幅 | 4.2% |\n\n来源 [路透](https://reuters.com/markets/nvda)`;
+	const [step] = watched([tool("report", { status: "progress", summary })]);
+	assert.equal(step.markdown, true);
+	const blocks = page.parseMarkdown(step.detail);
+	assert.deepEqual(blocks.map((b) => b.kind), ["p", "table", "p"]);
+	assert.deepEqual(blocks[2], { kind: "p", spans: [{ text: "来源 " }, { text: "路透" }, { text: "（https://reuters.com/markets/nvda）" }] });
+});
+
 test("页面：工具结果并进最近一个同名的待完成步骤，出错的标成 error；思考步骤里不出现 thinking", () => {
 	const steps = watched([
 		{ role: "assistant", content: [{ type: "thinking", thinking: "内心独白" }, { type: "text", text: "我先打开网页" }, { type: "toolCall", name: "web_get", arguments: { url: "https://a.example" } }] },
@@ -304,11 +314,18 @@ test("页面：工具结果并进最近一个同名的待完成步骤，出错�
 	assert.doesNotMatch(JSON.stringify(steps), /内心独白/);
 });
 
+test("页面：「重启后恢复」那一步下面写中文，不露出给模型看的英文说明；英文原话留在原始记录里", () => {
+	const note = "process restarted; inspect your workdir before repeating any external action";
+	const [step] = watched([{ role: "user", content: formatInputs({} as never, [{ id: "inp", ticketId: "tkt_1", kind: "recovery", triggerId: null, body: note, createdAt: 0, deliveredAt: null }]) }]);
+	assert.deepEqual([step.title, step.detail], ["重启后恢复", "宿主重启过，助手先看看做到哪了再接着做"]);
+	assert.ok(step.raw.includes(note));
+});
+
 test("页面：每种任务输入（formatInputs 生成的方括号标签）都有专门的步骤标题", () => {
 	const titles = INPUT_KINDS.map((kind) => {
 		const content = formatInputs({} as never, [{ id: "inp", ticketId: "tkt_1", kind, triggerId: null, body: "读取网页标题\n第二行", createdAt: 0, deliveredAt: null }]);
 		const [step] = watched([{ role: "user", content }]);
-		assert.equal(step.detail, "读取网页标题", kind);
+		if (kind !== "recovery") assert.equal(step.detail, "读取网页标题", kind);
 		return step.title;
 	});
 	assert.equal(new Set(titles).size, INPUT_KINDS.length, "每种输入各有标题；若有一种落到兜底，会和 trigger 的「收到新消息」重复");
@@ -351,7 +368,7 @@ test("页面：助手条每位在岗助手一枚小卡（●运行中 ◐空闲 
 		row({ id: "tkt_stp", stage: "stopped", workerState: "running", endedAt: 9000, helper: { name: "拾遗", role: "rule", seq: 2 } }),
 	], zeroToday(), { count: 6, tokens: 12_345 }), 1000);
 	const strip = page.helperStrip(view, 3000);
-	assert.deepEqual(strip.chips.map(({ id, ...shown }) => shown), [
+	assert.deepEqual(strip.chips.map(({ id, members, ...shown }) => shown), [
 		{ duty: "running", mark: "●", state: "运行中", name: "青檀", role: "对话助手 #1", elapsed: "7秒", tokens: "1.5k tokens" },
 		{ duty: "idle", mark: "◐", state: "空闲", name: "远山", role: "行情助手 #2", elapsed: "1分2秒", tokens: "0 tokens" },
 		{ duty: "queued", mark: "○", state: "排队", name: "青檀", role: "观察助手 #1", elapsed: "0秒", tokens: "1.5k tokens" },
@@ -1174,6 +1191,40 @@ test("网关：两个连接看不同任务，各自只收到自己的；关掉�
 	assert.equal(a.got.length, 2, "关掉的连接不再收到");
 });
 
+test("网关：成员干活时它的每条消息实时送到正在看这个任务的页面，带着是哪次派活的第几条；别的任务的页面收不到", async (t) => {
+	const crew = [{ name: "news-researcher", title: "新闻研究员", description: "查新闻", tools: undefined, skills: [], model: undefined, prompt: "", file: "/agents/news.md" }];
+	const brain = (cards: string[]) => cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: card.match(/trg_[\w-]+/)![0], title: card.includes("新闻") ? "查新闻" : "别的事", brief: "b", team: card.includes("新闻") ? "新闻队" : "默认" }] } }] : []));
+	const web = await webHost(t, brain, {
+		teams: { kinds: new Map([["默认", "solo"], ["新闻队", "crew"]]), pinned: new Map() },
+		dispatch: { crewOf: (team) => (team === "新闻队" ? crew : []), timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4 },
+	});
+	web.host.say("查新闻");
+	web.host.say("别的事");
+	await until(() => web.spawner.workers.size === 2, "两个助手");
+	const id = (title: string) => web.host.kernel.listTickets().find((r) => r.title === title)!.id;
+	const watch = (ticketId: string) => sse(`${web.url.origin}/transcript?token=${web.token}&ticket=${ticketId}`);
+	const [news, other] = [watch(id("查新闻")), watch(id("别的事"))];
+	t.after(() => { news.close(); other.close(); });
+	await until(() => news.got.length === 1 && other.got.length === 1, "两份历史");
+	assert.deepEqual(news.got[0], { type: "transcript_history", ticketId: id("查新闻"), messages: [], team: { titles: { "news-researcher": "新闻研究员" }, steps: {} } });
+	let finish!: () => void;
+	web.spawner.runner = async (run) => {
+		run.onMessage(said("成员先看看"));
+		run.onMessage(said("成员找到了"));
+		await new Promise<void>((done) => (finish = done));
+		return "答";
+	};
+	const result = web.spawner.workers.get(id("查新闻"))!.request("worker.dispatch", { agent: "news-researcher", task: "查", callId: "c9" });
+	await until(() => news.got.length === 3, "两条成员消息");
+	assert.deepEqual(news.got.slice(1), [
+		{ type: "transcript", ticketId: id("查新闻"), message: said("成员先看看"), member: { callId: "c9", index: 0 } },
+		{ type: "transcript", ticketId: id("查新闻"), message: said("成员找到了"), member: { callId: "c9", index: 1 } },
+	]);
+	assert.equal(other.got.length, 1);
+	finish();
+	await result;
+});
+
 test("网关：Worker 写到一半被杀、会话文件最后一行不完整时，历史只含完整的行，宿主照常服务", async (t) => {
 	const { open, history, sessionFile, watch, at } = await watchHost(t);
 	const { id } = await open("读网页");
@@ -1215,4 +1266,246 @@ test("网关：/transcript 没有 token 401；ticket 不像任务编号 400；�
 	await until(() => noToken.status === 401 && bad.status === 400, "拒绝");
 	await until(() => empty.got.length === 1, "空历史");
 	assert.deepEqual(empty.got[0], { type: "transcript_history", ticketId: "tkt_nothere", messages: [] });
+});
+
+const dispatchCall = (id: string, agent: string, task: string, timestamp?: number) => ({ role: "assistant", content: [{ type: "toolCall", id, name: "dispatch_agent", arguments: { agent, task } }], ...(timestamp !== undefined && { timestamp }) });
+const dispatchResult = (toolCallId: string, details: Record<string, unknown> | undefined, isError = false) => ({ role: "toolResult", toolName: "dispatch_agent", toolCallId, isError, content: [{ type: "text", text: "成员回复 …" }], ...(details && { details }) });
+const outcome = (title: string, state: string, reply: string | null, tokensIn: number, note?: string, tokensOut = 0) =>
+	({ kind: "dispatch", member: "x-member", title, task: `给${title}的事`, state, reply, tokensIn, tokensOut, ms: 1000, waitMs: 0, ...(note && { note }) });
+const onBoard = (callId: string, title: string, state: Dispatching[string][number]["state"], over: Partial<Dispatching[string][number]> = {}): Dispatching[string][number] => ({ callId, title, state, step: "", quietMs: 0, tokens: 0, ...over });
+const TITLES = { "market-analyst": "行情分析师", "news-researcher": "新闻研究员" };
+const teamHistory = (ticketId: string, messages: unknown[], steps: Record<string, unknown[]> = {}): HostToClient => ({ type: "transcript_history", ticketId, messages: messages as never, team: { titles: TITLES, steps: steps as never } });
+const fromMember = (ticketId: string, callId: string, index: number, message: unknown): HostToClient => ({ type: "transcript", ticketId, message: message as never, member: { callId, index } });
+const shown = (steps: page.Step[]) => steps.map((s) => [s.detail, s.state]);
+
+test("页面：成员的工具还在跑时，小卡下写这一步已经跑了多久，不写多久前有动静；工具返回后换回多久前", () => {
+	const view = page.emptyView();
+	const frame = (over: Partial<Dispatching[string][number]>) => board([row({ id: "tkt_team" })], zeroToday(), noHelpers, {}, { tkt_team: [onBoard("c1", "技术分析师", "running", { step: "执行命令", ...over })] });
+	const label = (now: number) => page.helperStrip(view, now).chips[0].members[0].label;
+	page.applyMessage(view, frame({ quietMs: 119_000, toolMs: 120_000 }), 1000);
+	assert.equal(label(1000), "技术分析师 · 执行命令 · 已 2 分钟");
+	assert.equal(label(1000 + 65_000), "技术分析师 · 执行命令 · 已 3 分钟", "没有新帧时页面自己往后数");
+	page.applyMessage(view, frame({ quietMs: 0, toolMs: 0 }), 1000);
+	assert.deepEqual([label(1000), label(1999), label(2000), label(1000 + 42_000)], ["技术分析师 · 执行命令 · 刚刚", "技术分析师 · 执行命令 · 刚刚", "技术分析师 · 执行命令 · 已 1 秒", "技术分析师 · 执行命令 · 已 42 秒"], "不到一秒不写「已 0 秒」");
+	page.applyMessage(view, frame({ quietMs: 12_000 }), 1000);
+	assert.equal(label(1000), "技术分析师 · 执行命令 · 12 秒前");
+});
+
+test("页面：助手条的小卡下列出在干活和在排队的成员：干活的写职称、正在做什么、多久前有动静，排队的写「排队中」；做完的不列；老宿主的帧没有这一项也不出错", () => {
+	const view = page.emptyView();
+	const working = { tkt_team: [
+		onBoard("c1", "新闻研究员", "running", { step: "读取网页", quietMs: 12_000, tokens: 300 }),
+		onBoard("c2", "行情分析师", "running"),
+		onBoard("c3", "财报解读", "queued"),
+		onBoard("c4", "技术分析师", "done", { tokens: 900 }),
+	] };
+	page.applyMessage(view, board([row({ id: "tkt_team" }), row({ id: "tkt_solo" })], zeroToday(), noHelpers, {}, working), 1000);
+	const members = (now: number) => page.helperStrip(view, now).chips.map((c) => c.members.map((m) => [m.state, m.label]));
+	assert.deepEqual(members(1000), [[["running", "新闻研究员 · 读取网页 · 12 秒前"], ["running", "行情分析师 · 启动中 · 刚刚"], ["queued", "财报解读 · 排队中"]], []]);
+	assert.deepEqual(members(1000 + 50_000)[0].slice(0, 2), [["running", "新闻研究员 · 读取网页 · 1 分钟前"], ["running", "行情分析师 · 启动中 · 50 秒前"]], "没有新帧时页面自己往后数");
+	page.applyMessage(view, board([row({ id: "tkt_team" }), row({ id: "tkt_solo" })]), 0);
+	assert.deepEqual(page.helperStrip(view, 0).chips.map((c) => c.members), [[], []]);
+	const fromSnapshot = page.emptyView();
+	page.applyMessage(fromSnapshot, snapshot({ board: [row({ id: "tkt_team" })], dispatching: working }), 0);
+	assert.equal(page.helperStrip(fromSnapshot, 0).chips[0].members.length, 3);
+	const old = page.emptyView();
+	page.applyMessage(old, { ...board([row()]), dispatching: undefined } as never, 0);
+	assert.deepEqual(page.helperStrip(old, 0).chips[0].members, []);
+});
+
+test("页面：每次派活是一步；并行的两次派活按调用编号各自对上自己的结果，展开有成员职称、任务、回复、状态和用量（输入加输出），不出现成员的英文名", () => {
+	const w = page.emptyWatch("tkt_1");
+	page.applyTranscript(w, history("tkt_1", [{ role: "assistant", content: [...dispatchCall("c1", "market-analyst", "看盘面").content, ...dispatchCall("c2", "news-researcher", "查新闻").content] }]));
+	assert.deepEqual(w.steps.map((s) => [s.title, s.state, s.dispatch?.task]), [["派活", "pending", "看盘面"], ["派活", "pending", "查新闻"]]);
+	page.applyTranscript(w, live("tkt_1", dispatchResult("c1", outcome("行情分析师", "timed_out", null, 1200, "超过 15 分钟的时限", 300))));
+	page.applyTranscript(w, live("tkt_1", dispatchResult("c2", outcome("新闻研究员", "done", "**没有**重大新闻", 300))));
+	assert.deepEqual(w.steps.map((s) => [s.title, s.detail, s.state]), [["派活", "行情分析师 · 超时", "error"], ["派活", "新闻研究员 · 完成", "ok"]]);
+	assert.deepEqual(w.steps.map((s) => s.dispatch), [
+		{ title: "行情分析师", task: "给行情分析师的事", reply: "", state: "timed_out", stateText: "超时", note: "超过 15 分钟的时限", tokens: "1.5k tokens", steps: [] },
+		{ title: "新闻研究员", task: "给新闻研究员的事", reply: "**没有**重大新闻", state: "done", stateText: "完成", note: "", tokens: "300 tokens", steps: [] },
+	]);
+	assert.doesNotMatch(JSON.stringify(w.steps.map((s) => [s.title, s.detail, s.dispatch])), /market-analyst|news-researcher|x-member/);
+});
+
+test("页面：派活的每种结束状态都有中文说法，超时、无进展和出错带上原因；被宿主拒绝的派活就是一步普通的失败", () => {
+	const steps = watched([
+		dispatchCall("c1", "a", "t"), dispatchResult("c1", outcome("甲", "stopped", null, 0)),
+		dispatchCall("c2", "a", "t"), dispatchResult("c2", outcome("乙", "failed", null, 0, "429")),
+		dispatchCall("c3", "a", "t"), dispatchResult("c3", outcome("丙", "stalled", null, 0, "3 分钟没有进展")),
+		dispatchCall("c4", "nobody", "t"), dispatchResult("c4", undefined, true),
+	]);
+	assert.deepEqual(steps.map((s) => [s.detail, s.state, s.dispatch?.stateText, s.dispatch?.note]), [
+		["甲 · 已停止", "stopped", "已停止", ""], ["乙 · 出错", "error", "出错", "429"], ["丙 · 无进展", "error", "无进展", "3 分钟没有进展"], ["", "error", undefined, undefined],
+	]);
+});
+
+test("页面：还没结束的派活一开始就写成员的职称；状态跟着看板走；一批里先做完的那位马上写完成，整批回来之前不退回排队中", () => {
+	const view = page.emptyView();
+	const w = page.emptyWatch("tkt_1");
+	page.applyTranscript(w, teamHistory("tkt_1", [dispatchCall("c1", "market-analyst", "看盘面"), dispatchCall("c2", "news-researcher", "查新闻"), tool("read", { path: "a.md" })]));
+	const now = () => shown(page.liveSteps(w, view));
+	page.applyMessage(view, board([row({ id: "tkt_1", workerState: "running" })]), 0);
+	assert.deepEqual(now(), [["行情分析师 · 排队中", "pending"], ["新闻研究员 · 排队中", "pending"], ["a.md", "pending"]], "看板还没列出来时算排队中");
+	const frame = (...entries: Dispatching[string]) => page.applyMessage(view, board([row({ id: "tkt_1", workerState: "running" })], zeroToday(), noHelpers, {}, entries.length ? { tkt_1: entries } : {}), 0);
+	frame(onBoard("c1", "行情分析师", "running", { step: "查询报价", tokens: 500 }), onBoard("c2", "新闻研究员", "queued"));
+	assert.deepEqual(now().slice(0, 2), [["行情分析师 · 进行中", "pending"], ["新闻研究员 · 排队中", "pending"]]);
+	frame(onBoard("c1", "行情分析师", "done", { tokens: 1500 }), onBoard("c2", "新闻研究员", "running"));
+	assert.deepEqual(now().slice(0, 2), [["行情分析师 · 完成", "ok"], ["新闻研究员 · 进行中", "pending"]]);
+	assert.equal(page.liveSteps(w, view)[0].dispatch?.tokens, "1.5k tokens");
+	frame(onBoard("c1", "行情分析师", "done", { tokens: 1500 }), onBoard("c2", "新闻研究员", "timed_out", { note: "超过 15 分钟的时限" }));
+	frame();
+	assert.deepEqual(now().slice(0, 2), [["行情分析师 · 完成", "ok"], ["新闻研究员 · 超时", "error"]], "整批回来、结果还没到的那一瞬间，页面记得最后看到的状态");
+	assert.equal(page.liveSteps(w, view)[1].dispatch?.note, "超过 15 分钟的时限");
+	assert.equal(w.steps[0].dispatch?.state, "queued", "liveSteps 不改动记录本身");
+});
+
+test("页面：任务被叫停后，没做完的步骤不再转圈：派活写成员职称和已停止，别的步骤也算已停止", () => {
+	const view = page.emptyView();
+	const w = page.emptyWatch("tkt_1");
+	const memberSaid = { role: "assistant", content: [{ type: "toolCall", id: "m1", name: "web_get", arguments: { url: "https://example.com/n" } }], usage: { input: 600, output: 100 } };
+	page.applyTranscript(w, teamHistory("tkt_1", [dispatchCall("c1", "news-researcher", "查新闻"), tool("bash", { command: "sleep 300" })], { c1: [memberSaid] }));
+	page.applyMessage(view, board([row({ id: "tkt_1", workerState: "running" })], zeroToday(), noHelpers, {}, { tkt_1: [onBoard("c1", "新闻研究员", "running", { tokens: 700 })] }), 0);
+	page.applyMessage(view, board([row({ id: "tkt_1", stage: "stopped", workerState: "idle", endedAt: 5 })]), 0);
+	const steps = page.liveSteps(w, view);
+	assert.deepEqual(shown(steps), [["新闻研究员 · 已停止", "stopped"], ["sleep 300", "stopped"]]);
+	assert.deepEqual([steps[0].dispatch?.title, steps[0].dispatch?.stateText, steps[0].dispatch?.tokens], ["新闻研究员", "已停止", "700 tokens"]);
+});
+
+test("页面：宿主重启前发出、没等到结果的步骤一打开就是已停止，不先写排队中；重启后新发出的照常", () => {
+	const view = page.emptyView();
+	const w = page.emptyWatch("tkt_1");
+	page.applyMessage(view, { ...board([row({ id: "tkt_1", workerState: "running" })]), duty: { since: 5000, resumed: 1 } } as HostToClient, 0);
+	page.applyTranscript(w, teamHistory("tkt_1", [dispatchCall("c1", "news-researcher", "查新闻", 4000)]));
+	assert.deepEqual(shown(page.liveSteps(w, view)), [["新闻研究员 · 已停止", "stopped"]]);
+	page.applyTranscript(w, live("tkt_1", dispatchCall("c2", "news-researcher", "再查", 6000)));
+	assert.deepEqual(shown(page.liveSteps(w, view)), [["新闻研究员 · 已停止", "stopped"], ["新闻研究员 · 排队中", "pending"]]);
+});
+
+test("页面：记下的派活最后状态只留到任务结束：任务结束或不在看板上了，它的那些记录就丢掉，不随标签页一直攒着", () => {
+	const view = page.emptyView();
+	const rows = (ended: number | null) => [row({ id: "tkt_a", endedAt: ended, stage: ended === null ? "running" : "stopped" }), row({ id: "tkt_b" })];
+	const kept = () => [...view.lastOnBoard].map(([ticketId, calls]) => [ticketId, [...calls.keys()]]);
+	page.applyMessage(view, board(rows(null), zeroToday(), noHelpers, {}, { tkt_a: [onBoard("a1", "新闻研究员", "running")], tkt_b: [onBoard("b1", "行情分析师", "running")] }), 0);
+	page.applyMessage(view, board(rows(null), zeroToday(), noHelpers, {}, { tkt_a: [onBoard("a2", "新闻研究员", "done")] }), 0);
+	assert.deepEqual(kept(), [["tkt_a", ["a1", "a2"]], ["tkt_b", ["b1"]]], "任务还在做时，离开看板的派活仍记着，等它的结果到");
+	page.applyMessage(view, board(rows(5000)), 0);
+	assert.deepEqual(kept(), [["tkt_b", ["b1"]]]);
+	page.applyMessage(view, snapshot({ board: [] }), 0);
+	assert.deepEqual(kept(), []);
+});
+
+test("页面：宿主被杀时还在跑的派活，重启后写已停止，仍带着成员用掉的 token：从成员自己的消息里的用量加出来", () => {
+	const view = page.emptyView();
+	const w = page.emptyWatch("tkt_1");
+	page.applyMessage(view, { ...board([row({ id: "tkt_1", workerState: "running" })]), duty: { since: 5000, resumed: 1 } } as HostToClient, 0);
+	const used = (input: number, output: number, cacheRead: number, content: unknown[]) => ({ role: "assistant", content, usage: { input, output, cacheRead } });
+	page.applyTranscript(w, teamHistory("tkt_1", [dispatchCall("c1", "news-researcher", "查新闻", 4000), dispatchCall("c2", "market-analyst", "看盘面", 4000)], { c1: [
+		used(900, 100, 200, [{ type: "toolCall", id: "m1", name: "web_get", arguments: { url: "https://example.com/n" } }]),
+		{ role: "toolResult", toolCallId: "m1", toolName: "web_get", content: [{ type: "text", text: "网页" }] },
+		used(250, 50, 0, [{ type: "toolCall", id: "m2", name: "web_get", arguments: { url: "https://example.com/m" } }]),
+	] }));
+	assert.deepEqual(page.liveSteps(w, view).map((s) => [s.detail, s.dispatch?.tokens]), [["新闻研究员 · 已停止", "1.5k tokens"], ["行情分析师 · 已停止", ""]], "没来得及出一条消息的那位不写用量");
+	page.applyTranscript(w, live("tkt_1", { role: "user", content: "[恢复说明]\nprocess restarted" }));
+	assert.deepEqual(page.liveSteps(w, view).slice(0, 2).map((s) => [s.detail, s.dispatch?.tokens]), [["新闻研究员 · 已停止", "1.5k tokens"], ["行情分析师 · 已停止", ""]], "恢复后的助手开始下一轮，那一步定成已停止，用量还在");
+});
+
+test("页面：助手收到新的输入开始下一轮时，上一轮没等到结果的步骤就此停下（助手进程中途退出过）", () => {
+	const w = page.emptyWatch("tkt_1");
+	page.applyTranscript(w, teamHistory("tkt_1", [dispatchCall("c1", "news-researcher", "查新闻"), tool("bash", { command: "sleep 300" })]));
+	page.applyTranscript(w, live("tkt_1", { role: "user", content: "[使用者的话（经 Router 转交）]\n继续" }));
+	page.applyTranscript(w, live("tkt_1", dispatchCall("c2", "news-researcher", "再查")));
+	assert.deepEqual(w.steps.map((s) => [s.detail, s.state]), [["新闻研究员 · 已停止", "stopped"], ["sleep 300", "stopped"], ["继续", "ok"], ["新闻研究员 · 排队中", "pending"]]);
+});
+
+test("页面：展开一次派活能看到成员自己的步骤：干活时一条条加上，做完后还在；同一条消息送来两次只算一次", () => {
+	const view = page.emptyView();
+	const w = page.emptyWatch("tkt_1");
+	const get = { role: "assistant", content: [{ type: "text", text: "先看新闻" }, { type: "toolCall", id: "m1", name: "web_get", arguments: { url: "https://example.com/n" } }] };
+	const got = { role: "toolResult", toolCallId: "m1", toolName: "web_get", content: [{ type: "text", text: "网页" }] };
+	page.applyTranscript(w, teamHistory("tkt_1", [dispatchCall("c1", "news-researcher", "查新闻")], { c1: [get] }));
+	page.applyMessage(view, board([row({ id: "tkt_1", workerState: "running" })], zeroToday(), noHelpers, {}, { tkt_1: [onBoard("c1", "新闻研究员", "running")] }), 0);
+	const inside = () => page.liveSteps(w, view)[0].dispatch!.steps.map((s) => [s.title, s.detail, s.state]);
+	assert.deepEqual(inside(), [["思考", "先看新闻", "ok"], ["读取网页", "example.com", "pending"]]);
+	assert.equal(page.applyTranscript(w, fromMember("tkt_1", "c1", 1, got)), true);
+	page.applyTranscript(w, fromMember("tkt_1", "c1", 1, got));
+	page.applyTranscript(w, fromMember("tkt_1", "c1", 2, said("没有重大新闻")));
+	assert.deepEqual(inside(), [["思考", "先看新闻", "ok"], ["读取网页", "example.com", "ok"]], "成员最后那段不带工具调用的话就是它的回复，回复框里已经有了，不再算一步");
+	assert.equal(w.steps.length, 1, "成员的消息不混进助手自己的步骤");
+	page.applyTranscript(w, live("tkt_1", dispatchResult("c1", outcome("新闻研究员", "done", "没有重大新闻", 300))));
+	assert.deepEqual(inside().length, 2, "做完后步骤还在");
+	const cut = page.emptyWatch("tkt_2");
+	page.applyTranscript(cut, teamHistory("tkt_2", [dispatchCall("c1", "news-researcher", "查新闻"), dispatchResult("c1", outcome("新闻研究员", "stalled", null, 0, "3 分钟没有进展"))], { c1: [get] }));
+	assert.deepEqual(page.liveSteps(cut, view)[0].dispatch!.steps.map((s) => s.state), ["ok", "stopped"], "成员被结束时没做完的那一步也停下");
+});
+
+test("页面：Markdown 只认安全的子集，解析成段落、标题和列表，行内只有粗体、斜体、代码和链接文字，HTML 原样当文字", () => {
+	const blocks = page.parseMarkdown("## 结论\n**个股领跌**，*仍偏空*，看 `sma50`\n\n- 第一条\n- 来源 [路透](https://reuters.com/x)\n1. 甲\n2. 乙\n\n<script>alert(1)</script> 不是标签");
+	assert.deepEqual(blocks, [
+		{ kind: "h", level: 2, spans: [{ text: "结论" }] },
+		{ kind: "p", spans: [{ text: "个股领跌", bold: true }, { text: "，" }, { text: "仍偏空", italic: true }, { text: "，看 " }, { text: "sma50", code: true }] },
+		{ kind: "ul", items: [[{ text: "第一条" }], [{ text: "来源 " }, { text: "路透" }, { text: "（https://reuters.com/x）" }]] },
+		{ kind: "ol", items: [[{ text: "甲" }], [{ text: "乙" }]] },
+		{ kind: "p", spans: [{ text: "<script>alert(1)</script> 不是标签" }] },
+	]);
+});
+
+test("页面：Markdown 表格解析成表头和行，单元格里照样认粗体和代码；没有分隔行的竖线只是文字", () => {
+	const blocks = page.parseMarkdown("对比如下：\n| 指标 | NVDA | SPY |\n|:--|--:|:-:|\n| 跌幅 | **4.2%** | 0.8% |\n| 量能 | `1.8x` |\n\n之后的话");
+	assert.deepEqual(blocks, [
+		{ kind: "p", spans: [{ text: "对比如下：" }] },
+		{ kind: "table", head: [[{ text: "指标" }], [{ text: "NVDA" }], [{ text: "SPY" }]], rows: [
+			[[{ text: "跌幅" }], [{ text: "4.2%", bold: true }], [{ text: "0.8%" }]],
+			[[{ text: "量能" }], [{ text: "1.8x", code: true }], []],
+		] },
+		{ kind: "p", spans: [{ text: "之后的话" }] },
+	]);
+	assert.deepEqual(page.parseMarkdown("| 只是 | 一行 |\n下一行"), [{ kind: "p", spans: [{ text: "| 只是 | 一行 |\n下一行" }] }]);
+	const started = performance.now();
+	page.parseMarkdown("| a | b |\n|--|--|\n" + "| x | y |\n".repeat(20_000) + "|".repeat(100_000));
+	assert.ok(performance.now() - started < 300, "大表格和成串的竖线也是线性时间");
+});
+
+test("页面：Markdown 的粗体、斜体、代码、链接和表格里夹着像 HTML 的内容时，原样留在文字里，解析结果里没有任何标签结构", () => {
+	const payload = '<img src=x onerror="alert(1)">';
+	const blocks = page.parseMarkdown(`**${payload}** 和 *<i>斜</i>* 和 \`${payload}\` 和 [<u>链</u>](https://e.com/<x>)\n\n| <b>头</b> |\n|--|\n| ${payload} |`);
+	assert.deepEqual(blocks, [
+		{ kind: "p", spans: [{ text: payload, bold: true }, { text: " 和 " }, { text: "<i>斜</i>", italic: true }, { text: " 和 " }, { text: payload, code: true }, { text: " 和 " }, { text: "<u>链</u>" }, { text: "（https://e.com/<x>）" }] },
+		{ kind: "table", head: [[{ text: "<b>头</b>" }]], rows: [[[{ text: payload }]]] },
+	]);
+	const kinds = new Set<string>();
+	const walk = (value: unknown): void => {
+		if (Array.isArray(value)) return value.forEach(walk);
+		if (value && typeof value === "object") for (const [key, v] of Object.entries(value)) (kinds.add(key), walk(v));
+	};
+	walk(blocks);
+	assert.deepEqual([...kinds].sort(), ["bold", "code", "head", "italic", "kind", "rows", "spans", "text"], "解析结果只有这几种字段，页面只会把 text 放进文本节点");
+});
+
+test("页面的脚本从不把字符串当 HTML 写进文档：成员回复、幕僚长的话和汇报都只经文本节点显示", () => {
+	for (const file of ["app.mjs", "view.mjs"]) {
+		const source = readFileSync(new URL(`../src/web/${file}`, import.meta.url), "utf8");
+		assert.doesNotMatch(source, /innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|DOMParser|\.srcdoc/, file);
+	}
+});
+
+test("页面：助手的汇报这一步按 Markdown 显示，别的步骤不是", () => {
+	const steps = watched([tool("report", { status: "ready", summary: "**结论**：个股领跌" }), tool("bash", { command: "echo **不是 Markdown**" })]);
+	assert.deepEqual(steps.map((s) => [s.title, s.detail, s.markdown ?? false]), [["提交结果", "**结论**：个股领跌", true], ["执行命令", "echo **不是 Markdown**", false]]);
+});
+
+test("页面：Markdown 里的多行段落保留换行，没有 Markdown 记号的文字原样是一段", () => {
+	assert.deepEqual(page.parseMarkdown("第一行\n第二行"), [{ kind: "p", spans: [{ text: "第一行\n第二行" }] }]);
+	assert.deepEqual(page.parseMarkdown("a*b 和 snake_case_name"), [{ kind: "p", spans: [{ text: "a*b 和 snake_case_name" }] }]);
+});
+
+test("页面：Markdown 解析对括号密集的长文本仍是线性的，正常链接照常解析", () => {
+	for (const text of ["[".repeat(200_000), "[a](x".repeat(40_000), "[a]".repeat(70_000) + "(", "](".repeat(100_000)]) {
+		const started = performance.now();
+		page.parseMarkdown(text);
+		const ms = performance.now() - started;
+		assert.ok(ms < 100, `${JSON.stringify(text.slice(0, 6))}… ${text.length} 字用了 ${Math.round(ms)} ms`);
+	}
+	assert.deepEqual(page.parseMarkdown("看 [路透](https://reuters.com/a_b?x=1) 和 [官方](https://nvidia.com)")[0], {
+		kind: "p", spans: [{ text: "看 " }, { text: "路透" }, { text: "（https://reuters.com/a_b?x=1） 和 " }, { text: "官方" }, { text: "（https://nvidia.com）" }],
+	});
 });

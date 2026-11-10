@@ -1,4 +1,5 @@
 import type { DashboardRow, Disposition, HelpersToday, Routes } from "../kernel/types.ts";
+import type { Dispatching } from "../host/dispatch.ts";
 
 /** ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
 export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string };
@@ -32,6 +33,8 @@ export interface BoardState {
 	helpers: HelpersToday;
 	/** What became of each of the user's recent messages, so a line under it can change without a reload. */
 	routes: Routes;
+	/** ticketId → that helper's dispatches: waiting, running, and ended ones until its whole batch is back. */
+	dispatching: Dispatching;
 }
 
 export type ClientToHost =
@@ -42,19 +45,34 @@ export type ClientToHost =
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
-	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; watching: WatchedSource[] }
+	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; watching: WatchedSource[] }
 	| { type: "user"; id: string; text: string; at: number }
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }
 	| { type: "reply"; text: string; at: number; replyId: string; ticketId?: string }
 	| ({ type: "board" } & BoardState)
-	| { type: "transcript_history"; ticketId: string; messages: TranscriptMessage[] }
-	| { type: "transcript"; ticketId: string; message: TranscriptMessage };
+	| ({ type: "transcript_history"; ticketId: string } & TranscriptHistory)
+	/** `member`: the message is from the member at work on that dispatch, and is that dispatch's `index`-th message. */
+	| { type: "transcript"; ticketId: string; message: TranscriptMessage; member?: { callId: string; index: number } };
+
+/** A ticket's 执行过程 so far. */
+export interface TranscriptHistory {
+	/** The helper's own messages. */
+	messages: TranscriptMessage[];
+	/** Only for a ticket whose helper has members: each member's title by name, and each dispatch's own messages by the helper's call id. */
+	team?: { titles: Record<string, string>; steps: Record<string, TranscriptMessage[]> };
+}
 
 export interface TranscriptMessage {
 	role: string;
-	content?: string | Array<{ type: string; text?: string; name?: string; arguments?: unknown; thinking?: string }>;
+	content?: string | Array<{ type: string; text?: string; id?: string; name?: string; arguments?: unknown; thinking?: string }>;
 	customType?: string;
 	toolName?: string;
+	toolCallId?: string;
 	isError?: boolean;
+	details?: unknown;
+	/** When Pi finished the message, in ms. */
+	timestamp?: number;
+	/** On an assistant message: what the model call used. */
+	usage?: { input?: number; output?: number; cacheRead?: number };
 }

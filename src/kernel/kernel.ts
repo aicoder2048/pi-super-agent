@@ -486,6 +486,13 @@ export class Kernel {
 		});
 	}
 
+	recordMemberProgress(ticketId: string): void {
+		this.#tx(() => {
+			this.#requireTicket(ticketId);
+			this.#run("UPDATE tickets SET last_progress_at = ? WHERE id = ?", this.#now(), ticketId);
+		});
+	}
+
 	recordUsage(ticketId: string, { provider, tokensIn, tokensOut }: { provider: string; tokensIn: number; tokensOut: number }): void {
 		this.#tx(() => {
 			this.#requireTicket(ticketId);

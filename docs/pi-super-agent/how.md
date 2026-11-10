@@ -126,7 +126,9 @@ Router 的普通文字输出不会发到任何地方。系统提示里也明确�
 3. 创建 `<state>/workers/<ticketId>` 作为 workdir，并生成一个新的 `randomUUID()` token。
 4. 调 `PiWorkerSpawner.spawn`。spawn 抛错就调 `kernel.workerExited` 后重新抛出。成功则记录 `Live` 并调 `kernel.workerStarted`。
 
-**`PiWorkerSpawner.spawn`**（`src/host/pi-worker.ts`）。模块有 `prepare` 命令且没有 `.psa-prepared` 标记时，先在 workdir 里执行 `bash -lc prepare`，超时 10 分钟。然后用 `RpcClient` 启动 `pi`。参数里 `--session-id` 是 ticket 的 `workerSessionId`，所以重启后进程会接上同一个 session。`--no-extensions -e src/worker/extension.ts` 只加载 Worker extension。`--append-system-prompt` 追加 `WORKER_PROMPT`。环境变量传入 `PSA_SOCKET/TICKET/TOKEN/BASIS/BG_MAX_MS`。auto-compaction 和 auto-retry 打开，steering mode 设为 `"all"`。Pi 事件的映射如下。
+**`PiWorkerSpawner.spawn`**（`src/host/pi-worker.ts`）。模块有 `prepare` 命令且没有 `.psa-prepared` 标记时，先在 workdir 里执行 `bash -lc prepare`，超时 10 分钟。然后用 `RpcClient` 启动 `pi`。参数里 `--session-id` 是 ticket 的 `workerSessionId`，所以重启后进程会接上同一个 session。`--no-extensions -e src/worker/extension.ts` 只加载 Worker extension。`--append-system-prompt` 追加 `WORKER_PROMPT`。环境变量传入 `PSA_SOCKET/TICKET/TOKEN/BASIS/BG_MAX_MS`；任务的团队里有可派的成员时再加 `PSA_CREW`（成员名单），提示词末尾多一段本队名册，Worker 多一个 `dispatch_agent` 工具。一次派活由 `PiWorkerSpawner.runMember` 起一个 `pi -p --mode json` 进程，自成进程组，`--session-dir` 是 `<state>/workers/<ticketId>/team/<成员>`，带 `--continue`，所以同一任务里再派给它会接上原来的 session；排队、时限、无进展和结果的状态在 `src/host/dispatch.ts` 的 `DispatchDesk`；成员进程打印的每个事件都算一次动静，用来显示它在做什么和判断无进展；工具调用开始和返回的事件（`tool_execution_start`、`tool_execution_end`）还用来记哪些调用没返回，有调用没返回时不算无进展。在跑的成员进程记在它 session 目录的 `running.json` 里（`src/host/member-ledger.ts`），宿主启动时先结束上一个宿主留下的成员。
+
+Worker 的常驻进程（`RpcClient` 那一个）打开 auto-compaction 和 auto-retry，steering mode 设为 `"all"`；成员的一次性进程不设这些。Worker 的 Pi 事件映射如下。
 
 - `agent_start` 调 `turnStarted`，它会再调一次 `claimSlot`。
 - `tool_execution_start` 调 `recordWorkerProgress`，更新 `last_progress_at` 和 `tool_calls`。

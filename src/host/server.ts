@@ -1,5 +1,7 @@
-import { createServer, type Server, type Socket } from "node:net";
+import { connect, createServer, type Server, type Socket } from "node:net";
 import { rmSync } from "node:fs";
+import { dirname } from "node:path";
+import { ConfigError } from "../config-error.ts";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
 import type { HostToClient } from "../client/protocol.ts";
 import { refusalText, type AnswerRefusal } from "../kernel/question.ts";
@@ -135,7 +137,9 @@ export class HostServer {
 		}
 	}
 
-	listen(path: string, clientToken: string): Promise<void> {
+	/** Binds the socket only when no live host answers on it, so one state directory has one host. */
+	async listen(path: string, clientToken: string): Promise<void> {
+		if (await answers(path)) throw new ConfigError(`状态目录 ${dirname(path)} 上已经有一个宿主在运行（${path} 有应答）。先停掉它，或把 PSA_STATE_DIR 设到别的目录。`);
 		this.#clientToken = clientToken;
 		rmSync(path, { force: true });
 		return new Promise((resolve, reject) => {
@@ -163,4 +167,15 @@ export class HostServer {
 		for (const c of this.#clients) c.socket.destroy();
 		return new Promise((resolve) => this.#server.close(() => resolve()));
 	}
+}
+
+function answers(path: string): Promise<boolean> {
+	return new Promise((resolve) => {
+		const probe = connect(path);
+		probe.once("connect", () => {
+			probe.destroy();
+			resolve(true);
+		});
+		probe.once("error", () => resolve(false));
+	});
 }

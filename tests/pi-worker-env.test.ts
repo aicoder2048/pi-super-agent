@@ -33,7 +33,7 @@ test("Worker 子进程和模块 prepare 拿不到宿主环境里的密钥类变�
 		moduleFor: () => ({ prepare: "env > prepare-env.txt" }),
 	});
 	const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
-	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", ruleId: null, team: "默认", token: "secret-ticket-token", model: { provider: "openai-codex", id: "gpt" } }, events);
+	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", ruleId: null, crew: [], token: "secret-ticket-token", model: { provider: "openai-codex", id: "gpt" } }, events);
 	t.after(() => handle.stop());
 	const env = JSON.parse(readFileSync(join(dir, "worker-env.json"), "utf8")) as Record<string, string>;
 	for (const name of ["MASSIVE_API_KEY", "FOO_TOKEN", "DEEPSEEK_API_KEY", "DB_PASSWORD", "SECRET_SAUCE"]) assert.equal(env[name], undefined, `Worker 环境里不该有 ${name}`);
@@ -64,7 +64,7 @@ test("Worker 子进程和模块 prepare 的环境里没有客户端凭据，也�
 		moduleFor: () => ({ prepare: "env > prepare-env.txt" }),
 	});
 	const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
-	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir, basis: "request", ruleId: null, team: "默认", token: "secret-ticket-token", model: { provider: "openai-codex", id: "gpt" } }, events);
+	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir, basis: "request", ruleId: null, team: "默认", crew: [], token: "secret-ticket-token", model: { provider: "openai-codex", id: "gpt" } }, events);
 	t.after(() => handle.stop());
 	const env = JSON.parse(readFileSync(join(workdir, "worker-env.json"), "utf8")) as Record<string, string>;
 	const prepared = readFileSync(join(workdir, "prepare-env.txt"), "utf8");
@@ -77,13 +77,20 @@ test("Worker 子进程和模块 prepare 的环境里没有客户端凭据，也�
 	assert.equal(env.PSA_SOCKET, join(stateDir, "host.sock"));
 });
 
-test("任务的团队经 PSA_TEAM 交给助手进程", async (t) => {
-	const dir = mkdtempSync(join(tmpdir(), "psa-env-"));
-	const cliPath = join(dir, "fake-pi.mjs");
-	writeFileSync(cliPath, FAKE_PI);
-	const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath });
-	const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
-	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", ruleId: null, team: "新闻队", token: "t", model: { provider: "openai-codex", id: "gpt" } }, events);
-	t.after(() => handle.stop());
-	assert.equal(JSON.parse(readFileSync(join(dir, "worker-env.json"), "utf8")).PSA_TEAM, "新闻队");
+test("本队有成员时，成员名单经 PSA_CREW 交给助手进程；默认团队的助手没有这个变量", async (t) => {
+	const crew = [{ name: "market-analyst", title: "行情分析师", description: "看盘面" }, { name: "news-researcher", title: "新闻研究员", description: "查新闻" }];
+	const envOf = async (members: typeof crew) => {
+		const dir = mkdtempSync(join(tmpdir(), "psa-env-"));
+		const cliPath = join(dir, "fake-pi.mjs");
+		writeFileSync(cliPath, FAKE_PI);
+		const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath });
+		const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
+		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", ruleId: null, crew: members as never, token: "t", model: { provider: "openai-codex", id: "gpt" } }, events);
+		t.after(() => handle.stop());
+		return JSON.parse(readFileSync(join(dir, "worker-env.json"), "utf8")) as Record<string, string>;
+	};
+	assert.equal((await envOf(crew)).PSA_CREW, "market-analyst,news-researcher");
+	const solo = await envOf([]);
+	assert.equal(solo.PSA_CREW, undefined);
+	assert.equal(solo.PSA_MEMBER_TOOLS, undefined);
 });

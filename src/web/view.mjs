@@ -10,8 +10,11 @@
 /** @typedef {import("../client/protocol.ts").TodayCounts} TodayCounts */
 /** @typedef {import("../client/protocol.ts").TranscriptMessage} TranscriptMessage */
 /** @typedef {import("../client/protocol.ts").WatchedSource} WatchedSource */
+/** @typedef {import("../host/dispatch.ts").Dispatching} Dispatching */
+/** @typedef {import("../host/dispatch.ts").BoardDispatch} BoardDispatch */
+/** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
 
-import { INPUT_LABEL, blocks, clip, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, shortId, stallMinutes, textOf } from "../client/board-format.mjs";
+import { INPUT_LABEL, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, shortId, stallMinutes, textOf, toolStep } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -52,11 +55,26 @@ const GROUP = {
  * @property {HelpersToday | undefined} helpers
  * @property {WatchedSource[]} watching
  * @property {Routes} routes
+ * @property {Dispatching} dispatching
+ * @property {Map<string, Map<string, BoardDispatch>>} lastOnBoard each unfinished ticket's dispatches as the board last listed them, by ticket then call id
  */
 
 /** @returns {View} */
 export function emptyView() {
-	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {} };
+	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {}, dispatching: {}, lastOnBoard: new Map() };
+}
+
+/** @param {View} view @param {Dispatching | undefined} dispatching */
+function setDispatching(view, dispatching) {
+	view.dispatching = dispatching ?? {};
+	const unfinished = new Set(view.rows.filter((r) => r.endedAt === null).map((r) => r.id));
+	for (const ticketId of view.lastOnBoard.keys()) if (!unfinished.has(ticketId)) view.lastOnBoard.delete(ticketId);
+	for (const [ticketId, listed] of Object.entries(view.dispatching)) {
+		if (!unfinished.has(ticketId)) continue;
+		const calls = view.lastOnBoard.get(ticketId) ?? new Map();
+		for (const d of listed) calls.set(d.callId, d);
+		view.lastOnBoard.set(ticketId, calls);
+	}
 }
 
 /** @param {View} view @param {ConversationLine} line */
@@ -73,6 +91,7 @@ export function applyMessage(view, message, now) {
 		case "snapshot":
 			for (const line of message.conversation) addLine(view, line);
 			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, receivedAt: now });
+			setDispatching(view, message.dispatching);
 			return ["conversation", "left", "header"];
 		case "user":
 			addLine(view, { id: message.id, who: "user", text: message.text, at: message.at });
@@ -82,6 +101,7 @@ export function applyMessage(view, message, now) {
 			return ["conversation"];
 		case "board":
 			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, routes: message.routes, receivedAt: now });
+			setDispatching(view, message.dispatching);
 			return ["conversation", "left", "header"];
 	}
 	return [];
@@ -277,10 +297,58 @@ export const stopSentence = (title) => `停止任务「${title}」`;
  * @typedef {object} Step
  * @property {string} title
  * @property {string} detail
- * @property {"ok" | "error" | "pending"} state
+ * @property {"ok" | "error" | "pending" | "stopped"} state stopped: it never got a result, because its ticket, helper or host stopped first
  * @property {string} raw
  * @property {string} [tool]
+ * @property {string} [callId]
+ * @property {number} [at] when the helper issued it
+ * @property {true} [markdown] the detail is the helper's own prose, shown as Markdown
+ * @property {DispatchEntry} [dispatch]
  */
+
+/**
+ * One dispatch as the page words it. Only the member's title, never its name.
+ * @typedef {object} DispatchEntry
+ * @property {string} title
+ * @property {string} task
+ * @property {string} reply
+ * @property {DispatchState} state
+ * @property {string} stateText
+ * @property {string} note
+ * @property {string} tokens
+ * @property {Step[]} steps
+ */
+
+/** @type {Record<DispatchState, string>} */
+const DISPATCH_STATE = { queued: "排队中", running: "进行中", done: "完成", timed_out: "超时", stalled: "无进展", stopped: "已停止", failed: "出错" };
+
+/** @type {Record<DispatchState, Step["state"]>} */
+const DISPATCH_STEP_STATE = { queued: "pending", running: "pending", done: "ok", timed_out: "error", stalled: "error", stopped: "stopped", failed: "error" };
+
+/** @param {Pick<DispatchEntry, "title" | "stateText">} entry */
+const dispatchDetail = (entry) => [entry.title, entry.stateText].filter(Boolean).join(" · ");
+
+/** @param {number} tokens */
+const tokensText = (tokens) => `${formatTokens(tokens)} tokens`;
+
+/** @param {unknown} details @returns {DispatchEntry | undefined} */
+function dispatchEntry(details) {
+	const d = /** @type {Record<string, any>} */ (details ?? {});
+	if (d.kind !== "dispatch" || !(d.state in DISPATCH_STATE)) return undefined;
+	return {
+		title: String(d.title ?? ""),
+		task: String(d.task ?? ""),
+		reply: typeof d.reply === "string" ? d.reply : "",
+		state: d.state,
+		stateText: DISPATCH_STATE[/** @type {DispatchState} */ (d.state)],
+		note: typeof d.note === "string" ? d.note : "",
+		tokens: tokensText((Number(d.tokensIn) || 0) + (Number(d.tokensOut) || 0)),
+		steps: [],
+	};
+}
+
+/** @param {Record<string, unknown>} a @param {Record<string, string>} titles @returns {DispatchEntry} */
+const pendingDispatch = (a, titles) => ({ title: titles[String(a.agent)] ?? "", task: String(a.task ?? ""), reply: "", state: "queued", stateText: DISPATCH_STATE.queued, note: "", tokens: "", steps: [] });
 
 /** @type {Record<InputKind, string>} */
 const INPUT_STEP = {
@@ -293,61 +361,23 @@ const INPUT_STEP = {
 	bg_result: "后台命令完成",
 };
 
-/** @type {Record<string, string>} */
-const LOOKUP_TITLE = { quote: "查询报价", bars: "查询 K 线", session: "查询交易时段" };
+const KIND_BY_LABEL = new Map(/** @type {[InputKind, string][]} */ (Object.entries(INPUT_LABEL)).map(([kind, label]) => [label, kind]));
 
-/** @param {Record<string, unknown>} a */
-function lookupStep(a) {
-	const args = a.args && typeof a.args === "object" ? /** @type {Record<string, unknown>} */ (a.args) : {};
-	const op = typeof a.op === "string" ? a.op : "";
-	const symbols = Array.isArray(args.symbols) ? args.symbols : typeof args.symbol === "string" ? [args.symbol] : [];
-	return {
-		title: LOOKUP_TITLE[op] ?? `查询 ${clip(op, 20)}`,
-		detail: clip(symbols.filter((s) => typeof s === "string").join(" "), 60),
-	};
-}
-
-const STEP_BY_LABEL = new Map(/** @type {[InputKind, string][]} */ (Object.entries(INPUT_LABEL)).map(([kind, label]) => [label, INPUT_STEP[kind]]));
-
-/** @type {Record<string, (a: Record<string, unknown>) => { title: string, detail: string }>} */
-const TOOL_STEP = {
-	read: (a) => ({ title: "读取文件", detail: baseName(a.path) }),
-	grep: (a) => ({ title: "搜索文件内容", detail: clip(a.pattern, 40) }),
-	find: (a) => ({ title: "查找文件", detail: clip(a.pattern, 40) }),
-	ls: (a) => ({ title: "列出目录", detail: baseName(a.path) }),
-	bash: (a) => ({ title: "执行命令", detail: clip(firstLine(a.command), 60) }),
-	edit: (a) => ({ title: "修改文件", detail: baseName(a.path) }),
-	write: (a) => ({ title: "写入文件", detail: baseName(a.path) }),
-	web_get: (a) => ({ title: "读取网页", detail: hostOf(a.url) }),
-	lookup: (a) => lookupStep(a),
-	read_ticket: () => ({ title: "查阅任务记录", detail: "" }),
-	hand_back: () => ({ title: "交回幕僚长", detail: "" }),
-	bg_start: (a) => ({ title: "启动后台命令", detail: clip(firstLine(a.command), 60) }),
-	bg_status: () => ({ title: "查看后台命令", detail: "" }),
-	bg_stop: () => ({ title: "停止后台命令", detail: "" }),
-	report: (a) => ({ title: reportTitle(a), detail: clip(a.question || a.summary, 120) }),
-};
-
-/** @param {Record<string, unknown>} a */
-function reportTitle(a) {
-	if (a.question) return "提出问题";
-	if (a.status === "ready") return "提交结果";
-	if (a.status === "blocked" || a.status === "failed") return "报告受阻";
-	if (a.status === "no_action") return "无需处理";
-	return "汇报进度";
-}
+// The host writes this input's body in English for the model.
+const RECOVERY_DETAIL = "宿主重启过，助手先看看做到哪了再接着做";
 
 const RAW_LIMIT = 2000;
 
-/** @param {TranscriptMessage} message @returns {Step[]} */
-function stepsFrom(message) {
+/** @param {TranscriptMessage} message @param {Record<string, string>} titles @returns {Step[]} */
+function stepsFrom(message, titles) {
 	if (message.role === "user" || (message.role === "custom" && message.customType === "psa-bg-result")) {
 		const text = textOf(message);
 		if (message.role === "custom") return [{ title: "后台命令完成", detail: clip(firstLine(text), 80), state: "ok", raw: clip(text, RAW_LIMIT) }];
 		return text.split(/\n\n(?=\[)/).map((part) => {
 			const label = /^\[([^\]]+)\]/.exec(part)?.[1] ?? "";
 			const body = part.split("\n").slice(1).join("\n");
-			return { title: STEP_BY_LABEL.get(label) ?? "收到新消息", detail: clip(firstLine(body), 80), state: "ok", raw: clip(part, RAW_LIMIT) };
+			const kind = KIND_BY_LABEL.get(label) ?? "trigger";
+			return { title: INPUT_STEP[kind], detail: kind === "recovery" ? RECOVERY_DETAIL : clip(firstLine(body), 80), state: "ok", raw: clip(part, RAW_LIMIT) };
 		});
 	}
 	if (message.role !== "assistant") return [];
@@ -355,29 +385,107 @@ function stepsFrom(message) {
 		if (c.type === "text" && c.text?.trim()) return [{ title: "思考", detail: clip(c.text.trim(), 200), state: /** @type {const} */ ("ok"), raw: clip(c.text, RAW_LIMIT) }];
 		if (c.type !== "toolCall" || !c.name) return [];
 		const args = typeof c.arguments === "object" && c.arguments !== null ? /** @type {Record<string, unknown>} */ (c.arguments) : {};
-		const known = TOOL_STEP[c.name]?.(args) ?? { title: `调用工具 ${c.name}`, detail: "" };
-		return [{ ...known, state: /** @type {const} */ ("pending"), raw: clip(`${c.name} ${JSON.stringify(c.arguments ?? {}, null, 2)}`, RAW_LIMIT), tool: c.name }];
+		const dispatch = c.name === "dispatch_agent" ? pendingDispatch(args, titles) : undefined;
+		const known = dispatch ? { title: toolStep(c.name, args).title, detail: dispatchDetail(dispatch), dispatch } : toolStep(c.name, args);
+		return [{ ...known, state: /** @type {const} */ ("pending"), raw: clip(`${c.name} ${JSON.stringify(c.arguments ?? {}, null, 2)}`, RAW_LIMIT), tool: c.name, ...(c.id ? { callId: c.id } : {}), ...(message.timestamp !== undefined ? { at: message.timestamp } : {}), ...(c.name === "report" ? { markdown: /** @type {const} */ (true) } : {}) }];
 	});
 }
 
 /**
  * @typedef {object} Watch
  * @property {string} ticketId
- * @property {Step[]} steps
+ * @property {Step[]} steps the helper's own steps
+ * @property {Record<string, string>} titles the crew's titles by member name
+ * @property {Map<string, TranscriptMessage[]>} members each dispatch's own messages, by the helper's call id
  */
 
 /** @param {string} ticketId @returns {Watch} */
 export function emptyWatch(ticketId) {
-	return { ticketId, steps: [] };
+	return { ticketId, steps: [], titles: {}, members: new Map() };
 }
 
-/** @param {Watch} watch @param {TranscriptMessage} message */
-function append(watch, message) {
-	if (message.role !== "toolResult") return void watch.steps.push(...stepsFrom(message));
-	const step = watch.steps.findLast((s) => s.state === "pending" && s.tool === message.toolName);
+/** @param {Step} step @returns {Step} */
+function stopped(step) {
+	if (!step.dispatch) return { ...step, state: "stopped" };
+	const dispatch = { ...step.dispatch, state: /** @type {const} */ ("stopped"), stateText: DISPATCH_STATE.stopped };
+	return { ...step, state: "stopped", dispatch, detail: dispatchDetail(dispatch) };
+}
+
+/** New input reaches a helper only after every call of its last turn has a result. @param {Step[]} steps */
+function stopUnanswered(steps) {
+	for (const [i, step] of steps.entries()) if (step.state === "pending") steps[i] = stopped(step);
+}
+
+/** @param {Step[]} steps @param {TranscriptMessage} message @param {Record<string, string>} titles */
+function append(steps, message, titles) {
+	if (message.role !== "toolResult") {
+		if (message.role !== "assistant") stopUnanswered(steps);
+		return void steps.push(...stepsFrom(message, titles));
+	}
+	// Parallel calls of one tool finish in any order, so the call id decides when there is one.
+	const step = steps.findLast((s) => s.state === "pending" && (message.toolCallId && s.callId ? s.callId === message.toolCallId : s.tool === message.toolName));
 	if (!step) return;
 	step.state = message.isError ? "error" : "ok";
 	step.raw = clip(`${step.raw}\n\n→ ${textOf(message)}`, RAW_LIMIT);
+	if (!step.dispatch) return;
+	step.dispatch = dispatchEntry(message.details);
+	step.detail = step.dispatch ? dispatchDetail(step.dispatch) : "";
+	if (step.dispatch) step.state = DISPATCH_STEP_STATE[step.dispatch.state];
+}
+
+/** A member's message without a tool call ends its turn, so its text is the reply. @param {TranscriptMessage} message */
+const isMemberReply = (message) => message.role === "assistant" && !blocks(message).some((c) => c.type === "toolCall");
+
+/** @param {Watch} watch @param {string | undefined} callId @param {boolean} dispatchEnded @returns {Step[]} */
+function memberSteps(watch, callId, dispatchEnded) {
+	/** @type {Step[]} */
+	const steps = [];
+	for (const message of watch.members.get(callId ?? "") ?? []) if (message && !isMemberReply(message)) append(steps, message, {});
+	return dispatchEnded ? steps.map((s) => (s.state === "pending" ? stopped(s) : s)) : steps;
+}
+
+/** What a dispatch's member has used, input plus output, by its own messages. @param {Watch} watch @param {string | undefined} callId */
+function memberTokens(watch, callId) {
+	let tokens = 0;
+	for (const message of watch.members.get(callId ?? "") ?? []) tokens += (message?.usage?.input ?? 0) + (message?.usage?.cacheRead ?? 0) + (message?.usage?.output ?? 0);
+	return tokens;
+}
+
+/**
+ * The watched steps as they stand now. An unfinished dispatch takes its state from the board. A step
+ * that can no longer finish reads as stopped: its helper is not running, or it was issued before this
+ * host started. A pending dispatch the board has never listed has just been called and waits.
+ * @param {Watch} watch @param {View} view @returns {Step[]}
+ */
+export function liveSteps(watch, view) {
+	const onBoard = new Map((view.dispatching[watch.ticketId] ?? []).map((d) => [d.callId, d]));
+	const row = view.rows.find((r) => r.id === watch.ticketId);
+	const helperGone = row?.workerState !== "running" || row.endedAt !== null;
+	const hostSince = view.duty?.since ?? 0;
+	// A dispatch cut off by a stop or a killed host has no result to carry its count, and after a restart no board entry either.
+	const used = (/** @type {string | undefined} */ callId, /** @type {number | undefined} */ counted) => {
+		const tokens = counted ?? memberTokens(watch, callId);
+		return counted !== undefined || tokens > 0 ? tokensText(tokens) : "";
+	};
+	return watch.steps.map((step) => {
+		if (step.state !== "pending") return step.dispatch ? { ...step, dispatch: { ...step.dispatch, tokens: step.dispatch.tokens || used(step.callId), steps: memberSteps(watch, step.callId, true) } } : step;
+		const dead = helperGone || (step.at ?? Infinity) < hostSince;
+		if (!step.dispatch) return dead ? stopped(step) : step;
+		const seen = onBoard.get(step.callId ?? "") ?? view.lastOnBoard.get(watch.ticketId)?.get(step.callId ?? "");
+		const last = seen?.state ?? "queued";
+		/** @type {DispatchState} */
+		const state = dead && (last === "queued" || last === "running") ? "stopped" : last;
+		const dispatch = {
+			...step.dispatch,
+			title: seen?.title ?? step.dispatch.title,
+			state,
+			stateText: DISPATCH_STATE[state],
+			note: seen?.note ?? "",
+			tokens: used(step.callId, seen?.tokens),
+			steps: memberSteps(watch, step.callId, DISPATCH_STEP_STATE[state] !== "pending"),
+		};
+		return { ...step, state: DISPATCH_STEP_STATE[state], dispatch, detail: dispatchDetail(dispatch) };
+	});
 }
 
 /**
@@ -387,10 +495,19 @@ export function applyTranscript(watch, message) {
 	if ((message.type !== "transcript_history" && message.type !== "transcript") || message.ticketId !== watch.ticketId) return false;
 	if (message.type === "transcript_history") {
 		watch.steps = [];
-		for (const m of message.messages) append(watch, m);
+		watch.titles = message.team?.titles ?? {};
+		watch.members = new Map(Object.entries(message.team?.steps ?? {}));
+		for (const m of message.messages) append(watch.steps, m, watch.titles);
 		return true;
 	}
-	append(watch, message.message);
+	if (message.member) {
+		const { callId, index } = message.member;
+		const own = watch.members.get(callId) ?? [];
+		own[index] = message.message;
+		watch.members.set(callId, own);
+		return true;
+	}
+	append(watch.steps, message.message, watch.titles);
 	return true;
 }
 
@@ -408,6 +525,20 @@ const DUTY_MARK = {
 	none: { duty: "queued", mark: "○", state: "排队" },
 };
 
+/** @param {number} ms */
+function ago(ms) {
+	const seconds = Math.floor(ms / 1000);
+	if (seconds < 5) return "刚刚";
+	return seconds < 60 ? `${seconds} 秒前` : `${Math.floor(seconds / 60)} 分钟前`;
+}
+
+/** @param {number} ms */
+function runningFor(ms) {
+	const seconds = Math.floor(ms / 1000);
+	if (seconds < 1) return "刚刚";
+	return seconds < 60 ? `已 ${seconds} 秒` : `已 ${Math.floor(seconds / 60)} 分钟`;
+}
+
 /**
  * @typedef {object} HelperChip
  * @property {string} id
@@ -418,6 +549,7 @@ const DUTY_MARK = {
  * @property {string} role
  * @property {string} elapsed
  * @property {string} tokens
+ * @property {{ title: string, state: "queued" | "running", label: string }[]} members the team members at work or waiting for this helper right now; a working one reads 「新闻研究员 · 读取网页 · 12 秒前」, or 「新闻研究员 · 执行命令 · 已 2 分钟」 while a tool call is in flight
  */
 
 /** One chip per helper on duty (a ticket not yet ended), then today's total. @param {View} view @param {number} now @returns {{ chips: HelperChip[], total: string }} */
@@ -431,6 +563,13 @@ export function helperStrip(view, now) {
 			role: helperLabel(row.helper),
 			elapsed: elapsedOf(row, now, view.receivedAt),
 			tokens: `${formatTokens(row.tokensIn + row.tokensOut)} tokens`,
+			members: (view.dispatching[row.id] ?? []).flatMap((d) => {
+				if (d.state === "queued") return [{ title: d.title, state: d.state, label: `${d.title} · ${DISPATCH_STATE.queued}` }];
+				if (d.state !== "running") return [];
+				const sinceFrame = now - view.receivedAt;
+				const when = d.toolMs === undefined ? ago(d.quietMs + sinceFrame) : runningFor(d.toolMs + sinceFrame);
+				return [{ title: d.title, state: d.state, label: `${d.title} · ${d.step || "启动中"} · ${when}` }];
+			}),
 		}];
 	});
 	const total = view.helpers ? `今日 ${view.helpers.count} 位 · ${formatTokens(view.helpers.tokens)} tokens` : "";
@@ -532,11 +671,84 @@ export function isStale(lastFrameAt, now) {
 	return now - lastFrameAt > STALE_AFTER_MS;
 }
 
-/** @param {unknown} s */
-const firstLine = (s) => (typeof s === "string" ? (s.split("\n").find((l) => l.trim()) ?? "").trim() : "");
+/**
+ * The safe Markdown subset the page renders, as data the page turns into DOM nodes (never HTML).
+ * @typedef {{ text: string, bold?: true, italic?: true, code?: true }} Span
+ * @typedef {{ kind: "p", spans: Span[] } | { kind: "h", level: number, spans: Span[] } | { kind: "ul" | "ol", items: Span[][] } | { kind: "table", head: Span[][], rows: Span[][][] }} MdBlock
+ */
 
-/** @param {unknown} p */
-const baseName = (p) => (typeof p === "string" ? clip(p.split("/").filter(Boolean).pop() ?? p, 60) : "");
+// Each alternative excludes its own delimiters from its body, so no input makes the match backtrack.
+const INLINE = /`([^`\n]+)`|\*\*([^*\n]+)\*\*|__([^_\n]+)__|(?<![\w*])\*([^*\s][^*\n]*?)\*(?![\w*])|\[([^\[\]\n]+)\]\(([^()\[\]\s]+)\)/g;
 
-/** @param {unknown} u */
-const hostOf = (u) => (typeof u === "string" ? (URL.parse(u)?.host ?? clip(u, 60)) : "");
+/** @param {string} text @returns {Span[]} */
+function inlineSpans(text) {
+	/** @type {Span[]} */
+	const spans = [];
+	const plain = (/** @type {string} */ t) => {
+		if (!t) return;
+		const last = spans.at(-1);
+		if (last && Object.keys(last).length === 1) last.text += t;
+		else spans.push({ text: t });
+	};
+	let at = 0;
+	for (const m of text.matchAll(INLINE)) {
+		plain(text.slice(at, m.index));
+		if (m[1] !== undefined) spans.push({ text: m[1], code: true });
+		else if (m[2] !== undefined || m[3] !== undefined) spans.push({ text: m[2] ?? m[3], bold: true });
+		else if (m[4] !== undefined) spans.push({ text: m[4], italic: true });
+		else spans.push({ text: m[5] }, { text: `（${m[6]}）` });
+		at = m.index + m[0].length;
+	}
+	plain(text.slice(at));
+	return spans;
+}
+
+/** @param {string} line */
+function tableCells(line) {
+	const row = line.trim();
+	return row.length > 1 && row.startsWith("|") && row.endsWith("|") ? row.slice(1, -1).split("|").map((cell) => cell.trim()) : null;
+}
+
+/** @param {string | undefined} line */
+const isTableRule = (line) => tableCells(line ?? "")?.every((cell) => /^:?-+:?$/.test(cell)) ?? false;
+
+/** @param {string} text @returns {MdBlock[]} */
+export function parseMarkdown(text) {
+	/** @type {MdBlock[]} */
+	const out = [];
+	/** @type {string[]} */
+	let para = [];
+	const flush = () => {
+		if (para.length) out.push({ kind: "p", spans: inlineSpans(para.join("\n")) });
+		para = [];
+	};
+	const lines = text.split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		const head = tableCells(line);
+		if (head && isTableRule(lines[i + 1])) {
+			flush();
+			/** @type {Span[][][]} */
+			const rows = [];
+			for (let cells = tableCells(lines[i + 2] ?? ""); cells; cells = tableCells(lines[++i + 2] ?? "")) rows.push(head.map((_, k) => inlineSpans(cells[k] ?? "")));
+			i++;
+			out.push({ kind: "table", head: head.map(inlineSpans), rows });
+			continue;
+		}
+		const heading = line.match(/^(#{1,6})\s+(.*)$/);
+		const item = line.match(/^\s*(?:([-*+])|\d+[.)])\s+(.*)$/);
+		if (!line.trim() || /^\s*(-{3,}|\*{3,})\s*$/.test(line)) flush();
+		else if (heading) {
+			flush();
+			out.push({ kind: "h", level: heading[1].length, spans: inlineSpans(heading[2].trim()) });
+		} else if (item) {
+			flush();
+			const kind = item[1] ? "ul" : "ol";
+			const last = out.at(-1);
+			if (last && last.kind === kind) last.items.push(inlineSpans(item[2]));
+			else out.push({ kind, items: [inlineSpans(item[2])] });
+		} else para.push(line);
+	}
+	flush();
+	return out;
+}

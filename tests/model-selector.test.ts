@@ -60,3 +60,14 @@ test("切回主模型后再次限流回退，会再通知一次", () => {
 	s.onSuccess();
 	assert.deepEqual(s.onError("429"), { switched: true, notify: true });
 });
+
+test("成员这类旁支用 steady 选模型：主模型稳定时用主模型；回退或正在试探时用回退模型，而且不触发试探", () => {
+	const { now, s } = selector();
+	assert.deepEqual(s.steady(), { model: primary, fellBack: false });
+	s.onError("429");
+	now.t += 20 * MIN;
+	assert.deepEqual(s.steady(), { model: fallback, fellBack: true });
+	assert.equal(s.current().fellBack, true, "steady 没有把选择器切进试探");
+	assert.equal(s.forTurn().probing, true);
+	assert.deepEqual(s.steady(), { model: fallback, fellBack: true }, "助手试探期间旁支仍用回退模型");
+});

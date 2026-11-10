@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { ConfigError } from "./config-error.ts";
 import { DEFAULT_TEAM, type TeamBook } from "./kernel/types.ts";
 import { parseModelRef, type ModelRef } from "./models.ts";
-import { WORKER_TOOLS } from "./worker/tools.ts";
+import { MEMBER_TOOLS, WORKER_TOOLS } from "./worker/tools.ts";
 
 /** One person on a team, from a `.pi/agents`-style Markdown file. */
 export interface Member {
@@ -131,8 +131,11 @@ export function parseMember(file: string, content: string, allowedProviders: rea
 	if (!MEMBER_NAME.test(name)) throw new ConfigError(`${file}：name「${name}」只能用小写英文字母、数字和连字符，以字母开头`);
 	const tools = list(fm.tools, file, "tools");
 	if ("tools" in fm && !tools?.length) throw new ConfigError(`${file}：tools 是空的；不想另设限就去掉这一行，要限制就至少写一个工具`);
-	const badTool = tools?.find((t) => !(WORKER_TOOLS as readonly string[]).includes(t));
-	if (badTool) throw new ConfigError(`${file}：tools 里的 ${badTool} 不是助手的工具，可用：${WORKER_TOOLS.join("、")}`);
+	const badTool = tools?.find((t) => !MEMBER_TOOLS.includes(t));
+	if (badTool) {
+		const why = (WORKER_TOOLS as readonly string[]).includes(badTool) ? "只有助手能用，成员不能汇报、交回、读任务记录、跑后台命令或再往下派" : "不是成员能用的工具";
+		throw new ConfigError(`${file}：tools 里的 ${badTool} ${why}，可用：${MEMBER_TOOLS.join("、")}`);
+	}
 	const skills = (list(fm.skills, file, "skills") ?? []).map((s) => resolve(dirname(file), s));
 	const missing = skills.find((s) => !existsSync(s));
 	if (missing) throw new ConfigError(`${file}：skills 指向的 ${missing} 不存在`);

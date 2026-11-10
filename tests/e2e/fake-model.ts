@@ -1,7 +1,9 @@
 // A local fake model that speaks the OpenAI chat-completions streaming protocol and replays the tool
 // calls a test scripted. The Router inside the host and every Worker subprocess reach it through a
-// models.json in a throwaway PI_CODING_AGENT_DIR (see fakeAgentEnv in harness.ts).
+// models.json in a throwaway PI_CODING_AGENT_DIR (see fakeAgentEnv below).
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { join } from "node:path";
 import { ids, type ToolCallSpec } from "../helpers/fakes.ts";
 
 export const FAKE_PROVIDER = "psa-fake";
@@ -16,16 +18,21 @@ export interface Step {
 	/** Matched against one message card ("[对话] …", "[Worker 汇报] …", "[任务说明] …"). */
 	match: RegExp;
 	answer: (card: string) => Answer;
+	/** Holds the reply this long, so the page can be seen while the model is still answering. */
+	delayMs?: number;
 }
 
-/** The Router has one conversation. Workers are told apart by the brief the Router wrote into open_ticket. */
+/**
+ * The Router has one conversation. Workers are told apart by the brief the Router wrote into open_ticket,
+ * and a team member by the first task its helper dispatched to it: later dispatches continue that conversation.
+ */
 export interface Script {
 	router: Step[];
 	workers?: WorkerScript[];
 }
 export type WorkerScript = { brief: string; steps: Step[] };
 
-export const on = (label: string, match: RegExp, answer: (card: string) => Answer): Step => ({ label, match, answer });
+export const on = (label: string, match: RegExp, answer: (card: string) => Answer, delayMs?: number): Step => ({ label, match, answer, ...(delayMs && { delayMs }) });
 export const worker = (brief: string, ...steps: Step[]): WorkerScript => ({ brief, steps });
 
 // Tool names and arguments follow src/host/router.ts and src/worker/extension.ts.
@@ -34,6 +41,7 @@ export const openTicket = (card: string, title: string, brief = title): ToolCall
 	args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg") ?? "trg_missing", title, brief }] },
 });
 export const reply = (card: string, text: string): ToolCall => ({ name: "reply", args: { text, cause: card.match(/\b(trg|tkt|act)_[\w-]+/)?.[0] } });
+export const dispatch = (agent: string, task: string): ToolCall => ({ name: "dispatch_agent", args: { agent, task } });
 export const report = (status: "progress" | "ready" | "blocked" | "failed" | "no_action", summary: string): ToolCall => ({ name: "report", args: { status, summary } });
 /** Crashes the current Worker for real: inside the bash tool, $PPID is the Pi process. */
 export const crashWorker = (): ToolCall => ({ name: "bash", args: { command: "kill -9 $PPID" } });
@@ -45,6 +53,8 @@ export interface Exchange {
 	cards: string[];
 	steps: string[];
 	unmatched: string[];
+	/** The tools the request offered the model. */
+	tools: string[];
 	answer: Answer;
 }
 
@@ -128,18 +138,20 @@ export class FakeModel {
 		}
 		let raw = "";
 		for await (const chunk of req) raw += chunk;
-		const body = JSON.parse(raw) as { model: string; messages: Message[] };
-		const exchange = this.#decide(body.model, body.messages);
+		const body = JSON.parse(raw) as { model: string; messages: Message[]; tools?: { function?: { name?: string } }[] };
+		const { delayMs, ...decided } = this.#decide(body.model, body.messages);
+		const exchange = { ...decided, tools: (body.tools ?? []).map((t) => t.function?.name ?? "") };
 		this.exchanges.push(exchange);
+		if (delayMs) await new Promise((done) => setTimeout(done, delayMs));
 		stream(res, exchange.answer);
 	}
 
 	// Each trailing user card claims the first unused step that matches it, in any order, so the result
 	// does not depend on how the Router batches cards or on automatic retries.
-	#decide(model: string, messages: Message[]): Exchange {
+	#decide(model: string, messages: Message[]): Omit<Exchange, "tools"> & { delayMs: number } {
 		const conversation = model === "router" || model === "fallback" ? "router" : briefOf(messages);
 		const cards = trailingCards(messages);
-		const base = { at: Date.now(), model, conversation, cards, steps: [] as string[], unmatched: [] as string[] };
+		const base = { at: Date.now(), model, conversation, cards, steps: [] as string[], unmatched: [] as string[], delayMs: 0 };
 		if (cards.length === 0) return { ...base, answer: "好。" };
 		const pending = this.#pending.get(conversation) ?? [];
 		const calls: ToolCall[] = [];
@@ -152,6 +164,7 @@ export class FakeModel {
 			const [step] = pending.splice(i, 1);
 			this.#checkDrained();
 			base.steps.push(step.label);
+			base.delayMs = Math.max(base.delayMs, step.delayMs ?? 0);
 			const answer = this.#sabotaged(step) ?? step.answer(card);
 			if (!Array.isArray(answer)) return { ...base, answer };
 			calls.push(...answer);
@@ -174,11 +187,24 @@ const textOf = (m: Message) => (typeof m.content === "string" ? m.content : (m.c
 
 function trailingCards(messages: Message[]): string[] {
 	const out: string[] = [];
-	for (let i = messages.length - 1; i >= 0 && messages[i].role === "user"; i--) out.unshift(...textOf(messages[i]).split(/\n\n(?=\[)/));
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i];
+		if (m.role === "user") out.unshift(...textOf(m).split(/\n\n(?=\[)/));
+		else if (scriptableToolResult(m)) out.unshift(scriptableToolResult(m)!);
+		else break;
+	}
 	return out;
 }
 
-/** A Worker's first user message is "[任务说明] trg_… · …\n<brief>". */
+/** The tool results a script can answer as a card: a member's reply to a dispatch, and a command's output that starts with "[命令输出]". */
+function scriptableToolResult(m: Message): string | undefined {
+	if (m.role !== "tool") return undefined;
+	const text = textOf(m);
+	if (text.startsWith("成员回复")) return `[成员回复] ${text}`;
+	return text.startsWith("[命令输出]") ? text : undefined;
+}
+
+/** A Worker's first user message is "[任务说明] trg_… · …\n<brief>"; a member's is "[派活] <title>\n<task>". */
 function briefOf(messages: Message[]): string {
 	const first = textOf(messages.find((m) => m.role === "user") ?? { role: "user" });
 	return first.slice(first.indexOf("\n") + 1).trim();
@@ -196,4 +222,24 @@ function stream(res: ServerResponse, answer: Answer): void {
 	}
 	send({ choices: [], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } });
 	res.end("data: [DONE]\n\n");
+}
+
+/** A Pi world with only the fake provider and no credentials, plus a proxy tripwire for stray traffic. */
+export function fakeAgentEnv(fake: FakeModel, agentDir: string): Record<string, string> {
+	mkdirSync(agentDir, { recursive: true });
+	writeFileSync(join(agentDir, "models.json"), JSON.stringify(fake.modelsJson()));
+	writeFileSync(join(agentDir, "auth.json"), "{}");
+	const tripwire = fake.baseUrl.replace(/\/v1$/, "");
+	return {
+		PI_CODING_AGENT_DIR: agentDir,
+		PI_OFFLINE: "1",
+		PI_SKIP_VERSION_CHECK: "1",
+		PI_TELEMETRY: "0",
+		HTTPS_PROXY: tripwire,
+		HTTP_PROXY: tripwire,
+		https_proxy: tripwire,
+		http_proxy: tripwire,
+		NO_PROXY: "127.0.0.1,localhost",
+		no_proxy: "127.0.0.1,localhost",
+	};
 }

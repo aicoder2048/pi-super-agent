@@ -63,7 +63,7 @@ async function fauxRuntime(failOn: (id: string) => boolean) {
 function hostConfig(provider: string, fallbackId = "fallback") {
 	const stateDir = mkdtempSync(join(tmpdir(), "psa-wire-"));
 	return {
-		stateDir, kernel: {}, bgMaxMinutes: 120, fallbackDailyTokens: 1000, retryAttempts: 0, probePrimaryMinutes: 15,
+		stateDir, kernel: {}, bgMaxMinutes: 120, fallbackDailyTokens: 1000, dispatchTimeoutSeconds: 60, dispatchCodingTimeoutSeconds: 600, dispatchStallSeconds: 45, maxConcurrentExperts: 2, retryAttempts: 0, probePrimaryMinutes: 15,
 		heartbeatSeconds: 30, watchdog: { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120 }, modulesDirs: [], webPort: 0, sources: {},
 		models: { router: { provider, id: "router" }, worker: { provider, id: "worker" }, fallback: { provider, id: fallbackId } },
 	};
@@ -239,4 +239,18 @@ test("真实接线：成员的模型只能用 router 或 worker 的提供方，�
 	assert.throws(() => createHostOptions({ config: paid.config, modules: Modules.load([]), modelRuntime, log: () => {} }), (e: Error) => e.message.startsWith(paid.file) && /拒绝使用 deepseek\/deepseek-flash/.test(e.message));
 	const missing = withModel(`${provider}/no-such-model`);
 	assert.throws(() => createHostOptions({ config: missing.config, modules: Modules.load([]), modelRuntime, log: () => {} }), (e: Error) => e.message.startsWith(missing.file) && /找不到模型 .*no-such-model/.test(e.message));
+});
+
+test("真实接线：宿主知道每个团队能派给谁（通用助手不算），时限和并发上限取自配置；名册里没有的团队答不上来", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const config = hostConfig(provider);
+	writeFiles(config.stateDir, {
+		"agents/news.md": memberFile("news-researcher", "新闻研究员"),
+		"teams.yaml": "新闻队:\n  description: 查新闻\n  members:\n    - general\n    - news-researcher\n",
+	});
+	const { dispatch } = createHostOptions({ config, modules: Modules.load([]), modelRuntime, log: () => {} });
+	assert.deepEqual(dispatch!.crewOf("新闻队")!.map((m) => [m.name, m.title]), [["news-researcher", "新闻研究员"]]);
+	assert.deepEqual(dispatch!.crewOf(DEFAULT_TEAM), []);
+	assert.equal(dispatch!.crewOf("旧队"), undefined);
+	assert.deepEqual([dispatch!.timeoutMs, dispatch!.codingTimeoutMs, dispatch!.stallMs, dispatch!.maxConcurrent], [60_000, 600_000, 45_000, 2]);
 });

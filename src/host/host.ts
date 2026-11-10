@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { writeHeartbeat } from "../heartbeat.ts";
 import { relocateState } from "./relocate.ts";
+import { endLeftoverMembers } from "./member-ledger.ts";
 import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
 import { Kernel, nextStallAt } from "../kernel/kernel.ts";
@@ -12,11 +13,13 @@ import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import type { Feed, FeedSpec } from "../sources/feeds.ts";
 import { Dispatcher } from "./dispatcher.ts";
 import { HostServer, type AnswerResult, type Broadcast } from "./server.ts";
-import type { BoardState, Duty, TodayCounts, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
+import type { BoardState, Duty, TodayCounts, TranscriptHistory, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
+import { readSessionEntries } from "../jsonl.ts";
+import { memberTranscripts } from "./dispatch.ts";
 import { WebGateway } from "./web.ts";
 import { loadToken } from "./web-token.ts";
 import { ConfigError } from "../config-error.ts";
-import { WorkerExecutor, type WorkerModels, type WorkerSpawner } from "./workers.ts";
+import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -44,6 +47,7 @@ export interface HostOptions {
 	timers?: TimerEntry[];
 	heartbeatMs?: number;
 	workerModels: WorkerModels;
+	dispatch?: DispatchOptions;
 	createRouter(deps: HostDeps): Promise<RouterLike>;
 	createSpawner(deps: HostDeps): WorkerSpawner;
 	log?: (line: string) => void;
@@ -88,6 +92,7 @@ export class Host {
 	#web: WebGateway | undefined;
 	readonly #watching: WatchedSource[];
 	readonly #clock: Clock;
+	readonly #crewOf: DispatchOptions["crewOf"] | undefined;
 	#duty!: Duty;
 
 	private constructor(options: HostOptions) {
@@ -100,6 +105,7 @@ export class Host {
 		const clock = options.clock ?? { now: () => Date.now() };
 		this.#clock = clock;
 		this.#watching = options.watching ?? [];
+		this.#crewOf = options.dispatch?.crewOf;
 		this.kernel = new Kernel({
 			db: openStore(join(options.stateDir, "state.db")),
 			clock,
@@ -139,8 +145,10 @@ export class Host {
 			stateDir: options.stateDir,
 			afterCommand: deps.afterCommand,
 			onTranscript: (ticketId, event) => this.#transcript(ticketId, event),
+			onMemberTranscript: (ticketId, member, message) => this.#web?.sendTranscript(ticketId, message, member),
 			onError: (ticketId, error) => this.#log(`[worker ${ticketId}] ${String(error)}`),
 			models: options.workerModels,
+			dispatch: options.dispatch,
 			lookup: async (source, op, args) => {
 				const feed = this.feeds.get(source);
 				if (!feed) throw new Error(`没有来源 ${source} 可查；可查：${[...this.feeds.keys()].join("、") || "无"}`);
@@ -164,7 +172,7 @@ export class Host {
 				onSay: (text) => this.say(text),
 				onAnswer: (reportId, option) => this.answer(reportId, option),
 				snapshot: () => this.snapshot(),
-				transcript: (ticketId) => this.transcript(ticketId),
+				transcript: (ticketId) => this.transcript(ticketId).messages,
 			},
 			(ticketId, token, method, params) => this.workers.handleRequest(ticketId, token, method, params),
 			this.#log,
@@ -180,10 +188,12 @@ export class Host {
 		try {
 			const clientToken = loadToken(options.stateDir, "client-token", host.#log);
 			const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath, rulesFor: options.rulesFor ?? (() => []) };
-			host.router = await options.createRouter(deps);
+			// The socket bind is what turns a second host on this state directory away; with webPort 0 the web port does not.
 			await host.server.listen(host.socketPath, clientToken);
+			await endLeftoverMembers(options.stateDir, host.#log);
+			host.router = await options.createRouter(deps);
 		} catch (error) {
-			await host.#web?.close();
+			await Promise.all([host.server.close(), host.#web?.close()]);
 			throw error;
 		}
 		host.kernel.nameUnnamedHelpers();
@@ -226,16 +236,16 @@ export class Host {
 	}
 
 	snapshot() {
-		const { rows, today, duty, helpers, routes } = this.#boardState();
+		const { rows, today, duty, helpers, routes, dispatching } = this.#boardState();
 		const watching = this.#watching.map((w) => {
 			const problem = this.feeds.get(w.source)?.problem();
 			return problem ? { ...w, problem } : w;
 		});
-		return { conversation: this.kernel.conversation(CONVERSATION_LINES), board: rows, today, duty, helpers, routes, watching };
+		return { conversation: this.kernel.conversation(CONVERSATION_LINES), board: rows, today, duty, helpers, routes, dispatching, watching };
 	}
 
 	#boardState(): BoardState {
-		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES) };
+		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching() };
 	}
 
 	#deliverReply(threadId: string, text: string, replyId: string, ticketId: string | null | undefined): void {
@@ -256,17 +266,16 @@ export class Host {
 		this.#web?.sendTranscript(ticketId, e.message);
 	}
 
-	transcript(ticketId: string): TranscriptMessage[] {
+	transcript(ticketId: string): TranscriptHistory {
 		const ticket = this.kernel.getTicket(ticketId);
-		if (!ticket) return [];
+		if (!ticket) return { messages: [] };
 		const dir = join(this.#stateDir, "sessions", "workers");
 		const file = existsSync(dir) ? readdirSync(dir).find((f) => f.endsWith(`_${ticket.workerSessionId}.jsonl`)) : undefined;
-		if (!file) return [];
-		return readFileSync(join(dir, file), "utf8")
-			.split("\n")
-			.flatMap((line) => parseSessionLine(line))
-			.filter((entry) => entry.type === "message" && entry.message?.role !== "system")
-			.map((entry) => entry.message as TranscriptMessage);
+		const messages = file ? readSessionEntries(join(dir, file)).filter((entry) => entry.type === "message" && entry.message?.role !== "system").map((entry) => entry.message as TranscriptMessage) : [];
+		const titles = Object.fromEntries((this.#crewOf?.(ticket.team) ?? []).map((m) => [m.name, m.title]));
+		const steps = memberTranscripts(this.#stateDir, ticketId);
+		const hasTeam = Object.keys(titles).length > 0 || Object.keys(steps).length > 0;
+		return { messages, ...(hasTeam && { team: { titles, steps } }) };
 	}
 
 	#beat(): void {
@@ -334,16 +343,6 @@ export class Host {
 		await this.workers.shutdown();
 		this.router.dispose();
 		await Promise.all([this.server.close(), this.#web?.close()]);
-	}
-}
-
-// A worker killed mid-write leaves an unterminated last line; Pi skips such lines when it reopens the session, and so do we.
-function parseSessionLine(line: string): { type: string; message?: { role?: string } }[] {
-	if (!line) return [];
-	try {
-		return [JSON.parse(line)];
-	} catch {
-		return [];
 	}
 }
 

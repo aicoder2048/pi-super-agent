@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { ConfigError } from "../config-error.ts";
 import { OPTIONS_MAX, refusalText, type AnswerRefusal } from "../kernel/question.ts";
-import type { HostToClient, TranscriptMessage } from "../client/protocol.ts";
+import type { HostToClient, TranscriptHistory, TranscriptMessage } from "../client/protocol.ts";
 import { hasVisibleText, HistoryEchoFilter, type AnswerResult, type Broadcast } from "./server.ts";
 import { tokenMatches } from "./web-token.ts";
 
@@ -11,7 +11,7 @@ type Snapshot = Omit<Extract<HostToClient, { type: "snapshot" }>, "type">;
 
 export interface WebHost {
 	snapshot(): Snapshot;
-	transcript(ticketId: string): TranscriptMessage[];
+	transcript(ticketId: string): TranscriptHistory;
 	say(text: string): string;
 	answer(reportId: string, option: number): AnswerResult;
 }
@@ -86,12 +86,13 @@ export class WebGateway {
 		for (const res of this.#streams) res.write(frame);
 	}
 
-	sendTranscript(ticketId: string, message: TranscriptMessage): void {
+	sendTranscript(ticketId: string, message: TranscriptMessage, member?: { callId: string; index: number }): void {
 		const watchers = this.#watchers.get(ticketId);
 		if (!watchers) return;
-		const frame = sseFrame({ type: "transcript", ticketId, message });
+		const frame = sseFrame({ type: "transcript", ticketId, message, ...(member && { member }) });
 		const json = JSON.stringify(message);
-		for (const res of watchers) if (!this.#echoes.isEcho(res, json)) res.write(frame);
+		const alreadyInHistory = (res: ServerResponse) => !member && this.#echoes.isEcho(res, json);
+		for (const res of watchers) if (!alreadyInHistory(res)) res.write(frame);
 	}
 
 	close(): Promise<void> {
@@ -130,11 +131,11 @@ export class WebGateway {
 		if (url.pathname === "/transcript") {
 			const ticketId = url.searchParams.get("ticket") ?? "";
 			if (!TICKET_ID.test(ticketId)) return deny(res, 400);
-			const messages = this.#host.transcript(ticketId);
+			const history = this.#host.transcript(ticketId);
 			const watchers = this.#watchers.get(ticketId) ?? new Set();
 			this.#watchers.set(ticketId, watchers);
-			this.#echoes.opened(res, messages);
-			return this.#openStream(res, { type: "transcript_history", ticketId, messages }, watchers, () => this.#watchers.delete(ticketId));
+			this.#echoes.opened(res, history.messages);
+			return this.#openStream(res, { type: "transcript_history", ticketId, ...history }, watchers, () => this.#watchers.delete(ticketId));
 		}
 		deny(res, 404);
 	}
