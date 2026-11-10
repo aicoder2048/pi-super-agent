@@ -4,10 +4,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DISPATCH_NEXT, DispatchDesk, REPLY_MAX, SlotPool, clipReply, memberSessionDir, parseDispatch, replyEnvelope, stallNote, timeoutNote, type DispatchOutcome, type DispatchResult, type DispatchState, type MemberRun } from "../src/host/dispatch.ts";
 import { HostConnection } from "../src/client/connection.ts";
-import type { TeamBook } from "../src/kernel/types.ts";
 import { ModelSelector } from "../src/model-selector.ts";
 import type { Member } from "../src/teams.ts";
-import { ids, startHost, until, type Brain, type FakeSpawner, type FakeWorker } from "./helpers/fakes.ts";
+import { domainsOf, ids, startHost, until, type Brain, type FakeSpawner, type FakeWorker } from "./helpers/fakes.ts";
 
 const never = () => new AbortController().signal;
 const tick = (ms = 20) => new Promise((done) => setTimeout(done, ms));
@@ -134,11 +133,12 @@ const member = (name: string, title: string, over: Partial<Member> = {}): Member
 const CREW = [member("market-analyst", "行情分析师", { model: MARKET_MODEL }), member("news-researcher", "新闻研究员")];
 const READER = member("reader", "资料员", { tools: ["read", "web_get", "lookup"] });
 const CODER = member("coder", "程序员", { tools: ["read", "bash", "edit"] });
-const TEAMS: TeamBook = { kinds: new Map([["默认", "solo"], ["看盘队", "crew"], ["开发队", "crew"], ["旧队", "crew"]]) };
-const crewOf = (team: string) => (team === "看盘队" ? CREW : team === "开发队" ? [READER, CODER] : team === "默认" ? [] : undefined);
+const LOADED = domainsOf({ watch: { team: "看盘队", crew: CREW }, dev: { team: "开发队", crew: [READER, CODER] } });
+/** `old` is a module the kernel still knows by name but whose folder is gone. */
+const DOMAINS = { book: new Map([...LOADED.book, ["old", "旧队"]]), kitFor: LOADED.kitFor };
 
-/** Opens a ticket on `team` for the first thing the user says and hands everything after it to that ticket. */
-function openOn(team: string): Brain {
+/** Opens a ticket in `domain` (none when undefined) for the first thing the user says and hands everything after it to that ticket. */
+function openOn(domain: string | undefined): Brain {
 	let opened = false;
 	let ticket = "";
 	return (cards, _call, toolResults) => {
@@ -147,14 +147,14 @@ function openOn(team: string): Brain {
 			if (!card.startsWith("[对话]")) return [];
 			if (opened) return [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId: ids(card, "trg"), ticketId: ticket }] } }];
 			opened = true;
-			return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: card.includes("推断") ? "inference" : "request", triggerId: ids(card, "trg"), title: "t", brief: "b", team }] } }];
+			return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: card.includes("推断") ? "inference" : "request", triggerId: ids(card, "trg"), title: "t", brief: "b", domain }] } }];
 		});
 	};
 }
 
 type Runner = (run: MemberRun) => Promise<string>;
 type Call = { agent: string; task: string; callId?: string };
-interface Options { team?: string; timeoutMs?: number; codingTimeoutMs?: number; stallMs?: number; beforeSay?: (spawner: FakeSpawner) => void; maxConcurrent?: number; selector?: ModelSelector; fallbackDailyTokens?: number; say?: string }
+interface Options { domain?: string | null; timeoutMs?: number; codingTimeoutMs?: number; stallMs?: number; beforeSay?: (spawner: FakeSpawner) => void; maxConcurrent?: number; selector?: ModelSelector; fallbackDailyTokens?: number; say?: string }
 
 const newSelector = (now = () => Date.now()) =>
 	new ModelSelector({ primary: { provider: "openai-codex", id: "gpt-6.1-sol" }, fallback: { provider: "openai-codex", id: "gpt-fallback" }, probeEveryMs: 60_000, clock: { now } });
@@ -164,14 +164,14 @@ async function dispatching(t: TestContext, runner: Runner, calls: Call[], option
 	const settled: Promise<{ value: unknown } | { error: unknown }>[] = [];
 	let helper: FakeWorker | undefined;
 	const logs: string[] = [];
-	const started = await startHost(openOn(options.team ?? "看盘队"), (w) => {
+	const started = await startHost(openOn(options.domain === null ? undefined : (options.domain ?? "watch")), (w) => {
 		if (helper) return;
 		helper = w;
 		calls.forEach((call, i) => settled.push(Promise.resolve().then(() => w.request("worker.dispatch", { callId: `call_${i}`, ...call })).then((value) => ({ value }), (error) => ({ error }))));
 	}, {
-		teams: TEAMS,
+		domains: DOMAINS,
 		log: (line) => logs.push(line),
-		dispatch: { crewOf, timeoutMs: options.timeoutMs ?? 5000, codingTimeoutMs: options.codingTimeoutMs ?? options.timeoutMs ?? 5000, stallMs: options.stallMs ?? 5000, maxConcurrent: options.maxConcurrent ?? 4 },
+		dispatch: { timeoutMs: options.timeoutMs ?? 5000, codingTimeoutMs: options.codingTimeoutMs ?? options.timeoutMs ?? 5000, stallMs: options.stallMs ?? 5000, maxConcurrent: options.maxConcurrent ?? 4 },
 		workerModels: { selector: options.selector ?? newSelector(), fallbackDailyTokens: options.fallbackDailyTokens ?? 1_000_000 },
 	});
 	t.after(() => started.host.stop());
@@ -266,7 +266,7 @@ test("超时的成员记为没有回复，它的进程被中止；其余结果�
 const devPair: Call[] = [{ agent: "reader", task: "查资料" }, { agent: "coder", task: "改代码" }];
 
 test("时限按成员在这个任务里能做什么定：能写文件、改文件或执行命令的用长的那一档，其余用短的", async (t) => {
-	const { results } = await dispatching(t, async (run) => (await wait(400, run.signal), "做完了"), devPair, { team: "开发队", timeoutMs: 200, codingTimeoutMs: 2000 });
+	const { results } = await dispatching(t, async (run) => (await wait(400, run.signal), "做完了"), devPair, { domain: "dev", timeoutMs: 200, codingTimeoutMs: 2000 });
 	const out = await results();
 	assert.deepEqual(out.map((r) => [r.details.title, r.details.state]), [["资料员", "timed_out"], ["程序员", "done"]]);
 	assert.equal(out[0].details.note, "超过 0.2 秒的时限");
@@ -274,7 +274,7 @@ test("时限按成员在这个任务里能做什么定：能写文件、改文�
 });
 
 test("推断任务里成员只读，写了 bash 的成员也按短的那一档限时", async (t) => {
-	const { results } = await dispatching(t, async (run) => (await wait(400, run.signal), "做完了"), [devPair[1]], { team: "开发队", timeoutMs: 150, codingTimeoutMs: 2000, say: "推断：盯一下" });
+	const { results } = await dispatching(t, async (run) => (await wait(400, run.signal), "做完了"), [devPair[1]], { domain: "dev", timeoutMs: 150, codingTimeoutMs: 2000, say: "推断：盯一下" });
 	assert.deepEqual((await results()).map((r) => r.details.state), ["timed_out"]);
 });
 
@@ -364,9 +364,9 @@ test("助手正在试探主模型时，成员仍用回退模型：回退模型�
 test("成员自己的模型就是回退模型：主模型正常时它的用量也算进回退上限，到了上限只拒绝它", async (t) => {
 	const own = [member("market-analyst", "行情分析师", { model: FALLBACK }), CREW[1]];
 	const ran: string[] = [];
-	const started = await startHost(openOn("自带队"), () => {}, {
-		teams: { kinds: new Map([["默认", "solo"], ["自带队", "crew"]]) },
-		dispatch: { crewOf: () => own, timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4 },
+	const started = await startHost(openOn("own"), () => {}, {
+		domains: domainsOf({ own: { team: "自带队", crew: own } }),
+		dispatch: { timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4 },
 		workerModels: { selector: selectorWith(FALLBACK), fallbackDailyTokens: 150 },
 	});
 	t.after(() => started.host.stop());
@@ -617,8 +617,8 @@ test("查看任务的执行过程时带上本队成员的职称，和每次派�
 	});
 });
 
-test("默认团队的任务：执行过程里没有团队这一项", async (t) => {
-	const { host, ticketId } = await dispatching(t, async () => "答", [], { team: "默认" });
+test("没有领域的任务：执行过程里没有团队这一项", async (t) => {
+	const { host, ticketId } = await dispatching(t, async () => "答", [], { domain: null });
 	assert.deepEqual(host.transcript(ticketId()), { messages: [] });
 });
 
@@ -745,8 +745,8 @@ test("任务正在停的时候发来的派活被拒绝，不起成员进程", as
 
 test("同名成员在两个任务里互不相让：各自的任务里同时在跑", async (t) => {
 	const helpers: FakeWorker[] = [];
-	const perMessage: Brain = (cards) => cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg"), title: card.includes("甲") ? "甲" : "乙", brief: "b", team: "看盘队" }] } }] : []));
-	const { host, spawner } = await startHost(perMessage, (w) => void helpers.push(w), { teams: TEAMS, dispatch: { crewOf, timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4 } });
+	const perMessage: Brain = (cards) => cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg"), title: card.includes("甲") ? "甲" : "乙", brief: "b", domain: "watch" }] } }] : []));
+	const { host, spawner } = await startHost(perMessage, (w) => void helpers.push(w), { domains: DOMAINS, dispatch: { timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4 } });
 	t.after(() => host.stop());
 	const running = new Set<string>();
 	let most = 0;
@@ -856,17 +856,17 @@ test("成员的令牌只能经宿主查数据：不能汇报、交回、读任�
 	assert.throws(() => host!.workers.handleRequest(started.ticketId(), memberToken, "worker.lookup", {}), /令牌不符/, "做完之后成员的令牌作废");
 });
 
-test("默认团队的助手没有成员可派：进程拿到的本队名单是空的，派活请求被拒", async (t) => {
+test("没有领域的助手没有成员可派：进程拿到的本队名单是空的，派活请求被拒", async (t) => {
 	let ran = 0;
-	const { host, result, helper, logs } = await dispatching(t, async () => (ran++, "答"), [two[0]], { team: "默认" });
+	const { host, result, helper, logs } = await dispatching(t, async () => (ran++, "答"), [two[0]], { domain: null });
 	assert.deepEqual(helper().spec.crew, []);
 	await assert.rejects(result(0), /没有可派的成员/);
 	assert.equal(ran, 0);
-	assert.deepEqual(logs.filter((line) => /名册/.test(line)), []);
+	assert.deepEqual(logs.filter((line) => /领域/.test(line)), []);
 });
 
-test("任务的团队后来从名册里去掉了：助手照常启动，按单个助手运行，不能派活，日志只记一行", async (t) => {
-	const { host, result, helper, logs, ticketId, spawner } = await dispatching(t, async () => "答", [two[0]], { team: "旧队" });
+test("任务的领域的模块后来拿掉了：助手照常启动，按没有领域的单个助手运行，不能派活，日志只记一行", async (t) => {
+	const { host, result, helper, logs, ticketId, spawner } = await dispatching(t, async () => "答", [two[0]], { domain: "old" });
 	assert.deepEqual(helper().spec.crew, []);
 	await assert.rejects(result(0), /没有可派的成员/);
 	helper().report({ status: "progress", summary: "自己做" });
@@ -875,5 +875,5 @@ test("任务的团队后来从名册里去掉了：助手照常启动，按单�
 	host.say("再看一下");
 	await until(() => spawner.spawned.length === 2, "同一个任务的助手再次启动");
 	assert.deepEqual(spawner.spawned, [ticketId(), ticketId()]);
-	assert.deepEqual(logs.filter((line) => /旧队/.test(line)).map((line) => line.replace(ticketId(), "tkt")), ["[worker tkt] 团队「旧队」已不在名册里，这个任务按单个助手运行，不能派活"]);
+	assert.deepEqual(logs.filter((line) => /领域/.test(line)).map((line) => line.replace(ticketId(), "tkt")), ["[worker tkt] 领域「old」的模块已不在，这个任务按没有领域的单个助手继续，没有这个领域的技能，也不能派活"]);
 });

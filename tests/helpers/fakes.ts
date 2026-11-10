@@ -25,6 +25,16 @@ export function defaultWorkerModels(): WorkerModels {
 import { Host, type HostDeps, type HostOptions, type RouterLike } from "../../src/host/host.ts";
 import type { WorkerEvents, WorkerHandle, WorkerSpawner, WorkerSpec } from "../../src/host/workers.ts";
 import type { MemberRun } from "../../src/host/dispatch.ts";
+import type { Domains } from "../../src/modules.ts";
+import type { Member } from "../../src/teams.ts";
+
+/** The domains of a host under test: each module name with its team's name and members, or null for a module without members. */
+export function domainsOf(modules: Record<string, { team: string; crew: readonly Member[] } | null>): Domains {
+	return {
+		book: new Map(Object.entries(modules).map(([name, team]) => [name, team?.team ?? null])),
+		kitFor: (domain) => (domain in modules ? { crew: modules[domain]?.crew ?? [] } : undefined),
+	};
+}
 
 export type ToolCallSpec = { name: string; args: Record<string, unknown> };
 export type Brain = (cards: string[], call: number, toolResults: string[]) => ToolCallSpec[] | Promise<ToolCallSpec[]>;
@@ -98,7 +108,7 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 				rulesFor: deps.rulesFor,
 				cwd: deps.stateDir,
 				rules: "",
-				teamRoster: "",
+				domainRoster: "",
 				afterCommand: deps.afterCommand,
 			});
 		},

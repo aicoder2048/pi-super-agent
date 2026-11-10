@@ -6,7 +6,7 @@ import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
 import { Kernel, nextStallAt } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
-import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type DashboardRow, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy, type TeamBook } from "../kernel/types.ts";
+import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type DashboardRow, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
 import type { TriggerSubmission } from "../kernel/types.ts";
 import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
@@ -20,6 +20,7 @@ import { WebGateway } from "./web.ts";
 import { loadToken } from "./web-token.ts";
 import { ConfigError } from "../config-error.ts";
 import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
+import type { Domains } from "../modules.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -42,7 +43,8 @@ export interface HostOptions {
 	sourcePolicy?: SourcePolicy;
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	isMarketSource?: (source: string) => boolean;
-	teams?: TeamBook;
+	/** The loaded modules. Without it no ticket has a domain. */
+	domains?: Domains;
 	rulesFor?: (triggerSource: string) => string[];
 	timers?: TimerEntry[];
 	heartbeatMs?: number;
@@ -92,7 +94,7 @@ export class Host {
 	#web: WebGateway | undefined;
 	readonly #watching: WatchedSource[];
 	readonly #clock: Clock;
-	readonly #crewOf: DispatchOptions["crewOf"] | undefined;
+	readonly #kitFor: Domains["kitFor"] | undefined;
 	#duty!: Duty;
 
 	private constructor(options: HostOptions) {
@@ -105,14 +107,14 @@ export class Host {
 		const clock = options.clock ?? { now: () => Date.now() };
 		this.#clock = clock;
 		this.#watching = options.watching ?? [];
-		this.#crewOf = options.dispatch?.crewOf;
+		this.#kitFor = options.domains?.kitFor;
 		this.kernel = new Kernel({
 			db: openStore(join(options.stateDir, "state.db")),
 			clock,
 			sourcePolicy: (trigger) => (trigger.source === WATCHDOG_SOURCE ? "notice" : (options.sourcePolicy?.(trigger) ?? "candidate")),
 			ruleAllows: options.ruleAllows,
 			isMarketSource: options.isMarketSource,
-			teams: options.teams,
+			domains: options.domains?.book,
 			log: this.#log,
 			config: options.config,
 		});
@@ -148,6 +150,7 @@ export class Host {
 			onMemberTranscript: (ticketId, member, message) => this.#web?.sendTranscript(ticketId, message, member),
 			onError: (ticketId, error) => this.#log(`[worker ${ticketId}] ${String(error)}`),
 			models: options.workerModels,
+			kitFor: this.#kitFor,
 			dispatch: options.dispatch,
 			lookup: async (source, op, args) => {
 				const feed = this.feeds.get(source);
@@ -272,7 +275,8 @@ export class Host {
 		const dir = join(this.#stateDir, "sessions", "workers");
 		const file = existsSync(dir) ? readdirSync(dir).find((f) => f.endsWith(`_${ticket.workerSessionId}.jsonl`)) : undefined;
 		const messages = file ? readSessionEntries(join(dir, file)).filter((entry) => entry.type === "message" && entry.message?.role !== "system").map((entry) => entry.message as TranscriptMessage) : [];
-		const titles = Object.fromEntries((this.#crewOf?.(ticket.team) ?? []).map((m) => [m.name, m.title]));
+		const crew = (ticket.domain !== null && this.#kitFor?.(ticket.domain)?.crew) || [];
+		const titles = Object.fromEntries(crew.map((m) => [m.name, m.title]));
 		const steps = memberTranscripts(this.#stateDir, ticketId);
 		const hasTeam = Object.keys(titles).length > 0 || Object.keys(steps).length > 0;
 		return { messages, ...(hasTeam && { team: { titles, steps } }) };

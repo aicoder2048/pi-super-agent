@@ -230,3 +230,26 @@ test("module.json 的 title 和 description：description 最多 60 字，写了
 		oneLine(() => load(root), startsWith(join(root, "news/module.json")), message);
 	}
 });
+
+test("给内核的领域簿：每个模块一项，有成员的记队名，没有成员的记空", () => {
+	const root = modulesRoot({ watch: { manifest: { team: "看盘队" }, "agents/a.md": person("market-analyst", "行情分析师") }, mail: {} });
+	assert.deepEqual([...load(root).book], [["mail", null], ["watch", "看盘队"]]);
+});
+
+test("按领域取助手要的东西：模块的成员；没有成员的模块给空名单；没有这个模块就答不上来", () => {
+	const root = modulesRoot({ watch: { manifest: { team: "看盘队" }, "agents/a.md": person("market-analyst", "行情分析师") }, mail: {} });
+	const { kitFor } = load(root);
+	assert.deepEqual(kitFor("watch")!.crew.map((m) => [m.name, m.title]), [["market-analyst", "行情分析师"]]);
+	assert.deepEqual(kitFor("mail")!.crew, []);
+	assert.equal(kitFor("gone"), undefined);
+});
+
+test("给幕僚长的领域名册：写了 description 的模块每个一行「名字（领域名）：说明」，没写的不列；没有成员也不列成员", () => {
+	const root = modulesRoot({
+		watch: { manifest: { title: "看盘", description: "行情、个股和相关新闻", team: "看盘队" }, "agents/a.md": person("market-analyst", "行情分析师") },
+		mail: { manifest: { title: "邮件", description: "收发和整理邮件" } },
+		quiet: { manifest: { title: "安静" } },
+	});
+	assert.equal(load(root).rosterPrompt(), "- mail（邮件）：收发和整理邮件\n- watch（看盘）：行情、个股和相关新闻");
+	assert.equal(Modules.load([]).rosterPrompt(), "");
+});

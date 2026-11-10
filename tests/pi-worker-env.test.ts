@@ -64,7 +64,7 @@ test("Worker 子进程和模块 prepare 的环境里没有客户端凭据，也�
 		moduleFor: () => ({ prepare: "env > prepare-env.txt" }),
 	});
 	const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
-	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir, basis: "request", ruleId: null, team: "默认", crew: [], token: "secret-ticket-token", model: { provider: "openai-codex", id: "gpt" } }, events);
+	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir, basis: "request", ruleId: null, crew: [], token: "secret-ticket-token", model: { provider: "openai-codex", id: "gpt" } }, events);
 	t.after(() => handle.stop());
 	const env = JSON.parse(readFileSync(join(workdir, "worker-env.json"), "utf8")) as Record<string, string>;
 	const prepared = readFileSync(join(workdir, "prepare-env.txt"), "utf8");
@@ -77,7 +77,7 @@ test("Worker 子进程和模块 prepare 的环境里没有客户端凭据，也�
 	assert.equal(env.PSA_SOCKET, join(stateDir, "host.sock"));
 });
 
-test("本队有成员时，成员名单经 PSA_CREW 交给助手进程；默认团队的助手没有这个变量", async (t) => {
+test("本队有成员时，成员名单经 PSA_CREW 交给助手进程；没有成员可派的助手没有这个变量", async (t) => {
 	const crew = [{ name: "market-analyst", title: "行情分析师", description: "看盘面" }, { name: "news-researcher", title: "新闻研究员", description: "查新闻" }];
 	const envOf = async (members: typeof crew) => {
 		const dir = mkdtempSync(join(tmpdir(), "psa-env-"));

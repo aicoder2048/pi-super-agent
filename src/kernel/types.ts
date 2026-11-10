@@ -9,21 +9,18 @@ export const HELPER_ROLES = ["conversation", "market", "rule", "watch"] as const
 export type HelperRole = (typeof HELPER_ROLES)[number];
 
 /**
- * Who a ticket shows as, fixed when it opens. One helper has a role and counts within that role: 「青檀 · 行情助手 #2」.
- * A helper whose team has members to dispatch carries the team's name instead and counts within that team: 「高山流水 · 看盘队 #2」.
- * Both count within one New York day.
+ * Who a ticket shows as. The name, the number and which of the two forms it takes are fixed when the ticket opens.
+ * One helper has a role and counts within that role: 「青檀 · 行情助手 #2」.
+ * A helper whose domain has members to dispatch to carries the module's team name instead and counts within that domain: 「高山流水 · 看盘队 #2」.
+ * Both count within one New York day. `team` is read from the module each time: its current team name, or the module's name once it has no members or is gone.
  */
 export type Helper = { name: string; seq: number } & ({ role: HelperRole } | { team: string });
 
-export const DEFAULT_TEAM = "默认";
-
-/** solo: one helper. crew: the team has a member besides 通用助手, so the helper can grow into a team. */
-export type TeamKind = "solo" | "crew";
-
-/** All the kernel knows about teams, built once at startup. */
-export interface TeamBook {
-	kinds: ReadonlyMap<string, TeamKind>;
-}
+/**
+ * All the kernel knows about domains, built once at startup: every loaded module's name,
+ * with its team's name when it has members and null when its helper works alone.
+ */
+export type DomainBook = ReadonlyMap<string, string | null>;
 
 export interface HelpersToday {
 	count: number;
@@ -123,7 +120,8 @@ export type Decision =
 			title: string;
 			basis: Basis;
 			ruleId?: string;
-			team?: string;
+			/** A module's name. Omitted or blank: the ticket has no domain. */
+			domain?: string;
 			triggerId?: string;
 			threads?: string[];
 			brief: string;
@@ -188,8 +186,8 @@ export interface Ticket {
 	title: string;
 	basis: Basis;
 	ruleId: string | null;
-	/** Fixed when the ticket opens; it may name a team that has since been removed. */
-	team: string;
+	/** The module this ticket belongs to, fixed when it opens. Null: no domain. The module may have been removed since. */
+	domain: string | null;
 	originTriggerId: string | null;
 	createdAt: number;
 	workerSessionId: string;

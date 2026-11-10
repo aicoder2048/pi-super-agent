@@ -9,7 +9,6 @@ import { createHostOptions, modelSelectors, watchedSources } from "../src/host/w
 import { memberProviders } from "../src/host/config.ts";
 import { Host } from "../src/host/host.ts";
 import { Modules } from "../src/modules.ts";
-import { DEFAULT_TEAM } from "../src/kernel/types.ts";
 import { KEY_NAMES } from "../src/sources/market/key.ts";
 import { until } from "./helpers/fakes.ts";
 
@@ -200,7 +199,7 @@ const moduleFiles = (name: string, manifest: object, files: Record<string, strin
 const NEWS_MODULE = moduleFiles("news", { title: "新闻", description: "查新闻、核对报道来源", team: "新闻队" }, { "agents/news.md": memberFile("news-researcher", "新闻研究员") });
 const loadWith = (config: ReturnType<typeof hostConfig>, ...dirs: string[]) => Modules.load([...dirs, join(config.stateDir, "modules")], { stateDir: config.stateDir, allowedProviders: memberProviders(config) });
 
-test("真实接线：仓库模块目录和状态目录 modules/ 里带成员的模块各是一支团队，进了内核的团队簿和幕僚长的提示词；提示词里没有成员", async (t) => {
+test("真实接线：仓库模块目录和状态目录 modules/ 里的模块都是领域，进了内核的领域簿；幕僚长的名册只列写了说明的，不列成员", async (t) => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = hostConfig(provider);
 	writeFiles(join(config.stateDir, "modules"), NEWS_MODULE);
@@ -210,19 +209,21 @@ test("真实接线：仓库模块目录和状态目录 modules/ 里带成员的�
 	});
 	const logs: string[] = [];
 	const options = createHostOptions({ config, modules: loadWith(config, modulesDir), modelRuntime, log: (line) => logs.push(line) });
-	assert.deepEqual([...options.teams!.kinds], [[DEFAULT_TEAM, "solo"], ["看盘队", "crew"], ["新闻队", "crew"]]);
-	assert.ok(logs.includes("[host] 团队：默认、看盘队、新闻队"), logs.join("\n"));
+	assert.deepEqual([...options.domains!.book], [["mail", null], ["watch", "看盘队"], ["news", "新闻队"]]);
+	assert.ok(logs.includes("[host] 领域：mail、watch（看盘队）、news（新闻队）"), logs.join("\n"));
 	const host = await Host.start(options);
 	t.after(() => host.stop());
 	const prompt: string = (host.router as any).session.systemPrompt;
-	assert.ok(prompt.includes("\n- 看盘队：盯行情\n- 新闻队：查新闻、核对报道来源\n"), prompt);
-	assert.doesNotMatch(prompt, /news-researcher|新闻研究员|market-analyst|行情分析师/);
+	assert.ok(prompt.includes("\n- watch（看盘）：盯行情\n- news（新闻）：查新闻、核对报道来源\n"), prompt);
+	assert.doesNotMatch(prompt, /news-researcher|新闻研究员|market-analyst|行情分析师|mail（/);
 });
 
-test("真实接线：没有任何带成员的模块时，团队簿里只有默认团队", async () => {
+test("真实接线：没有任何模块时没有领域", async () => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
-	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([]), modelRuntime, log: () => {} });
-	assert.deepEqual([...options.teams!.kinds], [[DEFAULT_TEAM, "solo"]]);
+	const logs: string[] = [];
+	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([]), modelRuntime, log: (line) => logs.push(line) });
+	assert.deepEqual([...options.domains!.book], []);
+	assert.ok(logs.includes("[host] 领域：无"), logs.join("\n"));
 });
 
 test("真实接线：成员的模型只能用 router 或 worker 的提供方，回退模型的提供方不算；提供方对了但模型不存在也在启动前报错", async () => {
@@ -239,13 +240,12 @@ test("真实接线：成员的模型只能用 router 或 worker 的提供方，�
 	assert.throws(() => createHostOptions({ config: missing.config, modules: loadWith(missing.config), modelRuntime, log: () => {} }), (e: Error) => e.message.startsWith(missing.file) && /找不到模型 .*no-such-model/.test(e.message));
 });
 
-test("真实接线：宿主知道每个团队能派给谁，时限和并发上限取自配置；名册里没有的团队答不上来", async () => {
+test("真实接线：宿主知道每个领域的助手能派给谁，时限和并发上限取自配置；没有加载的模块答不上来", async () => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = hostConfig(provider);
 	writeFiles(join(config.stateDir, "modules"), NEWS_MODULE);
-	const { dispatch } = createHostOptions({ config, modules: loadWith(config), modelRuntime, log: () => {} });
-	assert.deepEqual(dispatch!.crewOf("新闻队")!.map((m) => [m.name, m.title]), [["news-researcher", "新闻研究员"]]);
-	assert.deepEqual(dispatch!.crewOf(DEFAULT_TEAM), []);
-	assert.equal(dispatch!.crewOf("旧队"), undefined);
-	assert.deepEqual([dispatch!.timeoutMs, dispatch!.codingTimeoutMs, dispatch!.stallMs, dispatch!.maxConcurrent], [60_000, 600_000, 45_000, 2]);
+	const { dispatch, domains } = createHostOptions({ config, modules: loadWith(config), modelRuntime, log: () => {} });
+	assert.deepEqual(domains!.kitFor("news")!.crew.map((m) => [m.name, m.title]), [["news-researcher", "新闻研究员"]]);
+	assert.equal(domains!.kitFor("old"), undefined);
+	assert.deepEqual(dispatch, { timeoutMs: 60_000, codingTimeoutMs: 600_000, stallMs: 45_000, maxConcurrent: 2 });
 });

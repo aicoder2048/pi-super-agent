@@ -35,7 +35,7 @@ test("成员的工具 = 任务依据允许的工具 ∩ 成员自己的 tools；
 	for (const basis of ["request", "rule", "inference"] as const) assert.ok(!memberTools(basis, undefined).includes("dispatch_agent"));
 });
 
-test("默认团队的助手：启动参数和现在一模一样，提示词只有那一段", () => {
+test("没有成员可派的助手：启动参数和单个助手一模一样，提示词只有那一段", () => {
 	assert.deepEqual(workerArgs({ ...base, basis: "request", crew: [] }), ["--session-dir", "/s", "--session-id", "sid", "--no-extensions", "-e", "/ext.ts", "--no-skills", "--append-system-prompt", "p"]);
 	assert.deepEqual(workerArgs({ ...base, basis: "request", crew: [] }), workerArgs({ ...base, basis: "request" }));
 	assert.deepEqual(workerArgs({ ...base, basis: "inference", crew: [] }), workerArgs({ ...base, basis: "inference" }));

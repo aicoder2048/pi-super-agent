@@ -1,9 +1,9 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { ConfigError, readJsonFile } from "./config-error.ts";
-import { CONVERSATION_SOURCE, type SourcePolicy } from "./kernel/types.ts";
+import { CONVERSATION_SOURCE, type DomainBook, type SourcePolicy } from "./kernel/types.ts";
 import type { TimerEntry } from "./sources/timer.ts";
-import { loadTeam, type Team } from "./teams.ts";
+import { loadTeam, type Member, type Team } from "./teams.ts";
 
 export interface SourceFilter {
 	name: string;
@@ -38,6 +38,22 @@ export interface LoadedModule {
 	skillsDir: string | undefined;
 	/** The members in `agents/`. Absent: a ticket of this module is one helper. */
 	team?: Team;
+}
+
+/** What a helper is handed from its ticket's domain. */
+export interface DomainKit {
+	/** The module's members the helper may dispatch to. Empty: it works alone. */
+	crew: readonly Member[];
+}
+
+/** The kit of a ticket with no domain, or whose module is gone. */
+export const NO_DOMAIN: DomainKit = { crew: [] };
+
+/** The loaded modules as the host uses them once tickets belong to them. `Modules` is the real one. */
+export interface Domains {
+	readonly book: DomainBook;
+	/** Undefined: no loaded module has that name. */
+	readonly kitFor: (domain: string) => DomainKit | undefined;
 }
 
 export interface ModulesLoadOptions {
@@ -122,16 +138,18 @@ function rejectLooseTeamFiles(stateDir: string): void {
 	if (existsSync(agentsDir)) throw new ConfigError(`${agentsDir}：不再读取状态目录下零散的成员。把它们搬到 ${home}agents/，并在 ${home}module.json 写 team（队名）`);
 }
 
-export class Modules {
+export class Modules implements Domains {
 	readonly modules: LoadedModule[];
 	readonly userRules: ScopedRule[];
 	readonly skippedUserRules: string[];
+	readonly book: DomainBook;
 	readonly #scopes: Map<string, string[]>;
 
 	constructor(modules: LoadedModule[], userRules: ScopedRule[], skippedUserRules: string[]) {
 		this.modules = modules;
 		this.userRules = userRules;
 		this.skippedUserRules = skippedUserRules;
+		this.book = new Map(modules.map((m) => [m.name, m.team?.name ?? null]));
 		this.#scopes = new Map(this.allRules().map((r) => [r.id, r.sources]));
 	}
 
@@ -162,6 +180,16 @@ export class Modules {
 	rulesPrompt(): string {
 		return this.allRules().map((r) => `### ${r.id}\n${r.text}`).join("\n\n");
 	}
+
+	/** One line per module the 幕僚长 may choose as a domain: the ones with a description. Never a member. */
+	rosterPrompt(): string {
+		return this.modules.filter((m) => m.manifest.description).map((m) => `- ${m.name}（${m.manifest.title}）：${m.manifest.description}`).join("\n");
+	}
+
+	kitFor = (domain: string): DomainKit | undefined => {
+		const module = this.modules.find((m) => m.name === domain);
+		return module && { crew: module.team?.members ?? [] };
+	};
 
 	ruleAllows = (ruleId: string, triggerSource: string): boolean => {
 		return triggerSource !== CONVERSATION_SOURCE && (this.#scopes.get(ruleId)?.includes(triggerSource) ?? false);

@@ -1,6 +1,6 @@
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
-import { DEFAULT_TEAM, type Clock, type TeamBook } from "../kernel/types.ts";
+import type { Clock } from "../kernel/types.ts";
 import { ConfigError } from "../config-error.ts";
 import { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
@@ -71,9 +71,7 @@ export interface HostWiringInput {
 }
 
 export function createHostOptions({ config, modules, modelRuntime, log, clock = { now: () => Date.now() } }: HostWiringInput): HostOptions {
-	const withTeam = modules.modules.flatMap((m) => (m.team ? [{ ...m, team: m.team }] : []));
-	const teams: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"], ...withTeam.map((m) => [m.team.name, "crew"] as const)]) };
-	log(`[host] 团队：${[...teams.kinds.keys()].join("、")}`);
+	log(`[host] 领域：${modules.modules.map((m) => (m.team ? `${m.name}（${m.team.name}）` : m.name)).join("、") || "无"}`);
 	const resolve = (ref: ModelRef, role?: string) => {
 		const model = modelRuntime.getModel(ref.provider, ref.id);
 		if (!model) throw new ConfigError(`${role ? `${join(config.stateDir, "config.json")}：models.${role}：` : ""}找不到模型 ${formatModelRef(ref)}`);
@@ -82,7 +80,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 	resolve(config.models.router, "router");
 	resolve(config.models.worker, "worker");
 	resolve(config.models.fallback, "fallback");
-	for (const member of withTeam.flatMap((m) => m.team.members)) {
+	for (const member of modules.modules.flatMap((m) => m.team?.members ?? [])) {
 		if (member.model && !modelRuntime.getModel(member.model.provider, member.model.id)) throw new ConfigError(`${member.file}：model：找不到模型 ${formatModelRef(member.model)}`);
 	}
 	const selectors = modelSelectors(config, clock);
@@ -97,14 +95,13 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		sourcePolicy: modules.sourcePolicy,
 		ruleAllows: modules.ruleAllows,
 		isMarketSource: modules.isMarketSource,
-		teams,
+		domains: modules,
 		rulesFor: modules.rulesFor,
 		timers,
 		watching: watchedSources(modules, timers),
 		feeds,
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
 		dispatch: {
-			crewOf: (team) => (team === DEFAULT_TEAM ? [] : withTeam.find((m) => m.team.name === team)?.team.members),
 			timeoutMs: config.dispatchTimeoutSeconds * 1000,
 			codingTimeoutMs: config.dispatchCodingTimeoutSeconds * 1000,
 			stallMs: config.dispatchStallSeconds * 1000,
@@ -119,7 +116,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 				cwd: join(config.stateDir, "router"),
 				sessionDir: join(config.stateDir, "sessions", "router"),
 				rules: modules.rulesPrompt(),
-				teamRoster: withTeam.map((m) => `- ${m.team.name}：${m.manifest.description ?? ""}`).join("\n"),
+				domainRoster: modules.rosterPrompt(),
 				rulesFor: deps.rulesFor,
 				afterCommand: deps.afterCommand,
 				onError: (e) => log(`[router] ${String(e)}`),

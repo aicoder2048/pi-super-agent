@@ -3,8 +3,7 @@ import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { ROUTER_TOOL_NAMES } from "../src/host/router.ts";
-import { DEFAULT_TEAM, type TeamBook } from "../src/kernel/types.ts";
-import { ids, openOnConversation, startHost, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
+import { domainsOf, ids, openOnConversation, startHost, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
 
 const replyOnReport: Brain = (cards) =>
 	cards.flatMap((card) => {
@@ -226,24 +225,21 @@ test("宿主启动时状态目录不存在就建成 0700", async (t) => {
 	assert.equal(statSync(stateDir).mode & 0o777, 0o700);
 });
 
-const NEWS_BOOK: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"], ["新闻队", "crew"], ["看盘队", "crew"]]) };
+const NEWS_DOMAINS = domainsOf({
+	news: { team: "新闻队", crew: [{ name: "news-researcher", title: "新闻研究员", description: "查新闻", tools: undefined, skills: [], model: undefined, prompt: "", file: "/modules/news/agents/news.md" }] },
+	mail: null,
+});
+const DISPATCH = { timeoutMs: 1000, codingTimeoutMs: 1000, stallMs: 1000, maxConcurrent: 1 };
 
-const NEWS_DISPATCH = {
-	crewOf: (team: string) => (team === "新闻队" ? [{ name: "news-researcher", title: "新闻研究员", description: "查新闻", tools: undefined, skills: [], model: undefined, prompt: "", file: "/agents/news.md" }] : []),
-	timeoutMs: 1000,
-	codingTimeoutMs: 1000,
-	stallMs: 1000,
-	maxConcurrent: 1,
-};
-
-test("宿主把团队簿交给内核，任务的团队决定启动助手时交给它哪些成员", async (t) => {
+test("宿主把领域簿交给内核，任务的领域决定启动助手时交给它哪些成员；领域没有成员和没有领域的任务都是单个助手", async (t) => {
 	const brain: Brain = (cards) =>
-		cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg"), title: "t", brief: "b", ...(card.includes("新闻") && { team: "新闻队" }) }] } }] : []));
-	const { host, spawner } = await startHost(brain, (w) => w.settle(), { teams: NEWS_BOOK, dispatch: NEWS_DISPATCH });
+		cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg"), title: "t", brief: "b", ...(card.includes("新闻") && { domain: "news" }), ...(card.includes("邮件") && { domain: "mail" }) }] } }] : []));
+	const { host, spawner } = await startHost(brain, (w) => w.settle(), { domains: NEWS_DOMAINS, dispatch: DISPATCH });
 	t.after(() => host.stop());
 	host.say("看下听证会的新闻");
+	host.say("回一下邮件");
 	host.say("查明天天气");
-	await until(() => spawner.workers.size === 2, "两个助手都启动");
-	const teams = host.kernel.listTickets().map((row) => [row.title && row.helper && "team" in row.helper, spawner.workers.get(row.id)!.spec.crew.map((m) => m.name)]);
-	assert.deepEqual(teams, [[true, ["news-researcher"]], [false, []]]);
+	await until(() => spawner.workers.size === 3, "三个助手都启动");
+	const seen = host.kernel.listTickets().map((row) => [host.kernel.getTicket(row.id)!.domain, "team" in row.helper! && row.helper.team, spawner.workers.get(row.id)!.spec.crew.map((m) => m.name)]);
+	assert.deepEqual(seen, [["news", "新闻队", ["news-researcher"]], ["mail", false, []], [null, false, []]]);
 });

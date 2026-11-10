@@ -30,9 +30,9 @@ const STATE_FILES = {
 	"modules/watch/agents/news.md": "---\nname: news-researcher\ntitle: 新闻研究员\ndescription: 查新闻、核对报道来源\n---\n你是新闻研究员。\n",
 };
 
-const openOnTeam = (card: string, team: string): ToolCall => {
+const openInDomain = (card: string, domain: string): ToolCall => {
 	const call = openTicket(card, TASK.title, TASK.brief);
-	return { ...call, args: { decisions: (call.args.decisions as object[]).map((d) => ({ ...d, team })) } };
+	return { ...call, args: { decisions: (call.args.decisions as object[]).map((d) => ({ ...d, domain })) } };
 };
 const handOverTo = (title: string) => (card: string): ToolCall[] => {
 	const ticketId = card.match(new RegExp(`(tkt_[\\w-]+)「${title}」`))?.[1];
@@ -40,12 +40,12 @@ const handOverTo = (title: string) => (card: string): ToolCall[] => {
 };
 const sorted = (names: string[]) => [...names].sort();
 
-test("看盘队的助手把一个问题并行派给两位成员再合成一份答复；追问时同一位成员接着上次的话答；默认团队的助手没有派活工具", (t) =>
+test("看盘队的助手把一个问题并行派给两位成员再合成一份答复；追问时同一位成员接着上次的话答；没有领域的助手没有派活工具", (t) =>
 	story(
 		t,
 		{
 			router: [
-				on("Router 把问题交给看盘队", /^\[对话\][\s\S]*为什么跌/, (c) => [openOnTeam(c, "看盘队"), reply(c, "已交给**看盘队**，稍等。")]),
+				on("Router 把问题交给看盘队", /^\[对话\][\s\S]*为什么跌/, (c) => [openInDomain(c, "watch"), reply(c, "已交给**看盘队**，稍等。")]),
 				on("Router 把追问交给同一个任务", /^\[对话\][\s\S]*追问/, handOverTo(TASK.title)),
 				on("Router 开天气任务", /^\[对话\][\s\S]*天气/, (c) => [openTicket(c, WEATHER.title, WEATHER.brief), reply(c, "已安排")]),
 			],
@@ -172,7 +172,7 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 				const requests = fake.exchanges.filter((e) => e.model === "worker").length;
 				assert.match(await page.locator("#how-life").textContent() ?? "", new RegExp(`tokens 入 ${requests * 10} / 出 ${requests * 5}$`));
 			});
-			await step("模型看到的工具：看盘队的助手有 dispatch_agent，成员没有汇报、交回和派活，行情分析师只有自己列的那几个；默认团队的助手没有 dispatch_agent", async (page) => {
+			await step("模型看到的工具：看盘队的助手有 dispatch_agent，成员没有汇报、交回和派活，行情分析师只有自己列的那几个；没有领域的助手没有 dispatch_agent", async (page) => {
 				await sayInPage(page, "查一下天气");
 				await page.locator("#left .card", { hasText: "正在查" }).waitFor();
 				const toolsOf = (conversation: string) => fake.exchanges.find((e) => e.conversation === conversation)!.tools;
@@ -197,7 +197,7 @@ test("派过一次后重启宿主再追问，成员仍接着上次的会话；�
 		t,
 		{
 			router: [
-				on("Router 把问题交给看盘队", /^\[对话\][\s\S]*听证会/, (c) => [openOnTeam(c, "看盘队"), reply(c, "已交给看盘队")]),
+				on("Router 把问题交给看盘队", /^\[对话\][\s\S]*听证会/, (c) => [openInDomain(c, "watch"), reply(c, "已交给看盘队")]),
 				on("Router 把追问交给同一个任务", /^\[对话\][\s\S]*哪天/, handOverTo(TASK.title)),
 				on("Router 叫停任务", /^\[对话\][\s\S]*停掉/, stopTicket(TASK.title)),
 			],
@@ -290,7 +290,7 @@ test("一次派给四位成员、同时只能跑两位：小卡下两位在干�
 	story(
 		t,
 		{
-			router: [on("Router 把问题交给看盘队", /^\[对话\][\s\S]*为什么跌/, (c) => [openOnTeam(c, "看盘队"), reply(c, "已交给看盘队")])],
+			router: [on("Router 把问题交给看盘队", /^\[对话\][\s\S]*为什么跌/, (c) => [openInDomain(c, "watch"), reply(c, "已交给看盘队")])],
 			workers: [
 				worker(
 					TASK.brief,

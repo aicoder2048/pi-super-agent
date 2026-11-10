@@ -11,7 +11,6 @@ import {
 	CONVERSATION_SOURCE,
 	CONVERSATION_THREAD_ID,
 	DEFAULT_CONFIG,
-	DEFAULT_TEAM,
 	RETRY_BACKOFF_MS,
 	SYSTEM_PROBLEM_STREAK,
 } from "./types.ts";
@@ -28,9 +27,9 @@ import type {
 	QuestionClick,
 	DecisionResult,
 	Disposition,
+	DomainBook,
 	Helper,
 	HelpersToday,
-	TeamBook,
 	InputKind,
 	KernelConfig,
 	PendingAction,
@@ -125,15 +124,10 @@ export function nextStallAt(rows: DashboardRow[], stuckMs: number): number | nul
 const SOLO_HELPER_ROWS = "helper_role IS NOT NULL";
 const TEAM_HELPER_ROWS = "helper_name IS NOT NULL AND helper_role IS NULL";
 
-function toHelper(r: Row): Helper | null {
-	if (r.helper_name === null) return null;
-	const identity = { name: r.helper_name, seq: r.helper_seq };
-	return r.helper_role === null ? { ...identity, team: r.team } : { ...identity, role: r.helper_role };
-}
+/** Stands where the team name goes on a team ticket opened before tickets recorded a domain. */
+const FORMER_TEAM_LABEL = "团队";
 
 const storedRole = (helper: Helper) => ("role" in helper ? helper.role : null);
-
-const ONLY_DEFAULT_TEAM: TeamBook = { kinds: new Map([[DEFAULT_TEAM, "solo"]]) };
 
 export interface KernelOptions {
 	db: DatabaseSync;
@@ -142,7 +136,8 @@ export interface KernelOptions {
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	/** A rule ticket from such a source gets a market helper. */
 	isMarketSource?: (source: string) => boolean;
-	teams?: TeamBook;
+	/** Without it there are no domains, and every ticket is one helper. */
+	domains?: DomainBook;
 	log?: (line: string) => void;
 	config?: Partial<KernelConfig>;
 }
@@ -153,14 +148,14 @@ export class Kernel {
 	readonly #sourcePolicy: SourcePolicy;
 	readonly #ruleAllows: (ruleId: string, triggerSource: string) => boolean;
 	readonly #isMarketSource: (source: string) => boolean;
-	readonly #teams: TeamBook;
+	readonly #domains: DomainBook;
 	readonly #log: (line: string) => void;
 	readonly config: KernelConfig;
 
-	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, teams = ONLY_DEFAULT_TEAM, log = () => {}, config }: KernelOptions) {
+	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, domains = new Map(), log = () => {}, config }: KernelOptions) {
 		this.#ruleAllows = ruleAllows;
 		this.#isMarketSource = isMarketSource;
-		this.#teams = teams;
+		this.#domains = domains;
 		this.#log = log;
 		this.#db = db;
 		this.#clock = clock;
@@ -645,17 +640,17 @@ export class Kernel {
 				 WHERE t.helper_name IS NULL ORDER BY t.created_at, t.rowid`,
 			);
 			for (const r of unnamed) {
-				const h = this.#newHelper(r.basis, r.source, r.created_at, DEFAULT_TEAM);
+				const h = this.#newHelper(r.basis, r.source, r.created_at, null);
 				this.#run("UPDATE tickets SET helper_name = ?, helper_role = ?, helper_seq = ? WHERE id = ?", h.name, storedRole(h), h.seq, r.id);
 			}
 		});
 	}
 
-	#newHelper(basis: Basis, originSource: string | null, createdAt: number, team: string): Helper {
+	#newHelper(basis: Basis, originSource: string | null, createdAt: number, domain: string | null): Helper {
 		const role = helperRole(basis, originSource, this.#isMarketSource);
-		const crew = this.#teams.kinds.get(team) === "crew";
-		const unit = crew
-			? { rows: TEAM_HELPER_ROWS, column: "team", value: team, names: TEAM_NAMES }
+		const team = domain === null ? null : (this.#domains.get(domain) ?? null);
+		const unit = team !== null
+			? { rows: TEAM_HELPER_ROWS, column: "domain", value: domain, names: TEAM_NAMES }
 			: { rows: SOLO_HELPER_ROWS, column: "helper_role", value: role, names: SOLO_NAMES };
 		const day = newYorkDate(createdAt);
 		const sameUnit = this.#all(
@@ -667,7 +662,14 @@ export class Kernel {
 		const ordinal = this.#get(`SELECT COUNT(*) AS n FROM tickets WHERE ${unit.rows}`).n as number;
 		const onDuty = new Set(this.#column("SELECT helper_name AS v FROM tickets WHERE helper_name IS NOT NULL AND closed_at IS NULL AND stopped_at IS NULL"));
 		const identity = { name: helperName(unit.names, ordinal, onDuty), seq: sameUnit + 1 };
-		return crew ? { ...identity, team } : { ...identity, role };
+		return team !== null ? { ...identity, team } : { ...identity, role };
+	}
+
+	#helperOf(r: Row): Helper | null {
+		if (r.helper_name === null) return null;
+		const identity = { name: r.helper_name, seq: r.helper_seq };
+		if (r.helper_role !== null) return { ...identity, role: r.helper_role };
+		return { ...identity, team: this.#domains.get(r.domain) ?? r.domain ?? FORMER_TEAM_LABEL };
 	}
 
 	#stall(t: Ticket, now: number): Stall | null {
@@ -930,20 +932,21 @@ export class Kernel {
 				return reject(`unknown thread ${threadId}; new threads must look like thr_<source>:<thread>`);
 			}
 		}
-		const asked = typeof d.team === "string" && !d.team.trim() ? undefined : d.team;
-		if (asked !== undefined && !this.#teams.kinds.has(asked)) {
-			return reject(`unknown team ${asked}; the teams are ${[...this.#teams.kinds.keys()].join(", ")} (omit team for the default one)`);
+		const asked = typeof d.domain === "string" && !d.domain.trim() ? undefined : d.domain;
+		if (asked !== undefined && !this.#domains.has(asked)) {
+			const known = [...this.#domains.keys()];
+			return reject(`unknown domain ${asked}; ${known.length ? `the domains are ${known.join(", ")} (omit domain when none fits)` : "there are no domains (omit domain)"}`);
 		}
-		const team = asked ?? DEFAULT_TEAM;
+		const domain = asked ?? null;
 		if (d.basis === "inference") {
 			const limitProblem = this.#inferenceDailyLimitProblem();
 			if (limitProblem) return reject(limitProblem);
 		}
 
 		const ticketId = this.#id("tkt");
-		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now(), team);
+		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now(), domain);
 		this.#run(
-			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, team)
+			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, domain)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
 			ticketId,
 			d.title,
@@ -955,7 +958,7 @@ export class Kernel {
 			helper.name,
 			storedRole(helper),
 			helper.seq,
-			team,
+			domain,
 		);
 		for (const threadId of threads) {
 			const source = threadId.match(SOURCE_THREAD)?.[1];
@@ -1113,7 +1116,7 @@ export class Kernel {
 			title: r.title,
 			basis: r.basis as Basis,
 			ruleId: r.rule_id,
-			team: r.team ?? DEFAULT_TEAM,
+			domain: r.domain,
 			originTriggerId: r.origin_trigger_id,
 			createdAt: r.created_at,
 			workerSessionId: r.worker_session_id,
@@ -1128,7 +1131,7 @@ export class Kernel {
 			toolCalls: r.tool_calls,
 			tokensIn: r.tokens_in,
 			tokensOut: r.tokens_out,
-			helper: toHelper(r),
+			helper: this.#helperOf(r),
 			stage,
 			latestReport: latest ? toReport(latest) : null,
 		};
