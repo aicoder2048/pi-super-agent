@@ -134,56 +134,42 @@ test("发出的话上屏后被清屏，确认又丢了，页面仍显示已发�
 		},
 	));
 
-test("清屏按钮在对话栏顶部标题行，挨着「对话」，对话很长滚到底它也不动，点它仍能清屏", (t) =>
+test("清屏是输入框下方状态文字右端的下划线文字，对话栏上方没有标题行，点它仍能清屏", (t) =>
 	story(
 		t,
-		{
-			router: [
-				on("Router 回答一段很长的话", /^\[对话\][\s\S]*说长一点/, (c) => [
-					reply(c, [...Array.from({ length: 55 }, (_, i) => String(i + 1)), "到底了"].join("\n")),
-				]),
-			],
-		},
+		{ router: [on("Router 回答查天气", /^\[对话\][\s\S]*查天气/, (c) => [reply(c, "好的，去查了。")])] },
 		async ({ step }) => {
 			const clear = (page: Page) => page.getByRole("main", { name: "对话" }).getByRole("button", { name: "清屏" });
-			await step("说「说长一点」，幕僚长回一段很长的话", async (page) => {
-				await sayInPage(page, "说长一点");
-				await page.locator(".line.router .bubble", { hasText: "到底了" }).waitFor();
+			await step("页面说「查天气」，幕僚长回答", async (page) => {
+				await sayInPage(page, "查天气");
+				await page.locator(".line.router .bubble", { hasText: "好的，去查了。" }).waitFor();
 			});
-			await step("清屏按钮在对话上方的标题行里，和「对话」同一行，不在输入框那一块", async (page) => {
+			await step("清屏在输入框下方，和状态文字同一行、在它右边", async (page) => {
 				const layout = await clear(page).evaluate((button) => {
-					const thread = document.getElementById("conversation")!;
-					const row = button.parentElement!;
+					const box = (el: Element) => el.getBoundingClientRect();
+					const status = document.getElementById("say-status")!;
+					const composer = document.querySelector(".composer")!;
 					return {
-						inSayForm: button.closest("form") !== null,
-						rowHeading: [...row.children].filter((el) => el !== button).map((el) => el.textContent!.trim()),
-						aboveThread: !thread.contains(button) && (button.compareDocumentPosition(thread) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+						inSayForm: button.closest("form#say") !== null,
+						sameRow: button.parentElement === status.parentElement,
+						rightOfStatus: box(button).left >= box(status).right,
+						belowComposer: box(button).top >= box(composer).bottom,
 					};
 				});
-				assert.equal(layout.inSayForm, false, "清屏不在输入框那一块");
-				assert.deepEqual(layout.rowHeading, ["对话"], "清屏和「对话」在同一行");
-				assert.equal(layout.aboveThread, true, "标题行在对话上方，不跟着对话滚动");
+				assert.deepEqual(layout, { inSayForm: true, sameRow: true, rightOfStatus: true, belowComposer: true });
 			});
-			await step("「对话」和左栏「待你处理」、右栏「执行过程」三个栏目标题在同一条线上", async (page) => {
-				const tops = await page.evaluate(() => {
-					const top = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().top;
-					return { conversation: top(".conversation-head .label"), how: top("#how .label"), left: top("#left h2") };
+			await step("清屏看起来是下划线文字：没有边框，背景透明", async (page) => {
+				const look = await clear(page).evaluate((button) => {
+					const style = getComputedStyle(button);
+					return { underline: style.textDecorationLine.includes("underline"), border: style.borderTopWidth, background: style.backgroundColor };
 				});
-				assert.ok(Math.abs(tops.conversation - tops.how) <= 1, `「对话」${tops.conversation} 和「执行过程」${tops.how} 对齐`);
-				assert.ok(Math.abs(tops.conversation - tops.left) <= 1, `「对话」${tops.conversation} 和「待你处理」${tops.left} 对齐`);
+				assert.deepEqual(look, { underline: true, border: "0px", background: "rgba(0, 0, 0, 0)" });
 			});
-			await step("对话滚到底，清屏按钮的位置不变", async (page) => {
-				const before = (await clear(page).boundingBox())!;
-				const scrolled = await page.evaluate(() => {
-					const thread = document.getElementById("conversation")!;
-					thread.scrollTop = thread.scrollHeight;
-					return thread.scrollTop;
-				});
-				assert.ok(scrolled > 0, "对话够长，能滚动");
-				const after = (await clear(page).boundingBox())!;
-				assert.equal(after.y, before.y);
+			await step("对话栏上方没有标题行，对话直接从栏顶开始", async (page) => {
+				const first = await page.evaluate(() => document.querySelector("main")!.firstElementChild!.id);
+				assert.equal(first, "conversation");
 			});
-			await step("点标题行里的清屏，对话清空并出现细线", async (page) => {
+			await step("点清屏，对话清空并出现细线", async (page) => {
 				await clear(page).click();
 				await showsOnlyTheBar(page);
 			});

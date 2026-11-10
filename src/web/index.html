@@ -104,10 +104,6 @@
 		#done .card { opacity: 0.75; padding: 10px 12px; }
 
 		main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-		.conversation-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 32px; border-bottom: 1px solid var(--line); }
-		#clear { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
-		#clear:hover:not(:disabled) { color: var(--accent-ink); background: var(--accent-bg); }
-		#clear:disabled { opacity: 0.5; cursor: default; }
 		#conversation { flex: 1; overflow-y: auto; padding: 22px 32px; }
 		.thread { max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
 		.line { display: flex; gap: 10px; align-items: flex-start; }
@@ -131,7 +127,12 @@
 		#composer { flex: 1; border: 0; outline: none; resize: none; font: inherit; font-size: 14px; line-height: 1.6; background: transparent; color: var(--ink); max-height: 30vh; }
 		#send { font-size: 14px; font-weight: 600; min-height: 44px; padding: 0 20px; border-radius: 12px; border: 0; background: var(--accent); color: #fff; }
 		#send:disabled { opacity: 0.6; cursor: default; }
-		#say-status { font-size: 12px; color: var(--muted); margin-top: 8px; }
+		.say-row { display: flex; align-items: baseline; gap: 12px; margin-top: 8px; }
+		#say-status { font-size: 12px; color: var(--muted); }
+		#clear { margin-left: auto; flex: none; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+		#clear:hover:not(:disabled) { color: var(--accent-ink); }
+		#clear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+		#clear:disabled { opacity: 0.5; text-decoration: none; cursor: default; }
 		.cleared-bar { display: flex; align-items: center; gap: 10px; width: 100%; padding: 0; border: 0; background: none; font-size: 12px; color: var(--muted); }
 		.cleared-bar::before, .cleared-bar::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
 		.cleared-bar:hover { color: var(--accent-ink); }
@@ -202,7 +203,7 @@
 			#left, #how { border: 0; border-bottom: 1px solid var(--line); overflow: visible; }
 			#conversation { overflow: visible; padding: 16px; }
 			main { min-height: 70vh; flex: none; }
-			header, form, #helpers, .conversation-head { padding-left: 16px; padding-right: 16px; }
+			header, form, #helpers { padding-left: 16px; padding-right: 16px; }
 		}
 	</style>
 </head>
@@ -220,10 +221,6 @@
 	<div class="columns">
 		<aside id="left" aria-label="概况"></aside>
 		<main aria-label="对话">
-			<div class="conversation-head">
-				<div class="label">对话</div>
-				<button id="clear" type="button" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"></path><path d="M22 21H7"></path><path d="m5 11 9 9"></path></svg>清屏</button>
-			</div>
 			<div id="conversation"><div class="thread"><div class="welcome">幕僚长持续关注你的消息来源，在后台安排助手处理任务，只在需要你决定时通知你。</div></div></div>
 			<form id="say" autocomplete="off">
 				<label for="composer" class="sr">新任务</label>
@@ -231,7 +228,10 @@
 					<textarea id="composer" rows="2" placeholder="描述要做的事，例如：读取 example.com 的网页标题"></textarea>
 					<button id="send" type="submit">发送</button>
 				</div>
-				<div id="say-status" data-state="idle" aria-live="polite">任务在后台进行，完成或需要你决定时会通知你。</div>
+				<div class="say-row">
+					<div id="say-status" data-state="idle" aria-live="polite">任务在后台进行，完成或需要你决定时会通知你。</div>
+					<button id="clear" type="button" disabled>清屏</button>
+				</div>
 			</form>
 		</main>
 		<aside id="how" aria-label="执行过程">
