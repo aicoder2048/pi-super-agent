@@ -49,3 +49,21 @@ ts	phase	decision	why	evidence	result
 2026-11-09T12:04:12Z	f1-verdict	不修：卡片按钮早于幕僚长转述约一秒，先点会让回答排在问题前；U+3164 等少数不可见字母仍可作选项	回答送达正确，卡片才是问题的权威来源；剩余字符罕见且不影响授权	复验报告	decided
 2026-11-09T14:56:38Z	m1-live	真实开盘实测：这把 Key 的行情晚约 16 分钟（接口仍回 OK），报价按「比现在晚 10 分钟以上」也标延迟行情	此前以为是实时行情；实测 27 次快照报价都晚 16 分钟，提醒里却没写「延迟行情」，使用者会误以为是即时价	scratchpad/live-w1/demos/out/demo-5-market/market-tap.jsonl; tests/market-client.test.ts 红→绿	fixed
 2026-11-09T14:57:55Z	m1-live-verdict	延迟标记复审 PASS；按建议补 9/11 分钟边界样例和 lookup 说明；收盘宽限只剩约 4 分钟余量，记为已知风险不改	复审确认其他逻辑不依赖实时行情	复审报告；402/402	PASS
+2026-11-09T12:28:30Z	incident	W4 architect runner 1 在实验中用 pgrep | head -1 找宿主，误向使用者自己的宿主 PID 68967 发 SIGTERM，宿主已退出；未替使用者重启	宿主正常停止不丢状态；不知道它原来的启动方式，用新代码打开使用者的状态目录会改其数据库结构；之后的简报一律只允许按自己记下的 PID 停进程	candidate-1 报告	open
+2026-11-09T15:27:27Z	w4-order	W4 先于 W3，叠在 psa/stable-token 上；#23/#24 重新叠到 #22 之上，PR 成一条线	W3 改交互要等使用者看；W4 的 token 失效测试依赖 stable-token；两条叠栈分叉会让 W4 无基可依	重叠后 413/413	decided
+2026-11-09T15:27:27Z	w4-architect	以 runner 1 为底：按卡片内容认领的具名步骤、PSA_E2E_SABOTAGE、leftovers、失败报告页、无凭据+PI_OFFLINE+代理绊线、演示建在 harness 上并拒绝 anthropic/deepseek；取 runner 2 的 page.clock 卡死测试和收尾残留进程判失败	两份可行性都实测通过；runner 1 的匹配方式不受分批和重试影响，runner 2 的时钟快进把 35 秒压到约 2 秒	arena-w4/candidate-1/design.md, candidate-2/design.md	decided
+2026-11-09T15:27:27Z	w4-architect	演示并入 W4，不拆 W5；playwright-core 用 1.59.1 对上本机缓存的 chromium-1217	演示和 e2e 共用 harness 的进程组清理；拆开会先合一份靠 ps 找进程的旧清理	candidate-1 待定问题	decided
+2026-11-09T15:36:56Z	w4-build	收尾残留检查按自己记录的进程组（kill -pgid 0），不用 runner 2 的 pgrep -f 状态目录	安全规则禁止用 pgrep 选进程；Worker 和宿主同组，组探测覆盖全部	tests/e2e/harness.ts stopGroup/groupAlive	decided
+2026-11-09T15:36:56Z	w4-build	「Worker 汇报:crash」失败在「点开看 Worker 过程」而不是「Router 回复」	那一步是第一个需要 Worker 汇报的浏览器步骤；报告里写明 Router 收到「Worker 进程在一轮中途意外退出」	tests/e2e/.out/<story>/summary.txt	accepted
+2026-11-09T15:36:56Z	w4-build	「假模型脚本用完」先等最多 10 秒再断言	页面检查做完时 Worker 可能还没发出请求，首轮在 HTML 用例上报 unused=Worker 无需处理	首轮 just e2e 失败 1/5 用例	fixed
+2026-11-09T15:36:56Z	w4-build	四条页面检查各做一次变异：innerHTML、token 不持久、401 不判失效、陈旧阈值调大，各自让对应用例变红	证明新测试能失败；源文件用 git checkout 恢复	四次 just e2e 各 fail 2（用例+步骤）	verified
+2026-11-09T15:36:56Z	w4-demos	演示保持 .mjs，只把 lib 改成调用 harness 的 startHost/startGroup/stopAllGroups；demo-4 收尾时收养自己 Watchdog 日志里报告拉起的宿主进程组	改 .ts 不带来行为；Watchdog 用 detached 起宿主，宿主不在 Watchdog 的组里	demos/lib.mjs cleanup	decided
+2026-11-09T15:36:56Z	w4-demos	demo-market 的密钥文件路径取 PSA_DEMO_SECRETS_FILE，没设时取 ~/.pi-super-agent/config.json 的 secretsFile；不再写死 stock-heatmap/.env	只经 secretsFile 机制；脚本只读配置拿路径，从不打开密钥文件	demos/demo-5-market.mjs secretsFilePath	decided
+2026-11-09T15:57:50Z	simplify	demo-4 收尾不再解析 Watchdog 日志找宿主：Watchdog 以 detached 起宿主，宿主是自己进程组的组长；从本演示状态目录的 heartbeat.json 读 pid 收养该组，收尾时先停 Watchdog 再重读一次，重启后的新宿主也被覆盖	日志措辞不是接口；心跳文件是宿主写给 Watchdog 的正式记录，且只在演示自己的临时状态目录里	just demo 4-durable 全部 PASS；run.log 记录组 37084/37085/38033，kill(-pgid,0) 全部 ESRCH	applied
+2026-11-09T15:57:50Z	simplify	演示能失败：until 不再吞异常；断言不成立、超时、抛错记 FAIL，有 FAIL 或残留进程组时退出码 1；SKIP 只经 skip(reason) 用于行情或时限条件和前一幕没成的依赖，demo-5 的 no further band 仍是 SKIP	原来所有失败都记 SKIP，演示永远退出 0，回归看不出来	scratch 场景：throws=FAIL、超时=FAIL、skip=SKIP、exitCode 1；demo 1 和 4 实跑全部 PASS 退出 0	applied
+2026-11-09T16:07:48Z	demo-live	demo-market 开盘后启动时，演示时长从启动算起 25 分钟，首次看盘算补报，不计入「多数看盘不出声」	11:00 ET 启动时只看了 1 次就到截止，首轮把当天已过的档一次补报，被误判为噪音（新的 FAIL 机制如实暴露）	demos/out/demo-5-market 两次运行：修前 1m5s FAIL，修后 7m16s 6/6 PASS，含直达已订阅助手	fixed
+2026-11-09T17:14:08Z	live-lane	e2e 收尾每一步限时 10 秒、一步卡住其余照做；关闭浏览器也限时	实测：Mac 维护睡眠 965 秒后浏览器冻住，context.close 永不返回，宿主和假模型没停，run 6 挂了 43 分钟	pmset 日志 08:24-08:40；冻住浏览器复现：修后 302 秒以失败退出、无残留进程和临时目录	fixed
+2026-11-09T19:12:08Z	live-lane	e2e 报告按运行分目录（.out/run-<runner pid>，保留最近 5 次）；临时目录在假模型启动成功后才建	W4 lane 6：同一检出里两次 just e2e 同时跑，后一次清掉前一次的报告目录导致 ENOENT；该失败又在 try 之外，泄漏了临时目录（lane 8）	setup.e2e.ts 新测试先红后绿；两次并发 36/36、36/36	fixed
+2026-11-09T19:13:17Z	w4-lanes	W4 十条实测和性能全部通过（6、8 修后重跑）	首轮被 Mac 睡眠打断已作废；第二轮 caffeinate 下运行	docs/web-client/evidence/w4/*.png；just test 中位数 8.00→7.83s；just e2e 中位数 6.13s	PASS
+2026-11-09T19:16:06Z	w4-verdict	W4 复审 PASS；顺手修两处低概率问题：收尾后不再对已停的进程组发信号；演示的子进程环境删掉行情密钥变量（startHost 支持 baseEnv），只走 secretsFile	复审：pgid 复用可能误杀；shell 导出的密钥会让演示 1-4 轮询真实行情、让 demo-5 误判	实测：有无删除时 us-market 日志分别为「密钥来自环境变量」与「未配置行情密钥」	PASS
+2026-11-09T20:05:31Z	w4	停进程组时 EPERM 视同已不在	macOS 上只剩僵尸的组或被别的用户复用的组号会回 EPERM，W6c 实测两次因此中断收尾	setup.e2e.ts 新测试先红后绿	fixed
