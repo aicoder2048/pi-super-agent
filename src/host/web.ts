@@ -14,6 +14,8 @@ export interface WebHost {
 	snapshot(): Snapshot;
 	transcript(ticketId: string): TranscriptHistory;
 	say(text: string): string;
+	/** Null when lineId names no conversation line; nothing is written then. */
+	sayQuoting(text: string, lineId: string): string | null;
 	answer(reportId: string, option: number): AnswerResult;
 	clear(): void;
 }
@@ -21,6 +23,7 @@ export interface WebHost {
 const SAY_MAX_BYTES = 32 * 1024;
 const TICKET_ID = /^tkt_[A-Za-z0-9_-]{1,64}$/;
 const REPORT_ID = /^rpt_[A-Za-z0-9_-]{1,64}$/;
+const LINE_ID_MAX_CHARS = 80;
 
 const INDEX_HTML = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
 const SCRIPT = "text/javascript; charset=utf-8";
@@ -172,9 +175,15 @@ export class WebGateway {
 	#say(text: string, res: ServerResponse): void {
 		const body = parseSayBody(text);
 		if (body === undefined) return deny(res, 400);
-		const result = body.kind === "text" ? { ok: true as const, triggerId: this.#host.say(body.text) } : this.#host.answer(body.reportId, body.option);
-		if (!result.ok) return refuse(res, result.refusal);
-		const { triggerId } = result;
+		let triggerId: string | null;
+		if (body.kind === "answer") {
+			const result = this.#host.answer(body.reportId, body.option);
+			if (!result.ok) return refuse(res, result.refusal);
+			triggerId = result.triggerId;
+		} else {
+			triggerId = body.quoteOf === undefined ? this.#host.say(body.text) : this.#host.sayQuoting(body.text, body.quoteOf);
+			if (triggerId === null) return deny(res, 400);
+		}
 		res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ triggerId }));
 	}
 
@@ -199,7 +208,7 @@ export class WebGateway {
 	}
 }
 
-type SayBody = { kind: "text"; text: string } | { kind: "answer"; reportId: string; option: number };
+type SayBody = { kind: "text"; text: string; quoteOf?: string } | { kind: "answer"; reportId: string; option: number };
 
 function parseObject(body: string): object | undefined {
 	let parsed: unknown;
@@ -214,11 +223,14 @@ function parseObject(body: string): object | undefined {
 function parseSayBody(body: string): SayBody | undefined {
 	const parsed = parseObject(body);
 	if (parsed === undefined) return undefined;
-	const keys = Object.keys(parsed);
-	if (keys.length !== 1) return undefined;
-	const { text, answer } = parsed as { text?: unknown; answer?: unknown };
-	if (keys[0] === "text") return typeof text === "string" && hasVisibleText(text) ? { kind: "text", text } : undefined;
-	if (keys[0] !== "answer" || typeof answer !== "object" || answer === null || Object.keys(answer).length !== 2) return undefined;
+	const keys = Object.keys(parsed).sort().join();
+	const { text, answer, quoteOf } = parsed as { text?: unknown; answer?: unknown; quoteOf?: unknown };
+	if (keys === "text" || keys === "quoteOf,text") {
+		if (typeof text !== "string" || !hasVisibleText(text)) return undefined;
+		if (quoteOf === undefined) return { kind: "text", text };
+		return typeof quoteOf === "string" && quoteOf.length > 0 && quoteOf.length <= LINE_ID_MAX_CHARS ? { kind: "text", text, quoteOf } : undefined;
+	}
+	if (keys !== "answer" || typeof answer !== "object" || answer === null || Object.keys(answer).length !== 2) return undefined;
 	const { reportId, option } = answer as { reportId?: unknown; option?: unknown };
 	if (typeof reportId !== "string" || !(REPORT_ID.test(reportId) || isCapAskId(reportId))) return undefined;
 	if (typeof option !== "number" || !Number.isInteger(option) || option < 0 || option >= OPTIONS_MAX) return undefined;

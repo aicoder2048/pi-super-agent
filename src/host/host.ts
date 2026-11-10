@@ -202,7 +202,7 @@ export class Host {
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation() }, loadToken(options.stateDir, "web-token", host.#log), host.#log);
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), sayQuoting: (text, lineId) => host.sayQuoting(text, lineId), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation() }, loadToken(options.stateDir, "web-token", host.#log), host.#log);
 			await host.#web.listen(options.webPort);
 		}
 		try {
@@ -240,9 +240,19 @@ export class Host {
 	say(text: string): string {
 		const at = Date.now();
 		const { triggerId } = this.kernel.userSaid({ text, at });
-		this.#broadcast({ type: "user", id: triggerId, text, at });
+		this.#broadcast({ type: "user", id: triggerId, who: "user", text, at });
 		this.#changed();
 		return triggerId;
+	}
+
+	/** The web gateway's sentence that quotes a conversation line. Null, and nothing written or sent, when lineId names no such line. */
+	sayQuoting(text: string, lineId: string): string | null {
+		const at = Date.now();
+		const said = this.kernel.userSaidQuoting({ text, at, lineId });
+		if (!said) return null;
+		this.#broadcast({ type: "user", id: said.triggerId, who: "user", text, at, quote: said.quote });
+		this.#changed();
+		return said.triggerId;
 	}
 
 	/** Only the user's front ends reach this: the web gateway after its token and origin checks, and a socket connection that said hello as a client. */
@@ -252,7 +262,7 @@ export class Host {
 		const result = this.kernel.answerQuestion({ reportId, option, at });
 		if (!result.ok) return result;
 		if (!result.duplicate) {
-			this.#broadcast({ type: "user", id: result.triggerId, text: result.text, at });
+			this.#broadcast({ type: "user", id: result.triggerId, who: "user", text: result.text, at });
 			this.#changed();
 		}
 		return { ok: true, triggerId: result.triggerId };
@@ -270,7 +280,7 @@ export class Host {
 		const result = this.#memberCap?.answer(reportId, option) ?? { ok: false as const, refusal: { kind: "closed" as const } };
 		if (!result.ok) return result;
 		if (!result.duplicate) {
-			this.#broadcast({ type: "user", id: result.lineId, text: result.text, at: this.#clock.now() });
+			this.#broadcast({ type: "user", id: result.lineId, who: "user", text: result.text, at: this.#clock.now() });
 			this.workers.recheckMemberSlots();
 			this.#changed();
 		}

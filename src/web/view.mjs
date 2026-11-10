@@ -112,9 +112,11 @@ export function applyMessage(view, message, now) {
 		case "cleared":
 			resetConversation(view, message.conversation, message.cleared);
 			return ["conversation"];
-		case "user":
-			addLine(view, { id: message.id, who: "user", text: message.text, at: message.at });
+		case "user": {
+			const { type, ...line } = message;
+			addLine(view, line);
 			return ["conversation"];
+		}
 		case "reply":
 			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at, ...(message.ticketId ? { ticketId: message.ticketId } : {}) });
 			return ["conversation"];
