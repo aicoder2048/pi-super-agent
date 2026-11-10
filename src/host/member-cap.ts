@@ -28,6 +28,7 @@ export class MemberCap {
 	constructor(options: MemberCapOptions) {
 		this.#o = options;
 		this.#ask = options.store.latest();
+		this.#today();
 	}
 
 	limit(): number {

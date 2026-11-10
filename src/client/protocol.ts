@@ -1,4 +1,4 @@
-import type { DashboardRow, Disposition, HelpersToday, Routes } from "../kernel/types.ts";
+import type { CapQuestion, DashboardRow, Disposition, HelpersToday, Routes } from "../kernel/types.ts";
 import type { Dispatching } from "../host/dispatch.ts";
 
 /** ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
@@ -25,6 +25,9 @@ export interface WatchedSource {
 	rules: { id: string; text: string; by: "user" | "module" }[];
 }
 
+/** How many member processes may run at once right now, and the host's open question about raising it. Null on a host that cannot dispatch. */
+export type MemberCapBoard = { limit: number; question: CapQuestion | null } | null;
+
 export interface BoardState {
 	rows: DashboardRow[];
 	today: TodayCounts;
@@ -35,17 +38,18 @@ export interface BoardState {
 	routes: Routes;
 	/** ticketId → that helper's dispatches: waiting, running, and ended ones until its whole batch is back. */
 	dispatching: Dispatching;
+	memberCap: MemberCapBoard;
 }
 
 export type ClientToHost =
 	| { type: "hello"; role: "client"; token: string }
 	| { type: "say"; text: string; requestId: string }
-	/** A click on option `option` of the question in report `reportId`; the host words it as the user's message. */
+	/** A click on option `option` of the question `reportId`: a helper's report, or the host's own question about the member cap. The host words it as the user's message. */
 	| { type: "answer"; reportId: string; option: number; requestId: string }
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
-	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; watching: WatchedSource[] }
+	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; memberCap: MemberCapBoard; watching: WatchedSource[] }
 	| { type: "user"; id: string; text: string; at: number }
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }

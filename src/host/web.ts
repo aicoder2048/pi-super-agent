@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { ConfigError } from "../config-error.ts";
+import { isCapAskId } from "../kernel/cap-ask.ts";
 import { OPTIONS_MAX, refusalText, type AnswerRefusal } from "../kernel/question.ts";
 import type { HostToClient, TranscriptHistory, TranscriptMessage } from "../client/protocol.ts";
 import { hasVisibleText, HistoryEchoFilter, type AnswerResult, type Broadcast } from "./server.ts";
@@ -198,7 +199,7 @@ function parseSayBody(body: string): SayBody | undefined {
 	if (keys[0] === "text") return typeof text === "string" && hasVisibleText(text) ? { kind: "text", text } : undefined;
 	if (keys[0] !== "answer" || typeof answer !== "object" || answer === null || Object.keys(answer).length !== 2) return undefined;
 	const { reportId, option } = answer as { reportId?: unknown; option?: unknown };
-	if (typeof reportId !== "string" || !REPORT_ID.test(reportId)) return undefined;
+	if (typeof reportId !== "string" || !(REPORT_ID.test(reportId) || isCapAskId(reportId))) return undefined;
 	if (typeof option !== "number" || !Number.isInteger(option) || option < 0 || option >= OPTIONS_MAX) return undefined;
 	return { kind: "answer", reportId, option };
 }
