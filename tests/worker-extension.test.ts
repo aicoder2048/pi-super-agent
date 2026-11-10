@@ -127,8 +127,8 @@ test("Worker 的工具跑的命令，环境里没有任何 PSA_ 变量：拿不�
 	assert.equal(w.sent[0].message.content.split("输出末尾：\n")[1], "干净\n");
 });
 
-test("成员定义里可写的工具清单包含助手扩展注册的每一个工具", async (t) => {
-	const w = await load("request");
+test("助手的工具清单包含助手扩展注册的每一个工具，带着本队成员时也一样", async (t) => {
+	const w = await load("request", { PSA_CREW: "market-analyst" });
 	t.after(w.close);
 	assert.deepEqual([...w.tools.keys()].filter((name) => !(WORKER_TOOLS as readonly string[]).includes(name)), []);
 });

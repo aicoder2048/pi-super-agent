@@ -140,7 +140,13 @@ test("成员文件写错的字段报错并列出可写的字段；consult 不是
 	memberFails(member("tool: read\n"), /不认识的字段 tool/);
 	memberFails(member("consult: true\n"), /不认识的字段 consult/);
 });
-test("成员的 tools 里有助手没有的工具时报错并列出可用工具", () => memberFails(member("tools: read, rm\n"), /rm 不是助手的工具/));
+test("成员的 tools 里有不认识的工具时报错并列出成员可用的工具", () => memberFails(member("tools: read, rm\n"), /tools 里的 rm 不是成员能用的工具，可用：read、bash、edit、write、grep、find、ls、web_get、lookup$/));
+
+test("成员的 tools 里写了只有助手才有的工具（汇报、交回、读任务记录、后台命令、派活）时报错，不再悄悄去掉", () => {
+	for (const tool of ["report", "hand_back", "read_ticket", "bg_start", "bg_status", "bg_stop", "dispatch_agent"]) {
+		memberFails(member(`tools: read, ${tool}\n`), new RegExp(`tools 里的 ${tool} 只有助手能用，成员不能汇报、交回、读任务记录、跑后台命令或再往下派`));
+	}
+});
 test("成员的 tools 写了却是空的：报错，说明去掉这一行或至少写一个工具", () => {
 	for (const tools of ["tools:\n", 'tools: ""\n', "tools: []\n"]) memberFails(member(tools), /tools 是空的.*去掉.*至少写一个/);
 });

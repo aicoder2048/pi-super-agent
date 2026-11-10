@@ -1,15 +1,19 @@
 import type { Basis } from "../kernel/types.ts";
 
-/** Every tool a member file may list: Pi's built-ins and the ones the worker extension registers. `dispatch_agent` is not listed: only a helper with a crew has it. */
+/** Every tool a helper can have: Pi's built-ins and the ones the worker extension registers for it. */
 export const WORKER_TOOLS = [
 	"read", "bash", "edit", "write", "grep", "find", "ls",
-	"report", "hand_back", "read_ticket", "web_get", "lookup", "bg_start", "bg_status", "bg_stop",
+	"report", "hand_back", "read_ticket", "web_get", "lookup", "bg_start", "bg_status", "bg_stop", "dispatch_agent",
 ] as const;
 
 const READ_TOOLS = ["read", "grep", "find", "ls", "web_get", "lookup"] as const;
 const INFERENCE_TOOLS = ["read", "grep", "find", "ls", "report", "hand_back", "read_ticket", "web_get", "lookup"] as const;
-/** What a member may use at most: it works and answers, it does not report, hand back, dispatch or outlive its one turn. */
-const MEMBER_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup"] as const;
+/**
+ * Every tool a member file may list, and so the most a member can use: it works and answers, it does
+ * not report, hand back, read the ticket, dispatch or outlive its one turn. A member file that lists
+ * any other tool is rejected at load.
+ */
+export const MEMBER_TOOLS: readonly string[] = ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup"];
 
 export function toolAllowlist(basis: Basis, canDispatch = false): readonly string[] | undefined {
 	if (basis !== "inference") return undefined;
