@@ -249,3 +249,9 @@ test("真实接线：宿主知道每个领域的助手能派给谁，时限和�
 	assert.equal(domains!.kitFor("old"), undefined);
 	assert.deepEqual(dispatch, { timeoutMs: 60_000, codingTimeoutMs: 600_000, stallMs: 45_000, maxConcurrent: 2 });
 });
+
+test("真实接线：仓库里的玩具行情模块按领域交出自己的 skills/", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const { domains } = createHostOptions({ config: hostConfig(provider), modules: Modules.load([REPO_MODULES]), modelRuntime, log: () => {} });
+	assert.equal(domains!.kitFor("toy-market")!.skillsDir, join(REPO_MODULES, "toy-market/skills"));
+});

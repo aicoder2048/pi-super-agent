@@ -226,8 +226,8 @@ test("宿主启动时状态目录不存在就建成 0700", async (t) => {
 });
 
 const NEWS_DOMAINS = domainsOf({
-	news: { team: "新闻队", crew: [{ name: "news-researcher", title: "新闻研究员", description: "查新闻", tools: undefined, skills: [], model: undefined, prompt: "", file: "/modules/news/agents/news.md" }] },
-	mail: null,
+	news: { team: "新闻队", crew: [{ name: "news-researcher", title: "新闻研究员", description: "查新闻", tools: undefined, skills: [], model: undefined, prompt: "", file: "/modules/news/agents/news.md" }], skillsDir: "/modules/news/skills", prepare: "npm ci" },
+	mail: { skillsDir: "/modules/mail/skills" },
 });
 const DISPATCH = { timeoutMs: 1000, codingTimeoutMs: 1000, stallMs: 1000, maxConcurrent: 1 };
 
@@ -242,6 +242,20 @@ test("宿主把领域簿交给内核，任务的领域决定启动助手时交�
 	await until(() => spawner.workers.size === 3, "三个助手都启动");
 	const seen = host.kernel.listTickets().map((row) => [host.kernel.getTicket(row.id)!.domain, "team" in row.helper! && row.helper.team, spawner.workers.get(row.id)!.spec.crew.map((m) => m.name)]);
 	assert.deepEqual(seen, [["news", "新闻队", ["news-researcher"]], ["mail", false, []], [null, false, []]]);
+});
+
+test("知识跟着领域走：对话里开的任务属于哪个领域，助手就拿到那个模块的技能目录和 prepare；没有领域的助手什么都不带", async (t) => {
+	const brain: Brain = (cards) =>
+		cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg"), title: "t", brief: "b", ...(card.includes("新闻") && { domain: "news" }), ...(card.includes("邮件") && { domain: "mail" }) }] } }] : []));
+	const { host, spawner } = await startHost(brain, (w) => w.settle(), { domains: NEWS_DOMAINS });
+	t.after(() => host.stop());
+	host.say("看下听证会的新闻");
+	host.say("回一下邮件");
+	host.say("查明天天气");
+	await until(() => spawner.workers.size === 3, "三个助手都启动");
+	const handed = host.kernel.listTickets().map((row) => spawner.workers.get(row.id)!.spec).map((spec) => [spec.skillsDir, spec.prepare, spec.crew.length]);
+	assert.deepEqual(handed, [["/modules/news/skills", "npm ci", 0], ["/modules/mail/skills", undefined, 0], [undefined, undefined, 0]], "这个宿主不能派活，成员名单是空的，技能照给");
+	assert.ok(!("ruleId" in spawner.workers.values().next().value!.spec));
 });
 
 test("幕僚长给模块规则的任务填了别的领域时，助手拿到的是规则所在模块的成员，内核记的那一行写进宿主日志", async (t) => {

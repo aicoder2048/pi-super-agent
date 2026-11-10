@@ -40,14 +40,18 @@ export interface LoadedModule {
 	team?: Team;
 }
 
-/** What a helper is handed from its ticket's domain. */
+/** What a helper is handed from its ticket's domain, however the ticket was opened. */
 export interface DomainKit {
-	/** The module's members the helper may dispatch to. Empty: it works alone. */
+	/** The module's `skills/`. */
+	skillsDir: string | undefined;
+	/** Runs once in the ticket's workdir before the helper first starts. */
+	prepare: string | undefined;
+	/** The module's members the helper may dispatch to, each with the module's `skills/` ahead of its own. Empty: it works alone. */
 	crew: readonly Member[];
 }
 
 /** The kit of a ticket with no domain, or whose module is gone. */
-export const NO_DOMAIN: DomainKit = { crew: [] };
+export const NO_DOMAIN: DomainKit = { skillsDir: undefined, prepare: undefined, crew: [] };
 
 /** The loaded modules as the host uses them once tickets belong to them. `Modules` is the real one. */
 export interface Domains {
@@ -191,7 +195,10 @@ export class Modules implements Domains {
 
 	kitFor = (domain: string): DomainKit | undefined => {
 		const module = this.modules.find((m) => m.name === domain);
-		return module && { crew: module.team?.members ?? [] };
+		if (!module) return undefined;
+		const { skillsDir } = module;
+		const shared = skillsDir ? [skillsDir] : [];
+		return { skillsDir, prepare: module.manifest.prepare, crew: (module.team?.members ?? []).map((m) => ({ ...m, skills: [...shared, ...m.skills] })) };
 	};
 
 	ruleAllows = (ruleId: string, triggerSource: string): boolean => {
@@ -212,10 +219,5 @@ export class Modules implements Domains {
 
 	timers(): TimerEntry[] {
 		return this.modules.flatMap((m) => (m.manifest.timers ?? []).map((t) => ({ ...t, id: `${m.name}/${t.id}`, source: t.source ?? m.name })));
-	}
-
-	moduleForRule(ruleId: string | null): LoadedModule | undefined {
-		if (!ruleId) return undefined;
-		return this.modules.find((m) => ruleId.startsWith(`${m.name}/`));
 	}
 }

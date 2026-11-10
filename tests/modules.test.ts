@@ -16,7 +16,7 @@ test("仓库里的模块都被发现，规则带模块前缀", () => {
 	assert.ok(modules.ruleAllows("toy-market/big-move", "toy-market"));
 	assert.ok(!modules.ruleAllows("big-move", "toy-market"));
 	assert.match(modules.rulesPrompt(), /### toy-market\/big-move/);
-	assert.ok(modules.moduleForRule("toy-market/big-move")?.skillsDir);
+	assert.equal(modules.kitFor("toy-market")?.skillsDir, join(repoModules, "toy-market/skills"));
 });
 
 test("程序层过滤：小于 1% 的波动在调用模型前被筛掉", () => {

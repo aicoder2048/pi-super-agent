@@ -76,6 +76,7 @@ export class FakeModel {
 	/** Every request that is not POST /v1/chat/completions, including CONNECTs through the proxy tripwire. */
 	readonly stray: string[] = [];
 	readonly #pending = new Map<string, Step[]>();
+	readonly #systemPrompts = new Map<string, string>();
 	readonly #sabotage: { label: string; crash: boolean } | undefined;
 	#server!: Server;
 	#drained!: () => void;
@@ -113,6 +114,13 @@ export class FakeModel {
 		};
 	}
 
+	/** The system prompt of the latest request in a conversation: "router", a helper's brief, or a member's task. */
+	systemPromptOf(conversation: string): string {
+		const prompt = this.#systemPrompts.get(conversation);
+		if (prompt === undefined) throw new Error(`假模型没有收到过「${conversation}」的请求`);
+		return prompt;
+	}
+
 	leftovers(): Leftovers {
 		return {
 			unused: [...this.#pending.values()].flat().map((s) => s.label),
@@ -142,6 +150,7 @@ export class FakeModel {
 		const { delayMs, ...decided } = this.#decide(body.model, body.messages);
 		const exchange = { ...decided, tools: (body.tools ?? []).map((t) => t.function?.name ?? "") };
 		this.exchanges.push(exchange);
+		this.#systemPrompts.set(exchange.conversation, body.messages.filter((m) => m.role === "system" || m.role === "developer").map(textOf).join("\n"));
 		if (delayMs) await new Promise((done) => setTimeout(done, delayMs));
 		stream(res, exchange.answer);
 	}

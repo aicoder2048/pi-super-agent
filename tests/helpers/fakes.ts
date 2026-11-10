@@ -28,11 +28,11 @@ import type { MemberRun } from "../../src/host/dispatch.ts";
 import type { Domains } from "../../src/modules.ts";
 import type { Member } from "../../src/teams.ts";
 
-/** The domains of a host under test: each module name with its team's name and members, or null for a module without members. */
-export function domainsOf(modules: Record<string, { team: string; crew: readonly Member[] } | null>): Domains {
+/** The domains of a host under test, by module name. A module with members gives `team` and `crew` together. */
+export function domainsOf(modules: Record<string, { team?: string; crew?: readonly Member[]; skillsDir?: string; prepare?: string }>): Domains {
 	return {
-		book: new Map(Object.entries(modules).map(([name, team]) => [name, team?.team ?? null])),
-		kitFor: (domain) => (domain in modules ? { crew: modules[domain]?.crew ?? [] } : undefined),
+		book: new Map(Object.entries(modules).map(([name, m]) => [name, m.team ?? null])),
+		kitFor: (domain) => (domain in modules ? { skillsDir: modules[domain].skillsDir, prepare: modules[domain].prepare, crew: modules[domain].crew ?? [] } : undefined),
 	};
 }
 

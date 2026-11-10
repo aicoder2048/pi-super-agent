@@ -875,5 +875,6 @@ test("任务的领域的模块后来拿掉了：助手照常启动，按没有�
 	host.say("再看一下");
 	await until(() => spawner.spawned.length === 2, "同一个任务的助手再次启动");
 	assert.deepEqual(spawner.spawned, [ticketId(), ticketId()]);
+	assert.deepEqual([helper().spec.skillsDir, helper().spec.prepare], [undefined, undefined]);
 	assert.deepEqual(logs.filter((line) => /领域/.test(line)).map((line) => line.replace(ticketId(), "tkt")), ["[worker tkt] 领域「old」的模块已不在，这个任务按没有领域的单个助手继续，没有这个领域的技能，也不能派活"]);
 });

@@ -14,14 +14,11 @@ import type { TranscriptMessage } from "../client/protocol.ts";
 import { canCode, memberTools } from "../worker/tools.ts";
 import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberRun } from "./dispatch.ts";
 
-export interface WorkerSpec {
+export interface WorkerSpec extends DomainKit {
 	ticketId: string;
 	sessionId: string;
 	workdir: string;
 	basis: Basis;
-	ruleId: string | null;
-	/** The members of the ticket's domain this helper may dispatch to. Empty: it works alone. */
-	crew: readonly Member[];
 	token: string;
 	model: ModelRef;
 }
@@ -208,11 +205,11 @@ export class WorkerExecutor {
 			}),
 			transcript: (event) => this.#o.onTranscript?.(ticketId, event),
 		};
-		const { crew } = this.#kitFor(ticketId, ticket.domain);
+		const kit = this.#kitFor(ticketId, ticket.domain);
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ruleId: ticket.ruleId, crew, token, model: choice.model },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ...kit, token, model: choice.model },
 				events,
 			);
 		} catch (error) {
@@ -220,7 +217,7 @@ export class WorkerExecutor {
 			afterCommand();
 			throw error;
 		}
-		live = { handle, token, bgRunning: 0, stopping: false, crew };
+		live = { handle, token, bgRunning: 0, stopping: false, crew: kit.crew };
 		this.#live.set(ticketId, live);
 		if (kernel.getTicket(ticketId)?.stoppedAt != null) {
 			await this.stop(ticketId);

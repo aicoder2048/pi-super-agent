@@ -236,11 +236,25 @@ test("给内核的领域簿：每个模块一项，有成员的记队名，没�
 	assert.deepEqual([...load(root).book], [["mail", null], ["watch", "看盘队"]]);
 });
 
-test("按领域取助手要的东西：模块的成员；没有成员的模块给空名单；没有这个模块就答不上来", () => {
-	const root = modulesRoot({ watch: { manifest: { team: "看盘队" }, "agents/a.md": person("market-analyst", "行情分析师") }, mail: {} });
+test("按领域取助手要的东西：模块的 skills/、prepare 和成员；每位成员带上模块的 skills/，再加自己的；没有这个模块就答不上来", () => {
+	const root = modulesRoot({
+		watch: {
+			manifest: { team: "看盘队", prepare: "npm ci" },
+			"skills/charts/SKILL.md": "---\nname: charts\ndescription: 看图\n---\n",
+			"agents/a.md": person("market-analyst", "行情分析师"),
+			"agents/b.md": person("news-researcher", "新闻研究员").replace("---\n你", "skills: ./own\n---\n你"),
+			"agents/own/sources/SKILL.md": "---\nname: sources\ndescription: 核对来源\n---\n",
+		},
+		mail: { "skills/reply/SKILL.md": "---\nname: reply\ndescription: 回信\n---\n" },
+		bare: { manifest: { team: "光杆队" }, "agents/a.md": person("solo", "独行") },
+	});
 	const { kitFor } = load(root);
-	assert.deepEqual(kitFor("watch")!.crew.map((m) => [m.name, m.title]), [["market-analyst", "行情分析师"]]);
-	assert.deepEqual(kitFor("mail")!.crew, []);
+	const shared = join(root, "watch/skills");
+	const watch = kitFor("watch")!;
+	assert.deepEqual([watch.skillsDir, watch.prepare], [shared, "npm ci"]);
+	assert.deepEqual(watch.crew.map((m) => [m.name, m.title, m.skills]), [["market-analyst", "行情分析师", [shared]], ["news-researcher", "新闻研究员", [shared, join(root, "watch/agents/own")]]]);
+	assert.deepEqual(kitFor("mail"), { skillsDir: join(root, "mail/skills"), prepare: undefined, crew: [] });
+	assert.deepEqual([kitFor("bare")!.skillsDir, kitFor("bare")!.crew[0].skills], [undefined, []]);
 	assert.equal(kitFor("gone"), undefined);
 });
 
