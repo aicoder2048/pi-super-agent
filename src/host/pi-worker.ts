@@ -42,7 +42,7 @@ function teamPrompt(crew: readonly RosterEntry[]): string {
 ${crew.map((m) => `- ${m.name} · ${m.title}：${m.description}`).join("\n")}`;
 }
 
-// Below the 1 s a caller may wait before giving up; long enough for Pi to flush and exit on SIGTERM.
+// Long enough for Pi to flush its session and exit on SIGTERM; a member that has not exited by then is killed.
 const MEMBER_KILL_AFTER_MS = 800;
 
 const SECRET_NAME = /(_API_KEY|_ACCESS_KEY|_TOKEN|_SECRET|_PASSWORD)$|^SECRET_/i;
@@ -206,9 +206,10 @@ function runMemberProcess(args: string[], env: Record<string, string>, run: Memb
 				process.kill(-child.pid!, signal);
 			} catch {}
 		};
+		let killTimer: NodeJS.Timeout | undefined;
 		const abort = () => {
 			signalGroup("SIGTERM");
-			setTimeout(() => signalGroup("SIGKILL"), MEMBER_KILL_AFTER_MS).unref();
+			killTimer = setTimeout(() => signalGroup("SIGKILL"), MEMBER_KILL_AFTER_MS);
 		};
 		run.signal.addEventListener("abort", abort, { once: true });
 		let reply: string | undefined;
@@ -230,7 +231,10 @@ function runMemberProcess(args: string[], env: Record<string, string>, run: Memb
 		});
 		child.once("error", (error) => reject(error));
 		// Whatever the member left in its group may still hold its stdout open; `close` waits for that pipe.
-		child.once("exit", () => signalGroup("SIGKILL"));
+		child.once("exit", () => {
+			clearTimeout(killTimer);
+			signalGroup("SIGKILL");
+		});
 		child.once("close", (code) => {
 			run.signal.removeEventListener("abort", abort);
 			if (run.signal.aborted) reject(run.signal.reason);

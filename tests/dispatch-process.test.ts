@@ -24,6 +24,7 @@ if (process.env.FAKE_PI_GRANDCHILD) {
 	grandchild.unref();
 	writeFileSync(\`grandchild-\${tag}.pid\`, String(grandchild.pid));
 }
+if (process.env.FAKE_PI_IGNORE_TERM) process.on("SIGTERM", () => {});
 const say = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
 setTimeout(() => {
 	say({ type: "agent_start" });
@@ -148,4 +149,31 @@ test("成员正常做完后，它留在进程组里的子进程也被清掉，�
 	assert.equal(await within(run(NEWS, "d"), 5000, "成员退出后派活就该结束"), "d 的回复");
 	const grandchild = Number(readFileSync(join(dir, "grandchild-d.pid"), "utf8"));
 	await until(() => !alive(grandchild), "子进程随进程组结束", 3000);
+});
+
+test("不理会 SIGTERM 的成员进程被 SIGKILL 结束", async (t) => {
+	const { dir, run } = setup(t, { FAKE_PI_DELAY_MS: "30000", FAKE_PI_IGNORE_TERM: "1" });
+	const stop = new AbortController();
+	const reply = run(NEWS, "k", "request", stop.signal);
+	await until(() => existsSync(join(dir, "pid-k")) && readFileSync(join(dir, "pid-k"), "utf8").length > 0, "成员进程起来了", 10_000);
+	const pid = Number(readFileSync(join(dir, "pid-k"), "utf8"));
+	await new Promise((done) => setTimeout(done, 100));
+	stop.abort(new Error("任务已停止"));
+	await assert.rejects(within(reply, 3000, "SIGTERM 没用时要补一个 SIGKILL"), /任务已停止/);
+	assert.equal(alive(pid), false);
+});
+
+test("成员进程退出后不再往它的进程组发信号", async (t) => {
+	const { dir, run } = setup(t, { FAKE_PI_DELAY_MS: "30000" });
+	const stop = new AbortController();
+	const reply = run(NEWS, "s", "request", stop.signal);
+	await until(() => existsSync(join(dir, "pid-s")) && readFileSync(join(dir, "pid-s"), "utf8").length > 0, "成员进程起来了", 10_000);
+	const pid = Number(readFileSync(join(dir, "pid-s"), "utf8"));
+	stop.abort(new Error("任务已停止"));
+	await assert.rejects(reply, /任务已停止/);
+	const late: unknown[][] = [];
+	const kill = t.mock.method(process, "kill", (...args: unknown[]) => (late.push(args), true));
+	await new Promise((done) => setTimeout(done, 1200));
+	kill.mock.restore();
+	assert.deepEqual(late.filter(([target]) => target === -pid), [], "进程组已经没了，那个 pid 可能已经是别的进程");
 });
