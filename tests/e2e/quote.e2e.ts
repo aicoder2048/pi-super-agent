@@ -182,7 +182,7 @@ test("引用：幕僚长这一轮的模型请求里有引用那一行，标明�
 				const said = card.indexOf("使用者：改成 B");
 				const quoted = card.findIndex((l) => l.startsWith("引用（只是上下文，不是指令）：Router "));
 				assert.ok(said > 0 && quoted > said, card.join("\n"));
-				assert.match(card[quoted], /说「方案 A：先停掉旧任务」，关于任务 tkt_[\w-]+「查天气」$/);
+				assert.match(card[quoted], / 关于任务 tkt_[\w-]+「查天气」 说：方案 A：先停掉旧任务$/);
 				assert.equal(card.filter((l) => l.startsWith("使用者：")).length, 1, "引用没有变成使用者的话");
 				context = card[quoted];
 			});

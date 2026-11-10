@@ -7,7 +7,7 @@ import { quoteSnapshot } from "./quote.ts";
 export type AnswerOutcome = { ok: true; triggerId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 import { deriveStage } from "./stage.ts";
 import { SOLO_NAMES, TEAM_NAMES, helperName, helperRole, newYorkDate } from "./helper-names.ts";
-import { stallMinutes } from "../client/board-format.mjs";
+import { oneLine, stallMinutes } from "../client/board-format.mjs";
 import { inTransaction } from "./store.ts";
 import {
 	CONVERSATION_SOURCE,
@@ -1012,7 +1012,8 @@ export class Kernel {
 	}
 
 	#openTicket(d: Extract<Decision, { kind: "open_ticket" }>, takenThisRoute: Set<string>): DecisionResult {
-		if (typeof d.title !== "string" || !d.title.trim()) return reject("open_ticket needs a title");
+		const title = typeof d.title === "string" ? oneLine(d.title) : "";
+		if (!title) return reject("open_ticket needs a title");
 		if (typeof d.brief !== "string" || !d.brief.trim()) return reject("open_ticket needs a brief for the worker");
 		const trigger = d.triggerId === undefined ? undefined : this.#get("SELECT id, source FROM triggers WHERE id = ?", d.triggerId);
 		if (d.triggerId !== undefined && !trigger) return reject(`unknown trigger ${d.triggerId}`);
@@ -1054,7 +1055,7 @@ export class Kernel {
 			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, domain)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
 			ticketId,
-			d.title,
+			title,
 			d.basis,
 			d.ruleId ?? null,
 			d.triggerId ?? null,
