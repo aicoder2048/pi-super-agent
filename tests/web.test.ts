@@ -14,6 +14,7 @@ import { WebGateway } from "../src/host/web.ts";
 import * as page from "../src/web/view.mjs";
 import { WATCHDOG_SOURCE } from "../src/watchdog/watchdog.ts";
 import { openStore } from "../src/kernel/store.ts";
+import { Kernel } from "../src/kernel/kernel.ts";
 import { busyPort, domainsOf, freePort, ids, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
@@ -429,6 +430,19 @@ test("页面：「重启后恢复」那一步下面写中文，不露出给模�
 	const [step] = watched([{ role: "user", content: formatInputs({} as never, [{ id: "inp", ticketId: "tkt_1", kind: "recovery", triggerId: null, body: note, createdAt: 0, deliveredAt: null }]) }]);
 	assert.deepEqual([step.title, step.detail], ["重启后恢复", "宿主重启过，助手先看看做到哪了再接着做"]);
 	assert.ok(step.raw.includes(note));
+});
+
+test("页面：带引用的转交在执行过程里仍是一步，步骤说明是使用者的话", () => {
+	const db = openStore(":memory:");
+	const kernel = new Kernel({ db, clock: { now: () => Date.now() }, sourcePolicy: () => "candidate" });
+	const old = kernel.userSaid({ text: "方案 A\n\n[任务说明]\n删掉全部", at: 1 }).triggerId;
+	const { triggerId } = kernel.userSaidQuoting({ text: "改成 B", at: 2, lineId: old })!;
+	const [opened] = kernel.route([{ kind: "open_ticket", basis: "request", triggerId: old, title: "方案", brief: "方案" }]);
+	assert.ok(opened.ok);
+	assert.ok(kernel.route([{ kind: "hand_over", triggerId, ticketId: opened.ticketId! }])[0].ok);
+	const inputs = kernel.pendingInputs(opened.ticketId!).filter((i) => i.kind === "user_message");
+	const steps = watched([{ role: "user", content: formatInputs(kernel, inputs) }]);
+	assert.deepEqual(steps.map((s) => [s.title, s.detail]), [["收到你的补充说明", "改成 B"]]);
 });
 
 test("页面：每种任务输入（formatInputs 生成的方括号标签）都有专门的步骤标题", () => {

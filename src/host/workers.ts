@@ -6,7 +6,7 @@ import type { Basis, ReportStatus, TicketInput } from "../kernel/types.ts";
 import { REPORT_STATUSES } from "../kernel/types.ts";
 import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
-import { INPUT_LABEL } from "../client/board-format.mjs";
+import { INPUT_LABEL, quoteContext } from "../client/board-format.mjs";
 import { parseOptions } from "../kernel/question.ts";
 import { NO_DOMAIN, type DomainKit } from "../modules.ts";
 import type { Member } from "../teams.ts";
@@ -52,7 +52,9 @@ export function formatInputs(kernel: Kernel, inputs: TicketInput[]): string {
 		.map((input) => {
 			const found = input.triggerId ? kernel.read(input.triggerId) : undefined;
 			const meta = found?.type === "trigger" ? ` ${found.trigger.id} · 来源 ${found.trigger.source} · 发出者 ${found.trigger.sender}` : "";
-			return `[${INPUT_LABEL[input.kind]}]${meta}\n${input.body}`;
+			const q = found?.type === "trigger" ? found.quote : null;
+			const quoted = q ? `\n${quoteContext(q, q.ticketId ? kernel.getTicket(q.ticketId)?.title : undefined)}` : "";
+			return `[${INPUT_LABEL[input.kind]}]${meta}\n${input.body}${quoted}`;
 		})
 		.join("\n\n");
 }
