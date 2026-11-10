@@ -332,3 +332,7 @@ ts	phase	decision	why	evidence	result
 2026-11-10T10:02:22Z	simplify	拒绝：合并两个发话入口、联表取引用、统一三处不可见字符定义、时间格式换系统函数、合并测试构造函数	设计时比较过或规模下无收益；三处语义不同；格式有测试固定	simplify 四份报告	skipped
 2026-11-10T10:10:01Z	simplify	简化修复完成：打开状态库时把旧标题压成一行（先红：库里多行标题重开后仍是多行，点选回答卡片出现两行使用者），其余七条重构	改动深度审查指出的漏洞补上，ADR-0011 的说法才成立	commits c19bd95, a966df9; just test 931/931	done
 2026-11-10T10:10:01Z	verify	完整 just e2e 185 个，2 个失败都是 HANDOFF 里记的不稳定用例（点小卡时第二个助手还没报模型，读到模型 未启动）；单独重跑 helpers.e2e.ts 10/10 通过	失败输出和已知问题一致，与引用无关	/Users/szou/.claude/jobs/66e5cbed/tmp/e2e-quote.log	PASS
+2026-11-10T10:26:53Z	start	新一轮：幕僚长那句话的引用位置；之前的行都是本会话写的	使用者说左下角不舒服，选了方案 B：气泡下方靠右	本会话 66e5cbed，worktree psa/quote-btn @816c014	open
+2026-11-10T10:26:53Z	implement	先红后绿：引用右边缘对齐气泡（改前差 100px）；子代理有选项时让引用占一行，截图看出气泡和选项之间多一条空行，我加断言（改前 26px）后改成放在选项下方靠右	隐藏时占位的空行看起来像排版松了；选项和气泡等宽，放在选项下方右边照样对齐	commits 23775ad + 后续; /Users/szou/.claude/jobs/66e5cbed/tmp/btn-choices.png	done
+2026-11-10T10:26:53Z	verify	just test 931/931；just e2e 192 个里 2 个失败是已知不稳定用例（模型 未启动），单独重跑 helpers 10/10	和已知问题输出一致	/Users/szou/.claude/jobs/66e5cbed/tmp/e2e-btn.log	PASS
+2026-11-10T10:26:53Z	review	跳过 how、architect、interrogate、simplify	只改一个按钮的位置，布局由使用者选定；diff 不加注释	git diff main --stat	skipped
