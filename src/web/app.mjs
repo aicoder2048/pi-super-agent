@@ -375,13 +375,12 @@ function mount(doc) {
 		if (line.who === "router") {
 			const avatar = avatarMark.cloneNode(true);
 			const said = el("div", "said");
-			said.append(el("div", "who", "幕僚长"), bubble);
+			said.append(el("div", "who", "幕僚长"), bubble, quoteButton(line));
 			if (withChoices) {
 				const choices = el("div", "choices");
 				choices.dataset.line = line.id;
 				said.append(choices);
 			}
-			said.append(quoteButton(line));
 			item.append(avatar, said);
 		} else {
 			bubble.prepend(el("span", "sr", "你："));
