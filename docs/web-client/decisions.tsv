@@ -300,3 +300,8 @@ ts	phase	decision	why	evidence	result
 2026-11-10T06:18:36Z	simplify	跳过：标记改成每次清屏一行加上屏时间、改用序号当标识、按需拉取被隐藏的行、去掉渲染缓存变量、POST 路由表改回 if、say 和 clear 合用 fetch 助手、快照只查一次 UNION	前三条在设计阶段比较过并否决（三个时钟、多一条读接口）；其余是有意的选择或收益太小（快照只在连接时生成）	/Users/szou/.claude/jobs/66e5cbed/tmp/arena-clear/synthesis.md	skipped
 2026-11-10T06:19:24Z	verify	开 PR 前最后一遍完整 just e2e	修复和两轮清理之后再核一次	/Users/szou/.claude/jobs/66e5cbed/tmp/e2e2.log	145/145 PASS
 2026-11-10T06:19:24Z	trail	决策记录的跨模型复核跳过	规则要求复核者和做事的模型不同系列，本机可用的子代理都是 Claude	~/.claude/rules/pstack-models.md	skipped
+2026-11-10T07:20:36Z	start	新一轮：把清屏按钮移到对话栏顶部标题行；之前的行都是本会话写的（#42）	使用者看了实际页面，说按钮位置不理想	本会话 66e5cbed，worktree psa/clear-header @74e161c	open
+2026-11-10T07:20:37Z	frame	按方案 A：对话栏顶部一条不随对话滚动的标题行，左边「对话」，右边带图标的清屏按钮；发话状态那一行只留状态	使用者在 A、B、C、D 四个位置里选了 A：按钮挨着它要清的内容，远离发送	使用者本轮回复：按 A 做	decided
+2026-11-10T07:20:37Z	implement	先红后绿：e2e 断言按钮在标题行、不在输入框那一块、滚动后位置不变；再断言三栏标题顶边对齐（差 1px 以内），上边距从 12px 改到 16px	第一次失败是假回复超过 200 字被拒，改短后失败在对的地方	commits 1e9fde9, 1534fa6	done
+2026-11-10T07:20:37Z	verify	just test 888/888；just e2e 153/153；真实宿主加假模型截图：浅色长对话、深色清屏后、390 宽	按钮看得出是按钮，三栏标题对齐	/Users/szou/.claude/jobs/66e5cbed/tmp/shots2/*.png	PASS
+2026-11-10T07:20:37Z	review	跳过 how、architect、interrogate、Comment Sicko 和 simplify	只是把已有按钮挪到新标题行，没有新的类型或函数边界；布局由使用者选定；diff 不加注释，只改 21 行样式和标记	git diff main --stat	skipped
