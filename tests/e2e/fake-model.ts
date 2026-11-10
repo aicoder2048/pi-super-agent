@@ -183,13 +183,17 @@ export class FakeModel {
 type Message = { role: string; content?: string | { type: string; text?: string }[] };
 const textOf = (m: Message) => (typeof m.content === "string" ? m.content : (m.content ?? []).map((c) => c.text ?? "").join(""));
 
-/** The user cards after the last assistant turn. A member's reply to a dispatch counts as one card, "[成员回复] …", so a helper can be scripted past it. */
+/**
+ * The user cards after the last assistant turn. A member's reply to a dispatch counts as one card, "[成员回复] …",
+ * so a helper can be scripted past it; so does a command's output that starts with "[命令输出]".
+ */
 function trailingCards(messages: Message[]): string[] {
 	const out: string[] = [];
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const m = messages[i];
 		if (m.role === "user") out.unshift(...textOf(m).split(/\n\n(?=\[)/));
 		else if (m.role === "tool" && textOf(m).startsWith("成员回复")) out.unshift(`[成员回复] ${textOf(m)}`);
+		else if (m.role === "tool" && textOf(m).startsWith("[命令输出]")) out.unshift(textOf(m));
 		else break;
 	}
 	return out;

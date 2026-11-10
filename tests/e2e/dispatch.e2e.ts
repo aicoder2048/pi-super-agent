@@ -19,6 +19,7 @@ const NEWS_REPLY = "没有重大新闻，只有一条听证会的旧闻。";
 const SUPPORT_REPLY = "接着上次的盘面：支撑位在 172 附近。";
 const REPORT = "个股领跌，没有新的利空消息。";
 const WORKING_MS = 2500;
+const NEWS_COMMAND_S = 9;
 
 const STATE_FILES = {
 	"agents/market.md": "---\nname: market-analyst\ntitle: 行情分析师\ndescription: 看盘面、量能和大盘对比\ntools: read, lookup, web_get\n---\n你是行情分析师。\n",
@@ -59,7 +60,11 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 					on("行情分析师回复", /^\[派活\] 行情分析师\n看 NVDA/, () => MARKET_REPLY, WORKING_MS),
 					on("行情分析师接着上次回答追问", /^\[派活\] 行情分析师\n追问/, () => SUPPORT_REPLY),
 				),
-				worker(NEWS_TASK, on("新闻研究员回复", /^\[派活\] 新闻研究员\n/, () => NEWS_REPLY, WORKING_MS)),
+				worker(
+					NEWS_TASK,
+					on("新闻研究员先跑一条慢命令", /^\[派活\] 新闻研究员\n/, () => [{ name: "bash", args: { command: `sleep ${NEWS_COMMAND_S}; echo '[命令输出] 查完了'` } }]),
+					on("新闻研究员回复", /^\[命令输出\] 查完了/, () => NEWS_REPLY),
+				),
 				worker(WEATHER.brief, on("天气任务汇报", /^\[任务说明\]/, () => [report("progress", "正在查")])),
 			],
 		},
@@ -72,17 +77,28 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 				helperName = (await chip.locator(".name").textContent()) ?? "";
 				assert.equal([...helperName].length, 4, helperName);
 			});
-			await step("助手小卡下同时出现两位成员，只写职称", async (page) => {
+			await step("助手小卡下同时出现两位成员：职称、正在做什么、多久前有动静，不写英文名", async (page) => {
 				const members = page.locator("#helpers .helper-slot", { hasText: "看盘队 #1" }).locator(".member-chip");
 				await page.waitForFunction(() => document.querySelectorAll("#helpers .member-chip.running").length === 2);
-				assert.deepEqual(sorted(await members.allTextContents()), sorted(["行情分析师", "新闻研究员"]));
+				for (const label of await members.allTextContents()) assert.match(label, /^(行情分析师|新闻研究员) · .+ · (刚刚|\d+ 秒前)$/);
 				assert.match(await page.locator("#helpers .helper-chip", { hasText: "看盘队 #1" }).getAttribute("aria-label") ?? "", /成员：/);
 			});
 			await step("执行过程里两次派活各是一步，成员还在做时写进行中", async (page) => {
 				await page.locator("#helpers .helper-chip", { hasText: "看盘队 #1" }).click();
 				await page.locator("#how-title", { hasText: TASK.title }).waitFor();
-				await page.locator("#steps .step.pending", { hasText: "行情分析师 · 进行中" }).waitFor();
 				await page.locator("#steps .step.pending", { hasText: "新闻研究员 · 进行中" }).waitFor();
+			});
+			await step("行情分析师先做完：它那一步马上写完成，新闻研究员还在进行中", async (page) => {
+				await page.locator("#steps .step.ok", { hasText: "行情分析师 · 完成" }).waitFor();
+				assert.equal(await page.locator("#steps .step.pending", { hasText: "新闻研究员 · 进行中" }).count(), 1, "整批还没回来");
+				assert.equal(await page.locator("#steps .step-detail", { hasText: /^排队中$/ }).count(), 0, "没有不带职称的排队中");
+			});
+			await step("新闻研究员在跑命令：小卡下写「新闻研究员 · 执行命令 · N 秒前」，展开派活看到它自己的步骤", async (page) => {
+				await page.locator("#helpers .member-chip.running", { hasText: /^新闻研究员 · 执行命令 · \d+ 秒前$/ }).waitFor();
+				assert.equal(await page.locator("#helpers .member-chip").count(), 1, "做完的行情分析师不再列在小卡下");
+				const news = page.locator("#steps .step", { hasText: "新闻研究员 · 进行中" });
+				await news.locator("summary", { hasText: "派活明细" }).click();
+				await news.locator(".member-step.pending", { hasText: "执行命令" }).waitFor();
 			});
 			await step("两位做完后小卡下的成员消失，助手的名字不变，答复是助手合成的一份", async (page) => {
 				await page.locator("#left .card", { hasText: REPORT }).waitFor();
@@ -104,8 +120,8 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 				assert.doesNotMatch(await answer.textContent() ?? "", /\*\*/);
 				assert.notEqual(await page.title(), "被注入");
 				const news = page.locator("#steps .step", { hasText: "新闻研究员 · 完成" });
-				await news.locator("summary", { hasText: "派活明细" }).click();
-				assert.equal(await news.locator(".dispatch-reply").textContent(), NEWS_REPLY);
+				assert.equal(await news.locator(".dispatch-reply").textContent(), NEWS_REPLY, "干活时展开的明细，做完后还开着");
+				assert.deepEqual(await news.locator(".member-step.ok .member-step-title").allTextContents(), ["执行命令", "思考"], "成员自己的步骤做完后还在");
 				assert.doesNotMatch(await page.locator("#steps .dispatch").first().textContent() ?? "", /market-analyst|news-researcher/, "明细只写职称");
 			});
 			await step("追问一句，同一位成员接着上次的话答", async (page) => {
@@ -131,6 +147,7 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 				const news = page.locator("#steps .step", { hasText: "新闻研究员 · 完成" });
 				await news.locator("summary", { hasText: "派活明细" }).click();
 				assert.equal(await news.locator(".dispatch-reply").textContent(), NEWS_REPLY);
+				assert.deepEqual(await news.locator(".member-step.ok .member-step-title").allTextContents(), ["执行命令", "思考"], "成员的步骤来自它自己的会话文件");
 			});
 			await step("成员的用量计入任务：执行过程头部的 token 数等于助手和成员每次模型请求之和", async (page) => {
 				const requests = fake.exchanges.filter((e) => e.model === "worker").length;
@@ -153,6 +170,7 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 
 const HEARING_TASK = "查黄仁勋听证会的报道";
 const DATE_TASK = "接着查：听证会是哪天";
+const AGAIN_TASK = "强杀之后再查一次：听证会是哪天";
 const stopTicket = (title: string) => (card: string): ToolCall[] => [{ name: "route", args: { decisions: [{ kind: "stop", ticketId: card.match(new RegExp(`(tkt_[\\w-]+)「${title}」`))?.[1] }] } }];
 
 test("派过一次后重启宿主再追问，成员仍接着上次的会话；派活中叫停任务，成员进程和它起的命令一起结束", (t) =>
@@ -170,18 +188,22 @@ test("派过一次后重启宿主再追问，成员仍接着上次的会话；�
 					on("助手派给新闻研究员", /^\[任务说明\]/, () => [dispatch("news-researcher", HEARING_TASK)]),
 					on("助手汇报第一次的回复", /^\[成员回复\][\s\S]*三家媒体/, () => [report("progress", "三家媒体有报道。")]),
 					on("重启后助手再派给新闻研究员", /^\[使用者的话/, () => [dispatch("news-researcher", DATE_TASK)]),
+					on("宿主被强杀又重启后，助手按恢复说明再派一次", /^\[恢复说明\]/, () => [dispatch("news-researcher", AGAIN_TASK)]),
 				),
 				worker(
 					HEARING_TASK,
 					on("新闻研究员回复", /^\[派活\] 新闻研究员\n查黄仁勋/, () => "三家媒体有报道。"),
 					on("重启后新闻研究员接着上次，跑一条不会结束的命令", /^\[派活\] 新闻研究员\n接着查/, () => [{ name: "bash", args: { command: "echo $PPID > member.pid; sleep 300" } }]),
+					on("强杀重启后新闻研究员又跑一条不会结束的命令", /^\[派活\] 新闻研究员\n强杀之后/, () => [{ name: "bash", args: { command: "echo $PPID > member2.pid; sleep 300" } }]),
 				),
 			],
 		},
 		async ({ step, host, stateDir }) => {
-			const pidFile = () => {
-				const [ticket] = readdirSync(join(stateDir, "workers"));
-				return join(stateDir, "workers", ticket, "member.pid");
+			const ticketDir = () => join(stateDir, "workers", readdirSync(join(stateDir, "workers"))[0]);
+			const memberGroupFrom = async (file: string) => {
+				const path = join(ticketDir(), file);
+				for (let waited = 0; waited < 8000 && !(existsSync(path) && readFileSync(path, "utf8").trim()); waited += 50) await sleep(50);
+				return Number(readFileSync(path, "utf8"));
 			};
 			let memberGroup = 0;
 			await step("问一句，成员答完，助手汇报", async (page) => {
@@ -195,21 +217,84 @@ test("派过一次后重启宿主再追问，成员仍接着上次的会话；�
 			await step("追问一句，同一位成员接着重启前的会话干活，小卡下写它的职称", async (page) => {
 				await sayInPage(page, "听证会是哪天");
 				await page.locator("#helpers .member-chip.running", { hasText: "新闻研究员" }).waitFor();
-				for (let waited = 0; waited < 8000 && !(existsSync(pidFile()) && readFileSync(pidFile(), "utf8").trim()); waited += 50) await sleep(50);
-				memberGroup = Number(readFileSync(pidFile(), "utf8"));
+				memberGroup = await memberGroupFrom("member.pid");
 				assert.ok(memberGroup > 0 && groupAlive(memberGroup), `成员进程组 ${memberGroup} 在运行`);
-				const [ticket] = readdirSync(join(stateDir, "workers"));
-				assert.equal(readdirSync(join(stateDir, "workers", ticket, "team", "news-researcher")).filter((f) => f.endsWith(".jsonl")).length, 1, "重启前后是同一份会话");
-			});
-			await step("叫停任务：成员进程组整个结束，执行过程里那次派活写已停止，小卡消失", async (page) => {
+				assert.equal(readdirSync(join(ticketDir(), "team", "news-researcher")).filter((f) => f.endsWith(".jsonl")).length, 1, "重启前后是同一份会话");
 				await page.locator("#left .card", { hasText: TASK.title }).first().click();
 				await page.locator("#steps .step.pending", { hasText: "新闻研究员 · 进行中" }).waitFor();
+			});
+			await step("宿主被强杀（来不及停成员）后重启：新宿主先结束留下的成员，那次派活一连回来就写「新闻研究员 · 已停止」", async (page) => {
+				process.kill(host.pid, "SIGKILL");
+				await sleep(300);
+				assert.ok(groupAlive(memberGroup), "宿主被强杀时成员还活着");
+				await host.restart();
+				assert.equal(groupAlive(memberGroup), false, `新宿主启动完成时，留下的成员进程组 ${memberGroup} 应该已经结束`);
+				assert.match(host.log(), /结束了上一个宿主留下的成员进程：任务 tkt_\S+ 的 news-researcher/);
+				await waitStatus(page, "connected");
+				await page.locator("#steps .step.stopped", { hasText: "新闻研究员 · 已停止" }).waitFor();
+			});
+			await step("恢复后的助手再派一次，成员又在干活", async (page) => {
+				await page.locator("#steps .step.pending", { hasText: "新闻研究员 · 进行中" }).waitFor();
+				memberGroup = await memberGroupFrom("member2.pid");
+				assert.ok(memberGroup > 0 && groupAlive(memberGroup), `成员进程组 ${memberGroup} 在运行`);
+			});
+			await step("叫停任务：成员进程组整个结束；派活那一步写「新闻研究员 · 已停止」，没有一步还在转圈；小卡消失", async (page) => {
 				await sayInPage(page, "停掉这个任务");
-				await page.locator("#steps .step.pending", { hasText: "已停止" }).waitFor();
+				await page.waitForFunction(() => [...document.querySelectorAll("#steps .step.stopped .step-detail")].filter((n) => n.textContent === "新闻研究员 · 已停止").length === 2);
+				assert.equal(await page.locator("#steps .step.pending").count(), 0, "没有还在等结果的步骤");
 				for (let waited = 0; waited < 5000 && groupAlive(memberGroup); waited += 50) await sleep(50);
 				assert.equal(groupAlive(memberGroup), false, `成员进程组 ${memberGroup} 还活着`);
 				await page.waitForFunction(() => document.querySelectorAll("#helpers .helper-chip").length === 0);
+				const last = page.locator("#steps .step.stopped", { hasText: "新闻研究员 · 已停止" }).last();
+				await last.locator("summary", { hasText: "派活明细" }).click();
+				assert.deepEqual(await last.locator(".member-step.stopped .member-step-title").allTextContents(), ["执行命令"], "成员没跑完的那条命令也写已停止");
 			});
 		},
 		{ files: STATE_FILES, config: { dispatchTimeoutSeconds: 60 }, fixedPort: true },
+	));
+
+const FOUR = [["market-analyst", "行情分析师"], ["news-researcher", "新闻研究员"], ["earnings-reader", "财报解读"], ["chart-reader", "技术分析师"]];
+const FOUR_FILES = {
+	...Object.fromEntries(FOUR.map(([name, title]) => [`agents/${name}.md`, `---\nname: ${name}\ntitle: ${title}\ndescription: ${title}的活\ntools: read\n---\n你是${title}。\n`])),
+	"teams.yaml": `看盘队:\n  description: 四个人看盘\n  members:\n${FOUR.map(([name]) => `    - ${name}`).join("\n")}\n`,
+};
+
+test("一次派给四位成员、同时只能跑两位：小卡下两位在干活、两位写排队中；手机宽度下成员换行，不用横向滚动", (t) =>
+	story(
+		t,
+		{
+			router: [on("Router 把问题交给看盘队", /^\[对话\][\s\S]*为什么跌/, (c) => [openOnTeam(c, "看盘队"), reply(c, "已交给看盘队")])],
+			workers: [
+				worker(
+					TASK.brief,
+					on("助手同时派给四位成员", /^\[任务说明\]/, () => FOUR.map(([name, title]) => dispatch(name, `${title}看一下 NVDA`))),
+					...FOUR.slice(1).map(([name, title]) => on(`助手收到${title}的回复`, new RegExp(`^\\[成员回复\\] 成员回复 · ${title}（${name}）`), () => [])),
+					on("助手收到行情分析师的回复后汇报", /^\[成员回复\] 成员回复 · 行情分析师（market-analyst）/, () => [report("progress", "四位都看过了。")]),
+				),
+				...FOUR.map(([, title]) => worker(`${title}看一下 NVDA`, on(`${title}回复`, new RegExp(`^\\[派活\\] ${title}\\n`), () => `${title}：没有异常。`, WORKING_MS))),
+			],
+		},
+		async ({ step }) => {
+			await step("问一句，四位成员都列在助手小卡下：两位在干活，两位写排队中", async (page) => {
+				await sayInPage(page, ASK);
+				await page.waitForFunction(() => document.querySelectorAll("#helpers .member-chip.running").length === 2 && document.querySelectorAll("#helpers .member-chip.queued").length === 2);
+				for (const label of await page.locator("#helpers .member-chip.queued").allTextContents()) assert.match(label, /^(行情分析师|新闻研究员|财报解读|技术分析师) · 排队中$/);
+			});
+			await step("手机宽度（390 px）下四位成员换行显示，每一位都在屏幕里", async (page) => {
+				await page.setViewportSize({ width: 390, height: 844 });
+				await page.waitForFunction(() => document.querySelectorAll("#helpers .member-chip").length === 4);
+				const boxes = await page.locator("#helpers .member-chip").evaluateAll((chips) => chips.map((c) => {
+					const { left, right, top } = c.getBoundingClientRect();
+					return { left: Math.round(left), right: Math.round(right), top: Math.round(top) };
+				}));
+				await page.setViewportSize({ width: 1280, height: 720 });
+				assert.ok(boxes.every((b) => b.left >= 0 && b.right <= 390), `成员小标签超出 390 px：${JSON.stringify(boxes)}`);
+				assert.ok(new Set(boxes.map((b) => b.top)).size > 1, "四位放不下一行，应该换行");
+			});
+			await step("四位都做完，助手汇报，小卡下不再有成员", async (page) => {
+				await page.locator("#left .card", { hasText: "四位都看过了。" }).waitFor({ timeout: 20_000 });
+				await page.waitForFunction(() => document.querySelectorAll("#helpers .member-chip").length === 0);
+			});
+		},
+		{ files: FOUR_FILES, config: { maxConcurrentExperts: 2 } },
 	));

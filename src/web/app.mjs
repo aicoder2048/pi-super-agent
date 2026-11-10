@@ -15,7 +15,7 @@ const STATUS_TEXT = {
 };
 
 const THEME_KEY = "psa-theme";
-const MARK = { ok: "✓", error: "!", pending: "…" };
+const MARK = { ok: "✓", error: "!", pending: "…", stopped: "■" };
 
 /** @param {Document} doc */
 function mount(doc) {
@@ -327,14 +327,16 @@ function mount(doc) {
 	};
 
 	let stepsShown = "";
-	// A board frame can move a dispatch from 排队中 to 进行中 without any new transcript message.
+	/** @param {import("./view.mjs").Step[]} steps */
+	const stepsKey = (steps) => JSON.stringify(steps.map((s) => [s.state, s.detail, s.dispatch && [s.dispatch.tokens, s.dispatch.note, s.dispatch.steps.map((m) => [m.state, m.title, m.detail])]]));
+	// A board frame can move a dispatch, or a step whose helper stopped, without any new transcript message.
 	const renderStepsIfMoved = () => {
-		if (watching && stepsShown !== JSON.stringify(liveSteps(watching.watch, view).map((s) => [s.state, s.detail]))) renderSteps();
+		if (watching && stepsShown !== stepsKey(liveSteps(watching.watch, view))) renderSteps();
 	};
 
 	const renderSteps = () => {
 		const steps = watching ? liveSteps(watching.watch, view) : [];
-		stepsShown = JSON.stringify(steps.map((s) => [s.state, s.detail]));
+		stepsShown = stepsKey(steps);
 		if (!watching) return void $("steps").replaceChildren(el("li", "empty", "选择左侧的任务，查看助手的执行过程。"));
 		if (!steps.length) return void $("steps").replaceChildren(el("li", "empty", "暂无步骤。"));
 		const open = new Set([...$("steps").querySelectorAll("details[open]")].map((d) => d.getAttribute("data-i")));
@@ -355,6 +357,15 @@ function mount(doc) {
 				box.open = open.has(`d${i}`);
 				box.append(el("summary", "", "派活明细"), el("div", "dispatch-head", [d.title, d.stateText, d.tokens].filter(Boolean).join(" · ")), el("div", "dispatch-task", `任务：${d.task}`));
 				if (d.note) box.append(el("div", "dispatch-note", d.note));
+				if (d.steps.length) {
+					const list = el("ol", "member-steps");
+					list.append(...d.steps.map((m) => {
+						const item = el("li", `member-step ${m.state}`);
+						item.append(el("span", "member-step-mark", MARK[m.state]), el("span", "member-step-title", m.title), el("span", "member-step-detail", m.detail));
+						return item;
+					}));
+					box.append(list);
+				}
 				if (d.reply) box.append(md("dispatch-reply", d.reply));
 				body.append(box);
 			}
