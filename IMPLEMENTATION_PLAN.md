@@ -384,23 +384,24 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `src/host/pi-worker.ts`、`src/host/main.ts`、`src/watchdog/main.ts`（如需要）、`justfile`、`tests/host-main.test.ts`、`tests/pi-worker*.test.ts`。
+- [x] Edit `src/host/pi-worker.ts`、`src/host/main.ts`、`src/watchdog/main.ts`（如需要）、`justfile`、`tests/host-main.test.ts`、`tests/pi-worker*.test.ts`。另加 `src/host/worker-launcher.mjs`、`src/host/workers.ts`、`src/host/wiring.ts`、`tests/watchdog-main.test.ts`、`tests/recovery.test.ts`。
 
 **Build.**
 
-- [ ] 先写会失败的测试复现：给宿主进程组发 SIGINT（模拟终端），断言 Worker 不是被信号直接杀死、任务状态是停止而不是失败、宿主打印「已停止」并以 0 退出。
-- [ ] Worker 放进自己的进程组（或忽略终端 SIGINT），只由宿主停止。
-- [ ] 停止完成后打印「已停止」；第二次 Ctrl+C 立即退出并说明。
-- [ ] `just host`、`just watchdog` 按 Ctrl+C 不再出现 just 的 error 行（若 just 本身无法避免，记录原因和替代命令）。
-- [ ] 不再把 Pi 的 `No project session found` 警告转给使用者。
+- [x] 先写会失败的测试复现：给宿主进程组发 SIGINT（模拟终端），断言 Worker 不是被信号直接杀死、任务状态是停止而不是失败、宿主打印「已停止」并以 0 退出。a9ec3ef（测试入口 5b4cc08）。
+- [x] Worker 放进自己的进程组（或忽略终端 SIGINT），只由宿主停止。4aeb6b3：Worker 经 `worker-launcher.mjs` 启动，Pi 自成进程组。
+- [x] 停止完成后打印「已停止」；第二次 Ctrl+C 立即退出并说明。4aeb6b3。
+- [x] Ctrl+C 时成员进程也被结束、`running.json` 清掉，沿用 main 的停止顺序（先助手、后成员、等进程没了）。main 的 `WorkerExecutor.shutdown` 已经这样做，9ff90c0 用测试钉住。
+- [x] `just host`、`just watchdog` 按 Ctrl+C 不再出现 just 的 error 行（若 just 本身无法避免，记录原因和替代命令）。f3f113f；Watchdog 先停自己拉起的宿主 882f84a、0a3f47a。
+- [x] 不再把 Pi 的 `No project session found` 警告转给使用者。4aeb6b3；恢复的任务丢了会话时改为说明 e2180eb、4de6861。
 
 **You see.**
 
-- [ ] `just host` 有一个任务在跑时按 Ctrl+C：打印「收到 SIGINT，正在停止」和「已停止」，回到提示符，没有 error 行。
+- [x] `just host` 有一个任务在跑时按 Ctrl+C：打印「收到 SIGINT，正在停止」和「已停止」，回到提示符，没有 error 行。在 9ff90c0 上用 tmux 实测，见 decisions.tsv 的 x1-live 行。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 进程组 SIGINT 复现测试先红后绿；全量测试通过。
+- [x] 进程组 SIGINT 复现测试先红后绿；全量测试通过。在 9ff90c0 上 855/855；9 条新测试在 origin/main 加 5b4cc08 上全红。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
 
