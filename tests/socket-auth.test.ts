@@ -203,3 +203,12 @@ test("just say：client-token 和宿主的不一致时打印一行说明，退�
 	assert.match(run.stderr, /重启/);
 	assert.deepEqual(host.kernel.conversation(), []);
 });
+
+test("socket：升级前就开着的旧客户端每秒重连一次，宿主一分钟内只记一行拒绝日志，每次都照样断开", async (t) => {
+	const lines: string[] = [];
+	const { host } = await startHost(() => [], () => {}, { log: (line) => lines.push(line) });
+	t.after(() => host.stop());
+	for (let i = 0; i < 5; i++) assert.deepEqual(await within(rawSession(host.socketPath, [{ type: "hello", role: "client" }, SAY]), 3000, "断开"), []);
+	assert.equal(lines.filter((l) => l.startsWith("[socket]")).length, 1, lines.join("\n"));
+	assert.deepEqual(host.kernel.conversation(), []);
+});

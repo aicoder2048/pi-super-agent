@@ -40,6 +40,8 @@ export interface WorkerRequestHandler {
 	(ticketId: string, token: string, method: string, params: unknown): unknown;
 }
 
+const REFUSAL_LOG_EVERY_MS = 60_000;
+
 interface ClientConn {
 	socket: Socket;
 	watching: string | undefined;
@@ -51,6 +53,7 @@ export class HostServer {
 	readonly #echoes = new HistoryEchoFilter<ClientConn>();
 	readonly #log: (line: string) => void;
 	#clientToken = "";
+	#refusalLoggedAt = -Infinity;
 
 	constructor(clients: ClientHandlers, workers: WorkerRequestHandler, log: (line: string) => void) {
 		this.#log = log;
@@ -70,7 +73,7 @@ export class HostServer {
 					}
 					// A client speaks as the user (ADR-0003), so knowing the socket path is not enough to be one.
 					if (!tokenMatches(typeof r.token === "string" ? r.token : "", this.#clientToken)) {
-						this.#log("[socket] 拒绝了一个客户端连接：hello 没带对的 client-token。TUI、just say 和 just tail 会自己带上；宿主换过凭据就重开它们。");
+						this.#logRefusal();
 						return socket.destroy();
 					}
 					role = "client";
@@ -114,6 +117,14 @@ export class HostServer {
 				if (client) this.#clients.delete(client);
 			});
 		});
+	}
+
+	// A client opened before the upgrade retries every second without the credential; one line a minute keeps host.log readable.
+	#logRefusal(): void {
+		const now = Date.now();
+		if (now - this.#refusalLoggedAt < REFUSAL_LOG_EVERY_MS) return;
+		this.#refusalLoggedAt = now;
+		this.#log("[socket] 拒绝了客户端连接：hello 没带对的 client-token。重开 TUI、just say 或 just tail，它们会自己带上。一分钟内再有同样的拒绝不重复记。");
 	}
 
 	// One client's failed request must not reach the socket's data handler, where it would kill the host.
