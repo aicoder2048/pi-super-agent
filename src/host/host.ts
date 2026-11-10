@@ -14,7 +14,7 @@ import { Dispatcher } from "./dispatcher.ts";
 import { HostServer, type AnswerResult, type Broadcast } from "./server.ts";
 import type { BoardState, Duty, TodayCounts, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
 import { WebGateway } from "./web.ts";
-import { loadWebToken } from "./web-token.ts";
+import { loadToken } from "./web-token.ts";
 import { ConfigError } from "../config-error.ts";
 import { WorkerExecutor, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 
@@ -168,10 +168,12 @@ export class Host {
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), answer: (reportId, option) => host.answer(reportId, option) }, loadWebToken(options.stateDir, host.#log), host.#log);
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), answer: (reportId, option) => host.answer(reportId, option) }, loadToken(options.stateDir, "web-token", host.#log), host.#log);
 			await host.#web.listen(options.webPort);
 		}
 		try {
+			// After the web port binds: a second host that exits on a busy port must not touch the running host's credential.
+			loadToken(options.stateDir, "client-token", host.#log);
 			const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath, rulesFor: options.rulesFor ?? (() => []) };
 			host.router = await options.createRouter(deps);
 			await host.server.listen(host.socketPath);

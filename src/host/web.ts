@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -6,6 +5,7 @@ import { ConfigError } from "../config-error.ts";
 import { OPTIONS_MAX, refusalText, type AnswerRefusal } from "../kernel/question.ts";
 import type { HostToClient, TranscriptMessage } from "../client/protocol.ts";
 import { hasVisibleText, HistoryEchoFilter, type AnswerResult, type Broadcast } from "./server.ts";
+import { tokenMatches } from "./web-token.ts";
 
 type Snapshot = Omit<Extract<HostToClient, { type: "snapshot" }>, "type">;
 
@@ -214,12 +214,6 @@ function sseFrame(message: HostToClient): string {
 function isLocalHost(host: string | undefined, port: number): boolean {
 	const h = host?.toLowerCase();
 	return h === `127.0.0.1:${port}` || h === `localhost:${port}`;
-}
-
-function tokenMatches(given: string, token: string): boolean {
-	const got = Buffer.from(given);
-	const want = Buffer.from(token);
-	return got.length === want.length && timingSafeEqual(got, want);
 }
 
 const REFUSED_STATUS: Record<AnswerRefusal["kind"], number> = { no_question: 404, no_options: 409, out_of_range: 409, chosen: 409, spoke: 409, closed: 409 };

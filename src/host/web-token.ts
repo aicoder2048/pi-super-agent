@@ -1,22 +1,26 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const TOKEN = /^[0-9a-f]{64}$/;
 
-export const webTokenPath = (stateDir: string) => join(stateDir, "web-token");
+// Two credentials, because the web token is printed in the host log and sits in the browser's address bar,
+// while the client token never leaves its file.
+export type TokenFile = "web-token" | "client-token";
 
-// Reused across restarts so an open page reconnects by itself after the watchdog restarts the host.
-export function loadWebToken(stateDir: string, log: (line: string) => void): string {
-	const path = webTokenPath(stateDir);
+export const tokenPath = (stateDir: string, file: TokenFile) => join(stateDir, file);
+
+// Reused across restarts so an open page or client reconnects by itself after the watchdog restarts the host.
+export function loadToken(stateDir: string, file: TokenFile, log: (line: string) => void): string {
+	const path = tokenPath(stateDir, file);
 	let text: string;
 	try {
 		text = readFileSync(path, "utf8").trim();
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-		return writeWebToken(path);
+		return writeToken(path);
 	}
-	if (!TOKEN.test(text)) return writeWebToken(path);
+	if (!TOKEN.test(text)) return writeToken(path);
 	const mode = statSync(path).mode & 0o777;
 	if (mode & 0o077) {
 		chmodSync(path, 0o600);
@@ -25,12 +29,18 @@ export function loadWebToken(stateDir: string, log: (line: string) => void): str
 	return text;
 }
 
-export function removeWebToken(stateDir: string): void {
-	rmSync(webTokenPath(stateDir), { force: true });
+export function removeToken(stateDir: string, file: TokenFile): void {
+	rmSync(tokenPath(stateDir, file), { force: true });
+}
+
+export function tokenMatches(given: string, token: string): boolean {
+	const got = Buffer.from(given);
+	const want = Buffer.from(token);
+	return got.length === want.length && timingSafeEqual(got, want);
 }
 
 // Created 0600 rather than chmod-ed afterwards, so the token is never readable by others even for a moment.
-function writeWebToken(path: string): string {
+function writeToken(path: string): string {
 	const token = randomBytes(32).toString("hex");
 	const tmp = `${path}.tmp`;
 	rmSync(tmp, { force: true });

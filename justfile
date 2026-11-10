@@ -66,6 +66,10 @@ log limit="30":
 web-token-rotate:
     {{run}} src/cli/web-token-rotate.ts
 
+# 换客户端凭据：删掉状态目录里的 client-token，然后重启宿主生成新的。重启前新开的 TUI、just say 和 just tail 连不上。
+client-token-rotate:
+    {{run}} src/cli/client-token-rotate.ts
+
 # 持续显示对话。
 tail:
     {{run}} src/cli/say.ts tail
