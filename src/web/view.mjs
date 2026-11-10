@@ -11,6 +11,7 @@
 /** @typedef {import("../client/protocol.ts").TranscriptMessage} TranscriptMessage */
 /** @typedef {import("../client/protocol.ts").WatchedSource} WatchedSource */
 /** @typedef {import("../host/dispatch.ts").Dispatching} Dispatching */
+/** @typedef {import("../host/dispatch.ts").BoardDispatch} BoardDispatch */
 /** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
 
 import { INPUT_LABEL, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, shortId, stallMinutes, textOf, toolStep } from "../client/board-format.mjs";
@@ -55,11 +56,18 @@ const GROUP = {
  * @property {WatchedSource[]} watching
  * @property {Routes} routes
  * @property {Dispatching} dispatching
+ * @property {Map<string, BoardDispatch>} dispatchSeen each dispatch as a board frame last showed it, by call id: the board drops a batch a moment before its results reach the transcript
  */
 
 /** @returns {View} */
 export function emptyView() {
-	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {}, dispatching: {} };
+	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {}, dispatching: {}, dispatchSeen: new Map() };
+}
+
+/** @param {View} view @param {Dispatching | undefined} dispatching */
+function setDispatching(view, dispatching) {
+	view.dispatching = dispatching ?? {};
+	for (const d of Object.values(view.dispatching).flat()) view.dispatchSeen.set(d.callId, d);
 }
 
 /** @param {View} view @param {ConversationLine} line */
@@ -75,7 +83,8 @@ export function applyMessage(view, message, now) {
 	switch (message.type) {
 		case "snapshot":
 			for (const line of message.conversation) addLine(view, line);
-			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, dispatching: message.dispatching ?? {}, receivedAt: now });
+			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, receivedAt: now });
+			setDispatching(view, message.dispatching);
 			return ["conversation", "left", "header"];
 		case "user":
 			addLine(view, { id: message.id, who: "user", text: message.text, at: message.at });
@@ -84,7 +93,8 @@ export function applyMessage(view, message, now) {
 			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at, ...(message.ticketId ? { ticketId: message.ticketId } : {}) });
 			return ["conversation"];
 		case "board":
-			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, routes: message.routes, dispatching: message.dispatching ?? {}, receivedAt: now });
+			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, routes: message.routes, receivedAt: now });
+			setDispatching(view, message.dispatching);
 			return ["conversation", "left", "header"];
 	}
 	return [];
@@ -280,10 +290,11 @@ export const stopSentence = (title) => `停止任务「${title}」`;
  * @typedef {object} Step
  * @property {string} title
  * @property {string} detail
- * @property {"ok" | "error" | "pending"} state
+ * @property {"ok" | "error" | "pending" | "stopped"} state stopped: it never got a result, because its ticket, helper or host stopped first
  * @property {string} raw
  * @property {string} [tool]
  * @property {string} [callId]
+ * @property {number} [at] when the helper issued it
  * @property {DispatchEntry} [dispatch]
  */
 
@@ -297,13 +308,20 @@ export const stopSentence = (title) => `停止任务「${title}」`;
  * @property {string} stateText
  * @property {string} note
  * @property {string} tokens
+ * @property {Step[]} steps the member's own steps in this dispatch
  */
 
 /** @type {Record<DispatchState, string>} */
-const DISPATCH_STATE = { queued: "排队中", running: "进行中", done: "完成", timed_out: "超时", stopped: "已停止", failed: "出错" };
+const DISPATCH_STATE = { queued: "排队中", running: "进行中", done: "完成", timed_out: "超时", stalled: "无进展", stopped: "已停止", failed: "出错" };
+
+/** @type {Record<DispatchState, Step["state"]>} */
+const DISPATCH_STEP_STATE = { queued: "pending", running: "pending", done: "ok", timed_out: "error", stalled: "error", stopped: "stopped", failed: "error" };
 
 /** @param {Pick<DispatchEntry, "title" | "stateText">} entry */
 const dispatchDetail = (entry) => [entry.title, entry.stateText].filter(Boolean).join(" · ");
+
+/** @param {number} tokens */
+const tokensText = (tokens) => `${formatTokens(tokens)} tokens`;
 
 /** @param {unknown} details @returns {DispatchEntry | undefined} */
 function dispatchEntry(details) {
@@ -316,12 +334,13 @@ function dispatchEntry(details) {
 		state: d.state,
 		stateText: DISPATCH_STATE[/** @type {DispatchState} */ (d.state)],
 		note: typeof d.note === "string" ? d.note : "",
-		tokens: `${formatTokens((Number(d.tokensIn) || 0) + (Number(d.tokensOut) || 0))} tokens`,
+		tokens: tokensText((Number(d.tokensIn) || 0) + (Number(d.tokensOut) || 0)),
+		steps: [],
 	};
 }
 
-/** @param {Record<string, unknown>} a @returns {DispatchEntry} */
-const pendingDispatch = (a) => ({ title: "", task: String(a.task ?? ""), reply: "", state: "queued", stateText: DISPATCH_STATE.queued, note: "", tokens: "" });
+/** @param {Record<string, unknown>} a @param {Record<string, string>} titles @returns {DispatchEntry} */
+const pendingDispatch = (a, titles) => ({ title: titles[String(a.agent)] ?? "", task: String(a.task ?? ""), reply: "", state: "queued", stateText: DISPATCH_STATE.queued, note: "", tokens: "", steps: [] });
 
 /** @type {Record<InputKind, string>} */
 const INPUT_STEP = {
@@ -338,8 +357,8 @@ const STEP_BY_LABEL = new Map(/** @type {[InputKind, string][]} */ (Object.entri
 
 const RAW_LIMIT = 2000;
 
-/** @param {TranscriptMessage} message @returns {Step[]} */
-function stepsFrom(message) {
+/** @param {TranscriptMessage} message @param {Record<string, string>} titles @returns {Step[]} */
+function stepsFrom(message, titles) {
 	if (message.role === "user" || (message.role === "custom" && message.customType === "psa-bg-result")) {
 		const text = textOf(message);
 		if (message.role === "custom") return [{ title: "后台命令完成", detail: clip(firstLine(text), 80), state: "ok", raw: clip(text, RAW_LIMIT) }];
@@ -354,52 +373,87 @@ function stepsFrom(message) {
 		if (c.type === "text" && c.text?.trim()) return [{ title: "思考", detail: clip(c.text.trim(), 200), state: /** @type {const} */ ("ok"), raw: clip(c.text, RAW_LIMIT) }];
 		if (c.type !== "toolCall" || !c.name) return [];
 		const args = typeof c.arguments === "object" && c.arguments !== null ? /** @type {Record<string, unknown>} */ (c.arguments) : {};
-		const known = c.name === "dispatch_agent" ? { ...toolStep(c.name, args), dispatch: pendingDispatch(args) } : toolStep(c.name, args);
-		return [{ ...known, state: /** @type {const} */ ("pending"), raw: clip(`${c.name} ${JSON.stringify(c.arguments ?? {}, null, 2)}`, RAW_LIMIT), tool: c.name, ...(c.id ? { callId: c.id } : {}) }];
+		const dispatch = c.name === "dispatch_agent" ? pendingDispatch(args, titles) : undefined;
+		const known = dispatch ? { title: toolStep(c.name, args).title, detail: dispatchDetail(dispatch), dispatch } : toolStep(c.name, args);
+		return [{ ...known, state: /** @type {const} */ ("pending"), raw: clip(`${c.name} ${JSON.stringify(c.arguments ?? {}, null, 2)}`, RAW_LIMIT), tool: c.name, ...(c.id ? { callId: c.id } : {}), ...(message.timestamp !== undefined ? { at: message.timestamp } : {}) }];
 	});
 }
 
 /**
  * @typedef {object} Watch
  * @property {string} ticketId
- * @property {Step[]} steps
+ * @property {Step[]} steps the helper's own steps
+ * @property {Record<string, string>} titles the crew's titles by member name
+ * @property {Map<string, TranscriptMessage[]>} members each dispatch's own messages, by the helper's call id
  */
 
 /** @param {string} ticketId @returns {Watch} */
 export function emptyWatch(ticketId) {
-	return { ticketId, steps: [] };
+	return { ticketId, steps: [], titles: {}, members: new Map() };
 }
 
-/** @param {Watch} watch @param {TranscriptMessage} message */
-function append(watch, message) {
-	if (message.role !== "toolResult") return void watch.steps.push(...stepsFrom(message));
+/** @param {Step} step @returns {Step} */
+function stopped(step) {
+	if (!step.dispatch) return { ...step, state: "stopped" };
+	const dispatch = { ...step.dispatch, state: /** @type {const} */ ("stopped"), stateText: DISPATCH_STATE.stopped };
+	return { ...step, state: "stopped", dispatch, detail: dispatchDetail(dispatch) };
+}
+
+/** @param {Step[]} steps @param {TranscriptMessage} message @param {Record<string, string>} titles */
+function append(steps, message, titles) {
+	if (message.role !== "toolResult") {
+		// A helper takes new input only once every call of its last turn has a result, so a call still waiting here never got one.
+		if (message.role !== "assistant") for (const [i, step] of steps.entries()) if (step.state === "pending") steps[i] = stopped(step);
+		return void steps.push(...stepsFrom(message, titles));
+	}
 	// Parallel calls of one tool finish in any order, so the call id decides when there is one.
-	const step = watch.steps.findLast((s) => s.state === "pending" && (message.toolCallId && s.callId ? s.callId === message.toolCallId : s.tool === message.toolName));
+	const step = steps.findLast((s) => s.state === "pending" && (message.toolCallId && s.callId ? s.callId === message.toolCallId : s.tool === message.toolName));
 	if (!step) return;
 	step.state = message.isError ? "error" : "ok";
 	step.raw = clip(`${step.raw}\n\n→ ${textOf(message)}`, RAW_LIMIT);
 	if (!step.dispatch) return;
 	step.dispatch = dispatchEntry(message.details);
-	if (!step.dispatch) return;
-	step.detail = dispatchDetail(step.dispatch);
-	if (step.dispatch.state !== "done") step.state = "error";
+	step.detail = step.dispatch ? dispatchDetail(step.dispatch) : "";
+	if (step.dispatch) step.state = DISPATCH_STEP_STATE[step.dispatch.state];
+}
+
+/** @param {Watch} watch @param {string | undefined} callId @param {boolean} over the dispatch has ended @returns {Step[]} */
+function memberSteps(watch, callId, over) {
+	/** @type {Step[]} */
+	const steps = [];
+	for (const message of watch.members.get(callId ?? "") ?? []) if (message) append(steps, message, {});
+	return over ? steps.map((s) => (s.state === "pending" ? stopped(s) : s)) : steps;
 }
 
 /**
- * The watched steps with each unfinished dispatch in its state on the board. A pending dispatch the board
- * does not list has not been registered yet, or its helper is gone and it never will finish.
+ * The watched steps as they stand now. An unfinished dispatch takes its state from the board. A step
+ * that can no longer finish reads as stopped: its helper is not running, or it was issued before this
+ * host started. A pending dispatch the board has never listed has just been called and waits.
  * @param {Watch} watch @param {View} view @returns {Step[]}
  */
 export function liveSteps(watch, view) {
-	const live = new Map((view.dispatching[watch.ticketId] ?? []).map((d) => [d.callId, d]));
-	const helperRunning = view.rows.find((r) => r.id === watch.ticketId)?.workerState === "running";
+	const onBoard = new Map((view.dispatching[watch.ticketId] ?? []).map((d) => [d.callId, d]));
+	const row = view.rows.find((r) => r.id === watch.ticketId);
+	const helperGone = row?.workerState !== "running" || row.endedAt !== null;
+	const hostSince = view.duty?.since ?? 0;
 	return watch.steps.map((step) => {
-		if (step.state !== "pending" || !step.dispatch) return step;
-		const now = live.get(step.callId ?? "");
+		if (step.state !== "pending") return step.dispatch ? { ...step, dispatch: { ...step.dispatch, steps: memberSteps(watch, step.callId, true) } } : step;
+		const dead = helperGone || (step.at ?? Infinity) < hostSince;
+		if (!step.dispatch) return dead ? stopped(step) : step;
+		const seen = onBoard.get(step.callId ?? "") ?? view.dispatchSeen.get(step.callId ?? "");
+		const last = seen?.state ?? "queued";
 		/** @type {DispatchState} */
-		const state = now?.state ?? (helperRunning ? "queued" : "stopped");
-		const dispatch = { ...step.dispatch, title: now?.title ?? "", state, stateText: DISPATCH_STATE[state] };
-		return { ...step, dispatch, detail: dispatchDetail(dispatch) };
+		const state = dead && (last === "queued" || last === "running") ? "stopped" : last;
+		const dispatch = {
+			...step.dispatch,
+			title: seen?.title ?? step.dispatch.title,
+			state,
+			stateText: DISPATCH_STATE[state],
+			note: seen?.note ?? "",
+			tokens: seen ? tokensText(seen.tokens) : "",
+			steps: memberSteps(watch, step.callId, DISPATCH_STEP_STATE[state] !== "pending"),
+		};
+		return { ...step, state: DISPATCH_STEP_STATE[state], dispatch, detail: dispatchDetail(dispatch) };
 	});
 }
 
@@ -410,10 +464,19 @@ export function applyTranscript(watch, message) {
 	if ((message.type !== "transcript_history" && message.type !== "transcript") || message.ticketId !== watch.ticketId) return false;
 	if (message.type === "transcript_history") {
 		watch.steps = [];
-		for (const m of message.messages) append(watch, m);
+		watch.titles = message.team?.titles ?? {};
+		watch.members = new Map(Object.entries(message.team?.steps ?? {}));
+		for (const m of message.messages) append(watch.steps, m, watch.titles);
 		return true;
 	}
-	append(watch, message.message);
+	if (message.member) {
+		const { callId, index } = message.member;
+		const own = watch.members.get(callId) ?? [];
+		own[index] = message.message;
+		watch.members.set(callId, own);
+		return true;
+	}
+	append(watch.steps, message.message, watch.titles);
 	return true;
 }
 
@@ -431,6 +494,13 @@ const DUTY_MARK = {
 	none: { duty: "queued", mark: "○", state: "排队" },
 };
 
+/** How long ago, in the chip's words. @param {number} ms */
+function ago(ms) {
+	const seconds = Math.floor(ms / 1000);
+	if (seconds < 5) return "刚刚";
+	return seconds < 60 ? `${seconds} 秒前` : `${Math.floor(seconds / 60)} 分钟前`;
+}
+
 /**
  * @typedef {object} HelperChip
  * @property {string} id
@@ -441,7 +511,7 @@ const DUTY_MARK = {
  * @property {string} role
  * @property {string} elapsed
  * @property {string} tokens
- * @property {{ title: string, state: "queued" | "running", label: string }[]} members the team members at work for this helper right now
+ * @property {{ title: string, state: "queued" | "running", label: string }[]} members the team members at work or waiting for this helper right now; a working one reads 「新闻研究员 · 读取网页 · 12 秒前」
  */
 
 /** One chip per helper on duty (a ticket not yet ended), then today's total. @param {View} view @param {number} now @returns {{ chips: HelperChip[], total: string }} */
@@ -455,7 +525,11 @@ export function helperStrip(view, now) {
 			role: helperLabel(row.helper),
 			elapsed: elapsedOf(row, now, view.receivedAt),
 			tokens: `${formatTokens(row.tokensIn + row.tokensOut)} tokens`,
-			members: (view.dispatching[row.id] ?? []).map(({ title, state }) => ({ title, state, label: state === "queued" ? `${title} ${DISPATCH_STATE.queued}` : title })),
+			members: (view.dispatching[row.id] ?? []).flatMap((d) => {
+				if (d.state === "queued") return [{ title: d.title, state: d.state, label: `${d.title} · ${DISPATCH_STATE.queued}` }];
+				if (d.state !== "running") return [];
+				return [{ title: d.title, state: d.state, label: `${d.title} · ${d.step || "启动中"} · ${ago(d.quietMs + now - view.receivedAt)}` }];
+			}),
 		}];
 	});
 	const total = view.helpers ? `今日 ${view.helpers.count} 位 · ${formatTokens(view.helpers.tokens)} tokens` : "";

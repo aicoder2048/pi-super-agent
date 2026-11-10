@@ -71,4 +71,6 @@ export interface TranscriptMessage {
 	toolCallId?: string;
 	isError?: boolean;
 	details?: unknown;
+	/** When Pi finished the message, in ms. */
+	timestamp?: number;
 }
