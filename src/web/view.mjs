@@ -626,10 +626,7 @@ const clockTime = (ms, timeZone) => new Date(ms).toLocaleTimeString("zh-CN", { h
 /** @param {number} ms @param {string} [timeZone] */
 const dayOf = (ms, timeZone) => new Date(ms).toLocaleDateString("zh-CN", { timeZone });
 
-/**
- * The thin line at the top of the conversation after a 清屏, or null.
- * @param {View} view @param {number} now @param {string} [timeZone] @returns {{ text: string, expanded: boolean } | null}
- */
+/** @param {View} view @param {number} now @param {string} [timeZone] @returns {{ text: string, expanded: boolean } | null} */
 export function clearedBar(view, now, timeZone) {
 	if (!view.cleared) return null;
 	const { at } = view.cleared;
@@ -637,7 +634,7 @@ export function clearedBar(view, now, timeZone) {
 	return { text: `已清屏 · ${day}${clockTime(at, timeZone)} · ${view.showEarlier ? "收起" : "显示之前的"}`, expanded: view.showEarlier };
 }
 
-/** The hidden lines this tab shows above the conversation, oldest first; empty unless expanded. @param {View} view */
+/** @param {View} view */
 export const earlierLines = (view) => (view.showEarlier && view.cleared ? view.cleared.lines : []);
 
 /** @param {View} view */
@@ -650,7 +647,7 @@ export const canClear = (view) => view.lines.size > 0;
 
 export const CLEAR_FAILED = "清屏没有成功，请稍后再试。";
 
-/** The lines the page shows now whose id is not in `seen`, in order. @param {View} view @param {Set<string>} seen */
+/** @param {View} view @param {Set<string>} seen */
 export const linesNotIn = (view, seen) => [...view.lines.values()].filter((l) => !seen.has(l.id));
 
 /** @param {DashboardRow | undefined} row @param {number} now @param {number} receivedAt @param {string} [timeZone] */

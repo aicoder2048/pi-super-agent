@@ -310,7 +310,7 @@ function mount(doc) {
 		/** @type {HTMLElement} */ (box.querySelector(".total")).textContent = strip.total;
 	};
 
-	/** One conversation line. An expanded hidden line (`live` false) gets no option buttons. @param {import("./view.mjs").ConversationLine} line @param {boolean} live */
+	/** @param {import("./view.mjs").ConversationLine} line @param {boolean} live false for an expanded hidden line */
 	const lineNode = (line, live) => {
 		const item = el("div", `line ${line.who}`);
 		const bubble = line.who === "router" ? md("bubble", line.text) : el("div", "bubble", line.text);

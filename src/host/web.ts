@@ -15,7 +15,6 @@ export interface WebHost {
 	transcript(ticketId: string): TranscriptHistory;
 	say(text: string): string;
 	answer(reportId: string, option: number): AnswerResult;
-	/** 清屏. With nothing on screen it does nothing. */
 	clear(): void;
 }
 
@@ -180,7 +179,6 @@ export class WebGateway {
 		res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ triggerId }));
 	}
 
-	// The cleared frame reaches the tab that clicked over SSE, like every other tab.
 	#clear(body: string, res: ServerResponse): void {
 		if (!isEmptyObject(body)) return deny(res, 400);
 		this.#host.clear();
