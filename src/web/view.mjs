@@ -131,18 +131,17 @@ const CHOICE_NOTE = {
  * @property {string} note
  */
 
-/** The host acts on its own question at once, so there is no hand-over to wait for. */
 const CAP_SENT_NOTE = "已发送";
 
 /**
- * @param {DashboardRow["question"] | CapQuestion} q a helper's question, or the host's own, which has no click and no lock
+ * @param {(CapQuestion & Partial<Pick<NonNullable<DashboardRow["question"]>, "click" | "spoke">>) | null | undefined} q a helper's question, or the host's own, which is never clicked on the board and never locked
  * @param {Sending} sending @param {string} [sentNote] @returns {Choice | null}
  */
 function choiceOf(q, sending, sentNote = CHOICE_NOTE.sent) {
 	if (!q || q.options.length === 0) return null;
 	const local = sending.get(q.reportId);
-	const click = "click" in q ? q.click : null;
-	const spoke = "spoke" in q && q.spoke;
+	const click = q.click ?? null;
+	const spoke = q.spoke ?? false;
 	const shown = local
 		? { option: local.option, note: local.triggerId ? sentNote : CHOICE_NOTE.sending }
 		: click && click.state !== "dropped"

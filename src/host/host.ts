@@ -158,7 +158,7 @@ export class Host {
 			onError: (ticketId, error) => this.#log(`[worker ${ticketId}] ${String(error)}`),
 			models: options.workerModels,
 			kitFor: this.#kitFor,
-			dispatch: options.dispatch && memberCap && { ...options.dispatch, cap: { limit: () => memberCap.limit(), membersWaiting: (waiting) => this.#askAboutMemberCap(memberCap, waiting) } },
+			dispatch: memberCap && { ...options.dispatch!, cap: { limit: () => memberCap.limit(), membersWaiting: (waiting) => this.#askAboutMemberCap(memberCap, waiting) } },
 			lookup: async (source, op, args) => {
 				const feed = this.feeds.get(source);
 				if (!feed) throw new Error(`没有来源 ${source} 可查；可查：${[...this.feeds.keys()].join("、") || "无"}`);
@@ -248,7 +248,6 @@ export class Host {
 		return { ok: true, triggerId: result.triggerId };
 	}
 
-	// A dispatch is already waiting when this runs; failing to ask must not fail the dispatch.
 	#askAboutMemberCap(cap: MemberCap, waiting: number): void {
 		try {
 			cap.membersWaiting(waiting);
@@ -333,7 +332,6 @@ export class Host {
 		this.#midnightTimer.unref();
 	}
 
-	// A grant ends with its New York day; reading the board is what notices it, so a frame goes out then.
 	#atNextNewYorkDay(): void {
 		this.#newYorkDayTimer = setTimeout(() => {
 			this.#pushBoard();

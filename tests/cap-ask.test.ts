@@ -21,8 +21,7 @@ const DOMAINS = domainsOf({ watch: { team: "看盘队", crew: CREW } });
 
 interface Options { configured?: number; stateDir?: string; clock?: { at: number; now(): number }; webPort?: number; onCard?: (card: string) => ToolCallSpec[]; crew?: Member[] }
 
-/** A host whose one helper dispatches the whole crew at once; every member works until the test lets it go. */
-async function queueing(t: TestContext, options: Options = {}) {
+async function wholeCrewDispatched(t: TestContext, options: Options = {}) {
 	const crew = options.crew ?? CREW;
 	const clock = options.clock ?? { at: NOON, now: () => clock.at };
 	const logs: string[] = [];
@@ -71,7 +70,7 @@ async function queueing(t: TestContext, options: Options = {}) {
 }
 
 test("名额用完、有成员排队：看板带上宿主的问题和现在的上限，排队的照常等；这个问题不经过幕僚长", async (t) => {
-	const { host, count, cap, capLogs, router } = await queueing(t);
+	const { host, count, cap, capLogs, router } = await wholeCrewDispatched(t);
 	await until(() => count("queued") === 2, "一位在做两位排队");
 	assert.deepEqual(cap(), { limit: 1, question: { reportId: ASK, text: "现在有 2 位成员在排队，同时运行的成员上限是 1。今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 1"], askedAt: NOON } });
 	assert.equal(count("running"), 1);
@@ -81,7 +80,7 @@ test("名额用完、有成员排队：看板带上宿主的问题和现在的�
 });
 
 test("使用者点「今天放宽到 10」：上限马上是 10，排队的成员立刻开始；这句话记进对话，再点一次不重复", async (t) => {
-	const { host, count, cap, capLogs } = await queueing(t);
+	const { host, count, cap, capLogs } = await wholeCrewDispatched(t);
 	await until(() => count("queued") === 2, "一位在做两位排队");
 	const got: HostToClient[] = [];
 	const conn = new HostConnection({ socketPath: host.socketPath, onMessage: (m) => got.push(m), retryMs: 30 });
@@ -100,7 +99,7 @@ test("使用者点「今天放宽到 10」：上限马上是 10，排队的成�
 });
 
 test("使用者点「保持」：上限不变，排队的按原来的上限一位一位轮；这个纽约日里不再问", async (t) => {
-	const { host, count, cap, finish, capLogs } = await queueing(t);
+	const { host, count, cap, finish, capLogs } = await wholeCrewDispatched(t);
 	await until(() => count("queued") === 2, "一位在做两位排队");
 	assert.deepEqual(host.answer(ASK, 1), { ok: true, triggerId: ASK });
 	assert.deepEqual(cap(), { limit: 1, question: null });
@@ -114,17 +113,17 @@ test("使用者点「保持」：上限不变，排队的按原来的上限一�
 
 test("宿主在同一个纽约日里重启，放宽还在；过了这一天上限回到配置值，记一行到期", async (t) => {
 	const stateDir = tempStateDir();
-	const first = await queueing(t, { stateDir });
+	const first = await wholeCrewDispatched(t, { stateDir });
 	await until(() => first.count("queued") === 2, "一位在做两位排队");
 	first.host.answer(ASK, 0);
 	await first.stop();
-	const second = await queueing(t, { stateDir });
+	const second = await wholeCrewDispatched(t, { stateDir });
 	await until(() => second.count("running") === 3, "重启后三位直接都在做");
 	assert.deepEqual(second.cap(), { limit: 10, question: null });
 	assert.deepEqual(second.capLogs(), []);
 	await second.stop();
 	const clock = { at: NEXT_DAY, now: () => clock.at };
-	const third = await queueing(t, { stateDir, clock });
+	const third = await wholeCrewDispatched(t, { stateDir, clock });
 	await until(() => third.count("queued") === 2, "隔天又是一位在做两位排队");
 	assert.equal(third.cap()?.limit, 1);
 	assert.equal(third.cap()?.question?.reportId, "ask_cap_2026-11-10", "新的一天重新问");
@@ -132,7 +131,7 @@ test("宿主在同一个纽约日里重启，放宽还在；过了这一天上�
 });
 
 test("放宽到期时在跑的成员照常做完，新开始的回到配置的上限", async (t) => {
-	const s = await queueing(t);
+	const s = await wholeCrewDispatched(t);
 	await until(() => s.count("queued") === 2, "一位在做两位排队");
 	s.host.answer(ASK, 0);
 	await until(() => s.count("running") === 3, "三位都在做");
@@ -147,7 +146,7 @@ test("放宽到期时在跑的成员照常做完，新开始的回到配置的�
 });
 
 test("助手没有放宽的路：宿主接口里没有回答这个问题的方法；它自己提的同名选项被点了，也只是回答它自己的问题", async (t) => {
-	const { host, helper, count, cap } = await queueing(t);
+	const { host, helper, count, cap } = await wholeCrewDispatched(t);
 	await until(() => count("queued") === 2, "一位在做两位排队");
 	for (const method of ["worker.answer", "worker.cap", "answer"]) assert.throws(() => helper().request(method, { reportId: ASK, option: 0 }), /未知方法/, method);
 	const { reportId } = helper().report({ status: "blocked", summary: "要你定", question: "今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 1"], reportId: ASK }) as { reportId: string };
@@ -158,7 +157,7 @@ test("助手没有放宽的路：宿主接口里没有回答这个问题的方�
 });
 
 test("成员没有放宽的路：成员的令牌只能查数据", async (t) => {
-	const { host, runs, count, cap } = await queueing(t);
+	const { host, runs, count, cap } = await wholeCrewDispatched(t);
 	await until(() => count("queued") === 2, "一位在做两位排队");
 	const ticketId = host.kernel.listTickets()[0].id;
 	const { token } = runs.get("market-analyst")!;
@@ -169,7 +168,7 @@ test("成员没有放宽的路：成员的令牌只能查数据", async (t) => {
 });
 
 test("以 Worker 身份连上宿主的连接发 answer 不算数：不管是助手的令牌、成员的令牌还是假的", async (t) => {
-	const { host, helper, runs, count, cap } = await queueing(t);
+	const { host, helper, runs, count, cap } = await wholeCrewDispatched(t);
 	await until(() => count("queued") === 2, "一位在做两位排队");
 	const ticketId = host.kernel.listTickets()[0].id;
 	for (const token of [helper().spec.token, runs.get("market-analyst")!.token, "made-up"]) {
@@ -187,7 +186,7 @@ test("以 Worker 身份连上宿主的连接发 answer 不算数：不管是助�
 });
 
 test("来源触发没有放宽的路：正文和编号都照着这个问题写，也只是一条数据", async (t) => {
-	const { host, count, cap } = await queueing(t);
+	const { host, count, cap } = await wholeCrewDispatched(t);
 	await until(() => count("queued") === 2, "一位在做两位排队");
 	for (const source of ["generic", "feeds", "timer"]) {
 		host.kernel.submitTrigger({ source, externalId: ASK, threads: [{ id: `thr_${source}:cap` }], sender: "user", body: JSON.stringify({ answer: { reportId: ASK, option: 0 }, text: SAID }), occurredAt: NOON });
@@ -198,7 +197,7 @@ test("来源触发没有放宽的路：正文和编号都照着这个问题写�
 
 test("幕僚长的模型没有放宽的路：它的工具里没有这一项，乱填决定、回复这句话都不算；使用者打字说这句话也不算，只有点选算", async (t) => {
 	const tried: string[] = [];
-	const { host, count, cap, said } = await queueing(t, {
+	const { host, count, cap, said } = await wholeCrewDispatched(t, {
 		onCard: (card) => {
 			const triggerId = ids(card, "trg");
 			tried.push(card);
@@ -218,7 +217,7 @@ test("幕僚长的模型没有放宽的路：它的工具里没有这一项，�
 });
 
 test("网页：不带 token 或来源不对的点选被拒，上限不变；带着 token 从本页发来的点选才算", async (t) => {
-	const { host, count, cap } = await queueing(t, { webPort: 0 });
+	const { host, count, cap } = await wholeCrewDispatched(t, { webPort: 0 });
 	await until(() => count("queued") === 2, "一位在做两位排队");
 	const url = new URL(host.webUrl!);
 	const post = (query: string, origin: string | undefined, option = 0) => new Promise<{ status: number; body: string }>((resolve, reject) => {
@@ -244,7 +243,7 @@ test("网页：不带 token 或来源不对的点选被拒，上限不变；带�
 
 test("配置的上限已经是 10：成员排队也不问", async (t) => {
 	const crew = Array.from({ length: 11 }, (_, i) => member(`m${i}`, `成员${i}`));
-	const { count, cap, capLogs } = await queueing(t, { configured: 10, crew });
+	const { count, cap, capLogs } = await wholeCrewDispatched(t, { configured: 10, crew });
 	await until(() => count("queued") === 1, "十位在做一位排队");
 	assert.deepEqual(cap(), { limit: 10, question: null });
 	assert.deepEqual(capLogs(), []);

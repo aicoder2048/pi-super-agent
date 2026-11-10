@@ -1,4 +1,4 @@
-import { CAP_ASK_NEXT, capAskId, type CapAnswer, type CapAsk, type CapAskStore, type OpenCapAsk } from "../kernel/cap-ask.ts";
+import { CAP_ASK_NEXT, capAskId, type CapAnswer, type CapAsk, type CapAskStore, type RecordedCapAsk } from "../kernel/cap-ask.ts";
 import { newYorkDate } from "../kernel/helper-names.ts";
 import type { AnswerRefusal } from "../kernel/question.ts";
 import type { CapQuestion, Clock } from "../kernel/types.ts";
@@ -6,9 +6,6 @@ import type { CapQuestion, Clock } from "../kernel/types.ts";
 export const MEMBER_CAP_DEFAULT = 4;
 /** No config key and no answer lets more member processes than this run at once. */
 export const MEMBER_CAP_MAX = 10;
-
-/** By option index: the first button grants, the second declines. */
-const ANSWERS: readonly CapAnswer[] = ["granted", "declined"];
 
 export type CapAnswerOutcome = { ok: true; lineId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 
@@ -49,36 +46,37 @@ export class MemberCap {
 		const ask = this.#today();
 		if (ask.state !== "asked") return null;
 		const queue = waiting > 0 ? `现在有 ${waiting} 位成员在排队` : "今天有成员排过队";
-		return { reportId: capAskId(ask.day), text: `${queue}，同时运行的成员上限是 ${this.#o.configured}。今天放宽到 ${MEMBER_CAP_MAX} 吗？`, options: this.#options(), askedAt: ask.askedAt };
+		return { reportId: capAskId(ask.day), text: `${queue}，同时运行的成员上限是 ${this.#o.configured}。今天放宽到 ${MEMBER_CAP_MAX} 吗？`, options: this.#choices().map((c) => c.label), askedAt: ask.askedAt };
 	}
 
-	/** The click of an authenticated user front end; nothing else may call this. */
 	answer(reportId: string, option: number): CapAnswerOutcome {
-		const { configured, clock, store, log } = this.#o;
+		const { clock, store, log } = this.#o;
 		const refuse = (refusal: AnswerRefusal) => ({ ok: false as const, refusal });
 		const ask = this.#today();
 		if (ask.state === "none" || reportId !== capAskId(ask.day)) return refuse({ kind: "closed" });
-		const options = this.#options();
-		const said = (o: number) => `回答成员上限：${options[o]}`;
+		const choices = this.#choices();
+		const said = (label: string) => `回答成员上限：${label}`;
 		if (ask.state !== "asked") {
-			const chosen = ANSWERS.indexOf(ask.state);
-			if (option !== chosen) return refuse({ kind: "chosen", option: chosen, label: options[chosen] });
-			return { ok: true, lineId: reportId, text: said(chosen), duplicate: true };
+			const chosen = choices.findIndex((c) => c.state === ask.state);
+			if (option !== chosen) return refuse({ kind: "chosen", option: chosen, label: choices[chosen].label });
+			return { ok: true, lineId: reportId, text: said(choices[chosen].label), duplicate: true };
 		}
-		const state = Number.isInteger(option) ? ANSWERS[option] : undefined;
-		if (!state) return refuse({ kind: "out_of_range", count: options.length });
-		const answered = this.#move({ state, day: ask.day, askedAt: ask.askedAt, answeredAt: clock.now() });
-		store.save(answered, said(option));
-		const effect = state === "granted" ? `上限 ${MEMBER_CAP_MAX}` : "不再问";
-		log(`[host] 成员上限：使用者选了「${options[option]}」，纽约 ${ask.day} 这一天${effect}`);
-		return { ok: true, lineId: reportId, text: said(option), duplicate: false };
+		const choice = Number.isInteger(option) ? choices[option] : undefined;
+		if (!choice) return refuse({ kind: "out_of_range", count: choices.length });
+		const answered = this.#move({ state: choice.state, day: ask.day, askedAt: ask.askedAt, answeredAt: clock.now() });
+		store.save(answered, said(choice.label));
+		log(`[host] 成员上限：使用者选了「${choice.label}」，纽约 ${ask.day} 这一天${choice.effect}`);
+		return { ok: true, lineId: reportId, text: said(choice.label), duplicate: false };
 	}
 
-	#options(): string[] {
-		return [`今天放宽到 ${MEMBER_CAP_MAX}`, `保持 ${this.#o.configured}`];
+	#choices(): { label: string; state: CapAnswer; effect: string }[] {
+		return [
+			{ label: `今天放宽到 ${MEMBER_CAP_MAX}`, state: "granted", effect: `上限 ${MEMBER_CAP_MAX}` },
+			{ label: `保持 ${this.#o.configured}`, state: "declined", effect: "不再问" },
+		];
 	}
 
-	#move<A extends OpenCapAsk>(to: A): A {
+	#move<A extends RecordedCapAsk>(to: A): A {
 		if (!CAP_ASK_NEXT[this.#ask.state].includes(to.state)) throw new Error(`成员上限的问题不能从 ${this.#ask.state} 变成 ${to.state}`);
 		this.#ask = to;
 		return to;

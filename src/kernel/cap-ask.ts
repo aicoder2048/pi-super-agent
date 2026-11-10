@@ -9,7 +9,7 @@ export type CapAsk =
 	| { state: "asked"; day: string; askedAt: number }
 	| { state: CapAnswer; day: string; askedAt: number; answeredAt: number };
 
-export type OpenCapAsk = Exclude<CapAsk, { state: "none" }>;
+export type RecordedCapAsk = Exclude<CapAsk, { state: "none" }>;
 
 export const CAP_ASK_NEXT: Record<CapAsk["state"], readonly CapAsk["state"][]> = {
 	none: ["asked"],
@@ -28,6 +28,6 @@ export interface CapAskStore {
 	/** The most recent ask, or none when there is no ask or it is a grant already recorded as expired. */
 	latest(): CapAsk;
 	/** `said` is the user's sentence for an answer. */
-	save(ask: OpenCapAsk, said?: string): void;
+	save(ask: RecordedCapAsk, said?: string): void;
 	expire(day: string, at: number): void;
 }
