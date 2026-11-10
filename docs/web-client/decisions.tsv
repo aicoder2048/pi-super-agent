@@ -205,3 +205,11 @@ ts	phase	decision	why	evidence	result
 2026-11-10T02:40:30Z	t2b	红：tests/member-cap.test.ts 先写，报 member-cap.ts 没有导出 CAP_ASK_NEXT；config 测试先改成 1 到 10，报「必须是 1 到 16 的整数」	先看到失败再写实现	e0c1eb3；tests/member-cap.test.ts	实现后 12/12、15/15
 2026-11-10T02:56:57Z	t2b	宿主接线：名额池每次现问上限；有派活等名额时宿主提问；点选走原来的 answer 线路，按编号 ask_cap_<纽约日期> 分流到 MemberCap，不进内核的 answerQuestion，不通知幕僚长	幕僚长是模型，不能经手这个决定；线路复用，网页的 token 和 Origin 检查、socket 的 client 身份检查原样生效	tests/cap-ask.test.ts 13 条；红：snapshot().memberCap 是 undefined，文件整体超时	just test 655/655
 2026-11-10T02:56:57Z	t2b	测试里发现两处自己的假件写错：假成员没处理已经中止的信号，宿主停不下来；以 Worker 身份连着的 socket 不关，host.stop 的 server.close 一直等	都是测试夹具的问题，改夹具；第二处说明真实宿主停机时若有 Worker 身份的连接没断也会等，这是原有行为，不在本 PR 范围	tests/cap-ask.test.ts 的 runner 和 socket.destroy()	修好后 13/13
+2026-11-10T03:06:02Z	t2b	网页：成员上限是待你处理最前面的一张卡片，按钮沿用选项按钮和 /say 的 answer；排队成员的标签写现在的上限	卡片不属于任何任务，所以不能点开执行过程；标签上写上限最省事，使用者也看得到放宽生效了	e8b810c；红：tests/web.test.ts 3 条失败，tests/e2e/cap.e2e.ts 等不到 .card.cap（10 秒超时）	web 110/110，cap.e2e 11/11
+2026-11-10T03:06:02Z	t2b	e2e 里日志的预期写错了一次：以为提问时有 2 位在排队，实际是第三位成员排上队那一刻问的，日志写 1 位	日志记的是提问那一刻；卡片上的人数是每帧现算的，所以卡片写 2 位	tests/e2e/cap.e2e.ts「宿主日志里提问和回答各一行…」	改了测试的预期，没改代码
+2026-11-10T03:06:02Z	t2b	TUI：看板最前面列出问题，编号 cap；数字或 /answer cap <序号> 作答	TUI 也是使用者的前端，决定要求两边都能答	3be4e98；红：board.ts 没有导出 openQuestions，扩展的两条测试失败	client 25/25
+2026-11-10T03:06:02Z	t2b	精简：deslop 技能没有安装，自己过了一遍 diff，改了一个类型名、去掉一处多余的判断	按要求在最后一次提交前做	aa664a6	相关测试 132/132
+2026-11-10T03:06:02Z	t2b	no-comments：Comment Sicko 删了 6 条注释，提了 6 处要改的代码。改了 3 处：选项文字和结果合成一张表、问题的形状用类型说清缺哪些字段、测试夹具改名。没改 3 处：到期在读上限时顺手记下（上限必须按日期现算，定时器只为日志准时）、给 answer 的参数带上来源类型（现在靠 Host.answer 只有两处调用和六条测试守着）、把等名额的通知在派活台里隔离（宿主那层已接住并记日志）	前三处改了之后注释确实不需要了；后三处要么是有意的设计，要么改动比收益大，写进报告交给根判断	aa664a6	160/160
+2026-11-10T03:06:02Z	t2b	文档：ADR-0010；ADR-0006 和 ADR-0008 各加一句指过去，0008 的范围改成 1 到 10；GLOSSARY 加成员上限；copy.md 加「T2b 新增」；how.md；计划加 T2b 一节	按要求	82e1996；check-plan：11 PR sections, 0 problems	只勾了 Files、Build、You see、Verify unit
+2026-11-10T03:06:02Z	t2b	最后验证	交付前在代码和文档的最后一次提交上跑全量	82e1996；/tmp/cap-ask-e2e2.log	just test 661/661，just e2e 110/110；这一行之后的提交只动本文件
+2026-11-10T03:06:02Z	t2b	轨迹的跨模型复查没有做	这个会话能起的子代理都是同一家的模型	无	留给根
