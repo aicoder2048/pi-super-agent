@@ -236,6 +236,18 @@ test("真实接线：成员的模型只能用 router 或 worker 的提供方，�
 	assert.throws(() => createHostOptions({ config: missing.config, modules: loadWith(missing.config), modelRuntime, log: () => {} }), (e: Error) => e.message.startsWith(missing.file) && /找不到模型 .*no-such-model/.test(e.message));
 });
 
+test("真实接线：router 和 worker 的提供方不同时，成员的模型用其中哪一家都行，别家的不行", () => {
+	const loadMember = (model: string) => {
+		const config = hostConfig("openai-codex");
+		config.models.worker = { provider: "deepseek", id: "worker" };
+		writeFiles(join(config.stateDir, "modules"), moduleFiles("news", { team: "新闻队" }, { "agents/news.md": memberFile("news-researcher", "新闻研究员", `model: ${model}\n`) }));
+		return loadWith(config).modules[0].team!.members[0].model;
+	};
+	assert.deepEqual(loadMember("deepseek/deepseek-flash"), { provider: "deepseek", id: "deepseek-flash" });
+	assert.deepEqual(loadMember("openai-codex/gpt-6.1-sol"), { provider: "openai-codex", id: "gpt-6.1-sol" });
+	assert.throws(() => loadMember("faux/any"), /拒绝使用 faux\/any.*提供方：openai-codex、deepseek$/);
+});
+
 test("真实接线：宿主知道每个领域的助手能派给谁，时限和并发上限取自配置；没有加载的模块答不上来", async () => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = hostConfig(provider);
