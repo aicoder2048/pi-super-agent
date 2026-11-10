@@ -12,7 +12,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import type { Kernel } from "../kernel/kernel.ts";
 import { usageOf } from "./worker-events.ts";
-import { quoteContext } from "../client/board-format.mjs";
+import { quoteSuffix } from "./workers.ts";
 import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import { CONVERSATION_THREAD_ID, RETRY_BACKOFF_MS, type Decision, type RouterNotice } from "../kernel/types.ts";
@@ -117,9 +117,7 @@ export function noticeCard(kernel: Kernel, notice: RouterNotice, rulesFor: (sour
 		if (notice.kind === "conversation") {
 			const a = found.answers;
 			const clicked = a ? `\n点选回答：${a.ticketId}「${kernel.getTicket(a.ticketId)?.title ?? ""}」的问题「${a.question}」（汇报 ${a.reportId}）` : "";
-			const q = found.quote;
-			const quoted = q ? `\n${quoteContext(q, q.ticketId ? kernel.getTicket(q.ticketId)?.title : undefined)}` : "";
-			return `[对话] ${t.id} · ${time(t.occurredAt)}\n使用者：${t.body}${clicked}${quoted}\n${ticketsLine(kernel)}`;
+			return `[对话] ${t.id} · ${time(t.occurredAt)}\n使用者：${t.body}${clicked}${quoteSuffix(kernel, found.quote)}\n${ticketsLine(kernel)}`;
 		}
 		return [
 			`[候选触发] ${t.id} · 来源 ${t.source} · 线程 ${found.threadIds.join(", ")} · 发出者 ${t.sender} · ${time(t.occurredAt)}`,

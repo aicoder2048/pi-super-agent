@@ -278,14 +278,14 @@ export class Kernel {
 	}
 
 	#ticketOfLine(id: string, cause: string | null): string | null {
-		if (id.startsWith("trg_")) {
-			const t = this.#get("SELECT disposition, disposition_detail FROM triggers WHERE id = ?", id);
-			const routed = t.disposition === "opened_ticket" || t.disposition === "handed_over" ? t.disposition_detail : null;
-			return this.#answerOf(id)?.ticketId ?? routed;
-		}
+		if (id.startsWith("trg_")) return this.#answerOf(id)?.ticketId ?? this.#routedTicket(this.#get("SELECT disposition, disposition_detail FROM triggers WHERE id = ?", id)!);
 		if (cause?.startsWith("tkt_")) return cause;
 		if (cause?.startsWith("trg_")) return this.#ticketOfLine(cause, null);
 		return null;
+	}
+
+	#routedTicket(trigger: Row): string | null {
+		return trigger.disposition === "opened_ticket" || trigger.disposition === "handed_over" ? trigger.disposition_detail : null;
 	}
 
 	#quoteOf(triggerId: string): Quote | null {
@@ -923,14 +923,15 @@ export class Kernel {
 			"SELECT json_extract(payload, '$.triggerId') AS v FROM actions WHERE status = 'pending' AND kind = 'router.notify'",
 		));
 		const rows = this.#all(
-			`SELECT t.id, t.disposition, t.disposition_detail AS detail, EXISTS (SELECT 1 FROM reply_receipts r WHERE r.cause = t.id) AS answered
+			`SELECT t.id, t.disposition, t.disposition_detail, EXISTS (SELECT 1 FROM reply_receipts r WHERE r.cause = t.id) AS answered
 			 FROM triggers t JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ? ORDER BY t.rowid DESC LIMIT ?`,
 			CONVERSATION_THREAD_ID,
 			limit,
 		);
 		const routes: Routes = {};
 		for (const r of rows) {
-			if (r.disposition === "opened_ticket" || r.disposition === "handed_over") routes[r.id] = { kind: r.disposition, ticketId: r.detail };
+			const ticketId = this.#routedTicket(r);
+			if (ticketId) routes[r.id] = { kind: r.disposition, ticketId };
 			else if (r.disposition === "router_ignored") routes[r.id] = { kind: "router_ignored" };
 			else if (r.answered) routes[r.id] = { kind: "answered" };
 			else if (seeing.has(r.id)) routes[r.id] = { kind: "pending" };

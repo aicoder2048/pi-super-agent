@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Kernel } from "../kernel/kernel.ts";
-import type { Basis, ReportStatus, TicketInput } from "../kernel/types.ts";
+import type { Basis, Quote, ReportStatus, TicketInput } from "../kernel/types.ts";
 import { REPORT_STATUSES } from "../kernel/types.ts";
 import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
@@ -47,14 +47,16 @@ export interface WorkerSpawner {
 	runMember?(run: MemberRun): Promise<string>;
 }
 
+export function quoteSuffix(kernel: Kernel, quote: Quote | null): string {
+	return quote ? `\n${quoteContext(quote, quote.ticketId ? kernel.getTicket(quote.ticketId)?.title : undefined)}` : "";
+}
+
 export function formatInputs(kernel: Kernel, inputs: TicketInput[]): string {
 	return inputs
 		.map((input) => {
 			const found = input.triggerId ? kernel.read(input.triggerId) : undefined;
 			const meta = found?.type === "trigger" ? ` ${found.trigger.id} · 来源 ${found.trigger.source} · 发出者 ${found.trigger.sender}` : "";
-			const q = found?.type === "trigger" ? found.quote : null;
-			const quoted = q ? `\n${quoteContext(q, q.ticketId ? kernel.getTicket(q.ticketId)?.title : undefined)}` : "";
-			return `[${INPUT_LABEL[input.kind]}]${meta}\n${input.body}${quoted}`;
+			return `[${INPUT_LABEL[input.kind]}]${meta}\n${input.body}${quoteSuffix(kernel, found?.type === "trigger" ? found.quote : null)}`;
 		})
 		.join("\n\n");
 }

@@ -35,6 +35,7 @@ export const INPUT_LABEL = {
 };
 
 export const QUOTE_WHO = { user: "你", router: "幕僚长" };
+export const QUOTE_WHO_PROMPT = { user: "使用者", router: "Router" };
 
 /** @param {import("../kernel/types.ts").Quote} quote */
 export const quoteMark = (quote) => `↪ 引用 ${QUOTE_WHO[quote.who]}：${quote.text}`;
@@ -53,7 +54,7 @@ export function quoteContext(quote, ticketTitle) {
 	const d = new Date(quote.at);
 	const when = `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 	const about = quote.ticketId ? ` 关于任务 ${quote.ticketId}「${ticketTitle ?? ""}」` : "";
-	return `${QUOTE_LABEL}：${quote.who === "router" ? "Router" : "使用者"} ${when}${about} 说：${oneLine(quote.text)}`;
+	return `${QUOTE_LABEL}：${QUOTE_WHO_PROMPT[quote.who]} ${when}${about} 说：${oneLine(quote.text)}`;
 }
 
 /** @type {Record<import("../kernel/types.ts").HelperRole, string>} */

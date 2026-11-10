@@ -1,8 +1,8 @@
 // @ts-check
 
 import {
-	CLEAR_FAILED, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canClear, canSend, choicesInConversation, clearSent, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
-	questionOf, helperStrip, helperTint, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sayOutcome, settleSay, settleSending,
+	CLEAR_FAILED, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
+	questionOf, helperStrip, helperTint, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
 	smallPrint, stopSentence, toggleEarlier, toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperFullName } from "../client/board-format.mjs";
@@ -41,7 +41,7 @@ function mount(doc) {
 	let earlierShown = false;
 	/** @type {import("./view.mjs").SayState} */
 	let sayState = "idle";
-	/** @type {(import("./view.mjs").Draft & { idsAtSay: Set<string> }) | undefined} */
+	/** @type {(import("./view.mjs").Said & { idsAtSay: Set<string> }) | undefined} */
 	let unconfirmed;
 	/** @type {import("./view.mjs").ConversationLine | null} */
 	let quoting = null;
@@ -314,8 +314,8 @@ function mount(doc) {
 		/** @type {HTMLElement} */ (box.querySelector(".total")).textContent = strip.total;
 	};
 
-	/** @returns {import("./view.mjs").Draft} */
-	const currentDraft = () => ({ text: composer.value, quoteOf: quoting?.id ?? null });
+	/** @returns {import("./view.mjs").Said} */
+	const composed = () => ({ text: composer.value, quoteOf: quoting?.id ?? null });
 
 	const renderQuoteStrip = () => {
 		const box = $("conversation");
@@ -329,17 +329,22 @@ function mount(doc) {
 		if (atBottom) box.scrollTop = box.scrollHeight;
 	};
 
-	/** @param {import("./view.mjs").Draft} draft */
-	const applyDraft = (draft) => {
-		composer.value = draft.text;
-		if (draft.quoteOf === null) quoting = null;
+	/** @param {import("./view.mjs").Said} sent */
+	const clearIfUnchanged = (sent) => {
+		if (!sameAsSent(sent, composed())) return;
+		composer.value = "";
+		quoting = null;
 		renderQuoteStrip();
+	};
+
+	const unpick = () => {
+		for (const picked of thread.querySelectorAll(".line.picked")) picked.classList.remove("picked");
 	};
 
 	/** @param {import("./view.mjs").ConversationLine | null} line */
 	const setQuote = (line) => {
 		quoting = line;
-		for (const picked of thread.querySelectorAll(".line.picked")) picked.classList.remove("picked");
+		unpick();
 		renderQuoteStrip();
 		composer.focus();
 	};
@@ -431,11 +436,11 @@ function mount(doc) {
 
 	const settleUnconfirmed = () => {
 		if (!unconfirmed) return;
-		const next = settleSay({ state: sayState, ...unconfirmed }, currentDraft(), linesNotIn(view, unconfirmed.idsAtSay));
-		if (next.state === sayState) return;
+		const next = settleSay({ state: sayState, ...unconfirmed }, linesNotIn(view, unconfirmed.idsAtSay));
+		if (next === sayState) return;
+		clearIfUnchanged(unconfirmed);
 		unconfirmed = undefined;
-		applyDraft(next.draft);
-		setSay(next.state);
+		setSay(next);
 	};
 
 	const renderHow = () => {
@@ -595,7 +600,7 @@ function mount(doc) {
 	};
 
 	const say = async () => {
-		const sent = currentDraft();
+		const sent = composed();
 		if (!canSend(sent.text) || send.disabled) return;
 		send.disabled = true;
 		unconfirmed = undefined;
@@ -612,7 +617,7 @@ function mount(doc) {
 				cache: "no-store",
 			});
 			const state = sayOutcome({ status: res.status });
-			if (state === "delivered") applyDraft(clearSent(currentDraft(), sent));
+			if (state === "delivered") clearIfUnchanged(sent);
 			if (state === "expired") setStatus("expired");
 			setSay(state, res.status);
 		} catch {
@@ -649,7 +654,7 @@ function mount(doc) {
 		const line = target.closest(".bubble")?.closest(".line");
 		if (!line) return;
 		const wasPicked = line.classList.contains("picked");
-		for (const picked of thread.querySelectorAll(".line.picked")) picked.classList.remove("picked");
+		unpick();
 		line.classList.toggle("picked", !wasPicked);
 	});
 	composer.addEventListener("keydown", (e) => {
