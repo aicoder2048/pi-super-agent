@@ -18,11 +18,11 @@ const alive = (pid: number) => {
 	}
 };
 
-/** A process shaped like a member the host started: its own group, its session dir on the command line, a child in the group. */
+/** A process shaped like a member the host started: its own group, a child in the group, and Pi's habit of replacing its command line with its name. */
 async function leftover(t: TestContext, sessionDir: string, script = "") {
 	mkdirSync(sessionDir, { recursive: true });
 	const childPid = join(sessionDir, "child.pid");
-	const code = `${script}; const c = require("node:child_process").spawn("sleep", ["30"], { stdio: "ignore" }); require("node:fs").writeFileSync(${JSON.stringify(childPid)}, String(c.pid)); setInterval(() => {}, 1000);`;
+	const code = `process.title = "pi"; ${script}; const c = require("node:child_process").spawn("sleep", ["30"], { stdio: "ignore" }); require("node:fs").writeFileSync(${JSON.stringify(childPid)}, String(c.pid)); setInterval(() => {}, 1000);`;
 	const member = spawn(process.execPath, ["-e", code, "--", "--session-dir", sessionDir], { detached: true, stdio: "ignore" });
 	member.unref();
 	const pid = member.pid!;
@@ -42,7 +42,9 @@ test("上一个宿主留下的成员：按宿主自己记下的 pid 结束它和
 	const sessionDir = memberSessionDir(stateDir, "tkt_1", "news-researcher");
 	const { pid, child } = await leftover(t, sessionDir);
 	recordMember(sessionDir, pid);
-	assert.deepEqual(JSON.parse(readFileSync(ledger(sessionDir), "utf8")), { pid });
+	const recorded = JSON.parse(readFileSync(ledger(sessionDir), "utf8"));
+	assert.equal(recorded.pid, pid);
+	assert.match(recorded.startedAt, /\d{2}:\d{2}:\d{2}/, "记下进程的启动时间，用来认出它");
 	const logs: string[] = [];
 	await endLeftoverMembers(stateDir, (line) => logs.push(line));
 	assert.equal(alive(pid), false, "endLeftoverMembers 返回时进程已经没了");
@@ -60,15 +62,15 @@ test("留下的成员不理会 SIGTERM：补 SIGKILL，仍然等到它没了才�
 	assert.equal(alive(pid), false);
 });
 
-test("记录里的 pid 现在是别的进程（命令行里没有这位成员的会话目录）：不发信号，只清记录；进程已经不在的也只清记录", async (t) => {
+test("记录里的 pid 现在是别的进程（启动时间对不上）：不发信号，只清记录；进程已经不在的也只清记录", async (t) => {
 	const stateDir = mkdtempSync(join(tmpdir(), "psa-ledger-"));
 	const reused = memberSessionDir(stateDir, "tkt_1", "reused");
 	const gone = memberSessionDir(stateDir, "tkt_2", "gone");
 	const other = await leftover(t, join(stateDir, "somewhere-else"));
 	mkdirSync(reused, { recursive: true });
 	mkdirSync(gone, { recursive: true });
-	recordMember(reused, other.pid);
-	writeFileSync(ledger(gone), JSON.stringify({ pid: 2 ** 22 + 12345 }));
+	writeFileSync(ledger(reused), JSON.stringify({ pid: other.pid, startedAt: "Mon Jan  1 00:00:00 2024" }));
+	writeFileSync(ledger(gone), JSON.stringify({ pid: 2 ** 22 + 12345, startedAt: "Mon Jan  1 00:00:00 2024" }));
 	const logs: string[] = [];
 	await endLeftoverMembers(stateDir, (line) => logs.push(line));
 	assert.equal(alive(other.pid), true, "别人的进程不动");
