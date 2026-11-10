@@ -16,7 +16,7 @@ export type LiveState = "queued" | "running";
 export type EndState = Exclude<DispatchState, LiveState>;
 
 export const DISPATCH_NEXT: Record<DispatchState, readonly DispatchState[]> = {
-	queued: ["running", "timed_out", "stopped"],
+	queued: ["running", "timed_out", "stopped", "failed"],
 	running: ["done", "timed_out", "stalled", "stopped", "failed"],
 	done: [],
 	timed_out: [],
@@ -225,6 +225,8 @@ export interface DispatchOrder extends Omit<MemberRun, "token" | "signal" | "onA
 	onProgress(): void;
 	/** `index` counts this dispatch's messages from 0, so a message delivered twice lands in one place. */
 	onMessage(message: TranscriptMessage, index: number): void;
+	/** Asked when the dispatch gets its slot: a reason ends it as failed without starting the member. */
+	refusal?(): string | undefined;
 }
 
 export interface DeskOptions {
@@ -305,7 +307,7 @@ export class DispatchDesk {
 
 	async #work(order: DispatchOrder, dispatch: Dispatch, stop: AbortSignal): Promise<DispatchOutcome> {
 		const { queueTimeoutMs, stallMs } = this.#o;
-		const { limitMs, onProgress, onMessage, ...run } = order;
+		const { limitMs, onProgress, onMessage, refusal, ...run } = order;
 		let messages = 0;
 		const queuedAt = Date.now();
 		let startedAt = queuedAt;
@@ -327,6 +329,11 @@ export class DispatchDesk {
 			return stop.aborted ? end("stopped", null) : end("timed_out", null, `排队 ${span(queueTimeoutMs)}还没轮到`);
 		}
 		startedAt = dispatch.lastEventAt = Date.now();
+		const refused = refusal?.();
+		if (refused !== undefined) {
+			release();
+			return end("failed", null, refused);
+		}
 		move("running");
 		this.#o.onChange();
 		const cut = new AbortController();

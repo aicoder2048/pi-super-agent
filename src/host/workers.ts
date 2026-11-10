@@ -341,7 +341,7 @@ export class WorkerExecutor {
 		const { selector } = this.#o.models;
 		const steady = selector.steady();
 		if (steady.fellBack || !member.model) return { model: steady.model, onFallback: steady.fellBack };
-		return { model: member.model, onFallback: formatModelRef(member.model) === formatModelRef(selector.fallback) };
+		return { model: member.model, onFallback: member.model.provider === selector.fallback.provider };
 	}
 
 	#dispatch(ticketId: string, live: Live, params: unknown): Promise<DispatchResult> {
@@ -349,16 +349,21 @@ export class WorkerExecutor {
 		if (live.stopping) throw new Error("任务已停止");
 		const { member, task, callId } = parseDispatch(params, live.crew);
 		const { model, onFallback } = this.#memberModel(member);
-		if (onFallback && this.#o.kernel.usageToday(model.provider) >= this.#o.models.fallbackDailyTokens) {
-			throw new Error(`回退模型 ${formatModelRef(model)} 今日用量已达上限，这次不能派活`);
-		}
-		const { kernel, stateDir, afterCommand } = this.#o;
+		const { kernel, stateDir, afterCommand, models } = this.#o;
+		const refusal = () => {
+			if (!onFallback || kernel.usageToday(model.provider) < models.fallbackDailyTokens) return undefined;
+			const [fallback, own] = [formatModelRef(models.selector.fallback), formatModelRef(model)];
+			return `回退模型 ${fallback} 今日用量已达上限，这次不能派活${own === fallback ? "" : `（成员的模型 ${own} 和它同属 ${model.provider}，用量一起计）`}`;
+		};
+		const refused = refusal();
+		if (refused !== undefined) throw new Error(refused);
 		const { basis } = kernel.getTicket(ticketId)!;
 		const { timeoutMs, codingTimeoutMs } = this.#o.dispatch!;
 		return this.#desk.dispatch({
 			ticketId, callId, member, task, basis,
 			limitMs: canCode(memberTools(basis, member.tools)) ? codingTimeoutMs : timeoutMs,
 			model,
+			refusal,
 			workdir: join(stateDir, "workers", ticketId),
 			sessionDir: memberSessionDir(stateDir, ticketId, member.name),
 			onUsage: (u) => {

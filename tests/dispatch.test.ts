@@ -12,9 +12,9 @@ import { ids, startHost, until, type Brain, type FakeSpawner, type FakeWorker } 
 const never = () => new AbortController().signal;
 const tick = (ms = 20) => new Promise((done) => setTimeout(done, ms));
 
-test("派活的状态只有一条路：排队 → 进行 → 完成、超时、无进展、已停止或出错；排队时也可能超时或被停；结束后不再变", () => {
+test("派活的状态只有一条路：排队 → 进行 → 完成、超时、无进展、已停止或出错；排队时也可能超时、被停或轮到时被拒；结束后不再变", () => {
 	assert.deepEqual(DISPATCH_NEXT, {
-		queued: ["running", "timed_out", "stopped"],
+		queued: ["running", "timed_out", "stopped", "failed"],
 		running: ["done", "timed_out", "stalled", "stopped", "failed"],
 		done: [],
 		timed_out: [],
@@ -384,6 +384,50 @@ test("成员自己的模型就是回退模型：主模型正常时它的用量�
 	assert.throws(() => send(two[0], "c2"), /回退模型 fallback-co\/cheap 今日用量已达上限/);
 	assert.equal((await send(two[1], "c3")).details.state, "done", "用主模型的成员照常派");
 	assert.deepEqual(ran, ["market-analyst fallback-co/cheap", "news-researcher openai-codex/gpt-6.1-sol"]);
+});
+
+/** A team whose members bring their own models, with a helper that waits for the test to dispatch. */
+async function ownModels(t: TestContext, crew: Member[], runner: Runner, maxConcurrent = 4) {
+	const started = await startHost(openOn("自带队"), () => {}, {
+		teams: { kinds: new Map([["默认", "solo"], ["自带队", "crew"]]), pinned: new Map() },
+		dispatch: { crewOf: () => crew, timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent },
+		workerModels: { selector: selectorWith(FALLBACK), fallbackDailyTokens: 150 },
+	});
+	t.after(() => started.host.stop());
+	started.spawner.runner = runner;
+	started.host.say("看一下");
+	await until(() => started.spawner.workers.size === 1, "助手开始工作");
+	const [helper] = started.spawner.workers.values();
+	return { ...started, send: (call: Call, callId: string) => helper.request("worker.dispatch", { ...call, callId }) as Promise<DispatchResult> };
+}
+
+test("成员用的是回退模型那家的另一个模型：用量同样算进回退上限，到了上限拒绝派给它", async (t) => {
+	const ran: string[] = [];
+	const { host, send } = await ownModels(t, [member("market-analyst", "行情分析师", { model: { provider: FALLBACK.provider, id: "pricier" } }), CREW[1]], async (run) => {
+		ran.push(`${run.member.name} ${run.model.provider}/${run.model.id}`);
+		run.onUsage({ provider: run.model.provider, tokensIn: 150, tokensOut: 0 });
+		return "答";
+	});
+	assert.equal((await send(two[0], "c1")).details.state, "done");
+	assert.equal(host.kernel.usageToday(FALLBACK.provider), 150);
+	assert.throws(() => send(two[0], "c2"), /回退模型 fallback-co\/cheap 今日用量已达上限.*fallback-co\/pricier/);
+	assert.deepEqual(ran, ["market-analyst fallback-co/pricier"]);
+});
+
+test("排队时回退模型用到了上限：轮到时不起成员进程，这次派活记为出错并写明原因；已经在跑的那位照常做完", async (t) => {
+	const ran: string[] = [];
+	const { host, send } = await ownModels(t, [member("market-analyst", "行情分析师", { model: FALLBACK }), member("news-researcher", "新闻研究员", { model: FALLBACK })], async (run) => {
+		ran.push(run.member.name);
+		run.onUsage({ provider: run.model.provider, tokensIn: 100, tokensOut: 0 });
+		await tick(100);
+		run.onUsage({ provider: run.model.provider, tokensIn: 100, tokensOut: 0 });
+		return "答";
+	}, 1);
+	const [first, second] = await Promise.all([send(two[0], "c1"), send(two[1], "c2")]);
+	assert.deepEqual([first.details.state, first.details.reply], ["done", "答"], "用量在它跑的途中过了上限，不中途结束它");
+	assert.deepEqual([second.details.state, second.details.note], ["failed", "回退模型 fallback-co/cheap 今日用量已达上限，这次不能派活"]);
+	assert.deepEqual(ran, ["market-analyst"]);
+	assert.equal(host.kernel.usageToday(FALLBACK.provider), 200);
 });
 
 test("一批里先做完的那位，看板上马上写完成、令牌作废；整批都回来才从看板去掉", async (t) => {
