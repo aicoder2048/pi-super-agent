@@ -18,7 +18,7 @@ const teamOf = (modules: Modules, name: string) => modules.modules.find((m) => m
 
 test("仓库自带的两支队伍用默认配置的提供方都能加载：us-market 是看盘队的四位，pi-pi 是 Pi专家队的九位", () => {
 	const modules = load();
-	assert.deepEqual([...modules.book], [["pi-pi", "Pi专家队"], ["toy-market", null], ["us-market", "看盘队"]]);
+	assert.deepEqual([...modules.book], [["pi-pi", { team: "Pi专家队", onRoster: true }], ["toy-market", { team: null, onRoster: true }], ["us-market", { team: "看盘队", onRoster: true }]]);
 	assert.deepEqual(Object.fromEntries(teamOf(modules, "us-market")!.members.map((m) => [m.name, m.title])), WATCHERS);
 	const experts = teamOf(modules, "pi-pi")!.members;
 	assert.deepEqual(experts.map((m) => m.name), PI_EXPERTS);
@@ -73,7 +73,7 @@ test("看盘队每位成员的提示词都写了汇报格式：结论、证据�
 test("大波动规则不写「团队：」，它开的任务属于 us-market 领域，也就归看盘队", () => {
 	const modules = load();
 	assert.ok(modules.ruleAllows("us-market/big-move", "us-market"));
-	assert.equal(modules.book.get("us-market"), "看盘队");
+	assert.equal(modules.book.get("us-market")?.team, "看盘队");
 });
 
 test("拿掉 us-market 模块：加载不报错，它的领域、队伍和成员一起消失，pi-pi 不受影响", () => {
@@ -81,7 +81,7 @@ test("拿掉 us-market 模块：加载不报错，它的领域、队伍和成员
 	cpSync(REPO_MODULES, dir, { recursive: true });
 	rmSync(join(dir, "us-market"), { recursive: true });
 	const modules = load(dir);
-	assert.deepEqual([...modules.book], [["pi-pi", "Pi专家队"], ["toy-market", null]]);
+	assert.deepEqual([...modules.book], [["pi-pi", { team: "Pi专家队", onRoster: true }], ["toy-market", { team: null, onRoster: true }]]);
 	assert.equal(modules.kitFor("us-market"), undefined);
 	assert.ok(!modules.rosterPrompt().includes("us-market"));
 	assert.deepEqual(modules.rulesFor("us-market"), []);
