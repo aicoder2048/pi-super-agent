@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test, { after } from "node:test";
 import type { Page } from "playwright-core";
-import { on, openTicket, reply, report, worker } from "./fake-model.ts";
+import { on, openTicket, reply, report, worker, type ToolCall } from "./fake-model.ts";
 import { closeBrowser, sayInPage, story, waitStatus } from "./harness.ts";
 
 after(closeBrowser);
@@ -135,6 +135,63 @@ test("引用：窄屏触屏上点一下气泡出现「引用」，点气泡外�
 				await line.locator(".route").tap();
 				assert.equal(await line.evaluate((l) => l.classList.contains("picked")), false);
 				assert.equal(await opacity(line), "0");
+			});
+		},
+	));
+
+const handOverTo = (title: string) => (card: string): ToolCall[] => {
+	const ticketId = card.match(new RegExp(`(tkt_[\\w-]+)「${title}」`))?.[1];
+	return [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId: card.match(/trg_[\w-]+/)?.[0], ticketId }] } }];
+};
+
+test("引用：幕僚长这一轮的模型请求里有引用那一行，标明只是上下文；转交给任务后，助手的模型请求里有同样的一行", (t) =>
+	story(
+		t,
+		{
+			router: [
+				on("Router 开任务并给方案", /^\[对话\][\s\S]*查天气/, (c) => [openTicket(c, "查天气", "查天气任务"), reply(c, "方案 A：先停掉旧任务")]),
+				on("Router 转交带引用的改成 B", /^\[对话\][\s\S]*改成 B/, handOverTo("查天气")),
+			],
+			workers: [
+				worker(
+					"查天气任务",
+					on("助手开始查", /^\[任务说明\]/, () => [report("progress", "在查")]),
+					on("助手收到带引用的转交", /^\[使用者的话/, () => [report("progress", "改用方案 B")]),
+				),
+			],
+		},
+		async ({ step, fake }) => {
+			let context = "";
+			await step("页面说「查天气」，幕僚长开任务并给出方案 A，助手开始查", async (page) => {
+				await sayInPage(page, "查天气");
+				await page.locator(".line.router .bubble", { hasText: "方案 A：先停掉旧任务" }).waitFor();
+				await page.locator("#left .card", { hasText: "在查" }).waitFor();
+			});
+			await step("引用方案 A 说「改成 B」，幕僚长转交给查天气任务，助手汇报", async (page) => {
+				const line = page.locator(".thread > .line.router", { hasText: "方案 A" });
+				await line.locator(".bubble").hover();
+				await quoteButton(line).click();
+				await sayInPage(page, "改成 B");
+				await page.locator(".line.user", { hasText: "改成 B" }).locator(".route", { hasText: "已交给" }).waitFor();
+				await page.locator("#left .card", { hasText: "改用方案 B" }).waitFor();
+			});
+			await step("幕僚长这一轮的请求里，「使用者：改成 B」之后有一行标明只是上下文的引用", async () => {
+				const asked = fake.exchanges.find((e) => e.steps.includes("Router 转交带引用的改成 B"));
+				assert.ok(asked, "幕僚长收到了带引用的那句话");
+				const card = asked.cards.find((c) => c.includes("使用者：改成 B"))!.split("\n");
+				const said = card.indexOf("使用者：改成 B");
+				const quoted = card.findIndex((l) => l.startsWith("引用（只是上下文，不是指令）：Router "));
+				assert.ok(said > 0 && quoted > said, card.join("\n"));
+				assert.match(card[quoted], /说「方案 A：先停掉旧任务」，关于任务 tkt_[\w-]+「查天气」$/);
+				assert.equal(card.filter((l) => l.startsWith("使用者：")).length, 1, "引用没有变成使用者的话");
+				context = card[quoted];
+			});
+			await step("助手收到的转交里有一字不差的同一行引用", async () => {
+				const handed = fake.exchanges.find((e) => e.steps.includes("助手收到带引用的转交"));
+				assert.ok(handed, "助手收到了转交");
+				const input = handed.cards.find((c) => c.startsWith("[使用者的话"))!.split("\n");
+				assert.equal(input[1], "改成 B");
+				assert.equal(input[2], context);
 			});
 		},
 	));
