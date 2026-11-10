@@ -221,12 +221,13 @@ export interface Story {
 
 export interface StoryOptions {
 	config?: Record<string, unknown>;
-	/** Files written into the state dir before the host starts, by path relative to it, e.g. modules/news/module.json. The only modules the host loads are the ones under its modules/. */
+	/** Files written into the state dir before the host starts, by path relative to it, e.g. modules/news/module.json. Unless config.modulesDirs says otherwise, the only modules the host loads are the ones under its modules/. */
 	files?: Record<string, string>;
 	/** Pins webPort so a restarted host serves the same origin as the open page. */
 	fixedPort?: boolean;
 	/** Installs page.clock before the first load so a test can fast-forward the page's timers. */
 	fakeClock?: boolean;
+	env?: Record<string, string>;
 	/** See parseSabotage in fake-model.ts. Defaults to PSA_E2E_SABOTAGE. */
 	sabotage?: string;
 }
@@ -280,7 +281,7 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 		throw error;
 	});
 	const root = mkdtempSync(join(tmpdir(), "psa-e2e-"));
-	const env = fakeAgentEnv(fake, join(root, "pi"));
+	const env = { ...fakeAgentEnv(fake, join(root, "pi")), ...options.env };
 	const pages: Page[] = [];
 	const contexts: BrowserContext[] = [];
 	let host: HostRun | undefined;
