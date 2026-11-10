@@ -38,11 +38,11 @@ host:
 watchdog:
     {{run}} src/watchdog/main.ts
 
-# 打开 TUI 客户端（Pi TUI 只当界面，输入转发给宿主）。
+# 打开 TUI 客户端（Pi TUI 只当界面，输入转发给宿主）。连接时读状态目录里的 client-token。
 client:
     pi {{clean}} --no-session --no-context-files --tui-mode regular -e extensions/super-agent.ts
 
-# 对 Super Agent 说一句话，打印之后两分钟内的回复。
+# 对 Super Agent 说一句话，打印之后两分钟内的回复。连接时读状态目录里的 client-token，没有就先运行 just host。
 say +text:
     {{run}} src/cli/say.ts say {{text}}
 
@@ -65,6 +65,10 @@ log limit="30":
 # 换网页 token：删掉状态目录里的 web-token，宿主下次启动生成新的。正在运行的宿主重启前沿用旧 token。
 web-token-rotate:
     {{run}} src/cli/web-token-rotate.ts
+
+# 换客户端凭据：删掉状态目录里的 client-token，然后重启宿主生成新的。重启前新开的 TUI、just say 和 just tail 连不上。
+client-token-rotate:
+    {{run}} src/cli/client-token-rotate.ts
 
 # 持续显示对话。
 tail:

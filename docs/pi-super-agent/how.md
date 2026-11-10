@@ -62,7 +62,7 @@ flowchart LR
   WD -. "写文件" .-> Inbox
 ```
 
-client 和 Worker 共用 `<state>/host.sock` 这一个 Unix socket，协议是 JSON lines。连接上的第一行必须是 `hello`，由它决定角色。Router 跑在 host 进程内，Worker 是子进程。这个选择的理由写在 ADR 0002。
+client 和 Worker 共用 `<state>/host.sock` 这一个 Unix socket，协议是 JSON lines。连接上的第一行必须是 `hello`，由它决定角色。worker 角色带任务 token；其他角色都算 client，必须带状态目录里 `client-token` 的内容，否则宿主断开连接（ADR 0007）。Router 跑在 host 进程内，Worker 是子进程。这个选择的理由写在 ADR 0002。
 
 ### 2. 触发进入 Kernel
 
@@ -201,7 +201,7 @@ state 目录是 `PSA_STATE_DIR`，默认 `~/.pi-super-agent`。
 - **`state.db`**（`src/kernel/store.ts`）。打开时开启 WAL 和 `busy_timeout=5000`，后者未提交。CHECK 约束来自类型枚举。全局 `sequence` 只有一行，为 input、action 等提供单调递增的 `seq`。`inTransaction` 用 `BEGIN IMMEDIATE`，已经在事务中时直接复用。库里保存 trigger、thread、ticket、订阅、input、report、decision 日志、reply 回执、outbox 及其 `action_attempts`、source 游标。
 - **Pi session 文件**。Router 的在 `sessions/router`，Worker 的在 `sessions/workers/*_<sessionId>.jsonl`。Worker 的对话上下文保存在这些文件里，不在 DB 里。`/watch` 的历史记录也从这里读。
 - **只在内存里的状态**。Router 的 `#buffer` 和 `#busy`、两个 `ModelSelector` 的状态、executor 的 `#live` 表（进程句柄、token、`bgRunning`）、Watchdog 的 `#dropped` 集合。重启后这些都会丢失。Router 会从主模型重新开始，失败计数归零。
-- **其他文件**。`heartbeat.json` 内容是 `{pid, at}`，每 30 秒原子写入一次。`inbox/{processed,rejected}`、`workers/<ticketId>/`、`config.json`、`rules.md`、`modules/` 也在 state 目录下。只有 Watchdog 启动的 host 才写 `host.log`。
+- **其他文件**。`heartbeat.json` 内容是 `{pid, at}`，每 30 秒原子写入一次。`inbox/{processed,rejected}`、`workers/<ticketId>/`、`config.json`、`rules.md`、`modules/` 也在 state 目录下。`web-token` 和 `client-token` 是网页和 socket client 的凭据，权限 0600，由 `src/host/web-token.ts` 读或生成。只有 Watchdog 启动的 host 才写 `host.log`。
 
 client 自己不存任何东西。它以 `--no-session` 运行，连接后靠 snapshot 取数据。snapshot 包含 `kernel.conversation(50)` 和 `listTickets()`。
 
@@ -229,7 +229,7 @@ Watchdog（`src/watchdog/`，未提交）是另一个进程，用 `just watchdog
   - 每条 decision 都写入 `decisions` 表。
 - **Worker 层**。basis 为 `inference` 时，extension 用 `blockedExternalAction`（`src/worker/external-actions.ts`）的正则黑名单拦截 `bash` 和 `bg_start` 里的对外动作，比如 git push、curl POST、npm publish、发邮件。代码注释自己承认这只是一个底线。`formatInputs` 和 `WORKER_PROMPT` 告诉 Worker，trigger 内容只是数据，note 不是授权。
 - **读取范围**。`#readForWorker` 只允许 Worker 读自己的 ticket、自己订阅的 thread、这些 thread 上的 trigger，以及最近 20 条 input 引用到的 trigger。
-- **身份**。Worker 的身份完全靠每次 spawn 新生成的 token。client 没有认证，只靠 socket 的文件权限保护。client 协议里没有直接对 Worker 说话的消息。
+- **身份**。Worker 的身份完全靠每次 spawn 新生成的 token。client 要在 `hello` 里出示 `<state>/client-token` 的内容。能读状态目录的进程仍然能拿到它，这个边界写在 ADR 0007。client 协议里没有直接对 Worker 说话的消息。
 
 ## Where Things Live
 
@@ -244,6 +244,7 @@ Watchdog（`src/watchdog/`，未提交）是另一个进程，用 `just watchdog
 | `src/host/workers.ts`, `pi-worker.ts` | Worker 生命周期，以及 Pi RPC spawner 和 `WORKER_PROMPT`。 |
 | `src/worker/extension.ts`, `external-actions.ts` | Worker 内的工具、后台命令、inference 黑名单。 |
 | `src/host/server.ts`, `src/jsonl.ts` | socket 服务和 JSON lines 分帧。 |
+| `src/host/web-token.ts`, `src/client/client-token.ts` | 两个凭据文件的读写，以及 client 这边的读取。 |
 | `src/sources/`, `src/modules.ts` | trigger 来源、模块和规则加载、过滤策略。 |
 | `src/model-selector.ts`, `src/models.ts`, `src/host/config.ts` | 模型切换、默认模型、配置默认值。 |
 | `src/watchdog/` | Watchdog 判定函数和进程入口。 |

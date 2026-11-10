@@ -43,3 +43,36 @@ test("Worker 子进程和模块 prepare 拿不到宿主环境里的密钥类变�
 	const prepared = readFileSync(join(dir, "prepare-env.txt"), "utf8");
 	assert.ok(!/MASSIVE_API_KEY|FOO_TOKEN|DEEPSEEK_API_KEY/.test(prepared), "prepare 环境里不该有密钥类变量");
 });
+
+test("Worker 子进程和模块 prepare 的环境里没有客户端凭据，也没有指向它的状态目录变量，即使宿主是带着 PSA_STATE_DIR 启动的", async (t) => {
+	const stateDir = mkdtempSync(join(tmpdir(), "psa-env-"));
+	const credential = "ab".repeat(32);
+	writeFileSync(join(stateDir, "client-token"), `${credential}\n`, { mode: 0o600 });
+	const cliPath = join(stateDir, "fake-pi.mjs");
+	writeFileSync(cliPath, FAKE_PI);
+	const saved = process.env.PSA_STATE_DIR;
+	process.env.PSA_STATE_DIR = stateDir;
+	t.after(() => {
+		if (saved === undefined) delete process.env.PSA_STATE_DIR;
+		else process.env.PSA_STATE_DIR = saved;
+	});
+	const workdir = mkdtempSync(join(tmpdir(), "psa-env-work-"));
+	const spawner = new PiWorkerSpawner({
+		socketPath: join(stateDir, "host.sock"),
+		sessionDir: join(stateDir, "sessions"),
+		cliPath,
+		moduleFor: () => ({ prepare: "env > prepare-env.txt" }),
+	});
+	const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
+	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir, basis: "request", ruleId: null, token: "secret-ticket-token", model: { provider: "openai-codex", id: "gpt" } }, events);
+	t.after(() => handle.stop());
+	const env = JSON.parse(readFileSync(join(workdir, "worker-env.json"), "utf8")) as Record<string, string>;
+	const prepared = readFileSync(join(workdir, "prepare-env.txt"), "utf8");
+	assert.equal(env.PSA_STATE_DIR, undefined, "Worker 环境里不该有 PSA_STATE_DIR");
+	assert.ok(!/^PSA_STATE_DIR=/m.test(prepared), "prepare 环境里不该有 PSA_STATE_DIR");
+	for (const [where, text] of Object.entries({ Worker: JSON.stringify(env), prepare: prepared })) {
+		assert.ok(!text.includes(credential), `${where} 环境里不该有凭据`);
+		assert.ok(!text.includes("client-token"), `${where} 环境里不该有凭据文件的路径`);
+	}
+	assert.equal(env.PSA_SOCKET, join(stateDir, "host.sock"));
+});

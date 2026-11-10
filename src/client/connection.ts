@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { connect, type Socket } from "node:net";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
 import { DEFAULT_ACK_TIMEOUT_MS } from "./board-format.mjs";
+import { clientTokenBeside } from "./client-token.ts";
 import type { ClientToHost, HostToClient } from "./protocol.ts";
 
 export { DEFAULT_ACK_TIMEOUT_MS };
@@ -11,6 +12,7 @@ export interface HostConnectionOptions {
 	onMessage(message: HostToClient): void;
 	onStatus?(connected: boolean): void;
 	onAckMissing?(text: string): void;
+	onError?(line: string): void;
 	retryMs?: number;
 	ackTimeoutMs?: number;
 }
@@ -22,6 +24,7 @@ export class HostConnection {
 	#closed = false;
 	#watching: string | undefined;
 	#retry: NodeJS.Timeout | undefined;
+	#lastReported: string | undefined;
 	readonly #awaitingAck = new Map<string, NodeJS.Timeout>();
 
 	constructor(options: HostConnectionOptions) {
@@ -34,11 +37,19 @@ export class HostConnection {
 
 	open(): void {
 		if (this.#closed) return;
+		let token: string;
+		try {
+			token = clientTokenBeside(this.#o.socketPath);
+		} catch (error) {
+			this.#reportOnce((error as Error).message);
+			return this.#retryLater();
+		}
+		this.#lastReported = undefined;
 		const socket = connect(this.#o.socketPath);
 		this.#socket = socket;
 		socket.on("connect", () => {
 			this.#connected = true;
-			writeJsonLine(socket, { type: "hello", role: "client" } satisfies ClientToHost);
+			writeJsonLine(socket, { type: "hello", role: "client", token } satisfies ClientToHost);
 			if (this.#watching) writeJsonLine(socket, { type: "watch", ticketId: this.#watching } satisfies ClientToHost);
 			this.#o.onStatus?.(true);
 		});
@@ -56,9 +67,19 @@ export class HostConnection {
 			this.#connected = false;
 			if (was) this.#o.onStatus?.(false);
 			if (this.#closed) return;
-			this.#retry = setTimeout(() => this.open(), this.#o.retryMs ?? 1000);
-			this.#retry.unref();
+			this.#retryLater();
 		});
+	}
+
+	#retryLater(): void {
+		this.#retry = setTimeout(() => this.open(), this.#o.retryMs ?? 1000);
+		this.#retry.unref();
+	}
+
+	#reportOnce(line: string): void {
+		if (line === this.#lastReported) return;
+		this.#lastReported = line;
+		this.#o.onError?.(line);
 	}
 
 	say(text: string): string | undefined {

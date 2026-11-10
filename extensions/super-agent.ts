@@ -93,6 +93,7 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 			ackTimeoutMs,
 			onAckMissing: (text) =>
 				ctx?.ui.notify(`宿主 ${ackTimeoutMs / 1000} 秒内没有确认收到「${text}」，这句话可能没送达。宿主可能卡住了，稍后看对话里有没有它，没有就再说一次。`, "warning"),
+			onError: (line) => ctx?.ui.notify(line, "warning"),
 			onStatus: (connected) => {
 				view.connected = connected;
 				drawBoard();
