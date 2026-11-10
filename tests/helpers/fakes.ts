@@ -28,12 +28,12 @@ import type { MemberRun } from "../../src/host/dispatch.ts";
 import type { Domains } from "../../src/modules.ts";
 import type { Member } from "../../src/teams.ts";
 
-type FakeModule = { skillsDir?: string; prepare?: string } & ({ team: string; crew: readonly Member[] } | { team?: undefined; crew?: undefined });
+type FakeModule = { skillsDir?: string; prepare?: string; lookup?: boolean } & ({ team: string; crew: readonly Member[] } | { team?: undefined; crew?: undefined });
 
 export function domainsOf(modules: Record<string, FakeModule>): Domains {
 	return {
 		book: new Map(Object.entries(modules).map(([name, m]) => [name, { team: m.team ?? null, onRoster: true }])),
-		kitFor: (domain) => (domain in modules ? { skillsDir: modules[domain].skillsDir, prepare: modules[domain].prepare, crew: modules[domain].crew ?? [] } : undefined),
+		kitFor: (domain) => (domain in modules ? { skillsDir: modules[domain].skillsDir, prepare: modules[domain].prepare, crew: modules[domain].crew ?? [], mayLookup: modules[domain].lookup ?? false } : undefined),
 	};
 }
 
@@ -118,10 +118,10 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 
 export const ids = (card: string, prefix: "trg" | "tkt") => card.match(new RegExp(`${prefix}_[\\w-]+`))?.[0];
 
-export function openOnConversation(card: string, title = card.split("使用者：")[1]?.split("\n")[0] ?? "任务"): ToolCallSpec[] {
+export function openOnConversation(card: string, title = card.split("使用者：")[1]?.split("\n")[0] ?? "任务", domain?: string): ToolCallSpec[] {
 	const triggerId = ids(card, "trg")!;
 	return [
-		{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId, title, brief: title }] } },
+		{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId, title, brief: title, domain }] } },
 		{ name: "reply", args: { text: `收到：${title}`, cause: triggerId } },
 	];
 }

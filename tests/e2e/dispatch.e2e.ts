@@ -23,7 +23,7 @@ const REPORT_MD = "**个股领跌**，没有新的利空消息。";
 const WORKING_MS = 2500;
 const NEWS_COMMAND_S = 9;
 
-const WATCH_MANIFEST = JSON.stringify({ name: "watch", title: "看盘", description: "看盘面、查新闻", team: "看盘队" });
+const WATCH_MANIFEST = JSON.stringify({ name: "watch", title: "看盘", description: "看盘面、查新闻", team: "看盘队", tools: ["lookup"] });
 const STATE_FILES = {
 	"modules/watch/module.json": WATCH_MANIFEST,
 	"modules/watch/agents/market.md": "---\nname: market-analyst\ntitle: 行情分析师\ndescription: 看盘面、量能和大盘对比\ntools: read, lookup, web_get\n---\n你是行情分析师。\n",
@@ -181,7 +181,8 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 				assert.deepEqual(sorted(toolsOf(MARKET_TASK)), ["lookup", "read", "web_get"]);
 				assert.deepEqual(sorted(toolsOf(NEWS_TASK)), sorted(["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup"]));
 				assert.ok(!toolsOf(WEATHER.brief).includes("dispatch_agent"));
-				assert.deepEqual(sorted(toolsOf(WEATHER.brief)), sorted(toolsOf(TASK.brief).filter((name) => name !== "dispatch_agent")), "除了派活，两种助手的工具一样");
+				assert.ok(toolsOf(TASK.brief).includes("lookup") && !toolsOf(WEATHER.brief).includes("lookup"), "只有领域开了 lookup 的助手能查数据");
+				assert.deepEqual(sorted(toolsOf(WEATHER.brief)), sorted(toolsOf(TASK.brief).filter((name) => !["dispatch_agent", "lookup"].includes(name))), "除了派活和 lookup，两种助手的工具一样");
 			});
 		},
 		{ files: STATE_FILES, config: { dispatchTimeoutSeconds: 30 } },

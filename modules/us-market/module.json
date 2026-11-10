@@ -3,6 +3,7 @@
   "title": "美股行情",
   "description": "美股行情、个股涨跌和原因、技术面、财报和相关新闻",
   "team": "看盘队",
+  "tools": ["lookup"],
   "sources": [
     {
       "name": "us-market",

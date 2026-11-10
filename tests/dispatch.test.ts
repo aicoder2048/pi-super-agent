@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { DISPATCH_NEXT, DispatchDesk, REPLY_MAX, SlotPool, clipReply, keepReply, memberSessionDir, parseDispatch, replyEnvelope, stallNote, timeoutNote, type DispatchOutcome, type DispatchResult, type DispatchState, type MemberLimit, type MemberRun } from "../src/host/dispatch.ts";
 import { HostConnection } from "../src/client/connection.ts";
 import { ModelSelector } from "../src/model-selector.ts";
+import { Modules } from "../src/modules.ts";
 import type { Member } from "../src/teams.ts";
 import { domainsOf, ids, startHost, until, type Brain, type FakeSpawner, type FakeWorker } from "./helpers/fakes.ts";
 
@@ -187,7 +188,12 @@ const member = (name: string, title: string, over: Partial<Member> = {}): Member
 const CREW = [member("market-analyst", "行情分析师", { model: MARKET_MODEL }), member("news-researcher", "新闻研究员")];
 const READER = member("reader", "资料员", { tools: ["read", "web_get", "lookup"] });
 const CODER = member("coder", "程序员", { tools: ["read", "bash", "edit"] });
-const LOADED = domainsOf({ watch: { team: "看盘队", crew: CREW }, dev: { team: "开发队", crew: [READER, CODER] } });
+const plainModules = mkdtempSync(join(tmpdir(), "psa-plain-"));
+mkdirSync(join(plainModules, "plain/agents"), { recursive: true });
+writeFileSync(join(plainModules, "plain/module.json"), JSON.stringify({ name: "plain", team: "杂务队" }));
+writeFileSync(join(plainModules, "plain/agents/clerk.md"), "---\nname: clerk\ntitle: 文书\ndescription: 打杂\n---\n你是文书。\n");
+const PLAIN_CREW = Modules.load([plainModules]).kitFor("plain")!.crew;
+const LOADED = domainsOf({ watch: { team: "看盘队", crew: CREW }, dev: { team: "开发队", crew: [READER, CODER], lookup: true }, plain: { team: "杂务队", crew: PLAIN_CREW } });
 const REMOVED_MODULE = "old";
 const DOMAINS = { book: new Map([...LOADED.book, [REMOVED_MODULE, { team: "旧队", onRoster: true }]]), kitFor: LOADED.kitFor };
 
@@ -963,6 +969,25 @@ test("成员的令牌只能经宿主查数据：不能汇报、交回、读任�
 	assert.doesNotMatch(replies["worker.lookup"], /成员只能|令牌/);
 	assert.notEqual(memberToken, started.helper().spec.token);
 	assert.throws(() => host!.workers.handleRequest(started.ticketId(), memberToken, "worker.lookup", {}), /令牌不符/, "做完之后成员的令牌作废");
+});
+
+test("成员查数据要它自己的工具里有 lookup：工具里没写 lookup 的成员，和领域没开 lookup 时没写工具清单的成员，都被宿主拒绝", async (t) => {
+	const lookups = async (domain: string, calls: Call[]) => {
+		const replies: Record<string, string> = {};
+		let host: Awaited<ReturnType<typeof dispatching>>["host"] | undefined;
+		const started = await dispatching(t, async (run) => {
+			await until(() => host !== undefined, "测试拿到宿主");
+			replies[run.member.name] = String(await Promise.resolve().then(() => host!.workers.handleRequest(run.ticketId, run.token, "worker.lookup", { source: "nowhere", op: "quote" })).catch((e: Error) => e.message));
+			return "答";
+		}, calls, { domain });
+		host = started.host;
+		await started.results();
+		return replies;
+	};
+	const dev = await lookups("dev", devPair);
+	assert.doesNotMatch(dev.reader, /不能用 lookup|成员只能|令牌/);
+	assert.match(dev.coder, /不能用 lookup/);
+	assert.match((await lookups("plain", [{ agent: "clerk", task: "查价" }])).clerk, /不能用 lookup/);
 });
 
 test("没有领域的助手没有成员可派：进程拿到的本队名单是空的，派活请求被拒", async (t) => {

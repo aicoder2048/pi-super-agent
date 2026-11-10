@@ -4,6 +4,7 @@ import { ConfigError, readJsonFile } from "./config-error.ts";
 import { CONVERSATION_SOURCE, ruleId, type DomainBook, type SourcePolicy } from "./kernel/types.ts";
 import type { TimerEntry } from "./sources/timer.ts";
 import { loadTeam, type Member, type Team } from "./teams.ts";
+import { MEMBER_TOOLS, DOMAIN_GATED_TOOLS, type DomainGatedTool } from "./worker/tools.ts";
 
 export interface SourceFilter {
 	name: string;
@@ -25,6 +26,8 @@ export interface ModuleManifest {
 	description?: string;
 	/** The team's display name. Written exactly when `agents/` holds a member. */
 	team?: string;
+	/** The tools this domain turns on for its helper and members. Absent: none. */
+	tools?: DomainGatedTool[];
 	sources?: SourceFilter[];
 	timers?: TimerEntry[];
 	prepare?: string;
@@ -45,12 +48,13 @@ export interface DomainKit {
 	skillsDir: string | undefined;
 	/** Runs once in the ticket's workdir before the helper first starts. Never for an inference ticket. */
 	prepare: string | undefined;
-	/** The module's members the helper may dispatch to, each with the module's `skills/` ahead of its own. Empty: it works alone. */
+	/** The module's members the helper may dispatch to, each with the module's `skills/` ahead of its own and `tools` capped by what the domain turns on. Empty: it works alone. */
 	crew: readonly Member[];
+	mayLookup: boolean;
 }
 
 /** The kit of a ticket with no domain, or whose module is gone. */
-export const NO_DOMAIN: DomainKit = { skillsDir: undefined, prepare: undefined, crew: [] };
+export const NO_DOMAIN: DomainKit = { skillsDir: undefined, prepare: undefined, crew: [], mayLookup: false };
 
 /** The loaded modules as the host uses them once tickets belong to them. `Modules` is the real one. */
 export interface Domains {
@@ -101,6 +105,23 @@ export function parseRules(file: string, namespace: string, markdown: string): R
 	return rules.map((r) => ({ ...r, text: r.text.trim() })).filter((r) => r.text);
 }
 
+function checkModuleTools(manifestPath: string, tools: unknown, team: Team | undefined): void {
+	const isGated = (t: unknown) => (DOMAIN_GATED_TOOLS as readonly unknown[]).includes(t);
+	if (tools !== undefined && (!Array.isArray(tools) || !tools.length || !tools.every(isGated))) {
+		throw new ConfigError(`${manifestPath}：tools（${JSON.stringify(tools)}）写成要开的工具列表，例如 ["lookup"]；能开的只有 ${DOMAIN_GATED_TOOLS.join("、")}，不开就去掉这个字段`);
+	}
+	const granted: readonly unknown[] = tools ?? [];
+	for (const member of team?.members ?? []) {
+		const withheld = member.tools?.find((t) => isGated(t) && !granted.includes(t));
+		if (withheld) throw new ConfigError(`${member.file}：tools 里的 ${withheld} 要模块开了才有：在 ${manifestPath} 写 "tools": ["${withheld}"]，或从这位成员的 tools 去掉`);
+	}
+}
+
+function cappedTools(own: readonly string[] | undefined, granted: readonly DomainGatedTool[]): readonly string[] | undefined {
+	const withheld: readonly string[] = DOMAIN_GATED_TOOLS.filter((t) => !granted.includes(t));
+	return withheld.length ? (own ?? MEMBER_TOOLS).filter((t) => !withheld.includes(t)) : own;
+}
+
 function loadModule(dir: string, allowedProviders: readonly string[]): LoadedModule {
 	const manifestPath = join(dir, "module.json");
 	const manifest = readJsonFile<ModuleManifest>(manifestPath);
@@ -128,6 +149,8 @@ function loadModule(dir: string, allowedProviders: readonly string[]): LoadedMod
 			}
 		}
 	}
+	const team = loadTeam(dir, manifestPath, manifest.team, allowedProviders);
+	checkModuleTools(manifestPath, manifest.tools, team);
 	const rulesPath = join(dir, "rules.md");
 	const skillsDir = join(dir, "skills");
 	const moduleSources = [manifest.name, ...(manifest.sources ?? []).map((s) => s.name), ...(manifest.timers ?? []).map((t) => t.source ?? manifest.name)];
@@ -138,7 +161,7 @@ function loadModule(dir: string, allowedProviders: readonly string[]): LoadedMod
 		manifest,
 		rules: rules.map((r) => ({ ...r, sources: r.sources ?? [...new Set(moduleSources)] })),
 		skillsDir: existsSync(skillsDir) ? skillsDir : undefined,
-		team: loadTeam(dir, manifestPath, manifest.team, allowedProviders),
+		team,
 	};
 }
 
@@ -226,7 +249,13 @@ export class Modules implements Domains {
 		if (!module) return undefined;
 		const { skillsDir } = module;
 		const shared = skillsDir ? [skillsDir] : [];
-		return { skillsDir, prepare: module.manifest.prepare, crew: (module.team?.members ?? []).map((m) => ({ ...m, skills: [...shared, ...m.skills] })) };
+		const granted = module.manifest.tools ?? [];
+		return {
+			skillsDir,
+			prepare: module.manifest.prepare,
+			crew: (module.team?.members ?? []).map((m) => ({ ...m, skills: [...shared, ...m.skills], tools: cappedTools(m.tools, granted) })),
+			mayLookup: granted.includes("lookup"),
+		};
 	};
 
 	ruleAllows = (ruleId: string, triggerSource: string): boolean => {

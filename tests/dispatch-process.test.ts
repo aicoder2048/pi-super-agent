@@ -129,9 +129,18 @@ test("成员进程拿不到密钥类变量；扩展以成员身份运行：带�
 	assert.equal(env.PSA_TICKET, "tkt_helper");
 	assert.equal(env.PSA_TOKEN, "token-m");
 	assert.equal(env.PSA_BASIS, "inference");
-	assert.equal(env.PSA_LOOKUPS, "us-market quote");
 	assert.equal(env.PSA_CREW, undefined, "成员不能再往下派");
 	assert.equal(env.PSA_CALL_ID, "call-m", "成员进程知道这是助手的哪一次派活");
+});
+
+test("成员的工具里有 lookup 才拿到宿主给的可查来源；工具里没有 lookup 的成员，--tools 和环境里都没有它", async (t) => {
+	const { run, read } = setup(t);
+	await run(member({ name: "quoter", tools: ["read", "lookup"] }), "q", "inference");
+	assert.deepEqual(flag(read("argv-q.json"), "--tools")!.split(","), ["read", "lookup"]);
+	assert.equal(read("env-q.json").PSA_LOOKUPS, "us-market quote");
+	await run(MARKET, "m");
+	assert.ok(!flag(read("argv-m.json"), "--tools")!.split(",").includes("lookup"));
+	assert.equal(read("env-m.json").PSA_LOOKUPS, undefined);
 });
 
 test("模型出错时这次派活失败并带上错误", async (t) => {
