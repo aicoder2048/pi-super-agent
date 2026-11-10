@@ -71,7 +71,7 @@ export function parseMember(file: string, content: string, allowedProviders: rea
 	if (fm.model !== undefined) {
 		model = parseModelRef(text(fm.model, file, "model"), `${file}：model`);
 		if (!allowedProviders.includes(model.provider)) {
-			throw new ConfigError(`${file}：model：拒绝使用 ${model.provider}/${model.id}，成员只能用 config.json 里 router 或 worker 已经在用的提供方：${allowedProviders.join("、")}`);
+			throw new ConfigError(`${file}：model：拒绝使用 ${model.provider}/${model.id}，成员只能用 config.json 里 router 或 worker 已经在用的提供方${allowedProviders.length ? `：${allowedProviders.join("、")}` : "，而这次加载没有交代任何提供方"}`);
 		}
 	}
 	const description = text(fm.description, file, "description");

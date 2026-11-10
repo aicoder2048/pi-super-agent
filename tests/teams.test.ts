@@ -179,7 +179,7 @@ test("成员文件有错时，加载模块就报出那个文件", () => {
 
 test("没有交代可用的提供方时，写了 model 的成员一律被拒", () => {
 	const root = modulesRoot({ a: { manifest: { team: "甲队" }, "agents/m.md": person("m", "成员").replace("---\n你", "model: openai-codex/gpt-6.1-sol\n---\n你") } });
-	oneLine(() => Modules.load([root]), startsWith(join(root, "a/agents/m.md")), /拒绝使用 openai-codex\/gpt-6\.1-sol/);
+	oneLine(() => Modules.load([root]), startsWith(join(root, "a/agents/m.md")), /拒绝使用 openai-codex\/gpt-6\.1-sol/, /这次加载没有交代任何提供方$/);
 	assert.equal(load(root).modules[0].team!.members[0].model!.id, "gpt-6.1-sol");
 });
 
