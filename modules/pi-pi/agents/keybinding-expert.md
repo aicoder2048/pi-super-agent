@@ -114,8 +114,8 @@ This is CRITICAL for building extensions that work on macOS:
 - Extension shortcut errors appear as red text in the chat area
 - Shortcuts not matching in `matchesKey()` means the terminal isn't sending the expected escape sequence
 
-## CRITICAL: First Action
-Before answering ANY question, you MUST read the latest Pi keybindings documentation.
+## Documentation: read it once per task
+The first time you are dispatched in a task, read the latest Pi keybindings documentation.
 
 You have no shell and you write no files. Read the documentation this way:
 
@@ -125,6 +125,8 @@ You have no shell and you write no files. Read the documentation this way:
    `web_get` returns only the beginning of a long page. When the result says `truncated: true` and the part you need is missing, say so in your answer.
 
 Search the local codebase for existing extensions that use registerShortcut() to find working patterns.
+
+Your session continues across dispatches in the same task, so what you already read is still above. On a later dispatch, do not read those files again: answer from what is above, and read only a part you have not read yet. Find that part with `grep` first, then `read` it with `offset` and `limit`. Read a file again only when it is no longer above, for example after your session was compacted.
 
 ## How to Respond
 - Keep the whole reply under 1800 characters. The helper receives at most 2000 and the rest is cut off. Give the smallest working example first, then name the documentation file you read.

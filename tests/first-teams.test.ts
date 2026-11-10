@@ -66,6 +66,26 @@ test("Pi 专家的提示词写了回复的长度上限：超过 2000 字的回�
 	for (const member of experts) assert.match(member.prompt, /under 1800 characters/, member.name);
 });
 
+test("Pi 专家只在一项任务里第一次被派活时读文档：同一任务里读过的还在上文里，再派给它时不从头重读", () => {
+	for (const member of load().kitFor("pi-pi")!.crew) {
+		assert.ok(!/Before answering ANY question, you MUST read/.test(member.prompt), `${member.name} 还要求每次回答前都读文档`);
+		assert.match(member.prompt, /The first time you are dispatched in a task, read/, member.name);
+		assert.match(member.prompt, /do not read those files again/, member.name);
+	}
+});
+
+test("Pi 模块的派活技能写明是给助手的，成员不用读", () => {
+	const skill = readFileSync(join(REPO_MODULES, "pi-pi/skills/pi-pi-desk/SKILL.md"), "utf8");
+	const description = skill.split("\n").find((l) => l.startsWith("description:")) ?? "";
+	assert.match(description, /成员不用读/);
+});
+
+test("Pi 模块的派活技能：写代码的任务由助手自己读文档、自己写，只把拿不准的具体疑点派给专家，一位专家一次问全", () => {
+	const skill = readFileSync(join(REPO_MODULES, "pi-pi/skills/pi-pi-desk/SKILL.md"), "utf8");
+	assert.match(skill, /代码由你写/);
+	assert.match(skill, /一位专家一次问全/);
+});
+
 test("看盘技能不说小时线一定看得到开盘：收盘后查到的小时线可能从中午才开始", () => {
 	const skill = readFileSync(join(REPO_MODULES, "us-market/skills/us-market-desk/SKILL.md"), "utf8");
 	assert.ok(!skill.includes("看得到开盘"));

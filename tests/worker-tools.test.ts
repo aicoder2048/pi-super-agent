@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { workerArgs } from "../src/host/pi-worker.ts";
+import { MEMBER_PROMPT, workerArgs } from "../src/host/pi-worker.ts";
 import { canCode, memberTools, toolAllowlist } from "../src/worker/tools.ts";
 
 const base = { sessionDir: "/s", sessionId: "sid", extension: "/ext.ts", prompt: "p" };
@@ -61,4 +61,9 @@ test("能写文件、改文件或执行命令的成员算写代码的：按这�
 	assert.equal(canCode(memberTools("request", ["read", "grep", "web_get", "lookup"])), false);
 	assert.equal(canCode(memberTools("inference", ["read", "bash", "write"])), false, "推断任务里它只读");
 	assert.equal(canCode([]), false);
+});
+
+test("成员的提示词：同一任务里读过的文件还在上文，再派给它时不重读；长文件先 grep 定位，再只读需要的那一段", () => {
+	assert.match(MEMBER_PROMPT, /读过的文件还在上文里.*不要重读/);
+	assert.match(MEMBER_PROMPT, /先用 grep 找到位置/);
 });
