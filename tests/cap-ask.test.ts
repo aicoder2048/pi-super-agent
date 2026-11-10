@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import http from "node:http";
 import { connect } from "node:net";
+import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { HostConnection } from "../src/client/connection.ts";
 import type { HostToClient } from "../src/client/protocol.ts";
@@ -342,6 +344,8 @@ function storeBroken(host: { kernel: { capAsks: { save: unknown } } }, error: Er
 	return () => void (capAsks.save = save);
 }
 
+const clientHello = (socketPath: string) => ({ type: "hello", role: "client", token: readFileSync(join(dirname(socketPath), "client-token"), "utf8").trim() });
+
 async function answerOverSocket(socketPath: string, hello: object, requestId: string, option = 0) {
 	const socket = connect(socketPath);
 	const replies: Record<string, unknown>[] = [];
@@ -358,7 +362,7 @@ test("点了放宽而状态库写不进去：宿主照常运行，TUI 和网页�
 	const { host, count, cap, capLogs, logs } = await wholeCrewDispatched(t, { webPort: 0 });
 	await until(() => count("queued") === 2, "一位在做两位排队");
 	const mend = storeBroken(host, new Error("SQLITE_FULL: database or disk is full"));
-	assert.deepEqual(await answerOverSocket(host.socketPath, { type: "hello", role: "client" }, "r1"), { type: "refused", requestId: "r1", reason: "宿主内部出错，这次点选没有生效，请再点一次；详情见宿主日志。" });
+	assert.deepEqual(await answerOverSocket(host.socketPath, clientHello(host.socketPath), "r1"), { type: "refused", requestId: "r1", reason: "宿主内部出错，这次点选没有生效，请再点一次；详情见宿主日志。" });
 	const url = new URL(host.webUrl!);
 	const post = () => fetch(`${url.origin}/say${url.search}`, { method: "POST", headers: { "content-type": "application/json", origin: url.origin }, body: JSON.stringify({ answer: { reportId: ASK, option: 0 } }) });
 	assert.equal((await post()).status, 500);
@@ -367,7 +371,7 @@ test("点了放宽而状态库写不进去：宿主照常运行，TUI 和网页�
 	assert.equal(capLogs().length, 1, capLogs().join("\n"));
 	assert.equal(logs.filter((l) => l.startsWith("[socket] 客户端 answer 出错：") && l.includes("SQLITE_FULL")).length, 1, logs.join("\n"));
 	mend();
-	assert.equal((await answerOverSocket(host.socketPath, { type: "hello", role: "client" }, "r2")).type, "ack");
+	assert.equal((await answerOverSocket(host.socketPath, clientHello(host.socketPath), "r2")).type, "ack");
 	await until(() => count("running") === 3, "三位都在做", 500);
 	assert.deepEqual(host.snapshot().conversation.filter((l) => l.id === ASK).map((l) => l.text), [SAID]);
 });
