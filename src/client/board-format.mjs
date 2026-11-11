@@ -167,6 +167,7 @@ const TOOL_STEP = {
 	write: (a) => ({ icon: "pencil", title: "写入文件", detail: baseName(a.path) }),
 	web_get: (a) => ({ icon: "globe", title: "读取网页", detail: hostOf(a.url) }),
 	lookup: (a) => lookupStep(a),
+	new_app: (a) => ({ icon: "folder", title: "开应用目录", detail: clip(a.short, 24) }),
 	read_ticket: () => ({ icon: "ticket", title: "查阅任务记录", detail: "" }),
 	hand_back: () => ({ icon: "return", title: "交回幕僚长", detail: "" }),
 	bg_start: (a) => ({ icon: "terminal", title: "启动后台命令", detail: clip(firstLine(a.command), 60) }),

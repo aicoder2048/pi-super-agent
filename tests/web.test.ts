@@ -1907,7 +1907,11 @@ test("页面：展开一次派活能看到成员自己的步骤：干活时一�
 	assert.deepEqual(page.liveSteps(cut, view)[0].dispatch!.steps.map((s) => s.state), ["ok", "stopped"], "成员被结束时没做完的那一步也停下");
 });
 
-const TOOL_NAMES = ["read", "grep", "find", "ls", "bash", "edit", "write", "web_get", "lookup", "read_ticket", "hand_back", "bg_start", "bg_status", "bg_stop", "report", "dispatch_agent"];
+const TOOL_NAMES = ["read", "grep", "find", "ls", "bash", "edit", "write", "web_get", "lookup", "new_app", "read_ticket", "hand_back", "bg_start", "bg_status", "bg_stop", "report", "dispatch_agent"];
+
+test("页面：new_app 的步骤叫「开应用目录」，明细是短名", () => {
+	assert.deepEqual(format.toolStep("new_app", { short: "joke" }), { icon: "folder", title: "开应用目录", detail: "joke" });
+});
 
 test("页面：每种工具的步骤都有一个图标，未知工具用通用图标；index.html 的图标模板和图标名单一一对应", () => {
 	for (const name of TOOL_NAMES) assert.ok((format.STEP_ICONS as readonly string[]).includes(format.toolStep(name, {}).icon), `${name} → ${format.toolStep(name, {}).icon}`);
