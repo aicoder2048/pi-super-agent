@@ -30,7 +30,7 @@ test("Worker 连接上的请求可以异步完成：宿主等结果出来再回�
 	assert.deepEqual(replies.sort((a, b) => a.id - b.id), [{ id: 1, ok: true, result: { price: 142.85 } }, { id: 2, ok: false, error: "查不到" }]);
 });
 
-const DOMAINS = domainsOf({ quotes: { lookup: true }, mail: {} });
+const DOMAINS = domainsOf({ quotes: { tools: ["lookup"] }, mail: {} });
 
 async function lookupsIn(t: import("node:test").TestContext, domain: string | undefined) {
 	const results: unknown[] = [];

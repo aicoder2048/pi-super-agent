@@ -217,14 +217,14 @@ test("拿掉 us-market 模块：加载不报错，它的领域、队伍和成员
 	assert.equal(modules.kitFor("pi-pi")!.crew.length, 9);
 });
 
-test("只有 us-market 的 module.json 开了 lookup：美股看盘队的助手和四位成员都能查数据，pi-pi 和 toy-market 的都不能", () => {
+test("只有 us-market 的 module.json 开了 lookup 和 tripwire：美股看盘队的助手和四位成员都能查数据，助手能改盯盘条件，pi-pi 和 toy-market 的都不能", () => {
 	const modules = load();
 	const kit = modules.kitFor("us-market")!;
-	assert.equal(kit.mayLookup, true);
+	assert.deepEqual(kit.granted, ["lookup", "tripwire"]);
 	for (const member of kit.crew) assert.ok(memberTools("request", member.tools).includes("lookup"), member.name);
 	for (const domain of ["pi-pi", "toy-market"]) {
 		const other = modules.kitFor(domain)!;
-		assert.equal(other.mayLookup, false, domain);
+		assert.deepEqual(other.granted, [], domain);
 		for (const member of other.crew) assert.ok(!memberTools("request", member.tools).includes("lookup"), member.name);
 	}
 });

@@ -366,7 +366,7 @@ export class WorkerExecutor {
 
 	#mayLookup(ticketId: string, holder: Member | undefined): boolean {
 		const { basis, domain } = this.#o.kernel.getTicket(ticketId)!;
-		return holder ? memberTools(basis, holder.tools).includes("lookup") : this.#kitFor(ticketId, domain).mayLookup;
+		return holder ? memberTools(basis, holder.tools).includes("lookup") : this.#kitFor(ticketId, domain).granted.includes("lookup");
 	}
 
 	#kitFor(ticketId: string, domain: string | null): DomainKit {

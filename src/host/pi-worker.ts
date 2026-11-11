@@ -134,7 +134,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 				PSA_BASIS: spec.basis,
 				...(spec.crew.length && { PSA_CREW: spec.crew.map((m) => m.name).join(",") }),
 				PSA_BG_MAX_MS: String(this.#o.bgMaxMs ?? 120 * 60_000),
-				...this.#lookupEnv(spec.mayLookup),
+				...this.#lookupEnv(spec.granted.includes("lookup")),
 			},
 		});
 		let streaming = false;

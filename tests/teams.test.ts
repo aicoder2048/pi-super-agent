@@ -6,7 +6,7 @@ import test from "node:test";
 import { ConfigError } from "../src/config-error.ts";
 import { Modules, NO_DOMAIN } from "../src/modules.ts";
 import { parseMember } from "../src/teams.ts";
-import { MEMBER_TOOLS } from "../src/worker/tools.ts";
+import { MEMBER_TOOLS, memberTools } from "../src/worker/tools.ts";
 
 function agentsDir(files: Record<string, string>): string {
 	const dir = mkdtempSync(join(tmpdir(), "psa-agents-"));
@@ -253,7 +253,7 @@ test("按领域取助手要的东西：模块的 skills/、prepare 和成员；�
 	const watch = kitFor("watch")!;
 	assert.deepEqual([watch.skillsDir, watch.prepare], [shared, "npm ci"]);
 	assert.deepEqual(watch.crew.map((m) => [m.name, m.title, m.skills]), [["market-analyst", "行情分析师", [shared]], ["news-researcher", "新闻研究员", [shared, join(root, "watch/agents/own")]]]);
-	assert.deepEqual(kitFor("mail"), { skillsDir: join(root, "mail/skills"), prepare: undefined, crew: [], mayLookup: false });
+	assert.deepEqual(kitFor("mail"), { skillsDir: join(root, "mail/skills"), prepare: undefined, crew: [], granted: [] });
 	assert.deepEqual([kitFor("bare")!.skillsDir, kitFor("bare")!.crew[0].skills], [undefined, []]);
 	assert.equal(kitFor("gone"), undefined);
 });
@@ -322,23 +322,34 @@ const withTools = (text: string, tools: string) => text.replace("---\n你", `too
 test("module.json 的 tools 写成 [\"lookup\"]：这个领域的助手能查数据，成员的工具清单原样不动", () => {
 	const root = modulesRoot({ watch: { manifest: { team: "看盘队", tools: ["lookup"] }, "agents/a.md": person("market-analyst", "行情分析师"), "agents/b.md": withTools(person("chart-reader", "看图"), "read, lookup") } });
 	const kit = load(root).kitFor("watch")!;
-	assert.equal(kit.mayLookup, true);
+	assert.deepEqual(kit.granted, ["lookup"]);
 	assert.deepEqual(kit.crew.map((m) => [m.name, m.tools]), [["market-analyst", undefined], ["chart-reader", ["read", "lookup"]]]);
 });
 
 test("module.json 没写 tools：这个领域的助手不能查数据，没写工具清单的成员拿到除 lookup 以外的全部成员工具", () => {
 	const root = modulesRoot({ mail: { manifest: { team: "邮件队" }, "agents/a.md": person("clerk", "文书"), "agents/b.md": withTools(person("reader", "读信"), "read, web_get") } });
 	const kit = load(root).kitFor("mail")!;
-	assert.equal(kit.mayLookup, false);
+	assert.deepEqual(kit.granted, []);
 	assert.deepEqual(kit.crew.map((m) => [m.name, m.tools]), [["clerk", MEMBER_TOOLS.filter((t) => t !== "lookup")], ["reader", ["read", "web_get"]]]);
 });
 
-test("没有领域的任务不能查数据", () => assert.equal(NO_DOMAIN.mayLookup, false));
+test("没有领域的任务不能查数据", () => assert.deepEqual(NO_DOMAIN.granted, []));
 
-test("module.json 的 tools 写错（不是列表、空列表、不能由模块开的工具、不是字符串）：启动报一行错，以 module.json 开头，说明能开的只有 lookup", () => {
+test("module.json 的 tools 可以开 tripwire：这个领域的助手能改盯盘条件，成员拿不到它", () => {
+	const root = modulesRoot({ watch: { manifest: { team: "看盘队", tools: ["tripwire"] }, "agents/a.md": person("market-analyst", "行情分析师") } });
+	const kit = load(root).kitFor("watch")!;
+	assert.deepEqual(kit.granted, ["tripwire"]);
+	assert.ok(!memberTools("request", kit.crew[0].tools).includes("tripwire"));
+});
+
+test("成员的 tools 写了 tripwire：启动报错，说明成员不能改盯盘条件", () => {
+	memberFails(member("tools: read, tripwire\n"), /tools 里的 tripwire 只有使用者在对话里开的任务的助手能用，成员不能改盯盘条件/);
+});
+
+test("module.json 的 tools 写错（不是列表、空列表、不能由模块开的工具、不是字符串）：启动报一行错，以 module.json 开头，说明能开的是 lookup、tripwire", () => {
 	for (const tools of ["lookup", [], ["bash"], [1], ["lookup", "web_get"]]) {
 		const root = modulesRoot({ watch: { manifest: { tools } } });
-		oneLine(() => load(root), startsWith(join(root, "watch/module.json")), /tools/, /lookup/);
+		oneLine(() => load(root), startsWith(join(root, "watch/module.json")), /tools/, /能开的只有 lookup、tripwire/);
 	}
 });
 

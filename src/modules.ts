@@ -50,11 +50,11 @@ export interface DomainKit {
 	prepare: string | undefined;
 	/** The module's members the helper may dispatch to, each with the module's `skills/` ahead of its own and `tools` capped by what the domain turns on. Empty: it works alone. */
 	crew: readonly Member[];
-	mayLookup: boolean;
+	granted: readonly DomainGatedTool[];
 }
 
 /** The kit of a ticket with no domain, or whose module is gone. */
-export const NO_DOMAIN: DomainKit = { skillsDir: undefined, prepare: undefined, crew: [], mayLookup: false };
+export const NO_DOMAIN: DomainKit = { skillsDir: undefined, prepare: undefined, crew: [], granted: [] };
 
 /** The loaded modules as the host uses them once tickets belong to them. `Modules` is the real one. */
 export interface Domains {
@@ -118,7 +118,7 @@ function checkModuleTools(manifestPath: string, tools: unknown, team: Team | und
 }
 
 function cappedTools(own: readonly string[] | undefined, granted: readonly DomainGatedTool[]): readonly string[] | undefined {
-	const withheld: readonly string[] = DOMAIN_GATED_TOOLS.filter((t) => !granted.includes(t));
+	const withheld: readonly string[] = DOMAIN_GATED_TOOLS.filter((t) => !granted.includes(t) && MEMBER_TOOLS.includes(t));
 	return withheld.length ? (own ?? MEMBER_TOOLS).filter((t) => !withheld.includes(t)) : own;
 }
 
@@ -254,7 +254,7 @@ export class Modules implements Domains {
 			skillsDir,
 			prepare: module.manifest.prepare,
 			crew: (module.team?.members ?? []).map((m) => ({ ...m, skills: [...shared, ...m.skills], tools: cappedTools(m.tools, granted) })),
-			mayLookup: granted.includes("lookup"),
+			granted,
 		};
 	};
 

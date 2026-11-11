@@ -193,7 +193,7 @@ mkdirSync(join(plainModules, "plain/agents"), { recursive: true });
 writeFileSync(join(plainModules, "plain/module.json"), JSON.stringify({ name: "plain", team: "杂务队" }));
 writeFileSync(join(plainModules, "plain/agents/clerk.md"), "---\nname: clerk\ntitle: 文书\ndescription: 打杂\n---\n你是文书。\n");
 const PLAIN_CREW = Modules.load([plainModules]).kitFor("plain")!.crew;
-const LOADED = domainsOf({ watch: { team: "看盘队", crew: CREW }, dev: { team: "开发队", crew: [READER, CODER], lookup: true }, plain: { team: "杂务队", crew: PLAIN_CREW } });
+const LOADED = domainsOf({ watch: { team: "看盘队", crew: CREW }, dev: { team: "开发队", crew: [READER, CODER], tools: ["lookup"] }, plain: { team: "杂务队", crew: PLAIN_CREW } });
 const REMOVED_MODULE = "old";
 const DOMAINS = { book: new Map([...LOADED.book, [REMOVED_MODULE, { team: "旧队", onRoster: true }]]), kitFor: LOADED.kitFor };
 

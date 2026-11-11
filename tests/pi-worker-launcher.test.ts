@@ -31,7 +31,7 @@ async function spawnWorker(t: TestContext, fakePi: string, resume = false) {
 	const dir = mkdtempSync(join(tmpdir(), "psa-launch-"));
 	writeFileSync(join(dir, "fake-pi.mjs"), RESPOND + fakePi);
 	const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath: join(dir, "fake-pi.mjs") });
-	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", crew: [], token: "t", model: { provider: "openai-codex", id: "gpt" }, resume }, events);
+	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", crew: [], granted: [], token: "t", model: { provider: "openai-codex", id: "gpt" }, resume }, events);
 	await until(() => existsSync(join(dir, "pi.pid")), "Pi 已启动");
 	const pids = () => ["pi.pid", "child.pid"].filter((f) => existsSync(join(dir, f))).map((f) => Number(readFileSync(join(dir, f), "utf8")));
 	t.after(() => {
