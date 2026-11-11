@@ -311,7 +311,7 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 		consoleStream.end();
 		throw error;
 	});
-	const root = mkdtempSync(join(tmpdir(), "psa-e2e-"));
+	const root = mkdtempSync(join(tmpdir(), `psa-e2e-${process.pid}-`));
 	const env = { ...fakeAgentEnv(fake, join(root, "pi")), ...options.env };
 	const pages: Page[] = [];
 	const contexts: BrowserContext[] = [];

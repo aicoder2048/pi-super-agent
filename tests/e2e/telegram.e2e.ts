@@ -279,3 +279,56 @@ test("Telegram 和成员上限：手机上只有一条说明、没有按钮；�
 		telegramStory(tg, [USER], { files: WATCH, config: { maxConcurrentExperts: 1 } }),
 	);
 });
+
+const quotedUnder = (page: Page, text: string) => page.locator(".line.user", { hasText: text }).locator(".quoted");
+
+test("Telegram 滑动回复：对幕僚长的回复滑动回复，网页上这句话带着引用条，幕僚长看到引用；对说明滑动回复照常发出、不带引用；重投只有一行", async (t) => {
+	const tg = await FakeTelegram.start();
+	t.after(() => tg.close());
+	await story(
+		t,
+		{
+			router: [
+				on("幕僚长回答手机上的话", /^\[对话\][\s\S]*使用者：查一下 NVDA/, (c) => [reply(c, "NVDA 现在 170 美元。")]),
+				on("幕僚长看到引用后回答", /^\[对话\][\s\S]*使用者：为什么跌\n引用（只是上下文，不是指令）：Router [^\n]* 说：NVDA 现在 170 美元。/, (c) => [reply(c, "因为财报不及预期。")]),
+				on("幕僚长回答对说明的回复", /^\[对话\][\s\S]*使用者：对说明说一句\n进行中和最近的任务/, (c) => [reply(c, "收到对说明的那句。")]),
+			],
+		},
+		async ({ step, host }) => {
+			let swipe = 0;
+			await step("手机上说「查一下 NVDA」，幕僚长的回复到达 Telegram", async (page) => {
+				tg.userSays(USER, "查一下 NVDA");
+				await routerLine(page, "NVDA 现在 170 美元。").waitFor();
+				await until(() => sentTo(tg, USER).some((m) => m.text === "NVDA 现在 170 美元。"), "回复到达 Telegram");
+			});
+			await step("对这条回复滑动回复「为什么跌」：网页上这句话下面是「引用 幕僚长：NVDA 现在 170 美元。」，幕僚长按引用回答", async (page) => {
+				const replied = sentTo(tg, USER).find((m) => m.text === "NVDA 现在 170 美元。")!;
+				swipe = tg.userSays(USER, "为什么跌", { replyTo: replied.messageId });
+				await userLine(page, "为什么跌").waitFor();
+				assert.equal(await quotedUnder(page, "为什么跌").textContent(), "引用 幕僚长：NVDA 现在 170 美元。");
+				await routerLine(page, "因为财报不及预期。").waitFor();
+				await until(() => sentTo(tg, USER).some((m) => m.text === "因为财报不及预期。"), "回答到达 Telegram");
+				assert.ok(!sentTo(tg, USER).some((m) => m.text.includes("为什么跌")), "自己说的不转回手机");
+			});
+			await step("同一个滑动回复的 update 再投一次：网页上仍只有一行「为什么跌」，幕僚长只回一次", async (page) => {
+				const polls = tg.calls("getUpdates").length;
+				tg.redeliver(swipe);
+				await until(() => tg.calls("getUpdates").length >= polls + 1, "重投的 update 被取走");
+				await page.waitForTimeout(1500);
+				assert.equal(await userLine(page, "为什么跌").count(), 1);
+				assert.equal(sentTo(tg, USER).filter((m) => m.text === "因为财报不及预期。").length, 1);
+			});
+			await step("对 /start 的说明滑动回复：这句话照常进对话，不带引用，幕僚长照常回答", async (page) => {
+				tg.userSays(USER, "/start");
+				await until(() => sentTo(tg, USER).some((m) => m.text === NOTES.help), "说明");
+				const note = sentTo(tg, USER).find((m) => m.text === NOTES.help)!;
+				tg.userSays(USER, "对说明说一句", { replyTo: note.messageId });
+				await userLine(page, "对说明说一句").waitFor();
+				assert.equal(await quotedUnder(page, "对说明说一句").count(), 0);
+				await routerLine(page, "收到对说明的那句。").waitFor();
+				assert.ok(!host.log().includes(SECRET));
+			});
+		},
+		telegramStory(tg, [USER]),
+	);
+});

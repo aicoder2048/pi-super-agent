@@ -71,6 +71,7 @@ test("两个助手同时在岗：页头两枚小卡，点小卡打开执行过�
 				await chip.click();
 				await page.locator("#how-title", { hasText: SHORT.title }).waitFor();
 				assert.equal(await page.locator("#how-helper").textContent(), `${name} · 对话助手 #2`);
+				await page.locator("#how-life", { hasText: "模型 worker" }).waitFor();
 				assert.match(await page.locator("#how-life").textContent() ?? "", /^开始 \d\d:\d\d · 进行中 · 用时 .+ · 模型 worker · 工具 \d+ 次 · tokens 入 \S+ \/ 出 \S+$/);
 				const size = await page.evaluate(() => ({ scroll: document.scrollingElement!.scrollHeight, inner: innerHeight }));
 				assert.equal(size.scroll, size.inner, `加上助手条后整页高 ${size.scroll}，窗口高 ${size.inner}`);

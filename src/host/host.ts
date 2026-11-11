@@ -206,7 +206,7 @@ export class Host {
 			this.#log,
 		);
 		// Built before any client can say a line, so every line and reply reaches it; it touches the network only once started.
-		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }) }, db: this.#db, clock, log: this.#log });
+		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }) }, db: this.#db, clock, log: this.#log });
 	}
 
 	static async start(options: HostOptions): Promise<Host> {
@@ -263,11 +263,13 @@ export class Host {
 		return triggerId;
 	}
 
-	sayQuoting(text: string, lineId: string): string | null {
+	/** Null when lineId is not a shown conversation line. A repeated externalId returns the first line's id and changes nothing. */
+	sayQuoting(text: string, lineId: string, { externalId, from }: SayOptions = {}): string | null {
 		const at = Date.now();
-		const said = this.kernel.userSaidQuoting({ text, at, lineId });
+		const said = this.kernel.userSaidQuoting({ text, at, lineId, externalId });
 		if (!said) return null;
-		this.#broadcast({ type: "user", id: said.triggerId, who: "user", text, at, quote: said.quote });
+		if (said.duplicate) return said.triggerId;
+		this.#broadcast({ type: "user", id: said.triggerId, who: "user", text, at, quote: said.quote }, from);
 		this.#changed();
 		return said.triggerId;
 	}

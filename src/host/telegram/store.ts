@@ -143,6 +143,12 @@ export class TelegramStore {
 			.run(chatId, `line:${lineId}`, lineId, JSON.stringify({ kind: "received" } satisfies OutboundBody), messageId, this.#now());
 	}
 
+	/** The conversation line a message in the chat shows; undefined for a card, a note, or a message this store never saw. */
+	lineOf(chatId: number, messageId: number): string | undefined {
+		const row = this.#db.prepare("SELECT line_id FROM telegram_messages WHERE chat_id = ? AND message_id = ?").get(chatId, messageId) as { line_id: string | null } | undefined;
+		return row?.line_id ?? undefined;
+	}
+
 	openCards(chatId: number): CardView[] {
 		const rows = this.#db.prepare(`SELECT body FROM telegram_messages WHERE chat_id = ? AND key LIKE 'ask:%' AND ${CARD_STATUS} != 'closed'`).all(chatId) as { body: string }[];
 		return rows.map((r) => JSON.parse(r.body).view);

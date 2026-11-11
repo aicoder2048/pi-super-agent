@@ -32,6 +32,8 @@ type Board = Pick<BoardState, "rows" | "memberCap">;
 
 export interface TelegramHost {
 	say(text: string, options: SayOptions): string;
+	/** Null when the line cannot be quoted. */
+	sayQuoting(text: string, lineId: string, options: SayOptions): string | null;
 	answer(reportId: string, option: number, options: { from: ImChat }): AnswerResult;
 	board(): Board;
 }
@@ -245,7 +247,9 @@ export class TelegramClient {
 					break;
 				case "say": {
 					this.#openChat(inbound.chatId);
-					const lineId = this.#host.say(inbound.text, { externalId: `tg:${this.#api.botId}:${updateId}`, from: { client: "telegram", chatId: inbound.chatId } });
+					const options: SayOptions = { externalId: `tg:${this.#api.botId}:${updateId}`, from: { client: "telegram", chatId: inbound.chatId } };
+					const quoted = inbound.replyTo === null ? undefined : this.#store.lineOf(inbound.chatId, inbound.replyTo);
+					const lineId = (quoted && this.#host.sayQuoting(inbound.text, quoted, options)) ?? this.#host.say(inbound.text, options);
 					this.#store.received(inbound.chatId, lineId, inbound.messageId);
 					break;
 				}

@@ -282,6 +282,7 @@ async function cardClient(t: TestContext, { allowed = [USER], answer = (): Answe
 	const logs: string[] = [];
 	const host: TelegramHost = {
 		say: () => `trg_${randomUUID()}`,
+		sayQuoting: () => null,
 		answer: (reportId, option, { from }) => {
 			answered.push([reportId, option, from]);
 			return answer();
@@ -595,6 +596,93 @@ test("真宿主：点一次，幕僚长没转交；Telegram 重投这次点的 u
 	await host.settled();
 	assert.equal(userLines(host).filter((l) => l === `回答任务「查天气」：${CITY}`).length, 1, "一次点只答一次");
 	assert.deepEqual(tg.tapAnswers.filter((a) => a.callbackId === "cb-once").map((a) => a.text), ["已发送", "已发送"]);
+});
+
+const lastUserLine = (host: Host) => host.kernel.conversation().filter((l) => l.who === "user").at(-1)!;
+const sentMessage = (tg: FakeTelegram, text: string) => tg.sent.find((m) => m.text === text)!;
+
+async function swipeReplied(tg: FakeTelegram, host: Host, text: string, replyTo: number) {
+	const updateId = tg.userSays(USER, text, { replyTo });
+	await until(() => userLines(host).includes(text), `「${text}」进对话`);
+	return updateId;
+}
+
+test("滑动回复幕僚长的回复：这句话带着引用进对话，网页收到的也带引用，引用的是那条回复；不转回这个聊天", async (t) => {
+	const { host, tg } = await telegramHost(t);
+	const client = watch(t, host);
+	await client.connected();
+	tg.userSays(USER, "查一下 NVDA");
+	await until(() => sentTo(tg, USER).includes("收到：查一下 NVDA"), "回复到达 Telegram");
+	const reply = host.kernel.conversation().find((l) => l.who === "router")!;
+	await swipeReplied(tg, host, "为什么跌", sentMessage(tg, "收到：查一下 NVDA").messageId);
+	const { lineId, who, text } = lastUserLine(host).quote!;
+	assert.deepEqual({ lineId, who, text }, { lineId: reply.id, who: "router", text: "收到：查一下 NVDA" });
+	await until(() => ofType(client.got, "user").some((m) => m.text === "为什么跌"), "网页收到这句话");
+	assert.equal(ofType(client.got, "user").find((m) => m.text === "为什么跌")!.quote?.lineId, reply.id);
+	await until(() => sentTo(tg, USER).includes("收到：为什么跌"), "幕僚长回复了这句话");
+	assert.ok(!sentTo(tg, USER).some((m) => m.includes("为什么跌") && m.startsWith("你在")), "自己说的不转回来");
+});
+
+test("滑动回复自己在 Telegram 说过的话：引用的是自己那句", async (t) => {
+	const { host, tg } = await telegramHost(t);
+	const said = tg.userSays(USER, "查天气");
+	await until(() => sentTo(tg, USER).includes("收到：查天气"), "回复");
+	const own = host.kernel.conversation().find((l) => l.text === "查天气")!;
+	await swipeReplied(tg, host, "明天的", tg.messageIdOf(said));
+	assert.deepEqual([lastUserLine(host).quote?.lineId, lastUserLine(host).quote?.who], [own.id, "user"]);
+});
+
+test("滑动回复从网页转过来的话：引用的是网页上那句原话，不带转发前缀", async (t) => {
+	const { host, tg } = await telegramHost(t);
+	tg.userSays(USER, "/start");
+	await until(() => tg.sent.length === 1, "说明");
+	const webLine = host.say("网页上说的");
+	await until(() => sentTo(tg, USER).includes("你在网页或终端说：网页上说的"), "转过来的话");
+	await swipeReplied(tg, host, "接着说", sentMessage(tg, "你在网页或终端说：网页上说的").messageId);
+	assert.deepEqual([lastUserLine(host).quote?.lineId, lastUserLine(host).quote?.text], [webLine, "网页上说的"]);
+});
+
+test("滑动回复说明或找不到的旧消息：话照常作为普通的一句进对话，不带引用，不报错", async (t) => {
+	const { host, tg, logs } = await telegramHost(t);
+	tg.userSays(USER, "/start");
+	await until(() => tg.sent.length === 1, "说明");
+	await swipeReplied(tg, host, "对说明回复", sentMessage(tg, NOTES.help).messageId);
+	assert.equal(lastUserLine(host).quote, undefined);
+	await swipeReplied(tg, host, "对很早的消息回复", 987_654);
+	assert.equal(lastUserLine(host).quote, undefined);
+	assert.ok(!logs.some((l) => l.includes("出错")), logs.join("\n"));
+});
+
+test("真宿主：滑动回复问题卡片：话照常作为普通的一句进对话，不带引用", async (t) => {
+	const { host, tg, card } = await askedOnTelegram(t);
+	await swipeReplied(tg, host, "对卡片回复", card.messageId);
+	assert.equal(lastUserLine(host).quote, undefined);
+});
+
+test("同一个滑动回复的 update 投两次：对话里只有一行，带着引用", async (t) => {
+	const { host, tg } = await telegramHost(t);
+	tg.userSays(USER, "查一下 NVDA");
+	await until(() => sentTo(tg, USER).includes("收到：查一下 NVDA"), "回复");
+	const id = await swipeReplied(tg, host, "为什么跌", sentMessage(tg, "收到：查一下 NVDA").messageId);
+	await until(() => sentTo(tg, USER).includes("收到：为什么跌"), "第二句的回复");
+	const polls = tg.calls("getUpdates").length;
+	tg.redeliver(id);
+	await until(() => tg.calls("getUpdates").length >= polls + 2, "重投的 update 被取走");
+	await host.settled();
+	const lines = host.kernel.conversation().filter((l) => l.text === "为什么跌");
+	assert.equal(lines.length, 1);
+	assert.ok(lines[0].quote);
+	assert.equal(sentTo(tg, USER).filter((m) => m === "收到：为什么跌").length, 1);
+});
+
+test("清屏之后滑动回复清屏前的回复：引用仍然成立", async (t) => {
+	const { host, tg } = await telegramHost(t);
+	tg.userSays(USER, "查一下 NVDA");
+	await until(() => sentTo(tg, USER).includes("收到：查一下 NVDA"), "回复");
+	const reply = host.kernel.conversation().find((l) => l.who === "router")!;
+	host.clearConversation();
+	await swipeReplied(tg, host, "清屏后接着问", sentMessage(tg, "收到：查一下 NVDA").messageId);
+	assert.equal(host.kernel.conversation().find((l) => l.text === "清屏后接着问")!.quote?.lineId, reply.id);
 });
 
 const relayBrain: Brain = (cards) =>
