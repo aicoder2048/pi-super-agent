@@ -21,6 +21,7 @@ const SUPPORT_REPLY = "接着上次的盘面：支撑位在 172 附近。";
 const REPORT = "个股领跌，没有新的利空消息。";
 const REPORT_MD = "**个股领跌**，没有新的利空消息。";
 const WORKING_MS = 2500;
+const BAR_HINT = "按时限折算，不是完成度";
 const NEWS_COMMAND_S = 9;
 
 const WATCH_MANIFEST = JSON.stringify({ name: "watch", title: "看盘", description: "看盘面、查新闻", team: "看盘队", tools: ["lookup"] });
@@ -91,10 +92,31 @@ test("看盘队的领队把一个问题并行派给两位成员再合成一份�
 				await page.locator("#how-title", { hasText: TASK.title }).waitFor();
 				await page.locator("#steps .step.pending", { hasText: "新闻研究员 · 进行中" }).waitFor();
 			});
+			await step("同一轮的两次派活并排成两条分支：各有头像、状态和「已用 N 秒 · 时限 …」，时限照配置写；进行中的带进度条，悬停写明按时限折算", async (page) => {
+				const lanes = page.locator("#steps .lanes").first().locator(".lane");
+				assert.equal(await lanes.count(), 2);
+				assert.deepEqual(await lanes.locator(".face").allTextContents(), ["行", "新"], "分支上的头像和卡片底部的一样");
+				const news = lanes.filter({ hasText: "新闻研究员" });
+				await news.locator(".lane-time", { hasText: /^已用 \d+ 秒 · 时限 60 分钟$/ }).waitFor();
+				assert.equal(await news.locator("[role=progressbar]").getAttribute("title"), BAR_HINT);
+				assert.equal(await news.locator("[role=progressbar]").getAttribute("aria-label"), BAR_HINT);
+				await lanes.filter({ hasText: "行情分析师" }).locator(".lane-time", { hasText: /^(已用|用时) \d+ 秒 · 时限 30 秒$/ }).waitFor();
+			});
 			await step("行情分析师先做完：它那一步马上写完成，新闻研究员还在进行中", async (page) => {
 				await page.locator("#steps .step.ok", { hasText: "行情分析师 · 完成" }).waitFor();
 				assert.equal(await page.locator("#steps .step.pending", { hasText: "新闻研究员 · 进行中" }).count(), 1, "整批还没回来");
 				assert.equal(await page.locator("#steps .step-detail", { hasText: /^排队中$/ }).count(), 0, "没有不带职称的排队中");
+			});
+			await step("进行中的分支每秒往后数，不重画整个执行过程", async (page) => {
+				const time = page.locator("#steps .lane", { hasText: "新闻研究员 · 进行中" }).locator(".lane-time");
+				let ticked = false;
+				for (let tries = 0; tries < 3 && !ticked; tries++) {
+					const before = await time.evaluate((n) => ((n as HTMLElement & { tagged?: boolean }).tagged = true, n.textContent));
+					await sleep(2100);
+					const [tagged, after] = await time.evaluate((n) => [(n as HTMLElement & { tagged?: boolean }).tagged === true, n.textContent]);
+					ticked = tagged && after !== before;
+				}
+				assert.ok(ticked, "两秒里同一个节点上的已用时间变了");
 			});
 			await step("新闻研究员在跑命令：小卡下写「新闻研究员 · 执行命令 · 已 N 秒」，展开派活看到它自己的步骤", async (page) => {
 				await page.locator("#helpers .member-chip.running", { hasText: /^新闻研究员 · 执行命令 · 已 [5-9] 秒$/ }).waitFor();
@@ -171,6 +193,11 @@ test("看盘队的领队把一个问题并行派给两位成员再合成一份�
 				await news.locator("summary", { hasText: "派活明细" }).click();
 				assert.equal(await news.locator(".dispatch-reply").textContent(), NEWS_REPLY);
 				assert.deepEqual(await news.locator(".member-step.ok .member-step-title").allTextContents(), ["执行命令"], "成员的步骤来自它自己的会话文件");
+				assert.equal(await page.locator("#steps .lanes").first().locator(".lane").count(), 2, "刷新后同一轮仍并排成两条分支");
+				const times = await page.locator("#steps .lane .lane-time").allTextContents();
+				assert.equal(times.length, 3);
+				for (const text of times) assert.match(text, /^用时 \d+ 秒 · 时限 (30 秒|60 分钟)$/);
+				assert.equal(await page.locator("#steps [role=progressbar]").count(), 0, "做完的分支不带进度条");
 			});
 			await step("成员的用量计入任务：执行过程头部的 token 数等于助手和成员每次模型请求之和", async (page) => {
 				const requests = fake.exchanges.filter((e) => e.model === "worker").length;
@@ -311,15 +338,23 @@ test("一次派给四位成员、同时只能跑两位：小卡下两位在干�
 				await sayInPage(page, ASK);
 				await page.waitForFunction(() => document.querySelectorAll("#helpers .member-chip.running").length === 2 && document.querySelectorAll("#helpers .member-chip.queued").length === 2);
 				for (const label of await page.locator("#helpers .member-chip.queued").allTextContents()) assert.match(label, /^(行情分析师|新闻研究员|财报解读|技术分析师) · 排队中 · 上限 2$/);
+				await page.locator("#helpers .helper-chip", { hasText: "看盘队领队 #1" }).click();
+				await page.waitForFunction(() => document.querySelectorAll("#steps .lane").length === 4);
 			});
-			await step("手机宽度（390 px）下四位成员换行显示，每一位都在屏幕里", async (page) => {
+			await step("手机宽度（390 px）下四位成员换行显示，每一位都在屏幕里；执行过程不横向滚动，四条分支竖排成一列", async (page) => {
 				await page.setViewportSize({ width: 390, height: 844 });
 				await page.waitForFunction(() => document.querySelectorAll("#helpers .member-chip").length === 4);
 				const boxes = await page.locator("#helpers .member-chip").evaluateAll((chips) => chips.map((c) => {
 					const { left, right, top } = c.getBoundingClientRect();
 					return { left: Math.round(left), right: Math.round(right), top: Math.round(top) };
 				}));
+				const how = await page.evaluate(() => {
+					const panel = document.getElementById("how")!;
+					return { page: document.scrollingElement!.scrollWidth, panel: panel.scrollWidth - panel.clientWidth, lefts: [...document.querySelectorAll("#steps .lane")].map((n) => Math.round(n.getBoundingClientRect().left)) };
+				});
 				await page.setViewportSize({ width: 1280, height: 720 });
+				assert.ok(how.page <= 390 && how.panel <= 0, `执行过程横向滚动：${JSON.stringify(how)}`);
+				assert.equal(new Set(how.lefts).size, 1, `四条分支竖排成一列：${JSON.stringify(how.lefts)}`);
 				assert.ok(boxes.every((b) => b.left >= 0 && b.right <= 390), `成员小标签超出 390 px：${JSON.stringify(boxes)}`);
 				assert.ok(new Set(boxes.map((b) => b.top)).size > 1, "四位放不下一行，应该换行");
 			});
