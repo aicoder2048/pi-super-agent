@@ -202,3 +202,16 @@ test("幕僚长转述助手的问题：原话、只差标点、带一小段开�
 	assert.equal(repeatsQuestion(relay("你在哪个城市或地区？"), null), false, "没有问题");
 	assert.equal(repeatsQuestion(relay("？"), question({ text: "？", askedAt: 100 })), false, "只有标点的问题不拿来比");
 });
+
+test("幕僚长在问题前后多说了话、问题太短、使用者已经打字回答过：都不算重复，手机上照常发", () => {
+	const asked = question({ text: "查哪个城市？", askedAt: 100 });
+	const relay = (text: string) => ({ text, at: 200 });
+	for (const text of ["查哪个城市？北京已经查过了", "已查到北京。查哪个城市？", "那么查哪个城市？", "助手那边现在还想再问一下，查哪个城市？", "说明：已查到北京。查哪个城市？"]) {
+		assert.equal(repeatsQuestion(relay(text), asked), false, text);
+	}
+	const short = question({ text: "哪个？", askedAt: 100 });
+	assert.equal(repeatsQuestion(relay("我不知道是哪个"), short), false, "短问题只是被包含");
+	assert.equal(repeatsQuestion(relay("哪个？"), short), false, "不到 4 个字的问题不拿来比");
+	assert.equal(repeatsQuestion(relay("查哪个城市？"), question({ text: "查哪个城市？", askedAt: 100, spoke: true })), false, "使用者打字回答过，幕僚长再问一遍");
+	assert.equal(repeatsQuestion(relay("哪个城市？"), question({ text: "哪个城市？", askedAt: 100 })), true, "正好 4 个字的问题照常比");
+});
