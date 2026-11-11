@@ -27,6 +27,7 @@ test("幕僚长的提示词：使用者要加、改、去掉盯盘条件时新�
 	assert.match(lines[0], /新开.*basis=request/);
 	assert.match(lines[0], /不要 hand_over/);
 	assert.match(lines[0], /规则开的任务.*改不了/);
+	assert.match(lines[0], /也不要 note 它/);
 });
 
 test("没有可选的领域时，名册一节照样在，写明没有", () => {
