@@ -116,7 +116,7 @@ export function loadTeam(moduleDir: string, manifestPath: string, manifestTeam: 
 		if (manifestTeam !== undefined) throw new ConfigError(`${manifestPath}：写了 team「${String(manifestTeam)}」，但 agents/ 里没有成员；加上成员，或去掉 team`);
 		return undefined;
 	}
-	if (manifestTeam === undefined) throw new ConfigError(`${manifestPath}：agents/ 里有成员，要写 team（队名，例如「看盘队」）`);
+	if (manifestTeam === undefined) throw new ConfigError(`${manifestPath}：agents/ 里有成员，要写 team（队名，例如「美股看盘队」）`);
 	if (typeof manifestTeam !== "string" || !manifestTeam || /\s|\p{Cc}/u.test(manifestTeam)) throw new ConfigError(`${manifestPath}：team（${JSON.stringify(manifestTeam)}）要写成一个队名，不能为空，中间不能有空白或控制字符`);
 	return { name: manifestTeam, members: [first, ...rest] };
 }

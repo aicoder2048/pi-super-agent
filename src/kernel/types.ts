@@ -8,13 +8,7 @@ export type WorkerState = (typeof WORKER_STATES)[number];
 export const HELPER_ROLES = ["conversation", "market", "rule", "watch"] as const;
 export type HelperRole = (typeof HELPER_ROLES)[number];
 
-/**
- * Who a ticket shows as. The name, the number and which of the two forms it takes are fixed when the ticket opens.
- * One helper has a role and counts within that role: 「青檀 · 行情助手 #2」.
- * A helper whose domain has members to dispatch to carries the module's team name instead and counts within that domain: 「高山流水 · 看盘队 #2」.
- * Both count within one New York day. `team` is read from the module each time: its current team name, or the module's name once it has no members or is gone.
- */
-export type Helper = { name: string; seq: number } & ({ role: HelperRole } | { team: string });
+export type Helper = { name: string; seq: number } & ({ role: HelperRole } | { team: string | null });
 
 export interface DomainEntry {
 	/** The team's name when the module has members. Null: its helper works alone. */
@@ -215,6 +209,7 @@ export interface Ticket {
 	tokensOut: number;
 	/** Null only on a ticket from before helpers existed that the host has not named yet. */
 	helper: Helper | null;
+	dispatchedTo: string[] | null;
 	stage: Stage;
 	latestReport: Report | null;
 }
@@ -267,6 +262,7 @@ export interface DashboardRow {
 	elapsedMs: number;
 	lastProgressAt: number | null;
 	helper: Helper | null;
+	dispatchedTo: string[] | null;
 	workerState: WorkerState;
 	startedAt: number | null;
 	/** closedAt, or stoppedAt for a stopped ticket; null while the ticket is open. */

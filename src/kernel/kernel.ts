@@ -130,8 +130,6 @@ export function nextStallAt(rows: DashboardRow[], stuckMs: number): number | nul
 const SOLO_HELPER_ROWS = "helper_role IS NOT NULL";
 const TEAM_HELPER_ROWS = "helper_name IS NOT NULL AND helper_role IS NULL";
 
-const TEAM_LABEL_BEFORE_DOMAINS = "团队";
-
 const storedRole = (helper: Helper) => ("role" in helper ? helper.role : null);
 
 export interface KernelOptions {
@@ -550,6 +548,16 @@ export class Kernel {
 		});
 	}
 
+	recordDispatch(ticketId: string, memberTitle: string): void {
+		this.#tx(() => {
+			const stored = this.#requireTicket(ticketId).dispatched_to;
+			if (stored === null) return;
+			const titles: string[] = JSON.parse(stored);
+			if (titles.includes(memberTitle)) return;
+			this.#run("UPDATE tickets SET dispatched_to = ? WHERE id = ?", JSON.stringify([...titles, memberTitle]), ticketId);
+		});
+	}
+
 	recordMemberProgress(ticketId: string): void {
 		this.#tx(() => {
 			this.#requireTicket(ticketId);
@@ -688,6 +696,7 @@ export class Kernel {
 				elapsedMs: t.startedAt === null ? 0 : end - t.startedAt,
 				lastProgressAt: t.lastProgressAt,
 				helper: t.helper,
+				dispatchedTo: t.dispatchedTo,
 				workerState: t.workerState,
 				startedAt: t.startedAt,
 				endedAt: t.stoppedAt ?? t.closedAt,
@@ -741,7 +750,7 @@ export class Kernel {
 		if (r.helper_name === null) return null;
 		const identity = { name: r.helper_name, seq: r.helper_seq };
 		if (r.helper_role !== null) return { ...identity, role: r.helper_role };
-		return { ...identity, team: this.#domains.get(r.domain)?.team ?? r.domain ?? TEAM_LABEL_BEFORE_DOMAINS };
+		return { ...identity, team: this.#domains.get(r.domain)?.team ?? null };
 	}
 
 	#stall(t: Ticket, now: number): Stall | null {
@@ -1050,8 +1059,8 @@ export class Kernel {
 		if (ruled !== null && asked !== undefined && asked !== ruled) this.#log(`[kernel] 规则 ${d.ruleId} 属于领域「${ruled}」，幕僚长填的是「${asked}」，任务 ${ticketId} 按「${ruled}」开`);
 		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now(), domain);
 		this.#run(
-			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, domain)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
+			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, domain, dispatched_to)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)`,
 			ticketId,
 			title,
 			d.basis,
@@ -1063,6 +1072,7 @@ export class Kernel {
 			storedRole(helper),
 			helper.seq,
 			domain,
+			"team" in helper ? "[]" : null,
 		);
 		for (const threadId of threads) {
 			const source = threadId.match(SOURCE_THREAD)?.[1];
@@ -1250,6 +1260,7 @@ export class Kernel {
 			tokensCached: r.tokens_cached,
 			tokensOut: r.tokens_out,
 			helper: this.#helperOf(r),
+			dispatchedTo: r.dispatched_to === null ? null : JSON.parse(r.dispatched_to),
 			stage,
 			latestReport: latest ? toReport(latest) : null,
 		};

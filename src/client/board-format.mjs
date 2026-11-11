@@ -61,9 +61,9 @@ export function quoteContext(quote, ticketTitle) {
 export const HELPER_ROLE_LABEL = { conversation: "对话助手", market: "行情助手", rule: "规则助手", watch: "观察助手" };
 
 /** @param {Helper} helper */
-export const helperLabel = (helper) => `${"team" in helper ? helper.team : HELPER_ROLE_LABEL[helper.role]} #${helper.seq}`;
+export const helperLabel = (helper) => `${"team" in helper ? `${helper.team ?? ""}领队` : HELPER_ROLE_LABEL[helper.role]} #${helper.seq}`;
 
-/** 「青檀 · 行情助手 #2」 or 「高山流水 · 看盘队 #2」; "" for a ticket the host has not named yet. @param {Helper | null} helper */
+/** @param {Helper | null} helper */
 export const helperFullName = (helper) => (helper ? `${helper.name} · ${helperLabel(helper)}` : "");
 
 export const DEFAULT_ACK_TIMEOUT_MS = 5000;
@@ -178,3 +178,15 @@ function reportTitle(a) {
  * @param {string} name @param {Record<string, unknown>} args @returns {{ title: string, detail: string }}
  */
 export const toolStep = (name, args) => TOOL_STEP[name]?.(args) ?? { title: `调用工具 ${name}`, detail: "" };
+
+/** @param {DashboardRow} row */
+export function teamWork(row) {
+	if (!row.helper || !("team" in row.helper) || row.dispatchedTo === null) return "";
+	if (row.dispatchedTo.length > 0) return `派给 ${row.dispatchedTo.join("、")}`;
+	if (row.stage === "closed") return "领队独自完成";
+	if (row.stage === "stopped") return "领队未派活";
+	return "暂未派活";
+}
+
+/** @param {DashboardRow} row */
+export const helperLine = (row) => [helperFullName(row.helper), teamWork(row)].filter(Boolean).join(" · ");

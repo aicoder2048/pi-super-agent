@@ -107,5 +107,5 @@ test("仓库里的三个模块都有领域名和给幕僚长的说明，出现�
 		modules.rosterPrompt(),
 		"- pi-pi（Pi 开发）：怎么写 Pi 的扩展、主题、技能、配置、提示模板和终端界面组件\n- toy-market（玩具行情）：演示用的假行情，只管玩具代码（如 TOYX）的波动\n- us-market（美股行情）：美股行情、个股涨跌和原因、技术面、财报和相关新闻",
 	);
-	assert.deepEqual([...modules.book], [["pi-pi", { team: "Pi专家队", onRoster: true }], ["toy-market", { team: null, onRoster: true }], ["us-market", { team: "看盘队", onRoster: true }]]);
+	assert.deepEqual([...modules.book], [["pi-pi", { team: "Pi施工队", onRoster: true }], ["toy-market", { team: null, onRoster: true }], ["us-market", { team: "美股看盘队", onRoster: true }]]);
 });

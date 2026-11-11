@@ -12,6 +12,7 @@ import { INPUT_KINDS } from "../src/kernel/types.ts";
 import { ConfigError } from "../src/config-error.ts";
 import { WebGateway } from "../src/host/web.ts";
 import * as page from "../src/web/view.mjs";
+import { helperLine } from "../src/client/board-format.mjs";
 import { WATCHDOG_SOURCE } from "../src/watchdog/watchdog.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { Kernel } from "../src/kernel/kernel.ts";
@@ -21,7 +22,7 @@ function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
 		id: "tkt_abcd1234", title: "查天气", stage: "running", basis: "request", latestSummary: null, model: "openai-codex/gpt-6.1-sol",
 		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, question: null, stall: null,
-		helper: { name: "青檀", role: "conversation", seq: 1 }, workerState: "running", startedAt: 0, endedAt: null, ...over,
+		helper: { name: "青檀", role: "conversation", seq: 1 }, dispatchedTo: null, workerState: "running", startedAt: 0, endedAt: null, ...over,
 	};
 }
 
@@ -536,14 +537,45 @@ test("页面：看板推送带来新的去向，处理中的那句改写成已�
 	assert.equal(page.routeLine(view, "trg_2")?.text, "已交给 青檀 · 对话助手 #1（NVDA 新闻）");
 });
 
-test("页面：团队任务的小卡、任务卡片和去向都写四字名和团队名，团队名在角色的位置上，序号是这个团队当天的第几个", () => {
+test("页面：团队任务的助手是这个队的领队，小卡、任务卡片和去向都写四字名和「队名领队」，序号是这个团队当天的第几个", () => {
 	const view = page.emptyView();
-	const watch = row({ id: "tkt_team", title: "NVDA 听证会", helper: { name: "高山流水", team: "看盘队", seq: 2 } });
+	const watch = row({ id: "tkt_team", title: "NVDA 听证会", helper: { name: "高山流水", team: "美股看盘队", seq: 2 } });
 	page.applyMessage(view, snapshot({ board: [watch, row({ id: "tkt_solo" })], routes: { trg_open: { kind: "opened_ticket", ticketId: "tkt_team" }, trg_hand: { kind: "handed_over", ticketId: "tkt_team" } } }), 0);
-	assert.deepEqual(page.helperStrip(view, 0).chips.map((c) => [c.name, c.role]), [["高山流水", "看盘队 #2"], ["青檀", "对话助手 #1"]]);
-	assert.deepEqual(page.leftColumn(view, 0).doing.map((c) => c.helper), ["高山流水 · 看盘队 #2", "青檀 · 对话助手 #1"]);
-	assert.equal(page.routeLine(view, "trg_open")?.text, "已开新任务「NVDA 听证会」 · 高山流水 · 看盘队 #2");
-	assert.equal(page.routeLine(view, "trg_hand")?.text, "已交给 高山流水 · 看盘队 #2（NVDA 听证会）");
+	assert.deepEqual(page.helperStrip(view, 0).chips.map((c) => [c.name, c.role]), [["高山流水", "美股看盘队领队 #2"], ["青檀", "对话助手 #1"]]);
+	assert.deepEqual(page.leftColumn(view, 0).doing.map((c) => c.helper), ["高山流水 · 美股看盘队领队 #2", "青檀 · 对话助手 #1"]);
+	assert.equal(page.routeLine(view, "trg_open")?.text, "已开新任务「NVDA 听证会」 · 高山流水 · 美股看盘队领队 #2");
+	assert.equal(page.routeLine(view, "trg_hand")?.text, "已交给 高山流水 · 美股看盘队领队 #2（NVDA 听证会）");
+});
+
+test("页面：模块没了成员或被拿掉的团队任务只写「领队」，不编一个队名", () => {
+	const view = withRows([row({ helper: { name: "高山流水", team: null, seq: 3 } })]);
+	assert.deepEqual(page.helperStrip(view, 0).chips.map((c) => c.role), ["领队 #3"]);
+	assert.deepEqual(page.leftColumn(view, 0).doing.map((c) => c.helper), ["高山流水 · 领队 #3"]);
+});
+
+test("页面：团队任务的卡片和执行过程头部写领队派给了谁；还没派写暂未派活，结束时没派过写领队独自完成，停掉时写领队未派活", () => {
+	const leader = { name: "高山流水", team: "美股看盘队", seq: 2 };
+	const cases: [Partial<DashboardRow>, string][] = [
+		[{ dispatchedTo: ["行情分析师", "新闻研究员"] }, "高山流水 · 美股看盘队领队 #2 · 派给 行情分析师、新闻研究员"],
+		[{ dispatchedTo: ["行情分析师"], stage: "closed", endedAt: 1 }, "高山流水 · 美股看盘队领队 #2 · 派给 行情分析师"],
+		[{ dispatchedTo: [] }, "高山流水 · 美股看盘队领队 #2 · 暂未派活"],
+		[{ dispatchedTo: [], stage: "awaiting_answer" }, "高山流水 · 美股看盘队领队 #2 · 暂未派活"],
+		[{ dispatchedTo: [], stage: "closed", endedAt: 1 }, "高山流水 · 美股看盘队领队 #2 · 领队独自完成"],
+		[{ dispatchedTo: [], stage: "stopped", endedAt: 1 }, "高山流水 · 美股看盘队领队 #2 · 领队未派活"],
+		[{ dispatchedTo: null, stage: "closed", endedAt: 1 }, "高山流水 · 美股看盘队领队 #2"],
+	];
+	for (const [over, expected] of cases) {
+		const r = row({ helper: leader, ...over });
+		const view = withRows([r]);
+		const { needsYou, doing, done } = page.leftColumn(view, 0);
+		assert.deepEqual([...needsYou, ...doing, ...done].map((c) => c.helper), [expected], JSON.stringify(over));
+		assert.equal(helperLine(r), expected, `执行过程头部 ${JSON.stringify(over)}`);
+	}
+});
+
+test("页面：单个助手的任务不写派活：卡片和执行过程头部只有助手全名，旧任务还没有助手时都为空", () => {
+	assert.equal(helperLine(row({ stage: "closed", endedAt: 1 })), "青檀 · 对话助手 #1");
+	assert.equal(helperLine(row({ helper: null })), "");
 });
 
 test("页面：没有在岗助手时助手条只有今日合计；还没收到看板时为空", () => {

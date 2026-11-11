@@ -319,7 +319,7 @@ tools: read, web_get
 写好以后是这样的。
 
 - 幕僚长的名册多一行「- research（资料调研）：查公开资料、核对出处、写成带来源的摘要」。你在对话里说的事合适时，它开任务会填 `domain: research`。
-- 这个领域的任务显示成四字名加队名，例如「高山流水 · 调研队 #1」。助手带着 `skills/` 里的技能，可以用 `dispatch_agent` 把事派给检索员和核对员。两位成员也带着同一份技能，再加各自定义里的 `skills`。
+- 这个领域的任务由调研队的领队做，显示成四字名加「队名领队」，例如「高山流水 · 调研队领队 #1」。领队带着 `skills/` 里的技能，可以用 `dispatch_agent` 把事派给检索员和核对员。两位成员也带着同一份技能，再加各自定义里的 `skills`。
 - 没有 `agents/` 的模块，任务是一个带技能的助手，显示两字名加角色。
 - 成员要用模块的技能，`tools` 里就要有 `read`（或者不写 `tools`）。Pi 只把技能写进有工具读它的进程的提示词，没有 `read` 的成员看不到技能。
 - 一个模块最多一支队伍，一位成员只属于它所在的模块。不同模块的成员可以同名，同一个模块里不行。
@@ -353,7 +353,7 @@ tools: read, web_get
 | `src/model-selector.ts`, `src/models.ts`, `src/host/config.ts` | 模型切换、默认模型、配置默认值。 |
 | `src/watchdog/` | Watchdog 判定函数和进程入口。 |
 | `extensions/super-agent.ts`, `src/client/` | TUI client、协议、看板、transcript 格式化。 |
-| `modules/toy-market/`, `modules/us-market/`, `modules/pi-pi/` | 仓库自带的三个模块。玩具行情是示例，没有成员。美股行情带看盘队（行情分析师、技术分析师、新闻研究员、财报解读）和技能 `us-market-desk`。pi-pi 带 Pi专家队（九位 Pi 开发专家，只读文件和网页，出处见 `modules/pi-pi/NOTICE.md`）和技能 `pi-pi-desk`，没有来源和规则。 |
+| `modules/toy-market/`, `modules/us-market/`, `modules/pi-pi/` | 仓库自带的三个模块。玩具行情是示例，没有成员。美股行情带美股看盘队（行情分析师、技术分析师、新闻研究员、财报解读）和技能 `us-market-desk`。pi-pi 带 Pi施工队（九位 Pi 开发专家，只读文件和网页，出处见 `modules/pi-pi/NOTICE.md`）和技能 `pi-pi-desk`，没有来源和规则。 |
 | `docs/pi-super-agent/mvp-spec.md`, `docs/adr/0001-0003` | 规格与架构决策。 |
 | `tests/` | `kernel`、`host`、`recovery`、`fallback`、`watchdog`、`client` 测试。`helpers/fakes.ts` 提供 `fauxRouter` 和 `FakeSpawner`。 |
 

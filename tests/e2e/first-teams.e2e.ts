@@ -15,8 +15,8 @@ const MARKET_REPLY = "结论：个股行情，SPY 只跌 0.8%。来源和时间�
 const REPORT = "**个股领跌**并跌破 50 日均线；报价 15:42 ET（延迟）。行情分析师、技术分析师参与。";
 const PI = { title: "写 Pi 扩展", brief: "说明怎么给 Pi 写一个注册工具的扩展" };
 const PI_TASK = "给一个注册自定义工具的最小 Pi 扩展";
-const DESK_SKILL = "看盘队的共同做法";
-const PI_SKILL = "Pi专家队的派活做法";
+const DESK_SKILL = "美股看盘队的共同做法";
+const PI_SKILL = "Pi施工队的派活做法";
 const WORKING_MS = 2500;
 const NO_MARKET_KEYS = Object.fromEntries([...KEY_NAMES, ...FINNHUB_KEY_NAMES].map((name) => [name, ""]));
 
@@ -30,13 +30,13 @@ const openInPiPi = (card: string): ToolCall => {
 };
 const toolsOf = (fake: { exchanges: { conversation: string; tools: string[] }[] }, conversation: string) => [...fake.exchanges.find((e) => e.conversation === conversation)!.tools].sort();
 
-test("仓库自带的两支队伍：大波动规则开的任务归看盘队，助手派给行情分析师和技术分析师，三者都带着看盘模块的技能，成员只有自己列的只读工具；问 Pi 扩展怎么写的任务归 Pi专家队，助手带着 Pi 模块的技能派给扩展专家，专家不能执行命令", (t) =>
+test("仓库自带的两支队伍：大波动规则开的任务归美股看盘队，助手派给行情分析师和技术分析师，三者都带着看盘模块的技能，成员只有自己列的只读工具；问 Pi 扩展怎么写的任务归 Pi施工队，助手带着 Pi 模块的技能派给扩展专家，专家不能执行命令", (t) =>
 	story(
 		t,
 		{
 			router: [
 				on("Router 按大波动规则开任务，不填领域", /^\[候选触发\][\s\S]*来源 us-market[\s\S]*NVDA/, (c) => [openByBigMove(c)]),
-				on("Router 把 Pi 的问题交给 pi-pi 领域", /^\[对话\][\s\S]*扩展/, (c) => [openInPiPi(c), reply(c, "已交给 Pi专家队")]),
+				on("Router 把 Pi 的问题交给 pi-pi 领域", /^\[对话\][\s\S]*扩展/, (c) => [openInPiPi(c), reply(c, "已交给 Pi施工队")]),
 				on("Router 转告", /^\[Worker 汇报\][\s\S]*跌破 50 日均线/, (c) => [reply(c, "NVDA 跌 6.1%，个股领跌并跌破 50 日均线")]),
 			],
 			workers: [
@@ -57,9 +57,9 @@ test("仓库自带的两支队伍：大波动规则开的任务归看盘队，�
 			],
 		},
 		async ({ step, fake, cli }) => {
-			await step("投递一条 us-market 的大波动行情，任务是四字名加「看盘队 #1」", async (page) => {
+			await step("投递一条 us-market 的大波动行情，任务是四字名加「美股看盘队领队 #1」", async (page) => {
 				await cli(["src/cli/drop.ts", "us-market", "NVDA", "NVDA 价格 168.2，涨跌 -6.1%，成交量是均量的 3 倍"]);
-				const chip = page.locator("#helpers .helper-chip", { hasText: "看盘队 #1" });
+				const chip = page.locator("#helpers .helper-chip", { hasText: "美股看盘队领队 #1" });
 				await chip.waitFor({ timeout: 20_000 });
 				const name = (await chip.locator(".name").textContent()) ?? "";
 				assert.equal([...name].length, 4, name);
@@ -74,8 +74,8 @@ test("仓库自带的两支队伍：大波动规则开的任务归看盘队，�
 			});
 			await step("助手和两位成员的提示词里都有看盘模块的技能；成员的提示词是它自己的分工", () => {
 				for (const conversation of [BRIEF, MARKET_TASK, TECH_TASK]) assert.ok(fake.systemPromptOf(conversation).includes(DESK_SKILL), conversation);
-				assert.ok(fake.systemPromptOf(MARKET_TASK).includes("你是看盘队的行情分析师"));
-				assert.ok(fake.systemPromptOf(TECH_TASK).includes("你是看盘队的技术分析师"));
+				assert.ok(fake.systemPromptOf(MARKET_TASK).includes("你是美股看盘队的行情分析师"));
+				assert.ok(fake.systemPromptOf(TECH_TASK).includes("你是美股看盘队的技术分析师"));
 				assert.ok(fake.systemPromptOf(BRIEF).includes("market-analyst · 行情分析师"), "助手的名册里有成员");
 			});
 			await step("模型看到的工具：助手能派活，成员只有自己列的那几个", () => {
@@ -83,9 +83,9 @@ test("仓库自带的两支队伍：大波动规则开的任务归看盘队，�
 				assert.deepEqual(toolsOf(fake, TECH_TASK), ["lookup", "read"]);
 				assert.ok(toolsOf(fake, BRIEF).includes("dispatch_agent"));
 			});
-			await step("问 Pi 扩展怎么写：任务是「Pi专家队 #1」，助手的名册是九位 Pi 专家，带 Pi 模块的技能，不带看盘模块的", async (page) => {
+			await step("问 Pi 扩展怎么写：任务是「Pi施工队领队 #1」，助手的名册是九位 Pi 专家，带 Pi 模块的技能，不带看盘模块的", async (page) => {
 				await sayInPage(page, "Pi 的扩展怎么写");
-				await page.locator("#helpers .helper-chip", { hasText: "Pi专家队 #1" }).waitFor();
+				await page.locator("#helpers .helper-chip", { hasText: "Pi施工队领队 #1" }).waitFor();
 				await page.locator("#left .card", { hasText: "正在查扩展文档" }).waitFor();
 				const prompt = fake.systemPromptOf(PI.brief);
 				assert.equal(prompt.match(/^- [a-z]+-expert · /gm)?.length, 9);

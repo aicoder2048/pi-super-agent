@@ -67,8 +67,8 @@ test("任务属于哪个领域，助手和成员就带哪个模块的技能；�
 					assert.ok(!fake.systemPromptOf(conversation).includes(MAIL_SKILL), conversation);
 				}
 			});
-			await step("新闻领域有成员：小卡是四字名加模块的队名「新闻队 #1」", async (page) => {
-				const name = (await page.locator("#helpers .helper-chip", { hasText: "新闻队 #1" }).locator(".name").textContent()) ?? "";
+			await step("新闻领域有成员：小卡是四字名加模块的队名「新闻队领队 #1」", async (page) => {
+				const name = (await page.locator("#helpers .helper-chip", { hasText: "新闻队领队 #1" }).locator(".name").textContent()) ?? "";
 				assert.equal([...name].length, 4, name);
 			});
 			await step("邮件领域没有成员：两字名的对话助手，带着邮件模块的技能，没有派活工具", async (page) => {
@@ -81,10 +81,10 @@ test("任务属于哪个领域，助手和成员就带哪个模块的技能；�
 				assert.match((await page.locator("#left .card", { hasText: WEATHER.title }).locator(".by").textContent()) ?? "", /^.. · 对话助手 #\d$/u);
 				assert.ok(!fake.systemPromptOf(WEATHER.brief).includes(NEWS_SKILL) && !fake.systemPromptOf(WEATHER.brief).includes(MAIL_SKILL));
 			});
-			await step("rss 来了一条报道，幕僚长按新闻模块的规则开任务、没填领域：任务归新闻领域，是「新闻队 #2」，助手带着新闻技能", async (page) => {
+			await step("rss 来了一条报道，幕僚长按新闻模块的规则开任务、没填领域：任务归新闻领域，是「新闻队领队 #2」，助手带着新闻技能", async (page) => {
 				await cli(["src/cli/drop.ts", "rss", "hearing", "黄仁勋听证会有新报道"]);
 				const card = page.locator("#left .card", { hasText: FEED.title });
-				await card.locator(".by", { hasText: "新闻队 #2" }).waitFor();
+				await card.locator(".by", { hasText: "新闻队领队 #2" }).waitFor();
 				await page.locator("#left .card", { hasText: "正在核对" }).waitFor();
 				assert.ok(fake.systemPromptOf(FEED.brief).includes(NEWS_SKILL));
 				assert.ok(fake.exchanges.find((e) => e.conversation === FEED.brief)!.tools.includes("dispatch_agent"));

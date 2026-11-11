@@ -5,7 +5,7 @@ import {
 	questionOf, helperStrip, helperTint, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
 	smallPrint, stopSentence, toggleEarlier, toggleTheme,
 } from "./view.mjs";
-import { DEFAULT_ACK_TIMEOUT_MS, helperFullName } from "../client/board-format.mjs";
+import { DEFAULT_ACK_TIMEOUT_MS, helperLine } from "../client/board-format.mjs";
 
 const STATUS_TEXT = {
 	connecting: "连接中…",
@@ -446,7 +446,7 @@ function mount(doc) {
 		const row = view.rows.find((r) => r.id === watching?.watch.ticketId);
 		$("how-badge").replaceChildren(...(row ? [helperBadge(row.id)] : []));
 		$("how-title").textContent = row?.title ?? "";
-		$("how-helper").textContent = helperFullName(row?.helper ?? null);
+		$("how-helper").textContent = row ? helperLine(row) : "";
 		$("how-meta").textContent = row ? `${BASIS_PHRASE[row.basis]} · ${STAGE_PHRASE[row.stage]}` : "";
 		$("how-life").textContent = lifecycleLine(row, Date.now(), view.receivedAt);
 		$("small-print").textContent = smallPrint(row);

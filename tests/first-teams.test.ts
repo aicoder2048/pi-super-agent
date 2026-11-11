@@ -17,9 +17,9 @@ const WATCHERS = { "earnings-reader": "财报解读", "market-analyst": "行情�
 const PI_EXPERTS = ["agent-expert", "cli-expert", "config-expert", "ext-expert", "keybinding-expert", "prompt-expert", "skill-expert", "theme-expert", "tui-expert"];
 const teamOf = (modules: Modules, name: string) => modules.modules.find((m) => m.name === name)?.team;
 
-test("仓库自带的两支队伍用默认配置的提供方都能加载：us-market 是看盘队的四位，pi-pi 是 Pi专家队的九位", () => {
+test("仓库自带的两支队伍用默认配置的提供方都能加载：us-market 是美股看盘队的四位，pi-pi 是 Pi施工队的九位", () => {
 	const modules = load();
-	assert.deepEqual([...modules.book], [["pi-pi", { team: "Pi专家队", onRoster: true }], ["toy-market", { team: null, onRoster: true }], ["us-market", { team: "看盘队", onRoster: true }]]);
+	assert.deepEqual([...modules.book], [["pi-pi", { team: "Pi施工队", onRoster: true }], ["toy-market", { team: null, onRoster: true }], ["us-market", { team: "美股看盘队", onRoster: true }]]);
 	assert.deepEqual(Object.fromEntries(teamOf(modules, "us-market")!.members.map((m) => [m.name, m.title])), WATCHERS);
 	const experts = teamOf(modules, "pi-pi")!.members;
 	assert.deepEqual(experts.map((m) => m.name), PI_EXPERTS);
@@ -33,7 +33,7 @@ test("幕僚长的名册里有这两个领域：行情、个股、财报和相�
 	for (const word of ["Pi", "扩展", "主题", "技能", "配置", "提示模板", "界面组件"]) assert.ok(line("pi-pi").includes(word), `pi-pi 的说明提到${word}：${line("pi-pi")}`);
 });
 
-test("看盘队每位成员只列它用得上的只读工具；九位 Pi 专家都是读文件和读网页", () => {
+test("美股看盘队每位成员只列它用得上的只读工具；九位 Pi 专家都是读文件和读网页", () => {
 	const tools = (module: string) => Object.fromEntries(teamOf(load(), module)!.members.map((m) => [m.name, m.tools]));
 	assert.deepEqual(tools("us-market"), {
 		"earnings-reader": ["read", "lookup", "web_get"],
@@ -178,14 +178,14 @@ test("Pi 模块的经验放在它的技能里：pi-pi 的任务，助手拿到�
 	}
 });
 
-test("看盘队每位成员的汇报格式是三行要填的标题：结论、证据、来源和时间", () => {
+test("美股看盘队每位成员的汇报格式是三行要填的标题：结论、证据、来源和时间", () => {
 	for (const member of teamOf(load(), "us-market")!.members) {
 		const format = member.prompt.slice(member.prompt.indexOf("汇报格式"));
 		for (const heading of ["结论：", "证据：", "来源和时间："]) assert.ok(format.split("\n").some((line) => line.startsWith(heading)), `${member.name} 的汇报格式有一行以「${heading}」开头`);
 	}
 });
 
-test("看盘队每位成员的汇报格式写了全文不超过 600 字，链接不计", () => {
+test("美股看盘队每位成员的汇报格式写了全文不超过 600 字，链接不计", () => {
 	for (const member of teamOf(load(), "us-market")!.members) {
 		const format = member.prompt.slice(member.prompt.indexOf("汇报格式"));
 		assert.match(format, /全文不超过 600 字，链接不计/, member.name);
@@ -199,10 +199,10 @@ test("大波动规则要任务说明照抄触发里的代码、涨跌幅、档�
 	assert.match(rule, /是否一致/);
 });
 
-test("大波动规则不写「团队：」，它开的任务属于 us-market 领域，也就归看盘队", () => {
+test("大波动规则不写「团队：」，它开的任务属于 us-market 领域，也就归美股看盘队", () => {
 	const modules = load();
 	assert.ok(modules.ruleAllows("us-market/big-move", "us-market"));
-	assert.equal(modules.book.get("us-market")?.team, "看盘队");
+	assert.equal(modules.book.get("us-market")?.team, "美股看盘队");
 });
 
 test("拿掉 us-market 模块：加载不报错，它的领域、队伍和成员一起消失，pi-pi 不受影响", () => {
@@ -210,14 +210,14 @@ test("拿掉 us-market 模块：加载不报错，它的领域、队伍和成员
 	cpSync(REPO_MODULES, dir, { recursive: true });
 	rmSync(join(dir, "us-market"), { recursive: true });
 	const modules = load(dir);
-	assert.deepEqual([...modules.book], [["pi-pi", { team: "Pi专家队", onRoster: true }], ["toy-market", { team: null, onRoster: true }]]);
+	assert.deepEqual([...modules.book], [["pi-pi", { team: "Pi施工队", onRoster: true }], ["toy-market", { team: null, onRoster: true }]]);
 	assert.equal(modules.kitFor("us-market"), undefined);
 	assert.ok(!modules.rosterPrompt().includes("us-market"));
 	assert.deepEqual(modules.rulesFor("us-market"), []);
 	assert.equal(modules.kitFor("pi-pi")!.crew.length, 9);
 });
 
-test("只有 us-market 的 module.json 开了 lookup：看盘队的助手和四位成员都能查数据，pi-pi 和 toy-market 的都不能", () => {
+test("只有 us-market 的 module.json 开了 lookup：美股看盘队的助手和四位成员都能查数据，pi-pi 和 toy-market 的都不能", () => {
 	const modules = load();
 	const kit = modules.kitFor("us-market")!;
 	assert.equal(kit.mayLookup, true);
