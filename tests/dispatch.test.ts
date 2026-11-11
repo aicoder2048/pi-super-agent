@@ -281,6 +281,24 @@ test("助手一轮里派给两位成员：同时开始，各自拿回自己的�
 	assert.deepEqual(spawner.workers.get(ticketId())!.spec.crew.map((m) => m.name), ["market-analyst", "news-researcher"], "助手进程拿到本队成员");
 });
 
+test("看板记下领队把活派给了哪些成员，按职称、按先后，同一位派几次只记一次", async (t) => {
+	const { host, results, helper } = await dispatching(t, async () => "答", two);
+	await results();
+	await helper().request("worker.dispatch", { ...two[0], callId: "call_9" });
+	assert.deepEqual(host.kernel.listTickets()[0].dispatchedTo, ["行情分析师", "新闻研究员"]);
+});
+
+test("被回退上限拒掉的派活不算派过：看板上仍是一个也没派", async (t) => {
+	let now = 1_000_000;
+	const selector = selectorWith(FALLBACK, () => now);
+	selector.onError("429");
+	now += 120_000;
+	const { host, helper, ticketId } = await dispatching(t, async () => "答", [], { selector, fallbackDailyTokens: 150 });
+	host.kernel.recordUsage(ticketId(), { provider: FALLBACK.provider, tokensIn: 150, tokensOut: 0 });
+	assert.throws(() => helper().request("worker.dispatch", { ...two[1], callId: "call_9" }), /今日用量已达上限/);
+	assert.deepEqual(host.kernel.listTickets()[0].dispatchedTo, []);
+});
+
 test("推断任务的依据原样交给成员进程，由它把工具收窄成只读", async (t) => {
 	const bases: string[] = [];
 	const { host, results } = await dispatching(t, async (run) => (bases.push(run.basis), "答"), [two[0]], { say: "推断：盯一下" });

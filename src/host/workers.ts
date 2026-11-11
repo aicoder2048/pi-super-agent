@@ -380,6 +380,7 @@ export class WorkerExecutor {
 		};
 		const refused = refusal();
 		if (refused !== undefined) throw new Error(refused);
+		kernel.recordDispatch(ticketId, member.title);
 		const { basis } = kernel.getTicket(ticketId)!;
 		const { timeoutMs, codingTimeoutMs } = this.#o.dispatch!;
 		return this.#desk.dispatch({
