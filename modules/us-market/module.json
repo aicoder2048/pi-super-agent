@@ -1,9 +1,9 @@
 {
   "name": "us-market",
   "title": "美股行情",
-  "description": "美股行情、个股涨跌和原因、技术面、财报和相关新闻",
+  "description": "美股行情、个股涨跌和原因、技术面、财报、相关新闻和盯盘提醒",
   "team": "美股看盘队",
-  "tools": ["lookup"],
+  "tools": ["lookup", "tripwire"],
   "sources": [
     {
       "name": "us-market",

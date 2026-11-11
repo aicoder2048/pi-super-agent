@@ -28,13 +28,14 @@ import type { WorkerEvents, WorkerHandle, WorkerSpawner, WorkerSpec } from "../.
 import type { MemberRun } from "../../src/host/dispatch.ts";
 import type { Domains } from "../../src/modules.ts";
 import type { Member } from "../../src/teams.ts";
+import type { DomainGatedTool } from "../../src/worker/tools.ts";
 
-type FakeModule = { skillsDir?: string; prepare?: string; lookup?: boolean } & ({ team: string; crew: readonly Member[] } | { team?: undefined; crew?: undefined });
+type FakeModule = { skillsDir?: string; prepare?: string; tools?: DomainGatedTool[] } & ({ team: string; crew: readonly Member[] } | { team?: undefined; crew?: undefined });
 
 export function domainsOf(modules: Record<string, FakeModule>): Domains {
 	return {
 		book: new Map(Object.entries(modules).map(([name, m]) => [name, { team: m.team ?? null, onRoster: true }])),
-		kitFor: (domain) => (domain in modules ? { skillsDir: modules[domain].skillsDir, prepare: modules[domain].prepare, crew: modules[domain].crew ?? [], mayLookup: modules[domain].lookup ?? false } : undefined),
+		kitFor: (domain) => (domain in modules ? { skillsDir: modules[domain].skillsDir, prepare: modules[domain].prepare, crew: modules[domain].crew ?? [], granted: modules[domain].tools ?? [] } : undefined),
 	};
 }
 

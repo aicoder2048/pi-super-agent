@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS tickets (
 	helper_seq INTEGER,
 	domain TEXT,
 	dispatched_to TEXT,
+	read_web_at INTEGER,
 	CHECK (basis <> 'rule' OR rule_id IS NOT NULL)
 );
 
@@ -177,6 +178,12 @@ CREATE TABLE IF NOT EXISTS source_cursors (
 	updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS source_user_data (
+	source TEXT PRIMARY KEY,
+	data TEXT NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS usage_daily (
 	day TEXT NOT NULL,
 	provider TEXT NOT NULL,
@@ -248,6 +255,7 @@ export function openStore(path: string): DatabaseSync {
 	}
 	if (!ticketColumns.includes("domain")) db.exec("ALTER TABLE tickets ADD COLUMN domain TEXT");
 	if (!ticketColumns.includes("dispatched_to")) db.exec("ALTER TABLE tickets ADD COLUMN dispatched_to TEXT");
+	if (!ticketColumns.includes("read_web_at")) db.exec("ALTER TABLE tickets ADD COLUMN read_web_at INTEGER");
 	if (!ticketColumns.includes("tokens_cached")) db.exec("ALTER TABLE tickets ADD COLUMN tokens_cached INTEGER NOT NULL DEFAULT 0");
 	const retitle = db.prepare("UPDATE tickets SET title = ? WHERE id = ?");
 	for (const { id, title } of db.prepare("SELECT id, title FROM tickets").all() as { id: string; title: string }[]) {

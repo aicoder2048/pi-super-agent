@@ -104,7 +104,7 @@ export interface MemberRun {
 	member: Member;
 	task: string;
 	basis: Basis;
-	/** Lets the member's `lookup` through the host, and nothing else. */
+	/** Lets the member's `lookup` through the host, and its `web_get` tell the host it read a page; nothing else. */
 	token: string;
 	model: ModelRef;
 	workdir: string;

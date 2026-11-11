@@ -1,5 +1,6 @@
 import type { Clock, HostLinePost, TriggerSubmission } from "../kernel/types.ts";
 import { marketFeed } from "./market/source.ts";
+import type { RedactedTripwire } from "./market/tripwires.ts";
 
 export type { HostLinePost } from "../kernel/types.ts";
 
@@ -8,6 +9,8 @@ export interface FeedContext {
 	submit(trigger: TriggerSubmission): void;
 	readCursor(): string | undefined;
 	writeCursor(value: string): void;
+	readUserData(): string | undefined;
+	writeUserData(value: string): void;
 	/** Straight to the user's front ends; the Router never sees it. A repeated alert externalId changes nothing. A line the store refuses throws. */
 	post(line: HostLinePost): void;
 	/** Whether this feed already posted the alert `externalId`. */
@@ -20,11 +23,18 @@ export interface Feed {
 	stop(): void;
 	problem(): string | undefined;
 	lookup(op: string, args: unknown): Promise<unknown>;
+	tripwires(op: string, args: unknown): TripwireReply;
+}
+
+export interface TripwireReply {
+	echo: string;
+	tripwires: RedactedTripwire[];
 }
 
 export interface FeedSpec {
 	source: string;
 	lookupHelp: string;
+	tripwireHelp?: string;
 	create(ctx: FeedContext): Feed;
 }
 

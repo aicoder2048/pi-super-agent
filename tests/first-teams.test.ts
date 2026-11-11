@@ -26,10 +26,10 @@ test("仓库自带的两支队伍用默认配置的提供方都能加载：us-ma
 	for (const m of experts) assert.match(m.title, /\p{Script=Han}/u, `${m.name} 有中文职称`);
 });
 
-test("幕僚长的名册里有这两个领域：行情、个股、财报和相关新闻归 us-market，Pi 的扩展、主题、技能、配置、提示模板和界面组件归 pi-pi", () => {
+test("幕僚长的名册里有这两个领域：行情、个股、财报、相关新闻和盯盘提醒归 us-market，Pi 的扩展、主题、技能、配置、提示模板和界面组件归 pi-pi", () => {
 	const roster = load().rosterPrompt().split("\n");
 	const line = (name: string) => roster.find((l) => l.startsWith(`- ${name}（`)) ?? "";
-	for (const word of ["行情", "个股", "财报", "新闻"]) assert.ok(line("us-market").includes(word), `us-market 的说明提到${word}：${line("us-market")}`);
+	for (const word of ["行情", "个股", "财报", "新闻", "盯盘提醒"]) assert.ok(line("us-market").includes(word), `us-market 的说明提到${word}：${line("us-market")}`);
 	for (const word of ["Pi", "扩展", "主题", "技能", "配置", "提示模板", "界面组件"]) assert.ok(line("pi-pi").includes(word), `pi-pi 的说明提到${word}：${line("pi-pi")}`);
 });
 
@@ -156,6 +156,12 @@ test("看盘技能不说小时线一定看得到开盘：收盘后查到的小�
 	assert.match(skill, /开盘价.*`day`/);
 });
 
+test("看盘技能有一节盯盘条件：领队自己用 tripwire 不派活，改之前不读网页，中文名换成代码，按收据核对，写明默认值，汇报不复述成本价和股数，被拒照实转告", () => {
+	const skill = readFileSync(join(REPO_MODULES, "us-market/skills/us-market-desk/SKILL.md"), "utf8");
+	const section = skill.split(/\n(?=## )/).find((s) => s.startsWith("## 盯盘条件")) ?? "";
+	for (const pattern of [/`tripwire`/, /不派/, /代码/, /收据/, /either/, /5 和 20/, /不复述成本价和股数/, /拒绝/, /web_get/]) assert.match(section, pattern);
+});
+
 test("看盘模块的经验放在它的技能里：us-market 的任务，助手拿到这份技能，每位成员也拿到，而且都有读它的工具", () => {
 	const kit = load().kitFor("us-market")!;
 	assert.equal(kit.skillsDir, join(REPO_MODULES, "us-market/skills"));
@@ -217,14 +223,14 @@ test("拿掉 us-market 模块：加载不报错，它的领域、队伍和成员
 	assert.equal(modules.kitFor("pi-pi")!.crew.length, 9);
 });
 
-test("只有 us-market 的 module.json 开了 lookup：美股看盘队的助手和四位成员都能查数据，pi-pi 和 toy-market 的都不能", () => {
+test("只有 us-market 的 module.json 开了 lookup 和 tripwire：美股看盘队的助手和四位成员都能查数据，助手能改盯盘条件，pi-pi 和 toy-market 的都不能", () => {
 	const modules = load();
 	const kit = modules.kitFor("us-market")!;
-	assert.equal(kit.mayLookup, true);
+	assert.deepEqual(kit.granted, ["lookup", "tripwire"]);
 	for (const member of kit.crew) assert.ok(memberTools("request", member.tools).includes("lookup"), member.name);
 	for (const domain of ["pi-pi", "toy-market"]) {
 		const other = modules.kitFor(domain)!;
-		assert.equal(other.mayLookup, false, domain);
+		assert.deepEqual(other.granted, [], domain);
 		for (const member of other.crew) assert.ok(!memberTools("request", member.tools).includes("lookup"), member.name);
 	}
 });

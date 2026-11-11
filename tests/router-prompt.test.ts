@@ -19,6 +19,17 @@ test("幕僚长的提示词有一份领域名册：原样列出，并说明 doma
 	assert.doesNotMatch(prompt, /团队|team/);
 });
 
+test("幕僚长的提示词：使用者要加、改、去掉盯盘条件时新开一个 request 任务，不转交给已有任务；只占一行", () => {
+	const prompt = routerSystemPrompt("", 200, ROSTER);
+	const handling = prompt.slice(prompt.indexOf("## 怎么处理"), prompt.indexOf("## 怎么说话"));
+	const lines = handling.split("\n").filter((l) => l.includes("盯盘条件"));
+	assert.equal(lines.length, 1, handling);
+	assert.match(lines[0], /新开.*basis=request/);
+	assert.match(lines[0], /不要 hand_over/);
+	assert.match(lines[0], /规则开的任务.*改不了/);
+	assert.match(lines[0], /也不要 note 它/);
+});
+
 test("没有可选的领域时，名册一节照样在，写明没有", () => {
 	const prompt = routerSystemPrompt("", 200, "");
 	assert.match(prompt.slice(prompt.indexOf("## 领域"), prompt.indexOf("## 授权")), /（没有可选的领域）\n\n$/);

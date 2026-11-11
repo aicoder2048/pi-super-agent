@@ -158,9 +158,10 @@ test("真实接线：config.json 的 sources 里写了没有 feed 的来源名�
 	assert.throws(() => createHostOptions({ config, modules: Modules.load([REPO_MODULES]), modelRuntime, log: () => {} }), (e: Error) => e.name === "ConfigError" && /us-markt.*us-market/.test(e.message));
 });
 
-test("宿主运行模块声明的来源：随宿主启停，触发进内核，游标存在自己名下", async (t) => {
+test("宿主运行模块声明的来源：随宿主启停，触发进内核，游标和使用者数据存在自己名下", async (t) => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	let stopped = false;
+	let readBack: string | undefined;
 	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([]), modelRuntime, log: () => {} });
 	const host = await Host.start({
 		...options,
@@ -171,6 +172,8 @@ test("宿主运行模块声明的来源：随宿主启停，触发进内核，�
 				start() {
 					ctx.submit({ source: "fake", externalId: "e1", threads: [{ id: "thr_fake:a" }], sender: "fake", body: "动了", occurredAt: ctx.clock.now() });
 					ctx.writeCursor("c1");
+					ctx.writeUserData("d1");
+					readBack = ctx.readUserData();
 				},
 				stop() { stopped = true; },
 				problem: () => undefined,
@@ -182,6 +185,8 @@ test("宿主运行模块声明的来源：随宿主启停，触发进内核，�
 	t.after(() => (hostStopped ? undefined : host.stop()));
 	assert.deepEqual(host.kernel.triggerLog().map((x) => [x.source, x.externalId]), [["fake", "e1"]]);
 	assert.equal(host.kernel.sourceCursor("fake"), "c1");
+	assert.equal(host.kernel.sourceUserData("fake"), "d1");
+	assert.equal(readBack, "d1");
 	await host.stop();
 	hostStopped = true;
 	assert.ok(stopped);

@@ -166,6 +166,8 @@ export class Host {
 			submit,
 			readCursor: () => this.kernel.sourceCursor(spec.source),
 			writeCursor: (value) => this.kernel.setSourceCursor(spec.source, value),
+			readUserData: () => this.kernel.sourceUserData(spec.source),
+			writeUserData: (value) => this.kernel.setSourceUserData(spec.source, value),
 			post: (line) => this.#postHostLine(spec.source, line),
 			raised: (externalId) => this.kernel.raised(spec.source, externalId),
 			log: this.#log,
@@ -189,6 +191,11 @@ export class Host {
 				const feed = this.feeds.get(source);
 				if (!feed) throw new Error(`没有来源 ${source} 可查；可查：${[...this.feeds.keys()].join("、") || "无"}`);
 				return feed.lookup(op, args);
+			},
+			tripwires: (source, op, args) => {
+				const feed = this.feeds.get(source);
+				if (!feed) throw new Error(`没有来源 ${source}；有：${[...this.feeds.keys()].join("、") || "无"}`);
+				return feed.tripwires(op, args);
 			},
 		});
 		this.dispatcher = new Dispatcher({

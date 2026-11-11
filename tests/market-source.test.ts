@@ -48,6 +48,10 @@ function market(options: { dbPath?: string; respond?: (url: string, now: number)
 				}
 				kernel.setSourceCursor("us-market", v);
 			},
+			readUserData: () => kernel.sourceUserData("us-market"),
+			writeUserData: (v) => kernel.setSourceUserData("us-market", v),
+			post: (line) => void kernel.postHostLine("us-market", line),
+			raised: (externalId) => kernel.raised("us-market", externalId),
 			log: (l) => logs.push(l),
 		},
 	};
@@ -151,6 +155,7 @@ test("没有密钥：看盘停用，页面上的问题写「未配置行情密�
 	feed.start();
 	assert.equal(feed.problem(), "未配置行情密钥");
 	await assert.rejects(feed.lookup("session", {}), /停用.*未配置行情密钥/);
+	assert.throws(() => feed.tripwires("list", {}), /停用.*未配置行情密钥/);
 	feed.stop();
 	assert.match(logs.join("\n"), /未配置行情密钥/);
 });
@@ -362,7 +367,7 @@ test("Finnhub 密钥格式不对：只有 earnings 停用并说明原因，美�
 	writeFileSync(file, "MASSIVE_API_KEY=mk-secret\nFINNHUB_API_KEY=\"fh bad-secret\"\n");
 	const logs: string[] = [];
 	const spec = marketFeed({ source: "us-market", title: "美股行情", settings: DEFAULTS, override: undefined, where: "test", secretsFile: file, env: {}, log: (l) => logs.push(l) });
-	const feed = spec.create({ clock: { now: () => T("2026-11-09T15:00:00Z") }, submit: () => {}, readCursor: () => undefined, writeCursor: () => {}, log: () => {} });
+	const feed = spec.create({ clock: { now: () => T("2026-11-09T15:00:00Z") }, submit: () => {}, readCursor: () => undefined, writeCursor: () => {}, readUserData: () => undefined, writeUserData: () => {}, post: () => {}, raised: () => false, log: () => {} });
 	t.after(() => feed.stop());
 	assert.equal(feed.problem(), undefined);
 	assert.deepEqual(await feed.lookup("session", {}), { nyDate: "2026-11-09", phase: "regular", fromCache: false, cachedAgeMs: 0 });
@@ -465,4 +470,59 @@ test("日志：每次查询一行，写操作、来源（缓存/合用/上游）
 	assert.match(m.logs[3]!, /lookup bars NVDA day .*：缓存（\d+ms 前），排队 0ms，总计 0ms/);
 	assert.match(m.logs[4]!, /lookup quote：失败（quote 的 symbols 必须是/);
 	assert.ok(!m.logs.join("\n").includes("sk-test-secret"));
+});
+
+const COST = { symbol: "NVDA", condition: { kind: "cost", pct: 10, basis: 120, shares: 100 } };
+const receipts = (m: ReturnType<typeof market>) => m.kernel.conversation().filter((l) => l.who === "receipt").map((l) => l.text);
+
+test("盯盘条件：set 之后重启宿主（同一个状态库、新的 MarketSource），list 里还在", () => {
+	const m = market();
+	m.source.tripwires("set", COST);
+	const again = market({ dbPath: m.dbPath });
+	assert.deepEqual(again.source.tripwires("list", {}).tripwires, [{ symbol: "NVDA", kind: "cost", pct: 10, dir: "either", hasShares: true }]);
+});
+
+test("盯盘条件：网页的收据写出成本价和股数，回给助手的 echo 和清单都没有", () => {
+	const m = market();
+	const reply = m.source.tripwires("set", COST);
+	const [receipt] = receipts(m);
+	assert.match(receipt, /NVDA 成本价 120、100 股/);
+	assert.match(reply.echo, /^已添加：NVDA 相对成本价涨跌超过 10% 时提醒/);
+	assert.doesNotMatch(JSON.stringify(reply), /120|100 股|"shares"|"basis"/);
+});
+
+test("盯盘条件：list 在网页贴一张整份清单的收据，不改状态库", () => {
+	const m = market();
+	m.source.tripwires("set", COST);
+	const stored = m.kernel.sourceUserData("us-market");
+	const reply = m.source.tripwires("list", {});
+	assert.equal(reply.echo, "现在共 1 条。");
+	assert.equal(receipts(m).length, 2);
+	assert.match(receipts(m)[1], /^现在共 1 条：\nNVDA 成本价 120、100 股/);
+	assert.equal(m.kernel.sourceUserData("us-market"), stored);
+});
+
+test("盯盘条件：设成本条件时上一轮看盘有这只的新鲜报价，收据写出现在已在线外", async () => {
+	const m = market();
+	await m.source.tick();
+	m.source.tripwires("set", { symbol: "NVDA", condition: { kind: "cost", pct: 10, basis: 80 } });
+	assert.match(receipts(m)[0], /现在已在 \+25\.0%，回到线内后再越过才提醒/);
+});
+
+test("盯盘条件：改不成时报错给助手，状态库和网页都不动", () => {
+	const m = market();
+	assert.throws(() => m.source.tripwires("set", { symbol: "NVDA", condition: { kind: "cost", pct: 10 } }), /没改成：NVDA：新的 cost 条件缺少 basis/);
+	assert.throws(() => m.source.tripwires("watch", {}), /未知操作 watch/);
+	assert.equal(m.kernel.sourceUserData("us-market"), undefined);
+	assert.deepEqual(receipts(m), []);
+});
+
+test("盯盘条件：状态库里的清单读不出来时，problem() 写明，set 和 list 被拒，原来的数据不被覆盖", () => {
+	const m = market();
+	m.kernel.setSourceUserData("us-market", "{坏了");
+	const broken = market({ dbPath: m.dbPath });
+	assert.match(broken.source.problem() ?? "", /盯盘条件清单读不出来/);
+	assert.throws(() => broken.source.tripwires("set", COST), /盯盘条件清单读不出来/);
+	assert.throws(() => broken.source.tripwires("list", {}), /盯盘条件清单读不出来/);
+	assert.equal(broken.kernel.sourceUserData("us-market"), "{坏了");
 });

@@ -59,7 +59,12 @@ export function parseMember(file: string, content: string, allowedProviders: rea
 	if ("tools" in fm && !tools?.length) throw new ConfigError(`${file}：tools 是空的；不想另设限就去掉这一行，要限制就至少写一个工具`);
 	const badTool = tools?.find((t) => !MEMBER_TOOLS.includes(t));
 	if (badTool) {
-		const why = (WORKER_TOOLS as readonly string[]).includes(badTool) ? "只有助手能用，成员不能汇报、交回、读任务记录、跑后台命令或再往下派" : "不是成员能用的工具";
+		const why =
+			badTool === "tripwire"
+				? "只有使用者在对话里开的任务的助手能用，成员不能改盯盘条件"
+				: (WORKER_TOOLS as readonly string[]).includes(badTool)
+					? "只有助手能用，成员不能汇报、交回、读任务记录、跑后台命令或再往下派"
+					: "不是成员能用的工具";
 		throw new ConfigError(`${file}：tools 里的 ${badTool} ${why}，可用：${MEMBER_TOOLS.join("、")}`);
 	}
 	const skills = (list(fm.skills, file, "skills") ?? []).map((s) => resolve(dirname(file), s));

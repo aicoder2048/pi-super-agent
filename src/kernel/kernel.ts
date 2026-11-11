@@ -1027,6 +1027,29 @@ export class Kernel {
 		});
 	}
 
+	sourceUserData(source: string): string | undefined {
+		return this.#get("SELECT data FROM source_user_data WHERE source = ?", source)?.data;
+	}
+
+	setSourceUserData(source: string, data: string): void {
+		this.#run(
+			`INSERT INTO source_user_data (source, data, updated_at) VALUES (?, ?, ?)
+			 ON CONFLICT (source) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+			source,
+			data,
+			this.#now(),
+		);
+	}
+
+	readWeb(ticketId: string): void {
+		this.#run("UPDATE tickets SET read_web_at = COALESCE(read_web_at, ?) WHERE id = ?", this.#now(), ticketId);
+	}
+
+	heardOtherThanUser(ticketId: string): "trigger" | "note" | "web" | undefined {
+		if (this.#get("SELECT 1 FROM tickets WHERE id = ? AND read_web_at IS NOT NULL", ticketId)) return "web";
+		return this.#get("SELECT kind FROM ticket_inputs WHERE ticket_id = ? AND kind IN ('trigger', 'note') LIMIT 1", ticketId)?.kind;
+	}
+
 	/** A repeated (source, externalId) alert returns the first line and writes nothing; any other failed insert throws. */
 	postHostLine(source: string, post: HostLinePost): { line: HostLine; duplicate: boolean } {
 		return this.#tx(() => {
