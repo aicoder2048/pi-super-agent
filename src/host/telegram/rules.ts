@@ -32,7 +32,7 @@ export type Inbound =
 	| { do: "tell-id"; chatId: number }
 	| { do: "note"; chatId: number; note: Note }
 	| { do: "say"; chatId: number; messageId: number; text: string }
-	| { do: "answer"; chatId: number; callbackId: string; reportId: string; option: number }
+	| { do: "answer"; chatId: number; messageId: number; callbackId: string; reportId: string; option: number }
 	| { do: "refuse-tap"; callbackId: string; toast: string };
 
 /**
@@ -48,7 +48,7 @@ export function decide(event: TelegramEvent | null, allowed: ReadonlySet<number>
 		const answer = parseAnswerData(event.data);
 		if (answer === "cap") return { do: "refuse-tap", callbackId: event.callbackId, toast: refusalText({ kind: "not_here" }) };
 		if (!answer) return { do: "refuse-tap", callbackId: event.callbackId, toast: refusalText({ kind: "closed" }) };
-		return { do: "answer", chatId: chat.id, callbackId: event.callbackId, ...answer };
+		return { do: "answer", chatId: chat.id, messageId: event.messageId, callbackId: event.callbackId, ...answer };
 	}
 	const { content } = event;
 	if (allowed.size === 0) return content.kind === "text" ? { do: "tell-id", chatId: chat.id } : { do: "drop" };

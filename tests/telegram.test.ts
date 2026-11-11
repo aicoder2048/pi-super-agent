@@ -524,6 +524,35 @@ test("编辑卡片时 Telegram 的回应说不清（500）：编辑把卡片设�
 	assert.equal(cards(tg, USER).length, 1, "没有重发卡片");
 });
 
+test("点一条不是卡片的消息，按钮数据写成卡片的：被拒，不问宿主", async (t) => {
+	const { tg, open, frame, answered } = await cardClient(t);
+	await open(USER);
+	const help = tg.sent.find((m) => m.chatId === USER && m.text === NOTES.help)!;
+	frame([ticket(pending(rpt()))]);
+	await until(() => cards(tg, USER).length === 1, "卡片");
+	const tap = tg.userTaps(USER, help.messageId, cards(tg, USER)[0].buttons![1][0].data);
+	await until(() => tg.toastFor(tap) !== undefined, "点的回应");
+	assert.equal(tg.toastFor(tap), "这个问题已经回答过，或已不在等待回答");
+	assert.deepEqual(answered, []);
+});
+
+test("在卡片 A 上点，按钮数据写成卡片 B 的：被拒，不问宿主；A 自己的按钮照常回答 A", async (t) => {
+	const { tg, frame, open, answered } = await cardClient(t);
+	await open(USER);
+	const a = rpt();
+	const b = rpt();
+	frame([ticket(pending(a), "任务A"), ticket(pending(b, { text: "要不要发邮件？", options: ["发", "不发"] }), "任务B")]);
+	await until(() => cards(tg, USER).length === 2, "两张卡片");
+	const [cardA, cardB] = cards(tg, USER);
+	const forged = tg.userTaps(USER, cardA.messageId, cardB.buttons![0][0].data);
+	await until(() => tg.toastFor(forged) !== undefined, "伪造的点的回应");
+	assert.equal(tg.toastFor(forged), "这个问题已经回答过，或已不在等待回答");
+	const own = tg.userTaps(USER, cardA.messageId, cardA.buttons![1][0].data);
+	await until(() => tg.toastFor(own) !== undefined, "A 自己按钮的回应");
+	assert.equal(tg.toastFor(own), "已发送");
+	assert.deepEqual(answered, [[a, 1, { client: "telegram", chatId: USER }]]);
+});
+
 const dropBrain: Brain = (cards) =>
 	cards.flatMap((card) => {
 		const clicked = card.split("\n").find((l) => l.startsWith("点选回答："));

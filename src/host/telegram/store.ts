@@ -137,6 +137,11 @@ export class TelegramStore {
 		return rows.map((r) => JSON.parse(r.body).view);
 	}
 
+	/** callback_data comes from the phone and can name any question, so a tap counts only on the card that shows that question. */
+	isCard(chatId: number, messageId: number, reportId: string): boolean {
+		return this.#db.prepare("SELECT 1 FROM telegram_messages WHERE chat_id = ? AND message_id = ? AND key = ?").get(chatId, messageId, `ask:${reportId}`) !== undefined;
+	}
+
 	/**
 	 * Handles a tap once per update: `handle` runs in the same transaction that records its toast, and a redelivered
 	 * update gets that toast back without running it again.
