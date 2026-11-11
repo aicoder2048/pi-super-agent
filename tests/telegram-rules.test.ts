@@ -194,7 +194,7 @@ test("成员上限只发一条说明，指向网页和终端的「待你处理�
 test("幕僚长转述助手的问题：原话、只差标点、带一小段开场白都算重复；别的话、已回答的、没有问题的都不算", () => {
 	const asked = question({ text: "你在哪个城市或地区？", askedAt: 100 });
 	const relay = (text: string, at = 200) => ({ text, at });
-	for (const text of ["你在哪个城市或地区？", "  你在哪个城市或地区  ", "你在哪个城市或地区。", "你在哪个城市或地区?", "请问：你在哪个城市或地区？", "助手想知道，你在哪个城市或地区？"]) {
+	for (const text of ["你在哪个城市或地区？", "  你在哪个城市或地区  ", "你在哪个城市或地区。", "你在哪个城市或地区?", "请问：你在哪个城市或地区？"]) {
 		assert.equal(repeatsQuestion(relay(text), asked), true, text);
 	}
 	assert.equal(repeatsQuestion(relay("你在哪个城市或地区？告诉我之后助手会按当地的天气预报给你查明天的情况。"), asked), false, "问题之外还说了不少");
@@ -208,7 +208,7 @@ test("幕僚长转述助手的问题：原话、只差标点、带一小段开�
 test("幕僚长在问题前后多说了话、问题太短、使用者已经打字回答过：都不算重复，手机上照常发", () => {
 	const asked = question({ text: "查哪个城市？", askedAt: 100 });
 	const relay = (text: string) => ({ text, at: 200 });
-	for (const text of ["查哪个城市？北京已经查过了", "已查到北京。查哪个城市？", "那么查哪个城市？", "助手那边现在还想再问一下，查哪个城市？", "说明：已查到北京。查哪个城市？"]) {
+	for (const text of ["查哪个城市？北京已经查过了", "已查到北京。查哪个城市？", "那么查哪个城市？", "助手那边现在还想再问一下，查哪个城市？", "说明：已查到北京。查哪个城市？", "上海没数据，查哪个城市？", "不用再说了，查哪个城市？", "助手想知道，查哪个城市？"]) {
 		assert.equal(repeatsQuestion(relay(text), asked), false, text);
 	}
 	const short = question({ text: "哪个？", askedAt: 100 });
