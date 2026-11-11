@@ -67,6 +67,7 @@ export interface WorkerArgsInput {
 	skillsDir?: string;
 	basis: Basis;
 	crew?: readonly RosterEntry[];
+	outputRule?: string;
 }
 
 export function workerArgs(input: WorkerArgsInput): string[] {
@@ -80,6 +81,7 @@ export function workerArgs(input: WorkerArgsInput): string[] {
 		...(allowlist ? ["--tools", allowlist.join(","), "--no-mcp"] : []),
 		"--append-system-prompt", input.prompt,
 		...(crew.length ? ["--append-system-prompt", teamPrompt(crew)] : []),
+		...(input.outputRule ? ["--append-system-prompt", input.outputRule] : []),
 	];
 }
 
@@ -114,6 +116,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 			skillsDir: spec.skillsDir,
 			basis: spec.basis,
 			crew: spec.crew,
+			outputRule: spec.outputRule,
 		});
 		const client = new RpcClient({
 			cliPath: WORKER_LAUNCHER,
@@ -189,6 +192,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 			...(tools.length ? ["--tools", tools.join(",")] : ["--no-tools"]), "--no-mcp",
 			"--append-system-prompt", MEMBER_PROMPT,
 			"--append-system-prompt", member.prompt,
+			...(run.outputRule ? ["--append-system-prompt", run.outputRule] : []),
 			"--", `[派活] ${member.title}\n${run.task}`,
 		];
 		const env = {

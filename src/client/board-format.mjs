@@ -167,6 +167,7 @@ const TOOL_STEP = {
 	write: (a) => ({ icon: "pencil", title: "写入文件", detail: baseName(a.path) }),
 	web_get: (a) => ({ icon: "globe", title: "读取网页", detail: hostOf(a.url) }),
 	lookup: (a) => lookupStep(a),
+	new_app: (a) => ({ icon: "folder", title: "开应用目录", detail: clip(a.short, 24) }),
 	read_ticket: () => ({ icon: "ticket", title: "查阅任务记录", detail: "" }),
 	hand_back: () => ({ icon: "return", title: "交回幕僚长", detail: "" }),
 	bg_start: (a) => ({ icon: "terminal", title: "启动后台命令", detail: clip(firstLine(a.command), 60) }),
@@ -203,3 +204,10 @@ export function teamWork(row) {
 
 /** @param {DashboardRow} row */
 export const helperLine = (row) => [helperFullName(row.helper), teamWork(row)].filter(Boolean).join(" · ");
+
+/** The board's line for a task's writes outside the output root (ADR-0015), a guess said only as 可能; "" when there is none. @param {DashboardRow["outside"] | undefined} tally */
+export function outsideLine(tally) {
+	if (!tally) return "";
+	const head = tally.wrote === 0 ? `可能写到成品目录之外 ${tally.maybe} 处` : `写到成品目录之外 ${tally.wrote} 处${tally.maybe ? `，另有 ${tally.maybe} 处可能` : ""}`;
+	return `${head}：${tally.sample.join("、")}${tally.wrote + tally.maybe > tally.sample.length ? " …" : ""}`;
+}

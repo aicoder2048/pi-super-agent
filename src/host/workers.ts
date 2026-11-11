@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Kernel } from "../kernel/kernel.ts";
-import type { Basis, Quote, ReportStatus, TicketInput } from "../kernel/types.ts";
+import type { Basis, Quote, ReportStatus, TicketInput, WorkerReport, WriteCheck } from "../kernel/types.ts";
 import { REPORT_STATUSES } from "../kernel/types.ts";
 import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
@@ -13,6 +13,7 @@ import { NO_DOMAIN, type DomainKit } from "../modules.ts";
 import type { Member } from "../teams.ts";
 import type { TranscriptMessage } from "../client/protocol.ts";
 import { canCode, memberTools } from "../worker/tools.ts";
+import type { OutputRoot } from "./output.ts";
 import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberLimit, type MemberRun } from "./dispatch.ts";
 
 export interface WorkerSpec extends DomainKit {
@@ -23,6 +24,8 @@ export interface WorkerSpec extends DomainKit {
 	token: string;
 	model: ModelRef;
 	resume: boolean;
+	/** The output rule, for a helper that can write files. */
+	outputRule?: string;
 }
 
 export interface WorkerEvents {
@@ -87,6 +90,7 @@ export interface WorkerExecutorOptions {
 	kernel: Kernel;
 	spawner: WorkerSpawner;
 	stateDir: string;
+	output: OutputRoot;
 	afterCommand: () => void;
 	onTranscript?: (ticketId: string, event: unknown) => void;
 	/** One message of a member at work on dispatch `callId`; `index` is its place among that dispatch's messages. */
@@ -219,7 +223,7 @@ export class WorkerExecutor {
 				void this.#desk?.end(ticketId);
 				this.#live.delete(ticketId);
 				if (this.#shuttingDown) return;
-				if (live && !live.stopping) kernel.workerReport(ticketId, { status: "failed", summary: "Worker 进程在一轮中途意外退出。" });
+				if (live && !live.stopping) this.#report(ticketId, { status: "failed", summary: "Worker 进程在一轮中途意外退出。" });
 				kernel.workerExited(ticketId);
 			}),
 			transcript: (event) => this.#o.onTranscript?.(ticketId, event),
@@ -228,7 +232,7 @@ export class WorkerExecutor {
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ...kit, token, model: choice.model, resume },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ...kit, token, model: choice.model, resume, ...(ticket.basis !== "inference" && { outputRule: this.#o.output.prompt("helper") }) },
 				events,
 			);
 		} catch (error) {
@@ -266,7 +270,7 @@ export class WorkerExecutor {
 				await live.handle.deliver("[通知] 上一轮因模型额度或限流中断，已切换到回退模型。请从中断处继续。");
 				return;
 			} else if (error) {
-				kernel.workerReport(ticketId, { status: "failed", summary: `Worker 这一轮因模型错误中断：${error}` });
+				this.#report(ticketId, { status: "failed", summary: `Worker 这一轮因模型错误中断：${error}` });
 			}
 		}
 		kernel.workerTurnEnded(ticketId, { bgRunning: (live?.bgRunning ?? 0) > 0 });
@@ -293,6 +297,7 @@ export class WorkerExecutor {
 		kernel.blockForCap(
 			ticketId,
 			`回退模型 ${formatModelRef(models.selector.current().model)} 今日用量已达上限（${models.fallbackDailyTokens} token），等主模型恢复或明天再继续。`,
+			this.#checkWrites(ticketId),
 		);
 	}
 
@@ -310,7 +315,7 @@ export class WorkerExecutor {
 					if (!REPORT_STATUSES.includes(status)) throw new Error(`未知的汇报状态 ${String(p.status)}`);
 					if (typeof p.summary !== "string" || !p.summary.trim()) throw new Error("汇报需要 summary");
 					const question = typeof p.question === "string" && p.question.trim() ? p.question : undefined;
-					const result = kernel.workerReport(ticketId, {
+					const result = this.#report(ticketId, {
 						status,
 						summary: p.summary,
 						question,
@@ -330,6 +335,9 @@ export class WorkerExecutor {
 					if (!this.#mayLookup(ticketId, holder)) throw new Error("这项任务里不能用 lookup：任务的领域没有在 module.json 的 tools 里开 lookup，或这位成员的 tools 没写 lookup");
 					if (!this.#o.lookup) throw new Error("没有可查询的来源");
 					return this.#o.lookup(String(p.source), String(p.op), p.args);
+				case "worker.new_app":
+					if (kernel.getTicket(ticketId)!.basis === "inference") throw new Error("推断开的任务只读，不能开应用");
+					return this.#o.output.newApp(ticketId, p.short);
 				case "worker.dispatch":
 					return this.#dispatch(ticketId, live, params);
 				case "worker.bg":
@@ -341,6 +349,19 @@ export class WorkerExecutor {
 		} finally {
 			afterCommand();
 		}
+	}
+
+	/** Every report a worker makes or the host makes for it. One that reaches the Router carries the host's check of writes outside the output root. */
+	#report(ticketId: string, report: WorkerReport): { reportId: string } {
+		const { kernel } = this.#o;
+		const reachesRouter = report.question !== undefined || report.status !== "progress";
+		const writes = reachesRouter ? this.#checkWrites(ticketId) : undefined;
+		return kernel.workerReport(ticketId, { ...report, ...(writes && { writes }) });
+	}
+
+	#checkWrites(ticketId: string): WriteCheck {
+		const { kernel, output } = this.#o;
+		return output.checkWrites(kernel.getTicket(ticketId)!, kernel.writeScan(ticketId));
 	}
 
 	#mayLookup(ticketId: string, holder: Member | undefined): boolean {
@@ -383,9 +404,11 @@ export class WorkerExecutor {
 		kernel.recordDispatch(ticketId, member.title);
 		const { basis } = kernel.getTicket(ticketId)!;
 		const { timeoutMs, codingTimeoutMs } = this.#o.dispatch!;
+		const codes = canCode(memberTools(basis, member.tools));
 		return this.#desk.dispatch({
 			ticketId, callId, member, task, basis,
-			limitMs: canCode(memberTools(basis, member.tools)) ? codingTimeoutMs : timeoutMs,
+			limitMs: codes ? codingTimeoutMs : timeoutMs,
+			...(codes && { outputRule: this.#o.output.prompt("member") }),
 			model,
 			refusal,
 			workdir: join(stateDir, "workers", ticketId),

@@ -1,7 +1,7 @@
 import { replaceControlCharacters, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { DashboardRow } from "../kernel/types.ts";
 import type { MemberCapBoard } from "./protocol.ts";
-import { BASIS_LABEL, HOST_SOURCE, STAGE_LABEL, formatElapsed, formatTokens, helperFullName, isLive, modelText, selectRows, shortId, stallMinutes } from "./board-format.mjs";
+import { BASIS_LABEL, HOST_SOURCE, STAGE_LABEL, formatElapsed, formatTokens, helperFullName, isLive, modelText, outsideLine, selectRows, shortId, stallMinutes } from "./board-format.mjs";
 
 export { shortId };
 
@@ -85,6 +85,8 @@ export function renderBoard(view: BoardView, width: number, now: number): string
 			}
 		}
 		lines.push(fit(`   最近：${row.latestSummary ?? "（暂无汇报）"}`, width));
+		const outside = outsideLine(row.outside);
+		if (outside) lines.push(fit(`   ${outside}`, width));
 		lines.push(fit(`   ${[helperFullName(row.helper), modelText(row)].filter(Boolean).join(" · ")} · 工具 ${row.toolCalls} · ${formatTokens(row.tokensIn + row.tokensOut)} tok · ${formatElapsed(elapsed)}`, width));
 	}
 	if (hiddenClosed) lines.push(fit(`   另有 ${hiddenClosed} 个已结束的任务`, width));

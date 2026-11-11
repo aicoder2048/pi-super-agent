@@ -109,6 +109,8 @@ export interface MemberRun {
 	model: ModelRef;
 	workdir: string;
 	sessionDir: string;
+	/** The output rule, for a member that can write files or run commands. */
+	outputRule?: string;
 	signal: AbortSignal;
 	onUsage(u: Usage): void;
 	/** Every event the member's process emits is a sign of life; `step` names the step an event starts, `tool` the tool call it starts or ends. */
@@ -116,6 +118,9 @@ export interface MemberRun {
 	/** Each message the member itself produces, as it finishes. */
 	onMessage(message: TranscriptMessage): void;
 }
+
+/** Where Pi keeps each helper's session, as <timestamp>_<sessionId>.jsonl. */
+export const helperSessionDir = (stateDir: string) => join(stateDir, "sessions", "workers");
 
 export const memberSessionDir = (stateDir: string, ticketId: string, member: string) => join(stateDir, "workers", ticketId, "team", member);
 

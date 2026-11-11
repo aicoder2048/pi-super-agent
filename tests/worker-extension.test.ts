@@ -142,21 +142,33 @@ test("助手的工具清单包含助手扩展注册的每一个工具，带着�
 	assert.deepEqual([...w.tools.keys()].filter((name) => !(WORKER_TOOLS as readonly string[]).includes(name)), []);
 });
 
-const HELPER_TOOLS = ["report", "hand_back", "read_ticket", "web_get", "bg_start", "bg_status", "bg_stop"];
+const HELPER_TOOLS = ["report", "hand_back", "read_ticket", "web_get", "new_app", "bg_start", "bg_status", "bg_stop"];
+const READ_ONLY_HELPER_TOOLS = ["report", "hand_back", "read_ticket", "web_get"];
+
+test("能写文件的助手有 new_app，短名经宿主连接提交；推断任务的助手和成员没有", async (t) => {
+	const request = await load("request");
+	const inference = await load("inference");
+	const member = await load("request", { PSA_MEMBER_TOOLS: "read,write,bash" });
+	t.after(() => { request.close(); inference.close(); member.close(); });
+	await request.run("new_app", { short: "joke" });
+	assert.deepEqual([request.requests.at(-1).method, request.requests.at(-1).params], ["worker.new_app", { short: "joke" }]);
+	assert.equal(inference.tools.has("new_app"), false);
+	assert.equal(member.tools.has("new_app"), false);
+});
 
 test("没有成员可派的助手：工具和单个助手一样，没有 dispatch_agent", async (t) => {
 	const request = await load("request");
 	const inference = await load("inference");
 	t.after(() => { request.close(); inference.close(); });
 	assert.deepEqual([...request.tools.keys()], HELPER_TOOLS);
-	assert.deepEqual([...inference.tools.keys()], HELPER_TOOLS.filter((name) => !name.startsWith("bg_")));
+	assert.deepEqual([...inference.tools.keys()], READ_ONLY_HELPER_TOOLS);
 	assert.equal((await inference.handlers.get("tool_call")({ toolName: "dispatch_agent" }))?.block, true);
 });
 
 test("本队有成员的助手多一个 dispatch_agent：一次派给名册里的一位，带上调用编号经宿主连接提交，结果带给页面的明细；其余工具不变", async (t) => {
 	const helper = await load("inference", { PSA_CREW: "market-analyst,news-researcher" });
 	t.after(helper.close);
-	assert.deepEqual([...helper.tools.keys()], [...HELPER_TOOLS.filter((name) => !name.startsWith("bg_")), "dispatch_agent"]);
+	assert.deepEqual([...helper.tools.keys()], [...READ_ONLY_HELPER_TOOLS, "dispatch_agent"]);
 	assert.equal(process.env.PSA_CREW, undefined);
 	const tool = helper.tools.get("dispatch_agent");
 	assert.deepEqual(Object.keys(tool.parameters.properties), ["agent", "task"]);

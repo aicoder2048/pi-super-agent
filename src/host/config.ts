@@ -6,6 +6,7 @@ import { DEFAULT_MODELS, parseModelRef, type ModelRef } from "../models.ts";
 import type { KernelConfig } from "../kernel/types.ts";
 import { ConfigError, readJsonFile } from "../config-error.ts";
 import { MEMBER_CAP_DEFAULT, MEMBER_CAP_MAX } from "./member-cap.ts";
+import { within } from "./output.ts";
 import { parseWebHosts, type TailnetName } from "./web-hosts.ts";
 
 export interface HostConfig {
@@ -31,6 +32,8 @@ export interface HostConfig {
 	/** Tailnet names the page also answers at (ADR-0014). Empty means local only. */
 	webHosts: readonly TailnetName[];
 	secretsFile?: string;
+	/** Absolute. Where helpers and members put what they make (ADR-0015). */
+	outputDir: string;
 	sources: Record<string, unknown>;
 	/** Present means the Telegram client runs. An empty list is setup mode: it only tells whoever writes their own numeric id. */
 	telegram?: { allowedUserIds: readonly number[] };
@@ -79,6 +82,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	}
 	const secretsFile = raw.secretsFile === undefined ? undefined : resolve(stateDir, raw.secretsFile);
 	if (secretsFile && !existsSync(secretsFile)) throw new ConfigError(`${file}：secretsFile 指向的 ${secretsFile} 不存在`);
+	const outputDir = parseOutputDir(raw.outputDir, stateDir, file);
 	const seconds = (key: string, fallback: number): number => {
 		const value = raw[key] === undefined ? fallback : raw[key];
 		if (typeof value !== "number" || !(value >= DISPATCH_TIMEOUT_MIN && value <= DISPATCH_TIMEOUT_MAX)) {
@@ -128,9 +132,21 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		webPort,
 		webHosts,
 		secretsFile,
+		outputDir,
 		sources,
 		...(telegram && { telegram }),
 	};
+}
+
+function parseOutputDir(value: unknown, stateDir: string, file: string): string {
+	if (value !== undefined && typeof value !== "string") throw new ConfigError(`${file}：outputDir（${JSON.stringify(value)}）必须是目录路径字符串，相对路径按状态目录算`);
+	if (value?.startsWith("~")) throw new ConfigError(`${file}：outputDir（${JSON.stringify(value)}）不能以 ~ 开头，配置里不展开 ~，请写绝对路径`);
+	const dir = resolve(stateDir, value ?? "output");
+	if (within(dir, stateDir)) throw new ConfigError(`${file}：outputDir（${dir}）不能是状态目录或它的上级，否则令牌和 state.db 也算成品目录`);
+	for (const own of ["workers", "sessions"]) {
+		if (within(join(stateDir, own), dir)) throw new ConfigError(`${file}：outputDir（${dir}）不能放在状态目录的 ${own}/ 下面，那里是宿主自己的任务目录和会话记录`);
+	}
+	return dir;
 }
 
 // A token pasted into this section by mistake must not reach the error, so errors name keys and never echo values.

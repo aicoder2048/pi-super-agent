@@ -10,6 +10,7 @@ import type { TimerEntry } from "../sources/timer.ts";
 import { FEEDS, type FeedSpec } from "../sources/feeds.ts";
 import type { HostConfig } from "./config.ts";
 import type { HostOptions } from "./host.ts";
+import { helperSessionDir } from "./dispatch.ts";
 import { PiWorkerSpawner } from "./pi-worker.ts";
 import { Router } from "./router.ts";
 import { readSecret } from "../secrets.ts";
@@ -115,6 +116,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		feeds,
 		...(telegram && { telegram }),
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
+		outputDir: config.outputDir,
 		dispatch: {
 			timeoutMs: config.dispatchTimeoutSeconds * 1000,
 			codingTimeoutMs: config.dispatchCodingTimeoutSeconds * 1000,
@@ -138,7 +140,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		createSpawner: (deps) =>
 			new PiWorkerSpawner({
 				socketPath: deps.socketPath,
-				sessionDir: join(config.stateDir, "sessions", "workers"),
+				sessionDir: helperSessionDir(config.stateDir),
 				cliPath: process.env.PSA_PI_CLI || undefined,
 				bgMaxMs: config.bgMaxMinutes * 60_000,
 				lookupHelp: feeds.map((f) => f.lookupHelp).join("\n") || undefined,

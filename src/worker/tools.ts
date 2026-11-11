@@ -3,7 +3,7 @@ import type { Basis } from "../kernel/types.ts";
 /** Every tool a helper can have: Pi's built-ins and the ones the worker extension registers for it. */
 export const WORKER_TOOLS = [
 	"read", "bash", "edit", "write", "grep", "find", "ls",
-	"report", "hand_back", "read_ticket", "web_get", "lookup", "bg_start", "bg_status", "bg_stop", "dispatch_agent",
+	"report", "hand_back", "read_ticket", "web_get", "lookup", "new_app", "bg_start", "bg_status", "bg_stop", "dispatch_agent",
 ] as const;
 
 const READ_TOOLS = ["read", "grep", "find", "ls", "web_get", "lookup"] as const;

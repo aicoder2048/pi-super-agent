@@ -18,12 +18,13 @@ import { Dispatcher } from "./dispatcher.ts";
 import { HostServer, type AnswerResult, type Broadcast, type ImChat, type SayOptions } from "./server.ts";
 import type { BoardState, Duty, MemberCapBoard, TodayCounts, TranscriptHistory, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
 import { readSessionEntries } from "../jsonl.ts";
-import { memberTranscripts } from "./dispatch.ts";
+import { helperSessionDir, memberTranscripts } from "./dispatch.ts";
 import { WebGateway } from "./web.ts";
 import { loadToken } from "./web-token.ts";
 import type { TailnetName } from "./web-hosts.ts";
 import { MemberCap } from "./member-cap.ts";
 import { ConfigError } from "../config-error.ts";
+import { OutputRoot } from "./output.ts";
 import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 import type { Domains } from "../modules.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
@@ -55,6 +56,8 @@ export interface HostOptions {
 	timers?: TimerEntry[];
 	heartbeatMs?: number;
 	workerModels: WorkerModels;
+	/** Absolute. Defaults to <stateDir>/output. */
+	outputDir?: string;
 	dispatch?: DispatchOptions;
 	createRouter(deps: HostDeps): Promise<RouterLike>;
 	createSpawner(deps: HostDeps): WorkerSpawner;
@@ -141,6 +144,8 @@ export class Host {
 			log: this.#log,
 			config: options.config,
 		});
+		const output = new OutputRoot({ root: options.outputDir ?? join(options.stateDir, "output"), stateDir: options.stateDir, ledger: this.kernel });
+		output.prepare();
 		const submit = (trigger: TriggerSubmission) => {
 			this.kernel.submitTrigger(trigger);
 			this.#changed();
@@ -170,6 +175,7 @@ export class Host {
 			kernel: this.kernel,
 			spawner: options.createSpawner(deps),
 			stateDir: options.stateDir,
+			output,
 			afterCommand: deps.afterCommand,
 			onTranscript: (ticketId, event) => this.#transcript(ticketId, event),
 			onMemberTranscript: (ticketId, member, message) => this.#web?.sendTranscript(ticketId, message, member),
@@ -354,7 +360,7 @@ export class Host {
 	transcript(ticketId: string): TranscriptHistory {
 		const ticket = this.kernel.getTicket(ticketId);
 		if (!ticket) return { messages: [] };
-		const dir = join(this.#stateDir, "sessions", "workers");
+		const dir = helperSessionDir(this.#stateDir);
 		const file = existsSync(dir) ? readdirSync(dir).find((f) => f.endsWith(`_${ticket.workerSessionId}.jsonl`)) : undefined;
 		const messages = file ? readSessionEntries(join(dir, file)).filter((entry) => entry.type === "message" && entry.message?.role !== "system").map((entry) => entry.message as TranscriptMessage) : [];
 		const crew = (ticket.domain !== null && this.#kitFor?.(ticket.domain)?.crew) || [];

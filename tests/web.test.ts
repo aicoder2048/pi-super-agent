@@ -1908,7 +1908,11 @@ test("页面：展开一次派活能看到成员自己的步骤：干活时一�
 	assert.deepEqual(page.liveSteps(cut, view)[0].dispatch!.steps.map((s) => s.state), ["ok", "stopped"], "成员被结束时没做完的那一步也停下");
 });
 
-const TOOL_NAMES = ["read", "grep", "find", "ls", "bash", "edit", "write", "web_get", "lookup", "read_ticket", "hand_back", "bg_start", "bg_status", "bg_stop", "report", "dispatch_agent"];
+const TOOL_NAMES = ["read", "grep", "find", "ls", "bash", "edit", "write", "web_get", "lookup", "new_app", "read_ticket", "hand_back", "bg_start", "bg_status", "bg_stop", "report", "dispatch_agent"];
+
+test("页面：new_app 的步骤叫「开应用目录」，明细是短名", () => {
+	assert.deepEqual(format.toolStep("new_app", { short: "joke" }), { icon: "folder", title: "开应用目录", detail: "joke" });
+});
 
 test("页面：每种工具的步骤都有一个图标，未知工具用通用图标；index.html 的图标模板和图标名单一一对应", () => {
 	for (const name of TOOL_NAMES) assert.ok((format.STEP_ICONS as readonly string[]).includes(format.toolStep(name, {}).icon), `${name} → ${format.toolStep(name, {}).icon}`);
@@ -2135,6 +2139,23 @@ test("页面：排队的成员标签带上现在的上限，使用者看得到�
 	assert.deepEqual(page.helperStrip(view, 0).chips[0].members.map((m) => m.label), ["财报解读 · 排队中 · 上限 4"]);
 	page.applyMessage(view, frame(10), 0);
 	assert.deepEqual(page.helperStrip(view, 0).chips[0].members.map((m) => m.label), ["财报解读 · 排队中 · 上限 10"]);
+});
+
+test("页面：有外写的任务卡片多一行，确切写入和推测的可能写入分开数，带最多三个路径；只有推测的只说可能；没有外写的这一行是空的", () => {
+	const left = page.leftColumn(withRows([
+		row({ id: "tkt_out", stage: "closed", outside: { wrote: 5, maybe: 0, sample: ["/repo/a.ts", "/repo/b.ts", "/repo"] } }),
+		row({ id: "tkt_one", stage: "closed", outside: { wrote: 1, maybe: 0, sample: ["/repo/a.ts"] } }),
+		row({ id: "tkt_mix", stage: "closed", outside: { wrote: 2, maybe: 1, sample: ["/repo/a.ts", "/repo/b.ts", "/repo"] } }),
+		row({ id: "tkt_may", stage: "closed", outside: { wrote: 0, maybe: 3, sample: ["/repo/a.ts", "/repo/b.ts", "/repo"] } }),
+		row({ id: "tkt_cln", stage: "closed", outside: null }),
+	]), 0);
+	assert.deepEqual(Object.fromEntries(left.done.map((c) => [c.id, c.outside])), {
+		tkt_cln: "",
+		tkt_one: "写到成品目录之外 1 处：/repo/a.ts",
+		tkt_out: "写到成品目录之外 5 处：/repo/a.ts、/repo/b.ts、/repo …",
+		tkt_mix: "写到成品目录之外 2 处，另有 1 处可能：/repo/a.ts、/repo/b.ts、/repo",
+		tkt_may: "可能写到成品目录之外 3 处：/repo/a.ts、/repo/b.ts、/repo",
+	});
 });
 
 const sent = (id: string, text: string, who: "user" | "router" = "user"): ConversationLine => ({ id, who, text, at: Number(id.slice(1)) });

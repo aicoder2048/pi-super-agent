@@ -128,3 +128,19 @@ test("助手的领域开了 lookup，宿主才把可查来源交给它；没配�
 	assert.equal((await helperEnv(true, undefined)).PSA_LOOKUPS, "（宿主没有配置可查询的来源）");
 	assert.equal((await helperEnv(false, "us-market quote")).PSA_LOOKUPS, undefined);
 });
+
+test("宿主给了成品规则的助手，argv 里多一段 --append-system-prompt；没给的没有", async (t) => {
+	const argvOf = async (outputRule: string | undefined) => {
+		const dir = mkdtempSync(join(tmpdir(), "psa-env-"));
+		const cliPath = join(dir, "fake-pi.mjs");
+		writeFileSync(cliPath, FAKE_PI);
+		const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath });
+		const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
+		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", crew: [], token: "t", model: { provider: "openai-codex", id: "gpt" }, resume: false, outputRule }, events);
+		t.after(() => handle.stop());
+		return JSON.parse(readFileSync(join(dir, "worker-argv.json"), "utf8")) as string[];
+	};
+	const appended = (argv: string[]) => argv.flatMap((a, i) => (a === "--append-system-prompt" ? [argv[i + 1]] : []));
+	assert.ok(appended(await argvOf("## 成品放在哪里\n规则")).includes("## 成品放在哪里\n规则"));
+	assert.ok(!appended(await argvOf(undefined)).some((p) => p.includes("成品")));
+});

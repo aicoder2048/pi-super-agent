@@ -37,6 +37,10 @@ import type {
 	Helper,
 	HelpersToday,
 	InputKind,
+	OutsideTally,
+	OutsideWrite,
+	ScanCursor,
+	WriteCheck,
 	KernelConfig,
 	PendingAction,
 	ReadResult,
@@ -59,6 +63,7 @@ import type {
 type Row = Record<string, any>;
 
 const DAY_MS = 86_400_000;
+const OUTSIDE_SAMPLE = 3;
 
 const RECOVERY_NOTE = "process restarted; inspect your workdir before repeating any external action";
 
@@ -109,6 +114,9 @@ function toReport(r: Row): Report {
 		drafts: JSON.parse(r.drafts),
 		waiting: r.waiting === 1,
 		createdAt: r.created_at,
+		outsideWrites: JSON.parse(r.outside_writes),
+		outsideOmitted: r.outside_omitted,
+		writeProblem: r.write_problem,
 	};
 }
 
@@ -420,8 +428,8 @@ export class Kernel {
 			const reportId = this.#id("rpt");
 			const now = this.#now();
 			this.#run(
-				`INSERT INTO reports (id, seq, ticket_id, status, summary, question, options, drafts, waiting, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				`INSERT INTO reports (id, seq, ticket_id, status, summary, question, options, drafts, waiting, created_at, outside_writes, outside_omitted, write_scan, write_problem)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				reportId,
 				this.#nextSeq(),
 				ticketId,
@@ -432,11 +440,17 @@ export class Kernel {
 				JSON.stringify(report.drafts ?? []),
 				report.waiting ? 1 : 0,
 				now,
+				JSON.stringify(report.writes?.outside ?? []),
+				report.writes?.omitted ?? 0,
+				report.writes ? JSON.stringify(report.writes.scanned) : null,
+				report.writes?.problem ?? null,
 			);
 			this.#run("UPDATE tickets SET last_progress_at = ? WHERE id = ?", now, ticketId);
 			if (ticket.stopped_at !== null) return { reportId };
 
 			if (report.status === "no_action") {
+				// The user must hear about writes outside even when the work itself is not worth a word.
+				if (report.writes?.outside.length) this.#enqueue({ kind: "router.notify", payload: { kind: "report", ticketId, reportId } });
 				this.#close(ticketId);
 				return { reportId };
 			}
@@ -448,6 +462,27 @@ export class Kernel {
 			if (report.status === "ready" && !report.waiting && !report.question) this.#close(ticketId);
 			return { reportId };
 		});
+	}
+
+	/**
+	 * The app number for this ticket's app `short`: the same number again for the same pair, so new_app can be retried.
+	 * Otherwise one past both the highest number ever given and `floor - 1`, never a number given before.
+	 */
+	claimApp(ticketId: string, short: string, floor: number): { number: number; isNew: boolean } {
+		return this.#tx(() => {
+			const found = this.#get("SELECT number FROM apps WHERE ticket_id = ? AND short = ?", ticketId, short);
+			if (found) return { number: found.number as number, isNew: false };
+			const given = (this.#get("SELECT seq FROM sqlite_sequence WHERE name = 'apps'")?.seq as number | undefined) ?? 0;
+			const number = Math.max(given, floor - 1) + 1;
+			this.#run("INSERT INTO apps (number, short, ticket_id, created_at) VALUES (?, ?, ?, ?)", number, short, ticketId, this.#now());
+			return { number, isNew: true };
+		});
+	}
+
+	/** The cursor of the ticket's latest checked report, where the next write check starts. */
+	writeScan(ticketId: string): ScanCursor {
+		const row = this.#get("SELECT write_scan FROM reports WHERE ticket_id = ? AND write_scan IS NOT NULL ORDER BY seq DESC LIMIT 1", ticketId);
+		return row ? JSON.parse(row.write_scan) : {};
 	}
 
 	workerHandBack(ticketId: string, { body }: { body: string }): void {
@@ -601,10 +636,10 @@ export class Kernel {
 		);
 	}
 
-	blockForCap(ticketId: string, summary: string): void {
+	blockForCap(ticketId: string, summary: string, writes: WriteCheck): void {
 		this.#tx(() => {
 			const latest = this.#latestReportRow(ticketId);
-			if (!(latest?.status === "blocked" && latest.summary === summary)) this.workerReport(ticketId, { status: "blocked", summary });
+			if (!(latest?.status === "blocked" && latest.summary === summary)) this.workerReport(ticketId, { status: "blocked", summary, writes });
 			this.#run("UPDATE tickets SET worker_state = 'idle' WHERE id = ? AND worker_state = 'queued'", ticketId);
 		});
 	}
@@ -707,8 +742,18 @@ export class Kernel {
 				workerState: t.workerState,
 				startedAt: t.startedAt,
 				endedAt: t.stoppedAt ?? t.closedAt,
+				outside: this.#outsideTally(t.id),
 			};
 		});
+	}
+
+	#outsideTally(ticketId: string): OutsideTally | null {
+		const rows = this.#all("SELECT outside_writes, outside_omitted FROM reports WHERE ticket_id = ? AND (outside_writes <> '[]' OR outside_omitted > 0) ORDER BY seq", ticketId);
+		if (rows.length === 0) return null;
+		const writes = rows.flatMap((r) => JSON.parse(r.outside_writes) as OutsideWrite[]);
+		const wrote = writes.filter((w) => w.kind === "wrote").length;
+		const maybe = writes.length - wrote + rows.reduce((n, r) => n + (r.outside_omitted as number), 0);
+		return { wrote, maybe, sample: writes.flatMap((w) => (w.kind === "wrote" ? [w.path] : w.paths)).slice(0, OUTSIDE_SAMPLE) };
 	}
 
 	/** Tickets opened on today's New York date and the tokens they used. */
