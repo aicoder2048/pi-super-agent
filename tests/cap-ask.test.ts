@@ -9,6 +9,7 @@ import type { HostToClient } from "../src/client/protocol.ts";
 import type { MemberRun } from "../src/host/dispatch.ts";
 import type { HostOptions } from "../src/host/host.ts";
 import { onJsonLines, writeJsonLine } from "../src/jsonl.ts";
+import { refusalText } from "../src/kernel/question.ts";
 import type { Member } from "../src/teams.ts";
 import { domainsOf, ids, ofType, startHost, tempStateDir, until, type Brain, type FakeWorker, type ToolCallSpec } from "./helpers/fakes.ts";
 
@@ -122,6 +123,19 @@ test("使用者点「今天放宽到 10」：上限马上是 10，排队的成�
 	await until(() => ofType(got, "user").some((m) => m.text === "后面一句"), "客户端收到后面那句话");
 	assert.deepEqual(ofType(got, "user").map((m) => m.text), [SAID, "后面一句"], "再点一次和换项被拒都不再播这句话");
 	assert.equal(capLogs().length, 2, capLogs().join("\n"));
+});
+
+test("从 Telegram 这类 IM 客户端来的成员上限回答一律被拒（not_here）：上限不变、问题还开着、对话里没有这句话；网页和终端照常能答", async (t) => {
+	const { host, count, cap } = await wholeCrewDispatched(t);
+	await until(() => count("queued") === 2, "一位在做两位排队");
+	const from = { client: "telegram" as const, chatId: 42 };
+	for (const option of [0, 1]) assert.deepEqual(host.answer(ASK, option, { from }), { ok: false, refusal: { kind: "not_here" } });
+	assert.equal(refusalText({ kind: "not_here" }), "成员上限只能在网页或终端的「待你处理」里回答");
+	await host.settled();
+	assert.deepEqual(cap(), { limit: 1, question: { reportId: ASK, text: "现在有 2 位成员在排队，同时运行的成员上限是 1。今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 1"], askedAt: NOON } });
+	assert.equal(host.snapshot().conversation.some((l) => l.id === ASK), false);
+	assert.deepEqual(host.answer(ASK, 0), { ok: true, triggerId: ASK });
+	assert.equal(cap()?.limit, 10);
 });
 
 test("使用者点「保持」：上限不变，排队的按原来的上限一位一位轮；这个纽约日里不再问", async (t) => {
