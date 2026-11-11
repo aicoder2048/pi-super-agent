@@ -12,7 +12,8 @@ function message(text: string | { forwarded: true } | { viaBot: true } | { photo
 }
 
 test("名单上的人私聊打的字交给幕僚长，原样不改", () => {
-	assert.deepEqual(decide(message("查一下 NVDA"), ALLOWED), { do: "say", chatId: 42, messageId: 7, text: "查一下 NVDA" });
+	assert.deepEqual(decide(message("查一下 NVDA"), ALLOWED), { do: "say", chatId: 42, messageId: 7, text: "查一下 NVDA", replyTo: null });
+	assert.deepEqual(decide({ ...message("为什么跌"), replyTo: 5 } as TelegramEvent, ALLOWED), { do: "say", chatId: 42, messageId: 7, text: "为什么跌", replyTo: 5 }, "滑动回复带上被回复的那条消息");
 });
 
 test("不在名单里的人、群里的话、发信人不是聊天本人的私聊：丢弃", () => {
@@ -34,7 +35,7 @@ test("/start、/help（带不带 @机器人名和参数）回说明；别的 / �
 	for (const text of ["/start", "/start@psa_test_bot", "/start payload", "/help", "/help@psa_test_bot extra"]) {
 		assert.deepEqual(decide(message(text), ALLOWED), { do: "note", chatId: 42, note: "help" }, text);
 	}
-	for (const text of ["/foo bar", "/started", "/helpme"]) assert.deepEqual(decide(message(text), ALLOWED), { do: "say", chatId: 42, messageId: 7, text }, text);
+	for (const text of ["/foo bar", "/started", "/helpme"]) assert.deepEqual(decide(message(text), ALLOWED), { do: "say", chatId: 42, messageId: 7, text, replyTo: null }, text);
 });
 
 test("转发的消息和非文字消息回一句说明，不交给幕僚长；只有零宽字符的话不处理", () => {
@@ -176,9 +177,10 @@ test("没有助手名的旧任务：卡片开头写「助手问你」；很长�
 	assert.ok(render({ kind: "card", view }).text.startsWith(`助手问你（任务「${"长".repeat(40)}…」）：`));
 });
 
-test("成员上限只发一条说明，指向网页和终端的「待你处理」；/start 的说明提到按钮", () => {
+test("成员上限只发一条说明，指向网页和终端的「待你处理」；/start 的说明提到按钮和滑动回复", () => {
 	assert.equal(NOTES.cap, "成员上限：现在有成员在排队，宿主在问要不要今天放宽上限。这个问题只能在网页或终端的「待你处理」里回答。");
 	assert.deepEqual(render({ kind: "note", text: NOTES.cap }), { text: NOTES.cap, keyboard: null, silent: false });
 	assert.match(NOTES.help, /点按钮就是回答/);
 	assert.match(NOTES.help, /成员上限只能在网页或终端回答/);
+	assert.match(NOTES.help, /滑动回复，就是引用那句话/);
 });

@@ -17,7 +17,7 @@ const TITLE_MAX = 40;
 export type Note = "help" | "text-only" | "no-forwards" | "no-via-bot";
 
 export const NOTES = {
-	help: "这里是白宫。你在这里打的字就是对幕僚长说的话，和网页、终端是同一个对话；幕僚长的回复也发到这里。助手提问时会发来带按钮的问题，点按钮就是回答；成员上限只能在网页或终端回答。只收文字，转发的消息不会交给幕僚长。",
+	help: "这里是白宫。你在这里打的字就是对幕僚长说的话，和网页、终端是同一个对话；幕僚长的回复也发到这里。对一条消息滑动回复，就是引用那句话。助手提问时会发来带按钮的问题，点按钮就是回答；成员上限只能在网页或终端回答。只收文字，转发的消息不会交给幕僚长。",
 	"text-only": "目前只收文字消息，这条没有交给幕僚长。",
 	"no-forwards": "转发的消息不会交给幕僚长。要问幕僚长，复制文字后用你自己的话发。",
 	cap: "成员上限：现在有成员在排队，宿主在问要不要今天放宽上限。这个问题只能在网页或终端的「待你处理」里回答。",
@@ -31,7 +31,7 @@ export type Inbound =
 	| { do: "drop" }
 	| { do: "tell-id"; chatId: number }
 	| { do: "note"; chatId: number; note: Note }
-	| { do: "say"; chatId: number; messageId: number; text: string }
+	| { do: "say"; chatId: number; messageId: number; text: string; replyTo: number | null }
 	| { do: "answer"; chatId: number; callbackId: string; reportId: string; option: number }
 	| { do: "refuse-tap"; callbackId: string; toast: string };
 
@@ -58,7 +58,7 @@ export function decide(event: TelegramEvent | null, allowed: ReadonlySet<number>
 	if (content.kind === "other") return { do: "note", chatId: chat.id, note: "text-only" };
 	if (!hasVisibleText(content.text)) return { do: "ignore" };
 	if (HELP_COMMAND.test(content.text)) return { do: "note", chatId: chat.id, note: "help" };
-	return { do: "say", chatId: chat.id, messageId: event.messageId, text: content.text };
+	return { do: "say", chatId: chat.id, messageId: event.messageId, text: content.text, replyTo: event.replyTo };
 }
 
 /** The same states and order as the web page's card: a click that stands, then the user's typing, then a click the chief of staff dropped. */

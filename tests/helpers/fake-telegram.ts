@@ -104,6 +104,13 @@ export class FakeTelegram {
 		return this.push({ message });
 	}
 
+	/** The message_id of a message the user sent, by the update that carried it: what a swipe-reply to it points at. */
+	messageIdOf(updateId: number): number {
+		const update = this.#updates.find((u) => u.update_id === updateId) as { message?: { message_id: number } } | undefined;
+		if (!update?.message) throw new Error(`update ${updateId} 不是使用者的消息`);
+		return update.message.message_id;
+	}
+
 	/** Queues a tap on a button of message `messageId` (in `from`'s private chat unless `chatId` says otherwise); returns the callback id. */
 	userTaps(from: number, messageId: number, data: string, { chatId = from, group = false }: { chatId?: number; group?: boolean } = {}): string {
 		const id = `cb${this.#nextCallbackId++}`;
