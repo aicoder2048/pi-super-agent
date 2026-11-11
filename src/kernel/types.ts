@@ -314,8 +314,19 @@ export interface Quote {
 	ticketId: string | null;
 }
 
+/**
+ * What a source says to the user directly, past the Router (ADR-0017). The kind alone decides where it may go:
+ * an alert reaches every front end, Telegram included, and is deduped on (source, externalId); a receipt never leaves this machine.
+ */
+export type HostLinePost =
+	| { kind: "alert"; externalId: string; text: string; occurredAt: number }
+	| { kind: "receipt"; text: string };
+
+/** A host line in the conversation. `who` is the kind. It cannot be quoted. */
+export type HostLine = { id: string; who: HostLinePost["kind"]; text: string; at: number };
+
 /** One line of the 对话 column. ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
-export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string; quote?: Quote };
+export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string; quote?: Quote } | HostLine;
 
 /**
  * The latest 清屏. `at` is when it happened, and also its identity: every effective 清屏 has a strictly later `at` than the one before.

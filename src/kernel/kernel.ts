@@ -21,6 +21,8 @@ import type {
 	Action,
 	Cleared,
 	ConversationLine,
+	HostLine,
+	HostLinePost,
 	ActionKind,
 	AnswerClick,
 	Basis,
@@ -99,6 +101,10 @@ function toTrigger(r: Row): Trigger {
 }
 
 // Node 22's node:sqlite reads a string back only up to its first U+0000, so drop U+0000 before it reaches the store.
+function hostLine(r: Row): HostLine {
+	return { id: r.id, who: r.kind, text: r.text, at: r.created_at };
+}
+
 function sqlParams(params: SQLInputValue[]): SQLInputValue[] {
 	return params.map((p) => (typeof p === "string" ? p.replaceAll("\u0000", "") : p));
 }
@@ -164,7 +170,9 @@ const LINES = `
 	UNION ALL
 	SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause, r.delivered_at IS NOT NULL FROM reply_receipts r WHERE r.thread_id = ?
 	UNION ALL
-	SELECT ? || c.day, 'user', c.said, c.answered_at, c.rowid, NULL, 1 FROM cap_asks c WHERE c.said IS NOT NULL`;
+	SELECT ? || c.day, 'user', c.said, c.answered_at, c.rowid, NULL, 1 FROM cap_asks c WHERE c.said IS NOT NULL
+	UNION ALL
+	SELECT h.id, h.kind, h.text, h.created_at, h.rowid, NULL, h.kind = 'receipt' OR h.delivered_at IS NOT NULL FROM host_lines h`;
 const LINES_PARAMS = [CONVERSATION_THREAD_ID, CONVERSATION_THREAD_ID, CAP_ASK_PREFIX] as const;
 const HIDDEN = "id IN (SELECT line_id FROM conversation_hidden)";
 
@@ -271,7 +279,7 @@ export class Kernel {
 	/** Null when lineId is not a shown line. A repeated externalId returns the first line's id and writes nothing. */
 	userSaidQuoting({ text, at, lineId, externalId }: { text: string; at: number; lineId: string; externalId?: string }): { triggerId: string; quote: Quote; duplicate: boolean } | null {
 		return this.#tx(() => {
-			const line = this.#get(`SELECT id, who, text, at, cause FROM (${LINES}) WHERE id = ? AND shown`, ...LINES_PARAMS, lineId);
+			const line = this.#get(`SELECT id, who, text, at, cause FROM (${LINES}) WHERE id = ? AND shown AND who IN ('user', 'router')`, ...LINES_PARAMS, lineId);
 			const snapshot = line && quoteSnapshot(line.text);
 			if (!snapshot) return null;
 			const quote: Quote = { lineId, who: line.who, at: line.at, text: snapshot, ticketId: this.#ticketOfLine(lineId, line.cause) };
@@ -1017,6 +1025,43 @@ export class Kernel {
 				this.#now(),
 			);
 		});
+	}
+
+	/** A repeated (source, externalId) alert returns the first line and writes nothing; any other failed insert throws. */
+	postHostLine(source: string, post: HostLinePost): { line: HostLine; duplicate: boolean } {
+		return this.#tx(() => {
+			if (post.kind === "alert") {
+				const existing = this.#get("SELECT id, kind, text, created_at FROM host_lines WHERE source = ? AND external_id = ?", source, post.externalId);
+				if (existing) return { line: hostLine(existing), duplicate: true };
+			}
+			const id = this.#id("hln");
+			const at = this.#now();
+			this.#run(
+				"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+				id,
+				post.kind,
+				source,
+				post.kind === "alert" ? post.externalId : null,
+				post.text,
+				post.kind === "alert" ? post.occurredAt : at,
+				at,
+			);
+			return { line: { id, who: post.kind, text: post.text, at }, duplicate: false };
+		});
+	}
+
+	/** Whether `source` already posted the alert `externalId`. */
+	raised(source: string, externalId: string): boolean {
+		return this.#get("SELECT 1 FROM host_lines WHERE source = ? AND external_id = ?", source, externalId) !== undefined;
+	}
+
+	markHostLineDelivered(id: string): void {
+		this.#run("UPDATE host_lines SET delivered_at = ? WHERE id = ? AND delivered_at IS NULL", this.#now(), id);
+	}
+
+	/** Alerts stored but never handed to the front ends: the host stopped between the insert and the broadcast. */
+	undeliveredAlerts(): HostLine[] {
+		return this.#all("SELECT id, kind, text, created_at FROM host_lines WHERE kind = 'alert' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
 	}
 
 	usageToday(provider: string): number {

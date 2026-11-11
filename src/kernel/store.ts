@@ -208,6 +208,23 @@ CREATE TABLE IF NOT EXISTS conversation_hidden (
 	hidden_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS conversation_hidden_at ON conversation_hidden(hidden_at);
+
+-- What a source says to the user directly (ADR-0017). An alert is one line and may reach Telegram; a receipt stays on this machine.
+CREATE TABLE IF NOT EXISTS host_lines (
+	id TEXT PRIMARY KEY CHECK (id GLOB 'hln_*'),
+	kind TEXT NOT NULL CHECK (kind IN ('alert', 'receipt')),
+	source TEXT NOT NULL,
+	external_id TEXT,
+	text TEXT NOT NULL,
+	occurred_at INTEGER NOT NULL,
+	created_at INTEGER NOT NULL,
+	delivered_at INTEGER,
+	CHECK (
+		(kind = 'alert' AND external_id IS NOT NULL AND length(text) BETWEEN 1 AND 1000 AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0)
+		OR (kind = 'receipt' AND external_id IS NULL AND length(text) BETWEEN 1 AND 16000)
+	),
+	UNIQUE (source, external_id)
+);
 `;
 
 export function openStore(path: string): DatabaseSync {
