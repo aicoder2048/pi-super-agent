@@ -14,7 +14,7 @@ import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import type { Feed, FeedSpec } from "../sources/feeds.ts";
 import { Dispatcher } from "./dispatcher.ts";
-import { HostServer, type AnswerResult, type Broadcast, type SayOptions } from "./server.ts";
+import { HostServer, type AnswerResult, type Broadcast, type ImChat, type SayOptions } from "./server.ts";
 import type { BoardState, Duty, MemberCapBoard, TodayCounts, TranscriptHistory, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
 import { readSessionEntries } from "../jsonl.ts";
 import { memberTranscripts } from "./dispatch.ts";
@@ -25,7 +25,8 @@ import { MemberCap } from "./member-cap.ts";
 import { ConfigError } from "../config-error.ts";
 import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 import type { Domains } from "../modules.ts";
-import type { TelegramOptions } from "./telegram/client.ts";
+import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
+import type { DatabaseSync } from "node:sqlite";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -108,6 +109,8 @@ export class Host {
 	#stallAt: number | null = null;
 	#heartbeat: NodeJS.Timeout | undefined;
 	#web: WebGateway | undefined;
+	#telegram: TelegramClient | undefined;
+	readonly #db: DatabaseSync;
 	readonly #watching: WatchedSource[];
 	readonly #clock: Clock;
 	readonly #kitFor: Domains["kitFor"] | undefined;
@@ -128,8 +131,9 @@ export class Host {
 		this.#after = options.after ?? afterRealTime;
 		this.#watching = options.watching ?? [];
 		this.#kitFor = options.domains?.kitFor;
+		this.#db = openStore(join(options.stateDir, "state.db"));
 		this.kernel = new Kernel({
-			db: openStore(join(options.stateDir, "state.db")),
+			db: this.#db,
 			clock,
 			sourcePolicy: (trigger) => (trigger.source === WATCHDOG_SOURCE ? "notice" : (options.sourcePolicy?.(trigger) ?? "candidate")),
 			ruleAllows: options.ruleAllows,
@@ -235,6 +239,10 @@ export class Host {
 		if (host.#memberCap) host.#atNextNewYorkDay(host.#memberCap);
 		host.#pushBoardAtNextStall(host.kernel.listTickets());
 		host.dispatcher.kick();
+		if (options.telegram) {
+			host.#telegram = new TelegramClient({ ...options.telegram, host: { say: (text, o) => host.say(text, o) }, db: host.#db, clock: host.#clock, log: host.#log });
+			host.#telegram.start();
+		}
 		return host;
 	}
 
@@ -247,11 +255,11 @@ export class Host {
 	}
 
 	/** A repeated externalId returns the first line's id and changes nothing. */
-	say(text: string, { externalId }: SayOptions = {}): string {
+	say(text: string, { externalId, from }: SayOptions = {}): string {
 		const at = Date.now();
 		const { triggerId, duplicate } = this.kernel.userSaid({ text, at, externalId });
 		if (duplicate) return triggerId;
-		this.#broadcast({ type: "user", id: triggerId, who: "user", text, at });
+		this.#broadcast({ type: "user", id: triggerId, who: "user", text, at }, from);
 		this.#changed();
 		return triggerId;
 	}
@@ -326,9 +334,11 @@ export class Host {
 		this.kernel.markReplyDelivered(replyId);
 	}
 
-	#broadcast(message: Broadcast): void {
+	/** `from` names the IM chat a line came from. Only the IM clients get it; it never goes on the wire. */
+	#broadcast(message: Broadcast, from?: ImChat): void {
 		this.server.broadcast(message);
 		this.#web?.broadcast(message);
+		this.#telegram?.broadcast(message, from);
 	}
 
 	#transcript(ticketId: string, event: unknown): void {
@@ -414,6 +424,7 @@ export class Host {
 	}
 
 	async stop(): Promise<void> {
+		await this.#telegram?.stop();
 		clearInterval(this.#heartbeat);
 		this.generic.stop();
 		this.timer.stop();
