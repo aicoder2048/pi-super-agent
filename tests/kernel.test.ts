@@ -739,6 +739,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			elapsedMs: 90_000,
 			lastProgressAt: reportedAt,
 			helper: { name: SOLO_NAMES[0], role: "conversation", seq: 1 },
+			dispatchedTo: null,
 			workerState: "running",
 			startedAt: reportedAt,
 			endedAt: null,
@@ -1543,15 +1544,53 @@ test("名字和四字还是两字在开任务时定下，之后不变；队名�
 	const helpers = (domains?: DomainBook) => ids.map((id) => helperOf(setup({ path, domains }).kernel, id));
 	const solo = { name: SOLO_NAMES[0], role: "conversation", seq: 1 };
 	assert.deepEqual(helpers(new Map([["news", { team: "要闻队", onRoster: true }], ["mail", { team: "邮件队", onRoster: true }]])), [{ name: TEAM_NAMES[0], team: "要闻队", seq: 1 }, solo], "模块改了队名、另一个模块后来有了成员");
-	assert.deepEqual(helpers(new Map([["news", { team: null, onRoster: true }]])), [{ name: TEAM_NAMES[0], team: "news", seq: 1 }, solo], "模块没了成员：写模块名");
-	assert.deepEqual(helpers(), [{ name: TEAM_NAMES[0], team: "news", seq: 1 }, solo], "模块拿掉了：写模块名");
+	assert.deepEqual(helpers(new Map([["news", { team: null, onRoster: true }]])), [{ name: TEAM_NAMES[0], team: null, seq: 1 }, solo], "模块没了成员：没有队名");
+	assert.deepEqual(helpers(), [{ name: TEAM_NAMES[0], team: null, seq: 1 }, solo], "模块拿掉了：没有队名");
 });
 
-test("T1 开的团队任务只有四字名、没有领域：读出来队名的位置写「团队」", () => {
+test("T1 开的团队任务只有四字名、没有领域：读出来没有队名", () => {
 	const s = setup({ domains: DOMAINS });
 	const id = s.open("request", { domain: "news" });
 	s.db.prepare("UPDATE tickets SET domain = NULL WHERE id = ?").run(id);
-	assert.deepEqual(helperOf(s.kernel, id), { name: TEAM_NAMES[0], team: "团队", seq: 1 });
+	assert.deepEqual(helperOf(s.kernel, id), { name: TEAM_NAMES[0], team: null, seq: 1 });
+});
+
+const dispatchedTo = (kernel: Kernel, id: string) => kernel.listTickets().find((r) => r.id === id)!.dispatchedTo;
+
+test("团队任务记下领队派给了哪些成员：开时一个也没有，每个成员按第一次派活的顺序只记一次", () => {
+	const s = setup({ domains: DOMAINS });
+	const id = s.open("request", { domain: "news" });
+	assert.deepEqual(dispatchedTo(s.kernel, id), []);
+	s.kernel.recordDispatch(id, "新闻研究员");
+	s.kernel.recordDispatch(id, "行情分析师");
+	s.kernel.recordDispatch(id, "新闻研究员");
+	assert.deepEqual(dispatchedTo(s.kernel, id), ["新闻研究员", "行情分析师"]);
+	assert.deepEqual(s.kernel.getTicket(id)!.dispatchedTo, ["新闻研究员", "行情分析师"]);
+});
+
+test("没有成员的任务没有派活记录，记派活也不会凭空有", () => {
+	const s = setup({ domains: DOMAINS });
+	const ids = [s.open("request"), s.open("request", { domain: "mail" })];
+	for (const id of ids) s.kernel.recordDispatch(id, "新闻研究员");
+	assert.deepEqual(ids.map((id) => dispatchedTo(s.kernel, id)), [null, null]);
+});
+
+test("派活记录在状态库里：重开数据库读得回来", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path, domains: DOMAINS });
+	const id = first.open("request", { domain: "news" });
+	first.kernel.recordDispatch(id, "新闻研究员");
+	first.db.close();
+	assert.deepEqual(dispatchedTo(setup({ path, domains: DOMAINS }).kernel, id), ["新闻研究员"]);
+});
+
+test("这个改动之前开的团队任务没有派活记录：升级状态库后读出来是没有记录，而不是一个也没派", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path, domains: DOMAINS });
+	const id = first.open("request", { domain: "news" });
+	first.db.exec("ALTER TABLE tickets DROP COLUMN dispatched_to");
+	first.db.close();
+	assert.deepEqual(dispatchedTo(setup({ path, domains: DOMAINS }).kernel, id), null);
 });
 
 test("成员上限的问答记在状态库里：重开数据库读得回来，记了到期的放宽不再读出", () => {

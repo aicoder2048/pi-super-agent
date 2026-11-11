@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS tickets (
 	helper_role TEXT ${oneOf("helper_role", HELPER_ROLES)},
 	helper_seq INTEGER,
 	domain TEXT,
+	dispatched_to TEXT,
 	CHECK (basis <> 'rule' OR rule_id IS NOT NULL)
 );
 
@@ -212,6 +213,7 @@ export function openStore(path: string): DatabaseSync {
 			ALTER TABLE tickets ADD COLUMN helper_seq INTEGER`);
 	}
 	if (!ticketColumns.includes("domain")) db.exec("ALTER TABLE tickets ADD COLUMN domain TEXT");
+	if (!ticketColumns.includes("dispatched_to")) db.exec("ALTER TABLE tickets ADD COLUMN dispatched_to TEXT");
 	if (!ticketColumns.includes("tokens_cached")) db.exec("ALTER TABLE tickets ADD COLUMN tokens_cached INTEGER NOT NULL DEFAULT 0");
 	const retitle = db.prepare("UPDATE tickets SET title = ? WHERE id = ?");
 	for (const { id, title } of db.prepare("SELECT id, title FROM tickets").all() as { id: string; title: string }[]) {
