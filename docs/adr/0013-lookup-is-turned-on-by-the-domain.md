@@ -8,7 +8,7 @@
 
 ## 决定
 
-**团队一级：module.json 的 `tools`。** 模块写 `"tools": ["lookup"]`，这个领域的助手和成员才有 `lookup`。能由模块开的工具只有一份清单（`src/worker/tools.ts` 的 `DOMAIN_GATED_TOOLS`，目前只有 `lookup`）。`tools` 写错（不是列表、空列表、清单外的名字）启动报错，以 module.json 开头。`Modules.kitFor` 是唯一读这个字段的地方：它给助手的 `DomainKit.mayLookup` 赋值，并把成员的 `tools` 按领域收窄，没开 lookup 的领域里，没写 `tools` 的成员拿到除 `lookup` 以外的全部成员工具。没有领域的任务（对话里幕僚长没给领域的、使用者规则开的、模块已被删掉的）一律没有 `lookup`。
+**团队一级：module.json 的 `tools`。** 模块写 `"tools": ["lookup"]`，这个领域的助手和成员才有 `lookup`。能由模块开的工具只有一份清单（`src/worker/tools.ts` 的 `DOMAIN_GATED_TOOLS`，现在是 `lookup` 和 `tripwire`，后者见 ADR-0017，只有助手能用）。`tools` 写错（不是列表、空列表、清单外的名字）启动报错，以 module.json 开头。`Modules.kitFor` 是唯一读这个字段的地方：它把领域开的工具交给助手（`DomainKit.granted`），并把成员的 `tools` 按领域收窄，没开 lookup 的领域里，没写 `tools` 的成员拿到除 `lookup` 以外的全部成员工具。没有领域的任务（对话里幕僚长没给领域的、使用者规则开的、模块已被删掉的）一律没有 `lookup`。
 
 **成员一级：成员文件已有的 `tools` 行。** 成员实际的工具仍是「依据允许的」∩「领域开的」∩「成员自己写的」。去掉某位成员的 `lookup`，就从它的 `tools` 删掉这个词再重启宿主。成员写了 `lookup` 而模块没开，启动报错，以成员文件开头，说明在 module.json 开或从成员去掉，不悄悄丢掉。
 
