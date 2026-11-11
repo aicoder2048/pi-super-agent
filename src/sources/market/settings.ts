@@ -11,7 +11,7 @@ export interface MarketSettings extends DetectSettings {
 }
 
 const FIELDS = ["watchlist", "bands", "volumeSpikeX", "everySeconds", "minGapMs", "baseURL"];
-const MAX_WATCHLIST = 50;
+export const MAX_WATCHLIST = 50;
 const MAX_BANDS = 10;
 
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);

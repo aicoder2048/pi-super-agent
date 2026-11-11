@@ -45,13 +45,17 @@ const BAND_EPSILON = 1e-9;
 // Opening and closing auctions print huge single minutes that are not news.
 const AUCTION_MS = 10 * MINUTE;
 
+export function isFresh(quote: Quote, session: Session): boolean {
+	return nyDateOf(quote.at) === session.nyDate && quote.at >= session.openAt && quote.at <= session.closeAt;
+}
+
 export function detect(cursor: MarketCursor | undefined, quotes: Quote[], session: Session, settings: DetectSettings): { moves: Move[]; cursor: MarketCursor } {
 	const today: MarketCursor = cursor?.nyDate === session.nyDate ? cursor : { nyDate: session.nyDate, sawFreshQuote: false, pollsWithoutFreshQuote: 0, fired: {} };
 	const fired: Record<string, Fired> = { ...today.fired };
 	const moves: Move[] = [];
 	let fresh = 0;
 	for (const quote of quotes) {
-		if (nyDateOf(quote.at) !== session.nyDate || quote.at < session.openAt || quote.at > session.closeAt) continue;
+		if (!isFresh(quote, session)) continue;
 		fresh++;
 		const was: Fired = { highestUpBand: 0, highestDownBand: 0, volume: false, ...fired[quote.symbol] };
 		const next = { ...was };
