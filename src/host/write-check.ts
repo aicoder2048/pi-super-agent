@@ -73,7 +73,7 @@ function outsideWrite(call: ToolCall, cwd: string, home: string, place: Placemen
 	}
 	if ((call.name === "bash" || call.name === "bg_start") && typeof args.command === "string") {
 		const paths = bashTargets(args.command, cwd, home).filter((p) => place(p) === "outside");
-		return paths.length ? { kind: "maybe", paths, command: [...args.command].slice(0, COMMAND_MAX).join(""), by } : undefined;
+		return paths.length ? { kind: "maybe", paths, command: [...args.command].slice(0, COMMAND_MAX).join(""), tool: call.name, by } : undefined;
 	}
 	return undefined;
 }

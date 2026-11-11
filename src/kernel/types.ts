@@ -141,7 +141,7 @@ export type OutsideWrite =
 	/** A write or edit call's exact path, absolute. */
 	| { kind: "wrote"; path: string; tool: "write" | "edit"; by: Writer }
 	/** Paths a bash or bg_start command may have written, by a best-effort parse of `command`, which is cut short. */
-	| { kind: "maybe"; paths: string[]; command: string; by: Writer };
+	| { kind: "maybe"; paths: string[]; command: string; tool: "bash" | "bg_start"; by: Writer };
 
 /** Session file, relative to the state directory so it survives a move, to the count of complete lines already scanned. */
 export type ScanCursor = Readonly<Record<string, number>>;

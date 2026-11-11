@@ -15,7 +15,7 @@ import { usageOf } from "./worker-events.ts";
 import { quoteSuffix } from "./workers.ts";
 import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
-import { CONVERSATION_THREAD_ID, RETRY_BACKOFF_MS, type Decision, type RouterNotice } from "../kernel/types.ts";
+import { CONVERSATION_THREAD_ID, RETRY_BACKOFF_MS, type Decision, type OutsideWrite, type Report, type RouterNotice, type Writer } from "../kernel/types.ts";
 
 export const ROUTER_TOOL_NAMES = ["read", "route", "reply", "note", "ask_status"] as const;
 const CARD_BODY_LIMIT = 600;
@@ -157,12 +157,29 @@ function ticketsLine(kernel: Kernel): string {
 	return `进行中和最近的任务：${listed.map((r) => `${r.id}「${r.title}」${STAGE_NAME[r.stage]}`).join("；")}`;
 }
 
-function reportCard(kind: "report" | "question", head: string, r: { status: keyof typeof STATUS_LABEL; summary: string; question: string | null; options: string[]; drafts: unknown[] }): string {
+function reportCard(kind: "report" | "question", head: string, r: Report): string {
 	const lines = [`[${kind === "question" ? "Worker 提问" : "Worker 汇报"}] ${head} · ${STATUS_LABEL[r.status]}`, r.summary];
 	if (r.question) lines.push(`问题：${r.question}`);
 	if (r.options.length) lines.push(`选项：${r.options.map((o, i) => `${i + 1}. ${o}`).join("；")}`);
 	if (r.drafts.length) lines.push(`草稿（等使用者确认）：\n${r.drafts.map((d, i) => `${i + 1}. ${typeof d === "string" ? d : JSON.stringify(d)}`).join("\n")}`);
+	lines.push(...outsideSection(r));
 	return lines.join("\n");
+}
+
+const OUTSIDE_LISTED = 10;
+const writerLabel = (by: Writer) => (by.role === "helper" ? "助手" : `成员 ${by.name}`);
+const outsideItem = (w: OutsideWrite) =>
+	w.kind === "wrote" ? `- 写入 ${w.path}（${writerLabel(w.by)} · ${w.tool}）` : `- 可能写入 ${w.paths.join("、")}（${writerLabel(w.by)} · ${w.tool}：${w.command}）`;
+
+/** The host's write check on the card (ADR-0015); nothing when it found nothing. */
+function outsideSection(r: Report): string[] {
+	const total = r.outsideWrites.length + r.outsideOmitted;
+	if (total === 0 && !r.writeProblem) return [];
+	const lines = [`宿主检查（只告知，没有拦下）：${total ? `这次汇报之前，有 ${total} 处写到了成品目录和任务目录之外` : "没有发现写到成品目录和任务目录之外的地方"}`];
+	lines.push(...r.outsideWrites.slice(0, OUTSIDE_LISTED).map(outsideItem));
+	if (total > OUTSIDE_LISTED) lines.push(`另有 ${total - OUTSIDE_LISTED} 处，用 read 读 ${r.ticketId} 看全部`);
+	if (r.writeProblem) lines.push(`没能检查完：${r.writeProblem}`);
+	return lines;
 }
 
 export function routerSystemPrompt(rules: string, replyMaxChars: number, domainRoster: string): string {
@@ -197,6 +214,7 @@ export function routerSystemPrompt(rules: string, replyMaxChars: number, domainR
 - 每条 reply 不超过 ${replyMaxChars} 字。确认一次之后保持安静，只在有结果、需要使用者做决定、或做不下去时才说话。
 - Worker 提问时，只把那一个具体问题转给使用者，reply 的 cause 填该任务的 tkt_。问题带选项时，选项会显示成按钮和编号，reply 里只说问题本身，不要逐条抄写选项。
 - 汇报带草稿时，告诉使用者有待确认的草稿，不要替使用者做决定。
+- [Worker 汇报] 或 [Worker 提问] 带「宿主检查」一段时，reply 里用一句话告诉使用者：有文件写到了成品目录之外，举出最多三个路径。不替它解释，不说已经处理，也不要因此新开任务。
 
 ## 成员上限
 同时运行的成员有上限，名额用完时成员排队。放宽上限是使用者自己的决定，只能由他亲手点选，你没有放宽上限的工具，助手和成员也没有。

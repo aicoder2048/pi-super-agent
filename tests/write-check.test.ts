@@ -77,9 +77,9 @@ test("bash 和 bg_start 的命令里推测出写到外面的，报成可能写�
 		call("bash", { command: "echo hi > ../../stray-bash.md" }),
 	);
 	assert.deepEqual(w.check().outside, [
-		{ kind: "maybe", paths: [`${REPO}/x.ts`], command: `cat > ${REPO}/x.ts <<'EOF'\nrm -rf /should-not-count\nEOF`, by: { role: "helper" } },
-		{ kind: "maybe", paths: [REPO], command: `cd ${REPO} && npm i`, by: { role: "helper" } },
-		{ kind: "maybe", paths: [join(w.stateDir, "stray-bash.md")], command: "echo hi > ../../stray-bash.md", by: { role: "helper" } },
+		{ kind: "maybe", paths: [`${REPO}/x.ts`], command: `cat > ${REPO}/x.ts <<'EOF'\nrm -rf /should-not-count\nEOF`, tool: "bash", by: { role: "helper" } },
+		{ kind: "maybe", paths: [REPO], command: `cd ${REPO} && npm i`, tool: "bg_start", by: { role: "helper" } },
+		{ kind: "maybe", paths: [join(w.stateDir, "stray-bash.md")], command: "echo hi > ../../stray-bash.md", tool: "bash", by: { role: "helper" } },
 	]);
 });
 

@@ -2028,7 +2028,7 @@ test("看板这一行把任务所有汇报的外写加起来，带上没列出�
 	const clean = open("request");
 	run(id);
 	kernel.workerReport(id, { status: "blocked", summary: "a", writes: checked(["/r/1", "/r/2"], { s: 1 }) });
-	kernel.workerReport(id, { status: "blocked", summary: "b", writes: { outside: [{ kind: "maybe", paths: ["/r/3", "/r/4"], command: "cp x /r/3 /r/4", by: { role: "member", name: "coder" } }], omitted: 5, scanned: { s: 2 } } });
+	kernel.workerReport(id, { status: "blocked", summary: "b", writes: { outside: [{ kind: "maybe", paths: ["/r/3", "/r/4"], command: "cp x /r/3 /r/4", tool: "bash", by: { role: "member", name: "coder" } }], omitted: 5, scanned: { s: 2 } } });
 	const row = kernel.listTickets().find((r) => r.id === id)!;
 	assert.deepEqual(row.outside, { count: 8, sample: ["/r/1", "/r/2", "/r/3"] });
 	assert.equal(kernel.listTickets().find((r) => r.id === clean)!.outside, null);
