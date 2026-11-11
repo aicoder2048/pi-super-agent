@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
 import { connect, createServer } from "node:net";
@@ -383,12 +383,36 @@ test("页面：产品叫白宫，副标题是 Pi Super Agent，和你对话的�
 	assert.deepEqual(watched([tool("hand_back", { reason: "不归我管" })]).map((s) => s.title), ["交回幕僚长"]);
 });
 
-test("页面：助手图标的颜色由任务编号固定决定，并行的任务分得开", () => {
+test("页面：头像的颜色由任务编号固定决定，并行的任务分得开", () => {
 	const ids = Array.from({ length: 60 }, (_, i) => `tkt_${(i * 7919 + 104729).toString(36)}x${i}`);
-	const tints = ids.map(page.helperTint);
-	assert.deepEqual(ids.map(page.helperTint), tints, "同一个编号每次取同一种颜色");
+	const tints = ids.map((id) => page.avatarOf(row({ id })).tint);
+	assert.deepEqual(ids.map((id) => page.avatarOf(row({ id, helper: { name: "高山流水", team: null, seq: 1 } })).tint), tints, "同一个编号每次取同一种颜色，单个助手和领队一样");
 	assert.ok(tints.every((n) => Number.isInteger(n) && n >= 0 && n < page.HELPER_TINTS), String(tints));
 	assert.equal(new Set(tints).size, page.HELPER_TINTS, "六种颜色都会用到");
+	assert.equal("helperTint" in page, false, "头像只经 avatarOf 取色");
+});
+
+test("页面：头像的六种颜色上写字，亮色和暗色主题的对比度都不低于 4.5 比 1", () => {
+	const html = readFileSync(new URL("../src/web/index.html", import.meta.url), "utf8");
+	const luminance = (hex: string) => {
+		const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+		return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+	};
+	const contrast = (a: string, b: string) => {
+		const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+		return (hi + 0.05) / (lo + 0.05);
+	};
+	const tints = [...html.matchAll(/\.tint-(\d) \{ background: light-dark\((#\w{6}), (#\w{6})\); color: light-dark\((#\w{6}), (#\w{6})\); \}/g)];
+	assert.equal(tints.length, page.HELPER_TINTS);
+	for (const [, n, bgLight, bgDark, inkLight, inkDark] of tints) {
+		assert.ok(contrast(bgLight, inkLight) >= 4.5, `tint-${n} 亮色 ${contrast(bgLight, inkLight).toFixed(2)}`);
+		assert.ok(contrast(bgDark, inkDark) >= 4.5, `tint-${n} 暗色 ${contrast(bgDark, inkDark).toFixed(2)}`);
+	}
+});
+
+test("页面：领队头像的冠标在 index.html 里只画一次，页面克隆它", () => {
+	const html = readFileSync(new URL("../src/web/index.html", import.meta.url), "utf8");
+	assert.match(html, /<template id="crown-mark"><svg class="crown"[^>]*aria-hidden="true"/);
 });
 
 test("页面：report 带问题是提出问题，ready 是提交结果，blocked 和 failed 是报告受阻", () => {
@@ -494,7 +518,7 @@ test("页面：助手条每位在岗助手一枚小卡（●运行中 ◐空闲 
 		row({ id: "tkt_stp", stage: "stopped", workerState: "running", endedAt: 9000, helper: { name: "拾遗", role: "rule", seq: 2 } }),
 	], zeroToday(), { count: 6, tokens: 12_345 }), 1000);
 	const strip = page.helperStrip(view, 3000);
-	assert.deepEqual(strip.chips.map(({ id, members, ...shown }) => shown), [
+	assert.deepEqual(strip.chips.map(({ id, members, avatar, ...shown }) => shown), [
 		{ duty: "running", mark: "●", state: "运行中", name: "青檀", role: "对话助手 #1", elapsed: "7秒", tokens: "1.5k tokens" },
 		{ duty: "idle", mark: "◐", state: "空闲", name: "远山", role: "行情助手 #2", elapsed: "1分2秒", tokens: "0 tokens" },
 		{ duty: "queued", mark: "○", state: "排队", name: "青檀", role: "观察助手 #1", elapsed: "0秒", tokens: "1.5k tokens" },
@@ -553,29 +577,70 @@ test("页面：模块没了成员或被拿掉的团队任务只写「领队」�
 	assert.deepEqual(page.leftColumn(view, 0).doing.map((c) => c.helper), ["高山流水 · 领队 #3"]);
 });
 
-test("页面：团队任务的卡片和执行过程头部写领队派给了谁；还没派写暂未派活，结束时没派过写领队独自完成，停掉时写领队未派活", () => {
+test("页面：团队任务的卡片底部和执行过程头部写领队派给了谁；还没派写暂未派活，结束时没派过写领队独自完成，停掉时写领队未派活", () => {
 	const leader = { name: "高山流水", team: "美股看盘队", seq: 2 };
+	const full = "高山流水 · 美股看盘队领队 #2";
 	const cases: [Partial<DashboardRow>, string][] = [
-		[{ dispatchedTo: ["行情分析师", "新闻研究员"] }, "高山流水 · 美股看盘队领队 #2 · 派给 行情分析师、新闻研究员"],
-		[{ dispatchedTo: ["行情分析师"], stage: "closed", endedAt: 1 }, "高山流水 · 美股看盘队领队 #2 · 派给 行情分析师"],
-		[{ dispatchedTo: [] }, "高山流水 · 美股看盘队领队 #2 · 暂未派活"],
-		[{ dispatchedTo: [], stage: "awaiting_answer" }, "高山流水 · 美股看盘队领队 #2 · 暂未派活"],
-		[{ dispatchedTo: [], stage: "closed", endedAt: 1 }, "高山流水 · 美股看盘队领队 #2 · 领队独自完成"],
-		[{ dispatchedTo: [], stage: "stopped", endedAt: 1 }, "高山流水 · 美股看盘队领队 #2 · 领队未派活"],
-		[{ dispatchedTo: null, stage: "closed", endedAt: 1 }, "高山流水 · 美股看盘队领队 #2"],
+		[{ dispatchedTo: ["行情分析师", "新闻研究员"] }, "派给 行情分析师、新闻研究员"],
+		[{ dispatchedTo: ["行情分析师"], stage: "closed", endedAt: 1 }, "派给 行情分析师"],
+		[{ dispatchedTo: [] }, "暂未派活"],
+		[{ dispatchedTo: [], stage: "awaiting_answer" }, "暂未派活"],
+		[{ dispatchedTo: [], stage: "closed", endedAt: 1 }, "领队独自完成"],
+		[{ dispatchedTo: [], stage: "stopped", endedAt: 1 }, "领队未派活"],
+		[{ dispatchedTo: null, stage: "closed", endedAt: 1 }, ""],
 	];
-	for (const [over, expected] of cases) {
+	for (const [over, work] of cases) {
 		const r = row({ helper: leader, ...over });
-		const view = withRows([r]);
-		const { needsYou, doing, done } = page.leftColumn(view, 0);
-		assert.deepEqual([...needsYou, ...doing, ...done].map((c) => c.helper), [expected], JSON.stringify(over));
-		assert.equal(helperLine(r), expected, `执行过程头部 ${JSON.stringify(over)}`);
+		const { needsYou, doing, done } = page.leftColumn(withRows([r]), 0);
+		const cards = [...needsYou, ...doing, ...done];
+		assert.deepEqual(cards.map((c) => c.helper), [full], `卡片的名字行只写全名 ${JSON.stringify(over)}`);
+		assert.deepEqual(cards.map((c) => c.crew), [work ? { avatars: page.memberAvatars(r.dispatchedTo ?? []), text: work } : null], `卡片底部 ${JSON.stringify(over)}`);
+		assert.equal(helperLine(r), work ? `${full} · ${work}` : full, `执行过程头部 ${JSON.stringify(over)}`);
 	}
 });
 
-test("页面：单个助手的任务不写派活：卡片和执行过程头部只有助手全名，旧任务还没有助手时都为空", () => {
+test("页面：单个助手的任务不写派活：卡片和执行过程头部只有助手全名，卡片没有底部，旧任务还没有助手时都为空", () => {
 	assert.equal(helperLine(row({ stage: "closed", endedAt: 1 })), "青檀 · 对话助手 #1");
 	assert.equal(helperLine(row({ helper: null })), "");
+	assert.deepEqual(page.leftColumn(withRows([row(), row({ id: "tkt_none", helper: null })]), 0).doing.map((c) => c.crew), [null, null]);
+});
+
+test("页面：头像取名字的第一个汉字；单个助手和领队分两种，模块被拿掉的领队仍是领队，还没有助手的任务是扳手", () => {
+	const { tint } = page.avatarOf(row());
+	assert.deepEqual(page.avatarOf(row()), { kind: "helper", text: "青", tint });
+	assert.deepEqual(page.avatarOf(row({ helper: { name: "高山流水", team: "美股看盘队", seq: 2 } })), { kind: "leader", text: "高", tint });
+	assert.deepEqual(page.avatarOf(row({ helper: { name: "高山流水", team: null, seq: 3 } })), { kind: "leader", text: "高", tint });
+	assert.deepEqual(page.avatarOf(row({ helper: null })), { kind: "unassigned", text: "", tint });
+});
+
+test("页面：任务卡片和助手条小卡的头像就是这个任务的 avatarOf", () => {
+	const leader = row({ id: "tkt_team", helper: { name: "高山流水", team: "美股看盘队", seq: 2 } });
+	const solo = row({ id: "tkt_solo" });
+	const view = withRows([leader, solo]);
+	assert.deepEqual(page.leftColumn(view, 0).doing.map((c) => c.avatar), [page.avatarOf(leader), page.avatarOf(solo)]);
+	assert.deepEqual(page.helperStrip(view, 0).chips.map((c) => c.avatar), [page.avatarOf(leader), page.avatarOf(solo)]);
+});
+
+test("页面：成员头像取职称的第一个汉字，同一组里首字相同时取两个字；结果和顺序无关，同一职称同一颜色", () => {
+	const faces = (titles: string[]) => page.memberAvatars(titles).map((a) => a.text);
+	assert.deepEqual(faces(["行情分析师", "新闻研究员"]), ["行", "新"]);
+	assert.deepEqual(faces(["技术分析师", "技能专家"]), ["技术", "技能"]);
+	assert.deepEqual(faces(["Pi 扩展专家", "Pi 命令行专家"]), ["扩", "命"]);
+	assert.deepEqual(faces(["Analyst"]), ["A"], "没有汉字时取第一个字符");
+	assert.deepEqual(page.memberAvatars(["技术分析师", "技能专家"])[0], page.memberAvatars(["技能专家", "技术分析师"])[1]);
+	assert.equal(page.memberAvatars(["行情分析师"])[0].tint, page.memberAvatars(["新闻研究员", "行情分析师"])[1].tint);
+	assert.deepEqual(page.memberAvatars(["行情分析师", "新闻研究员"]).map((a) => a.kind), ["member", "member"]);
+	assert.deepEqual(page.memberAvatars([]), []);
+});
+
+test("页面：仓库自带的两支团队，每位成员的头像都是一个字，同队里不重复", () => {
+	for (const team of ["us-market", "pi-pi"]) {
+		const dir = new URL(`../modules/${team}/agents/`, import.meta.url);
+		const titles = readdirSync(dir).map((f) => readFileSync(new URL(f, dir), "utf8").match(/^title: (.+)$/m)?.[1] ?? f);
+		const faces = page.memberAvatars(titles).map((a) => a.text);
+		assert.ok(faces.every((f) => [...f].length === 1), `${team}: ${faces}`);
+		assert.equal(new Set(faces).size, titles.length, `${team}: ${faces}`);
+	}
 });
 
 test("页面：没有在岗助手时助手条只有今日合计；还没收到看板时为空", () => {
