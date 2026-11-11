@@ -1,26 +1,6 @@
 import { readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-
-export type Writer = { role: "helper" } | { role: "member"; name: string };
-
-export type OutsideWrite =
-	/** A write or edit call's exact path, absolute. */
-	| { kind: "wrote"; path: string; tool: "write" | "edit"; by: Writer }
-	/** Paths a bash or bg_start command may have written; `command` is cut to COMMAND_MAX characters. */
-	| { kind: "maybe"; paths: string[]; command: string; by: Writer };
-
-/** Session file, relative to the state directory so it survives a move, to the count of complete lines already scanned. Pi only appends to a session file. */
-export type ScanCursor = Readonly<Record<string, number>>;
-
-export interface WriteCheck {
-	/** wrote is unique by path and maybe by command; at most OUTSIDE_MAX, the rest are counted in `omitted`. */
-	outside: OutsideWrite[];
-	omitted: number;
-	/** Where the next check starts. */
-	scanned: ScanCursor;
-	/** Why some of it could not be checked; `outside` may then be short. */
-	problem?: string;
-}
+import type { OutsideWrite, ScanCursor, WriteCheck, Writer } from "../kernel/types.ts";
 
 export interface SessionToScan {
 	file: string;

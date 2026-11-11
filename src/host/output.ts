@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSy
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { helperSessionDir } from "./dispatch.ts";
-import { scanSessions, type Placement, type ScanCursor, type SessionToScan, type WriteCheck } from "./write-check.ts";
+import type { ScanCursor, WriteCheck } from "../kernel/types.ts";
+import { scanSessions, type Placement, type SessionToScan } from "./write-check.ts";
 
 /** One kind of thing in the output root. `dir` is relative to the root, posix, without a trailing slash. */
 export interface OutputKind {
@@ -112,7 +113,12 @@ export class OutputRoot {
 
 	/** What the ticket's helper and members wrote outside since `since`, read from their session files. */
 	checkWrites(ticket: { id: string; workerSessionId: string }, since: ScanCursor): WriteCheck {
-		return scanSessions(this.#sessions(ticket), since, this.#placement(ticket.id), homedir());
+		try {
+			return scanSessions(this.#sessions(ticket), since, this.#placement(ticket.id), homedir());
+		} catch (error) {
+			// A failed check must not lose the report it rides on; the problem shows on the card instead.
+			return { outside: [], omitted: 0, scanned: since, problem: `没能检查：${error instanceof Error ? error.message : String(error)}` };
+		}
 	}
 
 	#sessions(ticket: { id: string; workerSessionId: string }): SessionToScan[] {

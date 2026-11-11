@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import type { MemberRun } from "../src/host/dispatch.ts";
 import type { Member } from "../src/teams.ts";
@@ -66,4 +66,43 @@ test("派活时，能写文件或跑命令的成员拿到成员版的规则；�
 	assert.match(ruleOf("coder") ?? "", /请领队给/);
 	assert.doesNotMatch(ruleOf("coder") ?? "", /new_app/);
 	assert.equal(ruleOf("reader"), undefined);
+});
+
+function writeHelperSession(host: { kernel: { getTicket(id: string): { workerSessionId: string } | undefined } }, stateDir: string, ticketId: string, cwd: string, paths: string[]) {
+	const file = join(stateDir, "sessions", "workers", `2026-11-11T00-00-00_${host.kernel.getTicket(ticketId)!.workerSessionId}.jsonl`);
+	mkdirSync(dirname(file), { recursive: true });
+	const lines = [{ type: "session", cwd }, ...paths.map((path) => ({ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "write", arguments: { path, content: "x" } }] } }))];
+	writeFileSync(file, lines.map((l) => `${JSON.stringify(l)}\n`).join(""));
+}
+
+const outsidePaths = (r: { outsideWrites: { kind: string; path?: string }[] }) => r.outsideWrites.map((w) => w.path);
+
+test("会通知 Router 的汇报带上宿主检查的结果；进度汇报不检查，那段时间的写入留到下一条会通知的汇报", async (t) => {
+	const { host, helper } = await helperOf(t, "request");
+	const ticketId = helper.spec.ticketId;
+	const stateDir = dirname(dirname(helper.spec.workdir));
+	writeHelperSession(host, stateDir, ticketId, helper.spec.workdir, ["/psa-not-a-repo/a.ts", "draft.md"]);
+	helper.report({ status: "progress", summary: "做着" });
+	helper.report({ status: "blocked", summary: "卡住了" });
+	writeHelperSession(host, stateDir, ticketId, helper.spec.workdir, ["/psa-not-a-repo/a.ts", "draft.md", "/psa-not-a-repo/b.ts"]);
+	helper.report({ status: "ready", summary: "做好了" });
+	const found = host.kernel.read(ticketId);
+	assert.ok(found?.type === "ticket");
+	assert.deepEqual(found.recentReports.map((r) => [r.summary, outsidePaths(r)]), [
+		["做好了", ["/psa-not-a-repo/b.ts"]],
+		["卡住了", ["/psa-not-a-repo/a.ts"]],
+		["做着", []],
+	]);
+});
+
+test("进程中途退出、模型出错时宿主替它写的 failed 汇报，也带上外写", async (t) => {
+	for (const end of ["crash", "error"] as const) {
+		const { host, helper } = await helperOf(t, "request");
+		const ticketId = helper.spec.ticketId;
+		writeHelperSession(host, dirname(dirname(helper.spec.workdir)), ticketId, helper.spec.workdir, [`/psa-not-a-repo/${end}.ts`]);
+		if (end === "crash") helper.crash();
+		else helper.settle("500 服务器出错");
+		await until(() => host.kernel.getTicket(ticketId)?.latestReport?.status === "failed", `${end} 后有 failed 汇报`);
+		assert.deepEqual(outsidePaths(host.kernel.getTicket(ticketId)!.latestReport!), [`/psa-not-a-repo/${end}.ts`], end);
+	}
 });

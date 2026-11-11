@@ -743,6 +743,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			workerState: "running",
 			startedAt: reportedAt,
 			endedAt: null,
+			outside: null,
 		},
 	);
 	assert.equal(kernel.usageToday("deepseek"), 1200);
@@ -1987,4 +1988,63 @@ test("重新打开同一个 state.db 文件后，应用编号接着往下数", (
 	first.db.close();
 	const second = setup({ path });
 	assert.equal(second.kernel.claimApp(ticket, "weather", 1).number, 2);
+});
+
+const repoWrite = (path: string) => ({ kind: "wrote" as const, path, tool: "write" as const, by: { role: "helper" as const } });
+const checked = (paths: string[], scanned: Record<string, number>, extra: { omitted?: number; problem?: string } = {}) => ({ outside: paths.map(repoWrite), omitted: extra.omitted ?? 0, scanned, ...(extra.problem && { problem: extra.problem }) });
+
+test("汇报存下宿主检查的结果；writeScan 给最近一次检查过的游标，没检查过的汇报不改它", () => {
+	const { kernel, open, run } = setup();
+	const id = open("request");
+	run(id);
+	assert.deepEqual(kernel.writeScan(id), {});
+	kernel.workerReport(id, { status: "blocked", summary: "卡住了", writes: checked(["/repo/a.ts"], { "s.jsonl": 4 }, { omitted: 2, problem: "读不了会话 m.jsonl" }) });
+	kernel.workerReport(id, { status: "progress", summary: "还在做" });
+	assert.deepEqual(kernel.writeScan(id), { "s.jsonl": 4 });
+	const found = kernel.read(id);
+	assert.ok(found?.type === "ticket");
+	assert.deepEqual(found.recentReports.map((r) => [r.outsideWrites, r.outsideOmitted, r.writeProblem]), [
+		[[], 0, null],
+		[[repoWrite("/repo/a.ts")], 2, "读不了会话 m.jsonl"],
+	]);
+});
+
+test("带外写的「无需处理」汇报也通知 Router，再结束任务；不带外写的照旧安静结束", () => {
+	const { kernel, open, run, notices } = setup();
+	const quiet = open("request");
+	run(quiet);
+	kernel.workerReport(quiet, { status: "no_action", summary: "不用做", writes: checked([], { "q.jsonl": 2 }) });
+	assert.deepEqual(notices().filter((n) => "ticketId" in n && n.ticketId === quiet), []);
+	const loud = open("request");
+	run(loud);
+	const { reportId } = kernel.workerReport(loud, { status: "no_action", summary: "不用做", writes: checked(["/repo/x"], { "l.jsonl": 2 }) });
+	assert.deepEqual(notices().filter((n) => "ticketId" in n && n.ticketId === loud), [{ kind: "report", ticketId: loud, reportId }]);
+	assert.equal(kernel.getTicket(loud)?.stage, "closed");
+});
+
+test("看板这一行把任务所有汇报的外写加起来，带上没列出的条数，最多给三个样本路径", () => {
+	const { kernel, open, run } = setup();
+	const id = open("request");
+	const clean = open("request");
+	run(id);
+	kernel.workerReport(id, { status: "blocked", summary: "a", writes: checked(["/r/1", "/r/2"], { s: 1 }) });
+	kernel.workerReport(id, { status: "blocked", summary: "b", writes: { outside: [{ kind: "maybe", paths: ["/r/3", "/r/4"], command: "cp x /r/3 /r/4", by: { role: "member", name: "coder" } }], omitted: 5, scanned: { s: 2 } } });
+	const row = kernel.listTickets().find((r) => r.id === id)!;
+	assert.deepEqual(row.outside, { count: 8, sample: ["/r/1", "/r/2", "/r/3"] });
+	assert.equal(kernel.listTickets().find((r) => r.id === clean)!.outside, null);
+});
+
+test("旧数据库的汇报表没有外写的几列：打开时补上，旧汇报读回没有外写", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const id = first.open("request");
+	first.run(id);
+	first.kernel.workerReport(id, { status: "progress", summary: "旧汇报" });
+	first.db.exec("ALTER TABLE reports DROP COLUMN outside_writes; ALTER TABLE reports DROP COLUMN outside_omitted; ALTER TABLE reports DROP COLUMN write_scan; ALTER TABLE reports DROP COLUMN write_problem");
+	first.db.close();
+	const again = setup({ path });
+	const found = again.kernel.read(id);
+	assert.ok(found?.type === "ticket");
+	assert.deepEqual(found.recentReports.map((r) => [r.summary, r.outsideWrites, r.writeProblem]), [["旧汇报", [], null]]);
+	assert.deepEqual(again.kernel.writeScan(id), {});
 });

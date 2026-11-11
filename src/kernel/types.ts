@@ -134,6 +134,28 @@ export type Decision =
 
 export type DecisionResult = Result<{ ticketId?: string }>;
 
+export type Writer = { role: "helper" } | { role: "member"; name: string };
+
+/** A write by a helper or member that landed outside the output root, its ticket's workdir and the temp directories (ADR-0015). */
+export type OutsideWrite =
+	/** A write or edit call's exact path, absolute. */
+	| { kind: "wrote"; path: string; tool: "write" | "edit"; by: Writer }
+	/** Paths a bash or bg_start command may have written, by a best-effort parse of `command`, which is cut short. */
+	| { kind: "maybe"; paths: string[]; command: string; by: Writer };
+
+/** Session file, relative to the state directory so it survives a move, to the count of complete lines already scanned. */
+export type ScanCursor = Readonly<Record<string, number>>;
+
+export interface WriteCheck {
+	outside: OutsideWrite[];
+	/** Outside writes left out of `outside` to keep it short. */
+	omitted: number;
+	/** Where the next check starts. */
+	scanned: ScanCursor;
+	/** Why some of it could not be checked; `outside` may then be short. */
+	problem?: string;
+}
+
 export interface WorkerReport {
 	status: ReportStatus;
 	summary: string;
@@ -141,6 +163,8 @@ export interface WorkerReport {
 	options?: string[];
 	drafts?: unknown[];
 	waiting?: boolean;
+	/** Set by the host before the report reaches the kernel; never from the worker's own params. */
+	writes?: WriteCheck;
 }
 
 export interface Trigger {
@@ -171,6 +195,9 @@ export interface Report {
 	drafts: unknown[];
 	waiting: boolean;
 	createdAt: number;
+	outsideWrites: OutsideWrite[];
+	outsideOmitted: number;
+	writeProblem: string | null;
 }
 
 export interface TicketInput {
@@ -267,6 +294,13 @@ export interface DashboardRow {
 	startedAt: number | null;
 	/** closedAt, or stoppedAt for a stopped ticket; null while the ticket is open. */
 	endedAt: number | null;
+	/** Every outside write in the ticket's reports, with up to three of their paths; null when there is none. */
+	outside: OutsideTally | null;
+}
+
+export interface OutsideTally {
+	count: number;
+	sample: string[];
 }
 
 export interface Quote {

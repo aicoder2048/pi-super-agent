@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Kernel } from "../kernel/kernel.ts";
-import type { Basis, Quote, ReportStatus, TicketInput } from "../kernel/types.ts";
+import type { Basis, Quote, ReportStatus, TicketInput, WorkerReport } from "../kernel/types.ts";
 import { REPORT_STATUSES } from "../kernel/types.ts";
 import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
@@ -223,7 +223,7 @@ export class WorkerExecutor {
 				void this.#desk?.end(ticketId);
 				this.#live.delete(ticketId);
 				if (this.#shuttingDown) return;
-				if (live && !live.stopping) kernel.workerReport(ticketId, { status: "failed", summary: "Worker 进程在一轮中途意外退出。" });
+				if (live && !live.stopping) this.#report(ticketId, { status: "failed", summary: "Worker 进程在一轮中途意外退出。" });
 				kernel.workerExited(ticketId);
 			}),
 			transcript: (event) => this.#o.onTranscript?.(ticketId, event),
@@ -270,7 +270,7 @@ export class WorkerExecutor {
 				await live.handle.deliver("[通知] 上一轮因模型额度或限流中断，已切换到回退模型。请从中断处继续。");
 				return;
 			} else if (error) {
-				kernel.workerReport(ticketId, { status: "failed", summary: `Worker 这一轮因模型错误中断：${error}` });
+				this.#report(ticketId, { status: "failed", summary: `Worker 这一轮因模型错误中断：${error}` });
 			}
 		}
 		kernel.workerTurnEnded(ticketId, { bgRunning: (live?.bgRunning ?? 0) > 0 });
@@ -314,7 +314,7 @@ export class WorkerExecutor {
 					if (!REPORT_STATUSES.includes(status)) throw new Error(`未知的汇报状态 ${String(p.status)}`);
 					if (typeof p.summary !== "string" || !p.summary.trim()) throw new Error("汇报需要 summary");
 					const question = typeof p.question === "string" && p.question.trim() ? p.question : undefined;
-					const result = kernel.workerReport(ticketId, {
+					const result = this.#report(ticketId, {
 						status,
 						summary: p.summary,
 						question,
@@ -348,6 +348,14 @@ export class WorkerExecutor {
 		} finally {
 			afterCommand();
 		}
+	}
+
+	/** Every report a worker makes or the host makes for it. One that reaches the Router carries the host's check of writes outside the output root. */
+	#report(ticketId: string, report: WorkerReport): { reportId: string } {
+		const { kernel, output } = this.#o;
+		const reachesRouter = report.question !== undefined || report.status !== "progress";
+		const writes = reachesRouter ? output.checkWrites(kernel.getTicket(ticketId)!, kernel.writeScan(ticketId)) : undefined;
+		return kernel.workerReport(ticketId, { ...report, ...(writes && { writes }) });
 	}
 
 	#mayLookup(ticketId: string, holder: Member | undefined): boolean {

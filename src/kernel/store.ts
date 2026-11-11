@@ -103,7 +103,12 @@ CREATE TABLE IF NOT EXISTS reports (
 	options TEXT NOT NULL DEFAULT '[]',
 	drafts TEXT NOT NULL,
 	waiting INTEGER NOT NULL,
-	created_at INTEGER NOT NULL
+	created_at INTEGER NOT NULL,
+	outside_writes TEXT NOT NULL DEFAULT '[]',
+	outside_omitted INTEGER NOT NULL DEFAULT 0,
+	-- The scan cursor after the host's write check; NULL on a report the host did not check.
+	write_scan TEXT,
+	write_problem TEXT
 );
 
 -- A click on an option of the question in report_id; the trigger is the sentence the host wrote for it.
@@ -215,6 +220,10 @@ export function openStore(path: string): DatabaseSync {
 	db.exec("CREATE INDEX IF NOT EXISTS reply_receipts_cause ON reply_receipts(cause)");
 	const reportColumns = db.prepare("PRAGMA table_info(reports)").all().map((c) => (c as { name: string }).name);
 	if (!reportColumns.includes("options")) db.exec("ALTER TABLE reports ADD COLUMN options TEXT NOT NULL DEFAULT '[]'");
+	if (!reportColumns.includes("outside_writes")) db.exec("ALTER TABLE reports ADD COLUMN outside_writes TEXT NOT NULL DEFAULT '[]'");
+	if (!reportColumns.includes("outside_omitted")) db.exec("ALTER TABLE reports ADD COLUMN outside_omitted INTEGER NOT NULL DEFAULT 0");
+	if (!reportColumns.includes("write_scan")) db.exec("ALTER TABLE reports ADD COLUMN write_scan TEXT");
+	if (!reportColumns.includes("write_problem")) db.exec("ALTER TABLE reports ADD COLUMN write_problem TEXT");
 	const ticketColumns = db.prepare("PRAGMA table_info(tickets)").all().map((c) => (c as { name: string }).name);
 	if (!ticketColumns.includes("helper_name")) {
 		db.exec(`ALTER TABLE tickets ADD COLUMN helper_name TEXT;
