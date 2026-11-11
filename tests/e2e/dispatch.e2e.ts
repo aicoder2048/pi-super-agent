@@ -108,7 +108,10 @@ test("看盘队的领队把一个问题并行派给两位成员再合成一份�
 				await page.waitForFunction(() => document.querySelectorAll("#helpers .member-chip").length === 0);
 				assert.equal(await page.locator("#helpers .helper-chip", { hasText: "看盘队领队 #1" }).locator(".name").textContent(), helperName);
 				assert.equal(await page.locator("#how-helper").textContent(), `${helperName} · 看盘队领队 #1 · 派给 行情分析师、新闻研究员`);
-				assert.equal(await page.locator("#left .card", { hasText: REPORT }).locator(".by").textContent(), `${helperName} · 看盘队领队 #1 · 派给 行情分析师、新闻研究员`);
+				const card = page.locator("#left .card", { hasText: REPORT });
+				assert.equal(await card.locator(".by").textContent(), `${helperName} · 看盘队领队 #1`);
+				assert.equal(await card.locator(".crew-text").textContent(), "派给 行情分析师、新闻研究员");
+				assert.deepEqual(await card.locator(".crew .face").allTextContents(), ["行", "新"]);
 			});
 			await step("幕僚长的话、任务卡上的结论和汇报那一步都按 Markdown 显示，不露出星号", async (page) => {
 				const bubble = page.locator("#conversation .line.router .bubble", { hasText: "已交给" });

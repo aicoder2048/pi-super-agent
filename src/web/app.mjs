@@ -1,8 +1,8 @@
 // @ts-check
 
 import {
-	CLEAR_FAILED, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
-	questionOf, helperStrip, helperTint, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
+	CLEAR_FAILED, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
+	questionOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
 	smallPrint, stopSentence, toggleEarlier, toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperLine } from "../client/board-format.mjs";
@@ -35,6 +35,7 @@ function mount(doc) {
 	const avatarMark = template("router-avatar");
 	const youMark = template("user-avatar");
 	const wrench = template("helper-icon");
+	const crown = template("crown-mark");
 	let rendered = 0;
 	/** @type {number | null} */
 	let renderedClearAt = null;
@@ -145,12 +146,23 @@ function mount(doc) {
 		$("restart").textContent = restartNotice(view.duty, Date.now());
 	};
 
-	/** @param {string} ticketId */
-	const helperBadge = (ticketId) => {
-		const badge = el("span", `helper tint-${helperTint(ticketId)}`);
-		badge.setAttribute("aria-hidden", "true");
-		badge.append(wrench.cloneNode(true));
-		return badge;
+	/** @param {import("./view.mjs").Avatar} avatar */
+	const avatarNode = (avatar) => {
+		const face = el("span", `face tint-${avatar.tint}`, avatar.text);
+		face.dataset.kind = avatar.kind;
+		face.setAttribute("aria-hidden", "true");
+		if (avatar.kind === "unassigned") face.append(wrench.cloneNode(true));
+		if (avatar.kind === "leader") face.append(crown.cloneNode(true));
+		return face;
+	};
+
+	/** @param {import("./view.mjs").Crew} crew */
+	const crewNode = (crew) => {
+		const node = el("div", "crew");
+		const stack = el("span", "stack");
+		stack.append(...crew.avatars.map(avatarNode));
+		node.append(stack, el("span", "crew-text", crew.text));
+		return node;
 	};
 
 	/** @param {HTMLElement} box @param {import("./view.mjs").Choice | null | undefined} choice */
@@ -204,8 +216,9 @@ function mount(doc) {
 		node.setAttribute("role", "button");
 		node.setAttribute("aria-current", String(watching?.watch.ticketId === card.id));
 		const head = el("div", "head");
-		head.append(helperBadge(card.id), el("div", "title", card.title));
+		head.append(avatarNode(card.avatar), el("div", "title", card.title));
 		node.append(head, el("div", "by", card.helper), el("div", "why", `${card.why} · ${card.stage}`), md("latest", card.latest));
+		if (card.crew) node.append(crewNode(card.crew));
 		if (card.choice) {
 			const box = el("div", "choices");
 			fillChoices(box, card.choice);
@@ -280,7 +293,7 @@ function mount(doc) {
 		const node = el("button", "helper-chip");
 		node.type = "button";
 		node.dataset.id = chip.id;
-		node.append(el("span", "dot"), el("span", "name", chip.name), el("span", "role", chip.role), el("span", "meta"));
+		node.append(el("span", "dot"), avatarNode(chip.avatar), el("span", "name", chip.name), el("span", "role", chip.role), el("span", "meta"));
 		node.addEventListener("click", () => watch(chip.id));
 		const slot = el("div", "helper-slot");
 		slot.append(node, el("div", "members"));
@@ -444,7 +457,7 @@ function mount(doc) {
 
 	const renderHow = () => {
 		const row = view.rows.find((r) => r.id === watching?.watch.ticketId);
-		$("how-badge").replaceChildren(...(row ? [helperBadge(row.id)] : []));
+		$("how-badge").replaceChildren(...(row ? [avatarNode(avatarOf(row))] : []));
 		$("how-title").textContent = row?.title ?? "";
 		$("how-helper").textContent = row ? helperLine(row) : "";
 		$("how-meta").textContent = row ? `${BASIS_PHRASE[row.basis]} · ${STAGE_PHRASE[row.stage]}` : "";

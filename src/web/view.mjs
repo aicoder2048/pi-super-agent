@@ -17,7 +17,7 @@
 /** @typedef {import("../host/dispatch.ts").BoardDispatch} BoardDispatch */
 /** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
 
-import { HOST_SOURCE, INPUT_LABEL, QUOTE_WHO, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, helperLine, modelText, oneLine, shortId, stallMinutes, textOf, toolStep } from "../client/board-format.mjs";
+import { HOST_SOURCE, INPUT_LABEL, QUOTE_WHO, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, oneLine, shortId, stallMinutes, teamWork, textOf, toolStep } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -189,10 +189,22 @@ export function questionOf(view, reportId) {
 }
 
 /**
+ * A face for a helper or a member. The page draws it beside a name it never replaces, so it is aria-hidden.
+ * @typedef {object} Avatar
+ * @property {"helper" | "leader" | "member" | "unassigned"} kind leader: square with a crown, whether or not its module still has a team; unassigned: a ticket with no helper yet
+ * @property {string} text one character, two when members in the same set share the first; "" for unassigned
+ * @property {number} tint 0..HELPER_TINTS-1, the .tint-N class
+ */
+
+/** A team card's footer: the members' faces, then teamWork(row) verbatim. @typedef {{ avatars: Avatar[], text: string }} Crew */
+
+/**
  * @typedef {object} TaskCard
  * @property {string} id
  * @property {string} title
- * @property {string} helper
+ * @property {string} helper the full name only; a team's 「派给 …」 is in `crew`
+ * @property {Avatar} avatar
+ * @property {Crew | null} crew
  * @property {string} why
  * @property {string} stage
  * @property {string} latest
@@ -205,7 +217,9 @@ function card(row, now, sending) {
 	return {
 		id: row.id,
 		title: row.title,
-		helper: helperLine(row),
+		helper: helperFullName(row.helper),
+		avatar: avatarOf(row),
+		crew: crewOf(row),
 		why: BASIS_PHRASE[row.basis],
 		stage: row.stall ? `久无进展 · ${stallMinutes(row.stall.since, now)} 分钟` : STAGE_PHRASE[row.stage],
 		latest: row.question?.text ?? row.latestSummary ?? "已开始，暂无进展",
@@ -327,11 +341,44 @@ export function restartNotice(duty, now) {
 
 export const HELPER_TINTS = 6;
 
-/** FNV-1a over the ticket id, so a task keeps its helper colour across reloads. @param {string} ticketId */
-export function helperTint(ticketId) {
+/** FNV-1a, so a task (by ticket id) or a member (by title) keeps its colour across reloads. @param {string} key */
+function tintOf(key) {
 	let hash = 0x811c9dc5;
-	for (let i = 0; i < ticketId.length; i++) hash = Math.imul(hash ^ ticketId.charCodeAt(i), 0x01000193);
+	for (let i = 0; i < key.length; i++) hash = Math.imul(hash ^ key.charCodeAt(i), 0x01000193);
 	return (hash >>> 0) % HELPER_TINTS;
+}
+
+/**
+ * `width` characters from the first Han character, or from the start when there is none.
+ * Starting at a Han character is what tells Pi施工队 apart: every title there begins with 「Pi 」.
+ * @param {string} text @param {1 | 2} width
+ */
+function glyph(text, width) {
+	const chars = [...text];
+	const at = Math.max(0, chars.findIndex((c) => /\p{Script=Han}/u.test(c)));
+	return chars.slice(at, at + width).join("");
+}
+
+/** @param {DashboardRow} row @returns {Avatar} */
+export function avatarOf(row) {
+	const tint = tintOf(row.id);
+	if (!row.helper) return { kind: "unassigned", text: "", tint };
+	return { kind: "team" in row.helper ? "leader" : "helper", text: glyph(row.helper.name, 1), tint };
+}
+
+/** Faces for member titles in the order given; a face depends on the set of titles, never on their order. @param {readonly string[]} titles @returns {Avatar[]} */
+export function memberAvatars(titles) {
+	const firsts = titles.map((t) => glyph(t, 1));
+	return titles.map((title, i) => {
+		const shared = firsts.some((f, j) => f === firsts[i] && titles[j] !== title);
+		return { kind: "member", text: shared ? glyph(title, 2) : firsts[i], tint: tintOf(title) };
+	});
+}
+
+/** @param {DashboardRow} row @returns {Crew | null} */
+function crewOf(row) {
+	const text = teamWork(row);
+	return text ? { avatars: memberAvatars(row.dispatchedTo ?? []), text } : null;
 }
 
 /** @param {string} title */
@@ -601,6 +648,7 @@ function runningFor(ms) {
  * @property {string} role
  * @property {string} elapsed
  * @property {string} tokens
+ * @property {Avatar} avatar
  * @property {{ title: string, state: "queued" | "running", label: string }[]} members the team members at work or waiting for this helper right now; a working one reads 「新闻研究员 · 读取网页 · 12 秒前」, or 「新闻研究员 · 执行命令 · 已 2 分钟」 while a tool call is in flight
  */
 
@@ -614,6 +662,7 @@ export function helperStrip(view, now) {
 			...DUTY_MARK[row.workerState],
 			name: row.helper.name,
 			role: helperLabel(row.helper),
+			avatar: avatarOf(row),
 			elapsed: elapsedOf(row, now, view.receivedAt),
 			tokens: `${formatTokens(row.tokensIn + row.tokensOut)} tokens`,
 			members: (view.dispatching[row.id] ?? []).flatMap((d) => {

@@ -69,13 +69,17 @@
 		.card.cap { border-left: 4px solid var(--accent); }
 		.card.cap .by { font-weight: 700; }
 		.card[aria-current="true"] { outline: 2px solid var(--accent); outline-offset: -1px; }
-		.helper { width: 22px; height: 22px; border-radius: 999px; display: flex; align-items: center; justify-content: center; flex: none; }
-		.helper svg { width: 13px; height: 13px; }
+		.face { position: relative; width: 22px; height: 22px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; flex: none; font-size: 12px; font-weight: 600; line-height: 1; }
+		.face svg { width: 13px; height: 13px; }
+		.face[data-kind="leader"] { border-radius: 6px; }
+		.face .crown { position: absolute; top: -6px; left: 50%; width: 12px; height: 8px; transform: translateX(-50%); color: #f59f00; }
+		.face[data-kind="member"] { min-width: 18px; width: auto; height: 18px; padding: 0 4px; font-size: 10px; box-shadow: 0 0 0 2px var(--panel); }
+		.card.ask .face[data-kind="member"] { box-shadow: 0 0 0 2px var(--warn-bg); }
 		.tint-0 { background: light-dark(#e7ecff, #262c45); color: light-dark(#3b5bdb, #91a7ff); }
-		.tint-1 { background: light-dark(#fff0e0, #3a2618); color: light-dark(#d9480f, #ffa94d); }
-		.tint-2 { background: light-dark(#e6f6ea, #1f3326); color: light-dark(#2b8a3e, #69db7c); }
+		.tint-1 { background: light-dark(#fff0e0, #3a2618); color: light-dark(#b8400d, #ffa94d); }
+		.tint-2 { background: light-dark(#e6f6ea, #1f3326); color: light-dark(#237a35, #69db7c); }
 		.tint-3 { background: light-dark(#f3f0ff, #2c2445); color: light-dark(#7048e8, #b197fc); }
-		.tint-4 { background: light-dark(#e3fafc, #163236); color: light-dark(#0c8599, #66d9e8); }
+		.tint-4 { background: light-dark(#e3fafc, #163236); color: light-dark(#0b7285, #66d9e8); }
 		.tint-5 { background: light-dark(#fff0f6, #3a1d2a); color: light-dark(#c2255c, #faa2c1); }
 		.card .head { display: flex; align-items: flex-start; gap: 8px; }
 		.card .title { font-size: 14px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
@@ -83,6 +87,10 @@
 		.card .by:empty, #how-helper:empty, #how-life:empty { display: none; }
 		.card .why, .card .latest { font-size: 12px; color: var(--muted); margin-top: 6px; overflow-wrap: anywhere; white-space: pre-wrap; }
 		.card.ask .latest { color: var(--ink); font-size: 13px; }
+		.crew { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--accent-ink); }
+		.crew .stack { display: inline-flex; padding-left: 2px; }
+		.crew .stack:empty { display: none; }
+		.crew .face + .face { margin-left: -5px; }
 		.card .row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 		.card .row .spacer { flex: 1; }
 		.choices { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
@@ -166,7 +174,7 @@
 		.label { font-size: 12px; color: var(--muted); }
 		.how-head { display: flex; align-items: flex-start; gap: 8px; margin-top: 4px; }
 		.how-head:has(#how-title:empty) { display: none; }
-		.how-head .helper { margin-top: 1px; }
+		.how-head .face { margin-top: 1px; }
 		#how-title { font-size: 16px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; min-width: 0; }
 		#how-title:empty, #how-meta:empty { display: none; }
 		#how-meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
@@ -268,6 +276,7 @@
 	</div>
 	<template id="router-avatar"><svg class="avatar" viewBox="0 0 72 72" aria-hidden="true"><circle class="mark-bg" cx="36" cy="36" r="36"></circle><path d="M22 30h28M30 30v16M42 30v12c0 2.5 1.2 4 3.5 4" stroke="#fff" stroke-width="4.5" stroke-linecap="round" fill="none"></path><circle cx="52" cy="20" r="5" fill="#f59f00"></circle></svg></template>
 	<template id="user-avatar"><svg class="avatar you" viewBox="0 0 72 72" aria-hidden="true"><circle class="mark-bg" cx="36" cy="36" r="36"></circle><ellipse cx="36" cy="36" rx="25" ry="19" stroke="#f59f00" stroke-width="2.4" fill="none"></ellipse><path d="M36 22l3.6 7.6 8.3 1-6.1 5.7 1.6 8.2L36 40.4l-7.4 4.1 1.6-8.2-6.1-5.7 8.3-1z" fill="#f59f00"></path></svg></template>
+	<template id="crown-mark"><svg class="crown" viewBox="0 0 12 8" fill="currentColor" aria-hidden="true"><path d="M0 2l3 2.5L6 0l3 4.5L12 2l-1 6H1z"></path></svg></template>
 	<template id="helper-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.1-.4-.4-2.1z"></path></svg></template>
 	<script type="module" src="/app.mjs?token={{token}}"></script>
 </body>
