@@ -448,6 +448,21 @@ export class Kernel {
 		});
 	}
 
+	/**
+	 * The app number for this ticket's app `short`: the same number again for the same pair, so new_app can be retried.
+	 * Otherwise one past both the highest number ever given and `floor - 1`, never a number given before.
+	 */
+	claimApp(ticketId: string, short: string, floor: number): { number: number; isNew: boolean } {
+		return this.#tx(() => {
+			const found = this.#get("SELECT number FROM apps WHERE ticket_id = ? AND short = ?", ticketId, short);
+			if (found) return { number: found.number as number, isNew: false };
+			const given = (this.#get("SELECT seq FROM sqlite_sequence WHERE name = 'apps'")?.seq as number | undefined) ?? 0;
+			const number = Math.max(given, floor - 1) + 1;
+			this.#run("INSERT INTO apps (number, short, ticket_id, created_at) VALUES (?, ?, ?, ?)", number, short, ticketId, this.#now());
+			return { number, isNew: true };
+		});
+	}
+
 	workerHandBack(ticketId: string, { body }: { body: string }): void {
 		this.#tx(() => {
 			const ticket = this.#requireTicket(ticketId);

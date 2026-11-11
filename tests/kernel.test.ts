@@ -1960,3 +1960,31 @@ test("引用：引用表只收对话里三种行的编号", () => {
 	assert.throws(() => insert("act_1"), /CHECK constraint failed/);
 	insert("ask_cap_2026-11-10");
 });
+
+test("应用编号按顺序给；同一任务同一短名拿回原来的编号；删掉 apps 的行之后，下一个编号也不复用", () => {
+	const { db, kernel, open } = setup();
+	const a = open("request", { title: "做笑话扩展" });
+	const b = open("request", { title: "做天气扩展" });
+	assert.deepEqual(kernel.claimApp(a, "joke", 1), { number: 1, isNew: true });
+	assert.deepEqual(kernel.claimApp(a, "joke", 1), { number: 1, isNew: false });
+	assert.deepEqual(kernel.claimApp(b, "joke", 1), { number: 2, isNew: true });
+	db.exec("DELETE FROM apps");
+	assert.deepEqual(kernel.claimApp(b, "weather", 1), { number: 3, isNew: true });
+});
+
+test("应用编号不小于给的下限，之后接着下限往下数", () => {
+	const { kernel, open } = setup();
+	const a = open("request");
+	assert.deepEqual(kernel.claimApp(a, "old-dir", 42), { number: 42, isNew: true });
+	assert.deepEqual(kernel.claimApp(a, "next", 1), { number: 43, isNew: true });
+});
+
+test("重新打开同一个 state.db 文件后，应用编号接着往下数", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-apps-")), "state.db");
+	const first = setup({ path });
+	const ticket = first.open("request");
+	assert.equal(first.kernel.claimApp(ticket, "joke", 1).number, 1);
+	first.db.close();
+	const second = setup({ path });
+	assert.equal(second.kernel.claimApp(ticket, "weather", 1).number, 2);
+});

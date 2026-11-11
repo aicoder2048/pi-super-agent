@@ -189,6 +189,15 @@ CREATE TABLE IF NOT EXISTS reply_receipts (
 	delivered_at INTEGER
 );
 
+-- AUTOINCREMENT: sqlite_sequence keeps the highest number ever given, so a deleted row's number never comes back.
+CREATE TABLE IF NOT EXISTS apps (
+	number INTEGER PRIMARY KEY AUTOINCREMENT,
+	short TEXT NOT NULL CHECK (length(short) BETWEEN 1 AND 24),
+	ticket_id TEXT NOT NULL REFERENCES tickets(id),
+	created_at INTEGER NOT NULL,
+	UNIQUE (ticket_id, short)
+);
+
 CREATE TABLE IF NOT EXISTS conversation_hidden (
 	line_id TEXT PRIMARY KEY,
 	hidden_at INTEGER NOT NULL
