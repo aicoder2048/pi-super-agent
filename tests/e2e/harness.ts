@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createWriteStream, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, request } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { stripVTControlCharacters } from "node:util";
@@ -184,6 +186,32 @@ export async function startHost(options: StartHostOptions): Promise<HostRun> {
 		freeze: () => void signalGroup(current, "SIGSTOP"),
 		thaw: () => void signalGroup(current, "SIGCONT"),
 		stop: stopAll,
+	};
+}
+
+/**
+ * Stands in for `tailscale serve`: the page opens on 127.0.0.1:<proxy>, and the host sees the Host and Origin
+ * a browser on https://<name>/ sends. Responses stream through, so SSE frames arrive as they are written.
+ */
+export async function tailnetProxy(target: URL, name: string): Promise<{ url: (path: string) => URL; close: () => Promise<void> }> {
+	const server = createServer((req, res) => {
+		const headers = { ...req.headers, host: name, ...(req.headers.origin && { origin: `https://${name}` }) };
+		const upstream = request({ host: target.hostname, port: target.port, path: req.url, method: req.method, headers }, (reply) => {
+			res.writeHead(reply.statusCode!, reply.headers);
+			reply.pipe(res);
+		});
+		upstream.on("error", () => res.destroy());
+		res.on("close", () => upstream.destroy());
+		req.pipe(upstream);
+	});
+	await new Promise<void>((listening) => server.listen(0, "127.0.0.1", listening));
+	const { port } = server.address() as AddressInfo;
+	return {
+		url: (path) => new URL(path, `http://127.0.0.1:${port}`),
+		close: () => {
+			server.closeAllConnections();
+			return new Promise((closed) => server.close(() => closed()));
+		},
 	};
 }
 

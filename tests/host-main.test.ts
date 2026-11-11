@@ -52,6 +52,9 @@ const cases = [
 	},
 	{ name: "config.json 的 Watchdog 间隔不合理时，just host", entry: HOST, stateDir: stateWith(badInterval), message: /watchdog\.staleSeconds.*heartbeatSeconds/ },
 	{ name: "config.json 的 Watchdog 间隔不合理时，just watchdog", entry: WATCHDOG, stateDir: stateWith(badInterval), message: /watchdog\.staleSeconds.*heartbeatSeconds/ },
+	{ name: "webHosts 写了端口时，just host", entry: HOST, stateDir: stateWith({ webPort: 4517, webHosts: ["psa-home.example.ts.net:443"] }), message: /config\.json：webHosts\[0\]（"psa-home\.example\.ts\.net:443"）/ },
+	{ name: "webHosts 写了路径时，just host", entry: HOST, stateDir: stateWith({ webPort: 4517, webHosts: ["psa-home.example.ts.net/x"] }), message: /config\.json：webHosts\[0\]（"psa-home\.example\.ts\.net\/x"）/ },
+	{ name: "webHosts 写了名字而 webPort 是 0 时，just host", entry: HOST, stateDir: stateWith({ webHosts: ["psa-home.example.ts.net"] }), message: /config\.json：webHosts 需要固定的 webPort/ },
 	{ name: "config.json 不是合法 JSON 时，just host", entry: HOST, stateDir: stateWith("{bad"), message: /config\.json 不是合法的 JSON/ },
 	{ name: "config.json 不是合法 JSON 时，just watchdog", entry: WATCHDOG, stateDir: stateWith("{bad"), message: /config\.json 不是合法的 JSON/ },
 	{ name: "模型写法缺少 provider 时，just host", entry: HOST, stateDir: stateWith({ models: { router: "gpt" } }), message: /config\.json.*模型写法应为 provider\/id：gpt/ },
@@ -181,6 +184,22 @@ test("just host 启动后打印带 token 的网页网址，打开能看到页面
 	const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
 	assert.equal(res.status, 200);
 	assert.match(await res.text(), /Super Agent/);
+});
+
+test("config.json 有 webHosts 时，just host 在本机网址之后为每个名字打一行远程网址", async (t) => {
+	const webPort = await freePort();
+	const host = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], {
+		env: { ...process.env, PSA_STATE_DIR: stateWith({ webPort, webHosts: ["psa-home.example.ts.net", "laptop.example.ts.net"] })() },
+	});
+	t.after(() => host.kill("SIGKILL"));
+	let stderr = "";
+	host.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+	await until(() => /网页（远程） https:\/\/laptop\S+\n/.test(stderr), `日志里的远程网址：${stderr}`, 20_000);
+	const token = new RegExp(`\\[host\\] 网页 http://127\\.0\\.0\\.1:${webPort}/\\?token=([0-9a-f]{64})\\n`).exec(stderr)?.[1];
+	assert.ok(token, stderr);
+	const remote = [...stderr.matchAll(/\[host\] 网页（远程） (\S+)\n/g)].map((m) => m[1]);
+	assert.deepEqual(remote, [`https://psa-home.example.ts.net/?token=${token}`, `https://laptop.example.ts.net/?token=${token}`]);
+	assert.deepEqual([...stderr.matchAll(/\[host\] 网页 (\S+)\s/g)].map((m) => m[1]), [`http://127.0.0.1:${webPort}/?token=${token}`], "e2e 取网址的正则只匹配本机那一行");
 });
 
 async function hostUrlOnce(stateDir: string): Promise<string> {
