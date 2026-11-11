@@ -16,8 +16,9 @@
 /** @typedef {import("../host/dispatch.ts").Dispatching} Dispatching */
 /** @typedef {import("../host/dispatch.ts").BoardDispatch} BoardDispatch */
 /** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
+/** @typedef {import("../client/board-format.mjs").StepIcon} StepIcon */
 
-import { HOST_SOURCE, INPUT_LABEL, QUOTE_WHO, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, oneLine, shortId, stallMinutes, teamWork, textOf, toolStep } from "../client/board-format.mjs";
+import { HOST_SOURCE, INPUT_LABEL, QUOTE_WHO, blocks, clip, firstLine, formatElapsed, formatSpan, formatTokens, helperFullName, helperLabel, modelText, oneLine, shortId, stallMinutes, teamWork, textOf, toolStep } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -394,6 +395,8 @@ export const stopSentence = (title) => `停止任务「${title}」`;
  * @property {string} [callId]
  * @property {number} [at] when the helper issued it
  * @property {true} [markdown] the detail is the helper's own prose, shown as Markdown
+ * @property {StepIcon} icon
+ * @property {string} [round] dispatch steps only: the first dispatch call's id in the same assistant message. One message's calls run in parallel, so a shared round is what makes lanes.
  * @property {DispatchEntry} [dispatch]
  */
 
@@ -408,6 +411,13 @@ export const stopSentence = (title) => `停止任务「${title}」`;
  * @property {string} note
  * @property {string} tokens
  * @property {Step[]} steps
+ * @property {DispatchClock} clock
+ */
+
+/**
+ * What the page knows about a dispatch's time. null: nothing worth showing (stopped without a result, never started, or an older host).
+ * runningSince is in page time (view.receivedAt - the board's runningMs), so a lane can tick without another frame.
+ * @typedef {null | { phase: "waiting", limitMs: number | null } | { phase: "running", runningSince: number, limitMs: number } | { phase: "ended", ranMs: number, limitMs: number | null }} DispatchClock
  */
 
 /** @type {Record<DispatchState, string>} */
@@ -438,11 +448,13 @@ function dispatchEntry(details) {
 		note: typeof d.note === "string" ? d.note : "",
 		tokens: tokensText((Number(d.tokensIn) || 0) + (Number(d.tokensOut) || 0), Number(d.tokensCached) || 0),
 		steps: [],
+		// A dispatch that never started (queue timeout, refusal) has ms 0 and no 「用时」.
+		clock: Number(d.ms) > 0 ? { phase: "ended", ranMs: Number(d.ms), limitMs: Number.isFinite(d.limitMs) ? d.limitMs : null } : null,
 	};
 }
 
 /** @param {Record<string, unknown>} a @param {Record<string, string>} titles @returns {DispatchEntry} */
-const pendingDispatch = (a, titles) => ({ title: titles[String(a.agent)] ?? "", task: String(a.task ?? ""), reply: "", state: "queued", stateText: DISPATCH_STATE.queued, note: "", tokens: "", steps: [] });
+const pendingDispatch = (a, titles) => ({ title: titles[String(a.agent)] ?? "", task: String(a.task ?? ""), reply: "", state: "queued", stateText: DISPATCH_STATE.queued, note: "", tokens: "", steps: [], clock: { phase: "waiting", limitMs: null } });
 
 /** @type {Record<InputKind, string>} */
 const INPUT_STEP = {
@@ -466,21 +478,23 @@ const RAW_LIMIT = 2000;
 function stepsFrom(message, titles) {
 	if (message.role === "user" || (message.role === "custom" && message.customType === "psa-bg-result")) {
 		const text = textOf(message);
-		if (message.role === "custom") return [{ title: "后台命令完成", detail: clip(firstLine(text), 80), state: "ok", raw: clip(text, RAW_LIMIT) }];
+		if (message.role === "custom") return [{ title: "后台命令完成", detail: clip(firstLine(text), 80), state: "ok", raw: clip(text, RAW_LIMIT), icon: "terminal" }];
 		return text.split(/\n\n(?=\[)/).map((part) => {
 			const label = /^\[([^\]]+)\]/.exec(part)?.[1] ?? "";
 			const body = part.split("\n").slice(1).join("\n");
 			const kind = KIND_BY_LABEL.get(label) ?? "trigger";
-			return { title: INPUT_STEP[kind], detail: kind === "recovery" ? RECOVERY_DETAIL : clip(firstLine(body), 80), state: "ok", raw: clip(part, RAW_LIMIT) };
+			return { title: INPUT_STEP[kind], detail: kind === "recovery" ? RECOVERY_DETAIL : clip(firstLine(body), 80), state: "ok", raw: clip(part, RAW_LIMIT), icon: "inbox" };
 		});
 	}
 	if (message.role !== "assistant") return [];
+	const round = blocks(message).find((c) => c.type === "toolCall" && c.name === "dispatch_agent" && c.id)?.id;
 	return blocks(message).flatMap((c) => {
-		if (c.type === "text" && c.text?.trim()) return [{ title: "思考", detail: clip(c.text.trim(), 200), state: /** @type {const} */ ("ok"), raw: clip(c.text, RAW_LIMIT) }];
+		if (c.type === "text" && c.text?.trim()) return [{ title: "思考", detail: clip(c.text.trim(), 200), state: /** @type {const} */ ("ok"), raw: clip(c.text, RAW_LIMIT), icon: /** @type {const} */ ("thought") }];
 		if (c.type !== "toolCall" || !c.name) return [];
 		const args = typeof c.arguments === "object" && c.arguments !== null ? /** @type {Record<string, unknown>} */ (c.arguments) : {};
 		const dispatch = c.name === "dispatch_agent" ? pendingDispatch(args, titles) : undefined;
-		const known = dispatch ? { title: toolStep(c.name, args).title, detail: dispatchDetail(dispatch), dispatch } : toolStep(c.name, args);
+		const shown = toolStep(c.name, args);
+		const known = dispatch ? { ...shown, detail: dispatchDetail(dispatch), dispatch, ...(round ? { round } : {}) } : shown;
 		return [{ ...known, state: /** @type {const} */ ("pending"), raw: clip(`${c.name} ${JSON.stringify(c.arguments ?? {}, null, 2)}`, RAW_LIMIT), tool: c.name, ...(c.id ? { callId: c.id } : {}), ...(message.timestamp !== undefined ? { at: message.timestamp } : {}), ...(c.name === "report" ? { markdown: /** @type {const} */ (true) } : {}) }];
 	});
 }
@@ -501,7 +515,7 @@ export function emptyWatch(ticketId) {
 /** @param {Step} step @returns {Step} */
 function stopped(step) {
 	if (!step.dispatch) return { ...step, state: "stopped" };
-	const dispatch = { ...step.dispatch, state: /** @type {const} */ ("stopped"), stateText: DISPATCH_STATE.stopped };
+	const dispatch = { ...step.dispatch, state: /** @type {const} */ ("stopped"), stateText: DISPATCH_STATE.stopped, clock: null };
 	return { ...step, state: "stopped", dispatch, detail: dispatchDetail(dispatch) };
 }
 
@@ -582,9 +596,82 @@ export function liveSteps(watch, view) {
 			note: seen?.note ?? "",
 			tokens: used(step.callId, seen?.tokens, seen?.tokensCached),
 			steps: memberSteps(watch, step.callId, DISPATCH_STEP_STATE[state] !== "pending"),
+			clock: clockOnBoard(state, seen, view.receivedAt),
 		};
 		return { ...step, state: DISPATCH_STEP_STATE[state], dispatch, detail: dispatchDetail(dispatch) };
 	});
+}
+
+/**
+ * An unfinished dispatch's clock from its last board entry. A board entry is read defensively: a missing number blanks the time line.
+ * @param {DispatchState} state @param {BoardDispatch | undefined} seen @param {number} receivedAt @returns {DispatchClock}
+ */
+function clockOnBoard(state, seen, receivedAt) {
+	const limitMs = Number.isFinite(seen?.limitMs) ? /** @type {number} */ (seen?.limitMs) : null;
+	const ranMs = seen?.runningMs;
+	if (state === "queued") return { phase: "waiting", limitMs };
+	if (ranMs === undefined || !Number.isFinite(ranMs)) return null;
+	if (state === "running") return limitMs === null ? null : { phase: "running", runningSince: receivedAt - ranMs, limitMs };
+	return state !== "stopped" && ranMs > 0 ? { phase: "ended", ranMs, limitMs } : null;
+}
+
+/** Hover text and accessible description of a lane's bar: members report no progress, so the bar only measures time against the limit. */
+export const BAR_HINT = "按时限折算，不是完成度";
+
+/** @param {number} ms */
+function elapsedSpan(ms) {
+	const seconds = Math.floor(Math.max(0, ms) / 1000);
+	return seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分钟`;
+}
+
+/**
+ * What a lane says about time at `now`, and how full its bar is. Only a running lane has a bar.
+ * Waiting says nothing: the member's limit counts from its start, and the queue has its own limit.
+ * @param {Pick<DispatchEntry, "clock">} entry @param {number} now @returns {{ text: string, ratio: number | null }}
+ */
+export function laneClock(entry, now) {
+	const clock = entry.clock;
+	if (clock?.phase === "running") {
+		const ms = Math.max(0, now - clock.runningSince);
+		return { text: `已用 ${elapsedSpan(ms)} · 时限 ${formatSpan(clock.limitMs)}`, ratio: Math.min(1, ms / clock.limitMs) };
+	}
+	if (clock?.phase === "ended") return { text: [`用时 ${elapsedSpan(clock.ranMs)}`, ...(clock.limitMs === null ? [] : [`时限 ${formatSpan(clock.limitMs)}`])].join(" · "), ratio: null };
+	return { text: "", ratio: null };
+}
+
+/**
+ * @typedef {{ i: number, step: Step & { dispatch: DispatchEntry }, avatar: Avatar }} Lane i: the step's index in liveSteps(), which keys its open details
+ * @typedef {{ kind: "step", i: number, step: Step } | { kind: "lanes", state: Step["state"], lanes: Lane[] }} StepGroup
+ */
+
+/** @type {Step["state"][]} */
+const GROUP_STATE_ORDER = ["pending", "error", "stopped", "ok"];
+
+/**
+ * The steps panel's rows. Each round's dispatches become one lane group, placed where the round's first dispatch stands; every other step is its own row.
+ * Faces come from the row's dispatchedTo plus the lanes' titles, so a lane shows the same face as the card's footer.
+ * @param {Step[]} steps liveSteps() output @param {DashboardRow | undefined} row @returns {StepGroup[]}
+ */
+export function stepGroups(steps, row) {
+	const titles = [...new Set([...(row?.dispatchedTo ?? []), ...steps.flatMap((s) => (s.round && s.dispatch ? [s.dispatch.title] : []))])];
+	const faces = memberAvatars(titles);
+	/** @type {StepGroup[]} */
+	const groups = [];
+	/** @type {Map<string, Extract<StepGroup, { kind: "lanes" }>>} */
+	const rounds = new Map();
+	steps.forEach((step, i) => {
+		const dispatch = step.dispatch;
+		if (!step.round || !dispatch) return void groups.push({ kind: "step", i, step });
+		let group = rounds.get(step.round);
+		if (!group) {
+			group = { kind: "lanes", state: "ok", lanes: [] };
+			rounds.set(step.round, group);
+			groups.push(group);
+		}
+		group.lanes.push({ i, step: { ...step, dispatch }, avatar: faces[titles.indexOf(dispatch.title)] });
+	});
+	for (const group of rounds.values()) group.state = GROUP_STATE_ORDER.find((s) => group.lanes.some((l) => l.step.state === s)) ?? "ok";
+	return groups;
 }
 
 /**

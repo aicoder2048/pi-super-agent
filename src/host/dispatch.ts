@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { formatTokens } from "../client/board-format.mjs";
+import { formatSpan, formatTokens } from "../client/board-format.mjs";
 import type { Basis } from "../kernel/types.ts";
 import type { ModelRef } from "../models.ts";
 import type { Member } from "../teams.ts";
@@ -46,6 +46,10 @@ export interface BoardDispatch {
 	tokensCached: number;
 	/** Why it ended without a reply. */
 	note?: string;
+	/** This dispatch's time limit, counted from the member's start. */
+	limitMs: number;
+	/** How long the member has run: grows while it runs, frozen once it ends. Absent until it starts, and for one that never started. */
+	runningMs?: number;
 }
 
 /** ticketId → that helper's dispatches. */
@@ -73,9 +77,11 @@ export interface DispatchOutcome {
 	/** The part of `tokensIn` read from the prompt cache. */
 	tokensCached: number;
 	tokensOut: number;
-	/** From the member's start, not counting the queue. */
+	/** From the member's start, not counting the queue; 0 when it never started. */
 	ms: number;
 	waitMs: number;
+	/** The limit it ran under, so the page still shows it after a reload. Sessions written before this field lack it. */
+	limitMs: number;
 }
 
 /** What `worker.dispatch` returns: text for the helper's model, details for the page. */
@@ -178,11 +184,9 @@ export function keepReply(reply: string, workdir: string, member: string): KeptR
 	}
 }
 
-const span = (ms: number) => (ms % 60_000 === 0 ? `${ms / 60_000} 分钟` : `${+(ms / 1000).toFixed(1)} 秒`);
+export const timeoutNote = (limitMs: number) => `超过 ${formatSpan(limitMs)}的时限`;
 
-export const timeoutNote = (limitMs: number) => `超过 ${span(limitMs)}的时限`;
-
-export const stallNote = (stallMs: number) => `${span(stallMs)}没有进展`;
+export const stallNote = (stallMs: number) => `${formatSpan(stallMs)}没有进展`;
 
 const NO_REPLY: Record<EndState, (note?: string) => string> = {
 	done: () => "没有回复",
@@ -308,6 +312,10 @@ interface Dispatch {
 	tokensCached: number;
 	note?: string;
 	member: Member;
+	limitMs: number;
+	/** When the member got its slot: the one clock behind live().runningMs and the outcome's ms. */
+	startedAt?: number;
+	endedAt?: number;
 }
 
 class EndedByDesk extends Error {
@@ -344,7 +352,7 @@ export class DispatchDesk {
 	async dispatch(order: DispatchOrder): Promise<DispatchResult> {
 		let desk = this.#tickets.get(order.ticketId);
 		if (!desk) this.#tickets.set(order.ticketId, (desk = { stop: new AbortController(), dispatches: new Set(), work: new Set() }));
-		const dispatch: Dispatch = { callId: order.callId, title: order.member.title, state: "queued", token: randomUUID(), step: "", lastEventAt: 0, tools: new Map(), tokens: 0, tokensCached: 0, member: order.member };
+		const dispatch: Dispatch = { callId: order.callId, title: order.member.title, state: "queued", token: randomUUID(), step: "", lastEventAt: 0, tools: new Map(), tokens: 0, tokensCached: 0, member: order.member, limitMs: order.limitMs };
 		desk.dispatches.add(dispatch);
 		const work = this.#work(order, dispatch, desk.stop.signal);
 		desk.work.add(work);
@@ -366,7 +374,6 @@ export class DispatchDesk {
 		const { limitMs, onProgress, onMessage, refusal, ...run } = order;
 		let messages = 0;
 		const queuedAt = Date.now();
-		let startedAt = queuedAt;
 		const tokens = { tokensIn: 0, tokensCached: 0, tokensOut: 0 };
 		const move = (to: DispatchState) => {
 			if (!DISPATCH_NEXT[dispatch.state].includes(to)) throw new Error(`派活不能从 ${dispatch.state} 变成 ${to}`);
@@ -375,21 +382,26 @@ export class DispatchDesk {
 		const end = (state: EndState, reply: string | null, note?: string): DispatchOutcome => {
 			move(state);
 			if (note !== undefined) dispatch.note = note;
-			return { kind: "dispatch", member: order.member.name, title: order.member.title, task: order.task, state, reply, ...(note !== undefined && { note }), ...tokens, ms: Date.now() - startedAt, waitMs: startedAt - queuedAt };
+			const endedAt = (dispatch.endedAt = Date.now());
+			const { startedAt } = dispatch;
+			return {
+				kind: "dispatch", member: order.member.name, title: order.member.title, task: order.task, state, reply, ...(note !== undefined && { note }), ...tokens,
+				ms: startedAt === undefined ? 0 : endedAt - startedAt, waitMs: (startedAt ?? endedAt) - queuedAt, limitMs,
+			};
 		};
 		let release: () => void;
 		try {
 			release = await this.#slots.acquire(`${order.ticketId}/${order.member.name}`, AbortSignal.any([stop, AbortSignal.timeout(queueTimeoutMs)]));
 		} catch {
-			startedAt = Date.now();
-			return stop.aborted ? end("stopped", null) : end("timed_out", null, `排队 ${span(queueTimeoutMs)}还没轮到`);
+			return stop.aborted ? end("stopped", null) : end("timed_out", null, `排队 ${formatSpan(queueTimeoutMs)}还没轮到`);
 		}
-		startedAt = dispatch.lastEventAt = Date.now();
+		dispatch.lastEventAt = Date.now();
 		const refused = refusal?.();
 		if (refused !== undefined) {
 			release();
 			return end("failed", null, refused);
 		}
+		dispatch.startedAt = dispatch.lastEventAt;
 		move("running");
 		this.#o.onChange();
 		const cut = new AbortController();
@@ -486,6 +498,8 @@ export class DispatchDesk {
 					tokens: d.tokens,
 					tokensCached: d.tokensCached,
 					...(d.note !== undefined && { note: d.note }),
+					limitMs: d.limitMs,
+					...(d.startedAt !== undefined && { runningMs: (d.endedAt ?? now) - d.startedAt }),
 				};
 			});
 		}
