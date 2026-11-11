@@ -13,6 +13,7 @@ import { NO_DOMAIN, type DomainKit } from "../modules.ts";
 import type { Member } from "../teams.ts";
 import type { TranscriptMessage } from "../client/protocol.ts";
 import { canCode, memberTools } from "../worker/tools.ts";
+import type { OutputRoot } from "./output.ts";
 import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberLimit, type MemberRun } from "./dispatch.ts";
 
 export interface WorkerSpec extends DomainKit {
@@ -87,6 +88,7 @@ export interface WorkerExecutorOptions {
 	kernel: Kernel;
 	spawner: WorkerSpawner;
 	stateDir: string;
+	output: OutputRoot;
 	afterCommand: () => void;
 	onTranscript?: (ticketId: string, event: unknown) => void;
 	/** One message of a member at work on dispatch `callId`; `index` is its place among that dispatch's messages. */
@@ -330,6 +332,9 @@ export class WorkerExecutor {
 					if (!this.#mayLookup(ticketId, holder)) throw new Error("这项任务里不能用 lookup：任务的领域没有在 module.json 的 tools 里开 lookup，或这位成员的 tools 没写 lookup");
 					if (!this.#o.lookup) throw new Error("没有可查询的来源");
 					return this.#o.lookup(String(p.source), String(p.op), p.args);
+				case "worker.new_app":
+					if (kernel.getTicket(ticketId)!.basis === "inference") throw new Error("推断开的任务只读，不能开应用");
+					return this.#o.output.newApp(ticketId, p.short);
 				case "worker.dispatch":
 					return this.#dispatch(ticketId, live, params);
 				case "worker.bg":

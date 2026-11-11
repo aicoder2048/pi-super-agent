@@ -101,6 +101,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		watching: watchedSources(modules, timers),
 		feeds,
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
+		outputDir: config.outputDir,
 		dispatch: {
 			timeoutMs: config.dispatchTimeoutSeconds * 1000,
 			codingTimeoutMs: config.dispatchCodingTimeoutSeconds * 1000,

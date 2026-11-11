@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { REPLY_MAX } from "../src/host/dispatch.ts";
 import { MEMBER_PROMPT, workerArgs } from "../src/host/pi-worker.ts";
-import { canCode, memberTools, toolAllowlist } from "../src/worker/tools.ts";
+import { MEMBER_TOOLS, WORKER_TOOLS, canCode, memberTools, toolAllowlist } from "../src/worker/tools.ts";
 
 const base = { sessionDir: "/s", sessionId: "sid", extension: "/ext.ts", prompt: "p" };
 const flag = (args: string[], name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
@@ -19,6 +19,13 @@ test("请求和规则任务的 Worker 保留全部工具", () => {
 		assert.equal(flag(args, "--tools"), undefined);
 		assert.ok(!args.includes("--no-mcp"));
 	}
+});
+
+test("new_app 是助手的工具，不在推断任务的工具清单里，成员也不能有", () => {
+	assert.ok((WORKER_TOOLS as readonly string[]).includes("new_app"));
+	assert.ok(!toolAllowlist("inference")!.includes("new_app"));
+	assert.ok(!toolAllowlist("inference", true)!.includes("new_app"));
+	assert.ok(!MEMBER_TOOLS.includes("new_app"));
 });
 
 test("能派活的助手：推断任务的工具清单多一个 dispatch_agent；请求任务本来就不限；不能派活的清单和原来一样", () => {

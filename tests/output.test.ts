@@ -3,12 +3,20 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { Kernel } from "../src/kernel/kernel.ts";
+import { openStore } from "../src/kernel/store.ts";
 import { OUTPUT_KINDS, OutputRoot } from "../src/host/output.ts";
 
-function outputRoot() {
-	const stateDir = mkdtempSync(join(tmpdir(), "psa-output-"));
+function outputRoot(stateDir = mkdtempSync(join(tmpdir(), "psa-output-"))) {
+	const kernel = new Kernel({ db: openStore(":memory:"), clock: { now: () => Date.now() }, sourcePolicy: () => "candidate" });
+	const ticket = () => {
+		const { triggerId } = kernel.userSaid({ text: "做个扩展", at: Date.now() });
+		const [opened] = kernel.route([{ kind: "open_ticket", basis: "request", triggerId, title: "做个扩展", brief: "做个扩展" }]);
+		assert.ok(opened.ok);
+		return opened.ticketId!;
+	};
 	const root = join(stateDir, "output");
-	return { stateDir, root, output: new OutputRoot({ root, stateDir }) };
+	return { stateDir, root, ticket, output: new OutputRoot({ root, stateDir, ledger: kernel }) };
 }
 
 test("分类表的目录互不相同，也不互相嵌套；只有 apps 用应用编号，分析报告在 docs/analysis", () => {
@@ -50,4 +58,35 @@ test("prepare 建好每一类的目录，README 列出每一类；重复调用�
 	output.prepare();
 	assert.equal(readFileSync(join(root, "apps", "app-001-joke", "index.ts"), "utf8"), "kept");
 	assert.equal(readFileSync(join(root, "README.md"), "utf8"), readme);
+});
+
+test("new_app 拒绝不合法的短名，错误信息是中文", () => {
+	const { output, ticket } = outputRoot();
+	const id = ticket();
+	for (const short of ["Joke", "../x", "a b", "", "x".repeat(25), "-x", "x-", "a--b", 7, undefined]) {
+		assert.throws(() => output.newApp(id, short), /短名/, JSON.stringify(short));
+	}
+});
+
+test("new_app 建好 apps/app-NNN-<短名>/，编号至少三位", () => {
+	const { output, ticket, root } = outputRoot();
+	const app = output.newApp(ticket(), "stock-alert");
+	assert.deepEqual(app, { app: "app-001-stock-alert", dir: join(root, "apps", "app-001-stock-alert"), isNew: true });
+	assert.ok(existsSync(app.dir));
+});
+
+test("new_app 的编号不比 apps/ 下已有的最大编号小，state.db 是新的也一样", () => {
+	const stateDir = mkdtempSync(join(tmpdir(), "psa-output-"));
+	mkdirSync(join(stateDir, "output", "apps", "app-041-old"), { recursive: true });
+	mkdirSync(join(stateDir, "output", "apps", "notes"), { recursive: true });
+	const { output, ticket } = outputRoot(stateDir);
+	assert.equal(output.newApp(ticket(), "joke").app, "app-042-joke");
+});
+
+test("同一任务用同一短名再要，拿回同一个目录；不同任务用同一短名，拿到新编号", () => {
+	const { output, ticket } = outputRoot();
+	const [a, b] = [ticket(), ticket()];
+	const first = output.newApp(a, "joke");
+	assert.deepEqual(output.newApp(a, "joke"), { ...first, isNew: false });
+	assert.equal(output.newApp(b, "joke").app, "app-002-joke");
 });

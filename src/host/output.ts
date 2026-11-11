@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** One kind of thing in the output root. `dir` is relative to the root, posix, without a trailing slash. */
@@ -37,14 +37,58 @@ const APP_NAME: Record<OutputRole, string> = {
 	member: "派活里给的目录；没给就在回复里请领队给，不要自己编号",
 };
 
+declare const appShortBrand: unique symbol;
+/** An app's short name, as parseAppShort accepts it. */
+export type AppShort = string & { readonly [appShortBrand]: true };
+
+const APP_SHORT = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+const APP_SHORT_MAX = 24;
+const APP_DIR = /^app-(\d{3,})-/;
+
+/** Checks the short name a model sent; the error goes back to the model as is. */
+export function parseAppShort(raw: unknown): AppShort {
+	if (typeof raw !== "string" || raw.length > APP_SHORT_MAX || !APP_SHORT.test(raw)) {
+		throw new Error(`应用短名（${JSON.stringify(raw)}）要用英文小写字母开头，只含小写字母、数字和单个连字符，不以连字符结尾，最长 ${APP_SHORT_MAX} 个字符，例如 joke、stock-alert`);
+	}
+	return raw as AppShort;
+}
+
+/** The kernel owns app numbers; see Kernel.claimApp. */
+export interface AppLedger {
+	claimApp(ticketId: string, short: string, floor: number): { number: number; isNew: boolean };
+}
+
+export interface App {
+	/** app-007-joke */
+	app: string;
+	/** Absolute, and already made. */
+	dir: string;
+	isNew: boolean;
+}
+
 export class OutputRoot {
 	/** Absolute; the resolved config value, and the path the prompts name. */
 	readonly root: string;
 	readonly #stateDir: string;
+	readonly #ledger: AppLedger;
 
-	constructor(o: { root: string; stateDir: string }) {
+	constructor(o: { root: string; stateDir: string; ledger: AppLedger }) {
 		this.root = o.root;
 		this.#stateDir = o.stateDir;
+		this.#ledger = o.ledger;
+	}
+
+	/** worker.new_app. The floor keeps a new number above the app directories on disk, even with a fresh state.db. */
+	newApp(ticketId: string, rawShort: unknown): App {
+		const short = parseAppShort(rawShort);
+		const apps = join(this.root, "apps");
+		mkdirSync(apps, { recursive: true });
+		const highest = Math.max(0, ...readdirSync(apps).map((name) => Number(APP_DIR.exec(name)?.[1] ?? 0)));
+		const { number, isNew } = this.#ledger.claimApp(ticketId, short, highest + 1);
+		const app = `app-${String(number).padStart(3, "0")}-${short}`;
+		const dir = join(apps, app);
+		mkdirSync(dir, { recursive: true });
+		return { app, dir, isNew };
 	}
 
 	/** Makes the root and every kind's directory and rewrites README.md from the table. Leaves products alone; safe to repeat. */

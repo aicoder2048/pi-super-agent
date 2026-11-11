@@ -176,7 +176,10 @@ export default function workerExtension(pi: ExtensionAPI) {
 		});
 	}
 
-	if (!memberTools && !allowlist) registerBackgroundTools();
+	if (!memberTools && !allowlist) {
+		registerNewApp();
+		registerBackgroundTools();
+	}
 	if (!memberTools && crew.length) registerDispatch();
 
 	function registerDispatch(): void {
@@ -199,6 +202,19 @@ export default function workerExtension(pi: ExtensionAPI) {
 			async execute(id, params) {
 				const result = (await call("worker.dispatch", { ...params, callId: id })) as { text: string; details: unknown };
 				return { content: [{ type: "text" as const, text: result.text }], details: result.details };
+			},
+		});
+	}
+
+	function registerNewApp(): void {
+		pi.registerTool({
+			name: "new_app",
+			label: "开应用",
+			description: "在成品目录里要一个新应用的目录 apps/app-<编号>-<短名>/，编号由宿主给。同一任务里用同一个短名再调，拿回同一个目录。",
+			promptSnippet: "new_app: 给要做的应用要一个 apps/app-<编号>-<短名>/ 目录",
+			parameters: Type.Object({ short: Type.String({ description: "英文小写短名，单词之间用连字符，最长 24 个字符，例如 joke、stock-alert" }) }),
+			async execute(_id, params) {
+				return text(await call("worker.new_app", params));
 			},
 		});
 	}
