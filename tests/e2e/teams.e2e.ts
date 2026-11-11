@@ -37,15 +37,15 @@ test("状态目录的 modules/ 里放一个带成员的新闻模块：幕僚长�
 				await sayInPage(page, "查一下天气");
 				await page.waitForFunction(() => document.querySelectorAll("#helpers .helper-chip").length === 2);
 			});
-			await step("新闻任务的小卡、卡片、去向和执行过程头部都是「四字名 · 新闻队 #1」", async (page) => {
-				const chip = page.locator("#helpers .helper-chip", { hasText: "新闻队 #1" });
+			await step("新闻任务的小卡、卡片、去向和执行过程头部都是「四字名 · 新闻队领队 #1」，卡片和头部写领队还没派活", async (page) => {
+				const chip = page.locator("#helpers .helper-chip", { hasText: "新闻队领队 #1" });
 				const name = (await chip.locator(".name").textContent()) ?? "";
 				assert.equal([...name].length, 4, name);
-				assert.equal(await page.locator("#left .card", { hasText: NEWS.title }).locator(".by").textContent(), `${name} · 新闻队 #1`);
-				assert.equal(await page.locator(".line.user", { hasText: "听证会" }).locator(".route").textContent(), `已开新任务「${NEWS.title}」 · ${name} · 新闻队 #1`);
+				assert.equal(await page.locator("#left .card", { hasText: NEWS.title }).locator(".by").textContent(), `${name} · 新闻队领队 #1 · 暂未派活`);
+				assert.equal(await page.locator(".line.user", { hasText: "听证会" }).locator(".route").textContent(), `已开新任务「${NEWS.title}」 · ${name} · 新闻队领队 #1`);
 				await chip.click();
 				await page.locator("#how-title", { hasText: NEWS.title }).waitFor();
-				assert.equal(await page.locator("#how-helper").textContent(), `${name} · 新闻队 #1`);
+				assert.equal(await page.locator("#how-helper").textContent(), `${name} · 新闻队领队 #1 · 暂未派活`);
 			});
 			await step("天气任务没有领域，小卡是两字名加「对话助手 #1」", async (page) => {
 				const chip = page.locator("#helpers .helper-chip", { hasText: "对话助手 #1" });

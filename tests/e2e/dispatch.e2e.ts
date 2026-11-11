@@ -40,7 +40,7 @@ const handOverTo = (title: string) => (card: string): ToolCall[] => {
 };
 const sorted = (names: string[]) => [...names].sort();
 
-test("看盘队的助手把一个问题并行派给两位成员再合成一份答复；追问时同一位成员接着上次的话答；没有领域的助手没有派活工具", (t) =>
+test("看盘队的领队把一个问题并行派给两位成员再合成一份答复；追问时同一位成员接着上次的话答；没有领域的助手没有派活工具", (t) =>
 	story(
 		t,
 		{
@@ -73,21 +73,21 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 		},
 		async ({ step, fake, stateDir }) => {
 			let helperName = "";
-			await step("页面问一个要两方面判断的问题，助手是四字名加团队名", async (page) => {
+			await step("页面问一个要两方面判断的问题，助手是四字名加「队名领队」", async (page) => {
 				await sayInPage(page, ASK);
-				const chip = page.locator("#helpers .helper-chip", { hasText: "看盘队 #1" });
+				const chip = page.locator("#helpers .helper-chip", { hasText: "看盘队领队 #1" });
 				await chip.waitFor();
 				helperName = (await chip.locator(".name").textContent()) ?? "";
 				assert.equal([...helperName].length, 4, helperName);
 			});
 			await step("助手小卡下同时出现两位成员：职称、正在做什么、多久前有动静，不写英文名", async (page) => {
-				const members = page.locator("#helpers .helper-slot", { hasText: "看盘队 #1" }).locator(".member-chip");
+				const members = page.locator("#helpers .helper-slot", { hasText: "看盘队领队 #1" }).locator(".member-chip");
 				await page.waitForFunction(() => document.querySelectorAll("#helpers .member-chip.running").length === 2);
 				for (const label of await members.allTextContents()) assert.match(label, /^(行情分析师|新闻研究员) · .+ · (刚刚|\d+ 秒前|已 \d+ 秒)$/);
-				assert.match(await page.locator("#helpers .helper-chip", { hasText: "看盘队 #1" }).getAttribute("aria-label") ?? "", /成员：/);
+				assert.match(await page.locator("#helpers .helper-chip", { hasText: "看盘队领队 #1" }).getAttribute("aria-label") ?? "", /成员：/);
 			});
 			await step("执行过程里两次派活各是一步，成员还在做时写进行中", async (page) => {
-				await page.locator("#helpers .helper-chip", { hasText: "看盘队 #1" }).click();
+				await page.locator("#helpers .helper-chip", { hasText: "看盘队领队 #1" }).click();
 				await page.locator("#how-title", { hasText: TASK.title }).waitFor();
 				await page.locator("#steps .step.pending", { hasText: "新闻研究员 · 进行中" }).waitFor();
 			});
@@ -106,8 +106,9 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 			await step("两位做完后小卡下的成员消失，助手的名字不变，答复是助手合成的一份", async (page) => {
 				await page.locator("#left .card", { hasText: REPORT }).waitFor();
 				await page.waitForFunction(() => document.querySelectorAll("#helpers .member-chip").length === 0);
-				assert.equal(await page.locator("#helpers .helper-chip", { hasText: "看盘队 #1" }).locator(".name").textContent(), helperName);
-				assert.equal(await page.locator("#how-helper").textContent(), `${helperName} · 看盘队 #1`);
+				assert.equal(await page.locator("#helpers .helper-chip", { hasText: "看盘队领队 #1" }).locator(".name").textContent(), helperName);
+				assert.equal(await page.locator("#how-helper").textContent(), `${helperName} · 看盘队领队 #1 · 派给 行情分析师、新闻研究员`);
+				assert.equal(await page.locator("#left .card", { hasText: REPORT }).locator(".by").textContent(), `${helperName} · 看盘队领队 #1 · 派给 行情分析师、新闻研究员`);
 			});
 			await step("幕僚长的话、任务卡上的结论和汇报那一步都按 Markdown 显示，不露出星号", async (page) => {
 				const bubble = page.locator("#conversation .line.router .bubble", { hasText: "已交给" });
@@ -161,7 +162,7 @@ test("看盘队的助手把一个问题并行派给两位成员再合成一份�
 			await step("刷新页面后重新打开任务，三次派活的状态和回复还在（来自助手的会话记录）", async (page) => {
 				await page.reload();
 				await waitStatus(page, "connected");
-				await page.locator("#helpers .helper-chip", { hasText: "看盘队 #1" }).click();
+				await page.locator("#helpers .helper-chip", { hasText: "看盘队领队 #1" }).click();
 				await page.waitForFunction(() => [...document.querySelectorAll("#steps .step-detail")].filter((n) => n.textContent === "行情分析师 · 完成").length === 2);
 				const news = page.locator("#steps .step", { hasText: "新闻研究员 · 完成" });
 				await news.locator("summary", { hasText: "派活明细" }).click();
