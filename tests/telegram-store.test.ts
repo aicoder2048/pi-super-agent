@@ -12,7 +12,11 @@ const reply = (text: string) => ({ kind: "line" as const, text, silent: false })
 
 function fresh(): { db: DatabaseSync; store: TelegramStore; reopen: (botId?: number) => TelegramStore } {
 	const db = openStore(join(tempStateDir(), "state.db"));
-	const reopen = (botId = BOT) => new TelegramStore(db, botId, () => 1000);
+	const reopen = (botId = BOT) => {
+		const store = new TelegramStore(db, botId, () => 1000);
+		store.claim(new Set([42]));
+		return store;
+	};
 	return { db, store: reopen(), reopen };
 }
 
@@ -87,6 +91,13 @@ test("聊天第一次打开时返回 true；屏蔽后再打开又返回 true；�
 	assert.equal(store.next(), undefined, "屏蔽前没发出的不补发");
 });
 
+test("只建表不改行：认领（claim）之前，换了机器人的宿主也不清别人的 Telegram 状态", () => {
+	const { db, store } = fresh();
+	store.put(42, "line:a", "a", reply("一"));
+	new TelegramStore(db, 987654321, () => 1000);
+	assert.equal(rows(db, "telegram_messages"), 1);
+});
+
 test("换了机器人（bot id 不同）时清掉全部 Telegram 状态；同一个机器人重开不清", () => {
 	const { db, store, reopen } = fresh();
 	store.setNextUpdateId(11);
@@ -106,10 +117,10 @@ test("名单里去掉的人：他的聊天和消息在启动时删掉", () => {
 		store.openChat(chat);
 		store.put(chat, "setup", null, { kind: "note", text: "id" });
 	}
-	store.forgetChatsExcept(new Set([42]));
+	store.claim(new Set([42]));
 	assert.deepEqual(store.openChats(), [42]);
 	assert.equal(rows(db, "telegram_messages"), 1);
-	store.forgetChatsExcept(new Set());
+	store.claim(new Set());
 	assert.equal(rows(db, "telegram_messages"), 0);
 	assert.equal(rows(db, "telegram_chats"), 0);
 });
@@ -160,4 +171,24 @@ test("还开着的卡片：只列这个聊天里没结束的问题卡片", () =>
 	store.put(42, "cap:ask_cap_2026-11-11", null, { kind: "note", text: "成员上限" });
 	store.put(42, "line:rpl_1", "rpl_1", reply("收到。"));
 	assert.deepEqual(store.openCards(42).map((v) => v.reportId).sort(), ["rpt_1", "rpt_2"]);
+});
+
+test("可能已送达的消息不再发；每个聊天只等着一句说明，发出后再有才排到队尾", () => {
+	const { store } = fresh();
+	const note = { kind: "note" as const, text: "可能没送到" };
+	for (const key of ["a", "b", "c"] as const) store.put(42, `line:${key}`, key, reply(key));
+	store.maybeSent(store.next()!, note);
+	store.maybeSent(store.next()!, note);
+	assert.equal(store.next()?.key, "line:c", "前两条都不再发");
+	store.sent(store.next()!, 500);
+	const first = store.next()!;
+	assert.equal(first.key, "missed");
+	store.sent(first, 501);
+	assert.equal(store.next(), undefined);
+	store.put(42, "line:d", "d", reply("d"));
+	store.put(42, "line:e", "e", reply("e"));
+	store.maybeSent(store.next()!, note);
+	assert.equal(store.next()?.key, "line:e", "新的说明排在已等着的消息之后");
+	store.sent(store.next()!, 502);
+	assert.equal(store.next()?.key, "missed");
 });

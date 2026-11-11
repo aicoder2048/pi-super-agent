@@ -36,23 +36,26 @@ export interface TelegramHost {
 	board(): Board;
 }
 
-const DEFAULT_TIMING: TelegramTiming = {
+export const DEFAULT_TIMING: TelegramTiming = {
 	pollTimeoutSec: 50,
 	minGapMs: 1000,
-	backoffMs: [1000, 2000, 5000, 15_000, 30_000, 60_000],
+	backoffMs: [1000, 2000, 5000, 15_000, 30_000],
 	conflictBackoffMs: 30_000,
 	stopGraceMs: 5000,
 };
 const DROP_LOG_EVERY_MS = 60 * 60_000;
 const TAP_TAKEN = "已发送";
+const HANDLE_TRIES = 5;
 
-type Reaction = "exit" | "disable" | "retry" | "pause" | "block" | "give-up" | "conflict";
+type PollReaction = "exit" | "disable" | "retry" | "pause" | "conflict";
+type SendReaction = "disable" | "retry" | "pause" | "block" | "give-up" | "maybe-sent";
 
-const ON_POLL_ERROR: Record<TelegramErrorKind, Reaction> = {
+const ON_POLL_ERROR: Record<TelegramErrorKind, PollReaction> = {
 	stopped: "exit",
 	unauthorized: "disable",
 	conflict: "conflict",
 	rate_limited: "pause",
+	unreachable: "retry",
 	network: "retry",
 	server: "retry",
 	forbidden: "retry",
@@ -60,17 +63,20 @@ const ON_POLL_ERROR: Record<TelegramErrorKind, Reaction> = {
 	bad_response: "retry",
 };
 
-// A send Telegram answered with something unreadable may still have arrived, so it is not sent again.
-const ON_SEND_ERROR: Record<TelegramErrorKind, Reaction> = {
-	stopped: "exit",
+// A send is repeated only when Telegram surely did not take it: the request never left, or Telegram answered in JSON
+// with a refusal or a wait. After anything else, an abort at stop included, the message may be on the phone already,
+// so it is not sent again and the chat gets one note instead.
+const ON_SEND_ERROR: Record<TelegramErrorKind, SendReaction> = {
+	stopped: "maybe-sent",
 	unauthorized: "disable",
 	conflict: "retry",
 	rate_limited: "pause",
-	network: "retry",
-	server: "retry",
+	unreachable: "retry",
+	network: "maybe-sent",
+	server: "maybe-sent",
+	bad_response: "maybe-sent",
 	forbidden: "block",
 	bad_request: "give-up",
-	bad_response: "give-up",
 };
 
 export class TelegramClient {
@@ -91,6 +97,7 @@ export class TelegramClient {
 	#lastSendAt = -Infinity;
 	#dropped = 0;
 	#droppedLoggedAt = -Infinity;
+	#failedUpdate: { updateId: number; tries: number } | undefined;
 
 	constructor(options: TelegramOptions & { host: TelegramHost; db: DatabaseSync; clock: Clock; log: (line: string) => void }) {
 		this.#api = options.api;
@@ -105,14 +112,20 @@ export class TelegramClient {
 
 	/** Makes no network call, so a Telegram problem never holds up the host's start. */
 	start(): void {
-		this.#store.forgetChatsExcept(this.#allowed);
+		try {
+			this.#store.claim(this.#allowed);
+			const board = this.#host.board();
+			for (const chat of this.#store.openChats()) this.#syncCards(chat, board);
+		} catch (error) {
+			this.#state = "off";
+			this.#log(`[telegram] 本地状态出错（${(error as Error).message}），Telegram 客户端没有启动；网页和终端照常`);
+			return;
+		}
 		if (this.#allowed.size === 0) this.#log("[telegram] 名单为空：只告诉来信的人他自己的数字 id，不把任何消息交给幕僚长");
-		const board = this.#host.board();
-		for (const chat of this.#store.openChats()) this.#syncCards(chat, board);
 		this.#loops = [this.#poll(), this.#send()];
 	}
 
-	/** Synchronous and never throws: Telegram must not delay or fail what the web page and the TUI get. While stopping it still queues, for the next start to send. */
+	/** Synchronous and never throws: Telegram must not delay or fail what the web page and the TUI get. Before start and while stopping it still queues. */
 	broadcast(message: Broadcast, from?: ImChat): void {
 		if (this.#state === "off") return;
 		try {
@@ -153,31 +166,52 @@ export class TelegramClient {
 			}
 		}
 		let failures = 0;
+		let localFailures = 0;
 		while (this.#state === "running") {
-			let updates: Update[];
 			try {
-				updates = await this.#api.getUpdates(this.#store.nextUpdateId(), this.#timing.pollTimeoutSec, signal);
-				failures = 0;
+				const offset = this.#store.nextUpdateId();
+				let updates: Update[];
+				try {
+					updates = await this.#api.getUpdates(offset, this.#timing.pollTimeoutSec, signal);
+					failures = 0;
+				} catch (error) {
+					if (!(await this.#afterPollError(error, failures++))) return;
+					continue;
+				}
+				await this.#handleAll(updates);
+				localFailures = 0;
 			} catch (error) {
-				if (!(await this.#afterPollError(error, failures++))) return;
-				continue;
-			}
-			for (const update of updates) {
-				this.#handle(update);
-				this.#store.setNextUpdateId(update.updateId + 1);
+				await this.#afterLocalError(error, localFailures++);
 			}
 		}
 	}
 
-	/** Every effect is keyed by the update, so handling a redelivered one changes nothing. */
-	#handle({ updateId, event }: Update): void {
+	/** The offset moves past an update only once it is handled, so one that failed comes back with the next poll. */
+	async #handleAll(updates: Update[]): Promise<void> {
+		for (const update of updates) {
+			if (!this.#handle(update)) {
+				const tries = this.#failedUpdate?.updateId === update.updateId ? this.#failedUpdate.tries + 1 : 1;
+				this.#failedUpdate = { updateId: update.updateId, tries };
+				if (tries < HANDLE_TRIES) {
+					await this.#pause(this.#backoff(tries - 1));
+					return;
+				}
+				this.#log(`[telegram] 一条 Telegram 消息连续 ${HANDLE_TRIES} 次没能交给宿主，跳过了它`);
+			}
+			this.#store.setNextUpdateId(update.updateId + 1);
+		}
+	}
+
+	/** Every effect is keyed by the update, so handling a redelivered one changes nothing. False when it failed. */
+	#handle({ updateId, event }: Update): boolean {
 		try {
 			const inbound = decide(event, this.#allowed);
 			switch (inbound.do) {
 				case "ignore":
-					return;
+					break;
 				case "drop":
-					return this.#countDrop();
+					this.#countDrop();
+					break;
 				case "tell-id":
 					this.#store.put(inbound.chatId, "setup", null, { kind: "note", text: NOTES.setup(inbound.chatId) });
 					break;
@@ -194,14 +228,17 @@ export class TelegramClient {
 				case "answer": {
 					const result = this.#host.answer(inbound.reportId, inbound.option, { from: { client: "telegram", chatId: inbound.chatId } });
 					this.#answerTap(inbound.callbackId, result.ok ? TAP_TAKEN : refusalText(result.refusal));
-					return;
+					break;
 				}
 				case "refuse-tap":
-					return this.#answerTap(inbound.callbackId, inbound.toast);
+					this.#answerTap(inbound.callbackId, inbound.toast);
+					break;
 			}
 			this.#wake?.();
+			return true;
 		} catch (error) {
 			this.#log(`[telegram] 处理一条 Telegram 消息出错：${(error as Error).message}`);
+			return false;
 		}
 	}
 
@@ -261,54 +298,84 @@ export class TelegramClient {
 		return true;
 	}
 
+	/** A failed read or write of the local tables: the loop waits and goes on, it never ends the host. */
+	async #afterLocalError(error: unknown, failures: number): Promise<void> {
+		const waitMs = this.#backoff(failures);
+		if (failures === 0) this.#log(`[telegram] 本地状态出错（${(error as Error).message}），${Math.round(waitMs / 1000)} 秒后再试`);
+		await this.#pause(waitMs);
+	}
+
 	async #send(): Promise<void> {
 		let failures = 0;
+		let localFailures = 0;
 		while (this.#state === "running") {
-			const row = this.#store.next();
-			if (!row) {
-				await new Promise<void>((wake) => (this.#wake = wake));
-				continue;
-			}
-			await this.#pause(Math.max(this.#lastSendAt + this.#timing.minGapMs, this.#pauseUntil) - Date.now());
-			if (this.#state === "off") return;
-			this.#lastSendAt = Date.now();
 			try {
+				const row = this.#store.next();
+				if (!row) {
+					await new Promise<void>((wake) => (this.#wake = wake));
+					continue;
+				}
+				await this.#pause(Math.max(this.#lastSendAt + this.#timing.minGapMs, this.#pauseUntil) - Date.now());
+				if (this.#state !== "running") return;
+				this.#lastSendAt = Date.now();
 				const message = render(row.body);
-				if (row.messageId === null) this.#store.sent(row, await this.#api.send(row.chatId, message, this.#sending.signal));
-				else {
-					await this.#api.edit(row.chatId, row.messageId, message, this.#sending.signal);
-					this.#store.sent(row, row.messageId);
+				let messageId: number;
+				try {
+					if (row.messageId === null) messageId = await this.#api.send(row.chatId, message, this.#sending.signal);
+					else {
+						await this.#api.edit(row.chatId, row.messageId, message, this.#sending.signal);
+						messageId = row.messageId;
+					}
+				} catch (error) {
+					await this.#afterSendError(error, row, failures++);
+					continue;
 				}
 				failures = 0;
+				await this.#record(() => this.#store.sent(row, messageId));
+				localFailures = 0;
 			} catch (error) {
-				if (!this.#afterSendError(error, row, failures++)) return;
+				await this.#afterLocalError(error, localFailures++);
 			}
 		}
 	}
 
-	/** False when the loop should end. */
-	#afterSendError(error: unknown, row: Pending, failures: number): boolean {
-		const reaction = error instanceof TelegramError ? ON_SEND_ERROR[error.kind] : "retry";
+	async #afterSendError(error: unknown, row: Pending, failures: number): Promise<void> {
+		const kind = error instanceof TelegramError ? ON_SEND_ERROR[error.kind] : "maybe-sent";
+		// Two rows are worth repeating after a doubtful failure. An edit sets the card to a state, so landing it twice is the same as once
+		// (Telegram answers "not modified"). The note about a missing message: a second copy is harmless, none at all is a silent loss.
+		const reaction = kind === "maybe-sent" && (row.messageId !== null || row.key === "missed") ? "retry" : kind;
 		const message = (error as Error).message;
 		switch (reaction) {
-			case "exit":
-				return false;
 			case "disable":
-				this.#disable();
-				return false;
+				return this.#disable();
 			case "block":
-				this.#store.blockChat(row.chatId);
-				this.#log("[telegram] 一个聊天屏蔽了机器人，不再往那里发，直到对方再发消息");
-				return true;
+				await this.#record(() => this.#store.blockChat(row.chatId));
+				return this.#log("[telegram] 一个聊天屏蔽了机器人，不再往那里发，直到对方再发消息");
 			case "give-up":
-				this.#store.giveUp(row, message);
-				this.#log(`[telegram] Telegram 不收一条消息，不再重试：${message}`);
-				return true;
+				await this.#record(() => this.#store.giveUp(row, message));
+				return this.#log(`[telegram] Telegram 不收一条消息，不再重试：${message}`);
+			case "maybe-sent":
+				// A setup-mode writer is not the user yet, and the note points at a page they cannot open.
+				await this.#record(() => (row.key === "setup" ? this.#store.giveUp(row, "maybe-sent") : this.#store.maybeSent(row, { kind: "note", text: NOTES.missed })));
+				return this.#log(`[telegram] 一条消息可能已经发到，也可能没有（${message}），不再重发，改发一句说明`);
 			default: {
 				const waitMs = reaction === "pause" ? ((error as TelegramError).retryAfterMs ?? this.#backoff(failures)) : this.#backoff(failures);
 				this.#pauseUntil = Date.now() + waitMs;
 				if (failures === 0) this.#log(`[telegram] 发消息失败（${message}），${Math.round(waitMs / 1000)} 秒后重试；没发出的按顺序等着`);
-				return true;
+			}
+		}
+	}
+
+	/** Writes down what Telegram already did. Retried on its own: sending again is never the way to recover a local failure. */
+	async #record(write: () => void): Promise<void> {
+		for (let failures = 0; ; failures++) {
+			try {
+				write();
+				return;
+			} catch (error) {
+				if (failures === 0) this.#log(`[telegram] 没能在本地记下 Telegram 的结果（${(error as Error).message}），稍后再记，不重发`);
+				if (this.#state !== "running") return;
+				await this.#pause(this.#backoff(failures));
 			}
 		}
 	}

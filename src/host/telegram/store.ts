@@ -38,9 +38,9 @@ const NOTHING_TO_CLOSE = `message_id IS NULL AND ${CARD_STATUS} IS 'closed'`;
 
 /**
  * `line:<lineId>` shows a conversation line, `ask:<reportId>` is the card for a helper's question, `cap:<capAskId>` the member-cap note,
- * `note:<updateId>` answers one update, `setup` tells a writer their id.
+ * `note:<updateId>` answers one update, `setup` tells a writer their id, `missed` says a message may not have arrived.
  */
-export type MessageKey = `line:${string}` | `ask:${string}` | `cap:${string}` | `note:${number}` | "setup";
+export type MessageKey = `line:${string}` | `ask:${string}` | `cap:${string}` | `note:${number}` | "setup" | "missed";
 
 export type SendableBody = Exclude<OutboundBody, { kind: "received" }>;
 
@@ -54,23 +54,34 @@ export interface Pending {
 
 export class TelegramStore {
 	readonly #db: DatabaseSync;
+	readonly #botId: number;
 	readonly #now: () => number;
 
+	/** Only creates the tables: a host that loses the race for the state directory must not change another host's rows. */
 	constructor(db: DatabaseSync, botId: number, now: () => number) {
 		this.#db = db;
+		this.#botId = botId;
 		this.#now = now;
 		db.exec(SCHEMA);
-		inTransaction(db, () => {
-			const bot = db.prepare("SELECT bot_id FROM telegram_bot WHERE id = 1").get() as { bot_id: number } | undefined;
-			if (bot?.bot_id === botId) return;
-			db.exec("DELETE FROM telegram_messages; DELETE FROM telegram_chats; DELETE FROM telegram_bot");
-			db.prepare("INSERT INTO telegram_bot (id, bot_id) VALUES (1, ?)").run(botId);
+	}
+
+	/** Wipes everything when the bot changed, and the chats of ids no longer allowed. */
+	claim(allowed: ReadonlySet<number>): void {
+		const keep = JSON.stringify([...allowed]);
+		inTransaction(this.#db, () => {
+			const bot = this.#db.prepare("SELECT bot_id FROM telegram_bot WHERE id = 1").get() as { bot_id: number } | undefined;
+			if (bot?.bot_id !== this.#botId) {
+				this.#db.exec("DELETE FROM telegram_messages; DELETE FROM telegram_chats; DELETE FROM telegram_bot");
+				this.#db.prepare("INSERT INTO telegram_bot (id, bot_id) VALUES (1, ?)").run(this.#botId);
+			}
+			this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id NOT IN (SELECT value FROM json_each(?))").run(keep);
+			this.#db.prepare("DELETE FROM telegram_chats WHERE chat_id NOT IN (SELECT value FROM json_each(?))").run(keep);
 		});
 	}
 
 	nextUpdateId(): number | undefined {
-		const row = this.#db.prepare("SELECT next_update_id FROM telegram_bot WHERE id = 1").get() as { next_update_id: number | null };
-		return row.next_update_id ?? undefined;
+		const row = this.#db.prepare("SELECT next_update_id FROM telegram_bot WHERE id = 1").get() as { next_update_id: number | null } | undefined;
+		return row?.next_update_id ?? undefined;
 	}
 
 	setNextUpdateId(id: number): void {
@@ -94,14 +105,6 @@ export class TelegramStore {
 		inTransaction(this.#db, () => {
 			this.#db.prepare("UPDATE telegram_chats SET blocked_at = ? WHERE chat_id = ?").run(this.#now(), chatId);
 			this.#db.prepare(`UPDATE telegram_messages SET gave_up = 'blocked' WHERE chat_id = ? AND ${DUE}`).run(chatId);
-		});
-	}
-
-	forgetChatsExcept(allowed: ReadonlySet<number>): void {
-		const keep = JSON.stringify([...allowed]);
-		inTransaction(this.#db, () => {
-			this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id NOT IN (SELECT value FROM json_each(?))").run(keep);
-			this.#db.prepare("DELETE FROM telegram_chats WHERE chat_id NOT IN (SELECT value FROM json_each(?))").run(keep);
 		});
 	}
 
@@ -146,5 +149,18 @@ export class TelegramStore {
 
 	giveUp(row: Pending, reason: string): void {
 		this.#db.prepare("UPDATE telegram_messages SET gave_up = ? WHERE chat_id = ? AND key = ?").run(reason, row.chatId, row.key);
+	}
+
+	/**
+	 * Telegram may have shown `row` already, so it is never sent again; the chat gets `note` instead. One note waits per chat
+	 * however many rows end this way before it goes out; a later one goes to the back of the queue.
+	 */
+	maybeSent(row: Pending, note: SendableBody): void {
+		inTransaction(this.#db, () => {
+			this.giveUp(row, "maybe-sent");
+			if (this.#db.prepare(`SELECT 1 FROM telegram_messages WHERE chat_id = ? AND key = 'missed' AND ${DUE}`).get(row.chatId)) return;
+			this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id = ? AND key = 'missed'").run(row.chatId);
+			this.put(row.chatId, "missed", null, note);
+		});
 	}
 }

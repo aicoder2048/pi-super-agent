@@ -14,13 +14,15 @@ const ANSWER_DATA = new RegExp(`^a:([A-Za-z0-9_-]+):([0-${OPTIONS_MAX - 1}])$`);
 const REPORT_ID = /^rpt_[A-Za-z0-9_-]+$/;
 const TITLE_MAX = 40;
 
-export type Note = "help" | "text-only" | "no-forwards";
+export type Note = "help" | "text-only" | "no-forwards" | "no-via-bot";
 
 export const NOTES = {
 	help: "这里是白宫。你在这里打的字就是对幕僚长说的话，和网页、终端是同一个对话；幕僚长的回复也发到这里。助手提问时会发来带按钮的问题，点按钮就是回答；成员上限只能在网页或终端回答。只收文字，转发的消息不会交给幕僚长。",
 	"text-only": "目前只收文字消息，这条没有交给幕僚长。",
 	"no-forwards": "转发的消息不会交给幕僚长。要问幕僚长，复制文字后用你自己的话发。",
 	cap: "成员上限：现在有成员在排队，宿主在问要不要今天放宽上限。这个问题只能在网页或终端的「待你处理」里回答。",
+	"no-via-bot": "经别的机器人发出的消息不会交给幕僚长。要问幕僚长，直接在这里打字。",
+	missed: "有一条消息可能没送到手机上，网页上有完整对话。",
 	setup: (id: number) => `你的 Telegram 数字 id 是 ${id}。把这个数字写进宿主状态目录里 config.json 的 telegram.allowedUserIds，重启宿主后就能在这里和幕僚长对话。`,
 } as const;
 
@@ -52,6 +54,7 @@ export function decide(event: TelegramEvent | null, allowed: ReadonlySet<number>
 	if (allowed.size === 0) return content.kind === "text" ? { do: "tell-id", chatId: chat.id } : { do: "drop" };
 	if (!allowed.has(from)) return { do: "drop" };
 	if (content.kind === "forwarded") return { do: "note", chatId: chat.id, note: "no-forwards" };
+	if (content.kind === "via-bot") return { do: "note", chatId: chat.id, note: "no-via-bot" };
 	if (content.kind === "other") return { do: "note", chatId: chat.id, note: "text-only" };
 	if (!hasVisibleText(content.text)) return { do: "ignore" };
 	if (HELP_COMMAND.test(content.text)) return { do: "note", chatId: chat.id, note: "help" };

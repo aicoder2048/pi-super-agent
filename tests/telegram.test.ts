@@ -5,9 +5,9 @@ import test, { type TestContext } from "node:test";
 import { HostConnection } from "../src/client/connection.ts";
 import type { HostToClient } from "../src/client/protocol.ts";
 import type { Host } from "../src/host/host.ts";
-import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
+import { BotApi, BotToken, type Http } from "../src/host/telegram/bot-api.ts";
 import { randomUUID } from "node:crypto";
-import type { BoardState, MemberCapBoard } from "../src/client/protocol.ts";
+import type { MemberCapBoard } from "../src/client/protocol.ts";
 import type { AnswerResult, Broadcast, ImChat } from "../src/host/server.ts";
 import { TelegramClient, type TelegramHost, type TelegramTiming } from "../src/host/telegram/client.ts";
 import { NOTES } from "../src/host/telegram/rules.ts";
@@ -30,15 +30,29 @@ interface Setup {
 	fake?: FakeTelegram;
 	brain?: Brain;
 	script?: WorkerScript;
+	http?: Http;
 }
 
-async function telegramHost(t: TestContext, { allowed = [USER], stateDir = tempStateDir(), timing = FAST, fake, brain = echo, script = () => {} }: Setup = {}) {
+/** Fails sendMessage the way a refused connection does, so the request surely did not reach Telegram, while `down` is on. */
+function unreachable() {
+	const link = { down: false, refusals: 0 };
+	const http: Http = async (url, init) => {
+		if (link.down && url.endsWith("/sendMessage")) {
+			link.refusals++;
+			throw new TypeError("fetch failed", { cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }) });
+		}
+		return fetch(url, init);
+	};
+	return { link, http };
+}
+
+async function telegramHost(t: TestContext, { allowed = [USER], stateDir = tempStateDir(), timing = FAST, fake, brain = echo, script = () => {}, http }: Setup = {}) {
 	const tg = fake ?? (await FakeTelegram.start());
 	const logs: string[] = [];
 	const { host } = await startHost(brain, script, {
 		stateDir,
 		log: (line) => logs.push(line),
-		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set(allowed), timing },
+		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url, ...(http && { http }) }), allowedUserIds: new Set(allowed), timing },
 	});
 	let stopped = false;
 	const stop = async () => {
@@ -138,6 +152,16 @@ test("/start、/help 回说明；转发的和图片回一句说明；都不进�
 	assert.deepEqual(userLines(host), []);
 });
 
+test("经别的机器人（inline bot）发的消息回一句说明，不进对话", async (t) => {
+	const { host, tg } = await telegramHost(t);
+	tg.userSays(USER, "gif 机器人的结果", { viaBot: true });
+	await until(() => tg.sent.length === 1, "说明");
+	await host.settled();
+	await new Promise((r) => setTimeout(r, 200));
+	assert.deepEqual(sentTo(tg, USER), [NOTES["no-via-bot"]]);
+	assert.deepEqual(userLines(host), []);
+});
+
 test("网页或终端说的话静默转到 Telegram，带前缀；之后幕僚长的回复带通知", async (t) => {
 	const { host, tg } = await telegramHost(t);
 	tg.userSays(USER, "/start");
@@ -150,19 +174,20 @@ test("网页或终端说的话静默转到 Telegram，带前缀；之后幕僚�
 	]);
 });
 
-test("Telegram 发不出去时网页照常只收一次回复，回复动作不重试；恢复后按顺序补发，每条一次", async (t) => {
-	const { host, tg } = await telegramHost(t);
+test("连不上 Telegram 时网页照常只收一次回复，回复动作不重试；恢复后按顺序补发，每条一次", async (t) => {
+	const { link, http } = unreachable();
+	const { host, tg } = await telegramHost(t, { http });
 	const client = watch(t, host);
 	await client.connected();
 	tg.userSays(USER, "/start");
 	await until(() => tg.sent.length === 1, "说明");
-	tg.fail("sendMessage", 500);
+	link.down = true;
 	host.say("第一句");
 	host.say("第二句");
 	await until(() => ofType(client.got, "reply").length === 2, "网页收到两条回复");
-	await until(() => tg.calls("sendMessage").filter((r) => r.status === 500).length >= 2, "Telegram 失败了几次");
+	await until(() => link.refusals >= 2, "连了几次没连上");
 	assert.equal(host.kernel.dueActions(10).length, 0, "回复动作已完成，不重试");
-	tg.heal("sendMessage");
+	link.down = false;
 	await until(() => tg.sent.length === 5, "恢复后补发", 5000);
 	await new Promise((r) => setTimeout(r, 300));
 	assert.deepEqual(sentTo(tg, USER).slice(1), ["你在网页或终端说：第一句", "你在网页或终端说：第二句", "收到：第一句", "收到：第二句"]);
@@ -207,15 +232,15 @@ test("宿主停着时发的话，重启后进对话一次；停机前没发出�
 	const tg = await FakeTelegram.start();
 	t.after(() => tg.close());
 	const stateDir = tempStateDir();
-	const first = await telegramHost(t, { fake: tg, stateDir });
+	const { link, http } = unreachable();
+	const first = await telegramHost(t, { fake: tg, stateDir, http });
 	first.tg.userSays(USER, "停机前");
 	await until(() => sentTo(tg, USER).length === 1, "停机前的回复");
-	tg.fail("sendMessage", 500);
+	link.down = true;
 	first.host.say("回复发不出去");
 	await until(() => first.host.kernel.conversation().some((l) => l.text === "收到：回复发不出去"), "幕僚长回复了");
 	await first.stop();
 	tg.userSays(USER, "停机时说的");
-	tg.heal("sendMessage");
 	const second = await telegramHost(t, { fake: tg, stateDir });
 	await until(() => sentTo(tg, USER).includes("收到：停机时说的"), "重启后的回复", 5000);
 	await second.host.settled();
@@ -481,4 +506,20 @@ test("真宿主重启：卡片不重发；重启前的按钮点了仍然有效",
 	assert.equal(tg.toastFor(tap), "已发送");
 	await until(() => userLines(second.host).includes("回答任务「查天气」：北京"), "回答进对话");
 	await until(() => /已选「北京」/.test(tg.shown(first.card.messageId)!.text), "旧卡片被编辑");
+});
+
+test("编辑卡片时 Telegram 的回应说不清（500）：编辑把卡片设成一个状态，再编辑一次结果一样，所以重试；不改发「可能没送到」的说明，也不重发卡片", async (t) => {
+	const { tg, frame, open } = await cardClient(t);
+	await open(USER);
+	const id = rpt();
+	frame([ticket(pending(id))]);
+	await until(() => cards(tg, USER).length === 1, "卡片");
+	tg.fail("editMessageText", 500, {}, 2);
+	frame([ticket(pending(id, { click: { option: 1, state: "sent", triggerId: "trg_1" } }))]);
+	await until(() => tg.edits.length === 1, "重试后编辑成功", 5000);
+	await settle();
+	assert.equal(tg.calls("editMessageText").filter((r) => r.status === 500).length, 2);
+	assert.match(tg.shown(cards(tg, USER)[0].messageId)!.text, /已选「上海」，已发送，等待幕僚长转交$/);
+	assert.ok(!sentTo(tg, USER).includes(NOTES.missed), "没有改发说明");
+	assert.equal(cards(tg, USER).length, 1, "没有重发卡片");
 });

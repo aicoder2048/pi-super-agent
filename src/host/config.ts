@@ -133,13 +133,20 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	};
 }
 
+// A token pasted into this section by mistake must not reach the error, so errors name keys and never echo values.
 function parseTelegram(raw: unknown, file: string): { allowedUserIds: number[] } {
-	if (raw === null || typeof raw !== "object" || Array.isArray(raw) || Object.keys(raw).some((key) => key !== "allowedUserIds")) {
-		throw new ConfigError(`${file}：telegram（${JSON.stringify(raw)}）必须是只有 allowedUserIds 一项的对象`);
+	if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+		throw new ConfigError(`${file}：telegram 必须是只有 allowedUserIds 一项的对象`);
+	}
+	const extra = Object.keys(raw).filter((key) => key !== "allowedUserIds");
+	if (extra.length > 0) {
+		const named = extra.filter((key) => /^[A-Za-z_]\w{0,39}$/.test(key));
+		const shown = [...named, ...(named.length < extra.length ? [`另有 ${extra.length - named.length} 个不像字段名的键`] : [])].join("、");
+		throw new ConfigError(`${file}：telegram 只能有 allowedUserIds 一项，多了：${shown}。bot token 放在 secretsFile 或环境变量 TELEGRAM_BOT_TOKEN 里`);
 	}
 	const ids = (raw as { allowedUserIds?: unknown }).allowedUserIds;
 	if (!Array.isArray(ids) || !ids.every((id) => Number.isSafeInteger(id) && id > 0) || new Set(ids).size !== ids.length) {
-		throw new ConfigError(`${file}：telegram.allowedUserIds（${JSON.stringify(ids)}）必须是不重复的正整数数组：私聊里使用者的 Telegram 数字 id；空数组是设置模式`);
+		throw new ConfigError(`${file}：telegram.allowedUserIds 必须是不重复的正整数数组：私聊里使用者的 Telegram 数字 id；空数组是设置模式`);
 	}
 	return { allowedUserIds: ids };
 }

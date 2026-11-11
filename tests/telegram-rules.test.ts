@@ -6,8 +6,8 @@ import { answerData, cardView, closedView, decide, fitMessage, mirrorText, NOTES
 
 const ALLOWED = new Set([42]);
 
-function message(text: string | { forwarded: true } | { photo: true }, { from = 42, chat = from, group = false } = {}): TelegramEvent {
-	const content = typeof text === "string" ? { kind: "text" as const, text } : "forwarded" in text ? { kind: "forwarded" as const } : { kind: "other" as const };
+function message(text: string | { forwarded: true } | { viaBot: true } | { photo: true }, { from = 42, chat = from, group = false } = {}): TelegramEvent {
+	const content = typeof text === "string" ? { kind: "text" as const, text } : "forwarded" in text ? { kind: "forwarded" as const } : "viaBot" in text ? { kind: "via-bot" as const } : { kind: "other" as const };
 	return { kind: "message", chat: { id: chat, private: !group }, from, messageId: 7, content, replyTo: null };
 }
 
@@ -43,6 +43,11 @@ test("转发的消息和非文字消息回一句说明，不交给幕僚长；�
 	assert.deepEqual(decide(message("​ ⁠"), ALLOWED), { do: "ignore" });
 });
 
+test("经别的机器人（inline bot）发出的消息和转发同理：不算使用者的话，回一句说明", () => {
+	assert.deepEqual(decide(message({ viaBot: true }), ALLOWED), { do: "note", chatId: 42, note: "no-via-bot" });
+	assert.deepEqual(decide(message({ viaBot: true }, { from: 99 }), ALLOWED), { do: "drop" });
+});
+
 test("Telegram 发来的看不懂的更新不处理", () => {
 	assert.deepEqual(decide(null, ALLOWED), { do: "ignore" });
 });
@@ -50,7 +55,7 @@ test("Telegram 发来的看不懂的更新不处理", () => {
 test("说明的文字：设置模式写出对方的 id；其余是固定句子，称幕僚长和你", () => {
 	assert.equal(NOTES.setup(987654321), "你的 Telegram 数字 id 是 987654321。把这个数字写进宿主状态目录里 config.json 的 telegram.allowedUserIds，重启宿主后就能在这里和幕僚长对话。");
 	assert.match(NOTES.help, /^这里是白宫。/);
-	for (const text of [NOTES.help, NOTES["text-only"], NOTES["no-forwards"]]) assert.ok(!/它|我/.test(text), text);
+	for (const text of [NOTES.help, NOTES["text-only"], NOTES["no-forwards"], NOTES["no-via-bot"], NOTES.missed]) assert.ok(!/它|我/.test(text), text);
 });
 
 test("网页和终端说的话转到 Telegram 时加前缀；另一个 Telegram 账号说的话也说清来处", () => {

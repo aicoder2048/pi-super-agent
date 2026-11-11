@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:net";
 import test from "node:test";
 import { inspect } from "node:util";
 import { ConfigError } from "../src/config-error.ts";
@@ -86,6 +87,62 @@ test("fetch 抛出的错误带着网址和 token：变成 network，报错里没
 	});
 });
 
+test("请求没发出去（拒绝连接、域名查不到、连接超时）是 unreachable；发出去后断开、超时是 network，说不准 Telegram 收没收到", async () => {
+	const cases: [string | undefined, string][] = [
+		["ECONNREFUSED", "unreachable"],
+		["ENOTFOUND", "unreachable"],
+		["EAI_AGAIN", "unreachable"],
+		["UND_ERR_CONNECT_TIMEOUT", "unreachable"],
+		["ECONNRESET", "network"],
+		["UND_ERR_SOCKET", "network"],
+		["UND_ERR_HEADERS_TIMEOUT", "network"],
+		[undefined, "network"],
+	];
+	for (const [code, kind] of cases) {
+		const api = new BotApi({
+			token: token(),
+			http: async (url) => {
+				throw new TypeError(`fetch failed ${url}`, { cause: Object.assign(new Error(`${code} ${url}`), code ? { code } : {}) });
+			},
+		});
+		await assert.rejects(api.send(42, text("x"), never), (e: TelegramError) => {
+			assert.equal(e.kind, kind, String(code));
+			assertNoToken(e);
+			return true;
+		});
+	}
+	const timedOut = new BotApi({ token: token(), http: async () => { throw new DOMException("The operation was aborted due to timeout", "TimeoutError"); } });
+	await assert.rejects(timedOut.send(42, text("x"), never), (e: TelegramError) => e.kind === "network");
+});
+
+test("本机一个没人监听的端口：真实的 fetch 报拒绝连接，归为 unreachable", async () => {
+	const server = createServer();
+	await new Promise<void>((listening) => server.listen(0, "127.0.0.1", listening));
+	const { port } = server.address() as { port: number };
+	await new Promise((closed) => server.close(closed));
+	const api = new BotApi({ token: token(), baseUrl: `http://127.0.0.1:${port}` });
+	await assert.rejects(api.send(42, text("x"), never), (e: TelegramError) => e.kind === "unreachable");
+});
+
+test("retry_after 夹在 1 秒到 1 小时之间；别的状态带 retry_after 也按限流处理", async () => {
+	const cases: [number, unknown, number][] = [
+		[429, 0, 1000],
+		[429, -5, 1000],
+		[429, 2 ** 31, 3_600_000],
+		[429, 1e400, 3_600_000],
+		[500, 3, 3000],
+	];
+	for (const [status, retryAfter, ms] of cases) {
+		const respond = () => new Response(`{"ok":false,"error_code":${status},"description":"wait","parameters":{"retry_after":${retryAfter === 1e400 ? "1e400" : retryAfter}}}`, { status });
+		const api = new BotApi({ token: token(), http: fakeHttp(respond).http });
+		await assert.rejects(api.send(42, text("x"), never), (e: TelegramError) => {
+			assert.equal(e.kind, "rate_limited", `${status} ${retryAfter}`);
+			assert.equal(e.retryAfterMs, ms, `${status} ${retryAfter}`);
+			return true;
+		});
+	}
+});
+
 test("401 的 description 里带着 token：变成 unauthorized，报错里没有 token", async () => {
 	const api = new BotApi({ token: token(), http: fakeHttp(failed(401, `Unauthorized: ${RAW}`)).http });
 	await assert.rejects(api.getMe(never), (e: TelegramError) => {
@@ -140,8 +197,9 @@ test("取更新：带 offset、timeout 和只要 message、callback_query 的 al
 		{ update_id: 15, message: { message_id: 5, chat: { id: 42, type: "private" }, text: "没有 from" } },
 		{ update_id: 16, callback_query: { id: "c", from: { id: 42 }, data: "a:x:0" } },
 		{ update_id: 17, message: "garbage" },
-		{ update_id: 18, callback_query: { id: "cb7", from: { id: 42 }, message: { message_id: 30, chat: { id: 42, type: "private" } }, data: "a:rpt_1:1" } },
-		{ update_id: 19, callback_query: { id: "cb8", from: { id: 42 }, message: { message_id: 30, chat: { id: 42, type: "private" } }, game_short_name: "g" } },
+		{ update_id: 18, message: { message_id: 6, from: { id: 42 }, chat: { id: 42, type: "private" }, text: "gif 机器人的结果", via_bot: { id: 777, is_bot: true } } },
+		{ update_id: 19, callback_query: { id: "cb7", from: { id: 42 }, message: { message_id: 30, chat: { id: 42, type: "private" } }, data: "a:rpt_1:1" } },
+		{ update_id: 20, callback_query: { id: "cb8", from: { id: 42 }, message: { message_id: 30, chat: { id: 42, type: "private" } }, game_short_name: "g" } },
 	];
 	const f = fakeHttp(ok(updates));
 	const api = new BotApi({ token: token(), http: f.http });
@@ -156,8 +214,9 @@ test("取更新：带 offset、timeout 和只要 message、callback_query 的 al
 		{ updateId: 15, event: null },
 		{ updateId: 16, event: null },
 		{ updateId: 17, event: null },
-		{ updateId: 18, event: { kind: "tap", chat: { id: 42, private: true }, from: 42, messageId: 30, callbackId: "cb7", data: "a:rpt_1:1" } },
-		{ updateId: 19, event: { kind: "tap", chat: { id: 42, private: true }, from: 42, messageId: 30, callbackId: "cb8", data: "" } },
+		{ updateId: 18, event: { kind: "message", chat: { id: 42, private: true }, from: 42, messageId: 6, content: { kind: "via-bot" }, replyTo: null } },
+		{ updateId: 19, event: { kind: "tap", chat: { id: 42, private: true }, from: 42, messageId: 30, callbackId: "cb7", data: "a:rpt_1:1" } },
+		{ updateId: 20, event: { kind: "tap", chat: { id: 42, private: true }, from: 42, messageId: 30, callbackId: "cb8", data: "" } },
 	]);
 	await api.getUpdates(undefined, 50, never);
 	assert.deepEqual(f.calls[1].body, { timeout: 50, allowed_updates: ["message", "callback_query"] });

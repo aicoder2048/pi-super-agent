@@ -173,3 +173,23 @@ test("telegram 段写错时拒绝启动，报错指出字段；群和频道的�
 	}
 	assert.throws(() => loadConfig(stateWith({ telegram: { allowedUserIds: [42, 42] } })), /telegram\.allowedUserIds/);
 });
+
+test("telegram 段写错时报错只点出字段名，不回显段里的值：误写进去的 token 不会出现在报错里", () => {
+	const token = "987654321:AAH-real_looking_secret_token_abcdefg";
+	const secret = token.split(":")[1];
+	const cases: [unknown, RegExp][] = [
+		[{ allowedUserIds: [42], botToken: token }, /botToken/],
+		[{ allowedUserIds: [42], [token]: true }, /telegram/],
+		[{ allowedUserIds: [token] }, /telegram\.allowedUserIds/],
+		[{ allowedUserIds: token }, /telegram\.allowedUserIds/],
+		[token, /telegram/],
+	];
+	for (const [telegram, names] of cases) {
+		assert.throws(() => loadConfig(stateWith({ telegram })), (e: Error) => {
+			assert.equal(e.name, "ConfigError");
+			assert.match(e.message, names);
+			assert.ok(!e.message.includes(secret), e.message);
+			return true;
+		});
+	}
+});

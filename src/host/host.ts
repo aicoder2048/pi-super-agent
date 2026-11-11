@@ -108,7 +108,7 @@ export class Host {
 	#stallAt: number | null = null;
 	#heartbeat: NodeJS.Timeout | undefined;
 	#web: WebGateway | undefined;
-	#telegram: TelegramClient | undefined;
+	readonly #telegram: TelegramClient | undefined;
 	readonly #db: DatabaseSync;
 	readonly #watching: WatchedSource[];
 	readonly #clock: Clock;
@@ -205,6 +205,8 @@ export class Host {
 			(ticketId, token, method, params) => this.workers.handleRequest(ticketId, token, method, params),
 			this.#log,
 		);
+		// Built before any client can say a line, so every line and reply reaches it; it touches the network only once started.
+		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }) }, db: this.#db, clock, log: this.#log });
 	}
 
 	static async start(options: HostOptions): Promise<Host> {
@@ -237,11 +239,9 @@ export class Host {
 		host.#atNextMidnight();
 		if (host.#memberCap) host.#atNextNewYorkDay(host.#memberCap);
 		host.#pushBoardAtNextStall(host.kernel.listTickets());
-		host.dispatcher.kick();
-		if (options.telegram) {
-			host.#telegram = new TelegramClient({ ...options.telegram, host: { say: (text, o) => host.say(text, o), answer: (reportId, option, o) => host.answer(reportId, option, o), board: () => ({ rows: host.kernel.listTickets(), memberCap: host.#memberCapBoard() }) }, db: host.#db, clock: host.#clock, log: host.#log });
-			host.#telegram.start();
-		}
+		// Only now do the Router and every client exist; a reply delivered earlier would miss the ones still missing.
+		host.dispatcher.start();
+		host.#telegram?.start();
 		return host;
 	}
 
