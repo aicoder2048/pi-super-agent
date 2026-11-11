@@ -14,7 +14,7 @@ const ANSWER_DATA = new RegExp(`^a:([A-Za-z0-9_-]+):([0-${OPTIONS_MAX - 1}])$`);
 const REPORT_ID = /^rpt_[A-Za-z0-9_-]+$/;
 const TITLE_MAX = 40;
 const QUESTION_MIN = 4;
-const LEAD_IN = /^[^。！？.!?，,]{0,7}[：:]$/u;
+const LEAD_IN = /^(?:请问|问|助手问|助手问你|助手想知道)\s*[：:]$/u;
 const EDGES = /^[\s\p{P}]+|[\s\p{P}]+$/gu;
 
 export type Note = "help" | "text-only" | "no-forwards" | "no-via-bot";
@@ -102,7 +102,7 @@ export function cardView(row: DashboardRow): CardView | null {
 
 /**
  * The chief of staff relaying a helper's question the card already shows: the question itself, give or take edge
- * punctuation and a lead-in such as 「请问：」, with nothing after it. Anything more might be news the phone would lose,
+ * punctuation and one of a few fixed lead-ins such as 「请问：」, with nothing after it. Anything more might be news the phone would lose,
  * so it goes out. Once the user typed or the answer reached the task, a re-ask is news too.
  */
 export function repeatsQuestion(reply: { text: string; at: number }, question: PendingQuestion | null): boolean {
