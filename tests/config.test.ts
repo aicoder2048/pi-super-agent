@@ -131,3 +131,31 @@ test("maxConcurrentExperts 不是 1 到 10 的整数、两个派活时限不是 
 		}
 	}
 });
+
+test("webHosts 缺省时是空的，网页只开在本机，webPort 默认值不变", () => {
+	const config = loadConfig(stateWith({}));
+	assert.deepEqual(config.webHosts, []);
+	assert.equal(config.webPort, 4517);
+});
+
+test("webHosts 的名字读成小写，重复的只留一个，顺序不变", () => {
+	const config = loadConfig(stateWith({ webHosts: ["PSA-Home.Example.TS.net", "laptop.example.ts.net", "psa-home.example.ts.net"] }));
+	assert.deepEqual(config.webHosts, ["psa-home.example.ts.net", "laptop.example.ts.net"]);
+});
+
+test("webHosts 里不是 tailnet 机器名的项拒绝启动，报错只有一行，指出是第几项和原值", () => {
+	const bad = ["psa-home.example.ts.net:443", "https://psa-home.example.ts.net", "psa-home.example.ts.net/x", "example.com", "100.101.102.103", "", "psa-home.example.ts.net.", "*.example.ts.net", 42];
+	for (const item of bad) {
+		assert.throws(
+			() => loadConfig(stateWith({ webHosts: ["ok.example.ts.net", item] })),
+			(e: Error) => e.name === "ConfigError" && e.message.includes("webHosts[1]") && e.message.includes(JSON.stringify(item)) && !e.message.includes("\n"),
+			JSON.stringify(item),
+		);
+	}
+	assert.throws(() => loadConfig(stateWith({ webHosts: "psa-home.example.ts.net" })), (e: Error) => e.name === "ConfigError" && /webHosts/.test(e.message));
+});
+
+test("webHosts 不为空时 webPort 不能是 0：tailscale serve 转发到固定端口", () => {
+	assert.throws(() => loadConfig(stateWith({ webHosts: ["psa-home.example.ts.net"], webPort: 0 })), (e: Error) => e.name === "ConfigError" && /webHosts/.test(e.message) && /webPort/.test(e.message));
+	assert.equal(loadConfig(stateWith({ webHosts: [], webPort: 0 })).webPort, 0);
+});

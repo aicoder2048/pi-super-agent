@@ -6,6 +6,7 @@ import { DEFAULT_MODELS, parseModelRef, type ModelRef } from "../models.ts";
 import type { KernelConfig } from "../kernel/types.ts";
 import { ConfigError, readJsonFile } from "../config-error.ts";
 import { MEMBER_CAP_DEFAULT, MEMBER_CAP_MAX } from "./member-cap.ts";
+import { parseWebHosts, type TailnetName } from "./web-hosts.ts";
 
 export interface HostConfig {
 	stateDir: string;
@@ -27,6 +28,8 @@ export interface HostConfig {
 	watchdog: { intervalMinutes: number; stuckMinutes: number; staleSeconds: number };
 	modulesDirs: string[];
 	webPort: number;
+	/** Tailnet names the page also answers at (ADR-0014). Empty means local only. */
+	webHosts: readonly TailnetName[];
 	secretsFile?: string;
 	sources: Record<string, unknown>;
 }
@@ -64,6 +67,10 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	const webPort = raw.webPort ?? 4517;
 	if (!Number.isInteger(webPort) || webPort < 0 || webPort > 65535) {
 		throw new ConfigError(`${file}：webPort（${JSON.stringify(webPort)}）必须是 0 到 65535 之间的整数，0 表示任意空闲端口`);
+	}
+	const webHosts = parseWebHosts(raw.webHosts, `${file}：webHosts`);
+	if (webHosts.length > 0 && webPort === 0) {
+		throw new ConfigError(`${file}：webHosts 需要固定的 webPort：tailscale serve 转发到一个固定端口，webPort 是 0 时每次启动端口都不同`);
 	}
 	if (raw.secretsFile !== undefined && typeof raw.secretsFile !== "string") {
 		throw new ConfigError(`${file}：secretsFile（${JSON.stringify(raw.secretsFile)}）必须是 .env 文件的路径字符串`);
@@ -116,6 +123,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		watchdog,
 		modulesDirs: raw.modulesDirs ?? [fileURLToPath(new URL("../../modules", import.meta.url)), join(stateDir, "modules")],
 		webPort,
+		webHosts,
 		secretsFile,
 		sources,
 	};
