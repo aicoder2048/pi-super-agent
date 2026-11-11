@@ -215,12 +215,13 @@ function trailingCards(messages: Message[]): string[] {
 	return out;
 }
 
-/** The tool results a script can answer as a card: a member's reply to a dispatch, new_app's directory, and a command's output that starts with "[命令输出]". */
+/** The tool results a script can answer as a card: a member's reply to a dispatch, new_app's directory, tripwire's reply, and a command's output that starts with "[命令输出]". */
 function scriptableToolResult(m: Message): string | undefined {
 	if (m.role !== "tool") return undefined;
 	const text = textOf(m);
 	if (text.startsWith("成员回复")) return `[成员回复] ${text}`;
 	if (/^\{\s*"app": "app-\d{3,}-/.test(text)) return `[应用目录] ${text}`;
+	if (/^\{\s*"echo": /.test(text)) return `[盯盘条件] ${text}`;
 	return text.startsWith("[命令输出]") ? text : undefined;
 }
 
