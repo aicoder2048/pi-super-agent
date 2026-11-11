@@ -26,10 +26,10 @@ test("仓库自带的两支队伍用默认配置的提供方都能加载：us-ma
 	for (const m of experts) assert.match(m.title, /\p{Script=Han}/u, `${m.name} 有中文职称`);
 });
 
-test("幕僚长的名册里有这两个领域：行情、个股、财报和相关新闻归 us-market，Pi 的扩展、主题、技能、配置、提示模板和界面组件归 pi-pi", () => {
+test("幕僚长的名册里有这两个领域：行情、个股、财报、相关新闻和盯盘提醒归 us-market，Pi 的扩展、主题、技能、配置、提示模板和界面组件归 pi-pi", () => {
 	const roster = load().rosterPrompt().split("\n");
 	const line = (name: string) => roster.find((l) => l.startsWith(`- ${name}（`)) ?? "";
-	for (const word of ["行情", "个股", "财报", "新闻"]) assert.ok(line("us-market").includes(word), `us-market 的说明提到${word}：${line("us-market")}`);
+	for (const word of ["行情", "个股", "财报", "新闻", "盯盘提醒"]) assert.ok(line("us-market").includes(word), `us-market 的说明提到${word}：${line("us-market")}`);
 	for (const word of ["Pi", "扩展", "主题", "技能", "配置", "提示模板", "界面组件"]) assert.ok(line("pi-pi").includes(word), `pi-pi 的说明提到${word}：${line("pi-pi")}`);
 });
 
@@ -154,6 +154,12 @@ test("看盘技能不说小时线一定看得到开盘：收盘后查到的小�
 	const skill = readFileSync(join(REPO_MODULES, "us-market/skills/us-market-desk/SKILL.md"), "utf8");
 	assert.ok(!skill.includes("看得到开盘"));
 	assert.match(skill, /开盘价.*`day`/);
+});
+
+test("看盘技能有一节盯盘条件：领队自己用 tripwire 不派活，中文名换成代码，按收据核对，写明默认值，汇报不复述成本价和股数，被拒照实转告", () => {
+	const skill = readFileSync(join(REPO_MODULES, "us-market/skills/us-market-desk/SKILL.md"), "utf8");
+	const section = skill.split(/\n(?=## )/).find((s) => s.startsWith("## 盯盘条件")) ?? "";
+	for (const pattern of [/`tripwire`/, /不派/, /代码/, /收据/, /either/, /5 和 20/, /不复述成本价和股数/, /拒绝/]) assert.match(section, pattern);
 });
 
 test("看盘模块的经验放在它的技能里：us-market 的任务，助手拿到这份技能，每位成员也拿到，而且都有读它的工具", () => {
