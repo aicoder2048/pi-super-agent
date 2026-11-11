@@ -249,6 +249,7 @@ async function dispatching(t: TestContext, runner: Runner, calls: Call[], option
 const two: Call[] = [{ agent: "market-analyst", task: "盘面怎么样？" }, { agent: "news-researcher", task: "有什么新闻？" }];
 const held = (signal: AbortSignal, keep: (release: () => void) => void) =>
 	new Promise<void>((done, fail) => {
+		if (signal.aborted) return fail(signal.reason);
 		keep(done);
 		signal.addEventListener("abort", () => fail(signal.reason));
 	});
@@ -762,7 +763,10 @@ test("看板上正在跑工具的成员带着这一步已经跑了多久；两�
 		await held(run.signal, (done) => (finish = done));
 		return "答";
 	}, [two[1]]);
-	await until(() => (board()?.[0]?.toolMs ?? 0) >= 80 && board()[0].quietMs < board()[0].toolMs!, "第二个工具也开始了");
+	await until(() => {
+		const shown = board()?.[0];
+		return finish !== undefined && shown !== undefined && (shown.toolMs ?? 0) >= 80 && shown.quietMs < shown.toolMs!;
+	}, "第二个工具也开始了");
 	const [running] = board();
 	assert.equal(running.step, "执行命令", "先开始的那个还没返回");
 	assert.ok(running.toolMs! >= 80 && running.toolMs! < 1000, `这一步已经跑了 ${running.toolMs} ms`);
