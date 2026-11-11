@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import type { DatabaseSync } from "node:sqlite";
 import { writeHeartbeat } from "../heartbeat.ts";
 import { relocateState } from "./relocate.ts";
 import { endLeftoverMembers } from "./member-ledger.ts";
@@ -26,7 +27,6 @@ import { ConfigError } from "../config-error.ts";
 import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 import type { Domains } from "../modules.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
-import type { DatabaseSync } from "node:sqlite";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;

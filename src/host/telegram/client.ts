@@ -101,9 +101,9 @@ export class TelegramClient {
 		this.#loops = [this.#poll(), this.#send()];
 	}
 
-	/** Synchronous and never throws: Telegram must not delay or fail what the web page and the TUI get. */
+	/** Synchronous and never throws: Telegram must not delay or fail what the web page and the TUI get. While stopping it still queues, for the next start to send. */
 	broadcast(message: Broadcast, from?: ImChat): void {
-		if (this.#state !== "running") return;
+		if (this.#state === "off") return;
 		try {
 			if (message.type === "reply") {
 				for (const chat of this.#store.openChats()) this.#store.put(chat, `line:${message.replyId}`, message.replyId, { kind: "line", text: message.text, silent: false });
@@ -220,7 +220,7 @@ export class TelegramClient {
 				continue;
 			}
 			await this.#pause(Math.max(this.#lastSendAt + this.#timing.minGapMs, this.#pauseUntil) - Date.now());
-			if (this.#state !== "running") return;
+			if (this.#state === "off") return;
 			this.#lastSendAt = Date.now();
 			const { text, silent } = render(row.body);
 			try {

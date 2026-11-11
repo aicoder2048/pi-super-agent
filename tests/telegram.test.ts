@@ -218,3 +218,16 @@ test("宿主停着时发的话，重启后进对话一次；停机前没发出�
 		assert.equal(sentTo(tg, USER).filter((m) => m === text).length, 1, text);
 	}
 });
+
+test("宿主停止过程中广播的话也记进发件箱，下次启动后补发到 Telegram", async (t) => {
+	const tg = await FakeTelegram.start();
+	t.after(() => tg.close());
+	const stateDir = tempStateDir();
+	const first = await telegramHost(t, { fake: tg, stateDir });
+	tg.userSays(USER, "/start");
+	await until(() => tg.sent.length === 1, "说明");
+	await first.stop();
+	first.host.say("停止过程中说的");
+	await telegramHost(t, { fake: tg, stateDir, brain: () => [] });
+	await until(() => sentTo(tg, USER).includes("你在网页或终端说：停止过程中说的"), "下次启动后补发");
+});
