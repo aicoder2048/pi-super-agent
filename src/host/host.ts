@@ -166,6 +166,8 @@ export class Host {
 			submit,
 			readCursor: () => this.kernel.sourceCursor(spec.source),
 			writeCursor: (value) => this.kernel.setSourceCursor(spec.source, value),
+			readUserData: () => this.kernel.sourceUserData(spec.source),
+			writeUserData: (value) => this.kernel.setSourceUserData(spec.source, value),
 			post: (line) => this.#postHostLine(spec.source, line),
 			raised: (externalId) => this.kernel.raised(spec.source, externalId),
 			log: this.#log,

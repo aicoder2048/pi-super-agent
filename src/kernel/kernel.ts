@@ -1027,6 +1027,26 @@ export class Kernel {
 		});
 	}
 
+	/** The user's data a source keeps, such as the market feed's tripwires. Unlike the cursor, no source resets it. */
+	sourceUserData(source: string): string | undefined {
+		return this.#get("SELECT data FROM source_user_data WHERE source = ?", source)?.data;
+	}
+
+	setSourceUserData(source: string, data: string): void {
+		this.#run(
+			`INSERT INTO source_user_data (source, data, updated_at) VALUES (?, ?, ?)
+			 ON CONFLICT (source) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+			source,
+			data,
+			this.#now(),
+		);
+	}
+
+	/** Whether a source's text ever reached this ticket: a subscribed thread's trigger or one the Router handed over. The user's lines arrive as user_message. */
+	receivedSourceText(ticketId: string): boolean {
+		return this.#get("SELECT 1 FROM ticket_inputs WHERE ticket_id = ? AND kind = 'trigger'", ticketId) !== undefined;
+	}
+
 	/** A repeated (source, externalId) alert returns the first line and writes nothing; any other failed insert throws. */
 	postHostLine(source: string, post: HostLinePost): { line: HostLine; duplicate: boolean } {
 		return this.#tx(() => {

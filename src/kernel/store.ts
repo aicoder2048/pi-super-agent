@@ -177,6 +177,12 @@ CREATE TABLE IF NOT EXISTS source_cursors (
 	updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS source_user_data (
+	source TEXT PRIMARY KEY,
+	data TEXT NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS usage_daily (
 	day TEXT NOT NULL,
 	provider TEXT NOT NULL,

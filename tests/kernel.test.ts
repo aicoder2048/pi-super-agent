@@ -775,6 +775,43 @@ test("来源的读取位置跨重启保存", () => {
 	assert.equal(kernel.sourceCursor("timer"), "200");
 });
 
+test("来源的使用者数据跨重启保存，和读取位置互不相干", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-userdata-")), "state.db");
+	const open = () => new Kernel({ db: openStore(path), clock: { now: () => 0 }, sourcePolicy: () => "candidate" });
+	const kernel = open();
+	assert.equal(kernel.sourceUserData("us-market"), undefined);
+	kernel.setSourceUserData("us-market", '{"v":1}');
+	kernel.setSourceUserData("us-market", '{"v":2}');
+	kernel.setSourceCursor("us-market", "cursor");
+	const reopened = open();
+	assert.equal(reopened.sourceUserData("us-market"), '{"v":2}');
+	assert.equal(reopened.sourceCursor("us-market"), "cursor");
+	assert.equal(reopened.sourceUserData("other-feed"), undefined);
+});
+
+test("任务收没收到过来源正文：订阅的线程投进来的、幕僚长转交进来的来源触发都算；使用者的话不算", () => {
+	const kernel = new Kernel({ db: openStore(":memory:"), clock: { now: () => 0 }, sourcePolicy: () => "candidate" });
+	let n = 0;
+	const said = (body: string) => kernel.submitTrigger({ source: "conversation", externalId: `u${++n}`, threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body, occurredAt: 0 }).triggerId;
+	const open = (threads: string[] = []) => kernel.route([{ kind: "open_ticket", basis: "request", triggerId: said("盯盘"), threads, title: "盯盘", brief: "盯盘" }])[0].ticketId!;
+	const subscribed = open(["thr_ci:build-42"]);
+	const handedOver = open();
+	const talkedTo = open();
+	assert.equal(kernel.receivedSourceText(subscribed), false);
+	kernel.submitTrigger({ source: "ci", externalId: "b1", threads: [{ id: "thr_ci:build-42" }], sender: "ci", body: "失败", occurredAt: 0 });
+	const { triggerId: fromSource } = kernel.submitTrigger({ source: "rss", externalId: "r1", threads: [{ id: "thr_rss:x" }], sender: "rss", body: "外部正文", occurredAt: 0 });
+	assert.deepEqual(
+		kernel.route([
+			{ kind: "hand_over", triggerId: fromSource, ticketId: handedOver },
+			{ kind: "hand_over", triggerId: said("改成 8%"), ticketId: talkedTo },
+		]).map((r) => r.ok),
+		[true, true],
+	);
+	assert.equal(kernel.receivedSourceText(subscribed), true, "订阅投递");
+	assert.equal(kernel.receivedSourceText(handedOver), true, "转交");
+	assert.equal(kernel.receivedSourceText(talkedTo), false, "使用者后来说的话");
+});
+
 test("请求任务可以订阅还没出现过的来源线程，之后那条线程上的触发直达它", () => {
 	const kernel = new Kernel({ db: openStore(":memory:"), clock: { now: () => 0 }, sourcePolicy: () => "candidate" });
 	const { triggerId } = kernel.submitTrigger({ source: "conversation", externalId: "u1", threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body: "盯着 build-42", occurredAt: 0 });

@@ -8,6 +8,9 @@ export interface FeedContext {
 	submit(trigger: TriggerSubmission): void;
 	readCursor(): string | undefined;
 	writeCursor(value: string): void;
+	/** The user's data for this source. It survives restarts and NY days, unlike the cursor. */
+	readUserData(): string | undefined;
+	writeUserData(value: string): void;
 	/** Straight to the user's front ends; the Router never sees it. A repeated alert externalId changes nothing. A line the store refuses throws. */
 	post(line: HostLinePost): void;
 	/** Whether this feed already posted the alert `externalId`. */
