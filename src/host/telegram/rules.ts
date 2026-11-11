@@ -14,7 +14,7 @@ const ANSWER_DATA = new RegExp(`^a:([A-Za-z0-9_-]+):([0-${OPTIONS_MAX - 1}])$`);
 const REPORT_ID = /^rpt_[A-Za-z0-9_-]+$/;
 const TITLE_MAX = 40;
 const QUESTION_MIN = 4;
-const LEAD_IN = /^[^。！？.!?]{0,7}[：:，,]$/u;
+const LEAD_IN = /^[^。！？.!?，,]{0,7}[：:]$/u;
 const EDGES = /^[\s\p{P}]+|[\s\p{P}]+$/gu;
 
 export type Note = "help" | "text-only" | "no-forwards" | "no-via-bot";
