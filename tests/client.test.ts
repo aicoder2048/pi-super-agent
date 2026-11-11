@@ -562,8 +562,15 @@ test("看板：标题行分开显示未结束的任务数和其中真正在跑�
 	assert.match(header, /1 个在跑/);
 });
 
-test("看板：有外写的任务多一行「写到成品目录之外 N 处」；没有外写的不多", () => {
-	const text = renderBoard({ rows: [row({ id: "tkt_out1", outside: { count: 2, sample: ["/repo/a.ts", "/repo"] } }), row({ id: "tkt_cln1", outside: null })], receivedAt: 0, connected: true }, 160, 0).join("\n");
-	assert.equal(text.match(/写到成品目录之外/g)?.length, 1);
-	assert.match(text, /写到成品目录之外 2 处：\/repo\/a\.ts、\/repo/);
+test("看板：有外写的任务多一行，确切写入说写到成品目录之外，推测的只说可能；没有外写的不多", () => {
+	const text = renderBoard({ rows: [
+		row({ id: "tkt_wro1", outside: { wrote: 2, maybe: 0, sample: ["/repo/a.ts", "/repo"] } }),
+		row({ id: "tkt_mix1", outside: { wrote: 2, maybe: 1, sample: ["/repo/a.ts", "/repo/b.ts", "/repo"] } }),
+		row({ id: "tkt_may1", outside: { wrote: 0, maybe: 3, sample: ["/repo/a.ts", "/repo"] } }),
+		row({ id: "tkt_cln1", outside: null }),
+	], receivedAt: 0, connected: true }, 160, 0).join("\n");
+	assert.equal(text.match(/成品目录之外/g)?.length, 3);
+	assert.match(text, /^ +写到成品目录之外 2 处：\/repo\/a\.ts、\/repo$/m);
+	assert.match(text, /^ +写到成品目录之外 2 处，另有 1 处可能：\/repo\/a\.ts、\/repo\/b\.ts、\/repo$/m);
+	assert.match(text, /^ +可能写到成品目录之外 3 处：\/repo\/a\.ts、\/repo …$/m);
 });

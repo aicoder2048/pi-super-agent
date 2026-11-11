@@ -2022,7 +2022,7 @@ test("带外写的「无需处理」汇报也通知 Router，再结束任务；�
 	assert.equal(kernel.getTicket(loud)?.stage, "closed");
 });
 
-test("看板这一行把任务所有汇报的外写加起来，带上没列出的条数，最多给三个样本路径", () => {
+test("看板这一行把任务所有汇报的外写加起来：确切写入和推测的可能写入分开数，没记下的只算可能，最多给三个样本路径", () => {
 	const { kernel, open, run } = setup();
 	const id = open("request");
 	const clean = open("request");
@@ -2030,7 +2030,7 @@ test("看板这一行把任务所有汇报的外写加起来，带上没列出�
 	kernel.workerReport(id, { status: "blocked", summary: "a", writes: checked(["/r/1", "/r/2"], { s: 1 }) });
 	kernel.workerReport(id, { status: "blocked", summary: "b", writes: { outside: [{ kind: "maybe", paths: ["/r/3", "/r/4"], command: "cp x /r/3 /r/4", tool: "bash", by: { role: "member", name: "coder" } }], omitted: 5, scanned: { s: 2 } } });
 	const row = kernel.listTickets().find((r) => r.id === id)!;
-	assert.deepEqual(row.outside, { count: 8, sample: ["/r/1", "/r/2", "/r/3"] });
+	assert.deepEqual(row.outside, { wrote: 2, maybe: 6, sample: ["/r/1", "/r/2", "/r/3"] });
 	assert.equal(kernel.listTickets().find((r) => r.id === clean)!.outside, null);
 });
 

@@ -2140,15 +2140,19 @@ test("页面：排队的成员标签带上现在的上限，使用者看得到�
 	assert.deepEqual(page.helperStrip(view, 0).chips[0].members.map((m) => m.label), ["财报解读 · 排队中 · 上限 10"]);
 });
 
-test("页面：有外写的任务卡片多一行「写到成品目录之外 N 处」和最多三个路径；没有外写的这一行是空的", () => {
+test("页面：有外写的任务卡片多一行，确切写入和推测的可能写入分开数，带最多三个路径；只有推测的只说可能；没有外写的这一行是空的", () => {
 	const left = page.leftColumn(withRows([
-		row({ id: "tkt_out", stage: "closed", outside: { count: 5, sample: ["/repo/a.ts", "/repo/b.ts", "/repo"] } }),
-		row({ id: "tkt_one", stage: "closed", outside: { count: 1, sample: ["/repo/a.ts"] } }),
+		row({ id: "tkt_out", stage: "closed", outside: { wrote: 5, maybe: 0, sample: ["/repo/a.ts", "/repo/b.ts", "/repo"] } }),
+		row({ id: "tkt_one", stage: "closed", outside: { wrote: 1, maybe: 0, sample: ["/repo/a.ts"] } }),
+		row({ id: "tkt_mix", stage: "closed", outside: { wrote: 2, maybe: 1, sample: ["/repo/a.ts", "/repo/b.ts", "/repo"] } }),
+		row({ id: "tkt_may", stage: "closed", outside: { wrote: 0, maybe: 3, sample: ["/repo/a.ts", "/repo/b.ts", "/repo"] } }),
 		row({ id: "tkt_cln", stage: "closed", outside: null }),
 	]), 0);
-	assert.deepEqual(left.done.map((c) => [c.id, c.outside]), [
-		["tkt_cln", ""],
-		["tkt_one", "写到成品目录之外 1 处：/repo/a.ts"],
-		["tkt_out", "写到成品目录之外 5 处：/repo/a.ts、/repo/b.ts、/repo …"],
-	]);
+	assert.deepEqual(Object.fromEntries(left.done.map((c) => [c.id, c.outside])), {
+		tkt_cln: "",
+		tkt_one: "写到成品目录之外 1 处：/repo/a.ts",
+		tkt_out: "写到成品目录之外 5 处：/repo/a.ts、/repo/b.ts、/repo …",
+		tkt_mix: "写到成品目录之外 2 处，另有 1 处可能：/repo/a.ts、/repo/b.ts、/repo",
+		tkt_may: "可能写到成品目录之外 3 处：/repo/a.ts、/repo/b.ts、/repo",
+	});
 });

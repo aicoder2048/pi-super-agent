@@ -76,10 +76,10 @@ test("助手用 new_app 开应用、把目录派给成员；成员和助手写�
 				assert.match(card, /^- 可能写入 \S+\/stray-bash\.md（助手 · bash：echo note > \.\.\/\.\.\/stray-bash\.md）$/m);
 				assert.doesNotMatch(card, /extensions\/joke\.ts（/);
 			});
-			await step("页面的任务卡片写着「写到成品目录之外 2 处」", async (page) => {
+			await step("页面的任务卡片写着「写到成品目录之外 1 处，另有 1 处可能」：bash 推测的不算成确切写入", async (page) => {
 				const line = page.locator("#left .card", { hasText: JOKE.title }).locator(".outside");
 				const text = (await line.textContent()) ?? "";
-				assert.match(text, /^写到成品目录之外 2 处：\S+、\S+$/);
+				assert.match(text, /^写到成品目录之外 1 处，另有 1 处可能：\S+、\S+$/);
 				assert.ok(text.includes("/stray.md") && text.includes("/stray-bash.md"), text);
 			});
 			await step("领队和成员的系统提示词里有成品目录的绝对路径：领队的有 new_app，成员的是请领队给目录", async () => {
