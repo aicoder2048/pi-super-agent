@@ -98,6 +98,8 @@ export interface WorkerExecutorOptions {
 	onError?: (ticketId: string, error: unknown) => void;
 	models: WorkerModels;
 	lookup?: (source: string, op: string, args: unknown) => Promise<unknown>;
+	/** Runs only after handleRequest's tripwire checks passed. */
+	tripwires?: (source: string, op: string, args: unknown) => unknown;
 	/** The lookup by a ticket's domain. Without it every ticket runs as if it had no domain. */
 	kitFor?: (domain: string) => DomainKit | undefined;
 	/** Without it every helper works alone. */
@@ -335,6 +337,12 @@ export class WorkerExecutor {
 					if (!this.#mayLookup(ticketId, holder)) throw new Error("这项任务里不能用 lookup：任务的领域没有在 module.json 的 tools 里开 lookup，或这位成员的 tools 没写 lookup");
 					if (!this.#o.lookup) throw new Error("没有可查询的来源");
 					return this.#o.lookup(String(p.source), String(p.op), p.args);
+				case "worker.tripwire": {
+					const refusal = this.#tripwireRefusal(ticketId);
+					if (refusal) throw new Error(refusal);
+					if (!this.#o.tripwires) throw new Error("没有可改盯盘条件的来源");
+					return this.#o.tripwires(String(p.source), String(p.op), p.args);
+				}
 				case "worker.new_app":
 					if (kernel.getTicket(ticketId)!.basis === "inference") throw new Error("推断开的任务只读，不能开应用");
 					return this.#o.output.newApp(ticketId, p.short);
@@ -367,6 +375,16 @@ export class WorkerExecutor {
 	#mayLookup(ticketId: string, holder: Member | undefined): boolean {
 		const { basis, domain } = this.#o.kernel.getTicket(ticketId)!;
 		return holder ? memberTools(basis, holder.tools).includes("lookup") : this.#kitFor(ticketId, domain).granted.includes("lookup");
+	}
+
+	/** Tripwires are the user's data (ADR-0017): only a ticket the user opened in the conversation, never reached by a source's text, in a domain that grants it. */
+	#tripwireRefusal(ticketId: string): string | undefined {
+		const { kernel } = this.#o;
+		const { basis, domain } = kernel.getTicket(ticketId)!;
+		if (basis !== "request") return `只有使用者在对话里开的任务能改盯盘条件，这个任务是${basis === "rule" ? "规则" : "推断"}开的。请在汇报里告诉使用者：在对话里再说一次要怎么改。`;
+		if (kernel.receivedSourceText(ticketId)) return "这个任务收到过来源发来的内容，不能再改盯盘条件，免得来源里夹带的话被当成使用者的意思。请在汇报里请使用者在对话里重新说一次，会新开一个任务来改。";
+		if (!this.#kitFor(ticketId, domain).granted.includes("tripwire")) return "这个任务的领域没有在 module.json 的 tools 里开 tripwire，不能改盯盘条件。";
+		return undefined;
 	}
 
 	#kitFor(ticketId: string, domain: string | null): DomainKit {

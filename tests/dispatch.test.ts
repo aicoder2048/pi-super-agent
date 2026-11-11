@@ -1012,10 +1012,10 @@ test("派活的请求不合规时拒绝，不起成员进程：不在本队、�
 	assert.equal(ran, 0);
 });
 
-test("成员的令牌只能经宿主查数据：不能汇报、交回、读任务或再派活；和助手的令牌不是同一个", async (t) => {
+test("成员的令牌只能经宿主查数据：不能汇报、交回、读任务、再派活或改盯盘条件；和助手的令牌不是同一个", async (t) => {
 	const replies: Record<string, string> = {};
 	let host: Awaited<ReturnType<typeof dispatching>>["host"] | undefined;
-	const DENIED = ["worker.report", "worker.hand_back", "worker.read", "worker.dispatch", "worker.bg"];
+	const DENIED = ["worker.report", "worker.hand_back", "worker.read", "worker.dispatch", "worker.bg", "worker.tripwire"];
 	let memberToken = "";
 	const started = await dispatching(t, async (run) => {
 		await until(() => host !== undefined, "测试拿到宿主");

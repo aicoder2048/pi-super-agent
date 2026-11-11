@@ -1,5 +1,6 @@
 import type { Clock, HostLinePost, TriggerSubmission } from "../kernel/types.ts";
 import { marketFeed } from "./market/source.ts";
+import type { RedactedTripwire } from "./market/tripwires.ts";
 
 export type { HostLinePost } from "../kernel/types.ts";
 
@@ -23,11 +24,21 @@ export interface Feed {
 	stop(): void;
 	problem(): string | undefined;
 	lookup(op: string, args: unknown): Promise<unknown>;
+	/** The one way to change the user's tripwires. The host has already checked who may write (ADR-0017). Throws a message for the helper. */
+	tripwires(op: string, args: unknown): TripwireReply;
+}
+
+/** What the helper gets back. No cost basis and no share count: it may repeat this to the Router and so to Telegram. */
+export interface TripwireReply {
+	echo: string;
+	tripwires: RedactedTripwire[];
 }
 
 export interface FeedSpec {
 	source: string;
 	lookupHelp: string;
+	/** The tripwire tool's help a helper sees; empty for a feed without tripwires. */
+	tripwireHelp: string;
 	create(ctx: FeedContext): Feed;
 }
 
