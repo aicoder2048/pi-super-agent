@@ -25,6 +25,8 @@ export interface UserMessage {
 	chatId?: number;
 	group?: boolean;
 	forwarded?: boolean;
+	/** Sent through an inline bot: the text is that bot's, not the user's. */
+	viaBot?: boolean;
 	photo?: boolean;
 	replyTo?: number;
 }
@@ -70,6 +72,7 @@ export class FakeTelegram {
 			date: Math.floor(Date.now() / 1000),
 			...(options.photo ? { photo: [{ file_id: "photo" }] } : { text }),
 			...(options.forwarded && { forward_origin: { type: "hidden_user", sender_user_name: "别人", date: 0 } }),
+			...(options.viaBot && { via_bot: { id: 777, is_bot: true, first_name: "gif", username: "gif" } }),
 			...(options.replyTo !== undefined && { reply_to_message: { message_id: options.replyTo } }),
 		};
 		return this.push({ message });

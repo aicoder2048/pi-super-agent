@@ -46,6 +46,7 @@ export interface Chat {
 export type MessageContent =
 	| { kind: "text"; text: string }
 	| { kind: "forwarded" }
+	| { kind: "via-bot" }
 	| { kind: "other" };
 
 export type TelegramEvent = { kind: "message"; chat: Chat; from: number; messageId: number; content: MessageContent; replyTo: number | null };
@@ -159,7 +160,7 @@ function parseMessage(m: any): TelegramEvent | null {
 	if (typeof m !== "object" || m === null) return null;
 	const { chat, from, message_id: messageId } = m;
 	if (!Number.isSafeInteger(chat?.id) || typeof chat.type !== "string" || !Number.isSafeInteger(from?.id) || !Number.isSafeInteger(messageId)) return null;
-	const content: MessageContent = m.forward_origin ? { kind: "forwarded" } : typeof m.text === "string" ? { kind: "text", text: m.text } : { kind: "other" };
+	const content: MessageContent = m.forward_origin ? { kind: "forwarded" } : m.via_bot ? { kind: "via-bot" } : typeof m.text === "string" ? { kind: "text", text: m.text } : { kind: "other" };
 	const replyTo = m.reply_to_message?.message_id;
 	return { kind: "message", chat: { id: chat.id, private: chat.type === "private" }, from: from.id, messageId, content, replyTo: Number.isSafeInteger(replyTo) ? replyTo : null };
 }

@@ -133,6 +133,16 @@ test("/start、/help 回说明；转发的和图片回一句说明；都不进�
 	assert.deepEqual(userLines(host), []);
 });
 
+test("经别的机器人（inline bot）发的消息回一句说明，不进对话", async (t) => {
+	const { host, tg } = await telegramHost(t);
+	tg.userSays(USER, "gif 机器人的结果", { viaBot: true });
+	await until(() => tg.sent.length === 1, "说明");
+	await host.settled();
+	await new Promise((r) => setTimeout(r, 200));
+	assert.deepEqual(sentTo(tg, USER), [NOTES["no-via-bot"]]);
+	assert.deepEqual(userLines(host), []);
+});
+
 test("网页或终端说的话静默转到 Telegram，带前缀；之后幕僚长的回复带通知", async (t) => {
 	const { host, tg } = await telegramHost(t);
 	tg.userSays(USER, "/start");

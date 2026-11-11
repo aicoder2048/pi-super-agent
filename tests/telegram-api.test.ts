@@ -139,6 +139,7 @@ test("取更新：带 offset、timeout 和只要 message 的 allowed_updates；�
 		{ update_id: 15, message: { message_id: 5, chat: { id: 42, type: "private" }, text: "没有 from" } },
 		{ update_id: 16, callback_query: { id: "c", from: { id: 42 }, data: "a:x:0" } },
 		{ update_id: 17, message: "garbage" },
+		{ update_id: 18, message: { message_id: 6, from: { id: 42 }, chat: { id: 42, type: "private" }, text: "gif 机器人的结果", via_bot: { id: 777, is_bot: true } } },
 	];
 	const f = fakeHttp(ok(updates));
 	const api = new BotApi({ token: token(), http: f.http });
@@ -153,6 +154,7 @@ test("取更新：带 offset、timeout 和只要 message 的 allowed_updates；�
 		{ updateId: 15, event: null },
 		{ updateId: 16, event: null },
 		{ updateId: 17, event: null },
+		{ updateId: 18, event: { kind: "message", chat: { id: 42, private: true }, from: 42, messageId: 6, content: { kind: "via-bot" }, replyTo: null } },
 	]);
 	await api.getUpdates(undefined, 50, never);
 	assert.deepEqual(f.calls[1].body, { timeout: 50, allowed_updates: ["message"] });
