@@ -20,24 +20,27 @@
 
 ## 装 Node
 
-宿主要 Node 22.18 以上，而且要带 `node:sqlite`。
+宿主要 Node 22.19 以上（Pi 1.5.2 的要求），而且要带 `node:sqlite`。
 
-在 Mac mini（macOS 13.5 以上）上，装任何一个当前的 LTS 版都行，用 Homebrew 或 nvm 都可以：
+两台机器都用 nvm 装 Node 22，全文不用 Homebrew。老 Mac 上就是这样装的。macOS 12 上 Node 24 以上的安装包要求 macOS 13.5，所以老 Mac 只能用 Node 22。Mac mini 也装 Node 22，和老 Mac 跑同一个大版本。
 
-```sh
-brew install node
-```
-
-在 macOS 12 上，Node 24 以上的安装包要求 macOS 13.5，只能用 nvm 装 Node 22：
-
-1. 装 nvm：
+1. 装 Command Line Tools。它带 git，nvm 的安装脚本要用 git：
 
 	```sh
+	xcode-select --install
+	```
+
+	在弹窗里点安装，等它装完。已经装过时，它打印 `Command line tools are already installed`，接着做下一步。
+
+2. 装 nvm。nvm 的安装脚本只往已经存在的 `~/.zshrc` 里写配置，新 Mac 上还没有这个文件，所以先建一个：
+
+	```sh
+	touch ~/.zshrc
 	curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.41.0/install.sh | bash
 	```
 
-2. 关掉终端，重新打开一个。
-3. 装 Node 22，并设为默认版本：
+3. 关掉终端，重新打开一个。
+4. 装 Node 22，并设为默认版本：
 
 	```sh
 	nvm install 22
@@ -54,9 +57,9 @@ git --version
 
 预期输出：
 
-- `node -v` 打印 `v22.18.0` 或更高的版本号。老 Mac 上是 `v22.23.4`。
+- `node -v` 打印 `v22.19.0` 或更高的版本号。老 Mac 上是 `v22.23.4`。
 - 第二条打印 `sqlite ok`。Node 22 还会多打一行 `ExperimentalWarning`，可以不管。
-- `git --version` 打印版本号。如果弹窗要装 Command Line Tools，点安装，装完再跑一次。
+- `git --version` 打印版本号。
 
 ## 装 Pi 并登录 Codex
 
@@ -74,13 +77,7 @@ git --version
 
 ## 装 just
 
-在 Mac mini 上：
-
-```sh
-brew install just
-```
-
-没有 Homebrew 时，把 just 装到 `~/bin`：
+两台机器都把 just 装到 `~/bin`：
 
 ```sh
 mkdir -p ~/bin
@@ -93,14 +90,15 @@ echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
 ## 拉代码并跑测试
 
 ```sh
+cd ~
 git clone https://github.com/aicoder2048/pi-super-agent.git
 cd pi-super-agent
 just test
 ```
 
-预期最后几行里 `fail 0`。
+预期最后几行里 `fail 0`。下文的 `just` 命令都要在仓库目录 `~/pi-super-agent` 里运行。
 
-在慢机器上，全套并行跑时可能有两处超时：`tests/host-main.test.ts` 整个文件和 `tests/dispatch-process.test.ts` 第 259 行的用例。把它们放宽时限单独跑：
+在慢机器上，全套并行跑时可能有两处超时：`tests/host-main.test.ts` 整个文件，和 `tests/dispatch-process.test.ts` 里的用例「真的 Pi 进程：成员跑一条比无进展时限还久、一声不吭的命令，照常做完，不被当成无进展」。把它们放宽时限单独跑：
 
 ```sh
 node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/host-main.test.ts tests/dispatch-process.test.ts
@@ -131,7 +129,7 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/host-main.
 	FINNHUB_API_KEY=<你的 Finnhub 密钥>
 	```
 
-3. 写 `~/.pi-super-agent/config.json`。`models` 的三个模型都写成 Codex：回退模型的默认值是按量付费的 DeepSeek，不写就会用到它。`webHosts` 先照抄，「远程访问」一节再换成真名字。`secretsFile` 写相对路径时，相对的是状态目录。
+3. 写 `~/.pi-super-agent/config.json`。`models` 的三个模型都写成 Codex：回退模型的默认值是按量付费的 DeepSeek，不写就会用到它。`secretsFile` 写相对路径时，相对的是状态目录。
 
 	```json
 	{
@@ -140,10 +138,11 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/host-main.
 			"worker": "openai-codex/gpt-6.1-sol",
 			"fallback": "openai-codex/gpt-6.1-sol"
 		},
-		"webHosts": ["<machine>.<tailnet>.ts.net"],
 		"secretsFile": "secrets.env"
 	}
 	```
+
+	这个文件原样复制就能用。远程访问用的 `webHosts` 要等装好 Tailscale、知道这台 Mac 的名字以后，在「远程访问」一节再加。
 
 4. 在前台试跑一次宿主：
 
@@ -158,8 +157,9 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/host-main.
 	[us-market] Finnhub 密钥来自 secretsFile ~/.pi-super-agent/secrets.env
 	[host] 已启动，状态目录 ~/.pi-super-agent，Router openai-codex/gpt-6.1-terra，Worker openai-codex/gpt-6.1-sol，回退 openai-codex/gpt-6.1-sol
 	[host] 网页 http://127.0.0.1:4517/?token=…
-	[host] 网页（远程） https://<machine>.<tailnet>.ts.net/?token=…
 	```
+
+	这时还没有 `[host] 网页（远程）` 那一行。它在「远程访问」一节加上 `webHosts` 以后才出现。
 
 	如果写的是「密钥来自 环境变量 MASSIVE_API_KEY」，说明你的终端里 `export` 了同名变量，环境变量优先。开机自动启动时没有这些变量，宿主会用 `secretsFile`。
 
@@ -182,7 +182,7 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/host-main.
 	[service] 看门狗日志 ~/.pi-super-agent/watchdog.log，宿主日志 ~/.pi-super-agent/host.log
 	```
 
-	Node 来自 nvm 时，还会多一行提醒：服务固定用这个 Node 版本和它下面装的 Pi，换了 Node 版本后要重跑 `just service-uninstall && just service-install`。
+	Node 是用 nvm 装的，所以还会多一行提醒：服务固定用这个 Node 版本和它下面装的 Pi，换了 Node 版本后要重跑 `just service-uninstall && just service-install`。
 
 2. 几秒后查看状态：
 
@@ -190,13 +190,14 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/host-main.
 	just service-status
 	```
 
-	预期第一行是 `com.pi-super-agent.watchdog：运行中，看门狗 pid …`，最后一行是 `心跳    N 秒前，宿主 pid …`，N 是个位数。
+	预期第一行是 `com.pi-super-agent.watchdog：运行中，看门狗 pid …`，最后一行是 `心跳    N 秒前，宿主 pid …`。宿主每 30 秒写一次心跳，所以 N 在 0 到 30 之间。刚装完的几秒里宿主还在启动，最后一行可能是 `心跳    宿主没有在运行`，等几秒再跑一次。
 
 3. 打开自动登录。LaunchAgent 只在你登录后运行，停电重启后没有人登录，宿主就不会回来。
-	- macOS 13 以上：**System Settings** > **Users & Groups** > **Automatically log in as**，选你自己。
-	- macOS 12：**System Preferences** > **Users & Groups** > **Login Options** > **Automatic login**，选你自己。
 
-	自动登录要求关掉 FileVault。代价是有人拿走这台 Mac 时，开机就能进你的账户，读到状态目录里的对话、token 和行情密钥。Mac mini 放在家里不带出门时，这个代价通常可以接受。
+	自动登录要求先关掉 FileVault。新 Mac 默认打开 FileVault，这时自动登录的选项是灰的。关掉的代价是有人拿走这台 Mac 时，开机就能进你的账户，读到状态目录里的对话、token 和行情密钥。Mac mini 放在家里不带出门时，这个代价通常可以接受。
+
+	- macOS 13 以上：先在 **System Settings** > **Privacy & Security** > **FileVault** 里点 **Turn Off**，等解密完成。再到 **System Settings** > **Users & Groups** > **Automatically log in as**，选你自己。
+	- macOS 12：先在 **System Preferences** > **Security & Privacy** > **FileVault** 里关掉 FileVault。再到 **System Preferences** > **Users & Groups** > **Login Options** > **Automatic login**，选你自己。
 
 4. 防止 Mac 睡眠，并在停电恢复后自动开机：**System Settings** > **Energy**，打开 **Prevent automatic sleeping when the display is off** 和 **Start up automatically after a power failure**。这一步老 Mac 上没有做过，选项名以你的系统为准。
 5. 做一次重启测试：
@@ -211,7 +212,7 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/host-main.
 	tail -3 ~/.pi-super-agent/watchdog.log
 	```
 
-	预期：
+	预期这三行，每行开头还有一个 ISO 格式的时间戳：
 
 	```text
 	[watchdog] 已启动，每 3 分钟检查一次，状态目录 ~/.pi-super-agent
@@ -242,7 +243,20 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/host-main.
 
 	输出形如 `"DNSName": "<machine>.<tailnet>.ts.net.",`。去掉末尾的点，就是 `<machine>.<tailnet>.ts.net`。
 
-5. 把这个名字写进 `~/.pi-super-agent/config.json` 的 `webHosts`，替换占位的那一项。名字必须是小写，不带 `https://`、端口和路径。
+5. 在 `~/.pi-super-agent/config.json` 里加上 `webHosts`，写上一步查到的名字，不带 `https://`、端口和路径。大小写都可以，宿主读的时候转成小写。改完的文件是这样，`<machine>.<tailnet>` 换成你的名字：
+
+	```json
+	{
+		"models": {
+			"router": "openai-codex/gpt-6.1-terra",
+			"worker": "openai-codex/gpt-6.1-sol",
+			"fallback": "openai-codex/gpt-6.1-sol"
+		},
+		"webHosts": ["<machine>.<tailnet>.ts.net"],
+		"secretsFile": "secrets.env"
+	}
+	```
+
 6. 开 `serve`：
 
 	```sh
@@ -255,6 +269,7 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/host-main.
 7. 重启宿主，让它读到新的 `webHosts`：
 
 	```sh
+	cd ~/pi-super-agent
 	just service-uninstall && just service-install
 	```
 
@@ -267,7 +282,7 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/host-main.
 	预期一行 `[host] 网页（远程） https://<machine>.<tailnet>.ts.net/?token=…`。
 
 9. 在手机上装 Tailscale，登录同一个账户，再用手机浏览器打开上一步的网址。笔记本同样要装 Tailscale 并登录同一个账户。
-10. 检查手机断线后能自己回来：锁屏一分钟再解锁，网页的状态先显示「断开」，然后自己变回「在线」。
+10. 检查手机断线后能自己回来：锁屏一分钟再解锁。网页顶上先出现「连接中断，正在重连」，重连上以后这行字消失。
 
 如果远程网址打开是 403，先确认 `webHosts` 里的名字和 `DNSName` 一字不差，再确认仓库在 `main` 分支上。
 
@@ -314,7 +329,7 @@ macOS 12 上只有 1.102.4 能运行。它会自动升级到装不上的新版�
 代码、`config.json`、`secrets.env` 和状态目录里的 `modules/` 都只在宿主启动时读一次。改了任何一个，都要重启宿主。
 
 ```sh
-cd pi-super-agent
+cd ~/pi-super-agent
 git pull --ff-only
 just service-uninstall && just service-install
 ```
@@ -326,6 +341,7 @@ just service-uninstall && just service-install
 网页的 token 在网址里。截图分享过网址、换了手机，或者觉得 token 泄露了，就换一个：
 
 ```sh
+cd ~/pi-super-agent
 just web-token-rotate
 just service-uninstall && just service-install
 ```
@@ -336,28 +352,40 @@ just service-uninstall && just service-install
 
 把老 Mac 上的对话和任务搬到 Mac mini：
 
-1. Mac mini 先按上面各节装好，跑通 `just test`，但还不要 `just service-install`。
-2. 在老 Mac 上停掉服务，让复制时没有进程在写状态目录：
+1. Mac mini 先按上面各节装好，跑通 `just test`。
+2. 在老 Mac 上停掉服务，让复制时没有进程在写状态目录。命令在老 Mac 的仓库目录里运行，路径以老 Mac 上的为准：
 
 	```sh
+	cd ~/pi-super-agent
 	just service-uninstall
 	```
 
-3. 把老 Mac 的 `~/.pi-super-agent` 整个复制到 Mac mini 的 `~/.pi-super-agent`。例如在 Mac mini 上运行（老 Mac 要先打开 Remote Login）：
+3. 在 Mac mini 上停掉服务，把它自己的状态目录挪开：
+
+	```sh
+	cd ~/pi-super-agent
+	just service-uninstall
+	mv ~/.pi-super-agent ~/.pi-super-agent.trial
+	```
+
+	Mac mini 试跑过宿主，就有自己的状态目录。`rsync -a` 只添加和覆盖文件，不删文件，复制到一个已有的状态目录上时，试跑留下的 `state.db-wal` 这类文件会留在原地，和老 Mac 的 `state.db` 混在一起。挪开而不是用 `rsync --delete` 删掉，是为了需要时还能找回试跑的状态。没装过服务时，`just service-uninstall` 打印「没有安装，什么也没做」。没有状态目录时，`mv` 报 `No such file or directory`，都可以不管。搬家确认没问题以后，可以删掉 `~/.pi-super-agent.trial`。
+
+4. 把老 Mac 的 `~/.pi-super-agent` 整个复制到 Mac mini。例如在 Mac mini 上运行（老 Mac 要先打开 Remote Login）：
 
 	```sh
 	rsync -a <user>@<old-mac>:.pi-super-agent/ ~/.pi-super-agent/
 	```
 
-4. 在 Mac mini 上改 `~/.pi-super-agent/config.json`：`webHosts` 换成 Mac mini 的名字。`secretsFile` 写的是相对路径时不用改。
-5. 在 Mac mini 上运行 `just service-install`。用户名或家目录和老 Mac 不同时，`host.log` 里有一行 `[host] 状态目录换了位置，已把会话记录的工作目录改到 …`。宿主把新位置记在状态目录的 `location.json` 里，并改写了会话记录里的路径。
-6. 状态目录里的 `web-token` 也一起搬过来了，旧网址换成 Mac mini 的名字后仍然能用。不想让老网址继续有效，就做一次「换 token」。
+5. 在 Mac mini 上改 `~/.pi-super-agent/config.json`：`webHosts` 换成 Mac mini 的名字。`secretsFile` 写的是相对路径时不用改，写的是老 Mac 上的绝对路径时，改成 Mac mini 上的路径。
+6. 在 Mac mini 上运行 `just service-install`。用户名或家目录和老 Mac 不同时，`host.log` 里有一行 `[host] 状态目录换了位置，已把会话记录的工作目录改到 …`。宿主把新位置记在状态目录的 `location.json` 里，并改写了会话记录里的路径。
+7. 状态目录里的 `web-token` 也一起搬过来了，旧网址换成 Mac mini 的名字后仍然能用。不想让老网址继续有效，就做一次「换 token」。
 
 有一类旧数据搬不回来。PR #59 让宿主写库前去掉 U+0000。在它之前、用 Node 22 写入的含 U+0000 的行，写入时就在 U+0000 处被截断了，搬家后仍是截断的。
 
 ## 卸载
 
 ```sh
+cd ~/pi-super-agent
 just service-uninstall
 ```
 
