@@ -12,6 +12,7 @@ import { INPUT_KINDS } from "../src/kernel/types.ts";
 import { ConfigError } from "../src/config-error.ts";
 import { WebGateway } from "../src/host/web.ts";
 import * as page from "../src/web/view.mjs";
+import * as format from "../src/client/board-format.mjs";
 import { helperLine } from "../src/client/board-format.mjs";
 import { WATCHDOG_SOURCE } from "../src/watchdog/watchdog.ts";
 import { openStore } from "../src/kernel/store.ts";
@@ -1666,8 +1667,8 @@ test("网关：/transcript 没有 token 401；ticket 不像任务编号 400；�
 const dispatchCall = (id: string, agent: string, task: string, timestamp?: number) => ({ role: "assistant", content: [{ type: "toolCall", id, name: "dispatch_agent", arguments: { agent, task } }], ...(timestamp !== undefined && { timestamp }) });
 const dispatchResult = (toolCallId: string, details: Record<string, unknown> | undefined, isError = false) => ({ role: "toolResult", toolName: "dispatch_agent", toolCallId, isError, content: [{ type: "text", text: "成员回复 …" }], ...(details && { details }) });
 const outcome = (title: string, state: string, reply: string | null, tokensIn: number, note?: string, tokensOut = 0) =>
-	({ kind: "dispatch", member: "x-member", title, task: `给${title}的事`, state, reply, tokensIn, tokensOut, ms: 1000, waitMs: 0, ...(note && { note }) });
-const onBoard = (callId: string, title: string, state: Dispatching[string][number]["state"], over: Partial<Dispatching[string][number]> = {}): Dispatching[string][number] => ({ callId, title, state, step: "", quietMs: 0, tokens: 0, ...over });
+	({ kind: "dispatch", member: "x-member", title, task: `给${title}的事`, state, reply, tokensIn, tokensOut, ms: 1000, waitMs: 0, limitMs: 900_000, ...(note && { note }) });
+const onBoard = (callId: string, title: string, state: Dispatching[string][number]["state"], over: Partial<Dispatching[string][number]> = {}): Dispatching[string][number] => ({ callId, title, state, step: "", quietMs: 0, tokens: 0, tokensCached: 0, limitMs: 900_000, ...over });
 const TITLES = { "market-analyst": "行情分析师", "news-researcher": "新闻研究员" };
 const teamHistory = (ticketId: string, messages: unknown[], steps: Record<string, unknown[]> = {}): HostToClient => ({ type: "transcript_history", ticketId, messages: messages as never, team: { titles: TITLES, steps: steps as never } });
 const fromMember = (ticketId: string, callId: string, index: number, message: unknown): HostToClient => ({ type: "transcript", ticketId, message: message as never, member: { callId, index } });
@@ -1716,8 +1717,8 @@ test("页面：每次派活是一步；并行的两次派活按调用编号各�
 	page.applyTranscript(w, live("tkt_1", dispatchResult("c2", outcome("新闻研究员", "done", "**没有**重大新闻", 300))));
 	assert.deepEqual(w.steps.map((s) => [s.title, s.detail, s.state]), [["派活", "行情分析师 · 超时", "error"], ["派活", "新闻研究员 · 完成", "ok"]]);
 	assert.deepEqual(w.steps.map((s) => s.dispatch), [
-		{ title: "行情分析师", task: "给行情分析师的事", reply: "", state: "timed_out", stateText: "超时", note: "超过 15 分钟的时限", tokens: "1.5k tokens", steps: [] },
-		{ title: "新闻研究员", task: "给新闻研究员的事", reply: "**没有**重大新闻", state: "done", stateText: "完成", note: "", tokens: "300 tokens", steps: [] },
+		{ title: "行情分析师", task: "给行情分析师的事", reply: "", state: "timed_out", stateText: "超时", note: "超过 15 分钟的时限", tokens: "1.5k tokens", steps: [], clock: { phase: "ended", ranMs: 1000, limitMs: 900_000 } },
+		{ title: "新闻研究员", task: "给新闻研究员的事", reply: "**没有**重大新闻", state: "done", stateText: "完成", note: "", tokens: "300 tokens", steps: [], clock: { phase: "ended", ranMs: 1000, limitMs: 900_000 } },
 	]);
 	assert.doesNotMatch(JSON.stringify(w.steps.map((s) => [s.title, s.detail, s.dispatch])), /market-analyst|news-researcher|x-member/);
 });
@@ -1848,6 +1849,102 @@ test("页面：展开一次派活能看到成员自己的步骤：干活时一�
 	const cut = page.emptyWatch("tkt_2");
 	page.applyTranscript(cut, teamHistory("tkt_2", [dispatchCall("c1", "news-researcher", "查新闻"), dispatchResult("c1", outcome("新闻研究员", "stalled", null, 0, "3 分钟没有进展"))], { c1: [get] }));
 	assert.deepEqual(page.liveSteps(cut, view)[0].dispatch!.steps.map((s) => s.state), ["ok", "stopped"], "成员被结束时没做完的那一步也停下");
+});
+
+const TOOL_NAMES = ["read", "grep", "find", "ls", "bash", "edit", "write", "web_get", "lookup", "read_ticket", "hand_back", "bg_start", "bg_status", "bg_stop", "report", "dispatch_agent"];
+
+test("页面：每种工具的步骤都有一个图标，未知工具用通用图标；index.html 的图标模板和图标名单一一对应", () => {
+	for (const name of TOOL_NAMES) assert.ok((format.STEP_ICONS as readonly string[]).includes(format.toolStep(name, {}).icon), `${name} → ${format.toolStep(name, {}).icon}`);
+	assert.equal(format.toolStep("mystery", {}).icon, "tool");
+	const html = readFileSync(new URL("../src/web/index.html", import.meta.url), "utf8");
+	const template = /<template id="step-icons">([\s\S]*?)<\/template>/.exec(html)?.[1] ?? "";
+	const drawn = [...template.matchAll(/<svg data-icon="([a-z]+)"/g)].map((m) => m[1]);
+	assert.deepEqual([...drawn].sort(), [...format.STEP_ICONS].sort(), "模板里每个图标名画一次，不多不少");
+	assert.equal([...template.matchAll(/<svg /g)].length, format.STEP_ICONS.length);
+	for (const svg of template.match(/<svg [^>]*>/g) ?? []) {
+		assert.match(svg, /stroke="currentColor"/);
+		assert.match(svg, /fill="none"/);
+		assert.match(svg, /aria-hidden="true"/);
+	}
+});
+
+test("页面：不是工具调用的步骤也有图标：思考、收到的输入、后台命令完成", () => {
+	const w = page.emptyWatch("tkt_1");
+	page.applyTranscript(w, history("tkt_1", [{ role: "user", content: "[任务说明]\n查天气" }, said("先想想"), { role: "custom", customType: "psa-bg-result", content: "退出码 0" }]));
+	assert.deepEqual(w.steps.map((s) => [s.title, s.icon]), [["接收任务", "inbox"], ["思考", "thought"], ["后台命令完成", "terminal"]]);
+});
+
+test("页面：同一条消息里的几次派活是同一轮，分开的消息是两轮；同一条消息里的别的工具不算进这一轮", () => {
+	const steps = watched([
+		{ role: "assistant", content: [...dispatchCall("c1", "market-analyst", "看盘面").content, ...dispatchCall("c2", "news-researcher", "查新闻").content, { type: "toolCall", id: "r1", name: "read", arguments: { path: "a.md" } }] },
+		dispatchCall("c3", "news-researcher", "再查"),
+	]);
+	assert.deepEqual(steps.map((s) => [s.callId, s.round]), [["c1", "c1"], ["c2", "c1"], ["r1", undefined], ["c3", "c3"]]);
+});
+
+test("页面：没结束的派活的时钟跟着看板：排队时只知道时限，进行中记下按页面时钟算的开始时间，先做完的那位停在看板给的用时上；助手不在了就不写时间", () => {
+	const view = page.emptyView();
+	const w = page.emptyWatch("tkt_1");
+	page.applyTranscript(w, teamHistory("tkt_1", [dispatchCall("c1", "market-analyst", "看盘面"), dispatchCall("c2", "news-researcher", "查新闻")]));
+	const clocks = () => page.liveSteps(w, view).map((s) => s.dispatch?.clock);
+	page.applyMessage(view, board([row({ id: "tkt_1" })]), 0);
+	assert.deepEqual(clocks(), [{ phase: "waiting", limitMs: null }, { phase: "waiting", limitMs: null }], "看板还没列出来时不知道时限");
+	const frame = (...entries: Dispatching[string]) => page.applyMessage(view, board([row({ id: "tkt_1" })], zeroToday(), noHelpers, {}, { tkt_1: entries }), 1000);
+	frame(onBoard("c1", "行情分析师", "running", { runningMs: 5000 }), onBoard("c2", "新闻研究员", "queued", { limitMs: 3_600_000 }));
+	assert.deepEqual(clocks(), [{ phase: "running", runningSince: -4000, limitMs: 900_000 }, { phase: "waiting", limitMs: 3_600_000 }]);
+	frame(onBoard("c1", "行情分析师", "done", { runningMs: 38_000 }), onBoard("c2", "新闻研究员", "running", { runningMs: 0, limitMs: 3_600_000 }));
+	assert.deepEqual(clocks(), [{ phase: "ended", ranMs: 38_000, limitMs: 900_000 }, { phase: "running", runningSince: 1000, limitMs: 3_600_000 }]);
+	page.applyMessage(view, board([row({ id: "tkt_1", stage: "stopped", workerState: "idle", endedAt: 5 })]), 2000);
+	assert.deepEqual(clocks(), [null, null], "被叫停、没等到结果的派活只知道一个下限，不写时间");
+	assert.equal(w.steps[0].dispatch?.clock.phase, "waiting", "liveSteps 不改动记录本身");
+});
+
+test("页面：结束的派活的时钟来自结果：用时和时限；老会话的结果没有时限；没开始就结束的（排队超时、被拒）没有用时", () => {
+	const steps = watched([
+		dispatchCall("c1", "a", "t"), dispatchResult("c1", { ...outcome("甲", "done", "答", 0), ms: 38_000 }),
+		dispatchCall("c2", "a", "t"), dispatchResult("c2", (({ limitMs, ...old }) => old)({ ...outcome("乙", "done", "答", 0), ms: 2000 })),
+		dispatchCall("c3", "a", "t"), dispatchResult("c3", { ...outcome("丙", "timed_out", null, 0, "排队 15 分钟还没轮到"), ms: 0 }),
+	]);
+	assert.deepEqual(steps.map((s) => s.dispatch?.clock), [{ phase: "ended", ranMs: 38_000, limitMs: 900_000 }, { phase: "ended", ranMs: 2000, limitMs: null }, null]);
+});
+
+test("页面：派活分支的时间写法：进行中写已用和时限，带进度条；结束后写用时和时限，不带进度条；排队、被叫停和没开始的什么都不写", () => {
+	const at = (clock: page.DispatchEntry["clock"], now = 0) => page.laneClock({ clock } as page.DispatchEntry, now);
+	assert.deepEqual(at({ phase: "running", runningSince: 0, limitMs: 900_000 }, 38_000), { text: "已用 38 秒 · 时限 15 分钟", ratio: 38_000 / 900_000 });
+	assert.deepEqual(at({ phase: "running", runningSince: 0, limitMs: 3_600_000 }, 200_000), { text: "已用 3 分钟 · 时限 60 分钟", ratio: 200_000 / 3_600_000 });
+	assert.equal(at({ phase: "running", runningSince: 0, limitMs: 30_000 }, 4000).text, "已用 4 秒 · 时限 30 秒", "时限照配置写，不写死 15 分钟");
+	assert.equal(at({ phase: "running", runningSince: 0, limitMs: 30_000 }, 45_000).ratio, 1, "超出时限时进度条停在满格");
+	assert.deepEqual(at({ phase: "ended", ranMs: 38_000, limitMs: 900_000 }), { text: "用时 38 秒 · 时限 15 分钟", ratio: null });
+	assert.deepEqual(at({ phase: "ended", ranMs: 38_000, limitMs: null }), { text: "用时 38 秒", ratio: null });
+	assert.deepEqual(at({ phase: "waiting", limitMs: 900_000 }), { text: "", ratio: null });
+	assert.deepEqual(at(null), { text: "", ratio: null });
+	assert.equal(page.BAR_HINT, "按时限折算，不是完成度");
+});
+
+test("页面：执行过程按步排列，一轮里的几次派活并成一组分支，放在这一轮第一次派活的位置；一次派活也是一组；被宿主拒绝的派活是普通的一步", () => {
+	const view = page.emptyView();
+	const w = page.emptyWatch("tkt_1");
+	page.applyTranscript(w, teamHistory("tkt_1", [
+		tool("read", { path: "a.md" }),
+		{ role: "assistant", content: [...dispatchCall("c1", "market-analyst", "看盘面").content, ...dispatchCall("c2", "news-researcher", "查新闻").content] },
+		dispatchResult("c1", outcome("行情分析师", "done", "答", 0)),
+		dispatchCall("c3", "news-researcher", "再查"),
+		dispatchCall("c4", "nobody", "t"), dispatchResult("c4", undefined, true),
+	]));
+	const team = row({ id: "tkt_1", helper: { name: "高山流水", team: "美股看盘队", seq: 2 }, dispatchedTo: ["行情分析师", "新闻研究员"] });
+	page.applyMessage(view, board([team], zeroToday(), noHelpers, {}, { tkt_1: [onBoard("c2", "新闻研究员", "running", { runningMs: 0 }), onBoard("c3", "新闻研究员", "queued")] }), 0);
+	const groups = page.stepGroups(page.liveSteps(w, view), team);
+	assert.deepEqual(groups.map((g) => (g.kind === "step" ? ["step", g.i] : ["lanes", g.state, g.lanes.map((l) => [l.i, l.step.detail])])), [
+		["step", 0],
+		["lanes", "pending", [[1, "行情分析师 · 完成"], [2, "新闻研究员 · 进行中"]]],
+		["lanes", "pending", [[3, "新闻研究员 · 排队中"]]],
+		["step", 4],
+	]);
+	const lanes = groups.flatMap((g) => (g.kind === "lanes" ? g.lanes : []));
+	assert.deepEqual(lanes.slice(0, 2).map((l) => l.avatar), page.memberAvatars(team.dispatchedTo!), "分支上的头像和卡片底部的一样");
+	assert.deepEqual(page.stepGroups(page.liveSteps(w, view), undefined).flatMap((g) => (g.kind === "lanes" ? g.lanes.map((l) => l.avatar.text) : [])), ["行", "新", "新"], "没有任务行时按分支自己的职称取头像");
+	const done = page.stepGroups(watched([{ role: "assistant", content: [...dispatchCall("c1", "a", "t").content, ...dispatchCall("c2", "a", "t").content] }, dispatchResult("c1", outcome("甲", "done", "答", 0)), dispatchResult("c2", outcome("乙", "failed", null, 0, "429"))]), undefined);
+	assert.deepEqual(done.map((g) => g.kind === "lanes" && g.state), ["error"], "一组里有出错的，这一组的标记就是出错");
 });
 
 test("页面：Markdown 只认安全的子集，解析成段落、标题和列表，行内只有粗体、斜体、代码和链接文字，HTML 原样当文字", () => {

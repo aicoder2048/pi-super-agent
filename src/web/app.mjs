@@ -1,9 +1,9 @@
 // @ts-check
 
 import {
-	CLEAR_FAILED, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
+	BAR_HINT, CLEAR_FAILED, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
 	questionOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
-	smallPrint, stopSentence, toggleEarlier, toggleTheme,
+	laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperLine } from "../client/board-format.mjs";
 
@@ -36,6 +36,7 @@ function mount(doc) {
 	const youMark = template("user-avatar");
 	const wrench = template("helper-icon");
 	const crown = template("crown-mark");
+	const icons = new Map([.../** @type {HTMLTemplateElement} */ ($("step-icons")).content.querySelectorAll("svg[data-icon]")].map((svg) => [svg.getAttribute("data-icon"), svg]));
 	let rendered = 0;
 	/** @type {number | null} */
 	let renderedClearAt = null;
@@ -466,51 +467,131 @@ function mount(doc) {
 	};
 
 	let stepsShown = "";
+	/** runningSince moves a little with every frame, so only the phase and the fixed numbers decide a rebuild. @param {import("./view.mjs").DispatchClock} clock */
+	const clockKey = (clock) => clock && [clock.phase, clock.limitMs, clock.phase === "ended" ? clock.ranMs : null];
 	/** @param {import("./view.mjs").Step[]} steps */
-	const stepsKey = (steps) => JSON.stringify(steps.map((s) => [s.state, s.detail, s.dispatch && [s.dispatch.tokens, s.dispatch.note, s.dispatch.steps.map((m) => [m.state, m.title, m.detail])]]));
+	const stepsKey = (steps) => JSON.stringify(steps.map((s) => [s.state, s.detail, s.dispatch && [s.dispatch.tokens, s.dispatch.note, s.dispatch.steps.map((m) => [m.state, m.title, m.detail]), clockKey(s.dispatch.clock)]]));
 	const renderStepsIfMoved = () => {
 		if (watching && stepsShown !== stepsKey(liveSteps(watching.watch, view))) renderSteps();
+	};
+
+	/** @param {import("./view.mjs").StepIcon} icon @param {import("./view.mjs").Step["state"]} state */
+	const markNode = (icon, state) => {
+		const mark = el("span", "mark");
+		mark.append(/** @type {Element} */ (icons.get(icon) ?? icons.get("tool")).cloneNode(true), el("span", "mark-state", MARK[state]));
+		return mark;
+	};
+
+	/** @param {import("./view.mjs").Step} step @param {number} i @param {Set<string | null>} open */
+	const detailNodes = (step, i, open) => {
+		const nodes = [];
+		if (step.dispatch) {
+			const d = step.dispatch;
+			const box = el("details", "dispatch");
+			box.setAttribute("data-i", `d${i}`);
+			box.open = open.has(`d${i}`);
+			box.append(el("summary", "", "派活明细"), el("div", "dispatch-head", [d.title, d.stateText, d.tokens].filter(Boolean).join(" · ")), el("div", "dispatch-task", `任务：${d.task}`));
+			if (d.note) box.append(el("div", "dispatch-note", d.note));
+			if (d.steps.length) {
+				const list = el("ol", "member-steps");
+				list.append(...d.steps.map((m) => {
+					const item = el("li", `member-step ${m.state}`);
+					item.append(el("span", "member-step-mark", MARK[m.state]), el("span", "member-step-title", m.title), el("span", "member-step-detail", m.detail));
+					return item;
+				}));
+				box.append(list);
+			}
+			if (d.reply) box.append(md("dispatch-reply", d.reply));
+			nodes.push(box);
+		}
+		const raw = el("details", "");
+		raw.setAttribute("data-i", String(i));
+		raw.open = open.has(String(i));
+		raw.append(el("summary", "", "原始记录"), el("pre", "", step.raw));
+		nodes.push(raw);
+		return nodes;
+	};
+
+	/** @param {import("./view.mjs").Step} step @param {number} i @param {Set<string | null>} open */
+	const stepItem = (step, i, open) => {
+		const li = el("li", `step ${step.state}`);
+		const rail = el("span", "rail");
+		rail.append(markNode(step.icon, step.state));
+		const body = el("div", "step-body");
+		body.append(el("div", "step-title", step.title), step.markdown ? md("step-detail", step.detail) : el("div", "step-detail", step.detail), ...detailNodes(step, i, open));
+		li.append(rail, body);
+		return li;
+	};
+
+	/** Running lanes, patched by the 1 s tick instead of rebuilding the panel. @type {{ entry: import("./view.mjs").DispatchEntry, time: HTMLElement, bar: HTMLElement | null }[]} */
+	let ticking = [];
+
+	/** @param {HTMLElement} bar @param {{ text: string, ratio: number | null }} clock */
+	const setBar = (bar, clock) => {
+		const percent = Math.round((clock.ratio ?? 0) * 100);
+		bar.setAttribute("aria-valuenow", String(percent));
+		bar.setAttribute("aria-valuetext", clock.text);
+		/** @type {HTMLElement} */ (bar.firstElementChild).style.width = `${percent}%`;
+	};
+
+	/** @param {import("./view.mjs").Lane} lane @param {Set<string | null>} open */
+	const laneNode = (lane, open) => {
+		const { step, i } = lane;
+		const node = el("div", `step lane ${step.state}`);
+		const head = el("div", "lane-head");
+		head.append(avatarNode(lane.avatar), el("div", "step-detail", step.detail));
+		const clock = laneClock(step.dispatch, Date.now());
+		const time = el("div", "lane-time", clock.text);
+		node.append(head, time);
+		let bar = null;
+		if (clock.ratio !== null) {
+			bar = el("div", "lane-bar");
+			bar.setAttribute("role", "progressbar");
+			bar.setAttribute("aria-valuemin", "0");
+			bar.setAttribute("aria-valuemax", "100");
+			bar.setAttribute("aria-label", BAR_HINT);
+			bar.title = BAR_HINT;
+			bar.append(el("span", "lane-fill"));
+			setBar(bar, clock);
+			node.append(bar);
+		}
+		if (step.dispatch.clock?.phase === "running") ticking.push({ entry: step.dispatch, time, bar });
+		node.append(...detailNodes(step, i, open));
+		return node;
+	};
+
+	/** Not a .step itself, so `.step` still counts one per dispatch. @param {Extract<import("./view.mjs").StepGroup, { kind: "lanes" }>} group @param {Set<string | null>} open */
+	const lanesItem = (group, open) => {
+		const li = el("li", "lanes");
+		li.dataset.state = group.state;
+		const rail = el("span", "rail");
+		rail.append(markNode("dispatch", group.state));
+		const row = el("div", "lane-row");
+		row.append(...group.lanes.map((lane) => laneNode(lane, open)));
+		const body = el("div", "step-body");
+		body.append(el("div", "step-title", "派活"), row);
+		li.append(rail, body);
+		return li;
+	};
+
+	const tickLanes = () => {
+		const now = Date.now();
+		for (const { entry, time, bar } of ticking) {
+			const clock = laneClock(entry, now);
+			time.textContent = clock.text;
+			if (bar) setBar(bar, clock);
+		}
 	};
 
 	const renderSteps = () => {
 		const steps = watching ? liveSteps(watching.watch, view) : [];
 		stepsShown = stepsKey(steps);
+		ticking = [];
 		if (!watching) return void $("steps").replaceChildren(el("li", "empty", "选择左侧的任务，查看助手的执行过程。"));
 		if (!steps.length) return void $("steps").replaceChildren(el("li", "empty", "暂无步骤。"));
 		const open = new Set([...$("steps").querySelectorAll("details[open]")].map((d) => d.getAttribute("data-i")));
-		$("steps").replaceChildren(...steps.map((step, i) => {
-			const li = el("li", `step ${step.state}`);
-			const rail = el("span", "rail");
-			rail.append(el("span", "mark", MARK[step.state]));
-			const body = el("div", "step-body");
-			const raw = el("details", "");
-			raw.setAttribute("data-i", String(i));
-			raw.open = open.has(String(i));
-			raw.append(el("summary", "", "原始记录"), el("pre", "", step.raw));
-			body.append(el("div", "step-title", step.title), step.markdown ? md("step-detail", step.detail) : el("div", "step-detail", step.detail));
-			if (step.dispatch) {
-				const d = step.dispatch;
-				const box = el("details", "dispatch");
-				box.setAttribute("data-i", `d${i}`);
-				box.open = open.has(`d${i}`);
-				box.append(el("summary", "", "派活明细"), el("div", "dispatch-head", [d.title, d.stateText, d.tokens].filter(Boolean).join(" · ")), el("div", "dispatch-task", `任务：${d.task}`));
-				if (d.note) box.append(el("div", "dispatch-note", d.note));
-				if (d.steps.length) {
-					const list = el("ol", "member-steps");
-					list.append(...d.steps.map((m) => {
-						const item = el("li", `member-step ${m.state}`);
-						item.append(el("span", "member-step-mark", MARK[m.state]), el("span", "member-step-title", m.title), el("span", "member-step-detail", m.detail));
-						return item;
-					}));
-					box.append(list);
-				}
-				if (d.reply) box.append(md("dispatch-reply", d.reply));
-				body.append(box);
-			}
-			body.append(raw);
-			li.append(rail, body);
-			return li;
-		}));
+		const row = view.rows.find((r) => r.id === watching?.watch.ticketId);
+		$("steps").replaceChildren(...stepGroups(steps, row).map((group) => (group.kind === "step" ? stepItem(group.step, group.i, open) : lanesItem(group, open))));
 	};
 
 	const render = {
@@ -684,7 +765,10 @@ function mount(doc) {
 	renderSteps();
 	setInterval(() => {
 		renderHelpers();
-		if (watching) renderHow();
+		if (watching) {
+			renderHow();
+			tickLanes();
+		}
 	}, 1000);
 	setInterval(() => {
 		renderHeader();

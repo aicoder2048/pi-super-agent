@@ -144,30 +144,37 @@ function lookupStep(a) {
 	const op = typeof a.op === "string" ? a.op : "";
 	const symbols = Array.isArray(args.symbols) ? args.symbols : typeof args.symbol === "string" ? [args.symbol] : [];
 	return {
+		icon: /** @type {const} */ ("chart"),
 		title: LOOKUP_TITLE[op] ?? `查询 ${clip(op, 20)}`,
 		detail: clip(symbols.filter((s) => typeof s === "string").join(" "), 60),
 	};
 }
 
-/** @type {Record<string, (a: Record<string, unknown>) => { title: string, detail: string }>} */
+/** Every icon a step can show. index.html draws one `<svg data-icon>` per name in `<template id="step-icons">`, and a test checks the two lists agree. */
+export const STEP_ICONS = /** @type {const} */ (["file", "pencil", "search", "folder", "terminal", "globe", "chart", "ticket", "return", "report", "dispatch", "tool", "thought", "inbox"]);
+
+/** @typedef {typeof STEP_ICONS[number]} StepIcon */
+/** @typedef {{ icon: StepIcon, title: string, detail: string }} ToolStepShown */
+
+/** @type {Record<string, (a: Record<string, unknown>) => ToolStepShown>} */
 const TOOL_STEP = {
-	read: (a) => ({ title: "读取文件", detail: baseName(a.path) }),
-	grep: (a) => ({ title: "搜索文件内容", detail: clip(a.pattern, 40) }),
-	find: (a) => ({ title: "查找文件", detail: clip(a.pattern, 40) }),
-	ls: (a) => ({ title: "列出目录", detail: baseName(a.path) }),
-	bash: (a) => ({ title: "执行命令", detail: clip(firstLine(a.command), 60) }),
-	edit: (a) => ({ title: "修改文件", detail: baseName(a.path) }),
-	write: (a) => ({ title: "写入文件", detail: baseName(a.path) }),
-	web_get: (a) => ({ title: "读取网页", detail: hostOf(a.url) }),
+	read: (a) => ({ icon: "file", title: "读取文件", detail: baseName(a.path) }),
+	grep: (a) => ({ icon: "search", title: "搜索文件内容", detail: clip(a.pattern, 40) }),
+	find: (a) => ({ icon: "search", title: "查找文件", detail: clip(a.pattern, 40) }),
+	ls: (a) => ({ icon: "folder", title: "列出目录", detail: baseName(a.path) }),
+	bash: (a) => ({ icon: "terminal", title: "执行命令", detail: clip(firstLine(a.command), 60) }),
+	edit: (a) => ({ icon: "pencil", title: "修改文件", detail: baseName(a.path) }),
+	write: (a) => ({ icon: "pencil", title: "写入文件", detail: baseName(a.path) }),
+	web_get: (a) => ({ icon: "globe", title: "读取网页", detail: hostOf(a.url) }),
 	lookup: (a) => lookupStep(a),
-	read_ticket: () => ({ title: "查阅任务记录", detail: "" }),
-	hand_back: () => ({ title: "交回幕僚长", detail: "" }),
-	bg_start: (a) => ({ title: "启动后台命令", detail: clip(firstLine(a.command), 60) }),
-	bg_status: () => ({ title: "查看后台命令", detail: "" }),
-	bg_stop: () => ({ title: "停止后台命令", detail: "" }),
+	read_ticket: () => ({ icon: "ticket", title: "查阅任务记录", detail: "" }),
+	hand_back: () => ({ icon: "return", title: "交回幕僚长", detail: "" }),
+	bg_start: (a) => ({ icon: "terminal", title: "启动后台命令", detail: clip(firstLine(a.command), 60) }),
+	bg_status: () => ({ icon: "terminal", title: "查看后台命令", detail: "" }),
+	bg_stop: () => ({ icon: "terminal", title: "停止后台命令", detail: "" }),
 	// Shown as Markdown, so the page limits it by height: cutting the text would cut a table or a link in half.
-	report: (a) => ({ title: reportTitle(a), detail: typeof a.question === "string" && a.question ? a.question : typeof a.summary === "string" ? a.summary : "" }),
-	dispatch_agent: () => ({ title: "派活", detail: "" }),
+	report: (a) => ({ icon: "report", title: reportTitle(a), detail: typeof a.question === "string" && a.question ? a.question : typeof a.summary === "string" ? a.summary : "" }),
+	dispatch_agent: () => ({ icon: "dispatch", title: "派活", detail: "" }),
 };
 
 /** @param {Record<string, unknown>} a */
@@ -181,9 +188,9 @@ function reportTitle(a) {
 
 /**
  * One tool call as a step of 执行过程.
- * @param {string} name @param {Record<string, unknown>} args @returns {{ title: string, detail: string }}
+ * @param {string} name @param {Record<string, unknown>} args @returns {ToolStepShown}
  */
-export const toolStep = (name, args) => TOOL_STEP[name]?.(args) ?? { title: `调用工具 ${name}`, detail: "" };
+export const toolStep = (name, args) => TOOL_STEP[name]?.(args) ?? { icon: "tool", title: `调用工具 ${name}`, detail: "" };
 
 /** @param {DashboardRow} row */
 export function teamWork(row) {
