@@ -98,7 +98,6 @@ export interface WorkerExecutorOptions {
 	onError?: (ticketId: string, error: unknown) => void;
 	models: WorkerModels;
 	lookup?: (source: string, op: string, args: unknown) => Promise<unknown>;
-	/** Runs only after handleRequest's tripwire checks passed. */
 	tripwires?: (source: string, op: string, args: unknown) => unknown;
 	/** The lookup by a ticket's domain. Without it every ticket runs as if it had no domain. */
 	kitFor?: (domain: string) => DomainKit | undefined;
@@ -377,7 +376,6 @@ export class WorkerExecutor {
 		return holder ? memberTools(basis, holder.tools).includes("lookup") : this.#kitFor(ticketId, domain).granted.includes("lookup");
 	}
 
-	/** Tripwires are the user's data (ADR-0017): only a ticket the user opened in the conversation, never reached by a source's text, in a domain that grants it. */
 	#tripwireRefusal(ticketId: string): string | undefined {
 		const { kernel } = this.#o;
 		const { basis, domain } = kernel.getTicket(ticketId)!;

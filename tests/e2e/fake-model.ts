@@ -215,7 +215,6 @@ function trailingCards(messages: Message[]): string[] {
 	return out;
 }
 
-/** The tool results a script can answer as a card: a member's reply to a dispatch, new_app's directory, tripwire's reply, and a command's output that starts with "[命令输出]". */
 function scriptableToolResult(m: Message): string | undefined {
 	if (m.role !== "tool") return undefined;
 	const text = textOf(m);

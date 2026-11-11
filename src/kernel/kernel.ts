@@ -1027,7 +1027,6 @@ export class Kernel {
 		});
 	}
 
-	/** The user's data a source keeps, such as the market feed's tripwires. Unlike the cursor, no source resets it. */
 	sourceUserData(source: string): string | undefined {
 		return this.#get("SELECT data FROM source_user_data WHERE source = ?", source)?.data;
 	}
@@ -1042,7 +1041,6 @@ export class Kernel {
 		);
 	}
 
-	/** Whether a source's text ever reached this ticket: a subscribed thread's trigger or one the Router handed over. The user's lines arrive as user_message. */
 	receivedSourceText(ticketId: string): boolean {
 		return this.#get("SELECT 1 FROM ticket_inputs WHERE ticket_id = ? AND kind = 'trigger'", ticketId) !== undefined;
 	}

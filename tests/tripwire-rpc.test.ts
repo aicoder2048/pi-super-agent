@@ -30,7 +30,6 @@ async function call(worker: FakeWorker): Promise<unknown> {
 		.catch((e: Error) => e.message);
 }
 
-/** The helper calls worker.tripwire on the input that `when` picks, then reports. */
 async function tripwireIn(t: TestContext, brain: Brain, act: (host: Awaited<ReturnType<typeof startHost>>["host"]) => unknown, when: (input: string) => boolean = () => true) {
 	const feed = tripwireFeed();
 	const results: unknown[] = [];

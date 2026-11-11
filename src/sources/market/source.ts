@@ -143,7 +143,6 @@ export class MarketSource implements Feed {
 	#lastPoll: { at: number; quotes: Quote[] } | undefined;
 	#timer: NodeJS.Timeout | undefined;
 	#stopped = false;
-	/** Read once; this instance is the only writer, so it never diverges from the store. */
 	#book: { book: Book } | { problem: string };
 
 	constructor(options: MarketSourceOptions) {
@@ -173,7 +172,6 @@ export class MarketSource implements Feed {
 		return [feed, book].filter(Boolean).join("；") || undefined;
 	}
 
-	/** Store, then memory, then the receipt; a receipt fits the store by construction, so a write never ends half done. */
 	tripwires(op: string, args: unknown): TripwireReply {
 		if ("problem" in this.#book) throw new Error(`${this.#book.problem}。状态库里的清单没有被覆盖，修好之前改不了盯盘条件`);
 		const { ctx, settings } = this.#o;
