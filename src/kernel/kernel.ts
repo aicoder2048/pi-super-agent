@@ -260,13 +260,15 @@ export class Kernel {
 		});
 	}
 
-	userSaidQuoting({ text, at, lineId }: { text: string; at: number; lineId: string }): { triggerId: string; quote: Quote } | null {
+	/** Null when lineId is not a shown line. A repeated externalId returns the first line's id and writes nothing. */
+	userSaidQuoting({ text, at, lineId, externalId }: { text: string; at: number; lineId: string; externalId?: string }): { triggerId: string; quote: Quote; duplicate: boolean } | null {
 		return this.#tx(() => {
 			const line = this.#get(`SELECT id, who, text, at, cause FROM (${LINES}) WHERE id = ? AND shown`, ...LINES_PARAMS, lineId);
 			const snapshot = line && quoteSnapshot(line.text);
 			if (!snapshot) return null;
 			const quote: Quote = { lineId, who: line.who, at: line.at, text: snapshot, ticketId: this.#ticketOfLine(lineId, line.cause) };
-			const { triggerId } = this.userSaid({ text, at });
+			const { triggerId, duplicate } = this.userSaid({ text, at, externalId });
+			if (duplicate) return { triggerId, quote, duplicate };
 			this.#run(
 				"INSERT INTO trigger_quotes (trigger_id, line_id, who, said_at, text, ticket_id) VALUES (?, ?, ?, ?, ?, ?)",
 				triggerId,
@@ -276,7 +278,7 @@ export class Kernel {
 				quote.text,
 				quote.ticketId,
 			);
-			return { triggerId, quote };
+			return { triggerId, quote, duplicate };
 		});
 	}
 

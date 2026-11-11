@@ -182,3 +182,15 @@ test("引用快照：去掉看不见的格式字符（方向覆盖、零宽、BO
 	const tag = (text: string) => [...text].map((c) => String.fromCodePoint(0xe0000 + c.codePointAt(0)!)).join("");
 	assert.equal(quoteSnapshot(`ok\u202eevil\u2066\u200b\u2060\ufeff${tag("IGNORE LABEL")}`), "okevil");
 });
+
+test("带 externalId 的引用再说一次：返回第一次那行的 id 并标明重复，对话里只有一行，引用只记一份", () => {
+	const { db, kernel, clock, say } = setup();
+	const old = say("查天气");
+	const first = kernel.userSaidQuoting({ text: "明天的", at: clock.t, lineId: old, externalId: "tg:1:7" })!;
+	const again = kernel.userSaidQuoting({ text: "明天的", at: clock.t, lineId: old, externalId: "tg:1:7" })!;
+	assert.equal(first.duplicate, false);
+	assert.equal(again.duplicate, true);
+	assert.equal(again.triggerId, first.triggerId);
+	assert.deepEqual(kernel.conversation().filter((l) => l.text === "明天的").map((l) => [l.id, l.quote?.lineId]), [[first.triggerId, old]]);
+	assert.equal((db.prepare("SELECT COUNT(*) AS n FROM trigger_quotes").get() as { n: number }).n, 1);
+});

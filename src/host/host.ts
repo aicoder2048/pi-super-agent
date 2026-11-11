@@ -263,11 +263,13 @@ export class Host {
 		return triggerId;
 	}
 
-	sayQuoting(text: string, lineId: string): string | null {
+	/** Null when lineId is not a shown conversation line. A repeated externalId returns the first line's id and changes nothing. */
+	sayQuoting(text: string, lineId: string, { externalId, from }: SayOptions = {}): string | null {
 		const at = Date.now();
-		const said = this.kernel.userSaidQuoting({ text, at, lineId });
+		const said = this.kernel.userSaidQuoting({ text, at, lineId, externalId });
 		if (!said) return null;
-		this.#broadcast({ type: "user", id: said.triggerId, who: "user", text, at, quote: said.quote });
+		if (said.duplicate) return said.triggerId;
+		this.#broadcast({ type: "user", id: said.triggerId, who: "user", text, at, quote: said.quote }, from);
 		this.#changed();
 		return said.triggerId;
 	}
