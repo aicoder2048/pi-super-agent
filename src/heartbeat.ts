@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -24,4 +25,20 @@ export function readHeartbeat(stateDir: string): Heartbeat | undefined {
 	} catch {
 		return undefined;
 	}
+}
+
+export const HOST_ENTRY = "src/host/main.ts";
+
+function commandOf(pid: number): string | undefined {
+	try {
+		return execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" }).trim();
+	} catch {
+		return undefined;
+	}
+}
+
+// The pid in heartbeat.json may have been reused by an unrelated process since the host died.
+export function hostPid(stateDir: string, self = process.pid): number | undefined {
+	const pid = readHeartbeat(stateDir)?.pid;
+	return pid && pid !== self && commandOf(pid)?.includes(HOST_ENTRY) ? pid : undefined;
 }

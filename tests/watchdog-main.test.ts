@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { until } from "./helpers/fakes.ts";
+import { hostPid } from "../src/heartbeat.ts";
 
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
@@ -119,4 +120,17 @@ test("终端 Ctrl+C：Watchdog 不停别人启动的宿主", async (t) => {
 	assert.equal(await exited, 0, stderr);
 	assert.match(stderr, /\[watchdog\] 已停止/);
 	assert.ok(alive(host.pid!), "使用者自己启动的宿主不能被停掉");
+});
+
+test("hostPid 只认心跳里命令行是宿主入口的进程：没有心跳、无关进程、自己都不算", async (t) => {
+	const dir = stateDir();
+	assert.equal(hostPid(dir), undefined, "没有心跳");
+	const bystander = spawn("sleep", ["60"], { stdio: "ignore" });
+	const host = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", "src/host/main.ts"], { stdio: "ignore" });
+	t.after(cleanup(dir, bystander, host));
+	writeFileSync(join(dir, "heartbeat.json"), JSON.stringify({ pid: bystander.pid, at: Date.now() }));
+	assert.equal(hostPid(dir), undefined, "无关进程");
+	writeFileSync(join(dir, "heartbeat.json"), JSON.stringify({ pid: host.pid, at: Date.now() }));
+	await until(() => hostPid(dir) === host.pid, "宿主进程被认出", 5000);
+	assert.equal(hostPid(dir, host.pid), undefined, "调用者自己");
 });
