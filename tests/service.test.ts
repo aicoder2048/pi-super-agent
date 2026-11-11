@@ -189,6 +189,7 @@ test("statusLines 分清运行中、已停止、写了没加载、未安装，�
 	assert.match(first({ launchd: notLoaded, installed: undefined, heartbeat: undefined }), /未安装/);
 	assert.match(first({ launchd: { kind: "unknown", detail: "怪输出" } }), /怪输出/);
 	assert.match(statusLines(base).join("\n"), /12 秒前.*4300/);
+	assert.match(statusLines({ ...base, heartbeat: undefined }).join("\n"), /宿主没有在运行/);
 	assert.match(statusLines({ ...base, nodeExists: false }).join("\n"), /重跑 just service-install/);
 });
 

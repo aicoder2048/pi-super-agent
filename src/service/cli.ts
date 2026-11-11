@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ConfigError, exitOnConfigError } from "../config-error.ts";
-import { hostPid, readHeartbeat, writeFileAtomic } from "../heartbeat.ts";
+import { hostPid, liveHeartbeat, writeFileAtomic } from "../heartbeat.ts";
 import { defaultStateDir, loadConfig } from "../host/config.ts";
 import * as agent from "./launch-agent.ts";
 
@@ -42,8 +42,10 @@ function launchctl(args: string[]): { code: number; output: string } {
 	return { code: run.status ?? 1, output: `${run.stdout ?? ""}${run.stderr ?? ""}` };
 }
 
+const launchctlPrint = (label: agent.ServiceLabel) => launchctl(["print", `gui/${uid}/${label}`]);
+
 function launchdState(label: agent.ServiceLabel): agent.LaunchdState {
-	const { code, output } = launchctl(["print", `gui/${uid}/${label}`]);
+	const { code, output } = launchctlPrint(label);
 	return agent.parseLaunchctlPrint(code, output);
 }
 
@@ -122,15 +124,17 @@ function stopHost(stateDir: string): void {
 function uninstall(label: agent.ServiceLabel): void {
 	const plistFile = agent.plistPath(homedir(), label);
 	const onDisk = existsSync(plistFile);
-	const steps = agent.planUninstall({ onDisk, launchd: launchdState(label) });
+	const print = launchctlPrint(label);
+	const steps = agent.planUninstall({ onDisk, launchd: agent.parseLaunchctlPrint(print.code, print.output) });
 	if (steps.length === 0) {
 		console.log(`[service] ${label} 没有安装，什么也没做`);
 		return;
 	}
-	const stateDir = onDisk ? installedOnDisk(plistFile).stateDir : defaultStateDir();
+	const stateDir = onDisk ? installedOnDisk(plistFile).stateDir : agent.jobStateDir(print.output);
 	for (const step of steps) {
 		if (step === "bootout") bootout(label);
-		if (step === "stop_host") stopHost(stateDir);
+		if (step === "stop_host" && stateDir) stopHost(stateDir);
+		if (step === "stop_host" && !stateDir) console.log(`[service] plist 已不在，launchd 里也读不出 ${label} 的 PSA_STATE_DIR，没有停宿主；它若还在跑，请自己停掉`);
 		if (step === "remove") rmSync(plistFile, { force: true });
 	}
 	console.log(`[service] 已停止并移除 ${label}`);
@@ -145,7 +149,7 @@ function status(label: agent.ServiceLabel): void {
 		installed,
 		launchd: launchdState(label),
 		nodeExists: installed ? isExecutable(installed.node) : true,
-		heartbeat: installed && readHeartbeat(installed.stateDir),
+		heartbeat: installed && liveHeartbeat(installed.stateDir),
 		now: Date.now(),
 	});
 	console.log(lines.join("\n"));
