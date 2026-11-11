@@ -94,6 +94,12 @@ export function formatTokens(n) {
 	return `${(n / 1_000_000).toFixed(2)}M`;
 }
 
+/**
+ * A time limit as the host's notes and the page's lanes both word it: whole minutes as 「15 分钟」, else seconds.
+ * @param {number} ms
+ */
+export const formatSpan = (ms) => (ms % 60_000 === 0 ? `${ms / 60_000} 分钟` : `${+(ms / 1000).toFixed(1)} 秒`);
+
 /** @param {number} since @param {number} now */
 export const stallMinutes = (since, now) => Math.floor((now - since) / 60_000);
 

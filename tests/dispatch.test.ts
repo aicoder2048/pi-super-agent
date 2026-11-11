@@ -110,7 +110,7 @@ test("槽位池：上限每次现算。放宽后重排，等名额的马上拿�
 const fixedCap = (max: number): MemberLimit => ({ limit: () => max, membersWaiting() {} });
 
 const outcome = (over: Partial<DispatchOutcome> = {}): DispatchOutcome => ({
-	kind: "dispatch", member: "market-analyst", title: "行情分析师", task: "看盘面", state: "done", reply: "放量下跌", tokensIn: 1200, tokensOut: 300, ms: 900, waitMs: 0, ...over,
+	kind: "dispatch", member: "market-analyst", title: "行情分析师", task: "看盘面", state: "done", reply: "放量下跌", tokensIn: 1200, tokensOut: 300, ms: 900, waitMs: 0, limitMs: 900_000, ...over,
 });
 
 test("成员回复当数据交给助手：用每次新生成的随机边界框住，写明不是指令；回复里伪造的结尾骗不了助手", () => {
@@ -355,6 +355,50 @@ test("推断任务里成员只读，写了 bash 的成员也按短的那一档�
 	assert.deepEqual((await results()).map((r) => r.details.state), ["timed_out"]);
 });
 
+test("看板上的派活带着它的时限：能写文件的成员是长的那一档，只读的是短的那一档；结果里也记着时限", async (t) => {
+	const finish: (() => void)[] = [];
+	const { results, board } = await dispatching(t, async (run) => (await held(run.signal, (release) => finish.push(release)), "做完了"), devPair, { domain: "dev", timeoutMs: 20_000, codingTimeoutMs: 60_000 });
+	await until(() => board()?.length === 2 && board().every((d) => d.state === "running"), "两位都在做");
+	assert.deepEqual(board().map((d) => [d.title, d.limitMs]), [["资料员", 20_000], ["程序员", 60_000]]);
+	for (const release of finish) release();
+	assert.deepEqual((await results()).map((r) => [r.details.title, r.details.limitMs]), [["资料员", 20_000], ["程序员", 60_000]]);
+});
+
+test("看板上的派活带着成员已经跑了多久：排队时没有，进行中一直在涨，先做完的那位停在它的用时上，和结果里的用时一样", async (t) => {
+	const finish: (() => void)[] = [];
+	const { results, board } = await dispatching(t, async (run) => {
+		if (run.task === "第一件") await wait(100, run.signal);
+		else await held(run.signal, (release) => finish.push(release));
+		return "答";
+	}, [{ agent: "market-analyst", task: "第一件" }, { agent: "market-analyst", task: "第二件" }, { agent: "news-researcher", task: "第三件" }]);
+	await until(() => board()?.length === 3, "三次派活都登记了");
+	const queued = board()[1];
+	assert.equal(queued.state, "queued");
+	assert.equal("runningMs" in queued, false, "排队时还没开始计时");
+	const before = board()[2].runningMs!;
+	await tick(60);
+	assert.ok(board()[2].runningMs! > before, `进行中在涨：${before} → ${board()[2].runningMs}`);
+	await until(() => board()[0].state === "done", "第一件做完");
+	const frozen = board()[0].runningMs;
+	await tick(60);
+	assert.equal(board()[0].runningMs, frozen, "做完以后不再涨");
+	for (const release of finish) release();
+	const out = await results();
+	assert.equal(out[0].details.ms, frozen, "看板上的用时和结果里的用时是同一个钟");
+});
+
+test("排队超时的派活没有开始计时：用时 0，排队时长不少于排队的时限，结果照样记着成员的时限", async (t) => {
+	const { results } = await dispatching(t, async (run) => {
+		if (run.member.name === "market-analyst") await new Promise((done) => setTimeout(done, 600));
+		return "答";
+	}, two, { maxConcurrent: 1, timeoutMs: 200, codingTimeoutMs: 5000 });
+	const late = (await results())[1].details;
+	assert.equal(late.state, "timed_out");
+	assert.equal(late.ms, 0);
+	assert.ok(late.waitMs >= 190, `排队 ${late.waitMs} ms`);
+	assert.equal(late.limitMs, 5000, "排队的时限是短的那一档，成员自己的时限照旧");
+});
+
 test("时限的说法：整分钟写分钟，否则写秒", () => {
 	assert.match(replyEnvelope(outcome({ state: "timed_out", reply: null, note: timeoutNote(900_000) })), /没有回复（超时）：超过 15 分钟的时限/);
 	assert.equal(timeoutNote(3_600_000), "超过 60 分钟的时限");
@@ -529,6 +573,7 @@ test("排队时回退模型用到了上限：轮到时不起成员进程，这�
 	const [first, second] = await Promise.all([send(two[0], "c1"), send(two[1], "c2")]);
 	assert.deepEqual([first.details.state, first.details.reply], ["done", "答"], "用量在它跑的途中过了上限，不中途结束它");
 	assert.deepEqual([second.details.state, second.details.note], ["failed", "回退模型 fallback-co/cheap 今日用量已达上限，这次不能派活"]);
+	assert.equal(second.details.ms, 0, "被拒的派活没有开始，不计用时");
 	assert.deepEqual(ran, ["market-analyst"]);
 	assert.equal(host.kernel.usageToday(FALLBACK.provider), 200);
 });
@@ -563,7 +608,7 @@ test("看板上在跑的成员带着它正在做什么、多久没有动静和�
 	await until(() => board()?.[0]?.step === "读取网页", "看板写出成员在做什么");
 	await tick(60);
 	const [entry] = board();
-	assert.deepEqual({ ...entry, quietMs: 0 }, { callId: "call_0", title: "新闻研究员", state: "running", step: "读取网页", quietMs: 0, tokens: 120, tokensCached: 0 });
+	assert.deepEqual({ ...entry, quietMs: 0, runningMs: 0 }, { callId: "call_0", title: "新闻研究员", state: "running", step: "读取网页", quietMs: 0, tokens: 120, tokensCached: 0, limitMs: 5000, runningMs: 0 });
 	assert.ok(entry.quietMs >= 50 && entry.quietMs < 1000, `离上一次动静 ${entry.quietMs} ms`);
 	finish();
 	await results();
@@ -723,7 +768,7 @@ test("看板上正在跑工具的成员带着这一步已经跑了多久；两�
 	assert.ok(running.toolMs! >= 80 && running.toolMs! < 1000, `这一步已经跑了 ${running.toolMs} ms`);
 	finish();
 	await until(() => board()?.[0]?.toolMs === undefined, "工具都返回了");
-	assert.deepEqual({ ...board()[0], quietMs: 0 }, { callId: "call_0", title: "新闻研究员", state: "running", step: "读取网页", quietMs: 0, tokens: 0, tokensCached: 0 });
+	assert.deepEqual({ ...board()[0], quietMs: 0, runningMs: 0 }, { callId: "call_0", title: "新闻研究员", state: "running", step: "读取网页", quietMs: 0, tokens: 0, tokensCached: 0, limitMs: 5000, runningMs: 0 });
 	finish();
 	await results();
 });
