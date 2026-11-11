@@ -103,7 +103,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [ ] Lane 2. 名单上的人私聊发一句。Save `t1-say.png`. Pass when 网页对话出现这句话，幕僚长的回复出现在假服务的 `sendMessage` 记录里。
 - [ ] Lane 3. 陌生人和群聊各发一句。Save `t1-stranger.png`. Pass when 网页和状态库里都没有，日志里没有对方 id 和内容。
 - [ ] Lane 4. 同一个 update 投两次。Save `t1-replay.png`. Pass when 对话里只有一行。
-- [ ] Lane 5. 假服务对 `sendMessage` 连续返回 500 一分钟后恢复。Save `t1-outage.png`. Pass when 网页回复不重复，恢复后 Telegram 按顺序补到。
+- [ ] Lane 5. 假服务对 `sendMessage` 连续返回 500 一分钟后恢复。Save `t1-outage.png`. Pass when 网页回复不重复；出错时那几条 Telegram 不重发，手机上只多一句「可能没送到」的说明；恢复后新的回复照常到，每条一次。
 - [ ] Lane 6. 假服务返回 429 和 `retry_after`。Save `t1-429.png`. Pass when 发送循环按时暂停再继续，没有丢消息。
 - [ ] Lane 7. 假服务对 `getMe` 返回 401。Save `t1-401.png`. Pass when 日志一行说明 Telegram 已停用，网页照常可用，日志里没有 token。
 - [ ] Lane 8. `allowedUserIds` 为空，任何人发消息。Save `t1-setup.png`. Pass when 只回给对方它自己的 id，对话里什么也没有。
