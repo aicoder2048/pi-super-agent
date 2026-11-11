@@ -93,6 +93,11 @@ function toTrigger(r: Row): Trigger {
 	};
 }
 
+// Node 22's node:sqlite reads a string back only up to its first U+0000, so drop U+0000 before it reaches the store.
+function sqlParams(params: SQLInputValue[]): SQLInputValue[] {
+	return params.map((p) => (typeof p === "string" ? p.replaceAll("\u0000", "") : p));
+}
+
 function toReport(r: Row): Report {
 	return {
 		id: r.id,
@@ -1315,11 +1320,11 @@ export class Kernel {
 	}
 
 	#get(sql: string, ...params: SQLInputValue[]): Row | undefined {
-		return this.#db.prepare(sql).get(...params) as Row | undefined;
+		return this.#db.prepare(sql).get(...sqlParams(params)) as Row | undefined;
 	}
 
 	#all(sql: string, ...params: SQLInputValue[]): Row[] {
-		return this.#db.prepare(sql).all(...params) as Row[];
+		return this.#db.prepare(sql).all(...sqlParams(params)) as Row[];
 	}
 
 	#column(sql: string, ...params: SQLInputValue[]): string[] {
@@ -1327,6 +1332,6 @@ export class Kernel {
 	}
 
 	#run(sql: string, ...params: SQLInputValue[]) {
-		return this.#db.prepare(sql).run(...params);
+		return this.#db.prepare(sql).run(...sqlParams(params));
 	}
 }

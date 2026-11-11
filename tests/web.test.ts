@@ -11,6 +11,7 @@ import { formatInputs } from "../src/host/workers.ts";
 import { INPUT_KINDS } from "../src/kernel/types.ts";
 import { ConfigError } from "../src/config-error.ts";
 import { WebGateway } from "../src/host/web.ts";
+import { parseWebHosts } from "../src/host/web-hosts.ts";
 import * as page from "../src/web/view.mjs";
 import * as format from "../src/client/board-format.mjs";
 import { helperLine } from "../src/client/board-format.mjs";
@@ -932,6 +933,61 @@ test("网关：Host 头不是本机这个端口时返回 403，即使 token 正�
 	assert.equal((await request(at("/"), { host: `localhost:${url.port}` })).status, 200);
 });
 
+const TAILNET = "psa-home.example.ts.net";
+const remote = { webHosts: parseWebHosts([TAILNET], "test") };
+
+test("网关：webHosts 为空时，Host 是 tailnet 名字也 403", async (t) => {
+	const { at } = await webHost(t);
+	assert.equal((await request(at("/events"), { host: TAILNET })).status, 403);
+});
+
+test("网关：webHosts 列出的名字作 Host 时，页面、事件流和脚本都能打开", async (t) => {
+	const { at } = await webHost(t, () => [], remote);
+	for (const path of ["/", "/events", "/app.mjs"]) {
+		const res = await new Promise<number>((resolve, reject) => {
+			const req = http.get(at(path), { headers: { host: TAILNET } }, (r) => {
+				resolve(r.statusCode!);
+				req.destroy();
+			});
+			req.on("error", reject);
+		});
+		assert.equal(res, 200, path);
+	}
+});
+
+test("网关：没列入的 tailnet 名字，或列入的名字带了端口，都 403；Host 仍先于 token 检查", async (t) => {
+	const { at, url } = await webHost(t, () => [], remote);
+	for (const forged of ["other.example.ts.net", `${TAILNET}:443`, `${TAILNET}:${url.port}`]) {
+		assert.equal((await request(at("/events"), { host: forged })).status, 403, forged);
+	}
+	assert.equal((await request(at("/events", "0".repeat(64)), { host: TAILNET })).status, 401, "列入的名字加错 token");
+	assert.equal((await request(at("/events", "0".repeat(64)), { host: "evil.ts.net" })).status, 403, "没列入的名字加错 token");
+});
+
+test("网关：经 tailnet 名字发话，Origin 必须恰好是 https://<名字>", async (t) => {
+	const { post, userLines } = await sayHost(t, undefined, remote);
+	const body = JSON.stringify({ text: "手机上说" });
+	for (const origin of [`http://${TAILNET}`, "https://other.example.ts.net", `https://${TAILNET}:443`]) {
+		assert.equal((await post(body, { host: TAILNET, origin })).status, 403, origin);
+	}
+	assert.deepEqual(userLines(), []);
+	assert.equal((await post(body, { host: TAILNET, origin: `https://${TAILNET}` })).status, 200);
+	assert.deepEqual(userLines(), ["手机上说"]);
+});
+
+test("网关：转发时 Host 被改写成本机地址，Origin 仍是 https://<名字>，也是使用者的页面", async (t) => {
+	const { post, userLines } = await sayHost(t, undefined, remote);
+	assert.equal((await post(JSON.stringify({ text: "改写了 Host" }), { origin: `https://${TAILNET}` })).status, 200);
+	assert.deepEqual(userLines(), ["改写了 Host"]);
+});
+
+test("网关：每个 webHosts 名字一个远程网址，token 和本机网址相同；没有 webHosts 时没有远程网址", async (t) => {
+	const listed = await webHost(t, () => [], remote);
+	assert.deepEqual(listed.host.remoteWebUrls, [`https://${TAILNET}/?token=${listed.token}`]);
+	assert.match(listed.host.webUrl!, /^http:\/\/127\.0\.0\.1:\d+\/\?token=[0-9a-f]{64}$/);
+	assert.deepEqual((await webHost(t)).host.remoteWebUrls, []);
+});
+
 test("网关：首页带 token 的脚本地址，CSP 不允许内联脚本，响应不缓存、不带 referrer", async (t) => {
 	const { host, at, token } = await webHost(t);
 	const res = await request(at("/"));
@@ -1211,8 +1267,8 @@ test("宿主：这次启动恢复了执行中的任务，快照里的 duty.resum
 	assert.equal(third.host.snapshot().duty.resumed, 0);
 });
 
-async function sayHost(t: TestContext, brain?: Parameters<typeof webHost>[1]) {
-	const web = await webHost(t, brain);
+async function sayHost(t: TestContext, brain?: Parameters<typeof webHost>[1], options?: Parameters<typeof webHost>[2]) {
+	const web = await webHost(t, brain, options);
 	const origin = web.url.origin;
 	type Over = { token?: string; origin?: string | null; type?: string; host?: string };
 	const postTo = (path: string, body: string, over: Over = {}) =>

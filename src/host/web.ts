@@ -7,6 +7,7 @@ import { OPTIONS_MAX, refusalText, type AnswerRefusal } from "../kernel/question
 import type { HostToClient, TranscriptHistory, TranscriptMessage } from "../client/protocol.ts";
 import { hasVisibleText, HistoryEchoFilter, type AnswerResult, type Broadcast } from "./server.ts";
 import { tokenMatches } from "./web-token.ts";
+import { webAddresses, type TailnetName, type WebAddresses } from "./web-hosts.ts";
 
 type Snapshot = Omit<Extract<HostToClient, { type: "snapshot" }>, "type">;
 
@@ -43,7 +44,7 @@ const INTERNAL_ERROR = "宿主内部出错，详情见宿主日志。";
 const DENIED = {
 	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"} 或 {\"answer\": {\"reportId\": \"rpt_…\", \"option\": 0}}，或这句话是空的；清屏的正文是 {}。",
 	401: "token 缺失或已失效，请用宿主日志里最新的网址打开。",
-	403: "只接受本机这个页面（127.0.0.1 或 localhost）发来的请求。",
+	403: "只接受本机这个页面（127.0.0.1 或 localhost）或 config.json 的 webHosts 里列出的地址发来的请求。",
 	404: "没有这个页面。",
 	405: "这个地址不接受这种请求；发话用 POST /say，清屏用 POST /clear，其余只接受 GET。",
 	413: "这句话太长了，请分几次说。",
@@ -58,16 +59,18 @@ export class WebGateway {
 	readonly #echoes = new HistoryEchoFilter<ServerResponse>();
 	readonly #host: WebHost;
 	readonly #log: (line: string) => void;
-	#port = 0;
+	readonly #names: readonly TailnetName[];
+	#addresses: WebAddresses = { hosts: new Set(), origins: new Set(), local: "", remote: [] };
 	readonly #posts = new Map<string, (body: string, res: ServerResponse) => void>([
 		["/say", (body, res) => this.#say(body, res)],
 		["/clear", (body, res) => this.#clear(body, res)],
 	]);
 
-	constructor(host: WebHost, token: string, log: (line: string) => void) {
+	constructor(host: WebHost, token: string, log: (line: string) => void, names: readonly TailnetName[] = []) {
 		this.#host = host;
 		this.#token = token;
 		this.#log = log;
+		this.#names = names;
 		this.#server = createServer((req, res) => this.#guard(req, res, () => this.#handle(req, res)));
 	}
 
@@ -79,14 +82,18 @@ export class WebGateway {
 				else reject(error);
 			});
 			this.#server.listen({ host: "127.0.0.1", port }, () => {
-				this.#port = (this.#server.address() as AddressInfo).port;
+				this.#addresses = webAddresses((this.#server.address() as AddressInfo).port, this.#names);
 				resolve();
 			});
 		});
 	}
 
 	get url(): string {
-		return `http://127.0.0.1:${this.#port}/?token=${this.#token}`;
+		return `${this.#addresses.local}?token=${this.#token}`;
+	}
+
+	get remoteUrls(): readonly string[] {
+		return this.#addresses.remote.map((url) => `${url}?token=${this.#token}`);
 	}
 
 	broadcast(message: Broadcast): void {
@@ -125,7 +132,7 @@ export class WebGateway {
 	#handle(req: IncomingMessage, res: ServerResponse): void {
 		const url = URL.parse(req.url ?? "/", "http://x");
 		if (!url) return deny(res, 400);
-		if (!isLocalHost(req.headers.host, this.#port)) return deny(res, 403);
+		if (!this.#addresses.hosts.has(req.headers.host?.toLowerCase() ?? "")) return deny(res, 403);
 		const file = STATIC.get(url.pathname);
 		if (!file && !tokenMatches(url.searchParams.get("token") ?? "", this.#token)) return deny(res, 401);
 		const post = this.#posts.get(url.pathname);
@@ -152,8 +159,7 @@ export class WebGateway {
 	// The token stops other local pages; Origin and the JSON content type each stop cross-site form posts,
 	// since a cross-origin JSON POST needs a CORS preflight that this server never answers.
 	#post(req: IncomingMessage, res: ServerResponse, handle: (body: string, res: ServerResponse) => void): void {
-		const origin = req.headers.origin?.toLowerCase();
-		if (!origin?.startsWith("http://") || !isLocalHost(origin.slice("http://".length), this.#port)) return deny(res, 403);
+		if (!this.#addresses.origins.has(req.headers.origin?.toLowerCase() ?? "")) return deny(res, 403);
 		if (req.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json") return deny(res, 415);
 		if (Number(req.headers["content-length"] ?? 0) > SAY_MAX_BYTES) return tooLarge(req, res);
 		const chunks: Buffer[] = [];
@@ -248,11 +254,6 @@ function tooLarge(req: IncomingMessage, res: ServerResponse): void {
 
 function sseFrame(message: HostToClient): string {
 	return `data: ${JSON.stringify(message)}\n\n`;
-}
-
-function isLocalHost(host: string | undefined, port: number): boolean {
-	const h = host?.toLowerCase();
-	return h === `127.0.0.1:${port}` || h === `localhost:${port}`;
 }
 
 const REFUSED_STATUS: Record<AnswerRefusal["kind"], number> = { no_question: 404, no_options: 409, out_of_range: 409, chosen: 409, spoke: 409, closed: 409 };
