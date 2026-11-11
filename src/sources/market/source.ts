@@ -6,7 +6,8 @@ import { MarketClient, MarketError, type Bar, type Span, type Trace } from "./cl
 import { indicatorReport } from "./indicators.ts";
 import { FinnhubClient } from "./finnhub.ts";
 import { ConfigError } from "../../config-error.ts";
-import { readFinnhubKey, readMarketKey, type LoadedKey } from "./key.ts";
+import type { LoadedSecret } from "../../secrets.ts";
+import { readFinnhubKey, readMarketKey } from "./key.ts";
 import { detect, toTrigger, type MarketCursor, type Move, type Quote } from "./detect.ts";
 import { inPollWindow, MINUTE, nextPollDelay, sessionAt, shiftDate, type Session } from "./session.ts";
 import { parseMarketSettings, type MarketSettings } from "./settings.ts";
@@ -68,7 +69,7 @@ export function marketFeed(input: FeedInput): FeedSpec {
 }
 
 // A bad Finnhub key only turns off earnings; the rest of the feed does not depend on it.
-function earningsClient(input: FeedInput): LoadedKey | string {
+function earningsClient(input: FeedInput): LoadedSecret | string {
 	try {
 		return readFinnhubKey(input.env, input.secretsFile) ?? "未配置 FINNHUB_API_KEY";
 	} catch (error) {

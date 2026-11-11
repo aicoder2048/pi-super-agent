@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import type { DatabaseSync } from "node:sqlite";
 import { writeHeartbeat } from "../heartbeat.ts";
 import { relocateState } from "./relocate.ts";
 import { endLeftoverMembers } from "./member-ledger.ts";
@@ -14,7 +15,7 @@ import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import type { Feed, FeedSpec } from "../sources/feeds.ts";
 import { Dispatcher } from "./dispatcher.ts";
-import { HostServer, type AnswerResult, type Broadcast } from "./server.ts";
+import { HostServer, type AnswerResult, type Broadcast, type ImChat, type SayOptions } from "./server.ts";
 import type { BoardState, Duty, MemberCapBoard, TodayCounts, TranscriptHistory, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
 import { readSessionEntries } from "../jsonl.ts";
 import { memberTranscripts } from "./dispatch.ts";
@@ -25,6 +26,7 @@ import { MemberCap } from "./member-cap.ts";
 import { ConfigError } from "../config-error.ts";
 import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 import type { Domains } from "../modules.ts";
+import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -63,6 +65,7 @@ export interface HostOptions {
 	feeds?: FeedSpec[];
 	/** Runs `run` once, `ms` from now, and returns its cancel. The host waits for the New York day change with it; tests pass their own to make that moment arrive. */
 	after?: (ms: number, run: () => void) => () => void;
+	telegram?: TelegramOptions;
 }
 
 const afterRealTime: NonNullable<HostOptions["after"]> = (ms, run) => {
@@ -105,6 +108,8 @@ export class Host {
 	#stallAt: number | null = null;
 	#heartbeat: NodeJS.Timeout | undefined;
 	#web: WebGateway | undefined;
+	readonly #telegram: TelegramClient | undefined;
+	readonly #db: DatabaseSync;
 	readonly #watching: WatchedSource[];
 	readonly #clock: Clock;
 	readonly #kitFor: Domains["kitFor"] | undefined;
@@ -125,8 +130,9 @@ export class Host {
 		this.#after = options.after ?? afterRealTime;
 		this.#watching = options.watching ?? [];
 		this.#kitFor = options.domains?.kitFor;
+		this.#db = openStore(join(options.stateDir, "state.db"));
 		this.kernel = new Kernel({
-			db: openStore(join(options.stateDir, "state.db")),
+			db: this.#db,
 			clock,
 			sourcePolicy: (trigger) => (trigger.source === WATCHDOG_SOURCE ? "notice" : (options.sourcePolicy?.(trigger) ?? "candidate")),
 			ruleAllows: options.ruleAllows,
@@ -199,6 +205,8 @@ export class Host {
 			(ticketId, token, method, params) => this.workers.handleRequest(ticketId, token, method, params),
 			this.#log,
 		);
+		// Built before any client can say a line, so every line and reply reaches it; it touches the network only once started.
+		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }) }, db: this.#db, clock, log: this.#log });
 	}
 
 	static async start(options: HostOptions): Promise<Host> {
@@ -231,7 +239,9 @@ export class Host {
 		host.#atNextMidnight();
 		if (host.#memberCap) host.#atNextNewYorkDay(host.#memberCap);
 		host.#pushBoardAtNextStall(host.kernel.listTickets());
-		host.dispatcher.kick();
+		// Only now do the Router and every client exist; a reply delivered earlier would miss the ones still missing.
+		host.dispatcher.start();
+		host.#telegram?.start();
 		return host;
 	}
 
@@ -243,31 +253,38 @@ export class Host {
 		return this.#web?.remoteUrls ?? [];
 	}
 
-	say(text: string): string {
+	/** A repeated externalId returns the first line's id and changes nothing. */
+	say(text: string, { externalId, from }: SayOptions = {}): string {
 		const at = Date.now();
-		const { triggerId } = this.kernel.userSaid({ text, at });
-		this.#broadcast({ type: "user", id: triggerId, who: "user", text, at });
+		const { triggerId, duplicate } = this.kernel.userSaid({ text, at, externalId });
+		if (duplicate) return triggerId;
+		this.#broadcast({ type: "user", id: triggerId, who: "user", text, at }, from);
 		this.#changed();
 		return triggerId;
 	}
 
-	sayQuoting(text: string, lineId: string): string | null {
+	/** Null when lineId is not a shown conversation line. A repeated externalId returns the first line's id and changes nothing. */
+	sayQuoting(text: string, lineId: string, { externalId, from }: SayOptions = {}): string | null {
 		const at = Date.now();
-		const said = this.kernel.userSaidQuoting({ text, at, lineId });
+		const said = this.kernel.userSaidQuoting({ text, at, lineId, externalId });
 		if (!said) return null;
-		this.#broadcast({ type: "user", id: said.triggerId, who: "user", text, at, quote: said.quote });
+		if (said.duplicate) return said.triggerId;
+		this.#broadcast({ type: "user", id: said.triggerId, who: "user", text, at, quote: said.quote }, from);
 		this.#changed();
 		return said.triggerId;
 	}
 
-	/** Only the user's front ends reach this: the web gateway after its token and origin checks, and a socket connection that said hello as a client. */
-	answer(reportId: string, option: number): AnswerResult {
-		if (isCapAskId(reportId)) return this.#answerCapAsk(reportId, option);
+	/**
+	 * Only the user's front ends reach this: the web gateway after its token and origin checks, a socket connection that said hello as a client,
+	 * and an IM client (`from`) for a listed account. The member cap is answered on the web page or in the TUI only (ADR-0010, ADR-0016).
+	 */
+	answer(reportId: string, option: number, { from }: { from?: ImChat } = {}): AnswerResult {
+		if (isCapAskId(reportId)) return from ? { ok: false, refusal: { kind: "not_here" } } : this.#answerCapAsk(reportId, option);
 		const at = Date.now();
 		const result = this.kernel.answerQuestion({ reportId, option, at });
 		if (!result.ok) return result;
 		if (!result.duplicate) {
-			this.#broadcast({ type: "user", id: result.triggerId, who: "user", text: result.text, at });
+			this.#broadcast({ type: "user", id: result.triggerId, who: "user", text: result.text, at }, from);
 			this.#changed();
 		}
 		return { ok: true, triggerId: result.triggerId };
@@ -321,9 +338,10 @@ export class Host {
 		this.kernel.markReplyDelivered(replyId);
 	}
 
-	#broadcast(message: Broadcast): void {
+	#broadcast(message: Broadcast, from?: ImChat): void {
 		this.server.broadcast(message);
 		this.#web?.broadcast(message);
+		this.#telegram?.broadcast(message, from);
 	}
 
 	#transcript(ticketId: string, event: unknown): void {
@@ -409,6 +427,7 @@ export class Host {
 	}
 
 	async stop(): Promise<void> {
+		await this.#telegram?.stop();
 		clearInterval(this.#heartbeat);
 		this.generic.stop();
 		this.timer.stop();

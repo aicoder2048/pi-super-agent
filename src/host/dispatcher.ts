@@ -18,25 +18,34 @@ export class Dispatcher {
 	readonly #onComplete: (action: PendingAction) => void;
 	readonly #inFlight = new Set<string>();
 	readonly #idleWaiters: Array<() => void> = [];
+	readonly #retryPollMs: number;
 	#scheduled = false;
-	#stopped = false;
+	#state: "idle" | "running" | "stopped" = "idle";
 	#timer: NodeJS.Timeout | undefined;
 
 	constructor({ kernel, handlers, retryPollMs = 1000, onError, onComplete = () => {} }: DispatcherOptions) {
 		this.#onComplete = onComplete;
 		this.#kernel = kernel;
 		this.#handlers = handlers;
+		this.#retryPollMs = retryPollMs;
 		this.#onError = onError ?? ((action, error) => console.error(`[dispatcher] ${action.kind} ${action.id}:`, error));
-		this.#timer = setInterval(() => this.kick(), retryPollMs);
+	}
+
+	/** Until this runs a kick does nothing: the due actions wait in the kernel for the handlers' targets to exist. */
+	start(): void {
+		if (this.#state !== "idle") return;
+		this.#state = "running";
+		this.#timer = setInterval(() => this.kick(), this.#retryPollMs);
 		this.#timer.unref();
+		this.kick();
 	}
 
 	kick = (): void => {
-		if (this.#scheduled || this.#stopped) return;
+		if (this.#scheduled || this.#state !== "running") return;
 		this.#scheduled = true;
 		setImmediate(() => {
 			this.#scheduled = false;
-			if (!this.#stopped) this.#drain();
+			if (this.#state === "running") this.#drain();
 		});
 	};
 
@@ -77,7 +86,7 @@ export class Dispatcher {
 	}
 
 	stop(): void {
-		this.#stopped = true;
+		this.#state = "stopped";
 		clearInterval(this.#timer);
 	}
 }

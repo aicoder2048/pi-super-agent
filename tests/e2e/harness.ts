@@ -106,8 +106,8 @@ export interface HostRun {
 	readonly url: URL;
 	readonly pid: number;
 	log(): string;
-	/** Stops the group and starts the host again on the same state dir. */
-	restart(): Promise<URL>;
+	/** Stops the group and starts the host again on the same state dir; `whileDown` runs in between. */
+	restart(whileDown?: () => unknown): Promise<URL>;
 	freeze(): void;
 	thaw(): void;
 	/** Stops every group this host run started; returns the ones still alive. */
@@ -178,9 +178,10 @@ export async function startHost(options: StartHostOptions): Promise<HostRun> {
 			return current;
 		},
 		log: () => text,
-		async restart() {
+		async restart(whileDown) {
 			const left = await stopAll();
 			if (left.length) throw new Error(`重启前停不下宿主进程组 ${left.join(", ")}`);
+			await whileDown?.();
 			return boot();
 		},
 		freeze: () => void signalGroup(current, "SIGSTOP"),
@@ -258,6 +259,8 @@ export interface StoryOptions {
 	env?: Record<string, string>;
 	/** See parseSabotage in fake-model.ts. Defaults to PSA_E2E_SABOTAGE. */
 	sabotage?: string;
+	/** Modules the host process preloads with --import, e.g. tests/e2e/telegram-preload.mjs. */
+	imports?: string[];
 }
 
 let sharedBrowser: Promise<Browser> | undefined;
@@ -308,7 +311,7 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 		consoleStream.end();
 		throw error;
 	});
-	const root = mkdtempSync(join(tmpdir(), "psa-e2e-"));
+	const root = mkdtempSync(join(tmpdir(), `psa-e2e-${process.pid}-`));
 	const env = { ...fakeAgentEnv(fake, join(root, "pi")), ...options.env };
 	const pages: Page[] = [];
 	const contexts: BrowserContext[] = [];
@@ -358,7 +361,7 @@ export async function story(t: TestContext, script: Script, body: (s: Story) => 
 				mkdirSync(dirname(join(root, "s", name)), { recursive: true });
 				writeFileSync(join(root, "s", name), text);
 			}
-			const started = startHost({ models: fakeModels, stateDir: join(root, "s"), logFile: join(out, "host.log"), config: { webPort, modulesDirs: [join(root, "s", "modules")], ...options.config }, env });
+			const started = startHost({ models: fakeModels, stateDir: join(root, "s"), logFile: join(out, "host.log"), config: { webPort, modulesDirs: [join(root, "s", "modules")], ...options.config }, env, imports: options.imports });
 			const [run] = await Promise.all([started.then((h) => (host = h)), launchBrowser()]);
 			await waitStatus(await open(run.url, { fakeClock: options.fakeClock }), "connected");
 		});

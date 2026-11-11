@@ -40,10 +40,11 @@ test("收尾的某一步卡住时按时限放弃，后面的步骤照常执行�
 });
 
 test("故事在准备阶段出错（假模型拒绝启动）时，不留下临时目录", async (t) => {
-	const before = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith("psa-e2e-")));
+	const ours = `psa-e2e-${process.pid}-`;
+	const before = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith(ours)));
 	const step = on("汇报", /^\[任务说明\]/, () => "好。");
 	await assert.rejects(story(t, { router: [], workers: [worker("同一个", step), worker("同一个", step)] }, async () => {}), /同一个 brief/);
-	const leaked = readdirSync(tmpdir()).filter((n) => n.startsWith("psa-e2e-") && !before.has(n));
+	const leaked = readdirSync(tmpdir()).filter((n) => n.startsWith(ours) && !before.has(n));
 	assert.deepEqual(leaked, []);
 });
 
