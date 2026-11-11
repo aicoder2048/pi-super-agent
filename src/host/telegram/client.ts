@@ -368,7 +368,7 @@ export class TelegramClient {
 			case "maybe-sent":
 				// A setup-mode writer is not the user yet, and the note points at a page they cannot open.
 				await this.#record(() => (row.key === "setup" ? this.#store.giveUp(row, "maybe-sent") : this.#store.maybeSent(row)));
-				return this.#log(`[telegram] 一条消息可能已经发到，也可能没有（${message}），不再重发；手机上的下一条消息开头带一句说明`);
+				return this.#log(`[telegram] 一条消息可能已经发到，也可能没有（${message}），不再重发；手机上的下一条文字消息开头带一句说明`);
 			default: {
 				const waitMs = reaction === "pause" ? ((error as TelegramError).retryAfterMs ?? this.#backoff(failures)) : this.#backoff(failures);
 				this.#pauseUntil = Date.now() + waitMs;
