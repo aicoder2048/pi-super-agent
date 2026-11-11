@@ -101,6 +101,8 @@ test("看盘队的领队把一个问题并行派给两位成员再合成一份�
 				assert.equal(await news.locator("[role=progressbar]").getAttribute("title"), BAR_HINT);
 				assert.equal(await news.locator("[role=progressbar]").getAttribute("aria-label"), BAR_HINT);
 				await lanes.filter({ hasText: "行情分析师" }).locator(".lane-time", { hasText: /^(已用|用时) \d+ 秒 · 时限 30 秒$/ }).waitFor();
+				const lines = await lanes.locator(".step-detail, .lane-time").evaluateAll((nodes) => nodes.map((n) => Math.round(n.getBoundingClientRect().height / parseFloat(getComputedStyle(n).lineHeight))));
+				assert.deepEqual(lines, [1, 1, 1, 1], "桌面宽度下分支的状态和时间各占一行，不在词中间折行");
 			});
 			await step("行情分析师先做完：它那一步马上写完成，新闻研究员还在进行中", async (page) => {
 				await page.locator("#steps .step.ok", { hasText: "行情分析师 · 完成" }).waitFor();
