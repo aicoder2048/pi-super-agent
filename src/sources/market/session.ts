@@ -54,6 +54,12 @@ export function shiftDate(date: string, days: number): string {
 	return new Date(Date.parse(`${date}T12:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 }
 
+export function nextWeekday(date: string): string {
+	let next = shiftDate(date, 1);
+	while ([0, 6].includes(new Date(`${next}T12:00:00Z`).getUTCDay())) next = shiftDate(next, 1);
+	return next;
+}
+
 export function nyTime(ms: number): string {
 	const { minutes } = nyWall(ms);
 	return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;

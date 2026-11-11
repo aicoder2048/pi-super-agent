@@ -15,17 +15,28 @@ FEEDS["e2e-market"] = (input) => {
 	return { ...spec, create: (ctx) => (quotesDir ? pollOncePerQuoteFile(options, ctx, quotesDir) : new MarketSource({ ...options, ctx, client: offlineClient })) };
 };
 
+// Each file is one tick: { now?: ISO time (default Wed 10:00 ET), symbol?, price?, prevClose?, quotes?: [{ symbol, price, prevClose }], closes?: { SYM: { "YYYY-MM-DD": close } } }.
+// closes accumulate across files and answer daily bars requests the way the API does.
 function pollOncePerQuoteFile(options, ctx, dir) {
 	let quotes = [];
-	const client = { snapshot: async (symbols) => quotes.filter((q) => symbols.includes(q.symbol)), bars: async () => [], dispose() {} };
-	const source = new MarketSource({ ...options, client, ctx: { ...ctx, clock: { now: () => WED_10AM_ET } } });
+	let now = WED_10AM_ET;
+	const closes = {};
+	const bars = async (symbol, _span, from, to) =>
+		Object.entries(closes[symbol] ?? {})
+			.filter(([date]) => date >= from && date <= to)
+			.sort(([a], [b]) => a.localeCompare(b))
+			.map(([date, c]) => ({ t: Date.parse(`${date}T05:00:00Z`), o: c, h: c, l: c, c, v: 1000 }));
+	const client = { snapshot: async (symbols) => quotes.filter((q) => symbols.includes(q.symbol)), bars, dispose() {} };
+	const source = new MarketSource({ ...options, client, ctx: { ...ctx, clock: { now: () => now } } });
 	const seen = new Set();
 	let timer;
 	const scan = async () => {
 		for (const name of readdirSync(dir).filter((n) => !n.endsWith(".ticked") && !seen.has(n))) {
 			seen.add(name);
-			const { symbol, price, prevClose } = JSON.parse(readFileSync(join(dir, name), "utf8"));
-			quotes = [{ symbol, price, prevClose, changePct: ((price - prevClose) / prevClose) * 100, at: WED_10AM_ET - 60_000, delayed: false }];
+			const tick = JSON.parse(readFileSync(join(dir, name), "utf8"));
+			now = tick.now ? Date.parse(tick.now) : WED_10AM_ET;
+			for (const [symbol, byDate] of Object.entries(tick.closes ?? {})) closes[symbol] = { ...closes[symbol], ...byDate };
+			quotes = [...(tick.symbol ? [tick] : []), ...(tick.quotes ?? [])].map(({ symbol, price, prevClose }) => ({ symbol, price, prevClose, changePct: ((price - prevClose) / prevClose) * 100, at: now - 60_000, delayed: false }));
 			await source.tick();
 			writeFileSync(join(dir, `${name}.ticked`), "");
 		}

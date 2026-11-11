@@ -17,6 +17,7 @@ import {
 	redact,
 	serializeBook,
 	settleCross,
+	suspectedId,
 	type Applied,
 	type Book,
 	type Firing,
@@ -240,6 +241,15 @@ test("settleCross：当天收盘翻转就确认（没报过疑似也确认）；
 	assert.deepEqual(settleCross(cross, [...DEATH_BEFORE, 10], true), { ...base, shape: "death", stage: "withdrawn", price: 10, fastSma: 10, slowSma: 10 });
 	assert.equal(settleCross(cross, [...GOLDEN_BEFORE, 10], false), null);
 	assert.equal(settleCross(cross, [11, 10, 10, 13], true), null);
+});
+
+test("suspectedId：收盘后按昨天两条均线的关系推出盘中那条疑似的 id，和盘中贴的一致", () => {
+	const book = bookOf({ symbol: "TSLA", condition: { kind: "cross", fast: 2, slow: 3 } });
+	const [cross] = book.values() as unknown as [Tripwire & { condition: { kind: "cross" } }];
+	const intradayId = (before: number[], price: number) => firingId(TODAY, checkIntraday(book, [quote("TSLA", price, 10)], SESSION, new Map([["TSLA", { fetchedOn: TODAY, settledCloses: before }]]))[0]!);
+	assert.equal(suspectedId(TODAY, cross, [...GOLDEN_BEFORE, 10]), intradayId(GOLDEN_BEFORE, 13));
+	assert.equal(suspectedId(TODAY, cross, [...DEATH_BEFORE, 10]), intradayId(DEATH_BEFORE, 7));
+	assert.equal(suspectedId(TODAY, cross, [...GOLDEN_BEFORE, 10]), "TSLA:2026-11-09:cross-2-3-golden-suspected");
 });
 
 const LIVE = { at: NOW, delayed: true };
