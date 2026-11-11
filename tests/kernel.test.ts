@@ -1796,6 +1796,47 @@ test("引用：快照去掉看不见的控制字符", () => {
 	assert.equal(s.kernel.userSaidQuoting({ text: "a", at: s.clock.t, lineId: id })!.quote.text, "前面的[31m话完");
 });
 
+test("U+0000：触发正文去掉它，后面的字都在", () => {
+	const s = setup();
+	const { triggerId } = s.trigger({ body: "外部\u0000事件的后半句" });
+	const found = s.kernel.read(triggerId);
+	assert.ok(found?.type === "trigger");
+	assert.equal(found.trigger.body, "外部事件的后半句");
+});
+
+test("U+0000：使用者的话去掉它，后面的字都在", () => {
+	const s = setup();
+	s.kernel.userSaid({ text: "前\u0000面的话", at: s.clock.t });
+	assert.equal(s.kernel.conversation().at(-1)?.text, "前面的话");
+});
+
+test("U+0000：幕僚长的回复去掉它，后面的字都在", () => {
+	const s = setup();
+	replied(s, s.say("查天气").triggerId, "晴\u0000，二十度");
+	assert.equal(s.kernel.conversation().at(-1)?.text, "晴，二十度");
+});
+
+test("U+0000：成员报告的摘要和问题去掉它，后面的字都在", () => {
+	const s = setup();
+	const id = s.open("request");
+	s.kernel.workerReport(id, { status: "progress", summary: "查\u0000完了", question: "用\u0000 A 吗？" });
+	const found = s.kernel.read(id);
+	assert.ok(found?.type === "ticket");
+	assert.deepEqual([found.recentReports[0].summary, found.recentReports[0].question], ["查完了", "用 A 吗？"]);
+});
+
+test("U+0000：任务标题去掉它，不会是空标题", () => {
+	const s = setup();
+	assert.equal(s.kernel.getTicket(s.open("request", { title: "看\u0000盘任务" }))!.title, "看盘任务");
+});
+
+test("U+0000：external_id 带它的触发投两次，第二次是重复", () => {
+	const s = setup();
+	const first = s.trigger({ externalId: "evt\u00001" });
+	const again = s.trigger({ externalId: "evt\u00001" });
+	assert.deepEqual([first.duplicate, again.duplicate, again.triggerId], [false, true, first.triggerId]);
+});
+
 test("引用：编号不在对话里、或是还没送到屏幕上的回复时，什么都不写，返回 null", () => {
 	const s = setup();
 	const source = s.trigger().triggerId;
