@@ -48,19 +48,28 @@ test("行情请求：每日重置时价格全为 0 的占位行被丢掉，不�
 test("额度：任意两次请求之间至少隔 12 秒（每分钟不超过 5 次）", async () => {
 	const f = fakeHttp();
 	const c = client(f);
-	await Promise.all([c.snapshot(["NVDA"], "poll"), c.bars("NVDA", "minute", "2026-11-09", "2026-11-09"), c.snapshot(["SPY"], "lookup")]);
+	await Promise.all([c.snapshot(["NVDA"], "poll"), c.bars("NVDA", "minute", "2026-11-09", "2026-11-09", "lookup"), c.snapshot(["SPY"], "lookup")]);
 	assert.deepEqual(f.calls.map((x) => x.at), [0, 12_000, 24_000]);
 });
 
 test("额度：排队时看盘请求优先于 Worker 查询；排队的查询超过 3 个时直接回「忙」", async () => {
 	const f = fakeHttp((url) => Response.json(url.includes("aggs") ? { status: "OK", results: [] } : snapshotBody([])));
 	const c = client(f);
-	const lookups = [1, 2, 3, 4].map((i) => c.bars(`L${i}`, "minute", "2026-11-09", "2026-11-09"));
-	await assert.rejects(c.bars("L5", "minute", "2026-11-09", "2026-11-09"), (e: MarketError) => e.kind === "busy");
+	const lookups = [1, 2, 3, 4].map((i) => c.bars(`L${i}`, "minute", "2026-11-09", "2026-11-09", "lookup"));
+	await assert.rejects(c.bars("L5", "minute", "2026-11-09", "2026-11-09", "lookup"), (e: MarketError) => e.kind === "busy");
 	const poll = c.snapshot(["NVDA"], "poll");
 	await Promise.all([...lookups, poll]);
 	const order = f.calls.map((x) => (x.url.includes("snapshot") ? "poll" : x.url.match(/ticker\/(L\d)/)![1]));
 	assert.deepEqual(order, ["L1", "poll", "L2", "L3", "L4"]);
+});
+
+test("额度：看盘自己取的日线走看盘优先级，排在已经排队的 Worker 查询前面", async () => {
+	const f = fakeHttp(() => Response.json({ status: "OK", results: [] }));
+	const c = client(f);
+	const lookups = [1, 2, 3].map((i) => c.bars(`L${i}`, "day", "2026-11-01", "2026-11-09", "lookup"));
+	const feed = c.bars("FEED", "day", "2026-11-01", "2026-11-09", "poll");
+	await Promise.all([...lookups, feed]);
+	assert.deepEqual(f.calls.map((x) => x.url.match(/ticker\/(\w+)/)![1]), ["L1", "FEED", "L2", "L3"]);
 });
 
 test("额度：429 时按 Retry-After 冷却，冷却结束前不再请求", async () => {
@@ -139,7 +148,7 @@ test("上游数据在客户端边界校验：代码不合法或不是请求的�
 	const quotes = await c.snapshot(["NVDA", "SPY"], "poll");
 	assert.deepEqual(quotes.map((q) => q.symbol), ["NVDA", "SPY"]);
 	assert.equal(quotes[1].dayVolume, undefined);
-	assert.deepEqual(await c.bars("NVDA", "day", "2026-11-01", "2026-11-09"), [{ t: 1, o: 1, h: 2, l: 0.5, c: 1.5, v: 10 }]);
+	assert.deepEqual(await c.bars("NVDA", "day", "2026-11-01", "2026-11-09", "lookup"), [{ t: 1, o: 1, h: 2, l: 0.5, c: 1.5, v: 10 }]);
 });
 
 test("K 线：一天超过 500 根时返回离现在最近的 500 根，按时间正序", async () => {
@@ -150,6 +159,6 @@ test("K 线：一天超过 500 根时返回离现在最近的 500 根，按时�
 		const rows = q.get("sort") === "desc" ? [...all].reverse().slice(0, limit) : all.slice(0, limit);
 		return Response.json({ status: "OK", results: rows });
 	});
-	const bars = await client(f).bars("NVDA", "minute", "2026-11-09", "2026-11-09");
+	const bars = await client(f).bars("NVDA", "minute", "2026-11-09", "2026-11-09", "lookup");
 	assert.deepEqual([bars.length, bars[0].t, bars.at(-1)!.t], [500, 101, 600]);
 });

@@ -9,10 +9,10 @@ import { ConfigError } from "../../config-error.ts";
 import type { LoadedSecret } from "../../secrets.ts";
 import { readFinnhubKey, readMarketKey } from "./key.ts";
 import { detect, isFresh, toTrigger, type MarketCursor, type Move, type Quote } from "./detect.ts";
-import { inPollWindow, MINUTE, nextPollDelay, sessionAt, shiftDate, type Session } from "./session.ts";
+import { inPollWindow, MINUTE, nextPollDelay, nextWeekday, nyDateOf, sessionAt, shiftDate, type Session } from "./session.ts";
 import { parseMarketSettings, type MarketSettings } from "./settings.ts";
 import { parseSymbol } from "./symbol.ts";
-import { alertText, applyEdit, checkIntraday, driftOf, echoText, firingId, parseBook, parseEdit, polledSymbols, receiptText, redact, serializeBook, type Book, type History, type Tripwire } from "./tripwires.ts";
+import { alertText, applyEdit, checkIntraday, driftOf, echoText, firingId, parseBook, parseEdit, polledSymbols, receiptText, redact, serializeBook, settleCross, suspectedId, type Book, type Tripwire } from "./tripwires.ts";
 
 // How long a lookup result may be reused. Quotes the poll already holds are reused for one poll interval instead.
 const TTL_MS = { quote: 30_000, earnings: 6 * 60 * MINUTE, bars: { day: 10 * MINUTE, hour: 2 * MINUTE, minute: MINUTE } as Record<Span, number> };
@@ -36,7 +36,7 @@ const HOLIDAY_AFTER_OPEN_MS = 30 * MINUTE;
 const HOLIDAY_AFTER_POLLS = 5;
 const NOTICE_AFTER_MS = 15 * MINUTE;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const NO_HISTORY: History = new Map();
+const SETTLE_AFTER_MS = 20 * MINUTE;
 const SPANS: Span[] = ["minute", "hour", "day"];
 // Calendar days of bars indicators fetch when the caller gives no from: day covers SMA200 and 52 weeks (252 bars).
 const INDICATOR_DAYS: Record<Span, number> = { day: 400, hour: 30, minute: 4 };
@@ -107,6 +107,16 @@ function dateArg(op: string, a: Record<string, unknown>, field: string, required
 	return a[field];
 }
 
+type CrossTripwire = Tripwire & { condition: { kind: "cross" } };
+const crossTripwires = (book: Book) => [...book.values()].filter((t): t is CrossTripwire => t.condition.kind === "cross");
+
+/** pending: the close first seen for today's bar, by symbol. settled: symbols whose cross is settled today. */
+interface TripCursor {
+	pending: Record<string, number>;
+	settled: string[];
+}
+type SourceCursor = MarketCursor & { trip?: TripCursor };
+
 function noSessionToday(cursor: MarketCursor | undefined, session: Session, now: number): boolean {
 	return cursor?.nyDate === session.nyDate && !cursor.sawFreshQuote && cursor.pollsWithoutFreshQuote >= HOLIDAY_AFTER_POLLS && now >= session.openAt + HOLIDAY_AFTER_OPEN_MS;
 }
@@ -145,6 +155,8 @@ export class MarketSource implements Feed {
 	#timer: NodeJS.Timeout | undefined;
 	#stopped = false;
 	#book: { book: Book } | { problem: string };
+	// Settled closes before fetchedOn. Memory only: after a restart the poll warms one symbol a tick again.
+	readonly #history = new Map<string, { fetchedOn: string; slow: number; settledCloses: number[] }>();
 
 	constructor(options: MarketSourceOptions) {
 		this.#o = options;
@@ -205,7 +217,8 @@ export class MarketSource implements Feed {
 		const now = ctx.clock.now();
 		if (!inPollWindow(now)) {
 			this.#failing = undefined;
-			return this.#feel("resting", "不在交易时段，暂停请求行情");
+			this.#feel("resting", "不在交易时段，暂停请求行情");
+			return this.#settle(now);
 		}
 		const session = sessionAt(now);
 		const raw = ctx.readCursor();
@@ -220,6 +233,7 @@ export class MarketSource implements Feed {
 		}
 		this.#failing = undefined;
 		this.#lastPoll = { at: ctx.clock.now(), quotes };
+		await this.#warmHistory(book, session.nyDate);
 		this.#raise(book, quotes, session);
 		const result = detect(cursor, quotes.filter((q) => settings.watchlist.includes(q.symbol)), session, settings);
 		this.#submitThenSaveCursor(result.moves, result.cursor);
@@ -228,7 +242,7 @@ export class MarketSource implements Feed {
 
 	#raise(book: Book, quotes: Quote[], session: Session): void {
 		const { ctx, source } = this.#o;
-		for (const firing of checkIntraday(book, quotes, session, NO_HISTORY)) {
+		for (const firing of checkIntraday(book, quotes, session, this.#history)) {
 			const quote = quotes.find((q) => q.symbol === firing.symbol)!;
 			try {
 				ctx.post({ kind: "alert", externalId: firingId(session.nyDate, firing), text: alertText(firing, quote), occurredAt: quote.at });
@@ -236,6 +250,61 @@ export class MarketSource implements Feed {
 				ctx.log(`[${source}] 盯盘提醒没贴出去：${String(error)}`);
 			}
 		}
+	}
+
+	#dailyBars(t: CrossTripwire, nyDate: string): Promise<Bar[]> {
+		const from = shiftDate(nyDate, -(Math.ceil(1.6 * t.condition.slow) + 10));
+		return this.#o.client.bars(t.symbol, "day", from, nyDate, "poll");
+	}
+
+	// One request per tick at most, so warming never takes more than one slot from the 5-a-minute budget the poll shares.
+	async #warmHistory(book: Book, nyDate: string): Promise<void> {
+		const t = crossTripwires(book).find((t) => {
+			const h = this.#history.get(t.symbol);
+			return h?.fetchedOn !== nyDate || h.slow < t.condition.slow;
+		});
+		if (!t) return;
+		try {
+			const bars = await this.#dailyBars(t, nyDate);
+			this.#history.set(t.symbol, { fetchedOn: nyDate, slow: t.condition.slow, settledCloses: bars.filter((b) => nyDateOf(b.t) < nyDate).map((b) => b.c) });
+		} catch (error) {
+			this.#o.ctx.log(`[${this.#o.source}] ${t.symbol} 的日线没取到，均线交叉下一轮再试：${String(error)}`);
+		}
+	}
+
+	// lastBar().partial only reads the clock, so a day's bar counts as settled when two fetches at least one wake apart agree on its close.
+	async #settle(now: number): Promise<void> {
+		const { ctx, source } = this.#o;
+		const session = sessionAt(now);
+		if (session.weekend || now < session.closeAt + SETTLE_AFTER_MS || !("book" in this.#book)) return;
+		const raw = ctx.readCursor();
+		const cursor = raw === undefined ? undefined : (JSON.parse(raw) as SourceCursor);
+		if (cursor?.nyDate !== session.nyDate || !cursor.sawFreshQuote) return;
+		const trip: TripCursor = { pending: { ...cursor.trip?.pending }, settled: [...(cursor.trip?.settled ?? [])] };
+		const due = crossTripwires(this.#book.book).filter((t) => !trip.settled.includes(t.symbol));
+		if (!due.length) return;
+		for (const t of due) {
+			let bars;
+			try {
+				bars = await this.#dailyBars(t, session.nyDate);
+			} catch (error) {
+				ctx.log(`[${source}] ${t.symbol} 的当天日线没取到，均线交叉下次醒来再结算：${String(error)}`);
+				continue;
+			}
+			const last = bars.at(-1);
+			if (!last || nyDateOf(last.t) !== session.nyDate) continue;
+			if (trip.pending[t.symbol] !== last.c) {
+				trip.pending[t.symbol] = last.c;
+				continue;
+			}
+			const closes = bars.map((b) => b.c);
+			const firing = settleCross(t, closes, ctx.raised(suspectedId(session.nyDate, t, closes)));
+			if (firing) ctx.post({ kind: "alert", externalId: firingId(session.nyDate, firing), text: alertText(firing, { at: now, delayed: false }), occurredAt: now });
+			trip.settled.push(t.symbol);
+			this.#history.set(t.symbol, { fetchedOn: nextWeekday(session.nyDate), slow: t.condition.slow, settledCloses: closes });
+			ctx.log(`[${source}] ${t.symbol} 均线交叉已结算：今天收盘 ${last.c}，${firing ? firing.stage : "没有交叉"}`);
+		}
+		ctx.writeCursor(JSON.stringify({ ...cursor, trip }));
 	}
 
 	#submitThenSaveCursor(moves: Move[], cursor: MarketCursor): void {
@@ -268,7 +337,7 @@ export class MarketSource implements Feed {
 
 	#bars(trace: LookupTrace, symbol: string, span: Span, from: string, to: string, limit: number): Promise<Bar[]> {
 		trace.desc = `${symbol} ${span} ${from}～${to}`;
-		return this.#cached(trace, `bars:${symbol}:${span}:${from}:${to}:${limit}`, TTL_MS.bars[span], () => this.#o.client.bars(symbol, span, from, to, limit, trace));
+		return this.#cached(trace, `bars:${symbol}:${span}:${from}:${to}:${limit}`, TTL_MS.bars[span], () => this.#o.client.bars(symbol, span, from, to, "lookup", limit, trace));
 	}
 
 	async #lookup(op: string, args: unknown, trace: LookupTrace): Promise<unknown> {

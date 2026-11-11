@@ -20,3 +20,13 @@ export function fakeHttp(respond: (url: string, now: number) => Response | Promi
 	const sleep = async (ms: number) => { clock.t += ms; };
 	return { clock, calls, http, sleep };
 }
+
+/** Answers `/v2/aggs/.../day/{from}/{to}` from closes by NY date the way the API does: newest first, t at NY midnight (EST). */
+export function dailyBarsBody(closes: Record<string, number>, url: string) {
+	const [from, to] = new URL(url).pathname.split("/").slice(-2) as [string, string];
+	const results = Object.entries(closes)
+		.filter(([date]) => date >= from && date <= to)
+		.sort(([a], [b]) => b.localeCompare(a))
+		.map(([date, c]) => ({ t: Date.parse(`${date}T05:00:00Z`), o: c, h: c, l: c, c, v: 1000 }));
+	return { status: "OK", results };
+}

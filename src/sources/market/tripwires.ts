@@ -289,9 +289,16 @@ export function settleCross(t: Tripwire & { condition: { kind: "cross" } }, clos
 	const crossed = crossShape(before, close, fast, slow);
 	if (crossed) return { ...base, stage: "confirmed", ...crossed };
 	if (!suspectedRaised) return null;
-	// Yesterday's relation leaves only one shape that today could have been suspected of.
-	const shape: CrossShape = smaOf(before, fast) <= smaOf(before, slow) ? "golden" : "death";
-	return { ...base, shape, stage: "withdrawn", fastSma: smaOf(closesThroughToday, fast), slowSma: smaOf(closesThroughToday, slow) };
+	return { ...base, shape: suspectableShape(before, fast, slow), stage: "withdrawn", fastSma: smaOf(closesThroughToday, fast), slowSma: smaOf(closesThroughToday, slow) };
+}
+
+// Yesterday's relation leaves only one shape that today could have been suspected of.
+const suspectableShape = (before: readonly number[], fast: number, slow: number): CrossShape => (smaOf(before, fast) <= smaOf(before, slow) ? "golden" : "death");
+
+export function suspectedId(nyDate: string, t: Tripwire & { condition: { kind: "cross" } }, closesThroughToday: readonly number[]): string {
+	const { fast, slow } = t.condition;
+	const shape = suspectableShape(closesThroughToday.slice(0, -1), fast, slow);
+	return firingId(nyDate, { kind: "cross", symbol: t.symbol, fast, slow, shape, stage: "suspected", price: 0, fastSma: 0, slowSma: 0 });
 }
 
 export function firingId(nyDate: string, f: Firing): string {
