@@ -65,7 +65,7 @@ const ON_POLL_ERROR: Record<TelegramErrorKind, PollReaction> = {
 
 // A send is repeated only when Telegram surely did not take it: the request never left, or Telegram answered in JSON
 // with a refusal or a wait. After anything else, an abort at stop included, the message may be on the phone already,
-// so it is not sent again and the chat gets one note instead.
+// so it is not sent again and the chat owes a note instead.
 const ON_SEND_ERROR: Record<TelegramErrorKind, SendReaction> = {
 	stopped: "maybe-sent",
 	unauthorized: "disable",
@@ -330,7 +330,7 @@ export class TelegramClient {
 				await this.#pause(Math.max(this.#lastSendAt + this.#timing.minGapMs, this.#pauseUntil) - Date.now());
 				if (this.#state !== "running") return;
 				this.#lastSendAt = Date.now();
-				const message = render(row.body);
+				const message = render(row.body, row.note);
 				let messageId: number;
 				try {
 					if (row.messageId === null) messageId = await this.#api.send(row.chatId, message, this.#sending.signal);
@@ -367,8 +367,8 @@ export class TelegramClient {
 				return this.#log(`[telegram] Telegram 不收一条消息，不再重试：${message}`);
 			case "maybe-sent":
 				// A setup-mode writer is not the user yet, and the note points at a page they cannot open.
-				await this.#record(() => (row.key === "setup" ? this.#store.giveUp(row, "maybe-sent") : this.#store.maybeSent(row, { kind: "note", text: NOTES.missed })));
-				return this.#log(`[telegram] 一条消息可能已经发到，也可能没有（${message}），不再重发；一阵故障只补一句说明`);
+				await this.#record(() => (row.key === "setup" ? this.#store.giveUp(row, "maybe-sent") : this.#store.maybeSent(row)));
+				return this.#log(`[telegram] 一条消息可能已经发到，也可能没有（${message}），不再重发；手机上的下一条消息开头带一句说明`);
 			default: {
 				const waitMs = reaction === "pause" ? ((error as TelegramError).retryAfterMs ?? this.#backoff(failures)) : this.#backoff(failures);
 				this.#pauseUntil = Date.now() + waitMs;

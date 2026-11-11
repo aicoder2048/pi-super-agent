@@ -76,7 +76,7 @@ function watch(t: TestContext, host: Host) {
 	const conn = new HostConnection({ socketPath: host.socketPath, onMessage: (m) => got.push(m), retryMs: 30 });
 	conn.open();
 	t.after(() => conn.close());
-	return { got, connected: () => until(() => conn.connected, "连接") };
+	return { got, connected: () => until(() => ofType(got, "snapshot").length === 1, "宿主收下了客户端") };
 }
 
 const userLines = (host: Host) => host.kernel.conversation().filter((l) => l.who === "user").map((l) => l.text);
@@ -522,6 +522,28 @@ test("编辑卡片时 Telegram 的回应说不清（500）：编辑把卡片设�
 	assert.match(tg.shown(cards(tg, USER)[0].messageId)!.text, /已选「上海」，已发送，等待幕僚长转交$/);
 	assert.ok(!sentTo(tg, USER).includes(NOTES.missed), "没有改发说明");
 	assert.equal(cards(tg, USER).length, 1, "没有重发卡片");
+});
+
+test("聊天欠着「可能没送到」的说明时：卡片发出和编辑都不带说明、也不算还清；之后的第一条文字消息开头带上，说明只到一次", async (t) => {
+	const { tg, frame, open } = await cardClient(t);
+	await open(USER);
+	tg.fail("sendMessage", 500);
+	tg.userSays(USER, "/help");
+	await until(() => tg.calls("sendMessage").filter((r) => r.status === 500).length === 2, "帮助和单独的说明都说不准到没到");
+	tg.heal("sendMessage");
+	const id = rpt();
+	frame([ticket(pending(id))]);
+	await until(() => cards(tg, USER).length === 1, "卡片");
+	frame([ticket(pending(id, { click: { option: 1, state: "sent", triggerId: "trg_1" } }))]);
+	await until(() => tg.edits.length === 1, "卡片编辑");
+	const card = tg.shown(cards(tg, USER)[0].messageId)!;
+	assert.ok(card.text.startsWith("青檀"), "卡片编辑后不带说明");
+	assert.ok(cards(tg, USER)[0].text.startsWith("青檀"), "卡片发出时不带说明");
+	tg.userSays(USER, "/help");
+	await until(() => sentTo(tg, USER).includes(`${NOTES.missed}\n${NOTES.help}`), "下一条文字带上说明");
+	tg.userSays(USER, "/help");
+	await until(() => sentTo(tg, USER).filter((m) => m === NOTES.help).length === 2, "还清后不再带");
+	assert.equal(sentTo(tg, USER).filter((m) => m.includes(NOTES.missed)).length, 1);
 });
 
 test("点一条不是卡片的消息，按钮数据写成卡片的：被拒，不问宿主", async (t) => {

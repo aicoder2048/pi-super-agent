@@ -138,9 +138,11 @@ export type OutboundBody =
 	| { kind: "card"; view: CardView }
 	| { kind: "received" };
 
-export function render(body: Exclude<OutboundBody, { kind: "received" }>): { text: string; keyboard: Keyboard | null; silent: boolean } {
+/** `note`: the chat owes the may-be-missing note, and it goes first so a clipped text keeps it. A card never carries it. */
+export function render(body: Exclude<OutboundBody, { kind: "received" }>, note = false): { text: string; keyboard: Keyboard | null; silent: boolean } {
 	if (body.kind === "card") return { text: fitMessage(cardText(body.view)), keyboard: cardKeyboard(body.view), silent: false };
-	return { text: fitMessage(body.text), keyboard: null, silent: body.kind === "line" && body.silent };
+	const text = note ? (body.text ? `${NOTES.missed}\n${body.text}` : NOTES.missed) : body.text;
+	return { text: fitMessage(text), keyboard: null, silent: body.kind === "line" && body.silent };
 }
 
 /** Telegram drops a keyboard whose callback_data is longer than 64 bytes, so building one fails loudly instead. */
