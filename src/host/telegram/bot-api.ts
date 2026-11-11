@@ -8,6 +8,10 @@ const TOKEN_SHAPE = /^(\d{5,}):[A-Za-z0-9_-]{30,}$/;
 const REQUEST_DEADLINE_MS = 30_000;
 const POLL_DEADLINE_EXTRA_MS = 15_000;
 const DESCRIPTION_MAX = 120;
+const RETRY_AFTER_MIN_MS = 1000;
+const RETRY_AFTER_MAX_MS = 60 * 60_000;
+// Failures from before the request left this machine: Telegram surely did not get it.
+const NOT_SENT_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "ENETUNREACH", "EHOSTUNREACH", "UND_ERR_CONNECT_TIMEOUT"]);
 
 export type Http = (url: string, init: { method: "POST"; headers: Record<string, string>; body: string; redirect: "error"; signal: AbortSignal }) => Promise<Response>;
 
@@ -57,8 +61,10 @@ export interface Update {
 	event: TelegramEvent | null;
 }
 
+/** `unreachable`: the request never left, so Telegram has not seen it. `network`: it may have arrived. */
 export type TelegramErrorKind =
 	| "stopped"
+	| "unreachable"
 	| "network"
 	| "unauthorized"
 	| "forbidden"
@@ -139,8 +145,9 @@ export class BotApi {
 			});
 			status = response.status;
 			text = await response.text();
-		} catch {
-			throw new TelegramError(method, signal.aborted ? "stopped" : "network");
+		} catch (error) {
+			const code = (error as { cause?: { code?: unknown } } | undefined)?.cause?.code;
+			throw new TelegramError(method, signal.aborted ? "stopped" : typeof code === "string" && NOT_SENT_CODES.has(code) ? "unreachable" : "network");
 		}
 		let reply: any;
 		try {
@@ -149,10 +156,11 @@ export class BotApi {
 			throw new TelegramError(method, status >= 500 ? "server" : "bad_response");
 		}
 		if (reply?.ok === true && status < 300 && "result" in reply) return reply.result;
-		const kind = KIND_BY_STATUS[status] ?? (status >= 500 ? "server" : "bad_response");
 		const retryAfter = reply?.parameters?.retry_after;
+		const retryAfterMs = typeof retryAfter === "number" ? Math.min(Math.max(retryAfter * 1000, RETRY_AFTER_MIN_MS), RETRY_AFTER_MAX_MS) : undefined;
+		const kind = retryAfterMs !== undefined ? "rate_limited" : (KIND_BY_STATUS[status] ?? (status >= 500 ? "server" : "bad_response"));
 		const description = typeof reply?.description === "string" ? reply.description.replaceAll(raw, "[BotToken]").replaceAll(raw.split(":")[1], "[BotToken]") : undefined;
-		throw new TelegramError(method, kind, typeof retryAfter === "number" ? retryAfter * 1000 : undefined, description);
+		throw new TelegramError(method, kind, retryAfterMs, description);
 	}
 }
 

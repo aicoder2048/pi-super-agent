@@ -13,6 +13,7 @@ export const NOTES = {
 	"text-only": "目前只收文字消息，这条没有交给幕僚长。",
 	"no-forwards": "转发的消息不会交给幕僚长。要问幕僚长，复制文字后用你自己的话发。",
 	"no-via-bot": "经别的机器人发出的消息不会交给幕僚长。要问幕僚长，直接在这里打字。",
+	missed: "有一条消息可能没送到手机上，网页上有完整对话。",
 	setup: (id: number) => `你的 Telegram 数字 id 是 ${id}。把这个数字写进宿主状态目录里 config.json 的 telegram.allowedUserIds，重启宿主后就能在这里和幕僚长对话。`,
 } as const;
 

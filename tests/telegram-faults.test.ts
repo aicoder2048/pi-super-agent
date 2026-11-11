@@ -58,6 +58,81 @@ async function fakeTelegram(t: TestContext): Promise<FakeTelegram> {
 	return tg;
 }
 
+test("Telegram 收下了回复、回答前连接断了：回复不重发，补一句可能没送到的说明", async (t) => {
+	const tg = await fakeTelegram(t);
+	let dropNext = 1;
+	const http: Http = async (url, init) => {
+		const res = await fetch(url, init);
+		if (url.endsWith("/sendMessage") && dropNext > 0) {
+			dropNext--;
+			await res.text();
+			throw new TypeError("fetch failed", { cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }) });
+		}
+		return res;
+	};
+	const { host } = await tgHost(t, tg, { http });
+	tg.userSays(USER, "hi");
+	await until(() => sentTo(tg, USER).length >= 2, "回复和说明");
+	await host.settled();
+	await sleep(500);
+	assert.deepEqual(sentTo(tg, USER), ["收到：hi", NOTES.missed]);
+});
+
+test("Telegram 收下了回复、网关回 502 网页：回复不重发，补一句说明", async (t) => {
+	const tg = await fakeTelegram(t);
+	let failNext = 1;
+	const http: Http = async (url, init) => {
+		const res = await fetch(url, init);
+		if (url.endsWith("/sendMessage") && failNext > 0) {
+			failNext--;
+			await res.text();
+			return new Response("<html>502 Bad Gateway</html>", { status: 502 });
+		}
+		return res;
+	};
+	const { host } = await tgHost(t, tg, { http });
+	tg.userSays(USER, "hi");
+	await until(() => sentTo(tg, USER).length >= 2, "回复和说明");
+	await host.settled();
+	await sleep(500);
+	assert.deepEqual(sentTo(tg, USER), ["收到：hi", NOTES.missed]);
+});
+
+test("接连几条都可能已送达：每条都不重发，说明只补一句", async (t) => {
+	const tg = await fakeTelegram(t);
+	const { host } = await tgHost(t, tg);
+	tg.userSays(USER, "/start");
+	await until(() => tg.sent.length === 1, "说明");
+	tg.fail("sendMessage", 500, {}, 3);
+	host.say("一");
+	host.say("二");
+	await until(() => sentTo(tg, USER).includes(NOTES.missed), "可能没送到的说明", 5000);
+	await host.settled();
+	await sleep(500);
+	const texts = sentTo(tg, USER);
+	assert.equal(texts.filter((m) => m === NOTES.missed).length, 1, texts.join("\n"));
+	assert.equal(new Set(texts).size, texts.length, `没有哪条发了两次：${texts.join(" | ")}`);
+	assert.equal(tg.calls("sendMessage").filter((r) => r.status === 500).length, 3);
+});
+
+test("连不上 Telegram（请求没发出去）：重试，回复只到一次，不补说明", async (t) => {
+	const tg = await fakeTelegram(t);
+	let refuseNext = 2;
+	const http: Http = async (url, init) => {
+		if (url.endsWith("/sendMessage") && refuseNext > 0) {
+			refuseNext--;
+			throw refused();
+		}
+		return fetch(url, init);
+	};
+	const { host } = await tgHost(t, tg, { http });
+	tg.userSays(USER, "hi");
+	await until(() => sentTo(tg, USER).length >= 1, "回复");
+	await host.settled();
+	await sleep(500);
+	assert.deepEqual(sentTo(tg, USER), ["收到：hi"]);
+});
+
 test("重启时还没送出的回复，等 Telegram 客户端在了才送，手机上收得到", async (t) => {
 	const tg = await fakeTelegram(t);
 	const stateDir = tempStateDir();
@@ -95,4 +170,151 @@ test("宿主启动、Router 还没好时网页上说的话，也静默转到 Tel
 	};
 	await tgHost(t, tg, { stateDir, brain: () => [], extra: { webPort, createRouter: sayOnWebFirst } });
 	await until(() => sentTo(tg, USER).includes("你在网页或终端说：启动时网页上说的"), "网页上的话转到 Telegram");
+});
+
+test("发送退避中宿主停止：不再发新请求，宿主立刻停下", async (t) => {
+	const tg = await fakeTelegram(t);
+	let mode: "refuse" | "hang" = "refuse";
+	let refusals = 0;
+	let sendsAfterStop = 0;
+	const http: Http = async (url, init) => {
+		if (url.endsWith("/sendMessage")) {
+			if (mode === "hang") {
+				sendsAfterStop++;
+				return new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason)));
+			}
+			refusals++;
+			throw refused();
+		}
+		return fetch(url, init);
+	};
+	const { host, stop } = await tgHost(t, tg, { http, timing: { ...FAST, backoffMs: [60_000], stopGraceMs: 5000 } });
+	tg.userSays(USER, "hi");
+	await until(() => host.kernel.conversation().some((l) => l.text === "收到：hi"), "回复");
+	await until(() => refusals >= 1, "第一次发送没连上、进入退避");
+	await sleep(100);
+	mode = "hang";
+	await within(stop(), 1000, "宿主停止");
+	assert.equal(sendsAfterStop, 0, "停止后不再开始新的发送");
+});
+
+test("停止时正在发的消息被中止：下次启动不重发它，只补一句可能没送到的说明", async (t) => {
+	const tg = await fakeTelegram(t);
+	const stateDir = tempStateDir();
+	let hang = false;
+	const http: Http = async (url, init) => {
+		const res = await fetch(url, init);
+		if (hang && url.endsWith("/sendMessage")) {
+			await res.text();
+			return new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason)));
+		}
+		return res;
+	};
+	const first = await tgHost(t, tg, { stateDir, http, brain: () => [], timing: { ...FAST, stopGraceMs: 200 } });
+	tg.userSays(USER, "/start");
+	await until(() => tg.sent.length === 1, "说明");
+	hang = true;
+	first.host.say("停机时在发");
+	await until(() => sentTo(tg, USER).includes("你在网页或终端说：停机时在发"), "Telegram 收下了");
+	await first.stop();
+	await tgHost(t, tg, { stateDir, brain: () => [] });
+	await until(() => sentTo(tg, USER).includes(NOTES.missed), "可能没送到的说明");
+	await sleep(300);
+	assert.equal(sentTo(tg, USER).filter((m) => m === "你在网页或终端说：停机时在发").length, 1);
+});
+
+test("Telegram 给的 retry_after 是 0 或大得离谱：按 1 秒到 1 小时之间等，日志写实际等的秒数", async (t) => {
+	for (const [retryAfter, waits] of [[0, "1 秒后重试"], [2 ** 31, "3600 秒后重试"]] as const) {
+		const tg = await fakeTelegram(t);
+		tg.fail("getUpdates", 429, { parameters: { retry_after: retryAfter } });
+		const { logs, stop } = await tgHost(t, tg);
+		await until(() => tg.calls("getUpdates").length >= 1, "第一次取消息");
+		await sleep(700);
+		assert.ok(tg.calls("getUpdates").length <= 2, `retry_after ${retryAfter}：700 ms 里取了 ${tg.calls("getUpdates").length} 次`);
+		assert.ok(logs.some((l) => l.includes(waits)), logs.join("\n"));
+		await within(stop(), 1000, "等待中宿主停止");
+	}
+});
+
+test("Telegram 收下了消息、本地记账失败：不重发，日志说本地出错，不说发送失败", async (t) => {
+	const tg = await fakeTelegram(t);
+	const original = TelegramStore.prototype.sent;
+	let calls = 0;
+	t.mock.method(TelegramStore.prototype, "sent", function (this: TelegramStore, ...args: Parameters<TelegramStore["sent"]>) {
+		if (calls++ === 0) throw new Error("database is locked");
+		return original.apply(this, args);
+	});
+	const { host, logs } = await tgHost(t, tg);
+	tg.userSays(USER, "hi");
+	await until(() => sentTo(tg, USER).length >= 1, "回复");
+	await host.settled();
+	await sleep(500);
+	assert.deepEqual(sentTo(tg, USER), ["收到：hi"]);
+	assert.ok(calls >= 2, "记账重试过");
+	assert.ok(!logs.some((l) => l.includes("发消息失败")), logs.join("\n"));
+	assert.ok(logs.some((l) => l.includes("database is locked")), logs.join("\n"));
+});
+
+test("Telegram 的本地表读写各抛错一次：宿主不崩，之后照常收发", async (t) => {
+	const tg = await fakeTelegram(t);
+	for (const method of ["next", "setNextUpdateId"] as const) {
+		const original = TelegramStore.prototype[method] as (...args: unknown[]) => unknown;
+		let thrown = false;
+		t.mock.method(TelegramStore.prototype, method, function (this: TelegramStore, ...args: unknown[]) {
+			if (!thrown) {
+				thrown = true;
+				throw new Error(`${method} 出错`);
+			}
+			return original.apply(this, args);
+		});
+	}
+	const { host, logs } = await tgHost(t, tg);
+	tg.userSays(USER, "hi");
+	await until(() => sentTo(tg, USER).includes("收到：hi"), "回复");
+	await host.settled();
+	assert.deepEqual(host.kernel.conversation().filter((l) => l.who === "user").map((l) => l.text), ["hi"]);
+	assert.ok(logs.some((l) => l.includes("next 出错")) && logs.some((l) => l.includes("setNextUpdateId 出错")), logs.join("\n"));
+});
+
+test("把一条 Telegram 消息交给幕僚长时出错：不丢，重试后进对话一次", async (t) => {
+	const tg = await fakeTelegram(t);
+	const { host } = await tgHost(t, tg);
+	const original = host.kernel.userSaid.bind(host.kernel);
+	let calls = 0;
+	t.mock.method(host.kernel, "userSaid", (input: Parameters<Kernel["userSaid"]>[0]) => {
+		if (calls++ === 0) throw new Error("内核暂时写不进去");
+		return original(input);
+	});
+	tg.userSays(USER, "hi");
+	await until(() => sentTo(tg, USER).includes("收到：hi"), "回复", 4000);
+	await host.settled();
+	assert.deepEqual(host.kernel.conversation().filter((l) => l.who === "user").map((l) => l.text), ["hi"]);
+});
+
+test("一条消息连续 5 次交不出去：跳过它，日志不写内容和 id，后面的消息照常", async (t) => {
+	const tg = await fakeTelegram(t);
+	const { host, logs } = await tgHost(t, tg);
+	const original = host.kernel.userSaid.bind(host.kernel);
+	let tries = 0;
+	t.mock.method(host.kernel, "userSaid", (input: Parameters<Kernel["userSaid"]>[0]) => {
+		if (input.text === "坏") {
+			tries++;
+			throw new Error("内核写不进去");
+		}
+		return original(input);
+	});
+	const bad = tg.userSays(USER, "坏");
+	tg.userSays(USER, "好");
+	await until(() => sentTo(tg, USER).includes("收到：好"), "后面的消息照常", 5000);
+	assert.equal(tries, 5);
+	const skipped = logs.filter((l) => l.includes("跳过"));
+	assert.equal(skipped.length, 1, logs.join("\n"));
+	assert.ok(!skipped[0].includes("坏") && !skipped[0].includes(String(bad)) && !skipped[0].includes(String(USER)), skipped[0]);
+	assert.deepEqual(host.kernel.conversation().filter((l) => l.who === "user").map((l) => l.text), ["好"]);
+});
+
+test("退避最长 30 秒", async () => {
+	const { DEFAULT_TIMING } = (await import("../src/host/telegram/client.ts")) as { DEFAULT_TIMING?: { backoffMs: readonly number[] } };
+	assert.ok(DEFAULT_TIMING, "DEFAULT_TIMING 导出");
+	assert.equal(Math.max(...DEFAULT_TIMING.backoffMs), 30_000);
 });

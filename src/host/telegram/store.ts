@@ -33,8 +33,8 @@ CREATE INDEX IF NOT EXISTS telegram_messages_due ON telegram_messages(chat_id) W
 
 const DUE = "gave_up IS NULL AND (sent_version IS NULL OR sent_version < version)";
 
-/** `line:<lineId>` shows a conversation line, `note:<updateId>` answers one update, `setup` tells a writer their id. */
-export type MessageKey = `line:${string}` | `note:${number}` | "setup";
+/** `line:<lineId>` shows a conversation line, `note:<updateId>` answers one update, `setup` tells a writer their id, `missed` says a message may not have arrived. */
+export type MessageKey = `line:${string}` | `note:${number}` | "setup" | "missed";
 
 export type SendableBody = Exclude<OutboundBody, { kind: "received" }>;
 
@@ -140,4 +140,16 @@ export class TelegramStore {
 		this.#db.prepare("UPDATE telegram_messages SET gave_up = ? WHERE chat_id = ? AND key = ?").run(reason, row.chatId, row.key);
 	}
 
+	/**
+	 * Telegram may have shown `row` already, so it is never sent again; the chat gets `note` instead. One note waits per chat
+	 * however many rows end this way before it goes out; a later one goes to the back of the queue.
+	 */
+	maybeSent(row: Pending, note: SendableBody): void {
+		inTransaction(this.#db, () => {
+			this.giveUp(row, "maybe-sent");
+			if (this.#db.prepare(`SELECT 1 FROM telegram_messages WHERE chat_id = ? AND key = 'missed' AND ${DUE}`).get(row.chatId)) return;
+			this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id = ? AND key = 'missed'").run(row.chatId);
+			this.put(row.chatId, "missed", null, note);
+		});
+	}
 }

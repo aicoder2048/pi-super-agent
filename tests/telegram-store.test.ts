@@ -134,3 +134,23 @@ test("在内核已开的事务里写，跟着事务一起回滚", () => {
 	);
 	assert.equal(store.next(), undefined);
 });
+
+test("可能已送达的消息不再发；每个聊天只等着一句说明，发出后再有才排到队尾", () => {
+	const { store } = fresh();
+	const note = { kind: "note" as const, text: "可能没送到" };
+	for (const key of ["a", "b", "c"] as const) store.put(42, `line:${key}`, key, reply(key));
+	store.maybeSent(store.next()!, note);
+	store.maybeSent(store.next()!, note);
+	assert.equal(store.next()?.key, "line:c", "前两条都不再发");
+	store.sent(store.next()!, 500);
+	const first = store.next()!;
+	assert.equal(first.key, "missed");
+	store.sent(first, 501);
+	assert.equal(store.next(), undefined);
+	store.put(42, "line:d", "d", reply("d"));
+	store.put(42, "line:e", "e", reply("e"));
+	store.maybeSent(store.next()!, note);
+	assert.equal(store.next()?.key, "line:e", "新的说明排在已等着的消息之后");
+	store.sent(store.next()!, 502);
+	assert.equal(store.next()?.key, "missed");
+});

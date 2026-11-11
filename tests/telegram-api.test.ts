@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:net";
 import test from "node:test";
 import { inspect } from "node:util";
 import { ConfigError } from "../src/config-error.ts";
@@ -83,6 +84,62 @@ test("fetch 抛出的错误带着网址和 token：变成 network，报错里没
 		assertNoToken(e);
 		return true;
 	});
+});
+
+test("请求没发出去（拒绝连接、域名查不到、连接超时）是 unreachable；发出去后断开、超时是 network，说不准 Telegram 收没收到", async () => {
+	const cases: [string | undefined, string][] = [
+		["ECONNREFUSED", "unreachable"],
+		["ENOTFOUND", "unreachable"],
+		["EAI_AGAIN", "unreachable"],
+		["UND_ERR_CONNECT_TIMEOUT", "unreachable"],
+		["ECONNRESET", "network"],
+		["UND_ERR_SOCKET", "network"],
+		["UND_ERR_HEADERS_TIMEOUT", "network"],
+		[undefined, "network"],
+	];
+	for (const [code, kind] of cases) {
+		const api = new BotApi({
+			token: token(),
+			http: async (url) => {
+				throw new TypeError(`fetch failed ${url}`, { cause: Object.assign(new Error(`${code} ${url}`), code ? { code } : {}) });
+			},
+		});
+		await assert.rejects(api.send(42, "x", false, never), (e: TelegramError) => {
+			assert.equal(e.kind, kind, String(code));
+			assertNoToken(e);
+			return true;
+		});
+	}
+	const timedOut = new BotApi({ token: token(), http: async () => { throw new DOMException("The operation was aborted due to timeout", "TimeoutError"); } });
+	await assert.rejects(timedOut.send(42, "x", false, never), (e: TelegramError) => e.kind === "network");
+});
+
+test("本机一个没人监听的端口：真实的 fetch 报拒绝连接，归为 unreachable", async () => {
+	const server = createServer();
+	await new Promise<void>((listening) => server.listen(0, "127.0.0.1", listening));
+	const { port } = server.address() as { port: number };
+	await new Promise((closed) => server.close(closed));
+	const api = new BotApi({ token: token(), baseUrl: `http://127.0.0.1:${port}` });
+	await assert.rejects(api.send(42, "x", false, never), (e: TelegramError) => e.kind === "unreachable");
+});
+
+test("retry_after 夹在 1 秒到 1 小时之间；别的状态带 retry_after 也按限流处理", async () => {
+	const cases: [number, unknown, number][] = [
+		[429, 0, 1000],
+		[429, -5, 1000],
+		[429, 2 ** 31, 3_600_000],
+		[429, 1e400, 3_600_000],
+		[500, 3, 3000],
+	];
+	for (const [status, retryAfter, ms] of cases) {
+		const respond = () => new Response(`{"ok":false,"error_code":${status},"description":"wait","parameters":{"retry_after":${retryAfter === 1e400 ? "1e400" : retryAfter}}}`, { status });
+		const api = new BotApi({ token: token(), http: fakeHttp(respond).http });
+		await assert.rejects(api.send(42, "x", false, never), (e: TelegramError) => {
+			assert.equal(e.kind, "rate_limited", `${status} ${retryAfter}`);
+			assert.equal(e.retryAfterMs, ms, `${status} ${retryAfter}`);
+			return true;
+		});
+	}
 });
 
 test("401 的 description 里带着 token：变成 unauthorized，报错里没有 token", async () => {
