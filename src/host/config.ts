@@ -1,11 +1,12 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_MODELS, parseModelRef, type ModelRef } from "../models.ts";
 import type { KernelConfig } from "../kernel/types.ts";
 import { ConfigError, readJsonFile } from "../config-error.ts";
 import { MEMBER_CAP_DEFAULT, MEMBER_CAP_MAX } from "./member-cap.ts";
+import { within } from "./output.ts";
 import { parseWebHosts, type TailnetName } from "./web-hosts.ts";
 
 export interface HostConfig {
@@ -132,11 +133,6 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		sources,
 	};
 }
-
-const within = (parent: string, child: string) => {
-	const rel = relative(parent, child);
-	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-};
 
 function parseOutputDir(value: unknown, stateDir: string, file: string): string {
 	if (value !== undefined && typeof value !== "string") throw new ConfigError(`${file}：outputDir（${JSON.stringify(value)}）必须是目录路径字符串，相对路径按状态目录算`);

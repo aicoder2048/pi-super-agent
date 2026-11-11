@@ -17,7 +17,7 @@ import { Dispatcher } from "./dispatcher.ts";
 import { HostServer, type AnswerResult, type Broadcast } from "./server.ts";
 import type { BoardState, Duty, MemberCapBoard, TodayCounts, TranscriptHistory, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
 import { readSessionEntries } from "../jsonl.ts";
-import { memberTranscripts } from "./dispatch.ts";
+import { helperSessionDir, memberTranscripts } from "./dispatch.ts";
 import { WebGateway } from "./web.ts";
 import { loadToken } from "./web-token.ts";
 import type { TailnetName } from "./web-hosts.ts";
@@ -342,7 +342,7 @@ export class Host {
 	transcript(ticketId: string): TranscriptHistory {
 		const ticket = this.kernel.getTicket(ticketId);
 		if (!ticket) return { messages: [] };
-		const dir = join(this.#stateDir, "sessions", "workers");
+		const dir = helperSessionDir(this.#stateDir);
 		const file = existsSync(dir) ? readdirSync(dir).find((f) => f.endsWith(`_${ticket.workerSessionId}.jsonl`)) : undefined;
 		const messages = file ? readSessionEntries(join(dir, file)).filter((entry) => entry.type === "message" && entry.message?.role !== "system").map((entry) => entry.message as TranscriptMessage) : [];
 		const crew = (ticket.domain !== null && this.#kitFor?.(ticket.domain)?.crew) || [];

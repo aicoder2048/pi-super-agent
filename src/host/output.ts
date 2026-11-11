@@ -1,5 +1,8 @@
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
+import { helperSessionDir } from "./dispatch.ts";
+import { scanSessions, type Placement, type ScanCursor, type SessionToScan, type WriteCheck } from "./write-check.ts";
 
 /** One kind of thing in the output root. `dir` is relative to the root, posix, without a trailing slash. */
 export interface OutputKind {
@@ -66,6 +69,22 @@ export interface App {
 	isNew: boolean;
 }
 
+/** True when `child` is `parent` or inside it; both absolute. */
+export const within = (parent: string, child: string) => {
+	const rel = relative(parent, child);
+	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+};
+
+/** The real path of `path`, through its nearest existing ancestor when it does not exist yet (/tmp is /private/tmp on macOS). */
+function real(path: string): string {
+	try {
+		return realpathSync(path);
+	} catch {
+		const parent = dirname(path);
+		return parent === path ? path : join(real(parent), basename(path));
+	}
+}
+
 export class OutputRoot {
 	/** Absolute; the resolved config value, and the path the prompts name. */
 	readonly root: string;
@@ -89,6 +108,37 @@ export class OutputRoot {
 		const dir = join(apps, app);
 		mkdirSync(dir, { recursive: true });
 		return { app, dir, isNew };
+	}
+
+	/** What the ticket's helper and members wrote outside since `since`, read from their session files. */
+	checkWrites(ticket: { id: string; workerSessionId: string }, since: ScanCursor): WriteCheck {
+		return scanSessions(this.#sessions(ticket), since, this.#placement(ticket.id), homedir());
+	}
+
+	#sessions(ticket: { id: string; workerSessionId: string }): SessionToScan[] {
+		const jsonl = (dir: string) => (statSync(dir, { throwIfNoEntry: false })?.isDirectory() ? readdirSync(dir).filter((f) => f.endsWith(".jsonl")).sort() : []);
+		const entry = (file: string, by: SessionToScan["by"]) => ({ file, key: relative(this.#stateDir, file), by });
+		const helpers = helperSessionDir(this.#stateDir);
+		const team = join(this.#stateDir, "workers", ticket.id, "team");
+		return [
+			...jsonl(helpers).filter((f) => f.endsWith(`_${ticket.workerSessionId}.jsonl`)).map((f) => entry(join(helpers, f), { role: "helper" })),
+			...(existsSync(team) ? readdirSync(team) : []).flatMap((name) => jsonl(join(team, name)).map((f) => entry(join(team, name, f), { role: "member", name }))),
+		];
+	}
+
+	/**
+	 * Inside: the output root, this ticket's workdir, and the temp directories. Elsewhere in the state directory is outside,
+	 * even when the state directory itself sits in a temp directory, so config.json and the tokens are never inside.
+	 */
+	#placement(ticketId: string): Placement {
+		const state = real(this.#stateDir);
+		const own = [real(this.root), real(join(this.#stateDir, "workers", ticketId))];
+		const temp = [real(tmpdir()), real("/tmp")];
+		return (path) => {
+			const p = real(path);
+			if (within(state, p)) return own.some((dir) => within(dir, p)) ? "inside" : "outside";
+			return [...own, ...temp].some((dir) => within(dir, p)) ? "inside" : "outside";
+		};
 	}
 
 	/** Makes the root and every kind's directory and rewrites README.md from the table. Leaves products alone; safe to repeat. */

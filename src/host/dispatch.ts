@@ -119,6 +119,9 @@ export interface MemberRun {
 	onMessage(message: TranscriptMessage): void;
 }
 
+/** Where Pi keeps each helper's session, as <timestamp>_<sessionId>.jsonl. */
+export const helperSessionDir = (stateDir: string) => join(stateDir, "sessions", "workers");
+
 export const memberSessionDir = (stateDir: string, ticketId: string, member: string) => join(stateDir, "workers", ticketId, "team", member);
 
 export function memberSessionDirs(stateDir: string): string[] {
