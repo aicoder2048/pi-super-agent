@@ -219,6 +219,7 @@ function mount(doc) {
 		const head = el("div", "head");
 		head.append(avatarNode(card.avatar), el("div", "title", card.title));
 		node.append(head, el("div", "by", card.helper), el("div", "why", `${card.why} · ${card.stage}`), md("latest", card.latest));
+		if (card.outside) node.append(el("div", "outside", card.outside));
 		if (card.crew) node.append(crewNode(card.crew));
 		if (card.choice) {
 			const box = el("div", "choices");

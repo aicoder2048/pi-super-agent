@@ -203,3 +203,9 @@ export function teamWork(row) {
 
 /** @param {DashboardRow} row */
 export const helperLine = (row) => [helperFullName(row.helper), teamWork(row)].filter(Boolean).join(" · ");
+
+/** The board's line for a task's writes outside the output root (ADR-0015); "" when there is none. @param {DashboardRow["outside"] | undefined} tally */
+export function outsideLine(tally) {
+	if (!tally) return "";
+	return `写到成品目录之外 ${tally.count} 处：${tally.sample.join("、")}${tally.count > tally.sample.length ? " …" : ""}`;
+}

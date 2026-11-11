@@ -18,7 +18,7 @@
 /** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
 /** @typedef {import("../client/board-format.mjs").StepIcon} StepIcon */
 
-import { HOST_SOURCE, INPUT_LABEL, QUOTE_WHO, blocks, clip, firstLine, formatElapsed, formatSpan, formatTokens, helperFullName, helperLabel, modelText, oneLine, shortId, stallMinutes, teamWork, textOf, toolStep } from "../client/board-format.mjs";
+import { HOST_SOURCE, INPUT_LABEL, QUOTE_WHO, blocks, clip, firstLine, formatElapsed, formatSpan, formatTokens, helperFullName, helperLabel, modelText, oneLine, outsideLine, shortId, stallMinutes, teamWork, textOf, toolStep } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -209,6 +209,7 @@ export function questionOf(view, reportId) {
  * @property {string} why
  * @property {string} stage
  * @property {string} latest
+ * @property {string} outside the host's count of writes outside the output root, or ""
  * @property {boolean} canStop
  * @property {Choice | null} choice
  */
@@ -224,6 +225,7 @@ function card(row, now, sending) {
 		why: BASIS_PHRASE[row.basis],
 		stage: row.stall ? `久无进展 · ${stallMinutes(row.stall.since, now)} 分钟` : STAGE_PHRASE[row.stage],
 		latest: row.question?.text ?? row.latestSummary ?? "已开始，暂无进展",
+		outside: outsideLine(row.outside),
 		canStop: GROUP[row.stage] === "doing",
 		choice: choiceOf(row.question, sending),
 	};
