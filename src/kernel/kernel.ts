@@ -548,7 +548,6 @@ export class Kernel {
 		});
 	}
 
-	/** A ticket with no dispatch record (no team, or opened before records were kept) stays without one. */
 	recordDispatch(ticketId: string, memberTitle: string): void {
 		this.#tx(() => {
 			const stored = this.#requireTicket(ticketId).dispatched_to;

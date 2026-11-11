@@ -63,7 +63,7 @@ export const HELPER_ROLE_LABEL = { conversation: "对话助手", market: "行情
 /** @param {Helper} helper */
 export const helperLabel = (helper) => `${"team" in helper ? `${helper.team ?? ""}领队` : HELPER_ROLE_LABEL[helper.role]} #${helper.seq}`;
 
-/** 「青檀 · 行情助手 #2」 or 「高山流水 · 美股看盘队领队 #2」; "" for a ticket the host has not named yet. @param {Helper | null} helper */
+/** @param {Helper | null} helper */
 export const helperFullName = (helper) => (helper ? `${helper.name} · ${helperLabel(helper)}` : "");
 
 export const DEFAULT_ACK_TIMEOUT_MS = 5000;
@@ -179,7 +179,7 @@ function reportTitle(a) {
  */
 export const toolStep = (name, args) => TOOL_STEP[name]?.(args) ?? { title: `调用工具 ${name}`, detail: "" };
 
-/** Whether a team ticket's 领队 dispatched, and to whom; "" when there is no record to say it from. @param {DashboardRow} row */
+/** @param {DashboardRow} row */
 export function teamWork(row) {
 	if (!row.helper || !("team" in row.helper) || row.dispatchedTo === null) return "";
 	if (row.dispatchedTo.length > 0) return `派给 ${row.dispatchedTo.join("、")}`;
@@ -188,5 +188,5 @@ export function teamWork(row) {
 	return "暂未派活";
 }
 
-/** The task card's and the 执行过程 header's helper line. @param {DashboardRow} row */
+/** @param {DashboardRow} row */
 export const helperLine = (row) => [helperFullName(row.helper), teamWork(row)].filter(Boolean).join(" · ");
