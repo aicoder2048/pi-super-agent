@@ -2,7 +2,7 @@
 // something to one bot, so they live together here and are wiped together when the bot changes.
 import type { DatabaseSync } from "node:sqlite";
 import { inTransaction } from "../../kernel/store.ts";
-import type { OutboundBody } from "./rules.ts";
+import type { CardView, OutboundBody } from "./rules.ts";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS telegram_bot (
@@ -32,9 +32,15 @@ CREATE INDEX IF NOT EXISTS telegram_messages_due ON telegram_messages(chat_id) W
 `;
 
 const DUE = "gave_up IS NULL AND (sent_version IS NULL OR sent_version < version)";
+const CARD_STATUS = "body ->> '$.view.status.kind'";
+// A card that closed before Telegram ever showed it has nothing to tell the user. If its first send is still in flight, sent() records the message_id and the close goes out as an edit.
+const NOTHING_TO_CLOSE = `message_id IS NULL AND ${CARD_STATUS} IS 'closed'`;
 
-/** `line:<lineId>` shows a conversation line, `note:<updateId>` answers one update, `setup` tells a writer their id. */
-export type MessageKey = `line:${string}` | `note:${number}` | "setup";
+/**
+ * `line:<lineId>` shows a conversation line, `ask:<reportId>` is the card for a helper's question, `cap:<capAskId>` the member-cap note,
+ * `note:<updateId>` answers one update, `setup` tells a writer their id.
+ */
+export type MessageKey = `line:${string}` | `ask:${string}` | `cap:${string}` | `note:${number}` | "setup";
 
 export type SendableBody = Exclude<OutboundBody, { kind: "received" }>;
 
@@ -119,8 +125,14 @@ export class TelegramStore {
 			.run(chatId, `line:${lineId}`, lineId, JSON.stringify({ kind: "received" } satisfies OutboundBody), messageId, this.#now());
 	}
 
+	/** The question cards in this chat that have not closed yet. */
+	openCards(chatId: number): CardView[] {
+		const rows = this.#db.prepare(`SELECT body FROM telegram_messages WHERE chat_id = ? AND key LIKE 'ask:%' AND ${CARD_STATUS} != 'closed'`).all(chatId) as { body: string }[];
+		return rows.map((r) => JSON.parse(r.body).view);
+	}
+
 	next(): Pending | undefined {
-		const row = this.#db.prepare(`SELECT chat_id, key, version, message_id, body FROM telegram_messages WHERE ${DUE} ORDER BY rowid LIMIT 1`).get() as
+		const row = this.#db.prepare(`SELECT chat_id, key, version, message_id, body FROM telegram_messages WHERE ${DUE} AND NOT (${NOTHING_TO_CLOSE}) ORDER BY rowid LIMIT 1`).get() as
 			| { chat_id: number; key: MessageKey; version: number; message_id: number | null; body: string }
 			| undefined;
 		return row && { chatId: row.chat_id, key: row.key, version: row.version, messageId: row.message_id, body: JSON.parse(row.body) };

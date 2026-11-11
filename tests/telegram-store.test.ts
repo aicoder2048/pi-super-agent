@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import test from "node:test";
 import { inTransaction, openStore } from "../src/kernel/store.ts";
+import type { CardView } from "../src/host/telegram/rules.ts";
 import { TelegramStore } from "../src/host/telegram/store.ts";
 import { tempStateDir } from "./helpers/fakes.ts";
 
@@ -122,4 +123,41 @@ test("在内核已开的事务里写，跟着事务一起回滚", () => {
 		}),
 	);
 	assert.equal(store.next(), undefined);
+});
+
+const view = (status: CardView["status"], reportId = "rpt_1"): CardView => ({ reportId, title: "查天气", helper: "青檀 · 对话助手 #1", question: "查哪个城市？", options: ["北京", "上海"], status });
+const card = (status: CardView["status"], reportId = "rpt_1") => ({ kind: "card" as const, view: view(status, reportId) });
+
+test("卡片发出后内容变了是一次编辑：待发的那一行带着 Telegram 的 message_id", () => {
+	const { store } = fresh();
+	store.put(42, "ask:rpt_1", null, card({ kind: "open" }));
+	store.sent(store.next()!, 600);
+	store.put(42, "ask:rpt_1", null, card({ kind: "open" }));
+	assert.equal(store.next(), undefined, "同样的卡片不再发");
+	store.put(42, "ask:rpt_1", null, card({ kind: "sent", label: "上海" }));
+	assert.deepEqual(store.next(), { chatId: 42, key: "ask:rpt_1", version: 2, messageId: 600, body: card({ kind: "sent", label: "上海" }) });
+});
+
+test("还没发出就已结束的卡片不发；正在发的卡片发完后再编辑成已结束", () => {
+	const { store } = fresh();
+	store.put(42, "ask:rpt_1", null, card({ kind: "open" }));
+	store.put(42, "ask:rpt_1", null, card({ kind: "closed", label: null }));
+	assert.equal(store.next(), undefined);
+	store.put(42, "ask:rpt_2", null, card({ kind: "open" }, "rpt_2"));
+	const inFlight = store.next()!;
+	store.put(42, "ask:rpt_2", null, card({ kind: "closed", label: null }, "rpt_2"));
+	assert.equal(store.next(), undefined, "发出去之前不知道 message_id，没有可编辑的");
+	store.sent(inFlight, 601);
+	assert.deepEqual(store.next(), { chatId: 42, key: "ask:rpt_2", version: 2, messageId: 601, body: card({ kind: "closed", label: null }, "rpt_2") });
+});
+
+test("还开着的卡片：只列这个聊天里没结束的问题卡片", () => {
+	const { store } = fresh();
+	store.put(42, "ask:rpt_1", null, card({ kind: "open" }));
+	store.put(42, "ask:rpt_2", null, card({ kind: "sent", label: "北京" }, "rpt_2"));
+	store.put(42, "ask:rpt_3", null, card({ kind: "closed", label: null }, "rpt_3"));
+	store.put(43, "ask:rpt_4", null, card({ kind: "open" }, "rpt_4"));
+	store.put(42, "cap:ask_cap_2026-11-11", null, { kind: "note", text: "成员上限" });
+	store.put(42, "line:rpl_1", "rpl_1", reply("收到。"));
+	assert.deepEqual(store.openCards(42).map((v) => v.reportId).sort(), ["rpt_1", "rpt_2"]);
 });
