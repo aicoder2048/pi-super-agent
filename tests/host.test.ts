@@ -292,7 +292,7 @@ test("同一句话带同一个 externalId 再说一次：只记一条触发，�
 		conn.close();
 		await host.stop();
 	});
-	await until(() => conn.connected, "连接");
+	await until(() => ofType(got, "snapshot").length === 1, "宿主收下了客户端");
 	const first = host.say("查一下 NVDA", { externalId: "tg:123:5" });
 	assert.equal(host.say("查一下 NVDA", { externalId: "tg:123:5" }), first);
 	host.say("另一句", { externalId: "tg:123:6" });

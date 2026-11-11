@@ -203,8 +203,9 @@ test("停止时正在发的消息被中止：下次启动不重发它，只补�
 	const stateDir = tempStateDir();
 	let hang = false;
 	const http: Http = async (url, init) => {
+		const hangThis = hang && url.endsWith("/sendMessage");
 		const res = await fetch(url, init);
-		if (hang && url.endsWith("/sendMessage")) {
+		if (hangThis) {
 			await res.text();
 			return new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason)));
 		}

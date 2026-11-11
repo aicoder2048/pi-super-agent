@@ -71,7 +71,7 @@ function watch(t: TestContext, host: Host) {
 	const conn = new HostConnection({ socketPath: host.socketPath, onMessage: (m) => got.push(m), retryMs: 30 });
 	conn.open();
 	t.after(() => conn.close());
-	return { got, connected: () => until(() => conn.connected, "连接") };
+	return { got, connected: () => until(() => ofType(got, "snapshot").length === 1, "宿主收下了客户端") };
 }
 
 const userLines = (host: Host) => host.kernel.conversation().filter((l) => l.who === "user").map((l) => l.text);
