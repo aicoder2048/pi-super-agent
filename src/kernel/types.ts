@@ -299,7 +299,10 @@ export interface DashboardRow {
 }
 
 export interface OutsideTally {
-	count: number;
+	/** Exact write and edit calls. */
+	wrote: number;
+	/** Bash and bg_start guesses, plus entries past the per-check cap, whose kind was never recorded. */
+	maybe: number;
 	sample: string[];
 }
 

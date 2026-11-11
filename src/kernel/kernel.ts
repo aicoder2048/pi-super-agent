@@ -749,8 +749,9 @@ export class Kernel {
 		const rows = this.#all("SELECT outside_writes, outside_omitted FROM reports WHERE ticket_id = ? AND (outside_writes <> '[]' OR outside_omitted > 0) ORDER BY seq", ticketId);
 		if (rows.length === 0) return null;
 		const writes = rows.flatMap((r) => JSON.parse(r.outside_writes) as OutsideWrite[]);
-		const count = writes.length + rows.reduce((n, r) => n + (r.outside_omitted as number), 0);
-		return { count, sample: writes.flatMap((w) => (w.kind === "wrote" ? [w.path] : w.paths)).slice(0, OUTSIDE_SAMPLE) };
+		const wrote = writes.filter((w) => w.kind === "wrote").length;
+		const maybe = writes.length - wrote + rows.reduce((n, r) => n + (r.outside_omitted as number), 0);
+		return { wrote, maybe, sample: writes.flatMap((w) => (w.kind === "wrote" ? [w.path] : w.paths)).slice(0, OUTSIDE_SAMPLE) };
 	}
 
 	/** Tickets opened on today's New York date and the tokens they used. */

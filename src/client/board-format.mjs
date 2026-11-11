@@ -205,8 +205,9 @@ export function teamWork(row) {
 /** @param {DashboardRow} row */
 export const helperLine = (row) => [helperFullName(row.helper), teamWork(row)].filter(Boolean).join(" · ");
 
-/** The board's line for a task's writes outside the output root (ADR-0015); "" when there is none. @param {DashboardRow["outside"] | undefined} tally */
+/** The board's line for a task's writes outside the output root (ADR-0015), a guess said only as 可能; "" when there is none. @param {DashboardRow["outside"] | undefined} tally */
 export function outsideLine(tally) {
 	if (!tally) return "";
-	return `写到成品目录之外 ${tally.count} 处：${tally.sample.join("、")}${tally.count > tally.sample.length ? " …" : ""}`;
+	const head = tally.wrote === 0 ? `可能写到成品目录之外 ${tally.maybe} 处` : `写到成品目录之外 ${tally.wrote} 处${tally.maybe ? `，另有 ${tally.maybe} 处可能` : ""}`;
+	return `${head}：${tally.sample.join("、")}${tally.wrote + tally.maybe > tally.sample.length ? " …" : ""}`;
 }
