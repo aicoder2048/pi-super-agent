@@ -523,3 +523,25 @@ test("编辑卡片时 Telegram 的回应说不清（500）：编辑把卡片设�
 	assert.ok(!sentTo(tg, USER).includes(NOTES.missed), "没有改发说明");
 	assert.equal(cards(tg, USER).length, 1, "没有重发卡片");
 });
+
+const dropBrain: Brain = (cards) =>
+	cards.flatMap((card) => {
+		const clicked = card.split("\n").find((l) => l.startsWith("点选回答："));
+		if (card.startsWith("[对话]") && clicked) return [{ name: "reply", args: { text: "先不转交。", cause: ids(card, "trg") } }];
+		if (card.startsWith("[对话]") && card.includes("使用者：查天气")) return openOnConversation(card);
+		if (card.startsWith("[Worker 提问]")) return [{ name: "reply", args: { text: "查哪个城市？", cause: ids(card, "tkt") } }];
+		if (card.startsWith("[对话]")) return [{ name: "reply", args: { text: "收到。", cause: ids(card, "trg") } }];
+		return [];
+	});
+
+test("真宿主：点一次，幕僚长没转交；Telegram 重投这次点的 update：不再多一条回答，提示照旧", async (t) => {
+	const { host, tg, card } = await askedOnTelegram(t, { brain: dropBrain });
+	const updateId = tg.push({ callback_query: { id: "cb-once", from: { id: USER, is_bot: false, first_name: "测试" }, message: { message_id: card.messageId, chat: { id: USER, type: "private" } }, chat_instance: "fake", data: card.buttons![1][0].data } });
+	await until(() => tg.toastFor("cb-once") !== undefined, "点的回应");
+	await until(() => /幕僚长没有转交这次选择/.test(tg.shown(card.messageId)!.text), "卡片显示没转交、按钮回来", 5000);
+	tg.redeliver(updateId);
+	await until(() => tg.tapAnswers.filter((a) => a.callbackId === "cb-once").length === 2, "重投的 update 被处理");
+	await host.settled();
+	assert.equal(userLines(host).filter((l) => l === `回答任务「查天气」：${CITY}`).length, 1, "一次点只答一次");
+	assert.deepEqual(tg.tapAnswers.filter((a) => a.callbackId === "cb-once").map((a) => a.text), ["已发送", "已发送"]);
+});

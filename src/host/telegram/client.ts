@@ -226,8 +226,12 @@ export class TelegramClient {
 					break;
 				}
 				case "answer": {
-					const result = this.#host.answer(inbound.reportId, inbound.option, { from: { client: "telegram", chatId: inbound.chatId } });
-					this.#answerTap(inbound.callbackId, result.ok ? TAP_TAKEN : refusalText(result.refusal));
+					const { chatId, reportId, option } = inbound;
+					const toast = this.#store.tapOnce(updateId, () => {
+						const result = this.#host.answer(reportId, option, { from: { client: "telegram", chatId } });
+						return result.ok ? TAP_TAKEN : refusalText(result.refusal);
+					});
+					this.#answerTap(inbound.callbackId, toast);
 					break;
 				}
 				case "refuse-tap":

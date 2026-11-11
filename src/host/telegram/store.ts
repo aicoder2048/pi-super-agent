@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS telegram_messages (
 	created_at INTEGER NOT NULL,
 	PRIMARY KEY (chat_id, key)
 );
+CREATE TABLE IF NOT EXISTS telegram_taps (
+	update_id INTEGER PRIMARY KEY,
+	toast TEXT NOT NULL
+);
 CREATE UNIQUE INDEX IF NOT EXISTS telegram_messages_shown ON telegram_messages(chat_id, message_id) WHERE message_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS telegram_messages_due ON telegram_messages(chat_id) WHERE gave_up IS NULL AND (sent_version IS NULL OR sent_version < version);
 `;
@@ -71,7 +75,7 @@ export class TelegramStore {
 		inTransaction(this.#db, () => {
 			const bot = this.#db.prepare("SELECT bot_id FROM telegram_bot WHERE id = 1").get() as { bot_id: number } | undefined;
 			if (bot?.bot_id !== this.#botId) {
-				this.#db.exec("DELETE FROM telegram_messages; DELETE FROM telegram_chats; DELETE FROM telegram_bot");
+				this.#db.exec("DELETE FROM telegram_messages; DELETE FROM telegram_chats; DELETE FROM telegram_taps; DELETE FROM telegram_bot");
 				this.#db.prepare("INSERT INTO telegram_bot (id, bot_id) VALUES (1, ?)").run(this.#botId);
 			}
 			this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id NOT IN (SELECT value FROM json_each(?))").run(keep);
@@ -131,6 +135,20 @@ export class TelegramStore {
 	openCards(chatId: number): CardView[] {
 		const rows = this.#db.prepare(`SELECT body FROM telegram_messages WHERE chat_id = ? AND key LIKE 'ask:%' AND ${CARD_STATUS} != 'closed'`).all(chatId) as { body: string }[];
 		return rows.map((r) => JSON.parse(r.body).view);
+	}
+
+	/**
+	 * Handles a tap once per update: `handle` runs in the same transaction that records its toast, and a redelivered
+	 * update gets that toast back without running it again.
+	 */
+	tapOnce(updateId: number, handle: () => string): string {
+		return inTransaction(this.#db, () => {
+			const seen = this.#db.prepare("SELECT toast FROM telegram_taps WHERE update_id = ?").get(updateId) as { toast: string } | undefined;
+			if (seen) return seen.toast;
+			const toast = handle();
+			this.#db.prepare("INSERT INTO telegram_taps (update_id, toast) VALUES (?, ?)").run(updateId, toast);
+			return toast;
+		});
 	}
 
 	next(): Pending | undefined {
