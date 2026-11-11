@@ -8,6 +8,7 @@
 
 1. 在 Telegram 里找 `@BotFather`，发 `/newbot`，按提示起名字和用户名（用户名以 `bot` 结尾）。
 2. BotFather 回一个 token，形如 `123456789:AA...`。冒号前的数字是机器人的 id，整串是密码，不要发给别人，不要贴进聊天或截图。
+3. 同一条回复里还有一个 `t.me/<机器人用户名>` 链接，之后在手机上点它就能打开机器人。
 
 ## 2. 放 token
 
@@ -27,7 +28,7 @@ chmod 600 ~/.pi-super-agent/secrets.env
 
 ## 3. 用设置模式找到你的数字 id
 
-在状态目录的 `config.json` 里加上 `telegram` 段，名单先留空：
+在状态目录的 `config.json` 里加上 `telegram` 段，名单先留空。已有的 `models`、`webHosts`、`secretsFile` 等字段照旧保留，下面只列出相关的两项：
 
 ```json
 {
@@ -44,13 +45,15 @@ chmod 600 ~/.pi-super-agent/secrets.env
 [telegram] 已连上 @你的机器人，设置模式
 ```
 
-在手机上打开机器人，点「开始」或随便发一句。机器人回：
+在手机上打开机器人：点第 1 步里 BotFather 给的 `t.me/<机器人用户名>` 链接，或者在 Telegram 顶部的搜索框里输入机器人的用户名（以 `bot` 结尾），点搜索结果。打开后点屏幕底部的「开始」（英文界面是 START），或者随便发一句。机器人回：
 
 ```
 你的 Telegram 数字 id 是 987654321。把这个数字写进宿主状态目录里 config.json 的 telegram.allowedUserIds，重启宿主后就能在这里和幕僚长对话。
 ```
 
 设置模式下谁私聊都会收到他自己的 id，每个聊天一次；任何消息都不交给幕僚长。
+
+机器人没有回：看宿主日志里有没有「已连上 @你的机器人，设置模式」这一行。没有任何 `[telegram]` 开头的行，就是宿主跑的代码还没有这个功能，或者 `config.json` 里没有 `telegram` 段；有「Telegram 拒绝了 bot token（401）」，就是 token 抄错了，改好后重启宿主。
 
 ## 4. 写进名单
 
