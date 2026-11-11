@@ -113,6 +113,7 @@ test("「宿主检查」最多列 10 条，多的和没列出的合起来写另�
 test("幕僚长的提示词：汇报带「宿主检查」时，用一句话告诉使用者有文件写到了成品目录之外，举出最多三个路径；不解释、不说已处理、不新开任务", () => {
 	const prompt = routerSystemPrompt("", 200, ROSTER);
 	const line = prompt.split("\n").find((l) => l.includes("宿主检查")) ?? "";
+	assert.match(line, /列出了写到外面的路径时/, "只写了没能检查完的那一段，不该说有文件写到了外面");
 	assert.match(line, /一句话/);
 	assert.match(line, /最多三个路径/);
 	assert.match(line, /不要因此新开任务/);
