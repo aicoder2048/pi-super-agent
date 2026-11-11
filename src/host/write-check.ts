@@ -110,11 +110,15 @@ const PACKAGE_MANAGERS: Record<string, readonly string[]> = {
 	pip3: ["install"],
 };
 const GIT_WRITES = ["add", "commit", "checkout", "switch", "reset", "restore", "apply", "mv", "rm", "stash", "merge", "rebase", "pull", "clone", "init"];
-const RUNNERS = ["python", "python3", "node", "deno", "bun", "tsx", "bash", "sh", "zsh"];
+const SHELLS = ["bash", "sh", "zsh"];
+const INTERPRETERS = ["python", "python3", "node", "deno", "bun", "tsx"];
+const WRITES_IN_CODE = /write|open\s*\([^)]*,\s*['"][wax]|mkdir|makedirs|rename|unlink|remove|rmtree|copy|move|symlink|touch|appendFile|rmSync|cpSync|\brm\(/;
+const PI_WRITES = ["install", "remove", "uninstall", "update"];
 
 /**
  * A best guess at the absolute paths one shell command may write. It errs on reporting more, since the result reads as "may have written".
  * Heredoc bodies are dropped, the command splits at unquoted && || ; | & and newlines, and a cd holds for the rest of the command.
+ * An interpreter's script and its arguments do not count, nor does running something in a directory: only what the command itself writes.
  */
 export function bashTargets(command: string, cwd: string, home: string): string[] {
 	const targets: string[] = [];
@@ -122,7 +126,7 @@ export function bashTargets(command: string, cwd: string, home: string): string[
 	for (const segment of segments(withoutHeredocBodies(command))) {
 		const { words, redirects } = parseSegment(segment, home);
 		const at = (p: string) => resolve(here, p);
-		targets.push(...redirects.filter((r) => !r.startsWith("/dev/")).map(at));
+		targets.push(...redirects.map(at));
 		const start = words.findIndex((w) => !/^\w+=/.test(w));
 		if (start < 0) continue;
 		const [cmd, ...rest] = words.slice(start);
@@ -131,12 +135,12 @@ export function bashTargets(command: string, cwd: string, home: string): string[
 			here = at(plain[0] ?? home);
 			continue;
 		}
-		targets.push(...commandTargets(cmd, rest, plain, segment, here !== cwd, here).map(at));
+		targets.push(...commandTargets(cmd, rest, plain, here, home).map(at));
 	}
-	return [...new Set(targets)];
+	return [...new Set(targets)].filter((p) => !p.startsWith("/dev/"));
 }
 
-function commandTargets(cmd: string, rest: string[], plain: string[], segment: string, movedDir: boolean, here: string): string[] {
+function commandTargets(cmd: string, rest: string[], plain: string[], here: string, home: string): string[] {
 	const valueOf = (...flags: string[]) => {
 		const i = rest.findIndex((a) => flags.includes(a));
 		return i >= 0 ? rest[i + 1] : undefined;
@@ -177,7 +181,15 @@ function commandTargets(cmd: string, rest: string[], plain: string[], segment: s
 		}
 	}
 	if (PACKAGE_MANAGERS[cmd]?.includes(rest[0] ?? "")) return [here];
-	if (RUNNERS.includes(cmd)) return [...absolutePathsIn(segment), ...(movedDir ? [here] : [])];
+	if (cmd === "pi" && PI_WRITES.includes(plain[0] ?? "")) return [rest.includes("-l") || rest.includes("--local") ? join(here, ".pi") : join(home, ".pi", "agent")];
+	if (SHELLS.includes(cmd)) {
+		const code = valueOf("-c");
+		return code === undefined ? [] : bashTargets(code, here, home);
+	}
+	if (INTERPRETERS.includes(cmd)) {
+		const code = valueOf("-c", "-e", "--eval");
+		return code !== undefined && WRITES_IN_CODE.test(code) ? absolutePathsIn(code) : [];
+	}
 	return [];
 }
 
@@ -225,7 +237,7 @@ function segments(command: string): string[] {
 	return out.map((s) => s.trim()).filter(Boolean);
 }
 
-/** Splits one segment into words, with quotes removed and a leading unquoted ~ expanded, and pulls out the redirect targets. */
+/** Splits one segment into words, with quotes removed, a leading unquoted ~ and any $HOME outside single quotes expanded, and pulls out the redirect targets. */
 function parseSegment(segment: string, home: string): { words: string[]; redirects: string[] } {
 	const tokens: string[] = [];
 	let current: string | undefined;
@@ -236,6 +248,12 @@ function parseSegment(segment: string, home: string): { words: string[]; redirec
 	};
 	for (let i = 0; i < segment.length; i++) {
 		const c = segment[i];
+		const homeVar = quote === "'" || c !== "$" ? undefined : /^\$(HOME\b|\{HOME\})/.exec(segment.slice(i))?.[0];
+		if (homeVar) {
+			current = (current ?? "") + home;
+			i += homeVar.length - 1;
+			continue;
+		}
 		if (quote) {
 			if (c === quote) quote = undefined;
 			else current += c === "\\" && quote === '"' ? segment[++i] : c;
