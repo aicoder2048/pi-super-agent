@@ -221,9 +221,8 @@ export class TelegramClient {
 			await this.#pause(Math.max(this.#lastSendAt + this.#timing.minGapMs, this.#pauseUntil) - Date.now());
 			if (this.#state === "off") return;
 			this.#lastSendAt = Date.now();
-			const { text, silent } = render(row.body);
 			try {
-				this.#store.sent(row, await this.#api.send(row.chatId, text, silent, this.#sending.signal));
+				this.#store.sent(row, await this.#api.send(row.chatId, render(row.body), this.#sending.signal));
 				failures = 0;
 			} catch (error) {
 				if (!this.#afterSendError(error, row, failures++)) return;

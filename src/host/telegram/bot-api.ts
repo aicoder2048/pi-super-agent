@@ -8,6 +8,7 @@ const TOKEN_SHAPE = /^(\d{5,}):[A-Za-z0-9_-]{30,}$/;
 const REQUEST_DEADLINE_MS = 30_000;
 const POLL_DEADLINE_EXTRA_MS = 15_000;
 const DESCRIPTION_MAX = 120;
+const NOT_MODIFIED = "message is not modified";
 
 export type Http = (url: string, init: { method: "POST"; headers: Record<string, string>; body: string; redirect: "error"; signal: AbortSignal }) => Promise<Response>;
 
@@ -54,6 +55,12 @@ export type TelegramEvent =
 
 /** One row per inner array. */
 export type Keyboard = readonly (readonly { label: string; data: string }[])[];
+
+export interface OutboundMessage {
+	text: string;
+	keyboard: Keyboard | null;
+	silent: boolean;
+}
 
 /** `event` is null for anything the client does not handle; the offset still moves past it. */
 export interface Update {
@@ -117,16 +124,31 @@ export class BotApi {
 	}
 
 	async getUpdates(offset: number | undefined, timeoutSec: number, signal: AbortSignal): Promise<Update[]> {
-		const params = { ...(offset !== undefined && { offset }), timeout: timeoutSec, allowed_updates: ["message"] };
+		const params = { ...(offset !== undefined && { offset }), timeout: timeoutSec, allowed_updates: ["message", "callback_query"] };
 		const result = await this.#call("getUpdates", params, signal, timeoutSec * 1000 + POLL_DEADLINE_EXTRA_MS);
 		if (!Array.isArray(result) || !result.every((u) => Number.isSafeInteger(u?.update_id))) throw new TelegramError("getUpdates", "bad_response");
-		return result.map((u) => ({ updateId: u.update_id, event: parseMessage(u.message) }));
+		return result.map((u) => ({ updateId: u.update_id, event: u.callback_query ? parseTap(u.callback_query) : parseMessage(u.message) }));
 	}
 
-	async send(chatId: number, text: string, silent: boolean, signal: AbortSignal): Promise<number> {
-		const sent = await this.#call("sendMessage", { chat_id: chatId, text, ...(silent && { disable_notification: true }) }, signal);
+	/** Plain text, no parse_mode. Returns Telegram's message_id. */
+	async send(chatId: number, { text, keyboard, silent }: OutboundMessage, signal: AbortSignal): Promise<number> {
+		const sent = await this.#call("sendMessage", { chat_id: chatId, text, ...(keyboard && { reply_markup: inlineKeyboard(keyboard) }), ...(silent && { disable_notification: true }) }, signal);
 		if (!Number.isSafeInteger(sent?.message_id)) throw new TelegramError("sendMessage", "bad_response");
 		return sent.message_id;
+	}
+
+	/** Always sends reply_markup, so a card whose buttons went away loses them on the phone too. Telegram's "not modified" counts as done. */
+	async edit(chatId: number, messageId: number, { text, keyboard }: OutboundMessage, signal: AbortSignal): Promise<void> {
+		try {
+			await this.#call("editMessageText", { chat_id: chatId, message_id: messageId, text, reply_markup: inlineKeyboard(keyboard ?? []) }, signal);
+		} catch (error) {
+			if (!(error instanceof TelegramError && error.kind === "bad_request" && error.message.includes(NOT_MODIFIED))) throw error;
+		}
+	}
+
+	/** `toast` null only stops the button's spinner. */
+	async answerTap(callbackId: string, toast: string | null, signal: AbortSignal): Promise<void> {
+		await this.#call("answerCallbackQuery", { callback_query_id: callbackId, ...(toast !== null && { text: toast }) }, signal);
 	}
 
 	async #call(method: string, params: object, signal: AbortSignal, deadlineMs = REQUEST_DEADLINE_MS): Promise<any> {
@@ -167,4 +189,14 @@ function parseMessage(m: any): TelegramEvent | null {
 	const content: MessageContent = m.forward_origin ? { kind: "forwarded" } : typeof m.text === "string" ? { kind: "text", text: m.text } : { kind: "other" };
 	const replyTo = m.reply_to_message?.message_id;
 	return { kind: "message", chat: { id: chat.id, private: chat.type === "private" }, from: from.id, messageId, content, replyTo: Number.isSafeInteger(replyTo) ? replyTo : null };
+}
+
+function parseTap(q: any): TelegramEvent | null {
+	const message = q?.message;
+	if (typeof q?.id !== "string" || !Number.isSafeInteger(q.from?.id) || !Number.isSafeInteger(message?.chat?.id) || typeof message.chat.type !== "string" || !Number.isSafeInteger(message.message_id)) return null;
+	return { kind: "tap", chat: { id: message.chat.id, private: message.chat.type === "private" }, from: q.from.id, messageId: message.message_id, callbackId: q.id, data: typeof q.data === "string" ? q.data : "" };
+}
+
+function inlineKeyboard(keyboard: Keyboard) {
+	return { inline_keyboard: keyboard.map((row) => row.map(({ label, data }) => ({ text: label, callback_data: data }))) };
 }
