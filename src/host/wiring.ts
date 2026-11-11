@@ -12,6 +12,9 @@ import type { HostConfig } from "./config.ts";
 import type { HostOptions } from "./host.ts";
 import { PiWorkerSpawner } from "./pi-worker.ts";
 import { Router } from "./router.ts";
+import { readSecret } from "../secrets.ts";
+import { BotApi, BotToken } from "./telegram/bot-api.ts";
+import type { TelegramOptions } from "./telegram/client.ts";
 
 export type ModelWiringConfig = Pick<HostConfig, "models" | "probePrimaryMinutes">;
 
@@ -62,6 +65,15 @@ export function feedSpecs(config: Pick<HostConfig, "stateDir" | "secretsFile" | 
 	});
 }
 
+export function telegramOptions(config: Pick<HostConfig, "stateDir" | "secretsFile" | "telegram">, env: Readonly<NodeJS.ProcessEnv>, log: (line: string) => void): TelegramOptions | undefined {
+	if (!config.telegram) return undefined;
+	const found = readSecret(["TELEGRAM_BOT_TOKEN"], "Telegram bot token", env, config.secretsFile);
+	if (!found) throw new ConfigError(`${join(config.stateDir, "config.json")}：写了 telegram 段，但环境变量和 secretsFile 里都没有 TELEGRAM_BOT_TOKEN`);
+	const token = new BotToken(found.key, found.origin);
+	log(`[telegram] bot token 来自${found.origin}`);
+	return { api: new BotApi({ token }), allowedUserIds: new Set(config.telegram.allowedUserIds) };
+}
+
 export interface HostWiringInput {
 	config: HostConfig;
 	modules: Modules;
@@ -85,6 +97,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 	const selectors = modelSelectors(config, clock);
 	const timers = modules.timers();
 	const feeds = feedSpecs(config, modules, log);
+	const telegram = telegramOptions(config, process.env, log);
 	return {
 		stateDir: config.stateDir,
 		heartbeatMs: config.heartbeatSeconds * 1000,
@@ -100,6 +113,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		timers,
 		watching: watchedSources(modules, timers),
 		feeds,
+		...(telegram && { telegram }),
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
 		dispatch: {
 			timeoutMs: config.dispatchTimeoutSeconds * 1000,

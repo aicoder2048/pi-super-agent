@@ -25,6 +25,7 @@ import { MemberCap } from "./member-cap.ts";
 import { ConfigError } from "../config-error.ts";
 import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 import type { Domains } from "../modules.ts";
+import type { TelegramOptions } from "./telegram/client.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -63,6 +64,8 @@ export interface HostOptions {
 	feeds?: FeedSpec[];
 	/** Runs `run` once, `ms` from now, and returns its cancel. The host waits for the New York day change with it; tests pass their own to make that moment arrive. */
 	after?: (ms: number, run: () => void) => () => void;
+	/** Runs the Telegram client beside the web page and the socket clients. */
+	telegram?: TelegramOptions;
 }
 
 const afterRealTime: NonNullable<HostOptions["after"]> = (ms, run) => {

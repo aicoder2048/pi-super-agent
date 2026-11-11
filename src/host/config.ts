@@ -32,6 +32,8 @@ export interface HostConfig {
 	webHosts: readonly TailnetName[];
 	secretsFile?: string;
 	sources: Record<string, unknown>;
+	/** Present means the Telegram client runs. An empty list is setup mode: it only tells whoever writes their own numeric id. */
+	telegram?: { allowedUserIds: readonly number[] };
 }
 
 const STUCK_MINUTES_MAX = 1440;
@@ -103,6 +105,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	if (sources === null || typeof sources !== "object" || Array.isArray(sources)) {
 		throw new ConfigError(`${file}：sources（${JSON.stringify(sources)}）必须是以来源名为键的对象`);
 	}
+	const telegram = raw.telegram === undefined ? undefined : parseTelegram(raw.telegram, file);
 	return {
 		stateDir,
 		models: {
@@ -126,5 +129,17 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		webHosts,
 		secretsFile,
 		sources,
+		...(telegram && { telegram }),
 	};
+}
+
+function parseTelegram(raw: unknown, file: string): { allowedUserIds: number[] } {
+	if (raw === null || typeof raw !== "object" || Array.isArray(raw) || Object.keys(raw).some((key) => key !== "allowedUserIds")) {
+		throw new ConfigError(`${file}：telegram（${JSON.stringify(raw)}）必须是只有 allowedUserIds 一项的对象`);
+	}
+	const ids = (raw as { allowedUserIds?: unknown }).allowedUserIds;
+	if (!Array.isArray(ids) || !ids.every((id) => Number.isSafeInteger(id) && id > 0) || new Set(ids).size !== ids.length) {
+		throw new ConfigError(`${file}：telegram.allowedUserIds（${JSON.stringify(ids)}）必须是不重复的正整数数组：私聊里使用者的 Telegram 数字 id；空数组是设置模式`);
+	}
+	return { allowedUserIds: ids };
 }

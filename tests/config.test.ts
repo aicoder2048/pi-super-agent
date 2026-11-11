@@ -159,3 +159,17 @@ test("webHosts 不为空时 webPort 不能是 0：tailscale serve 转发到固�
 	assert.throws(() => loadConfig(stateWith({ webHosts: ["psa-home.example.ts.net"], webPort: 0 })), (e: Error) => e.name === "ConfigError" && /webHosts/.test(e.message) && /webPort/.test(e.message));
 	assert.equal(loadConfig(stateWith({ webHosts: [], webPort: 0 })).webPort, 0);
 });
+
+test("没写 telegram 段时 Telegram 客户端不运行；名单可以是空的（设置模式）", () => {
+	assert.equal(loadConfig(stateWith({})).telegram, undefined);
+	assert.deepEqual(loadConfig(stateWith({ telegram: { allowedUserIds: [] } })).telegram, { allowedUserIds: [] });
+	assert.deepEqual(loadConfig(stateWith({ telegram: { allowedUserIds: [987654321, 42] } })).telegram, { allowedUserIds: [987654321, 42] });
+});
+
+test("telegram 段写错时拒绝启动，报错指出字段；群和频道的负数 id 不收", () => {
+	const bad = [null, [], "x", {}, { allowedUserIds: "42" }, { allowedUserIds: [42], extra: 1 }, { allowedUserIds: [-100123] }, { allowedUserIds: [0] }, { allowedUserIds: [1.5] }, { allowedUserIds: ["42"] }, { allowedUserIds: [42, 42] }, { allowedUserIds: [2 ** 53] }];
+	for (const telegram of bad) {
+		assert.throws(() => loadConfig(stateWith({ telegram })), (e: Error) => e.name === "ConfigError" && /telegram/.test(e.message), JSON.stringify(telegram));
+	}
+	assert.throws(() => loadConfig(stateWith({ telegram: { allowedUserIds: [42, 42] } })), /telegram\.allowedUserIds/);
+});
