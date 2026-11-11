@@ -102,15 +102,7 @@ export class TelegramClient {
 
 	/** Makes no network call, so a Telegram problem never holds up the host's start. */
 	start(): void {
-		try {
-			this.#store.claim(this.#allowed);
-		} catch (error) {
-			this.#state = "off";
-			this.#log(`[telegram] 本地状态出错（${(error as Error).message}），Telegram 客户端没有启动；网页和终端照常`);
-			return;
-		}
-		if (this.#allowed.size === 0) this.#log("[telegram] 名单为空：只告诉来信的人他自己的数字 id，不把任何消息交给幕僚长");
-		this.#loops = [this.#poll(), this.#send()];
+		this.#loops = [this.#run()];
 	}
 
 	/** Synchronous and never throws: Telegram must not delay or fail what the web page and the TUI get. Before start and while stopping it still queues. */
@@ -138,6 +130,21 @@ export class TelegramClient {
 		const grace = setTimeout(() => this.#sending.abort(), this.#timing.stopGraceMs);
 		await Promise.all(this.#loops);
 		clearTimeout(grace);
+	}
+
+	/** A local state error at start is waited out like any other, so the client never needs a host restart to come up. */
+	async #run(): Promise<void> {
+		for (let failures = 0; this.#state === "running"; failures++) {
+			try {
+				this.#store.claim(this.#allowed);
+				break;
+			} catch (error) {
+				await this.#afterLocalError(error, failures);
+			}
+		}
+		if (this.#state !== "running") return;
+		if (this.#allowed.size === 0) this.#log("[telegram] 名单为空：只告诉来信的人他自己的数字 id，不把任何消息交给幕僚长");
+		await Promise.all([this.#poll(), this.#send()]);
 	}
 
 	async #poll(): Promise<void> {
@@ -284,9 +291,7 @@ export class TelegramClient {
 	}
 
 	async #afterSendError(error: unknown, row: Pending, failures: number): Promise<void> {
-		const kind = error instanceof TelegramError ? ON_SEND_ERROR[error.kind] : "maybe-sent";
-		// The note about a missing message is the one row worth repeating: a second copy is harmless, none at all is a silent loss.
-		const reaction = kind === "maybe-sent" && row.key === "missed" ? "retry" : kind;
+		const reaction = error instanceof TelegramError ? ON_SEND_ERROR[error.kind] : "maybe-sent";
 		const message = (error as Error).message;
 		switch (reaction) {
 			case "disable":
@@ -300,7 +305,7 @@ export class TelegramClient {
 			case "maybe-sent":
 				// A setup-mode writer is not the user yet, and the note points at a page they cannot open.
 				await this.#record(() => (row.key === "setup" ? this.#store.giveUp(row, "maybe-sent") : this.#store.maybeSent(row, { kind: "note", text: NOTES.missed })));
-				return this.#log(`[telegram] 一条消息可能已经发到，也可能没有（${message}），不再重发，改发一句说明`);
+				return this.#log(`[telegram] 一条消息可能已经发到，也可能没有（${message}），不再重发；一阵故障只补一句说明`);
 			default: {
 				const waitMs = reaction === "pause" ? ((error as TelegramError).retryAfterMs ?? this.#backoff(failures)) : this.#backoff(failures);
 				this.#pauseUntil = Date.now() + waitMs;
