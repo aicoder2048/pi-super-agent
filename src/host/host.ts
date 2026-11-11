@@ -239,7 +239,7 @@ export class Host {
 		host.#pushBoardAtNextStall(host.kernel.listTickets());
 		host.dispatcher.kick();
 		if (options.telegram) {
-			host.#telegram = new TelegramClient({ ...options.telegram, host: { say: (text, o) => host.say(text, o) }, db: host.#db, clock: host.#clock, log: host.#log });
+			host.#telegram = new TelegramClient({ ...options.telegram, host: { say: (text, o) => host.say(text, o), answer: (reportId, option, o) => host.answer(reportId, option, o), board: () => ({ rows: host.kernel.listTickets(), memberCap: host.#memberCapBoard() }) }, db: host.#db, clock: host.#clock, log: host.#log });
 			host.#telegram.start();
 		}
 		return host;

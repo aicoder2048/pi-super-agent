@@ -6,11 +6,15 @@ import { HostConnection } from "../src/client/connection.ts";
 import type { HostToClient } from "../src/client/protocol.ts";
 import type { Host } from "../src/host/host.ts";
 import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
-import type { TelegramTiming } from "../src/host/telegram/client.ts";
+import { randomUUID } from "node:crypto";
+import type { BoardState, MemberCapBoard } from "../src/client/protocol.ts";
+import type { AnswerResult, Broadcast, ImChat } from "../src/host/server.ts";
+import { TelegramClient, type TelegramHost, type TelegramTiming } from "../src/host/telegram/client.ts";
 import { NOTES } from "../src/host/telegram/rules.ts";
 import { openStore } from "../src/kernel/store.ts";
+import type { DashboardRow, PendingQuestion } from "../src/kernel/types.ts";
 import { FAKE_BOT_TOKEN, FakeTelegram } from "./helpers/fake-telegram.ts";
-import { ids, ofType, startHost, tempStateDir, until, within, type Brain } from "./helpers/fakes.ts";
+import { ids, ofType, openOnConversation, startHost, tempStateDir, until, within, type Brain, type WorkerScript } from "./helpers/fakes.ts";
 
 const USER = 42;
 const FAST: Partial<TelegramTiming> = { pollTimeoutSec: 2, minGapMs: 20, backoffMs: [100, 200], conflictBackoffMs: 200, stopGraceMs: 500 };
@@ -25,12 +29,13 @@ interface Setup {
 	timing?: Partial<TelegramTiming>;
 	fake?: FakeTelegram;
 	brain?: Brain;
+	script?: WorkerScript;
 }
 
-async function telegramHost(t: TestContext, { allowed = [USER], stateDir = tempStateDir(), timing = FAST, fake, brain = echo }: Setup = {}) {
+async function telegramHost(t: TestContext, { allowed = [USER], stateDir = tempStateDir(), timing = FAST, fake, brain = echo, script = () => {} }: Setup = {}) {
 	const tg = fake ?? (await FakeTelegram.start());
 	const logs: string[] = [];
-	const { host } = await startHost(brain, () => {}, {
+	const { host } = await startHost(brain, script, {
 		stateDir,
 		log: (line) => logs.push(line),
 		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set(allowed), timing },
@@ -232,4 +237,248 @@ test("宿主停止过程中广播的话也记进发件箱，下次启动后补�
 	first.host.say("停止过程中说的");
 	await telegramHost(t, { fake: tg, stateDir, brain: () => [] });
 	await until(() => sentTo(tg, USER).includes("你在网页或终端说：停止过程中说的"), "下次启动后补发");
+});
+
+const OTHER = 43;
+const CAP = "ask_cap_2026-11-11";
+const rpt = () => `rpt_${randomUUID()}`;
+const pending = (reportId: string, over: Partial<PendingQuestion> = {}): PendingQuestion => ({ reportId, text: "查哪个城市？", options: ["北京", "上海"], askedAt: 1, click: null, spoke: false, ...over });
+const ticket = (q: PendingQuestion | null, title = "查天气") =>
+	({ id: `tkt_${q?.reportId ?? "none"}`, title, stage: "awaiting_answer", question: q, helper: { name: "青檀", role: "conversation", seq: 1 } }) as unknown as DashboardRow;
+const capBoard = (): MemberCapBoard => ({ limit: 4, question: { reportId: CAP, text: "现在有 2 位成员在排队，同时运行的成员上限是 4。今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 4"], askedAt: 1 } });
+const settle = (ms = 300) => new Promise((r) => setTimeout(r, ms));
+
+/** A TelegramClient against the fake Bot API and a stand-in host whose board the test sets frame by frame. */
+async function cardClient(t: TestContext, { allowed = [USER], answer = (): AnswerResult => ({ ok: true, triggerId: "trg_1" }) }: { allowed?: number[]; answer?: () => AnswerResult } = {}) {
+	const tg = await FakeTelegram.start();
+	const stateDir = tempStateDir();
+	const state = { rows: [] as DashboardRow[], memberCap: null as MemberCapBoard };
+	const answered: [string, number, ImChat][] = [];
+	const logs: string[] = [];
+	const host: TelegramHost = {
+		say: () => `trg_${randomUUID()}`,
+		answer: (reportId, option, { from }) => {
+			answered.push([reportId, option, from]);
+			return answer();
+		},
+		board: () => state,
+	};
+	const store = openStore(join(stateDir, "state.db"));
+	const client = new TelegramClient({ api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set(allowed), timing: FAST, host, db: store, clock: { now: () => Date.now() }, log: (l) => logs.push(l) });
+	client.start();
+	t.after(async () => {
+		await client.stop();
+		await tg.close();
+		store.close();
+	});
+	const frame = (rows: DashboardRow[], memberCap: MemberCapBoard = null) => {
+		state.rows = rows;
+		state.memberCap = memberCap;
+		client.broadcast({ type: "board", rows, memberCap } as unknown as Broadcast);
+	};
+	const open = async (chatId: number) => {
+		const before = sentTo(tg, chatId).length;
+		tg.userSays(chatId, "/start");
+		await until(() => sentTo(tg, chatId).length > before, "聊天打开");
+	};
+	return { tg, frame, open, answered, logs, state };
+}
+
+const cards = (tg: FakeTelegram, chatId: number) => tg.sent.filter((m) => m.chatId === chatId && m.text.includes("问你（任务"));
+const labels = (m: { buttons: { text: string }[][] | null } | undefined) => m?.buttons?.map((row) => row.map((b) => b.text)) ?? null;
+
+test("助手的问题在每个聊天里只发一张带按钮的卡片；十个一样的看板帧不发也不编辑；状态变一次只编辑一次", async (t) => {
+	const { tg, frame, open } = await cardClient(t, { allowed: [USER, OTHER] });
+	await open(USER);
+	await open(OTHER);
+	const id = rpt();
+	for (let i = 0; i < 10; i++) frame([ticket(pending(id))]);
+	await until(() => cards(tg, USER).length === 1 && cards(tg, OTHER).length === 1, "两个聊天各一张卡片");
+	await settle();
+	for (const chat of [USER, OTHER]) {
+		const [card] = cards(tg, chat);
+		assert.equal(card.text, "青檀 · 对话助手 #1 问你（任务「查天气」）：\n查哪个城市？");
+		assert.deepEqual(labels(card), [["北京"], ["上海"]]);
+		assert.equal(card.silent, false, "新问题带通知");
+	}
+	assert.equal(tg.edits.length, 0);
+	for (let i = 0; i < 10; i++) frame([ticket(pending(id, { click: { option: 1, state: "sent", triggerId: "trg_1" } }))]);
+	await until(() => tg.edits.length === 2, "两个聊天各编辑一次");
+	await settle();
+	assert.equal(tg.edits.length, 2);
+	for (const chat of [USER, OTHER]) {
+		const shown = tg.shown(cards(tg, chat)[0].messageId)!;
+		assert.match(shown.text, /\n\n已选「上海」，已发送，等待幕僚长转交$/);
+		assert.equal(shown.buttons, null, "按钮消失");
+	}
+	assert.equal(cards(tg, USER).length + cards(tg, OTHER).length, 2, "没有再发新卡片");
+});
+
+test("问题离开看板：卡片编辑成已结束，按钮消失；之后的看板帧不再动它", async (t) => {
+	const { tg, frame, open } = await cardClient(t);
+	await open(USER);
+	const id = rpt();
+	frame([ticket(pending(id))]);
+	await until(() => cards(tg, USER).length === 1, "卡片");
+	frame([]);
+	await until(() => tg.edits.length === 1, "关闭");
+	const shown = tg.shown(cards(tg, USER)[0].messageId)!;
+	assert.match(shown.text, /\n\n已结束：这个问题已经回答过，或已不在等待回答$/);
+	assert.equal(shown.buttons, null);
+	frame([]);
+	frame([ticket(null)]);
+	await settle();
+	assert.equal(tg.edits.length, 1);
+});
+
+test("没有选项的问题：卡片没有按钮，写「直接打字回答。」", async (t) => {
+	const { tg, frame, open } = await cardClient(t);
+	await open(USER);
+	frame([ticket(pending(rpt(), { options: [] }))]);
+	await until(() => cards(tg, USER).length === 1, "卡片");
+	assert.match(cards(tg, USER)[0].text, /\n\n直接打字回答。$/);
+	assert.equal(cards(tg, USER)[0].buttons, null);
+});
+
+test("聊天打开之前就在等回答的问题：打开时补发卡片", async (t) => {
+	const { tg, frame, open } = await cardClient(t);
+	frame([ticket(pending(rpt()))]);
+	await settle(100);
+	assert.equal(tg.sent.length, 0, "还没有打开的聊天");
+	await open(USER);
+	await until(() => cards(tg, USER).length === 1, "打开后补发");
+});
+
+test("点按钮：交给宿主回答，带上是哪个 Telegram 聊天；成功提示已发送，被拒提示原因", async (t) => {
+	let result: AnswerResult = { ok: true, triggerId: "trg_1" };
+	const { tg, frame, open, answered } = await cardClient(t, { answer: () => result });
+	await open(USER);
+	const id = rpt();
+	frame([ticket(pending(id))]);
+	await until(() => cards(tg, USER).length === 1, "卡片");
+	const { messageId, buttons } = cards(tg, USER)[0];
+	const first = tg.userTaps(USER, messageId, buttons![1][0].data);
+	await until(() => tg.toastFor(first) !== undefined, "第一次点的回应");
+	assert.equal(tg.toastFor(first), "已发送");
+	result = { ok: false, refusal: { kind: "chosen", option: 0, label: "北京" } };
+	const second = tg.userTaps(USER, messageId, buttons![1][0].data);
+	await until(() => tg.toastFor(second) !== undefined, "第二次点的回应");
+	assert.equal(tg.toastFor(second), "已选「北京」");
+	assert.deepEqual(answered, [
+		[id, 1, { client: "telegram", chatId: USER }],
+		[id, 1, { client: "telegram", chatId: USER }],
+	]);
+});
+
+test("成员上限：只发一条说明，没有按钮，看板帧再来也不重发；伪造的成员上限按钮被拒，不问宿主", async (t) => {
+	const { tg, frame, open, answered } = await cardClient(t);
+	await open(USER);
+	for (let i = 0; i < 10; i++) frame([], capBoard());
+	await until(() => sentTo(tg, USER).includes(NOTES.cap), "成员上限的说明");
+	await settle();
+	const notes = tg.sent.filter((m) => m.text === NOTES.cap);
+	assert.equal(notes.length, 1);
+	assert.equal(notes[0].buttons, null);
+	const forged = tg.userTaps(USER, notes[0].messageId, `a:${CAP}:0`);
+	await until(() => tg.toastFor(forged) !== undefined, "伪造按钮的回应");
+	assert.equal(tg.toastFor(forged), "成员上限只能在网页或终端的「待你处理」里回答");
+	assert.deepEqual(answered, []);
+});
+
+test("看不懂的按钮、不在名单里的人点按钮：都不问宿主；名单上的人收到提示，陌生人什么都收不到", async (t) => {
+	const { tg, open, answered } = await cardClient(t);
+	await open(USER);
+	const junk = tg.userTaps(USER, 1, "zzz");
+	const stranger = tg.userTaps(99, 1, `a:${rpt()}:0`);
+	await until(() => tg.toastFor(junk) !== undefined, "看不懂的按钮的回应");
+	await settle();
+	assert.equal(tg.toastFor(junk), "这个问题已经回答过，或已不在等待回答");
+	assert.equal(tg.toastFor(stranger), undefined);
+	assert.deepEqual(answered, []);
+});
+
+const CITY = "上海";
+const askBrain = (typedDelayMs = 0): Brain => (cards) =>
+	Promise.all(
+		cards.map(async (card) => {
+			const clicked = card.split("\n").find((l) => l.startsWith("点选回答："));
+			if (card.startsWith("[对话]") && clicked) return [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId: ids(card, "trg"), ticketId: ids(clicked, "tkt") }] } }];
+			if (card.startsWith("[对话]") && card.includes("使用者：查天气")) return openOnConversation(card);
+			if (card.startsWith("[对话]")) {
+				await new Promise((r) => setTimeout(r, typedDelayMs));
+				return [{ name: "reply", args: { text: "收到你打的字。", cause: ids(card, "trg") } }];
+			}
+			if (card.startsWith("[Worker 提问]")) return [{ name: "reply", args: { text: "查哪个城市？", cause: ids(card, "tkt") } }];
+			return [];
+		}),
+	).then((calls) => calls.flat());
+const asking: WorkerScript = (w, input) => {
+	if (input.includes("回答任务")) return;
+	w.report({ status: "blocked", summary: "要你定", question: "查哪个城市？", options: ["北京", CITY] });
+	w.settle();
+};
+
+async function askedOnTelegram(t: TestContext, setup: Setup = {}) {
+	const started = await telegramHost(t, { brain: askBrain(), script: asking, ...setup });
+	started.tg.userSays(USER, "/start");
+	await until(() => sentTo(started.tg, USER).length === 1, "说明");
+	started.host.say("查天气");
+	await until(() => cards(started.tg, USER).length === 1, "卡片到达 Telegram");
+	return { ...started, card: cards(started.tg, USER)[0] };
+}
+
+test("真宿主：在 Telegram 点按钮，回答像网页点选一样进对话；卡片变成已回答，按钮消失；同一个按钮再点只答一次、弹出提示", async (t) => {
+	const { host, tg, card } = await askedOnTelegram(t);
+	const client = watch(t, host);
+	await client.connected();
+	assert.deepEqual(labels(card), [["北京"], [CITY]]);
+	const tap = tg.userTaps(USER, card.messageId, card.buttons![1][0].data);
+	await until(() => ofType(client.got, "user").some((m) => m.text === `回答任务「查天气」：${CITY}`), "网页收到回答");
+	await until(() => tg.shown(card.messageId)!.text.endsWith(`已选「${CITY}」，已回答`), "卡片编辑成已回答");
+	assert.equal(tg.shown(card.messageId)!.buttons, null);
+	assert.equal(tg.toastFor(tap), "已发送");
+	const again = tg.userTaps(USER, card.messageId, card.buttons![1][0].data);
+	await until(() => tg.toastFor(again) !== undefined, "第二次点的回应");
+	assert.equal(tg.toastFor(again), "已发送");
+	await host.settled();
+	assert.equal(userLines(host).filter((l) => l === `回答任务「查天气」：${CITY}`).length, 1, "只答一次");
+	assert.ok(!sentTo(tg, USER).some((m) => m.includes("你在网页或终端说：回答任务")), "自己点的回答不再转回这个聊天");
+});
+
+test("真宿主：网页先点了另一项，再在 Telegram 点：被拒，提示已选；卡片跟着网页变", async (t) => {
+	const { host, tg, card } = await askedOnTelegram(t);
+	const reportId = host.kernel.listTickets()[0].question!.reportId;
+	assert.equal(host.answer(reportId, 0).ok, true);
+	const tap = tg.userTaps(USER, card.messageId, card.buttons![1][0].data);
+	await until(() => tg.toastFor(tap) !== undefined, "点的回应");
+	assert.equal(tg.toastFor(tap), "已选「北京」");
+	await until(() => /已选「北京」，(已发送，等待幕僚长转交|已回答)$/.test(tg.shown(card.messageId)!.text), "卡片跟着网页的点选");
+	assert.ok(sentTo(tg, USER).includes("你在网页或终端说：回答任务「查天气」：北京"));
+});
+
+test("真宿主：使用者在 Telegram 直接打字：卡片变成已插话，这句话照常交给幕僚长", async (t) => {
+	const { host, tg, card } = await askedOnTelegram(t, { brain: askBrain(1500) });
+	tg.userSays(USER, "我打字说上海");
+	await until(() => tg.shown(card.messageId)!.text.endsWith("已插话：你刚发了一句话，等幕僚长处理完再点"), "卡片变成已插话");
+	assert.equal(tg.shown(card.messageId)!.buttons, null);
+	await until(() => sentTo(tg, USER).includes("收到你打的字。"), "幕僚长处理了这句话", 5000);
+	assert.ok(userLines(host).includes("我打字说上海"));
+});
+
+test("真宿主重启：卡片不重发；重启前的按钮点了仍然有效", async (t) => {
+	const tg = await FakeTelegram.start();
+	t.after(() => tg.close());
+	const stateDir = tempStateDir();
+	const first = await askedOnTelegram(t, { fake: tg, stateDir });
+	await first.stop();
+	const sentBefore = tg.sent.length;
+	const second = await telegramHost(t, { fake: tg, stateDir, brain: askBrain(), script: asking });
+	await until(() => tg.calls("getMe").length === 2, "重启后连上 Telegram");
+	await settle(500);
+	assert.equal(tg.sent.length, sentBefore, "没有重发");
+	const tap = tg.userTaps(USER, first.card.messageId, first.card.buttons![0][0].data);
+	await until(() => tg.toastFor(tap) !== undefined, "点的回应");
+	assert.equal(tg.toastFor(tap), "已发送");
+	await until(() => userLines(second.host).includes("回答任务「查天气」：北京"), "回答进对话");
+	await until(() => /已选「北京」/.test(tg.shown(first.card.messageId)!.text), "旧卡片被编辑");
 });
