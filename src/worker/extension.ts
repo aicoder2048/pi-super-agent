@@ -153,6 +153,7 @@ export default function workerExtension(pi: ExtensionAPI) {
 		],
 		parameters: Type.Object({ url: Type.String({ description: "要读取的 http 或 https 网址" }) }),
 		async execute(_id, params) {
+			await call("worker.read_web", { url: params.url });
 			return text(await webGet(params.url));
 		},
 	});

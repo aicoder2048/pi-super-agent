@@ -1041,8 +1041,13 @@ export class Kernel {
 		);
 	}
 
-	receivedSourceText(ticketId: string): boolean {
-		return this.#get("SELECT 1 FROM ticket_inputs WHERE ticket_id = ? AND kind = 'trigger'", ticketId) !== undefined;
+	readWeb(ticketId: string): void {
+		this.#run("UPDATE tickets SET read_web_at = COALESCE(read_web_at, ?) WHERE id = ?", this.#now(), ticketId);
+	}
+
+	heardOtherThanUser(ticketId: string): "trigger" | "note" | "web" | undefined {
+		if (this.#get("SELECT 1 FROM tickets WHERE id = ? AND read_web_at IS NOT NULL", ticketId)) return "web";
+		return this.#get("SELECT kind FROM ticket_inputs WHERE ticket_id = ? AND kind IN ('trigger', 'note') LIMIT 1", ticketId)?.kind;
 	}
 
 	/** A repeated (source, externalId) alert returns the first line and writes nothing; any other failed insert throws. */
