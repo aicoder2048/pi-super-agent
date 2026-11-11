@@ -643,9 +643,9 @@ test("盯盘条件：只在盯盘条件里的股票也被看盘轮询，给它�
 	assert.match(receipts(m)[1], /现在已在 \+25\.0%，回到线内后再越过才提醒/);
 });
 
-test("均线交叉：给助手的盯盘条件说明写明盘中先报疑似、收盘后约 35 到 50 分钟再确认或撤回", () => {
+test("均线交叉：给助手的盯盘条件说明写明盘中先报疑似、收盘后约 60 到 75 分钟再确认或撤回", () => {
 	const spec = marketFeed({ source: "us-market", title: "美股行情", settings: DEFAULTS, override: undefined, where: "test", secretsFile: undefined, env: {}, log: () => {} });
-	assert.match(spec.tripwireHelp ?? "", /盘中.*疑似.*收盘后大约 35 到 50 分钟.*确认.*没有成立/);
+	assert.match(spec.tripwireHelp ?? "", /盘中.*疑似.*收盘后大约 60 到 75 分钟.*确认.*没有成立/);
 });
 
 const aggsCount = (m: ReturnType<typeof market>) => m.requests.filter((r) => r.url.includes("/v2/aggs/")).length;
@@ -693,15 +693,15 @@ test("均线交叉：现价把 5 日均线拉到 20 日均线上方，贴一条�
 	assert.ok(m.kernel.raised("us-market", "TSLA:2026-11-09:cross-5-20-golden-suspected"));
 });
 
-test("均线交叉结算：收盘 20 分钟内不取；之后第一次醒来取到当天日线只记下，下次醒来收盘价一致才撤回疑似；结算后不再取", async () => {
+test("均线交叉结算：收盘 45 分钟内不取；之后第一次醒来取到当天日线只记下，下次醒来收盘价一致才撤回疑似；结算后不再取", async () => {
 	const m = await suspectedGoldenToday();
 	m.daily.TSLA!["2026-11-09"] = 100;
-	assert.equal(await aggsAt(m, "2026-11-09T21:15:00Z"), 0);
-	assert.deepEqual([await aggsAt(m, "2026-11-09T21:21:00Z"), alerts(m).length], [1, 1]);
-	assert.equal(await aggsAt(m, "2026-11-09T21:36:00Z"), 1);
+	assert.equal(await aggsAt(m, "2026-11-09T21:40:00Z"), 0);
+	assert.deepEqual([await aggsAt(m, "2026-11-09T21:46:00Z"), alerts(m).length], [1, 1]);
+	assert.equal(await aggsAt(m, "2026-11-09T22:01:00Z"), 1);
 	assert.deepEqual(alerts(m).map(headOf), ["TSLA 疑似金叉", "TSLA 金叉没有成立"]);
 	assert.ok(m.kernel.raised("us-market", "TSLA:2026-11-09:cross-5-20-golden-withdrawn"));
-	assert.deepEqual([await aggsAt(m, "2026-11-09T21:51:00Z"), await aggsAt(m, "2026-11-10T01:00:00Z")], [0, 0]);
+	assert.deepEqual([await aggsAt(m, "2026-11-09T22:16:00Z"), await aggsAt(m, "2026-11-10T01:00:00Z")], [0, 0]);
 });
 
 test("均线交叉结算：当天收盘成立就确认（盘中没报过疑似也确认）；没成立也没报过疑似就什么都不贴，同样不再取", async () => {
@@ -712,30 +712,30 @@ test("均线交叉结算：当天收盘成立就确认（盘中没报过疑似�
 	await aggsAt(m, "2026-11-09T15:01:00Z");
 	m.daily.TSLA!["2026-11-09"] = 102;
 	m.daily.AMD!["2026-11-09"] = 100;
-	assert.deepEqual([await aggsAt(m, "2026-11-09T21:21:00Z"), await aggsAt(m, "2026-11-09T21:36:00Z")], [2, 2]);
+	assert.deepEqual([await aggsAt(m, "2026-11-09T21:46:00Z"), await aggsAt(m, "2026-11-09T22:01:00Z")], [2, 2]);
 	assert.deepEqual(alerts(m), ["TSLA 金叉确认：今天收盘 102.00，5 日均线 100.20 上穿 20 日均线 100.05。"]);
-	assert.equal(await aggsAt(m, "2026-11-09T21:51:00Z"), 0);
+	assert.equal(await aggsAt(m, "2026-11-09T22:16:00Z"), 0);
 });
 
 test("均线交叉结算：两次醒来之间当天收盘价变了，不结算，从新的价重新等一次", async () => {
 	const m = await suspectedGoldenToday();
 	m.daily.TSLA!["2026-11-09"] = 101.5;
-	await aggsAt(m, "2026-11-09T21:21:00Z");
+	await aggsAt(m, "2026-11-09T21:46:00Z");
 	m.daily.TSLA!["2026-11-09"] = 100;
-	await aggsAt(m, "2026-11-09T21:36:00Z");
+	await aggsAt(m, "2026-11-09T22:01:00Z");
 	assert.equal(alerts(m).length, 1);
-	await aggsAt(m, "2026-11-09T21:51:00Z");
+	await aggsAt(m, "2026-11-09T22:16:00Z");
 	assert.deepEqual(alerts(m).map(headOf), ["TSLA 疑似金叉", "TSLA 金叉没有成立"]);
 	assert.match(alerts(m)[1]!, /今天收盘 100\.00/);
 });
 
 test("均线交叉结算：当天日线还没出来时只是等，不记也不贴", async () => {
 	const m = await suspectedGoldenToday();
-	assert.deepEqual([await aggsAt(m, "2026-11-09T21:21:00Z"), await aggsAt(m, "2026-11-09T21:36:00Z")], [1, 1]);
+	assert.deepEqual([await aggsAt(m, "2026-11-09T21:46:00Z"), await aggsAt(m, "2026-11-09T22:01:00Z")], [1, 1]);
 	m.daily.TSLA!["2026-11-09"] = 100;
-	await aggsAt(m, "2026-11-09T21:51:00Z");
+	await aggsAt(m, "2026-11-09T22:16:00Z");
 	assert.equal(alerts(m).length, 1);
-	await aggsAt(m, "2026-11-09T22:06:00Z");
+	await aggsAt(m, "2026-11-09T22:31:00Z");
 	assert.equal(alerts(m).length, 2);
 });
 
@@ -745,26 +745,26 @@ test("均线交叉结算：当天没见过新鲜报价（休市）不结算，�
 	for (const symbol of Object.keys(m.prices)) delete m.prices[symbol];
 	await aggsAt(m, "2026-11-09T15:00:00Z");
 	m.daily.TSLA!["2026-11-09"] = 100;
-	assert.deepEqual([await aggsAt(m, "2026-11-09T21:21:00Z"), await aggsAt(m, "2026-11-09T21:36:00Z")], [0, 0]);
+	assert.deepEqual([await aggsAt(m, "2026-11-09T21:46:00Z"), await aggsAt(m, "2026-11-09T22:01:00Z")], [0, 0]);
 });
 
 test("均线交叉结算：贴出撤回之后、写游标之前崩溃，重来一次不再多贴，只结算一次", async () => {
 	const m = await suspectedGoldenToday();
 	m.daily.TSLA!["2026-11-09"] = 100;
-	await aggsAt(m, "2026-11-09T21:21:00Z");
+	await aggsAt(m, "2026-11-09T21:46:00Z");
 	m.crashBeforeCursor();
-	await assert.rejects(aggsAt(m, "2026-11-09T21:36:00Z"), /崩溃/);
+	await assert.rejects(aggsAt(m, "2026-11-09T22:01:00Z"), /崩溃/);
 	assert.equal(alerts(m).length, 2);
-	assert.equal(await aggsAt(m, "2026-11-09T21:51:00Z"), 1);
+	assert.equal(await aggsAt(m, "2026-11-09T22:16:00Z"), 1);
 	assert.equal(alerts(m).length, 2);
-	assert.equal(await aggsAt(m, "2026-11-09T22:06:00Z"), 0);
+	assert.equal(await aggsAt(m, "2026-11-09T22:31:00Z"), 0);
 });
 
 test("均线交叉：结算取到的收盘价留给下一个交易日，第二天盘中直接用，不再取日线", async () => {
 	const m = await suspectedGoldenToday();
 	m.daily.TSLA!["2026-11-09"] = 102;
-	await aggsAt(m, "2026-11-09T21:21:00Z");
-	await aggsAt(m, "2026-11-09T21:36:00Z");
+	await aggsAt(m, "2026-11-09T21:46:00Z");
+	await aggsAt(m, "2026-11-09T22:01:00Z");
 	m.prices.TSLA = 80;
 	assert.equal(await aggsAt(m, "2026-11-10T15:00:00Z"), 0);
 	assert.deepEqual(alerts(m).map(headOf), ["TSLA 疑似金叉", "TSLA 金叉确认", "TSLA 疑似死叉"]);

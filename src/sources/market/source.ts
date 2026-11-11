@@ -36,7 +36,7 @@ const HOLIDAY_AFTER_OPEN_MS = 30 * MINUTE;
 const HOLIDAY_AFTER_POLLS = 5;
 const NOTICE_AFTER_MS = 15 * MINUTE;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const SETTLE_AFTER_MS = 20 * MINUTE;
+const SETTLE_AFTER_MS = 45 * MINUTE;
 const SPANS: Span[] = ["minute", "hour", "day"];
 // Calendar days of bars indicators fetch when the caller gives no from: day covers SMA200 and 52 weeks (252 bars).
 const INDICATOR_DAYS: Record<Span, number> = { day: 400, hour: 30, minute: 4 };
@@ -55,7 +55,7 @@ const TRIPWIRE_HELP = `us-market（美股盯盘条件）：同一只股票每种
 - set { symbol, condition }：新增或修改这只股票这一种条件。改已有的条件时只写要改的字段，没写的保持原样。condition 是下面三种之一，dir 是 up、down 或 either（不写就是 either），pct 在 0.1 到 100 之间：
   - { kind: "day", pct, dir? }：相对昨收涨跌超过 pct% 时提醒
   - { kind: "cost", pct, basis, shares?, dir? }：相对成本价 basis 涨跌超过 pct% 时提醒，新加时必须有 basis；shares 是股数，可以不写，写 null 是去掉
-  - { kind: "cross", fast?, slow? }：fast 日均线和 slow 日均线金叉、死叉时提醒，不写就是 5 和 20。盘中现价让两条均线翻转时先报一条「疑似」，收盘后大约 35 到 50 分钟按当天收盘价再报「确认」或「没有成立」（撤回疑似）
+  - { kind: "cross", fast?, slow? }：fast 日均线和 slow 日均线金叉、死叉时提醒，不写就是 5 和 20。盘中现价让两条均线翻转时先报一条「疑似」，收盘后大约 60 到 75 分钟按当天收盘价再报「确认」或「没有成立」（撤回疑似）
 - remove { symbol, kind? }：去掉这只股票的某一种条件，不写 kind 就全部去掉
 自选股加上条件里的股票最多 50 只，均线交叉条件最多 10 只。`;
 

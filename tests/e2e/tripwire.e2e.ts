@@ -152,7 +152,7 @@ function tslaHistory(): Record<string, number> {
 	return { ...closes, "2026-11-10": 99 };
 }
 
-test("均线交叉：盘中现价拉出金叉，手机响一条「疑似金叉」；收盘 20 分钟后两次醒来取到一致的当天日线、收盘没成立，手机再响一条「金叉没有成立」；网页两条都在", async (t) => {
+test("均线交叉：盘中现价拉出金叉，手机响一条「疑似金叉」；收盘 45 分钟后两次醒来取到一致的当天日线、收盘没成立，手机再响一条「金叉没有成立」；网页两条都在", async (t) => {
 	const tg = await FakeTelegram.start();
 	t.after(() => tg.close());
 	const ticks = mkdtempSync(join(tmpdir(), "psa-e2e-quotes-"));
@@ -177,13 +177,13 @@ test("均线交叉：盘中现价拉出金叉，手机响一条「疑似金叉�
 				await page.locator(".line.alert").waitFor();
 				assert.match((await page.locator(".line.alert .bubble").textContent()) ?? "", /TSLA 疑似金叉/);
 			});
-			await step("收盘 21 分钟后第一次醒来取到当天日线（收 100）：只记下，手机不响", async () => {
-				await tick("2-settle-first", { now: "2026-11-11T21:21:00Z", closes: { TSLA: { "2026-11-11": 100 } } });
+			await step("收盘 51 分钟后第一次醒来取到当天日线（收 100）：只记下，手机不响", async () => {
+				await tick("2-settle-first", { now: "2026-11-11T21:51:00Z", closes: { TSLA: { "2026-11-11": 100 } } });
 				await new Promise((r) => setTimeout(r, 1500));
 				assert.equal(rang().length, 1);
 			});
 			await step("再过 15 分钟醒来，当天收盘价一致：手机收到「金叉没有成立」，网页对话里两条提醒都在", async (page) => {
-				await tick("3-settle-agree", { now: "2026-11-11T21:36:00Z" });
+				await tick("3-settle-agree", { now: "2026-11-11T22:06:00Z" });
 				await until(() => rang().length === 2, "撤回到达 Telegram");
 				assert.match(rang()[1].text, /^盯盘提醒：TSLA 金叉没有成立：今天收盘 100\.00.*早前的疑似金叉提醒作废。$/);
 				await page.locator(".line.alert").nth(1).waitFor();
