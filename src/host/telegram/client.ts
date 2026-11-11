@@ -1,11 +1,14 @@
-// The Telegram client: a long-poll loop for what the user writes, a send loop for the outbox, and the
-// fan-out of host broadcasts into the outbox. Its public surface is start / broadcast / stop.
+// The Telegram client: a long-poll loop for what the user writes and taps, a send loop for the outbox, and the
+// fan-out of host broadcasts (lines and question cards) into the outbox. Its public surface is start / broadcast / stop.
 import type { DatabaseSync } from "node:sqlite";
 import { setTimeout as sleep } from "node:timers/promises";
+import type { BoardState } from "../../client/protocol.ts";
+import { refusalText } from "../../kernel/question.ts";
+import { inTransaction } from "../../kernel/store.ts";
 import type { Clock } from "../../kernel/types.ts";
-import type { Broadcast, ImChat, SayOptions } from "../server.ts";
+import type { AnswerResult, Broadcast, ImChat, SayOptions } from "../server.ts";
 import { TelegramError, type BotApi, type TelegramErrorKind, type Update } from "./bot-api.ts";
-import { decide, mirrorText, NOTES, render } from "./rules.ts";
+import { cardView, closedView, decide, mirrorText, NOTES, render, repeatsQuestion } from "./rules.ts";
 import { TelegramStore, type Pending } from "./store.ts";
 
 export interface TelegramTiming {
@@ -25,8 +28,12 @@ export interface TelegramOptions {
 	timing?: Partial<TelegramTiming>;
 }
 
+type Board = Pick<BoardState, "rows" | "memberCap">;
+
 export interface TelegramHost {
 	say(text: string, options: SayOptions): string;
+	answer(reportId: string, option: number, options: { from: ImChat }): AnswerResult;
+	board(): Board;
 }
 
 export const DEFAULT_TIMING: TelegramTiming = {
@@ -37,6 +44,7 @@ export const DEFAULT_TIMING: TelegramTiming = {
 	stopGraceMs: 5000,
 };
 const DROP_LOG_EVERY_MS = 60 * 60_000;
+const TAP_TAKEN = "已发送";
 const HANDLE_TRIES = 5;
 
 type PollReaction = "exit" | "disable" | "retry" | "pause" | "conflict";
@@ -77,6 +85,7 @@ export class TelegramClient {
 	readonly #timing: TelegramTiming;
 	readonly #host: TelegramHost;
 	readonly #store: TelegramStore;
+	readonly #db: DatabaseSync;
 	readonly #clock: Clock;
 	readonly #log: (line: string) => void;
 	readonly #polling = new AbortController();
@@ -97,6 +106,7 @@ export class TelegramClient {
 		this.#host = options.host;
 		this.#clock = options.clock;
 		this.#log = options.log;
+		this.#db = options.db;
 		this.#store = new TelegramStore(options.db, options.api.botId, options.clock.now);
 	}
 
@@ -110,15 +120,34 @@ export class TelegramClient {
 		if (this.#state === "off") return;
 		try {
 			if (message.type === "reply") {
-				for (const chat of this.#store.openChats()) this.#store.put(chat, `line:${message.replyId}`, message.replyId, { kind: "line", text: message.text, silent: false });
+				if (!this.#cardStandsIn(message)) {
+					for (const chat of this.#store.openChats()) this.#store.put(chat, `line:${message.replyId}`, message.replyId, { kind: "line", text: message.text, silent: false });
+				}
 			} else if (message.type === "user") {
 				for (const chat of this.#store.openChats()) {
 					if (chat !== from?.chatId) this.#store.put(chat, `line:${message.id}`, message.id, { kind: "line", text: mirrorText(message.text, from), silent: true });
 				}
+			} else if (message.type === "board") {
+				for (const chat of this.#store.openChats()) this.#syncCards(chat, message);
 			}
 			this.#wake?.();
 		} catch (error) {
 			this.#log(`[telegram] 没能记下要发到 Telegram 的消息：${(error as Error).message}`);
+		}
+	}
+
+	/** Fails open: when the board can't be read or the card can't be queued, the reply goes out, so at worst the phone sees the question twice. */
+	#cardStandsIn(message: { text: string; at: number; ticketId?: string }): boolean {
+		if (!message.ticketId) return false;
+		try {
+			const board = this.#host.board();
+			if (!repeatsQuestion(message, board.rows.find((row) => row.id === message.ticketId)?.question ?? null)) return false;
+			// Board frames wait 100ms after a change, so a quick Router turn can beat the frame with the card: queue the card here, then drop the repeat.
+			for (const chat of this.#store.openChats()) this.#syncCards(chat, board);
+			return true;
+		} catch (error) {
+			this.#log(`[telegram] 没能确认这句回复是不是卡片上的问题，照常发到 Telegram：${(error as Error).message}`);
+			return false;
 		}
 	}
 
@@ -137,6 +166,8 @@ export class TelegramClient {
 		for (let failures = 0; this.#state === "running"; failures++) {
 			try {
 				this.#store.claim(this.#allowed);
+				const board = this.#host.board();
+				for (const chat of this.#store.openChats()) this.#syncCards(chat, board);
 				break;
 			} catch (error) {
 				await this.#afterLocalError(error, failures);
@@ -209,15 +240,28 @@ export class TelegramClient {
 					this.#store.put(inbound.chatId, "setup", null, { kind: "note", text: NOTES.setup(inbound.chatId) });
 					break;
 				case "note":
-					this.#store.openChat(inbound.chatId);
+					this.#openChat(inbound.chatId);
 					this.#store.put(inbound.chatId, `note:${updateId}`, null, { kind: "note", text: NOTES[inbound.note] });
 					break;
 				case "say": {
-					this.#store.openChat(inbound.chatId);
+					this.#openChat(inbound.chatId);
 					const lineId = this.#host.say(inbound.text, { externalId: `tg:${this.#api.botId}:${updateId}`, from: { client: "telegram", chatId: inbound.chatId } });
 					this.#store.received(inbound.chatId, lineId, inbound.messageId);
 					break;
 				}
+				case "answer": {
+					const { chatId, messageId, reportId, option } = inbound;
+					const toast = this.#store.tapOnce(updateId, () => {
+						if (!this.#store.isCard(chatId, messageId, reportId)) return refusalText({ kind: "closed" });
+						const result = this.#host.answer(reportId, option, { from: { client: "telegram", chatId } });
+						return result.ok ? TAP_TAKEN : refusalText(result.refusal);
+					});
+					this.#answerTap(inbound.callbackId, toast);
+					break;
+				}
+				case "refuse-tap":
+					this.#answerTap(inbound.callbackId, inbound.toast);
+					break;
 			}
 			this.#wake?.();
 			return true;
@@ -225,6 +269,36 @@ export class TelegramClient {
 			this.#log(`[telegram] 处理一条 Telegram 消息出错：${(error as Error).message}`);
 			return false;
 		}
+	}
+
+	/** A chat that opens (or reopens after a block) gets the cards of the questions already waiting. */
+	#openChat(chatId: number): void {
+		if (this.#store.openChat(chatId)) this.#syncCards(chatId, this.#host.board());
+	}
+
+	/** One card per question per chat, as desired state: an unchanged card is a no-op, a changed one becomes an edit, a gone one closes. */
+	#syncCards(chatId: number, { rows, memberCap }: Board): void {
+		inTransaction(this.#db, () => {
+			const onBoard = new Set<string>();
+			for (const row of rows) {
+				const view = cardView(row);
+				if (!view) continue;
+				onBoard.add(view.reportId);
+				this.#store.put(chatId, `ask:${view.reportId}`, null, { kind: "card", view });
+			}
+			for (const view of this.#store.openCards(chatId)) {
+				if (!onBoard.has(view.reportId)) this.#store.put(chatId, `ask:${view.reportId}`, null, { kind: "card", view: closedView(view) });
+			}
+			const cap = memberCap?.question;
+			if (cap) this.#store.put(chatId, `cap:${cap.reportId}`, null, { kind: "note", text: NOTES.cap });
+		});
+	}
+
+	/** Straight to Telegram, not through the outbox: a toast is only worth showing right after the tap. */
+	#answerTap(callbackId: string, toast: string): void {
+		this.#api.answerTap(callbackId, toast, this.#polling.signal).catch((error) => {
+			if (!(error instanceof TelegramError && error.kind === "stopped")) this.#log(`[telegram] 没能回应一次按钮点击：${(error as Error).message}`);
+		});
 	}
 
 	#countDrop(): void {
@@ -273,10 +347,14 @@ export class TelegramClient {
 				await this.#pause(Math.max(this.#lastSendAt + this.#timing.minGapMs, this.#pauseUntil) - Date.now());
 				if (this.#state !== "running") return;
 				this.#lastSendAt = Date.now();
-				const { text, silent } = render(row.body, row.note);
+				const message = render(row.body, row.note);
 				let messageId: number;
 				try {
-					messageId = await this.#api.send(row.chatId, text, silent, this.#sending.signal);
+					if (row.messageId === null) messageId = await this.#api.send(row.chatId, message, this.#sending.signal);
+					else {
+						await this.#api.edit(row.chatId, row.messageId, message, this.#sending.signal);
+						messageId = row.messageId;
+					}
 				} catch (error) {
 					await this.#afterSendError(error, row, failures++);
 					continue;
@@ -291,7 +369,9 @@ export class TelegramClient {
 	}
 
 	async #afterSendError(error: unknown, row: Pending, failures: number): Promise<void> {
-		const reaction = error instanceof TelegramError ? ON_SEND_ERROR[error.kind] : "maybe-sent";
+		const kind = error instanceof TelegramError ? ON_SEND_ERROR[error.kind] : "maybe-sent";
+		// An edit sets the card to a state, so landing it twice is the same as once (Telegram answers "not modified"): repeat it after a doubtful failure.
+		const reaction = kind === "maybe-sent" && row.messageId !== null ? "retry" : kind;
 		const message = (error as Error).message;
 		switch (reaction) {
 			case "disable":

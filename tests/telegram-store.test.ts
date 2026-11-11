@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import test from "node:test";
 import { inTransaction, openStore } from "../src/kernel/store.ts";
+import type { CardView } from "../src/host/telegram/rules.ts";
 import { TelegramStore } from "../src/host/telegram/store.ts";
 import { tempStateDir } from "./helpers/fakes.ts";
 
@@ -135,6 +136,43 @@ test("在内核已开的事务里写，跟着事务一起回滚", () => {
 	assert.equal(store.next(), undefined);
 });
 
+const view = (status: CardView["status"], reportId = "rpt_1"): CardView => ({ reportId, title: "查天气", helper: "青檀 · 对话助手 #1", question: "查哪个城市？", options: ["北京", "上海"], status });
+const card = (status: CardView["status"], reportId = "rpt_1") => ({ kind: "card" as const, view: view(status, reportId) });
+
+test("卡片发出后内容变了是一次编辑：待发的那一行带着 Telegram 的 message_id", () => {
+	const { store } = fresh();
+	store.put(42, "ask:rpt_1", null, card({ kind: "open" }));
+	store.sent(store.next()!, 600);
+	store.put(42, "ask:rpt_1", null, card({ kind: "open" }));
+	assert.equal(store.next(), undefined, "同样的卡片不再发");
+	store.put(42, "ask:rpt_1", null, card({ kind: "sent", label: "上海" }));
+	assert.deepEqual(store.next(), { chatId: 42, key: "ask:rpt_1", version: 2, messageId: 600, body: card({ kind: "sent", label: "上海" }), note: false });
+});
+
+test("还没发出就已结束的卡片不发；正在发的卡片发完后再编辑成已结束", () => {
+	const { store } = fresh();
+	store.put(42, "ask:rpt_1", null, card({ kind: "open" }));
+	store.put(42, "ask:rpt_1", null, card({ kind: "closed", label: null }));
+	assert.equal(store.next(), undefined);
+	store.put(42, "ask:rpt_2", null, card({ kind: "open" }, "rpt_2"));
+	const inFlight = store.next()!;
+	store.put(42, "ask:rpt_2", null, card({ kind: "closed", label: null }, "rpt_2"));
+	assert.equal(store.next(), undefined, "发出去之前不知道 message_id，没有可编辑的");
+	store.sent(inFlight, 601);
+	assert.deepEqual(store.next(), { chatId: 42, key: "ask:rpt_2", version: 2, messageId: 601, body: card({ kind: "closed", label: null }, "rpt_2"), note: false });
+});
+
+test("还开着的卡片：只列这个聊天里没结束的问题卡片", () => {
+	const { store } = fresh();
+	store.put(42, "ask:rpt_1", null, card({ kind: "open" }));
+	store.put(42, "ask:rpt_2", null, card({ kind: "sent", label: "北京" }, "rpt_2"));
+	store.put(42, "ask:rpt_3", null, card({ kind: "closed", label: null }, "rpt_3"));
+	store.put(43, "ask:rpt_4", null, card({ kind: "open" }, "rpt_4"));
+	store.put(42, "cap:ask_cap_2026-11-11", null, { kind: "note", text: "成员上限" });
+	store.put(42, "line:rpl_1", "rpl_1", reply("收到。"));
+	assert.deepEqual(store.openCards(42).map((v) => v.reportId).sort(), ["rpt_1", "rpt_2"]);
+});
+
 test("可能已送达的消息不再发；聊天欠一句说明，由下一条消息带上，带着的那条发出后不再欠", () => {
 	const { store } = fresh();
 	for (const key of ["a", "b", "c"] as const) store.put(42, `line:${key}`, key, reply(key));
@@ -168,6 +206,28 @@ test("欠一句说明、没有别的待发：排一条单独的说明；它说�
 	assert.equal(store.next()?.key, "missed", "新的一笔欠账再排一条");
 });
 
+test("欠着说明时，发出过的卡片或文字改了内容是编辑：不带说明、不算还清；没有新文字可带时排一条单独的说明", () => {
+	const { store } = fresh();
+	store.put(42, "ask:rpt_1", null, card({ kind: "open" }));
+	store.put(42, "line:a", "a", reply("a"));
+	store.sent(store.next()!, 600);
+	store.sent(store.next()!, 601);
+	store.put(42, "line:b", "b", reply("b"));
+	store.maybeSent(store.next()!);
+	store.put(42, "ask:rpt_1", null, card({ kind: "sent", label: "上海" }));
+	store.put(42, "line:a", "a", reply("a 改了"));
+	const edits = [store.next()!];
+	store.sent(edits[0], 600);
+	edits.push(store.next()!);
+	store.sent(edits[1], 601);
+	assert.deepEqual(edits.map((e) => [e.key, e.messageId, e.note]), [["ask:rpt_1", 600, false], ["line:a", 601, false]]);
+	const alone = store.next()!;
+	assert.deepEqual([alone.key, alone.note], ["missed", true], "编辑没有还清，单独的说明照排");
+	store.put(42, "line:c", "c", reply("c"));
+	store.sent(alone, 602);
+	assert.equal(store.next()?.note, false);
+});
+
 test("欠的说明存在状态库里，重开后还欠着；屏蔽、换机器人时不再欠", () => {
 	const { store, reopen } = fresh();
 	store.put(42, "line:a", "a", reply("a"));
@@ -180,4 +240,25 @@ test("欠的说明存在状态库里，重开后还欠着；屏蔽、换机器�
 	assert.equal(store.next()?.note, false, "屏蔽时欠的说明一起放下");
 	store.maybeSent(store.next()!);
 	assert.equal(reopen(987654321).next(), undefined);
+});
+
+test("同一个 update 的点只处理一次：重投拿回第一次的提示；处理出错不记，连同它写的一起回滚；换了机器人才忘掉", () => {
+	const { db, store, reopen } = fresh();
+	assert.throws(() =>
+		store.tapOnce(7, () => {
+			store.put(42, "line:a", "a", reply("一"));
+			throw new Error("宿主出错");
+		}),
+	);
+	assert.equal(rows(db, "telegram_messages"), 0);
+	let runs = 0;
+	const handle = (toast: string) => () => {
+		runs++;
+		return toast;
+	};
+	assert.equal(store.tapOnce(7, handle("已发送")), "已发送");
+	assert.equal(reopen().tapOnce(7, handle("别的")), "已发送");
+	assert.equal(runs, 1);
+	assert.equal(reopen(987654321).tapOnce(7, handle("新机器人")), "新机器人");
+	assert.equal(runs, 2);
 });

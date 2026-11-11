@@ -1,16 +1,38 @@
-// A fake Bot API on 127.0.0.1: getMe, a long-polling getUpdates and sendMessage, with hooks to inject
-// updates and failures. In-process tests point BotApi at it; the e2e preload reroutes the host's fetch to it.
+// A fake Bot API on 127.0.0.1: getMe, a long-polling getUpdates, sendMessage, editMessageText and
+// answerCallbackQuery, with hooks to inject messages, button taps and failures. In-process tests point BotApi at it; the e2e preload reroutes the host's fetch to it.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
 export const FAKE_BOT_TOKEN = "123456789:AAH-fake_token_for_tests_only_000000";
 export const FAKE_BOT_USERNAME = "psa_test_bot";
 
+export interface Button {
+	text: string;
+	data: string;
+}
+
 export interface SentMessage {
 	chatId: number;
 	text: string;
 	silent: boolean;
+	/** Null when the message has no inline keyboard. */
+	buttons: Button[][] | null;
 	messageId: number;
+	at: number;
+}
+
+export interface Edit {
+	chatId: number;
+	messageId: number;
+	text: string;
+	buttons: Button[][] | null;
+	at: number;
+}
+
+export interface TapAnswer {
+	callbackId: string;
+	/** The toast; null when the client only stopped the spinner. */
+	text: string | null;
 	at: number;
 }
 
@@ -36,6 +58,8 @@ type Waiter = { offset: number; res: ServerResponse; timer: NodeJS.Timeout };
 
 export class FakeTelegram {
 	readonly sent: SentMessage[] = [];
+	readonly edits: Edit[] = [];
+	readonly tapAnswers: TapAnswer[] = [];
 	readonly requests: RequestRecord[] = [];
 	/** Requests whose path carried another token than the one the fake was started with. */
 	wrongToken = 0;
@@ -45,7 +69,9 @@ export class FakeTelegram {
 	readonly #redeliver: { update_id: number }[] = [];
 	readonly #failures = new Map<string, Failure>();
 	readonly #waiters = new Set<Waiter>();
+	readonly #shown = new Map<number, SentMessage>();
 	#confirmed = 0;
+	#nextCallbackId = 1;
 	#nextUpdateId = 1000;
 	#nextMessageId = 1;
 	url = "";
@@ -76,6 +102,23 @@ export class FakeTelegram {
 			...(options.replyTo !== undefined && { reply_to_message: { message_id: options.replyTo } }),
 		};
 		return this.push({ message });
+	}
+
+	/** Queues a tap on a button of message `messageId` (in `from`'s private chat unless `chatId` says otherwise); returns the callback id. */
+	userTaps(from: number, messageId: number, data: string, { chatId = from, group = false }: { chatId?: number; group?: boolean } = {}): string {
+		const id = `cb${this.#nextCallbackId++}`;
+		this.push({ callback_query: { id, from: { id: from, is_bot: false, first_name: "测试" }, message: { message_id: messageId, chat: { id: chatId, type: group ? "group" : "private" } }, chat_instance: "fake", data } });
+		return id;
+	}
+
+	/** What the phone shows for one message now: its latest text and buttons after every edit. */
+	shown(messageId: number): SentMessage | undefined {
+		return this.#shown.get(messageId);
+	}
+
+	/** The toast the client showed for one tap: undefined while it has not answered, null for no toast. */
+	toastFor(callbackId: string): string | null | undefined {
+		return this.tapAnswers.find((a) => a.callbackId === callbackId)?.text;
 	}
 
 	push(update: object): number {
@@ -136,10 +179,26 @@ export class FakeTelegram {
 			case "getMe":
 				return reply(200, { ok: true, result: { id: Number(this.#token.split(":")[0]), is_bot: true, first_name: "白宫", username: FAKE_BOT_USERNAME } });
 			case "sendMessage": {
-				const sent = { chatId: params.chat_id, text: params.text, silent: params.disable_notification === true, messageId: this.#nextMessageId++, at: Date.now() };
+				const sent = { chatId: params.chat_id, text: params.text, silent: params.disable_notification === true, buttons: buttonsOf(params.reply_markup), messageId: this.#nextMessageId++, at: Date.now() };
 				this.sent.push(sent);
+				this.#shown.set(sent.messageId, sent);
 				return reply(200, { ok: true, result: { message_id: sent.messageId, chat: { id: sent.chatId, type: "private" }, date: Math.floor(sent.at / 1000), text: sent.text } });
 			}
+			case "editMessageText": {
+				const shown = this.#shown.get(params.message_id);
+				if (!shown || shown.chatId !== params.chat_id) return reply(400, { ok: false, error_code: 400, description: "Bad Request: message to edit not found" });
+				const buttons = buttonsOf(params.reply_markup);
+				if (shown.text === params.text && JSON.stringify(shown.buttons) === JSON.stringify(buttons)) {
+					return reply(400, { ok: false, error_code: 400, description: "Bad Request: message is not modified: specified new message content and reply markup are exactly the same" });
+				}
+				const edit = { chatId: shown.chatId, messageId: shown.messageId, text: params.text, buttons, at: Date.now() };
+				this.edits.push(edit);
+				this.#shown.set(shown.messageId, { ...shown, text: edit.text, buttons });
+				return reply(200, { ok: true, result: { message_id: shown.messageId, chat: { id: shown.chatId, type: "private" }, text: edit.text } });
+			}
+			case "answerCallbackQuery":
+				this.tapAnswers.push({ callbackId: params.callback_query_id, text: typeof params.text === "string" ? params.text : null, at: Date.now() });
+				return reply(200, { ok: true, result: true });
 			case "getUpdates": {
 				const offset = typeof params.offset === "number" ? params.offset : 0;
 				this.#confirmed = Math.max(this.#confirmed, offset);
@@ -173,4 +232,9 @@ export class FakeTelegram {
 		this.requests.push({ method: "getUpdates", at: Date.now(), status: 200 });
 		if (!waiter.res.writableEnded) waiter.res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, result }));
 	}
+}
+
+function buttonsOf(markup: { inline_keyboard?: { text: string; callback_data: string }[][] } | undefined): Button[][] | null {
+	const rows = markup?.inline_keyboard;
+	return rows?.length ? rows.map((row) => row.map((b) => ({ text: b.text, data: b.callback_data }))) : null;
 }

@@ -2,7 +2,7 @@
 // something to one bot, so they live together here and are wiped together when the bot changes.
 import type { DatabaseSync } from "node:sqlite";
 import { inTransaction } from "../../kernel/store.ts";
-import type { OutboundBody } from "./rules.ts";
+import type { CardView, OutboundBody } from "./rules.ts";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS telegram_bot (
@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS telegram_messages (
 	created_at INTEGER NOT NULL,
 	PRIMARY KEY (chat_id, key)
 );
+CREATE TABLE IF NOT EXISTS telegram_taps (
+	update_id INTEGER PRIMARY KEY,
+	toast TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS telegram_owed_notes (
 	chat_id INTEGER PRIMARY KEY
 );
@@ -35,13 +39,19 @@ CREATE INDEX IF NOT EXISTS telegram_messages_due ON telegram_messages(chat_id) W
 `;
 
 const DUE = "gave_up IS NULL AND (sent_version IS NULL OR sent_version < version)";
-// Only plain text carries the may-be-missing note: a message edited in place, such as a card, would not show it as news.
-const CARRIES_NOTE = "body ->> '$.kind' IN ('line', 'note')";
+const CARD_STATUS = "body ->> '$.view.status.kind'";
+// A card that closed before Telegram ever showed it has nothing to tell the user. If its first send is still in flight, sent() records the message_id and the close goes out as an edit.
+const NOTHING_TO_CLOSE = `message_id IS NULL AND ${CARD_STATUS} IS 'closed'`;
+// Only a new text message carries the may-be-missing note: a message edited in place, such as a card, would not show it as news.
+const CARRIES_NOTE = "body ->> '$.kind' IN ('line', 'note') AND message_id IS NULL";
 // The standalone note is an empty text message: the note it carries is all it says.
 const STANDALONE_NOTE: SendableBody = { kind: "note", text: "" };
 
-/** `line:<lineId>` shows a conversation line, `note:<updateId>` answers one update, `setup` tells a writer their id, `missed` carries an owed note when nothing else will. */
-export type MessageKey = `line:${string}` | `note:${number}` | "setup" | "missed";
+/**
+ * `line:<lineId>` shows a conversation line, `ask:<reportId>` is the card for a helper's question, `cap:<capAskId>` the member-cap note,
+ * `note:<updateId>` answers one update, `setup` tells a writer their id, `missed` carries an owed note when nothing else will.
+ */
+export type MessageKey = `line:${string}` | `ask:${string}` | `cap:${string}` | `note:${number}` | "setup" | "missed";
 
 export type SendableBody = Exclude<OutboundBody, { kind: "received" }>;
 
@@ -74,7 +84,7 @@ export class TelegramStore {
 		inTransaction(this.#db, () => {
 			const bot = this.#db.prepare("SELECT bot_id FROM telegram_bot WHERE id = 1").get() as { bot_id: number } | undefined;
 			if (bot?.bot_id !== this.#botId) {
-				this.#db.exec("DELETE FROM telegram_messages; DELETE FROM telegram_chats; DELETE FROM telegram_owed_notes; DELETE FROM telegram_bot");
+				this.#db.exec("DELETE FROM telegram_messages; DELETE FROM telegram_chats; DELETE FROM telegram_taps; DELETE FROM telegram_owed_notes; DELETE FROM telegram_bot");
 				this.#db.prepare("INSERT INTO telegram_bot (id, bot_id) VALUES (1, ?)").run(this.#botId);
 			}
 			this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id NOT IN (SELECT value FROM json_each(?))").run(keep);
@@ -133,6 +143,30 @@ export class TelegramStore {
 			.run(chatId, `line:${lineId}`, lineId, JSON.stringify({ kind: "received" } satisfies OutboundBody), messageId, this.#now());
 	}
 
+	openCards(chatId: number): CardView[] {
+		const rows = this.#db.prepare(`SELECT body FROM telegram_messages WHERE chat_id = ? AND key LIKE 'ask:%' AND ${CARD_STATUS} != 'closed'`).all(chatId) as { body: string }[];
+		return rows.map((r) => JSON.parse(r.body).view);
+	}
+
+	/** callback_data comes from the phone and can name any question, so a tap counts only on the card that shows that question. */
+	isCard(chatId: number, messageId: number, reportId: string): boolean {
+		return this.#db.prepare("SELECT 1 FROM telegram_messages WHERE chat_id = ? AND message_id = ? AND key = ?").get(chatId, messageId, `ask:${reportId}`) !== undefined;
+	}
+
+	/**
+	 * Handles a tap once per update: `handle` runs in the same transaction that records its toast, and a redelivered
+	 * update gets that toast back without running it again.
+	 */
+	tapOnce(updateId: number, handle: () => string): string {
+		return inTransaction(this.#db, () => {
+			const seen = this.#db.prepare("SELECT toast FROM telegram_taps WHERE update_id = ?").get(updateId) as { toast: string } | undefined;
+			if (seen) return seen.toast;
+			const toast = handle();
+			this.#db.prepare("INSERT INTO telegram_taps (update_id, toast) VALUES (?, ?)").run(updateId, toast);
+			return toast;
+		});
+	}
+
 	/** Also queues the standalone note for a chat that owes one and has no text waiting to carry it: one per debt. */
 	next(): Pending | undefined {
 		this.#db
@@ -145,7 +179,7 @@ export class TelegramStore {
 		const row = this.#db
 			.prepare(
 				`SELECT m.chat_id, key, version, message_id, body, o.chat_id IS NOT NULL AND ${CARRIES_NOTE} AS note
-				 FROM telegram_messages m LEFT JOIN telegram_owed_notes o ON o.chat_id = m.chat_id WHERE ${DUE} ORDER BY m.rowid LIMIT 1`,
+				 FROM telegram_messages m LEFT JOIN telegram_owed_notes o ON o.chat_id = m.chat_id WHERE ${DUE} AND NOT (${NOTHING_TO_CLOSE}) ORDER BY m.rowid LIMIT 1`,
 			)
 			.get() as { chat_id: number; key: MessageKey; version: number; message_id: number | null; body: string; note: number } | undefined;
 		return row && { chatId: row.chat_id, key: row.key, version: row.version, messageId: row.message_id, body: JSON.parse(row.body), note: row.note === 1 };

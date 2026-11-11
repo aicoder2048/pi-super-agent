@@ -206,7 +206,7 @@ export class Host {
 			this.#log,
 		);
 		// Built before any client can say a line, so every line and reply reaches it; it touches the network only once started.
-		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o) }, db: this.#db, clock, log: this.#log });
+		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }) }, db: this.#db, clock, log: this.#log });
 	}
 
 	static async start(options: HostOptions): Promise<Host> {
@@ -272,14 +272,17 @@ export class Host {
 		return said.triggerId;
 	}
 
-	/** Only the user's front ends reach this: the web gateway after its token and origin checks, and a socket connection that said hello as a client. */
-	answer(reportId: string, option: number): AnswerResult {
-		if (isCapAskId(reportId)) return this.#answerCapAsk(reportId, option);
+	/**
+	 * Only the user's front ends reach this: the web gateway after its token and origin checks, a socket connection that said hello as a client,
+	 * and an IM client (`from`) for a listed account. The member cap is answered on the web page or in the TUI only (ADR-0010, ADR-0016).
+	 */
+	answer(reportId: string, option: number, { from }: { from?: ImChat } = {}): AnswerResult {
+		if (isCapAskId(reportId)) return from ? { ok: false, refusal: { kind: "not_here" } } : this.#answerCapAsk(reportId, option);
 		const at = Date.now();
 		const result = this.kernel.answerQuestion({ reportId, option, at });
 		if (!result.ok) return result;
 		if (!result.duplicate) {
-			this.#broadcast({ type: "user", id: result.triggerId, who: "user", text: result.text, at });
+			this.#broadcast({ type: "user", id: result.triggerId, who: "user", text: result.text, at }, from);
 			this.#changed();
 		}
 		return { ok: true, triggerId: result.triggerId };

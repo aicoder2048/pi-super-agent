@@ -32,7 +32,8 @@ export type AnswerRefusal =
 	| { kind: "out_of_range"; count: number }
 	| { kind: "chosen"; option: number; label: string }
 	| { kind: "spoke" }
-	| { kind: "closed" };
+	| { kind: "closed" }
+	| { kind: "not_here" };
 
 export function refusalText(r: AnswerRefusal): string {
 	switch (r.kind) {
@@ -48,6 +49,8 @@ export function refusalText(r: AnswerRefusal): string {
 			return "你刚发了一句话，幕僚长处理完之前不能点选项";
 		case "closed":
 			return "这个问题已经回答过，或已不在等待回答";
+		case "not_here":
+			return "成员上限只能在网页或终端的「待你处理」里回答";
 	}
 }
 
