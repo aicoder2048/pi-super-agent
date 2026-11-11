@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { DashboardRow, PendingQuestion } from "../src/kernel/types.ts";
 import type { TelegramEvent } from "../src/host/telegram/bot-api.ts";
-import { answerData, cardView, closedView, decide, fitMessage, mirrorText, NOTES, parseAnswerData, render, type CardView } from "../src/host/telegram/rules.ts";
+import { answerData, cardView, closedView, decide, fitMessage, mirrorText, NOTES, parseAnswerData, render, repeatsQuestion, type CardView } from "../src/host/telegram/rules.ts";
 
 const ALLOWED = new Set([42]);
 
@@ -189,4 +189,18 @@ test("成员上限只发一条说明，指向网页和终端的「待你处理�
 	assert.match(NOTES.help, /点按钮就是回答/);
 	assert.match(NOTES.help, /成员上限只能在网页或终端回答/);
 	assert.match(NOTES.help, /滑动回复，就是引用那句话/);
+});
+
+test("幕僚长转述助手的问题：原话、只差标点、带一小段开场白都算重复；别的话、已回答的、没有问题的都不算", () => {
+	const asked = question({ text: "你在哪个城市或地区？", askedAt: 100 });
+	const relay = (text: string, at = 200) => ({ text, at });
+	for (const text of ["你在哪个城市或地区？", "  你在哪个城市或地区  ", "你在哪个城市或地区。", "你在哪个城市或地区?", "请问：你在哪个城市或地区？", "助手想知道，你在哪个城市或地区？"]) {
+		assert.equal(repeatsQuestion(relay(text), asked), true, text);
+	}
+	assert.equal(repeatsQuestion(relay("你在哪个城市或地区？告诉我之后助手会按当地的天气预报给你查明天的情况。"), asked), false, "问题之外还说了不少");
+	assert.equal(repeatsQuestion(relay("助手查天气前要先知道城市。"), asked), false, "说的是别的");
+	assert.equal(repeatsQuestion(relay("你在哪个城市或地区？", 50), asked), false, "问题之前的回复");
+	assert.equal(repeatsQuestion(relay("你在哪个城市或地区？"), question({ text: "你在哪个城市或地区？", askedAt: 100, click: click(0, "handed_over") })), false, "问题已回答");
+	assert.equal(repeatsQuestion(relay("你在哪个城市或地区？"), null), false, "没有问题");
+	assert.equal(repeatsQuestion(relay("？"), question({ text: "？", askedAt: 100 })), false, "只有标点的问题不拿来比");
 });

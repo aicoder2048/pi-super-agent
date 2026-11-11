@@ -2,7 +2,7 @@
 import { clip, helperFullName } from "../../client/board-format.mjs";
 import { isCapAskId } from "../../kernel/cap-ask.ts";
 import { OPTIONS_MAX, refusalText } from "../../kernel/question.ts";
-import type { DashboardRow } from "../../kernel/types.ts";
+import type { DashboardRow, PendingQuestion } from "../../kernel/types.ts";
 import { hasVisibleText, type ImChat } from "../server.ts";
 import type { Keyboard, TelegramEvent } from "./bot-api.ts";
 
@@ -13,6 +13,8 @@ const CALLBACK_DATA_MAX_BYTES = 64;
 const ANSWER_DATA = new RegExp(`^a:([A-Za-z0-9_-]+):([0-${OPTIONS_MAX - 1}])$`);
 const REPORT_ID = /^rpt_[A-Za-z0-9_-]+$/;
 const TITLE_MAX = 40;
+const RELAY_SLACK = 10;
+const EDGES = /^[\s\p{P}]+|[\s\p{P}]+$/gu;
 
 export type Note = "help" | "text-only" | "no-forwards" | "no-via-bot";
 
@@ -95,6 +97,17 @@ export function cardView(row: DashboardRow): CardView | null {
 						? { kind: "dropped" }
 						: { kind: "open" };
 	return { reportId: q.reportId, title: row.title, helper: helperFullName(row.helper), question: q.text, options: q.options, status };
+}
+
+/**
+ * The chief of staff relaying a helper's question the card already shows: the question itself, give or take edge
+ * punctuation and a lead-in or tail of at most RELAY_SLACK characters. An answered question no longer has a card to stand in.
+ */
+export function repeatsQuestion(reply: { text: string; at: number }, question: PendingQuestion | null): boolean {
+	if (!question || question.askedAt > reply.at || question.click?.state === "handed_over") return false;
+	const asked = question.text.replace(EDGES, "");
+	const said = reply.text.replace(EDGES, "");
+	return asked !== "" && said.includes(asked) && said.length <= asked.length + RELAY_SLACK;
 }
 
 /** A question that left the board: buttons go, and the option the user picked stays readable. */

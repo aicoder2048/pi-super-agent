@@ -8,7 +8,7 @@ import { inTransaction } from "../../kernel/store.ts";
 import type { Clock } from "../../kernel/types.ts";
 import type { AnswerResult, Broadcast, ImChat, SayOptions } from "../server.ts";
 import { TelegramError, type BotApi, type TelegramErrorKind, type Update } from "./bot-api.ts";
-import { cardView, closedView, decide, mirrorText, NOTES, render } from "./rules.ts";
+import { cardView, closedView, decide, mirrorText, NOTES, render, repeatsQuestion } from "./rules.ts";
 import { TelegramStore, type Pending } from "./store.ts";
 
 export interface TelegramTiming {
@@ -122,7 +122,14 @@ export class TelegramClient {
 		if (this.#state === "off") return;
 		try {
 			if (message.type === "reply") {
-				for (const chat of this.#store.openChats()) this.#store.put(chat, `line:${message.replyId}`, message.replyId, { kind: "line", text: message.text, silent: false });
+				const board = message.ticketId ? this.#host.board() : null;
+				const question = board?.rows.find((row) => row.id === message.ticketId)?.question ?? null;
+				// Board frames wait 100ms after a change, so a quick Router turn can beat the frame with the card: queue the card here, then drop the repeat.
+				if (board && repeatsQuestion(message, question)) {
+					for (const chat of this.#store.openChats()) this.#syncCards(chat, board);
+				} else {
+					for (const chat of this.#store.openChats()) this.#store.put(chat, `line:${message.replyId}`, message.replyId, { kind: "line", text: message.text, silent: false });
+				}
 			} else if (message.type === "user") {
 				for (const chat of this.#store.openChats()) {
 					if (chat !== from?.chatId) this.#store.put(chat, `line:${message.id}`, message.id, { kind: "line", text: mirrorText(message.text, from), silent: true });

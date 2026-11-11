@@ -684,3 +684,35 @@ test("清屏之后滑动回复清屏前的回复：引用仍然成立", async (t
 	await swipeReplied(tg, host, "清屏后接着问", sentMessage(tg, "收到：查一下 NVDA").messageId);
 	assert.equal(host.kernel.conversation().find((l) => l.text === "清屏后接着问")!.quote?.lineId, reply.id);
 });
+
+const relayBrain: Brain = (cards) =>
+	cards.flatMap((card) => {
+		if (card.startsWith("[对话]") && card.includes("使用者：查天气")) return openOnConversation(card);
+		if (card.startsWith("[Worker 提问]")) {
+			const cause = ids(card, "tkt");
+			return [
+				{ name: "reply", args: { text: "查哪个城市？", cause } },
+				{ name: "reply", args: { text: "助手查天气前要先知道城市。", cause } },
+			];
+		}
+		return [];
+	});
+
+test("真宿主：助手带选项提问，手机上只有卡片，幕僚长转述的同一个问题不再单发一条；同一任务的别的话照常到；网页照常收到转述", async (t) => {
+	const started = await telegramHost(t, { brain: relayBrain, script: asking });
+	const { host, tg } = started;
+	const client = watch(t, host);
+	await client.connected();
+	tg.userSays(USER, "/start");
+	await until(() => sentTo(tg, USER).length === 1, "说明");
+	host.say("查天气");
+	await until(() => sentTo(tg, USER).includes("助手查天气前要先知道城市。"), "同一任务的别的话到达 Telegram");
+	await host.settled();
+	await settle();
+	assert.equal(cards(tg, USER).length, 1, "一张卡片");
+	assert.ok(!sentTo(tg, USER).includes("查哪个城市？"), "转述的问题不单发");
+	const ask = sentTo(tg, USER).findIndex((m) => m.includes("问你（任务"));
+	assert.ok(ask < sentTo(tg, USER).indexOf("助手查天气前要先知道城市。"), "卡片在后面那句话之前");
+	assert.deepEqual(ofType(client.got, "reply").map((m) => m.text).slice(-2), ["查哪个城市？", "助手查天气前要先知道城市。"], "终端照常收到两句");
+	assert.ok(host.kernel.conversation().some((l) => l.text === "查哪个城市？"), "对话里照常有转述");
+});
