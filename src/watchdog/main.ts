@@ -1,6 +1,6 @@
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { fchmodSync, fstatSync, openSync } from "node:fs";
-import { readHeartbeat } from "../heartbeat.ts";
+import { HOST_ENTRY, hostPid } from "../heartbeat.ts";
 import { constants } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,25 +17,10 @@ try {
 const log = (line: string) => console.error(`${new Date().toISOString()} ${line}`);
 const repo = fileURLToPath(new URL("../..", import.meta.url));
 const intervalMs = config.watchdog.intervalMinutes * 60_000;
-const HOST_ENTRY = "src/host/main.ts";
 const HOST_STOP_MS = 15_000;
 
-function commandOf(pid: number): string | undefined {
-	try {
-		return execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" }).trim();
-	} catch {
-		return undefined;
-	}
-}
-
-// The pid in heartbeat.json may have been reused by an unrelated process since the host died.
-function hostPid(): number | undefined {
-	const pid = readHeartbeat(config.stateDir)?.pid;
-	return pid && pid !== process.pid && commandOf(pid)?.includes(HOST_ENTRY) ? pid : undefined;
-}
-
 function killHungHost(): void {
-	const pid = hostPid();
+	const pid = hostPid(config.stateDir);
 	if (!pid) return;
 	process.kill(pid, "SIGKILL");
 	log(`[watchdog] 已结束没有心跳的宿主进程 ${pid}`);

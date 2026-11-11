@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -25,3 +26,24 @@ export function readHeartbeat(stateDir: string): Heartbeat | undefined {
 		return undefined;
 	}
 }
+
+export const HOST_ENTRY = "src/host/main.ts";
+
+function commandOf(pid: number): string | undefined {
+	try {
+		return execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" }).trim();
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * The heartbeat only while its writer still runs: a host that stopped cleanly leaves its last heartbeat behind, and its
+ * pid may since have been reused by an unrelated process.
+ */
+export function liveHeartbeat(stateDir: string, self = process.pid): Heartbeat | undefined {
+	const beat = readHeartbeat(stateDir);
+	return beat && beat.pid !== self && commandOf(beat.pid)?.includes(HOST_ENTRY) ? beat : undefined;
+}
+
+export const hostPid = (stateDir: string, self = process.pid): number | undefined => liveHeartbeat(stateDir, self)?.pid;
