@@ -65,7 +65,6 @@ export interface HostOptions {
 	feeds?: FeedSpec[];
 	/** Runs `run` once, `ms` from now, and returns its cancel. The host waits for the New York day change with it; tests pass their own to make that moment arrive. */
 	after?: (ms: number, run: () => void) => () => void;
-	/** Runs the Telegram client beside the web page and the socket clients. */
 	telegram?: TelegramOptions;
 }
 
@@ -334,7 +333,6 @@ export class Host {
 		this.kernel.markReplyDelivered(replyId);
 	}
 
-	/** `from` names the IM chat a line came from. Only the IM clients get it; it never goes on the wire. */
 	#broadcast(message: Broadcast, from?: ImChat): void {
 		this.server.broadcast(message);
 		this.#web?.broadcast(message);

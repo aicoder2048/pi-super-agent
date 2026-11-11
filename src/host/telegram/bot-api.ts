@@ -18,7 +18,6 @@ export class BotToken {
 	/** The number before ":". Not secret: Telegram shows it as the bot's user id. */
 	readonly botId: number;
 
-	/** `origin` says where the token came from, for the error when its shape is wrong. */
 	constructor(raw: string, origin: string) {
 		const shape = TOKEN_SHAPE.exec(raw);
 		if (!shape) throw new ConfigError(`TELEGRAM_BOT_TOKEN（${origin}）格式不对：应是 @BotFather 给的「数字:字母数字串」，请重新复制`);
@@ -87,7 +86,6 @@ export class TelegramError extends Error {
 
 export interface BotApiOptions {
 	token: BotToken;
-	/** TELEGRAM_API, or http://127.0.0.1:<port> for a fake server in tests. */
 	baseUrl?: string;
 	/** Defaults to the global fetch, looked up at call time so an e2e preload can reroute it. */
 	http?: Http;
@@ -120,7 +118,6 @@ export class BotApi {
 		return result.map((u) => ({ updateId: u.update_id, event: parseMessage(u.message) }));
 	}
 
-	/** Plain text, no parse_mode. Returns Telegram's message_id. */
 	async send(chatId: number, text: string, silent: boolean, signal: AbortSignal): Promise<number> {
 		const sent = await this.#call("sendMessage", { chat_id: chatId, text, ...(silent && { disable_notification: true }) }, signal);
 		if (!Number.isSafeInteger(sent?.message_id)) throw new TelegramError("sendMessage", "bad_response");

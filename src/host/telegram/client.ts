@@ -19,7 +19,6 @@ export interface TelegramTiming {
 	stopGraceMs: number;
 }
 
-/** What HostOptions.telegram carries: built by wiring, or by a test around a fake Bot API. */
 export interface TelegramOptions {
 	api: BotApi;
 	allowedUserIds: ReadonlySet<number>;
