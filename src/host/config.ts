@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_MODELS, parseModelRef, type ModelRef } from "../models.ts";
 import type { KernelConfig } from "../kernel/types.ts";
@@ -31,6 +31,8 @@ export interface HostConfig {
 	/** Tailnet names the page also answers at (ADR-0014). Empty means local only. */
 	webHosts: readonly TailnetName[];
 	secretsFile?: string;
+	/** Absolute. Where helpers and members put what they make (ADR-0015). */
+	outputDir: string;
 	sources: Record<string, unknown>;
 }
 
@@ -77,6 +79,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	}
 	const secretsFile = raw.secretsFile === undefined ? undefined : resolve(stateDir, raw.secretsFile);
 	if (secretsFile && !existsSync(secretsFile)) throw new ConfigError(`${file}：secretsFile 指向的 ${secretsFile} 不存在`);
+	const outputDir = parseOutputDir(raw.outputDir, stateDir, file);
 	const seconds = (key: string, fallback: number): number => {
 		const value = raw[key] === undefined ? fallback : raw[key];
 		if (typeof value !== "number" || !(value >= DISPATCH_TIMEOUT_MIN && value <= DISPATCH_TIMEOUT_MAX)) {
@@ -125,6 +128,22 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		webPort,
 		webHosts,
 		secretsFile,
+		outputDir,
 		sources,
 	};
+}
+
+const within = (parent: string, child: string) => {
+	const rel = relative(parent, child);
+	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+};
+
+function parseOutputDir(value: unknown, stateDir: string, file: string): string {
+	if (value !== undefined && typeof value !== "string") throw new ConfigError(`${file}：outputDir（${JSON.stringify(value)}）必须是目录路径字符串，相对路径按状态目录算`);
+	const dir = resolve(stateDir, value ?? "output");
+	if (within(dir, stateDir)) throw new ConfigError(`${file}：outputDir（${dir}）不能是状态目录或它的上级，否则令牌和 state.db 也算成品目录`);
+	for (const own of ["workers", "sessions"]) {
+		if (within(join(stateDir, own), dir)) throw new ConfigError(`${file}：outputDir（${dir}）不能放在状态目录的 ${own}/ 下面，那里是宿主自己的任务目录和会话记录`);
+	}
+	return dir;
 }

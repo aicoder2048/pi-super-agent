@@ -159,3 +159,20 @@ test("webHosts 不为空时 webPort 不能是 0：tailscale serve 转发到固�
 	assert.throws(() => loadConfig(stateWith({ webHosts: ["psa-home.example.ts.net"], webPort: 0 })), (e: Error) => e.name === "ConfigError" && /webHosts/.test(e.message) && /webPort/.test(e.message));
 	assert.equal(loadConfig(stateWith({ webHosts: [], webPort: 0 })).webPort, 0);
 });
+
+test("成品目录默认是状态目录下的 output；相对路径按状态目录解析，绝对路径原样保留", () => {
+	const dir = stateWith({});
+	assert.equal(loadConfig(dir).outputDir, join(dir, "output"));
+	const relative = stateWith({ outputDir: "made/by-workers" });
+	assert.equal(loadConfig(relative).outputDir, join(relative, "made/by-workers"));
+	const elsewhere = mkdtempSync(join(tmpdir(), "psa-made-"));
+	assert.equal(loadConfig(stateWith({ outputDir: elsewhere })).outputDir, elsewhere);
+});
+
+test("outputDir 不是字符串、等于状态目录、是状态目录的上级、或在 workers/、sessions/ 下面时拒绝启动，报错以 config.json 开头", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-config-"));
+	for (const outputDir of [42, ".", dir, "..", "workers/x", "sessions", "sessions/workers/out"]) {
+		writeFileSync(join(dir, "config.json"), JSON.stringify({ outputDir }));
+		assert.throws(() => loadConfig(dir), (e: Error) => e.name === "ConfigError" && e.message.startsWith(join(dir, "config.json")) && /outputDir/.test(e.message), JSON.stringify(outputDir));
+	}
+});
