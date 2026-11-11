@@ -19,7 +19,7 @@ import { WATCHDOG_SOURCE } from "../src/watchdog/watchdog.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { Kernel } from "../src/kernel/kernel.ts";
 import { answerSentence } from "../src/kernel/question.ts";
-import { busyPort, domainsOf, freePort, ids, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
+import { busyPort, domainsOf, fakeFeed, freePort, ids, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
@@ -176,6 +176,22 @@ test("页面：收到 cleared 帧后对话只剩帧里带的行，顶部细线�
 	assert.deepEqual(texts(view), ["router:还在路上的回复"]);
 	assert.deepEqual(page.clearedBar(view, AT_1405 + 60 * MIN, "Asia/Shanghai"), { text: "已清屏 · 14:05 · 显示之前的", expanded: false });
 	assert.equal(page.clearedBar(view, AT_1405 + 24 * 60 * MIN, "Asia/Shanghai")?.text, "已清屏 · 11月9日 14:05 · 显示之前的", "不是今天清的屏写上日期");
+});
+
+test("页面：宿主行（提醒、收据）进对话；刷新后的快照里还在、不重复；清屏帧把它收走", () => {
+	const view = page.emptyView();
+	const alert = { id: "hln_1", who: "alert", text: "NVDA 涨了 5.3%", at: AT_1405 } as const;
+	const receipt = { id: "hln_2", who: "receipt", text: "已记下：NVDA\n成本价 120.00", at: AT_1405 + 1 } as const;
+	assert.deepEqual(page.applyMessage(view, { type: "host_line", ...alert }, 0), ["conversation"]);
+	page.applyMessage(view, { type: "host_line", ...receipt }, 0);
+	assert.deepEqual(texts(view), ["alert:NVDA 涨了 5.3%", "receipt:已记下：NVDA\n成本价 120.00"]);
+	const reloaded = page.emptyView();
+	page.applyMessage(reloaded, snapshot({ conversation: [alert, receipt], cleared: null }), 0);
+	page.applyMessage(reloaded, { type: "host_line", ...alert }, 0);
+	assert.deepEqual(texts(reloaded), texts(view));
+	page.applyMessage(view, clearedFrame([alert, receipt]), 0);
+	assert.deepEqual(texts(view), []);
+	assert.deepEqual(page.earlierLines((page.toggleEarlier(view), view)).map((l) => l.id), ["hln_1", "hln_2"]);
 });
 
 test("页面：点细线只在本页展开被清掉的行，再点收起；新的清屏把展开收回", () => {
@@ -2215,4 +2231,20 @@ test("页面：只有光标在第一行按 ↑、在最后一行按 ↓ 才翻�
 	for (const held of ["shiftKey", "altKey", "ctrlKey", "metaKey", "isComposing"] as const) assert.equal(page.historyKey(key("ArrowUp", { [held]: true }), "", 0, 0), null, held);
 	assert.equal(page.historyKey(key("ArrowUp", { keyCode: 229 }), "", 0, 0), null);
 	assert.equal(page.historyKey(key("Enter"), "", 0, 0), null);
+});
+
+test("网关：来源贴的提醒和收据经事件流到网页，各一帧；重复的提醒不再发；之后连上的网页在快照里看到它们", async (t) => {
+	const feed = fakeFeed("us-market");
+	const { events } = await webHost(t, () => [], { feeds: [feed.spec] });
+	const stream = events();
+	await until(() => ofType(stream.got, "snapshot").length === 1, "快照");
+	feed.ctx!.post({ kind: "alert", externalId: "NVDA:x", text: "NVDA 涨了 5.3%", occurredAt: 1 });
+	feed.ctx!.post({ kind: "alert", externalId: "NVDA:x", text: "NVDA 涨了 5.3%", occurredAt: 1 });
+	feed.ctx!.post({ kind: "receipt", text: "已记下：NVDA" });
+	await until(() => ofType(stream.got, "host_line").length === 2, "两帧宿主行");
+	await new Promise((r) => setTimeout(r, 200));
+	assert.deepEqual(ofType(stream.got, "host_line").map((m) => [m.who, m.text]), [["alert", "NVDA 涨了 5.3%"], ["receipt", "已记下：NVDA"]]);
+	const later = events();
+	await until(() => ofType(later.got, "snapshot").length === 1, "新网页的快照");
+	assert.deepEqual(ofType(later.got, "snapshot")[0].conversation.map((l) => [l.who, l.text]), [["alert", "NVDA 涨了 5.3%"], ["receipt", "已记下：NVDA"]]);
 });

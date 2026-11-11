@@ -9,7 +9,7 @@ import { isCapAskId } from "../kernel/cap-ask.ts";
 import { msUntilNextNewYorkDay } from "../kernel/helper-names.ts";
 import { Kernel, nextStallAt } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
-import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type DashboardRow, type Disposition, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
+import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type DashboardRow, type Disposition, type HostLine, type HostLinePost, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
 import type { TriggerSubmission } from "../kernel/types.ts";
 import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
@@ -166,6 +166,8 @@ export class Host {
 			submit,
 			readCursor: () => this.kernel.sourceCursor(spec.source),
 			writeCursor: (value) => this.kernel.setSourceCursor(spec.source, value),
+			post: (line) => this.#postHostLine(spec.source, line),
+			raised: (externalId) => this.kernel.raised(spec.source, externalId),
 			log: this.#log,
 		})]));
 		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []) };
@@ -236,6 +238,7 @@ export class Host {
 		const recovered = host.kernel.recoverOnStartup();
 		host.#duty = { since: host.#clock.now(), resumed: recovered.length };
 		if (recovered.length) host.#log(`[host] 恢复 ${recovered.length} 个执行中的任务：${recovered.join(", ")}`);
+		for (const line of host.kernel.undeliveredAlerts()) host.#deliverHostLine(line);
 		host.generic.start();
 		host.timer.start();
 		for (const feed of host.feeds.values()) feed.start();
@@ -342,6 +345,17 @@ export class Host {
 		if (threadId !== CONVERSATION_THREAD_ID) throw new Error(`线程 ${threadId} 没有渠道`);
 		this.#broadcast({ type: "reply", text, at: Date.now(), replyId, ...(ticketId ? { ticketId } : {}) });
 		this.kernel.markReplyDelivered(replyId);
+	}
+
+	#postHostLine(source: string, post: HostLinePost): void {
+		const { line, duplicate } = this.kernel.postHostLine(source, post);
+		if (!duplicate) this.#deliverHostLine(line);
+	}
+
+	// Telegram's outbox upserts on the line id, so delivering again after a stop between the two steps sends nothing twice.
+	#deliverHostLine(line: HostLine): void {
+		this.#broadcast({ type: "host_line", ...line });
+		if (line.who === "alert") this.kernel.markHostLineDelivered(line.id);
 	}
 
 	#broadcast(message: Broadcast, from?: ImChat): void {

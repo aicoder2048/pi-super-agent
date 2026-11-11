@@ -280,6 +280,21 @@ test("TUI：收到网页清屏的 cleared 帧时什么都不打印，已经打�
 	assert.deepEqual(ext.warnings, []);
 });
 
+test("TUI：提醒和收据打成「盯盘提醒>」「盯盘条件（只在本机）>」，快照里的和实时的都一样，同一个 id 只打一次", async (t) => {
+	const host = scriptedHost();
+	host.hello((s) => {
+		writeJsonLine(s, { type: "snapshot", board: [], conversation: [{ id: "hln_1", who: "receipt", text: "已记下：NVDA", at: 4 }] });
+		writeJsonLine(s, { type: "host_line", id: "hln_2", who: "alert", text: "NVDA 涨了 5.3%", at: 5 });
+		writeJsonLine(s, { type: "host_line", id: "hln_2", who: "alert", text: "NVDA 涨了 5.3%", at: 5 });
+		writeJsonLine(s, { type: "user", who: "user", id: "trg_3", text: "好", at: 6 });
+	});
+	await host.listen();
+	const ext = await runExtension(host.path);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await until(() => ext.shown.some((l) => l === "你> 好"), "最后一句");
+	assert.deepEqual(ext.shown, ["盯盘条件（只在本机）> 已记下：NVDA", "盯盘提醒> NVDA 涨了 5.3%", "你> 好"]);
+});
+
 test("终端：带引用的话前面先打一行「↪ 引用 幕僚长：…」，快照里的历史和实时的都一样", async (t) => {
 	const quote = (lineId: string, who: "user" | "router", text: string) => ({ lineId, who, at: 4, text, ticketId: null });
 	const host = scriptedHost();

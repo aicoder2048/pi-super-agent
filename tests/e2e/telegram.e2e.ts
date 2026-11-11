@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { after } from "node:test";
@@ -127,6 +128,45 @@ test("Telegram：名单上的人在手机上说话，网页上看到；幕僚长
 			});
 		},
 		telegramStory(tg, [USER]),
+	);
+});
+
+test("盯盘提醒：来源贴一条提醒，网页对话里出现带「盯盘提醒」标签、不能引用的一行，手机响一次；重启后不重发，刷新后还在", async (t) => {
+	const tg = await FakeTelegram.start();
+	t.after(() => tg.close());
+	const alerts = mkdtempSync(join(tmpdir(), "psa-e2e-alerts-"));
+	const text = "NVDA 涨了 5.3%，现价 150.20（延迟行情）";
+	const alertLine = (page: Page) => page.locator(".line.alert");
+	const rang = () => sentTo(tg, USER).filter((m) => m.text === `盯盘提醒：${text}`);
+	const options = telegramStory(tg, [USER], {
+		files: { "modules/alerts/module.json": JSON.stringify({ name: "alerts", sources: [{ name: "e2e-alerts", feed: { kind: "e2e-alerts" } }] }) },
+	});
+	await story(
+		t,
+		{ router: [] },
+		async ({ step, host }) => {
+			await step("手机打开聊天后，来源贴一条提醒：网页出现这一行，手机收到一条带通知的「盯盘提醒：…」", async (page) => {
+				tg.userSays(USER, "/start");
+				await until(() => sentTo(tg, USER).length === 1, "说明");
+				writeFileSync(join(alerts, "NVDA-2026-11-11-day-up-5"), text);
+				await alertLine(page).waitFor();
+				assert.equal(await alertLine(page).locator(".who").textContent(), "盯盘提醒");
+				assert.equal(await alertLine(page).locator(".bubble").textContent(), text);
+				assert.equal(await alertLine(page).locator(".quote-btn").count(), 0, "提醒不能引用");
+				await until(() => rang().length === 1, "提醒到达 Telegram");
+				assert.equal(rang()[0].silent, false, "手机响");
+			});
+			await step("重启宿主：来源再贴同一条，手机不再收到；刷新网页，这一行还在、只有一行", async (page) => {
+				await host.restart();
+				await waitStatus(page, "connected");
+				await page.reload();
+				await alertLine(page).waitFor();
+				await page.waitForTimeout(1500);
+				assert.equal(await alertLine(page).count(), 1);
+				assert.equal(rang().length, 1);
+			});
+		},
+		{ ...options, imports: [...options.imports!, "./tests/e2e/alert-feed-preload.mjs"], env: { ...options.env, PSA_E2E_ALERTS_DIR: alerts } },
 	);
 });
 

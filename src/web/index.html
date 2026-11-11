@@ -130,6 +130,11 @@
 		button.route:hover { color: var(--accent-ink); text-decoration: underline; }
 		.router .bubble { max-width: none; }
 		.router .bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 6px 18px 18px 18px; }
+		.alert .said, .receipt .said { min-width: 0; max-width: 78%; margin-left: 42px; }
+		.alert .bubble, .receipt .bubble { max-width: none; border-radius: 10px; }
+		.alert .bubble { background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--ink); }
+		.alert .who { color: var(--warn-ink); font-weight: 600; }
+		.receipt .bubble { background: var(--bg); border: 1px dashed var(--line); color: var(--muted); font-size: 13px; }
 		.welcome { text-align: center; font-size: 12px; color: var(--muted); }
 		form { padding: 12px 32px 24px; max-width: 844px; width: 100%; margin: 0 auto; }
 		#say { --composer-edge: 11px; --send-pad: 20px; --send-size: 14px; }

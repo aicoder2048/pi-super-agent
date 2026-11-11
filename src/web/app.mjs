@@ -5,7 +5,7 @@ import {
 	questionOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
 	laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory,
 } from "./view.mjs";
-import { DEFAULT_ACK_TIMEOUT_MS, helperLine } from "../client/board-format.mjs";
+import { DEFAULT_ACK_TIMEOUT_MS, HOST_LINE_LABEL, helperLine } from "../client/board-format.mjs";
 
 const STATUS_TEXT = {
 	connecting: "连接中…",
@@ -388,6 +388,12 @@ function mount(doc) {
 	/** @param {import("./view.mjs").ConversationLine} line @param {boolean} withChoices */
 	const lineNode = (line, withChoices) => {
 		const item = el("div", `line ${line.who}`);
+		if (line.who === "alert" || line.who === "receipt") {
+			const said = el("div", "said");
+			said.append(el("div", "who", HOST_LINE_LABEL[line.who]), el("div", "bubble", line.text));
+			item.append(said);
+			return item;
+		}
 		const bubble = line.who === "router" ? md("bubble", line.text) : el("div", "bubble", line.text);
 		if (line.who === "router") {
 			const avatar = avatarMark.cloneNode(true);

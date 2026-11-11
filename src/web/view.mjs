@@ -113,7 +113,8 @@ export function applyMessage(view, message, now) {
 		case "cleared":
 			resetConversation(view, message.conversation, message.cleared);
 			return ["conversation"];
-		case "user": {
+		case "user":
+		case "host_line": {
 			const { type, ...line } = message;
 			addLine(view, line);
 			return ["conversation"];

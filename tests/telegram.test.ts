@@ -14,7 +14,9 @@ import { NOTES } from "../src/host/telegram/rules.ts";
 import { openStore } from "../src/kernel/store.ts";
 import type { DashboardRow, PendingQuestion } from "../src/kernel/types.ts";
 import { FAKE_BOT_TOKEN, FakeTelegram } from "./helpers/fake-telegram.ts";
-import { ids, ofType, openOnConversation, startHost, tempStateDir, until, within, type Brain, type WorkerScript } from "./helpers/fakes.ts";
+import { Kernel } from "../src/kernel/kernel.ts";
+import type { FeedSpec } from "../src/sources/feeds.ts";
+import { fakeFeed, ids, ofType, openOnConversation, startHost, tempStateDir, until, within, type Brain, type WorkerScript } from "./helpers/fakes.ts";
 
 const USER = 42;
 const FAST: Partial<TelegramTiming> = { pollTimeoutSec: 2, minGapMs: 20, backoffMs: [100, 200], conflictBackoffMs: 200, stopGraceMs: 500 };
@@ -31,6 +33,7 @@ interface Setup {
 	brain?: Brain;
 	script?: WorkerScript;
 	http?: Http;
+	feeds?: FeedSpec[];
 }
 
 /** Fails sendMessage the way a refused connection does, so the request surely did not reach Telegram, while `down` is on. */
@@ -46,11 +49,12 @@ function unreachable() {
 	return { link, http };
 }
 
-async function telegramHost(t: TestContext, { allowed = [USER], stateDir = tempStateDir(), timing = FAST, fake, brain = echo, script = () => {}, http }: Setup = {}) {
+async function telegramHost(t: TestContext, { allowed = [USER], stateDir = tempStateDir(), timing = FAST, fake, brain = echo, script = () => {}, http, feeds }: Setup = {}) {
 	const tg = fake ?? (await FakeTelegram.start());
 	const logs: string[] = [];
 	const { host } = await startHost(brain, script, {
 		stateDir,
+		feeds,
 		log: (line) => logs.push(line),
 		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url, ...(http && { http }) }), allowedUserIds: new Set(allowed), timing },
 	});
@@ -726,4 +730,83 @@ test("读看板出错时，幕僚长带任务的回复照常发到手机，日�
 	client.broadcast({ type: "reply", text: "查哪个城市？", at: Date.now(), replyId: "rep_1", ticketId: "tkt_1" });
 	await until(() => sentTo(tg, USER).includes("查哪个城市？"), "回复到达 Telegram");
 	assert.equal(logs.filter((l) => l.includes("看板读不出来")).length, 1);
+});
+
+test("盯盘提醒带通知发到每个聊天，前面写「盯盘提醒：」；同一行再广播一次不重发", async (t) => {
+	const { tg, open, client } = await cardClient(t, { allowed: [USER, OTHER] });
+	await open(USER);
+	await open(OTHER);
+	const line = { type: "host_line", id: "hln_1", who: "alert", text: "NVDA 涨了 5.3%，现价 150.20", at: Date.now() } as const;
+	client.broadcast(line);
+	client.broadcast(line);
+	await until(() => sentTo(tg, USER).length === 2 && sentTo(tg, OTHER).length === 2, "两个聊天都收到提醒");
+	await settle();
+	for (const chat of [USER, OTHER]) {
+		assert.deepEqual(tg.sent.filter((m) => m.chatId === chat).slice(1).map((m) => [m.text, m.silent]), [["盯盘提醒：NVDA 涨了 5.3%，现价 150.20", false]]);
+	}
+});
+
+test("盯盘条件的收据只在本机：广播收据，Telegram 什么都不发", async (t) => {
+	const { tg, open, client } = await cardClient(t);
+	await open(USER);
+	const before = sentTo(tg, USER).length;
+	client.broadcast({ type: "host_line", id: "hln_2", who: "receipt", text: "已记下：NVDA 成本价 120.00、100 股", at: Date.now() });
+	client.broadcast({ type: "reply", text: "已添加", at: Date.now(), replyId: "rpl_after" });
+	await until(() => sentTo(tg, USER).includes("已添加"), "收据之后的回复到达");
+	assert.deepEqual(sentTo(tg, USER).slice(before), ["已添加"]);
+});
+
+test("不认识的广播类型：不发到 Telegram，日志记一行，不悄悄丢掉", async (t) => {
+	const { tg, open, client, logs } = await cardClient(t);
+	await open(USER);
+	client.broadcast({ type: "brand_new", text: "以后加的新类型" } as unknown as Broadcast);
+	assert.equal(logs.filter((l) => l.includes("brand_new")).length, 1, logs.join("\n"));
+	await settle();
+	assert.ok(!sentTo(tg, USER).some((m) => m.includes("以后加的新类型")));
+});
+
+const ALERT = "NVDA 涨了 5.3%，现价 150.20";
+const PHONE_ALERT = `盯盘提醒：${ALERT}`;
+
+test("真宿主：来源贴的提醒带通知到手机一次，同一个 id 再贴不重发；收据不发；来源能问出这条提醒贴过了", async (t) => {
+	const tg = await FakeTelegram.start();
+	t.after(() => tg.close());
+	const stateDir = tempStateDir();
+	const feed = fakeFeed("us-market");
+	const first = await telegramHost(t, { fake: tg, stateDir, feeds: [feed.spec] });
+	tg.userSays(USER, "/start");
+	await until(() => sentTo(tg, USER).length === 1, "说明");
+	assert.equal(feed.ctx!.raised("NVDA:2026-11-11:day-up-5"), false);
+	feed.ctx!.post({ kind: "alert", externalId: "NVDA:2026-11-11:day-up-5", text: ALERT, occurredAt: Date.now() });
+	feed.ctx!.post({ kind: "alert", externalId: "NVDA:2026-11-11:day-up-5", text: ALERT, occurredAt: Date.now() });
+	feed.ctx!.post({ kind: "receipt", text: "已记下：NVDA 成本价 120.00、100 股" });
+	assert.equal(feed.ctx!.raised("NVDA:2026-11-11:day-up-5"), true);
+	await until(() => sentTo(tg, USER).includes(PHONE_ALERT), "提醒到手机");
+	assert.equal(tg.sent.find((m) => m.text === PHONE_ALERT)!.silent, false, "提醒带通知");
+	assert.deepEqual(first.host.kernel.conversation().map((l) => [l.who, l.text]), [["alert", ALERT], ["receipt", "已记下：NVDA 成本价 120.00、100 股"]]);
+	await first.stop();
+	await telegramHost(t, { fake: tg, stateDir, feeds: [fakeFeed("us-market").spec] });
+	await new Promise((r) => setTimeout(r, 300));
+	assert.equal(sentTo(tg, USER).filter((m) => m === PHONE_ALERT).length, 1, "重启后不重发");
+	assert.ok(!sentTo(tg, USER).some((m) => m.includes("120.00")), "收据不出本机");
+});
+
+test("真宿主：提醒写进库后、广播前宿主停了，重启后补发到手机一次，再重启也不重发；网页对话里有它", async (t) => {
+	const tg = await FakeTelegram.start();
+	t.after(() => tg.close());
+	const stateDir = tempStateDir();
+	const first = await telegramHost(t, { fake: tg, stateDir });
+	tg.userSays(USER, "/start");
+	await until(() => sentTo(tg, USER).length === 1, "说明");
+	await first.stop();
+	const crashed = db(stateDir);
+	new Kernel({ db: crashed, clock: { now: () => Date.now() }, sourcePolicy: () => "candidate" }).postHostLine("us-market", { kind: "alert", externalId: "NVDA:x", text: ALERT, occurredAt: Date.now() });
+	crashed.close();
+	const second = await telegramHost(t, { fake: tg, stateDir });
+	await until(() => sentTo(tg, USER).includes(PHONE_ALERT), "重启后补发");
+	assert.deepEqual(second.host.snapshot().conversation.map((l) => [l.who, l.text]), [["alert", ALERT]]);
+	await second.stop();
+	await telegramHost(t, { fake: tg, stateDir });
+	await new Promise((r) => setTimeout(r, 300));
+	assert.equal(sentTo(tg, USER).filter((m) => m === PHONE_ALERT).length, 1);
 });

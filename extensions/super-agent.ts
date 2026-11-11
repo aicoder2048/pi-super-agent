@@ -6,15 +6,15 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
 import { openQuestions, renderBoard, shortId, ticketsMatching, type BoardView, type OpenQuestion } from "../src/client/board.ts";
-import { quoteMark } from "../src/client/board-format.mjs";
+import { HOST_LINE_LABEL, quoteMark } from "../src/client/board-format.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, HostConnection } from "../src/client/connection.ts";
 import type { ConversationLine, HostToClient } from "../src/client/protocol.ts";
 import { formatTranscriptMessage } from "../src/client/transcript.ts";
 import { defaultStateDir } from "../src/host/config.ts";
 
 const LINE = "psa-line";
-type Who = "user" | "router" | "worker" | "system";
-const PREFIX: Record<Who, string> = { user: "你", router: "Router", worker: "Worker", system: "·" };
+type Who = ConversationLine["who"] | "worker" | "system";
+const PREFIX: Record<Who, string> = { user: "你", router: "Router", ...HOST_LINE_LABEL, worker: "Worker", system: "·" };
 const HISTORY_SHOWN = 10;
 
 export default function superAgentClient(pi: ExtensionAPI): void {
@@ -57,8 +57,9 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 				view.receivedAt = Date.now();
 				break;
 			case "user":
-			case "reply": {
-				const line: ConversationLine = m.type === "user" ? { ...m, who: "user" } : { id: m.replyId, who: "router", text: m.text, at: m.at };
+			case "reply":
+			case "host_line": {
+				const line: ConversationLine = m.type === "user" ? { ...m, who: "user" } : m.type === "reply" ? { id: m.replyId, who: "router", text: m.text, at: m.at } : m;
 				if (!isNew(line)) return;
 				markSeen(line);
 				showLine(line);
