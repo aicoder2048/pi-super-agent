@@ -27,13 +27,20 @@ CREATE TABLE IF NOT EXISTS telegram_messages (
 	created_at INTEGER NOT NULL,
 	PRIMARY KEY (chat_id, key)
 );
+CREATE TABLE IF NOT EXISTS telegram_owed_notes (
+	chat_id INTEGER PRIMARY KEY
+);
 CREATE UNIQUE INDEX IF NOT EXISTS telegram_messages_shown ON telegram_messages(chat_id, message_id) WHERE message_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS telegram_messages_due ON telegram_messages(chat_id) WHERE gave_up IS NULL AND (sent_version IS NULL OR sent_version < version);
 `;
 
 const DUE = "gave_up IS NULL AND (sent_version IS NULL OR sent_version < version)";
+// Only plain text carries the may-be-missing note: a message edited in place, such as a card, would not show it as news.
+const CARRIES_NOTE = "body ->> '$.kind' IN ('line', 'note')";
+// The standalone note is an empty text message: the note it carries is all it says.
+const STANDALONE_NOTE: SendableBody = { kind: "note", text: "" };
 
-/** `line:<lineId>` shows a conversation line, `note:<updateId>` answers one update, `setup` tells a writer their id, `missed` says a message may not have arrived. */
+/** `line:<lineId>` shows a conversation line, `note:<updateId>` answers one update, `setup` tells a writer their id, `missed` carries an owed note when nothing else will. */
 export type MessageKey = `line:${string}` | `note:${number}` | "setup" | "missed";
 
 export type SendableBody = Exclude<OutboundBody, { kind: "received" }>;
@@ -44,6 +51,8 @@ export interface Pending {
 	version: number;
 	messageId: number | null;
 	body: SendableBody;
+	/** The chat owes the may-be-missing note and this message carries it. */
+	note: boolean;
 }
 
 export class TelegramStore {
@@ -65,11 +74,12 @@ export class TelegramStore {
 		inTransaction(this.#db, () => {
 			const bot = this.#db.prepare("SELECT bot_id FROM telegram_bot WHERE id = 1").get() as { bot_id: number } | undefined;
 			if (bot?.bot_id !== this.#botId) {
-				this.#db.exec("DELETE FROM telegram_messages; DELETE FROM telegram_chats; DELETE FROM telegram_bot");
+				this.#db.exec("DELETE FROM telegram_messages; DELETE FROM telegram_chats; DELETE FROM telegram_owed_notes; DELETE FROM telegram_bot");
 				this.#db.prepare("INSERT INTO telegram_bot (id, bot_id) VALUES (1, ?)").run(this.#botId);
 			}
 			this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id NOT IN (SELECT value FROM json_each(?))").run(keep);
 			this.#db.prepare("DELETE FROM telegram_chats WHERE chat_id NOT IN (SELECT value FROM json_each(?))").run(keep);
+			this.#db.prepare("DELETE FROM telegram_owed_notes WHERE chat_id NOT IN (SELECT value FROM json_each(?))").run(keep);
 		});
 	}
 
@@ -94,11 +104,12 @@ export class TelegramStore {
 		return changed > 0;
 	}
 
-	/** Telegram said the user blocked the bot. What was waiting for this chat is dropped, so unblocking does not replay it. */
+	/** Telegram said the user blocked the bot. What was waiting for this chat is dropped, an owed note too, so unblocking does not replay it. */
 	blockChat(chatId: number): void {
 		inTransaction(this.#db, () => {
 			this.#db.prepare("UPDATE telegram_chats SET blocked_at = ? WHERE chat_id = ?").run(this.#now(), chatId);
 			this.#db.prepare(`UPDATE telegram_messages SET gave_up = 'blocked' WHERE chat_id = ? AND ${DUE}`).run(chatId);
+			this.#forgiveNote(chatId);
 		});
 	}
 
@@ -122,20 +133,31 @@ export class TelegramStore {
 			.run(chatId, `line:${lineId}`, lineId, JSON.stringify({ kind: "received" } satisfies OutboundBody), messageId, this.#now());
 	}
 
+	/** Also queues the standalone note for a chat that owes one and has no text waiting to carry it: one per debt. */
 	next(): Pending | undefined {
-		const row = this.#db.prepare(`SELECT chat_id, key, version, message_id, body FROM telegram_messages WHERE ${DUE} ORDER BY rowid LIMIT 1`).get() as
-			| { chat_id: number; key: MessageKey; version: number; message_id: number | null; body: string }
-			| undefined;
-		return row && { chatId: row.chat_id, key: row.key, version: row.version, messageId: row.message_id, body: JSON.parse(row.body) };
+		this.#db
+			.prepare(
+				`INSERT INTO telegram_messages (chat_id, key, body, version, created_at)
+				 SELECT o.chat_id, 'missed', ?, 1, ? FROM telegram_owed_notes o
+				 WHERE NOT EXISTS (SELECT 1 FROM telegram_messages m WHERE m.chat_id = o.chat_id AND (m.key = 'missed' OR (${DUE} AND ${CARRIES_NOTE})))`,
+			)
+			.run(JSON.stringify(STANDALONE_NOTE), this.#now());
+		const row = this.#db
+			.prepare(
+				`SELECT m.chat_id, key, version, message_id, body, o.chat_id IS NOT NULL AND ${CARRIES_NOTE} AS note
+				 FROM telegram_messages m LEFT JOIN telegram_owed_notes o ON o.chat_id = m.chat_id WHERE ${DUE} ORDER BY m.rowid LIMIT 1`,
+			)
+			.get() as { chat_id: number; key: MessageKey; version: number; message_id: number | null; body: string; note: number } | undefined;
+		return row && { chatId: row.chat_id, key: row.key, version: row.version, messageId: row.message_id, body: JSON.parse(row.body), note: row.note === 1 };
 	}
 
-	/** A late finish of an older version cannot undo a newer one. A clean send ends the chat's run of doubtful ones. */
+	/** A late finish of an older version cannot undo a newer one. Telegram showing a message that carried the note settles the chat's debt. */
 	sent(row: Pending, messageId: number): void {
 		inTransaction(this.#db, () => {
 			this.#db
 				.prepare("UPDATE telegram_messages SET sent_version = MAX(COALESCE(sent_version, 0), ?), message_id = ? WHERE chat_id = ? AND key = ?")
 				.run(row.version, messageId, row.chatId, row.key);
-			this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id = ? AND key = 'missed' AND gave_up = 'maybe-sent'").run(row.chatId);
+			if (row.note) this.#forgiveNote(row.chatId);
 		});
 	}
 
@@ -144,16 +166,20 @@ export class TelegramStore {
 	}
 
 	/**
-	 * Telegram may have shown `row` already, so it is never sent again; the chat gets `note` instead. A chat gets one note per
-	 * run of doubtful sends: none is added while one waits, or while one that may have arrived has not been followed by a clean send.
-	 * The note itself ends this way too, so a Telegram that takes messages but answers with errors cannot fill the phone with notes.
+	 * Telegram may have shown `row` already, so it is never sent again, and the chat owes the may-be-missing note until a
+	 * message carrying it surely arrives. A doubtful send of a carrying message, the standalone note included, leaves the debt
+	 * as it was: Telegram may take messages and still answer with errors, and a retried note would flood the phone.
 	 */
-	maybeSent(row: Pending, note: SendableBody): void {
+	maybeSent(row: Pending): void {
 		inTransaction(this.#db, () => {
 			this.giveUp(row, "maybe-sent");
-			if (this.#db.prepare(`SELECT 1 FROM telegram_messages WHERE chat_id = ? AND key = 'missed' AND (${DUE} OR gave_up = 'maybe-sent')`).get(row.chatId)) return;
-			this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id = ? AND key = 'missed'").run(row.chatId);
-			this.put(row.chatId, "missed", null, note);
+			this.#db.prepare("INSERT INTO telegram_owed_notes (chat_id) VALUES (?) ON CONFLICT DO NOTHING").run(row.chatId);
 		});
+	}
+
+	/** Dropping the standalone row lets the next debt queue its own. */
+	#forgiveNote(chatId: number): void {
+		this.#db.prepare("DELETE FROM telegram_owed_notes WHERE chat_id = ?").run(chatId);
+		this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id = ? AND key = 'missed'").run(chatId);
 	}
 }

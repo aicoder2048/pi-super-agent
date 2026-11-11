@@ -48,8 +48,10 @@ export type OutboundBody =
 	| { kind: "note"; text: string }
 	| { kind: "received" };
 
-export function render(body: Exclude<OutboundBody, { kind: "received" }>): { text: string; silent: boolean } {
-	return { text: fitMessage(body.text), silent: body.kind === "line" && body.silent };
+/** `note`: the chat owes the may-be-missing note, and it goes first so a clipped text keeps it. */
+export function render(body: Exclude<OutboundBody, { kind: "received" }>, note = false): { text: string; silent: boolean } {
+	const text = note ? (body.text ? `${NOTES.missed}\n${body.text}` : NOTES.missed) : body.text;
+	return { text: fitMessage(text), silent: body.kind === "line" && body.silent };
 }
 
 export function mirrorText(text: string, from?: ImChat): string {

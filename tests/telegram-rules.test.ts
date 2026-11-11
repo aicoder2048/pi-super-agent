@@ -68,6 +68,12 @@ test("回复带通知，转过来的话静默，说明带通知；都是纯文�
 	assert.deepEqual(render({ kind: "note", text: NOTES.help }), { text: NOTES.help, silent: false });
 });
 
+test("欠着说明时，文字消息第一行是那句说明；单独的说明只有这一句；截断时说明还在", () => {
+	assert.deepEqual(render({ kind: "line", text: "收到。", silent: false }, true), { text: `${NOTES.missed}\n收到。`, silent: false });
+	assert.deepEqual(render({ kind: "note", text: "" }, true), { text: NOTES.missed, silent: false });
+	assert.ok(render({ kind: "line", text: "x".repeat(5000), silent: false }, true).text.startsWith(`${NOTES.missed}\nxxx`));
+});
+
 test("超过 4000 个 UTF-16 单位的文字截断并提示去网页看全文；不拆开代理对；短的不动", () => {
 	assert.equal(fitMessage("短"), "短");
 	const exact = "x".repeat(4000);

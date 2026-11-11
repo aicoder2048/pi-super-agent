@@ -16,6 +16,8 @@ const SECRET = FAKE_BOT_TOKEN.split(":")[1];
 const userLine = (page: Page, text: string) => page.locator(".line.user .bubble", { hasText: text });
 const routerLine = (page: Page, text: string) => page.locator(".line.router .bubble", { hasText: text });
 const sentTo = (tg: FakeTelegram, chatId: number) => tg.sent.filter((m) => m.chatId === chatId);
+const unnoted = (text: string) => (text.startsWith(`${NOTES.missed}\n`) ? text.slice(NOTES.missed.length + 1) : text);
+const noteCount = (texts: string[]) => texts.filter((x) => x.split("\n")[0] === NOTES.missed).length;
 
 async function until(predicate: () => boolean, label: string, timeoutMs = 15_000): Promise<void> {
 	for (const start = Date.now(); !predicate(); await new Promise((r) => setTimeout(r, 50))) {
@@ -33,7 +35,7 @@ function telegramStory(tg: FakeTelegram, allowedUserIds: number[]): StoryOptions
 	};
 }
 
-test("Telegram：名单上的人在手机上说话，网页上看到；幕僚长的回复同时到网页和 Telegram；陌生人和群看不到；网页的话静默转过去；Telegram 出错不重发、补一句说明；重启不丢不重", async (t) => {
+test("Telegram：名单上的人在手机上说话，网页上看到；幕僚长的回复同时到网页和 Telegram；陌生人和群看不到；网页的话静默转过去；Telegram 出错不重发、之后的消息带一句说明；重启不丢不重", async (t) => {
 	const tg = await FakeTelegram.start();
 	t.after(() => tg.close());
 	await story(
@@ -43,6 +45,7 @@ test("Telegram：名单上的人在手机上说话，网页上看到；幕僚长
 				on("幕僚长回答手机上的话", /^\[对话\][\s\S]*使用者：查一下 NVDA/, (c) => [reply(c, "NVDA 现在 170 美元。")]),
 				on("幕僚长回答网页上的话", /^\[对话\][\s\S]*使用者：网页上说一句/, (c) => [reply(c, "收到网页上的话。")]),
 				on("幕僚长回答断网时的话", /^\[对话\][\s\S]*使用者：断网时说/, (c) => [reply(c, "收到断网时的话。")]),
+				on("幕僚长回答恢复后的话", /^\[对话\][\s\S]*使用者：恢复后说/, (c) => [reply(c, "收到恢复后的话。")]),
 				on("幕僚长回答重启前的话", /^\[对话\][\s\S]*使用者：重启前说的/, (c) => [reply(c, "收到重启前的话。")]),
 				on("幕僚长回答停机时的话", /^\[对话\][\s\S]*使用者：停机时说的/, (c) => [reply(c, "收到停机时的话。")]),
 			],
@@ -80,22 +83,20 @@ test("Telegram：名单上的人在手机上说话，网页上看到；幕僚长
 					["收到网页上的话。", false],
 				]);
 			});
-			await step("Telegram 回 500 时网页照常只有一条回复；说不准到没到的不重发，恢复后手机上补一句说明", async (page) => {
+			await step("Telegram 回 500 时网页照常只有一条回复；出错的那几条不重发；恢复后手机上的第一条消息开头带一句说明", async (page) => {
 				const before = sentTo(tg, USER).length;
 				tg.fail("sendMessage", 500);
 				await sayInPage(page, "断网时说");
 				await routerLine(page, "收到断网时的话。").waitFor();
-				await until(() => tg.calls("sendMessage").some((r) => r.status === 500), "Telegram 失败过");
-				await page.waitForTimeout(1500);
+				await until(() => tg.calls("sendMessage").filter((r) => r.status === 500).length === 3, "转过去的话、回复和单独的说明都没发出");
 				tg.heal("sendMessage");
-				await until(() => sentTo(tg, USER).some((m) => m.text === NOTES.missed), "可能没送到的说明", 30_000);
+				tg.userSays(USER, "恢复后说");
+				await until(() => sentTo(tg, USER).length > before, "恢复后的回复到达 Telegram");
 				await page.waitForTimeout(1500);
-				const texts = sentTo(tg, USER).slice(before).map((m) => m.text);
-				assert.equal(texts.filter((x) => x === NOTES.missed).length, 1, texts.join(" | "));
-				assert.equal(new Set(texts).size, texts.length, `没有重复：${texts.join(" | ")}`);
+				assert.deepEqual(sentTo(tg, USER).slice(before).map((m) => m.text), [`${NOTES.missed}\n收到恢复后的话。`]);
 				assert.equal(await routerLine(page, "收到断网时的话。").count(), 1);
 			});
-			await step("重启：停机时手机上说的话进对话一次、回复一次；停机前说不准的不重发，只补一句说明", async (page) => {
+			await step("重启：停机时手机上说的话进对话一次、回复一次；停机前说不准的不重发，重启后的第一条消息带一句说明", async (page) => {
 				const failedBefore = tg.calls("sendMessage").filter((r) => r.status === 500).length;
 				tg.fail("sendMessage", 500);
 				await sayInPage(page, "重启前说的");
@@ -107,13 +108,13 @@ test("Telegram：名单上的人在手机上说话，网页上看到；幕僚长
 				});
 				await waitStatus(page, "connected");
 				await routerLine(page, "收到停机时的话。").waitFor({ timeout: 20_000 });
-				await until(() => sentTo(tg, USER).some((m) => m.text === "收到停机时的话。"), "停机时的话的回复到达 Telegram", 30_000);
+				await until(() => sentTo(tg, USER).some((m) => unnoted(m.text) === "收到停机时的话。"), "停机时的话的回复到达 Telegram", 30_000);
 				await page.waitForTimeout(1500);
 				assert.equal(await userLine(page, "停机时说的").count(), 1);
-				const texts = sentTo(tg, USER).map((m) => m.text);
+				const texts = sentTo(tg, USER).map((m) => unnoted(m.text));
 				for (const text of ["你在网页或终端说：重启前说的", "收到重启前的话。"]) assert.ok(texts.filter((x) => x === text).length <= 1, text);
 				assert.equal(texts.filter((x) => x === "收到停机时的话。").length, 1);
-				assert.equal(texts.filter((x) => x === NOTES.missed).length, 2, "两次出错各补一句说明");
+				assert.equal(noteCount(sentTo(tg, USER).map((m) => m.text)), 2, "两次出错，各有一条消息带说明");
 			});
 			await step("宿主日志和状态目录（secretsFile 以外）里没有 bot token，Telegram 每个请求都带对的 token", async () => {
 				assert.ok(!host.log().includes(SECRET));

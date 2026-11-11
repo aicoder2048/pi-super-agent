@@ -20,6 +20,15 @@ const echo: Brain = (cards) =>
 	cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "reply", args: { text: `收到：${card.split("使用者：")[1]?.split("\n")[0]}`, cause: ids(card, "trg") } }] : []));
 const sentTo = (tg: FakeTelegram, chatId: number) => tg.sent.filter((m) => m.chatId === chatId).map((m) => m.text);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const noted = (text: string) => `${NOTES.missed}\n${text}`;
+const unnoted = (text: string) => (text.startsWith(`${NOTES.missed}\n`) ? text.slice(NOTES.missed.length + 1) : text);
+const noteCount = (texts: string[]) => texts.filter((m) => m.split("\n")[0] === NOTES.missed).length;
+const acceptedThen502: Http = async (url, init) => {
+	const res = await fetch(url, init);
+	if (!url.endsWith("/sendMessage")) return res;
+	await res.text();
+	return new Response("<html>502 Bad Gateway</html>", { status: 502 });
+};
 const refused = () => new TypeError("fetch failed", { cause: Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:1"), { code: "ECONNREFUSED" }) });
 
 interface Setup {
@@ -98,7 +107,7 @@ test("Telegram 收下了回复、网关回 502 网页：回复不重发，补一
 	assert.deepEqual(sentTo(tg, USER), ["收到：hi", NOTES.missed]);
 });
 
-test("接连几条都可能已送达：每条都不重发，说明只补一句", async (t) => {
+test("接连几条都可能已送达：每条都不重发，说明只到一次，带在恢复后的第一条上", async (t) => {
 	const tg = await fakeTelegram(t);
 	const { host } = await tgHost(t, tg);
 	tg.userSays(USER, "/start");
@@ -106,13 +115,71 @@ test("接连几条都可能已送达：每条都不重发，说明只补一句",
 	tg.fail("sendMessage", 500, {}, 3);
 	host.say("一");
 	host.say("二");
-	await until(() => sentTo(tg, USER).includes(NOTES.missed), "可能没送到的说明", 5000);
+	await until(() => noteCount(sentTo(tg, USER)) === 1, "可能没送到的说明", 5000);
 	await host.settled();
 	await sleep(500);
 	const texts = sentTo(tg, USER);
-	assert.equal(texts.filter((m) => m === NOTES.missed).length, 1, texts.join("\n"));
-	assert.equal(new Set(texts).size, texts.length, `没有哪条发了两次：${texts.join(" | ")}`);
+	assert.equal(noteCount(texts), 1, texts.join(" | "));
+	assert.equal(new Set(texts.map(unnoted)).size, texts.length, `没有哪条发了两次：${texts.join(" | ")}`);
 	assert.equal(tg.calls("sendMessage").filter((r) => r.status === 500).length, 3);
+});
+
+test("Telegram 回 500（没收下）一阵后恢复：出错时的回复不重发，恢复后的第一条回复开头带一句说明", async (t) => {
+	const tg = await fakeTelegram(t);
+	const { host } = await tgHost(t, tg);
+	tg.fail("sendMessage", 500);
+	tg.userSays(USER, "during1");
+	tg.userSays(USER, "during2");
+	await until(() => tg.calls("sendMessage").length >= 3, "出错时的几次发送");
+	await host.settled();
+	await sleep(500);
+	tg.heal("sendMessage");
+	tg.userSays(USER, "after");
+	await until(() => sentTo(tg, USER).length >= 1, "恢复后的回复");
+	await host.settled();
+	await sleep(500);
+	assert.deepEqual(sentTo(tg, USER), [noted("收到：after")]);
+});
+
+test("欠着说明时宿主重启：重启后还欠着，下一条回复开头带上", async (t) => {
+	const tg = await fakeTelegram(t);
+	const stateDir = tempStateDir();
+	const first = await tgHost(t, tg, { stateDir });
+	tg.fail("sendMessage", 500);
+	tg.userSays(USER, "before");
+	await until(() => tg.calls("sendMessage").length >= 2, "回复和单独的说明都没发出");
+	await first.host.settled();
+	await sleep(300);
+	await first.stop();
+	tg.heal("sendMessage");
+	await tgHost(t, tg, { stateDir });
+	tg.userSays(USER, "after");
+	await until(() => sentTo(tg, USER).length >= 1, "重启后的回复");
+	await sleep(500);
+	assert.deepEqual(sentTo(tg, USER), [noted("收到：after")]);
+});
+
+test("带着说明的消息正常发出：不再欠，之后的回复不带说明", async (t) => {
+	const tg = await fakeTelegram(t);
+	let release: (() => void) | undefined;
+	let sends = 0;
+	const http: Http = async (url, init) => {
+		if (!url.endsWith("/sendMessage") || ++sends > 1) return fetch(url, init);
+		await new Promise<void>((resume) => (release = resume));
+		return acceptedThen502(url, init);
+	};
+	const { host } = await tgHost(t, tg, { http });
+	tg.userSays(USER, "a");
+	await until(() => release !== undefined, "第一条回复在发");
+	host.say("b");
+	await until(() => host.kernel.conversation().some((l) => l.text === "收到：b"), "第二条回复");
+	release!();
+	await until(() => sentTo(tg, USER).includes("收到：b"), "第二条回复到了手机");
+	tg.userSays(USER, "c");
+	await until(() => sentTo(tg, USER).includes("收到：c"), "第三条回复");
+	await host.settled();
+	await sleep(300);
+	assert.deepEqual(sentTo(tg, USER), ["收到：a", noted("你在网页或终端说：b"), "收到：b", "收到：c"]);
 });
 
 test("连不上 Telegram（请求没发出去）：重试，回复只到一次，不补说明", async (t) => {
@@ -320,36 +387,29 @@ test("退避最长 30 秒", async () => {
 	assert.equal(Math.max(...DEFAULT_TIMING.backoffMs), 30_000);
 });
 
-test("Telegram 收下每条、却一直回 502：一阵故障里说明只到一次；恢复后再出一阵故障，再补一句", async (t) => {
+test("Telegram 收下每条、却一直回 502：每条回复只到一次，单独的说明最多一句，之后的回复开头带说明；恢复后带说明的那条发出就不再带", async (t) => {
 	const tg = await fakeTelegram(t);
 	let bad = true;
-	const http: Http = async (url, init) => {
-		const res = await fetch(url, init);
-		if (url.endsWith("/sendMessage") && bad) {
-			await res.text();
-			return new Response("<html>502 Bad Gateway</html>", { status: 502 });
-		}
-		return res;
-	};
+	const http: Http = (url, init) => (bad ? acceptedThen502(url, init) : fetch(url, init));
 	const { host } = await tgHost(t, tg, { http });
-	tg.userSays(USER, "hi");
-	await until(() => sentTo(tg, USER).includes(NOTES.missed), "可能没送到的说明");
-	host.say("网页上说的");
+	const replies = [1, 2, 3, 4, 5, 6].map((i) => `收到：m${i}`);
+	for (const [i, reply] of replies.entries()) {
+		tg.userSays(USER, `m${i + 1}`);
+		await until(() => sentTo(tg, USER).map(unnoted).includes(reply), reply);
+	}
+	await until(() => sentTo(tg, USER).includes(NOTES.missed), "单独的说明");
 	await host.settled();
-	await sleep(1500);
+	await sleep(500);
+	const texts = sentTo(tg, USER);
+	assert.deepEqual(texts.filter((m) => m !== NOTES.missed).map(unnoted), replies, `每条回复只到一次：${texts.join(" | ")}`);
+	assert.equal(texts.filter((m) => m === NOTES.missed).length, 1, `单独的说明只有一句：${texts.join(" | ")}`);
+	assert.ok(texts.every((m) => unnoted(unnoted(m)) === unnoted(m)), "没有哪条带两句说明");
+	assert.ok(texts.includes(noted("收到：m6")), `说不准到没到的消息不算还清：${texts.join(" | ")}`);
 	bad = false;
 	tg.userSays(USER, "again");
-	await until(() => sentTo(tg, USER).includes("收到：again"), "恢复后的回复");
-	const notes = () => sentTo(tg, USER).filter((m) => m === NOTES.missed).length;
-	assert.equal(notes(), 1, sentTo(tg, USER).join(" | "));
-	bad = true;
-	host.say("又出故障时说的");
-	await until(() => notes() === 2, "新一阵故障的说明");
-	await host.settled();
-	await sleep(1000);
-	const texts = sentTo(tg, USER);
-	assert.equal(notes(), 2, texts.join(" | "));
-	assert.equal(new Set(texts.filter((m) => m !== NOTES.missed)).size, texts.length - 2, `没有哪条发了两次：${texts.join(" | ")}`);
+	await until(() => sentTo(tg, USER).includes(noted("收到：again")), "恢复后带说明的回复");
+	tg.userSays(USER, "again2");
+	await until(() => sentTo(tg, USER).includes("收到：again2"), "之后的回复不带说明");
 });
 
 test("说明本身没发出去（连不上）：说明重试，手机上只到一次", async (t) => {

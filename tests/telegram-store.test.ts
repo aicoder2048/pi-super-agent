@@ -26,7 +26,7 @@ test("同一条消息写两次只有一行；内容变了版本加一，待发�
 	store.put(42, "line:rpl_1", "rpl_1", reply("收到。"));
 	store.put(42, "line:rpl_1", "rpl_1", reply("收到。"));
 	assert.equal(rows(db, "telegram_messages"), 1);
-	assert.deepEqual(store.next(), { chatId: 42, key: "line:rpl_1", version: 1, messageId: null, body: reply("收到。") });
+	assert.deepEqual(store.next(), { chatId: 42, key: "line:rpl_1", version: 1, messageId: null, body: reply("收到。"), note: false });
 	store.put(42, "line:rpl_1", "rpl_1", reply("改了。"));
 	assert.equal(store.next()?.version, 2);
 	assert.deepEqual(store.next()?.body, reply("改了。"));
@@ -135,22 +135,49 @@ test("在内核已开的事务里写，跟着事务一起回滚", () => {
 	assert.equal(store.next(), undefined);
 });
 
-test("可能已送达的消息不再发；每个聊天只等着一句说明，发出后再有才排到队尾", () => {
+test("可能已送达的消息不再发；聊天欠一句说明，由下一条消息带上，带着的那条发出后不再欠", () => {
 	const { store } = fresh();
-	const note = { kind: "note" as const, text: "可能没送到" };
 	for (const key of ["a", "b", "c"] as const) store.put(42, `line:${key}`, key, reply(key));
-	store.maybeSent(store.next()!, note);
-	store.maybeSent(store.next()!, note);
-	assert.equal(store.next()?.key, "line:c", "前两条都不再发");
-	store.sent(store.next()!, 500);
-	const first = store.next()!;
-	assert.equal(first.key, "missed");
-	store.sent(first, 501);
-	assert.equal(store.next(), undefined);
+	assert.equal(store.next()?.note, false);
+	store.maybeSent(store.next()!);
+	const b = store.next()!;
+	assert.deepEqual([b.key, b.note], ["line:b", true]);
+	store.maybeSent(b);
+	const c = store.next()!;
+	assert.deepEqual([c.key, c.note], ["line:c", true], "带着说明的那条说不准到没到时，仍然欠着");
+	store.sent(c, 500);
+	assert.equal(store.next(), undefined, "说明已带到，不再单独发");
 	store.put(42, "line:d", "d", reply("d"));
-	store.put(42, "line:e", "e", reply("e"));
-	store.maybeSent(store.next()!, note);
-	assert.equal(store.next()?.key, "line:e", "新的说明排在已等着的消息之后");
-	store.sent(store.next()!, 502);
-	assert.equal(store.next()?.key, "missed");
+	assert.equal(store.next()?.note, false);
+});
+
+test("欠一句说明、没有别的待发：排一条单独的说明；它说不准到没到时不再排第二条，下一条消息带上", () => {
+	const { store } = fresh();
+	store.put(42, "line:a", "a", reply("a"));
+	store.maybeSent(store.next()!);
+	const alone = store.next()!;
+	assert.deepEqual([alone.key, alone.note], ["missed", true]);
+	store.maybeSent(alone);
+	assert.equal(store.next(), undefined, "同一笔欠账只排一条单独的说明");
+	store.put(42, "line:b", "b", reply("b"));
+	const b = store.next()!;
+	assert.deepEqual([b.key, b.note], ["line:b", true]);
+	store.sent(b, 500);
+	store.put(42, "line:c", "c", reply("c"));
+	store.maybeSent(store.next()!);
+	assert.equal(store.next()?.key, "missed", "新的一笔欠账再排一条");
+});
+
+test("欠的说明存在状态库里，重开后还欠着；屏蔽、换机器人时不再欠", () => {
+	const { store, reopen } = fresh();
+	store.put(42, "line:a", "a", reply("a"));
+	store.maybeSent(store.next()!);
+	const owed = reopen().next()!;
+	assert.deepEqual([owed.key, owed.note], ["missed", true]);
+	store.blockChat(42);
+	store.openChat(42);
+	store.put(42, "line:b", "b", reply("b"));
+	assert.equal(store.next()?.note, false, "屏蔽时欠的说明一起放下");
+	store.maybeSent(store.next()!);
+	assert.equal(reopen(987654321).next(), undefined);
 });
