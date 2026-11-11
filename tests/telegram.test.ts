@@ -307,7 +307,7 @@ async function cardClient(t: TestContext, { allowed = [USER], answer = (): Answe
 		tg.userSays(chatId, "/start");
 		await until(() => sentTo(tg, chatId).length > before, "聊天打开");
 	};
-	return { tg, frame, open, answered, logs, state };
+	return { tg, frame, open, answered, logs, state, host, client };
 }
 
 const cards = (tg: FakeTelegram, chatId: number) => tg.sent.filter((m) => m.chatId === chatId && m.text.includes("问你（任务"));
@@ -715,4 +715,15 @@ test("真宿主：助手带选项提问，手机上只有卡片，幕僚长转�
 	assert.ok(ask < sentTo(tg, USER).indexOf("助手查天气前要先知道城市。"), "卡片在后面那句话之前");
 	assert.deepEqual(ofType(client.got, "reply").map((m) => m.text).slice(-2), ["查哪个城市？", "助手查天气前要先知道城市。"], "终端照常收到两句");
 	assert.ok(host.kernel.conversation().some((l) => l.text === "查哪个城市？"), "对话里照常有转述");
+});
+
+test("读看板出错时，幕僚长带任务的回复照常发到手机，日志记一行", async (t) => {
+	const { tg, open, logs, host, client } = await cardClient(t);
+	await open(USER);
+	host.board = () => {
+		throw new Error("看板读不出来");
+	};
+	client.broadcast({ type: "reply", text: "查哪个城市？", at: Date.now(), replyId: "rep_1", ticketId: "tkt_1" });
+	await until(() => sentTo(tg, USER).includes("查哪个城市？"), "回复到达 Telegram");
+	assert.equal(logs.filter((l) => l.includes("看板读不出来")).length, 1);
 });
