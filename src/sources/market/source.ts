@@ -12,7 +12,7 @@ import { detect, isFresh, toTrigger, type MarketCursor, type Move, type Quote } 
 import { inPollWindow, MINUTE, nextPollDelay, sessionAt, shiftDate, type Session } from "./session.ts";
 import { parseMarketSettings, type MarketSettings } from "./settings.ts";
 import { parseSymbol } from "./symbol.ts";
-import { applyEdit, driftOf, echoText, parseBook, parseEdit, receiptText, redact, serializeBook, type Book, type Tripwire } from "./tripwires.ts";
+import { alertText, applyEdit, checkIntraday, driftOf, echoText, firingId, parseBook, parseEdit, polledSymbols, receiptText, redact, serializeBook, type Book, type History, type Tripwire } from "./tripwires.ts";
 
 // How long a lookup result may be reused. Quotes the poll already holds are reused for one poll interval instead.
 const TTL_MS = { quote: 30_000, earnings: 6 * 60 * MINUTE, bars: { day: 10 * MINUTE, hour: 2 * MINUTE, minute: MINUTE } as Record<Span, number> };
@@ -36,6 +36,7 @@ const HOLIDAY_AFTER_OPEN_MS = 30 * MINUTE;
 const HOLIDAY_AFTER_POLLS = 5;
 const NOTICE_AFTER_MS = 15 * MINUTE;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const NO_HISTORY: History = new Map();
 const SPANS: Span[] = ["minute", "hour", "day"];
 // Calendar days of bars indicators fetch when the caller gives no from: day covers SMA200 and 52 weeks (252 bars).
 const INDICATOR_DAYS: Record<Span, number> = { day: 400, hour: 30, minute: 4 };
@@ -210,17 +211,31 @@ export class MarketSource implements Feed {
 		const raw = ctx.readCursor();
 		const cursor = raw === undefined ? undefined : (JSON.parse(raw) as MarketCursor);
 		if (noSessionToday(cursor, session, now)) return this.#feel("holiday", `${session.nyDate} 开盘半小时仍没有当天的报价，按休市处理，今天不再请求`);
+		const book: Book = "book" in this.#book ? this.#book.book : new Map();
 		let quotes;
 		try {
-			quotes = await client.snapshot(settings.watchlist, "poll");
+			quotes = await client.snapshot(polledSymbols(book, settings.watchlist), "poll");
 		} catch (error) {
 			return this.#failed(error, now);
 		}
 		this.#failing = undefined;
 		this.#lastPoll = { at: ctx.clock.now(), quotes };
-		const result = detect(cursor, quotes, session, settings);
+		this.#raise(book, quotes, session);
+		const result = detect(cursor, quotes.filter((q) => settings.watchlist.includes(q.symbol)), session, settings);
 		this.#submitThenSaveCursor(result.moves, result.cursor);
 		this.#feel("watching", `开盘中，每 ${settings.everySeconds} 秒看一次自选 ${settings.watchlist.length} 只`);
+	}
+
+	#raise(book: Book, quotes: Quote[], session: Session): void {
+		const { ctx, source } = this.#o;
+		for (const firing of checkIntraday(book, quotes, session, NO_HISTORY)) {
+			const quote = quotes.find((q) => q.symbol === firing.symbol)!;
+			try {
+				ctx.post({ kind: "alert", externalId: firingId(session.nyDate, firing), text: alertText(firing, quote), occurredAt: quote.at });
+			} catch (error) {
+				ctx.log(`[${source}] 盯盘提醒没贴出去：${String(error)}`);
+			}
+		}
 	}
 
 	#submitThenSaveCursor(moves: Move[], cursor: MarketCursor): void {

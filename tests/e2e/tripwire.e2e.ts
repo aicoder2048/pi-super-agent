@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test, { after } from "node:test";
 import { FAKE_BOT_TOKEN, FakeTelegram } from "../helpers/fake-telegram.ts";
 import { on, openTicket, reply, report, worker, type ToolCall } from "./fake-model.ts";
@@ -32,6 +35,21 @@ const inUsMarket = (call: ToolCall): ToolCall => ({ ...call, args: { decisions: 
 const setCost: ToolCall = { name: "tripwire", args: { source: "us-market", op: "set", args: { symbol: "NVDA", condition: { kind: "cost", pct: 10, basis: 120, shares: 100 } } } };
 const echoOf = (card: string) => (JSON.parse(card.slice(card.indexOf("{"))) as { echo: string }).echo;
 
+const CHAT_SETS_COST = {
+	router: [
+		on("幕僚长为盯盘条件开 us-market 的请求任务", /^\[对话\][\s\S]*帮我盯英伟达/, (c) => [inUsMarket(openTicket(c, TASK.title, TASK.brief)), reply(c, "好，我让看盘队记下。")]),
+		on("幕僚长转告助手的汇报", /^\[Worker 汇报\][\s\S]*已添加：NVDA/, (c) => [reply(c, ROUTER_SAYS)]),
+	],
+	workers: [
+		worker(
+			TASK.brief,
+			on("助手用 tripwire 写入成本条件", /^\[任务说明\]/, () => [setCost]),
+			on("助手照 echo 汇报", /^\[盯盘条件\]/, (c) => [report("ready", echoOf(c))]),
+		),
+	],
+};
+const STORY_OPTIONS = (tgUrl: string) => ({ files: FILES, config: { secretsFile: "secrets.env", telegram: { allowedUserIds: [USER] } }, imports: ["./tests/e2e/telegram-preload.mjs", "./tests/e2e/market-offline-preload.mjs"], env: { PSA_E2E_TELEGRAM_URL: tgUrl }, fixedPort: true });
+
 async function until(predicate: () => boolean, label: string, timeoutMs = 15_000): Promise<void> {
 	for (const start = Date.now(); !predicate(); await new Promise((r) => setTimeout(r, 50))) {
 		if (Date.now() - start > timeoutMs) throw new Error(`等待超时：${label}`);
@@ -44,19 +62,7 @@ test("盯盘条件：网页上说一句，幕僚长开 us-market 的请求任务
 	const sentTo = () => tg.sent.filter((m) => m.chatId === USER);
 	await story(
 		t,
-		{
-			router: [
-				on("幕僚长为盯盘条件开 us-market 的请求任务", /^\[对话\][\s\S]*帮我盯英伟达/, (c) => [inUsMarket(openTicket(c, TASK.title, TASK.brief)), reply(c, "好，我让看盘队记下。")]),
-				on("幕僚长转告助手的汇报", /^\[Worker 汇报\][\s\S]*已添加：NVDA/, (c) => [reply(c, ROUTER_SAYS)]),
-			],
-			workers: [
-				worker(
-					TASK.brief,
-					on("助手用 tripwire 写入成本条件", /^\[任务说明\]/, () => [setCost]),
-					on("助手照 echo 汇报", /^\[盯盘条件\]/, (c) => [report("ready", echoOf(c))]),
-				),
-			],
-		},
+		CHAT_SETS_COST,
 		async ({ step, fake }) => {
 			await step("手机打开聊天后，网页上说要盯英伟达：网页出现宿主写的收据，写着成本价和股数", async (page) => {
 				tg.userSays(USER, "/start");
@@ -80,6 +86,44 @@ test("盯盘条件：网页上说一句，幕僚长开 us-market 的请求任务
 				assert.deepEqual(sentTo().filter((m) => /成本价 120|盯盘条件（只在本机）|现在共 1 条/.test(m.text)), []);
 			});
 		},
-		{ files: FILES, config: { secretsFile: "secrets.env", telegram: { allowedUserIds: [USER] } }, imports: ["./tests/e2e/telegram-preload.mjs", "./tests/e2e/market-offline-preload.mjs"], env: { PSA_E2E_TELEGRAM_URL: tg.url }, fixedPort: true },
+		STORY_OPTIONS(tg.url),
+	);
+});
+
+test("盯盘提醒：聊天里设好成本条件后，盘中报价越过 +10% 线，手机响一次「盯盘提醒」且没有成本价，网页出现同一行；同价再看一轮什么都不发", async (t) => {
+	const tg = await FakeTelegram.start();
+	t.after(() => tg.close());
+	const quotes = mkdtempSync(join(tmpdir(), "psa-e2e-quotes-"));
+	const alertText = "NVDA 相对成本价 +10.40%，到了你设的 +10% 提醒线。现价 132.48。报价时间 09:59 ET。";
+	const rang = () => tg.sent.filter((m) => m.chatId === USER && m.text.startsWith("盯盘提醒："));
+	const tick = async (name: string, price: number) => {
+		writeFileSync(join(quotes, name), JSON.stringify({ symbol: "NVDA", price, prevClose: 130 }));
+		await until(() => existsSync(join(quotes, `${name}.ticked`)), `看盘 ${name}`);
+	};
+	const options = STORY_OPTIONS(tg.url);
+	await story(
+		t,
+		CHAT_SETS_COST,
+		async ({ step }) => {
+			await step("网页上说要盯英伟达，收据出现后，NVDA 报价越过成本 +10%：手机收到一条响铃的盯盘提醒，网页出现同一行", async (page) => {
+				tg.userSays(USER, "/start");
+				await sayInPage(page, "帮我盯英伟达，成本 120，100 股，偏离 10% 提醒");
+				await page.locator(".line.receipt").waitFor();
+				await tick("1-cross", 132.48);
+				const alert = page.locator(".line.alert");
+				await alert.waitFor();
+				assert.equal(await alert.locator(".bubble").textContent(), alertText);
+				await until(() => rang().length === 1, "提醒到达 Telegram");
+				assert.deepEqual(rang().map((m) => [m.text, m.silent]), [[`盯盘提醒：${alertText}`, false]]);
+				assert.doesNotMatch(rang()[0].text, /120|100 股/);
+			});
+			await step("同一个价格再看一轮：手机和网页都没有新的提醒", async (page) => {
+				await tick("2-same", 132.48);
+				await page.waitForTimeout(1500);
+				assert.equal(rang().length, 1);
+				assert.equal(await page.locator(".line.alert").count(), 1);
+			});
+		},
+		{ ...options, env: { ...options.env, PSA_E2E_QUOTES_DIR: quotes } },
 	);
 });
