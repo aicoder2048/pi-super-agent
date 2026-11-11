@@ -48,23 +48,34 @@ export interface Pending {
 
 export class TelegramStore {
 	readonly #db: DatabaseSync;
+	readonly #botId: number;
 	readonly #now: () => number;
 
+	/** Only creates the tables: a host that loses the race for the state directory must not change another host's rows. */
 	constructor(db: DatabaseSync, botId: number, now: () => number) {
 		this.#db = db;
+		this.#botId = botId;
 		this.#now = now;
 		db.exec(SCHEMA);
-		inTransaction(db, () => {
-			const bot = db.prepare("SELECT bot_id FROM telegram_bot WHERE id = 1").get() as { bot_id: number } | undefined;
-			if (bot?.bot_id === botId) return;
-			db.exec("DELETE FROM telegram_messages; DELETE FROM telegram_chats; DELETE FROM telegram_bot");
-			db.prepare("INSERT INTO telegram_bot (id, bot_id) VALUES (1, ?)").run(botId);
+	}
+
+	/** Wipes everything when the bot changed, and the chats of ids no longer allowed. */
+	claim(allowed: ReadonlySet<number>): void {
+		const keep = JSON.stringify([...allowed]);
+		inTransaction(this.#db, () => {
+			const bot = this.#db.prepare("SELECT bot_id FROM telegram_bot WHERE id = 1").get() as { bot_id: number } | undefined;
+			if (bot?.bot_id !== this.#botId) {
+				this.#db.exec("DELETE FROM telegram_messages; DELETE FROM telegram_chats; DELETE FROM telegram_bot");
+				this.#db.prepare("INSERT INTO telegram_bot (id, bot_id) VALUES (1, ?)").run(this.#botId);
+			}
+			this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id NOT IN (SELECT value FROM json_each(?))").run(keep);
+			this.#db.prepare("DELETE FROM telegram_chats WHERE chat_id NOT IN (SELECT value FROM json_each(?))").run(keep);
 		});
 	}
 
 	nextUpdateId(): number | undefined {
-		const row = this.#db.prepare("SELECT next_update_id FROM telegram_bot WHERE id = 1").get() as { next_update_id: number | null };
-		return row.next_update_id ?? undefined;
+		const row = this.#db.prepare("SELECT next_update_id FROM telegram_bot WHERE id = 1").get() as { next_update_id: number | null } | undefined;
+		return row?.next_update_id ?? undefined;
 	}
 
 	setNextUpdateId(id: number): void {
@@ -88,14 +99,6 @@ export class TelegramStore {
 		inTransaction(this.#db, () => {
 			this.#db.prepare("UPDATE telegram_chats SET blocked_at = ? WHERE chat_id = ?").run(this.#now(), chatId);
 			this.#db.prepare(`UPDATE telegram_messages SET gave_up = 'blocked' WHERE chat_id = ? AND ${DUE}`).run(chatId);
-		});
-	}
-
-	forgetChatsExcept(allowed: ReadonlySet<number>): void {
-		const keep = JSON.stringify([...allowed]);
-		inTransaction(this.#db, () => {
-			this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id NOT IN (SELECT value FROM json_each(?))").run(keep);
-			this.#db.prepare("DELETE FROM telegram_chats WHERE chat_id NOT IN (SELECT value FROM json_each(?))").run(keep);
 		});
 	}
 
@@ -136,4 +139,5 @@ export class TelegramStore {
 	giveUp(row: Pending, reason: string): void {
 		this.#db.prepare("UPDATE telegram_messages SET gave_up = ? WHERE chat_id = ? AND key = ?").run(reason, row.chatId, row.key);
 	}
+
 }

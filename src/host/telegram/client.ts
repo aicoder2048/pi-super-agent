@@ -95,12 +95,18 @@ export class TelegramClient {
 
 	/** Makes no network call, so a Telegram problem never holds up the host's start. */
 	start(): void {
-		this.#store.forgetChatsExcept(this.#allowed);
+		try {
+			this.#store.claim(this.#allowed);
+		} catch (error) {
+			this.#state = "off";
+			this.#log(`[telegram] 本地状态出错（${(error as Error).message}），Telegram 客户端没有启动；网页和终端照常`);
+			return;
+		}
 		if (this.#allowed.size === 0) this.#log("[telegram] 名单为空：只告诉来信的人他自己的数字 id，不把任何消息交给幕僚长");
 		this.#loops = [this.#poll(), this.#send()];
 	}
 
-	/** Synchronous and never throws: Telegram must not delay or fail what the web page and the TUI get. While stopping it still queues, for the next start to send. */
+	/** Synchronous and never throws: Telegram must not delay or fail what the web page and the TUI get. Before start and while stopping it still queues. */
 	broadcast(message: Broadcast, from?: ImChat): void {
 		if (this.#state === "off") return;
 		try {
