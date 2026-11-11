@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -196,4 +197,77 @@ test("parseServiceLabel：空值用默认 label，带斜杠、空格、以横线
 	assert.equal(parseServiceLabel(""), DEFAULT_LABEL);
 	assert.equal(parseServiceLabel("com.pi-super-agent.lane3"), "com.pi-super-agent.lane3");
 	for (const bad of ["a/b", " x", "-x", "a b"]) assert.throws(() => parseServiceLabel(bad), ConfigError, bad);
+});
+
+const TEST_LABEL = "com.pi-super-agent.test-cli";
+const isAlive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+/** A HOME of its own and a fake launchctl first on PATH, so the CLI never reaches the real launchd or LaunchAgents. */
+function fakeLaunchd(printWhenLoaded: string | undefined) {
+	const root = mkdtempSync(join(tmpdir(), "psa-cli-"));
+	const home = join(root, "home");
+	const bin = join(root, "bin");
+	mkdirSync(join(home, "Library", "LaunchAgents"), { recursive: true });
+	mkdirSync(bin);
+	if (printWhenLoaded !== undefined) {
+		writeFileSync(join(root, "print.txt"), printWhenLoaded);
+		writeFileSync(join(root, "loaded"), "");
+	}
+	writeFileSync(join(bin, "launchctl"), `#!/bin/bash
+cd "${root}"
+case "$1" in
+	print) if [ -e loaded ]; then cat print.txt; exit 0; fi; echo "Could not find service"; exit 113 ;;
+	bootout) rm -f loaded ;;
+esac
+exit 0
+`);
+	chmodSync(join(bin, "launchctl"), 0o755);
+	const cli = (command: string, shellStateDir: string) => spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/service/cli.ts", command], {
+		env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, PSA_SERVICE_LABEL: TEST_LABEL, PSA_STATE_DIR: shellStateDir },
+		encoding: "utf8",
+	});
+	return { home, cli };
+}
+
+function stateDirWithFakeHost(t: test.TestContext) {
+	const dir = mkdtempSync(join(tmpdir(), "psa-cli-state-"));
+	// Started through a shell that exits at once, so the test process is not its parent and a stopped host does not linger as a zombie.
+	const pid = Number(execFileSync("sh", ["-c", `"${process.execPath}" -e "setInterval(() => {}, 1000)" src/host/main.ts >/dev/null 2>&1 & echo $!`], { encoding: "utf8" }));
+	t.after(() => isAlive(pid) && process.kill(pid, "SIGKILL"));
+	writeFileSync(join(dir, "heartbeat.json"), JSON.stringify({ pid, at: Date.now() }));
+	return { dir, pid };
+}
+
+const loadedWithEnv = (env: string) => RUNNING.replace("\tenvironment = {\n", `\tinherited environment = {\n\t\tPSA_STATE_DIR => /inherited\n\t}\n\n\tenvironment = {\n${env}`);
+
+test("plist 没了但 job 还加载着时，uninstall 停的是 job 环境里状态目录的宿主，不是当前 shell 的", darwin, async (t) => {
+	const job = stateDirWithFakeHost(t);
+	const shell = stateDirWithFakeHost(t);
+	const { cli } = fakeLaunchd(loadedWithEnv(`\t\tPSA_STATE_DIR => ${job.dir}\n`));
+	const run = cli("uninstall", shell.dir);
+	assert.equal(run.status, 0, run.stdout + run.stderr);
+	assert.ok(!isAlive(job.pid), "job 的宿主应已停止");
+	assert.ok(isAlive(shell.pid), "当前 shell 状态目录里的宿主不能被停掉");
+});
+
+test("plist 没了、job 环境里也读不出状态目录时，uninstall 不停任何宿主并说明原因", darwin, async (t) => {
+	const shell = stateDirWithFakeHost(t);
+	const { cli } = fakeLaunchd(loadedWithEnv(""));
+	const run = cli("uninstall", shell.dir);
+	assert.equal(run.status, 0, run.stdout + run.stderr);
+	assert.match(run.stdout, /没有停宿主/);
+	assert.ok(isAlive(shell.pid), "猜不出状态目录时不能停任何宿主");
+});
+
+test("service-status：心跳文件还在但记录的宿主已经退出时，报宿主没有在运行，不报它的 pid", darwin, async () => {
+	const stateDir = mkdtempSync(join(tmpdir(), "psa-cli-state-"));
+	const gone = spawn(process.execPath, ["-e", "", "src/host/main.ts"], { stdio: "ignore" });
+	await once(gone, "exit");
+	writeFileSync(join(stateDir, "heartbeat.json"), JSON.stringify({ pid: gone.pid, at: Date.now() - 5000 }));
+	const { home, cli } = fakeLaunchd(undefined);
+	writeFileSync(join(home, "Library", "LaunchAgents", `${TEST_LABEL}.plist`), launchAgentPlist({ ...input, label: TEST_LABEL as LaunchAgentInput["label"], home, stateDir }));
+	const run = cli("status", stateDir);
+	assert.equal(run.status, 0, run.stdout + run.stderr);
+	assert.match(run.stdout, /宿主没有在运行/);
+	assert.doesNotMatch(run.stdout, new RegExp(`pid ${gone.pid}\\b`));
 });
