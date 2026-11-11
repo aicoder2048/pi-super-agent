@@ -25,6 +25,7 @@ export interface Step {
 /**
  * The Router has one conversation. Workers are told apart by the brief the Router wrote into open_ticket,
  * and a team member by the first task its helper dispatched to it: later dispatches continue that conversation.
+ * A member's script may name only the start of that task, when the rest is known only at run time (a directory from new_app).
  */
 export interface Script {
 	router: Step[];
@@ -42,6 +43,9 @@ export const openTicket = (card: string, title: string, brief = title): ToolCall
 });
 export const reply = (card: string, text: string): ToolCall => ({ name: "reply", args: { text, cause: card.match(/\b(trg|tkt|act)_[\w-]+/)?.[0] } });
 export const dispatch = (agent: string, task: string): ToolCall => ({ name: "dispatch_agent", args: { agent, task } });
+export const newApp = (short: string): ToolCall => ({ name: "new_app", args: { short } });
+export const write = (path: string, content: string): ToolCall => ({ name: "write", args: { path, content } });
+export const bash = (command: string): ToolCall => ({ name: "bash", args: { command } });
 export const report = (status: "progress" | "ready" | "blocked" | "failed" | "no_action", summary: string): ToolCall => ({ name: "report", args: { status, summary } });
 /** Crashes the current Worker for real: inside the bash tool, $PPID is the Pi process. */
 export const crashWorker = (): ToolCall => ({ name: "bash", args: { command: "kill -9 $PPID" } });
@@ -158,7 +162,7 @@ export class FakeModel {
 	// Each trailing user card claims the first unused step that matches it, in any order, so the result
 	// does not depend on how the Router batches cards or on automatic retries.
 	#decide(model: string, messages: Message[]): Omit<Exchange, "tools"> & { delayMs: number } {
-		const conversation = model === "router" || model === "fallback" ? "router" : briefOf(messages);
+		const conversation = model === "router" || model === "fallback" ? "router" : this.#scriptFor(briefOf(messages));
 		const cards = trailingCards(messages);
 		const userTexts = messages.filter((m) => m.role === "user").map(textOf);
 		const base = { at: Date.now(), model, conversation, cards, userTexts, steps: [] as string[], unmatched: [] as string[], delayMs: 0 };
@@ -180,6 +184,11 @@ export class FakeModel {
 			calls.push(...answer);
 		}
 		return { ...base, answer: calls.length ? calls : "好。" };
+	}
+
+	#scriptFor(brief: string): string {
+		if (this.#pending.has(brief)) return brief;
+		return [...this.#pending.keys()].find((key) => key !== "router" && brief.startsWith(key)) ?? brief;
 	}
 
 	#checkDrained(): void {
@@ -206,11 +215,12 @@ function trailingCards(messages: Message[]): string[] {
 	return out;
 }
 
-/** The tool results a script can answer as a card: a member's reply to a dispatch, and a command's output that starts with "[命令输出]". */
+/** The tool results a script can answer as a card: a member's reply to a dispatch, new_app's directory, and a command's output that starts with "[命令输出]". */
 function scriptableToolResult(m: Message): string | undefined {
 	if (m.role !== "tool") return undefined;
 	const text = textOf(m);
 	if (text.startsWith("成员回复")) return `[成员回复] ${text}`;
+	if (/^\{\s*"app": "app-\d{3,}-/.test(text)) return `[应用目录] ${text}`;
 	return text.startsWith("[命令输出]") ? text : undefined;
 }
 
