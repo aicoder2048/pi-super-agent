@@ -136,6 +136,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 
 function parseOutputDir(value: unknown, stateDir: string, file: string): string {
 	if (value !== undefined && typeof value !== "string") throw new ConfigError(`${file}：outputDir（${JSON.stringify(value)}）必须是目录路径字符串，相对路径按状态目录算`);
+	if (value?.startsWith("~")) throw new ConfigError(`${file}：outputDir（${JSON.stringify(value)}）不能以 ~ 开头，配置里不展开 ~，请写绝对路径`);
 	const dir = resolve(stateDir, value ?? "output");
 	if (within(dir, stateDir)) throw new ConfigError(`${file}：outputDir（${dir}）不能是状态目录或它的上级，否则令牌和 state.db 也算成品目录`);
 	for (const own of ["workers", "sessions"]) {
