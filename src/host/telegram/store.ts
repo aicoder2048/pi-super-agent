@@ -125,7 +125,6 @@ export class TelegramStore {
 			.run(chatId, `line:${lineId}`, lineId, JSON.stringify({ kind: "received" } satisfies OutboundBody), messageId, this.#now());
 	}
 
-	/** The question cards in this chat that have not closed yet. */
 	openCards(chatId: number): CardView[] {
 		const rows = this.#db.prepare(`SELECT body FROM telegram_messages WHERE chat_id = ? AND key LIKE 'ask:%' AND ${CARD_STATUS} != 'closed'`).all(chatId) as { body: string }[];
 		return rows.map((r) => JSON.parse(r.body).view);

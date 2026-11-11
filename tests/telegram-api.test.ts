@@ -227,11 +227,10 @@ test("编辑时 Telegram 说内容没变：算编辑成功；消息找不到、�
 	await assert.rejects(send.send(42, text("x"), never), (e: TelegramError) => e.kind === "bad_request", "只有编辑把「没变」当成功");
 });
 
-test("回应按钮点击：answerCallbackQuery 带 callback_query_id；有提示时带 text，没有时只让按钮停止转圈", async () => {
+test("回应按钮点击：answerCallbackQuery 带 callback_query_id 和提示文字", async () => {
 	const f = fakeHttp(ok(true));
 	const api = new BotApi({ token: token(), http: f.http });
 	await api.answerTap("cb7", "已发送", never);
-	await api.answerTap("cb8", null, never);
 	assert.equal(f.calls[0].url, `${TELEGRAM_API}/bot${RAW}/answerCallbackQuery`);
-	assert.deepEqual(f.calls.map((c) => c.body), [{ callback_query_id: "cb7", text: "已发送" }, { callback_query_id: "cb8" }]);
+	assert.deepEqual(f.calls[0].body, { callback_query_id: "cb7", text: "已发送" });
 });

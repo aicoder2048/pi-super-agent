@@ -146,9 +146,8 @@ export class BotApi {
 		}
 	}
 
-	/** `toast` null only stops the button's spinner. */
-	async answerTap(callbackId: string, toast: string | null, signal: AbortSignal): Promise<void> {
-		await this.#call("answerCallbackQuery", { callback_query_id: callbackId, ...(toast !== null && { text: toast }) }, signal);
+	async answerTap(callbackId: string, toast: string, signal: AbortSignal): Promise<void> {
+		await this.#call("answerCallbackQuery", { callback_query_id: callbackId, text: toast }, signal);
 	}
 
 	async #call(method: string, params: object, signal: AbortSignal, deadlineMs = REQUEST_DEADLINE_MS): Promise<any> {

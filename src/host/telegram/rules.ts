@@ -77,7 +77,6 @@ export interface CardView {
 	status: CardStatus;
 }
 
-/** Null when the row has no pending question. */
 export function cardView(row: DashboardRow): CardView | null {
 	const q = row.question;
 	if (!q) return null;
