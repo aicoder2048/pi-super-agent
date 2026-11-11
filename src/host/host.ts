@@ -20,6 +20,7 @@ import { readSessionEntries } from "../jsonl.ts";
 import { memberTranscripts } from "./dispatch.ts";
 import { WebGateway } from "./web.ts";
 import { loadToken } from "./web-token.ts";
+import type { TailnetName } from "./web-hosts.ts";
 import { MemberCap } from "./member-cap.ts";
 import { ConfigError } from "../config-error.ts";
 import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
@@ -57,6 +58,7 @@ export interface HostOptions {
 	createSpawner(deps: HostDeps): WorkerSpawner;
 	log?: (line: string) => void;
 	webPort?: number;
+	webHosts?: readonly TailnetName[];
 	watching?: WatchedSource[];
 	feeds?: FeedSpec[];
 	/** Runs `run` once, `ms` from now, and returns its cancel. The host waits for the New York day change with it; tests pass their own to make that moment arrive. */
@@ -202,7 +204,7 @@ export class Host {
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), sayQuoting: (text, lineId) => host.sayQuoting(text, lineId), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation() }, loadToken(options.stateDir, "web-token", host.#log), host.#log);
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), sayQuoting: (text, lineId) => host.sayQuoting(text, lineId), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation() }, loadToken(options.stateDir, "web-token", host.#log), host.#log, options.webHosts ?? []);
 			await host.#web.listen(options.webPort);
 		}
 		try {
@@ -235,6 +237,10 @@ export class Host {
 
 	get webUrl(): string | undefined {
 		return this.#web?.url;
+	}
+
+	get remoteWebUrls(): readonly string[] {
+		return this.#web?.remoteUrls ?? [];
 	}
 
 	say(text: string): string {

@@ -186,6 +186,22 @@ test("just host 启动后打印带 token 的网页网址，打开能看到页面
 	assert.match(await res.text(), /Super Agent/);
 });
 
+test("config.json 有 webHosts 时，just host 在本机网址之后为每个名字打一行远程网址", async (t) => {
+	const webPort = await freePort();
+	const host = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], {
+		env: { ...process.env, PSA_STATE_DIR: stateWith({ webPort, webHosts: ["psa-home.example.ts.net", "laptop.example.ts.net"] })() },
+	});
+	t.after(() => host.kill("SIGKILL"));
+	let stderr = "";
+	host.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+	await until(() => /网页（远程） https:\/\/laptop\S+\n/.test(stderr), `日志里的远程网址：${stderr}`, 20_000);
+	const token = new RegExp(`\\[host\\] 网页 http://127\\.0\\.0\\.1:${webPort}/\\?token=([0-9a-f]{64})\\n`).exec(stderr)?.[1];
+	assert.ok(token, stderr);
+	const remote = [...stderr.matchAll(/\[host\] 网页（远程） (\S+)\n/g)].map((m) => m[1]);
+	assert.deepEqual(remote, [`https://psa-home.example.ts.net/?token=${token}`, `https://laptop.example.ts.net/?token=${token}`]);
+	assert.deepEqual([...stderr.matchAll(/\[host\] 网页 (\S+)\s/g)].map((m) => m[1]), [`http://127.0.0.1:${webPort}/?token=${token}`], "e2e 取网址的正则只匹配本机那一行");
+});
+
 async function hostUrlOnce(stateDir: string): Promise<string> {
 	const host = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], { env: { ...process.env, PSA_STATE_DIR: stateDir } });
 	const exited = new Promise((r) => host.on("exit", r));
