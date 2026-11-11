@@ -14,7 +14,7 @@ import { GenericSource } from "../sources/generic.ts";
 import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import type { Feed, FeedSpec } from "../sources/feeds.ts";
 import { Dispatcher } from "./dispatcher.ts";
-import { HostServer, type AnswerResult, type Broadcast } from "./server.ts";
+import { HostServer, type AnswerResult, type Broadcast, type SayOptions } from "./server.ts";
 import type { BoardState, Duty, MemberCapBoard, TodayCounts, TranscriptHistory, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
 import { readSessionEntries } from "../jsonl.ts";
 import { memberTranscripts } from "./dispatch.ts";
@@ -246,9 +246,11 @@ export class Host {
 		return this.#web?.remoteUrls ?? [];
 	}
 
-	say(text: string): string {
+	/** A repeated externalId returns the first line's id and changes nothing. */
+	say(text: string, { externalId }: SayOptions = {}): string {
 		const at = Date.now();
-		const { triggerId } = this.kernel.userSaid({ text, at });
+		const { triggerId, duplicate } = this.kernel.userSaid({ text, at, externalId });
+		if (duplicate) return triggerId;
 		this.#broadcast({ type: "user", id: triggerId, who: "user", text, at });
 		this.#changed();
 		return triggerId;

@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { HostConnection } from "../src/client/connection.ts";
+import type { HostToClient } from "../src/client/protocol.ts";
 import { ROUTER_TOOL_NAMES } from "../src/host/router.ts";
-import { domainsOf, ids, openOnConversation, startHost, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
+import { domainsOf, ids, ofType, openOnConversation, startHost, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
 
 const replyOnReport: Brain = (cards) =>
 	cards.flatMap((card) => {
@@ -279,4 +281,23 @@ test("幕僚长给模块规则的任务填了别的领域时，助手拿到的�
 	await until(() => spawner.workers.size === 1, "助手启动");
 	assert.deepEqual([...spawner.workers.values()][0].spec.crew.map((m) => m.name), ["news-researcher"]);
 	assert.equal(logs.filter((line) => line.startsWith("[kernel] 规则 news/breaking 属于领域「news」，幕僚长填的是「mail」")).length, 1, logs.join("\n"));
+});
+
+test("同一句话带同一个 externalId 再说一次：只记一条触发，客户端只收到一次", async (t) => {
+	const { host } = await startHost(() => [], () => {});
+	const got: HostToClient[] = [];
+	const conn = new HostConnection({ socketPath: host.socketPath, onMessage: (m) => got.push(m), retryMs: 30 });
+	conn.open();
+	t.after(async () => {
+		conn.close();
+		await host.stop();
+	});
+	await until(() => conn.connected, "连接");
+	const first = host.say("查一下 NVDA", { externalId: "tg:123:5" });
+	assert.equal(host.say("查一下 NVDA", { externalId: "tg:123:5" }), first);
+	host.say("另一句", { externalId: "tg:123:6" });
+	await until(() => ofType(got, "user").length === 2, "两句话到达客户端");
+	await host.settled();
+	assert.deepEqual(ofType(got, "user").map((m) => m.text), ["查一下 NVDA", "另一句"]);
+	assert.deepEqual(host.kernel.conversation().filter((l) => l.who === "user").map((l) => l.text), ["查一下 NVDA", "另一句"]);
 });
