@@ -25,8 +25,9 @@ const DEFAULTS = {
 function market(options: { dbPath?: string; respond?: (url: string, now: number) => Response; paced?: boolean } = {}) {
 	const dbPath = options.dbPath ?? join(mkdtempSync(join(tmpdir(), "psa-market-")), "state.db");
 	const prices: Record<string, number> = { NVDA: 100, SPY: 600 };
+	const prevCloses: Record<string, number> = { SPY: 600 };
 	const { clock, calls, http, sleep } = fakeHttp((url, now) =>
-		options.respond ? options.respond(url, now) : Response.json(snapshotBody(Object.entries(prices).map(([s, p]) => tickerRow(s, p, s === "SPY" ? 600 : 100, now - 60_000)))),
+		options.respond ? options.respond(url, now) : Response.json(snapshotBody(Object.entries(prices).map(([s, p]) => tickerRow(s, p, prevCloses[s] ?? 100, now - 60_000)))),
 	T("2026-11-09T15:00:00Z"));
 	const kernel = new Kernel({ db: openStore(dbPath), clock, sourcePolicy: (t) => (t.source === "watchdog" ? "notice" : "candidate") });
 	const client = new MarketClient({ key: "sk-test-secret", baseURL: DEFAULTS.baseURL, minGapMs: options.paced ? 12_000 : 0, http, clock, sleep: options.paced ? sleep : async () => {} });
@@ -57,7 +58,7 @@ function market(options: { dbPath?: string; respond?: (url: string, now: number)
 	};
 	const source = new MarketSource(sourceOptions);
 	const triggers = () => kernel.triggerLog().map((t) => ({ source: t.source, externalId: t.externalId, disposition: t.disposition })).reverse();
-	return { source, options: sourceOptions, kernel, clock, prices, requests: calls, logs, triggers, dbPath, crashBeforeCursor: () => { failWrite = true; } };
+	return { source, options: sourceOptions, kernel, clock, prices, prevCloses, requests: calls, logs, triggers, dbPath, crashBeforeCursor: () => { failWrite = true; } };
 }
 
 test("看盘：周末不发任何请求", async () => {
@@ -525,4 +526,115 @@ test("盯盘条件：状态库里的清单读不出来时，problem() 写明，s
 	assert.throws(() => broken.source.tripwires("set", COST), /盯盘条件清单读不出来/);
 	assert.throws(() => broken.source.tripwires("list", {}), /盯盘条件清单读不出来/);
 	assert.equal(broken.kernel.sourceUserData("us-market"), "{坏了");
+});
+
+const alerts = (m: ReturnType<typeof market>) => m.kernel.conversation().filter((l) => l.who === "alert").map((l) => l.text);
+const tickersOf = (url: string) => new URL(url).searchParams.get("tickers")!.split(",");
+
+test("盯盘提醒：只在盯盘条件里的股票（AMD）并进同一次快照请求，不多发请求；它涨 9% 不触发 big-move 档位", async () => {
+	const m = market();
+	m.source.tripwires("set", { symbol: "AMD", condition: { kind: "day", pct: 20 } });
+	m.prices.AMD = 109;
+	await m.source.tick();
+	assert.equal(m.requests.length, 1);
+	assert.deepEqual(tickersOf(m.requests[0]!.url), ["NVDA", "SPY", "AMD"]);
+	assert.deepEqual([m.triggers(), alerts(m)], [[], []]);
+});
+
+test("盯盘提醒：成本条件今天越过 +10% 线（昨收还在线内）贴一条提醒；同价再看、重启后再看都不重复；当天把线改成 8% 另贴一条", async () => {
+	const m = market();
+	m.source.tripwires("set", COST);
+	m.prevCloses.NVDA = 125;
+	m.prices.NVDA = 132.48;
+	await m.source.tick();
+	assert.deepEqual(alerts(m), ["NVDA 相对成本价 +10.40%，到了你设的 +10% 提醒线。现价 132.48。报价时间 09:59 ET（延迟行情）。"]);
+	await m.source.tick();
+	const again = market({ dbPath: m.dbPath });
+	Object.assign(again.prevCloses, m.prevCloses);
+	again.prices.NVDA = 132.48;
+	await again.source.tick();
+	assert.equal(alerts(again).length, 1);
+	again.source.tripwires("set", { symbol: "NVDA", condition: { kind: "cost", pct: 8 } });
+	await again.source.tick();
+	assert.equal(alerts(again).length, 2);
+	assert.ok(again.kernel.raised("us-market", "NVDA:2026-11-09:cost-up-8"));
+});
+
+test("盯盘提醒：昨收已经在成本线外，今天没有越过，不提醒", async () => {
+	const m = market();
+	m.source.tripwires("set", COST);
+	m.prevCloses.NVDA = 133;
+	m.prices.NVDA = 135;
+	await m.source.tick();
+	assert.deepEqual(alerts(m), []);
+});
+
+test("盯盘提醒：当天涨跌条件 5%（不限方向）涨 5.3% 贴一条，同一天跌到 -5.1% 再贴一条跌的", async () => {
+	const m = market();
+	m.source.tripwires("set", { symbol: "NVDA", condition: { kind: "day", pct: 5 } });
+	m.prices.NVDA = 105.3;
+	await m.source.tick();
+	m.prices.NVDA = 94.9;
+	await m.source.tick();
+	assert.deepEqual(alerts(m).map((t) => t.split("，")[0]), ["NVDA 涨 +5.30%", "NVDA 跌 -5.10%"]);
+	assert.ok(m.kernel.raised("us-market", "NVDA:2026-11-09:day-down-5"));
+});
+
+test("盯盘提醒：不是今天常规时段的报价（昨天的旧价、收盘后的盘后价）不提醒", async () => {
+	let at = T("2026-11-06T20:59:00Z");
+	const m = market({ respond: () => Response.json(snapshotBody([tickerRow("NVDA", 110, 100, at)])) });
+	m.source.tripwires("set", { symbol: "NVDA", condition: { kind: "day", pct: 5 } });
+	await m.source.tick();
+	m.clock.t = T("2026-11-09T21:10:00Z");
+	at = T("2026-11-09T21:05:00Z");
+	await m.source.tick();
+	assert.equal(m.requests.length, 2);
+	assert.deepEqual(alerts(m), []);
+});
+
+test("盯盘提醒：提醒文字没有成本价和股数", async () => {
+	const m = market();
+	m.source.tripwires("set", { symbol: "NVDA", condition: { kind: "cost", pct: 10, basis: 120, shares: 37 } });
+	m.source.tripwires("set", { symbol: "SPY", condition: { kind: "cost", pct: 3, basis: 580, shares: 46, dir: "up" } });
+	Object.assign(m.prevCloses, { NVDA: 125, SPY: 590 });
+	Object.assign(m.prices, { NVDA: 132.48, SPY: 610 });
+	await m.source.tick();
+	assert.equal(alerts(m).length, 2);
+	for (const text of alerts(m)) assert.doesNotMatch(text, /120|37|580|46/);
+});
+
+test("盯盘提醒：用 tripwires 改的条件下一轮看盘就生效，不用重启", async () => {
+	const m = market();
+	m.prices.NVDA = 105.3;
+	await m.source.tick();
+	assert.deepEqual(alerts(m), []);
+	m.source.tripwires("set", { symbol: "NVDA", condition: { kind: "day", pct: 5 } });
+	await m.source.tick();
+	assert.equal(alerts(m).length, 1);
+	m.source.tripwires("remove", { symbol: "NVDA" });
+	m.prices.NVDA = 94.9;
+	await m.source.tick();
+	assert.equal(alerts(m).length, 1);
+});
+
+test("盯盘提醒：贴提醒抛错时记一行日志，big-move 触发照常提交、游标照常写", async () => {
+	const m = market();
+	m.source.tripwires("set", { symbol: "NVDA", condition: { kind: "day", pct: 5 } });
+	m.options.ctx.post = () => {
+		throw new Error("提醒行格式不对");
+	};
+	m.prices.NVDA = 105.3;
+	await m.source.tick();
+	await m.source.tick();
+	assert.deepEqual(m.triggers().map((t) => t.externalId), ["NVDA:2026-11-09:up5"]);
+	assert.match(m.logs.join("\n"), /盯盘提醒.*提醒行格式不对/);
+});
+
+test("盯盘条件：只在盯盘条件里的股票也被看盘轮询，给它设成本条件时收据同样写出现在已在线外", async () => {
+	const m = market();
+	m.source.tripwires("set", { symbol: "AMD", condition: { kind: "day", pct: 20 } });
+	m.prices.AMD = 100;
+	await m.source.tick();
+	m.source.tripwires("set", { symbol: "AMD", condition: { kind: "cost", pct: 10, basis: 80 } });
+	assert.match(receipts(m)[1], /现在已在 \+25\.0%，回到线内后再越过才提醒/);
 });
