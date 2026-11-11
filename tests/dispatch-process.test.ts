@@ -68,7 +68,7 @@ function setup(t: TestContext, env: Record<string, string> = {}) {
 	const usage: number[] = [];
 	const activity: (string | undefined)[] = [];
 	const messages: TranscriptMessage[] = [];
-	const run = (who: Member, tag: string, basis: Basis = "request", signal = new AbortController().signal) =>
+	const run = (who: Member, tag: string, basis: Basis = "request", signal = new AbortController().signal, outputRule?: string) =>
 		spawner.runMember({
 			ticketId: "tkt_helper", member: who, task: `${tag}\n细节`, basis, token: `token-${tag}`, workdir: dir, sessionDir: memberSessionDir(dir, "tkt_helper", who.name), signal,
 			model: { provider: "openai-codex", id: "gpt-6.1-sol" },
@@ -76,6 +76,7 @@ function setup(t: TestContext, env: Record<string, string> = {}) {
 			onActivity: (step) => activity.push(step),
 			onMessage: (message) => messages.push(message),
 			callId: `call-${tag}`,
+			outputRule,
 		} satisfies MemberRun);
 	const read = (file: string) => JSON.parse(readFileSync(join(dir, file), "utf8"));
 	return { dir, run, usage, activity, messages, read };
@@ -90,6 +91,15 @@ const alive = (pid: number) => {
 		return false;
 	}
 };
+
+test("宿主给了成品规则的成员，argv 里多一段 --append-system-prompt；没给的没有", async (t) => {
+	const { run, read } = setup(t);
+	const appended = (argv: string[]) => argv.flatMap((a, i) => (a === "--append-system-prompt" ? [argv[i + 1]] : []));
+	await run(MARKET, "rule", "request", undefined, "## 成品放在哪里\n规则");
+	assert.ok(appended(read("argv-rule.json")).includes("## 成品放在哪里\n规则"));
+	await run(NEWS, "plain");
+	assert.ok(!appended(read("argv-plain.json")).some((p) => p.includes("成品")));
+});
 
 test("成员做一件事：Pi 打印模式，会话放在任务里这位成员自己的目录并接着上次，工具取交集，回复取最后一条，用量逐条上报", async (t) => {
 	const { dir, run, usage, read } = setup(t);

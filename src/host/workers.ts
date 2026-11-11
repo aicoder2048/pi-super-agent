@@ -24,6 +24,8 @@ export interface WorkerSpec extends DomainKit {
 	token: string;
 	model: ModelRef;
 	resume: boolean;
+	/** The output rule, for a helper that can write files. */
+	outputRule?: string;
 }
 
 export interface WorkerEvents {
@@ -230,7 +232,7 @@ export class WorkerExecutor {
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ...kit, token, model: choice.model, resume },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ...kit, token, model: choice.model, resume, ...(ticket.basis !== "inference" && { outputRule: this.#o.output.prompt("helper") }) },
 				events,
 			);
 		} catch (error) {
@@ -388,9 +390,11 @@ export class WorkerExecutor {
 		kernel.recordDispatch(ticketId, member.title);
 		const { basis } = kernel.getTicket(ticketId)!;
 		const { timeoutMs, codingTimeoutMs } = this.#o.dispatch!;
+		const codes = canCode(memberTools(basis, member.tools));
 		return this.#desk.dispatch({
 			ticketId, callId, member, task, basis,
-			limitMs: canCode(memberTools(basis, member.tools)) ? codingTimeoutMs : timeoutMs,
+			limitMs: codes ? codingTimeoutMs : timeoutMs,
+			...(codes && { outputRule: this.#o.output.prompt("member") }),
 			model,
 			refusal,
 			workdir: join(stateDir, "workers", ticketId),
