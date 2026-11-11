@@ -1,6 +1,7 @@
 import { isFresh, type Quote } from "./detect.ts";
 import { sma } from "./indicators.ts";
 import { nyTime, type Session } from "./session.ts";
+import { MAX_WATCHLIST } from "./settings.ts";
 import { parseSymbol } from "./symbol.ts";
 
 export type Sym = string & { readonly __sym: unique symbol };
@@ -28,8 +29,7 @@ export const keyOf = (t: { symbol: Sym; condition: { kind: ConditionKind } }): T
 export type Book = ReadonlyMap<TripwireKey, Tripwire>;
 
 export const LIMITS = {
-	// Same cap as MAX_WATCHLIST, so one snapshot request still covers every polled symbol.
-	polledSymbols: 50,
+	polledSymbols: MAX_WATCHLIST,
 	crossSymbols: 10,
 	pct: { min: 0.1, max: 100 },
 	basis: { min: 0.0001, max: 1_000_000 },
@@ -126,30 +126,31 @@ export function parseEdit(op: string, args: unknown): TripwireEdit {
 	}
 }
 
-/** A string is the reason the merged condition is refused. */
-function merge(existing: Condition | undefined, patch: ConditionPatch): Condition | string {
+type Merged = { condition: Condition } | { reason: string };
+
+function merge(existing: Condition | undefined, patch: ConditionPatch): Merged {
 	const missing = (...fields: [string, unknown][]) => {
 		const names = fields.filter(([, v]) => v === undefined).map(([f]) => f);
-		return names.length ? `新的 ${patch.kind} 条件缺少 ${names.join("、")}` : undefined;
+		return names.length ? { reason: `新的 ${patch.kind} 条件缺少 ${names.join("、")}` } : undefined;
 	};
 	switch (patch.kind) {
 		case "day": {
 			const base = existing as Extract<Condition, { kind: "day" }> | undefined;
 			const pct = patch.pct ?? base?.pct;
-			return missing(["pct", pct]) ?? { kind: "day", pct: pct!, dir: patch.dir ?? base?.dir ?? "either" };
+			return missing(["pct", pct]) ?? { condition: { kind: "day", pct: pct!, dir: patch.dir ?? base?.dir ?? "either" } };
 		}
 		case "cost": {
 			const base = existing as Extract<Condition, { kind: "cost" }> | undefined;
 			const pct = patch.pct ?? base?.pct;
 			const basis = patch.basis ?? base?.basis;
 			const shares = patch.shares === null ? undefined : (patch.shares ?? base?.shares);
-			return missing(["pct", pct], ["basis", basis]) ?? defined({ kind: "cost" as const, pct: pct!, dir: patch.dir ?? base?.dir ?? "either", basis: basis!, shares });
+			return missing(["pct", pct], ["basis", basis]) ?? { condition: defined({ kind: "cost" as const, pct: pct!, dir: patch.dir ?? base?.dir ?? "either", basis: basis!, shares }) };
 		}
 		case "cross": {
 			const base = existing as Extract<Condition, { kind: "cross" }> | undefined;
 			const fast = patch.fast ?? base?.fast ?? LIMITS.crossDefault.fast;
 			const slow = patch.slow ?? base?.slow ?? LIMITS.crossDefault.slow;
-			return fast < slow ? { kind: "cross", fast, slow } : `fast（${fast}）必须小于 slow（${slow}）`;
+			return fast < slow ? { condition: { kind: "cross", fast, slow } } : { reason: `fast（${fast}）必须小于 slow（${slow}）` };
 		}
 	}
 }
@@ -162,8 +163,7 @@ export function polledSymbols(book: Book, watchlist: readonly string[]): string[
 
 const crossCount = (book: Book) => [...book.values()].filter((t) => t.condition.kind === "cross").length;
 
-/** A cap only refuses an edit that grows past it, so a config watchlist that grew on its own never blocks a threshold change. */
-function overCap(before: Book, after: Book, watchlist: readonly string[]): string | undefined {
+function growsPastCap(before: Book, after: Book, watchlist: readonly string[]): string | undefined {
 	const polled = polledSymbols(after, watchlist).length;
 	if (polled > LIMITS.polledSymbols && polled > polledSymbols(before, watchlist).length) return `盯的股票（watchlist 加盯盘条件）最多 ${LIMITS.polledSymbols} 只，这次会变成 ${polled} 只`;
 	const crosses = crossCount(after);
@@ -181,12 +181,13 @@ export function applyEdit(book: Book, edit: Exclude<TripwireEdit, { op: "list" }
 	}
 	const key = keyOf({ symbol: edit.symbol, condition: edit.patch });
 	const existing = book.get(key);
-	const condition = merge(existing?.condition, edit.patch);
-	if (typeof condition === "string") return { ok: false, reason: `${edit.symbol}：${condition}` };
+	const merged = merge(existing?.condition, edit.patch);
+	if ("reason" in merged) return { ok: false, reason: `${edit.symbol}：${merged.reason}` };
+	const { condition } = merged;
 	if (existing && sameCondition(existing.condition, condition)) return { ok: true, book, changed: false, before: [existing], after: [existing] };
 	const after: Tripwire = { symbol: edit.symbol, condition, setAt: now };
 	const next = new Map(book).set(key, after);
-	const over = overCap(book, next, watchlist);
+	const over = growsPastCap(book, next, watchlist);
 	if (over) return { ok: false, reason: over };
 	return { ok: true, book: next, changed: true, before: existing ? [existing] : [], after: [after] };
 }
@@ -197,7 +198,6 @@ export function serializeBook(book: Book): string {
 	return JSON.stringify({ version: BOOK_VERSION, tripwires: [...book.values()] });
 }
 
-/** Unreadable data is a problem, never an empty book: an empty book would overwrite the user's list on the next edit. */
 export function parseBook(raw: string | undefined): { book: Book } | { problem: string } {
 	if (raw === undefined) return { book: new Map() };
 	try {
@@ -210,8 +210,9 @@ export function parseBook(raw: string | undefined): { book: Book } | { problem: 
 			only(where, t, ["symbol", "condition", "setAt"]);
 			const symbol = symbolField(where, t);
 			if (symbol !== t.symbol) throw new Error(`${where} 的 symbol 不是规范写法`);
-			const condition = merge(undefined, parsePatch(where, t.condition));
-			if (typeof condition === "string") throw new Error(`${where}：${condition}`);
+			const merged = merge(undefined, parsePatch(where, t.condition));
+			if ("reason" in merged) throw new Error(`${where}：${merged.reason}`);
+			const { condition } = merged;
 			if (typeof t.setAt !== "number" || !Number.isFinite(t.setAt)) throw new Error(`${where} 的 setAt 不是时间`);
 			const key = keyOf({ symbol, condition });
 			if (book.has(key)) throw new Error(`${where}和前面的 ${key} 重复`);
@@ -223,24 +224,21 @@ export function parseBook(raw: string | undefined): { book: Book } | { problem: 
 	}
 }
 
-/** Deliberately no basis and no shares: alert text is built from a Firing, so no code path can send them off the machine. */
 export type Firing =
 	| { kind: "day"; symbol: Sym; side: Side; pct: number; changePct: number; price: number; prevClose: number }
 	| { kind: "cost"; symbol: Sym; side: Side; pct: number; driftPct: number; price: number }
 	| { kind: "cross"; symbol: Sym; fast: number; slow: number; shape: CrossShape; stage: CrossStage; price: number; fastSma: number; slowSma: number };
 export type CrossStage = "suspected" | "confirmed" | "withdrawn";
 
-/** Settled daily closes before `nyDate`, oldest first, per symbol, fetched on `nyDate`. */
-export type History = ReadonlyMap<string, { nyDate: string; closes: readonly number[] }>;
+export type History = ReadonlyMap<string, { fetchedOn: string; settledCloses: readonly number[] }>;
 
-// Prices are cents, so a real move of exactly a threshold can compute a hair below it.
+// Float rounding can put a move of exactly a threshold a hair below it (609 / 600 - 1 < 1.5%).
 const EPSILON = 1e-9;
 const sideOf = (pct: number): Side => (pct >= 0 ? "up" : "down");
 const admits = (dir: Direction, side: Side) => dir === "either" || dir === side;
 const beyond = (move: number, pct: number, side: Side) => (side === "up" ? move : -move) >= pct - EPSILON;
 const driftOf = (price: number, basis: number) => ((price - basis) / basis) * 100;
 
-/** Stateless: returns every firing that holds now. The host dedupes by firingId, so re-posting is a no-op. */
 export function checkIntraday(book: Book, quotes: readonly Quote[], session: Session, history: History): Firing[] {
 	const fresh = new Map(quotes.filter((q) => isFresh(q, session)).map((q) => [q.symbol, q]));
 	return [...book.values()].flatMap((t) => {
@@ -258,13 +256,12 @@ function check({ symbol, condition: c }: Tripwire, q: Quote, nyDate: string, his
 		case "cost": {
 			const driftPct = driftOf(q.price, c.basis);
 			const side = sideOf(driftPct);
-			// Only the crossing day alerts, so a position that stays past its line does not ring every day.
 			const crossedToday = beyond(driftPct, c.pct, side) && !beyond(driftOf(q.prevClose, c.basis), c.pct, side);
 			return admits(c.dir, side) && crossedToday ? [{ kind: "cost", symbol, side, pct: c.pct, driftPct, price: q.price }] : [];
 		}
 		case "cross": {
 			const h = history.get(symbol);
-			const crossed = h?.nyDate === nyDate ? crossShape(h.closes, q.price, c.fast, c.slow) : null;
+			const crossed = h?.fetchedOn === nyDate ? crossShape(h.settledCloses, q.price, c.fast, c.slow) : null;
 			return crossed ? [{ kind: "cross", symbol, fast: c.fast, slow: c.slow, stage: "suspected", price: q.price, ...crossed }] : [];
 		}
 	}
@@ -283,7 +280,6 @@ export function crossShape(settledBeforeToday: readonly number[], todayClose: nu
 	return null;
 }
 
-/** Confirms a flip on today's settled close, suspected or not. Withdraws a suspicion that did not hold; yesterday's relation says which shape it could have been. */
 export function settleCross(t: Tripwire & { condition: { kind: "cross" } }, closesThroughToday: readonly number[], suspectedRaised: boolean): Firing | null {
 	const { fast, slow } = t.condition;
 	const before = closesThroughToday.slice(0, -1);
@@ -293,11 +289,11 @@ export function settleCross(t: Tripwire & { condition: { kind: "cross" } }, clos
 	const crossed = crossShape(before, close, fast, slow);
 	if (crossed) return { ...base, stage: "confirmed", ...crossed };
 	if (!suspectedRaised) return null;
+	// Yesterday's relation leaves only one shape that today could have been suspected of.
 	const shape: CrossShape = smaOf(before, fast) <= smaOf(before, slow) ? "golden" : "death";
 	return { ...base, shape, stage: "withdrawn", fastSma: smaOf(closesThroughToday, fast), slowSma: smaOf(closesThroughToday, slow) };
 }
 
-/** Symbol, NY trading day and signal with the threshold inside, so editing a threshold re-arms it and repeating an edit does not. */
 export function firingId(nyDate: string, f: Firing): string {
 	const signal = f.kind === "cross" ? `cross-${f.fast}-${f.slow}-${f.shape}-${f.stage}` : `${f.kind}-${f.side}-${f.pct}`;
 	return `${f.symbol}:${nyDate}:${signal}`;
@@ -328,14 +324,15 @@ export function alertText(f: Firing, quote: { at: number; delayed: boolean }): s
 	}
 }
 
-/** `local` text carries the cost basis and shares and must never leave the machine. */
-function describe({ symbol, condition: c }: Tripwire, local: boolean): string {
+type Audience = "local" | "shareable";
+
+function describe({ symbol, condition: c }: Tripwire, audience: Audience): string {
 	switch (c.kind) {
 		case "day":
 			return `${symbol} 相对昨收${DIR_WORDS[c.dir]}超过 ${c.pct}% 时提醒`;
 		case "cost": {
 			const rule = `相对成本价${DIR_WORDS[c.dir]}超过 ${c.pct}% 时提醒`;
-			if (!local) return `${symbol} ${rule}（成本价和股数只在网页显示）`;
+			if (audience === "shareable") return `${symbol} ${rule}（成本价和股数只在网页显示）`;
 			return `${symbol} 成本价 ${c.basis}${c.shares === undefined ? "" : `、${c.shares} 股`}，${rule}`;
 		}
 		case "cross":
@@ -343,8 +340,8 @@ function describe({ symbol, condition: c }: Tripwire, local: boolean): string {
 	}
 }
 
-function summary(before: readonly Tripwire[], after: readonly Tripwire[], local: boolean): string | undefined {
-	const listed = (ts: readonly Tripwire[]) => ts.map((t) => describe(t, local)).join("；");
+function summary(before: readonly Tripwire[], after: readonly Tripwire[], audience: Audience): string | undefined {
+	const listed = (ts: readonly Tripwire[]) => ts.map((t) => describe(t, audience)).join("；");
 	if (after.length && before.length && sameCondition(before[0]!.condition, after[0]!.condition)) return `没有变化：${listed(after)}。`;
 	if (after.length && before.length) return `已改：${listed(after)}，原来是 ${listed(before)}。`;
 	if (after.length) return `已添加：${listed(after)}。`;
@@ -359,16 +356,14 @@ function alreadyPast(after: readonly Tripwire[], currentDrift: number | undefine
 	return admits(c.dir, side) && beyond(currentDrift, c.pct, side) ? `现在已在 ${signed(currentDrift, 1)}，回到线内后再越过才提醒。` : undefined;
 }
 
-/** Local only (web and terminal): one condition per line, cost basis and shares included. */
 export function receiptText(before: readonly Tripwire[], after: readonly Tripwire[], book: Book, currentDrift?: number): string {
-	const lines = [summary(before, after, true), alreadyPast(after, currentDrift), `现在共 ${book.size} 条${book.size ? "：" : "。"}`, ...[...book.values()].map((t) => describe(t, true))];
+	const lines = [summary(before, after, "local"), alreadyPast(after, currentDrift), `现在共 ${book.size} 条${book.size ? "：" : "。"}`, ...[...book.values()].map((t) => describe(t, "local"))];
 	return lines.filter((l) => l !== undefined).join("\n");
 }
 
-/** What the Worker gets back, and so what may reach a Router reply and Telegram: no cost basis, no shares. */
 export function echoText(applied: Applied): string {
 	if (!applied.ok) return `没改成：${applied.reason}`;
-	return `${summary(applied.before, applied.after, false) ?? ""}现在共 ${applied.book.size} 条。`;
+	return `${summary(applied.before, applied.after, "shareable") ?? ""}现在共 ${applied.book.size} 条。`;
 }
 
 export type RedactedTripwire = { symbol: Sym } & (

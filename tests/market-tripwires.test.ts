@@ -221,13 +221,13 @@ test("crossShape：快线从不高于慢线变成高于是金叉，反过来是�
 
 test("cross 盘中：拿今天取的已收盘日线加现价报疑似；日线不是今天取的或不够长都不报", () => {
 	const book = bookOf({ symbol: "TSLA", condition: { kind: "cross", fast: 2, slow: 3 } });
-	const history: History = new Map([["TSLA", { nyDate: TODAY, closes: GOLDEN_BEFORE }]]);
+	const history: History = new Map([["TSLA", { fetchedOn: TODAY, settledCloses: GOLDEN_BEFORE }]]);
 	assert.deepEqual(checkIntraday(book, [quote("TSLA", 13, 10)], SESSION, history), [
 		{ kind: "cross", symbol: "TSLA", fast: 2, slow: 3, shape: "golden", stage: "suspected", price: 13, fastSma: 11.5, slowSma: 11 },
 	]);
 	assert.deepEqual(fired(book, [quote("TSLA", 10, 10)], history), []);
-	assert.deepEqual(fired(book, [quote("TSLA", 13, 10)], new Map([["TSLA", { nyDate: "2026-11-06", closes: GOLDEN_BEFORE }]])), []);
-	assert.deepEqual(fired(book, [quote("TSLA", 13, 10)], new Map([["TSLA", { nyDate: TODAY, closes: [11, 10, 10] }]])), []);
+	assert.deepEqual(fired(book, [quote("TSLA", 13, 10)], new Map([["TSLA", { fetchedOn: "2026-11-06", settledCloses: GOLDEN_BEFORE }]])), []);
+	assert.deepEqual(fired(book, [quote("TSLA", 13, 10)], new Map([["TSLA", { fetchedOn: TODAY, settledCloses: [11, 10, 10] }]])), []);
 	assert.deepEqual(fired(book, [quote("TSLA", 13, 10)]), []);
 });
 
