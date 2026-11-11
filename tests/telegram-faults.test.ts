@@ -318,3 +318,73 @@ test("退避最长 30 秒", async () => {
 	assert.ok(DEFAULT_TIMING, "DEFAULT_TIMING 导出");
 	assert.equal(Math.max(...DEFAULT_TIMING.backoffMs), 30_000);
 });
+
+test("Telegram 收下每条、却一直回 502：一阵故障里说明只到一次；恢复后再出一阵故障，再补一句", async (t) => {
+	const tg = await fakeTelegram(t);
+	let bad = true;
+	const http: Http = async (url, init) => {
+		const res = await fetch(url, init);
+		if (url.endsWith("/sendMessage") && bad) {
+			await res.text();
+			return new Response("<html>502 Bad Gateway</html>", { status: 502 });
+		}
+		return res;
+	};
+	const { host } = await tgHost(t, tg, { http });
+	tg.userSays(USER, "hi");
+	await until(() => sentTo(tg, USER).includes(NOTES.missed), "可能没送到的说明");
+	host.say("网页上说的");
+	await host.settled();
+	await sleep(1500);
+	bad = false;
+	tg.userSays(USER, "again");
+	await until(() => sentTo(tg, USER).includes("收到：again"), "恢复后的回复");
+	const notes = () => sentTo(tg, USER).filter((m) => m === NOTES.missed).length;
+	assert.equal(notes(), 1, sentTo(tg, USER).join(" | "));
+	bad = true;
+	host.say("又出故障时说的");
+	await until(() => notes() === 2, "新一阵故障的说明");
+	await host.settled();
+	await sleep(1000);
+	const texts = sentTo(tg, USER);
+	assert.equal(notes(), 2, texts.join(" | "));
+	assert.equal(new Set(texts.filter((m) => m !== NOTES.missed)).size, texts.length - 2, `没有哪条发了两次：${texts.join(" | ")}`);
+});
+
+test("说明本身没发出去（连不上）：说明重试，手机上只到一次", async (t) => {
+	const tg = await fakeTelegram(t);
+	let sends = 0;
+	const http: Http = async (url, init) => {
+		if (!url.endsWith("/sendMessage")) return fetch(url, init);
+		sends++;
+		if (sends === 2) throw refused();
+		const res = await fetch(url, init);
+		if (sends === 1) {
+			await res.text();
+			return new Response("<html>502 Bad Gateway</html>", { status: 502 });
+		}
+		return res;
+	};
+	const { host } = await tgHost(t, tg, { http });
+	tg.userSays(USER, "hi");
+	await until(() => sentTo(tg, USER).includes(NOTES.missed), "可能没送到的说明");
+	await host.settled();
+	await sleep(500);
+	assert.deepEqual(sentTo(tg, USER), ["收到：hi", NOTES.missed]);
+});
+
+test("启动时本地状态读写失败两次：Telegram 客户端过一会儿自己开始取消息，宿主照常，日志只记一行", async (t) => {
+	const tg = await fakeTelegram(t);
+	const original = TelegramStore.prototype.claim;
+	let failures = 2;
+	t.mock.method(TelegramStore.prototype, "claim", function (this: TelegramStore, ...args: Parameters<TelegramStore["claim"]>) {
+		if (failures-- > 0) throw new Error("database is locked");
+		return original.apply(this, args);
+	});
+	const { host, logs } = await tgHost(t, tg);
+	host.say("网页照常");
+	await until(() => host.kernel.conversation().some((l) => l.text === "收到：网页照常"), "网页上的回复");
+	tg.userSays(USER, "hi");
+	await until(() => sentTo(tg, USER).includes("收到：hi"), "Telegram 上的回复", 5000);
+	assert.equal(logs.filter((l) => l.includes("database is locked")).length, 1, logs.join("\n"));
+});
