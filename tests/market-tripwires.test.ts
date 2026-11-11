@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyEdit, LIMITS, parseBook, parseEdit, polledSymbols, serializeBook, type Applied, type Book } from "../src/sources/market/tripwires.ts";
+import type { Quote } from "../src/sources/market/detect.ts";
+import { sessionAt } from "../src/sources/market/session.ts";
+import { applyEdit, checkIntraday, crossShape, LIMITS, parseBook, parseEdit, polledSymbols, serializeBook, settleCross, type Applied, type Book, type History, type Tripwire } from "../src/sources/market/tripwires.ts";
 
 const NOW = Date.parse("2026-11-09T15:00:00Z");
 const EMPTY: Book = new Map();
@@ -140,3 +142,82 @@ test("存取：serializeBook 再 parseBook 得到同一份清单；没有数据�
 	}
 });
 
+
+const TODAY = "2026-11-09";
+const SESSION = sessionAt(NOW);
+const NO_HISTORY: History = new Map();
+
+function quote(symbol: string, price: number, prevClose: number, over: Partial<Quote> = {}): Quote {
+	return { symbol, price, prevClose, changePct: ((price - prevClose) / prevClose) * 100, at: NOW, delayed: true, ...over };
+}
+
+const fired = (book: Book, quotes: Quote[], history = NO_HISTORY) => checkIntraday(book, quotes, SESSION, history).map((f) => `${f.symbol}:${f.kind}:${"side" in f ? f.side : f.shape}`);
+
+test("day：涨跌幅到了阈值就报，方向要符合；没到、方向不对、不在清单里的不报", () => {
+	const book = bookOf(
+		{ symbol: "NVDA", condition: { kind: "day", pct: 5 } },
+		{ symbol: "AAPL", condition: { kind: "day", pct: 3, dir: "up" } },
+		{ symbol: "TSLA", condition: { kind: "day", pct: 3, dir: "down" } },
+		{ symbol: "AMD", condition: { kind: "day", pct: 3, dir: "down" } },
+	);
+	const quotes = [quote("NVDA", 105.2, 100), quote("AAPL", 96, 100), quote("TSLA", 96.5, 100), quote("AMD", 102, 100), quote("MSFT", 90, 100)];
+	assert.deepEqual(fired(book, quotes), ["NVDA:day:up", "TSLA:day:down"]);
+	assert.deepEqual(fired(book, [quote("NVDA", 95, 100), quote("AAPL", 103, 100)]), ["NVDA:day:down", "AAPL:day:up"]);
+	assert.deepEqual(fired(book, [quote("NVDA", 104.9, 100)]), []);
+	const q = quote("NVDA", 105.2, 100);
+	assert.deepEqual(checkIntraday(book, [q], SESSION, NO_HISTORY), [{ kind: "day", symbol: "NVDA", side: "up", pct: 5, changePct: q.changePct, price: 105.2, prevClose: 100 }]);
+});
+
+test("过期和不在常规时段的报价不算：上个交易日、盘前、收盘后", () => {
+	const book = bookOf({ symbol: "NVDA", condition: { kind: "day", pct: 5 } });
+	for (const at of [Date.parse("2026-11-06T20:59:00Z"), Date.parse("2026-11-09T14:00:00Z"), Date.parse("2026-11-09T21:30:00Z")]) {
+		assert.deepEqual(fired(book, [quote("NVDA", 110, 100, { at })]), [], new Date(at).toISOString());
+	}
+});
+
+test("cost：今天越过线才报，按昨收算已在线外的不报；方向不符不报；带上精确偏离", () => {
+	const book = bookOf({ symbol: "NVDA", condition: { kind: "cost", basis: 100, shares: 50, pct: 10 } }, { symbol: "AMD", condition: { kind: "cost", basis: 100, pct: 10, dir: "up" } });
+	const [up] = checkIntraday(book, [quote("NVDA", 111, 108)], SESSION, NO_HISTORY);
+	assert.ok(up?.kind === "cost");
+	const { driftPct, ...rest } = up;
+	assert.deepEqual(rest, { kind: "cost", symbol: "NVDA", side: "up", pct: 10, price: 111 });
+	assert.ok(Math.abs(driftPct - 11) < 1e-9);
+	assert.deepEqual(fired(book, [quote("NVDA", 112, 110.5)]), []);
+	assert.deepEqual(fired(book, [quote("NVDA", 89, 95)]), ["NVDA:cost:down"]);
+	assert.deepEqual(fired(book, [quote("NVDA", 85, 89)]), []);
+	assert.deepEqual(fired(book, [quote("AMD", 89, 95)]), []);
+	assert.deepEqual(fired(book, [quote("NVDA", 109, 100)]), []);
+});
+
+const GOLDEN_BEFORE = [12, 11, 10, 10];
+const DEATH_BEFORE = [8, 9, 10, 10];
+
+test("crossShape：快线从不高于慢线变成高于是金叉，反过来是死叉；没翻转或收盘价不够是 null", () => {
+	assert.deepEqual(crossShape(GOLDEN_BEFORE, 13, 2, 3), { shape: "golden", fastSma: 11.5, slowSma: 11 });
+	assert.deepEqual(crossShape(DEATH_BEFORE, 7, 2, 3), { shape: "death", fastSma: 8.5, slowSma: 9 });
+	assert.equal(crossShape(GOLDEN_BEFORE, 10, 2, 3), null);
+	assert.equal(crossShape([11, 10, 10], 13, 2, 3), null);
+});
+
+test("cross 盘中：拿今天取的已收盘日线加现价报疑似；日线不是今天取的或不够长都不报", () => {
+	const book = bookOf({ symbol: "TSLA", condition: { kind: "cross", fast: 2, slow: 3 } });
+	const history: History = new Map([["TSLA", { nyDate: TODAY, closes: GOLDEN_BEFORE }]]);
+	assert.deepEqual(checkIntraday(book, [quote("TSLA", 13, 10)], SESSION, history), [
+		{ kind: "cross", symbol: "TSLA", fast: 2, slow: 3, shape: "golden", stage: "suspected", price: 13, fastSma: 11.5, slowSma: 11 },
+	]);
+	assert.deepEqual(fired(book, [quote("TSLA", 10, 10)], history), []);
+	assert.deepEqual(fired(book, [quote("TSLA", 13, 10)], new Map([["TSLA", { nyDate: "2026-11-06", closes: GOLDEN_BEFORE }]])), []);
+	assert.deepEqual(fired(book, [quote("TSLA", 13, 10)], new Map([["TSLA", { nyDate: TODAY, closes: [11, 10, 10] }]])), []);
+	assert.deepEqual(fired(book, [quote("TSLA", 13, 10)]), []);
+});
+
+test("settleCross：当天收盘翻转就确认（没报过疑似也确认）；没翻转但报过疑似就撤回；否则什么都不报", () => {
+	const [cross] = bookOf({ symbol: "TSLA", condition: { kind: "cross", fast: 2, slow: 3 } }).values() as unknown as [Tripwire & { condition: { kind: "cross" } }];
+	const base = { kind: "cross", symbol: "TSLA", fast: 2, slow: 3 };
+	assert.deepEqual(settleCross(cross, [...GOLDEN_BEFORE, 13], false), { ...base, shape: "golden", stage: "confirmed", price: 13, fastSma: 11.5, slowSma: 11 });
+	assert.deepEqual(settleCross(cross, [...DEATH_BEFORE, 7], true), { ...base, shape: "death", stage: "confirmed", price: 7, fastSma: 8.5, slowSma: 9 });
+	assert.deepEqual(settleCross(cross, [...GOLDEN_BEFORE, 10], true), { ...base, shape: "golden", stage: "withdrawn", price: 10, fastSma: 10, slowSma: 10 });
+	assert.deepEqual(settleCross(cross, [...DEATH_BEFORE, 10], true), { ...base, shape: "death", stage: "withdrawn", price: 10, fastSma: 10, slowSma: 10 });
+	assert.equal(settleCross(cross, [...GOLDEN_BEFORE, 10], false), null);
+	assert.equal(settleCross(cross, [11, 10, 10, 13], true), null);
+});

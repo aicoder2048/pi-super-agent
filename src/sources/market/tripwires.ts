@@ -1,3 +1,6 @@
+import { isFresh, type Quote } from "./detect.ts";
+import { sma } from "./indicators.ts";
+import type { Session } from "./session.ts";
 import { parseSymbol } from "./symbol.ts";
 
 export type Sym = string & { readonly __sym: unique symbol };
@@ -218,4 +221,78 @@ export function parseBook(raw: string | undefined): { book: Book } | { problem: 
 	} catch (error) {
 		return { problem: `盯盘条件清单读不出来：${(error as Error).message}` };
 	}
+}
+
+/** Deliberately no basis and no shares: alert text is built from a Firing, so no code path can send them off the machine. */
+export type Firing =
+	| { kind: "day"; symbol: Sym; side: Side; pct: number; changePct: number; price: number; prevClose: number }
+	| { kind: "cost"; symbol: Sym; side: Side; pct: number; driftPct: number; price: number }
+	| { kind: "cross"; symbol: Sym; fast: number; slow: number; shape: CrossShape; stage: CrossStage; price: number; fastSma: number; slowSma: number };
+export type CrossStage = "suspected" | "confirmed" | "withdrawn";
+
+/** Settled daily closes before `nyDate`, oldest first, per symbol, fetched on `nyDate`. */
+export type History = ReadonlyMap<string, { nyDate: string; closes: readonly number[] }>;
+
+// Prices are cents, so a real move of exactly a threshold can compute a hair below it.
+const EPSILON = 1e-9;
+const sideOf = (pct: number): Side => (pct >= 0 ? "up" : "down");
+const admits = (dir: Direction, side: Side) => dir === "either" || dir === side;
+const beyond = (move: number, pct: number, side: Side) => (side === "up" ? move : -move) >= pct - EPSILON;
+const driftOf = (price: number, basis: number) => ((price - basis) / basis) * 100;
+
+/** Stateless: returns every firing that holds now. The host dedupes by firingId, so re-posting is a no-op. */
+export function checkIntraday(book: Book, quotes: readonly Quote[], session: Session, history: History): Firing[] {
+	const fresh = new Map(quotes.filter((q) => isFresh(q, session)).map((q) => [q.symbol, q]));
+	return [...book.values()].flatMap((t) => {
+		const q = fresh.get(t.symbol);
+		return q ? check(t, q, session.nyDate, history) : [];
+	});
+}
+
+function check({ symbol, condition: c }: Tripwire, q: Quote, nyDate: string, history: History): Firing[] {
+	switch (c.kind) {
+		case "day": {
+			const side = sideOf(q.changePct);
+			return admits(c.dir, side) && beyond(q.changePct, c.pct, side) ? [{ kind: "day", symbol, side, pct: c.pct, changePct: q.changePct, price: q.price, prevClose: q.prevClose }] : [];
+		}
+		case "cost": {
+			const driftPct = driftOf(q.price, c.basis);
+			const side = sideOf(driftPct);
+			// Only the crossing day alerts, so a position that stays past its line does not ring every day.
+			const crossedToday = beyond(driftPct, c.pct, side) && !beyond(driftOf(q.prevClose, c.basis), c.pct, side);
+			return admits(c.dir, side) && crossedToday ? [{ kind: "cost", symbol, side, pct: c.pct, driftPct, price: q.price }] : [];
+		}
+		case "cross": {
+			const h = history.get(symbol);
+			const crossed = h?.nyDate === nyDate ? crossShape(h.closes, q.price, c.fast, c.slow) : null;
+			return crossed ? [{ kind: "cross", symbol, fast: c.fast, slow: c.slow, stage: "suspected", price: q.price, ...crossed }] : [];
+		}
+	}
+}
+
+const smaOf = (closes: readonly number[], n: number) => sma([...closes], n)!;
+
+export function crossShape(settledBeforeToday: readonly number[], todayClose: number, fast: number, slow: number): { shape: CrossShape; fastSma: number; slowSma: number } | null {
+	if (settledBeforeToday.length < slow + 1) return null;
+	const before = smaOf(settledBeforeToday, fast) - smaOf(settledBeforeToday, slow);
+	const today = [...settledBeforeToday, todayClose];
+	const fastSma = smaOf(today, fast);
+	const slowSma = smaOf(today, slow);
+	if (before <= 0 && fastSma > slowSma) return { shape: "golden", fastSma, slowSma };
+	if (before >= 0 && fastSma < slowSma) return { shape: "death", fastSma, slowSma };
+	return null;
+}
+
+/** Confirms a flip on today's settled close, suspected or not. Withdraws a suspicion that did not hold; yesterday's relation says which shape it could have been. */
+export function settleCross(t: Tripwire & { condition: { kind: "cross" } }, closesThroughToday: readonly number[], suspectedRaised: boolean): Firing | null {
+	const { fast, slow } = t.condition;
+	const before = closesThroughToday.slice(0, -1);
+	const close = closesThroughToday.at(-1);
+	if (close === undefined || before.length < slow + 1) return null;
+	const base = { kind: "cross" as const, symbol: t.symbol, fast, slow, price: close };
+	const crossed = crossShape(before, close, fast, slow);
+	if (crossed) return { ...base, stage: "confirmed", ...crossed };
+	if (!suspectedRaised) return null;
+	const shape: CrossShape = smaOf(before, fast) <= smaOf(before, slow) ? "golden" : "death";
+	return { ...base, shape, stage: "withdrawn", fastSma: smaOf(closesThroughToday, fast), slowSma: smaOf(closesThroughToday, slow) };
 }
