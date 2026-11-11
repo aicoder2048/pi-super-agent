@@ -643,6 +643,11 @@ test("盯盘条件：只在盯盘条件里的股票也被看盘轮询，给它�
 	assert.match(receipts(m)[1], /现在已在 \+25\.0%，回到线内后再越过才提醒/);
 });
 
+test("均线交叉：给助手的盯盘条件说明写明盘中先报疑似、收盘后约 35 到 50 分钟再确认或撤回", () => {
+	const spec = marketFeed({ source: "us-market", title: "美股行情", settings: DEFAULTS, override: undefined, where: "test", secretsFile: undefined, env: {}, log: () => {} });
+	assert.match(spec.tripwireHelp ?? "", /盘中.*疑似.*收盘后大约 35 到 50 分钟.*确认.*没有成立/);
+});
+
 const aggsCount = (m: ReturnType<typeof market>) => m.requests.filter((r) => r.url.includes("/v2/aggs/")).length;
 const headOf = (text: string) => text.split("：")[0];
 
