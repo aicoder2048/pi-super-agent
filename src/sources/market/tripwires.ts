@@ -237,7 +237,7 @@ const EPSILON = 1e-9;
 const sideOf = (pct: number): Side => (pct >= 0 ? "up" : "down");
 const admits = (dir: Direction, side: Side) => dir === "either" || dir === side;
 const beyond = (move: number, pct: number, side: Side) => (side === "up" ? move : -move) >= pct - EPSILON;
-const driftOf = (price: number, basis: number) => ((price - basis) / basis) * 100;
+export const driftOf = (price: number, basis: number) => ((price - basis) / basis) * 100;
 
 export function checkIntraday(book: Book, quotes: readonly Quote[], session: Session, history: History): Firing[] {
 	const fresh = new Map(quotes.filter((q) => isFresh(q, session)).map((q) => [q.symbol, q]));

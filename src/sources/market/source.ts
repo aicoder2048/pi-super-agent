@@ -1,5 +1,5 @@
 import { WATCHDOG_SOURCE } from "../../watchdog/watchdog.ts";
-import type { Feed, FeedContext, FeedInput, FeedSpec } from "../feeds.ts";
+import type { Feed, FeedContext, FeedInput, FeedSpec, TripwireReply } from "../feeds.ts";
 import { threadId } from "../generic.ts";
 import { LookupCache, type Cached, type Via } from "./cache.ts";
 import { MarketClient, MarketError, type Bar, type Span, type Trace } from "./client.ts";
@@ -8,10 +8,11 @@ import { FinnhubClient } from "./finnhub.ts";
 import { ConfigError } from "../../config-error.ts";
 import type { LoadedSecret } from "../../secrets.ts";
 import { readFinnhubKey, readMarketKey } from "./key.ts";
-import { detect, toTrigger, type MarketCursor, type Move, type Quote } from "./detect.ts";
+import { detect, isFresh, toTrigger, type MarketCursor, type Move, type Quote } from "./detect.ts";
 import { inPollWindow, MINUTE, nextPollDelay, sessionAt, shiftDate, type Session } from "./session.ts";
 import { parseMarketSettings, type MarketSettings } from "./settings.ts";
 import { parseSymbol } from "./symbol.ts";
+import { applyEdit, driftOf, echoText, parseBook, parseEdit, receiptText, redact, serializeBook, type Book, type Tripwire } from "./tripwires.ts";
 
 // How long a lookup result may be reused. Quotes the poll already holds are reused for one poll interval instead.
 const TTL_MS = { quote: 30_000, earnings: 6 * 60 * MINUTE, bars: { day: 10 * MINUTE, hour: 2 * MINUTE, minute: MINUTE } as Record<Span, number> };
@@ -48,6 +49,15 @@ const LOOKUP_HELP = `us-market（美股行情）：每个结果都带 fromCache�
 - earnings { symbol }：Finnhub 财报。next 是下次财报 { date, hour: "bmo" 盘前|"amc" 盘后|"dmh" 盘中|"unknown", year, quarter, epsEstimate, revenueEstimate }，没有排期时为 null；quarters 是最近 4 个已公布季度（新到旧）{ year, quarter, period, reportDate, epsActual, epsEstimate, epsSurprisePct, revenueActual, revenueEstimate, revenueSurprisePct }，超预期百分比 = (实际 - 预期) / |预期| × 100，由程序算好；接口没给的字段不出现（Finnhub 免费档的财报日历不给历史，所以通常没有 reportDate 和营收）
 - session {}：纽约日期和交易时段（pre、regular、post、closed）`;
 
+const TRIPWIRE_HELP = `us-market（美股盯盘条件）：同一只股票每种条件最多一条。成本价和股数不会回给你，网页上有一张宿主写的收据。
+- list {}：列出全部条件
+- set { symbol, condition }：新增或修改这只股票这一种条件。改已有的条件时只写要改的字段，没写的保持原样。condition 是下面三种之一，dir 是 up、down 或 either（不写就是 either），pct 在 0.1 到 100 之间：
+  - { kind: "day", pct, dir? }：相对昨收涨跌超过 pct% 时提醒
+  - { kind: "cost", pct, basis, shares?, dir? }：相对成本价 basis 涨跌超过 pct% 时提醒，新加时必须有 basis；shares 是股数，可以不写，写 null 是去掉
+  - { kind: "cross", fast?, slow? }：fast 日均线和 slow 日均线金叉、死叉时提醒，不写就是 5 和 20
+- remove { symbol, kind? }：去掉这只股票的某一种条件，不写 kind 就全部去掉
+自选股加上条件里的股票最多 50 只，均线交叉条件最多 10 只。`;
+
 export function marketFeed(input: FeedInput): FeedSpec {
 	const { source, title } = input;
 	const settings = parseMarketSettings(input.settings, input.override, input.where);
@@ -58,6 +68,7 @@ export function marketFeed(input: FeedInput): FeedSpec {
 	return {
 		source,
 		lookupHelp: LOOKUP_HELP,
+		tripwireHelp: TRIPWIRE_HELP,
 		create: (ctx) => loaded
 			? new MarketSource({
 				source, title, settings, ctx,
@@ -107,6 +118,9 @@ function disabledFeed(source: string, reason: string): Feed {
 		lookup: async () => {
 			throw new Error(`${source} 已停用：${reason}`);
 		},
+		tripwires: () => {
+			throw new Error(`${source} 已停用：${reason}`);
+		},
 	};
 }
 
@@ -129,10 +143,13 @@ export class MarketSource implements Feed {
 	#lastPoll: { at: number; quotes: Quote[] } | undefined;
 	#timer: NodeJS.Timeout | undefined;
 	#stopped = false;
+	/** Read once; this instance is the only writer, so it never diverges from the store. */
+	#book: { book: Book } | { problem: string };
 
 	constructor(options: MarketSourceOptions) {
 		this.#o = options;
 		this.#cache = new LookupCache(options.ctx.clock, CACHE_ENTRIES);
+		this.#book = parseBook(options.ctx.readUserData());
 	}
 
 	start(): void {
@@ -151,7 +168,36 @@ export class MarketSource implements Feed {
 	}
 
 	problem(): string | undefined {
-		return this.#disabled ?? (this.#failing && `暂时取不到行情：${this.#failing.error}`);
+		const feed = this.#disabled ?? (this.#failing && `暂时取不到行情：${this.#failing.error}`);
+		const book = "problem" in this.#book ? `${this.#book.problem}，没有覆盖它，盯盘条件暂时改不了` : undefined;
+		return [feed, book].filter(Boolean).join("；") || undefined;
+	}
+
+	/** Store, then memory, then the receipt; a receipt fits the store by construction, so a write never ends half done. */
+	tripwires(op: string, args: unknown): TripwireReply {
+		if ("problem" in this.#book) throw new Error(`${this.#book.problem}。状态库里的清单没有被覆盖，修好之前改不了盯盘条件`);
+		const { ctx, settings } = this.#o;
+		const { book } = this.#book;
+		const edit = parseEdit(op, args);
+		if (edit.op === "list") {
+			ctx.post({ kind: "receipt", text: receiptText([], [], book) });
+			return { echo: echoText({ ok: true, book, changed: false, before: [], after: [] }), tripwires: redact(book) };
+		}
+		const applied = applyEdit(book, edit, settings.watchlist, ctx.clock.now());
+		if (!applied.ok) throw new Error(echoText(applied));
+		if (applied.changed) {
+			ctx.writeUserData(serializeBook(applied.book));
+			this.#book = { book: applied.book };
+		}
+		ctx.post({ kind: "receipt", text: receiptText(applied.before, applied.after, applied.book, this.#currentDrift(applied.after[0])) });
+		return { echo: echoText(applied), tripwires: redact(applied.book) };
+	}
+
+	#currentDrift(t: Tripwire | undefined): number | undefined {
+		if (t?.condition.kind !== "cost" || !this.#lastPoll) return undefined;
+		const session = sessionAt(this.#o.ctx.clock.now());
+		const quote = this.#lastPoll.quotes.find((q) => q.symbol === t.symbol && isFresh(q, session));
+		return quote && driftOf(quote.price, t.condition.basis);
 	}
 
 	async tick(): Promise<void> {
