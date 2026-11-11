@@ -10,7 +10,7 @@
 
 **宿主仍只绑 `127.0.0.1`。** 宿主不知道 Tailscale，也不调用它。使用者自己运行 `tailscale serve --bg <webPort>`。
 
-**`config.json` 的 `webHosts` 列出 tailnet 机器名**，例如 `["psa-home.example.ts.net"]`。每一项必须是小写的 `*.ts.net` 名字，不带 `https://`、端口和路径，也不能是 IP 或通配符。写错时宿主启动就退出，报错指出是第几项、原值是什么。大写字母读成小写，重复的只留一项。`webHosts` 不为空时 `webPort` 不能是 0：`tailscale serve` 转发到一个固定端口，端口每次启动都变，远程网址就失效。缺省或空数组时，网关的行为与今天完全相同。
+**`config.json` 的 `webHosts` 列出 tailnet 机器名**，例如 `["psa-home.example.ts.net"]`。每一项必须是小写的 `*.ts.net` 名字，不带 `https://`、端口和路径，也不能是 IP 或通配符。写错时宿主启动就退出，报错指出是第几项、原值是什么。大写字母读成小写，重复的只留一项。`webHosts` 不为空时 `webPort` 不能是 0：`tailscale serve` 转发到一个固定端口，端口每次启动都变，远程网址就失效。缺省或空数组时，网关接受和拒绝的请求与今天完全相同，只有 403 的说明文字多提了一句 `webHosts`。
 
 **接受的地址只从一处推导。** `src/host/web-hosts.ts` 从端口和名字算出两个集合：接受的 Host 是 `127.0.0.1:<端口>`、`localhost:<端口>` 和每个名字（不带端口）；接受的 Origin 是这两个本机地址加 `http://`，以及每个 `https://<名字>`。远程名字不带端口，因为 Tailscale 在 443 上应答，浏览器在 Host 和 Origin 里都省略默认端口。网关对每个请求只做精确的集合查找，Host 仍在 token 之前检查。打印的远程网址出自同一份数据，所以日志里的网址一定是网关接受的地址。
 
