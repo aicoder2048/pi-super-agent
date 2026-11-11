@@ -192,3 +192,24 @@ test("可能已送达的消息不再发；每个聊天只等着一句说明，�
 	store.sent(store.next()!, 502);
 	assert.equal(store.next()?.key, "missed");
 });
+
+test("同一个 update 的点只处理一次：重投拿回第一次的提示；处理出错不记，连同它写的一起回滚；换了机器人才忘掉", () => {
+	const { db, store, reopen } = fresh();
+	assert.throws(() =>
+		store.tapOnce(7, () => {
+			store.put(42, "line:a", "a", reply("一"));
+			throw new Error("宿主出错");
+		}),
+	);
+	assert.equal(rows(db, "telegram_messages"), 0);
+	let runs = 0;
+	const handle = (toast: string) => () => {
+		runs++;
+		return toast;
+	};
+	assert.equal(store.tapOnce(7, handle("已发送")), "已发送");
+	assert.equal(reopen().tapOnce(7, handle("别的")), "已发送");
+	assert.equal(runs, 1);
+	assert.equal(reopen(987654321).tapOnce(7, handle("新机器人")), "新机器人");
+	assert.equal(runs, 2);
+});

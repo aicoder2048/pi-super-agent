@@ -91,7 +91,7 @@ function tap(data: string, { from = 42, chat = from, group = false } = {}): Tele
 }
 
 test("名单上的人点按钮：data 是 a:<报告 id>:<序号> 时交给宿主回答", () => {
-	assert.deepEqual(decide(tap(`a:${RPT}:2`), ALLOWED), { do: "answer", chatId: 42, callbackId: "cb1", reportId: RPT, option: 2 });
+	assert.deepEqual(decide(tap(`a:${RPT}:2`), ALLOWED), { do: "answer", chatId: 42, messageId: 9, callbackId: "cb1", reportId: RPT, option: 2 });
 });
 
 test("点成员上限的按钮（伪造的 data）：不交给宿主，提示只能在网页或终端回答", () => {
