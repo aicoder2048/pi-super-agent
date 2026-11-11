@@ -45,7 +45,8 @@ watchdog:
     if [ -t 0 ]; then set -m; fi
     {{run}} src/watchdog/main.ts
 
-# 用的是现在 PATH 里的 node 和状态目录（PSA_STATE_DIR）；换了 node、Pi 或仓库位置后重跑一次。重复运行不会重启宿主。
+# 用的是现在 PATH 里的 node 和状态目录（PSA_STATE_DIR）；换了 node 或仓库位置后重跑一次。重复运行不会重启宿主：
+# 升级了 Pi 要让宿主用上，跑 just service-uninstall && just service-install。
 # 登录后自动启动 Watchdog（它再拉起宿主），崩溃后 launchd 把它拉回来。需要这台 Mac 开着自动登录。
 service-install:
     {{run}} src/service/cli.ts install
@@ -54,7 +55,7 @@ service-install:
 service-uninstall:
     {{run}} src/service/cli.ts uninstall
 
-# 三个 service 命令都可用 PSA_SERVICE_LABEL 换一个 label 试装。
+# 试装时 PSA_SERVICE_LABEL 和 PSA_STATE_DIR 一起换：只换 label，试装的 plist 仍指向真的状态目录，卸载时会停掉真的宿主。
 # 打印 launchd 里的状态、已装 plist 的 node 路径和最近一次心跳。
 service-status:
     {{run}} src/service/cli.ts status
