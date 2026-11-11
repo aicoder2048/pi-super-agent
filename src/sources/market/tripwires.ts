@@ -306,7 +306,7 @@ const SHAPES: Record<CrossShape, { name: string; verb: string }> = { golden: { n
 const DIR_WORDS: Record<Direction, string> = { up: "涨", down: "跌", either: "涨跌" };
 
 export function alertText(f: Firing, quote: { at: number; delayed: boolean }): string {
-	const head = `【盯盘提醒】${f.symbol} `;
+	const head = `${f.symbol} `;
 	const at = `报价时间 ${nyTime(quote.at)} ET${quote.delayed ? "（延迟行情）" : ""}。`;
 	switch (f.kind) {
 		case "day":
