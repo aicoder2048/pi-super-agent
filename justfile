@@ -45,6 +45,20 @@ watchdog:
     if [ -t 0 ]; then set -m; fi
     {{run}} src/watchdog/main.ts
 
+# 用的是现在 PATH 里的 node 和状态目录（PSA_STATE_DIR）；换了 node、Pi 或仓库位置后重跑一次。重复运行不会重启宿主。
+# 登录后自动启动 Watchdog（它再拉起宿主），崩溃后 launchd 把它拉回来。需要这台 Mac 开着自动登录。
+service-install:
+    {{run}} src/service/cli.ts install
+
+# 停掉 Watchdog 和宿主，删掉 LaunchAgent。没装也不报错。
+service-uninstall:
+    {{run}} src/service/cli.ts uninstall
+
+# 三个 service 命令都可用 PSA_SERVICE_LABEL 换一个 label 试装。
+# 打印 launchd 里的状态、已装 plist 的 node 路径和最近一次心跳。
+service-status:
+    {{run}} src/service/cli.ts status
+
 # 打开 TUI 客户端（Pi TUI 只当界面，输入转发给宿主）。连接时读状态目录里的 client-token。
 client:
     pi {{clean}} --no-session --no-context-files --tui-mode regular -e extensions/super-agent.ts
