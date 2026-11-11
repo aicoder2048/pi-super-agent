@@ -35,7 +35,7 @@ export const OUTPUT_KINDS = [
 
 export type OutputRole = "helper" | "member";
 
-const DATED_NAME = "8 位日期-短名，例如 20261111-nvda-drop.md";
+const DATED_NAME = "8 位日期-短名，扩展名按内容，例如 20261111-nvda-drop";
 const APP_NAME: Record<OutputRole, string> = {
 	helper: "用 new_app 要目录，不要自己编号",
 	member: "派活里给的目录；没给就在回复里请领队给，不要自己编号",

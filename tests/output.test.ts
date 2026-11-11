@@ -33,6 +33,8 @@ test("助手和成员的规则里写着成品目录的绝对路径，分类表�
 		const rule = output.prompt(role);
 		for (const kind of OUTPUT_KINDS) assert.ok(rule.includes(`${root}/${kind.dir}/`), `${role} 的规则里没有 ${kind.dir}`);
 		assert.match(rule, /不要写进代码仓库/);
+		const dataRow = rule.split("\n").find((l) => l.startsWith(`| ${root}/data/ |`)) ?? "";
+		assert.doesNotMatch(dataRow, /\.md/, "数据那一行的起名例子不该带 .md");
 	}
 });
 
