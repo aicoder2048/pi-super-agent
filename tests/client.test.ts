@@ -347,7 +347,7 @@ const row = (over: Partial<DashboardRow>): DashboardRow => ({
 	id: "tkt_3f2a9c", title: "整理本周的会议纪要并发给团队", stage: "running", basis: "request",
 	latestSummary: "已经读完五份纪要，正在合并重复的行动项，预计还要两分钟", model: "openai-codex/gpt-6.1-sol",
 	fellBack: false, toolCalls: 12, tokensIn: 3200, tokensOut: 800, elapsedMs: 312_000, question: null, stall: null, lastProgressAt: null,
-	helper: { name: "听松", role: "market", seq: 2 }, workerState: "running", startedAt: 0, endedAt: null, ...over,
+	helper: { name: "听松", role: "market", seq: 2 }, dispatchedTo: null, workerState: "running", startedAt: 0, endedAt: null, ...over,
 });
 
 const asking = (id: string, reportId: string, over: Partial<NonNullable<DashboardRow["question"]>> = {}) =>
@@ -437,9 +437,9 @@ test("看板：任意终端宽度下每行都不超宽（含中文双宽字符�
 	}
 });
 
-test("看板：团队任务的卡片写四字名和团队名，和页面同一种写法", () => {
-	const lines = renderBoard({ rows: [row({ helper: { name: "高山流水", team: "看盘队", seq: 2 } })], receivedAt: 0, connected: true }, 120, 10_000).join("\n");
-	assert.ok(lines.includes("高山流水 · 看盘队 #2 · gpt-6.1-sol"), lines);
+test("看板：团队任务的卡片写四字名和「队名领队」，和页面同一种写法", () => {
+	const lines = renderBoard({ rows: [row({ helper: { name: "高山流水", team: "美股看盘队", seq: 2 } })], receivedAt: 0, connected: true }, 120, 10_000).join("\n");
+	assert.ok(lines.includes("高山流水 · 美股看盘队领队 #2 · gpt-6.1-sol"), lines);
 });
 
 test("看板：卡片带齐标题、阶段、依据、最近汇报、模型、工具次数、token 和时长", () => {

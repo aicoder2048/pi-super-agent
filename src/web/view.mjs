@@ -17,7 +17,7 @@
 /** @typedef {import("../host/dispatch.ts").BoardDispatch} BoardDispatch */
 /** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
 
-import { HOST_SOURCE, INPUT_LABEL, QUOTE_WHO, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, modelText, oneLine, shortId, stallMinutes, textOf, toolStep } from "../client/board-format.mjs";
+import { HOST_SOURCE, INPUT_LABEL, QUOTE_WHO, blocks, clip, firstLine, formatElapsed, formatTokens, helperFullName, helperLabel, helperLine, modelText, oneLine, shortId, stallMinutes, textOf, toolStep } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -205,7 +205,7 @@ function card(row, now, sending) {
 	return {
 		id: row.id,
 		title: row.title,
-		helper: helperFullName(row.helper),
+		helper: helperLine(row),
 		why: BASIS_PHRASE[row.basis],
 		stage: row.stall ? `久无进展 · ${stallMinutes(row.stall.since, now)} 分钟` : STAGE_PHRASE[row.stage],
 		latest: row.question?.text ?? row.latestSummary ?? "已开始，暂无进展",
