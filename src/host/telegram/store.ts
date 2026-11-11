@@ -169,11 +169,14 @@ export class TelegramStore {
 		return row && { chatId: row.chat_id, key: row.key, version: row.version, messageId: row.message_id, body: JSON.parse(row.body) };
 	}
 
-	/** A late finish of an older version cannot undo a newer one. */
+	/** A late finish of an older version cannot undo a newer one. A clean send ends the chat's run of doubtful ones. */
 	sent(row: Pending, messageId: number): void {
-		this.#db
-			.prepare("UPDATE telegram_messages SET sent_version = MAX(COALESCE(sent_version, 0), ?), message_id = ? WHERE chat_id = ? AND key = ?")
-			.run(row.version, messageId, row.chatId, row.key);
+		inTransaction(this.#db, () => {
+			this.#db
+				.prepare("UPDATE telegram_messages SET sent_version = MAX(COALESCE(sent_version, 0), ?), message_id = ? WHERE chat_id = ? AND key = ?")
+				.run(row.version, messageId, row.chatId, row.key);
+			this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id = ? AND key = 'missed' AND gave_up = 'maybe-sent'").run(row.chatId);
+		});
 	}
 
 	giveUp(row: Pending, reason: string): void {
@@ -181,13 +184,14 @@ export class TelegramStore {
 	}
 
 	/**
-	 * Telegram may have shown `row` already, so it is never sent again; the chat gets `note` instead. One note waits per chat
-	 * however many rows end this way before it goes out; a later one goes to the back of the queue.
+	 * Telegram may have shown `row` already, so it is never sent again; the chat gets `note` instead. A chat gets one note per
+	 * run of doubtful sends: none is added while one waits, or while one that may have arrived has not been followed by a clean send.
+	 * The note itself ends this way too, so a Telegram that takes messages but answers with errors cannot fill the phone with notes.
 	 */
 	maybeSent(row: Pending, note: SendableBody): void {
 		inTransaction(this.#db, () => {
 			this.giveUp(row, "maybe-sent");
-			if (this.#db.prepare(`SELECT 1 FROM telegram_messages WHERE chat_id = ? AND key = 'missed' AND ${DUE}`).get(row.chatId)) return;
+			if (this.#db.prepare(`SELECT 1 FROM telegram_messages WHERE chat_id = ? AND key = 'missed' AND (${DUE} OR gave_up = 'maybe-sent')`).get(row.chatId)) return;
 			this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id = ? AND key = 'missed'").run(row.chatId);
 			this.put(row.chatId, "missed", null, note);
 		});
