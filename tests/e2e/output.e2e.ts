@@ -11,7 +11,7 @@ const JOKE = { title: "做笑话扩展", brief: "做一个讲笑话的 Pi 扩展
 const WEATHER = { title: "做天气扩展", brief: "做一个查天气的 Pi 扩展" };
 const MEMBER_TASK = "在下面的应用目录里写 extensions/joke.ts";
 const READY = "笑话扩展做好了";
-const ROUTER_SAYS = "笑话扩展做好了。另外有文件写到了成品目录之外：stray.md、stray-bash.md。";
+const ROUTER_SAYS = "笑话扩展做好了。另外有文件写到了成品目录之外：stray.md；可能还有 stray-bash.md。";
 
 const STATE_FILES = {
 	"modules/dev/module.json": JSON.stringify({ name: "dev", title: "开发", description: "写 Pi 扩展和小工具", team: "开发队" }),
@@ -71,7 +71,7 @@ test("助手用 new_app 开应用、把目录派给成员；成员和助手写�
 			});
 			await step("Router 收到的汇报卡片有「宿主检查」一段：成员的 write 和领队的 bash 都在，应用里的那份不在", async () => {
 				const card = fake.exchanges.filter((e) => e.conversation === "router").flatMap((e) => e.cards).find((c) => c.startsWith("[Worker 汇报]") && c.includes("宿主检查"))!;
-				assert.match(card, /宿主检查（只告知，没有拦下）：这次汇报之前，有 2 处写到了成品目录和任务目录之外/);
+				assert.match(card, /宿主检查（只告知，没有拦下）：这次汇报之前，有 1 处写到了成品目录和任务目录之外，另有 1 处可能写到了那里（从命令推测）$/m);
 				assert.match(card, /^- 写入 \S+\/stray\.md（成员 ext-expert · write）$/m);
 				assert.match(card, /^- 可能写入 \S+\/stray-bash\.md（助手 · bash：echo note > \.\.\/\.\.\/stray-bash\.md）$/m);
 				assert.doesNotMatch(card, /extensions\/joke\.ts（/);

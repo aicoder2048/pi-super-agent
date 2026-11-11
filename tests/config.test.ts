@@ -176,3 +176,10 @@ test("outputDir 不是字符串、等于状态目录、是状态目录的上级�
 		assert.throws(() => loadConfig(dir), (e: Error) => e.name === "ConfigError" && e.message.startsWith(join(dir, "config.json")) && /outputDir/.test(e.message), JSON.stringify(outputDir));
 	}
 });
+
+test("outputDir 以 ~ 开头时拒绝启动，报错说写绝对路径：配置里的 ~ 不展开", () => {
+	for (const outputDir of ["~/out", "~"]) {
+		assert.throws(() => loadConfig(stateWith({ outputDir })), (e: Error) => e.name === "ConfigError" && /outputDir/.test(e.message) && /绝对路径/.test(e.message) && e.message.includes(JSON.stringify(outputDir)), outputDir);
+	}
+	assert.equal(loadConfig(stateWith({ outputDir: "made~1" })).outputDir.endsWith("made~1"), true);
+});

@@ -144,3 +144,59 @@ test("bash 的写入推测：重定向、tee、cp/mv 的目标、git -C、cd 之
 	];
 	for (const [command, expected] of cases) assert.deepEqual(bashTargets(command, cwd, homedir()), expected, command);
 });
+
+test("bash 的误报：解释器的脚本路径和参数、cd 之后跑测试或脚本、-c 里只读文件、tee 到 /dev/ 都不算写入", () => {
+	const cases = [
+		"node /r/scripts/check.mjs",
+		"python3 /r/tools/x.py --in /etc/hosts --out /r/out.json",
+		"cd /r && python3 -m pytest",
+		"cd /r && node scripts/build.mjs",
+		"python3 -c \"print(open('/etc/hosts').read())\"",
+		"bash /r/run.sh /r/x",
+		"echo x | tee /dev/stderr",
+		"echo x | tee -a /dev/null",
+	];
+	for (const command of cases) assert.deepEqual(bashTargets(command, "/work", homedir()), [], command);
+});
+
+test("bash 的写入推测：-c/-e 里的代码有写操作时算它写的路径，bash -c 里的命令按命令推测", () => {
+	const cases: [string, string[]][] = [
+		["python3 -c \"open('/r/x','w').write('x')\"", ["/r/x"]],
+		["node -e \"require('fs').writeFileSync('/r/n.txt','x')\"", ["/r/n.txt"]],
+		["bash -c \"echo x > /r/bc\"", ["/r/bc"]],
+		["sh -c 'cd /r && npm install'", ["/r"]],
+	];
+	for (const [command, expected] of cases) assert.deepEqual(bashTargets(command, "/work", homedir()), expected, command);
+});
+
+test("pi install、remove 算写到 Pi 的配置目录：默认 ~/.pi/agent，带 -l 时是当前目录的 .pi", () => {
+	const home = "/home/u";
+	const cases: [string, string[]][] = [
+		["pi install ./myext", ["/home/u/.pi/agent"]],
+		["pi install npm:@scope/pkg", ["/home/u/.pi/agent"]],
+		["cd /r && pi install -l ./myext", ["/r/.pi"]],
+		["pi remove --local npm:x", ["/work/.pi"]],
+		["pi uninstall git:github.com/a/b", ["/home/u/.pi/agent"]],
+		["pi --version", []],
+		["pi list", []],
+	];
+	for (const [command, expected] of cases) assert.deepEqual(bashTargets(command, "/work", home), expected, command);
+});
+
+test("bash 命令里的 $HOME 和 ${HOME} 和 ~ 一样展开成家目录；单引号里的不展开", () => {
+	const home = "/home/u";
+	const cases: [string, string[]][] = [
+		["echo x > $HOME/a.txt", ["/home/u/a.txt"]],
+		["cp ext.ts \"${HOME}/.pi/agent/extensions/ext.ts\"", ["/home/u/.pi/agent/extensions/ext.ts"]],
+		["mkdir -p $HOME", ["/home/u"]],
+		["echo x > $HOMEDIR/a", ["/work/$HOMEDIR/a"]],
+		["echo x > '$HOME/a'", ["/work/$HOME/a"]],
+	];
+	for (const [command, expected] of cases) assert.deepEqual(bashTargets(command, "/work", home), expected, command);
+});
+
+test("成品目录里名字以 .. 开头的文件仍算里面", () => {
+	const w = world();
+	w.helper(call("write", { path: join(w.output.root, "..notes.md"), content: "x" }), call("write", { path: join(w.workdir, "..draft.md"), content: "x" }));
+	assert.deepEqual(w.check().outside, []);
+});

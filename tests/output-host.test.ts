@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import type { MemberRun } from "../src/host/dispatch.ts";
+import { ModelSelector } from "../src/model-selector.ts";
 import type { Member } from "../src/teams.ts";
 import { domainsOf, ids, startHost, until, type Brain, type FakeWorker } from "./helpers/fakes.ts";
 
@@ -105,4 +106,20 @@ test("进程中途退出、模型出错时宿主替它写的 failed 汇报，也
 		await until(() => host.kernel.getTicket(ticketId)?.latestReport?.status === "failed", `${end} 后有 failed 汇报`);
 		assert.deepEqual(outsidePaths(host.kernel.getTicket(ticketId)!.latestReport!), [`/psa-not-a-repo/${end}.ts`], end);
 	}
+});
+
+test("回退模型用量到上限时宿主写的受阻汇报，也带上外写", async (t) => {
+	const selector = new ModelSelector({ primary: { provider: "openai-codex", id: "p" }, fallback: { provider: "deepseek", id: "f" }, probeEveryMs: 15 * 60_000, clock: { now: () => Date.now() } });
+	selector.onError("429");
+	const started = await startHost(openAs("request"), (w) => {
+		writeHelperSession(started.host, dirname(dirname(w.spec.workdir)), w.spec.ticketId, w.spec.workdir, ["/psa-not-a-repo/capped.ts"]);
+		started.host.kernel.recordUsage(w.spec.ticketId, { provider: "deepseek", tokensIn: 150, tokensOut: 0 });
+		w.settle();
+	}, { workerModels: { selector, fallbackDailyTokens: 100 } });
+	t.after(() => started.host.stop());
+	started.host.say("做一个讲笑话的扩展");
+	await until(() => started.host.kernel.listTickets()[0]?.stage === "blocked_or_failed", "上限受阻");
+	const latest = started.host.kernel.getTicket(started.host.kernel.listTickets()[0].id)!.latestReport!;
+	assert.match(latest.summary, /上限/);
+	assert.deepEqual(outsidePaths(latest), ["/psa-not-a-repo/capped.ts"]);
 });
