@@ -2,7 +2,27 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Quote } from "../src/sources/market/detect.ts";
 import { sessionAt } from "../src/sources/market/session.ts";
-import { applyEdit, checkIntraday, crossShape, LIMITS, parseBook, parseEdit, polledSymbols, serializeBook, settleCross, type Applied, type Book, type History, type Tripwire } from "../src/sources/market/tripwires.ts";
+import {
+	alertText,
+	applyEdit,
+	checkIntraday,
+	crossShape,
+	echoText,
+	firingId,
+	LIMITS,
+	parseBook,
+	parseEdit,
+	polledSymbols,
+	receiptText,
+	redact,
+	serializeBook,
+	settleCross,
+	type Applied,
+	type Book,
+	type Firing,
+	type History,
+	type Tripwire,
+} from "../src/sources/market/tripwires.ts";
 
 const NOW = Date.parse("2026-11-09T15:00:00Z");
 const EMPTY: Book = new Map();
@@ -220,4 +240,97 @@ test("settleCross：当天收盘翻转就确认（没报过疑似也确认）；
 	assert.deepEqual(settleCross(cross, [...DEATH_BEFORE, 10], true), { ...base, shape: "death", stage: "withdrawn", price: 10, fastSma: 10, slowSma: 10 });
 	assert.equal(settleCross(cross, [...GOLDEN_BEFORE, 10], false), null);
 	assert.equal(settleCross(cross, [11, 10, 10, 13], true), null);
+});
+
+const LIVE = { at: NOW, delayed: true };
+
+test("firingId：代码、纽约日、带阈值的信号，没有时钟；同一触发换个报价时间 id 不变，改阈值 id 就变", () => {
+	const book = bookOf({ symbol: "NVDA", condition: { kind: "day", pct: 5 } }, { symbol: "AMD", condition: { kind: "cost", basis: 100, pct: 10 } });
+	const ids = (b: Book, at: number) => checkIntraday(b, [quote("NVDA", 106, 100, { at }), quote("AMD", 89, 95, { at })], sessionAt(at), NO_HISTORY).map((f) => firingId(TODAY, f));
+	assert.deepEqual(ids(book, NOW), ["NVDA:2026-11-09:day-up-5", "AMD:2026-11-09:cost-down-10"]);
+	assert.deepEqual(ids(book, NOW + 47 * 60_000 + 13_000), ids(book, NOW));
+	const retuned = apply(book, "set", { symbol: "NVDA", condition: { kind: "day", pct: 5.5 } });
+	assert.ok(retuned.ok);
+	assert.deepEqual(ids(retuned.book, NOW), ["NVDA:2026-11-09:day-up-5.5", "AMD:2026-11-09:cost-down-10"]);
+	const cross: Firing = { kind: "cross", symbol: "TSLA" as never, fast: 5, slow: 20, shape: "golden", stage: "suspected", price: 250.1, fastSma: 248.31, slowSma: 247.95 };
+	assert.equal(firingId(TODAY, cross), "TSLA:2026-11-09:cross-5-20-golden-suspected");
+	assert.equal(firingId(TODAY, { ...cross, shape: "death", stage: "withdrawn" }), "TSLA:2026-11-09:cross-5-20-death-withdrawn");
+});
+
+test("alertText：一行中文，只有价格和百分比，写明报价时间和是否延迟", () => {
+	const [day] = checkIntraday(bookOf({ symbol: "NVDA", condition: { kind: "day", pct: 5 } }), [quote("NVDA", 105.2, 100)], SESSION, NO_HISTORY);
+	assert.equal(alertText(day!, LIVE), "【盯盘提醒】NVDA 涨 +5.20%，到了你设的 +5% 提醒线。现价 105.20，昨收 100.00。报价时间 10:00 ET（延迟行情）。");
+	const [cost] = checkIntraday(bookOf({ symbol: "AMD", condition: { kind: "cost", basis: 100, pct: 10 } }), [quote("AMD", 89, 95)], SESSION, NO_HISTORY);
+	assert.equal(alertText(cost!, { at: NOW, delayed: false }), "【盯盘提醒】AMD 相对成本价 -11.00%，到了你设的 -10% 提醒线。现价 89.00。报价时间 10:00 ET。");
+	const cross = (stage: "suspected" | "confirmed" | "withdrawn", shape: "golden" | "death" = "golden"): Firing => ({ kind: "cross", symbol: "TSLA" as never, fast: 5, slow: 20, shape, stage, price: 250.1, fastSma: 248.31, slowSma: 247.95 });
+	assert.equal(alertText(cross("suspected"), LIVE), "【盯盘提醒】TSLA 疑似金叉：把现价 250.10 当作今天收盘，5 日均线 248.31 上穿 20 日均线 247.95。收盘后确认。报价时间 10:00 ET（延迟行情）。");
+	assert.equal(alertText(cross("confirmed"), LIVE), "【盯盘提醒】TSLA 金叉确认：今天收盘 250.10，5 日均线 248.31 上穿 20 日均线 247.95。");
+	assert.equal(alertText(cross("withdrawn", "death"), LIVE), "【盯盘提醒】TSLA 死叉没有成立：今天收盘 250.10，5 日均线 248.31，20 日均线 247.95。早前的疑似死叉提醒作废。");
+	for (const f of [day!, cost!, cross("suspected"), cross("confirmed", "death"), cross("withdrawn")]) {
+		const text = alertText(f, LIVE);
+		assert.ok(!/[\r\n]/.test(text) && text.length <= 1000, text);
+	}
+});
+
+test("防泄露：每一种 cost 触发的提醒、给 Worker 的回显和清单里都没有成本价和股数", () => {
+	const basis = 123.45;
+	const shares = 777;
+	const set = apply(EMPTY, "set", { symbol: "NVDA", condition: { kind: "cost", basis, shares, pct: 10 } });
+	assert.ok(set.ok);
+	const changed = apply(set.book, "set", { symbol: "NVDA", condition: { kind: "cost", pct: 8 } });
+	const same = apply(set.book, "set", { symbol: "NVDA", condition: { kind: "cost", pct: 10 } });
+	const removed = apply(set.book, "remove", { symbol: "NVDA" });
+	const firings = [
+		[137, 130],
+		[110, 116],
+		[136, 120],
+		[111, 125],
+	].flatMap(([price, prev]) => checkIntraday(set.book, [quote("NVDA", price!, prev!)], SESSION, NO_HISTORY));
+	assert.equal(firings.length, 4);
+	const outbound = [...firings.map((f) => alertText(f, LIVE)), ...[set, changed, same, removed].map(echoText), JSON.stringify(redact(set.book))];
+	for (const text of outbound) {
+		assert.ok(!text.includes(String(basis)) && !text.includes(String(shares)), text);
+	}
+	assert.match(receiptText(set.before, set.after, set.book), /123\.45/);
+	assert.match(receiptText(set.before, set.after, set.book), /777 股/);
+	assert.deepEqual(redact(set.book), [{ symbol: "NVDA", kind: "cost", pct: 10, dir: "either", hasShares: true }]);
+});
+
+test("回显：说清新加、改了、没变、去掉和现在共几条；拒绝时带上原因", () => {
+	const added = apply(EMPTY, "set", { symbol: "NVDA", condition: { kind: "cost", basis: 120, shares: 100, pct: 10 } });
+	assert.equal(echoText(added), "已添加：NVDA 相对成本价涨跌超过 10% 时提醒（成本价和股数只在网页显示）。现在共 1 条。");
+	assert.ok(added.ok);
+	const changed = apply(added.book, "set", { symbol: "NVDA", condition: { kind: "cost", pct: 8, dir: "down" } });
+	assert.equal(echoText(changed), "已改：NVDA 相对成本价跌超过 8% 时提醒（成本价和股数只在网页显示），原来是 NVDA 相对成本价涨跌超过 10% 时提醒（成本价和股数只在网页显示）。现在共 1 条。");
+	assert.match(echoText(apply(added.book, "set", { symbol: "NVDA", condition: { kind: "cost", pct: 10 } })), /^没有变化：/);
+	assert.equal(echoText(apply(added.book, "remove", { symbol: "NVDA" })), "已去掉：NVDA 相对成本价涨跌超过 10% 时提醒（成本价和股数只在网页显示）。现在共 0 条。");
+	assert.match(echoText(apply(EMPTY, "set", { symbol: "NVDA", condition: { kind: "cost", pct: 10 } })), /^没改成：NVDA：.*basis/);
+});
+
+test("收据：一条一行，写明成本价和股数、共几条；成本线设下时已在线外要说明回到线内再越过才提醒", () => {
+	const book = bookOf({ symbol: "TSLA", condition: { kind: "cross" } });
+	const r = apply(book, "set", { symbol: "NVDA", condition: { kind: "cost", basis: 120, shares: 100, pct: 10, dir: "up" } });
+	assert.ok(r.ok);
+	assert.equal(
+		receiptText(r.before, r.after, r.book, 16.666),
+		["已添加：NVDA 成本价 120、100 股，相对成本价涨超过 10% 时提醒。", "现在已在 +16.7%，回到线内后再越过才提醒。", "现在共 2 条：", "TSLA 5 日均线和 20 日均线金叉、死叉时提醒", "NVDA 成本价 120、100 股，相对成本价涨超过 10% 时提醒"].join("\n"),
+	);
+	assert.doesNotMatch(receiptText(r.before, r.after, r.book, 4), /现在已在/);
+	assert.doesNotMatch(receiptText(r.before, r.after, r.book, -16), /现在已在/);
+});
+
+test("收据在满额清单（50 只 × 3 种，最长的代码和数字）时不超过 16000 字", () => {
+	const symbol = (i: number) => `ABCDEFGH${String.fromCharCode(65 + Math.floor(i / 26))}${String.fromCharCode(65 + (i % 26))}.XYZ`;
+	const tripwires = Array.from({ length: LIMITS.polledSymbols }, (_, i) => [
+		{ symbol: symbol(i), condition: { kind: "day", pct: 99.99, dir: "either" }, setAt: NOW },
+		{ symbol: symbol(i), condition: { kind: "cost", pct: 99.99, dir: "either", basis: 999999.9999, shares: 999999999.99 }, setAt: NOW },
+		{ symbol: symbol(i), condition: { kind: "cross", fast: 199, slow: 200 }, setAt: NOW },
+	]).flat();
+	const parsed = parseBook(JSON.stringify({ version: 1, tripwires }));
+	assert.ok("book" in parsed && parsed.book.size === 150);
+	const [, cost] = parsed.book.values();
+	const before = { ...cost!, condition: { ...cost!.condition, pct: 50 } } as Tripwire;
+	const text = receiptText([before], [cost!], parsed.book, 99.99);
+	assert.ok(text.length <= 16000, `${text.length}`);
+	assert.equal(text.split("\n").length, 153);
 });

@@ -1,6 +1,6 @@
 import { isFresh, type Quote } from "./detect.ts";
 import { sma } from "./indicators.ts";
-import type { Session } from "./session.ts";
+import { nyTime, type Session } from "./session.ts";
 import { parseSymbol } from "./symbol.ts";
 
 export type Sym = string & { readonly __sym: unique symbol };
@@ -295,4 +295,88 @@ export function settleCross(t: Tripwire & { condition: { kind: "cross" } }, clos
 	if (!suspectedRaised) return null;
 	const shape: CrossShape = smaOf(before, fast) <= smaOf(before, slow) ? "golden" : "death";
 	return { ...base, shape, stage: "withdrawn", fastSma: smaOf(closesThroughToday, fast), slowSma: smaOf(closesThroughToday, slow) };
+}
+
+/** Symbol, NY trading day and signal with the threshold inside, so editing a threshold re-arms it and repeating an edit does not. */
+export function firingId(nyDate: string, f: Firing): string {
+	const signal = f.kind === "cross" ? `cross-${f.fast}-${f.slow}-${f.shape}-${f.stage}` : `${f.kind}-${f.side}-${f.pct}`;
+	return `${f.symbol}:${nyDate}:${signal}`;
+}
+
+const money = (n: number) => n.toFixed(2);
+const signed = (n: number, digits = 2) => `${n >= 0 ? "+" : ""}${n.toFixed(digits)}%`;
+const lineOf = (side: Side, pct: number) => `${side === "up" ? "+" : "-"}${pct}%`;
+const SHAPES: Record<CrossShape, { name: string; verb: string }> = { golden: { name: "金叉", verb: "上穿" }, death: { name: "死叉", verb: "下穿" } };
+const DIR_WORDS: Record<Direction, string> = { up: "涨", down: "跌", either: "涨跌" };
+
+export function alertText(f: Firing, quote: { at: number; delayed: boolean }): string {
+	const head = `【盯盘提醒】${f.symbol} `;
+	const at = `报价时间 ${nyTime(quote.at)} ET${quote.delayed ? "（延迟行情）" : ""}。`;
+	switch (f.kind) {
+		case "day":
+			return `${head}${f.side === "up" ? "涨" : "跌"} ${signed(f.changePct)}，到了你设的 ${lineOf(f.side, f.pct)} 提醒线。现价 ${money(f.price)}，昨收 ${money(f.prevClose)}。${at}`;
+		case "cost":
+			return `${head}相对成本价 ${signed(f.driftPct)}，到了你设的 ${lineOf(f.side, f.pct)} 提醒线。现价 ${money(f.price)}。${at}`;
+		case "cross": {
+			const { name, verb } = SHAPES[f.shape];
+			const fast = `${f.fast} 日均线 ${money(f.fastSma)}`;
+			const slow = `${f.slow} 日均线 ${money(f.slowSma)}`;
+			if (f.stage === "suspected") return `${head}疑似${name}：把现价 ${money(f.price)} 当作今天收盘，${fast} ${verb} ${slow}。收盘后确认。${at}`;
+			if (f.stage === "confirmed") return `${head}${name}确认：今天收盘 ${money(f.price)}，${fast} ${verb} ${slow}。`;
+			return `${head}${name}没有成立：今天收盘 ${money(f.price)}，${fast}，${slow}。早前的疑似${name}提醒作废。`;
+		}
+	}
+}
+
+/** `local` text carries the cost basis and shares and must never leave the machine. */
+function describe({ symbol, condition: c }: Tripwire, local: boolean): string {
+	switch (c.kind) {
+		case "day":
+			return `${symbol} 相对昨收${DIR_WORDS[c.dir]}超过 ${c.pct}% 时提醒`;
+		case "cost": {
+			const rule = `相对成本价${DIR_WORDS[c.dir]}超过 ${c.pct}% 时提醒`;
+			if (!local) return `${symbol} ${rule}（成本价和股数只在网页显示）`;
+			return `${symbol} 成本价 ${c.basis}${c.shares === undefined ? "" : `、${c.shares} 股`}，${rule}`;
+		}
+		case "cross":
+			return `${symbol} ${c.fast} 日均线和 ${c.slow} 日均线金叉、死叉时提醒`;
+	}
+}
+
+function summary(before: readonly Tripwire[], after: readonly Tripwire[], local: boolean): string | undefined {
+	const listed = (ts: readonly Tripwire[]) => ts.map((t) => describe(t, local)).join("；");
+	if (after.length && before.length && sameCondition(before[0]!.condition, after[0]!.condition)) return `没有变化：${listed(after)}。`;
+	if (after.length && before.length) return `已改：${listed(after)}，原来是 ${listed(before)}。`;
+	if (after.length) return `已添加：${listed(after)}。`;
+	if (before.length) return `已去掉：${listed(before)}。`;
+	return undefined;
+}
+
+function alreadyPast(after: readonly Tripwire[], currentDrift: number | undefined): string | undefined {
+	const c = after[0]?.condition;
+	if (c?.kind !== "cost" || currentDrift === undefined) return undefined;
+	const side = sideOf(currentDrift);
+	return admits(c.dir, side) && beyond(currentDrift, c.pct, side) ? `现在已在 ${signed(currentDrift, 1)}，回到线内后再越过才提醒。` : undefined;
+}
+
+/** Local only (web and terminal): one condition per line, cost basis and shares included. */
+export function receiptText(before: readonly Tripwire[], after: readonly Tripwire[], book: Book, currentDrift?: number): string {
+	const lines = [summary(before, after, true), alreadyPast(after, currentDrift), `现在共 ${book.size} 条${book.size ? "：" : "。"}`, ...[...book.values()].map((t) => describe(t, true))];
+	return lines.filter((l) => l !== undefined).join("\n");
+}
+
+/** What the Worker gets back, and so what may reach a Router reply and Telegram: no cost basis, no shares. */
+export function echoText(applied: Applied): string {
+	if (!applied.ok) return `没改成：${applied.reason}`;
+	return `${summary(applied.before, applied.after, false) ?? ""}现在共 ${applied.book.size} 条。`;
+}
+
+export type RedactedTripwire = { symbol: Sym } & (
+	| { kind: "day"; pct: number; dir: Direction }
+	| { kind: "cost"; pct: number; dir: Direction; hasShares: boolean }
+	| { kind: "cross"; fast: number; slow: number }
+);
+
+export function redact(book: Book): RedactedTripwire[] {
+	return [...book.values()].map(({ symbol, condition: c }) => (c.kind === "cost" ? { symbol, kind: c.kind, pct: c.pct, dir: c.dir, hasShares: c.shares !== undefined } : { symbol, ...c }));
 }
