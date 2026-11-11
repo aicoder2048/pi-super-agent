@@ -120,12 +120,7 @@ export class TelegramClient {
 		if (this.#state === "off") return;
 		try {
 			if (message.type === "reply") {
-				const board = message.ticketId ? this.#host.board() : null;
-				const question = board?.rows.find((row) => row.id === message.ticketId)?.question ?? null;
-				// Board frames wait 100ms after a change, so a quick Router turn can beat the frame with the card: queue the card here, then drop the repeat.
-				if (board && repeatsQuestion(message, question)) {
-					for (const chat of this.#store.openChats()) this.#syncCards(chat, board);
-				} else {
+				if (!this.#cardStandsIn(message)) {
 					for (const chat of this.#store.openChats()) this.#store.put(chat, `line:${message.replyId}`, message.replyId, { kind: "line", text: message.text, silent: false });
 				}
 			} else if (message.type === "user") {
@@ -138,6 +133,21 @@ export class TelegramClient {
 			this.#wake?.();
 		} catch (error) {
 			this.#log(`[telegram] 没能记下要发到 Telegram 的消息：${(error as Error).message}`);
+		}
+	}
+
+	/** Fails open: when the board can't be read or the card can't be queued, the reply goes out, so at worst the phone sees the question twice. */
+	#cardStandsIn(message: { text: string; at: number; ticketId?: string }): boolean {
+		if (!message.ticketId) return false;
+		try {
+			const board = this.#host.board();
+			if (!repeatsQuestion(message, board.rows.find((row) => row.id === message.ticketId)?.question ?? null)) return false;
+			// Board frames wait 100ms after a change, so a quick Router turn can beat the frame with the card: queue the card here, then drop the repeat.
+			for (const chat of this.#store.openChats()) this.#syncCards(chat, board);
+			return true;
+		} catch (error) {
+			this.#log(`[telegram] 没能确认这句回复是不是卡片上的问题，照常发到 Telegram：${(error as Error).message}`);
+			return false;
 		}
 	}
 

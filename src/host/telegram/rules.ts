@@ -13,7 +13,8 @@ const CALLBACK_DATA_MAX_BYTES = 64;
 const ANSWER_DATA = new RegExp(`^a:([A-Za-z0-9_-]+):([0-${OPTIONS_MAX - 1}])$`);
 const REPORT_ID = /^rpt_[A-Za-z0-9_-]+$/;
 const TITLE_MAX = 40;
-const RELAY_SLACK = 10;
+const QUESTION_MIN = 4;
+const LEAD_IN = /^[^。！？.!?]{0,7}[：:，,]$/u;
 const EDGES = /^[\s\p{P}]+|[\s\p{P}]+$/gu;
 
 export type Note = "help" | "text-only" | "no-forwards" | "no-via-bot";
@@ -101,13 +102,16 @@ export function cardView(row: DashboardRow): CardView | null {
 
 /**
  * The chief of staff relaying a helper's question the card already shows: the question itself, give or take edge
- * punctuation and a lead-in or tail of at most RELAY_SLACK characters. An answered question no longer has a card to stand in.
+ * punctuation and a lead-in such as 「请问：」, with nothing after it. Anything more might be news the phone would lose,
+ * so it goes out. Once the user typed or the answer reached the task, a re-ask is news too.
  */
 export function repeatsQuestion(reply: { text: string; at: number }, question: PendingQuestion | null): boolean {
-	if (!question || question.askedAt > reply.at || question.click?.state === "handed_over") return false;
+	if (!question || question.askedAt > reply.at || question.spoke || question.click?.state === "handed_over") return false;
 	const asked = question.text.replace(EDGES, "");
 	const said = reply.text.replace(EDGES, "");
-	return asked !== "" && said.includes(asked) && said.length <= asked.length + RELAY_SLACK;
+	if ([...asked].length < QUESTION_MIN || !said.endsWith(asked)) return false;
+	const leadIn = said.slice(0, said.length - asked.length).trimEnd();
+	return leadIn === "" || LEAD_IN.test(leadIn);
 }
 
 /** A question that left the board: buttons go, and the option the user picked stays readable. */
