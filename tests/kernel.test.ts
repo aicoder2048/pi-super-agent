@@ -808,9 +808,9 @@ test("回退上限造成的受阻：任务记一条受阻汇报并移出排队�
 	const busy = open("request", { title: "占名额" });
 	run(busy);
 	const capped = open("request", { title: "被上限挡住" });
-	kernel.blockForCap(capped, "回退模型今日用量已达上限");
+	kernel.blockForCap(capped, "回退模型今日用量已达上限", { outside: [], omitted: 0, scanned: {} });
 	assert.equal(kernel.getTicket(capped)!.stage, "blocked_or_failed");
-	kernel.blockForCap(capped, "回退模型今日用量已达上限");
+	kernel.blockForCap(capped, "回退模型今日用量已达上限", { outside: [], omitted: 0, scanned: {} });
 	assert.equal(kernel.read(capped)!.type === "ticket" && (kernel.read(capped) as any).recentReports.length, 1);
 	for (const a of kernel.dueActions()) kernel.completeAction(a.id);
 	idle(busy);

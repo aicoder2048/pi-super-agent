@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Kernel } from "../kernel/kernel.ts";
-import type { Basis, Quote, ReportStatus, TicketInput, WorkerReport } from "../kernel/types.ts";
+import type { Basis, Quote, ReportStatus, TicketInput, WorkerReport, WriteCheck } from "../kernel/types.ts";
 import { REPORT_STATUSES } from "../kernel/types.ts";
 import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
@@ -297,6 +297,7 @@ export class WorkerExecutor {
 		kernel.blockForCap(
 			ticketId,
 			`回退模型 ${formatModelRef(models.selector.current().model)} 今日用量已达上限（${models.fallbackDailyTokens} token），等主模型恢复或明天再继续。`,
+			this.#checkWrites(ticketId),
 		);
 	}
 
@@ -352,10 +353,15 @@ export class WorkerExecutor {
 
 	/** Every report a worker makes or the host makes for it. One that reaches the Router carries the host's check of writes outside the output root. */
 	#report(ticketId: string, report: WorkerReport): { reportId: string } {
-		const { kernel, output } = this.#o;
+		const { kernel } = this.#o;
 		const reachesRouter = report.question !== undefined || report.status !== "progress";
-		const writes = reachesRouter ? output.checkWrites(kernel.getTicket(ticketId)!, kernel.writeScan(ticketId)) : undefined;
+		const writes = reachesRouter ? this.#checkWrites(ticketId) : undefined;
 		return kernel.workerReport(ticketId, { ...report, ...(writes && { writes }) });
+	}
+
+	#checkWrites(ticketId: string): WriteCheck {
+		const { kernel, output } = this.#o;
+		return output.checkWrites(kernel.getTicket(ticketId)!, kernel.writeScan(ticketId));
 	}
 
 	#mayLookup(ticketId: string, holder: Member | undefined): boolean {

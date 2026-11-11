@@ -40,6 +40,7 @@ import type {
 	OutsideTally,
 	OutsideWrite,
 	ScanCursor,
+	WriteCheck,
 	KernelConfig,
 	PendingAction,
 	ReadResult,
@@ -633,10 +634,10 @@ export class Kernel {
 		);
 	}
 
-	blockForCap(ticketId: string, summary: string): void {
+	blockForCap(ticketId: string, summary: string, writes: WriteCheck): void {
 		this.#tx(() => {
 			const latest = this.#latestReportRow(ticketId);
-			if (!(latest?.status === "blocked" && latest.summary === summary)) this.workerReport(ticketId, { status: "blocked", summary });
+			if (!(latest?.status === "blocked" && latest.summary === summary)) this.workerReport(ticketId, { status: "blocked", summary, writes });
 			this.#run("UPDATE tickets SET worker_state = 'idle' WHERE id = ? AND worker_state = 'queued'", ticketId);
 		});
 	}
