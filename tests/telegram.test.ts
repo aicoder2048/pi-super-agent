@@ -42,9 +42,11 @@ async function telegramHost(t: TestContext, { allowed = [USER], stateDir = tempS
 		await host.stop();
 	};
 	t.after(async () => {
+		const snapshot = JSON.stringify(host.snapshot());
 		await stop();
 		if (!fake) await tg.close();
 		assert.ok(!logs.some((l) => l.includes(SECRET)), "日志里没有 token");
+		assert.ok(!snapshot.includes(SECRET), "给客户端的快照里没有 token");
 		assert.equal(tg.wrongToken, 0, "每个请求都带对的 token");
 	});
 	return { host, tg, logs, stateDir, stop };

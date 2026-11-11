@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { after } from "node:test";
@@ -106,8 +107,13 @@ test("Telegram：名单上的人在手机上说话，网页上看到；幕僚长
 				const texts = sentTo(tg, USER).map((m) => m.text);
 				for (const text of ["你在网页或终端说：重启前说的", "收到重启前的话。", "收到停机时的话。"]) assert.equal(texts.filter((x) => x === text).length, 1, text);
 			});
-			await step("宿主日志里没有 bot token，Telegram 每个请求都带对的 token", async () => {
+			await step("宿主日志和状态目录（secretsFile 以外）里没有 bot token，Telegram 每个请求都带对的 token", async () => {
 				assert.ok(!host.log().includes(SECRET));
+				const leaks = readdirSync(stateDir, { recursive: true, withFileTypes: true })
+					.filter((e) => e.isFile() && e.name !== "secrets.env")
+					.map((e) => join(e.parentPath, e.name))
+					.filter((file) => readFileSync(file).includes(SECRET));
+				assert.deepEqual(leaks, []);
 				assert.equal(tg.wrongToken, 0);
 			});
 		},
