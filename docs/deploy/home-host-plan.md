@@ -34,7 +34,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Follow this dependency graph. Start dependent work only after its parent merges, or base it on the parent branch when the execution playbook stacks.
   - [ ] H1, H2 and H3 are independent and first. All three branch from `main` as `psa/nul-strip`, `psa/web-hosts` and `psa/autostart`.
   - [ ] H4 after H2 and H3, on `psa/home-runbook`.
-- [ ] Hold the file boundaries. H1 touches only `src/kernel/kernel.ts`、`src/kernel/store.ts`、`tests/kernel.test.ts`。H2 touches only `src/host/web.ts`、`src/host/config.ts`、`src/host/main.ts`、`docs/adr/`、`tests/web-gateway*`、`tests/config.test.ts`、`tests/e2e/`。H3 touches only `src/service/`、`justfile`、`tests/service.test.ts`。H4 touches only `docs/deploy/`。
+- [ ] Hold the file boundaries. H1 touches only `src/kernel/kernel.ts`、`src/kernel/store.ts`、`tests/kernel.test.ts`。H2 touches only `src/host/web-hosts.ts`、`src/host/web.ts`、`src/host/config.ts`、`src/host/wiring.ts`、`src/host/host.ts`、`src/host/main.ts`、`docs/adr/`、`tests/web.test.ts`、`tests/config.test.ts`、`tests/host-main.test.ts`、`tests/wiring.test.ts`、`tests/stories.test.ts`、`tests/e2e/`。H3 touches only `src/service/`、`src/heartbeat.ts`、`src/watchdog/main.ts`、`justfile`、`tests/service.test.ts` 和看门狗的测试。H4 touches only `docs/deploy/`。
 - [ ] Hold the review gate. H2 changes an interaction（使用者从手机打开网页）。It waits for the operator's review in chat with screenshots and a video before merge.
 
 ### PR mechanics, for every PR
@@ -118,17 +118,21 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
+- [ ] Create `src/host/web-hosts.ts`.
 - [ ] Edit `src/host/web.ts`.
 - [ ] Edit `src/host/config.ts`.
+- [ ] Edit `src/host/wiring.ts`.
+- [ ] Edit `src/host/host.ts`.
 - [ ] Edit `src/host/main.ts`.
 - [ ] Create `docs/adr/0014-the-web-page-answers-hosts-the-user-lists.md`.
+- [ ] Edit `tests/web.test.ts`.
 - [ ] Edit `tests/config.test.ts`.
-- [ ] Edit the web gateway unit tests under `tests/`.
+- [ ] Edit `tests/host-main.test.ts`.
 - [ ] Create `tests/e2e/remote-host.e2e.ts`.
 
 **Build.**
 
-- [ ] 先做原型（Appendix A 第 1、2 条）。在老 Mac 上装 Tailscale，运行 `tailscale serve --bg 4517`，用 `curl -v` 看转发后的 `Host` 和 `Origin`，用手机 Safari 打开网页看 SSE 是否即时到达。结果记进决策记录，再动代码。
+- [ ] 先做原型（Appendix A 第 1、2 条）。在使用者的 MacBook Pro 上装 Tailscale（老 Mac 的 macOS 12 装不了，见 Appendix C），运行 `tailscale serve --bg 4517`，用 `curl -v` 看转发后的 `Host` 和 `Origin`，用手机 Safari 打开网页看 SSE 是否即时到达。结果记进决策记录，再动代码。
 - [ ] `config.json` 加 `webHosts`，是一组主机名，例如 `["psa-home.example.ts.net"]`。`config.ts` 校验每一项是不带端口和路径的主机名，空数组和缺省都等于今天的行为。
 - [ ] `web.ts` 的 `isLocalHost` 改成 `isAllowedHost`：除了 `127.0.0.1:<端口>` 和 `localhost:<端口>`，还接受 `webHosts` 里的主机名（不带端口，按 Tailscale 的 443 转发）。`#post` 的 `Origin` 检查对 `webHosts` 只接受 `https://<主机名>`。
 - [ ] `main.ts` 在本机网址之外，为每个 `webHosts` 再打一行 `[host] 网页（远程） https://<主机名>/?token=…`。
@@ -153,7 +157,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [ ] Lane 7. 错误或缺失的 token 经代理访问。Save `h2-token.png`. Pass when 401，没有数据。
 - [ ] Lane 8. `webHosts` 写成带端口或带路径的值。Save `h2-config.png`. Pass when 宿主启动时报出具体是哪一项不合法，并退出。
 - [ ] Lane 9. 手机宽度 390 像素经代理打开。Save `h2-phone.png`. Pass when 没有横向滚动，发话框可用。
-- [ ] Lane 10. 使用者在老 Mac 上开 `tailscale serve`，手机连 tailnet 打开远程网址，发「查一下 NVDA 现在多少钱」。Save `h2-tailscale.png`. Pass when 回复和卡片在手机上出现，锁屏一分钟后解锁，页面自己重连。
+- [ ] Lane 10. 使用者在 MacBook Pro 上跑宿主并开 `tailscale serve`，手机连 tailnet 打开远程网址，发「查一下 NVDA 现在多少钱」。Save `h2-tailscale.png`. Pass when 回复和卡片在手机上出现，锁屏一分钟后解锁，页面自己重连。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -182,6 +186,9 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Files.**
 
 - [ ] Create `src/service/launch-agent.ts`.
+- [ ] Create `src/service/cli.ts`.
+- [ ] Edit `src/heartbeat.ts`.
+- [ ] Edit `src/watchdog/main.ts`.
 - [ ] Edit `justfile`.
 - [ ] Create `tests/service.test.ts`.
 
@@ -197,7 +204,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/service.test.ts` 加用例：生成的 plist 过 `plutil -lint`；node 路径、仓库目录、`PATH` 第一项和状态目录都写对；路径里有空格和中文时仍是合法的 plist；没有 `PSA_STATE_DIR` 时不写这一项。Run `just test`.
+- [ ] `tests/service.test.ts` 加用例：生成的 plist 过 `plutil -lint`；node 路径、仓库目录、`PATH` 第一项和状态目录都写对；路径里有空格和中文时仍是合法的 plist；`PSA_STATE_DIR` 总是写成解析后的绝对路径，看门狗日志在它下面。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 会改动 launchd 的 lane 用独有的 `Label` 和临时状态目录，结束时一定 `bootout` 并删文件。
 
@@ -308,7 +315,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 - `control-ui` 和 `control-cli` 未安装（全部 PR）：网页 lane 用 Playwright 加 `tests/e2e/harness.ts`，命令行 lane 用 bash，owner 在报告里写明。
 - 本机禁止 force-push（全部 PR）：rebase 改为合并 main，并核对树一致。
-- 真 Tailscale 只能由使用者操作（H2 lane 10、H3 lane 10、H4 lane 10）：这三条 lane 等使用者在老 Mac 和手机上跑完才算过，root 提前把命令写好。
+- 真 Tailscale 只能由使用者操作（H2 lane 10、H3 lane 10、H4 lane 10）：这三条 lane 等使用者跑完才算过，root 提前把命令写好。
+- Tailscale 的三种 macOS 客户端都要求 macOS 13 以上（tailscale.com 的安装说明，2026-11-10 查），老 Mac 的 macOS 12 装不了（使用者实测安装失败）。所以老 Mac 只彩排 H1、H3 和手册中不涉及远程的部分；H2 的原型和 lane 10 改在使用者的 MacBook Pro（macOS 26）上跑宿主；Mac mini 是新机器，不受影响。手册写明 macOS 13 的要求。
 - token 进了手机浏览器的历史记录（H2）：ADR-0014 写明，并在手册里写换 token 的办法。
 - LaunchAgent 需要自动登录（H3）：停电重启后没有自动登录，宿主不会回来。手册写明开自动登录，以及它的安全代价。
 - `host.log` 没有轮转（H3）：长期运行会变大。先在手册里写清楚位置和手动清理办法，量大了再做轮转。
