@@ -48,7 +48,12 @@ export type MessageContent =
 	| { kind: "forwarded" }
 	| { kind: "other" };
 
-export type TelegramEvent = { kind: "message"; chat: Chat; from: number; messageId: number; content: MessageContent; replyTo: number | null };
+export type TelegramEvent =
+	| { kind: "message"; chat: Chat; from: number; messageId: number; content: MessageContent; replyTo: number | null }
+	| { kind: "tap"; chat: Chat; from: number; messageId: number; callbackId: string; data: string };
+
+/** One row per inner array. */
+export type Keyboard = readonly (readonly { label: string; data: string }[])[];
 
 /** `event` is null for anything the client does not handle; the offset still moves past it. */
 export interface Update {
