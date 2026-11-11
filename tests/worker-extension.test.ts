@@ -117,6 +117,20 @@ test("宿主没给 PSA_LOOKUPS 的助手和成员都没有 lookup", async (t) =>
 	for (const w of [inference, request, member]) assert.equal(w.tools.has("lookup"), false);
 });
 
+test("宿主给了 PSA_TRIPWIRES 的助手有 tripwire：描述里有来源的说明，调用经宿主连接发出；没给的助手和成员都没有", async (t) => {
+	const w = await load("request", { PSA_TRIPWIRES: "us-market（美股盯盘条件）：list、set、remove" });
+	const plain = await load("request");
+	const member = await load("request", { PSA_MEMBER_TOOLS: "read,web_get", PSA_TRIPWIRES: "us-market" });
+	t.after(() => { w.close(); plain.close(); member.close(); });
+	assert.match(w.tools.get("tripwire").description, /us-market（美股盯盘条件）：list、set、remove/);
+	assert.equal(process.env.PSA_TRIPWIRES, undefined);
+	const params = { source: "us-market", op: "set", args: { symbol: "NVDA", condition: { kind: "day", pct: 5 } } };
+	await w.run("tripwire", params);
+	assert.deepEqual([w.requests.at(-1).method, w.requests.at(-1).params], ["worker.tripwire", params]);
+	assert.equal(plain.tools.has("tripwire"), false);
+	assert.equal(member.tools.has("tripwire"), false);
+});
+
 test("汇报工具接受问题的 2 到 4 个选项，经宿主连接原样提交", async (t) => {
 	const w = await load("inference");
 	t.after(w.close);

@@ -144,6 +144,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 				cliPath: process.env.PSA_PI_CLI || undefined,
 				bgMaxMs: config.bgMaxMinutes * 60_000,
 				lookupHelp: feeds.map((f) => f.lookupHelp).join("\n") || undefined,
+				tripwireHelp: feeds.map((f) => f.tripwireHelp).filter(Boolean).join("\n") || undefined,
 			}),
 	};
 }

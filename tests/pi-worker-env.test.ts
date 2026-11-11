@@ -129,6 +129,23 @@ test("助手的领域开了 lookup，宿主才把可查来源交给它；没配�
 	assert.equal((await helperEnv(false, "us-market quote")).PSA_LOOKUPS, undefined);
 });
 
+test("只有使用者开的任务、领域又开了 tripwire，宿主才把盯盘条件的说明（PSA_TRIPWIRES）交给助手", async (t) => {
+	const helperEnv = async (basis: "request" | "rule" | "inference", granted: ("lookup" | "tripwire")[], tripwireHelp?: string) => {
+		const dir = mkdtempSync(join(tmpdir(), "psa-env-"));
+		const cliPath = join(dir, "fake-pi.mjs");
+		writeFileSync(cliPath, FAKE_PI);
+		const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath, tripwireHelp });
+		const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
+		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis, skillsDir: undefined, prepare: undefined, crew: [], granted, token: "tok", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
+		t.after(() => handle.stop());
+		return JSON.parse(readFileSync(join(dir, "worker-env.json"), "utf8")) as Record<string, string>;
+	};
+	assert.equal((await helperEnv("request", ["lookup", "tripwire"], "us-market set")).PSA_TRIPWIRES, "us-market set");
+	assert.equal((await helperEnv("request", ["tripwire"])).PSA_TRIPWIRES, "（宿主没有配置可改盯盘条件的来源）");
+	assert.equal((await helperEnv("request", ["lookup"], "us-market set")).PSA_TRIPWIRES, undefined);
+	for (const basis of ["rule", "inference"] as const) assert.equal((await helperEnv(basis, ["lookup", "tripwire"], "us-market set")).PSA_TRIPWIRES, undefined, basis);
+});
+
 test("宿主给了成品规则的助手，argv 里多一段 --append-system-prompt；没给的没有", async (t) => {
 	const argvOf = async (outputRule: string | undefined) => {
 		const dir = mkdtempSync(join(tmpdir(), "psa-env-"));
