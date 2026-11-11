@@ -37,8 +37,13 @@ function commandOf(pid: number): string | undefined {
 	}
 }
 
-// The pid in heartbeat.json may have been reused by an unrelated process since the host died.
-export function hostPid(stateDir: string, self = process.pid): number | undefined {
-	const pid = readHeartbeat(stateDir)?.pid;
-	return pid && pid !== self && commandOf(pid)?.includes(HOST_ENTRY) ? pid : undefined;
+/**
+ * The heartbeat only while its writer still runs: a host that stopped cleanly leaves its last heartbeat behind, and its
+ * pid may since have been reused by an unrelated process.
+ */
+export function liveHeartbeat(stateDir: string, self = process.pid): Heartbeat | undefined {
+	const beat = readHeartbeat(stateDir);
+	return beat && beat.pid !== self && commandOf(beat.pid)?.includes(HOST_ENTRY) ? beat : undefined;
 }
+
+export const hostPid = (stateDir: string, self = process.pid): number | undefined => liveHeartbeat(stateDir, self)?.pid;
