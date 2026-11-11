@@ -45,8 +45,8 @@ watchdog:
     if [ -t 0 ]; then set -m; fi
     {{run}} src/watchdog/main.ts
 
-# 用的是现在 PATH 里的 node 和状态目录（PSA_STATE_DIR）；换了 node 或仓库位置后重跑一次。重复运行不会重启宿主：
-# 升级了 Pi 要让宿主用上，跑 just service-uninstall && just service-install。
+# 用的是现在 PATH 里的 node 和状态目录（PSA_STATE_DIR）。重复运行不会重启宿主：
+# 换了 node、仓库位置或升级了 Pi，要让宿主用上，跑 just service-uninstall && just service-install。
 # 登录后自动启动 Watchdog（它再拉起宿主），崩溃后 launchd 把它拉回来。需要这台 Mac 开着自动登录。
 service-install:
     {{run}} src/service/cli.ts install
