@@ -34,7 +34,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Follow this dependency graph. Start dependent work only after its parent merges, or base it on the parent branch when the execution playbook stacks.
   - [ ] H1, H2 and H3 are independent and first. All three branch from `main` as `psa/nul-strip`, `psa/web-hosts` and `psa/autostart`.
   - [ ] H4 after H2 and H3, on `psa/home-runbook`.
-- [ ] Hold the file boundaries. H1 touches only `src/kernel/kernel.ts`、`src/kernel/store.ts`、`tests/kernel.test.ts`。H2 touches only `src/host/web-hosts.ts`、`src/host/web.ts`、`src/host/config.ts`、`src/host/wiring.ts`、`src/host/host.ts`、`src/host/main.ts`、`docs/adr/`、`tests/web.test.ts`、`tests/config.test.ts`、`tests/host-main.test.ts`、`tests/wiring.test.ts`、`tests/stories.test.ts`、`tests/e2e/`。H3 touches only `src/service/`、`src/heartbeat.ts`、`src/watchdog/main.ts`、`justfile`、`tests/service.test.ts` 和看门狗的测试。H4 touches only `docs/deploy/`。
+- [ ] Hold the file boundaries. H1 touches only `src/kernel/kernel.ts`、`tests/kernel.test.ts`。H2 touches only `src/host/web-hosts.ts`、`src/host/web.ts`、`src/host/config.ts`、`src/host/wiring.ts`、`src/host/host.ts`、`src/host/main.ts`、`docs/adr/`、`tests/web.test.ts`、`tests/config.test.ts`、`tests/host-main.test.ts`、`tests/wiring.test.ts`、`tests/stories.test.ts`、`tests/e2e/`。H3 touches only `src/service/`、`src/heartbeat.ts`、`src/watchdog/main.ts`、`justfile`、`tests/service.test.ts` 和看门狗的测试。H4 touches only `docs/deploy/`。
 - [ ] Hold the review gate. H2 changes an interaction（使用者从手机打开网页）。It waits for the operator's review in chat with screenshots and a video before merge.
 
 ### PR mechanics, for every PR
@@ -68,12 +68,11 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Files.**
 
 - [ ] Edit `src/kernel/kernel.ts`.
-- [ ] Edit `src/kernel/store.ts`.
 - [ ] Edit `tests/kernel.test.ts`.
 
 **Build.**
 
-- [ ] 在 `Kernel` 的 `#run`、`#get`、`#all`（`kernel.ts:1317-1331`）里，把字符串参数中的 U+0000 去掉，再交给 `node:sqlite`。`store.ts:218-222` 的迁移写入也走同一个函数。查询参数也去，这样按 `external_id` 查找和写入时一致。
+- [ ] 在 `Kernel` 的 `#run`、`#get`、`#all`（`kernel.ts:1317-1331`）里，把字符串参数中的 U+0000 去掉，再交给 `node:sqlite`。`store.ts:218-222` 的迁移写入的是 `oneLine(title)`，它已经去掉 U+0000，不用改。查询参数也去，这样按 `external_id` 查找和写入时一致。
 
 **You see.**
 
@@ -245,7 +244,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Build.**
 
-- [ ] 按这次在老 Mac 上真实走过的步骤写：nvm 装 Node 22（macOS 13.5 以上可装 Node 24 或 26）、装 Pi 并 `/login` Codex、装 just、拉代码、`config.json` 的 `models` 和 `secretsFile`、`.env` 的变量名和 0600 权限、`just service-install`、装 Tailscale 和 `tailscale serve`、`webHosts`、手机打开远程网址、换 token、从老 Mac 把状态目录搬到 Mac mini（`location.json` 会改写会话路径）。
+- [ ] 按这次在老 Mac 上真实走过的步骤写：nvm 装 Node 22（macOS 13.5 以上可装 Node 24 或 26）、装 Pi 并 `/login` Codex、装 just、拉代码、`config.json` 的 `models` 和 `secretsFile`、`.env` 的变量名和 0600 权限、`just service-install`、装 Tailscale 和 `tailscale serve`、`webHosts`、手机打开远程网址、换 token、从老 Mac 把状态目录搬到 Mac mini（`location.json` 会改写会话路径），以及 H1 之前在 Node 22 下写入、带 U+0000 的旧行仍是截断的。
 - [ ] 每一步写出预期看到的日志行或命令输出。
 
 **You see.**
