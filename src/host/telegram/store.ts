@@ -49,9 +49,10 @@ const STANDALONE_NOTE: SendableBody = { kind: "note", text: "" };
 
 /**
  * `line:<lineId>` shows a conversation line, `ask:<reportId>` is the card for a helper's question, `cap:<capAskId>` the member-cap note,
- * `note:<updateId>` answers one update, `setup` tells a writer their id, `missed` carries an owed note when nothing else will.
+ * `note:<updateId>` answers one update, `setup` tells a writer their id, `missed` carries an owed note when nothing else will,
+ * `alert:<hostLineId>` is a source's alert.
  */
-export type MessageKey = `line:${string}` | `ask:${string}` | `cap:${string}` | `note:${number}` | "setup" | "missed";
+export type MessageKey = `line:${string}` | `ask:${string}` | `cap:${string}` | `note:${number}` | `alert:${string}` | "setup" | "missed";
 
 export type SendableBody = Exclude<OutboundBody, { kind: "received" }>;
 

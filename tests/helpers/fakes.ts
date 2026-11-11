@@ -10,6 +10,7 @@ import { Router } from "../../src/host/router.ts";
 import { ModelSelector } from "../../src/model-selector.ts";
 import { formatModelRef } from "../../src/models.ts";
 import type { WorkerModels } from "../../src/host/workers.ts";
+import type { FeedContext, FeedSpec } from "../../src/sources/feeds.ts";
 
 export function defaultWorkerModels(): WorkerModels {
 	return {
@@ -204,6 +205,19 @@ export class FakeSpawner implements WorkerSpawner {
 			},
 		};
 	}
+}
+
+export function fakeFeed(source = "fake-feed") {
+	const feed = { ctx: undefined as FeedContext | undefined, spec: undefined as unknown as FeedSpec };
+	feed.spec = {
+		source,
+		lookupHelp: "",
+		create: (ctx) => {
+			feed.ctx = ctx;
+			return { start() {}, stop() {}, problem: () => undefined, lookup: async () => null };
+		},
+	};
+	return feed;
 }
 
 export function tempStateDir(): string {

@@ -181,6 +181,10 @@ export function mirrorText(text: string, from?: ImChat): string {
 	return `${from ? "你在另一个 Telegram 账号说" : "你在网页或终端说"}：${text}`;
 }
 
+export function alertText(text: string): string {
+	return `盯盘提醒：${text}`;
+}
+
 /** One conversation line is one Telegram message, so a long text is clipped rather than split. */
 export function fitMessage(text: string): string {
 	if (text.length <= MESSAGE_MAX) return text;

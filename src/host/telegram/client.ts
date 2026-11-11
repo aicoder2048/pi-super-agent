@@ -8,7 +8,7 @@ import { inTransaction } from "../../kernel/store.ts";
 import type { Clock } from "../../kernel/types.ts";
 import type { AnswerResult, Broadcast, ImChat, SayOptions } from "../server.ts";
 import { TelegramError, type BotApi, type TelegramErrorKind, type Update } from "./bot-api.ts";
-import { cardView, closedView, decide, mirrorText, NOTES, render, repeatsQuestion } from "./rules.ts";
+import { alertText, cardView, closedView, decide, mirrorText, NOTES, render, repeatsQuestion } from "./rules.ts";
 import { TelegramStore, type Pending } from "./store.ts";
 
 export interface TelegramTiming {
@@ -121,16 +121,32 @@ export class TelegramClient {
 	broadcast(message: Broadcast, from?: ImChat): void {
 		if (this.#state === "off") return;
 		try {
-			if (message.type === "reply") {
-				if (!this.#cardStandsIn(message)) {
-					for (const chat of this.#store.openChats()) this.#store.put(chat, `line:${message.replyId}`, message.replyId, { kind: "line", text: message.text, silent: false });
+			switch (message.type) {
+				case "reply":
+					if (!this.#cardStandsIn(message)) {
+						for (const chat of this.#store.openChats()) this.#store.put(chat, `line:${message.replyId}`, message.replyId, { kind: "line", text: message.text, silent: false });
+					}
+					break;
+				case "user":
+					for (const chat of this.#store.openChats()) {
+						if (chat !== from?.chatId) this.#store.put(chat, `line:${message.id}`, message.id, { kind: "line", text: mirrorText(message.text, from), silent: true });
+					}
+					break;
+				case "board":
+					for (const chat of this.#store.openChats()) this.#syncCards(chat, message);
+					break;
+				case "host_line":
+					if (message.who === "alert") {
+						for (const chat of this.#store.openChats()) this.#store.put(chat, `alert:${message.id}`, null, { kind: "line", text: alertText(message.text), silent: false });
+					}
+					break;
+				case "cleared":
+					break;
+				default: {
+					const unknown: never = message;
+					this.#log(`[telegram] 不认识的广播类型 ${(unknown as { type: string }).type}，没有发到 Telegram`);
+					return;
 				}
-			} else if (message.type === "user") {
-				for (const chat of this.#store.openChats()) {
-					if (chat !== from?.chatId) this.#store.put(chat, `line:${message.id}`, message.id, { kind: "line", text: mirrorText(message.text, from), silent: true });
-				}
-			} else if (message.type === "board") {
-				for (const chat of this.#store.openChats()) this.#syncCards(chat, message);
 			}
 			this.#wake?.();
 		} catch (error) {

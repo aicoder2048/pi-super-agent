@@ -2048,3 +2048,89 @@ test("旧数据库的汇报表没有外写的几列：打开时补上，旧汇�
 	assert.deepEqual(found.recentReports.map((r) => [r.summary, r.outsideWrites, r.writeProblem]), [["旧汇报", [], null]]);
 	assert.deepEqual(again.kernel.writeScan(id), {});
 });
+
+const alert = (externalId: string, text = "NVDA 涨了 5.3%") => ({ kind: "alert" as const, externalId, text, occurredAt: 1 });
+
+test("宿主行：同一来源同一个 externalId 的提醒第二次是重复，库里只有一行，返回第一行", () => {
+	const s = setup();
+	const first = s.kernel.postHostLine("us-market", alert("NVDA:2026-11-08:day-up-5"));
+	s.clock.t += 1000;
+	const again = s.kernel.postHostLine("us-market", alert("NVDA:2026-11-08:day-up-5", "换了措辞"));
+	assert.equal(first.duplicate, false);
+	assert.deepEqual(again, { line: first.line, duplicate: true });
+	assert.deepEqual(s.kernel.conversation().map((l) => [l.who, l.text]), [["alert", "NVDA 涨了 5.3%"]]);
+	assert.equal(s.kernel.postHostLine("other-feed", alert("NVDA:2026-11-08:day-up-5")).duplicate, false, "别的来源用同一个 id 不算重复");
+});
+
+test("宿主行：收据不去重，可以多行、很长", () => {
+	const s = setup();
+	const text = Array.from({ length: 150 }, (_, i) => `第 ${i} 条：${"条件".repeat(40)}`).join("\n");
+	assert.ok(text.length > 1000 && text.length <= 16000);
+	const a = s.kernel.postHostLine("us-market", { kind: "receipt", text });
+	const b = s.kernel.postHostLine("us-market", { kind: "receipt", text });
+	assert.deepEqual([a.duplicate, b.duplicate], [false, false]);
+	assert.notEqual(a.line.id, b.line.id);
+	assert.deepEqual(s.kernel.conversation().map((l) => [l.who, l.text]), [["receipt", text], ["receipt", text]]);
+});
+
+test("宿主行：不合规的提醒（换行、空、超过 1000 字）和超过 16000 字的收据直接报错，什么都不写", () => {
+	const s = setup();
+	for (const bad of ["第一行\n第二行", "", "长".repeat(1001)]) {
+		assert.throws(() => s.kernel.postHostLine("us-market", alert(`id-${bad.length}`, bad)), /CHECK constraint failed/, JSON.stringify(bad.slice(0, 10)));
+	}
+	assert.throws(() => s.kernel.postHostLine("us-market", { kind: "receipt", text: "长".repeat(16001) }), /CHECK constraint failed/);
+	assert.deepEqual(s.kernel.conversation(), []);
+	assert.equal(s.kernel.raised("us-market", "id-0"), false);
+});
+
+test("宿主行：raised 只认这个来源已经贴过的提醒 id", () => {
+	const s = setup();
+	s.kernel.postHostLine("us-market", alert("TSLA:2026-11-08:cross-5-20-golden-suspected"));
+	assert.equal(s.kernel.raised("us-market", "TSLA:2026-11-08:cross-5-20-golden-suspected"), true);
+	assert.equal(s.kernel.raised("us-market", "TSLA:2026-11-09:cross-5-20-golden-suspected"), false);
+	assert.equal(s.kernel.raised("other-feed", "TSLA:2026-11-08:cross-5-20-golden-suspected"), false);
+});
+
+test("宿主行：conversation() 按时间把使用者的话、幕僚长的回复、提醒和收据排在一起", () => {
+	const s = setup();
+	const said = s.say("帮我盯英伟达").triggerId;
+	s.clock.t += 1000;
+	const receipt = s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下：NVDA" }).line;
+	s.clock.t += 1000;
+	const reply = replied(s, said, "已添加");
+	s.clock.t += 1000;
+	const posted = s.kernel.postHostLine("us-market", alert("NVDA:x")).line;
+	assert.deepEqual(s.kernel.conversation().map((l) => [l.id, l.who]), [[said, "user"], [receipt.id, "receipt"], [reply, "router"], [posted.id, "alert"]]);
+	assert.deepEqual(posted, { id: posted.id, who: "alert", text: "NVDA 涨了 5.3%", at: s.clock.t });
+	assert.match(posted.id, /^hln_/);
+});
+
+test("宿主行：清屏收走收据和已送达的提醒；还没送达的提醒留在对话里", () => {
+	const s = setup();
+	const receipt = s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下" }).line;
+	const delivered = s.kernel.postHostLine("us-market", alert("a")).line;
+	s.kernel.markHostLineDelivered(delivered.id);
+	const pending = s.kernel.postHostLine("us-market", alert("b")).line;
+	s.kernel.clearConversation();
+	assert.deepEqual(s.kernel.conversation().map((l) => l.id), [pending.id]);
+	assert.deepEqual(s.kernel.cleared()!.lines.map((l) => l.id), [receipt.id, delivered.id]);
+});
+
+test("宿主行：undeliveredAlerts 只列没标记送达的提醒，不列收据", () => {
+	const s = setup();
+	s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下" });
+	const done = s.kernel.postHostLine("us-market", alert("a")).line;
+	const pending = s.kernel.postHostLine("us-market", alert("b")).line;
+	s.kernel.markHostLineDelivered(done.id);
+	assert.deepEqual(s.kernel.undeliveredAlerts(), [pending]);
+});
+
+test("宿主行：不能引用提醒和收据，和不认识的行一样返回 null，什么都不写", () => {
+	const s = setup();
+	const posted = s.kernel.postHostLine("us-market", alert("a")).line;
+	s.kernel.markHostLineDelivered(posted.id);
+	const receipt = s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下" }).line;
+	const before = quoteCounts(s);
+	for (const lineId of [posted.id, receipt.id]) assert.equal(s.kernel.userSaidQuoting({ text: "为什么", at: s.clock.t, lineId }), null, lineId);
+	assert.deepEqual(quoteCounts(s), before);
+});

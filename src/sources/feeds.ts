@@ -1,11 +1,17 @@
-import type { Clock, TriggerSubmission } from "../kernel/types.ts";
+import type { Clock, HostLinePost, TriggerSubmission } from "../kernel/types.ts";
 import { marketFeed } from "./market/source.ts";
+
+export type { HostLinePost } from "../kernel/types.ts";
 
 export interface FeedContext {
 	clock: Clock;
 	submit(trigger: TriggerSubmission): void;
 	readCursor(): string | undefined;
 	writeCursor(value: string): void;
+	/** Straight to the user's front ends; the Router never sees it. A repeated alert externalId changes nothing. A line the store refuses throws. */
+	post(line: HostLinePost): void;
+	/** Whether this feed already posted the alert `externalId`. */
+	raised(externalId: string): boolean;
 	log(line: string): void;
 }
 

@@ -1,7 +1,7 @@
-import type { CapQuestion, Cleared, ConversationLine, DashboardRow, Disposition, HelpersToday, Routes } from "../kernel/types.ts";
+import type { CapQuestion, Cleared, ConversationLine, DashboardRow, Disposition, HelpersToday, HostLine, Routes } from "../kernel/types.ts";
 import type { Dispatching } from "../host/dispatch.ts";
 
-export type { Cleared, ConversationLine, Quote } from "../kernel/types.ts";
+export type { Cleared, ConversationLine, HostLine, Quote } from "../kernel/types.ts";
 
 /** `resumed` counts the running tickets recovered at this start; 0 means a clean start. */
 export interface Duty {
@@ -53,6 +53,7 @@ export type HostToClient =
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }
 	| { type: "reply"; text: string; at: number; replyId: string; ticketId?: string }
+	| ({ type: "host_line" } & HostLine)
 	| ({ type: "board" } & BoardState)
 	/** A 清屏 on the host: every front end's conversation is now exactly `conversation`, and `cleared` is what it took away. */
 	| { type: "cleared"; conversation: ConversationLine[]; cleared: Cleared }

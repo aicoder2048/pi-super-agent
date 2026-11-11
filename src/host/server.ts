@@ -7,7 +7,7 @@ import type { HostToClient } from "../client/protocol.ts";
 import { refusalText, type AnswerRefusal } from "../kernel/question.ts";
 import { tokenMatches } from "./web-token.ts";
 
-export type Broadcast = Extract<HostToClient, { type: "user" | "reply" | "board" | "cleared" }>;
+export type Broadcast = Extract<HostToClient, { type: "user" | "reply" | "board" | "cleared" | "host_line" }>;
 
 export type AnswerResult = { ok: true; triggerId: string } | { ok: false; refusal: AnswerRefusal };
 

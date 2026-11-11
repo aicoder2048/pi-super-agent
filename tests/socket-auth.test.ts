@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { HostConnection } from "../src/client/connection.ts";
 import type { HostToClient } from "../src/client/protocol.ts";
-import { busyPort, ofType, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
+import { busyPort, fakeFeed, ofType, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 const tokenFile = (stateDir: string) => join(stateDir, "client-token");
 const readToken = (stateDir: string) => readFileSync(tokenFile(stateDir), "utf8").trim();
@@ -263,6 +263,20 @@ test("just tail：带引用的话前面先打一行「↪ 引用 …」", async 
 	host.sayQuoting("再想想", first);
 	await until(() => tail.output().includes("你> 再想想"), "实时的那句", 5000);
 	assert.deepEqual(tail.lines(), ["TIME 你> 方案 A 先停掉旧任务", "TIME ↪ 引用 你：方案 A 先停掉旧任务", "TIME 你> 改成 B", "TIME ↪ 引用 你：方案 A 先停掉旧任务", "TIME 你> 再想想"]);
+});
+
+test("just tail：提醒和收据打成「盯盘提醒>」「盯盘条件（只在本机）>」，历史里的和实时的都一样", async (t) => {
+	const stateDir = tempStateDir();
+	const feed = fakeFeed("us-market");
+	const { host } = await startHost(() => [], () => {}, { stateDir, feeds: [feed.spec] });
+	t.after(() => host.stop());
+	feed.ctx!.post({ kind: "receipt", text: "已记下：NVDA" });
+	const tail = tailSay(stateDir);
+	t.after(tail.stop);
+	await until(() => tail.output().includes("已记下"), "tail 打出历史里的收据", 15_000);
+	feed.ctx!.post({ kind: "alert", externalId: "NVDA:x", text: "NVDA 涨了 5.3%", occurredAt: 1 });
+	await until(() => tail.output().includes("NVDA 涨了"), "实时的提醒", 5000);
+	assert.deepEqual(tail.lines(), ["TIME 盯盘条件（只在本机）> 已记下：NVDA", "TIME 盯盘提醒> NVDA 涨了 5.3%"]);
 });
 
 test("just say：socket 的 say 多带一个 quote 键时照常当一句话说，不带引用", async (t) => {
