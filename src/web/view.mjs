@@ -889,6 +889,52 @@ const plainText = (text) =>
 		.map(spanText)
 		.join(" ");
 
+// A card's option reaches the conversation as the user's sentence (answerSentence in kernel/question.ts), but it was clicked, not typed.
+const CARD_ANSWER = /^回答任务「/;
+
+/** What the user sent, oldest first, for ↑ and ↓ in the composer; a repeat of the sentence before it is one entry. @param {View} view */
+export function sentHistory(view) {
+	/** @type {string[]} */
+	const entries = [];
+	for (const line of knownLines(view)) {
+		if (line.who === "user" && !CARD_ANSWER.test(line.text) && line.text !== entries.at(-1)) entries.push(line.text);
+	}
+	return entries;
+}
+
+/** `index` is the entry the composer shows, or null on the user's own draft. @typedef {{ index: number | null, draft: string }} Browsing */
+
+/**
+ * @param {Pick<KeyboardEvent, "key" | "shiftKey" | "altKey" | "ctrlKey" | "metaKey" | "isComposing" | "keyCode">} e
+ * @param {string} value @param {number} start @param {number} end the composer's selection
+ * @returns {"up" | "down" | null}
+ */
+export function historyKey(e, value, start, end) {
+	if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.isComposing || e.keyCode === 229 || start !== end) return null;
+	if (e.key === "ArrowUp") return value.slice(0, start).includes("\n") ? null : "up";
+	if (e.key === "ArrowDown") return value.slice(end).includes("\n") ? null : "down";
+	return null;
+}
+
+/**
+ * One ↑ or ↓ through `entries`; null leaves the key to the textarea. A composer that no longer shows the entry it was given
+ * means the user typed, so browsing starts over with that text as the draft.
+ * @param {Browsing} state @param {"up" | "down"} key @param {string[]} entries @param {string} current the composer's text
+ * @returns {{ state: Browsing, text: string } | null}
+ */
+export function historyStep(state, key, entries, current) {
+	const browsing = state.index !== null && entries[state.index] === current;
+	const index = browsing ? state.index : null;
+	const draft = browsing ? state.draft : current;
+	if (key === "up") {
+		const next = (index ?? entries.length) - 1;
+		return next < 0 ? null : { state: { index: next, draft }, text: entries[next] };
+	}
+	if (index === null) return null;
+	const next = index + 1;
+	return next < entries.length ? { state: { index: next, draft }, text: entries[next] } : { state: { index: null, draft }, text: draft };
+}
+
 /** @param {{ who: "user" | "router", text: string }} said */
 export const quoteShown = (said) => ({
 	who: QUOTE_WHO[said.who],

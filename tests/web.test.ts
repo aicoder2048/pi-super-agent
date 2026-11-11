@@ -18,6 +18,7 @@ import { helperLine } from "../src/client/board-format.mjs";
 import { WATCHDOG_SOURCE } from "../src/watchdog/watchdog.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { Kernel } from "../src/kernel/kernel.ts";
+import { answerSentence } from "../src/kernel/question.ts";
 import { busyPort, domainsOf, freePort, ids, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
@@ -2155,4 +2156,63 @@ test("页面：有外写的任务卡片多一行，确切写入和推测的可�
 		tkt_mix: "写到成品目录之外 2 处，另有 1 处可能：/repo/a.ts、/repo/b.ts、/repo",
 		tkt_may: "可能写到成品目录之外 3 处：/repo/a.ts、/repo/b.ts、/repo",
 	});
+});
+
+const sent = (id: string, text: string, who: "user" | "router" = "user"): ConversationLine => ({ id, who, text, at: Number(id.slice(1)) });
+const fresh = { index: null, draft: "" };
+const key = (k: string, over: Partial<KeyboardEvent> = {}) => ({ key: k, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, isComposing: false, keyCode: 0, ...over });
+
+test("页面：输入框的历史是你自己发过的话，按时间先后，清屏藏起的也算；连着发两遍同一句只算一次；幕僚长的话和点选项的回答不算", () => {
+	const view = page.emptyView();
+	const cardAnswer = sent("u5", answerSentence("查天气", "要带伞"));
+	page.applyMessage(view, snapshot({ cleared: { at: 1, lines: [sent("u1", "查天气"), sent("r2", "多云", "router")] }, conversation: [sent("u3", "改成 B"), sent("u4", "改成 B"), cardAnswer, sent("u6", "查天气"), sent("r7", "好", "router")] }), 0);
+	assert.deepEqual(page.sentHistory(view), ["查天气", "改成 B", "查天气"]);
+});
+
+test("页面：没有历史时按 ↑ 不接管，光标照常移动", () => {
+	assert.equal(page.historyStep(fresh, "up", [], "草稿"), null);
+});
+
+test("页面：按 ↑ 从最新一句往回走，走到最早一句停住；第一次按下前输入框里的字存为草稿", () => {
+	const entries = ["一", "二", "三"];
+	const first = page.historyStep(fresh, "up", entries, "没写完")!;
+	assert.equal(first.text, "三");
+	const second = page.historyStep(first.state, "up", entries, first.text)!;
+	assert.equal(second.text, "二");
+	const third = page.historyStep(second.state, "up", entries, second.text)!;
+	assert.equal(third.text, "一");
+	assert.equal(page.historyStep(third.state, "up", entries, third.text), null);
+});
+
+test("页面：按 ↓ 往新的走，越过最新一句回到草稿；不在翻历史时 ↓ 不接管", () => {
+	const entries = ["一", "二"];
+	assert.equal(page.historyStep(fresh, "down", entries, "没写完"), null);
+	const back2 = page.historyStep(page.historyStep(fresh, "up", entries, "没写完")!.state, "up", entries, "二")!;
+	const forward = page.historyStep(back2.state, "down", entries, back2.text)!;
+	assert.equal(forward.text, "二");
+	const draft = page.historyStep(forward.state, "down", entries, forward.text)!;
+	assert.equal(draft.text, "没写完");
+	assert.equal(page.historyStep(draft.state, "down", entries, draft.text), null);
+});
+
+test("页面：翻到历史后改了字，再按 ↑ 从最新一句重新开始，改过的字成了新草稿", () => {
+	const entries = ["一", "二", "三"];
+	const back = page.historyStep(page.historyStep(fresh, "up", entries, "旧草稿")!.state, "up", entries, "三")!;
+	const again = page.historyStep(back.state, "up", entries, "二改了")!;
+	assert.equal(again.text, "三");
+	const home = page.historyStep(again.state, "down", entries, again.text)!;
+	assert.equal(home.text, "二改了");
+});
+
+test("页面：只有光标在第一行按 ↑、在最后一行按 ↓ 才翻历史；选中文字、按着修饰键、输入法正在拼字时都不翻", () => {
+	const text = "第一行\n第二行\n第三行";
+	assert.equal(page.historyKey(key("ArrowUp"), text, 2, 2), "up");
+	assert.equal(page.historyKey(key("ArrowUp"), text, 5, 5), null);
+	assert.equal(page.historyKey(key("ArrowDown"), text, 5, 5), null);
+	assert.equal(page.historyKey(key("ArrowDown"), text, 10, 10), "down");
+	assert.equal(page.historyKey(key("ArrowUp"), "\n下面", 0, 0), "up");
+	assert.equal(page.historyKey(key("ArrowUp"), "一行", 0, 2), null);
+	for (const held of ["shiftKey", "altKey", "ctrlKey", "metaKey", "isComposing"] as const) assert.equal(page.historyKey(key("ArrowUp", { [held]: true }), "", 0, 0), null, held);
+	assert.equal(page.historyKey(key("ArrowUp", { keyCode: 229 }), "", 0, 0), null);
+	assert.equal(page.historyKey(key("Enter"), "", 0, 0), null);
 });

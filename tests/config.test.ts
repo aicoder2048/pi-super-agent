@@ -183,3 +183,37 @@ test("outputDir 以 ~ 开头时拒绝启动，报错说写绝对路径：配置�
 	}
 	assert.equal(loadConfig(stateWith({ outputDir: "made~1" })).outputDir.endsWith("made~1"), true);
 });
+
+test("没写 telegram 段时 Telegram 客户端不运行；名单可以是空的（设置模式）", () => {
+	assert.equal(loadConfig(stateWith({})).telegram, undefined);
+	assert.deepEqual(loadConfig(stateWith({ telegram: { allowedUserIds: [] } })).telegram, { allowedUserIds: [] });
+	assert.deepEqual(loadConfig(stateWith({ telegram: { allowedUserIds: [987654321, 42] } })).telegram, { allowedUserIds: [987654321, 42] });
+});
+
+test("telegram 段写错时拒绝启动，报错指出字段；群和频道的负数 id 不收", () => {
+	const bad = [null, [], "x", {}, { allowedUserIds: "42" }, { allowedUserIds: [42], extra: 1 }, { allowedUserIds: [-100123] }, { allowedUserIds: [0] }, { allowedUserIds: [1.5] }, { allowedUserIds: ["42"] }, { allowedUserIds: [42, 42] }, { allowedUserIds: [2 ** 53] }];
+	for (const telegram of bad) {
+		assert.throws(() => loadConfig(stateWith({ telegram })), (e: Error) => e.name === "ConfigError" && /telegram/.test(e.message), JSON.stringify(telegram));
+	}
+	assert.throws(() => loadConfig(stateWith({ telegram: { allowedUserIds: [42, 42] } })), /telegram\.allowedUserIds/);
+});
+
+test("telegram 段写错时报错只点出字段名，不回显段里的值：误写进去的 token 不会出现在报错里", () => {
+	const token = "987654321:AAH-real_looking_secret_token_abcdefg";
+	const secret = token.split(":")[1];
+	const cases: [unknown, RegExp][] = [
+		[{ allowedUserIds: [42], botToken: token }, /botToken/],
+		[{ allowedUserIds: [42], [token]: true }, /telegram/],
+		[{ allowedUserIds: [token] }, /telegram\.allowedUserIds/],
+		[{ allowedUserIds: token }, /telegram\.allowedUserIds/],
+		[token, /telegram/],
+	];
+	for (const [telegram, names] of cases) {
+		assert.throws(() => loadConfig(stateWith({ telegram })), (e: Error) => {
+			assert.equal(e.name, "ConfigError");
+			assert.match(e.message, names);
+			assert.ok(!e.message.includes(secret), e.message);
+			return true;
+		});
+	}
+});

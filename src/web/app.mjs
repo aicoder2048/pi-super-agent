@@ -3,7 +3,7 @@
 import {
 	BAR_HINT, CLEAR_FAILED, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
 	questionOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
-	laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme,
+	laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperLine } from "../client/board-format.mjs";
 
@@ -47,6 +47,8 @@ function mount(doc) {
 	let unconfirmed;
 	/** @type {import("./view.mjs").ConversationLine | null} */
 	let quoting = null;
+	/** @type {import("./view.mjs").Browsing} */
+	let browsing = { index: null, draft: "" };
 	const quoteStrip = $("quote-strip");
 	const touch = matchMedia("(hover: none)");
 	/** @type {{ watch: ReturnType<typeof emptyWatch>, source: EventSource } | undefined} */
@@ -755,6 +757,15 @@ function mount(doc) {
 		if (e.key === "Escape" && quoting && !e.isComposing && e.keyCode !== 229) {
 			e.preventDefault();
 			setQuote(null);
+			return;
+		}
+		const arrow = historyKey(e, composer.value, composer.selectionStart, composer.selectionEnd);
+		const step = arrow && historyStep(browsing, arrow, sentHistory(view), composer.value);
+		if (step) {
+			e.preventDefault();
+			browsing = step.state;
+			composer.value = step.text;
+			composer.setSelectionRange(step.text.length, step.text.length);
 			return;
 		}
 		if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.keyCode === 229) return;

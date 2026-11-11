@@ -11,6 +11,15 @@ export type Broadcast = Extract<HostToClient, { type: "user" | "reply" | "board"
 
 export type AnswerResult = { ok: true; triggerId: string } | { ok: false; refusal: AnswerRefusal };
 
+/** An IM chat a line came from. Only IM clients set it, and the host never puts it on the wire. */
+export type ImChat = { client: "telegram"; chatId: number };
+
+export interface SayOptions {
+	/** The kernel's dedupe key. A client that can receive the same input twice sets it. */
+	externalId?: string;
+	from?: ImChat;
+}
+
 const ANSWER_FAILED = "宿主内部出错，这次点选没有生效，请再点一次；详情见宿主日志。";
 
 export interface ClientHandlers {

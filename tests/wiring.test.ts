@@ -5,7 +5,7 @@ import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createHostOptions, modelSelectors, watchedSources } from "../src/host/wiring.ts";
+import { createHostOptions, modelSelectors, telegramOptions, watchedSources } from "../src/host/wiring.ts";
 import { memberProviders } from "../src/host/config.ts";
 import { Host } from "../src/host/host.ts";
 import { Modules } from "../src/modules.ts";
@@ -263,4 +263,48 @@ test("真实接线：仓库里的玩具行情模块按领域交出自己的 skil
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const { domains } = createHostOptions({ config: hostConfig(provider), modules: Modules.load([REPO_MODULES]), modelRuntime, log: () => {} });
 	assert.equal(domains!.kitFor("toy-market")!.skillsDir, join(REPO_MODULES, "toy-market/skills"));
+});
+
+const TG_TOKEN = "123456789:AAH-fake_token_for_wiring_tests_00";
+
+function telegramConfig(secrets?: string) {
+	const stateDir = mkdtempSync(join(tmpdir(), "psa-tg-"));
+	let secretsFile: string | undefined;
+	if (secrets !== undefined) writeFileSync((secretsFile = join(stateDir, "secrets.env")), secrets);
+	return { stateDir, secretsFile, telegram: { allowedUserIds: [42] } };
+}
+
+test("Telegram 接线：没写 telegram 段时不建客户端，也不读 token", () => {
+	assert.equal(telegramOptions({ ...telegramConfig(), telegram: undefined }, { TELEGRAM_BOT_TOKEN: "garbage" }, () => {}), undefined);
+});
+
+test("Telegram 接线：写了 telegram 段但环境变量和 secretsFile 里都没有 token 时启动前报错", () => {
+	assert.throws(() => telegramOptions(telegramConfig("OTHER=1\n"), {}, () => {}), (e: Error) => e.name === "ConfigError" && /TELEGRAM_BOT_TOKEN/.test(e.message) && /config\.json/.test(e.message));
+});
+
+test("Telegram 接线：token 先读环境变量再读 secretsFile；日志写来源不写 token；名单交给客户端", () => {
+	const logs: string[] = [];
+	const fromFile = telegramOptions(telegramConfig(`TELEGRAM_BOT_TOKEN=${TG_TOKEN}\n`), {}, (l) => logs.push(l))!;
+	assert.equal(fromFile.api.botId, 123456789);
+	assert.deepEqual([...fromFile.allowedUserIds], [42]);
+	const fromEnv = telegramOptions(telegramConfig("TELEGRAM_BOT_TOKEN=987654321:AAH-other_token_in_the_secrets_file\n"), { TELEGRAM_BOT_TOKEN: TG_TOKEN }, (l) => logs.push(l))!;
+	assert.equal(fromEnv.api.botId, 123456789);
+	assert.match(logs[0], /\[telegram\] bot token 来自secretsFile /);
+	assert.equal(logs[1], "[telegram] bot token 来自环境变量 TELEGRAM_BOT_TOKEN");
+	assert.ok(!logs.some((l) => l.includes(TG_TOKEN.split(":")[1])));
+});
+
+test("Telegram 接线：token 格式不对时启动前报错，报错里没有 token", () => {
+	assert.throws(() => telegramOptions(telegramConfig(), { TELEGRAM_BOT_TOKEN: "not-a-token-AAH-secret-part" }, () => {}), (e: Error) => e.name === "ConfigError" && !e.message.includes("secret-part"));
+});
+
+test("真实接线：config 里有 telegram 段时宿主选项带上 Telegram 客户端", async (t) => {
+	withoutKeyVars(t);
+	const saved = process.env.TELEGRAM_BOT_TOKEN;
+	process.env.TELEGRAM_BOT_TOKEN = TG_TOKEN;
+	t.after(() => (saved === undefined ? delete process.env.TELEGRAM_BOT_TOKEN : (process.env.TELEGRAM_BOT_TOKEN = saved)));
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const options = createHostOptions({ config: { ...hostConfig(provider), telegram: { allowedUserIds: [42] } }, modules: Modules.load([]), modelRuntime, log: () => {} });
+	assert.equal(options.telegram?.api.botId, 123456789);
+	assert.equal(createHostOptions({ config: hostConfig(provider), modules: Modules.load([]), modelRuntime, log: () => {} }).telegram, undefined);
 });

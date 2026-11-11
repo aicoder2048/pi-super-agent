@@ -35,6 +35,8 @@ export interface HostConfig {
 	/** Absolute. Where helpers and members put what they make (ADR-0015). */
 	outputDir: string;
 	sources: Record<string, unknown>;
+	/** Present means the Telegram client runs. An empty list is setup mode: it only tells whoever writes their own numeric id. */
+	telegram?: { allowedUserIds: readonly number[] };
 }
 
 const STUCK_MINUTES_MAX = 1440;
@@ -107,6 +109,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	if (sources === null || typeof sources !== "object" || Array.isArray(sources)) {
 		throw new ConfigError(`${file}：sources（${JSON.stringify(sources)}）必须是以来源名为键的对象`);
 	}
+	const telegram = raw.telegram === undefined ? undefined : parseTelegram(raw.telegram, file);
 	return {
 		stateDir,
 		models: {
@@ -131,6 +134,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		secretsFile,
 		outputDir,
 		sources,
+		...(telegram && { telegram }),
 	};
 }
 
@@ -143,4 +147,22 @@ function parseOutputDir(value: unknown, stateDir: string, file: string): string 
 		if (within(join(stateDir, own), dir)) throw new ConfigError(`${file}：outputDir（${dir}）不能放在状态目录的 ${own}/ 下面，那里是宿主自己的任务目录和会话记录`);
 	}
 	return dir;
+}
+
+// A token pasted into this section by mistake must not reach the error, so errors name keys and never echo values.
+function parseTelegram(raw: unknown, file: string): { allowedUserIds: number[] } {
+	if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+		throw new ConfigError(`${file}：telegram 必须是只有 allowedUserIds 一项的对象`);
+	}
+	const extra = Object.keys(raw).filter((key) => key !== "allowedUserIds");
+	if (extra.length > 0) {
+		const named = extra.filter((key) => /^[A-Za-z_]\w{0,39}$/.test(key));
+		const shown = [...named, ...(named.length < extra.length ? [`另有 ${extra.length - named.length} 个不像字段名的键`] : [])].join("、");
+		throw new ConfigError(`${file}：telegram 只能有 allowedUserIds 一项，多了：${shown}。bot token 放在 secretsFile 或环境变量 TELEGRAM_BOT_TOKEN 里`);
+	}
+	const ids = (raw as { allowedUserIds?: unknown }).allowedUserIds;
+	if (!Array.isArray(ids) || !ids.every((id) => Number.isSafeInteger(id) && id > 0) || new Set(ids).size !== ids.length) {
+		throw new ConfigError(`${file}：telegram.allowedUserIds 必须是不重复的正整数数组：私聊里使用者的 Telegram 数字 id；空数组是设置模式`);
+	}
+	return { allowedUserIds: ids };
 }
