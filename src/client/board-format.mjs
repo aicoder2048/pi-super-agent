@@ -35,7 +35,6 @@ export const INPUT_LABEL = {
 };
 
 export const QUOTE_WHO = { user: "你", router: "幕僚长" };
-/** The label every front end puts on a host line (ADR-0017). */
 export const HOST_LINE_LABEL = { alert: "盯盘提醒", receipt: "盯盘条件（只在本机）" };
 export const QUOTE_WHO_PROMPT = { user: "使用者", router: "Router" };
 

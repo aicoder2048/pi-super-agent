@@ -352,7 +352,6 @@ export class Host {
 		if (!duplicate) this.#deliverHostLine(line);
 	}
 
-	// Telegram's outbox upserts on the line id, so delivering again after a stop between the two steps sends nothing twice.
 	#deliverHostLine(line: HostLine): void {
 		this.#broadcast({ type: "host_line", ...line });
 		if (line.who === "alert") this.kernel.markHostLineDelivered(line.id);

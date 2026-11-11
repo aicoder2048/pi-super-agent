@@ -1,6 +1,3 @@
-// e2e only, loaded into the host with --import: adds feed kind "e2e-alerts". Every file the test drops into
-// PSA_E2E_ALERTS_DIR becomes one alert, the file name its externalId and the contents its text. A restarted host
-// posts every file again, so the kernel's dedupe is what keeps the phone from ringing twice.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { FEEDS } from "../../src/sources/feeds.ts";

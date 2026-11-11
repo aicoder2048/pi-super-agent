@@ -53,7 +53,6 @@ export type HostToClient =
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }
 	| { type: "reply"; text: string; at: number; replyId: string; ticketId?: string }
-	/** What a source says to the user directly (ADR-0017). */
 	| ({ type: "host_line" } & HostLine)
 	| ({ type: "board" } & BoardState)
 	/** A 清屏 on the host: every front end's conversation is now exactly `conversation`, and `cleared` is what it took away. */

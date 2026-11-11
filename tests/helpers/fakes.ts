@@ -207,7 +207,6 @@ export class FakeSpawner implements WorkerSpawner {
 	}
 }
 
-/** A feed that does nothing by itself; the test speaks through `ctx` once the host has created it. */
 export function fakeFeed(source = "fake-feed") {
 	const feed = { ctx: undefined as FeedContext | undefined, spec: undefined as unknown as FeedSpec };
 	feed.spec = {

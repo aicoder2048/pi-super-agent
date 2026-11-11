@@ -209,7 +209,6 @@ CREATE TABLE IF NOT EXISTS conversation_hidden (
 );
 CREATE INDEX IF NOT EXISTS conversation_hidden_at ON conversation_hidden(hidden_at);
 
--- What a source says to the user directly (ADR-0017). An alert is one line and may reach Telegram; a receipt stays on this machine.
 CREATE TABLE IF NOT EXISTS host_lines (
 	id TEXT PRIMARY KEY CHECK (id GLOB 'hln_*'),
 	kind TEXT NOT NULL CHECK (kind IN ('alert', 'receipt')),

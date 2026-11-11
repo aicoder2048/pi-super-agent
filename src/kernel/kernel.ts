@@ -100,11 +100,11 @@ function toTrigger(r: Row): Trigger {
 	};
 }
 
-// Node 22's node:sqlite reads a string back only up to its first U+0000, so drop U+0000 before it reaches the store.
 function hostLine(r: Row): HostLine {
 	return { id: r.id, who: r.kind, text: r.text, at: r.created_at };
 }
 
+// Node 22's node:sqlite reads a string back only up to its first U+0000, so drop U+0000 before it reaches the store.
 function sqlParams(params: SQLInputValue[]): SQLInputValue[] {
 	return params.map((p) => (typeof p === "string" ? p.replaceAll("\u0000", "") : p));
 }
@@ -1050,7 +1050,6 @@ export class Kernel {
 		});
 	}
 
-	/** Whether `source` already posted the alert `externalId`. */
 	raised(source: string, externalId: string): boolean {
 		return this.#get("SELECT 1 FROM host_lines WHERE source = ? AND external_id = ?", source, externalId) !== undefined;
 	}
@@ -1059,7 +1058,6 @@ export class Kernel {
 		this.#run("UPDATE host_lines SET delivered_at = ? WHERE id = ? AND delivered_at IS NULL", this.#now(), id);
 	}
 
-	/** Alerts stored but never handed to the front ends: the host stopped between the insert and the broadcast. */
 	undeliveredAlerts(): HostLine[] {
 		return this.#all("SELECT id, kind, text, created_at FROM host_lines WHERE kind = 'alert' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
 	}

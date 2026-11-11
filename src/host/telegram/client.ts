@@ -136,7 +136,6 @@ export class TelegramClient {
 					for (const chat of this.#store.openChats()) this.#syncCards(chat, message);
 					break;
 				case "host_line":
-					// A receipt may carry cost basis and shares and never leaves this machine (ADR-0017). lineId null: a swipe-reply on an alert is a plain line.
 					if (message.who === "alert") {
 						for (const chat of this.#store.openChats()) this.#store.put(chat, `alert:${message.id}`, null, { kind: "line", text: alertText(message.text), silent: false });
 					}
