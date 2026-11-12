@@ -80,3 +80,13 @@ test("新布局包叫 user 或 conversation：和旧布局一样不许用这两�
 		],
 	);
 });
+
+test("module.json 存了一半、不是合法 JSON：加载不报错，这个文件夹记成无效包并写明原因", () => {
+	const dir = root();
+	mkdirSync(join(dir, "half"));
+	writeFileSync(join(dir, "half", "module.json"), '{"schema":1,');
+	const modules = Modules.load([dir]);
+	const [half] = modules.packages;
+	assert.equal(half?.name, "half");
+	assert.ok(half && !half.scan.ok && half.scan.problems.some((p) => p.where === "module.json" && /not valid JSON/.test(p.reason)));
+});

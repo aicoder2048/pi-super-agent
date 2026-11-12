@@ -273,8 +273,8 @@ test("两个模块目录里有同名的模块：启动报一行错，以先读�
 	oneLine(() => Modules.load([first, second]), startsWith(`${join(first, "news")}：模块重名：news`), join(second, "news"));
 });
 
-test("module.json 不是一个 JSON 对象，或不是合法的 JSON：启动报一行错，以 module.json 开头", () => {
-	for (const [text, message] of [["null", /JSON 对象/], ["[]", /JSON 对象/], ['"news"', /JSON 对象/], ["7", /JSON 对象/], ["{\n\tname: news,\n}\n", /不是合法的 JSON/]] as const) {
+test("module.json 不是一个 JSON 对象：启动报一行错，以 module.json 开头", () => {
+	for (const [text, message] of [["null", /JSON 对象/], ["[]", /JSON 对象/], ['"news"', /JSON 对象/], ["7", /JSON 对象/]] as const) {
 		const root = writeFiles(mkdtempSync(join(tmpdir(), "psa-mods-")), { "news/module.json": text });
 		oneLine(() => load(root), startsWith(join(root, "news/module.json")), message);
 	}

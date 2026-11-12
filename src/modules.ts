@@ -209,9 +209,14 @@ function loadModule(dir: string, allowedProviders: readonly string[], switches: 
 	};
 }
 
-function declaresSchema(manifestPath: string): boolean {
-	const raw = readJsonFile<unknown>(manifestPath);
-	return typeof raw === "object" && raw !== null && Object.hasOwn(raw, "schema");
+/** A manifest that is not valid JSON, such as one caught half-saved, is read as a package so that the scan reports it instead of stopping the host. */
+export function isPackageManifest(manifestPath: string): boolean {
+	try {
+		const raw: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
+		return typeof raw === "object" && raw !== null && Object.hasOwn(raw, "schema");
+	} catch {
+		return true;
+	}
 }
 
 function rejectLooseTeamFiles(stateDir: string): void {
@@ -303,7 +308,7 @@ export class Modules {
 				if (!statSync(dir).isDirectory()) continue;
 				const manifestPath = join(dir, "module.json");
 				if (!existsSync(manifestPath)) rejectModuleWithoutManifest(root, dir);
-				else if (declaresSchema(manifestPath)) packages.push({ name: entry, dir, scan: scanPackage(dir, { runCases: false }) });
+				else if (isPackageManifest(manifestPath)) packages.push({ name: entry, dir, scan: scanPackage(dir, { runCases: false }) });
 				else modules.push(loadModule(dir, allowedProviders, switches.values));
 			}
 		}
