@@ -39,6 +39,7 @@ function main(): void {
 	};
 	const detailRows: { label: string; values(m: LoadedModule): string[] }[] = [
 		{ label: "来源", values: (m) => (m.manifest.sources ?? []).map((s) => sourceText(m, s)) },
+		{ label: "工具", values: (m) => [(m.manifest.tools ?? []).join("、")].filter(Boolean) },
 		{ label: "规则", values: (m) => [m.rules.map((r) => r.id).join("、")].filter(Boolean) },
 		{ label: "技能", values: (m) => [skillNames(m.skillsDir).join("、")].filter(Boolean) },
 	];

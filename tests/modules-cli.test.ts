@@ -35,6 +35,14 @@ test("just modules：不连宿主列出仓库模块，toy-market 默认关闭，
 	assert.match(run.stdout, /技能\s+toy-market\n/);
 });
 
+test("just modules：列出模块在 module.json 里开的工具，没开的写无", (t) => {
+	const run = list(stateDir(t));
+	assert.equal(run.status, 0, run.stderr);
+	const block = (name: string) => run.stdout.split(/\n(?=\S)/).find((b) => b.startsWith(`${name} `)) ?? "";
+	assert.match(block("us-market"), /\n  工具\s+lookup、tripwire\n/);
+	assert.match(block("toy-market"), /\n  工具\s+无\n/);
+});
+
 test("just modules：按 config.json 的开关显示启用原因，停用模块的来源写模块停用", (t) => {
 	const run = list(stateDir(t, { modules: { "toy-market": true, "us-market": false } }));
 	assert.equal(run.status, 0, run.stderr);
