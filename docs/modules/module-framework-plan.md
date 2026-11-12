@@ -176,6 +176,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 2026-11-12 在 3cf80a2 上通过：`just test` 1377 条全过；`node docs/modules/architecture/check.mjs` 7 项 ok；`docs/modules/evidence/f2a-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f2a/owner/`。打开 0.29 秒生效，关掉 0.16 秒，宿主进程号不变。Lane 4 在改技能后重启宿主，让钉着的任务重新起 Worker，它的提示词里是旧技能和旧摘要的副本路径（F2a 没有文件监视器，新摘要要等重启或 F2b）。Lane 6 在宿主停着时把记录写成「检查中、outbox 里有检查」，模拟驱动器做到一半崩溃。Perf：trunk 和 head 交替各 5 次，启动到就绪 trunk 中位数 368 毫秒（离散 14），head 377 毫秒（离散 11）；drop 到任务出现 trunk 383 毫秒，head 383 毫秒，两边都主要花在 `just drop` 起进程和收件箱轮询上，开任务只多记一个摘要。`publish` 100 次最长 0.009 毫秒；切换 toy-market 后一次轮询（读开关、走状态机、重建表、换表、回收）100 次最长 0.26 毫秒。
 
+2026-11-12 修复轮在 657b15c 上通过：`just test` 1385 条全过；`check.mjs` 7 项 ok；`f2a-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f2a/fix-owner/`。修了正确性审查的七条。`module-store/` 里的 `.DS_Store` 不再让宿主起不来。结束的任务被回复重开时改钉到正在服务的版本（它的副本可能已回收）。副本读不出来不再记死，下次发布后重读。宿主跑工具用例改成异步子进程，驱动器在检查处停下、结果回来再接着走，3 个 4 秒用例时事件循环最长停 53 毫秒（原来 12 秒）。`just module on` 对宿主还没发现的包说「下次启动生效」。`just modules` 表头算上新布局包。副本只复制摘要算进去的文件，复制后核对摘要，对不上就不留副本、重新检查。Lane 6 改成等记录变成运行中再判，因为带用例的包现在异步检查。
+
 **Merge.**
 
 - [ ] Root's clean verdict at the exact head SHA.
