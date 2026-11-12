@@ -12,7 +12,7 @@ import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 const HEAD = resolve(import.meta.dirname, "../../..");
-const BASE_REF = "b3b9ac5";
+const BASE_REF = spawnSync("git", ["merge-base", "HEAD", "origin/psa/mod-f5-templates"], { cwd: HEAD, encoding: "utf8" }).stdout.trim().slice(0, 7);
 const REAL = { router: "openai-codex/gpt-6.1-terra", worker: "openai-codex/gpt-6.1-sol", fallback: "openai-codex/gpt-6.1-sol" };
 const [mode = "lanes", outDir = "/tmp/swarm-f6/owner", ...only] = process.argv.slice(2);
 const BASE = join(outDir, "base");

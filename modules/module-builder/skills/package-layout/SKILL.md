@@ -14,7 +14,7 @@ description: 新布局模块包里每个文件放什么、怎么写。写或改�
 | `skills/<名字>/SKILL.md` | front matter 写 `name`（等于文件夹名）和 `description`（什么时候读），正文是做法 |
 | `agents/<名字>.md` | front matter 写 `name`、`title`、`description`、`tools`、`uses`，正文是这位专家的提示词，1 到 2 KB |
 | `evals/<名字>.md` | 见技能 write-evals |
-| `rules.md` | 只给有 feed 的模块用，「来源:」写 `<模块>/<feed>`。只在使用者开口时做事的模块不写 |
+| `rules.md` | 有 feed 的模块在这里写规则，「来源:」写 `<模块>/<feed>`。没有来源的模块也可以写一条分派说明，告诉幕僚长什么话开到这个模块；它不授权任何事。两样都不需要就不写 |
 
 - `tools` 只能从 read、bash、edit、write、grep、find、ls、web_get 里选，用逗号分隔。只读的专家只给 read、grep、find、ls。
 - `uses` 写这位专家要用的模块能力：`knowledge`、`tools/<名字>`、`data/<名字>`。包里没有的写了会被检查拒绝。
