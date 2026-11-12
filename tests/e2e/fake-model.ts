@@ -224,7 +224,7 @@ function scriptableToolResult(m: Message): string | undefined {
 	if (m.role !== "tool") return undefined;
 	const text = textOf(m);
 	if (text.startsWith("成员回复")) return `[成员回复] ${text}`;
-	const tagged = text.search(/\[模块(工具|知识)\]/);
+	const tagged = text.search(/\[模块(工具|知识|数据)\]/);
 	if (tagged >= 0) return text.slice(tagged);
 	if (/^\{\s*"app": "app-\d{3,}-/.test(text)) return `[应用目录] ${text}`;
 	if (/^\{\s*"echo": /.test(text)) return `[盯盘条件] ${text}`;
