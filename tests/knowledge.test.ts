@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import fs, { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -210,4 +211,71 @@ test("导入一个没有 Markdown 的目录：什么都不改，之前导入的�
 	mkdirSync(empty);
 	assert.equal(importKnowledge(dataDir, GUIDE, empty), 0);
 	assert.equal(passages(await search("利尿剂")).length, 1);
+});
+
+test("导入一个不是 .md 的文件：返回 0，之前导入的还在、还查得到", async (t) => {
+	const { search, dataDir, root } = setup(t);
+	const guide = join(root, "guide.md");
+	writeFileSync(guide, "## 第一章\n\n利尿剂用法。\n");
+	importKnowledge(dataDir, GUIDE, guide);
+	for (const name of ["notes.txt", "guide.pdf"]) {
+		const other = join(root, name);
+		writeFileSync(other, "利尿剂剂量。");
+		assert.equal(importKnowledge(dataDir, GUIDE, other), 0, name);
+	}
+	const reply = await search("利尿剂");
+	assert.deepEqual(passages(reply).map((p) => p.section), ["第一章"]);
+	assert.doesNotMatch(text(reply), /还没导入/);
+});
+
+test("索引文件坏了或是空的：查询时重建，照常返回段落", async (t) => {
+	const { search, dataDir } = setup(t);
+	assert.equal(passages(await search("同一家实验室")).length, 1);
+	for (const junk of ["not a database", ""]) {
+		writeFileSync(join(dataDir, "index", "knowledge.db"), junk);
+		assert.equal(passages(await search("同一家实验室")).length, 1, JSON.stringify(junk));
+	}
+});
+
+test("标题末尾的 # 前面没有空格时是标题的一部分（C#），有空格的一串 # 才是收尾", async (t) => {
+	const { search, dataDir, root } = setup(t);
+	const file = join(root, "guide.md");
+	writeFileSync(file, "## C#\n\n利尿剂甲。\n\n## 收尾 ##\n\n利尿剂乙。\n");
+	importKnowledge(dataDir, GUIDE, file);
+	assert.deepEqual(passages(await search("利尿剂")).map((p) => p.section).sort(), ["C#", "收尾"]);
+});
+
+test("没有标题的导入文件：章节写原来的文件名", async (t) => {
+	const { search, dataDir, root } = setup(t);
+	const file = join(root, "guide.md");
+	writeFileSync(file, "没有标题的一段，利尿剂用法。\n");
+	importKnowledge(dataDir, GUIDE, file);
+	assert.deepEqual(passages(await search("利尿剂")).map((p) => p.section), ["guide"]);
+});
+
+test("查询算指纹时导入正好把文件换掉了：这次查询照常回答，用的是新内容", async (t) => {
+	const { search, dataDir, root } = setup(t);
+	const first = join(root, "first.md");
+	const second = join(root, "second.md");
+	writeFileSync(first, "## 旧章节\n\n利尿剂旧用法。\n");
+	writeFileSync(second, "## 新章节\n\n利尿剂新用法。\n");
+	importKnowledge(dataDir, GUIDE, first);
+	const imported = join(dataDir, "knowledge", GUIDE);
+	const realStat = fs.statSync;
+	let swapped = false;
+	fs.statSync = ((path: string, ...rest: never[]) => {
+		if (!swapped && String(path).startsWith(imported)) {
+			swapped = true;
+			importKnowledge(dataDir, GUIDE, second);
+		}
+		return (realStat as (...a: unknown[]) => unknown)(path, ...rest);
+	}) as typeof fs.statSync;
+	syncBuiltinESMExports();
+	t.after(() => {
+		fs.statSync = realStat;
+		syncBuiltinESMExports();
+	});
+	const reply = await search("利尿剂");
+	assert.ok(swapped, "导入发生在查询读指纹的时候");
+	assert.deepEqual(passages(reply).map((p) => p.section), ["新章节"]);
 });

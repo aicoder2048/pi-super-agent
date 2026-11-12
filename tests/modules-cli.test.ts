@@ -254,6 +254,19 @@ test("just module import：把全文复制进实例数据并建好索引，包�
 	assert.deepEqual(readdirSync(join(dir, "modules/personal-health/knowledge", GUIDE)), ["source.json"]);
 });
 
+test("just module import：给的是一个不是 .md 的文件，一行拒绝并以 1 退出，之前导入的不动", (t) => {
+	const { dir, file } = healthState(t);
+	assert.equal(cli("src/cli/module.ts", dir, ["import", "personal-health", GUIDE, file]).status, 0);
+	const notes = join(dir, "notes.txt");
+	writeFileSync(notes, "四联药物治疗。");
+	const run = cli("src/cli/module.ts", dir, ["import", "personal-health", GUIDE, notes]);
+	assert.equal(run.status, 1, run.stdout + run.stderr);
+	assert.equal((run.stdout + run.stderr).trim().split("\n").length, 1);
+	assert.match(run.stdout, /只收 Markdown 文件（\.md）/);
+	assert.doesNotMatch(run.stdout, /导入了/);
+	assert.deepEqual(readdirSync(join(dir, "modules-data/personal-health/knowledge", GUIDE)), ["guide.md"]);
+});
+
 test("just module import：知识名不是 user-import 的、包里没有的、模块不存在的，各一行拒绝并以 1 退出", (t) => {
 	const { dir, file } = healthState(t);
 	for (const [module, doc, reason] of [

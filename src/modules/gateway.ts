@@ -82,12 +82,8 @@ export function createGateway(ports: GatewayPorts): Gateway {
 	const knowledgeOf = (copy: Copy): KnowledgeBase => ({ module: copy.module, digest: copy.digest, copyDir: copy.dir, dataDir: ports.dataDir(copy.module), docs: copy.knowledge });
 
 	const search = (copy: Copy, query: string): Reply => {
-		try {
-			const found = searchKnowledge(knowledgeOf(copy), query);
-			return { ok: true, output: foundText(copy.module, query, found), private: false, passages: found.passages };
-		} catch (error) {
-			return { ok: false, refusal: { code: "provider-failed", note: String(error) } };
-		}
+		const found = searchKnowledge(knowledgeOf(copy), query);
+		return { ok: true, output: foundText(copy.module, query, found), private: false, passages: found.passages };
 	};
 
 	const runTool = async (copy: Copy, tool: Tool, input: Json): Promise<Reply> => {

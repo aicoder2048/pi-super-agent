@@ -45,6 +45,7 @@ declare module "node:path" {
 	export function dirname(path: string): string;
 	export function join(...parts: string[]): string;
 	export function resolve(...parts: string[]): string;
+	export function relative(from: string, to: string): string;
 }
 declare module "node:url" {
 	export function pathToFileURL(path: string): { href: string };

@@ -1,6 +1,6 @@
 /** The index is rebuilt whenever its fingerprint stops matching, so a package update or an edited import needs nobody to tell it. */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Component, ComponentName, Digest, ModuleName } from "./manifest.ts";
 import type { Passage } from "./protocol.ts";
@@ -26,7 +26,8 @@ const importedDir = (dataDir: string, doc: string) => join(dataDir, "knowledge",
 
 export const moduleDataDir = (stateDir: string, module: string) => join(stateDir, "modules-data", module);
 
-const markdownIn = (dir: string): string[] => (existsSync(dir) ? allFiles(dir).filter((f) => f.endsWith(".md")).sort().map((f) => join(dir, f)) : []);
+const isMarkdown = (file: string) => file.endsWith(".md");
+const markdownIn = (dir: string): string[] => (existsSync(dir) ? allFiles(dir).filter(isMarkdown).sort().map((f) => join(dir, f)) : []);
 
 const textsOf = (base: KnowledgeBase): Texts =>
 	base.docs.map((doc) => ({
@@ -58,7 +59,7 @@ function splitByHeadings(markdown: string, fallback: string): { section: string;
 	};
 	for (const line of markdown.split(/\r?\n/)) {
 		if (line.startsWith("```")) fenced = !fenced;
-		const heading = fenced ? null : /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+		const heading = fenced ? null : /^(#{1,6})\s+(.+?)(?:\s+#+)?\s*$/.exec(line);
 		if (!heading) {
 			body.push(line);
 			continue;
@@ -100,14 +101,17 @@ export function buildIndex(base: KnowledgeBase, texts = textsOf(base)): void {
 	}
 }
 
+/** A missing, corrupt or stale index is rebuilt: it holds nothing the package and the imports can't give again. */
 function openFresh(base: KnowledgeBase, texts: Texts): DatabaseSync {
 	const path = indexPath(base.dataDir);
-	if (existsSync(path)) {
-		const db = new DatabaseSync(path, { readOnly: true });
+	const current = fingerprint(base.digest, texts);
+	let db: DatabaseSync | undefined;
+	try {
+		db = new DatabaseSync(path, { readOnly: true });
 		const row = db.prepare("SELECT fingerprint FROM meta").get() as { fingerprint: string } | undefined;
-		if (row?.fingerprint === fingerprint(base.digest, texts)) return db;
-		db.close();
-	}
+		if (row?.fingerprint === current) return db;
+	} catch {}
+	db?.close();
 	buildIndex(base, texts);
 	return new DatabaseSync(path, { readOnly: true });
 }
@@ -134,10 +138,9 @@ function excerpt(text: string, terms: readonly string[]): string {
 	return `${start > 0 ? "…" : ""}${text.slice(start, end)}${end < text.length ? "…" : ""}`;
 }
 
-export function searchKnowledge(base: KnowledgeBase, query: string): Found {
+function searchOnce(base: KnowledgeBase, terms: readonly string[]): Found {
 	const texts = textsOf(base);
 	const missing = notImported(texts);
-	const terms = [...new Set(query.split(/\s+/).filter(Boolean))];
 	if (terms.length === 0) return { passages: [], notImported: missing };
 	const db = openFresh(base, texts);
 	try {
@@ -145,6 +148,17 @@ export function searchKnowledge(base: KnowledgeBase, query: string): Found {
 		return { passages, notImported: missing };
 	} finally {
 		db.close();
+	}
+}
+
+export function searchKnowledge(base: KnowledgeBase, query: string): Found {
+	const terms = [...new Set(query.split(/\s+/).filter(Boolean))];
+	try {
+		return searchOnce(base, terms);
+	} catch (error) {
+		// An import replaced the files between listing and reading them, so list them again.
+		if ((error as { code?: string }).code !== "ENOENT") throw error;
+		return searchOnce(base, terms);
 	}
 }
 
@@ -173,14 +187,19 @@ export function catalogueText(base: KnowledgeBase): string {
 		.join("\n");
 }
 
+/** Copies the Markdown files under their own names. Returns 0 and leaves the previous import alone when there are none. */
 export function importKnowledge(dataDir: string, doc: string, from: string): number {
-	const files = statSync(from).isDirectory() ? markdownIn(from) : [from];
+	const directory = statSync(from).isDirectory();
+	const files = directory ? markdownIn(from) : [from].filter(isMarkdown);
 	if (files.length === 0) return 0;
 	const target = importedDir(dataDir, doc);
 	const temp = `${target}.partial`;
 	rmSync(temp, { recursive: true, force: true });
-	mkdirSync(temp, { recursive: true });
-	files.forEach((file, i) => copyFileSync(file, join(temp, `${String(i).padStart(3, "0")}-${basename(file)}`)));
+	for (const file of files) {
+		const to = join(temp, directory ? relative(from, file) : basename(file));
+		mkdirSync(dirname(to), { recursive: true });
+		copyFileSync(file, to);
+	}
 	rmSync(target, { recursive: true, force: true });
 	renameSync(temp, target);
 	return files.length;

@@ -18,7 +18,7 @@ export function importModuleKnowledge(module: string, doc: string, from: string)
 		if (!existsSync(from)) return refuse(`${from}：没有这个文件或目录`);
 		const dataDir = moduleDataDir(config.stateDir, module);
 		const count = importKnowledge(dataDir, doc, resolve(from));
-		if (count === 0) return refuse(`${from} 里没有 Markdown 文件（.md），没有导入`);
+		if (count === 0) return refuse(`${from}：只收 Markdown 文件（.md），这里没有，没有导入，之前导入的没动`);
 		const { digest, dir } = found.scan.scan;
 		buildIndex({ module: module as ModuleName, digest, copyDir: dir, dataDir, docs });
 		console.log(`导入了 ${module} 的 ${doc}：${count} 个 Markdown 文件，放在 ${join(dataDir, "knowledge", doc)}，索引已重建`);
