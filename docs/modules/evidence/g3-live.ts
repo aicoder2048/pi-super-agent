@@ -39,7 +39,12 @@ function tree(name: keyof typeof TREES): string {
 	return dir;
 }
 
-const stateDir = () => mkdtempSync(join(tmpdir(), "psa-g3-"));
+const made: string[] = [];
+const stateDir = () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-g3-"));
+	made.push(dir);
+	return dir;
+};
 const place = (state: string, from: string, name: string) => cpSync(from, join(state, "modules", name), { recursive: true, force: true });
 
 function just(state: string, args: string[]) {
@@ -171,7 +176,7 @@ async function lanes(): Promise<void> {
 	});
 	let host: Host | undefined;
 	const phone = () => tg.sent.filter((m: { chatId: number }) => m.chatId === USER).map((m: { text: string }) => m.text as string);
-	const alertsOn = (key: string) => state_(state, `SELECT external_id, text, private_title FROM host_lines WHERE kind = 'alert' AND source = 'module:personal-health' ORDER BY rowid`).filter((r) => String(r.text).includes(` ${key} `));
+	const alertsOn = (key: string) => state_(state, `SELECT external_id, text, module_title, module_private FROM host_lines WHERE kind = 'alert' AND source = 'module:personal-health' ORDER BY rowid`).filter((r) => String(r.text).includes(` ${key} `));
 	const say = async (brief: string) => {
 		just(state, ["say", brief]);
 		return within(60_000, () => state_(state, `SELECT 1 FROM tickets t JOIN reports r ON r.ticket_id = t.id WHERE t.title = '${brief}'`).length > 0);
@@ -232,10 +237,16 @@ async function lanes(): Promise<void> {
 		});
 
 		await lane(9, "private", async () => {
-			const all = state_(state, "SELECT text, private_title FROM host_lines WHERE kind = 'alert' ORDER BY rowid");
-			await within(15_000, () => phone().filter((m) => m === NOTICE).length >= all.length);
+			const all = state_(state, "SELECT id, text, module_title, module_private FROM host_lines WHERE kind = 'alert' ORDER BY rowid");
+			const sent = () => state_(state, `SELECT key, body ->> '$.text' AS text, sent_version = version AS sent FROM telegram_messages WHERE chat_id = ${USER} AND key LIKE 'alert:%' ORDER BY created_at`);
+			await within(15_000, () => sent().filter((m) => m.sent === 1).length >= all.length);
+			const messages = sent();
+			const each = all.every((a) => messages.some((m) => m.key === `alert:${a.id}` && m.sent === 1 && m.text === NOTICE));
 			const leaked = phone().filter((m) => all.some((a) => m.includes(String(a.text))) || /7\.4|空腹血糖/.test(m));
-			return { pass: all.length >= 4 && all.every((a) => a.private_title === "个人医疗健康") && leaked.length === 0 && phone().filter((m) => m === NOTICE).length >= all.length, evidence: `alerts on the web page (lab-results is private):\n${show(all)}\nTelegram recorder (chat ${USER}):\n${phone().join("\n")}\nTelegram lines carrying an alert's content: ${leaked.length}` };
+			return {
+				pass: all.length >= 4 && all.every((a) => a.module_title === "个人医疗健康" && a.module_private === 1) && each && messages.length === all.length && leaked.length === 0,
+				evidence: `alerts on the web page (lab-results is private):\n${show(all)}\ntelegram_messages alert: rows for chat ${USER}:\n${show(messages)}\nTelegram recorder lines carrying an alert's content: ${leaked.length}`,
+			};
 		});
 	} finally {
 		writeFileSync(join(outDir, "g3-fake.jsonl"), fake.jsonl());
@@ -315,7 +326,6 @@ async function writes(dir: string, conditions: boolean): Promise<{ runs: number[
 		alerts += rows.write("personal-health", components, "lab-results", [{ item: "M0", value: 1000 + (i % 7), takenAt: `2026-11-12T${String(i).padStart(4, "0")}` }], "perf", "perf helper").alerts?.length ?? 0;
 		runs.push(performance.now() - started);
 	}
-	rmSync(state, { recursive: true, force: true });
 	return { runs, alerts };
 }
 
@@ -337,4 +347,5 @@ try {
 	await (mode === "perf" ? perf() : lanes());
 } finally {
 	for (const { dir } of Object.values(TREES)) if (existsSync(dir)) spawnSync("git", ["worktree", "remove", "--force", dir], { cwd: HEAD });
+	for (const dir of made) rmSync(dir, { recursive: true, force: true });
 }
