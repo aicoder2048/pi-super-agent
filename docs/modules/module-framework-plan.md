@@ -235,7 +235,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 2026-11-12 在 4bab7f4 上通过：`just test` 1398 条全过（`tests/watchdog-main.test.ts` 的「终端 Ctrl+C」第一次跑偶发失败，重跑通过）；`node docs/modules/architecture/check.mjs` 7 项 ok；`docs/modules/evidence/f2b-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f2b/owner/`。改技能存盘 0.49 秒换上，收据列出这个文件；坏的 module.json 旧版本继续服务，`just modules` 写出原因；一秒内存五次只换一次；Lane 9 真模型 `openai-codex/gpt-6.1-terra` 把报税的问题分到 personal-tax。监视器的去抖从 150 毫秒改成 300 毫秒，因为一秒内均匀存五次时间隔约 150 到 200 毫秒，150 毫秒的窗口会换五次。宿主上跑工具测试用例走 F2a 的异步路径，存盘回调里没有 `spawnSync`；收据在换上和监视器报文件名两件事都到了以后才写，打开模块时正在复制副本又存盘也有收据（Lane 2 第一次重跑抓到这个竞态）。Perf：幕僚长 token 量的是每个新会话的第一句，trunk 和 head 交替各 5 次，trunk 中位数 2688（离散 6），head 2780（离散 4），多 92 个，就是名单那一段的标题和系统提示词里说明它的一行；名单没变时之后的输入不再新加这一段，但它留在会话历史里，所以之后的输入差距不变。核查在同一会话里量过第二句，trunk 两次 [2691,3195]、[2693,3222]，head 两次 [2781,3280]、[2779,3382]，第一句差 90 和 86，第二句差 85 和 160，160 那次核查归因于模型那一轮回复更长，见 `/tmp/swarm-f2b/v/second-input.txt`。同一会话里连发五句的量法不可用，真模型开的任务和 Worker 汇报两边不一样，差了一整条汇报。存盘到收据 10 次中位数 492 毫秒（离散 21），其中 300 毫秒是去抖。
 
-2026-11-12 修复轮在 b2af03b 上通过：`just test` 1403 条全过（第一次跑 `tests/watchdog-main.test.ts` 的「终端 Ctrl+C」偶发失败，第二次跑 `tests/cap-ask.test.ts` 一条负载下的计时失败，单跑五次都过，第三次全过）；`check.mjs` 7 项 ok；`f2b-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f2b/fix/`。修了四处，每处先有失败的测试（`tests/module-watch.test.ts`，红的输出在 `/tmp/swarm-f2b/fix/red.txt`）。启动时是旧布局的模块，存盘时 module.json 不是合法 JSON（存了一半或写错），仍按旧布局算，照旧服务，改好或关掉再打开都正常；以前它会被当成新布局包，记录变成无效，再打开也不服务。建不出来的模块目录和文件监视器的 error 事件只写一行日志，不让宿主启动失败。收据只列出和上一次服务的版本不一样的文件，停用期间的存盘和内容没变的存盘不再算进去。Lane 3 改成看 module_records 里的服务摘要没变。Lane 8 加了一步，改 personal-tax 的 `rules.md` 存盘，收据只列出 `rules.md`，下一句给幕僚长的输入前带新的一段名单和规则，里面有新规则。Perf 重跑：新会话第一句 trunk 中位数 2693（离散 4），head 2781（离散 3），多 88；存盘到收据 10 次中位数 494 毫秒（离散 28）。仓库自带的 `modules/` 下的新布局包第一次被发现时默认打开，状态目录里的默认停用，这条规则写进了 design.md §4。
+2026-11-12 修复轮在 b2af03b 上通过：`just test` 1403 条全过（第一次跑 `tests/watchdog-main.test.ts` 的「终端 Ctrl+C」偶发失败，第二次跑 `tests/cap-ask.test.ts` 一条负载下的计时失败，单跑五次都过，第三次全过）；`check.mjs` 7 项 ok；`f2b-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f2b/fix/`。修了四处，每处先有失败的测试（`tests/module-watch.test.ts`，红的输出在 `/tmp/swarm-f2b/fix/red.txt`）。启动时是旧布局的模块，存盘时 module.json 不是合法 JSON（存了一半或写错），仍按旧布局算，照旧服务，改好或关掉再打开都正常；以前它会被当成新布局包，记录变成无效，再打开也不服务。建不出来的模块目录和文件监视器的 error 事件只写一行日志，不让宿主启动失败。收据列出上一次换上以后、服务期间存过的文件，去掉那些让文件夹回到正在服务的版本的存盘；所以它可能列出最后内容没变的文件（比如先存坏 module.json、改 rules.md、再把 module.json 改回原样，两个都会列出），但不会漏掉改过的文件。停用期间的存盘不算进去。Lane 3 改成看 module_records 里的服务摘要没变。Lane 8 加了一步，改 personal-tax 的 `rules.md` 存盘，收据只列出 `rules.md`，下一句给幕僚长的输入前带新的一段名单和规则，里面有新规则。Perf 重跑：新会话第一句 trunk 中位数 2693（离散 4），head 2781（离散 3），多 88；存盘到收据 10 次中位数 494 毫秒（离散 28）。仓库自带的 `modules/` 下的新布局包第一次被发现时默认打开，状态目录里的默认停用，这条规则写进了 design.md §4。
 
 **Merge.**
 
@@ -532,45 +532,47 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `src/client/protocol.ts`（`BoardState` 加 `modules`）、`src/host/host.ts`、`src/host/web.ts`（加开关的 POST）、`src/web/view.mjs`、`src/web/app.mjs`。
-- [ ] Create `tests/e2e/modules.e2e.ts`。
+- [x] Edit `src/client/protocol.ts`（`BoardState` 加 `modules`）、`src/host/host.ts`、`src/host/web.ts`（加开关的 POST）、`src/web/view.mjs`、`src/web/app.mjs`。
+- [x] Create `tests/e2e/modules.e2e.ts`。
 
 **Build.**
 
-- [ ] 网页加「模块」一栏，每个模块一张卡，写状态和原因、版本、组成数、用到的密钥名字、还钉着旧版本的任务数、还没导入的知识，带开关按钮。
+- [x] 网页加「模块」一栏，每个模块一张卡，写状态和原因、版本、组成数、用到的密钥名字、还钉着旧版本的任务数、还没导入的知识，带开关按钮。
 
 **You see.**
 
-- [ ] 网页「模块」一栏里点 stock-ta 的开关，两秒内卡片变成「运行中」。
+- [x] 网页「模块」一栏里点 stock-ta 的开关，两秒内卡片变成「运行中」。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/web.test.ts` 覆盖开关的 POST 要 token、`BoardState.modules` 的内容。Run `just test`.
+- [x] `tests/web.test.ts` 覆盖开关的 POST 要 token、`BoardState.modules` 的内容。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个 e2e 脚本 `tests/e2e/modules.e2e.ts`。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都打开网页。Save `f2c-regression.png`. Pass when 其余各栏一样。
-- [ ] Lane 2. 模块栏。Save `f2c-list.png`. Pass when 每个模块一张卡，状态正确。
-- [ ] Lane 3. 点开关打开。Save `f2c-on.png`. Pass when 两秒内运行中。
-- [ ] Lane 4. 点开关关掉。Save `f2c-off.png`. Pass when 两秒内已停用。
-- [ ] Lane 5. 无效模块。Save `f2c-invalid.png`. Pass when 卡片写出哪个文件哪一处。
-- [ ] Lane 6. 还没导入的知识。Save `f2c-import.png`. Pass when 卡片列出知识名和导入命令。
-- [ ] Lane 7. 钉着旧版本的任务。Save `f2c-pinned.png`. Pass when 卡片显示数量。
-- [ ] Lane 8. 窄屏 390 像素。Save `f2c-narrow.png`. Pass when 没有横向滚动。
-- [ ] Lane 9. 深色主题。Save `f2c-dark.png`. Pass when 文字可读。
-- [ ] Lane 10. 不带 token 的 POST。Save `f2c-token.txt`. Pass when 401。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都打开网页。Save `f2c-regression.png`. Pass when 其余各栏一样。
+- [x] Lane 2. 模块栏。Save `f2c-list.png`. Pass when 每个模块一张卡，状态正确。
+- [x] Lane 3. 点开关打开。Save `f2c-on.png`. Pass when 两秒内运行中。
+- [x] Lane 4. 点开关关掉。Save `f2c-off.png`. Pass when 两秒内已停用。
+- [x] Lane 5. 无效模块。Save `f2c-invalid.png`. Pass when 卡片写出哪个文件哪一处。
+- [x] Lane 6. 还没导入的知识。Save `f2c-import.png`. Pass when 卡片列出知识名和导入命令。
+- [x] Lane 7. 钉着旧版本的任务。Save `f2c-pinned.png`. Pass when 卡片显示数量。
+- [x] Lane 8. 窄屏 390 像素。Save `f2c-narrow.png`. Pass when 没有横向滚动。
+- [x] Lane 9. 深色主题。Save `f2c-dark.png`. Pass when 文字可读。
+- [x] Lane 10. 不带 token 的 POST。Save `f2c-token.txt`. Pass when 401。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 看板推送一次的字节数。
-- [ ] Probe. trunk 和 head 各取 5 次推送。
-- [ ] Baseline. Record the trunk 中位数 first.
-- [ ] Rule. 每个模块多出的字节超过 1 KB 就失败。
+- [x] Metric. 看板推送一次的字节数。
+- [x] Probe. trunk 和 head 各取 5 次推送。
+- [x] Baseline. Record the trunk 中位数 first.
+- [x] Rule. 每个模块多出的字节超过 1 KB 就失败。
+
+2026-11-12 在 F2c 分支（rebase 到 main 9818893 之后）上通过：`just test` 1486 条全过；`check.mjs` 7 项 ok；`tests/e2e/modules.e2e.ts` 十条 lane 全过，输出在 `/tmp/swarm-f2c/owner2/`。点 stock-ta 的「打开」791 毫秒变成运行中，「关掉」795 毫秒变成已停用；无效包的卡写出 `module.json：unknown key "descripton"`；stock-ta 的卡把 18 份没导入的知识收在「还没导入的知识 18 份」里，展开后每份一行名字和 `just module import stock-ta <名字> <文件或目录>`；开着任务时改版本，卡上写「1 个任务还在用旧版本」；390 像素宽没有横向滚动；深色主题模块卡上的字对比度最低 6.8 比 1；不带 token 的 POST 回 401。Lane 1 用 main 的检出跑同一组包，左栏除模块栏外各栏文字一样。看板推送 trunk 中位数 328 字节，head 2075 字节（4 个模块，平均每个多 437 字节，5 次没有波动）；单张卡最大是 stock-ta 的 665 字节。为了守住 1 KB，卡里没导入的知识只带名字，导入命令由页面拼，`tests/web.test.ts` 断言页面拼的命令和 `knowledge.ts` 的 `importCommand` 一字不差。lane 用 `docs/modules/examples/stock-ta`、示例包 personal-tax、personal-health 和坏例子 unknown-key，都复制进临时状态目录。截图和录像在 `docs/modules/evidence/f2c-review-*.png`、`f2c-review.mp4`（33 秒）。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 2, 3 and 5 screenshots into `docs/modules/evidence/f2c-review-<slug>.png`.
-- [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/modules/evidence/f2c-review.mp4`. 本机用 Playwright 录像。
+- [x] Copy lane 2, 3 and 5 screenshots into `docs/modules/evidence/f2c-review-<slug>.png`.
+- [x] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/modules/evidence/f2c-review.mp4`. 本机用 Playwright 录像。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**

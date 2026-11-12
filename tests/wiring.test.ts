@@ -14,7 +14,7 @@ import { servedAsHost, until } from "./helpers/fakes.ts";
 import { liveRegistry, ModuleStore } from "../src/modules/live.ts";
 import type { ComponentName, Digest, ModuleName } from "../src/modules/manifest.ts";
 
-const fixed = (modules: Modules) => ({ live: liveRegistry(modules), kitFor: (domain: string) => modules.kitFor(domain) });
+const fixed = (modules: Modules) => ({ live: liveRegistry(modules), kitFor: (domain: string) => modules.kitFor(domain), cards: () => [], setSwitch: () => false, onChange: () => {} });
 
 const config = {
 	models: {

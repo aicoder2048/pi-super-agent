@@ -101,6 +101,25 @@
 		.choices button[aria-pressed="true"] { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 		.choices .note { font-size: 12px; color: var(--muted); }
 		.stop { font-size: 12px; min-height: 28px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--muted); }
+		.card.module { display: flex; flex-direction: column; gap: 4px; }
+		.card.module .head { align-items: center; flex-wrap: wrap; }
+		.card.module .head .title { flex: 1; min-width: 0; }
+		.card.module .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--muted); flex: none; }
+		.card.module.ok .dot { background: var(--ok); }
+		.card.module.busy .dot { background: var(--accent); }
+		.card.module.bad .dot { background: var(--warn); }
+		.card.module .state { font-size: 13px; overflow-wrap: anywhere; }
+		.card.module.bad .state { color: var(--warn-ink); }
+		.card.module .meta { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+		.card.module .problems { margin: 4px 0 0; padding: 4px 8px 4px 22px; font-size: 12px; color: var(--warn-ink); background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 6px; overflow-wrap: anywhere; }
+		.card.module .imports { margin-top: 4px; font-size: 12px; }
+		.card.module .imports summary { cursor: pointer; color: var(--muted); }
+		.card.module .imports ul { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+		.card.module .imports li { display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+		.card.module .imports code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; padding: 4px 6px; border-radius: 6px; background: var(--track); user-select: all; overflow-wrap: anywhere; }
+		.switch { font-size: 12px; min-height: 28px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--accent); background: var(--panel); color: var(--accent-ink); flex: none; }
+		.switch[aria-pressed="true"] { border-color: var(--line); color: var(--muted); }
+		.switch:disabled { cursor: default; opacity: 0.6; }
 		.watch { display: flex; align-items: flex-start; gap: 10px; padding: 4px; }
 		.watch::before { content: ""; width: 8px; height: 8px; border-radius: 999px; background: var(--ok); margin-top: 6px; flex: none; }
 		.watch.problem::before { background: var(--warn); }

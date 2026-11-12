@@ -1,5 +1,6 @@
 import type { CapQuestion, Cleared, ConversationLine, DashboardRow, Disposition, HelpersToday, HostLine, Routes } from "../kernel/types.ts";
 import type { Dispatching } from "../host/dispatch.ts";
+import type { KindDir } from "../modules/manifest.ts";
 
 export type { Cleared, ConversationLine, HostLine, Quote } from "../kernel/types.ts";
 
@@ -36,6 +37,26 @@ export interface SourcePanel {
 /** How many member processes may run at once right now, and the host's open question about raising it. Null on a host that cannot dispatch. */
 export type MemberCapBoard = { limit: number; question: CapQuestion | null } | null;
 
+export interface ModuleCard {
+	name: string;
+	title?: string;
+	on: boolean;
+	/** `reason` is empty when it would repeat the version or the first problem. */
+	label: string;
+	reason: string;
+	tone: "ok" | "busy" | "bad" | "off";
+	/** At most five `where：reason` lines. */
+	problems: string[];
+	/** Serving, else the one on disk. `digest` is its first 12 characters. */
+	version: { label: string; digest: string };
+	components: Partial<Record<KindDir | "rules", number>>;
+	/** Names only, from the tools and feeds. Never a value. */
+	secrets: string[];
+	pinnedOld: number;
+	/** Names only; the page builds each import command so a card stays under 1 KB. */
+	notImported: string[];
+}
+
 export interface BoardState {
 	rows: DashboardRow[];
 	today: TodayCounts;
@@ -48,6 +69,7 @@ export interface BoardState {
 	dispatching: Dispatching;
 	memberCap: MemberCapBoard;
 	watching: WatchedSource[];
+	modules: ModuleCard[];
 }
 
 export type ClientToHost =
@@ -58,7 +80,7 @@ export type ClientToHost =
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
-	| { type: "snapshot"; conversation: ConversationLine[]; cleared: Cleared | null; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; memberCap: MemberCapBoard; watching: WatchedSource[] }
+	| { type: "snapshot"; conversation: ConversationLine[]; cleared: Cleared | null; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; memberCap: MemberCapBoard; watching: WatchedSource[]; modules: ModuleCard[] }
 	| ({ type: "user" } & ConversationLine & { who: "user" })
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }

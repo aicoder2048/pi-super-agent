@@ -27,6 +27,7 @@ import { ConfigError } from "../config-error.ts";
 import { OutputRoot } from "./output.ts";
 import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 import type { Domains } from "../modules.ts";
+import type { LiveModules } from "./live-modules.ts";
 import type { Gateway } from "../modules/protocol.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
 
@@ -54,6 +55,7 @@ export interface HostOptions {
 	/** The serving modules, asked each time. Without it no ticket has a domain. */
 	domains?: Domains;
 	gateway?: Gateway;
+	modules?: Pick<LiveModules, "cards" | "setSwitch" | "onChange">;
 	rulesFor?: (triggerSource: string) => string[];
 	timers?: TimerEntry[];
 	heartbeatMs?: number;
@@ -118,6 +120,7 @@ export class Host {
 	readonly #watching: WatchedSource[];
 	readonly #clock: Clock;
 	readonly #kitFor: Domains["kitFor"] | undefined;
+	readonly #modules: HostOptions["modules"];
 	readonly #memberCap: MemberCap | undefined;
 	readonly #after: NonNullable<HostOptions["after"]>;
 	#cancelNewYorkDay: (() => void) | undefined;
@@ -135,6 +138,7 @@ export class Host {
 		this.#after = options.after ?? afterRealTime;
 		this.#watching = options.watching ?? [];
 		this.#kitFor = options.domains?.kitFor;
+		this.#modules = options.modules;
 		this.#db = openStore(join(options.stateDir, "state.db"));
 		this.kernel = new Kernel({
 			db: this.#db,
@@ -230,7 +234,7 @@ export class Host {
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), sayQuoting: (text, lineId) => host.sayQuoting(text, lineId), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation() }, loadToken(options.stateDir, "web-token", host.#log), host.#log, options.webHosts ?? []);
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), sayQuoting: (text, lineId) => host.sayQuoting(text, lineId), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation(), switchModule: (name, on) => host.switchModule(name, on) }, loadToken(options.stateDir, "web-token", host.#log), host.#log, options.webHosts ?? []);
 			await host.#web.listen(options.webPort);
 		}
 		try {
@@ -244,6 +248,7 @@ export class Host {
 			await Promise.all([host.server.close(), host.#web?.close()]);
 			throw error;
 		}
+		host.#modules?.onChange(() => host.#changed());
 		host.kernel.nameUnnamedHelpers();
 		const recovered = host.kernel.recoverOnStartup();
 		host.#duty = { since: host.#clock.now(), resumed: recovered.length };
@@ -333,13 +338,19 @@ export class Host {
 		return { conversation: this.kernel.conversation(CONVERSATION_LINES), cleared: this.kernel.cleared(CONVERSATION_LINES), board: rows, ...board };
 	}
 
+	switchModule(name: string, on: boolean): boolean {
+		if (!this.#modules?.setSwitch(name, on)) return false;
+		this.#changed();
+		return true;
+	}
+
 	clearConversation(): void {
 		const cleared = this.kernel.clearConversation(CONVERSATION_LINES);
 		if (cleared) this.#broadcast({ type: "cleared", conversation: this.kernel.conversation(CONVERSATION_LINES), cleared });
 	}
 
 	#boardState(): BoardState {
-		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard(), watching: this.#watchingNow() };
+		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard(), watching: this.#watchingNow(), modules: this.#modules?.cards() ?? [] };
 	}
 
 	#watchingNow(): WatchedSource[] {

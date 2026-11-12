@@ -164,7 +164,7 @@ export function searchKnowledge(base: KnowledgeBase, query: string): Found {
 
 const AUTHORITY_TEXT = { authoritative: "权威", reference: "参考" } as const;
 
-const importCommand = (module: ModuleName, doc: ComponentName) => `just module import ${module} ${doc} <文件或目录>`;
+export const importCommand = (module: ModuleName, doc: ComponentName) => `just module import ${module} ${doc} <文件或目录>`;
 
 export function foundText(module: ModuleName, query: string, found: Found): string {
 	const hits = found.passages.length
@@ -177,8 +177,10 @@ export function foundText(module: ModuleName, query: string, found: Found): stri
 	return ["[模块知识]", ...hits, ...missing].join("\n");
 }
 
+export const notImportedIn = (base: KnowledgeBase): readonly Knowledge[] => notImported(textsOf(base));
+
 export function catalogueText(base: KnowledgeBase): string {
-	const missing = notImported(textsOf(base));
+	const missing = notImportedIn(base);
 	return base.docs
 		.map((d) => {
 			const imported = !missing.includes(d);

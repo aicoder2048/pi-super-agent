@@ -10,20 +10,28 @@ import { basename, dirname, join } from "node:path";
 import { BUNDLED_MODULES } from "./config.ts";
 import { moduleRows, pinnedCopies, saveModuleRecord, setModuleSwitch } from "../kernel/store.ts";
 import { manifestLayout, packageModule, type DomainKit, type LoadedModule, type Modules } from "../modules.ts";
-import { initialRecord, type Effect, type ModuleEvent, type Version } from "../modules/lifecycle.ts";
+import type { ModuleCard } from "../client/protocol.ts";
+import { notImportedIn, moduleDataDir } from "../modules/knowledge.ts";
+import { describe, initialRecord, problemText, type Effect, type ModuleEvent, type ModuleRecord, type Stage, type Version } from "../modules/lifecycle.ts";
 import { drive, liveRegistry, ModuleStore, switchEvent } from "../modules/live.ts";
 import type { Digest, ModuleName, PackageScan, Problem, ScanResult } from "../modules/manifest.ts";
 import type { LiveRegistry } from "../modules/registry.ts";
-import { digestOf, hasCases, runCasesAsync, scanPackage } from "../modules/validate.ts";
+import { digestOf, hasCases, runCasesAsync, scanPackage, secretNames } from "../modules/validate.ts";
 import { watchModules, type Saved } from "../modules/watch.ts";
 
 const POLL_MS = 500;
+const CARD_PROBLEMS = 5;
 const LEGACY_LABEL = "旧布局";
 
 export interface LiveModules {
 	readonly live: LiveRegistry<Modules>;
 	/** `pin` null: the serving table. Otherwise the ticket's copy, served even after the module is switched off. */
 	kitFor(domain: string, pin: string | null): DomainKit | undefined;
+	cards(): ModuleCard[];
+	/** Writes the switch where `just module on|off` does; the next poll applies it. False for a module the host has never found. */
+	setSwitch(name: string, on: boolean): boolean;
+	/** Replaces the previous listener. */
+	onChange(listener: () => void): void;
 	tick(): void;
 	stop(): void;
 }
@@ -41,14 +49,34 @@ export interface LiveModulesOptions {
 const versionOf = (dir: string, scan: ScanResult): Version =>
 	scan.ok ? { digest: scan.scan.digest, label: scan.scan.manifest.version } : { digest: digestOf(dir), label: "?" };
 
-/** `legacy` is set for a module the legacy loader read; it serves from its folder, with no copy. */
-type Found = { dir: string; version: Version; legacy?: LoadedModule };
+/** `legacy` is set for a module the legacy loader read; it serves from its folder, with no copy. `scan` is the package's latest scan. */
+type Found = { dir: string; version: Version; legacy?: LoadedModule; scan?: ScanResult };
+
+const stageOf = ({ state }: ModuleRecord): Stage | null => (state.at === "staging" ? state.stage : state.at === "active" ? state.update : null);
+
+function toneOf({ state }: ModuleRecord): ModuleCard["tone"] {
+	if (state.at === "active") return "ok";
+	if (state.at === "staging") return state.stage.at === "invalid" ? "bad" : "busy";
+	return "off";
+}
+
+function legacyComponents(module: LoadedModule): ModuleCard["components"] {
+	const counts = { tools: module.manifest.tools?.length ?? 0, agents: module.team?.members.length ?? 0, rules: module.rules.length };
+	return Object.fromEntries(Object.entries(counts).filter(([, n]) => n > 0));
+}
+
+function packageComponents(scan: PackageScan): ModuleCard["components"] {
+	const counts: ModuleCard["components"] = {};
+	for (const { kind } of scan.components) counts[kind] = (counts[kind] ?? 0) + 1;
+	if (scan.rules.length > 0) counts.rules = scan.rules.length;
+	return counts;
+}
 
 export function startLiveModules({ db, stateDir, roots, discovered, configSwitches, log }: LiveModulesOptions): LiveModules {
 	const store = new ModuleStore(join(stateDir, "module-store"));
 	const found = new Map<string, Found>([
 		...discovered.found.map((m): [string, Found] => [m.name, { dir: m.dir, version: { digest: digestOf(m.dir), label: LEGACY_LABEL }, legacy: m }]),
-		...discovered.packages.map(({ name, dir, scan }): [string, Found] => [name, { dir, version: versionOf(dir, scan) }]),
+		...discovered.packages.map(({ name, dir, scan }): [string, Found] => [name, { dir, version: versionOf(dir, scan), scan }]),
 	]);
 	const defaultOn = (name: string) => {
 		const entry = found.get(name);
@@ -147,9 +175,11 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 			log(`[modules] 收据：${name} 换上 ${serving.label}（${serving.digest.slice(0, 12)}），改了 ${[...saved].sort().join("、") || "（没记下文件名）"}`);
 		}
 	};
+	let changed = () => {};
 	const step = (name: string, event: ModuleEvent | null) => {
 		records.set(name, drive(records.get(name) ?? initialRecord(name as ModuleName), event, (r) => saveModuleRecord(db, r), run(name)));
 		receipt(name);
+		changed();
 	};
 
 	const table = (): Modules => {
@@ -204,8 +234,9 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 			log(`[modules] ${name} 是旧布局模块，改动要重启宿主才生效；module.json 写上 "schema": 1 和 "version" 以后存盘就生效`);
 			return;
 		}
-		const version = versionOf(dir, scanPackage(dir, { runCases: false }));
-		found.set(name, { dir, version });
+		const scan = scanPackage(dir, { runCases: false });
+		const version = versionOf(dir, scan);
+		found.set(name, { dir, version, scan });
 		const serving = servingOf(name)?.digest;
 		if (serving === version.digest && receipted.get(name) === serving) savedSinceServing.delete(name);
 		else savedSinceServing.set(name, new Set([...(savedSinceServing.get(name) ?? []), ...files]));
@@ -222,8 +253,49 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 	const timer = setInterval(() => safely("开关轮询", tick), POLL_MS);
 	timer.unref();
 
+	const cardOf = (record: ModuleRecord, on: boolean, pinned: ReturnType<typeof pinnedCopies>): ModuleCard => {
+		const { name, state } = record;
+		const entry = found.get(name);
+		const scan = entry?.scan?.ok ? entry.scan.scan : undefined;
+		const servingDigest = servingOf(name)?.digest;
+		const version = state.at === "active" ? state.serving : (entry?.version ?? (state.at === "missing" ? state.last : null));
+		const stage = stageOf(record);
+		const problems = stage?.at === "invalid" ? stage.problems : entry?.scan?.ok === false ? entry.scan.problems : [];
+		const { label, reason } = describe(record);
+				const repeats = (state.at === "active" && state.update === null) || (state.at === "staging" && stage?.at === "invalid");
+		const docs = scan?.components.filter((c) => c.kind === "knowledge") ?? [];
+		const title = entry?.legacy?.manifest.title ?? scan?.manifest.title;
+		return {
+			name,
+			...(title && { title }),
+			on,
+			label,
+			reason: repeats ? "" : reason,
+			tone: toneOf(record),
+			problems: problems.slice(0, CARD_PROBLEMS).map(problemText),
+			version: { label: version?.label ?? "?", digest: version?.digest.slice(0, 12) ?? "" },
+			components: entry?.legacy ? legacyComponents(entry.legacy) : scan ? packageComponents(scan) : {},
+			secrets: scan ? secretNames(scan.components) : [],
+			pinnedOld: pinned.filter((p) => p.module === name && p.digest !== servingDigest).reduce((sum, p) => sum + p.tickets, 0),
+			notImported: scan
+				? notImportedIn({ module: name, digest: scan.digest, copyDir: scan.dir, dataDir: moduleDataDir(stateDir, name), docs }).map((d) => d.name)
+				: [],
+		};
+	};
+
 	return {
 		live,
+		cards: () => {
+			const switches = new Map(moduleRows(db).map((r) => [r.name, r.switch]));
+			const pinned = pinnedCopies(db);
+			return [...records.values()].sort((a, b) => a.name.localeCompare(b.name)).map((r) => cardOf(r, switches.get(r.name) ?? defaultOn(r.name), pinned));
+		},
+		setSwitch: (name, on) => {
+			if (!found.has(name) && !records.has(name)) return false;
+			setModuleSwitch(db, name, on);
+			return true;
+		},
+		onChange: (listener) => void (changed = listener),
 		kitFor: (domain, pin) => {
 			if (pin === null) return live.current().kitFor(domain);
 			const copy = fromCopy(domain as ModuleName, pin as Digest);

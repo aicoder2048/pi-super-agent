@@ -13,6 +13,7 @@
 /** @typedef {import("../kernel/types.ts").CapQuestion} CapQuestion */
 /** @typedef {import("../client/protocol.ts").TranscriptMessage} TranscriptMessage */
 /** @typedef {import("../client/protocol.ts").WatchedSource} WatchedSource */
+/** @typedef {import("../client/protocol.ts").ModuleCard} ModuleCard */
 /** @typedef {import("../host/dispatch.ts").Dispatching} Dispatching */
 /** @typedef {import("../host/dispatch.ts").BoardDispatch} BoardDispatch */
 /** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
@@ -58,6 +59,7 @@ const GROUP = {
  * @property {Duty | undefined} duty
  * @property {HelpersToday | undefined} helpers
  * @property {WatchedSource[]} watching
+ * @property {ModuleCard[]} modules empty from a host older than this field
  * @property {Routes} routes
  * @property {Dispatching} dispatching
  * @property {MemberCapBoard} memberCap null from a host that cannot dispatch, or one older than this field
@@ -68,7 +70,7 @@ const GROUP = {
 
 /** @returns {View} */
 export function emptyView() {
-	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], routes: {}, dispatching: {}, memberCap: null, lastOnBoard: new Map(), cleared: null, showEarlier: false };
+	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], modules: [], routes: {}, dispatching: {}, memberCap: null, lastOnBoard: new Map(), cleared: null, showEarlier: false };
 }
 
 /** @param {View} view @param {Dispatching | undefined} dispatching */
@@ -96,6 +98,12 @@ function resetConversation(view, lines, cleared) {
 	view.showEarlier = false;
 }
 
+/** @param {View} view @param {import("../client/protocol.ts").BoardState} board @param {number} now */
+function applyBoard(view, board, now) {
+	Object.assign(view, { rows: board.rows, today: board.today, duty: board.duty, helpers: board.helpers, watching: board.watching, modules: board.modules ?? [], routes: board.routes, memberCap: board.memberCap ?? null, receivedAt: now });
+	setDispatching(view, board.dispatching);
+}
+
 /**
  * @param {View} view @param {HostToClient} message @param {number} now
  * @returns {("conversation" | "left" | "header")[]}
@@ -106,8 +114,7 @@ export function applyMessage(view, message, now) {
 			const cleared = message.cleared ?? null;
 			if (cleared?.at !== view.cleared?.at) resetConversation(view, message.conversation, cleared);
 			else for (const line of message.conversation) addLine(view, line);
-			Object.assign(view, { rows: message.board, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, memberCap: message.memberCap ?? null, receivedAt: now });
-			setDispatching(view, message.dispatching);
+			applyBoard(view, { ...message, rows: message.board }, now);
 			return ["conversation", "left", "header"];
 		}
 		case "cleared":
@@ -123,8 +130,7 @@ export function applyMessage(view, message, now) {
 			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at, ...(message.ticketId ? { ticketId: message.ticketId } : {}) });
 			return ["conversation"];
 		case "board":
-			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, memberCap: message.memberCap ?? null, receivedAt: now });
-			setDispatching(view, message.dispatching);
+			applyBoard(view, message, now);
 			return ["conversation", "left", "header"];
 	}
 	return [];
@@ -297,8 +303,37 @@ export function leftColumn(view, now, sending = new Map()) {
 			lists: panelLists(w.panel),
 		})),
 		today: todayCopy(view.today),
+		modules: view.modules.map(moduleCard),
 	};
 }
+
+/** @type {[keyof ModuleCard["components"], string][]} */
+const COMPONENT_NAMES = [["knowledge", "知识"], ["data", "数据"], ["tools", "工具"], ["skills", "技能"], ["feeds", "feed"], ["agents", "成员"], ["evals", "考题"], ["rules", "规则"]];
+
+/**
+ * @typedef {{ name: string, heading: string, on: boolean, button: string, state: string, tone: "ok" | "busy" | "bad" | "off", version: string, lines: string[], problems: string[], importsHeading: string, imports: { name: string, command: string }[] }} ModuleView
+ */
+
+/** @param {ModuleCard} m @returns {ModuleView} */
+function moduleCard(m) {
+	const parts = COMPONENT_NAMES.flatMap(([kind, label]) => (m.components[kind] ? [`${label} ${m.components[kind]}`] : []));
+	return {
+		name: m.name,
+		heading: m.title ? `${m.title} · ${m.name}` : m.name,
+		on: m.on,
+		button: m.on ? "关掉" : "打开",
+		state: m.reason ? `${m.label} · ${m.reason}` : m.label,
+		tone: m.tone,
+		version: `版本 ${m.version.label}${m.version.digest ? ` · ${m.version.digest}` : ""}`,
+		lines: [parts.join(" · "), m.secrets.length ? `密钥 ${m.secrets.join("、")}` : "", m.pinnedOld ? `${m.pinnedOld} 个任务还在用旧版本` : ""].filter(Boolean),
+		problems: m.problems,
+		importsHeading: `还没导入的知识 ${m.notImported.length} 份`,
+		imports: m.notImported.map((doc) => ({ name: doc, command: `just module import ${m.name} ${doc} <文件或目录>` })),
+	};
+}
+
+/** @param {string} name @param {boolean} on */
+export const moduleBody = (name, on) => JSON.stringify({ module: name, on });
 
 /** @typedef {{ key: "watchlist" | "tripwires", summary: string, items: string[], open: boolean }} PanelList */
 
@@ -815,6 +850,7 @@ export const toggleEarlier = (view) => {
 export const canClear = (view) => view.lines.size > 0;
 
 export const CLEAR_FAILED = "清屏没有成功，请稍后再试。";
+export const SWITCH_FAILED = "模块开关没有切换成功，请稍后再试。";
 
 /** @param {View} view */
 const knownLines = (view) => [...(view.cleared?.lines ?? []), ...view.lines.values()];

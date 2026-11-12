@@ -379,3 +379,68 @@ test("第一次启动：随仓库发的新布局包 pi-pi 导入成开，九位�
 	assert.equal(switches["tax"], false);
 	assert.equal(modules.kitFor("pi-pi", null)?.crew.length, 9);
 });
+
+const cardOf = (modules: LiveModules, name: string) => modules.cards().find((c) => c.name === name)!;
+
+test("模块卡：每个模块一张，写开关、状态和原因、版本和摘要前 12 位、组成数；旧布局写旧布局", (t) => {
+	const dir = stateDir(t);
+	const { modules } = boot(t, dir);
+	assert.deepEqual(modules.cards().map((c) => c.name), ["old", "quiet", "tax"]);
+	const tax = cardOf(modules, "tax");
+	assert.deepEqual(
+		{ on: tax.on, label: tax.label, reason: tax.reason, version: tax.version.label, components: tax.components, problems: tax.problems, pinnedOld: tax.pinnedOld },
+		{ on: false, label: "已停用", reason: "你把它关了，数据还留着", version: "0.1.0", components: { skills: 1 }, problems: [], pinnedOld: 0 },
+	);
+	assert.equal(tax.title, "报税");
+	assert.equal(tax.version.digest, digestOf(join(dir, "modules/tax")).slice(0, 12));
+	assert.deepEqual([cardOf(modules, "old").on, cardOf(modules, "old").label, cardOf(modules, "old").version.label], [true, "运行中", "旧布局"]);
+});
+
+test("模块卡的开关写进状态库的同一列，下一次轮询生效并通知；没发现的模块不写", async (t) => {
+	const dir = stateDir(t);
+	const { db, modules } = boot(t, dir);
+	let changes = 0;
+	modules.onChange(() => changes++);
+	assert.equal(modules.setSwitch("tax", true), true);
+	assert.equal(moduleRows(db).find((r) => r.name === "tax")?.switch, true);
+	await until(() => cardOf(modules, "tax").label === "运行中", "tax 运行中", 2000);
+	assert.deepEqual([cardOf(modules, "tax").on, cardOf(modules, "tax").tone, cardOf(modules, "tax").reason], [true, "ok", ""], "运行中的原因就是版本，不重复");
+	assert.ok(changes > 0);
+	assert.equal(modules.setSwitch("nope", true), false);
+	assert.equal(moduleRows(db).some((r) => r.name === "nope"), false);
+});
+
+test("模块卡：包没通过检查时写出哪个文件哪一处", (t) => {
+	const dir = stateDir(t);
+	writeFileSync(join(dir, "modules/tax/module.json"), JSON.stringify({ schema: 1, name: "tax", version: "0.1.0", descripton: "拼错" }));
+	const { db, modules } = boot(t, dir);
+	assert.match(cardOf(modules, "tax").problems.join("\n"), /module\.json：.*descripton/);
+	assert.equal(cardOf(modules, "tax").tone, "off", "关着的无效包");
+	setModuleSwitch(db, "tax", true);
+	modules.tick();
+	assert.deepEqual([cardOf(modules, "tax").label, cardOf(modules, "tax").tone, cardOf(modules, "tax").reason], ["无效", "bad", ""], "第一处问题已在问题列表里，状态行不重复");
+});
+
+test("模块卡：还钉着旧版本的开着的任务数；用到的密钥名字；还没导入的知识带导入命令", (t) => {
+	const dir = stateDir(t);
+	files(join(dir, "modules/tax"), {
+		"knowledge/irs-pub-17/source.json": JSON.stringify({ title: "IRS 第 17 号出版物", version: "2025", published: "2025-01-01", authority: "authoritative", license: "user-import", origin: "https://www.irs.gov/pub17" }),
+		"feeds/statements/feed.json": JSON.stringify({ title: "券商交易记录", description: "取成交", handler: "index.ts", secrets: ["EXAMPLE_BROKER_TOKEN"], every: "1d", into: "transactions", notice: "有新成交" }),
+		"feeds/statements/index.ts": "export default async function () { return []; }\n",
+		"data/transactions/collection.json": JSON.stringify({ title: "交易", kind: "record", class: "private", fields: { amount: { type: "number", title: "金额" } } }),
+	});
+	const first = boot(t, dir);
+	setModuleSwitch(first.db, "tax", true);
+	first.modules.tick();
+	assert.equal(cardOf(first.modules, "tax").label, "运行中", cardOf(first.modules, "tax").problems.join("\n"));
+	first.open("tax");
+	assert.equal(cardOf(first.modules, "tax").pinnedOld, 0);
+	first.stop();
+
+	writeFileSync(join(dir, "modules/tax/skills/estimate/SKILL.md"), skill(NEW_SKILL));
+	const { modules } = boot(t, dir);
+	const tax = cardOf(modules, "tax");
+	assert.equal(tax.pinnedOld, 1);
+	assert.deepEqual(tax.secrets, ["EXAMPLE_BROKER_TOKEN"]);
+	assert.deepEqual(tax.notImported, ["irs-pub-17"]);
+});

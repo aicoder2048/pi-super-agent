@@ -1,7 +1,7 @@
 // @ts-check
 
 import {
-	BAR_HINT, CLEAR_FAILED, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
+	BAR_HINT, CLEAR_FAILED, SWITCH_FAILED, moduleBody, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
 	questionOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
 	laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory,
 } from "./view.mjs";
@@ -56,6 +56,7 @@ function mount(doc) {
 	let watching;
 	/** @type {import("./view.mjs").Sending} */
 	const sending = new Map();
+	const switching = new Set();
 
 	/** @param {string} tag @param {string} className @param {string} [text] */
 	const el = (tag, className, text = "") => {
@@ -294,6 +295,54 @@ function mount(doc) {
 		return node;
 	};
 
+	/** @param {string} name @param {boolean} on */
+	const switchModule = async (name, on) => {
+		switching.add(name);
+		renderLeft();
+		try {
+			const res = await fetch(`/module?${query}`, { method: "POST", headers: { "content-type": "application/json" }, body: moduleBody(name, on), cache: "no-store", signal: AbortSignal.timeout(DEFAULT_ACK_TIMEOUT_MS) });
+			if (res.status === 401) setStatus("expired");
+			else if (!res.ok) setSay("rejected", res.status, SWITCH_FAILED);
+		} catch {
+			setSay("rejected", undefined, SWITCH_FAILED);
+		} finally {
+			switching.delete(name);
+			renderLeft();
+		}
+	};
+
+	/** @param {import("./view.mjs").ModuleView} m */
+	const moduleCard = (m) => {
+		const node = el("div", `card module ${m.tone}`);
+		node.dataset.module = m.name;
+		const button = el("button", "switch", m.button);
+		button.type = "button";
+		button.setAttribute("aria-pressed", String(m.on));
+		button.setAttribute("aria-label", `${m.button} ${m.name}`);
+		button.disabled = switching.has(m.name);
+		button.addEventListener("click", () => void switchModule(m.name, !m.on));
+		const head = el("div", "head");
+		head.append(el("span", "dot"), el("div", "title", m.heading), button);
+		node.append(head, el("div", "state", m.state), ...[m.version, ...m.lines].map((line) => el("div", "meta", line)));
+		if (m.problems.length) {
+			const list = el("ul", "problems");
+			list.append(...m.problems.map((p) => el("li", "", p)));
+			node.append(list);
+		}
+		if (m.imports.length) {
+			const box = el("details", "imports");
+			const list = el("ul", "");
+			list.append(...m.imports.map((i) => {
+				const item = el("li", "", i.name);
+				item.append(el("code", "", i.command));
+				return item;
+			}));
+			box.append(el("summary", "", m.importsHeading), list);
+			node.append(box);
+		}
+		return node;
+	};
+
 	const renderLeft = () => {
 		const left = leftColumn(view, Date.now(), sending);
 		const today = el("section", "");
@@ -318,6 +367,7 @@ function mount(doc) {
 			}), "暂无关注的来源。"),
 			today,
 			done,
+			section(`模块 · ${left.modules.length}`, left.modules.map(moduleCard), "没有发现模块。"),
 		);
 	};
 

@@ -176,7 +176,8 @@ export class FakeModel {
 		for (const card of cards) {
 			const i = pending.findIndex((s) => s.match.test(card));
 			if (i < 0) {
-				base.unmatched.push(card);
+				// The host resends the roster whenever the module table changes; scripts that don't test it ignore it.
+				if (!card.startsWith("[名单和规则]")) base.unmatched.push(card);
 				continue;
 			}
 			const [step] = pending.splice(i, 1);

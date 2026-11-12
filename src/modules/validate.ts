@@ -500,10 +500,12 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder }:
 
 export const problemLine = (problem: Problem): string => `${problem.where}: ${problem.reason}`;
 
+export const secretNames = (components: readonly Component[]): string[] =>
+	[...new Set(components.flatMap((item) => (item.kind === "tools" ? item.tool.secrets : item.kind === "feeds" ? item.feed.secrets : undefined) ?? []))].sort();
+
 export function summary(scan: Extract<ScanResult, { ok: true }>["scan"]): string {
 	const count = (kind: Component["kind"]): number => scan.components.filter((item) => item.kind === kind).length;
 	const classes = DATA_CLASSES.map((name) => `${name}:${scan.components.filter((item) => item.kind === "data" && item.collection.class === name).length}`);
-	const secrets = new Set(scan.components.flatMap((item) => (item.kind === "tools" ? item.tool.secrets : item.kind === "feeds" ? item.feed.secrets : undefined) ?? []));
 	const kinds = KIND_DIRS.map((kind) => `${kind}=${count(kind)}`).join(" ");
-	return `ok ${scan.manifest.name}@${scan.manifest.version} | ${kinds} | rules=${scan.rules.length} | data-classes=${classes.join(",")} | secrets=${[...secrets].sort().join(",") || "none"} | digest=${scan.digest.slice(0, 12)}`;
+	return `ok ${scan.manifest.name}@${scan.manifest.version} | ${kinds} | rules=${scan.rules.length} | data-classes=${classes.join(",")} | secrets=${secretNames(scan.components).join(",") || "none"} | digest=${scan.digest.slice(0, 12)}`;
 }
