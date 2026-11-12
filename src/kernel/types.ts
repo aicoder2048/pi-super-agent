@@ -17,6 +17,8 @@ export interface DomainEntry {
 	onRoster: boolean;
 	/** The package version that serves now. A ticket opened in this domain is pinned to it. Absent for a legacy module, which has no copy to pin. */
 	digest?: string;
+	/** The module's Chinese name, for the line Telegram gets instead of a report that touched private data. */
+	title?: string;
 }
 
 /** All the kernel knows about domains: one entry per serving module, by the module's name. */

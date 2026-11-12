@@ -1047,6 +1047,15 @@ export class Kernel {
 		this.#run("UPDATE tickets SET read_web_at = COALESCE(read_web_at, ?) WHERE id = ?", this.#now(), ticketId);
 	}
 
+	/** The ticket read or wrote a module's `private` data. Telegram then gets only a pointer to the web page for it. */
+	touchPrivate(ticketId: string): void {
+		this.#run("UPDATE tickets SET touched_private_at = COALESCE(touched_private_at, ?) WHERE id = ?", this.#now(), ticketId);
+	}
+
+	touchedPrivate(ticketId: string): boolean {
+		return this.#get("SELECT 1 FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) !== undefined;
+	}
+
 	heardOtherThanUser(ticketId: string): "trigger" | "note" | "web" | undefined {
 		if (this.#get("SELECT 1 FROM tickets WHERE id = ? AND read_web_at IS NOT NULL", ticketId)) return "web";
 		return this.#get("SELECT kind FROM ticket_inputs WHERE ticket_id = ? AND kind IN ('trigger', 'note') LIMIT 1", ticketId)?.kind;

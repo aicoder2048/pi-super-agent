@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS tickets (
 	module_digest TEXT,
 	dispatched_to TEXT,
 	read_web_at INTEGER,
+	touched_private_at INTEGER,
 	CHECK (basis <> 'rule' OR rule_id IS NOT NULL)
 );
 
@@ -267,6 +268,7 @@ export function openStore(path: string): DatabaseSync {
 	if (!ticketColumns.includes("module_digest")) db.exec("ALTER TABLE tickets ADD COLUMN module_digest TEXT");
 	if (!ticketColumns.includes("dispatched_to")) db.exec("ALTER TABLE tickets ADD COLUMN dispatched_to TEXT");
 	if (!ticketColumns.includes("read_web_at")) db.exec("ALTER TABLE tickets ADD COLUMN read_web_at INTEGER");
+	if (!ticketColumns.includes("touched_private_at")) db.exec("ALTER TABLE tickets ADD COLUMN touched_private_at INTEGER");
 	if (!ticketColumns.includes("tokens_cached")) db.exec("ALTER TABLE tickets ADD COLUMN tokens_cached INTEGER NOT NULL DEFAULT 0");
 	const retitle = db.prepare("UPDATE tickets SET title = ? WHERE id = ?");
 	for (const { id, title } of db.prepare("SELECT id, title FROM tickets").all() as { id: string; title: string }[]) {

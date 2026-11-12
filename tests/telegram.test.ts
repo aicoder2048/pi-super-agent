@@ -283,7 +283,7 @@ const settle = (ms = 300) => new Promise((r) => setTimeout(r, ms));
 async function cardClient(t: TestContext, { allowed = [USER], answer = (): AnswerResult => ({ ok: true, triggerId: "trg_1" }) }: { allowed?: number[]; answer?: () => AnswerResult } = {}) {
 	const tg = await FakeTelegram.start();
 	const stateDir = tempStateDir();
-	const state = { rows: [] as DashboardRow[], memberCap: null as MemberCapBoard };
+	const state = { rows: [] as DashboardRow[], memberCap: null as MemberCapBoard, private: new Map<string, string>() };
 	const answered: [string, number, ImChat][] = [];
 	const logs: string[] = [];
 	const host: TelegramHost = {
@@ -294,6 +294,7 @@ async function cardClient(t: TestContext, { allowed = [USER], answer = (): Answe
 			return answer();
 		},
 		board: () => state,
+		privateTitle: (ticketId) => state.private.get(ticketId) ?? null,
 	};
 	const store = openStore(join(stateDir, "state.db"));
 	const client = new TelegramClient({ api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set(allowed), timing: FAST, host, db: store, clock: { now: () => Date.now() }, log: (l) => logs.push(l) });
@@ -826,4 +827,20 @@ test("真宿主：提醒写进库后、广播前宿主停了，重启后补发�
 	await telegramHost(t, { fake: tg, stateDir });
 	await new Promise((r) => setTimeout(r, 300));
 	assert.equal(sentTo(tg, USER).filter((m) => m === PHONE_ALERT).length, 1);
+});
+
+test("任务读写过私密数据：它的问题卡片和幕僚长的转述在 Telegram 上都只发一行提示，没有按钮；别的任务照常", async (t) => {
+	const { tg, frame, open, client, state } = await cardClient(t);
+	await open(USER);
+	const secret = rpt();
+	state.private.set(`tkt_${secret}`, "个人医疗健康");
+	frame([ticket(pending(secret, { text: "CEA 4.2，要不要约复查？", options: ["约", "不约"] }), "记指标"), ticket(pending(rpt()))]);
+	client.broadcast({ type: "reply", text: "CEA 4.2 ng/mL，比上次高", at: Date.now(), replyId: "rep_1", ticketId: `tkt_${secret}` });
+	client.broadcast({ type: "reply", text: "北京晴", at: Date.now(), replyId: "rep_2", ticketId: "tkt_other" });
+	await until(() => cards(tg, USER).length === 1 && sentTo(tg, USER).includes("北京晴"), "别的任务照常");
+	await settle();
+	const notices = tg.sent.filter((m) => m.chatId === USER && m.text === "个人医疗健康 有新内容，请在网页上查看");
+	assert.equal(notices.length, 2, "卡片一行、转述一行");
+	assert.ok(notices.every((m) => m.buttons === null));
+	assert.ok(!sentTo(tg, USER).some((m) => m.includes("4.2")), sentTo(tg, USER).join(" / "));
 });

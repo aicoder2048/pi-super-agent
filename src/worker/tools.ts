@@ -3,11 +3,11 @@ import type { Basis } from "../kernel/types.ts";
 /** Every tool a helper can have: Pi's built-ins and the ones the worker extension registers for it. */
 export const WORKER_TOOLS = [
 	"read", "bash", "edit", "write", "grep", "find", "ls",
-	"report", "hand_back", "read_ticket", "web_get", "lookup", "tripwire", "new_app", "bg_start", "bg_status", "bg_stop", "dispatch_agent", "domain_tool", "knowledge",
+	"report", "hand_back", "read_ticket", "web_get", "lookup", "tripwire", "new_app", "bg_start", "bg_status", "bg_stop", "dispatch_agent", "domain_tool", "knowledge", "data",
 ] as const;
 
 const READ_TOOLS = ["read", "grep", "find", "ls", "web_get", "lookup"] as const;
-const INFERENCE_TOOLS = ["read", "grep", "find", "ls", "report", "hand_back", "read_ticket", "web_get", "lookup", "domain_tool", "knowledge"] as const;
+const INFERENCE_TOOLS = ["read", "grep", "find", "ls", "report", "hand_back", "read_ticket", "web_get", "lookup", "domain_tool", "knowledge", "data"] as const;
 /**
  * Every tool a member file may list, and so the most a member can use: it works and answers, it does
  * not report, hand back, read the ticket, dispatch or outlive its one turn. A member file that lists

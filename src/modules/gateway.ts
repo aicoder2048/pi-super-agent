@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { RUNTIMES, toolEffect, type AgentDescriptor, type Component, type Digest, type FieldDescriptor, type ModuleName, type ToolEffect } from "./manifest.ts";
+import { DataInputError, type ModuleRows } from "./instance-data.ts";
 import { catalogueText, foundText, searchKnowledge, type Knowledge, type KnowledgeBase } from "./knowledge.ts";
 import { AUTHORITY, effectOf, senderOf, type Caller, type Gateway, type Refusal, type Json, type Reply, type Request } from "./protocol.ts";
 import { LIMIT_MS, runModuleCodeAsync } from "./run-code.ts";
@@ -11,6 +12,7 @@ export interface GatewayPorts {
 	/** The version the module serves now, read from memory on every call. Undefined: switched off or gone, so its open tickets reach nothing. */
 	serving(module: ModuleName): Digest | undefined;
 	dataDir(module: ModuleName): string;
+	rows: ModuleRows;
 	/** A value from the host's secrets file. */
 	secret(name: string): string | undefined;
 	log(line: string): void;
@@ -18,13 +20,16 @@ export interface GatewayPorts {
 }
 
 type Tool = Extract<Component, { kind: "tools" }>;
-type Copy = { module: ModuleName; digest: Digest; dir: string; tools: readonly Tool[]; knowledge: readonly Knowledge[]; agents: readonly AgentDescriptor[] };
+type Collection = Extract<Component, { kind: "data" }>;
+type Copy = { module: ModuleName; digest: Digest; dir: string; tools: readonly Tool[]; knowledge: readonly Knowledge[]; collections: readonly Collection[]; agents: readonly AgentDescriptor[] };
 type Capability = { effect: ToolEffect; run: () => Promise<Reply> };
 
 const fieldsHelp = (fields: Readonly<Record<string, FieldDescriptor>>) =>
 	Object.entries(fields).map(([name, f]) => `${name}（${f.type}，${f.title}${f.unit ? `，${f.unit}` : ""}）`).join("、") || "无";
 
 const useOf = (request: Request): string => (request.kind === "tool" ? `tools/${request.name}` : request.kind === "knowledge" ? "knowledge" : `${request.kind}/${request.collection}`);
+
+const whoOf = (caller: Caller) => (caller.who === "page" ? "page" : `${caller.ticket} ${caller.member ?? "helper"}`);
 
 const moduleOf = (caller: Caller) => (caller.who === "worker" ? caller.pin.module : caller.module);
 
@@ -44,6 +49,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			module, digest, dir,
 			tools: components.filter((c): c is Tool => c.kind === "tools"),
 			knowledge: components.filter((c): c is Knowledge => c.kind === "knowledge"),
+			collections: components.filter((c): c is Collection => c.kind === "data"),
 			agents: components.flatMap((c) => (c.kind === "agents" ? [c.agent] : [])),
 		};
 		copies.set(key, copy);
@@ -61,7 +67,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 		return AUTHORITY[effect].includes(sender) ? undefined : { code: "not-allowed", sender, note: `a ${effect} call is for ${AUTHORITY[effect].join(", ")}` };
 	};
 
-	const find = (copy: Copy, request: Request): Capability | undefined => {
+	const find = (copy: Copy, request: Request, caller: Caller): Capability | undefined => {
 		if (request.kind === "tool") {
 			const tool = copy.tools.find((t) => t.name === request.name);
 			return tool && { effect: toolEffect(tool.tool), run: () => runTool(copy, tool, request.input) };
@@ -69,13 +75,16 @@ export function createGateway(ports: GatewayPorts): Gateway {
 		if (request.kind === "knowledge" && request.op === "search" && copy.knowledge.length > 0) {
 			return { effect: "pure", run: async () => search(copy, request.query) };
 		}
+		if (request.kind === "data" && request.op !== "open-blob" && copy.collections.some((c) => c.name === request.collection)) {
+			return { effect: "pure", run: async () => rows(copy.module, request, whoOf(caller)) };
+		}
 		return undefined;
 	};
 	/** The protocol's order: resolve in the pinned version, the module's state, the member's `uses`, the authority table. */
 	const resolve = (caller: Caller, request: Request): { refusal: Refusal } | Capability => {
 		const serving = ports.serving(moduleOf(caller));
 		const copy = callerCopy(caller, serving);
-		const found = copy && find(copy, request);
+		const found = copy && find(copy, request, caller);
 		if (copy === undefined || found === undefined) return { refusal: { code: "no-such-capability" } };
 		if (serving === undefined) return { refusal: { code: "module-disabled" } };
 		const refusal = memberRefusal(caller, copy, useOf(request)) ?? authorityRefusal(caller, request, found.effect);
@@ -86,6 +95,22 @@ export function createGateway(ports: GatewayPorts): Gateway {
 	const search = (copy: Copy, query: string): Reply => {
 		const found = searchKnowledge(knowledgeOf(copy), query);
 		return { ok: true, output: foundText(copy.module, query, found), private: false, passages: found.passages };
+	};
+
+	/** Rows are read and written in the serving version's structure: a ticket pinned to an older one reaches them through the stored aliases. */
+	const rows = (module: ModuleName, request: Extract<Request, { kind: "data" }>, who: string): Reply => {
+		const serving = copyOf(module, ports.serving(module));
+		if (serving === undefined) return { ok: false, refusal: { code: "module-disabled" } };
+		try {
+			const accessed =
+				request.op === "write"
+					? ports.rows.write(module, serving.collections, request.collection, request.rows, request.from, who)
+					: ports.rows.query(module, serving.collections, request.collection, request.op === "query" ? request.query : {}, who);
+			return { ok: true, output: { collection: accessed.collection, rows: accessed.rows as unknown as Json }, private: accessed.class === "private" };
+		} catch (error) {
+			if (error instanceof DataInputError) return { ok: false, refusal: { code: "bad-input", note: error.message } };
+			throw error;
+		}
 	};
 
 	const runTool = async (copy: Copy, tool: Tool, input: Json): Promise<Reply> => {
@@ -107,7 +132,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			} catch (error) {
 				reply = { ok: false, refusal: { code: "provider-failed", note: String((error as Error)?.message ?? error) } };
 			}
-			const who = caller.who === "page" ? "page" : `${caller.ticket} ${caller.member ?? "helper"} ${caller.basis}`;
+			const who = caller.who === "page" ? "page" : `${whoOf(caller)} ${caller.basis}`;
 			ports.log(`[gateway] ${moduleOf(caller)} ${useOf(request)} ${who} ${reply.ok ? "ok" : reply.refusal.code} ${Date.now() - started} ms`);
 			return reply;
 		},
@@ -119,7 +144,10 @@ export function createGateway(ports: GatewayPorts): Gateway {
 				.filter((t) => !memberRefusal(caller, copy, `tools/${t.name}`) && !authorityRefusal(caller, probe(t), toolEffect(t.tool)))
 				.map((t) => ({ request: "tool" as const, name: t.name, title: t.tool.title, help: `${t.tool.description} 输入：${fieldsHelp(t.tool.input)}。输出：${fieldsHelp(t.tool.output)}。` }));
 			const knowledge = copy.knowledge.length > 0 && !memberRefusal(caller, copy, "knowledge") ? [{ request: "knowledge" as const, name: "knowledge", title: "模块知识", help: catalogueText(knowledgeOf(copy)) }] : [];
-			return [...tools, ...knowledge];
+			const data = copy.collections
+				.filter((c) => !memberRefusal(caller, copy, `data/${c.name}`))
+				.map((c) => ({ request: "data" as const, name: c.name, title: c.collection.title, help: `${c.collection.kind}，${c.collection.class}。字段：${fieldsHelp(c.collection.fields)}` }));
+			return [...tools, ...knowledge, ...data];
 		},
 	};
 }
