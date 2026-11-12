@@ -749,6 +749,15 @@ test("盯盘提醒带通知发到每个聊天，前面写「盯盘提醒：」�
 	}
 });
 
+test("模块的提醒前面写「提醒 · 模块名：」，不写盯盘提醒；私密模块的提醒只发一行提示", async (t) => {
+	const { tg, open, client } = await cardClient(t);
+	await open(USER);
+	client.broadcast({ type: "host_line", id: "hln_3", who: "alert", text: "体重 我 81，高于 80", at: Date.now(), module: { title: "身体", private: false } });
+	client.broadcast({ type: "host_line", id: "hln_4", who: "alert", text: "检验指标 CEA 9，高于 5", at: Date.now(), module: { title: "个人医疗健康", private: true } });
+	await until(() => sentTo(tg, USER).length === 3, "两条提醒都到了");
+	assert.deepEqual(sentTo(tg, USER).slice(1), ["提醒 · 身体：体重 我 81，高于 80", "个人医疗健康 有新内容，请在网页上查看"]);
+});
+
 test("盯盘条件的收据只在本机：广播收据，Telegram 什么都不发", async (t) => {
 	const { tg, open, client } = await cardClient(t);
 	await open(USER);

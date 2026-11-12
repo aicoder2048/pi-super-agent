@@ -228,7 +228,8 @@ CREATE TABLE IF NOT EXISTS host_lines (
 	occurred_at INTEGER NOT NULL,
 	created_at INTEGER NOT NULL,
 	delivered_at INTEGER,
-	private_title TEXT,
+	module_title TEXT,
+	module_private INTEGER,
 	CHECK (
 		(kind = 'alert' AND external_id IS NOT NULL AND length(text) BETWEEN 1 AND 1000 AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0)
 		OR (kind = 'receipt' AND external_id IS NULL AND length(text) BETWEEN 1 AND 16000)
@@ -271,7 +272,7 @@ export function openStore(path: string): DatabaseSync {
 	if (!ticketColumns.includes("read_web_at")) db.exec("ALTER TABLE tickets ADD COLUMN read_web_at INTEGER");
 	if (!ticketColumns.includes("touched_private_at")) db.exec("ALTER TABLE tickets ADD COLUMN touched_private_at INTEGER");
 	const hostLineColumns = db.prepare("PRAGMA table_info(host_lines)").all().map((c) => (c as { name: string }).name);
-	if (!hostLineColumns.includes("private_title")) db.exec("ALTER TABLE host_lines ADD COLUMN private_title TEXT");
+	if (!hostLineColumns.includes("module_title")) db.exec("ALTER TABLE host_lines ADD COLUMN module_title TEXT; ALTER TABLE host_lines ADD COLUMN module_private INTEGER");
 	if (!ticketColumns.includes("tokens_cached")) db.exec("ALTER TABLE tickets ADD COLUMN tokens_cached INTEGER NOT NULL DEFAULT 0");
 	const retitle = db.prepare("UPDATE tickets SET title = ? WHERE id = ?");
 	for (const { id, title } of db.prepare("SELECT id, title FROM tickets").all() as { id: string; title: string }[]) {

@@ -397,7 +397,7 @@ export class Host {
 			externalId: alert.externalId,
 			text: alert.text,
 			occurredAt: Number.isNaN(occurredAt) ? this.#clock.now() : occurredAt,
-			...(alert.private && { privateTitle: this.#moduleTitle(module) }),
+			module: { title: this.#moduleTitle(module), private: alert.private },
 		});
 	}
 

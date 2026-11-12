@@ -1,8 +1,8 @@
 // Pure: who counts as the user on Telegram, what a message or a tap means, and how each outbound message reads.
-import { clip, helperFullName } from "../../client/board-format.mjs";
+import { clip, helperFullName, hostLineLabel } from "../../client/board-format.mjs";
 import { isCapAskId } from "../../kernel/cap-ask.ts";
 import { OPTIONS_MAX, refusalText } from "../../kernel/question.ts";
-import type { DashboardRow, PendingQuestion } from "../../kernel/types.ts";
+import type { DashboardRow, HostLine, PendingQuestion } from "../../kernel/types.ts";
 import { hasVisibleText, type ImChat } from "../server.ts";
 import type { Keyboard, TelegramEvent } from "./bot-api.ts";
 
@@ -181,8 +181,8 @@ export function mirrorText(text: string, from?: ImChat): string {
 	return `${from ? "你在另一个 Telegram 账号说" : "你在网页或终端说"}：${text}`;
 }
 
-export function alertText(text: string): string {
-	return `盯盘提醒：${text}`;
+export function alertText(line: HostLine): string {
+	return `${hostLineLabel(line)}：${line.text}`;
 }
 
 /** One conversation line is one Telegram message, so a long text is clipped rather than split. */
