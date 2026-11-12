@@ -1,4 +1,4 @@
-/** One Massive snapshot request per round for the whole watchlist. Parsing follows the host's us-market client (src/sources/market/client.ts). */
+/** Parsing mirrors src/sources/market/client.ts: module code cannot import the host's. */
 interface Input {
 	settings: { baseUrl: string };
 	rows: { watchlist?: { fields: { symbol?: unknown; removedAt?: unknown } }[] };
@@ -7,7 +7,6 @@ interface Input {
 type Quote = { id: string; symbol: string; price: number; changePct: number; volume: number | null; at: string };
 type Notice = { id: string; thread: string; fields: Record<string, string> };
 
-/** The user picked 5%. He could ask for a setting instead. */
 const BIG_MOVE_PCT = 5;
 
 const object = (v: unknown): Record<string, any> => (v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, any>) : {});
@@ -33,7 +32,6 @@ function parseQuote(raw: unknown, symbols: readonly string[]): Quote[] {
 	return [{ id: `${r.ticker}@${at}`, symbol: r.ticker, price, changePct, volume: typeof day.v === "number" ? day.v : null, at }];
 }
 
-/** "2026-11-12 10:44" in New York, and the trading date alone. */
 function newYork(iso: string): { date: string; minute: string } {
 	const parts = Object.fromEntries(
 		new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })

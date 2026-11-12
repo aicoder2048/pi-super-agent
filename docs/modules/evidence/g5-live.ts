@@ -98,7 +98,6 @@ function copyPackage(state: string, baseUrl?: string): string {
 	return dir;
 }
 
-/** Stands in for Massive: answers `prices` against `prevClose` at data time `at`; 401 to a call without a key. */
 async function fakeMassive() {
 	const state = { prices: {} as Record<string, number>, prevClose: {} as Record<string, number>, at: 0, urls: [] as string[] };
 	const server = createServer((req, res) => {
@@ -113,8 +112,7 @@ async function fakeMassive() {
 	return { state, url: `http://127.0.0.1:${port}`, close: () => new Promise((done) => server.close(done)) };
 }
 
-/** Opens a request ticket on every [对话], and a rule ticket on every candidate whose card lists a rule. */
-function brain(cards: string[]) {
+function routerOpensTickets(cards: string[]) {
 	return cards.flatMap((card) => {
 		const triggerId = ids(card, "trg");
 		if (card.startsWith("[对话]")) {
@@ -137,7 +135,6 @@ async function script(worker: FakeWorker, input: string) {
 	worker.settle();
 }
 
-/** One in-process host whose state dir holds stock-ta, switched on with `just module on`. */
 async function feedHost(o: { fixtures: boolean; baseUrl?: string; secret: (name: string) => string | undefined }) {
 	const state = mkdtempSync(join(tmpdir(), "psa-g5-"));
 	copyPackage(state, o.baseUrl);
@@ -154,7 +151,7 @@ async function feedHost(o: { fixtures: boolean; baseUrl?: string; secret: (name:
 		return current().feeds().some((f: { source: string }) => f.source === "stock-ta/quotes");
 	}, 200);
 	if (serving < 0) throw new Error(`stock-ta did not start serving:\n${logs.join("\n")}`);
-	const { host } = await startHost(brain, script, {
+	const { host } = await startHost(routerOpensTickets, script, {
 		stateDir: state,
 		log,
 		clock: { now: () => clock.now },
@@ -323,7 +320,6 @@ async function lanes(): Promise<void> {
 
 type Host = { stop(): Promise<void> };
 
-/** A real host process from this tree on its own state dir with stock-ta switched on. */
 async function realHost(state: string, config: Record<string, unknown>, env: Record<string, string>, imports: string[] = []): Promise<Host> {
 	const harness = await import(join(HEAD, "tests/e2e/harness.ts"));
 	const host = await harness.startHost({ models: REAL, stateDir: state, logFile: join(state, "host.log"), config: { webPort: 0, ...config }, env: { TA_ROOT, ...env }, timeoutMs: 60_000, imports });

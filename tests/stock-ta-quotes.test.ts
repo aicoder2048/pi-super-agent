@@ -18,7 +18,6 @@ const AT = Date.parse("2026-11-12T15:44:00Z");
 type Answer = { status: number; body: unknown };
 type Hit = { url: string; auth: string | undefined };
 
-/** Stands in for Massive: answers the next queued reply, else the last one, and records what was asked. */
 async function fakeMassive(t: TestContext) {
 	const hits: Hit[] = [];
 	let answers: Answer[] = [];
