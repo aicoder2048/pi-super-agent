@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "name": "notes",
+  "version": "0.1.0",
+  "title": "notes",
+  "description": "一句话说明这个模块管什么。Router 按这句话决定把哪些任务交给它"
+}

@@ -122,13 +122,9 @@ test:
 modules:
     {{run}} src/cli/modules.ts
 
-# just module check <目录> [--previous <旧版本目录>]：检查新布局包，没问题打印一行 ok | just module import <模块> <知识名> <文件或目录>：user-import 知识的全文进实例数据，不进模块包
+# just module check <目录> [--previous <旧版本目录>]：检查新布局包，没问题打印一行 ok | just module new <名字> [--template notes|team|full]：从模板生成，默认 notes | just module try <名字>：在临时状态目录里把 evals/ 的考题当任务跑一遍 | just module import <模块> <知识名> <文件或目录>：user-import 知识的全文进实例数据，不进模块包
 module *args:
     {{run}} src/cli/module.ts {{args}}
-
-# 在状态目录的 modules/ 下生成一个新模块骨架：just module-new <模块名>
-module-new name:
-    {{run}} src/cli/module-new.ts {{name}}
 
 # 真实宿主、Worker 子进程和无头浏览器，模型换成 tests/e2e/fake-model.ts 的本地假模型，不请求任何真实模型或行情接口。
 # 首次运行自动装 playwright-core 和浏览器。失败报告在 tests/e2e/.out/<测试>/index.html。

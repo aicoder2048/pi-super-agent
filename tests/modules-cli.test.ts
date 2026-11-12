@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -9,6 +9,7 @@ import { startLiveModules } from "../src/host/live-modules.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { KEY_NAMES } from "../src/sources/market/key.ts";
 import { until } from "./helpers/fakes.ts";
+import { FakeModel, domainTool, fakeAgentEnv, on, openTicket, report, reply, worker, type Script } from "./e2e/fake-model.ts";
 
 function stateDir(t: import("node:test").TestContext, config?: object): string {
 	const dir = mkdtempSync(join(tmpdir(), "psa-modcli-"));
@@ -24,8 +25,9 @@ function cli(script: string, dir: string, args: string[] = [], extraEnv: Record<
 }
 
 const list = (dir: string, env?: Record<string, string>) => cli("src/cli/modules.ts", dir, [], env);
-const scaffold = (dir: string, name: string) => cli("src/cli/module-new.ts", dir, [name]);
 const lineOf = (out: string, name: string) => out.split("\n").find((l) => l.startsWith(`${name} `)) ?? "";
+const SAMPLE = join(import.meta.dirname, "..", "docs", "modules", "architecture", "sample");
+const check = (dir: string) => cli("src/cli/module.ts", tmpdir(), ["check", dir]);
 
 test("just modules：不连宿主列出仓库模块，toy-market 默认关闭，us-market 没有密钥时看盘停用", (t) => {
 	const run = list(stateDir(t));
@@ -83,52 +85,66 @@ test("just modules：config.json 写了没发现的模块名时只打印一句�
 	assert.doesNotMatch(run.stderr, /^\s+at /m);
 });
 
-test("just module-new：生成能干净加载的模块，打印生成的文件和下一步", (t) => {
+const newModule = (dir: string, args: string[]) => cli("src/cli/module.ts", dir, ["new", ...args]);
+const kinds = (dir: string) => readdirSync(dir).filter((k) => !k.includes(".")).sort();
+
+test("just module new：三种模板生成的包都通过检查，名字改成新名字，显示为已停用", (t) => {
 	const dir = stateDir(t);
-	const run = scaffold(dir, "demo");
-	assert.equal(run.status, 0, run.stderr);
-	const root = join(dir, "modules", "demo");
-	for (const file of ["module.json", "rules.md", join("skills", "README.txt")]) {
-		assert.ok(existsSync(join(root, file)), file);
-		assert.match(run.stdout, new RegExp(file.replace(".", "\\.")));
+	for (const [template, expected] of [
+		["notes", ["knowledge", "skills"]],
+		["team", ["agents", "evals", "knowledge", "skills"]],
+		["full", ["agents", "evals", "knowledge", "skills", "tools"]],
+	] as const) {
+		const name = `demo-${template}`;
+		const run = newModule(dir, [name, "--template", template]);
+		assert.equal(run.status, 0, run.stdout + run.stderr);
+		const root = join(dir, "modules", name);
+		assert.deepEqual(kinds(root), expected, template);
+		assert.equal(JSON.parse(readFileSync(join(root, "module.json"), "utf8")).name, name);
+		const checked = check(root);
+		assert.equal(checked.status, 0, checked.stdout);
+		assert.match(checked.stdout, new RegExp(`^ok ${name}@0\\.1\\.0 `));
+		assert.match(lineOf(list(dir).stdout, name), /新布局\s+已停用\s/);
 	}
-	assert.match(run.stdout, /重启宿主/);
-	assert.match(run.stdout, /just modules/);
-	const demo = loadModules(loadConfig(dir)).found.find((m) => m.name === "demo")!;
-	assert.deepEqual(demo.state, { enabled: true, by: "default" });
-	assert.deepEqual(demo.rules.map((r) => [r.id, r.sources]), [["demo/example", ["demo"]]]);
-	assert.deepEqual(demo.manifest.sources?.map((s) => [s.name, s.feed]), [["demo", undefined]]);
-	assert.match(lineOf(list(dir).stdout, "demo"), /启用（默认）/);
 });
 
-test("just module-new：目录已存在时拒绝并以 1 退出，不改已有文件", (t) => {
+test("just module new：不写 --template 时用 notes", (t) => {
+	const dir = stateDir(t);
+	const run = newModule(dir, ["demo"]);
+	assert.equal(run.status, 0, run.stdout + run.stderr);
+	assert.deepEqual(kinds(join(dir, "modules", "demo")), ["knowledge", "skills"]);
+});
+
+test("just module new：重名时一行拒绝并以 1 退出，原目录不变", (t) => {
 	const dir = stateDir(t);
 	mkdirSync(join(dir, "modules", "demo"), { recursive: true });
-	writeFileSync(join(dir, "modules", "demo", "rules.md"), "mine");
-	const run = scaffold(dir, "demo");
-	assert.equal(run.status, 1);
-	assert.match(run.stderr, /已存在/);
-	assert.equal(readFileSync(join(dir, "modules", "demo", "rules.md"), "utf8"), "mine");
-	assert.deepEqual(readdirSync(join(dir, "modules", "demo")), ["rules.md"]);
-});
-
-test("just module-new：和已有模块重名时拒绝", (t) => {
-	const dir = stateDir(t);
-	const run = scaffold(dir, "toy-market");
-	assert.equal(run.status, 1);
-	assert.match(run.stderr, /toy-market/);
-	assert.ok(!existsSync(join(dir, "modules", "toy-market")));
-});
-
-test("just module-new：名字不合法时拒绝，不在任何地方建目录", (t) => {
-	const dir = stateDir(t);
-	for (const name of ["../evil", "中文", "-x"]) {
-		const run = scaffold(dir, name);
+	writeFileSync(join(dir, "modules", "demo", "notes.txt"), "mine");
+	for (const name of ["demo", "toy-market"]) {
+		const run = newModule(dir, [name, "--template", "team"]);
 		assert.equal(run.status, 1, name);
-		assert.match(run.stderr, /模块名/, name);
+		assert.equal((run.stdout + run.stderr).trim().split("\n").length, 1, run.stdout + run.stderr);
+		assert.match(run.stdout + run.stderr, new RegExp(name));
+	}
+	assert.deepEqual(readdirSync(join(dir, "modules", "demo")), ["notes.txt"]);
+	assert.deepEqual(readdirSync(join(dir, "modules")), ["demo"]);
+});
+
+test("just module new：名字不合法或模板不存在时拒绝，不建目录", (t) => {
+	const dir = stateDir(t);
+	for (const args of [["../evil"], ["中文"], ["-x"], ["demo", "--template", "nope"]]) {
+		const run = newModule(dir, args);
+		assert.notEqual(run.status, 0, args.join(" "));
+		assert.match(run.stdout + run.stderr, args[2] === "nope" ? /notes、team、full/ : /模块名/, args.join(" "));
 	}
 	assert.ok(!existsSync(join(dir, "evil")));
 	assert.ok(!existsSync(join(dir, "modules")) || readdirSync(join(dir, "modules")).length === 0);
+});
+
+test("模板不会被当成模块加载", (t) => {
+	const modules = loadModules(loadConfig(stateDir(t)));
+	const names = [...modules.found, ...modules.packages].map((m) => m.name);
+	for (const template of ["notes", "team", "full"]) assert.ok(!names.includes(template), names.join(", "));
+	assert.ok(!names.includes("templates"), names.join(", "));
 });
 
 test("just toy-feed：toy-market 关闭时说明怎么打开并以 1 退出，不投递；打开后照常投递", (t) => {
@@ -142,8 +158,6 @@ test("just toy-feed：toy-market 关闭时说明怎么打开并以 1 退出，�
 	assert.equal(readdirSync(join(on, "inbox")).filter((f) => f.endsWith(".json")).length, 1);
 });
 
-const SAMPLE = join(import.meta.dirname, "..", "docs", "modules", "architecture", "sample");
-const check = (dir: string) => cli("src/cli/module.ts", tmpdir(), ["check", dir]);
 
 test("just module check：好包打印一行 ok 名字@版本 和各类组件数，以 0 退出", () => {
 	const run = check(join(SAMPLE, "personal-tax"));
@@ -280,4 +294,72 @@ test("just module import：知识名不是 user-import 的、包里没有的、�
 		assert.equal((run.stdout + run.stderr).trim().split("\n").length, 1);
 	}
 	assert.ok(!existsSync(join(dir, "modules-data")));
+});
+
+const QUESTION = /^\[对话\][\s\S]*应税所得大概是 25000/;
+const opensTaxTicket = on("开任务", QUESTION, (card) => {
+	const open = openTicket(card, "预演算税");
+	const decisions = (open.args.decisions as object[]).map((d) => ({ ...d, domain: "personal-tax" }));
+	return [{ ...open, args: { decisions } }, reply(card, "好")];
+});
+
+function snapshot(dir: string): string {
+	return readdirSync(dir, { recursive: true, withFileTypes: true })
+		.map((e) => join(e.parentPath, e.name))
+		.sort()
+		.map((path) => (statSync(path).isFile() ? `${path}\n${readFileSync(path, "utf8")}` : path))
+		.join("\n");
+}
+
+/** Runs `just module try personal-tax` against a user state dir whose config.json names the fake models. */
+async function rehearse(t: import("node:test").TestContext, script: Script, models = { router: "psa-fake/router", worker: "psa-fake/worker", fallback: "psa-fake/fallback" }) {
+	const fake = await FakeModel.start(script);
+	t.after(() => fake.close());
+	const dir = stateDir(t, { models });
+	cpSync(join(SAMPLE, "personal-tax"), join(dir, "modules", "personal-tax"), { recursive: true });
+	const scratch = mkdtempSync(join(tmpdir(), "psa-tt-"));
+	t.after(() => rmSync(scratch, { recursive: true, force: true }));
+	const pi = mkdtempSync(join(tmpdir(), "psa-pi-"));
+	t.after(() => rmSync(pi, { recursive: true, force: true }));
+	const before = snapshot(dir);
+	const env = { ...process.env, ...fakeAgentEnv(fake, pi), PSA_STATE_DIR: dir, TMPDIR: scratch };
+	const child = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/cli/module.ts", "try", "personal-tax"], { env, stdio: ["ignore", "pipe", "pipe"] });
+	let out = "";
+	child.stdout.setEncoding("utf8").on("data", (s: string) => (out += s));
+	child.stderr.setEncoding("utf8").on("data", (s: string) => (out += s));
+	const timer = setTimeout(() => child.kill("SIGKILL"), 25_000);
+	const status = await new Promise<number | null>((done) => child.once("close", done));
+	clearTimeout(timer);
+	return { status, out, leftover: readdirSync(scratch).filter((f) => f.startsWith("psa-try-")), userDirChanged: snapshot(dir) !== before };
+}
+
+test("just module try：假模型调了考题要的工具、汇报里有该有的话，判通过，临时状态目录删掉，使用者的状态目录不变", async (t) => {
+	const run = await rehearse(t, {
+		router: [opensTaxTicket],
+		workers: [worker("预演算税", on("调工具", /^\[任务说明\]/, () => [domainTool("tax-bracket", { taxableIncome: 25000 })]), on("汇报", /^\[模块工具\]/, () => [report("ready", "落在第 2 档，估算税额 4000 美元")]))],
+	});
+	assert.equal(run.status, 0, run.out);
+	assert.match(run.out, /^PASS bracket-uses-tool/m);
+	assert.match(run.out, /落在第 2 档，估算税额 4000 美元/);
+	assert.deepEqual(run.leftover, []);
+	assert.equal(run.userDirChanged, false);
+});
+
+test("just module try：没调考题要的工具时判失败，写出没用到哪一项，以 1 退出", async (t) => {
+	const run = await rehearse(t, {
+		router: [opensTaxTicket],
+		workers: [worker("预演算税", on("直接汇报", /^\[任务说明\]/, () => [report("ready", "第 2 档，估算 4000 美元")]))],
+	});
+	assert.equal(run.status, 1, run.out);
+	assert.match(run.out, /^FAIL bracket-uses-tool：.*没用到 tools\/tax-bracket/m);
+	assert.doesNotMatch(run.out, /汇报里没有/);
+	assert.deepEqual(run.leftover, []);
+});
+
+test("just module try：config.json 的模型按量计费时一行拒绝，不起宿主", async (t) => {
+	const run = await rehearse(t, { router: [] }, { router: "openai-codex/gpt-6.1-terra", worker: "deepseek/deepseek-flash", fallback: "openai-codex/gpt-6.1-sol" });
+	assert.equal(run.status, 1, run.out);
+	assert.equal(run.out.trim().split("\n").length, 1, run.out);
+	assert.match(run.out, /deepseek\/deepseek-flash.*按量计费/);
+	assert.deepEqual(run.leftover, []);
 });
