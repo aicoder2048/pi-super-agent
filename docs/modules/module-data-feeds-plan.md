@@ -294,6 +294,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 2026-11-12 在 8a2cb5e 上通过：`tests/scheduler.test.ts` 12 条、`tests/feed-runner.test.ts` 3 条、`tests/wiring.test.ts` 和 `tests/config.test.ts` 各加 1 条；`just test` 1575 条全过，`check.mjs` 7 项 ok。十条 lane 全 PASS，输出在 `/tmp/swarm-g4/owner/g4-*.txt`。lane 6 的条件用「高于 7」：G3 的水平条件只在跨进去的那一行提醒，第一次用「高于 5」时 6.3 已经在线上，7.2 不算跨入，没有提醒，是 lane 写错了。perf 两轮：启动到网址 trunk 中位 397.8 和 448.7 ms，head 415.2 和 440.7 ms，差 +17.4 和 -8.0 ms（第一轮 head 有一次 965 ms，第二轮没再出现）；空 handler 一次调用中位 77.3 和 44.4 ms，几乎全是起 node 进程。fixtures 格式：`feeds/<feed>/fixtures/<样例>.json` 是 `{ "input": FeedInput 的一部分, "responses": { "<完整网址>": 应答 } }`，`input.settings` 和 `input.rows` 逐个键合并在宿主给的上面（`reads` 的每个集合没给就是空列），`responses` 按完整网址代替 `fetch`，没给的网址这一次失败并说出网址。
 
+2026-11-12 审计修复在 d963c72 上通过（已合入 G3 bb4a352）：检查和运行共用一个 `feedInput`，`reads` 的集合样例没给就是空列；inbox 逐个文件处理，坏文件单独进 rejected 并带 .error.txt，handler 失败的文件留到下一次；timer 或不带连接器的 handler 没写 every 时检查拒收；宿主检查、`just module check`、`just module try` 的密钥和运行时一样先看环境变量再看 secretsFile；日志行数只算真存下的。`just test` 1596 条全过，`check.mjs` 7 项 ok，十条 lane 全 PASS（`/tmp/swarm-g4/fix/g4-*.txt`），perf 启动中位 trunk 394.5 ms、head 402.9 ms，空 handler 中位 43.9 ms。
+
 **Merge.**
 
 - [ ] Root's clean verdict at the exact head SHA.
