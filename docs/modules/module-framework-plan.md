@@ -251,7 +251,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Files.**
 
 - [x] Create `src/modules/gateway.ts` 和 `src/modules/run-code.ts`（异步、每次调用一个进程）。
-- [x] Edit `src/worker/extension.ts`、`src/worker/tools.ts`、`src/host/workers.ts`、`src/host/host.ts`、`src/teams.ts`（成员加 `uses`）。
+- [x] Edit `src/worker/extension.ts`、`src/worker/tools.ts`、`src/host/workers.ts`、`src/host/host.ts`。`uses` 从钉住副本的 `agents/*.md` 读，`src/teams.ts` 不改。另外有意越过本节的文件边界改了两个文件：`src/web/view.mjs`（H5 卡片上的「所属模块已停用」）和 `tests/e2e/fake-model.ts`（live lane 用的回放 helper）。
 - [x] Create `tests/gateway.test.ts`，Edit `tests/worker-extension.test.ts`。
 
 **Build.**
@@ -283,7 +283,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [x] Metric. 一次 `domain_tool` 调用从 Worker 发出到收到的时间。trunk 没有这个工具，所以和 trunk 的 `lookup` 往返时间对照，另给绝对预算。
+- [x] Metric. 一次 `domain_tool` 调用从 Worker 发出到收到的时间。trunk 没有这个工具。trunk 的 `lookup` 在宿主这一侧现算、不发请求，量出来是 0 毫秒，和起一个进程的 `domain_tool` 不可比，只作记录。判断靠下面 150 毫秒的绝对预算。
 - [x] Probe. 同一个宿主上交替调 20 次 `lookup` 和 20 次 `tax-bracket`。
 - [x] Baseline. Record the trunk `lookup` 中位数 first.
 - [x] Rule. `tax-bracket` 中位数超过 150 毫秒就失败。
@@ -291,6 +291,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Review gate.** None. F3 is not review-gated.
 
 2026-11-12 在 01cd967 上通过：`just test` 1420 条全过；`node docs/modules/architecture/check.mjs` 7 项 ok；`docs/modules/evidence/f3-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f3/owner/`。Gateway 在 `src/modules/gateway.ts`，按协议的顺序：只在任务钉住的副本里找工具，模块不在服务就拒绝，成员对照副本里 `agents/*.md` 的 `uses`，再查 `AUTHORITY`，然后起一个进程跑工具。调用者在宿主每次收到 `worker.domain_tool` 时现组（`heardOthers` 会在任务中途变），没有在启动 Worker 时绑定。启动器从 `validate.ts` 挪到 `src/modules/run-code.ts`，检查用例和 Gateway 共用一个异步启动器，密钥值从宿主的 secretsFile 取。成员不再加 `uses` 字段，`src/teams.ts` 没改：成员能不能有 `domain_tool` 看 Gateway 给它的工具目录是不是空的，目录已经按副本里的 `uses` 和权限表筛过，`uses` 只有副本里一份。访问记录是每次调用一行宿主日志 `[gateway] <模块> tools/<工具> <任务> <成员或 helper> <依据> <结果> <毫秒> ms`，没有新表。模块停用后它开着的任务调工具得到「本任务所属模块已停用……请用 report 汇报做到哪里，然后收尾」，看板卡片写「所属模块已停用」（H5）；停用时不主动通知 Worker，下一次调用时才知道。Lane 3 的拒绝在第一层，pi-pi 的助手没有 `domain_tool` 这个工具。Lane 8 死循环 20005 毫秒后这一次失败，期间网页 7 毫秒回 200。Lane 10 真模型 `openai-codex/gpt-6.1-sol` 调了 tax-bracket，汇报写「第 2 档……应缴税额 4,000 美元」。Perf：宿主这一侧，从请求到 Gateway 到回复，tax-bracket 20 次中位数 50 毫秒（离散 3），几乎都是起 Node 进程；同一宿主上另一个任务同时查 20 次 lookup session，trunk 和 head 都是 0 毫秒（现算，不发请求）；Worker 一轮只调一次 tax-bracket，假模型两次请求之间中位数 52 毫秒（离散 10）。trunk 没有 `domain_tool`，lookup 也没法串成一轮一次，所以 lookup 量的是宿主这一侧。
+
+2026-11-12 在 b256c1c 上通过（修正轮）：启动器 `runModuleCodeAsync` 让工具自成一个进程组，到时限、stdout 超过 1 MB、或工具退出时整组 SIGKILL，回复不再等所有管道持有者。修之前，子进程继承 stdout 的工具要等子进程跑完（30 秒）才回，不理 SIGTERM 的工具永远不回也不退。工具返回 undefined 时回 null。Gateway 的端口（读密钥、找副本）抛错时这一次回 provider-failed，`[gateway]` 日志照记。`just test` 1426 条全过；`check.mjs` 7 项 ok；十条 lane 全 PASS，输出在 `/tmp/swarm-f3/fix/`；Lane 8 死循环 20006 毫秒后失败，期间网页 7 毫秒回 200。Perf：tax-bracket 宿主这一侧 20 次中位数 48 毫秒（离散 7），一轮 Worker 51 毫秒（离散 14），trunk lookup 0 毫秒。`just module check` 走的同步启动器 `runModuleCode` 没改，仍只对工具本身发 SIGTERM。
 
 **Merge.**
 
