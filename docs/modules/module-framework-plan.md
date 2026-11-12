@@ -47,7 +47,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Run `/deslop` before each commit and `/no-comments` before review. `deslop` 未安装，用内置 `simplify` 代替。`no-comments` 用 `pstack:comment-sicko` 子任务代替。
 - [ ] Triage every Bugbot and security-reviewer comment per `../references/bugbot-triage.md`. 仓库没有 Bugbot，记一行 skip。
 - [ ] Rebase onto current trunk before the code-ready report and babysit. Keep that merge base in fix rounds. Rebase again only at merge prep, on a `git merge-tree` conflict with trunk, on a CI failure that comes from a change on trunk, or when a known concurrent change to the same files lands. 叠放的 PR rebase 到父分支。
-- [ ] 推送前查私人信息。`git diff` 里不能出现 `/Users/szou`、邮箱和 `TechnicalAnalysis` 的绝对路径。
+- [ ] 推送前查私人信息。`git diff` 里不能出现本机主目录的绝对路径、邮箱和 `TechnicalAnalysis` 的绝对路径。
 
 ### Verdict and merge, for every PR
 
