@@ -329,7 +329,7 @@ export type HostLinePost =
 	| { kind: "alert"; externalId: string; text: string; occurredAt: number; privateTitle?: string }
 	| { kind: "receipt"; text: string };
 
-/** A host line in the conversation. `who` is the kind. It cannot be quoted. `privateTitle`: an alert on private data, which Telegram gets as that module's one line. */
+/** A host line in the conversation. `who` is the kind. It cannot be quoted. */
 export type HostLine = { id: string; who: HostLinePost["kind"]; text: string; at: number; privateTitle?: string };
 
 /** One line of the 对话 column. ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */

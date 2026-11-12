@@ -389,7 +389,7 @@ export class Host {
 		return this.#book?.().get(module)?.title ?? module;
 	}
 
-	/** A module's alert speaks past the Router (ADR-0017). On a `private` collection, Telegram gets only the module's one line. */
+	/** Bypasses the Router (ADR-0017). */
 	#postModuleAlert(module: string, alert: Alert): void {
 		const occurredAt = Date.parse(alert.at);
 		this.#postHostLine(`module:${module}`, {

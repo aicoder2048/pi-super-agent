@@ -1,17 +1,9 @@
-/**
- * The user's conditions on a watched series (design.md 提醒条件, K4 D7): the kinds, their checks and the
- * text of an alert. Pure: instance-data.ts stores conditions in the module's data.db and hands these
- * functions the key's latest rows.
- *
- * Level conditions (above, below, change-pct against a basis) alert when a row crosses into them, not on
- * every row that stays there, so a feed that writes every minute does not repeat itself.
- */
+/** Level conditions (above, below, change-pct against a basis) alert when a row crosses into them, not on every row inside, so a feed writing every minute does not repeat itself. */
 import type { Condition, Json, Watch } from "./protocol.ts";
 
-/** A condition as kept in data.db. `collection` is the collection's current name. */
 export type SetCondition = Watch & { collection: string; setAt: string };
 
-/** One row of the key's series, oldest first; the last one is the row just written. */
+/** Oldest first; the last is the row just written. */
 export type Point = { value: number; at: string; from: string };
 
 type Kind = Condition["when"];
@@ -20,17 +12,16 @@ type Fields = Record<string, Json | undefined>;
 type Spec<K extends Kind> = {
 	fields: readonly string[];
 	parse(raw: Fields): Of<K> | string;
-	/** Rows of history the check reads, the new row included. A streak reads one more, to tell exactly `times` from more. */
+	/** A streak reads one more row, to tell exactly `times` from more. */
 	need(c: Of<K>): number;
 	describe(c: Of<K>): string;
-	/** What happened, when the last point meets the condition. */
 	met(c: Of<K>, points: readonly Point[]): string | undefined;
 };
 
 // Float rounding can put a move of exactly a threshold a hair below it (5.5 / 5 - 1 < 10%).
 const EPSILON = 1e-9;
 const round = (n: number) => String(Number(n.toFixed(2)));
-/** The market's simple moving average (src/sources/market/indicators.ts), restated: importing it would pull the market feed into src/modules. */
+/** Restated from src/sources/market/indicators.ts: importing it would pull the market feed into src/modules. */
 const sma = (values: readonly number[], n: number) => (values.length < n ? undefined : values.slice(-n).reduce((a, b) => a + b, 0) / n);
 const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const wholeIn = (v: unknown, min: number, max: number): v is number => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
@@ -45,7 +36,6 @@ function streak(points: readonly Point[], rising: boolean): number {
 	return count;
 }
 
-/** True when the last point is in the state and the one before it, if any, was not. */
 const entered = (points: readonly Point[], inside: (value: number) => boolean) => inside(points.at(-1)!.value) && !(points.length > 1 && inside(points.at(-2)!.value));
 
 const parseTimes = (times: Json | undefined) => (wholeIn(times, 1, 100) ? times : "times 要是 1 到 100 的整数");
@@ -53,7 +43,6 @@ const parseTimes = (times: Json | undefined) => (wholeIn(times, 1, 100) ? times 
 type ChangePct = Of<"change-pct">;
 const DIRECTIONS = ["up", "down", "either"] as const;
 
-/** The signed move from `ref` in percent, when it reaches the condition; undefined otherwise. */
 function moveOf(c: ChangePct, value: number, ref: number): number | undefined {
 	if (ref === 0) return undefined;
 	const move = ((value - ref) / ref) * 100;
@@ -164,10 +153,9 @@ export const need = (c: Condition) => specOf(c).need(c);
 
 export const describe = (c: Condition) => specOf(c).describe(c);
 
-/** What the last point did to meet `c`, or undefined. */
 export const met = (c: Condition, points: readonly Point[]) => specOf(c).met(c, points);
 
-/** One line for a host line, at most 1000 characters (kernel's host_lines check). */
+// 1000: the kernel's host_lines length check.
 const oneLine = (text: string) => [...text.replace(/\s+/g, " ").trim()].slice(0, 1000).join("");
 
 export function alertText(title: string, condition: SetCondition, point: Point, happened: string): string {

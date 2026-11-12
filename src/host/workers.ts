@@ -38,7 +38,6 @@ function dataRequest(p: Record<string, unknown>): Request {
 	return { kind: "data", collection, op: "query", query };
 }
 
-/** The `watch` tool's arguments as a gateway request. */
 function watchRequest(p: Record<string, unknown>): Request {
 	const collection = String(p.collection ?? "") as ComponentName;
 	if (p.op === "set") return { kind: "watch", collection, op: "set", watch: { key: p.key, condition: p.condition, note: p.note, id: p.id } as never };
@@ -143,7 +142,6 @@ export interface WorkerExecutorOptions {
 	/** Without it every helper works alone. */
 	dispatch?: DeskDispatchOptions;
 	gateway?: Gateway;
-	/** Posts a condition a Worker's write met, as the module's host line. */
 	alert?: (module: ModuleName, alert: Alert) => void;
 }
 

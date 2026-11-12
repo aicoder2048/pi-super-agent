@@ -113,7 +113,6 @@ export type Watched = { collection: ComponentName; class: DataClass; output: { c
 /** `components` is the serving version: its structure is ensured first, and it decides which fields show. */
 export interface ModuleRows {
 	query(module: ModuleName, components: readonly Component[], collection: string, query: Query, who: string): Accessed;
-	/** Written rows of a watched series are checked against the conditions on their key. */
 	write(module: ModuleName, components: readonly Component[], collection: string, rows: readonly Json[], from: string, who: string): Written;
 	watch(module: ModuleName, components: readonly Component[], request: WatchRequest, who: string): Watched;
 }
@@ -162,7 +161,6 @@ function conditionsOf(db: DatabaseSync, collection: string): SetCondition[] {
 	}));
 }
 
-/** Each written row is checked where it falls in time, against the rows of its key up to it. */
 function alertsFor(db: DatabaseSync, { name, collection }: DataComponent, written: readonly Record<string, Value>[]): Alert[] {
 	const watch = collection.watch;
 	if (watch === undefined) return [];

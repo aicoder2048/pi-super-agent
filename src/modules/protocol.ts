@@ -27,7 +27,7 @@ export type Condition =
 /** One condition the user set. `key` is a value of the collection's watch key, e.g. `CEA` or `NVDA`. */
 export type Watch = { id: string; key: string; condition: Condition; note?: string };
 
-/** A condition a written row met. `externalId` is the condition's id and the row's time, so the same row never alerts twice. */
+/** `externalId` is the condition's id and the row's time, so a row never alerts twice. */
 export type Alert = { externalId: string; text: string; at: string; private: boolean };
 
 export type Query = { where?: Readonly<Record<string, string | number>>; since?: string; until?: string; limit?: number };
@@ -133,7 +133,7 @@ export type Refusal =
 /** One hit of a knowledge search, with the citation a skill asks the Worker to carry. */
 export type Passage = { doc: ComponentName; title: string; version: string; authority: "authoritative" | "reference"; section: string; text: string };
 
-/** `private` is true when the call read or wrote a `private` collection. The host then marks the ticket. `alerts` are for the host to post. */
+/** `private` is true when the call read or wrote a `private` collection. The host then marks the ticket. */
 export type Reply = { ok: true; output: Json; private: boolean; passages?: readonly Passage[]; alerts?: readonly Alert[] } | { ok: false; refusal: Refusal };
 
 export interface Gateway {
