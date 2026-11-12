@@ -63,7 +63,6 @@ async function fauxRuntime(failOn: (id: string) => boolean) {
 	return { modelRuntime, provider: faux.getModel().provider };
 }
 
-/** The roster and rules block in the first input the real Router sends to its model. */
 async function firstBlock(host: Host): Promise<string> {
 	host.say("你好");
 	const session = (host.router as any).session;

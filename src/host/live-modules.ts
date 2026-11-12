@@ -31,7 +31,6 @@ export interface LiveModules {
 export interface LiveModulesOptions {
 	db: DatabaseSync;
 	stateDir: string;
-	/** The folders that hold module folders. A saved change under one swaps the module without a restart. */
 	roots: readonly string[];
 	discovered: Modules;
 	/** config.json's `modules`, imported into the switches on the first boot only. */
@@ -127,22 +126,19 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 		log(`[modules] ${name} 的文件在复制时变了，重新检查`);
 		return { type: "package-found", version: versionOf(entry.dir, scanPackage(entry.dir, { runCases: false })) };
 	};
-	/** Files saved since the version that serves now, for the receipt. */
-	const unswapped = new Map<string, Set<string>>();
-	const servingDigest = (name: string) => {
+	const savedSinceServing = new Map<string, Set<string>>();
+	const servingOf = (name: string) => {
 		const state = records.get(name)?.state;
-		return state?.at === "active" ? state.serving.digest : undefined;
+		return state?.at === "active" ? state.serving : undefined;
 	};
 	const step = (name: string, event: ModuleEvent | null) => {
-		const before = servingDigest(name);
-		const record = drive(records.get(name) ?? initialRecord(name as ModuleName), event, (r) => saveModuleRecord(db, r), run(name));
-		records.set(name, record);
-		const after = servingDigest(name);
-		const changed = unswapped.get(name);
-		if (changed === undefined || before === undefined || after === undefined || after === before) return;
-		unswapped.delete(name);
-		const label = record.state.at === "active" ? record.state.serving.label : "?";
-		log(`[modules] 收据：${name} 换上 ${label}（${after.slice(0, 12)}），改了 ${[...changed].sort().join("、") || "（没记下文件名）"}`);
+		const before = servingOf(name);
+		records.set(name, drive(records.get(name) ?? initialRecord(name as ModuleName), event, (r) => saveModuleRecord(db, r), run(name)));
+		const after = servingOf(name);
+		const saved = savedSinceServing.get(name);
+		if (saved === undefined || before === undefined || after === undefined || after.digest === before.digest) return;
+		savedSinceServing.delete(name);
+		log(`[modules] 收据：${name} 换上 ${after.label}（${after.digest.slice(0, 12)}），改了 ${[...saved].sort().join("、") || "（没记下文件名）"}`);
 	};
 
 	const table = (): Modules => {
@@ -187,7 +183,7 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 		if (!existsSync(manifest)) {
 			if (known === undefined) return;
 			found.delete(name);
-			unswapped.delete(name);
+			savedSinceServing.delete(name);
 			step(name, { type: "package-gone" });
 			return;
 		}
@@ -197,7 +193,7 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 		}
 		const version = versionOf(dir, scanPackage(dir, { runCases: false }));
 		found.set(name, { dir, version });
-		unswapped.set(name, new Set([...(unswapped.get(name) ?? []), ...files]));
+		savedSinceServing.set(name, new Set([...(savedSinceServing.get(name) ?? []), ...files]));
 		step(name, { type: "package-found", version });
 	};
 	const onSaved = (saved: Saved) =>

@@ -30,7 +30,6 @@ function stateDir(t: TestContext): string {
 	return dir;
 }
 
-/** Boots with tax switched on, so it is serving. */
 async function boot(t: TestContext, dir: string) {
 	const db = openStore(join(dir, "state.db"));
 	setModuleSwitch(db, "tax", true);
@@ -156,7 +155,9 @@ test("宿主运行时打开一个模块：幕僚长下一次收到的输入前�
 	t.after(() => host.stop());
 	const cli = (...args: string[]) => spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", ...args], { cwd: REPO, env: { ...process.env, PSA_STATE_DIR: dir, PSA_SAY_WAIT_MS: "300" }, encoding: "utf8", timeout: 20_000 });
 	cli("src/cli/module.ts", "on", "tax");
-	await until(() => moduleRows(openStore(join(dir, "state.db"))).find((r) => r.name === "tax")?.record?.state.at === "active", "tax 打开", 3000);
+	const db = openStore(join(dir, "state.db"));
+	t.after(() => db.close());
+	await until(() => moduleRows(db).find((r) => r.name === "tax")?.record?.state.at === "active", "tax 打开", 3000);
 	const routerCards = () => fake.exchanges.filter((e) => e.conversation === "router").flatMap((e) => e.cards);
 	const said = cli("src/cli/say.ts", "say", "第一句");
 	await until(() => routerCards().some((c) => c.includes("第一句")), `幕僚长收到第一句：${said.stdout}${said.stderr}\n${host.log().slice(-2000)}`, 10_000);

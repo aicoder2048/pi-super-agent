@@ -4,13 +4,9 @@ import { join } from "node:path";
 /** Saves within this long of each other are one change, so five saves in one second swap once. */
 const QUIET_MS = 300;
 
-/** One module folder that changed, with the files under it that changed, relative to the folder. */
+/** Each module folder that changed, with the files under it that changed, relative to the folder. */
 export type Saved = ReadonlyMap<string, ReadonlySet<string>>;
 
-/**
- * Watches each root's module folders and reports every burst of saves once it has been quiet
- * for `QUIET_MS`. A root that cannot be watched is logged and skipped.
- */
 export function watchModules(roots: readonly string[], onSaved: (saved: Saved) => void, log: (line: string) => void): { close(): void } {
 	let pending = new Map<string, Set<string>>();
 	let timer: ReturnType<typeof setTimeout> | undefined;

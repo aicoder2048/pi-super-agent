@@ -58,7 +58,6 @@ export interface FauxRouterOptions {
 	failOn?: (modelId: string) => string | undefined;
 	persist?: boolean;
 	errorRetryMs?: number[];
-	/** The roster and rules block the Router sends when it changes. */
 	preamble?: () => string;
 }
 
@@ -278,7 +277,6 @@ export async function startHost(brain: Brain, script: WorkerScript, options: Par
 	return { host, router, spawner, said };
 }
 
-/** The table a host serves on its first start: legacy modules that are on, then every valid package read from its folder. */
 export function servedAsHost(modules: Modules): Modules {
 	return modules.serve([...modules.modules, ...modules.packages.flatMap((p) => (p.scan.ok ? [packageModule(p.dir, p.name)] : []))]);
 }

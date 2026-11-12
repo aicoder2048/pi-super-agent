@@ -269,7 +269,6 @@ export interface RouterOptions {
 	modelRuntime: ModelRuntime;
 	cwd: string;
 	sessionDir?: string;
-	/** The current roster and rules block, sent before the next input whenever it differs from the last one sent. */
 	preamble: () => string;
 	afterCommand: () => void;
 	onError?: (error: unknown) => void;

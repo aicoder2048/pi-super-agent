@@ -10,8 +10,6 @@ import { MEMBER_CAP_DEFAULT, MEMBER_CAP_MAX } from "./member-cap.ts";
 import { within } from "./output.ts";
 import { parseWebHosts, type TailnetName } from "./web-hosts.ts";
 
-
-/** The modules that ship with the host. A package here starts switched on; one the user adds starts off. */
 export const BUNDLED_MODULES = fileURLToPath(new URL("../../modules", import.meta.url));
 export interface HostConfig {
 	stateDir: string;
