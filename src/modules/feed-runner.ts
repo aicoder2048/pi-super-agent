@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { FeedStates, ModuleRows } from "./instance-data.ts";
 import type { CollectionDescriptor, Component, ComponentName, FeedDescriptor, FeedFixture, ModuleName } from "./manifest.ts";
-import type { Alert, Collected, FeedInput, Json } from "./protocol.ts";
-import { LIMIT_MS, runModuleCodeAsync } from "./run-code.ts";
+import type { Alert, Collected, FeedInput, Json, Row } from "./protocol.ts";
+import { LIMIT_MS, runModuleCodeAsync, secretsFor } from "./run-code.ts";
 
 export type FeedEntry = { source: string; module: ModuleName; dir: string; name: ComponentName; feed: FeedDescriptor; fixtures: readonly FeedFixture[]; components: readonly Component[]; private: boolean };
 
@@ -55,8 +55,20 @@ export function parseCollected(output: Json, into?: CollectionDescriptor): Colle
 export const intoOf = (feed: Pick<FeedDescriptor, "into">, components: readonly Component[]): CollectionDescriptor | undefined =>
 	components.find((c): c is Extract<Component, { kind: "data" }> => c.kind === "data" && c.name === feed.into)?.collection;
 
-export const withFixture = (built: FeedInput, fixture: FeedFixture | undefined): FeedInput =>
-	fixture === undefined ? built : ({ ...built, ...fixture.input, settings: { ...built.settings, ...(fixture.input["settings"] as object | undefined) } } as FeedInput);
+export type Held = { cursor: string | null; rows(collection: string): readonly Row[]; watchedKeys: readonly string[] };
+export const NOTHING_HELD: Held = { cursor: null, rows: () => [], watchedKeys: [] };
+
+export function feedInput(feed: FeedDescriptor, items: readonly Json[], held: Held, fixture?: FeedFixture): FeedInput {
+	const given = fixture?.input ?? {};
+	return {
+		items,
+		cursor: held.cursor,
+		watchedKeys: held.watchedKeys,
+		...given,
+		settings: { ...feed.settings, ...(given["settings"] as object | undefined) },
+		rows: { ...Object.fromEntries((feed.reads ?? []).map((c) => [c, held.rows(c)])), ...(given["rows"] as object | undefined) },
+	} as FeedInput;
+}
 
 const fill = (template: string, fields: Readonly<Record<string, string>>) => template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => fields[key] ?? "");
 
@@ -64,16 +76,12 @@ async function fromHandler({ module, source, feed, name, dir, components }: Feed
 	const { data } = ports;
 	const into = intoOf(feed, components);
 	const watched = into?.watch === undefined ? [] : data.watch(module, components, { kind: "watch", collection: feed.into as ComponentName, op: "list" }, source).output;
-	const built: FeedInput = {
-		items,
-		settings: (feed.settings ?? {}) as FeedInput["settings"],
+	const input = feedInput(feed, items, {
 		cursor: data.feedState(module, source).cursor,
-		rows: Object.fromEntries((feed.reads ?? []).map((c) => [c, data.query(module, components, c, { limit: READ_LIMIT }, source).rows])),
+		rows: (c) => data.query(module, components, c, { limit: READ_LIMIT }, source).rows,
 		watchedKeys: "conditions" in watched ? [...new Set(watched.conditions.map((c) => c.key))] : [],
-	};
-	const input = withFixture(built, fixture);
-	const secrets = Object.fromEntries((feed.secrets ?? []).map((n) => [n, ports.secret(n) ?? ""]));
-	const reply = await runModuleCodeAsync(join(dir, "feeds", name), handler, input, secrets, { limitMs: ports.limitMs ?? LIMIT_MS, ...(fixture && { responses: fixture.responses }) });
+	}, fixture);
+	const reply = await runModuleCodeAsync(join(dir, "feeds", name), handler, input, secretsFor(feed.secrets ?? [], ports.secret), { limitMs: ports.limitMs ?? LIMIT_MS, ...(fixture && { responses: fixture.responses }) });
 	return reply.ok ? parseCollected(reply.output, into) : reply.note;
 }
 
@@ -83,15 +91,17 @@ export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: F
 		const collected = feed.handler === undefined ? fromItems((fixture?.input["items"] as Json[] | undefined) ?? items) : await fromHandler(entry, feed.handler, items, ports, fixture);
 		if (typeof collected === "string") return { ok: false, note: collected };
 		const records = collected.records ?? [];
+		let stored = 0;
 		if (records.length > 0 && feed.into !== undefined) {
 			const written = ports.data.write(module, components, feed.into, records, source, source, true);
+			stored = written.rows.length;
 			for (const alert of written.alerts) ports.alert(module, alert);
 		}
 		const template = feed.notice;
 		const notices = template === undefined ? [] : (collected.notices ?? []).map((n) => ({ ...n, body: fill(template, n.fields) }));
 		for (const n of notices) ports.submit({ source, id: n.id, thread: n.thread ?? entry.name, body: n.body, at: ports.now(), private: entry.private });
 		if (collected.cursor !== undefined) ports.data.saveFeedState(module, source, { cursor: collected.cursor });
-		return { ok: true, records: feed.into === undefined ? 0 : records.length, notices: notices.length };
+		return { ok: true, records: stored, notices: notices.length };
 	} catch (error) {
 		return { ok: false, note: failed(error) };
 	}

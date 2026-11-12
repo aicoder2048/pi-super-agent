@@ -18,6 +18,8 @@ import { drive, liveRegistry, ModuleStore, switchEvent } from "../modules/live.t
 import type { Digest, ModuleName, PackageScan, Problem, ScanResult } from "../modules/manifest.ts";
 import type { LiveRegistry } from "../modules/registry.ts";
 import { digestOf, hasCases, runCasesAsync, scanPackage, secretNames } from "../modules/validate.ts";
+import type { SecretLookup } from "../modules/run-code.ts";
+import { secretLookup } from "../secrets.ts";
 import { watchModules, type Saved } from "../modules/watch.ts";
 
 const POLL_MS = 500;
@@ -45,6 +47,7 @@ export interface LiveModulesOptions {
 	/** config.json's `modules`, imported into the switches on the first boot only. */
 	configSwitches: Record<string, boolean>;
 	log: (line: string) => void;
+	secret?: SecretLookup;
 }
 
 const versionOf = (dir: string, scan: ScanResult): Version =>
@@ -73,7 +76,7 @@ function packageComponents(scan: PackageScan): ModuleCard["components"] {
 	return counts;
 }
 
-export function startLiveModules({ db, stateDir, roots, discovered, configSwitches, log }: LiveModulesOptions): LiveModules {
+export function startLiveModules({ db, stateDir, roots, discovered, configSwitches, log, secret = secretLookup(undefined) }: LiveModulesOptions): LiveModules {
 	const store = new ModuleStore(join(stateDir, "module-store"));
 	const data = instanceData(stateDir);
 	const found = new Map<string, Found>([
@@ -119,7 +122,7 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 	let stopped = false;
 	const runCases = (name: string, scan: PackageScan) => {
 		caseResults.set(name, { digest: scan.digest, problems: null });
-		void runCasesAsync(scan).then((problems) => {
+		void runCasesAsync(scan, secret).then((problems) => {
 			if (stopped || caseResults.get(name)?.digest !== scan.digest) return;
 			caseResults.set(name, { digest: scan.digest, problems });
 			safely("工具测试用例跑完后更新模块", () => {

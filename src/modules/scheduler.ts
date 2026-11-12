@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { settleInbox, takeInbox } from "./connectors/inbox.ts";
+import { processInbox, rejectInbox, takeInbox } from "./connectors/inbox.ts";
 import { timerDue, timerItem } from "./connectors/timer.ts";
 import type { FeedEntry, FeedRun } from "./feed-runner.ts";
 import type { FeedStates } from "./instance-data.ts";
@@ -62,7 +62,15 @@ export function createScheduler(o: SchedulerOptions): Scheduler {
 			if (!open()) return undefined;
 			const dir = join(o.inboxDir, entry.module, entry.name);
 			const taken = takeInbox(dir, o.log);
-			return taken.items.length === 0 ? undefined : call(entry, taken.items).then((run) => settleInbox(dir, taken.files, run.ok));
+			if (taken.length === 0) return undefined;
+			const mayBeNetwork = feed.handler !== undefined;
+			return (async () => {
+				for (const { file, item } of taken) {
+					const run = await call(entry, [item]);
+					if (run.ok) processInbox(dir, file);
+					else if (!mayBeNetwork) rejectInbox(dir, file, run.note, o.log);
+				}
+			})();
 		}
 		if (feed.every === undefined || !timerDue(feed.every, lastRunOf(entry), now) || !open()) return undefined;
 		lastRun.set(source, now);

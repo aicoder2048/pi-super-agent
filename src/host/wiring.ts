@@ -14,7 +14,7 @@ import type { HostOptions } from "./host.ts";
 import { helperSessionDir } from "./dispatch.ts";
 import { PiWorkerSpawner } from "./pi-worker.ts";
 import { Router, routerPreamble } from "./router.ts";
-import { readSecret } from "../secrets.ts";
+import { readSecret, secretLookup } from "../secrets.ts";
 import { createGateway } from "../modules/gateway.ts";
 import { instanceData } from "../modules/instance-data.ts";
 import { moduleDataDir } from "../modules/knowledge.ts";
@@ -110,7 +110,7 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 	const feeds = feedSpecs(config, modules, log);
 	const telegram = telegramOptions(config, process.env, log);
 	const store = new ModuleStore(join(config.stateDir, "module-store"));
-	const secret = (name: string) => readSecret([name], name, process.env, config.secretsFile)?.key;
+	const secret = secretLookup(config.secretsFile);
 	return {
 		stateDir: config.stateDir,
 		heartbeatMs: config.heartbeatSeconds * 1000,

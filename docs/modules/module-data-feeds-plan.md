@@ -199,7 +199,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 - [x] 条件存在模块的 `data.db` 里：`id`、`key`、种类、参数、`setAt`、可选的 `basis`、说明。种类是 `above`、`below`、`rising-streak`、`falling-streak`、`change-pct`、`crosses-average`。
 - [x] `watch` 工具：`list` 谁都能用；`set`、`remove` 只给只听过你本人的 request 任务（那张表的「替你做主」一行）。设完回一行程序拼出的回执。
-- [x] 有新行写进写了 `watch` 的 `series` 时，宿主对这个 key 的条件算一遍。满足就经宿主行（ADR-0017）直接提醒你，不经过幕僚长。提醒文字由程序拼出，带数值、时间和这一行的来源。同一条件同一行只提醒一次（宿主行按条件编号加这一行的时间去重）。
+- [x] 有新行写进写了 `watch` 的 `series` 时，宿主对这个 key 的条件算一遍。满足就经宿主行（ADR-0017）直接提醒你，不经过幕僚长。提醒文字由程序拼出，带数值、时间和这一行的来源。同一条件同一行只提醒一次（宿主行按条件编号加这一行的编号去重）。只有新数据提醒：只算时间等于这个 key 已存最新时间的行（同一时间算新）；补录和导入过去的读数只存不提醒。
 - [x] `private` 数据上的提醒在 Telegram 上只发一行提示。
 - [x] 不改 us-market 的盯盘条件，它的纯函数只读复用（例如均线计算）。
 
@@ -257,7 +257,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] 调度器跟着 `LiveRegistry`：模块打开，它的 feed 排上；关掉或拿掉，立刻停。来源名是 `<模块>/<feed>`。
 - [x] 两个连接器。`timer` 按 `every` 到点调用；`inbox` 读 `<stateDir>/inbox/<模块>/<feed>/` 下新放进来的 JSON 文件，处理完挪走。
 - [x] `feed.json` 加一个可选的 `"when": "us-market-hours"`，由调度器判断，复用 `src/sources/market/session.ts` 的交易时段规则（开盘到收盘加 20 分钟，给延迟数据留时间）。不在时段内不调用。
-- [x] handler 是「输入到输出」的函数：输入连接器给的内容、你填的设置、上次的进度；输出要存的行、要发的触发、新的进度。存行（进 `into`，触发 G3 的条件计算）、发触发（经内核 `submitTrigger`，按 `id` 去重，`ignore` 过滤）、存进度（存在模块的 `data.db`）都由宿主做。
+- [x] handler 是「输入到输出」的函数：输入连接器给的内容、feed.json 里写的 `settings`、上次的进度（`ask` 的回答还没有地方存，也不合并进来）；输出要存的行、要发的触发、新的进度。存行（进 `into`，触发 G3 的条件计算）、发触发（经内核 `submitTrigger`，按 `id` 去重，`ignore` 过滤）、存进度（存在模块的 `data.db`）都由宿主做。
 - [x] `just module check` 用 `feeds/<feed>/fixtures/` 跑一遍 handler，fixtures 替换网络请求；`just module try` 里连接器换成读 fixtures。
 - [x] 不建限速队列。us-market 的旧 feed 不动。
 
@@ -292,7 +292,9 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Review gate.** None. G4 is not review-gated.
 
-2026-11-12 在 8a2cb5e 上通过：`tests/scheduler.test.ts` 12 条、`tests/feed-runner.test.ts` 3 条、`tests/wiring.test.ts` 和 `tests/config.test.ts` 各加 1 条；`just test` 1575 条全过，`check.mjs` 7 项 ok。十条 lane 全 PASS，输出在 `/tmp/swarm-g4/owner/g4-*.txt`。lane 6 的条件用「高于 7」：G3 的水平条件只在跨进去的那一行提醒，第一次用「高于 5」时 6.3 已经在线上，7.2 不算跨入，没有提醒，是 lane 写错了。perf 两轮：启动到网址 trunk 中位 397.8 和 448.7 ms，head 415.2 和 440.7 ms，差 +17.4 和 -8.0 ms（第一轮 head 有一次 965 ms，第二轮没再出现）；空 handler 一次调用中位 77.3 和 44.4 ms，几乎全是起 node 进程。fixtures 格式：`feeds/<feed>/fixtures/<样例>.json` 是 `{ "input": FeedInput 的一部分, "responses": { "<完整网址>": 应答 } }`，`input.settings` 合并在 feed.json 的 settings 上，`responses` 按完整网址代替 `fetch`，没给的网址这一次失败并说出网址。
+2026-11-12 在 8a2cb5e 上通过：`tests/scheduler.test.ts` 12 条、`tests/feed-runner.test.ts` 3 条、`tests/wiring.test.ts` 和 `tests/config.test.ts` 各加 1 条；`just test` 1575 条全过，`check.mjs` 7 项 ok。十条 lane 全 PASS，输出在 `/tmp/swarm-g4/owner/g4-*.txt`。lane 6 的条件用「高于 7」：G3 的水平条件只在跨进去的那一行提醒，第一次用「高于 5」时 6.3 已经在线上，7.2 不算跨入，没有提醒，是 lane 写错了。perf 两轮：启动到网址 trunk 中位 397.8 和 448.7 ms，head 415.2 和 440.7 ms，差 +17.4 和 -8.0 ms（第一轮 head 有一次 965 ms，第二轮没再出现）；空 handler 一次调用中位 77.3 和 44.4 ms，几乎全是起 node 进程。fixtures 格式：`feeds/<feed>/fixtures/<样例>.json` 是 `{ "input": FeedInput 的一部分, "responses": { "<完整网址>": 应答 } }`，`input.settings` 和 `input.rows` 逐个键合并在宿主给的上面（`reads` 的每个集合没给就是空列），`responses` 按完整网址代替 `fetch`，没给的网址这一次失败并说出网址。
+
+2026-11-12 审计修复在 d963c72 上通过（已合入 G3 bb4a352）：检查和运行共用一个 `feedInput`，`reads` 的集合样例没给就是空列；inbox 逐个文件处理，坏文件单独进 rejected 并带 .error.txt，handler 失败的文件留到下一次；timer 或不带连接器的 handler 没写 every 时检查拒收；宿主检查、`just module check`、`just module try` 的密钥和运行时一样先看环境变量再看 secretsFile；日志行数只算真存下的。`just test` 1596 条全过，`check.mjs` 7 项 ok，十条 lane 全 PASS（`/tmp/swarm-g4/fix/g4-*.txt`），perf 启动中位 trunk 394.5 ms、head 402.9 ms，空 handler 中位 43.9 ms。
 
 **Merge.**
 

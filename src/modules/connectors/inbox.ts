@@ -14,24 +14,22 @@ function moveTo(dir: string, sub: "processed" | "rejected", file: string): strin
 	return target;
 }
 
-export function takeInbox(dir: string, log: (line: string) => void): { items: Json[]; files: string[] } {
-	if (!existsSync(dir)) return { items: [], files: [] };
-	const items: Json[] = [];
-	const files: string[] = [];
-	for (const file of readdirSync(dir).filter((f) => f.endsWith(".json")).sort()) {
-		try {
-			items.push(JSON.parse(readFileSync(join(dir, file), "utf8")) as Json);
-			files.push(file);
-		} catch (error) {
-			if (Date.now() - statSync(join(dir, file)).mtimeMs < SETTLE_MS) continue;
-			const target = moveTo(dir, "rejected", file);
-			writeFileSync(`${target}.error.txt`, `${(error as Error).message}\n`);
-			log(`[feeds] 拒收 ${join(dir, file)}：不是合法的 JSON`);
-		}
-	}
-	return { items, files };
+export const processInbox = (dir: string, file: string): void => void moveTo(dir, "processed", file);
+
+export function rejectInbox(dir: string, file: string, reason: string, log: (line: string) => void): void {
+	const target = moveTo(dir, "rejected", file);
+	writeFileSync(`${target}.error.txt`, `${reason}\n`);
+	log(`[feeds] 拒收 ${join(dir, file)}：${reason}`);
 }
 
-export function settleInbox(dir: string, files: readonly string[], ok: boolean): void {
-	for (const file of files) moveTo(dir, ok ? "processed" : "rejected", file);
+export function takeInbox(dir: string, log: (line: string) => void): { file: string; item: Json }[] {
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir).filter((f) => f.endsWith(".json")).sort().flatMap((file) => {
+		try {
+			return [{ file, item: JSON.parse(readFileSync(join(dir, file), "utf8")) as Json }];
+		} catch (error) {
+			if (Date.now() - statSync(join(dir, file)).mtimeMs >= SETTLE_MS) rejectInbox(dir, file, `不是合法的 JSON：${(error as Error).message}`, log);
+			return [];
+		}
+	});
 }

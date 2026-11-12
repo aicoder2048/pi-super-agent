@@ -2,9 +2,8 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { EVERY } from "./connectors/timer.ts";
-import { intoOf, parseCollected, withFixture } from "./feed-runner.ts";
-import type { FeedInput } from "./protocol.ts";
-import { namedFromEnv, runModuleCode, runModuleCodeAsync, type CodeReply, type RunOptions, type Secrets } from "./run-code.ts";
+import { feedInput, intoOf, NOTHING_HELD, parseCollected } from "./feed-runner.ts";
+import { runModuleCode, runModuleCodeAsync, secretsFor, type CodeReply, type RunOptions, type SecretLookup, type Secrets } from "./run-code.ts";
 import { CONNECTORS, DATA_CLASSES, FEED_WHEN, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS } from "./manifest.ts";
 import type {
 	AgentDescriptor, CapabilityUse, CollectionDescriptor, Component, ComponentName, Digest, FeedDescriptor, FeedFixture, FieldDescriptor, KindDir, MemberTool, ModuleManifest, ModuleName, PackageScan, Problem, RuleRef, Runtime, ScanResult, ToolCase, ToolDescriptor,
@@ -178,6 +177,8 @@ function readKnowledge(report: Report, root: string, name: string): Component | 
 	return { kind: "knowledge", name: name as ComponentName, source, texts };
 }
 
+const WATCH_TYPES: Record<"key" | "value" | "at", readonly FieldDescriptor["type"][]> = { key: ["text"], value: ["number"], at: ["date", "text"] };
+
 function readCollection(report: Report, root: string, name: string): Component | undefined {
 	const dir = `data/${name}`;
 	const where = `${dir}/collection.json`;
@@ -207,7 +208,7 @@ function readCollection(report: Report, root: string, name: string): Component |
 			for (const part of ["key", "value", "at"] as const) {
 				const named = watch[part] as string;
 				if (!Object.hasOwn(described, named)) report(where, `watch.${part} names "${named}", which is not a field`);
-				else if (part === "value" && described[named]?.type !== "number") report(where, "watch.value must name a number field");
+				else if (!WATCH_TYPES[part].includes(described[named]!.type)) report(where, `watch.${part} must name a ${WATCH_TYPES[part].join(" or ")} field`);
 			}
 			collection.watch = { key: watch["key"], value: watch["value"], at: watch["at"] };
 		}
@@ -290,6 +291,8 @@ function readFeed(report: Report, root: string, name: string): Component | undef
 	if (connector === undefined && feed.handler === undefined) report(where, `needs a "connector", a "handler", or both`);
 	if (feed.into === undefined && feed.notice === undefined) report(where, `needs "into" (store records), "notice" (tell the Router), or both`);
 	if (feed.every !== undefined && !EVERY.test(feed.every)) report(where, `"every" must look like 30s, 15m, 6h or 1d`);
+	const scheduledBy = connector === "timer" ? "the timer connector" : connector === undefined && feed.handler !== undefined ? "a handler and no connector" : undefined;
+	if (feed.every === undefined && scheduledBy !== undefined) report(where, `needs "every": with ${scheduledBy} it runs only on that schedule`);
 	const when = raw["when"];
 	if (oneOf(FEED_WHEN, when)) feed.when = when;
 	else if (when !== undefined) report(where, `"when" must be one of ${FEED_WHEN.join(", ")}`);
@@ -431,13 +434,13 @@ function same(actual: Json | undefined, expected: Json, tolerance: number): bool
 
 type CaseRun = { dir: string; entry: string; secrets: Secrets; input: unknown; options: RunOptions; problem(reply: CodeReply): Problem | undefined };
 
-function toolRun(root: string, component: Extract<Component, { kind: "tools" }>, item: ToolCase, index: number): CaseRun {
+function toolRun(root: string, component: Extract<Component, { kind: "tools" }>, item: ToolCase, index: number, secret: SecretLookup): CaseRun {
 	const where = `tools/${component.name}/cases.json`;
 	const label = `test case ${index + 1} "${item.name}"`;
 	return {
 		dir: join(root, "tools", component.name),
 		entry: RUNTIMES[component.tool.runtime ?? "node"],
-		secrets: namedFromEnv(component.tool.secrets ?? []),
+		secrets: secretsFor(component.tool.secrets ?? [], secret),
 		input: item.input,
 		options: {},
 		problem: (reply) => {
@@ -448,15 +451,13 @@ function toolRun(root: string, component: Extract<Component, { kind: "tools" }>,
 	};
 }
 
-/** The handler gets what the host would hand it on a first call with nothing stored, with the fixture's input over it. */
-function feedRun(root: string, { name, feed }: Extract<Component, { kind: "feeds" }>, components: readonly Component[], fixture: FeedFixture): CaseRun {
+function feedRun(root: string, { name, feed }: Extract<Component, { kind: "feeds" }>, components: readonly Component[], fixture: FeedFixture, secret: SecretLookup): CaseRun {
 	const where = `feeds/${name}/fixtures/${fixture.name}.json`;
-	const built: FeedInput = { items: [], settings: (feed.settings ?? {}) as FeedInput["settings"], cursor: null, rows: {}, watchedKeys: [] };
 	return {
 		dir: join(root, "feeds", name),
 		entry: feed.handler!,
-		secrets: namedFromEnv(feed.secrets ?? []),
-		input: withFixture(built, fixture),
+		secrets: secretsFor(feed.secrets ?? [], secret),
+		input: feedInput(feed, [], NOTHING_HELD, fixture),
 		options: { responses: fixture.responses },
 		problem: (reply) => {
 			if (!reply.ok) return { where, reason: `the handler threw on this fixture: ${reply.note}` };
@@ -466,20 +467,20 @@ function feedRun(root: string, { name, feed }: Extract<Component, { kind: "feeds
 	};
 }
 
-function caseRuns(root: string, components: readonly Component[]): CaseRun[] {
+function caseRuns(root: string, components: readonly Component[], secret: SecretLookup): CaseRun[] {
 	return components.flatMap((component) => {
-		if (component.kind === "tools") return component.cases.map((item, index) => toolRun(root, component, item, index));
-		if (component.kind === "feeds" && component.feed.handler !== undefined) return component.fixtures.map((fixture) => feedRun(root, component, components, fixture));
+		if (component.kind === "tools") return component.cases.map((item, index) => toolRun(root, component, item, index, secret));
+		if (component.kind === "feeds" && component.feed.handler !== undefined) return component.fixtures.map((fixture) => feedRun(root, component, components, fixture, secret));
 		return [];
 	});
 }
 
-export const hasCases = (scan: PackageScan): boolean => caseRuns(scan.dir, scan.components).length > 0;
+export const hasCases = (scan: PackageScan): boolean => caseRuns(scan.dir, scan.components, () => undefined).length > 0;
 
 /** For a package scanned with `runCases: false`. */
-export async function runCasesAsync(scan: PackageScan): Promise<Problem[]> {
+export async function runCasesAsync(scan: PackageScan, secret: SecretLookup): Promise<Problem[]> {
 	const problems: Problem[] = [];
-	for (const run of caseRuns(scan.dir, scan.components)) {
+	for (const run of caseRuns(scan.dir, scan.components, secret)) {
 		const problem = run.problem(await runModuleCodeAsync(run.dir, run.entry, run.input, run.secrets, run.options));
 		if (problem) problems.push(problem);
 	}
@@ -525,9 +526,9 @@ export function scanPackage(packageDir: string, options: ScanOptions = {}): Scan
 }
 
 /** `folder`: the module name the folder stands for. A copy in the module store sits in a folder named by its digest. */
-type ScanOptions = { previous?: string | undefined; runCases?: boolean; folder?: string };
+type ScanOptions = { previous?: string | undefined; runCases?: boolean; folder?: string; secret?: SecretLookup };
 
-function scanReadable(packageDir: string, { previous, runCases = true, folder }: ScanOptions): ScanResult {
+function scanReadable(packageDir: string, { previous, runCases = true, folder, secret = (name) => process.env[name] }: ScanOptions): ScanResult {
 	const root = resolve(packageDir);
 	const problems: Problem[] = [];
 	const report: Report = (where, reason) => void problems.push({ where, reason });
@@ -539,7 +540,7 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder }:
 	const rules = readRules(report, root, manifest.name, feeds);
 	crossCheck(report, manifest, components);
 	if (runCases && problems.length === 0) {
-		for (const run of caseRuns(root, components)) {
+		for (const run of caseRuns(root, components, secret)) {
 			const problem = run.problem(runModuleCode(run.dir, run.entry, run.input, run.secrets, run.options));
 			if (problem) problems.push(problem);
 		}

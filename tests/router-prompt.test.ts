@@ -43,6 +43,15 @@ test("幕僚长的提示词：使用者要加、改、去掉盯盘条件时新�
 	assert.match(lines[0], /也不要 note 它/);
 });
 
+test("幕僚长的提示词：使用者要给某个模块的数据设提醒（高于多少提醒我）时，在那个模块的领域新开一个 request 任务", () => {
+	const prompt = routerSystemPrompt(200);
+	const handling = prompt.slice(prompt.indexOf("## 怎么处理"), prompt.indexOf("## 怎么说话"));
+	const line = handling.split("\n").find((l) => l.includes("高于") && l.includes("模块"));
+	assert.ok(line, handling);
+	assert.match(line, /open_ticket.*basis=request/);
+	assert.match(line, /domain 填.*模块/);
+});
+
 test("route 工具的 open_ticket 可以带 domain，原样交给内核；没有 team 参数", async () => {
 	const seen: Decision[][] = [];
 	const kernel = { config: { replyMaxChars: 200 }, route: (d: Decision[]) => (seen.push(d), [{ ok: true }]) } as unknown as Kernel;
