@@ -10,7 +10,7 @@ import { memberProviders } from "../src/host/config.ts";
 import { Host } from "../src/host/host.ts";
 import { Modules } from "../src/modules.ts";
 import { FINNHUB_KEY_NAMES, KEY_NAMES } from "../src/sources/market/key.ts";
-import { until } from "./helpers/fakes.ts";
+import { servedAsHost, until } from "./helpers/fakes.ts";
 import { liveRegistry } from "../src/modules/live.ts";
 
 const fixed = (modules: Modules) => ({ live: liveRegistry(modules), kitFor: (domain: string) => modules.kitFor(domain) });
@@ -356,13 +356,13 @@ test("真实接线：config 里有 telegram 段时宿主选项带上 Telegram �
 test("接线把模块表交给宿主时不拍快照：换表以后宿主的领域簿和成员都是新表的；钉着版本的任务问钉住的副本", async () => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const empty = Modules.load([]);
-	const repo = Modules.load([REPO_MODULES]);
+	const repo = servedAsHost(Modules.load([REPO_MODULES]));
 	const live = liveRegistry(empty);
 	const pinned = { skillsDir: "/copy/skills", prepare: undefined, crew: [], granted: [] };
 	const options = createHostOptions({ config: hostConfig(provider), modules: { live, kitFor: (domain, pin) => (pin === null ? live.current().kitFor(domain) : pinned) }, modelRuntime, log: () => {} });
 	assert.deepEqual([...options.domains!.book().keys()], []);
 	live.publish(repo);
-	assert.deepEqual([...options.domains!.book().keys()], ["pi-pi", "us-market"]);
+	assert.deepEqual([...options.domains!.book().keys()], ["us-market", "pi-pi"]);
 	assert.equal(options.domains!.kitFor("pi-pi", null)!.crew.length, 9);
 	assert.equal(options.domains!.kitFor("tax", "abc"), pinned);
 });

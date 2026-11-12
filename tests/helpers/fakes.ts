@@ -26,7 +26,7 @@ export function defaultWorkerModels(): WorkerModels {
 import { Host, type HostDeps, type HostOptions, type RouterLike } from "../../src/host/host.ts";
 import type { WorkerEvents, WorkerHandle, WorkerSpawner, WorkerSpec } from "../../src/host/workers.ts";
 import type { MemberRun } from "../../src/host/dispatch.ts";
-import type { Domains } from "../../src/modules.ts";
+import { packageModule, type Domains, type Modules } from "../../src/modules.ts";
 import type { Member } from "../../src/teams.ts";
 import type { DomainGatedTool } from "../../src/worker/tools.ts";
 
@@ -276,4 +276,9 @@ export async function startHost(brain: Brain, script: WorkerScript, options: Par
 	spawner.request = (...args) => host.workers.handleRequest(...args);
 	const said = () => host.kernel.conversation().filter((m) => m.who === "router").map((m) => m.text);
 	return { host, router, spawner, said };
+}
+
+/** The table a host serves on its first start: legacy modules that are on, then every valid package read from its folder. */
+export function servedAsHost(modules: Modules): Modules {
+	return modules.serve([...modules.modules, ...modules.packages.flatMap((p) => (p.scan.ok ? [packageModule(p.dir, p.name)] : []))]);
 }

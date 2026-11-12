@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test, { type TestContext } from "node:test";
 import { startLiveModules, type LiveModules } from "../src/host/live-modules.ts";
 import { Kernel } from "../src/kernel/kernel.ts";
@@ -361,4 +362,20 @@ test("宿主启动后才放进来的包：just module on 说下次启动宿主�
 	assert.match(late.stdout, /下次启动/);
 	assert.doesNotMatch(late.stdout, /马上生效/);
 	assert.match(moduleCli(dir, ["on", "tax"]).stdout, /马上生效/);
+});
+
+test("第一次启动：随仓库发的新布局包 pi-pi 导入成开，九位成员照常；状态目录里的新布局包导入成关", (t) => {
+	const dir = stateDir(t);
+	const repo = fileURLToPath(new URL("../modules", import.meta.url));
+	const roots = [repo, join(dir, "modules")];
+	const db = openStore(join(dir, "state.db"));
+	const modules = startLiveModules({ db, stateDir: dir, roots, discovered: Modules.load(roots), configSwitches: {}, log: () => {} });
+	t.after(() => {
+		modules.stop();
+		db.close();
+	});
+	const switches = Object.fromEntries(moduleRows(db).map((r) => [r.name, r.switch]));
+	assert.equal(switches["pi-pi"], true);
+	assert.equal(switches["tax"], false);
+	assert.equal(modules.kitFor("pi-pi", null)?.crew.length, 9);
 });

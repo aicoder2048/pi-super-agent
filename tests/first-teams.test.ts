@@ -7,11 +7,11 @@ import { loadConfig, memberProviders } from "../src/host/config.ts";
 import { Modules } from "../src/modules.ts";
 import { memberTools } from "../src/worker/tools.ts";
 import { piPackageRoot } from "../src/pi-runtime.mjs";
-import { tempStateDir } from "./helpers/fakes.ts";
+import { servedAsHost, tempStateDir } from "./helpers/fakes.ts";
 
 const REPO_MODULES = fileURLToPath(new URL("../modules", import.meta.url));
 const defaultProviders = memberProviders(loadConfig(tempStateDir()));
-const load = (dir = REPO_MODULES) => Modules.load([dir], { allowedProviders: defaultProviders, switches: { values: { "toy-market": true }, file: "config.json" } });
+const load = (dir = REPO_MODULES) => servedAsHost(Modules.load([dir], { allowedProviders: defaultProviders, switches: { values: { "toy-market": true }, file: "config.json" } }));
 
 const WATCHERS = { "earnings-reader": "财报解读", "market-analyst": "行情分析师", "news-researcher": "新闻研究员", "technical-analyst": "技术分析师" };
 const PI_EXPERTS = ["agent-expert", "cli-expert", "config-expert", "ext-expert", "keybinding-expert", "prompt-expert", "skill-expert", "theme-expert", "tui-expert"];
@@ -19,7 +19,7 @@ const teamOf = (modules: Modules, name: string) => modules.modules.find((m) => m
 
 test("仓库自带的两支队伍用默认配置的提供方都能加载：us-market 是美股看盘队的四位，pi-pi 是 Pi施工队的九位", () => {
 	const modules = load();
-	assert.deepEqual([...modules.book], [["pi-pi", { team: "Pi施工队", onRoster: true }], ["toy-market", { team: null, onRoster: true }], ["us-market", { team: "美股看盘队", onRoster: true }]]);
+	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true }, "us-market": { team: "美股看盘队", onRoster: true } });
 	assert.deepEqual(Object.fromEntries(teamOf(modules, "us-market")!.members.map((m) => [m.name, m.title])), WATCHERS);
 	const experts = teamOf(modules, "pi-pi")!.members;
 	assert.deepEqual(experts.map((m) => m.name), PI_EXPERTS);
@@ -217,7 +217,7 @@ test("拿掉 us-market 模块：加载不报错，它的领域、队伍和成员
 	cpSync(REPO_MODULES, dir, { recursive: true });
 	rmSync(join(dir, "us-market"), { recursive: true });
 	const modules = load(dir);
-	assert.deepEqual([...modules.book], [["pi-pi", { team: "Pi施工队", onRoster: true }], ["toy-market", { team: null, onRoster: true }]]);
+	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true } });
 	assert.equal(modules.kitFor("us-market"), undefined);
 	assert.ok(!modules.rosterPrompt().includes("us-market"));
 	assert.deepEqual(modules.rulesFor("us-market"), []);
@@ -234,4 +234,11 @@ test("只有 us-market 的 module.json 开了 lookup 和 tripwire：美股看盘
 		assert.deepEqual(other.granted, [], domain);
 		for (const member of other.crew) assert.ok(!memberTools("request", member.tools).includes("lookup"), member.name);
 	}
+});
+
+test("pi-pi 是新布局包：module.json 写了 schema 1 和 version，检查通过，九位成员", () => {
+	const pipi = Modules.load([REPO_MODULES]).packages.find((p) => p.name === "pi-pi");
+	assert.ok(pipi?.scan.ok, JSON.stringify(pipi?.scan));
+	assert.equal(pipi.scan.scan.manifest.version, "1.0.0");
+	assert.deepEqual(pipi.scan.scan.components.filter((c) => c.kind === "agents").map((c) => c.name).sort(), PI_EXPERTS);
 });

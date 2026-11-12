@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { ConfigError } from "../src/config-error.ts";
 import { Modules, moduleNameProblem, parseRules } from "../src/modules.ts";
+import { servedAsHost } from "./helpers/fakes.ts";
 
 const repoModules = fileURLToPath(new URL("../modules", import.meta.url));
 const switches = (values: Record<string, boolean>) => ({ values, file: "/state/config.json" });
@@ -14,7 +15,8 @@ const quote = (body: string) => ({ source: "toy-market", externalId: "x", thread
 
 test("仓库里的模块都被发现，规则带模块前缀", () => {
 	const modules = withToy();
-	assert.deepEqual(modules.found.map((m) => m.name), ["pi-pi", "toy-market", "us-market"]);
+	assert.deepEqual(modules.found.map((m) => m.name), ["toy-market", "us-market"]);
+	assert.deepEqual(modules.packages.map((p) => p.name), ["pi-pi"]);
 	assert.ok(modules.ruleAllows("toy-market/big-move", "toy-market"));
 	assert.ok(!modules.ruleAllows("big-move", "toy-market"));
 	assert.match(modules.rulesPrompt(), /### toy-market\/big-move/);
@@ -117,7 +119,7 @@ test("模块名和对象原型上的属性同名时（constructor、toString）�
 });
 
 test("toy-market 默认关闭，开关打开后它的规则和过滤才生效", () => {
-	assert.deepEqual(Modules.load([repoModules]).modules.map((m) => m.name), ["pi-pi", "us-market"]);
+	assert.deepEqual(Modules.load([repoModules]).modules.map((m) => m.name), ["us-market"]);
 	const on = withToy();
 	assert.ok(on.ruleAllows("toy-market/big-move", "toy-market"));
 	assert.equal(on.sourcePolicy(quote("TOYX 价格 100.4，涨跌 +0.4%，成交量 500 股")), "ignore");
@@ -175,10 +177,10 @@ test("模块不能叫 user：这个名字留给使用者自己的规则，加载
 });
 
 test("仓库里的三个模块都有领域名和给幕僚长的说明，出现在领域名册里；玩具行情没有成员", () => {
-	const modules = withToy();
+	const modules = servedAsHost(withToy());
 	assert.equal(
 		modules.rosterPrompt(),
-		"- pi-pi（Pi 开发）：怎么写 Pi 的扩展、主题、技能、配置、提示模板和终端界面组件\n- toy-market（玩具行情）：演示用的假行情，只管玩具代码（如 TOYX）的波动\n- us-market（美股行情）：美股行情、个股涨跌和原因、技术面、财报、相关新闻和盯盘提醒",
+		"- toy-market（玩具行情）：演示用的假行情，只管玩具代码（如 TOYX）的波动\n- us-market（美股行情）：美股行情、个股涨跌和原因、技术面、财报、相关新闻和盯盘提醒\n- pi-pi（Pi 开发）：怎么写 Pi 的扩展、主题、技能、配置、提示模板和终端界面组件",
 	);
-	assert.deepEqual([...modules.book], [["pi-pi", { team: "Pi施工队", onRoster: true }], ["toy-market", { team: null, onRoster: true }], ["us-market", { team: "美股看盘队", onRoster: true }]]);
+	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true }, "us-market": { team: "美股看盘队", onRoster: true } });
 });
