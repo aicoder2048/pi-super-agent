@@ -268,6 +268,15 @@ test("just module import：把全文复制进实例数据并建好索引，包�
 	assert.deepEqual(readdirSync(join(dir, "modules/personal-health/knowledge", GUIDE)), ["source.json"]);
 });
 
+test("just module import 经过 just：文件名带空格时照常导入", (t) => {
+	const { dir } = healthState(t);
+	const file = join(dir, "TA02 - 心衰 指南.md");
+	writeFileSync(file, "# 心衰指南\n\n## 射血分数降低\n\n四联药物治疗。\n");
+	const run = spawnSync("just", ["module", "import", "personal-health", GUIDE, file], { encoding: "utf8", env: { ...process.env, PSA_STATE_DIR: dir } });
+	assert.equal(run.status, 0, run.stdout + run.stderr);
+	assert.deepEqual(readdirSync(join(dir, "modules-data/personal-health/knowledge", GUIDE)), ["TA02 - 心衰 指南.md"]);
+});
+
 test("just module import：给的是一个不是 .md 的文件，一行拒绝并以 1 退出，之前导入的不动", (t) => {
 	const { dir, file } = healthState(t);
 	assert.equal(cli("src/cli/module.ts", dir, ["import", "personal-health", GUIDE, file]).status, 0);
