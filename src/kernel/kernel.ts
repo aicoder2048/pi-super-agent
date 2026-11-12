@@ -158,8 +158,8 @@ export interface KernelOptions {
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	/** A rule ticket from such a source gets a market helper. */
 	isMarketSource?: (source: string) => boolean;
-	/** Without it there are no domains, and every ticket is one helper. */
-	domains?: DomainBook;
+	/** Asked each time it is needed, because modules switch on and off while the host runs. Without it there are no domains, and every ticket is one helper. */
+	domains?: () => DomainBook;
 	log?: (line: string) => void;
 	config?: Partial<KernelConfig>;
 }
@@ -182,7 +182,7 @@ export class Kernel {
 	readonly #sourcePolicy: SourcePolicy;
 	readonly #ruleAllows: (ruleId: string, triggerSource: string) => boolean;
 	readonly #isMarketSource: (source: string) => boolean;
-	readonly #domains: DomainBook;
+	readonly #domains: () => DomainBook;
 	readonly #log: (line: string) => void;
 	readonly config: KernelConfig;
 	readonly capAsks: CapAskStore = {
@@ -204,7 +204,7 @@ export class Kernel {
 		},
 	};
 
-	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, domains = new Map(), log = () => {}, config }: KernelOptions) {
+	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, domains = () => new Map(), log = () => {}, config }: KernelOptions) {
 		this.#ruleAllows = ruleAllows;
 		this.#isMarketSource = isMarketSource;
 		this.#domains = domains;
@@ -789,7 +789,7 @@ export class Kernel {
 
 	#newHelper(basis: Basis, originSource: string | null, createdAt: number, domain: string | null): Helper {
 		const role = helperRole(basis, originSource, this.#isMarketSource);
-		const team = domain === null ? null : (this.#domains.get(domain)?.team ?? null);
+		const team = domain === null ? null : (this.#domains().get(domain)?.team ?? null);
 		const unit = team !== null
 			? { rows: TEAM_HELPER_ROWS, column: "domain", value: domain, names: TEAM_NAMES }
 			: { rows: SOLO_HELPER_ROWS, column: "helper_role", value: role, names: SOLO_NAMES };
@@ -810,7 +810,7 @@ export class Kernel {
 		if (r.helper_name === null) return null;
 		const identity = { name: r.helper_name, seq: r.helper_seq };
 		if (r.helper_role !== null) return { ...identity, role: r.helper_role };
-		return { ...identity, team: this.#domains.get(r.domain)?.team ?? null };
+		return { ...identity, team: this.#domains().get(r.domain)?.team ?? null };
 	}
 
 	#stall(t: Ticket, now: number): Stall | null {
@@ -1182,8 +1182,8 @@ export class Kernel {
 		if (ruled !== null && asked !== undefined && asked !== ruled) this.#log(`[kernel] 规则 ${d.ruleId} 属于领域「${ruled}」，幕僚长填的是「${asked}」，任务 ${ticketId} 按「${ruled}」开`);
 		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now(), domain);
 		this.#run(
-			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, domain, dispatched_to)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)`,
+			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, domain, module_digest, dispatched_to)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)`,
 			ticketId,
 			title,
 			d.basis,
@@ -1195,6 +1195,7 @@ export class Kernel {
 			storedRole(helper),
 			helper.seq,
 			domain,
+			domain === null ? null : (this.#domains().get(domain)?.digest ?? null),
 			"team" in helper ? "[]" : null,
 		);
 		for (const threadId of threads) {
@@ -1209,16 +1210,17 @@ export class Kernel {
 	}
 
 	#whyNotPickable(domain: string): string | undefined {
-		const entry = this.#domains.get(domain);
+		const domains = this.#domains();
+		const entry = domains.get(domain);
 		if (entry?.onRoster) return undefined;
-		const roster = [...this.#domains].filter(([, e]) => e.onRoster).map(([name]) => name);
+		const roster = [...domains].filter(([, e]) => e.onRoster).map(([name]) => name);
 		const why = entry ? `domain ${domain} is not on your roster (its module has no description), so you cannot pick it` : `unknown domain ${domain}`;
 		return `${why}; ${roster.length ? `the domains are ${roster.join(", ")} (omit domain when none fits)` : "there are no domains (omit domain)"}`;
 	}
 
 	#domainOfRule(ruleId: string): string | null {
 		const namespace = ruleNamespace(ruleId);
-		return this.#domains.has(namespace) ? namespace : null;
+		return this.#domains().has(namespace) ? namespace : null;
 	}
 
 	#inferenceRunning(): number {
@@ -1367,6 +1369,7 @@ export class Kernel {
 			basis: r.basis as Basis,
 			ruleId: r.rule_id,
 			domain: r.domain,
+			moduleDigest: r.module_digest,
 			originTriggerId: r.origin_trigger_id,
 			createdAt: r.created_at,
 			workerSessionId: r.worker_session_id,

@@ -105,7 +105,7 @@ function allFiles(root: string, where = ""): string[] {
 }
 
 /** One hash over every file. Each file goes in as its path, its length and its content. */
-function digestOf(root: string): Digest {
+export function digestOf(root: string): Digest {
 	const hash = createHash("sha256");
 	for (const path of allFiles(root).sort()) {
 		const content = readFileSync(join(root, path));
@@ -131,7 +131,9 @@ function fields(report: Report, where: string, key: string, value: Json | undefi
 	return result;
 }
 
-function readManifest(report: Report, root: string): ModuleManifest | undefined {
+const RESERVED_NAMES = ["user", "conversation"];
+
+function readManifest(report: Report, root: string, folder: string): ModuleManifest | undefined {
 	const where = "module.json";
 	const derived = ["components", "tools", "skills", "feeds", "sources", "timers", "agents", "knowledge", "data"];
 	const parsed = readJson(report, root, where);
@@ -141,8 +143,9 @@ function readManifest(report: Report, root: string): ModuleManifest | undefined 
 	if (raw === undefined) return undefined;
 	if (raw["schema"] !== 1) report(where, `"schema" must be 1: that key is what marks a folder as a package of this layout`);
 	const name = typeof raw["name"] === "string" ? raw["name"] : "";
-	if (name !== basename(root)) report(where, `"name" is "${name}" but the folder is "${basename(root)}"`);
+	if (name !== folder) report(where, `"name" is "${name}" but the folder is "${folder}"`);
 	else if (!NAME.test(name)) report(where, `"${name}" is not a usable module name (lowercase letters, digits and hyphens)`);
+	else if (RESERVED_NAMES.includes(name)) report(where, `"${name}" is reserved: "user" names your own rules and "conversation" names the chat source`);
 	const version = typeof raw["version"] === "string" ? raw["version"] : "";
 	if (!/^\d+\.\d+\.\d+$/.test(version)) report(where, `"version" must look like 1.2.3`);
 	const manifest: ModuleManifest = { schema: 1, name: name as ModuleName, version };
@@ -460,13 +463,27 @@ function readComponents(report: Report, root: string): Component[] {
 	return components;
 }
 
-/** `runCases: false` skips the tools' test cases, which spawn a process each: the host does that when it finds a package. */
-export function scanPackage(packageDir: string, { previous, runCases = true }: { previous?: string | undefined; runCases?: boolean } = {}): ScanResult {
+/**
+ * `runCases: false` skips the tools' test cases, which spawn a process each: the host does that when it finds a package.
+ * A folder the readers trip over (a `SKILL.md` that is a directory) is one problem on that package, never a throw.
+ */
+export function scanPackage(packageDir: string, options: ScanOptions = {}): ScanResult {
+	try {
+		return scanReadable(packageDir, options);
+	} catch (error) {
+		return { ok: false, name: basename(resolve(packageDir)), problems: [{ where: ".", reason: `could not read the package: ${error instanceof Error ? error.message : String(error)}` }] };
+	}
+}
+
+/** `folder`: the module name the folder stands for. A copy in the module store sits in a folder named by its digest. */
+type ScanOptions = { previous?: string | undefined; runCases?: boolean; folder?: string };
+
+function scanReadable(packageDir: string, { previous, runCases = true, folder }: ScanOptions): ScanResult {
 	const root = resolve(packageDir);
 	const problems: Problem[] = [];
 	const report: Report = (where, reason) => void problems.push({ where, reason });
 	const rejected = (name: string): ScanResult => ({ ok: false, name, problems });
-	const manifest = readManifest(report, root);
+	const manifest = readManifest(report, root, folder ?? basename(root));
 	if (manifest === undefined) return rejected(basename(root));
 	const components = readComponents(report, root);
 	const feeds = new Set(components.filter((item) => item.kind === "feeds").map((item) => item.name as string));

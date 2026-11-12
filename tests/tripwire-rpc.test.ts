@@ -88,9 +88,9 @@ test("领域没开 tripwire 的任务和没有领域的任务改盯盘条件，�
 	}
 });
 
-test("us-market 在 config.json 里停用后，停用前开的这个领域的任务改盯盘条件，宿主拒绝，来源收不到", async (t) => {
+test("us-market 停用后，停用前开的这个领域的任务改盯盘条件，宿主拒绝，来源收不到", async (t) => {
 	const off = Modules.load([fileURLToPath(new URL("../modules", import.meta.url))], { switches: { values: { "us-market": false }, file: "config.json" } });
-	const fromBeforeTheSwitch: Domains = { book: new Map([["us-market", { team: "美股看盘队", onRoster: true }]]), kitFor: off.kitFor };
+	const fromBeforeTheSwitch: Domains = { book: () => new Map([["us-market", { team: "美股看盘队", onRoster: true }]]), kitFor: off.kitFor };
 	const { result, asked } = await tripwireIn(t, onConversation("us-market"), (host) => host.say("帮我盯英伟达"), { domains: fromBeforeTheSwitch });
 	assert.deepEqual(asked, []);
 	assert.match(String(result), /领域没有在 module\.json 的 tools 里开 tripwire/);

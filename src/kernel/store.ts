@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { oneLine } from "../client/board-format.mjs";
+import type { ModuleRecord } from "../modules/lifecycle.ts";
 import {
 	ACTION_KINDS,
 	ACTION_STATUSES,
@@ -72,6 +73,7 @@ CREATE TABLE IF NOT EXISTS tickets (
 	helper_role TEXT ${oneOf("helper_role", HELPER_ROLES)},
 	helper_seq INTEGER,
 	domain TEXT,
+	module_digest TEXT,
 	dispatched_to TEXT,
 	read_web_at INTEGER,
 	CHECK (basis <> 'rule' OR rule_id IS NOT NULL)
@@ -232,6 +234,13 @@ CREATE TABLE IF NOT EXISTS host_lines (
 	UNIQUE (source, external_id)
 );
 CREATE INDEX IF NOT EXISTS host_lines_today ON host_lines (kind, created_at, source);
+
+-- Two writers, one column each: the user's switch (just module on|off, the first-boot import) and the host's lifecycle record (JSON).
+CREATE TABLE IF NOT EXISTS module_records (
+	name TEXT PRIMARY KEY,
+	switch INTEGER CHECK (switch IN (0, 1)),
+	record TEXT
+);
 `;
 
 export function openStore(path: string): DatabaseSync {
@@ -255,6 +264,7 @@ export function openStore(path: string): DatabaseSync {
 			ALTER TABLE tickets ADD COLUMN helper_seq INTEGER`);
 	}
 	if (!ticketColumns.includes("domain")) db.exec("ALTER TABLE tickets ADD COLUMN domain TEXT");
+	if (!ticketColumns.includes("module_digest")) db.exec("ALTER TABLE tickets ADD COLUMN module_digest TEXT");
 	if (!ticketColumns.includes("dispatched_to")) db.exec("ALTER TABLE tickets ADD COLUMN dispatched_to TEXT");
 	if (!ticketColumns.includes("read_web_at")) db.exec("ALTER TABLE tickets ADD COLUMN read_web_at INTEGER");
 	if (!ticketColumns.includes("tokens_cached")) db.exec("ALTER TABLE tickets ADD COLUMN tokens_cached INTEGER NOT NULL DEFAULT 0");
@@ -263,6 +273,35 @@ export function openStore(path: string): DatabaseSync {
 		if (oneLine(title) !== title) retitle.run(oneLine(title), id);
 	}
 	return db;
+}
+
+export interface ModuleRow {
+	name: string;
+	/** Null: the user never switched it, so its default applies. */
+	switch: boolean | null;
+	/** Null: the host has not seen it yet. */
+	record: ModuleRecord | null;
+}
+
+export function moduleRows(db: DatabaseSync): ModuleRow[] {
+	return (db.prepare("SELECT name, switch, record FROM module_records ORDER BY name").all() as { name: string; switch: number | null; record: string | null }[]).map((r) => ({
+		name: r.name,
+		switch: r.switch === null ? null : r.switch === 1,
+		record: r.record === null ? null : (JSON.parse(r.record) as ModuleRecord),
+	}));
+}
+
+export function setModuleSwitch(db: DatabaseSync, name: string, on: boolean): void {
+	db.prepare("INSERT INTO module_records (name, switch) VALUES (?, ?) ON CONFLICT (name) DO UPDATE SET switch = excluded.switch").run(name, on ? 1 : 0);
+}
+
+export function saveModuleRecord(db: DatabaseSync, record: ModuleRecord): void {
+	db.prepare("INSERT INTO module_records (name, record) VALUES (?, ?) ON CONFLICT (name) DO UPDATE SET record = excluded.record").run(record.name, JSON.stringify(record));
+}
+
+/** The package versions open tickets are pinned to. Their copies must stay. */
+export function pinnedCopies(db: DatabaseSync): { module: string; digest: string }[] {
+	return db.prepare("SELECT DISTINCT domain AS module, module_digest AS digest FROM tickets WHERE closed_at IS NULL AND module_digest IS NOT NULL").all() as { module: string; digest: string }[];
 }
 
 export function inTransaction<T>(db: DatabaseSync, fn: () => T): T {

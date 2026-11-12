@@ -195,7 +195,7 @@ writeFileSync(join(plainModules, "plain/agents/clerk.md"), "---\nname: clerk\nti
 const PLAIN_CREW = Modules.load([plainModules]).kitFor("plain")!.crew;
 const LOADED = domainsOf({ watch: { team: "看盘队", crew: CREW }, dev: { team: "开发队", crew: [READER, CODER], tools: ["lookup"] }, plain: { team: "杂务队", crew: PLAIN_CREW } });
 const REMOVED_MODULE = "old";
-const DOMAINS = { book: new Map([...LOADED.book, [REMOVED_MODULE, { team: "旧队", onRoster: true }]]), kitFor: LOADED.kitFor };
+const DOMAINS = { book: () => new Map([...LOADED.book(), [REMOVED_MODULE, { team: "旧队", onRoster: true }]]), kitFor: LOADED.kitFor };
 
 function openOn(domain: string | undefined): Brain {
 	let opened = false;

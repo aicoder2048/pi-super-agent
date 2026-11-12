@@ -3,8 +3,10 @@ import { basename, join } from "node:path";
 import { ConfigError, readJsonFile } from "./config-error.ts";
 import { CONVERSATION_SOURCE, ruleId, type DomainBook, type SourcePolicy } from "./kernel/types.ts";
 import type { TimerEntry } from "./sources/timer.ts";
-import type { ScanResult } from "./modules/manifest.ts";
-import { scanPackage } from "./modules/validate.ts";
+import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import type { Digest, ScanResult } from "./modules/manifest.ts";
+import { parseModelRef } from "./models.ts";
+import { problemLine, scanPackage } from "./modules/validate.ts";
 import { loadTeam, type Member, type Team } from "./teams.ts";
 import { MEMBER_TOOLS, DOMAIN_GATED_TOOLS, type DomainGatedTool } from "./worker/tools.ts";
 
@@ -46,6 +48,8 @@ export interface LoadedModule {
 	/** The members in `agents/`. Absent: a ticket of this module is one helper. */
 	team?: Team;
 	state: ModuleState;
+	/** Set for a package served from its copy in the module store. */
+	digest?: Digest;
 }
 
 export interface FoundPackage {
@@ -83,11 +87,11 @@ export interface DomainKit {
 /** The kit of a ticket with no domain, or whose module is gone. */
 export const NO_DOMAIN: DomainKit = { skillsDir: undefined, prepare: undefined, crew: [], granted: [] };
 
-/** The loaded modules as the host uses them once tickets belong to them. `Modules` is the real one. */
+/** The serving modules as the host uses them once tickets belong to them. Asked each time, because modules switch on and off while the host runs. */
 export interface Domains {
-	readonly book: DomainBook;
-	/** Undefined: no loaded module has that name. */
-	readonly kitFor: (domain: string) => DomainKit | undefined;
+	readonly book: () => DomainBook;
+	/** `pin` is the ticket's package version; null asks the serving table. Undefined: no such module, or that version is gone. */
+	readonly kitFor: (domain: string, pin: string | null) => DomainKit | undefined;
 }
 
 export interface ModulesLoadOptions {
@@ -235,9 +239,38 @@ function rejectModuleWithoutManifest(root: string, dir: string): void {
 	if (parts.length) throw new ConfigError(`${dir}：有 ${parts.join("、")} 却没有 module.json，这个文件夹不会被当成模块。加上 ${join(dir, "module.json")}，至少写 {"name": "${basename(dir)}"}；不是模块就把它移出 ${root}`);
 }
 
+/**
+ * A package as the legacy table serves it, read from its copy in the module store. Members
+ * get no gated tools: what a package's code may reach goes through the Gateway (F3).
+ */
+export function packageModule(dir: string, name: string): LoadedModule {
+	const result = scanPackage(dir, { runCases: false, folder: name });
+	if (!result.ok) throw new Error(`${dir}：模块副本读不出来：${result.problems.map(problemLine).join("；")}`);
+	const { manifest, components, digest } = result.scan;
+	const members = components.flatMap((c): Member[] => {
+		if (c.kind !== "agents") return [];
+		const file = join(dir, "agents", `${c.name}.md`);
+		const { agent } = c;
+		return [{ name: agent.name, title: agent.title, description: agent.description, tools: cappedTools(agent.tools, []), skills: [], model: agent.model === undefined ? undefined : parseModelRef(agent.model, file), prompt: parseFrontmatter(readFileSync(file, "utf8")).body.trim(), file }];
+	});
+	const [first, ...rest] = members;
+	const rulesPath = join(dir, "rules.md");
+	const skillsDir = join(dir, "skills");
+	return {
+		name: manifest.name,
+		dir,
+		manifest: { name: manifest.name, ...(manifest.title !== undefined && { title: manifest.title }), ...(manifest.description !== undefined && { description: manifest.description }), ...(manifest.team !== undefined && { team: manifest.team }) },
+		rules: existsSync(rulesPath) ? parseRules(rulesPath, manifest.name, readFileSync(rulesPath, "utf8")).map((r) => ({ ...r, sources: r.sources ?? [] })) : [],
+		skillsDir: existsSync(skillsDir) ? skillsDir : undefined,
+		...(first !== undefined && manifest.team !== undefined && { team: { name: manifest.team, members: [first, ...rest] } }),
+		state: { enabled: true, by: "default" },
+		digest,
+	};
+}
+
 const onRoster = (module: LoadedModule) => module.manifest.description !== undefined;
 
-export class Modules implements Domains {
+export class Modules {
 	readonly found: LoadedModule[];
 	readonly packages: readonly FoundPackage[];
 	readonly modules: LoadedModule[];
@@ -246,13 +279,14 @@ export class Modules implements Domains {
 	readonly book: DomainBook;
 	readonly #scopes: Map<string, string[]>;
 
-	constructor(found: LoadedModule[], userRules: ScopedRule[], skippedUserRules: string[], packages: readonly FoundPackage[] = []) {
+	/** `serving` defaults to the found modules that are switched on. */
+	constructor(found: LoadedModule[], userRules: ScopedRule[], skippedUserRules: string[], packages: readonly FoundPackage[] = [], serving = found.filter((m) => m.state.enabled)) {
 		this.found = found;
 		this.packages = packages;
-		this.modules = found.filter((m) => m.state.enabled);
+		this.modules = serving;
 		this.userRules = userRules;
 		this.skippedUserRules = skippedUserRules;
-		this.book = new Map(this.modules.map((m) => [m.name, { team: m.team?.name ?? null, onRoster: onRoster(m) }]));
+		this.book = new Map(this.modules.map((m) => [m.name, { team: m.team?.name ?? null, onRoster: onRoster(m), ...(m.digest && { digest: m.digest }) }]));
 		this.#scopes = new Map(this.allRules().map((r) => [r.id, r.sources]));
 	}
 
@@ -286,6 +320,11 @@ export class Modules implements Domains {
 		const userRules = parsed.filter((r): r is ScopedRule => !!r.sources?.length);
 		const skipped = parsed.filter((r) => !r.sources?.length).map((r) => r.id);
 		return new Modules(modules, userRules, skipped, packages);
+	}
+
+	/** The same load serving exactly `modules`, in their order. */
+	serve(modules: LoadedModule[]): Modules {
+		return new Modules(this.found, this.userRules, this.skippedUserRules, this.packages, modules);
 	}
 
 	allRules(): ScopedRule[] {

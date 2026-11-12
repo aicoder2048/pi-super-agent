@@ -11,6 +11,9 @@ import { Host } from "../src/host/host.ts";
 import { Modules } from "../src/modules.ts";
 import { FINNHUB_KEY_NAMES, KEY_NAMES } from "../src/sources/market/key.ts";
 import { until } from "./helpers/fakes.ts";
+import { liveRegistry } from "../src/modules/live.ts";
+
+const fixed = (modules: Modules) => ({ live: liveRegistry(modules), kitFor: (domain: string) => modules.kitFor(domain) });
 
 const config = {
 	models: {
@@ -72,14 +75,14 @@ function hostConfig(provider: string, fallbackId = "fallback") {
 test("入口：配置里的回退模型不存在时，启动前就报错", async () => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	assert.throws(
-		() => createHostOptions({ config: hostConfig(provider, "missing"), modules: Modules.load([]), modelRuntime, log: () => {} }),
+		() => createHostOptions({ config: hostConfig(provider, "missing"), modules: fixed(Modules.load([])), modelRuntime, log: () => {} }),
 		/找不到模型 .*missing/,
 	);
 });
 
 test("入口：按真实接线启动的宿主，Router 遇到最终的限流错误会切到回退模型", async (t) => {
 	const { modelRuntime, provider } = await fauxRuntime((id) => id === "router");
-	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([]), modelRuntime, log: () => {} });
+	const options = createHostOptions({ config: hostConfig(provider), modules: fixed(Modules.load([])), modelRuntime, log: () => {} });
 	const host = await Host.start(options);
 	t.after(() => host.stop());
 	host.say("你好");
@@ -120,7 +123,7 @@ test("真实接线：美股行情出现在关注的来源里，用人话标题�
 	withoutKeyVars(t);
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const logs: string[] = [];
-	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([REPO_MODULES]), modelRuntime, log: (l) => logs.push(l) });
+	const options = createHostOptions({ config: hostConfig(provider), modules: fixed(Modules.load([REPO_MODULES])), modelRuntime, log: (l) => logs.push(l) });
 	const host = await Host.start(options);
 	t.after(() => host.stop());
 	const entry = host.snapshot().watching.find((w) => w.source === "us-market")!;
@@ -136,7 +139,7 @@ test("真实接线：宿主从环境变量读到密钥，日志只写来源不�
 	process.env.MASSIVE_API_KEY = "sk-wire-secret";
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const logs: string[] = [];
-	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([REPO_MODULES]), modelRuntime, log: (l) => logs.push(l) });
+	const options = createHostOptions({ config: hostConfig(provider), modules: fixed(Modules.load([REPO_MODULES])), modelRuntime, log: (l) => logs.push(l) });
 	assert.deepEqual(options.feeds?.map((f) => f.source), ["us-market"]);
 	assert.ok(logs.some((l) => l.includes("环境变量 MASSIVE_API_KEY")));
 	assert.ok(!logs.some((l) => l.includes("sk-wire-secret")));
@@ -146,23 +149,23 @@ test("真实接线：config.json 里 sources.us-market 拼错字段时启动前�
 	withoutKeyVars(t);
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = { ...hostConfig(provider), sources: { "us-market": { watchlst: ["AMD"] } } };
-	assert.throws(() => createHostOptions({ config, modules: Modules.load([REPO_MODULES]), modelRuntime, log: () => {} }), /config\.json.*watchlst/);
+	assert.throws(() => createHostOptions({ config, modules: fixed(Modules.load([REPO_MODULES])), modelRuntime, log: () => {} }), /config\.json.*watchlst/);
 	const odd = new Modules([{ name: "odd", dir: "/m/odd", manifest: { name: "odd", sources: [{ name: "odd", feed: { kind: "carrier-pigeon" } }] }, rules: [], skillsDir: undefined, state: { enabled: true, by: "default" } }], [], []);
-	assert.throws(() => createHostOptions({ config: hostConfig(provider), modules: odd, modelRuntime, log: () => {} }), /carrier-pigeon.*massive-stocks/);
+	assert.throws(() => createHostOptions({ config: hostConfig(provider), modules: fixed(odd), modelRuntime, log: () => {} }), /carrier-pigeon.*massive-stocks/);
 });
 
 test("真实接线：config.json 的 sources 里写了没有 feed 的来源名时启动前报错，列出可配置的来源", async (t) => {
 	withoutKeyVars(t);
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = { ...hostConfig(provider), sources: { "us-markt": { watchlist: ["AMD"] } } };
-	assert.throws(() => createHostOptions({ config, modules: Modules.load([REPO_MODULES]), modelRuntime, log: () => {} }), (e: Error) => e.name === "ConfigError" && /us-markt.*us-market/.test(e.message));
+	assert.throws(() => createHostOptions({ config, modules: fixed(Modules.load([REPO_MODULES])), modelRuntime, log: () => {} }), (e: Error) => e.name === "ConfigError" && /us-markt.*us-market/.test(e.message));
 });
 
 test("宿主运行模块声明的来源：随宿主启停，触发进内核，游标和使用者数据存在自己名下", async (t) => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	let stopped = false;
 	let readBack: string | undefined;
-	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([]), modelRuntime, log: () => {} });
+	const options = createHostOptions({ config: hostConfig(provider), modules: fixed(Modules.load([])), modelRuntime, log: () => {} });
 	const host = await Host.start({
 		...options,
 		feeds: [{
@@ -198,7 +201,7 @@ test("真实接线：关掉 us-market 后不运行它的看盘，config.json 里
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = { ...hostConfig(provider), sources: { "us-market": { watchlist: ["AMD"] } } };
 	const modules = Modules.load([REPO_MODULES], { switches: { values: { "us-market": false }, file: "config.json" } });
-	const options = createHostOptions({ config, modules, modelRuntime, log: () => {} });
+	const options = createHostOptions({ config, modules: fixed(modules), modelRuntime, log: () => {} });
 	assert.deepEqual(options.feeds, []);
 	assert.ok(!options.watching?.some((w) => w.source === "us-market"));
 });
@@ -208,10 +211,10 @@ test("真实接线：关掉 us-market 时有行情密钥也不建看盘，不开
 	process.env.MASSIVE_API_KEY = "sk-wiring-fake";
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const modules = Modules.load([REPO_MODULES], { switches: { values: { "us-market": false }, file: "config.json" } });
-	const options = createHostOptions({ config: hostConfig(provider), modules, modelRuntime, log: () => {} });
+	const options = createHostOptions({ config: hostConfig(provider), modules: fixed(modules), modelRuntime, log: () => {} });
 	assert.deepEqual(options.feeds, []);
-	assert.equal(options.domains!.kitFor("us-market"), undefined);
-	assert.ok(!options.domains!.book.has("us-market"));
+	assert.equal(options.domains!.kitFor("us-market", null), undefined);
+	assert.ok(!options.domains!.book().has("us-market"));
 	const host = await Host.start(options);
 	t.after(() => host.stop());
 	assert.equal(host.feeds.size, 0);
@@ -239,8 +242,8 @@ test("真实接线：仓库模块目录和状态目录 modules/ 里的模块都�
 		...moduleFiles("watch", { title: "看盘", description: "盯行情", team: "看盘队", sources: [{ name: "quotes" }] }, { "rules.md": "## drop\n跌多了开任务\n", "agents/analyst.md": memberFile("market-analyst", "行情分析师") }),
 		...moduleFiles("mail", { sources: [{ name: "mail" }] }),
 	});
-	const options = createHostOptions({ config, modules: loadWith(config, modulesDir), modelRuntime, log: () => {} });
-	assert.deepEqual([...options.domains!.book], [["mail", { team: null, onRoster: false }], ["watch", { team: "看盘队", onRoster: true }], ["news", { team: "新闻队", onRoster: true }]]);
+	const options = createHostOptions({ config, modules: fixed(loadWith(config, modulesDir)), modelRuntime, log: () => {} });
+	assert.deepEqual([...options.domains!.book()], [["mail", { team: null, onRoster: false }], ["watch", { team: "看盘队", onRoster: true }], ["news", { team: "新闻队", onRoster: true }]]);
 	const host = await Host.start(options);
 	t.after(() => host.stop());
 	const prompt: string = (host.router as any).session.systemPrompt;
@@ -250,8 +253,8 @@ test("真实接线：仓库模块目录和状态目录 modules/ 里的模块都�
 
 test("真实接线：没有任何模块时没有领域", async () => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
-	const options = createHostOptions({ config: hostConfig(provider), modules: Modules.load([]), modelRuntime, log: () => {} });
-	assert.deepEqual([...options.domains!.book], []);
+	const options = createHostOptions({ config: hostConfig(provider), modules: fixed(Modules.load([])), modelRuntime, log: () => {} });
+	assert.deepEqual([...options.domains!.book()], []);
 });
 
 test("真实接线：成员的模型只能用 router 或 worker 的提供方，回退模型的提供方不算；提供方对了但模型不存在也在启动前报错", async () => {
@@ -265,7 +268,7 @@ test("真实接线：成员的模型只能用 router 或 worker 的提供方，�
 	const paid = withModel("deepseek/deepseek-flash");
 	assert.throws(() => loadWith(paid.config), (e: Error) => e.message.startsWith(paid.file) && /拒绝使用 deepseek\/deepseek-flash/.test(e.message));
 	const missing = withModel(`${provider}/no-such-model`);
-	assert.throws(() => createHostOptions({ config: missing.config, modules: loadWith(missing.config), modelRuntime, log: () => {} }), (e: Error) => e.message.startsWith(missing.file) && /找不到模型 .*no-such-model/.test(e.message));
+	assert.throws(() => createHostOptions({ config: missing.config, modules: fixed(loadWith(missing.config)), modelRuntime, log: () => {} }), (e: Error) => e.message.startsWith(missing.file) && /找不到模型 .*no-such-model/.test(e.message));
 });
 
 test("真实接线：router 和 worker 的提供方不同时，成员的模型用其中哪一家都行，别家的不行", () => {
@@ -284,17 +287,17 @@ test("真实接线：宿主知道每个领域的助手能派给谁，时限和�
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = hostConfig(provider);
 	writeFiles(join(config.stateDir, "modules"), NEWS_MODULE);
-	const { dispatch, domains } = createHostOptions({ config, modules: loadWith(config), modelRuntime, log: () => {} });
-	assert.deepEqual(domains!.kitFor("news")!.crew.map((m) => [m.name, m.title]), [["news-researcher", "新闻研究员"]]);
-	assert.equal(domains!.kitFor("old"), undefined);
+	const { dispatch, domains } = createHostOptions({ config, modules: fixed(loadWith(config)), modelRuntime, log: () => {} });
+	assert.deepEqual(domains!.kitFor("news", null)!.crew.map((m) => [m.name, m.title]), [["news-researcher", "新闻研究员"]]);
+	assert.equal(domains!.kitFor("old", null), undefined);
 	assert.deepEqual(dispatch, { timeoutMs: 60_000, codingTimeoutMs: 600_000, stallMs: 45_000, maxConcurrent: 2 });
 });
 
 test("真实接线：仓库里的玩具行情模块按领域交出自己的 skills/", async () => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const modules = Modules.load([REPO_MODULES], { switches: { values: { "toy-market": true }, file: "config.json" } });
-	const { domains } = createHostOptions({ config: hostConfig(provider), modules, modelRuntime, log: () => {} });
-	assert.equal(domains!.kitFor("toy-market")!.skillsDir, join(REPO_MODULES, "toy-market/skills"));
+	const { domains } = createHostOptions({ config: hostConfig(provider), modules: fixed(modules), modelRuntime, log: () => {} });
+	assert.equal(domains!.kitFor("toy-market", null)!.skillsDir, join(REPO_MODULES, "toy-market/skills"));
 });
 
 const TG_TOKEN = "123456789:AAH-fake_token_for_wiring_tests_00";
@@ -336,7 +339,21 @@ test("真实接线：config 里有 telegram 段时宿主选项带上 Telegram �
 	process.env.TELEGRAM_BOT_TOKEN = TG_TOKEN;
 	t.after(() => (saved === undefined ? delete process.env.TELEGRAM_BOT_TOKEN : (process.env.TELEGRAM_BOT_TOKEN = saved)));
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
-	const options = createHostOptions({ config: { ...hostConfig(provider), telegram: { allowedUserIds: [42] } }, modules: Modules.load([]), modelRuntime, log: () => {} });
+	const options = createHostOptions({ config: { ...hostConfig(provider), telegram: { allowedUserIds: [42] } }, modules: fixed(Modules.load([])), modelRuntime, log: () => {} });
 	assert.equal(options.telegram?.api.botId, 123456789);
-	assert.equal(createHostOptions({ config: hostConfig(provider), modules: Modules.load([]), modelRuntime, log: () => {} }).telegram, undefined);
+	assert.equal(createHostOptions({ config: hostConfig(provider), modules: fixed(Modules.load([])), modelRuntime, log: () => {} }).telegram, undefined);
+});
+
+test("接线把模块表交给宿主时不拍快照：换表以后宿主的领域簿和成员都是新表的；钉着版本的任务问钉住的副本", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const empty = Modules.load([]);
+	const repo = Modules.load([REPO_MODULES]);
+	const live = liveRegistry(empty);
+	const pinned = { skillsDir: "/copy/skills", prepare: undefined, crew: [], granted: [] };
+	const options = createHostOptions({ config: hostConfig(provider), modules: { live, kitFor: (domain, pin) => (pin === null ? live.current().kitFor(domain) : pinned) }, modelRuntime, log: () => {} });
+	assert.deepEqual([...options.domains!.book().keys()], []);
+	live.publish(repo);
+	assert.deepEqual([...options.domains!.book().keys()], ["pi-pi", "us-market"]);
+	assert.equal(options.domains!.kitFor("pi-pi", null)!.crew.length, 9);
+	assert.equal(options.domains!.kitFor("tax", "abc"), pinned);
 });

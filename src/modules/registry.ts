@@ -37,21 +37,11 @@ export interface RegistrySnapshot {
 	feeds(): readonly { source: string; module: ModuleName; component: Extract<Component, { kind: "feeds" }> }[];
 }
 
-export interface LiveRegistry {
-	current(): RegistrySnapshot;
-	/** Atomic. Listeners run after the swap, in registration order, and may not throw. */
-	publish(next: RegistrySnapshot): void;
-	onChange(listener: (change: { from: RegistrySnapshot; to: RegistrySnapshot; changed: readonly ModuleName[] }) => void): () => void;
-}
-
-/** Owns `<stateDir>/module-store/`. The only writer there. */
-export interface ModuleStore {
-	/** Copies the package into the store under its digest. A second call for the same digest does nothing. */
-	keep(scan: PackageScan): PackageSnapshot;
-	/** For a ticket's pin. A pinned copy is never collected. */
-	open(pin: { module: ModuleName; digest: Digest }): PackageSnapshot;
-	/** Deletes copies that are not serving and not pinned by an open ticket. */
-	collect(inUse: ReadonlySet<Digest>): void;
+/** `S` is the table the host serves. Until every module is a package, that is the legacy `Modules` (see `src/host/live-modules.ts`). */
+export interface LiveRegistry<S> {
+	current(): S;
+	/** Atomic: one assignment. A holder of the old table keeps reading the whole old table. The scheduler (F5) adds a change listener. */
+	publish(next: S): void;
 }
 
 /** Owns `<stateDir>/modules-data/<module>/`. The only host code that opens a module's instance data. */
@@ -78,7 +68,7 @@ export interface InstanceHandle {
 /** Runs each serving module's feeds on a clock or on a push, and follows registry changes. */
 export interface Scheduler {
 	/** A removed or replaced module's entries stop before the new ones start. Cursors stay in instance data. */
-	follow(registry: LiveRegistry): void;
+	follow(registry: LiveRegistry<RegistrySnapshot>): void;
 	health(source: string): { lastOk: string | null; problem: string | null };
 }
 

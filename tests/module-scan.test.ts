@@ -60,3 +60,23 @@ test("新布局包和旧布局模块同名时报模块重名，和两个旧模�
 test("config.json 的开关写了新布局包的名字不算没发现的模块", () => {
 	assert.doesNotThrow(() => Modules.load([root({}, ["personal-tax"])], { switches: switches({ "personal-tax": true }) }));
 });
+
+test("扫描一个包时读文件出错（SKILL.md 是个目录）：这个包记成无效并带原因，加载照常", () => {
+	const dir = root({ odd: {} });
+	mkdirSync(join(dir, "odd/skills/foo/SKILL.md"), { recursive: true });
+	const modules = Modules.load([dir]);
+	const [odd] = modules.packages;
+	assert.ok(odd && !odd.scan.ok, "odd is invalid");
+	assert.match(odd.scan.problems[0]!.reason, /could not read the package: .*EISDIR/);
+});
+
+test("新布局包叫 user 或 conversation：和旧布局一样不许用这两个名字，包记成无效", () => {
+	const modules = Modules.load([root({ user: {}, conversation: {} })]);
+	assert.deepEqual(
+		modules.packages.map((p) => [p.name, p.scan.ok ? "ok" : p.scan.problems[0]!.reason]),
+		[
+			["conversation", `"conversation" is reserved: "user" names your own rules and "conversation" names the chat source`],
+			["user", `"user" is reserved: "user" names your own rules and "conversation" names the chat source`],
+		],
+	);
+});

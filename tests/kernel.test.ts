@@ -17,7 +17,7 @@ function setup({ config, path = ":memory:", at = "2026-11-08T10:00:00", domains 
 	const db = openStore(path);
 	const logs: string[] = [];
 	const kernel = new Kernel({
-		domains,
+		domains: domains && (() => domains),
 		log: (line) => logs.push(line),
 		db,
 		clock,
