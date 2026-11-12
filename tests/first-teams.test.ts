@@ -44,11 +44,10 @@ test("美股看盘队每位成员只列它用得上的只读工具；九位 Pi �
 	assert.deepEqual(tools("pi-pi"), Object.fromEntries(PI_EXPERTS.map((name) => [name, ["read", "grep", "find", "ls", "web_get"]])));
 });
 
-// module-builder's experts write module packages by design (design.md §6), so they are not among the read-only crews.
-const shipped = () => load().modules.filter((m) => m.name !== "module-builder").flatMap((m) => m.team?.members ?? []);
+const readOnlyCrews = () => load().modules.filter((m) => m.name !== "module-builder").flatMap((m) => m.team?.members ?? []);
 
 test("仓库自带的看盘队和施工队十三位成员都写了工具清单，没有一位能执行命令、写文件或改文件", () => {
-	const all = shipped();
+	const all = readOnlyCrews();
 	assert.equal(all.length, 13);
 	for (const member of all) {
 		assert.ok(member.tools, `${member.file} 写了 tools`);
@@ -57,7 +56,7 @@ test("仓库自带的看盘队和施工队十三位成员都写了工具清单�
 });
 
 test("仓库自带的成员提示词不让成员跑 firecrawl 或 curl", () => {
-	for (const member of shipped()) {
+	for (const member of readOnlyCrews()) {
 		for (const word of ["firecrawl", "curl "]) assert.ok(!member.prompt.includes(word), `${member.file} 的正文里有「${word.trim()}」`);
 	}
 });

@@ -19,7 +19,6 @@ import type { WorkerEvents, WorkerHandle, WorkerSpawner, WorkerSpec } from "./wo
 
 const WORKER_EXTENSION = fileURLToPath(new URL("../worker/extension.ts", import.meta.url));
 const WORKER_LAUNCHER = fileURLToPath(new URL("./worker-launcher.mjs", import.meta.url));
-/** The host's code checkout. The justfile is there, so a helper or member runs `just -f "$PSA_REPO/justfile" module ...` from its task folder. */
 const REPO = join(import.meta.dirname, "../..");
 
 export const WORKER_PROMPT = `你是 Super Agent 的一个 Worker，负责一项任务。你不直接和使用者说话：你的推理和工具调用不会被转达，只有 report 工具提交的汇报会到达 Router，再由 Router 转告使用者。
