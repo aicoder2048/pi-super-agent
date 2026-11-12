@@ -68,7 +68,6 @@ const listing = (state: string, name: string) => {
 };
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
-/** Milliseconds until `ok()` held, or -1 after `limitMs`. */
 async function within(limitMs: number, ok: () => boolean): Promise<number> {
 	const started = performance.now();
 	while (performance.now() - started < limitMs) {
@@ -281,16 +280,18 @@ const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.len
 const line = (name: string, xs: number[], unit: string) => `${name}: median ${median(xs).toFixed(0)} ${unit}, runs ${xs.map((t) => t.toFixed(0)).join(" ")}, spread ${(Math.max(...xs) - Math.min(...xs)).toFixed(0)} ${unit}`;
 
 type Usage = { input: number; cacheRead?: number; cacheWrite?: number };
-/** Prompt tokens of the first model call after each input the host sent to the Router. */
+type Entry = { type: string; customType?: string; content?: string; message?: { role: string; usage?: Usage } };
+/** Prompt tokens, cache included, of the first model call after each [对话] input the host sent to the Router. */
 function routerInputTokens(state: string): number[] {
 	const dir = join(state, "sessions/router");
-	const entries = readdirSync(dir).flatMap((f) => readFileSync(join(dir, f), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { type: string; message?: { role: string; customType?: string; usage?: Usage } }));
+	const entries = readdirSync(dir).flatMap((f) => readFileSync(join(dir, f), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Entry));
 	const tokens: number[] = [];
 	let waiting = false;
-	for (const { message } of entries) {
-		if (message?.role === "custom" && message.customType === "psa-notice") waiting = true;
-		if (message?.role === "assistant" && waiting && message.usage) {
-			tokens.push(message.usage.input + (message.usage.cacheRead ?? 0) + (message.usage.cacheWrite ?? 0));
+	for (const entry of entries) {
+		if (entry.type === "custom_message" && entry.customType === "psa-notice") waiting = (entry.content ?? "").includes("[对话]");
+		const usage = entry.message?.role === "assistant" ? entry.message.usage : undefined;
+		if (waiting && usage) {
+			tokens.push(usage.input + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0));
 			waiting = false;
 		}
 	}
