@@ -77,6 +77,11 @@ function readStored(db: DatabaseSync): Stored {
 	return row === undefined ? EMPTY : (JSON.parse(row.json) as Stored);
 }
 
+const addMissingSourcesColumn = (db: DatabaseSync, stored: Stored) =>
+	Object.keys(stored.collections)
+		.filter((name) => db.prepare(`SELECT 1 FROM pragma_table_info(?) WHERE name = '_sources'`).get(name) === undefined)
+		.map((name) => `ALTER TABLE ${quote(name)} ADD COLUMN "_sources" TEXT`);
+
 const failed = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const problemText = (problems: readonly { where: string; reason: string }[]) => problems.map((p) => `${p.where}：${p.reason}`).join("；");
@@ -240,13 +245,14 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 				const before = readStored(db);
 				const problems = problemsFor(before, components);
 				if (problems.length > 0) return { ok: false, reason: problemText(problems) };
+				const sourcesBackfill = addMissingSourcesColumn(db, before);
 				const { sql, next } = plan(before, components);
-				if (JSON.stringify(next) === JSON.stringify(before)) return { ok: true };
+				if (sourcesBackfill.length === 0 && JSON.stringify(next) === JSON.stringify(before)) return { ok: true };
 				// SQLite is the rollback: closing with the transaction still open undoes it, and a hot
 				// journal left by a crash is rolled back on the next open.
 				db.exec("BEGIN");
 				db.exec(CONDITIONS);
-				for (const statement of sql) db.exec(statement);
+				for (const statement of [...sourcesBackfill, ...sql]) db.exec(statement);
 				db.exec("CREATE TABLE IF NOT EXISTS _structure (json TEXT NOT NULL); DELETE FROM _structure");
 				db.prepare("INSERT INTO _structure VALUES (?)").run(JSON.stringify(next));
 				db.exec("COMMIT");
