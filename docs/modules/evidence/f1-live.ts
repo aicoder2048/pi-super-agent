@@ -36,7 +36,7 @@ function stateDir(packages: Record<string, object> = {}, samples: string[] = [])
 
 function just(args: string[], { cwd = HEAD, state = stateDir() } = {}) {
 	const run = spawnSync("just", args, { cwd, env: { ...process.env, PSA_STATE_DIR: state }, encoding: "utf8", timeout: 60_000 });
-	return { status: run.status, out: run.stdout + run.stderr };
+	return { status: run.status, stdout: run.stdout, out: run.stdout + run.stderr };
 }
 
 const results: string[] = [];
@@ -70,7 +70,7 @@ async function lanes(): Promise<void> {
 	lane(2, "health", () => {
 		const run = just(["module", "check", join(SAMPLE, "personal-health")]);
 		const recorded = /personal-health sample package validates: (.*)$/m.exec(checkMjs.stdout)?.[1];
-		return { pass: run.status === 0 && run.out.startsWith("ok personal-health@0.1.0") && run.out.trim() === recorded, evidence: `exit ${run.status}\n${run.out}check.mjs recorded: ${recorded}` };
+		return { pass: run.status === 0 && run.stdout.startsWith("ok personal-health@0.1.0") && run.stdout.trim() === recorded, evidence: `exit ${run.status}\n${run.out}check.mjs recorded: ${recorded}` };
 	});
 
 	lane(3, "broken", () => {
@@ -97,7 +97,7 @@ async function lanes(): Promise<void> {
 
 	lane(7, "missing", () => {
 		const run = just(["module", "check", join(SAMPLE, "no-such-package")]);
-		return { pass: run.status === 1 && run.out.trim().split("\n").length === 1, evidence: `exit ${run.status}\n${run.out}` };
+		return { pass: run.status === 1 && run.stdout.trim().split("\n").length === 1, evidence: `exit ${run.status}\n${run.out}` };
 	});
 
 	lane(8, "typo", () => {
@@ -130,7 +130,7 @@ async function lanes(): Promise<void> {
 	console.log(results.join("\n"));
 }
 
-/** Boot to ready, trunk and head alternating, with the repo's three modules plus both sample packages in the state dir. */
+/** Boot to ready, trunk and head alternating. Trunk cannot boot with the sample packages (it loads them as old-layout modules and stops), so trunk boots the repo's three modules and head boots those plus both samples. */
 async function perf(runs = 5): Promise<void> {
 	const trees = { trunk: trunk(), head: HEAD };
 	const times: Record<string, number[]> = { trunk: [], head: [] };
@@ -140,7 +140,7 @@ async function perf(runs = 5): Promise<void> {
 		for (let i = 0; i < runs; i++) {
 			for (const [name, tree] of Object.entries(trees)) {
 				const { startHost, fakeModels } = await import(join(tree, "tests/e2e/harness.ts"));
-				const state = stateDir({}, ["personal-health", "personal-tax"]);
+				const state = stateDir({}, name === "head" ? ["personal-health", "personal-tax"] : []);
 				const started = performance.now();
 				const host = await startHost({ models: fakeModels, stateDir: state, logFile: join(state, "host.log"), config: { webPort: 0 }, env: fakeAgentEnv(fake, join(state, "pi")) });
 				times[name]!.push(performance.now() - started);
