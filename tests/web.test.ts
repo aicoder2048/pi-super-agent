@@ -2470,6 +2470,24 @@ test("右栏：来了属于某个任务的提醒，打开那个任务的标签",
 	assert.equal(page.panelStep(alerted, { kind: "close" }).showing, "modules");
 });
 
+test("右栏刷新：任务标签和最后看的标签存下来，刷新后任务还在就照原样恢复，高亮不留", () => {
+	const before = panelAfter({ kind: "pick", tab: "modules" }, { kind: "open", ticketId: "tkt_a" }, { kind: "alert", lineId: "hln_1" });
+	assert.deepEqual(page.savedPanel(page.panelText(before), new Set(["tkt_a"])), { ...before, flash: null });
+	const onTask = panelAfter({ kind: "pick", tab: "sources" }, { kind: "open", ticketId: "tkt_a" });
+	assert.deepEqual(page.savedPanel(page.panelText(onTask), new Set(["tkt_a"])), onTask);
+});
+
+test("右栏刷新：存下的任务已经不在看板上，丢掉任务标签，回到最后看的概况标签", () => {
+	const onTask = panelAfter({ kind: "pick", tab: "sources" }, { kind: "open", ticketId: "tkt_gone" });
+	assert.deepEqual(page.savedPanel(page.panelText(onTask), new Set(["tkt_a"])), { ...page.firstPanel(), showing: "sources", last: "sources" });
+});
+
+test("右栏刷新：没存过或存的东西读不懂，从「今天」开始", () => {
+	for (const text of [null, "", "{", "null", '{"showing":"nope","task":3,"last":"today"}', '{"showing":"task","task":null,"last":"today"}']) {
+		assert.deepEqual(page.savedPanel(text, new Set(["tkt_a"])), page.firstPanel(), String(text));
+	}
+});
+
 const hostAlert = (id: string, text: string) => ({ id, who: "alert" as const, text, at: 1 });
 
 test("右栏标签：今天 = 今日来源消息 + 今日提醒，来源、模块、已完成各带数字；有任务时任务标签排第一，写编号前 4 位", () => {

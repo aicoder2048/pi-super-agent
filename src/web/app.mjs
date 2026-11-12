@@ -3,7 +3,7 @@
 import {
 	BAR_HINT, CLEAR_FAILED, SWITCH_FAILED, moduleBody, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
 	questionOf, choiceOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
-	laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory, firstPanel, panelStep, overviewTabs,
+	laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory, firstPanel, panelStep, overviewTabs, panelText, savedPanel,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, HOST_LINE_LABEL, helperLine } from "../client/board-format.mjs";
 
@@ -16,6 +16,7 @@ const STATUS_TEXT = {
 
 const THEME_KEY = "psa-theme";
 const PANEL_KEY = "psa-panel-open";
+const TAB_KEY = "psa-right-panel";
 const MARK = { ok: "✓", error: "!", pending: "…", stopped: "■" };
 
 /** @param {Document} doc */
@@ -58,6 +59,7 @@ function mount(doc) {
 	const sending = new Map();
 	const switching = new Set();
 	let panel = firstPanel();
+	let restored = false;
 	let moduleDetails = false;
 
 	/** @param {string} tag @param {string} className @param {string} [text] */
@@ -468,6 +470,7 @@ function mount(doc) {
 	const showPanel = (next) => {
 		const reopen = next.task !== (watching?.watch.ticketId ?? null);
 		panel = next;
+		store.set(TAB_KEY, panelText(panel));
 		if (!reopen) {
 			renderTabs();
 			renderOverview();
@@ -852,6 +855,7 @@ function mount(doc) {
 	/** Clicking the task already open reopens its stream, which recovers after a host restart. @param {string} ticketId */
 	const watch = (ticketId) => {
 		panel = panelStep(panel, { kind: "open", ticketId });
+		store.set(TAB_KEY, panelText(panel));
 		follow(ticketId);
 		renderPanel();
 	};
@@ -899,6 +903,10 @@ function mount(doc) {
 			if (panes.includes("left")) settleSending(view, sending);
 			for (const pane of panes) render[pane]();
 			if (panes.includes("left")) renderHow();
+			if (message.type === "snapshot" && !restored) {
+				restored = true;
+				showPanel(savedPanel(store.get(TAB_KEY), new Set(view.rows.map((r) => r.id))));
+			}
 			if (message.type === "host_line" && message.who === "alert") showPanel(panelStep(panel, { kind: "alert", lineId: message.id }));
 		};
 		events.onerror = () => {

@@ -367,6 +367,26 @@ export function panelStep(panel, event) {
 	}
 }
 
+const OVERVIEW_TABS = ["today", "sources", "modules", "done"];
+
+/** What a reload restores: the task tab stays until ×, so it outlives the page. @param {Panel} panel */
+export const panelText = (panel) => JSON.stringify({ showing: panel.showing, task: panel.task, last: panel.last });
+
+/** @param {string | null} text @param {Set<string>} ticketIds the tickets on the first board after a reload @returns {Panel} */
+export function savedPanel(text, ticketIds) {
+	let saved;
+	try {
+		saved = JSON.parse(text ?? "");
+	} catch {
+		return firstPanel();
+	}
+	const { showing, task, last } = saved ?? {};
+	const valid = OVERVIEW_TABS.includes(last) && (task === null || typeof task === "string") && (OVERVIEW_TABS.includes(showing) || (showing === "task" && task !== null));
+	if (!valid) return firstPanel();
+	const panel = { ...firstPanel(), showing, task, last };
+	return task === null || ticketIds.has(task) ? panel : panelStep(panel, { kind: "close" });
+}
+
 /** @typedef {{ key: OverviewTab | "task", label: string, count: number | null, selected: boolean }} PanelTab */
 
 /** @param {View} view @param {Panel} panel @returns {PanelTab[]} */
