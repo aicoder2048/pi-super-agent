@@ -364,8 +364,12 @@ function alreadyPast(after: readonly Tripwire[], currentDrift: number | undefine
 }
 
 export function receiptText(before: readonly Tripwire[], after: readonly Tripwire[], book: Book, currentDrift?: number): string {
-	const lines = [summary(before, after, "local"), alreadyPast(after, currentDrift), `现在共 ${book.size} 条${book.size ? "：" : "。"}`, ...[...book.values()].map((t) => describe(t, "local"))];
+	const lines = [summary(before, after, "local"), alreadyPast(after, currentDrift), `现在共 ${book.size} 条${book.size ? "：" : "。"}`, ...localLines(book)];
 	return lines.filter((l) => l !== undefined).join("\n");
+}
+
+export function localLines(book: Book): string[] {
+	return [...book.values()].map((t) => describe(t, "local"));
 }
 
 export function echoText(applied: Applied): string {

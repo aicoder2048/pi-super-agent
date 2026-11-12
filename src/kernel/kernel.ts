@@ -1085,6 +1085,11 @@ export class Kernel {
 		return this.#all("SELECT id, kind, text, created_at FROM host_lines WHERE kind = 'alert' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
 	}
 
+	alertCountsToday(): Record<string, number> {
+		const rows = this.#all("SELECT source, COUNT(*) AS count FROM host_lines WHERE kind = 'alert' AND created_at >= ? GROUP BY source", localDayStart(this.#now()));
+		return Object.fromEntries(rows.map((r) => [r.source, r.count]));
+	}
+
 	usageToday(provider: string): number {
 		return this.#get("SELECT tokens FROM usage_daily WHERE day = ? AND provider = ?", localDayKey(this.#now()), provider)?.tokens ?? 0;
 	}

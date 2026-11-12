@@ -5,7 +5,7 @@ import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TestContext } from "node:test";
-import type { HostToClient } from "../../src/client/protocol.ts";
+import type { HostToClient, SourcePanel } from "../../src/client/protocol.ts";
 import { Router } from "../../src/host/router.ts";
 import { ModelSelector } from "../../src/model-selector.ts";
 import { formatModelRef } from "../../src/models.ts";
@@ -208,14 +208,14 @@ export class FakeSpawner implements WorkerSpawner {
 	}
 }
 
-export function fakeFeed(source = "fake-feed") {
+export function fakeFeed(source = "fake-feed", panel?: () => SourcePanel) {
 	const feed = { ctx: undefined as FeedContext | undefined, spec: undefined as unknown as FeedSpec };
 	feed.spec = {
 		source,
 		lookupHelp: "",
 		create: (ctx) => {
 			feed.ctx = ctx;
-			return { start() {}, stop() {}, problem: () => undefined, lookup: async () => null };
+			return { start() {}, stop() {}, problem: () => undefined, lookup: async () => null, ...(panel && { panel }) };
 		},
 	};
 	return feed;

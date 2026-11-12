@@ -136,6 +136,8 @@ test("宿主给了 PSA_TRIPWIRES 的助手有 tripwire：描述里有来源的�
 	const member = await load("request", { PSA_MEMBER_TOOLS: "read,web_get", PSA_TRIPWIRES: "us-market" });
 	t.after(() => { w.close(); plain.close(); member.close(); });
 	assert.match(w.tools.get("tripwire").description, /us-market（美股盯盘条件）：list、set、remove/);
+	assert.match(w.tools.get("tripwire").description, /盯盘条件（只在本机）/);
+	assert.doesNotMatch(w.tools.get("tripwire").description, /收据/);
 	assert.equal(process.env.PSA_TRIPWIRES, undefined);
 	const params = { source: "us-market", op: "set", args: { symbol: "NVDA", condition: { kind: "day", pct: 5 } } };
 	await w.run("tripwire", params);

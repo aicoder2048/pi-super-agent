@@ -15,6 +15,7 @@ const STATUS_TEXT = {
 };
 
 const THEME_KEY = "psa-theme";
+const PANEL_KEY = "psa-panel-open";
 const MARK = { ok: "✓", error: "!", pending: "…", stopped: "■" };
 
 /** @param {Document} doc */
@@ -121,28 +122,38 @@ function mount(doc) {
 	};
 
 	const store = {
-		get: () => {
+		/** @param {string} key */
+		get: (key) => {
 			try {
-				return localStorage.getItem(THEME_KEY);
+				return localStorage.getItem(key);
 			} catch {
 				return null;
 			}
 		},
-		/** @param {string} value */
-		set: (value) => {
+		/** @param {string} key @param {string} value */
+		set: (key, value) => {
 			try {
-				localStorage.setItem(THEME_KEY, value);
+				localStorage.setItem(key, value);
 			} catch {}
 		},
 	};
 	const systemDark = () => matchMedia("(prefers-color-scheme: dark)").matches;
-	const stored = store.get();
+	const stored = store.get(THEME_KEY);
 	if (stored === "light" || stored === "dark") doc.documentElement.dataset.theme = stored;
 	$("theme").addEventListener("click", () => {
 		const next = toggleTheme(resolveTheme(doc.documentElement.dataset.theme ?? null, systemDark()));
 		doc.documentElement.dataset.theme = next;
-		store.set(next);
+		store.set(THEME_KEY, next);
 	});
+
+	/** @type {Record<string, boolean>} */
+	const panelOpen = (() => {
+		try {
+			return JSON.parse(store.get(PANEL_KEY) ?? "{}") ?? {};
+		} catch {
+			return {};
+		}
+	})();
 
 	const renderHeader = () => {
 		$("duty").textContent = dutyLine(view.duty, Date.now(), status.dataset.status === "connected");
@@ -266,6 +277,23 @@ function mount(doc) {
 		return node;
 	};
 
+	/** @param {string} source @param {import("./view.mjs").PanelList} list */
+	const panelList = (source, list) => {
+		const id = `${source}/${list.key}`;
+		const node = el("details", `panel ${list.key}`);
+		node.open = panelOpen[id] ?? list.open;
+		const items = el("ul", "");
+		items.append(...list.items.map((item) => el("li", "", item)));
+		node.append(el("summary", "", list.summary), items);
+		node.addEventListener("toggle", () => {
+			// Setting open above queues a toggle too; only the viewer's own click is worth remembering.
+			if (node.open === (panelOpen[id] ?? list.open)) return;
+			panelOpen[id] = node.open;
+			store.set(PANEL_KEY, JSON.stringify(panelOpen));
+		});
+		return node;
+	};
+
 	const renderLeft = () => {
 		const left = leftColumn(view, Date.now(), sending);
 		const today = el("section", "");
@@ -282,8 +310,9 @@ function mount(doc) {
 			section(`进行中 · ${left.doing.length}`, left.doing.map((c) => taskCard(c, "doing")), "暂无进行中的任务。"),
 			section(`关注的来源 · ${left.watching.length}`, left.watching.map((w) => {
 				const node = el("div", w.problem ? "watch problem" : "watch");
+				node.dataset.source = w.source;
 				const body = el("div", "");
-				body.append(el("div", "name", w.name), el("div", "rule", [w.rule, w.hits].filter(Boolean).join(" · ")));
+				body.append(el("div", "name", w.name), el("div", "rule", [w.rule, w.hits, w.alerts].filter(Boolean).join(" · ")), ...w.lists.map((l) => panelList(w.source, l)));
 				node.append(body);
 				return node;
 			}), "暂无关注的来源。"),

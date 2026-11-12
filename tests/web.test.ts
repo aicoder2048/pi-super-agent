@@ -4,7 +4,7 @@ import { join } from "node:path";
 import http from "node:http";
 import { connect, createServer } from "node:net";
 import test, { mock, type TestContext } from "node:test";
-import type { ConversationLine, HostToClient, TodayCounts } from "../src/client/protocol.ts";
+import type { ConversationLine, HostToClient, TodayCounts, WatchedSource } from "../src/client/protocol.ts";
 import type { DashboardRow, Routes } from "../src/kernel/types.ts";
 import type { Dispatching } from "../src/host/dispatch.ts";
 import { formatInputs } from "../src/host/workers.ts";
@@ -33,7 +33,7 @@ const zeroToday = (): TodayCounts => ({ byDisposition: { ignored: 0, delivered: 
 const duty = { since: 0, resumed: 0 };
 const noHelpers = { count: 0, tokens: 0 };
 const snapshot = (over: Partial<Extract<HostToClient, { type: "snapshot" }>> = {}): HostToClient => ({ type: "snapshot", conversation: [], board: [], today: zeroToday(), duty, helpers: noHelpers, watching: [], routes: {}, dispatching: {}, ...over });
-const board = (rows: DashboardRow[], today = zeroToday(), helpers = noHelpers, routes: Routes = {}, dispatching: Dispatching = {}): HostToClient => ({ type: "board", rows, today, duty, helpers, routes, dispatching });
+const board = (rows: DashboardRow[], today = zeroToday(), helpers = noHelpers, routes: Routes = {}, dispatching: Dispatching = {}, watching: WatchedSource[] = []): HostToClient => ({ type: "board", rows, today, duty, helpers, routes, dispatching, memberCap: null, watching });
 const texts = (view: ReturnType<typeof page.emptyView>) => [...view.lines.values()].map((l) => `${l.who}:${l.text}`);
 const withRows = (rows: DashboardRow[], now = 0) => {
 	const view = page.emptyView();
@@ -318,10 +318,10 @@ test("页面：关注的来源每一行用来源原名，显示第一条规则�
 		],
 	}), 0);
 	assert.deepEqual(page.leftColumn(view).watching, [
-		{ name: "inbox", rule: "有人找我先看一遍", hits: "今日 2 条", problem: false },
-		{ name: "digest", rule: "每 1 天：早报", hits: "", problem: false },
-		{ name: "pager", rule: "每 30 分钟：看看", hits: "", problem: false },
-		{ name: "quotes", rule: "收到新消息时处理", hits: "", problem: false },
+		{ source: "inbox", name: "inbox", rule: "有人找我先看一遍", hits: "今日 2 条", alerts: "", problem: false, lists: [] },
+		{ source: "digest", name: "digest", rule: "每 1 天：早报", hits: "", alerts: "", problem: false, lists: [] },
+		{ source: "pager", name: "pager", rule: "每 30 分钟：看看", hits: "", alerts: "", problem: false, lists: [] },
+		{ source: "quotes", name: "quotes", rule: "收到新消息时处理", hits: "", alerts: "", problem: false, lists: [] },
 	]);
 });
 
@@ -335,9 +335,42 @@ test("页面：带标题的来源显示标题和一句说明；看不了盘时�
 		],
 	}), 0);
 	assert.deepEqual(page.leftColumn(view).watching, [
-		{ name: "美股行情", rule: "未配置行情密钥 · 交易时段每分钟看一遍自选股", hits: "", problem: true },
-		{ name: "港股行情", rule: "盘中看一遍", hits: "", problem: false },
+		{ source: "us-market", name: "美股行情", rule: "未配置行情密钥 · 交易时段每分钟看一遍自选股", hits: "", alerts: "", problem: true, lists: [] },
+		{ source: "us-market-2", name: "港股行情", rule: "盘中看一遍", hits: "", alerts: "", problem: false, lists: [] },
 	]);
+});
+
+const NVDA_COST = "NVDA 成本价 120、100 股，相对成本价涨跌超过 10% 时提醒";
+
+test("页面：来源下面列出自选几只、盯盘条件几条（一条一行）和今日提醒数；空的清单不列，盯盘条件默认展开，自选默认收起", () => {
+	const view = page.emptyView();
+	const today = zeroToday();
+	today.bySource = { "us-market": 3 };
+	page.applyMessage(view, snapshot({
+		today,
+		watching: [
+			{ source: "us-market", title: "美股行情", description: "交易时段每分钟看一遍自选股", timers: [], rules: [], panel: { watchlist: ["NVDA", "SPY"], tripwires: [NVDA_COST] }, alertsToday: 2 },
+			{ source: "quiet-feed", timers: [], rules: [], panel: { watchlist: [], tripwires: [] }, alertsToday: 0 },
+		],
+	}), 0);
+	assert.deepEqual(page.leftColumn(view).watching, [
+		{
+			source: "us-market", name: "美股行情", rule: "交易时段每分钟看一遍自选股", hits: "今日 3 条", alerts: "今日提醒 2", problem: false,
+			lists: [
+				{ key: "watchlist", summary: "自选 2 只", items: ["NVDA", "SPY"], open: false },
+				{ key: "tripwires", summary: "盯盘条件 1 条", items: [NVDA_COST], open: true },
+			],
+		},
+		{ source: "quiet-feed", name: "quiet-feed", rule: "收到新消息时处理", hits: "", alerts: "", problem: false, lists: [] },
+	]);
+});
+
+test("页面：board 帧带来的关注的来源替换快照里的，条件改了不用刷新", () => {
+	const view = page.emptyView();
+	const market = (tripwires: string[]): WatchedSource => ({ source: "us-market", timers: [], rules: [], panel: { watchlist: ["NVDA"], tripwires }, alertsToday: 0 });
+	page.applyMessage(view, snapshot({ watching: [market([NVDA_COST])] }), 0);
+	assert.ok(page.applyMessage(view, board([], zeroToday(), noHelpers, {}, {}, [market([])]), 0).includes("left"));
+	assert.deepEqual(page.leftColumn(view).watching[0].lists.map((l) => l.key), ["watchlist"]);
 });
 
 test("页面：有问题的来源圆点用警示色，亮色和暗色主题都有", () => {
@@ -2231,6 +2264,34 @@ test("页面：只有光标在第一行按 ↑、在最后一行按 ↓ 才翻�
 	for (const held of ["shiftKey", "altKey", "ctrlKey", "metaKey", "isComposing"] as const) assert.equal(page.historyKey(key("ArrowUp", { [held]: true }), "", 0, 0), null, held);
 	assert.equal(page.historyKey(key("ArrowUp", { keyCode: 229 }), "", 0, 0), null);
 	assert.equal(page.historyKey(key("Enter"), "", 0, 0), null);
+});
+
+test("宿主：有面板的来源程序在关注的来源里带上面板和今日提醒数，没面板的只带今日提醒数，没有来源程序的来源都不带", async (t) => {
+	const market = fakeFeed("us-market", () => ({ watchlist: ["NVDA", "SPY"], tripwires: [NVDA_COST] }));
+	const plain = fakeFeed("plain-feed");
+	const watching = ["us-market", "plain-feed", "toy-market"].map((source) => ({ source, timers: [], rules: [] }));
+	const { host } = await webHost(t, () => [], { feeds: [market.spec, plain.spec], watching });
+	market.ctx!.post({ kind: "alert", externalId: "NVDA:x", text: "NVDA 涨了 5.3%", occurredAt: 1 });
+	market.ctx!.post({ kind: "receipt", text: "已记下：NVDA" });
+	assert.deepEqual(host.snapshot().watching, [
+		{ source: "us-market", timers: [], rules: [], panel: { watchlist: ["NVDA", "SPY"], tripwires: [NVDA_COST] }, alertsToday: 1 },
+		{ source: "plain-feed", timers: [], rules: [], alertsToday: 0 },
+		{ source: "toy-market", timers: [], rules: [] },
+	]);
+});
+
+test("网关：改了盯盘条件、贴了提醒，开着的网页从 board 帧拿到新的面板和今日提醒数", async (t) => {
+	let tripwires: string[] = [];
+	const market = fakeFeed("us-market", () => ({ watchlist: ["NVDA"], tripwires }));
+	const { events } = await webHost(t, () => [], { feeds: [market.spec], watching: [{ source: "us-market", timers: [], rules: [] }] });
+	const stream = events();
+	await until(() => ofType(stream.got, "snapshot").length === 1, "快照");
+	const panelOf = (m: { watching: WatchedSource[] }) => m.watching.find((w) => w.source === "us-market");
+	tripwires = [NVDA_COST];
+	market.ctx!.post({ kind: "receipt", text: "已添加：NVDA" });
+	await until(() => ofType(stream.got, "board").some((m) => panelOf(m)?.panel?.tripwires[0] === NVDA_COST), "board 帧带新条件");
+	market.ctx!.post({ kind: "alert", externalId: "NVDA:x", text: "NVDA 涨了 5.3%", occurredAt: 1 });
+	await until(() => ofType(stream.got, "board").some((m) => panelOf(m)?.alertsToday === 1), "board 帧带今日提醒数");
 });
 
 test("网关：来源贴的提醒和收据经事件流到网页，各一帧；重复的提醒不再发；之后连上的网页在快照里看到它们", async (t) => {

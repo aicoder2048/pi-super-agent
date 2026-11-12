@@ -2163,6 +2163,18 @@ test("宿主行：清屏收走收据和已送达的提醒；还没送达的提�
 	assert.deepEqual(s.kernel.cleared()!.lines.map((l) => l.id), [receipt.id, delivered.id]);
 });
 
+test("宿主行：alertCountsToday 按来源数本地今天贴的提醒，不数收据和昨天的提醒", () => {
+	const s = setup({ at: "2026-11-08T23:30:00" });
+	s.kernel.postHostLine("us-market", alert("yesterday"));
+	s.clock.t = new Date("2026-11-09T00:10:00").getTime();
+	s.kernel.postHostLine("us-market", alert("a"));
+	s.kernel.postHostLine("us-market", alert("b"));
+	s.kernel.postHostLine("us-market", alert("b"));
+	s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下" });
+	s.kernel.postHostLine("other-feed", alert("a"));
+	assert.deepEqual(s.kernel.alertCountsToday(), { "us-market": 2, "other-feed": 1 });
+});
+
 test("宿主行：undeliveredAlerts 只列没标记送达的提醒，不列收据", () => {
 	const s = setup();
 	s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下" });

@@ -1,4 +1,5 @@
 import { WATCHDOG_SOURCE } from "../../watchdog/watchdog.ts";
+import type { SourcePanel } from "../../client/protocol.ts";
 import type { Feed, FeedContext, FeedInput, FeedSpec, TripwireReply } from "../feeds.ts";
 import { threadId } from "../generic.ts";
 import { LookupCache, type Cached, type Via } from "./cache.ts";
@@ -12,7 +13,7 @@ import { detect, isFresh, toTrigger, type MarketCursor, type Move, type Quote } 
 import { inPollWindow, MINUTE, nextPollDelay, nextWeekday, nyDateOf, sessionAt, shiftDate, type Session } from "./session.ts";
 import { parseMarketSettings, type MarketSettings } from "./settings.ts";
 import { parseSymbol } from "./symbol.ts";
-import { alertText, applyEdit, checkIntraday, driftOf, echoText, firingId, parseBook, parseEdit, polledSymbols, receiptText, redact, serializeBook, settleCross, suspectedId, type Book, type Tripwire } from "./tripwires.ts";
+import { alertText, applyEdit, checkIntraday, driftOf, echoText, firingId, localLines, parseBook, parseEdit, polledSymbols, receiptText, redact, serializeBook, settleCross, suspectedId, type Book, type Tripwire } from "./tripwires.ts";
 
 // How long a lookup result may be reused. Quotes the poll already holds are reused for one poll interval instead.
 const TTL_MS = { quote: 30_000, earnings: 6 * 60 * MINUTE, bars: { day: 10 * MINUTE, hour: 2 * MINUTE, minute: MINUTE } as Record<Span, number> };
@@ -50,7 +51,7 @@ const LOOKUP_HELP = `us-market（美股行情）：每个结果都带 fromCache�
 - earnings { symbol }：Finnhub 财报。next 是下次财报 { date, hour: "bmo" 盘前|"amc" 盘后|"dmh" 盘中|"unknown", year, quarter, epsEstimate, revenueEstimate }，没有排期时为 null；quarters 是最近 4 个已公布季度（新到旧）{ year, quarter, period, reportDate, epsActual, epsEstimate, epsSurprisePct, revenueActual, revenueEstimate, revenueSurprisePct }，超预期百分比 = (实际 - 预期) / |预期| × 100，由程序算好；接口没给的字段不出现（Finnhub 免费档的财报日历不给历史，所以通常没有 reportDate 和营收）
 - session {}：纽约日期和交易时段（pre、regular、post、closed）`;
 
-const TRIPWIRE_HELP = `us-market（美股盯盘条件）：同一只股票每种条件最多一条。成本价和股数不会回给你，网页上有一张宿主写的收据。
+const TRIPWIRE_HELP = `us-market（美股盯盘条件）：同一只股票每种条件最多一条。成本价和股数不会回给你。宿主在网页对话里贴一行「盯盘条件（只在本机）」，逐字写出存下的条件；网页左栏「关注的来源」也列出全部条件。
 - list {}：列出全部条件
 - set { symbol, condition }：新增或修改这只股票这一种条件。改已有的条件时只写要改的字段，没写的保持原样。condition 是下面三种之一，dir 是 up、down 或 either（不写就是 either），pct 在 0.1 到 100 之间：
   - { kind: "day", pct, dir? }：相对昨收涨跌超过 pct% 时提醒
@@ -185,6 +186,10 @@ export class MarketSource implements Feed {
 		const feed = this.#disabled ?? (this.#failing && `暂时取不到行情：${this.#failing.error}`);
 		const book = "problem" in this.#book ? `${this.#book.problem}，没有覆盖它，盯盘条件暂时改不了` : undefined;
 		return [feed, book].filter(Boolean).join("；") || undefined;
+	}
+
+	panel(): SourcePanel {
+		return { watchlist: this.#o.settings.watchlist, tripwires: "book" in this.#book ? localLines(this.#book.book) : [] };
 	}
 
 	tripwires(op: string, args: unknown): TripwireReply {
