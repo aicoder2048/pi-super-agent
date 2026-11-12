@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
+import { fileURLToPath } from "node:url";
+import { Modules, type Domains } from "../src/modules.ts";
 import type { FeedSpec } from "../src/sources/feeds.ts";
 import type { Member } from "../src/teams.ts";
 import { domainsOf, ids, openOnConversation, startHost, until, type Brain, type FakeSpawner, type FakeWorker } from "./helpers/fakes.ts";
@@ -33,11 +35,12 @@ async function call(worker: FakeWorker): Promise<unknown> {
 }
 
 interface Steps {
+	domains?: Domains;
 	when?: (input: string) => boolean;
 	before?: (worker: FakeWorker, spawner: FakeSpawner) => Promise<unknown>;
 }
 
-async function tripwireIn(t: TestContext, brain: Brain, act: (host: Awaited<ReturnType<typeof startHost>>["host"]) => unknown, { when = () => true, before }: Steps = {}) {
+async function tripwireIn(t: TestContext, brain: Brain, act: (host: Awaited<ReturnType<typeof startHost>>["host"]) => unknown, { domains = DOMAINS, when = () => true, before }: Steps = {}) {
 	const feed = tripwireFeed();
 	const results: unknown[] = [];
 	let spawner!: FakeSpawner;
@@ -51,7 +54,7 @@ async function tripwireIn(t: TestContext, brain: Brain, act: (host: Awaited<Retu
 			worker.report({ status: "progress", summary: "好了" });
 			worker.settle();
 		},
-		{ domains: DOMAINS, feeds: [feed.spec], ruleAllows: () => true, dispatch: { timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4 } },
+		{ domains, feeds: [feed.spec], ruleAllows: () => true, dispatch: { timeoutMs: 5000, codingTimeoutMs: 5000, stallMs: 5000, maxConcurrent: 4 } },
 	);
 	const { host } = started;
 	spawner = started.spawner;
@@ -83,6 +86,14 @@ test("领域没开 tripwire 的任务和没有领域的任务改盯盘条件，�
 		assert.deepEqual(asked, [], String(domain));
 		assert.match(String(result), /领域没有在 module\.json 的 tools 里开 tripwire/, String(domain));
 	}
+});
+
+test("us-market 在 config.json 里停用后，停用前开的这个领域的任务改盯盘条件，宿主拒绝，来源收不到", async (t) => {
+	const off = Modules.load([fileURLToPath(new URL("../modules", import.meta.url))], { switches: { values: { "us-market": false }, file: "config.json" } });
+	const fromBeforeTheSwitch: Domains = { book: new Map([["us-market", { team: "美股看盘队", onRoster: true }]]), kitFor: off.kitFor };
+	const { result, asked } = await tripwireIn(t, onConversation("us-market"), (host) => host.say("帮我盯英伟达"), { domains: fromBeforeTheSwitch });
+	assert.deepEqual(asked, []);
+	assert.match(String(result), /领域没有在 module\.json 的 tools 里开 tripwire/);
 });
 
 test("规则开的任务和推断开的任务改盯盘条件，宿主拒绝，说明只有使用者在对话里开的任务能改", async (t) => {

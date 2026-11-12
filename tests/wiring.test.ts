@@ -203,6 +203,21 @@ test("真实接线：关掉 us-market 后不运行它的看盘，config.json 里
 	assert.ok(!options.watching?.some((w) => w.source === "us-market"));
 });
 
+test("真实接线：关掉 us-market 时有行情密钥也不建看盘，不开 lookup 和 tripwire，领域簿和幕僚长的名册里都没有它", async (t) => {
+	withoutKeyVars(t);
+	process.env.MASSIVE_API_KEY = "sk-wiring-fake";
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const modules = Modules.load([REPO_MODULES], { switches: { values: { "us-market": false }, file: "config.json" } });
+	const options = createHostOptions({ config: hostConfig(provider), modules, modelRuntime, log: () => {} });
+	assert.deepEqual(options.feeds, []);
+	assert.equal(options.domains!.kitFor("us-market"), undefined);
+	assert.ok(!options.domains!.book.has("us-market"));
+	const host = await Host.start(options);
+	t.after(() => host.stop());
+	assert.equal(host.feeds.size, 0);
+	assert.doesNotMatch((host.router as any).session.systemPrompt, /us-market（/);
+});
+
 function writeFiles(dir: string, files: Record<string, string>): string {
 	for (const [name, text] of Object.entries(files)) {
 		mkdirSync(join(dir, name, ".."), { recursive: true });
