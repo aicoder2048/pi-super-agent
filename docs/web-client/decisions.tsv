@@ -342,3 +342,18 @@ ts	phase	decision	why	evidence	result
 2026-11-10T10:37:05Z	verify	just test 931/931；just e2e 193 个中 3 个失败：2 个是已知的模型 未启动，1 个是 setup.e2e 的临时目录检查和并行文件互相干扰，单独连跑 3 次都通过	失败与本次改动无关；第二个不稳定用例记作后续	/Users/szou/.claude/jobs/66e5cbed/tmp/e2e-hover.log	PASS
 2026-11-10T10:42:35Z	implement	幕僚长那句的引用上边距 4 改 7px：按截图像素量，幕僚长侧气泡到字 4px、使用者侧去向小字到字 7px；改后两边都是 7px	使用者说左边比右边近；DOM 文字框量不准（含字体留白），改量像素	/Users/szou/.claude/jobs/66e5cbed/tmp/px2-*.png, space-full.png	done
 2026-11-10T10:42:35Z	verify	just test 931/931；just e2e 193/193；鼠标逐像素移到引用的测试仍通过	改样式后全量确认	/Users/szou/.claude/jobs/66e5cbed/tmp/e2e-space.log	PASS
+2026-11-09T18:47:23Z	m3	模块开关放在 Modules.load：found 保存全部模块和启用原因，modules 只含启用的	宿主里来源、规则、技能、定时器、feed 都只读 modules，一处过滤就让停用模块什么都不贡献，W6 的角色也读它	tests/modules.test.ts 模块开关两条 红→绿	decided
+2026-11-09T18:47:23Z	m3	停用的模块仍然加载和校验 module.json	just modules 要列出停用模块的规则和技能；坏掉的清单无论开关都早报错	src/modules.ts loadModule	decided
+2026-11-09T18:47:23Z	m3	config.json 的 sources 可以留着停用模块的来源设置	否则关掉 us-market 后 sources.us-market 会被当成未知来源，启动失败	tests/wiring.test.ts 关掉 us-market 一条	fixed
+2026-11-09T18:47:23Z	m3	模块名规则 ^[A-Za-z0-9][\w-]*$，加载和 module-new 共用 moduleNameProblem	名字进目录名、规则 id 前缀和来源名；只拦路径分隔、点开头和空白，现有 toy-market、us-market 不受影响	tests/modules.test.ts 模块名一条	decided
+2026-11-09T18:47:23Z	m3	config.modules 判断用 Object.hasOwn	模块名叫 toString、constructor 时普通下标会读到原型上的函数	src/modules.ts stateOf	fixed
+2026-11-09T18:47:23Z	m3	toy-feed 在 toy-market 关闭时报一行 ConfigError 并以 1 退出，不投递	关闭时投递的假行情不命中任何规则，静默成功会误导	tests/modules-cli.test.ts toy-feed 一条	decided
+2026-11-09T18:48:48Z	m3	module.json 的说明写成 "//" 键，不改成 JSONC	加载用 JSON.parse，"//" 键会被忽略；为注释换解析器不值得	scaffold 生成的模块经 loadModules 干净加载	decided
+2026-11-09T18:48:48Z	m3	skills/ 的说明文件叫 README.txt	Pi 的 --skill 目录会把根目录下每个 .md 当成技能加载（pi-coding-agent dist/core/skills.js loadSkillsFromDirInternal）	skills.js 读源码确认	decided
+2026-11-09T18:48:48Z	m3	just modules 的来源状态复用 feedSpecs 和 FeedSpec.status	与宿主走同一段检查（有没有密钥、settings 是否合法），只给来源不给密钥	lane10 输出里没有假密钥	decided
+2026-11-09T18:48:48Z	m3	live lane 实测	临时状态目录跑 10 条 lane；just modules 5 次 0.35 秒	scratchpad m3-live/*.txt；trunk 491 测试，head 510 全绿	PASS
+2026-11-09T18:53:44Z	m3-verdict	M3 复审 PASS；补测试钉住模块名与对象原型属性同名（constructor）时按清单默认；停用模块的来源仍按未知来源交给幕僚长，保持现状	复审：13 处变异 12 处变红，唯一漏网的 hasOwn 现已钉住	tests/modules.test.ts 变异验证	PASS
+2026-11-12T00:09:31Z	m3-merge	合并 main 而不 rebase：开关作为 Modules.load 的 switches 选项，和 stateDir、allowedProviders 并列；loadModules 一处读 config.json 交给宿主、just modules、market-smoke 和 toy-feed	main 改了 Modules.load 的签名；一处读配置，各入口看到的启用列表一样	git merge origin/main；just test 全绿	decided
+2026-11-12T00:09:31Z	m3-merge	main 新加的领域工具、宿主行、盯盘条件和队伍都读 Modules.modules、kitFor 和领域簿，停用模块不进这三处，所以什么都不贡献，不另加检查	一处过滤盖住所有后加的东西；停用领域的旧任务和模块被删掉一样按没有领域处理	tests/wiring.test.ts、tests/tripwire-rpc.test.ts 三处变异都变红	decided
+2026-11-12T00:09:31Z	m3-merge	W4：e2e 只加载状态目录的模块，first-teams.e2e 加载仓库模块但不碰 toy-market；只有演示 3 要在配置里打开 toy-market	按代码查过每个 e2e 的 modulesDirs	demos/demo-3-proactive.mjs	fixed
+2026-11-12T00:09:31Z	m3-merge	just modules 加一行「工具」，列 module.json 开的 lookup、tripwire	使用者看得到哪个领域能查数据、能改盯盘条件，不用打开清单	tests/modules-cli.test.ts 工具一条 红→绿	decided

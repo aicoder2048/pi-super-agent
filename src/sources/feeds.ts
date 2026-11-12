@@ -33,6 +33,8 @@ export interface TripwireReply {
 
 export interface FeedSpec {
 	source: string;
+	/** One line saying whether the feed can run, e.g. why it is off. Never contains a secret. */
+	status: string;
 	lookupHelp: string;
 	tripwireHelp?: string;
 	create(ctx: FeedContext): Feed;

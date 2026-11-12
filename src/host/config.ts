@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_MODELS, parseModelRef, type ModelRef } from "../models.ts";
 import type { KernelConfig } from "../kernel/types.ts";
 import { ConfigError, readJsonFile } from "../config-error.ts";
+import { Modules } from "../modules.ts";
 import { MEMBER_CAP_DEFAULT, MEMBER_CAP_MAX } from "./member-cap.ts";
 import { within } from "./output.ts";
 import { parseWebHosts, type TailnetName } from "./web-hosts.ts";
@@ -28,6 +29,7 @@ export interface HostConfig {
 	heartbeatSeconds: number;
 	watchdog: { intervalMinutes: number; stuckMinutes: number; staleSeconds: number };
 	modulesDirs: string[];
+	moduleSwitches: Record<string, boolean>;
 	webPort: number;
 	/** Tailnet names the page also answers at (ADR-0014). Empty means local only. */
 	webHosts: readonly TailnetName[];
@@ -109,6 +111,10 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	if (sources === null || typeof sources !== "object" || Array.isArray(sources)) {
 		throw new ConfigError(`${file}：sources（${JSON.stringify(sources)}）必须是以来源名为键的对象`);
 	}
+	const moduleSwitches = raw.modules === undefined ? {} : raw.modules;
+	if (moduleSwitches === null || typeof moduleSwitches !== "object" || Array.isArray(moduleSwitches) || Object.values(moduleSwitches).some((v) => typeof v !== "boolean")) {
+		throw new ConfigError(`${file}：modules（${JSON.stringify(moduleSwitches)}）必须是以模块名为键、值为 true 或 false 的对象`);
+	}
 	const telegram = raw.telegram === undefined ? undefined : parseTelegram(raw.telegram, file);
 	return {
 		stateDir,
@@ -129,6 +135,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		heartbeatSeconds,
 		watchdog,
 		modulesDirs: raw.modulesDirs ?? [fileURLToPath(new URL("../../modules", import.meta.url)), join(stateDir, "modules")],
+		moduleSwitches,
 		webPort,
 		webHosts,
 		secretsFile,
@@ -136,6 +143,14 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		sources,
 		...(telegram && { telegram }),
 	};
+}
+
+export function loadModules(config: Pick<HostConfig, "stateDir" | "modulesDirs" | "moduleSwitches" | "models">): Modules {
+	return Modules.load(config.modulesDirs, {
+		stateDir: config.stateDir,
+		allowedProviders: memberProviders(config),
+		switches: { values: config.moduleSwitches, file: join(config.stateDir, "config.json") },
+	});
 }
 
 function parseOutputDir(value: unknown, stateDir: string, file: string): string {

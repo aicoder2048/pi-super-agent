@@ -88,7 +88,7 @@ test("入口：按真实接线启动的宿主，Router 遇到最终的限流错�
 
 test("在替你盯着：每个来源一项，带上管它的规则（使用者的在前）和定时器，忽略的来源不算", () => {
 	const mod = (name: string, manifest: Partial<import("../src/modules.ts").ModuleManifest>, rules: { id: string; text: string; sources: string[] }[]) =>
-		({ name, dir: `/m/${name}`, manifest: { name, ...manifest }, rules, skillsDir: undefined });
+		({ name, dir: `/m/${name}`, manifest: { name, ...manifest }, rules, skillsDir: undefined, state: { enabled: true, by: "default" as const } });
 	const modules = new Modules(
 		[
 			mod("market", { sources: [{ name: "quotes" }, { name: "spam", mode: "ignore" }] }, [{ id: "market/drop", text: "跌多了提醒我\n细节", sources: ["quotes"] }]),
@@ -147,7 +147,7 @@ test("真实接线：config.json 里 sources.us-market 拼错字段时启动前�
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = { ...hostConfig(provider), sources: { "us-market": { watchlst: ["AMD"] } } };
 	assert.throws(() => createHostOptions({ config, modules: Modules.load([REPO_MODULES]), modelRuntime, log: () => {} }), /config\.json.*watchlst/);
-	const odd = new Modules([{ name: "odd", dir: "/m/odd", manifest: { name: "odd", sources: [{ name: "odd", feed: { kind: "carrier-pigeon" } }] }, rules: [], skillsDir: undefined }], [], []);
+	const odd = new Modules([{ name: "odd", dir: "/m/odd", manifest: { name: "odd", sources: [{ name: "odd", feed: { kind: "carrier-pigeon" } }] }, rules: [], skillsDir: undefined, state: { enabled: true, by: "default" } }], [], []);
 	assert.throws(() => createHostOptions({ config: hostConfig(provider), modules: odd, modelRuntime, log: () => {} }), /carrier-pigeon.*massive-stocks/);
 });
 
@@ -168,6 +168,7 @@ test("宿主运行模块声明的来源：随宿主启停，触发进内核，�
 		feeds: [{
 			source: "fake",
 			lookupHelp: "",
+			status: "运行",
 			create: (ctx) => ({
 				start() {
 					ctx.submit({ source: "fake", externalId: "e1", threads: [{ id: "thr_fake:a" }], sender: "fake", body: "动了", occurredAt: ctx.clock.now() });
@@ -190,6 +191,31 @@ test("宿主运行模块声明的来源：随宿主启停，触发进内核，�
 	await host.stop();
 	hostStopped = true;
 	assert.ok(stopped);
+});
+
+test("真实接线：关掉 us-market 后不运行它的看盘，config.json 里留着它的 sources 设置也不报错", async (t) => {
+	withoutKeyVars(t);
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const config = { ...hostConfig(provider), sources: { "us-market": { watchlist: ["AMD"] } } };
+	const modules = Modules.load([REPO_MODULES], { switches: { values: { "us-market": false }, file: "config.json" } });
+	const options = createHostOptions({ config, modules, modelRuntime, log: () => {} });
+	assert.deepEqual(options.feeds, []);
+	assert.ok(!options.watching?.some((w) => w.source === "us-market"));
+});
+
+test("真实接线：关掉 us-market 时有行情密钥也不建看盘，不开 lookup 和 tripwire，领域簿和幕僚长的名册里都没有它", async (t) => {
+	withoutKeyVars(t);
+	process.env.MASSIVE_API_KEY = "sk-wiring-fake";
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const modules = Modules.load([REPO_MODULES], { switches: { values: { "us-market": false }, file: "config.json" } });
+	const options = createHostOptions({ config: hostConfig(provider), modules, modelRuntime, log: () => {} });
+	assert.deepEqual(options.feeds, []);
+	assert.equal(options.domains!.kitFor("us-market"), undefined);
+	assert.ok(!options.domains!.book.has("us-market"));
+	const host = await Host.start(options);
+	t.after(() => host.stop());
+	assert.equal(host.feeds.size, 0);
+	assert.doesNotMatch((host.router as any).session.systemPrompt, /us-market（/);
 });
 
 function writeFiles(dir: string, files: Record<string, string>): string {
@@ -266,7 +292,8 @@ test("真实接线：宿主知道每个领域的助手能派给谁，时限和�
 
 test("真实接线：仓库里的玩具行情模块按领域交出自己的 skills/", async () => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
-	const { domains } = createHostOptions({ config: hostConfig(provider), modules: Modules.load([REPO_MODULES]), modelRuntime, log: () => {} });
+	const modules = Modules.load([REPO_MODULES], { switches: { values: { "toy-market": true }, file: "config.json" } });
+	const { domains } = createHostOptions({ config: hostConfig(provider), modules, modelRuntime, log: () => {} });
 	assert.equal(domains!.kitFor("toy-market")!.skillsDir, join(REPO_MODULES, "toy-market/skills"));
 });
 

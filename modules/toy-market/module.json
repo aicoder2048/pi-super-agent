@@ -1,5 +1,6 @@
 {
   "name": "toy-market",
+  "defaultEnabled": false,
   "title": "玩具行情",
   "description": "演示用的假行情，只管玩具代码（如 TOYX）的波动",
   "sources": [

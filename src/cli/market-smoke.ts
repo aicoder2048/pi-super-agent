@@ -1,5 +1,4 @@
-import { loadConfig, memberProviders } from "../host/config.ts";
-import { Modules } from "../modules.ts";
+import { loadConfig, loadModules } from "../host/config.ts";
 import { MarketClient } from "../sources/market/client.ts";
 import { FinnhubClient } from "../sources/market/finnhub.ts";
 import { indicatorReport } from "../sources/market/indicators.ts";
@@ -13,7 +12,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 async function main(): Promise<void> {
 	const config = loadConfig();
-	const filter = Modules.load(config.modulesDirs, { allowedProviders: memberProviders(config) }).modules.flatMap((m) => m.manifest.sources ?? []).find((s) => s.name === SOURCE);
+	const filter = loadModules(config).modules.flatMap((m) => m.manifest.sources ?? []).find((s) => s.name === SOURCE);
 	if (!filter?.feed) throw new Error(`没有找到声明了 feed 的来源 ${SOURCE}`);
 	const settings = parseMarketSettings(filter.feed.settings, config.sources[SOURCE], `sources.${SOURCE}`);
 	const loaded = readMarketKey(process.env, config.secretsFile);

@@ -48,6 +48,7 @@ async function lookupsIn(t: import("node:test").TestContext, domain: string | un
 			feeds: [{
 				source: "us-market",
 				lookupHelp: "",
+				status: "运行",
 				create: () => ({ start() {}, stop() {}, problem: () => undefined, lookup: async (op, args) => (asked.push([op, args]), [{ symbol: "NVDA", price: 142.85 }]) }),
 			}],
 		},

@@ -1,7 +1,7 @@
 // 主动 + 事件驱动：外部事件进来，小波动不打扰你，来源里的指令当数据，大波动按规则自己开任务，后续行情直达订阅的助手。
 import { Demo, skip, sleep, fmtTicket, fmtTrigger } from "./lib.mjs";
 
-const d = new Demo("demo-3-proactive", { port: 45193 });
+const d = new Demo("demo-3-proactive", { port: 45193, config: { modules: { "toy-market": true } } });
 const todayLine = () => d.page.locator("#today").innerText().catch(() => "");
 
 await d.run(async () => {

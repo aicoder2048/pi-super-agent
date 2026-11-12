@@ -65,6 +65,7 @@ const cases = [
 	{ name: "module.json 不是 JSON 对象时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: "null" } }), message: /^\S+\/mods\/m\/module\.json：.*JSON 对象/m },
 	{ name: "模块名不等于目录名时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: { name: "other" } } }), message: /name 必须等于目录名 m/ },
 	{ name: "ignore 不是合法正则时，just host", entry: HOST, stateDir: stateWith({}, { mods: { m: { name: "m", sources: [{ name: "m", ignore: ["("] }] } } }), message: /module\.json.*ignore.*不是合法的正则/ },
+	{ name: "config.json 的 modules 写了没发现的模块时，just host", entry: HOST, stateDir: stateWith({ modules: { nope: true } }, { mods: { m: { name: "m" } } }), message: /config\.json：modules\.nope 不是已发现的模块/ },
 	{ name: "两个模块重名时，just host", entry: HOST, stateDir: stateWith({}, { a: { m: { name: "m" } }, b: { m: { name: "m" } } }), message: /^\S+\/a\/m：模块重名：m 也定义在 \S+\/b\/m。/m },
 	{
 		name: "定时器 everyMinutes 不大于 0 时，just host",
@@ -149,7 +150,7 @@ for (const c of cases) {
 	});
 }
 
-test("just host 启动时列出加载的模块，有成员的模块后面写队名", () => {
+test("just host 启动时列出加载的模块，有成员的模块后面写队名，停用的模块另列", () => {
 	const stateDir = stateWithFiles({ ...NEWS_MODULE, "modules/mail/module.json": JSON.stringify({ name: "mail" }) })();
 	writeFileSync(join(stateDir, "config.json"), JSON.stringify({ webPort: 0, models: { router: "openai-codex/no-such-model" } }));
 	const run = spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], {
@@ -158,7 +159,7 @@ test("just host 启动时列出加载的模块，有成员的模块后面写队�
 		timeout: 20_000,
 		killSignal: "SIGKILL",
 	});
-	assert.match(run.stderr, /\[host\] 模块：pi-pi（Pi施工队）, toy-market, us-market（美股看盘队）, mail, news（新闻队）；规则 \d+ 条/);
+	assert.match(run.stderr, /\[host\] 模块：pi-pi（Pi施工队）, us-market（美股看盘队）, mail, news（新闻队）；停用 toy-market；规则 \d+ 条/);
 });
 
 test("使用者规则没写来源行时，just host 启动时逐条说明它不生效", () => {

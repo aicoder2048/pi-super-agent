@@ -63,11 +63,13 @@ export function marketFeed(input: FeedInput): FeedSpec {
 	const { source, title } = input;
 	const settings = parseMarketSettings(input.settings, input.override, input.where);
 	const loaded = readMarketKey(input.env, input.secretsFile);
+	const status = loaded ? `密钥来自 ${loaded.origin}` : "未配置行情密钥，看盘停用";
 	const earnings = earningsClient(input);
-	input.log(`[${source}] ${title}：${loaded ? `密钥来自 ${loaded.origin}` : "未配置行情密钥，看盘停用"}；自选 ${settings.watchlist.join(" ")}`);
+	input.log(`[${source}] ${title}：${status}；自选 ${settings.watchlist.join(" ")}`);
 	input.log(`[${source}] ${typeof earnings === "string" ? `earnings 查询不可用：${earnings}` : `Finnhub 密钥来自 ${earnings.origin}`}`);
 	return {
 		source,
+		status,
 		lookupHelp: LOOKUP_HELP,
 		tripwireHelp: TRIPWIRE_HELP,
 		create: (ctx) => loaded

@@ -11,7 +11,7 @@ import { tempStateDir } from "./helpers/fakes.ts";
 
 const REPO_MODULES = fileURLToPath(new URL("../modules", import.meta.url));
 const defaultProviders = memberProviders(loadConfig(tempStateDir()));
-const load = (dir = REPO_MODULES) => Modules.load([dir], { allowedProviders: defaultProviders });
+const load = (dir = REPO_MODULES) => Modules.load([dir], { allowedProviders: defaultProviders, switches: { values: { "toy-market": true }, file: "config.json" } });
 
 const WATCHERS = { "earnings-reader": "财报解读", "market-analyst": "行情分析师", "news-researcher": "新闻研究员", "technical-analyst": "技术分析师" };
 const PI_EXPERTS = ["agent-expert", "cli-expert", "config-expert", "ext-expert", "keybinding-expert", "prompt-expert", "skill-expert", "theme-expert", "tui-expert"];

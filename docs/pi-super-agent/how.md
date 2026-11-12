@@ -26,8 +26,8 @@ Pi Super Agent 是一个常驻本机的 headless host 进程，入口是 `src/ho
 | Action | outbox 行，共 4 种。`router.notify`、`worker.wake`、`worker.stop`、`channel.reply`。 |
 | RouterNotice | `router.notify` 的 payload。kind 有 `conversation`、`candidate`、`report`、`question`、`handback`、`notice`。`notice` 是工作区里新加的，尚未提交。 |
 | Report | Worker 通过 `report` 工具交回的状态。status 有 `progress`、`ready`、`blocked`、`failed`、`no_action`，可以带 `question` 和 `waiting`。 |
-| Module | `modules/<name>/` 下的 `module.json`（领域名和说明、队名、source 过滤器、timers、prepare）、`rules.md`、`skills/` 和 `agents/`（成员）。用户自己的模块放在 `<state>/modules/<name>/`，用户规则放在 `<state>/rules.md`。写法见「怎么写一个模块」。 |
-| Domain | ticket 所属的模块，存在 `tickets.domain`（模块的 `name`，可空）。模块规则开的 ticket 属于规则所在的模块，由 Kernel 按规则编号的前缀定；其余由 Router 用 `open_ticket` 的 `domain` 选，只能选名册上的（模块写了 `description`），省略就是没有领域。Worker 的技能、`prepare` 和可派的成员都按它取（`Modules.kitFor`）。见 ADR-0009。 |
+| Module | `modules/<name>/` 下的 `module.json`（领域名和说明、队名、`tools`、`defaultEnabled`、source 过滤器、timers、prepare）、`rules.md`、`skills/` 和 `agents/`（成员）。用户自己的模块放在 `<state>/modules/<name>/`，用户规则放在 `<state>/rules.md`。写法见「怎么写一个模块」。宿主从 `modulesDirs` 发现模块，默认是仓库的 `modules/` 和 `<state>/modules/`；设了 `modulesDirs` 就整个替换这两个目录。`config.json` 的 `"modules": { "<name>": true\|false }` 逐个开关模块，写了没发现的名字时启动报错。停用的模块什么都不贡献：没有来源和 feed（不看盘、不提醒、不读盯盘条件），没有规则、技能、定时器、成员、名册里的一行，也不开 `lookup`、`tripwire`。`just modules` 列出全部模块和状态，`just module-new <name>` 在 `<state>/modules/` 生成骨架。 |
+| Domain | ticket 所属的模块，存在 `tickets.domain`（模块的 `name`，可空）。模块规则开的 ticket 属于规则所在的模块，由 Kernel 按规则编号的前缀定；其余由 Router 用 `open_ticket` 的 `domain` 选，只能选名册上的（模块写了 `description`），省略就是没有领域。Worker 的技能、`prepare` 和可派的成员都按它取（`Modules.kitFor`）。见 ADR-0009。停用模块的 ticket 和模块被删掉一样，没有领域的东西。 |
 | `ModelSelector` | 主模型、fallback、probing 三态状态机（`src/model-selector.ts`，未提交）。Router 一个实例，所有 Worker 共用另一个实例。 |
 
 ## How It Works
@@ -353,7 +353,7 @@ tools: read, web_get
 | `src/model-selector.ts`, `src/models.ts`, `src/host/config.ts` | 模型切换、默认模型、配置默认值。 |
 | `src/watchdog/` | Watchdog 判定函数和进程入口。 |
 | `extensions/super-agent.ts`, `src/client/` | TUI client、协议、看板、transcript 格式化。 |
-| `modules/toy-market/`, `modules/us-market/`, `modules/pi-pi/` | 仓库自带的三个模块。玩具行情是示例，没有成员。美股行情带美股看盘队（行情分析师、技术分析师、新闻研究员、财报解读）和技能 `us-market-desk`。pi-pi 带 Pi施工队（九位 Pi 开发专家，只读文件和网页，出处见 `modules/pi-pi/NOTICE.md`）和技能 `pi-pi-desk`，没有来源和规则。 |
+| `modules/toy-market/`, `modules/us-market/`, `modules/pi-pi/` | 仓库自带的三个模块。玩具行情是示例，没有成员，`defaultEnabled: false`：在 `config.json` 写 `"modules": { "toy-market": true }` 才加载，`just toy-feed` 在它关闭时提示怎么打开。美股行情带美股看盘队（行情分析师、技术分析师、新闻研究员、财报解读）和技能 `us-market-desk`。pi-pi 带 Pi施工队（九位 Pi 开发专家，只读文件和网页，出处见 `modules/pi-pi/NOTICE.md`）和技能 `pi-pi-desk`，没有来源和规则。 |
 | `docs/pi-super-agent/mvp-spec.md`, `docs/adr/0001-0003` | 规格与架构决策。 |
 | `tests/` | `kernel`、`host`、`recovery`、`fallback`、`watchdog`、`client` 测试。`helpers/fakes.ts` 提供 `fauxRouter` 和 `FakeSpawner`。 |
 

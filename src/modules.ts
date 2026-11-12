@@ -20,6 +20,8 @@ export interface SourceFilter {
 
 export interface ModuleManifest {
 	name: string;
+	/** False: off unless config.json's `modules` turns it on. */
+	defaultEnabled?: boolean;
 	/** The domain's Chinese name. Required when `description` is written. */
 	title?: string;
 	/** One sentence for the 幕僚长. A module without it is not offered to the 幕僚长. */
@@ -41,6 +43,23 @@ export interface LoadedModule {
 	skillsDir: string | undefined;
 	/** The members in `agents/`. Absent: a ticket of this module is one helper. */
 	team?: Team;
+	state: ModuleState;
+}
+
+export interface ModuleState {
+	enabled: boolean;
+	by: "config" | "manifest" | "default";
+}
+
+export interface ModuleSwitches {
+	values: Record<string, boolean>;
+	file: string;
+}
+
+const MODULE_NAME = /^[A-Za-z0-9][\w-]*$/;
+
+export function moduleNameProblem(name: string): string | undefined {
+	return MODULE_NAME.test(name) ? undefined : `模块名「${name}」只能用字母、数字、- 和 _，并以字母或数字开头`;
 }
 
 /** What a helper is handed from its ticket's domain, however the ticket was opened. */
@@ -68,6 +87,8 @@ export interface ModulesLoadOptions {
 	stateDir?: string;
 	/** The providers a member's `model` may use. Empty: a member that names a model is rejected. */
 	allowedProviders?: readonly string[];
+	/** config.json's `modules`. Omitted: every module follows its manifest. */
+	switches?: ModuleSwitches;
 }
 
 const DESCRIPTION_MAX_CHARS = 60;
@@ -105,6 +126,11 @@ export function parseRules(file: string, namespace: string, markdown: string): R
 	return rules.map((r) => ({ ...r, text: r.text.trim() })).filter((r) => r.text);
 }
 
+function stateOf(manifest: ModuleManifest, switches: Record<string, boolean>): ModuleState {
+	if (Object.hasOwn(switches, manifest.name)) return { enabled: switches[manifest.name], by: "config" };
+	return manifest.defaultEnabled === false ? { enabled: false, by: "manifest" } : { enabled: true, by: "default" };
+}
+
 function checkModuleTools(manifestPath: string, tools: unknown, team: Team | undefined): void {
 	const isGated = (t: unknown) => (DOMAIN_GATED_TOOLS as readonly unknown[]).includes(t);
 	if (tools !== undefined && (!Array.isArray(tools) || !tools.length || !tools.every(isGated))) {
@@ -122,7 +148,7 @@ function cappedTools(own: readonly string[] | undefined, granted: readonly Domai
 	return withheld.length ? (own ?? MEMBER_TOOLS).filter((t) => !withheld.includes(t)) : own;
 }
 
-function loadModule(dir: string, allowedProviders: readonly string[]): LoadedModule {
+function loadModule(dir: string, allowedProviders: readonly string[], switches: Record<string, boolean>): LoadedModule {
 	const manifestPath = join(dir, "module.json");
 	const manifest = readJsonFile<ModuleManifest>(manifestPath);
 	if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) throw new ConfigError(`${manifestPath}：要写成一个 JSON 对象，例如 {"name": "${basename(dir)}"}，现在写的是 ${JSON.stringify(manifest)}`);
@@ -131,6 +157,11 @@ function loadModule(dir: string, allowedProviders: readonly string[]): LoadedMod
 		if (typeof value === "string" && LINE_BREAK_OR_CONTROL.test(value)) throw new ConfigError(`${manifestPath}：${key}（${JSON.stringify(value)}）里有换行或别的控制字符，写成一行普通文字`);
 	}
 	if (!manifest.name || manifest.name !== basename(dir)) throw new ConfigError(`${manifestPath}：name 必须等于目录名 ${basename(dir)}`);
+	const nameProblem = moduleNameProblem(manifest.name);
+	if (nameProblem) throw new ConfigError(`${manifestPath}：${nameProblem}`);
+	if (manifest.defaultEnabled !== undefined && typeof manifest.defaultEnabled !== "boolean") {
+		throw new ConfigError(`${manifestPath}：defaultEnabled（${JSON.stringify(manifest.defaultEnabled)}）只能是 true 或 false`);
+	}
 	if (manifest.name === USER_NAMESPACE) throw new ConfigError(`${manifestPath}：模块不能叫 ${USER_NAMESPACE}，这个名字留给状态目录 rules.md 里你自己的规则。给模块目录换个名字`);
 	for (const key of ["title", "description"] as const) {
 		const value: unknown = manifest[key];
@@ -162,6 +193,7 @@ function loadModule(dir: string, allowedProviders: readonly string[]): LoadedMod
 		rules: rules.map((r) => ({ ...r, sources: r.sources ?? [...new Set(moduleSources)] })),
 		skillsDir: existsSync(skillsDir) ? skillsDir : undefined,
 		team,
+		state: stateOf(manifest, switches),
 	};
 }
 
@@ -193,21 +225,23 @@ function rejectModuleWithoutManifest(root: string, dir: string): void {
 const onRoster = (module: LoadedModule) => module.manifest.description !== undefined;
 
 export class Modules implements Domains {
+	readonly found: LoadedModule[];
 	readonly modules: LoadedModule[];
 	readonly userRules: ScopedRule[];
 	readonly skippedUserRules: string[];
 	readonly book: DomainBook;
 	readonly #scopes: Map<string, string[]>;
 
-	constructor(modules: LoadedModule[], userRules: ScopedRule[], skippedUserRules: string[]) {
-		this.modules = modules;
+	constructor(found: LoadedModule[], userRules: ScopedRule[], skippedUserRules: string[]) {
+		this.found = found;
+		this.modules = found.filter((m) => m.state.enabled);
 		this.userRules = userRules;
 		this.skippedUserRules = skippedUserRules;
-		this.book = new Map(modules.map((m) => [m.name, { team: m.team?.name ?? null, onRoster: onRoster(m) }]));
+		this.book = new Map(this.modules.map((m) => [m.name, { team: m.team?.name ?? null, onRoster: onRoster(m) }]));
 		this.#scopes = new Map(this.allRules().map((r) => [r.id, r.sources]));
 	}
 
-	static load(dirs: readonly string[], { stateDir, allowedProviders = [] }: ModulesLoadOptions = {}): Modules {
+	static load(dirs: readonly string[], { stateDir, allowedProviders = [], switches = { values: {}, file: "config.json" } }: ModulesLoadOptions = {}): Modules {
 		if (stateDir !== undefined) rejectLooseTeamFiles(stateDir);
 		const userRulesFile = stateDir === undefined ? undefined : join(stateDir, "rules.md");
 		const modules: LoadedModule[] = [];
@@ -218,7 +252,7 @@ export class Modules implements Domains {
 			for (const entry of entries) {
 				const dir = join(root, entry);
 				if (!statSync(dir).isDirectory()) continue;
-				if (existsSync(join(dir, "module.json"))) modules.push(loadModule(dir, allowedProviders));
+				if (existsSync(join(dir, "module.json"))) modules.push(loadModule(dir, allowedProviders, switches.values));
 				else rejectModuleWithoutManifest(root, dir);
 			}
 		}
@@ -226,6 +260,9 @@ export class Modules implements Domains {
 			const first = modules.slice(0, i).find((m) => m.name === module.name);
 			if (first) throw new ConfigError(`${first.dir}：模块重名：${module.name} 也定义在 ${module.dir}。给其中一个文件夹改名（module.json 的 name 跟着改），或删掉一个`);
 		}
+		const names = modules.map((m) => m.name);
+		const unknown = Object.keys(switches.values).find((name) => !names.includes(name));
+		if (unknown) throw new ConfigError(`${switches.file}：modules.${unknown} 不是已发现的模块，已发现：${names.join("、") || "（没有）"}`);
 		const parsed = userRulesFile && existsSync(userRulesFile) ? parseRules(userRulesFile, USER_NAMESPACE, readFileSync(userRulesFile, "utf8")) : [];
 		const userRules = parsed.filter((r): r is ScopedRule => !!r.sources?.length);
 		const skipped = parsed.filter((r) => !r.sources?.length).map((r) => r.id);

@@ -4,7 +4,7 @@ import type { Clock } from "../kernel/types.ts";
 import { ConfigError } from "../config-error.ts";
 import { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
-import type { Modules } from "../modules.ts";
+import type { LoadedModule, Modules } from "../modules.ts";
 import type { WatchedSource } from "../client/protocol.ts";
 import type { TimerEntry } from "../sources/timer.ts";
 import { FEEDS, type FeedSpec } from "../sources/feeds.ts";
@@ -46,8 +46,9 @@ function pick(filter: { title?: string; description?: string } | undefined) {
 }
 
 export function feedSpecs(config: Pick<HostConfig, "stateDir" | "secretsFile" | "sources">, modules: Modules, log: (line: string) => void, env = process.env): FeedSpec[] {
-	const declared = modules.modules.flatMap((m) => (m.manifest.sources ?? []).filter((s) => s.feed).map((s) => ({ module: m, source: s })));
-	const names = declared.map((d) => d.source.name);
+	const declaredBy = (list: LoadedModule[]) => list.flatMap((m) => (m.manifest.sources ?? []).filter((s) => s.feed).map((s) => ({ module: m, source: s })));
+	const declared = declaredBy(modules.modules);
+	const names = declaredBy(modules.found).map((d) => d.source.name);
 	const unknown = Object.keys(config.sources).find((name) => !names.includes(name));
 	if (unknown) throw new ConfigError(`${join(config.stateDir, "config.json")}：sources.${unknown} 不是可配置的来源，可配置：${names.join("、") || "（没有）"}`);
 	return declared.map(({ module: m, source: s }) => {

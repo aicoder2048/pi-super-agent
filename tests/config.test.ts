@@ -84,6 +84,14 @@ test("状态目录不存在时建成 0700，只有自己能进；已有的目录
 	assert.equal(statSync(chosen).mode & 0o777, 0o755);
 });
 
+test("modules 是以模块名为键、值为 true 或 false 的对象，默认为空", () => {
+	assert.deepEqual(loadConfig(stateWith({})).moduleSwitches, {});
+	assert.deepEqual(loadConfig(stateWith({ modules: { "toy-market": true, "us-market": false } })).moduleSwitches, { "toy-market": true, "us-market": false });
+	for (const modules of [[], "toy-market", { "toy-market": "yes" }, null]) {
+		assert.throws(() => loadConfig(stateWith({ modules })), (e: Error) => e.name === "ConfigError" && /config\.json.*modules/.test(e.message), JSON.stringify(modules));
+	}
+});
+
 test("派活的设置有默认值：同时运行的成员最多 4 位，不写代码的成员限时 15 分钟，能写代码的 60 分钟；config.json 可以改", () => {
 	const defaults = loadConfig(stateWith({}));
 	assert.equal(defaults.maxConcurrentExperts, 4);
