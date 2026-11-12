@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { createGateway } from "../src/modules/gateway.ts";
@@ -11,6 +12,7 @@ import type { Digest, ModuleName } from "../src/modules/manifest.ts";
 import type { Alert, Condition, Json, Reply, Request, WorkerCaller } from "../src/modules/protocol.ts";
 import { scanPackage } from "../src/modules/validate.ts";
 import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
+import { hostLineLabel } from "../src/client/board-format.mjs";
 import type { DomainKit, Domains } from "../src/modules.ts";
 import { FAKE_BOT_TOKEN, FakeTelegram } from "./helpers/fake-telegram.ts";
 import { ids, openOnConversation, startHost, until, type FakeWorker } from "./helpers/fakes.ts";
@@ -18,7 +20,7 @@ import { ids, openOnConversation, startHost, until, type FakeWorker } from "./he
 const SAMPLE = join(import.meta.dirname, "../docs/modules/architecture/sample");
 const HEALTH = "personal-health" as ModuleName;
 
-function world(t: TestContext) {
+function world(t: TestContext, log: (line: string) => void = () => {}) {
 	const root = mkdtempSync(join(tmpdir(), "psa-conditions-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const state = join(root, "state");
@@ -37,7 +39,7 @@ function world(t: TestContext) {
 		dataDir: (module) => moduleDataDir(state, module),
 		rows: instanceData(state),
 		secret: () => undefined,
-		log: () => {},
+		log,
 	});
 	const caller = (module: ModuleName, digest: Digest, over: Partial<WorkerCaller> = {}): WorkerCaller => ({
 		who: "worker", ticket: "tkt_1", pin: { module, digest }, basis: "request", member: null, heardOthers: false, ...over,
@@ -45,9 +47,9 @@ function world(t: TestContext) {
 	return { root, keep, gateway, caller };
 }
 
-const health = (t: TestContext) => {
-	const w = world(t);
-	const digest = w.keep(HEALTH, join(SAMPLE, "personal-health"));
+const health = (t: TestContext, log?: (line: string) => void, pkg = join(SAMPLE, "personal-health")) => {
+	const w = world(t, log);
+	const digest = w.keep(HEALTH, pkg);
 	return { ...w, me: (over: Partial<WorkerCaller> = {}) => w.caller(HEALTH, digest, over) };
 };
 
@@ -141,13 +143,78 @@ test("提醒文字由程序拼出：带模块的数据名、key、这一行的�
 	assert.equal(alert.at, "2026-11-12");
 });
 
-test("同一条件、同一时间的行：提醒的编号相同，宿主据此只提醒一次", async (t) => {
+test("改了条件之后同一天再写一行：提醒编号和改之前的不同，宿主不会把它当重复吞掉", async (t) => {
+	const { gateway, me } = health(t);
+	const kept = ok(await gateway.call(me(), set("CEA", { when: "above", value: 5 })));
+	const id = (kept.output as { condition: { id: string } }).condition.id;
+	const [before] = alertsOf(await gateway.call(me(), write([{ item: "CEA", value: 9, takenAt: "2026-11-12" }])));
+	ok(await gateway.call(me(), set("CEA", { when: "above", value: 8 }, { id })));
+	alertsOf(await gateway.call(me(), write([{ item: "CEA", value: 7, takenAt: "2026-11-12" }])));
+	const [after] = alertsOf(await gateway.call(me(), write([{ item: "CEA", value: 9, takenAt: "2026-11-12" }])));
+	assert.ok(before && after);
+	assert.notEqual(after.externalId, before.externalId);
+});
+
+test("日期只到天：同一天里先涨后跌两次够大的变动，各提醒一次，编号不同", async (t) => {
+	const { gateway, me } = health(t);
+	ok(await gateway.call(me(), set("空腹血糖", { when: "change-pct", atLeast: 20, direction: "either" })));
+	const alerts = [];
+	for (const value of [5, 7, 5]) alerts.push(alertsOf(await gateway.call(me(), write([glucose(value, "2026-11-12")]))));
+	assert.deepEqual(alerts.map((a) => a.length), [0, 1, 1]);
+	assert.notEqual(alerts[1]![0]!.externalId, alerts[2]![0]!.externalId);
+});
+
+test("change-pct 带 basis、方向 either：从涨够一侧直接跳到跌够一侧，也提醒", async (t) => {
+	const { gateway, me } = health(t);
+	ok(await gateway.call(me(), set("空腹血糖", { when: "change-pct", atLeast: 10, direction: "either", basis: 5 })));
+	assert.deepEqual(await series(gateway, me(), [5.6, 4.4, 4.3, 5.7]), [1, 1, 0, 1]);
+});
+
+test("一次导入多行过去的读数：只看最新的那一行，不为中间每次越线各提醒一次", async (t) => {
 	const { gateway, me } = health(t);
 	ok(await gateway.call(me(), set("空腹血糖", { when: "above", value: 7 })));
-	const first = alertsOf(await gateway.call(me(), write([glucose(6, "2026-11-12"), glucose(7.4, "2026-11-12")])));
-	const again = alertsOf(await gateway.call(me(), write([glucose(6, "2026-11-12"), glucose(7.4, "2026-11-12")])));
-	assert.equal(first.length, 1);
-	assert.deepEqual(again.map((a) => a.externalId), first.map((a) => a.externalId));
+	const rows = [6, 8, 6, 8, 6, 8, 6, 8].map((value, i) => glucose(value, `2026-10-0${i + 1}`));
+	assert.equal(alertsOf(await gateway.call(me(), write(rows))).length, 1);
+});
+
+test("补录比已存最新一行更早的读数：存下，不提醒", async (t) => {
+	const { gateway, me } = health(t);
+	ok(await gateway.call(me(), set("空腹血糖", { when: "above", value: 7 })));
+	assert.deepEqual(await series(gateway, me(), [6, 6.5]), [0, 0]);
+	const backfilled = await gateway.call(me(), write([glucose(8, "2026-10-20"), glucose(6, "2026-10-21"), glucose(8, "2026-10-22")]));
+	assert.equal(alertsOf(backfilled).length, 0);
+	assert.equal((ok(backfilled).output as { rows: unknown[] }).rows.length, 3);
+});
+
+test("检查提醒条件出错时，写进去的行照样算写成功，出错记一行日志", async (t) => {
+	const logs: string[] = [];
+	const { root, gateway, me } = health(t, (line) => logs.push(line));
+	ok(await gateway.call(me(), set("空腹血糖", { when: "above", value: 7 })));
+	const db = new DatabaseSync(join(moduleDataDir(join(root, "state"), HEALTH), "data.db"));
+	db.exec("UPDATE _conditions SET params = 'not json'");
+	db.close();
+	const reply = await gateway.call(me(), write([glucose(7.4, "2026-11-12")]));
+	assert.deepEqual(alertsOf(reply), []);
+	const read = ok(await gateway.call(me(), { kind: "data", collection: "lab-results" as never, op: "query", query: {} }));
+	assert.equal((read.output as { rows: unknown[] }).rows.length, 1);
+	assert.ok(logs.some((l) => l.includes("lab-results") && l.includes("提醒")), logs.join("\n"));
+});
+
+test("watch.key 要指向文字字段，watch.at 要指向日期或文字字段，否则包检查不过", (t) => {
+	const root = mkdtempSync(join(tmpdir(), "psa-watch-scan-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	const scan = (watch: object) => {
+		const dir = mkdtempSync(join(root, "pkg-"));
+		const fields = { who: { type: "text", title: "谁" }, code: { type: "number", title: "编号" }, kg: { type: "number", title: "公斤" }, on: { type: "date", title: "日期" }, epoch: { type: "number", title: "时间戳" } };
+		mkdirSync(join(dir, "data", "weights"), { recursive: true });
+		writeFileSync(join(dir, "module.json"), JSON.stringify({ schema: 1, name: "body", version: "0.1.0" }));
+		writeFileSync(join(dir, "data", "weights", "collection.json"), JSON.stringify({ title: "体重", kind: "series", class: "shareable", fields, watch }));
+		const result = scanPackage(dir, { runCases: false, folder: "body" });
+		return result.ok ? [] : result.problems.map((p) => p.reason);
+	};
+	assert.deepEqual(scan({ key: "who", value: "kg", at: "on" }), []);
+	assert.ok(scan({ key: "code", value: "kg", at: "on" }).some((r) => r.includes("watch.key")));
+	assert.ok(scan({ key: "who", value: "kg", at: "epoch" }).some((r) => r.includes("watch.at")));
 });
 
 test("set 回一行回执；list 列出；带 id 的 set 改那一条；remove 去掉", async (t) => {
@@ -213,8 +280,8 @@ test("这类数据改名后，原来设的条件跟着走，照常提醒", async
 const USER = 42;
 const NOTICE = "个人医疗健康 有新内容，请在网页上查看";
 
-async function hostWithHealth(t: TestContext, script: (worker: FakeWorker) => Promise<unknown>, basis: "request" | "inference" = "request") {
-	const w = health(t);
+async function hostWithHealth(t: TestContext, script: (worker: FakeWorker) => Promise<unknown>, basis: "request" | "inference" = "request", pkg?: string) {
+	const w = health(t, undefined, pkg);
 	const tg = await FakeTelegram.start();
 	t.after(() => tg.close());
 	const digest = w.me().pin.digest;
@@ -263,12 +330,28 @@ test("宿主：助手设条件后写进 7.4，网页对话里有一条完整提�
 	assert.match([...spawner.workers.values()][0]!.spec.watch ?? "", /lab-results · 检验指标/);
 });
 
-test("宿主：同一条件同一时间的提醒只出现一次", async (t) => {
-	const { alerts } = await hostWithHealth(t, async (worker) => {
+test("宿主：同一天里两次越线，网页上两条提醒都在，都标着是哪个模块的提醒", async (t) => {
+	const { host } = await hostWithHealth(t, async (worker) => {
 		await worker.request("worker.watch", setAbove7);
-		for (let i = 0; i < 2; i++) await worker.request("worker.data", { ...write74, rows: [glucose(6, "2026-11-12"), glucose(7.4, "2026-11-12")] });
+		for (const value of [6, 7.4, 6, 7.4]) await worker.request("worker.data", { ...write74, rows: [glucose(value, "2026-11-12")] });
 	});
-	assert.equal(alerts().length, 1);
+	const lines = host.kernel.conversation().filter((l) => l.who === "alert");
+	assert.equal(lines.length, 2);
+	for (const line of lines) assert.equal(hostLineLabel(line), "提醒 · 个人医疗健康");
+});
+
+test("宿主：可分享数据上的提醒，Telegram 上带全文，前面写「提醒 · 模块名」", async (t) => {
+	const pkg = mkdtempSync(join(tmpdir(), "psa-shareable-health-"));
+	t.after(() => rmSync(pkg, { recursive: true, force: true }));
+	cpSync(join(SAMPLE, "personal-health"), pkg, { recursive: true });
+	const collection = join(pkg, "data", "lab-results", "collection.json");
+	writeFileSync(collection, JSON.stringify({ ...JSON.parse(readFileSync(collection, "utf8")), class: "shareable" }));
+	const { phone } = await hostWithHealth(t, async (worker) => {
+		await worker.request("worker.watch", setAbove7);
+		await worker.request("worker.data", write74);
+	}, "request", pkg);
+	await until(() => phone().some((m) => m.startsWith("提醒 · 个人医疗健康：")), "提醒带模块名到了手机");
+	assert.ok(phone().some((m) => m.startsWith("提醒 · 个人医疗健康：") && m.includes("空腹血糖 7.4")), phone().join(" / "));
 });
 
 test("宿主：推断开的任务设条件被拒，说明推断任务只读、不能改提醒条件；list 可以", async (t) => {

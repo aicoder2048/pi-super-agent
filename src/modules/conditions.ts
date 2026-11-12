@@ -36,7 +36,10 @@ function streak(points: readonly Point[], rising: boolean): number {
 	return count;
 }
 
-const entered = (points: readonly Point[], inside: (value: number) => boolean) => inside(points.at(-1)!.value) && !(points.length > 1 && inside(points.at(-2)!.value));
+const entered = (points: readonly Point[], sideOf: (value: number) => string | boolean | undefined) => {
+	const now = sideOf(points.at(-1)!.value);
+	return Boolean(now) && (points.length < 2 || sideOf(points.at(-2)!.value) !== now);
+};
 
 const parseTimes = (times: Json | undefined) => (wholeIn(times, 1, 100) ? times : "times 要是 1 到 100 的整数");
 
@@ -102,7 +105,11 @@ const SPECS: { [K in Kind]: Spec<K> } = {
 			const basis = c.basis;
 			if (basis !== undefined) {
 				const move = moveOf(c, now.value, basis);
-				return move !== undefined && entered(points, (v) => moveOf(c, v, basis) !== undefined) ? `相对 ${basis} ${moved(move)}` : undefined;
+				const side = (v: number) => {
+					const m = moveOf(c, v, basis);
+					return m === undefined ? undefined : m >= 0 ? "up" : "down";
+				};
+				return entered(points, side) ? `相对 ${basis} ${moved(move!)}` : undefined;
 			}
 			const move = prev && moveOf(c, now.value, prev.value);
 			return move === undefined ? undefined : `比上一次（${prev!.value}，${prev!.at}）${moved(move)}`;
