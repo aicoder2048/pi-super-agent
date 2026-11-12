@@ -337,12 +337,13 @@ function snapshot(dir: string): string {
 		.join("\n");
 }
 
-type Rehearsal = { models?: { router: string; worker: string; fallback: string }; pkg?: string; during?: (child: import("node:child_process").ChildProcess, fake: FakeModel) => Promise<void> };
+type Rehearsal = { models?: { router: string; worker: string; fallback: string }; pkg?: string; secrets?: string; during?: (child: import("node:child_process").ChildProcess, fake: FakeModel) => Promise<void> };
 
-async function rehearse(t: import("node:test").TestContext, script: Script, { models = { router: "psa-fake/router", worker: "psa-fake/worker", fallback: "psa-fake/fallback" }, pkg = join(SAMPLE, "personal-tax"), during }: Rehearsal = {}) {
+async function rehearse(t: import("node:test").TestContext, script: Script, { models = { router: "psa-fake/router", worker: "psa-fake/worker", fallback: "psa-fake/fallback" }, pkg = join(SAMPLE, "personal-tax"), secrets, during }: Rehearsal = {}) {
 	const fake = await FakeModel.start(script);
 	t.after(() => fake.close());
-	const dir = stateDir(t, { models });
+	const dir = stateDir(t, { models, ...(secrets !== undefined && { secretsFile: "secrets.env" }) });
+	if (secrets !== undefined) writeFileSync(join(dir, "secrets.env"), secrets);
 	cpSync(pkg, join(dir, "modules", "personal-tax"), { recursive: true });
 	const scratch = mkdtempSync(join(tmpdir(), "psa-tt-"));
 	t.after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -378,6 +379,30 @@ test("just module try：假模型调了考题要的工具、汇报里有该有�
 	assert.deepEqual(run.leftover, []);
 	assert.deepEqual(run.leftWhenSaidGone, [], "说临时状态目录已删时它已经删了");
 	assert.equal(run.userDirChanged, false);
+});
+
+test("just module try：工具要的密钥只写在 config.json 的 secretsFile 里时，检查和临时宿主都拿到它，预演照常判通过", async (t) => {
+	const pkg = mkdtempSync(join(tmpdir(), "psa-keyed-"));
+	t.after(() => rmSync(pkg, { recursive: true, force: true }));
+	cpSync(join(SAMPLE, "personal-tax"), pkg, { recursive: true });
+	for (const [path, content] of Object.entries({
+		"tools/probe/tool.json": JSON.stringify({ title: "probe", description: "reads its key", input: { x: { type: "number", title: "x" } }, output: { y: { type: "number", title: "y" } }, secrets: ["LAB_KEY"] }),
+		"tools/probe/index.ts": `export default async () => ({ y: process.env.LAB_KEY === "k" ? 1 : 0 });`,
+		"tools/probe/cases.json": JSON.stringify([{ name: "has-key", input: { x: 1 }, expect: { y: 1 } }]),
+	})) {
+		mkdirSync(join(pkg, path, ".."), { recursive: true });
+		writeFileSync(join(pkg, path), content);
+	}
+	const run = await rehearse(
+		t,
+		{
+			router: [opensTaxTicket],
+			workers: [worker("预演算税", on("调工具", /^\[任务说明\]/, () => [domainTool("tax-bracket", { taxableIncome: 25000 })]), on("汇报", /^\[模块工具\]/, () => [report("ready", "落在第 2 档，估算税额 4000 美元")]))],
+		},
+		{ pkg, secrets: "LAB_KEY=k\n" },
+	);
+	assert.equal(run.status, 0, run.out);
+	assert.match(run.out, /^PASS bracket-uses-tool/m);
 });
 
 test("just module try：没调考题要的工具时判失败，写出没用到哪一项，以 1 退出", async (t) => {

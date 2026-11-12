@@ -85,7 +85,7 @@ export async function tryModule(target: string): Promise<number> {
 		if (exams.length === 0) return refuse(`${scanned.scan.manifest.name} 没有考题（evals/ 是空的），没有可预演的`);
 		const worker = formatModelRef(config.models.worker);
 		// The fallback is the worker model, so a dry run never reaches a pay-per-use fallback.
-		return await rehearse(source, scanned.scan.manifest.name, exams, { router: formatModelRef(config.models.router), worker, fallback: worker });
+		return await rehearse(source, scanned.scan.manifest.name, exams, { router: formatModelRef(config.models.router), worker, fallback: worker }, config.secretsFile);
 	} catch (error) {
 		return exitOnConfigError(error);
 	}
@@ -102,7 +102,7 @@ function invalidWhy(state: ModuleState | undefined): string | undefined {
 	return state?.at === "staging" && state.stage.at === "invalid" ? state.stage.problems.map(problemLine).join("；") : undefined;
 }
 
-async function rehearse(source: string, module: string, exams: readonly Exam[], models: Models): Promise<number> {
+async function rehearse(source: string, module: string, exams: readonly Exam[], models: Models, secretsFile: string | undefined): Promise<number> {
 	const stateDir = mkdtempSync(join(tmpdir(), "psa-try-"));
 	let host: ReturnType<typeof startHost> | undefined;
 	let stopping = false;
@@ -113,7 +113,7 @@ async function rehearse(source: string, module: string, exams: readonly Exam[], 
 	let passed: string | undefined;
 	try {
 		cpSync(source, join(stateDir, "modules", module), { recursive: true });
-		writeFileSync(join(stateDir, "config.json"), JSON.stringify({ models, modulesDirs: [join(stateDir, "modules")], webPort: 0, feedFixtures: true }));
+		writeFileSync(join(stateDir, "config.json"), JSON.stringify({ models, modulesDirs: [join(stateDir, "modules")], webPort: 0, feedFixtures: true, secretsFile }));
 		const store = openStore(join(stateDir, "state.db"));
 		setModuleSwitch(store, module, true);
 		store.close();
