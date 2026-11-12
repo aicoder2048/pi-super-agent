@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHostOptions, modelSelectors, telegramOptions, watchedSources } from "../src/host/wiring.ts";
@@ -11,7 +11,8 @@ import { Host } from "../src/host/host.ts";
 import { Modules } from "../src/modules.ts";
 import { FINNHUB_KEY_NAMES, KEY_NAMES } from "../src/sources/market/key.ts";
 import { servedAsHost, until } from "./helpers/fakes.ts";
-import { liveRegistry } from "../src/modules/live.ts";
+import { liveRegistry, ModuleStore } from "../src/modules/live.ts";
+import type { ComponentName, Digest, ModuleName } from "../src/modules/manifest.ts";
 
 const fixed = (modules: Modules) => ({ live: liveRegistry(modules), kitFor: (domain: string) => modules.kitFor(domain) });
 
@@ -364,4 +365,24 @@ test("接线把模块表交给宿主时不拍快照：换表以后宿主的领�
 	assert.deepEqual([...options.domains!.book().keys()], ["us-market", "pi-pi"]);
 	assert.equal(options.domains!.kitFor("pi-pi", null)!.crew.length, 9);
 	assert.equal(options.domains!.kitFor("tax", "abc"), pinned);
+});
+
+test("入口：宿主的 Gateway 从状态目录的模块副本里跑工具，密钥值取自 secretsFile，每次调用记一行日志", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const config = hostConfig(provider);
+	const pkg = join(mkdtempSync(join(tmpdir(), "psa-wire-pkg-")), "personal-tax");
+	cpSync(join(import.meta.dirname, "../docs/modules/architecture/sample/personal-tax"), pkg, { recursive: true });
+	mkdirSync(join(pkg, "tools/env-probe"));
+	writeFileSync(join(pkg, "tools/env-probe/tool.json"), JSON.stringify({ title: "密钥", description: "回显密钥", effect: "read", secrets: ["TAX_KEY"], input: { x: { type: "text", title: "x" } }, output: { named: { type: "text", title: "n" } } }));
+	writeFileSync(join(pkg, "tools/env-probe/index.ts"), "export default () => ({ named: process.env.TAX_KEY ?? null });");
+	const secretsFile = join(config.stateDir, "secrets.env");
+	writeFileSync(secretsFile, "TAX_KEY=from-file\n");
+	const modules = servedAsHost(Modules.load([join(pkg, "..")]));
+	const digest = modules.book.get("personal-tax")!.digest! as Digest;
+	new ModuleStore(join(config.stateDir, "module-store")).keep("personal-tax" as ModuleName, digest, pkg);
+	const logs: string[] = [];
+	const options = createHostOptions({ config: { ...config, secretsFile }, modules: fixed(modules), modelRuntime, log: (l) => logs.push(l) });
+	const caller = { who: "worker" as const, ticket: "tkt_1", pin: { module: "personal-tax" as ModuleName, digest }, basis: "request" as const, member: null, heardOthers: false };
+	assert.deepEqual(await options.gateway!.call(caller, { kind: "tool", name: "env-probe" as ComponentName, input: {} }), { ok: true, output: { named: "from-file" }, private: false });
+	assert.ok(logs.some((l) => l.startsWith("[gateway] personal-tax tools/env-probe")), logs.join("\n"));
 });

@@ -94,6 +94,11 @@ test("页面：待你处理的卡片先显示问题，受阻的显示最近汇�
 	assert.deepEqual([...left.needsYou, ...left.doing].map((c) => c.canStop), [false, false, true, true], "只有进行中的能停止");
 });
 
+test("页面：所属模块已停用的任务，还开着时卡片阶段写「所属模块已停用」；做完的照常写已完成", () => {
+	const left = page.leftColumn(withRows([row({ id: "tkt_off", stage: "running", moduleOff: true }), row({ id: "tkt_done", stage: "closed", moduleOff: true })]), 0);
+	assert.deepEqual([...left.doing, ...left.done].map((c) => [c.id, c.stage]), [["tkt_off", "所属模块已停用"], ["tkt_done", "已完成"]]);
+});
+
 const MIN = 60_000;
 const asked = (over: Partial<NonNullable<DashboardRow["question"]>> = {}) =>
 	({ reportId: "rpt_q1", text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 10 * MIN, click: null, spoke: false, ...over });

@@ -300,6 +300,8 @@ export interface DashboardRow {
 	endedAt: number | null;
 	/** Every outside write in the ticket's reports, with up to three of their paths; null when there is none. */
 	outside: OutsideTally | null;
+	/** The ticket belongs to a module that no longer serves. */
+	moduleOff: boolean;
 }
 
 export interface OutsideTally {

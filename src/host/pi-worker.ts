@@ -136,6 +136,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 				...(spec.crew.length && { PSA_CREW: spec.crew.map((m) => m.name).join(",") }),
 				PSA_BG_MAX_MS: String(this.#o.bgMaxMs ?? 120 * 60_000),
 				...this.#lookupEnv(spec.granted.includes("lookup")),
+				...(spec.domainTools && { PSA_DOMAIN_TOOLS: spec.domainTools }),
 				...(spec.granted.includes("tripwire") && spec.basis === "request" && { PSA_TRIPWIRES: this.#o.tripwireHelp || "（宿主没有配置可改盯盘条件的来源）" }),
 			},
 		});
@@ -184,7 +185,8 @@ export class PiWorkerSpawner implements WorkerSpawner {
 	/** One dispatch: `pi --mode json -p` continuing the member's session, in its own process group, killed as a group on abort. */
 	runMember(run: MemberRun): Promise<string> {
 		const { member } = run;
-		const tools = memberTools(run.basis, member.tools);
+		// A member reaches module tools only through the catalogue its `uses` narrowed the Gateway to.
+		const tools = [...memberTools(run.basis, member.tools), ...(run.domainTools ? ["domain_tool"] : [])];
 		const args = [
 			this.#o.cliPath ?? piCliPath(),
 			"--mode", "json", "-p", "--session-dir", run.sessionDir, "--continue", "--no-context-files",
@@ -206,6 +208,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 			PSA_MEMBER_TOOLS: tools.join(","),
 			PSA_CALL_ID: run.callId,
 			...this.#lookupEnv(tools.includes("lookup")),
+			...(run.domainTools && { PSA_DOMAIN_TOOLS: run.domainTools }),
 		};
 		return runMemberProcess(args, env, run);
 	}

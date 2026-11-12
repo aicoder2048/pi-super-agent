@@ -744,6 +744,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			startedAt: reportedAt,
 			endedAt: null,
 			outside: null,
+			moduleOff: false,
 		},
 	);
 	assert.equal(kernel.usageToday("deepseek"), 1200);

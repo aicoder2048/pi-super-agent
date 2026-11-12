@@ -10,11 +10,17 @@ import { INPUT_LABEL, quoteContext } from "../client/board-format.mjs";
 import { parseOptions } from "../kernel/question.ts";
 import type { Usage } from "./worker-events.ts";
 import { NO_DOMAIN, type DomainKit, type Domains } from "../modules.ts";
+import { refusalText } from "../modules/gateway.ts";
+import type { ComponentName, Digest, ModuleName } from "../modules/manifest.ts";
+import type { Gateway, Json, WorkerCaller } from "../modules/protocol.ts";
 import type { Member } from "../teams.ts";
 import type { TranscriptMessage } from "../client/protocol.ts";
 import { canCode, memberTools } from "../worker/tools.ts";
 import type { OutputRoot } from "./output.ts";
 import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberLimit, type MemberRun } from "./dispatch.ts";
+
+/** What a member may ask the host; everything else is the helper's. */
+const MEMBER_METHODS = ["worker.lookup", "worker.read_web", "worker.domain_tool"];
 
 const HEARD = { trigger: "收到过来源发来的内容", note: "收到过幕僚长的备注", web: "读过网页" } as const;
 
@@ -28,6 +34,8 @@ export interface WorkerSpec extends DomainKit {
 	resume: boolean;
 	/** The output rule, for a helper that can write files. */
 	outputRule?: string;
+	/** The module tools this helper may call, one line each. Absent: it has no `domain_tool`. */
+	domainTools?: string;
 }
 
 export interface WorkerEvents {
@@ -105,6 +113,7 @@ export interface WorkerExecutorOptions {
 	kitFor?: Domains["kitFor"];
 	/** Without it every helper works alone. */
 	dispatch?: DeskDispatchOptions;
+	gateway?: Gateway;
 }
 
 export interface WorkerModels {
@@ -232,10 +241,11 @@ export class WorkerExecutor {
 			transcript: (event) => this.#o.onTranscript?.(ticketId, event),
 		};
 		const kit = this.#kitFor(ticketId, ticket);
+		const domainTools = this.#domainTools(ticketId, null);
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ...kit, token, model: choice.model, resume, ...(ticket.basis !== "inference" && { outputRule: this.#o.output.prompt("helper") }) },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ...kit, token, model: choice.model, resume, ...(ticket.basis !== "inference" && { outputRule: this.#o.output.prompt("helper") }), ...(domainTools && { domainTools }) },
 				events,
 			);
 		} catch (error) {
@@ -308,7 +318,7 @@ export class WorkerExecutor {
 		const live = this.#live.get(ticketId);
 		const holder = live !== undefined && live.token !== token ? this.#desk?.holder(ticketId, token) : undefined;
 		if (!live || (live.token !== token && !holder)) throw new Error("未知的 Worker 或令牌不符");
-		if (holder && method !== "worker.lookup" && method !== "worker.read_web") throw new Error("成员只能经宿主查数据（lookup），不能汇报、交回、读任务或再派活");
+		if (holder && !MEMBER_METHODS.includes(method)) throw new Error("成员只能经宿主查数据（lookup）和调模块工具（domain_tool），不能汇报、交回、读任务或再派活");
 		const { kernel, afterCommand } = this.#o;
 		const p = (params ?? {}) as Record<string, unknown>;
 		try {
@@ -338,6 +348,8 @@ export class WorkerExecutor {
 					if (!this.#mayLookup(ticketId, holder)) throw new Error("这项任务里不能用 lookup：任务的领域没有在 module.json 的 tools 里开 lookup，或这位成员的 tools 没写 lookup");
 					if (!this.#o.lookup) throw new Error("没有可查询的来源");
 					return this.#o.lookup(String(p.source), String(p.op), p.args);
+				case "worker.domain_tool":
+					return this.#domainTool(ticketId, holder?.name ?? null, p);
 				case "worker.read_web":
 					kernel.readWeb(ticketId);
 					return { recorded: true };
@@ -379,6 +391,29 @@ export class WorkerExecutor {
 	#mayLookup(ticketId: string, holder: Member | undefined): boolean {
 		const ticket = this.#o.kernel.getTicket(ticketId)!;
 		return holder ? memberTools(ticket.basis, holder.tools).includes("lookup") : this.#kitFor(ticketId, ticket).granted.includes("lookup");
+	}
+
+	/** Assembled at each call: `heardOthers` changes while the ticket runs. Undefined: the ticket pins no module package. */
+	#callerOf(ticketId: string, member: string | null): WorkerCaller | undefined {
+		const { kernel } = this.#o;
+		const { domain, moduleDigest, basis } = kernel.getTicket(ticketId)!;
+		if (domain === null || moduleDigest === null) return undefined;
+		const pin = { module: domain as ModuleName, digest: moduleDigest as Digest };
+		return { who: "worker", ticket: ticketId, pin, basis, member, heardOthers: kernel.heardOtherThanUser(ticketId) !== undefined };
+	}
+
+	#domainTools(ticketId: string, member: string | null): string | undefined {
+		const caller = this.#callerOf(ticketId, member);
+		const tools = caller && this.#o.gateway ? this.#o.gateway.catalogue(caller) : [];
+		return tools.length ? tools.map((t) => `${t.name} · ${t.title}：${t.help}`).join("\n") : undefined;
+	}
+
+	async #domainTool(ticketId: string, member: string | null, p: Record<string, unknown>): Promise<Json> {
+		const caller = this.#callerOf(ticketId, member);
+		if (!caller || !this.#o.gateway) throw new Error("[模块工具] 这个任务不属于带工具的模块，没有模块工具可调");
+		const reply = await this.#o.gateway.call(caller, { kind: "tool", name: String(p.name) as ComponentName, input: (p.input ?? {}) as Json });
+		if (!reply.ok) throw new Error(`[模块工具] ${refusalText(reply.refusal)}`);
+		return reply.output;
 	}
 
 	#tripwireRefusal(ticketId: string): string | undefined {
@@ -428,10 +463,12 @@ export class WorkerExecutor {
 		const { basis } = kernel.getTicket(ticketId)!;
 		const { timeoutMs, codingTimeoutMs } = this.#o.dispatch!;
 		const codes = canCode(memberTools(basis, member.tools));
+		const domainTools = this.#domainTools(ticketId, member.name);
 		return this.#desk.dispatch({
 			ticketId, callId, member, task, basis,
 			limitMs: codes ? codingTimeoutMs : timeoutMs,
 			...(codes && { outputRule: this.#o.output.prompt("member") }),
+			...(domainTools && { domainTools }),
 			model,
 			refusal,
 			workdir: join(stateDir, "workers", ticketId),
