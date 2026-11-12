@@ -1,0 +1,20 @@
+{
+  "title": "券商交易记录",
+  "description": "每天去券商接口取一次新的成交，存成交易记录",
+  "handler": "index.ts",
+  "secrets": [
+    "EXAMPLE_BROKER_TOKEN"
+  ],
+  "every": "1d",
+  "settings": {
+    "baseUrl": "https://api.broker.example/v1"
+  },
+  "ask": {
+    "account": {
+      "title": "券商账户号",
+      "type": "text"
+    }
+  },
+  "into": "transactions",
+  "notice": "券商有 {{count}} 笔新成交，已实现盈亏合计 {{gain}} 美元。"
+}

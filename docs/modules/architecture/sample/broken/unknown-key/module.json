@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "name": "unknown-key",
+  "version": "0.1.0",
+  "title": "坏例子",
+  "descripton": "把 description 拼错了"
+}

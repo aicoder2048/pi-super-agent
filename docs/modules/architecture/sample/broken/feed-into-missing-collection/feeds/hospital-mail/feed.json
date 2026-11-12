@@ -1,0 +1,6 @@
+{
+  "title": "医院邮件",
+  "connector": "mail",
+  "every": "15m",
+  "into": "documents"
+}

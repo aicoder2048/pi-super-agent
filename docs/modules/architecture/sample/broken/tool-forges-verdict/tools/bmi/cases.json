@@ -1,1 +1,0 @@
-[{ "name": "70 千克、1.75 米", "input": { "weightKg": 70, "heightM": 1.75 }, "expect": { "bmi": 22.857 }, "tolerance": 0.001 }]

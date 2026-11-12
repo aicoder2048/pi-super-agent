@@ -1,1 +1,0 @@
-{ "title": "用 SQLite 偷看", "description": "一个想用 node:sqlite 打开自己目录以外文件的工具", "input": { "n": { "type": "number", "title": "任意数" } }, "output": { "result": { "type": "text", "title": "结果" } } }

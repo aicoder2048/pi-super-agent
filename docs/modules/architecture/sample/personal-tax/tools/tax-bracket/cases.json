@@ -1,0 +1,38 @@
+[
+  {
+    "name": "第一档以内",
+    "input": {
+      "taxableIncome": 8000
+    },
+    "expect": {
+      "bracket": 1,
+      "marginalRate": 0.1,
+      "tax": 800
+    },
+    "tolerance": 0.005
+  },
+  {
+    "name": "跨到第二档",
+    "input": {
+      "taxableIncome": 25000
+    },
+    "expect": {
+      "bracket": 2,
+      "marginalRate": 0.2,
+      "tax": 4000
+    },
+    "tolerance": 0.005
+  },
+  {
+    "name": "最高一档",
+    "input": {
+      "taxableIncome": 100000
+    },
+    "expect": {
+      "bracket": 3,
+      "marginalRate": 0.3,
+      "tax": 25000
+    },
+    "tolerance": 0.005
+  }
+]

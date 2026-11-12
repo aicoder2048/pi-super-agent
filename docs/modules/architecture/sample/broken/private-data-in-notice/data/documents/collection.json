@@ -1,1 +1,0 @@
-{ "title": "报告", "kind": "record", "class": "local-only", "fields": { "summary": { "type": "text", "title": "要点" } } }

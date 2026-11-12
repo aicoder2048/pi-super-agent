@@ -1,1 +1,0 @@
-{ "title": "医院邮件", "connector": "mail", "every": "15m", "notice": "医院来信：{{subject}} {{body}}" }

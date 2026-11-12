@@ -49,14 +49,16 @@ check("the type sketch passes tsc", () => {
   }
 });
 
-check("the personal-health sample package validates", () => {
-  read("sketch/validate.ts");
-  try {
-    return node(["sketch/validate.ts", "sample/personal-health"]).trim().split("\n").at(-1);
-  } catch (error) {
-    throw new Error(`${error.stdout ?? ""}${error.stderr ?? ""}` || error.message);
-  }
-});
+for (const sample of ["personal-health", "personal-tax"]) {
+  check(`the ${sample} sample package validates`, () => {
+    read("sketch/validate.ts");
+    try {
+      return node(["sketch/validate.ts", `sample/${sample}`]).trim().split("\n").at(-1);
+    } catch (error) {
+      throw new Error(`${error.stdout ?? ""}${error.stderr ?? ""}` || error.message);
+    }
+  });
+}
 
 check("each broken sample package is rejected with its reason", () => {
   const cases = JSON.parse(read("sample/broken/expected.json"));
@@ -78,19 +80,21 @@ check("each broken sample package is rejected with its reason", () => {
   return `${names.length} cases`;
 });
 
-check("an update may add a field and may not rename one", () => {
+check("an update may add or rename a field and may not change a unit", () => {
   const previous = "sample/update/0.1.0/health-lite";
   read(`${previous}/module.json`);
   node(["sketch/validate.ts", "sample/update/0.2.0-adds-field/health-lite", "--previous", previous]);
+  const renamed = node(["sketch/validate.ts", "sample/update/0.2.0-renames-field/health-lite", "--previous", previous]);
+  if (!renamed.includes('renamed from "lab"')) throw new Error(`the rename was accepted without the note 'renamed from "lab"':\n${renamed}`);
   let output = "";
   try {
-    output = node(["sketch/validate.ts", "sample/update/0.2.0-renames-field/health-lite", "--previous", previous]);
+    output = node(["sketch/validate.ts", "sample/update/0.2.0-changes-unit/health-lite", "--previous", previous]);
   } catch (error) {
     output = `${error.stdout ?? ""}${error.stderr ?? ""}`;
-    if (!output.includes("was removed")) throw new Error(`the rename failed without "was removed":\n${output}`);
+    if (!output.includes("changed unit")) throw new Error(`the unit change failed without "changed unit":\n${output}`);
     return;
   }
-  throw new Error(`the rename was accepted:\n${output}`);
+  throw new Error(`the unit change was accepted:\n${output}`);
 });
 
 check("the lifecycle, access and validator tests pass", () => {

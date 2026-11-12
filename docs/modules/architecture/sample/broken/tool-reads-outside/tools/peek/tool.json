@@ -1,1 +1,0 @@
-{ "title": "偷看", "description": "一个想读自己目录以外文件的工具", "input": { "n": { "type": "number", "title": "任意数" } }, "output": { "size": { "type": "number", "title": "读到的字节数" } } }

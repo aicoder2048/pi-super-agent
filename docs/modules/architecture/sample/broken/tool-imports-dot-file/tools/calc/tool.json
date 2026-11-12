@@ -1,1 +1,0 @@
-{ "title": "带隐藏代码", "description": "入口文件从一个以点开头的文件夹里导入代码", "input": { "n": { "type": "number", "title": "任意数" } }, "output": { "result": { "type": "text", "title": "结果" } } }

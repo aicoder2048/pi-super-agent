@@ -1,1 +1,0 @@
-[{ "name": "直接请求 example.com", "input": { "n": 1 }, "expect": { "status": 200 } }]
