@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import fs, { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, type FSWatcher } from "node:fs";
+import { EventEmitter } from "node:events";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test, { type TestContext } from "node:test";
+import test, { mock, type TestContext } from "node:test";
 import { startLiveModules } from "../src/host/live-modules.ts";
 import { moduleRows, openStore, setModuleSwitch } from "../src/kernel/store.ts";
 import { Modules } from "../src/modules.ts";
 import { describe } from "../src/modules/lifecycle.ts";
 import { digestOf } from "../src/modules/validate.ts";
+import { watchModules } from "../src/modules/watch.ts";
 import { until } from "./helpers/fakes.ts";
 import { FakeModel, fakeAgentEnv, on } from "./e2e/fake-model.ts";
 import { fakeModels, REPO, startHost } from "./e2e/harness.ts";
@@ -202,4 +205,93 @@ test("宿主运行时打开一个模块：幕僚长下一次收到的输入前�
 	cli("src/cli/say.ts", "say", "第二句");
 	await until(() => routerCards().some((c) => c.includes("第二句")), "幕僚长收到第二句", 10_000);
 	assert.ok(!routerCards().slice(seen).some((c) => c.startsWith("[名单和规则]")), routerCards().slice(seen).join("\n---\n"));
+});
+
+test("旧布局模块的 module.json 存了一半或写错：照旧服务，改好后照旧；关掉再打开也正常", async (t) => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-watch-legacy-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const good = JSON.stringify({ name: "notes", title: "笔记", description: "记笔记" });
+	write(join(dir, "modules"), { "notes/module.json": good, "notes/rules.md": "" });
+	const db = openStore(join(dir, "state.db"));
+	const roots = [join(dir, "modules")];
+	const modules = startLiveModules({ db, stateDir: dir, roots, discovered: Modules.load(roots), configSwitches: {}, log: () => {} });
+	t.after(() => {
+		modules.stop();
+		db.close();
+	});
+	const served = () => modules.live.current().book.has("notes");
+	const label = () => describe(moduleRows(db).find((r) => r.name === "notes")!.record!).label;
+	assert.ok(served(), "启动时在服务");
+	await new Promise((r) => setTimeout(r, 300));
+	save(dir, "notes/module.json", good.slice(0, -1) + ",");
+	await new Promise((r) => setTimeout(r, 800));
+	assert.ok(served(), "写错后照旧服务");
+	assert.equal(label(), "运行中");
+	save(dir, "notes/module.json", good);
+	await new Promise((r) => setTimeout(r, 800));
+	setModuleSwitch(db, "notes", false);
+	modules.tick();
+	assert.ok(!served(), "关掉后不服务");
+	setModuleSwitch(db, "notes", true);
+	modules.tick();
+	assert.ok(served(), "再打开照旧服务");
+	assert.equal(label(), "运行中");
+});
+
+test("模块目录建不出来：宿主照常启动，日志写一行原因", (t) => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-watch-root-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	writeFileSync(join(dir, "a-file"), "");
+	const roots = [join(dir, "a-file/modules")];
+	const db = openStore(join(dir, "state.db"));
+	t.after(() => db.close());
+	const logs: string[] = [];
+	const modules = startLiveModules({ db, stateDir: dir, roots, discovered: Modules.load(roots), configSwitches: {}, log: (line) => logs.push(line) });
+	modules.stop();
+	assert.ok(logs.some((l) => l.includes("a-file/modules")), logs.join("\n"));
+});
+
+test("文件监视器报错：写一行日志，不抛出", (t) => {
+	const fake = new EventEmitter() as FSWatcher;
+	fake.close = () => {};
+	t.after(() => {
+		mock.restoreAll();
+		syncBuiltinESMExports();
+	});
+	mock.method(fs, "watch", () => fake);
+	syncBuiltinESMExports();
+	const logs: string[] = [];
+	const watcher = watchModules(["/somewhere"], () => {}, (line) => logs.push(line));
+	t.after(() => watcher.close());
+	fake.emit("error", new Error("EMFILE"));
+	assert.ok(logs.some((l) => l.includes("EMFILE")), logs.join("\n"));
+});
+
+test("内容没变的存盘不进收据：之后改规则，收据只列出规则文件", async (t) => {
+	const dir = stateDir(t);
+	const { serving, receipts } = await boot(t, dir);
+	save(dir, "tax/skills/estimate/SKILL.md", skill("旧版"));
+	await new Promise((r) => setTimeout(r, 800));
+	save(dir, "tax/rules.md", "新规则");
+	const now = digestOf(join(dir, "modules/tax"));
+	await until(() => serving("tax") === now && receipts().length === 1, `换上并留收据：${receipts().join("\n")}`, 5000);
+	assert.match(receipts()[0]!, /改了 rules\.md$/);
+});
+
+test("停用期间的存盘不进再打开以后的收据", async (t) => {
+	const dir = stateDir(t);
+	const { modules, serving, receipts } = await boot(t, dir);
+	const db = openStore(join(dir, "state.db"));
+	t.after(() => db.close());
+	setModuleSwitch(db, "tax", false);
+	modules.tick();
+	save(dir, "tax/notes.md", "停用时改的");
+	await new Promise((r) => setTimeout(r, 800));
+	setModuleSwitch(db, "tax", true);
+	modules.tick();
+	await until(() => serving("tax") === digestOf(join(dir, "modules/tax")), "再打开后在服务", 5000);
+	save(dir, "tax/rules.md", "新规则");
+	const now = digestOf(join(dir, "modules/tax"));
+	await until(() => serving("tax") === now && receipts().length === 1, `换上并留收据：${receipts().join("\n")}`, 5000);
+	assert.match(receipts()[0]!, /改了 rules\.md$/);
 });
