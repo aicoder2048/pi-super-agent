@@ -1,0 +1,4 @@
+[
+  { "name": "上涨", "input": { "from": 80, "to": 100 }, "expect": { "change": 20, "percent": 25 } },
+  { "name": "下跌", "input": { "from": 50, "to": 40 }, "expect": { "change": -10, "percent": -20 } }
+]

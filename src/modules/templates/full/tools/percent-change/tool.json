@@ -1,0 +1,12 @@
+{
+  "title": "涨跌幅",
+  "description": "给出原来的数和现在的数，算出变化了多少和变化的百分比。换成你自己的计算",
+  "input": {
+    "from": { "type": "number", "title": "原来的数" },
+    "to": { "type": "number", "title": "现在的数" }
+  },
+  "output": {
+    "change": { "type": "number", "title": "变化了多少" },
+    "percent": { "type": "number", "title": "变化的百分比" }
+  }
+}

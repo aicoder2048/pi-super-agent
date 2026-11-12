@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import { problemLine, scanPackage, summary } from "../modules/validate.ts";
 
-const USAGE = "usage: just module check <packageDir> [--previous <packageDir>] | just module on <name> | just module off <name> | just module import <name> <knowledge> <file or folder>";
+const USAGE = "usage: just module check <packageDir> [--previous <packageDir>] | just module new <name> [--template notes|team|full] | just module try <name or packageDir> | just module on <name> | just module off <name> | just module import <name> <knowledge> <file or folder>";
 
 const isFolder = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
 
@@ -24,8 +24,10 @@ function check(target: string, previous: string | undefined): number {
 
 const [command, target, flag, previous, ...rest] = process.argv.slice(2);
 if (command === "check" && target !== undefined && rest.length === 0 && (flag === undefined || (flag === "--previous" && previous !== undefined))) process.exitCode = check(target, previous);
-// Loaded only for on/off and import, so `check` runs under plain node without Pi (docs/modules/architecture/check.mjs).
+// Loaded only for the commands that read config.json, so `check` runs under plain node without Pi (docs/modules/architecture/check.mjs).
 else if ((command === "on" || command === "off") && target !== undefined && flag === undefined) process.exitCode = (await import("./module-switch.ts")).switchModule(target, command === "on");
+else if (command === "new" && target !== undefined && rest.length === 0 && (flag === undefined || (flag === "--template" && previous !== undefined))) process.exitCode = (await import("./module-new.ts")).newModule(target, previous ?? "notes");
+else if (command === "try" && target !== undefined && flag === undefined) process.exitCode = await (await import("./module-try.ts")).tryModule(target);
 else if (command === "import" && target !== undefined && flag !== undefined && previous !== undefined && rest.length === 0) process.exitCode = (await import("./module-import.ts")).importModuleKnowledge(target, flag, previous);
 else {
 	console.error(USAGE);
