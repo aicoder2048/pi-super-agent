@@ -1,7 +1,7 @@
 /** Parsing mirrors src/sources/market/client.ts: module code cannot import the host's. */
 interface Input {
 	settings: { baseUrl: string };
-	rows: { watchlist?: { fields: { symbol?: unknown; removedAt?: unknown } }[] };
+	rows: { watchlist?: { id: string; fields: { symbol?: unknown; removedAt?: unknown } }[] };
 }
 
 type Quote = { id: string; symbol: string; price: number; changePct: number; volume: number | null; at: string };
@@ -49,19 +49,28 @@ function bigMove(q: Quote): Notice[] {
 	const { date, minute } = newYork(q.at);
 	return [{
 		id: `big-move:${q.symbol}:${date}:${up ? "up" : "down"}`,
-		thread: `big-move:${q.symbol}`,
+		thread: `big-move:${q.symbol}:${date}:${up ? "up" : "down"}`,
 		fields: { symbol: q.symbol, direction: up ? "涨" : "跌", pct: `${up ? "+" : ""}${q.changePct.toFixed(2)}`, price: q.price.toFixed(2), at: minute },
 	}];
 }
 
+/** A symbol listed twice counts by its newest row, so crossing out or re-adding it always takes effect. */
+function listedSymbols(rows: NonNullable<Input["rows"]["watchlist"]>): string[] {
+	const removed = new Map<string, boolean>();
+	for (const row of [...rows].sort((x, y) => Number(x.id) - Number(y.id))) {
+		const symbol = String(row.fields.symbol ?? "").trim().toUpperCase();
+		if (symbol !== "") removed.set(symbol, Boolean(row.fields.removedAt));
+	}
+	return [...removed].filter(([, out]) => !out).map(([symbol]) => symbol).sort();
+}
+
 export default async function quotes(input: Input) {
-	const listed = (input.rows.watchlist ?? []).filter((row) => !row.fields.removedAt).map((row) => String(row.fields.symbol ?? "").trim().toUpperCase());
-	const symbols = [...new Set(listed)].filter((s) => s !== "").sort();
+	const symbols = listedSymbols(input.rows.watchlist ?? []);
 	if (symbols.length === 0) return { records: [] };
-	const key = process.env.MASSIVE_API_KEY ?? "";
+	const key = process.env.POLYGON_API_KEY ?? "";
+	if (key === "") throw new Error("没有设置 POLYGON_API_KEY，这一轮没去取报价：在宿主的密钥文件里加一行 POLYGON_API_KEY=<你的 Massive/Polygon 密钥>，见 docs/modules/stock-ta.md");
 	const url = `${input.settings.baseUrl}/v2/snapshot/locale/us/markets/stocks/tickers?tickers=${symbols.map(encodeURIComponent).join(",")}`;
-	const reply = await fetch(url, { headers: { Accept: "application/json", ...(key !== "" && { Authorization: `Bearer ${key}` }) }, redirect: "error" });
-	if (key === "" && (reply.status === 401 || reply.status === 403)) throw new Error("没有设置 MASSIVE_API_KEY：在宿主的密钥文件里加一行 MASSIVE_API_KEY=<你的 Massive 密钥>，见 docs/modules/stock-ta.md");
+	const reply = await fetch(url, { headers: { Accept: "application/json", Authorization: `Bearer ${key}` }, redirect: "error" });
 	if (!reply.ok) throw new Error(`行情服务返回 HTTP ${reply.status}`);
 	const tickers = object(await reply.json()).tickers;
 	if (!Array.isArray(tickers)) throw new Error("行情服务的应答里没有 tickers");

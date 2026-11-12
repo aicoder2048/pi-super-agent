@@ -1,8 +1,8 @@
 /**
  *   G5_SECRETS=<host secrets .env> node --import ./src/pi-runtime.mjs docs/modules/evidence/g5-live.ts [lanes|real|market] [outDir]
  *
- * G5_SECRETS names a .env file the script reads TA_ROOT and the Massive key from (MASSIVE_API_KEY, or the
- * host's other names for it such as POLYGON_API_KEY); the environment wins over the file. Nothing prints a value.
+ * G5_SECRETS names a .env file the script reads TA_ROOT and POLYGON_API_KEY from; the environment wins over the
+ * file. Nothing prints a value.
  *
  * lanes   Lane 1 calls the structure tool from origin/main's package and this tree's. Lanes 2 to 7 and 11 run
  *         in-process hosts with a fake clock, a fake Router that opens a ticket on every request and on every
@@ -27,7 +27,6 @@ const [mode = "lanes", outDir = "/tmp/swarm-g5/owner"] = process.argv.slice(2);
 mkdirSync(outDir, { recursive: true });
 
 const { readSecret } = await import(join(HEAD, "src/secrets.ts"));
-const { readMarketKey } = await import(join(HEAD, "src/sources/market/key.ts"));
 const { inPollWindow } = await import(join(HEAD, "src/sources/market/session.ts"));
 const { startLiveModules } = await import(join(HEAD, "src/host/live-modules.ts"));
 const { Modules } = await import(join(HEAD, "src/modules.ts"));
@@ -131,6 +130,7 @@ type FakeWorker = { inputs: string[]; request(method: string, params: unknown): 
 async function script(worker: FakeWorker, input: string) {
 	if (input.includes("把 AAPL 加进自选股")) await worker.request("worker.data", { op: "write", collection: "watchlist", rows: [{ symbol: "AAPL" }], from: "使用者口述" });
 	if (input.includes("NVDA 跌破 171 提醒我")) await worker.request("worker.watch", { op: "set", collection: "quotes", key: "NVDA", condition: { when: "below", value: 171 } });
+	if (input.includes("相对昨收")) return void worker.report({ status: "blocked", summary: "要你定", question: "先看日线还是周线？", options: ["日线", "周线"] });
 	worker.report({ status: "ready", summary: "看过了" });
 	worker.settle();
 }
@@ -186,7 +186,7 @@ async function feedHost(o: { fixtures: boolean; baseUrl?: string; secret: (name:
 		},
 		quotes: () => query(dataDb, "SELECT symbol, price, changePct, at, _from FROM quotes ORDER BY _id"),
 		triggers: () => query(db, "SELECT external_id, body, disposition FROM triggers WHERE source = 'stock-ta/quotes' ORDER BY rowid"),
-		tickets: () => query(db, "SELECT id, title, basis, rule_id, domain FROM tickets ORDER BY rowid"),
+		tickets: () => query(db, "SELECT id, title, basis, rule_id, domain, worker_state, closed_at FROM tickets ORDER BY rowid"),
 		alerts: () => query(db, "SELECT external_id, text FROM host_lines WHERE kind = 'alert' AND source = 'module:stock-ta' ORDER BY rowid"),
 		conditions: () => query(dataDb, "SELECT key, kind, params FROM _conditions"),
 		async stop() {
@@ -214,15 +214,15 @@ async function lanes(): Promise<void> {
 
 	await lane(2, "check", async () => {
 		const state = mkdtempSync(join(tmpdir(), "psa-g5-"));
-		const ok = just(state, ["module", "check", PKG], { MASSIVE_API_KEY: "" });
+		const ok = just(state, ["module", "check", PKG], { POLYGON_API_KEY: "" });
 		const broken = copyPackage(state);
 		const fixture = join(broken, "feeds", "quotes", "fixtures", "nvda-down-5.json");
 		writeFileSync(fixture, JSON.stringify({ ...JSON.parse(readFileSync(fixture, "utf8")), responses: {} }));
-		const bad = just(state, ["module", "check", broken], { MASSIVE_API_KEY: "" });
+		const bad = just(state, ["module", "check", broken], { POLYGON_API_KEY: "" });
 		rmSync(state, { recursive: true, force: true });
 		return {
 			pass: ok.status === 0 && /^ok stock-ta@0\.1\.0 .*feeds=1/m.test(ok.out) && bad.status !== 0 && bad.out.includes("tickers?tickers=AMD,NVDA"),
-			evidence: `just module check docs/modules/examples/stock-ta, MASSIVE_API_KEY empty: exit ${ok.status}\n${ok.out}\nsame package with the fixture's responses emptied, so the handler's request has no answer: exit ${bad.status}\n${bad.out}`,
+			evidence: `just module check docs/modules/examples/stock-ta, POLYGON_API_KEY empty: exit ${ok.status}\n${ok.out}\nsame package with the fixture's responses emptied, so the handler's request has no answer: exit ${bad.status}\n${bad.out}`,
 		};
 	});
 
@@ -248,7 +248,7 @@ async function lanes(): Promise<void> {
 
 	const massive = await fakeMassive();
 	const key = { on: true };
-	const net = await feedHost({ fixtures: false, baseUrl: massive.url, secret: (name) => (name === "MASSIVE_API_KEY" && key.on ? "sk-fake" : undefined) });
+	const net = await feedHost({ fixtures: false, baseUrl: massive.url, secret: (name) => (name === "POLYGON_API_KEY" && key.on ? "sk-fake" : undefined) });
 	const market = (prices: Record<string, number>) => {
 		Object.assign(massive.state.prices, prices);
 		massive.state.at = net.clock.now + MINUTE - 15 * MINUTE;
@@ -277,20 +277,23 @@ async function lanes(): Promise<void> {
 			const alerts = net.alerts();
 			const text = String(alerts[0]?.text ?? "");
 			const at = String(net.quotes().findLast((q) => q.symbol === "NVDA")?.at);
-			return { pass: conditions.length === 1 && alerts.length === 1 && text.includes("NVDA 170") && text.includes(at), evidence: `the user said NVDA 跌破 171 提醒我 (request ticket, worker.watch set); NVDA was 180.4, the next round brings 170\nconditions: ${show(conditions)}\nthe 170 row's data time: ${at}\nalerts:\n${show(alerts)}` };
+			const shown = "2026-11-09 09:47（美东）";
+			return { pass: conditions.length === 1 && alerts.length === 1 && text.includes("NVDA 170") && at === "2026-11-09T14:47:00.000Z" && text.includes(shown), evidence: `the user said NVDA 跌破 171 提醒我 (request ticket, worker.watch set); NVDA was 180.4, the next round brings 170\nconditions: ${show(conditions)}\nthe 170 row's stored data time: ${at}; the alert should show ${shown}\nalerts:\n${show(alerts)}` };
 		});
 
 		await lane(7, "nokey", async () => {
 			key.on = false;
 			const rows = net.quotes().length;
+			const asked = massive.state.urls.length;
 			market({});
 			await net.round();
-			const note = net.logs.filter((l) => l.includes("stock-ta/quotes") && l.includes("MASSIVE_API_KEY"));
+			const requests = massive.state.urls.length - asked;
+			const note = net.logs.filter((l) => l.includes("stock-ta/quotes") && l.includes("POLYGON_API_KEY"));
 			const alive = Array.isArray(net.host.kernel.listTickets()) && net.host.snapshot() !== undefined;
 			key.on = true;
 			market({});
 			await net.round();
-			return { pass: note.length === 1 && alive && net.quotes().length > rows, evidence: `the host's secrets have no MASSIVE_API_KEY for one round\nlog: ${note.join("\n")}\nhost still answers snapshot(): ${alive}\nwith the key back the next round stored again: ${rows} -> ${net.quotes().length} rows` };
+			return { pass: note.length === 1 && requests === 0 && alive && net.quotes().length > rows, evidence: `the host's secrets have no POLYGON_API_KEY for one round\nrequests to Massive that round: ${requests}\nlog: ${note.join("\n")}\nhost still answers snapshot(): ${alive}\nwith the key back the next round stored again: ${rows} -> ${net.quotes().length} rows` };
 		});
 
 		await lane(11, "big-move", async () => {
@@ -305,10 +308,11 @@ async function lanes(): Promise<void> {
 			await net.round();
 			const third = { triggers: net.triggers(), tickets: net.tickets() };
 			const ruled = third.tickets.filter((t) => t.rule_id === "stock-ta/big-move");
+			const firstStillOpen = ruled[0]?.worker_state === "idle" && ruled[0]?.closed_at === null;
 			const book = net.live.live.current().book.get("stock-ta");
 			return {
-				pass: before.triggers === 0 && first.triggers.length === 1 && String(first.triggers[0]!.external_id) === "big-move:NVDA:2026-11-09:down" && second.triggers.length === 1 && second.tickets.length === first.tickets.length && third.triggers.length === 2 && String(third.triggers[1]!.external_id) === "big-move:NVDA:2026-11-09:up" && ruled.length === 2 && ruled.every((t) => t.domain === "stock-ta") && book?.team === "技术分析研究组",
-				evidence: `NVDA prevClose 176: 166.84 (-5.20%), then 166 (-5.68%) the same day, then 184.8 (+5.00%)\nafter -5.20%:\ntriggers:\n${show(first.triggers)}\ntickets:\n${show(first.tickets)}\nafter -5.68%: ${second.triggers.length} trigger(s), ${second.tickets.length} ticket(s)\nafter +5.00%:\ntriggers:\n${show(third.triggers)}\ntickets:\n${show(third.tickets)}\nstock-ta's team: ${book?.team}`,
+				pass: before.triggers === 0 && first.triggers.length === 1 && String(first.triggers[0]!.external_id) === "big-move:NVDA:2026-11-09:down" && second.triggers.length === 1 && second.tickets.length === first.tickets.length && third.triggers.length === 2 && String(third.triggers[1]!.external_id) === "big-move:NVDA:2026-11-09:up" && third.triggers[1]!.disposition === "to_router" && firstStillOpen && ruled.length === 2 && ruled.every((t) => t.domain === "stock-ta") && book?.team === "技术分析研究组",
+				evidence: `NVDA prevClose 176: 166.84 (-5.20%), then 166 (-5.68%) the same day, then 184.8 (+5.00%)\nafter -5.20%:\ntriggers:\n${show(first.triggers)}\ntickets:\n${show(first.tickets)}\nafter -5.68%: ${second.triggers.length} trigger(s), ${second.tickets.length} ticket(s)\nthe -5.20% ticket is still open (its Worker asked a question): ${firstStillOpen}\nafter +5.00%:\ntriggers:\n${show(third.triggers)}\ntickets:\n${show(third.tickets)}\nstock-ta's team: ${book?.team}`,
 			};
 		});
 	} finally {
@@ -367,8 +371,8 @@ async function real(): Promise<void> {
 
 async function marketLanes(): Promise<void> {
 	if (!inPollWindow(Date.now())) throw new Error("the market lanes call Massive and need US trading hours (9:30 to 16:20 New York, weekdays); nothing was called");
-	const massiveKey = readMarketKey(process.env, SECRETS)?.key;
-	if (massiveKey === undefined || TA_ROOT === "") throw new Error("set G5_SECRETS to a .env holding TA_ROOT and MASSIVE_API_KEY (or POLYGON_API_KEY)");
+	const massiveKey = readSecret(["POLYGON_API_KEY"], "POLYGON_API_KEY", process.env, SECRETS)?.key;
+	if (massiveKey === undefined || TA_ROOT === "") throw new Error("set G5_SECRETS to a .env holding TA_ROOT and POLYGON_API_KEY");
 	const { FAKE_BOT_TOKEN, FakeTelegram } = await import(join(HEAD, "tests/helpers/fake-telegram.ts"));
 	const state = mkdtempSync(join(tmpdir(), "psa-g5-market-"));
 	copyPackage(state);
@@ -377,7 +381,7 @@ async function marketLanes(): Promise<void> {
 	const data = instanceData(state);
 	data.write("stock-ta", components, "watchlist", ["NVDA", "AAPL", "AMD"].map((symbol) => ({ symbol })), "使用者口述", "g5-live");
 	data.watch("stock-ta", components, { kind: "watch", collection: "quotes", op: "set", watch: { key: "NVDA", condition: { when: "above", value: 0.01 } } }, "g5-live");
-	writeFileSync(join(state, "secrets.env"), `MASSIVE_API_KEY=${massiveKey}\nTELEGRAM_BOT_TOKEN=${FAKE_BOT_TOKEN}\n`, { mode: 0o600 });
+	writeFileSync(join(state, "secrets.env"), `POLYGON_API_KEY=${massiveKey}\nTELEGRAM_BOT_TOKEN=${FAKE_BOT_TOKEN}\n`, { mode: 0o600 });
 	const tg = await FakeTelegram.start();
 	const phone = () => tg.sent.filter((m: { chatId: number }) => m.chatId === USER).map((m: { text: string }) => m.text);
 	const host = await realHost(state, { secretsFile: "secrets.env", telegram: { allowedUserIds: [USER] } }, { PSA_E2E_TELEGRAM_URL: tg.url }, ["./tests/e2e/telegram-preload.mjs"]);

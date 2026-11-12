@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { EVERY } from "./connectors/timer.ts";
 import { feedInput, intoOf, NOTHING_HELD, parseCollected } from "./feed-runner.ts";
-import { runModuleCode, runModuleCodeAsync, secretsFor, type CodeReply, type RunOptions, type SecretLookup, type Secrets } from "./run-code.ts";
+import { fixtureSecrets, runModuleCode, runModuleCodeAsync, secretsFor, type CodeReply, type RunOptions, type SecretLookup, type Secrets } from "./run-code.ts";
 import { CONNECTORS, DATA_CLASSES, FEED_WHEN, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS } from "./manifest.ts";
 import type {
 	AgentDescriptor, CapabilityUse, CollectionDescriptor, Component, ComponentName, Digest, FeedDescriptor, FeedFixture, FieldDescriptor, KindDir, MemberTool, ModuleManifest, ModuleName, PackageScan, Problem, RuleRef, Runtime, ScanResult, ToolCase, ToolDescriptor,
@@ -451,12 +451,12 @@ function toolRun(root: string, component: Extract<Component, { kind: "tools" }>,
 	};
 }
 
-function feedRun(root: string, { name, feed }: Extract<Component, { kind: "feeds" }>, components: readonly Component[], fixture: FeedFixture, secret: SecretLookup): CaseRun {
+function feedRun(root: string, { name, feed }: Extract<Component, { kind: "feeds" }>, components: readonly Component[], fixture: FeedFixture): CaseRun {
 	const where = `feeds/${name}/fixtures/${fixture.name}.json`;
 	return {
 		dir: join(root, "feeds", name),
 		entry: feed.handler!,
-		secrets: secretsFor(feed.secrets ?? [], secret),
+		secrets: fixtureSecrets(feed.secrets ?? []),
 		input: feedInput(feed, [], NOTHING_HELD, fixture),
 		options: { responses: fixture.responses },
 		problem: (reply) => {
@@ -470,7 +470,7 @@ function feedRun(root: string, { name, feed }: Extract<Component, { kind: "feeds
 function caseRuns(root: string, components: readonly Component[], secret: SecretLookup): CaseRun[] {
 	return components.flatMap((component) => {
 		if (component.kind === "tools") return component.cases.map((item, index) => toolRun(root, component, item, index, secret));
-		if (component.kind === "feeds" && component.feed.handler !== undefined) return component.fixtures.map((fixture) => feedRun(root, component, components, fixture, secret));
+		if (component.kind === "feeds" && component.feed.handler !== undefined) return component.fixtures.map((fixture) => feedRun(root, component, components, fixture));
 		return [];
 	});
 }

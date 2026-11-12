@@ -8,6 +8,9 @@ import { Modules } from "../src/modules.ts";
 import { runFeed, type FeedNotice, type FeedPorts } from "../src/modules/feed-runner.ts";
 import { instanceData } from "../src/modules/instance-data.ts";
 import { problemLine, scanPackage } from "../src/modules/validate.ts";
+import { Kernel } from "../src/kernel/kernel.ts";
+import { openStore } from "../src/kernel/store.ts";
+import { threadId } from "../src/sources/generic.ts";
 import { servedAsHost } from "./helpers/fakes.ts";
 import { snapshotBody, tickerRow } from "./helpers/market.ts";
 
@@ -47,10 +50,11 @@ async function quotesFeed(t: TestContext, key = "sk-test") {
 	assert.ok(entry, "stock-ta 有 quotes feed");
 	const data = instanceData(join(root, "state"));
 	const notices: FeedNotice[] = [];
-	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: () => {}, secret: (name) => (name === "MASSIVE_API_KEY" && key !== "" ? key : undefined), now: () => AT + 15 * 60_000 };
+	const alerts: string[] = [];
+	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: (_, a) => void alerts.push(a.text), secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined), now: () => AT + 15 * 60_000 };
 	const watch = (...symbols: string[]) => data.write("stock-ta", entry.components, "watchlist", symbols.map((symbol) => ({ symbol })), "使用者口述", "test");
 	const quotes = () => data.query("stock-ta", entry.components, "quotes", {}, "test").rows;
-	return { massive, modules, entry, data, notices, watch, quotes, round: () => runFeed(entry, [], ports) };
+	return { massive, modules, entry, data, notices, alerts, watch, quotes, round: () => runFeed(entry, [], ports), rehearse: () => runFeed(entry, [], ports, entry.fixtures[0]) };
 }
 
 test("快照解析：一次请求取回整张自选股，每只一行，带价格、相对昨收的涨跌幅、成交量和数据时间", async (t) => {
@@ -93,17 +97,35 @@ test("自选股改了下一轮就用新名单；划掉的不再请求；名单�
 	assert.equal(feed.massive.hits.at(-1)!.url, `${SNAPSHOT}?tickers=AAPL`);
 });
 
-test("缺密钥：这一轮失败，一行说明去哪里设 MASSIVE_API_KEY", async (t) => {
+test("同一只股票有两行：以最新的一行为准，最新一行划掉了就不再请求，划掉后又加回来就照常请求", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.massive.answer(snapshot([tickerRow("NVDA", 180.4, 176, AT)]));
+	const [first] = feed.watch("NVDA").rows;
+	const [second] = feed.watch("NVDA").rows;
+	feed.data.write("stock-ta", feed.entry.components, "watchlist", [{ id: second!.id, removedAt: "2026-11-12" }], "使用者口述", "test");
+	assert.deepEqual(await feed.round(), { ok: true, records: 0, notices: 0 });
+	assert.equal(feed.massive.hits.length, 0, `最新一行（${second!.id}）划掉了，较早的 ${first!.id} 不算`);
+	feed.watch("NVDA");
+	await feed.round();
+	assert.equal(feed.massive.hits.at(-1)?.url, `${SNAPSHOT}?tickers=NVDA`);
+});
+
+test("缺密钥：不发请求，这一轮失败，一行说明去哪里设 POLYGON_API_KEY", async (t) => {
 	const feed = await quotesFeed(t, "");
 	feed.watch("NVDA");
 	feed.massive.answer({ status: 401, body: { status: "ERROR" } });
 	const run = await feed.round();
 	assert.equal(run.ok, false);
 	const note = run.ok ? "" : run.note;
-	assert.match(note, /没有设置 MASSIVE_API_KEY/);
+	assert.match(note, /没有设置 POLYGON_API_KEY/);
 	assert.equal(note.split("\n").length, 1);
-	assert.equal(feed.massive.hits[0]!.auth, undefined, "没有密钥就不带空的 Bearer");
+	assert.equal(feed.massive.hits.length, 0, "没有密钥就不去敲行情服务的门");
 	assert.equal(feed.quotes().length, 0);
+});
+
+test("样例排练：样例代替网络，没有密钥也照常跑完", async (t) => {
+	const feed = await quotesFeed(t, "");
+	assert.deepEqual(await feed.rehearse(), { ok: true, records: 2, notices: 1 });
 });
 
 test("接口出错：这一轮失败，说出状态码，不存任何东西", async (t) => {
@@ -141,7 +163,34 @@ test("涨跌 5%：NVDA 跌 5.2% 发一条触发，同一天同方向的 id 不�
 	assert.match(body, /延迟 15 分钟/);
 	assert.match(feed.notices[2]!.body, /\+5\.00%/);
 	assert.equal(feed.notices[0]!.source, "stock-ta/quotes");
-	assert.equal(feed.notices[0]!.thread, "big-move:NVDA", "每只股票一条线程，别的股票的大涨跌不会落进 NVDA 的任务");
+	assert.equal(feed.notices[0]!.thread, "big-move:NVDA:2026-11-12:down", "每只股票每天每个方向一条线程");
+});
+
+test("先跌 5% 的任务还开着，同一天反过来涨 5%：另开一个任务，不落进前一个任务", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.massive.answer(snapshot([tickerRow("NVDA", 94.8, 100, AT)]), snapshot([tickerRow("NVDA", 105, 100, AT + 60_000)]));
+	await feed.round();
+	await feed.round();
+	const kernel = new Kernel({ db: openStore(":memory:"), clock: { now: () => AT }, sourcePolicy: () => "candidate" });
+	const submit = (n: FeedNotice) => kernel.submitTrigger({ source: n.source, externalId: n.id, threads: [{ id: threadId(n.source, n.thread) }], sender: n.source, body: n.body, occurredAt: n.at });
+	const [down, up] = feed.notices;
+	const first = submit(down!);
+	kernel.route([{ kind: "open_ticket", basis: "rule", ruleId: "stock-ta/big-move", triggerId: first.triggerId, title: "看 NVDA 跌 5%", brief: "看结构", threads: [threadId(down!.source, down!.thread)] }]);
+	assert.ok(kernel.listTickets().length === 1 && !["stopped", "closed"].includes(kernel.listTickets()[0]!.stage), "跌 5% 的任务还开着");
+	const second = submit(up!);
+	assert.equal(kernel.triggerLog().find((tr) => tr.id === second.triggerId)?.disposition, "to_router");
+});
+
+test("报价的提醒条件：提醒里的数据时间按美东写，存的仍是 UTC 时间", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.data.watch("stock-ta", feed.entry.components, { kind: "watch", collection: "quotes" as never, op: "set", watch: { key: "NVDA", condition: { when: "below", value: 171 } } }, "test");
+	feed.massive.answer(snapshot([tickerRow("NVDA", 170, 176, AT)]));
+	await feed.round();
+	assert.equal(feed.alerts.length, 1);
+	assert.match(feed.alerts[0]!, /（2026-11-12 10:44（美东），来自 stock-ta\/quotes）/);
+	assert.equal(feed.quotes()[0]!.fields["at"], "2026-11-12T15:44:00.000Z");
 });
 
 test("规则：stock-ta/quotes 的触发有一条规则可用，规则把任务交给技术分析研究组", async (t) => {
@@ -153,9 +202,9 @@ test("规则：stock-ta/quotes 的触发有一条规则可用，规则把任务�
 });
 
 test("stock-ta 包通过检查：quotes 的样例跑过 handler，不需要真的密钥", () => {
-	const result = scanPackage(PKG);
+	const result = scanPackage(PKG, { secret: () => undefined });
 	assert.ok(result.ok, result.ok ? "" : result.problems.map(problemLine).join("\n"));
 	const feed = result.scan.components.find((c) => c.kind === "feeds" && c.name === "quotes");
 	assert.ok(feed?.kind === "feeds" && feed.fixtures.length > 0);
-	assert.deepEqual({ every: feed.feed.every, when: feed.feed.when, secrets: feed.feed.secrets, into: feed.feed.into, reads: feed.feed.reads }, { every: "60s", when: "us-market-hours", secrets: ["MASSIVE_API_KEY"], into: "quotes", reads: ["watchlist"] });
+	assert.deepEqual({ every: feed.feed.every, when: feed.feed.when, secrets: feed.feed.secrets, into: feed.feed.into, reads: feed.feed.reads }, { every: "60s", when: "us-market-hours", secrets: ["POLYGON_API_KEY"], into: "quotes", reads: ["watchlist"] });
 });
