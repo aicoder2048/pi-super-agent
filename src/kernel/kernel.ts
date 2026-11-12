@@ -726,6 +726,7 @@ export class Kernel {
 
 	listTickets(): DashboardRow[] {
 		const now = this.#now();
+		const serving = this.#domains();
 		return this.#all("SELECT id FROM tickets ORDER BY created_at, rowid").map((r) => {
 			const t = this.#ticket(r.id)!;
 			const end = t.stoppedAt ?? t.closedAt ?? now;
@@ -751,6 +752,7 @@ export class Kernel {
 				startedAt: t.startedAt,
 				endedAt: t.stoppedAt ?? t.closedAt,
 				outside: this.#outsideTally(t.id),
+				moduleOff: t.domain !== null && !serving.has(t.domain),
 			};
 		});
 	}

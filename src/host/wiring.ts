@@ -15,6 +15,9 @@ import { helperSessionDir } from "./dispatch.ts";
 import { PiWorkerSpawner } from "./pi-worker.ts";
 import { Router, routerPreamble } from "./router.ts";
 import { readSecret } from "../secrets.ts";
+import { createGateway } from "../modules/gateway.ts";
+import { ModuleStore } from "../modules/live.ts";
+import type { Digest } from "../modules/manifest.ts";
 import { BotApi, BotToken } from "./telegram/bot-api.ts";
 import type { TelegramOptions } from "./telegram/client.ts";
 
@@ -103,6 +106,7 @@ export function createHostOptions({ config, modules: { live, kitFor }, modelRunt
 	const timers = modules.timers();
 	const feeds = feedSpecs(config, modules, log);
 	const telegram = telegramOptions(config, process.env, log);
+	const store = new ModuleStore(join(config.stateDir, "module-store"));
 	return {
 		stateDir: config.stateDir,
 		heartbeatMs: config.heartbeatSeconds * 1000,
@@ -114,6 +118,12 @@ export function createHostOptions({ config, modules: { live, kitFor }, modelRunt
 		ruleAllows: (ruleId, source) => live.current().ruleAllows(ruleId, source),
 		isMarketSource: (source) => live.current().isMarketSource(source),
 		domains: { book: () => live.current().book, kitFor },
+		gateway: createGateway({
+			copyDir: (module, digest) => store.dirOf(module, digest),
+			serving: (module) => live.current().book.get(module)?.digest as Digest | undefined,
+			secret: (name) => readSecret([name], name, process.env, config.secretsFile)?.key,
+			log,
+		}),
 		rulesFor: (source) => live.current().rulesFor(source),
 		timers,
 		watching: watchedSources(modules, timers),

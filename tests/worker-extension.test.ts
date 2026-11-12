@@ -146,6 +146,22 @@ test("宿主给了 PSA_TRIPWIRES 的助手有 tripwire：描述里有来源的�
 	assert.equal(member.tools.has("tripwire"), false);
 });
 
+test("宿主给了模块工具目录（PSA_DOMAIN_TOOLS）的助手和成员有 domain_tool：描述里列出工具，调用经宿主连接发出；没给的没有", async (t) => {
+	const help = "tax-bracket · 税率档位：给出应税所得，算出档位。输入：taxableIncome（number，应税所得，USD）";
+	const helper = await load("inference", { PSA_DOMAIN_TOOLS: help });
+	const member = await load("request", { PSA_MEMBER_TOOLS: "read,domain_tool", PSA_DOMAIN_TOOLS: help });
+	const plain = await load("request");
+	t.after(() => { helper.close(); member.close(); plain.close(); });
+	for (const w of [helper, member]) {
+		assert.match(w.tools.get("domain_tool").description, /tax-bracket · 税率档位/);
+		await w.run("domain_tool", { name: "tax-bracket", input: { taxableIncome: 25000 } });
+		assert.deepEqual([w.requests.at(-1).method, w.requests.at(-1).params], ["worker.domain_tool", { name: "tax-bracket", input: { taxableIncome: 25000 } }]);
+		assert.equal(await w.handlers.get("tool_call")({ toolName: "domain_tool", input: {} }), undefined);
+	}
+	assert.equal(process.env.PSA_DOMAIN_TOOLS, undefined);
+	assert.equal(plain.tools.has("domain_tool"), false);
+});
+
 test("汇报工具接受问题的 2 到 4 个选项，经宿主连接原样提交", async (t) => {
 	const w = await load("inference");
 	t.after(w.close);

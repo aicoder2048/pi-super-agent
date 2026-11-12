@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { runModuleCode, scanPackage } from "../src/modules/validate.ts";
+import { namedFromEnv, runModuleCode } from "../src/modules/run-code.ts";
+import { scanPackage } from "../src/modules/validate.ts";
 
 const SAMPLE = join(dirname(fileURLToPath(import.meta.url)), "..", "docs", "modules", "architecture", "sample");
 const update = (to: string) => scanPackage(join(SAMPLE, "update", to, "health-lite"), { previous: join(SAMPLE, "update", "0.1.0", "health-lite") });
@@ -29,7 +30,7 @@ test("module code gets the secrets its descriptor names as environment variables
 	process.env["NAMED_KEY"] = "n";
 	process.env["OTHER_KEY"] = "o";
 	try {
-		assert.deepEqual(runModuleCode(dir, "index.ts", {}, ["NAMED_KEY"]), { ok: true, output: { named: "n", other: null } });
+		assert.deepEqual(runModuleCode(dir, "index.ts", {}, namedFromEnv(["NAMED_KEY"])), { ok: true, output: { named: "n", other: null } });
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

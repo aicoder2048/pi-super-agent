@@ -27,6 +27,7 @@ import { ConfigError } from "../config-error.ts";
 import { OutputRoot } from "./output.ts";
 import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 import type { Domains } from "../modules.ts";
+import type { Gateway } from "../modules/protocol.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
 
 export interface RouterLike {
@@ -52,6 +53,7 @@ export interface HostOptions {
 	isMarketSource?: (source: string) => boolean;
 	/** The serving modules, asked each time. Without it no ticket has a domain. */
 	domains?: Domains;
+	gateway?: Gateway;
 	rulesFor?: (triggerSource: string) => string[];
 	timers?: TimerEntry[];
 	heartbeatMs?: number;
@@ -186,6 +188,7 @@ export class Host {
 			onError: (ticketId, error) => this.#log(`[worker ${ticketId}] ${String(error)}`),
 			models: options.workerModels,
 			kitFor: this.#kitFor,
+			gateway: options.gateway,
 			dispatch: memberCap && { ...options.dispatch!, cap: { limit: () => memberCap.limit(), membersWaiting: (waiting) => this.#askAboutMemberCap(memberCap, waiting) } },
 			lookup: async (source, op, args) => {
 				const feed = this.feeds.get(source);

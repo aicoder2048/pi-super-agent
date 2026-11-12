@@ -224,7 +224,7 @@ function card(row, now, sending) {
 		avatar: avatarOf(row),
 		crew: crewOf(row),
 		why: BASIS_PHRASE[row.basis],
-		stage: row.stall ? `久无进展 · ${stallMinutes(row.stall.since, now)} 分钟` : STAGE_PHRASE[row.stage],
+		stage: row.stall ? `久无进展 · ${stallMinutes(row.stall.since, now)} 分钟` : row.moduleOff && GROUP[row.stage] !== "done" ? "所属模块已停用" : STAGE_PHRASE[row.stage],
 		latest: row.question?.text ?? row.latestSummary ?? "已开始，暂无进展",
 		outside: outsideLine(row.outside),
 		canStop: GROUP[row.stage] === "doing",

@@ -68,7 +68,7 @@ function setup(t: TestContext, env: Record<string, string> = {}) {
 	const usage: number[] = [];
 	const activity: (string | undefined)[] = [];
 	const messages: TranscriptMessage[] = [];
-	const run = (who: Member, tag: string, basis: Basis = "request", signal = new AbortController().signal, outputRule?: string) =>
+	const run = (who: Member, tag: string, basis: Basis = "request", signal = new AbortController().signal, outputRule?: string, domainTools?: string) =>
 		spawner.runMember({
 			ticketId: "tkt_helper", member: who, task: `${tag}\n细节`, basis, token: `token-${tag}`, workdir: dir, sessionDir: memberSessionDir(dir, "tkt_helper", who.name), signal,
 			model: { provider: "openai-codex", id: "gpt-6.1-sol" },
@@ -77,6 +77,7 @@ function setup(t: TestContext, env: Record<string, string> = {}) {
 			onMessage: (message) => messages.push(message),
 			callId: `call-${tag}`,
 			outputRule,
+			...(domainTools && { domainTools }),
 		} satisfies MemberRun);
 	const read = (file: string) => JSON.parse(readFileSync(join(dir, file), "utf8"));
 	return { dir, run, usage, activity, messages, read };
@@ -118,6 +119,16 @@ test("成员做一件事：Pi 打印模式，会话放在任务里这位成员�
 	await run(NEWS, "n");
 	assert.equal(flag(read("argv-n.json"), "--session-dir"), join(dir, "workers", "tkt_helper", "team", "news-researcher"), "每位成员各有会话目录");
 	assert.deepEqual(flag(read("argv-n.json"), "--tools")!.split(","), ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup"]);
+});
+
+test("宿主给了模块工具目录的成员，工具清单多一个 domain_tool，目录交给扩展；没给的没有", async (t) => {
+	const { run, read } = setup(t);
+	await run(MARKET, "d", "inference", undefined, undefined, "tax-bracket · 税率档位：算税");
+	assert.deepEqual(flag(read("argv-d.json"), "--tools")!.split(","), ["read", "web_get", "domain_tool"]);
+	assert.equal(read("env-d.json").PSA_DOMAIN_TOOLS, "tax-bracket · 税率档位：算税");
+	await run(MARKET, "p", "inference");
+	assert.ok(!flag(read("argv-p.json"), "--tools")!.includes("domain_tool"));
+	assert.equal(read("env-p.json").PSA_DOMAIN_TOOLS, undefined);
 });
 
 test("推断任务里的成员即使写了 bash 也只读；交集为空时一个工具也没有", async (t) => {

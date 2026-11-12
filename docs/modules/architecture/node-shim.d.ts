@@ -52,13 +52,15 @@ declare module "node:child_process" {
 		setEncoding(encoding: "utf8"): { on(event: "data", listener: (chunk: string) => void): void };
 	}
 	export interface ChildProcess {
+		pid?: number;
 		stdout: Readable;
 		stderr: Readable;
 		stdin: { on(event: "error", listener: () => void): void; end(data: string): void };
 		on(event: "error", listener: (error: Error) => void): void;
+		on(event: "exit", listener: () => void): void;
 		on(event: "close", listener: (status: number | null, signal: string | null) => void): void;
 	}
-	export function spawn(command: string, args: readonly string[], options: { timeout: number; env: Readonly<Record<string, string>>; cwd: string }): ChildProcess;
+	export function spawn(command: string, args: readonly string[], options: { detached: boolean; env: Readonly<Record<string, string>>; cwd: string }): ChildProcess;
 }
 declare module "node:test" {
 	export function test(name: string, run: () => void | Promise<void>): void;
@@ -79,6 +81,7 @@ declare const process: {
 	execPath: string;
 	exitCode: number | undefined;
 	env: Record<string, string | undefined>;
+	kill(pid: number, signal: string): void;
 };
 declare function setTimeout(run: () => void, ms: number): unknown;
 declare function clearTimeout(timer: unknown): void;

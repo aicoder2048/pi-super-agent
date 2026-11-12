@@ -46,6 +46,7 @@ export const dispatch = (agent: string, task: string): ToolCall => ({ name: "dis
 export const newApp = (short: string): ToolCall => ({ name: "new_app", args: { short } });
 export const write = (path: string, content: string): ToolCall => ({ name: "write", args: { path, content } });
 export const bash = (command: string): ToolCall => ({ name: "bash", args: { command } });
+export const domainTool = (name: string, input: Record<string, unknown>): ToolCall => ({ name: "domain_tool", args: { name, input } });
 export const report = (status: "progress" | "ready" | "blocked" | "failed" | "no_action", summary: string): ToolCall => ({ name: "report", args: { status, summary } });
 /** Crashes the current Worker for real: inside the bash tool, $PPID is the Pi process. */
 export const crashWorker = (): ToolCall => ({ name: "bash", args: { command: "kill -9 $PPID" } });
@@ -60,6 +61,7 @@ export interface Exchange {
 	unmatched: string[];
 	/** The tools the request offered the model. */
 	tools: string[];
+	toolResults: string[];
 	answer: Answer;
 }
 
@@ -165,7 +167,8 @@ export class FakeModel {
 		const conversation = model === "router" || model === "fallback" ? "router" : this.#scriptFor(briefOf(messages));
 		const cards = trailingCards(messages);
 		const userTexts = messages.filter((m) => m.role === "user").map(textOf);
-		const base = { at: Date.now(), model, conversation, cards, userTexts, steps: [] as string[], unmatched: [] as string[], delayMs: 0 };
+		const toolResults = messages.slice(messages.findLastIndex((m) => m.role === "assistant") + 1).filter((m) => m.role === "tool").map(textOf);
+		const base = { at: Date.now(), model, conversation, cards, userTexts, toolResults, steps: [] as string[], unmatched: [] as string[], delayMs: 0 };
 		if (cards.length === 0) return { ...base, answer: "好。" };
 		const pending = this.#pending.get(conversation) ?? [];
 		const calls: ToolCall[] = [];
@@ -219,6 +222,7 @@ function scriptableToolResult(m: Message): string | undefined {
 	if (m.role !== "tool") return undefined;
 	const text = textOf(m);
 	if (text.startsWith("成员回复")) return `[成员回复] ${text}`;
+	if (text.includes("[模块工具]")) return text.slice(text.indexOf("[模块工具]"));
 	if (/^\{\s*"app": "app-\d{3,}-/.test(text)) return `[应用目录] ${text}`;
 	if (/^\{\s*"echo": /.test(text)) return `[盯盘条件] ${text}`;
 	return text.startsWith("[命令输出]") ? text : undefined;

@@ -145,8 +145,8 @@ export interface Gateway {
 }
 
 /**
- * What module code is written against. Each call is one fresh process (`runModuleCode` in
- * validate.ts), and the runner turns it into a call of the entry file's default export, so
+ * What module code is written against. Each call is one fresh process (`runModuleCodeAsync` in
+ * run-code.ts), and the runner turns it into a call of the entry file's default export, so
  * the author writes a plain function. This one is `tools/<name>/index.ts`.
  */
 export type ToolFunction = (input: Json) => Json | Promise<Json>;
