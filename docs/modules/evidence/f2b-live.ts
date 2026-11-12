@@ -252,19 +252,21 @@ async function lanes(): Promise<void> {
 
 	await lane(9, "real", async () => {
 		const state = stateDir();
-		let host: Host | undefined;
+		let host: Host;
 		try {
 			host = await boot(state, null);
+		} catch (error) {
+			return { pass: "inconclusive", evidence: `a real host could not start: ${String((error as Error).stack ?? error)}` };
+		}
+		try {
 			await turnOn(state);
 			just(state, ["say", "帮我估算一下今年的应税所得大概落在哪一档，按我券商的交易记录算"]);
 			const took = await within(120_000, () => query(state, "SELECT id FROM tickets").length > 0);
 			const tickets = query<{ id: string; domain: string | null; title: string }>(state, "SELECT id, domain, title FROM tickets");
-			const conversation = query(state, "SELECT who, text FROM conversation ORDER BY at");
-			return { pass: took >= 0 && tickets.some((t) => t.domain === "personal-tax"), evidence: `models ${JSON.stringify(REAL)}\nticket after ${took} ms: ${JSON.stringify(tickets)}\nconversation: ${JSON.stringify(conversation)}` };
-		} catch (error) {
-			return { pass: "inconclusive", evidence: `a real run could not start: ${String((error as Error).stack ?? error)}` };
+			const log = readFileSync(join(state, "host.log"), "utf8").split("\n").filter((l) => l.includes("[router]") || l.includes("[modules]"));
+			return { pass: took >= 0 && tickets.some((t) => t.domain === "personal-tax"), evidence: `models ${JSON.stringify(REAL)}\nticket after ${took} ms: ${JSON.stringify(tickets)}\nhost log:\n${log.join("\n")}` };
 		} finally {
-			await host?.stop();
+			await host.stop();
 		}
 	});
 
