@@ -161,7 +161,7 @@ async function lanes(): Promise<void> {
 				writeFileSync(join(state, TAX, "module.json"), '{"schema":1,');
 				const took = await within(2000, () => /说明.*not valid JSON/.test(listing(state, "personal-tax")));
 				const shown = listing(state, "personal-tax");
-				const pass = took >= 0 && serving(state, "personal-tax") === before && /运行中/.test(shown) && host.log().includes("网页");
+				const pass = took >= 0 && record(state, "personal-tax")?.state.at === "active" && serving(state, "personal-tax") === before && /运行中/.test(shown);
 				return { pass, evidence: `reason shown after ${took} ms; serving still ${serving(state, "personal-tax")} (was ${before})\njust modules:\n${shown}` };
 			});
 
@@ -241,8 +241,30 @@ async function lanes(): Promise<void> {
 			await within(10_000, () => routerCards(fake).some((c: string) => c.includes("名单没变再说一句")));
 			const second = routerCards(fake).slice(mid);
 			const block = first.find(isBlock) ?? "";
-			const pass = first.filter(isBlock).length === 1 && block.includes("- personal-tax（个人报税）") && first.indexOf(block) < first.findIndex((c: string) => c.includes("名单变了以后第一句")) && !second.some(isBlock);
-			return { pass, evidence: `after the switch, the Router got:\n${first.map((c: string) => c.slice(0, 300)).join("\n---\n")}\n\nnext input:\n${second.map((c: string) => c.slice(0, 300)).join("\n---\n")}` };
+			const rule = "F2b 存盘新加的一条规则";
+			const seenReceipts = receipts(state).length;
+			writeFileSync(join(state, TAX, "rules.md"), `${readFileSync(join(state, TAX, "rules.md"), "utf8")}\n## f2b-edit\n${rule}\n`);
+			const swapped = await within(2000, () => receipts(state).length > seenReceipts);
+			const receipt = receipts(state).slice(seenReceipts);
+			const before = routerCards(fake).length;
+			just(state, ["say", "改了规则以后说一句"]);
+			await within(10_000, () => routerCards(fake).some((c: string) => c.includes("改了规则以后说一句")));
+			const third = routerCards(fake).slice(before);
+			const pass =
+				first.filter(isBlock).length === 1 &&
+				block.includes("- personal-tax（个人报税）") &&
+				first.indexOf(block) < first.findIndex((c: string) => c.includes("名单变了以后第一句")) &&
+				!second.some(isBlock) &&
+				swapped >= 0 &&
+				receipt.length === 1 &&
+				/改了 rules\.md$/.test(receipt[0]!) &&
+				third.filter(isBlock).length === 1 &&
+				third.find(isBlock)!.includes(rule);
+			const show = (cards: string[]) => cards.map((c: string) => c.slice(0, 300)).join("\n---\n");
+			return {
+				pass,
+				evidence: `after the switch, the Router got:\n${show(first)}\n\nnext input:\n${show(second)}\n\nafter saving rules.md (${swapped} ms): ${receipt.join("\n")}\nnext input:\n${show(third.map((c: string) => (isBlock(c) ? c.slice(c.indexOf("f2b-edit") - 40) : c)))}`,
+			};
 		} finally {
 			await host.stop();
 			await fake.close();
@@ -321,7 +343,7 @@ async function perf(): Promise<void> {
 		const ok = tokens.head!.length === 5 && tokens.trunk!.length === 5 && extra <= 100;
 		pass &&= ok;
 		lines.push(
-			`${ok ? "PASS" : "FAIL"} Router prompt tokens of the first input in a fresh session, real ${REAL.router}, alternating trunk/head, 5 runs each (rule: head median more than 100 over trunk fails). Head's first input carries the roster block, so later inputs with an unchanged roster cost less than this.`,
+			`${ok ? "PASS" : "FAIL"} Router prompt tokens of the first input in a fresh session, real ${REAL.router}, alternating trunk/head, 5 runs each (rule: head median more than 100 over trunk fails). The block stays in the session history, so later inputs with an unchanged roster carry about the same gap.`,
 			line("  trunk", tokens.trunk!, "tok"),
 			line("  head", tokens.head!, "tok"),
 			`  head - trunk = ${extra} tok`,
