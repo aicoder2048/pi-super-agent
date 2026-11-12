@@ -16,6 +16,8 @@ export interface FeedContext {
 	post(line: HostLinePost): void;
 	/** Whether this feed already posted the alert `externalId`. */
 	raised(externalId: string): boolean;
+	/** The alerts this feed posted at or after `since`, oldest first. */
+	alertsSince(since: number): { externalId: string; text: string; at: number }[];
 	log(line: string): void;
 }
 
@@ -31,6 +33,8 @@ export interface Feed {
 export interface TripwireReply {
 	echo: string;
 	tripwires: RedactedTripwire[];
+	/** list only: today's alerts, so a helper asked "why no alert" can see what went out. */
+	firedToday?: { sentAt: string; text: string }[];
 }
 
 export interface FeedSpec {

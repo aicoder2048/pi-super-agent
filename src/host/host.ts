@@ -176,6 +176,7 @@ export class Host {
 			writeUserData: (value) => this.kernel.setSourceUserData(spec.source, value),
 			post: (line) => this.#postHostLine(spec.source, line),
 			raised: (externalId) => this.kernel.raised(spec.source, externalId),
+			alertsSince: (since) => this.kernel.alertsSince(spec.source, since),
 			log: this.#log,
 		})]));
 		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []) };

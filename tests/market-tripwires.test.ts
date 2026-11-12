@@ -269,9 +269,11 @@ test("firingId：代码、纽约日、带阈值的信号，没有时钟；同一
 
 test("alertText：一行中文，只有价格和百分比，写明报价时间和是否延迟", () => {
 	const [day] = checkIntraday(bookOf({ symbol: "NVDA", condition: { kind: "day", pct: 5 } }), [quote("NVDA", 105.2, 100)], SESSION, NO_HISTORY);
-	assert.equal(alertText(day!, LIVE), "NVDA 涨 +5.20%，到了你设的 +5% 提醒线。现价 105.20，昨收 100.00。报价时间 10:00 ET（延迟行情）。");
+	assert.equal(alertText(day!, LIVE), "NVDA 涨 5.20%，到了你设的 +5% 提醒线。现价 105.20，昨收 100.00。报价时间 10:00 ET（延迟行情）。");
 	const [cost] = checkIntraday(bookOf({ symbol: "AMD", condition: { kind: "cost", basis: 100, pct: 10 } }), [quote("AMD", 89, 95)], SESSION, NO_HISTORY);
 	assert.equal(alertText(cost!, { at: NOW, delayed: false }), "AMD 相对成本价 -11.00%，到了你设的 -10% 提醒线。现价 89.00。报价时间 10:00 ET。");
+	const [down] = checkIntraday(bookOf({ symbol: "NVDA", condition: { kind: "day", pct: 1 } }), [quote("NVDA", 156.26, 173.73)], SESSION, NO_HISTORY);
+	assert.equal(alertText(down!, LIVE), "NVDA 跌 10.06%，到了你设的 -1% 提醒线。现价 156.26，昨收 173.73。报价时间 10:00 ET（延迟行情）。");
 	const cross = (stage: "suspected" | "confirmed" | "withdrawn", shape: "golden" | "death" = "golden"): Firing => ({ kind: "cross", symbol: "TSLA" as never, fast: 5, slow: 20, shape, stage, price: 250.1, fastSma: 248.31, slowSma: 247.95 });
 	assert.equal(alertText(cross("suspected"), LIVE), "TSLA 疑似金叉：把现价 250.10 当作今天收盘，5 日均线 248.31 上穿 20 日均线 247.95。收盘后确认。报价时间 10:00 ET（延迟行情）。");
 	assert.equal(alertText(cross("confirmed"), LIVE), "TSLA 金叉确认：今天收盘 250.10，5 日均线 248.31 上穿 20 日均线 247.95。");

@@ -57,6 +57,7 @@ function market(options: { dbPath?: string; respond?: (url: string, now: number)
 			writeUserData: (v) => kernel.setSourceUserData("us-market", v),
 			post: (line) => void kernel.postHostLine("us-market", line),
 			raised: (externalId) => kernel.raised("us-market", externalId),
+			alertsSince: (since) => kernel.alertsSince("us-market", since),
 			log: (l) => logs.push(l),
 		},
 	};
@@ -372,7 +373,7 @@ test("Finnhub 密钥格式不对：只有 earnings 停用并说明原因，美�
 	writeFileSync(file, "MASSIVE_API_KEY=mk-secret\nFINNHUB_API_KEY=\"fh bad-secret\"\n");
 	const logs: string[] = [];
 	const spec = marketFeed({ source: "us-market", title: "美股行情", settings: DEFAULTS, override: undefined, where: "test", secretsFile: file, env: {}, log: (l) => logs.push(l) });
-	const feed = spec.create({ clock: { now: () => T("2026-11-09T15:00:00Z") }, submit: () => {}, readCursor: () => undefined, writeCursor: () => {}, readUserData: () => undefined, writeUserData: () => {}, post: () => {}, raised: () => false, log: () => {} });
+	const feed = spec.create({ clock: { now: () => T("2026-11-09T15:00:00Z") }, submit: () => {}, readCursor: () => undefined, writeCursor: () => {}, readUserData: () => undefined, writeUserData: () => {}, post: () => {}, raised: () => false, alertsSince: () => [], log: () => {} });
 	t.after(() => feed.stop());
 	assert.equal(feed.problem(), undefined);
 	assert.deepEqual(await feed.lookup("session", {}), { nyDate: "2026-11-09", phase: "regular", fromCache: false, cachedAgeMs: 0 });
@@ -479,6 +480,7 @@ test("日志：每次查询一行，写操作、来源（缓存/合用/上游）
 
 const COST = { symbol: "NVDA", condition: { kind: "cost", pct: 10, basis: 120, shares: 100 } };
 const receipts = (m: ReturnType<typeof market>) => m.kernel.conversation().filter((l) => l.who === "receipt").map((l) => l.text);
+const alerts = (m: ReturnType<typeof market>) => m.kernel.conversation().filter((l) => l.who === "alert").map((l) => l.text);
 
 test("盯盘条件：set 之后重启宿主（同一个状态库、新的 MarketSource），list 里还在", () => {
 	const m = market();
@@ -514,10 +516,42 @@ test("盯盘条件：list 在网页贴一张整份清单的收据，不改状态
 	m.source.tripwires("set", COST);
 	const stored = m.kernel.sourceUserData("us-market");
 	const reply = m.source.tripwires("list", {});
-	assert.equal(reply.echo, "现在共 1 条。");
+	assert.equal(reply.echo, "现在共 1 条。今天还没发过盯盘提醒。");
 	assert.equal(receipts(m).length, 2);
 	assert.match(receipts(m)[1], /^现在共 1 条：\nNVDA 成本价 120、100 股/);
 	assert.equal(m.kernel.sourceUserData("us-market"), stored);
+});
+
+test("盯盘条件：list 告诉助手今天已经发出的提醒，助手才答得出「为什么没发」", async () => {
+	const m = market();
+	m.source.tripwires("set", { symbol: "NVDA", condition: { kind: "day", pct: 5 } });
+	assert.deepEqual(m.source.tripwires("list", {}).firedToday, []);
+	assert.equal(m.source.tripwires("list", {}).echo, "现在共 1 条。今天还没发过盯盘提醒。");
+	m.prices.NVDA = 94.9;
+	await m.source.tick();
+	const reply = m.source.tripwires("list", {});
+	assert.deepEqual(reply.firedToday, [{ sentAt: "10:00 ET", text: alerts(m)[0] }]);
+	assert.equal(reply.echo, "现在共 1 条。今天已发出 1 条盯盘提醒（同一只股票同一条件同一方向每天只提醒一次）。");
+});
+
+test("盯盘条件：list 里今天的成本价提醒不带数字，免得助手倒推出成本价", async () => {
+	const m = market();
+	m.source.tripwires("set", COST);
+	m.prices.NVDA = 132.48;
+	await m.source.tick();
+	const reply = m.source.tripwires("list", {});
+	assert.equal(reply.firedToday?.length, 1);
+	assert.equal(reply.firedToday?.[0]!.text, "NVDA 相对成本价的提醒（数字只在网页显示）");
+	assert.doesNotMatch(JSON.stringify(reply), /132|120|10\.40/);
+});
+
+test("盯盘条件：list 不算昨天发过的提醒", async () => {
+	const m = market();
+	m.source.tripwires("set", { symbol: "NVDA", condition: { kind: "day", pct: 5 } });
+	m.prices.NVDA = 94.9;
+	await m.source.tick();
+	m.clock.t += 24 * 60 * 60 * 1000;
+	assert.deepEqual(m.source.tripwires("list", {}).firedToday, []);
 });
 
 test("盯盘条件：设成本条件时上一轮看盘有这只的新鲜报价，收据写出现在已在线外", async () => {
@@ -545,7 +579,6 @@ test("盯盘条件：状态库里的清单读不出来时，problem() 写明，s
 	assert.equal(broken.kernel.sourceUserData("us-market"), "{坏了");
 });
 
-const alerts = (m: ReturnType<typeof market>) => m.kernel.conversation().filter((l) => l.who === "alert").map((l) => l.text);
 const tickersOf = (url: string) => new URL(url).searchParams.get("tickers")!.split(",");
 
 test("盯盘提醒：只在盯盘条件里的股票（AMD）并进同一次快照请求，不多发请求；它涨 9% 不触发 big-move 档位", async () => {
@@ -593,7 +626,7 @@ test("盯盘提醒：当天涨跌条件 5%（不限方向）涨 5.3% 贴一条�
 	await m.source.tick();
 	m.prices.NVDA = 94.9;
 	await m.source.tick();
-	assert.deepEqual(alerts(m).map((t) => t.split("，")[0]), ["NVDA 涨 +5.30%", "NVDA 跌 -5.10%"]);
+	assert.deepEqual(alerts(m).map((t) => t.split("，")[0]), ["NVDA 涨 5.30%", "NVDA 跌 5.10%"]);
 	assert.ok(m.kernel.raised("us-market", "NVDA:2026-11-09:day-down-5"));
 });
 
