@@ -382,7 +382,7 @@ export function panelStep(panel, event) {
 
 const OVERVIEW_TABS = ["today", "sources", "modules", "done"];
 
-/** What a reload restores: the task tab stays until ×, so it outlives the page. @param {Panel} panel */
+/** @param {Panel} panel */
 export const panelText = (panel) => JSON.stringify({ showing: panel.showing, task: panel.task, last: panel.last });
 
 /** @param {string | null} text @param {Set<string>} ticketIds the tickets on the first board after a reload @returns {Panel} */
