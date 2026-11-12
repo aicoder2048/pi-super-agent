@@ -25,7 +25,6 @@ function width(text: string): number {
 
 const pad = (text: string, to: number) => text + " ".repeat(Math.max(0, to - width(text)));
 
-/** Each section aligns its own columns, so the old-layout rows print exactly as before packages existed. */
 function columns(rows: readonly string[][]): (row: readonly string[]) => string {
 	const widths = [0, 1].map((i) => Math.max(...rows.map((r) => width(r[i]))));
 	return ([name, state, dir]) => `${pad(name, widths[0])}  ${pad(state, widths[1])}  ${dir}`;

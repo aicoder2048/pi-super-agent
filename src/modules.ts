@@ -48,7 +48,6 @@ export interface LoadedModule {
 	state: ModuleState;
 }
 
-/** A folder whose module.json has a "schema" key: the new package layout. It is found and checked only; nothing of it runs yet. */
 export interface FoundPackage {
 	name: string;
 	dir: string;

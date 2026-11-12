@@ -1,9 +1,3 @@
-/**
- * Scans a module package and lists every mistake it finds. Its job is to help the author: a
- * key that is a typo, a missing file, a reference to nothing, a failing test case. The host's
- * `checking` stage and `just module check` are this scan. `previous` adds what the new version
- * does to stored data.
- */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -466,7 +460,7 @@ function readComponents(report: Report, root: string): Component[] {
 	return components;
 }
 
-/** `runCases: false` skips the tools' test cases, which spawn a process each: the host does that when it finds a package, and runs them when the user switches the package on. */
+/** `runCases: false` skips the tools' test cases, which spawn a process each: the host does that when it finds a package. */
 export function scanPackage(packageDir: string, { previous, runCases = true }: { previous?: string | undefined; runCases?: boolean } = {}): ScanResult {
 	const root = resolve(packageDir);
 	const problems: Problem[] = [];

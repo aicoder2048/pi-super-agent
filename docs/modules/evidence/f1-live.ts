@@ -1,9 +1,7 @@
 /**
- * The F1 live lanes and perf probe of docs/modules/module-framework-plan.md, rerunnable at any head.
- *
  *   node --import ./src/pi-runtime.mjs docs/modules/evidence/f1-live.ts [lanes|perf] [outDir]
  *
- * Lane 1 and the probe compare against trunk: a detached worktree of `main` at <outDir>/trunk.
+ * Lane 1 and the probe compare against a detached worktree of `main` at <outDir>/trunk.
  */
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
@@ -130,7 +128,7 @@ async function lanes(): Promise<void> {
 	console.log(results.join("\n"));
 }
 
-/** Boot to ready, trunk and head alternating. Trunk cannot boot with the sample packages (it loads them as old-layout modules and stops), so trunk boots the repo's three modules and head boots those plus both samples. */
+/** Trunk loads the sample packages as old-layout modules and stops, so trunk boots the repo's three modules and head boots those plus both samples. */
 async function perf(runs = 5): Promise<void> {
 	const trees = { trunk: trunk(), head: HEAD };
 	const times: Record<string, number[]> = { trunk: [], head: [] };
