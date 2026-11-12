@@ -186,6 +186,30 @@ test("补录比已存最新一行更早的读数：存下，不提醒", async (t
 	assert.equal((ok(backfilled).output as { rows: unknown[] }).rows.length, 3);
 });
 
+test("一次写进几行比已存最新一行更新的读数：每行和它前一行比，越线那行提醒", async (t) => {
+	const { gateway, me } = health(t);
+	ok(await gateway.call(me(), set("空腹血糖", { when: "above", value: 7 })));
+	assert.deepEqual(await series(gateway, me(), [6]), [0]);
+	const alerts = alertsOf(await gateway.call(me(), write([glucose(7.2, "2026-11-02"), glucose(7.4, "2026-11-03")])));
+	assert.deepEqual(alerts.map((a) => a.at), ["2026-11-02"]);
+});
+
+test("一次写进的新读数先越线又降回：越线那行照样提醒", async (t) => {
+	const { gateway, me } = health(t);
+	ok(await gateway.call(me(), set("空腹血糖", { when: "above", value: 7 })));
+	assert.deepEqual(await series(gateway, me(), [6]), [0]);
+	const alerts = alertsOf(await gateway.call(me(), write([glucose(8, "2026-11-02"), glucose(6.5, "2026-11-03")])));
+	assert.deepEqual(alerts.map((a) => a.at), ["2026-11-02"]);
+});
+
+test("一次写进的行里，比写入前已存最新一行更早的只存不提醒，更新的照样提醒", async (t) => {
+	const { gateway, me } = health(t);
+	ok(await gateway.call(me(), set("空腹血糖", { when: "above", value: 7 })));
+	assert.deepEqual(await series(gateway, me(), [6, 6.5]), [0, 0]);
+	const alerts = alertsOf(await gateway.call(me(), write([glucose(8, "2026-10-20"), glucose(6, "2026-10-21"), glucose(7.5, "2026-11-03")])));
+	assert.deepEqual(alerts.map((a) => a.at), ["2026-11-03"]);
+});
+
 test("检查提醒条件出错时，写进去的行照样算写成功，出错记一行日志", async (t) => {
 	const logs: string[] = [];
 	const { root, gateway, me } = health(t, (line) => logs.push(line));

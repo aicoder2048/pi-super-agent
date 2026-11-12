@@ -199,7 +199,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 - [x] 条件存在模块的 `data.db` 里：`id`、`key`、种类、参数、`setAt`、可选的 `basis`、说明。种类是 `above`、`below`、`rising-streak`、`falling-streak`、`change-pct`、`crosses-average`。
 - [x] `watch` 工具：`list` 谁都能用；`set`、`remove` 只给只听过你本人的 request 任务（那张表的「替你做主」一行）。设完回一行程序拼出的回执。
-- [x] 有新行写进写了 `watch` 的 `series` 时，宿主对这个 key 的条件算一遍。满足就经宿主行（ADR-0017）直接提醒你，不经过幕僚长。提醒文字由程序拼出，带数值、时间和这一行的来源。同一条件同一行只提醒一次（宿主行按条件编号加这一行的编号去重）。只有新数据提醒：只算时间等于这个 key 已存最新时间的行（同一时间算新）；补录和导入过去的读数只存不提醒。
+- [x] 有新行写进写了 `watch` 的 `series` 时，宿主对这个 key 的条件算一遍。满足就经宿主行（ADR-0017）直接提醒你，不经过幕僚长。提醒文字由程序拼出，带数值、时间和这一行的来源。同一条件同一行只提醒一次（宿主行按条件编号加这一行的编号去重）。只有新数据提醒：写入前先记下这个 key 已存最新的时间，比它早的行是补录，只存不提醒；不早于它的行按时间逐行和前一行比（前一行可能是已存的，也可能是同一次写进来的），同一时间算新。这个 key 之前没有读数时，这次写入当作导入过去的读数，只算其中时间最新的行。
 - [x] `private` 数据上的提醒在 Telegram 上只发一行提示。
 - [x] 不改 us-market 的盯盘条件，它的纯函数只读复用（例如均线计算）。
 
@@ -234,6 +234,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Review gate.** None. G3 is not review-gated.
 
 2026-11-12 在 0738d5b 上通过：`tests/conditions.test.ts` 17 条，`just test` 1556 条里只有 `tests/watchdog-main.test.ts` 的「终端 Ctrl+C：Watchdog 不停别人启动的宿主」偶发失败（基线 5317b9e 上 10 次里也失败 2 次，和本 PR 无关），`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g3/owner/g3-*.txt`。lane 10 用 `openai-codex/gpt-6.1-sol`：第一次只说「空腹血糖高于 7 提醒我」，Worker 先问单位、没有设（`g3-real-first-try.txt`），补上「单位 mmol/L，直接设」后条件表有这一条，回执一行。perf 10 万行、这个 key 上 20 个条件，100 次写入，三轮中位 0.74 到 0.81 ms，G2 同样写入 1.43 到 2.09 ms（G2 先跑，冷启动偏慢），最大 26 ms 是第一次写入时建索引。
+
+2026-11-12 在 <HEAD> 上通过（修正轮）：一次写进同一个 key 的几行新读数时，以前只算时间最新的那一行，而且拿它和同一批里的前一行比，所以已存 6、一次写进 7.2 和 7.4（条件高于 7）不提醒，写进 8 和 6.5 也不提醒。现在写入前先记下这个 key 已存最新的时间，不早于它的行逐行算，两种情况都在 7.2 和 8 那一行提醒一次；比它早的行照样只存不提醒。`tests/conditions.test.ts` 27 条，`just test` 1573 条全过（第二次跑时只有已知偶发的「终端 Ctrl+C：Watchdog 不停别人启动的宿主」失败，单独重跑 8 条全过），`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g3/fix3/`。perf 10 万行、20 个条件、100 次写入，四轮中位 0.78 到 0.93 ms，G2 同样写入 1.30 到 2.56 ms。修正中途一版对 20 个条件各查了一次 key 的最新时间，中位涨到 1.9 ms 左右，按 key 去重后回到 1 ms 以内。
 
 **Merge.**
 
