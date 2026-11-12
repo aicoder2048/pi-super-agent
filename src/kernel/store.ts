@@ -231,6 +231,7 @@ CREATE TABLE IF NOT EXISTS host_lines (
 	),
 	UNIQUE (source, external_id)
 );
+CREATE INDEX IF NOT EXISTS host_lines_today ON host_lines (kind, created_at, source);
 `;
 
 export function openStore(path: string): DatabaseSync {
