@@ -364,45 +364,47 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `modules/templates/notes/`、`modules/templates/team/`、`modules/templates/full/`（不被宿主加载）。
-- [ ] Edit `src/cli/module.ts`（加 `new` 和 `try`），Delete `src/cli/module-new.ts` 和 `justfile` 的 `module-new` recipe。
-- [ ] Create `src/modules/rehearse.ts`，Edit `tests/modules-cli.test.ts`。
+- [x] Create `modules/templates/notes/`、`modules/templates/team/`、`modules/templates/full/`（不被宿主加载）。实际放在 `src/modules/templates/`：仓库的 `modules/` 是宿主扫描的模块目录，放进去会被当成名叫 templates 的模块。
+- [x] Edit `src/cli/module.ts`（加 `new` 和 `try`），Delete `src/cli/module-new.ts` 和 `justfile` 的 `module-new` recipe。旧脚本和 recipe 已删；`src/cli/module-new.ts` 这个文件名留给 `newModule`，和 `module-switch.ts`、`module-import.ts` 一样由 `module.ts` 按需加载。
+- [x] Create `src/modules/rehearse.ts`，Edit `tests/modules-cli.test.ts`。判定在 `rehearse.ts`（过 check.mjs 的 tsc），起宿主和连 socket 在 `src/cli/module-try.ts`。
 
 **Build.**
 
-- [ ] `just module new <名字> --template notes|team|full` 复制模板并改名，写进 `<stateDir>/modules/<名字>/`，生成的包通过检查，状态为已停用。
-- [ ] `just module try <名字>` 起临时状态目录，把 `evals/` 的每道题当成任务跑，核对用到的能力和答案里该有的话，用 `config.json` 里 Worker 的模型，拒绝按量计费的 provider。
+- [x] `just module new <名字> --template notes|team|full` 复制模板并改名，写进 `<stateDir>/modules/<名字>/`，生成的包通过检查，状态为已停用。
+- [x] `just module try <名字>` 起临时状态目录，把 `evals/` 的每道题当成任务跑，核对用到的能力和答案里该有的话，用 `config.json` 里 Worker 的模型，拒绝按量计费的 provider。
 
 **You see.**
 
-- [ ] `just module new demo --template team` 后 `just module check` 显示 ok。
-- [ ] `just module try personal-tax` 打印每道考题的通过或失败和原因。
+- [x] `just module new demo --template team` 后 `just module check` 显示 ok。
+- [x] `just module try personal-tax` 打印每道考题的通过或失败和原因。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/modules-cli.test.ts` 覆盖三种模板都通过检查、重名拒绝、模板目录不被当成模块加载、`try` 用假模型时考题判定正确、按量计费的模型被拒绝。Run `just test`.
+- [x] `tests/modules-cli.test.ts` 覆盖三种模板都通过检查、重名拒绝、模板目录不被当成模块加载、`try` 用假模型时考题判定正确、按量计费的模型被拒绝。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/f5-live.ts`。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 跑 `just module-new demo`，head 跑 `just module new demo --template notes`。Save `f5-regression.txt`. Pass when 两边都生成模块，head 的通过新检查。
-- [ ] Lane 2. `--template team`。Save `f5-team.txt`. Pass when 检查 ok，有专家和考题。
-- [ ] Lane 3. `--template full`。Save `f5-full.txt`. Pass when 检查 ok，工具用例通过。
-- [ ] Lane 4. 重名。Save `f5-dup.txt`. Pass when 拒绝，原目录不变。
-- [ ] Lane 5. 宿主运行时新建。Save `f5-hot.txt`. Pass when 两秒内出现为已停用。
-- [ ] Lane 6. `just module try personal-tax` 用假模型。Save `f5-try-fake.txt`. Pass when 考题通过。
-- [ ] Lane 7. 考题要求的能力没被用到。Save `f5-try-fail.txt`. Pass when 判失败并写出没用到哪项。
-- [ ] Lane 8. 配置成按量计费的模型。Save `f5-paid.txt`. Pass when 拒绝运行。
-- [ ] Lane 9. 用真模型 `openai-codex/*` 跑 `just module try personal-tax`。Save `f5-try-real.txt`. Pass when 有通过或失败的判定和对话记录。
-- [ ] Lane 10. `try` 结束后。Save `f5-clean.txt`. Pass when 临时状态目录删掉，使用者的状态目录没变。
+- [x] Lane 1. Regression lane against trunk. trunk 跑 `just module-new demo`，head 跑 `just module new demo --template notes`。Save `f5-regression.txt`. Pass when 两边都生成模块，head 的通过新检查。
+- [x] Lane 2. `--template team`。Save `f5-team.txt`. Pass when 检查 ok，有专家和考题。
+- [x] Lane 3. `--template full`。Save `f5-full.txt`. Pass when 检查 ok，工具用例通过。
+- [x] Lane 4. 重名。Save `f5-dup.txt`. Pass when 拒绝，原目录不变。
+- [x] Lane 5. 宿主运行时新建。Save `f5-hot.txt`. Pass when 两秒内出现为已停用。
+- [x] Lane 6. `just module try personal-tax` 用假模型。Save `f5-try-fake.txt`. Pass when 考题通过。
+- [x] Lane 7. 考题要求的能力没被用到。Save `f5-try-fail.txt`. Pass when 判失败并写出没用到哪项。
+- [x] Lane 8. 配置成按量计费的模型。Save `f5-paid.txt`. Pass when 拒绝运行。
+- [x] Lane 9. 用真模型 `openai-codex/*` 跑 `just module try personal-tax`。Save `f5-try-real.txt`. Pass when 有通过或失败的判定和对话记录。
+- [x] Lane 10. `try` 结束后。Save `f5-clean.txt`. Pass when 临时状态目录删掉，使用者的状态目录没变。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. `just module new` 的时间。trunk 是 `just module-new`。
-- [ ] Probe. trunk 和 head 交替各 5 次。
-- [ ] Baseline. Record the trunk 中位数 first.
-- [ ] Rule. head 比 trunk 慢 1 秒以上就失败。
+- [x] Metric. `just module new` 的时间。trunk 是 `just module-new`。
+- [x] Probe. trunk 和 head 交替各 5 次。
+- [x] Baseline. Record the trunk 中位数 first.
+- [x] Rule. head 比 trunk 慢 1 秒以上就失败。
 
 **Review gate.** None. F5 is not review-gated.
+
+2026-11-12 在 bf048dc 上通过：`just test` 1442 条全过；`node docs/modules/architecture/check.mjs` 7 项 ok；`docs/modules/evidence/f5-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f5/owner/`。模板是三个完整的包，`just module check` 可以直接检查；full 是 team 加一个纯计算工具 `percent-change`，数据和 feed 这个程序推迟，模板 README 写明了。`just module new` 不写 `--template` 时用 notes。生成时先复制到状态目录下的点开头临时目录，改好 `module.json` 的 name 和 title 再整个改名进 `modules/`，运行中的宿主只看到一个完整的包（lane 5 在 310 毫秒内记成已停用）。`just module try` 只读使用者的包，在 `$TMPDIR/psa-try-*` 里起一个真宿主（`modulesDirs` 只有这个包，开关打开），等模块进入运行中，再经 socket 把每道考题当一句话说出去；按 `tickets.origin_trigger_id` 找到任务，等到第一份不是 progress 的汇报；用到的能力看宿主日志里这张任务的 `[gateway] ... ok` 行，该有的话在汇报正文里找子串。Router 和 Worker 用使用者 config.json 的模型，任何一个按量计费就一行拒绝；临时配置的 fallback 也设成 Worker 的模型，不会走到按量计费的后备模型。Lane 9 真模型 `openai-codex/gpt-6.1-terra` 和 `gpt-6.1-sol` 跑 personal-tax：判 FAIL，原因是没用到 tools/tax-bracket、汇报里没有「第 2 档」，Worker 按技能 year-end-estimate 先停下来问税制和申报身份（blocked）。这是预演该发现的问题，说明样例的考题和技能互相冲突，不是 try 的毛病。Perf：`just module new --template full` 中位数 342 毫秒，trunk `just module-new` 344 毫秒（各 5 次交替，离散 3 和 6 毫秒）。
 
 **Merge.**
 
