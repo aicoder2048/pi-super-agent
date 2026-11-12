@@ -122,7 +122,7 @@ test:
 modules:
     {{run}} src/cli/modules.ts
 
-# just module check <目录> [--previous <旧版本目录>]：检查新布局包，没问题打印一行 ok | just module new <名字> [--template notes|team|full]：从模板生成，默认 notes | just module try <名字>：在临时状态目录里把 evals/ 的考题当任务跑一遍 | just module import <模块> <知识名> <文件或目录>：user-import 知识的全文进实例数据，不进模块包
+# just module check <目录> [--previous <旧版本目录>]：检查新布局包，没问题打印一行 ok | just module new <名字> [--template notes|team|full]：从模板生成，默认 notes | just module try <名字>：在临时状态目录里把 evals/ 的考题当任务跑一遍 | just module import <模块> <知识名> <文件或目录>：user-import 知识的全文进实例数据，不进模块包 | just module purge <名字> [--confirm <名字>]：模块关着时删掉它的全部实例数据，要再输入一次模块名
 [positional-arguments]
 module *args:
     {{run}} src/cli/module.ts "$@"

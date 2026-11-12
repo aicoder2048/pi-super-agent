@@ -56,14 +56,14 @@ export type ModuleEvent =
 	| { type: "disable" }
 	| { type: "checked"; digest: Digest; problems: readonly Problem[] }
 	| { type: "migrated"; attempt: number }
-	/** The driver has already restored the instance data snapshot. */
+	/** The driver has already rolled the instance data back. */
 	| { type: "migration-failed"; attempt: number; reason: string }
 	/** The user confirmed deleting the instance data. */
 	| { type: "purge" };
 
 export type Effect =
 	| { do: "check"; version: Version }
-	/** Snapshot instance data, apply what `to` adds or renames, restore the snapshot on failure. The result event carries `attempt`. */
+	/** Apply what `to` adds or renames to the instance data in one transaction. The result event carries `attempt`. */
 	| { do: "migrate"; from: Version | null; to: Version; attempt: number }
 	/** Copy `serve` into the module store and swap the live registry so the module serves it, or is absent when null. */
 	| { do: "publish"; serve: Version | null }

@@ -185,6 +185,13 @@ function readCollection(report: Report, root: string, name: string): Component |
 	if (!oneOf(["record", "series"] as const, kind)) return void report(where, `"kind" must be record or series`);
 	if (!oneOf(DATA_CLASSES, dataClass)) return void report(where, `"class" must be one of ${DATA_CLASSES.join(", ")}`);
 	const described = fields(report, where, "fields", raw["fields"]);
+	const seen = new Map<string, string>();
+	for (const [field, { was: old }] of Object.entries(described)) {
+		const twin = seen.get(field.toLowerCase());
+		if (twin !== undefined) report(where, `fields "${twin}" and "${field}" differ only in case, and the database treats them as one name`);
+		seen.set(field.toLowerCase(), field);
+		if (old !== undefined && old !== field && Object.hasOwn(described, old)) report(where, `field "${field}" says "was": "${old}", but "${old}" is still a field here; a rename takes the old name away`);
+	}
 	const collection: CollectionDescriptor = { title: String(raw["title"]), kind, class: dataClass, fields: described };
 	const was = optionalText(report, where, raw, "was");
 	if (was !== undefined) collection.was = was;
@@ -371,6 +378,9 @@ function crossCheck(report: Report, manifest: ModuleManifest, components: readon
 		return kind === "watch" ? components.some((item) => item.kind === "data" && item.name === name && item.collection.watch !== undefined) : has(kind, name);
 	};
 	for (const item of components) {
+		if (item.kind === "data" && item.collection.was !== undefined && item.collection.was !== item.name && has("data", item.collection.was)) {
+			report(`data/${item.name}/collection.json`, `"was": "${item.collection.was}" names a collection this package still has; a rename takes the old name away`);
+		}
 		if (item.kind === "feeds") {
 			for (const collection of [item.feed.into, ...(item.feed.reads ?? [])]) {
 				if (collection !== undefined && !has("data", collection)) report(`feeds/${item.name}/feed.json`, `names collection "${collection}", but there is no data/${collection}`);
