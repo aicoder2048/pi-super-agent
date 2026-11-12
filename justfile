@@ -60,6 +60,23 @@ service-uninstall:
 service-status:
     {{run}} src/service/cli.ts status
 
+# 更新到最新 main 并重装服务，最后打印服务状态。只改了 config.json 时用 just redeploy --no-pull。
+redeploy flag="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{flag}}" in
+        "") branch=$(git rev-parse --abbrev-ref HEAD)
+            if [ "$branch" != "main" ]; then echo "现在在分支 ${branch}，不是 main。先 git checkout main，或者用 just redeploy --no-pull 只重装。" >&2; exit 1; fi
+            git pull --ff-only ;;
+        --no-pull) ;;
+        *) echo "用法：just redeploy [--no-pull]" >&2; exit 2 ;;
+    esac
+    echo "版本：$(git log --oneline -1)"
+    just service-uninstall
+    just service-install
+    sleep 3
+    just service-status
+
 # 打开 TUI 客户端（Pi TUI 只当界面，输入转发给宿主）。连接时读状态目录里的 client-token。
 client:
     pi {{clean}} --no-session --no-context-files --tui-mode regular -e extensions/super-agent.ts
