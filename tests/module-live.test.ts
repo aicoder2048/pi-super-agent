@@ -352,16 +352,16 @@ test("复制出来的摘要和要的不一样（复制时文件被改了）：�
 	assert.deepEqual(copies(dir), []);
 });
 
-test("宿主启动后才放进来的包：just module on 说下次启动宿主时生效，已发现的包说马上生效", (t) => {
+test("宿主启动后才放进来的包：监视器发现它，just module on 说宿主在运行就马上生效，它两秒内开始服务", async (t) => {
 	const dir = stateDir(t);
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ modulesDirs: [join(dir, "modules")] }));
-	boot(t, dir);
+	const { modules } = boot(t, dir);
+	await new Promise((r) => setTimeout(r, 300));
 	files(join(dir, "modules"), { "late/module.json": JSON.stringify({ schema: 1, name: "late", version: "0.1.0", title: "后来的", description: "启动后才放进来" }) });
 	const late = moduleCli(dir, ["on", "late"]);
 	assert.equal(late.status, 0, late.stderr);
-	assert.match(late.stdout, /下次启动/);
-	assert.doesNotMatch(late.stdout, /马上生效/);
-	assert.match(moduleCli(dir, ["on", "tax"]).stdout, /马上生效/);
+	assert.match(late.stdout, /马上生效/);
+	await until(() => modules.live.current().book.has("late"), "late 开始服务", 2000);
 });
 
 test("第一次启动：随仓库发的新布局包 pi-pi 导入成开，九位成员照常；状态目录里的新布局包导入成关", (t) => {

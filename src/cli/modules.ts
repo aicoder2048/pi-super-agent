@@ -104,7 +104,7 @@ function main(): void {
 			if (!scan.ok) for (const problem of scan.problems) console.log(`  ${problemLine(problem)}`);
 		});
 	}
-	console.log("开关模块：just module on <名字> 或 just module off <名字>，宿主已发现的模块马上生效，不用重启。");
+	console.log("开关模块：just module on <名字> 或 just module off <名字>，宿主在运行就马上生效，不用重启。");
 }
 
 try {
