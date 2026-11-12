@@ -371,7 +371,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Build.**
 
 - [x] `just module new <名字> --template notes|team|full` 复制模板并改名，写进 `<stateDir>/modules/<名字>/`，生成的包通过检查，状态为已停用。
-- [x] `just module try <名字>` 起临时状态目录，把 `evals/` 的每道题当成任务跑，核对用到的能力和答案里该有的话，用 `config.json` 里 Worker 的模型，拒绝按量计费的 provider。
+- [x] `just module try <名字>` 起临时状态目录，把 `evals/` 的每道题当成任务跑，核对用到的能力和答案里该有的话，用 `config.json` 里 Router 和 Worker 的模型（design §6 只说了 Worker，临时宿主的 Router 也要模型），拒绝按量计费的 provider。
 
 **You see.**
 
@@ -405,6 +405,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Review gate.** None. F5 is not review-gated.
 
 2026-11-12 在 bf048dc 上通过：`just test` 1442 条全过；`node docs/modules/architecture/check.mjs` 7 项 ok；`docs/modules/evidence/f5-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f5/owner/`。模板是三个完整的包，`just module check` 可以直接检查；full 是 team 加一个纯计算工具 `percent-change`，数据和 feed 这个程序推迟，模板 README 写明了。`just module new` 不写 `--template` 时用 notes。生成时先复制到状态目录下的点开头临时目录，改好 `module.json` 的 name 和 title 再整个改名进 `modules/`，运行中的宿主只看到一个完整的包（lane 5 在 310 毫秒内记成已停用）。`just module try` 只读使用者的包，在 `$TMPDIR/psa-try-*` 里起一个真宿主（`modulesDirs` 只有这个包，开关打开），等模块进入运行中，再经 socket 把每道考题当一句话说出去；按 `tickets.origin_trigger_id` 找到任务，等到第一份不是 progress 的汇报；用到的能力看宿主日志里这张任务的 `[gateway] ... ok` 行，该有的话在汇报正文里找子串。Router 和 Worker 用使用者 config.json 的模型，任何一个按量计费就一行拒绝；临时配置的 fallback 也设成 Worker 的模型，不会走到按量计费的后备模型。Lane 9 真模型 `openai-codex/gpt-6.1-terra` 和 `gpt-6.1-sol` 跑 personal-tax：判 FAIL，原因是没用到 tools/tax-bracket、汇报里没有「第 2 档」，Worker 按技能 year-end-estimate 先停下来问税制和申报身份（blocked）。这是预演该发现的问题，说明样例的考题和技能互相冲突，不是 try 的毛病。Perf：`just module new --template full` 中位数 342 毫秒，trunk `just module-new` 344 毫秒（各 5 次交替，离散 3 和 6 毫秒）。
+
+2026-11-12 修复轮（PR #85 审查）：临时状态目录在三种结束方式下都删掉。正常跑完，删掉以后才打印「临时状态目录已删」。Ctrl+C、SIGTERM、SIGHUP，停掉临时宿主、删目录、以 130 退出，不打印堆栈；之前信号处理先关了数据库，主循环下一次轮询抛「statement has been finalized」。临时宿主中途退出（例如模型名不存在，模块已进入运行中、Host.start 才失败），一行写「临时宿主退出了」和宿主最后几行输出，删目录，以 1 退出；之前 `await ready` 永远不结束，Node 以 13 退出，目录留下。等握手和等回执都改成和等任务一样的轮询，宿主一退出或超时就停。宿主日志 `[gateway]` 记能力的 uses 写法（`knowledge`、`tools/<工具>`、`data/<集合>`），和考题的 `uses` 对得上。design §6 说预演把连接器换成读 `fixtures/` 的样例、Telegram 和提醒换成记录器，这两样没有做：临时配置里没有 Telegram，所以根本不发；feed 和连接器这个程序推迟，预演里没有 feed。修复轮验证：`just test` 1459 条全过，`check.mjs` 7 项 ok，十条 lane 重跑全 PASS（输出在 `/tmp/swarm-f5/fix/`），真模型下对整组进程发 SIGINT 后 1 秒内以 130 退出，没有留下临时目录和宿主（`/tmp/swarm-f5/fix/f5-ctrl-c-real.txt`）。
 
 **Merge.**
 

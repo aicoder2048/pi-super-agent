@@ -29,7 +29,7 @@ Modules supply **data and paths, never code**. A module can contribute: a Router
 
 ### 1. Discovery and loading (once, at startup)
 
-`main()` (src/host/main.ts:9) calls `loadConfig()` (src/host/config.ts:57), then `loadModules(config)` (config.ts:148), which is a thin wrapper over `Modules.load(config.modulesDirs, {stateDir, allowedProviders, switches})`. Every CLI (`just modules`, `just module-new`, `market-smoke`, `toy-feed`) goes through the same two calls offline.
+`main()` (src/host/main.ts:9) calls `loadConfig()` (src/host/config.ts:57), then `loadModules(config)` (config.ts:148), which is a thin wrapper over `Modules.load(config.modulesDirs, {stateDir, allowedProviders, switches})`. Every CLI (`just modules`, `just module new`, `market-smoke`, `toy-feed`) goes through the same two calls offline.
 
 - `modulesDirs` defaults to `[<repo>/modules, <stateDir>/modules]` (config.ts:137). Writing it in config.json replaces both defaults; it is not type-checked, and relative entries resolve against the process cwd.
 - `moduleSwitches` is config.json's `"modules": {name: bool}` (config.ts:114-117), validated as an object of booleans.
@@ -50,7 +50,7 @@ Validation is fail-fast and total: every problem throws `ConfigError`, startup p
 
 `stateOf` (modules.ts:129): an explicit config entry wins (`by: "config"`, using `Object.hasOwn` so `constructor` is safe), otherwise `defaultEnabled: false` means off (`by: "manifest"`; toy-market does this), otherwise on. A disabled module stays in `found` and contributes nothing else: no rules, filters, market flag, timers, feeds, kit, book entry or roster line. There is no CLI toggle and no runtime toggle; you edit config.json and restart. `just modules` (src/cli/modules.ts) prints the found list with state and reason and ends with "重启宿主生效".
 
-`just module-new <name>` (src/cli/module-new.ts) writes `<stateDir>/modules/<name>/` with a `module.json` (one generic source, no feed, `"//"` comment keys, no title/description so it is off the roster), `rules.md` with an `example` rule scoped to the module name, and `skills/README.txt` (`.txt` so Pi won't load it). It fully loads all modules first for its clash check, so any broken existing module makes the scaffold command fail too.
+`just module new <name> [--template notes|team|full]` (src/cli/module-new.ts, F5) copies a package template from `src/modules/templates/` into `<stateDir>/modules/<name>/`, renames it, and leaves it switched off. It fully loads all modules first for its clash check, so any broken existing module makes the scaffold command fail too. (At `3a98800` this was `just module-new`, which wrote a legacy `module.json`, `rules.md` with an `example` rule and `skills/README.txt`; F5 replaced it.)
 
 ### 3. Wiring: where the registry is taken apart
 
@@ -147,14 +147,14 @@ The cap-ask card (ADR-0010): when dispatches wait for a slot, `MemberCap.members
 | src/worker/extension.ts, tools.ts | In-Worker tool registration, `DOMAIN_GATED_TOOLS`, allowlists |
 | src/sources/feeds.ts, generic.ts, timer.ts, market/ | `FEEDS`, `Feed` contract, inbox, timers, the market feed and tripwire model |
 | src/host/member-cap.ts, src/kernel/cap-ask.ts, src/host/web.ts | Cap-ask card |
-| src/cli/modules.ts, module-new.ts | `just modules`, `just module-new` |
+| src/cli/modules.ts, module-new.ts | `just modules`, `just module new` |
 | modules/pi-pi, toy-market, us-market | The three modules (pi-pi: team of 9 + skills, roster only; toy-market: off by default, inbox-fed; us-market: team of 4, feed, `tools: [lookup, tripwire]`) |
 | src/service/, src/watchdog/, justfile | launchd service, watchdog, `redeploy` |
 
 ## Gotchas
 
 1. **No hot-plug anywhere.** A new module folder is invisible until restart; a deleted `skills/` dir is noticed only by Pi at next spawn (behaviour with a missing `--skill` dir is unverified).
-2. **One bad module stops the host**, even a disabled one, and also stops `just module-new`.
+2. **One bad module stops the host**, even a disabled one, and also stops `just module new`.
 3. **Sources are global strings.** Two modules can declare the same source; `sourcePolicy`/`isMarketSource` take the first, `watchedSources` merges. Undeclared sources default to `candidate`.
 4. **Rule default scope includes the module's own name**, so a module with no sources still matches triggers whose source equals its name.
 5. **Duplicate rule headings in one `rules.md` are not detected**; `#scopes` keeps the last.
