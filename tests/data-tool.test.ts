@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -77,7 +77,7 @@ const ok = (reply: Reply) => {
 	assert.ok(reply.ok, JSON.stringify(reply));
 	return reply;
 };
-const rowsOf = (reply: Reply) => (ok(reply).output as { rows: { id: string; from: string; fields: Record<string, Json> }[] }).rows;
+const rowsOf = (reply: Reply) => (ok(reply).output as { rows: { id: string; from: string; sources?: Record<string, string>; fields: Record<string, Json> }[] }).rows;
 const refusal = (reply: Reply) => {
 	assert.ok(!reply.ok, `没被拒：${JSON.stringify(reply)}`);
 	return reply.refusal;
@@ -112,6 +112,17 @@ test("record 按主键写：不带 id 新增一行，带 id 只改给出的字�
 	assert.equal(all.length, 1);
 	assert.deepEqual(all[0]!.fields, { birthYear: 1970, sex: "男", conditions: null, allergies: "青霉素、头孢", medications: null });
 	assert.equal(refusal(await gateway.call(me(), write("lab-results", [{ id: "1", value: 2 }]))).code, "bad-input");
+});
+
+test("record 按 id 改几项、来源不同：这一行的 from 不变，改过的字段在 sources 里写明各自的来源；同一来源再改就收回", async (t) => {
+	const { gateway, me } = health(t);
+	const [row] = rowsOf(await gateway.call(me(), write("profile", [{ birthYear: 1970, allergies: "青霉素" }], "blobs/discharge-2025.pdf")));
+	const [updated] = rowsOf(await gateway.call(me(), write("profile", [{ id: row!.id, medications: "二甲双胍" }], "使用者口述")));
+	assert.equal(updated!.from, "blobs/discharge-2025.pdf");
+	assert.deepEqual(updated!.sources, { medications: "使用者口述" });
+	const [back] = rowsOf(await gateway.call(me(), write("profile", [{ id: row!.id, medications: "二甲双胍缓释片" }], "blobs/discharge-2025.pdf")));
+	assert.equal(back!.sources, undefined);
+	assert.deepEqual(rowsOf(await gateway.call(me(), query("profile")))[0]!.sources, undefined);
 });
 
 test("字段名不认识、类型不对、没写 from：拒绝，说明原因，一行都不写", async (t) => {
@@ -149,16 +160,20 @@ test("别的模块的任务查不到这个模块的数据", async (t) => {
 	assert.equal(refusal(reply).code, "no-such-capability");
 });
 
-test("每次读写在 data.db 的访问记录里记一笔：谁、哪类数据、读还是写、几行", async (t) => {
+test("每次读写在 data.db 的访问记录里记一笔：谁、哪类数据、读还是写、几行、结果；被拒的也记", async (t) => {
 	const { gateway, me, sql } = health(t);
 	await gateway.call(me(), write("lab-results", [cea(1, "2026-01-01"), cea(2, "2026-02-01")]));
 	await gateway.call(me({ member: "oncologist" }), query("lab-results", { limit: 1 }));
 	await gateway.call(me({ ticket: "tkt_2" }), query("research-updates"));
-	const log = sql<Record<string, unknown>>("personal-health", "SELECT who, collection, op, rows FROM _access ORDER BY rowid");
+	await gateway.call(me(), write("lab-results", [{ item: "CEA", value: "高" }]));
+	await gateway.call(me(), query("lab-results", { where: { colour: "red" } }));
+	const log = sql<Record<string, unknown>>("personal-health", "SELECT who, collection, op, rows, outcome FROM _access ORDER BY rowid");
 	assert.deepEqual(log, [
-		{ who: "tkt_1 helper", collection: "lab-results", op: "write", rows: 2 },
-		{ who: "tkt_1 oncologist", collection: "lab-results", op: "read", rows: 1 },
-		{ who: "tkt_2 helper", collection: "research-updates", op: "read", rows: 0 },
+		{ who: "tkt_1 helper", collection: "lab-results", op: "write", rows: 2, outcome: "ok" },
+		{ who: "tkt_1 oncologist", collection: "lab-results", op: "read", rows: 1, outcome: "ok" },
+		{ who: "tkt_2 helper", collection: "research-updates", op: "read", rows: 0, outcome: "ok" },
+		{ who: "tkt_1 helper", collection: "lab-results", op: "write", rows: 0, outcome: "refused：字段「value」要数字，收到 \"高\"" },
+		{ who: "tkt_1 helper", collection: "lab-results", op: "read", rows: 0, outcome: "refused：「lab-results」没有字段「colour」，有：item、value、unit、reference、takenAt、lab" },
 	]);
 });
 
@@ -186,6 +201,22 @@ test("钉在改名前版本的任务按旧字段名写：值落到新名字下�
 	const now = rowsOf(await w.gateway.call(w.caller(LITE, v2), query("lab-results")));
 	assert.deepEqual(now[0]!.fields, { item: "CEA", value: 3.1, takenAt: "2026-10-01", laboratory: "协和" });
 	assert.equal(rowsOf(await w.gateway.call(pinned, query("lab-results", { where: { lab: "协和" } }))).length, 1);
+});
+
+test("字段改名以后，这个字段另记的来源跟着到新名字下", async (t) => {
+	const w = world(t);
+	const asRecord = (version: string) => {
+		const dir = join(w.root, version, "health-lite");
+		cpSync(join(UPDATE, version, "health-lite"), dir, { recursive: true });
+		const path = join(dir, "data", "lab-results", "collection.json");
+		writeFileSync(path, readFileSync(path, "utf8").replace('"series"', '"record"'));
+		return dir;
+	};
+	const v1 = w.caller(LITE, w.keep(LITE, asRecord("0.1.0")));
+	const [row] = rowsOf(await w.gateway.call(v1, write("lab-results", [{ item: "CEA", value: 3.1, takenAt: "2026-10-01", lab: "协和" }])));
+	ok(await w.gateway.call(v1, write("lab-results", [{ id: row!.id, lab: "协和东院" }], "使用者口述")));
+	const v2 = w.caller(LITE, w.keep(LITE, asRecord("0.2.0-renames-field")));
+	assert.deepEqual(rowsOf(await w.gateway.call(v2, query("lab-results")))[0]!.sources, { laboratory: "使用者口述" });
 });
 
 test("拿掉的字段读不出来也写不进去，值留着；加回来以后又看得见", async (t) => {
@@ -301,4 +332,54 @@ test("宿主：只读过 shareable 数据的任务，Telegram 收到完整转述
 test("宿主：推断开的任务用 data 写被拒，说明推断任务只读", async (t) => {
 	const { result } = await hostWithHealth(t, (worker) => Promise.resolve(worker.request("worker.data", writeCea)), "inference");
 	assert.match(String(result), /\[模块数据\].*只读/);
+});
+
+test("宿主：write 没给 rows 或 rows 不是数组、op 不认识：拒绝，不当成写了 0 行或 list", async (t) => {
+	const { result, state } = await hostWithHealth(t, async (worker) => {
+		const outcomes: string[] = [];
+		for (const params of [{ op: "write", collection: "lab-results", from: "使用者口述" }, { op: "write", collection: "lab-results", rows: "CEA 4.2", from: "使用者口述" }, { op: "delete", collection: "lab-results" }]) {
+			outcomes.push(await Promise.resolve().then(() => worker.request("worker.data", params)).then((r) => `ok ${JSON.stringify(r)}`, (e: Error) => e.message));
+		}
+		return outcomes;
+	});
+	const [noRows, notArray, unknownOp] = result as string[];
+	assert.match(noRows!, /\[模块数据\].*rows/);
+	assert.match(notArray!, /\[模块数据\].*rows/);
+	assert.match(unknownOp!, /\[模块数据\].*delete/);
+	assert.ok(!existsSync(join(moduleDataDir(state, HEALTH), "data.db")), "没有碰到数据库");
+});
+
+test("宿主：在网页上回答私密任务的问题，Telegram 上这句回答只是一行提示，看不到选项原文", async (t) => {
+	const w = health(t);
+	const tg = await FakeTelegram.start();
+	t.after(() => tg.close());
+	const kit: DomainKit = { skillsDir: undefined, prepare: undefined, crew: [], granted: [] };
+	const domains: Domains = { book: () => new Map([["personal-health", { team: "健康顾问团", onRoster: true, digest: w.digest, title: "个人医疗健康" }]]), kitFor: (d) => (d === "personal-health" ? kit : undefined) };
+	let opened = false;
+	const { host } = await startHost(
+		(cards) => cards.flatMap((card) => {
+			if (!card.startsWith("[对话]") || opened) return [];
+			opened = true;
+			return openOnConversation(card, "记指标", "personal-health");
+		}),
+		async (worker) => {
+			await worker.request("worker.data", { op: "list", collection: "lab-results" });
+			worker.report({ status: "blocked", summary: "要你定", question: "CEA 从 3.1 升到 4.2，要不要约复查？", options: ["CEA 4.2 偏高，约下周复查", "先不复查"] });
+			worker.settle();
+		},
+		{ domains, gateway: w.gateway, telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set([USER]), timing: { pollTimeoutSec: 2, minGapMs: 20 } } },
+	);
+	t.after(() => host.stop());
+	tg.userSays(USER, "/start");
+	await until(() => tg.sent.length > 0, "聊天打开");
+	await host.say("看看 CEA");
+	await until(() => host.kernel.listTickets()[0]?.question != null, "问题来了", 10_000);
+	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => m.text);
+	await until(() => phone().includes(NOTICE), "问题卡片换成一行提示");
+	const before = phone().length;
+	assert.equal(host.answer(host.kernel.listTickets()[0]!.question!.reportId, 0).ok, true);
+	await until(() => phone().length > before, "回答发到了手机");
+	await new Promise((r) => setTimeout(r, 300));
+	assert.deepEqual(phone().slice(before), [NOTICE]);
+	assert.ok(host.kernel.conversation().some((l) => l.text.includes("CEA 4.2 偏高，约下周复查")), "对话里是完整回答");
 });

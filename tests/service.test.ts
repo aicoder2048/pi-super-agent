@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -16,6 +16,7 @@ import {
 	parseServiceLabel,
 	planInstall,
 	planUninstall,
+	plistPath,
 	servicePath,
 	statusLines,
 	type LaunchAgentInput,
@@ -30,6 +31,8 @@ const input: LaunchAgentInput = {
 	repo: "/Users/u/PiSuperAgent",
 	home: "/Users/u",
 	stateDir: "/Users/u/.pi-super-agent",
+	just: undefined,
+	uv: undefined,
 };
 
 function plistFile(xml: string): string {
@@ -80,12 +83,18 @@ test("同一输入生成的 plist 字节相同，换了 node 就不同", () => {
 });
 
 test("服务的 PATH：node 的目录在最前、不重复，系统目录里有 /bin 给 bash 用", () => {
-	const brew = servicePath("/opt/homebrew/bin/node").split(":");
+	const brew = servicePath(["/opt/homebrew/bin/node"]).split(":");
 	assert.equal(brew[0], "/opt/homebrew/bin");
 	assert.equal(brew.filter((d) => d === "/opt/homebrew/bin").length, 1);
-	const nvm = servicePath("/Users/u/.nvm/versions/node/v22.23.4/bin/node").split(":");
+	const nvm = servicePath(["/Users/u/.nvm/versions/node/v22.23.4/bin/node"]).split(":");
 	assert.equal(nvm[0], "/Users/u/.nvm/versions/node/v22.23.4/bin");
 	assert.ok(nvm.includes("/bin"));
+});
+
+test("服务的 PATH：just 和 uv 的目录紧跟 node 的目录，排在系统目录前，没找到的不占位", () => {
+	const dirs = servicePath(["/Users/u/.nvm/versions/node/v22.23.4/bin/node", "/Users/u/bin/just", "/Users/u/.local/bin/uv"]).split(":");
+	assert.deepEqual(dirs.slice(0, 4), ["/Users/u/.nvm/versions/node/v22.23.4/bin", "/Users/u/bin", "/Users/u/.local/bin", "/opt/homebrew/bin"]);
+	assert.deepEqual(servicePath(["/opt/homebrew/bin/node", undefined, undefined]), servicePath(["/opt/homebrew/bin/node"]));
 });
 
 test("findOnPath 像 shell 一样取 PATH 里第一个可执行的，保留符号链接，跳过相对路径和不可执行的", () => {
@@ -223,12 +232,38 @@ esac
 exit 0
 `);
 	chmodSync(join(bin, "launchctl"), 0o755);
-	const cli = (command: string, shellStateDir: string) => spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/service/cli.ts", command], {
-		env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, PSA_SERVICE_LABEL: TEST_LABEL, PSA_STATE_DIR: shellStateDir },
+	const cli = (command: string, shellStateDir: string, path = `${bin}:${process.env.PATH}`) => spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/service/cli.ts", command], {
+		env: { ...process.env, HOME: home, PATH: path, PSA_SERVICE_LABEL: TEST_LABEL, PSA_STATE_DIR: shellStateDir },
 		encoding: "utf8",
 	});
-	return { home, cli };
+	return { home, bin, cli };
 }
+
+// Bare PATH so this machine's own just and uv cannot leak into the service PATH.
+function installWith(tools: string[]) {
+	const { home, bin, cli } = fakeLaunchd(undefined);
+	symlinkSync(process.execPath, join(bin, "node"));
+	symlinkSync(execFileSync("which", ["npm"], { encoding: "utf8" }).trim(), join(bin, "npm"));
+	const toolDir = mkdtempSync(join(tmpdir(), "psa-tools-"));
+	for (const tool of tools) writeFileSync(join(toolDir, tool), "#!/bin/bash\n", { mode: 0o755 });
+	const run = cli("install", mkdtempSync(join(tmpdir(), "psa-cli-state-")), `${bin}:${toolDir}:/usr/bin:/bin`);
+	assert.equal(run.status, 0, run.stdout + run.stderr);
+	const plist = plutilJson(readFileSync(plistPath(home, TEST_LABEL as LaunchAgentInput["label"]), "utf8"));
+	return { stdout: run.stdout, bin, toolDir, path: plist.EnvironmentVariables.PATH as string };
+}
+
+test("service-install 把装机 PATH 里 just 和 uv 的目录写进服务的 PATH，预检那行写出 just 的路径", darwin, () => {
+	const { stdout, bin, toolDir, path } = installWith(["just", "uv"]);
+	assert.ok(path.startsWith(`${bin}:${toolDir}:/opt/homebrew/bin:`), path);
+	assert.match(stdout, new RegExp(`预检通过.*just ${toolDir}/just`));
+});
+
+test("装机 PATH 里没有 just 时 service-install 照样装上，多打一行说专家队跑不了 just、怎么补", darwin, () => {
+	const { stdout, bin, path } = installWith([]);
+	assert.ok(path.startsWith(`${bin}:/opt/homebrew/bin:`), path);
+	assert.match(stdout, /找不到 just.*just service-install/);
+	assert.match(stdout, /已安装/);
+});
 
 function stateDirWithFakeHost(t: test.TestContext) {
 	const dir = mkdtempSync(join(tmpdir(), "psa-cli-state-"));

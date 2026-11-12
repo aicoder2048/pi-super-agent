@@ -79,7 +79,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 - [x] 每个模块一个 `<stateDir>/modules-data/<名字>/data.db`。`collection.json` 里每类数据一张表，`record` 和 `series` 都是一行一条，列就是 `collection.json` 声明的字段（`series` 的 `key`、`at`、数值也是声明的字段，`watch` 指名用哪几个）。每行带 `from`（来源原件或 feed），原件放 `blobs/`。
 - [x] 结构只增不减。加字段自动加列；`was` 改名把值搬到新名字并留别名；拿掉的字段不显示，值留着；改类型或单位拒绝，模块停在无效，旧版本继续服务。`was` 指向包里还在的名字、改名改到一个拿掉过但值还留着的名字、名字和存下的（或同一个包里的）只差大小写，检查都拒绝并写明原因。旧名字又声明成新的时，它的旧别名去掉。存下来的结构记在 `data.db` 里，和包里的声明比。宿主启动时给正在运行、没有待做迁移的模块补上缺的结构。
-- [x] 迁移前先复制一份 `data.db` 当快照，失败就用快照恢复。快照只活在一次迁移里，离开迁移就删；崩溃留下的快照下次打开时直接删掉、不恢复，`data.db` 靠 SQLite 自己的日志回滚到完整状态。`data.db` 读不了时检查和迁移给出原因，模块停在无效，宿主照常启动。迁移带只增的编号，迟到的旧结果被忽略。
+- [x] 一次迁移的所有结构调整和 `_structure` 的写入在同一个 SQLite 事务里，回滚就靠这个事务，不另拍快照。中途失败时连接带着没提交的事务关掉，改动全部撤回；宿主在事务里崩溃，留下的热日志在下次打开时由 SQLite 回滚，`data.db` 和迁移前一字不差。（最早的版本另拷一份快照、失败时拷回去，拷回去的半路宿主死掉会把唯一完整的一份删掉，所以去掉了。）`data.db` 读不了时检查和迁移给出原因，模块停在无效，宿主照常启动。迁移带只增的编号，迟到的旧结果被忽略。
 - [x] `just module purge <名字>` 要再输入一次模块名才删这个模块的全部实例数据。不交互时写 `--confirm <名字>`。模块开着时拒绝，先 `just module off`。输完名字后在同一个写事务里再读一次开关和记录，这时开着也拒绝。
 
 **You see.**
@@ -89,7 +89,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [x] `tests/instance-data.test.ts` 覆盖建表、加字段、改名别名、拿掉后再加回来值还在、改单位拒绝、迁移中途失败恢复快照、迟到结果被忽略、purge 要确认。用 `docs/modules/architecture/sample/update/` 的五个版本。Run `just test`.
+- [x] `tests/instance-data.test.ts` 覆盖建表、加字段、改名别名、拿掉后再加回来值还在、改单位拒绝、迁移中途失败全部撤回、迟到结果被忽略、purge 要确认。用 `docs/modules/architecture/sample/update/` 的五个版本。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/g1-live.ts`。
 
@@ -99,14 +99,14 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] Lane 4. 存一个改名的版本（`was`）。Save `g1-rename.txt`. Pass when 旧值出现在新名字下。
 - [x] Lane 5. 存一个拿掉字段的版本再加回来。Save `g1-remove.txt`. Pass when 值还在。
 - [x] Lane 6. 存一个改单位的版本。Save `g1-unit.txt`. Pass when 无效带原因，旧版本服务，数据不变。
-- [x] Lane 7. 迁移中途杀掉宿主再起。Save `g1-crash.txt`. Pass when 数据等于快照或新结构，不会半截。最早的脚本三次杀进程都落在拷快照和 COMMIT 之后，没打到事务里面。修复轮改成两次等 `data.db-journal` 出现（事务里面）、一次等快照出现；单元测试「迁移事务里崩溃」两条另外覆盖（子进程在事务中 SIGKILL 自己，留下热日志和快照，其中一条是停机时包又改成无效版本）。
+- [x] Lane 7. 迁移中途杀掉宿主再起。Save `g1-crash.txt`. Pass when 数据等于迁移前或新结构，不会半截。最早的脚本三次杀进程都落在 COMMIT 之后，没打到事务里面。现在三次都等 `data.db-journal` 出现（事务里面）再杀；单元测试「迁移事务里崩溃」两条另外覆盖（子进程在事务中 SIGKILL 自己，留下热日志，其中一条是停机时包又改成无效版本）。
 - [x] Lane 8. 拿掉模块包再放回来。Save `g1-away.txt`. Pass when 数据原样接上。
 - [x] Lane 9. `just module purge personal-health` 输错名字。Save `g1-purge-wrong.txt`. Pass when 拒绝，数据还在。
 - [x] Lane 10. 输对名字。Save `g1-purge.txt`. Pass when `modules-data/personal-health` 不在了，模块包不受影响。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [x] Metric. 宿主启动到就绪的时间，以及一次加字段迁移的时间（含快照），数据表里有 10 万行。trunk 没有迁移，迁移另给绝对预算。
+- [x] Metric. 宿主启动到就绪的时间，以及一次加字段迁移的时间，数据表里有 10 万行。trunk 没有迁移，迁移另给绝对预算。
 - [x] Probe. trunk 和 head 交替各 5 次 `startHost`；迁移在 head 上量 5 次。
 - [x] Baseline. Record the trunk 启动中位数 first.
 - [x] Rule. 启动比 trunk 慢 200 毫秒以上，或 10 万行的迁移超过 2 秒，就失败。
@@ -116,6 +116,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 2026-11-12 在 c69e412 上通过：`tests/instance-data.test.ts` 12 条，`just test` 1487 条全过，`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g1/owner/g1-*.txt`；perf 启动 trunk 中位 407 ms、head 408 ms，10 万行加字段迁移中位 6 ms（6.3 MB）。lane 7 用 200 万行，三次里两次在迁移中途 SIGKILL，重启后都是新结构、行数不变、快照不留。
 
 2026-11-12 审计修复轮在 92a3e7e（已 rebase 到 main e8741fc）上通过：审计的八条加 gates 验证的第九条，十一条新单元测试先红后绿（`/tmp/swarm-g1/fix/red.txt`）；`tests/instance-data.test.ts` 22 条，`just test` 1511 条全过，`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g1/fix/g1-*.txt`，lane 7 三次都打中（两次在事务里面），重启后 200 万行都在、新结构、不留快照；perf 启动 trunk 中位 385 ms、head 388 ms，10 万行加字段迁移中位 5 ms。
+
+2026-11-12 去快照修复在本提交上通过：验证者发现宿主在「快照拷回 data.db」的半路死掉，下次打开会删掉唯一完整的快照，data.db 从此读不了。复现测试先红（`database disk image is malformed`，`/tmp/swarm-g1/fix2/red.txt`），去掉快照、只靠 SQLite 事务回滚后转绿；新增「宿主在撤回改动前死掉」一条，失败迁移和事务里崩溃两条改成断言 `data.db` 和迁移前一字不差。`tests/instance-data.test.ts` 22 条，`just test` 1511 条全过，`check.mjs` 全绿；lane 6、7 PASS，lane 7 三次都在事务里杀掉，输出在 `/tmp/swarm-g1/fix2/g1-*.txt`。
 
 **Merge.**
 
@@ -171,6 +173,10 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Review gate.** None. G2 is not review-gated.
 
 2026-11-12 在 691e39f 上通过（之后的 9006cf4 只删注释）：`tests/data-tool.test.ts` 18 条，`just test` 1530 条全过，`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g2/owner/g2-*.txt`，lane 10 用 `openai-codex/gpt-6.1-sol` 记下一条空腹血糖，`lab-results` 有这一行，from 是「使用者口述」；perf 10 万行按 item 和日期范围取 100 行，查询中位 3.2 ms（20 次，差 1.4 ms），单行写入中位 0.4 ms，trunk `knowledge` 检索中位 0.1 ms 作对照。lane 3 在 personal-health 里就地把 `lab` 改名为 `laboratory`，因为 health-lite 不在名册上，幕僚长开不了它的任务。
+
+审查后的修正（2026-11-12）：网页上回答私密任务的问题，转到 Telegram 的那句回答也只发一行提示；`record` 按 id 从别的来源改几项，`from` 不变，改过的字段各自的来源记在 `sources`；`write` 没给 rows、op 不认识都拒绝；字段不能叫 `id`；访问记录也记被拒的调用和原因。
+
+待定（要使用者定）：幕僚长在对话里的回复（起因是使用者的一句话，不带任务）不受私密一行规则管。它从转述里知道的私密数值，之后可能出现在这类回复里，原样发到 Telegram。design.md 第 5 节写明了这一处还没管到。
 
 **Merge.**
 

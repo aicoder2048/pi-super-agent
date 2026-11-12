@@ -1,6 +1,6 @@
 /** Stored structure only grows (design.md H6). `_structure` holds everything ever stored, hidden fields and aliases included. */
 import { randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { alertText, met, need, parseWatch, receiptText, type Point, type SetCondition } from "./conditions.ts";
@@ -39,7 +39,7 @@ function plan(stored: Stored, components: readonly Component[]): { sql: string[]
 		const { was, fields: declared, ...described } = collection;
 		const from = [name, was].find((n) => n !== undefined && Object.hasOwn(next.collections, n));
 		if (from === undefined) {
-			sql.push(`CREATE TABLE ${quote(name)} ("_id" INTEGER PRIMARY KEY, "_from" TEXT NOT NULL${Object.entries(declared).map(([f, d]) => `, ${column(f, d)}`).join("")})`);
+			sql.push(`CREATE TABLE ${quote(name)} ("_id" INTEGER PRIMARY KEY, "_from" TEXT NOT NULL, "_sources" TEXT${Object.entries(declared).map(([f, d]) => `, ${column(f, d)}`).join("")})`);
 			next.collections[name] = { ...described, fields: Object.fromEntries(Object.entries(declared).map(([f, d]) => [f, plain(d)])), aliases: {} };
 			continue;
 		}
@@ -56,6 +56,7 @@ function plan(stored: Stored, components: readonly Component[]): { sql: string[]
 				const old = descriptor.was;
 				if (old !== undefined && Object.hasOwn(fields, old)) {
 					sql.push(`ALTER TABLE ${quote(name)} RENAME COLUMN ${quote(old)} TO ${quote(field)}`);
+					sql.push(`UPDATE ${quote(name)} SET "_sources" = json_set(json_remove("_sources", '$.${old}'), '$.${field}', "_sources" ->> '$.${old}') WHERE "_sources" ->> '$.${old}' IS NOT NULL`);
 					delete fields[old];
 					aliases = renamed(aliases, old, field);
 				} else sql.push(`ALTER TABLE ${quote(name)} ADD COLUMN ${column(field, descriptor)}`);
@@ -74,22 +75,6 @@ function readStored(db: DatabaseSync): Stored {
 	return row === undefined ? EMPTY : (JSON.parse(row.json) as Stored);
 }
 
-/** A leftover journal belongs to the replaced file, and SQLite would replay it onto the snapshot. */
-function restore(path: string, snapshot: string): void {
-	for (const suffix of ["-journal", "-wal", "-shm"]) rmSync(`${path}${suffix}`, { force: true });
-	copyFileSync(snapshot, path);
-}
-
-/**
- * A snapshot lives only inside one `migrate` call. One left by a crash is never restored: rows
- * written since would be lost, and SQLite's own journal already brings `data.db` back to whole.
- * Opening read-write lets SQLite roll that journal back.
- */
-function openDiscardingSnapshot(path: string): DatabaseSync {
-	rmSync(`${path}.snapshot`, { force: true });
-	return new DatabaseSync(path);
-}
-
 const failed = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const problemText = (problems: readonly { where: string; reason: string }[]) => problems.map((p) => `${p.where}：${p.reason}`).join("；");
@@ -100,15 +85,10 @@ export class DataInputError extends Error {}
 
 type DataComponent = Extract<Component, { kind: "data" }>;
 type Value = Extract<SQLInputValue, string | number | null>;
+type Op = "read" | "write";
 
 /** What a read or write touched. `collection` is the current name, whatever name the caller used. */
 export type Accessed = { collection: ComponentName; class: DataClass; rows: Row[] };
-
-/** `alerts`: the conditions the written rows met, for the host to post. */
-export type Written = Accessed & { alerts: readonly Alert[] };
-
-export type WatchRequest = Extract<Request, { kind: "watch" }>;
-export type Watched = { collection: ComponentName; class: DataClass; output: { conditions: SetCondition[] } | { condition: SetCondition; receipt: string } };
 
 /** `components` is the serving version: its structure is ensured first, and it decides which fields show. */
 export interface ModuleRows {
@@ -116,6 +96,12 @@ export interface ModuleRows {
 	write(module: ModuleName, components: readonly Component[], collection: string, rows: readonly Json[], from: string, who: string): Written;
 	watch(module: ModuleName, components: readonly Component[], request: WatchRequest, who: string): Watched;
 }
+
+/** `alerts`: the conditions the written rows met, for the host to post. */
+export type Written = Accessed & { alerts: readonly Alert[] };
+
+export type WatchRequest = Extract<Request, { kind: "watch" }>;
+export type Watched = { collection: ComponentName; class: DataClass; output: { conditions: SetCondition[] } | { condition: SetCondition; receipt: string } };
 
 const LIMIT = { fallback: 50, max: 500 };
 
@@ -147,11 +133,17 @@ function valueOf(field: FieldDescriptor, name: string, value: Json | undefined):
 
 const timeField = ({ watch, fields }: CollectionDescriptor) => watch?.at ?? Object.keys(fields).find((name) => fields[name]!.type === "date");
 
-const rowOf = (fields: readonly string[], row: Record<string, Value>): Row => ({
-	id: String(row._id),
-	from: String(row._from),
-	fields: Object.fromEntries(fields.map((f) => [f, row[f] ?? null])),
-});
+const sourcesOf = (row: Record<string, Value>): Record<string, string> => (row._sources === null || row._sources === undefined ? {} : JSON.parse(String(row._sources)));
+
+function rowOf(fields: readonly string[], row: Record<string, Value>): Row {
+	const sources = Object.fromEntries(Object.entries(sourcesOf(row)).filter(([field]) => fields.includes(field)));
+	return {
+		id: String(row._id),
+		from: String(row._from),
+		fields: Object.fromEntries(fields.map((f) => [f, row[f] ?? null])),
+		...(Object.keys(sources).length > 0 && { sources }),
+	};
+}
 
 type ConditionRow = { id: string; collection: string; key: string; kind: Condition["when"]; params: string; set_at: string; note: string | null };
 
@@ -183,27 +175,29 @@ function alertsFor(db: DatabaseSync, { name, collection }: DataComponent, writte
 
 export function instanceData(stateDir: string): InstanceData & ModuleRows {
 	const pathOf = (module: ModuleName) => join(moduleDataDir(stateDir, module), "data.db");
-	/** Ensures the structure, then one short-lived connection in rollback-journal mode, so migrate's file snapshot always holds every committed row. */
-	const withRows = <T>(module: ModuleName, components: readonly Component[], use: (db: DatabaseSync, stored: Stored) => T): T => {
+	const withRows = <T>(module: ModuleName, components: readonly Component[], access: { who: string; collection: string; op: Op }, use: (db: DatabaseSync, stored: Stored) => T): T => {
 		const ensured = data.migrate(module, components);
 		if (!ensured.ok) throw new Error(ensured.reason);
 		const db = new DatabaseSync(pathOf(module));
 		try {
-			db.exec(`CREATE TABLE IF NOT EXISTS _access (at TEXT NOT NULL, who TEXT NOT NULL, collection TEXT NOT NULL, op TEXT NOT NULL, rows INTEGER NOT NULL); ${CONDITIONS}`);
+			db.exec(`CREATE TABLE IF NOT EXISTS _access (at TEXT NOT NULL, who TEXT NOT NULL, collection TEXT NOT NULL, op TEXT NOT NULL, rows INTEGER NOT NULL, outcome TEXT NOT NULL); ${CONDITIONS}`);
 			return use(db, readStored(db));
+		} catch (error) {
+			if (error instanceof DataInputError) logAccess(db, access.who, access.collection, access.op, 0, `refused：${error.message}`);
+			throw error;
 		} finally {
 			db.close();
 		}
 	};
-	const logAccess = (db: DatabaseSync, who: string, collection: string, op: "read" | "write", rows: number) =>
-		db.prepare("INSERT INTO _access VALUES (?, ?, ?, ?, ?)").run(new Date().toISOString(), who, collection, op, rows);
+	const logAccess = (db: DatabaseSync, who: string, collection: string, op: Op, rows: number, outcome = "ok") =>
+		db.prepare("INSERT INTO _access VALUES (?, ?, ?, ?, ?, ?)").run(new Date().toISOString(), who, collection, op, rows, outcome);
 
 	const data: InstanceData & ModuleRows = {
 		check(module, components) {
 			const path = pathOf(module);
 			if (!existsSync(path)) return [];
 			try {
-				const db = openDiscardingSnapshot(path);
+				const db = new DatabaseSync(path);
 				try {
 					return problemsFor(readStored(db), components);
 				} finally {
@@ -215,43 +209,36 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 		},
 		migrate(module, components) {
 			const path = pathOf(module);
-			const snapshot = `${path}.snapshot`;
 			if (!existsSync(path) && !components.some((c) => c.kind === "data")) return { ok: true };
 			let db: DatabaseSync | undefined;
 			try {
 				mkdirSync(join(dirname(path), "blobs"), { recursive: true });
-				db = openDiscardingSnapshot(path);
+				db = new DatabaseSync(path);
 				const before = readStored(db);
 				const problems = problemsFor(before, components);
 				if (problems.length > 0) return { ok: false, reason: problemText(problems) };
 				const { sql, next } = plan(before, components);
 				if (JSON.stringify(next) === JSON.stringify(before)) return { ok: true };
-				copyFileSync(path, snapshot);
-				try {
-					db.exec("BEGIN");
-					db.exec(CONDITIONS);
-					for (const statement of sql) db.exec(statement);
-					db.exec("CREATE TABLE IF NOT EXISTS _structure (json TEXT NOT NULL); DELETE FROM _structure");
-					db.prepare("INSERT INTO _structure VALUES (?)").run(JSON.stringify(next));
-					db.exec("COMMIT");
-				} catch (error) {
-					db.close();
-					restore(path, snapshot);
-					return { ok: false, reason: failed(error) };
-				}
+				// SQLite is the rollback: closing with the transaction still open undoes it, and a hot
+				// journal left by a crash is rolled back on the next open.
+				db.exec("BEGIN");
+				db.exec(CONDITIONS);
+				for (const statement of sql) db.exec(statement);
+				db.exec("CREATE TABLE IF NOT EXISTS _structure (json TEXT NOT NULL); DELETE FROM _structure");
+				db.prepare("INSERT INTO _structure VALUES (?)").run(JSON.stringify(next));
+				db.exec("COMMIT");
 				return { ok: true };
 			} catch (error) {
 				return { ok: false, reason: failed(error) };
 			} finally {
 				if (db?.isOpen) db.close();
-				rmSync(snapshot, { force: true });
 			}
 		},
 		purge(module) {
 			rmSync(moduleDataDir(stateDir, module), { recursive: true, force: true });
 		},
 		query(module, components, collection, query, who) {
-			return withRows(module, components, (db, stored) => {
+			return withRows(module, components, { who, collection, op: "read" }, (db, stored) => {
 				const { component, field } = resolve(stored, components, collection);
 				const visible = Object.keys(component.collection.fields);
 				const time = timeField(component.collection);
@@ -273,8 +260,8 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 			});
 		},
 		write(module, components, collection, rows, from, who) {
-			if (from.trim() === "") throw new DataInputError("写数据要写 from：这些行从哪里来，例如原件的路径，或「使用者口述」");
-			return withRows(module, components, (db, stored) => {
+			return withRows(module, components, { who, collection, op: "write" }, (db, stored) => {
+				if (from.trim() === "") throw new DataInputError("写数据要写 from：这些行从哪里来，例如原件的路径，或「使用者口述」");
 				const { component, field } = resolve(stored, components, collection);
 				const { fields, kind } = component.collection;
 				const table = quote(component.name);
@@ -288,17 +275,22 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 							const now = field(name);
 							return [now, valueOf(fields[now]!, name, value)] as const;
 						});
-						const names = ["_from", ...values.map(([n]) => n)].map(quote);
-						const params: SQLInputValue[] = [from, ...values.map(([, v]) => v)];
 						if (id === undefined) {
-							const result = db.prepare(`INSERT INTO ${table} (${names.join(", ")}) VALUES (${names.map(() => "?").join(", ")})`).run(...params);
+							const names = ["_from", ...values.map(([n]) => n)].map(quote);
+							const result = db.prepare(`INSERT INTO ${table} (${names.join(", ")}) VALUES (${names.map(() => "?").join(", ")})`).run(from, ...values.map(([, v]) => v));
 							ids.push(Number(result.lastInsertRowid));
 							continue;
 						}
 						if (kind === "series") throw new DataInputError(`「${component.name}」是 series，只能追加新行，不能按 id 改`);
-						const set = names.map((n) => `${n} = ?`).join(", ");
-						const result = db.prepare(`UPDATE ${table} SET ${set} WHERE "_id" = ?`).run(...params, Number(id));
-						if (result.changes === 0) throw new DataInputError(`「${component.name}」没有 id 为 ${JSON.stringify(id)} 的一行`);
+						const before = db.prepare(`SELECT "_from", "_sources" FROM ${table} WHERE "_id" = ?`).get(Number(id)) as Record<string, Value> | undefined;
+						if (before === undefined) throw new DataInputError(`「${component.name}」没有 id 为 ${JSON.stringify(id)} 的一行`);
+						const sources = sourcesOf(before);
+						for (const [name] of values) {
+							if (from === before._from) delete sources[name];
+							else sources[name] = from;
+						}
+						const set = [...values.map(([n]) => `${quote(n)} = ?`), `"_sources" = ?`].join(", ");
+						db.prepare(`UPDATE ${table} SET ${set} WHERE "_id" = ?`).run(...values.map(([, v]) => v), Object.keys(sources).length > 0 ? JSON.stringify(sources) : null, Number(id));
 						ids.push(Number(id));
 					}
 					logAccess(db, who, component.name, "write", ids.length);
@@ -314,11 +306,11 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 			});
 		},
 		watch(module, components, request, who) {
-			return withRows(module, components, (db, stored) => {
+			return withRows(module, components, { who, collection: request.collection, op: request.op === "list" ? "read" : "write" }, (db, stored) => {
 				const { component } = resolve(stored, components, request.collection);
 				const { name, collection } = component;
 				if (collection.watch === undefined) throw new DataInputError(`「${name}」没有写 watch，不能设提醒条件`);
-				const answer = (output: Watched["output"], op: "read" | "write", rows: number): Watched => {
+				const answer = (output: Watched["output"], op: Op, rows: number): Watched => {
 					logAccess(db, who, name, op, rows);
 					return { collection: name, class: collection.class, output };
 				};

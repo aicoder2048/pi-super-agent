@@ -32,11 +32,15 @@ export type Alert = { externalId: string; text: string; at: string; private: boo
 
 export type Query = { where?: Readonly<Record<string, string | number>>; since?: string; until?: string; limit?: number };
 
-/** One stored row. `from` names where it came from (an original's path, a feed, 「使用者口述」), so the user can check an extracted value. */
+/**
+ * One stored row. `from` names where it came from (an original's path, a feed, 「使用者口述」), so the user can check an extracted value.
+ * `sources` names the fields a later update took from somewhere else, each with that source.
+ */
 export interface Row {
 	id: string;
 	fields: { readonly [field: string]: Json };
 	from: string;
+	sources?: { readonly [field: string]: string };
 }
 
 /** A closed set: one variant per thing a module can serve to a caller. */

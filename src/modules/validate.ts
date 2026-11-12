@@ -119,6 +119,7 @@ function fields(report: Report, where: string, key: string, value: Json | undefi
 	if (!isObject(value) || Object.keys(value).length === 0) report(where, `"${key}" must describe at least one field`);
 	for (const [name, raw] of Object.entries(isObject(value) ? value : {})) {
 		if (!FIELD_NAME.test(name)) report(where, `${key}.${name} is not a valid field name (a letter, then letters, digits and underscores)`);
+		else if (key === "fields" && name === "id") report(where, `fields.id is reserved: a row written with "id" updates the row that has that id`);
 		else if (!isObject(raw) || !oneOf(FIELD_TYPES, raw["type"]) || typeof raw["title"] !== "string") {
 			report(where, `${key}.${name} needs a "type" (${FIELD_TYPES.join(", ")}) and a "title"`);
 		} else {

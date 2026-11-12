@@ -51,12 +51,12 @@ const columns = (state: string, module: string, table: string) => sql<{ name: st
 const tables = (state: string, module: string) => sql<{ name: string }>(state, module, "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE '\\_%' ESCAPE '\\' ORDER BY name").map((t) => t.name);
 const labRow = (state: string) => write(state, LITE, `INSERT INTO "lab-results" ("_from", item, value, takenAt, lab) VALUES ('blobs/report-1.pdf', 'CEA', 3.1, '2026-10-01', '协和')`);
 
-test("第一次迁移：personal-health 的五类数据各一张表，列是 collection.json 的字段，每行另有出处 _from", (t) => {
+test("第一次迁移：personal-health 的五类数据各一张表，列是 collection.json 的字段，每行另有出处 _from 和后来改动的来源 _sources", (t) => {
 	const state = stateDir(t);
 	const result = instanceData(state).migrate("personal-health" as ModuleName, components(join(SAMPLE, "personal-health")));
 	assert.deepEqual(result, { ok: true });
 	assert.deepEqual(tables(state, "personal-health"), ["device-readings", "documents", "lab-results", "profile", "research-updates"]);
-	assert.deepEqual(columns(state, "personal-health", "lab-results"), ["_id", "_from", "item", "value", "unit", "reference", "takenAt", "lab"]);
+	assert.deepEqual(columns(state, "personal-health", "lab-results"), ["_id", "_from", "_sources", "item", "value", "unit", "reference", "takenAt", "lab"]);
 	assert.ok(existsSync(join(state, "modules-data", "personal-health", "blobs")), "blobs/ holds the originals rows point to");
 });
 
@@ -120,27 +120,30 @@ test("什么都没存过：检查没有问题，也不建目录", (t) => {
 	assert.ok(!existsSync(join(state, "modules-data", LITE)));
 });
 
-test("迁移中途失败：恢复快照，前面做过的调整也撤回，原因带出来，不留快照文件", (t) => {
+const NOTES: Component = { kind: "data", name: "notes" as ComponentName, seeded: false, collection: { title: "笔记", kind: "record", class: "private", fields: { text: { type: "text", title: "内容" } } } };
+
+test("迁移中途失败：前面做过的调整也撤回，data.db 和迁移前一字不差，原因带出来", (t) => {
 	const state = stateDir(t);
 	const data = instanceData(state);
 	data.migrate(LITE, lite("0.1.0"));
 	labRow(state);
 	write(state, LITE, `CREATE TABLE "notes" (x)`);
-	const notes: Component = { kind: "data", name: "notes" as ComponentName, seeded: false, collection: { title: "笔记", kind: "record", class: "private", fields: { text: { type: "text", title: "内容" } } } };
-	const result = data.migrate(LITE, [...lite("0.2.0-adds-field"), notes]);
+	const before = readFileSync(dbOf(state, LITE));
+	const result = data.migrate(LITE, [...lite("0.2.0-adds-field"), NOTES]);
 	assert.equal(result.ok, false);
 	assert.match(result.ok ? "" : result.reason, /notes/);
-	assert.deepEqual(columns(state, LITE, "lab-results"), ["_id", "_from", "item", "value", "takenAt", "lab"]);
+	assert.deepEqual(readFileSync(dbOf(state, LITE)), before);
+	assert.deepEqual(columns(state, LITE, "lab-results"), ["_id", "_from", "_sources", "item", "value", "takenAt", "lab"]);
 	assert.deepEqual(sql(state, LITE, `SELECT item FROM "lab-results"`), [{ item: "CEA" }]);
 	assert.deepEqual(data.check(LITE, lite("0.2.0-adds-field")), []);
 	assert.deepEqual(data.migrate(LITE, lite("0.2.0-adds-field")), { ok: true });
 });
 
-/** cache_size = 1 makes SQLite spill pages to disk, so the kill leaves a hot journal next to the snapshot. */
+/** cache_size = 1 makes SQLite spill half-done pages into data.db before the kill, so only the journal can bring it back. */
 function crashMidMigration(state: string): void {
 	const path = dbOf(state, LITE);
-	const code = `import { copyFileSync } from "node:fs"; import { DatabaseSync } from "node:sqlite";
-const db = new DatabaseSync(${JSON.stringify(path)}); copyFileSync(${JSON.stringify(path)}, ${JSON.stringify(`${path}.snapshot`)});
+	const code = `import { DatabaseSync } from "node:sqlite";
+const db = new DatabaseSync(${JSON.stringify(path)});
 db.exec("PRAGMA cache_size = 1; BEGIN"); db.exec('ALTER TABLE "lab-results" ADD COLUMN half TEXT'); db.exec(\`UPDATE "lab-results" SET lab = 'HALF'\`); db.exec("DELETE FROM _structure");
 process.kill(process.pid, "SIGKILL");`;
 	const child = spawnSync(process.execPath, ["--input-type=module", "--eval", code], { encoding: "utf8", timeout: 20_000 });
@@ -149,28 +152,38 @@ process.kill(process.pid, "SIGKILL");`;
 }
 const manyLabRows = (state: string) => write(state, LITE, `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2000) INSERT INTO "lab-results" ("_from", item, value, takenAt, lab) SELECT 'x', 'CEA', i, '2026-10-01', '协和' FROM n`);
 
-test("迁移事务里崩溃：检查不报错，再迁移得到新结构，行一条不少，没有半截改动，不留快照", (t) => {
+test("迁移事务里、提交前崩溃：检查后 data.db 和崩溃前一字不差，再迁移得到新结构，行一条不少", (t) => {
 	const state = stateDir(t);
 	const data = instanceData(state);
 	data.migrate(LITE, lite("0.1.0"));
 	manyLabRows(state);
+	const before = readFileSync(dbOf(state, LITE));
 	crashMidMigration(state);
 	assert.deepEqual(data.check(LITE, lite("0.2.0-adds-field")), []);
+	assert.deepEqual(readFileSync(dbOf(state, LITE)), before);
 	assert.deepEqual(data.migrate(LITE, lite("0.2.0-adds-field")), { ok: true });
-	assert.deepEqual(columns(state, LITE, "lab-results"), ["_id", "_from", "item", "value", "takenAt", "lab", "method"]);
+	assert.deepEqual(columns(state, LITE, "lab-results"), ["_id", "_from", "_sources", "item", "value", "takenAt", "lab", "method"]);
 	assert.deepEqual(sql(state, LITE, `SELECT count(*) AS n, sum(lab = '协和') AS kept FROM "lab-results"`), [{ n: 2000, kept: 2000 }]);
-	assert.ok(!existsSync(`${dbOf(state, LITE)}.snapshot`));
 });
 
-test("崩溃留下的旧快照不会盖掉之后写进来的行", (t) => {
+test("迁移失败、宿主在撤回改动前死掉：data.db 照样能读，和迁移前一字不差", (t) => {
 	const state = stateDir(t);
 	const data = instanceData(state);
 	data.migrate(LITE, lite("0.1.0"));
-	cpSync(dbOf(state, LITE), `${dbOf(state, LITE)}.snapshot`);
-	labRow(state);
-	assert.deepEqual(data.migrate(LITE, lite("0.2.0-adds-field")), { ok: true });
-	assert.deepEqual(sql(state, LITE, `SELECT item, method FROM "lab-results"`), [{ item: "CEA", method: null }]);
-	assert.ok(!existsSync(`${dbOf(state, LITE)}.snapshot`));
+	manyLabRows(state);
+	write(state, LITE, `CREATE TABLE "notes" (x)`);
+	const path = dbOf(state, LITE);
+	const before = readFileSync(path);
+	const code = `import { DatabaseSync } from "node:sqlite";
+const exec = DatabaseSync.prototype.exec;
+DatabaseSync.prototype.exec = function (sql) { try { return exec.call(this, sql); } catch { process.kill(process.pid, "SIGKILL"); } };
+const { instanceData } = await import(${JSON.stringify(join(import.meta.dirname, "..", "src", "modules", "instance-data.ts"))});
+instanceData(${JSON.stringify(state)}).migrate("health-lite", ${JSON.stringify([...lite("0.2.0-adds-field"), NOTES])});`;
+	const child = spawnSync(process.execPath, ["--input-type=module", "--eval", code], { encoding: "utf8", timeout: 20_000 });
+	assert.equal(child.signal, "SIGKILL", child.stderr);
+	assert.ok(existsSync(`${path}-journal`), "the kill left a hot journal");
+	assert.deepEqual(data.check(LITE, lite("0.1.0")), []);
+	assert.deepEqual(readFileSync(path), before);
 });
 
 test("data.db 坏了：检查和迁移都给出原因，不抛出", (t) => {
@@ -347,6 +360,11 @@ test("同一个包里字段名只差大小写：检查拒绝", (t) => {
 	assert.match(scanReasons(dir), /fields "lab" and "Lab" differ only in case/);
 });
 
+test("字段名叫 id：检查拒绝，因为写入时 id 指要改的那一行", (t) => {
+	const dir = liteVariant(t, (fields) => void (fields["id"] = { type: "text", title: "编号" }));
+	assert.match(scanReasons(dir), /fields\.id is reserved/);
+});
+
 test("模块已经在运行、包没变：重启时把缺的数据结构补上（数据目录被手动删了也一样）", (t) => {
 	const state = stateDir(t);
 	place(state, "0.1.0");
@@ -377,7 +395,6 @@ test("迁移事务里崩溃、停机时包又改成无效版本：宿主照常�
 	const second = boot(t, state);
 	assert.match(second.label().reason, /0\.1\.0 在运行.*无效.*changed unit/);
 	assert.deepEqual(sql(state, LITE, `SELECT count(*) AS n FROM "lab-results" WHERE lab = '协和'`), [{ n: 2000 }]);
-	assert.ok(!existsSync(`${dbOf(state, LITE)}.snapshot`));
 });
 
 test("just module purge：输名字确认的时候模块被打开了，拒绝，数据和记录都不动", async (t) => {

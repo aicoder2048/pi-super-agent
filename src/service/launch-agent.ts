@@ -17,6 +17,9 @@ export interface LaunchAgentInput {
 	repo: string;
 	home: string;
 	stateDir: string;
+	/** Put on the service PATH: module-builder's experts run `just`, stock-ta runs `uv`. */
+	just: string | undefined;
+	uv: string | undefined;
 }
 
 export type LaunchdState =
@@ -61,13 +64,14 @@ export function findOnPath(name: string, pathEnv: string, isExecutable: (file: s
 	return undefined;
 }
 
-export function servicePath(node: string): string {
-	return [...new Set([dirname(node), ...SYSTEM_PATH])].join(":");
+export function servicePath(programs: (string | undefined)[]): string {
+	const dirs = programs.filter((p) => p !== undefined).map((p) => dirname(p));
+	return [...new Set([...dirs, ...SYSTEM_PATH])].join(":");
 }
 
 /** The plist's environment and the exact env preflight runs `npm root -g` under, so what passed preflight is what launchd runs. */
 export function serviceEnvironment(input: LaunchAgentInput): Record<string, string> {
-	return { HOME: input.home, PATH: servicePath(input.node), PSA_STATE_DIR: input.stateDir };
+	return { HOME: input.home, PATH: servicePath([input.node, input.just, input.uv]), PSA_STATE_DIR: input.stateDir };
 }
 
 type PlistValue = string | boolean | PlistValue[] | { [key: string]: PlistValue };

@@ -1,5 +1,5 @@
 /**
- *   node --import ./src/pi-runtime.mjs docs/modules/evidence/g1-live.ts [lanes|perf] [outDir]
+ *   node --import ./src/pi-runtime.mjs docs/modules/evidence/g1-live.ts [lanes|perf] [outDir] [lane numbers...]
  *
  * Every lane runs on the fake model from tests/e2e/fake-model.ts, each in its own throwaway state dir.
  * Lane 1 and the perf baseline also run a detached worktree of `origin/main` at <outDir>/trunk.
@@ -15,7 +15,7 @@ const HEAD = resolve(import.meta.dirname, "../../..");
 const SAMPLE = join(HEAD, "docs/modules/architecture/sample");
 const UPDATE = join(SAMPLE, "update");
 const LITE = "health-lite";
-const [mode = "lanes", outDir = "/tmp/swarm-g1/owner"] = process.argv.slice(2);
+const [mode = "lanes", outDir = "/tmp/swarm-g1/owner", ...only] = process.argv.slice(2);
 const TRUNK = join(outDir, "trunk");
 mkdirSync(outDir, { recursive: true });
 
@@ -120,6 +120,7 @@ async function liteHost(count = 1) {
 
 const results: string[] = [];
 async function lane(n: number, slug: string, body: () => Promise<{ pass: boolean | "inconclusive"; evidence: string }>): Promise<void> {
+	if (only.length > 0 && !only.includes(String(n))) return;
 	let verdict: { pass: boolean | "inconclusive"; evidence: string };
 	try {
 		verdict = await body();
@@ -181,7 +182,7 @@ async function lanes(): Promise<void> {
 			for (const table of names) {
 				const declared = Object.keys(JSON.parse(readFileSync(join(SAMPLE, "personal-health/data", table, "collection.json"), "utf8")).fields);
 				const have = columns(state, table, "personal-health");
-				pass &&= have.join() === ["_id", "_from", ...declared].join();
+				pass &&= have.join() === ["_id", "_from", "_sources", ...declared].join();
 				lines.push(`${table}: columns ${have.join(", ")} | collection.json fields ${declared.join(", ")}`);
 			}
 			return { pass, evidence: lines.join("\n") };
@@ -262,7 +263,7 @@ async function lanes(): Promise<void> {
 		let pass = true;
 		let hits = 0;
 		const COUNT = 2_000_000;
-		for (const [n, at] of [[1, "-journal"], [2, "-journal"], [3, ".snapshot"]] as const) {
+		for (const n of [1, 2, 3]) {
 			const { state, host, close } = await liteHost(COUNT);
 			try {
 				const path = dataDb(state, LITE);
@@ -270,17 +271,17 @@ async function lanes(): Promise<void> {
 				// Busy-wait so the kill lands while the file is there; a timer would sleep through the window.
 				const started = Date.now();
 				let seen = false;
-				while (!seen && Date.now() - started < 10_000) seen = existsSync(`${path}${at}`);
+				while (!seen && Date.now() - started < 10_000) seen = existsSync(`${path}-journal`);
 				if (seen) process.kill(-host.pid, "SIGKILL");
-				const left = [".snapshot", "-journal"].filter((s) => existsSync(`${path}${s}`));
+				const left = existsSync(`${path}-journal`);
 				hits += seen ? 1 : 0;
 				await host.restart();
 				const back = await within(10_000, serving(state, "0.2.0"));
 				const count = rows(state, `SELECT COUNT(*) AS n FROM "lab-results"`)[0]!["n"];
 				const have = columns(state, "lab-results");
-				const ok = back >= 0 && count === COUNT && have.includes("method") && !existsSync(`${path}.snapshot`);
+				const ok = back >= 0 && count === COUNT && have.includes("method");
 				pass &&= ok;
-				lines.push(`trial ${n}: waited for data.db${at}: ${seen ? "seen, SIGKILL the host group" : "never seen, the migration finished first"}; left on disk ${left.join(", ") || "nothing"}; after restart serving 0.2.0 in ${back} ms, rows ${count}, columns ${have.join(", ")}, snapshot left ${existsSync(`${path}.snapshot`)}`);
+				lines.push(`trial ${n}: waited for data.db-journal: ${seen ? "seen, SIGKILL the host group" : "never seen, the migration finished first"}; journal left on disk ${left}; after restart serving 0.2.0 in ${back} ms, rows ${count}, columns ${have.join(", ")}`);
 			} finally {
 				await close();
 			}
@@ -387,7 +388,7 @@ async function perf(): Promise<void> {
 		rmSync(state, { recursive: true, force: true });
 	}
 	const migrateOk = Math.max(...migrations) <= 2000;
-	lines.push(`${migrateOk ? "PASS" : "FAIL"} add-field migration with snapshot, ${ROWS} rows, data.db ${(size / 1e6).toFixed(1)} MB, 5 runs on fresh copies (rule: any run over 2000 ms fails)`, line("  head", migrations, "ms"));
+	lines.push(`${migrateOk ? "PASS" : "FAIL"} add-field migration, ${ROWS} rows, data.db ${(size / 1e6).toFixed(1)} MB, 5 runs on fresh copies (rule: any run over 2000 ms fails)`, line("  head", migrations, "ms"));
 
 	const report = [`${bootOk && migrateOk ? "PASS" : "FAIL"} perf`, ...lines].join("\n");
 	writeFileSync(join(outDir, "g1-perf.txt"), `${report}\n`);

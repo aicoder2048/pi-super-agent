@@ -844,3 +844,15 @@ test("任务读写过私密数据：它的问题卡片和幕僚长的转述在 T
 	assert.ok(notices.every((m) => m.buttons === null));
 	assert.ok(!sentTo(tg, USER).some((m) => m.includes("4.2")), sentTo(tg, USER).join(" / "));
 });
+
+test("回答私密任务的问题：Telegram 上这句回答只发一行提示；别的任务的回答照常转发", async (t) => {
+	const { tg, open, client, state } = await cardClient(t);
+	await open(USER);
+	state.private.set("tkt_secret", "个人医疗健康");
+	client.broadcast({ type: "user", id: "trg_1", who: "user", text: "回答任务「记指标」：CEA 4.2 偏高，约下周复查", at: Date.now(), ticketId: "tkt_secret" });
+	client.broadcast({ type: "user", id: "trg_2", who: "user", text: "回答任务「查天气」：北京", at: Date.now(), ticketId: "tkt_other" });
+	await until(() => sentTo(tg, USER).some((m) => m.includes("北京")), "别的任务照常");
+	await settle();
+	assert.ok(sentTo(tg, USER).includes("个人医疗健康 有新内容，请在网页上查看"), sentTo(tg, USER).join(" / "));
+	assert.ok(!sentTo(tg, USER).some((m) => m.includes("4.2")), sentTo(tg, USER).join(" / "));
+});

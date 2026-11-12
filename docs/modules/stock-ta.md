@@ -23,7 +23,7 @@ stock-ta 让 Pi Super Agent 回答美股个股的技术面问题，例如「NVDA
 
 下面的命令在本仓库根目录运行。状态目录默认是 `~/.pi-super-agent`，设了 `PSA_STATE_DIR` 就是它。
 
-1. 确认技术分析项目能用：`uv` 在宿主的 PATH 里（`which uv`），项目的 `app/trading` 跑过 `uv sync`。宿主作为服务运行时，服务的 PATH 也要有 `uv`。
+1. 确认技术分析项目能用：`uv` 在宿主的 PATH 里（`which uv`），项目的 `app/trading` 跑过 `uv sync`。宿主作为服务运行时，服务的 PATH 也要有 `uv`：`just service-install` 会把装机时 PATH 里 `uv` 的目录写进去，装了 uv 之后重跑一次。
 
 2. 把包复制进状态目录。新包被发现时是停用的。
 

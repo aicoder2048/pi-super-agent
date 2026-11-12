@@ -26,9 +26,14 @@ const TAGS: Record<Request["kind"], string> = { tool: "[模块工具]", knowledg
 /** The `data` tool's arguments as a gateway request. `list` is a query with no conditions. */
 function dataRequest(p: Record<string, unknown>): Request {
 	const collection = String(p.collection ?? "") as ComponentName;
-	if (p.op === "write") return { kind: "data", collection, op: "write", rows: Array.isArray(p.rows) ? (p.rows as Json[]) : [], from: typeof p.from === "string" ? p.from : "" };
+	const refuse = (note: string) => new Error(`${TAGS.data} ${refusalText({ code: "bad-input", note })}`);
+	if (p.op === "write") {
+		if (!Array.isArray(p.rows)) throw refuse("write 要给 rows：要写的行组成的数组");
+		return { kind: "data", collection, op: "write", rows: p.rows as Json[], from: typeof p.from === "string" ? p.from : "" };
+	}
 	const limit: Query = typeof p.limit === "number" ? { limit: p.limit } : {};
-	if (p.op !== "query") return { kind: "data", collection, op: "query", query: limit };
+	if (p.op === "list") return { kind: "data", collection, op: "query", query: limit };
+	if (p.op !== "query") throw refuse(`op 只能是 list、query 或 write，收到 ${JSON.stringify(p.op)}`);
 	const query: Query = {
 		...limit,
 		...(p.where !== null && typeof p.where === "object" && { where: p.where as Query["where"] }),
