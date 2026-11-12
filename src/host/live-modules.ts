@@ -140,8 +140,7 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 		if (serving === undefined) {
 			receipted.delete(name);
 			savedSinceServing.delete(name);
-		}
-		else if (last === undefined) receipted.set(name, serving.digest);
+		} else if (last === undefined) receipted.set(name, serving.digest);
 		else if (last !== serving.digest && saved !== undefined) {
 			receipted.set(name, serving.digest);
 			savedSinceServing.delete(name);
@@ -200,8 +199,8 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 			return;
 		}
 		const layout = manifestLayout(manifest);
-		// A legacy module caught mid-save stays legacy, so it keeps serving what it loaded at boot.
-		if (layout === "legacy" || (layout === "unreadable" && known?.legacy)) {
+		const staysLegacy = layout === "legacy" || (layout === "unreadable" && known?.legacy !== undefined);
+		if (staysLegacy) {
 			log(`[modules] ${name} 是旧布局模块，改动要重启宿主才生效；module.json 写上 "schema": 1 和 "version" 以后存盘就生效`);
 			return;
 		}

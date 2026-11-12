@@ -209,8 +209,7 @@ function loadModule(dir: string, allowedProviders: readonly string[], switches: 
 	};
 }
 
-/** A manifest that is not valid JSON, such as one caught half-saved, is read as a package so that the scan reports it instead of stopping the host. */
-/** "unreadable": not valid JSON, so the file alone cannot say which layout the folder is. */
+/** "unreadable": not valid JSON, such as one caught half-saved. A folder first seen that way is read as a package, so the scan reports it instead of stopping the host. */
 export function manifestLayout(manifestPath: string): "package" | "legacy" | "unreadable" {
 	try {
 		const raw: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
