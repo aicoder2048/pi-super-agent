@@ -17,19 +17,14 @@ const REPO = resolve(import.meta.dirname, "../..");
 const ACTIVE_MS = 60_000;
 const OPEN_MS = 180_000;
 const REPORT_MS = 600_000;
+const ACK_MS = 5_000;
+const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
 type Models = { router: string; worker: string; fallback: string };
 
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
+const interruption = new Error("interrupted");
 const paid = (models: readonly ModelRef[]) => models.find((m) => PAY_PER_USE_PROVIDERS.includes(m.provider.trim().toLowerCase()));
-
-async function until<T>(ms: number, probe: () => T | undefined, alive: () => boolean): Promise<T | undefined> {
-	for (const end = Date.now() + ms; Date.now() < end && alive(); await sleep(100)) {
-		const found = probe();
-		if (found !== undefined) return found;
-	}
-	return probe();
-}
 
 function groupAlive(pgid: number): boolean {
 	try {
@@ -108,12 +103,13 @@ function invalidWhy(state: ModuleState | undefined): string | undefined {
 
 async function rehearse(source: string, module: string, exams: readonly Exam[], models: Models): Promise<number> {
 	const stateDir = mkdtempSync(join(tmpdir(), "psa-try-"));
-	const undo: (() => unknown)[] = [() => rmSync(stateDir, { recursive: true, force: true })];
-	const cleanup = async () => {
-		for (const step of undo.splice(0).reverse()) await step();
-	};
-	const interrupted = () => void cleanup().finally(() => process.exit(130));
-	process.once("SIGINT", interrupted).once("SIGTERM", interrupted);
+	let host: ReturnType<typeof startHost> | undefined;
+	let stopping = false;
+	const interrupted = () => (stopping = true);
+	for (const signal of SIGNALS) process.on(signal, interrupted);
+	let talk: HostConnection | undefined;
+	let db: DatabaseSync | undefined;
+	let passed: string | undefined;
 	try {
 		cpSync(source, join(stateDir, "modules", module), { recursive: true });
 		writeFileSync(join(stateDir, "config.json"), JSON.stringify({ models, modulesDirs: [join(stateDir, "modules")], webPort: 0 }));
@@ -122,11 +118,19 @@ async function rehearse(source: string, module: string, exams: readonly Exam[], 
 		store.close();
 		console.log(`预演 ${module}：临时状态目录 ${stateDir}，模型 ${models.router}（Router）、${models.worker}（Worker）`);
 
-		const host = startHost(stateDir);
-		undo.push(() => host.stop());
-		const db = new DatabaseSync(join(stateDir, "state.db"), { readOnly: true });
-		undo.push(() => db.close());
-		const record = db.prepare("SELECT record FROM module_records WHERE name = ?");
+		const started = (host = startHost(stateDir));
+		const until = async <T>(ms: number, probe: () => T | undefined): Promise<T | undefined> => {
+			for (const end = Date.now() + ms; Date.now() < end && started.alive() && !stopping; await sleep(100)) {
+				const found = probe();
+				if (found !== undefined) return found;
+			}
+			if (stopping) throw interruption;
+			return probe();
+		};
+		const hostGone = () => refuse(`临时宿主退出了：${started.tail()}`);
+		const opened = new DatabaseSync(join(stateDir, "state.db"), { readOnly: true });
+		db = opened;
+		const record = opened.prepare("SELECT record FROM module_records WHERE name = ?");
 		const stateOf = () => {
 			const row = record.get(module) as { record: string | null } | undefined;
 			return row?.record ? (JSON.parse(row.record) as { state: ModuleState }).state : undefined;
@@ -134,39 +138,36 @@ async function rehearse(source: string, module: string, exams: readonly Exam[], 
 		const state = await until(ACTIVE_MS, () => {
 			const at = stateOf();
 			return at?.at === "active" || invalidWhy(at) !== undefined ? at : undefined;
-		}, host.alive);
-		if (state?.at !== "active") return refuse(`${module} 在临时宿主里没有打开：${invalidWhy(state) ?? host.tail()}`);
+		});
+		if (state?.at !== "active") return refuse(`${module} 在临时宿主里没有打开：${invalidWhy(state) ?? started.tail()}`);
 
 		const replies: string[] = [];
-		const acks = new Map<string, (triggerId: string | undefined) => void>();
-		let greeted = () => {};
-		const ready = new Promise<void>((done) => (greeted = done));
-		const talk = new HostConnection({
+		const answers = new Map<string, string | null>();
+		let greeted = false;
+		talk = new HostConnection({
 			socketPath: join(stateDir, "host.sock"),
 			onMessage: (m) => {
-				if (m.type === "snapshot") greeted();
+				if (m.type === "snapshot") greeted = true;
 				else if (m.type === "reply") replies.push(m.text);
-				else if (m.type === "ack" || m.type === "refused") acks.get(m.requestId)?.(m.type === "ack" ? m.triggerId : undefined);
+				else if (m.type === "ack" || m.type === "refused") answers.set(m.requestId, m.type === "ack" ? m.triggerId : null);
 			},
-			onAckMissing: () => acks.forEach((done) => done(undefined)),
 			retryMs: 200,
 		});
 		talk.open();
-		undo.push(() => talk.close());
-		await ready;
+		if (!(await until(ACTIVE_MS, () => greeted || undefined))) return started.alive() ? refuse(`临时宿主 ${ACTIVE_MS / 1000} 秒内没有接通`) : hostGone();
 
-		const ticketOf = db.prepare("SELECT id, domain FROM tickets WHERE origin_trigger_id = ?");
-		const reportOf = db.prepare("SELECT status, summary FROM reports WHERE ticket_id = ? AND status <> 'progress' ORDER BY seq DESC LIMIT 1");
+		const ticketOf = opened.prepare("SELECT id, domain FROM tickets WHERE origin_trigger_id = ?");
+		const reportOf = opened.prepare("SELECT status, summary FROM reports WHERE ticket_id = ? AND status <> 'progress' ORDER BY seq DESC LIMIT 1");
 		let failed = 0;
 		for (const exam of exams) {
 			const heard = replies.length;
 			const requestId = talk.say(exam.question);
-			const trigger = requestId === undefined ? undefined : await new Promise<string | undefined>((done) => acks.set(requestId, done));
-			acks.clear();
-			const ticket = trigger && (await until(OPEN_MS, () => ticketOf.get(trigger) as { id: string; domain: string | null } | undefined, host.alive));
-			const report = ticket && (await until(REPORT_MS, () => reportOf.get(ticket.id) as { status: string; summary: string } | undefined, host.alive));
+			const trigger = requestId === undefined ? undefined : await until(ACK_MS, () => answers.get(requestId));
+			const ticket = trigger ? await until(OPEN_MS, () => ticketOf.get(trigger) as { id: string; domain: string | null } | undefined) : undefined;
+			const report = ticket ? await until(REPORT_MS, () => reportOf.get(ticket.id) as { status: string; summary: string } | undefined) : undefined;
+			if (!started.alive()) return hostGone();
 			const said = replies.slice(heard);
-			const attempt: Attempt = ticket ? { opened: true, ticket: ticket.id, domain: ticket.domain, report: report ?? null, gateway: host.gateway } : { opened: false, replies: said };
+			const attempt: Attempt = ticket ? { opened: true, ticket: ticket.id, domain: ticket.domain, report: report ?? null, gateway: started.gateway } : { opened: false, replies: said };
 			const verdict = judge(module, exam, attempt);
 			if (!verdict.pass) failed++;
 			console.log(verdictLine(exam, verdict));
@@ -174,10 +175,17 @@ async function rehearse(source: string, module: string, exams: readonly Exam[], 
 			for (const text of said) console.log(`  Router：${text}`);
 			if (report) console.log(`  汇报（${report.status}）：${report.summary}`);
 		}
-		console.log(`${exams.length - failed}/${exams.length} 道考题通过；临时状态目录已删`);
+		passed = `${exams.length - failed}/${exams.length} 道考题通过`;
 		return failed === 0 ? 0 : 1;
+	} catch (error) {
+		if (error === interruption) return 130;
+		throw error;
 	} finally {
-		process.off("SIGINT", interrupted).off("SIGTERM", interrupted);
-		await cleanup();
+		talk?.close();
+		await host?.stop();
+		rmSync(stateDir, { recursive: true, force: true });
+		db?.close();
+		for (const signal of SIGNALS) process.off(signal, interrupted);
+		if (passed !== undefined) console.log(`${passed}；临时状态目录已删`);
 	}
 }

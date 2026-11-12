@@ -139,6 +139,14 @@ test("每次调用在宿主日志里记一笔：模块、能力、调用者、�
 	assert.match(logs[1]!, /personal-tax .*tools\/tax-bracket .*tkt_1.*ok.* \d+ ms/);
 });
 
+test("宿主日志记的是能力的 uses 写法：知识写 knowledge，数据写 data/<集合>，和考题的 uses 对得上", async (t) => {
+	const { gateway, caller, logs } = setup(t);
+	await gateway.call(caller(), { kind: "knowledge", op: "search", query: "税率" });
+	await gateway.call(caller(), { kind: "data", collection: "transactions" as ComponentName, op: "query", query: {} });
+	assert.match(logs[0]!, /\[gateway\] personal-tax knowledge tkt_1 /);
+	assert.match(logs[1]!, /\[gateway\] personal-tax data\/transactions tkt_1 /);
+});
+
 test("工具目录只列调用者能用的：成员只见 uses 里的工具，推断任务不见 write 工具", (t) => {
 	const { gateway, caller } = setup(t);
 	const names = (c: WorkerCaller) => gateway.catalogue(c).map((entry) => entry.name).sort();

@@ -311,11 +311,13 @@ function snapshot(dir: string): string {
 		.join("\n");
 }
 
-async function rehearse(t: import("node:test").TestContext, script: Script, models = { router: "psa-fake/router", worker: "psa-fake/worker", fallback: "psa-fake/fallback" }) {
+type Rehearsal = { models?: { router: string; worker: string; fallback: string }; pkg?: string; during?: (child: import("node:child_process").ChildProcess, fake: FakeModel) => Promise<void> };
+
+async function rehearse(t: import("node:test").TestContext, script: Script, { models = { router: "psa-fake/router", worker: "psa-fake/worker", fallback: "psa-fake/fallback" }, pkg = join(SAMPLE, "personal-tax"), during }: Rehearsal = {}) {
 	const fake = await FakeModel.start(script);
 	t.after(() => fake.close());
 	const dir = stateDir(t, { models });
-	cpSync(join(SAMPLE, "personal-tax"), join(dir, "modules", "personal-tax"), { recursive: true });
+	cpSync(pkg, join(dir, "modules", "personal-tax"), { recursive: true });
 	const scratch = mkdtempSync(join(tmpdir(), "psa-tt-"));
 	t.after(() => rmSync(scratch, { recursive: true, force: true }));
 	const pi = mkdtempSync(join(tmpdir(), "psa-pi-"));
@@ -324,12 +326,19 @@ async function rehearse(t: import("node:test").TestContext, script: Script, mode
 	const env = { ...process.env, ...fakeAgentEnv(fake, pi), PSA_STATE_DIR: dir, TMPDIR: scratch };
 	const child = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/cli/module.ts", "try", "personal-tax"], { env, stdio: ["ignore", "pipe", "pipe"] });
 	let out = "";
-	child.stdout.setEncoding("utf8").on("data", (s: string) => (out += s));
+	const tryDirs = () => readdirSync(scratch).filter((f) => f.startsWith("psa-try-"));
+	let leftWhenSaidGone: string[] | undefined;
+	child.stdout.setEncoding("utf8").on("data", (s: string) => {
+		out += s;
+		if (leftWhenSaidGone === undefined && out.includes("临时状态目录已删")) leftWhenSaidGone = tryDirs();
+	});
 	child.stderr.setEncoding("utf8").on("data", (s: string) => (out += s));
 	const timer = setTimeout(() => child.kill("SIGKILL"), 25_000);
-	const status = await new Promise<number | null>((done) => child.once("close", done));
+	const closed = new Promise<number | null>((done) => child.once("close", done));
+	await during?.(child, fake);
+	const status = await closed;
 	clearTimeout(timer);
-	return { status, out, leftover: readdirSync(scratch).filter((f) => f.startsWith("psa-try-")), userDirChanged: snapshot(dir) !== before };
+	return { status, out, leftover: tryDirs(), leftWhenSaidGone, userDirChanged: snapshot(dir) !== before };
 }
 
 test("just module try：假模型调了考题要的工具、汇报里有该有的话，判通过，临时状态目录删掉，使用者的状态目录不变", async (t) => {
@@ -341,6 +350,7 @@ test("just module try：假模型调了考题要的工具、汇报里有该有�
 	assert.match(run.out, /^PASS bracket-uses-tool/m);
 	assert.match(run.out, /落在第 2 档，估算税额 4000 美元/);
 	assert.deepEqual(run.leftover, []);
+	assert.deepEqual(run.leftWhenSaidGone, [], "说临时状态目录已删时它已经删了");
 	assert.equal(run.userDirChanged, false);
 });
 
@@ -356,9 +366,54 @@ test("just module try：没调考题要的工具时判失败，写出没用到�
 });
 
 test("just module try：config.json 的模型按量计费时一行拒绝，不起宿主", async (t) => {
-	const run = await rehearse(t, { router: [] }, { router: "openai-codex/gpt-6.1-terra", worker: "deepseek/deepseek-flash", fallback: "openai-codex/gpt-6.1-sol" });
+	const run = await rehearse(t, { router: [] }, { models: { router: "openai-codex/gpt-6.1-terra", worker: "deepseek/deepseek-flash", fallback: "openai-codex/gpt-6.1-sol" } });
 	assert.equal(run.status, 1, run.out);
 	assert.equal(run.out.trim().split("\n").length, 1, run.out);
 	assert.match(run.out, /deepseek\/deepseek-flash.*按量计费/);
+	assert.deepEqual(run.leftover, []);
+});
+
+const groupAlive = (pgid: number) => {
+	try {
+		process.kill(-pgid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+};
+
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+	test(`just module try：等汇报时收到 ${signal}，停掉临时宿主、删掉临时状态目录，以 130 退出，不打印堆栈`, async (t) => {
+		let host = 0;
+		const run = await rehearse(t, {
+			router: [opensTaxTicket],
+			workers: [worker("预演算税", on("想很久", /^\[任务说明\]/, () => [report("ready", "第 2 档")], 20_000))],
+		}, {
+			during: async (child, fake) => {
+				await until(() => fake.exchanges.some((e) => e.cards.some((c) => c.startsWith("[任务说明]"))), "Worker 开始干活", 20_000);
+				host = Number(spawnSync("pgrep", ["-P", String(child.pid)], { encoding: "utf8" }).stdout.trim().split("\n")[0]);
+				// SIGSTOP makes the host slow to stop, like one running real Workers, so try must wait for host.stop() before exiting.
+				process.kill(host, "SIGSTOP");
+				child.kill(signal);
+				await new Promise((done) => setTimeout(done, 500));
+				process.kill(host, "SIGCONT");
+			},
+		});
+		assert.equal(run.status, 130, run.out);
+		assert.doesNotMatch(run.out, /Error|    at /);
+		assert.deepEqual(run.leftover, []);
+		assert.ok(host > 0 && !groupAlive(host), `临时宿主 ${host} 还活着`);
+	});
+}
+
+test("just module try：模块打开后临时宿主退出，写出一行原因和宿主的报错，删掉临时状态目录，以 1 退出", async (t) => {
+	const pkg = join(stateDir(t), "team");
+	cpSync(join(import.meta.dirname, "..", "src", "modules", "templates", "team"), pkg, { recursive: true });
+	writeFileSync(join(pkg, "module.json"), readFileSync(join(pkg, "module.json"), "utf8").replace('"name": "team"', '"name": "personal-tax"'));
+	const run = await rehearse(t, { router: [] }, { pkg, models: { router: "psa-fake/no-such-model", worker: "psa-fake/worker", fallback: "psa-fake/fallback" } });
+	assert.equal(run.status, 1, run.out);
+	assert.match(run.out, /临时宿主.*退出/);
+	assert.match(run.out, /找不到模型 psa-fake\/no-such-model/);
+	assert.doesNotMatch(run.out, /unsettled top-level await|临时状态目录已删/);
 	assert.deepEqual(run.leftover, []);
 });

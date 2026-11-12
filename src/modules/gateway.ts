@@ -19,10 +19,12 @@ export interface GatewayPorts {
 
 type Tool = Extract<Component, { kind: "tools" }>;
 type Copy = { module: ModuleName; digest: Digest; dir: string; tools: readonly Tool[]; knowledge: readonly Knowledge[]; agents: readonly AgentDescriptor[] };
-type Capability = { use: string; effect: ToolEffect; run: () => Promise<Reply> };
+type Capability = { effect: ToolEffect; run: () => Promise<Reply> };
 
 const fieldsHelp = (fields: Readonly<Record<string, FieldDescriptor>>) =>
 	Object.entries(fields).map(([name, f]) => `${name}（${f.type}，${f.title}${f.unit ? `，${f.unit}` : ""}）`).join("、") || "无";
+
+const useOf = (request: Request): string => (request.kind === "tool" ? `tools/${request.name}` : request.kind === "knowledge" ? "knowledge" : `${request.kind}/${request.collection}`);
 
 const moduleOf = (caller: Caller) => (caller.who === "worker" ? caller.pin.module : caller.module);
 
@@ -62,10 +64,10 @@ export function createGateway(ports: GatewayPorts): Gateway {
 	const find = (copy: Copy, request: Request): Capability | undefined => {
 		if (request.kind === "tool") {
 			const tool = copy.tools.find((t) => t.name === request.name);
-			return tool && { use: `tools/${tool.name}`, effect: toolEffect(tool.tool), run: () => runTool(copy, tool, request.input) };
+			return tool && { effect: toolEffect(tool.tool), run: () => runTool(copy, tool, request.input) };
 		}
 		if (request.kind === "knowledge" && request.op === "search" && copy.knowledge.length > 0) {
-			return { use: "knowledge", effect: "pure", run: async () => search(copy, request.query) };
+			return { effect: "pure", run: async () => search(copy, request.query) };
 		}
 		return undefined;
 	};
@@ -76,7 +78,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 		const found = copy && find(copy, request);
 		if (copy === undefined || found === undefined) return { refusal: { code: "no-such-capability" } };
 		if (serving === undefined) return { refusal: { code: "module-disabled" } };
-		const refusal = memberRefusal(caller, copy, found.use) ?? authorityRefusal(caller, request, found.effect);
+		const refusal = memberRefusal(caller, copy, useOf(request)) ?? authorityRefusal(caller, request, found.effect);
 		return refusal ? { refusal } : found;
 	};
 	const knowledgeOf = (copy: Copy): KnowledgeBase => ({ module: copy.module, digest: copy.digest, copyDir: copy.dir, dataDir: ports.dataDir(copy.module), docs: copy.knowledge });
@@ -106,8 +108,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 				reply = { ok: false, refusal: { code: "provider-failed", note: String((error as Error)?.message ?? error) } };
 			}
 			const who = caller.who === "page" ? "page" : `${caller.ticket} ${caller.member ?? "helper"} ${caller.basis}`;
-			const what = request.kind === "tool" ? `tools/${request.name}` : request.kind;
-			ports.log(`[gateway] ${moduleOf(caller)} ${what} ${who} ${reply.ok ? "ok" : reply.refusal.code} ${Date.now() - started} ms`);
+			ports.log(`[gateway] ${moduleOf(caller)} ${useOf(request)} ${who} ${reply.ok ? "ok" : reply.refusal.code} ${Date.now() - started} ms`);
 			return reply;
 		},
 		catalogue(caller) {
