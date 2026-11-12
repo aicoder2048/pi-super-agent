@@ -191,47 +191,49 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `src/modules/watch.ts`（条件模型、纯函数计算、提醒文字）。注意已有 `src/modules/watch.ts` 是文件监视器，新文件取别的名字，例如 `src/modules/conditions.ts`。
-- [ ] Edit `src/modules/gateway.ts`（`find` 认 `watch` 请求）、`src/worker/extension.ts`、`src/worker/tools.ts`、`src/modules/instance-data.ts`（写入后计算条件）。
-- [ ] Create `tests/conditions.test.ts`。
+- [x] Create `src/modules/watch.ts`（条件模型、纯函数计算、提醒文字）。注意已有 `src/modules/watch.ts` 是文件监视器，新文件取别的名字，例如 `src/modules/conditions.ts`。实际是 `src/modules/conditions.ts`。
+- [x] Edit `src/modules/gateway.ts`（`find` 认 `watch` 请求）、`src/worker/extension.ts`、`src/worker/tools.ts`、`src/modules/instance-data.ts`（写入后计算条件）。
+- [x] Create `tests/conditions.test.ts`。
 
 **Build.**
 
-- [ ] 条件存在模块的 `data.db` 里：`id`、`key`、种类、参数、`setAt`、可选的 `basis`、说明。种类是 `above`、`below`、`rising-streak`、`falling-streak`、`change-pct`、`crosses-average`。
-- [ ] `watch` 工具：`list` 谁都能用；`set`、`remove` 只给只听过你本人的 request 任务（那张表的「替你做主」一行）。设完回一行程序拼出的回执。
-- [ ] 有新行写进写了 `watch` 的 `series` 时，宿主对这个 key 的条件算一遍。满足就经宿主行（ADR-0017）直接提醒你，不经过幕僚长。提醒文字由程序拼出，带数值、时间和这一行的来源。同一条件同一行只提醒一次（宿主行按条件编号加这一行的时间去重）。
-- [ ] `private` 数据上的提醒在 Telegram 上只发一行提示。
-- [ ] 不改 us-market 的盯盘条件，它的纯函数只读复用（例如均线计算）。
+- [x] 条件存在模块的 `data.db` 里：`id`、`key`、种类、参数、`setAt`、可选的 `basis`、说明。种类是 `above`、`below`、`rising-streak`、`falling-streak`、`change-pct`、`crosses-average`。
+- [x] `watch` 工具：`list` 谁都能用；`set`、`remove` 只给只听过你本人的 request 任务（那张表的「替你做主」一行）。设完回一行程序拼出的回执。
+- [x] 有新行写进写了 `watch` 的 `series` 时，宿主对这个 key 的条件算一遍。满足就经宿主行（ADR-0017）直接提醒你，不经过幕僚长。提醒文字由程序拼出，带数值、时间和这一行的来源。同一条件同一行只提醒一次（宿主行按条件编号加这一行的时间去重）。
+- [x] `private` 数据上的提醒在 Telegram 上只发一行提示。
+- [x] 不改 us-market 的盯盘条件，它的纯函数只读复用（例如均线计算）。
 
 **You see.**
 
-- [ ] 在 personal-health 里对你说「空腹血糖高于 7 提醒我」，写进一条 7.4 的读数后，网页和 Telegram 记录器各出现一条提醒；Telegram 上是一行提示，因为这类数据是私密的。
+- [x] 在 personal-health 里对你说「空腹血糖高于 7 提醒我」，写进一条 7.4 的读数后，网页和 Telegram 记录器各出现一条提醒；Telegram 上是一行提示，因为这类数据是私密的。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/conditions.test.ts` 覆盖六种条件的触发和不触发边界、同一行只提醒一次、推断任务和读过 feed 的任务设条件被拒、`list` 都能用、私密数据的一行规则、提醒文字里的数值和时间来自这一行。Run `just test`.
+- [x] `tests/conditions.test.ts` 覆盖六种条件的触发和不触发边界、同一行只提醒一次、推断任务和读过 feed 的任务设条件被拒、`list` 都能用、私密数据的一行规则、提醒文字里的数值和时间来自这一行。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/g3-live.ts`。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都给 us-market 设一个盯盘条件并用假行情触发。Save `g3-regression.txt`. Pass when 两边提醒相同。
-- [ ] Lane 2. `above` 触发。Save `g3-above.txt`. Pass when 网页出现提醒，带数值和时间。
-- [ ] Lane 3. `below` 不触发的边界值。Save `g3-below.txt`. Pass when 没有提醒。
-- [ ] Lane 4. `rising-streak` 三连涨。Save `g3-streak.txt`. Pass when 第三行写入时提醒一次。
-- [ ] Lane 5. `change-pct` 带 `basis`。Save `g3-change.txt`. Pass when 按 basis 算的涨跌幅提醒。
-- [ ] Lane 6. `crosses-average`。Save `g3-cross.txt`. Pass when 穿过均线那一行提醒。
-- [ ] Lane 7. 同一行写两次。Save `g3-dedupe.txt`. Pass when 只提醒一次。
-- [ ] Lane 8. 推断任务设条件。Save `g3-infer.txt`. Pass when 拒绝，条件表不变。
-- [ ] Lane 9. 私密数据上的提醒。Save `g3-private.txt`. Pass when Telegram 记录器只有一行提示。
-- [ ] Lane 10. 真模型 `openai-codex/*`，你说「空腹血糖高于 7 提醒我」。Save `g3-real.txt`. Pass when 条件表里有这一条，回执一行。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都给 us-market 设一个盯盘条件并用假行情触发。Save `g3-regression.txt`. Pass when 两边提醒相同。
+- [x] Lane 2. `above` 触发。Save `g3-above.txt`. Pass when 网页出现提醒，带数值和时间。
+- [x] Lane 3. `below` 不触发的边界值。Save `g3-below.txt`. Pass when 没有提醒。
+- [x] Lane 4. `rising-streak` 三连涨。Save `g3-streak.txt`. Pass when 第三行写入时提醒一次。
+- [x] Lane 5. `change-pct` 带 `basis`。Save `g3-change.txt`. Pass when 按 basis 算的涨跌幅提醒。
+- [x] Lane 6. `crosses-average`。Save `g3-cross.txt`. Pass when 穿过均线那一行提醒。
+- [x] Lane 7. 同一行写两次。Save `g3-dedupe.txt`. Pass when 只提醒一次。
+- [x] Lane 8. 推断任务设条件。Save `g3-infer.txt`. Pass when 拒绝，条件表不变。
+- [x] Lane 9. 私密数据上的提醒。Save `g3-private.txt`. Pass when Telegram 记录器只有一行提示。
+- [x] Lane 10. 真模型 `openai-codex/*`，你说「空腹血糖高于 7 提醒我」。Save `g3-real.txt`. Pass when 条件表里有这一条，回执一行。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 写一行并算完这个 key 上 20 个条件的时间。trunk 没有这个功能，只给绝对预算。
-- [ ] Probe. 100 次写入。
-- [ ] Baseline. Record the G2 写入中位数 first.
-- [ ] Rule. 比 G2 的写入多出 20 毫秒以上就失败。
+- [x] Metric. 写一行并算完这个 key 上 20 个条件的时间。trunk 没有这个功能，只给绝对预算。
+- [x] Probe. 100 次写入。
+- [x] Baseline. Record the G2 写入中位数 first.
+- [x] Rule. 比 G2 的写入多出 20 毫秒以上就失败。
 
 **Review gate.** None. G3 is not review-gated.
+
+2026-11-12 在 0738d5b 上通过：`tests/conditions.test.ts` 17 条，`just test` 1556 条里只有 `tests/watchdog-main.test.ts` 的「终端 Ctrl+C：Watchdog 不停别人启动的宿主」偶发失败（基线 5317b9e 上 10 次里也失败 2 次，和本 PR 无关），`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g3/owner/g3-*.txt`。lane 10 用 `openai-codex/gpt-6.1-sol`：第一次只说「空腹血糖高于 7 提醒我」，Worker 先问单位、没有设（`g3-real-first-try.txt`），补上「单位 mmol/L，直接设」后条件表有这一条，回执一行。perf 10 万行、这个 key 上 20 个条件，100 次写入，三轮中位 0.74 到 0.81 ms，G2 同样写入 1.43 到 2.09 ms（G2 先跑，冷启动偏慢），最大 26 ms 是第一次写入时建索引。
 
 **Merge.**
 
