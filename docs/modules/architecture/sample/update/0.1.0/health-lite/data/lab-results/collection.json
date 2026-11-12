@@ -1,0 +1,24 @@
+{
+  "title": "检验指标",
+  "kind": "series",
+  "class": "private",
+  "fields": {
+    "item": {
+      "type": "text",
+      "title": "项目"
+    },
+    "value": {
+      "type": "number",
+      "title": "数值",
+      "unit": "mmol/L"
+    },
+    "takenAt": {
+      "type": "date",
+      "title": "采样日期"
+    },
+    "lab": {
+      "type": "text",
+      "title": "实验室"
+    }
+  }
+}

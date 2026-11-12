@@ -1,0 +1,11 @@
+{
+  "title": "研究进展",
+  "kind": "record",
+  "class": "shareable",
+  "fields": {
+    "title": { "type": "text", "title": "标题" },
+    "source": { "type": "text", "title": "来源，例如 pubmed、clinicaltrials" },
+    "published": { "type": "date", "title": "发表日期" },
+    "url": { "type": "text", "title": "链接" }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "title": "智能设备数据",
+  "description": "设备把读数推到宿主的 webhook，模块自带的代码把厂商格式转成设备读数",
+  "connector": "webhook",
+  "handler": "index.ts",
+  "into": "device-readings"
+}

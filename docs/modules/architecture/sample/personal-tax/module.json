@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "name": "personal-tax",
+  "version": "0.1.0",
+  "title": "个人报税",
+  "description": "整理券商交易记录，估算应税所得落在哪一档，准备报税材料",
+  "team": "报税顾问团"
+}

@@ -1,0 +1,33 @@
+{
+  "title": "券商交易记录",
+  "kind": "record",
+  "class": "private",
+  "fields": {
+    "tradedAt": {
+      "type": "date",
+      "title": "成交日期"
+    },
+    "symbol": {
+      "type": "text",
+      "title": "代码"
+    },
+    "side": {
+      "type": "text",
+      "title": "买入或卖出"
+    },
+    "quantity": {
+      "type": "number",
+      "title": "数量"
+    },
+    "proceeds": {
+      "type": "number",
+      "title": "成交金额",
+      "unit": "USD"
+    },
+    "realizedGain": {
+      "type": "number",
+      "title": "已实现盈亏",
+      "unit": "USD"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "unknown-key": "unknown key \"descripton\"",
+  "declares-components": "components are derived from the folders, not declared",
+  "misnamed-kind-folder": "skill: is not a component kind",
+  "tool-case-fails": "test case 1 \"70 千克、1.75 米\" failed",
+  "tool-missing-entry": "tools/bmi/index.ts: is missing",
+  "tool-without-cases": "a tool that only computes needs test cases",
+  "agent-unknown-capability": "uses \"data/prescriptions\", which this package does not have",
+  "agent-unknown-tool": "tools lists \"bsh\"",
+  "feed-into-missing-collection": "names collection \"documents\", but there is no data/documents",
+  "feed-unknown-connector": "is not one of the host's connectors",
+  "rule-names-other-module": "names source \"us-market/quotes\", which is not this module's",
+  "watch-names-missing-field": "watch.at names \"sampledAt\", which is not a field",
+  "bundled-copyrighted-text": "license is user-import, so the text must not be in the package"
+}

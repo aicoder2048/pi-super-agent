@@ -1,0 +1,177 @@
+/**
+ * The gateway: the single way a Worker or the page reaches anything a module provides.
+ *
+ * A capability is a component that can be called: a tool, the knowledge base, a data
+ * collection, a collection's conditions. Every call goes through `Gateway.call`. It
+ * resolves the capability in the module and version the ticket pinned, so a ticket never
+ * reaches another module. It narrows by the member's `uses`, asks `allowed`, calls the
+ * provider and writes the access log.
+ *
+ * Skills and agent files are not capabilities. Pi reads them as files from the ticket's
+ * pinned copy. Feeds are not either: only the host's scheduler runs them.
+ */
+import type { ComponentName, Digest, ModuleName, ToolEffect } from "./manifest.ts";
+
+export type Json = null | boolean | number | string | readonly Json[] | { readonly [key: string]: Json };
+
+export type Condition =
+	| { when: "above"; value: number }
+	| { when: "below"; value: number }
+	| { when: "rising-streak"; times: number }
+	| { when: "falling-streak"; times: number }
+	| { when: "change-pct"; atLeast: number; direction: "up" | "down" | "either" }
+	/** The market's moving-average cross, as a condition on any series. */
+	| { when: "crosses-average"; points: number; direction: "up" | "down" };
+
+/** One condition the user set. `key` is a value of the collection's watch key, e.g. `CEA` or `NVDA`. */
+export type Watch = { id: string; key: string; condition: Condition; note?: string };
+
+export type Query = { where?: Readonly<Record<string, string | number>>; since?: string; until?: string; limit?: number };
+
+/** The original a row was extracted from: a row of a collection that has a `blob` field. */
+export type RowSource = { collection: ComponentName; row: string };
+
+/** One stored row. `from` is kept so the user can check an extracted value against its original. */
+export interface Row {
+	id: string;
+	fields: { readonly [field: string]: Json };
+	from: RowSource | null;
+}
+
+/** A closed set: one variant per thing a module can serve to a caller. */
+export type Request =
+	| { kind: "tool"; name: ComponentName; input: Json }
+	| { kind: "knowledge"; op: "search"; query: string; limit?: number }
+	| { kind: "knowledge"; op: "read"; doc: ComponentName; section: string }
+	| { kind: "data"; collection: ComponentName; op: "query"; query: Query }
+	| { kind: "data"; collection: ComponentName; op: "put"; rows: readonly Json[]; from?: RowSource }
+	| { kind: "data"; collection: ComponentName; op: "open-blob"; row: string; field: string }
+	| { kind: "watch"; collection: ComponentName; op: "list" }
+	| { kind: "watch"; collection: ComponentName; op: "set"; watch: Omit<Watch, "id"> & { id?: string } }
+	| { kind: "watch"; collection: ComponentName; op: "remove"; id: string };
+
+/**
+ * What a request may change. `read`: nothing, which covers a `pure` tool and a `read` tool.
+ * `write`: adds instance data, or is a tool whose effect is `write`.
+ * `user-authority`: changes what the host will do later on its own (a condition).
+ */
+export type Effect = "read" | "write" | "user-authority";
+
+/** `tool` is `toolEffect(descriptor)` from manifest.ts. It matters only for a `tool` request. */
+export function effectOf(request: Request, tool: ToolEffect): Effect {
+	if (request.kind === "tool") return tool === "write" ? "write" : "read";
+	if (request.kind === "data") return request.op === "put" ? "write" : "read";
+	if (request.kind === "watch") return request.op === "list" ? "read" : "user-authority";
+	return "read";
+}
+
+export interface WorkerCaller {
+	who: "worker";
+	ticket: string;
+	/** The version the ticket pinned when it opened. Never changes. */
+	pin: { module: ModuleName; digest: Digest };
+	basis: "request" | "rule" | "inference";
+	/** null for the helper, the member's name for a team member. */
+	member: string | null;
+	/** True once the ticket has read anything that is not the user's own words. */
+	heardOthers: boolean;
+}
+
+/** A Worker, or the modules page. A click on the page is the user. */
+export type Caller = WorkerCaller | { who: "page"; module: ModuleName };
+
+/**
+ * The kinds of caller the authority table tells apart. A `request` ticket that has heard
+ * nothing but the user is its own kind: it is the only Worker that carries the user's
+ * authority (ADR-0003).
+ */
+export const SENDERS = ["request-user-only", "request", "rule", "inference", "page"] as const;
+export type Sender = (typeof SENDERS)[number];
+
+export function senderOf(caller: Caller): Sender {
+	if (caller.who === "page") return "page";
+	return caller.basis === "request" && !caller.heardOthers ? "request-user-only" : caller.basis;
+}
+
+/**
+ * ADR-0003 as a table. Content from feeds, mail, files and models is data, never
+ * authority: an inference ticket only reads, and a condition changes only for the user.
+ */
+export const AUTHORITY: Readonly<Record<Effect, readonly Sender[]>> = {
+	read: ["request-user-only", "request", "rule", "inference", "page"],
+	write: ["request-user-only", "request", "rule", "page"],
+	"user-authority": ["request-user-only", "page"],
+};
+
+export function allowed(caller: Caller, request: Request, tool: ToolEffect): boolean {
+	return AUTHORITY[effectOf(request, tool)].includes(senderOf(caller));
+}
+
+/**
+ * The one place a data class is enforced. A ticket has touched private data once it has
+ * read a `private` collection or taken a trigger from a feed that fills one. Its reports
+ * are shown in full on the web page and the TUI. Telegram gets this pointer instead. An
+ * alert on a `private` collection follows the same rule.
+ */
+export function telegramText(full: string, touchedPrivate: boolean, moduleTitle: string): string {
+	return touchedPrivate ? `${moduleTitle} 有新内容，请在网页上查看` : full;
+}
+
+export type Refusal =
+	| { code: "no-such-capability" }
+	| { code: "not-in-uses"; member: string }
+	| { code: "module-disabled" }
+	/** `allowed` said no. `note` says who may send this request. */
+	| { code: "not-allowed"; sender: Sender; note: string }
+	| { code: "bad-input"; note: string }
+	| { code: "provider-failed"; note: string };
+
+/** One hit of a knowledge search, with the citation a skill asks the Worker to carry. */
+export type Passage = { doc: ComponentName; title: string; version: string; authority: "authoritative" | "reference"; section: string; text: string };
+
+/** `private` is true when `output` holds rows of a `private` collection. The host then marks the ticket. */
+export type Reply = { ok: true; output: Json; private: boolean; passages?: readonly Passage[] } | { ok: false; refusal: Refusal };
+
+export interface Gateway {
+	/**
+	 * The only entry point. Order: resolve the capability in the caller's pinned version,
+	 * read the module's state from its lifecycle record, check the member's `uses`, ask
+	 * `allowed`. Then call the provider, mark the ticket if the reply is private, and
+	 * append to the module's access log.
+	 */
+	call(caller: Caller, request: Request): Promise<Reply>;
+	/** The tool list a Worker registers at spawn, already narrowed to the caller. `help` is built from the descriptor. */
+	catalogue(caller: WorkerCaller): readonly { request: Request["kind"]; name: string; title: string; help: string }[];
+}
+
+/**
+ * What module code is written against. Each call is one fresh process (`runModuleCode` in
+ * validate.ts), and the runner turns it into a call of the entry file's default export, so
+ * the author writes a plain function. This one is `tools/<name>/index.ts`.
+ */
+export type ToolFunction = (input: Json) => Json | Promise<Json>;
+
+/** A feed handler's default export. The host calls it on the feed's schedule, or when its connector has items. */
+export type FeedHandler = (input: FeedInput) => Collected | Promise<Collected>;
+
+export interface FeedInput {
+	/** From the connector, or empty for a feed that fetches for itself. */
+	items: readonly Json[];
+	/** `settings` from feed.json merged with the user's answers to `ask`. */
+	settings: Readonly<Record<string, Json>>;
+	cursor: string | null;
+	/** The rows of each collection the feed lists in `reads`. */
+	rows: Readonly<Record<string, readonly Row[]>>;
+	/** The keys the user watches in the `into` collection, so the feed fetches what the conditions need. */
+	watchedKeys: readonly string[];
+}
+
+/** What a feed's work produces. The host, not the feed, stores, submits and moves the cursor. */
+export interface Collected {
+	/** Rows for the feed's `into` collection. `id` makes a repeated row a no-op. */
+	records?: readonly ({ id: string } & { readonly [field: string]: Json })[];
+	/** Values for the placeholders of the feed's `notice`. One trigger per entry, deduped by `id`. */
+	notices?: readonly { id: string; thread?: string; fields: Readonly<Record<string, string>> }[];
+	/** The feed's next cursor. The host saves it only after the records and notices are stored. */
+	cursor?: string;
+}

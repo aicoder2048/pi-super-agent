@@ -1,0 +1,27 @@
+{
+  "title": "税率档位",
+  "description": "给出应税所得，算出它落在哪一档、边际税率和应纳税额。税率表在 rates-2025.json 里，是演示用的假数字。",
+  "input": {
+    "taxableIncome": {
+      "type": "number",
+      "title": "应税所得",
+      "unit": "USD"
+    }
+  },
+  "output": {
+    "bracket": {
+      "type": "number",
+      "title": "第几档"
+    },
+    "marginalRate": {
+      "type": "number",
+      "title": "边际税率"
+    },
+    "tax": {
+      "type": "number",
+      "title": "应纳税额",
+      "unit": "USD"
+    }
+  },
+  "cites": "rates-2025.json（演示用的假税率表）"
+}

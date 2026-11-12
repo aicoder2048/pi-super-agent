@@ -1,0 +1,6 @@
+{
+  "title": "新闻",
+  "connector": "rss-reader",
+  "every": "1h",
+  "notice": "{{title}}"
+}

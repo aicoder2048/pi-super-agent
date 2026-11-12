@@ -1,0 +1,13 @@
+{
+  "title": "设备读数",
+  "kind": "series",
+  "class": "private",
+  "fields": {
+    "metric": { "type": "text", "title": "指标，例如静息心率、血压收缩压、体重" },
+    "value": { "type": "number", "title": "数值" },
+    "unit": { "type": "text", "title": "单位" },
+    "measuredAt": { "type": "date", "title": "测量时间" },
+    "device": { "type": "text", "title": "设备" }
+  },
+  "watch": { "key": "metric", "value": "value", "at": "measuredAt" }
+}

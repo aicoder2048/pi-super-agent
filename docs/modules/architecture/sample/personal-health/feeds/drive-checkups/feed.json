@@ -1,0 +1,10 @@
+{
+  "title": "网盘里的体检报告",
+  "description": "看 Google Drive 里的一个文件夹，有新的 PDF 就归档",
+  "connector": "google-drive",
+  "every": "1h",
+  "settings": { "mimeTypes": ["application/pdf", "image/jpeg", "image/png"] },
+  "ask": { "folder": { "title": "体检报告放在哪个文件夹", "type": "drive-folder" } },
+  "into": "documents",
+  "notice": "网盘里有一份新的体检报告已经归档。"
+}
