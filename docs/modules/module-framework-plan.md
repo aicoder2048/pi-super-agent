@@ -476,44 +476,46 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `modules/stock-ta/`（`module.json`、`GLOSSARY.md`、`knowledge/`、`tools/`、`skills/`、`agents/`、`evals/`）。
-- [ ] Create `docs/modules/stock-ta.md`，写怎么填 `TA_ROOT`、怎么导入知识。
+- [x] Create `modules/stock-ta/`（`module.json`、`GLOSSARY.md`、`knowledge/`、`tools/`、`skills/`、`agents/`、`evals/`）。实际放在 `docs/modules/examples/stock-ta/`：仓库 `modules/` 里的新布局包默认打开，没有技术分析项目的机器（例如跑服务的旧 Mac）会得到一组全失败的工具，还会在名单上和 us-market 抢美股问题；使用者复制进状态目录再 `just module on`。术语表没有单独的 `GLOSSARY.md`，放在随包自带的知识 `knowledge/glossary/` 里。
+- [x] Create `docs/modules/stock-ta.md`，写怎么填 `TA_ROOT`、怎么导入知识。
 
 **Build.**
 
-- [ ] 知识只放出处，`"license": "user-import"`。全文由 `just module import stock-ta ...` 从使用者本机导入，不进仓库。
-- [ ] 工具的 `index.ts` 起子进程调 `uv run --project $TA_ROOT/app/trading ta <子命令>`，只用只读子命令，默认断网并传缓存覆盖得到的 `now`，输出裁剪到 20 KB 以内。`TA_ROOT` 由使用者写进宿主密钥文件。另有一个纯计算工具算盈亏比和止损距离，带 `cases.json`。
-- [ ] 技能搬 `principle-evidence`、`principle-freshness`，`ta-interpret` 和 `ta-screen` 去掉桌面界面部分。五位专家，团队名「技术分析研究组」。
+- [x] 知识只放出处，`"license": "user-import"`。全文由 `just module import stock-ta ...` 从使用者本机导入，不进仓库。
+- [x] 工具的 `index.ts` 起子进程调 `uv run --project $TA_ROOT/app/trading ta <子命令>`，只用只读子命令，默认断网并传缓存覆盖得到的 `now`，输出裁剪到 20 KB 以内。`TA_ROOT` 由使用者写进宿主密钥文件。另有一个纯计算工具算盈亏比和止损距离，带 `cases.json`。
+- [x] 技能搬 `principle-evidence`、`principle-freshness`，`ta-interpret` 和 `ta-screen` 去掉桌面界面部分。五位专家，团队名「技术分析研究组」。
 
 **You see.**
 
-- [ ] 打开 stock-ta 后问「NVDA 现在的支撑阻力和动量怎么样」，领队派给结构与形态和趋势与动量两位专家，汇报带数据时间和笔记出处。
+- [x] 打开 stock-ta 后问「NVDA 现在的支撑阻力和动量怎么样」，领队派给结构与形态和趋势与动量两位专家，汇报带数据时间和笔记出处。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/stock-ta.test.ts` 覆盖包检查通过、纯计算工具用例、命令行工具在 `TA_ROOT` 没设时给出可读的错误、裁剪不超过 20 KB。Run `just test`.
+- [x] `tests/stock-ta.test.ts` 覆盖包检查通过、纯计算工具用例、命令行工具在 `TA_ROOT` 没设时给出可读的错误、裁剪不超过 20 KB。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/d1-live.ts`，数据库只读，断网。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 没有 stock-ta，记录这一点。head 上问一个 us-market 的问题。Save `d1-regression.txt`. Pass when 仍分到 us-market。
-- [ ] Lane 2. `just module check modules/stock-ta`。Save `d1-check.txt`. Pass when ok。
-- [ ] Lane 3. 直接调 `structure` 工具查 NVDA。Save `d1-structure.txt`. Pass when 有支撑阻力和数据时间，输出不超过 20 KB。
-- [ ] Lane 4. 调 `signals` 工具。Save `d1-signals.txt`. Pass when 返回信号列表。
-- [ ] Lane 5. 调 `note` 工具。Save `d1-note.txt`. Pass when 返回笔记段落，不含使用者本机的绝对路径。
-- [ ] Lane 6. 盈亏比工具。Save `d1-rr.txt`. Pass when 和用例一致。
-- [ ] Lane 7. 导入知识后用 `knowledge` 查「背离」。Save `d1-knowledge.txt`. Pass when 返回 TA02 的段落。
-- [ ] Lane 8. 跑前后对比技术分析项目的数据库。Save `d1-readonly.txt`. Pass when `ta.sqlite` 和 `market.sqlite` 的哈希不变。
-- [ ] Lane 9. 用真模型 `openai-codex/*` 问 NVDA 的支撑阻力和动量。Save `d1-real.txt`. Pass when 领队派给至少两位专家，汇报带数据时间和出处。
-- [ ] Lane 10. `just module try stock-ta` 用真模型。Save `d1-try.txt`. Pass when 每道考题有判定。
+- [x] Lane 1. Regression lane against trunk. trunk 没有 stock-ta，记录这一点。head 上问一个 us-market 的问题。Save `d1-regression.txt`. Pass when 仍分到 us-market。
+- [x] Lane 2. `just module check docs/modules/examples/stock-ta`。Save `d1-check.txt`. Pass when ok。
+- [x] Lane 3. 直接调 `structure` 工具查 NVDA。Save `d1-structure.txt`. Pass when 有支撑阻力和数据时间，输出不超过 20 KB。
+- [x] Lane 4. 调 `signals` 工具。Save `d1-signals.txt`. Pass when 返回信号列表。
+- [x] Lane 5. 调 `note` 工具。Save `d1-note.txt`. Pass when 返回笔记段落，不含使用者本机的绝对路径。
+- [x] Lane 6. 盈亏比工具。Save `d1-rr.txt`. Pass when 和用例一致。
+- [x] Lane 7. 导入知识后用 `knowledge` 查「背离」。Save `d1-knowledge.txt`. Pass when 返回 TA02 的段落。
+- [x] Lane 8. 跑前后对比技术分析项目的数据库。Save `d1-readonly.txt`. Pass when `ta.sqlite` 和 `market.sqlite` 的哈希不变。
+- [x] Lane 9. 用真模型 `openai-codex/*` 问 NVDA 的支撑阻力和动量。Save `d1-real.txt`. Pass when 领队派给至少两位专家，汇报带数据时间和出处。
+- [x] Lane 10. `just module try stock-ta` 用真模型。Save `d1-try.txt`. Pass when 每道考题有判定。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 一次 `structure` 工具调用的总时间。trunk 没有这个工具，对照直接跑 `ta structure` 的时间。
-- [ ] Probe. 交替各 10 次。
-- [ ] Baseline. Record the 直接跑 `ta` 的中位数 first.
-- [ ] Rule. 工具调用比直接跑 `ta` 慢 150 毫秒以上就失败。
+- [x] Metric. 一次 `structure` 工具调用的总时间。trunk 没有这个工具，对照直接跑 `ta structure` 的时间。
+- [x] Probe. 交替各 10 次。
+- [x] Baseline. Record the 直接跑 `ta` 的中位数 first.
+- [x] Rule. 工具调用比直接跑 `ta` 慢 150 毫秒以上就失败。
 
 **Review gate.** None. D1 is not review-gated.
+
+2026-11-12 在 88303a5 上通过：`just test` 1468 条全过；`node docs/modules/architecture/check.mjs` 7 项 ok；`docs/modules/evidence/d1-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-d1/owner2/`。八个工具：七个调 `ta` 只读子命令（`structure`、`signals`、`note`、`prices`、`conditions`、`rules`，`screen` 只查已有结果），一个纯计算 `risk-reward`（`cases.json` 三例）。事故：开发中实测 `ta` 哪怕只读也会提交一次空的写事务，原库文件头第 28 和 96 字节变了。所以每次调用先在临时目录里用 APFS 克隆 `ta.sqlite`（`screen` 再加 `market.sqlite`），`TA_DB_PATH`、`TA_MARKET_DB_PATH` 指向副本，`MASSIVE_BASE_URL=http://127.0.0.1:9` 断网，`uv run --no-sync`，子进程 18 秒超时（宿主单次调用 20 秒）。`structure` 的 `now` 取副本里这个标的和 QQQ、SPY 的 `dividend_sync.synced_ms` 最大值加 60 秒；标的不在缓存或比 QQQ、SPY 旧一天以上，一行拒绝，不调 `ta`。事故之后的基线 `ta.sqlite` c2e830db…、`market.sqlite` 374540703c…，lane 8 前后哈希都等于它。`justfile` 的 `module` recipe 改成 `[positional-arguments]` 加 `"$@"`，带空格的笔记文件名（`TA02 - MACD 实战精华总结.md`）不再被拆开（lane 7 曾因此失败）。Lane 1 真模型问「NVDA 今天为什么跌」仍分到 us-market；lane 9 真模型 `openai-codex/gpt-6.1-terra` 和 `gpt-6.1-sol` 问「NVDA 现在的支撑阻力和动量怎么样」，分到 stock-ta，领队派给结构与形态、趋势与动量，汇报带 data_end 和笔记出处；lane 10 `just module try` 真模型 2/2 道考题通过。Perf：一次 `structure` 工具调用中位数 1113 毫秒，直接在克隆库上跑 `ta structure` 1069 毫秒，慢 44 毫秒（各 10 次交替，离散 66 和 23 毫秒，`/tmp/swarm-d1/owner/d1-perf.txt`，这一轮没有重测）。
 
 **Merge.**
 
