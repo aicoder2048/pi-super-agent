@@ -235,7 +235,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 2026-11-12 在 0738d5b 上通过：`tests/conditions.test.ts` 17 条，`just test` 1556 条里只有 `tests/watchdog-main.test.ts` 的「终端 Ctrl+C：Watchdog 不停别人启动的宿主」偶发失败（基线 5317b9e 上 10 次里也失败 2 次，和本 PR 无关），`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g3/owner/g3-*.txt`。lane 10 用 `openai-codex/gpt-6.1-sol`：第一次只说「空腹血糖高于 7 提醒我」，Worker 先问单位、没有设（`g3-real-first-try.txt`），补上「单位 mmol/L，直接设」后条件表有这一条，回执一行。perf 10 万行、这个 key 上 20 个条件，100 次写入，三轮中位 0.74 到 0.81 ms，G2 同样写入 1.43 到 2.09 ms（G2 先跑，冷启动偏慢），最大 26 ms 是第一次写入时建索引。
 
-2026-11-12 在 <HEAD> 上通过（修正轮）：一次写进同一个 key 的几行新读数时，以前只算时间最新的那一行，而且拿它和同一批里的前一行比，所以已存 6、一次写进 7.2 和 7.4（条件高于 7）不提醒，写进 8 和 6.5 也不提醒。现在写入前先记下这个 key 已存最新的时间，不早于它的行逐行算，两种情况都在 7.2 和 8 那一行提醒一次；比它早的行照样只存不提醒。`tests/conditions.test.ts` 27 条，`just test` 1573 条全过（第二次跑时只有已知偶发的「终端 Ctrl+C：Watchdog 不停别人启动的宿主」失败，单独重跑 8 条全过），`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g3/fix3/`。perf 10 万行、20 个条件、100 次写入，四轮中位 0.78 到 0.93 ms，G2 同样写入 1.30 到 2.56 ms。修正中途一版对 20 个条件各查了一次 key 的最新时间，中位涨到 1.9 ms 左右，按 key 去重后回到 1 ms 以内。
+2026-11-12 在 6a2cd64 上通过（修正轮）：一次写进同一个 key 的几行新读数时，以前只算时间最新的那一行，而且拿它和同一批里的前一行比，所以已存 6、一次写进 7.2 和 7.4（条件高于 7）不提醒，写进 8 和 6.5 也不提醒。现在写入前先记下这个 key 已存最新的时间，不早于它的行逐行算，两种情况都在 7.2 和 8 那一行提醒一次；比它早的行照样只存不提醒。`tests/conditions.test.ts` 27 条，`just test` 1573 条全过（第二次跑时只有已知偶发的「终端 Ctrl+C：Watchdog 不停别人启动的宿主」失败，单独重跑 8 条全过），`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g3/fix3/`。perf 10 万行、20 个条件、100 次写入，四轮中位 0.78 到 0.93 ms，G2 同样写入 1.30 到 2.56 ms。修正中途一版对 20 个条件各查了一次 key 的最新时间，中位涨到 1.9 ms 左右，按 key 去重后回到 1 ms 以内。
 
 **Merge.**
 
