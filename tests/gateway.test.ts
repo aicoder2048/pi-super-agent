@@ -47,14 +47,16 @@ function storeWithTax(t: TestContext) {
 	return { store, digest };
 }
 
-function setup(t: TestContext, { serving = true, limitMs = 20_000 } = {}) {
+const hostSecrets = (name: string): string | undefined => ({ TAX_KEY: "named-value", OTHER_KEY: "unnamed-value" })[name];
+
+function setup(t: TestContext, { serving = true, limitMs = 20_000, secret = hostSecrets } = {}) {
 	const { store, digest } = storeWithTax(t);
 	const logs: string[] = [];
 	const state = { serving };
 	const gateway = createGateway({
 		copyDir: (module, pin) => store.dirOf(module, pin),
 		serving: () => (state.serving ? digest : undefined),
-		secret: (name) => ({ TAX_KEY: "named-value", OTHER_KEY: "unnamed-value" })[name],
+		secret,
 		log: (line) => logs.push(line),
 		limitMs,
 	});
@@ -109,6 +111,13 @@ test("推断开的任务调 effect 是 write 的工具被拒绝；使用者开�
 test("工具的进程只拿到 tool.json 写了名字的密钥，宿主别的密钥拿不到", async (t) => {
 	const { gateway, caller } = setup(t);
 	assert.deepEqual(await gateway.call(caller(), call("env-probe")), { ok: true, output: { named: "named-value", unnamed: null }, private: false });
+});
+
+test("读密钥出错（值不合法、密钥文件读不到）：这次调用失败并说明原因，宿主日志照样记一笔", async (t) => {
+	const { gateway, caller, logs } = setup(t, { secret: () => { throw new Error("TAX_KEY 含有空白或非 ASCII 字符，请检查"); } });
+	const reply = await gateway.call(caller(), call("env-probe"));
+	assert.deepEqual(reply, { ok: false, refusal: { code: "provider-failed", note: "TAX_KEY 含有空白或非 ASCII 字符，请检查" } });
+	assert.match(logs.at(-1)!, /\[gateway\] personal-tax tools\/env-probe .* provider-failed \d+ ms/);
 });
 
 test("工具死循环：到时限只这一次失败，宿主同时和之后的调用照常", async (t) => {

@@ -75,8 +75,13 @@ export function createGateway(ports: GatewayPorts): Gateway {
 	return {
 		async call(caller, request) {
 			const started = Date.now();
-			const resolved = resolve(caller, request);
-			const reply: Reply = "refusal" in resolved ? { ok: false, refusal: resolved.refusal } : await run(resolved);
+			let reply: Reply;
+			try {
+				const resolved = resolve(caller, request);
+				reply = "refusal" in resolved ? { ok: false, refusal: resolved.refusal } : await run(resolved);
+			} catch (error) {
+				reply = { ok: false, refusal: { code: "provider-failed", note: String((error as Error)?.message ?? error) } };
+			}
 			const who = caller.who === "page" ? "page" : `${caller.ticket} ${caller.member ?? "helper"} ${caller.basis}`;
 			const what = request.kind === "tool" ? `tools/${request.name}` : request.kind;
 			ports.log(`[gateway] ${moduleOf(caller)} ${what} ${who} ${reply.ok ? "ok" : reply.refusal.code} ${Date.now() - started} ms`);
