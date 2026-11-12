@@ -22,6 +22,16 @@ export interface WatchedSource {
 	problem?: string;
 	timers: { everyMinutes: number; body: string }[];
 	rules: { id: string; text: string; by: "user" | "module" }[];
+	/** Only for a source whose feed has a panel. */
+	panel?: SourcePanel;
+	/** Only for a source run by a feed: its alerts posted since local midnight. */
+	alertsToday?: number;
+}
+
+/** What a feed is watching, for the page's left column. A tripwire line may carry a cost basis and shares, so it never leaves this machine (ADR-0017). */
+export interface SourcePanel {
+	watchlist: string[];
+	tripwires: string[];
 }
 
 /** How many member processes may run at once right now, and the host's open question about raising it. Null on a host that cannot dispatch. */
@@ -38,6 +48,7 @@ export interface BoardState {
 	/** ticketId → that helper's dispatches: waiting, running, and ended ones until its whole batch is back. */
 	dispatching: Dispatching;
 	memberCap: MemberCapBoard;
+	watching: WatchedSource[];
 }
 
 export type ClientToHost =

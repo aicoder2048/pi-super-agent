@@ -1,4 +1,5 @@
 import { WATCHDOG_SOURCE } from "../../watchdog/watchdog.ts";
+import type { SourcePanel } from "../../client/protocol.ts";
 import type { Feed, FeedContext, FeedInput, FeedSpec, TripwireReply } from "../feeds.ts";
 import { threadId } from "../generic.ts";
 import { LookupCache, type Cached, type Via } from "./cache.ts";
@@ -12,7 +13,7 @@ import { detect, isFresh, toTrigger, type MarketCursor, type Move, type Quote } 
 import { inPollWindow, MINUTE, nextPollDelay, nextWeekday, nyDateOf, sessionAt, shiftDate, type Session } from "./session.ts";
 import { parseMarketSettings, type MarketSettings } from "./settings.ts";
 import { parseSymbol } from "./symbol.ts";
-import { alertText, applyEdit, checkIntraday, driftOf, echoText, firingId, parseBook, parseEdit, polledSymbols, receiptText, redact, serializeBook, settleCross, suspectedId, type Book, type Tripwire } from "./tripwires.ts";
+import { alertText, applyEdit, checkIntraday, driftOf, echoText, firingId, localLines, parseBook, parseEdit, polledSymbols, receiptText, redact, serializeBook, settleCross, suspectedId, type Book, type Tripwire } from "./tripwires.ts";
 
 // How long a lookup result may be reused. Quotes the poll already holds are reused for one poll interval instead.
 const TTL_MS = { quote: 30_000, earnings: 6 * 60 * MINUTE, bars: { day: 10 * MINUTE, hour: 2 * MINUTE, minute: MINUTE } as Record<Span, number> };
@@ -185,6 +186,10 @@ export class MarketSource implements Feed {
 		const feed = this.#disabled ?? (this.#failing && `暂时取不到行情：${this.#failing.error}`);
 		const book = "problem" in this.#book ? `${this.#book.problem}，没有覆盖它，盯盘条件暂时改不了` : undefined;
 		return [feed, book].filter(Boolean).join("；") || undefined;
+	}
+
+	panel(): SourcePanel {
+		return { watchlist: this.#o.settings.watchlist, tripwires: "book" in this.#book ? localLines(this.#book.book) : [] };
 	}
 
 	tripwires(op: string, args: unknown): TripwireReply {

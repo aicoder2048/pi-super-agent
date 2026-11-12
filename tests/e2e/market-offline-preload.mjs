@@ -52,5 +52,6 @@ function pollOncePerQuoteFile(options, ctx, dir) {
 		problem: () => source.problem(),
 		lookup: (op, args) => source.lookup(op, args),
 		tripwires: (op, args) => source.tripwires(op, args),
+		panel: () => source.panel(),
 	};
 }

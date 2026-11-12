@@ -496,6 +496,19 @@ test("盯盘条件：网页的收据写出成本价和股数，回给助手的 e
 	assert.doesNotMatch(JSON.stringify(reply), /120|100 股|"shares"|"basis"/);
 });
 
+test("盯盘条件：网页左栏的面板列出自选股和每条条件，条件的写法和收据一样带成本价；去掉后不再列出", () => {
+	const m = market();
+	assert.deepEqual(m.source.panel(), { watchlist: ["NVDA", "SPY"], tripwires: [] });
+	m.source.tripwires("set", COST);
+	m.source.tripwires("set", { symbol: "TSLA", condition: { kind: "cross" } });
+	assert.deepEqual(m.source.panel(), {
+		watchlist: ["NVDA", "SPY"],
+		tripwires: ["NVDA 成本价 120、100 股，相对成本价涨跌超过 10% 时提醒", "TSLA 5 日均线和 20 日均线金叉、死叉时提醒"],
+	});
+	m.source.tripwires("remove", { symbol: "NVDA" });
+	assert.deepEqual(m.source.panel().tripwires, ["TSLA 5 日均线和 20 日均线金叉、死叉时提醒"]);
+});
+
 test("盯盘条件：list 在网页贴一张整份清单的收据，不改状态库", () => {
 	const m = market();
 	m.source.tripwires("set", COST);
@@ -641,6 +654,13 @@ test("盯盘条件：只在盯盘条件里的股票也被看盘轮询，给它�
 	await m.source.tick();
 	m.source.tripwires("set", { symbol: "AMD", condition: { kind: "cost", pct: 10, basis: 80 } });
 	assert.match(receipts(m)[1], /现在已在 \+25\.0%，回到线内后再越过才提醒/);
+});
+
+test("给助手的盯盘条件说明不说「收据」，说网页上那一行叫「盯盘条件（只在本机）」，左栏关注的来源列出全部条件", () => {
+	const spec = marketFeed({ source: "us-market", title: "美股行情", settings: DEFAULTS, override: undefined, where: "test", secretsFile: undefined, env: {}, log: () => {} });
+	assert.doesNotMatch(spec.tripwireHelp ?? "", /收据/);
+	assert.match(spec.tripwireHelp ?? "", /盯盘条件（只在本机）/);
+	assert.match(spec.tripwireHelp ?? "", /关注的来源/);
 });
 
 test("均线交叉：给助手的盯盘条件说明写明盘中先报疑似、收盘后约 60 到 75 分钟再确认或撤回", () => {

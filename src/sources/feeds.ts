@@ -1,3 +1,4 @@
+import type { SourcePanel } from "../client/protocol.ts";
 import type { Clock, HostLinePost, TriggerSubmission } from "../kernel/types.ts";
 import { marketFeed } from "./market/source.ts";
 import type { RedactedTripwire } from "./market/tripwires.ts";
@@ -24,6 +25,7 @@ export interface Feed {
 	problem(): string | undefined;
 	lookup(op: string, args: unknown): Promise<unknown>;
 	tripwires(op: string, args: unknown): TripwireReply;
+	panel?(): SourcePanel;
 }
 
 export interface TripwireReply {
