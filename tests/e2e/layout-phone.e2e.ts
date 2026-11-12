@@ -95,6 +95,19 @@ test("方案 D 手机：底部标签栏待办、对话、概况，概况里四�
 				assert.equal(await place(page, "overview").locator(".dot").isHidden(), true);
 				await shot(page, "ld2-alert.png");
 			});
+			await step("Lane 7b. 在任务详情里来了提醒：详情不动，「概况」带提醒点；点「概况」看到「今天」里这条高亮", async (page) => {
+				await place(page, "todo").click();
+				await leftCard(page, NEWS.title).click();
+				await page.locator("#how-title", { hasText: NEWS.title }).waitFor();
+				writeFileSync(join(alerts, "AAPL-day-down-5"), "AAPL 相对昨收跌了 5.1%，超过你设的 5%");
+				await place(page, "overview").locator(".dot:not([hidden])").waitFor({ timeout: 2000 });
+				assert.equal(await screen(page), "task");
+				assert.equal(await page.locator("#how-title", { hasText: NEWS.title }).isVisible(), true, "详情还在");
+				await shot(page, "ld2-alert-in-task.png");
+				await place(page, "overview").click();
+				assert.equal(await selectedTab(page), "today");
+				await page.locator("#today .alerts li.flash", { hasText: "AAPL 相对昨收跌了 5.1%" }).waitFor();
+			});
 			await step("Lane 8. 深色 390 宽：底栏和分段文字对比度不低于 4.5 比 1，没有横向滚动", async () => {
 				const dark = await open(host.url, { context: { colorScheme: "dark", viewport: PHONE } });
 				await dark.locator("#left .card").first().waitFor();
@@ -120,6 +133,30 @@ test("方案 D 手机：底部标签栏待办、对话、概况，概况里四�
 				assert.equal(await screen(page), "task");
 				await page.locator("#how-title", { hasText: NEWS.title }).waitFor();
 				await shot(page, "ld2-resize.png");
+			});
+			await step("Lane 9b. 768 和 834 宽（iPad 竖屏）用手机布局；901 宽三栏时对话区不窄于 320 像素", async () => {
+				const report: Record<string, unknown> = {};
+				for (const width of [768, 834, 901]) {
+					const p = await open(host.url, { context: { viewport: { width, height: 1024 } } });
+					await p.locator("#tab-today .count").waitFor({ state: "attached" });
+					const m = await p.evaluate(() => ({ main: document.querySelector("main")!.getBoundingClientRect().width, bar: getComputedStyle(document.querySelector("#bottom")!).display !== "none" }));
+					report[width] = m;
+					if (width < 900) assert.ok(m.bar, `${width} 宽应有底栏`);
+					else assert.ok(!m.bar && m.main >= 320, `${width} 宽 ${JSON.stringify(m)}`);
+					assert.ok(await noSideScroll(p));
+					await shot(p, `ld2-width-${width}.png`);
+					await p.context().close();
+				}
+				writeFileSync(join(SHOTS, "ld2-widths.json"), `${JSON.stringify(report, null, 2)}\n`);
+			});
+			await step("Lane 9c. 桌面上看到的提醒，缩到手机宽不带提醒点", async () => {
+				const desk = await open(host.url, { context: { viewport: { width: 1440, height: 900 } } });
+				await desk.locator("#tab-today .count").waitFor();
+				writeFileSync(join(alerts, "TSLA-day-up-5"), "TSLA 相对昨收涨了 6.0%，超过你设的 5%");
+				await desk.locator("#today .alerts li.flash", { hasText: "TSLA 相对昨收涨了 6.0%" }).waitFor({ timeout: 2000 });
+				await desk.setViewportSize(PHONE);
+				assert.equal(await place(desk, "overview").locator(".dot").isHidden(), true);
+				await desk.context().close();
 			});
 			await step("Lane 10. 1440 宽桌面：没有底栏，三栏和 LD1 一样", async () => {
 				const desk = await open(host.url, { context: { viewport: { width: 1440, height: 900 } } });

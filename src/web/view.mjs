@@ -351,7 +351,7 @@ function moduleCard(m) {
  * @typedef {{ showing: OverviewTab | "task", task: string | null, last: OverviewTab, flash: string | null, place: Place, dot: boolean }} Panel
  */
 
-/** @typedef {{ kind: "pick", tab: OverviewTab | "task" } | { kind: "open", ticketId: string } | { kind: "close" } | { kind: "alert", lineId: string, ticketId?: string } | { kind: "place", place: Place }} PanelEvent */
+/** @typedef {{ kind: "pick", tab: OverviewTab | "task" } | { kind: "open", ticketId: string } | { kind: "close" } | { kind: "alert", lineId: string, ticketId?: string, phone?: boolean } | { kind: "place", place: Place }} PanelEvent */
 
 /** @returns {Panel} */
 export const firstPanel = () => ({ showing: "today", task: null, last: "today", flash: null, place: "todo", dot: false });
@@ -369,9 +369,12 @@ export function panelStep(panel, event) {
 			return { ...panel, showing: "task", task: event.ticketId };
 		case "close":
 			return { ...panel, task: null, showing: panel.showing === "task" ? panel.last : panel.showing };
-		case "alert":
+		case "alert": {
+			const screen = phoneScreen(panel);
+			if (event.phone) return { ...panel, showing: screen === "task" ? "task" : "today", last: "today", flash: event.lineId, dot: screen !== "overview" };
 			if (event.ticketId) return { ...panel, showing: "task", task: event.ticketId, flash: null };
-			return { ...panel, showing: "today", last: "today", flash: event.lineId, dot: phoneScreen(panel) !== "overview" };
+			return { ...panel, showing: "today", last: "today", flash: event.lineId };
+		}
 		case "place":
 			return { ...panel, place: event.place, showing: panel.showing === "task" ? panel.last : panel.showing, dot: event.place === "overview" ? false : panel.dot };
 	}

@@ -145,8 +145,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Build.**
 
 - [x] 手机当前屏 `screen`（待办、对话、概况）放进同一个右栏状态，`panelStep` 加选屏事件。打开任务在手机上推进一屏任务详情，左上「‹ 返回」回到点之前的屏。
-- [x] 窄屏（不超过 760 像素）时一次只显示一屏，底部固定标签栏三项，「待办」带待你处理的数字；「概况」顶上是今天、来源、模块、已完成四段，跟桌面右栏同一套状态。
-- [x] 提醒来了，概况的分段照桌面规则切换，不把人从当前屏拉走，「概况」标签带一个提醒点。
+- [x] 窄屏（不超过 900 像素，iPad 竖屏也算）时一次只显示一屏，底部固定标签栏三项，「待办」带待你处理的数字；「概况」顶上是今天、来源、模块、已完成四段，跟桌面右栏同一套状态。
+- [x] 提醒来了，手机上从不换屏：正在看任务详情也留在详情，概况的分段记成「今天」并高亮这条，人不在概况时「概况」标签带一个提醒点。提醒点只在手机宽度下来提醒时才亮，桌面上看到过的提醒缩到手机宽不再带点。
 
 **You see.**
 
@@ -167,7 +167,10 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] Lane 6. 点任务推进详情。Save `ld2-task.png`. Pass when 详情占满一屏，有提问、选项和执行过程，「‹ 返回」回到「待办」。
 - [x] Lane 7. 在「对话」屏时来了一条提醒。Save `ld2-alert.png`. Pass when 还停在「对话」，「概况」标签出现提醒点；点「概况」看到「今天」里这条提醒高亮，提醒点消失。
 - [x] Lane 8. 深色 390 宽。Save `ld2-dark.png`. Pass when 底栏和分段文字对比度不低于 4.5 比 1，没有横向滚动。
+- [x] Lane 7b. 在任务详情里来了一条提醒。Save `ld2-alert-in-task.png`. Pass when 还停在任务详情，「概况」标签出现提醒点；点「概况」看到「今天」里这条提醒高亮。
 - [x] Lane 9. 宽度在 390 和 1024 之间来回。Save `ld2-resize.png`. Pass when 1024 宽回到三栏，打开着的任务标签还在；回到 390 宽显示任务详情。
+- [x] Lane 9b. 768 和 834 宽（iPad 竖屏）、901 宽。Save `ld2-width-768.png`、`ld2-width-834.png`、`ld2-width-901.png`. Pass when 768 和 834 宽是底部标签栏，901 宽三栏时对话区不窄于 320 像素，都没有横向滚动。
+- [x] Lane 9c. 桌面上看到的提醒。Pass when 1440 宽来了提醒、看到高亮后缩到 390 宽，「概况」上没有提醒点。
 - [x] Lane 10. 1440 宽桌面不受影响。Save `ld2-desktop.png`. Pass when 没有底部标签栏，三栏布局和 LD1 的截图一致。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
@@ -179,9 +182,11 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 2026-11-12 在 psa/layout-d-phone 上通过：`just test` 1531 条全过；`just e2e` 333 条里 327 过、6 条按环境变量跳过、0 失败。先红后绿的记录在 `/tmp/swarm-ld2/owner/red-unit.txt`（`phoneScreen` 不存在，`firstPanel` 没有 `place` 和 `dot`）。`tests/e2e/layout-phone.e2e.ts` 十条 lane 全过，截图在 `/tmp/swarm-ld2/owner/`。在岗助手一排在手机上也保留（使用者的第 2 条回答），只把页头副标题收起。Lane 1 用 LD1 cacf5f1 的检出：两边 390 宽都能在受阻卡片上点选项，LD1 没有底栏。perf 五轮交替：每次推送重画 LD1 中位数 0.58 毫秒，LD2 0.71 毫秒；切一次底栏中位数 0.3 毫秒（100 次，最慢 1.9 毫秒）。
 
+2026-11-12 修复轮（验收发现三处）：一，手机上正在看任务详情时来了提醒，屏幕被切回「待办」。现在提醒事件带上是不是手机宽，手机上从不换屏。二，761 到 900 像素之间三栏并排，对话区只剩 181 像素。两种办法都试了截图（`/tmp/swarm-ld-fix/proto-phone-768.png`、`proto-phone-834.png` 对 `proto-stacked-768.png`、`proto-stacked-834.png`）：沿用 LD1 的竖排时输入框和右栏都在一屏以下，点任务看不到任务标签；用手机布局一屏一件事，输入框一直在。断点定在 900 像素，901 宽三栏对话区 321 像素。三，桌面上看过的提醒缩到手机宽还带提醒点，现在点只在手机宽度下来提醒时才亮。`just test` 1537 条全过，`just e2e` 336 条里 330 过、6 条按环境变量跳过、0 失败，两个 lane 脚本全过。Lane 1 用 LD1 7246a59 的检出，perf 每次推送重画 LD1 中位数 0.54 毫秒、LD2 0.62 毫秒，切一次底栏 0.3 毫秒。先红后绿：`/tmp/swarm-ld-fix/ld2-red-unit.txt`（详情被换成「待办」、属于任务的提醒顶掉详情、桌面提醒带点），`ld2-red-e2e-7b.txt`（Lane 7b 屏幕是 todo 不是 task），`ld2-red-e2e-2.txt`（Lane 9b 768 宽没有底栏）。
+
 **Review gate.** The operator reviews before merge.
 
-- [x] Copy lane 2, 4, 6 and 7 screenshots into `docs/web-client/evidence/ld2-review-<slug>.png`.
+- [x] Copy lane 2, 4, 6 and 7 screenshots into `docs/web-client/evidence/ld2-review-<slug>.png`. 修复轮加了 `ld2-review-alert-in-task.png`（Lane 7b）和 `ld2-review-ipad-834.png`（Lane 9b）。
 - [x] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/web-client/evidence/ld2-review.mp4`. 本机用 Playwright 录像，390 宽，再用 ffmpeg 转成 mp4。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
@@ -217,7 +222,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - **现有 e2e 依赖左栏结构。** 二十来个 e2e 用 `#left .card`、`#done`、`.watch`、`.card.module` 找元素。LD1 让待你处理和进行中仍在 `#left`，`#done`、`#how`、`#steps` 这些 id 搬到右栏面板里保留，只改需要先点标签的几个 e2e。owner 跑全量 `just e2e` 确认。
 - **Control skill 未安装。** 用 `tests/e2e/harness.ts` 的 Playwright 代替 `control-ui`，lane 和录像都在本机无头 Chromium 里跑。
 - **看板变大。** 今天的提醒每条一行，一天最多几十条（同一来源同一 `externalId` 只存一次）。LD1 的 perf 守住每条 200 字节以内。
-- **窄屏断点。** LD1 保留现有 900 像素以下的竖排，LD2 换成底部标签栏，断点定在 760 像素，900 到 760 之间仍是三栏。LD2 的 lane 9 看来回切换。
+- **窄屏断点。** LD1 保留现有 900 像素以下的竖排，LD2 在 900 像素以下换成底部标签栏（起初定在 760 像素，761 到 900 之间三栏挤得对话区只剩 181 像素，修复轮改成 900）。LD2 的 lane 9 看来回切换，lane 9b 看 768、834、901 宽。
 
 ## Appendix D. Links and reading list
 

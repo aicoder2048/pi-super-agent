@@ -2459,7 +2459,7 @@ test("右栏：没有任务时点任务标签不动", () => {
 
 test("右栏：来了不属于任务的提醒，切到「今天」并高亮这条，任务标签留着；再选标签高亮消失", () => {
 	const alerted = panelAfter({ kind: "open", ticketId: "tkt_a" }, { kind: "pick", tab: "sources" }, { kind: "alert", lineId: "hln_1" });
-	assert.deepEqual(alerted, { showing: "today", task: "tkt_a", last: "today", flash: "hln_1", place: "todo", dot: true });
+	assert.deepEqual(alerted, { showing: "today", task: "tkt_a", last: "today", flash: "hln_1", place: "todo", dot: false });
 	assert.equal(page.panelStep(alerted, { kind: "pick", tab: "modules" }).flash, null);
 	assert.equal(page.panelStep(alerted, { kind: "close" }).flash, "hln_1", "关任务标签不影响高亮");
 });
@@ -2540,14 +2540,30 @@ test("手机：在任务详情点底栏换屏，离开详情；进概况时看�
 });
 
 test("手机：不在概况时来了提醒，不换屏，分段切到「今天」，概况带提醒点；进概况后提醒点消失", () => {
-	const alerted = panelAfter({ kind: "place", place: "chat" }, { kind: "alert", lineId: "hln_1" });
+	const alerted = panelAfter({ kind: "place", place: "chat" }, { kind: "alert", lineId: "hln_1", phone: true });
 	assert.deepEqual([page.phoneScreen(alerted), alerted.showing, alerted.flash, alerted.dot], ["chat", "today", "hln_1", true]);
 	const seen = page.panelStep(alerted, { kind: "place", place: "overview" });
 	assert.deepEqual([page.phoneScreen(seen), seen.dot, seen.flash], ["overview", false, "hln_1"]);
 });
 
 test("手机：正在看概况时来了提醒，不带提醒点", () => {
-	assert.equal(panelAfter({ kind: "place", place: "overview" }, { kind: "pick", tab: "sources" }, { kind: "alert", lineId: "hln_1" }).dot, false);
+	assert.equal(panelAfter({ kind: "place", place: "overview" }, { kind: "pick", tab: "sources" }, { kind: "alert", lineId: "hln_1", phone: true }).dot, false);
+});
+
+test("手机：正在看任务详情时来了提醒，详情不动，带提醒点；进概况看到的是「今天」里高亮的这条", () => {
+	const alerted = panelAfter({ kind: "pick", tab: "modules" }, { kind: "open", ticketId: "tkt_a" }, { kind: "alert", lineId: "hln_1", phone: true });
+	assert.deepEqual([page.phoneScreen(alerted), alerted.task, alerted.dot], ["task", "tkt_a", true]);
+	const overview = page.panelStep(alerted, { kind: "place", place: "overview" });
+	assert.deepEqual([overview.showing, overview.flash, overview.dot], ["today", "hln_1", false]);
+});
+
+test("手机：属于任务的提醒也不换屏，不顶掉正在看的详情", () => {
+	const alerted = panelAfter({ kind: "open", ticketId: "tkt_a" }, { kind: "alert", lineId: "hln_1", ticketId: "tkt_b", phone: true });
+	assert.deepEqual([page.phoneScreen(alerted), alerted.task], ["task", "tkt_a"]);
+});
+
+test("桌面：提醒在桌面上已经看到了，不留提醒点，缩到手机宽也没有", () => {
+	assert.equal(panelAfter({ kind: "place", place: "chat" }, { kind: "alert", lineId: "hln_1" }).dot, false);
 });
 
 test("手机：「待办」上的数字是待你处理的条数", () => {
