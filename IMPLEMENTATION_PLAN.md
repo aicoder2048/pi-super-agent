@@ -903,7 +903,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - W3 的投递必须走 `dropTrigger` 进投递目录，经过来源策略，绝不能走 `Host.say`，否则测试数据会变成使用者的授权。
 - 快照里的耗时是快照时刻的值。页面要像 TUI 一样，对执行中的任务按收到时间在本地累加。
 - `http.Server.close()` 会等 SSE 长连接。`Host.stop` 必须先断开所有连接，否则测试挂住、SIGINT 变慢。
-- M3 让 toy-market 默认关闭。W4 分支 `psa/e2e` 的演示和 e2e 用到 toy-market，rebase 到 M3 之后要在测试状态目录的 `config.json` 写 `"modules": {"toy-market": true}`。
+- M3 让 toy-market 默认关闭。M3 合并 main 时查过：e2e 只加载状态目录的模块，first-teams 加载仓库模块但不用 toy-market，都不用改；演示 3 用到 toy-market，它的配置写上 `"modules": {"toy-market": true}`。
 - W4 第一次给仓库加 `package.json` 和 Playwright 依赖，`just test` 必须不受影响。
 
 ## Appendix D. Links and reading list
