@@ -17,6 +17,8 @@ export interface DomainEntry {
 	onRoster: boolean;
 	/** The package version that serves now. A ticket opened in this domain is pinned to it. Absent for a legacy module, which has no copy to pin. */
 	digest?: string;
+	/** The module's Chinese name, for the line Telegram gets instead of a report that touched private data. */
+	title?: string;
 }
 
 /** All the kernel knows about domains: one entry per serving module, by the module's name. */
@@ -72,6 +74,8 @@ export interface TriggerSubmission {
 	sender: string;
 	body: string;
 	occurredAt: number;
+	/** From a feed that fills private data (design.md §5): a ticket that takes it has touched private data. */
+	private?: boolean;
 }
 
 export type SourcePolicy = (trigger: TriggerSubmission) => "ignore" | "candidate" | "notice";
@@ -324,13 +328,16 @@ export interface Quote {
  * an alert reaches every front end, Telegram included, and is deduped on (source, externalId); a receipt never leaves this machine.
  */
 export type HostLinePost =
-	| { kind: "alert"; externalId: string; text: string; occurredAt: number }
+	| { kind: "alert"; externalId: string; text: string; occurredAt: number; module?: AlertModule }
 	| { kind: "receipt"; text: string };
 
-/** A host line in the conversation. `who` is the kind. It cannot be quoted. */
-export type HostLine = { id: string; who: HostLinePost["kind"]; text: string; at: number };
+/** A private module's alert leaves this machine only as a notice naming the module. */
+export type AlertModule = { title: string; private: boolean };
 
-/** One line of the 对话 column. ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
+/** A host line in the conversation. `who` is the kind. It cannot be quoted. `module`: absent for the market source's alerts. */
+export type HostLine = { id: string; who: HostLinePost["kind"]; text: string; at: number; module?: AlertModule };
+
+/** One line of the 对话 column. ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. On a user line, the task whose question it answers. */
 export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string; quote?: Quote } | HostLine;
 
 /**

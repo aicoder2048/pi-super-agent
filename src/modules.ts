@@ -4,7 +4,8 @@ import { ConfigError, readJsonFile } from "./config-error.ts";
 import { CONVERSATION_SOURCE, ruleId, type DomainBook, type SourcePolicy } from "./kernel/types.ts";
 import type { TimerEntry } from "./sources/timer.ts";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
-import type { Digest, ScanResult } from "./modules/manifest.ts";
+import { feedClass, type CollectionDescriptor, type Digest, type ScanResult } from "./modules/manifest.ts";
+import type { FeedEntry } from "./modules/feed-runner.ts";
 import { parseModelRef } from "./models.ts";
 import { problemLine, scanPackage } from "./modules/validate.ts";
 import { loadTeam, type Member, type Team } from "./teams.ts";
@@ -50,6 +51,7 @@ export interface LoadedModule {
 	state: ModuleState;
 	/** Set for a package served from its copy in the module store. */
 	digest?: Digest;
+	feeds?: readonly FeedEntry[];
 }
 
 export interface FoundPackage {
@@ -259,17 +261,28 @@ export function packageModule(dir: string, name: string): LoadedModule {
 		return [{ name: agent.name, title: agent.title, description: agent.description, tools: cappedTools(agent.tools, []), skills: [], model: agent.model === undefined ? undefined : parseModelRef(agent.model, file), prompt: parseFrontmatter(readFileSync(file, "utf8")).body.trim(), file }];
 	});
 	const [first, ...rest] = members;
+	const collections = new Map(components.flatMap((c): [string, CollectionDescriptor][] => (c.kind === "data" ? [[c.name, c.collection]] : [])));
+	const feeds = components.flatMap((c): FeedEntry[] =>
+		c.kind === "feeds" ? [{ source: `${manifest.name}/${c.name}`, module: manifest.name, dir, name: c.name, feed: c.feed, fixtures: c.fixtures, components, private: feedClass(c.feed, collections) === "private" }] : [],
+	);
+	const sources = feeds.map(({ source, feed }): SourceFilter => ({
+		name: source,
+		title: feed.title,
+		...(feed.description !== undefined && { description: feed.description }),
+		...(feed.ignore !== undefined && { ignore: [...feed.ignore] }),
+	}));
 	const rulesPath = join(dir, "rules.md");
 	const skillsDir = join(dir, "skills");
 	return {
 		name: manifest.name,
 		dir,
-		manifest: { name: manifest.name, ...(manifest.title !== undefined && { title: manifest.title }), ...(manifest.description !== undefined && { description: manifest.description }), ...(manifest.team !== undefined && { team: manifest.team }) },
+		manifest: { name: manifest.name, ...(manifest.title !== undefined && { title: manifest.title }), ...(manifest.description !== undefined && { description: manifest.description }), ...(manifest.team !== undefined && { team: manifest.team }), sources },
 		rules: existsSync(rulesPath) ? parseRules(rulesPath, manifest.name, readFileSync(rulesPath, "utf8")).map((r) => ({ ...r, sources: r.sources ?? [] })) : [],
 		skillsDir: existsSync(skillsDir) ? skillsDir : undefined,
 		...(first !== undefined && manifest.team !== undefined && { team: { name: manifest.team, members: [first, ...rest] } }),
 		state: { enabled: true, by: "default" },
 		digest,
+		feeds,
 	};
 }
 
@@ -290,7 +303,7 @@ export class Modules {
 		this.modules = serving;
 		this.userRules = userRules;
 		this.skippedUserRules = skippedUserRules;
-		this.book = new Map(this.modules.map((m) => [m.name, { team: m.team?.name ?? null, onRoster: onRoster(m), ...(m.digest && { digest: m.digest }) }]));
+		this.book = new Map(this.modules.map((m) => [m.name, { team: m.team?.name ?? null, onRoster: onRoster(m), ...(m.digest && { digest: m.digest }), ...(m.manifest.title && { title: m.manifest.title }) }]));
 		this.#scopes = new Map(this.allRules().map((r) => [r.id, r.sources]));
 	}
 
@@ -369,6 +382,10 @@ export class Modules {
 		if (filter.mode === "ignore") return "ignore";
 		return (filter.ignore ?? []).some((p) => new RegExp(p).test(trigger.body)) ? "ignore" : "candidate";
 	};
+
+	feeds(): FeedEntry[] {
+		return this.modules.flatMap((m) => m.feeds ?? []);
+	}
 
 	isMarketSource = (source: string): boolean =>
 		this.modules.some((m) => (m.manifest.sources ?? []).some((s) => s.name === source && s.market === true));

@@ -19,23 +19,28 @@ export type Condition =
 	| { when: "below"; value: number }
 	| { when: "rising-streak"; times: number }
 	| { when: "falling-streak"; times: number }
-	| { when: "change-pct"; atLeast: number; direction: "up" | "down" | "either" }
+	/** Against `basis` when given, else against the row before. */
+	| { when: "change-pct"; atLeast: number; direction: "up" | "down" | "either"; basis?: number }
 	/** The market's moving-average cross, as a condition on any series. */
 	| { when: "crosses-average"; points: number; direction: "up" | "down" };
 
 /** One condition the user set. `key` is a value of the collection's watch key, e.g. `CEA` or `NVDA`. */
 export type Watch = { id: string; key: string; condition: Condition; note?: string };
 
+/** `externalId` is the condition's id and the row's time, so a row never alerts twice. */
+export type Alert = { externalId: string; text: string; at: string; private: boolean };
+
 export type Query = { where?: Readonly<Record<string, string | number>>; since?: string; until?: string; limit?: number };
 
-/** The original a row was extracted from: a row of a collection that has a `blob` field. */
-export type RowSource = { collection: ComponentName; row: string };
-
-/** One stored row. `from` is kept so the user can check an extracted value against its original. */
+/**
+ * One stored row. `from` names where it came from (an original's path, a feed, 「使用者口述」), so the user can check an extracted value.
+ * `sources` names the fields a later update took from somewhere else, each with that source.
+ */
 export interface Row {
 	id: string;
 	fields: { readonly [field: string]: Json };
-	from: RowSource | null;
+	from: string;
+	sources?: { readonly [field: string]: string };
 }
 
 /** A closed set: one variant per thing a module can serve to a caller. */
@@ -44,7 +49,8 @@ export type Request =
 	| { kind: "knowledge"; op: "search"; query: string; limit?: number }
 	| { kind: "knowledge"; op: "read"; doc: ComponentName; section: string }
 	| { kind: "data"; collection: ComponentName; op: "query"; query: Query }
-	| { kind: "data"; collection: ComponentName; op: "put"; rows: readonly Json[]; from?: RowSource }
+	/** A row with `id` updates that row of a `record` collection. A row without one is added. */
+	| { kind: "data"; collection: ComponentName; op: "write"; rows: readonly Json[]; from: string }
 	| { kind: "data"; collection: ComponentName; op: "open-blob"; row: string; field: string }
 	| { kind: "watch"; collection: ComponentName; op: "list" }
 	| { kind: "watch"; collection: ComponentName; op: "set"; watch: Omit<Watch, "id"> & { id?: string } }
@@ -60,7 +66,7 @@ export type Effect = "read" | "write" | "user-authority";
 /** `tool` is `toolEffect(descriptor)` from manifest.ts. It matters only for a `tool` request. */
 export function effectOf(request: Request, tool: ToolEffect): Effect {
 	if (request.kind === "tool") return tool === "write" ? "write" : "read";
-	if (request.kind === "data") return request.op === "put" ? "write" : "read";
+	if (request.kind === "data") return request.op === "write" ? "write" : "read";
 	if (request.kind === "watch") return request.op === "list" ? "read" : "user-authority";
 	return "read";
 }
@@ -113,9 +119,11 @@ export function allowed(caller: Caller, request: Request, tool: ToolEffect): boo
  * are shown in full on the web page and the TUI. Telegram gets this pointer instead. An
  * alert on a `private` collection follows the same rule.
  */
-export function telegramText(full: string, touchedPrivate: boolean, moduleTitle: string): string {
-	return touchedPrivate ? `${moduleTitle} 有新内容，请在网页上查看` : full;
+export function telegramText(full: string, privateModule: string | null): string {
+	return privateModule === null ? full : privateLine(privateModule);
 }
+
+export const privateLine = (moduleTitle: string) => `${moduleTitle} 有新内容，请在网页上查看`;
 
 export type Refusal =
 	| { code: "no-such-capability" }
@@ -129,8 +137,8 @@ export type Refusal =
 /** One hit of a knowledge search, with the citation a skill asks the Worker to carry. */
 export type Passage = { doc: ComponentName; title: string; version: string; authority: "authoritative" | "reference"; section: string; text: string };
 
-/** `private` is true when `output` holds rows of a `private` collection. The host then marks the ticket. */
-export type Reply = { ok: true; output: Json; private: boolean; passages?: readonly Passage[] } | { ok: false; refusal: Refusal };
+/** `private` is true when the call read or wrote a `private` collection. The host then marks the ticket. */
+export type Reply = { ok: true; output: Json; private: boolean; passages?: readonly Passage[]; alerts?: readonly Alert[] } | { ok: false; refusal: Refusal };
 
 export interface Gateway {
 	/**
@@ -157,7 +165,7 @@ export type FeedHandler = (input: FeedInput) => Collected | Promise<Collected>;
 export interface FeedInput {
 	/** From the connector, or empty for a feed that fetches for itself. */
 	items: readonly Json[];
-	/** `settings` from feed.json merged with the user's answers to `ask`. */
+	/** `settings` from feed.json. Answers to `ask` are not stored yet, so they are not merged in. */
 	settings: Readonly<Record<string, Json>>;
 	cursor: string | null;
 	/** The rows of each collection the feed lists in `reads`. */
