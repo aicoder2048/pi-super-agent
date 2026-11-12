@@ -79,7 +79,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Build.**
 
-- [x] 右栏状态 `Panel` 和 `panelStep(panel, event)`（`view.mjs`）。状态是 `{ showing, task, last, flash }`，事件是选标签、打开任务、关任务、来了提醒。打开任务时任务标签排在最前并切过去；切到别的标签任务标签留着；× 关掉回到最后看的那个标签；提醒属于某个任务就打开那个任务，否则切到「今天」并高亮这条提醒。
+- [x] 右栏状态 `Panel` 和 `panelStep(panel, event)`（`view.mjs`）。状态是 `{ showing, task, last, flash }`，事件是选标签、打开任务、关任务、来了提醒。打开任务时任务标签排在最前并切过去；切到别的标签任务标签留着；× 关掉回到最后看的那个标签；提醒属于某个任务就打开那个任务，否则切到「今天」并高亮这条提醒。现在只有「切到今天并高亮」这一支真的会走到：今天没有哪个来源会让提醒带上任务编号（宿主行不带 `ticketId`，网页也不传），打开任务那一支在 `panelStep` 里写好了、单元测试覆盖了，等以后有来源能从提醒开任务时再接线。
 - [x] 标签数字 `overviewTabs(view, panel)`（`view.mjs`）。今天 = 今日来源消息数 + 今日提醒数，来源 = 关注的来源数，模块 = 模块数，已完成 = 已完成任务数。任务标签写「任务 #<编号前 4 位>」。
 - [x] 看板加 `alerts`（今天的提醒，本地日，按先后），`Kernel.alertsToday()` 一条 SQL 取出。
 - [x] 左栏只剩「待你处理」和「进行中」，卡片紧凑（最新进展最多两行），选项按钮还在卡片上。
@@ -107,7 +107,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] Lane 7. 「模块」标签。Save `ld1-modules.png`. Pass when 一个模块一行带开关；点 stock-ta 的开关两秒内变成开；点「详情 ›」出现完整模块卡。
 - [x] Lane 8. 「来源」和「已完成」标签。Save `ld1-sources.png`、`ld1-done.png`. Pass when 来源行写今日提醒数；已完成列出做完的任务，点它打开任务标签，× 回到「已完成」。
 - [x] Lane 9. 1024 宽浅色和深色、1440 宽深色。Save `ld1-light-1024.png`、`ld1-dark-1024.png`、`ld1-dark-1440.png`. Pass when 三栏都在，对话区不窄于 400 像素，没有横向滚动，标签文字对比度不低于 4.5 比 1。
-- [x] Lane 10. 刷新和键盘。Save `ld1-keyboard.png`. Pass when 刷新后右栏回到「今天」；用 Tab 走到标签，方向键切换标签，`aria-selected` 跟着变。
+- [x] Lane 10. 刷新和键盘。Save `ld1-reload.png`、`ld1-keyboard.png`. Pass when 刷新后任务标签和最后看的标签都还在（使用者说任务标签留到点 × 为止，存在这个浏览器的 localStorage 里，任务不在看板上了就不恢复）；点 × 后再刷新任务标签不回来；用 Tab 走到标签，方向键切换标签，`aria-selected` 跟着变。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -118,9 +118,11 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 2026-11-12 在 psa/layout-d 上通过：`just test` 1526 条全过；`just e2e` 319 条里 315 过、4 条按环境变量跳过、0 失败；`check.mjs` 7 项 ok。先红后绿的记录在 `/tmp/swarm-ld1/owner/red-unit.txt`（`panelStep`、`overviewTabs`、`alertsToday` 不存在，看板帧等不到 `alerts`）。`tests/e2e/layout.e2e.ts` 十条 lane 全过，截图在 `/tmp/swarm-ld1/owner/`。提醒文件落盘到右栏切到「今天」并高亮约 0.2 秒；stock-ta 开关两秒内变成开；1024 宽对话区 444 像素，三栏都在，没有横向滚动，标签对比度都不低于 4.5 比 1。Lane 1 用 main 0e1fc9a 的检出跑同一组脚本，两边左栏卡片都能点选项，trunk 右栏只有「选择左侧的任务」那句。perf 五轮交替，每轮约 25 次推送：看板 trunk 1992 字节，head 2136 字节（1 条提醒，多 144 字节）；每次推送重画 trunk 中位数 1.07 毫秒，head 1.71 毫秒（多 0.64 毫秒，规则是超过 1.5 倍且多 2 毫秒才失败）。head 多出的是右栏四个面板和标签每次推送都重画。
 
+2026-11-12 修复轮（验收发现）：刷新后任务标签丢了、回到「今天」，和使用者说的「留到点 × 为止」不符。现在右栏的任务标签和最后看的标签存进 localStorage（读写都包了 try/catch），刷新后等第一帧看板，任务还在就恢复。先红后绿：`savedPanel`、`panelText` 不存在（`/tmp/swarm-ld-fix/ld1-red-unit.txt`），Lane 10 等不到 `#tab-task`（`/tmp/swarm-ld-fix/ld1-red-e2e.txt`）。
+
 **Review gate.** The operator reviews before merge.
 
-- [x] Copy lane 2, 3, 5 and 7 screenshots into `docs/web-client/evidence/ld1-review-<slug>.png`.
+- [x] Copy lane 2, 3, 5 and 7 screenshots into `docs/web-client/evidence/ld1-review-<slug>.png`. 深色 1440 宽另存 `docs/web-client/evidence/ld1-dark-1440.png`。
 - [x] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/web-client/evidence/ld1-review.mp4`. 本机用 Playwright 录像，再用 ffmpeg 转成 mp4。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 

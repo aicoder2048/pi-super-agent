@@ -145,11 +145,21 @@ test("方案 D 桌面布局：左栏收件箱，右栏带数字的标签，任�
 				}
 				writeFileSync(join(SHOTS, "ld1-widths.json"), `${JSON.stringify(report, null, 2)}\n`);
 			});
-			await step("Lane 10. 刷新后回到「今天」没有任务标签；Tab 走到标签，方向键切换，aria-selected 跟着变", async (page) => {
+			await step("Lane 10. 刷新后任务标签和最后看的标签都还在，× 才关掉；Tab 走到标签，方向键切换，aria-selected 跟着变", async (page) => {
+				await page.locator("#done .card", { hasText: DIGEST.title }).click();
+				await tab(page, "modules").click();
+				await page.reload();
+				await tab(page, "task").waitFor();
+				assert.equal(await selectedTab(page), "modules");
+				await tab(page, "task").click();
+				await page.locator("#how-title", { hasText: DIGEST.title }).waitFor();
+				await shot(page, "ld1-reload.png");
+				await page.locator(".tab-close").click();
+				assert.equal(await selectedTab(page), "modules");
 				await page.reload();
 				await page.locator("#tab-today .count").waitFor();
-				assert.equal(await selectedTab(page), "today");
-				assert.equal(await tab(page, "task").count(), 0);
+				assert.equal(await selectedTab(page), "modules");
+				assert.equal(await tab(page, "task").count(), 0, "关掉的任务标签刷新后不回来");
 				await tab(page, "today").focus();
 				await page.keyboard.press("ArrowRight");
 				assert.equal(await selectedTab(page), "sources");
