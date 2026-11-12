@@ -69,49 +69,51 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `src/modules/instance-data.ts`（`InstanceData`、`InstanceHandle` 的实现）。
-- [ ] Edit `src/host/live-modules.ts`，`migrate` 和 `purge-data` 两个效果不再是空操作。
-- [ ] Edit `src/cli/module.ts`，加 `just module purge <名字>`。
-- [ ] Edit `src/modules/registry.ts`，接口和实现对齐。
-- [ ] Create `tests/instance-data.test.ts`。
+- [x] Create `src/modules/instance-data.ts`（`InstanceData` 的实现；`InstanceHandle` 并进 `InstanceData`，见 PR 的 Tradeoffs）。
+- [x] Edit `src/host/live-modules.ts`，`migrate` 和 `purge-data` 两个效果不再是空操作。
+- [x] Edit `src/cli/module.ts`，加 `just module purge <名字>`。
+- [x] Edit `src/modules/registry.ts`，接口和实现对齐。
+- [x] Create `tests/instance-data.test.ts`。
 
 **Build.**
 
-- [ ] 每个模块一个 `<stateDir>/modules-data/<名字>/data.db`。`collection.json` 里每类数据一张表，`record` 一行一条，`series` 带 `key`、`at` 和数值。每行带 `from`（来源原件或 feed），原件放 `blobs/`。
-- [ ] 结构只增不减。加字段自动加列；`was` 改名把值搬到新名字并留别名；拿掉的字段不显示，值留着；改类型或单位拒绝，模块停在无效，旧版本继续服务。存下来的结构记在 `data.db` 里，和包里的声明比。
-- [ ] 迁移前先复制一份 `data.db` 当快照，失败就用快照恢复。迁移带只增的编号，迟到的旧结果被忽略。
-- [ ] `just module purge <名字>` 要再输入一次模块名才删这个模块的全部实例数据。
+- [x] 每个模块一个 `<stateDir>/modules-data/<名字>/data.db`。`collection.json` 里每类数据一张表，`record` 一行一条，`series` 带 `key`、`at` 和数值。每行带 `from`（来源原件或 feed），原件放 `blobs/`。
+- [x] 结构只增不减。加字段自动加列；`was` 改名把值搬到新名字并留别名；拿掉的字段不显示，值留着；改类型或单位拒绝，模块停在无效，旧版本继续服务。存下来的结构记在 `data.db` 里，和包里的声明比。
+- [x] 迁移前先复制一份 `data.db` 当快照，失败就用快照恢复。迁移带只增的编号，迟到的旧结果被忽略。
+- [x] `just module purge <名字>` 要再输入一次模块名才删这个模块的全部实例数据。不交互时写 `--confirm <名字>`。模块开着时拒绝，先 `just module off`。
 
 **You see.**
 
-- [ ] 把 personal-health 样例放进状态目录并打开，`modules-data/personal-health/data.db` 里出现五张表。
-- [ ] 给一类数据加一个字段存盘，两秒内表多一列，旧行这一列为空；改一个字段的单位，`just modules` 显示无效和原因，数据没变。
+- [x] 把 personal-health 样例放进状态目录并打开，`modules-data/personal-health/data.db` 里出现五张表。
+- [x] 给一类数据加一个字段存盘，两秒内表多一列，旧行这一列为空；改一个字段的单位，`just modules` 显示无效和原因，数据没变。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/instance-data.test.ts` 覆盖建表、加字段、改名别名、拿掉后再加回来值还在、改单位拒绝、迁移中途失败恢复快照、迟到结果被忽略、purge 要确认。用 `docs/modules/architecture/sample/update/` 的五个版本。Run `just test`.
+- [x] `tests/instance-data.test.ts` 覆盖建表、加字段、改名别名、拿掉后再加回来值还在、改单位拒绝、迁移中途失败恢复快照、迟到结果被忽略、purge 要确认。用 `docs/modules/architecture/sample/update/` 的五个版本。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/g1-live.ts`。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都打开 personal-tax 并调一次 `tax-bracket`。Save `g1-regression.txt`. Pass when 两边结果相同，head 多出 `data.db`。
-- [ ] Lane 2. 打开 personal-health。Save `g1-tables.txt`. Pass when `data.db` 有五张表，列和 `collection.json` 一致。
-- [ ] Lane 3. 存一个加字段的版本。Save `g1-add.txt`. Pass when 两秒内换上，多一列。
-- [ ] Lane 4. 存一个改名的版本（`was`）。Save `g1-rename.txt`. Pass when 旧值出现在新名字下。
-- [ ] Lane 5. 存一个拿掉字段的版本再加回来。Save `g1-remove.txt`. Pass when 值还在。
-- [ ] Lane 6. 存一个改单位的版本。Save `g1-unit.txt`. Pass when 无效带原因，旧版本服务，数据不变。
-- [ ] Lane 7. 迁移中途杀掉宿主再起。Save `g1-crash.txt`. Pass when 数据等于快照或新结构，不会半截。
-- [ ] Lane 8. 拿掉模块包再放回来。Save `g1-away.txt`. Pass when 数据原样接上。
-- [ ] Lane 9. `just module purge personal-health` 输错名字。Save `g1-purge-wrong.txt`. Pass when 拒绝，数据还在。
-- [ ] Lane 10. 输对名字。Save `g1-purge.txt`. Pass when `modules-data/personal-health` 不在了，模块包不受影响。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都打开 personal-tax 并调一次 `tax-bracket`。Save `g1-regression.txt`. Pass when 两边结果相同，head 多出 `data.db`。
+- [x] Lane 2. 打开 personal-health。Save `g1-tables.txt`. Pass when `data.db` 有五张表，列和 `collection.json` 一致。
+- [x] Lane 3. 存一个加字段的版本。Save `g1-add.txt`. Pass when 两秒内换上，多一列。
+- [x] Lane 4. 存一个改名的版本（`was`）。Save `g1-rename.txt`. Pass when 旧值出现在新名字下。
+- [x] Lane 5. 存一个拿掉字段的版本再加回来。Save `g1-remove.txt`. Pass when 值还在。
+- [x] Lane 6. 存一个改单位的版本。Save `g1-unit.txt`. Pass when 无效带原因，旧版本服务，数据不变。
+- [x] Lane 7. 迁移中途杀掉宿主再起。Save `g1-crash.txt`. Pass when 数据等于快照或新结构，不会半截。
+- [x] Lane 8. 拿掉模块包再放回来。Save `g1-away.txt`. Pass when 数据原样接上。
+- [x] Lane 9. `just module purge personal-health` 输错名字。Save `g1-purge-wrong.txt`. Pass when 拒绝，数据还在。
+- [x] Lane 10. 输对名字。Save `g1-purge.txt`. Pass when `modules-data/personal-health` 不在了，模块包不受影响。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 宿主启动到就绪的时间，以及一次加字段迁移的时间（含快照），数据表里有 10 万行。trunk 没有迁移，迁移另给绝对预算。
-- [ ] Probe. trunk 和 head 交替各 5 次 `startHost`；迁移在 head 上量 5 次。
-- [ ] Baseline. Record the trunk 启动中位数 first.
-- [ ] Rule. 启动比 trunk 慢 200 毫秒以上，或 10 万行的迁移超过 2 秒，就失败。
+- [x] Metric. 宿主启动到就绪的时间，以及一次加字段迁移的时间（含快照），数据表里有 10 万行。trunk 没有迁移，迁移另给绝对预算。
+- [x] Probe. trunk 和 head 交替各 5 次 `startHost`；迁移在 head 上量 5 次。
+- [x] Baseline. Record the trunk 启动中位数 first.
+- [x] Rule. 启动比 trunk 慢 200 毫秒以上，或 10 万行的迁移超过 2 秒，就失败。
 
 **Review gate.** None. G1 is not review-gated.
+
+2026-11-12 在 c69e412 上通过：`tests/instance-data.test.ts` 12 条，`just test` 1487 条全过，`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g1/owner/g1-*.txt`；perf 启动 trunk 中位 407 ms、head 408 ms，10 万行加字段迁移中位 6 ms（6.3 MB）。lane 7 用 200 万行，三次里两次在迁移中途 SIGKILL，重启后都是新结构、行数不变、快照不留。
 
 **Merge.**
 
