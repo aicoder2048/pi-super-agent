@@ -298,6 +298,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 2026-11-12 审计修复在 d963c72 上通过（已合入 G3 bb4a352）：检查和运行共用一个 `feedInput`，`reads` 的集合样例没给就是空列；inbox 逐个文件处理，坏文件单独进 rejected 并带 .error.txt，handler 失败的文件留到下一次；timer 或不带连接器的 handler 没写 every 时检查拒收；宿主检查、`just module check`、`just module try` 的密钥和运行时一样先看环境变量再看 secretsFile；日志行数只算真存下的。`just test` 1596 条全过，`check.mjs` 7 项 ok，十条 lane 全 PASS（`/tmp/swarm-g4/fix/g4-*.txt`），perf 启动中位 trunk 394.5 ms、head 402.9 ms，空 handler 中位 43.9 ms。
 
+2026-11-12 第二轮审计修复（已合入 main e13a5e8）：宿主跑用例时读密钥出错（密钥值有空白、密钥文件跑着时被删）不再让宿主因未处理的 rejection 退出，模块记为无效，原因写着出错的话；`just module try` 的临时宿主也拿到 secretsFile，之前只有检查读它，密钥只在文件里的工具在临时宿主里用例不过；带 handler 的 inbox 文件连着失败 3 次挪进 rejected，.error.txt 写着最后一次的原因，成功一次就清零，次数记在宿主内存里，重启后重新数。`just test` 1604 条全过，`check.mjs` 全绿，十条 lane 全 PASS（`/tmp/swarm-g4/fix2/g4-*.txt`）。
+
 **Merge.**
 
 - [ ] Root's clean verdict at the exact head SHA.
