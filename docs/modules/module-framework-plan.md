@@ -70,50 +70,52 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `src/modules/manifest.ts`, `src/modules/validate.ts`, `src/modules/lifecycle.ts`, `src/modules/protocol.ts`, `src/modules/registry.ts`，从 `docs/modules/architecture/sketch/` 搬过来。
-- [ ] Create `src/cli/module.ts` 和 `justfile` 的 `module *args` recipe。
-- [ ] Edit `src/modules.ts` 第 264 行附近，`"schema": 1` 的文件夹交给新扫描。
-- [ ] Create `tests/module-scan.test.ts`，把 `sketch/*.test.ts` 搬成 `tests/module-validate.test.ts`、`tests/module-lifecycle.test.ts`、`tests/module-protocol.test.ts`。
-- [ ] Edit `docs/modules/architecture/check.mjs`，改成检查 `src/modules/`。Delete `docs/modules/architecture/sketch/`。
-- [ ] Edit the four stale docs that say PR #27 is unmerged (`current-state.md` 列出的位置)。
-- [ ] Create `docs/modules/module-framework-plan.md`（本文件）。
+- [x] Create `src/modules/manifest.ts`, `src/modules/validate.ts`, `src/modules/lifecycle.ts`, `src/modules/protocol.ts`, `src/modules/registry.ts`，从 `docs/modules/architecture/sketch/` 搬过来。
+- [x] Create `src/cli/module.ts` 和 `justfile` 的 `module *args` recipe。
+- [x] Edit `src/modules.ts` 第 264 行附近，`"schema": 1` 的文件夹交给新扫描。
+- [x] Create `tests/module-scan.test.ts`，把 `sketch/*.test.ts` 搬成 `tests/module-validate.test.ts`、`tests/module-lifecycle.test.ts`、`tests/module-protocol.test.ts`。
+- [x] Edit `docs/modules/architecture/check.mjs`，改成检查 `src/modules/`。Delete `docs/modules/architecture/sketch/`。
+- [x] Edit the four stale docs that say PR #27 is unmerged (`current-state.md` 列出的位置)。
+- [x] Create `docs/modules/module-framework-plan.md`（本文件）。
 
 **Build.**
 
-- [ ] `scanPackage` 和 `summary` 从 `src/modules/validate.ts` 导出。`Modules.load` 读到 `"schema": 1` 时调 `scanPackage`，结果收进 `Modules.packages`（有效或无效带原因），不抛错，宿主照常启动。
-- [ ] `just module check <目录>` 打印一行 `ok <名字>@<版本> | ...` 或每个问题一行，退出码 0 或 1。
+- [x] `scanPackage` 和 `summary` 从 `src/modules/validate.ts` 导出。`Modules.load` 读到 `"schema": 1` 时调 `scanPackage`，结果收进 `Modules.packages`（有效或无效带原因），不抛错，宿主照常启动。
+- [x] `just module check <目录>` 打印一行 `ok <名字>@<版本> | ...` 或每个问题一行，退出码 0 或 1。
 
 **You see.**
 
-- [ ] `just module check docs/modules/architecture/sample/personal-tax` 打印 `ok personal-tax@0.1.0 | knowledge=0 data=1 tools=1 ...`。
-- [ ] 状态目录 `modules/` 里放一个坏的新布局包，`just host` 照常启动，`just modules` 把它列成「无效」并写出原因。
+- [x] `just module check docs/modules/architecture/sample/personal-tax` 打印 `ok personal-tax@0.1.0 | knowledge=0 data=1 tools=1 ...`。
+- [x] 状态目录 `modules/` 里放一个坏的新布局包，`just host` 照常启动，`just modules` 把它列成「无效」并写出原因。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/module-scan.test.ts` 新增「schema 1 的坏包不阻止加载」「schema 1 的好包出现在 packages 里」「旧布局模块行为不变」。Run `just test`.
-- [ ] 搬过来的 17 条草图测试在 `tests/` 下通过。Run `just test`.
+- [x] `tests/module-scan.test.ts` 新增「schema 1 的坏包不阻止加载」「schema 1 的好包出现在 packages 里」「旧布局模块行为不变」。Run `just test`.
+- [x] 搬过来的 17 条草图测试在 `tests/` 下通过。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/f1-live.ts`。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都跑 `just modules`，状态目录只有仓库自带的三个模块。Save `f1-regression.txt`. Pass when 两边输出逐字相同。
-- [ ] Lane 2. `just module check` 检查 personal-health 样例。Save `f1-health.txt`. Pass when 输出 `ok personal-health@0.1.0` 且 digest 和 check.mjs 记录的一致。
-- [ ] Lane 3. 检查 13 个坏包。Save `f1-broken.txt`. Pass when 每个都退出码 1，原因和 `sample/broken/<名字>/expected.txt` 一致。
-- [ ] Lane 4. 状态目录放一个坏的 schema 1 包后启动宿主。Save `f1-boot-bad.txt`. Pass when 宿主就绪，日志里有一行这个包无效的原因。
-- [ ] Lane 5. 状态目录放 personal-tax 样例后跑 `just modules`。Save `f1-list.txt`. Pass when 列出它是新布局、有效、已停用。
-- [ ] Lane 6. 新布局包和旧布局模块同名。Save `f1-dup.txt`. Pass when 报重名，宿主拒绝启动的行为和今天两个旧模块同名时一样。
-- [ ] Lane 7. `just module check` 一个不存在的目录。Save `f1-missing.txt`. Pass when 一行原因，退出码 1。
-- [ ] Lane 8. 拼错 `module.json` 的键。Save `f1-typo.txt`. Pass when 输出 `unknown key "descripton"`。
-- [ ] Lane 9. 带失败用例的工具。Save `f1-case.txt`. Pass when 指出用例名和期望值。
-- [ ] Lane 10. `node docs/modules/architecture/check.mjs`。Save `f1-check.txt`. Pass when 全部 ok。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都跑 `just modules`，状态目录只有仓库自带的三个模块。Save `f1-regression.txt`. Pass when 两边输出逐字相同。
+- [x] Lane 2. `just module check` 检查 personal-health 样例。Save `f1-health.txt`. Pass when 输出 `ok personal-health@0.1.0` 且 digest 和 check.mjs 记录的一致。
+- [x] Lane 3. 检查 13 个坏包。Save `f1-broken.txt`. Pass when 每个都退出码 1，原因和 `sample/broken/<名字>/expected.txt` 一致。
+- [x] Lane 4. 状态目录放一个坏的 schema 1 包后启动宿主。Save `f1-boot-bad.txt`. Pass when 宿主就绪，日志里有一行这个包无效的原因。
+- [x] Lane 5. 状态目录放 personal-tax 样例后跑 `just modules`。Save `f1-list.txt`. Pass when 列出它是新布局、有效、已停用。
+- [x] Lane 6. 新布局包和旧布局模块同名。Save `f1-dup.txt`. Pass when 报重名，宿主拒绝启动的行为和今天两个旧模块同名时一样。
+- [x] Lane 7. `just module check` 一个不存在的目录。Save `f1-missing.txt`. Pass when 一行原因，退出码 1。
+- [x] Lane 8. 拼错 `module.json` 的键。Save `f1-typo.txt`. Pass when 输出 `unknown key "descripton"`。
+- [x] Lane 9. 带失败用例的工具。Save `f1-case.txt`. Pass when 指出用例名和期望值。
+- [x] Lane 10. `node docs/modules/architecture/check.mjs`。Save `f1-check.txt`. Pass when 全部 ok。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 宿主从启动到就绪的时间，状态目录里有仓库三个模块加两个样例包。
-- [ ] Probe. trunk 和 head 交替各跑 5 次 `tests/e2e/harness.ts` 的 `startHost`，取中位数。
-- [ ] Baseline. Record the trunk 中位数 first.
-- [ ] Rule. head 比 trunk 慢 200 毫秒以上就失败。
+- [x] Metric. 宿主从启动到就绪的时间，状态目录里有仓库三个模块加两个样例包。
+- [x] Probe. trunk 和 head 交替各跑 5 次 `tests/e2e/harness.ts` 的 `startHost`，取中位数。
+- [x] Baseline. Record the trunk 中位数 first.
+- [x] Rule. head 比 trunk 慢 200 毫秒以上就失败。
 
 **Review gate.** None. F1 is not review-gated.
+
+2026-11-12 在 72448bc 上通过：`just test` 1357 条全过；`node docs/modules/architecture/check.mjs` 7 项 ok；`docs/modules/evidence/f1-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f1/owner/`。Lane 3 的原因来自 `sample/broken/expected.json`（没有逐包的 expected.txt）。宿主发现包时只查结构，不跑工具用例（用例在打开开关时跑，见 design.md 的状态图），所以加载两个样例包不花派生进程的时间。Perf：trunk 带两个样例包起不来（把它们当旧模块加载后退出），所以 trunk 只放仓库三个模块，head 再加两个样例包；各 5 次，trunk 中位数 374 毫秒（离散 12），head 379 毫秒（离散 6），差 5 毫秒，低于噪声。
 
 **Merge.**
 
