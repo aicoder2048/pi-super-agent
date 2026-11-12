@@ -102,8 +102,8 @@ export interface ModuleRows {
 	watch(module: ModuleName, components: readonly Component[], request: WatchRequest, who: string): Watched;
 }
 
-/** `alerts`: the conditions the written rows met, for the host to post. */
-export type Written = Accessed & { alerts: readonly Alert[] };
+/** `alerts`: the conditions the written rows met, for the host to post. `alertProblem`: why they could not be checked; the rows are written anyway. */
+export type Written = Accessed & { alerts: readonly Alert[]; alertProblem?: string };
 
 export type WatchRequest = Extract<Request, { kind: "watch" }>;
 export type Watched = { collection: ComponentName; class: DataClass; output: { conditions: SetCondition[] } | { condition: SetCondition; receipt: string } };
@@ -158,6 +158,7 @@ function conditionsOf(db: DatabaseSync, collection: string): SetCondition[] {
 	}));
 }
 
+/** Equal times count as the latest: a date-only time cannot order two readings taken the same day. */
 function alertsFor(db: DatabaseSync, { name, collection }: DataComponent, written: readonly Record<string, Value>[]): Alert[] {
 	const watch = collection.watch;
 	if (watch === undefined) return [];
@@ -166,14 +167,20 @@ function alertsFor(db: DatabaseSync, { name, collection }: DataComponent, writte
 	const [key, value, at] = [watch.key, watch.value, watch.at].map(quote);
 	db.exec(`CREATE INDEX IF NOT EXISTS ${quote(`_watch_${name}`)} ON ${quote(name)} (${key}, ${at})`);
 	const history = db.prepare(`SELECT ${value} AS value, ${at} AS at, "_from" AS "from" FROM ${quote(name)} WHERE ${key} = ? AND ${value} IS NOT NULL AND ${at} IS NOT NULL AND (${at} < ? OR (${at} = ? AND "_id" <= ?)) ORDER BY ${at} DESC, "_id" DESC LIMIT ?`);
+	const latestOf = db.prepare(`SELECT MAX(${at}) AS at FROM ${quote(name)} WHERE ${key} = ?`);
+	const latest = new Map<Value | undefined, Value>();
+	const isLatestForKey = (k: Value | undefined, t: string) => {
+		if (!latest.has(k)) latest.set(k, (latestOf.get(k!) as { at: Value }).at);
+		return t === latest.get(k);
+	};
 	return written.flatMap((row) => {
 		const [k, v, t] = [row[watch.key], row[watch.value], row[watch.at]];
 		const mine = conditions.filter((c) => c.key === k);
-		if (mine.length === 0 || typeof v !== "number" || typeof t !== "string") return [];
+		if (mine.length === 0 || typeof v !== "number" || typeof t !== "string" || !isLatestForKey(k, t)) return [];
 		const points = (history.all(k!, t, t, row._id!, Math.max(...mine.map((c) => need(c.condition)))) as Point[]).reverse();
 		return mine.flatMap((c) => {
 			const happened = met(c.condition, points);
-			return happened === undefined ? [] : [{ externalId: `${c.id}@${t}`, text: alertText(collection.title, c, points.at(-1)!, happened), at: t, private: collection.class === "private" }];
+			return happened === undefined ? [] : [{ externalId: `${c.id}:${row._id}`, text: alertText(collection.title, c, points.at(-1)!, happened), at: t, private: collection.class === "private" }];
 		});
 	});
 }
@@ -308,7 +315,12 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 				const visible = Object.keys(fields);
 				const read = db.prepare(`SELECT * FROM ${table} WHERE "_id" = ?`);
 				const written = ids.map((id) => read.get(id) as Record<string, Value>);
-				return { collection: component.name, class: component.collection.class, rows: written.map((row) => rowOf(visible, row)), alerts: alertsFor(db, component, written) };
+				const answer = { collection: component.name, class: component.collection.class, rows: written.map((row) => rowOf(visible, row)) };
+				try {
+					return { ...answer, alerts: alertsFor(db, component, written) };
+				} catch (error) {
+					return { ...answer, alerts: [], alertProblem: failed(error) };
+				}
 			});
 		},
 		watch(module, components, request, who) {

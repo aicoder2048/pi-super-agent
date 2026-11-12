@@ -118,6 +118,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 				return { ok: true, output: { collection: read.collection, rows: read.rows as unknown as Json }, private: read.class === "private" };
 			}
 			const written = ports.rows.write(module, collections, request.collection, request.rows, request.from, who);
+			if (written.alertProblem !== undefined) ports.log(`[gateway] ${module} ${written.collection}：写进去了，但提醒条件没检查成：${written.alertProblem}`);
 			return { ok: true, output: { collection: written.collection, rows: written.rows as unknown as Json }, private: written.class === "private", alerts: written.alerts };
 		});
 	const conditions = (module: ModuleName, request: WatchRequest, who: string): Reply =>
