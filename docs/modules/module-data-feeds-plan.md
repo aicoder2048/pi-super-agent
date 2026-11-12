@@ -99,7 +99,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] Lane 4. 存一个改名的版本（`was`）。Save `g1-rename.txt`. Pass when 旧值出现在新名字下。
 - [x] Lane 5. 存一个拿掉字段的版本再加回来。Save `g1-remove.txt`. Pass when 值还在。
 - [x] Lane 6. 存一个改单位的版本。Save `g1-unit.txt`. Pass when 无效带原因，旧版本服务，数据不变。
-- [x] Lane 7. 迁移中途杀掉宿主再起。Save `g1-crash.txt`. Pass when 数据等于快照或新结构，不会半截。脚本里的三次杀进程落在拷快照和 COMMIT 之后两个窗口，不在事务里面；事务里面的崩溃由单元测试「迁移事务里崩溃」两条覆盖（子进程在事务中 SIGKILL 自己，留下热日志和快照）。
+- [x] Lane 7. 迁移中途杀掉宿主再起。Save `g1-crash.txt`. Pass when 数据等于快照或新结构，不会半截。最早的脚本三次杀进程都落在拷快照和 COMMIT 之后，没打到事务里面。修复轮改成两次等 `data.db-journal` 出现（事务里面）、一次等快照出现；单元测试「迁移事务里崩溃」两条另外覆盖（子进程在事务中 SIGKILL 自己，留下热日志和快照，其中一条是停机时包又改成无效版本）。
 - [x] Lane 8. 拿掉模块包再放回来。Save `g1-away.txt`. Pass when 数据原样接上。
 - [x] Lane 9. `just module purge personal-health` 输错名字。Save `g1-purge-wrong.txt`. Pass when 拒绝，数据还在。
 - [x] Lane 10. 输对名字。Save `g1-purge.txt`. Pass when `modules-data/personal-health` 不在了，模块包不受影响。
@@ -114,6 +114,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Review gate.** None. G1 is not review-gated.
 
 2026-11-12 在 c69e412 上通过：`tests/instance-data.test.ts` 12 条，`just test` 1487 条全过，`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g1/owner/g1-*.txt`；perf 启动 trunk 中位 407 ms、head 408 ms，10 万行加字段迁移中位 6 ms（6.3 MB）。lane 7 用 200 万行，三次里两次在迁移中途 SIGKILL，重启后都是新结构、行数不变、快照不留。
+
+2026-11-12 审计修复轮在 92a3e7e（已 rebase 到 main e8741fc）上通过：审计的八条加 gates 验证的第九条，十一条新单元测试先红后绿（`/tmp/swarm-g1/fix/red.txt`）；`tests/instance-data.test.ts` 22 条，`just test` 1511 条全过，`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g1/fix/g1-*.txt`，lane 7 三次都打中（两次在事务里面），重启后 200 万行都在、新结构、不留快照；perf 启动 trunk 中位 385 ms、head 388 ms，10 万行加字段迁移中位 5 ms。
 
 **Merge.**
 
