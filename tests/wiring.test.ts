@@ -362,7 +362,7 @@ test("接线把模块表交给宿主时不拍快照：换表以后宿主的领�
 	const options = createHostOptions({ config: hostConfig(provider), modules: { live, kitFor: (domain, pin) => (pin === null ? live.current().kitFor(domain) : pinned) }, modelRuntime, log: () => {} });
 	assert.deepEqual([...options.domains!.book().keys()], []);
 	live.publish(repo);
-	assert.deepEqual([...options.domains!.book().keys()], ["us-market", "pi-pi"]);
+	assert.deepEqual([...options.domains!.book().keys()], ["us-market", "module-builder", "pi-pi"]);
 	assert.equal(options.domains!.kitFor("pi-pi", null)!.crew.length, 9);
 	assert.equal(options.domains!.kitFor("tax", "abc"), pinned);
 });

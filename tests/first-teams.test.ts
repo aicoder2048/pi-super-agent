@@ -19,7 +19,7 @@ const teamOf = (modules: Modules, name: string) => modules.modules.find((m) => m
 
 test("仓库自带的两支队伍用默认配置的提供方都能加载：us-market 是美股看盘队的四位，pi-pi 是 Pi施工队的九位", () => {
 	const modules = load();
-	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true }, "us-market": { team: "美股看盘队", onRoster: true } });
+	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "module-builder": { team: "模块工坊", onRoster: true }, "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true }, "us-market": { team: "美股看盘队", onRoster: true } });
 	assert.deepEqual(Object.fromEntries(teamOf(modules, "us-market")!.members.map((m) => [m.name, m.title])), WATCHERS);
 	const experts = teamOf(modules, "pi-pi")!.members;
 	assert.deepEqual(experts.map((m) => m.name), PI_EXPERTS);
@@ -44,9 +44,10 @@ test("美股看盘队每位成员只列它用得上的只读工具；九位 Pi �
 	assert.deepEqual(tools("pi-pi"), Object.fromEntries(PI_EXPERTS.map((name) => [name, ["read", "grep", "find", "ls", "web_get"]])));
 });
 
-const shipped = () => load().modules.flatMap((m) => m.team?.members ?? []);
+// module-builder's experts write module packages by design (design.md §6), so they are not among the read-only crews.
+const shipped = () => load().modules.filter((m) => m.name !== "module-builder").flatMap((m) => m.team?.members ?? []);
 
-test("仓库自带的十三位成员都写了工具清单，没有一位能执行命令、写文件或改文件", () => {
+test("仓库自带的看盘队和施工队十三位成员都写了工具清单，没有一位能执行命令、写文件或改文件", () => {
 	const all = shipped();
 	assert.equal(all.length, 13);
 	for (const member of all) {
@@ -217,7 +218,7 @@ test("拿掉 us-market 模块：加载不报错，它的领域、队伍和成员
 	cpSync(REPO_MODULES, dir, { recursive: true });
 	rmSync(join(dir, "us-market"), { recursive: true });
 	const modules = load(dir);
-	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true } });
+	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "module-builder": { team: "模块工坊", onRoster: true }, "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true } });
 	assert.equal(modules.kitFor("us-market"), undefined);
 	assert.ok(!modules.rosterPrompt().includes("us-market"));
 	assert.deepEqual(modules.rulesFor("us-market"), []);

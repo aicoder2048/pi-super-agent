@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "name": "module-builder",
+  "version": "0.1.0",
+  "title": "模块制作",
+  "description": "用聊天做一个新模块，或改一个已有模块：访谈、搭包、整理知识、出考题、检查",
+  "team": "模块工坊"
+}
