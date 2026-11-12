@@ -7,6 +7,8 @@ import type { FeedFixture, FeedWhen } from "./manifest.ts";
 import type { Json } from "./protocol.ts";
 
 const RUNNING = ["timer", "inbox"];
+/** A handler can fail on a network blip, so an inbox file gets this many tries in a row before it is rejected. */
+const INBOX_TRIES = 3;
 
 export interface SchedulerOptions {
 	feeds(): readonly FeedEntry[];
@@ -31,6 +33,7 @@ export function createScheduler(o: SchedulerOptions): Scheduler {
 	const running = new Set<string>();
 	const rehearsed = new Set<string>();
 	const waiting = new Set<string>();
+	const failures = new Map<string, number>();
 	let timer: ReturnType<typeof setInterval> | undefined;
 
 	const call = async (entry: FeedEntry, items: readonly Json[], fixture?: FeedFixture): Promise<FeedRun> => {
@@ -67,8 +70,15 @@ export function createScheduler(o: SchedulerOptions): Scheduler {
 			return (async () => {
 				for (const { file, item } of taken) {
 					const run = await call(entry, [item]);
+					const key = join(dir, file);
+					const tries = run.ok ? 0 : (failures.get(key) ?? 0) + 1;
+					if (!run.ok && mayBeNetwork && tries < INBOX_TRIES) {
+						failures.set(key, tries);
+						continue;
+					}
+					failures.delete(key);
 					if (run.ok) processInbox(dir, file);
-					else if (!mayBeNetwork) rejectInbox(dir, file, run.note, o.log);
+					else rejectInbox(dir, file, run.note, o.log);
 				}
 			})();
 		}
