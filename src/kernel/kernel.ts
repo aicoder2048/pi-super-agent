@@ -1110,7 +1110,7 @@ export class Kernel {
 
 	/** Alerts posted since local midnight, oldest first. */
 	alertsToday(): HostLine[] {
-		return this.#all("SELECT id, kind, text, created_at FROM host_lines WHERE kind = 'alert' AND created_at >= ? ORDER BY rowid", localDayStart(this.#now())).map(hostLine);
+		return this.#all("SELECT id, kind, text, created_at, module_title, module_private FROM host_lines WHERE kind = 'alert' AND created_at >= ? ORDER BY rowid", localDayStart(this.#now())).map(hostLine);
 	}
 
 	alertCountsToday(): Record<string, number> {

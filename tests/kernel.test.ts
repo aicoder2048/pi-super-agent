@@ -2209,6 +2209,13 @@ test("宿主行：alertsToday 按先后列出本地今天贴的提醒，不列�
 	assert.deepEqual(s.kernel.alertsToday(), [a, b]);
 });
 
+test("宿主行：alertsToday 里模块的提醒带着模块名和是否私密", () => {
+	const s = setup();
+	const line = s.kernel.postHostLine("health", { ...alert("cea"), module: { title: "个人医疗健康", private: true } }).line;
+	assert.deepEqual(s.kernel.alertsToday(), [line]);
+	assert.deepEqual(line.module, { title: "个人医疗健康", private: true });
+});
+
 test("宿主行：undeliveredAlerts 只列没标记送达的提醒，不列收据", () => {
 	const s = setup();
 	s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下" });
