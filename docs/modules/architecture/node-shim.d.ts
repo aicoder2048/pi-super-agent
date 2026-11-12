@@ -17,7 +17,7 @@ declare module "node:fs" {
 	export function renameSync(from: string, to: string): void;
 	export function mkdtempSync(prefix: string): string;
 	export function writeFileSync(path: string, content: string): void;
-	export function rmSync(path: string, options: { recursive: true; force: true }): void;
+	export function rmSync(path: string, options: { recursive?: true; force: true }): void;
 	export interface FSWatcher {
 		close(): void;
 		on(event: "error", listener: (error: Error) => void): this;
@@ -35,6 +35,7 @@ declare module "node:sqlite" {
 		exec(sql: string): void;
 		prepare(sql: string): StatementSync;
 		close(): void;
+		readonly isOpen: boolean;
 	}
 }
 declare module "node:os" {

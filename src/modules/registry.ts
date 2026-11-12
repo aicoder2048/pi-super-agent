@@ -4,8 +4,7 @@
  * `LiveRegistry` and asks for `current()`. Publishing a new snapshot is one assignment, so
  * a reader sees the whole old table or the whole new one.
  */
-import type { CollectionDescriptor, Component, Digest, ModuleName, PackageScan } from "./manifest.ts";
-import type { Caller } from "./protocol.ts";
+import type { Component, Digest, ModuleName, PackageScan, Problem } from "./manifest.ts";
 
 /** A read-only copy of one package version under `<stateDir>/module-store/<name>/<digest>/`. */
 export interface PackageSnapshot {
@@ -46,23 +45,16 @@ export interface LiveRegistry<S> {
 
 /** Owns `<stateDir>/modules-data/<module>/`. The only host code that opens a module's instance data. */
 export interface InstanceData {
-	/** Creates the directory and database on first use. Never touches the package. */
-	open(module: ModuleName): InstanceHandle;
-	sizeBytes(module: ModuleName): number;
-	/** Irreversible. Called only for the `purge-data` effect. */
-	purge(module: ModuleName): void;
-}
-
-export interface InstanceHandle {
+	/** What `components` would break in the stored structure. Nothing stored: none. */
+	check(module: ModuleName, components: readonly Component[]): readonly Problem[];
 	/**
-	 * Everything that was ever stored: each collection with its fields, the hidden ones
-	 * included, and the old names that are aliases after a rename. The `checking` stage
-	 * compares a new version against this (`structureChanges`).
+	 * Grows the stored structure to cover `components`, creating the directory and database on
+	 * first use. Snapshots the database first and restores it on failure, so the data is either
+	 * the old structure or the new one. Safe to run again after a crash.
 	 */
-	stored(): ReadonlyMap<string, CollectionDescriptor & { aliases: Readonly<Record<string, string>> }>;
-	/** Taken before a migration. `restore` puts it back. */
-	snapshot(): { restore(): void; discard(): void };
-	accessLog(since: string): readonly { at: string; caller: Caller["who"]; ticket: string | null; request: string; rows: number }[];
+	migrate(module: ModuleName, components: readonly Component[]): { ok: true } | { ok: false; reason: string };
+	/** Irreversible. Only the `purge-data` effect and `just module purge` call it. */
+	purge(module: ModuleName): void;
 }
 
 /** Runs each serving module's feeds on a clock or on a push, and follows registry changes. */

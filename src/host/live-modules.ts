@@ -11,6 +11,7 @@ import { BUNDLED_MODULES } from "./config.ts";
 import { moduleRows, pinnedCopies, saveModuleRecord, setModuleSwitch } from "../kernel/store.ts";
 import { manifestLayout, packageModule, type DomainKit, type LoadedModule, type Modules } from "../modules.ts";
 import type { ModuleCard } from "../client/protocol.ts";
+import { instanceData } from "../modules/instance-data.ts";
 import { notImportedIn, moduleDataDir } from "../modules/knowledge.ts";
 import { describe, initialRecord, problemText, type Effect, type ModuleEvent, type ModuleRecord, type Stage, type Version } from "../modules/lifecycle.ts";
 import { drive, liveRegistry, ModuleStore, switchEvent } from "../modules/live.ts";
@@ -74,6 +75,7 @@ function packageComponents(scan: PackageScan): ModuleCard["components"] {
 
 export function startLiveModules({ db, stateDir, roots, discovered, configSwitches, log }: LiveModulesOptions): LiveModules {
 	const store = new ModuleStore(join(stateDir, "module-store"));
+	const data = instanceData(stateDir);
 	const found = new Map<string, Found>([
 		...discovered.found.map((m): [string, Found] => [m.name, { dir: m.dir, version: { digest: digestOf(m.dir), label: LEGACY_LABEL }, legacy: m }]),
 		...discovered.packages.map(({ name, dir, scan }): [string, Found] => [name, { dir, version: versionOf(dir, scan), scan }]),
@@ -132,6 +134,8 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 		const result = scanPackage(entry.dir, { runCases: false });
 		if (!result.ok) return ok(result.problems);
 		if (result.scan.digest !== version.digest) return { type: "package-found", version: versionOf(entry.dir, result) };
+		const stored = data.check(name as ModuleName, result.scan.components);
+		if (stored.length > 0) return ok(stored);
 		if (!hasCases(result.scan)) return ok();
 		const ran = caseResults.get(name);
 		if (ran?.digest !== version.digest) runCases(name, result.scan);
@@ -141,9 +145,22 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 		}
 		return "wait";
 	};
+	const migrate = (name: string, entry: Found, effect: Extract<Effect, { do: "migrate" }>): ModuleEvent => {
+		if (entry.legacy) return { type: "migrated", attempt: effect.attempt };
+		const result = scanPackage(entry.dir, { runCases: false });
+		if (!result.ok || result.scan.digest !== effect.to.digest) return { type: "package-found", version: versionOf(entry.dir, result) };
+		const done = data.migrate(name as ModuleName, result.scan.components);
+		if (done.ok) return { type: "migrated", attempt: effect.attempt };
+		log(`[modules] ${name} 的数据结构调整失败，已恢复快照：${done.reason}`);
+		return { type: "migration-failed", attempt: effect.attempt, reason: done.reason };
+	};
 	const run = (name: string) => (effect: Effect): ModuleEvent | null | "wait" => {
 		const entry = found.get(name);
-		if (effect.do === "migrate") return { type: "migrated", attempt: effect.attempt };
+		if (effect.do === "purge-data") {
+			data.purge(name as ModuleName);
+			return null;
+		}
+		if (effect.do === "migrate") return entry === undefined ? null : migrate(name, entry, effect);
 		if (effect.do === "check") return entry === undefined ? null : check(name, entry, effect.version);
 		if (effect.do !== "publish" || effect.serve === null || entry === undefined || entry.legacy) return null;
 		if (store.keep(name as ModuleName, effect.serve.digest, entry.dir)) {
