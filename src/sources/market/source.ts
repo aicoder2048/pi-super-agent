@@ -10,7 +10,7 @@ import { ConfigError } from "../../config-error.ts";
 import type { LoadedSecret } from "../../secrets.ts";
 import { readFinnhubKey, readMarketKey } from "./key.ts";
 import { detect, isFresh, toTrigger, type MarketCursor, type Move, type Quote } from "./detect.ts";
-import { inPollWindow, MINUTE, nextPollDelay, nextWeekday, nyDateOf, sessionAt, shiftDate, type Session } from "./session.ts";
+import { inPollWindow, MINUTE, nextPollDelay, nextWeekday, nyDateOf, nyTime, sessionAt, shiftDate, type Session } from "./session.ts";
 import { parseMarketSettings, type MarketSettings } from "./settings.ts";
 import { parseSymbol } from "./symbol.ts";
 import { alertText, applyEdit, checkIntraday, driftOf, echoText, firingId, localLines, parseBook, parseEdit, polledSymbols, receiptText, redact, serializeBook, settleCross, suspectedId, type Book, type Tripwire } from "./tripwires.ts";
@@ -52,7 +52,7 @@ const LOOKUP_HELP = `us-market（美股行情）：每个结果都带 fromCache�
 - session {}：纽约日期和交易时段（pre、regular、post、closed）`;
 
 const TRIPWIRE_HELP = `us-market（美股盯盘条件）：同一只股票每种条件最多一条。成本价和股数不会回给你。宿主在网页对话里贴一行「盯盘条件（只在本机）」，逐字写出存下的条件；网页左栏「关注的来源」也列出全部条件。
-- list {}：列出全部条件
+- list {}：列出全部条件，并在 firedToday 里给出今天（纽约日期）已经发出的盯盘提醒（sentAt 发出时间、text 提醒原文；成本价提醒不带数字）。使用者问「提醒为什么没发」时先 list 看这里
 - set { symbol, condition }：新增或修改这只股票这一种条件。改已有的条件时只写要改的字段，没写的保持原样。condition 是下面三种之一，dir 是 up、down 或 either（不写就是 either），pct 在 0.1 到 100 之间：
   - { kind: "day", pct, dir? }：相对昨收涨跌超过 pct% 时提醒
   - { kind: "cost", pct, basis, shares?, dir? }：相对成本价 basis 涨跌超过 pct% 时提醒，新加时必须有 basis；shares 是股数，可以不写，写 null 是去掉
@@ -199,7 +199,9 @@ export class MarketSource implements Feed {
 		const edit = parseEdit(op, args);
 		if (edit.op === "list") {
 			ctx.post({ kind: "receipt", text: receiptText([], [], book) });
-			return { echo: echoText({ ok: true, book, changed: false, before: [], after: [] }), tripwires: redact(book) };
+			const firedToday = this.#firedToday();
+			const fired = firedToday.length ? `今天已发出 ${firedToday.length} 条盯盘提醒（同一只股票同一条件同一方向每天只提醒一次）。` : "今天还没发过盯盘提醒。";
+			return { echo: echoText({ ok: true, book, changed: false, before: [], after: [] }) + fired, tripwires: redact(book), firedToday };
 		}
 		const applied = applyEdit(book, edit, settings.watchlist, ctx.clock.now());
 		if (!applied.ok) throw new Error(echoText(applied));
@@ -209,6 +211,18 @@ export class MarketSource implements Feed {
 		}
 		ctx.post({ kind: "receipt", text: receiptText(applied.before, applied.after, applied.book, this.#currentDrift(applied.after[0])) });
 		return { echo: echoText(applied), tripwires: redact(applied.book) };
+	}
+
+	// Alert ids carry the New York date (firingId), so "today" here is the trading day, not the host's local day.
+	// A cost alert's price and drift would give away the cost basis, so the helper only learns that one went out.
+	#firedToday(): { sentAt: string; text: string }[] {
+		const now = this.#o.ctx.clock.now();
+		const { nyDate } = sessionAt(now);
+		return this.#o.ctx.alertsSince(now - 36 * 60 * MINUTE).flatMap(({ externalId, text, at }) => {
+			const [symbol, date, signal] = externalId.split(":");
+			if (date !== nyDate) return [];
+			return [{ sentAt: `${nyTime(at)} ET`, text: signal?.startsWith("cost-") ? `${symbol} 相对成本价的提醒（数字只在网页显示）` : text }];
+		});
 	}
 
 	#currentDrift(t: Tripwire | undefined): number | undefined {

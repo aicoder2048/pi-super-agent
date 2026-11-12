@@ -1081,6 +1081,12 @@ export class Kernel {
 		this.#run("UPDATE host_lines SET delivered_at = ? WHERE id = ? AND delivered_at IS NULL", this.#now(), id);
 	}
 
+	/** This source's alerts created at or after `since`, oldest first. */
+	alertsSince(source: string, since: number): { externalId: string; text: string; at: number }[] {
+		return this.#all("SELECT external_id, text, created_at FROM host_lines WHERE kind = 'alert' AND source = ? AND created_at >= ? ORDER BY rowid", source, since)
+			.map((r) => ({ externalId: r.external_id, text: r.text, at: r.created_at }));
+	}
+
 	undeliveredAlerts(): HostLine[] {
 		return this.#all("SELECT id, kind, text, created_at FROM host_lines WHERE kind = 'alert' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
 	}

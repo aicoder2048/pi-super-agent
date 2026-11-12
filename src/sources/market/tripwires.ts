@@ -317,7 +317,7 @@ export function alertText(f: Firing, quote: { at: number; delayed: boolean }): s
 	const at = `报价时间 ${nyTime(quote.at)} ET${quote.delayed ? "（延迟行情）" : ""}。`;
 	switch (f.kind) {
 		case "day":
-			return `${head}${f.side === "up" ? "涨" : "跌"} ${signed(f.changePct)}，到了你设的 ${lineOf(f.side, f.pct)} 提醒线。现价 ${money(f.price)}，昨收 ${money(f.prevClose)}。${at}`;
+			return `${head}${f.side === "up" ? "涨" : "跌"} ${Math.abs(f.changePct).toFixed(2)}%，到了你设的 ${lineOf(f.side, f.pct)} 提醒线。现价 ${money(f.price)}，昨收 ${money(f.prevClose)}。${at}`;
 		case "cost":
 			return `${head}相对成本价 ${signed(f.driftPct)}，到了你设的 ${lineOf(f.side, f.pct)} 提醒线。现价 ${money(f.price)}。${at}`;
 		case "cross": {
