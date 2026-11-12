@@ -130,48 +130,53 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `src/modules/live.ts`（`LiveRegistry`、驱动器、副本目录 `module-store/`）。
-- [ ] Edit `src/kernel/kernel.ts`，`domains` 选项改成函数。Edit `src/kernel/store.ts`，加模块记录表和 `tickets.module_digest` 列。
-- [ ] Edit `src/host/host.ts`、`src/host/wiring.ts`、`src/host/workers.ts`、`src/host/pi-worker.ts`，改握 `LiveRegistry`，技能和专家从任务钉住的副本读。
-- [ ] Edit `src/cli/module.ts`，加 `on` 和 `off`。
-- [ ] Create `tests/module-live.test.ts`。
+- [x] Create `src/modules/live.ts`（`LiveRegistry`、驱动器、副本目录 `module-store/`）。
+- [x] Edit `src/kernel/kernel.ts`，`domains` 选项改成函数。Edit `src/kernel/store.ts`，加模块记录表和 `tickets.module_digest` 列。
+- [x] Edit `src/host/host.ts`、`src/host/wiring.ts`、`src/host/workers.ts`，改握 `LiveRegistry`，技能和专家从任务钉住的副本读。`pi-worker.ts` 不用改：`kitFor` 交出的已经是副本里的路径。驱动器和开关的接线放在新文件 `src/host/live-modules.ts`。
+- [x] Edit `src/cli/module.ts`，加 `on` 和 `off`（写开关的代码在 `src/cli/module-switch.ts`，只在 on/off 时加载，`check` 仍能用不带 Pi 的 node 跑）。
+- [x] Create `tests/module-live.test.ts`。
 
 **Build.**
 
-- [ ] `LiveRegistry.current()` 返回不可变快照，`publish` 一次赋值换表。驱动器按 `lifecycle.ts` 的 `transition` 走，`pending` 动作存在 state.db，崩溃后接着做。
-- [ ] 开关存在模块记录里。宿主第一次启动时从 `config.json` 的 `modules` 导入一次，旧布局里默认打开的模块导入成开。`just module on|off <名字>` 写记录，运行中的宿主两秒内生效。
-- [ ] 任务开出时记下模块摘要，技能、专家定义从 `module-store/<名字>/<摘要>/` 读。没有任务钉着的旧副本回收。
+- [x] `LiveRegistry.current()` 返回不可变快照，`publish` 一次赋值换表。驱动器按 `lifecycle.ts` 的 `transition` 走，`pending` 动作存在 state.db，崩溃后接着做。
+- [x] 开关存在模块记录里。宿主第一次启动时从 `config.json` 的 `modules` 导入一次，旧布局里默认打开的模块导入成开。`just module on|off <名字>` 写记录，运行中的宿主两秒内生效。
+- [x] 任务开出时记下模块摘要，技能、专家定义从 `module-store/<名字>/<摘要>/` 读。没有任务钉着的旧副本回收。
 
 **You see.**
 
-- [ ] 宿主运行时 `just module on personal-tax`，`just modules` 两秒内显示「运行中」，不用重启。
-- [ ] 正在跑的任务在模块文件改了以后仍用开始时的技能。
+- [x] 宿主运行时 `just module on personal-tax`，`just modules` 两秒内显示「运行中」，不用重启。
+- [x] 正在跑的任务在模块文件改了以后仍用开始时的技能。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/module-live.test.ts` 覆盖换表原子性、开关运行中生效、任务钉版本、崩溃后接着做 `pending`、旧副本回收、config.json 导入只做一次。Run `just test`.
+- [x] `tests/module-live.test.ts` 覆盖换表原子性、开关运行中生效、任务钉版本、崩溃后接着做 `pending`、旧副本回收、config.json 导入只做一次。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/f2a-live.ts`，宿主用假模型。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都用假模型跑一次 pi-pi 领域的任务。Save `f2a-regression.txt`. Pass when 两边任务都属于 pi-pi 且完成。
-- [ ] Lane 2. 运行中打开一个新布局模块。Save `f2a-on.txt`. Pass when 两秒内状态变成运行中，宿主进程号不变。
-- [ ] Lane 3. 运行中关掉它。Save `f2a-off.txt`. Pass when 两秒内变成已停用，新任务不再分到它。
-- [ ] Lane 4. 任务开出后改技能文件。Save `f2a-pin.txt`. Pass when 任务读到的是旧技能，副本目录里有两个摘要。
-- [ ] Lane 5. 任务结束后。Save `f2a-gc.txt`. Pass when 旧摘要的副本被回收。
-- [ ] Lane 6. 驱动器做到一半杀掉宿主再起。Save `f2a-crash.txt`. Pass when 重启后 `pending` 做完，状态正确。
-- [ ] Lane 7. `config.json` 里关掉 toy-market 后首次启动。Save `f2a-import.txt`. Pass when 记录里 toy-market 关，pi-pi 和 us-market 开。
-- [ ] Lane 8. 再改 `config.json` 后重启。Save `f2a-import-once.txt`. Pass when 记录不变，日志提示开关改由 `just module` 管。
-- [ ] Lane 9. 包不在时关掉开关，包放回来。Save `f2a-away.txt`. Pass when 仍是关。
-- [ ] Lane 10. 宿主没运行时 `just module on`。Save `f2a-offline.txt`. Pass when 记录写入，下次启动生效。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都用假模型跑一次 pi-pi 领域的任务。Save `f2a-regression.txt`. Pass when 两边任务都属于 pi-pi 且完成。
+- [x] Lane 2. 运行中打开一个新布局模块。Save `f2a-on.txt`. Pass when 两秒内状态变成运行中，宿主进程号不变。
+- [x] Lane 3. 运行中关掉它。Save `f2a-off.txt`. Pass when 两秒内变成已停用，新任务不再分到它。
+- [x] Lane 4. 任务开出后改技能文件。Save `f2a-pin.txt`. Pass when 任务读到的是旧技能，副本目录里有两个摘要。
+- [x] Lane 5. 任务结束后。Save `f2a-gc.txt`. Pass when 旧摘要的副本被回收。
+- [x] Lane 6. 驱动器做到一半杀掉宿主再起。Save `f2a-crash.txt`. Pass when 重启后 `pending` 做完，状态正确。
+- [x] Lane 7. `config.json` 里关掉 toy-market 后首次启动。Save `f2a-import.txt`. Pass when 记录里 toy-market 关，pi-pi 和 us-market 开。
+- [x] Lane 8. 再改 `config.json` 后重启。Save `f2a-import-once.txt`. Pass when 记录不变，日志提示开关改由 `just module` 管。
+- [x] Lane 9. 包不在时关掉开关，包放回来。Save `f2a-away.txt`. Pass when 仍是关。
+- [x] Lane 10. 宿主没运行时 `just module on`。Save `f2a-offline.txt`. Pass when 记录写入，下次启动生效。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 宿主启动到就绪的时间，以及开出一个任务的时间（新增复制副本的开销）。trunk 没有换表，换表本身另给绝对预算。
-- [ ] Probe. trunk 和 head 交替各 5 次，`startHost` 就绪时间和 `drop` 到任务出现的时间。换表用 `performance.now()` 量 `publish` 100 次。
-- [ ] Baseline. Record the trunk 两个中位数 first.
-- [ ] Rule. 启动或开任务比 trunk 慢 200 毫秒以上就失败。一次换表超过 50 毫秒就失败。
+- [x] Metric. 宿主启动到就绪的时间，以及开出一个任务的时间（新增复制副本的开销）。trunk 没有换表，换表本身另给绝对预算。
+- [x] Probe. trunk 和 head 交替各 5 次，`startHost` 就绪时间和 `drop` 到任务出现的时间。换表用 `performance.now()` 量 `publish` 100 次。
+- [x] Baseline. Record the trunk 两个中位数 first.
+- [x] Rule. 启动或开任务比 trunk 慢 200 毫秒以上就失败。一次换表超过 50 毫秒就失败。
 
 **Review gate.** None. F2a is not review-gated.
+
+
+2026-11-12 在 3cf80a2 上通过：`just test` 1377 条全过；`node docs/modules/architecture/check.mjs` 7 项 ok；`docs/modules/evidence/f2a-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f2a/owner/`。打开 0.29 秒生效，关掉 0.16 秒，宿主进程号不变。Lane 4 在改技能后重启宿主，让钉着的任务重新起 Worker，它的提示词里是旧技能和旧摘要的副本路径（F2a 没有文件监视器，新摘要要等重启或 F2b）。Lane 6 在宿主停着时把记录写成「检查中、outbox 里有检查」，模拟驱动器做到一半崩溃。Perf：trunk 和 head 交替各 5 次，启动到就绪 trunk 中位数 368 毫秒（离散 14），head 377 毫秒（离散 11）；drop 到任务出现 trunk 383 毫秒，head 383 毫秒，两边都主要花在 `just drop` 起进程和收件箱轮询上，开任务只多记一个摘要。`publish` 100 次最长 0.009 毫秒；切换 toy-market 后一次轮询（读开关、走状态机、重建表、换表、回收）100 次最长 0.26 毫秒。
+
+2026-11-12 修复轮在 657b15c 上通过：`just test` 1385 条全过；`check.mjs` 7 项 ok；`f2a-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f2a/fix-owner/`。修了正确性审查的七条。`module-store/` 里的 `.DS_Store` 不再让宿主起不来。结束的任务被回复重开时改钉到正在服务的版本（它的副本可能已回收）。副本读不出来不再记死，下次发布后重读。宿主跑工具用例改成异步子进程，驱动器在检查处停下、结果回来再接着走，3 个 4 秒用例时事件循环最长停 53 毫秒（原来 12 秒）。`just module on` 对宿主还没发现的包说「下次启动生效」。`just modules` 表头算上新布局包。副本只复制摘要算进去的文件，复制后核对摘要，对不上就不留副本、重新检查。Lane 6 改成等记录变成运行中再判，因为带用例的包现在异步检查。
 
 **Merge.**
 

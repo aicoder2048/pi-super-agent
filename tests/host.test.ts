@@ -301,3 +301,20 @@ test("同一句话带同一个 externalId 再说一次：只记一条触发，�
 	assert.deepEqual(ofType(got, "user").map((m) => m.text), ["查一下 NVDA", "另一句"]);
 	assert.deepEqual(host.kernel.conversation().filter((l) => l.who === "user").map((l) => l.text), ["查一下 NVDA", "另一句"]);
 });
+
+test("任务钉住开出时的模块版本：领域簿换了版本以后，已开的任务的助手仍拿钉住的副本，新任务拿新版本", async (t) => {
+	let digest = "v1";
+	const domains = {
+		book: () => new Map([["tax", { team: null, onRoster: true, digest }]]),
+		kitFor: (_domain: string, pin: string | null) => ({ skillsDir: `/module-store/tax/${pin ?? "serving"}/skills`, prepare: undefined, crew: [], granted: [] }),
+	};
+	const brain: Brain = (cards) => cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg"), title: "t", brief: "b", domain: "tax" }] } }] : []));
+	const { host, spawner } = await startHost(brain, (w) => w.settle(), { domains });
+	t.after(() => host.stop());
+	host.say("算一下今年的税");
+	await until(() => spawner.workers.size === 1, "第一个助手启动");
+	digest = "v2";
+	host.say("再算一遍税");
+	await until(() => spawner.workers.size === 2, "第二个助手启动");
+	assert.deepEqual([...spawner.workers.values()].map((w) => w.spec.skillsDir), ["/module-store/tax/v1/skills", "/module-store/tax/v2/skills"]);
+});

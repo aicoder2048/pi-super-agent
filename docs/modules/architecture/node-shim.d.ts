@@ -9,6 +9,10 @@ declare module "node:fs" {
 	export function readFileSync(path: string): Uint8Array;
 	export function readFileSync(path: string, encoding: "utf8"): string;
 	export function readdirSync(path: string, options: { withFileTypes: true }): Dirent[];
+	export function readdirSync(path: string): string[];
+	export function mkdirSync(path: string, options: { recursive: true }): void;
+	export function copyFileSync(from: string, to: string): void;
+	export function renameSync(from: string, to: string): void;
 	export function mkdtempSync(prefix: string): string;
 	export function writeFileSync(path: string, content: string): void;
 	export function rmSync(path: string, options: { recursive: true; force: true }): void;
@@ -39,6 +43,17 @@ declare module "node:child_process" {
 		args: readonly string[],
 		options: { encoding: "utf8"; timeout: number; env: Readonly<Record<string, string>>; cwd: string; input: string },
 	): { status: number | null; stdout: string; stderr: string; error?: Error };
+	interface Readable {
+		setEncoding(encoding: "utf8"): { on(event: "data", listener: (chunk: string) => void): void };
+	}
+	export interface ChildProcess {
+		stdout: Readable;
+		stderr: Readable;
+		stdin: { on(event: "error", listener: () => void): void; end(data: string): void };
+		on(event: "error", listener: (error: Error) => void): void;
+		on(event: "close", listener: (status: number | null, signal: string | null) => void): void;
+	}
+	export function spawn(command: string, args: readonly string[], options: { timeout: number; env: Readonly<Record<string, string>>; cwd: string }): ChildProcess;
 }
 declare module "node:test" {
 	export function test(name: string, run: () => void | Promise<void>): void;

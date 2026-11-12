@@ -10,9 +10,12 @@ import type { HostToClient } from "../src/client/protocol.ts";
 import { loadConfig } from "../src/host/config.ts";
 import { Host } from "../src/host/host.ts";
 import { createHostOptions } from "../src/host/wiring.ts";
+import { liveRegistry } from "../src/modules/live.ts";
 import type { WorkerEvents, WorkerSpec } from "../src/host/workers.ts";
 import { Modules } from "../src/modules.ts";
 import { defaultWorkerModels, FakeSpawner, fauxRouter, ids, openOnConversation, startHost, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
+
+const fixed = (modules: Modules) => ({ live: liveRegistry(modules), kitFor: (domain: string) => modules.kitFor(domain) });
 
 const replyOnReport: Brain = (cards) =>
 	cards.flatMap((card) => {
@@ -92,7 +95,7 @@ test("故事 12：使用者规则文件里的规则进入按真实接线启动�
 	const { modelRuntime, provider } = await fauxRuntime();
 	const rulesFile = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
 	writeFileSync(rulesFile, "## watch-ci\n来源: ci\nCI 失败时开任务\n");
-	const host = await Host.start(createHostOptions({ config: wiringConfig(provider), modules: Modules.load([], { stateDir: dirname(rulesFile) }), modelRuntime, log: () => {} }));
+	const host = await Host.start(createHostOptions({ config: wiringConfig(provider), modules: fixed(Modules.load([], { stateDir: dirname(rulesFile) })), modelRuntime, log: () => {} }));
 	t.after(() => host.stop());
 	const prompt: string = (host.router as any).session.systemPrompt;
 	assert.match(prompt, /user\/watch-ci/);
@@ -203,7 +206,7 @@ test("故事 28：没有配置文件时，Router 和 Worker 用 openai-codex，�
 test("故事 29：按真实接线启动的 Router 打开了 Pi 的自动重试，次数取配置的 retryAttempts", async (t) => {
 	for (const retryAttempts of [3, 5]) {
 		const { modelRuntime, provider } = await fauxRuntime();
-		const host = await Host.start(createHostOptions({ config: wiringConfig(provider, retryAttempts), modules: Modules.load([]), modelRuntime, log: () => {} }));
+		const host = await Host.start(createHostOptions({ config: wiringConfig(provider, retryAttempts), modules: fixed(Modules.load([])), modelRuntime, log: () => {} }));
 		t.after(() => host.stop());
 		const settings = (host.router as any).session.settingsManager;
 		assert.equal(settings.getRetryEnabled(), true);

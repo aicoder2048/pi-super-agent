@@ -15,9 +15,11 @@ export interface DomainEntry {
 	team: string | null;
 	/** The 幕僚长 was offered this domain. False: only the module's own rules put a ticket in it. */
 	onRoster: boolean;
+	/** The package version that serves now. A ticket opened in this domain is pinned to it. Absent for a legacy module, which has no copy to pin. */
+	digest?: string;
 }
 
-/** All the kernel knows about domains, built once at startup: one entry per loaded module, by the module's name. */
+/** All the kernel knows about domains: one entry per serving module, by the module's name. */
 export type DomainBook = ReadonlyMap<string, DomainEntry>;
 
 /** A rule's id is its namespace and its heading: a module's name for the module's rules, `user` for the user's own. */
@@ -217,6 +219,8 @@ export interface Ticket {
 	ruleId: string | null;
 	/** The module this ticket belongs to, fixed when it opens. Null: no domain. The module may have been removed since. */
 	domain: string | null;
+	/** The package version the ticket is pinned to: its skills and members come from that copy. Null: no domain, or a legacy module. */
+	moduleDigest: string | null;
 	originTriggerId: string | null;
 	createdAt: number;
 	workerSessionId: string;

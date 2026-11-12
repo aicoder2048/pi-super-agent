@@ -451,3 +451,13 @@ test("终端 Ctrl+C 时成员正在干活：宿主停下后不留成员进程，
 	assert.equal(existsSync(ledger), false, "成员记录 running.json 已清掉");
 	await until(() => !alive(helperPid), "助手进程已结束");
 });
+
+test("just host 第一次启动把 config.json 的模块开关导入状态库，启动日志按导入后的开关列模块", () => {
+	const stateDir = stateWith({ webPort: 0, modules: { "us-market": false }, models: { router: "openai-codex/no-such-model" } })();
+	const run = spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], { env: { ...process.env, PSA_STATE_DIR: stateDir }, encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL" });
+	assert.match(run.stderr, /\[host\] 模块：pi-pi（Pi施工队）；停用 toy-market, us-market；规则 \d+ 条/);
+	const db = new DatabaseSync(join(stateDir, "state.db"), { readOnly: true });
+	const switches = db.prepare("SELECT name, switch FROM module_records ORDER BY name").all().map((r) => [r.name, r.switch]);
+	db.close();
+	assert.deepEqual(switches, [["pi-pi", 1], ["toy-market", 0], ["us-market", 0]]);
+});

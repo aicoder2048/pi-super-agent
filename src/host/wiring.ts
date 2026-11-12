@@ -5,6 +5,7 @@ import { ConfigError } from "../config-error.ts";
 import { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import type { LoadedModule, Modules } from "../modules.ts";
+import type { LiveModules } from "./live-modules.ts";
 import type { WatchedSource } from "../client/protocol.ts";
 import type { TimerEntry } from "../sources/timer.ts";
 import { FEEDS, type FeedSpec } from "../sources/feeds.ts";
@@ -78,13 +79,15 @@ export function telegramOptions(config: Pick<HostConfig, "stateDir" | "secretsFi
 
 export interface HostWiringInput {
 	config: HostConfig;
-	modules: Modules;
+	/** The Router's rules and roster, the timers and the feeds are read once here; F2b and F5 make them follow. */
+	modules: Pick<LiveModules, "live" | "kitFor">;
 	modelRuntime: ModelRuntime;
 	log: (line: string) => void;
 	clock?: Clock;
 }
 
-export function createHostOptions({ config, modules, modelRuntime, log, clock = { now: () => Date.now() } }: HostWiringInput): HostOptions {
+export function createHostOptions({ config, modules: { live, kitFor }, modelRuntime, log, clock = { now: () => Date.now() } }: HostWiringInput): HostOptions {
+	const modules = live.current();
 	const resolve = (ref: ModelRef, role?: string) => {
 		const model = modelRuntime.getModel(ref.provider, ref.id);
 		if (!model) throw new ConfigError(`${role ? `${join(config.stateDir, "config.json")}：models.${role}：` : ""}找不到模型 ${formatModelRef(ref)}`);
@@ -107,11 +110,11 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		webHosts: config.webHosts,
 		config: config.kernel,
 		log,
-		sourcePolicy: modules.sourcePolicy,
-		ruleAllows: modules.ruleAllows,
-		isMarketSource: modules.isMarketSource,
-		domains: modules,
-		rulesFor: modules.rulesFor,
+		sourcePolicy: (trigger) => live.current().sourcePolicy(trigger),
+		ruleAllows: (ruleId, source) => live.current().ruleAllows(ruleId, source),
+		isMarketSource: (source) => live.current().isMarketSource(source),
+		domains: { book: () => live.current().book, kitFor },
+		rulesFor: (source) => live.current().rulesFor(source),
 		timers,
 		watching: watchedSources(modules, timers),
 		feeds,

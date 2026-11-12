@@ -2,14 +2,14 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Kernel } from "../kernel/kernel.ts";
-import type { Basis, Quote, ReportStatus, TicketInput, WorkerReport, WriteCheck } from "../kernel/types.ts";
+import type { Basis, Quote, ReportStatus, Ticket, TicketInput, WorkerReport, WriteCheck } from "../kernel/types.ts";
 import { REPORT_STATUSES } from "../kernel/types.ts";
 import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import { INPUT_LABEL, quoteContext } from "../client/board-format.mjs";
 import { parseOptions } from "../kernel/question.ts";
 import type { Usage } from "./worker-events.ts";
-import { NO_DOMAIN, type DomainKit } from "../modules.ts";
+import { NO_DOMAIN, type DomainKit, type Domains } from "../modules.ts";
 import type { Member } from "../teams.ts";
 import type { TranscriptMessage } from "../client/protocol.ts";
 import { canCode, memberTools } from "../worker/tools.ts";
@@ -101,8 +101,8 @@ export interface WorkerExecutorOptions {
 	models: WorkerModels;
 	lookup?: (source: string, op: string, args: unknown) => Promise<unknown>;
 	tripwires?: (source: string, op: string, args: unknown) => unknown;
-	/** The lookup by a ticket's domain. Without it every ticket runs as if it had no domain. */
-	kitFor?: (domain: string) => DomainKit | undefined;
+	/** The lookup by a ticket's domain and pinned version. Without it every ticket runs as if it had no domain. */
+	kitFor?: Domains["kitFor"];
 	/** Without it every helper works alone. */
 	dispatch?: DeskDispatchOptions;
 }
@@ -231,7 +231,7 @@ export class WorkerExecutor {
 			}),
 			transcript: (event) => this.#o.onTranscript?.(ticketId, event),
 		};
-		const kit = this.#kitFor(ticketId, ticket.domain);
+		const kit = this.#kitFor(ticketId, ticket);
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
@@ -377,23 +377,24 @@ export class WorkerExecutor {
 	}
 
 	#mayLookup(ticketId: string, holder: Member | undefined): boolean {
-		const { basis, domain } = this.#o.kernel.getTicket(ticketId)!;
-		return holder ? memberTools(basis, holder.tools).includes("lookup") : this.#kitFor(ticketId, domain).granted.includes("lookup");
+		const ticket = this.#o.kernel.getTicket(ticketId)!;
+		return holder ? memberTools(ticket.basis, holder.tools).includes("lookup") : this.#kitFor(ticketId, ticket).granted.includes("lookup");
 	}
 
 	#tripwireRefusal(ticketId: string): string | undefined {
 		const { kernel } = this.#o;
-		const { basis, domain } = kernel.getTicket(ticketId)!;
+		const ticket = kernel.getTicket(ticketId)!;
+		const { basis } = ticket;
 		if (basis !== "request") return `只有使用者在对话里开的任务能改盯盘条件，这个任务是${basis === "rule" ? "规则" : "推断"}开的。请在汇报里告诉使用者：在对话里再说一次要怎么改。`;
 		const heard = kernel.heardOtherThanUser(ticketId);
 		if (heard) return `这个任务${HEARD[heard]}，不能再改盯盘条件，免得其中夹带的话被当成使用者的意思。请在汇报里请使用者在对话里重新说一次，会新开一个任务来改。`;
-		if (!this.#kitFor(ticketId, domain).granted.includes("tripwire")) return "这个任务的领域没有在 module.json 的 tools 里开 tripwire，不能改盯盘条件。";
+		if (!this.#kitFor(ticketId, ticket).granted.includes("tripwire")) return "这个任务的领域没有在 module.json 的 tools 里开 tripwire，不能改盯盘条件。";
 		return undefined;
 	}
 
-	#kitFor(ticketId: string, domain: string | null): DomainKit {
+	#kitFor(ticketId: string, { domain, moduleDigest }: Pick<Ticket, "domain" | "moduleDigest">): DomainKit {
 		if (domain === null) return NO_DOMAIN;
-		const kit = this.#o.kitFor?.(domain);
+		const kit = this.#o.kitFor?.(domain, moduleDigest);
 		if (kit) return this.#desk ? kit : { ...kit, crew: [] };
 		if (!this.#domainless.has(ticketId)) {
 			this.#domainless.add(ticketId);

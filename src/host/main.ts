@@ -6,17 +6,22 @@ import { Host } from "./host.ts";
 import { exitOnConfigError } from "../config-error.ts";
 import { createHostOptions } from "./wiring.ts";
 import { problemLine } from "../modules/validate.ts";
+import { openStore } from "../kernel/store.ts";
+import { startLiveModules } from "./live-modules.ts";
+import { join } from "node:path";
 
 async function main(): Promise<void> {
 	const config = loadConfig();
 	const log = (line: string) => console.error(`${new Date().toISOString()} ${line}`);
-	const modules = loadModules(config);
-	const off = modules.found.filter((m) => !m.state.enabled).map((m) => m.name);
+	const discovered = loadModules(config);
+	for (const { name, scan } of discovered.packages) if (!scan.ok) log(`[host] 新布局包 ${name} 无效：${scan.problems.map(problemLine).join("；")}`);
+	const live = startLiveModules({ db: openStore(join(config.stateDir, "state.db")), stateDir: config.stateDir, discovered, configSwitches: config.moduleSwitches, log });
+	const modules = live.live.current();
+	const off = [...discovered.found, ...discovered.packages.filter((p) => p.scan.ok)].map((m) => m.name).filter((name) => !modules.book.has(name));
 	log(`[host] 模块：${modules.modules.map((m) => (m.team ? `${m.name}（${m.team.name}）` : m.name)).join(", ") || "无"}${off.length ? `；停用 ${off.join(", ")}` : ""}；规则 ${modules.allRules().length} 条`);
 	for (const id of modules.skippedUserRules) log(`[host] 规则 ${id} 没写「来源:」，不生效`);
-	for (const { name, scan } of modules.packages) if (!scan.ok) log(`[host] 新布局包 ${name} 无效：${scan.problems.map(problemLine).join("；")}`);
 
-	const host = await Host.start(createHostOptions({ config, modules, modelRuntime: await ModelRuntime.create(), log }));
+	const host = await Host.start(createHostOptions({ config, modules: live, modelRuntime: await ModelRuntime.create(), log }));
 	log(`[host] 已启动，状态目录 ${config.stateDir}，Router ${formatModelRef(config.models.router)}，Worker ${formatModelRef(config.models.worker)}，回退 ${formatModelRef(config.models.fallback)}`);
 	log(`[host] 网页 ${host.webUrl}`);
 	for (const url of host.remoteWebUrls) log(`[host] 网页（远程） ${url}`);

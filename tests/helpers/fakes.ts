@@ -34,7 +34,7 @@ type FakeModule = { skillsDir?: string; prepare?: string; tools?: DomainGatedToo
 
 export function domainsOf(modules: Record<string, FakeModule>): Domains {
 	return {
-		book: new Map(Object.entries(modules).map(([name, m]) => [name, { team: m.team ?? null, onRoster: true }])),
+		book: () => new Map(Object.entries(modules).map(([name, m]) => [name, { team: m.team ?? null, onRoster: true }])),
 		kitFor: (domain) => (domain in modules ? { skillsDir: modules[domain].skillsDir, prepare: modules[domain].prepare, crew: modules[domain].crew ?? [], granted: modules[domain].tools ?? [] } : undefined),
 	};
 }

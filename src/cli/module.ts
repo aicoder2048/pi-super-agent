@@ -1,11 +1,14 @@
 import { statSync } from "node:fs";
 import { problemLine, scanPackage, summary } from "../modules/validate.ts";
 
-const USAGE = "usage: just module check <packageDir> [--previous <packageDir>]";
+const USAGE = "usage: just module check <packageDir> [--previous <packageDir>] | just module on <name> | just module off <name>";
+
+const isFolder = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
 
 function check(target: string, previous: string | undefined): number {
-	if (!statSync(target, { throwIfNoEntry: false })?.isDirectory()) {
-		console.log(`${target}: no such folder`);
+	const missing = [target, previous].find((dir) => dir !== undefined && !isFolder(dir));
+	if (missing !== undefined) {
+		console.log(`${missing}: no such folder`);
 		return 1;
 	}
 	const result = scanPackage(target, { previous });
@@ -20,8 +23,9 @@ function check(target: string, previous: string | undefined): number {
 }
 
 const [command, target, flag, previous, ...rest] = process.argv.slice(2);
-const wellFormed = command === "check" && target !== undefined && rest.length === 0 && (flag === undefined || (flag === "--previous" && previous !== undefined));
-if (wellFormed) process.exitCode = check(target, previous);
+if (command === "check" && target !== undefined && rest.length === 0 && (flag === undefined || (flag === "--previous" && previous !== undefined))) process.exitCode = check(target, previous);
+// Loaded only for on/off, so `check` runs under plain node without Pi (docs/modules/architecture/check.mjs).
+else if ((command === "on" || command === "off") && target !== undefined && flag === undefined) process.exitCode = (await import("./module-switch.ts")).switchModule(target, command === "on");
 else {
 	console.error(USAGE);
 	process.exitCode = 2;

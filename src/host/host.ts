@@ -50,7 +50,7 @@ export interface HostOptions {
 	sourcePolicy?: SourcePolicy;
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	isMarketSource?: (source: string) => boolean;
-	/** The loaded modules. Without it no ticket has a domain. */
+	/** The serving modules, asked each time. Without it no ticket has a domain. */
 	domains?: Domains;
 	rulesFor?: (triggerSource: string) => string[];
 	timers?: TimerEntry[];
@@ -391,7 +391,7 @@ export class Host {
 		const dir = helperSessionDir(this.#stateDir);
 		const file = existsSync(dir) ? readdirSync(dir).find((f) => f.endsWith(`_${ticket.workerSessionId}.jsonl`)) : undefined;
 		const messages = file ? readSessionEntries(join(dir, file)).filter((entry) => entry.type === "message" && entry.message?.role !== "system").map((entry) => entry.message as TranscriptMessage) : [];
-		const crew = (ticket.domain !== null && this.#kitFor?.(ticket.domain)?.crew) || [];
+		const crew = (ticket.domain !== null && this.#kitFor?.(ticket.domain, ticket.moduleDigest)?.crew) || [];
 		const titles = Object.fromEntries(crew.map((m) => [m.name, m.title]));
 		const steps = memberTranscripts(this.#stateDir, ticketId);
 		const hasTeam = Object.keys(titles).length > 0 || Object.keys(steps).length > 0;
