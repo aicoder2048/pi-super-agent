@@ -70,8 +70,8 @@ export async function stopGroup(pgid: number): Promise<boolean> {
  * Starts `node --import ./src/pi-runtime.mjs <args>` from the repo as the leader of a new process group.
  * Its pid is the group id, and every child it spawns (Workers included) stays in that group.
  */
-export function startGroup(args: string[], options: { env: NodeJS.ProcessEnv; logFile: string; onOutput?: (text: string) => void }): { pid: number; exited: Promise<number | null> } {
-	const child = spawn(process.execPath, [...RUN, ...args], { cwd: REPO, env: options.env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+export function startGroup(args: string[], options: { env: NodeJS.ProcessEnv; logFile: string; onOutput?: (text: string) => void; repo?: string }): { pid: number; exited: Promise<number | null> } {
+	const child = spawn(process.execPath, [...RUN, ...args], { cwd: options.repo ?? REPO, env: options.env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
 	if (!child.pid) throw new Error(`无法启动 ${args.join(" ")}`);
 	const pid = child.pid;
 	liveGroups.add(pid);
@@ -124,6 +124,7 @@ export interface StartHostOptions {
 	baseEnv?: NodeJS.ProcessEnv;
 	imports?: string[];
 	timeoutMs?: number;
+	repo?: string;
 }
 
 export async function startHost(options: StartHostOptions): Promise<HostRun> {
@@ -147,7 +148,7 @@ export async function startHost(options: StartHostOptions): Promise<HostRun> {
 				clearTimeout(timer);
 				done((url = new URL(found[1])));
 			};
-			const proc = startGroup([...(options.imports ?? []).flatMap((f) => ["--import", f]), "src/host/main.ts"], { env, logFile: options.logFile, onOutput });
+			const proc = startGroup([...(options.imports ?? []).flatMap((f) => ["--import", f]), "src/host/main.ts"], { env, logFile: options.logFile, onOutput, repo: options.repo });
 			groups.push(proc.pid);
 			current = proc.pid;
 			void proc.exited.then((code) => {
