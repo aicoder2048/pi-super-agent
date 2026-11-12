@@ -127,3 +127,30 @@ test("ta 报业务错误：把 message 和 hint 转成一行说明", async (t) =
 	assert.equal(reply.ok, false);
 	assert.match(!reply.ok ? reply.note : "", /找不到这篇笔记。检查编号和标题。/);
 });
+
+test("QQQ 的缓存比标的旧一天差 30 秒：加 60 秒的 now 会让 ta 联网补数据，所以不调用 ta", async (t) => {
+	const ta = fakeProject(t, {}, { NVDA: SYNCED, QQQ: SYNCED - 24 * HOUR + 30_000, SPY: SYNCED });
+	const reply = await ta.call("structure", { symbol: "NVDA" });
+	assert.equal(reply.ok, false);
+	assert.match(!reply.ok ? reply.note : "", /不联网/);
+	assert.deepEqual(ta.calls(), []);
+});
+
+test("ta 退出码 0 却没有输出：给一行中文说明，不露出 JSON 解析错误", async (t) => {
+	const ta = fakeProject(t, { signals: {} });
+	const reply = await ta.call("signals", { symbol: "NVDA" });
+	assert.equal(reply.ok, false);
+	const note = !reply.ok ? reply.note : "";
+	assert.match(note, /ta signals 没有输出结果/);
+	assert.doesNotMatch(note, /JSON|\n/);
+});
+
+test("数字字段收到 true 或空白：一行拒绝，不调用 ta", async (t) => {
+	const ta = fakeProject(t, {});
+	for (const limit of [true, " "]) {
+		const reply = await ta.call("signals", { symbol: "NVDA", limit });
+		assert.equal(reply.ok, false, JSON.stringify(limit));
+		assert.match(!reply.ok ? reply.note : "", /limit 要是数字/);
+	}
+	assert.deepEqual(ta.calls(), []);
+});

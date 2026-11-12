@@ -16,6 +16,7 @@ export type JsonObject = { [key: string]: Json };
 const LIMIT_BYTES = 20_000;
 const UNDER_HOST_LIMIT_MS = 18_000;
 const DAY_MS = 86_400_000;
+const NOW_AFTER_SYNC_MS = 60_000;
 const SETUP = "见 docs/modules/stock-ta.md";
 const TIERS = [
 	{ items: 20, chars: 4000, depth: 8 },
@@ -35,8 +36,9 @@ export function argsOf(input: unknown, fields: Readonly<Record<string, Kind>>): 
 		const value = given[key];
 		if (value === undefined || value === null || value === "") continue;
 		if (kind === "number") {
-			if (!Number.isFinite(Number(value))) throw new Error(`${key} 要是数字，收到 ${JSON.stringify(value)}`);
-			args[key] = Number(value);
+			const number = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : NaN;
+			if (!Number.isFinite(number)) throw new Error(`${key} 要是数字，收到 ${JSON.stringify(value)}`);
+			args[key] = number;
 		} else if (kind === "list") {
 			args[key] = (Array.isArray(value) ? value : String(value).split(/[,，\s]+/)).map(String).filter((item) => item !== "");
 		} else args[key] = String(value).trim();
@@ -65,7 +67,9 @@ export function ta(command: Command, args: JsonObject): JsonObject {
 		});
 		if (run.error) throw new Error((run.error as NodeJS.ErrnoException).code === "ENOENT" ? "找不到 uv：宿主的 PATH 里要有 uv" : `ta ${command} 没跑完：${run.error.message}`);
 		if (run.status !== 0) throw new Error(failure(command, run.status, run.stderr));
-		return trim(JSON.parse(run.stdout.trim().split("\n").at(-1)!) as JsonObject);
+		const last = run.stdout.trim().split("\n").at(-1);
+		if (!last) throw new Error(`ta ${command} 没有输出结果（退出码 0），再试一次；还是这样就在技术分析项目里直接跑这个子命令看看`);
+		return trim(JSON.parse(last) as JsonObject);
 	} finally {
 		rmSync(scratch, { recursive: true, force: true });
 	}
@@ -82,7 +86,7 @@ function clone(file: string, into: string): string {
 /**
  * `ta structure` refetches a symbol's dividends unless `now` falls 0 to 1 day after its last
  * sync, and its momentum part reads QQQ and SPY the same way. A `now` just after the newest of
- * those syncs keeps every read on the cache.
+ * those syncs keeps every read on the cache only while the oldest sync is under a day before that now.
  */
 function structureInput(args: JsonObject, db: string): JsonObject {
 	const symbol = String(args["symbol"] ?? "").toUpperCase().replace("-", ".");
@@ -95,10 +99,10 @@ function structureInput(args: JsonObject, db: string): JsonObject {
 	}
 	const times = synced.map((row) => row.synced_ms);
 	const newest = Math.max(...times);
-	if (!synced.some((row) => row.symbol === symbol) || newest - Math.min(...times) >= DAY_MS) {
+	if (!synced.some((row) => row.symbol === symbol) || newest + NOW_AFTER_SYNC_MS - Math.min(...times) >= DAY_MS) {
 		throw new Error(`本机缓存里没有 ${symbol || "这个标的"} 足够新的日线，这个工具不联网；先在技术分析项目里扫描一次，或换一个自选股里的标的`);
 	}
-	return { timeframe: "1d", ...args, symbol, now: new Date(newest + 60_000).toISOString() };
+	return { timeframe: "1d", ...args, symbol, now: new Date(newest + NOW_AFTER_SYNC_MS).toISOString() };
 }
 
 function failure(command: Command, status: number | null, stderr: string): string {
