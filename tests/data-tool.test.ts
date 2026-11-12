@@ -212,8 +212,9 @@ test("旧名字后来又给了一类新数据：按现在声明的名字走，�
 	};
 	const v1 = pkg("0.1.0", { notes: { title: "笔记" } });
 	await w.gateway.call(w.caller("notes-mod" as ModuleName, v1), write("notes", [{ text: "旧笔记" }], "使用者口述"));
-	pkg("0.2.0", { memos: { title: "备忘", was: "notes" } });
-	const v3 = pkg("0.3.0", { memos: { title: "备忘", was: "notes" }, notes: { title: "新笔记" } });
+	const v2 = pkg("0.2.0", { memos: { title: "备忘", was: "notes" } });
+	ok(await w.gateway.call(w.caller("notes-mod" as ModuleName, v2), query("memos")));
+	const v3 = pkg("0.3.0", { memos: { title: "备忘" }, notes: { title: "新笔记" } });
 	const me = w.caller("notes-mod" as ModuleName, v3);
 	await w.gateway.call(me, write("notes", [{ text: "新笔记" }], "使用者口述"));
 	assert.deepEqual(rowsOf(await w.gateway.call(me, query("notes"))).map((r) => r.fields.text), ["新笔记"]);

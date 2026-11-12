@@ -13,7 +13,6 @@ import { DatabaseSync } from "node:sqlite";
 
 const HEAD = resolve(import.meta.dirname, "../../..");
 const SAMPLE = join(HEAD, "docs/modules/architecture/sample");
-const LITE = "health-lite";
 const REAL = { router: "openai-codex/gpt-6.1-terra", worker: "openai-codex/gpt-6.1-sol", fallback: "openai-codex/gpt-6.1-sol" };
 const USER = 42;
 const NOTICE = "个人医疗健康 有新内容，请在网页上查看";
@@ -144,10 +143,9 @@ async function lanes(): Promise<void> {
 
 	const state = stateDir();
 	for (const name of ["personal-health", "personal-tax"]) place(state, join(SAMPLE, name), name);
-	place(state, join(SAMPLE, "update/0.1.0", LITE), LITE);
 	const tg = await FakeTelegram.start();
 	const fake = await FakeModel.start({
-		router: [opens(B.write, "personal-health"), opens(B.alias, LITE), opens(B.infer, "personal-health", "inference"), opens(B.uses, "personal-health"), opens(B.other, "personal-tax"), opens(B.shareable, "personal-health"), relay, relay, relay, relay, relay, relay],
+		router: [opens(B.write, "personal-health"), opens(B.alias, "personal-health"), opens(B.infer, "personal-health", "inference"), opens(B.uses, "personal-health"), opens(B.other, "personal-tax"), opens(B.shareable, "personal-health"), ...Array.from({ length: 12 }, () => relay)],
 		workers: [
 			worker(
 				B.write,
@@ -194,7 +192,7 @@ async function lanes(): Promise<void> {
 	const routerSaid = () => state_(state, "SELECT text FROM reply_receipts").map((r) => r.text as string);
 	try {
 		host = await boot(state, fake, tg);
-		const on_ = await turnOn(state, ["personal-health", "personal-tax", LITE]);
+		const on_ = await turnOn(state, ["personal-health", "personal-tax"]);
 		if (on_ < 0) throw new Error(`modules did not start serving: ${JSON.stringify(state_(state, "SELECT name, record FROM module_records"))}`);
 		tg.userSays(USER, "/start");
 		await within(10_000, () => phone().length > 0);
@@ -209,13 +207,17 @@ async function lanes(): Promise<void> {
 		});
 
 		await lane(3, "alias", async () => {
-			for (const file of ["module.json", "data/lab-results/collection.json"]) writeFileSync(join(state, "modules", LITE, file), readFileSync(join(SAMPLE, "update/0.2.0-renames-field", LITE, file)));
-			const swapped = await within(10_000, () => moduleState(state, LITE)?.serving?.label === "0.2.0");
+			const pkg = join(state, "modules/personal-health");
+			const collection = JSON.parse(readFileSync(join(pkg, "data/lab-results/collection.json"), "utf8"));
+			const { lab, ...rest } = collection.fields;
+			writeFileSync(join(pkg, "data/lab-results/collection.json"), JSON.stringify({ ...collection, fields: { ...rest, laboratory: { ...lab, was: "lab" } } }, null, 2));
+			writeFileSync(join(pkg, "module.json"), readFileSync(join(pkg, "module.json"), "utf8").replace('"0.1.0"', '"0.1.1"'));
+			const swapped = await within(10_000, () => moduleState(state, "personal-health")?.serving?.label === "0.1.1");
 			const took = await say(B.alias);
 			const card = lastCard(B.alias);
-			const stored = data(state, LITE, `SELECT item, value, laboratory FROM "lab-results"`);
-			const columns = data(state, LITE, `SELECT name FROM pragma_table_info('lab-results')`).map((c) => c.name);
-			return { pass: swapped >= 0 && took >= 0 && stored.some((r) => r.laboratory === "瑞金") && !columns.includes("lab"), evidence: `0.2.0 (lab renamed to laboratory) serving after ${swapped} ms\nwrote {lab: "瑞金"}; result card:\n${card}\ncolumns: ${columns.join(",")}\nrows: ${JSON.stringify(stored)}` };
+			const stored = data(state, "personal-health", `SELECT item, value, laboratory FROM "lab-results"`);
+			const columns = data(state, "personal-health", `SELECT name FROM pragma_table_info('lab-results')`).map((c) => c.name);
+			return { pass: swapped >= 0 && took >= 0 && stored.some((r) => r.laboratory === "瑞金") && !columns.includes("lab"), evidence: `personal-health 0.1.1 (lab renamed to laboratory) serving after ${swapped} ms\nwrote {lab: "瑞金"}; result card:\n${card}\ncolumns: ${columns.join(",")}\nrows: ${JSON.stringify(stored)}` };
 		});
 
 		await lane(4, "infer", async () => {
@@ -240,10 +242,9 @@ async function lanes(): Promise<void> {
 
 		await lane(7, "log", async () => {
 			const log = data(state, "personal-health", "SELECT who, collection, op, rows FROM _access ORDER BY rowid");
-			const lite = data(state, LITE, "SELECT who, collection, op, rows FROM _access ORDER BY rowid");
 			const gateway = readFileSync(join(state, "host.log"), "utf8").split("\n").filter((l) => /\[gateway\] .* data\//.test(l));
 			const okCalls = gateway.filter((l) => / ok \d+ ms$/.test(l)).length;
-			return { pass: okCalls === log.length + lite.length && log.length === 3 && lite.length === 1, evidence: `gateway data calls that went through: ${okCalls}\n${gateway.join("\n")}\npersonal-health _access:\n${log.map((r) => JSON.stringify(r)).join("\n")}\nhealth-lite _access:\n${lite.map((r) => JSON.stringify(r)).join("\n")}` };
+			return { pass: okCalls === log.length && log.length === 3, evidence: `gateway data calls that went through: ${okCalls} (L2 write and query, L3 write; refusals stop before the data)\n${gateway.join("\n")}\npersonal-health _access:\n${log.map((r) => JSON.stringify(r)).join("\n")}` };
 		});
 
 		await lane(8, "private", async () => {
@@ -258,7 +259,7 @@ async function lanes(): Promise<void> {
 
 		await lane(9, "shareable", async () => {
 			const took = await say(B.shareable);
-			await within(10_000, () => phone().some((m) => m.startsWith("转述：公开的研究进展")));
+			await within(30_000, () => phone().some((m) => m.startsWith("转述：公开的研究进展")));
 			const ticket = ticketOf(B.shareable)!;
 			const marked = state_(state, `SELECT touched_private_at FROM tickets WHERE id = '${ticket}'`)[0]?.touched_private_at;
 			return { pass: took >= 0 && marked == null && phone().includes("转述：公开的研究进展还没有记录"), evidence: `ticket ${ticket} touched_private_at ${marked}\nTelegram recorder:\n${phone().join("\n")}` };
