@@ -1,0 +1,1 @@
+{ "title": "邮箱", "connector": "mail", "every": "15m", "notice": "有一封新邮件。" }

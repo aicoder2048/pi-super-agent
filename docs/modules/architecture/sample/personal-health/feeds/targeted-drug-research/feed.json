@@ -1,0 +1,10 @@
+{
+  "title": "靶向药研究进展",
+  "description": "每天查一次论文库和临床试验库，新结果去重后告诉幕僚长",
+  "connector": "literature-search",
+  "every": "1d",
+  "settings": { "sources": ["pubmed", "clinicaltrials"], "maxPerRun": 10 },
+  "ask": { "drugs": { "title": "要跟踪哪些药物或靶点", "type": "text-list" } },
+  "into": "research-updates",
+  "notice": "{{title}}（{{source}}，{{published}}）{{url}}"
+}

@@ -1,0 +1,10 @@
+{
+  "title": "医院发来的邮件",
+  "description": "只看你列出的发件人，带附件的归档为报告",
+  "connector": "mail",
+  "every": "15m",
+  "settings": { "attachmentsOnly": true },
+  "ask": { "senders": { "title": "哪些发件人是医院或体检机构", "type": "email-list" } },
+  "into": "documents",
+  "notice": "邮箱里有一份医院发来的报告已经归档。"
+}

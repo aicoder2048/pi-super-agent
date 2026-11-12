@@ -1,0 +1,1 @@
+{ "title": "查报价", "description": "查一只股票的最新报价", "input": { "symbol": { "type": "text", "title": "代码" } }, "output": { "price": { "type": "number", "title": "最新价" } }, "network": [{ "host": "api.example.com", "perMinute": 5 }], "effect": "read" }

@@ -1,0 +1,1 @@
+{ "title": "查新闻", "description": "同一个地址，换一种写法，想多要一份额度", "input": { "symbol": { "type": "text", "title": "代码" } }, "output": { "price": { "type": "number", "title": "最新价" } }, "network": [{ "host": "API.Example.com.", "perMinute": 600 }], "effect": "read" }

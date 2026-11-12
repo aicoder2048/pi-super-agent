@@ -1,0 +1,12 @@
+{
+  "title": "基本信息",
+  "kind": "record",
+  "class": "local-only",
+  "fields": {
+    "birthYear": { "type": "number", "title": "出生年份" },
+    "sex": { "type": "text", "title": "性别" },
+    "conditions": { "type": "text", "title": "已确诊的疾病" },
+    "allergies": { "type": "text", "title": "过敏史" },
+    "medications": { "type": "text", "title": "正在用的药" }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "title": "胰岛素敏感度",
+  "description": "由空腹血糖和空腹胰岛素算 HOMA-IR 和 QUICKI。只适用于空腹采样，不适用于正在用胰岛素的人。",
+  "input": {
+    "fastingGlucose": { "type": "number", "title": "空腹血糖", "unit": "mmol/L" },
+    "fastingInsulin": { "type": "number", "title": "空腹胰岛素", "unit": "µU/mL" }
+  },
+  "output": {
+    "homaIr": { "type": "number", "title": "HOMA-IR" },
+    "quicki": { "type": "number", "title": "QUICKI" }
+  },
+  "cites": "Matthews 1985 (HOMA-IR = 血糖 mmol/L × 胰岛素 µU/mL ÷ 22.5)；Katz 2000 (QUICKI = 1 ÷ (log10 胰岛素 + log10 血糖 mg/dL))"
+}

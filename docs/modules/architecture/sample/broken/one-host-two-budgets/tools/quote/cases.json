@@ -1,0 +1,1 @@
+[{ "name": "NVDA", "input": { "symbol": "NVDA" }, "expect": { "price": 120.5 }, "replay": [{ "url": "https://api.example.com/quote/NVDA", "status": 200, "body": "{\"price\":120.5}" }] }]

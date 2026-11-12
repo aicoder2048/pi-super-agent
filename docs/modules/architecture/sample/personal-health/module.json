@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "name": "personal-health",
+  "version": "0.1.0",
+  "title": "个人医疗健康",
+  "description": "体检和检验报告、用药、指标跟踪和越线提醒、多学科会诊",
+  "team": "健康顾问团"
+}

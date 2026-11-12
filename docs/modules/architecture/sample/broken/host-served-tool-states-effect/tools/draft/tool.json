@@ -1,0 +1,1 @@
+{ "title": "起草模块", "description": "在草稿目录里建文件、跑校验", "input": { "path": { "type": "text", "title": "文件路径" } }, "output": { "result": { "type": "text", "title": "结果" } }, "servedBy": "authoring", "effect": "read" }

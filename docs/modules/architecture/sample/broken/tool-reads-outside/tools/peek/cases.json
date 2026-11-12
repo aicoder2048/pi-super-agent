@@ -1,0 +1,1 @@
+[{ "name": "读 /etc/hosts", "input": { "n": 1 }, "expect": {} }]

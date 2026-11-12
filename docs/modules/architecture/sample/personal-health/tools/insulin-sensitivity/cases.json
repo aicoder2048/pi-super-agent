@@ -1,0 +1,20 @@
+[
+  {
+    "name": "血糖 5.0、胰岛素 10",
+    "input": { "fastingGlucose": 5.0, "fastingInsulin": 10 },
+    "expect": { "homaIr": 2.2222, "quicki": 0.3385 },
+    "tolerance": 0.0005
+  },
+  {
+    "name": "血糖 4.5、胰岛素 5（敏感）",
+    "input": { "fastingGlucose": 4.5, "fastingInsulin": 5 },
+    "expect": { "homaIr": 1.0, "quicki": 0.3834 },
+    "tolerance": 0.0005
+  },
+  {
+    "name": "血糖 6.5、胰岛素 25（抵抗）",
+    "input": { "fastingGlucose": 6.5, "fastingInsulin": 25 },
+    "expect": { "homaIr": 7.2222, "quicki": 0.2885 },
+    "tolerance": 0.0005
+  }
+]

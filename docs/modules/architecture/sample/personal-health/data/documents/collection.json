@@ -1,0 +1,12 @@
+{
+  "title": "报告和病历原件",
+  "kind": "record",
+  "class": "private",
+  "fields": {
+    "kind": { "type": "text", "title": "类别：影像报告、检验报告、出院小结、处方、诊断、病历" },
+    "issuedAt": { "type": "date", "title": "出具日期" },
+    "issuer": { "type": "text", "title": "出具机构" },
+    "original": { "type": "blob", "title": "原件" },
+    "summary": { "type": "text", "title": "提取出的要点" }
+  }
+}

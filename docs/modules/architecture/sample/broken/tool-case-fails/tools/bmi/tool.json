@@ -1,0 +1,6 @@
+{
+  "title": "体重指数",
+  "description": "体重（千克）除以身高（米）的平方",
+  "input": { "weightKg": { "type": "number", "title": "体重", "unit": "kg" }, "heightM": { "type": "number", "title": "身高", "unit": "m" } },
+  "output": { "bmi": { "type": "number", "title": "BMI" } }
+}

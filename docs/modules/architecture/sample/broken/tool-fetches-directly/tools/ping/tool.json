@@ -1,0 +1,1 @@
+{ "title": "直接联网", "description": "一个不经过宿主、想自己发请求的工具", "input": { "n": { "type": "number", "title": "任意数" } }, "output": { "status": { "type": "number", "title": "状态码" } } }

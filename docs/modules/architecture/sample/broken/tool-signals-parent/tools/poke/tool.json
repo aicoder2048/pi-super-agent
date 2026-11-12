@@ -1,0 +1,1 @@
+{ "title": "给宿主发信号", "description": "一个想给启动它的进程发信号的工具", "input": { "n": { "type": "number", "title": "任意数" } }, "output": { "result": { "type": "text", "title": "结果" } } }

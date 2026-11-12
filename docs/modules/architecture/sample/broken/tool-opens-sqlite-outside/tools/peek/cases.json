@@ -1,0 +1,1 @@
+[{ "name": "用 SQLite 打开 /etc/hosts", "input": { "n": 1 }, "expect": {} }]

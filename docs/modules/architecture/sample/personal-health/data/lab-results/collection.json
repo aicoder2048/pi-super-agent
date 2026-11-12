@@ -1,0 +1,14 @@
+{
+  "title": "检验指标",
+  "kind": "series",
+  "class": "private",
+  "fields": {
+    "item": { "type": "text", "title": "项目，例如 CEA、CA19-9、AFP、空腹血糖" },
+    "value": { "type": "number", "title": "数值" },
+    "unit": { "type": "text", "title": "单位" },
+    "reference": { "type": "text", "title": "参考范围" },
+    "takenAt": { "type": "date", "title": "采样日期" },
+    "lab": { "type": "text", "title": "实验室" }
+  },
+  "watch": { "key": "item", "value": "value", "at": "takenAt" }
+}
