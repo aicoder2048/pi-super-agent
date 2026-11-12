@@ -203,20 +203,51 @@ test("钉在改名前版本的任务按旧字段名写：值落到新名字下�
 	assert.equal(rowsOf(await w.gateway.call(pinned, query("lab-results", { where: { lab: "协和" } }))).length, 1);
 });
 
+const liteWithLabResultsAsRecord = (root: string, version: string) => {
+	const dir = join(root, version, "health-lite");
+	cpSync(join(UPDATE, version, "health-lite"), dir, { recursive: true });
+	const path = join(dir, "data", "lab-results", "collection.json");
+	writeFileSync(path, readFileSync(path, "utf8").replace('"series"', '"record"'));
+	return dir;
+};
+
 test("字段改名以后，这个字段另记的来源跟着到新名字下", async (t) => {
 	const w = world(t);
-	const asRecord = (version: string) => {
-		const dir = join(w.root, version, "health-lite");
-		cpSync(join(UPDATE, version, "health-lite"), dir, { recursive: true });
-		const path = join(dir, "data", "lab-results", "collection.json");
-		writeFileSync(path, readFileSync(path, "utf8").replace('"series"', '"record"'));
-		return dir;
-	};
-	const v1 = w.caller(LITE, w.keep(LITE, asRecord("0.1.0")));
+	const v1 = w.caller(LITE, w.keep(LITE, liteWithLabResultsAsRecord(w.root, "0.1.0")));
 	const [row] = rowsOf(await w.gateway.call(v1, write("lab-results", [{ item: "CEA", value: 3.1, takenAt: "2026-10-01", lab: "协和" }])));
 	ok(await w.gateway.call(v1, write("lab-results", [{ id: row!.id, lab: "协和东院" }], "使用者口述")));
-	const v2 = w.caller(LITE, w.keep(LITE, asRecord("0.2.0-renames-field")));
+	const v2 = w.caller(LITE, w.keep(LITE, liteWithLabResultsAsRecord(w.root, "0.2.0-renames-field")));
 	assert.deepEqual(rowsOf(await w.gateway.call(v2, query("lab-results")))[0]!.sources, { laboratory: "使用者口述" });
+});
+
+test("G1 建的 data.db（表里没有 _sources、没有 _access）：按 id 改几项照样记来源，字段改名的迁移也成功", async (t) => {
+	const w = world(t);
+	const v1 = w.caller(LITE, w.keep(LITE, liteWithLabResultsAsRecord(w.root, "0.1.0")));
+	const [row] = rowsOf(await w.gateway.call(v1, write("lab-results", [{ item: "CEA", value: 3.1, takenAt: "2026-10-01", lab: "协和" }])));
+	const db = new DatabaseSync(join(moduleDataDir(w.state, LITE), "data.db"));
+	db.exec(`ALTER TABLE "lab-results" DROP COLUMN "_sources"; DROP TABLE "_access"`);
+	db.close();
+	const [updated] = rowsOf(await w.gateway.call(v1, write("lab-results", [{ id: row!.id, lab: "协和东院" }], "使用者口述")));
+	assert.equal(updated!.from, "blobs/report-2026-10.pdf");
+	assert.deepEqual(updated!.sources, { lab: "使用者口述" });
+	assert.equal(w.sql<{ op: string }>(LITE, `SELECT op FROM _access WHERE op = 'write'`).length, 1);
+	const v2 = w.caller(LITE, w.keep(LITE, liteWithLabResultsAsRecord(w.root, "0.2.0-renames-field")));
+	const [renamed] = rowsOf(await w.gateway.call(v2, query("lab-results")));
+	assert.equal(renamed!.fields.laboratory, "协和东院");
+	assert.deepEqual(renamed!.sources, { laboratory: "使用者口述" });
+});
+
+test("G1 建的 data.db 直接遇到字段改名：迁移成功，旧值到新名字下，表补上 _sources", async (t) => {
+	const w = world(t);
+	const v1 = w.caller(LITE, w.keep(LITE, join(UPDATE, "0.1.0", "health-lite")));
+	ok(await w.gateway.call(v1, write("lab-results", [{ item: "CEA", value: 3.1, takenAt: "2026-10-01", lab: "协和" }])));
+	const db = new DatabaseSync(join(moduleDataDir(w.state, LITE), "data.db"));
+	db.exec(`ALTER TABLE "lab-results" DROP COLUMN "_sources"`);
+	db.close();
+	const scan = scanPackage(join(UPDATE, "0.2.0-renames-field", "health-lite"), { runCases: false });
+	assert.ok(scan.ok);
+	assert.deepEqual(w.data.migrate(LITE, scan.scan.components), { ok: true });
+	assert.deepEqual(w.sql(LITE, `SELECT laboratory, "_sources" FROM "lab-results"`), [{ laboratory: "协和", _sources: null }]);
 });
 
 test("拿掉的字段读不出来也写不进去，值留着；加回来以后又看得见", async (t) => {
