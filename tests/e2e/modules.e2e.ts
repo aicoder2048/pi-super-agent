@@ -26,7 +26,6 @@ const inDomain = (call: ToolCall, domain: string): ToolCall => ({ ...call, args:
 
 const card = (page: Page, name: string) => page.locator(`#modules .card.module[data-module="${name}"]`);
 const modulesSection = (page: Page) => page.locator("#modules");
-/** The full cards sit behind 「详情 ›」 in the 模块 tab. */
 async function openModules(page: Page): Promise<void> {
 	await page.locator("#tab-modules").click();
 	const more = page.locator("#modules .more");

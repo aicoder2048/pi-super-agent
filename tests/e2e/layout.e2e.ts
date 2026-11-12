@@ -231,7 +231,6 @@ test("方案 D 桌面布局：左栏收件箱，右栏带数字的标签，任�
 
 const trunk = process.env.PSA_LD_TRUNK;
 
-/** Toggles `name` through the page-facing POST and waits for the board frame that shows it settled. */
 async function toggleAndCountPushes(url: URL, name: string, times: number): Promise<number> {
 	const events = new URL("/events", url);
 	events.search = url.search;

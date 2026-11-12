@@ -70,56 +70,58 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `docs/web-client/layout-d-plan.md`（本文件），作为 LD1 的第一个提交。
-- [ ] Edit `src/web/view.mjs`。加右栏状态和它的纯函数，加标签上的数字、今天的提醒、模块行。
-- [ ] Edit `src/web/app.mjs` 和 `src/web/index.html`。左栏只画待你处理和进行中，右栏画标签和五个面板。
-- [ ] Edit `src/client/protocol.ts`、`src/host/host.ts`、`src/kernel/kernel.ts`。看板带上今天的提醒（`alerts`）。
-- [ ] Edit `tests/web.test.ts`，加右栏状态、标签数字、今天提醒的用例。
-- [ ] Create `tests/e2e/layout.e2e.ts`（十条 lane、perf 和评审录像）。Edit 受布局影响的 e2e（`modules.e2e.ts`、`tripwire.e2e.ts`、`avatars.e2e.ts` 等）。
+- [x] Create `docs/web-client/layout-d-plan.md`（本文件），作为 LD1 的第一个提交。
+- [x] Edit `src/web/view.mjs`。加右栏状态和它的纯函数，加标签上的数字、今天的提醒、模块行。
+- [x] Edit `src/web/app.mjs` 和 `src/web/index.html`。左栏只画待你处理和进行中，右栏画标签和五个面板。
+- [x] Edit `src/client/protocol.ts`、`src/host/host.ts`、`src/kernel/kernel.ts`。看板带上今天的提醒（`alerts`）。
+- [x] Edit `tests/web.test.ts`，加右栏状态、标签数字、今天提醒的用例。
+- [x] Create `tests/e2e/layout.e2e.ts`（十条 lane、perf 和评审录像）。Edit 受布局影响的 e2e（`modules.e2e.ts`、`tripwire.e2e.ts`、`avatars.e2e.ts` 等）。
 
 **Build.**
 
-- [ ] 右栏状态 `Panel` 和 `panelStep(panel, event)`（`view.mjs`）。状态是 `{ showing, task, last, flash }`，事件是选标签、打开任务、关任务、来了提醒。打开任务时任务标签排在最前并切过去；切到别的标签任务标签留着；× 关掉回到最后看的那个标签；提醒属于某个任务就打开那个任务，否则切到「今天」并高亮这条提醒。
-- [ ] 标签数字 `overviewTabs(view, panel)`（`view.mjs`）。今天 = 今日来源消息数 + 今日提醒数，来源 = 关注的来源数，模块 = 模块数，已完成 = 已完成任务数。任务标签写「任务 #<编号前 4 位>」。
-- [ ] 看板加 `alerts`（今天的提醒，本地日，按先后），`Kernel.alertsToday()` 一条 SQL 取出。
-- [ ] 左栏只剩「待你处理」和「进行中」，卡片紧凑（最新进展最多两行），选项按钮还在卡片上。
-- [ ] 右栏五个面板。今天（今日来源消息、今日提醒）、来源（原来的关注的来源）、模块（一行一个带开关，「详情 ›」里是完整的模块卡）、已完成、任务（提问和选项、执行过程）。在岗助手一排不动。
+- [x] 右栏状态 `Panel` 和 `panelStep(panel, event)`（`view.mjs`）。状态是 `{ showing, task, last, flash }`，事件是选标签、打开任务、关任务、来了提醒。打开任务时任务标签排在最前并切过去；切到别的标签任务标签留着；× 关掉回到最后看的那个标签；提醒属于某个任务就打开那个任务，否则切到「今天」并高亮这条提醒。
+- [x] 标签数字 `overviewTabs(view, panel)`（`view.mjs`）。今天 = 今日来源消息数 + 今日提醒数，来源 = 关注的来源数，模块 = 模块数，已完成 = 已完成任务数。任务标签写「任务 #<编号前 4 位>」。
+- [x] 看板加 `alerts`（今天的提醒，本地日，按先后），`Kernel.alertsToday()` 一条 SQL 取出。
+- [x] 左栏只剩「待你处理」和「进行中」，卡片紧凑（最新进展最多两行），选项按钮还在卡片上。
+- [x] 右栏五个面板。今天（今日来源消息、今日提醒）、来源（原来的关注的来源）、模块（一行一个带开关，「详情 ›」里是完整的模块卡）、已完成、任务（提问和选项、执行过程）。在岗助手一排不动。
 
 **You see.**
 
-- [ ] 1440 宽打开网页，三栏都在，左栏只有「待你处理」「进行中」，右栏停在「今天」，四个标签都带数字。
-- [ ] 点一张卡，右栏最前面出现「任务 #xxxx ×」并切过去。切到「模块」再点 ×，停在「模块」；在任务标签上点 ×，回到点卡之前的标签。
-- [ ] 放一条提醒，右栏一秒内切到「今天」，这条提醒高亮。
+- [x] 1440 宽打开网页，三栏都在，左栏只有「待你处理」「进行中」，右栏停在「今天」，四个标签都带数字。
+- [x] 点一张卡，右栏最前面出现「任务 #xxxx ×」并切过去。切到「模块」再点 ×，停在「模块」；在任务标签上点 ×，回到点卡之前的标签。
+- [x] 放一条提醒，右栏一秒内切到「今天」，这条提醒高亮。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/web.test.ts` 加 `panelStep` 的用例（打开、切走后任务标签还在、× 回到上一个、提醒带任务和不带任务两种、重复打开同一个任务）、`overviewTabs` 的数字和任务标签、`todayAlerts` 的文案，先红后绿。Run `just test`.
-- [ ] `tests/host.test.ts` 或 `tests/web.test.ts` 加看板帧带今天提醒的用例，先红后绿。Run `just test`.
+- [x] `tests/web.test.ts` 加 `panelStep` 的用例（打开、切走后任务标签还在、× 回到上一个、提醒带任务和不带任务两种、重复打开同一个任务）、`overviewTabs` 的数字和任务标签、`todayAlerts` 的文案，先红后绿。Run `just test`.
+- [x] `tests/host.test.ts` 或 `tests/web.test.ts` 加看板帧带今天提醒的用例，先红后绿。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个 Playwright 脚本 `tests/e2e/layout.e2e.ts`。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 用同一组假模型脚本和模块包，各开一个带选项的受阻任务，在左栏卡片上点选项。trunk 没有标签页，记下这一点，只比较两边都有的行为。Save `ld1-regression.png`. Pass when 两边左栏卡片上都有选项按钮，点了都显示「已发送」，head 的右栏没选任务时不是空的。
-- [ ] Lane 2. 1440 宽浅色，没选任务。Save `ld1-default-light-1440.png`. Pass when 左栏只有两段，右栏「今天」选中，四个标签的数字和看板一致，没有横向滚动。
-- [ ] Lane 3. 点左栏受阻卡片。Save `ld1-task.png`. Pass when 右栏第一个标签是「任务 #xxxx」且选中，面板里有标题、提问、选项按钮和执行过程，左栏卡片描边。
-- [ ] Lane 4. 任务标签不随切换消失。Save `ld1-task-stays.png`. Pass when 切到「模块」后任务标签还在；回到任务标签内容不变；在任务标签上点 × 回到「模块」，任务标签消失。
-- [ ] Lane 5. 来了一条不属于任务的提醒。Save `ld1-alert.png`. Pass when 右栏在「来源」时放一条提醒，两秒内切到「今天」，这条提醒带高亮，「今天」的数字加 1，任务标签还在。
-- [ ] Lane 6. 在任务标签里点选项。Save `ld1-answer.png`. Pass when 任务标签里和左栏卡片上的同一个选项都显示已选，幕僚长收到回答。
-- [ ] Lane 7. 「模块」标签。Save `ld1-modules.png`. Pass when 一个模块一行带开关；点 stock-ta 的开关两秒内变成开；点「详情 ›」出现完整模块卡。
-- [ ] Lane 8. 「来源」和「已完成」标签。Save `ld1-sources.png`、`ld1-done.png`. Pass when 来源行写今日提醒数；已完成列出做完的任务，点它打开任务标签，× 回到「已完成」。
-- [ ] Lane 9. 1024 宽浅色和深色、1440 宽深色。Save `ld1-light-1024.png`、`ld1-dark-1024.png`、`ld1-dark-1440.png`. Pass when 三栏都在，对话区不窄于 400 像素，没有横向滚动，标签文字对比度不低于 4.5 比 1。
-- [ ] Lane 10. 刷新和键盘。Save `ld1-keyboard.png`. Pass when 刷新后右栏回到「今天」；用 Tab 走到标签，方向键切换标签，`aria-selected` 跟着变。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 用同一组假模型脚本和模块包，各开一个带选项的受阻任务，在左栏卡片上点选项。trunk 没有标签页，记下这一点，只比较两边都有的行为。Save `ld1-regression.png`. Pass when 两边左栏卡片上都有选项按钮，点了都显示「已发送」，head 的右栏没选任务时不是空的。
+- [x] Lane 2. 1440 宽浅色，没选任务。Save `ld1-default-light-1440.png`. Pass when 左栏只有两段，右栏「今天」选中，四个标签的数字和看板一致，没有横向滚动。
+- [x] Lane 3. 点左栏受阻卡片。Save `ld1-task.png`. Pass when 右栏第一个标签是「任务 #xxxx」且选中，面板里有标题、提问、选项按钮和执行过程，左栏卡片描边。
+- [x] Lane 4. 任务标签不随切换消失。Save `ld1-task-stays.png`. Pass when 切到「模块」后任务标签还在；回到任务标签内容不变；在任务标签上点 × 回到「模块」，任务标签消失。
+- [x] Lane 5. 来了一条不属于任务的提醒。Save `ld1-alert.png`. Pass when 右栏在「来源」时放一条提醒，两秒内切到「今天」，这条提醒带高亮，「今天」的数字加 1，任务标签还在。
+- [x] Lane 6. 在任务标签里点选项。Save `ld1-answer.png`. Pass when 任务标签里和左栏卡片上的同一个选项都显示已选，幕僚长收到回答。
+- [x] Lane 7. 「模块」标签。Save `ld1-modules.png`. Pass when 一个模块一行带开关；点 stock-ta 的开关两秒内变成开；点「详情 ›」出现完整模块卡。
+- [x] Lane 8. 「来源」和「已完成」标签。Save `ld1-sources.png`、`ld1-done.png`. Pass when 来源行写今日提醒数；已完成列出做完的任务，点它打开任务标签，× 回到「已完成」。
+- [x] Lane 9. 1024 宽浅色和深色、1440 宽深色。Save `ld1-light-1024.png`、`ld1-dark-1024.png`、`ld1-dark-1440.png`. Pass when 三栏都在，对话区不窄于 400 像素，没有横向滚动，标签文字对比度不低于 4.5 比 1。
+- [x] Lane 10. 刷新和键盘。Save `ld1-keyboard.png`. Pass when 刷新后右栏回到「今天」；用 Tab 走到标签，方向键切换标签，`aria-selected` 跟着变。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 看板推送一次的字节数，和每次看板推送页面重画的脚本加排版耗时（Chrome `Performance.getMetrics` 的 `ScriptDuration` 加 `LayoutDuration`，按推送次数平均）。
-- [ ] Probe. trunk 和 head 用同一组模块包和任务，交替各跑 5 轮，每轮切 10 次模块开关产生 20 次推送。
-- [ ] Baseline. Record the trunk 中位数 first.
-- [ ] Rule. head 每次推送的字节数比 trunk 多出超过「今天的提醒数 × 200 字节 + 50 字节」就失败；每次推送的重画耗时中位数超过 trunk 的 1.5 倍且多出 2 毫秒以上就失败。
+- [x] Metric. 看板推送一次的字节数，和每次看板推送页面重画的脚本加排版耗时（Chrome `Performance.getMetrics` 的 `ScriptDuration` 加 `LayoutDuration`，按推送次数平均）。
+- [x] Probe. trunk 和 head 用同一组模块包和任务，交替各跑 5 轮，每轮切 10 次模块开关产生 20 次推送。
+- [x] Baseline. Record the trunk 中位数 first.
+- [x] Rule. head 每次推送的字节数比 trunk 多出超过「今天的提醒数 × 200 字节 + 50 字节」就失败；每次推送的重画耗时中位数超过 trunk 的 1.5 倍且多出 2 毫秒以上就失败。
+
+2026-11-12 在 psa/layout-d 上通过：`just test` 1526 条全过；`just e2e` 319 条里 315 过、4 条按环境变量跳过、0 失败；`check.mjs` 7 项 ok。先红后绿的记录在 `/tmp/swarm-ld1/owner/red-unit.txt`（`panelStep`、`overviewTabs`、`alertsToday` 不存在，看板帧等不到 `alerts`）。`tests/e2e/layout.e2e.ts` 十条 lane 全过，截图在 `/tmp/swarm-ld1/owner/`。提醒文件落盘到右栏切到「今天」并高亮约 0.2 秒；stock-ta 开关两秒内变成开；1024 宽对话区 444 像素，三栏都在，没有横向滚动，标签对比度都不低于 4.5 比 1。Lane 1 用 main 0e1fc9a 的检出跑同一组脚本，两边左栏卡片都能点选项，trunk 右栏只有「选择左侧的任务」那句。perf 五轮交替，每轮约 25 次推送：看板 trunk 1992 字节，head 2136 字节（1 条提醒，多 144 字节）；每次推送重画 trunk 中位数 1.07 毫秒，head 1.71 毫秒（多 0.64 毫秒，规则是超过 1.5 倍且多 2 毫秒才失败）。head 多出的是右栏四个面板和标签每次推送都重画。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 2, 3, 5 and 7 screenshots into `docs/web-client/evidence/ld1-review-<slug>.png`.
-- [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/web-client/evidence/ld1-review.mp4`. 本机用 Playwright 录像，再用 ffmpeg 转成 mp4。
+- [x] Copy lane 2, 3, 5 and 7 screenshots into `docs/web-client/evidence/ld1-review-<slug>.png`.
+- [x] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/web-client/evidence/ld1-review.mp4`. 本机用 Playwright 录像，再用 ffmpeg 转成 mp4。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**

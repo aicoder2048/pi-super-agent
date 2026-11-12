@@ -849,7 +849,7 @@ function mount(doc) {
 		}
 	};
 
-	/** Opens the task tab; a click on the task already open reopens its stream too, which picks up after a host restart. @param {string} ticketId */
+	/** Clicking the task already open reopens its stream, which recovers after a host restart. @param {string} ticketId */
 	const watch = (ticketId) => {
 		panel = panelStep(panel, { kind: "open", ticketId });
 		follow(ticketId);

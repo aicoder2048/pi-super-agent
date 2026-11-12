@@ -413,7 +413,6 @@ async function saveReport(out: string, stepName: string, error: unknown, pages: 
 	return join(out, "index.html");
 }
 
-/** A package folder as story files under modules/<as>/. */
 export const packageFiles = (from: string, as: string): Record<string, string> =>
 	Object.fromEntries(
 		readdirSync(from, { recursive: true, withFileTypes: true })
@@ -421,7 +420,7 @@ export const packageFiles = (from: string, as: string): Record<string, string> =
 			.map((e) => [join("modules", as, e.parentPath.slice(from.length), e.name), readFileSync(join(e.parentPath, e.name), "utf8")]),
 	);
 
-/** WCAG contrast of the first match against the nearest painted background. */
+/** Against the nearest painted background. */
 export function contrastOf(page: Page, selector: string): Promise<number> {
 	return page.locator(selector).first().evaluate((node) => {
 		const rgb = (css: string) => css.match(/[\d.]+/g)!.slice(0, 3).map(Number);
