@@ -302,30 +302,30 @@ async function perf(): Promise<void> {
 	const lines: string[] = [];
 	let pass = true;
 
-	const tokens: Record<string, number[]> = {};
+	const tokens: Record<string, number[]> = { trunk: [], head: [] };
 	try {
-		const hosts: Record<string, { state: string; host: Host }> = {};
-		for (const [name, tree] of [["trunk", trunk()], ["head", HEAD]] as const) {
-			const state = stateDir(false);
-			hosts[name] = { state, host: await boot(state, null, {}, tree) };
-		}
-		try {
-			for (let i = 1; i <= 5; i++) {
-				for (const name of ["trunk", "head"]) {
-					const { state } = hosts[name]!;
-					const before = routerInputTokens(state).length;
-					just(state, ["say", `第 ${i} 句：只回我一个字「好」，不用开任务`]);
-					await within(120_000, () => routerInputTokens(state).length > before);
+		for (let i = 1; i <= 5; i++) {
+			for (const [name, tree] of [["trunk", trunk()], ["head", HEAD]] as const) {
+				const state = stateDir(false);
+				const host = await boot(state, null, {}, tree);
+				try {
+					just(state, ["say", `第 ${i} 句：只回我一个字「好」`], tree);
+					await within(120_000, () => routerInputTokens(state).length > 0);
+					tokens[name]!.push(routerInputTokens(state)[0]!);
+				} finally {
+					await host.stop();
 				}
 			}
-			for (const name of ["trunk", "head"]) tokens[name] = routerInputTokens(hosts[name]!.state);
-		} finally {
-			for (const { host } of Object.values(hosts)) await host.stop();
 		}
 		const extra = median(tokens.head!) - median(tokens.trunk!);
 		const ok = tokens.head!.length === 5 && tokens.trunk!.length === 5 && extra <= 100;
 		pass &&= ok;
-		lines.push(`${ok ? "PASS" : "FAIL"} Router prompt tokens per input, real ${REAL.router}, alternating trunk/head, 5 inputs each (rule: head median more than 100 over trunk fails)`, line("  trunk", tokens.trunk!, "tok"), line("  head", tokens.head!, "tok"), `  head - trunk = ${extra} tok`);
+		lines.push(
+			`${ok ? "PASS" : "FAIL"} Router prompt tokens of the first input in a fresh session, real ${REAL.router}, alternating trunk/head, 5 runs each (rule: head median more than 100 over trunk fails). Head's first input carries the roster block, so later inputs with an unchanged roster cost less than this.`,
+			line("  trunk", tokens.trunk!, "tok"),
+			line("  head", tokens.head!, "tok"),
+			`  head - trunk = ${extra} tok`,
+		);
 	} catch (error) {
 		lines.push(`INCONCLUSIVE Router prompt tokens: a real run could not finish: ${String((error as Error).message ?? error)}`);
 	}
