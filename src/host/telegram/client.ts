@@ -142,7 +142,8 @@ export class TelegramClient {
 					break;
 				case "host_line":
 					if (message.who === "alert") {
-						for (const chat of this.#store.openChats()) this.#store.put(chat, `alert:${message.id}`, null, { kind: "line", text: alertText(message.text), silent: false });
+						const text = telegramText(alertText(message.text), message.privateTitle ?? null);
+						for (const chat of this.#store.openChats()) this.#store.put(chat, `alert:${message.id}`, null, { kind: "line", text, silent: false });
 					}
 					break;
 				case "cleared":

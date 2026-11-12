@@ -101,7 +101,7 @@ function toTrigger(r: Row): Trigger {
 }
 
 function hostLine(r: Row): HostLine {
-	return { id: r.id, who: r.kind, text: r.text, at: r.created_at };
+	return { id: r.id, who: r.kind, text: r.text, at: r.created_at, ...(r.private_title && { privateTitle: r.private_title }) };
 }
 
 // Node 22's node:sqlite reads a string back only up to its first U+0000, so drop U+0000 before it reaches the store.
@@ -1064,13 +1064,14 @@ export class Kernel {
 	postHostLine(source: string, post: HostLinePost): { line: HostLine; duplicate: boolean } {
 		return this.#tx(() => {
 			if (post.kind === "alert") {
-				const existing = this.#get("SELECT id, kind, text, created_at FROM host_lines WHERE source = ? AND external_id = ?", source, post.externalId);
+				const existing = this.#get("SELECT id, kind, text, created_at, private_title FROM host_lines WHERE source = ? AND external_id = ?", source, post.externalId);
 				if (existing) return { line: hostLine(existing), duplicate: true };
 			}
 			const id = this.#id("hln");
 			const at = this.#now();
+			const privateTitle = post.kind === "alert" ? post.privateTitle : undefined;
 			this.#run(
-				"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+				"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at, private_title) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
 				id,
 				post.kind,
 				source,
@@ -1078,8 +1079,9 @@ export class Kernel {
 				post.text,
 				post.kind === "alert" ? post.occurredAt : at,
 				at,
+				privateTitle ?? null,
 			);
-			return { line: { id, who: post.kind, text: post.text, at }, duplicate: false };
+			return { line: { id, who: post.kind, text: post.text, at, ...(privateTitle && { privateTitle }) }, duplicate: false };
 		});
 	}
 
@@ -1098,7 +1100,7 @@ export class Kernel {
 	}
 
 	undeliveredAlerts(): HostLine[] {
-		return this.#all("SELECT id, kind, text, created_at FROM host_lines WHERE kind = 'alert' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
+		return this.#all("SELECT id, kind, text, created_at, private_title FROM host_lines WHERE kind = 'alert' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
 	}
 
 	alertCountsToday(): Record<string, number> {

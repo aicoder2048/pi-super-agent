@@ -12,7 +12,7 @@ import type { Usage } from "./worker-events.ts";
 import { NO_DOMAIN, type DomainKit, type Domains } from "../modules.ts";
 import { refusalText } from "../modules/gateway.ts";
 import type { ComponentName, Digest, ModuleName } from "../modules/manifest.ts";
-import type { Gateway, Json, Query, Request, WorkerCaller } from "../modules/protocol.ts";
+import type { Alert, Gateway, Json, Query, Request, WorkerCaller } from "../modules/protocol.ts";
 import type { Member } from "../teams.ts";
 import type { TranscriptMessage } from "../client/protocol.ts";
 import { canCode, memberTools } from "../worker/tools.ts";
@@ -38,6 +38,14 @@ function dataRequest(p: Record<string, unknown>): Request {
 	return { kind: "data", collection, op: "query", query };
 }
 
+/** The `watch` tool's arguments as a gateway request. */
+function watchRequest(p: Record<string, unknown>): Request {
+	const collection = String(p.collection ?? "") as ComponentName;
+	if (p.op === "set") return { kind: "watch", collection, op: "set", watch: { key: p.key, condition: p.condition, note: p.note, id: p.id } as never };
+	if (p.op === "remove") return { kind: "watch", collection, op: "remove", id: String(p.id ?? "") };
+	return { kind: "watch", collection, op: "list" };
+}
+
 const HEARD = { trigger: "收到过来源发来的内容", note: "收到过幕僚长的备注", web: "读过网页" } as const;
 
 export interface WorkerSpec extends DomainKit {
@@ -55,6 +63,8 @@ export interface WorkerSpec extends DomainKit {
 	knowledge?: string;
 	/** The module's collections this helper may read and write, one line each. Absent: it has no `data`. */
 	data?: string;
+	/** The watched series this helper may list or set conditions on, one line each. Absent: it has no `watch`. */
+	watch?: string;
 }
 
 export interface WorkerEvents {
@@ -133,6 +143,8 @@ export interface WorkerExecutorOptions {
 	/** Without it every helper works alone. */
 	dispatch?: DeskDispatchOptions;
 	gateway?: Gateway;
+	/** Posts a condition a Worker's write met, as the module's host line. */
+	alert?: (module: ModuleName, alert: Alert) => void;
 }
 
 export interface WorkerModels {
@@ -373,6 +385,8 @@ export class WorkerExecutor {
 					return this.#gatewayCall(ticketId, holder?.name ?? null, { kind: "knowledge", op: "search", query: String(p.query ?? "") });
 				case "worker.data":
 					return this.#gatewayCall(ticketId, holder?.name ?? null, dataRequest(p));
+				case "worker.watch":
+					return this.#gatewayCall(ticketId, null, watchRequest(p));
 				case "worker.read_web":
 					kernel.readWeb(ticketId);
 					return { recorded: true };
@@ -425,14 +439,15 @@ export class WorkerExecutor {
 		return { who: "worker", ticket: ticketId, pin, basis, member, heardOthers: kernel.heardOtherThanUser(ticketId) !== undefined };
 	}
 
-	#catalogue(ticketId: string, member: string | null): { domainTools?: string; knowledge?: string; data?: string } {
+	#catalogue(ticketId: string, member: string | null): { domainTools?: string; knowledge?: string; data?: string; watch?: string } {
 		const caller = this.#callerOf(ticketId, member);
 		const entries = caller && this.#o.gateway ? this.#o.gateway.catalogue(caller) : [];
 		const lines = (kind: Request["kind"]) => entries.filter((e) => e.request === kind).map((e) => `${e.name} · ${e.title}：${e.help}`);
 		const tools = lines("tool");
 		const knowledge = entries.find((e) => e.request === "knowledge");
 		const data = lines("data");
-		return { ...(tools.length && { domainTools: tools.join("\n") }), ...(knowledge && { knowledge: knowledge.help }), ...(data.length && { data: data.join("\n") }) };
+		const watch = member === null ? lines("watch") : [];
+		return { ...(tools.length && { domainTools: tools.join("\n") }), ...(knowledge && { knowledge: knowledge.help }), ...(data.length && { data: data.join("\n") }), ...(watch.length && { watch: watch.join("\n") }) };
 	}
 
 	async #gatewayCall(ticketId: string, member: string | null, request: Request): Promise<Json> {
@@ -442,6 +457,7 @@ export class WorkerExecutor {
 		const reply = await this.#o.gateway.call(caller, request);
 		if (!reply.ok) throw new Error(`${tag} ${refusalText(reply.refusal)}`);
 		if (reply.private) this.#o.kernel.touchPrivate(ticketId);
+		for (const alert of reply.alerts ?? []) this.#o.alert?.(caller.pin.module, alert);
 		return reply.output;
 	}
 

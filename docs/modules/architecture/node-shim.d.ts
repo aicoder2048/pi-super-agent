@@ -58,6 +58,7 @@ declare module "node:crypto" {
 		digest(encoding: "hex"): string;
 	}
 	export function createHash(algorithm: "sha256"): Hash;
+	export function randomUUID(): string;
 }
 declare module "node:child_process" {
 	export function spawnSync(

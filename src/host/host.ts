@@ -28,7 +28,7 @@ import { OutputRoot } from "./output.ts";
 import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 import type { Domains } from "../modules.ts";
 import type { LiveModules } from "./live-modules.ts";
-import type { Gateway } from "../modules/protocol.ts";
+import type { Alert, Gateway } from "../modules/protocol.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
 
 export interface RouterLike {
@@ -196,6 +196,7 @@ export class Host {
 			models: options.workerModels,
 			kitFor: this.#kitFor,
 			gateway: options.gateway,
+			alert: (module, alert) => this.#postModuleAlert(module, alert),
 			dispatch: memberCap && { ...options.dispatch!, cap: { limit: () => memberCap.limit(), membersWaiting: (waiting) => this.#askAboutMemberCap(memberCap, waiting) } },
 			lookup: async (source, op, args) => {
 				const feed = this.feeds.get(source);
@@ -375,13 +376,29 @@ export class Host {
 		if (!this.kernel.touchedPrivate(ticketId)) return null;
 		const domain = this.kernel.getTicket(ticketId)?.domain;
 		if (!domain) return "模块";
-		return this.#book?.().get(domain)?.title ?? domain;
+		return this.#moduleTitle(domain);
 	}
 
 	#deliverReply(threadId: string, text: string, replyId: string, ticketId: string | null | undefined): void {
 		if (threadId !== CONVERSATION_THREAD_ID) throw new Error(`线程 ${threadId} 没有渠道`);
 		this.#broadcast({ type: "reply", text, at: Date.now(), replyId, ...(ticketId ? { ticketId } : {}) });
 		this.kernel.markReplyDelivered(replyId);
+	}
+
+	#moduleTitle(module: string): string {
+		return this.#book?.().get(module)?.title ?? module;
+	}
+
+	/** A module's alert speaks past the Router (ADR-0017). On a `private` collection, Telegram gets only the module's one line. */
+	#postModuleAlert(module: string, alert: Alert): void {
+		const occurredAt = Date.parse(alert.at);
+		this.#postHostLine(`module:${module}`, {
+			kind: "alert",
+			externalId: alert.externalId,
+			text: alert.text,
+			occurredAt: Number.isNaN(occurredAt) ? this.#clock.now() : occurredAt,
+			...(alert.private && { privateTitle: this.#moduleTitle(module) }),
+		});
 	}
 
 	#postHostLine(source: string, post: HostLinePost): void {
