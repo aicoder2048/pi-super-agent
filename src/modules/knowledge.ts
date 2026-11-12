@@ -1,6 +1,6 @@
 /** The index is rebuilt whenever its fingerprint stops matching, so a package update or an edited import needs nobody to tell it. */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Component, ComponentName, Digest, ModuleName } from "./manifest.ts";
 import type { Passage } from "./protocol.ts";
@@ -158,8 +158,8 @@ export function searchKnowledge(base: KnowledgeBase, query: string): Found {
 	} catch (error) {
 		// An import replaced the files between listing and reading them, so list them again.
 		if ((error as { code?: string }).code !== "ENOENT") throw error;
-		return searchOnce(base, terms);
 	}
+	return searchOnce(base, terms);
 }
 
 const AUTHORITY_TEXT = { authoritative: "权威", reference: "参考" } as const;
@@ -187,20 +187,20 @@ export function catalogueText(base: KnowledgeBase): string {
 		.join("\n");
 }
 
-/** Copies the Markdown files under their own names. Returns 0 and leaves the previous import alone when there are none. */
 export function importKnowledge(dataDir: string, doc: string, from: string): number {
-	const directory = statSync(from).isDirectory();
-	const files = directory ? markdownIn(from) : [from].filter(isMarkdown);
+	const files = statSync(from).isDirectory() ? allFiles(from).filter(isMarkdown).map((f) => [join(from, f), f] as const) : isMarkdown(from) ? [[from, basename(from)] as const] : [];
 	if (files.length === 0) return 0;
 	const target = importedDir(dataDir, doc);
 	const temp = `${target}.partial`;
-	rmSync(temp, { recursive: true, force: true });
-	for (const file of files) {
-		const to = join(temp, directory ? relative(from, file) : basename(file));
+	const old = `${target}.old`;
+	for (const dir of [temp, old]) rmSync(dir, { recursive: true, force: true });
+	for (const [file, name] of files) {
+		const to = join(temp, name);
 		mkdirSync(dirname(to), { recursive: true });
 		copyFileSync(file, to);
 	}
-	rmSync(target, { recursive: true, force: true });
+	if (existsSync(target)) renameSync(target, old);
 	renameSync(temp, target);
+	rmSync(old, { recursive: true, force: true });
 	return files.length;
 }
