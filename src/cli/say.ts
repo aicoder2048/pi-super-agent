@@ -1,10 +1,10 @@
 import { connect } from "node:net";
 import { join } from "node:path";
-import { HOST_LINE_LABEL, quoteMark } from "../client/board-format.mjs";
+import { hostLineLabel, quoteMark } from "../client/board-format.mjs";
 import { clientTokenBeside } from "../client/client-token.ts";
 import { defaultStateDir } from "../host/config.ts";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
-import type { ConversationLine, Quote } from "../kernel/types.ts";
+import type { ConversationLine } from "../kernel/types.ts";
 
 const [mode = "tail", ...rest] = process.argv.slice(2);
 const text = rest.join(" ");
@@ -25,11 +25,11 @@ const token = tokenOrExit();
 let greeted = false;
 const socket = connect(socketPath);
 const time = (at: number) => new Date(at).toLocaleTimeString("zh-CN", { hour12: false });
-const WHO: Record<ConversationLine["who"], string> = { user: "你", router: "Router", ...HOST_LINE_LABEL };
+const WHO = { user: "你", router: "Router" } as const;
 const print = (who: string, body: string, at: number) => console.log(`${time(at)} ${who}> ${body}`);
-const printLine = (m: { who: ConversationLine["who"]; text: string; at: number; quote?: Quote }) => {
-	if (m.quote) console.log(`${time(m.at)} ${quoteMark(m.quote)}`);
-	print(WHO[m.who], m.text, m.at);
+const printLine = (m: ConversationLine) => {
+	if ("quote" in m && m.quote) console.log(`${time(m.at)} ${quoteMark(m.quote)}`);
+	print(m.who === "user" || m.who === "router" ? WHO[m.who] : hostLineLabel(m), m.text, m.at);
 };
 
 socket.on("error", (e) => fail(`连不上宿主：${e.message}。先运行 just host。`));

@@ -1,10 +1,12 @@
 /** Stored structure only grows (design.md H6). `_structure` holds everything ever stored, hidden fields and aliases included. */
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { alertText, met, need, parseWatch, receiptText, type Point, type SetCondition } from "./conditions.ts";
 import { moduleDataDir } from "./knowledge.ts";
 import { structureChanges, type CollectionDescriptor, type Component, type ComponentName, type DataClass, type FieldDescriptor, type ModuleName } from "./manifest.ts";
-import type { Json, Query, Row } from "./protocol.ts";
+import type { Alert, Condition, Json, Query, Request, Row } from "./protocol.ts";
 import type { InstanceData } from "./registry.ts";
 
 /** `aliases` maps each old name to the current one, so a ticket pinned to an older version still reads and writes. */
@@ -13,6 +15,8 @@ type Stored = { collections: Record<string, StoredCollection>; aliases: Record<s
 
 const EMPTY: Stored = { collections: {}, aliases: {} };
 const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
+const literal = (text: string) => `'${text.replaceAll("'", "''")}'`;
+const CONDITIONS = "CREATE TABLE IF NOT EXISTS _conditions (id TEXT PRIMARY KEY, collection TEXT NOT NULL, key TEXT NOT NULL, kind TEXT NOT NULL, params TEXT NOT NULL, set_at TEXT NOT NULL, note TEXT)";
 const column = (name: string, field: FieldDescriptor) => `${quote(name)} ${field.type === "number" ? "REAL" : "TEXT"}`;
 const plain = ({ was: _, ...field }: FieldDescriptor) => field;
 const renamed = (aliases: Record<string, string>, from: string, to: string) => ({
@@ -40,7 +44,7 @@ function plan(stored: Stored, components: readonly Component[]): { sql: string[]
 			continue;
 		}
 		if (from !== name) {
-			sql.push(`ALTER TABLE ${quote(from)} RENAME TO ${quote(name)}`);
+			sql.push(`ALTER TABLE ${quote(from)} RENAME TO ${quote(name)}`, `UPDATE _conditions SET collection = ${literal(name)} WHERE collection = ${literal(from)}`);
 			next.aliases = renamed(next.aliases, from, name);
 		}
 		const before = next.collections[from]!;
@@ -94,8 +98,15 @@ export type Accessed = { collection: ComponentName; class: DataClass; rows: Row[
 /** `components` is the serving version: its structure is ensured first, and it decides which fields show. */
 export interface ModuleRows {
 	query(module: ModuleName, components: readonly Component[], collection: string, query: Query, who: string): Accessed;
-	write(module: ModuleName, components: readonly Component[], collection: string, rows: readonly Json[], from: string, who: string): Accessed;
+	write(module: ModuleName, components: readonly Component[], collection: string, rows: readonly Json[], from: string, who: string): Written;
+	watch(module: ModuleName, components: readonly Component[], request: WatchRequest, who: string): Watched;
 }
+
+/** `alerts`: the conditions the written rows met, for the host to post. `alertProblem`: why they could not be checked; the rows are written anyway. */
+export type Written = Accessed & { alerts: readonly Alert[]; alertProblem?: string };
+
+export type WatchRequest = Extract<Request, { kind: "watch" }>;
+export type Watched = { collection: ComponentName; class: DataClass; output: { conditions: SetCondition[] } | { condition: SetCondition; receipt: string } };
 
 const LIMIT = { fallback: 50, max: 500 };
 
@@ -139,6 +150,58 @@ function rowOf(fields: readonly string[], row: Record<string, Value>): Row {
 	};
 }
 
+type ConditionRow = { id: string; collection: string; key: string; kind: Condition["when"]; params: string; set_at: string; note: string | null };
+
+function conditionsOf(db: DatabaseSync, collection: string): SetCondition[] {
+	return (db.prepare("SELECT * FROM _conditions WHERE collection = ? ORDER BY rowid").all(collection) as ConditionRow[]).map((r) => ({
+		id: r.id, collection: r.collection, key: r.key, condition: { when: r.kind, ...JSON.parse(r.params) } as Condition, ...(r.note !== null && { note: r.note }), setAt: r.set_at,
+	}));
+}
+
+/**
+ * Runs before the write: rows older than a key's stored latest time are backfill and never alert. Equal
+ * times count as new, because a date-only time cannot order two readings taken the same day. A key with
+ * no stored reading takes the write as history, so only its latest time counts.
+ */
+function watchBeforeWrite(db: DatabaseSync, { name, collection }: DataComponent): (written: readonly Record<string, Value>[]) => Alert[] {
+	const watch = collection.watch;
+	if (watch === undefined) return () => [];
+	try {
+		const conditions = conditionsOf(db, name);
+		if (conditions.length === 0) return () => [];
+		const [key, value, at] = [watch.key, watch.value, watch.at].map(quote);
+		db.exec(`CREATE INDEX IF NOT EXISTS ${quote(`_watch_${name}`)} ON ${quote(name)} (${key}, ${at})`);
+		const history = db.prepare(`SELECT ${value} AS value, ${at} AS at, "_from" AS "from" FROM ${quote(name)} WHERE ${key} = ? AND ${value} IS NOT NULL AND ${at} IS NOT NULL AND (${at} < ? OR (${at} = ? AND "_id" <= ?)) ORDER BY ${at} DESC, "_id" DESC LIMIT ?`);
+		const latestOf = db.prepare(`SELECT MAX(${at}) AS at FROM ${quote(name)} WHERE ${key} = ?`);
+		const latest = (k: string) => (latestOf.get(k) as { at: Value }).at;
+		const before = new Map([...new Set(conditions.map((c) => c.key))].map((k) => [k, latest(k)]));
+		return (written) => {
+			const cutoff = new Map([...before].map(([k, t]) => [k, t ?? latest(k)]));
+			const isNew = (row: Record<string, Value>) => {
+				const [t, from] = [row[watch.at], cutoff.get(String(row[watch.key]))];
+				return typeof row[watch.value] === "number" && typeof t === "string" && typeof from === "string" && t >= from;
+			};
+			const byTime = (a: Record<string, Value>, b: Record<string, Value>) => {
+				const [x, y] = [String(a[watch.at]), String(b[watch.at])];
+				return x < y ? -1 : x > y ? 1 : Number(a._id) - Number(b._id);
+			};
+			return written.filter(isNew).toSorted(byTime).flatMap((row) => {
+				const [k, t] = [String(row[watch.key]), String(row[watch.at])];
+				const mine = conditions.filter((c) => c.key === k);
+				const points = (history.all(k, t, t, row._id!, Math.max(...mine.map((c) => need(c.condition)))) as Point[]).reverse();
+				return mine.flatMap((c) => {
+					const happened = met(c.condition, points);
+					return happened === undefined ? [] : [{ externalId: `${c.id}:${row._id}`, text: alertText(collection.title, c, points.at(-1)!, happened), at: t, private: collection.class === "private" }];
+				});
+			});
+		};
+	} catch (error) {
+		return () => {
+			throw error;
+		};
+	}
+}
+
 export function instanceData(stateDir: string): InstanceData & ModuleRows {
 	const pathOf = (module: ModuleName) => join(moduleDataDir(stateDir, module), "data.db");
 	const withRows = <T>(module: ModuleName, components: readonly Component[], access: { who: string; collection: string; op: Op }, use: (db: DatabaseSync, stored: Stored) => T): T => {
@@ -146,7 +209,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 		if (!ensured.ok) throw new Error(ensured.reason);
 		const db = new DatabaseSync(pathOf(module));
 		try {
-			db.exec("CREATE TABLE IF NOT EXISTS _access (at TEXT NOT NULL, who TEXT NOT NULL, collection TEXT NOT NULL, op TEXT NOT NULL, rows INTEGER NOT NULL, outcome TEXT NOT NULL)");
+			db.exec(`CREATE TABLE IF NOT EXISTS _access (at TEXT NOT NULL, who TEXT NOT NULL, collection TEXT NOT NULL, op TEXT NOT NULL, rows INTEGER NOT NULL, outcome TEXT NOT NULL); ${CONDITIONS}`);
 			return use(db, readStored(db));
 		} catch (error) {
 			if (error instanceof DataInputError) logAccess(db, access.who, access.collection, access.op, 0, `refused：${error.message}`);
@@ -189,6 +252,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 				// SQLite is the rollback: closing with the transaction still open undoes it, and a hot
 				// journal left by a crash is rolled back on the next open.
 				db.exec("BEGIN");
+				db.exec(CONDITIONS);
 				for (const statement of [...sourcesBackfill, ...sql]) db.exec(statement);
 				db.exec("CREATE TABLE IF NOT EXISTS _structure (json TEXT NOT NULL); DELETE FROM _structure");
 				db.prepare("INSERT INTO _structure VALUES (?)").run(JSON.stringify(next));
@@ -232,6 +296,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 				const { fields, kind } = component.collection;
 				const table = quote(component.name);
 				const ids: number[] = [];
+				const alertsFor = watchBeforeWrite(db, component);
 				db.exec("BEGIN");
 				try {
 					for (const row of rows) {
@@ -267,7 +332,41 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 				}
 				const visible = Object.keys(fields);
 				const read = db.prepare(`SELECT * FROM ${table} WHERE "_id" = ?`);
-				return { collection: component.name, class: component.collection.class, rows: ids.map((id) => rowOf(visible, read.get(id) as Record<string, Value>)) };
+				const written = ids.map((id) => read.get(id) as Record<string, Value>);
+				const answer = { collection: component.name, class: component.collection.class, rows: written.map((row) => rowOf(visible, row)) };
+				try {
+					return { ...answer, alerts: alertsFor(written) };
+				} catch (error) {
+					return { ...answer, alerts: [], alertProblem: failed(error) };
+				}
+			});
+		},
+		watch(module, components, request, who) {
+			return withRows(module, components, { who, collection: request.collection, op: request.op === "list" ? "read" : "write" }, (db, stored) => {
+				const { component } = resolve(stored, components, request.collection);
+				const { name, collection } = component;
+				if (collection.watch === undefined) throw new DataInputError(`「${name}」没有写 watch，不能设提醒条件`);
+				const answer = (output: Watched["output"], op: Op, rows: number): Watched => {
+					logAccess(db, who, name, op, rows);
+					return { collection: name, class: collection.class, output };
+				};
+				if (request.op === "list") {
+					const conditions = conditionsOf(db, name);
+					return answer({ conditions }, "read", conditions.length);
+				}
+				const id = request.op === "remove" ? request.id : request.watch.id;
+				const before = id === undefined ? undefined : conditionsOf(db, name).find((c) => c.id === id);
+				if (id !== undefined && before === undefined) throw new DataInputError(`「${name}」没有编号为 ${id} 的提醒条件，现有的用 list 看`);
+				if (request.op === "remove") {
+					db.prepare("DELETE FROM _conditions WHERE id = ?").run(id!);
+					return answer({ condition: before!, receipt: receiptText("已去掉", collection.title, before!) }, "write", 1);
+				}
+				const parsed = parseWatch(request.watch);
+				if (typeof parsed === "string") throw new DataInputError(parsed);
+				const { condition: { when, ...params }, key, note } = parsed;
+				const kept: SetCondition = { id: before?.id ?? `cnd_${randomUUID()}`, collection: name, key, condition: parsed.condition, ...(note !== undefined && { note }), setAt: new Date().toISOString() };
+				db.prepare("INSERT OR REPLACE INTO _conditions VALUES (?, ?, ?, ?, ?, ?, ?)").run(kept.id, name, key, when, JSON.stringify(params), kept.setAt, note ?? null);
+				return answer({ condition: kept, receipt: receiptText(before ? "已改" : "已设", collection.title, kept) }, "write", 1);
 			});
 		},
 	};

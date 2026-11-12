@@ -140,6 +140,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 				...(spec.domainTools && { PSA_DOMAIN_TOOLS: spec.domainTools }),
 				...(spec.knowledge && { PSA_KNOWLEDGE: spec.knowledge }),
 				...(spec.data && { PSA_DATA: spec.data }),
+				...(spec.watch && { PSA_WATCH: spec.watch }),
 				...(spec.granted.includes("tripwire") && spec.basis === "request" && { PSA_TRIPWIRES: this.#o.tripwireHelp || "（宿主没有配置可改盯盘条件的来源）" }),
 			},
 		});

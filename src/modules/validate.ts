@@ -176,6 +176,8 @@ function readKnowledge(report: Report, root: string, name: string): Component | 
 	return { kind: "knowledge", name: name as ComponentName, source, texts };
 }
 
+const WATCH_TYPES: Record<"key" | "value" | "at", readonly FieldDescriptor["type"][]> = { key: ["text"], value: ["number"], at: ["date", "text"] };
+
 function readCollection(report: Report, root: string, name: string): Component | undefined {
 	const dir = `data/${name}`;
 	const where = `${dir}/collection.json`;
@@ -205,7 +207,7 @@ function readCollection(report: Report, root: string, name: string): Component |
 			for (const part of ["key", "value", "at"] as const) {
 				const named = watch[part] as string;
 				if (!Object.hasOwn(described, named)) report(where, `watch.${part} names "${named}", which is not a field`);
-				else if (part === "value" && described[named]?.type !== "number") report(where, "watch.value must name a number field");
+				else if (!WATCH_TYPES[part].includes(described[named]!.type)) report(where, `watch.${part} must name a ${WATCH_TYPES[part].join(" or ")} field`);
 			}
 			collection.watch = { key: watch["key"], value: watch["value"], at: watch["at"] };
 		}

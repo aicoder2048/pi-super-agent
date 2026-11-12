@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { RUNTIMES, toolEffect, type AgentDescriptor, type Component, type Digest, type FieldDescriptor, type ModuleName, type ToolEffect } from "./manifest.ts";
-import { DataInputError, type ModuleRows } from "./instance-data.ts";
+import { DataInputError, type ModuleRows, type WatchRequest } from "./instance-data.ts";
 import { catalogueText, foundText, searchKnowledge, type Knowledge, type KnowledgeBase } from "./knowledge.ts";
 import { AUTHORITY, effectOf, senderOf, type Caller, type Gateway, type Refusal, type Json, type Reply, type Request } from "./protocol.ts";
 import { LIMIT_MS, runModuleCodeAsync } from "./run-code.ts";
@@ -78,6 +78,9 @@ export function createGateway(ports: GatewayPorts): Gateway {
 		if (request.kind === "data" && request.op !== "open-blob" && copy.collections.some((c) => c.name === request.collection)) {
 			return { effect: "pure", run: async () => rows(copy.module, request, whoOf(caller)) };
 		}
+		if (request.kind === "watch" && copy.collections.some((c) => c.name === request.collection && c.collection.watch !== undefined)) {
+			return { effect: "pure", run: async () => conditions(copy.module, request, whoOf(caller)) };
+		}
 		return undefined;
 	};
 	/** The protocol's order: resolve in the pinned version, the module's state, the member's `uses`, the authority table. */
@@ -97,21 +100,32 @@ export function createGateway(ports: GatewayPorts): Gateway {
 		return { ok: true, output: foundText(copy.module, query, found), private: false, passages: found.passages };
 	};
 
-	/** Rows are read and written in the serving version's structure: a ticket pinned to an older one reaches them through the stored aliases. */
-	const rows = (module: ModuleName, request: Extract<Request, { kind: "data" }>, who: string): Reply => {
+	/** Rows and conditions are kept in the serving version's structure: a ticket pinned to an older one reaches them through the stored aliases. */
+	const withServing = (module: ModuleName, use: (collections: readonly Collection[]) => Reply): Reply => {
 		const serving = copyOf(module, ports.serving(module));
 		if (serving === undefined) return { ok: false, refusal: { code: "module-disabled" } };
 		try {
-			const accessed =
-				request.op === "write"
-					? ports.rows.write(module, serving.collections, request.collection, request.rows, request.from, who)
-					: ports.rows.query(module, serving.collections, request.collection, request.op === "query" ? request.query : {}, who);
-			return { ok: true, output: { collection: accessed.collection, rows: accessed.rows as unknown as Json }, private: accessed.class === "private" };
+			return use(serving.collections);
 		} catch (error) {
 			if (error instanceof DataInputError) return { ok: false, refusal: { code: "bad-input", note: error.message } };
 			throw error;
 		}
 	};
+	const rows = (module: ModuleName, request: Extract<Request, { kind: "data" }>, who: string): Reply =>
+		withServing(module, (collections) => {
+			if (request.op !== "write") {
+				const read = ports.rows.query(module, collections, request.collection, request.op === "query" ? request.query : {}, who);
+				return { ok: true, output: { collection: read.collection, rows: read.rows as unknown as Json }, private: read.class === "private" };
+			}
+			const written = ports.rows.write(module, collections, request.collection, request.rows, request.from, who);
+			if (written.alertProblem !== undefined) ports.log(`[gateway] ${module} ${written.collection}：写进去了，但提醒条件没检查成：${written.alertProblem}`);
+			return { ok: true, output: { collection: written.collection, rows: written.rows as unknown as Json }, private: written.class === "private", alerts: written.alerts };
+		});
+	const conditions = (module: ModuleName, request: WatchRequest, who: string): Reply =>
+		withServing(module, (collections) => {
+			const watched = ports.rows.watch(module, collections, request, who);
+			return { ok: true, output: { collection: watched.collection, ...watched.output } as unknown as Json, private: watched.class === "private" };
+		});
 
 	const runTool = async (copy: Copy, tool: Tool, input: Json): Promise<Reply> => {
 		const secrets = Object.fromEntries((tool.tool.secrets ?? []).flatMap((name) => {
@@ -147,7 +161,10 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			const data = copy.collections
 				.filter((c) => !memberRefusal(caller, copy, `data/${c.name}`))
 				.map((c) => ({ request: "data" as const, name: c.name, title: c.collection.title, help: `${c.collection.kind}，${c.collection.class}。字段：${fieldsHelp(c.collection.fields)}` }));
-			return [...tools, ...knowledge, ...data];
+			const watch = copy.collections.flatMap(({ name, collection: { title, watch } }) =>
+				watch === undefined || memberRefusal(caller, copy, `watch/${name}`) ? [] : [{ request: "watch" as const, name, title, help: `key 是 ${watch.key} 字段的值，盯 ${watch.value}，时间看 ${watch.at}` }],
+			);
+			return [...tools, ...knowledge, ...data, ...watch];
 		},
 	};
 }
@@ -163,7 +180,7 @@ export function refusalText(refusal: Refusal): string {
 			return `成员 ${refusal.member} 的 uses 没有列这一项，用不了`;
 		case "not-allowed":
 			return refusal.sender === "inference"
-				? "推断开的任务只读，不能调会改变外面东西的工具。需要时请在汇报里请使用者在对话里提出"
+				? "推断开的任务只读，不能写模块数据、不能设或删提醒条件，也不能调会改变外面东西的工具。需要时请在汇报里请使用者在对话里提出"
 				: "只有使用者在对话里开、只听过使用者的话的任务才能做这件事。请在汇报里请使用者在对话里重新说一次";
 		case "bad-input":
 		case "provider-failed":

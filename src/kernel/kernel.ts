@@ -21,6 +21,7 @@ import type {
 	Action,
 	Cleared,
 	ConversationLine,
+	AlertModule,
 	HostLine,
 	HostLinePost,
 	ActionKind,
@@ -100,8 +101,10 @@ function toTrigger(r: Row): Trigger {
 	};
 }
 
+const moduleOf = (r: Row): { module?: AlertModule } => (r.module_title ? { module: { title: r.module_title, private: r.module_private === 1 } } : {});
+
 function hostLine(r: Row): HostLine {
-	return { id: r.id, who: r.kind, text: r.text, at: r.created_at };
+	return { id: r.id, who: r.kind, text: r.text, at: r.created_at, ...moduleOf(r) };
 }
 
 // Node 22's node:sqlite reads a string back only up to its first U+0000, so drop U+0000 before it reaches the store.
@@ -165,14 +168,14 @@ export interface KernelOptions {
 }
 
 const LINES = `
-	SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord, NULL AS cause, 1 AS shown FROM triggers t
+	SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord, NULL AS cause, 1 AS shown, NULL AS module_title, NULL AS module_private FROM triggers t
 	JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ?
 	UNION ALL
-	SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause, r.delivered_at IS NOT NULL FROM reply_receipts r WHERE r.thread_id = ?
+	SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause, r.delivered_at IS NOT NULL, NULL, NULL FROM reply_receipts r WHERE r.thread_id = ?
 	UNION ALL
-	SELECT ? || c.day, 'user', c.said, c.answered_at, c.rowid, NULL, 1 FROM cap_asks c WHERE c.said IS NOT NULL
+	SELECT ? || c.day, 'user', c.said, c.answered_at, c.rowid, NULL, 1, NULL, NULL FROM cap_asks c WHERE c.said IS NOT NULL
 	UNION ALL
-	SELECT h.id, h.kind, h.text, h.created_at, h.rowid, NULL, h.kind = 'receipt' OR h.delivered_at IS NOT NULL FROM host_lines h`;
+	SELECT h.id, h.kind, h.text, h.created_at, h.rowid, NULL, h.kind = 'receipt' OR h.delivered_at IS NOT NULL, h.module_title, h.module_private FROM host_lines h`;
 const LINES_PARAMS = [CONVERSATION_THREAD_ID, CONVERSATION_THREAD_ID, CAP_ASK_PREFIX] as const;
 const HIDDEN = "id IN (SELECT line_id FROM conversation_hidden)";
 
@@ -988,7 +991,7 @@ export class Kernel {
 			.reverse()
 			.map((r) => {
 				const quote = r.id.startsWith("trg_") ? this.#quoteOf(r.id) : null;
-				return { id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { ticketId: r.cause } : {}), ...(quote ? { quote } : {}) };
+				return { id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { ticketId: r.cause } : {}), ...(quote ? { quote } : {}), ...moduleOf(r) };
 			});
 	}
 
@@ -1064,13 +1067,14 @@ export class Kernel {
 	postHostLine(source: string, post: HostLinePost): { line: HostLine; duplicate: boolean } {
 		return this.#tx(() => {
 			if (post.kind === "alert") {
-				const existing = this.#get("SELECT id, kind, text, created_at FROM host_lines WHERE source = ? AND external_id = ?", source, post.externalId);
+				const existing = this.#get("SELECT id, kind, text, created_at, module_title, module_private FROM host_lines WHERE source = ? AND external_id = ?", source, post.externalId);
 				if (existing) return { line: hostLine(existing), duplicate: true };
 			}
 			const id = this.#id("hln");
 			const at = this.#now();
+			const module = post.kind === "alert" ? post.module : undefined;
 			this.#run(
-				"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+				"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at, module_title, module_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
 				id,
 				post.kind,
 				source,
@@ -1078,8 +1082,10 @@ export class Kernel {
 				post.text,
 				post.kind === "alert" ? post.occurredAt : at,
 				at,
+				module?.title ?? null,
+				module === undefined ? null : Number(module.private),
 			);
-			return { line: { id, who: post.kind, text: post.text, at }, duplicate: false };
+			return { line: { id, who: post.kind, text: post.text, at, ...(module && { module }) }, duplicate: false };
 		});
 	}
 
@@ -1098,7 +1104,7 @@ export class Kernel {
 	}
 
 	undeliveredAlerts(): HostLine[] {
-		return this.#all("SELECT id, kind, text, created_at FROM host_lines WHERE kind = 'alert' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
+		return this.#all("SELECT id, kind, text, created_at, module_title, module_private FROM host_lines WHERE kind = 'alert' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
 	}
 
 	alertCountsToday(): Record<string, number> {
