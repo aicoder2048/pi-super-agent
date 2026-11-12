@@ -10,6 +10,8 @@ declare module "node:fs" {
 	export function readFileSync(path: string, encoding: "utf8"): string;
 	export function readdirSync(path: string, options: { withFileTypes: true }): Dirent[];
 	export function readdirSync(path: string): string[];
+	export function readdirSync(path: string, options: { recursive: true }): string[];
+	export function statSync(path: string): { size: number; mtimeMs: number; isDirectory(): boolean };
 	export function mkdirSync(path: string, options: { recursive: true }): void;
 	export function copyFileSync(from: string, to: string): void;
 	export function renameSync(from: string, to: string): void;
@@ -22,11 +24,24 @@ declare module "node:fs" {
 	}
 	export function watch(path: string, options: { recursive: true }, listener: (event: string, filename: string | null) => void): FSWatcher;
 }
+declare module "node:sqlite" {
+	export interface StatementSync {
+		run(...values: (string | number)[]): unknown;
+		get(...values: (string | number)[]): unknown;
+		all(...values: (string | number)[]): unknown[];
+	}
+	export class DatabaseSync {
+		constructor(path: string, options?: { readOnly: boolean });
+		exec(sql: string): void;
+		prepare(sql: string): StatementSync;
+		close(): void;
+	}
+}
 declare module "node:os" {
 	export function tmpdir(): string;
 }
 declare module "node:path" {
-	export function basename(path: string): string;
+	export function basename(path: string, suffix?: string): string;
 	export function dirname(path: string): string;
 	export function join(...parts: string[]): string;
 	export function resolve(...parts: string[]): string;
@@ -77,6 +92,7 @@ interface ImportMeta {
 	url: string;
 }
 declare const process: {
+	pid: number;
 	argv: string[];
 	execPath: string;
 	exitCode: number | undefined;

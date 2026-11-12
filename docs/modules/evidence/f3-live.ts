@@ -254,7 +254,7 @@ async function lanes(): Promise<void> {
 			await lane(5, "uses", async () => {
 				const { took, cards } = await run("L5", B.member, 1);
 				const offered = exchangesOf(fake, B.member)[0]?.tools ?? [];
-				return { pass: took >= 0 && /uses 没有列这个工具/.test(cards[0] ?? "") && offered.includes("domain_tool"), evidence: `clerk (uses: tools/tax-note) offered: ${offered.join(", ")}\nclerk's tax-bracket call: ${cards[0]}\naccess log:\n${gatewayLines(state).filter((l) => l.includes("clerk")).join("\n")}` };
+				return { pass: took >= 0 && /uses 没有列这一项/.test(cards[0] ?? "") && offered.includes("domain_tool"), evidence: `clerk (uses: tools/tax-note) offered: ${offered.join(", ")}\nclerk's tax-bracket call: ${cards[0]}\naccess log:\n${gatewayLines(state).filter((l) => l.includes("clerk")).join("\n")}` };
 			});
 
 			await lane(6, "infer", async () => {

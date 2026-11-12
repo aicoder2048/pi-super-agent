@@ -47,6 +47,7 @@ export const newApp = (short: string): ToolCall => ({ name: "new_app", args: { s
 export const write = (path: string, content: string): ToolCall => ({ name: "write", args: { path, content } });
 export const bash = (command: string): ToolCall => ({ name: "bash", args: { command } });
 export const domainTool = (name: string, input: Record<string, unknown>): ToolCall => ({ name: "domain_tool", args: { name, input } });
+export const knowledge = (query: string): ToolCall => ({ name: "knowledge", args: { query } });
 export const report = (status: "progress" | "ready" | "blocked" | "failed" | "no_action", summary: string): ToolCall => ({ name: "report", args: { status, summary } });
 /** Crashes the current Worker for real: inside the bash tool, $PPID is the Pi process. */
 export const crashWorker = (): ToolCall => ({ name: "bash", args: { command: "kill -9 $PPID" } });
@@ -222,7 +223,8 @@ function scriptableToolResult(m: Message): string | undefined {
 	if (m.role !== "tool") return undefined;
 	const text = textOf(m);
 	if (text.startsWith("成员回复")) return `[成员回复] ${text}`;
-	if (text.includes("[模块工具]")) return text.slice(text.indexOf("[模块工具]"));
+	const tagged = text.search(/\[模块(工具|知识)\]/);
+	if (tagged >= 0) return text.slice(tagged);
 	if (/^\{\s*"app": "app-\d{3,}-/.test(text)) return `[应用目录] ${text}`;
 	if (/^\{\s*"echo": /.test(text)) return `[盯盘条件] ${text}`;
 	return text.startsWith("[命令输出]") ? text : undefined;

@@ -79,6 +79,7 @@ export default function workerExtension(pi: ExtensionAPI) {
 	const lookupHelp = process.env.PSA_LOOKUPS;
 	const tripwireHelp = process.env.PSA_TRIPWIRES;
 	const domainToolsHelp = process.env.PSA_DOMAIN_TOOLS;
+	const knowledgeHelp = process.env.PSA_KNOWLEDGE;
 	for (const name of Object.keys(process.env)) if (name.startsWith("PSA_")) delete process.env[name];
 	const bg = new Map<string, BgCommand>();
 	let bgSeq = 0;
@@ -194,6 +195,24 @@ export default function workerExtension(pi: ExtensionAPI) {
 			}),
 			async execute(_id, params) {
 				return text(`[模块工具] ${params.name}：${JSON.stringify(await call("worker.domain_tool", params))}`);
+			},
+		});
+	}
+
+	if (knowledgeHelp !== undefined) registerKnowledge(knowledgeHelp);
+
+	function registerKnowledge(help: string): void {
+		pi.registerTool({
+			name: "knowledge",
+			label: "模块知识",
+			description: `按关键词查本任务所属模块带的知识（指南、要点），返回最相关的几段摘录，每段带文档名、版本和章节。可查：\n${help}`,
+			promptSnippet: "knowledge: 查本任务所属模块的知识，返回带出处的段落摘录",
+			promptGuidelines: ["结论引用知识时写明文档名、版本和章节。", "查不到时换更短或别的说法再查；回复说某份知识还没导入时，在汇报里把导入命令告诉使用者。"],
+			parameters: Type.Object({
+				query: Type.String({ description: "关键词，空格分开几个词，例如 肿瘤标志物 复查" }),
+			}),
+			async execute(_id, params) {
+				return text(String(await call("worker.knowledge", params)));
 			},
 		});
 	}

@@ -232,3 +232,39 @@ test("just modules：运行中的新布局包写出正在服务的版本和摘�
 	assert.match(bad, new RegExp(`\\n  版本  0\\.1\\.0（${serving.slice(0, 12)}）\\n`));
 	assert.match(bad, /\n  说明  0\.1\.0 在运行；你刚改的版本无效：module\.json：is not valid JSON/);
 });
+
+const GUIDE = "2022-aha-acc-hfsa-hf";
+
+function healthState(t: import("node:test").TestContext) {
+	const dir = stateDir(t);
+	cpSync("docs/modules/architecture/sample/personal-health", join(dir, "modules/personal-health"), { recursive: true });
+	const file = join(dir, "guide.md");
+	writeFileSync(file, "# 心衰指南\n\n## 射血分数降低\n\n四联药物治疗。\n");
+	return { dir, file };
+}
+
+test("just module import：把全文复制进实例数据并建好索引，包里不多文件，打印一行", (t) => {
+	const { dir, file } = healthState(t);
+	const run = cli("src/cli/module.ts", dir, ["import", "personal-health", GUIDE, file]);
+	assert.equal(run.status, 0, run.stdout + run.stderr);
+	assert.match(run.stdout.trim(), /^导入了 personal-health 的 2022-aha-acc-hfsa-hf：1 个 Markdown 文件/);
+	assert.equal(run.stdout.trim().split("\n").length, 1);
+	assert.deepEqual(readdirSync(join(dir, "modules-data/personal-health/knowledge", GUIDE)).length, 1);
+	assert.ok(existsSync(join(dir, "modules-data/personal-health/index/knowledge.db")));
+	assert.deepEqual(readdirSync(join(dir, "modules/personal-health/knowledge", GUIDE)), ["source.json"]);
+});
+
+test("just module import：知识名不是 user-import 的、包里没有的、模块不存在的，各一行拒绝并以 1 退出", (t) => {
+	const { dir, file } = healthState(t);
+	for (const [module, doc, reason] of [
+		["personal-health", "tumor-marker-basics", /tumor-marker-basics 随模块自带全文（license 是 bundled），不用导入/],
+		["personal-health", "no-such-doc", /personal-health 没有叫 no-such-doc 的知识，有：2022-aha-acc-hfsa-hf、tumor-marker-basics/],
+		["no-such-module", GUIDE, /no-such-module 不是已发现的新布局模块/],
+	] as const) {
+		const run = cli("src/cli/module.ts", dir, ["import", module, doc, file]);
+		assert.equal(run.status, 1, `${module} ${doc}`);
+		assert.match(run.stdout + run.stderr, reason);
+		assert.equal((run.stdout + run.stderr).trim().split("\n").length, 1);
+	}
+	assert.ok(!existsSync(join(dir, "modules-data")));
+});
