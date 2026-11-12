@@ -48,6 +48,24 @@ const CHAT_SETS_COST = {
 		),
 	],
 };
+const REMOVE_TASK = { title: "不盯英伟达", brief: "把 NVDA 从盯盘条件里去掉" };
+const CHAT_SETS_THEN_REMOVES_COST = {
+	router: [
+		...CHAT_SETS_COST.router,
+		on("幕僚长为去掉条件开 us-market 的请求任务", /^\[对话\][\s\S]*不用盯英伟达/, (c) => [inUsMarket(openTicket(c, REMOVE_TASK.title, REMOVE_TASK.brief)), reply(c, "好，我让看盘队去掉。")]),
+		on("幕僚长转告去掉条件的汇报", /^\[Worker 汇报\][\s\S]*已去掉：NVDA/, (c) => [reply(c, "已去掉 NVDA 的盯盘提醒。")]),
+	],
+	workers: [
+		...CHAT_SETS_COST.workers,
+		worker(
+			REMOVE_TASK.brief,
+			on("助手用 tripwire 去掉条件", /^\[任务说明\]/, () => [{ name: "tripwire", args: { source: "us-market", op: "remove", args: { symbol: "NVDA" } } }]),
+			on("助手照 echo 汇报去掉了什么", /^\[盯盘条件\]/, (c) => [report("ready", echoOf(c))]),
+		),
+	],
+};
+const PANEL_SHOTS = new URL("./.out/source-panel/", import.meta.url).pathname;
+const NVDA_LINE = "NVDA 成本价 120、100 股，相对成本价涨跌超过 10% 时提醒";
 const CROSS_TASK = { title: "盯特斯拉均线", brief: "把 TSLA 的 5 日、20 日均线金叉死叉加进盯盘条件" };
 const CHAT_SETS_CROSS = {
 	router: [
@@ -71,13 +89,13 @@ async function until(predicate: () => boolean, label: string, timeoutMs = 15_000
 	}
 }
 
-test("盯盘条件：网页上说一句，幕僚长开 us-market 的请求任务，助手用 tripwire 写入；网页出现带成本价的收据，Telegram 收不到收据", async (t) => {
+test("盯盘条件：网页上说一句，幕僚长开 us-market 的请求任务，助手用 tripwire 写入；网页出现带成本价的收据，左栏列出这条，Telegram 收不到收据；说去掉后左栏不再列出", async (t) => {
 	const tg = await FakeTelegram.start();
 	t.after(() => tg.close());
 	const sentTo = () => tg.sent.filter((m) => m.chatId === USER);
 	await story(
 		t,
-		CHAT_SETS_COST,
+		CHAT_SETS_THEN_REMOVES_COST,
 		async ({ step, fake }) => {
 			await step("手机打开聊天后，网页上说要盯英伟达：网页出现宿主写的收据，写着成本价和股数", async (page) => {
 				tg.userSays(USER, "/start");
@@ -99,6 +117,40 @@ test("盯盘条件：网页上说一句，幕僚长开 us-market 的请求任务
 				await until(() => sentTo().some((m) => m.text === ROUTER_SAYS), "回复到达 Telegram");
 				assert.ok(sentTo().some((m) => m.text.startsWith("你在网页或终端说：帮我盯英伟达")));
 				assert.deepEqual(sentTo().filter((m) => /成本价 120|盯盘条件（只在本机）|现在共 1 条/.test(m.text)), []);
+			});
+			await step("不用刷新，左栏关注的来源下展开着「盯盘条件 1 条」，写着成本价；「自选 2 只」默认收起，点开后刷新页面还开着", async (page) => {
+				const source = page.locator('.watch[data-source="us-market"]');
+				await source.locator(".panel.tripwires li", { hasText: NVDA_LINE }).waitFor();
+				assert.equal(await source.locator(".panel.tripwires summary").textContent(), "盯盘条件 1 条");
+				assert.equal(await source.locator(".panel.tripwires").evaluate((d) => (d as HTMLDetailsElement).open), true);
+				const watchlist = source.locator(".panel.watchlist");
+				assert.equal(await watchlist.locator("summary").textContent(), "自选 2 只");
+				assert.equal(await watchlist.evaluate((d) => (d as HTMLDetailsElement).open), false);
+				await watchlist.locator("summary").click();
+				await page.waitForFunction(() => localStorage.getItem("psa-panel-open")?.includes('"us-market/watchlist":true'), null, { timeout: 5_000 });
+				await page.reload();
+				await page.locator('.watch[data-source="us-market"] .panel.watchlist[open] li', { hasText: "SPY" }).waitFor();
+			});
+			await step("左栏截图：亮色和暗色，桌面宽度和 390px 手机宽度", async (page) => {
+				for (const [width, height] of [[1280, 800], [390, 844]]) {
+					await page.setViewportSize({ width, height });
+					for (const theme of ["light", "dark"]) {
+						await page.evaluate((t) => (document.documentElement.dataset.theme = t), theme);
+						await page.locator('.watch[data-source="us-market"]').screenshot({ path: join(PANEL_SHOTS, `source-${theme}-${width}.png`) });
+						await page.locator("#left").screenshot({ path: join(PANEL_SHOTS, `left-${theme}-${width}.png`) });
+						const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+						assert.ok(overflow <= 0, `${width}px ${theme} 横向溢出 ${overflow}px`);
+					}
+				}
+				await page.setViewportSize({ width: 1280, height: 800 });
+			});
+			await step("网页上说不用盯英伟达了：左栏的「盯盘条件」不再列出，Telegram 照样收不到成本价", async (page) => {
+				await sayInPage(page, "不用盯英伟达了");
+				await page.locator(".line.router .bubble", { hasText: "已去掉 NVDA 的盯盘提醒。" }).waitFor();
+				await page.locator('.watch[data-source="us-market"] .panel.tripwires').waitFor({ state: "detached" });
+				assert.equal(await page.locator('.watch[data-source="us-market"] .panel.watchlist summary').textContent(), "自选 2 只");
+				await until(() => sentTo().some((m) => m.text === "已去掉 NVDA 的盯盘提醒。"), "回复到达 Telegram");
+				assert.deepEqual(sentTo().filter((m) => /成本价 120|盯盘条件 \d+ 条/.test(m.text)), []);
 			});
 		},
 		STORY_OPTIONS(tg.url),

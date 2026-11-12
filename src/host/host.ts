@@ -326,12 +326,8 @@ export class Host {
 	}
 
 	snapshot() {
-		const { rows, today, duty, helpers, routes, dispatching, memberCap } = this.#boardState();
-		const watching = this.#watching.map((w) => {
-			const problem = this.feeds.get(w.source)?.problem();
-			return problem ? { ...w, problem } : w;
-		});
-		return { conversation: this.kernel.conversation(CONVERSATION_LINES), cleared: this.kernel.cleared(CONVERSATION_LINES), board: rows, today, duty, helpers, routes, dispatching, memberCap, watching };
+		const { rows, ...board } = this.#boardState();
+		return { conversation: this.kernel.conversation(CONVERSATION_LINES), cleared: this.kernel.cleared(CONVERSATION_LINES), board: rows, ...board };
 	}
 
 	clearConversation(): void {
@@ -340,7 +336,17 @@ export class Host {
 	}
 
 	#boardState(): BoardState {
-		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard() };
+		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard(), watching: this.#watchingNow() };
+	}
+
+	#watchingNow(): WatchedSource[] {
+		const alerts = this.kernel.alertCountsToday();
+		return this.#watching.map((w) => {
+			const feed = this.feeds.get(w.source);
+			if (!feed) return w;
+			const problem = feed.problem();
+			return { ...w, ...(problem && { problem }), ...(feed.panel && { panel: feed.panel() }), alertsToday: alerts[w.source] ?? 0 };
+		});
 	}
 
 	#memberCapBoard(): MemberCapBoard {
@@ -356,7 +362,9 @@ export class Host {
 
 	#postHostLine(source: string, post: HostLinePost): void {
 		const { line, duplicate } = this.kernel.postHostLine(source, post);
-		if (!duplicate) this.#deliverHostLine(line);
+		if (duplicate) return;
+		this.#deliverHostLine(line);
+		this.#changed();
 	}
 
 	#deliverHostLine(line: HostLine): void {

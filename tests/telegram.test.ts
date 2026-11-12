@@ -3,7 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { HostConnection } from "../src/client/connection.ts";
-import type { HostToClient } from "../src/client/protocol.ts";
+import type { HostToClient, WatchedSource } from "../src/client/protocol.ts";
 import type { Host } from "../src/host/host.ts";
 import { BotApi, BotToken, type Http } from "../src/host/telegram/bot-api.ts";
 import { randomUUID } from "node:crypto";
@@ -34,6 +34,7 @@ interface Setup {
 	script?: WorkerScript;
 	http?: Http;
 	feeds?: FeedSpec[];
+	watching?: WatchedSource[];
 }
 
 /** Fails sendMessage the way a refused connection does, so the request surely did not reach Telegram, while `down` is on. */
@@ -49,12 +50,13 @@ function unreachable() {
 	return { link, http };
 }
 
-async function telegramHost(t: TestContext, { allowed = [USER], stateDir = tempStateDir(), timing = FAST, fake, brain = echo, script = () => {}, http, feeds }: Setup = {}) {
+async function telegramHost(t: TestContext, { allowed = [USER], stateDir = tempStateDir(), timing = FAST, fake, brain = echo, script = () => {}, http, feeds, watching }: Setup = {}) {
 	const tg = fake ?? (await FakeTelegram.start());
 	const logs: string[] = [];
 	const { host } = await startHost(brain, script, {
 		stateDir,
 		feeds,
+		watching,
 		log: (line) => logs.push(line),
 		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url, ...(http && { http }) }), allowedUserIds: new Set(allowed), timing },
 	});
@@ -754,6 +756,21 @@ test("盯盘条件的收据只在本机：广播收据，Telegram 什么都不�
 	client.broadcast({ type: "reply", text: "已添加", at: Date.now(), replyId: "rpl_after" });
 	await until(() => sentTo(tg, USER).includes("已添加"), "收据之后的回复到达");
 	assert.deepEqual(sentTo(tg, USER).slice(before), ["已添加"]);
+});
+
+test("真宿主：改了盯盘条件后，网页左栏的面板带着成本价随 board 帧推出去，Telegram 一条带成本价的都不发", async (t) => {
+	let tripwires: string[] = [];
+	const feed = fakeFeed("us-market", () => ({ watchlist: ["NVDA"], tripwires }));
+	const { host, tg } = await telegramHost(t, { feeds: [feed.spec], watching: [{ source: "us-market", timers: [], rules: [] }] });
+	tg.userSays(USER, "/start");
+	await until(() => sentTo(tg, USER).length === 1, "说明");
+	tripwires = ["NVDA 成本价 120、100 股，相对成本价涨跌超过 10% 时提醒"];
+	feed.ctx!.post({ kind: "receipt", text: "已添加：NVDA 成本价 120、100 股" });
+	assert.match(JSON.stringify(host.snapshot().watching), /成本价 120/);
+	await new Promise((r) => setTimeout(r, 300));
+	tg.userSays(USER, "好了吗");
+	await until(() => sentTo(tg, USER).includes("收到：好了吗"), "之后的回复到达");
+	assert.deepEqual(sentTo(tg, USER).filter((m) => /120|盯盘条件/.test(m)), []);
 });
 
 test("不认识的广播类型：不发到 Telegram，日志记一行，不悄悄丢掉", async (t) => {

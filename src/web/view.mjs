@@ -123,7 +123,7 @@ export function applyMessage(view, message, now) {
 			addLine(view, { id: message.replyId, who: "router", text: message.text, at: message.at, ...(message.ticketId ? { ticketId: message.ticketId } : {}) });
 			return ["conversation"];
 		case "board":
-			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, routes: message.routes, memberCap: message.memberCap ?? null, receivedAt: now });
+			Object.assign(view, { rows: message.rows, today: message.today, duty: message.duty, helpers: message.helpers, watching: message.watching, routes: message.routes, memberCap: message.memberCap ?? null, receivedAt: now });
 			setDispatching(view, message.dispatching);
 			return ["conversation", "left", "header"];
 	}
@@ -287,9 +287,30 @@ export function leftColumn(view, now, sending = new Map()) {
 		doing: groups.doing,
 		done: groups.done.reverse(),
 		doneLine: `已完成 · ${groups.done.length}`,
-		watching: view.watching.map((w) => ({ name: w.title ?? w.source, rule: [w.problem, w.description ?? watchRule(w)].filter(Boolean).join(" · "), hits: hits[w.source] ? `今日 ${hits[w.source]} 条` : "", problem: !!w.problem })),
+		watching: view.watching.map((w) => ({
+			source: w.source,
+			name: w.title ?? w.source,
+			rule: [w.problem, w.description ?? watchRule(w)].filter(Boolean).join(" · "),
+			hits: hits[w.source] ? `今日 ${hits[w.source]} 条` : "",
+			alerts: w.alertsToday ? `今日提醒 ${w.alertsToday}` : "",
+			problem: !!w.problem,
+			lists: panelLists(w.panel),
+		})),
 		today: todayCopy(view.today),
 	};
+}
+
+/** One collapsible list under a source; the page may keep the viewer's own open or closed in place of `open`. @typedef {{ key: "watchlist" | "tripwires", summary: string, items: string[], open: boolean }} PanelList */
+
+/** @param {WatchedSource["panel"]} panel @returns {PanelList[]} */
+function panelLists(panel) {
+	if (!panel) return [];
+	/** @type {PanelList[]} */
+	const lists = [
+		{ key: "watchlist", summary: `自选 ${panel.watchlist.length} 只`, items: panel.watchlist, open: false },
+		{ key: "tripwires", summary: `盯盘条件 ${panel.tripwires.length} 条`, items: panel.tripwires, open: true },
+	];
+	return lists.filter((l) => l.items.length > 0);
 }
 
 /** @param {WatchedSource} w */
