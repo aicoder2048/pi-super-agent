@@ -14,7 +14,7 @@ import type { HostOptions } from "./host.ts";
 import { helperSessionDir } from "./dispatch.ts";
 import { PiWorkerSpawner } from "./pi-worker.ts";
 import { Router, routerPreamble } from "./router.ts";
-import { readSecret } from "../secrets.ts";
+import { readSecret, secretLookup } from "../secrets.ts";
 import { createGateway } from "../modules/gateway.ts";
 import { instanceData } from "../modules/instance-data.ts";
 import { moduleDataDir } from "../modules/knowledge.ts";
@@ -110,6 +110,7 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 	const feeds = feedSpecs(config, modules, log);
 	const telegram = telegramOptions(config, process.env, log);
 	const store = new ModuleStore(join(config.stateDir, "module-store"));
+	const secret = secretLookup(config.secretsFile);
 	return {
 		stateDir: config.stateDir,
 		heartbeatMs: config.heartbeatSeconds * 1000,
@@ -120,6 +121,7 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 		sourcePolicy: (trigger) => live.current().sourcePolicy(trigger),
 		ruleAllows: (ruleId, source) => live.current().ruleAllows(ruleId, source),
 		isMarketSource: (source) => live.current().isMarketSource(source),
+		moduleFeeds: { feeds: () => live.current().feeds(), fixtures: config.feedFixtures, secret },
 		domains: { book: () => live.current().book, kitFor },
 		modules: panel,
 		gateway: createGateway({
@@ -127,7 +129,7 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 			serving: (module) => live.current().book.get(module)?.digest as Digest | undefined,
 			dataDir: (module) => moduleDataDir(config.stateDir, module),
 			rows: instanceData(config.stateDir),
-			secret: (name) => readSecret([name], name, process.env, config.secretsFile)?.key,
+			secret,
 			log,
 		}),
 		rulesFor: (source) => live.current().rulesFor(source),

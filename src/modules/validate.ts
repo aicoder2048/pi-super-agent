@@ -1,16 +1,17 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { namedFromEnv, runModuleCode, runModuleCodeAsync, type CodeReply, type Secrets } from "./run-code.ts";
-import { CONNECTORS, DATA_CLASSES, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS } from "./manifest.ts";
+import { EVERY } from "./connectors/timer.ts";
+import { feedInput, intoOf, NOTHING_HELD, parseCollected } from "./feed-runner.ts";
+import { runModuleCode, runModuleCodeAsync, secretsFor, type CodeReply, type RunOptions, type SecretLookup, type Secrets } from "./run-code.ts";
+import { CONNECTORS, DATA_CLASSES, FEED_WHEN, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS } from "./manifest.ts";
 import type {
-	AgentDescriptor, CapabilityUse, CollectionDescriptor, Component, ComponentName, Digest, FeedDescriptor, FieldDescriptor, KindDir, MemberTool, ModuleManifest, ModuleName, PackageScan, Problem, RuleRef, Runtime, ScanResult, ToolCase, ToolDescriptor,
+	AgentDescriptor, CapabilityUse, CollectionDescriptor, Component, ComponentName, Digest, FeedDescriptor, FeedFixture, FieldDescriptor, KindDir, MemberTool, ModuleManifest, ModuleName, PackageScan, Problem, RuleRef, Runtime, ScanResult, ToolCase, ToolDescriptor,
 } from "./manifest.ts";
 
 const NAME = /^[a-z0-9][a-z0-9-]*$/;
 const FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
-const EVERY = /^\d+(s|m|h|d)$/;
 const FIELD_TYPES = ["text", "number", "date", "blob"] as const;
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -277,7 +278,7 @@ function readSkill(report: Report, root: string, name: string): Component | unde
 function readFeed(report: Report, root: string, name: string): Component | undefined {
 	const dir = `feeds/${name}`;
 	const where = `${dir}/feed.json`;
-	const raw = readObject(report, root, where, ["title"], ["description", "connector", "handler", "secrets", "every", "settings", "ask", "into", "reads", "notice", "ignore"]);
+	const raw = readObject(report, root, where, ["title"], ["description", "connector", "handler", "secrets", "every", "when", "settings", "ask", "into", "reads", "notice", "ignore"]);
 	if (raw === undefined) return undefined;
 	const feed: FeedDescriptor = { title: String(raw["title"]) };
 	const connector = raw["connector"];
@@ -290,6 +291,11 @@ function readFeed(report: Report, root: string, name: string): Component | undef
 	if (connector === undefined && feed.handler === undefined) report(where, `needs a "connector", a "handler", or both`);
 	if (feed.into === undefined && feed.notice === undefined) report(where, `needs "into" (store records), "notice" (tell the Router), or both`);
 	if (feed.every !== undefined && !EVERY.test(feed.every)) report(where, `"every" must look like 30s, 15m, 6h or 1d`);
+	const scheduledBy = connector === "timer" ? "the timer connector" : connector === undefined && feed.handler !== undefined ? "a handler and no connector" : undefined;
+	if (feed.every === undefined && scheduledBy !== undefined) report(where, `needs "every": with ${scheduledBy} it runs only on that schedule`);
+	const when = raw["when"];
+	if (oneOf(FEED_WHEN, when)) feed.when = when;
+	else if (when !== undefined) report(where, `"when" must be one of ${FEED_WHEN.join(", ")}`);
 	if (feed.handler !== undefined && !existsSync(join(root, dir, feed.handler))) report(`${dir}/${feed.handler}`, "is named as the handler but is missing");
 	const secrets = nameList(report, where, raw, "secrets", SECRET_NAME);
 	if (secrets !== undefined) feed.secrets = secrets;
@@ -314,7 +320,26 @@ function readFeed(report: Report, root: string, name: string): Component | undef
 	}
 	if (ignore !== undefined) feed.ignore = ignore;
 	if (ignore !== undefined && feed.notice === undefined) report(where, `"ignore" filters triggers, so it needs a "notice"`);
-	return { kind: "feeds", name: name as ComponentName, feed };
+	return { kind: "feeds", name: name as ComponentName, feed, fixtures: readFixtures(report, root, `${dir}/fixtures`) };
+}
+
+function readFixtures(report: Report, root: string, dir: string): FeedFixture[] {
+	if (!existsSync(join(root, dir))) return [];
+	return entries(root, dir).files.flatMap((file): FeedFixture[] => {
+		const where = `${dir}/${file}`;
+		if (!file.endsWith(".json")) {
+			report(where, "fixtures holds one JSON file per case");
+			return [];
+		}
+		const raw = readObject(report, root, where, [], ["input", "responses"]);
+		if (raw === undefined) return [];
+		const [input, responses] = [raw["input"] ?? {}, raw["responses"] ?? {}];
+		if (!isObject(input) || !isObject(responses)) {
+			report(where, `"input" and "responses" must be objects`);
+			return [];
+		}
+		return [{ name: file.slice(0, -5), input, responses }];
+	});
 }
 
 function readAgent(report: Report, root: string, file: string): Component | undefined {
@@ -407,36 +432,56 @@ function same(actual: Json | undefined, expected: Json, tolerance: number): bool
 	return actual === expected;
 }
 
-type CaseRun = { dir: string; entry: string; secrets: Secrets; where: string; label: string; item: ToolCase };
+type CaseRun = { dir: string; entry: string; secrets: Secrets; input: unknown; options: RunOptions; problem(reply: CodeReply): Problem | undefined };
 
-function caseRuns(root: string, components: readonly Component[]): CaseRun[] {
-	return components.flatMap((component) =>
-		component.kind !== "tools"
-			? []
-			: component.cases.map((item, index) => ({
-					dir: join(root, "tools", component.name),
-					entry: RUNTIMES[component.tool.runtime ?? "node"],
-					secrets: namedFromEnv(component.tool.secrets ?? []),
-					where: `tools/${component.name}/cases.json`,
-					label: `test case ${index + 1} "${item.name}"`,
-					item,
-				})),
-	);
+function toolRun(root: string, component: Extract<Component, { kind: "tools" }>, item: ToolCase, index: number, secret: SecretLookup): CaseRun {
+	const where = `tools/${component.name}/cases.json`;
+	const label = `test case ${index + 1} "${item.name}"`;
+	return {
+		dir: join(root, "tools", component.name),
+		entry: RUNTIMES[component.tool.runtime ?? "node"],
+		secrets: secretsFor(component.tool.secrets ?? [], secret),
+		input: item.input,
+		options: {},
+		problem: (reply) => {
+			if (!reply.ok) return { where, reason: `${label} threw: ${reply.note}` };
+			if (!same(reply.output as Json, item.expect as Json, item.tolerance ?? 1e-9)) return { where, reason: `${label} failed: expected ${JSON.stringify(item.expect)}, got ${JSON.stringify(reply.output)}` };
+			return undefined;
+		},
+	};
 }
 
-function caseProblem({ where, label, item }: CaseRun, reply: CodeReply): Problem | undefined {
-	if (!reply.ok) return { where, reason: `${label} threw: ${reply.note}` };
-	if (!same(reply.output as Json, item.expect as Json, item.tolerance ?? 1e-9)) return { where, reason: `${label} failed: expected ${JSON.stringify(item.expect)}, got ${JSON.stringify(reply.output)}` };
-	return undefined;
+function feedRun(root: string, { name, feed }: Extract<Component, { kind: "feeds" }>, components: readonly Component[], fixture: FeedFixture, secret: SecretLookup): CaseRun {
+	const where = `feeds/${name}/fixtures/${fixture.name}.json`;
+	return {
+		dir: join(root, "feeds", name),
+		entry: feed.handler!,
+		secrets: secretsFor(feed.secrets ?? [], secret),
+		input: feedInput(feed, [], NOTHING_HELD, fixture),
+		options: { responses: fixture.responses },
+		problem: (reply) => {
+			if (!reply.ok) return { where, reason: `the handler threw on this fixture: ${reply.note}` };
+			const parsed = parseCollected(reply.output, intoOf(feed, components));
+			return typeof parsed === "string" ? { where, reason: `the handler's reply on this fixture: ${parsed}` } : undefined;
+		},
+	};
 }
 
-export const hasCases = (scan: PackageScan): boolean => scan.components.some((c) => c.kind === "tools" && c.cases.length > 0);
+function caseRuns(root: string, components: readonly Component[], secret: SecretLookup): CaseRun[] {
+	return components.flatMap((component) => {
+		if (component.kind === "tools") return component.cases.map((item, index) => toolRun(root, component, item, index, secret));
+		if (component.kind === "feeds" && component.feed.handler !== undefined) return component.fixtures.map((fixture) => feedRun(root, component, components, fixture, secret));
+		return [];
+	});
+}
+
+export const hasCases = (scan: PackageScan): boolean => caseRuns(scan.dir, scan.components, () => undefined).length > 0;
 
 /** For a package scanned with `runCases: false`. */
-export async function runCasesAsync(scan: PackageScan): Promise<Problem[]> {
+export async function runCasesAsync(scan: PackageScan, secret: SecretLookup): Promise<Problem[]> {
 	const problems: Problem[] = [];
-	for (const run of caseRuns(scan.dir, scan.components)) {
-		const problem = caseProblem(run, await runModuleCodeAsync(run.dir, run.entry, run.item.input, run.secrets));
+	for (const run of caseRuns(scan.dir, scan.components, secret)) {
+		const problem = run.problem(await runModuleCodeAsync(run.dir, run.entry, run.input, run.secrets, run.options));
 		if (problem) problems.push(problem);
 	}
 	return problems;
@@ -481,9 +526,9 @@ export function scanPackage(packageDir: string, options: ScanOptions = {}): Scan
 }
 
 /** `folder`: the module name the folder stands for. A copy in the module store sits in a folder named by its digest. */
-type ScanOptions = { previous?: string | undefined; runCases?: boolean; folder?: string };
+type ScanOptions = { previous?: string | undefined; runCases?: boolean; folder?: string; secret?: SecretLookup };
 
-function scanReadable(packageDir: string, { previous, runCases = true, folder }: ScanOptions): ScanResult {
+function scanReadable(packageDir: string, { previous, runCases = true, folder, secret = (name) => process.env[name] }: ScanOptions): ScanResult {
 	const root = resolve(packageDir);
 	const problems: Problem[] = [];
 	const report: Report = (where, reason) => void problems.push({ where, reason });
@@ -495,8 +540,8 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder }:
 	const rules = readRules(report, root, manifest.name, feeds);
 	crossCheck(report, manifest, components);
 	if (runCases && problems.length === 0) {
-		for (const run of caseRuns(root, components)) {
-			const problem = caseProblem(run, runModuleCode(run.dir, run.entry, run.item.input, run.secrets));
+		for (const run of caseRuns(root, components, secret)) {
+			const problem = run.problem(runModuleCode(run.dir, run.entry, run.input, run.secrets, run.options));
 			if (problem) problems.push(problem);
 		}
 	}

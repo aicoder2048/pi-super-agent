@@ -104,6 +104,8 @@ declare const process: {
 };
 declare function setTimeout(run: () => void, ms: number): unknown;
 declare function clearTimeout(timer: unknown): void;
+declare function setInterval(run: () => void, ms: number): { unref(): void };
+declare function clearInterval(timer: unknown): void;
 declare const console: {
 	log(line: string): void;
 };

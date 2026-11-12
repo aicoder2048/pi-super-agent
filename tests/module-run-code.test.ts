@@ -24,7 +24,7 @@ const alive = (pid: number) => {
 	}
 };
 
-const run = (dir: string) => runModuleCodeAsync(dir, "index.ts", {}, {}, TEST_LIMIT_MS);
+const run = (dir: string) => runModuleCodeAsync(dir, "index.ts", {}, {}, { limitMs: TEST_LIMIT_MS });
 const failsInTime = async (dir: string) => assert.equal((await within(run(dir), TEST_LIMIT_MS + 1500, "到时限没有结束")).ok, false);
 const pidGone = (dir: string) => {
 	const pid = Number(readFileSync(join(dir, "pid"), "utf8"));

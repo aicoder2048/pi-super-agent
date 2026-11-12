@@ -225,3 +225,8 @@ test("telegram 段写错时报错只点出字段名，不回显段里的值：�
 		});
 	}
 });
+
+test("feedFixtures 默认关；just module try 写 true 时预演用 fixtures 代替连接器", () => {
+	assert.equal(loadConfig(stateWith({})).feedFixtures, false);
+	assert.equal(loadConfig(stateWith({ feedFixtures: true })).feedFixtures, true);
+});

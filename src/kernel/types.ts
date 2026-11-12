@@ -74,6 +74,8 @@ export interface TriggerSubmission {
 	sender: string;
 	body: string;
 	occurredAt: number;
+	/** From a feed that fills private data (design.md §5): a ticket that takes it has touched private data. */
+	private?: boolean;
 }
 
 export type SourcePolicy = (trigger: TriggerSubmission) => "ignore" | "candidate" | "notice";

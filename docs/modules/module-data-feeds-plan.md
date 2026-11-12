@@ -250,49 +250,55 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `src/modules/scheduler.ts`（调度器）、`src/modules/connectors/timer.ts`、`src/modules/connectors/inbox.ts`、`src/modules/feed-runner.ts`（每次调用一个进程跑 handler，复用 `run-code.ts`）。
-- [ ] Edit `src/host/live-modules.ts`（调度器跟着模块表启停）、`src/host/host.ts`、`src/host/wiring.ts`、`src/modules/validate.ts`（检查时用 fixtures 跑 handler）、`src/modules/rehearse.ts`（预演时连接器换成读 fixtures）。
-- [ ] Create `tests/scheduler.test.ts`、`tests/feed-runner.test.ts`。
+- [x] Create `src/modules/scheduler.ts`（调度器）、`src/modules/connectors/timer.ts`、`src/modules/connectors/inbox.ts`、`src/modules/feed-runner.ts`（每次调用一个进程跑 handler，复用 `run-code.ts`）。
+- [x] Edit `src/host/live-modules.ts`（调度器跟着模块表启停）、`src/host/host.ts`、`src/host/wiring.ts`、`src/modules/validate.ts`（检查时用 fixtures 跑 handler）、`src/modules/rehearse.ts`（预演时连接器换成读 fixtures）。实际没改 `live-modules.ts` 和 `rehearse.ts`：调度器每一拍从 `live.current().feeds()` 读 feed 表（包的 feed 在 `src/modules.ts` 的 `packageModule` 里带上），开关一变下一拍就跟上；预演由 `src/cli/module-try.ts` 在临时 config.json 里写 `feedFixtures: true`。另改了 `src/kernel/`（触发上记 `private`）、`src/modules/instance-data.ts`（feed 的 id 去重和进度表）、`src/modules/run-code.ts`（`responses` 代替 fetch）。
+- [x] Create `tests/scheduler.test.ts`、`tests/feed-runner.test.ts`。
 
 **Build.**
 
-- [ ] 调度器跟着 `LiveRegistry`：模块打开，它的 feed 排上；关掉或拿掉，立刻停。来源名是 `<模块>/<feed>`。
-- [ ] 两个连接器。`timer` 按 `every` 到点调用；`inbox` 读 `<stateDir>/inbox/<模块>/<feed>/` 下新放进来的 JSON 文件，处理完挪走。
-- [ ] `feed.json` 加一个可选的 `"when": "us-market-hours"`，由调度器判断，复用 `src/sources/market/session.ts` 的交易时段规则（开盘到收盘加 20 分钟，给延迟数据留时间）。不在时段内不调用。
-- [ ] handler 是「输入到输出」的函数：输入连接器给的内容、你填的设置、上次的进度；输出要存的行、要发的触发、新的进度。存行（进 `into`，触发 G3 的条件计算）、发触发（经内核 `submitTrigger`，按 `id` 去重，`ignore` 过滤）、存进度（存在模块的 `data.db`）都由宿主做。
-- [ ] `just module check` 用 `feeds/<feed>/fixtures/` 跑一遍 handler，fixtures 替换网络请求；`just module try` 里连接器换成读 fixtures。
-- [ ] 不建限速队列。us-market 的旧 feed 不动。
+- [x] 调度器跟着 `LiveRegistry`：模块打开，它的 feed 排上；关掉或拿掉，立刻停。来源名是 `<模块>/<feed>`。
+- [x] 两个连接器。`timer` 按 `every` 到点调用；`inbox` 读 `<stateDir>/inbox/<模块>/<feed>/` 下新放进来的 JSON 文件，处理完挪走。
+- [x] `feed.json` 加一个可选的 `"when": "us-market-hours"`，由调度器判断，复用 `src/sources/market/session.ts` 的交易时段规则（开盘到收盘加 20 分钟，给延迟数据留时间）。不在时段内不调用。
+- [x] handler 是「输入到输出」的函数：输入连接器给的内容、feed.json 里写的 `settings`、上次的进度（`ask` 的回答还没有地方存，也不合并进来）；输出要存的行、要发的触发、新的进度。存行（进 `into`，触发 G3 的条件计算）、发触发（经内核 `submitTrigger`，按 `id` 去重，`ignore` 过滤）、存进度（存在模块的 `data.db`）都由宿主做。
+- [x] `just module check` 用 `feeds/<feed>/fixtures/` 跑一遍 handler，fixtures 替换网络请求；`just module try` 里连接器换成读 fixtures。
+- [x] 不建限速队列。us-market 的旧 feed 不动。
 
 **You see.**
 
-- [ ] 一个只有 `timer` 和一句 `notice` 的模块打开后，到点幕僚长收到触发并开任务；关掉模块后不再触发。
-- [ ] 往收件箱目录丢一个 JSON 文件，几秒内进了对应的数据，文件被挪走。
+- [x] 一个只有 `timer` 和一句 `notice` 的模块打开后，到点幕僚长收到触发并开任务；关掉模块后不再触发。
+- [x] 往收件箱目录丢一个 JSON 文件，几秒内进了对应的数据，文件被挪走。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/scheduler.test.ts` 覆盖跟着开关启停、交易时段判断（假时钟，盘前、盘中、收盘后 20 分钟内、周末）、同一批内容跑两次不重复、`ignore`、进度在崩溃后接上、handler 超时只算这一次失败。`tests/feed-runner.test.ts` 覆盖 fixtures 替换网络请求。Run `just test`.
+- [x] `tests/scheduler.test.ts` 覆盖跟着开关启停、交易时段判断（假时钟，盘前、盘中、收盘后 20 分钟内、周末）、同一批内容跑两次不重复、`ignore`、进度在崩溃后接上、handler 超时只算这一次失败。`tests/feed-runner.test.ts` 覆盖 fixtures 替换网络请求。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/g4-live.ts`，时钟和网络都用假的。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都跑 us-market 的旧 feed 一轮（假行情）。Save `g4-regression.txt`. Pass when 两边触发相同。
-- [ ] Lane 2. `timer` 加 `notice`。Save `g4-timer.txt`. Pass when 到点出现触发和任务。
-- [ ] Lane 3. 关掉模块。Save `g4-off.txt`. Pass when 下一个点不再调用。
-- [ ] Lane 4. `when: us-market-hours` 在周末。Save `g4-weekend.txt`. Pass when 不调用。
-- [ ] Lane 5. handler 存行进 `into`。Save `g4-into.txt`. Pass when 数据里有这些行，带 `from` 是 `<模块>/<feed>`。
-- [ ] Lane 6. 存的行满足一个条件。Save `g4-alert.txt`. Pass when 出现提醒。
-- [ ] Lane 7. 同一批内容跑两次。Save `g4-dedupe.txt`. Pass when 行和触发都不重复。
-- [ ] Lane 8. `inbox` 丢文件。Save `g4-inbox.txt`. Pass when 进数据，文件挪走。
-- [ ] Lane 9. handler 抛错或超时。Save `g4-fail.txt`. Pass when 这一次失败有日志，下一个点照常调用，宿主不受影响。
-- [ ] Lane 10. `just module check` 带 fixtures 的包。Save `g4-check.txt`. Pass when 跑过 handler，输出 ok。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都跑 us-market 的旧 feed 一轮（假行情）。Save `g4-regression.txt`. Pass when 两边触发相同。
+- [x] Lane 2. `timer` 加 `notice`。Save `g4-timer.txt`. Pass when 到点出现触发和任务。
+- [x] Lane 3. 关掉模块。Save `g4-off.txt`. Pass when 下一个点不再调用。
+- [x] Lane 4. `when: us-market-hours` 在周末。Save `g4-weekend.txt`. Pass when 不调用。
+- [x] Lane 5. handler 存行进 `into`。Save `g4-into.txt`. Pass when 数据里有这些行，带 `from` 是 `<模块>/<feed>`。
+- [x] Lane 6. 存的行满足一个条件。Save `g4-alert.txt`. Pass when 出现提醒。
+- [x] Lane 7. 同一批内容跑两次。Save `g4-dedupe.txt`. Pass when 行和触发都不重复。
+- [x] Lane 8. `inbox` 丢文件。Save `g4-inbox.txt`. Pass when 进数据，文件挪走。
+- [x] Lane 9. handler 抛错或超时。Save `g4-fail.txt`. Pass when 这一次失败有日志，下一个点照常调用，宿主不受影响。
+- [x] Lane 10. `just module check` 带 fixtures 的包。Save `g4-check.txt`. Pass when 跑过 handler，输出 ok。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 宿主启动到就绪的时间（状态目录里有 5 个各带 2 个 feed 的模块），以及一次 handler 调用的宿主侧总时间。
-- [ ] Probe. trunk 和 head 交替各 5 次 `startHost`；handler 调用 20 次。
-- [ ] Baseline. Record the trunk 启动中位数 first.
-- [ ] Rule. 启动比 trunk 慢 200 毫秒以上，或一次空 handler 调用超过 150 毫秒，就失败。
+- [x] Metric. 宿主启动到就绪的时间（状态目录里有 5 个各带 2 个 feed 的模块），以及一次 handler 调用的宿主侧总时间。
+- [x] Probe. trunk 和 head 交替各 5 次 `startHost`；handler 调用 20 次。
+- [x] Baseline. Record the trunk 启动中位数 first.
+- [x] Rule. 启动比 trunk 慢 200 毫秒以上，或一次空 handler 调用超过 150 毫秒，就失败。
 
 **Review gate.** None. G4 is not review-gated.
+
+2026-11-12 在 8a2cb5e 上通过：`tests/scheduler.test.ts` 12 条、`tests/feed-runner.test.ts` 3 条、`tests/wiring.test.ts` 和 `tests/config.test.ts` 各加 1 条；`just test` 1575 条全过，`check.mjs` 7 项 ok。十条 lane 全 PASS，输出在 `/tmp/swarm-g4/owner/g4-*.txt`。lane 6 的条件用「高于 7」：G3 的水平条件只在跨进去的那一行提醒，第一次用「高于 5」时 6.3 已经在线上，7.2 不算跨入，没有提醒，是 lane 写错了。perf 两轮：启动到网址 trunk 中位 397.8 和 448.7 ms，head 415.2 和 440.7 ms，差 +17.4 和 -8.0 ms（第一轮 head 有一次 965 ms，第二轮没再出现）；空 handler 一次调用中位 77.3 和 44.4 ms，几乎全是起 node 进程。fixtures 格式：`feeds/<feed>/fixtures/<样例>.json` 是 `{ "input": FeedInput 的一部分, "responses": { "<完整网址>": 应答 } }`，`input.settings` 和 `input.rows` 逐个键合并在宿主给的上面（`reads` 的每个集合没给就是空列），`responses` 按完整网址代替 `fetch`，没给的网址这一次失败并说出网址。
+
+2026-11-12 审计修复在 d963c72 上通过（已合入 G3 bb4a352）：检查和运行共用一个 `feedInput`，`reads` 的集合样例没给就是空列；inbox 逐个文件处理，坏文件单独进 rejected 并带 .error.txt，handler 失败的文件留到下一次；timer 或不带连接器的 handler 没写 every 时检查拒收；宿主检查、`just module check`、`just module try` 的密钥和运行时一样先看环境变量再看 secretsFile；日志行数只算真存下的。`just test` 1596 条全过，`check.mjs` 7 项 ok，十条 lane 全 PASS（`/tmp/swarm-g4/fix/g4-*.txt`），perf 启动中位 trunk 394.5 ms、head 402.9 ms，空 handler 中位 43.9 ms。
+
+2026-11-12 第二轮审计修复（已合入 main e13a5e8）：宿主跑用例时读密钥出错（密钥值有空白、密钥文件跑着时被删）不再让宿主因未处理的 rejection 退出，模块记为无效，原因写着出错的话；`just module try` 的临时宿主也拿到 secretsFile，之前只有检查读它，密钥只在文件里的工具在临时宿主里用例不过；带 handler 的 inbox 文件连着失败 3 次挪进 rejected，.error.txt 写着最后一次的原因，成功一次就清零，次数记在宿主内存里，重启后重新数。`just test` 1604 条全过，`check.mjs` 全绿，十条 lane 全 PASS（`/tmp/swarm-g4/fix2/g4-*.txt`）。
 
 **Merge.**
 
