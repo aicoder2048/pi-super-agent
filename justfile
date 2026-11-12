@@ -122,7 +122,7 @@ test:
 modules:
     {{run}} src/cli/modules.ts
 
-# 检查一个新布局（"schema": 1）的模块包：just module check <目录> [--previous <旧版本目录>]。没问题打印一行 ok，有问题每个一行并以 1 退出。
+# just module check <目录> [--previous <旧版本目录>]：检查新布局包，没问题打印一行 ok | just module import <模块> <知识名> <文件或目录>：user-import 知识的全文进实例数据，不进模块包
 module *args:
     {{run}} src/cli/module.ts {{args}}
 

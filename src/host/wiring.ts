@@ -16,6 +16,7 @@ import { PiWorkerSpawner } from "./pi-worker.ts";
 import { Router, routerPreamble } from "./router.ts";
 import { readSecret } from "../secrets.ts";
 import { createGateway } from "../modules/gateway.ts";
+import { moduleDataDir } from "../modules/knowledge.ts";
 import { ModuleStore } from "../modules/live.ts";
 import type { Digest } from "../modules/manifest.ts";
 import { BotApi, BotToken } from "./telegram/bot-api.ts";
@@ -121,6 +122,7 @@ export function createHostOptions({ config, modules: { live, kitFor }, modelRunt
 		gateway: createGateway({
 			copyDir: (module, digest) => store.dirOf(module, digest),
 			serving: (module) => live.current().book.get(module)?.digest as Digest | undefined,
+			dataDir: (module) => moduleDataDir(config.stateDir, module),
 			secret: (name) => readSecret([name], name, process.env, config.secretsFile)?.key,
 			log,
 		}),

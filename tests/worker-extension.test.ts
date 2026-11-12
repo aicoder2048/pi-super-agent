@@ -162,6 +162,22 @@ test("宿主给了模块工具目录（PSA_DOMAIN_TOOLS）的助手和成员有 
 	assert.equal(plain.tools.has("domain_tool"), false);
 });
 
+test("宿主给了知识目录（PSA_KNOWLEDGE）的助手和成员有 knowledge：描述里列出知识，查询经宿主连接发出，原样返回宿主的段落；没给的没有", async (t) => {
+	const help = "tumor-marker-basics · 《肿瘤标志物跟踪要点（模块自编）》版本 0.1，参考";
+	const helper = await load("inference", { PSA_KNOWLEDGE: help });
+	const member = await load("request", { PSA_MEMBER_TOOLS: "read,knowledge", PSA_KNOWLEDGE: help });
+	const plain = await load("request");
+	t.after(() => { helper.close(); member.close(); plain.close(); });
+	for (const w of [helper, member]) {
+		assert.match(w.tools.get("knowledge").description, /tumor-marker-basics · 《肿瘤标志物跟踪要点/);
+		await w.run("knowledge", { query: "复查" });
+		assert.deepEqual([w.requests.at(-1).method, w.requests.at(-1).params], ["worker.knowledge", { query: "复查" }]);
+		assert.equal(await w.handlers.get("tool_call")({ toolName: "knowledge", input: {} }), undefined);
+	}
+	assert.equal(process.env.PSA_KNOWLEDGE, undefined);
+	assert.equal(plain.tools.has("knowledge"), false);
+});
+
 test("汇报工具接受问题的 2 到 4 个选项，经宿主连接原样提交", async (t) => {
 	const w = await load("inference");
 	t.after(w.close);

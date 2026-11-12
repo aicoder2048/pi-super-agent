@@ -307,45 +307,49 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `src/modules/knowledge.ts`（导入、切段、FTS5 索引、查询）。
-- [ ] Edit `src/modules/gateway.ts`、`src/worker/extension.ts`、`src/worker/tools.ts`、`src/cli/module.ts`（加 `import`）。
-- [ ] Create `tests/knowledge.test.ts`。
+- [x] Create `src/modules/knowledge.ts`（导入、切段、FTS5 索引、查询）。
+- [x] Edit `src/modules/gateway.ts`、`src/worker/extension.ts`、`src/worker/tools.ts`、`src/cli/module.ts`（加 `import`）。
+- [x] Create `tests/knowledge.test.ts`。
 
 **Build.**
 
-- [ ] 索引存在 `<stateDir>/modules-data/<名字>/index/knowledge.db`。`bundled` 的知识从包里建索引，`user-import` 的从 `modules-data/<名字>/knowledge/` 建。
-- [ ] `just module import <名字> <知识名> <文件或目录>` 把全文复制进实例数据并重建索引。
-- [ ] `knowledge` 工具按查询返回段落，每段带文档名、版本和章节。查询少于 3 个字时用 `LIKE`，否则用 trigram 的 `MATCH`。
+- [x] 索引存在 `<stateDir>/modules-data/<名字>/index/knowledge.db`。`bundled` 的知识从包里建索引，`user-import` 的从 `modules-data/<名字>/knowledge/` 建。
+- [x] `just module import <名字> <知识名> <文件或目录>` 把全文复制进实例数据并重建索引。
+- [x] `knowledge` 工具按查询返回段落，每段带文档名、版本和章节。查询少于 3 个字时用 `LIKE`，否则用 trigram 的 `MATCH`。
 
 **You see.**
 
-- [ ] 在 personal-health 任务里问「肿瘤标志物」，Worker 的回复引用了文档名和章节。
+- [x] 在 personal-health 任务里问「肿瘤标志物」，Worker 的回复引用了文档名和章节。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/knowledge.test.ts` 覆盖按标题切段、两个字的中文词能查到、`user-import` 没导入时提示还没导入、别的模块的知识查不到、包更新后索引重建。Run `just test`.
+- [x] `tests/knowledge.test.ts` 覆盖按标题切段、两个字的中文词能查到、`user-import` 没导入时提示还没导入、别的模块的知识查不到、包更新后索引重建。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/f4-live.ts`。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 没有 `knowledge` 工具，记录这一点。head 上跑 F3 的 `tax-bracket` 调用。Save `f4-regression.txt`. Pass when 结果和 F3 一样。
-- [ ] Lane 2. 查 `bundled` 知识里的三个字的词。Save `f4-three.txt`. Pass when 返回段落带章节。
-- [ ] Lane 3. 查两个字的词。Save `f4-two.txt`. Pass when 返回段落。
-- [ ] Lane 4. 查 `user-import` 知识但没导入。Save `f4-missing.txt`. Pass when 提示还没导入和导入命令。
-- [ ] Lane 5. 导入后再查。Save `f4-import.txt`. Pass when 返回导入文件里的段落。
-- [ ] Lane 6. 别的模块的任务查。Save `f4-other.txt`. Pass when 查不到。
-- [ ] Lane 7. 改知识文件存盘。Save `f4-reindex.txt`. Pass when 新任务查到新内容。
-- [ ] Lane 8. 成员 `uses` 没有 `knowledge`。Save `f4-uses.txt`. Pass when 拒绝。
-- [ ] Lane 9. 没有结果的查询。Save `f4-empty.txt`. Pass when 返回空列表和一句说明。
-- [ ] Lane 10. 用真模型 `openai-codex/*` 问一个知识里的问题。Save `f4-real.txt`. Pass when 回复引用了文档名。
+- [x] Lane 1. Regression lane against trunk. trunk 没有 `knowledge` 工具，记录这一点。head 上跑 F3 的 `tax-bracket` 调用。Save `f4-regression.txt`. Pass when 结果和 F3 一样。
+- [x] Lane 2. 查 `bundled` 知识里的三个字的词。Save `f4-three.txt`. Pass when 返回段落带章节。
+- [x] Lane 3. 查两个字的词。Save `f4-two.txt`. Pass when 返回段落。
+- [x] Lane 4. 查 `user-import` 知识但没导入。Save `f4-missing.txt`. Pass when 提示还没导入和导入命令。
+- [x] Lane 5. 导入后再查。Save `f4-import.txt`. Pass when 返回导入文件里的段落。
+- [x] Lane 6. 别的模块的任务查。Save `f4-other.txt`. Pass when 查不到。
+- [x] Lane 7. 改知识文件存盘。Save `f4-reindex.txt`. Pass when 新任务查到新内容。
+- [x] Lane 8. 成员 `uses` 没有 `knowledge`。Save `f4-uses.txt`. Pass when 拒绝。
+- [x] Lane 9. 没有结果的查询。Save `f4-empty.txt`. Pass when 返回空列表和一句说明。
+- [x] Lane 10. 用真模型 `openai-codex/*` 问一个知识里的问题。Save `f4-real.txt`. Pass when 回复引用了文档名。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 一次 `knowledge` 查询的时间，以及一份 1000 行文档的建索引时间。trunk 没有这个功能，只给绝对预算。
-- [ ] Probe. 导入 personal-health 的两份知识和一份 1000 行的合成文档，查 20 次，建索引 5 次。
-- [ ] Baseline. Record the trunk 宿主启动时间 first，确认索引不拖慢启动。
-- [ ] Rule. 查询中位数超过 50 毫秒，或建索引超过 2 秒，或启动比 trunk 慢 200 毫秒以上，就失败。
+- [x] Metric. 一次 `knowledge` 查询的时间，以及一份 1000 行文档的建索引时间。trunk 没有这个功能，只给绝对预算。
+- [x] Probe. 导入 personal-health 的两份知识和一份 1000 行的合成文档，查 20 次，建索引 5 次。
+- [x] Baseline. Record the trunk 宿主启动时间 first，确认索引不拖慢启动。
+- [x] Rule. 查询中位数超过 50 毫秒，或建索引超过 2 秒，或启动比 trunk 慢 200 毫秒以上，就失败。
+
+2026-11-12 在 7048db1 上通过（修正轮）：单个 `notes.txt` 或 PDF 以前会顶掉之前的导入，命令行还说「导入了 1 个 Markdown 文件」，之后查询全跳过它、文档又算还没导入；现在一行拒绝、以 1 退出，之前的导入不动。导入的文件保留原名，没有标题的段落章节写原文件名（以前是 `000-guide`）。换上新导入时先把旧目录改名挪开再换，查询正好赶上导入、读到一个刚被换掉的文件时重新列一次文件。`index/knowledge.db` 坏了或是空文件时查询重建它，以前每次都回 provider-failed。标题末尾的 `#` 前面有空格才算收尾，`## C#` 的章节是 `C#`。`just test` 1450 条全过；`check.mjs` 7 项 ok；十条 lane 全 PASS，输出在 `/tmp/swarm-f4/fix/`。
 
 **Review gate.** None. F4 is not review-gated.
+
+2026-11-12 在 f998544 上通过：`just test` 1438 条全过；`node docs/modules/architecture/check.mjs` 7 项 ok；`docs/modules/evidence/f4-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f4/owner/`。检索在 `src/modules/knowledge.ts`：按 Markdown 标题切段，章节写成标题路径（「肿瘤标志物跟踪要点 > 看趋势，不看单次」），每段带文档名、标题、版本和权威程度；全部查询词都有 3 个字以上时用 trigram `MATCH` 按 bm25 排序，有一个词不到 3 个字就按子串命中数排序；最多回 8 段，每段只给 360 字左右的摘录。索引是 `modules-data/<模块>/index/knowledge.db`，里面记着指纹（任务钉住的副本摘要加上导入文件的大小和修改时间），查询时指纹对不上就先建到临时文件再改名换上，所以包更新、改导入文件都不用通知谁。还没导入的 `user-import` 知识写在每次回复的末尾和 `knowledge` 工具的说明里，连同 `just module import <模块> <知识名> <文件或目录>`。导入只收 `.md`（给单个文件也一样），按原来的文件名复制，跳过点开头的文件，先复制到临时目录再换上；给的文件不是 `.md` 或目录里没有 Markdown 时一行拒绝，不动之前的导入。`just module import` 的相对路径从仓库目录解析（just 在那里跑 recipe），和 `module check` 一样。Gateway 的 `find` 现在给每种请求返回 `uses` 里要写的那一项、权限表要看的效果和提供者，`call` 和 `resolve` 不再按种类分支。成员有没有 `knowledge` 看 Gateway 给它的目录里有没有知识这一项，和 `domain_tool` 一样。Lane 6 和 lane 8 的拒绝在第一层：personal-tax 的助手和 uses 没写 knowledge 的影像科顾问都没有 `knowledge` 这个工具（Pi 回 Tool knowledge not found）；Gateway 这一层的拒绝由单元测试覆盖。Lane 10 真模型 `openai-codex/gpt-6.1-sol` 调了 knowledge，汇报引用《肿瘤标志物跟踪要点（模块自编）》版本 0.1 的三个章节。Perf：查询在宿主这一侧 20 次中位数 3 毫秒（离散 7，第一次含建索引 7 毫秒，日志精度 1 毫秒）；一份 1000 行合成文档加两份 personal-health 知识建索引 5 次中位数 2.5 毫秒；宿主启动 trunk 374 毫秒、head 388 毫秒、head 带两个模块和两份导入 384 毫秒（各 5 次，离散都在 10 毫秒内），索引不在启动时建。trunk 不认新布局的包，所以启动对照用没有包的状态目录。
 
 **Merge.**
 

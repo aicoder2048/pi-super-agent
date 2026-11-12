@@ -113,6 +113,7 @@ export interface MemberRun {
 	outputRule?: string;
 	/** The module tools its `uses` reaches, one line each. Absent: it has no `domain_tool`. */
 	domainTools?: string;
+	knowledge?: string;
 	signal: AbortSignal;
 	onUsage(u: Usage): void;
 	/** Every event the member's process emits is a sign of life; `step` names the step an event starts, `tool` the tool call it starts or ends. */

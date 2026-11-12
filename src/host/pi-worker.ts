@@ -137,6 +137,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 				PSA_BG_MAX_MS: String(this.#o.bgMaxMs ?? 120 * 60_000),
 				...this.#lookupEnv(spec.granted.includes("lookup")),
 				...(spec.domainTools && { PSA_DOMAIN_TOOLS: spec.domainTools }),
+				...(spec.knowledge && { PSA_KNOWLEDGE: spec.knowledge }),
 				...(spec.granted.includes("tripwire") && spec.basis === "request" && { PSA_TRIPWIRES: this.#o.tripwireHelp || "（宿主没有配置可改盯盘条件的来源）" }),
 			},
 		});
@@ -185,8 +186,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 	/** One dispatch: `pi --mode json -p` continuing the member's session, in its own process group, killed as a group on abort. */
 	runMember(run: MemberRun): Promise<string> {
 		const { member } = run;
-		// A member reaches module tools only through the catalogue its `uses` narrowed the Gateway to.
-		const tools = [...memberTools(run.basis, member.tools), ...(run.domainTools ? ["domain_tool"] : [])];
+		const tools = [...memberTools(run.basis, member.tools), ...(run.domainTools ? ["domain_tool"] : []), ...(run.knowledge ? ["knowledge"] : [])];
 		const args = [
 			this.#o.cliPath ?? piCliPath(),
 			"--mode", "json", "-p", "--session-dir", run.sessionDir, "--continue", "--no-context-files",
@@ -209,6 +209,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 			PSA_CALL_ID: run.callId,
 			...this.#lookupEnv(tools.includes("lookup")),
 			...(run.domainTools && { PSA_DOMAIN_TOOLS: run.domainTools }),
+			...(run.knowledge && { PSA_KNOWLEDGE: run.knowledge }),
 		};
 		return runMemberProcess(args, env, run);
 	}

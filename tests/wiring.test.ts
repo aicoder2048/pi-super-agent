@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai";
-import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHostOptions, modelSelectors, telegramOptions, watchedSources } from "../src/host/wiring.ts";
@@ -385,4 +385,19 @@ test("入口：宿主的 Gateway 从状态目录的模块副本里跑工具，�
 	const caller = { who: "worker" as const, ticket: "tkt_1", pin: { module: "personal-tax" as ModuleName, digest }, basis: "request" as const, member: null, heardOthers: false };
 	assert.deepEqual(await options.gateway!.call(caller, { kind: "tool", name: "env-probe" as ComponentName, input: {} }), { ok: true, output: { named: "from-file" }, private: false });
 	assert.ok(logs.some((l) => l.startsWith("[gateway] personal-tax tools/env-probe")), logs.join("\n"));
+});
+
+test("入口：宿主的 Gateway 查模块知识，索引建在状态目录的 modules-data/<模块>/index/knowledge.db", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const config = hostConfig(provider);
+	const pkg = join(mkdtempSync(join(tmpdir(), "psa-wire-pkg-")), "personal-health");
+	cpSync(join(import.meta.dirname, "../docs/modules/architecture/sample/personal-health"), pkg, { recursive: true });
+	const modules = servedAsHost(Modules.load([join(pkg, "..")]));
+	const digest = modules.book.get("personal-health")!.digest! as Digest;
+	new ModuleStore(join(config.stateDir, "module-store")).keep("personal-health" as ModuleName, digest, pkg);
+	const options = createHostOptions({ config, modules: fixed(modules), modelRuntime, log: () => {} });
+	const caller = { who: "worker" as const, ticket: "tkt_1", pin: { module: "personal-health" as ModuleName, digest }, basis: "request" as const, member: null, heardOthers: false };
+	const reply = await options.gateway!.call(caller, { kind: "knowledge", op: "search", query: "复查" });
+	assert.equal(reply.ok && reply.passages?.[0]?.doc, "tumor-marker-basics");
+	assert.ok(existsSync(join(config.stateDir, "modules-data/personal-health/index/knowledge.db")));
 });
