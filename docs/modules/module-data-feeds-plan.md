@@ -307,38 +307,42 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `docs/modules/examples/stock-ta/data/watchlist/collection.json`、`data/quotes/collection.json`、`feeds/quotes/feed.json`、`feeds/quotes/index.ts`、`feeds/quotes/fixtures/`。
-- [ ] Edit `docs/modules/examples/stock-ta/agents/*.md`（`uses` 加 `data/quotes`、`data/watchlist`、`watch/quotes`）、`skills/`、`docs/modules/stock-ta.md`。
-- [ ] Create `tests/stock-ta-quotes.test.ts`。
+- [x] Create `docs/modules/examples/stock-ta/data/watchlist/collection.json`、`data/quotes/collection.json`、`feeds/quotes/feed.json`、`feeds/quotes/index.ts`、`feeds/quotes/fixtures/`。
+- [x] Edit `docs/modules/examples/stock-ta/agents/*.md`（`uses` 加 `data/quotes`、`data/watchlist`、`watch/quotes`）、`skills/`、`docs/modules/stock-ta.md`。另建 `rules.md`，改 `tests/e2e/modules.e2e.ts` 里模块卡的密钥一行。
+- [x] Create `tests/stock-ta-quotes.test.ts`。
 
 **Build.**
 
-- [ ] `watchlist`（`record`，`shareable`）：自选股和备注。Worker 能增删，改了下一轮 feed 就用新名单，不用重启。
-- [ ] `quotes`（`series`，`shareable`，`watch` 指向 `symbol`、`price`、`at`）：每轮每只一行，带价格、涨跌幅、成交量和数据时间。
-- [ ] `feeds/quotes`：`timer`，`every` 60 秒，`when: us-market-hours`，`secrets: ["MASSIVE_API_KEY"]`。handler 一次快照请求取回整张自选股（Starter 套餐，延迟 15 分钟），按数据时间去重。
-- [ ] 专家能读 `quotes`，你本人能在 `quotes` 上设条件，例如「NVDA 跌破 170 提醒我」。
-- [ ] 文档写明数据延迟 15 分钟、怎么设密钥、怎么改自选股。
+- [x] `watchlist`（`record`，`shareable`）：自选股和备注。Worker 能增删，改了下一轮 feed 就用新名单，不用重启。数据工具没有删行，划掉一只是给那一行写上 `removedAt`。
+- [x] `quotes`（`series`，`shareable`，`watch` 指向 `symbol`、`price`、`at`）：每轮每只一行，带价格、涨跌幅、成交量和数据时间。
+- [x] `feeds/quotes`：`timer`，`every` 60 秒，`when: us-market-hours`，`secrets: ["MASSIVE_API_KEY"]`。handler 一次快照请求取回整张自选股（Starter 套餐，延迟 15 分钟），按数据时间去重。
+- [x] 专家能读 `quotes`，你本人能在 `quotes` 上设条件，例如「NVDA 跌破 170 提醒我」。
+- [x] 文档写明数据延迟 15 分钟、怎么设密钥、怎么改自选股。
+- [x] 涨跌 5% 自动分析（使用者 2026-11-12 定）。自选股一只当天相对昨收涨跌达到 5%，handler 发一条 `notice`，id 是 `big-move:<代码>:<美东交易日>:<up|down>`，内核按 id 去重，所以同一只同一天同一方向只一次；线程是 `big-move:<代码>`，别的股票不会落进这只的任务。`rules.md` 的 `big-move` 规则（`来源: stock-ta/quotes`）让幕僚长给技术分析研究组开任务，结构与形态和趋势与动量各看一遍，汇报带数据时间和出处，写明「这是技术分析，不是交易指令」。5% 是 `feeds/quotes/index.ts` 里的常量 `BIG_MOVE_PCT`，使用者以后可以要求改成设置。
 
 **You see.**
 
 - [ ] 交易时段打开 stock-ta，一分钟内 `quotes` 里有自选股的报价，数据时间比现在早约 15 分钟；你设的条件满足时，网页和手机上出现提醒。
+- [x] 自选股里一只当天跌到 5%，幕僚长自己给技术分析研究组开一个任务，结构与形态和趋势与动量各看一遍，汇报写数据时间、延迟 15 分钟、出处，并说明不是交易指令；同一天再跌也不再开，反过来涨 5% 另开一个。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/stock-ta-quotes.test.ts` 用 fixtures 覆盖快照解析、同一数据时间不重复存、自选股改了下一轮生效、缺密钥时一行说明、接口出错时这一轮失败。Run `just test`.
+- [x] `tests/stock-ta-quotes.test.ts` 用 fixtures 覆盖快照解析、同一数据时间不重复存、自选股改了下一轮生效、缺密钥时一行说明、接口出错时这一轮失败，以及涨跌 5% 的触发 id、线程和正文、规则把任务交给技术分析研究组。Run `just test`.
 
-**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/g5-live.ts`。lane 8 到 10 用真行情和真模型，必须在交易时段跑。
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/g5-live.ts`，`lanes` 跑 1 到 7 和 11，`real` 跑 10b，`market` 跑 8、9、10a 和 perf。lane 8、9、10a 和 perf 用真行情，必须在交易时段跑，脚本在时段外直接拒绝。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都调 stock-ta 的 `structure` 工具查 NVDA。Save `g5-regression.txt`. Pass when 结果相同。
-- [ ] Lane 2. `just module check` stock-ta。Save `g5-check.txt`. Pass when ok，fixtures 跑过 handler。
-- [ ] Lane 3. fixtures 驱动一轮 feed。Save `g5-fixture.txt`. Pass when `quotes` 里每只一行。
-- [ ] Lane 4. 同一数据时间再来一轮。Save `g5-dedupe.txt`. Pass when 不重复。
-- [ ] Lane 5. Worker 往自选股加 AAPL。Save `g5-watchlist.txt`. Pass when 下一轮报价里有 AAPL。
-- [ ] Lane 6. 你设「NVDA 低于 fixtures 里的价格加 1」。Save `g5-alert.txt`. Pass when 下一轮出现提醒，带价格和数据时间。
-- [ ] Lane 7. 缺密钥。Save `g5-nokey.txt`. Pass when 一行说明，宿主照常。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都调 stock-ta 的 `structure` 工具查 NVDA。Save `g5-regression.txt`. Pass when 结果相同。
+- [x] Lane 2. `just module check` stock-ta。Save `g5-check.txt`. Pass when ok，fixtures 跑过 handler。
+- [x] Lane 3. fixtures 驱动一轮 feed。Save `g5-fixture.txt`. Pass when `quotes` 里每只一行。
+- [x] Lane 4. 同一数据时间再来一轮。Save `g5-dedupe.txt`. Pass when 不重复。
+- [x] Lane 5. Worker 往自选股加 AAPL。Save `g5-watchlist.txt`. Pass when 下一轮报价里有 AAPL。
+- [x] Lane 6. 你设「NVDA 低于 fixtures 里的价格加 1」。Save `g5-alert.txt`. Pass when 下一轮出现提醒，带价格和数据时间。
+- [x] Lane 7. 缺密钥。Save `g5-nokey.txt`. Pass when 一行说明，宿主照常。
 - [ ] Lane 8. 真行情，交易时段打开 stock-ta 等两轮。Save `g5-real-quotes.txt`. Pass when `quotes` 里有真实报价，数据时间比现在早 15 分钟左右。
 - [ ] Lane 9. 真行情上设一个一定会触发的条件。Save `g5-real-alert.txt`. Pass when 网页和 Telegram 记录器出现提醒。
-- [ ] Lane 10. 真模型 `openai-codex/*` 问「NVDA 现在多少，离 170 还有多远」。Save `g5-real-ask.txt`. Pass when 专家读了 `quotes`，回答带数据时间并说明延迟 15 分钟。
+- [ ] Lane 10a. 真模型 `openai-codex/*` 问「NVDA 现在多少，离 170 还有多远」。Save `g5-real-ask.txt`. Pass when 专家读了 `quotes`，回答带数据时间并说明延迟 15 分钟。
+- [x] Lane 10b. 真模型 `openai-codex/*`，stock-ta 用 fixtures 模式（NVDA 跌 5.2%）。Save `g5-real-big-move.txt`. Pass when 幕僚长按规则 `stock-ta/big-move` 开任务，派给结构与形态和趋势与动量，汇报带数据时间、延迟 15 分钟和「不是交易指令」。
+- [x] Lane 11. 假模型，假 Massive 依次给 NVDA 跌 5.2%、同一天跌 5.68%、涨 5.00%。Save `g5-big-move.txt`. Pass when 第一轮正好一条触发和一个规则任务，第二轮没有新触发和任务，涨 5% 另有一条触发和一个任务，任务领域是 stock-ta，队是技术分析研究组。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -348,6 +352,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [ ] Rule. 一轮总时间比接口耗时多出 300 毫秒以上，或任何一轮超过 10 秒，就失败。
 
 **Review gate.** None. G5 is not review-gated.
+
+2026-11-12 在 b0ef8ad 上通过：`tests/stock-ta-quotes.test.ts` 8 条，`just test` 1583 条全过，`check.mjs` 7 项 ok，`tests/e2e/modules.e2e.ts` 全过。lane 1 到 7、10b、11 全 PASS，输出在 `/tmp/swarm-g5/owner/g5-*.txt`。lane 10b 第一次 FAIL：两位专家都派了、数据时间和延迟都写了，但摘要没有写不是交易指令；规则改成「摘要里原样写一句」后重跑 PASS（之后只删了注释）。lane 8、9、10a 和 perf 等交易时段跑：`G5_SECRETS=<宿主密钥 .env> node --import ./src/pi-runtime.mjs docs/modules/evidence/g5-live.ts market /tmp/swarm-g5/owner`。
 
 **Merge.**
 
