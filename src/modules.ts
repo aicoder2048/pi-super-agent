@@ -210,12 +210,13 @@ function loadModule(dir: string, allowedProviders: readonly string[], switches: 
 }
 
 /** A manifest that is not valid JSON, such as one caught half-saved, is read as a package so that the scan reports it instead of stopping the host. */
-export function isPackageManifest(manifestPath: string): boolean {
+/** "unreadable": not valid JSON, so the file alone cannot say which layout the folder is. */
+export function manifestLayout(manifestPath: string): "package" | "legacy" | "unreadable" {
 	try {
 		const raw: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
-		return typeof raw === "object" && raw !== null && Object.hasOwn(raw, "schema");
+		return typeof raw === "object" && raw !== null && Object.hasOwn(raw, "schema") ? "package" : "legacy";
 	} catch {
-		return true;
+		return "unreadable";
 	}
 }
 
@@ -308,7 +309,7 @@ export class Modules {
 				if (!statSync(dir).isDirectory()) continue;
 				const manifestPath = join(dir, "module.json");
 				if (!existsSync(manifestPath)) rejectModuleWithoutManifest(root, dir);
-				else if (isPackageManifest(manifestPath)) packages.push({ name: entry, dir, scan: scanPackage(dir, { runCases: false }) });
+				else if (manifestLayout(manifestPath) !== "legacy") packages.push({ name: entry, dir, scan: scanPackage(dir, { runCases: false }) });
 				else modules.push(loadModule(dir, allowedProviders, switches.values));
 			}
 		}

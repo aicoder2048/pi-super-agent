@@ -17,19 +17,19 @@ export function watchModules(roots: readonly string[], onSaved: (saved: Saved) =
 	};
 	const watchers = roots.flatMap((root): FSWatcher[] => {
 		try {
-			return [
-				watch(root, { recursive: true }, (_event, filename) => {
-					const parts = (filename ?? "").split("/");
-					const [folder, ...rest] = parts;
-					if (!folder || parts.some((part) => part.startsWith("."))) return;
-					const dir = join(root, folder);
-					const files = pending.get(dir) ?? new Set();
-					if (rest.length > 0) files.add(rest.join("/"));
-					pending.set(dir, files);
-					clearTimeout(timer);
-					timer = setTimeout(flush, QUIET_MS);
-				}),
-			];
+			const watcher = watch(root, { recursive: true }, (_event, filename) => {
+				const parts = (filename ?? "").split("/");
+				const [folder, ...rest] = parts;
+				if (!folder || parts.some((part) => part.startsWith("."))) return;
+				const dir = join(root, folder);
+				const files = pending.get(dir) ?? new Set();
+				if (rest.length > 0) files.add(rest.join("/"));
+				pending.set(dir, files);
+				clearTimeout(timer);
+				timer = setTimeout(flush, QUIET_MS);
+			});
+			watcher.on("error", (error) => log(`[modules] 监视 ${root} 出错，那里之后的改动要重启宿主才生效：${error.message}`));
+			return [watcher];
 		} catch (error) {
 			log(`[modules] 监视不了 ${root}，那里的改动要重启宿主才生效：${error instanceof Error ? error.message : String(error)}`);
 			return [];

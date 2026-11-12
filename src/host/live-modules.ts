@@ -9,7 +9,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { BUNDLED_MODULES } from "./config.ts";
 import { moduleRows, pinnedCopies, saveModuleRecord, setModuleSwitch } from "../kernel/store.ts";
-import { isPackageManifest, packageModule, type DomainKit, type LoadedModule, type Modules } from "../modules.ts";
+import { manifestLayout, packageModule, type DomainKit, type LoadedModule, type Modules } from "../modules.ts";
 import { initialRecord, type Effect, type ModuleEvent, type Version } from "../modules/lifecycle.ts";
 import { drive, liveRegistry, ModuleStore, switchEvent } from "../modules/live.ts";
 import type { Digest, ModuleName, PackageScan, Problem, ScanResult } from "../modules/manifest.ts";
@@ -137,7 +137,10 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 		const serving = servingOf(name);
 		const saved = savedSinceServing.get(name);
 		const last = receipted.get(name);
-		if (serving === undefined) receipted.delete(name);
+		if (serving === undefined) {
+			receipted.delete(name);
+			savedSinceServing.delete(name);
+		}
 		else if (last === undefined) receipted.set(name, serving.digest);
 		else if (last !== serving.digest && saved !== undefined) {
 			receipted.set(name, serving.digest);
@@ -196,13 +199,17 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 			step(name, { type: "package-gone" });
 			return;
 		}
-		if (!isPackageManifest(manifest)) {
+		const layout = manifestLayout(manifest);
+		// A legacy module caught mid-save stays legacy, so it keeps serving what it loaded at boot.
+		if (layout === "legacy" || (layout === "unreadable" && known?.legacy)) {
 			log(`[modules] ${name} 是旧布局模块，改动要重启宿主才生效；module.json 写上 "schema": 1 和 "version" 以后存盘就生效`);
 			return;
 		}
 		const version = versionOf(dir, scanPackage(dir, { runCases: false }));
 		found.set(name, { dir, version });
-		savedSinceServing.set(name, new Set([...(savedSinceServing.get(name) ?? []), ...files]));
+		const serving = servingOf(name)?.digest;
+		if (serving === version.digest && receipted.get(name) === serving) savedSinceServing.delete(name);
+		else savedSinceServing.set(name, new Set([...(savedSinceServing.get(name) ?? []), ...files]));
 		step(name, { type: "package-found", version });
 	};
 	const onSaved = (saved: Saved) =>
@@ -211,7 +218,7 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 			live.publish(table());
 			collect();
 		});
-	for (const root of roots) mkdirSync(root, { recursive: true });
+	for (const root of roots) safely(`建模块目录 ${root} `, () => mkdirSync(root, { recursive: true }));
 	const watcher = watchModules(roots, onSaved, log);
 	const timer = setInterval(() => safely("开关轮询", tick), POLL_MS);
 	timer.unref();

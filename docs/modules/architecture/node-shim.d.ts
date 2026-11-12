@@ -18,6 +18,7 @@ declare module "node:fs" {
 	export function rmSync(path: string, options: { recursive: true; force: true }): void;
 	export interface FSWatcher {
 		close(): void;
+		on(event: "error", listener: (error: Error) => void): this;
 	}
 	export function watch(path: string, options: { recursive: true }, listener: (event: string, filename: string | null) => void): FSWatcher;
 }
