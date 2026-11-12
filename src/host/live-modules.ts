@@ -47,7 +47,6 @@ export interface LiveModulesOptions {
 	/** config.json's `modules`, imported into the switches on the first boot only. */
 	configSwitches: Record<string, boolean>;
 	log: (line: string) => void;
-	/** Where the package's test cases find their secrets: the same place the running host reads them. */
 	secret?: SecretLookup;
 }
 

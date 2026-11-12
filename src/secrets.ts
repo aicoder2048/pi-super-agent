@@ -23,20 +23,18 @@ export function readSecret(names: readonly string[], label: string, env: Readonl
 	return found;
 }
 
-/** How the host and every check find a module's secret: the environment first, then `secretsFile`. */
 export const secretLookup = (secretsFile: string | undefined, env: Readonly<NodeJS.ProcessEnv> = process.env): SecretLookup => (name) => readSecret([name], name, env, secretsFile)?.key;
 
-/** config.json's `secretsFile`, resolved against the state folder. Kept apart from loadConfig so `just module check` reads it without loading Pi. */
+/** Kept out of loadConfig so `just module check` reads it without loading Pi. */
 export const configuredSecretsFile = (stateDir: string): string | undefined => {
 	const file = join(stateDir, "config.json");
 	return parseSecretsFile(existsSync(file) ? readJsonFile<{ secretsFile?: unknown }>(file).secretsFile : undefined, stateDir, file);
 };
 
-/** `raw`: config.json's `secretsFile` value; `file`: config.json, for the message. */
-export function parseSecretsFile(raw: unknown, stateDir: string, file: string): string | undefined {
+export function parseSecretsFile(raw: unknown, stateDir: string, configFile: string): string | undefined {
 	if (raw === undefined) return undefined;
-	if (typeof raw !== "string") throw new ConfigError(`${file}：secretsFile（${JSON.stringify(raw)}）必须是 .env 文件的路径字符串`);
+	if (typeof raw !== "string") throw new ConfigError(`${configFile}：secretsFile（${JSON.stringify(raw)}）必须是 .env 文件的路径字符串`);
 	const secretsFile = resolve(stateDir, raw);
-	if (!existsSync(secretsFile)) throw new ConfigError(`${file}：secretsFile 指向的 ${secretsFile} 不存在`);
+	if (!existsSync(secretsFile)) throw new ConfigError(`${configFile}：secretsFile 指向的 ${secretsFile} 不存在`);
 	return secretsFile;
 }

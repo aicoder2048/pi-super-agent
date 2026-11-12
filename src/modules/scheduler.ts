@@ -63,12 +63,12 @@ export function createScheduler(o: SchedulerOptions): Scheduler {
 			const dir = join(o.inboxDir, entry.module, entry.name);
 			const taken = takeInbox(dir, o.log);
 			if (taken.length === 0) return undefined;
-			// A handler's failure may be the network, so its file waits for the next look. Without a handler the only failure is the file itself.
+			const mayBeNetwork = feed.handler !== undefined;
 			return (async () => {
 				for (const { file, item } of taken) {
 					const run = await call(entry, [item]);
 					if (run.ok) processInbox(dir, file);
-					else if (feed.handler === undefined) rejectInbox(dir, file, run.note, o.log);
+					else if (!mayBeNetwork) rejectInbox(dir, file, run.note, o.log);
 				}
 			})();
 		}

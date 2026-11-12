@@ -525,7 +525,7 @@ export function scanPackage(packageDir: string, options: ScanOptions = {}): Scan
 	}
 }
 
-/** `folder`: the module name the folder stands for. A copy in the module store sits in a folder named by its digest. `secret`: where the cases find the secrets they name, the environment alone unless given. */
+/** `folder`: the module name the folder stands for. A copy in the module store sits in a folder named by its digest. */
 type ScanOptions = { previous?: string | undefined; runCases?: boolean; folder?: string; secret?: SecretLookup };
 
 function scanReadable(packageDir: string, { previous, runCases = true, folder, secret = (name) => process.env[name] }: ScanOptions): ScanResult {

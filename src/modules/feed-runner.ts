@@ -55,11 +55,9 @@ export function parseCollected(output: Json, into?: CollectionDescriptor): Colle
 export const intoOf = (feed: Pick<FeedDescriptor, "into">, components: readonly Component[]): CollectionDescriptor | undefined =>
 	components.find((c): c is Extract<Component, { kind: "data" }> => c.kind === "data" && c.name === feed.into)?.collection;
 
-/** What the instance holds for a feed. `just module check` runs a handler with nothing held. */
 export type Held = { cursor: string | null; rows(collection: string): readonly Row[]; watchedKeys: readonly string[] };
 export const NOTHING_HELD: Held = { cursor: null, rows: () => [], watchedKeys: [] };
 
-/** The one place a handler's input is built, so a check run and a real run hand it the same shape. A fixture's `settings` and `rows` go over the built ones key by key. */
 export function feedInput(feed: FeedDescriptor, items: readonly Json[], held: Held, fixture?: FeedFixture): FeedInput {
 	const given = fixture?.input ?? {};
 	return {
