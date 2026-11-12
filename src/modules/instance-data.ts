@@ -1,9 +1,4 @@
-/**
- * Instance data: one SQLite file per module at `<stateDir>/modules-data/<name>/data.db`, originals
- * under `blobs/`. One table per collection, one column per field, and `_from` on every row naming
- * the original or the feed it came from. Stored structure only grows (design.md H6): the
- * structure as stored so far lives in the `_structure` table, hidden fields and aliases included.
- */
+/** Stored structure only grows (design.md H6). `_structure` holds everything ever stored, hidden fields and aliases included. */
 import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -27,7 +22,6 @@ const renamed = (aliases: Record<string, string>, from: string, to: string) => (
 const asComponents = (stored: Stored): Component[] =>
 	Object.entries(stored.collections).map(([name, { aliases: _, ...collection }]) => ({ kind: "data", name: name as ComponentName, collection, seeded: false }));
 
-/** The statements that grow `stored` to cover `components`, and the stored structure after them. Pure. */
 function plan(stored: Stored, components: readonly Component[]): { sql: string[]; next: Stored } {
 	const sql: string[] = [];
 	const next: Stored = { collections: { ...stored.collections }, aliases: { ...stored.aliases } };
@@ -71,7 +65,7 @@ function readStored(db: DatabaseSync): Stored {
 	return row === undefined ? EMPTY : (JSON.parse(row.json) as Stored);
 }
 
-/** Puts the snapshot back over the database. A leftover rollback journal belongs to the replaced file, so it goes first. */
+/** A leftover journal belongs to the replaced file, and SQLite would replay it onto the snapshot. */
 function restore(path: string, snapshot: string): void {
 	for (const suffix of ["-journal", "-wal", "-shm"]) rmSync(`${path}${suffix}`, { force: true });
 	copyFileSync(snapshot, path);
@@ -100,8 +94,8 @@ export function instanceData(stateDir: string): InstanceData {
 			const snapshot = `${path}.snapshot`;
 			if (!existsSync(path) && !components.some((c) => c.kind === "data")) return { ok: true };
 			mkdirSync(join(dirname(path), "blobs"), { recursive: true });
-			// A snapshot is only left behind by a run that stopped before it finished.
-			if (existsSync(snapshot)) restore(path, snapshot);
+			const interrupted = existsSync(snapshot);
+			if (interrupted) restore(path, snapshot);
 			const db = new DatabaseSync(path);
 			try {
 				const before = readStored(db);

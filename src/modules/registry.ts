@@ -53,7 +53,7 @@ export interface InstanceData {
 	 * the old structure or the new one. Safe to run again after a crash.
 	 */
 	migrate(module: ModuleName, components: readonly Component[]): { ok: true } | { ok: false; reason: string };
-	/** Irreversible. Only the `purge-data` effect and `just module purge` call it. */
+	/** Irreversible. */
 	purge(module: ModuleName): void;
 }
 

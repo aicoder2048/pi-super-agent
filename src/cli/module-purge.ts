@@ -20,7 +20,6 @@ async function firstLine(prompt: string): Promise<string> {
 	return "";
 }
 
-/** Deletes every piece of a module's instance data, only while the module is off and only after the name is typed again. */
 export async function purgeModule(name: string, confirm: string | undefined): Promise<number> {
 	try {
 		const { stateDir } = loadConfig();

@@ -43,7 +43,6 @@ const place = (state: string, from: string, name: string) => {
 	cpSync(from, to, { recursive: true, force: true });
 };
 const lite = (version: string) => join(UPDATE, version, LITE);
-/** Saves the files of another version over the package, the way an editor would. */
 const save = (state: string, version: string) => {
 	for (const file of ["module.json", "data/lab-results/collection.json"]) writeFileSync(join(state, "modules", LITE, file), readFileSync(join(lite(version), file)));
 };
@@ -108,7 +107,6 @@ async function turnOn(state: string, name: string, label: string, tree = HEAD): 
 	just(state, ["module", "on", name], tree);
 	return within(5000, serving(state, label, name));
 }
-/** A host on the fake model with health-lite 0.1.0 switched on, holding `count` rows. */
 async function liteHost(count = 1) {
 	const state = stateDir();
 	place(state, lite("0.1.0"), LITE);
