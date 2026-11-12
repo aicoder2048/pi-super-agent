@@ -3,6 +3,8 @@ import { basename, join } from "node:path";
 import { ConfigError, readJsonFile } from "./config-error.ts";
 import { CONVERSATION_SOURCE, ruleId, type DomainBook, type SourcePolicy } from "./kernel/types.ts";
 import type { TimerEntry } from "./sources/timer.ts";
+import type { ScanResult } from "./modules/manifest.ts";
+import { scanPackage } from "./modules/validate.ts";
 import { loadTeam, type Member, type Team } from "./teams.ts";
 import { MEMBER_TOOLS, DOMAIN_GATED_TOOLS, type DomainGatedTool } from "./worker/tools.ts";
 
@@ -44,6 +46,13 @@ export interface LoadedModule {
 	/** The members in `agents/`. Absent: a ticket of this module is one helper. */
 	team?: Team;
 	state: ModuleState;
+}
+
+/** A folder whose module.json has a "schema" key: the new package layout. It is found and checked only; nothing of it runs yet. */
+export interface FoundPackage {
+	name: string;
+	dir: string;
+	scan: ScanResult;
 }
 
 export interface ModuleState {
@@ -197,6 +206,11 @@ function loadModule(dir: string, allowedProviders: readonly string[], switches: 
 	};
 }
 
+function declaresSchema(manifestPath: string): boolean {
+	const raw = readJsonFile<unknown>(manifestPath);
+	return typeof raw === "object" && raw !== null && Object.hasOwn(raw, "schema");
+}
+
 function rejectLooseTeamFiles(stateDir: string): void {
 	const home = `${join(stateDir, "modules")}/<名字>/`;
 	const teamsFile = join(stateDir, "teams.yaml");
@@ -226,14 +240,16 @@ const onRoster = (module: LoadedModule) => module.manifest.description !== undef
 
 export class Modules implements Domains {
 	readonly found: LoadedModule[];
+	readonly packages: readonly FoundPackage[];
 	readonly modules: LoadedModule[];
 	readonly userRules: ScopedRule[];
 	readonly skippedUserRules: string[];
 	readonly book: DomainBook;
 	readonly #scopes: Map<string, string[]>;
 
-	constructor(found: LoadedModule[], userRules: ScopedRule[], skippedUserRules: string[]) {
+	constructor(found: LoadedModule[], userRules: ScopedRule[], skippedUserRules: string[], packages: readonly FoundPackage[] = []) {
 		this.found = found;
+		this.packages = packages;
 		this.modules = found.filter((m) => m.state.enabled);
 		this.userRules = userRules;
 		this.skippedUserRules = skippedUserRules;
@@ -245,6 +261,7 @@ export class Modules implements Domains {
 		if (stateDir !== undefined) rejectLooseTeamFiles(stateDir);
 		const userRulesFile = stateDir === undefined ? undefined : join(stateDir, "rules.md");
 		const modules: LoadedModule[] = [];
+		const packages: FoundPackage[] = [];
 		for (const root of dirs) {
 			if (!existsSync(root)) continue;
 			const entries = readdirSync(root).sort();
@@ -252,21 +269,24 @@ export class Modules implements Domains {
 			for (const entry of entries) {
 				const dir = join(root, entry);
 				if (!statSync(dir).isDirectory()) continue;
-				if (existsSync(join(dir, "module.json"))) modules.push(loadModule(dir, allowedProviders, switches.values));
-				else rejectModuleWithoutManifest(root, dir);
+				const manifestPath = join(dir, "module.json");
+				if (!existsSync(manifestPath)) rejectModuleWithoutManifest(root, dir);
+				else if (declaresSchema(manifestPath)) packages.push({ name: entry, dir, scan: scanPackage(dir, { runCases: false }) });
+				else modules.push(loadModule(dir, allowedProviders, switches.values));
 			}
 		}
-		for (const [i, module] of modules.entries()) {
-			const first = modules.slice(0, i).find((m) => m.name === module.name);
+		const all = [...modules, ...packages];
+		for (const [i, module] of all.entries()) {
+			const first = all.slice(0, i).find((m) => m.name === module.name);
 			if (first) throw new ConfigError(`${first.dir}：模块重名：${module.name} 也定义在 ${module.dir}。给其中一个文件夹改名（module.json 的 name 跟着改），或删掉一个`);
 		}
-		const names = modules.map((m) => m.name);
+		const names = all.map((m) => m.name);
 		const unknown = Object.keys(switches.values).find((name) => !names.includes(name));
 		if (unknown) throw new ConfigError(`${switches.file}：modules.${unknown} 不是已发现的模块，已发现：${names.join("、") || "（没有）"}`);
 		const parsed = userRulesFile && existsSync(userRulesFile) ? parseRules(userRulesFile, USER_NAMESPACE, readFileSync(userRulesFile, "utf8")) : [];
 		const userRules = parsed.filter((r): r is ScopedRule => !!r.sources?.length);
 		const skipped = parsed.filter((r) => !r.sources?.length).map((r) => r.id);
-		return new Modules(modules, userRules, skipped);
+		return new Modules(modules, userRules, skipped, packages);
 	}
 
 	allRules(): ScopedRule[] {

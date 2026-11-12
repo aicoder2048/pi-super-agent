@@ -224,6 +224,8 @@ ADR-0003 says only the user's own words and rule files authorize; ADR-0010 exten
 
 ### Docs that are out of date
 
+The first four were fixed in F1 (`docs/modules/module-framework-plan.md`).
+
 - docs/adr/0009-...md:44: "模块没有单独的开关" (no switch); #27 added one.
 - docs/modules/module-architecture-upgrade-memo.md:50-51 (§2.1) and :280 (M0 "合并 PR #27"): say #27 is unmerged; it is merged as cefb2c1.
 - docs/modules/module-user-guide.md:1025: "模块开关和脚手架在 PR #27 里，还没有合并" contradicts its own lines 578-580, which already describe the switch.

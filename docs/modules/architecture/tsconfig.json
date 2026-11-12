@@ -5,7 +5,9 @@
     "target": "esnext",
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "lib": ["esnext"],
+    "lib": [
+      "esnext"
+    ],
     "types": [],
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
@@ -16,5 +18,11 @@
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": false
   },
-  "include": ["*.ts"]
+  "include": [
+    "node-shim.d.ts",
+    "../../../src/modules/*.ts",
+    "../../../tests/module-validate.test.ts",
+    "../../../tests/module-lifecycle.test.ts",
+    "../../../tests/module-protocol.test.ts"
+  ]
 }

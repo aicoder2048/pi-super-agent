@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { initialRecord, settle, transition } from "./lifecycle.ts";
-import type { Effect, ModuleEvent, ModuleRecord, Version } from "./lifecycle.ts";
-import type { Digest, ModuleName } from "./manifest.ts";
+import { initialRecord, settle, transition } from "../src/modules/lifecycle.ts";
+import type { Effect, ModuleEvent, ModuleRecord, Version } from "../src/modules/lifecycle.ts";
+import type { Digest, ModuleName } from "../src/modules/manifest.ts";
 
 const version = (digest: string): Version => ({ digest: digest as Digest, label: digest });
 const [V1, V2, BAD] = [version("v1"), version("v2"), version("bad")];

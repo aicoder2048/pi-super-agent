@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -137,4 +137,41 @@ test("just toy-feed：toy-market 关闭时说明怎么打开并以 1 退出，�
 	const on = stateDir(t, { modules: { "toy-market": true } });
 	assert.equal(cli("modules/toy-market/feed.ts", on).status, 0);
 	assert.equal(readdirSync(join(on, "inbox")).filter((f) => f.endsWith(".json")).length, 1);
+});
+
+const SAMPLE = join(import.meta.dirname, "..", "docs", "modules", "architecture", "sample");
+const check = (dir: string) => cli("src/cli/module.ts", tmpdir(), ["check", dir]);
+
+test("just module check：好包打印一行 ok 名字@版本 和各类组件数，以 0 退出", () => {
+	const run = check(join(SAMPLE, "personal-tax"));
+	assert.equal(run.status, 0, run.stderr);
+	assert.match(run.stdout, /^ok personal-tax@0\.1\.0 \| knowledge=0 data=1 tools=1 .*digest=[0-9a-f]{12}\n$/);
+});
+
+test("just module check：坏包每个问题一行，带路径和原因，以 1 退出", () => {
+	const run = check(join(SAMPLE, "broken", "unknown-key"));
+	assert.equal(run.status, 1);
+	assert.match(run.stdout, /^module\.json: unknown key "descripton"/m);
+	assert.match(run.stdout, /^rejected unknown-key: 1 problem\(s\)$/m);
+});
+
+test("just module check：目录不存在时一行原因，以 1 退出", () => {
+	const run = check(join(SAMPLE, "no-such-package"));
+	assert.equal(run.status, 1);
+	assert.equal(run.stdout.trim().split("\n").length, 1);
+	assert.match(run.stdout, /no-such-package/);
+});
+
+test("just modules：状态目录里的新布局包列成新布局，有效的写已停用，无效的写原因；旧模块照列", (t) => {
+	const dir = stateDir(t);
+	mkdirSync(join(dir, "modules"));
+	cpSync(join(SAMPLE, "personal-tax"), join(dir, "modules", "personal-tax"), { recursive: true });
+	mkdirSync(join(dir, "modules", "bad"));
+	writeFileSync(join(dir, "modules", "bad", "module.json"), JSON.stringify({ schema: 1, name: "bad", version: "0.1.0", descripton: "拼错" }));
+	const run = list(dir);
+	assert.equal(run.status, 0, run.stderr);
+	assert.match(lineOf(run.stdout, "us-market"), /启用（默认）/);
+	assert.match(lineOf(run.stdout, "personal-tax"), /新布局\s+有效，已停用\s+\S*modules\/personal-tax$/);
+	assert.match(lineOf(run.stdout, "bad"), /新布局\s+无效\s+\S*modules\/bad$/);
+	assert.match(run.stdout, /\n  module\.json: unknown key "descripton"/);
 });

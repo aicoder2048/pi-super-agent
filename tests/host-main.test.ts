@@ -162,6 +162,22 @@ test("just host 启动时列出加载的模块，有成员的模块后面写队�
 	assert.match(run.stderr, /\[host\] 模块：pi-pi（Pi施工队）, us-market（美股看盘队）, mail, news（新闻队）；停用 toy-market；规则 \d+ 条/);
 });
 
+test("状态目录 modules/ 里有坏的新布局包时，just host 照常加载模块，并用一行写出这个包无效的原因", () => {
+	const bad = JSON.stringify({ schema: 1, name: "bad", version: "0.1.0", descripton: "拼错" });
+	const stateDir = stateWithFiles({ "modules/bad/module.json": bad })();
+	writeFileSync(join(stateDir, "config.json"), JSON.stringify({ webPort: 0, models: { router: "openai-codex/no-such-model" } }));
+	const run = spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], {
+		env: { ...process.env, PSA_STATE_DIR: stateDir },
+		encoding: "utf8",
+		timeout: 20_000,
+		killSignal: "SIGKILL",
+	});
+	assert.match(run.stderr, /\[host\] 模块：pi-pi/);
+	const lines = run.stderr.split("\n").filter((l) => l.includes("bad"));
+	assert.equal(lines.length, 1, run.stderr);
+	assert.match(lines[0], /\[host\] 新布局包 bad 无效：module\.json: unknown key "descripton"/);
+});
+
 test("使用者规则没写来源行时，just host 启动时逐条说明它不生效", () => {
 	const stateDir = stateWith({ models: { router: "openai-codex/no-such-model" } })();
 	writeFileSync(join(stateDir, "rules.md"), "## no-source\n有新邮件就看一下\n\n## ok\n来源: ci\nCI 失败时开任务\n");
