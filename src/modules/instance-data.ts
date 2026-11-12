@@ -168,31 +168,48 @@ function conditionsOf(db: DatabaseSync, collection: string): SetCondition[] {
 	}));
 }
 
-/** Equal times count as the latest: a date-only time cannot order two readings taken the same day. */
-function alertsFor(db: DatabaseSync, { name, collection }: DataComponent, written: readonly Record<string, Value>[]): Alert[] {
+/**
+ * Runs before the write: rows older than a key's stored latest time are backfill and never alert. Equal
+ * times count as new, because a date-only time cannot order two readings taken the same day. A key with
+ * no stored reading takes the write as history, so only its latest time counts.
+ */
+function watchBeforeWrite(db: DatabaseSync, { name, collection }: DataComponent): (written: readonly Record<string, Value>[]) => Alert[] {
 	const watch = collection.watch;
-	if (watch === undefined) return [];
-	const conditions = conditionsOf(db, name);
-	if (conditions.length === 0) return [];
-	const [key, value, at] = [watch.key, watch.value, watch.at].map(quote);
-	db.exec(`CREATE INDEX IF NOT EXISTS ${quote(`_watch_${name}`)} ON ${quote(name)} (${key}, ${at})`);
-	const history = db.prepare(`SELECT ${value} AS value, ${at} AS at, "_from" AS "from" FROM ${quote(name)} WHERE ${key} = ? AND ${value} IS NOT NULL AND ${at} IS NOT NULL AND (${at} < ? OR (${at} = ? AND "_id" <= ?)) ORDER BY ${at} DESC, "_id" DESC LIMIT ?`);
-	const latestOf = db.prepare(`SELECT MAX(${at}) AS at FROM ${quote(name)} WHERE ${key} = ?`);
-	const latest = new Map<Value | undefined, Value>();
-	const isLatestForKey = (k: Value | undefined, t: string) => {
-		if (!latest.has(k)) latest.set(k, (latestOf.get(k!) as { at: Value }).at);
-		return t === latest.get(k);
-	};
-	return written.flatMap((row) => {
-		const [k, v, t] = [row[watch.key], row[watch.value], row[watch.at]];
-		const mine = conditions.filter((c) => c.key === k);
-		if (mine.length === 0 || typeof v !== "number" || typeof t !== "string" || !isLatestForKey(k, t)) return [];
-		const points = (history.all(k!, t, t, row._id!, Math.max(...mine.map((c) => need(c.condition)))) as Point[]).reverse();
-		return mine.flatMap((c) => {
-			const happened = met(c.condition, points);
-			return happened === undefined ? [] : [{ externalId: `${c.id}:${row._id}`, text: alertText(collection.title, c, points.at(-1)!, happened), at: t, private: collection.class === "private" }];
-		});
-	});
+	if (watch === undefined) return () => [];
+	try {
+		const conditions = conditionsOf(db, name);
+		if (conditions.length === 0) return () => [];
+		const [key, value, at] = [watch.key, watch.value, watch.at].map(quote);
+		db.exec(`CREATE INDEX IF NOT EXISTS ${quote(`_watch_${name}`)} ON ${quote(name)} (${key}, ${at})`);
+		const history = db.prepare(`SELECT ${value} AS value, ${at} AS at, "_from" AS "from" FROM ${quote(name)} WHERE ${key} = ? AND ${value} IS NOT NULL AND ${at} IS NOT NULL AND (${at} < ? OR (${at} = ? AND "_id" <= ?)) ORDER BY ${at} DESC, "_id" DESC LIMIT ?`);
+		const latestOf = db.prepare(`SELECT MAX(${at}) AS at FROM ${quote(name)} WHERE ${key} = ?`);
+		const latest = (k: string) => (latestOf.get(k) as { at: Value }).at;
+		const before = new Map([...new Set(conditions.map((c) => c.key))].map((k) => [k, latest(k)]));
+		return (written) => {
+			const cutoff = new Map([...before].map(([k, t]) => [k, t ?? latest(k)]));
+			const isNew = (row: Record<string, Value>) => {
+				const [t, from] = [row[watch.at], cutoff.get(String(row[watch.key]))];
+				return typeof row[watch.value] === "number" && typeof t === "string" && typeof from === "string" && t >= from;
+			};
+			const byTime = (a: Record<string, Value>, b: Record<string, Value>) => {
+				const [x, y] = [String(a[watch.at]), String(b[watch.at])];
+				return x < y ? -1 : x > y ? 1 : Number(a._id) - Number(b._id);
+			};
+			return written.filter(isNew).toSorted(byTime).flatMap((row) => {
+				const [k, t] = [String(row[watch.key]), String(row[watch.at])];
+				const mine = conditions.filter((c) => c.key === k);
+				const points = (history.all(k, t, t, row._id!, Math.max(...mine.map((c) => need(c.condition)))) as Point[]).reverse();
+				return mine.flatMap((c) => {
+					const happened = met(c.condition, points);
+					return happened === undefined ? [] : [{ externalId: `${c.id}:${row._id}`, text: alertText(collection.title, c, points.at(-1)!, happened), at: t, private: collection.class === "private" }];
+				});
+			});
+		};
+	} catch (error) {
+		return () => {
+			throw error;
+		};
+	}
 }
 
 export function instanceData(stateDir: string): InstanceData & ModuleRows & FeedStates {
@@ -301,6 +318,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 				const table = quote(component.name);
 				const ids: number[] = [];
 				const seen = db.prepare("INSERT OR IGNORE INTO _feed_rows VALUES (?, ?)");
+				const alertsFor = watchBeforeWrite(db, component);
 				db.exec("BEGIN");
 				try {
 					for (const row of rows) {
@@ -343,7 +361,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 				const written = ids.map((id) => read.get(id) as Record<string, Value>);
 				const answer = { collection: component.name, class: component.collection.class, rows: written.map((row) => rowOf(visible, row)) };
 				try {
-					return { ...answer, alerts: alertsFor(db, component, written) };
+					return { ...answer, alerts: alertsFor(written) };
 				} catch (error) {
 					return { ...answer, alerts: [], alertProblem: failed(error) };
 				}
