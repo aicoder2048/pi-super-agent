@@ -25,7 +25,6 @@ export const LIMIT_MS = 20_000;
 
 export type CodeReply = { ok: true; output: Json } | { ok: false; note: string };
 
-/** Secret values by name. */
 export type Secrets = Readonly<Record<string, string>>;
 
 /** `just module check` runs without a host, so its secrets come from the environment it was started in. */

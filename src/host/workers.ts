@@ -19,7 +19,6 @@ import { canCode, memberTools } from "../worker/tools.ts";
 import type { OutputRoot } from "./output.ts";
 import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberLimit, type MemberRun } from "./dispatch.ts";
 
-/** What a member may ask the host; everything else is the helper's. */
 const MEMBER_METHODS = ["worker.lookup", "worker.read_web", "worker.domain_tool"];
 
 const HEARD = { trigger: "收到过来源发来的内容", note: "收到过幕僚长的备注", web: "读过网页" } as const;
@@ -393,7 +392,7 @@ export class WorkerExecutor {
 		return holder ? memberTools(ticket.basis, holder.tools).includes("lookup") : this.#kitFor(ticketId, ticket).granted.includes("lookup");
 	}
 
-	/** Assembled at each call: `heardOthers` changes while the ticket runs. Undefined: the ticket pins no module package. */
+	/** Assembled at each call: `heardOthers` changes while the ticket runs. */
 	#callerOf(ticketId: string, member: string | null): WorkerCaller | undefined {
 		const { kernel } = this.#o;
 		const { domain, moduleDigest, basis } = kernel.getTicket(ticketId)!;

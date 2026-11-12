@@ -25,7 +25,6 @@ function files(root: string, tree: Record<string, string>): void {
 const tool = (effect: string, secrets: string[] = []) =>
 	JSON.stringify({ title: effect, description: `${effect} tool`, input: { note: { type: "text", title: "备注" } }, output: { done: { type: "text", title: "结果" } }, effect, ...(secrets.length && { secrets }) });
 
-/** personal-tax plus a write tool, a tool that echoes two secrets, a tool that never returns, and a member whose `uses` has no tool. */
 function storeWithTax(t: TestContext) {
 	const root = mkdtempSync(join(tmpdir(), "psa-gateway-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -145,7 +144,6 @@ const member = (name: string): Member => ({ name, title: name, description: name
 
 type Scene = { worker: FakeWorker; state: { serving: boolean }; spawner: FakeSpawner };
 
-/** A host whose personal-tax tickets pin the stored copy, with the real Gateway in front of it. */
 async function hostWithTax(t: TestContext, script: (scene: Scene) => Promise<unknown>, basis: "request" | "inference" = "request") {
 	const { store, digest } = storeWithTax(t);
 	const logs: string[] = [];

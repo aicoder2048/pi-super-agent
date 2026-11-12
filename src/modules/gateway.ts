@@ -6,7 +6,6 @@ import { LIMIT_MS, runModuleCodeAsync } from "./run-code.ts";
 import { scanPackage } from "./validate.ts";
 
 export interface GatewayPorts {
-	/** The read-only copy of `module` at `digest` in the module store. */
 	copyDir(module: ModuleName, digest: Digest): string;
 	/** The version the module serves now, read from memory on every call. Undefined: switched off or gone, so its open tickets reach nothing. */
 	serving(module: ModuleName): Digest | undefined;

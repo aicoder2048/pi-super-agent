@@ -53,7 +53,6 @@ export interface HostOptions {
 	isMarketSource?: (source: string) => boolean;
 	/** The serving modules, asked each time. Without it no ticket has a domain. */
 	domains?: Domains;
-	/** Module capabilities. Without it no ticket reaches a module's tools. */
 	gateway?: Gateway;
 	rulesFor?: (triggerSource: string) => string[];
 	timers?: TimerEntry[];
