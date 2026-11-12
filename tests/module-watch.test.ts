@@ -94,6 +94,41 @@ test("带工具用例的包改了规则存盘：用例在后台跑完才换上�
 	assert.match(receipts[0]!, /personal-tax 换上 0\.1\.0.*改了 rules\.md/);
 });
 
+test("打开带工具用例的模块、正在复制副本时存盘：复制作废，换上存下的版本，仍留一行收据列出这个文件", async (t) => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-watch-race-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	cpSync(join(REPO, "docs/modules/architecture/sample/personal-tax"), join(dir, "modules/personal-tax"), { recursive: true });
+	const real = openStore(join(dir, "state.db"));
+	t.after(() => real.close());
+	let saved = false;
+	const saveWhileCopying = (json: string) => {
+		const record = JSON.parse(json) as { state?: { at: string }; pending?: { do: string }[] };
+		if (saved || record.state?.at !== "active" || record.pending?.[0]?.do !== "publish") return;
+		saved = true;
+		appendFileSync(join(dir, "modules/personal-tax/rules.md"), "\n");
+	};
+	const db = new Proxy(real, {
+		get: (target, key) =>
+			key === "prepare"
+				? (sql: string) => {
+						const statement = target.prepare(sql);
+						return new Proxy(statement, { get: (s, k) => (k === "run" ? (...args: unknown[]) => (sql.startsWith("INSERT INTO module_records") && saveWhileCopying(args[1] as string), (s.run as (...a: unknown[]) => unknown)(...args)) : Reflect.get(s, k).bind?.(s) ?? Reflect.get(s, k)) });
+					}
+				: (Reflect.get(target, key) as { bind?: (o: unknown) => unknown }).bind?.(target) ?? Reflect.get(target, key),
+	});
+	const logs: string[] = [];
+	const roots = [join(dir, "modules")];
+	const modules = startLiveModules({ db, stateDir: dir, roots, discovered: Modules.load(roots), configSwitches: {}, log: (line) => logs.push(line) });
+	t.after(() => modules.stop());
+	await new Promise((r) => setTimeout(r, 300));
+	setModuleSwitch(real, "personal-tax", true);
+	modules.tick();
+	await until(() => saved, "存盘发生在复制副本时", 15_000);
+	const now = digestOf(join(dir, "modules/personal-tax"));
+	await until(() => modules.live.current().book.get("personal-tax")?.digest === now && logs.some((l) => l.includes("收据")), `换上存下的版本并留收据：${logs.join("\n")}`, 15_000);
+	assert.match(logs.find((l) => l.includes("收据"))!, /personal-tax 换上 0\.1\.0.*改了 rules\.md/);
+});
+
 test("存一个坏的 module.json：旧版本继续服务，状态写出原因；再改好就换上新版本", async (t) => {
 	const dir = stateDir(t);
 	const { modules, record, serving, receipts } = await boot(t, dir);

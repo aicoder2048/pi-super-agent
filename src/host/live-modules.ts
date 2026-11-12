@@ -127,18 +127,27 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 		return { type: "package-found", version: versionOf(entry.dir, scanPackage(entry.dir, { runCases: false })) };
 	};
 	const savedSinceServing = new Map<string, Set<string>>();
+	/** The serving digest the last receipt covered. A swap can land before the watcher reports the save behind it, so the receipt waits for both. */
+	const receipted = new Map<string, Digest>();
 	const servingOf = (name: string) => {
 		const state = records.get(name)?.state;
 		return state?.at === "active" ? state.serving : undefined;
 	};
-	const step = (name: string, event: ModuleEvent | null) => {
-		const before = servingOf(name);
-		records.set(name, drive(records.get(name) ?? initialRecord(name as ModuleName), event, (r) => saveModuleRecord(db, r), run(name)));
-		const after = servingOf(name);
+	const receipt = (name: string) => {
+		const serving = servingOf(name);
 		const saved = savedSinceServing.get(name);
-		if (saved === undefined || before === undefined || after === undefined || after.digest === before.digest) return;
-		savedSinceServing.delete(name);
-		log(`[modules] 收据：${name} 换上 ${after.label}（${after.digest.slice(0, 12)}），改了 ${[...saved].sort().join("、") || "（没记下文件名）"}`);
+		const last = receipted.get(name);
+		if (serving === undefined) receipted.delete(name);
+		else if (last === undefined) receipted.set(name, serving.digest);
+		else if (last !== serving.digest && saved !== undefined) {
+			receipted.set(name, serving.digest);
+			savedSinceServing.delete(name);
+			log(`[modules] 收据：${name} 换上 ${serving.label}（${serving.digest.slice(0, 12)}），改了 ${[...saved].sort().join("、") || "（没记下文件名）"}`);
+		}
+	};
+	const step = (name: string, event: ModuleEvent | null) => {
+		records.set(name, drive(records.get(name) ?? initialRecord(name as ModuleName), event, (r) => saveModuleRecord(db, r), run(name)));
+		receipt(name);
 	};
 
 	const table = (): Modules => {
