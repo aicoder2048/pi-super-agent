@@ -7,7 +7,6 @@ import type { FeedFixture, FeedWhen } from "./manifest.ts";
 import type { Json } from "./protocol.ts";
 
 const RUNNING = ["timer", "inbox"];
-/** A handler can fail on a network blip, so an inbox file gets this many tries in a row before it is rejected. */
 const INBOX_TRIES = 3;
 
 export interface SchedulerOptions {
