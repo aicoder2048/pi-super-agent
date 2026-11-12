@@ -57,7 +57,6 @@ export interface HostOptions {
 	sourcePolicy?: SourcePolicy;
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	isMarketSource?: (source: string) => boolean;
-	/** The serving modules' feeds, asked every tick. `fixtures`: `just module try` runs each feed's fixtures once instead of its connector. */
 	moduleFeeds?: { feeds(): readonly FeedEntry[]; fixtures: boolean; secret?: (name: string) => string | undefined; tickMs?: number };
 	/** The serving modules, asked each time. Without it no ticket has a domain. */
 	domains?: Domains;

@@ -35,7 +35,6 @@ function writePackage(root: string, name: string, feeds: Record<string, Feed>, {
 	return dir;
 }
 
-/** A handler that counts its calls in a file beside it, so a test sees each process it started. */
 const counting = (body: string) => `import { appendFileSync } from "node:fs";\nexport default async function (input) {\n\tappendFileSync("calls.txt", JSON.stringify(input) + "\\n");\n${body}\n}\n`;
 const callsOf = (root: string, module: string, feed: string) => {
 	const file = join(root, "modules", module, "feeds", feed, "calls.txt");

@@ -17,7 +17,6 @@ const EMPTY: Stored = { collections: {}, aliases: {} };
 const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 const literal = (text: string) => `'${text.replaceAll("'", "''")}'`;
 const CONDITIONS = "CREATE TABLE IF NOT EXISTS _conditions (id TEXT PRIMARY KEY, collection TEXT NOT NULL, key TEXT NOT NULL, kind TEXT NOT NULL, params TEXT NOT NULL, set_at TEXT NOT NULL, note TEXT)";
-/** Each feed's ids already stored, so a repeated batch is a no-op; and each feed's cursor and last call. */
 const FEED_TABLES = "CREATE TABLE IF NOT EXISTS _feed_rows (source TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (source, id)); CREATE TABLE IF NOT EXISTS _feeds (source TEXT PRIMARY KEY, cursor TEXT, last_run_at INTEGER)";
 const column = (name: string, field: FieldDescriptor) => `${quote(name)} ${field.type === "number" ? "REAL" : "TEXT"}`;
 const plain = ({ was: _, ...field }: FieldDescriptor) => field;
@@ -110,7 +109,6 @@ export type Written = Accessed & { alerts: readonly Alert[] };
 
 export type FeedState = { cursor: string | null; lastRunAt: number | null };
 
-/** Kept in the module's `data.db` beside the rows, so a feed resumes where it was after a crash. */
 export interface FeedStates {
 	feedState(module: ModuleName, source: string): FeedState;
 	/** A field left out keeps its stored value. */

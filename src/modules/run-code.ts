@@ -38,7 +38,6 @@ export type CodeReply = { ok: true; output: Json } | { ok: false; note: string }
 
 export type Secrets = Readonly<Record<string, string>>;
 
-/** A fixture's answers to `fetch`, by exact URL. Given, the code never reaches the network. */
 export type Responses = FeedFixture["responses"];
 
 export type RunOptions = { limitMs?: number; responses?: Responses };

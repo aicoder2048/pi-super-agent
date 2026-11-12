@@ -1,9 +1,4 @@
-/**
- * One call of one feed, end to end. The handler (or the connector's items, for a feed with no
- * code) gives back a `Collected`. The host stores the records into `into` (which also checks
- * the conditions), submits the notices, and saves the cursor last, so a crash before the end
- * repeats the call and the ids make the repeat a no-op.
- */
+/** Saves the cursor last: a crash before the end repeats the call, and the ids make the repeat a no-op. */
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { FeedStates, ModuleRows } from "./instance-data.ts";
@@ -11,10 +6,8 @@ import type { CollectionDescriptor, Component, ComponentName, FeedDescriptor, Fe
 import type { Alert, Collected, FeedInput, Json } from "./protocol.ts";
 import { LIMIT_MS, runModuleCodeAsync } from "./run-code.ts";
 
-/** A feed of a serving module. `dir` is the package copy the module serves from; `source` is `<module>/<feed>`; `private`: it fills a private collection. */
 export type FeedEntry = { source: string; module: ModuleName; dir: string; name: ComponentName; feed: FeedDescriptor; fixtures: readonly FeedFixture[]; components: readonly Component[]; private: boolean };
 
-/** A trigger for the kernel. `id` is its external id, so the kernel drops a repeat. */
 export type FeedNotice = { source: string; id: string; thread: string; body: string; at: number; private: boolean };
 
 export interface FeedPorts {
@@ -28,7 +21,6 @@ export interface FeedPorts {
 
 export type FeedRun = { ok: true; records: number; notices: number } | { ok: false; note: string };
 
-/** The rows of `reads` a handler is given, newest first. */
 const READ_LIMIT = 500;
 
 type JsonObject = { readonly [key: string]: Json };
@@ -37,7 +29,6 @@ const failed = (error: unknown) => (error instanceof Error ? error.message : Str
 
 const itemId = (item: JsonObject) => (typeof item["id"] === "string" && item["id"] !== "" ? item["id"] : createHash("sha256").update(JSON.stringify(item)).digest("hex").slice(0, 16));
 
-/** A feed with no code: each item is one record and one notice, its scalar fields filling the placeholders. */
 function fromItems(items: readonly Json[]): Collected | string {
 	const objects = items.filter(isObject);
 	if (objects.length !== items.length) return "每一项要是一个 JSON 对象";
@@ -46,7 +37,6 @@ function fromItems(items: readonly Json[]): Collected | string {
 	return { records, notices };
 }
 
-/** The boundary check on what module code hands back. `into` given: every record field must be one of its fields. */
 export function parseCollected(output: Json, into?: CollectionDescriptor): Collected | string {
 	if (!isObject(output)) return `要交回一个对象 { records, notices, cursor }，收到 ${JSON.stringify(output)}`;
 	const { records = [], notices = [], cursor } = output;
@@ -65,7 +55,6 @@ export function parseCollected(output: Json, into?: CollectionDescriptor): Colle
 export const intoOf = (feed: Pick<FeedDescriptor, "into">, components: readonly Component[]): CollectionDescriptor | undefined =>
 	components.find((c): c is Extract<Component, { kind: "data" }> => c.kind === "data" && c.name === feed.into)?.collection;
 
-/** A fixture's `input` replaces the built input key by key; its `settings` merge over feed.json's. */
 export const withFixture = (built: FeedInput, fixture: FeedFixture | undefined): FeedInput =>
 	fixture === undefined ? built : ({ ...built, ...fixture.input, settings: { ...built.settings, ...(fixture.input["settings"] as object | undefined) } } as FeedInput);
 
@@ -98,8 +87,9 @@ export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: F
 			const written = ports.data.write(module, components, feed.into, records, source, source, true);
 			for (const alert of written.alerts) ports.alert(module, alert);
 		}
-		const notices = feed.notice === undefined ? [] : (collected.notices ?? []);
-		for (const n of notices) ports.submit({ source, id: n.id, thread: n.thread ?? entry.name, body: fill(feed.notice!, n.fields), at: ports.now(), private: entry.private });
+		const template = feed.notice;
+		const notices = template === undefined ? [] : (collected.notices ?? []).map((n) => ({ ...n, body: fill(template, n.fields) }));
+		for (const n of notices) ports.submit({ source, id: n.id, thread: n.thread ?? entry.name, body: n.body, at: ports.now(), private: entry.private });
 		if (collected.cursor !== undefined) ports.data.saveFeedState(module, source, { cursor: collected.cursor });
 		return { ok: true, records: feed.into === undefined ? 0 : records.length, notices: notices.length };
 	} catch (error) {

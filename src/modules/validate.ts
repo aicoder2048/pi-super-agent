@@ -429,7 +429,6 @@ function same(actual: Json | undefined, expected: Json, tolerance: number): bool
 	return actual === expected;
 }
 
-/** One run of module code that `check` makes: a tool's test case, or a feed handler on one fixture. */
 type CaseRun = { dir: string; entry: string; secrets: Secrets; input: unknown; options: RunOptions; problem(reply: CodeReply): Problem | undefined };
 
 function toolRun(root: string, component: Extract<Component, { kind: "tools" }>, item: ToolCase, index: number): CaseRun {

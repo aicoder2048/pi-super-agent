@@ -137,11 +137,7 @@ export interface FeedDescriptor {
 export const FEED_WHEN = ["us-market-hours"] as const;
 export type FeedWhen = (typeof FEED_WHEN)[number];
 
-/**
- * `feeds/<name>/fixtures/<case>.json`. `input` replaces what the host would hand the handler
- * (settings merge over feed.json's). `responses` answers the handler's `fetch` by exact URL,
- * so `just module check` and `just module try` never reach the network.
- */
+/** `feeds/<name>/fixtures/<case>.json`. `input` replaces the handler's input (settings merge over feed.json's); `responses` answers `fetch` by exact URL. */
 export type FeedFixture = { name: string; input: { readonly [key: string]: unknown }; responses: { readonly [url: string]: unknown } };
 
 /** Front matter of `agents/<name>.md`. The body is the member's prompt. */

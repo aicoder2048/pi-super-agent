@@ -14,7 +14,6 @@ function moveTo(dir: string, sub: "processed" | "rejected", file: string): strin
 	return target;
 }
 
-/** `<stateDir>/inbox/<module>/<feed>/*.json`, one item per file. A file that is not JSON goes to `rejected/` with the reason beside it. */
 export function takeInbox(dir: string, log: (line: string) => void): { items: Json[]; files: string[] } {
 	if (!existsSync(dir)) return { items: [], files: [] };
 	const items: Json[] = [];
@@ -33,7 +32,6 @@ export function takeInbox(dir: string, log: (line: string) => void): { items: Js
 	return { items, files };
 }
 
-/** After the call: `processed/` once stored, `rejected/` when the call failed, so a bad file is not retried every tick. */
 export function settleInbox(dir: string, files: readonly string[], ok: boolean): void {
 	for (const file of files) moveTo(dir, ok ? "processed" : "rejected", file);
 }

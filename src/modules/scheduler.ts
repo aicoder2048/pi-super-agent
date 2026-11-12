@@ -1,9 +1,3 @@
-/**
- * Runs the serving modules' feeds (design.md H3). Each tick reads the feed list afresh from the
- * module table, so a feed starts the tick after its module serves and stops the tick after it
- * is switched off or removed. A feed has at most one call in flight; a call that fails or hits
- * the time limit only costs that call.
- */
 import { join } from "node:path";
 import { settleInbox, takeInbox } from "./connectors/inbox.ts";
 import { timerDue, timerItem } from "./connectors/timer.ts";
@@ -12,17 +6,14 @@ import type { FeedStates } from "./instance-data.ts";
 import type { FeedFixture, FeedWhen } from "./manifest.ts";
 import type { Json } from "./protocol.ts";
 
-/** The connectors the host runs today. A feed on another one waits until it exists. */
 const RUNNING = ["timer", "inbox"];
 
 export interface SchedulerOptions {
 	feeds(): readonly FeedEntry[];
 	run(entry: FeedEntry, items: readonly Json[], fixture?: FeedFixture): Promise<FeedRun>;
 	state: FeedStates;
-	/** `<stateDir>/inbox`; a feed's folder is `<module>/<feed>` under it. */
 	inboxDir: string;
 	now(): number;
-	/** What each `when` in feed.json means. The host passes the market's own trading-hours rule. */
 	when: Readonly<Record<FeedWhen, (now: number) => boolean>>;
 	/** `just module try`: each feed runs its fixtures once, and no connector runs. */
 	fixtures: boolean;
@@ -30,7 +21,6 @@ export interface SchedulerOptions {
 }
 
 export interface Scheduler {
-	/** Resolves when every call this tick started has finished. */
 	tick(): Promise<void>;
 	start(everyMs: number): void;
 	stop(): void;

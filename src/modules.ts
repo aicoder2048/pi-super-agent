@@ -51,7 +51,6 @@ export interface LoadedModule {
 	state: ModuleState;
 	/** Set for a package served from its copy in the module store. */
 	digest?: Digest;
-	/** A package's feeds, which the host's scheduler runs. */
 	feeds?: readonly FeedEntry[];
 }
 
