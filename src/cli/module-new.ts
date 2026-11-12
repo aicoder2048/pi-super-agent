@@ -4,7 +4,6 @@ import { ConfigError, exitOnConfigError } from "../config-error.ts";
 import { loadConfig, loadModules } from "../host/config.ts";
 import { moduleNameProblem } from "../modules.ts";
 
-/** Smallest first. Each one is a whole package under TEMPLATES_DIR, so `just module check` runs on it as is. */
 const TEMPLATES = ["notes", "team", "full"];
 const TEMPLATES_DIR = join(import.meta.dirname, "..", "modules", "templates");
 

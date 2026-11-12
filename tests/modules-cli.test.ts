@@ -311,7 +311,6 @@ function snapshot(dir: string): string {
 		.join("\n");
 }
 
-/** Runs `just module try personal-tax` against a user state dir whose config.json names the fake models. */
 async function rehearse(t: import("node:test").TestContext, script: Script, models = { router: "psa-fake/router", worker: "psa-fake/worker", fallback: "psa-fake/fallback" }) {
 	const fake = await FakeModel.start(script);
 	t.after(() => fake.close());

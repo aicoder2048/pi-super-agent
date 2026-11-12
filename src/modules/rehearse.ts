@@ -1,12 +1,9 @@
-/** Judging a dry run (B3): each question of `evals/` asked as a request, then checked against the host's own receipts. */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EvalDescriptor, PackageScan } from "./manifest.ts";
 
-/** One question of `evals/` and the text the dry run says. */
 export type Exam = EvalDescriptor & { question: string };
 
-/** What the host did with one question. The Router may answer without opening a ticket, and a ticket may never report. */
 export type Attempt =
 	| { opened: false; replies: readonly string[] }
 	| { opened: true; ticket: string; domain: string | null; report: { status: string; summary: string } | null; gateway: readonly string[] };
@@ -21,7 +18,6 @@ export function examsOf(scan: PackageScan): Exam[] {
 	});
 }
 
-/** The capabilities a ticket called successfully, read from the Gateway's access lines (`[gateway] <module> <use> <ticket> <who> <basis> ok <N> ms`). */
 function usedBy(gateway: readonly string[], module: string, ticket: string): Set<string> {
 	const used = new Set<string>();
 	for (const line of gateway) {

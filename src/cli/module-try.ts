@@ -23,7 +23,6 @@ type Models = { router: string; worker: string; fallback: string };
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 const paid = (models: readonly ModelRef[]) => models.find((m) => PAY_PER_USE_PROVIDERS.includes(m.provider.trim().toLowerCase()));
 
-/** Polls until `probe` gives a value, the time is up, or `alive` turns false. */
 async function until<T>(ms: number, probe: () => T | undefined, alive: () => boolean): Promise<T | undefined> {
 	for (const end = Date.now() + ms; Date.now() < end && alive(); await sleep(100)) {
 		const found = probe();
@@ -41,7 +40,7 @@ function groupAlive(pgid: number): boolean {
 	}
 }
 
-/** The host as its own process group, so stopping it also stops every Worker it started. Keeps its `[gateway]` lines and its last lines. */
+// Its own process group, so stopping it also stops every Worker it started.
 function startHost(stateDir: string) {
 	const child = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST_ENTRY], { cwd: REPO, env: { ...process.env, PSA_STATE_DIR: stateDir }, detached: true, stdio: ["ignore", "pipe", "pipe"] });
 	const gateway: string[] = [];
