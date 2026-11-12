@@ -165,7 +165,7 @@ export type FeedHandler = (input: FeedInput) => Collected | Promise<Collected>;
 export interface FeedInput {
 	/** From the connector, or empty for a feed that fetches for itself. */
 	items: readonly Json[];
-	/** `settings` from feed.json merged with the user's answers to `ask`. */
+	/** `settings` from feed.json. Answers to `ask` are not stored yet, so they are not merged in. */
 	settings: Readonly<Record<string, Json>>;
 	cursor: string | null;
 	/** The rows of each collection the feed lists in `reads`. */

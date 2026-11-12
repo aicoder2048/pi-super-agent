@@ -42,8 +42,9 @@ export type Responses = FeedFixture["responses"];
 
 export type RunOptions = { limitMs?: number; responses?: Responses };
 
-/** `just module check` runs without a host, so its secrets come from the environment it was started in. */
-export const namedFromEnv = (names: readonly string[]): Secrets => Object.fromEntries(names.map((name) => [name, process.env[name] ?? ""]));
+export type SecretLookup = (name: string) => string | undefined;
+
+export const secretsFor = (names: readonly string[], secret: SecretLookup): Secrets => Object.fromEntries(names.map((name) => [name, secret(name) ?? ""]));
 
 function codeProcess(dir: string, entry: string, secrets: Secrets) {
 	const env = { PATH: process.env["PATH"] ?? "", HOME: process.env["HOME"] ?? "", ...secrets };

@@ -9,6 +9,7 @@ import type { ModuleName } from "../src/modules/manifest.ts";
 import type { Alert } from "../src/modules/protocol.ts";
 import { runFeed, type FeedEntry, type FeedNotice } from "../src/modules/feed-runner.ts";
 import { createScheduler } from "../src/modules/scheduler.ts";
+import { problemLine, scanPackage } from "../src/modules/validate.ts";
 import { inPollWindow } from "../src/sources/market/session.ts";
 import { ids, servedAsHost, startHost, until } from "./helpers/fakes.ts";
 
@@ -270,4 +271,95 @@ test("宿主：写进 private 数据的 feed 触发的任务标成读过私密�
 	await host.feedScheduler.tick();
 	await until(() => host.kernel.listTickets().length === 1, "开了任务");
 	assert.equal(host.kernel.touchedPrivate(host.kernel.listTickets()[0]!.id), true);
+});
+
+const countReadings = { title: "数读数", handler: "index.ts", every: "1m", reads: ["readings"], notice: "n={{n}}" };
+const countHandler = `export default async function (input) {\n\treturn { notices: [{ id: "x", fields: { n: String(input.rows.readings.length) } }] };\n}\n`;
+const writeFixture = (root: string, module: string, feed: string, name: string, body: object) => {
+	const dir = join(root, "modules", module, "feeds", feed, "fixtures");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, `${name}.json`), JSON.stringify(body));
+};
+
+test("检查和运行给 handler 的输入一样：reads 里的每个集合都有一列行，样例没给就是空列", async (t) => {
+	const w = world(t, { lab: { count: { json: countReadings, handler: countHandler } } });
+	writeFixture(w.root, "lab", "count", "plain", { responses: {} });
+	const scan = scanPackage(join(w.root, "modules", "lab"));
+	assert.ok(scan.ok, scan.ok ? "" : scan.problems.map(problemLine).join("\n"));
+});
+
+test("预演时样例给的 rows 交给 handler", async (t) => {
+	const w = world(t, { lab: { count: { json: countReadings, handler: countHandler } } }, { fixtures: true });
+	writeFixture(w.root, "lab", "count", "two", { input: { rows: { readings: [{ item: "CEA" }, { item: "CEA" }] } }, responses: {} });
+	const entries = servedAsHost(Modules.load([join(w.root, "modules")])).feeds();
+	const data = instanceData(w.state);
+	const ports = { data, submit: (n: FeedNotice) => void w.submitted.push(n), alert: () => {}, secret: () => undefined, now: () => w.clock.now };
+	await runFeed(entries[0]!, [], ports, entries[0]!.fixtures[0]);
+	assert.deepEqual(w.submitted.map((n) => n.body), ["n=2"]);
+});
+
+test("inbox：一个坏文件只拒收它自己，好文件照常存下；rejected 里有一个 .error.txt 写着问题", async (t) => {
+	const w = world(t, { lab: { drop: { json: { title: "投递读数", connector: "inbox", into: "readings" } } } });
+	const { scheduler, data } = w.make();
+	const dir = join(w.state, "inbox", "lab", "drop");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "a-good.json"), JSON.stringify({ id: "g1", item: "CEA", value: 3, at: "2026-11-03" }));
+	writeFileSync(join(dir, "b-typo.json"), JSON.stringify({ id: "t1", item: "CEA", valeu: 4 }));
+	await scheduler.tick();
+	const entry = w.entries[0]!;
+	assert.equal(data.query(entry.module, entry.components, "readings", {}, "test").rows.length, 1);
+	assert.deepEqual(readdirSync(join(dir, "processed")), ["a-good.json"]);
+	assert.deepEqual(readdirSync(join(dir, "rejected")).sort(), ["b-typo.json", "b-typo.json.error.txt"]);
+	assert.match(readFileSync(join(dir, "rejected", "b-typo.json.error.txt"), "utf8"), /valeu/);
+});
+
+test("inbox：handler 这一次失败（比如断网）时文件留在 inbox，下一个点再试", async (t) => {
+	const handler = counting(`\tif (input.items[0].fail) throw new Error("network down");\n\treturn { records: input.items };`);
+	const w = world(t, { lab: { drop: { json: { title: "投递读数", connector: "inbox", handler: "index.ts", into: "readings" }, handler } } });
+	const { scheduler } = w.make();
+	const dir = join(w.state, "inbox", "lab", "drop");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "one.json"), JSON.stringify({ id: "r1", item: "CEA", fail: true }));
+	await scheduler.tick();
+	assert.deepEqual(readdirSync(dir), ["one.json"]);
+	assert.ok(w.logged.some((line) => line.includes("network down")), w.logged.join("\n"));
+});
+
+test("检查：timer 或不带连接器的 handler 没写 every 时拒收，一行说清楚", (t) => {
+	const root = mkdtempSync(join(tmpdir(), "psa-scheduler-every-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	const timer = writePackage(root, "timer", { tick: { json: { title: "到点", connector: "timer", notice: "到点了" } } });
+	const pull = writePackage(root, "pull", { fetch: { json: { title: "取", handler: "index.ts", into: "readings" }, handler: "export default async () => ({});\n" } });
+	for (const [dir, feed] of [[timer, "tick"], [pull, "fetch"]] as const) {
+		const scan = scanPackage(dir);
+		assert.equal(scan.ok, false, feed);
+		assert.match(scan.ok ? "" : scan.problems.map(problemLine).join("\n"), new RegExp(`^feeds/${feed}/feed\\.json: .*"every"`, "m"));
+	}
+});
+
+test("进度最后才存：存了行、交触发时崩了，下一次从原来的进度重跑，行和触发都不重复", async (t) => {
+	const once = counting(`\tif (input.cursor === "c1") return {};\n\treturn { records: [{ id: "a", item: "CEA", value: 4, at: "2026-11-01" }], notices: [{ id: "n1", fields: {} }], cursor: "c1" };`);
+	const w = world(t, { lab: { pull: { json: { title: "取读数", handler: "index.ts", every: "1m", into: "readings", notice: "新读数" }, handler: once } } });
+	const entry = w.entries[0]!;
+	const data = instanceData(w.state);
+	let crash = true;
+	const submit = (n: FeedNotice) => {
+		if (crash) throw new Error("host went down");
+		w.submitted.push(n);
+	};
+	const ports = { data, submit, alert: () => {}, secret: () => undefined, now: () => w.clock.now };
+	assert.equal((await runFeed(entry, [], ports)).ok, false);
+	crash = false;
+	await runFeed(entry, [], ports);
+	assert.equal(data.query(entry.module, entry.components, "readings", {}, "test").rows.length, 1);
+	assert.deepEqual(w.submitted.map((n) => n.id), ["n1"]);
+});
+
+test("日志里的行数只算真存下的：同一批重跑一次写 0 行", async (t) => {
+	const w = world(t, { lab: { pull: handlerFeed } });
+	const { scheduler } = w.make();
+	await scheduler.tick();
+	w.clock.now += MINUTE;
+	await scheduler.tick();
+	assert.deepEqual(w.logged, ["[feeds] lab/pull：2 行，1 条触发", "[feeds] lab/pull：0 行，1 条触发"]);
 });

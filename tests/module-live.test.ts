@@ -40,12 +40,12 @@ function stateDir(t: TestContext): string {
 	return dir;
 }
 
-function boot(t: TestContext, dir: string, configSwitches: Record<string, boolean> = {}) {
+function boot(t: TestContext, dir: string, configSwitches: Record<string, boolean> = {}, secret: (name: string) => string | undefined = () => undefined) {
 	const db = openStore(join(dir, "state.db"));
 	const logs: string[] = [];
 	const roots = [join(dir, "modules")];
 	const discovered = Modules.load(roots, { switches: { values: configSwitches, file: "config.json" } });
-	const modules = startLiveModules({ db, stateDir: dir, roots, discovered, configSwitches, log: (line) => logs.push(line) });
+	const modules = startLiveModules({ db, stateDir: dir, roots, discovered, configSwitches, secret, log: (line) => logs.push(line) });
 	const stop = () => {
 		modules.stop();
 		if (db.isOpen) db.close();
@@ -330,6 +330,20 @@ test("工具测试用例不过：记录是无效，原因写着哪个用例，�
 	const record = moduleRows(db).find((r) => r.name === "slow")!.record!;
 	assert.match(describe(record).reason, /tools\/nap\/cases\.json.*c0.*failed/);
 	assert.equal(serving(modules).includes("slow"), false);
+});
+
+test("宿主跑用例时的密钥和运行时同一个来源：密钥只在密钥文件里也能通过", async (t) => {
+	const dir = stateDir(t);
+	files(join(dir, "modules"), {
+		"keyed/module.json": JSON.stringify({ schema: 1, name: "keyed", version: "0.1.0", title: "带密钥", description: "要密钥的工具" }),
+		"keyed/tools/probe/tool.json": JSON.stringify({ title: "probe", description: "reads its key", input: { x: { type: "number", title: "x" } }, output: { y: { type: "number", title: "y" } }, secrets: ["LAB_KEY"] }),
+		"keyed/tools/probe/index.ts": `export default async () => ({ y: process.env.LAB_KEY === "k" ? 1 : 0 });`,
+		"keyed/tools/probe/cases.json": JSON.stringify([{ name: "has-key", input: { x: 1 }, expect: { y: 1 } }]),
+	});
+	const { db } = boot(t, dir, {}, (name) => (name === "LAB_KEY" ? "k" : undefined));
+	setModuleSwitch(db, "keyed", true);
+	await until(() => ["运行中", "无效"].includes(label(dir, "keyed") ?? ""), "keyed 检查完", 15_000);
+	assert.equal(label(dir, "keyed"), "运行中");
 });
 
 test("副本只复制摘要算进去的文件：包里的 .git 不进副本，副本的摘要就是它的目录名", (t) => {

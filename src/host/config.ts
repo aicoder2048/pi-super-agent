@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_MODELS, parseModelRef, type ModelRef } from "../models.ts";
@@ -9,6 +8,8 @@ import { Modules } from "../modules.ts";
 import { MEMBER_CAP_DEFAULT, MEMBER_CAP_MAX } from "./member-cap.ts";
 import { within } from "./output.ts";
 import { parseWebHosts, type TailnetName } from "./web-hosts.ts";
+import { parseSecretsFile } from "../secrets.ts";
+import { defaultStateDir } from "../state-dir.ts";
 
 export const BUNDLED_MODULES = fileURLToPath(new URL("../../modules", import.meta.url));
 export interface HostConfig {
@@ -53,9 +54,7 @@ export function memberProviders(config: Pick<HostConfig, "models">): string[] {
 	return [...new Set([config.models.router.provider, config.models.worker.provider])];
 }
 
-export function defaultStateDir(): string {
-	return resolve(process.env.PSA_STATE_DIR ?? join(homedir(), ".pi-super-agent"));
-}
+export { defaultStateDir };
 
 export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	mkdirSync(stateDir, { recursive: true, mode: 0o700 });
@@ -82,11 +81,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	if (webHosts.length > 0 && webPort === 0) {
 		throw new ConfigError(`${file}：webHosts 需要固定的 webPort：tailscale serve 转发到一个固定端口，webPort 是 0 时每次启动端口都不同`);
 	}
-	if (raw.secretsFile !== undefined && typeof raw.secretsFile !== "string") {
-		throw new ConfigError(`${file}：secretsFile（${JSON.stringify(raw.secretsFile)}）必须是 .env 文件的路径字符串`);
-	}
-	const secretsFile = raw.secretsFile === undefined ? undefined : resolve(stateDir, raw.secretsFile);
-	if (secretsFile && !existsSync(secretsFile)) throw new ConfigError(`${file}：secretsFile 指向的 ${secretsFile} 不存在`);
+	const secretsFile = parseSecretsFile(raw.secretsFile, stateDir, file);
 	const outputDir = parseOutputDir(raw.outputDir, stateDir, file);
 	const seconds = (key: string, fallback: number): number => {
 		const value = raw[key] === undefined ? fallback : raw[key];
