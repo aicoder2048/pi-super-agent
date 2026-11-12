@@ -76,9 +76,11 @@ function main(): void {
 		{ label: "技能", values: (m) => [skillNames(m.skillsDir).join("、")].filter(Boolean) },
 	];
 
+	const packageStatus = (p: (typeof modules.packages)[number]) => (p.scan.ok ? status(p.name, { on: false, text: config.moduleSwitches[p.name] ? NEXT_START : "已停用" }) : { on: false, text: "无效" });
 	const table = modules.found.map((m) => [m.name, legacy(m).text, folder(m.dir)]);
 	const line = columns(table);
-	console.log(`模块 ${modules.found.length} 个，启用 ${modules.found.filter((m) => legacy(m).on).length} 个；状态目录 ${config.stateDir}`);
+	const on = modules.found.filter((m) => legacy(m).on).length + modules.packages.filter((p) => packageStatus(p).on).length;
+	console.log(`模块 ${modules.found.length + modules.packages.length} 个，启用 ${on} 个；状态目录 ${config.stateDir}`);
 	modules.found.forEach((m, i) => {
 		console.log(line(table[i]));
 		for (const d of detailRows) {
@@ -89,8 +91,7 @@ function main(): void {
 	if (modules.packages.length) {
 		console.log(`新布局包 ${modules.packages.length} 个`);
 		const packageRows = modules.packages.map((p) => {
-			const text = p.scan.ok ? status(p.name, { on: false, text: config.moduleSwitches[p.name] ? NEXT_START : "已停用" }).text : "无效";
-			return [p.name, `新布局  ${text}`, folder(p.dir)];
+			return [p.name, `新布局  ${packageStatus(p).text}`, folder(p.dir)];
 		});
 		const packageLine = columns(packageRows);
 		modules.packages.forEach(({ scan }, i) => {
@@ -98,7 +99,7 @@ function main(): void {
 			if (!scan.ok) for (const problem of scan.problems) console.log(`  ${problemLine(problem)}`);
 		});
 	}
-	console.log("开关模块：just module on <名字> 或 just module off <名字>，宿主在运行就马上生效，不用重启。");
+	console.log("开关模块：just module on <名字> 或 just module off <名字>，宿主已发现的模块马上生效，不用重启。");
 }
 
 try {

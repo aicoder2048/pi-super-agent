@@ -10,9 +10,9 @@ import { moduleRows, pinnedCopies, saveModuleRecord, setModuleSwitch } from "../
 import { packageModule, type DomainKit, type LoadedModule, type Modules } from "../modules.ts";
 import { initialRecord, type Effect, type ModuleEvent, type Version } from "../modules/lifecycle.ts";
 import { drive, liveRegistry, ModuleStore, switchEvent } from "../modules/live.ts";
-import type { Digest, ModuleName } from "../modules/manifest.ts";
+import type { Digest, ModuleName, PackageScan, Problem, ScanResult } from "../modules/manifest.ts";
 import type { LiveRegistry } from "../modules/registry.ts";
-import { digestOf, scanPackage } from "../modules/validate.ts";
+import { digestOf, hasCases, runCasesAsync, scanPackage } from "../modules/validate.ts";
 
 const POLL_MS = 500;
 const LEGACY_LABEL = "旧布局";
@@ -34,6 +34,9 @@ export interface LiveModulesOptions {
 	log: (line: string) => void;
 }
 
+const versionOf = (dir: string, scan: ScanResult): Version =>
+	scan.ok ? { digest: scan.scan.digest, label: scan.scan.manifest.version } : { digest: digestOf(dir), label: "?" };
+
 /** `legacy` is set for a module the legacy loader read; it serves from its folder, with no copy. */
 type Found = { dir: string; version: Version; legacy?: LoadedModule };
 
@@ -41,11 +44,18 @@ export function startLiveModules({ db, stateDir, discovered, configSwitches, log
 	const store = new ModuleStore(join(stateDir, "module-store"));
 	const found = new Map<string, Found>([
 		...discovered.found.map((m): [string, Found] => [m.name, { dir: m.dir, version: { digest: digestOf(m.dir), label: LEGACY_LABEL }, legacy: m }]),
-		...discovered.packages.map(({ name, dir, scan }): [string, Found] => [name, { dir, version: scan.ok ? { digest: scan.scan.digest, label: scan.scan.manifest.version } : { digest: digestOf(dir), label: "?" } }]),
+		...discovered.packages.map(({ name, dir, scan }): [string, Found] => [name, { dir, version: versionOf(dir, scan) }]),
 	]);
 	const defaultOn = (name: string) => {
 		const legacy = found.get(name)?.legacy;
 		return legacy !== undefined && legacy.manifest.defaultEnabled !== false;
+	};
+	const safely = (what: string, work: () => void) => {
+		try {
+			work();
+		} catch (error) {
+			log(`[modules] ${what}出错：${error instanceof Error ? error.message : String(error)}`);
+		}
 	};
 	const copies = new Map<Digest, LoadedModule | undefined>();
 	const fromCopy = (module: ModuleName, digest: Digest): LoadedModule | undefined => {
@@ -69,18 +79,46 @@ export function startLiveModules({ db, stateDir, discovered, configSwitches, log
 		log("[modules] config.json 的 modules 开关已在第一次启动时导入，之后不再读它；开关模块用 just module on <名字> 或 just module off <名字>");
 	}
 
-	const run = (name: string) => (effect: Effect): ModuleEvent | null => {
+	const caseResults = new Map<string, { digest: Digest; problems: readonly Problem[] | null }>();
+	let stopped = false;
+	const runCases = (name: string, scan: PackageScan) => {
+		caseResults.set(name, { digest: scan.digest, problems: null });
+		void runCasesAsync(scan).then((problems) => {
+			if (stopped || caseResults.get(name)?.digest !== scan.digest) return;
+			caseResults.set(name, { digest: scan.digest, problems });
+			safely("工具测试用例跑完后更新模块", () => {
+				step(name, null);
+				live.publish(table());
+			});
+		});
+	};
+	const check = (name: string, entry: Found, version: Version): ModuleEvent | "wait" => {
+		const ok = (problems: readonly Problem[] = []): ModuleEvent => ({ type: "checked", digest: version.digest, problems });
+		if (entry.legacy) return ok();
+		const result = scanPackage(entry.dir, { runCases: false });
+		if (!result.ok) return ok(result.problems);
+		if (result.scan.digest !== version.digest) return { type: "package-found", version: versionOf(entry.dir, result) };
+		if (!hasCases(result.scan)) return ok();
+		const ran = caseResults.get(name);
+		if (ran?.digest !== version.digest) runCases(name, result.scan);
+		else if (ran.problems !== null) {
+			caseResults.delete(name);
+			return ok(ran.problems);
+		}
+		return "wait";
+	};
+	const run = (name: string) => (effect: Effect): ModuleEvent | null | "wait" => {
 		const entry = found.get(name);
 		if (effect.do === "migrate") return { type: "migrated", attempt: effect.attempt };
-		if (effect.do === "check") {
-			if (entry === undefined) return null;
-			const result = entry.legacy ? undefined : scanPackage(entry.dir);
-			if (result?.ok === false) return { type: "checked", digest: effect.version.digest, problems: result.problems };
-			if (result?.ok && result.scan.digest !== effect.version.digest) return { type: "package-found", version: { digest: result.scan.digest, label: result.scan.manifest.version } };
-			return { type: "checked", digest: effect.version.digest, problems: [] };
+		if (effect.do === "check") return entry === undefined ? null : check(name, entry, effect.version);
+		if (effect.do !== "publish" || effect.serve === null || entry === undefined || entry.legacy) return null;
+		if (store.keep(name as ModuleName, effect.serve.digest, entry.dir)) {
+			// A copy that failed to load earlier exists now.
+			copies.delete(effect.serve.digest);
+			return null;
 		}
-		if (effect.do === "publish" && effect.serve !== null && entry !== undefined && !entry.legacy) store.keep(name as ModuleName, effect.serve.digest, entry.dir);
-		return null;
+		log(`[modules] ${name} 的文件在复制时变了，重新检查`);
+		return { type: "package-found", version: versionOf(entry.dir, scanPackage(entry.dir, { runCases: false })) };
 	};
 	const step = (name: string, event: ModuleEvent | null) => {
 		const record = drive(records.get(name) ?? initialRecord(name as ModuleName), event, (r) => saveModuleRecord(db, r), run(name));
@@ -97,7 +135,7 @@ export function startLiveModules({ db, stateDir, discovered, configSwitches, log
 	};
 	const collect = () => {
 		const serving = [...records.values()].flatMap((r) => (r.state.at === "active" ? [`${r.name}/${r.state.serving.digest}`] : []));
-		store.collect(new Set([...serving, ...pinnedCopies(db).map((p) => `${p.module}/${p.digest}`)]));
+		safely("回收旧副本", () => store.collect(new Set([...serving, ...pinnedCopies(db).map((p) => `${p.module}/${p.digest}`)])));
 	};
 	const reconcile = (): boolean => {
 		let changed = false;
@@ -121,13 +159,7 @@ export function startLiveModules({ db, stateDir, discovered, configSwitches, log
 		if (reconcile()) live.publish(table());
 		collect();
 	};
-	const timer = setInterval(() => {
-		try {
-			tick();
-		} catch (error) {
-			log(`[modules] 开关轮询出错：${error instanceof Error ? error.message : String(error)}`);
-		}
-	}, POLL_MS);
+	const timer = setInterval(() => safely("开关轮询", tick), POLL_MS);
 	timer.unref();
 
 	return {
@@ -138,6 +170,9 @@ export function startLiveModules({ db, stateDir, discovered, configSwitches, log
 			return copy && discovered.serve([copy]).kitFor(domain);
 		},
 		tick,
-		stop: () => clearInterval(timer),
+		stop: () => {
+			stopped = true;
+			clearInterval(timer);
+		},
 	};
 }

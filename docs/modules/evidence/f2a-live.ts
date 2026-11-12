@@ -211,6 +211,7 @@ async function lanes(): Promise<void> {
 				db.prepare("UPDATE module_records SET switch = 1, record = ? WHERE name = 'personal-tax'").run(JSON.stringify(halfway));
 				db.close();
 			});
+			await within(10_000, () => records(state)["personal-tax"]?.at === "active");
 			const after = records(state)["personal-tax"];
 			const listing = just(state, ["modules"]).out.split("\n").find((l) => l.startsWith("personal-tax ")) ?? "";
 			return { pass: after?.at === "active" && after.pending === 0 && /运行中/.test(listing), evidence: `seeded while down: staging/checking with pending [check]\nafter restart: ${JSON.stringify(after)}\njust modules: ${listing}` };

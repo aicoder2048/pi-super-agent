@@ -8,6 +8,7 @@ import { loadConfig, loadModules } from "../src/host/config.ts";
 import { startLiveModules } from "../src/host/live-modules.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { KEY_NAMES } from "../src/sources/market/key.ts";
+import { until } from "./helpers/fakes.ts";
 
 function stateDir(t: import("node:test").TestContext, config?: object): string {
 	const dir = mkdtempSync(join(tmpdir(), "psa-modcli-"));
@@ -185,7 +186,7 @@ test("just module check 的 --previous 指向不存在的目录：打印一行�
 	assert.equal(`${run.stdout}${run.stderr}`.trim(), `${join(dir, "no-such-version")}: no such folder`);
 });
 
-test("just modules：新布局包按生命周期显示，没跑过工具用例的包不说有效；宿主把它打开以后显示运行中", (t) => {
+test("just modules：新布局包按生命周期显示，没跑过工具用例的包不说有效；宿主把它打开以后显示运行中", async (t) => {
 	const dir = stateDir(t);
 	cpSync("docs/modules/architecture/sample/personal-tax", join(dir, "modules/personal-tax"), { recursive: true });
 	const before = lineOf(list(dir).stdout, "personal-tax");
@@ -196,6 +197,7 @@ test("just modules：新布局包按生命周期显示，没跑过工具用例�
 	const db = openStore(join(dir, "state.db"));
 	const config = loadConfig(dir);
 	const modules = startLiveModules({ db, stateDir: dir, discovered: loadModules(config), configSwitches: config.moduleSwitches, log: () => {} });
+	await until(() => modules.live.current().book.has("personal-tax"), "personal-tax 的工具用例跑完、开始服务", 15_000);
 	modules.stop();
 	db.close();
 	const after = list(dir);
@@ -203,4 +205,5 @@ test("just modules：新布局包按生命周期显示，没跑过工具用例�
 	assert.match(lineOf(after.stdout, "us-market"), /\s运行中\s/);
 	assert.match(lineOf(after.stdout, "toy-market"), /\s已停用\s/);
 	assert.match(after.stdout, /开关模块：just module on <名字> 或 just module off <名字>/);
+	assert.match(after.stdout, /^模块 4 个，启用 3 个；/m);
 });

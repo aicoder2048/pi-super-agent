@@ -1,11 +1,11 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { CONNECTORS, DATA_CLASSES, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS } from "./manifest.ts";
 import type {
-	AgentDescriptor, CapabilityUse, CollectionDescriptor, Component, ComponentName, Digest, FeedDescriptor, FieldDescriptor, KindDir, MemberTool, ModuleManifest, ModuleName, Problem, RuleRef, Runtime, ScanResult, ToolCase, ToolDescriptor,
+	AgentDescriptor, CapabilityUse, CollectionDescriptor, Component, ComponentName, Digest, FeedDescriptor, FieldDescriptor, KindDir, MemberTool, ModuleManifest, ModuleName, PackageScan, Problem, RuleRef, Runtime, ScanResult, ToolCase, ToolDescriptor,
 } from "./manifest.ts";
 
 const NAME = /^[a-z0-9][a-z0-9-]*$/;
@@ -98,7 +98,8 @@ function entries(root: string, where: string): { dirs: string[]; files: string[]
 	};
 }
 
-function allFiles(root: string, where = ""): string[] {
+/** The files `digestOf` covers, as paths relative to `root`. */
+export function allFiles(root: string, where = ""): string[] {
 	const found = entries(root, where);
 	const path = (name: string): string => (where === "" ? name : `${where}/${name}`);
 	return [...found.files.map(path), ...found.dirs.flatMap((name) => allFiles(root, path(name)))];
@@ -405,18 +406,45 @@ try {
 console.log(JSON.stringify(reply));
 `;
 
-export function runModuleCode(dir: string, entry: string, input: unknown, secrets: readonly string[] = []): { ok: true; output: Json } | { ok: false; note: string } {
+type Reply = { ok: true; output: Json } | { ok: false; note: string };
+
+function codeProcess(dir: string, entry: string, secrets: readonly string[]) {
 	const env: Record<string, string> = { PATH: process.env["PATH"] ?? "", HOME: process.env["HOME"] ?? "" };
 	for (const name of secrets) env[name] = process.env[name] ?? "";
 	const args = ["--input-type=module", "-e", NODE_RUNNER, pathToFileURL(join(dir, entry)).href];
-	const run = spawnSync(process.execPath, args, { encoding: "utf8", timeout: 20_000, env, cwd: dir, input: JSON.stringify({ input }) });
-	const last = run.stdout.trim().split("\n").at(-1) ?? "";
+	return { args, options: { timeout: 20_000, env, cwd: dir } };
+}
+
+function readReply(stdout: string, stderr: string, status: number | null, error: Error | undefined): Reply {
+	const last = stdout.trim().split("\n").at(-1) ?? "";
 	try {
-		if (run.error === undefined && run.status === 0) return JSON.parse(last) as { ok: true; output: Json } | { ok: false; note: string };
+		if (error === undefined && status === 0) return JSON.parse(last) as Reply;
 	} catch {
 		return { ok: false, note: `the last line of stdout was not a reply: ${last}` };
 	}
-	return { ok: false, note: (run.error?.message ?? run.stderr).trim().split("\n").slice(0, 3).join(" ") || `exit ${run.status}` };
+	return { ok: false, note: (error?.message ?? stderr).trim().split("\n").slice(0, 3).join(" ") || `exit ${status}` };
+}
+
+export function runModuleCode(dir: string, entry: string, input: unknown, secrets: readonly string[] = []): Reply {
+	const { args, options } = codeProcess(dir, entry, secrets);
+	const run = spawnSync(process.execPath, args, { ...options, encoding: "utf8", input: JSON.stringify({ input }) });
+	return readReply(run.stdout, run.stderr, run.status, run.error);
+}
+
+export function runModuleCodeAsync(dir: string, entry: string, input: unknown, secrets: readonly string[] = []): Promise<Reply> {
+	const { args, options } = codeProcess(dir, entry, secrets);
+	return new Promise((done) => {
+		const child = spawn(process.execPath, args, options);
+		let stdout = "";
+		let stderr = "";
+		child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
+		child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+		// A child that dies before reading stdin breaks the pipe; its exit is the reply that counts.
+		child.stdin.on("error", () => undefined);
+		child.on("error", (error) => done(readReply(stdout, stderr, null, error)));
+		child.on("close", (status, signal) => done(readReply(stdout, stderr, status, signal === null ? undefined : new Error(`stopped by ${signal} (the limit is 20 s)`))));
+		child.stdin.end(JSON.stringify({ input }));
+	});
 }
 
 function same(actual: Json | undefined, expected: Json, tolerance: number): boolean {
@@ -426,15 +454,39 @@ function same(actual: Json | undefined, expected: Json, tolerance: number): bool
 	return actual === expected;
 }
 
-function runToolCases(report: Report, root: string, name: string, tool: ToolDescriptor, cases: readonly ToolCase[]): void {
-	for (const [index, item] of cases.entries()) {
-		const label = `test case ${index + 1} "${item.name}"`;
-		const reply = runModuleCode(join(root, "tools", name), RUNTIMES[tool.runtime ?? "node"], item.input, tool.secrets);
-		if (!reply.ok) report(`tools/${name}/cases.json`, `${label} threw: ${reply.note}`);
-		else if (!same(reply.output, item.expect as Json, item.tolerance ?? 1e-9)) {
-			report(`tools/${name}/cases.json`, `${label} failed: expected ${JSON.stringify(item.expect)}, got ${JSON.stringify(reply.output)}`);
-		}
+type CaseRun = { dir: string; entry: string; secrets: readonly string[] | undefined; where: string; label: string; item: ToolCase };
+
+function caseRuns(root: string, components: readonly Component[]): CaseRun[] {
+	return components.flatMap((component) =>
+		component.kind !== "tools"
+			? []
+			: component.cases.map((item, index) => ({
+					dir: join(root, "tools", component.name),
+					entry: RUNTIMES[component.tool.runtime ?? "node"],
+					secrets: component.tool.secrets,
+					where: `tools/${component.name}/cases.json`,
+					label: `test case ${index + 1} "${item.name}"`,
+					item,
+				})),
+	);
+}
+
+function caseProblem({ where, label, item }: CaseRun, reply: Reply): Problem | undefined {
+	if (!reply.ok) return { where, reason: `${label} threw: ${reply.note}` };
+	if (!same(reply.output, item.expect as Json, item.tolerance ?? 1e-9)) return { where, reason: `${label} failed: expected ${JSON.stringify(item.expect)}, got ${JSON.stringify(reply.output)}` };
+	return undefined;
+}
+
+export const hasCases = (scan: PackageScan): boolean => scan.components.some((c) => c.kind === "tools" && c.cases.length > 0);
+
+/** For a package scanned with `runCases: false`. */
+export async function runCasesAsync(scan: PackageScan): Promise<Problem[]> {
+	const problems: Problem[] = [];
+	for (const run of caseRuns(scan.dir, scan.components)) {
+		const problem = caseProblem(run, await runModuleCodeAsync(run.dir, run.entry, run.item.input, run.secrets));
+		if (problem) problems.push(problem);
 	}
+	return problems;
 }
 
 const READERS: Record<KindDir, { each: "dirs" | "files"; read(report: Report, root: string, name: string): Component | undefined }> = {
@@ -490,7 +542,10 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder }:
 	const rules = readRules(report, root, manifest.name, feeds);
 	crossCheck(report, manifest, components);
 	if (runCases && problems.length === 0) {
-		for (const item of components) if (item.kind === "tools") runToolCases(report, root, item.name, item.tool, item.cases);
+		for (const run of caseRuns(root, components)) {
+			const problem = caseProblem(run, runModuleCode(run.dir, run.entry, run.item.input, run.secrets));
+			if (problem) problems.push(problem);
+		}
 	}
 	let notes: string[] = [];
 	if (previous !== undefined && problems.length === 0) {

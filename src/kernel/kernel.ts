@@ -1195,7 +1195,7 @@ export class Kernel {
 			storedRole(helper),
 			helper.seq,
 			domain,
-			domain === null ? null : (this.#domains().get(domain)?.digest ?? null),
+			this.#servingDigest(domain),
 			"team" in helper ? "[]" : null,
 		);
 		for (const threadId of threads) {
@@ -1249,13 +1249,20 @@ export class Kernel {
 			body,
 			this.#now(),
 		);
+		// A closed ticket's copy may already be collected, so a reopened ticket runs on the serving version.
 		this.#run(
 			`UPDATE tickets SET closed_at = NULL,
+			 module_digest = CASE WHEN closed_at IS NULL THEN module_digest ELSE ? END,
 			 worker_state = CASE WHEN worker_state IN ('none', 'idle') THEN 'queued' ELSE worker_state END
 			 WHERE id = ?`,
+			this.#servingDigest(this.#ticketRow(ticketId)!.domain),
 			ticketId,
 		);
 		this.#wake(ticketId);
+	}
+
+	#servingDigest(domain: string | null): string | null {
+		return domain === null ? null : (this.#domains().get(domain)?.digest ?? null);
 	}
 
 	#acceptsInput(ticketId: string): string | null {
