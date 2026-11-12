@@ -4,7 +4,7 @@ import { CAP_ASK_PREFIX, type CapAsk, type CapAskStore } from "./cap-ask.ts";
 import { answerExternalId, answerSentence, type AnswerRefusal } from "./question.ts";
 import { quoteSnapshot } from "./quote.ts";
 
-export type AnswerOutcome = { ok: true; triggerId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
+export type AnswerOutcome = { ok: true; triggerId: string; ticketId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 import { deriveStage } from "./stage.ts";
 import { SOLO_NAMES, TEAM_NAMES, helperName, helperRole, newYorkDate } from "./helper-names.ts";
 import { oneLine, stallMinutes } from "../client/board-format.mjs";
@@ -323,7 +323,7 @@ export class Kernel {
 			const click = this.#latestClick(reportId);
 			if (click && click.state !== "dropped") {
 				if (click.option !== option) return refuse({ kind: "chosen", option: click.option, label: options[click.option] });
-				return { ok: true, triggerId: click.triggerId, text: this.#get("SELECT body FROM triggers WHERE id = ?", click.triggerId)!.body, duplicate: true };
+				return { ok: true, triggerId: click.triggerId, ticketId: report.ticket_id, text: this.#get("SELECT body FROM triggers WHERE id = ?", click.triggerId)!.body, duplicate: true };
 			}
 			const ticket = this.#ticket(report.ticket_id)!;
 			if (ticket.stage !== "awaiting_answer" || ticket.latestReport?.id !== reportId) return refuse({ kind: "closed" });
@@ -334,7 +334,7 @@ export class Kernel {
 			const clicks = this.#get("SELECT COUNT(*) AS n FROM answer_clicks WHERE report_id = ?", reportId)!.n as number;
 			const { triggerId } = this.userSaid({ text, at, externalId: answerExternalId(reportId, clicks + 1) });
 			this.#run("INSERT INTO answer_clicks (trigger_id, report_id, option) VALUES (?, ?, ?)", triggerId, reportId, option);
-			return { ok: true, triggerId, text, duplicate: false };
+			return { ok: true, triggerId, ticketId: ticket.id, text, duplicate: false };
 		});
 	}
 
@@ -1045,6 +1045,14 @@ export class Kernel {
 
 	readWeb(ticketId: string): void {
 		this.#run("UPDATE tickets SET read_web_at = COALESCE(read_web_at, ?) WHERE id = ?", this.#now(), ticketId);
+	}
+
+	touchPrivate(ticketId: string): void {
+		this.#run("UPDATE tickets SET touched_private_at = COALESCE(touched_private_at, ?) WHERE id = ?", this.#now(), ticketId);
+	}
+
+	touchedPrivate(ticketId: string): boolean {
+		return this.#get("SELECT 1 FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) !== undefined;
 	}
 
 	heardOtherThanUser(ticketId: string): "trigger" | "note" | "web" | undefined {

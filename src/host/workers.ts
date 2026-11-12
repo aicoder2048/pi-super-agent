@@ -12,14 +12,36 @@ import type { Usage } from "./worker-events.ts";
 import { NO_DOMAIN, type DomainKit, type Domains } from "../modules.ts";
 import { refusalText } from "../modules/gateway.ts";
 import type { ComponentName, Digest, ModuleName } from "../modules/manifest.ts";
-import type { Gateway, Json, Request, WorkerCaller } from "../modules/protocol.ts";
+import type { Gateway, Json, Query, Request, WorkerCaller } from "../modules/protocol.ts";
 import type { Member } from "../teams.ts";
 import type { TranscriptMessage } from "../client/protocol.ts";
 import { canCode, memberTools } from "../worker/tools.ts";
 import type { OutputRoot } from "./output.ts";
 import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberLimit, type MemberRun } from "./dispatch.ts";
 
-const MEMBER_METHODS = ["worker.lookup", "worker.read_web", "worker.domain_tool", "worker.knowledge"];
+const MEMBER_METHODS = ["worker.lookup", "worker.read_web", "worker.domain_tool", "worker.knowledge", "worker.data"];
+
+const TAGS: Record<Request["kind"], string> = { tool: "[模块工具]", knowledge: "[模块知识]", data: "[模块数据]", watch: "[提醒条件]" };
+
+/** The `data` tool's arguments as a gateway request. `list` is a query with no conditions. */
+function dataRequest(p: Record<string, unknown>): Request {
+	const collection = String(p.collection ?? "") as ComponentName;
+	const refuse = (note: string) => new Error(`${TAGS.data} ${refusalText({ code: "bad-input", note })}`);
+	if (p.op === "write") {
+		if (!Array.isArray(p.rows)) throw refuse("write 要给 rows：要写的行组成的数组");
+		return { kind: "data", collection, op: "write", rows: p.rows as Json[], from: typeof p.from === "string" ? p.from : "" };
+	}
+	const limit: Query = typeof p.limit === "number" ? { limit: p.limit } : {};
+	if (p.op === "list") return { kind: "data", collection, op: "query", query: limit };
+	if (p.op !== "query") throw refuse(`op 只能是 list、query 或 write，收到 ${JSON.stringify(p.op)}`);
+	const query: Query = {
+		...limit,
+		...(p.where !== null && typeof p.where === "object" && { where: p.where as Query["where"] }),
+		...(typeof p.since === "string" && { since: p.since }),
+		...(typeof p.until === "string" && { until: p.until }),
+	};
+	return { kind: "data", collection, op: "query", query };
+}
 
 const HEARD = { trigger: "收到过来源发来的内容", note: "收到过幕僚长的备注", web: "读过网页" } as const;
 
@@ -36,6 +58,8 @@ export interface WorkerSpec extends DomainKit {
 	/** The module tools this helper may call, one line each. Absent: it has no `domain_tool`. */
 	domainTools?: string;
 	knowledge?: string;
+	/** The module's collections this helper may read and write, one line each. Absent: it has no `data`. */
+	data?: string;
 }
 
 export interface WorkerEvents {
@@ -318,7 +342,7 @@ export class WorkerExecutor {
 		const live = this.#live.get(ticketId);
 		const holder = live !== undefined && live.token !== token ? this.#desk?.holder(ticketId, token) : undefined;
 		if (!live || (live.token !== token && !holder)) throw new Error("未知的 Worker 或令牌不符");
-		if (holder && !MEMBER_METHODS.includes(method)) throw new Error("成员只能经宿主查数据（lookup）、调模块工具（domain_tool）和查模块知识（knowledge），不能汇报、交回、读任务或再派活");
+		if (holder && !MEMBER_METHODS.includes(method)) throw new Error("成员只能经宿主查数据（lookup）、调模块工具（domain_tool）、查模块知识（knowledge）和读写模块数据（data），不能汇报、交回、读任务或再派活");
 		const { kernel, afterCommand } = this.#o;
 		const p = (params ?? {}) as Record<string, unknown>;
 		try {
@@ -352,6 +376,8 @@ export class WorkerExecutor {
 					return this.#gatewayCall(ticketId, holder?.name ?? null, { kind: "tool", name: String(p.name) as ComponentName, input: (p.input ?? {}) as Json });
 				case "worker.knowledge":
 					return this.#gatewayCall(ticketId, holder?.name ?? null, { kind: "knowledge", op: "search", query: String(p.query ?? "") });
+				case "worker.data":
+					return this.#gatewayCall(ticketId, holder?.name ?? null, dataRequest(p));
 				case "worker.read_web":
 					kernel.readWeb(ticketId);
 					return { recorded: true };
@@ -404,20 +430,23 @@ export class WorkerExecutor {
 		return { who: "worker", ticket: ticketId, pin, basis, member, heardOthers: kernel.heardOtherThanUser(ticketId) !== undefined };
 	}
 
-	#catalogue(ticketId: string, member: string | null): { domainTools?: string; knowledge?: string } {
+	#catalogue(ticketId: string, member: string | null): { domainTools?: string; knowledge?: string; data?: string } {
 		const caller = this.#callerOf(ticketId, member);
 		const entries = caller && this.#o.gateway ? this.#o.gateway.catalogue(caller) : [];
-		const tools = entries.filter((e) => e.request === "tool").map((t) => `${t.name} · ${t.title}：${t.help}`);
+		const lines = (kind: Request["kind"]) => entries.filter((e) => e.request === kind).map((e) => `${e.name} · ${e.title}：${e.help}`);
+		const tools = lines("tool");
 		const knowledge = entries.find((e) => e.request === "knowledge");
-		return { ...(tools.length && { domainTools: tools.join("\n") }), ...(knowledge && { knowledge: knowledge.help }) };
+		const data = lines("data");
+		return { ...(tools.length && { domainTools: tools.join("\n") }), ...(knowledge && { knowledge: knowledge.help }), ...(data.length && { data: data.join("\n") }) };
 	}
 
 	async #gatewayCall(ticketId: string, member: string | null, request: Request): Promise<Json> {
-		const tag = request.kind === "knowledge" ? "[模块知识]" : "[模块工具]";
+		const tag = TAGS[request.kind];
 		const caller = this.#callerOf(ticketId, member);
 		if (!caller || !this.#o.gateway) throw new Error(`${tag} 这个任务不属于模块包，没有模块的工具和知识可用`);
 		const reply = await this.#o.gateway.call(caller, request);
 		if (!reply.ok) throw new Error(`${tag} ${refusalText(reply.refusal)}`);
+		if (reply.private) this.#o.kernel.touchPrivate(ticketId);
 		return reply.output;
 	}
 

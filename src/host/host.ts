@@ -121,6 +121,7 @@ export class Host {
 	readonly #clock: Clock;
 	readonly #kitFor: Domains["kitFor"] | undefined;
 	readonly #modules: HostOptions["modules"];
+	readonly #book: Domains["book"] | undefined;
 	readonly #memberCap: MemberCap | undefined;
 	readonly #after: NonNullable<HostOptions["after"]>;
 	#cancelNewYorkDay: (() => void) | undefined;
@@ -139,6 +140,7 @@ export class Host {
 		this.#watching = options.watching ?? [];
 		this.#kitFor = options.domains?.kitFor;
 		this.#modules = options.modules;
+		this.#book = options.domains?.book;
 		this.#db = openStore(join(options.stateDir, "state.db"));
 		this.kernel = new Kernel({
 			db: this.#db,
@@ -229,7 +231,7 @@ export class Host {
 			this.#log,
 		);
 		// Built before any client can say a line, so every line and reply reaches it; it touches the network only once started.
-		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }) }, db: this.#db, clock, log: this.#log });
+		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }), privateTitle: (ticketId) => this.#privateTitle(ticketId) }, db: this.#db, clock, log: this.#log });
 	}
 
 	static async start(options: HostOptions): Promise<Host> {
@@ -309,7 +311,7 @@ export class Host {
 		const result = this.kernel.answerQuestion({ reportId, option, at });
 		if (!result.ok) return result;
 		if (!result.duplicate) {
-			this.#broadcast({ type: "user", id: result.triggerId, who: "user", text: result.text, at }, from);
+			this.#broadcast({ type: "user", id: result.triggerId, who: "user", text: result.text, at, ticketId: result.ticketId }, from);
 			this.#changed();
 		}
 		return { ok: true, triggerId: result.triggerId };
@@ -367,6 +369,13 @@ export class Host {
 	#memberCapBoard(): MemberCapBoard {
 		const cap = this.#memberCap;
 		return cap ? { limit: cap.limit(), question: cap.question(this.workers.membersWaitingForSlot()) } : null;
+	}
+
+	#privateTitle(ticketId: string): string | null {
+		if (!this.kernel.touchedPrivate(ticketId)) return null;
+		const domain = this.kernel.getTicket(ticketId)?.domain;
+		if (!domain) return "模块";
+		return this.#book?.().get(domain)?.title ?? domain;
 	}
 
 	#deliverReply(threadId: string, text: string, replyId: string, ticketId: string | null | undefined): void {

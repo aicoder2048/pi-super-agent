@@ -9,6 +9,7 @@ import type { Clock } from "../../kernel/types.ts";
 import type { AnswerResult, Broadcast, ImChat, SayOptions } from "../server.ts";
 import { TelegramError, type BotApi, type TelegramErrorKind, type Update } from "./bot-api.ts";
 import { alertText, cardView, closedView, decide, mirrorText, NOTES, render, repeatsQuestion } from "./rules.ts";
+import { privateLine, telegramText } from "../../modules/protocol.ts";
 import { TelegramStore, type Pending } from "./store.ts";
 
 export interface TelegramTiming {
@@ -36,6 +37,8 @@ export interface TelegramHost {
 	sayQuoting(text: string, lineId: string, options: SayOptions): string | null;
 	answer(reportId: string, option: number, options: { from: ImChat }): AnswerResult;
 	board(): Board;
+	/** The module's title when the ticket touched private data: its reports and cards then go out as one line pointing to the web page. Null: in full. */
+	privateTitle(ticketId: string): string | null;
 }
 
 export const DEFAULT_TIMING: TelegramTiming = {
@@ -122,16 +125,20 @@ export class TelegramClient {
 		if (this.#state === "off") return;
 		try {
 			switch (message.type) {
-				case "reply":
-					if (!this.#cardStandsIn(message)) {
-						for (const chat of this.#store.openChats()) this.#store.put(chat, `line:${message.replyId}`, message.replyId, { kind: "line", text: message.text, silent: false });
+				case "reply": {
+					const title = message.ticketId === undefined ? null : this.#host.privateTitle(message.ticketId);
+					if (title !== null || !this.#cardStandsIn(message)) {
+						for (const chat of this.#store.openChats()) this.#store.put(chat, `line:${message.replyId}`, message.replyId, { kind: "line", text: telegramText(message.text, title), silent: false });
 					}
 					break;
-				case "user":
+				}
+				case "user": {
+					const title = message.ticketId === undefined ? null : this.#host.privateTitle(message.ticketId);
 					for (const chat of this.#store.openChats()) {
-						if (chat !== from?.chatId) this.#store.put(chat, `line:${message.id}`, message.id, { kind: "line", text: mirrorText(message.text, from), silent: true });
+						if (chat !== from?.chatId) this.#store.put(chat, `line:${message.id}`, message.id, { kind: "line", text: telegramText(mirrorText(message.text, from), title), silent: true });
 					}
 					break;
+				}
 				case "board":
 					for (const chat of this.#store.openChats()) this.#syncCards(chat, message);
 					break;
@@ -303,6 +310,11 @@ export class TelegramClient {
 			for (const row of rows) {
 				const view = cardView(row);
 				if (!view) continue;
+				const title = this.#host.privateTitle(row.id);
+				if (title !== null) {
+					this.#store.put(chatId, `private:${view.reportId}`, null, { kind: "line", text: privateLine(title), silent: false });
+					continue;
+				}
 				onBoard.add(view.reportId);
 				this.#store.put(chatId, `ask:${view.reportId}`, null, { kind: "card", view });
 			}

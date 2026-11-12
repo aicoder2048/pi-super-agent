@@ -25,10 +25,11 @@ declare module "node:fs" {
 	export function watch(path: string, options: { recursive: true }, listener: (event: string, filename: string | null) => void): FSWatcher;
 }
 declare module "node:sqlite" {
+	export type SQLInputValue = null | number | bigint | string;
 	export interface StatementSync {
-		run(...values: (string | number)[]): unknown;
-		get(...values: (string | number)[]): unknown;
-		all(...values: (string | number)[]): unknown[];
+		run(...values: SQLInputValue[]): { changes: number | bigint; lastInsertRowid: number | bigint };
+		get(...values: SQLInputValue[]): unknown;
+		all(...values: SQLInputValue[]): unknown[];
 	}
 	export class DatabaseSync {
 		constructor(path: string, options?: { readOnly: boolean });

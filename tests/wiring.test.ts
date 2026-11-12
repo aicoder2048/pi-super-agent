@@ -252,7 +252,7 @@ test("真实接线：仓库模块目录和状态目录 modules/ 里的模块都�
 		...moduleFiles("mail", { sources: [{ name: "mail" }] }),
 	});
 	const options = createHostOptions({ config, modules: fixed(loadWith(config, modulesDir)), modelRuntime, log: () => {} });
-	assert.deepEqual([...options.domains!.book()], [["mail", { team: null, onRoster: false }], ["watch", { team: "看盘队", onRoster: true }], ["news", { team: "新闻队", onRoster: true }]]);
+	assert.deepEqual([...options.domains!.book()], [["mail", { team: null, onRoster: false }], ["watch", { team: "看盘队", onRoster: true, title: "看盘" }], ["news", { team: "新闻队", onRoster: true, title: "新闻" }]]);
 	const host = await Host.start(options);
 	t.after(() => host.stop());
 	const block = await firstBlock(host);

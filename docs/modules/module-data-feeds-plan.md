@@ -132,45 +132,51 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `src/modules/gateway.ts`（`find` 认 `data` 请求）、`src/worker/extension.ts`、`src/worker/tools.ts`、`src/host/workers.ts`。
-- [ ] Edit `src/kernel/store.ts`（任务记「读过私密数据」）、`src/host/telegram/*`（私密任务的汇报只发一行）。
-- [ ] Create `tests/data-tool.test.ts`。
+- [x] Edit `src/modules/gateway.ts`（`find` 认 `data` 请求）、`src/worker/extension.ts`、`src/worker/tools.ts`、`src/host/workers.ts`。
+- [x] Edit `src/kernel/store.ts`（任务记「读过私密数据」）、`src/host/telegram/*`（私密任务的汇报只发一行）。
+- [x] Create `tests/data-tool.test.ts`。
 
 **Build.**
 
-- [ ] `data` 工具：`list`、`query`（条件、时间范围、条数）、`write`（`record` 按主键写，`series` 追加，带 `from`）。按那张表，读谁都可以，写不给推断任务。专家只够得到 `uses` 里列的 `data/<名字>`。
-- [ ] 每次调用在 `data.db` 的访问记录表里记一笔：谁、哪类数据、读还是写、几行。
-- [ ] 任务读过或写过 `private` 数据，就在任务上记一笔。这个任务的汇报和卡片在 Telegram 上只发一行「<模块标题> 有新内容，请在网页上查看」，网页和 TUI 照常完整显示。
+- [x] `data` 工具：`list`、`query`（条件、时间范围、条数）、`write`（`record` 按主键写，`series` 追加，带 `from`）。按那张表，读谁都可以，写不给推断任务。专家只够得到 `uses` 里列的 `data/<名字>`。
+- [x] 每次调用在 `data.db` 的访问记录表里记一笔：谁、哪类数据、读还是写、几行。
+- [x] 任务读过或写过 `private` 数据，就在任务上记一笔。这个任务的汇报和卡片在 Telegram 上只发一行「<模块标题> 有新内容，请在网页上查看」，网页和 TUI 照常完整显示。
 
 **You see.**
 
-- [ ] personal-health 任务里 Worker 写一条检验指标再读出来，访问记录里有两笔；Telegram 上只有一行提示，网页上是完整汇报。
+- [x] personal-health 任务里 Worker 写一条检验指标再读出来，访问记录里有两笔；Telegram 上只有一行提示，网页上是完整汇报。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/data-tool.test.ts` 覆盖读写、别名读写、推断任务写被拒、`uses` 没列被拒、别的模块的数据查不到、访问记录、私密标记和 Telegram 一行规则。Run `just test`.
+- [x] `tests/data-tool.test.ts` 覆盖读写、别名读写、推断任务写被拒、`uses` 没列被拒、别的模块的数据查不到、访问记录、私密标记和 Telegram 一行规则。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/g2-live.ts`，Worker 的调用由假模型回放，lane 10 用真模型。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都调一次 `knowledge`。Save `g2-regression.txt`. Pass when 结果相同。
-- [ ] Lane 2. 写一条 `series` 再查。Save `g2-write-read.txt`. Pass when 读回同一行，带 `from`。
-- [ ] Lane 3. 按改名前的旧字段名写。Save `g2-alias.txt`. Pass when 落到新名字下。
-- [ ] Lane 4. 推断任务写。Save `g2-infer.txt`. Pass when 拒绝。
-- [ ] Lane 5. 专家 `uses` 没列这类数据。Save `g2-uses.txt`. Pass when 拒绝。
-- [ ] Lane 6. 别的模块的任务读。Save `g2-other.txt`. Pass when 查不到。
-- [ ] Lane 7. 访问记录。Save `g2-log.txt`. Pass when 每次调用一笔。
-- [ ] Lane 8. 读过私密数据的任务汇报。Save `g2-private.txt`. Pass when Telegram 记录器只有一行提示，网页看板是完整汇报。
-- [ ] Lane 9. 只读过 `shareable` 数据的任务。Save `g2-shareable.txt`. Pass when Telegram 是完整汇报。
-- [ ] Lane 10. 真模型 `openai-codex/*` 让 Worker 记下一条体检指标。Save `g2-real.txt`. Pass when 数据库里有这一行。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都调一次 `knowledge`。Save `g2-regression.txt`. Pass when 结果相同。
+- [x] Lane 2. 写一条 `series` 再查。Save `g2-write-read.txt`. Pass when 读回同一行，带 `from`。
+- [x] Lane 3. 按改名前的旧字段名写。Save `g2-alias.txt`. Pass when 落到新名字下。
+- [x] Lane 4. 推断任务写。Save `g2-infer.txt`. Pass when 拒绝。
+- [x] Lane 5. 专家 `uses` 没列这类数据。Save `g2-uses.txt`. Pass when 拒绝。
+- [x] Lane 6. 别的模块的任务读。Save `g2-other.txt`. Pass when 查不到。
+- [x] Lane 7. 访问记录。Save `g2-log.txt`. Pass when 每次调用一笔。
+- [x] Lane 8. 读过私密数据的任务汇报。Save `g2-private.txt`. Pass when Telegram 记录器只有一行提示，网页看板是完整汇报。
+- [x] Lane 9. 只读过 `shareable` 数据的任务。Save `g2-shareable.txt`. Pass when Telegram 是完整汇报。
+- [x] Lane 10. 真模型 `openai-codex/*` 让 Worker 记下一条体检指标。Save `g2-real.txt`. Pass when 数据库里有这一行。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 一次 `data` 查询（10 万行里按 key 和时间范围取 100 行）的宿主侧时间。trunk 没有这个工具，只给绝对预算。
-- [ ] Probe. 20 次查询，20 次写入。
-- [ ] Baseline. Record the trunk `knowledge` 查询中位数 first，作对照。
-- [ ] Rule. 查询或写入中位数超过 50 毫秒就失败。
+- [x] Metric. 一次 `data` 查询（10 万行里按 key 和时间范围取 100 行）的宿主侧时间。trunk 没有这个工具，只给绝对预算。
+- [x] Probe. 20 次查询，20 次写入。
+- [x] Baseline. Record the trunk `knowledge` 查询中位数 first，作对照。
+- [x] Rule. 查询或写入中位数超过 50 毫秒就失败。
 
 **Review gate.** None. G2 is not review-gated.
+
+2026-11-12 在 691e39f 上通过（之后的 9006cf4 只删注释）：`tests/data-tool.test.ts` 18 条，`just test` 1530 条全过，`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g2/owner/g2-*.txt`，lane 10 用 `openai-codex/gpt-6.1-sol` 记下一条空腹血糖，`lab-results` 有这一行，from 是「使用者口述」；perf 10 万行按 item 和日期范围取 100 行，查询中位 3.2 ms（20 次，差 1.4 ms），单行写入中位 0.4 ms，trunk `knowledge` 检索中位 0.1 ms 作对照。lane 3 在 personal-health 里就地把 `lab` 改名为 `laboratory`，因为 health-lite 不在名册上，幕僚长开不了它的任务。
+
+审查后的修正（2026-11-12）：网页上回答私密任务的问题，转到 Telegram 的那句回答也只发一行提示；`record` 按 id 从别的来源改几项，`from` 不变，改过的字段各自的来源记在 `sources`；`write` 没给 rows、op 不认识都拒绝；字段不能叫 `id`；访问记录也记被拒的调用和原因。
+
+待定（要使用者定）：幕僚长在对话里的回复（起因是使用者的一句话，不带任务）不受私密一行规则管。它从转述里知道的私密数值，之后可能出现在这类回复里，原样发到 Telegram。design.md 第 5 节写明了这一处还没管到。
 
 **Merge.**
 

@@ -149,7 +149,7 @@ test("宿主日志记的是能力的 uses 写法：知识写 knowledge，数据�
 
 test("工具目录只列调用者能用的：成员只见 uses 里的工具，推断任务不见 write 工具", (t) => {
 	const { gateway, caller } = setup(t);
-	const names = (c: WorkerCaller) => gateway.catalogue(c).map((entry) => entry.name).sort();
+	const names = (c: WorkerCaller) => gateway.catalogue(c).filter((e) => e.request === "tool").map((entry) => entry.name).sort();
 	assert.deepEqual(names(caller()), ["env-probe", "file-return", "spin", "tax-bracket"]);
 	assert.deepEqual(names(caller({ basis: "inference" })), ["env-probe", "spin", "tax-bracket"]);
 	assert.deepEqual(names(caller({ member: "tax-preparer" })), ["tax-bracket"]);
