@@ -254,8 +254,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Build.**
 
-- [ ] 文档写清旧 Mac 要的东西。旧 Mac 现在没有 `uv`，也没有 `gh`。它没有能访问 GitHub 的 SSH 密钥，git 用 `osxkeychain` 存凭据（Appendix A）。
-- [ ] 默认做法（Appendix E 第 2 条）。使用者在 GitHub 网页上建一个 fine-grained token，只给技术分析这一个仓库的 Contents 只读权限，设过期时间。在旧 Mac 的终端里用 `git credential-osxkeychain store` 存进钥匙串。凭据只在跑 `just module setup` 时用，宿主服务运行时不需要。
+- [ ] 文档写清旧 Mac 要的东西。旧 Mac 现在没有 `uv`，也没有 `gh`。它没有能访问 GitHub 的 SSH 密钥。登录钥匙串在终端里常是锁着的，`osxkeychain` 存凭据会被悄悄丢掉，所以改用 git 的 `store` helper（Appendix A）。
+- [ ] 默认做法（Appendix E 第 2 条）。使用者在 GitHub 网页上建一个 fine-grained token，只给技术分析这一个仓库的 Contents 只读权限，设过期时间。在旧 Mac 上设 `git config --global credential.helper store`，`~/.git-credentials` 权限 600，第一次 `git ls-remote` 时填入 token。2026-11-12 使用者已做完，旧 Mac 读到 main c9e7536，不再问密码。凭据只在跑 `just module setup` 时用，宿主服务运行时不需要。
 - [ ] 装 uv（官方安装脚本或 Homebrew）。`#91` 已经把装机时 PATH 里 `uv` 的目录写进服务 PATH，S2 起工具不再依赖它，所以只有 setup 需要。uv 会下载 Python 3.12。旧 Mac 是 Intel、macOS 12，numpy 和 pandas 都有 `macosx_10_13_x86_64` 的 wheel，不用编译。
 - [ ] 复制包、`just module setup stock-ta`、密钥文件里确认有 `MASSIVE_API_KEY`、把笔记文件拷过去并导入、`just module on stock-ta`、等第一次扫描。
 - [ ] 换钉的提交时，改 `py/pyproject.toml` 的 `rev`，跑 `uv lock`，提交。每台机器复制新包以后重跑 `just module setup stock-ta`。工具在锁文件变了时会提醒（S2）。
@@ -271,7 +271,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. lane 2 和 lane 3 要使用者亲手做，owner 等使用者说做完了再接着跑。
 
 - [ ] Lane 1. Regression lane against trunk. trunk 上旧 Mac 没有 stock-ta。记下这一点，在旧 Mac 上跑 `just modules`，确认 us-market 照常。Save `s4-regression.txt`. Pass when 装之前和装之后 us-market 的状态相同。
-- [ ] Lane 2. 使用者建 token、存进钥匙串。owner 跑 `git ls-remote https://github.com/aicoder2048/TechnicalAnalysis HEAD`。Save `s4-auth.txt`. Pass when 打印一个提交，没有要密码。
+- [ ] Lane 2. 使用者建 token、存进 `~/.git-credentials`。owner 跑 `git ls-remote https://github.com/aicoder2048/TechnicalAnalysis HEAD`。Save `s4-auth.txt`. Pass when 打印一个提交，没有要密码。
 - [ ] Lane 3. 使用者装 uv。owner 跑 `uv --version`。Save `s4-uv.txt`. Pass when 有版本号。
 - [ ] Lane 4. `just module setup stock-ta`。Save `s4-setup.txt`. Pass when 装好，记下用时和 `files/venv` 的大小。
 - [ ] Lane 5. `just module check` 和 `just modules`。Save `s4-check.txt`. Pass when ok，stock-ta 有效。
@@ -320,12 +320,12 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **全市场数据（`screen` 用的 `market.sqlite`）。** 你本机这份是 419 MB：320 个交易日、3146114 行日线、11220 个标的、43077 行分红。从零同步要约 320 次全市场日线请求、12 页标的列表、44 页分红，再加约 2000 次市值查询，合计约 2400 个请求。这个量不适合放进一个每天跑的模块 feed，所以默认不做。
 
-**还没证明的。** 旧 Mac 上 fine-grained token 加 `osxkeychain` 能不能让 uv 拿到私有仓库，要等 S4 的 lane 2 和 lane 4。用 SSH 部署密钥加 `url.<base>.insteadOf` 改写地址这条路，没试过 uv 认不认。
+**还没证明的。** 旧 Mac 上 fine-grained token 加 `store` helper 能不能让 uv 拿到私有仓库（git 本身已经可以），要等 S4 的 lane 2 和 lane 4。用 SSH 部署密钥加 `url.<base>.insteadOf` 改写地址这条路，没试过 uv 认不认。
 
 ## Appendix B. Alternatives rejected
 
 - **复制技术分析的源码进模块包。** 使用者 2026-11-12 否决。两份代码会分叉，公开仓库里也不该有私有源码。
-- **git 依赖用 SSH 地址。** 本机的 SSH 密钥没登记在 GitHub 上，旧 Mac 没有 SSH 密钥，HTTPS 加钥匙串两台都能走通。
+- **git 依赖用 SSH 地址。** 本机的 SSH 密钥没登记在 GitHub 上，旧 Mac 没有 SSH 密钥，HTTPS 加 git 凭据两台都能走通。
 - **工具里用 `uv run`。** 服务的 PATH 里要有 `uv`，速度又没好处。setup 时用 uv，运行时直接调 venv。
 - **venv 放在包目录里。** 包目录有文件监视，venv 里的几千个文件会触发重新加载，而且复制包时会带上。放在 `files/venv`，purge 时一起删。
 - **工具直接读 feed 正在写的库。** 技术分析库是回滚日志模式。扫描写到一半时去克隆，可能拿到半截的库。改成副本加改名以后，读的人只会看到整份旧库或整份新库。
@@ -341,7 +341,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - **S2 的 GitHub 凭据。** setup 失败时报错可能带出仓库地址，不会带出 token。lane 2 的输出要查一遍再存。
 - **S3 的副本加改名。** 改名要和原库在同一个文件系统，`files/ta/` 里建副本就满足。扫描超时被杀时，副本留着，下一次覆盖。
 - **S3 的真行情 lane 依赖时间。** 只能在交易日收盘 15 分钟以后跑，错过就等下一个交易日。fixtures 的 lane 不受影响。
-- **S4 依赖使用者亲手操作。** 建 token、装 uv 要使用者做。钥匙串在 SSH 会话里可能是锁着的，所以存凭据和第一次 setup 都在旧 Mac 的本地终端里做。
+- **S4 依赖使用者亲手操作。** 建 token、装 uv 要使用者做。旧 Mac 的登录钥匙串在终端里是锁着的（`security add-internet-password` 报 User interaction is not allowed），所以凭据存进 `~/.git-credentials`，ssh 会话里也能用。
 - **钉的版本过时。** 技术分析仓库修了规则，模块不会自动跟上。换提交是一次 PR 加每台机器一次 setup。
 - **没有 control skill。** 网页 lane 用仓库自己的 Playwright harness，命令行 lane 用脚本。
 
@@ -360,6 +360,6 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 每条都有默认做法。不回答就按默认走，回答了就按你说的改计划。
 
 1. **`screen`（全市场选股）留不留。** 默认拿掉工具和 `ta-screen` 技能。要留，就再加一个 S5：每周一次的全市场同步 feed，约 420 MB、约 2400 个请求，旧 Mac 上要多久没量过。
-2. **旧 Mac 用什么凭据拿私有仓库。** 默认是 fine-grained token，只给这一个仓库的只读权限，存在旧 Mac 的钥匙串里。另一条路是旧 Mac 生成一个 SSH 部署密钥，登记成这个仓库的只读部署密钥，再用 git 的 `insteadOf` 把 HTTPS 地址改成 SSH。这条路不过期，但 uv 认不认没试过。
+2. **旧 Mac 用什么凭据拿私有仓库。** 已定：fine-grained token，只给这一个仓库的只读权限，90 天过期，存在旧 Mac 的 `~/.git-credentials`（权限 600）。另一条路是旧 Mac 生成一个 SSH 部署密钥，登记成这个仓库的只读部署密钥，再用 git 的 `insteadOf` 把 HTTPS 地址改成 SSH。这条路不过期，但 uv 认不认没试过。
 3. **扫描出新信号时要不要叫醒领队。** 默认不叫，信号只在你问的时候查。要叫的话，`scan` feed 加一个 `notice`，每个新信号发一个触发，和技术分析应用的提醒一样。
 4. **钉哪个提交。** 默认是 S2 开工时技术分析仓库 `main` 上已推送的最新提交（今天是 `c9e7536`）。你有还没推送的规则改动的话，先推送。
