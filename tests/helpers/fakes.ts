@@ -58,6 +58,8 @@ export interface FauxRouterOptions {
 	failOn?: (modelId: string) => string | undefined;
 	persist?: boolean;
 	errorRetryMs?: number[];
+	/** The roster and rules block the Router sends when it changes. */
+	preamble?: () => string;
 }
 
 export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxRouterHandle {
@@ -110,8 +112,7 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 				errorRetryMs: options.errorRetryMs ?? [10, 10, 10],
 				rulesFor: deps.rulesFor,
 				cwd: deps.stateDir,
-				rules: "",
-				domainRoster: "",
+				preamble: options.preamble ?? (() => ""),
 				afterCommand: deps.afterCommand,
 			});
 		},
