@@ -156,10 +156,11 @@ test("看盘技能不说小时线一定看得到开盘：收盘后查到的小�
 	assert.match(skill, /开盘价.*`day`/);
 });
 
-test("看盘技能有一节盯盘条件：领队自己用 tripwire 不派活，改之前不读网页，中文名换成代码，按收据核对，写明默认值，汇报不复述成本价和股数，被拒照实转告", () => {
+test("看盘技能有一节盯盘条件：领队自己用 tripwire 不派活，改之前不读网页，中文名换成代码，请使用者看网页上「盯盘条件（只在本机）」那一行或左栏关注的来源，写明默认值，汇报不复述成本价和股数，被拒照实转告", () => {
 	const skill = readFileSync(join(REPO_MODULES, "us-market/skills/us-market-desk/SKILL.md"), "utf8");
 	const section = skill.split(/\n(?=## )/).find((s) => s.startsWith("## 盯盘条件")) ?? "";
-	for (const pattern of [/`tripwire`/, /不派/, /代码/, /收据/, /either/, /5 和 20/, /不复述成本价和股数/, /拒绝/, /web_get/]) assert.match(section, pattern);
+	for (const pattern of [/`tripwire`/, /不派/, /代码/, /盯盘条件（只在本机）/, /关注的来源/, /either/, /5 和 20/, /不复述成本价和股数/, /拒绝/, /web_get/]) assert.match(section, pattern);
+	assert.doesNotMatch(skill, /收据/);
 });
 
 test("看盘模块的经验放在它的技能里：us-market 的任务，助手拿到这份技能，每位成员也拿到，而且都有读它的工具", () => {
