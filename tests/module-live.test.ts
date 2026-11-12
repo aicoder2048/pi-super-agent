@@ -346,6 +346,23 @@ test("宿主跑用例时的密钥和运行时同一个来源：密钥只在密�
 	assert.equal(label(dir, "keyed"), "运行中");
 });
 
+test("读密钥时出错（密钥值有空白、密钥文件跑着时被删）：模块记为无效，原因写着出错的话，宿主不崩", async (t) => {
+	const dir = stateDir(t);
+	files(join(dir, "modules"), {
+		"keyed/module.json": JSON.stringify({ schema: 1, name: "keyed", version: "0.1.0", title: "带密钥", description: "要密钥的工具" }),
+		"keyed/tools/probe/tool.json": JSON.stringify({ title: "probe", description: "reads its key", input: { x: { type: "number", title: "x" } }, output: { y: { type: "number", title: "y" } }, secrets: ["LAB_KEY"] }),
+		"keyed/tools/probe/index.ts": `export default async () => ({ y: 1 });`,
+		"keyed/tools/probe/cases.json": JSON.stringify([{ name: "has-key", input: { x: 1 }, expect: { y: 1 } }]),
+	});
+	const { db } = boot(t, dir, {}, () => {
+		throw new Error("LAB_KEY 含有空白");
+	});
+	setModuleSwitch(db, "keyed", true);
+	await until(() => label(dir, "keyed") === "无效", "keyed 检查不过", 15_000);
+	const record = moduleRows(db).find((r) => r.name === "keyed")!.record!;
+	assert.match(describe(record).reason, /LAB_KEY 含有空白/);
+});
+
 test("副本只复制摘要算进去的文件：包里的 .git 不进副本，副本的摘要就是它的目录名", (t) => {
 	const dir = stateDir(t);
 	files(join(dir, "modules"), { "tax/.git/config": "[core]" });
