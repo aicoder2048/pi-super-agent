@@ -186,7 +186,6 @@ export class PiWorkerSpawner implements WorkerSpawner {
 	/** One dispatch: `pi --mode json -p` continuing the member's session, in its own process group, killed as a group on abort. */
 	runMember(run: MemberRun): Promise<string> {
 		const { member } = run;
-		// A member reaches module tools and knowledge only through the catalogue its `uses` narrowed the Gateway to.
 		const tools = [...memberTools(run.basis, member.tools), ...(run.domainTools ? ["domain_tool"] : []), ...(run.knowledge ? ["knowledge"] : [])];
 		const args = [
 			this.#o.cliPath ?? piCliPath(),

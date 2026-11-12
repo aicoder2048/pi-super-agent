@@ -10,7 +10,6 @@ export interface GatewayPorts {
 	copyDir(module: ModuleName, digest: Digest): string;
 	/** The version the module serves now, read from memory on every call. Undefined: switched off or gone, so its open tickets reach nothing. */
 	serving(module: ModuleName): Digest | undefined;
-	/** `<stateDir>/modules-data/<module>`: the module's instance data. */
 	dataDir(module: ModuleName): string;
 	/** A value from the host's secrets file. */
 	secret(name: string): string | undefined;
@@ -20,7 +19,6 @@ export interface GatewayPorts {
 
 type Tool = Extract<Component, { kind: "tools" }>;
 type Copy = { module: ModuleName; digest: Digest; dir: string; tools: readonly Tool[]; knowledge: readonly Knowledge[]; agents: readonly AgentDescriptor[] };
-/** A request the Gateway has a provider for: what a member's `uses` must list, the tool effect the authority table reads, and the provider. */
 type Capability = { use: string; effect: ToolEffect; run: () => Promise<Reply> };
 
 const fieldsHelp = (fields: Readonly<Record<string, FieldDescriptor>>) =>

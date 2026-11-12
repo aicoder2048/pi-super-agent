@@ -1,10 +1,4 @@
-/**
- * A module's knowledge search: Markdown split by headings into a SQLite FTS5 index at
- * `<stateDir>/modules-data/<module>/index/knowledge.db`. Bundled texts come from the pinned
- * copy, `user-import` texts from `modules-data/<module>/knowledge/<doc>/`. The index is
- * rebuilt whenever its fingerprint (the copy's digest and the imported files) no longer
- * matches, always to a temp file renamed into place.
- */
+/** The index is rebuilt whenever its fingerprint stops matching, so a package update or an edited import needs nobody to tell it. */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -14,7 +8,6 @@ import { allFiles } from "./validate.ts";
 
 export type Knowledge = Extract<Component, { kind: "knowledge" }>;
 
-/** Everything one search reads: the pinned copy, the module's instance data, the docs the copy declares. */
 export interface KnowledgeBase {
 	module: ModuleName;
 	digest: Digest;
@@ -24,7 +17,6 @@ export interface KnowledgeBase {
 }
 
 type Found = { passages: readonly Passage[]; notImported: readonly Knowledge[] };
-/** Each doc with the Markdown files it is indexed from, listed once per search. */
 type Texts = readonly { doc: Knowledge; files: readonly string[] }[];
 
 const LIMIT = 8;
@@ -34,7 +26,6 @@ const importedDir = (dataDir: string, doc: string) => join(dataDir, "knowledge",
 
 export const moduleDataDir = (stateDir: string, module: string) => join(stateDir, "modules-data", module);
 
-/** Dot files are skipped, as in a package, so a copied `.git` or `._x.md` is never indexed. */
 const markdownIn = (dir: string): string[] => (existsSync(dir) ? allFiles(dir).filter((f) => f.endsWith(".md")).sort().map((f) => join(dir, f)) : []);
 
 const textsOf = (base: KnowledgeBase): Texts =>
@@ -55,7 +46,6 @@ function fingerprint(digest: Digest, texts: Texts): string {
 	return [digest, ...imported].join("\n");
 }
 
-/** One passage per heading that has text under it. `section` is the heading path, e.g. `指南 > 7.3 心衰`. */
 function splitByHeadings(markdown: string, fallback: string): { section: string; text: string }[] {
 	const out: { section: string; text: string }[] = [];
 	const path: string[] = [];
@@ -82,7 +72,6 @@ function splitByHeadings(markdown: string, fallback: string): { section: string;
 	return out;
 }
 
-/** Idempotent: the same inputs give the same index, and a reader never sees a half-built file. */
 export function buildIndex(base: KnowledgeBase, texts = textsOf(base)): void {
 	const target = indexPath(base.dataDir);
 	mkdirSync(join(target, ".."), { recursive: true });
@@ -163,7 +152,6 @@ const AUTHORITY_TEXT = { authoritative: "权威", reference: "参考" } as const
 
 const importCommand = (module: ModuleName, doc: ComponentName) => `just module import ${module} ${doc} <文件或目录>`;
 
-/** What the Worker reads: numbered excerpts with their citation, then what is still to import. */
 export function foundText(module: ModuleName, query: string, found: Found): string {
 	const hits = found.passages.length
 		? [
@@ -175,7 +163,6 @@ export function foundText(module: ModuleName, query: string, found: Found): stri
 	return ["[模块知识]", ...hits, ...missing].join("\n");
 }
 
-/** The docs a caller may search, one line each, for the `knowledge` tool's description. */
 export function catalogueText(base: KnowledgeBase): string {
 	const missing = notImported(textsOf(base));
 	return base.docs
@@ -186,11 +173,6 @@ export function catalogueText(base: KnowledgeBase): string {
 		.join("\n");
 }
 
-/**
- * Replaces the imported text of `doc` with the Markdown at `from` (a file, or every `.md` under
- * a folder) and returns the number of files. With none, the old import stays. Copies into a
- * temp folder first, so a crash never leaves half an import.
- */
 export function importKnowledge(dataDir: string, doc: string, from: string): number {
 	const files = statSync(from).isDirectory() ? markdownIn(from) : [from];
 	if (files.length === 0) return 0;

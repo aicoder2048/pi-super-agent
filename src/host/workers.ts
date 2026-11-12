@@ -35,7 +35,6 @@ export interface WorkerSpec extends DomainKit {
 	outputRule?: string;
 	/** The module tools this helper may call, one line each. Absent: it has no `domain_tool`. */
 	domainTools?: string;
-	/** The module's knowledge docs, one line each. Absent: it has no `knowledge`. */
 	knowledge?: string;
 }
 
@@ -405,7 +404,6 @@ export class WorkerExecutor {
 		return { who: "worker", ticket: ticketId, pin, basis, member, heardOthers: kernel.heardOtherThanUser(ticketId) !== undefined };
 	}
 
-	/** What the Gateway lets this caller reach, as the help text of `domain_tool` and `knowledge`. A key is absent when there is nothing to reach. */
 	#catalogue(ticketId: string, member: string | null): { domainTools?: string; knowledge?: string } {
 		const caller = this.#callerOf(ticketId, member);
 		const entries = caller && this.#o.gateway ? this.#o.gateway.catalogue(caller) : [];

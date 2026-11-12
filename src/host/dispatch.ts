@@ -113,7 +113,6 @@ export interface MemberRun {
 	outputRule?: string;
 	/** The module tools its `uses` reaches, one line each. Absent: it has no `domain_tool`. */
 	domainTools?: string;
-	/** The module's knowledge docs its `uses` reaches. Absent: it has no `knowledge`. */
 	knowledge?: string;
 	signal: AbortSignal;
 	onUsage(u: Usage): void;

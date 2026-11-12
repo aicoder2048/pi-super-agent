@@ -5,7 +5,6 @@ import { loadConfig, loadModules } from "../host/config.ts";
 import { buildIndex, importKnowledge, moduleDataDir, type Knowledge } from "../modules/knowledge.ts";
 import type { ModuleName } from "../modules/manifest.ts";
 
-/** Copies the text into `<stateDir>/modules-data/<module>/knowledge/<doc>/`, never into the package, and rebuilds the index. */
 export function importModuleKnowledge(module: string, doc: string, from: string): number {
 	try {
 		const config = loadConfig();
