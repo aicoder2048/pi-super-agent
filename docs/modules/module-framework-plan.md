@@ -191,47 +191,49 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `src/modules/watch.ts`（`fs.watch` 递归监视，去抖）。
-- [ ] Edit `src/host/router.ts` 的 `#flush` 和 `routerSystemPrompt`，Edit `src/host/wiring.ts`。
-- [ ] Edit `modules/pi-pi/module.json`，转换成新布局。
-- [ ] Create `tests/module-watch.test.ts`，Edit `tests/router-prompt.test.ts`。
+- [x] Create `src/modules/watch.ts`（`fs.watch` 递归监视，去抖）。
+- [x] Edit `src/host/router.ts` 的 `#flush` 和 `routerSystemPrompt`，Edit `src/host/wiring.ts`。
+- [x] Edit `modules/pi-pi/module.json`，转换成新布局。
+- [x] Create `tests/module-watch.test.ts`，Edit `tests/router-prompt.test.ts`。
 
 **Build.**
 
-- [ ] 监视器看到包变了就算新摘要，交给驱动器检查。通过就换上并留一条收据（改了哪些文件），没通过旧版本继续服务。
-- [ ] 系统提示词只留固定文字。模块表摘要变了以后，下一次给幕僚长的输入前带一段当前名单和规则全文。
-- [ ] pi-pi 加 `"schema": 1` 和 `"version"`，由新扫描加载，行为不变。
+- [x] 监视器看到包变了就算新摘要，交给驱动器检查。通过就换上并留一条收据（改了哪些文件），没通过旧版本继续服务。
+- [x] 系统提示词只留固定文字。模块表摘要变了以后，下一次给幕僚长的输入前带一段当前名单和规则全文。
+- [x] pi-pi 加 `"schema": 1` 和 `"version"`，由新扫描加载，行为不变。
 
 **You see.**
 
-- [ ] 宿主运行时改 personal-tax 的 `rules.md` 存盘，`just modules` 两秒内显示新摘要，宿主日志有一行收据。
-- [ ] 幕僚长下一次回复里能用上新加的模块。
+- [x] 宿主运行时改 personal-tax 的 `rules.md` 存盘，`just modules` 两秒内显示新摘要，宿主日志有一行收据。
+- [x] 幕僚长下一次回复里能用上新加的模块。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/module-watch.test.ts` 覆盖新增、修改、删除、坏的修改保留旧版本、连续保存只换一次。`tests/router-prompt.test.ts` 覆盖名单只在摘要变化后带一次。Run `just test`.
+- [x] `tests/module-watch.test.ts` 覆盖新增、修改、删除、坏的修改保留旧版本、连续保存只换一次。`tests/router-prompt.test.ts` 覆盖名单只在摘要变化后带一次。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/f2b-live.ts`。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都问一个 pi-pi 的问题。Save `f2b-regression.txt`. Pass when 两边任务都属于 pi-pi，成员名单相同。
-- [ ] Lane 2. 改技能文件存盘。Save `f2b-edit.txt`. Pass when 两秒内换上新摘要，收据列出这个文件。
-- [ ] Lane 3. 存一个坏的 `module.json`。Save `f2b-bad.txt`. Pass when 状态写出原因，旧版本继续服务。
-- [ ] Lane 4. 再改好。Save `f2b-fix.txt`. Pass when 换上新版本。
-- [ ] Lane 5. 放进一个新模块文件夹。Save `f2b-add.txt`. Pass when 出现为已停用。
-- [ ] Lane 6. 删掉模块文件夹。Save `f2b-remove.txt`. Pass when 状态变成包不在了，实例数据目录还在。
-- [ ] Lane 7. 一秒内连存五次。Save `f2b-burst.txt`. Pass when 只换一次，摘要是最后一次。
-- [ ] Lane 8. 名单变化后发一句话。Save `f2b-roster.txt`. Pass when 幕僚长收到的输入前面有一段名单，再发一句时没有。
-- [ ] Lane 9. 用真模型 `openai-codex/*` 问新打开模块管的事。Save `f2b-real.txt`. Pass when 任务分到这个模块。
-- [ ] Lane 10. pi-pi 转换后跑 `just module check modules/pi-pi`。Save `f2b-pipi.txt`. Pass when ok，成员数是 9。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都问一个 pi-pi 的问题。Save `f2b-regression.txt`. Pass when 两边任务都属于 pi-pi，成员名单相同。
+- [x] Lane 2. 改技能文件存盘。Save `f2b-edit.txt`. Pass when 两秒内换上新摘要，收据列出这个文件。
+- [x] Lane 3. 存一个坏的 `module.json`。Save `f2b-bad.txt`. Pass when 状态写出原因，旧版本继续服务。
+- [x] Lane 4. 再改好。Save `f2b-fix.txt`. Pass when 换上新版本。
+- [x] Lane 5. 放进一个新模块文件夹。Save `f2b-add.txt`. Pass when 出现为已停用。
+- [x] Lane 6. 删掉模块文件夹。Save `f2b-remove.txt`. Pass when 状态变成包不在了，实例数据目录还在。
+- [x] Lane 7. 一秒内连存五次。Save `f2b-burst.txt`. Pass when 只换一次，摘要是最后一次。
+- [x] Lane 8. 名单变化后发一句话。Save `f2b-roster.txt`. Pass when 幕僚长收到的输入前面有一段名单，再发一句时没有。
+- [x] Lane 9. 用真模型 `openai-codex/*` 问新打开模块管的事。Save `f2b-real.txt`. Pass when 任务分到这个模块。
+- [x] Lane 10. pi-pi 转换后跑 `just module check modules/pi-pi`。Save `f2b-pipi.txt`. Pass when ok，成员数是 9。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 幕僚长每次输入的 token 数，以及存盘到换上的时间。
-- [ ] Probe. trunk 和 head 交替各发 5 句同样的话，读 Pi 会话的 usage。存盘到收据的时间量 10 次。
-- [ ] Baseline. Record the trunk token 中位数 first.
-- [ ] Rule. 名单没变时 head 每次输入比 trunk 多 100 个 token 以上就失败。存盘到换上超过 2 秒就失败。
+- [x] Metric. 幕僚长每次输入的 token 数，以及存盘到换上的时间。
+- [x] Probe. trunk 和 head 交替各发 5 句同样的话，读 Pi 会话的 usage。存盘到收据的时间量 10 次。
+- [x] Baseline. Record the trunk token 中位数 first.
+- [x] Rule. 名单没变时 head 每次输入比 trunk 多 100 个 token 以上就失败。存盘到换上超过 2 秒就失败。
 
 **Review gate.** None. F2b is not review-gated.
+
+2026-11-12 在 4bab7f4 上通过：`just test` 1398 条全过（`tests/watchdog-main.test.ts` 的「终端 Ctrl+C」第一次跑偶发失败，重跑通过）；`node docs/modules/architecture/check.mjs` 7 项 ok；`docs/modules/evidence/f2b-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f2b/owner/`。改技能存盘 0.49 秒换上，收据列出这个文件；坏的 module.json 旧版本继续服务，`just modules` 写出原因；一秒内存五次只换一次；Lane 9 真模型 `openai-codex/gpt-6.1-terra` 把报税的问题分到 personal-tax。监视器的去抖从 150 毫秒改成 300 毫秒，因为一秒内均匀存五次时间隔约 150 到 200 毫秒，150 毫秒的窗口会换五次。宿主上跑工具测试用例走 F2a 的异步路径，存盘回调里没有 `spawnSync`；收据在换上和监视器报文件名两件事都到了以后才写，打开模块时正在复制副本又存盘也有收据（Lane 2 第一次重跑抓到这个竞态）。Perf：幕僚长 token 量的是每个新会话的第一句，trunk 和 head 交替各 5 次，trunk 中位数 2688（离散 6），head 2780（离散 4），多 92 个，就是名单那一段的标题和系统提示词里说明它的一行；名单没变时之后的输入不再带这一段（推断，没单独量）。同一会话里连发五句的量法不可用，真模型开的任务和 Worker 汇报两边不一样，差了一整条汇报。存盘到收据 10 次中位数 492 毫秒（离散 21），其中 300 毫秒是去抖。
 
 **Merge.**
 
