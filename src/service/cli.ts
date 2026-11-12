@@ -66,7 +66,8 @@ function preflight(input: agent.LaunchAgentInput): string {
 	}
 	const bash = agent.findOnPath("bash", env.PATH, isExecutable);
 	if (!bash) throw new ConfigError(`服务的 PATH（${env.PATH}）里找不到 bash，成员要用它`);
-	return `[service] 预检通过：node ${input.node}，npm root -g 找到 Pi，bash ${bash}，config.json 能加载`;
+	const passed = `[service] 预检通过：node ${input.node}，npm root -g 找到 Pi，bash ${bash}${input.just ? `，just ${input.just}` : ""}，config.json 能加载`;
+	return input.just ? passed : `${passed}\n[service] PATH 里找不到 just：module-builder 的专家队跑不了 just module new/check/try。装上 just 或把它的目录加进 PATH，再重跑 just service-install`;
 }
 
 function bootout(label: agent.ServiceLabel): void {
@@ -80,10 +81,11 @@ function bootout(label: agent.ServiceLabel): void {
 
 function install(label: agent.ServiceLabel): void {
 	if (uid === 0) throw new ConfigError("不要用 sudo 运行：LaunchAgent 装在你自己的账户下");
-	const node = agent.findOnPath("node", process.env.PATH ?? "", isExecutable);
+	const findTool = (name: string) => agent.findOnPath(name, process.env.PATH ?? "", isExecutable);
+	const node = findTool("node");
 	if (!node) throw new ConfigError("PATH 里找不到 node");
 	if (!isExecutable(join(dirname(node), "npm"))) throw new ConfigError(`${dirname(node)} 里没有 npm：服务用 node 旁边的 npm 找全局安装的 Pi`);
-	const input: agent.LaunchAgentInput = { label, node, repo, home: homedir(), stateDir: defaultStateDir() };
+	const input: agent.LaunchAgentInput = { label, node, repo, home: homedir(), stateDir: defaultStateDir(), just: findTool("just"), uv: findTool("uv") };
 	const plistFile = agent.plistPath(input.home, label);
 	console.log(preflight(input));
 	const desired = agent.launchAgentPlist(input);
