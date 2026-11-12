@@ -106,7 +106,6 @@ const inDomain = (call: Call, domain: string, basis = "request") => ({ ...call, 
 const dataCall = (args: Record<string, unknown>): Call => ({ name: "data", args });
 const cea = (value: number, takenAt: string) => ({ item: "CEA", value, unit: "ng/mL", reference: "<5", takenAt, lab: "协和" });
 
-/** One Router step per lane: the user's sentence opens a ticket whose brief is the lane's name. */
 const opens = (brief: string, domain: string, basis = "request") => on(`开 ${brief}`, new RegExp(`^\\[对话\\][\\s\\S]*使用者：${brief}`), (c: string) => [inDomain(openTicket(c, brief), domain, basis), reply(c, `好，${brief}`)]);
 const relay = on("转述汇报", /^\[Worker 汇报\]/, (c: string) => [reply(c, `转述：${c.split("\n")[1] ?? ""}`)]);
 const B = { write: "L2 记指标", alias: "L3 旧字段名", infer: "L4 推断写", uses: "L5 成员越权", other: "L6 别的模块", shareable: "L9 只读公开" };
@@ -304,7 +303,6 @@ async function lanes(): Promise<void> {
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
 const line = (name: string, xs: number[], unit: string) => `${name}: median ${median(xs).toFixed(2)} ${unit}, runs ${xs.map((t) => t.toFixed(2)).join(" ")}, spread ${(Math.max(...xs) - Math.min(...xs)).toFixed(2)} ${unit}`;
 
-/** Host-side time of one call, measured in-process on the module's real data.db. */
 async function perf(): Promise<void> {
 	const lines: string[] = [];
 	const ROWS = 100_000;

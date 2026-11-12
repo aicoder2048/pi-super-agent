@@ -92,7 +92,6 @@ const problemText = (problems: readonly { where: string; reason: string }[]) => 
 
 const problemsFor = (stored: Stored, components: readonly Component[]) => structureChanges(asComponents(stored), components).problems;
 
-/** Input the caller can fix: an unknown collection or field, a value of the wrong type, a missing `from`. */
 export class DataInputError extends Error {}
 
 type DataComponent = Extract<Component, { kind: "data" }>;
@@ -101,7 +100,7 @@ type Value = Extract<SQLInputValue, string | number | null>;
 /** What a read or write touched. `collection` is the current name, whatever name the caller used. */
 export type Accessed = { collection: ComponentName; class: DataClass; rows: Row[] };
 
-/** Reads and writes rows. `components` is the serving version: its structure is ensured first, and it decides which fields show. */
+/** `components` is the serving version: its structure is ensured first, and it decides which fields show. */
 export interface ModuleRows {
 	query(module: ModuleName, components: readonly Component[], collection: string, query: Query, who: string): Accessed;
 	write(module: ModuleName, components: readonly Component[], collection: string, rows: readonly Json[], from: string, who: string): Accessed;

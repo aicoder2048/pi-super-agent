@@ -28,7 +28,6 @@ function files(root: string, tree: Record<string, string>): void {
 	}
 }
 
-/** A state dir with a module store; `keep` copies a package in and returns its digest. */
 function world(t: TestContext) {
 	const root = mkdtempSync(join(tmpdir(), "psa-data-tool-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -246,7 +245,6 @@ test("工具目录：每类数据一行，带字段说明；成员只见 uses �
 const USER = 42;
 const NOTICE = "个人医疗健康 有新内容，请在网页上查看";
 
-/** A host serving personal-health, a fake Telegram chat that is open, and a Router that relays each report in full. */
 async function hostWithHealth(t: TestContext, script: (worker: FakeWorker) => Promise<unknown>, basis: "request" | "inference" = "request") {
 	const w = health(t);
 	const tg = await FakeTelegram.start();

@@ -1047,7 +1047,6 @@ export class Kernel {
 		this.#run("UPDATE tickets SET read_web_at = COALESCE(read_web_at, ?) WHERE id = ?", this.#now(), ticketId);
 	}
 
-	/** The ticket read or wrote a module's `private` data. Telegram then gets only a pointer to the web page for it. */
 	touchPrivate(ticketId: string): void {
 		this.#run("UPDATE tickets SET touched_private_at = COALESCE(touched_private_at, ?) WHERE id = ?", this.#now(), ticketId);
 	}
