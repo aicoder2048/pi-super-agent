@@ -80,7 +80,8 @@ export default function workerExtension(pi: ExtensionAPI) {
 	const tripwireHelp = process.env.PSA_TRIPWIRES;
 	const domainToolsHelp = process.env.PSA_DOMAIN_TOOLS;
 	const knowledgeHelp = process.env.PSA_KNOWLEDGE;
-	for (const name of Object.keys(process.env)) if (name.startsWith("PSA_")) delete process.env[name];
+	// PSA_REPO is no credential; commands use it to reach the justfile.
+	for (const name of Object.keys(process.env)) if (name.startsWith("PSA_") && name !== "PSA_REPO") delete process.env[name];
 	const bg = new Map<string, BgCommand>();
 	let bgSeq = 0;
 	let deadline: NodeJS.Timeout | undefined;

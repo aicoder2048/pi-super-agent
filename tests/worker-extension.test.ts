@@ -104,10 +104,14 @@ test("web_get 先请宿主记下这个任务读过网页（worker.read_web），
 	await assert.rejects(refused.run("web_get", { url: "http://127.0.0.1:9/" }), /宿主没记下/);
 });
 
-test("扩展读完宿主连接信息后从环境变量里删掉，命令子进程继承不到", async (t) => {
-	const w = await load("request");
-	t.after(w.close);
+test("扩展读完宿主连接信息后从环境变量里删掉，命令子进程继承不到；代码仓库的位置 PSA_REPO 留给命令用", async (t) => {
+	const w = await load("request", { PSA_REPO: "/repo" });
+	t.after(() => {
+		delete process.env.PSA_REPO;
+		return w.close();
+	});
 	for (const name of ["PSA_SOCKET", "PSA_TOKEN", "PSA_TICKET", "PSA_BASIS"]) assert.equal(process.env[name], undefined, name);
+	assert.equal(process.env.PSA_REPO, "/repo");
 });
 
 test("宿主给了可查来源（PSA_LOOKUPS）的助手，不论哪种依据都有 lookup：描述里列出这些来源，调用经宿主连接发出", async (t) => {
