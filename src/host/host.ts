@@ -351,7 +351,7 @@ export class Host {
 	}
 
 	#boardState(): BoardState {
-		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard(), watching: this.#watchingNow(), modules: this.#modules?.cards() ?? [] };
+		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard(), watching: this.#watchingNow(), modules: this.#modules?.cards() ?? [], alerts: this.kernel.alertsToday() };
 	}
 
 	#watchingNow(): WatchedSource[] {

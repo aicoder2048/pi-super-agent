@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { createWriteStream, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createWriteStream, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -411,4 +411,31 @@ async function saveReport(out: string, stepName: string, error: unknown, pages: 
 <p><a href="page-console.log">page-console.log</a> · <a href="host.log">host.log</a> · <a href="fake-model.jsonl">fake-model.jsonl</a></p>`,
 	);
 	return join(out, "index.html");
+}
+
+/** A package folder as story files under modules/<as>/. */
+export const packageFiles = (from: string, as: string): Record<string, string> =>
+	Object.fromEntries(
+		readdirSync(from, { recursive: true, withFileTypes: true })
+			.filter((e) => e.isFile())
+			.map((e) => [join("modules", as, e.parentPath.slice(from.length), e.name), readFileSync(join(e.parentPath, e.name), "utf8")]),
+	);
+
+/** WCAG contrast of the first match against the nearest painted background. */
+export function contrastOf(page: Page, selector: string): Promise<number> {
+	return page.locator(selector).first().evaluate((node) => {
+		const rgb = (css: string) => css.match(/[\d.]+/g)!.slice(0, 3).map(Number);
+		const lum = (css: string) => {
+			const [r, g, b] = rgb(css).map((v) => {
+				const c = v / 255;
+				return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+			});
+			return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+		};
+		let painted: Element | null = node;
+		while (painted && /rgba\(.*, 0\)|transparent/.test(getComputedStyle(painted).backgroundColor)) painted = painted.parentElement;
+		const back = getComputedStyle(painted ?? document.body).backgroundColor;
+		const [a, b] = [lum(getComputedStyle(node).color), lum(back)].sort((x, y) => y - x);
+		return (a + 0.05) / (b + 0.05);
+	});
 }

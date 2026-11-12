@@ -119,7 +119,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Review gate.** The operator reviews before merge.
 
 - [ ] Copy lane 2, 3, 5 and 7 screenshots into `docs/web-client/evidence/ld1-review-<slug>.png`.
-- [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/web-client/evidence/ld1-review.webm`. 本机用 Playwright 录像。
+- [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/web-client/evidence/ld1-review.mp4`. 本机用 Playwright 录像，再用 ffmpeg 转成 mp4。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
@@ -176,7 +176,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Review gate.** The operator reviews before merge.
 
 - [ ] Copy lane 2, 4, 6 and 7 screenshots into `docs/web-client/evidence/ld2-review-<slug>.png`.
-- [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/web-client/evidence/ld2-review.webm`. 本机用 Playwright 录像，390 宽。
+- [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/web-client/evidence/ld2-review.mp4`. 本机用 Playwright 录像，390 宽，再用 ffmpeg 转成 mp4。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
