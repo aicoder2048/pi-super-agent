@@ -118,6 +118,8 @@ export interface FeedDescriptor {
 	secrets?: readonly string[];
 	/** Poll interval such as `15m` or `1d`. Push connectors need none. */
 	every?: string;
+	/** Called only while this is true. `us-market-hours`: a trading day from the open to 20 minutes after the close. */
+	when?: FeedWhen;
 	/** Defaults that are the same for every user. */
 	settings?: Readonly<Record<string, unknown>>;
 	/** What the user fills in on the modules page. The answers are instance data. */
@@ -131,6 +133,16 @@ export interface FeedDescriptor {
 	/** Regular expressions. A trigger whose body matches one is dropped before the Router sees it. */
 	ignore?: readonly string[];
 }
+
+export const FEED_WHEN = ["us-market-hours"] as const;
+export type FeedWhen = (typeof FEED_WHEN)[number];
+
+/**
+ * `feeds/<name>/fixtures/<case>.json`. `input` replaces what the host would hand the handler
+ * (settings merge over feed.json's). `responses` answers the handler's `fetch` by exact URL,
+ * so `just module check` and `just module try` never reach the network.
+ */
+export type FeedFixture = { name: string; input: { readonly [key: string]: unknown }; responses: { readonly [url: string]: unknown } };
 
 /** Front matter of `agents/<name>.md`. The body is the member's prompt. */
 export interface AgentDescriptor {
@@ -155,7 +167,7 @@ export type Component =
 	| { kind: "data"; name: ComponentName; collection: CollectionDescriptor; seeded: boolean }
 	| { kind: "tools"; name: ComponentName; tool: ToolDescriptor; cases: readonly ToolCase[] }
 	| { kind: "skills"; name: ComponentName; description: string }
-	| { kind: "feeds"; name: ComponentName; feed: FeedDescriptor }
+	| { kind: "feeds"; name: ComponentName; feed: FeedDescriptor; fixtures: readonly FeedFixture[] }
 	| { kind: "agents"; name: ComponentName; agent: AgentDescriptor }
 	| { kind: "evals"; name: ComponentName; eval: EvalDescriptor };
 

@@ -38,6 +38,8 @@ export interface HostConfig {
 	/** Absolute. Where helpers and members put what they make (ADR-0015). */
 	outputDir: string;
 	sources: Record<string, unknown>;
+	/** Written by `just module try`: each package feed runs its fixtures once, and no connector runs. */
+	feedFixtures: boolean;
 	/** Present means the Telegram client runs. An empty list is setup mode: it only tells whoever writes their own numeric id. */
 	telegram?: { allowedUserIds: readonly number[] };
 }
@@ -142,6 +144,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		secretsFile,
 		outputDir,
 		sources,
+		feedFixtures: raw.feedFixtures === true,
 		...(telegram && { telegram }),
 	};
 }

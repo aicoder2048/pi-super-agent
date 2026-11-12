@@ -1,22 +1,31 @@
 {
-  "trades": [
-    {
-      "id": "t-1001",
-      "tradedAt": "2026-03-02",
-      "symbol": "VTI",
-      "side": "sell",
-      "quantity": 10,
-      "proceeds": 2890.5,
-      "realizedGain": 312.4
-    },
-    {
-      "id": "t-1002",
-      "tradedAt": "2026-03-05",
-      "symbol": "BND",
-      "side": "sell",
-      "quantity": 20,
-      "proceeds": 1460,
-      "realizedGain": -18.2
+  "input": {
+    "settings": {
+      "account": "A-1"
     }
-  ]
+  },
+  "responses": {
+    "https://api.broker.example/v1/accounts/A-1/trades?since=1970-01-01": {
+      "trades": [
+        {
+          "id": "t-1001",
+          "tradedAt": "2026-03-02",
+          "symbol": "VTI",
+          "side": "sell",
+          "quantity": 10,
+          "proceeds": 2890.5,
+          "realizedGain": 312.4
+        },
+        {
+          "id": "t-1002",
+          "tradedAt": "2026-03-05",
+          "symbol": "BND",
+          "side": "sell",
+          "quantity": 20,
+          "proceeds": 1460,
+          "realizedGain": -18.2
+        }
+      ]
+    }
+  }
 }

@@ -112,7 +112,7 @@ async function rehearse(source: string, module: string, exams: readonly Exam[], 
 	let passed: string | undefined;
 	try {
 		cpSync(source, join(stateDir, "modules", module), { recursive: true });
-		writeFileSync(join(stateDir, "config.json"), JSON.stringify({ models, modulesDirs: [join(stateDir, "modules")], webPort: 0 }));
+		writeFileSync(join(stateDir, "config.json"), JSON.stringify({ models, modulesDirs: [join(stateDir, "modules")], webPort: 0, feedFixtures: true }));
 		const store = openStore(join(stateDir, "state.db"));
 		setModuleSwitch(store, module, true);
 		store.close();

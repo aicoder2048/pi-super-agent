@@ -17,6 +17,8 @@ const EMPTY: Stored = { collections: {}, aliases: {} };
 const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 const literal = (text: string) => `'${text.replaceAll("'", "''")}'`;
 const CONDITIONS = "CREATE TABLE IF NOT EXISTS _conditions (id TEXT PRIMARY KEY, collection TEXT NOT NULL, key TEXT NOT NULL, kind TEXT NOT NULL, params TEXT NOT NULL, set_at TEXT NOT NULL, note TEXT)";
+/** Each feed's ids already stored, so a repeated batch is a no-op; and each feed's cursor and last call. */
+const FEED_TABLES = "CREATE TABLE IF NOT EXISTS _feed_rows (source TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (source, id)); CREATE TABLE IF NOT EXISTS _feeds (source TEXT PRIMARY KEY, cursor TEXT, last_run_at INTEGER)";
 const column = (name: string, field: FieldDescriptor) => `${quote(name)} ${field.type === "number" ? "REAL" : "TEXT"}`;
 const plain = ({ was: _, ...field }: FieldDescriptor) => field;
 const renamed = (aliases: Record<string, string>, from: string, to: string) => ({
@@ -93,12 +95,22 @@ export type Accessed = { collection: ComponentName; class: DataClass; rows: Row[
 /** `components` is the serving version: its structure is ensured first, and it decides which fields show. */
 export interface ModuleRows {
 	query(module: ModuleName, components: readonly Component[], collection: string, query: Query, who: string): Accessed;
-	write(module: ModuleName, components: readonly Component[], collection: string, rows: readonly Json[], from: string, who: string): Written;
+	/** `byFeed`: `from` is a feed's source and each row's `id` is that feed's own id, so a row already stored from it is skipped. */
+	write(module: ModuleName, components: readonly Component[], collection: string, rows: readonly Json[], from: string, who: string, byFeed?: boolean): Written;
 	watch(module: ModuleName, components: readonly Component[], request: WatchRequest, who: string): Watched;
 }
 
 /** `alerts`: the conditions the written rows met, for the host to post. */
 export type Written = Accessed & { alerts: readonly Alert[] };
+
+export type FeedState = { cursor: string | null; lastRunAt: number | null };
+
+/** Kept in the module's `data.db` beside the rows, so a feed resumes where it was after a crash. */
+export interface FeedStates {
+	feedState(module: ModuleName, source: string): FeedState;
+	/** A field left out keeps its stored value. */
+	saveFeedState(module: ModuleName, source: string, state: { cursor?: string; lastRunAt?: number }): void;
+}
 
 export type WatchRequest = Extract<Request, { kind: "watch" }>;
 export type Watched = { collection: ComponentName; class: DataClass; output: { conditions: SetCondition[] } | { condition: SetCondition; receipt: string } };
@@ -173,14 +185,14 @@ function alertsFor(db: DatabaseSync, { name, collection }: DataComponent, writte
 	});
 }
 
-export function instanceData(stateDir: string): InstanceData & ModuleRows {
+export function instanceData(stateDir: string): InstanceData & ModuleRows & FeedStates {
 	const pathOf = (module: ModuleName) => join(moduleDataDir(stateDir, module), "data.db");
 	const withRows = <T>(module: ModuleName, components: readonly Component[], access: { who: string; collection: string; op: Op }, use: (db: DatabaseSync, stored: Stored) => T): T => {
 		const ensured = data.migrate(module, components);
 		if (!ensured.ok) throw new Error(ensured.reason);
 		const db = new DatabaseSync(pathOf(module));
 		try {
-			db.exec(`CREATE TABLE IF NOT EXISTS _access (at TEXT NOT NULL, who TEXT NOT NULL, collection TEXT NOT NULL, op TEXT NOT NULL, rows INTEGER NOT NULL, outcome TEXT NOT NULL); ${CONDITIONS}`);
+			db.exec(`CREATE TABLE IF NOT EXISTS _access (at TEXT NOT NULL, who TEXT NOT NULL, collection TEXT NOT NULL, op TEXT NOT NULL, rows INTEGER NOT NULL, outcome TEXT NOT NULL); ${CONDITIONS}; ${FEED_TABLES}`);
 			return use(db, readStored(db));
 		} catch (error) {
 			if (error instanceof DataInputError) logAccess(db, access.who, access.collection, access.op, 0, `refused：${error.message}`);
@@ -192,7 +204,18 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 	const logAccess = (db: DatabaseSync, who: string, collection: string, op: Op, rows: number, outcome = "ok") =>
 		db.prepare("INSERT INTO _access VALUES (?, ?, ?, ?, ?, ?)").run(new Date().toISOString(), who, collection, op, rows, outcome);
 
-	const data: InstanceData & ModuleRows = {
+	const withFeeds = <T>(module: ModuleName, use: (db: DatabaseSync) => T): T => {
+		mkdirSync(moduleDataDir(stateDir, module), { recursive: true });
+		const db = new DatabaseSync(pathOf(module));
+		try {
+			db.exec(FEED_TABLES);
+			return use(db);
+		} finally {
+			db.close();
+		}
+	};
+
+	const data: InstanceData & ModuleRows & FeedStates = {
 		check(module, components) {
 			const path = pathOf(module);
 			if (!existsSync(path)) return [];
@@ -259,23 +282,28 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 				return { collection: component.name, class: component.collection.class, rows };
 			});
 		},
-		write(module, components, collection, rows, from, who) {
+		write(module, components, collection, rows, from, who, byFeed = false) {
 			return withRows(module, components, { who, collection, op: "write" }, (db, stored) => {
 				if (from.trim() === "") throw new DataInputError("写数据要写 from：这些行从哪里来，例如原件的路径，或「使用者口述」");
 				const { component, field } = resolve(stored, components, collection);
 				const { fields, kind } = component.collection;
 				const table = quote(component.name);
 				const ids: number[] = [];
+				const seen = db.prepare("INSERT OR IGNORE INTO _feed_rows VALUES (?, ?)");
 				db.exec("BEGIN");
 				try {
 					for (const row of rows) {
 						if (row === null || typeof row !== "object" || Array.isArray(row)) throw new DataInputError(`每一行要是一个对象，收到 ${JSON.stringify(row)}`);
 						const { id, ...given } = row as Record<string, Json>;
+						if (byFeed) {
+							if (typeof id !== "string" || id === "") throw new DataInputError(`feed 交回的每一行要有文字 id，收到 ${JSON.stringify(row)}`);
+							if (Number(seen.run(from, id).changes) === 0) continue;
+						}
 						const values = Object.entries(given).map(([name, value]) => {
 							const now = field(name);
 							return [now, valueOf(fields[now]!, name, value)] as const;
 						});
-						if (id === undefined) {
+						if (id === undefined || byFeed) {
 							const names = ["_from", ...values.map(([n]) => n)].map(quote);
 							const result = db.prepare(`INSERT INTO ${table} (${names.join(", ")}) VALUES (${names.map(() => "?").join(", ")})`).run(from, ...values.map(([, v]) => v));
 							ids.push(Number(result.lastInsertRowid));
@@ -304,6 +332,17 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 				const written = ids.map((id) => read.get(id) as Record<string, Value>);
 				return { collection: component.name, class: component.collection.class, rows: written.map((row) => rowOf(visible, row)), alerts: alertsFor(db, component, written) };
 			});
+		},
+		feedState(module, source) {
+			return withFeeds(module, (db) => {
+				const row = db.prepare("SELECT cursor, last_run_at FROM _feeds WHERE source = ?").get(source) as { cursor: string | null; last_run_at: number | null } | undefined;
+				return { cursor: row?.cursor ?? null, lastRunAt: row?.last_run_at ?? null };
+			});
+		},
+		saveFeedState(module, source, { cursor, lastRunAt }) {
+			withFeeds(module, (db) =>
+				db.prepare("INSERT INTO _feeds VALUES (?, ?, ?) ON CONFLICT (source) DO UPDATE SET cursor = COALESCE(excluded.cursor, cursor), last_run_at = COALESCE(excluded.last_run_at, last_run_at)").run(source, cursor ?? null, lastRunAt ?? null),
+			);
 		},
 		watch(module, components, request, who) {
 			return withRows(module, components, { who, collection: request.collection, op: request.op === "list" ? "read" : "write" }, (db, stored) => {

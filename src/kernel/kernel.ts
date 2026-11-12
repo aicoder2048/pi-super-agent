@@ -239,8 +239,8 @@ export class Kernel {
 
 			const triggerId = this.#id("trg");
 			this.#run(
-				`INSERT INTO triggers (id, source, external_id, sender, body, occurred_at, received_at, disposition)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				`INSERT INTO triggers (id, source, external_id, sender, body, occurred_at, received_at, disposition, private)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				triggerId,
 				sub.source,
 				sub.externalId,
@@ -249,6 +249,7 @@ export class Kernel {
 				sub.occurredAt,
 				this.#now(),
 				disposition,
+				sub.private ? 1 : 0,
 			);
 			for (const threadId of new Set(threadIds)) {
 				this.#run("INSERT INTO trigger_threads (trigger_id, thread_id) VALUES (?, ?)", triggerId, threadId);
@@ -1276,6 +1277,7 @@ export class Kernel {
 			this.#servingDigest(this.#ticketRow(ticketId)!.domain),
 			ticketId,
 		);
+		if (triggerId !== null && this.#get("SELECT private FROM triggers WHERE id = ?", triggerId)?.private === 1) this.touchPrivate(ticketId);
 		this.#wake(ticketId);
 	}
 

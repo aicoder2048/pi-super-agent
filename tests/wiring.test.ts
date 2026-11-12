@@ -401,3 +401,22 @@ test("入口：宿主的 Gateway 查模块知识，索引建在状态目录的 m
 	assert.equal(reply.ok && reply.passages?.[0]?.doc, "tumor-marker-basics");
 	assert.ok(existsSync(join(config.stateDir, "modules-data/personal-health/index/knowledge.db")));
 });
+
+test("真实接线：模块包的 feed 交给调度器，写进 private 数据的 feed 算私密来源；config 的 feedFixtures 打开预演", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const root = mkdtempSync(join(tmpdir(), "psa-wire-feeds-"));
+	const pkg = join(root, "lab");
+	mkdirSync(join(pkg, "data", "readings"), { recursive: true });
+	mkdirSync(join(pkg, "feeds", "tick"), { recursive: true });
+	mkdirSync(join(pkg, "feeds", "drop"), { recursive: true });
+	writeFileSync(join(pkg, "module.json"), JSON.stringify({ schema: 1, name: "lab", version: "0.1.0" }));
+	writeFileSync(join(pkg, "data", "readings", "collection.json"), JSON.stringify({ title: "读数", kind: "series", class: "private", fields: { value: { type: "number", title: "数值" } } }));
+	writeFileSync(join(pkg, "feeds", "tick", "feed.json"), JSON.stringify({ title: "整点", connector: "timer", every: "1h", notice: "到点了" }));
+	writeFileSync(join(pkg, "feeds", "drop", "feed.json"), JSON.stringify({ title: "投递", connector: "inbox", into: "readings" }));
+	const modules = servedAsHost(Modules.load([root]));
+	const options = createHostOptions({ config: { ...hostConfig(provider), feedFixtures: true }, modules: fixed(modules), modelRuntime, log: () => {} });
+	assert.deepEqual(options.moduleFeeds?.feeds().map((f) => f.source).sort(), ["lab/drop", "lab/tick"]);
+	assert.equal(options.moduleFeeds?.fixtures, true);
+	assert.deepEqual(options.moduleFeeds?.feeds().map((f) => [f.source, f.private]).sort(), [["lab/drop", true], ["lab/tick", false]]);
+	assert.equal(options.sourcePolicy?.({ source: "lab/tick", externalId: "x", threads: [], sender: "lab/tick", body: "到点了", occurredAt: 0 }), "candidate");
+});

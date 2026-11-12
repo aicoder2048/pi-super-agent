@@ -271,6 +271,8 @@ export function openStore(path: string): DatabaseSync {
 	if (!ticketColumns.includes("read_web_at")) db.exec("ALTER TABLE tickets ADD COLUMN read_web_at INTEGER");
 	if (!ticketColumns.includes("touched_private_at")) db.exec("ALTER TABLE tickets ADD COLUMN touched_private_at INTEGER");
 	const hostLineColumns = db.prepare("PRAGMA table_info(host_lines)").all().map((c) => (c as { name: string }).name);
+	const triggerColumns = db.prepare("PRAGMA table_info(triggers)").all().map((c) => (c as { name: string }).name);
+	if (!triggerColumns.includes("private")) db.exec("ALTER TABLE triggers ADD COLUMN private INTEGER NOT NULL DEFAULT 0");
 	if (!hostLineColumns.includes("private_title")) db.exec("ALTER TABLE host_lines ADD COLUMN private_title TEXT");
 	if (!ticketColumns.includes("tokens_cached")) db.exec("ALTER TABLE tickets ADD COLUMN tokens_cached INTEGER NOT NULL DEFAULT 0");
 	const retitle = db.prepare("UPDATE tickets SET title = ? WHERE id = ?");

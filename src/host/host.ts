@@ -29,6 +29,11 @@ import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpa
 import type { Domains } from "../modules.ts";
 import type { LiveModules } from "./live-modules.ts";
 import type { Alert, Gateway } from "../modules/protocol.ts";
+import { runFeed, type FeedEntry, type FeedPorts } from "../modules/feed-runner.ts";
+import { instanceData } from "../modules/instance-data.ts";
+import { createScheduler, type Scheduler } from "../modules/scheduler.ts";
+import { threadId } from "../sources/generic.ts";
+import { inPollWindow } from "../sources/market/session.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
 
 export interface RouterLike {
@@ -52,6 +57,8 @@ export interface HostOptions {
 	sourcePolicy?: SourcePolicy;
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	isMarketSource?: (source: string) => boolean;
+	/** The serving modules' feeds, asked every tick. `fixtures`: `just module try` runs each feed's fixtures once instead of its connector. */
+	moduleFeeds?: { feeds(): readonly FeedEntry[]; fixtures: boolean; secret?: (name: string) => string | undefined; tickMs?: number };
 	/** The serving modules, asked each time. Without it no ticket has a domain. */
 	domains?: Domains;
 	gateway?: Gateway;
@@ -107,6 +114,7 @@ export class Host {
 	readonly generic: GenericSource;
 	readonly timer: TimerSource;
 	readonly feeds: Map<string, Feed>;
+	readonly feedScheduler: Scheduler;
 	readonly #log: (line: string) => void;
 	readonly #stateDir: string;
 	#boardTimer: NodeJS.Timeout | undefined;
@@ -181,6 +189,24 @@ export class Host {
 			alertsSince: (since) => this.kernel.alertsSince(spec.source, since),
 			log: this.#log,
 		})]));
+		const data = instanceData(options.stateDir);
+		const feedPorts: FeedPorts = {
+			data,
+			submit: ({ source, id, thread, body, at, private: touched }) => submit({ source, externalId: id, threads: [{ id: threadId(source, thread) }], sender: source, body, occurredAt: at, private: touched }),
+			alert: (module, alert) => this.#postModuleAlert(module, alert),
+			secret: options.moduleFeeds?.secret ?? (() => undefined),
+			now: clock.now,
+		};
+		this.feedScheduler = createScheduler({
+			feeds: options.moduleFeeds?.feeds ?? (() => []),
+			run: (entry, items, fixture) => runFeed(entry, items, feedPorts, fixture),
+			state: data,
+			inboxDir: join(options.stateDir, "inbox"),
+			now: clock.now,
+			when: { "us-market-hours": inPollWindow },
+			fixtures: options.moduleFeeds?.fixtures ?? false,
+			log: this.#log,
+		});
 		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []) };
 		const memberCap = options.dispatch && new MemberCap({ configured: options.dispatch.maxConcurrent, clock, store: this.kernel.capAsks, log: this.#log });
 		this.#memberCap = memberCap;
@@ -261,6 +287,7 @@ export class Host {
 		host.generic.start();
 		host.timer.start();
 		for (const feed of host.feeds.values()) feed.start();
+		host.feedScheduler.start(options.moduleFeeds?.tickMs ?? 1000);
 		host.#beat();
 		host.#heartbeat = setInterval(() => host.#beat(), options.heartbeatMs ?? 30_000);
 		host.#heartbeat.unref();
@@ -507,6 +534,7 @@ export class Host {
 		this.generic.stop();
 		this.timer.stop();
 		for (const feed of this.feeds.values()) feed.stop();
+		this.feedScheduler.stop();
 		this.dispatcher.stop();
 		clearTimeout(this.#boardTimer);
 		clearTimeout(this.#midnightTimer);

@@ -1,0 +1,60 @@
+import assert from "node:assert/strict";
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test, { type TestContext } from "node:test";
+import { Modules } from "../src/modules.ts";
+import { instanceData } from "../src/modules/instance-data.ts";
+import { runFeed, type FeedNotice } from "../src/modules/feed-runner.ts";
+import { problemLine, scanPackage } from "../src/modules/validate.ts";
+import { servedAsHost } from "./helpers/fakes.ts";
+
+const TAX = join(import.meta.dirname, "../docs/modules/architecture/sample/personal-tax");
+
+function taxCopy(t: TestContext) {
+	const root = mkdtempSync(join(tmpdir(), "psa-feed-runner-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	cpSync(TAX, join(root, "modules", "personal-tax"), { recursive: true });
+	return { root, pkg: join(root, "modules", "personal-tax") };
+}
+
+const brokerage = (root: string) => {
+	const entry = servedAsHost(Modules.load([join(root, "modules")])).feeds().find((e) => e.source === "personal-tax/brokerage-statements");
+	assert.ok(entry);
+	return entry;
+};
+
+test("fixtures 代替网络：券商样例按样例应答得到两行记录、一条触发和新的进度", async (t) => {
+	const { root } = taxCopy(t);
+	const entry = brokerage(root);
+	const fixture = entry.fixtures.find((f) => f.name === "two-trades");
+	assert.ok(fixture, "样例读进了 fixtures");
+	const data = instanceData(join(root, "state"));
+	const submitted: FeedNotice[] = [];
+	const run = await runFeed(entry, [], { data, submit: (n) => void submitted.push(n), alert: () => {}, secret: () => undefined, now: () => Date.parse("2026-11-12T00:00:00Z") }, fixture);
+	assert.deepEqual(run, { ok: true, records: 2, notices: 1 });
+	assert.equal(data.query(entry.module, entry.components, "transactions", {}, "test").rows.length, 2);
+	assert.equal(submitted[0]!.body, "券商有 2 笔新成交，已实现盈亏合计 294.20 美元。");
+	assert.equal(data.feedState(entry.module, entry.source).cursor, "2026-03-05");
+});
+
+test("fixtures 没给的网址：这一次失败，说出是哪个网址，不存任何东西", async (t) => {
+	const { root } = taxCopy(t);
+	const entry = brokerage(root);
+	const fixture = { name: "wrong", input: { settings: { account: "OTHER" } }, responses: entry.fixtures[0]!.responses };
+	const data = instanceData(join(root, "state"));
+	const run = await runFeed(entry, [], { data, submit: () => {}, alert: () => {}, secret: () => undefined, now: () => 0 }, fixture);
+	assert.equal(run.ok, false);
+	assert.match(!run.ok ? run.note : "", /accounts\/OTHER\/trades/);
+	assert.equal(data.feedState(entry.module, entry.source).cursor, null);
+});
+
+test("just module check 用 fixtures 跑 handler：样例包通过；handler 交回的行有 into 里没有的字段时说出问题", async (t) => {
+	const { pkg } = taxCopy(t);
+	const ok = scanPackage(pkg);
+	assert.ok(ok.ok, ok.ok ? "" : ok.problems.map(problemLine).join("\n"));
+	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default async function () {\n\tawait fetch("https://api.broker.example/v1/accounts/A-1/trades?since=1970-01-01");\n\treturn { records: [{ id: "t", ticker: "VTI" }] };\n}\n`);
+	const bad = scanPackage(pkg);
+	assert.equal(bad.ok, false);
+	assert.match(bad.ok ? "" : bad.problems.map(problemLine).join("\n"), /feeds\/brokerage-statements\/fixtures\/two-trades\.json.*"ticker"/);
+});
