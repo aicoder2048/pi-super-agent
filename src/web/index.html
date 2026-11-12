@@ -310,12 +310,32 @@
 		#small-print { margin-top: auto; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
 		#small-print:empty { display: none; }
 
-		@media (max-width: 900px) {
-			.columns { display: flex; flex-direction: column; overflow-y: auto; }
-			#left, #context, .pane { border: 0; border-bottom: 1px solid var(--line); overflow: visible; }
-			#conversation { overflow: visible; padding: 16px; }
-			main { min-height: 70vh; flex: none; }
-			header, form, #helpers { padding-left: 16px; padding-right: 16px; }
+		#bottom, #back-bar { display: none; }
+		@media (max-width: 760px) {
+			header { padding: 10px 16px; gap: 10px; }
+			.brand span { display: none; }
+			#helpers { padding: 6px 16px; }
+			.columns { display: block; }
+			#left, main, #context { display: none; height: 100%; border: 0; }
+			body[data-screen="todo"] #left { display: flex; padding: 16px; }
+			body[data-screen="chat"] main { display: flex; }
+			body[data-screen="overview"] #context, body[data-screen="task"] #context { display: flex; }
+			#conversation { padding: 16px; }
+			form { padding: 8px 16px 12px; }
+			.pane { padding: 16px; }
+			#tabs { margin: 10px 16px 0; padding: 3px; gap: 2px; border: 0; border-radius: 10px; background: var(--track); }
+			#tabs .tab { flex: 1 1 0; padding: 6px 2px; border: 0; border-radius: 8px; }
+			#tabs .tab[aria-selected="true"] { background: var(--panel); box-shadow: var(--shadow); }
+			#tab-done .count, body[data-screen="overview"] .task-tab, body[data-screen="task"] #tabs { display: none; }
+			body[data-screen="task"] #back-bar { display: block; flex: none; padding: 8px 12px 0; }
+			#back { border: 0; background: none; padding: 6px 4px; font-size: 14px; color: var(--accent-ink); }
+			#bottom { flex: none; display: flex; background: var(--panel); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+			#bottom button { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0 6px; border: 0; background: none; color: var(--muted); font-size: 11px; }
+			#bottom button svg { width: 22px; height: 22px; }
+			#bottom button[aria-current="true"] { color: var(--accent-ink); font-weight: 600; }
+			#bottom .badge { position: absolute; top: 3px; left: calc(50% + 6px); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--warn); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; }
+			#bottom .badge:empty { display: none; }
+			#bottom .dot { position: absolute; top: 6px; left: calc(50% + 8px); width: 8px; height: 8px; border-radius: 999px; background: var(--warn); }
 		}
 		@media (max-width: 600px) {
 			.lane-row { grid-template-columns: minmax(0, 1fr); }
@@ -351,6 +371,7 @@
 			</form>
 		</main>
 		<aside id="context" aria-label="概况">
+			<div id="back-bar"><button id="back" type="button"></button></div>
 			<div id="tabs" role="tablist" aria-label="概况"></div>
 			<section id="how" class="pane" role="tabpanel" aria-labelledby="tab-task" hidden>
 				<div>
@@ -370,6 +391,11 @@
 			<section id="done" class="pane" role="tabpanel" aria-labelledby="tab-done" hidden></section>
 		</aside>
 	</div>
+	<nav id="bottom" aria-label="切换屏幕">
+		<button type="button" data-place="todo"><span class="icon" data-icon="inbox"></span>待办<span class="badge"></span></button>
+		<button type="button" data-place="chat"><span class="icon" data-icon="report"></span>对话</button>
+		<button type="button" data-place="overview"><span class="icon" data-icon="chart"></span>概况<span class="dot" hidden></span></button>
+	</nav>
 	<template id="router-avatar"><svg class="avatar" viewBox="0 0 72 72" aria-hidden="true"><circle class="mark-bg" cx="36" cy="36" r="36"></circle><path d="M22 30h28M30 30v16M42 30v12c0 2.5 1.2 4 3.5 4" stroke="#fff" stroke-width="4.5" stroke-linecap="round" fill="none"></path><circle cx="52" cy="20" r="5" fill="#f59f00"></circle></svg></template>
 	<template id="user-avatar"><svg class="avatar you" viewBox="0 0 72 72" aria-hidden="true"><circle class="mark-bg" cx="36" cy="36" r="36"></circle><ellipse cx="36" cy="36" rx="25" ry="19" stroke="#f59f00" stroke-width="2.4" fill="none"></ellipse><path d="M36 22l3.6 7.6 8.3 1-6.1 5.7 1.6 8.2L36 40.4l-7.4 4.1 1.6-8.2-6.1-5.7 8.3-1z" fill="#f59f00"></path></svg></template>
 	<template id="crown-mark"><svg class="crown" viewBox="0 0 12 8" fill="currentColor" aria-hidden="true"><path d="M0 2l3 2.5L6 0l3 4.5L12 2l-1 6H1z"></path></svg></template>

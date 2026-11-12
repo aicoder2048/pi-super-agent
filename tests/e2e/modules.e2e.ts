@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test, { after } from "node:test";
 import type { Page } from "playwright-core";
 import { fakeAgentEnv, on, openTicket, report, reply, worker, type ToolCall } from "./fake-model.ts";
-import { REPO, closeBrowser, contrastOf, fakeModels, packageFiles, sayInPage, startHost, story } from "./harness.ts";
+import { REPO, closeBrowser, contrastOf, fakeModels, packageFiles, sayInPage, startHost, story, showScreen } from "./harness.ts";
 
 after(closeBrowser);
 
@@ -27,6 +27,7 @@ const inDomain = (call: ToolCall, domain: string): ToolCall => ({ ...call, args:
 const card = (page: Page, name: string) => page.locator(`#modules .card.module[data-module="${name}"]`);
 const modulesSection = (page: Page) => page.locator("#modules");
 async function openModules(page: Page): Promise<void> {
+	await showScreen(page, "overview");
 	await page.locator("#tab-modules").click();
 	const more = page.locator("#modules .more");
 	if ((await more.getAttribute("aria-expanded")) === "false") await more.click();
@@ -102,7 +103,7 @@ test("模块栏：每个模块一张卡，开关两秒内生效，无效写出�
 			});
 			await step("Lane 8. 390 像素宽：没有横向滚动", async () => {
 				const narrow = await open(host.url, { context: { viewport: { width: 390, height: 844 } } });
-				await narrow.locator("#tab-modules .count", { hasText: "4" }).waitFor();
+				await narrow.locator("#tab-modules .count", { hasText: "4" }).waitFor({ state: "attached" });
 				await openModules(narrow);
 				await card(narrow, "personal-tax").waitFor();
 				const widths = await narrow.evaluate(() => ({

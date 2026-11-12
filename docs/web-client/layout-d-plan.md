@@ -137,48 +137,50 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `src/web/index.html`（底部标签栏和窄屏样式）、`src/web/app.mjs`、`src/web/view.mjs`（手机当前屏的状态）。
-- [ ] Edit `tests/web.test.ts`。Create `tests/e2e/layout-phone.e2e.ts`。
+- [x] Edit `src/web/index.html`（底部标签栏和窄屏样式）、`src/web/app.mjs`、`src/web/view.mjs`（手机当前屏的状态）。
+- [x] Edit `tests/web.test.ts`。Create `tests/e2e/layout-phone.e2e.ts` 和两个 e2e 共用的 `tests/e2e/layout-story.ts`。Edit 手机宽度下要先点底栏的 e2e（`harness.ts` 加 `showScreen`）。
 
 **Build.**
 
-- [ ] 手机当前屏 `screen`（待办、对话、概况）放进同一个右栏状态，`panelStep` 加选屏事件。打开任务在手机上推进一屏任务详情，左上「‹ 返回」回到点之前的屏。
-- [ ] 窄屏（不超过 760 像素）时一次只显示一屏，底部固定标签栏三项，「待办」带待你处理的数字；「概况」顶上是今天、来源、模块、已完成四段，跟桌面右栏同一套状态。
-- [ ] 提醒来了，概况的分段照桌面规则切换，不把人从当前屏拉走，「概况」标签带一个提醒点。
+- [x] 手机当前屏 `screen`（待办、对话、概况）放进同一个右栏状态，`panelStep` 加选屏事件。打开任务在手机上推进一屏任务详情，左上「‹ 返回」回到点之前的屏。
+- [x] 窄屏（不超过 760 像素）时一次只显示一屏，底部固定标签栏三项，「待办」带待你处理的数字；「概况」顶上是今天、来源、模块、已完成四段，跟桌面右栏同一套状态。
+- [x] 提醒来了，概况的分段照桌面规则切换，不把人从当前屏拉走，「概况」标签带一个提醒点。
 
 **You see.**
 
-- [ ] 390 宽打开网页，默认是「待办」，底部三个标签，「待办」上有数字。
-- [ ] 点「概况」，顶上四段；点「模块」，一行一个带开关。
+- [x] 390 宽打开网页，默认是「待办」，底部三个标签，「待办」上有数字。
+- [x] 点「概况」，顶上四段；点「模块」，一行一个带开关。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/web.test.ts` 加选屏、手机上打开和返回任务、提醒只切分段不切屏、提醒点在进入概况后消失的用例，先红后绿。Run `just test`.
+- [x] `tests/web.test.ts` 加选屏、手机上打开和返回任务、提醒只切分段不切屏、提醒点在进入概况后消失的用例，先红后绿。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个 Playwright 脚本 `tests/e2e/layout-phone.e2e.ts`。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都用 390 宽打开同一个带受阻任务的状态。trunk 没有底部标签栏，记下这一点。Save `ld2-regression.png`. Pass when 两边都能在受阻卡片上点选项，head 有底部标签栏且没有横向滚动。
-- [ ] Lane 2. 默认屏。Save `ld2-todo.png`. Pass when 显示「待办」，只有待你处理和进行中，「待办」标签上的数字等于待你处理数。
-- [ ] Lane 3. 「对话」屏。Save `ld2-chat.png`. Pass when 对话和输入框占满一屏，发一句话后出现在对话里，输入框不被底栏挡住。
-- [ ] Lane 4. 「概况」屏和四段。Save `ld2-overview.png`. Pass when 顶上四段，默认「今天」，切到「来源」「已完成」内容跟着变。
-- [ ] Lane 5. 「概况 · 模块」的开关。Save `ld2-modules.png`. Pass when 点 stock-ta 的开关两秒内变成开。
-- [ ] Lane 6. 点任务推进详情。Save `ld2-task.png`. Pass when 详情占满一屏，有提问、选项和执行过程，「‹ 返回」回到「待办」。
-- [ ] Lane 7. 在「对话」屏时来了一条提醒。Save `ld2-alert.png`. Pass when 还停在「对话」，「概况」标签出现提醒点；点「概况」看到「今天」里这条提醒高亮，提醒点消失。
-- [ ] Lane 8. 深色 390 宽。Save `ld2-dark.png`. Pass when 底栏和分段文字对比度不低于 4.5 比 1，没有横向滚动。
-- [ ] Lane 9. 宽度在 390 和 1024 之间来回。Save `ld2-resize.png`. Pass when 1024 宽回到三栏，打开着的任务标签还在；回到 390 宽显示任务详情。
-- [ ] Lane 10. 1440 宽桌面不受影响。Save `ld2-desktop.png`. Pass when 没有底部标签栏，三栏布局和 LD1 的截图一致。
+- [x] Lane 1. Regression lane against trunk. LD2 叠在 LD1 上，这条的 trunk 一侧用父分支 LD1 的检出。两边都用 390 宽打开同一个带受阻任务的状态。LD1 没有底部标签栏，记下这一点。Save `ld2-regression.png`. Pass when 两边都能在受阻卡片上点选项，head 有底部标签栏且没有横向滚动。
+- [x] Lane 2. 默认屏。Save `ld2-todo.png`. Pass when 显示「待办」，只有待你处理和进行中，「待办」标签上的数字等于待你处理数。
+- [x] Lane 3. 「对话」屏。Save `ld2-chat.png`. Pass when 对话和输入框占满一屏，发一句话后出现在对话里，输入框不被底栏挡住。
+- [x] Lane 4. 「概况」屏和四段。Save `ld2-overview.png`. Pass when 顶上四段，默认「今天」，切到「来源」「已完成」内容跟着变。
+- [x] Lane 5. 「概况 · 模块」的开关。Save `ld2-modules.png`. Pass when 点 stock-ta 的开关两秒内变成开。
+- [x] Lane 6. 点任务推进详情。Save `ld2-task.png`. Pass when 详情占满一屏，有提问、选项和执行过程，「‹ 返回」回到「待办」。
+- [x] Lane 7. 在「对话」屏时来了一条提醒。Save `ld2-alert.png`. Pass when 还停在「对话」，「概况」标签出现提醒点；点「概况」看到「今天」里这条提醒高亮，提醒点消失。
+- [x] Lane 8. 深色 390 宽。Save `ld2-dark.png`. Pass when 底栏和分段文字对比度不低于 4.5 比 1，没有横向滚动。
+- [x] Lane 9. 宽度在 390 和 1024 之间来回。Save `ld2-resize.png`. Pass when 1024 宽回到三栏，打开着的任务标签还在；回到 390 宽显示任务详情。
+- [x] Lane 10. 1440 宽桌面不受影响。Save `ld2-desktop.png`. Pass when 没有底部标签栏，三栏布局和 LD1 的截图一致。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 390 宽下每次看板推送页面重画的脚本加排版耗时，和切一次底部标签的耗时。
-- [ ] Probe. LD1 head（trunk 一侧）和 LD2 head 用同一组模块包，交替各跑 5 轮，每轮切 10 次模块开关；LD2 另外每轮切 20 次底部标签。
-- [ ] Baseline. Record the LD1 中位数 first.
-- [ ] Rule. 每次推送的重画耗时中位数超过 LD1 的 1.5 倍且多出 2 毫秒以上就失败；切一次底部标签的中位数超过 16 毫秒就失败。
+- [x] Metric. 390 宽下每次看板推送页面重画的脚本加排版耗时，和切一次底部标签的耗时。
+- [x] Probe. LD1 head（trunk 一侧）和 LD2 head 用同一组模块包，交替各跑 5 轮，每轮切 10 次模块开关；LD2 另外每轮切 20 次底部标签。
+- [x] Baseline. Record the LD1 中位数 first.
+- [x] Rule. 每次推送的重画耗时中位数超过 LD1 的 1.5 倍且多出 2 毫秒以上就失败；切一次底部标签的中位数超过 16 毫秒就失败。
+
+2026-11-12 在 psa/layout-d-phone 上通过：`just test` 1531 条全过；`just e2e` 333 条里 327 过、6 条按环境变量跳过、0 失败。先红后绿的记录在 `/tmp/swarm-ld2/owner/red-unit.txt`（`phoneScreen` 不存在，`firstPanel` 没有 `place` 和 `dot`）。`tests/e2e/layout-phone.e2e.ts` 十条 lane 全过，截图在 `/tmp/swarm-ld2/owner/`。在岗助手一排在手机上也保留（使用者的第 2 条回答），只把页头副标题收起。Lane 1 用 LD1 cacf5f1 的检出：两边 390 宽都能在受阻卡片上点选项，LD1 没有底栏。perf 五轮交替：每次推送重画 LD1 中位数 0.58 毫秒，LD2 0.71 毫秒；切一次底栏中位数 0.3 毫秒（100 次，最慢 1.9 毫秒）。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 2, 4, 6 and 7 screenshots into `docs/web-client/evidence/ld2-review-<slug>.png`.
-- [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/web-client/evidence/ld2-review.mp4`. 本机用 Playwright 录像，390 宽，再用 ffmpeg 转成 mp4。
+- [x] Copy lane 2, 4, 6 and 7 screenshots into `docs/web-client/evidence/ld2-review-<slug>.png`.
+- [x] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/web-client/evidence/ld2-review.mp4`. 本机用 Playwright 录像，390 宽，再用 ffmpeg 转成 mp4。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**

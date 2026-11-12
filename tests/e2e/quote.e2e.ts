@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test, { after } from "node:test";
 import type { Page } from "playwright-core";
 import { on, openTicket, reply, report, worker, type ToolCall } from "./fake-model.ts";
-import { closeBrowser, sayInPage, story, waitStatus } from "./harness.ts";
+import { closeBrowser, sayInPage, story, waitStatus, showScreen } from "./harness.ts";
 
 after(closeBrowser);
 
@@ -134,6 +134,7 @@ test("引用：窄屏触屏上点一下气泡出现「引用」，点气泡外�
 				await sayInPage(page, "查天气");
 				phone = await open(host.url, { context: { viewport: { width: 390, height: 844 }, hasTouch: true } });
 				await waitStatus(phone, "connected");
+				await showScreen(phone, "chat");
 				await phone.locator(".line.router .bubble", { hasText: "好的，去查了。" }).waitFor();
 				await phone.locator(".line.user .route").waitFor();
 			});
@@ -172,6 +173,7 @@ test("引用：触屏上没点气泡，手指点在看不见的「引用」那�
 				await page.locator(".line.router .bubble", { hasText: "第二个回答" }).waitFor();
 				phone = await open(host.url, { context: { viewport: { width: 390, height: 844 }, hasTouch: true } });
 				await waitStatus(phone, "connected");
+				await showScreen(phone, "chat");
 				await phone.locator(".line.router .bubble", { hasText: "第二个回答" }).waitFor();
 			});
 			await step("点第一句幕僚长回答下面「引用」所在的地方，引用条不出现", async () => {

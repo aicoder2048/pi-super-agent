@@ -3,7 +3,7 @@
 import {
 	BAR_HINT, CLEAR_FAILED, SWITCH_FAILED, moduleBody, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
 	questionOf, choiceOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
-	laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory, firstPanel, panelStep, overviewTabs,
+	laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory, firstPanel, panelStep, overviewTabs, phoneScreen,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, HOST_LINE_LABEL, helperLine } from "../client/board-format.mjs";
 
@@ -346,6 +346,7 @@ function mount(doc) {
 	};
 
 	const renderLeft = (left = leftColumn(view, Date.now(), sending)) => {
+		/** @type {HTMLElement} */ ($("bottom").querySelector(".badge")).textContent = left.needsYouCount ? String(left.needsYouCount) : "";
 		$("left").replaceChildren(
 			section(left.needsYouLine, [...(left.capCard ? [capCard(left.capCard)] : []), ...left.needsYou.map((c) => taskCard(c, "ask"))], "暂无待处理事项。", "warn"),
 			section(`进行中 · ${left.doing.length}`, left.doing.map((c) => taskCard(c, "doing")), "暂无进行中的任务。"),
@@ -440,6 +441,18 @@ function mount(doc) {
 		for (const pane of ["how", "today", "sources", "modules", "done"]) $(pane).hidden = pane !== (panel.showing === "task" ? "how" : panel.showing);
 	};
 
+	const PLACE_NAME = { todo: "待办", chat: "对话", overview: "概况" };
+	const renderScreen = () => {
+		const screen = phoneScreen(panel);
+		const entered = doc.body.dataset.screen !== screen;
+		doc.body.dataset.screen = screen;
+		for (const button of $("bottom").querySelectorAll("button")) button.setAttribute("aria-current", String(/** @type {HTMLElement} */ (button).dataset.place === screen));
+		/** @type {HTMLElement} */ ($("bottom").querySelector(".dot")).hidden = !panel.dot;
+		$("back").textContent = `‹ ${PLACE_NAME[panel.place]}`;
+		// A hidden conversation keeps scrollTop at 0, so coming back to it would show the oldest lines.
+		if (entered && screen === "chat") $("conversation").scrollTop = $("conversation").scrollHeight;
+	};
+
 	/** @param {string | null} ticketId */
 	const follow = (ticketId) => {
 		watching?.source.close();
@@ -468,6 +481,7 @@ function mount(doc) {
 	const showPanel = (next) => {
 		const reopen = next.task !== (watching?.watch.ticketId ?? null);
 		panel = next;
+		renderScreen();
 		if (!reopen) {
 			renderTabs();
 			renderOverview();
@@ -852,6 +866,7 @@ function mount(doc) {
 	/** Clicking the task already open reopens its stream, which recovers after a host restart. @param {string} ticketId */
 	const watch = (ticketId) => {
 		panel = panelStep(panel, { kind: "open", ticketId });
+		renderScreen();
 		follow(ticketId);
 		renderPanel();
 	};
@@ -861,6 +876,14 @@ function mount(doc) {
 		const keys = overviewTabs(view, panel).map((t) => t.key);
 		return keys[(keys.indexOf(key) + by + keys.length) % keys.length];
 	};
+	for (const button of $("bottom").querySelectorAll("button")) {
+		const place = /** @type {import("./view.mjs").Place} */ (/** @type {HTMLElement} */ (button).dataset.place);
+		const icon = /** @type {HTMLElement} */ (button.querySelector(".icon"));
+		icon.replaceWith(/** @type {Element} */ (icons.get(icon.dataset.icon ?? "")).cloneNode(true));
+		button.addEventListener("click", () => showPanel(panelStep(panel, { kind: "place", place })));
+	}
+	renderScreen();
+	$("back").addEventListener("click", () => showPanel(panelStep(panel, { kind: "pick", tab: panel.last })));
 	$("tabs").addEventListener("keydown", (e) => {
 		const key = /** @type {HTMLElement} */ (e.target).closest(".tab")?.getAttribute("data-tab");
 		if (!key || (e.key !== "ArrowRight" && e.key !== "ArrowLeft")) return;

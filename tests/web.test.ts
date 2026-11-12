@@ -2428,7 +2428,7 @@ test("网关：来源贴的提醒和收据经事件流到网页，各一帧；�
 const panelAfter = (...events: Parameters<typeof page.panelStep>[1][]) => events.reduce(page.panelStep, page.firstPanel());
 
 test("右栏：开始停在「今天」，没有任务标签", () => {
-	assert.deepEqual(page.firstPanel(), { showing: "today", task: null, last: "today", flash: null });
+	assert.deepEqual(page.firstPanel(), { showing: "today", task: null, last: "today", flash: null, place: "todo", dot: false });
 });
 
 test("右栏：选中任务，任务标签切过去；切到别的标签任务标签留着；在任务标签上点 × 回到选任务之前的标签", () => {
@@ -2439,7 +2439,7 @@ test("右栏：选中任务，任务标签切过去；切到别的标签任务�
 	const back = page.panelStep(away, { kind: "pick", tab: "task" });
 	assert.equal(back.showing, "task");
 	assert.equal(page.panelStep(opened, { kind: "close" }).showing, "sources");
-	assert.deepEqual(page.panelStep(back, { kind: "close" }), { showing: "modules", task: null, last: "modules", flash: null });
+	assert.deepEqual(page.panelStep(back, { kind: "close" }), { showing: "modules", task: null, last: "modules", flash: null, place: "todo", dot: false });
 });
 
 test("右栏：在别的标签上关任务，停在原地", () => {
@@ -2459,7 +2459,7 @@ test("右栏：没有任务时点任务标签不动", () => {
 
 test("右栏：来了不属于任务的提醒，切到「今天」并高亮这条，任务标签留着；再选标签高亮消失", () => {
 	const alerted = panelAfter({ kind: "open", ticketId: "tkt_a" }, { kind: "pick", tab: "sources" }, { kind: "alert", lineId: "hln_1" });
-	assert.deepEqual(alerted, { showing: "today", task: "tkt_a", last: "today", flash: "hln_1" });
+	assert.deepEqual(alerted, { showing: "today", task: "tkt_a", last: "today", flash: "hln_1", place: "todo", dot: true });
 	assert.equal(page.panelStep(alerted, { kind: "pick", tab: "modules" }).flash, null);
 	assert.equal(page.panelStep(alerted, { kind: "close" }).flash, "hln_1", "关任务标签不影响高亮");
 });
@@ -2503,4 +2503,36 @@ test("右栏「模块」：一行一个模块，运行中的写标题，别的�
 	const left = page.leftColumn(view, 0);
 	assert.equal(left.modulesLine, "模块 · 2 · 运行中 1");
 	assert.deepEqual(left.modules.map((m) => [m.name, m.on, m.note]), [["stock-ta", true, "股票技术分析"], ["tax", false, "已停用"]]);
+});
+
+test("手机：开始在「待办」；选屏换屏；任务打开时显示任务详情，返回回到点任务之前的屏，任务标签留着", () => {
+	assert.equal(page.phoneScreen(page.firstPanel()), "todo");
+	const chat = panelAfter({ kind: "place", place: "chat" });
+	assert.equal(page.phoneScreen(chat), "chat");
+	const detail = page.panelStep(chat, { kind: "open", ticketId: "tkt_a" });
+	assert.equal(page.phoneScreen(detail), "task");
+	const back = page.panelStep(detail, { kind: "pick", tab: detail.last });
+	assert.deepEqual([page.phoneScreen(back), back.task], ["chat", "tkt_a"]);
+});
+
+test("手机：在任务详情点底栏换屏，离开详情；进概况时看的是最后那个概况分段", () => {
+	const detail = panelAfter({ kind: "pick", tab: "modules" }, { kind: "open", ticketId: "tkt_a" });
+	const overview = page.panelStep(detail, { kind: "place", place: "overview" });
+	assert.deepEqual([page.phoneScreen(overview), overview.showing, overview.task], ["overview", "modules", "tkt_a"]);
+});
+
+test("手机：不在概况时来了提醒，不换屏，分段切到「今天」，概况带提醒点；进概况后提醒点消失", () => {
+	const alerted = panelAfter({ kind: "place", place: "chat" }, { kind: "alert", lineId: "hln_1" });
+	assert.deepEqual([page.phoneScreen(alerted), alerted.showing, alerted.flash, alerted.dot], ["chat", "today", "hln_1", true]);
+	const seen = page.panelStep(alerted, { kind: "place", place: "overview" });
+	assert.deepEqual([page.phoneScreen(seen), seen.dot, seen.flash], ["overview", false, "hln_1"]);
+});
+
+test("手机：正在看概况时来了提醒，不带提醒点", () => {
+	assert.equal(panelAfter({ kind: "place", place: "overview" }, { kind: "pick", tab: "sources" }, { kind: "alert", lineId: "hln_1" }).dot, false);
+});
+
+test("手机：「待办」上的数字是待你处理的条数", () => {
+	const view = withRows([row({ id: "tkt_a", stage: "awaiting_answer" }), row({ id: "tkt_b", stage: "running" })]);
+	assert.equal(page.leftColumn(view, 0).needsYouCount, 1);
 });

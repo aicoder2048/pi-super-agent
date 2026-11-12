@@ -224,8 +224,14 @@ export function waitStatus(page: Page, status: Status, timeoutMs = 15_000): Prom
 	return page.waitForFunction((s) => document.querySelector("#status")?.getAttribute("data-status") === s, status, { timeout: timeoutMs });
 }
 
+/** On a phone-width page, taps the bottom bar's button for `place`; a desktop page shows every column already. */
+export async function showScreen(page: Page, place: "todo" | "chat" | "overview"): Promise<void> {
+	if (await page.locator("#bottom").isVisible()) await page.locator(`#bottom button[data-place="${place}"]`).click();
+}
+
 /** Sends one sentence from the composer and waits for the delivered ack. `typeDelayMs` types it key by key, for recordings. */
 export async function sayInPage(page: Page, text: string, { typeDelayMs }: { typeDelayMs?: number } = {}): Promise<void> {
+	await showScreen(page, "chat");
 	const box = page.locator("#composer");
 	if (typeDelayMs === undefined) await box.fill(text);
 	else {
