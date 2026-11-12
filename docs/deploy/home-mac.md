@@ -177,10 +177,12 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/host-main.
 	预期输出：
 
 	```text
-	[service] 预检通过：node <node 的路径>，npm root -g 找到 Pi，bash /bin/bash，config.json 能加载
+	[service] 预检通过：node <node 的路径>，npm root -g 找到 Pi，bash /bin/bash，just <just 的路径>，config.json 能加载
 	[service] 已安装 com.pi-super-agent.watchdog：~/Library/LaunchAgents/com.pi-super-agent.watchdog.plist
 	[service] 看门狗日志 ~/.pi-super-agent/watchdog.log，宿主日志 ~/.pi-super-agent/host.log
 	```
+
+	服务的 PATH 是 node 的目录、just 和 uv 的目录（装的时候在你的 PATH 里找到的话），再加系统目录。`~/bin` 不在系统目录里，所以要在 `~/bin` 已经进了 PATH 的终端里跑这一步，module-builder 的专家队才能跑 `just module new/check/try`。找不到 just 时照样会装上，但多打一行提醒：装上 just 或把它的目录加进 PATH，再重跑 `just service-install`。
 
 	Node 是用 nvm 装的，所以还会多一行提醒：服务固定用这个 Node 版本和它下面装的 Pi，换了 Node 版本后要重跑 `just service-uninstall && just service-install`。
 

@@ -1,5 +1,5 @@
 /** Stored structure only grows (design.md H6). `_structure` holds everything ever stored, hidden fields and aliases included. */
-import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { moduleDataDir } from "./knowledge.ts";
@@ -71,22 +71,6 @@ function readStored(db: DatabaseSync): Stored {
 	return row === undefined ? EMPTY : (JSON.parse(row.json) as Stored);
 }
 
-/** A leftover journal belongs to the replaced file, and SQLite would replay it onto the snapshot. */
-function restore(path: string, snapshot: string): void {
-	for (const suffix of ["-journal", "-wal", "-shm"]) rmSync(`${path}${suffix}`, { force: true });
-	copyFileSync(snapshot, path);
-}
-
-/**
- * A snapshot lives only inside one `migrate` call. One left by a crash is never restored: rows
- * written since would be lost, and SQLite's own journal already brings `data.db` back to whole.
- * Opening read-write lets SQLite roll that journal back.
- */
-function openDiscardingSnapshot(path: string): DatabaseSync {
-	rmSync(`${path}.snapshot`, { force: true });
-	return new DatabaseSync(path);
-}
-
 const failed = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const problemText = (problems: readonly { where: string; reason: string }[]) => problems.map((p) => `${p.where}：${p.reason}`).join("；");
@@ -152,7 +136,6 @@ function rowOf(fields: readonly string[], row: Record<string, Value>): Row {
 
 export function instanceData(stateDir: string): InstanceData & ModuleRows {
 	const pathOf = (module: ModuleName) => join(moduleDataDir(stateDir, module), "data.db");
-	/** Ensures the structure, then one short-lived connection in rollback-journal mode, so migrate's file snapshot always holds every committed row. */
 	const withRows = <T>(module: ModuleName, components: readonly Component[], access: { who: string; collection: string; op: Op }, use: (db: DatabaseSync, stored: Stored) => T): T => {
 		const ensured = data.migrate(module, components);
 		if (!ensured.ok) throw new Error(ensured.reason);
@@ -175,7 +158,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 			const path = pathOf(module);
 			if (!existsSync(path)) return [];
 			try {
-				const db = openDiscardingSnapshot(path);
+				const db = new DatabaseSync(path);
 				try {
 					return problemsFor(readStored(db), components);
 				} finally {
@@ -187,35 +170,28 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 		},
 		migrate(module, components) {
 			const path = pathOf(module);
-			const snapshot = `${path}.snapshot`;
 			if (!existsSync(path) && !components.some((c) => c.kind === "data")) return { ok: true };
 			let db: DatabaseSync | undefined;
 			try {
 				mkdirSync(join(dirname(path), "blobs"), { recursive: true });
-				db = openDiscardingSnapshot(path);
+				db = new DatabaseSync(path);
 				const before = readStored(db);
 				const problems = problemsFor(before, components);
 				if (problems.length > 0) return { ok: false, reason: problemText(problems) };
 				const { sql, next } = plan(before, components);
 				if (JSON.stringify(next) === JSON.stringify(before)) return { ok: true };
-				copyFileSync(path, snapshot);
-				try {
-					db.exec("BEGIN");
-					for (const statement of sql) db.exec(statement);
-					db.exec("CREATE TABLE IF NOT EXISTS _structure (json TEXT NOT NULL); DELETE FROM _structure");
-					db.prepare("INSERT INTO _structure VALUES (?)").run(JSON.stringify(next));
-					db.exec("COMMIT");
-				} catch (error) {
-					db.close();
-					restore(path, snapshot);
-					return { ok: false, reason: failed(error) };
-				}
+				// SQLite is the rollback: closing with the transaction still open undoes it, and a hot
+				// journal left by a crash is rolled back on the next open.
+				db.exec("BEGIN");
+				for (const statement of sql) db.exec(statement);
+				db.exec("CREATE TABLE IF NOT EXISTS _structure (json TEXT NOT NULL); DELETE FROM _structure");
+				db.prepare("INSERT INTO _structure VALUES (?)").run(JSON.stringify(next));
+				db.exec("COMMIT");
 				return { ok: true };
 			} catch (error) {
 				return { ok: false, reason: failed(error) };
 			} finally {
 				if (db?.isOpen) db.close();
-				rmSync(snapshot, { force: true });
 			}
 		},
 		purge(module) {
