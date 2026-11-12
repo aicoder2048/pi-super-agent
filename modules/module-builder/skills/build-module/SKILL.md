@@ -15,7 +15,7 @@ PSA_STATE_DIR="$STATE" just -f "$PSA_REPO/justfile" module new <名字> --templa
 PSA_STATE_DIR="$STATE" just -f "$PSA_REPO/justfile" module try <名字>
 ```
 
-- 模块包写在 `$STATE/modules/<名字>/`。这就是使用者要的成品位置，不放成品目录。
+- 模块包只能在 `$STATE/modules/<名字>/`。宿主只在这里发现模块，放进成品目录宿主看不到，`just module on` 也打不开。这一条优先于系统提示里的「成品放在哪里」：做模块不调 new_app，`PSA_STATE_DIR` 只设成 `$STATE`。派活时把 `$STATE/modules/<名字>/` 的绝对路径写进任务。
 - `$PSA_REPO/modules/` 是仓库自带的模块，不改。使用者要改它们时，汇报说它在代码仓库里，请他自己改。
 - 不跑 `just module on`、`just module off`，不改 `config.json`。
 
