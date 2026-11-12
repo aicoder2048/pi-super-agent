@@ -330,11 +330,12 @@ macOS 12 上只有 1.102.4 能运行。它会自动升级到装不上的新版�
 
 ```sh
 cd ~/pi-super-agent
-git pull --ff-only
-just service-uninstall && just service-install
+just redeploy
 ```
 
-重启会让宿主停几秒，正在跑的任务会被停掉，所以挑没有任务在跑的时候做。只改了配置时，跳过 `git pull`。
+`just redeploy` 先确认当前在 `main` 分支，再 `git pull --ff-only`，然后依次运行 `just service-uninstall`、`just service-install` 和 `just service-status`，最后一步会打印装上的版本和最近一次心跳。不在 `main` 分支，或者本地有改动让快进失败时，它停下来报错，不会重装。
+
+重启会让宿主停几秒，正在跑的任务会被停掉，所以挑没有任务在跑的时候做。只改了配置时，用 `just redeploy --no-pull`：不拉代码，只重装。
 
 ## 换 token
 
