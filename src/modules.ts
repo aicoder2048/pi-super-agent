@@ -226,7 +226,6 @@ const onRoster = (module: LoadedModule) => module.manifest.description !== undef
 
 export class Modules implements Domains {
 	readonly found: LoadedModule[];
-	/** Enabled only. Everything the host runs reads these, so a disabled module contributes nothing. */
 	readonly modules: LoadedModule[];
 	readonly userRules: ScopedRule[];
 	readonly skippedUserRules: string[];
