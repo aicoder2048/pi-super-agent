@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ComponentName, Digest, ModuleName, ToolEffect } from "./manifest.ts";
-import { allowed, SENDERS, senderOf, telegramText } from "./protocol.ts";
-import type { Caller, Request, Sender } from "./protocol.ts";
+import type { ComponentName, Digest, ModuleName, ToolEffect } from "../src/modules/manifest.ts";
+import { allowed, SENDERS, senderOf, telegramText } from "../src/modules/protocol.ts";
+import type { Caller, Request, Sender } from "../src/modules/protocol.ts";
 
 const C = "c" as ComponentName;
 const M = "m" as ModuleName;

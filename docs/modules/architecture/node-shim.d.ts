@@ -1,4 +1,4 @@
-/** The few Node declarations the sketch needs, so it type-checks with no dependencies. */
+/** The few Node declarations src/modules/ and its tests need, so it type-checks with no dependencies. */
 declare module "node:fs" {
 	export interface Dirent {
 		name: string;

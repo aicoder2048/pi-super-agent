@@ -122,6 +122,10 @@ test:
 modules:
     {{run}} src/cli/modules.ts
 
+# 检查一个新布局（"schema": 1）的模块包：just module check <目录> [--previous <旧版本目录>]。没问题打印一行 ok，有问题每个一行并以 1 退出。
+module *args:
+    {{run}} src/cli/module.ts {{args}}
+
 # 在状态目录的 modules/ 下生成一个新模块骨架：just module-new <模块名>
 module-new name:
     {{run}} src/cli/module-new.ts {{name}}

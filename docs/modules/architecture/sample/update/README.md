@@ -2,11 +2,13 @@
 
 同一个模块 `health-lite` 的五个版本，演示改数据结构时会发生什么。存下来的数据只增不减，模块包决定显示哪些。
 
+在仓库根目录运行：
+
 ```
-node sketch/validate.ts sample/update/0.2.0-adds-field/health-lite --previous sample/update/0.1.0/health-lite
-node sketch/validate.ts sample/update/0.2.0-renames-field/health-lite --previous sample/update/0.1.0/health-lite
-node sketch/validate.ts sample/update/0.2.0-removes-field/health-lite --previous sample/update/0.1.0/health-lite
-node sketch/validate.ts sample/update/0.2.0-changes-unit/health-lite --previous sample/update/0.1.0/health-lite
+just module check docs/modules/architecture/sample/update/0.2.0-adds-field/health-lite --previous docs/modules/architecture/sample/update/0.1.0/health-lite
+just module check docs/modules/architecture/sample/update/0.2.0-renames-field/health-lite --previous docs/modules/architecture/sample/update/0.1.0/health-lite
+just module check docs/modules/architecture/sample/update/0.2.0-removes-field/health-lite --previous docs/modules/architecture/sample/update/0.1.0/health-lite
+just module check docs/modules/architecture/sample/update/0.2.0-changes-unit/health-lite --previous docs/modules/architecture/sample/update/0.1.0/health-lite
 ```
 
 第一条通过。0.2.0 多了一个字段 `method`，宿主自动加上，旧的行里它是空的。

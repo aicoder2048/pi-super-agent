@@ -36,10 +36,11 @@ check("design.md answers every requirement id", () => {
   return `${ids.length} ids`;
 });
 
-check("the type sketch passes tsc", () => {
-  read("sketch/tsconfig.json");
+const CHECK = ["../../../src/cli/module.ts", "check"];
+
+check("src/modules/ passes tsc", () => {
   try {
-    execFileSync("npx", ["--yes", "-p", "typescript@5.9", "tsc", "-p", "sketch/tsconfig.json"], {
+    execFileSync("npx", ["--yes", "-p", "typescript@5.9", "tsc", "-p", "tsconfig.json"], {
       cwd: here,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -51,9 +52,8 @@ check("the type sketch passes tsc", () => {
 
 for (const sample of ["personal-health", "personal-tax"]) {
   check(`the ${sample} sample package validates`, () => {
-    read("sketch/validate.ts");
     try {
-      return node(["sketch/validate.ts", `sample/${sample}`]).trim().split("\n").at(-1);
+      return node([...CHECK, `sample/${sample}`]).trim().split("\n").at(-1);
     } catch (error) {
       throw new Error(`${error.stdout ?? ""}${error.stderr ?? ""}` || error.message);
     }
@@ -67,7 +67,7 @@ check("each broken sample package is rejected with its reason", () => {
   for (const name of names) {
     let output = "";
     try {
-      output = node(["sketch/validate.ts", `sample/broken/${name}`]);
+      output = node([...CHECK, `sample/broken/${name}`]);
     } catch (error) {
       output = `${error.stdout ?? ""}${error.stderr ?? ""}`;
       if (!output.includes(cases[name])) {
@@ -83,12 +83,12 @@ check("each broken sample package is rejected with its reason", () => {
 check("an update may add or rename a field and may not change a unit", () => {
   const previous = "sample/update/0.1.0/health-lite";
   read(`${previous}/module.json`);
-  node(["sketch/validate.ts", "sample/update/0.2.0-adds-field/health-lite", "--previous", previous]);
-  const renamed = node(["sketch/validate.ts", "sample/update/0.2.0-renames-field/health-lite", "--previous", previous]);
+  node([...CHECK, "sample/update/0.2.0-adds-field/health-lite", "--previous", previous]);
+  const renamed = node([...CHECK, "sample/update/0.2.0-renames-field/health-lite", "--previous", previous]);
   if (!renamed.includes('renamed from "lab"')) throw new Error(`the rename was accepted without the note 'renamed from "lab"':\n${renamed}`);
   let output = "";
   try {
-    output = node(["sketch/validate.ts", "sample/update/0.2.0-changes-unit/health-lite", "--previous", previous]);
+    output = node([...CHECK, "sample/update/0.2.0-changes-unit/health-lite", "--previous", previous]);
   } catch (error) {
     output = `${error.stdout ?? ""}${error.stderr ?? ""}`;
     if (!output.includes("changed unit")) throw new Error(`the unit change failed without "changed unit":\n${output}`);
@@ -98,7 +98,7 @@ check("an update may add or rename a field and may not change a unit", () => {
 });
 
 check("the lifecycle, access and validator tests pass", () => {
-  const tests = ["sketch/lifecycle.test.ts", "sketch/protocol.test.ts", "sketch/validate.test.ts"];
+  const tests = ["lifecycle", "protocol", "validate"].map((name) => `../../../tests/module-${name}.test.ts`);
   for (const test of tests) read(test);
   try {
     const output = node(["--test", ...tests]);

@@ -1,11 +1,3 @@
-/**
- * node sketch/validate.ts <packageDir> [--previous <packageDir>]
- *
- * Scans a module package. It prints every mistake it finds (exit 1), or notes and one
- * summary line (exit 0). Its job is to help the author: a key that is a typo, a missing
- * file, a reference to nothing, a failing test case. The host's `checking` stage and
- * `just module check` are this scan. `--previous` adds what the new version does to stored data.
- */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -431,7 +423,7 @@ function same(actual: Json | undefined, expected: Json, tolerance: number): bool
 	return actual === expected;
 }
 
-function runCases(report: Report, root: string, name: string, tool: ToolDescriptor, cases: readonly ToolCase[]): void {
+function runToolCases(report: Report, root: string, name: string, tool: ToolDescriptor, cases: readonly ToolCase[]): void {
 	for (const [index, item] of cases.entries()) {
 		const label = `test case ${index + 1} "${item.name}"`;
 		const reply = runModuleCode(join(root, "tools", name), RUNTIMES[tool.runtime ?? "node"], item.input, tool.secrets);
@@ -468,7 +460,8 @@ function readComponents(report: Report, root: string): Component[] {
 	return components;
 }
 
-export function scanPackage(packageDir: string, previousDir?: string): ScanResult {
+/** `runCases: false` skips the tools' test cases, which spawn a process each: the host does that when it finds a package. */
+export function scanPackage(packageDir: string, { previous, runCases = true }: { previous?: string | undefined; runCases?: boolean } = {}): ScanResult {
 	const root = resolve(packageDir);
 	const problems: Problem[] = [];
 	const report: Report = (where, reason) => void problems.push({ where, reason });
@@ -479,12 +472,12 @@ export function scanPackage(packageDir: string, previousDir?: string): ScanResul
 	const feeds = new Set(components.filter((item) => item.kind === "feeds").map((item) => item.name as string));
 	const rules = readRules(report, root, manifest.name, feeds);
 	crossCheck(report, manifest, components);
-	if (problems.length === 0) {
-		for (const item of components) if (item.kind === "tools") runCases(report, root, item.name, item.tool, item.cases);
+	if (runCases && problems.length === 0) {
+		for (const item of components) if (item.kind === "tools") runToolCases(report, root, item.name, item.tool, item.cases);
 	}
 	let notes: string[] = [];
-	if (previousDir !== undefined && problems.length === 0) {
-		const before = readComponents(() => undefined, resolve(previousDir));
+	if (previous !== undefined && problems.length === 0) {
+		const before = readComponents(() => undefined, resolve(previous));
 		const changes = structureChanges(before, components);
 		problems.push(...changes.problems);
 		notes = changes.notes;
@@ -493,28 +486,12 @@ export function scanPackage(packageDir: string, previousDir?: string): ScanResul
 	return { ok: true, scan: { dir: root, manifest, components, rules, digest: digestOf(root), notes } };
 }
 
-function summary(scan: Extract<ScanResult, { ok: true }>["scan"]): string {
+export const problemLine = (problem: Problem): string => `${problem.where}: ${problem.reason}`;
+
+export function summary(scan: Extract<ScanResult, { ok: true }>["scan"]): string {
 	const count = (kind: Component["kind"]): number => scan.components.filter((item) => item.kind === kind).length;
 	const classes = DATA_CLASSES.map((name) => `${name}:${scan.components.filter((item) => item.kind === "data" && item.collection.class === name).length}`);
 	const secrets = new Set(scan.components.flatMap((item) => (item.kind === "tools" ? item.tool.secrets : item.kind === "feeds" ? item.feed.secrets : undefined) ?? []));
 	const kinds = KIND_DIRS.map((kind) => `${kind}=${count(kind)}`).join(" ");
 	return `ok ${scan.manifest.name}@${scan.manifest.version} | ${kinds} | rules=${scan.rules.length} | data-classes=${classes.join(",")} | secrets=${[...secrets].sort().join(",") || "none"} | digest=${scan.digest.slice(0, 12)}`;
-}
-
-if (basename(process.argv[1] ?? "") === "validate.ts") {
-	const [target, flag, previous] = process.argv.slice(2);
-	if (target === undefined || (flag !== undefined && (flag !== "--previous" || previous === undefined))) {
-		console.log("usage: node validate.ts <packageDir> [--previous <packageDir>]");
-		process.exitCode = 2;
-	} else {
-		const result = scanPackage(target, previous);
-		if (result.ok) {
-			for (const note of result.scan.notes) console.log(`note ${note}`);
-			console.log(summary(result.scan));
-		} else {
-			for (const problem of result.problems) console.log(`${problem.where}: ${problem.reason}`);
-			console.log(`rejected ${result.name}: ${result.problems.length} problem(s)`);
-			process.exitCode = 1;
-		}
-	}
 }

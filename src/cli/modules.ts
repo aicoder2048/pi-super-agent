@@ -4,6 +4,7 @@ import { exitOnConfigError } from "../config-error.ts";
 import { loadConfig, loadModules } from "../host/config.ts";
 import { feedSpecs } from "../host/wiring.ts";
 import type { LoadedModule, ModuleState, SourceFilter } from "../modules.ts";
+import { problemLine } from "../modules/validate.ts";
 
 function stateText({ enabled, by }: ModuleState): string {
 	if (by === "config") return enabled ? "启用（config.json 打开）" : "停用（config.json 关闭）";
@@ -23,6 +24,11 @@ function width(text: string): number {
 }
 
 const pad = (text: string, to: number) => text + " ".repeat(Math.max(0, to - width(text)));
+
+function columns(rows: readonly string[][]): (row: readonly string[]) => string {
+	const widths = [0, 1].map((i) => Math.max(...rows.map((r) => width(r[i]))));
+	return ([name, state, dir]) => `${pad(name, widths[0])}  ${pad(state, widths[1])}  ${dir}`;
+}
 
 function folder(dir: string): string {
 	const rel = relative(process.cwd(), dir);
@@ -45,16 +51,24 @@ function main(): void {
 	];
 
 	const rows = modules.found.map((m) => [m.name, stateText(m.state), folder(m.dir)]);
-	const widths = [0, 1].map((i) => Math.max(...rows.map((r) => width(r[i]))));
+	const line = columns(rows);
 	console.log(`模块 ${modules.found.length} 个，启用 ${modules.modules.length} 个；状态目录 ${config.stateDir}`);
 	modules.found.forEach((m, i) => {
-		const [name, state, dir] = rows[i];
-		console.log(`${pad(name, widths[0])}  ${pad(state, widths[1])}  ${dir}`);
+		console.log(line(rows[i]));
 		for (const d of detailRows) {
 			const values = d.values(m);
 			console.log(`  ${d.label}  ${values.length ? values.join(`\n  ${" ".repeat(width(d.label))}  `) : "无"}`);
 		}
 	});
+	if (modules.packages.length) {
+		console.log(`新布局包 ${modules.packages.length} 个`);
+		const packageRows = modules.packages.map((p) => [p.name, `新布局  ${p.scan.ok ? "有效，已停用" : "无效"}`, folder(p.dir)]);
+		const packageLine = columns(packageRows);
+		modules.packages.forEach(({ scan }, i) => {
+			console.log(packageLine(packageRows[i]));
+			if (!scan.ok) for (const problem of scan.problems) console.log(`  ${problemLine(problem)}`);
+		});
+	}
 	console.log(`开关模块：在 ${join(config.stateDir, "config.json")} 写 "modules": { "<模块名>": true 或 false }，重启宿主生效。`);
 }
 

@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { runModuleCode, scanPackage } from "./validate.ts";
+import { runModuleCode, scanPackage } from "../src/modules/validate.ts";
 
-const SAMPLE = join(dirname(fileURLToPath(import.meta.url)), "..", "sample");
-const update = (to: string) => scanPackage(join(SAMPLE, "update", to, "health-lite"), join(SAMPLE, "update", "0.1.0", "health-lite"));
+const SAMPLE = join(dirname(fileURLToPath(import.meta.url)), "..", "docs", "modules", "architecture", "sample");
+const update = (to: string) => scanPackage(join(SAMPLE, "update", to, "health-lite"), { previous: join(SAMPLE, "update", "0.1.0", "health-lite") });
 const notesOf = (to: string): string => {
 	const result = update(to);
 	assert(result.ok, `${to} should be accepted`);
