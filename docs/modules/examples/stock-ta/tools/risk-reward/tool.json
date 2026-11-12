@@ -1,0 +1,20 @@
+{
+  "title": "盈亏比与止损距离",
+  "description": "给出开仓价、止损价和目标价，算盈亏比、止损和目标离开仓价的百分比；给了 ATR 再算止损是几个 ATR。止损低于开仓价是做多，高于是做空",
+  "cites": "盈亏比 = (目标 - 开仓) / (开仓 - 止损)，做空取绝对值",
+  "input": {
+    "entry": { "type": "number", "title": "开仓价" },
+    "stop": { "type": "number", "title": "止损价" },
+    "target": { "type": "number", "title": "目标价" },
+    "atr": { "type": "number", "title": "ATR，可不填，structure 的 atr 字段" }
+  },
+  "output": {
+    "side": { "type": "text", "title": "做多或做空" },
+    "risk": { "type": "number", "title": "每股风险" },
+    "reward": { "type": "number", "title": "每股潜在收益" },
+    "ratio": { "type": "number", "title": "盈亏比" },
+    "stopPercent": { "type": "number", "title": "止损离开仓价的百分比" },
+    "targetPercent": { "type": "number", "title": "目标离开仓价的百分比" },
+    "stopInAtr": { "type": "number", "title": "止损是几个 ATR" }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "title": "选股结果",
+  "description": "技术分析项目里已经跑过的选股的结果：运行状态、覆盖范围、过滤统计和命中。只读，不跑新的选股。命中不是信号，关注度不是胜率",
+  "effect": "read",
+  "secrets": ["TA_ROOT"],
+  "input": {
+    "run_id": { "type": "number", "title": "选股运行编号；不填看最近一次" },
+    "symbols": { "type": "text", "title": "只看这些代码，逗号分隔，最多 20 个" },
+    "limit": { "type": "number", "title": "最多几条命中，默认 20" }
+  },
+  "output": {
+    "run": { "type": "text", "title": "这次运行的状态和覆盖范围" },
+    "hits": { "type": "text", "title": "命中列表" },
+    "truncated": { "type": "text", "title": "true 表示结果被裁剪过" }
+  }
+}
