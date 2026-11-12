@@ -133,12 +133,12 @@ export class OutputRoot {
 	}
 
 	/**
-	 * Inside: the output root, this ticket's workdir, and the temp directories. Elsewhere in the state directory is outside,
+	 * Inside: the output root, this ticket's workdir, the module packages, and the temp directories. Elsewhere in the state directory is outside,
 	 * even when the state directory itself sits in a temp directory, so config.json and the tokens are never inside.
 	 */
 	#placement(ticketId: string): Placement {
 		const state = real(this.#stateDir);
-		const own = [real(this.root), real(join(this.#stateDir, "workers", ticketId))];
+		const own = [real(this.root), real(join(this.#stateDir, "workers", ticketId)), real(join(this.#stateDir, "modules"))];
 		const temp = [real(tmpdir()), real("/tmp")];
 		return (path) => {
 			const p = real(path);
@@ -169,13 +169,14 @@ export class OutputRoot {
 			"|---|---|---|",
 			...rows,
 			"- 名字用英文小写，单词之间用连字符。写之前先 ls 看一眼，不要覆盖已经有的文件。",
+			`- 模块包写进 ${join(this.#stateDir, "modules")}/<名字>/（模块目录），宿主只在那里发现模块，不放成品目录。`,
 			"- 使用者在对话里明确点名要写到别处时，可以照做。",
-			"- 汇报时，宿主会检查有没有写到成品目录、任务目录和临时目录之外，有的话写进汇报，让使用者看到。",
+			"- 汇报时，宿主会检查有没有写到成品目录、模块目录、任务目录和临时目录之外，有的话写进汇报，让使用者看到。",
 		];
 		if (role === "helper") {
 			lines.push(
 				"- 同一个应用接着做，就用同一个短名调 new_app，会拿回原来的目录。",
-				"- 派活给成员时，把成员该写的具体目录（绝对路径）写进任务里。即使你知道代码仓库在哪，也不要让成员写进仓库，也不要写成品目录之外的路径。",
+				"- 派活给成员时，把成员该写的具体目录（绝对路径）写进任务里。即使你知道代码仓库在哪，也不要让成员写进仓库，路径只用成品目录或模块目录里的。",
 				"- 汇报里写明成品的绝对路径。",
 			);
 		}

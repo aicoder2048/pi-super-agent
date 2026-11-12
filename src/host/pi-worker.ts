@@ -19,6 +19,7 @@ import type { WorkerEvents, WorkerHandle, WorkerSpawner, WorkerSpec } from "./wo
 
 const WORKER_EXTENSION = fileURLToPath(new URL("../worker/extension.ts", import.meta.url));
 const WORKER_LAUNCHER = fileURLToPath(new URL("./worker-launcher.mjs", import.meta.url));
+const REPO = join(import.meta.dirname, "../..");
 
 export const WORKER_PROMPT = `你是 Super Agent 的一个 Worker，负责一项任务。你不直接和使用者说话：你的推理和工具调用不会被转达，只有 report 工具提交的汇报会到达 Router，再由 Router 转告使用者。
 - 开始工作后在关键节点用 report 汇报；完成时汇报 ready，做不下去时汇报 blocked 或 failed，判断不值得做时汇报 no_action。
@@ -56,7 +57,7 @@ const SECRET_NAME = /(_API_KEY|_ACCESS_KEY|_TOKEN|_SECRET|_PASSWORD)$|^SECRET_/i
 // RpcClient spreads the host's process.env under the env it is given; an undefined value masks
 // a name there because spawn drops undefined entries.
 export function workerEnv(host: NodeJS.ProcessEnv): Record<string, string> {
-	return Object.fromEntries(Object.keys(host).map((name) => [name, SECRET_NAME.test(name) || name === CREDENTIAL_DIR_NAME ? undefined : host[name]])) as Record<string, string>;
+	return { ...Object.fromEntries(Object.keys(host).map((name) => [name, SECRET_NAME.test(name) || name === CREDENTIAL_DIR_NAME ? undefined : host[name]])), PSA_REPO: REPO } as Record<string, string>;
 }
 
 export interface WorkerArgsInput {

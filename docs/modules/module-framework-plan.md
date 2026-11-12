@@ -421,40 +421,45 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `modules/module-builder/`（`module.json`、`rules.md`、`skills/`、`agents/`、`evals/`）。
-- [ ] Edit `docs/modules/module-user-guide.md`，加「用聊天做模块」一节。
+- [x] Create `modules/module-builder/`（`module.json`、`rules.md`、`skills/`、`agents/`、`evals/`）。
+- [x] Edit `docs/modules/module-user-guide.md`，加「用聊天做模块」一节。
+- [x] Edit `src/host/pi-worker.ts`（Worker 环境多一个 `PSA_REPO`）、`src/worker/extension.ts`（删 PSA_ 变量时留下它）、`src/host/output.ts`（规则写明模块目录，写文件检查把它算在里面），以及它们的测试 `tests/pi-worker-env.test.ts`、`tests/worker-extension.test.ts`、`tests/output.test.ts`、`tests/write-check.test.ts`。
 
 **Build.**
 
-- [ ] 一支团队（访谈、搭结构、整理知识、出考题、检查）和几份技能。专家有 `write`、`edit`、`bash`，在 `<stateDir>/modules/<名字>/` 里写文件，自己跑 `just module check` 和 `just module try`。新模块停在已停用。
+- [x] 一支团队（访谈、搭结构、整理知识、出考题、检查）和几份技能。专家有 `write`、`edit`、`bash`，在 `<stateDir>/modules/<名字>/` 里写文件，自己跑 `just module check` 和 `just module try`。新模块停在已停用。
 
 **You see.**
 
-- [ ] 对幕僚长说「帮我做一个记录读书笔记的模块」，几轮对话后状态目录里出现一个检查通过、已停用的模块。
+- [x] 对幕僚长说「帮我做一个记录读书笔记的模块」，几轮对话后状态目录里出现一个检查通过、已停用的模块。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/module-builder.test.ts` 覆盖包通过检查、专家的 `tools` 和 `uses` 合法、默认打开。Run `just test`.
+- [x] `tests/module-builder.test.ts` 覆盖包通过检查、专家的 `tools` 和 `uses` 合法、默认打开。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/f6-live.ts`，lane 9 和 10 用真模型。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 没有制作模块，记录这一点。head 上跑 `just modules`。Save `f6-regression.txt`. Pass when 其余模块的状态和 F5 相同。
-- [ ] Lane 2. `just module check modules/module-builder`。Save `f6-check.txt`. Pass when ok。
-- [ ] Lane 3. `just module try module-builder` 用假模型。Save `f6-try.txt`. Pass when 考题通过。
-- [ ] Lane 4. 假模型回放「做一个读书笔记模块」。Save `f6-notes.txt`. Pass when 生成的包检查通过、已停用。
-- [ ] Lane 5. 生成的包同名已存在。Save `f6-dup.txt`. Pass when 不覆盖，回复说明。
-- [ ] Lane 6. 让它改已有模块加一份技能。Save `f6-edit.txt`. Pass when 存盘后换上新摘要。
-- [ ] Lane 7. 它写坏一个文件。Save `f6-bad.txt`. Pass when 它读到检查结果并改好。
-- [ ] Lane 8. 推断任务里调用它。Save `f6-infer.txt`. Pass when 不开出制作任务。
-- [ ] Lane 9. 用真模型 `openai-codex/*` 做一个「家庭菜谱」模块。Save `f6-real.txt`. Pass when 包检查通过，有知识和技能。
-- [ ] Lane 10. 打开 lane 9 做出的模块并问它一个问题。Save `f6-real-use.txt`. Pass when 任务分到这个模块。
+- [x] Lane 1. Regression lane against trunk. trunk 没有制作模块，记录这一点。head 上跑 `just modules`。Save `f6-regression.txt`. Pass when 其余模块的状态和 F5 相同。
+- [x] Lane 2. `just module check modules/module-builder`。Save `f6-check.txt`. Pass when ok。
+- [x] Lane 3. `just module try module-builder` 用假模型。Save `f6-try.txt`. Pass when 考题通过。
+- [x] Lane 4. 假模型回放「做一个读书笔记模块」。Save `f6-notes.txt`. Pass when 生成的包检查通过、已停用。
+- [x] Lane 5. 生成的包同名已存在。Save `f6-dup.txt`. Pass when 不覆盖，回复说明。
+- [x] Lane 6. 让它改已有模块加一份技能。Save `f6-edit.txt`. Pass when 存盘后换上新摘要。
+- [x] Lane 7. 它写坏一个文件。Save `f6-bad.txt`. Pass when 它读到检查结果并改好。
+- [x] Lane 8. 推断任务里调用它。Save `f6-infer.txt`. Pass when 不开出制作任务。
+- [x] Lane 9. 用真模型 `openai-codex/*` 做一个「家庭菜谱」模块。Save `f6-real.txt`. Pass when 包检查通过，有知识和技能。
+- [x] Lane 10. 打开 lane 9 做出的模块并问它一个问题。Save `f6-real-use.txt`. Pass when 任务分到这个模块。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 多一个模块后宿主启动时间。
-- [ ] Probe. trunk 和 head 交替各 5 次 `startHost`。
-- [ ] Baseline. Record the trunk 中位数 first.
-- [ ] Rule. head 比 trunk 慢 200 毫秒以上就失败。
+- [x] Metric. 多一个模块后宿主启动时间。
+- [x] Probe. trunk 和 head 交替各 5 次 `startHost`。
+- [x] Baseline. Record the trunk 中位数 first.
+- [x] Rule. head 比 trunk 慢 200 毫秒以上就失败。
+
+2026-11-12 在 8043f8c 上通过：`just test` 1458 条全过；`node docs/modules/architecture/check.mjs` 7 项 ok；`docs/modules/evidence/f6-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f6/owner/`。`modules/module-builder/` 是新布局包，队名模块工坊，五位专家（访谈、搭结构、整理知识、出考题、检查），三份技能（build-module、package-layout、write-evals），两道一次答得完的考题。`rules.md` 只有一条不对任何来源生效的说明，告诉幕僚长对话里要做或改模块时以 request 开到 module-builder，推断不开。宿主改了三处，都是做模块绕不开的：助手、成员和 prepare 的环境多一个 `PSA_REPO`（代码仓库的位置，扩展删 PSA_ 变量时留下它），专家才能 `just -f "$PSA_REPO/justfile" module ...`；「成品放在哪里」规则写明模块包放 `<状态目录>/modules/<名字>/`，写那里不算写到外面。后一处来自真模型：只改技能的三次运行（两次 FAIL，一次靠符号链接蒙混）都把包写进了成品目录 `output/apps/`，宿主的规则压过了模块的技能，记录在 `/tmp/swarm-f6/owner/f6-real-attempt*.txt`。Lane 8 证明推断任务开进 module-builder 时助手和成员都只有只读工具，bash 和 write 返回「Tool not found」，没有包生成。Lane 9 用 `openai-codex/gpt-6.1-terra` 和 `gpt-6.1-sol` 从一句话做出 family-recipes：14.5 分钟，五位专家都派到，检查 ok，知识 1 份、技能 1 份、专家 1 位、考题 2 道，预演 2/2 PASS，停在已停用；lane 10 打开后问「家里有番茄和鸡蛋」，5.6 秒开出 family-recipes 的任务。Perf：`startHost` 到打印网址，F5 中位数 388 毫秒，head 392 毫秒（各 5 次交替，离散 37 和 5 毫秒）。
+
+2026-11-12 在 f123cb8 上复核通过（其后的提交只改这份计划）：gates verifier 在 deed66d 上跑 `just test` 1463/1463，check.mjs 7/7，lane 1 到 10 全 PASS（lane 9 真模型 9.5 分钟，family-recipes 检查 ok，预演 2/2），perf 慢 5 毫秒，输出在 `/tmp/swarm-f6/verify/`。修正轮在 f123cb8 上让规则的写入检查和派活两句都写明模块目录，design.md 第 6 节如实记下宿主的三处通用改动，package-layout 技能允许没有来源的分派说明；`just test` 1463 条只有已知会抖的「终端 Ctrl+C」失败一次，单独重跑 8/8 过，check.mjs 7/7，lane 1 到 8 全 PASS，lane 1 对比父分支的 faffa98，输出在 `/tmp/swarm-f6/fix/`。
 
 **Review gate.** None. F6 is not review-gated.
 

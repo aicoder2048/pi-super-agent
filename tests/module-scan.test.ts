@@ -44,9 +44,9 @@ test("schema 1 的好包出现在 packages 里，不算旧布局模块，也不�
 	assert.equal(tax.scan.scan.manifest.version, "0.1.0");
 });
 
-test("旧布局模块行为不变：仓库里只有 pi-pi 是新布局包，其余的 found 和 modules 和以前一样", () => {
+test("旧布局模块行为不变：仓库里只有 module-builder 和 pi-pi 是新布局包，其余的 found 和 modules 和以前一样", () => {
 	const modules = Modules.load([repoModules], { switches: switches({ "toy-market": true }) });
-	assert.deepEqual(modules.packages.map((p) => p.name), ["pi-pi"]);
+	assert.deepEqual(modules.packages.map((p) => p.name), ["module-builder", "pi-pi"]);
 	assert.deepEqual(modules.modules.map((m) => m.name), ["toy-market", "us-market"]);
 });
 

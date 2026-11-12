@@ -16,7 +16,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 });
 `;
 
-test("Worker 子进程和领域的 prepare 拿不到宿主环境里的密钥类变量，只拿到宿主给它的 PSA_ 变量；领域的技能目录交给助手进程，全局技能不加载", async (t) => {
+test("Worker 子进程和领域的 prepare 拿不到宿主环境里的密钥类变量，只拿到宿主给它的 PSA_ 变量（含代码仓库的位置 PSA_REPO）；领域的技能目录交给助手进程，全局技能不加载", async (t) => {
 	const dir = mkdtempSync(join(tmpdir(), "psa-env-"));
 	const cliPath = join(dir, "fake-pi.mjs");
 	writeFileSync(cliPath, FAKE_PI);
@@ -40,7 +40,9 @@ test("Worker 子进程和领域的 prepare 拿不到宿主环境里的密钥类�
 	assert.equal(env.PSA_TOKEN, "secret-ticket-token");
 	assert.equal(env.PSA_KEEP_HOME, "kept");
 	assert.equal(env.PATH, process.env.PATH);
+	assert.ok(existsSync(join(env.PSA_REPO, "justfile")), `PSA_REPO 指向宿主代码仓库，助手能用 just -f 跑 just module：${env.PSA_REPO}`);
 	const prepared = readFileSync(join(dir, "prepare-env.txt"), "utf8");
+	assert.match(prepared, /^PSA_REPO=/m, "prepare 和成员用同一份环境，也有 PSA_REPO");
 	assert.ok(!/MASSIVE_API_KEY|FINNHUB_API_KEY|FOO_TOKEN|DEEPSEEK_API_KEY/.test(prepared), "prepare 环境里不该有密钥类变量");
 	const argv = JSON.parse(readFileSync(join(dir, "worker-argv.json"), "utf8")) as string[];
 	assert.deepEqual(argv.flatMap((a, i) => (a === "--skill" ? [argv[i + 1]] : [])), ["/modules/news/skills"]);

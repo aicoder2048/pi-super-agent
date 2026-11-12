@@ -27,12 +27,15 @@ test("分类表的目录互不相同，也不互相嵌套；只有 apps 用应�
 	assert.ok(dirs.includes("docs/analysis"));
 });
 
-test("助手和成员的规则里写着成品目录的绝对路径，分类表的每个目录都在里面", () => {
-	const { root, output } = outputRoot();
+test("助手和成员的规则里写着成品目录的绝对路径，分类表的每个目录都在里面，也写着模块包放在状态目录的 modules/", () => {
+	const { root, stateDir, output } = outputRoot();
 	for (const role of ["helper", "member"] as const) {
 		const rule = output.prompt(role);
 		for (const kind of OUTPUT_KINDS) assert.ok(rule.includes(`${root}/${kind.dir}/`), `${role} 的规则里没有 ${kind.dir}`);
 		assert.match(rule, /不要写进代码仓库/);
+		assert.ok(rule.includes(`模块包写进 ${join(stateDir, "modules")}/<名字>/`), `${role} 的规则写明模块包的位置`);
+		const check = rule.split("\n").find((l) => l.includes("宿主会检查")) ?? "";
+		assert.match(check, /模块目录/, `${role} 的规则里，宿主的写入检查也把模块目录算在里面`);
 		const dataRow = rule.split("\n").find((l) => l.startsWith(`| ${root}/data/ |`)) ?? "";
 		assert.doesNotMatch(dataRow, /\.md/, "数据那一行的起名例子不该带 .md");
 	}
@@ -44,6 +47,8 @@ test("只有助手的规则里有 new_app，也要求派活时写明目录、不
 	const member = output.prompt("member");
 	assert.match(helper, /new_app/);
 	assert.match(helper, /派活给成员时.*绝对路径/);
+	const dispatch = helper.split("\n").find((l) => l.includes("派活给成员时")) ?? "";
+	assert.match(dispatch, /模块目录/, "派活时可以把模块目录下的模块包路径写进任务");
 	assert.doesNotMatch(member, /new_app/);
 	assert.match(member, /请领队给/);
 });

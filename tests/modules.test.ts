@@ -16,7 +16,7 @@ const quote = (body: string) => ({ source: "toy-market", externalId: "x", thread
 test("仓库里的模块都被发现，规则带模块前缀", () => {
 	const modules = withToy();
 	assert.deepEqual(modules.found.map((m) => m.name), ["toy-market", "us-market"]);
-	assert.deepEqual(modules.packages.map((p) => p.name), ["pi-pi"]);
+	assert.deepEqual(modules.packages.map((p) => p.name), ["module-builder", "pi-pi"]);
 	assert.ok(modules.ruleAllows("toy-market/big-move", "toy-market"));
 	assert.ok(!modules.ruleAllows("big-move", "toy-market"));
 	assert.match(modules.rulesPrompt(), /### toy-market\/big-move/);
@@ -176,11 +176,11 @@ test("模块不能叫 user：这个名字留给使用者自己的规则，加载
 	assert.throws(() => Modules.load([root]), (e: Error) => e instanceof ConfigError && e.message.startsWith(join(root, "user/module.json")) && /不能叫 user/.test(e.message) && !e.message.includes("\n"));
 });
 
-test("仓库里的三个模块都有领域名和给幕僚长的说明，出现在领域名册里；玩具行情没有成员", () => {
+test("仓库里的四个模块都有领域名和给幕僚长的说明，出现在领域名册里；玩具行情没有成员", () => {
 	const modules = servedAsHost(withToy());
 	assert.equal(
 		modules.rosterPrompt(),
-		"- toy-market（玩具行情）：演示用的假行情，只管玩具代码（如 TOYX）的波动\n- us-market（美股行情）：美股行情、个股涨跌和原因、技术面、财报、相关新闻和盯盘提醒\n- pi-pi（Pi 开发）：怎么写 Pi 的扩展、主题、技能、配置、提示模板和终端界面组件",
+		"- toy-market（玩具行情）：演示用的假行情，只管玩具代码（如 TOYX）的波动\n- us-market（美股行情）：美股行情、个股涨跌和原因、技术面、财报、相关新闻和盯盘提醒\n- module-builder（模块制作）：用聊天做一个新模块，或改一个已有模块：访谈、搭包、整理知识、出考题、检查\n- pi-pi（Pi 开发）：怎么写 Pi 的扩展、主题、技能、配置、提示模板和终端界面组件",
 	);
-	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true }, "us-market": { team: "美股看盘队", onRoster: true } });
+	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "module-builder": { team: "模块工坊", onRoster: true }, "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true }, "us-market": { team: "美股看盘队", onRoster: true } });
 });

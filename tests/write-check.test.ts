@@ -200,3 +200,13 @@ test("成品目录里名字以 .. 开头的文件仍算里面", () => {
 	w.helper(call("write", { path: join(w.output.root, "..notes.md"), content: "x" }), call("write", { path: join(w.workdir, "..draft.md"), content: "x" }));
 	assert.deepEqual(w.check().outside, []);
 });
+
+test("状态目录 modules/ 下的模块包是成品，写进去算里面；它旁边的 module-store 仍算外面", () => {
+	const w = world();
+	w.helper(
+		call("write", { path: join(w.stateDir, "modules", "family-recipes", "module.json"), content: "{}" }),
+		call("edit", { path: "../../modules/family-recipes/skills/cook/SKILL.md", edits: [] }),
+		call("write", { path: join(w.stateDir, "module-store", "x", "module.json"), content: "{}" }),
+	);
+	assert.deepEqual(w.check().outside.map((o) => o.kind === "wrote" && o.path), [join(w.stateDir, "module-store", "x", "module.json")]);
+});
