@@ -4,7 +4,7 @@ import { join } from "node:path";
 import http from "node:http";
 import { connect, createServer } from "node:net";
 import test, { mock, type TestContext } from "node:test";
-import type { ConversationLine, HostToClient, TodayCounts, WatchedSource } from "../src/client/protocol.ts";
+import type { ConversationLine, HostToClient, ModuleCard, TodayCounts, WatchedSource } from "../src/client/protocol.ts";
 import type { DashboardRow, Routes } from "../src/kernel/types.ts";
 import type { Dispatching } from "../src/host/dispatch.ts";
 import { formatInputs } from "../src/host/workers.ts";
@@ -20,6 +20,8 @@ import { openStore } from "../src/kernel/store.ts";
 import { Kernel } from "../src/kernel/kernel.ts";
 import { answerSentence } from "../src/kernel/question.ts";
 import { busyPort, domainsOf, fakeFeed, freePort, ids, ofType, openOnConversation, startHost, tempStateDir, until, within } from "./helpers/fakes.ts";
+import { importCommand } from "../src/modules/knowledge.ts";
+import type { ComponentName, ModuleName } from "../src/modules/manifest.ts";
 
 function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
@@ -328,6 +330,36 @@ test("页面：关注的来源每一行用来源原名，显示第一条规则�
 		{ source: "pager", name: "pager", rule: "每 30 分钟：看看", hits: "", alerts: "", problem: false, lists: [] },
 		{ source: "quotes", name: "quotes", rule: "收到新消息时处理", hits: "", alerts: "", problem: false, lists: [] },
 	]);
+});
+
+test("页面：模块栏每个模块一张卡：标题和名字、状态、版本、组成、密钥名字、钉着旧版本的任务数、没导入的知识和导入命令、开关按钮", () => {
+	const view = page.emptyView();
+	const health = taxCard({
+		name: "personal-health", title: "个人医疗健康", on: true, label: "运行中", reason: "", tone: "ok", components: { knowledge: 2, tools: 1, agents: 5, rules: 1 }, secrets: ["EXAMPLE_TOKEN"], pinnedOld: 2,
+		notImported: ["hf", "ccs"],
+	});
+	page.applyMessage(view, { ...board([]), modules: [health, taxCard({ title: undefined })] } as HostToClient, 0);
+	const [on, off] = page.leftColumn(view, 0).modules;
+	assert.deepEqual(on, {
+		name: "personal-health", heading: "个人医疗健康 · personal-health", on: true, button: "关掉", state: "运行中", tone: "ok", version: "版本 0.1.0 · abcdef123456",
+		lines: ["知识 2 · 工具 1 · 成员 5 · 规则 1", "密钥 EXAMPLE_TOKEN", "2 个任务还在用旧版本"], problems: [],
+		importsHeading: "还没导入的知识 2 份",
+		imports: [{ name: "hf", command: "just module import personal-health hf <文件或目录>" }, { name: "ccs", command: "just module import personal-health ccs <文件或目录>" }],
+	});
+	assert.equal(on.imports[0].command, importCommand("personal-health" as ModuleName, "hf" as ComponentName), "和宿主给的导入命令一字不差");
+	assert.deepEqual([off.heading, off.button, off.state, off.tone, off.lines], ["tax", "打开", "已停用 · 你把它关了，数据还留着", "off", ["技能 1"]]);
+});
+
+test("页面：无效的模块卡用宿主给的警示色，列出哪个文件哪一处；宿主没给原因时状态行只写状态", () => {
+	const view = page.emptyView();
+	const problems = ["module.json：unknown key \"descripton\"", "tools/x/tool.json：needs \"entry\""];
+	page.applyMessage(view, { ...board([]), modules: [taxCard({ on: true, label: "无效", reason: "", tone: "bad", problems })] } as HostToClient, 0);
+	const [card] = page.leftColumn(view, 0).modules;
+	assert.deepEqual([card.state, card.tone, card.problems], ["无效", "bad", problems]);
+});
+
+test("页面：老宿主的帧没有 modules 时模块栏是空的", () => {
+	assert.deepEqual(page.leftColumn(withRows([]), 0).modules, []);
 });
 
 test("页面：带标题的来源显示标题和一句说明；看不了盘时把问题写在说明前面，标成有问题", () => {
@@ -1461,6 +1493,75 @@ test("网关：GET /say、GET /clear 405；/clear 的正文不是 {} 时 400；/
 	const res = await request(at("/"), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
 	assert.equal(res.status, 405);
 	assert.match(res.body, /POST \/clear/);
+});
+
+function modulePanel(cards: ModuleCard[]) {
+	const switched: [string, boolean][] = [];
+	let listener = () => {};
+	return {
+		switched,
+		changed: () => listener(),
+		panel: {
+			cards: () => cards,
+			setSwitch: (name: string, on: boolean) => cards.some((c) => c.name === name) && switched.push([name, on]) > 0,
+			onChange: (l: () => void) => void (listener = l),
+		},
+	};
+}
+
+const taxCard = (over: Partial<ModuleCard> = {}): ModuleCard => ({
+	name: "tax", title: "报税", on: false, label: "已停用", reason: "你把它关了，数据还留着", tone: "off", problems: [], version: { label: "0.1.0", digest: "abcdef123456" },
+	components: { skills: 1 }, secrets: [], pinnedOld: 0, notImported: [], ...over,
+});
+
+test("网关：POST /module 写开关，回 204；要 token、本机 Origin、JSON 正文；没发现的模块、不合格的正文 400；GET 405", async (t) => {
+	const modules = modulePanel([taxCard()]);
+	const { at, url } = await sayHost(t, undefined, { modules: modules.panel });
+	type Over = { token?: string; origin?: string | null; type?: string };
+	const toggle = (body: string, over: Over = {}) =>
+		request(at("/module", over.token), { method: "POST", body, headers: { "content-type": over.type ?? "application/json", ...(over.origin === null ? {} : { origin: over.origin ?? url.origin }) } });
+	const on = JSON.stringify({ module: "tax", on: true });
+	assert.equal((await toggle(on, { token: "" })).status, 401);
+	assert.equal((await toggle(on, { token: "0".repeat(64) })).status, 401);
+	assert.equal((await toggle(on, { origin: null })).status, 403);
+	assert.equal((await toggle(on, { origin: "http://evil.example" })).status, 403);
+	assert.equal((await toggle(on, { type: "text/plain" })).status, 415);
+	assert.deepEqual(modules.switched, []);
+	for (const body of [JSON.stringify({ module: "nope", on: true }), JSON.stringify({ module: "tax", on: "yes" }), JSON.stringify({ module: "tax" }), JSON.stringify({ module: "tax", on: true, x: 1 }), "[]"]) {
+		assert.equal((await toggle(body)).status, 400, body);
+	}
+	assert.equal((await request(at("/module"))).status, 405);
+	const res = await toggle(on);
+	assert.equal(res.status, 204);
+	assert.equal((await toggle(JSON.stringify({ module: "tax", on: false }))).status, 204);
+	assert.deepEqual(modules.switched, [["tax", true], ["tax", false]]);
+});
+
+test("宿主：网页写了开关就推一次看板，不等模块表的轮询", async (t) => {
+	const modules = modulePanel([taxCard()]);
+	const { events, url, at } = await sayHost(t, undefined, { modules: modules.panel });
+	const stream = events();
+	await until(() => stream.got.length > 0, "快照");
+	const res = await request(at("/module"), { method: "POST", body: JSON.stringify({ module: "tax", on: true }), headers: { "content-type": "application/json", origin: url.origin } });
+	assert.equal(res.status, 204);
+	await until(() => ofType(stream.got, "board").length > 0, "看板帧");
+});
+
+test("宿主：快照和看板帧带 modules，是模块表给的卡；模块表说变了就推一次看板", async (t) => {
+	const cards = [taxCard()];
+	const modules = modulePanel(cards);
+	const { host, events } = await sayHost(t, undefined, { modules: modules.panel });
+	assert.deepEqual(host.snapshot().modules, cards);
+	const stream = events();
+	await until(() => stream.got.length > 0, "快照");
+	cards[0] = taxCard({ on: true, label: "运行中", reason: "", tone: "ok" });
+	modules.changed();
+	await until(() => ofType(stream.got, "board").some((b) => b.modules[0]?.label === "运行中"), "带运行中的看板帧");
+});
+
+test("宿主：没有模块表时 modules 是空的", async (t) => {
+	const { host } = await sayHost(t);
+	assert.deepEqual(host.snapshot().modules, []);
 });
 
 const openTicketOnConversation = (cards: string[]) => (cards[0]?.startsWith("[对话]") ? openOnConversation(cards[0]) : []);

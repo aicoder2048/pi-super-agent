@@ -300,8 +300,8 @@ export function saveModuleRecord(db: DatabaseSync, record: ModuleRecord): void {
 }
 
 /** The package versions open tickets are pinned to. Their copies must stay. */
-export function pinnedCopies(db: DatabaseSync): { module: string; digest: string }[] {
-	return db.prepare("SELECT DISTINCT domain AS module, module_digest AS digest FROM tickets WHERE closed_at IS NULL AND module_digest IS NOT NULL").all() as { module: string; digest: string }[];
+export function pinnedCopies(db: DatabaseSync): { module: string; digest: string; tickets: number }[] {
+	return db.prepare("SELECT domain AS module, module_digest AS digest, COUNT(*) AS tickets FROM tickets WHERE closed_at IS NULL AND module_digest IS NOT NULL GROUP BY domain, module_digest").all() as { module: string; digest: string; tickets: number }[];
 }
 
 export function inTransaction<T>(db: DatabaseSync, fn: () => T): T {

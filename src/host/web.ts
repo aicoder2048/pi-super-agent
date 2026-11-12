@@ -18,6 +18,7 @@ export interface WebHost {
 	sayQuoting(text: string, lineId: string): string | null;
 	answer(reportId: string, option: number): AnswerResult;
 	clear(): void;
+	switchModule(name: string, on: boolean): boolean;
 }
 
 const SAY_MAX_BYTES = 32 * 1024;
@@ -42,11 +43,11 @@ const KEEPALIVE_MS = 15_000;
 const INTERNAL_ERROR = "宿主内部出错，详情见宿主日志。";
 
 const DENIED = {
-	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"} 或 {\"answer\": {\"reportId\": \"rpt_…\", \"option\": 0}}，或这句话是空的；清屏的正文是 {}。",
+	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"} 或 {\"answer\": {\"reportId\": \"rpt_…\", \"option\": 0}}，或这句话是空的；清屏的正文是 {}；开关模块的正文是 {\"module\": \"名字\", \"on\": true}，名字要是宿主发现过的模块。",
 	401: "token 缺失或已失效，请用宿主日志里最新的网址打开。",
 	403: "只接受本机这个页面（127.0.0.1 或 localhost）或 config.json 的 webHosts 里列出的地址发来的请求。",
 	404: "没有这个页面。",
-	405: "这个地址不接受这种请求；发话用 POST /say，清屏用 POST /clear，其余只接受 GET。",
+	405: "这个地址不接受这种请求；发话用 POST /say，清屏用 POST /clear，开关模块用 POST /module，其余只接受 GET。",
 	413: "这句话太长了，请分几次说。",
 	415: "发话的正文要用 application/json。",
 } as const;
@@ -64,6 +65,7 @@ export class WebGateway {
 	readonly #posts = new Map<string, (body: string, res: ServerResponse) => void>([
 		["/say", (body, res) => this.#say(body, res)],
 		["/clear", (body, res) => this.#clear(body, res)],
+		["/module", (body, res) => this.#switchModule(body, res)],
 	]);
 
 	constructor(host: WebHost, token: string, log: (line: string) => void, names: readonly TailnetName[] = []) {
@@ -198,6 +200,12 @@ export class WebGateway {
 		res.writeHead(204, NO_LEAK_HEADERS).end();
 	}
 
+	#switchModule(text: string, res: ServerResponse): void {
+		const body = parseSwitchBody(text);
+		if (body === undefined || !this.#host.switchModule(body.module, body.on)) return deny(res, 400);
+		res.writeHead(204, NO_LEAK_HEADERS).end();
+	}
+
 	#openStream(res: ServerResponse, first: HostToClient, set: Set<ServerResponse>, onEmpty?: () => void): void {
 		res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "text/event-stream; charset=utf-8", connection: "keep-alive" });
 		res.write("retry: 1000\n\n");
@@ -240,6 +248,13 @@ function parseSayBody(body: string): SayBody | undefined {
 	if (typeof reportId !== "string" || !(REPORT_ID.test(reportId) || isCapAskId(reportId))) return undefined;
 	if (typeof option !== "number" || !Number.isInteger(option) || option < 0 || option >= OPTIONS_MAX) return undefined;
 	return { kind: "answer", reportId, option };
+}
+
+function parseSwitchBody(body: string): { module: string; on: boolean } | undefined {
+	const parsed = parseObject(body);
+	if (parsed === undefined || Object.keys(parsed).sort().join() !== "module,on") return undefined;
+	const { module, on } = parsed as { module: unknown; on: unknown };
+	return typeof module === "string" && typeof on === "boolean" ? { module, on } : undefined;
 }
 
 function isEmptyObject(body: string): boolean {

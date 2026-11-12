@@ -15,7 +15,7 @@ import type { WorkerEvents, WorkerSpec } from "../src/host/workers.ts";
 import { Modules } from "../src/modules.ts";
 import { defaultWorkerModels, FakeSpawner, fauxRouter, ids, openOnConversation, startHost, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
 
-const fixed = (modules: Modules) => ({ live: liveRegistry(modules), kitFor: (domain: string) => modules.kitFor(domain) });
+const fixed = (modules: Modules) => ({ live: liveRegistry(modules), kitFor: (domain: string) => modules.kitFor(domain), cards: () => [], setSwitch: () => false, onChange: () => {} });
 
 const replyOnReport: Brain = (cards) =>
 	cards.flatMap((card) => {

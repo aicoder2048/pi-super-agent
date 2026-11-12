@@ -84,13 +84,14 @@ export function telegramOptions(config: Pick<HostConfig, "stateDir" | "secretsFi
 export interface HostWiringInput {
 	config: HostConfig;
 	/** The timers, the feeds and `watching` are read once here; F5 makes them follow. */
-	modules: Pick<LiveModules, "live" | "kitFor">;
+	modules: Pick<LiveModules, "live" | "kitFor" | "cards" | "setSwitch" | "onChange">;
 	modelRuntime: ModelRuntime;
 	log: (line: string) => void;
 	clock?: Clock;
 }
 
-export function createHostOptions({ config, modules: { live, kitFor }, modelRuntime, log, clock = { now: () => Date.now() } }: HostWiringInput): HostOptions {
+export function createHostOptions({ config, modules: panel, modelRuntime, log, clock = { now: () => Date.now() } }: HostWiringInput): HostOptions {
+	const { live, kitFor } = panel;
 	const modules = live.current();
 	const resolve = (ref: ModelRef, role?: string) => {
 		const model = modelRuntime.getModel(ref.provider, ref.id);
@@ -119,6 +120,7 @@ export function createHostOptions({ config, modules: { live, kitFor }, modelRunt
 		ruleAllows: (ruleId, source) => live.current().ruleAllows(ruleId, source),
 		isMarketSource: (source) => live.current().isMarketSource(source),
 		domains: { book: () => live.current().book, kitFor },
+		modules: panel,
 		gateway: createGateway({
 			copyDir: (module, digest) => store.dirOf(module, digest),
 			serving: (module) => live.current().book.get(module)?.digest as Digest | undefined,

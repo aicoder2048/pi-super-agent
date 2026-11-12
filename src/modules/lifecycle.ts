@@ -174,13 +174,15 @@ export function transition(record: ModuleRecord, event: ModuleEvent): { record: 
 	}
 }
 
+export const problemText = (problem: Problem) => `${problem.where}：${problem.reason}`;
+
 /** The one line the modules page and `just module list` show. */
 export function describe(record: ModuleRecord): { label: string; reason: string } {
 	const stageLine = (stage: Stage): { label: string; reason: string } => {
 		if (stage.at === "checking") return { label: "检查中", reason: `正在检查 ${stage.version.label}` };
 		if (stage.at === "migrating") return { label: "迁移中", reason: `正在按 ${stage.version.label} 调整数据结构` };
 		const first = stage.problems[0];
-		return { label: "无效", reason: first === undefined ? "检查没有通过" : `${first.where}：${first.reason}` };
+		return { label: "无效", reason: first === undefined ? "检查没有通过" : problemText(first) };
 	};
 	const state = record.state;
 	if (state.at === "missing") return { label: "包不在了", reason: state.last === null ? "没有见过这个模块包" : "模块包被拿掉了，数据还留着" };
