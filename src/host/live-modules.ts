@@ -5,14 +5,17 @@
  * each record to match, so a switch takes effect within one poll.
  */
 import type { DatabaseSync } from "node:sqlite";
-import { join } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { BUNDLED_MODULES } from "./config.ts";
 import { moduleRows, pinnedCopies, saveModuleRecord, setModuleSwitch } from "../kernel/store.ts";
-import { packageModule, type DomainKit, type LoadedModule, type Modules } from "../modules.ts";
+import { isPackageManifest, packageModule, type DomainKit, type LoadedModule, type Modules } from "../modules.ts";
 import { initialRecord, type Effect, type ModuleEvent, type Version } from "../modules/lifecycle.ts";
 import { drive, liveRegistry, ModuleStore, switchEvent } from "../modules/live.ts";
 import type { Digest, ModuleName, PackageScan, Problem, ScanResult } from "../modules/manifest.ts";
 import type { LiveRegistry } from "../modules/registry.ts";
 import { digestOf, hasCases, runCasesAsync, scanPackage } from "../modules/validate.ts";
+import { watchModules, type Saved } from "../modules/watch.ts";
 
 const POLL_MS = 500;
 const LEGACY_LABEL = "旧布局";
@@ -28,6 +31,8 @@ export interface LiveModules {
 export interface LiveModulesOptions {
 	db: DatabaseSync;
 	stateDir: string;
+	/** The folders that hold module folders. A saved change under one swaps the module without a restart. */
+	roots: readonly string[];
 	discovered: Modules;
 	/** config.json's `modules`, imported into the switches on the first boot only. */
 	configSwitches: Record<string, boolean>;
@@ -40,15 +45,16 @@ const versionOf = (dir: string, scan: ScanResult): Version =>
 /** `legacy` is set for a module the legacy loader read; it serves from its folder, with no copy. */
 type Found = { dir: string; version: Version; legacy?: LoadedModule };
 
-export function startLiveModules({ db, stateDir, discovered, configSwitches, log }: LiveModulesOptions): LiveModules {
+export function startLiveModules({ db, stateDir, roots, discovered, configSwitches, log }: LiveModulesOptions): LiveModules {
 	const store = new ModuleStore(join(stateDir, "module-store"));
 	const found = new Map<string, Found>([
 		...discovered.found.map((m): [string, Found] => [m.name, { dir: m.dir, version: { digest: digestOf(m.dir), label: LEGACY_LABEL }, legacy: m }]),
 		...discovered.packages.map(({ name, dir, scan }): [string, Found] => [name, { dir, version: versionOf(dir, scan) }]),
 	]);
 	const defaultOn = (name: string) => {
-		const legacy = found.get(name)?.legacy;
-		return legacy !== undefined && legacy.manifest.defaultEnabled !== false;
+		const entry = found.get(name);
+		if (entry?.legacy) return entry.legacy.manifest.defaultEnabled !== false;
+		return entry !== undefined && dirname(entry.dir) === BUNDLED_MODULES;
 	};
 	const safely = (what: string, work: () => void) => {
 		try {
@@ -57,7 +63,8 @@ export function startLiveModules({ db, stateDir, discovered, configSwitches, log
 			log(`[modules] ${what}出错：${error instanceof Error ? error.message : String(error)}`);
 		}
 	};
-	const copies = new Map<Digest, LoadedModule | undefined>();
+	/** Seeded with the legacy modules, which serve from their folder, so a legacy version resolves like a copy. */
+	const copies = new Map<Digest, LoadedModule | undefined>([...found.values()].flatMap((entry) => (entry.legacy ? [[entry.version.digest, entry.legacy] as const] : [])));
 	const fromCopy = (module: ModuleName, digest: Digest): LoadedModule | undefined => {
 		if (!copies.has(digest)) {
 			try {
@@ -120,16 +127,29 @@ export function startLiveModules({ db, stateDir, discovered, configSwitches, log
 		log(`[modules] ${name} 的文件在复制时变了，重新检查`);
 		return { type: "package-found", version: versionOf(entry.dir, scanPackage(entry.dir, { runCases: false })) };
 	};
+	/** Files saved since the version that serves now, for the receipt. */
+	const unswapped = new Map<string, Set<string>>();
+	const servingDigest = (name: string) => {
+		const state = records.get(name)?.state;
+		return state?.at === "active" ? state.serving.digest : undefined;
+	};
 	const step = (name: string, event: ModuleEvent | null) => {
+		const before = servingDigest(name);
 		const record = drive(records.get(name) ?? initialRecord(name as ModuleName), event, (r) => saveModuleRecord(db, r), run(name));
 		records.set(name, record);
+		const after = servingDigest(name);
+		const changed = unswapped.get(name);
+		if (changed === undefined || before === undefined || after === undefined || after === before) return;
+		unswapped.delete(name);
+		const label = record.state.at === "active" ? record.state.serving.label : "?";
+		log(`[modules] 收据：${name} 换上 ${label}（${after.slice(0, 12)}），改了 ${[...changed].sort().join("、") || "（没记下文件名）"}`);
 	};
 
 	const table = (): Modules => {
 		const serving = [...found].flatMap(([name, entry]): LoadedModule[] => {
 			const record = records.get(name);
 			if (record?.state.at !== "active") return [];
-			return entry.legacy ? [entry.legacy] : (fromCopy(name as ModuleName, record.state.serving.digest) ?? []);
+			return fromCopy(name as ModuleName, record.state.serving.digest) ?? [];
 		});
 		return discovered.serve(serving);
 	};
@@ -159,6 +179,35 @@ export function startLiveModules({ db, stateDir, discovered, configSwitches, log
 		if (reconcile()) live.publish(table());
 		collect();
 	};
+	const rescan = (dir: string, files: ReadonlySet<string>) => {
+		const name = basename(dir);
+		const known = found.get(name);
+		if (known !== undefined && known.dir !== dir) return;
+		const manifest = join(dir, "module.json");
+		if (!existsSync(manifest)) {
+			if (known === undefined) return;
+			found.delete(name);
+			unswapped.delete(name);
+			step(name, { type: "package-gone" });
+			return;
+		}
+		if (!isPackageManifest(manifest)) {
+			log(`[modules] ${name} 是旧布局模块，改动要重启宿主才生效；module.json 写上 "schema": 1 和 "version" 以后存盘就生效`);
+			return;
+		}
+		const version = versionOf(dir, scanPackage(dir, { runCases: false }));
+		found.set(name, { dir, version });
+		unswapped.set(name, new Set([...(unswapped.get(name) ?? []), ...files]));
+		step(name, { type: "package-found", version });
+	};
+	const onSaved = (saved: Saved) =>
+		safely("处理存盘", () => {
+			for (const [dir, files] of saved) rescan(dir, files);
+			live.publish(table());
+			collect();
+		});
+	for (const root of roots) mkdirSync(root, { recursive: true });
+	const watcher = watchModules(roots, onSaved, log);
 	const timer = setInterval(() => safely("开关轮询", tick), POLL_MS);
 	timer.unref();
 
@@ -173,6 +222,7 @@ export function startLiveModules({ db, stateDir, discovered, configSwitches, log
 		stop: () => {
 			stopped = true;
 			clearInterval(timer);
+			watcher.close();
 		},
 	};
 }

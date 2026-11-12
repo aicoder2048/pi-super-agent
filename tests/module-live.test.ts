@@ -42,8 +42,9 @@ function stateDir(t: TestContext): string {
 function boot(t: TestContext, dir: string, configSwitches: Record<string, boolean> = {}) {
 	const db = openStore(join(dir, "state.db"));
 	const logs: string[] = [];
-	const discovered = Modules.load([join(dir, "modules")], { switches: { values: configSwitches, file: "config.json" } });
-	const modules = startLiveModules({ db, stateDir: dir, discovered, configSwitches, log: (line) => logs.push(line) });
+	const roots = [join(dir, "modules")];
+	const discovered = Modules.load(roots, { switches: { values: configSwitches, file: "config.json" } });
+	const modules = startLiveModules({ db, stateDir: dir, roots, discovered, configSwitches, log: (line) => logs.push(line) });
 	const stop = () => {
 		modules.stop();
 		if (db.isOpen) db.close();

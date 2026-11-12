@@ -16,6 +16,10 @@ declare module "node:fs" {
 	export function mkdtempSync(prefix: string): string;
 	export function writeFileSync(path: string, content: string): void;
 	export function rmSync(path: string, options: { recursive: true; force: true }): void;
+	export interface FSWatcher {
+		close(): void;
+	}
+	export function watch(path: string, options: { recursive: true }, listener: (event: string, filename: string | null) => void): FSWatcher;
 }
 declare module "node:os" {
 	export function tmpdir(): string;
@@ -75,6 +79,8 @@ declare const process: {
 	exitCode: number | undefined;
 	env: Record<string, string | undefined>;
 };
+declare function setTimeout(run: () => void, ms: number): unknown;
+declare function clearTimeout(timer: unknown): void;
 declare const console: {
 	log(line: string): void;
 };
