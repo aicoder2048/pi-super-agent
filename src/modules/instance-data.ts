@@ -35,7 +35,7 @@ function plan(stored: Stored, components: readonly Component[]): { sql: string[]
 		const { was, fields: declared, ...described } = collection;
 		const from = [name, was].find((n) => n !== undefined && Object.hasOwn(next.collections, n));
 		if (from === undefined) {
-			sql.push(`CREATE TABLE ${quote(name)} ("_id" INTEGER PRIMARY KEY, "_from" TEXT NOT NULL${Object.entries(declared).map(([f, d]) => `, ${column(f, d)}`).join("")})`);
+			sql.push(`CREATE TABLE ${quote(name)} ("_id" INTEGER PRIMARY KEY, "_from" TEXT NOT NULL, "_sources" TEXT${Object.entries(declared).map(([f, d]) => `, ${column(f, d)}`).join("")})`);
 			next.collections[name] = { ...described, fields: Object.fromEntries(Object.entries(declared).map(([f, d]) => [f, plain(d)])), aliases: {} };
 			continue;
 		}
@@ -52,6 +52,7 @@ function plan(stored: Stored, components: readonly Component[]): { sql: string[]
 				const old = descriptor.was;
 				if (old !== undefined && Object.hasOwn(fields, old)) {
 					sql.push(`ALTER TABLE ${quote(name)} RENAME COLUMN ${quote(old)} TO ${quote(field)}`);
+					sql.push(`UPDATE ${quote(name)} SET "_sources" = json_set(json_remove("_sources", '$.${old}'), '$.${field}', "_sources" ->> '$.${old}') WHERE "_sources" ->> '$.${old}' IS NOT NULL`);
 					delete fields[old];
 					aliases = renamed(aliases, old, field);
 				} else sql.push(`ALTER TABLE ${quote(name)} ADD COLUMN ${column(field, descriptor)}`);
@@ -96,6 +97,7 @@ export class DataInputError extends Error {}
 
 type DataComponent = Extract<Component, { kind: "data" }>;
 type Value = Extract<SQLInputValue, string | number | null>;
+type Op = "read" | "write";
 
 /** What a read or write touched. `collection` is the current name, whatever name the caller used. */
 export type Accessed = { collection: ComponentName; class: DataClass; rows: Row[] };
@@ -136,28 +138,37 @@ function valueOf(field: FieldDescriptor, name: string, value: Json | undefined):
 
 const timeField = ({ watch, fields }: CollectionDescriptor) => watch?.at ?? Object.keys(fields).find((name) => fields[name]!.type === "date");
 
-const rowOf = (fields: readonly string[], row: Record<string, Value>): Row => ({
-	id: String(row._id),
-	from: String(row._from),
-	fields: Object.fromEntries(fields.map((f) => [f, row[f] ?? null])),
-});
+const sourcesOf = (row: Record<string, Value>): Record<string, string> => (row._sources === null || row._sources === undefined ? {} : JSON.parse(String(row._sources)));
+
+function rowOf(fields: readonly string[], row: Record<string, Value>): Row {
+	const sources = Object.fromEntries(Object.entries(sourcesOf(row)).filter(([field]) => fields.includes(field)));
+	return {
+		id: String(row._id),
+		from: String(row._from),
+		fields: Object.fromEntries(fields.map((f) => [f, row[f] ?? null])),
+		...(Object.keys(sources).length > 0 && { sources }),
+	};
+}
 
 export function instanceData(stateDir: string): InstanceData & ModuleRows {
 	const pathOf = (module: ModuleName) => join(moduleDataDir(stateDir, module), "data.db");
 	/** Ensures the structure, then one short-lived connection in rollback-journal mode, so migrate's file snapshot always holds every committed row. */
-	const withRows = <T>(module: ModuleName, components: readonly Component[], use: (db: DatabaseSync, stored: Stored) => T): T => {
+	const withRows = <T>(module: ModuleName, components: readonly Component[], access: { who: string; collection: string; op: Op }, use: (db: DatabaseSync, stored: Stored) => T): T => {
 		const ensured = data.migrate(module, components);
 		if (!ensured.ok) throw new Error(ensured.reason);
 		const db = new DatabaseSync(pathOf(module));
 		try {
-			db.exec("CREATE TABLE IF NOT EXISTS _access (at TEXT NOT NULL, who TEXT NOT NULL, collection TEXT NOT NULL, op TEXT NOT NULL, rows INTEGER NOT NULL)");
+			db.exec("CREATE TABLE IF NOT EXISTS _access (at TEXT NOT NULL, who TEXT NOT NULL, collection TEXT NOT NULL, op TEXT NOT NULL, rows INTEGER NOT NULL, outcome TEXT NOT NULL)");
 			return use(db, readStored(db));
+		} catch (error) {
+			if (error instanceof DataInputError) logAccess(db, access.who, access.collection, access.op, 0, `refused：${error.message}`);
+			throw error;
 		} finally {
 			db.close();
 		}
 	};
-	const logAccess = (db: DatabaseSync, who: string, collection: string, op: "read" | "write", rows: number) =>
-		db.prepare("INSERT INTO _access VALUES (?, ?, ?, ?, ?)").run(new Date().toISOString(), who, collection, op, rows);
+	const logAccess = (db: DatabaseSync, who: string, collection: string, op: Op, rows: number, outcome = "ok") =>
+		db.prepare("INSERT INTO _access VALUES (?, ?, ?, ?, ?, ?)").run(new Date().toISOString(), who, collection, op, rows, outcome);
 
 	const data: InstanceData & ModuleRows = {
 		check(module, components) {
@@ -211,7 +222,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 			rmSync(moduleDataDir(stateDir, module), { recursive: true, force: true });
 		},
 		query(module, components, collection, query, who) {
-			return withRows(module, components, (db, stored) => {
+			return withRows(module, components, { who, collection, op: "read" }, (db, stored) => {
 				const { component, field } = resolve(stored, components, collection);
 				const visible = Object.keys(component.collection.fields);
 				const time = timeField(component.collection);
@@ -233,8 +244,8 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 			});
 		},
 		write(module, components, collection, rows, from, who) {
-			if (from.trim() === "") throw new DataInputError("写数据要写 from：这些行从哪里来，例如原件的路径，或「使用者口述」");
-			return withRows(module, components, (db, stored) => {
+			return withRows(module, components, { who, collection, op: "write" }, (db, stored) => {
+				if (from.trim() === "") throw new DataInputError("写数据要写 from：这些行从哪里来，例如原件的路径，或「使用者口述」");
 				const { component, field } = resolve(stored, components, collection);
 				const { fields, kind } = component.collection;
 				const table = quote(component.name);
@@ -248,17 +259,22 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows {
 							const now = field(name);
 							return [now, valueOf(fields[now]!, name, value)] as const;
 						});
-						const names = ["_from", ...values.map(([n]) => n)].map(quote);
-						const params: SQLInputValue[] = [from, ...values.map(([, v]) => v)];
 						if (id === undefined) {
-							const result = db.prepare(`INSERT INTO ${table} (${names.join(", ")}) VALUES (${names.map(() => "?").join(", ")})`).run(...params);
+							const names = ["_from", ...values.map(([n]) => n)].map(quote);
+							const result = db.prepare(`INSERT INTO ${table} (${names.join(", ")}) VALUES (${names.map(() => "?").join(", ")})`).run(from, ...values.map(([, v]) => v));
 							ids.push(Number(result.lastInsertRowid));
 							continue;
 						}
 						if (kind === "series") throw new DataInputError(`「${component.name}」是 series，只能追加新行，不能按 id 改`);
-						const set = names.map((n) => `${n} = ?`).join(", ");
-						const result = db.prepare(`UPDATE ${table} SET ${set} WHERE "_id" = ?`).run(...params, Number(id));
-						if (result.changes === 0) throw new DataInputError(`「${component.name}」没有 id 为 ${JSON.stringify(id)} 的一行`);
+						const before = db.prepare(`SELECT "_from", "_sources" FROM ${table} WHERE "_id" = ?`).get(Number(id)) as Record<string, Value> | undefined;
+						if (before === undefined) throw new DataInputError(`「${component.name}」没有 id 为 ${JSON.stringify(id)} 的一行`);
+						const sources = sourcesOf(before);
+						for (const [name] of values) {
+							if (from === before._from) delete sources[name];
+							else sources[name] = from;
+						}
+						const set = [...values.map(([n]) => `${quote(n)} = ?`), `"_sources" = ?`].join(", ");
+						db.prepare(`UPDATE ${table} SET ${set} WHERE "_id" = ?`).run(...values.map(([, v]) => v), Object.keys(sources).length > 0 ? JSON.stringify(sources) : null, Number(id));
 						ids.push(Number(id));
 					}
 					logAccess(db, who, component.name, "write", ids.length);

@@ -132,11 +132,13 @@ export class TelegramClient {
 					}
 					break;
 				}
-				case "user":
+				case "user": {
+					const title = message.ticketId === undefined ? null : this.#host.privateTitle(message.ticketId);
 					for (const chat of this.#store.openChats()) {
-						if (chat !== from?.chatId) this.#store.put(chat, `line:${message.id}`, message.id, { kind: "line", text: mirrorText(message.text, from), silent: true });
+						if (chat !== from?.chatId) this.#store.put(chat, `line:${message.id}`, message.id, { kind: "line", text: telegramText(mirrorText(message.text, from), title), silent: true });
 					}
 					break;
+				}
 				case "board":
 					for (const chat of this.#store.openChats()) this.#syncCards(chat, message);
 					break;

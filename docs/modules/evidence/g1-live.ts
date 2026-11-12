@@ -181,7 +181,7 @@ async function lanes(): Promise<void> {
 			for (const table of names) {
 				const declared = Object.keys(JSON.parse(readFileSync(join(SAMPLE, "personal-health/data", table, "collection.json"), "utf8")).fields);
 				const have = columns(state, table, "personal-health");
-				pass &&= have.join() === ["_id", "_from", ...declared].join();
+				pass &&= have.join() === ["_id", "_from", "_sources", ...declared].join();
 				lines.push(`${table}: columns ${have.join(", ")} | collection.json fields ${declared.join(", ")}`);
 			}
 			return { pass, evidence: lines.join("\n") };

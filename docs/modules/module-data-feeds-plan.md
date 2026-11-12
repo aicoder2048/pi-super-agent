@@ -172,6 +172,10 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 2026-11-12 在 691e39f 上通过（之后的 9006cf4 只删注释）：`tests/data-tool.test.ts` 18 条，`just test` 1530 条全过，`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g2/owner/g2-*.txt`，lane 10 用 `openai-codex/gpt-6.1-sol` 记下一条空腹血糖，`lab-results` 有这一行，from 是「使用者口述」；perf 10 万行按 item 和日期范围取 100 行，查询中位 3.2 ms（20 次，差 1.4 ms），单行写入中位 0.4 ms，trunk `knowledge` 检索中位 0.1 ms 作对照。lane 3 在 personal-health 里就地把 `lab` 改名为 `laboratory`，因为 health-lite 不在名册上，幕僚长开不了它的任务。
 
+审查后的修正（2026-11-12）：网页上回答私密任务的问题，转到 Telegram 的那句回答也只发一行提示；`record` 按 id 从别的来源改几项，`from` 不变，改过的字段各自的来源记在 `sources`；`write` 没给 rows、op 不认识都拒绝；字段不能叫 `id`；访问记录也记被拒的调用和原因。
+
+待定（要使用者定）：幕僚长在对话里的回复（起因是使用者的一句话，不带任务）不受私密一行规则管。它从转述里知道的私密数值，之后可能出现在这类回复里，原样发到 Telegram。design.md 第 5 节写明了这一处还没管到。
+
 **Merge.**
 
 - [ ] Root's clean verdict at the exact head SHA.

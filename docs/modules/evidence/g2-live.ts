@@ -1,5 +1,6 @@
 /**
  *   node --import ./src/pi-runtime.mjs docs/modules/evidence/g2-live.ts [lanes|perf] [outDir]
+ *   LANES=2,3,4 runs only those lanes.
  *
  * Lanes 2 to 9 replay Worker calls from the fake model in tests/e2e/fake-model.ts on one host, with a fake
  * Telegram chat. Lane 1 and the perf baseline also run a detached worktree of `origin/main` at <outDir>/trunk.
@@ -18,6 +19,7 @@ const USER = 42;
 const NOTICE = "个人医疗健康 有新内容，请在网页上查看";
 const [mode = "lanes", outDir = "/tmp/swarm-g2/owner"] = process.argv.slice(2);
 const TRUNK = join(outDir, "trunk");
+const ONLY = process.env.LANES?.split(",").map(Number);
 mkdirSync(outDir, { recursive: true });
 
 const { fakeModels } = await import(join(HEAD, "tests/e2e/harness.ts"));
@@ -87,6 +89,7 @@ async function boot(state: string, fake: Fake | null, tg?: Telegram, tree = HEAD
 
 const results: string[] = [];
 async function lane(n: number, slug: string, body: () => Promise<{ pass: boolean | "inconclusive"; evidence: string }>): Promise<void> {
+	if (ONLY && !ONLY.includes(n)) return;
 	let verdict: { pass: boolean | "inconclusive"; evidence: string };
 	try {
 		verdict = await body();
@@ -240,7 +243,7 @@ async function lanes(): Promise<void> {
 		});
 
 		await lane(7, "log", async () => {
-			const log = data(state, "personal-health", "SELECT who, collection, op, rows FROM _access ORDER BY rowid");
+			const log = data(state, "personal-health", "SELECT who, collection, op, rows, outcome FROM _access ORDER BY rowid");
 			const gateway = readFileSync(join(state, "host.log"), "utf8").split("\n").filter((l) => /\[gateway\] .* data\//.test(l));
 			const okCalls = gateway.filter((l) => / ok \d+ ms$/.test(l)).length;
 			return { pass: okCalls === log.length && log.length === 3, evidence: `gateway data calls that went through: ${okCalls} (L2 write and query, L3 write; refusals stop before the data)\n${gateway.join("\n")}\npersonal-health _access:\n${log.map((r) => JSON.stringify(r)).join("\n")}` };

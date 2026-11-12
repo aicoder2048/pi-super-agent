@@ -332,7 +332,7 @@ export type HostLinePost =
 /** A host line in the conversation. `who` is the kind. It cannot be quoted. */
 export type HostLine = { id: string; who: HostLinePost["kind"]; text: string; at: number };
 
-/** One line of the 对话 column. ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
+/** One line of the 对话 column. ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. On a user line, the task whose question it answers. */
 export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string; quote?: Quote } | HostLine;
 
 /**

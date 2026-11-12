@@ -311,7 +311,7 @@ export class Host {
 		const result = this.kernel.answerQuestion({ reportId, option, at });
 		if (!result.ok) return result;
 		if (!result.duplicate) {
-			this.#broadcast({ type: "user", id: result.triggerId, who: "user", text: result.text, at }, from);
+			this.#broadcast({ type: "user", id: result.triggerId, who: "user", text: result.text, at, ticketId: result.ticketId }, from);
 			this.#changed();
 		}
 		return { ok: true, triggerId: result.triggerId };

@@ -51,12 +51,12 @@ const columns = (state: string, module: string, table: string) => sql<{ name: st
 const tables = (state: string, module: string) => sql<{ name: string }>(state, module, "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE '\\_%' ESCAPE '\\' ORDER BY name").map((t) => t.name);
 const labRow = (state: string) => write(state, LITE, `INSERT INTO "lab-results" ("_from", item, value, takenAt, lab) VALUES ('blobs/report-1.pdf', 'CEA', 3.1, '2026-10-01', '协和')`);
 
-test("第一次迁移：personal-health 的五类数据各一张表，列是 collection.json 的字段，每行另有出处 _from", (t) => {
+test("第一次迁移：personal-health 的五类数据各一张表，列是 collection.json 的字段，每行另有出处 _from 和后来改动的来源 _sources", (t) => {
 	const state = stateDir(t);
 	const result = instanceData(state).migrate("personal-health" as ModuleName, components(join(SAMPLE, "personal-health")));
 	assert.deepEqual(result, { ok: true });
 	assert.deepEqual(tables(state, "personal-health"), ["device-readings", "documents", "lab-results", "profile", "research-updates"]);
-	assert.deepEqual(columns(state, "personal-health", "lab-results"), ["_id", "_from", "item", "value", "unit", "reference", "takenAt", "lab"]);
+	assert.deepEqual(columns(state, "personal-health", "lab-results"), ["_id", "_from", "_sources", "item", "value", "unit", "reference", "takenAt", "lab"]);
 	assert.ok(existsSync(join(state, "modules-data", "personal-health", "blobs")), "blobs/ holds the originals rows point to");
 });
 
@@ -130,7 +130,7 @@ test("迁移中途失败：恢复快照，前面做过的调整也撤回，原�
 	const result = data.migrate(LITE, [...lite("0.2.0-adds-field"), notes]);
 	assert.equal(result.ok, false);
 	assert.match(result.ok ? "" : result.reason, /notes/);
-	assert.deepEqual(columns(state, LITE, "lab-results"), ["_id", "_from", "item", "value", "takenAt", "lab"]);
+	assert.deepEqual(columns(state, LITE, "lab-results"), ["_id", "_from", "_sources", "item", "value", "takenAt", "lab"]);
 	assert.deepEqual(sql(state, LITE, `SELECT item FROM "lab-results"`), [{ item: "CEA" }]);
 	assert.deepEqual(data.check(LITE, lite("0.2.0-adds-field")), []);
 	assert.deepEqual(data.migrate(LITE, lite("0.2.0-adds-field")), { ok: true });
@@ -157,7 +157,7 @@ test("迁移事务里崩溃：检查不报错，再迁移得到新结构，行�
 	crashMidMigration(state);
 	assert.deepEqual(data.check(LITE, lite("0.2.0-adds-field")), []);
 	assert.deepEqual(data.migrate(LITE, lite("0.2.0-adds-field")), { ok: true });
-	assert.deepEqual(columns(state, LITE, "lab-results"), ["_id", "_from", "item", "value", "takenAt", "lab", "method"]);
+	assert.deepEqual(columns(state, LITE, "lab-results"), ["_id", "_from", "_sources", "item", "value", "takenAt", "lab", "method"]);
 	assert.deepEqual(sql(state, LITE, `SELECT count(*) AS n, sum(lab = '协和') AS kept FROM "lab-results"`), [{ n: 2000, kept: 2000 }]);
 	assert.ok(!existsSync(`${dbOf(state, LITE)}.snapshot`));
 });
@@ -345,6 +345,11 @@ test("was 指向包里还在的名字：检查拒绝，说明改名会拿掉旧�
 test("同一个包里字段名只差大小写：检查拒绝", (t) => {
 	const dir = liteVariant(t, (fields) => void (fields["Lab"] = { type: "text", title: "实验室2" }));
 	assert.match(scanReasons(dir), /fields "lab" and "Lab" differ only in case/);
+});
+
+test("字段名叫 id：检查拒绝，因为写入时 id 指要改的那一行", (t) => {
+	const dir = liteVariant(t, (fields) => void (fields["id"] = { type: "text", title: "编号" }));
+	assert.match(scanReasons(dir), /fields\.id is reserved/);
 });
 
 test("模块已经在运行、包没变：重启时把缺的数据结构补上（数据目录被手动删了也一样）", (t) => {
