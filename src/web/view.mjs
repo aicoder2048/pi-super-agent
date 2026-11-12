@@ -300,7 +300,7 @@ export function leftColumn(view, now, sending = new Map()) {
 	};
 }
 
-/** One collapsible list under a source; the page may keep the viewer's own open or closed in place of `open`. @typedef {{ key: "watchlist" | "tripwires", summary: string, items: string[], open: boolean }} PanelList */
+/** @typedef {{ key: "watchlist" | "tripwires", summary: string, items: string[], open: boolean }} PanelList */
 
 /** @param {WatchedSource["panel"]} panel @returns {PanelList[]} */
 function panelLists(panel) {

@@ -146,7 +146,7 @@ function mount(doc) {
 		store.set(THEME_KEY, next);
 	});
 
-	/** This viewer's own open or closed per source list, by "source/key"; a list not in here opens as the view says. @type {Record<string, boolean>} */
+	/** @type {Record<string, boolean>} */
 	const panelOpen = (() => {
 		try {
 			return JSON.parse(store.get(PANEL_KEY) ?? "{}") ?? {};

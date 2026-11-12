@@ -22,7 +22,6 @@ export interface WatchedSource {
 	problem?: string;
 	timers: { everyMinutes: number; body: string }[];
 	rules: { id: string; text: string; by: "user" | "module" }[];
-	/** Only for a source whose feed has a panel. */
 	panel?: SourcePanel;
 	/** Only for a source run by a feed: its alerts posted since local midnight. */
 	alertsToday?: number;
