@@ -27,12 +27,13 @@ test("分类表的目录互不相同，也不互相嵌套；只有 apps 用应�
 	assert.ok(dirs.includes("docs/analysis"));
 });
 
-test("助手和成员的规则里写着成品目录的绝对路径，分类表的每个目录都在里面", () => {
-	const { root, output } = outputRoot();
+test("助手和成员的规则里写着成品目录的绝对路径，分类表的每个目录都在里面，也写着模块包放在状态目录的 modules/", () => {
+	const { root, stateDir, output } = outputRoot();
 	for (const role of ["helper", "member"] as const) {
 		const rule = output.prompt(role);
 		for (const kind of OUTPUT_KINDS) assert.ok(rule.includes(`${root}/${kind.dir}/`), `${role} 的规则里没有 ${kind.dir}`);
 		assert.match(rule, /不要写进代码仓库/);
+		assert.ok(rule.includes(`模块包写进 ${join(stateDir, "modules")}/<名字>/`), `${role} 的规则写明模块包的位置`);
 		const dataRow = rule.split("\n").find((l) => l.startsWith(`| ${root}/data/ |`)) ?? "";
 		assert.doesNotMatch(dataRow, /\.md/, "数据那一行的起名例子不该带 .md");
 	}
