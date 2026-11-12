@@ -26,7 +26,7 @@ export function defaultWorkerModels(): WorkerModels {
 import { Host, type HostDeps, type HostOptions, type RouterLike } from "../../src/host/host.ts";
 import type { WorkerEvents, WorkerHandle, WorkerSpawner, WorkerSpec } from "../../src/host/workers.ts";
 import type { MemberRun } from "../../src/host/dispatch.ts";
-import type { Domains } from "../../src/modules.ts";
+import { packageModule, type Domains, type Modules } from "../../src/modules.ts";
 import type { Member } from "../../src/teams.ts";
 import type { DomainGatedTool } from "../../src/worker/tools.ts";
 
@@ -58,6 +58,7 @@ export interface FauxRouterOptions {
 	failOn?: (modelId: string) => string | undefined;
 	persist?: boolean;
 	errorRetryMs?: number[];
+	preamble?: () => string;
 }
 
 export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxRouterHandle {
@@ -110,8 +111,7 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 				errorRetryMs: options.errorRetryMs ?? [10, 10, 10],
 				rulesFor: deps.rulesFor,
 				cwd: deps.stateDir,
-				rules: "",
-				domainRoster: "",
+				preamble: options.preamble ?? (() => ""),
 				afterCommand: deps.afterCommand,
 			});
 		},
@@ -275,4 +275,8 @@ export async function startHost(brain: Brain, script: WorkerScript, options: Par
 	spawner.request = (...args) => host.workers.handleRequest(...args);
 	const said = () => host.kernel.conversation().filter((m) => m.who === "router").map((m) => m.text);
 	return { host, router, spawner, said };
+}
+
+export function servedAsHost(modules: Modules): Modules {
+	return modules.serve([...modules.modules, ...modules.packages.flatMap((p) => (p.scan.ok ? [packageModule(p.dir, p.name)] : []))]);
 }

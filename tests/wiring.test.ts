@@ -10,7 +10,7 @@ import { memberProviders } from "../src/host/config.ts";
 import { Host } from "../src/host/host.ts";
 import { Modules } from "../src/modules.ts";
 import { FINNHUB_KEY_NAMES, KEY_NAMES } from "../src/sources/market/key.ts";
-import { until } from "./helpers/fakes.ts";
+import { servedAsHost, until } from "./helpers/fakes.ts";
 import { liveRegistry } from "../src/modules/live.ts";
 
 const fixed = (modules: Modules) => ({ live: liveRegistry(modules), kitFor: (domain: string) => modules.kitFor(domain) });
@@ -61,6 +61,14 @@ async function fauxRuntime(failOn: (id: string) => boolean) {
 	const modelRuntime = await ModelRuntime.create({ authPath: join(mkdtempSync(join(tmpdir(), "psa-auth-")), "a.json"), modelsPath: null, refreshOnCreate: false });
 	modelRuntime.registerNativeProvider(faux.provider);
 	return { modelRuntime, provider: faux.getModel().provider };
+}
+
+async function firstBlock(host: Host): Promise<string> {
+	host.say("你好");
+	const session = (host.router as any).session;
+	const block = () => (session.messages as { role: string; content: string }[]).find((m) => m.role === "custom" && m.content.startsWith("[名单和规则]"))?.content;
+	await until(() => block() !== undefined, "幕僚长收到名单和规则");
+	return block()!.split("\n\n[")[0]!;
 }
 
 function hostConfig(provider: string, fallbackId = "fallback") {
@@ -234,7 +242,7 @@ const moduleFiles = (name: string, manifest: object, files: Record<string, strin
 const NEWS_MODULE = moduleFiles("news", { title: "新闻", description: "查新闻、核对报道来源", team: "新闻队" }, { "agents/news.md": memberFile("news-researcher", "新闻研究员") });
 const loadWith = (config: ReturnType<typeof hostConfig>, ...dirs: string[]) => Modules.load([...dirs, join(config.stateDir, "modules")], { stateDir: config.stateDir, allowedProviders: memberProviders(config) });
 
-test("真实接线：仓库模块目录和状态目录 modules/ 里的模块都是领域，进了内核的领域簿；幕僚长的名册只列写了说明的，不列成员", async (t) => {
+test("真实接线：仓库模块目录和状态目录 modules/ 里的模块都是领域，进了内核的领域簿；幕僚长收到的名册只列写了说明的，不列成员", async (t) => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = hostConfig(provider);
 	writeFiles(join(config.stateDir, "modules"), NEWS_MODULE);
@@ -246,9 +254,9 @@ test("真实接线：仓库模块目录和状态目录 modules/ 里的模块都�
 	assert.deepEqual([...options.domains!.book()], [["mail", { team: null, onRoster: false }], ["watch", { team: "看盘队", onRoster: true }], ["news", { team: "新闻队", onRoster: true }]]);
 	const host = await Host.start(options);
 	t.after(() => host.stop());
-	const prompt: string = (host.router as any).session.systemPrompt;
-	assert.ok(prompt.includes("\n- watch（看盘）：盯行情\n- news（新闻）：查新闻、核对报道来源\n"), prompt);
-	assert.doesNotMatch(prompt, /news-researcher|新闻研究员|market-analyst|行情分析师|mail（/);
+	const block = await firstBlock(host);
+	assert.ok(block.includes("\n- watch（看盘）：盯行情\n- news（新闻）：查新闻、核对报道来源\n"), block);
+	assert.doesNotMatch(block, /news-researcher|新闻研究员|market-analyst|行情分析师|mail（/);
 });
 
 test("真实接线：没有任何模块时没有领域", async () => {
@@ -347,13 +355,13 @@ test("真实接线：config 里有 telegram 段时宿主选项带上 Telegram �
 test("接线把模块表交给宿主时不拍快照：换表以后宿主的领域簿和成员都是新表的；钉着版本的任务问钉住的副本", async () => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const empty = Modules.load([]);
-	const repo = Modules.load([REPO_MODULES]);
+	const repo = servedAsHost(Modules.load([REPO_MODULES]));
 	const live = liveRegistry(empty);
 	const pinned = { skillsDir: "/copy/skills", prepare: undefined, crew: [], granted: [] };
 	const options = createHostOptions({ config: hostConfig(provider), modules: { live, kitFor: (domain, pin) => (pin === null ? live.current().kitFor(domain) : pinned) }, modelRuntime, log: () => {} });
 	assert.deepEqual([...options.domains!.book().keys()], []);
 	live.publish(repo);
-	assert.deepEqual([...options.domains!.book().keys()], ["pi-pi", "us-market"]);
+	assert.deepEqual([...options.domains!.book().keys()], ["us-market", "pi-pi"]);
 	assert.equal(options.domains!.kitFor("pi-pi", null)!.crew.length, 9);
 	assert.equal(options.domains!.kitFor("tax", "abc"), pinned);
 });

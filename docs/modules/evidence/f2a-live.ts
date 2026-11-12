@@ -320,7 +320,7 @@ async function perf(runs = 5): Promise<void> {
 	const state = stateDir();
 	const config = loadConfig(state);
 	const db = openStore(join(state, "state.db"));
-	const modules = startLiveModules({ db, stateDir: state, discovered: loadModules(config), configSwitches: {}, log: () => {} });
+	const modules = startLiveModules({ db, stateDir: state, roots: config.modulesDirs, discovered: loadModules(config), configSwitches: {}, log: () => {} });
 	const publishes: number[] = [];
 	const toggles: number[] = [];
 	for (let i = 0; i < 100; i++) {

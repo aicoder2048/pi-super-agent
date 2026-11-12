@@ -29,8 +29,8 @@ const legacy = (name: string): string => {
 
 test("schema 1 的坏包不阻止加载：它被记成无效并带原因，旧布局模块照常加载", () => {
 	const modules = Modules.load([repoModules, root({ bad: { descripton: "拼错" } })]);
-	assert.deepEqual(modules.found.map((m) => m.name), ["pi-pi", "toy-market", "us-market"]);
-	const [bad] = modules.packages;
+	assert.deepEqual(modules.found.map((m) => m.name), ["toy-market", "us-market"]);
+	const bad = modules.packages.find((p) => p.name === "bad");
 	assert.equal(bad?.name, "bad");
 	assert.ok(bad && !bad.scan.ok && bad.scan.problems.some((p) => p.where === "module.json" && p.reason.includes(`unknown key "descripton"`)));
 });
@@ -44,10 +44,10 @@ test("schema 1 的好包出现在 packages 里，不算旧布局模块，也不�
 	assert.equal(tax.scan.scan.manifest.version, "0.1.0");
 });
 
-test("旧布局模块行为不变：没有新布局包时 packages 为空，found 和 modules 和以前一样", () => {
+test("旧布局模块行为不变：仓库里只有 pi-pi 是新布局包，其余的 found 和 modules 和以前一样", () => {
 	const modules = Modules.load([repoModules], { switches: switches({ "toy-market": true }) });
-	assert.deepEqual(modules.packages, []);
-	assert.deepEqual(modules.modules.map((m) => m.name), ["pi-pi", "toy-market", "us-market"]);
+	assert.deepEqual(modules.packages.map((p) => p.name), ["pi-pi"]);
+	assert.deepEqual(modules.modules.map((m) => m.name), ["toy-market", "us-market"]);
 });
 
 test("新布局包和旧布局模块同名时报模块重名，和两个旧模块同名一样", () => {
@@ -79,4 +79,14 @@ test("新布局包叫 user 或 conversation：和旧布局一样不许用这两�
 			["user", `"user" is reserved: "user" names your own rules and "conversation" names the chat source`],
 		],
 	);
+});
+
+test("module.json 存了一半、不是合法 JSON：加载不报错，这个文件夹记成无效包并写明原因", () => {
+	const dir = root();
+	mkdirSync(join(dir, "half"));
+	writeFileSync(join(dir, "half", "module.json"), '{"schema":1,');
+	const modules = Modules.load([dir]);
+	const [half] = modules.packages;
+	assert.equal(half?.name, "half");
+	assert.ok(half && !half.scan.ok && half.scan.problems.some((p) => p.where === "module.json" && /not valid JSON/.test(p.reason)));
 });

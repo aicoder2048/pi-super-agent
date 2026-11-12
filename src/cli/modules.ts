@@ -76,7 +76,7 @@ function main(): void {
 		{ label: "技能", values: (m) => [skillNames(m.skillsDir).join("、")].filter(Boolean) },
 	];
 
-	const packageStatus = (p: (typeof modules.packages)[number]) => (p.scan.ok ? status(p.name, { on: false, text: config.moduleSwitches[p.name] ? NEXT_START : "已停用" }) : { on: false, text: "无效" });
+	const packageStatus = (p: (typeof modules.packages)[number]) => (p.scan.ok || rows.get(p.name)?.record ? status(p.name, { on: false, text: config.moduleSwitches[p.name] ? NEXT_START : "已停用" }) : { on: false, text: "无效" });
 	const table = modules.found.map((m) => [m.name, legacy(m).text, folder(m.dir)]);
 	const line = columns(table);
 	const on = modules.found.filter((m) => legacy(m).on).length + modules.packages.filter((p) => packageStatus(p).on).length;
@@ -94,12 +94,17 @@ function main(): void {
 			return [p.name, `新布局  ${packageStatus(p).text}`, folder(p.dir)];
 		});
 		const packageLine = columns(packageRows);
-		modules.packages.forEach(({ scan }, i) => {
+		modules.packages.forEach(({ name, scan }, i) => {
 			console.log(packageLine(packageRows[i]));
+			const record = rows.get(name)?.record;
+			if (record?.state.at === "active") {
+				console.log(`  版本  ${record.state.serving.label}（${record.state.serving.digest.slice(0, 12)}）`);
+				if (record.state.update !== null) console.log(`  说明  ${describe(record).reason}`);
+			}
 			if (!scan.ok) for (const problem of scan.problems) console.log(`  ${problemLine(problem)}`);
 		});
 	}
-	console.log("开关模块：just module on <名字> 或 just module off <名字>，宿主已发现的模块马上生效，不用重启。");
+	console.log("开关模块：just module on <名字> 或 just module off <名字>，宿主在运行就马上生效，不用重启。");
 }
 
 try {

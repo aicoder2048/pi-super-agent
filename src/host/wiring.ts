@@ -13,7 +13,7 @@ import type { HostConfig } from "./config.ts";
 import type { HostOptions } from "./host.ts";
 import { helperSessionDir } from "./dispatch.ts";
 import { PiWorkerSpawner } from "./pi-worker.ts";
-import { Router } from "./router.ts";
+import { Router, routerPreamble } from "./router.ts";
 import { readSecret } from "../secrets.ts";
 import { BotApi, BotToken } from "./telegram/bot-api.ts";
 import type { TelegramOptions } from "./telegram/client.ts";
@@ -79,7 +79,7 @@ export function telegramOptions(config: Pick<HostConfig, "stateDir" | "secretsFi
 
 export interface HostWiringInput {
 	config: HostConfig;
-	/** The Router's rules and roster, the timers and the feeds are read once here; F2b and F5 make them follow. */
+	/** The timers, the feeds and `watching` are read once here; F5 makes them follow. */
 	modules: Pick<LiveModules, "live" | "kitFor">;
 	modelRuntime: ModelRuntime;
 	log: (line: string) => void;
@@ -135,8 +135,10 @@ export function createHostOptions({ config, modules: { live, kitFor }, modelRunt
 				retry: { maxRetries: config.retryAttempts },
 				cwd: join(config.stateDir, "router"),
 				sessionDir: join(config.stateDir, "sessions", "router"),
-				rules: modules.rulesPrompt(),
-				domainRoster: modules.rosterPrompt(),
+				preamble: () => {
+					const current = live.current();
+					return routerPreamble(current.rosterPrompt(), current.rulesPrompt());
+				},
 				rulesFor: deps.rulesFor,
 				afterCommand: deps.afterCommand,
 				onError: (e) => log(`[router] ${String(e)}`),

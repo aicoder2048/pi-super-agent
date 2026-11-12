@@ -91,15 +91,18 @@ test("故事 10：定时器到点产生来源为 timer 的触发，Router 收到
 	assert.equal(found?.type === "trigger" && found.trigger.source, "timer");
 });
 
-test("故事 12：使用者规则文件里的规则进入按真实接线启动的 Router 系统提示词", async (t) => {
+test("故事 12：使用者规则文件里的规则进入按真实接线启动的 Router 收到的名单和规则", async (t) => {
 	const { modelRuntime, provider } = await fauxRuntime();
 	const rulesFile = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
 	writeFileSync(rulesFile, "## watch-ci\n来源: ci\nCI 失败时开任务\n");
 	const host = await Host.start(createHostOptions({ config: wiringConfig(provider), modules: fixed(Modules.load([], { stateDir: dirname(rulesFile) })), modelRuntime, log: () => {} }));
 	t.after(() => host.stop());
-	const prompt: string = (host.router as any).session.systemPrompt;
-	assert.match(prompt, /user\/watch-ci/);
-	assert.match(prompt, /CI 失败时开任务/);
+	host.say("你好");
+	const session = (host.router as any).session;
+	const block = () => (session.messages as { role: string; content: string }[]).find((m) => m.role === "custom" && m.content.startsWith("[名单和规则]"))?.content ?? "";
+	await until(() => block() !== "", "幕僚长收到名单和规则");
+	assert.match(block(), /### user\/watch-ci\nCI 失败时开任务/);
+	assert.doesNotMatch(session.systemPrompt, /watch-ci/);
 });
 
 test("故事 20：查看任务时收到 Worker 会话文件里的历史消息，系统消息被去掉", async (t) => {

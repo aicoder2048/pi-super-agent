@@ -1,5 +1,7 @@
 {
+  "schema": 1,
   "name": "pi-pi",
+  "version": "1.0.0",
   "title": "Pi 开发",
   "description": "怎么写 Pi 的扩展、主题、技能、配置、提示模板和终端界面组件",
   "team": "Pi施工队"

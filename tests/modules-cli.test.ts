@@ -196,7 +196,7 @@ test("just modules：新布局包按生命周期显示，没跑过工具用例�
 	assert.equal(cli("src/cli/module.ts", dir, ["on", "personal-tax"]).status, 0);
 	const db = openStore(join(dir, "state.db"));
 	const config = loadConfig(dir);
-	const modules = startLiveModules({ db, stateDir: dir, discovered: loadModules(config), configSwitches: config.moduleSwitches, log: () => {} });
+	const modules = startLiveModules({ db, stateDir: dir, roots: config.modulesDirs, discovered: loadModules(config), configSwitches: config.moduleSwitches, log: () => {} });
 	await until(() => modules.live.current().book.has("personal-tax"), "personal-tax 的工具用例跑完、开始服务", 15_000);
 	modules.stop();
 	db.close();
@@ -206,4 +206,29 @@ test("just modules：新布局包按生命周期显示，没跑过工具用例�
 	assert.match(lineOf(after.stdout, "toy-market"), /\s已停用\s/);
 	assert.match(after.stdout, /开关模块：just module on <名字> 或 just module off <名字>/);
 	assert.match(after.stdout, /^模块 4 个，启用 3 个；/m);
+});
+
+test("just modules：运行中的新布局包写出正在服务的版本和摘要；存坏了以后仍写运行中，并写出新版本没通过的原因", async (t) => {
+	const dir = stateDir(t);
+	cpSync("docs/modules/architecture/sample/personal-tax", join(dir, "modules/personal-tax"), { recursive: true });
+	assert.equal(cli("src/cli/module.ts", dir, ["on", "personal-tax"]).status, 0);
+	const boot = async () => {
+		const db = openStore(join(dir, "state.db"));
+		const config = loadConfig(dir);
+		const modules = startLiveModules({ db, stateDir: dir, roots: config.modulesDirs, discovered: loadModules(config), configSwitches: config.moduleSwitches, log: () => {} });
+		await until(() => modules.live.current().book.has("personal-tax"), "personal-tax 在服务", 15_000);
+		modules.stop();
+		db.close();
+	};
+	await boot();
+	const serving = readdirSync(join(dir, "module-store/personal-tax"))[0]!;
+	const good = list(dir).stdout;
+	assert.match(good, new RegExp(`\\n  版本  0\\.1\\.0（${serving.slice(0, 12)}）\\n`));
+
+	writeFileSync(join(dir, "modules/personal-tax/module.json"), '{"schema":1,');
+	await boot();
+	const bad = list(dir).stdout;
+	assert.match(lineOf(bad, "personal-tax"), /新布局\s+运行中\s/);
+	assert.match(bad, new RegExp(`\\n  版本  0\\.1\\.0（${serving.slice(0, 12)}）\\n`));
+	assert.match(bad, /\n  说明  0\.1\.0 在运行；你刚改的版本无效：module\.json：is not valid JSON/);
 });

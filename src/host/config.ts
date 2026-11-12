@@ -10,6 +10,7 @@ import { MEMBER_CAP_DEFAULT, MEMBER_CAP_MAX } from "./member-cap.ts";
 import { within } from "./output.ts";
 import { parseWebHosts, type TailnetName } from "./web-hosts.ts";
 
+export const BUNDLED_MODULES = fileURLToPath(new URL("../../modules", import.meta.url));
 export interface HostConfig {
 	stateDir: string;
 	models: { router: ModelRef; worker: ModelRef; fallback: ModelRef };
@@ -134,7 +135,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		probePrimaryMinutes: raw.probePrimaryMinutes ?? 15,
 		heartbeatSeconds,
 		watchdog,
-		modulesDirs: raw.modulesDirs ?? [fileURLToPath(new URL("../../modules", import.meta.url)), join(stateDir, "modules")],
+		modulesDirs: raw.modulesDirs ?? [BUNDLED_MODULES, join(stateDir, "modules")],
 		moduleSwitches,
 		webPort,
 		webHosts,
