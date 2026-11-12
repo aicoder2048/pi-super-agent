@@ -77,10 +77,10 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Build.**
 
-- [x] 每个模块一个 `<stateDir>/modules-data/<名字>/data.db`。`collection.json` 里每类数据一张表，`record` 一行一条，`series` 带 `key`、`at` 和数值。每行带 `from`（来源原件或 feed），原件放 `blobs/`。
-- [x] 结构只增不减。加字段自动加列；`was` 改名把值搬到新名字并留别名；拿掉的字段不显示，值留着；改类型或单位拒绝，模块停在无效，旧版本继续服务。存下来的结构记在 `data.db` 里，和包里的声明比。
-- [x] 迁移前先复制一份 `data.db` 当快照，失败就用快照恢复。迁移带只增的编号，迟到的旧结果被忽略。
-- [x] `just module purge <名字>` 要再输入一次模块名才删这个模块的全部实例数据。不交互时写 `--confirm <名字>`。模块开着时拒绝，先 `just module off`。
+- [x] 每个模块一个 `<stateDir>/modules-data/<名字>/data.db`。`collection.json` 里每类数据一张表，`record` 和 `series` 都是一行一条，列就是 `collection.json` 声明的字段（`series` 的 `key`、`at`、数值也是声明的字段，`watch` 指名用哪几个）。每行带 `from`（来源原件或 feed），原件放 `blobs/`。
+- [x] 结构只增不减。加字段自动加列；`was` 改名把值搬到新名字并留别名；拿掉的字段不显示，值留着；改类型或单位拒绝，模块停在无效，旧版本继续服务。`was` 指向包里还在的名字、改名改到一个拿掉过但值还留着的名字、名字和存下的（或同一个包里的）只差大小写，检查都拒绝并写明原因。旧名字又声明成新的时，它的旧别名去掉。存下来的结构记在 `data.db` 里，和包里的声明比。宿主启动时给正在运行、没有待做迁移的模块补上缺的结构。
+- [x] 迁移前先复制一份 `data.db` 当快照，失败就用快照恢复。快照只活在一次迁移里，离开迁移就删；崩溃留下的快照下次打开时直接删掉、不恢复，`data.db` 靠 SQLite 自己的日志回滚到完整状态。`data.db` 读不了时检查和迁移给出原因，模块停在无效，宿主照常启动。迁移带只增的编号，迟到的旧结果被忽略。
+- [x] `just module purge <名字>` 要再输入一次模块名才删这个模块的全部实例数据。不交互时写 `--confirm <名字>`。模块开着时拒绝，先 `just module off`。输完名字后在同一个写事务里再读一次开关和记录，这时开着也拒绝。
 
 **You see.**
 
@@ -99,7 +99,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] Lane 4. 存一个改名的版本（`was`）。Save `g1-rename.txt`. Pass when 旧值出现在新名字下。
 - [x] Lane 5. 存一个拿掉字段的版本再加回来。Save `g1-remove.txt`. Pass when 值还在。
 - [x] Lane 6. 存一个改单位的版本。Save `g1-unit.txt`. Pass when 无效带原因，旧版本服务，数据不变。
-- [x] Lane 7. 迁移中途杀掉宿主再起。Save `g1-crash.txt`. Pass when 数据等于快照或新结构，不会半截。
+- [x] Lane 7. 迁移中途杀掉宿主再起。Save `g1-crash.txt`. Pass when 数据等于快照或新结构，不会半截。脚本里的三次杀进程落在拷快照和 COMMIT 之后两个窗口，不在事务里面；事务里面的崩溃由单元测试「迁移事务里崩溃」两条覆盖（子进程在事务中 SIGKILL 自己，留下热日志和快照）。
 - [x] Lane 8. 拿掉模块包再放回来。Save `g1-away.txt`. Pass when 数据原样接上。
 - [x] Lane 9. `just module purge personal-health` 输错名字。Save `g1-purge-wrong.txt`. Pass when 拒绝，数据还在。
 - [x] Lane 10. 输对名字。Save `g1-purge.txt`. Pass when `modules-data/personal-health` 不在了，模块包不受影响。

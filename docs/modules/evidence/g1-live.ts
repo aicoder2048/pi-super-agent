@@ -262,7 +262,7 @@ async function lanes(): Promise<void> {
 		let pass = true;
 		let hits = 0;
 		const COUNT = 2_000_000;
-		for (const [n, at] of [[1, ".snapshot.partial"], [2, ".snapshot"], [3, ".snapshot"]] as const) {
+		for (const [n, at] of [[1, "-journal"], [2, "-journal"], [3, ".snapshot"]] as const) {
 			const { state, host, close } = await liteHost(COUNT);
 			try {
 				const path = dataDb(state, LITE);
@@ -272,7 +272,7 @@ async function lanes(): Promise<void> {
 				let seen = false;
 				while (!seen && Date.now() - started < 10_000) seen = existsSync(`${path}${at}`);
 				if (seen) process.kill(-host.pid, "SIGKILL");
-				const left = [".snapshot", ".snapshot.partial", "-journal"].filter((s) => existsSync(`${path}${s}`));
+				const left = [".snapshot", "-journal"].filter((s) => existsSync(`${path}${s}`));
 				hits += seen ? 1 : 0;
 				await host.restart();
 				const back = await within(10_000, serving(state, "0.2.0"));

@@ -223,6 +223,14 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 		return changed;
 	};
 
+	// A module serving since before it had data, or whose data folder was deleted, never meets a migrate again. With a migrate pending the data may already be ahead of what serves.
+	for (const [name, record] of records) {
+		const state = record.state;
+		if (state.at !== "active" || state.update?.at === "migrating" || found.get(name)?.legacy) continue;
+		const scan = scanPackage(store.dirOf(name as ModuleName, state.serving.digest), { runCases: false, folder: name });
+		const done = scan.ok ? data.migrate(name as ModuleName, scan.scan.components) : { ok: false as const, reason: scan.problems.map(problemText).join("；") };
+		if (!done.ok) log(`[modules] ${name} 正在运行的版本补数据结构没成功：${done.reason}`);
+	}
 	for (const [name, { version }] of found) step(name, { type: "package-found", version });
 	for (const name of records.keys()) if (!found.has(name)) step(name, { type: "package-gone" });
 	reconcile();

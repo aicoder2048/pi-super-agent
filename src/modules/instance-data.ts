@@ -1,5 +1,5 @@
 /** Stored structure only grows (design.md H6). `_structure` holds everything ever stored, hidden fields and aliases included. */
-import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { moduleDataDir } from "./knowledge.ts";
@@ -18,6 +18,9 @@ const renamed = (aliases: Record<string, string>, from: string, to: string) => (
 	...Object.fromEntries(Object.entries(aliases).map(([old, now]) => [old, now === from ? to : now])),
 	[from]: to,
 });
+
+/** Declaring an old name again creates a new thing, so its alias is dropped. */
+const unshadowed = (aliases: Record<string, string>, names: object) => Object.fromEntries(Object.entries(aliases).filter(([old]) => !Object.hasOwn(names, old)));
 
 const asComponents = (stored: Stored): Component[] =>
 	Object.entries(stored.collections).map(([name, { aliases: _, ...collection }]) => ({ kind: "data", name: name as ComponentName, collection, seeded: false }));
@@ -54,8 +57,9 @@ function plan(stored: Stored, components: readonly Component[]): { sql: string[]
 			}
 			fields[field] = plain(descriptor);
 		}
-		next.collections[name] = { ...described, fields, aliases };
+		next.collections[name] = { ...described, fields, aliases: unshadowed(aliases, fields) };
 	}
+	next.aliases = unshadowed(next.aliases, next.collections);
 	return { sql, next };
 }
 
@@ -69,8 +73,19 @@ function readStored(db: DatabaseSync): Stored {
 function restore(path: string, snapshot: string): void {
 	for (const suffix of ["-journal", "-wal", "-shm"]) rmSync(`${path}${suffix}`, { force: true });
 	copyFileSync(snapshot, path);
-	rmSync(snapshot, { force: true });
 }
+
+/**
+ * A snapshot lives only inside one `migrate` call. One left by a crash is never restored: rows
+ * written since would be lost, and SQLite's own journal already brings `data.db` back to whole.
+ * Opening read-write lets SQLite roll that journal back.
+ */
+function openDiscardingSnapshot(path: string): DatabaseSync {
+	rmSync(`${path}.snapshot`, { force: true });
+	return new DatabaseSync(path);
+}
+
+const failed = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const problemText = (problems: readonly { where: string; reason: string }[]) => problems.map((p) => `${p.where}：${p.reason}`).join("；");
 
@@ -82,29 +97,31 @@ export function instanceData(stateDir: string): InstanceData {
 		check(module, components) {
 			const path = pathOf(module);
 			if (!existsSync(path)) return [];
-			const db = new DatabaseSync(path, { readOnly: true });
 			try {
-				return problemsFor(readStored(db), components);
-			} finally {
-				db.close();
+				const db = openDiscardingSnapshot(path);
+				try {
+					return problemsFor(readStored(db), components);
+				} finally {
+					db.close();
+				}
+			} catch (error) {
+				return [{ where: "data.db", reason: `the stored data could not be read: ${failed(error)}` }];
 			}
 		},
 		migrate(module, components) {
 			const path = pathOf(module);
 			const snapshot = `${path}.snapshot`;
 			if (!existsSync(path) && !components.some((c) => c.kind === "data")) return { ok: true };
-			mkdirSync(join(dirname(path), "blobs"), { recursive: true });
-			const interrupted = existsSync(snapshot);
-			if (interrupted) restore(path, snapshot);
-			const db = new DatabaseSync(path);
+			let db: DatabaseSync | undefined;
 			try {
+				mkdirSync(join(dirname(path), "blobs"), { recursive: true });
+				db = openDiscardingSnapshot(path);
 				const before = readStored(db);
 				const problems = problemsFor(before, components);
 				if (problems.length > 0) return { ok: false, reason: problemText(problems) };
 				const { sql, next } = plan(before, components);
 				if (JSON.stringify(next) === JSON.stringify(before)) return { ok: true };
-				copyFileSync(path, `${snapshot}.partial`);
-				renameSync(`${snapshot}.partial`, snapshot);
+				copyFileSync(path, snapshot);
 				try {
 					db.exec("BEGIN");
 					for (const statement of sql) db.exec(statement);
@@ -114,12 +131,14 @@ export function instanceData(stateDir: string): InstanceData {
 				} catch (error) {
 					db.close();
 					restore(path, snapshot);
-					return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+					return { ok: false, reason: failed(error) };
 				}
-				rmSync(snapshot, { force: true });
 				return { ok: true };
+			} catch (error) {
+				return { ok: false, reason: failed(error) };
 			} finally {
-				if (db.isOpen) db.close();
+				if (db?.isOpen) db.close();
+				rmSync(snapshot, { force: true });
 			}
 		},
 		purge(module) {

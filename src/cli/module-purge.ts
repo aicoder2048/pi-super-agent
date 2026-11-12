@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { exitOnConfigError } from "../config-error.ts";
 import { loadConfig } from "../host/config.ts";
-import { moduleRows, openStore, saveModuleRecord } from "../kernel/store.ts";
+import { inTransaction, moduleRows, openStore, saveModuleRecord } from "../kernel/store.ts";
 import { instanceData } from "../modules/instance-data.ts";
 import { moduleDataDir } from "../modules/knowledge.ts";
 import { initialRecord, transition } from "../modules/lifecycle.ts";
@@ -29,24 +29,35 @@ export async function purgeModule(name: string, confirm: string | undefined): Pr
 			return 0;
 		}
 		const db = openStore(join(stateDir, "state.db"));
-		try {
+		// The switch can be on before the host's next poll moves the record out of disabled.
+		const purgeable = () => {
 			const row = moduleRows(db).find((r) => r.name === name);
 			const record = row?.record ?? initialRecord(name as ModuleName);
-			// The switch can be on before the host's next poll moves the record out of disabled.
-			if (row?.switch === true || record.pending.length > 0 || transition(record, { type: "purge" }).effects.length === 0) {
-				console.log(`${name} 还开着，先 just module off ${name}，等 just modules 显示已停用再删`);
-				return 1;
-			}
+			return row?.switch === true || record.pending.length > 0 || transition(record, { type: "purge" }).effects.length === 0 ? null : record;
+		};
+		const stillOn = () => {
+			console.log(`${name} 还开着，先 just module off ${name}，等 just modules 显示已停用再删`);
+			return 1;
+		};
+		try {
+			if (purgeable() === null) return stillOn();
 			const typed = confirm ?? (await firstLine(`要删除 ${name} 的全部实例数据（${dir}），删了找不回来。再输入一次模块名确认：`));
 			if (typed !== name) {
 				console.log(`输入的是「${typed}」，和 ${name} 不一样，什么都没删`);
 				return 1;
 			}
 			const data = instanceData(stateDir);
-			drive(record, { type: "purge" }, (r) => saveModuleRecord(db, r), (effect) => {
-				if (effect.do === "purge-data") data.purge(name as ModuleName);
-				return null;
+			// Read again under the write lock: the module may have been switched on while the prompt waited.
+			const purged = inTransaction(db, () => {
+				const record = purgeable();
+				if (record === null) return false;
+				drive(record, { type: "purge" }, (r) => saveModuleRecord(db, r), (effect) => {
+					if (effect.do === "purge-data") data.purge(name as ModuleName);
+					return null;
+				});
+				return true;
 			});
+			if (!purged) return stillOn();
 			console.log(`删掉了 ${name} 的全部实例数据（${dir}）。模块包没动`);
 			return 0;
 		} finally {

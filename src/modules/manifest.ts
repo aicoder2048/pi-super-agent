@@ -187,13 +187,25 @@ export function feedClass(feed: Pick<FeedDescriptor, "into">, collections: Reado
 	return (feed.into === undefined ? undefined : collections.get(feed.into)?.class) ?? "shareable";
 }
 
+/** SQLite matches table and column names regardless of case. */
+function clash(stored: ReadonlySet<string>, name: string, was: string | undefined): string | undefined {
+	const from = was !== undefined && stored.has(was) ? was : undefined;
+	if (stored.has(name)) {
+		return from === undefined || from === name ? undefined : `"${name}" has "was": "${from}", but "${name}" already holds stored values of its own from an earlier version; pick a new name`;
+	}
+	const twin = [...stored].find((other) => other !== from && other.toLowerCase() === name.toLowerCase());
+	return twin === undefined ? undefined : `"${name}" differs from the stored "${twin}" only in case, and the database treats them as one name; pick another name`;
+}
+
 /**
  * What a new version does to data that is already stored.
  *
  * Stored structure only grows. A new collection or field is added. One the package no
  * longer has is hidden, and its values stay. `was` renames one and keeps the old name as an
- * alias for tickets pinned to the old version. All of that is a note. The only problems
- * are changes that make stored values mean something else: another type, unit or kind.
+ * alias for tickets pinned to the old version. All of that is a note. The problems are
+ * changes that make stored values mean something else (another type, unit or kind) and
+ * names that would land on stored values of another name (a rename onto a hidden name, a
+ * name that differs from a stored one only in case).
  * `previous` stands for the stored structure, which the host keeps in the module's `data.db`.
  */
 export function structureChanges(previous: readonly Component[], next: readonly Component[]): { problems: Problem[]; notes: string[] } {
@@ -202,6 +214,21 @@ export function structureChanges(previous: readonly Component[], next: readonly 
 	const kept = "its stored values are kept and hidden";
 	const now = new Map<string, CollectionDescriptor>();
 	for (const item of next) if (item.kind === "data") now.set(item.name, item.collection);
+	const stored = new Map<string, CollectionDescriptor>();
+	for (const item of previous) if (item.kind === "data") stored.set(item.name, item.collection);
+	const storedNames = new Set(stored.keys());
+	for (const [name, collection] of now) {
+		const where = `data/${name}/collection.json`;
+		const clashed = clash(storedNames, name, collection.was);
+		if (clashed !== undefined) problems.push({ where, reason: clashed });
+		const before = stored.get(name) ?? (collection.was === undefined ? undefined : stored.get(collection.was));
+		if (before === undefined) continue;
+		const storedFields = new Set(Object.keys(before.fields));
+		for (const [field, descriptor] of Object.entries(collection.fields)) {
+			const fieldClash = clash(storedFields, field, descriptor.was);
+			if (fieldClash !== undefined) problems.push({ where, reason: `field ${fieldClash}` });
+		}
+	}
 	for (const item of previous) {
 		if (item.kind !== "data") continue;
 		const renamedTo = [...now].find(([, collection]) => collection.was === item.name)?.[0];
