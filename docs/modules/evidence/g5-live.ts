@@ -130,8 +130,7 @@ type FakeWorker = { inputs: string[]; request(method: string, params: unknown): 
 async function script(worker: FakeWorker, input: string) {
 	if (input.includes("把 AAPL 加进自选股")) await worker.request("worker.data", { op: "write", collection: "watchlist", rows: [{ symbol: "AAPL" }], from: "使用者口述" });
 	if (input.includes("NVDA 跌破 171 提醒我")) await worker.request("worker.watch", { op: "set", collection: "quotes", key: "NVDA", condition: { when: "below", value: 171 } });
-	if (input.includes("相对昨收")) return void worker.report({ status: "blocked", summary: "要你定", question: "先看日线还是周线？", options: ["日线", "周线"] });
-	worker.report({ status: "ready", summary: "看过了" });
+	worker.report(input.includes("按规则看") ? { status: "blocked", summary: "要你定", question: "先看日线还是周线？", options: ["日线", "周线"] } : { status: "ready", summary: "看过了" });
 	worker.settle();
 }
 
@@ -311,7 +310,7 @@ async function lanes(): Promise<void> {
 			const firstStillOpen = ruled[0]?.worker_state === "idle" && ruled[0]?.closed_at === null;
 			const book = net.live.live.current().book.get("stock-ta");
 			return {
-				pass: before.triggers === 0 && first.triggers.length === 1 && String(first.triggers[0]!.external_id) === "big-move:NVDA:2026-11-09:down" && second.triggers.length === 1 && second.tickets.length === first.tickets.length && third.triggers.length === 2 && String(third.triggers[1]!.external_id) === "big-move:NVDA:2026-11-09:up" && third.triggers[1]!.disposition === "to_router" && firstStillOpen && ruled.length === 2 && ruled.every((t) => t.domain === "stock-ta") && book?.team === "技术分析研究组",
+				pass: before.triggers === 0 && first.triggers.length === 1 && String(first.triggers[0]!.external_id) === "big-move:NVDA:2026-11-09:down" && second.triggers.length === 1 && second.tickets.length === first.tickets.length && third.triggers.length === 2 && String(third.triggers[1]!.external_id) === "big-move:NVDA:2026-11-09:up" && third.triggers[1]!.disposition === "opened_ticket" && firstStillOpen && ruled.length === 2 && ruled.every((t) => t.domain === "stock-ta") && book?.team === "技术分析研究组",
 				evidence: `NVDA prevClose 176: 166.84 (-5.20%), then 166 (-5.68%) the same day, then 184.8 (+5.00%)\nafter -5.20%:\ntriggers:\n${show(first.triggers)}\ntickets:\n${show(first.tickets)}\nafter -5.68%: ${second.triggers.length} trigger(s), ${second.tickets.length} ticket(s)\nthe -5.20% ticket is still open (its Worker asked a question): ${firstStillOpen}\nafter +5.00%:\ntriggers:\n${show(third.triggers)}\ntickets:\n${show(third.tickets)}\nstock-ta's team: ${book?.team}`,
 			};
 		});

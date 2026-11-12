@@ -54,14 +54,13 @@ function bigMove(q: Quote): Notice[] {
 	}];
 }
 
-/** A symbol listed twice counts by its newest row, so crossing out or re-adding it always takes effect. */
 function listedSymbols(rows: NonNullable<Input["rows"]["watchlist"]>): string[] {
-	const removed = new Map<string, boolean>();
+	const latestRemoved = new Map<string, boolean>();
 	for (const row of [...rows].sort((x, y) => Number(x.id) - Number(y.id))) {
 		const symbol = String(row.fields.symbol ?? "").trim().toUpperCase();
-		if (symbol !== "") removed.set(symbol, Boolean(row.fields.removedAt));
+		if (symbol !== "") latestRemoved.set(symbol, Boolean(row.fields.removedAt));
 	}
-	return [...removed].filter(([, out]) => !out).map(([symbol]) => symbol).sort();
+	return [...latestRemoved].filter(([, out]) => !out).map(([symbol]) => symbol).sort();
 }
 
 export default async function quotes(input: Input) {
