@@ -325,6 +325,47 @@ test("inbox：handler 这一次失败（比如断网）时文件留在 inbox，�
 	assert.ok(w.logged.some((line) => line.includes("network down")), w.logged.join("\n"));
 });
 
+test("inbox：一个 handler 一直失败的文件不挡住同一批后面的文件", async (t) => {
+	const handler = `export default async (input) => { if (input.items[0].fail) throw new Error("network down"); return { records: input.items }; };\n`;
+	const w = world(t, { lab: { drop: { json: { title: "投递读数", connector: "inbox", handler: "index.ts", into: "readings" }, handler } } });
+	const { scheduler } = w.make();
+	const dir = join(w.state, "inbox", "lab", "drop");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "a-stuck.json"), JSON.stringify({ id: "s1", item: "CEA", fail: true }));
+	writeFileSync(join(dir, "b-good.json"), JSON.stringify({ id: "g1", item: "CEA", value: 3, at: "2026-11-03" }));
+	await scheduler.tick();
+	assert.deepEqual(readdirSync(join(dir, "processed")), ["b-good.json"]);
+	assert.ok(existsSync(join(dir, "a-stuck.json")));
+});
+
+test("inbox：handler 对同一个文件连着失败 3 次，文件挪进 rejected，.error.txt 写着最后一次的原因", async (t) => {
+	const handler = `export default async (input) => { throw new Error("network down " + input.items[0].id); };\n`;
+	const w = world(t, { lab: { drop: { json: { title: "投递读数", connector: "inbox", handler: "index.ts", into: "readings" }, handler } } });
+	const { scheduler } = w.make();
+	const dir = join(w.state, "inbox", "lab", "drop");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "one.json"), JSON.stringify({ id: "r1", item: "CEA" }));
+	await scheduler.tick();
+	await scheduler.tick();
+	assert.ok(existsSync(join(dir, "one.json")), "两次失败后还在 inbox");
+	await scheduler.tick();
+	assert.deepEqual(readdirSync(join(dir, "rejected")).sort(), ["one.json", "one.json.error.txt"]);
+	assert.match(readFileSync(join(dir, "rejected", "one.json.error.txt"), "utf8"), /network down r1/);
+});
+
+test("inbox：handler 失败 2 次后成功，文件进 processed，不进 rejected", async (t) => {
+	const handler = counting(`\tif (readFileSync("calls.txt", "utf8").trim().split("\\n").length < 3) throw new Error("network down");\n\treturn { records: input.items };`).replace("{ appendFileSync }", "{ appendFileSync, readFileSync }");
+	const w = world(t, { lab: { drop: { json: { title: "投递读数", connector: "inbox", handler: "index.ts", into: "readings" }, handler } } });
+	const { scheduler } = w.make();
+	const dir = join(w.state, "inbox", "lab", "drop");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "one.json"), JSON.stringify({ id: "r1", item: "CEA", value: 3, at: "2026-11-03" }));
+	for (let i = 0; i < 3; i++) await scheduler.tick();
+	assert.equal(callsOf(w.root, "lab", "drop").length, 3);
+	assert.deepEqual(readdirSync(join(dir, "processed")), ["one.json"]);
+	assert.equal(existsSync(join(dir, "rejected")), false);
+});
+
 test("检查：timer 或不带连接器的 handler 没写 every 时拒收，一行说清楚", (t) => {
 	const root = mkdtempSync(join(tmpdir(), "psa-scheduler-every-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));

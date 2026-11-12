@@ -122,7 +122,8 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 	let stopped = false;
 	const runCases = (name: string, scan: PackageScan) => {
 		caseResults.set(name, { digest: scan.digest, problems: null });
-		void runCasesAsync(scan, secret).then((problems) => {
+		const cannotRun = (error: unknown): Problem[] => [{ where: "test cases", reason: `could not run: ${error instanceof Error ? error.message : String(error)}` }];
+		void runCasesAsync(scan, secret).catch(cannotRun).then((problems) => {
 			if (stopped || caseResults.get(name)?.digest !== scan.digest) return;
 			caseResults.set(name, { digest: scan.digest, problems });
 			safely("工具测试用例跑完后更新模块", () => {
