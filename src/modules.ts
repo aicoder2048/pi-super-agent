@@ -279,7 +279,6 @@ export class Modules {
 	readonly book: DomainBook;
 	readonly #scopes: Map<string, string[]>;
 
-	/** `serving` defaults to the found modules that are switched on. */
 	constructor(found: LoadedModule[], userRules: ScopedRule[], skippedUserRules: string[], packages: readonly FoundPackage[] = [], serving = found.filter((m) => m.state.enabled)) {
 		this.found = found;
 		this.packages = packages;

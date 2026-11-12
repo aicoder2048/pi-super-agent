@@ -26,7 +26,6 @@ function files(root: string, tree: Record<string, string>): void {
 	}
 }
 
-/** A state dir whose `modules/` holds a schema-1 package `tax`, a legacy module `old` that is on by default, and a legacy `quiet` that is off by default. */
 function stateDir(t: TestContext): string {
 	const dir = mkdtempSync(join(tmpdir(), "psa-live-"));
 	t.after(() => rmSync(dir, { recursive: true, force: true }));

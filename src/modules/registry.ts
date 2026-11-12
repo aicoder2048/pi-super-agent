@@ -40,7 +40,7 @@ export interface RegistrySnapshot {
 /** `S` is the table the host serves. Until every module is a package, that is the legacy `Modules` (see `src/host/live-modules.ts`). */
 export interface LiveRegistry<S> {
 	current(): S;
-	/** Atomic: one assignment. A holder of the old table keeps reading the whole old table. The scheduler (F5) adds a change listener. */
+	/** Atomic: one assignment. A holder of the old table keeps reading the whole old table. */
 	publish(next: S): void;
 }
 

@@ -21,7 +21,6 @@ export interface LiveModules {
 	readonly live: LiveRegistry<Modules>;
 	/** `pin` null: the serving table. Otherwise the ticket's copy, served even after the module is switched off. */
 	kitFor(domain: string, pin: string | null): DomainKit | undefined;
-	/** Reads the switches, drives the records to them, and deletes copies nothing uses. The poll calls it. */
 	tick(): void;
 	stop(): void;
 }
@@ -29,7 +28,6 @@ export interface LiveModules {
 export interface LiveModulesOptions {
 	db: DatabaseSync;
 	stateDir: string;
-	/** What is on disk now. */
 	discovered: Modules;
 	/** config.json's `modules`, imported into the switches on the first boot only. */
 	configSwitches: Record<string, boolean>;

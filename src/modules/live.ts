@@ -1,7 +1,3 @@
-/**
- * The live module table, the driver step that moves one module record, and the module store.
- * The host wiring (state.db, the switches, building a table) is in `src/host/live-modules.ts`.
- */
 import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { settle, transition, type Effect, type ModuleEvent, type ModuleRecord } from "./lifecycle.ts";
@@ -16,13 +12,11 @@ export function liveRegistry<S>(initial: S): LiveRegistry<S> {
 	};
 }
 
-/** Whether the user's switch is on, as the record holds it. */
 function isOn(record: ModuleRecord): boolean {
 	const state = record.state;
 	return state.at === "staging" || state.at === "active" || (state.at === "missing" && state.wasOn);
 }
 
-/** The event that brings the record to the user's switch, or null when it is there already. */
 export function switchEvent(record: ModuleRecord, on: boolean): ModuleEvent | null {
 	if (isOn(record) === on) return null;
 	return { type: on ? "enable" : "disable" };
@@ -56,7 +50,6 @@ export class ModuleStore {
 		return join(this.#root, module, digest);
 	}
 
-	/** A second call for the same digest does nothing. */
 	keep(module: ModuleName, digest: Digest, from: string): string {
 		const dir = this.dirOf(module, digest);
 		if (existsSync(dir)) return dir;
@@ -68,7 +61,6 @@ export class ModuleStore {
 		return dir;
 	}
 
-	/** Deletes every copy whose `<name>/<digest>` is not in `inUse`. */
 	collect(inUse: ReadonlySet<string>): void {
 		if (!existsSync(this.#root)) return;
 		for (const module of readdirSync(this.#root)) {

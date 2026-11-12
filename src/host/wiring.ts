@@ -79,7 +79,7 @@ export function telegramOptions(config: Pick<HostConfig, "stateDir" | "secretsFi
 
 export interface HostWiringInput {
 	config: HostConfig;
-	/** The live table and the pinned-copy lookup (`src/host/live-modules.ts`). The Router's rules and roster, the timers and the feeds are read once here; F2b and F5 make them follow. */
+	/** The Router's rules and roster, the timers and the feeds are read once here; F2b and F5 make them follow. */
 	modules: Pick<LiveModules, "live" | "kitFor">;
 	modelRuntime: ModelRuntime;
 	log: (line: string) => void;
