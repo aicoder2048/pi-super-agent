@@ -1,0 +1,13 @@
+{
+  "title": "规则状态",
+  "description": "每只标的当前持续满足的规则状态（例如道氏结构上升、在 MA200 上方）和已经持续了几根 K 线。状态不是新信号",
+  "effect": "read",
+  "secrets": ["TA_ROOT"],
+  "input": {
+    "symbol": { "type": "text", "title": "美股代码；不填查全部" }
+  },
+  "output": {
+    "conditions": { "type": "text", "title": "状态列表" },
+    "truncated": { "type": "text", "title": "true 表示结果被裁剪过" }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "title": "笔记原文",
+  "description": "按信号或规则的 sources 取技术分析笔记的原文。source 写 TA02 取整篇，写 TA02#标题 取一节，标题要和原文一字不差",
+  "effect": "read",
+  "secrets": ["TA_ROOT"],
+  "input": {
+    "source": { "type": "text", "title": "笔记编号，可带 #标题" }
+  },
+  "output": {
+    "source": { "type": "text", "title": "取的是哪篇哪节" },
+    "text": { "type": "text", "title": "原文" },
+    "truncated": { "type": "text", "title": "true 表示原文太长被截断，按 #标题 取一节" }
+  }
+}

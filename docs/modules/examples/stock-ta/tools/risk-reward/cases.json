@@ -1,0 +1,5 @@
+[
+  { "name": "做多", "input": { "entry": 100, "stop": 95, "target": 115 }, "expect": { "side": "做多", "risk": 5, "reward": 15, "ratio": 3, "stopPercent": 5, "targetPercent": 15 } },
+  { "name": "做空", "input": { "entry": 50, "stop": 52, "target": 44 }, "expect": { "side": "做空", "risk": 2, "reward": 6, "ratio": 3, "stopPercent": 4, "targetPercent": 12 } },
+  { "name": "止损按 ATR 计", "input": { "entry": 178.67, "stop": 170.28, "target": 195.45, "atr": 8.39 }, "expect": { "side": "做多", "ratio": 2, "stopInAtr": 1 }, "tolerance": 0.001 }
+]
