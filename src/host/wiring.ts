@@ -10,8 +10,12 @@ import type { TimerEntry } from "../sources/timer.ts";
 import { FEEDS, type FeedSpec } from "../sources/feeds.ts";
 import type { HostConfig } from "./config.ts";
 import type { HostOptions } from "./host.ts";
+import { helperSessionDir } from "./dispatch.ts";
 import { PiWorkerSpawner } from "./pi-worker.ts";
 import { Router } from "./router.ts";
+import { readSecret } from "../secrets.ts";
+import { BotApi, BotToken } from "./telegram/bot-api.ts";
+import type { TelegramOptions } from "./telegram/client.ts";
 
 export type ModelWiringConfig = Pick<HostConfig, "models" | "probePrimaryMinutes">;
 
@@ -63,6 +67,15 @@ export function feedSpecs(config: Pick<HostConfig, "stateDir" | "secretsFile" | 
 	});
 }
 
+export function telegramOptions(config: Pick<HostConfig, "stateDir" | "secretsFile" | "telegram">, env: Readonly<NodeJS.ProcessEnv>, log: (line: string) => void): TelegramOptions | undefined {
+	if (!config.telegram) return undefined;
+	const found = readSecret(["TELEGRAM_BOT_TOKEN"], "TELEGRAM_BOT_TOKEN", env, config.secretsFile);
+	if (!found) throw new ConfigError(`${join(config.stateDir, "config.json")}：写了 telegram 段，但环境变量和 secretsFile 里都没有 TELEGRAM_BOT_TOKEN`);
+	const token = new BotToken(found.key, found.origin);
+	log(`[telegram] bot token 来自${found.origin}`);
+	return { api: new BotApi({ token }), allowedUserIds: new Set(config.telegram.allowedUserIds) };
+}
+
 export interface HostWiringInput {
 	config: HostConfig;
 	modules: Modules;
@@ -80,22 +93,37 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 	resolve(config.models.router, "router");
 	resolve(config.models.worker, "worker");
 	resolve(config.models.fallback, "fallback");
+	for (const member of modules.modules.flatMap((m) => m.team?.members ?? [])) {
+		if (member.model && !modelRuntime.getModel(member.model.provider, member.model.id)) throw new ConfigError(`${member.file}：model：找不到模型 ${formatModelRef(member.model)}`);
+	}
 	const selectors = modelSelectors(config, clock);
 	const timers = modules.timers();
 	const feeds = feedSpecs(config, modules, log);
+	const telegram = telegramOptions(config, process.env, log);
 	return {
 		stateDir: config.stateDir,
 		heartbeatMs: config.heartbeatSeconds * 1000,
 		webPort: config.webPort,
+		webHosts: config.webHosts,
 		config: config.kernel,
 		log,
 		sourcePolicy: modules.sourcePolicy,
 		ruleAllows: modules.ruleAllows,
+		isMarketSource: modules.isMarketSource,
+		domains: modules,
 		rulesFor: modules.rulesFor,
 		timers,
 		watching: watchedSources(modules, timers),
 		feeds,
+		...(telegram && { telegram }),
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
+		outputDir: config.outputDir,
+		dispatch: {
+			timeoutMs: config.dispatchTimeoutSeconds * 1000,
+			codingTimeoutMs: config.dispatchCodingTimeoutSeconds * 1000,
+			stallMs: config.dispatchStallSeconds * 1000,
+			maxConcurrent: config.maxConcurrentExperts,
+		},
 		createRouter: (deps) =>
 			Router.create({
 				kernel: deps.kernel,
@@ -105,6 +133,7 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 				cwd: join(config.stateDir, "router"),
 				sessionDir: join(config.stateDir, "sessions", "router"),
 				rules: modules.rulesPrompt(),
+				domainRoster: modules.rosterPrompt(),
 				rulesFor: deps.rulesFor,
 				afterCommand: deps.afterCommand,
 				onError: (e) => log(`[router] ${String(e)}`),
@@ -112,13 +141,11 @@ export function createHostOptions({ config, modules, modelRuntime, log, clock = 
 		createSpawner: (deps) =>
 			new PiWorkerSpawner({
 				socketPath: deps.socketPath,
-				sessionDir: join(config.stateDir, "sessions", "workers"),
+				sessionDir: helperSessionDir(config.stateDir),
+				cliPath: process.env.PSA_PI_CLI || undefined,
 				bgMaxMs: config.bgMaxMinutes * 60_000,
 				lookupHelp: feeds.map((f) => f.lookupHelp).join("\n") || undefined,
-				moduleFor: (ruleId) => {
-					const mod = modules.moduleForRule(ruleId);
-					return mod && { skillsDir: mod.skillsDir, prepare: mod.manifest.prepare };
-				},
+				tripwireHelp: feeds.map((f) => f.tripwireHelp).filter(Boolean).join("\n") || undefined,
 			}),
 	};
 }

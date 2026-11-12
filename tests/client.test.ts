@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { connect, createServer, type Socket } from "node:net";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import superAgentClient from "../extensions/super-agent.ts";
 import { onJsonLines, writeJsonLine } from "../src/jsonl.ts";
-import { openChoices, renderBoard, shortId } from "../src/client/board.ts";
+import { openChoices, openQuestions, renderBoard, shortId } from "../src/client/board.ts";
 import { HostConnection } from "../src/client/connection.ts";
-import type { HostToClient } from "../src/client/protocol.ts";
+import type { HostToClient, MemberCapBoard } from "../src/client/protocol.ts";
 import { formatTranscriptMessage } from "../src/client/transcript.ts";
 import { Host } from "../src/host/host.ts";
 import type { DashboardRow } from "../src/kernel/types.ts";
@@ -163,7 +163,7 @@ function rawLines(socketPath: string, lines: string[]): Promise<void> {
 test("协议：客户端发来合法 JSON 但不是对象（null、数字、字符串、数组）时只断开它，宿主照常服务", async (t) => {
 	const host = await hostAt(tempStateDir());
 	t.after(() => host.stop());
-	const hellos = { first: [], client: ['{"type":"hello","role":"client"}'], worker: ['{"type":"hello","role":"worker","ticketId":"x","token":"y"}'] };
+	const hellos = { first: [], client: [JSON.stringify({ type: "hello", role: "client", token: readFileSync(join(dirname(host.socketPath), "client-token"), "utf8").trim() })], worker: ['{"type":"hello","role":"worker","ticketId":"x","token":"y"}'] };
 	for (const [where, before] of Object.entries(hellos)) {
 		for (const value of ["null", "42", '"x"', "[]"]) {
 			await rawLines(host.socketPath, [...before, value]);
@@ -187,6 +187,7 @@ test("协议：只有零宽字符的一句话不进对话", async (t) => {
 
 function scriptedHost() {
 	const path = join(tempStateDir(), "fake-host.sock");
+	writeFileSync(join(dirname(path), "client-token"), "ab".repeat(32));
 	const sockets: Socket[] = [];
 	const fromClient: Record<string, any>[] = [];
 	let onHello: (socket: Socket) => void = () => {};
@@ -263,6 +264,66 @@ test("客户端：同一毫秒到达的多条对话都显示，同一个 id 只�
 	assert.deepEqual(ext.shown, ["你> 问", "Router> 答一", "Router> 答二", "Router> 答三"]);
 });
 
+test("TUI：收到网页清屏的 cleared 帧时什么都不打印，已经打印的行留着，之后的新行照常打印", async (t) => {
+	const host = scriptedHost();
+	host.hello((s) => {
+		writeJsonLine(s, { type: "snapshot", conversation: [{ id: "trg_1", who: "user", text: "问", at: 5 }], board: [], cleared: null });
+		writeJsonLine(s, { type: "cleared", conversation: [], cleared: { at: 6, lines: [{ id: "trg_1", who: "user", text: "问", at: 5 }] } });
+		writeJsonLine(s, { type: "user", id: "trg_2", text: "又问", at: 7 });
+	});
+	await host.listen();
+	const ext = await runExtension(host.path);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await until(() => ext.shown.length >= 2, "清屏后的新行");
+	await new Promise((r) => setTimeout(r, 100));
+	assert.deepEqual(ext.shown, ["你> 问", "你> 又问"]);
+	assert.deepEqual(ext.warnings, []);
+});
+
+test("TUI：提醒和收据打成「盯盘提醒>」「盯盘条件（只在本机）>」，快照里的和实时的都一样，同一个 id 只打一次", async (t) => {
+	const host = scriptedHost();
+	host.hello((s) => {
+		writeJsonLine(s, { type: "snapshot", board: [], conversation: [{ id: "hln_1", who: "receipt", text: "已记下：NVDA", at: 4 }] });
+		writeJsonLine(s, { type: "host_line", id: "hln_2", who: "alert", text: "NVDA 涨了 5.3%", at: 5 });
+		writeJsonLine(s, { type: "host_line", id: "hln_2", who: "alert", text: "NVDA 涨了 5.3%", at: 5 });
+		writeJsonLine(s, { type: "user", who: "user", id: "trg_3", text: "好", at: 6 });
+	});
+	await host.listen();
+	const ext = await runExtension(host.path);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await until(() => ext.shown.some((l) => l === "你> 好"), "最后一句");
+	assert.deepEqual(ext.shown, ["盯盘条件（只在本机）> 已记下：NVDA", "盯盘提醒> NVDA 涨了 5.3%", "你> 好"]);
+});
+
+test("终端：带引用的话前面先打一行「↪ 引用 幕僚长：…」，快照里的历史和实时的都一样", async (t) => {
+	const quote = (lineId: string, who: "user" | "router", text: string) => ({ lineId, who, at: 4, text, ticketId: null });
+	const host = scriptedHost();
+	host.hello((s) => {
+		writeJsonLine(s, { type: "snapshot", board: [], conversation: [
+			{ id: "rpl_1", who: "router", text: "方案 A： 先停掉旧任务", at: 4 },
+			{ id: "trg_2", who: "user", text: "改成 B", at: 5, quote: quote("rpl_1", "router", "方案 A： 先停掉旧任务") },
+		] });
+		writeJsonLine(s, { type: "user", who: "user", id: "trg_3", text: "再想想", at: 6, quote: quote("trg_2", "user", "改成 B") });
+		writeJsonLine(s, { type: "user", who: "user", id: "trg_4", text: "好", at: 7 });
+	});
+	await host.listen();
+	const ext = await runExtension(host.path);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await until(() => ext.shown.some((l) => l === "你> 好"), "最后一句");
+	assert.deepEqual(ext.shown, ["Router> 方案 A： 先停掉旧任务", "↪ 引用 幕僚长：方案 A： 先停掉旧任务", "你> 改成 B", "↪ 引用 你：改成 B", "你> 再想想", "你> 好"]);
+});
+
+test("TUI：状态目录里没有 client-token 时提醒一次先启动宿主，不发 hello", async (t) => {
+	const host = scriptedHost();
+	rmSync(join(dirname(host.path), "client-token"));
+	await host.listen();
+	const ext = await runExtension(host.path);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await until(() => ext.warnings.length === 1, "提醒");
+	assert.match(ext.warnings[0], /client-token.*just host/);
+	assert.deepEqual(host.fromClient, []);
+});
+
 test("客户端：说的话带请求 id，宿主回 ack 并附上触发 id，和回显的用户行 id 一致", async (t) => {
 	const host = await hostAt(tempStateDir());
 	const c = client(host.socketPath);
@@ -300,7 +361,8 @@ test("客户端：宿主收下但不回 ack（卡住了）时提醒使用者这�
 const row = (over: Partial<DashboardRow>): DashboardRow => ({
 	id: "tkt_3f2a9c", title: "整理本周的会议纪要并发给团队", stage: "running", basis: "request",
 	latestSummary: "已经读完五份纪要，正在合并重复的行动项，预计还要两分钟", model: "openai-codex/gpt-6.1-sol",
-	fellBack: false, toolCalls: 12, tokensIn: 3200, tokensOut: 800, elapsedMs: 312_000, question: null, stall: null, lastProgressAt: null, ...over,
+	fellBack: false, toolCalls: 12, tokensIn: 3200, tokensOut: 800, elapsedMs: 312_000, question: null, stall: null, lastProgressAt: null,
+	helper: { name: "听松", role: "market", seq: 2 }, dispatchedTo: null, workerState: "running", startedAt: 0, endedAt: null, ...over,
 });
 
 const asking = (id: string, reportId: string, over: Partial<NonNullable<DashboardRow["question"]>> = {}) =>
@@ -321,9 +383,9 @@ test("看板：等回答的任务列出问题和编号选项，底部提示怎�
 	assert.match(text, /回复数字作答；多个问题等回答时用 \/answer <编号> <序号>/);
 });
 
-async function answeringClient(rows: DashboardRow[]) {
+async function answeringClient(rows: DashboardRow[], memberCap?: MemberCapBoard) {
 	const host = scriptedHost();
-	host.hello((s) => writeJsonLine(s, { type: "snapshot", conversation: [], board: rows }));
+	host.hello((s) => writeJsonLine(s, { type: "snapshot", conversation: [], board: rows, memberCap }));
 	await host.listen();
 	const ext = await runExtension(host.path);
 	await until(() => host.fromClient.some((r) => r.type === "hello"), "连接");
@@ -390,9 +452,14 @@ test("看板：任意终端宽度下每行都不超宽（含中文双宽字符�
 	}
 });
 
+test("看板：团队任务的卡片写四字名和「队名领队」，和页面同一种写法", () => {
+	const lines = renderBoard({ rows: [row({ helper: { name: "高山流水", team: "美股看盘队", seq: 2 } })], receivedAt: 0, connected: true }, 120, 10_000).join("\n");
+	assert.ok(lines.includes("高山流水 · 美股看盘队领队 #2 · gpt-6.1-sol"), lines);
+});
+
 test("看板：卡片带齐标题、阶段、依据、最近汇报、模型、工具次数、token 和时长", () => {
 	const lines = renderBoard({ rows: [row({ fellBack: true })], receivedAt: 0, connected: true }, 120, 10_000).join("\n");
-	for (const part of ["3f2a", "整理本周", "执行中", "请求", "已经读完", "gpt-6.1-sol（已回退）", "工具 12", "4.0k tok", "5分22秒"]) {
+	for (const part of ["3f2a", "整理本周", "执行中", "请求", "已经读完", "听松 · 行情助手 #2", "gpt-6.1-sol（已回退）", "工具 12", "4.0k tok", "5分22秒"]) {
 		assert.ok(lines.includes(part), part);
 	}
 	assert.equal(shortId("tkt_3f2a9c"), "3f2a");
@@ -419,4 +486,106 @@ test("过程格式：Worker 文字、工具调用和截断的工具结果", () =
 	const [result] = formatTranscriptMessage({ role: "toolResult", content: [{ type: "text", text: "x".repeat(1000) }] });
 	assert.ok([...result].length < 450);
 	assert.deepEqual(formatTranscriptMessage({ role: "system", content: "s" }), []);
+});
+
+test("看板：宿主关于成员上限的问题列在最前面，编号是 cap，带编号选项；和任务的问题一起算等回答的问题", () => {
+	const memberCap = { limit: 4, question: { reportId: "ask_cap_2026-11-09", text: "现在有 2 位成员在排队，同时运行的成员上限是 4。今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 4"], askedAt: 0 } };
+	const lines = renderBoard({ rows: [], memberCap, receivedAt: 0, connected: true }, 120, 0);
+	assert.match(lines.join("\n"), /cap 成员上限\s+等你回答 · 白宫 · 系统\n\s+问题：现在有 2 位成员在排队，同时运行的成员上限是 4。今天放宽到 10 吗？\n\s+1\. 今天放宽到 10   2\. 保持 4\n\s+回复数字作答/);
+	assert.deepEqual(openQuestions({ rows: [], memberCap }), [{ id: "cap", title: "成员上限", reportId: "ask_cap_2026-11-09", options: ["今天放宽到 10", "保持 4"] }]);
+	const both = openQuestions({ rows: [asking("tkt_ab12", "rpt_1")], memberCap });
+	assert.deepEqual(both.map((q) => [q.id, q.reportId]), [["cap", "ask_cap_2026-11-09"], ["tkt_ab12", "rpt_1"]]);
+	assert.deepEqual(openQuestions({ rows: [asking("tkt_ab12", "rpt_1")], memberCap: { limit: 10, question: null } }).map((q) => q.id), ["tkt_ab12"]);
+	assert.deepEqual(openQuestions({ rows: [asking("tkt_ab12", "rpt_1")] }).map((q) => q.title), ["任务tkt_ab12"], "老宿主的帧没有成员上限");
+	assert.doesNotMatch(renderBoard({ rows: [], memberCap: { limit: 10, question: null }, receivedAt: 0, connected: true }, 120, 0).join("\n"), /成员上限/);
+	for (const width of [20, 40]) for (const line of renderBoard({ rows: [], memberCap, receivedAt: 0, connected: true }, width, 0)) assert.ok(visibleWidth(line) <= width, line);
+});
+
+test("看板：助手照着成员上限提的问题仍是任务那一行：右边写的是它为什么存在，不是「白宫 · 系统」，标题里写了这几个字也一样", () => {
+	const memberCap = { limit: 4, question: { reportId: "ask_cap_2026-11-09", text: "今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 4"], askedAt: 0 } };
+	const copy = (title: string) => row({ id: "tkt_cafe01", title, stage: "awaiting_answer", question: { reportId: "rpt_1", text: "今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 4"], askedAt: 0, click: null, spoke: false } });
+	for (const width of [60, 100, 160]) {
+		for (const title of ["成员上限", `成员上限${" ".repeat(width)}等你回答 · 白宫 · 系统`, "cap 成员上限 · 白宫 · 系统"]) {
+			const lines = renderBoard({ rows: [copy(title)], memberCap, receivedAt: 0, connected: true }, width, 0);
+			const fromHost = lines.filter((line) => line.trimEnd().endsWith("白宫 · 系统"));
+			assert.equal(fromHost.length, 1, lines.join("\n"));
+			assert.match(fromHost[0], /^cap 成员上限 /);
+			assert.match(lines.find((line) => line.startsWith("cafe "))!, /等你回答 · 请求$/);
+		}
+	}
+});
+
+const CAP_ASKING: MemberCapBoard = { limit: 4, question: { reportId: "ask_cap_2026-11-09", text: "现在有 2 位成员在排队，同时运行的成员上限是 4。今天放宽到 10 吗？", options: ["今天放宽到 10", "保持 4"], askedAt: 0 } };
+
+test("客户端：只有成员上限的问题在等时，回复数字就答它；数字超出两项时提醒；看板帧里问题没了，数字又当一句话发", async (t) => {
+	const { host, ext, sent } = await answeringClient([], CAP_ASKING);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await ext.input("3");
+	assert.match(ext.warnings.at(-1)!, /「成员上限」只有 2 个选项/);
+	await ext.input("1");
+	await until(() => sent().length === 1, "发出回答");
+	assert.deepEqual(sent(), [["answer", "ask_cap_2026-11-09", 0]]);
+	host.dropClients();
+	host.hello((s) => {
+		writeJsonLine(s, { type: "snapshot", conversation: [], board: [], memberCap: CAP_ASKING });
+		writeJsonLine(s, { type: "board", rows: [], memberCap: { limit: 10, question: null } });
+	});
+	await until(() => host.fromClient.filter((r) => r.type === "hello").length === 2, "重连", 5000);
+	await new Promise((r) => setTimeout(r, 50));
+	await ext.input("1");
+	await until(() => sent().length === 2, "当一句话发");
+	assert.deepEqual(sent()[1], ["say", "1"]);
+});
+
+test("客户端：成员上限的问题和任务的问题同时在等时数字不猜；/answer cap <序号> 答成员上限", async (t) => {
+	const { host, ext, sent } = await answeringClient([asking("tkt_ab12", "rpt_1")], CAP_ASKING);
+	t.after(async () => { await ext.shutdown(); await host.close(); });
+	await ext.input("1");
+	assert.match(ext.warnings.at(-1)!, /有 2 个问题在等回答，请用 \/answer <编号> <序号>，例如 \/answer cap 1/);
+	await ext.command("answer", "cap 2");
+	await ext.command("answer", "ab 1");
+	await until(() => sent().length === 2, "两个都发出");
+	assert.deepEqual(sent(), [["answer", "ask_cap_2026-11-09", 1], ["answer", "rpt_1", 0]]);
+});
+
+test("客户端：状态目录里有以前留下的凭据但宿主不在时，警告写明它找的是哪个 socket，方便发现两边的状态目录不一致", async (t) => {
+	const stateDir = tempStateDir();
+	writeFileSync(join(stateDir, "client-token"), `${"a".repeat(64)}\n`);
+	const socketPath = join(stateDir, "host.sock");
+	const ext = await runExtension(socketPath);
+	t.after(() => ext.shutdown());
+	await ext.input("你好");
+	assert.equal(ext.warnings.length, 1);
+	assert.ok(ext.warnings[0]!.includes(socketPath), ext.warnings[0]);
+});
+
+test("看板：汇报和标题里的换行、制表符不会把卡片撑成多行，每张卡片恰好三行", () => {
+	const rows = [
+		row({ id: "tkt_t1", title: "统计\t文件数", latestSummary: "统计结果：\n| 目录 | 文件数 |\n|---|---:|\n| src/cli/ | 4 |" }),
+		row({ id: "tkt_t2", latestSummary: "核实结果：消息部分准确。\n\n• 最新公告预告 11 月 11 日发布\r\n• 来源：https://nodejs.org" }),
+	];
+	const lines = renderBoard({ rows, receivedAt: 0, connected: true }, 100, 0);
+	for (const line of lines) assert.doesNotMatch(line, /[\n\r\t]/, JSON.stringify(line));
+	assert.equal(lines.length, 1 + rows.length * 3 + 1);
+	assert.ok(lines.some((l) => l.includes("统计结果： | 目录 |")), lines.join("\n"));
+});
+
+test("看板：标题行分开显示未结束的任务数和其中真正在跑的任务数", () => {
+	const rows = [row({ id: "tkt_i1", stage: "idle" }), row({ id: "tkt_a1", stage: "awaiting_answer" }), row({ id: "tkt_r1", stage: "running" })];
+	const header = renderBoard({ rows, receivedAt: 0, connected: true }, 120, 0)[0]!;
+	assert.match(header, /3 个未结束/);
+	assert.match(header, /1 个在跑/);
+});
+
+test("看板：有外写的任务多一行，确切写入说写到成品目录之外，推测的只说可能；没有外写的不多", () => {
+	const text = renderBoard({ rows: [
+		row({ id: "tkt_wro1", outside: { wrote: 2, maybe: 0, sample: ["/repo/a.ts", "/repo"] } }),
+		row({ id: "tkt_mix1", outside: { wrote: 2, maybe: 1, sample: ["/repo/a.ts", "/repo/b.ts", "/repo"] } }),
+		row({ id: "tkt_may1", outside: { wrote: 0, maybe: 3, sample: ["/repo/a.ts", "/repo"] } }),
+		row({ id: "tkt_cln1", outside: null }),
+	], receivedAt: 0, connected: true }, 160, 0).join("\n");
+	assert.equal(text.match(/成品目录之外/g)?.length, 3);
+	assert.match(text, /^ +写到成品目录之外 2 处：\/repo\/a\.ts、\/repo$/m);
+	assert.match(text, /^ +写到成品目录之外 2 处，另有 1 处可能：\/repo\/a\.ts、\/repo\/b\.ts、\/repo$/m);
+	assert.match(text, /^ +可能写到成品目录之外 3 处：\/repo\/a\.ts、\/repo …$/m);
 });

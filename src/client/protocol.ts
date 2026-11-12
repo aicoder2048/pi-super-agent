@@ -1,7 +1,7 @@
-import type { DashboardRow, Disposition } from "../kernel/types.ts";
+import type { CapQuestion, Cleared, ConversationLine, DashboardRow, Disposition, HelpersToday, HostLine, Routes } from "../kernel/types.ts";
+import type { Dispatching } from "../host/dispatch.ts";
 
-/** ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
-export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string };
+export type { Cleared, ConversationLine, HostLine, Quote } from "../kernel/types.ts";
 
 /** `resumed` counts the running tickets recovered at this start; 0 means a clean start. */
 export interface Duty {
@@ -24,33 +24,61 @@ export interface WatchedSource {
 	rules: { id: string; text: string; by: "user" | "module" }[];
 }
 
+/** How many member processes may run at once right now, and the host's open question about raising it. Null on a host that cannot dispatch. */
+export type MemberCapBoard = { limit: number; question: CapQuestion | null } | null;
+
 export interface BoardState {
 	rows: DashboardRow[];
 	today: TodayCounts;
 	duty: Duty;
+	/** Helpers opened on today's New York date and their tokens. */
+	helpers: HelpersToday;
+	/** What became of each of the user's recent messages, so a line under it can change without a reload. */
+	routes: Routes;
+	/** ticketId → that helper's dispatches: waiting, running, and ended ones until its whole batch is back. */
+	dispatching: Dispatching;
+	memberCap: MemberCapBoard;
 }
 
 export type ClientToHost =
-	| { type: "hello"; role: "client" }
+	| { type: "hello"; role: "client"; token: string }
 	| { type: "say"; text: string; requestId: string }
-	/** A click on option `option` of the question in report `reportId`; the host words it as the user's message. */
+	/** A click on option `option` of the question `reportId`: a helper's report, or the host's own question about the member cap. The host words it as the user's message. */
 	| { type: "answer"; reportId: string; option: number; requestId: string }
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
-	| { type: "snapshot"; conversation: ConversationLine[]; board: DashboardRow[]; today: TodayCounts; duty: Duty; watching: WatchedSource[] }
-	| { type: "user"; id: string; text: string; at: number }
+	| { type: "snapshot"; conversation: ConversationLine[]; cleared: Cleared | null; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; memberCap: MemberCapBoard; watching: WatchedSource[] }
+	| ({ type: "user" } & ConversationLine & { who: "user" })
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }
 	| { type: "reply"; text: string; at: number; replyId: string; ticketId?: string }
+	| ({ type: "host_line" } & HostLine)
 	| ({ type: "board" } & BoardState)
-	| { type: "transcript_history"; ticketId: string; messages: TranscriptMessage[] }
-	| { type: "transcript"; ticketId: string; message: TranscriptMessage };
+	/** A 清屏 on the host: every front end's conversation is now exactly `conversation`, and `cleared` is what it took away. */
+	| { type: "cleared"; conversation: ConversationLine[]; cleared: Cleared }
+	| ({ type: "transcript_history"; ticketId: string } & TranscriptHistory)
+	/** `member`: the message is from the member at work on that dispatch, and is that dispatch's `index`-th message. */
+	| { type: "transcript"; ticketId: string; message: TranscriptMessage; member?: { callId: string; index: number } };
+
+/** A ticket's 执行过程 so far. */
+export interface TranscriptHistory {
+	/** The helper's own messages. */
+	messages: TranscriptMessage[];
+	/** Only for a ticket whose helper has members: each member's title by name, and each dispatch's own messages by the helper's call id. */
+	team?: { titles: Record<string, string>; steps: Record<string, TranscriptMessage[]> };
+}
 
 export interface TranscriptMessage {
 	role: string;
-	content?: string | Array<{ type: string; text?: string; name?: string; arguments?: unknown; thinking?: string }>;
+	content?: string | Array<{ type: string; text?: string; id?: string; name?: string; arguments?: unknown; thinking?: string }>;
 	customType?: string;
 	toolName?: string;
+	toolCallId?: string;
 	isError?: boolean;
+	details?: unknown;
+	/** When Pi finished the message, in ms. */
+	timestamp?: number;
+	/** On an assistant message: what the model call used. */
+	usage?: { input?: number; output?: number; cacheRead?: number };
 }

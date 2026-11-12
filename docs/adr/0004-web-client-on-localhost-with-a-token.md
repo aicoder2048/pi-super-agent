@@ -20,4 +20,4 @@ token 跨重启不变，这样 Watchdog 拉起崩溃的宿主后，开着的网�
 ## Consequences
 
 - 唯一的写入口是 `POST /say`。它在 Host 头和 token 之外，还要求 `Origin` 恰好是本机这个端口的页面（缺失也拒绝，403），正文必须是 `application/json`（否则 415）。跨站页面发 JSON 要先过 CORS 预检，而网关从不回应预检，所以这是 `Origin` 之后的第二道墙。
-- 第二个 `just host` 会因为端口被占用而退出，不再抢走正在运行的宿主的 `host.sock`。启动宿主的测试一律用 `webPort: 0`。
+- 第二个 `just host` 会因为端口被占用而退出，不再抢走正在运行的宿主的 `host.sock`。启动宿主的测试一律用 `webPort: 0`。`webPort` 是 0 时端口挡不住第二个宿主，所以 T2 起由 socket 来挡：绑定 `host.sock` 之前先连一下，有宿主应答就报错退出，不删它的 socket（ADR-0008）。

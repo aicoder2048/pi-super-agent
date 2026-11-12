@@ -1,8 +1,13 @@
 {
   "name": "us-market",
+  "title": "美股行情",
+  "description": "美股行情、个股涨跌和原因、技术面、财报、相关新闻和盯盘提醒",
+  "team": "美股看盘队",
+  "tools": ["lookup", "tripwire"],
   "sources": [
     {
       "name": "us-market",
+      "market": true,
       "title": "美股行情",
       "description": "交易时段每分钟看一遍自选股，涨跌到档或放量时提醒",
       "feed": {

@@ -7,7 +7,10 @@ interface PiEvent {
 
 export interface Usage {
 	provider: string;
+	/** New input plus cache reads. Cache writes are not counted. */
 	tokensIn: number;
+	/** The part of `tokensIn` read from the provider's prompt cache. Absent: none reported. */
+	tokensCached?: number;
 	tokensOut: number;
 }
 
@@ -16,6 +19,7 @@ export function usageOf(message: PiEvent["message"], defaultProvider: string): U
 	return {
 		provider: message.provider ?? defaultProvider,
 		tokensIn: (message.usage.input ?? 0) + (message.usage.cacheRead ?? 0),
+		tokensCached: message.usage.cacheRead ?? 0,
 		tokensOut: message.usage.output ?? 0,
 	};
 }

@@ -6,7 +6,7 @@ import { Modules } from "../src/modules.ts";
 import { dropTrigger } from "../src/sources/generic.ts";
 import { ids, startHost, until, type Brain } from "./helpers/fakes.ts";
 
-const modules = Modules.load([fileURLToPath(new URL("../modules", import.meta.url))], undefined, { values: { "toy-market": true }, file: "config.json" });
+const modules = Modules.load([fileURLToPath(new URL("../modules", import.meta.url))], { switches: { values: { "toy-market": true }, file: "config.json" } });
 const withModules = { sourcePolicy: modules.sourcePolicy, ruleAllows: modules.ruleAllows, rulesFor: modules.rulesFor };
 const threadOf = (card: string) => card.match(/线程 (thr_\S+)/)?.[1];
 
@@ -54,6 +54,25 @@ test("落到已订阅线程的触发直达 Worker，Router 没有模型调用", 
 	await host.settled();
 	assert.equal(router.calls(), callsBefore);
 	assert.equal(host.kernel.triggerLog()[0].disposition, "delivered");
+});
+
+test("订阅过线程的任务结束后，同一线程的新报价重新经过规则，Router 开出新的规则任务", async (t) => {
+	const { host, spawner } = await startHost(ruleBrain, (w) => {
+		w.report({ status: "ready", summary: "报了一次价" });
+		w.settle();
+	}, withModules);
+	t.after(() => host.stop());
+	const quote = (id: string, body: string) =>
+		host.kernel.submitTrigger({ source: "toy-market", externalId: id, threads: [{ id: "thr_toy-market:TOYX" }], sender: "feed", body, occurredAt: Date.now() });
+	quote("q1", "TOYX 价格 94.8，涨跌 -5.2%，成交量 12 股");
+	await until(() => host.kernel.listTickets()[0]?.stage === "closed", "第一个任务汇报就绪后结束");
+	const first = host.kernel.listTickets()[0].id;
+	quote("q2", "TOYX 价格 93.0，涨跌 -7.0%，成交量 30 股");
+	await until(() => host.kernel.listTickets().length === 2, "第二条报价开出新任务");
+	await host.settled();
+	assert.equal(host.kernel.getTicket(first)!.stage, "closed");
+	assert.ok(!spawner.workers.get(first)!.inputs.some((i) => i.includes("93.0")));
+	assert.equal(host.kernel.triggerLog()[0].disposition, "opened_ticket");
 });
 
 test("没有规则时开出的推断任务：开始时的确认被拒绝，对使用者全程安静", async (t) => {

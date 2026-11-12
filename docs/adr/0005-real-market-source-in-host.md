@@ -6,7 +6,7 @@
 
 密钥只在宿主里。来源依次是环境变量 `STOCK_HEATMAP_API_KEY`、`MASSIVE_API_KEY`、`POLYGON_API_KEY`，再是 `config.json` 里 `secretsFile` 指向的 `.env`（文件不存在时启动报错）。宿主不改自己的 `process.env`；隔离放在启动子进程的地方：宿主启动 Worker 和模块的 `prepare` 时，名字以 `_API_KEY`、`_ACCESS_KEY`、`_TOKEN`、`_SECRET`、`_PASSWORD` 结尾或以 `SECRET_` 开头的变量一律不传，行情的三个变量名都在其中。Worker 用的 Pi 从 `~/.pi/agent/auth.json` 读 openai-codex（OAuth）和 deepseek 的凭据，不需要其中任何一个变量，所以没有放行名单；只靠环境变量给模型密钥的配置，Worker 会拿不到。密钥只放在 `Authorization: Bearer` 头里，不进网址、日志和错误信息；错误信息是固定的中文，不带网址、头和响应正文。地址只允许 `https://api.massive.com` 和 `https://api.polygon.io`。没有密钥、401、403 时看盘停用，日志一行，页面「关注的来源」里写明原因（如「未配置行情密钥」）。网络错误、5xx、429 会重试；连续 15 分钟取不到行情时，用 watchdog 来源提交一条通知，由幕僚长告诉使用者一次，恢复后清零。
 
-Worker 查数据用一个只读工具 `lookup { source, op, args }`，经已有的 Worker socket（按任务令牌校验）交给宿主，宿主转给对应来源。`us-market` 的操作只有 `quote`、`bars`、`session`，参数严格校验（代码、日期格式、枚举，多余字段拒绝），只回数字和合法代码，不回外部文本。这一点在客户端边界保证：快照里代码不是本次请求的那几只、价格或时间不是有限正数的行，K 线里任一字段不是有限数的根，都直接丢掉，所以触发正文、线程标题和查询结果里只有校验过的代码和数字。每种依据都有这个工具，包括推断任务；可查的来源和操作写在工具描述里，因为推断任务没有规则，不加载模块 skill。
+Worker 查数据用一个只读工具 `lookup { source, op, args }`，经已有的 Worker socket（按任务令牌校验）交给宿主，宿主转给对应来源。`us-market` 的操作只有 `quote`、`bars`、`session`，参数严格校验（代码、日期格式、枚举，多余字段拒绝），只回数字和合法代码，不回外部文本。这一点在客户端边界保证：快照里代码不是本次请求的那几只、价格或时间不是有限正数的行，K 线里任一字段不是有限数的根，都直接丢掉，所以触发正文、线程标题和查询结果里只有校验过的代码和数字。每种依据都有这个工具，包括推断任务（已由 ADR-0013 改写：只有在 module.json 的 `tools` 里开了 `lookup` 的领域才有）；可查的来源和操作写在工具描述里，因为推断任务没有规则，不加载模块 skill。
 
 ## Considered Options
 

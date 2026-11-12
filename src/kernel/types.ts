@@ -4,6 +4,31 @@ export type Basis = (typeof BASES)[number];
 export const WORKER_STATES = ["none", "queued", "running", "idle"] as const;
 export type WorkerState = (typeof WORKER_STATES)[number];
 
+/** conversation: the user's own words; market: a rule fired by a market source; rule: any other rule; watch: the Router's own inference. */
+export const HELPER_ROLES = ["conversation", "market", "rule", "watch"] as const;
+export type HelperRole = (typeof HELPER_ROLES)[number];
+
+export type Helper = { name: string; seq: number } & ({ role: HelperRole } | { team: string | null });
+
+export interface DomainEntry {
+	/** The team's name when the module has members. Null: its helper works alone. */
+	team: string | null;
+	/** The 幕僚长 was offered this domain. False: only the module's own rules put a ticket in it. */
+	onRoster: boolean;
+}
+
+/** All the kernel knows about domains, built once at startup: one entry per loaded module, by the module's name. */
+export type DomainBook = ReadonlyMap<string, DomainEntry>;
+
+/** A rule's id is its namespace and its heading: a module's name for the module's rules, `user` for the user's own. */
+export const ruleId = (namespace: string, heading: string) => `${namespace}/${heading}`;
+export const ruleNamespace = (id: string) => id.split("/")[0];
+
+export interface HelpersToday {
+	count: number;
+	tokens: number;
+}
+
 export const REPORT_STATUSES = ["progress", "ready", "blocked", "failed", "no_action"] as const;
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
 
@@ -97,6 +122,8 @@ export type Decision =
 			title: string;
 			basis: Basis;
 			ruleId?: string;
+			/** A module's name. Omitted, null or blank: the ticket has no domain. */
+			domain?: string | null;
 			triggerId?: string;
 			threads?: string[];
 			brief: string;
@@ -107,6 +134,28 @@ export type Decision =
 
 export type DecisionResult = Result<{ ticketId?: string }>;
 
+export type Writer = { role: "helper" } | { role: "member"; name: string };
+
+/** A write by a helper or member that landed outside the output root, its ticket's workdir and the temp directories (ADR-0015). */
+export type OutsideWrite =
+	/** A write or edit call's exact path, absolute. */
+	| { kind: "wrote"; path: string; tool: "write" | "edit"; by: Writer }
+	/** Paths a bash or bg_start command may have written, by a best-effort parse of `command`, which is cut short. */
+	| { kind: "maybe"; paths: string[]; command: string; tool: "bash" | "bg_start"; by: Writer };
+
+/** Session file, relative to the state directory so it survives a move, to the count of complete lines already scanned. */
+export type ScanCursor = Readonly<Record<string, number>>;
+
+export interface WriteCheck {
+	outside: OutsideWrite[];
+	/** Outside writes left out of `outside` to keep it short. */
+	omitted: number;
+	/** Where the next check starts. */
+	scanned: ScanCursor;
+	/** Why some of it could not be checked; `outside` may then be short. */
+	problem?: string;
+}
+
 export interface WorkerReport {
 	status: ReportStatus;
 	summary: string;
@@ -114,6 +163,8 @@ export interface WorkerReport {
 	options?: string[];
 	drafts?: unknown[];
 	waiting?: boolean;
+	/** Set by the host before the report reaches the kernel; never from the worker's own params. */
+	writes?: WriteCheck;
 }
 
 export interface Trigger {
@@ -144,6 +195,9 @@ export interface Report {
 	drafts: unknown[];
 	waiting: boolean;
 	createdAt: number;
+	outsideWrites: OutsideWrite[];
+	outsideOmitted: number;
+	writeProblem: string | null;
 }
 
 export interface TicketInput {
@@ -161,6 +215,8 @@ export interface Ticket {
 	title: string;
 	basis: Basis;
 	ruleId: string | null;
+	/** The module this ticket belongs to, fixed when it opens. Null: no domain. The module may have been removed since. */
+	domain: string | null;
 	originTriggerId: string | null;
 	createdAt: number;
 	workerSessionId: string;
@@ -173,8 +229,14 @@ export interface Ticket {
 	model: string | null;
 	fellBack: boolean;
 	toolCalls: number;
+	/** New input plus cache reads. Cache writes are not counted. */
 	tokensIn: number;
+	/** The part of `tokensIn` read from the provider's prompt cache. */
+	tokensCached: number;
 	tokensOut: number;
+	/** Null only on a ticket from before helpers existed that the host has not named yet. */
+	helper: Helper | null;
+	dispatchedTo: string[] | null;
 	stage: Stage;
 	latestReport: Report | null;
 }
@@ -189,6 +251,9 @@ export interface PendingQuestion {
 	/** The user said something after the question and the Router has not finished with it; a click now could contradict it. */
 	spoke: boolean;
 }
+
+/** The host's own question about the member cap. `reportId` is its id on the answer wire, never a report's. */
+export type CapQuestion = Pick<PendingQuestion, "reportId" | "text" | "options" | "askedAt">;
 
 /**
  * sent: the Router has not finished with the click yet. handed_over: the asking task got it.
@@ -216,10 +281,60 @@ export interface DashboardRow {
 	model: string | null;
 	fellBack: boolean;
 	toolCalls: number;
+	/** New input plus cache reads. Cache writes are not counted. */
 	tokensIn: number;
+	/** The part of `tokensIn` read from the provider's prompt cache. */
+	tokensCached: number;
 	tokensOut: number;
 	elapsedMs: number;
 	lastProgressAt: number | null;
+	helper: Helper | null;
+	dispatchedTo: string[] | null;
+	workerState: WorkerState;
+	startedAt: number | null;
+	/** closedAt, or stoppedAt for a stopped ticket; null while the ticket is open. */
+	endedAt: number | null;
+	/** Every outside write in the ticket's reports, with up to three of their paths; null when there is none. */
+	outside: OutsideTally | null;
+}
+
+export interface OutsideTally {
+	/** Exact write and edit calls. */
+	wrote: number;
+	/** Bash and bg_start guesses, plus entries past the per-check cap, whose kind was never recorded. */
+	maybe: number;
+	sample: string[];
+}
+
+export interface Quote {
+	lineId: string;
+	who: "user" | "router";
+	at: number;
+	text: string;
+	ticketId: string | null;
+}
+
+/**
+ * What a source says to the user directly, past the Router (ADR-0017). The kind alone decides where it may go:
+ * an alert reaches every front end, Telegram included, and is deduped on (source, externalId); a receipt never leaves this machine.
+ */
+export type HostLinePost =
+	| { kind: "alert"; externalId: string; text: string; occurredAt: number }
+	| { kind: "receipt"; text: string };
+
+/** A host line in the conversation. `who` is the kind. It cannot be quoted. */
+export type HostLine = { id: string; who: HostLinePost["kind"]; text: string; at: number };
+
+/** One line of the 对话 column. ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. */
+export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string; quote?: Quote } | HostLine;
+
+/**
+ * The latest 清屏. `at` is when it happened, and also its identity: every effective 清屏 has a strictly later `at` than the one before.
+ * `lines` holds the newest hidden lines from every 清屏 so far, oldest first. Never empty: a 清屏 that hid nothing is not recorded.
+ */
+export interface Cleared {
+	at: number;
+	lines: ConversationLine[];
 }
 
 export interface AnswerClick {
@@ -230,7 +345,7 @@ export interface AnswerClick {
 }
 
 export type ReadResult =
-	| { type: "trigger"; trigger: Trigger; threadIds: string[]; ticketIds: string[]; answers: AnswerClick | null }
+	| { type: "trigger"; trigger: Trigger; threadIds: string[]; ticketIds: string[]; answers: AnswerClick | null; quote: Quote | null }
 	| { type: "thread"; thread: Thread; recentTriggerIds: string[]; subscribedTicketIds: string[] }
 	| {
 			type: "ticket";
@@ -254,3 +369,8 @@ export interface SystemProblem {
 	lastError: string;
 	since: number;
 }
+
+/** What became of one of the user's messages: a task took it, the Router answered it, is still on it, or set it aside. */
+export type Routing = { kind: "opened_ticket" | "handed_over"; ticketId: string } | { kind: "answered" | "pending" | "router_ignored" };
+/** By conversation trigger id. A message the Router saw and left without a decision or a reply has no entry. */
+export type Routes = Record<string, Routing>;

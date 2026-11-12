@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +9,8 @@ import { Kernel } from "../src/kernel/kernel.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { CONVERSATION_THREAD_ID } from "../src/kernel/types.ts";
 import { checkWatchdog, Watchdog } from "../src/watchdog/watchdog.ts";
+import { hostPid } from "../src/heartbeat.ts";
+import { until } from "./helpers/fakes.ts";
 
 const MIN = 60_000;
 const config = { heartbeatStaleMs: 2 * MIN, restartGraceMs: 3 * MIN };
@@ -113,4 +117,29 @@ test("Watchdog 用内核配置里的阈值判断久无进展：阈值 10 分钟�
 	const drops = readdirSync(join(stateDir, "inbox")).filter((f) => f.endsWith(".json"));
 	assert.equal(drops.length, 1);
 	assert.match(JSON.parse(readFileSync(join(stateDir, "inbox", drops[0]), "utf8")).body, /跑回归.*11 分钟/);
+});
+
+function freshHeartbeatWatchdog(pid: number) {
+	const stateDir = mkdtempSync(join(tmpdir(), "psa-wd-"));
+	writeFileSync(join(stateDir, "heartbeat.json"), JSON.stringify({ pid, at: Date.now() }));
+	const started = { count: 0 };
+	const wd = new Watchdog({ stateDir, clock: { now: () => Date.now() }, config, startHost: () => { started.count++; } });
+	return { stateDir, wd, started };
+}
+
+test("心跳还新鲜但记录的宿主已经退出（比如刚被正常停下）时，第一次检查就拉起宿主", async () => {
+	const gone = spawn(process.execPath, ["-e", "", "src/host/main.ts"], { stdio: "ignore" });
+	await once(gone, "exit");
+	const { wd, started } = freshHeartbeatWatchdog(gone.pid!);
+	wd.checkOnce();
+	assert.equal(started.count, 1);
+});
+
+test("心跳新鲜且记录的 pid 是活着的宿主时，不拉起", async (t) => {
+	const host = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", "src/host/main.ts"], { stdio: "ignore" });
+	t.after(() => host.kill("SIGKILL"));
+	const { stateDir, wd, started } = freshHeartbeatWatchdog(host.pid!);
+	await until(() => hostPid(stateDir) === host.pid, "宿主进程被认出", 5000);
+	wd.checkOnce();
+	assert.equal(started.count, 0);
 });

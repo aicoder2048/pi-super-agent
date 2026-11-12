@@ -4,27 +4,32 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Kernel, nextStallAt } from "../src/kernel/kernel.ts";
+import { SOLO_NAMES, TEAM_NAMES } from "../src/kernel/helper-names.ts";
 import { refusalText } from "../src/kernel/question.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { CONVERSATION_THREAD_ID, DISPOSITIONS } from "../src/kernel/types.ts";
-import type { Basis, KernelConfig, TriggerSubmission } from "../src/kernel/types.ts";
+import type { Basis, DomainBook, KernelConfig, TriggerSubmission } from "../src/kernel/types.ts";
 
 const HOUR = 3_600_000;
 
-function setup({ config, path = ":memory:" }: { config?: Partial<KernelConfig>; path?: string } = {}) {
-	const clock = { t: new Date("2026-11-08T10:00:00").getTime(), now() { return this.t; } };
+function setup({ config, path = ":memory:", at = "2026-11-08T10:00:00", domains }: { config?: Partial<KernelConfig>; path?: string; at?: string; domains?: DomainBook } = {}) {
+	const clock = { t: new Date(at).getTime(), now() { return this.t; } };
 	const db = openStore(path);
+	const logs: string[] = [];
 	const kernel = new Kernel({
+		domains,
+		log: (line) => logs.push(line),
 		db,
 		clock,
 		sourcePolicy: (t) => (t.source === "noise" ? "ignore" : "candidate"),
+		isMarketSource: (source) => source === "toy-market",
 		config,
 	});
 	let n = 0;
 	const trigger = (over: Partial<TriggerSubmission> = {}) =>
 		kernel.submitTrigger({
 			source: "generic",
-			externalId: `e${++n}`,
+			externalId: `e${++n}-${clock.t}`,
 			threads: [{ id: "thr_misc" }],
 			sender: "script",
 			body: "外部事件",
@@ -38,13 +43,13 @@ function setup({ config, path = ":memory:" }: { config?: Partial<KernelConfig>; 
 	const wakes = () => due("worker.wake").map((a) => (a.payload as { ticketId: string }).ticketId);
 	const drain = () => { for (const a of kernel.dueActions(1000)) kernel.completeAction(a.id); };
 
-	function open(basis: Basis, { threads = [] as string[], title = `${basis} 任务` } = {}) {
+	function open(basis: Basis, { threads = [] as string[], title = `${basis} 任务`, source = "generic", domain = undefined as string | null | undefined, ruleId = "rule-1" } = {}) {
 		let triggerId: string | undefined;
 		if (basis === "request") triggerId = say(title).triggerId;
-		if (basis === "rule") triggerId = trigger({ threads: [{ id: `thr_generic:rule-${++n}` }], body: title }).triggerId;
+		if (basis === "rule") triggerId = trigger({ source, threads: [{ id: `thr_${source}:rule-${++n}` }], body: title }).triggerId;
 		for (const id of threads) trigger({ threads: [{ id }] });
 		const [result] = kernel.route([
-			{ kind: "open_ticket", title, basis, ruleId: basis === "rule" ? "rule-1" : undefined, triggerId, threads, brief: title },
+			{ kind: "open_ticket", title, basis, ruleId: basis === "rule" ? ruleId : undefined, domain, triggerId, threads, brief: title },
 		]);
 		assert.ok(result.ok, `open_ticket rejected: ${!result.ok && result.reason}`);
 		return result.ticketId!;
@@ -69,7 +74,7 @@ function setup({ config, path = ":memory:" }: { config?: Partial<KernelConfig>; 
 
 	const stage = (ticketId: string) => kernel.getTicket(ticketId)!.stage;
 
-	return { db, kernel, clock, trigger, say, due, notices, wakes, drain, open, run, idle, handOverUserMessage, stage };
+	return { db, kernel, clock, logs, trigger, say, due, notices, wakes, drain, open, run, idle, handOverUserMessage, stage };
 }
 
 test("内核不引用任何 Pi 的包", () => {
@@ -259,6 +264,29 @@ test("对话历史按先后列出使用者的话和 Router 的回复", () => {
 	assert.deepEqual(kernel.conversation().map((m) => [m.who, m.text]), [["user", "查天气"], ["router", "好的，去查了。"]]);
 });
 
+test("对话去向：开了新任务、交给已有任务、幕僚长直接回答、幕僚长处理中、判断无需处理；幕僚长看过却什么都没做的不写", () => {
+	const { kernel, say, drain } = setup();
+	const opened = say("查天气").triggerId;
+	const [first] = kernel.route([{ kind: "open_ticket", title: "查天气", basis: "request", triggerId: opened, brief: "查天气" }]);
+	const handed = say("顺便看看明天").triggerId;
+	kernel.route([{ kind: "hand_over", triggerId: handed, ticketId: first.ticketId! }]);
+	const answered = say("在吗").triggerId;
+	kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "在。", cause: answered });
+	const dismissed = say("谢谢").triggerId;
+	kernel.route([{ kind: "ignore", triggerId: dismissed, reason: "客套话" }]);
+	const dropped = say("嗯").triggerId;
+	drain();
+	const pending = say("再查一下 NVDA").triggerId;
+	assert.deepEqual(kernel.conversationRoutes(), {
+		[opened]: { kind: "opened_ticket", ticketId: first.ticketId },
+		[handed]: { kind: "handed_over", ticketId: first.ticketId },
+		[answered]: { kind: "answered" },
+		[dismissed]: { kind: "router_ignored" },
+		[pending]: { kind: "pending" },
+	});
+	assert.equal(dropped in kernel.conversationRoutes(), false);
+});
+
 test("阶段：受阻或失败，直到使用者再说话", () => {
 	const { kernel, open, idle, stage, handOverUserMessage } = setup();
 	const blocked = open("request");
@@ -274,16 +302,81 @@ test("阶段：受阻或失败，直到使用者再说话", () => {
 	assert.equal(stage(failed), "blocked_or_failed");
 });
 
-test("阶段：就绪且不再等待时任务结束，订阅的线程来新触发会重新打开", () => {
-	const { kernel, trigger, open, idle, stage } = setup();
+test("阶段：就绪且不再等待时任务结束，保留订阅记录", () => {
+	const { kernel, open, idle, stage } = setup();
 	const id = open("rule", { threads: ["thr_pr"] });
 	idle(id);
 	kernel.workerReport(id, { status: "ready", summary: "已合并" });
 	assert.equal(stage(id), "closed");
+	const found = kernel.read("thr_pr");
+	assert.ok(found?.type === "thread");
+	assert.deepEqual(found.subscribedTicketIds, [id]);
+});
 
-	trigger({ threads: [{ id: "thr_pr" }], body: "PR 有新评论" });
+test("已结束任务订阅过的线程来新触发：不直达它，作为候选交给 Router，任务保持结束", () => {
+	const { kernel, trigger, open, idle, drain, notices, wakes, stage } = setup();
+	const id = open("rule", { threads: ["thr_pr"] });
+	idle(id);
+	kernel.workerReport(id, { status: "ready", summary: "已合并" });
+	drain();
+
+	const { triggerId } = trigger({ threads: [{ id: "thr_pr" }], body: "PR 有新评论" });
+
+	assert.equal(kernel.triggerLog()[0].disposition, "to_router");
+	assert.deepEqual(notices(), [{ kind: "candidate", triggerId }]);
+	assert.deepEqual(wakes(), []);
+	assert.equal(stage(id), "closed");
+	assert.deepEqual(kernel.pendingInputs(id), []);
+});
+
+test("已结束任务订阅过的线程来新触发：Router 可以凭它开规则任务", () => {
+	const { kernel, trigger, open, idle } = setup();
+	const old = open("rule", { threads: ["thr_toy-market:TOYX"] });
+	idle(old);
+	kernel.workerReport(old, { status: "ready", summary: "报了一次价" });
+
+	const { triggerId } = trigger({ source: "toy-market", threads: [{ id: "thr_toy-market:TOYX" }], body: "TOYX 跌 6%" });
+	const [result] = kernel.route([
+		{ kind: "open_ticket", basis: "rule", ruleId: "toy-market/big-move", triggerId, threads: ["thr_toy-market:TOYX"], title: "核实", brief: "核实" },
+	]);
+
+	assert.ok(result.ok, !result.ok ? result.reason : "");
+	assert.notEqual(result.ticketId, old);
+	assert.equal(kernel.getTicket(old)!.stage, "closed");
+});
+
+test("已结束任务订阅过的线程来新触发：Router 可以把它转交回旧任务，旧任务重新打开", () => {
+	const { kernel, trigger, open, idle, wakes, drain, stage } = setup();
+	const id = open("rule", { threads: ["thr_pr"] });
+	idle(id);
+	kernel.workerReport(id, { status: "ready", summary: "已合并" });
+	drain();
+	const { triggerId } = trigger({ threads: [{ id: "thr_pr" }], body: "PR 被回滚了" });
+
+	const [result] = kernel.route([{ kind: "hand_over", triggerId, ticketId: id }]);
+
+	assert.ok(result.ok, !result.ok ? result.reason : "");
 	assert.notEqual(stage(id), "closed");
-	assert.equal(kernel.pendingInputs(id).length, 1);
+	assert.deepEqual(wakes(), [id]);
+	assert.deepEqual(kernel.pendingInputs(id).map((i) => [i.kind, i.triggerId]), [["trigger", triggerId]]);
+	trigger({ threads: [{ id: "thr_pr" }], body: "又有新评论" });
+	assert.equal(kernel.triggerLog()[0].disposition, "delivered");
+});
+
+test("同一线程上既有已结束任务又有未结束任务：只直达未结束的那个", () => {
+	const { kernel, trigger, open, idle, drain, notices, wakes } = setup();
+	const closed = open("rule", { threads: ["thr_pr"] });
+	idle(closed);
+	kernel.workerReport(closed, { status: "no_action", summary: "无事" });
+	const live = open("rule", { threads: ["thr_pr"] });
+	idle(live);
+	drain();
+
+	trigger({ threads: [{ id: "thr_pr" }], body: "CI 失败了" });
+
+	assert.deepEqual(notices(), []);
+	assert.deepEqual(wakes(), [live]);
+	assert.deepEqual(kernel.pendingInputs(closed), []);
 });
 
 test("汇报就绪、受阻、失败时通知 Router；进展不通知", () => {
@@ -621,7 +714,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 	run(id);
 	kernel.recordWorkerProgress(id);
 	kernel.recordWorkerProgress(id);
-	kernel.recordUsage(id, { provider: "deepseek", tokensIn: 1000, tokensOut: 200 });
+	kernel.recordUsage(id, { provider: "deepseek", tokensIn: 1000, tokensCached: 600, tokensOut: 200 });
 	kernel.workerReport(id, { status: "progress", summary: "写了一半" });
 	const reportedAt = clock.t;
 	clock.t += 90_000;
@@ -641,9 +734,16 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			fellBack: false,
 			toolCalls: 2,
 			tokensIn: 1000,
+			tokensCached: 600,
 			tokensOut: 200,
 			elapsedMs: 90_000,
 			lastProgressAt: reportedAt,
+			helper: { name: SOLO_NAMES[0], role: "conversation", seq: 1 },
+			dispatchedTo: null,
+			workerState: "running",
+			startedAt: reportedAt,
+			endedAt: null,
+			outside: null,
 		},
 	);
 	assert.equal(kernel.usageToday("deepseek"), 1200);
@@ -673,6 +773,53 @@ test("来源的读取位置跨重启保存", () => {
 	kernel.setSourceCursor("timer", "100");
 	kernel.setSourceCursor("timer", "200");
 	assert.equal(kernel.sourceCursor("timer"), "200");
+});
+
+test("来源的使用者数据跨重启保存，和读取位置互不相干", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-userdata-")), "state.db");
+	const open = () => new Kernel({ db: openStore(path), clock: { now: () => 0 }, sourcePolicy: () => "candidate" });
+	const kernel = open();
+	assert.equal(kernel.sourceUserData("us-market"), undefined);
+	kernel.setSourceUserData("us-market", '{"v":1}');
+	kernel.setSourceUserData("us-market", '{"v":2}');
+	kernel.setSourceCursor("us-market", "cursor");
+	const reopened = open();
+	assert.equal(reopened.sourceUserData("us-market"), '{"v":2}');
+	assert.equal(reopened.sourceCursor("us-market"), "cursor");
+	assert.equal(reopened.sourceUserData("other-feed"), undefined);
+});
+
+test("任务听没听过使用者以外的话：订阅的线程投进来、幕僚长转交进来的来源触发算来源正文，幕僚长的备注算备注，记下读过网页算网页；使用者的话不算；重开库后还在", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-heard-"));
+	const kernel = new Kernel({ db: openStore(join(dir, "state.db")), clock: { now: () => 0 }, sourcePolicy: () => "candidate" });
+	let n = 0;
+	const said = (body: string) => kernel.submitTrigger({ source: "conversation", externalId: `u${++n}`, threads: [{ id: CONVERSATION_THREAD_ID }], sender: "user", body, occurredAt: 0 }).triggerId;
+	const open = (threads: string[] = []) => kernel.route([{ kind: "open_ticket", basis: "request", triggerId: said("盯盘"), threads, title: "盯盘", brief: "盯盘" }])[0].ticketId!;
+	const subscribed = open(["thr_ci:build-42"]);
+	const handedOver = open();
+	const talkedTo = open();
+	const noted = open();
+	const readWeb = open();
+	assert.equal(kernel.heardOtherThanUser(subscribed), undefined);
+	kernel.submitTrigger({ source: "ci", externalId: "b1", threads: [{ id: "thr_ci:build-42" }], sender: "ci", body: "失败", occurredAt: 0 });
+	const { triggerId: fromSource } = kernel.submitTrigger({ source: "rss", externalId: "r1", threads: [{ id: "thr_rss:x" }], sender: "rss", body: "外部正文", occurredAt: 0 });
+	assert.deepEqual(
+		kernel.route([
+			{ kind: "hand_over", triggerId: fromSource, ticketId: handedOver },
+			{ kind: "hand_over", triggerId: said("改成 8%"), ticketId: talkedTo },
+		]).map((r) => r.ok),
+		[true, true],
+	);
+	assert.equal(kernel.note({ ticketId: noted, text: "成本价 120" }).ok, true);
+	kernel.readWeb(readWeb);
+	kernel.readWeb(readWeb);
+	assert.equal(kernel.heardOtherThanUser(subscribed), "trigger", "订阅投递");
+	assert.equal(kernel.heardOtherThanUser(handedOver), "trigger", "转交");
+	assert.equal(kernel.heardOtherThanUser(talkedTo), undefined, "使用者后来说的话");
+	assert.equal(kernel.heardOtherThanUser(noted), "note", "备注");
+	assert.equal(kernel.heardOtherThanUser(readWeb), "web", "读过网页");
+	const reopened = new Kernel({ db: openStore(join(dir, "state.db")), clock: { now: () => 0 }, sourcePolicy: () => "candidate" });
+	assert.equal(reopened.heardOtherThanUser(readWeb), "web", "重开库后还在");
 });
 
 test("请求任务可以订阅还没出现过的来源线程，之后那条线程上的触发直达它", () => {
@@ -708,9 +855,9 @@ test("回退上限造成的受阻：任务记一条受阻汇报并移出排队�
 	const busy = open("request", { title: "占名额" });
 	run(busy);
 	const capped = open("request", { title: "被上限挡住" });
-	kernel.blockForCap(capped, "回退模型今日用量已达上限");
+	kernel.blockForCap(capped, "回退模型今日用量已达上限", { outside: [], omitted: 0, scanned: {} });
 	assert.equal(kernel.getTicket(capped)!.stage, "blocked_or_failed");
-	kernel.blockForCap(capped, "回退模型今日用量已达上限");
+	kernel.blockForCap(capped, "回退模型今日用量已达上限", { outside: [], omitted: 0, scanned: {} });
 	assert.equal(kernel.read(capped)!.type === "ticket" && (kernel.read(capped) as any).recentReports.length, 1);
 	for (const a of kernel.dueActions()) kernel.completeAction(a.id);
 	idle(busy);
@@ -782,7 +929,7 @@ test("证据：规则依据必须有一条未处理的非对话触发，且来�
 	assert.equal(kernel.route([open("rule", event("toy", "跌 6%"), "toy/big-move")])[0].ok, true);
 });
 
-test("推断并发：已结束的推断任务被订阅线程重新打开时，另一个推断任务在跑就拿不到名额，空出后再唤醒", () => {
+test("推断并发：已结束的推断任务被 Router 转交重新打开时，另一个推断任务在跑就拿不到名额，空出后再唤醒", () => {
 	const { kernel, trigger, run, idle, drain } = setup({ config: { inferenceConcurrent: 1, inferenceDaily: 10 } });
 	const openInference = (thread: string) => {
 		const { triggerId } = trigger({ threads: [{ id: thread }] });
@@ -796,7 +943,8 @@ test("推断并发：已结束的推断任务被订阅线程重新打开时，�
 	const b = openInference("thr_feed:b");
 	run(b);
 	drain();
-	trigger({ threads: [{ id: "thr_feed:a" }], body: "a 的新消息" });
+	const { triggerId } = trigger({ threads: [{ id: "thr_feed:a" }], body: "a 的新消息" });
+	assert.ok(kernel.route([{ kind: "hand_over", triggerId, ticketId: a }])[0].ok);
 	assert.equal(kernel.claimSlot(a), false);
 	assert.equal(kernel.getTicket(a)!.stage, "queued");
 	drain();
@@ -903,6 +1051,31 @@ test("旧数据库的汇报表没有选项列：打开时补上，旧汇报读�
 	const found = again.kernel.read(id);
 	assert.ok(found?.type === "ticket");
 	assert.deepEqual(found.recentReports.map((r) => [r.summary, r.options]), [["旧汇报", []]]);
+});
+
+test("记账把缓存读取和新输入分开：输入仍是两者之和，缓存读取另记；不报缓存的用量记 0；当天合计不变", () => {
+	const { kernel, open } = setup();
+	const id = open("request");
+	kernel.recordUsage(id, { provider: "deepseek", tokensIn: 1000, tokensCached: 900, tokensOut: 50 });
+	kernel.recordUsage(id, { provider: "deepseek", tokensIn: 300, tokensOut: 10 });
+	const [row] = kernel.listTickets();
+	assert.deepEqual([row.tokensIn, row.tokensCached, row.tokensOut], [1300, 900, 60]);
+	const found = kernel.read(id);
+	assert.ok(found?.type === "ticket");
+	assert.equal(found.ticket.tokensCached, 900);
+	assert.equal(kernel.usageToday("deepseek"), 1360);
+});
+
+test("旧数据库的任务表没有缓存读取列：打开时补上，旧任务记 0", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const id = first.open("request");
+	first.kernel.recordUsage(id, { provider: "deepseek", tokensIn: 500, tokensOut: 5 });
+	first.db.exec("ALTER TABLE tickets DROP COLUMN tokens_cached");
+	first.db.close();
+	const again = setup({ path });
+	const [row] = again.kernel.listTickets();
+	assert.deepEqual([row.tokensIn, row.tokensCached, row.tokensOut], [500, 0, 5]);
 });
 
 test("看板：等回答的任务带上它在等的问题（汇报 id、文字、选项、提问时间、还没回答）；其他阶段没有问题", () => {
@@ -1125,4 +1298,886 @@ test("下一次久无进展的时刻：执行中、还没久无进展的任务�
 	assert.equal(next(), firstAt + 10 * MIN);
 	clock.t = firstAt + 11 * MIN;
 	assert.equal(next(), firstAt + 13 * MIN, "已经久无进展的不再排");
+});
+
+const helperOf = (kernel: Kernel, id: string) => kernel.listTickets().find((r) => r.id === id)!.helper;
+const closeTicket = (s: ReturnType<typeof setup>, id: string) => {
+	s.run(id);
+	s.kernel.workerReport(id, { status: "no_action", summary: "无需处理" });
+};
+
+test("助手角色按任务来源：你的话是对话助手，行情来源的规则是行情助手，其他规则是规则助手，主动发现是观察助手；序号按角色从 1 数", () => {
+	const s = setup({ config: { inferenceConcurrent: 10 } });
+	const ids = [s.open("request"), s.open("rule"), s.open("rule", { source: "toy-market" }), s.open("inference"), s.open("request"), s.open("rule", { source: "toy-market" })];
+	assert.deepEqual(
+		ids.map((id) => { const h = helperOf(s.kernel, id)!; return `${h.role} #${h.seq}`; }),
+		["conversation #1", "rule #1", "market #1", "watch #1", "conversation #2", "market #2"],
+	);
+});
+
+test("助手序号按纽约日期分天：纽约午夜之后同一角色从 1 重新数", () => {
+	const s = setup({ at: "2026-11-09T04:30:00Z" });
+	const lateNight = s.open("request");
+	s.clock.t += HOUR;
+	const nextDay = [s.open("request"), s.open("request")];
+	assert.deepEqual([lateNight, ...nextDay].map((id) => helperOf(s.kernel, id)!.seq), [1, 1, 2]);
+});
+
+test("助手名字按建任务的先后从名字池里依次取，在岗的助手不重名；池用完时加「·二」", () => {
+	const s = setup();
+	const ids = SOLO_NAMES.map(() => s.open("request"));
+	assert.deepEqual(ids.map((id) => helperOf(s.kernel, id)!.name), [...SOLO_NAMES]);
+	const overflow = s.open("request");
+	assert.equal(helperOf(s.kernel, overflow)!.name, `${SOLO_NAMES[0]}·二`);
+	closeTicket(s, ids[4]);
+	assert.equal(helperOf(s.kernel, s.open("request"))!.name, SOLO_NAMES[4], "下一位从第二个名字往后找，第一个空出来的是刚完成的那位");
+});
+
+test("完成或停止的助手让出名字：之后轮到这个名字时可以再用", () => {
+	const s = setup();
+	const first = s.open("request");
+	closeTicket(s, first);
+	const rest = SOLO_NAMES.slice(1).map(() => s.open("request"));
+	assert.equal(rest.length, SOLO_NAMES.length - 1);
+	assert.equal(helperOf(s.kernel, s.open("request"))!.name, SOLO_NAMES[0]);
+});
+
+test("助手名字、角色和序号存在状态库里，重启后不变", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const ids = [first.open("request"), first.open("rule", { source: "toy-market" })];
+	const before = ids.map((id) => helperOf(first.kernel, id));
+	first.db.close();
+	const again = setup({ path });
+	assert.deepEqual(ids.map((id) => helperOf(again.kernel, id)), before);
+});
+
+test("旧状态库没有助手列：打开时补上，补名字时按建任务的先后，角色看依据和来源", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const ids = [first.open("request"), first.open("rule", { source: "toy-market" }), first.open("request"), first.open("rule")];
+	closeTicket(first, ids[0]);
+	for (const column of ["helper_name", "helper_role", "helper_seq"]) first.db.exec(`ALTER TABLE tickets DROP COLUMN ${column}`);
+	first.db.close();
+	const again = setup({ path });
+	assert.deepEqual(ids.map((id) => helperOf(again.kernel, id)), ids.map(() => null), "宿主补名字之前没有助手");
+	again.kernel.nameUnnamedHelpers();
+	assert.deepEqual(
+		ids.map((id) => helperOf(again.kernel, id)),
+		[
+			{ name: SOLO_NAMES[0], role: "conversation", seq: 1 },
+			{ name: SOLO_NAMES[1], role: "market", seq: 1 },
+			{ name: SOLO_NAMES[2], role: "conversation", seq: 2 },
+			{ name: SOLO_NAMES[3], role: "rule", seq: 1 },
+		],
+	);
+	again.clock.t += 1000;
+	const next = again.open("request");
+	assert.deepEqual(helperOf(again.kernel, next), { name: SOLO_NAMES[4], role: "conversation", seq: 3 });
+});
+
+test("看板行带结束时间：完成取关闭时刻，停止取停止时刻，进行中为空", () => {
+	const s = setup();
+	const [done, stopped, live] = [s.open("request"), s.open("request"), s.open("request")];
+	closeTicket(s, done);
+	const closedAt = s.clock.t;
+	s.clock.t += 1000;
+	s.kernel.route([{ kind: "stop", ticketId: stopped }]);
+	const rows = new Map(s.kernel.listTickets().map((r) => [r.id, r]));
+	assert.deepEqual([done, stopped, live].map((id) => rows.get(id)!.endedAt), [closedAt, closedAt + 1000, null]);
+});
+
+test("今日助手：纽约今天建的任务数和它们的 token 合计；昨天建的不算", () => {
+	const s = setup({ at: "2026-11-09T04:30:00Z" });
+	const yesterday = s.open("request");
+	s.run(yesterday);
+	s.kernel.recordUsage(yesterday, { provider: "p", tokensIn: 5000, tokensOut: 5000 });
+	s.clock.t += HOUR;
+	assert.deepEqual(s.kernel.helpersToday(), { count: 0, tokens: 0 });
+	const [a, b] = [s.open("request"), s.open("rule", { source: "toy-market" })];
+	s.run(a);
+	s.kernel.recordUsage(a, { provider: "p", tokensIn: 1000, tokensOut: 200 });
+	s.kernel.recordUsage(yesterday, { provider: "p", tokensIn: 7, tokensOut: 0 });
+	assert.deepEqual(s.kernel.helpersToday(), { count: 2, tokens: 1200 });
+	assert.ok(b);
+});
+
+const DOMAINS: DomainBook = new Map([["news", { team: "新闻队", onRoster: true }], ["watch", { team: "看盘队", onRoster: true }], ["mail", { team: null, onRoster: true }]]);
+const WITH_UNLISTED: DomainBook = new Map([...DOMAINS, ["quiet", { team: "安静队", onRoster: false }]]);
+const domainOf = (kernel: Kernel, id: string) => kernel.getTicket(id)!.domain;
+
+test("任务最多属于一个领域：open_ticket 省略 domain 就是没有领域，填了领域簿里的模块名就记在任务上", () => {
+	const s = setup({ domains: DOMAINS });
+	assert.equal(domainOf(s.kernel, s.open("request")), null);
+	assert.equal(domainOf(s.kernel, s.open("request", { domain: "news" })), "news");
+	assert.equal(domainOf(s.kernel, s.open("request", { domain: "mail" })), "mail");
+	assert.equal(domainOf(s.kernel, s.open("inference", { domain: "watch" })), "watch");
+});
+
+test("open_ticket 的 domain 是空串或只有空白：当作没填，任务没有领域", () => {
+	const s = setup({ domains: DOMAINS });
+	assert.equal(domainOf(s.kernel, s.open("request", { domain: "" })), null);
+	assert.equal(domainOf(s.kernel, s.open("request", { domain: "  " })), null);
+});
+
+test("open_ticket 的 domain 是 null：当作没填；按规则开的任务照样归规则所在的模块", () => {
+	const s = setup({ domains: DOMAINS });
+	assert.equal(domainOf(s.kernel, s.open("request", { domain: null })), null);
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "news/breaking", domain: null })), "news");
+	assert.deepEqual(s.logs, []);
+});
+
+test("open_ticket 的 domain 两头的空白去掉再认；大小写不同不算同一个领域", () => {
+	const s = setup({ domains: DOMAINS });
+	assert.equal(domainOf(s.kernel, s.open("request", { domain: " news\n" })), "news");
+	const [shouted] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", triggerId: s.say("查新闻").triggerId, domain: "NEWS", brief: "b" }]);
+	assert.deepEqual(shouted, { ok: false, reason: "unknown domain NEWS; the domains are news, watch, mail (omit domain when none fits)" });
+});
+
+test("不在名册上的领域幕僚长不能选：拒绝并说明原因，列出的只有名册上的领域；它的规则开的任务照样归它", () => {
+	const s = setup({ domains: WITH_UNLISTED });
+	const decision = { kind: "open_ticket", title: "t", basis: "request", triggerId: s.say("安静一下").triggerId, brief: "b" } as const;
+	const [picked] = s.kernel.route([{ ...decision, domain: "quiet" }]);
+	assert.deepEqual(picked, { ok: false, reason: "domain quiet is not on your roster (its module has no description), so you cannot pick it; the domains are news, watch, mail (omit domain when none fits)" });
+	const [typo] = s.kernel.route([{ ...decision, domain: "quite" }]);
+	assert.deepEqual(typo, { ok: false, reason: "unknown domain quite; the domains are news, watch, mail (omit domain when none fits)" });
+	const [byUserRule] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "rule", ruleId: "user/ci", triggerId: s.trigger({ threads: [{ id: "thr_generic:u" }] }).triggerId, domain: "quiet", brief: "b" }]);
+	assert.equal(byUserRule.ok, false);
+	const ruled = s.open("rule", { ruleId: "quiet/hush" });
+	assert.equal(domainOf(s.kernel, ruled), "quiet");
+	assert.deepEqual(helperOf(s.kernel, ruled), { name: TEAM_NAMES[0], team: "安静队", seq: 1 });
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "quiet/hush", domain: "quiet" })), "quiet", "填的正是规则所在的模块：没有选，照开");
+	assert.deepEqual(s.logs, []);
+});
+
+test("加载的模块都不在名册上时，幕僚长没有可选的领域", () => {
+	const s = setup({ domains: new Map([["quiet", { team: null, onRoster: false }]]) });
+	const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", triggerId: s.say("x").triggerId, domain: "quite", brief: "b" }]);
+	assert.deepEqual(result, { ok: false, reason: "unknown domain quite; there are no domains (omit domain)" });
+});
+
+test("没有加载任何模块时，内核不认任何领域", () => {
+	const s = setup();
+	assert.equal(domainOf(s.kernel, s.open("request")), null);
+	const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", triggerId: s.say("查新闻").triggerId, domain: "news", brief: "b" }]);
+	assert.deepEqual(result, { ok: false, reason: "unknown domain news; there are no domains (omit domain)" });
+});
+
+test("不存在的领域：拒绝这个决定，理由里写出有哪些领域；这条触发还能再用", () => {
+	const s = setup({ domains: DOMAINS });
+	const { triggerId } = s.say("看下财报");
+	const decision = { kind: "open_ticket", title: "t", basis: "request", triggerId, brief: "b" } as const;
+	const [typo] = s.kernel.route([{ ...decision, domain: "新闻队" }]);
+	assert.deepEqual(typo, { ok: false, reason: "unknown domain 新闻队; the domains are news, watch, mail (omit domain when none fits)" });
+	const [notText] = s.kernel.route([{ ...decision, domain: 7 as unknown as string }]);
+	assert.equal(notText.ok, false);
+	assert.equal(s.kernel.listTickets().length, 0);
+	const [retry] = s.kernel.route([{ ...decision, domain: "news" }]);
+	assert.ok(retry.ok);
+});
+
+test("模块规则开的任务属于规则所在的模块：幕僚长省略或填对了都不记日志；模块没有成员也一样归它", () => {
+	const s = setup({ domains: DOMAINS });
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "news/breaking" })), "news");
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "news/breaking", domain: "news" })), "news");
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "news/breaking", domain: " " })), "news");
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "mail/new" })), "mail");
+	assert.deepEqual(s.logs, []);
+});
+
+test("幕僚长给模块规则的任务填了别的领域：内核按规则所在的模块定，并记一行日志", () => {
+	const s = setup({ domains: DOMAINS });
+	const id = s.open("rule", { ruleId: "news/breaking", domain: "watch" });
+	assert.equal(domainOf(s.kernel, id), "news");
+	assert.deepEqual(helperOf(s.kernel, id), { name: TEAM_NAMES[0], team: "新闻队", seq: 1 });
+	assert.deepEqual(s.logs, [`[kernel] 规则 news/breaking 属于领域「news」，幕僚长填的是「watch」，任务 ${id} 按「news」开`]);
+});
+
+test("模块规则的任务填了不存在的领域，照样拒绝，不悄悄改回", () => {
+	const s = setup({ domains: DOMAINS });
+	const { triggerId } = s.trigger({ threads: [{ id: "thr_generic:r" }] });
+	const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "rule", ruleId: "news/breaking", triggerId, domain: "财报", brief: "b" }]);
+	assert.equal(result.ok, false);
+	assert.deepEqual(s.logs, []);
+});
+
+test("使用者自己的规则和不属于任何已加载模块的规则没有自己的领域：幕僚长填的算数，不填就没有领域", () => {
+	const s = setup({ domains: DOMAINS });
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "user/ci" })), null);
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "user/ci", domain: "watch" })), "watch");
+	assert.equal(domainOf(s.kernel, s.open("rule", { ruleId: "gone/old", domain: "news" })), "news");
+	assert.deepEqual(s.logs, []);
+});
+
+test("规则的归属只管按规则开的任务：使用者开口要的任务即使带着规则编号，也由幕僚长选领域", () => {
+	const s = setup({ domains: DOMAINS });
+	const [result] = s.kernel.route([{ kind: "open_ticket", title: "t", basis: "request", ruleId: "news/breaking", triggerId: s.say("看盘").triggerId, domain: "watch", brief: "b" }]);
+	assert.equal(domainOf(s.kernel, result.ticketId!), "watch");
+	assert.deepEqual(s.logs, []);
+});
+
+test("任务的领域存在状态库里：重启后不变，即使那个模块已经拿掉", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path, domains: DOMAINS });
+	const ids = [first.open("request", { domain: "news" }), first.open("request")];
+	first.db.close();
+	const again = setup({ path });
+	assert.deepEqual(ids.map((id) => domainOf(again.kernel, id)), ["news", null]);
+});
+
+test("旧状态库的任务没有领域：打开时补上 domain 列，旧任务读出来没有领域；旧的 team 列留在原处，不读也不写", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const old = first.open("request");
+	const before = helperOf(first.kernel, old);
+	first.db.exec("ALTER TABLE tickets DROP COLUMN domain; ALTER TABLE tickets ADD COLUMN team TEXT; UPDATE tickets SET team = '新闻队'");
+	first.db.close();
+	const again = setup({ path, domains: DOMAINS });
+	assert.equal(domainOf(again.kernel, old), null);
+	assert.deepEqual(helperOf(again.kernel, old), before);
+	again.clock.t += 1000;
+	assert.equal(domainOf(again.kernel, again.open("request", { domain: "news" })), "news");
+	assert.deepEqual(again.db.prepare("SELECT team, domain FROM tickets ORDER BY created_at").all().map((r) => [r.team, r.domain]), [["新闻队", null], [null, "news"]]);
+});
+
+test("新建的状态库没有 team 列", () => {
+	const s = setup();
+	assert.ok(!s.db.prepare("PRAGMA table_info(tickets)").all().some((c) => c.name === "team"));
+});
+
+test("领域有成员的任务取四字名，身份是名字、模块的队名和序号；没有领域和领域没有成员的任务仍是两字名加角色", () => {
+	const s = setup({ domains: DOMAINS });
+	const ids = [s.open("request", { domain: "news" }), s.open("request"), s.open("request", { domain: "mail" }), s.open("rule", { domain: "watch", source: "toy-market" })];
+	assert.deepEqual(ids.map((id) => helperOf(s.kernel, id)), [
+		{ name: TEAM_NAMES[0], team: "新闻队", seq: 1 },
+		{ name: SOLO_NAMES[0], role: "conversation", seq: 1 },
+		{ name: SOLO_NAMES[1], role: "conversation", seq: 2 },
+		{ name: TEAM_NAMES[1], team: "看盘队", seq: 1 },
+	]);
+});
+
+test("团队任务的序号按领域在纽约同一天里数：各领域数各的，不占单个助手的序号，过了纽约午夜从 1 重新数", () => {
+	const s = setup({ domains: DOMAINS, at: "2026-11-09T04:30:00Z" });
+	const seqs = (ids: string[]) => ids.map((id) => helperOf(s.kernel, id)!.seq);
+	const lateNight = [s.open("request", { domain: "news" }), s.open("request", { domain: "news" }), s.open("request", { domain: "watch" }), s.open("request")];
+	assert.deepEqual(seqs(lateNight), [1, 2, 1, 1]);
+	s.clock.t += HOUR;
+	assert.deepEqual(seqs([s.open("request", { domain: "news" }), s.open("request")]), [1, 1]);
+});
+
+test("两个名字池各自轮转：团队任务不推进两字池，四字池整池在岗时加「·二」", () => {
+	const s = setup({ domains: DOMAINS });
+	const teamIds = TEAM_NAMES.map(() => s.open("request", { domain: "news" }));
+	assert.deepEqual(teamIds.map((id) => helperOf(s.kernel, id)!.name), [...TEAM_NAMES]);
+	assert.equal(helperOf(s.kernel, s.open("request"))!.name, SOLO_NAMES[0]);
+	assert.equal(helperOf(s.kernel, s.open("request", { domain: "watch" }))!.name, `${TEAM_NAMES[0]}·二`);
+	assert.equal(helperOf(s.kernel, s.open("request"))!.name, SOLO_NAMES[1]);
+});
+
+test("在岗的名字不分池：旧版本开的任务带着四字名和角色还在岗时，新的团队任务不取同一个名字", () => {
+	const s = setup({ domains: DOMAINS });
+	const old = s.open("request");
+	s.db.prepare("UPDATE tickets SET helper_name = ? WHERE id = ?").run(TEAM_NAMES[0], old);
+	assert.deepEqual(helperOf(s.kernel, old), { name: TEAM_NAMES[0], role: "conversation", seq: 1 });
+	assert.deepEqual(helperOf(s.kernel, s.open("request", { domain: "news" })), { name: TEAM_NAMES[1], team: "新闻队", seq: 1 });
+	assert.deepEqual(helperOf(s.kernel, s.open("request")), { name: SOLO_NAMES[1], role: "conversation", seq: 2 });
+});
+
+test("名字和四字还是两字在开任务时定下，之后不变；队名在读任务时取模块现在写的 team", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path, domains: DOMAINS });
+	const ids = [first.open("request", { domain: "news" }), first.open("request", { domain: "mail" })];
+	assert.deepEqual(ids.map((id) => helperOf(first.kernel, id)), [{ name: TEAM_NAMES[0], team: "新闻队", seq: 1 }, { name: SOLO_NAMES[0], role: "conversation", seq: 1 }]);
+	first.db.close();
+	const helpers = (domains?: DomainBook) => ids.map((id) => helperOf(setup({ path, domains }).kernel, id));
+	const solo = { name: SOLO_NAMES[0], role: "conversation", seq: 1 };
+	assert.deepEqual(helpers(new Map([["news", { team: "要闻队", onRoster: true }], ["mail", { team: "邮件队", onRoster: true }]])), [{ name: TEAM_NAMES[0], team: "要闻队", seq: 1 }, solo], "模块改了队名、另一个模块后来有了成员");
+	assert.deepEqual(helpers(new Map([["news", { team: null, onRoster: true }]])), [{ name: TEAM_NAMES[0], team: null, seq: 1 }, solo], "模块没了成员：没有队名");
+	assert.deepEqual(helpers(), [{ name: TEAM_NAMES[0], team: null, seq: 1 }, solo], "模块拿掉了：没有队名");
+});
+
+test("T1 开的团队任务只有四字名、没有领域：读出来没有队名", () => {
+	const s = setup({ domains: DOMAINS });
+	const id = s.open("request", { domain: "news" });
+	s.db.prepare("UPDATE tickets SET domain = NULL WHERE id = ?").run(id);
+	assert.deepEqual(helperOf(s.kernel, id), { name: TEAM_NAMES[0], team: null, seq: 1 });
+});
+
+const dispatchedTo = (kernel: Kernel, id: string) => kernel.listTickets().find((r) => r.id === id)!.dispatchedTo;
+
+test("团队任务记下领队派给了哪些成员：开时一个也没有，每个成员按第一次派活的顺序只记一次", () => {
+	const s = setup({ domains: DOMAINS });
+	const id = s.open("request", { domain: "news" });
+	assert.deepEqual(dispatchedTo(s.kernel, id), []);
+	s.kernel.recordDispatch(id, "新闻研究员");
+	s.kernel.recordDispatch(id, "行情分析师");
+	s.kernel.recordDispatch(id, "新闻研究员");
+	assert.deepEqual(dispatchedTo(s.kernel, id), ["新闻研究员", "行情分析师"]);
+	assert.deepEqual(s.kernel.getTicket(id)!.dispatchedTo, ["新闻研究员", "行情分析师"]);
+});
+
+test("没有成员的任务没有派活记录，记派活也不会凭空有", () => {
+	const s = setup({ domains: DOMAINS });
+	const ids = [s.open("request"), s.open("request", { domain: "mail" })];
+	for (const id of ids) s.kernel.recordDispatch(id, "新闻研究员");
+	assert.deepEqual(ids.map((id) => dispatchedTo(s.kernel, id)), [null, null]);
+});
+
+test("派活记录在状态库里：重开数据库读得回来", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path, domains: DOMAINS });
+	const id = first.open("request", { domain: "news" });
+	first.kernel.recordDispatch(id, "新闻研究员");
+	first.db.close();
+	assert.deepEqual(dispatchedTo(setup({ path, domains: DOMAINS }).kernel, id), ["新闻研究员"]);
+});
+
+test("这个改动之前开的团队任务没有派活记录：升级状态库后读出来是没有记录，而不是一个也没派", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path, domains: DOMAINS });
+	const id = first.open("request", { domain: "news" });
+	first.db.exec("ALTER TABLE tickets DROP COLUMN dispatched_to");
+	first.db.close();
+	assert.deepEqual(dispatchedTo(setup({ path, domains: DOMAINS }).kernel, id), null);
+});
+
+test("成员上限的问答记在状态库里：重开数据库读得回来，记了到期的放宽不再读出", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-cap-"));
+	try {
+		const path = join(dir, "state.db");
+		const first = setup({ path });
+		assert.deepEqual(first.kernel.capAsks.latest(), { state: "none" });
+		first.kernel.capAsks.save({ state: "asked", day: "2026-11-08", askedAt: 100 });
+		assert.deepEqual(first.kernel.capAsks.latest(), { state: "asked", day: "2026-11-08", askedAt: 100 });
+		first.kernel.capAsks.save({ state: "granted", day: "2026-11-08", askedAt: 100, answeredAt: 200 }, "回答成员上限：今天放宽到 10");
+		first.db.close();
+		const second = setup({ path });
+		assert.deepEqual(second.kernel.capAsks.latest(), { state: "granted", day: "2026-11-08", askedAt: 100, answeredAt: 200 });
+		second.kernel.capAsks.expire("2026-11-08", 300);
+		assert.deepEqual(second.kernel.capAsks.latest(), { state: "none" });
+		second.kernel.capAsks.save({ state: "declined", day: "2026-11-09", askedAt: 400, answeredAt: 500 }, "回答成员上限：保持 4");
+		assert.deepEqual(second.kernel.capAsks.latest(), { state: "declined", day: "2026-11-09", askedAt: 400, answeredAt: 500 });
+		second.db.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("成员上限：记了到期的那一天又被问起（时钟往回拨过了零点），到期的记号清掉，之后的放宽重启后读得回来", () => {
+	const { kernel } = setup();
+	const day = "2026-11-08";
+	kernel.capAsks.save({ state: "asked", day, askedAt: 100 });
+	kernel.capAsks.save({ state: "granted", day, askedAt: 100, answeredAt: 200 }, "回答成员上限：今天放宽到 10");
+	kernel.capAsks.expire(day, 300);
+	kernel.capAsks.save({ state: "asked", day, askedAt: 400 });
+	assert.deepEqual(kernel.capAsks.latest(), { state: "asked", day, askedAt: 400 }, "重新问的问题读得回来，提问时间是这一次的");
+	kernel.capAsks.save({ state: "granted", day, askedAt: 400, answeredAt: 500 }, "回答成员上限：今天放宽到 10");
+	assert.deepEqual(kernel.capAsks.latest(), { state: "granted", day, askedAt: 400, answeredAt: 500 });
+});
+
+test("成员上限：状态库不收对不上的记录。回答必须带使用者的那句话，没答的问题不能带", () => {
+	const { kernel } = setup();
+	const day = "2026-11-08";
+	assert.throws(() => kernel.capAsks.save({ state: "granted", day, askedAt: 100, answeredAt: 200 }), /CHECK constraint failed/, "放宽没有那句话");
+	assert.throws(() => kernel.capAsks.save({ state: "declined", day, askedAt: 100, answeredAt: 200 }), /CHECK constraint failed/, "保持没有那句话");
+	assert.throws(() => kernel.capAsks.save({ state: "asked", day, askedAt: 100 }, "回答成员上限：今天放宽到 10"), /CHECK constraint failed/, "没答的问题带着一句话");
+	assert.deepEqual(kernel.capAsks.latest(), { state: "none" });
+});
+
+test("使用者对成员上限的回答是对话里他自己的一句话，但不是触发：幕僚长收不到通知，也没有可转交的东西", () => {
+	const { kernel, say } = setup();
+	const { triggerId } = say("查天气");
+	const pending = kernel.dueActions().length;
+	kernel.capAsks.save({ state: "asked", day: "2026-11-08", askedAt: Date.parse("2026-11-08T10:00:01") });
+	assert.deepEqual(kernel.conversation().map((l) => l.id), [triggerId], "问了还没答，对话里没有这句话");
+	kernel.capAsks.save({ state: "granted", day: "2026-11-08", askedAt: Date.parse("2026-11-08T10:00:01"), answeredAt: Date.parse("2026-11-08T10:00:02") }, "回答成员上限：今天放宽到 10");
+	assert.deepEqual(kernel.conversation().map((l) => [l.id, l.who, l.text, l.at]), [
+		[triggerId, "user", "查天气", Date.parse("2026-11-08T10:00:00")],
+		["ask_cap_2026-11-08", "user", "回答成员上限：今天放宽到 10", Date.parse("2026-11-08T10:00:02")],
+	]);
+	assert.equal(kernel.dueActions().length, pending, "没有给幕僚长的新通知");
+	assert.equal(kernel.read("ask_cap_2026-11-08"), undefined);
+	assert.equal(kernel.triggerLog().length, 1);
+});
+
+function replied(s: ReturnType<typeof setup>, cause: string, text: string, { delivered = true } = {}) {
+	const result = s.kernel.reply({ threadId: CONVERSATION_THREAD_ID, text, cause });
+	assert.ok(result.ok, `reply rejected: ${!result.ok && result.reason}`);
+	if (delivered) s.kernel.markReplyDelivered(result.replyId);
+	return result.replyId;
+}
+
+test("清屏后对话只列清屏之后的话；被清掉的行仍在库里，kernel.read 照常读得到", () => {
+	const s = setup();
+	const old = s.say("查天气").triggerId;
+	replied(s, old, "好的，去查了。");
+	s.clock.t += 1000;
+	s.kernel.clearConversation();
+	s.clock.t += 1000;
+	const now = s.say("刚才那件事呢").triggerId;
+	assert.deepEqual(s.kernel.conversation().map((l) => l.id), [now]);
+	const found = s.kernel.read(old);
+	assert.ok(found?.type === "trigger", "清掉的触发仍读得到");
+	assert.equal(found.trigger.body, "查天气");
+	assert.equal(s.kernel.triggerLog().length, 2);
+});
+
+test("清屏只收走已经送到屏幕上的回复：还没投递的回复清屏后仍在对话里", () => {
+	const s = setup();
+	const said = s.say("查天气").triggerId;
+	const pending = replied(s, said, "好的，去查了。", { delivered: false });
+	s.kernel.clearConversation();
+	assert.deepEqual(s.kernel.conversation().map((l) => l.id), [pending]);
+	assert.deepEqual(s.kernel.cleared()!.lines.map((l) => l.id), [said]);
+});
+
+test("cleared() 给出最近一次清屏的时间和最新的被清掉的行，按对话顺序，最多 limit 条", () => {
+	const s = setup();
+	for (let i = 0; i < 60; i++) {
+		s.say(`第 ${i} 句`);
+		s.clock.t += 10;
+	}
+	const before = s.kernel.conversation(100);
+	const at = s.clock.t;
+	s.kernel.clearConversation();
+	const cleared = s.kernel.cleared(50)!;
+	assert.equal(cleared.at, at);
+	assert.equal(cleared.lines.length, 50);
+	assert.deepEqual(cleared.lines, before.slice(-50));
+});
+
+test("没有可清的行时清屏什么都不做：返回 null，清屏时间不变，库里不多写", () => {
+	const s = setup();
+	assert.equal(s.kernel.clearConversation(), null);
+	assert.equal(s.kernel.cleared(), null);
+	s.say("查天气");
+	const first = s.kernel.clearConversation();
+	assert.ok(first);
+	s.clock.t += 1000;
+	assert.equal(s.kernel.clearConversation(), null);
+	assert.equal(s.kernel.cleared()!.at, first.at);
+});
+
+test("时钟不动时连清两次屏，第二次的时间也严格更晚", () => {
+	const s = setup();
+	s.say("一");
+	const first = s.kernel.clearConversation()!;
+	s.say("二");
+	const second = s.kernel.clearConversation()!;
+	assert.equal(second.at, first.at + 1);
+	assert.deepEqual(s.kernel.conversation(), []);
+});
+
+test("清屏不产生触发，也不排任何动作，幕僚长不会被叫醒", () => {
+	const s = setup();
+	s.say("查天气");
+	const triggers = s.kernel.triggerLog().length;
+	const actions = s.kernel.dueActions(10);
+	s.kernel.clearConversation();
+	assert.equal(s.kernel.triggerLog().length, triggers);
+	assert.deepEqual(s.kernel.dueActions(10), actions);
+});
+
+test("答过的成员上限问题那句话随清屏收走，还没答的不算", () => {
+	const s = setup();
+	const day = "2026-11-08";
+	s.kernel.capAsks.save({ state: "granted", day, askedAt: Date.parse("2026-11-08T10:00:01"), answeredAt: Date.parse("2026-11-08T10:00:02") }, "回答成员上限：今天放宽到 10");
+	s.kernel.capAsks.save({ state: "asked", day: "2026-11-09", askedAt: Date.parse("2026-11-08T10:00:03") });
+	s.kernel.clearConversation();
+	assert.deepEqual(s.kernel.cleared()!.lines.map((l) => l.id), [`ask_cap_${day}`]);
+	assert.deepEqual(s.kernel.conversation(), []);
+});
+
+test("旧的 state.db 打开后清屏表自动建好，原有对话全部可见", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	first.say("查天气");
+	const before = first.kernel.conversation();
+	first.db.exec("DROP TABLE IF EXISTS conversation_hidden");
+	first.db.close();
+	const again = setup({ path });
+	assert.deepEqual(again.kernel.conversation(), before);
+	assert.equal(again.kernel.cleared(), null);
+});
+
+function quoteCounts(s: ReturnType<typeof setup>) {
+	const n = (sql: string) => (s.db.prepare(sql).get() as { n: number }).n;
+	return {
+		triggers: n("SELECT COUNT(*) AS n FROM triggers"),
+		quotes: n("SELECT COUNT(*) AS n FROM trigger_quotes"),
+		notices: n("SELECT COUNT(*) AS n FROM actions WHERE kind = 'router.notify' AND status = 'pending'"),
+	};
+}
+
+test("引用：说话时引用一条幕僚长的话，库里记下被引用行的编号、谁说的、什么时候、一行快照和当时的任务；conversation() 和 read() 都带出同一个引用", () => {
+	const s = setup();
+	const ticketId = s.open("request", { title: "换供应商" });
+	s.clock.t += 1000;
+	const replyAt = s.clock.t;
+	const replyId = replied(s, ticketId, "方案 A：\n先停掉旧任务");
+	s.clock.t += 1000;
+	const said = s.kernel.userSaidQuoting({ text: "改成 B", at: s.clock.t, lineId: replyId });
+	assert.ok(said);
+	assert.deepEqual(said.quote, { lineId: replyId, who: "router", at: replyAt, text: "方案 A： 先停掉旧任务", ticketId });
+	const found = s.kernel.read(said.triggerId);
+	assert.ok(found?.type === "trigger");
+	assert.deepEqual(found.quote, said.quote);
+	assert.deepEqual(s.kernel.conversation().at(-1), { id: said.triggerId, who: "user", text: "改成 B", at: s.clock.t, quote: said.quote });
+	assert.deepEqual(s.notices().at(-1), { kind: "conversation", triggerId: said.triggerId }, "和普通的话一样交给幕僚长");
+});
+
+test("引用：被引用的话有换行和很长时，快照压成一行、最多 200 字、截断处带「…」", () => {
+	const s = setup();
+	const long = s.say(`第一行\r\n第二行 第三行\n${"长".repeat(500)}`).triggerId;
+	const short = s.say("短短一句话，原样存下来。").triggerId;
+	const longQuote = s.kernel.userSaidQuoting({ text: "a", at: s.clock.t, lineId: long })!.quote;
+	assert.doesNotMatch(longQuote.text, /[^\S ]| {2}/u, "只剩单个空格");
+	assert.equal([...longQuote.text].length, 201);
+	assert.ok(longQuote.text.startsWith("第一行 第二行 第三行 长"));
+	assert.ok(longQuote.text.endsWith("长…"));
+	assert.equal(s.kernel.userSaidQuoting({ text: "b", at: s.clock.t, lineId: short })!.quote.text, "短短一句话，原样存下来。");
+});
+
+test("引用：快照去掉看不见的控制字符", () => {
+	const s = setup();
+	const id = s.say("前\u0000面\u0007的\u001b[31m话\u0085完").triggerId;
+	assert.equal(s.kernel.userSaidQuoting({ text: "a", at: s.clock.t, lineId: id })!.quote.text, "前面的[31m话完");
+});
+
+test("U+0000：触发正文去掉它，后面的字都在", () => {
+	const s = setup();
+	const { triggerId } = s.trigger({ body: "外部\u0000事件的后半句" });
+	const found = s.kernel.read(triggerId);
+	assert.ok(found?.type === "trigger");
+	assert.equal(found.trigger.body, "外部事件的后半句");
+});
+
+test("U+0000：使用者的话去掉它，后面的字都在", () => {
+	const s = setup();
+	s.kernel.userSaid({ text: "前\u0000面的话", at: s.clock.t });
+	assert.equal(s.kernel.conversation().at(-1)?.text, "前面的话");
+});
+
+test("U+0000：幕僚长的回复去掉它，后面的字都在", () => {
+	const s = setup();
+	replied(s, s.say("查天气").triggerId, "晴\u0000，二十度");
+	assert.equal(s.kernel.conversation().at(-1)?.text, "晴，二十度");
+});
+
+test("U+0000：成员报告的摘要和问题去掉它，后面的字都在", () => {
+	const s = setup();
+	const id = s.open("request");
+	s.kernel.workerReport(id, { status: "progress", summary: "查\u0000完了", question: "用\u0000 A 吗？" });
+	const found = s.kernel.read(id);
+	assert.ok(found?.type === "ticket");
+	assert.deepEqual([found.recentReports[0].summary, found.recentReports[0].question], ["查完了", "用 A 吗？"]);
+});
+
+test("U+0000：任务标题去掉它，不会是空标题", () => {
+	const s = setup();
+	assert.equal(s.kernel.getTicket(s.open("request", { title: "看\u0000盘任务" }))!.title, "看盘任务");
+});
+
+test("U+0000：external_id 带它的触发投两次，第二次是重复", () => {
+	const s = setup();
+	const first = s.trigger({ externalId: "evt\u00001" });
+	const again = s.trigger({ externalId: "evt\u00001" });
+	assert.deepEqual([first.duplicate, again.duplicate, again.triggerId], [false, true, first.triggerId]);
+});
+
+test("引用：编号不在对话里、或是还没送到屏幕上的回复时，什么都不写，返回 null", () => {
+	const s = setup();
+	const source = s.trigger().triggerId;
+	const said = s.say("查天气").triggerId;
+	const undelivered = replied(s, said, "好的", { delivered: false });
+	const before = quoteCounts(s);
+	for (const lineId of ["rpl_missing", source, "", undelivered]) {
+		assert.equal(s.kernel.userSaidQuoting({ text: "改成 B", at: s.clock.t, lineId }), null, lineId);
+	}
+	assert.deepEqual(quoteCounts(s), before);
+});
+
+test("引用：清屏藏起来的行照样能引用，新的话带着引用出现在对话里", () => {
+	const s = setup();
+	const old = s.say("查天气").triggerId;
+	s.kernel.clearConversation();
+	s.clock.t += 1000;
+	const said = s.kernel.userSaidQuoting({ text: "刚才那件事呢", at: s.clock.t, lineId: old })!;
+	assert.equal(said.quote.text, "查天气");
+	assert.deepEqual(s.kernel.conversation().map((l) => [l.id, l.quote?.lineId]), [[said.triggerId, old]]);
+});
+
+test("引用：可以引用成员上限的回答，它不属于任何任务", () => {
+	const s = setup();
+	const day = "2026-11-08";
+	const answeredAt = Date.parse("2026-11-08T10:00:02");
+	s.kernel.capAsks.save({ state: "granted", day, askedAt: answeredAt - 1000, answeredAt }, "回答成员上限：今天放宽到 10");
+	const said = s.kernel.userSaidQuoting({ text: "为什么放宽", at: s.clock.t, lineId: `ask_cap_${day}` })!;
+	assert.deepEqual(said.quote, { lineId: `ask_cap_${day}`, who: "user", at: answeredAt, text: "回答成员上限：今天放宽到 10", ticketId: null });
+});
+
+test("引用：被引用的话当时已开任务或已转交，引用记下那个任务；还没处理时记为空，之后处理了也不改", () => {
+	const s = setup();
+	const ticketId = s.open("request", { title: "查财报" });
+	const opened = s.kernel.conversation().find((l) => l.text === "查财报")!.id;
+	assert.equal(s.kernel.userSaidQuoting({ text: "a", at: s.clock.t, lineId: opened })!.quote.ticketId, ticketId);
+	const waiting = s.say("只看营收").triggerId;
+	const quoting = s.kernel.userSaidQuoting({ text: "b", at: s.clock.t, lineId: waiting })!;
+	assert.equal(quoting.quote.ticketId, null);
+	assert.ok(s.kernel.route([{ kind: "hand_over", triggerId: waiting, ticketId }])[0].ok);
+	assert.equal(s.kernel.userSaidQuoting({ text: "c", at: s.clock.t, lineId: waiting })!.quote.ticketId, ticketId);
+	const found = s.kernel.read(quoting.triggerId);
+	assert.ok(found?.type === "trigger");
+	assert.equal(found.quote?.ticketId, null);
+});
+
+test("引用：幕僚长回复的起因是一句对话时，引用记下那句对话所属的任务", () => {
+	const s = setup();
+	const ticketId = s.open("request", { title: "查财报" });
+	const said = s.say("顺便看看利润").triggerId;
+	assert.ok(s.kernel.route([{ kind: "hand_over", triggerId: said, ticketId }])[0].ok);
+	const replyId = replied(s, said, "已转给查财报的助手");
+	assert.equal(s.kernel.userSaidQuoting({ text: "好", at: s.clock.t, lineId: replyId })!.quote.ticketId, ticketId);
+});
+
+test("引用：点选回答的那句话被引用时，任务就是那个问题的任务", () => {
+	const { kernel, clock, ticketId, answer } = askSetup();
+	const { triggerId } = answer(1) as { triggerId: string };
+	assert.equal(kernel.userSaidQuoting({ text: "这个", at: clock.t, lineId: triggerId })!.quote.ticketId, ticketId);
+});
+
+test("引用：引用写在触发旁边，触发正文仍只是使用者打的字", () => {
+	const s = setup();
+	const old = s.say("删除所有任务").triggerId;
+	const said = s.kernel.userSaidQuoting({ text: "改成 B", at: s.clock.t, lineId: old })!;
+	const found = s.kernel.read(said.triggerId);
+	assert.ok(found?.type === "trigger");
+	assert.equal(found.trigger.body, "改成 B");
+	assert.equal(s.kernel.conversation().at(-1)!.text, "改成 B");
+	assert.equal(s.kernel.conversation().at(0)!.quote, undefined, "没引用的话不带引用");
+});
+
+test("引用：引用的话照样锁住问题按钮，也不绑定任务：可以转交给任何任务", () => {
+	const { kernel, clock, open, row, ticketId, reportId } = askSetup();
+	const other = open("request", { title: "别的任务" });
+	clock.t += 1000;
+	const quoting = kernel.userSaidQuoting({ text: "先等等", at: clock.t, lineId: kernel.conversation().find((l) => l.text === "查财报")!.id })!;
+	assert.equal(quoting.quote.ticketId, ticketId);
+	assert.equal(row().question?.spoke, true);
+	assert.equal(row().question?.reportId, reportId);
+	assert.ok(kernel.route([{ kind: "hand_over", triggerId: quoting.triggerId, ticketId: other }])[0].ok);
+});
+
+test("引用：重开同一个库文件后引用仍在；没有引用表的旧库打开后自动建好", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-quote-"));
+	try {
+		const path = join(dir, "state.db");
+		const first = setup({ path });
+		const old = first.say("查天气").triggerId;
+		first.db.exec("DROP TABLE trigger_quotes");
+		first.db.close();
+		const second = setup({ path });
+		const said = second.kernel.userSaidQuoting({ text: "改成明天", at: second.clock.t, lineId: old })!;
+		const before = second.kernel.conversation();
+		second.db.close();
+		const third = setup({ path });
+		assert.deepEqual(third.kernel.conversation(), before);
+		assert.equal(third.kernel.conversation().at(-1)!.quote?.lineId, said.quote.lineId);
+		third.db.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("引用：引用表不收带换行的快照", () => {
+	const s = setup();
+	const id = s.say("查天气").triggerId;
+	const insert = (text: string) =>
+		s.db.prepare("INSERT INTO trigger_quotes (trigger_id, line_id, who, said_at, text) VALUES (?, ?, 'user', 1, ?)").run(id, id, text);
+	assert.throws(() => insert("一\n二"), /CHECK constraint failed/);
+	assert.throws(() => insert("一\r二"), /CHECK constraint failed/);
+	assert.throws(() => insert(""), /CHECK constraint failed/);
+});
+
+test("引用：引用表只收对话里三种行的编号", () => {
+	const s = setup();
+	const id = s.say("查天气").triggerId;
+	const insert = (lineId: string) =>
+		s.db.prepare("INSERT INTO trigger_quotes (trigger_id, line_id, who, said_at, text) VALUES (?, ?, 'user', 1, '查天气')").run(id, lineId);
+	assert.throws(() => insert("tkt_1"), /CHECK constraint failed/);
+	assert.throws(() => insert("act_1"), /CHECK constraint failed/);
+	insert("ask_cap_2026-11-10");
+});
+
+test("应用编号按顺序给；同一任务同一短名拿回原来的编号；删掉 apps 的行之后，下一个编号也不复用", () => {
+	const { db, kernel, open } = setup();
+	const a = open("request", { title: "做笑话扩展" });
+	const b = open("request", { title: "做天气扩展" });
+	assert.deepEqual(kernel.claimApp(a, "joke", 1), { number: 1, isNew: true });
+	assert.deepEqual(kernel.claimApp(a, "joke", 1), { number: 1, isNew: false });
+	assert.deepEqual(kernel.claimApp(b, "joke", 1), { number: 2, isNew: true });
+	db.exec("DELETE FROM apps");
+	assert.deepEqual(kernel.claimApp(b, "weather", 1), { number: 3, isNew: true });
+});
+
+test("应用编号不小于给的下限，之后接着下限往下数", () => {
+	const { kernel, open } = setup();
+	const a = open("request");
+	assert.deepEqual(kernel.claimApp(a, "old-dir", 42), { number: 42, isNew: true });
+	assert.deepEqual(kernel.claimApp(a, "next", 1), { number: 43, isNew: true });
+});
+
+test("重新打开同一个 state.db 文件后，应用编号接着往下数", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-apps-")), "state.db");
+	const first = setup({ path });
+	const ticket = first.open("request");
+	assert.equal(first.kernel.claimApp(ticket, "joke", 1).number, 1);
+	first.db.close();
+	const second = setup({ path });
+	assert.equal(second.kernel.claimApp(ticket, "weather", 1).number, 2);
+});
+
+const repoWrite = (path: string) => ({ kind: "wrote" as const, path, tool: "write" as const, by: { role: "helper" as const } });
+const checked = (paths: string[], scanned: Record<string, number>, extra: { omitted?: number; problem?: string } = {}) => ({ outside: paths.map(repoWrite), omitted: extra.omitted ?? 0, scanned, ...(extra.problem && { problem: extra.problem }) });
+
+test("汇报存下宿主检查的结果；writeScan 给最近一次检查过的游标，没检查过的汇报不改它", () => {
+	const { kernel, open, run } = setup();
+	const id = open("request");
+	run(id);
+	assert.deepEqual(kernel.writeScan(id), {});
+	kernel.workerReport(id, { status: "blocked", summary: "卡住了", writes: checked(["/repo/a.ts"], { "s.jsonl": 4 }, { omitted: 2, problem: "读不了会话 m.jsonl" }) });
+	kernel.workerReport(id, { status: "progress", summary: "还在做" });
+	assert.deepEqual(kernel.writeScan(id), { "s.jsonl": 4 });
+	const found = kernel.read(id);
+	assert.ok(found?.type === "ticket");
+	assert.deepEqual(found.recentReports.map((r) => [r.outsideWrites, r.outsideOmitted, r.writeProblem]), [
+		[[], 0, null],
+		[[repoWrite("/repo/a.ts")], 2, "读不了会话 m.jsonl"],
+	]);
+});
+
+test("带外写的「无需处理」汇报也通知 Router，再结束任务；不带外写的照旧安静结束", () => {
+	const { kernel, open, run, notices } = setup();
+	const quiet = open("request");
+	run(quiet);
+	kernel.workerReport(quiet, { status: "no_action", summary: "不用做", writes: checked([], { "q.jsonl": 2 }) });
+	assert.deepEqual(notices().filter((n) => "ticketId" in n && n.ticketId === quiet), []);
+	const loud = open("request");
+	run(loud);
+	const { reportId } = kernel.workerReport(loud, { status: "no_action", summary: "不用做", writes: checked(["/repo/x"], { "l.jsonl": 2 }) });
+	assert.deepEqual(notices().filter((n) => "ticketId" in n && n.ticketId === loud), [{ kind: "report", ticketId: loud, reportId }]);
+	assert.equal(kernel.getTicket(loud)?.stage, "closed");
+});
+
+test("看板这一行把任务所有汇报的外写加起来：确切写入和推测的可能写入分开数，没记下的只算可能，最多给三个样本路径", () => {
+	const { kernel, open, run } = setup();
+	const id = open("request");
+	const clean = open("request");
+	run(id);
+	kernel.workerReport(id, { status: "blocked", summary: "a", writes: checked(["/r/1", "/r/2"], { s: 1 }) });
+	kernel.workerReport(id, { status: "blocked", summary: "b", writes: { outside: [{ kind: "maybe", paths: ["/r/3", "/r/4"], command: "cp x /r/3 /r/4", tool: "bash", by: { role: "member", name: "coder" } }], omitted: 5, scanned: { s: 2 } } });
+	const row = kernel.listTickets().find((r) => r.id === id)!;
+	assert.deepEqual(row.outside, { wrote: 2, maybe: 6, sample: ["/r/1", "/r/2", "/r/3"] });
+	assert.equal(kernel.listTickets().find((r) => r.id === clean)!.outside, null);
+});
+
+test("旧数据库的汇报表没有外写的几列：打开时补上，旧汇报读回没有外写", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const id = first.open("request");
+	first.run(id);
+	first.kernel.workerReport(id, { status: "progress", summary: "旧汇报" });
+	first.db.exec("ALTER TABLE reports DROP COLUMN outside_writes; ALTER TABLE reports DROP COLUMN outside_omitted; ALTER TABLE reports DROP COLUMN write_scan; ALTER TABLE reports DROP COLUMN write_problem");
+	first.db.close();
+	const again = setup({ path });
+	const found = again.kernel.read(id);
+	assert.ok(found?.type === "ticket");
+	assert.deepEqual(found.recentReports.map((r) => [r.summary, r.outsideWrites, r.writeProblem]), [["旧汇报", [], null]]);
+	assert.deepEqual(again.kernel.writeScan(id), {});
+});
+
+const alert = (externalId: string, text = "NVDA 涨了 5.3%") => ({ kind: "alert" as const, externalId, text, occurredAt: 1 });
+
+test("宿主行：同一来源同一个 externalId 的提醒第二次是重复，库里只有一行，返回第一行", () => {
+	const s = setup();
+	const first = s.kernel.postHostLine("us-market", alert("NVDA:2026-11-08:day-up-5"));
+	s.clock.t += 1000;
+	const again = s.kernel.postHostLine("us-market", alert("NVDA:2026-11-08:day-up-5", "换了措辞"));
+	assert.equal(first.duplicate, false);
+	assert.deepEqual(again, { line: first.line, duplicate: true });
+	assert.deepEqual(s.kernel.conversation().map((l) => [l.who, l.text]), [["alert", "NVDA 涨了 5.3%"]]);
+	assert.equal(s.kernel.postHostLine("other-feed", alert("NVDA:2026-11-08:day-up-5")).duplicate, false, "别的来源用同一个 id 不算重复");
+});
+
+test("宿主行：收据不去重，可以多行、很长", () => {
+	const s = setup();
+	const text = Array.from({ length: 150 }, (_, i) => `第 ${i} 条：${"条件".repeat(40)}`).join("\n");
+	assert.ok(text.length > 1000 && text.length <= 16000);
+	const a = s.kernel.postHostLine("us-market", { kind: "receipt", text });
+	const b = s.kernel.postHostLine("us-market", { kind: "receipt", text });
+	assert.deepEqual([a.duplicate, b.duplicate], [false, false]);
+	assert.notEqual(a.line.id, b.line.id);
+	assert.deepEqual(s.kernel.conversation().map((l) => [l.who, l.text]), [["receipt", text], ["receipt", text]]);
+});
+
+test("宿主行：不合规的提醒（换行、空、超过 1000 字）和超过 16000 字的收据直接报错，什么都不写", () => {
+	const s = setup();
+	for (const bad of ["第一行\n第二行", "", "长".repeat(1001)]) {
+		assert.throws(() => s.kernel.postHostLine("us-market", alert(`id-${bad.length}`, bad)), /CHECK constraint failed/, JSON.stringify(bad.slice(0, 10)));
+	}
+	assert.throws(() => s.kernel.postHostLine("us-market", { kind: "receipt", text: "长".repeat(16001) }), /CHECK constraint failed/);
+	assert.deepEqual(s.kernel.conversation(), []);
+	assert.equal(s.kernel.raised("us-market", "id-0"), false);
+});
+
+test("宿主行：raised 只认这个来源已经贴过的提醒 id", () => {
+	const s = setup();
+	s.kernel.postHostLine("us-market", alert("TSLA:2026-11-08:cross-5-20-golden-suspected"));
+	assert.equal(s.kernel.raised("us-market", "TSLA:2026-11-08:cross-5-20-golden-suspected"), true);
+	assert.equal(s.kernel.raised("us-market", "TSLA:2026-11-09:cross-5-20-golden-suspected"), false);
+	assert.equal(s.kernel.raised("other-feed", "TSLA:2026-11-08:cross-5-20-golden-suspected"), false);
+});
+
+test("宿主行：conversation() 按时间把使用者的话、幕僚长的回复、提醒和收据排在一起", () => {
+	const s = setup();
+	const said = s.say("帮我盯英伟达").triggerId;
+	s.clock.t += 1000;
+	const receipt = s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下：NVDA" }).line;
+	s.clock.t += 1000;
+	const reply = replied(s, said, "已添加");
+	s.clock.t += 1000;
+	const posted = s.kernel.postHostLine("us-market", alert("NVDA:x")).line;
+	assert.deepEqual(s.kernel.conversation().map((l) => [l.id, l.who]), [[said, "user"], [receipt.id, "receipt"], [reply, "router"], [posted.id, "alert"]]);
+	assert.deepEqual(posted, { id: posted.id, who: "alert", text: "NVDA 涨了 5.3%", at: s.clock.t });
+	assert.match(posted.id, /^hln_/);
+});
+
+test("宿主行：清屏收走收据和已送达的提醒；还没送达的提醒留在对话里", () => {
+	const s = setup();
+	const receipt = s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下" }).line;
+	const delivered = s.kernel.postHostLine("us-market", alert("a")).line;
+	s.kernel.markHostLineDelivered(delivered.id);
+	const pending = s.kernel.postHostLine("us-market", alert("b")).line;
+	s.kernel.clearConversation();
+	assert.deepEqual(s.kernel.conversation().map((l) => l.id), [pending.id]);
+	assert.deepEqual(s.kernel.cleared()!.lines.map((l) => l.id), [receipt.id, delivered.id]);
+});
+
+test("宿主行：undeliveredAlerts 只列没标记送达的提醒，不列收据", () => {
+	const s = setup();
+	s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下" });
+	const done = s.kernel.postHostLine("us-market", alert("a")).line;
+	const pending = s.kernel.postHostLine("us-market", alert("b")).line;
+	s.kernel.markHostLineDelivered(done.id);
+	assert.deepEqual(s.kernel.undeliveredAlerts(), [pending]);
+});
+
+test("宿主行：不能引用提醒和收据，和不认识的行一样返回 null，什么都不写", () => {
+	const s = setup();
+	const posted = s.kernel.postHostLine("us-market", alert("a")).line;
+	s.kernel.markHostLineDelivered(posted.id);
+	const receipt = s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下" }).line;
+	const before = quoteCounts(s);
+	for (const lineId of [posted.id, receipt.id]) assert.equal(s.kernel.userSaidQuoting({ text: "为什么", at: s.clock.t, lineId }), null, lineId);
+	assert.deepEqual(quoteCounts(s), before);
 });

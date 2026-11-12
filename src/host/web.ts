@@ -1,24 +1,29 @@
-import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { ConfigError } from "../config-error.ts";
+import { isCapAskId } from "../kernel/cap-ask.ts";
 import { OPTIONS_MAX, refusalText, type AnswerRefusal } from "../kernel/question.ts";
-import type { HostToClient, TranscriptMessage } from "../client/protocol.ts";
+import type { HostToClient, TranscriptHistory, TranscriptMessage } from "../client/protocol.ts";
 import { hasVisibleText, HistoryEchoFilter, type AnswerResult, type Broadcast } from "./server.ts";
+import { tokenMatches } from "./web-token.ts";
+import { webAddresses, type TailnetName, type WebAddresses } from "./web-hosts.ts";
 
 type Snapshot = Omit<Extract<HostToClient, { type: "snapshot" }>, "type">;
 
 export interface WebHost {
 	snapshot(): Snapshot;
-	transcript(ticketId: string): TranscriptMessage[];
+	transcript(ticketId: string): TranscriptHistory;
 	say(text: string): string;
+	sayQuoting(text: string, lineId: string): string | null;
 	answer(reportId: string, option: number): AnswerResult;
+	clear(): void;
 }
 
 const SAY_MAX_BYTES = 32 * 1024;
 const TICKET_ID = /^tkt_[A-Za-z0-9_-]{1,64}$/;
 const REPORT_ID = /^rpt_[A-Za-z0-9_-]{1,64}$/;
+const LINE_ID_MAX_CHARS = 80;
 
 const INDEX_HTML = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
 const SCRIPT = "text/javascript; charset=utf-8";
@@ -37,11 +42,11 @@ const KEEPALIVE_MS = 15_000;
 const INTERNAL_ERROR = "宿主内部出错，详情见宿主日志。";
 
 const DENIED = {
-	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"} 或 {\"answer\": {\"reportId\": \"rpt_…\", \"option\": 0}}，或这句话是空的。",
+	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"} 或 {\"answer\": {\"reportId\": \"rpt_…\", \"option\": 0}}，或这句话是空的；清屏的正文是 {}。",
 	401: "token 缺失或已失效，请用宿主日志里最新的网址打开。",
-	403: "只接受本机这个页面（127.0.0.1 或 localhost）发来的请求。",
+	403: "只接受本机这个页面（127.0.0.1 或 localhost）或 config.json 的 webHosts 里列出的地址发来的请求。",
 	404: "没有这个页面。",
-	405: "这个地址不接受这种请求；发话用 POST /say，其余只接受 GET。",
+	405: "这个地址不接受这种请求；发话用 POST /say，清屏用 POST /clear，其余只接受 GET。",
 	413: "这句话太长了，请分几次说。",
 	415: "发话的正文要用 application/json。",
 } as const;
@@ -54,12 +59,18 @@ export class WebGateway {
 	readonly #echoes = new HistoryEchoFilter<ServerResponse>();
 	readonly #host: WebHost;
 	readonly #log: (line: string) => void;
-	#port = 0;
+	readonly #names: readonly TailnetName[];
+	#addresses: WebAddresses = { hosts: new Set(), origins: new Set(), local: "", remote: [] };
+	readonly #posts = new Map<string, (body: string, res: ServerResponse) => void>([
+		["/say", (body, res) => this.#say(body, res)],
+		["/clear", (body, res) => this.#clear(body, res)],
+	]);
 
-	constructor(host: WebHost, token: string, log: (line: string) => void) {
+	constructor(host: WebHost, token: string, log: (line: string) => void, names: readonly TailnetName[] = []) {
 		this.#host = host;
 		this.#token = token;
 		this.#log = log;
+		this.#names = names;
 		this.#server = createServer((req, res) => this.#guard(req, res, () => this.#handle(req, res)));
 	}
 
@@ -71,14 +82,18 @@ export class WebGateway {
 				else reject(error);
 			});
 			this.#server.listen({ host: "127.0.0.1", port }, () => {
-				this.#port = (this.#server.address() as AddressInfo).port;
+				this.#addresses = webAddresses((this.#server.address() as AddressInfo).port, this.#names);
 				resolve();
 			});
 		});
 	}
 
 	get url(): string {
-		return `http://127.0.0.1:${this.#port}/?token=${this.#token}`;
+		return `${this.#addresses.local}?token=${this.#token}`;
+	}
+
+	get remoteUrls(): readonly string[] {
+		return this.#addresses.remote.map((url) => `${url}?token=${this.#token}`);
 	}
 
 	broadcast(message: Broadcast): void {
@@ -86,12 +101,13 @@ export class WebGateway {
 		for (const res of this.#streams) res.write(frame);
 	}
 
-	sendTranscript(ticketId: string, message: TranscriptMessage): void {
+	sendTranscript(ticketId: string, message: TranscriptMessage, member?: { callId: string; index: number }): void {
 		const watchers = this.#watchers.get(ticketId);
 		if (!watchers) return;
-		const frame = sseFrame({ type: "transcript", ticketId, message });
+		const frame = sseFrame({ type: "transcript", ticketId, message, ...(member && { member }) });
 		const json = JSON.stringify(message);
-		for (const res of watchers) if (!this.#echoes.isEcho(res, json)) res.write(frame);
+		const alreadyInHistory = (res: ServerResponse) => !member && this.#echoes.isEcho(res, json);
+		for (const res of watchers) if (!alreadyInHistory(res)) res.write(frame);
 	}
 
 	close(): Promise<void> {
@@ -116,10 +132,11 @@ export class WebGateway {
 	#handle(req: IncomingMessage, res: ServerResponse): void {
 		const url = URL.parse(req.url ?? "/", "http://x");
 		if (!url) return deny(res, 400);
-		if (!isLocalHost(req.headers.host, this.#port)) return deny(res, 403);
+		if (!this.#addresses.hosts.has(req.headers.host?.toLowerCase() ?? "")) return deny(res, 403);
 		const file = STATIC.get(url.pathname);
 		if (!file && !tokenMatches(url.searchParams.get("token") ?? "", this.#token)) return deny(res, 401);
-		if (url.pathname === "/say") return req.method === "POST" ? this.#say(req, res) : deny(res, 405);
+		const post = this.#posts.get(url.pathname);
+		if (post) return req.method === "POST" ? this.#post(req, res, post) : deny(res, 405);
 		if (req.method !== "GET") return deny(res, 405);
 		if (file) return void res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": file.type }).end(file.body);
 		if (url.pathname === "/") {
@@ -130,20 +147,19 @@ export class WebGateway {
 		if (url.pathname === "/transcript") {
 			const ticketId = url.searchParams.get("ticket") ?? "";
 			if (!TICKET_ID.test(ticketId)) return deny(res, 400);
-			const messages = this.#host.transcript(ticketId);
+			const history = this.#host.transcript(ticketId);
 			const watchers = this.#watchers.get(ticketId) ?? new Set();
 			this.#watchers.set(ticketId, watchers);
-			this.#echoes.opened(res, messages);
-			return this.#openStream(res, { type: "transcript_history", ticketId, messages }, watchers, () => this.#watchers.delete(ticketId));
+			this.#echoes.opened(res, history.messages);
+			return this.#openStream(res, { type: "transcript_history", ticketId, ...history }, watchers, () => this.#watchers.delete(ticketId));
 		}
 		deny(res, 404);
 	}
 
 	// The token stops other local pages; Origin and the JSON content type each stop cross-site form posts,
 	// since a cross-origin JSON POST needs a CORS preflight that this server never answers.
-	#say(req: IncomingMessage, res: ServerResponse): void {
-		const origin = req.headers.origin?.toLowerCase();
-		if (!origin?.startsWith("http://") || !isLocalHost(origin.slice("http://".length), this.#port)) return deny(res, 403);
+	#post(req: IncomingMessage, res: ServerResponse, handle: (body: string, res: ServerResponse) => void): void {
+		if (!this.#addresses.origins.has(req.headers.origin?.toLowerCase() ?? "")) return deny(res, 403);
 		if (req.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json") return deny(res, 415);
 		if (Number(req.headers["content-length"] ?? 0) > SAY_MAX_BYTES) return tooLarge(req, res);
 		const chunks: Buffer[] = [];
@@ -156,14 +172,30 @@ export class WebGateway {
 		req.on("end", () =>
 			this.#guard(req, res, () => {
 				if (res.headersSent) return;
-				const body = parseSayBody(Buffer.concat(chunks).toString("utf8"));
-				if (body === undefined) return deny(res, 400);
-				const result = body.kind === "text" ? { ok: true as const, triggerId: this.#host.say(body.text) } : this.#host.answer(body.reportId, body.option);
-				if (!result.ok) return refuse(res, result.refusal);
-				const { triggerId } = result;
-				res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ triggerId }));
+				handle(Buffer.concat(chunks).toString("utf8"), res);
 			}),
 		);
+	}
+
+	#say(text: string, res: ServerResponse): void {
+		const body = parseSayBody(text);
+		if (body === undefined) return deny(res, 400);
+		let triggerId: string | null;
+		if (body.kind === "answer") {
+			const result = this.#host.answer(body.reportId, body.option);
+			if (!result.ok) return refuse(res, result.refusal);
+			triggerId = result.triggerId;
+		} else {
+			triggerId = body.quoteOf === undefined ? this.#host.say(body.text) : this.#host.sayQuoting(body.text, body.quoteOf);
+			if (triggerId === null) return deny(res, 400);
+		}
+		res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ triggerId }));
+	}
+
+	#clear(body: string, res: ServerResponse): void {
+		if (!isEmptyObject(body)) return deny(res, 400);
+		this.#host.clear();
+		res.writeHead(204, NO_LEAK_HEADERS).end();
 	}
 
 	#openStream(res: ServerResponse, first: HostToClient, set: Set<ServerResponse>, onEmpty?: () => void): void {
@@ -181,25 +213,38 @@ export class WebGateway {
 	}
 }
 
-type SayBody = { kind: "text"; text: string } | { kind: "answer"; reportId: string; option: number };
+type SayBody = { kind: "text"; text: string; quoteOf?: string } | { kind: "answer"; reportId: string; option: number };
 
-function parseSayBody(body: string): SayBody | undefined {
+function parseObject(body: string): object | undefined {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(body);
 	} catch {
 		return undefined;
 	}
-	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
-	const keys = Object.keys(parsed);
-	if (keys.length !== 1) return undefined;
-	const { text, answer } = parsed as { text?: unknown; answer?: unknown };
-	if (keys[0] === "text") return typeof text === "string" && hasVisibleText(text) ? { kind: "text", text } : undefined;
-	if (keys[0] !== "answer" || typeof answer !== "object" || answer === null || Object.keys(answer).length !== 2) return undefined;
+	return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : undefined;
+}
+
+function parseSayBody(body: string): SayBody | undefined {
+	const parsed = parseObject(body);
+	if (parsed === undefined) return undefined;
+	const keys = Object.keys(parsed).sort().join();
+	const { text, answer, quoteOf } = parsed as { text?: unknown; answer?: unknown; quoteOf?: unknown };
+	if (keys === "text" || keys === "quoteOf,text") {
+		if (typeof text !== "string" || !hasVisibleText(text)) return undefined;
+		if (quoteOf === undefined) return { kind: "text", text };
+		return typeof quoteOf === "string" && quoteOf.length > 0 && quoteOf.length <= LINE_ID_MAX_CHARS ? { kind: "text", text, quoteOf } : undefined;
+	}
+	if (keys !== "answer" || typeof answer !== "object" || answer === null || Object.keys(answer).length !== 2) return undefined;
 	const { reportId, option } = answer as { reportId?: unknown; option?: unknown };
-	if (typeof reportId !== "string" || !REPORT_ID.test(reportId)) return undefined;
+	if (typeof reportId !== "string" || !(REPORT_ID.test(reportId) || isCapAskId(reportId))) return undefined;
 	if (typeof option !== "number" || !Number.isInteger(option) || option < 0 || option >= OPTIONS_MAX) return undefined;
 	return { kind: "answer", reportId, option };
+}
+
+function isEmptyObject(body: string): boolean {
+	const parsed = parseObject(body);
+	return parsed !== undefined && Object.keys(parsed).length === 0;
 }
 
 function tooLarge(req: IncomingMessage, res: ServerResponse): void {
@@ -211,18 +256,7 @@ function sseFrame(message: HostToClient): string {
 	return `data: ${JSON.stringify(message)}\n\n`;
 }
 
-function isLocalHost(host: string | undefined, port: number): boolean {
-	const h = host?.toLowerCase();
-	return h === `127.0.0.1:${port}` || h === `localhost:${port}`;
-}
-
-function tokenMatches(given: string, token: string): boolean {
-	const got = Buffer.from(given);
-	const want = Buffer.from(token);
-	return got.length === want.length && timingSafeEqual(got, want);
-}
-
-const REFUSED_STATUS: Record<AnswerRefusal["kind"], number> = { no_question: 404, no_options: 409, out_of_range: 409, chosen: 409, spoke: 409, closed: 409 };
+const REFUSED_STATUS: Record<AnswerRefusal["kind"], number> = { no_question: 404, no_options: 409, out_of_range: 409, chosen: 409, spoke: 409, closed: 409, not_here: 409 };
 
 // The body is JSON so the page can pick its own copy by `refused`; `reason` is for curl users.
 function refuse(res: ServerResponse, refusal: AnswerRefusal): void {

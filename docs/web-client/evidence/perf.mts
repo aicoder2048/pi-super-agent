@@ -1,6 +1,8 @@
 // Measures host.say() -> "user" frame latency on the Unix socket (trunk and head) and on SSE (head only).
 // Usage: node --import <repo>/src/pi-runtime.mjs perf.ts <repo> <label> <n>
+import { readFileSync } from "node:fs";
 import { connect } from "node:net";
+import { dirname, join } from "node:path";
 import { request } from "node:http";
 import { performance } from "node:perf_hooks";
 const [repo, label, nArg] = process.argv.slice(2);
@@ -20,7 +22,7 @@ sock.on("data", (d) => {
 		if (m.type === "user" && pending.has(m.text)) pending.get(m.text)!.sock = performance.now();
 	}
 });
-sock.write(JSON.stringify({ type: "hello", role: "client" }) + "\n");
+sock.write(JSON.stringify({ type: "hello", role: "client", token: readFileSync(join(dirname(host.socketPath), "client-token"), "utf8").trim() }) + "\n");
 if (head) {
 	const u = new URL(host.webUrl);
 	await new Promise<void>((resolve) => {

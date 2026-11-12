@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { writeFileAtomic } from "../heartbeat.ts";
 import { join, sep } from "node:path";
+import { memberSessionDirs } from "./dispatch.ts";
 
 const SESSION_DIRS = [join("sessions", "router"), join("sessions", "workers")];
 
@@ -11,13 +12,13 @@ export function relocateState(stateDir: string): boolean {
 	const marker = join(here, "location.json");
 	const previous = existsSync(marker) ? (JSON.parse(readFileSync(marker, "utf8")) as { path?: string }).path : undefined;
 	if (previous === here) return false;
-	if (previous) for (const dir of SESSION_DIRS) rewriteHeaders(join(here, dir), previous, here);
+	if (previous) for (const dir of [...SESSION_DIRS.map((d) => join(here, d)), ...memberSessionDirs(here)]) rewriteHeaders(dir, previous, here);
 	writeFileAtomic(marker, JSON.stringify({ path: here }));
 	return previous !== undefined;
 }
 
 function rewriteHeaders(dir: string, from: string, to: string): void {
-	if (!existsSync(dir)) return;
+	if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) return;
 	for (const file of readdirSync(dir).filter((f) => f.endsWith(".jsonl"))) {
 		const path = join(dir, file);
 		const text = readFileSync(path, "utf8");

@@ -3,6 +3,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, wri
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { memberSessionDir } from "../src/host/dispatch.ts";
 import { relocateState } from "../src/host/relocate.ts";
 
 function sessionFile(dir: string, name: string, cwd: string) {
@@ -35,4 +36,21 @@ test("第一次启动只记下位置，不改任何文件", () => {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "psa-reloc-")));
 	assert.equal(relocateState(dir), false);
 	assert.equal(JSON.parse(readFileSync(join(dir, "location.json"), "utf8")).path, dir);
+});
+
+test("状态目录换了位置时，任务里每位成员的会话也改到新位置，下次派给它仍接得上", () => {
+	const root = realpathSync(mkdtempSync(join(tmpdir(), "psa-reloc-")));
+	const a = join(root, "A"), b = join(root, "B");
+	mkdirSync(a);
+	relocateState(a);
+	sessionFile(memberSessionDir(a, "tkt_1", "news-researcher"), "m1", join(a, "workers", "tkt_1"));
+	sessionFile(memberSessionDir(a, "tkt_2", "market-analyst"), "m2", join(a, "workers", "tkt_2"));
+	mkdirSync(join(a, "workers", "tkt_3"));
+	writeFileSync(join(a, "workers", "tkt_3", "team"), "助手自己写的同名文件");
+	cpSync(a, b, { recursive: true });
+	rmSync(a, { recursive: true });
+
+	assert.equal(relocateState(b), true);
+	assert.equal(header(join(memberSessionDir(b, "tkt_1", "news-researcher"), "m1.jsonl")).cwd, join(b, "workers", "tkt_1"));
+	assert.equal(header(join(memberSessionDir(b, "tkt_2", "market-analyst"), "m2.jsonl")).cwd, join(b, "workers", "tkt_2"));
 });

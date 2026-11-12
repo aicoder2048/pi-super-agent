@@ -4,7 +4,7 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { HostConnection } from "../src/client/connection.ts";
 import type { HostToClient } from "../src/client/protocol.ts";
 import { loadConfig } from "../src/host/config.ts";
@@ -44,7 +44,7 @@ async function fauxRuntime() {
 function wiringConfig(provider: string, retryAttempts = 3) {
 	return {
 		stateDir: tempStateDir(), kernel: {}, bgMaxMinutes: 120, fallbackDailyTokens: 1000, retryAttempts, probePrimaryMinutes: 15,
-		heartbeatSeconds: 30, watchdog: { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120 }, modulesDirs: [], webPort: 0, sources: {},
+		heartbeatSeconds: 30, watchdog: { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120 }, modulesDirs: [], webPort: 0, webHosts: [], sources: {},
 		models: { router: { provider, id: "router" }, worker: { provider, id: "worker" }, fallback: { provider, id: "fallback" } },
 	};
 }
@@ -92,7 +92,7 @@ test("故事 12：使用者规则文件里的规则进入按真实接线启动�
 	const { modelRuntime, provider } = await fauxRuntime();
 	const rulesFile = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
 	writeFileSync(rulesFile, "## watch-ci\n来源: ci\nCI 失败时开任务\n");
-	const host = await Host.start(createHostOptions({ config: wiringConfig(provider), modules: Modules.load([], rulesFile), modelRuntime, log: () => {} }));
+	const host = await Host.start(createHostOptions({ config: wiringConfig(provider), modules: Modules.load([], { stateDir: dirname(rulesFile) }), modelRuntime, log: () => {} }));
 	t.after(() => host.stop());
 	const prompt: string = (host.router as any).session.systemPrompt;
 	assert.match(prompt, /user\/watch-ci/);

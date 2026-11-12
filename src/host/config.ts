@@ -6,6 +6,9 @@ import { DEFAULT_MODELS, parseModelRef, type ModelRef } from "../models.ts";
 import type { KernelConfig } from "../kernel/types.ts";
 import { ConfigError, readJsonFile } from "../config-error.ts";
 import { Modules } from "../modules.ts";
+import { MEMBER_CAP_DEFAULT, MEMBER_CAP_MAX } from "./member-cap.ts";
+import { within } from "./output.ts";
+import { parseWebHosts, type TailnetName } from "./web-hosts.ts";
 
 export interface HostConfig {
 	stateDir: string;
@@ -13,6 +16,14 @@ export interface HostConfig {
 	kernel: Partial<KernelConfig>;
 	bgMaxMinutes: number;
 	fallbackDailyTokens: number;
+	/** One dispatch's time limit for a member that cannot write, edit or run commands in the ticket, counted from when it starts. Also how long a dispatch may wait for a slot. */
+	dispatchTimeoutSeconds: number;
+	/** The same limit for a member that can. */
+	dispatchCodingTimeoutSeconds: number;
+	/** A running member with no event of any kind for this long is ended. */
+	dispatchStallSeconds: number;
+	/** Member processes running at once across the host until the user raises it for a day; the rest queue. */
+	maxConcurrentExperts: number;
 	retryAttempts: number;
 	probePrimaryMinutes: number;
 	heartbeatSeconds: number;
@@ -20,11 +31,24 @@ export interface HostConfig {
 	modulesDirs: string[];
 	moduleSwitches: Record<string, boolean>;
 	webPort: number;
+	/** Tailnet names the page also answers at (ADR-0014). Empty means local only. */
+	webHosts: readonly TailnetName[];
 	secretsFile?: string;
+	/** Absolute. Where helpers and members put what they make (ADR-0015). */
+	outputDir: string;
 	sources: Record<string, unknown>;
+	/** Present means the Telegram client runs. An empty list is setup mode: it only tells whoever writes their own numeric id. */
+	telegram?: { allowedUserIds: readonly number[] };
 }
 
 const STUCK_MINUTES_MAX = 1440;
+const DISPATCH_TIMEOUT_MIN = 1;
+const DISPATCH_TIMEOUT_MAX = 3600;
+const DISPATCH_STALL_MIN = 30;
+
+export function memberProviders(config: Pick<HostConfig, "models">): string[] {
+	return [...new Set([config.models.router.provider, config.models.worker.provider])];
+}
 
 export function defaultStateDir(): string {
 	return resolve(process.env.PSA_STATE_DIR ?? join(homedir(), ".pi-super-agent"));
@@ -51,11 +75,38 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	if (!Number.isInteger(webPort) || webPort < 0 || webPort > 65535) {
 		throw new ConfigError(`${file}：webPort（${JSON.stringify(webPort)}）必须是 0 到 65535 之间的整数，0 表示任意空闲端口`);
 	}
+	const webHosts = parseWebHosts(raw.webHosts, `${file}：webHosts`);
+	if (webHosts.length > 0 && webPort === 0) {
+		throw new ConfigError(`${file}：webHosts 需要固定的 webPort：tailscale serve 转发到一个固定端口，webPort 是 0 时每次启动端口都不同`);
+	}
 	if (raw.secretsFile !== undefined && typeof raw.secretsFile !== "string") {
 		throw new ConfigError(`${file}：secretsFile（${JSON.stringify(raw.secretsFile)}）必须是 .env 文件的路径字符串`);
 	}
 	const secretsFile = raw.secretsFile === undefined ? undefined : resolve(stateDir, raw.secretsFile);
 	if (secretsFile && !existsSync(secretsFile)) throw new ConfigError(`${file}：secretsFile 指向的 ${secretsFile} 不存在`);
+	const outputDir = parseOutputDir(raw.outputDir, stateDir, file);
+	const seconds = (key: string, fallback: number): number => {
+		const value = raw[key] === undefined ? fallback : raw[key];
+		if (typeof value !== "number" || !(value >= DISPATCH_TIMEOUT_MIN && value <= DISPATCH_TIMEOUT_MAX)) {
+			throw new ConfigError(`${file}：${key}（${JSON.stringify(value)}）必须是不小于 ${DISPATCH_TIMEOUT_MIN}、不超过 ${DISPATCH_TIMEOUT_MAX} 的秒数`);
+		}
+		return value;
+	};
+	const dispatchTimeoutSeconds = seconds("dispatchTimeoutSeconds", 900);
+	const dispatchCodingTimeoutSeconds = seconds("dispatchCodingTimeoutSeconds", 3600);
+	const longestDispatch = Math.max(dispatchTimeoutSeconds, dispatchCodingTimeoutSeconds);
+	const dispatchStallSeconds = raw.dispatchStallSeconds === undefined ? Math.min(180, longestDispatch) : raw.dispatchStallSeconds;
+	if (raw.dispatchStallSeconds !== undefined && (typeof dispatchStallSeconds !== "number" || !(dispatchStallSeconds >= DISPATCH_STALL_MIN && dispatchStallSeconds <= longestDispatch))) {
+		const shown = `${file}：dispatchStallSeconds（${JSON.stringify(dispatchStallSeconds)}）`;
+		if (longestDispatch < DISPATCH_STALL_MIN) {
+			throw new ConfigError(`${shown}没有可写的值：最长的派活时限现在是 ${longestDispatch} 秒，而它必须不短于 ${DISPATCH_STALL_MIN} 秒、不长于最长的派活时限。把 dispatchTimeoutSeconds 或 dispatchCodingTimeoutSeconds 调到 ${DISPATCH_STALL_MIN} 秒以上，或者去掉 dispatchStallSeconds`);
+		}
+		throw new ConfigError(`${shown}必须是 ${DISPATCH_STALL_MIN} 到 ${longestDispatch} 之间的秒数：不短于 ${DISPATCH_STALL_MIN} 秒，不长于最长的派活时限`);
+	}
+	const maxConcurrentExperts = raw.maxConcurrentExperts === undefined ? MEMBER_CAP_DEFAULT : raw.maxConcurrentExperts;
+	if (!Number.isInteger(maxConcurrentExperts) || maxConcurrentExperts < 1 || maxConcurrentExperts > MEMBER_CAP_MAX) {
+		throw new ConfigError(`${file}：maxConcurrentExperts（${JSON.stringify(maxConcurrentExperts)}）必须是 1 到 ${MEMBER_CAP_MAX} 的整数`);
+	}
 	const sources = raw.sources ?? {};
 	if (sources === null || typeof sources !== "object" || Array.isArray(sources)) {
 		throw new ConfigError(`${file}：sources（${JSON.stringify(sources)}）必须是以来源名为键的对象`);
@@ -64,6 +115,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	if (moduleSwitches === null || typeof moduleSwitches !== "object" || Array.isArray(moduleSwitches) || Object.values(moduleSwitches).some((v) => typeof v !== "boolean")) {
 		throw new ConfigError(`${file}：modules（${JSON.stringify(moduleSwitches)}）必须是以模块名为键、值为 true 或 false 的对象`);
 	}
+	const telegram = raw.telegram === undefined ? undefined : parseTelegram(raw.telegram, file);
 	return {
 		stateDir,
 		models: {
@@ -74,6 +126,10 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		kernel: { ...(raw.kernel ?? {}), stuckMs: stuckMinutes * 60_000 },
 		bgMaxMinutes: raw.bgMaxMinutes ?? 120,
 		fallbackDailyTokens: raw.fallbackDailyTokens ?? 8_000_000,
+		dispatchTimeoutSeconds,
+		dispatchCodingTimeoutSeconds,
+		dispatchStallSeconds,
+		maxConcurrentExperts,
 		retryAttempts: raw.retryAttempts ?? 3,
 		probePrimaryMinutes: raw.probePrimaryMinutes ?? 15,
 		heartbeatSeconds,
@@ -81,11 +137,47 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		modulesDirs: raw.modulesDirs ?? [fileURLToPath(new URL("../../modules", import.meta.url)), join(stateDir, "modules")],
 		moduleSwitches,
 		webPort,
+		webHosts,
 		secretsFile,
+		outputDir,
 		sources,
+		...(telegram && { telegram }),
 	};
 }
 
-export function loadModules(config: Pick<HostConfig, "stateDir" | "modulesDirs" | "moduleSwitches">): Modules {
-	return Modules.load(config.modulesDirs, join(config.stateDir, "rules.md"), { values: config.moduleSwitches, file: join(config.stateDir, "config.json") });
+export function loadModules(config: Pick<HostConfig, "stateDir" | "modulesDirs" | "moduleSwitches" | "models">): Modules {
+	return Modules.load(config.modulesDirs, {
+		stateDir: config.stateDir,
+		allowedProviders: memberProviders(config),
+		switches: { values: config.moduleSwitches, file: join(config.stateDir, "config.json") },
+	});
+}
+
+function parseOutputDir(value: unknown, stateDir: string, file: string): string {
+	if (value !== undefined && typeof value !== "string") throw new ConfigError(`${file}：outputDir（${JSON.stringify(value)}）必须是目录路径字符串，相对路径按状态目录算`);
+	if (value?.startsWith("~")) throw new ConfigError(`${file}：outputDir（${JSON.stringify(value)}）不能以 ~ 开头，配置里不展开 ~，请写绝对路径`);
+	const dir = resolve(stateDir, value ?? "output");
+	if (within(dir, stateDir)) throw new ConfigError(`${file}：outputDir（${dir}）不能是状态目录或它的上级，否则令牌和 state.db 也算成品目录`);
+	for (const own of ["workers", "sessions"]) {
+		if (within(join(stateDir, own), dir)) throw new ConfigError(`${file}：outputDir（${dir}）不能放在状态目录的 ${own}/ 下面，那里是宿主自己的任务目录和会话记录`);
+	}
+	return dir;
+}
+
+// A token pasted into this section by mistake must not reach the error, so errors name keys and never echo values.
+function parseTelegram(raw: unknown, file: string): { allowedUserIds: number[] } {
+	if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+		throw new ConfigError(`${file}：telegram 必须是只有 allowedUserIds 一项的对象`);
+	}
+	const extra = Object.keys(raw).filter((key) => key !== "allowedUserIds");
+	if (extra.length > 0) {
+		const named = extra.filter((key) => /^[A-Za-z_]\w{0,39}$/.test(key));
+		const shown = [...named, ...(named.length < extra.length ? [`另有 ${extra.length - named.length} 个不像字段名的键`] : [])].join("、");
+		throw new ConfigError(`${file}：telegram 只能有 allowedUserIds 一项，多了：${shown}。bot token 放在 secretsFile 或环境变量 TELEGRAM_BOT_TOKEN 里`);
+	}
+	const ids = (raw as { allowedUserIds?: unknown }).allowedUserIds;
+	if (!Array.isArray(ids) || !ids.every((id) => Number.isSafeInteger(id) && id > 0) || new Set(ids).size !== ids.length) {
+		throw new ConfigError(`${file}：telegram.allowedUserIds 必须是不重复的正整数数组：私聊里使用者的 Telegram 数字 id；空数组是设置模式`);
+	}
+	return { allowedUserIds: ids };
 }

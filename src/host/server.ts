@@ -1,12 +1,26 @@
-import { createServer, type Server, type Socket } from "node:net";
+import { connect, createServer, type Server, type Socket } from "node:net";
 import { rmSync } from "node:fs";
+import { dirname } from "node:path";
+import { ConfigError } from "../config-error.ts";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
 import type { HostToClient } from "../client/protocol.ts";
 import { refusalText, type AnswerRefusal } from "../kernel/question.ts";
+import { tokenMatches } from "./web-token.ts";
 
-export type Broadcast = Extract<HostToClient, { type: "user" | "reply" | "board" }>;
+export type Broadcast = Extract<HostToClient, { type: "user" | "reply" | "board" | "cleared" | "host_line" }>;
 
 export type AnswerResult = { ok: true; triggerId: string } | { ok: false; refusal: AnswerRefusal };
+
+/** An IM chat a line came from. Only IM clients set it, and the host never puts it on the wire. */
+export type ImChat = { client: "telegram"; chatId: number };
+
+export interface SayOptions {
+	/** The kernel's dedupe key. A client that can receive the same input twice sets it. */
+	externalId?: string;
+	from?: ImChat;
+}
+
+const ANSWER_FAILED = "宿主内部出错，这次点选没有生效，请再点一次；详情见宿主日志。";
 
 export interface ClientHandlers {
 	onSay(text: string): string;
@@ -39,6 +53,8 @@ export interface WorkerRequestHandler {
 	(ticketId: string, token: string, method: string, params: unknown): unknown;
 }
 
+const REFUSAL_LOG_EVERY_MS = 60_000;
+
 interface ClientConn {
 	socket: Socket;
 	watching: string | undefined;
@@ -49,6 +65,8 @@ export class HostServer {
 	readonly #clients = new Set<ClientConn>();
 	readonly #echoes = new HistoryEchoFilter<ClientConn>();
 	readonly #log: (line: string) => void;
+	#clientToken = "";
+	#refusalLoggedAt = -Infinity;
 
 	constructor(clients: ClientHandlers, workers: WorkerRequestHandler, log: (line: string) => void) {
 		this.#log = log;
@@ -61,13 +79,19 @@ export class HostServer {
 				const r = record as Record<string, any>;
 				if (!role) {
 					if (r.type !== "hello") return socket.destroy();
-					role = r.role === "worker" ? "worker" : "client";
-					if (role === "worker") worker = { ticketId: String(r.ticketId), token: String(r.token) };
-					else {
-						client = { socket, watching: undefined };
-						this.#clients.add(client);
-						this.#guard("hello", () => writeJsonLine(socket, { type: "snapshot", ...(clients.snapshot() as object) }), () => socket.destroy());
+					if (r.role === "worker") {
+						role = "worker";
+						worker = { ticketId: String(r.ticketId), token: String(r.token) };
+						return;
 					}
+					if (!tokenMatches(typeof r.token === "string" ? r.token : "", this.#clientToken)) {
+						this.#logRefusal();
+						return socket.destroy();
+					}
+					role = "client";
+					client = { socket, watching: undefined };
+					this.#clients.add(client);
+					this.#guard("hello", () => writeJsonLine(socket, { type: "snapshot", ...(clients.snapshot() as object) }), () => socket.destroy());
 					return;
 				}
 				if (role === "worker") {
@@ -86,8 +110,10 @@ export class HostServer {
 					}, () => {});
 				}
 				else if (r.type === "answer" && typeof r.reportId === "string" && Number.isInteger(r.option) && typeof r.requestId === "string") {
-					const result = clients.onAnswer(r.reportId, r.option);
-					writeJsonLine(socket, result.ok ? { type: "ack", requestId: r.requestId, triggerId: result.triggerId } : { type: "refused", requestId: r.requestId, reason: refusalText(result.refusal) });
+					this.#guard("answer", () => {
+						const result = clients.onAnswer(r.reportId, r.option);
+						writeJsonLine(socket, result.ok ? { type: "ack", requestId: r.requestId, triggerId: result.triggerId } : { type: "refused", requestId: r.requestId, reason: refusalText(result.refusal) });
+					}, () => writeJsonLine(socket, { type: "refused", requestId: r.requestId, reason: ANSWER_FAILED }));
 				}
 				else if (r.type === "watch") {
 					c.watching = typeof r.ticketId === "string" ? r.ticketId : undefined;
@@ -107,6 +133,13 @@ export class HostServer {
 		});
 	}
 
+	#logRefusal(): void {
+		const now = Date.now();
+		if (now - this.#refusalLoggedAt < REFUSAL_LOG_EVERY_MS) return;
+		this.#refusalLoggedAt = now;
+		this.#log("[socket] 拒绝了客户端连接：hello 没带对的 client-token。重开 TUI、just say 或 just tail，它们会自己带上。一分钟内再有同样的拒绝不重复记。");
+	}
+
 	// One client's failed request must not reach the socket's data handler, where it would kill the host.
 	#guard(what: string, work: () => void, answerFailure: () => void): void {
 		try {
@@ -117,7 +150,10 @@ export class HostServer {
 		}
 	}
 
-	listen(path: string): Promise<void> {
+	/** Binds the socket only when no live host answers on it, so one state directory has one host. */
+	async listen(path: string, clientToken: string): Promise<void> {
+		if (await answers(path)) throw new ConfigError(`状态目录 ${dirname(path)} 上已经有一个宿主在运行（${path} 有应答）。先停掉它，或把 PSA_STATE_DIR 设到别的目录。`);
+		this.#clientToken = clientToken;
 		rmSync(path, { force: true });
 		return new Promise((resolve, reject) => {
 			this.#server.once("error", reject);
@@ -144,4 +180,15 @@ export class HostServer {
 		for (const c of this.#clients) c.socket.destroy();
 		return new Promise((resolve) => this.#server.close(() => resolve()));
 	}
+}
+
+function answers(path: string): Promise<boolean> {
+	return new Promise((resolve) => {
+		const probe = connect(path);
+		probe.once("connect", () => {
+			probe.destroy();
+			resolve(true);
+		});
+		probe.once("error", () => resolve(false));
+	});
 }

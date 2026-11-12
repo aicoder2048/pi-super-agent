@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
+import { CAP_ASK_PREFIX, type CapAsk, type CapAskStore } from "./cap-ask.ts";
 import { answerExternalId, answerSentence, type AnswerRefusal } from "./question.ts";
+import { quoteSnapshot } from "./quote.ts";
 
 export type AnswerOutcome = { ok: true; triggerId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 import { deriveStage } from "./stage.ts";
-import { stallMinutes } from "../client/board-format.mjs";
+import { SOLO_NAMES, TEAM_NAMES, helperName, helperRole, newYorkDate } from "./helper-names.ts";
+import { oneLine, stallMinutes } from "../client/board-format.mjs";
 import { inTransaction } from "./store.ts";
 import {
 	CONVERSATION_SOURCE,
@@ -12,9 +15,14 @@ import {
 	DEFAULT_CONFIG,
 	RETRY_BACKOFF_MS,
 	SYSTEM_PROBLEM_STREAK,
+	ruleNamespace,
 } from "./types.ts";
 import type {
 	Action,
+	Cleared,
+	ConversationLine,
+	HostLine,
+	HostLinePost,
 	ActionKind,
 	AnswerClick,
 	Basis,
@@ -24,15 +32,24 @@ import type {
 	DecisionLogEntry,
 	PendingQuestion,
 	QuestionClick,
+	Quote,
 	DecisionResult,
 	Disposition,
+	DomainBook,
+	Helper,
+	HelpersToday,
 	InputKind,
+	OutsideTally,
+	OutsideWrite,
+	ScanCursor,
+	WriteCheck,
 	KernelConfig,
 	PendingAction,
 	ReadResult,
 	Report,
 	Result,
 	RouterNotice,
+	Routes,
 	SourcePolicy,
 	Stall,
 	SystemProblem,
@@ -46,6 +63,9 @@ import type {
 } from "./types.ts";
 
 type Row = Record<string, any>;
+
+const DAY_MS = 86_400_000;
+const OUTSIDE_SAMPLE = 3;
 
 const RECOVERY_NOTE = "process restarted; inspect your workdir before repeating any external action";
 
@@ -80,6 +100,15 @@ function toTrigger(r: Row): Trigger {
 	};
 }
 
+function hostLine(r: Row): HostLine {
+	return { id: r.id, who: r.kind, text: r.text, at: r.created_at };
+}
+
+// Node 22's node:sqlite reads a string back only up to its first U+0000, so drop U+0000 before it reaches the store.
+function sqlParams(params: SQLInputValue[]): SQLInputValue[] {
+	return params.map((p) => (typeof p === "string" ? p.replaceAll("\u0000", "") : p));
+}
+
 function toReport(r: Row): Report {
 	return {
 		id: r.id,
@@ -91,6 +120,9 @@ function toReport(r: Row): Report {
 		drafts: JSON.parse(r.drafts),
 		waiting: r.waiting === 1,
 		createdAt: r.created_at,
+		outsideWrites: JSON.parse(r.outside_writes),
+		outsideOmitted: r.outside_omitted,
+		writeProblem: r.write_problem,
 	};
 }
 
@@ -114,23 +146,69 @@ export function nextStallAt(rows: DashboardRow[], stuckMs: number): number | nul
 	return at.length ? Math.min(...at) : null;
 }
 
+const SOLO_HELPER_ROWS = "helper_role IS NOT NULL";
+const TEAM_HELPER_ROWS = "helper_name IS NOT NULL AND helper_role IS NULL";
+
+const storedRole = (helper: Helper) => ("role" in helper ? helper.role : null);
+
 export interface KernelOptions {
 	db: DatabaseSync;
 	clock: Clock;
 	sourcePolicy: SourcePolicy;
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
+	/** A rule ticket from such a source gets a market helper. */
+	isMarketSource?: (source: string) => boolean;
+	/** Without it there are no domains, and every ticket is one helper. */
+	domains?: DomainBook;
+	log?: (line: string) => void;
 	config?: Partial<KernelConfig>;
 }
+
+const LINES = `
+	SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord, NULL AS cause, 1 AS shown FROM triggers t
+	JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ?
+	UNION ALL
+	SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause, r.delivered_at IS NOT NULL FROM reply_receipts r WHERE r.thread_id = ?
+	UNION ALL
+	SELECT ? || c.day, 'user', c.said, c.answered_at, c.rowid, NULL, 1 FROM cap_asks c WHERE c.said IS NOT NULL
+	UNION ALL
+	SELECT h.id, h.kind, h.text, h.created_at, h.rowid, NULL, h.kind = 'receipt' OR h.delivered_at IS NOT NULL FROM host_lines h`;
+const LINES_PARAMS = [CONVERSATION_THREAD_ID, CONVERSATION_THREAD_ID, CAP_ASK_PREFIX] as const;
+const HIDDEN = "id IN (SELECT line_id FROM conversation_hidden)";
 
 export class Kernel {
 	readonly #db: DatabaseSync;
 	readonly #clock: Clock;
 	readonly #sourcePolicy: SourcePolicy;
 	readonly #ruleAllows: (ruleId: string, triggerSource: string) => boolean;
+	readonly #isMarketSource: (source: string) => boolean;
+	readonly #domains: DomainBook;
+	readonly #log: (line: string) => void;
 	readonly config: KernelConfig;
+	readonly capAsks: CapAskStore = {
+		latest: (): CapAsk => {
+			const r = this.#get("SELECT * FROM cap_asks ORDER BY day DESC LIMIT 1");
+			if (!r || r.expired_at !== null) return { state: "none" };
+			const asked = { day: r.day as string, askedAt: r.asked_at as number };
+			return r.state === "asked" ? { state: "asked", ...asked } : { state: r.state, ...asked, answeredAt: r.answered_at };
+		},
+		save: (ask, said) => {
+			this.#run(
+				`INSERT INTO cap_asks (day, state, asked_at, answered_at, said) VALUES (?, ?, ?, ?, ?)
+				 ON CONFLICT (day) DO UPDATE SET state = excluded.state, asked_at = excluded.asked_at, answered_at = excluded.answered_at, said = excluded.said, expired_at = NULL`,
+				ask.day, ask.state, ask.askedAt, ask.state === "asked" ? null : ask.answeredAt, said ?? null,
+			);
+		},
+		expire: (day, at) => {
+			this.#run("UPDATE cap_asks SET expired_at = ? WHERE day = ?", at, day);
+		},
+	};
 
-	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, config }: KernelOptions) {
+	constructor({ db, clock, sourcePolicy, ruleAllows = () => true, isMarketSource = () => false, domains = new Map(), log = () => {}, config }: KernelOptions) {
 		this.#ruleAllows = ruleAllows;
+		this.#isMarketSource = isMarketSource;
+		this.#domains = domains;
+		this.#log = log;
 		this.#db = db;
 		this.#clock = clock;
 		this.#sourcePolicy = sourcePolicy;
@@ -156,7 +234,7 @@ export class Kernel {
 			const isConversation = threadIds.includes(CONVERSATION_THREAD_ID);
 			const policy = isConversation ? "candidate" : this.#sourcePolicy(sub);
 			const ignored = policy === "ignore";
-			const subscribers = isConversation || policy !== "candidate" ? [] : this.#subscribersOf(threadIds);
+			const subscribers = isConversation || policy !== "candidate" ? [] : this.#openSubscribersOf(threadIds);
 			const disposition: Disposition = ignored ? "ignored" : subscribers.length > 0 ? "delivered" : "to_router";
 
 			const triggerId = this.#id("trg");
@@ -196,6 +274,44 @@ export class Kernel {
 			body: text,
 			occurredAt: at,
 		});
+	}
+
+	/** Null when lineId is not a shown line. A repeated externalId returns the first line's id and writes nothing. */
+	userSaidQuoting({ text, at, lineId, externalId }: { text: string; at: number; lineId: string; externalId?: string }): { triggerId: string; quote: Quote; duplicate: boolean } | null {
+		return this.#tx(() => {
+			const line = this.#get(`SELECT id, who, text, at, cause FROM (${LINES}) WHERE id = ? AND shown AND who IN ('user', 'router')`, ...LINES_PARAMS, lineId);
+			const snapshot = line && quoteSnapshot(line.text);
+			if (!snapshot) return null;
+			const quote: Quote = { lineId, who: line.who, at: line.at, text: snapshot, ticketId: this.#ticketOfLine(lineId, line.cause) };
+			const { triggerId, duplicate } = this.userSaid({ text, at, externalId });
+			if (duplicate) return { triggerId, quote, duplicate };
+			this.#run(
+				"INSERT INTO trigger_quotes (trigger_id, line_id, who, said_at, text, ticket_id) VALUES (?, ?, ?, ?, ?, ?)",
+				triggerId,
+				quote.lineId,
+				quote.who,
+				quote.at,
+				quote.text,
+				quote.ticketId,
+			);
+			return { triggerId, quote, duplicate };
+		});
+	}
+
+	#ticketOfLine(id: string, cause: string | null): string | null {
+		if (id.startsWith("trg_")) return this.#answerOf(id)?.ticketId ?? this.#routedTicket(this.#get("SELECT disposition, disposition_detail FROM triggers WHERE id = ?", id)!);
+		if (cause?.startsWith("tkt_")) return cause;
+		if (cause?.startsWith("trg_")) return this.#ticketOfLine(cause, null);
+		return null;
+	}
+
+	#routedTicket(trigger: Row): string | null {
+		return trigger.disposition === "opened_ticket" || trigger.disposition === "handed_over" ? trigger.disposition_detail : null;
+	}
+
+	#quoteOf(triggerId: string): Quote | null {
+		const r = this.#get("SELECT line_id, who, said_at, text, ticket_id FROM trigger_quotes WHERE trigger_id = ?", triggerId);
+		return r ? { lineId: r.line_id, who: r.who, at: r.said_at, text: r.text, ticketId: r.ticket_id } : null;
 	}
 
 	answerQuestion({ reportId, option, at }: { reportId: string; option: number; at: number }): AnswerOutcome {
@@ -320,8 +436,8 @@ export class Kernel {
 			const reportId = this.#id("rpt");
 			const now = this.#now();
 			this.#run(
-				`INSERT INTO reports (id, seq, ticket_id, status, summary, question, options, drafts, waiting, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				`INSERT INTO reports (id, seq, ticket_id, status, summary, question, options, drafts, waiting, created_at, outside_writes, outside_omitted, write_scan, write_problem)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				reportId,
 				this.#nextSeq(),
 				ticketId,
@@ -332,11 +448,17 @@ export class Kernel {
 				JSON.stringify(report.drafts ?? []),
 				report.waiting ? 1 : 0,
 				now,
+				JSON.stringify(report.writes?.outside ?? []),
+				report.writes?.omitted ?? 0,
+				report.writes ? JSON.stringify(report.writes.scanned) : null,
+				report.writes?.problem ?? null,
 			);
 			this.#run("UPDATE tickets SET last_progress_at = ? WHERE id = ?", now, ticketId);
 			if (ticket.stopped_at !== null) return { reportId };
 
 			if (report.status === "no_action") {
+				// The user must hear about writes outside even when the work itself is not worth a word.
+				if (report.writes?.outside.length) this.#enqueue({ kind: "router.notify", payload: { kind: "report", ticketId, reportId } });
 				this.#close(ticketId);
 				return { reportId };
 			}
@@ -348,6 +470,27 @@ export class Kernel {
 			if (report.status === "ready" && !report.waiting && !report.question) this.#close(ticketId);
 			return { reportId };
 		});
+	}
+
+	/**
+	 * The app number for this ticket's app `short`: the same number again for the same pair, so new_app can be retried.
+	 * Otherwise one past both the highest number ever given and `floor - 1`, never a number given before.
+	 */
+	claimApp(ticketId: string, short: string, floor: number): { number: number; isNew: boolean } {
+		return this.#tx(() => {
+			const found = this.#get("SELECT number FROM apps WHERE ticket_id = ? AND short = ?", ticketId, short);
+			if (found) return { number: found.number as number, isNew: false };
+			const given = (this.#get("SELECT seq FROM sqlite_sequence WHERE name = 'apps'")?.seq as number | undefined) ?? 0;
+			const number = Math.max(given, floor - 1) + 1;
+			this.#run("INSERT INTO apps (number, short, ticket_id, created_at) VALUES (?, ?, ?, ?)", number, short, ticketId, this.#now());
+			return { number, isNew: true };
+		});
+	}
+
+	/** The cursor of the ticket's latest checked report, where the next write check starts. */
+	writeScan(ticketId: string): ScanCursor {
+		const row = this.#get("SELECT write_scan FROM reports WHERE ticket_id = ? AND write_scan IS NOT NULL ORDER BY seq DESC LIMIT 1", ticketId);
+		return row ? JSON.parse(row.write_scan) : {};
 	}
 
 	workerHandBack(ticketId: string, { body }: { body: string }): void {
@@ -455,12 +598,31 @@ export class Kernel {
 		});
 	}
 
-	recordUsage(ticketId: string, { provider, tokensIn, tokensOut }: { provider: string; tokensIn: number; tokensOut: number }): void {
+	recordDispatch(ticketId: string, memberTitle: string): void {
+		this.#tx(() => {
+			const stored = this.#requireTicket(ticketId).dispatched_to;
+			if (stored === null) return;
+			const titles: string[] = JSON.parse(stored);
+			if (titles.includes(memberTitle)) return;
+			this.#run("UPDATE tickets SET dispatched_to = ? WHERE id = ?", JSON.stringify([...titles, memberTitle]), ticketId);
+		});
+	}
+
+	recordMemberProgress(ticketId: string): void {
+		this.#tx(() => {
+			this.#requireTicket(ticketId);
+			this.#run("UPDATE tickets SET last_progress_at = ? WHERE id = ?", this.#now(), ticketId);
+		});
+	}
+
+	/** `tokensIn` is new input plus cache reads; `tokensCached` is the cache-read part of it. */
+	recordUsage(ticketId: string, { provider, tokensIn, tokensCached = 0, tokensOut }: { provider: string; tokensIn: number; tokensCached?: number; tokensOut: number }): void {
 		this.#tx(() => {
 			this.#requireTicket(ticketId);
 			this.#run(
-				"UPDATE tickets SET tokens_in = tokens_in + ?, tokens_out = tokens_out + ? WHERE id = ?",
+				"UPDATE tickets SET tokens_in = tokens_in + ?, tokens_cached = tokens_cached + ?, tokens_out = tokens_out + ? WHERE id = ?",
 				tokensIn,
+				tokensCached,
 				tokensOut,
 				ticketId,
 			);
@@ -482,10 +644,10 @@ export class Kernel {
 		);
 	}
 
-	blockForCap(ticketId: string, summary: string): void {
+	blockForCap(ticketId: string, summary: string, writes: WriteCheck): void {
 		this.#tx(() => {
 			const latest = this.#latestReportRow(ticketId);
-			if (!(latest?.status === "blocked" && latest.summary === summary)) this.workerReport(ticketId, { status: "blocked", summary });
+			if (!(latest?.status === "blocked" && latest.summary === summary)) this.workerReport(ticketId, { status: "blocked", summary, writes });
 			this.#run("UPDATE tickets SET worker_state = 'idle' WHERE id = ? AND worker_state = 'queued'", ticketId);
 		});
 	}
@@ -579,11 +741,76 @@ export class Kernel {
 				fellBack: t.fellBack,
 				toolCalls: t.toolCalls,
 				tokensIn: t.tokensIn,
+				tokensCached: t.tokensCached,
 				tokensOut: t.tokensOut,
 				elapsedMs: t.startedAt === null ? 0 : end - t.startedAt,
 				lastProgressAt: t.lastProgressAt,
+				helper: t.helper,
+				dispatchedTo: t.dispatchedTo,
+				workerState: t.workerState,
+				startedAt: t.startedAt,
+				endedAt: t.stoppedAt ?? t.closedAt,
+				outside: this.#outsideTally(t.id),
 			};
 		});
+	}
+
+	#outsideTally(ticketId: string): OutsideTally | null {
+		const rows = this.#all("SELECT outside_writes, outside_omitted FROM reports WHERE ticket_id = ? AND (outside_writes <> '[]' OR outside_omitted > 0) ORDER BY seq", ticketId);
+		if (rows.length === 0) return null;
+		const writes = rows.flatMap((r) => JSON.parse(r.outside_writes) as OutsideWrite[]);
+		const wrote = writes.filter((w) => w.kind === "wrote").length;
+		const maybe = writes.length - wrote + rows.reduce((n, r) => n + (r.outside_omitted as number), 0);
+		return { wrote, maybe, sample: writes.flatMap((w) => (w.kind === "wrote" ? [w.path] : w.paths)).slice(0, OUTSIDE_SAMPLE) };
+	}
+
+	/** Tickets opened on today's New York date and the tokens they used. */
+	helpersToday(): HelpersToday {
+		const now = this.#now();
+		const today = newYorkDate(now);
+		const rows = this.#all("SELECT created_at, tokens_in + tokens_out AS tokens FROM tickets WHERE created_at > ?", now - 2 * DAY_MS)
+			.filter((r) => newYorkDate(r.created_at) === today);
+		return { count: rows.length, tokens: rows.reduce((sum, r) => sum + r.tokens, 0) };
+	}
+
+	/** Names tickets from a state db older than helpers, in the order they were opened. The host calls it once at start, since only it knows the market sources. */
+	nameUnnamedHelpers(): void {
+		this.#tx(() => {
+			const unnamed = this.#all(
+				`SELECT t.id, t.basis, t.created_at, g.source FROM tickets t LEFT JOIN triggers g ON g.id = t.origin_trigger_id
+				 WHERE t.helper_name IS NULL ORDER BY t.created_at, t.rowid`,
+			);
+			for (const r of unnamed) {
+				const h = this.#newHelper(r.basis, r.source, r.created_at, null);
+				this.#run("UPDATE tickets SET helper_name = ?, helper_role = ?, helper_seq = ? WHERE id = ?", h.name, storedRole(h), h.seq, r.id);
+			}
+		});
+	}
+
+	#newHelper(basis: Basis, originSource: string | null, createdAt: number, domain: string | null): Helper {
+		const role = helperRole(basis, originSource, this.#isMarketSource);
+		const team = domain === null ? null : (this.#domains.get(domain)?.team ?? null);
+		const unit = team !== null
+			? { rows: TEAM_HELPER_ROWS, column: "domain", value: domain, names: TEAM_NAMES }
+			: { rows: SOLO_HELPER_ROWS, column: "helper_role", value: role, names: SOLO_NAMES };
+		const day = newYorkDate(createdAt);
+		const sameUnit = this.#all(
+			`SELECT created_at FROM tickets WHERE ${unit.rows} AND ${unit.column} = ? AND created_at > ? AND created_at <= ?`,
+			unit.value,
+			createdAt - 2 * DAY_MS,
+			createdAt,
+		).filter((r) => newYorkDate(r.created_at) === day).length;
+		const ordinal = this.#get(`SELECT COUNT(*) AS n FROM tickets WHERE ${unit.rows}`).n as number;
+		const onDuty = new Set(this.#column("SELECT helper_name AS v FROM tickets WHERE helper_name IS NOT NULL AND closed_at IS NULL AND stopped_at IS NULL"));
+		const identity = { name: helperName(unit.names, ordinal, onDuty), seq: sameUnit + 1 };
+		return team !== null ? { ...identity, team } : { ...identity, role };
+	}
+
+	#helperOf(r: Row): Helper | null {
+		if (r.helper_name === null) return null;
+		const identity = { name: r.helper_name, seq: r.helper_seq };
+		if (r.helper_role !== null) return { ...identity, role: r.helper_role };
+		return { ...identity, team: this.#domains.get(r.domain)?.team ?? null };
 	}
 
 	#stall(t: Ticket, now: number): Stall | null {
@@ -657,6 +884,7 @@ export class Kernel {
 				type: "trigger",
 				trigger: toTrigger(row),
 				answers: this.#answerOf(id),
+				quote: this.#quoteOf(id),
 				threadIds: this.#column("SELECT thread_id AS v FROM trigger_threads WHERE trigger_id = ?", id),
 				ticketIds: this.#column(
 					`SELECT ticket_id AS v FROM ticket_inputs WHERE trigger_id = ?
@@ -717,20 +945,70 @@ export class Kernel {
 		}));
 	}
 
-	conversation(limit = 50): { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string }[] {
+	/** The visible conversation: the newest `limit` lines no 清屏 has hidden, oldest first. */
+	conversation(limit = 50): ConversationLine[] {
+		return this.#lines(`NOT ${HIDDEN}`, limit);
+	}
+
+	/** The latest 清屏 and the newest `limit` lines hidden so far, or null if there was never an effective 清屏. */
+	cleared(limit = 50): Cleared | null {
+		const at = this.#lastClearAt();
+		return at === null ? null : { at, lines: this.#lines(HIDDEN, limit) };
+	}
+
+	/**
+	 * 清屏: hides every line that is on the screens now. It writes no trigger, wakes no one and changes no conversation row.
+	 * Returns null when nothing on screen was left to hide, and then writes nothing.
+	 */
+	clearConversation(limit = 50): Cleared | null {
+		return this.#tx(() => {
+			const last = this.#lastClearAt();
+			const at = last === null ? this.#now() : Math.max(this.#now(), last + 1);
+			const { changes } = this.#run(
+				`INSERT OR IGNORE INTO conversation_hidden (line_id, hidden_at) SELECT id, ? FROM (${LINES}) WHERE shown`,
+				at,
+				...LINES_PARAMS,
+			);
+			return changes > 0 ? { at, lines: this.#lines(HIDDEN, limit) } : null;
+		});
+	}
+
+	#lastClearAt(): number | null {
+		return this.#get("SELECT MAX(hidden_at) AS at FROM conversation_hidden")?.at ?? null;
+	}
+
+	#lines(where: string, limit: number): ConversationLine[] {
 		return this.#all(
-			`SELECT * FROM (
-				SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord, NULL AS cause FROM triggers t
-				JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ?
-				UNION ALL
-				SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause FROM reply_receipts r WHERE r.thread_id = ?
-			) ORDER BY at DESC, who = 'router' DESC, ord DESC LIMIT ?`,
-			CONVERSATION_THREAD_ID,
-			CONVERSATION_THREAD_ID,
+			`SELECT * FROM (${LINES}) WHERE ${where} ORDER BY at DESC, who = 'router' DESC, ord DESC LIMIT ?`,
+			...LINES_PARAMS,
 			limit,
 		)
 			.reverse()
-			.map((r) => ({ id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { ticketId: r.cause } : {}) }));
+			.map((r) => {
+				const quote = r.id.startsWith("trg_") ? this.#quoteOf(r.id) : null;
+				return { id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { ticketId: r.cause } : {}), ...(quote ? { quote } : {}) };
+			});
+	}
+
+	conversationRoutes(limit = 50): Routes {
+		const seeing = new Set(this.#column(
+			"SELECT json_extract(payload, '$.triggerId') AS v FROM actions WHERE status = 'pending' AND kind = 'router.notify'",
+		));
+		const rows = this.#all(
+			`SELECT t.id, t.disposition, t.disposition_detail, EXISTS (SELECT 1 FROM reply_receipts r WHERE r.cause = t.id) AS answered
+			 FROM triggers t JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ? ORDER BY t.rowid DESC LIMIT ?`,
+			CONVERSATION_THREAD_ID,
+			limit,
+		);
+		const routes: Routes = {};
+		for (const r of rows) {
+			const ticketId = this.#routedTicket(r);
+			if (ticketId) routes[r.id] = { kind: r.disposition, ticketId };
+			else if (r.disposition === "router_ignored") routes[r.id] = { kind: "router_ignored" };
+			else if (r.answered) routes[r.id] = { kind: "answered" };
+			else if (seeing.has(r.id)) routes[r.id] = { kind: "pending" };
+		}
+		return routes;
 	}
 
 	sourceCursor(source: string): string | undefined {
@@ -747,6 +1025,64 @@ export class Kernel {
 				this.#now(),
 			);
 		});
+	}
+
+	sourceUserData(source: string): string | undefined {
+		return this.#get("SELECT data FROM source_user_data WHERE source = ?", source)?.data;
+	}
+
+	setSourceUserData(source: string, data: string): void {
+		this.#run(
+			`INSERT INTO source_user_data (source, data, updated_at) VALUES (?, ?, ?)
+			 ON CONFLICT (source) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+			source,
+			data,
+			this.#now(),
+		);
+	}
+
+	readWeb(ticketId: string): void {
+		this.#run("UPDATE tickets SET read_web_at = COALESCE(read_web_at, ?) WHERE id = ?", this.#now(), ticketId);
+	}
+
+	heardOtherThanUser(ticketId: string): "trigger" | "note" | "web" | undefined {
+		if (this.#get("SELECT 1 FROM tickets WHERE id = ? AND read_web_at IS NOT NULL", ticketId)) return "web";
+		return this.#get("SELECT kind FROM ticket_inputs WHERE ticket_id = ? AND kind IN ('trigger', 'note') LIMIT 1", ticketId)?.kind;
+	}
+
+	/** A repeated (source, externalId) alert returns the first line and writes nothing; any other failed insert throws. */
+	postHostLine(source: string, post: HostLinePost): { line: HostLine; duplicate: boolean } {
+		return this.#tx(() => {
+			if (post.kind === "alert") {
+				const existing = this.#get("SELECT id, kind, text, created_at FROM host_lines WHERE source = ? AND external_id = ?", source, post.externalId);
+				if (existing) return { line: hostLine(existing), duplicate: true };
+			}
+			const id = this.#id("hln");
+			const at = this.#now();
+			this.#run(
+				"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+				id,
+				post.kind,
+				source,
+				post.kind === "alert" ? post.externalId : null,
+				post.text,
+				post.kind === "alert" ? post.occurredAt : at,
+				at,
+			);
+			return { line: { id, who: post.kind, text: post.text, at }, duplicate: false };
+		});
+	}
+
+	raised(source: string, externalId: string): boolean {
+		return this.#get("SELECT 1 FROM host_lines WHERE source = ? AND external_id = ?", source, externalId) !== undefined;
+	}
+
+	markHostLineDelivered(id: string): void {
+		this.#run("UPDATE host_lines SET delivered_at = ? WHERE id = ? AND delivered_at IS NULL", this.#now(), id);
+	}
+
+	undeliveredAlerts(): HostLine[] {
+		return this.#all("SELECT id, kind, text, created_at FROM host_lines WHERE kind = 'alert' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
 	}
 
 	usageToday(provider: string): number {
@@ -801,7 +1137,8 @@ export class Kernel {
 	}
 
 	#openTicket(d: Extract<Decision, { kind: "open_ticket" }>, takenThisRoute: Set<string>): DecisionResult {
-		if (typeof d.title !== "string" || !d.title.trim()) return reject("open_ticket needs a title");
+		const title = typeof d.title === "string" ? oneLine(d.title) : "";
+		if (!title) return reject("open_ticket needs a title");
 		if (typeof d.brief !== "string" || !d.brief.trim()) return reject("open_ticket needs a brief for the worker");
 		const trigger = d.triggerId === undefined ? undefined : this.#get("SELECT id, source FROM triggers WHERE id = ?", d.triggerId);
 		if (d.triggerId !== undefined && !trigger) return reject(`unknown trigger ${d.triggerId}`);
@@ -826,22 +1163,34 @@ export class Kernel {
 				return reject(`unknown thread ${threadId}; new threads must look like thr_<source>:<thread>`);
 			}
 		}
+		const asked = typeof d.domain === "string" ? d.domain.trim() || undefined : (d.domain ?? undefined);
+		const ruled = d.basis === "rule" ? this.#domainOfRule(d.ruleId!) : null;
+		const unpickable = asked === undefined || asked === ruled ? undefined : this.#whyNotPickable(asked);
+		if (unpickable) return reject(unpickable);
+		const domain = ruled ?? asked ?? null;
 		if (d.basis === "inference") {
 			const limitProblem = this.#inferenceDailyLimitProblem();
 			if (limitProblem) return reject(limitProblem);
 		}
 
 		const ticketId = this.#id("tkt");
+		if (ruled !== null && asked !== undefined && asked !== ruled) this.#log(`[kernel] 规则 ${d.ruleId} 属于领域「${ruled}」，幕僚长填的是「${asked}」，任务 ${ticketId} 按「${ruled}」开`);
+		const helper = this.#newHelper(d.basis, trigger?.source ?? null, this.#now(), domain);
 		this.#run(
-			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued')`,
+			`INSERT INTO tickets (id, title, basis, rule_id, origin_trigger_id, created_at, worker_session_id, worker_state, helper_name, helper_role, helper_seq, domain, dispatched_to)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)`,
 			ticketId,
-			d.title,
+			title,
 			d.basis,
 			d.ruleId ?? null,
 			d.triggerId ?? null,
 			this.#now(),
 			randomUUID(),
+			helper.name,
+			storedRole(helper),
+			helper.seq,
+			domain,
+			"team" in helper ? "[]" : null,
 		);
 		for (const threadId of threads) {
 			const source = threadId.match(SOURCE_THREAD)?.[1];
@@ -852,6 +1201,19 @@ export class Kernel {
 		if (d.triggerId !== undefined) takenThisRoute.add(d.triggerId);
 		if (d.triggerId !== undefined) this.#setDisposition(d.triggerId, "opened_ticket", ticketId);
 		return { ok: true, ticketId };
+	}
+
+	#whyNotPickable(domain: string): string | undefined {
+		const entry = this.#domains.get(domain);
+		if (entry?.onRoster) return undefined;
+		const roster = [...this.#domains].filter(([, e]) => e.onRoster).map(([name]) => name);
+		const why = entry ? `domain ${domain} is not on your roster (its module has no description), so you cannot pick it` : `unknown domain ${domain}`;
+		return `${why}; ${roster.length ? `the domains are ${roster.join(", ")} (omit domain when none fits)` : "there are no domains (omit domain)"}`;
+	}
+
+	#domainOfRule(ruleId: string): string | null {
+		const namespace = ruleNamespace(ruleId);
+		return this.#domains.has(namespace) ? namespace : null;
 	}
 
 	#inferenceRunning(): number {
@@ -930,11 +1292,11 @@ export class Kernel {
 		this.#run("UPDATE triggers SET disposition = ?, disposition_detail = ? WHERE id = ?", disposition, detail, triggerId);
 	}
 
-	#subscribersOf(threadIds: string[]): string[] {
+	#openSubscribersOf(threadIds: string[]): string[] {
 		if (threadIds.length === 0) return [];
 		return this.#column(
 			`SELECT DISTINCT s.ticket_id AS v FROM subscriptions s JOIN tickets t ON t.id = s.ticket_id
-			 WHERE t.stopped_at IS NULL AND s.thread_id IN (${threadIds.map(() => "?").join(", ")})
+			 WHERE t.stopped_at IS NULL AND t.closed_at IS NULL AND s.thread_id IN (${threadIds.map(() => "?").join(", ")})
 			 ORDER BY t.created_at`,
 			...threadIds,
 		);
@@ -999,6 +1361,7 @@ export class Kernel {
 			title: r.title,
 			basis: r.basis as Basis,
 			ruleId: r.rule_id,
+			domain: r.domain,
 			originTriggerId: r.origin_trigger_id,
 			createdAt: r.created_at,
 			workerSessionId: r.worker_session_id,
@@ -1012,7 +1375,10 @@ export class Kernel {
 			fellBack: r.fell_back === 1,
 			toolCalls: r.tool_calls,
 			tokensIn: r.tokens_in,
+			tokensCached: r.tokens_cached,
 			tokensOut: r.tokens_out,
+			helper: this.#helperOf(r),
+			dispatchedTo: r.dispatched_to === null ? null : JSON.parse(r.dispatched_to),
 			stage,
 			latestReport: latest ? toReport(latest) : null,
 		};
@@ -1067,11 +1433,11 @@ export class Kernel {
 	}
 
 	#get(sql: string, ...params: SQLInputValue[]): Row | undefined {
-		return this.#db.prepare(sql).get(...params) as Row | undefined;
+		return this.#db.prepare(sql).get(...sqlParams(params)) as Row | undefined;
 	}
 
 	#all(sql: string, ...params: SQLInputValue[]): Row[] {
-		return this.#db.prepare(sql).all(...params) as Row[];
+		return this.#db.prepare(sql).all(...sqlParams(params)) as Row[];
 	}
 
 	#column(sql: string, ...params: SQLInputValue[]): string[] {
@@ -1079,6 +1445,6 @@ export class Kernel {
 	}
 
 	#run(sql: string, ...params: SQLInputValue[]) {
-		return this.#db.prepare(sql).run(...params);
+		return this.#db.prepare(sql).run(...sqlParams(params));
 	}
 }

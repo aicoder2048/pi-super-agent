@@ -15,7 +15,7 @@ function record() {
 	return { calls, translator: new WorkerEventTranslator(events, "openai-codex") };
 }
 
-test("Pi 的 RPC 事件变成看板计数：工具调用一次记一次，token 按输入加缓存和输出累计", () => {
+test("Pi 的 RPC 事件变成看板计数：工具调用一次记一次，token 按输入加缓存和输出累计，缓存读取另记一份", () => {
 	const { calls, translator } = record();
 	translator.feed({ type: "agent_start" });
 	translator.feed({ type: "tool_execution_start", toolName: "bash" });
@@ -24,7 +24,7 @@ test("Pi 的 RPC 事件变成看板计数：工具调用一次记一次，token 
 	assert.deepEqual(calls, [
 		["turnStarted"],
 		["toolCalled"],
-		["usage", { provider: "deepseek", tokensIn: 120, tokensOut: 30 }],
+		["usage", { provider: "deepseek", tokensIn: 120, tokensCached: 20, tokensOut: 30 }],
 		["settled", undefined],
 	]);
 });
@@ -43,5 +43,5 @@ test("没有 provider 的用量记到默认提供方；非助手消息不计用�
 	const { calls, translator } = record();
 	translator.feed({ type: "message_end", message: { role: "assistant", usage: { input: 5, output: 1 } } });
 	translator.feed({ type: "message_end", message: { role: "user", usage: { input: 999, output: 999 } } });
-	assert.deepEqual(calls, [["usage", { provider: "openai-codex", tokensIn: 5, tokensOut: 1 }]]);
+	assert.deepEqual(calls, [["usage", { provider: "openai-codex", tokensIn: 5, tokensCached: 0, tokensOut: 1 }]]);
 });

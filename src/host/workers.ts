@@ -2,27 +2,38 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Kernel } from "../kernel/kernel.ts";
-import type { Basis, ReportStatus, TicketInput } from "../kernel/types.ts";
+import type { Basis, Quote, ReportStatus, TicketInput, WorkerReport, WriteCheck } from "../kernel/types.ts";
 import { REPORT_STATUSES } from "../kernel/types.ts";
 import type { ModelSelector } from "../model-selector.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
-import { INPUT_LABEL } from "../client/board-format.mjs";
+import { INPUT_LABEL, quoteContext } from "../client/board-format.mjs";
 import { parseOptions } from "../kernel/question.ts";
+import type { Usage } from "./worker-events.ts";
+import { NO_DOMAIN, type DomainKit } from "../modules.ts";
+import type { Member } from "../teams.ts";
+import type { TranscriptMessage } from "../client/protocol.ts";
+import { canCode, memberTools } from "../worker/tools.ts";
+import type { OutputRoot } from "./output.ts";
+import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberLimit, type MemberRun } from "./dispatch.ts";
 
-export interface WorkerSpec {
+const HEARD = { trigger: "收到过来源发来的内容", note: "收到过幕僚长的备注", web: "读过网页" } as const;
+
+export interface WorkerSpec extends DomainKit {
 	ticketId: string;
 	sessionId: string;
 	workdir: string;
 	basis: Basis;
-	ruleId: string | null;
 	token: string;
 	model: ModelRef;
+	resume: boolean;
+	/** The output rule, for a helper that can write files. */
+	outputRule?: string;
 }
 
 export interface WorkerEvents {
 	turnStarted(): void;
 	toolCalled(): void;
-	usage(u: { provider: string; tokensIn: number; tokensOut: number }): void;
+	usage(u: Usage): void;
 	settled(error?: string): void;
 	exited(): void;
 	transcript(event: unknown): void;
@@ -38,6 +49,12 @@ export interface WorkerHandle {
 
 export interface WorkerSpawner {
 	spawn(spec: WorkerSpec, events: WorkerEvents): Promise<WorkerHandle>;
+	/** Runs one dispatch as a one-shot member process. A spawner without it cannot host a team. */
+	runMember?(run: MemberRun): Promise<string>;
+}
+
+export function quoteSuffix(kernel: Kernel, quote: Quote | null): string {
+	return quote ? `\n${quoteContext(quote, quote.ticketId ? kernel.getTicket(quote.ticketId)?.title : undefined)}` : "";
 }
 
 export function formatInputs(kernel: Kernel, inputs: TicketInput[]): string {
@@ -45,7 +62,7 @@ export function formatInputs(kernel: Kernel, inputs: TicketInput[]): string {
 		.map((input) => {
 			const found = input.triggerId ? kernel.read(input.triggerId) : undefined;
 			const meta = found?.type === "trigger" ? ` ${found.trigger.id} · 来源 ${found.trigger.source} · 发出者 ${found.trigger.sender}` : "";
-			return `[${INPUT_LABEL[input.kind]}]${meta}\n${input.body}`;
+			return `[${INPUT_LABEL[input.kind]}]${meta}\n${input.body}${quoteSuffix(kernel, found?.type === "trigger" ? found.quote : null)}`;
 		})
 		.join("\n\n");
 }
@@ -55,17 +72,39 @@ interface Live {
 	token: string;
 	bgRunning: number;
 	stopping: boolean;
+	crew: readonly Member[];
 }
+
+export interface DispatchOptions {
+	/** One dispatch's limit for a member that cannot write, edit or run commands in the ticket; also the longest wait for a slot. */
+	timeoutMs: number;
+	/** One dispatch's limit for a member that can. */
+	codingTimeoutMs: number;
+	/** A running member with no event of any kind for this long is ended. */
+	stallMs: number;
+	/** `maxConcurrentExperts`: the cap until the user raises it for a day. */
+	maxConcurrent: number;
+}
+
+export type DeskDispatchOptions = Omit<DispatchOptions, "maxConcurrent"> & { cap: MemberLimit };
 
 export interface WorkerExecutorOptions {
 	kernel: Kernel;
 	spawner: WorkerSpawner;
 	stateDir: string;
+	output: OutputRoot;
 	afterCommand: () => void;
 	onTranscript?: (ticketId: string, event: unknown) => void;
+	/** One message of a member at work on dispatch `callId`; `index` is its place among that dispatch's messages. */
+	onMemberTranscript?: (ticketId: string, member: { callId: string; index: number }, message: TranscriptMessage) => void;
 	onError?: (ticketId: string, error: unknown) => void;
 	models: WorkerModels;
 	lookup?: (source: string, op: string, args: unknown) => Promise<unknown>;
+	tripwires?: (source: string, op: string, args: unknown) => unknown;
+	/** The lookup by a ticket's domain. Without it every ticket runs as if it had no domain. */
+	kitFor?: (domain: string) => DomainKit | undefined;
+	/** Without it every helper works alone. */
+	dispatch?: DeskDispatchOptions;
 }
 
 export interface WorkerModels {
@@ -78,9 +117,28 @@ export class WorkerExecutor {
 	readonly #live = new Map<string, Live>();
 	readonly #spawning = new Map<string, Promise<Live | undefined>>();
 	#shuttingDown = false;
+	readonly #desk: DispatchDesk | undefined;
+	readonly #domainless = new Set<string>();
 
 	constructor(options: WorkerExecutorOptions) {
 		this.#o = options;
+		const { dispatch, spawner } = options;
+		if (dispatch && spawner.runMember) {
+			this.#desk = new DispatchDesk({ queueTimeoutMs: dispatch.timeoutMs, stallMs: dispatch.stallMs, cap: dispatch.cap, run: (run) => spawner.runMember!(run), onChange: options.afterCommand });
+		}
+	}
+
+	dispatching(): Dispatching {
+		return this.#desk?.live() ?? {};
+	}
+
+	membersWaitingForSlot(): number {
+		return this.#desk?.waitingForSlot() ?? 0;
+	}
+
+	/** Starts the waiting members that fit; call it after the member cap went up. */
+	recheckMemberSlots(): void {
+		this.#desk?.recheck();
 	}
 
 	liveCount(): number {
@@ -112,15 +170,20 @@ export class WorkerExecutor {
 
 	async stop(ticketId: string): Promise<void> {
 		const live = this.#live.get(ticketId);
-		if (!live) return;
-		live.stopping = true;
-		await live.handle.stop();
+		if (live) live.stopping = true;
+		// The helper goes first: a member stopped while its helper still runs would hand it a result to act on.
+		try {
+			await live?.handle.stop();
+		} finally {
+			await this.#desk?.end(ticketId);
+		}
 	}
 
 	// On host shutdown the kernel keeps the running state so restart recovery re-wakes these tickets.
 	async shutdown(): Promise<void> {
 		this.#shuttingDown = true;
 		await Promise.all([...this.#live.keys()].map((id) => this.stop(id)));
+		await this.#desk?.endAll();
 	}
 
 	#start(ticketId: string): Promise<Live | undefined> {
@@ -139,6 +202,7 @@ export class WorkerExecutor {
 			afterCommand();
 			return undefined;
 		}
+		const resume = kernel.getTicket(ticketId)?.startedAt != null;
 		if (!kernel.claimSlot(ticketId)) return undefined;
 		const ticket = kernel.getTicket(ticketId)!;
 		const workdir = join(stateDir, "workers", ticketId);
@@ -159,17 +223,19 @@ export class WorkerExecutor {
 			usage: (u) => guard(() => kernel.recordUsage(ticketId, u))(),
 			settled: (error) => void this.#onSettled(ticketId, live, error).catch((e) => this.#o.onError?.(ticketId, e)).finally(afterCommand),
 			exited: guard(() => {
+				void this.#desk?.end(ticketId);
 				this.#live.delete(ticketId);
 				if (this.#shuttingDown) return;
-				if (live && !live.stopping) kernel.workerReport(ticketId, { status: "failed", summary: "Worker 进程在一轮中途意外退出。" });
+				if (live && !live.stopping) this.#report(ticketId, { status: "failed", summary: "Worker 进程在一轮中途意外退出。" });
 				kernel.workerExited(ticketId);
 			}),
 			transcript: (event) => this.#o.onTranscript?.(ticketId, event),
 		};
+		const kit = this.#kitFor(ticketId, ticket.domain);
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ruleId: ticket.ruleId, token, model: choice.model },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ...kit, token, model: choice.model, resume, ...(ticket.basis !== "inference" && { outputRule: this.#o.output.prompt("helper") }) },
 				events,
 			);
 		} catch (error) {
@@ -177,7 +243,7 @@ export class WorkerExecutor {
 			afterCommand();
 			throw error;
 		}
-		live = { handle, token, bgRunning: 0, stopping: false };
+		live = { handle, token, bgRunning: 0, stopping: false, crew: kit.crew };
 		this.#live.set(ticketId, live);
 		if (kernel.getTicket(ticketId)?.stoppedAt != null) {
 			await this.stop(ticketId);
@@ -207,7 +273,7 @@ export class WorkerExecutor {
 				await live.handle.deliver("[通知] 上一轮因模型额度或限流中断，已切换到回退模型。请从中断处继续。");
 				return;
 			} else if (error) {
-				kernel.workerReport(ticketId, { status: "failed", summary: `Worker 这一轮因模型错误中断：${error}` });
+				this.#report(ticketId, { status: "failed", summary: `Worker 这一轮因模型错误中断：${error}` });
 			}
 		}
 		kernel.workerTurnEnded(ticketId, { bgRunning: (live?.bgRunning ?? 0) > 0 });
@@ -234,12 +300,15 @@ export class WorkerExecutor {
 		kernel.blockForCap(
 			ticketId,
 			`回退模型 ${formatModelRef(models.selector.current().model)} 今日用量已达上限（${models.fallbackDailyTokens} token），等主模型恢复或明天再继续。`,
+			this.#checkWrites(ticketId),
 		);
 	}
 
 	handleRequest(ticketId: string, token: string, method: string, params: unknown): unknown {
 		const live = this.#live.get(ticketId);
-		if (!live || live.token !== token) throw new Error("未知的 Worker 或令牌不符");
+		const holder = live !== undefined && live.token !== token ? this.#desk?.holder(ticketId, token) : undefined;
+		if (!live || (live.token !== token && !holder)) throw new Error("未知的 Worker 或令牌不符");
+		if (holder && method !== "worker.lookup" && method !== "worker.read_web") throw new Error("成员只能经宿主查数据（lookup），不能汇报、交回、读任务或再派活");
 		const { kernel, afterCommand } = this.#o;
 		const p = (params ?? {}) as Record<string, unknown>;
 		try {
@@ -249,7 +318,7 @@ export class WorkerExecutor {
 					if (!REPORT_STATUSES.includes(status)) throw new Error(`未知的汇报状态 ${String(p.status)}`);
 					if (typeof p.summary !== "string" || !p.summary.trim()) throw new Error("汇报需要 summary");
 					const question = typeof p.question === "string" && p.question.trim() ? p.question : undefined;
-					const result = kernel.workerReport(ticketId, {
+					const result = this.#report(ticketId, {
 						status,
 						summary: p.summary,
 						question,
@@ -266,8 +335,23 @@ export class WorkerExecutor {
 				case "worker.read":
 					return this.#readForWorker(ticketId, typeof p.id === "string" ? p.id : undefined);
 				case "worker.lookup":
+					if (!this.#mayLookup(ticketId, holder)) throw new Error("这项任务里不能用 lookup：任务的领域没有在 module.json 的 tools 里开 lookup，或这位成员的 tools 没写 lookup");
 					if (!this.#o.lookup) throw new Error("没有可查询的来源");
 					return this.#o.lookup(String(p.source), String(p.op), p.args);
+				case "worker.read_web":
+					kernel.readWeb(ticketId);
+					return { recorded: true };
+				case "worker.tripwire": {
+					const refusal = this.#tripwireRefusal(ticketId);
+					if (refusal) throw new Error(refusal);
+					if (!this.#o.tripwires) throw new Error("没有可改盯盘条件的来源");
+					return this.#o.tripwires(String(p.source), String(p.op), p.args);
+				}
+				case "worker.new_app":
+					if (kernel.getTicket(ticketId)!.basis === "inference") throw new Error("推断开的任务只读，不能开应用");
+					return this.#o.output.newApp(ticketId, p.short);
+				case "worker.dispatch":
+					return this.#dispatch(ticketId, live, params);
 				case "worker.bg":
 					live.bgRunning = Number(p.running) || 0;
 					return { ok: true };
@@ -277,6 +361,97 @@ export class WorkerExecutor {
 		} finally {
 			afterCommand();
 		}
+	}
+
+	/** Every report a worker makes or the host makes for it. One that reaches the Router carries the host's check of writes outside the output root. */
+	#report(ticketId: string, report: WorkerReport): { reportId: string } {
+		const { kernel } = this.#o;
+		const reachesRouter = report.question !== undefined || report.status !== "progress";
+		const writes = reachesRouter ? this.#checkWrites(ticketId) : undefined;
+		return kernel.workerReport(ticketId, { ...report, ...(writes && { writes }) });
+	}
+
+	#checkWrites(ticketId: string): WriteCheck {
+		const { kernel, output } = this.#o;
+		return output.checkWrites(kernel.getTicket(ticketId)!, kernel.writeScan(ticketId));
+	}
+
+	#mayLookup(ticketId: string, holder: Member | undefined): boolean {
+		const { basis, domain } = this.#o.kernel.getTicket(ticketId)!;
+		return holder ? memberTools(basis, holder.tools).includes("lookup") : this.#kitFor(ticketId, domain).granted.includes("lookup");
+	}
+
+	#tripwireRefusal(ticketId: string): string | undefined {
+		const { kernel } = this.#o;
+		const { basis, domain } = kernel.getTicket(ticketId)!;
+		if (basis !== "request") return `只有使用者在对话里开的任务能改盯盘条件，这个任务是${basis === "rule" ? "规则" : "推断"}开的。请在汇报里告诉使用者：在对话里再说一次要怎么改。`;
+		const heard = kernel.heardOtherThanUser(ticketId);
+		if (heard) return `这个任务${HEARD[heard]}，不能再改盯盘条件，免得其中夹带的话被当成使用者的意思。请在汇报里请使用者在对话里重新说一次，会新开一个任务来改。`;
+		if (!this.#kitFor(ticketId, domain).granted.includes("tripwire")) return "这个任务的领域没有在 module.json 的 tools 里开 tripwire，不能改盯盘条件。";
+		return undefined;
+	}
+
+	#kitFor(ticketId: string, domain: string | null): DomainKit {
+		if (domain === null) return NO_DOMAIN;
+		const kit = this.#o.kitFor?.(domain);
+		if (kit) return this.#desk ? kit : { ...kit, crew: [] };
+		if (!this.#domainless.has(ticketId)) {
+			this.#domainless.add(ticketId);
+			this.#o.onError?.(ticketId, `领域「${domain}」的模块已不在，这个任务按没有领域的单个助手继续，没有这个领域的技能，也不能派活`);
+		}
+		return NO_DOMAIN;
+	}
+
+	// A member reports no outcome to the selector, so it must not start a probe or ride on the helper's.
+	#memberModel(member: Member): { model: ModelRef; onFallback: boolean } {
+		const { selector } = this.#o.models;
+		const steady = selector.steady();
+		if (steady.fellBack || !member.model) return { model: steady.model, onFallback: steady.fellBack };
+		return { model: member.model, onFallback: member.model.provider === selector.fallback.provider };
+	}
+
+	#dispatch(ticketId: string, live: Live, params: unknown): Promise<DispatchResult> {
+		if (!this.#desk || live.crew.length === 0) throw new Error("这个任务的领域没有可派的成员");
+		if (live.stopping) throw new Error("任务已停止");
+		const { member, task, callId } = parseDispatch(params, live.crew);
+		const { model, onFallback } = this.#memberModel(member);
+		const { kernel, stateDir, afterCommand, models } = this.#o;
+		const refusal = () => {
+			if (!onFallback || kernel.usageToday(model.provider) < models.fallbackDailyTokens) return undefined;
+			const [fallback, own] = [formatModelRef(models.selector.fallback), formatModelRef(model)];
+			return `回退模型 ${fallback} 今日用量已达上限，这次不能派活${own === fallback ? "" : `（成员的模型 ${own} 和它同属 ${model.provider}，用量一起计）`}`;
+		};
+		const refused = refusal();
+		if (refused !== undefined) throw new Error(refused);
+		kernel.recordDispatch(ticketId, member.title);
+		const { basis } = kernel.getTicket(ticketId)!;
+		const { timeoutMs, codingTimeoutMs } = this.#o.dispatch!;
+		const codes = canCode(memberTools(basis, member.tools));
+		return this.#desk.dispatch({
+			ticketId, callId, member, task, basis,
+			limitMs: codes ? codingTimeoutMs : timeoutMs,
+			...(codes && { outputRule: this.#o.output.prompt("member") }),
+			model,
+			refusal,
+			workdir: join(stateDir, "workers", ticketId),
+			sessionDir: memberSessionDir(stateDir, ticketId, member.name),
+			onUsage: (u) => {
+				try {
+					kernel.recordUsage(ticketId, u);
+				} catch (error) {
+					this.#o.onError?.(ticketId, error);
+				}
+				afterCommand();
+			},
+			onMessage: (message, index) => this.#o.onMemberTranscript?.(ticketId, { callId, index }, message),
+			onProgress: () => {
+				try {
+					kernel.recordMemberProgress(ticketId);
+				} catch (error) {
+					this.#o.onError?.(ticketId, error);
+				}
+			},
+		});
 	}
 
 	#readForWorker(ticketId: string, id: string | undefined): unknown {

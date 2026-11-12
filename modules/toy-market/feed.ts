@@ -14,14 +14,15 @@ function main(): void {
 	}
 	const price = +(100 * (1 + change / 100)).toFixed(2);
 	const sign = change >= 0 ? "+" : "";
-	const file = dropTrigger(join(config.stateDir, "inbox"), {
+	const inbox = join(config.stateDir, "inbox");
+	const file = dropTrigger(inbox, {
 		source: "toy-market",
 		thread: symbol,
 		threadTitle: `${symbol} 行情`,
 		sender: "toy-feed",
 		body: `${symbol} 价格 ${price}，涨跌 ${sign}${change}%，成交量 ${volume} 股`,
 	});
-	console.log(`投递 ${file}：${symbol} ${price}（${sign}${change}%，成交量 ${volume} 股）`);
+	console.log(`投递 ${join(inbox, file)}：${symbol} ${price}（${sign}${change}%，成交量 ${volume} 股）`);
 }
 
 try {

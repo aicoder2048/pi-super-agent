@@ -91,3 +91,137 @@ test("modules 是以模块名为键、值为 true 或 false 的对象，默认�
 		assert.throws(() => loadConfig(stateWith({ modules })), (e: Error) => e.name === "ConfigError" && /config\.json.*modules/.test(e.message), JSON.stringify(modules));
 	}
 });
+
+test("派活的设置有默认值：同时运行的成员最多 4 位，不写代码的成员限时 15 分钟，能写代码的 60 分钟；config.json 可以改", () => {
+	const defaults = loadConfig(stateWith({}));
+	assert.equal(defaults.maxConcurrentExperts, 4);
+	assert.equal(defaults.dispatchTimeoutSeconds, 900);
+	assert.equal(defaults.dispatchCodingTimeoutSeconds, 3600);
+	const set = loadConfig(stateWith({ maxConcurrentExperts: 2, dispatchTimeoutSeconds: 60, dispatchCodingTimeoutSeconds: 600 }));
+	assert.deepEqual([set.maxConcurrentExperts, set.dispatchTimeoutSeconds, set.dispatchCodingTimeoutSeconds], [2, 60, 600]);
+	assert.equal(loadConfig(stateWith({ dispatchTimeoutSeconds: 3600 })).dispatchTimeoutSeconds, 3600, "两个时限最长都是 60 分钟");
+});
+
+test("成员多久没有动静算无进展：默认 180 秒，可以改；必须在 30 秒和最长的派活时限之间", () => {
+	assert.equal(loadConfig(stateWith({})).dispatchStallSeconds, 180);
+	assert.equal(loadConfig(stateWith({ dispatchStallSeconds: 30 })).dispatchStallSeconds, 30);
+	assert.equal(loadConfig(stateWith({ dispatchStallSeconds: 3600 })).dispatchStallSeconds, 3600);
+	assert.equal(loadConfig(stateWith({ dispatchTimeoutSeconds: 60, dispatchCodingTimeoutSeconds: 600, dispatchStallSeconds: 600 })).dispatchStallSeconds, 600);
+	for (const config of [{ dispatchStallSeconds: 29 }, { dispatchStallSeconds: 3601 }, { dispatchStallSeconds: "180" }, { dispatchStallSeconds: null }, { dispatchTimeoutSeconds: 60, dispatchCodingTimeoutSeconds: 600, dispatchStallSeconds: 601 }]) {
+		assert.throws(() => loadConfig(stateWith(config)), (e: Error) => e.name === "ConfigError" && /dispatchStallSeconds（.*必须是 30 到 \d+ 之间的秒数/.test(e.message), JSON.stringify(config));
+	}
+	assert.equal(loadConfig(stateWith({ dispatchTimeoutSeconds: 60, dispatchCodingTimeoutSeconds: 90 })).dispatchStallSeconds, 90, "没写时不超过最长的时限");
+});
+
+test("两个派活时限都短于 30 秒时写了 dispatchStallSeconds：报错说清这时没有可写的值和怎么改，不说「30 到 20 之间」", () => {
+	assert.throws(
+		() => loadConfig(stateWith({ dispatchTimeoutSeconds: 20, dispatchCodingTimeoutSeconds: 20, dispatchStallSeconds: 30 })),
+		(e: Error) => e.name === "ConfigError" && !/30 到 20/.test(e.message) && /dispatchStallSeconds（30）.*最长的派活时限现在是 20 秒.*不短于 30 秒.*去掉 dispatchStallSeconds/.test(e.message),
+	);
+	assert.equal(loadConfig(stateWith({ dispatchTimeoutSeconds: 20, dispatchCodingTimeoutSeconds: 20 })).dispatchStallSeconds, 20, "不写时照常启动");
+});
+
+test("两个派活时限不到 1 秒时拒绝启动", () => {
+	for (const key of ["dispatchTimeoutSeconds", "dispatchCodingTimeoutSeconds"]) {
+		assert.throws(() => loadConfig(stateWith({ [key]: 0.5 })), (e: Error) => e.name === "ConfigError" && e.message.includes(`${key}（0.5）`) && /不小于 1、不超过 3600/.test(e.message), key);
+		assert.equal(loadConfig(stateWith({ [key]: 1 }))[key as "dispatchTimeoutSeconds"], 1);
+	}
+});
+
+test("maxConcurrentExperts 不是 1 到 10 的整数、两个派活时限不是 1 到 3600 之间的数时拒绝启动，报错指出字段", () => {
+	for (const value of [0, 11, 16, 1.5, "4", null]) {
+		assert.throws(() => loadConfig(stateWith({ maxConcurrentExperts: value })), (e: Error) => e.name === "ConfigError" && /maxConcurrentExperts.*1 到 10 的整数/.test(e.message), JSON.stringify(value));
+	}
+	assert.equal(loadConfig(stateWith({ maxConcurrentExperts: 10 })).maxConcurrentExperts, 10);
+	for (const key of ["dispatchTimeoutSeconds", "dispatchCodingTimeoutSeconds"]) {
+		for (const value of [0, -1, 3601, "60", null]) {
+			assert.throws(() => loadConfig(stateWith({ [key]: value })), (e: Error) => e.name === "ConfigError" && e.message.includes(`${key}（`) && /不超过 3600/.test(e.message), `${key} ${JSON.stringify(value)}`);
+		}
+	}
+});
+
+test("webHosts 缺省时是空的，网页只开在本机，webPort 默认值不变", () => {
+	const config = loadConfig(stateWith({}));
+	assert.deepEqual(config.webHosts, []);
+	assert.equal(config.webPort, 4517);
+});
+
+test("webHosts 的名字读成小写，重复的只留一个，顺序不变", () => {
+	const config = loadConfig(stateWith({ webHosts: ["PSA-Home.Example.TS.net", "laptop.example.ts.net", "psa-home.example.ts.net"] }));
+	assert.deepEqual(config.webHosts, ["psa-home.example.ts.net", "laptop.example.ts.net"]);
+});
+
+test("webHosts 里不是 tailnet 机器名的项拒绝启动，报错只有一行，指出是第几项和原值", () => {
+	const bad = ["psa-home.example.ts.net:443", "https://psa-home.example.ts.net", "psa-home.example.ts.net/x", "example.com", "100.101.102.103", "", "psa-home.example.ts.net.", "*.example.ts.net", 42];
+	for (const item of bad) {
+		assert.throws(
+			() => loadConfig(stateWith({ webHosts: ["ok.example.ts.net", item] })),
+			(e: Error) => e.name === "ConfigError" && e.message.includes("webHosts[1]") && e.message.includes(JSON.stringify(item)) && !e.message.includes("\n"),
+			JSON.stringify(item),
+		);
+	}
+	assert.throws(() => loadConfig(stateWith({ webHosts: "psa-home.example.ts.net" })), (e: Error) => e.name === "ConfigError" && /webHosts/.test(e.message));
+});
+
+test("webHosts 不为空时 webPort 不能是 0：tailscale serve 转发到固定端口", () => {
+	assert.throws(() => loadConfig(stateWith({ webHosts: ["psa-home.example.ts.net"], webPort: 0 })), (e: Error) => e.name === "ConfigError" && /webHosts/.test(e.message) && /webPort/.test(e.message));
+	assert.equal(loadConfig(stateWith({ webHosts: [], webPort: 0 })).webPort, 0);
+});
+
+test("成品目录默认是状态目录下的 output；相对路径按状态目录解析，绝对路径原样保留", () => {
+	const dir = stateWith({});
+	assert.equal(loadConfig(dir).outputDir, join(dir, "output"));
+	const relative = stateWith({ outputDir: "made/by-workers" });
+	assert.equal(loadConfig(relative).outputDir, join(relative, "made/by-workers"));
+	const elsewhere = mkdtempSync(join(tmpdir(), "psa-made-"));
+	assert.equal(loadConfig(stateWith({ outputDir: elsewhere })).outputDir, elsewhere);
+});
+
+test("outputDir 不是字符串、等于状态目录、是状态目录的上级、或在 workers/、sessions/ 下面时拒绝启动，报错以 config.json 开头", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-config-"));
+	for (const outputDir of [42, ".", dir, "..", "workers/x", "sessions", "sessions/workers/out"]) {
+		writeFileSync(join(dir, "config.json"), JSON.stringify({ outputDir }));
+		assert.throws(() => loadConfig(dir), (e: Error) => e.name === "ConfigError" && e.message.startsWith(join(dir, "config.json")) && /outputDir/.test(e.message), JSON.stringify(outputDir));
+	}
+});
+
+test("outputDir 以 ~ 开头时拒绝启动，报错说写绝对路径：配置里的 ~ 不展开", () => {
+	for (const outputDir of ["~/out", "~"]) {
+		assert.throws(() => loadConfig(stateWith({ outputDir })), (e: Error) => e.name === "ConfigError" && /outputDir/.test(e.message) && /绝对路径/.test(e.message) && e.message.includes(JSON.stringify(outputDir)), outputDir);
+	}
+	assert.equal(loadConfig(stateWith({ outputDir: "made~1" })).outputDir.endsWith("made~1"), true);
+});
+
+test("没写 telegram 段时 Telegram 客户端不运行；名单可以是空的（设置模式）", () => {
+	assert.equal(loadConfig(stateWith({})).telegram, undefined);
+	assert.deepEqual(loadConfig(stateWith({ telegram: { allowedUserIds: [] } })).telegram, { allowedUserIds: [] });
+	assert.deepEqual(loadConfig(stateWith({ telegram: { allowedUserIds: [987654321, 42] } })).telegram, { allowedUserIds: [987654321, 42] });
+});
+
+test("telegram 段写错时拒绝启动，报错指出字段；群和频道的负数 id 不收", () => {
+	const bad = [null, [], "x", {}, { allowedUserIds: "42" }, { allowedUserIds: [42], extra: 1 }, { allowedUserIds: [-100123] }, { allowedUserIds: [0] }, { allowedUserIds: [1.5] }, { allowedUserIds: ["42"] }, { allowedUserIds: [42, 42] }, { allowedUserIds: [2 ** 53] }];
+	for (const telegram of bad) {
+		assert.throws(() => loadConfig(stateWith({ telegram })), (e: Error) => e.name === "ConfigError" && /telegram/.test(e.message), JSON.stringify(telegram));
+	}
+	assert.throws(() => loadConfig(stateWith({ telegram: { allowedUserIds: [42, 42] } })), /telegram\.allowedUserIds/);
+});
+
+test("telegram 段写错时报错只点出字段名，不回显段里的值：误写进去的 token 不会出现在报错里", () => {
+	const token = "987654321:AAH-real_looking_secret_token_abcdefg";
+	const secret = token.split(":")[1];
+	const cases: [unknown, RegExp][] = [
+		[{ allowedUserIds: [42], botToken: token }, /botToken/],
+		[{ allowedUserIds: [42], [token]: true }, /telegram/],
+		[{ allowedUserIds: [token] }, /telegram\.allowedUserIds/],
+		[{ allowedUserIds: token }, /telegram\.allowedUserIds/],
+		[token, /telegram/],
+	];
+	for (const [telegram, names] of cases) {
+		assert.throws(() => loadConfig(stateWith({ telegram })), (e: Error) => {
+			assert.equal(e.name, "ConfigError");
+			assert.match(e.message, names);
+			assert.ok(!e.message.includes(secret), e.message);
+			return true;
+		});
+	}
+});

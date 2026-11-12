@@ -1,10 +1,11 @@
 // @ts-check
 
 import {
-	STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, canSend, choicesInConversation, dutyLine, emptyView, emptyWatch,
-	helperTint, isStale, leftColumn, resolveTheme, restartNotice, sayCopy, sayOutcome, settleSay, settleSending, smallPrint, stopSentence, toggleTheme,
+	BAR_HINT, CLEAR_FAILED, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
+	questionOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
+	laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory,
 } from "./view.mjs";
-import { DEFAULT_ACK_TIMEOUT_MS, isLive } from "../client/board-format.mjs";
+import { DEFAULT_ACK_TIMEOUT_MS, HOST_LINE_LABEL, helperLine } from "../client/board-format.mjs";
 
 const STATUS_TEXT = {
 	connecting: "连接中…",
@@ -14,7 +15,7 @@ const STATUS_TEXT = {
 };
 
 const THEME_KEY = "psa-theme";
-const MARK = { ok: "✓", error: "!", pending: "…" };
+const MARK = { ok: "✓", error: "!", pending: "…", stopped: "■" };
 
 /** @param {Document} doc */
 function mount(doc) {
@@ -28,15 +29,28 @@ function mount(doc) {
 	const composer = /** @type {HTMLTextAreaElement} */ ($("composer"));
 	const send = /** @type {HTMLButtonElement} */ ($("send"));
 	const sayStatus = $("say-status");
+	const clearButton = /** @type {HTMLButtonElement} */ ($("clear"));
 	/** @param {string} id */
 	const template = (id) => /** @type {Element} */ (/** @type {HTMLTemplateElement} */ ($(id)).content.firstElementChild);
 	const avatarMark = template("router-avatar");
+	const youMark = template("user-avatar");
 	const wrench = template("helper-icon");
+	const crown = template("crown-mark");
+	const icons = new Map([.../** @type {HTMLTemplateElement} */ ($("step-icons")).content.querySelectorAll("svg[data-icon]")].map((svg) => [svg.getAttribute("data-icon"), svg]));
 	let rendered = 0;
+	/** @type {number | null} */
+	let renderedClearAt = null;
+	let earlierShown = false;
 	/** @type {import("./view.mjs").SayState} */
 	let sayState = "idle";
-	/** @type {{ text: string, from: number } | undefined} */
+	/** @type {(import("./view.mjs").Said & { idsAtSay: Set<string> }) | undefined} */
 	let unconfirmed;
+	/** @type {import("./view.mjs").ConversationLine | null} */
+	let quoting = null;
+	/** @type {import("./view.mjs").Browsing} */
+	let browsing = { index: null, draft: "" };
+	const quoteStrip = $("quote-strip");
+	const touch = matchMedia("(hover: none)");
 	/** @type {{ watch: ReturnType<typeof emptyWatch>, source: EventSource } | undefined} */
 	let watching;
 	/** @type {import("./view.mjs").Sending} */
@@ -47,6 +61,48 @@ function mount(doc) {
 		const node = doc.createElement(tag);
 		node.className = className;
 		node.textContent = text;
+		return node;
+	};
+
+	/** The safe Markdown subset as DOM nodes; every piece of text goes in through textContent. @param {string} className @param {string} text */
+	const md = (className, text) => {
+		const node = el("div", `${className} md`);
+		const inline = (/** @type {HTMLElement} */ box, /** @type {import("./view.mjs").Span[]} */ spans) =>
+			box.append(...spans.map((s) => (s.code ? el("code", "", s.text) : s.bold ? el("strong", "", s.text) : s.italic ? el("em", "", s.text) : doc.createTextNode(s.text))));
+		for (const block of parseMarkdown(text)) {
+			if (block.kind === "table") {
+				const table = el("table", "");
+				const row = (/** @type {string} */ tag, /** @type {import("./view.mjs").Span[][]} */ cells) => {
+					const tr = el("tr", "");
+					for (const cell of cells) {
+						const box = el(tag, "");
+						inline(box, cell);
+						tr.append(box);
+					}
+					return tr;
+				};
+				const head = el("thead", "");
+				head.append(row("th", block.head));
+				const body = el("tbody", "");
+				body.append(...block.rows.map((cells) => row("td", cells)));
+				table.append(head, body);
+				const scroll = el("div", "md-table");
+				scroll.append(table);
+				node.append(scroll);
+			} else if (block.kind === "ul" || block.kind === "ol") {
+				const list = el(block.kind, "");
+				for (const item of block.items) {
+					const li = el("li", "");
+					inline(li, item);
+					list.append(li);
+				}
+				node.append(list);
+			} else {
+				const box = el("div", block.kind === "h" ? "md-h" : "md-p");
+				inline(box, block.spans);
+				node.append(box);
+			}
+		}
 		return node;
 	};
 
@@ -93,12 +149,23 @@ function mount(doc) {
 		$("restart").textContent = restartNotice(view.duty, Date.now());
 	};
 
-	/** @param {string} ticketId */
-	const helperBadge = (ticketId) => {
-		const badge = el("span", `helper tint-${helperTint(ticketId)}`);
-		badge.setAttribute("aria-hidden", "true");
-		badge.append(wrench.cloneNode(true));
-		return badge;
+	/** @param {import("./view.mjs").Avatar} avatar */
+	const avatarNode = (avatar) => {
+		const face = el("span", `face tint-${avatar.tint}`, avatar.text);
+		face.dataset.kind = avatar.kind;
+		face.setAttribute("aria-hidden", "true");
+		if (avatar.kind === "unassigned") face.append(wrench.cloneNode(true));
+		if (avatar.kind === "leader") face.append(crown.cloneNode(true));
+		return face;
+	};
+
+	/** @param {import("./view.mjs").Crew} crew */
+	const crewNode = (crew) => {
+		const node = el("div", "crew");
+		const stack = el("span", "stack");
+		stack.append(...crew.avatars.map(avatarNode));
+		node.append(stack, el("span", "crew-text", crew.text));
+		return node;
 	};
 
 	/** @param {HTMLElement} box @param {import("./view.mjs").Choice | null | undefined} choice */
@@ -119,6 +186,27 @@ function mount(doc) {
 		if (choice.note) box.append(el("span", "note", choice.note));
 	};
 
+	// A message's route changes after it is drawn; an unchanged one is left alone so a focused line keeps focus.
+	const renderRoutes = () => {
+		for (const slot of /** @type {NodeListOf<HTMLElement>} */ (thread.querySelectorAll(".route-slot[data-line]"))) {
+			const route = routeLine(view, slot.dataset.line ?? "");
+			const shown = route ? `${route.ticketId ?? ""}|${route.text}` : "";
+			if (slot.dataset.shown === shown) continue;
+			slot.dataset.shown = shown;
+			if (!route) {
+				slot.replaceChildren();
+				continue;
+			}
+			const node = el(route.ticketId ? "button" : "span", "route", route.text);
+			if (route.ticketId) {
+				const { ticketId } = route;
+				/** @type {HTMLButtonElement} */ (node).type = "button";
+				node.addEventListener("click", () => watch(ticketId));
+			}
+			slot.replaceChildren(node);
+		}
+	};
+
 	const renderChoices = () => {
 		const placed = choicesInConversation(view, sending);
 		for (const box of thread.querySelectorAll(".choices[data-line]")) fillChoices(/** @type {HTMLElement} */ (box), placed.get(box.getAttribute("data-line") ?? ""));
@@ -131,8 +219,10 @@ function mount(doc) {
 		node.setAttribute("role", "button");
 		node.setAttribute("aria-current", String(watching?.watch.ticketId === card.id));
 		const head = el("div", "head");
-		head.append(helperBadge(card.id), el("div", "title", card.title));
-		node.append(head, el("div", "why", `${card.why} · ${card.stage}`), el("div", "latest", card.latest));
+		head.append(avatarNode(card.avatar), el("div", "title", card.title));
+		node.append(head, el("div", "by", card.helper), el("div", "why", `${card.why} · ${card.stage}`), md("latest", card.latest));
+		if (card.outside) node.append(el("div", "outside", card.outside));
+		if (card.crew) node.append(crewNode(card.crew));
 		if (card.choice) {
 			const box = el("div", "choices");
 			fillChoices(box, card.choice);
@@ -160,6 +250,15 @@ function mount(doc) {
 		return node;
 	};
 
+	/** @param {import("./view.mjs").CapCard} card */
+	const capCard = (card) => {
+		const node = el("div", "card ask cap");
+		const box = el("div", "choices");
+		fillChoices(box, card.choice);
+		node.append(el("div", "title", card.title), el("div", "by", card.source), el("div", "why", card.stage), el("div", "latest", card.latest), box);
+		return node;
+	};
+
 	/** @param {string} heading @param {HTMLElement[]} items @param {string} emptyText @param {string} [headingClass] */
 	const section = (heading, items, emptyText, headingClass = "") => {
 		const node = el("section", "");
@@ -179,7 +278,7 @@ function mount(doc) {
 		list.append(...left.done.map((c) => taskCard(c, "done")));
 		done.append(el("summary", "", left.doneLine), list);
 		$("left").replaceChildren(
-			section(`待你处理 · ${left.needsYou.length}`, left.needsYou.map((c) => taskCard(c, "ask")), "暂无待处理事项。", "warn"),
+			section(left.needsYouLine, [...(left.capCard ? [capCard(left.capCard)] : []), ...left.needsYou.map((c) => taskCard(c, "ask"))], "暂无待处理事项。", "warn"),
 			section(`进行中 · ${left.doing.length}`, left.doing.map((c) => taskCard(c, "doing")), "暂无进行中的任务。"),
 			section(`关注的来源 · ${left.watching.length}`, left.watching.map((w) => {
 				const node = el("div", w.problem ? "watch problem" : "watch");
@@ -193,26 +292,165 @@ function mount(doc) {
 		);
 	};
 
+	/** @param {import("./view.mjs").HelperChip} chip */
+	const helperChip = (chip) => {
+		const node = el("button", "helper-chip");
+		node.type = "button";
+		node.dataset.id = chip.id;
+		node.append(el("span", "dot"), avatarNode(chip.avatar), el("span", "name", chip.name), el("span", "role", chip.role), el("span", "meta"));
+		node.addEventListener("click", () => watch(chip.id));
+		const slot = el("div", "helper-slot");
+		slot.append(node, el("div", "members"));
+		return slot;
+	};
+
+	// Chips tick every second; they are updated in place so a focused or half-clicked chip survives.
+	const renderHelpers = () => {
+		const strip = helperStrip(view, Date.now());
+		const box = $("helpers");
+		box.hidden = !strip.total && !strip.chips.length;
+		const shown = [...box.querySelectorAll(".helper-chip")].map((n) => /** @type {HTMLElement} */ (n).dataset.id).join();
+		if (shown !== strip.chips.map((c) => c.id).join() || !box.querySelector(".total")) {
+			box.replaceChildren(...strip.chips.map(helperChip), el("span", "total"));
+		}
+		for (const chip of strip.chips) {
+			const node = /** @type {HTMLElement} */ (box.querySelector(`.helper-chip[data-id="${chip.id}"]`));
+			const dot = /** @type {HTMLElement} */ (node.querySelector(".dot"));
+			dot.textContent = chip.mark;
+			dot.dataset.duty = chip.duty;
+			/** @type {HTMLElement} */ (node.querySelector(".meta")).textContent = `${chip.elapsed} · ${chip.tokens}`;
+			node.setAttribute("aria-current", String(watching?.watch.ticketId === chip.id));
+			const members = /** @type {HTMLElement} */ (node.nextElementSibling);
+			const labels = chip.members.map((m) => m.label);
+			if (members.dataset.shown !== labels.join()) {
+				members.dataset.shown = labels.join();
+				members.replaceChildren(...chip.members.map((m) => el("span", `member-chip ${m.state}`, m.label)));
+			}
+			node.setAttribute("aria-label", `${chip.name} · ${chip.role}，${chip.state}，用时 ${chip.elapsed}，${chip.tokens}${labels.length ? `，成员：${labels.join("、")}` : ""}`);
+		}
+		/** @type {HTMLElement} */ (box.querySelector(".total")).textContent = strip.total;
+	};
+
+	/** @returns {import("./view.mjs").Said} */
+	const composed = () => ({ text: composer.value, quoteOf: quoting?.id ?? null });
+
+	const renderQuoteStrip = () => {
+		const box = $("conversation");
+		const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+		quoteStrip.hidden = !quoting;
+		if (quoting) {
+			const shown = quoteShown(quoting);
+			/** @type {HTMLElement} */ (quoteStrip.querySelector(".quote-who")).textContent = `引用 ${shown.who}：`;
+			/** @type {HTMLElement} */ (quoteStrip.querySelector(".quote-text")).textContent = shown.text;
+		}
+		if (atBottom) box.scrollTop = box.scrollHeight;
+	};
+
+	/** @param {import("./view.mjs").Said} sent */
+	const clearIfUnchanged = (sent) => {
+		if (!sameAsSent(sent, composed())) return;
+		composer.value = "";
+		quoting = null;
+		renderQuoteStrip();
+	};
+
+	const unpick = () => {
+		for (const picked of thread.querySelectorAll(".line.picked")) picked.classList.remove("picked");
+	};
+
+	/** @param {import("./view.mjs").ConversationLine | null} line */
+	const setQuote = (line) => {
+		quoting = line;
+		unpick();
+		renderQuoteStrip();
+		composer.focus();
+	};
+
+	/** @param {import("../kernel/types.ts").Quote} quote */
+	const quotedNode = (quote) => {
+		const shown = quoteShown(quote);
+		const node = el("div", "quoted");
+		node.append(el("span", "sr", "引用 "), el("span", "quote-text", `${shown.who}：${shown.text}`));
+		return node;
+	};
+
+	/** @param {import("./view.mjs").ConversationLine} line */
+	const quoteButton = (line) => {
+		const button = el("button", "quote-btn", "引用");
+		button.type = "button";
+		button.addEventListener("click", (e) => {
+			e.stopPropagation();
+			setQuote(line);
+		});
+		return button;
+	};
+
+	/** @param {import("./view.mjs").ConversationLine} line @param {boolean} withChoices */
+	const lineNode = (line, withChoices) => {
+		const item = el("div", `line ${line.who}`);
+		if (line.who === "alert" || line.who === "receipt") {
+			const said = el("div", "said");
+			said.append(el("div", "who", HOST_LINE_LABEL[line.who]), el("div", "bubble", line.text));
+			item.append(said);
+			return item;
+		}
+		const bubble = line.who === "router" ? md("bubble", line.text) : el("div", "bubble", line.text);
+		if (line.who === "router") {
+			const avatar = avatarMark.cloneNode(true);
+			const said = el("div", "said");
+			said.append(el("div", "who", "幕僚长"), bubble, quoteButton(line));
+			if (withChoices) {
+				const choices = el("div", "choices");
+				choices.dataset.line = line.id;
+				said.append(choices);
+			}
+			item.append(avatar, said);
+		} else {
+			bubble.prepend(el("span", "sr", "你："));
+			const said = el("div", "said");
+			const slot = el("div", "route-slot");
+			slot.dataset.line = line.id;
+			said.append(bubble, ...(line.quote ? [quotedNode(line.quote)] : []), slot, quoteButton(line));
+			item.append(said, youMark.cloneNode(true));
+		}
+		return item;
+	};
+
+	const clearedBarNode = () => {
+		const node = el("button", "cleared-bar");
+		node.type = "button";
+		node.addEventListener("click", () => {
+			toggleEarlier(view);
+			renderConversation();
+		});
+		return node;
+	};
+
 	const renderConversation = () => {
 		const box = $("conversation");
 		const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-		for (const line of [...view.lines.values()].slice(rendered)) {
-			const item = el("div", `line ${line.who}`);
-			const bubble = el("div", "bubble", line.text);
-			if (line.who === "router") {
-				const avatar = avatarMark.cloneNode(true);
-				const said = el("div", "said");
-				const choices = el("div", "choices");
-				choices.dataset.line = line.id;
-				said.append(el("div", "who", "幕僚长"), bubble, choices);
-				item.append(avatar, said);
-			} else {
-				bubble.prepend(el("span", "sr", "你："));
-				item.append(bubble);
-			}
-			thread.append(item);
+		const clearAt = view.cleared?.at ?? null;
+		if (clearAt !== renderedClearAt) {
+			for (const node of thread.querySelectorAll(":scope > .line, :scope > .cleared-bar, :scope > .earlier")) node.remove();
+			rendered = 0;
+			renderedClearAt = clearAt;
+			earlierShown = false;
+			if (view.cleared) thread.append(clearedBarNode(), el("div", "earlier"));
 		}
+		const top = clearedBar(view, Date.now());
+		const barNode = thread.querySelector(".cleared-bar");
+		if (top && barNode) {
+			barNode.textContent = top.text;
+			barNode.setAttribute("aria-expanded", String(top.expanded));
+		}
+		if (view.showEarlier !== earlierShown) {
+			thread.querySelector(".earlier")?.replaceChildren(...earlierLines(view).map((line) => lineNode(line, false)));
+			earlierShown = view.showEarlier;
+		}
+		for (const line of [...view.lines.values()].slice(rendered)) thread.append(lineNode(line, true));
 		rendered = view.lines.size;
+		clearButton.disabled = !canClear(view);
+		renderRoutes();
 		renderChoices();
 		if (atBottom) box.scrollTop = box.scrollHeight;
 		settleUnconfirmed();
@@ -220,39 +458,149 @@ function mount(doc) {
 
 	const settleUnconfirmed = () => {
 		if (!unconfirmed) return;
-		const next = settleSay({ state: sayState, text: unconfirmed.text }, composer.value, [...view.lines.values()].slice(unconfirmed.from));
-		if (next.state === sayState) return;
+		const next = settleSay({ state: sayState, ...unconfirmed }, linesNotIn(view, unconfirmed.idsAtSay));
+		if (next === sayState) return;
+		clearIfUnchanged(unconfirmed);
 		unconfirmed = undefined;
-		composer.value = next.composer;
-		setSay(next.state);
+		setSay(next);
 	};
 
 	const renderHow = () => {
 		const row = view.rows.find((r) => r.id === watching?.watch.ticketId);
-		$("how-badge").replaceChildren(...(row ? [helperBadge(row.id)] : []));
+		$("how-badge").replaceChildren(...(row ? [avatarNode(avatarOf(row))] : []));
 		$("how-title").textContent = row?.title ?? "";
+		$("how-helper").textContent = row ? helperLine(row) : "";
 		$("how-meta").textContent = row ? `${BASIS_PHRASE[row.basis]} · ${STAGE_PHRASE[row.stage]}` : "";
-		$("small-print").textContent = smallPrint(row, Date.now(), view.receivedAt);
+		$("how-life").textContent = lifecycleLine(row, Date.now(), view.receivedAt);
+		$("small-print").textContent = smallPrint(row);
+	};
+
+	let stepsShown = "";
+	/** runningSince moves a little with every frame, so only the phase and the fixed numbers decide a rebuild. @param {import("./view.mjs").DispatchClock} clock */
+	const clockKey = (clock) => clock && [clock.phase, clock.limitMs, clock.phase === "ended" ? clock.ranMs : null];
+	/** @param {import("./view.mjs").Step[]} steps */
+	const stepsKey = (steps) => JSON.stringify(steps.map((s) => [s.state, s.detail, s.dispatch && [s.dispatch.tokens, s.dispatch.note, s.dispatch.steps.map((m) => [m.state, m.title, m.detail]), clockKey(s.dispatch.clock)]]));
+	const renderStepsIfMoved = () => {
+		if (watching && stepsShown !== stepsKey(liveSteps(watching.watch, view))) renderSteps();
+	};
+
+	/** @param {import("./view.mjs").StepIcon} icon @param {import("./view.mjs").Step["state"]} state */
+	const markNode = (icon, state) => {
+		const mark = el("span", "mark");
+		mark.append(/** @type {Element} */ (icons.get(icon) ?? icons.get("tool")).cloneNode(true), el("span", "mark-state", MARK[state]));
+		return mark;
+	};
+
+	/** @param {import("./view.mjs").Step} step @param {number} i @param {Set<string | null>} open */
+	const detailNodes = (step, i, open) => {
+		const nodes = [];
+		if (step.dispatch) {
+			const d = step.dispatch;
+			const box = el("details", "dispatch");
+			box.setAttribute("data-i", `d${i}`);
+			box.open = open.has(`d${i}`);
+			box.append(el("summary", "", "派活明细"), el("div", "dispatch-head", [d.title, d.stateText, d.tokens].filter(Boolean).join(" · ")), el("div", "dispatch-task", `任务：${d.task}`));
+			if (d.note) box.append(el("div", "dispatch-note", d.note));
+			if (d.steps.length) {
+				const list = el("ol", "member-steps");
+				list.append(...d.steps.map((m) => {
+					const item = el("li", `member-step ${m.state}`);
+					item.append(el("span", "member-step-mark", MARK[m.state]), el("span", "member-step-title", m.title), el("span", "member-step-detail", m.detail));
+					return item;
+				}));
+				box.append(list);
+			}
+			if (d.reply) box.append(md("dispatch-reply", d.reply));
+			nodes.push(box);
+		}
+		const raw = el("details", "");
+		raw.setAttribute("data-i", String(i));
+		raw.open = open.has(String(i));
+		raw.append(el("summary", "", "原始记录"), el("pre", "", step.raw));
+		nodes.push(raw);
+		return nodes;
+	};
+
+	/** @param {import("./view.mjs").Step} step @param {number} i @param {Set<string | null>} open */
+	const stepItem = (step, i, open) => {
+		const li = el("li", `step ${step.state}`);
+		const rail = el("span", "rail");
+		rail.append(markNode(step.icon, step.state));
+		const body = el("div", "step-body");
+		body.append(el("div", "step-title", step.title), step.markdown ? md("step-detail", step.detail) : el("div", "step-detail", step.detail), ...detailNodes(step, i, open));
+		li.append(rail, body);
+		return li;
+	};
+
+	/** Running lanes, patched by the 1 s tick instead of rebuilding the panel. @type {{ entry: import("./view.mjs").DispatchEntry, time: HTMLElement, bar: HTMLElement | null }[]} */
+	let ticking = [];
+
+	/** @param {HTMLElement} bar @param {{ text: string, ratio: number | null }} clock */
+	const setBar = (bar, clock) => {
+		const percent = Math.round((clock.ratio ?? 0) * 100);
+		bar.setAttribute("aria-valuenow", String(percent));
+		bar.setAttribute("aria-valuetext", clock.text);
+		/** @type {HTMLElement} */ (bar.firstElementChild).style.width = `${percent}%`;
+	};
+
+	/** @param {import("./view.mjs").Lane} lane @param {Set<string | null>} open */
+	const laneNode = (lane, open) => {
+		const { step, i } = lane;
+		const node = el("div", `step lane ${step.state}`);
+		const head = el("div", "lane-head");
+		head.append(avatarNode(lane.avatar), el("div", "step-detail", step.detail));
+		const clock = laneClock(step.dispatch, Date.now());
+		const time = el("div", "lane-time", clock.text);
+		node.append(head, time);
+		let bar = null;
+		if (clock.ratio !== null) {
+			bar = el("div", "lane-bar");
+			bar.setAttribute("role", "progressbar");
+			bar.setAttribute("aria-valuemin", "0");
+			bar.setAttribute("aria-valuemax", "100");
+			bar.setAttribute("aria-label", BAR_HINT);
+			bar.title = BAR_HINT;
+			bar.append(el("span", "lane-fill"));
+			setBar(bar, clock);
+			node.append(bar);
+		}
+		if (step.dispatch.clock?.phase === "running") ticking.push({ entry: step.dispatch, time, bar });
+		node.append(...detailNodes(step, i, open));
+		return node;
+	};
+
+	/** Not a .step itself, so `.step` still counts one per dispatch. @param {Extract<import("./view.mjs").StepGroup, { kind: "lanes" }>} group @param {Set<string | null>} open */
+	const lanesItem = (group, open) => {
+		const li = el("li", "lanes");
+		li.dataset.state = group.state;
+		const rail = el("span", "rail");
+		rail.append(markNode("dispatch", group.state));
+		const row = el("div", "lane-row");
+		row.append(...group.lanes.map((lane) => laneNode(lane, open)));
+		const body = el("div", "step-body");
+		body.append(el("div", "step-title", "派活"), row);
+		li.append(rail, body);
+		return li;
+	};
+
+	const tickLanes = () => {
+		const now = Date.now();
+		for (const { entry, time, bar } of ticking) {
+			const clock = laneClock(entry, now);
+			time.textContent = clock.text;
+			if (bar) setBar(bar, clock);
+		}
 	};
 
 	const renderSteps = () => {
-		const steps = watching?.watch.steps ?? [];
+		const steps = watching ? liveSteps(watching.watch, view) : [];
+		stepsShown = stepsKey(steps);
+		ticking = [];
 		if (!watching) return void $("steps").replaceChildren(el("li", "empty", "选择左侧的任务，查看助手的执行过程。"));
 		if (!steps.length) return void $("steps").replaceChildren(el("li", "empty", "暂无步骤。"));
 		const open = new Set([...$("steps").querySelectorAll("details[open]")].map((d) => d.getAttribute("data-i")));
-		$("steps").replaceChildren(...steps.map((step, i) => {
-			const li = el("li", `step ${step.state}`);
-			const rail = el("span", "rail");
-			rail.append(el("span", "mark", MARK[step.state]));
-			const body = el("div", "step-body");
-			const raw = el("details", "");
-			raw.setAttribute("data-i", String(i));
-			raw.open = open.has(String(i));
-			raw.append(el("summary", "", "原始记录"), el("pre", "", step.raw));
-			body.append(el("div", "step-title", step.title), el("div", "step-detail", step.detail), raw);
-			li.append(rail, body);
-			return li;
-		}));
+		const row = view.rows.find((r) => r.id === watching?.watch.ticketId);
+		$("steps").replaceChildren(...stepGroups(steps, row).map((group) => (group.kind === "step" ? stepItem(group.step, group.i, open) : lanesItem(group, open))));
 	};
 
 	const render = {
@@ -260,6 +608,8 @@ function mount(doc) {
 		left: () => {
 			renderLeft();
 			renderChoices();
+			renderHelpers();
+			renderStepsIfMoved();
 		},
 		header: renderHeader,
 	};
@@ -287,7 +637,7 @@ function mount(doc) {
 				setSay(state);
 			} else {
 				sending.delete(reportId);
-				const options = view.rows.find((r) => r.question?.reportId === reportId)?.question?.options ?? [];
+				const options = questionOf(view, reportId)?.options ?? [];
 				setSay(state, res.status, state === "rejected" ? answerRefusedCopy(res.status, await res.json().catch(() => null), options) : undefined);
 			}
 		} catch {
@@ -309,6 +659,7 @@ function mount(doc) {
 		};
 		watching = { watch: w, source };
 		renderLeft();
+		renderHelpers();
 		renderHow();
 		renderSteps();
 	};
@@ -351,11 +702,11 @@ function mount(doc) {
 	};
 
 	const say = async () => {
-		const text = composer.value;
-		if (!canSend(text) || send.disabled) return;
+		const sent = composed();
+		if (!canSend(sent.text) || send.disabled) return;
 		send.disabled = true;
 		unconfirmed = undefined;
-		const from = view.lines.size;
+		const idsAtSay = knownLineIds(view);
 		setSay("sending");
 		const abort = new AbortController();
 		const timer = setTimeout(() => abort.abort(), DEFAULT_ACK_TIMEOUT_MS);
@@ -363,17 +714,17 @@ function mount(doc) {
 			const res = await fetch(`/say?${query}`, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ text }),
+				body: sayBody(sent),
 				signal: abort.signal,
 				cache: "no-store",
 			});
 			const state = sayOutcome({ status: res.status });
-			if (state === "delivered" && composer.value === text) composer.value = "";
+			if (state === "delivered") clearIfUnchanged(sent);
 			if (state === "expired") setStatus("expired");
 			setSay(state, res.status);
 		} catch {
 			setSay(sayOutcome(abort.signal.aborted ? "timeout" : "network"));
-			unconfirmed = { text, from };
+			unconfirmed = { ...sent, idsAtSay };
 			settleUnconfirmed();
 		} finally {
 			clearTimeout(timer);
@@ -381,11 +732,48 @@ function mount(doc) {
 		}
 	};
 
+	clearButton.addEventListener("click", async () => {
+		clearButton.disabled = true;
+		try {
+			const res = await fetch(`/clear?${query}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", cache: "no-store", signal: AbortSignal.timeout(DEFAULT_ACK_TIMEOUT_MS) });
+			if (res.status === 401) setStatus("expired");
+			else if (!res.ok) setSay("rejected", res.status, CLEAR_FAILED);
+		} catch {
+			setSay("rejected", undefined, CLEAR_FAILED);
+		} finally {
+			clearButton.disabled = !canClear(view);
+		}
+	});
+
 	$("say").addEventListener("submit", (e) => {
 		e.preventDefault();
 		void say();
 	});
+	$("quote-cancel").addEventListener("click", () => setQuote(null));
+	thread.addEventListener("click", (e) => {
+		const target = /** @type {Element} */ (e.target);
+		if (!touch.matches || target.closest(".choices, .route, a, button")) return;
+		const line = target.closest(".bubble")?.closest(".line");
+		if (!line) return;
+		const wasPicked = line.classList.contains("picked");
+		unpick();
+		line.classList.toggle("picked", !wasPicked);
+	});
 	composer.addEventListener("keydown", (e) => {
+		if (e.key === "Escape" && quoting && !e.isComposing && e.keyCode !== 229) {
+			e.preventDefault();
+			setQuote(null);
+			return;
+		}
+		const arrow = historyKey(e, composer.value, composer.selectionStart, composer.selectionEnd);
+		const step = arrow && historyStep(browsing, arrow, sentHistory(view), composer.value);
+		if (step) {
+			e.preventDefault();
+			browsing = step.state;
+			composer.value = step.text;
+			composer.setSelectionRange(step.text.length, step.text.length);
+			return;
+		}
 		if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.keyCode === 229) return;
 		e.preventDefault();
 		void say();
@@ -394,7 +782,11 @@ function mount(doc) {
 	renderLeft();
 	renderSteps();
 	setInterval(() => {
-		if (watching && view.rows.some((r) => r.id === watching?.watch.ticketId && isLive(r))) renderHow();
+		renderHelpers();
+		if (watching) {
+			renderHow();
+			tickLanes();
+		}
 	}, 1000);
 	setInterval(() => {
 		renderHeader();

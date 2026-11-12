@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { until } from "./helpers/fakes.ts";
+import { hostPid } from "../src/heartbeat.ts";
 
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
@@ -79,4 +80,57 @@ test("已有的 host.log 权限比 0600 宽时，Watchdog 拉起宿主前收紧�
 	t.after(cleanup(dir, wd));
 	await until(() => readFileSync(log, "utf8").includes("token="), "host.log 里有网页网址", 15000);
 	assert.equal(statSync(log).mode & 0o777, 0o600);
+});
+
+test("终端 Ctrl+C：Watchdog 先停掉它拉起的宿主，再打印「已停止」并以 0 退出", async (t) => {
+	const dir = stateDir();
+	const wd = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/watchdog/main.ts"], {
+		env: { ...process.env, PSA_STATE_DIR: dir },
+		stdio: ["ignore", "ignore", "pipe"],
+		detached: true,
+	});
+	t.after(cleanup(dir, wd));
+	const exited = new Promise<number | null>((r) => wd.on("exit", (code) => r(code)));
+	let stderr = "";
+	wd.stderr!.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+	await until(() => { const pid = heartbeatPid(dir); return !!pid && pid !== wd.pid && alive(pid); }, "宿主写出心跳", 15000);
+	const hostPid = heartbeatPid(dir)!;
+	process.kill(-wd.pid!, "SIGINT");
+	assert.equal(await exited, 0, stderr);
+	assert.match(stderr, /\[watchdog\] 已停止/);
+	assert.ok(!alive(hostPid), "宿主应已停止");
+});
+
+test("终端 Ctrl+C：Watchdog 不停别人启动的宿主", async (t) => {
+	const dir = stateDir();
+	const host = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/host/main.ts"], { env: { ...process.env, PSA_STATE_DIR: dir }, stdio: "ignore" });
+	t.after(cleanup(dir, host));
+	await until(() => heartbeatPid(dir) === host.pid, "宿主写出心跳", 15000);
+	const wd = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/watchdog/main.ts"], {
+		env: { ...process.env, PSA_STATE_DIR: dir },
+		stdio: ["ignore", "ignore", "pipe"],
+		detached: true,
+	});
+	t.after(cleanup(dir, wd));
+	const exited = new Promise<number | null>((r) => wd.on("exit", (code) => r(code)));
+	let stderr = "";
+	wd.stderr!.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+	await until(() => stderr.includes("已启动"), "Watchdog 已启动", 15000);
+	process.kill(-wd.pid!, "SIGINT");
+	assert.equal(await exited, 0, stderr);
+	assert.match(stderr, /\[watchdog\] 已停止/);
+	assert.ok(alive(host.pid!), "使用者自己启动的宿主不能被停掉");
+});
+
+test("hostPid 只认心跳里命令行是宿主入口的进程：没有心跳、无关进程、自己都不算", async (t) => {
+	const dir = stateDir();
+	assert.equal(hostPid(dir), undefined, "没有心跳");
+	const bystander = spawn("sleep", ["60"], { stdio: "ignore" });
+	const host = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", "src/host/main.ts"], { stdio: "ignore" });
+	t.after(cleanup(dir, bystander, host));
+	writeFileSync(join(dir, "heartbeat.json"), JSON.stringify({ pid: bystander.pid, at: Date.now() }));
+	assert.equal(hostPid(dir), undefined, "无关进程");
+	writeFileSync(join(dir, "heartbeat.json"), JSON.stringify({ pid: host.pid, at: Date.now() }));
+	await until(() => hostPid(dir) === host.pid, "宿主进程被认出", 5000);
+	assert.equal(hostPid(dir, host.pid), undefined, "调用者自己");
 });

@@ -5,22 +5,23 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
-import { openChoices, renderBoard, shortId, ticketsMatching, type BoardView } from "../src/client/board.ts";
+import { openQuestions, renderBoard, shortId, ticketsMatching, type BoardView, type OpenQuestion } from "../src/client/board.ts";
+import { HOST_LINE_LABEL, quoteMark } from "../src/client/board-format.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, HostConnection } from "../src/client/connection.ts";
 import type { ConversationLine, HostToClient } from "../src/client/protocol.ts";
-import type { DashboardRow } from "../src/kernel/types.ts";
 import { formatTranscriptMessage } from "../src/client/transcript.ts";
 import { defaultStateDir } from "../src/host/config.ts";
 
 const LINE = "psa-line";
-type Who = "user" | "router" | "worker" | "system";
-const PREFIX: Record<Who, string> = { user: "你", router: "Router", worker: "Worker", system: "·" };
+type Who = ConversationLine["who"] | "worker" | "system";
+const PREFIX: Record<Who, string> = { user: "你", router: "Router", ...HOST_LINE_LABEL, worker: "Worker", system: "·" };
 const HISTORY_SHOWN = 10;
 
 export default function superAgentClient(pi: ExtensionAPI): void {
 	const view: BoardView = { rows: [], receivedAt: Date.now(), connected: false };
 	let ctx: ExtensionContext | undefined;
 	let conn: HostConnection | undefined;
+	let socketPath = "";
 	const seenIds = new Set<string>();
 	let primed = false;
 	let watching: string | undefined;
@@ -28,6 +29,11 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 
 	const show = (who: Who, text: string) =>
 		pi.sendMessage({ customType: LINE, content: `${PREFIX[who]}> ${text}`, display: true, details: { who } });
+
+	const showLine = (l: ConversationLine) => {
+		if (l.quote) pi.sendMessage({ customType: LINE, content: quoteMark(l.quote), display: true, details: { who: "system" } });
+		show(l.who, l.text);
+	};
 
 	const drawBoard = () =>
 		ctx?.ui.setWidget("psa-board", () => ({ render: (width: number) => renderBoard(view, width, Date.now()), invalidate() {} }));
@@ -37,7 +43,7 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 
 	const showConversation = (lines: ConversationLine[]) => {
 		const fresh = lines.filter(isNew);
-		for (const l of primed ? fresh : fresh.slice(-HISTORY_SHOWN)) show(l.who, l.text);
+		for (const l of primed ? fresh : fresh.slice(-HISTORY_SHOWN)) showLine(l);
 		lines.forEach(markSeen);
 		primed = true;
 	};
@@ -47,23 +53,29 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 			case "snapshot":
 				showConversation(m.conversation);
 				view.rows = m.board;
+				view.memberCap = m.memberCap;
 				view.receivedAt = Date.now();
 				break;
 			case "user":
-			case "reply": {
-				const line: ConversationLine = { id: m.type === "user" ? m.id : m.replyId, who: m.type === "user" ? "user" : "router", text: m.text, at: m.at };
+			case "reply":
+			case "host_line": {
+				const line: ConversationLine = m.type === "user" ? { ...m, who: "user" } : m.type === "reply" ? { id: m.replyId, who: "router", text: m.text, at: m.at } : m;
 				if (!isNew(line)) return;
 				markSeen(line);
-				show(line.who, line.text);
+				showLine(line);
 				return;
 			}
 			case "ack":
+				return;
+			// A terminal cannot take back lines it already printed; a new connection's snapshot is already filtered.
+			case "cleared":
 				return;
 			case "refused":
 				ctx?.ui.notify(m.reason, "warning");
 				return;
 			case "board":
 				view.rows = m.rows;
+				view.memberCap = m.memberCap;
 				view.receivedAt = Date.now();
 				break;
 			case "transcript_history":
@@ -87,12 +99,14 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, context) => {
 		ctx = context;
 		const ackTimeoutMs = Number(process.env.PSA_ACK_TIMEOUT_MS) || DEFAULT_ACK_TIMEOUT_MS;
+		socketPath = process.env.PSA_SOCKET ?? join(defaultStateDir(), "host.sock");
 		conn = new HostConnection({
-			socketPath: process.env.PSA_SOCKET ?? join(defaultStateDir(), "host.sock"),
+			socketPath,
 			onMessage,
 			ackTimeoutMs,
 			onAckMissing: (text) =>
 				ctx?.ui.notify(`宿主 ${ackTimeoutMs / 1000} 秒内没有确认收到「${text}」，这句话可能没送达。宿主可能卡住了，稍后看对话里有没有它，没有就再说一次。`, "warning"),
+			onError: (line) => ctx?.ui.notify(line, "warning"),
 			onStatus: (connected) => {
 				view.connected = connected;
 				drawBoard();
@@ -109,9 +123,8 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 		conn?.close();
 	});
 
-	const answer = (row: DashboardRow, pick: number, ui: ExtensionContext["ui"]) => {
-		const q = row.question!;
-		if (pick < 1 || pick > q.options.length) return ui.notify(`「${row.title}」只有 ${q.options.length} 个选项`, "warning");
+	const answer = (q: OpenQuestion, pick: number, ui: ExtensionContext["ui"]) => {
+		if (pick < 1 || pick > q.options.length) return ui.notify(`「${q.title}」只有 ${q.options.length} 个选项`, "warning");
 		if (!conn?.answer(q.reportId, pick - 1, q.options[pick - 1])) ui.notify("宿主未连接，回答没有发出。先运行 just host。", "warning");
 	};
 
@@ -119,7 +132,7 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 		if (event.source === "extension") return { action: "continue" };
 		const text = event.text.trim();
 		if (!text) return { action: "handled" };
-		const open = /^[1-9]$/.test(text) ? openChoices(view.rows) : [];
+		const open = /^[1-9]$/.test(text) ? openQuestions(view) : [];
 		if (open.length === 1) {
 			answer(open[0], Number(text), context.ui);
 			return { action: "handled" };
@@ -128,7 +141,7 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 			context.ui.notify(`有 ${open.length} 个问题在等回答，请用 /answer <编号> <序号>，例如 /answer ${shortId(open[0].id)} ${text}`, "warning");
 			return { action: "handled" };
 		}
-		if (!conn?.say(text)) context.ui.notify("宿主未连接，这句话没有发出。先运行 just host。", "warning");
+		if (!conn?.say(text)) context.ui.notify(`连不上宿主（${socketPath}），这句话没有发出。先运行 just host，并确认各个终端的 PSA_STATE_DIR 相同。`, "warning");
 		return { action: "handled" };
 	});
 
@@ -136,9 +149,9 @@ export default function superAgentClient(pi: ExtensionAPI): void {
 		description: "选一个问题的选项作答：/answer <编号> <序号>",
 		handler: async (args, context) => {
 			const [key = "", pick = ""] = args.trim().split(/\s+/);
-			const matches = ticketsMatching(openChoices(view.rows), key);
+			const matches = ticketsMatching(openQuestions(view), key);
 			if (!key || matches.length !== 1 || !/^\d+$/.test(pick)) {
-				context.ui.notify(matches.length > 1 ? `编号 ${key} 对应多个问题，请多写几位` : "用法：/answer <编号> <序号>，编号是看板上等回答的任务", "warning");
+				context.ui.notify(matches.length > 1 ? `编号 ${key} 对应多个问题，请多写几位` : "用法：/answer <编号> <序号>，编号是看板上等回答的任务，成员上限的问题是 cap", "warning");
 				return;
 			}
 			answer(matches[0], Number(pick), context.ui);

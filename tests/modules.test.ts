@@ -1,22 +1,24 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { ConfigError } from "../src/config-error.ts";
 import { Modules, moduleNameProblem, parseRules } from "../src/modules.ts";
 
 const repoModules = fileURLToPath(new URL("../modules", import.meta.url));
-const withToy = () => Modules.load([repoModules], undefined, { values: { "toy-market": true }, file: "config.json" });
+const switches = (values: Record<string, boolean>) => ({ values, file: "/state/config.json" });
+const withToy = () => Modules.load([repoModules], { switches: switches({ "toy-market": true }) });
 const quote = (body: string) => ({ source: "toy-market", externalId: "x", threads: [], sender: "feed", body, occurredAt: 0 });
 
 test("仓库里的模块都被发现，规则带模块前缀", () => {
 	const modules = withToy();
-	assert.deepEqual(modules.found.map((m) => m.name), ["toy-market", "us-market"]);
+	assert.deepEqual(modules.found.map((m) => m.name), ["pi-pi", "toy-market", "us-market"]);
 	assert.ok(modules.ruleAllows("toy-market/big-move", "toy-market"));
 	assert.ok(!modules.ruleAllows("big-move", "toy-market"));
 	assert.match(modules.rulesPrompt(), /### toy-market\/big-move/);
-	assert.ok(modules.moduleForRule("toy-market/big-move")?.skillsDir);
+	assert.equal(modules.kitFor("toy-market")?.skillsDir, join(repoModules, "toy-market/skills"));
 });
 
 test("程序层过滤：小于 1% 的波动在调用模型前被筛掉", () => {
@@ -26,8 +28,13 @@ test("程序层过滤：小于 1% 的波动在调用模型前被筛掉", () => {
 	assert.equal(sourcePolicy({ ...quote("anything"), source: "other" }), "candidate");
 });
 
+test("行情来源：模块里标了 market 的来源（玩具行情、美股行情）是，其他来源不是", () => {
+	const { isMarketSource } = withToy();
+	assert.deepEqual(["toy-market", "us-market", "mail", "conversation"].map(isMarketSource), [true, true, false, false]);
+});
+
 test("规则文件按二级标题切分，空规则不算", () => {
-	assert.deepEqual(parseRules("user", "# 标题\n## a\n第一条\n\n## b\n\n## c\n第三条"), [
+	assert.deepEqual(parseRules("rules.md", "user", "# 标题\n## a\n第一条\n\n## b\n\n## c\n第三条"), [
 		{ id: "user/a", text: "第一条" },
 		{ id: "user/c", text: "第三条" },
 	]);
@@ -45,7 +52,7 @@ test("规则的适用来源：使用者规则必须写来源行才生效，写�
 	const dir = mkdtempSync(join(tmpdir(), "psa-rules-"));
 	const file = join(dir, "rules.md");
 	writeFileSync(file, "## any\n有新邮件就看一下\n\n## ci-only\n来源: ci, github\nCI 失败时开任务\n");
-	const modules = Modules.load([], file);
+	const modules = Modules.load([], { stateDir: dirname(file) });
 	assert.ok(!modules.ruleAllows("user/any", "mail"));
 	assert.deepEqual(modules.rulesFor("mail"), []);
 	assert.doesNotMatch(modules.rulesPrompt(), /user\/any/);
@@ -59,7 +66,7 @@ test("规则的适用来源：使用者规则必须写来源行才生效，写�
 test("规则的适用来源：来源行里一个来源都没有的使用者规则同样不生效", () => {
 	const file = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
 	writeFileSync(file, "## empty\n来源: ，\n有新邮件就看一下\n");
-	const modules = Modules.load([], file);
+	const modules = Modules.load([], { stateDir: dirname(file) });
 	assert.ok(!modules.ruleAllows("user/empty", "mail"));
 	assert.deepEqual(modules.skippedUserRules, ["user/empty"]);
 	assert.equal(modules.rulesPrompt(), "");
@@ -75,25 +82,23 @@ function moduleRoot(modules: Record<string, object>): string {
 	return root;
 }
 
-const switches = (values: Record<string, boolean>) => ({ values, file: "/state/config.json" });
-
 test("模块开关：关掉的模块不贡献来源、规则、技能和定时器，其他模块照常", () => {
 	const root = moduleRoot({
 		mail: { sources: [{ name: "mail", mode: "ignore" }], timers: [{ id: "t", everyMinutes: 5, thread: "t", body: "看信" }] },
 		ci: { sources: [{ name: "ci" }] },
 	});
-	const modules = Modules.load([root], undefined, switches({ mail: false }));
+	const modules = Modules.load([root], { switches: switches({ mail: false }) });
 	assert.deepEqual(modules.modules.map((m) => m.name), ["ci"]);
 	assert.deepEqual(modules.allRules().map((r) => r.id), ["ci/watch"]);
 	assert.equal(modules.sourcePolicy({ ...quote("x"), source: "mail" }), "candidate");
 	assert.deepEqual(modules.timers(), []);
-	assert.equal(modules.moduleForRule("mail/watch"), undefined);
-	assert.ok(modules.moduleForRule("ci/watch")?.skillsDir);
+	assert.equal(modules.kitFor("mail"), undefined);
+	assert.ok(modules.kitFor("ci")?.skillsDir);
 });
 
 test("模块开关：found 列出全部模块和启用原因", () => {
 	const root = moduleRoot({ a: {}, b: { defaultEnabled: false }, c: { defaultEnabled: false }, d: {} });
-	const modules = Modules.load([root], undefined, switches({ c: true, d: false }));
+	const modules = Modules.load([root], { switches: switches({ c: true, d: false }) });
 	assert.deepEqual(modules.found.map((m) => [m.name, m.state]), [
 		["a", { enabled: true, by: "default" }],
 		["b", { enabled: false, by: "manifest" }],
@@ -104,7 +109,7 @@ test("模块开关：found 列出全部模块和启用原因", () => {
 
 test("模块名和对象原型上的属性同名时（constructor、toString），没写开关就按清单默认", () => {
 	const root = moduleRoot({ constructor: { defaultEnabled: false }, toString: {} });
-	const modules = Modules.load([root], undefined, switches({}));
+	const modules = Modules.load([root], { switches: switches({}) });
 	assert.deepEqual(modules.found.map((m) => [m.name, m.state]), [
 		["constructor", { enabled: false, by: "manifest" }],
 		["toString", { enabled: true, by: "default" }],
@@ -112,8 +117,8 @@ test("模块名和对象原型上的属性同名时（constructor、toString）�
 });
 
 test("toy-market 默认关闭，开关打开后它的规则和过滤才生效", () => {
-	assert.deepEqual(Modules.load([repoModules]).modules.map((m) => m.name), ["us-market"]);
-	const on = Modules.load([repoModules], undefined, switches({ "toy-market": true }));
+	assert.deepEqual(Modules.load([repoModules]).modules.map((m) => m.name), ["pi-pi", "us-market"]);
+	const on = withToy();
 	assert.ok(on.ruleAllows("toy-market/big-move", "toy-market"));
 	assert.equal(on.sourcePolicy(quote("TOYX 价格 100.4，涨跌 +0.4%，成交量 500 股")), "ignore");
 });
@@ -121,7 +126,7 @@ test("toy-market 默认关闭，开关打开后它的规则和过滤才生效", 
 test("模块开关里写了没发现的模块名时报 ConfigError，指出 config.json 和已发现的模块", () => {
 	const root = moduleRoot({ mail: {} });
 	assert.throws(
-		() => Modules.load([root], undefined, switches({ mial: true })),
+		() => Modules.load([root], { switches: switches({ mial: true }) }),
 		(e: Error) => e.name === "ConfigError" && /\/state\/config\.json.*modules\.mial.*mail/.test(e.message),
 	);
 });
@@ -136,4 +141,44 @@ test("模块名只能用字母、数字、- 和 _，并以字母或数字开头"
 	for (const bad of ["", "-x", "../evil", "a/b", ".hidden", "中文", "a b"]) assert.ok(moduleNameProblem(bad), bad);
 	const root = moduleRoot({ "a b": {} });
 	assert.throws(() => Modules.load([root]), (e: Error) => e.name === "ConfigError" && /a b/.test(e.message));
+});
+
+test("规则里写了「团队：」行：加载时报一行错，以规则文件开头，写出规则 id 和改法；模块规则和使用者规则都一样", () => {
+	for (const line of ["团队：新闻队", "团队: 新闻队", "团队："]) {
+		const dir = mkdtempSync(join(tmpdir(), "psa-rules-"));
+		const file = join(dir, "rules.md");
+		writeFileSync(file, `## ci\n来源: ci\nCI 失败时开任务\n\n## news\n来源: rss\n${line}\n有听证会新闻就查一下\n`);
+		assert.throws(() => Modules.load([], { stateDir: dirname(file) }), (e: Error) => {
+			assert.ok(e instanceof ConfigError, String(e));
+			assert.ok(e.message.startsWith(file), e.message);
+			assert.ok(!e.message.includes("\n"), e.message);
+			assert.match(e.message, /规则 user\/news 写了「团队：」/);
+			assert.match(e.message, /删掉这一行/);
+			assert.match(e.message, /agents\//);
+			return true;
+		}, line);
+	}
+	assert.throws(() => parseRules("/m/watch/rules.md", "watch", "## drop\n团队：看盘队\n跌多了开任务\n"), (e: Error) => e.message.startsWith("/m/watch/rules.md：规则 watch/drop 写了「团队：」"));
+});
+
+test("幕僚长看到的规则只有编号和正文", () => {
+	const file = join(mkdtempSync(join(tmpdir(), "psa-rules-")), "rules.md");
+	writeFileSync(file, "## news\n来源: rss\n有听证会新闻就查一下\n\n## ci\n来源: ci\nCI 失败时开任务\n");
+	assert.equal(Modules.load([], { stateDir: dirname(file) }).rulesPrompt(), "### user/news\n有听证会新闻就查一下\n\n### user/ci\nCI 失败时开任务");
+});
+
+test("模块不能叫 user：这个名字留给使用者自己的规则，加载时报一行错，以 module.json 开头", () => {
+	const root = mkdtempSync(join(tmpdir(), "psa-mods-"));
+	mkdirSync(join(root, "user"));
+	writeFileSync(join(root, "user", "module.json"), JSON.stringify({ name: "user" }));
+	assert.throws(() => Modules.load([root]), (e: Error) => e instanceof ConfigError && e.message.startsWith(join(root, "user/module.json")) && /不能叫 user/.test(e.message) && !e.message.includes("\n"));
+});
+
+test("仓库里的三个模块都有领域名和给幕僚长的说明，出现在领域名册里；玩具行情没有成员", () => {
+	const modules = withToy();
+	assert.equal(
+		modules.rosterPrompt(),
+		"- pi-pi（Pi 开发）：怎么写 Pi 的扩展、主题、技能、配置、提示模板和终端界面组件\n- toy-market（玩具行情）：演示用的假行情，只管玩具代码（如 TOYX）的波动\n- us-market（美股行情）：美股行情、个股涨跌和原因、技术面、财报、相关新闻和盯盘提醒",
+	);
+	assert.deepEqual([...modules.book], [["pi-pi", { team: "Pi施工队", onRoster: true }], ["toy-market", { team: null, onRoster: true }], ["us-market", { team: "美股看盘队", onRoster: true }]]);
 });

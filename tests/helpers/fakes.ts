@@ -10,6 +10,7 @@ import { Router } from "../../src/host/router.ts";
 import { ModelSelector } from "../../src/model-selector.ts";
 import { formatModelRef } from "../../src/models.ts";
 import type { WorkerModels } from "../../src/host/workers.ts";
+import type { FeedContext, FeedSpec } from "../../src/sources/feeds.ts";
 
 export function defaultWorkerModels(): WorkerModels {
 	return {
@@ -24,6 +25,19 @@ export function defaultWorkerModels(): WorkerModels {
 }
 import { Host, type HostDeps, type HostOptions, type RouterLike } from "../../src/host/host.ts";
 import type { WorkerEvents, WorkerHandle, WorkerSpawner, WorkerSpec } from "../../src/host/workers.ts";
+import type { MemberRun } from "../../src/host/dispatch.ts";
+import type { Domains } from "../../src/modules.ts";
+import type { Member } from "../../src/teams.ts";
+import type { DomainGatedTool } from "../../src/worker/tools.ts";
+
+type FakeModule = { skillsDir?: string; prepare?: string; tools?: DomainGatedTool[] } & ({ team: string; crew: readonly Member[] } | { team?: undefined; crew?: undefined });
+
+export function domainsOf(modules: Record<string, FakeModule>): Domains {
+	return {
+		book: new Map(Object.entries(modules).map(([name, m]) => [name, { team: m.team ?? null, onRoster: true }])),
+		kitFor: (domain) => (domain in modules ? { skillsDir: modules[domain].skillsDir, prepare: modules[domain].prepare, crew: modules[domain].crew ?? [], granted: modules[domain].tools ?? [] } : undefined),
+	};
+}
 
 export type ToolCallSpec = { name: string; args: Record<string, unknown> };
 export type Brain = (cards: string[], call: number, toolResults: string[]) => ToolCallSpec[] | Promise<ToolCallSpec[]>;
@@ -97,6 +111,7 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 				rulesFor: deps.rulesFor,
 				cwd: deps.stateDir,
 				rules: "",
+				domainRoster: "",
 				afterCommand: deps.afterCommand,
 			});
 		},
@@ -105,10 +120,10 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 
 export const ids = (card: string, prefix: "trg" | "tkt") => card.match(new RegExp(`${prefix}_[\\w-]+`))?.[0];
 
-export function openOnConversation(card: string, title = card.split("使用者：")[1]?.split("\n")[0] ?? "任务"): ToolCallSpec[] {
+export function openOnConversation(card: string, title = card.split("使用者：")[1]?.split("\n")[0] ?? "任务", domain?: string): ToolCallSpec[] {
 	const triggerId = ids(card, "trg")!;
 	return [
-		{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId, title, brief: title }] } },
+		{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId, title, brief: title, domain }] } },
 		{ name: "reply", args: { text: `收到：${title}`, cause: triggerId } },
 	];
 }
@@ -132,10 +147,17 @@ export class FakeSpawner implements WorkerSpawner {
 	spawnGate: Promise<void> | undefined;
 	readonly workers = new Map<string, FakeWorker>();
 	request!: (ticketId: string, token: string, method: string, params: unknown) => unknown;
+	/** Does a dispatched member's work; a test sets it before its helper dispatches. */
+	runner: ((run: MemberRun) => Promise<string>) | undefined;
 	readonly #script: WorkerScript;
 
 	constructor(script: WorkerScript) {
 		this.#script = script;
+	}
+
+	runMember(run: MemberRun): Promise<string> {
+		if (!this.runner) throw new Error("测试没有设置 runner");
+		return this.runner(run);
 	}
 
 	async spawn(spec: WorkerSpec, events: WorkerEvents): Promise<WorkerHandle> {
@@ -173,16 +195,30 @@ export class FakeSpawner implements WorkerSpawner {
 				worker.inputs.push(text);
 				streaming = true;
 				events.turnStarted();
-				setImmediate(() => void script(worker, text));
+				setImmediate(() => alive && void script(worker, text));
 			},
 			stop: async () => {
 				this.stopped.push(spec.ticketId);
 				if (!alive) return;
 				alive = false;
-				setImmediate(() => events.exited());
+				// Pi's RpcClient resolves stop() only after the process has exited or it has sent SIGKILL, so `exited` comes first.
+				events.exited();
 			},
 		};
 	}
+}
+
+export function fakeFeed(source = "fake-feed") {
+	const feed = { ctx: undefined as FeedContext | undefined, spec: undefined as unknown as FeedSpec };
+	feed.spec = {
+		source,
+		lookupHelp: "",
+		create: (ctx) => {
+			feed.ctx = ctx;
+			return { start() {}, stop() {}, problem: () => undefined, lookup: async () => null };
+		},
+	};
+	return feed;
 }
 
 export function tempStateDir(): string {

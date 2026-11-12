@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Kernel } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
 import type { Clock, KernelConfig, Stall, SystemProblem } from "../kernel/types.ts";
-import { readHeartbeat } from "../heartbeat.ts";
+import { liveHeartbeat } from "../heartbeat.ts";
 import { dropTrigger } from "../sources/generic.ts";
 
 export const WATCHDOG_SOURCE = "watchdog";
@@ -80,7 +80,7 @@ export class Watchdog {
 		const tickets = kernel?.listTickets() ?? [];
 		const problems = kernel?.systemProblems() ?? [];
 		const result = checkWatchdog(
-			{ now, heartbeatAt: readHeartbeat(this.#o.stateDir)?.at, tickets, problems },
+			{ now, heartbeatAt: liveHeartbeat(this.#o.stateDir)?.at, tickets, problems },
 			this.#o.config,
 		);
 		if (result.restartHost && now - this.#lastRestartAt >= this.#o.config.restartGraceMs) {
