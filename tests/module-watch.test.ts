@@ -137,7 +137,7 @@ test("一秒内连存五次：只换一次，换上的是最后一次存下的�
 	const { serving, receipts } = await boot(t, dir);
 	for (let i = 1; i <= 5; i++) {
 		save(dir, "tax/skills/estimate/SKILL.md", skill(`第 ${i} 次`));
-		await new Promise((r) => setTimeout(r, 30));
+		await new Promise((r) => setTimeout(r, 200));
 	}
 	const last = digestOf(join(dir, "modules/tax"));
 	await until(() => serving("tax") === last, "换上最后一次", 5000);

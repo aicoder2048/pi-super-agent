@@ -1,8 +1,8 @@
 import { watch, type FSWatcher } from "node:fs";
 import { join } from "node:path";
 
-/** Saves within this long of each other are one change, so an editor's burst of writes swaps once. */
-const QUIET_MS = 150;
+/** Saves within this long of each other are one change, so five saves in one second swap once. */
+const QUIET_MS = 300;
 
 /** One module folder that changed, with the files under it that changed, relative to the folder. */
 export type Saved = ReadonlyMap<string, ReadonlySet<string>>;
