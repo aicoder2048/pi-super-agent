@@ -250,45 +250,47 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `src/modules/gateway.ts` 和 `src/modules/run-code.ts`（异步、每次调用一个进程）。
-- [ ] Edit `src/worker/extension.ts`、`src/worker/tools.ts`、`src/host/workers.ts`、`src/host/host.ts`、`src/teams.ts`（成员加 `uses`）。
-- [ ] Create `tests/gateway.test.ts`，Edit `tests/worker-extension.test.ts`。
+- [x] Create `src/modules/gateway.ts` 和 `src/modules/run-code.ts`（异步、每次调用一个进程）。
+- [x] Edit `src/worker/extension.ts`、`src/worker/tools.ts`、`src/host/workers.ts`、`src/host/host.ts`、`src/teams.ts`（成员加 `uses`）。
+- [x] Create `tests/gateway.test.ts`，Edit `tests/worker-extension.test.ts`。
 
 **Build.**
 
-- [ ] `Gateway.call(caller, request)` 只在任务所属模块、钉住的摘要里找能力，模块停用就拒绝，成员对照 `uses`，再按 `allowed` 那张表。
-- [ ] `domain_tool` 交给启动器。进程的 cwd 是工具目录，环境只有 `PATH`、`HOME` 和 `tool.json` 写了名字的密钥，值用 `readSecret` 从宿主的密钥文件读。时限 20 秒。
-- [ ] 成员有 `uses` 时宿主自动给它 `domain_tool`，它的 Pi 工具目录里列出模块的工具名和说明。
+- [x] `Gateway.call(caller, request)` 只在任务所属模块、钉住的摘要里找能力，模块停用就拒绝，成员对照 `uses`，再按 `allowed` 那张表。
+- [x] `domain_tool` 交给启动器。进程的 cwd 是工具目录，环境只有 `PATH`、`HOME` 和 `tool.json` 写了名字的密钥，值用 `readSecret` 从宿主的密钥文件读。时限 20 秒。
+- [x] 成员有 `uses` 时宿主自动给它 `domain_tool`，它的 Pi 工具目录里列出模块的工具名和说明。
 
 **You see.**
 
-- [ ] 在 personal-tax 任务里，Worker 调 `domain_tool` 算出税额，访问记录里有一笔。
+- [x] 在 personal-tax 任务里，Worker 调 `domain_tool` 算出税额，访问记录里有一笔。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/gateway.test.ts` 覆盖别的模块的工具查不到、停用拒绝、`uses` 没列拒绝、推断任务调 `write` 工具拒绝、密钥只给写了名字的、进程超时只算这一次失败。Run `just test`.
+- [x] `tests/gateway.test.ts` 覆盖别的模块的工具查不到、停用拒绝、`uses` 没列拒绝、推断任务调 `write` 工具拒绝、密钥只给写了名字的、进程超时只算这一次失败。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/f3-live.ts`，Worker 的工具调用由假模型回放。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都跑一次 us-market 的 `lookup`。Save `f3-regression.txt`. Pass when 两边结果相同。
-- [ ] Lane 2. personal-tax 任务调 `tax-bracket`。Save `f3-call.txt`. Pass when 返回值和 `cases.json` 一致。
-- [ ] Lane 3. pi-pi 任务调 `tax-bracket`。Save `f3-other.txt`. Pass when 拒绝，原因是不在本模块。
-- [ ] Lane 4. 调用中关掉模块再调。Save `f3-disabled.txt`. Pass when 第二次拒绝。
-- [ ] Lane 5. 成员 `uses` 没列这个工具。Save `f3-uses.txt`. Pass when 拒绝。
-- [ ] Lane 6. 推断任务调 `effect: write` 的工具。Save `f3-infer.txt`. Pass when 拒绝。
-- [ ] Lane 7. 工具读写了名字的密钥和没写名字的密钥。Save `f3-secret.txt`. Pass when 前者拿到，后者拿不到。
-- [ ] Lane 8. 工具死循环。Save `f3-timeout.txt`. Pass when 20 秒后这次失败，宿主照常响应别的请求。
-- [ ] Lane 9. 改工具代码存盘后新任务调用。Save `f3-hot.txt`. Pass when 用的是新代码，旧任务用旧代码。
-- [ ] Lane 10. 用真模型 `openai-codex/*` 问一道需要算税的题。Save `f3-real.txt`. Pass when Worker 调了 `domain_tool` 且答案引用了结果。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都跑一次 us-market 的 `lookup`。Save `f3-regression.txt`. Pass when 两边结果相同。
+- [x] Lane 2. personal-tax 任务调 `tax-bracket`。Save `f3-call.txt`. Pass when 返回值和 `cases.json` 一致。
+- [x] Lane 3. pi-pi 任务调 `tax-bracket`。Save `f3-other.txt`. Pass when 拒绝，原因是不在本模块。
+- [x] Lane 4. 调用中关掉模块再调。Save `f3-disabled.txt`. Pass when 第二次拒绝。
+- [x] Lane 5. 成员 `uses` 没列这个工具。Save `f3-uses.txt`. Pass when 拒绝。
+- [x] Lane 6. 推断任务调 `effect: write` 的工具。Save `f3-infer.txt`. Pass when 拒绝。
+- [x] Lane 7. 工具读写了名字的密钥和没写名字的密钥。Save `f3-secret.txt`. Pass when 前者拿到，后者拿不到。
+- [x] Lane 8. 工具死循环。Save `f3-timeout.txt`. Pass when 20 秒后这次失败，宿主照常响应别的请求。
+- [x] Lane 9. 改工具代码存盘后新任务调用。Save `f3-hot.txt`. Pass when 用的是新代码，旧任务用旧代码。
+- [x] Lane 10. 用真模型 `openai-codex/*` 问一道需要算税的题。Save `f3-real.txt`. Pass when Worker 调了 `domain_tool` 且答案引用了结果。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 一次 `domain_tool` 调用从 Worker 发出到收到的时间。trunk 没有这个工具，所以和 trunk 的 `lookup` 往返时间对照，另给绝对预算。
-- [ ] Probe. 同一个宿主上交替调 20 次 `lookup` 和 20 次 `tax-bracket`。
-- [ ] Baseline. Record the trunk `lookup` 中位数 first.
-- [ ] Rule. `tax-bracket` 中位数超过 150 毫秒就失败。
+- [x] Metric. 一次 `domain_tool` 调用从 Worker 发出到收到的时间。trunk 没有这个工具，所以和 trunk 的 `lookup` 往返时间对照，另给绝对预算。
+- [x] Probe. 同一个宿主上交替调 20 次 `lookup` 和 20 次 `tax-bracket`。
+- [x] Baseline. Record the trunk `lookup` 中位数 first.
+- [x] Rule. `tax-bracket` 中位数超过 150 毫秒就失败。
 
 **Review gate.** None. F3 is not review-gated.
+
+2026-11-12 在 01cd967 上通过：`just test` 1420 条全过；`node docs/modules/architecture/check.mjs` 7 项 ok；`docs/modules/evidence/f3-live.ts` 十条 lane 全 PASS，输出在 `/tmp/swarm-f3/owner/`。Gateway 在 `src/modules/gateway.ts`，按协议的顺序：只在任务钉住的副本里找工具，模块不在服务就拒绝，成员对照副本里 `agents/*.md` 的 `uses`，再查 `AUTHORITY`，然后起一个进程跑工具。调用者在宿主每次收到 `worker.domain_tool` 时现组（`heardOthers` 会在任务中途变），没有在启动 Worker 时绑定。启动器从 `validate.ts` 挪到 `src/modules/run-code.ts`，检查用例和 Gateway 共用一个异步启动器，密钥值从宿主的 secretsFile 取。成员不再加 `uses` 字段，`src/teams.ts` 没改：成员能不能有 `domain_tool` 看 Gateway 给它的工具目录是不是空的，目录已经按副本里的 `uses` 和权限表筛过，`uses` 只有副本里一份。访问记录是每次调用一行宿主日志 `[gateway] <模块> tools/<工具> <任务> <成员或 helper> <依据> <结果> <毫秒> ms`，没有新表。模块停用后它开着的任务调工具得到「本任务所属模块已停用……请用 report 汇报做到哪里，然后收尾」，看板卡片写「所属模块已停用」（H5）；停用时不主动通知 Worker，下一次调用时才知道。Lane 3 的拒绝在第一层，pi-pi 的助手没有 `domain_tool` 这个工具。Lane 8 死循环 20005 毫秒后这一次失败，期间网页 7 毫秒回 200。Lane 10 真模型 `openai-codex/gpt-6.1-sol` 调了 tax-bracket，汇报写「第 2 档……应缴税额 4,000 美元」。Perf：宿主这一侧，从请求到 Gateway 到回复，tax-bracket 20 次中位数 50 毫秒（离散 3），几乎都是起 Node 进程；同一宿主上另一个任务同时查 20 次 lookup session，trunk 和 head 都是 0 毫秒（现算，不发请求）；Worker 一轮只调一次 tax-bracket，假模型两次请求之间中位数 52 毫秒（离散 10）。trunk 没有 `domain_tool`，lookup 也没法串成一轮一次，所以 lookup 量的是宿主这一侧。
 
 **Merge.**
 
