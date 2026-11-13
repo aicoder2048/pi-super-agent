@@ -335,7 +335,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 - [x] `tests/stock-ta-quotes.test.ts` 用 fixtures 覆盖快照解析、同一数据时间不重复存、自选股改了下一轮生效、同一只两行以最新一行为准、缺密钥时不发请求只记一行、没有密钥也能排练样例、接口出错时这一轮失败、提醒时间按美东写，以及涨跌 5% 的触发 id、线程和正文、规则把任务交给技术分析研究组。Run `just test`.
 
-**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/g5-live.ts`，`lanes` 跑 1 到 7 和 11，`real` 跑 10b，`market` 跑 8、9、10a 和 perf。lane 8、9、10a 和 perf 用真行情，必须在交易时段跑，脚本在时段外直接拒绝。
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/g5-live.ts`，`lanes` 跑 1 到 7 和 11，`real` 跑 10b，`market` 跑 8、9、10a 和 perf。lane 8、9、10a 和 perf 用真行情，在交易时段跑；时段外脚本直接拒绝，加 `--off-hours` 才跑（使用者 2026-11-12 定）。`--off-hours` 只在宿主进程里把 feed 的 `when` 闸门打开两轮，`feed.json` 仍是 `when: us-market-hours`；Massive 时段外回最后一笔成交，lane 8 改查数据时间是不是最近的一笔真实成交，不查延迟 15 分钟。
 
 - [x] Lane 1. Regression lane against trunk. trunk 和 head 都调 stock-ta 的 `structure` 工具查 NVDA。Save `g5-regression.txt`. Pass when 结果相同。
 - [x] Lane 2. `just module check` stock-ta。Save `g5-check.txt`. Pass when ok，fixtures 跑过 handler。
@@ -344,18 +344,19 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] Lane 5. Worker 往自选股加 AAPL。Save `g5-watchlist.txt`. Pass when 下一轮报价里有 AAPL。
 - [x] Lane 6. 你设「NVDA 低于 fixtures 里的价格加 1」。Save `g5-alert.txt`. Pass when 下一轮出现提醒，带价格和按美东写的数据时间。
 - [x] Lane 7. 缺密钥。Save `g5-nokey.txt`. Pass when 那一轮不发请求，一行说明，宿主照常。
-- [ ] Lane 8. 真行情，交易时段打开 stock-ta 等两轮。Save `g5-real-quotes.txt`. Pass when `quotes` 里有真实报价，数据时间比现在早 15 分钟左右。
-- [ ] Lane 9. 真行情上设一个一定会触发的条件。Save `g5-real-alert.txt`. Pass when 网页和 Telegram 记录器出现提醒。
-- [ ] Lane 10a. 真模型 `openai-codex/*` 问「NVDA 现在多少，离 170 还有多远」。Save `g5-real-ask.txt`. Pass when 专家读了 `quotes`，回答带数据时间并说明延迟 15 分钟。
+- [x] Lane 8. 真行情，交易时段打开 stock-ta 等两轮。Save `g5-real-quotes.txt`. Pass when `quotes` 里有真实报价，数据时间比现在早 15 分钟左右。off-hours，2026-11-12 22:11 美东：两轮都跑了，NVDA、AAPL、AMD 三行，数据时间 19:59 美东（盘后最后一分钟），第二轮按数据时间去重存 0 行。
+- [ ] 盘中数据时间约早 15 分钟。交易时段跑 `market`（不加 `--off-hours`）时确认。
+- [x] Lane 9. 真行情上设一个一定会触发的条件。Save `g5-real-alert.txt`. Pass when 网页和 Telegram 记录器出现提醒。off-hours，2026-11-12 22:11 美东：`host_lines` 和 Telegram 记录器都有「NVDA 167.8351，高于 0.01（2026-11-12 19:59 美东，来自 stock-ta/quotes）」。
+- [x] Lane 10a. 真模型 `openai-codex/*` 问「NVDA 现在多少，离 170 还有多远」。Save `g5-real-ask.txt`. Pass when 专家读了 `quotes`，回答带数据时间并说明延迟 15 分钟。off-hours，2026-11-12 22:12 美东：stock-ta 的请求任务读了 `quotes`，回答 167.8351、比 170 低 2.1649，写了数据时间和延迟 15 分钟。第一次 FAIL：宿主同时开着 us-market，幕僚长把这个问题交给了美股看盘队；脚本改成 market lane 的宿主关掉 us-market 后 PASS。回答的时间写成 UTC 和北京时间，没写美东，也没说是盘后价。
 - [x] Lane 10b. 真模型 `openai-codex/*`，stock-ta 用 fixtures 模式（NVDA 跌 5.2%）。Save `g5-real-big-move.txt`. Pass when 幕僚长按规则 `stock-ta/big-move` 开任务，派给结构与形态和趋势与动量，汇报带数据时间、延迟 15 分钟和「不是交易指令」。
 - [x] Lane 11. 假模型，假 Massive 依次给 NVDA 跌 5.2%、同一天跌 5.68%、涨 5.00%。Save `g5-big-move.txt`. Pass when 第一轮正好一条触发和一个规则任务，第二轮没有新触发和任务；跌 5% 的任务还开着（Worker 提了问题在等回答），涨 5% 另有一条触发交给幕僚长、另开一个任务，任务领域是 stock-ta，队是技术分析研究组。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 一轮报价 feed 的总时间（起进程、一次快照请求、存行、算条件）。
-- [ ] Probe. 交易时段真行情 10 轮，记每轮时间；同时记 Massive 接口本身的耗时。
-- [ ] Baseline. Record the 接口耗时中位数 first.
-- [ ] Rule. 一轮总时间比接口耗时多出 300 毫秒以上，或任何一轮超过 10 秒，就失败。
+- [x] Metric. 一轮报价 feed 的总时间（起进程、一次快照请求、存行、算条件）。
+- [x] Probe. 交易时段真行情 10 轮，记每轮时间；同时记 Massive 接口本身的耗时。off-hours，2026-11-12 22:08 美东：handler 经本地转发取数，每轮的总时间和它自己那次请求一起记。
+- [x] Baseline. Record the 接口耗时中位数 first. 接口中位数 96 毫秒（67 到 246）。
+- [x] Rule. 一轮总时间比接口耗时多出 300 毫秒以上，或任何一轮超过 10 秒，就失败。PASS：每轮总时间中位数 203 毫秒，最长 328 毫秒；比接口多出 82 到 110 毫秒（中位数 107）。多出的部分很稳，是起 handler 子进程；波动全在接口耗时，第一轮 246 毫秒是转发到 Massive 的新连接。第 2 到 10 轮同一数据时间去重，存 0 行，盘中每轮存 3 行会稍多一点。机器负载 6 到 10（18 核）。
 
 **Review gate.** None. G5 is not review-gated.
 
@@ -364,6 +365,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 2026-11-12 修复轮在 704b409 上通过：审计（PR #97）的四点都改了。线程改成和 id 一样的 `big-move:<代码>:<美东日期>:<up|down>`；密钥名改成 `POLYGON_API_KEY`（使用者定），没有密钥不发请求；fixtures 排练和 `just module check` 用替身密钥；提醒里的时间按美东写；同一只两行以最新一行为准。红灯先行，见 `/tmp/swarm-g5/fix/red-quotes.txt` 和 `red-fixture-and-alert.txt`。`tests/stock-ta-quotes.test.ts` 13 条，`just test` 1616 条全过，`check.mjs` 全 ok，`tests/e2e/modules.e2e.ts` 12 条全过，`just module check` 不带密钥 ok。lane 1 到 7、11、10b 全 PASS，输出在 `/tmp/swarm-g5/fix/`；lane 11 让第一个大跌任务开着（Worker 提了问题），涨 5% 仍另开任务。lane 10b 前两次 FAIL 是 Router 调 openai-codex 时 `fetch failed`（网络），第三次 PASS。lane 8、9、10a 和 perf 仍等交易时段。
 
 2026-11-12 第二轮修复（复核 4c8d21b 的问题）：换美东时间原来写在框架的 `alertText` 里，所有模块带时区的时刻都被改成美东，西海岸使用者的个人读数也会显示成美东。现在 `watch` 多一个可选的 `zone`（IANA 时区名，检查时拒收不认识的名字，坏包 `watch-unknown-zone`），只有写了 `zone` 的数据才换算并标时区，`America/New_York` 标「美东」；只有 stock-ta 的 `quotes` 写了。提醒文字去掉套着的括号，写成「（2026-11-09 09:47 美东，来自 stock-ta/quotes）」。红灯先行，见 `/tmp/swarm-g5/fix2/red.log`。`just test` 1617 条全过，`check.mjs` 全 ok（坏包 14 个），`just module check` stock-ta 不带密钥 ok，lane 1 到 7、11 全 PASS，输出在 `/tmp/swarm-g5/fix2/out/`。
+
+2026-11-12 时段外跑真行情（使用者定：不等开盘）：`G5_SECRETS=<宿主密钥 .env> node --import ./src/pi-runtime.mjs docs/modules/evidence/g5-live.ts market --off-hours /tmp/swarm-g5/offhours`。lane 8、9、10a 和 perf 全 PASS，输出在 `/tmp/swarm-g5/offhours/`（perf 出自第一次运行，在 `run1/`；lane 8、9、10a 出自第三次运行，在 `run3/`）。AMD 当天涨 5.43%，真数据上自己开了一个 `stock-ta/big-move` 任务，第二轮同一 id 的触发没有再开任务。三次运行一共约 17 次 Massive 请求，其中 2 次是 us-market 查 NVDA 报价（关掉 us-market 之前）。不加 `--off-hours` 时脚本在时段外照样拒绝。还差盘中数据时间约早 15 分钟这一项。
 
 **Merge.**
 

@@ -1,5 +1,5 @@
 /**
- *   G5_SECRETS=<host secrets .env> node --import ./src/pi-runtime.mjs docs/modules/evidence/g5-live.ts [lanes|real|market] [outDir]
+ *   G5_SECRETS=<host secrets .env> node --import ./src/pi-runtime.mjs docs/modules/evidence/g5-live.ts [lanes|real|market] [--off-hours] [--skip-perf] [outDir]
  *
  * G5_SECRETS names a .env file the script reads TA_ROOT and POLYGON_API_KEY from; the environment wins over the
  * file. Nothing prints a value.
@@ -10,7 +10,11 @@
  * real    Lane 10b. A real host process on openai-codex models, stock-ta in fixture mode (the feed runs its
  *         fixture once, NVDA -5.2%), so the big-move ticket goes through the real Router and team at any hour.
  * market  Lanes 8, 9, 10a and perf. Real Massive quotes and real models; refuses to start outside 9:30 to
- *         16:20 New York on a weekday.
+ *         16:20 New York on a weekday. With --off-hours it runs anyway: the host process opens the feed's
+ *         `when` gate for two rounds only (feed.json keeps `when: us-market-hours`), Massive answers with the
+ *         last trade, and lane 8 checks the data time is a recent trade rather than about 15 minutes ago.
+ *         Massive requests: two host rounds plus ten perf rounds; --skip-perf leaves out the ten.
+ *         The host runs with us-market off: its 美股看盘队 would otherwise take lane 10a's NVDA question.
  */
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -23,7 +27,9 @@ const HEAD = resolve(import.meta.dirname, "../../..");
 const PKG = join(HEAD, "docs/modules/examples/stock-ta");
 const REAL = { router: "openai-codex/gpt-6.1-terra", worker: "openai-codex/gpt-6.1-sol", fallback: "openai-codex/gpt-6.1-sol" };
 const USER = 42;
-const [mode = "lanes", outDir = "/tmp/swarm-g5/owner"] = process.argv.slice(2);
+const OFF_HOURS = process.argv.includes("--off-hours");
+const SKIP_PERF = process.argv.includes("--skip-perf");
+const [mode = "lanes", outDir = "/tmp/swarm-g5/owner"] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 mkdirSync(outDir, { recursive: true });
 
 const { readSecret } = await import(join(HEAD, "src/secrets.ts"));
@@ -368,8 +374,25 @@ async function real(): Promise<void> {
 	console.log(`\n${results.join("\n")}`);
 }
 
+const HOST_ROUNDS = 2;
+/** Preloaded into the host with --import under --off-hours: the scheduler's `us-market-hours` gate opens for HOST_ROUNDS due rounds, then stays shut. */
+const OFF_HOURS_GATE = `data:text/javascript,${encodeURIComponent(`
+import { registerHooks } from "node:module";
+let left = ${HOST_ROUNDS};
+globalThis.__g5Gate = () => left-- > 0;
+const GATE = 'when: { "us-market-hours": inPollWindow }';
+registerHooks({ load(url, context, next) {
+	const loaded = next(url, context);
+	if (!url.endsWith("/src/host/host.ts")) return loaded;
+	const source = String(loaded.source);
+	if (!source.includes(GATE)) throw new Error("g5-live --off-hours: src/host/host.ts no longer wires the feed gate as " + GATE);
+	return { ...loaded, source: source.replace(GATE, 'when: { "us-market-hours": () => globalThis.__g5Gate() }') };
+} });
+`)}`;
+const DAY = 24 * 60 * MINUTE;
+
 async function marketLanes(): Promise<void> {
-	if (!inPollWindow(Date.now())) throw new Error("the market lanes call Massive and need US trading hours (9:30 to 16:20 New York, weekdays); nothing was called");
+	if (!OFF_HOURS && !inPollWindow(Date.now())) throw new Error("the market lanes call Massive and need US trading hours (9:30 to 16:20 New York, weekdays); nothing was called. --off-hours runs them on the last trade");
 	const massiveKey = readSecret(["POLYGON_API_KEY"], "POLYGON_API_KEY", process.env, SECRETS)?.key;
 	if (massiveKey === undefined || TA_ROOT === "") throw new Error("set G5_SECRETS to a .env holding TA_ROOT and POLYGON_API_KEY");
 	const { FAKE_BOT_TOKEN, FakeTelegram } = await import(join(HEAD, "tests/helpers/fake-telegram.ts"));
@@ -381,9 +404,11 @@ async function marketLanes(): Promise<void> {
 	data.write("stock-ta", components, "watchlist", ["NVDA", "AAPL", "AMD"].map((symbol) => ({ symbol })), "使用者口述", "g5-live");
 	data.watch("stock-ta", components, { kind: "watch", collection: "quotes", op: "set", watch: { key: "NVDA", condition: { when: "above", value: 0.01 } } }, "g5-live");
 	writeFileSync(join(state, "secrets.env"), `POLYGON_API_KEY=${massiveKey}\nTELEGRAM_BOT_TOKEN=${FAKE_BOT_TOKEN}\n`, { mode: 0o600 });
+	const off = just(state, ["module", "off", "us-market"]);
+	if (off.status !== 0) throw new Error(off.out);
 	const tg = await FakeTelegram.start();
 	const phone = () => tg.sent.filter((m: { chatId: number }) => m.chatId === USER).map((m: { text: string }) => m.text);
-	const host = await realHost(state, { secretsFile: "secrets.env", telegram: { allowedUserIds: [USER] } }, { PSA_E2E_TELEGRAM_URL: tg.url }, ["./tests/e2e/telegram-preload.mjs"]);
+	const host = await realHost(state, { secretsFile: "secrets.env", telegram: { allowedUserIds: [USER] } }, { PSA_E2E_TELEGRAM_URL: tg.url }, ["./tests/e2e/telegram-preload.mjs", ...(OFF_HOURS ? [OFF_HOURS_GATE] : [])]);
 	const rounds = () => readFileSync(join(state, "host.log"), "utf8").split("\n").filter((l) => l.includes("[feeds] stock-ta/quotes"));
 	const quotes = () => query(join(state, "modules-data/stock-ta/data.db"), "SELECT symbol, price, changePct, volume, at FROM quotes ORDER BY _id");
 	try {
@@ -394,7 +419,9 @@ async function marketLanes(): Promise<void> {
 			const rows = quotes();
 			const lags = rows.map((r) => Math.round((now - Date.parse(String(r.at))) / MINUTE));
 			const symbols = new Set(rows.map((r) => r.symbol));
-			return { pass: rounds().length >= 2 && ["NVDA", "AAPL", "AMD"].every((s) => symbols.has(s)) && lags.every((m) => m >= 10 && m <= 30), evidence: `now ${new Date(now).toISOString()}\nfeed rounds:\n${rounds().join("\n")}\nquotes:\n${show(rows)}\nminutes behind now: ${lags.join(", ")}` };
+			const timely = OFF_HOURS ? lags.every((m) => m >= 0 && m <= (4 * DAY) / MINUTE) : lags.every((m) => m >= 10 && m <= 30);
+			const rule = OFF_HOURS ? "off-hours data, the 15-minute delay was not checked: pass needs each data time in the past and within 4 days" : "pass needs each data time 10 to 30 minutes behind now";
+			return { pass: rounds().length >= 2 && rows.length > 0 && ["NVDA", "AAPL", "AMD"].every((s) => symbols.has(s)) && timely, evidence: `${rule}\nnow ${new Date(now).toISOString()}\nfeed rounds:\n${rounds().join("\n")}\nquotes:\n${show(rows)}\nminutes behind now: ${lags.join(", ")}` };
 		});
 
 		await lane(9, "real-alert", async () => {
@@ -410,41 +437,63 @@ async function marketLanes(): Promise<void> {
 			const found = finalReport(state, "t.domain = 'stock-ta' AND t.basis = 'request'");
 			const text = found?.summary ?? "";
 			const read = readFileSync(join(state, "host.log"), "utf8").split("\n").filter((l) => l.includes("[gateway]") && l.includes("quotes"));
-			return { pass: read.length > 0 && /延迟/.test(text) && /\d{1,2}:\d{2}/.test(text), evidence: `models ${JSON.stringify(REAL)}\nasked: ${asked}\ngateway reads of quotes:\n${read.join("\n")}\nreport (${found?.status}):\n${text}` };
+			const tickets = query(join(state, "state.db"), "SELECT id, title, basis, rule_id, domain, worker_state, closed_at FROM tickets ORDER BY rowid");
+			return { pass: read.length > 0 && /延迟/.test(text) && /\d{1,2}:\d{2}/.test(text), evidence: `models ${JSON.stringify(REAL)}\nasked: ${asked}\ngateway reads of quotes:\n${read.join("\n")}\ntickets:\n${show(tickets)}\nreport (${found?.status}):\n${text}` };
 		});
 	} finally {
 		await host.stop();
 		await tg.close?.();
+		cpSync(join(state, "host.log"), join(outDir, "g5-market-host.log"));
 	}
 
+	rmSync(state, { recursive: true, force: true });
+	if (!SKIP_PERF) await perf(massiveKey);
+	console.log(`\n${results.join("\n")}`);
+}
+
+/** Each round's handler fetches through a local relay to Massive, so the round and its own request are timed together. */
+async function perf(massiveKey: string): Promise<void> {
+	const upstreamMs: number[] = [];
+	const relay = createServer(async (req, res) => {
+		const started = performance.now();
+		const reply = await fetch(`https://api.massive.com${req.url}`, { headers: { Accept: "application/json", Authorization: String(req.headers.authorization ?? "") } });
+		const body = Buffer.from(await reply.arrayBuffer());
+		upstreamMs.push(performance.now() - started);
+		res.writeHead(reply.status, { "content-type": "application/json" }).end(body);
+	});
+	await new Promise<void>((done) => relay.listen(0, "127.0.0.1", done));
+	const state = mkdtempSync(join(tmpdir(), "psa-g5-perf-"));
+	copyPackage(state, `http://127.0.0.1:${(relay.address() as { port: number }).port}`);
+	const entry = servedAsHost(Modules.load([join(state, "modules")])).feeds()[0];
+	const data = instanceData(state);
+	data.write("stock-ta", entry.components, "watchlist", ["NVDA", "AAPL", "AMD"].map((symbol) => ({ symbol })), "使用者口述", "g5-live");
+	data.watch("stock-ta", entry.components, { kind: "watch", collection: "quotes", op: "set", watch: { key: "NVDA", condition: { when: "above", value: 0.01 } } }, "g5-live");
 	const ports = { data, submit: () => {}, alert: () => {}, secret: () => massiveKey, now: () => Date.now() };
-	const url = `https://api.massive.com/v2/snapshot/locale/us/markets/stocks/tickers?tickers=AAPL,AMD,NVDA`;
-	const api: number[] = [];
-	const total: number[] = [];
-	for (let i = 0; i < 10; i++) {
-		let started = performance.now();
-		const reply = await fetch(url, { headers: { Authorization: `Bearer ${massiveKey}` } });
-		await reply.json();
-		api.push(performance.now() - started);
-		await sleep(1_000);
-		started = performance.now();
-		const run = await runFeed(entry, [], ports);
-		if (!run.ok) throw new Error(run.note);
-		total.push(performance.now() - started);
-		await sleep(1_000);
+	const rounds: { total: number; api: number; records: number }[] = [];
+	try {
+		for (let i = 0; i < 10; i++) {
+			const started = performance.now();
+			const run = await runFeed(entry, [], ports);
+			if (!run.ok) throw new Error(run.note);
+			rounds.push({ total: performance.now() - started, api: upstreamMs[i] ?? Number.NaN, records: run.records });
+			await sleep(1_000);
+		}
+	} finally {
+		relay.close();
+		rmSync(state, { recursive: true, force: true });
 	}
 	const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
-	const line = (name: string, xs: number[]) => `${name}: median ${median(xs).toFixed(0)} ms, runs ${xs.map((t) => t.toFixed(0)).join(" ")}, spread ${(Math.max(...xs) - Math.min(...xs)).toFixed(0)} ms`;
-	const extra = median(total) - median(api);
+	const over = rounds.map((r) => r.total - r.api);
+	const pass = upstreamMs.length === 10 && over.every((ms) => ms <= 300) && rounds.every((r) => r.total <= 10_000);
 	const report = [
-		`${extra <= 300 && Math.max(...total) <= 10_000 ? "PASS" : "FAIL"} perf: one quotes round (process, one snapshot request, store, conditions) vs the bare snapshot request, alternating 10 each (rule: over 300 ms more, or any round over 10 s, fails). The round is ${extra.toFixed(0)} ms more.`,
-		line("  bare snapshot request (baseline)", api),
-		line("  runFeed round", total),
+		`${pass ? "PASS" : "FAIL"} perf${OFF_HOURS ? " (off-hours)" : ""}: 10 quotes rounds (start the handler process, one snapshot request, store, conditions), each timed with its own Massive request (rule: a round more than 300 ms over its request, or any round over 10 s, fails).`,
+		`  baseline, Massive request: median ${median(rounds.map((r) => r.api)).toFixed(0)} ms`,
+		`  round total: median ${median(rounds.map((r) => r.total)).toFixed(0)} ms, max ${Math.max(...rounds.map((r) => r.total)).toFixed(0)} ms`,
+		`  round minus its request: median ${median(over).toFixed(0)} ms, max ${Math.max(...over).toFixed(0)} ms`,
+		...rounds.map((r, i) => `  round ${i + 1}: total ${r.total.toFixed(0)} ms, request ${r.api.toFixed(0)} ms, over ${(r.total - r.api).toFixed(0)} ms, rows stored ${r.records}`),
 	].join("\n");
 	writeFileSync(join(outDir, "g5-perf.txt"), `${report}\n`);
 	console.log(report);
-	rmSync(state, { recursive: true, force: true });
-	console.log(`\n${results.join("\n")}`);
 }
 
 await (mode === "market" ? marketLanes() : mode === "real" ? real() : lanes());
