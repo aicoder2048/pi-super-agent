@@ -176,7 +176,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 审查后的修正（2026-11-12）：网页上回答私密任务的问题，转到 Telegram 的那句回答也只发一行提示；`record` 按 id 从别的来源改几项，`from` 不变，改过的字段各自的来源记在 `sources`；`write` 没给 rows、op 不认识都拒绝；字段不能叫 `id`；访问记录也记被拒的调用和原因。
 
-待定（要使用者定）：幕僚长在对话里的回复（起因是使用者的一句话，不带任务）不受私密一行规则管。它从转述里知道的私密数值，之后可能出现在这类回复里，原样发到 Telegram。design.md 第 5 节写明了这一处还没管到。
+已定（2026-11-12）：私密数据一旦可能到过幕僚长那里（有任务读过 `private` 数据，或私密 feed 来过触发），幕僚长此后的每一句回复在 Telegram 上只发一行提示，网页照旧完整。理由和代价见 design.md 第 5 节。
 
 **Merge.**
 

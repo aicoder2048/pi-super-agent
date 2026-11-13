@@ -257,7 +257,7 @@ export class Host {
 			this.#log,
 		);
 		// Built before any client can say a line, so every line and reply reaches it; it touches the network only once started.
-		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }), privateTitle: (ticketId) => this.#privateTitle(ticketId) }, db: this.#db, clock, log: this.#log });
+		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }), privateTitle: (ticketId) => this.#privateTitle(ticketId), routerHeardPrivate: () => this.#routerHeardPrivate() }, db: this.#db, clock, log: this.#log });
 	}
 
 	static async start(options: HostOptions): Promise<Host> {
@@ -403,6 +403,12 @@ export class Host {
 		const domain = this.kernel.getTicket(ticketId)?.domain;
 		if (!domain) return "模块";
 		return this.#moduleTitle(domain);
+	}
+
+	#routerHeardPrivate(): string | null {
+		const last = this.kernel.lastPrivate();
+		if (!last) return null;
+		return last.module === null ? "模块" : this.#moduleTitle(last.module);
 	}
 
 	#deliverReply(threadId: string, text: string, replyId: string, ticketId: string | null | undefined): void {

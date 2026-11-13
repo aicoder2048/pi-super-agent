@@ -318,6 +318,7 @@ async function hostWithHealth(t: TestContext, script: (worker: FakeWorker) => Pr
 		(cards) => cards.flatMap((card) => {
 			if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `转述：${card.split("\n")[1]}`, cause: ids(card, "tkt") } }];
 			if (!card.startsWith("[对话]")) return [];
+			if (card.includes("刚才")) return [{ name: "reply", args: { text: "记得：CEA 4.2 ng/mL", cause: ids(card, "trg") } }];
 			const [route, reply] = openOnConversation(card, "记指标", "personal-health");
 			(route!.args.decisions as Record<string, unknown>[])[0]!.basis = basis;
 			return [route!, reply!];
@@ -358,6 +359,26 @@ test("宿主：只读过 shareable 数据的任务，Telegram 收到完整转述
 	const { phone } = await hostWithHealth(t, (worker) => Promise.resolve(worker.request("worker.data", { op: "list", collection: "research-updates" })));
 	assert.ok(phone().includes("转述：CEA 4.2 ng/mL，比上次高"), phone().join("\n"));
 	assert.ok(!phone().includes(NOTICE));
+});
+
+async function followUp(host: Awaited<ReturnType<typeof hostWithHealth>>["host"], phone: () => string[]) {
+	const before = phone().length;
+	await host.say("刚才的 CEA 是多少？");
+	await until(() => host.kernel.conversation().some((l) => l.text === "记得：CEA 4.2 ng/mL"), "幕僚长在对话里回了", 10_000);
+	await until(() => phone().length >= before + 2, "这一问一答到了手机");
+	return phone().slice(before);
+}
+
+test("宿主：私密任务汇报之后，幕僚长回使用者的话在 Telegram 上也只是一行提示，网页和终端是完整回复", async (t) => {
+	const { host, phone } = await hostWithHealth(t, (worker) => Promise.resolve(worker.request("worker.data", writeCea)));
+	const after = await followUp(host, phone);
+	assert.ok(after.includes(NOTICE), after.join(" / "));
+	assert.ok(!after.some((m) => m.includes("4.2")), `手机上没有指标的数值：${after.join(" / ")}`);
+});
+
+test("宿主：没碰过私密数据时，幕僚长回使用者的话完整发到 Telegram", async (t) => {
+	const { host, phone } = await hostWithHealth(t, (worker) => Promise.resolve(worker.request("worker.data", { op: "list", collection: "research-updates" })));
+	assert.ok((await followUp(host, phone)).includes("记得：CEA 4.2 ng/mL"));
 });
 
 test("宿主：推断开的任务用 data 写被拒，说明推断任务只读", async (t) => {

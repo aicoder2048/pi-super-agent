@@ -2234,3 +2234,14 @@ test("宿主行：不能引用提醒和收据，和不认识的行一样返回 n
 	for (const lineId of [posted.id, receipt.id]) assert.equal(s.kernel.userSaidQuoting({ text: "为什么", at: s.clock.t, lineId }), null, lineId);
 	assert.deepEqual(quoteCounts(s), before);
 });
+
+test("幕僚长可能读过的私密数据：最新一个读过私密数据的任务，或私密 feed 来的触发；都没有时是 null", () => {
+	const s = setup({ domains: DOMAINS });
+	s.open("request");
+	assert.equal(s.kernel.lastPrivate(), null);
+	s.kernel.touchPrivate(s.open("request", { title: "记 CEA", domain: "mail" }));
+	assert.deepEqual(s.kernel.lastPrivate(), { module: "mail" });
+	s.clock.t += 1000;
+	s.trigger({ source: "personal-health/pull", private: true });
+	assert.deepEqual(s.kernel.lastPrivate(), { module: "personal-health" });
+});

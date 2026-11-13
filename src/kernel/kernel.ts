@@ -1059,6 +1059,17 @@ export class Kernel {
 		return this.#get("SELECT 1 FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) !== undefined;
 	}
 
+	/** The module of the newest private data the Router may have read: a ticket that touched it, or a private feed's trigger, which reaches the Router as a card even when ignored. */
+	lastPrivate(): { module: string | null } | null {
+		const row = this.#get(
+			`SELECT 'ticket' AS kind, domain AS ref, touched_private_at AS at FROM tickets WHERE touched_private_at IS NOT NULL
+			 UNION ALL SELECT 'trigger', source, received_at FROM triggers WHERE private = 1
+			 ORDER BY at DESC LIMIT 1`,
+		);
+		if (!row) return null;
+		return { module: row.kind === "ticket" ? row.ref : ruleNamespace(row.ref) };
+	}
+
 	heardOtherThanUser(ticketId: string): "trigger" | "note" | "web" | undefined {
 		if (this.#get("SELECT 1 FROM tickets WHERE id = ? AND read_web_at IS NOT NULL", ticketId)) return "web";
 		return this.#get("SELECT kind FROM ticket_inputs WHERE ticket_id = ? AND kind IN ('trigger', 'note') LIMIT 1", ticketId)?.kind;
