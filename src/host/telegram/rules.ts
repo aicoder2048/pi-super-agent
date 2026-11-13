@@ -4,7 +4,7 @@ import { isCapAskId } from "../../kernel/cap-ask.ts";
 import { OPTIONS_MAX, refusalText } from "../../kernel/question.ts";
 import type { DashboardRow, HostLine, PendingQuestion } from "../../kernel/types.ts";
 import { hasVisibleText, type ImChat } from "../server.ts";
-import type { Keyboard, TelegramEvent } from "./bot-api.ts";
+import type { Keyboard, OutboundMessage, TelegramEvent } from "./bot-api.ts";
 
 const MESSAGE_MAX = 4000;
 const CLIPPED = "…（全文见网页）";
@@ -75,6 +75,8 @@ export type CardStatus =
 
 export interface CardView {
 	reportId: string;
+	/** Missing on a card stored before cards named their ticket. */
+	ticketId?: string;
 	title: string;
 	/** Empty for a ticket from before helpers had names. */
 	helper: string;
@@ -97,7 +99,7 @@ export function cardView(row: DashboardRow): CardView | null {
 					: click?.state === "dropped"
 						? { kind: "dropped" }
 						: { kind: "open" };
-	return { reportId: q.reportId, title: row.title, helper: helperFullName(row.helper), question: q.text, options: q.options, status };
+	return { reportId: q.reportId, ticketId: row.id, title: row.title, helper: helperFullName(row.helper), question: q.text, options: q.options, status };
 }
 
 /**
@@ -150,16 +152,17 @@ function cardKeyboard(view: CardView): Keyboard | null {
 
 /** What a row in the outbox asks Telegram to show. `received` is the user's own message: already on the phone, never sent. */
 export type OutboundBody =
-	| { kind: "line"; text: string; silent: boolean }
+	/** `noPreview`: a host line carries other people's text, such as a mail's first sentence, and a link in it gets no preview card. */
+	| { kind: "line"; text: string; silent: boolean; noPreview?: true }
 	| { kind: "note"; text: string }
 	| { kind: "card"; view: CardView }
 	| { kind: "received" };
 
 /** `note`: the chat owes the may-be-missing note, and it goes first so a clipped text keeps it. A card never carries it. */
-export function render(body: Exclude<OutboundBody, { kind: "received" }>, note = false): { text: string; keyboard: Keyboard | null; silent: boolean } {
+export function render(body: Exclude<OutboundBody, { kind: "received" }>, note = false): OutboundMessage {
 	if (body.kind === "card") return { text: fitMessage(cardText(body.view)), keyboard: cardKeyboard(body.view), silent: false };
 	const text = note ? (body.text ? `${NOTES.missed}\n${body.text}` : NOTES.missed) : body.text;
-	return { text: fitMessage(text), keyboard: null, silent: body.kind === "line" && body.silent };
+	return { text: fitMessage(text), keyboard: null, silent: body.kind === "line" && body.silent, ...(body.kind === "line" && body.noPreview && { noPreview: true }) };
 }
 
 /** Telegram drops a keyboard whose callback_data is longer than 64 bytes, so building one fails loudly instead. */

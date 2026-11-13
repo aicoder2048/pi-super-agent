@@ -1,0 +1,10 @@
+{
+  "title": "来信",
+  "description": "收件箱里放进一封信就收一封；信里写了 problem 时这一拍报出它",
+  "connector": "inbox",
+  "handler": "index.ts",
+  "into": "messages",
+  "notice": "{{from}} 来信：{{subject}}。{{snippet}}",
+  "line": "{{from}}\n{{subject}}\n{{snippet}}",
+  "ignore": ["来信：广告"]
+}

@@ -182,4 +182,9 @@ export interface Collected {
 	notices?: readonly { id: string; thread?: string; fields: Readonly<Record<string, string>> }[];
 	/** The feed's next cursor. The host saves it only after the records and notices are stored. */
 	cursor?: string;
+	/**
+	 * Something the user should fix, such as an expired authorization. The host tells the user the first beat an `id` is reported, and
+	 * again only after a beat without it. `text` is written in the module's code: it never carries collection data (ADR-0020).
+	 */
+	problem?: { id: string; text: string };
 }

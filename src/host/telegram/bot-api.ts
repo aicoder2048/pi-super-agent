@@ -65,6 +65,7 @@ export interface OutboundMessage {
 	text: string;
 	keyboard: Keyboard | null;
 	silent: boolean;
+	noPreview?: true;
 }
 
 /** `event` is null for anything the client does not handle; the offset still moves past it. */
@@ -138,8 +139,8 @@ export class BotApi {
 	}
 
 	/** Plain text, no parse_mode. Returns Telegram's message_id. */
-	async send(chatId: number, { text, keyboard, silent }: OutboundMessage, signal: AbortSignal): Promise<number> {
-		const sent = await this.#call("sendMessage", { chat_id: chatId, text, ...(keyboard && { reply_markup: inlineKeyboard(keyboard) }), ...(silent && { disable_notification: true }) }, signal);
+	async send(chatId: number, { text, keyboard, silent, noPreview }: OutboundMessage, signal: AbortSignal): Promise<number> {
+		const sent = await this.#call("sendMessage", { chat_id: chatId, text, ...(keyboard && { reply_markup: inlineKeyboard(keyboard) }), ...(silent && { disable_notification: true }), ...(noPreview && { link_preview_options: { is_disabled: true } }) }, signal);
 		if (!Number.isSafeInteger(sent?.message_id)) throw new TelegramError("sendMessage", "bad_response");
 		return sent.message_id;
 	}

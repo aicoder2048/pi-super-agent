@@ -121,7 +121,7 @@ function feedOf(t: TestContext, limit?: string) {
 	assert.ok(entry);
 	const data = instanceData(join(root, "state"));
 	const run = (settings: object, limitMs?: number) =>
-		runFeed({ ...entry, feed: { ...entry.feed, settings: { ...entry.feed.settings, ...settings } } }, [], { data, submit: () => {}, alert: () => {}, secret: () => undefined, now: () => 0, ...(limitMs !== undefined && { limitMs }) });
+		runFeed({ ...entry, feed: { ...entry.feed, settings: { ...entry.feed.settings, ...settings } } }, [], { data, submit: () => {}, alert: () => {}, problem: () => {}, secret: () => undefined, now: () => 0, ...(limitMs !== undefined && { limitMs }) });
 	return { root, out, run, real: moduleDataDir(join(root, "state"), "alpha") };
 }
 

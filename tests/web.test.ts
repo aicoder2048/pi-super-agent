@@ -262,15 +262,6 @@ test("页面：被清掉的那句幕僚长回复下不再放选项按钮，看�
 	assert.notEqual(page.leftColumn(view, 0).needsYou[0].choice, null);
 });
 
-test("页面：对话为空时清屏按钮不可点", () => {
-	const view = page.emptyView();
-	assert.equal(page.canClear(view), false);
-	page.applyMessage(view, { type: "user", who: "user", id: "trg_1", text: "你好", at: 1 }, 0);
-	assert.equal(page.canClear(view), true);
-	page.applyMessage(view, clearedFrame([line("trg_1", "你好")]), 0);
-	assert.equal(page.canClear(view), false);
-});
-
 test("页面：发出时没收到确认的那句话，中间清过屏也照样在之后到达的行里对上", () => {
 	const view = page.emptyView();
 	page.applyMessage(view, snapshot({ conversation: [line("trg_1", "查天气"), line("trg_2", "再查一次")] }), 0);

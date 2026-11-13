@@ -72,6 +72,23 @@ const OUTSIDE_SAMPLE = 3;
 const RECOVERY_NOTE = "process restarted; inspect your workdir before repeating any external action";
 
 const reject = (reason: string) => ({ ok: false as const, reason });
+/** What a card in `actions a` is about: its trigger, its ticket, or for a notice the card itself. A reply about that answers it. */
+const CARD_CAUSE = "COALESCE(json_extract(a.payload, '$.triggerId'), json_extract(a.payload, '$.ticketId'), a.id)";
+
+function writtenBy(d: Decision, ticketId: string | undefined): string[] {
+	switch (d.kind) {
+		case "open_ticket":
+			return [ticketId!];
+		case "hand_over":
+			return [d.ticketId];
+		case "ignore":
+			return [d.triggerId];
+		case "stop":
+			return [];
+		default:
+			throw new Error(`decision ${(d as { kind: string }).kind} does not say where it writes`);
+	}
+}
 
 const answerOnly = (triggerId: string, ticketId: string) =>
 	`${triggerId} is the user's click answering ${ticketId}'s question; route hand_over to ${ticketId}`;
@@ -219,7 +236,7 @@ export class Kernel {
 		this.config = { ...DEFAULT_CONFIG, ...config };
 	}
 
-	submitTrigger(sub: TriggerSubmission): { triggerId: string; duplicate: boolean } {
+	submitTrigger(sub: TriggerSubmission): { triggerId: string; duplicate: boolean; line?: HostLine } {
 		return this.#tx(() => {
 			const existing = this.#get("SELECT id FROM triggers WHERE source = ? AND external_id = ?", sub.source, sub.externalId);
 			if (existing) return { triggerId: existing.id, duplicate: true };
@@ -266,6 +283,7 @@ export class Kernel {
 					policy === "notice" ? { kind: "notice", body: sub.body } : { kind: isConversation ? "conversation" : "candidate", triggerId };
 				this.#enqueue({ kind: "router.notify", payload });
 			}
+			if (sub.announce && !ignored) return { triggerId, duplicate: false, line: this.#insertHostLine(sub.source, { kind: "notice", text: this.moduleNotice(sub.source, sub.body) }) };
 			return { triggerId, duplicate: false };
 		});
 	}
@@ -348,6 +366,7 @@ export class Kernel {
 		return this.#tx(() =>
 			decisions.map((decision) => {
 				const result = this.#decide(decision, takenThisRoute);
+				if (result.ok) for (const id of writtenBy(decision, result.ticketId)) this.#routerWrote(id);
 				this.#run(
 					"INSERT INTO decisions (decision, ok, reason, ticket_id, created_at) VALUES (?, ?, ?, ?, ?)",
 					JSON.stringify(decision),
@@ -361,7 +380,8 @@ export class Kernel {
 		);
 	}
 
-	reply({ threadId, text, cause }: { threadId: string; text: string; cause: string }): Result<{ replyId: string }> {
+	/** `answers` are the act_ ids of the cards the reply answers. */
+	reply({ threadId, text, cause, answers = [] }: { threadId: string; text: string; cause: string; answers?: string[] }): Result<{ replyId: string }> {
 		return this.#tx(() => {
 			if (!this.#get("SELECT 1 FROM threads WHERE id = ?", threadId)) return reject(`unknown thread ${threadId}`);
 			const length = [...text].length;
@@ -370,17 +390,21 @@ export class Kernel {
 			}
 			const problem = this.#causeProblem(cause);
 			if (problem) return reject(problem);
+			const stray = answers.filter((id) => !this.#get(`SELECT 1 FROM actions a WHERE a.id = ? AND a.kind = 'router.notify' AND ${CARD_CAUSE} = ?`, id, cause));
+			if (stray.length) return reject(`answers 里的 ${stray.join("、")} 不是关于 ${cause} 的卡片；只列关于 ${cause} 的卡片第一行末尾的 act_ id，不带「卡片」两个字`);
 			const used = this.#get("SELECT COUNT(*) AS n FROM reply_receipts WHERE cause = ?", cause).n as number;
 			if (used >= this.config.repliesPerCause) return reject(`already replied ${used} times about ${cause}`);
 			const replyId = this.#id("rpl");
 			this.#run(
-				"INSERT INTO reply_receipts (id, thread_id, cause, text, created_at) VALUES (?, ?, ?, ?, ?)",
+				"INSERT INTO reply_receipts (id, thread_id, cause, answers, text, created_at) VALUES (?, ?, ?, ?, ?, ?)",
 				replyId,
 				threadId,
 				cause,
+				JSON.stringify(answers),
 				text,
 				this.#now(),
 			);
+			this.#routerWrote(replyId, this.#privateTicket(cause));
 			this.#enqueue({ kind: "channel.reply", payload: { threadId, text, replyId, ticketId: cause.startsWith("tkt_") ? cause : null } });
 			return { ok: true, replyId };
 		});
@@ -421,6 +445,7 @@ export class Kernel {
 			const problem = this.#acceptsInput(ticketId);
 			if (problem) return reject(problem);
 			this.#addInput(ticketId, "note", text);
+			this.#routerWrote(ticketId);
 			return { ok: true };
 		});
 	}
@@ -971,17 +996,18 @@ export class Kernel {
 
 	/** The latest 清屏 and the newest `limit` lines hidden so far, or null if there was never an effective 清屏. */
 	cleared(limit = 50): Cleared | null {
-		const at = this.#lastClearAt();
+		const at = this.lastClearAt();
 		return at === null ? null : { at, lines: this.#lines(HIDDEN, limit) };
 	}
 
 	/**
-	 * 清屏: hides every line that is on the screens now. It writes no trigger, wakes no one and changes no conversation row.
-	 * Returns null when nothing on screen was left to hide, and then writes nothing.
+	 * 清屏: hides every line that is on the screens now and records that the Router starts over, even when nothing was on screen.
+	 * It writes no trigger, wakes no one and changes no conversation row. Returns null when nothing on screen was left to hide.
 	 */
 	clearConversation(limit = 50): Cleared | null {
 		return this.#tx(() => {
-			const last = this.#lastClearAt();
+			this.#run("INSERT INTO router_start_overs (at) VALUES (?)", this.#now());
+			const last = this.lastClearAt();
 			const at = last === null ? this.#now() : Math.max(this.#now(), last + 1);
 			const { changes } = this.#run(
 				`INSERT OR IGNORE INTO conversation_hidden (line_id, hidden_at) SELECT id, ? FROM (${LINES}) WHERE shown`,
@@ -992,8 +1018,13 @@ export class Kernel {
 		});
 	}
 
-	#lastClearAt(): number | null {
+	lastClearAt(): number | null {
 		return this.#get("SELECT MAX(hidden_at) AS at FROM conversation_hidden")?.at ?? null;
+	}
+
+	/** When the Router was last told to start over, or null. A session started before then must never be continued. */
+	lastStartOverAt(): number | null {
+		return this.#get("SELECT MAX(at) AS at FROM router_start_overs")?.at ?? null;
 	}
 
 	#lines(where: string, limit: number): ConversationLine[] {
@@ -1069,7 +1100,99 @@ export class Kernel {
 	}
 
 	touchedPrivate(ticketId: string): boolean {
-		return this.#get("SELECT 1 FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) !== undefined;
+		return this.#privateTicket(ticketId) !== null;
+	}
+
+	#privateTicket(ticketId: string): { module: string | null } | null {
+		return this.#get("SELECT domain AS module FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) ?? null;
+	}
+
+	moduleLabel(module: string | null): string {
+		return module === null ? "模块" : (this.#domains().get(module)?.title ?? module);
+	}
+
+	/** A notice a module's feed gives the user starts with the module's title, so the phone shows whose words they are. */
+	moduleNotice(source: string, text: string): string {
+		return `${this.moduleLabel(ruleNamespace(source))}：${text}`;
+	}
+
+	privateLabel(ticketId: string): string | null {
+		const ticket = this.#privateTicket(ticketId);
+		return ticket && this.moduleLabel(ticket.module);
+	}
+
+	/** A private ticket's title was written with private data at hand, so text about anything else names it only by its module. */
+	ticketName(ticketId: string): string {
+		const row = this.#get("SELECT title, domain, touched_private_at FROM tickets WHERE id = ?", ticketId);
+		return `${ticketId}「${row?.touched_private_at == null ? (row?.title ?? "") : `一个${this.moduleLabel(row.domain)}的私密任务`}」`;
+	}
+
+	/**
+	 * A card is answered once a reply names it or its trigger backed a decision. A reply from before replies
+	 * named their cards answers every card about its cause that came before it.
+	 */
+	answered(actionId: string): boolean {
+		return Boolean(
+			this.#get(
+				`SELECT EXISTS (SELECT 1 FROM reply_receipts r, json_each(r.answers) j WHERE j.value = ?)
+					OR EXISTS (SELECT 1 FROM actions a JOIN triggers t ON t.id = json_extract(a.payload, '$.triggerId') WHERE a.id = ? AND t.disposition != 'to_router')
+					OR EXISTS (SELECT 1 FROM actions a JOIN reply_receipts r ON r.answers IS NULL AND r.created_at >= a.created_at
+						AND r.cause = ${CARD_CAUSE} WHERE a.id = ?) AS answered`,
+				actionId,
+				actionId,
+				actionId,
+			).answered,
+		);
+	}
+
+	routerSaw(id: string): void {
+		const heard = this.#privacyOf(id);
+		if (heard) this.#run("INSERT INTO router_private (at, module) VALUES (?, ?)", this.#now(), heard.module);
+	}
+
+	/** Called before the read's content goes back to the Worker. */
+	workerSaw(ticketId: string, id: string): void {
+		if (this.#privacyOf(id)) this.touchPrivate(ticketId);
+	}
+
+	/** A subscriber can read every trigger in the thread, so subscribing is reading them. Reading the thread itself shows only ids. */
+	#holdsPrivate(threadId: string): boolean {
+		return this.#column("SELECT trigger_id AS v FROM trigger_threads WHERE thread_id = ?", threadId).some((id) => this.#privacyOf(id) !== null);
+	}
+
+	#privacyOf(id: string): { module: string | null } | null {
+		if (id.startsWith("tkt_")) return this.#privateTicket(id);
+		const written = this.#get("SELECT module FROM private_text WHERE id = ?", id);
+		if (written) return { module: written.module };
+		if (!id.startsWith("trg_")) return null;
+		const feed = this.#get("SELECT source FROM triggers WHERE id = ? AND private = 1", id);
+		if (feed) return { module: ruleNamespace(feed.source) };
+		const answered = this.#answerOf(id)?.ticketId;
+		const quoted = this.#get("SELECT line_id FROM trigger_quotes WHERE trigger_id = ?", id)?.line_id;
+		return (answered && this.#privacyOf(answered)) || (quoted && this.#privacyOf(quoted)) || null;
+	}
+
+	/** The newest private data the current Router session holds, or null when it holds none. */
+	lastPrivate(): { module: string | null } | null {
+		const row = this.#get("SELECT module FROM router_private ORDER BY at DESC, rowid DESC LIMIT 1");
+		return row ? { module: row.module } : null;
+	}
+
+	/** Recorded when the reply was written, so a 清屏 between writing and sending does not change it. */
+	privateReply(replyId: string): { module: string | null } | null {
+		const row = this.#get("SELECT module FROM private_text WHERE id = ?", replyId);
+		return row ? { module: row.module } : null;
+	}
+
+	#routerWrote(id: string, privateCause: { module: string | null } | null = null): void {
+		const heard = privateCause ?? this.lastPrivate();
+		if (!heard) return;
+		if (id.startsWith("tkt_")) this.touchPrivate(id);
+		else this.#run("INSERT INTO private_text (id, module) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", id, heard.module);
+	}
+
+	routerStartedFresh(): void {
+		this.#run("DELETE FROM router_private");
 	}
 
 	heardOtherThanUser(ticketId: string): "trigger" | "note" | "web" | undefined {
@@ -1084,23 +1207,27 @@ export class Kernel {
 				const existing = this.#get("SELECT id, kind, text, created_at, module_title, module_private FROM host_lines WHERE source = ? AND external_id = ?", source, post.externalId);
 				if (existing) return { line: hostLine(existing), duplicate: true };
 			}
-			const id = this.#id("hln");
-			const at = this.#now();
-			const module = post.kind === "alert" ? post.module : undefined;
-			this.#run(
-				"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at, module_title, module_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-				id,
-				post.kind,
-				source,
-				post.kind === "alert" ? post.externalId : null,
-				post.text,
-				post.kind === "alert" ? post.occurredAt : at,
-				at,
-				module?.title ?? null,
-				module === undefined ? null : Number(module.private),
-			);
-			return { line: { id, who: post.kind, text: post.text, at, ...(module && { module }) }, duplicate: false };
+			return { line: this.#insertHostLine(source, post), duplicate: false };
 		});
+	}
+
+	#insertHostLine(source: string, post: HostLinePost): HostLine {
+		const id = this.#id("hln");
+		const at = this.#now();
+		const module = post.kind === "alert" ? post.module : undefined;
+		this.#run(
+			"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at, module_title, module_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			id,
+			post.kind,
+			source,
+			post.kind === "alert" ? post.externalId : null,
+			post.text,
+			post.kind === "alert" ? post.occurredAt : at,
+			at,
+			module?.title ?? null,
+			module === undefined ? null : Number(module.private),
+		);
+		return { id, who: post.kind, text: post.text, at, ...(module && { module }) };
 	}
 
 	raised(source: string, externalId: string): boolean {
@@ -1243,6 +1370,7 @@ export class Kernel {
 			const source = threadId.match(SOURCE_THREAD)?.[1];
 			if (source) this.#run("INSERT INTO threads (id, source, title) VALUES (?, ?, NULL) ON CONFLICT (id) DO NOTHING", threadId, source);
 			this.#run("INSERT INTO subscriptions (ticket_id, thread_id) VALUES (?, ?)", ticketId, threadId);
+			if (this.#holdsPrivate(threadId)) this.touchPrivate(ticketId);
 		}
 		this.#addInput(ticketId, "brief", d.brief, d.triggerId ?? null);
 		if (d.triggerId !== undefined) takenThisRoute.add(d.triggerId);
@@ -1299,7 +1427,7 @@ export class Kernel {
 			this.#servingDigest(this.#ticketRow(ticketId)!.domain),
 			ticketId,
 		);
-		if (triggerId !== null && this.#get("SELECT private FROM triggers WHERE id = ?", triggerId)?.private === 1) this.touchPrivate(ticketId);
+		if (triggerId !== null && this.#privacyOf(triggerId)) this.touchPrivate(ticketId);
 		this.#wake(ticketId);
 	}
 

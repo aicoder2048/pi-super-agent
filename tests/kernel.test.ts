@@ -1055,6 +1055,35 @@ test("旧数据库的汇报表没有选项列：打开时补上，旧汇报读�
 	assert.deepEqual(found.recentReports.map((r) => [r.summary, r.options]), [["旧汇报", []]]);
 });
 
+test("旧状态库的回复没记回答了哪些卡片：卡片之后有同一起因的回复就算回答过，回复之后来的卡片不算", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const notifyIds = () => new Set(first.due("router.notify").map((a) => a.id));
+	const added = (step: () => void) => {
+		const before = notifyIds();
+		step();
+		const [id] = [...notifyIds()].filter((x) => !before.has(x));
+		assert.ok(id, "step added a card");
+		return id;
+	};
+	let triggerId = "";
+	const line = added(() => ({ triggerId } = first.say("在吗")));
+	const ticketId = first.open("request");
+	first.run(ticketId);
+	const blocked = added(() => first.kernel.workerReport(ticketId, { status: "blocked", summary: "卡住了" }));
+	first.clock.t += 1000;
+	first.kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "在。", cause: triggerId });
+	first.kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "卡住了", cause: ticketId });
+	first.clock.t += 1000;
+	const ready = added(() => first.kernel.workerReport(ticketId, { status: "ready", summary: "完成了" }));
+	first.db.exec(`CREATE TABLE old_receipts AS SELECT id, thread_id, ticket_id, cause, text, created_at, delivered_at FROM reply_receipts;
+		DROP TABLE reply_receipts;
+		ALTER TABLE old_receipts RENAME TO reply_receipts;`);
+	first.db.close();
+	const again = setup({ path });
+	assert.deepEqual([line, blocked, ready].map((id) => again.kernel.answered(id)), [true, true, false]);
+});
+
 test("记账把缓存读取和新输入分开：输入仍是两者之和，缓存读取另记；不报缓存的用量记 0；当天合计不变", () => {
 	const { kernel, open } = setup();
 	const id = open("request");
@@ -2262,4 +2291,248 @@ test("宿主行：不能引用提醒和收据，和不认识的行一样返回 n
 	const before = quoteCounts(s);
 	for (const lineId of [posted.id, receipt.id]) assert.equal(s.kernel.userSaidQuoting({ text: "为什么", at: s.clock.t, lineId }), null, lineId);
 	assert.deepEqual(quoteCounts(s), before);
+});
+
+test("幕僚长会话里的私密数据：交给它的私密任务或私密 feed 触发里最新的一个；换新会话后是 null", () => {
+	const s = setup({ domains: DOMAINS });
+	const plain = s.open("request");
+	s.kernel.routerSaw(plain);
+	assert.equal(s.kernel.lastPrivate(), null);
+	const health = s.open("request", { title: "记 CEA", domain: "mail" });
+	s.kernel.touchPrivate(health);
+	s.kernel.routerSaw(health);
+	assert.deepEqual(s.kernel.lastPrivate(), { module: "mail" });
+	s.clock.t += 1000;
+	s.kernel.routerSaw(s.trigger({ source: "personal-health/pull", private: true }).triggerId);
+	assert.deepEqual(s.kernel.lastPrivate(), { module: "personal-health" });
+	s.kernel.routerStartedFresh();
+	assert.equal(s.kernel.lastPrivate(), null);
+});
+
+test("幕僚长会话里的私密数据：引用一行私密的话也算交给它，引用普通的话不算", () => {
+	const s = setup({ domains: DOMAINS });
+	const health = s.open("request", { title: "记 CEA", domain: "mail" });
+	s.kernel.touchPrivate(health);
+	const plain = s.open("request", { title: "查天气" });
+	const quote = (lineId: string) => {
+		s.clock.t += 1000;
+		const said = s.kernel.userSaidQuoting({ text: "刚才那个", at: s.clock.t, lineId });
+		assert.ok(said, lineId);
+		s.kernel.routerSaw(said.triggerId);
+		return said.triggerId;
+	};
+
+	quote(replied(s, plain, "晴，20 度"));
+	assert.equal(s.kernel.lastPrivate(), null, "普通的话");
+
+	const relayed = replied(s, health, "CEA 4.2");
+	s.kernel.routerSaw(health);
+	const remembered = replied(s, plain, "记得是 4.2");
+	s.kernel.routerStartedFresh();
+	assert.equal(s.kernel.lastPrivate(), null);
+	quote(relayed);
+	assert.deepEqual(s.kernel.lastPrivate(), { module: "mail" }, "转述私密任务的话");
+	s.kernel.routerStartedFresh();
+	const quoting = quote(remembered);
+	assert.deepEqual(s.kernel.lastPrivate(), { module: "mail" }, "会话里有私密数据时说的话");
+	s.kernel.routerStartedFresh();
+	quote(quoting);
+	assert.deepEqual(s.kernel.lastPrivate(), { module: "mail" }, "引用了私密话的那句话");
+
+	s.run(health);
+	const { reportId } = s.kernel.workerReport(health, { status: "blocked", summary: "两种口径", question: "按哪次？", options: ["10 月那次", "9 月那次"] });
+	s.drain();
+	const answer = s.kernel.answerQuestion({ reportId, option: 0, at: s.clock.t });
+	assert.ok(answer.ok);
+	s.kernel.routerStartedFresh();
+	quote(answer.triggerId);
+	assert.deepEqual(s.kernel.lastPrivate(), { module: "mail" }, "点选回答私密任务的那句话");
+});
+
+test("幕僚长会话里有私密数据时，它开的任务和它补给任务的话都让任务算私密；没有时不算", () => {
+	const s = setup({ domains: DOMAINS });
+	const before = s.open("request", { title: "查天气" });
+	assert.equal(s.kernel.touchedPrivate(before), false);
+	const health = s.open("request", { title: "记 CEA", domain: "mail" });
+	s.kernel.touchPrivate(health);
+	s.kernel.routerSaw(health);
+
+	assert.equal(s.kernel.touchedPrivate(s.open("request", { title: "解释 CEA 4.2" })), true, "会话里有私密数据时开的任务");
+	assert.ok(s.kernel.note({ ticketId: before, text: "CEA 是 4.2" }).ok);
+	assert.equal(s.kernel.touchedPrivate(before), true, "会话里有私密数据时补的话");
+
+	s.kernel.routerStartedFresh();
+	assert.equal(s.kernel.touchedPrivate(s.open("request", { title: "查明天天气" })), false, "换新会话后开的任务");
+});
+
+test("幕僚长会话里有私密数据时，转交过去的任务和忽略理由也算私密；换新会话后不算", () => {
+	const s = setup({ domains: DOMAINS });
+	const plain = s.open("request", { title: "查天气" });
+	const health = s.open("request", { title: "记 CEA", domain: "mail" });
+	s.kernel.touchPrivate(health);
+	s.kernel.routerSaw(health);
+	const handOver = () => s.kernel.route([{ kind: "hand_over", triggerId: s.say("按刚才的数改").triggerId, ticketId: plain }])[0]!;
+	const ignore = () => {
+		const triggerId = s.trigger({ body: "广告" }).triggerId;
+		assert.ok(s.kernel.route([{ kind: "ignore", triggerId, reason: "和 CEA 4.2 无关" }])[0]!.ok);
+		return triggerId;
+	};
+
+	assert.ok(handOver().ok);
+	assert.equal(s.kernel.touchedPrivate(plain), true, "会话里有私密数据时转交过去的任务");
+	const ignoredHolding = ignore();
+	s.kernel.routerStartedFresh();
+	s.kernel.routerSaw(ignoredHolding);
+	assert.deepEqual(s.kernel.lastPrivate(), { module: "mail" }, "读到会话里有私密数据时写的忽略理由");
+
+	s.kernel.routerStartedFresh();
+	const later = s.open("request", { title: "查明天天气" });
+	s.kernel.route([{ kind: "hand_over", triggerId: s.say("改成后天").triggerId, ticketId: later }]);
+	assert.equal(s.kernel.touchedPrivate(later), false, "换新会话后转交过去的任务");
+	s.kernel.routerSaw(ignore());
+	assert.equal(s.kernel.lastPrivate(), null, "换新会话后写的忽略理由");
+});
+
+test("订阅一个装着私密 feed 触发的线程，任务就算私密；线程里没有私密触发时不算", () => {
+	const s = setup({ domains: DOMAINS });
+	s.trigger({ source: "mail/inbox", threads: [{ id: "thr_mail:1" }], body: "检验单 CEA 4.2", private: true });
+	assert.equal(s.kernel.touchedPrivate(s.open("request", { title: "看医院来信", threads: ["thr_mail:1"] })), true);
+	assert.equal(s.kernel.touchedPrivate(s.open("request", { title: "看杂项", threads: ["thr_misc:2"] })), false);
+});
+
+test("引用了私密话的那句话转交给哪个任务，那个任务就算私密，不看幕僚长会话里有没有私密数据", () => {
+	const s = setup({ domains: DOMAINS });
+	const plain = s.open("request", { title: "查天气" });
+	const health = s.open("request", { title: "记 CEA", domain: "mail" });
+	s.kernel.touchPrivate(health);
+	const relayed = replied(s, health, "CEA 4.2");
+	s.kernel.routerStartedFresh();
+	const said = s.kernel.userSaidQuoting({ text: "按这个改", at: s.clock.t, lineId: relayed })!;
+	assert.ok(s.kernel.route([{ kind: "hand_over", triggerId: said.triggerId, ticketId: plain }])[0]!.ok);
+	assert.equal(s.kernel.touchedPrivate(plain), true);
+});
+
+test("升级：旧库里第一次有私密数据之后幕僚长写的回复，打开后都算私密回复；之前的不算", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-private-seed-"));
+	try {
+		const path = join(dir, "state.db");
+		const first = setup({ path, domains: DOMAINS });
+		const early = replied(first, first.say("早上好").triggerId, "早");
+		first.clock.t += 1000;
+		const health = first.open("request", { title: "记 CEA", domain: "mail" });
+		first.kernel.touchPrivate(health);
+		first.clock.t += 1000;
+		const later = replied(first, first.say("刚才是多少").triggerId, "4.2");
+		first.db.exec("DROP TABLE router_private; DROP TABLE private_text");
+		first.db.close();
+		const second = setup({ path, domains: DOMAINS });
+		assert.equal(second.kernel.privateReply(early), null);
+		assert.deepEqual(second.kernel.privateReply(later), { module: "mail" });
+		second.db.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("升级：旧库里第一次有私密数据之后幕僚长开的任务、转交或补话过的任务、写下忽略理由的触发，打开后都算私密；之前的不算", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-private-seed-"));
+	try {
+		const path = join(dir, "state.db");
+		const first = setup({ path, domains: DOMAINS });
+		const earlyTicket = first.open("request", { title: "查天气" });
+		const handed = first.open("request", { title: "查航班" });
+		const noted = first.open("request", { title: "查快递" });
+		const ignoreTrigger = () => {
+			const triggerId = first.trigger({ body: "广告" }).triggerId;
+			assert.ok(first.kernel.route([{ kind: "ignore", triggerId, reason: "和 CEA 4.2 无关" }])[0]!.ok);
+			return triggerId;
+		};
+		const earlyIgnored = ignoreTrigger();
+		first.clock.t += 1000;
+		const health = first.open("request", { title: "记 CEA", domain: "mail" });
+		first.kernel.touchPrivate(health);
+		first.clock.t += 1000;
+		const opened = first.open("request", { title: "解释 CEA 4.2" });
+		assert.ok(first.kernel.route([{ kind: "hand_over", triggerId: first.say("按 4.2 改").triggerId, ticketId: handed }])[0]!.ok);
+		assert.ok(first.kernel.note({ ticketId: noted, text: "CEA 是 4.2" }).ok);
+		const lateIgnored = ignoreTrigger();
+		first.db.exec("DROP TABLE router_private; DROP TABLE private_text");
+		first.db.close();
+
+		const second = setup({ path, domains: DOMAINS });
+		const privateNow = (id: string) => second.kernel.touchedPrivate(id);
+		assert.deepEqual([earlyTicket, opened, handed, noted].map(privateNow), [false, true, true, true]);
+		const sawPrivate = (triggerId: string) => {
+			second.kernel.routerStartedFresh();
+			second.kernel.routerSaw(triggerId);
+			return second.kernel.lastPrivate();
+		};
+		assert.equal(sawPrivate(earlyIgnored), null, "私密数据之前写的忽略理由");
+		assert.deepEqual(sawPrivate(lateIgnored), { module: "mail" }, "私密数据之后写的忽略理由");
+		second.db.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("升级：补记私密的迁移中途失败（比如宿主崩了），下次打开时整步重来，不会只建了表没补记", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-private-seed-"));
+	try {
+		const path = join(dir, "state.db");
+		const first = setup({ path, domains: DOMAINS });
+		const health = first.open("request", { title: "记 CEA", domain: "mail" });
+		first.kernel.touchPrivate(health);
+		first.clock.t += 1000;
+		const opened = first.open("request", { title: "解释 CEA 4.2" });
+		first.db.exec("DROP TABLE router_private; DROP TABLE private_text; CREATE TRIGGER crash BEFORE UPDATE ON tickets BEGIN SELECT RAISE(ABORT, 'crash'); END;");
+		first.db.close();
+		assert.throws(() => openStore(path), /crash/);
+		const raw = new DatabaseSync(path);
+		raw.exec("DROP TRIGGER crash");
+		raw.close();
+
+		const second = setup({ path, domains: DOMAINS });
+		assert.equal(second.kernel.touchedPrivate(opened), true);
+		second.db.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("别处提到任务时：普通任务写标题，私密任务只写它属于哪个模块", () => {
+	const s = setup({ domains: DOMAINS });
+	const plain = s.open("request", { title: "查天气" });
+	const health = s.open("request", { title: "记 CEA 4.2", domain: "mail" });
+	const loose = s.open("request", { title: "解释 CEA 4.2" });
+	s.kernel.touchPrivate(health);
+	s.kernel.touchPrivate(loose);
+	assert.equal(s.kernel.ticketName(plain), `${plain}「查天气」`);
+	assert.equal(s.kernel.ticketName(health), `${health}「一个mail的私密任务」`);
+	assert.equal(s.kernel.ticketName(loose), `${loose}「一个模块的私密任务」`);
+});
+
+test("回复的 answers 只能列这条回复起因的卡片：别的任务的卡片、不存在的 id、带「卡片」前缀的 id 都被拒绝，什么也不记", () => {
+	const { kernel, open, run, due, clock } = setup();
+	const card = (step: () => void) => {
+		const before = new Set(due("router.notify").map((a) => a.id));
+		step();
+		return due("router.notify").find((a) => !before.has(a.id))!.id;
+	};
+	const jia = open("request");
+	const yi = open("request");
+	run(jia);
+	run(yi);
+	const jiaCard = card(() => kernel.workerReport(jia, { status: "ready", summary: "完成：甲" }));
+	const yiCard = card(() => kernel.workerReport(yi, { status: "ready", summary: "完成：乙" }));
+	clock.t += 1000;
+	const reply = (answers: string[]) => kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "甲做完了", cause: jia, answers });
+	for (const wrong of [[yiCard], [jiaCard, yiCard], ["act_doesnotexist"], [`卡片 ${jiaCard}`]]) {
+		const result = reply(wrong);
+		assert.equal(result.ok, false, `拒绝 ${wrong.join(",")}`);
+		assert.match(!result.ok ? result.reason : "", new RegExp(jia), "原因说出这条回复的起因");
+	}
+	assert.deepEqual([jiaCard, yiCard].map((id) => kernel.answered(id)), [false, false], "被拒的回复不算回答了任何卡片");
+	assert.equal(kernel.conversation(50).filter((l) => l.who === "router").length, 0, "被拒的回复没有说出去");
+	assert.equal(reply([jiaCard]).ok, true);
+	assert.deepEqual([jiaCard, yiCard].map((id) => kernel.answered(id)), [true, false]);
 });

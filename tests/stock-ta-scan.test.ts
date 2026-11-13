@@ -46,7 +46,7 @@ async function scanFeed(t: TestContext, { key = KEY, viaVenv = false, installed 
 		assert.ok(found, "stock-ta 有 scan feed");
 		return found;
 	};
-	const ports: FeedPorts = { data, submit: () => undefined, alert: () => undefined, secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined), now: () => Date.now() };
+	const ports: FeedPorts = { data, submit: () => undefined, alert: () => undefined, problem: () => undefined, secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined), now: () => Date.now() };
 	const live = join(dataDir, "files", "ta", "ta.sqlite");
 	return {
 		live,

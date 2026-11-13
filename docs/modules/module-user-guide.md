@@ -241,6 +241,8 @@ flowchart TB
 
   它把环境装进数据目录的 `files/venv-<12 位>`，打印一行装好了。代码里用 `process.env.PSA_MODULE_VENV` 找到它，例如 `join(process.env.PSA_MODULE_VENV, "bin", "python")`。换了依赖（`uv.lock` 变了）要再跑一次 setup，换机器也要跑一次。`just module check` 跑工具用例时也用这个环境，所以用到 Python 的用例要先 setup。没有 `uv` 或者拿不到依赖时，它说明怎么办。
 - **跑得久的 feed。** 一次调用默认最多 20 秒。在 `feed.json` 写 `"limit": "5m"` 放宽，最多 `"10m"`。
+- **私密 feed 在手机上露几行。** 写进 `private` 集合的 feed，通知在 Telegram 上默认只有一行「<模块> 有新内容，请在网页上查看」。在 `feed.json` 写 `"line": "{{from}}\n{{subject}}\n{{snippet}}"`，每条新通知就照这个模板发三行到网页和 Telegram，开头是「<模块标题>：」，幕僚长也只看到这几行。最多三行，只能引用 `notice` 里有的字段，每行最多 160 个字，值里的换行、零宽和方向控制字符都会去掉。写进 `line` 就是同意这几个字段经过 Telegram 的服务器（ADR-0020）。正文这类字段不要写进去。通知的 `id` 和 `thread` 只以散列交给幕僚长，`ignore` 仍按 `notice` 填好的文字过滤。
+- **feed 报问题。** handler 交回的对象可以带 `"problem": { "id": "auth", "text": "授权过期了，请重新授权" }`。同一个 `id` 只说一次，中间有一拍没报，再报才再说。`text` 写死在代码里，不要拼集合里的数据。
 
 ## 4. 动手前：你的领域属于哪一档
 

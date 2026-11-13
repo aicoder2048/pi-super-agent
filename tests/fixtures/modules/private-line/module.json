@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "name": "private-line",
+  "version": "0.1.0",
+  "title": "测试信箱",
+  "description": "测试用：一个私密集合，来信时只把发件人、主题、开头一句放出本机"
+}
