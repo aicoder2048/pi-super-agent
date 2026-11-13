@@ -1,0 +1,29 @@
+{
+  "about": "NVDA 的 Finnhub 财报日历，2026-11-13 的真实应答（from=2026-11-13&to=2027-03-13），两条，未按日期排序",
+  "body": {
+    "earningsCalendar": [
+      {
+        "symbol": "NVDA",
+        "date": "2027-02-23",
+        "hour": "amc",
+        "quarter": 4,
+        "year": 2027,
+        "epsEstimate": 2.8011,
+        "epsActual": null,
+        "revenueEstimate": 127462200942,
+        "revenueActual": null
+      },
+      {
+        "symbol": "NVDA",
+        "date": "2026-11-17",
+        "hour": "amc",
+        "quarter": 3,
+        "year": 2027,
+        "epsEstimate": 2.5225,
+        "epsActual": null,
+        "revenueEstimate": 111202869991,
+        "revenueActual": null
+      }
+    ]
+  }
+}

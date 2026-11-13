@@ -42,13 +42,13 @@ export function dailyBarsBody(closes: Record<string, number>, url: string) {
 }
 
 export type Answer = { status: number; body: unknown; raw?: string };
-type Hit = { url: string; auth: string | undefined };
+type Hit = { url: string; auth: string | undefined; token: string | undefined };
 
 export async function fakeMassive(t: TestContext) {
 	const hits: Hit[] = [];
 	let answers: Answer[] = [];
 	const server = createServer((req, res) => {
-		hits.push({ url: req.url ?? "", auth: req.headers.authorization });
+		hits.push({ url: req.url ?? "", auth: req.headers.authorization, token: req.headers["x-finnhub-token"] as string | undefined });
 		const answer = answers.length > 1 ? answers.shift()! : answers[0]!;
 		res.writeHead(answer.status, { "content-type": "application/json" }).end(answer.raw ?? JSON.stringify(answer.body));
 	});
