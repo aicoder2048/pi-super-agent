@@ -16,6 +16,7 @@ import { PiWorkerSpawner } from "./pi-worker.ts";
 import { Router, routerPreamble } from "./router.ts";
 import { readSecret, secretLookup } from "../secrets.ts";
 import { createGateway } from "../modules/gateway.ts";
+import { googlePort } from "../modules/google-port.ts";
 import { instanceData } from "../modules/instance-data.ts";
 import { moduleDataDir } from "../modules/knowledge.ts";
 import { ModuleStore } from "../modules/live.ts";
@@ -131,6 +132,7 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 			rows: instanceData(config.stateDir),
 			secret,
 			log,
+			google: googlePort({ secret, oauthUrl: process.env.PSA_GOOGLE_OAUTH_URL, fixtures: config.feedFixtures }),
 		}),
 		rulesFor: (source) => live.current().rulesFor(source),
 		timers,

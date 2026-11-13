@@ -85,6 +85,10 @@ export interface CollectionDescriptor {
 export const TOOL_EFFECTS = ["read", "write"] as const;
 export type ToolEffect = "pure" | (typeof TOOL_EFFECTS)[number];
 
+/** A host port takes a tool's reply and does the one outside write the host holds the token for. Each names the only module that may use it (ADR-0022). */
+export const TOOL_PORTS = { "gmail.createDraft": "mail" } as const;
+export type ToolPort = keyof typeof TOOL_PORTS;
+
 /**
  * `tools/<name>/tool.json`. The folder may hold any other files: more code, data tables,
  * dependencies. The entry is the runtime's entry file, and its default export is the tool.
@@ -101,6 +105,8 @@ export interface ToolDescriptor {
 	/** Names of secrets in the host's secrets file. The host sets each as an environment variable of the tool's process. */
 	secrets?: readonly string[];
 	runtime?: Runtime;
+	/** The tool returns what the port needs and the host does the write. Requires `effect: "write"`. */
+	port?: ToolPort;
 }
 
 /** One entry of `cases.json`. `tolerance` is absolute, for numbers, default 1e-9. */

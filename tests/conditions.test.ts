@@ -411,7 +411,7 @@ const quotes = (t: TestContext) => {
 	const quote = (price: number, hhmm: string, day = "2026-11-12", prevClose: number | null = 100) => ({ symbol: "NVDA", price, ...(prevClose !== null && { prevClose }), changePct: Number((price / (prevClose ?? price) * 100 - 100).toFixed(2)), at: `${day}T${String(Number(hhmm.slice(0, 2)) + 5).padStart(2, "0")}:${hhmm.slice(3)}:00.000Z` });
 	const writeQuotes = async (...rows: ReturnType<typeof quote>[]) => {
 		const alerts: Alert[] = [];
-		for (const row of rows) alerts.push(...alertsOf(await w.gateway.call(me, { kind: "data", collection: "quotes" as never, op: "write", rows: [row], from: "stock-ta/quotes" })));
+		for (const row of rows) alerts.push(...alertsOf(await w.gateway.call(me, { kind: "data", collection: "quotes" as never, op: "write", rows: [row], from: "行情测试" })));
 		return alerts;
 	};
 	return { ...w, me, setMove, quote, writeQuotes };

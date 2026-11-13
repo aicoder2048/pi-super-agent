@@ -4,6 +4,7 @@ import { RUNTIMES, toolEffect, type AgentDescriptor, type Component, type Digest
 import { DataInputError, type ModuleRows, type WatchRequest } from "./instance-data.ts";
 import { catalogueText, foundText, searchKnowledge, type Knowledge, type KnowledgeBase } from "./knowledge.ts";
 import { AUTHORITY, effectOf, senderOf, type Caller, type Gateway, type Refusal, type Json, type Reply, type Request } from "./protocol.ts";
+import { writeDraft, type GooglePort } from "./google-port.ts";
 import { LIMIT_MS, runModuleCodeAsync } from "./run-code.ts";
 import { scanPackage } from "./validate.ts";
 
@@ -17,11 +18,12 @@ export interface GatewayPorts {
 	secret(name: string): string | undefined;
 	log(line: string): void;
 	limitMs?: number;
+	google?: GooglePort;
 }
 
 type Tool = Extract<Component, { kind: "tools" }>;
 type Collection = Extract<Component, { kind: "data" }>;
-type Copy = { module: ModuleName; digest: Digest; dir: string; tools: readonly Tool[]; knowledge: readonly Knowledge[]; collections: readonly Collection[]; agents: readonly AgentDescriptor[] };
+type Copy = { module: ModuleName; digest: Digest; dir: string; tools: readonly Tool[]; knowledge: readonly Knowledge[]; collections: readonly Collection[]; agents: readonly AgentDescriptor[]; feedSources: readonly string[] };
 type Capability = { effect: ToolEffect; run: () => Promise<Reply> };
 
 const fieldsHelp = (fields: Readonly<Record<string, FieldDescriptor>>) =>
@@ -51,6 +53,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			knowledge: components.filter((c): c is Knowledge => c.kind === "knowledge"),
 			collections: components.filter((c): c is Collection => c.kind === "data"),
 			agents: components.flatMap((c) => (c.kind === "agents" ? [c.agent] : [])),
+			feedSources: components.flatMap((c) => (c.kind === "feeds" ? [`${module}/${c.name}`] : [])),
 		};
 		copies.set(key, copy);
 		return copy;
@@ -101,28 +104,30 @@ export function createGateway(ports: GatewayPorts): Gateway {
 	};
 
 	/** Rows and conditions are kept in the serving version's structure: a ticket pinned to an older one reaches them through the stored aliases. */
-	const withServing = (module: ModuleName, use: (collections: readonly Collection[]) => Reply): Reply => {
+	const withServing = (module: ModuleName, use: (serving: Copy) => Reply): Reply => {
 		const serving = copyOf(module, ports.serving(module));
 		if (serving === undefined) return { ok: false, refusal: { code: "module-disabled" } };
 		try {
-			return use(serving.collections);
+			return use(serving);
 		} catch (error) {
 			if (error instanceof DataInputError) return { ok: false, refusal: { code: "bad-input", note: error.message } };
 			throw error;
 		}
 	};
 	const rows = (module: ModuleName, request: Extract<Request, { kind: "data" }>, who: string): Reply =>
-		withServing(module, (collections) => {
+		withServing(module, ({ collections, feedSources }) => {
 			if (request.op !== "write") {
 				const read = ports.rows.query(module, collections, request.collection, request.op === "query" ? request.query : {}, who);
 				return { ok: true, output: { collection: read.collection, rows: read.rows as unknown as Json }, private: read.class === "private" };
 			}
+			// Rows marked with a feed's source and no later edit are what the feed stored; draft-reply trusts exactly that.
+			if (feedSources.includes(request.from.trim())) return { ok: false, refusal: { code: "bad-input", note: `from 不能写 ${request.from.trim()}：那是 feed 存信用的来源名，任务写的行要写自己的来源` } };
 			const written = ports.rows.write(module, collections, request.collection, request.rows, request.from, who);
 			if (written.alertProblem !== undefined) ports.log(`[gateway] ${module} ${written.collection}：写进去了，但提醒条件没检查成：${written.alertProblem}`);
 			return { ok: true, output: { collection: written.collection, rows: written.rows as unknown as Json }, private: written.class === "private", alerts: written.alerts };
 		});
 	const conditions = (module: ModuleName, request: WatchRequest, who: string): Reply =>
-		withServing(module, (collections) => {
+		withServing(module, ({ collections }) => {
 			const watched = ports.rows.watch(module, collections, request, who);
 			return { ok: true, output: { collection: watched.collection, ...watched.output } as unknown as Json, private: watched.class === "private" };
 		});
@@ -135,7 +140,11 @@ export function createGateway(ports: GatewayPorts): Gateway {
 		const ran = await runModuleCodeAsync({ packageDir: copy.dir, component: join("tools", tool.name), dataDir: ports.dataDir(copy.module) }, RUNTIMES[tool.tool.runtime ?? "node"], input, secrets, { limitMs: ports.limitMs ?? LIMIT_MS });
 		// Tool code gets the module's data dir and can open any collection, so a tool that is not pure may carry private rows out.
 		const mayCarryPrivate = toolEffect(tool.tool) !== "pure" && copy.collections.some((c) => c.collection.class === "private");
-		return ran.ok ? { ok: true, output: ran.output, private: mayCarryPrivate } : { ok: false, refusal: { code: "provider-failed", note: ran.note } };
+		if (!ran.ok) return { ok: false, refusal: { code: "provider-failed", note: ran.note } };
+		if (tool.tool.port === undefined) return { ok: true, output: ran.output, private: mayCarryPrivate };
+		if (ports.google === undefined) return { ok: false, refusal: { code: "provider-failed", note: "这台宿主没有接 Google，建不了草稿" } };
+		const done = await writeDraft(ports.google, ran.output);
+		return typeof done === "string" ? { ok: false, refusal: { code: "provider-failed", note: done } } : { ok: true, output: done.output, private: mayCarryPrivate, receipt: done.receipt };
 	};
 
 	return {

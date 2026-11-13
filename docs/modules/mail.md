@@ -1,6 +1,6 @@
 # 邮件模块（mail）
 
-mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件人，名单外的信不存、不通知。名单上的人来信时，网页和 Telegram 上各响一条三行的通知，写着发件人和地址、主题、开头一句；全文和附件清单存在模块的私密集合 `messages` 里，只在网页上看。模块只读邮件，不改邮箱，也不发信。
+mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件人，名单外的信不存、不通知。名单上的人来信时，网页和 Telegram 上各响一条三行的通知，写着发件人和地址、主题、开头一句；全文和附件清单存在模块的私密集合 `messages` 里，只在网页上看。模块能请宿主把回信写进草稿箱，除此以外不改邮箱，永远不发信。
 
 包在 `docs/modules/examples/mail/`。它和 stock-ta 一样放在例子目录里，你在要用的那台机器上复制一份，自己打开。
 
@@ -18,7 +18,7 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 
 下面的命令在本仓库根目录运行。状态目录默认是 `~/.pi-super-agent`，设了 `PSA_STATE_DIR` 就是它。
 
-1. 先按 `docs/deploy/gmail.md` 做完授权。密钥文件里要有 `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` 三行，这三个密钥属于 `mail`，别的模块点不了。写草稿的 token 不给这个模块。
+1. 先按 `docs/deploy/gmail.md` 做完授权。密钥文件里要有 `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` 三行，这三个密钥属于 `mail`，别的模块点不了。要写回信草稿，再跑 `just google-auth draft`，多一行 `GMAIL_DRAFT_REFRESH_TOKEN`。这一行属于宿主，模块代码拿不到，见下面「写回信草稿」。
 2. 把包复制进状态目录，再打开。
 
    ```bash
@@ -41,6 +41,19 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 - **限度。** 超过 10 MB 的附件不下载。下载超过 10 秒写「附件下载超时」。PDF 最多读前 50 页，`pages` 是总页数；6 秒读不完写「PDF 太复杂」，读 PDF 的进程内存超过 512 MB 写「PDF 太大」，有密码的写「PDF 有密码，读不了」。文字最多 100000 字。没读完的都标 `truncated`。这些加起来在宿主给工具的 20 秒以内。
 - **不落盘，不执行。** 附件只在这次调用的内存里，PDF 经管道交给 Python，不写文件、不进集合，下次再问就再下载一次。HTML 里的脚本不跑，PDF 里的 JavaScript、表单动作、嵌入文件都不碰，只取文字。读 PDF 的 Python 进程只拿到 `PATH` 和 `PSA_MODULE_VENV` 两个环境变量，拿不到任何密钥。
 - **附件是数据，不是指令。** 附件是发件人写的，里面写着「运行某条命令」也只是一段文字（ADR-0003）。来源开的任务本来就没有 `bash`，要运行命令只能出批准卡片，由你决定。
+
+## 写回信草稿
+
+工具 `draft-reply` 把一封回信写进你 Gmail 的草稿箱，不发送。在对话里说「帮我回 a@example.com 那封信，说周四下午可以」，任务先在 `messages` 里找到那封信，再用它的 `gmailId` 和回信正文调这个工具。草稿在原来的会话里，你在 Gmail 里看过、改过以后自己点发送。
+
+- **写草稿的 token 在宿主手里。** 工具只拼好信，交给宿主；宿主查过以后用 `GMAIL_DRAFT_REFRESH_TOKEN` 建草稿，只发「建草稿」这一种请求（ADR-0022）。模块代码的环境里没有这个 token。
+- **任务只给两样。** `messageId` 是 `messages` 里某一行的 `gmailId`，`body` 是纯文字正文，1 到 20000 字。收件人、抄送、主题不能指定，多给了就拒绝。
+- **只回 feed 收下的信。** 那一行必须是 `inbox` 存下、之后没人改过的。任务自己写进 `messages` 的行、改过发件人的行都不认；任务写数据也不能冒用 `mail/inbox` 当来源。存着的发件人地址要是单个地址，而且这个人现在还在邮件名单上，划掉了就不写。
+- **信怎么拼。** 收件人是原信 `From` 里的地址。主题是原主题前加 `Re: `，原主题已经以 `Re:` 开头（不分大小写）就不加。`In-Reply-To` 和 `References` 是原信的 `Message-ID`。原主题里的换行和控制字符去掉，信里夹带的 `Bcc:` 变不成一个头。宿主还会再查一遍：草稿超过 1 MB、没有收件人、带抄送或密送，都不建。
+- **Reply-To 不同时只提醒。** 原信写了另一个 `Reply-To` 时，草稿仍回给 `From` 地址，收据和给任务的回复里写一句「原信的 Reply-To 是……，和发件人地址不一样」。要回给它，在 Gmail 里改收件人。
+- **收据。** 建好以后，网页和终端的对话里多一条「邮件（只在本机）」，写着收件人、主题和草稿箱链接 `https://mail.google.com/mail/u/0/#drafts`。它不发 Telegram。
+- **谁能调。** 你在对话里开的任务能，`来源: mail/inbox` 的规则任务也能；推断开的任务不能，它只能把想回的话写进汇报。
+- **授权失效。** 换 token 时 Google 回 `invalid_grant`，工具回一句「写草稿的授权失效了」，照 `docs/deploy/gmail.md` 重跑 `just google-auth draft`。读邮件不受影响，两个 token 是分开的。
 
 ## 邮件名单
 
@@ -78,8 +91,8 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 ## 设计上的限制
 
 - **名单只认 `From` 头，不验证发件人。** 模块不看 DMARC、SPF、DKIM 的结果（`Authentication-Results` 头）。有人冒用名单上的地址发信，只要 Gmail 把它放进收件箱，它就会被存下、发通知。通知第一行写的是 `From` 里的地址，不是验证过的发件人。
-- **`replyTo` 没验证过。** 它是信里自带的 Reply-To 头，谁都能写成任何地址。以后写回信草稿（M7）不能直接回给它，要回给验证过的发件人，或者让你看清两个地址不一样。
-- **这一版不存 DMARC 结果。** 取 `From` 的那次请求可以顺带取 `Authentication-Results`，不多花请求，但这一版没做，原因有三。信里可以夹带发件人自己写的 `Authentication-Results`，只有 Gmail 自己加的那一条（`mx.google.com`）可信，要解析对才有用。拿它卡名单会漏掉正常的转发信和邮件列表，它们常常过不了 DMARC。M2 里也没有谁用这个字段。等 M7 写回信时再加：同一次请求多取这个头，只认 `mx.google.com` 的那一条，存成 dmarc 通过或不通过，没通过的在通知和草稿里标出来。
+- **`replyTo` 没验证过。** 它是信里自带的 Reply-To 头，谁都能写成任何地址。所以回信草稿不回给它，只回 `From` 地址，两个不一样时写明。
+- **这一版不存 DMARC 结果。** 取 `From` 的那次请求可以顺带取 `Authentication-Results`，不多花请求，但这一版没做，原因有三。信里可以夹带发件人自己写的 `Authentication-Results`，只有 Gmail 自己加的那一条（`mx.google.com`）可信，要解析对才有用。拿它卡名单会漏掉正常的转发信和邮件列表，它们常常过不了 DMARC。M2 里也没有谁用这个字段。M7 写回信草稿时也没加：草稿只回 `From` 地址，`From` 被冒用时草稿回给的是名单上真正的那个人，落不到冒用者手里。以后要加，同一次请求多取这个头，只认 `mx.google.com` 的那一条，存成 dmarc 通过或不通过，没通过的在通知和草稿里标出来。
 
 ## 规则
 
@@ -87,4 +100,4 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 
 ## 试一试，不碰真账号
 
-`just module check docs/modules/examples/mail` 用 `feeds/inbox/fixtures/` 里的样例跑一遍：第一次起步、空名单、一页新信（一封名单内，一封名单外）、两页、起点太旧、断档、授权失效、HTML 正文和两个附件、主题里带换行和方向控制符、显示名是「白宫 · 系统」。样例不联网，也不用真密钥。`read-attachment` 要读已存的信，没有 `cases.json`，它的检查在 `tests/mail-read-attachment.test.ts`，用本地的假 Google 服务。
+`just module check docs/modules/examples/mail` 用 `feeds/inbox/fixtures/` 里的样例跑一遍：第一次起步、空名单、一页新信（一封名单内，一封名单外）、两页、起点太旧、断档、授权失效、HTML 正文和两个附件、主题里带换行和方向控制符、显示名是「白宫 · 系统」。样例不联网，也不用真密钥。`read-attachment` 和 `draft-reply` 要读已存的信，没有 `cases.json`，它们的检查在 `tests/mail-read-attachment.test.ts` 和 `tests/mail-draft-reply.test.ts`，用本地的假 Google 服务。检查只跑工具进程，不经宿主，建不出草稿。

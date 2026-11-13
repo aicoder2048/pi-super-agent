@@ -43,7 +43,11 @@ export const QUOTE_WHO = { user: "你", router: "幕僚长" };
 export const HOST_LINE_LABEL = { alert: "盯盘提醒", receipt: "盯盘条件（只在本机）", notice: "通知" };
 
 /** @param {import("../kernel/types.ts").HostLine} line */
-export const hostLineLabel = (line) => (line.who === "alert" && line.module ? `提醒 · ${line.module.title}` : HOST_LINE_LABEL[line.who]);
+export const hostLineLabel = (line) => {
+	if (line.module && line.who === "alert") return `提醒 · ${line.module.title}`;
+	if (line.module && line.who === "receipt") return `${line.module.title}（只在本机）`;
+	return HOST_LINE_LABEL[line.who];
+};
 export const QUOTE_WHO_PROMPT = { user: "使用者", router: "Router" };
 
 /** @param {import("../kernel/types.ts").Quote} quote */

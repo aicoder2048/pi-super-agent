@@ -230,6 +230,7 @@ export class Host {
 			kitFor: this.#kitFor,
 			gateway: options.gateway,
 			alert: (module, alert) => this.#postModuleAlert(module, alert),
+			receipt: (module, text) => this.#postHostLine(`module:${module}`, { kind: "receipt", text, module: { title: this.kernel.moduleLabel(module), private: true } }),
 			dispatch: memberCap && { ...options.dispatch!, cap: { limit: () => memberCap.limit(), membersWaiting: (waiting) => this.#askAboutMemberCap(memberCap, waiting) } },
 			lookup: async (source, op, args) => {
 				const feed = this.feeds.get(source);
