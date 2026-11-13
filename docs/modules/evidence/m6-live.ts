@@ -256,7 +256,8 @@ async function lanes() {
 		const readsPhone = reads.phone();
 		await reads.stop("m6-regression-reads-first");
 		const relayOnPhone = (phone: string[]) => phone.filter((t) => !t.startsWith("通知：")).join(" | ");
-		const pass = !trunkRelay.includes(NOTE) && trunkRelay.includes("Tool domain_tool not found") && headRelay.includes(NOTE) && JSON.stringify(trunkRows) === JSON.stringify(headRows);
+		const oneLine = (phone: string[]) => !relayOnPhone(phone).includes(NOTE) && relayOnPhone(phone).includes("邮件 有新内容，请在网页上查看");
+		const pass = !trunkRelay.includes(NOTE) && trunkRelay.includes("Tool domain_tool not found") && headRelay.includes(NOTE) && JSON.stringify(trunkRows) === JSON.stringify(headRows) && oneLine(headPhone) && oneLine(readsPhone);
 		return {
 			pass,
 			evidence: [
@@ -376,7 +377,7 @@ async function lanes() {
 		const printEnv = "import json, os, sys\nsys.stdin.buffer.read()\nprint(json.dumps({'pages': 1, 'text': ' '.join(sorted(os.environ)), 'truncated': False}))\n";
 		const w = await toolWorld([ann("m-1", [file("a.txt", "text/plain", "x"), file("b.pdf", "application/pdf", textPdf(["secret"]))])], { pdfScript: printEnv });
 		try {
-			const listing = () => [...readdirSync(join(w.dataDir, "files"), { recursive: true }).map(String).filter((f) => !f.startsWith("venv-") || !f.includes("/")), ...readdirSync(tmpdir()).filter((f) => !f.startsWith("psa-") && statSync(join(tmpdir(), f)).mtimeMs > Date.now() - 60_000)].sort();
+			const listing = () => [...readdirSync(join(w.dataDir, "files"), { recursive: true }).map(String).filter((f) => !f.startsWith("venv-") || !f.includes("/")), ...readdirSync(tmpdir()).filter((f) => !f.startsWith("psa-") && (statSync(join(tmpdir(), f), { throwIfNoEntry: false })?.mtimeMs ?? 0) > Date.now() - 60_000)].sort();
 			const before = listing();
 			const txt = (await w.call("m-1", "1")).reply;
 			const env = (await w.call("m-1", "2")).reply;
