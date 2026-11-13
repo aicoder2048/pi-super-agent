@@ -433,7 +433,7 @@ async function newsLane(): Promise<Verdict> {
 		const told = host.tg.sent.slice(before).filter((m: { chatId: number }) => m.chatId === USER).map((m: { text: string }) => m.text).join("\n");
 		const checks = {
 			"1 news only is not stock-ta": newsTickets.length > 0 && newsTickets.every((t) => t["domain"] !== "stock-ta"),
-			"2 stock-ta reports the move and no cause": ta.length > 0 && ta.every((t) => PERCENT.test(t) && !CAUSE.test(t)),
+			"2 stock-ta reports the move, no cause, and the line to ask the cause separately": ta.length > 0 && ta.every((t) => PERCENT.test(t) && !CAUSE.test(t) && /单独问/.test(t)),
 			"3 a cause can only come from a domain-null ticket": mixedTickets.every((t) => t["domain"] === "stock-ta" || t["domain"] === null),
 		};
 		const file = join(outDir, "r2a-news.png");

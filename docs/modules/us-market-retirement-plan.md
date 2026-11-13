@@ -100,14 +100,14 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 
 - [x] `quote` 工具。输入 `symbols`（1 到 10 个代码，可以是自选股以外的股票和 ETF），一次快照请求，回每只的价格、昨收、相对昨收涨跌幅、当天量、数据时间，和按 `market-days.ts` 算出的时段标签（盘中、盘前、盘后、休市）。盘前盘后的价格照样回，带上标签，不拒绝。`secrets: ["POLYGON_API_KEY"]`，只读，18 秒内结束。
 - [x] 技能 `quick-quote` 给领队。只问价格、涨跌、成交量的问题，领队自己调一次 `quote` 回答，不派活给专家。回答写价格、涨跌幅、数据时间、「延迟 15 分钟」和时段标签。问到为什么涨跌、要技术面时才派专家。
-- [x] 同一个技能写新闻问题。股票技术分析不管新闻和财报解读。问题里有新闻或「为什么涨跌」那一半时，领队只报涨跌，不猜原因，不读网页。原因那一半由幕僚长另开成不属于任何领域的通用任务（2026-11-13 改：原来要领队明说「新闻单独问」。实跑时幕僚长有一次把原因拆成了通用任务，使用者一次就拿到了跌幅和有出处的原因，这条改成接受拆分。另外三次没拆，使用者只拿到涨跌和「原因尚未核实」）。
+- [x] 同一个技能写新闻问题。股票技术分析不管新闻和财报解读。问题里有新闻或「为什么涨跌」那一半时，领队只报涨跌，不猜原因，不读网页，最后加一句「原因不在行情数据里，想知道可以单独问一句。」。幕僚长有时把原因那一半另开成不属于任何领域的通用任务，那时原因从通用任务来（2026-11-13 改：混合问题实跑 9 次只有 1 次拆出通用任务，没拆时使用者只拿到涨跌和「原因尚未核实」，没有下一步，所以领队的汇报总要留这一句。幕僚长转到 Telegram 时 4 次里 4 次改写或删掉了这一句，网页卡片上看得到原句；让幕僚长照原样转述要改宿主提示词，单独 PR）。
 - [x] `module.json` 的 `description` 改成「美股报价、涨跌、K 线和技术面：支撑阻力、形态、动量、信号、盈亏比；问涨跌都归这里，只问新闻和财报解读的不归这里」，让幕僚长把只问新闻的问题交给通用助手、把带涨跌的混合问题交给 stock-ta（`src/host/router.ts` 第 237 行，省略 domain 就由通用助手处理）。
 - [x] 不改报价 feed 的行为，不改 `rules.md`。
 
 **You see.**
 
 - [x] 在 Telegram 上问「NVDA 现在多少」，25 秒内收到一句带价格、涨跌幅、数据时间和「延迟 15 分钟」的回答，网页上这个任务没有派活记录。
-- [x] 问「NVDA 跌了多少，为什么跌」，回答里有跌幅；原因如果答了，来自通用任务，不来自 stock-ta。
+- [ ] 问「NVDA 跌了多少，为什么跌」，回答里有跌幅；原因如果答了，不来自 stock-ta。网页上 stock-ta 任务的汇报最后有一句原因要单独问。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -123,7 +123,7 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 - [x] Lane 6. 查 11 个代码，再在没有 `POLYGON_API_KEY` 时查一次。Save `r2a-limits.txt`. Pass when 第一次拒绝并说明最多 10 个，第二次一行说明怎么加密钥，两次都不发请求。
 - [x] Lane 7. 网页上打开 lane 1 的任务。Save `r2a-no-dispatch.png`. Pass when 任务里只有领队，没有专家的回合。
 - [x] Lane 8. 真行情 `quote` 查 NVDA、SPY、QQQ、META、TSM。Save `r2a-real.txt`. Pass when 5 只都有价格、涨跌幅和标签，数据时间是最近的交易时段。
-- [x] Lane 9. 真模型分别问「NVDA 最新新闻」和「NVDA 跌了多少，为什么跌」。Save `r2a-news.png`. Pass when 只问新闻的问题没有开在 stock-ta 领域；混合问题里 stock-ta 的回答有涨跌幅（带 %），自己不说原因；原因如果答了，来自 domain 为空的任务。
+- [ ] Lane 9. 真模型分别问「NVDA 最新新闻」和「NVDA 跌了多少，为什么跌」。Save `r2a-news.png`. Pass when 只问新闻的问题没有开在 stock-ta 领域；混合问题里 stock-ta 的回答有涨跌幅（带 %），自己不说原因；stock-ta 的汇报里有「单独问」那一句；原因如果答了，来自 domain 为空的任务。Telegram 上的转述不算在内（幕僚长会改写这一句，见上面的新闻问题那条）。
 - [x] Lane 10. 真模型在对话里说「从自选股去掉 AMZN 和 AAPL」（Appendix E 第 11 条）。Save `r2a-watchlist-edit.txt`. Pass when 任务开在 stock-ta，`watchlist` 里这两行写上了 `removedAt`，下一轮报价 feed 的请求里没有它们。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
@@ -133,7 +133,7 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 - [x] Baseline. Record the trunk 中位数 first.
 - [x] Rule. head 中位数超过 25 秒，或比 trunk 慢，就失败。`quote` 中位数超过 3 秒，或任何一次超过 18 秒，就失败。旧 Mac 上中位数超过 25 秒就记成阻碍，回到这个 PR 修。
 
-2026-11-13 在 psa/rt-r2a-quote 上通过：`just test` 1743/1743，`check.mjs` 全绿，`just module check` ok。lane 1 到 10 全部 PASS（lane 7、9 在合入 main 96d3db8 后的 head 上重跑）。perf 真模型 trunk 和 head 交替各 5 次，trunk 中位数 24.9 s，head 18.0 s；`quote` 真行情 20 次中位数 313 ms，最慢 492 ms。旧 Mac 上的 3 次等部署后再算。lane 9 的标准 2026-11-13 改过，见上面 Build 第三条。 评审图 `r2a-review-no-dispatch.png`、`r2a-review-news.png`、`r2a-review-web.png` 和 60 秒视频 `r2a-review.mp4` 已放进 `docs/modules/evidence/`；Telegram 截图还没有，录像脚本在网页上提问，消息不经过假 Telegram。
+2026-11-13 在 psa/rt-r2a-quote 上通过：`just test` 1743/1743，`check.mjs` 全绿，`just module check` ok。lane 1 到 8 和 10 PASS（lane 7 在合入 main 96d3db8 后的 head 上重跑）。perf 真模型 trunk 和 head 交替各 5 次，trunk 中位数 24.9 s，head 18.0 s；`quote` 真行情 20 次中位数 313 ms，最慢 492 ms。旧 Mac 上的 3 次等部署后再算。lane 9 的标准 2026-11-13 改过，见上面 Build 第三条。按改后的标准在 head 上重跑一次没过：这次领队没照 quick-quote 做，派了趋势与动量，自己读了 NVIDIA 官网公告，汇报里写了可能的原因，也没有「单独问」那一句；同一个技能之前 4 次领队都只报涨跌并留了这一句。 评审图 `r2a-review-no-dispatch.png`、`r2a-review-news.png`、`r2a-review-web.png` 和 60 秒视频 `r2a-review.mp4` 已放进 `docs/modules/evidence/`；Telegram 截图还没有，录像脚本在网页上提问，消息不经过假 Telegram。
 
 **Review gate.** The operator reviews before merge.
 
@@ -589,7 +589,7 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 - **回退到 R1 以前起不来（R1 的部署）。** 旧代码遇到 `day-move` 会抛错，回退步骤先恢复 `data.db` 备份。R1 的 lane 10 演练过一遍。
 - **提前收盘日（R1 到 R7）。** 新鲜度和档位都按 13:00 收盘算，2026-11-27 在旧 Mac 上实查。`market-days.ts` 是 `session.ts` 的副本，R7 以后还是两份，每年更新表时两处都改，`tests/market-hours.test.ts` 比对两份相同。
 - **一个密钥三路请求（R2a、R2b、R5）。** `quote`、`intraday` 是按需请求，报价 feed 每 60 秒一次，S2 的每日扫描也用这个密钥。Starter 套餐没有次数上限，R2b、R5 的 perf 记 429 次数。
-- **新闻问题落空（R2a）。** 领域里没有新闻了。幕僚长按模块说明把只问新闻的问题交给通用助手，混合问题由幕僚长把原因那一半另开成通用任务，stock-ta 的领队只报涨跌。R2a 的 lane 9 把关。
+- **新闻问题落空（R2a）。** 领域里没有新闻了。幕僚长按模块说明把只问新闻的问题交给通用助手，混合问题里 stock-ta 的领队只报涨跌，加一句原因要单独问；幕僚长有时把原因另开成通用任务。R2a 的 lane 9 把关。
 - **测试改动大（R5、R7）。** 20 多个测试文件引用 us-market。改测试只改断言，不跳过、不删能保护现在行为的测试，PR 正文逐个列出。
 - **没有 control skill。** 网页 lane 用仓库自己的 Playwright，命令行 lane 用脚本，Telegram 用假 Telegram。旧 Mac 上的手机确认从 `telegram_messages` 事后查，不用你守着。
 
