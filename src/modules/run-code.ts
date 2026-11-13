@@ -7,14 +7,24 @@
 import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { FeedFixture } from "./manifest.ts";
 import type { Json } from "./protocol.ts";
 
 const NODE_RUNNER = `
 let text = "";
 for await (const chunk of process.stdin) text += chunk;
+const call = JSON.parse(text);
+if (call.responses) {
+	globalThis.fetch = async (url) => {
+		const key = String(url?.url ?? url);
+		if (!Object.hasOwn(call.responses, key)) throw new Error("the fixture has no response for " + key);
+		const body = call.responses[key];
+		return new Response(typeof body === "string" ? body : JSON.stringify(body), { headers: { "content-type": "application/json" } });
+	};
+}
 let reply;
 try {
-	reply = { ok: true, output: (await (await import(process.argv[1])).default(JSON.parse(text).input)) ?? null };
+	reply = { ok: true, output: (await (await import(process.argv[1])).default(call.input)) ?? null };
 } catch (error) {
 	reply = { ok: false, note: String(error?.message ?? error) };
 }
@@ -28,8 +38,13 @@ export type CodeReply = { ok: true; output: Json } | { ok: false; note: string }
 
 export type Secrets = Readonly<Record<string, string>>;
 
-/** `just module check` runs without a host, so its secrets come from the environment it was started in. */
-export const namedFromEnv = (names: readonly string[]): Secrets => Object.fromEntries(names.map((name) => [name, process.env[name] ?? ""]));
+export type Responses = FeedFixture["responses"];
+
+export type RunOptions = { limitMs?: number; responses?: Responses };
+
+export type SecretLookup = (name: string) => string | undefined;
+
+export const secretsFor = (names: readonly string[], secret: SecretLookup): Secrets => Object.fromEntries(names.map((name) => [name, secret(name) ?? ""]));
 
 function codeProcess(dir: string, entry: string, secrets: Secrets) {
 	const env = { PATH: process.env["PATH"] ?? "", HOME: process.env["HOME"] ?? "", ...secrets };
@@ -47,14 +62,14 @@ function readReply(stdout: string, stderr: string, status: number | null, error:
 	return { ok: false, note: (error?.message ?? stderr).trim().split("\n").slice(0, 3).join(" ") || `exit ${status}` };
 }
 
-export function runModuleCode(dir: string, entry: string, input: unknown, secrets: Secrets = {}): CodeReply {
+export function runModuleCode(dir: string, entry: string, input: unknown, secrets: Secrets = {}, { responses }: Pick<RunOptions, "responses"> = {}): CodeReply {
 	const { args, options } = codeProcess(dir, entry, secrets);
-	const run = spawnSync(process.execPath, args, { ...options, timeout: LIMIT_MS, encoding: "utf8", input: JSON.stringify({ input }) });
+	const run = spawnSync(process.execPath, args, { ...options, timeout: LIMIT_MS, encoding: "utf8", input: JSON.stringify({ input, responses }) });
 	return readReply(run.stdout, run.stderr, run.status, run.error);
 }
 
 /** Node's "close" waits for every process holding the stdio pipes, so a grandchild could keep a call open forever. The tool's whole process group is SIGKILLed at the limit, past the stdout cap, or once the tool exits. */
-export function runModuleCodeAsync(dir: string, entry: string, input: unknown, secrets: Secrets = {}, limitMs = LIMIT_MS): Promise<CodeReply> {
+export function runModuleCodeAsync(dir: string, entry: string, input: unknown, secrets: Secrets = {}, { limitMs = LIMIT_MS, responses }: RunOptions = {}): Promise<CodeReply> {
 	const { args, options } = codeProcess(dir, entry, secrets);
 	return new Promise((done) => {
 		const child = spawn(process.execPath, args, { ...options, detached: true });
@@ -90,6 +105,6 @@ export function runModuleCodeAsync(dir: string, entry: string, input: unknown, s
 		};
 		child.on("error", (error) => finish(readReply(stdout, stderr, null, error)));
 		child.on("close", (status) => finish(readReply(stdout, stderr, status, stopped === undefined ? undefined : new Error(stopped))));
-		child.stdin.end(JSON.stringify({ input }));
+		child.stdin.end(JSON.stringify({ input, responses }));
 	});
 }

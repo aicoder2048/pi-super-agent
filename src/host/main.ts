@@ -9,13 +9,14 @@ import { problemLine } from "../modules/validate.ts";
 import { openStore } from "../kernel/store.ts";
 import { startLiveModules } from "./live-modules.ts";
 import { join } from "node:path";
+import { secretLookup } from "../secrets.ts";
 
 async function main(): Promise<void> {
 	const config = loadConfig();
 	const log = (line: string) => console.error(`${new Date().toISOString()} ${line}`);
 	const discovered = loadModules(config);
 	for (const { name, scan } of discovered.packages) if (!scan.ok) log(`[host] 新布局包 ${name} 无效：${scan.problems.map(problemLine).join("；")}`);
-	const live = startLiveModules({ db: openStore(join(config.stateDir, "state.db")), stateDir: config.stateDir, roots: config.modulesDirs, discovered, configSwitches: config.moduleSwitches, log });
+	const live = startLiveModules({ db: openStore(join(config.stateDir, "state.db")), stateDir: config.stateDir, roots: config.modulesDirs, discovered, configSwitches: config.moduleSwitches, log, secret: secretLookup(config.secretsFile) });
 	const modules = live.live.current();
 	const off = [...discovered.found, ...discovered.packages.filter((p) => p.scan.ok)].map((m) => m.name).filter((name) => !modules.book.has(name));
 	log(`[host] 模块：${modules.modules.map((m) => (m.team ? `${m.name}（${m.team.name}）` : m.name)).join(", ") || "无"}${off.length ? `；停用 ${off.join(", ")}` : ""}；规则 ${modules.allRules().length} 条`);

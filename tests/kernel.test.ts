@@ -2110,6 +2110,29 @@ test("宿主行：同一来源同一个 externalId 的提醒第二次是重复�
 	assert.equal(s.kernel.postHostLine("other-feed", alert("NVDA:2026-11-08:day-up-5")).duplicate, false, "别的来源用同一个 id 不算重复");
 });
 
+test("宿主行：模块的提醒记着是哪个模块、私密不私密；刚贴出、待发和历史里读回来都一样", () => {
+	const s = setup();
+	const module = { title: "个人医疗健康", private: true };
+	const { line } = s.kernel.postHostLine("module:personal-health", { ...alert("cnd_1:1", "检验指标 CEA 9"), module });
+	assert.deepEqual(line.module, module);
+	assert.deepEqual(s.kernel.undeliveredAlerts().map((l) => l.module), [module]);
+	assert.deepEqual(s.kernel.conversation().map((l) => (l.who === "alert" ? l.module : undefined)), [module]);
+	s.kernel.postHostLine("us-market", alert("NVDA:2026-11-08:day-up-5"));
+	assert.equal(s.kernel.conversation().at(-1)!.who === "alert" && "module" in s.kernel.conversation().at(-1)!, false);
+});
+
+test("旧数据库的宿主行表没有模块列：打开时补上，旧提醒读回来没有模块，新提醒记得模块", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	first.kernel.postHostLine("us-market", alert("NVDA:2026-11-08:day-up-5"));
+	first.db.exec("ALTER TABLE host_lines DROP COLUMN module_title; ALTER TABLE host_lines DROP COLUMN module_private");
+	first.db.close();
+	const again = setup({ path });
+	const module = { title: "个人医疗健康", private: true };
+	again.kernel.postHostLine("module:personal-health", { ...alert("cnd_1:1", "检验指标 CEA 9"), module });
+	assert.deepEqual(again.kernel.conversation().map((l) => (l.who === "alert" ? l.module : "?")), [undefined, module]);
+});
+
 test("宿主行：收据不去重，可以多行、很长", () => {
 	const s = setup();
 	const text = Array.from({ length: 150 }, (_, i) => `第 ${i} 条：${"条件".repeat(40)}`).join("\n");
@@ -2184,6 +2207,13 @@ test("宿主行：alertsToday 按先后列出本地今天贴的提醒，不列�
 	s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下" });
 	const b = s.kernel.postHostLine("other-feed", alert("b")).line;
 	assert.deepEqual(s.kernel.alertsToday(), [a, b]);
+});
+
+test("宿主行：alertsToday 里模块的提醒带着模块名和是否私密", () => {
+	const s = setup();
+	const line = s.kernel.postHostLine("health", { ...alert("cea"), module: { title: "个人医疗健康", private: true } }).line;
+	assert.deepEqual(s.kernel.alertsToday(), [line]);
+	assert.deepEqual(line.module, { title: "个人医疗健康", private: true });
 });
 
 test("宿主行：undeliveredAlerts 只列没标记送达的提醒，不列收据", () => {

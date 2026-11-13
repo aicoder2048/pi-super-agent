@@ -200,6 +200,13 @@ test("页面：宿主行（提醒、收据）进对话；刷新后的快照里�
 	assert.deepEqual(page.earlierLines((page.toggleEarlier(view), view)).map((l) => l.id), ["hln_1", "hln_2"]);
 });
 
+test("页面：盯盘的提醒标「盯盘提醒」，模块的提醒标「提醒 · 模块名」，收据标「盯盘条件（只在本机）」", () => {
+	const at = AT_1405;
+	assert.equal(format.hostLineLabel({ id: "hln_1", who: "alert", text: "NVDA 涨了 5.3%", at }), "盯盘提醒");
+	assert.equal(format.hostLineLabel({ id: "hln_2", who: "alert", text: "检验指标 CEA 9", at, module: { title: "个人医疗健康", private: true } }), "提醒 · 个人医疗健康");
+	assert.equal(format.hostLineLabel({ id: "hln_3", who: "receipt", text: "已记下：NVDA", at }), "盯盘条件（只在本机）");
+});
+
 test("页面：点细线只在本页展开被清掉的行，再点收起；新的清屏把展开收回", () => {
 	const view = page.emptyView();
 	const hidden = [line("trg_1", "查天气"), line("rpl_1", "好的")];

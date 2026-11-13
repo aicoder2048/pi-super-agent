@@ -132,45 +132,51 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `src/modules/gateway.ts`（`find` 认 `data` 请求）、`src/worker/extension.ts`、`src/worker/tools.ts`、`src/host/workers.ts`。
-- [ ] Edit `src/kernel/store.ts`（任务记「读过私密数据」）、`src/host/telegram/*`（私密任务的汇报只发一行）。
-- [ ] Create `tests/data-tool.test.ts`。
+- [x] Edit `src/modules/gateway.ts`（`find` 认 `data` 请求）、`src/worker/extension.ts`、`src/worker/tools.ts`、`src/host/workers.ts`。
+- [x] Edit `src/kernel/store.ts`（任务记「读过私密数据」）、`src/host/telegram/*`（私密任务的汇报只发一行）。
+- [x] Create `tests/data-tool.test.ts`。
 
 **Build.**
 
-- [ ] `data` 工具：`list`、`query`（条件、时间范围、条数）、`write`（`record` 按主键写，`series` 追加，带 `from`）。按那张表，读谁都可以，写不给推断任务。专家只够得到 `uses` 里列的 `data/<名字>`。
-- [ ] 每次调用在 `data.db` 的访问记录表里记一笔：谁、哪类数据、读还是写、几行。
-- [ ] 任务读过或写过 `private` 数据，就在任务上记一笔。这个任务的汇报和卡片在 Telegram 上只发一行「<模块标题> 有新内容，请在网页上查看」，网页和 TUI 照常完整显示。
+- [x] `data` 工具：`list`、`query`（条件、时间范围、条数）、`write`（`record` 按主键写，`series` 追加，带 `from`）。按那张表，读谁都可以，写不给推断任务。专家只够得到 `uses` 里列的 `data/<名字>`。
+- [x] 每次调用在 `data.db` 的访问记录表里记一笔：谁、哪类数据、读还是写、几行。
+- [x] 任务读过或写过 `private` 数据，就在任务上记一笔。这个任务的汇报和卡片在 Telegram 上只发一行「<模块标题> 有新内容，请在网页上查看」，网页和 TUI 照常完整显示。
 
 **You see.**
 
-- [ ] personal-health 任务里 Worker 写一条检验指标再读出来，访问记录里有两笔；Telegram 上只有一行提示，网页上是完整汇报。
+- [x] personal-health 任务里 Worker 写一条检验指标再读出来，访问记录里有两笔；Telegram 上只有一行提示，网页上是完整汇报。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/data-tool.test.ts` 覆盖读写、别名读写、推断任务写被拒、`uses` 没列被拒、别的模块的数据查不到、访问记录、私密标记和 Telegram 一行规则。Run `just test`.
+- [x] `tests/data-tool.test.ts` 覆盖读写、别名读写、推断任务写被拒、`uses` 没列被拒、别的模块的数据查不到、访问记录、私密标记和 Telegram 一行规则。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/g2-live.ts`，Worker 的调用由假模型回放，lane 10 用真模型。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都调一次 `knowledge`。Save `g2-regression.txt`. Pass when 结果相同。
-- [ ] Lane 2. 写一条 `series` 再查。Save `g2-write-read.txt`. Pass when 读回同一行，带 `from`。
-- [ ] Lane 3. 按改名前的旧字段名写。Save `g2-alias.txt`. Pass when 落到新名字下。
-- [ ] Lane 4. 推断任务写。Save `g2-infer.txt`. Pass when 拒绝。
-- [ ] Lane 5. 专家 `uses` 没列这类数据。Save `g2-uses.txt`. Pass when 拒绝。
-- [ ] Lane 6. 别的模块的任务读。Save `g2-other.txt`. Pass when 查不到。
-- [ ] Lane 7. 访问记录。Save `g2-log.txt`. Pass when 每次调用一笔。
-- [ ] Lane 8. 读过私密数据的任务汇报。Save `g2-private.txt`. Pass when Telegram 记录器只有一行提示，网页看板是完整汇报。
-- [ ] Lane 9. 只读过 `shareable` 数据的任务。Save `g2-shareable.txt`. Pass when Telegram 是完整汇报。
-- [ ] Lane 10. 真模型 `openai-codex/*` 让 Worker 记下一条体检指标。Save `g2-real.txt`. Pass when 数据库里有这一行。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都调一次 `knowledge`。Save `g2-regression.txt`. Pass when 结果相同。
+- [x] Lane 2. 写一条 `series` 再查。Save `g2-write-read.txt`. Pass when 读回同一行，带 `from`。
+- [x] Lane 3. 按改名前的旧字段名写。Save `g2-alias.txt`. Pass when 落到新名字下。
+- [x] Lane 4. 推断任务写。Save `g2-infer.txt`. Pass when 拒绝。
+- [x] Lane 5. 专家 `uses` 没列这类数据。Save `g2-uses.txt`. Pass when 拒绝。
+- [x] Lane 6. 别的模块的任务读。Save `g2-other.txt`. Pass when 查不到。
+- [x] Lane 7. 访问记录。Save `g2-log.txt`. Pass when 每次调用一笔。
+- [x] Lane 8. 读过私密数据的任务汇报。Save `g2-private.txt`. Pass when Telegram 记录器只有一行提示，网页看板是完整汇报。
+- [x] Lane 9. 只读过 `shareable` 数据的任务。Save `g2-shareable.txt`. Pass when Telegram 是完整汇报。
+- [x] Lane 10. 真模型 `openai-codex/*` 让 Worker 记下一条体检指标。Save `g2-real.txt`. Pass when 数据库里有这一行。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 一次 `data` 查询（10 万行里按 key 和时间范围取 100 行）的宿主侧时间。trunk 没有这个工具，只给绝对预算。
-- [ ] Probe. 20 次查询，20 次写入。
-- [ ] Baseline. Record the trunk `knowledge` 查询中位数 first，作对照。
-- [ ] Rule. 查询或写入中位数超过 50 毫秒就失败。
+- [x] Metric. 一次 `data` 查询（10 万行里按 key 和时间范围取 100 行）的宿主侧时间。trunk 没有这个工具，只给绝对预算。
+- [x] Probe. 20 次查询，20 次写入。
+- [x] Baseline. Record the trunk `knowledge` 查询中位数 first，作对照。
+- [x] Rule. 查询或写入中位数超过 50 毫秒就失败。
 
 **Review gate.** None. G2 is not review-gated.
+
+2026-11-12 在 691e39f 上通过（之后的 9006cf4 只删注释）：`tests/data-tool.test.ts` 18 条，`just test` 1530 条全过，`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g2/owner/g2-*.txt`，lane 10 用 `openai-codex/gpt-6.1-sol` 记下一条空腹血糖，`lab-results` 有这一行，from 是「使用者口述」；perf 10 万行按 item 和日期范围取 100 行，查询中位 3.2 ms（20 次，差 1.4 ms），单行写入中位 0.4 ms，trunk `knowledge` 检索中位 0.1 ms 作对照。lane 3 在 personal-health 里就地把 `lab` 改名为 `laboratory`，因为 health-lite 不在名册上，幕僚长开不了它的任务。
+
+审查后的修正（2026-11-12）：网页上回答私密任务的问题，转到 Telegram 的那句回答也只发一行提示；`record` 按 id 从别的来源改几项，`from` 不变，改过的字段各自的来源记在 `sources`；`write` 没给 rows、op 不认识都拒绝；字段不能叫 `id`；访问记录也记被拒的调用和原因。
+
+待定（要使用者定）：幕僚长在对话里的回复（起因是使用者的一句话，不带任务）不受私密一行规则管。它从转述里知道的私密数值，之后可能出现在这类回复里，原样发到 Telegram。design.md 第 5 节写明了这一处还没管到。
 
 **Merge.**
 
@@ -185,47 +191,51 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `src/modules/watch.ts`（条件模型、纯函数计算、提醒文字）。注意已有 `src/modules/watch.ts` 是文件监视器，新文件取别的名字，例如 `src/modules/conditions.ts`。
-- [ ] Edit `src/modules/gateway.ts`（`find` 认 `watch` 请求）、`src/worker/extension.ts`、`src/worker/tools.ts`、`src/modules/instance-data.ts`（写入后计算条件）。
-- [ ] Create `tests/conditions.test.ts`。
+- [x] Create `src/modules/watch.ts`（条件模型、纯函数计算、提醒文字）。注意已有 `src/modules/watch.ts` 是文件监视器，新文件取别的名字，例如 `src/modules/conditions.ts`。实际是 `src/modules/conditions.ts`。
+- [x] Edit `src/modules/gateway.ts`（`find` 认 `watch` 请求）、`src/worker/extension.ts`、`src/worker/tools.ts`、`src/modules/instance-data.ts`（写入后计算条件）。
+- [x] Create `tests/conditions.test.ts`。
 
 **Build.**
 
-- [ ] 条件存在模块的 `data.db` 里：`id`、`key`、种类、参数、`setAt`、可选的 `basis`、说明。种类是 `above`、`below`、`rising-streak`、`falling-streak`、`change-pct`、`crosses-average`。
-- [ ] `watch` 工具：`list` 谁都能用；`set`、`remove` 只给只听过你本人的 request 任务（那张表的「替你做主」一行）。设完回一行程序拼出的回执。
-- [ ] 有新行写进写了 `watch` 的 `series` 时，宿主对这个 key 的条件算一遍。满足就经宿主行（ADR-0017）直接提醒你，不经过幕僚长。提醒文字由程序拼出，带数值、时间和这一行的来源。同一条件同一行只提醒一次（宿主行按条件编号加这一行的时间去重）。
-- [ ] `private` 数据上的提醒在 Telegram 上只发一行提示。
-- [ ] 不改 us-market 的盯盘条件，它的纯函数只读复用（例如均线计算）。
+- [x] 条件存在模块的 `data.db` 里：`id`、`key`、种类、参数、`setAt`、可选的 `basis`、说明。种类是 `above`、`below`、`rising-streak`、`falling-streak`、`change-pct`、`crosses-average`。
+- [x] `watch` 工具：`list` 谁都能用；`set`、`remove` 只给只听过你本人的 request 任务（那张表的「替你做主」一行）。设完回一行程序拼出的回执。
+- [x] 有新行写进写了 `watch` 的 `series` 时，宿主对这个 key 的条件算一遍。满足就经宿主行（ADR-0017）直接提醒你，不经过幕僚长。提醒文字由程序拼出，带数值、时间和这一行的来源。同一条件同一行只提醒一次（宿主行按条件编号加这一行的编号去重）。只有新数据提醒：写入前先记下这个 key 已存最新的时间，比它早的行是补录，只存不提醒；不早于它的行按时间逐行和前一行比（前一行可能是已存的，也可能是同一次写进来的），同一时间算新。这个 key 之前没有读数时，这次写入当作导入过去的读数，只算其中时间最新的行。
+- [x] `private` 数据上的提醒在 Telegram 上只发一行提示。
+- [x] 不改 us-market 的盯盘条件，它的纯函数只读复用（例如均线计算）。
 
 **You see.**
 
-- [ ] 在 personal-health 里对你说「空腹血糖高于 7 提醒我」，写进一条 7.4 的读数后，网页和 Telegram 记录器各出现一条提醒；Telegram 上是一行提示，因为这类数据是私密的。
+- [x] 在 personal-health 里对你说「空腹血糖高于 7 提醒我」，写进一条 7.4 的读数后，网页和 Telegram 记录器各出现一条提醒；Telegram 上是一行提示，因为这类数据是私密的。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/conditions.test.ts` 覆盖六种条件的触发和不触发边界、同一行只提醒一次、推断任务和读过 feed 的任务设条件被拒、`list` 都能用、私密数据的一行规则、提醒文字里的数值和时间来自这一行。Run `just test`.
+- [x] `tests/conditions.test.ts` 覆盖六种条件的触发和不触发边界、同一行只提醒一次、推断任务和读过 feed 的任务设条件被拒、`list` 都能用、私密数据的一行规则、提醒文字里的数值和时间来自这一行。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/g3-live.ts`。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都给 us-market 设一个盯盘条件并用假行情触发。Save `g3-regression.txt`. Pass when 两边提醒相同。
-- [ ] Lane 2. `above` 触发。Save `g3-above.txt`. Pass when 网页出现提醒，带数值和时间。
-- [ ] Lane 3. `below` 不触发的边界值。Save `g3-below.txt`. Pass when 没有提醒。
-- [ ] Lane 4. `rising-streak` 三连涨。Save `g3-streak.txt`. Pass when 第三行写入时提醒一次。
-- [ ] Lane 5. `change-pct` 带 `basis`。Save `g3-change.txt`. Pass when 按 basis 算的涨跌幅提醒。
-- [ ] Lane 6. `crosses-average`。Save `g3-cross.txt`. Pass when 穿过均线那一行提醒。
-- [ ] Lane 7. 同一行写两次。Save `g3-dedupe.txt`. Pass when 只提醒一次。
-- [ ] Lane 8. 推断任务设条件。Save `g3-infer.txt`. Pass when 拒绝，条件表不变。
-- [ ] Lane 9. 私密数据上的提醒。Save `g3-private.txt`. Pass when Telegram 记录器只有一行提示。
-- [ ] Lane 10. 真模型 `openai-codex/*`，你说「空腹血糖高于 7 提醒我」。Save `g3-real.txt`. Pass when 条件表里有这一条，回执一行。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都给 us-market 设一个盯盘条件并用假行情触发。Save `g3-regression.txt`. Pass when 两边提醒相同。
+- [x] Lane 2. `above` 触发。Save `g3-above.txt`. Pass when 网页出现提醒，带数值和时间。
+- [x] Lane 3. `below` 不触发的边界值。Save `g3-below.txt`. Pass when 没有提醒。
+- [x] Lane 4. `rising-streak` 三连涨。Save `g3-streak.txt`. Pass when 第三行写入时提醒一次。
+- [x] Lane 5. `change-pct` 带 `basis`。Save `g3-change.txt`. Pass when 按 basis 算的涨跌幅提醒。
+- [x] Lane 6. `crosses-average`。Save `g3-cross.txt`. Pass when 穿过均线那一行提醒。
+- [x] Lane 7. 同一行写两次。Save `g3-dedupe.txt`. Pass when 只提醒一次。
+- [x] Lane 8. 推断任务设条件。Save `g3-infer.txt`. Pass when 拒绝，条件表不变。
+- [x] Lane 9. 私密数据上的提醒。Save `g3-private.txt`. Pass when Telegram 记录器只有一行提示。
+- [x] Lane 10. 真模型 `openai-codex/*`，你说「空腹血糖高于 7 提醒我」。Save `g3-real.txt`. Pass when 条件表里有这一条，回执一行。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 写一行并算完这个 key 上 20 个条件的时间。trunk 没有这个功能，只给绝对预算。
-- [ ] Probe. 100 次写入。
-- [ ] Baseline. Record the G2 写入中位数 first.
-- [ ] Rule. 比 G2 的写入多出 20 毫秒以上就失败。
+- [x] Metric. 写一行并算完这个 key 上 20 个条件的时间。trunk 没有这个功能，只给绝对预算。
+- [x] Probe. 100 次写入。
+- [x] Baseline. Record the G2 写入中位数 first.
+- [x] Rule. 比 G2 的写入多出 20 毫秒以上就失败。
 
 **Review gate.** None. G3 is not review-gated.
+
+2026-11-12 在 0738d5b 上通过：`tests/conditions.test.ts` 17 条，`just test` 1556 条里只有 `tests/watchdog-main.test.ts` 的「终端 Ctrl+C：Watchdog 不停别人启动的宿主」偶发失败（基线 5317b9e 上 10 次里也失败 2 次，和本 PR 无关），`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g3/owner/g3-*.txt`。lane 10 用 `openai-codex/gpt-6.1-sol`：第一次只说「空腹血糖高于 7 提醒我」，Worker 先问单位、没有设（`g3-real-first-try.txt`），补上「单位 mmol/L，直接设」后条件表有这一条，回执一行。perf 10 万行、这个 key 上 20 个条件，100 次写入，三轮中位 0.74 到 0.81 ms，G2 同样写入 1.43 到 2.09 ms（G2 先跑，冷启动偏慢），最大 26 ms 是第一次写入时建索引。
+
+2026-11-12 在 6a2cd64 上通过（修正轮）：一次写进同一个 key 的几行新读数时，以前只算时间最新的那一行，而且拿它和同一批里的前一行比，所以已存 6、一次写进 7.2 和 7.4（条件高于 7）不提醒，写进 8 和 6.5 也不提醒。现在写入前先记下这个 key 已存最新的时间，不早于它的行逐行算，两种情况都在 7.2 和 8 那一行提醒一次；比它早的行照样只存不提醒。`tests/conditions.test.ts` 27 条，`just test` 1573 条全过（第二次跑时只有已知偶发的「终端 Ctrl+C：Watchdog 不停别人启动的宿主」失败，单独重跑 8 条全过），`check.mjs` 全绿；十条 lane 全 PASS，输出在 `/tmp/swarm-g3/fix3/`。perf 10 万行、20 个条件、100 次写入，四轮中位 0.78 到 0.93 ms，G2 同样写入 1.30 到 2.56 ms。修正中途一版对 20 个条件各查了一次 key 的最新时间，中位涨到 1.9 ms 左右，按 key 去重后回到 1 ms 以内。
 
 **Merge.**
 
@@ -240,49 +250,55 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `src/modules/scheduler.ts`（调度器）、`src/modules/connectors/timer.ts`、`src/modules/connectors/inbox.ts`、`src/modules/feed-runner.ts`（每次调用一个进程跑 handler，复用 `run-code.ts`）。
-- [ ] Edit `src/host/live-modules.ts`（调度器跟着模块表启停）、`src/host/host.ts`、`src/host/wiring.ts`、`src/modules/validate.ts`（检查时用 fixtures 跑 handler）、`src/modules/rehearse.ts`（预演时连接器换成读 fixtures）。
-- [ ] Create `tests/scheduler.test.ts`、`tests/feed-runner.test.ts`。
+- [x] Create `src/modules/scheduler.ts`（调度器）、`src/modules/connectors/timer.ts`、`src/modules/connectors/inbox.ts`、`src/modules/feed-runner.ts`（每次调用一个进程跑 handler，复用 `run-code.ts`）。
+- [x] Edit `src/host/live-modules.ts`（调度器跟着模块表启停）、`src/host/host.ts`、`src/host/wiring.ts`、`src/modules/validate.ts`（检查时用 fixtures 跑 handler）、`src/modules/rehearse.ts`（预演时连接器换成读 fixtures）。实际没改 `live-modules.ts` 和 `rehearse.ts`：调度器每一拍从 `live.current().feeds()` 读 feed 表（包的 feed 在 `src/modules.ts` 的 `packageModule` 里带上），开关一变下一拍就跟上；预演由 `src/cli/module-try.ts` 在临时 config.json 里写 `feedFixtures: true`。另改了 `src/kernel/`（触发上记 `private`）、`src/modules/instance-data.ts`（feed 的 id 去重和进度表）、`src/modules/run-code.ts`（`responses` 代替 fetch）。
+- [x] Create `tests/scheduler.test.ts`、`tests/feed-runner.test.ts`。
 
 **Build.**
 
-- [ ] 调度器跟着 `LiveRegistry`：模块打开，它的 feed 排上；关掉或拿掉，立刻停。来源名是 `<模块>/<feed>`。
-- [ ] 两个连接器。`timer` 按 `every` 到点调用；`inbox` 读 `<stateDir>/inbox/<模块>/<feed>/` 下新放进来的 JSON 文件，处理完挪走。
-- [ ] `feed.json` 加一个可选的 `"when": "us-market-hours"`，由调度器判断，复用 `src/sources/market/session.ts` 的交易时段规则（开盘到收盘加 20 分钟，给延迟数据留时间）。不在时段内不调用。
-- [ ] handler 是「输入到输出」的函数：输入连接器给的内容、你填的设置、上次的进度；输出要存的行、要发的触发、新的进度。存行（进 `into`，触发 G3 的条件计算）、发触发（经内核 `submitTrigger`，按 `id` 去重，`ignore` 过滤）、存进度（存在模块的 `data.db`）都由宿主做。
-- [ ] `just module check` 用 `feeds/<feed>/fixtures/` 跑一遍 handler，fixtures 替换网络请求；`just module try` 里连接器换成读 fixtures。
-- [ ] 不建限速队列。us-market 的旧 feed 不动。
+- [x] 调度器跟着 `LiveRegistry`：模块打开，它的 feed 排上；关掉或拿掉，立刻停。来源名是 `<模块>/<feed>`。
+- [x] 两个连接器。`timer` 按 `every` 到点调用；`inbox` 读 `<stateDir>/inbox/<模块>/<feed>/` 下新放进来的 JSON 文件，处理完挪走。
+- [x] `feed.json` 加一个可选的 `"when": "us-market-hours"`，由调度器判断，复用 `src/sources/market/session.ts` 的交易时段规则（开盘到收盘加 20 分钟，给延迟数据留时间）。不在时段内不调用。
+- [x] handler 是「输入到输出」的函数：输入连接器给的内容、feed.json 里写的 `settings`、上次的进度（`ask` 的回答还没有地方存，也不合并进来）；输出要存的行、要发的触发、新的进度。存行（进 `into`，触发 G3 的条件计算）、发触发（经内核 `submitTrigger`，按 `id` 去重，`ignore` 过滤）、存进度（存在模块的 `data.db`）都由宿主做。
+- [x] `just module check` 用 `feeds/<feed>/fixtures/` 跑一遍 handler，fixtures 替换网络请求；`just module try` 里连接器换成读 fixtures。
+- [x] 不建限速队列。us-market 的旧 feed 不动。
 
 **You see.**
 
-- [ ] 一个只有 `timer` 和一句 `notice` 的模块打开后，到点幕僚长收到触发并开任务；关掉模块后不再触发。
-- [ ] 往收件箱目录丢一个 JSON 文件，几秒内进了对应的数据，文件被挪走。
+- [x] 一个只有 `timer` 和一句 `notice` 的模块打开后，到点幕僚长收到触发并开任务；关掉模块后不再触发。
+- [x] 往收件箱目录丢一个 JSON 文件，几秒内进了对应的数据，文件被挪走。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/scheduler.test.ts` 覆盖跟着开关启停、交易时段判断（假时钟，盘前、盘中、收盘后 20 分钟内、周末）、同一批内容跑两次不重复、`ignore`、进度在崩溃后接上、handler 超时只算这一次失败。`tests/feed-runner.test.ts` 覆盖 fixtures 替换网络请求。Run `just test`.
+- [x] `tests/scheduler.test.ts` 覆盖跟着开关启停、交易时段判断（假时钟，盘前、盘中、收盘后 20 分钟内、周末）、同一批内容跑两次不重复、`ignore`、进度在崩溃后接上、handler 超时只算这一次失败。`tests/feed-runner.test.ts` 覆盖 fixtures 替换网络请求。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/g4-live.ts`，时钟和网络都用假的。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都跑 us-market 的旧 feed 一轮（假行情）。Save `g4-regression.txt`. Pass when 两边触发相同。
-- [ ] Lane 2. `timer` 加 `notice`。Save `g4-timer.txt`. Pass when 到点出现触发和任务。
-- [ ] Lane 3. 关掉模块。Save `g4-off.txt`. Pass when 下一个点不再调用。
-- [ ] Lane 4. `when: us-market-hours` 在周末。Save `g4-weekend.txt`. Pass when 不调用。
-- [ ] Lane 5. handler 存行进 `into`。Save `g4-into.txt`. Pass when 数据里有这些行，带 `from` 是 `<模块>/<feed>`。
-- [ ] Lane 6. 存的行满足一个条件。Save `g4-alert.txt`. Pass when 出现提醒。
-- [ ] Lane 7. 同一批内容跑两次。Save `g4-dedupe.txt`. Pass when 行和触发都不重复。
-- [ ] Lane 8. `inbox` 丢文件。Save `g4-inbox.txt`. Pass when 进数据，文件挪走。
-- [ ] Lane 9. handler 抛错或超时。Save `g4-fail.txt`. Pass when 这一次失败有日志，下一个点照常调用，宿主不受影响。
-- [ ] Lane 10. `just module check` 带 fixtures 的包。Save `g4-check.txt`. Pass when 跑过 handler，输出 ok。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都跑 us-market 的旧 feed 一轮（假行情）。Save `g4-regression.txt`. Pass when 两边触发相同。
+- [x] Lane 2. `timer` 加 `notice`。Save `g4-timer.txt`. Pass when 到点出现触发和任务。
+- [x] Lane 3. 关掉模块。Save `g4-off.txt`. Pass when 下一个点不再调用。
+- [x] Lane 4. `when: us-market-hours` 在周末。Save `g4-weekend.txt`. Pass when 不调用。
+- [x] Lane 5. handler 存行进 `into`。Save `g4-into.txt`. Pass when 数据里有这些行，带 `from` 是 `<模块>/<feed>`。
+- [x] Lane 6. 存的行满足一个条件。Save `g4-alert.txt`. Pass when 出现提醒。
+- [x] Lane 7. 同一批内容跑两次。Save `g4-dedupe.txt`. Pass when 行和触发都不重复。
+- [x] Lane 8. `inbox` 丢文件。Save `g4-inbox.txt`. Pass when 进数据，文件挪走。
+- [x] Lane 9. handler 抛错或超时。Save `g4-fail.txt`. Pass when 这一次失败有日志，下一个点照常调用，宿主不受影响。
+- [x] Lane 10. `just module check` 带 fixtures 的包。Save `g4-check.txt`. Pass when 跑过 handler，输出 ok。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 宿主启动到就绪的时间（状态目录里有 5 个各带 2 个 feed 的模块），以及一次 handler 调用的宿主侧总时间。
-- [ ] Probe. trunk 和 head 交替各 5 次 `startHost`；handler 调用 20 次。
-- [ ] Baseline. Record the trunk 启动中位数 first.
-- [ ] Rule. 启动比 trunk 慢 200 毫秒以上，或一次空 handler 调用超过 150 毫秒，就失败。
+- [x] Metric. 宿主启动到就绪的时间（状态目录里有 5 个各带 2 个 feed 的模块），以及一次 handler 调用的宿主侧总时间。
+- [x] Probe. trunk 和 head 交替各 5 次 `startHost`；handler 调用 20 次。
+- [x] Baseline. Record the trunk 启动中位数 first.
+- [x] Rule. 启动比 trunk 慢 200 毫秒以上，或一次空 handler 调用超过 150 毫秒，就失败。
 
 **Review gate.** None. G4 is not review-gated.
+
+2026-11-12 在 8a2cb5e 上通过：`tests/scheduler.test.ts` 12 条、`tests/feed-runner.test.ts` 3 条、`tests/wiring.test.ts` 和 `tests/config.test.ts` 各加 1 条；`just test` 1575 条全过，`check.mjs` 7 项 ok。十条 lane 全 PASS，输出在 `/tmp/swarm-g4/owner/g4-*.txt`。lane 6 的条件用「高于 7」：G3 的水平条件只在跨进去的那一行提醒，第一次用「高于 5」时 6.3 已经在线上，7.2 不算跨入，没有提醒，是 lane 写错了。perf 两轮：启动到网址 trunk 中位 397.8 和 448.7 ms，head 415.2 和 440.7 ms，差 +17.4 和 -8.0 ms（第一轮 head 有一次 965 ms，第二轮没再出现）；空 handler 一次调用中位 77.3 和 44.4 ms，几乎全是起 node 进程。fixtures 格式：`feeds/<feed>/fixtures/<样例>.json` 是 `{ "input": FeedInput 的一部分, "responses": { "<完整网址>": 应答 } }`，`input.settings` 和 `input.rows` 逐个键合并在宿主给的上面（`reads` 的每个集合没给就是空列），`responses` 按完整网址代替 `fetch`，没给的网址这一次失败并说出网址。
+
+2026-11-12 审计修复在 d963c72 上通过（已合入 G3 bb4a352）：检查和运行共用一个 `feedInput`，`reads` 的集合样例没给就是空列；inbox 逐个文件处理，坏文件单独进 rejected 并带 .error.txt，handler 失败的文件留到下一次；timer 或不带连接器的 handler 没写 every 时检查拒收；宿主检查、`just module check`、`just module try` 的密钥和运行时一样先看环境变量再看 secretsFile；日志行数只算真存下的。`just test` 1596 条全过，`check.mjs` 7 项 ok，十条 lane 全 PASS（`/tmp/swarm-g4/fix/g4-*.txt`），perf 启动中位 trunk 394.5 ms、head 402.9 ms，空 handler 中位 43.9 ms。
+
+2026-11-12 第二轮审计修复（已合入 main e13a5e8）：宿主跑用例时读密钥出错（密钥值有空白、密钥文件跑着时被删）不再让宿主因未处理的 rejection 退出，模块记为无效，原因写着出错的话；`just module try` 的临时宿主也拿到 secretsFile，之前只有检查读它，密钥只在文件里的工具在临时宿主里用例不过；带 handler 的 inbox 文件连着失败 3 次挪进 rejected，.error.txt 写着最后一次的原因，成功一次就清零，次数记在宿主内存里，重启后重新数。`just test` 1604 条全过，`check.mjs` 全绿，十条 lane 全 PASS（`/tmp/swarm-g4/fix2/g4-*.txt`）。
 
 **Merge.**
 

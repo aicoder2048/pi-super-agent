@@ -27,7 +27,7 @@ const TABLE: readonly [Request, ToolEffect, readonly Sender[]][] = [
 	[{ kind: "knowledge", op: "read", doc: C, section: "1" }, "pure", EVERYONE],
 	[{ kind: "data", collection: C, op: "query", query: {} }, "pure", EVERYONE],
 	[{ kind: "data", collection: C, op: "open-blob", row: "r", field: "f" }, "pure", EVERYONE],
-	[{ kind: "data", collection: C, op: "put", rows: [] }, "pure", NOT_INFERENCE],
+	[{ kind: "data", collection: C, op: "write", rows: [], from: "test" }, "pure", NOT_INFERENCE],
 	[{ kind: "watch", collection: C, op: "list" }, "pure", EVERYONE],
 	[{ kind: "watch", collection: C, op: "set", watch: { key: "CEA", condition: { when: "above", value: 5 } } }, "pure", THE_USER],
 	[{ kind: "watch", collection: C, op: "remove", id: "w" }, "pure", THE_USER],
@@ -47,6 +47,6 @@ test("only a request ticket that has heard nobody but the user carries the user'
 });
 
 test("Telegram gets the full text unless the ticket has touched private data", () => {
-	assert.equal(telegramText("CEA 5.2", false, "个人医疗健康"), "CEA 5.2");
-	assert.equal(telegramText("CEA 5.2", true, "个人医疗健康").includes("5.2"), false);
+	assert.equal(telegramText("CEA 5.2", null), "CEA 5.2");
+	assert.equal(telegramText("CEA 5.2", "个人医疗健康"), "个人医疗健康 有新内容，请在网页上查看");
 });

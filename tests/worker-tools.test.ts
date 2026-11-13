@@ -9,7 +9,7 @@ const flag = (args: string[], name: string) => (args.includes(name) ? args[args.
 
 test("推断任务的 Worker 只拿只读工具、网页读取和汇报类工具，并关掉 MCP", () => {
 	const args = workerArgs({ ...base, basis: "inference" });
-	assert.deepEqual(flag(args, "--tools")!.split(",").sort(), ["domain_tool", "find", "grep", "hand_back", "knowledge", "lookup", "ls", "read", "read_ticket", "report", "web_get"]);
+	assert.deepEqual(flag(args, "--tools")!.split(",").sort(), ["data", "domain_tool", "find", "grep", "hand_back", "knowledge", "lookup", "ls", "read", "read_ticket", "report", "watch", "web_get"]);
 	assert.ok(args.includes("--no-mcp"));
 });
 

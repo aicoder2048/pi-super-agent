@@ -4,7 +4,7 @@ import { CAP_ASK_PREFIX, type CapAsk, type CapAskStore } from "./cap-ask.ts";
 import { answerExternalId, answerSentence, type AnswerRefusal } from "./question.ts";
 import { quoteSnapshot } from "./quote.ts";
 
-export type AnswerOutcome = { ok: true; triggerId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
+export type AnswerOutcome = { ok: true; triggerId: string; ticketId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 import { deriveStage } from "./stage.ts";
 import { SOLO_NAMES, TEAM_NAMES, helperName, helperRole, newYorkDate } from "./helper-names.ts";
 import { oneLine, stallMinutes } from "../client/board-format.mjs";
@@ -21,6 +21,7 @@ import type {
 	Action,
 	Cleared,
 	ConversationLine,
+	AlertModule,
 	HostLine,
 	HostLinePost,
 	ActionKind,
@@ -100,8 +101,10 @@ function toTrigger(r: Row): Trigger {
 	};
 }
 
+const moduleOf = (r: Row): { module?: AlertModule } => (r.module_title ? { module: { title: r.module_title, private: r.module_private === 1 } } : {});
+
 function hostLine(r: Row): HostLine {
-	return { id: r.id, who: r.kind, text: r.text, at: r.created_at };
+	return { id: r.id, who: r.kind, text: r.text, at: r.created_at, ...moduleOf(r) };
 }
 
 // Node 22's node:sqlite reads a string back only up to its first U+0000, so drop U+0000 before it reaches the store.
@@ -165,14 +168,14 @@ export interface KernelOptions {
 }
 
 const LINES = `
-	SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord, NULL AS cause, 1 AS shown FROM triggers t
+	SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord, NULL AS cause, 1 AS shown, NULL AS module_title, NULL AS module_private FROM triggers t
 	JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ?
 	UNION ALL
-	SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause, r.delivered_at IS NOT NULL FROM reply_receipts r WHERE r.thread_id = ?
+	SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause, r.delivered_at IS NOT NULL, NULL, NULL FROM reply_receipts r WHERE r.thread_id = ?
 	UNION ALL
-	SELECT ? || c.day, 'user', c.said, c.answered_at, c.rowid, NULL, 1 FROM cap_asks c WHERE c.said IS NOT NULL
+	SELECT ? || c.day, 'user', c.said, c.answered_at, c.rowid, NULL, 1, NULL, NULL FROM cap_asks c WHERE c.said IS NOT NULL
 	UNION ALL
-	SELECT h.id, h.kind, h.text, h.created_at, h.rowid, NULL, h.kind = 'receipt' OR h.delivered_at IS NOT NULL FROM host_lines h`;
+	SELECT h.id, h.kind, h.text, h.created_at, h.rowid, NULL, h.kind = 'receipt' OR h.delivered_at IS NOT NULL, h.module_title, h.module_private FROM host_lines h`;
 const LINES_PARAMS = [CONVERSATION_THREAD_ID, CONVERSATION_THREAD_ID, CAP_ASK_PREFIX] as const;
 const HIDDEN = "id IN (SELECT line_id FROM conversation_hidden)";
 
@@ -239,8 +242,8 @@ export class Kernel {
 
 			const triggerId = this.#id("trg");
 			this.#run(
-				`INSERT INTO triggers (id, source, external_id, sender, body, occurred_at, received_at, disposition)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				`INSERT INTO triggers (id, source, external_id, sender, body, occurred_at, received_at, disposition, private)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				triggerId,
 				sub.source,
 				sub.externalId,
@@ -249,6 +252,7 @@ export class Kernel {
 				sub.occurredAt,
 				this.#now(),
 				disposition,
+				sub.private ? 1 : 0,
 			);
 			for (const threadId of new Set(threadIds)) {
 				this.#run("INSERT INTO trigger_threads (trigger_id, thread_id) VALUES (?, ?)", triggerId, threadId);
@@ -323,7 +327,7 @@ export class Kernel {
 			const click = this.#latestClick(reportId);
 			if (click && click.state !== "dropped") {
 				if (click.option !== option) return refuse({ kind: "chosen", option: click.option, label: options[click.option] });
-				return { ok: true, triggerId: click.triggerId, text: this.#get("SELECT body FROM triggers WHERE id = ?", click.triggerId)!.body, duplicate: true };
+				return { ok: true, triggerId: click.triggerId, ticketId: report.ticket_id, text: this.#get("SELECT body FROM triggers WHERE id = ?", click.triggerId)!.body, duplicate: true };
 			}
 			const ticket = this.#ticket(report.ticket_id)!;
 			if (ticket.stage !== "awaiting_answer" || ticket.latestReport?.id !== reportId) return refuse({ kind: "closed" });
@@ -334,7 +338,7 @@ export class Kernel {
 			const clicks = this.#get("SELECT COUNT(*) AS n FROM answer_clicks WHERE report_id = ?", reportId)!.n as number;
 			const { triggerId } = this.userSaid({ text, at, externalId: answerExternalId(reportId, clicks + 1) });
 			this.#run("INSERT INTO answer_clicks (trigger_id, report_id, option) VALUES (?, ?, ?)", triggerId, reportId, option);
-			return { ok: true, triggerId, text, duplicate: false };
+			return { ok: true, triggerId, ticketId: ticket.id, text, duplicate: false };
 		});
 	}
 
@@ -988,7 +992,7 @@ export class Kernel {
 			.reverse()
 			.map((r) => {
 				const quote = r.id.startsWith("trg_") ? this.#quoteOf(r.id) : null;
-				return { id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { ticketId: r.cause } : {}), ...(quote ? { quote } : {}) };
+				return { id: r.id, who: r.who, text: r.text, at: r.at, ...(r.cause?.startsWith("tkt_") ? { ticketId: r.cause } : {}), ...(quote ? { quote } : {}), ...moduleOf(r) };
 			});
 	}
 
@@ -1047,6 +1051,14 @@ export class Kernel {
 		this.#run("UPDATE tickets SET read_web_at = COALESCE(read_web_at, ?) WHERE id = ?", this.#now(), ticketId);
 	}
 
+	touchPrivate(ticketId: string): void {
+		this.#run("UPDATE tickets SET touched_private_at = COALESCE(touched_private_at, ?) WHERE id = ?", this.#now(), ticketId);
+	}
+
+	touchedPrivate(ticketId: string): boolean {
+		return this.#get("SELECT 1 FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) !== undefined;
+	}
+
 	heardOtherThanUser(ticketId: string): "trigger" | "note" | "web" | undefined {
 		if (this.#get("SELECT 1 FROM tickets WHERE id = ? AND read_web_at IS NOT NULL", ticketId)) return "web";
 		return this.#get("SELECT kind FROM ticket_inputs WHERE ticket_id = ? AND kind IN ('trigger', 'note') LIMIT 1", ticketId)?.kind;
@@ -1056,13 +1068,14 @@ export class Kernel {
 	postHostLine(source: string, post: HostLinePost): { line: HostLine; duplicate: boolean } {
 		return this.#tx(() => {
 			if (post.kind === "alert") {
-				const existing = this.#get("SELECT id, kind, text, created_at FROM host_lines WHERE source = ? AND external_id = ?", source, post.externalId);
+				const existing = this.#get("SELECT id, kind, text, created_at, module_title, module_private FROM host_lines WHERE source = ? AND external_id = ?", source, post.externalId);
 				if (existing) return { line: hostLine(existing), duplicate: true };
 			}
 			const id = this.#id("hln");
 			const at = this.#now();
+			const module = post.kind === "alert" ? post.module : undefined;
 			this.#run(
-				"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+				"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at, module_title, module_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
 				id,
 				post.kind,
 				source,
@@ -1070,8 +1083,10 @@ export class Kernel {
 				post.text,
 				post.kind === "alert" ? post.occurredAt : at,
 				at,
+				module?.title ?? null,
+				module === undefined ? null : Number(module.private),
 			);
-			return { line: { id, who: post.kind, text: post.text, at }, duplicate: false };
+			return { line: { id, who: post.kind, text: post.text, at, ...(module && { module }) }, duplicate: false };
 		});
 	}
 
@@ -1090,12 +1105,12 @@ export class Kernel {
 	}
 
 	undeliveredAlerts(): HostLine[] {
-		return this.#all("SELECT id, kind, text, created_at FROM host_lines WHERE kind = 'alert' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
+		return this.#all("SELECT id, kind, text, created_at, module_title, module_private FROM host_lines WHERE kind = 'alert' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
 	}
 
 	/** Alerts posted since local midnight, oldest first. */
 	alertsToday(): HostLine[] {
-		return this.#all("SELECT id, kind, text, created_at FROM host_lines WHERE kind = 'alert' AND created_at >= ? ORDER BY rowid", localDayStart(this.#now())).map(hostLine);
+		return this.#all("SELECT id, kind, text, created_at, module_title, module_private FROM host_lines WHERE kind = 'alert' AND created_at >= ? ORDER BY rowid", localDayStart(this.#now())).map(hostLine);
 	}
 
 	alertCountsToday(): Record<string, number> {
@@ -1271,6 +1286,7 @@ export class Kernel {
 			this.#servingDigest(this.#ticketRow(ticketId)!.domain),
 			ticketId,
 		);
+		if (triggerId !== null && this.#get("SELECT private FROM triggers WHERE id = ?", triggerId)?.private === 1) this.touchPrivate(ticketId);
 		this.#wake(ticketId);
 	}
 

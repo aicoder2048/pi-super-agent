@@ -28,7 +28,12 @@ import { OutputRoot } from "./output.ts";
 import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 import type { Domains } from "../modules.ts";
 import type { LiveModules } from "./live-modules.ts";
-import type { Gateway } from "../modules/protocol.ts";
+import type { Alert, Gateway } from "../modules/protocol.ts";
+import { runFeed, type FeedEntry, type FeedPorts } from "../modules/feed-runner.ts";
+import { instanceData } from "../modules/instance-data.ts";
+import { createScheduler, type Scheduler } from "../modules/scheduler.ts";
+import { threadId } from "../sources/generic.ts";
+import { inPollWindow } from "../sources/market/session.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
 
 export interface RouterLike {
@@ -52,6 +57,7 @@ export interface HostOptions {
 	sourcePolicy?: SourcePolicy;
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	isMarketSource?: (source: string) => boolean;
+	moduleFeeds?: { feeds(): readonly FeedEntry[]; fixtures: boolean; secret?: (name: string) => string | undefined; tickMs?: number };
 	/** The serving modules, asked each time. Without it no ticket has a domain. */
 	domains?: Domains;
 	gateway?: Gateway;
@@ -107,6 +113,7 @@ export class Host {
 	readonly generic: GenericSource;
 	readonly timer: TimerSource;
 	readonly feeds: Map<string, Feed>;
+	readonly feedScheduler: Scheduler;
 	readonly #log: (line: string) => void;
 	readonly #stateDir: string;
 	#boardTimer: NodeJS.Timeout | undefined;
@@ -121,6 +128,7 @@ export class Host {
 	readonly #clock: Clock;
 	readonly #kitFor: Domains["kitFor"] | undefined;
 	readonly #modules: HostOptions["modules"];
+	readonly #book: Domains["book"] | undefined;
 	readonly #memberCap: MemberCap | undefined;
 	readonly #after: NonNullable<HostOptions["after"]>;
 	#cancelNewYorkDay: (() => void) | undefined;
@@ -139,6 +147,7 @@ export class Host {
 		this.#watching = options.watching ?? [];
 		this.#kitFor = options.domains?.kitFor;
 		this.#modules = options.modules;
+		this.#book = options.domains?.book;
 		this.#db = openStore(join(options.stateDir, "state.db"));
 		this.kernel = new Kernel({
 			db: this.#db,
@@ -179,6 +188,24 @@ export class Host {
 			alertsSince: (since) => this.kernel.alertsSince(spec.source, since),
 			log: this.#log,
 		})]));
+		const data = instanceData(options.stateDir);
+		const feedPorts: FeedPorts = {
+			data,
+			submit: ({ source, id, thread, body, at, private: touched }) => submit({ source, externalId: id, threads: [{ id: threadId(source, thread) }], sender: source, body, occurredAt: at, private: touched }),
+			alert: (module, alert) => this.#postModuleAlert(module, alert),
+			secret: options.moduleFeeds?.secret ?? (() => undefined),
+			now: clock.now,
+		};
+		this.feedScheduler = createScheduler({
+			feeds: options.moduleFeeds?.feeds ?? (() => []),
+			run: (entry, items, fixture) => runFeed(entry, items, feedPorts, fixture),
+			state: data,
+			inboxDir: join(options.stateDir, "inbox"),
+			now: clock.now,
+			when: { "us-market-hours": inPollWindow },
+			fixtures: options.moduleFeeds?.fixtures ?? false,
+			log: this.#log,
+		});
 		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []) };
 		const memberCap = options.dispatch && new MemberCap({ configured: options.dispatch.maxConcurrent, clock, store: this.kernel.capAsks, log: this.#log });
 		this.#memberCap = memberCap;
@@ -194,6 +221,7 @@ export class Host {
 			models: options.workerModels,
 			kitFor: this.#kitFor,
 			gateway: options.gateway,
+			alert: (module, alert) => this.#postModuleAlert(module, alert),
 			dispatch: memberCap && { ...options.dispatch!, cap: { limit: () => memberCap.limit(), membersWaiting: (waiting) => this.#askAboutMemberCap(memberCap, waiting) } },
 			lookup: async (source, op, args) => {
 				const feed = this.feeds.get(source);
@@ -229,7 +257,7 @@ export class Host {
 			this.#log,
 		);
 		// Built before any client can say a line, so every line and reply reaches it; it touches the network only once started.
-		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }) }, db: this.#db, clock, log: this.#log });
+		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }), privateTitle: (ticketId) => this.#privateTitle(ticketId) }, db: this.#db, clock, log: this.#log });
 	}
 
 	static async start(options: HostOptions): Promise<Host> {
@@ -258,6 +286,7 @@ export class Host {
 		host.generic.start();
 		host.timer.start();
 		for (const feed of host.feeds.values()) feed.start();
+		host.feedScheduler.start(options.moduleFeeds?.tickMs ?? 1000);
 		host.#beat();
 		host.#heartbeat = setInterval(() => host.#beat(), options.heartbeatMs ?? 30_000);
 		host.#heartbeat.unref();
@@ -309,7 +338,7 @@ export class Host {
 		const result = this.kernel.answerQuestion({ reportId, option, at });
 		if (!result.ok) return result;
 		if (!result.duplicate) {
-			this.#broadcast({ type: "user", id: result.triggerId, who: "user", text: result.text, at }, from);
+			this.#broadcast({ type: "user", id: result.triggerId, who: "user", text: result.text, at, ticketId: result.ticketId }, from);
 			this.#changed();
 		}
 		return { ok: true, triggerId: result.triggerId };
@@ -369,10 +398,33 @@ export class Host {
 		return cap ? { limit: cap.limit(), question: cap.question(this.workers.membersWaitingForSlot()) } : null;
 	}
 
+	#privateTitle(ticketId: string): string | null {
+		if (!this.kernel.touchedPrivate(ticketId)) return null;
+		const domain = this.kernel.getTicket(ticketId)?.domain;
+		if (!domain) return "模块";
+		return this.#moduleTitle(domain);
+	}
+
 	#deliverReply(threadId: string, text: string, replyId: string, ticketId: string | null | undefined): void {
 		if (threadId !== CONVERSATION_THREAD_ID) throw new Error(`线程 ${threadId} 没有渠道`);
 		this.#broadcast({ type: "reply", text, at: Date.now(), replyId, ...(ticketId ? { ticketId } : {}) });
 		this.kernel.markReplyDelivered(replyId);
+	}
+
+	#moduleTitle(module: string): string {
+		return this.#book?.().get(module)?.title ?? module;
+	}
+
+	/** Bypasses the Router (ADR-0017). */
+	#postModuleAlert(module: string, alert: Alert): void {
+		const occurredAt = Date.parse(alert.at);
+		this.#postHostLine(`module:${module}`, {
+			kind: "alert",
+			externalId: alert.externalId,
+			text: alert.text,
+			occurredAt: Number.isNaN(occurredAt) ? this.#clock.now() : occurredAt,
+			module: { title: this.#moduleTitle(module), private: alert.private },
+		});
 	}
 
 	#postHostLine(source: string, post: HostLinePost): void {
@@ -481,6 +533,7 @@ export class Host {
 		this.generic.stop();
 		this.timer.stop();
 		for (const feed of this.feeds.values()) feed.stop();
+		this.feedScheduler.stop();
 		this.dispatcher.stop();
 		clearTimeout(this.#boardTimer);
 		clearTimeout(this.#midnightTimer);

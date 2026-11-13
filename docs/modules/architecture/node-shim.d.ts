@@ -25,10 +25,11 @@ declare module "node:fs" {
 	export function watch(path: string, options: { recursive: true }, listener: (event: string, filename: string | null) => void): FSWatcher;
 }
 declare module "node:sqlite" {
+	export type SQLInputValue = null | number | bigint | string;
 	export interface StatementSync {
-		run(...values: (string | number)[]): unknown;
-		get(...values: (string | number)[]): unknown;
-		all(...values: (string | number)[]): unknown[];
+		run(...values: SQLInputValue[]): { changes: number | bigint; lastInsertRowid: number | bigint };
+		get(...values: SQLInputValue[]): unknown;
+		all(...values: SQLInputValue[]): unknown[];
 	}
 	export class DatabaseSync {
 		constructor(path: string, options?: { readOnly: boolean });
@@ -57,6 +58,7 @@ declare module "node:crypto" {
 		digest(encoding: "hex"): string;
 	}
 	export function createHash(algorithm: "sha256"): Hash;
+	export function randomUUID(): string;
 }
 declare module "node:child_process" {
 	export function spawnSync(
@@ -102,6 +104,8 @@ declare const process: {
 };
 declare function setTimeout(run: () => void, ms: number): unknown;
 declare function clearTimeout(timer: unknown): void;
+declare function setInterval(run: () => void, ms: number): { unref(): void };
+declare function clearInterval(timer: unknown): void;
 declare const console: {
 	log(line: string): void;
 };
