@@ -49,10 +49,10 @@ export default async function intraday(input: unknown) {
 		dayVwap: dayVwap(got),
 		truncated: got.length >= limit,
 		timeZone: "美东，行情延迟 15 分钟",
+		...(got.length === 0 && { note: `${from} 到 ${to} 没有 K 线，可能休市（节假日），把 from、to 改成上一个交易日再查` }),
 	};
 }
 
-/** Volume-weighted average over the newest New York date's bars, from the first of them on. */
 function dayVwap(got: readonly Bar[]) {
 	const last = got.at(-1);
 	if (last === undefined) return null;

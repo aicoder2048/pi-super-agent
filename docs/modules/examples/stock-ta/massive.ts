@@ -43,7 +43,6 @@ export function massiveBase(): string {
 }
 
 export type Span = "minute" | "hour";
-/** [epoch ms, open, high, low, close, volume, VWAP of the bar] */
 export type Bar = [t: number, o: number, h: number, l: number, c: number, v: number, vw: number];
 
 /** Newest `limit` bars from `from` to `to` (New York dates), oldest first, as the host's MarketClient.bars asks. */

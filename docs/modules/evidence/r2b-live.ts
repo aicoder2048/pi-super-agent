@@ -22,6 +22,8 @@ const HEAD = resolve(import.meta.dirname, "../../..");
 const REAL = { router: "openai-codex/gpt-6.1-terra", worker: "openai-codex/gpt-6.1-sol", fallback: "openai-codex/gpt-6.1-sol" };
 const USER = 42;
 const DESK_Q = "NVDA 今天的涨跌是它自己的事还是板块的事";
+// The plan's You-see question names NVDA's move; on 2026-11-13 NVDA was down about 3%, so the media run names that.
+const MEDIA_Q = "NVDA 今天跌了 3% 多，是它自己的事还是板块的事";
 const [mode = "tools", outDir = "/tmp/swarm-r2b/owner"] = process.argv.slice(2);
 const TRUNK = join(outDir, "trunk");
 const SEED = join(outDir, "seed");
@@ -491,7 +493,7 @@ async function media(): Promise<void> {
 		const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
 		await page.goto(real.host.url.href);
 		await page.waitForTimeout(1500);
-		await harness.sayInPage(page, DESK_Q, { typeDelayMs: 40 });
+		await harness.sayInPage(page, MEDIA_Q, { typeDelayMs: 40 });
 		await within(60_000, () => (ticketsOf(real.state).length > 0 ? true : undefined), 500);
 		await idle(real);
 		await page.waitForTimeout(3000);
@@ -499,7 +501,7 @@ async function media(): Promise<void> {
 		const tickets = ticketsOf(real.state);
 		const summary = query(join(real.state, "state.db"), "SELECT summary FROM reports WHERE status = 'ready' ORDER BY seq").map((r) => String(r["summary"])).join("\n---\n");
 		const members = memberReplies(real.state);
-		writeFileSync(join(outDir, "r2b-review-desk.txt"), `asked on the web page: ${DESK_Q}\ntickets:\n${show(tickets)}\nreport:\n${summary}\n\nmember replies:\n${members.map((m) => `[${m.member}]\n${m.text}`).join("\n\n")}\n\ngateway:\n${hostLog(real.state).filter((l) => l.includes("[gateway]")).join("\n")}\n`);
+		writeFileSync(join(outDir, "r2b-review-desk.txt"), `asked on the web page: ${MEDIA_Q}\ntickets:\n${show(tickets)}\nreport:\n${summary}\n\nmember replies:\n${members.map((m) => `[${m.member}]\n${m.text}`).join("\n\n")}\n\ngateway:\n${hostLog(real.state).filter((l) => l.includes("[gateway]")).join("\n")}\n`);
 		console.log(`media in ${outDir}: r2b-review-desk.png, r2b-review-desk.txt`);
 	} finally {
 		await browser.close();

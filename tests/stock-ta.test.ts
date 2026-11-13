@@ -499,3 +499,11 @@ test("intraday：行情服务回 HTTP 500 或 429 时一行说明，429 说请�
 	assert.match(limited, /429.*请求太多.*稍后/);
 	assert.equal(limited.split("\n").length, 1);
 });
+
+test("intraday：那天没有 K 线（节假日）时说明休市，让改日期，不只回一个空列表", async (t) => {
+	const tool = await intradayTool(t);
+	tool.massive.answer({ status: 200, body: { status: "OK", results: [] } });
+	const out = output(await tool.intraday({ symbol: "NVDA", span: "minute", now: new Date(ny("2026-11-26", "11:00")).toISOString() }));
+	assert.deepEqual(out["bars"], []);
+	assert.match(String(out["note"]), /2026-11-26.*没有 K 线.*from/);
+});
