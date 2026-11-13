@@ -412,7 +412,7 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 - [ ] Lane 1. Regression lane against trunk. 一致性回放 `r5-parity.ts`，trunk 跑 us-market，head 跑 stock-ta，同一个剧本、同一份盯盘条件，SPY、QQQ 在自选股里。Save `r5-parity.txt`. Pass when 去掉不要的种类后，归一的事件完全相同，不同之处只有 Appendix B 列出的几条。
 - [ ] Lane 2. head 宿主回放剧本，查 `triggers` 和 `host_lines` 的来源。Save `r5-one-path.txt`. Pass when 没有一行来源是 `us-market`，每个到档事件正好一条触发和一行提醒。
 - [ ] Lane 3. 剧本里 NVDA 到 +5% 再到 +8%，真模型照 `rules.md` 开任务。Save `r5-ticket.png`. Pass when 只开一个团队任务，盘面、结构形态、趋势动量在同一轮里派出，+8% 的触发进了同一个任务。
-- [ ] Lane 4. 先让一个私密模块的任务读过私密数据（和 #105 的 `private-reply-live.ts` 一样），再回放 NVDA 到 +5%。Save `r5-private-first.png`. Pass when 假 Telegram 收到完整的到档那一行；幕僚长的回复照 #105 只有一行提示。
+- [ ] Lane 4. 先让一个私密模块的任务读过私密数据，再回放 NVDA 到 +5%。Save `r5-private-first.png`. Pass when 假 Telegram 收到完整的到档那一行，幕僚长的回复也是全文（ADR-0023 去掉了 #105 的一行提示）。
 - [ ] Lane 5. 剧本里 SPY 到 +1.6% 和 +2.1%，SPY 不在自选股里。Save `r5-spy.txt`. Pass when 1.6% 没有任何触发和提醒；2.1% 有一行提醒、开一个任务。
 - [ ] Lane 6. 节假日和 2026-11-27 提前收盘日两个剧本。Save `r5-calendar.txt`. Pass when 节假日没有任何触发；提前收盘日 13:00 以后的成交不写行、不触发。
 - [ ] Lane 7. 临时状态目录的 `config.json` 里留着 `sources.us-market`，启动宿主。Save `r5-config.txt`. Pass when 拒绝启动，报错写着删掉哪一项。删掉后启动正常。
@@ -592,7 +592,7 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 - **R1 以前的代码遇到 `day-move` 会抛错（实测）。** 在 main 上对 `{ when: "day-move" }` 调条件的 `need` 和 `describe`，都是 `TypeError: Cannot read properties of undefined (reading 'need')`。所以回到 R1 以前必须恢复 `data.db` 备份，不能只靠 `--undo`。
 - **留着 `sources.us-market` 但没有 us-market 包时宿主起不来（实测）。** 报错是「config.json：sources.us-market 不是可配置的来源，可配置：（没有）」。R5 改报错说明，R6 先删这一项。
 - **cost 搬成 `change-pct` 行为不同（实测）。** G3 的 `change-pct` 在第一行就已经超过成本线时立刻提醒，旧的 cost 不提醒。你没有 cost 条件，也决定不要 cost，所以迁移不搬它。
-- **到档的消息会被 #105 遮住（读代码）。** #105 让幕僚长在任何任务读过私密数据以后，在 Telegram 上的每句回复都只发一行提示。到档以后的汇报经过幕僚长，所以只有到档那一行作为模块提醒行直接发（ADR-0017），你才看得到。R5 依赖 #105。
+- **到档的消息会被 #105 遮住（读代码）。** #105 让幕僚长在任何任务读过私密数据以后，在 Telegram 上的每句回复都只发一行提示。到档以后的汇报经过幕僚长，所以只有到档那一行作为模块提醒行直接发（ADR-0017），你才看得到。R5 依赖 #105。2026-11-13 补：ADR-0023 去掉了这条规则，汇报和回复在 Telegram 上都是全文，到档那一行仍直接发。
 - **不要的种类以前从没开过任务（实测，旧 Mac 的 `triggers`）。** us-market 一共 17 条触发。个股 3% 档和指数 1.5% 档 5 条，都被幕僚长忽略。放量 8 条，6 条被忽略，2 条转进了更高一档已经开的任务。开任务的 3 条都是 5% 以上的个股档或 2% 的指数档，还有 1 条指数 3% 档转进了已开的任务。所以去掉 3% 档、1.5% 档和放量，你在 Telegram 上看到的东西不会少。
 - **11-12 去掉 AMZN、AAPL 没成（实测加推断）。** 那天的请求「从自选股移除 AMZN 和 AAPL」开在 us-market 领域，任务停在 idle。us-market 的自选股写在 `modules/us-market/module.json` 里（读代码），对话改不了，这是推断的原因。stock-ta 的自选股是模块数据，有 `removedAt` 字段，R2a 的 lane 10 实测领队能不能改。
 - **到档以后多久收到第一行汇报（审查者 B 报告，本次没复测）。** 旧 Mac 上 us-market 从触发到 Telegram 第一行汇报的中位数约 2 分钟。R5 的 perf 基线开工时重量。

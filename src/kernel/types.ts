@@ -20,7 +20,7 @@ export interface DomainEntry {
 	onRoster: boolean;
 	/** The package version that serves now. A ticket opened in this domain is pinned to it. Absent for a legacy module, which has no copy to pin. */
 	digest?: string;
-	/** The module's Chinese name, for the line Telegram gets instead of a report that touched private data. */
+	/** The module's Chinese name, shown before its alerts and notices. */
 	title?: string;
 	/** A feed fills a `private` collection, so a ticket a host source opened (bash or web_get) may not take this domain (ADR-0018). */
 	privateFeed?: true;
@@ -79,12 +79,9 @@ export type TriggerSubmission = {
 	sender: string;
 	body: string;
 	occurredAt: number;
-} & (
-	/** From a feed that fills private data (design.md §5): a ticket that takes it has touched private data. */
-	| { private?: boolean; announce?: never }
 	/** A private feed's released `line` (ADR-0020): a new trigger that is not ignored is also posted as a notice host line, in the same transaction. */
-	| { private?: false; announce: true }
-);
+	announce?: true;
+};
 
 export type SourcePolicy = (trigger: TriggerSubmission) => "ignore" | "candidate" | "notice";
 
@@ -345,8 +342,8 @@ export type HostLinePost =
 
 export const NOTICE_MAX = 2000;
 
-/** A private module's alert leaves this machine only as a notice naming the module. */
-export type AlertModule = { title: string; private: boolean };
+/** The module an alert or receipt comes from, shown before its text. */
+export type AlertModule = { title: string };
 
 /** A host line in the conversation. `who` is the kind. It cannot be quoted. `module`: absent for the market source's alerts. */
 export type HostLine = { id: string; who: HostLinePost["kind"]; text: string; at: number; module?: AlertModule };

@@ -110,21 +110,6 @@ const feedProblem = (origin: Origin, feed: string, what: string) =>
 		? undefined
 		: `${what} belongs to module feed ${feed}, and only a ticket that module's feed opened (no bash, no web_get), in domain ${ruleNamespace(feed)} or no domain, may take a feed's text; open a ticket for it instead`;
 
-function writtenBy(d: Decision, ticketId: string | undefined): string[] {
-	switch (d.kind) {
-		case "open_ticket":
-			return [ticketId!];
-		case "hand_over":
-			return [d.ticketId];
-		case "ignore":
-			return [d.triggerId];
-		case "stop":
-			return [];
-		default:
-			throw new Error(`decision ${(d as { kind: string }).kind} does not say where it writes`);
-	}
-}
-
 const answerOnly = (triggerId: string, ticketId: string) =>
 	`${triggerId} is the user's click answering ${ticketId}'s question; route hand_over to ${ticketId}`;
 
@@ -154,7 +139,7 @@ function toTrigger(r: Row): Trigger {
 	};
 }
 
-const moduleOf = (r: Row): { module?: AlertModule } => (r.module_title ? { module: { title: r.module_title, private: r.module_private === 1 } } : {});
+const moduleOf = (r: Row): { module?: AlertModule } => (r.module_title ? { module: { title: r.module_title } } : {});
 
 function hostLine(r: Row): HostLine {
 	return { id: r.id, who: r.kind, text: r.text, at: r.created_at, ...moduleOf(r) };
@@ -235,14 +220,14 @@ export interface KernelOptions {
 }
 
 const LINES = `
-	SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord, NULL AS cause, 1 AS shown, NULL AS module_title, NULL AS module_private FROM triggers t
+	SELECT t.id AS id, 'user' AS who, t.body AS text, t.received_at AS at, t.rowid AS ord, NULL AS cause, 1 AS shown, NULL AS module_title FROM triggers t
 	JOIN trigger_threads tt ON tt.trigger_id = t.id WHERE tt.thread_id = ?
 	UNION ALL
-	SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause, r.delivered_at IS NOT NULL, NULL, NULL FROM reply_receipts r WHERE r.thread_id = ?
+	SELECT r.id, 'router', r.text, r.created_at, r.rowid, r.cause, r.delivered_at IS NOT NULL, NULL FROM reply_receipts r WHERE r.thread_id = ?
 	UNION ALL
-	SELECT ? || c.day, 'user', c.said, c.answered_at, c.rowid, NULL, 1, NULL, NULL FROM cap_asks c WHERE c.said IS NOT NULL
+	SELECT ? || c.day, 'user', c.said, c.answered_at, c.rowid, NULL, 1, NULL FROM cap_asks c WHERE c.said IS NOT NULL
 	UNION ALL
-	SELECT h.id, h.kind, h.text, h.created_at, h.rowid, NULL, h.kind = 'receipt' OR h.delivered_at IS NOT NULL, h.module_title, h.module_private FROM host_lines h`;
+	SELECT h.id, h.kind, h.text, h.created_at, h.rowid, NULL, h.kind = 'receipt' OR h.delivered_at IS NOT NULL, h.module_title FROM host_lines h`;
 const LINES_PARAMS = [CONVERSATION_THREAD_ID, CONVERSATION_THREAD_ID, CAP_ASK_PREFIX] as const;
 const HIDDEN = "id IN (SELECT line_id FROM conversation_hidden)";
 
@@ -309,8 +294,8 @@ export class Kernel {
 
 			const triggerId = this.#id("trg");
 			this.#run(
-				`INSERT INTO triggers (id, source, external_id, sender, body, occurred_at, received_at, disposition, private)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				`INSERT INTO triggers (id, source, external_id, sender, body, occurred_at, received_at, disposition)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 				triggerId,
 				sub.source,
 				sub.externalId,
@@ -319,7 +304,6 @@ export class Kernel {
 				sub.occurredAt,
 				this.#now(),
 				disposition,
-				sub.private ? 1 : 0,
 			);
 			for (const threadId of new Set(threadIds)) {
 				this.#run("INSERT INTO trigger_threads (trigger_id, thread_id) VALUES (?, ?)", triggerId, threadId);
@@ -434,14 +418,13 @@ export class Kernel {
 		return r && toRunAsk(r);
 	}
 
-	/** Only the user's click reaches this. `fromIm`: a phone may not approve a command for a ticket that touched private data. */
-	answerRunAsk({ askId, option, fromIm }: { askId: string; option: number; fromIm: boolean }): RunAnswerOutcome {
+	/** Only the user's click reaches this. */
+	answerRunAsk({ askId, option }: { askId: string; option: number }): RunAnswerOutcome {
 		return this.#tx((): RunAnswerOutcome => {
 			const refuse = (refusal: AnswerRefusal) => ({ ok: false as const, refusal });
 			this.#expireRunAsks();
 			const ask = this.runAsk(askId);
 			if (!ask) return refuse({ kind: "no_question" });
-			if (fromIm && this.touchedPrivate(ask.ticketId)) return refuse({ kind: "web_only" });
 			if (!Number.isInteger(option) || option < 0 || option >= RUN_OPTIONS.length) return refuse({ kind: "out_of_range", count: RUN_OPTIONS.length });
 			if (ask.state === "declined" && ask.reason !== "user") return refuse({ kind: "closed" });
 			if (ask.state !== "open") {
@@ -498,7 +481,6 @@ export class Kernel {
 		return this.#tx(() =>
 			decisions.map((decision) => {
 				const result = this.#decide(decision, takenThisRoute);
-				if (result.ok) for (const id of writtenBy(decision, result.ticketId)) this.#routerWrote(id);
 				this.#run(
 					"INSERT INTO decisions (decision, ok, reason, ticket_id, created_at) VALUES (?, ?, ?, ?, ?)",
 					JSON.stringify(decision),
@@ -536,7 +518,6 @@ export class Kernel {
 				text,
 				this.#now(),
 			);
-			this.#routerWrote(replyId, this.#privateTicket(cause));
 			this.#enqueue({ kind: "channel.reply", payload: { threadId, text, replyId, ticketId: cause.startsWith("tkt_") ? cause : null } });
 			return { ok: true, replyId };
 		});
@@ -577,7 +558,6 @@ export class Kernel {
 			const problem = this.#acceptsInput(ticketId);
 			if (problem) return reject(problem);
 			this.#addInput(ticketId, "note", text);
-			this.#routerWrote(ticketId);
 			return { ok: true };
 		});
 	}
@@ -1222,18 +1202,6 @@ export class Kernel {
 		this.#run("UPDATE tickets SET read_web_at = COALESCE(read_web_at, ?) WHERE id = ?", this.#now(), ticketId);
 	}
 
-	touchPrivate(ticketId: string): void {
-		this.#run("UPDATE tickets SET touched_private_at = COALESCE(touched_private_at, ?) WHERE id = ?", this.#now(), ticketId);
-	}
-
-	touchedPrivate(ticketId: string): boolean {
-		return this.#privateTicket(ticketId) !== null;
-	}
-
-	#privateTicket(ticketId: string): { module: string | null } | null {
-		return this.#get("SELECT domain AS module FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) ?? null;
-	}
-
 	moduleLabel(module: string | null): string {
 		return module === null ? "模块" : (this.#domains().get(module)?.title ?? module);
 	}
@@ -1241,17 +1209,6 @@ export class Kernel {
 	/** A notice a module's feed gives the user starts with the module's title, so the phone shows whose words they are. */
 	moduleNotice(source: string, text: string): string {
 		return `${this.moduleLabel(ruleNamespace(source))}：${text}`;
-	}
-
-	privateLabel(ticketId: string): string | null {
-		const ticket = this.#privateTicket(ticketId);
-		return ticket && this.moduleLabel(ticket.module);
-	}
-
-	/** A private ticket's title was written with private data at hand, so text about anything else names it only by its module. */
-	ticketName(ticketId: string): string {
-		const row = this.#get("SELECT title, domain, touched_private_at FROM tickets WHERE id = ?", ticketId);
-		return `${ticketId}「${row?.touched_private_at == null ? (row?.title ?? "") : `一个${this.moduleLabel(row.domain)}的私密任务`}」`;
 	}
 
 	/**
@@ -1272,11 +1229,6 @@ export class Kernel {
 		);
 	}
 
-	routerSaw(id: string): void {
-		const heard = this.#privacyOf(id);
-		if (heard) this.#run("INSERT INTO router_private (at, module) VALUES (?, ?)", this.#now(), heard.module);
-	}
-
 	/** What a Worker's `read_ticket` returns: its own ticket, a thread it subscribes, or a trigger in one of those threads or among its inputs. */
 	workerRead(ticketId: string, id: string | undefined): ReadResult {
 		const own = this.read(ticketId);
@@ -1290,48 +1242,7 @@ export class Kernel {
 				((target.threadIds.some((t) => own.threadIds.includes(t)) && feedMayReach(origin, target.trigger.source)) ||
 					own.recentInputs.some((i) => i.triggerId === id)));
 		if (!allowed) throw new Error(`${id} 不属于本任务，读不到`);
-		if (this.#privacyOf(id)) this.touchPrivate(ticketId);
 		return target;
-	}
-
-	/** A subscriber can read every trigger in the thread, so subscribing is reading them. Reading the thread itself shows only ids. */
-	#holdsPrivate(threadId: string): boolean {
-		return this.#column("SELECT trigger_id AS v FROM trigger_threads WHERE thread_id = ?", threadId).some((id) => this.#privacyOf(id) !== null);
-	}
-
-	#privacyOf(id: string): { module: string | null } | null {
-		if (id.startsWith("tkt_")) return this.#privateTicket(id);
-		const written = this.#get("SELECT module FROM private_text WHERE id = ?", id);
-		if (written) return { module: written.module };
-		if (!id.startsWith("trg_")) return null;
-		const feed = this.#get("SELECT source FROM triggers WHERE id = ? AND private = 1", id);
-		if (feed) return { module: ruleNamespace(feed.source) };
-		const answered = this.#answerOf(id)?.ticketId;
-		const quoted = this.#get("SELECT line_id FROM trigger_quotes WHERE trigger_id = ?", id)?.line_id;
-		return (answered && this.#privacyOf(answered)) || (quoted && this.#privacyOf(quoted)) || null;
-	}
-
-	/** The newest private data the current Router session holds, or null when it holds none. */
-	lastPrivate(): { module: string | null } | null {
-		const row = this.#get("SELECT module FROM router_private ORDER BY at DESC, rowid DESC LIMIT 1");
-		return row ? { module: row.module } : null;
-	}
-
-	/** Recorded when the reply was written, so a 清屏 between writing and sending does not change it. */
-	privateReply(replyId: string): { module: string | null } | null {
-		const row = this.#get("SELECT module FROM private_text WHERE id = ?", replyId);
-		return row ? { module: row.module } : null;
-	}
-
-	#routerWrote(id: string, privateCause: { module: string | null } | null = null): void {
-		const heard = privateCause ?? this.lastPrivate();
-		if (!heard) return;
-		if (id.startsWith("tkt_")) this.touchPrivate(id);
-		else this.#run("INSERT INTO private_text (id, module) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", id, heard.module);
-	}
-
-	routerStartedFresh(): void {
-		this.#run("DELETE FROM router_private");
 	}
 
 	heardOtherThanUser(ticketId: string): "trigger" | "note" | "web" | undefined {
@@ -1343,7 +1254,7 @@ export class Kernel {
 	postHostLine(source: string, post: HostLinePost): { line: HostLine; duplicate: boolean } {
 		return this.#tx(() => {
 			if (post.kind === "alert") {
-				const existing = this.#get("SELECT id, kind, text, created_at, module_title, module_private FROM host_lines WHERE source = ? AND external_id = ?", source, post.externalId);
+				const existing = this.#get("SELECT id, kind, text, created_at, module_title FROM host_lines WHERE source = ? AND external_id = ?", source, post.externalId);
 				if (existing) return { line: hostLine(existing), duplicate: true };
 			}
 			return { line: this.#insertHostLine(source, post), duplicate: false };
@@ -1355,7 +1266,7 @@ export class Kernel {
 		const at = this.#now();
 		const module = post.kind === "notice" ? undefined : post.module;
 		this.#run(
-			"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at, module_title, module_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at, module_title) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
 			id,
 			post.kind,
 			source,
@@ -1364,7 +1275,6 @@ export class Kernel {
 			post.kind === "alert" ? post.occurredAt : at,
 			at,
 			module?.title ?? null,
-			module === undefined ? null : Number(module.private),
 		);
 		return { id, who: post.kind, text: post.text, at, ...(module && { module }) };
 	}
@@ -1384,12 +1294,12 @@ export class Kernel {
 	}
 
 	undeliveredLines(): HostLine[] {
-		return this.#all("SELECT id, kind, text, created_at, module_title, module_private FROM host_lines WHERE kind <> 'receipt' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
+		return this.#all("SELECT id, kind, text, created_at, module_title FROM host_lines WHERE kind <> 'receipt' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
 	}
 
 	/** Alerts posted since local midnight, oldest first. */
 	alertsToday(): HostLine[] {
-		return this.#all("SELECT id, kind, text, created_at, module_title, module_private FROM host_lines WHERE kind = 'alert' AND created_at >= ? ORDER BY rowid", localDayStart(this.#now())).map(hostLine);
+		return this.#all("SELECT id, kind, text, created_at, module_title FROM host_lines WHERE kind = 'alert' AND created_at >= ? ORDER BY rowid", localDayStart(this.#now())).map(hostLine);
 	}
 
 	alertCountsToday(): Record<string, number> {
@@ -1521,7 +1431,6 @@ export class Kernel {
 			const source = threadId.match(SOURCE_THREAD)?.[1];
 			if (source) this.#run("INSERT INTO threads (id, source, title) VALUES (?, ?, NULL) ON CONFLICT (id) DO NOTHING", threadId, source);
 			this.#run("INSERT INTO subscriptions (ticket_id, thread_id) VALUES (?, ?)", ticketId, threadId);
-			if (this.#holdsPrivate(threadId)) this.touchPrivate(ticketId);
 		}
 		this.#addInput(ticketId, "brief", d.brief, d.triggerId ?? null);
 		if (d.triggerId !== undefined) takenThisRoute.add(d.triggerId);
@@ -1578,7 +1487,6 @@ export class Kernel {
 			this.#servingDigest(this.#ticketRow(ticketId)!.domain),
 			ticketId,
 		);
-		if (triggerId !== null && this.#privacyOf(triggerId)) this.touchPrivate(ticketId);
 		this.#wake(ticketId);
 	}
 

@@ -95,7 +95,7 @@ async function side(repo: string, label: "trunk" | "head") {
 	const db = (sql: string) => query(join(state, "state.db"), sql);
 	const letters = () => query(join(state, "modules-data/private-line/data.db"), "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%messages%'").flatMap((t) => query(join(state, "modules-data/private-line/data.db"), `SELECT * FROM "${t.name}" ORDER BY "_id"`));
 	const notices = () => db("SELECT text FROM host_lines WHERE kind = 'notice' AND source = 'private-line/inbox' ORDER BY rowid").map((r) => String(r.text));
-	const triggers = () => db("SELECT external_id, body, private FROM triggers WHERE source = 'private-line/inbox' ORDER BY rowid");
+	const triggers = () => db("SELECT external_id, body FROM triggers WHERE source = 'private-line/inbox' ORDER BY rowid");
 	const inbox = join(state, "inbox/private-line/inbox");
 	let n = 0;
 	const deliver = async (item: object) => {
@@ -206,22 +206,21 @@ try {
 		check(
 			"m3-market-full",
 			head.texts().includes("转述：TOYX 跌了 5.2%，成交量放大") && head.host.url !== undefined,
-			`tickets: ${JSON.stringify(head.db("SELECT title, basis, rule_id, touched_private_at FROM tickets"))}\nTelegram recorder (last 4):\n${head.texts().slice(-4).join("\n---\n")}`,
+			`tickets: ${JSON.stringify(head.db("SELECT title, basis, rule_id FROM tickets"))}\nTelegram recorder (last 4):\n${head.texts().slice(-4).join("\n---\n")}`,
 		);
 
 		await head.deliver(letter("m-5", { subject: "请处理" }));
-		await within(60_000, () => head.db("SELECT text FROM reply_receipts").some((r) => String(r.text).includes(CANARY)));
-		await within(10_000, () => head.texts().filter((t) => t === ONE_LINE).length >= 1);
+		await within(60_000, () => head.texts().some((t) => t.startsWith("转述：") && t.includes(CANARY)));
 		const mark = head.texts().length;
 		head.tg.userSays(USER, "那封信呢");
-		await within(20_000, () => head.texts().slice(mark).includes(ONE_LINE));
+		await within(20_000, () => head.texts().slice(mark).includes("回：好的"));
 		await sleep(1000);
 		const web = head.db("SELECT text FROM reply_receipts").map((r) => String(r.text));
-		const leaked = [...(head.tg.sent as { text: string }[]).map((m) => m.text), ...(head.tg.edits as { text: string }[]).map((e) => e.text)].filter((t) => t.includes(CANARY));
+		const relayed = head.texts().filter((t) => t.startsWith("转述：") && t.includes(CANARY));
 		check(
-			"m3-canary",
-			leaked.length === 0 && web.some((t) => t.includes(CANARY)) && head.texts().slice(mark).includes(ONE_LINE) && !head.texts().slice(mark).includes("回：好的"),
-			`Telegram messages or edits holding ${CANARY}: ${leaked.length}\nRouter replies on the web: ${JSON.stringify(web)}\ntickets: ${JSON.stringify(head.db("SELECT title, basis, domain, touched_private_at IS NOT NULL AS private FROM tickets"))}\nTelegram after "那封信呢":\n${head.texts().slice(mark).join("\n---\n")}`,
+			"m3-full-text",
+			relayed.length === 1 && head.texts().slice(mark).includes("回：好的") && !head.texts().some((t) => t.includes("请在网页上查看")),
+			`relays on Telegram holding the letter's body: ${JSON.stringify(relayed)}\nRouter replies on the web: ${JSON.stringify(web)}\ntickets: ${JSON.stringify(head.db("SELECT title, basis, domain FROM tickets"))}\nTelegram after "那封信呢":\n${head.texts().slice(mark).join("\n---\n")}`,
 		);
 
 		const checks: string[] = [];

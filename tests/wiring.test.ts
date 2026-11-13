@@ -390,15 +390,15 @@ async function envProbe(secretsText: string) {
 
 test("入口：宿主的 Gateway 从状态目录的模块副本里跑工具，密钥值取自 secretsFile，每次调用记一行日志", async () => {
 	const { reply, logs } = await envProbe("PERSONAL_TAX__KEY=from-file\n");
-	assert.deepEqual(reply, { ok: true, output: { named: "from-file" }, private: true });
+	assert.deepEqual(reply, { ok: true, output: { named: "from-file" } });
 	assert.ok(logs.some((l) => l.startsWith("[gateway] personal-tax tools/env-probe")), logs.join("\n"));
 });
 
 test("入口：宿主进程环境里的同名变量到不了模块代码，模块的密钥只取自 secretsFile", async (t) => {
 	process.env.PERSONAL_TAX__KEY = "from-host-env";
 	t.after(() => delete process.env.PERSONAL_TAX__KEY);
-	assert.deepEqual((await envProbe("PERSONAL_TAX__KEY=from-file\n")).reply, { ok: true, output: { named: "from-file" }, private: true });
-	assert.deepEqual((await envProbe("OTHER=x\n")).reply, { ok: true, output: { named: null }, private: true });
+	assert.deepEqual((await envProbe("PERSONAL_TAX__KEY=from-file\n")).reply, { ok: true, output: { named: "from-file" } });
+	assert.deepEqual((await envProbe("OTHER=x\n")).reply, { ok: true, output: { named: null } });
 });
 
 async function draftProbe(t: TestContext, feedFixtures: boolean, oauthUrl: (google: FakeGoogle) => string | undefined) {

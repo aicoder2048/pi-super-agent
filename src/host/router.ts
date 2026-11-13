@@ -39,7 +39,6 @@ export function routerTools(kernel: Kernel, afterCommand: () => void, unanswered
 		description: "按 id 读取任务（tkt_）、线程（thr_）或触发（trg_）。结果里带相邻对象的 id，可以继续读下一跳。",
 		parameters: Type.Object({ id: Type.String() }),
 		async execute(_id, { id }) {
-			kernel.routerSaw(id);
 			return json(kernel.read(id) ?? { error: `找不到 ${id}` });
 		},
 	});
@@ -166,7 +165,7 @@ function ticketsLine(kernel: Kernel): string {
 	const recent = rows.filter((r) => r.stage === "closed" || r.stage === "stopped").slice(-RECENT_CLOSED);
 	const listed = [...open, ...recent].slice(-LISTED_TICKETS);
 	if (listed.length === 0) return "进行中和最近的任务：无";
-	return `进行中和最近的任务：${listed.map((r) => `${kernel.ticketName(r.id)}${STAGE_NAME[r.stage]}`).join("；")}`;
+	return `进行中和最近的任务：${listed.map((r) => `${r.id}「${r.title}」${STAGE_NAME[r.stage]}`).join("；")}`;
 }
 
 function reportCard(kind: "report" | "question", head: string, r: Report): string {
@@ -301,7 +300,7 @@ export type RouterSession = Awaited<ReturnType<typeof createAgentSession>>["sess
 interface PendingCard {
 	card: string;
 	actionId?: string;
-	/** Tickets and triggers the card carries; counted as seen only once the card reaches a session. */
+	/** The trigger or ticket the card is about, so a reply to that cause can tell which cards it answers. */
 	carries?: string[];
 }
 
@@ -451,7 +450,6 @@ export class Router {
 				sessionManager: openSessionManager(options, fresh),
 				settingsManager,
 			});
-			if (session.messages.length === 0) options.kernel.routerStartedFresh();
 			return session;
 		};
 		router = new Router(await open(false), open, options);
@@ -529,7 +527,6 @@ export class Router {
 			const preamble = block === "" ? undefined : hashOf(block);
 			const fresh = preamble !== undefined && preamble !== this.#sentPreamble;
 			if (fresh) this.#sentPreamble = preamble;
-			for (const id of items.flatMap((p) => p.carries ?? [])) this.#kernel.routerSaw(id);
 			return this.session
 				.sendCustomMessage(
 					{

@@ -198,7 +198,7 @@ export class Host {
 		const data = instanceData(options.stateDir);
 		const feedPorts: FeedPorts = {
 			data,
-			submit: ({ source, id, thread, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(source, thread) }], sender: source, body, occurredAt: at, ...(reach === "released" ? { announce: true } : { private: reach === "private" }) }),
+			submit: ({ source, id, thread, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(source, thread) }], sender: source, body, occurredAt: at, ...(reach === "released" && { announce: true }) }),
 			alert: (module, alert) => this.#postModuleAlert(module, alert),
 			problem: (source, problem) => this.#feedProblem(source, problem),
 			secret: options.moduleFeeds?.secret ?? (() => undefined),
@@ -230,7 +230,7 @@ export class Host {
 			kitFor: this.#kitFor,
 			gateway: options.gateway,
 			alert: (module, alert) => this.#postModuleAlert(module, alert),
-			receipt: (module, text) => this.#postHostLine(`module:${module}`, { kind: "receipt", text, module: { title: this.kernel.moduleLabel(module), private: true } }),
+			receipt: (module, text) => this.#postHostLine(`module:${module}`, { kind: "receipt", text, module: { title: this.kernel.moduleLabel(module) } }),
 			dispatch: memberCap && { ...options.dispatch!, cap: { limit: () => memberCap.limit(), membersWaiting: (waiting) => this.#askAboutMemberCap(memberCap, waiting) } },
 			lookup: async (source, op, args) => {
 				const feed = this.feeds.get(source);
@@ -267,7 +267,7 @@ export class Host {
 			this.#log,
 		);
 		// Built before any client can say a line, so every line and reply reaches it; it touches the network only once started.
-		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }), privateTitle: (ticketId) => this.kernel.privateLabel(ticketId), privateReply: (replyId) => this.#privateReply(replyId) }, db: this.#db, clock, log: this.#log });
+		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }) }, db: this.#db, clock, log: this.#log });
 	}
 
 	static async start(options: HostOptions): Promise<Host> {
@@ -348,7 +348,7 @@ export class Host {
 	 */
 	answer(reportId: string, option: number, { from }: { from?: ImChat } = {}): AnswerResult {
 		if (isCapAskId(reportId)) return from ? { ok: false, refusal: { kind: "not_here" } } : this.#answerCapAsk(reportId, option);
-		if (isRunAskId(reportId)) return this.#answerRunAsk(reportId, option, from);
+		if (isRunAskId(reportId)) return this.#answerRunAsk(reportId, option);
 		const at = Date.now();
 		const result = this.kernel.answerQuestion({ reportId, option, at });
 		if (!result.ok) return result;
@@ -379,8 +379,8 @@ export class Host {
 	}
 
 	/** Not a trigger and not a conversation line: the Router never sees the click (ADR-0021). */
-	#answerRunAsk(askId: string, option: number, from: ImChat | undefined): AnswerResult {
-		const result = this.kernel.answerRunAsk({ askId, option, fromIm: from !== undefined });
+	#answerRunAsk(askId: string, option: number): AnswerResult {
+		const result = this.kernel.answerRunAsk({ askId, option });
 		if (!result.ok) return result;
 		if (!result.duplicate) {
 			if (result.ask.state === "approved") this.#runApproved(result.ask);
@@ -445,11 +445,6 @@ export class Host {
 		return cap ? { limit: cap.limit(), question: cap.question(this.workers.membersWaitingForSlot()) } : null;
 	}
 
-	#privateReply(replyId: string): string | null {
-		const heard = this.kernel.privateReply(replyId);
-		return heard && this.kernel.moduleLabel(heard.module);
-	}
-
 	#deliverReply(threadId: string, text: string, replyId: string, ticketId: string | null | undefined): void {
 		if (threadId !== CONVERSATION_THREAD_ID) throw new Error(`线程 ${threadId} 没有渠道`);
 		this.#broadcast({ type: "reply", text, at: Date.now(), replyId, ...(ticketId ? { ticketId } : {}) });
@@ -464,7 +459,7 @@ export class Host {
 			externalId: alert.externalId,
 			text: alert.text,
 			occurredAt: Number.isNaN(occurredAt) ? this.#clock.now() : occurredAt,
-			module: { title: this.kernel.moduleLabel(module), private: alert.private },
+			module: { title: this.kernel.moduleLabel(module) },
 		});
 	}
 

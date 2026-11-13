@@ -76,8 +76,6 @@ export type CardStatus =
 
 export interface CardView {
 	reportId: string;
-	/** Missing on a card stored before cards named their ticket. */
-	ticketId?: string;
 	title: string;
 	/** Empty for a ticket from before helpers had names. */
 	helper: string;
@@ -100,7 +98,7 @@ export function cardView(row: DashboardRow): CardView | null {
 					: click?.state === "dropped"
 						? { kind: "dropped" }
 						: { kind: "open" };
-	return { reportId: q.reportId, ticketId: row.id, title: row.title, helper: helperFullName(row.helper), question: q.text, options: q.options, status };
+	return { reportId: q.reportId, title: row.title, helper: helperFullName(row.helper), question: q.text, options: q.options, status };
 }
 
 /** A number on each real line, so a line the phone soft-wraps reads as the same line and a real newline cannot hide in a wrap. */
@@ -109,15 +107,13 @@ const numberLines = (command: string) => command.split("\n").map((line, i) => `$
 export function runAskView(row: DashboardRow, ask: RunAsk): CardView {
 	const label = ask.state === "open" || (ask.state === "declined" && ask.reason !== "user") ? null : RUN_OPTIONS[ask.state === "declined" ? 1 : 0];
 	const question = [`任务想运行一条命令。${runOrigin(ask.origin)}`, "命令：", numberLines(ask.command), `任务的说法：${ask.why}`].join("\n");
-	return { reportId: ask.id, ticketId: row.id, title: row.title, helper: HOST_SOURCE, question, options: RUN_OPTIONS, status: ask.state === "open" ? { kind: "open" } : { kind: "closed", label } };
+	return { reportId: ask.id, title: row.title, helper: HOST_SOURCE, question, options: RUN_OPTIONS, status: ask.state === "open" ? { kind: "open" } : { kind: "closed", label } };
 }
 
 /** A command is shown whole or not at all, so a card that would be clipped goes to the web page instead. */
 export const fitsOneMessage = (view: CardView) => cardText(view).length <= MESSAGE_MAX;
 
 export const runAskLine = (title: string) => `任务「${clip(title, TITLE_MAX)}」想运行一条命令，请在网页上批准`;
-
-export const privateRunAskLine = (module: string) => `${module} 的任务想运行一条命令，请在网页上批准`;
 
 /**
  * The chief of staff relaying a helper's question the card already shows: the question itself, give or take edge

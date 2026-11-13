@@ -195,7 +195,6 @@ async function chatRig(t: test.TestContext, routerOptions: object = {}) {
 		session: () => (host.router as Router).session,
 		count: (prefix: string) => routerReplies(host).filter((x) => x.startsWith(prefix)).length,
 		phone: () => tg.sent.filter((m) => m.chatId === USER).map((m) => m.text),
-		leaks: () => [...tg.sent.map((m) => m.text), ...tg.edits.map((e) => e.text)].filter((x) => x.includes(CANARY)),
 	};
 }
 
@@ -298,20 +297,19 @@ test("G0：回复了一句话之后同一轮的下一次模型调用出错，重
 	assert.equal(r.count("回：一"), 1);
 });
 
-test("H：私密候选那一轮出错、清屏后补进新会话：记作私密，之后的回复在 Telegram 上不发全文", async (t) => {
+test("H：候选那一轮出错、清屏后补进新会话；之后的回复全文发到 Telegram", async (t) => {
 	let failing = true;
 	const r = await chatRig(t, { failOn: () => (failing ? "boom: overloaded" : undefined), errorRetryMs: [1500] });
-	r.host.kernel.submitTrigger({ source: "personal-health/mail", externalId: "h1", threads: [{ id: "thr_h1" }], sender: "h", body: `检验单 ${CANARY}`, occurredAt: Date.now(), private: true });
+	r.host.kernel.submitTrigger({ source: "personal-health/mail", externalId: "h1", threads: [{ id: "thr_h1" }], sender: "h", body: `检验单 ${CANARY}`, occurredAt: Date.now() });
 	await until(() => erroredOut(r.session()), "那一轮出错", 5000);
 	r.host.clearConversation();
 	failing = false;
-	await until(() => r.host.kernel.lastPrivate() !== null && !r.session().isStreaming && r.session().messages.length > 0, "新会话看到私密候选", 5000);
+	await until(() => !r.session().isStreaming && r.session().messages.length > 0, "新会话看到候选", 5000);
 	assert.ok(JSON.stringify(r.session().messages).includes(CANARY), "新会话里有那张卡片");
 	r.host.say("二");
 	await until(() => r.count("回：二") > 0, "二", 5000);
 	await sleep(500);
-	assert.deepEqual(r.leaks(), []);
-	assert.ok(!r.phone().some((x) => x.includes("回：二")), "二 不发全文");
+	await until(() => r.phone().includes(`回：二｜${CANARY}`), "二 全文到了手机", 5000);
 });
 
 test("I：清屏时没有没处理完的卡片，新会话不多跑一轮", async (t) => {
