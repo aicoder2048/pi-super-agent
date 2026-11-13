@@ -170,7 +170,7 @@ async function lanes() {
 		};
 		const old = await run(trunk(), "m7-regression-trunk");
 		const now = await run(HEAD, "m7-regression-head");
-		const pass = old.posts === 0 && old.sends === 0 && old.saw.includes("Tool domain_tool not found") && now.posts === 1 && now.sends === 0;
+		const pass = old.posts === 0 && old.sends === 0 && /Tool domain_tool not found|本任务所属模块的这个版本里没有这一项/.test(old.saw) && now.posts === 1 && now.sends === 0;
 		return { pass, evidence: `trunk ${trunk()}: drafts.create ${old.posts}, SEND ATTEMPT ${old.sends}\n  relay: ${old.relay}\n  worker saw: ${old.saw}\nhead: drafts.create ${now.posts}, SEND ATTEMPT ${now.sends}\n  relay: ${now.relay}` };
 	});
 
