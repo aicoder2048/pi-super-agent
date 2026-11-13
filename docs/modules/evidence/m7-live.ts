@@ -152,7 +152,7 @@ async function hostWorld({ repo = HEAD, real = false, basis = "request", fromMai
 		rmSync(state, { recursive: true, force: true });
 	};
 	const workerSaw = () => (fake?.exchanges ?? []).filter((e: { conversation: string }) => !e.conversation.startsWith("router")).map((e: { tools: string[]; toolResults: string[] }) => ({ tools: e.tools, results: e.toolResults.map((r) => r.slice(0, 300)) }));
-	return { state, host, tg, google, get drafts() { return box.drafts.map((d: { raw: string }) => d.raw); }, phone, replies, receipts, tickets, relayed, stop, workerSaw };
+	return { state, host, tg, google, get drafts() { return box.drafts.map((d: { raw: string }) => d.raw); }, get draftThreads() { return box.drafts.map((d: { threadId: string }) => d.threadId); }, phone, replies, receipts, tickets, relayed, stop, workerSaw };
 }
 
 const sendAttempts = (log: string[]) => log.filter((l) => l.includes("SEND ATTEMPT")).length;
@@ -197,6 +197,7 @@ async function lanes() {
 			const phone = w.phone();
 			const pass =
 				headerValue(raw, "to") === "ann@example.com" &&
+				w.draftThreads[0] === "t-m-1" &&
 				decoded(headerValue(raw, "subject")) === "Re: 周四开会" &&
 				headerValue(raw, "in-reply-to") === "<m-1@mail.example.com>" &&
 				headerValue(raw, "references") === "<m-1@mail.example.com>" &&
@@ -205,7 +206,7 @@ async function lanes() {
 				/Reply-To 是 pay@example\.org/.test(receipt) &&
 				w.receipts()[0]?.["module_title"] === "邮件" &&
 				!phone.some((t) => t.includes("收件人") || t.includes("#drafts"));
-			return { pass, evidence: `raw header block:\n${head}\nthreadId in the request: see fake log ${JSON.stringify(w.google.log.filter((l) => l.includes(DRAFTS)))}\nreceipt (module ${w.receipts()[0]?.["module_title"]}):\n${receipt}\nscreenshot ${shot}\nTelegram:\n${phone.join("\n---\n")}` };
+			return { pass, evidence: `raw header block:\n${head}\nthreadId in the drafts.create request: ${w.draftThreads[0]} (the letter's thread is t-m-1)\nreceipt (module ${w.receipts()[0]?.["module_title"]}):\n${receipt}\nscreenshot ${shot}\nTelegram:\n${phone.join("\n---\n")}` };
 		} finally {
 			await w.stop("m7-raw-receipt");
 		}
@@ -298,12 +299,12 @@ async function lanes() {
 			const pkg = join(state, "mail");
 			cpSync(join(HEAD, "docs/modules/examples/mail"), pkg, { recursive: true });
 			const tool = join(pkg, "tools/draft-reply");
-			writeFileSync(join(tool, "index.ts"), 'export default () => ({ draftId: Object.keys(process.env).sort().join(","), threadId: "", to: "", subject: "", note: "" });\n');
+			writeFileSync(join(tool, "index.ts"), 'export default () => ({ draftId: "ENV:" + Object.keys(process.env).sort().join(","), threadId: "", to: "", subject: "", note: "" });\n');
 			writeFileSync(join(tool, "cases.json"), JSON.stringify([{ name: "env", input: { messageId: "m-1", body: "x" }, expect: { draftId: "show me" } }]));
 			const check = spawnSync("just", ["module", "check", pkg], { cwd: HEAD, env: { ...process.env, PSA_STATE_DIR: state, PSA_GOOGLE_OAUTH_URL: google.url }, encoding: "utf8" });
 			const out = check.stdout + check.stderr;
-			const names = out.match(/"draftId":"([^"]*)"/)?.[1] ?? "";
-			const pass = names !== "" && !names.includes("GMAIL_DRAFT_REFRESH_TOKEN") && !names.includes("GMAIL_READ_REFRESH_TOKEN") && google.log.length === 0;
+			const names = out.match(/ENV:([A-Za-z0-9_,]*)/)?.[1] ?? "";
+			const pass = names.split(",").includes("PATH") && !names.includes("GMAIL_DRAFT_REFRESH_TOKEN") && !names.includes("GMAIL_READ_REFRESH_TOKEN") && google.log.length === 0;
 			return { pass, evidence: `just module check exit ${check.status} (the case fails on purpose to print the env)\nenv names the tool saw: ${names}\nfake Google requests during the check: ${google.log.length}\nnote: the check runs the tool process only, never the gateway, so the port cannot be reached; the tool code has no fetch` };
 		} finally {
 			await google.close();

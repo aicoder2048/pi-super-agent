@@ -98,12 +98,12 @@ ssh -N -L 8765:127.0.0.1:8765 <旧 Mac>
 ### 撤销
 
 - 全部撤掉。到 `https://myaccount.google.com/connections` 找到 `PSA mail`，删除它的访问权限，两个 token 一起失效。
-- 只撤写草稿的那个。在跑宿主的机器上用 Google 的撤销接口撤掉它，token 不经过屏幕，打印 `200` 就是撤掉了：
+- 撤写草稿的那个。在跑宿主的机器上用 Google 的撤销接口撤掉它，token 不经过屏幕，打印 `200` 就是撤掉了：
 
   ```bash
   grep '^GMAIL_DRAFT_REFRESH_TOKEN=' <secretsFile> | cut -d= -f2- |
     curl -s -o /dev/null -w '%{http_code}\n' --data-urlencode token@- https://oauth2.googleapis.com/revoke
   ```
 
-  之后 `draft-reply` 回一句「写草稿的授权失效了」。读邮件的 token 是不是跟着失效，要在时段 2 实测（计划 M7 lane 10），结果记在这里。
+  撤销接口撤的是整份授权，不只是这一个 token。2026-11-13 时段 2 实测（计划 M7 lane 10），撤掉写草稿的 token 以后，读邮件的 token 也跟着失效，`just google-auth read --check` 回 `400 invalid_grant`。所以撤哪一个都等于两个一起撤，`draft-reply` 回一句「写草稿的授权失效了」，`inbox` 也不再收信。要接着用，两个都重新授权，跑 `just google-auth read` 和 `just google-auth draft`，把两行都换掉。
 - 撤完把旧 Mac 和笔记本 `secretsFile` 里对应的行删掉。全部撤掉时再在模块页关掉 `mail`。
