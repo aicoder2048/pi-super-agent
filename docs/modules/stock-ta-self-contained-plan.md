@@ -71,52 +71,54 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `src/modules/run-code.ts`。`codeProcess` 多给一个环境变量 `PSA_MODULE_DATA`，值是 `<stateDir>/modules-data/<模块>/`。
-- [ ] Edit 调 `runModuleCode` 和 `runModuleCodeAsync` 的地方（`src/modules/feed-runner.ts`、`src/modules/gateway.ts`、`src/modules/validate.ts`），把模块的数据目录传下去。
-- [ ] Edit `src/modules/manifest.ts`、`src/modules/validate.ts`、`src/modules/live.ts`。`feed.json` 加可选的 `limit`；包里可以有 `py/` 子项目，命令行检查和宿主装包时的检查都认它；`__pycache__` 不算进版本 digest（`allFiles`、`digestOf`）。
-- [ ] Create `src/cli/module-setup.ts`。Edit `src/cli/module.ts`，加 `just module setup <名字>`。
-- [ ] Edit `src/cli/module-try.ts`，预演的临时状态目录接上真实的 `files/`。
-- [ ] Edit `docs/modules/architecture/design.md` 第 2、3 节和 `docs/modules/module-user-guide.md`。
-- [ ] Create `tests/module-files.test.ts`、`tests/module-setup.test.ts`。
+- [x] Edit `src/modules/run-code.ts`。`codeProcess` 多给一个环境变量 `PSA_MODULE_DATA`，值是 `<stateDir>/modules-data/<模块>/`。
+- [x] Edit 调 `runModuleCode` 和 `runModuleCodeAsync` 的地方（`src/modules/feed-runner.ts`、`src/modules/gateway.ts`、`src/modules/validate.ts`），把模块的数据目录传下去。
+- [x] Edit `src/modules/manifest.ts`、`src/modules/validate.ts`、`src/modules/live.ts`。`feed.json` 加可选的 `limit`；包里可以有 `py/` 子项目，命令行检查和宿主装包时的检查都认它；`__pycache__` 不算进版本 digest（`allFiles`、`digestOf`）。
+- [x] Create `src/cli/module-setup.ts`。Edit `src/cli/module.ts`，加 `just module setup <名字>`。
+- [x] Edit `src/cli/module-try.ts`，预演的临时状态目录接上真实的 `files/`。
+- [x] Edit `docs/modules/architecture/design.md` 第 2、3 节和 `docs/modules/module-user-guide.md`。
+- [x] Create `tests/module-files.test.ts`、`tests/module-setup.test.ts`。
 
 **Build.**
 
-- [ ] 每个工具和 feed 的进程都拿到 `PSA_MODULE_DATA`。模块代码只往其中的 `files/` 写。`data.db` 和 `knowledge/` 由宿主管，代码只读。宿主在模块打开时建好 `files/`。`just module purge` 本来就删整个目录，`files/` 跟着删。
-- [ ] 两条检查路径（`just module check`，和宿主在 `live.ts` 里装新版本前的检查）跑 feed 的 fixtures 时，都给 handler 一个临时的 `PSA_MODULE_DATA`，跑完删掉。fixture 里的假 `ta` 永远看不到真实的数据目录。
-- [ ] `feed.json` 的 `limit`（例如 `"5m"`，最多 `"10m"`）代替默认的 20 秒，调度器照这个时限停掉这一次调用。不写还是 20 秒。
-- [ ] `py/` 是允许的非组件目录，两条检查路径都认。今天 `just module check` 对它报 `py: is not a component kind`（实测，Appendix A）。包里有 `py/pyproject.toml` 时，检查要求同一目录有 `py/uv.lock`，缺一个就拒绝并说明。`__pycache__` 不进版本 digest，否则 Python 跑一次就让宿主以为包变了。
-- [ ] venv 按锁文件分开放：`files/venv-<py/uv.lock 的 sha256 前 12 位>`。工具和 feed 用和**自己这份包副本**里 `py/uv.lock` 对得上的那个 venv，所以 `rev` 换了以后，钉在旧版本上的 ticket 照样能跑。
-- [ ] `just module setup <名字>` 跑 `uv sync --frozen --compile-bytecode --project <包>/py`，设 `UV_PROJECT_ENVIRONMENT=<数据目录>/files/venv-<12 位>`。环境不进包目录，包不被改动（实测见 Appendix A）。装完最后一步写 `venv-<12 位>/.psa-lock`，内容是完整的 sha256；没有这个文件的 venv 算没装完，下次 setup 重装。重跑同一个锁文件什么都不变。setup 删掉当前和上一个以外的 venv（按 `.psa-lock` 的修改时间）。找不到 `uv` 或 git 拿不到私有仓库时，一行说明怎么办，指向 `docs/modules/stock-ta.md`。
-- [ ] `just module try` 的临时状态目录里，`files/` 是真实 `files/` 的克隆，`venv-*` 例外，是指向真实 venv 的符号链接。venv 里的脚本写死了绝对路径，所以不能复制，也不能改名。预演跑 feed 只写克隆，不碰真实数据。
+- [x] 每个工具和 feed 的进程都拿到 `PSA_MODULE_DATA`。模块代码只往其中的 `files/` 写。`data.db` 和 `knowledge/` 由宿主管，代码只读。宿主在模块打开时建好 `files/`。`just module purge` 本来就删整个目录，`files/` 跟着删。
+- [x] 两条检查路径（`just module check`，和宿主在 `live.ts` 里装新版本前的检查）跑 feed 的 fixtures 时，都给 handler 一个临时的 `PSA_MODULE_DATA`，跑完删掉。fixture 里的假 `ta` 永远看不到真实的数据目录。
+- [x] `feed.json` 的 `limit`（例如 `"5m"`，最多 `"10m"`）代替默认的 20 秒，调度器照这个时限停掉这一次调用。不写还是 20 秒。
+- [x] `py/` 是允许的非组件目录，两条检查路径都认。今天 `just module check` 对它报 `py: is not a component kind`（实测，Appendix A）。包里有 `py/pyproject.toml` 时，检查要求同一目录有 `py/uv.lock`，缺一个就拒绝并说明。`__pycache__` 不进版本 digest，否则 Python 跑一次就让宿主以为包变了。
+- [x] venv 按锁文件分开放：`files/venv-<py/uv.lock 的 sha256 前 12 位>`。工具和 feed 用和**自己这份包副本**里 `py/uv.lock` 对得上的那个 venv，所以 `rev` 换了以后，钉在旧版本上的 ticket 照样能跑。
+- [x] `just module setup <名字>` 跑 `uv sync --frozen --compile-bytecode --project <包>/py`，设 `UV_PROJECT_ENVIRONMENT=<数据目录>/files/venv-<12 位>`。环境不进包目录，包不被改动（实测见 Appendix A）。装完最后一步写 `venv-<12 位>/.psa-lock`，内容是完整的 sha256；没有这个文件的 venv 算没装完，下次 setup 重装。重跑同一个锁文件什么都不变。setup 删掉当前和上一个以外的 venv（按 `.psa-lock` 的修改时间）。找不到 `uv` 或 git 拿不到私有仓库时，一行说明怎么办，指向 `docs/modules/stock-ta.md`。
+- [x] `just module try` 的临时状态目录里，`files/` 是真实 `files/` 的克隆，`venv-*` 例外，是指向真实 venv 的符号链接。venv 里的脚本写死了绝对路径，所以不能复制，也不能改名。预演跑 feed 只写克隆，不碰真实数据。
 
 **You see.**
 
-- [ ] 一个带 `py/`（依赖一个公开的小包）的样例模块打开后，`just module setup` 打印一行装好了，`modules-data/<模块>/files/venv-<12 位>/bin/` 里有可执行文件，包目录的 sha256 没变，`just modules` 里它是有效的，没有 `py` 的报错。
-- [ ] 样例工具输出 `PSA_MODULE_DATA`，值是这个模块自己的数据目录。
+- [x] 一个带 `py/`（依赖一个公开的小包）的样例模块打开后，`just module setup` 打印一行装好了，`modules-data/<模块>/files/venv-<12 位>/bin/` 里有可执行文件，包目录的 sha256 没变，`just modules` 里它是有效的，没有 `py` 的报错。
+- [x] 样例工具输出 `PSA_MODULE_DATA`，值是这个模块自己的数据目录。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/module-files.test.ts` 覆盖工具和 feed 拿到自己模块的目录、拿不到别的模块的、两条检查路径都用临时目录、两条检查路径都接受 `py/`、`__pycache__` 不改变 digest、`limit` 生效和上限、try 的克隆加符号链接、purge 删掉 `files/`。`tests/module-setup.test.ts` 用一个假 `uv` 覆盖参数、`UV_PROJECT_ENVIRONMENT` 是 `venv-<12 位>`、`.psa-lock` 最后写、重跑不变、半截 venv 被重装、只留当前和上一个、缺 `uv` 的说明、缺 `uv.lock` 时检查拒绝。Run `just test`.
+- [x] `tests/module-files.test.ts` 覆盖工具和 feed 拿到自己模块的目录、拿不到别的模块的、两条检查路径都用临时目录、两条检查路径都接受 `py/`、`__pycache__` 不改变 digest、`limit` 生效和上限、try 的克隆加符号链接、purge 删掉 `files/`。`tests/module-setup.test.ts` 用一个假 `uv` 覆盖参数、`UV_PROJECT_ENVIRONMENT` 是 `venv-<12 位>`、`.psa-lock` 最后写、重跑不变、半截 venv 被重装、只留当前和上一个、缺 `uv` 的说明、缺 `uv.lock` 时检查拒绝。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/s1-live.ts`。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都打开 personal-tax 并调一次 `tax-bracket`。Save `s1-regression.txt`. Pass when 两边结果相同。
-- [ ] Lane 2. 样例模块和另一个模块的工具各打印一次 `PSA_MODULE_DATA`。Save `s1-env.txt`. Pass when 各自拿到自己的数据目录，`files/` 已经建好。
-- [ ] Lane 3. 真 `uv` 跑 `just module setup` 样例模块。Save `s1-setup.txt`. Pass when `files/venv-<12 位>` 建好，`.psa-lock` 等于 `uv.lock` 的 sha256，包目录 sha256 不变。
-- [ ] Lane 4. 再跑一次 `just module setup`，然后在包的 `py/` 里放一个 `__pycache__/x.pyc`。Save `s1-setup-again.txt`. Pass when 什么都没变，两秒内结束，`just modules` 里的版本 digest 不变、不提示有新版本。
-- [ ] Lane 5. 改两次 `py/uv.lock`（换依赖的版本），每次都 setup。Save `s1-venv-retention.txt`. Pass when 第一次改完有两个 venv，第二次改完只剩当前和上一个。
-- [ ] Lane 6. PATH 里没有 `uv` 时跑 setup。Save `s1-no-uv.txt`. Pass when 一行说明，退出码非零。
-- [ ] Lane 7. feed 写 `"limit": "1m"`，handler 睡 30 秒。Save `s1-limit.txt`. Pass when 这一次成功，不在 20 秒时被停。
-- [ ] Lane 8. `just module check` 跑带 `py/` 和 fixtures 的样例模块，handler 往 `files/` 写一个文件。Save `s1-check.txt`. Pass when ok，没有 `py` 的报错，真实数据目录里没有这个文件。
-- [ ] Lane 9. 宿主运行中，把同一个样例模块放进模块目录，让宿主自己检查并装上。Save `s1-host-check.txt`. Pass when 宿主日志里这个版本检查通过，没有 `py: is not a component kind`，真实数据目录里没有 fixture 写的文件。
-- [ ] Lane 10. `just module try` 样例模块，预演里的 feed 往 `files/` 写；然后关掉模块、`just module purge`。Save `s1-try-purge.txt`. Pass when 预演后真实 `files/` 不变、临时目录里的 `venv-*` 是符号链接；purge 后 `files/` 和所有 venv 都没了。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都打开 personal-tax 并调一次 `tax-bracket`。Save `s1-regression.txt`. Pass when 两边结果相同。
+- [x] Lane 2. 样例模块和另一个模块的工具各打印一次 `PSA_MODULE_DATA`。Save `s1-env.txt`. Pass when 各自拿到自己的数据目录，`files/` 已经建好。
+- [x] Lane 3. 真 `uv` 跑 `just module setup` 样例模块。Save `s1-setup.txt`. Pass when `files/venv-<12 位>` 建好，`.psa-lock` 等于 `uv.lock` 的 sha256，包目录 sha256 不变。
+- [x] Lane 4. 再跑一次 `just module setup`，然后在包的 `py/` 里放一个 `__pycache__/x.pyc`。Save `s1-setup-again.txt`. Pass when 什么都没变，两秒内结束，`just modules` 里的版本 digest 不变、不提示有新版本。
+- [x] Lane 5. 改两次 `py/uv.lock`（换依赖的版本），每次都 setup。Save `s1-venv-retention.txt`. Pass when 第一次改完有两个 venv，第二次改完只剩当前和上一个。
+- [x] Lane 6. PATH 里没有 `uv` 时跑 setup。Save `s1-no-uv.txt`. Pass when 一行说明，退出码非零。
+- [x] Lane 7. feed 写 `"limit": "1m"`，handler 睡 30 秒。Save `s1-limit.txt`. Pass when 这一次成功，不在 20 秒时被停。
+- [x] Lane 8. `just module check` 跑带 `py/` 和 fixtures 的样例模块，handler 往 `files/` 写一个文件。Save `s1-check.txt`. Pass when ok，没有 `py` 的报错，真实数据目录里没有这个文件。
+- [x] Lane 9. 宿主运行中，把同一个样例模块放进模块目录，让宿主自己检查并装上。Save `s1-host-check.txt`. Pass when 宿主日志里这个版本检查通过，没有 `py: is not a component kind`，真实数据目录里没有 fixture 写的文件。
+- [x] Lane 10. `just module try` 样例模块，预演里的 feed 往 `files/` 写；然后关掉模块、`just module purge`。Save `s1-try-purge.txt`. Pass when 预演后真实 `files/` 不变、临时目录里的 `venv-*` 是符号链接；purge 后 `files/` 和所有 venv 都没了。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 宿主启动到就绪的时间，和一次空工具调用的宿主侧时间。
-- [ ] Probe. trunk 和 head 交替各 5 次 `startHost`，各 20 次空工具调用。
-- [ ] Baseline. Record the trunk 启动中位数和空工具调用中位数 first.
-- [ ] Rule. 启动比 trunk 慢 200 毫秒以上，或空工具调用慢 20 毫秒以上，就失败。
+- [x] Metric. 宿主启动到就绪的时间，和一次空工具调用的宿主侧时间。
+- [x] Probe. trunk 和 head 交替各 5 次 `startHost`，各 20 次空工具调用。
+- [x] Baseline. Record the trunk 启动中位数和空工具调用中位数 first.
+- [x] Rule. 启动比 trunk 慢 200 毫秒以上，或空工具调用慢 20 毫秒以上，就失败。
+
+2026-11-12 在 f613e6d 上通过：`tests/module-files.test.ts` 14 条、`tests/module-setup.test.ts` 8 条、`tests/modules-cli.test.ts` 加 1 条（try 的克隆加符号链接），每条先红后绿；`just test` 1664 条里只有已知偶发的「终端 Ctrl+C：Watchdog 不停别人启动的宿主」失败（基线 2ec205d 上也失败，单独重跑三次两次全过），`check.mjs` 全绿。十条 lane 全 PASS，输出在 `/tmp/swarm-s1/owner/s1-*.txt`；样例的 `py/` 依赖公开包 `six`，lane 3 到 5 用真 `uv` 从 PyPI 装，setup 0.4 秒，重跑 0.35 秒，换两次锁文件后只剩当前和上一个 venv。perf 启动 trunk 中位 395.4 ms、head 396.5 ms（各 5 次）；空工具调用 trunk 40.9 ms、head 40.8 ms、带 200 KB `uv.lock` 的包 41.1 ms（各 20 次，每次调用都算一遍锁文件的 sha256）。接缝选环境变量（`PSA_MODULE_DATA`、`PSA_MODULE_VENV`），不在输入里加字段，理由见 PR。
 
 **Review gate.** None. S1 is not review-gated.
 
