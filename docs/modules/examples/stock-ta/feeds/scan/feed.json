@@ -5,7 +5,7 @@
   "secrets": ["POLYGON_API_KEY"],
   "every": "1h",
   "limit": "5m",
-  "settings": { "scanSeconds": 270 },
+  "settings": { "baseUrl": "https://api.massive.com", "scanSeconds": 270 },
   "reads": ["watchlist"],
   "into": "scan-runs"
 }

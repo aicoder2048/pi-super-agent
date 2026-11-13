@@ -9,7 +9,7 @@ import { listedSymbols, type WatchRow } from "../../watchlist.ts";
 
 interface Input {
 	/** `ta`: a node script that stands in for the venv's `ta` (fixtures and tests). `now`: a fixed time for this tick. */
-	settings: { ta?: string; now?: string; scanSeconds: number };
+	settings: { baseUrl: string; scanSeconds: number; ta?: string; now?: string };
 	cursor: string | null;
 	rows: { watchlist?: WatchRow[] };
 }
@@ -88,7 +88,7 @@ async function lastSessionNow(ta: Ta, tickMs: number): Promise<string> {
 }
 
 function taOf(settings: Input["settings"], key: string, db: string): Ta {
-	const env = { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", TA_DB_PATH: db, MASSIVE_API_KEY: key };
+	const env = { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", TA_DB_PATH: db, MASSIVE_API_KEY: key, MASSIVE_BASE_URL: settings.baseUrl };
 	const deadline = Date.now() + settings.scanSeconds * 1000;
 	if (settings.ta !== undefined) return { command: process.execPath, args: [resolve(settings.ta)], env, deadline };
 	const ta = join(process.env.PSA_MODULE_VENV ?? "", "bin", "ta");

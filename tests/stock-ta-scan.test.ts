@@ -9,6 +9,7 @@ import { Modules } from "../src/modules.ts";
 import { runFeed, type FeedPorts } from "../src/modules/feed-runner.ts";
 import { lockOf, venvDir } from "../src/modules/files.ts";
 import { instanceData } from "../src/modules/instance-data.ts";
+import { fakeTa } from "./helpers/fake-ta.ts";
 import { servedAsHost } from "./helpers/fakes.ts";
 
 const PKG = join(import.meta.dirname, "../docs/modules/examples/stock-ta");
@@ -16,91 +17,25 @@ const KEY = "sk-scan-test";
 const WEDNESDAY_EVENING = "2026-11-11T23:00:00.000Z";
 const SATURDAY = "2026-11-14T15:00:00.000Z";
 
-/** What the fake `ta scan` does. Every call is logged with its input and what it found on disk. */
-type ScanPlan =
-	| { kind: "ok"; rows?: number; signals?: number }
-	| { kind: "partial"; failing: string[] }
-	| { kind: "down" }
-	| { kind: "dividends" }
-	| { kind: "skip" }
-	| { kind: "exit" }
-	| { kind: "sleep" };
-
-type Call = { cmd: string; input: Record<string, unknown>; key?: string; db?: string; seen: { next: string | null; journal: boolean; lock: boolean } };
-
-const FAKE_TA = `
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
-const config = JSON.parse(readFileSync(new URL("./config.json", import.meta.url), "utf8"));
-let text = "";
-for await (const chunk of process.stdin) text += chunk;
-const input = JSON.parse(text || "{}");
-const cmd = process.argv[2];
-const db = process.env.TA_DB_PATH;
-const sha = (p) => (existsSync(p) ? createHash("sha256").update(readFileSync(p)).digest("hex") : null);
-appendFileSync(config.log, JSON.stringify({ cmd, input, key: process.env.MASSIVE_API_KEY, db, seen: { next: db ? sha(db) : null, journal: existsSync(db + "-journal"), lock: existsSync(db + ".scan.lock") } }) + "\\n");
-const out = (value) => console.log(JSON.stringify(value));
-if (cmd === "calendar") {
-	const day = new Date(input.date + "T12:00:00Z").getUTCDay();
-	const trading = day >= 1 && day <= 5;
-	out({ date: input.date, is_trading_day: trading, open: trading ? input.date + "T14:30:00+00:00" : null, close: trading ? input.date + "T21:00:00+00:00" : null, delay_minutes: 15 });
-	process.exit(0);
-}
-const plan = config.scan;
-const symbols = input.symbols;
-const write = (rows) => {
-	const store = new DatabaseSync(db);
-	store.exec("CREATE TABLE IF NOT EXISTS bars (symbol TEXT, n INTEGER)");
-	const insert = store.prepare("INSERT INTO bars VALUES (?, ?)");
-	store.exec("BEGIN");
-	for (let i = 0; i < rows; i++) insert.run(symbols[i % symbols.length], i);
-	store.exec("COMMIT");
-	store.close();
-};
-const error = (symbol, code) => ({ symbol, error: { code, message: code === "MARKET_UNAVAILABLE" ? "行情服务不可用。" : "日线数据无效。", hint: "稍后重试。" } });
-if (plan.kind === "exit") {
-	write(3);
-	console.error(JSON.stringify({ error: { code: "INTERNAL_ERROR", message: "内部错误。" } }));
-	process.exit(2);
-}
-if (plan.kind === "sleep") {
-	write(3);
-	await new Promise((done) => setTimeout(done, 60_000));
-}
-if (plan.kind === "skip") {
-	out({ scan_id: 1, symbol_count: 0, new_signals: [], errors: [], skipped: true, reason: "纽约日期不是交易日。", next_scan: "2026-11-16T21:15:30+00:00" });
-	process.exit(0);
-}
-write(plan.rows ?? symbols.length);
-const errors = plan.kind === "dividends" ? symbols.map((s) => ({ symbol: s, error: { code: "DIVIDENDS_UNAVAILABLE", message: "分红不可用，当前仅拆股复权。" } })) : plan.kind === "down" ? symbols.map((s) => error(s, "MARKET_UNAVAILABLE")) : plan.kind === "partial" ? plan.failing.map((s) => error(s, "MARKET_DATA_INVALID")) : [];
-if (plan.kind === "ok") errors.push({ symbol: "QQQ", error: { code: "DIVIDENDS_UNAVAILABLE", message: "分红更新不可用，使用已缓存分红。" } });
-out({ scan_id: 1, symbol_count: symbols.length, new_signals: Array.from({ length: plan.signals ?? 0 }, (_, i) => ({ id: i })), errors });
-`;
 
 async function scanFeed(t: TestContext, { key = KEY, viaVenv = false } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "psa-stock-ta-scan-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const pkg = join(root, "modules", "stock-ta");
 	cpSync(PKG, pkg, { recursive: true });
-	const fake = join(root, "fake");
-	mkdirSync(fake);
-	const log = join(fake, "calls.log");
-	writeFileSync(join(fake, "ta.mjs"), FAKE_TA);
-	const setPlan = (scan: ScanPlan) => writeFileSync(join(fake, "config.json"), JSON.stringify({ log, scan }));
-	setPlan({ kind: "ok" });
+	const fake = fakeTa(join(root, "fake"));
 	const state = join(root, "state");
 	const data = instanceData(state);
 	const dataDir = data.dir("stock-ta");
 	if (viaVenv) {
 		const bin = join(venvDir(dataDir, lockOf(pkg)!), "bin");
 		mkdirSync(bin, { recursive: true });
-		writeFileSync(join(bin, "ta"), `#!/bin/sh\nexec "${process.execPath}" "${join(fake, "ta.mjs")}" "$@"\n`);
+		writeFileSync(join(bin, "ta"), `#!/bin/sh\nexec "${process.execPath}" "${fake.script}" "$@"\n`);
 		chmodSync(join(bin, "ta"), 0o755);
 	}
 	const feedJson = join(pkg, "feeds", "scan", "feed.json");
 	const descriptor = JSON.parse(readFileSync(feedJson, "utf8"));
-	let settings: Record<string, unknown> = { ...descriptor.settings, now: WEDNESDAY_EVENING, ...(!viaVenv && { ta: join(fake, "ta.mjs") }) };
+	let settings: Record<string, unknown> = { ...descriptor.settings, now: WEDNESDAY_EVENING, ...(!viaVenv && { ta: fake.script }) };
 	const writeSettings = () => writeFileSync(feedJson, JSON.stringify({ ...descriptor, settings }));
 	writeSettings();
 	let modules = servedAsHost(Modules.load([join(root, "modules")]));
@@ -111,10 +46,9 @@ async function scanFeed(t: TestContext, { key = KEY, viaVenv = false } = {}) {
 	};
 	const ports: FeedPorts = { data, submit: () => undefined, alert: () => undefined, secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined), now: () => Date.now() };
 	const live = join(dataDir, "files", "ta", "ta.sqlite");
-	const calls = (): Call[] => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)) : []);
 	return {
 		live,
-		setPlan,
+		setPlan: fake.setPlan,
 		at(now: string, extra: Record<string, unknown> = {}) {
 			settings = { ...settings, now, ...extra };
 			writeSettings();
@@ -123,8 +57,8 @@ async function scanFeed(t: TestContext, { key = KEY, viaVenv = false } = {}) {
 		watch: (...symbols: string[]) => data.write("stock-ta", entry().components, "watchlist", symbols.map((symbol) => ({ symbol })), "使用者口述", "test"),
 		runs: () => data.query("stock-ta", entry().components, "scan-runs", {}, "test").rows,
 		cursor: () => data.feedState("stock-ta", "stock-ta/scan").cursor,
-		calls,
-		scans: () => calls().filter((c) => c.cmd === "scan"),
+		calls: fake.calls,
+		scans: fake.scans,
 		tick: () => runFeed(entry(), [], ports),
 	};
 }
@@ -158,6 +92,7 @@ test("扫描传给 ta 的是自选股加 QQQ、SPY，日线模式，密钥以 MA
 	assert.deepEqual(scan?.input["symbols"], ["NVDA", "AMD", "QQQ", "SPY"]);
 	assert.equal(scan?.input["mode"], "daily");
 	assert.equal(scan?.key, KEY);
+	assert.equal(scan?.base, "https://api.massive.com");
 	assert.equal(scan?.db, `${feed.live}.next`);
 });
 
