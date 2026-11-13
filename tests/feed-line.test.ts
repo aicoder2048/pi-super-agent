@@ -99,6 +99,7 @@ async function lettersHost(t: TestContext, edit?: (pkg: string) => void) {
 		createRouter: router.createRouter,
 		createSpawner: () => new FakeSpawner(() => {}),
 		log: () => {},
+		sourcePolicy: modules.sourcePolicy,
 		domains: { book: () => modules.book, kitFor: () => undefined },
 		moduleFeeds: { feeds: () => modules.feeds(), fixtures: false, tickMs: 20 },
 		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set([USER]), timing: { pollTimeoutSec: 1, minGapMs: 5 } },
@@ -156,6 +157,13 @@ test("来源的 ignore 照 notice 的文字过滤：被滤掉的来信不响手�
 	await deliver(letter("m-2"));
 	assert.deepEqual(notices().map((l) => l.text), [LINE]);
 	assert.equal(host.kernel.triggerLog().filter((tr) => tr.source === "private-line/inbox" && tr.disposition !== "ignored").length, 1);
+});
+
+test("ignore 只照 notice 的文字过滤一次：只匹配放出的那几行、不匹配 notice 的规则不吞掉来信", async (t) => {
+	const { host, deliver, notices } = await lettersHost(t, (pkg) => editFeed(pkg, (f) => void (f["ignore"] = ["\\n季度对账单\\n"])));
+	await deliver(letter("m-1"));
+	assert.deepEqual(notices().map((l) => l.text), [LINE]);
+	assert.deepEqual(host.kernel.triggerLog().filter((tr) => tr.source === "private-line/inbox").map((tr) => tr.disposition), ["to_router"]);
 });
 
 test("来信不让幕僚长变私密：放出的触发之后，幕僚长在 Telegram 上的回复是全文；没写 line 的私密 feed 照旧让它变私密", async (t) => {
