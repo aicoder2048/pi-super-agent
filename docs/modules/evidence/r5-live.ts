@@ -92,7 +92,6 @@ async function lane(n: number | string, slug: string, body: () => Promise<Verdic
 	console.log(results.at(-1));
 }
 
-/** Stands in for Massive: answers the snapshot with whatever prices the lane set, at the data time the lane set. */
 async function fakeMassive() {
 	const market = { prices: {} as Record<string, number>, prevClose: {} as Record<string, number>, at: 0, hits: [] as string[] };
 	const server = createServer((req, res) => {
@@ -113,7 +112,6 @@ function installStockTa(state: string, baseUrl: string): void {
 	writeFileSync(feedJson, JSON.stringify({ ...feed, settings: { ...feed.settings, baseUrl } }));
 }
 
-/** An old us-market ticket, trigger and alert line, as the old Mac's state.db holds them. */
 function seedUsMarketHistory(state: string): string {
 	const db = openStore(join(state, "state.db"));
 	const kernel = new Kernel({ db, clock: { now: () => ny("10:05", "2026-11-12") }, sourcePolicy: () => "candidate" });
@@ -185,7 +183,6 @@ async function boot(o: Boot) {
 	};
 }
 
-/** Phone bubbles as the fake Telegram recorded them, so a reviewer sees what the user would. */
 async function bubbles(png: string, title: string, lines: string[]): Promise<void> {
 	const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 	const html = `<!doctype html><meta charset="utf-8"><style>body{margin:0;padding:24px;background:#c8dcc0;font:15px/1.45 -apple-system,"PingFang SC",sans-serif;width:520px}h2{font-size:14px;color:#345;margin:0 0 12px}.msg{background:#fff;border-radius:12px 12px 12px 4px;padding:8px 12px;margin:0 0 10px;box-shadow:0 1px 1px rgba(0,0,0,.15);white-space:pre-wrap}</style><h2>${esc(title)}</h2>${lines.map((l) => `<div class="msg">${esc(l)}</div>`).join("")}`;

@@ -63,10 +63,10 @@ export async function stockTaDay(tree: string, state: string, watchlist: readonl
 		async round(tick: Tick): Promise<{ ok: boolean; records: number; notices: string[]; alerts: Posted[]; ms: number }> {
 			clock.now = tick.now;
 			const tickers = Object.entries(tick.prices).map(([symbol, price]) => tickerRow(symbol, price, tick.prevClose[symbol]!, tick.at));
-			// R5's feed always adds SPY and QQQ; a tree before it asks for the watchlist alone.
 			const body = { status: "DELAYED", tickers };
-			const asked = [listed(), [...new Set([...listed(), "SPY", "QQQ"])].sort()];
-			const fixture = { name: "replay", input: { now: new Date(tick.now).toISOString() }, responses: Object.fromEntries(asked.map((symbols) => [`${SNAPSHOT}?tickers=${symbols.join(",")}`, body])) };
+			const watchlistOnly = listed();
+			const withIndexes = [...new Set([...listed(), "SPY", "QQQ"])].sort();
+			const fixture = { name: "replay", input: { now: new Date(tick.now).toISOString() }, responses: Object.fromEntries([watchlistOnly, withIndexes].map((symbols) => [`${SNAPSHOT}?tickers=${symbols.join(",")}`, body])) };
 			const notices: string[] = [];
 			const fresh: Posted[] = [];
 			const started = performance.now();
@@ -110,7 +110,6 @@ export async function replay(tree: string, state: string, s: Scenario, watchlist
 
 export type Band = { minute: string; symbol: string; date: string; kind: "band" | "volume"; side?: "up" | "down"; pct?: number };
 
-/** us-market's own band and volume detection (src/sources/market/detect.ts) over the same snapshots, with the bands in its module.json. */
 export async function oldBands(tree: string, s: Scenario, watchlist: readonly string[], settings: { bands: unknown; volumeSpikeX: number }): Promise<Band[]> {
 	const { detect } = await import(join(tree, "src/sources/market/detect.ts"));
 	const { parseQuote } = await import(join(tree, "src/sources/market/client.ts"));

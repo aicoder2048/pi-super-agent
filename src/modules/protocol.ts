@@ -33,7 +33,6 @@ export type Watch = { id: string; key: string; condition: Condition; note?: stri
 export type Alert = { externalId: string; text: string; at: string; private: boolean };
 
 export type Side = "up" | "down";
-/** `clause` is what the condition adds to a feed alert's line when it joins one. */
 export type DayMoveFold = { key: string; side: Side; clause: string };
 export type FeedAlert = { id: string; text: string; at: string; fold?: { key: string; side: Side } };
 

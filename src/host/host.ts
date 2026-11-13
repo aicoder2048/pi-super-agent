@@ -139,7 +139,6 @@ export class Host {
 	readonly #after: NonNullable<HostOptions["after"]>;
 	#cancelNewYorkDay: (() => void) | undefined;
 	readonly #feedProblems = new Map<string, string>();
-	/** In memory: a card shows no beat until the first one after a restart. */
 	readonly #beats = new Map<string, FeedBeat & { module: string }>();
 	#duty!: Duty;
 

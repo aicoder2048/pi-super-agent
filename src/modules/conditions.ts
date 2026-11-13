@@ -215,7 +215,6 @@ function zoneTime(at: string, zone: string | undefined): string {
 	return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute} ${zone === "America/New_York" ? "美东" : zone}`;
 }
 
-/** A day-move firing, as the clause it adds to a feed alert on the same key and direction (protocol `FeedAlert.fold`). */
 export function foldOf(condition: SetCondition, point: Point): DayMoveFold | undefined {
 	const c = condition.condition;
 	if (c.when !== "day-move") return undefined;

@@ -106,7 +106,6 @@ async function fromHandler({ module, source, feed, name, dir, components }: Feed
 	return reply.ok ? parseCollected(reply.output, into) : reply.note;
 }
 
-/** A day-move condition that fires anew with a feed alert of the same key and direction posts that alert's line, its own clause added, once. */
 function postAlerts({ module, private: held }: FeedEntry, conditions: readonly ConditionAlert[], feed: readonly FeedAlert[], ports: FeedPorts): void {
 	const joined = new Set<FeedAlert>();
 	for (const { fold, ...alert } of conditions) {
