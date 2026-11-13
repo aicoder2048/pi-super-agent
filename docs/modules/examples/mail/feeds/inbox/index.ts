@@ -62,9 +62,17 @@ const gmailClient = (baseUrl: string, token: string): Gmail => async (path, quer
 	return { status: typeof body?.error?.code === "number" ? body.error.code : reply.status, body };
 };
 
-async function ok(gmail: Gmail, path: string, query: Record<string, string>): Promise<any> {
+/** A letter deleted after history.list named it answers 404; it is gone for good, so the beat skips it rather than retrying forever. */
+async function stillThere(gmail: Gmail, path: string, query: Record<string, string>): Promise<any | undefined> {
 	const { status, body } = await gmail(path, query);
+	if (status === 404) return undefined;
 	if (status !== 200) throw new Error(`Gmail ${path} 返回 HTTP ${status}`);
+	return body;
+}
+
+async function ok(gmail: Gmail, path: string, query: Record<string, string>): Promise<any> {
+	const body = await stillThere(gmail, path, query);
+	if (body === undefined) throw new Error(`Gmail ${path} 返回 HTTP 404`);
 	return body;
 }
 
@@ -108,9 +116,10 @@ export default async function inbox(input: Input): Promise<Reply> {
 	const records: MessageRow[] = [];
 	for (const id of new Set(found.ids)) {
 		const path = `/messages/${encodeURIComponent(id)}`;
-		const meta: GmailMessage = await ok(gmail, path, { format: "metadata", metadataHeaders: "From" });
-		if (!listed(senders, parseFrom(header(meta, "From")).address)) continue;
-		records.push(messageRow(await ok(gmail, path, { format: "full" })));
+		const meta: GmailMessage | undefined = await stillThere(gmail, path, { format: "metadata", metadataHeaders: "From" });
+		if (meta === undefined || !listed(senders, parseFrom(header(meta, "From")).address)) continue;
+		const full: GmailMessage | undefined = await stillThere(gmail, path, { format: "full" });
+		if (full !== undefined) records.push(messageRow(full));
 	}
 	return {
 		records,

@@ -80,6 +80,11 @@ export class FakeInbox {
 		this.#history.push({ id: this.#historyId, added: letters.map((l) => l.id) });
 	}
 
+	/** The letter is deleted in Gmail: every messages.get for it answers 404 from now on. */
+	vanish(id: string): void {
+		this.routes[`GET ${GMAIL}/messages/${id}`] = () => ({ status: 404, body: { error: { code: 404, message: "Requested entity was not found.", status: "NOT_FOUND" } } });
+	}
+
 	forget(): void {
 		this.#oldest = this.#historyId + 1;
 	}

@@ -203,6 +203,20 @@ test("cursor 只在行存好后保存：取信失败的一拍什么都不存，�
 	assert.equal(feed.messages().length, 1);
 });
 
+test("信在 history.list 和 messages.get 之间被删了（404）：跳过它，这一拍照常存别的信、往前走", async (t) => {
+	const feed = await mailFeed(t);
+	feed.senders("ann@example.com");
+	await feed.beat();
+	feed.box.deliver(stranger("m-gone-meta"), ann("m-gone-full"), ann("m-1"));
+	feed.box.vanish("m-gone-meta");
+	const full = feed.box.routes[`GET ${GMAIL}/messages/m-gone-full`] as (url: URL) => unknown;
+	feed.box.routes[`GET ${GMAIL}/messages/m-gone-full`] = (url: URL) =>
+		url.searchParams.get("format") === "metadata" ? full(url) : { status: 404, body: { error: { code: 404, message: "Requested entity was not found." } } };
+	assert.deepEqual(await feed.beat(), { ok: true, records: 1, notices: 1 });
+	assert.deepEqual(feed.messages().map((r) => r.fields["gmailId"]), ["m-1"]);
+	assert.equal(JSON.parse(feed.cursor()!).historyId, feed.box.historyId, "cursor 往前走，下一拍不再碰删掉的信");
+});
+
 test("通知：三行是 显示名 <地址>、主题、开头一句；清洗控制符和换行，按字形截断；冒充的显示名后面也看得到真地址", async (t) => {
 	const feed = await mailFeed(t);
 	feed.senders("@example.com");
