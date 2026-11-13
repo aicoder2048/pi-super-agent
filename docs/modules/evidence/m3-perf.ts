@@ -53,7 +53,7 @@ async function start(repo: string, label: string) {
 	const measure = async (id: string) => {
 		mkdirSync(inbox, { recursive: true });
 		writeFileSync(join(inbox, `${id}.json`), JSON.stringify({ id, from: "Ann <ann@example.com>", subject: `第 ${id} 封`, snippet: "开头一句", body: "正文" }));
-		const written = () => query(join(stateDir, "state.db"), "SELECT id, received_at FROM triggers WHERE external_id = ?", id)[0];
+		const written = () => query(join(stateDir, "state.db"), "SELECT id, received_at FROM triggers WHERE body LIKE ?", `%第 ${id} 封%`)[0];
 		for (const end = Date.now() + 15_000; !written() && Date.now() < end; ) await sleep(5);
 		await sleep(50);
 		const data = join(stateDir, "modules-data/private-line/data.db");
