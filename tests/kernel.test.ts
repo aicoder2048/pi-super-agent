@@ -1055,6 +1055,35 @@ test("旧数据库的汇报表没有选项列：打开时补上，旧汇报读�
 	assert.deepEqual(found.recentReports.map((r) => [r.summary, r.options]), [["旧汇报", []]]);
 });
 
+test("旧状态库的回复没记回答了哪些卡片：卡片之后有同一起因的回复就算回答过，回复之后来的卡片不算", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	const notifyIds = () => new Set(first.due("router.notify").map((a) => a.id));
+	const added = (step: () => void) => {
+		const before = notifyIds();
+		step();
+		const [id] = [...notifyIds()].filter((x) => !before.has(x));
+		assert.ok(id, "step added a card");
+		return id;
+	};
+	let triggerId = "";
+	const line = added(() => ({ triggerId } = first.say("在吗")));
+	const ticketId = first.open("request");
+	first.run(ticketId);
+	const blocked = added(() => first.kernel.workerReport(ticketId, { status: "blocked", summary: "卡住了" }));
+	first.clock.t += 1000;
+	first.kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "在。", cause: triggerId });
+	first.kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "卡住了", cause: ticketId });
+	first.clock.t += 1000;
+	const ready = added(() => first.kernel.workerReport(ticketId, { status: "ready", summary: "完成了" }));
+	first.db.exec(`CREATE TABLE old_receipts AS SELECT id, thread_id, ticket_id, cause, text, created_at, delivered_at FROM reply_receipts;
+		DROP TABLE reply_receipts;
+		ALTER TABLE old_receipts RENAME TO reply_receipts;`);
+	first.db.close();
+	const again = setup({ path });
+	assert.deepEqual([line, blocked, ready].map((id) => again.kernel.answered(id)), [true, true, false]);
+});
+
 test("记账把缓存读取和新输入分开：输入仍是两者之和，缓存读取另记；不报缓存的用量记 0；当天合计不变", () => {
 	const { kernel, open } = setup();
 	const id = open("request");

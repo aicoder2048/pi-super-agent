@@ -118,7 +118,7 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 	};
 }
 
-export const ids = (card: string, prefix: "trg" | "tkt") => card.match(new RegExp(`${prefix}_[\\w-]+`))?.[0];
+export const ids = (card: string, prefix: "trg" | "tkt" | "act") => card.match(new RegExp(`${prefix}_[\\w-]+`))?.[0];
 
 export function openOnConversation(card: string, title = card.split("使用者：")[1]?.split("\n")[0] ?? "任务", domain?: string): ToolCallSpec[] {
 	const triggerId = ids(card, "trg")!;

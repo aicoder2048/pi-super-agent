@@ -199,9 +199,10 @@ async function chatRig(t: test.TestContext, routerOptions: object = {}) {
 	};
 }
 
-// Opens a ticket per line and relays Worker reports; `relayOne` relays one report per turn.
+// Opens a ticket per line and relays Worker reports, naming the cards each reply answers. `relayOne` relays the
+// oldest report of a turn, `relayLast` only the latest, `combine` all of them in one reply.
 async function taskRig(t: test.TestContext, script: WorkerScript, options: { stateDir?: string; retry?: number[] } = {}) {
-	const st = { failing: false, failNext: false, relayOne: false, failAfterLine: false };
+	const st = { failing: false, failNext: false, relayOne: false, relayLast: false, combine: false, failAfterLine: false };
 	const tg = await FakeTelegram.start();
 	t.after(() => tg.close());
 	const pending: string[] = [];
@@ -214,8 +215,10 @@ async function taskRig(t: test.TestContext, script: WorkerScript, options: { sta
 			}
 			if (c.startsWith("[Worker")) pending.push(c);
 		}
-		const take = st.relayOne ? pending.splice(0, 1) : pending.splice(0);
-		for (const c of take) out.push({ name: "reply", args: { text: `转达：${c.split("\n")[1]}`, cause: ids(c, "tkt") } });
+		const take = st.relayOne ? pending.splice(0, 1) : st.relayLast ? pending.splice(0).slice(-1) : pending.splice(0);
+		const relay = (cards: string[]) => ({ name: "reply", args: { text: `转达：${cards.map((c) => c.split("\n")[1]).join("＋")}`, cause: ids(cards[0]!, "tkt"), answers: cards.map((c) => ids(c, "act")) } });
+		if (st.combine && take.length) out.push(relay(take));
+		else for (const c of take) out.push(relay([c]));
 		if (take.length && st.failNext) st.failing = true;
 		return out;
 	};
@@ -244,6 +247,7 @@ async function taskRig(t: test.TestContext, script: WorkerScript, options: { sta
 		start,
 		session: () => (host.router as Router).session,
 		count: (text: string) => routerReplies(host).filter((x) => x.startsWith(text)).length,
+		mentions: (text: string) => routerReplies(host).filter((x) => x.includes(text)).length,
 	};
 }
 
@@ -426,4 +430,47 @@ test("T3b：回了一句话、那一轮出错，宿主重启、旧会话正常�
 	await r.start();
 	await sleep(2500);
 	assert.equal(r.count("收到：一"), 1);
+});
+
+const twoReports: WorkerScript = (w) => {
+	w.report({ status: "blocked", summary: "卡住了" });
+	w.report({ status: "ready", summary: "完成了" });
+	w.settle();
+};
+
+test("A1：同一任务的两份报告进了一轮，只转达了后一份就出错、清屏：前一份补转达，后一份不重发", async (t) => {
+	const r = await taskRig(t, twoReports);
+	r.st.failNext = r.st.relayLast = true;
+	r.host.say("做事");
+	await until(() => erroredOut(r.session()), "转达后一份之后出错", 8000);
+	r.host.clearConversation();
+	r.st.failing = r.st.failNext = false;
+	await sleep(3000);
+	assert.equal(r.mentions("完成了"), 1, "完成了 转达一次");
+	assert.equal(r.mentions("卡住了"), 1, "卡住了 补转达一次");
+});
+
+test("A2：同一任务的两份报告合成一句转达，出错、清屏：两份都不重发", async (t) => {
+	const r = await taskRig(t, twoReports);
+	r.st.failNext = r.st.combine = true;
+	r.host.say("做事");
+	await until(() => erroredOut(r.session()), "合并转达之后出错", 8000);
+	r.host.clearConversation();
+	r.st.failing = r.st.failNext = false;
+	await sleep(3000);
+	assert.equal(r.mentions("完成了"), 1, "完成了 转达一次");
+	assert.equal(r.mentions("卡住了"), 1, "卡住了 转达一次");
+});
+
+test("A3：只转达了后一份就出错，宿主重启：前一份补转达，后一份不重发", async (t) => {
+	const r = await taskRig(t, twoReports, { retry: [60000] });
+	r.st.failNext = r.st.relayLast = true;
+	r.host.say("做事");
+	await until(() => erroredOut(r.session()), "转达后一份之后出错", 8000);
+	await r.host.stop();
+	r.st.failing = r.st.failNext = false;
+	await r.start();
+	await sleep(3000);
+	assert.equal(r.mentions("完成了"), 1, "完成了 转达一次");
+	assert.equal(r.mentions("卡住了"), 1, "卡住了 补转达一次");
 });
