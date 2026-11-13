@@ -413,13 +413,20 @@ async function proxy() {
 			writeFileSync(file, `${new Date().toISOString()} REFUSED ${req.method} ${req.url!.split("?")[0]}\n`, { flag: "a" });
 			return void res.writeHead(403).end();
 		}
-		const body = req.method === "POST" ? await new Response(req as unknown as ReadableStream).arrayBuffer() : undefined;
 		const target = req.url!.startsWith("/token") ? `https://oauth2.googleapis.com${req.url}` : `https://gmail.googleapis.com${req.url}`;
-		const headers = Object.fromEntries(Object.entries(req.headers).filter(([k]) => ["authorization", "content-type", "accept"].includes(k)) as [string, string][]);
-		const reply = await fetch(target, { method: req.method, headers, body, redirect: "error" });
 		const masked = new URL(target).pathname.replace(/\/messages\/[^/]+/, "/messages/<id>");
-		writeFileSync(file, `${new Date().toISOString()} ${req.method} ${masked} ${reply.status} ${Date.now() - t0}ms\n`, { flag: "a" });
-		res.writeHead(reply.status, { "content-type": reply.headers.get("content-type") ?? "application/json" }).end(Buffer.from(await reply.arrayBuffer()));
+		try {
+			const body = req.method === "POST" ? await new Response(req as unknown as ReadableStream).arrayBuffer() : undefined;
+			const headers = Object.fromEntries(Object.entries(req.headers).filter(([k]) => ["authorization", "content-type", "accept"].includes(k)) as [string, string][]);
+			const reply = await fetch(target, { method: req.method, headers, body, redirect: "error" });
+			writeFileSync(file, `${new Date().toISOString()} ${req.method} ${masked} ${reply.status} ${Date.now() - t0}ms\n`, { flag: "a" });
+			res.writeHead(reply.status, { "content-type": reply.headers.get("content-type") ?? "application/json" }).end(Buffer.from(await reply.arrayBuffer()));
+		} catch (error) {
+			const why = error instanceof Error ? (error.cause instanceof Error ? error.cause.message : error.message) : String(error);
+			writeFileSync(file, `${new Date().toISOString()} ${req.method} ${masked} FAILED ${why.split("\n")[0]} ${Date.now() - t0}ms\n`, { flag: "a" });
+			if (!res.headersSent) res.writeHead(502);
+			res.end();
+		}
 	});
 	server.listen(port, "127.0.0.1", () => console.log(`proxy on http://127.0.0.1:${port}, log ${file}`));
 	await new Promise(() => {});
