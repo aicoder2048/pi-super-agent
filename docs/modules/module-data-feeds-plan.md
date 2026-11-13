@@ -361,6 +361,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 2026-11-12 在 b0ef8ad 上通过：`tests/stock-ta-quotes.test.ts` 8 条，`just test` 1583 条全过，`check.mjs` 7 项 ok，`tests/e2e/modules.e2e.ts` 全过。lane 1 到 7、10b、11 全 PASS，输出在 `/tmp/swarm-g5/owner/g5-*.txt`。lane 10b 第一次 FAIL：两位专家都派了、数据时间和延迟都写了，但摘要没有写不是交易指令；规则改成「摘要里原样写一句」后重跑 PASS（之后只删了注释）。lane 8、9、10a 和 perf 等交易时段跑：`G5_SECRETS=<宿主密钥 .env> node --import ./src/pi-runtime.mjs docs/modules/evidence/g5-live.ts market /tmp/swarm-g5/owner`。
 
+2026-11-12 修复轮在 704b409 上通过：审计（PR #97）的四点都改了。线程改成和 id 一样的 `big-move:<代码>:<美东日期>:<up|down>`；密钥名改成 `POLYGON_API_KEY`（使用者定），没有密钥不发请求；fixtures 排练和 `just module check` 用替身密钥；提醒里的时间按美东写；同一只两行以最新一行为准。红灯先行，见 `/tmp/swarm-g5/fix/red-quotes.txt` 和 `red-fixture-and-alert.txt`。`tests/stock-ta-quotes.test.ts` 13 条，`just test` 1616 条全过，`check.mjs` 全 ok，`tests/e2e/modules.e2e.ts` 12 条全过，`just module check` 不带密钥 ok。lane 1 到 7、11、10b 全 PASS，输出在 `/tmp/swarm-g5/fix/`；lane 11 让第一个大跌任务开着（Worker 提了问题），涨 5% 仍另开任务。lane 10b 前两次 FAIL 是 Router 调 openai-codex 时 `fetch failed`（网络），第三次 PASS。lane 8、9、10a 和 perf 仍等交易时段。
+
 **Merge.**
 
 - [ ] Root's clean verdict at the exact head SHA.
