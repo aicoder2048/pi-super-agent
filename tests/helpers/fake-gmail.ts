@@ -7,13 +7,17 @@ export type Letter = {
 	snippet?: string;
 	text?: string;
 	html?: string;
+	/** The text/plain part as raw bytes in this charset, named in the part's Content-Type the way Gmail serves it. */
+	encoded?: { charset: string; bytes: Uint8Array };
+	/** A text/html part Gmail serves only by attachmentId, the way it does for a large body. */
+	htmlByAttachment?: boolean;
 	attachments?: readonly { filename: string; mimeType: string; size: number }[];
 	replyTo?: string;
 	at?: number;
 };
 
 const GMAIL = "/gmail/v1/users/me";
-const b64 = (text: string) => Buffer.from(text, "utf8").toString("base64url");
+const b64 = (data: string | Uint8Array) => (typeof data === "string" ? Buffer.from(data, "utf8") : Buffer.from(data)).toString("base64url");
 
 function headers(letter: Letter) {
 	return [
@@ -27,10 +31,16 @@ function headers(letter: Letter) {
 export function gmailMessage(letter: Letter, format: "full" | "metadata" = "full") {
 	const top = { id: letter.id, threadId: `t-${letter.id}`, labelIds: ["INBOX", "UNREAD"], snippet: letter.snippet ?? "", internalDate: String(letter.at ?? Date.now()) };
 	if (format === "metadata") return { ...top, payload: { mimeType: "multipart/mixed", headers: headers(letter) } };
-	const bodies = [
+	type Body = { partId: string; mimeType: string; filename: string; headers: { name: string; value: string }[]; body: { size: number; data?: string; attachmentId?: string } };
+	const bodies: Body[] = [
 		...(letter.text === undefined ? [] : [{ mimeType: "text/plain", text: letter.text }]),
 		...(letter.html === undefined ? [] : [{ mimeType: "text/html", text: letter.html }]),
 	].map(({ mimeType, text }, i) => ({ partId: `0.${i}`, mimeType, filename: "", headers: [], body: { size: Buffer.byteLength(text), data: b64(text) } }));
+	if (letter.encoded !== undefined) {
+		const { charset, bytes } = letter.encoded;
+		bodies.push({ partId: `0.${bodies.length}`, mimeType: "text/plain", filename: "", headers: [{ name: "Content-Type", value: `text/plain; charset="${charset}"` }], body: { size: bytes.length, data: b64(bytes) } });
+	}
+	if (letter.htmlByAttachment) bodies.push({ partId: `0.${bodies.length}`, mimeType: "text/html", filename: "", headers: [], body: { size: 900_000, attachmentId: `att-${letter.id}-html` } });
 	const files = (letter.attachments ?? []).map((a, i) => ({ partId: String(i + 1), mimeType: a.mimeType, filename: a.filename, headers: [], body: { attachmentId: `att-${letter.id}-${i + 1}`, size: a.size } }));
 	return {
 		...top,

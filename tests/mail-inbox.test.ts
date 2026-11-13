@@ -232,6 +232,30 @@ test("名单：地址不分大小写；同一地址有好几行时，任何一�
 	assert.deepEqual(feed.messages().map((r) => r.fields["gmailId"]), ["m-2"], "划掉以后再加一行，就又在名单上");
 });
 
+test("正文按 Content-Type 的 charset 解码；认不出的 charset 按 UTF-8 并标明；只给 attachmentId 的正文标明没取", async (t) => {
+	const feed = await mailFeed(t);
+	feed.senders("ann@example.com");
+	await feed.beat();
+	const bytes = (hex: string) => Buffer.from(hex, "hex");
+	const samples = [
+		["gbk", "c4e3bac3a3accac0bde7", "你好，世界"],
+		["GB2312", "c4e3bac3", "你好"],
+		["big5", "bb4fc657a741a66e", "臺灣你好"],
+		["Shift_JIS", "82b182f182c982bf82cd", "こんにちは"],
+		["iso-8859-1", "636166e9", "café"],
+		["ISO-8859-2", "a3f364bc", "Łódź"],
+	] as const;
+	for (const [charset, hex] of samples) feed.box.deliver(ann(`m-${charset}`, { text: undefined, encoded: { charset, bytes: bytes(hex) } }));
+	feed.box.deliver(ann("m-odd", { text: undefined, encoded: { charset: "x-made-up", bytes: Buffer.from("plain words") } }));
+	feed.box.deliver(ann("m-att", { text: undefined, htmlByAttachment: true }));
+	await feed.beat();
+	const body = (id: string) => String(feed.messages().find((r) => r.fields["gmailId"] === id)!.fields["body"]);
+	for (const [charset, , text] of samples) assert.equal(body(`m-${charset}`), text, charset);
+	assert.match(body("m-odd"), /^plain words/);
+	assert.match(body("m-odd"), /x-made-up/, "认不出的 charset 写明");
+	assert.match(body("m-att"), /正文.*没取.*Gmail/, "只给 attachmentId 的正文写明没取");
+});
+
 test("通知：三行是 显示名 <地址>、主题、开头一句；清洗控制符和换行，按字形截断；冒充的显示名后面也看得到真地址", async (t) => {
 	const feed = await mailFeed(t);
 	feed.senders("@example.com");
