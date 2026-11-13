@@ -71,7 +71,7 @@ function files(root: string, tree: Record<string, string>): void {
 	}
 }
 
-/** A package whose fixture feed files one letter into a private collection, so the task its rule opens touched private data. */
+/** A package whose fixture feed files one letter into a private collection. */
 function m5mail(w: World): void {
 	files(join(w.state, "modules", "m5mail"), {
 		"module.json": JSON.stringify({ schema: 1, name: "m5mail", version: "0.1.0", title: "M5 邮件", description: "M5 live lanes 用的私密来信模块" }),

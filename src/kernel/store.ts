@@ -323,7 +323,6 @@ export function openStore(path: string): DatabaseSync {
 		);
 	}
 	if (!ticketColumns.includes("tokens_cached")) db.exec("ALTER TABLE tickets ADD COLUMN tokens_cached INTEGER NOT NULL DEFAULT 0");
-	// Left by the Router privacy tracking that ADR-0023 retired; nothing reads them.
 	db.exec("DROP TABLE IF EXISTS router_private; DROP TABLE IF EXISTS private_text");
 	if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'router_start_overs'").get()) {
 		// Old stores logged a 清屏 only as hidden lines; seeding the latest costs at most one extra fresh session, which loses nothing durable.
