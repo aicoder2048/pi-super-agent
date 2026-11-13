@@ -1,0 +1,10 @@
+{
+  "title": "自选股",
+  "kind": "record",
+  "class": "shareable",
+  "fields": {
+    "symbol": { "type": "text", "title": "代码，例如 NVDA" },
+    "note": { "type": "text", "title": "备注" },
+    "removedAt": { "type": "date", "title": "划掉的日期。划掉一只就写上它，不删行；空着就还在自选股里" }
+  }
+}

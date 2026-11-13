@@ -1,0 +1,12 @@
+{
+  "title": "自选股报价",
+  "description": "交易时段每 60 秒取一次自选股的快照（Massive Starter 套餐，延迟 15 分钟）；当天涨跌幅达到 5% 时发一条触发",
+  "handler": "index.ts",
+  "secrets": ["POLYGON_API_KEY"],
+  "every": "60s",
+  "when": "us-market-hours",
+  "settings": { "baseUrl": "https://api.massive.com" },
+  "reads": ["watchlist"],
+  "into": "quotes",
+  "notice": "自选股 {{symbol}} 今天{{direction}}到 {{price}} 美元，相对昨收 {{pct}}%，数据时间 {{at}}（美东，行情延迟 15 分钟）。"
+}

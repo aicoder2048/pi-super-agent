@@ -72,8 +72,8 @@ export interface CollectionDescriptor {
 	kind: "record" | "series";
 	class: DataClass;
 	fields: Readonly<Record<string, FieldDescriptor>>;
-	/** Makes a series watchable by the host's condition mechanism. Names fields of this collection. */
-	watch?: { key: string; value: string; at: string };
+	/** Makes a series watchable by the host's condition mechanism. Names fields of this collection; `zone` (IANA name) makes alerts show full instants in that zone, otherwise `at` as stored. */
+	watch?: { key: string; value: string; at: string; zone?: string };
 	/** The name this collection had before a rename. */
 	was?: string;
 }

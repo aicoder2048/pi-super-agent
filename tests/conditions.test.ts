@@ -132,6 +132,14 @@ test("crosses-average：上一行在均线上或下面、这一行穿到另一�
 	assert.deepEqual(await series(gateway, me(), [10, 11, 12, 13, 9, 12, 13, 10]), [0, 0, 0, 0, 1, 1, 0, 1]);
 });
 
+test("数据没写 watch.zone：提醒里的时间照存的原样写，不换算成别的时区", async (t) => {
+	const { gateway, me } = health(t);
+	ok(await gateway.call(me(), set("空腹血糖", { when: "above", value: 7 })));
+	const [alert] = alertsOf(await gateway.call(me(), write([glucose(7.4, "2026-11-12T07:30:00-08:00")])));
+	assert.ok(alert?.text.includes("（2026-11-12T07:30:00-08:00，来自 使用者口述）"), alert?.text);
+	assert.ok(!alert.text.includes("美东"), alert.text);
+});
+
 test("提醒文字由程序拼出：带模块的数据名、key、这一行的数值、时间和来源，只有一行", async (t) => {
 	const { gateway, me } = health(t);
 	ok(await gateway.call(me(), set("空腹血糖", { when: "above", value: 7 }, { note: "复查后告诉内分泌科" })));

@@ -1,0 +1,13 @@
+{
+  "title": "自选股报价（延迟 15 分钟）",
+  "kind": "series",
+  "class": "shareable",
+  "fields": {
+    "symbol": { "type": "text", "title": "代码" },
+    "price": { "type": "number", "title": "价格", "unit": "USD" },
+    "changePct": { "type": "number", "title": "相对昨收的涨跌幅", "unit": "%" },
+    "volume": { "type": "number", "title": "当天成交量" },
+    "at": { "type": "date", "title": "数据时间（UTC），不是取回的时间" }
+  },
+  "watch": { "key": "symbol", "value": "price", "at": "at", "zone": "America/New_York" }
+}

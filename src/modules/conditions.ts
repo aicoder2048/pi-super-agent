@@ -165,8 +165,16 @@ export const met = (c: Condition, points: readonly Point[]) => specOf(c).met(c, 
 // 1000: the kernel's host_lines length check.
 const oneLine = (text: string) => [...text.replace(/\s+/g, " ").trim()].slice(0, 1000).join("");
 
-export function alertText(title: string, condition: SetCondition, point: Point, happened: string): string {
-	return oneLine(`${title} ${condition.key} ${point.value}，${happened}（${point.at}，来自 ${point.from}）${condition.note ? `。备注：${condition.note}` : ""}`);
+function zoneTime(at: string, zone: string | undefined): string {
+	const ms = Date.parse(at);
+	if (zone === undefined || !/T.*(Z|[+-]\d\d:\d\d)$/.test(at) || Number.isNaN(ms)) return at;
+	const format = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+	const p = Object.fromEntries(format.formatToParts(ms).map((x) => [x.type, x.value]));
+	return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute} ${zone === "America/New_York" ? "美东" : zone}`;
+}
+
+export function alertText(title: string, condition: SetCondition, point: Point, happened: string, zone?: string): string {
+	return oneLine(`${title} ${condition.key} ${point.value}，${happened}（${zoneTime(point.at, zone)}，来自 ${point.from}）${condition.note ? `。备注：${condition.note}` : ""}`);
 }
 
 export function receiptText(done: "已设" | "已改" | "已去掉", title: string, condition: SetCondition): string {

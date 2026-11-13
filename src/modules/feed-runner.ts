@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { FeedStates, ModuleRows } from "./instance-data.ts";
 import type { CollectionDescriptor, Component, ComponentName, FeedDescriptor, FeedFixture, ModuleName } from "./manifest.ts";
 import type { Alert, Collected, FeedInput, Json, Row } from "./protocol.ts";
-import { LIMIT_MS, runModuleCodeAsync, secretsFor } from "./run-code.ts";
+import { fixtureSecrets, LIMIT_MS, runModuleCodeAsync, secretsFor } from "./run-code.ts";
 
 export type FeedEntry = { source: string; module: ModuleName; dir: string; name: ComponentName; feed: FeedDescriptor; fixtures: readonly FeedFixture[]; components: readonly Component[]; private: boolean };
 
@@ -81,7 +81,7 @@ async function fromHandler({ module, source, feed, name, dir, components }: Feed
 		rows: (c) => data.query(module, components, c, { limit: READ_LIMIT }, source).rows,
 		watchedKeys: "conditions" in watched ? [...new Set(watched.conditions.map((c) => c.key))] : [],
 	}, fixture);
-	const reply = await runModuleCodeAsync(join(dir, "feeds", name), handler, input, secretsFor(feed.secrets ?? [], ports.secret), { limitMs: ports.limitMs ?? LIMIT_MS, ...(fixture && { responses: fixture.responses }) });
+	const reply = await runModuleCodeAsync(join(dir, "feeds", name), handler, input, fixture ? fixtureSecrets(feed.secrets ?? []) : secretsFor(feed.secrets ?? [], ports.secret), { limitMs: ports.limitMs ?? LIMIT_MS, ...(fixture && { responses: fixture.responses }) });
 	return reply.ok ? parseCollected(reply.output, into) : reply.note;
 }
 

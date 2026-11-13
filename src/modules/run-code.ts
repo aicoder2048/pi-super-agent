@@ -46,6 +46,10 @@ export type SecretLookup = (name: string) => string | undefined;
 
 export const secretsFor = (names: readonly string[], secret: SecretLookup): Secrets => Object.fromEntries(names.map((name) => [name, secret(name) ?? ""]));
 
+const FIXTURE_SECRET = "fixture";
+
+export const fixtureSecrets = (names: readonly string[]): Secrets => Object.fromEntries(names.map((name) => [name, FIXTURE_SECRET]));
+
 function codeProcess(dir: string, entry: string, secrets: Secrets) {
 	const env = { PATH: process.env["PATH"] ?? "", HOME: process.env["HOME"] ?? "", ...secrets };
 	const args = ["--input-type=module", "-e", NODE_RUNNER, pathToFileURL(join(dir, entry)).href];

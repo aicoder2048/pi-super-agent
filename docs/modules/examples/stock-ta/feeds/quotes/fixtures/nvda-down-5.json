@@ -1,0 +1,72 @@
+{
+  "input": {
+    "settings": {
+      "baseUrl": "https://api.massive.com"
+    },
+    "rows": {
+      "watchlist": [
+        {
+          "id": "1",
+          "fields": {
+            "symbol": "NVDA"
+          },
+          "from": "使用者口述"
+        },
+        {
+          "id": "2",
+          "fields": {
+            "symbol": "AMD"
+          },
+          "from": "使用者口述"
+        }
+      ]
+    }
+  },
+  "responses": {
+    "https://api.massive.com/v2/snapshot/locale/us/markets/stocks/tickers?tickers=AMD,NVDA": {
+      "status": "DELAYED",
+      "tickers": [
+        {
+          "ticker": "NVDA",
+          "lastTrade": {
+            "p": 166.84,
+            "t": 1794498240000000000
+          },
+          "min": {
+            "c": 166.84,
+            "t": 1794498240000,
+            "v": 1000
+          },
+          "day": {
+            "c": 166.84,
+            "v": 5000000
+          },
+          "prevDay": {
+            "c": 176,
+            "v": 39000000
+          }
+        },
+        {
+          "ticker": "AMD",
+          "lastTrade": {
+            "p": 151.5,
+            "t": 1794498240000000000
+          },
+          "min": {
+            "c": 151.5,
+            "t": 1794498240000,
+            "v": 1000
+          },
+          "day": {
+            "c": 151.5,
+            "v": 5000000
+          },
+          "prevDay": {
+            "c": 150,
+            "v": 39000000
+          }
+        }
+      ]
+    }
+  }
+}

@@ -11,5 +11,6 @@
   "feed-unknown-connector": "is not one of the host's connectors",
   "rule-names-other-module": "names source \"us-market/quotes\", which is not this module's",
   "watch-names-missing-field": "watch.at names \"sampledAt\", which is not a field",
-  "bundled-copyrighted-text": "license is user-import, so the text must not be in the package"
+  "bundled-copyrighted-text": "license is user-import, so the text must not be in the package",
+  "watch-unknown-zone": "watch.zone \"America/Neu_York\" is not a time zone name, e.g. \"America/New_York\""
 }
