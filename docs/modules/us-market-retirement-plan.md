@@ -88,55 +88,57 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 
 **Files.**
 
-- [ ] Create `docs/modules/examples/stock-ta/tools/quote/`（`tool.json`、`index.ts`、fixtures）。
-- [ ] Create `docs/modules/examples/stock-ta/massive.ts`。把 `feeds/quotes/index.ts` 的 `parseQuote` 和 `epochMs` 搬进来，Edit `feeds/quotes/index.ts` 改成 import 它，行为不变。
-- [ ] Create `docs/modules/examples/stock-ta/market-days.ts`，美股交易时段和提前收盘日表，照抄 `src/sources/market/session.ts`（模块代码不能 import 宿主的代码）。
-- [ ] Create `docs/modules/examples/stock-ta/skills/quick-quote/SKILL.md`。
-- [ ] Edit `docs/modules/examples/stock-ta/module.json` 的 `description`。
-- [ ] Edit `docs/modules/stock-ta.md`，写上 `quote` 工具、新闻问题怎么处理、「旧 Mac 部署」一节。
-- [ ] Edit `tests/stock-ta.test.ts`。Create `docs/modules/evidence/r2a-live.ts`。
+- [x] Create `docs/modules/examples/stock-ta/tools/quote/`（`tool.json`、`index.ts`、fixtures）。
+- [x] Create `docs/modules/examples/stock-ta/massive.ts`。把 `feeds/quotes/index.ts` 的 `parseQuote` 和 `epochMs` 搬进来，Edit `feeds/quotes/index.ts` 改成 import 它，行为不变。
+- [x] Create `docs/modules/examples/stock-ta/market-days.ts`，美股交易时段和提前收盘日表，照抄 `src/sources/market/session.ts`（模块代码不能 import 宿主的代码）。
+- [x] Create `docs/modules/examples/stock-ta/skills/quick-quote/SKILL.md`。
+- [x] Edit `docs/modules/examples/stock-ta/module.json` 的 `description`。
+- [x] Edit `docs/modules/stock-ta.md`，写上 `quote` 工具、新闻问题怎么处理、「旧 Mac 部署」一节。
+- [x] Edit `tests/stock-ta.test.ts`。Create `docs/modules/evidence/r2a-live.ts`。
 
 **Build.**
 
-- [ ] `quote` 工具。输入 `symbols`（1 到 10 个代码，可以是自选股以外的股票和 ETF），一次快照请求，回每只的价格、昨收、相对昨收涨跌幅、当天量、数据时间，和按 `market-days.ts` 算出的时段标签（盘中、盘前、盘后、休市）。盘前盘后的价格照样回，带上标签，不拒绝。`secrets: ["POLYGON_API_KEY"]`，只读，18 秒内结束。
-- [ ] 技能 `quick-quote` 给领队。只问价格、涨跌、成交量的问题，领队自己调一次 `quote` 回答，不派活给专家。回答写价格、涨跌幅、数据时间、「延迟 15 分钟」和时段标签。问到为什么涨跌、要技术面时才派专家。
-- [ ] 同一个技能写新闻问题。股票技术分析不管新闻和财报解读。问题里有新闻或「为什么涨跌」那一半时，领队只报涨跌，不猜原因，不读网页。原因那一半由幕僚长另开成不属于任何领域的通用任务（2026-11-13 改：原来要领队明说「新闻单独问」，实跑三次幕僚长都把原因拆成了通用任务，使用者一次就拿到完整回答，这条改成接受拆分）。
-- [ ] `module.json` 的 `description` 改成「美股报价、涨跌、K 线和技术面：支撑阻力、形态、动量、信号、盈亏比；问涨跌都归这里，只问新闻和财报解读的不归这里」，让幕僚长把只问新闻的问题交给通用助手、把带涨跌的混合问题交给 stock-ta（`src/host/router.ts` 第 237 行，省略 domain 就由通用助手处理）。
-- [ ] 不改报价 feed 的行为，不改 `rules.md`。
+- [x] `quote` 工具。输入 `symbols`（1 到 10 个代码，可以是自选股以外的股票和 ETF），一次快照请求，回每只的价格、昨收、相对昨收涨跌幅、当天量、数据时间，和按 `market-days.ts` 算出的时段标签（盘中、盘前、盘后、休市）。盘前盘后的价格照样回，带上标签，不拒绝。`secrets: ["POLYGON_API_KEY"]`，只读，18 秒内结束。
+- [x] 技能 `quick-quote` 给领队。只问价格、涨跌、成交量的问题，领队自己调一次 `quote` 回答，不派活给专家。回答写价格、涨跌幅、数据时间、「延迟 15 分钟」和时段标签。问到为什么涨跌、要技术面时才派专家。
+- [x] 同一个技能写新闻问题。股票技术分析不管新闻和财报解读。问题里有新闻或「为什么涨跌」那一半时，领队只报涨跌，不猜原因，不读网页。原因那一半由幕僚长另开成不属于任何领域的通用任务（2026-11-13 改：原来要领队明说「新闻单独问」。实跑时幕僚长有一次把原因拆成了通用任务，使用者一次就拿到了跌幅和有出处的原因，这条改成接受拆分。另外三次没拆，使用者只拿到涨跌和「原因尚未核实」）。
+- [x] `module.json` 的 `description` 改成「美股报价、涨跌、K 线和技术面：支撑阻力、形态、动量、信号、盈亏比；问涨跌都归这里，只问新闻和财报解读的不归这里」，让幕僚长把只问新闻的问题交给通用助手、把带涨跌的混合问题交给 stock-ta（`src/host/router.ts` 第 237 行，省略 domain 就由通用助手处理）。
+- [x] 不改报价 feed 的行为，不改 `rules.md`。
 
 **You see.**
 
-- [ ] 在 Telegram 上问「NVDA 现在多少」，25 秒内收到一句带价格、涨跌幅、数据时间和「延迟 15 分钟」的回答，网页上这个任务没有派活记录。
-- [ ] 问「NVDA 跌了多少，为什么跌」，回答里有跌幅；原因如果答了，来自通用任务，不来自 stock-ta。
+- [x] 在 Telegram 上问「NVDA 现在多少」，25 秒内收到一句带价格、涨跌幅、数据时间和「延迟 15 分钟」的回答，网页上这个任务没有派活记录。
+- [x] 问「NVDA 跌了多少，为什么跌」，回答里有跌幅；原因如果答了，来自通用任务，不来自 stock-ta。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/stock-ta.test.ts` 新增：`quote` 解析（纳秒和毫秒时间戳、没有成交价时退到分钟收盘）、超过 10 个代码被拒、自选股以外的代码照查、时段标签（盘中、盘前、盘后、周末、节假日、提前收盘日 13:00 以后算盘后）、没有密钥一行说明、HTTP 错误一行说明。报价 feed 换用 `massive.ts` 后原有测试照旧通过。用 fixtures，不连网。每条先红后绿。Run `just test`.
+- [x] `tests/stock-ta.test.ts` 新增：`quote` 解析（纳秒和毫秒时间戳、没有成交价时退到分钟收盘）、超过 10 个代码被拒、自选股以外的代码照查、时段标签（盘中、盘前、盘后、周末、节假日、提前收盘日 13:00 以后算盘后）、没有密钥一行说明、HTTP 错误一行说明。报价 feed 换用 `massive.ts` 后原有测试照旧通过。用 fixtures，不连网。每条先红后绿。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/r2a-live.ts`。lane 1、8、9、10 用真模型，lane 8 用真行情。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都关掉 us-market、开着 stock-ta，用真模型问「NVDA 现在多少」。Save `r2a-regression.txt`. Pass when head 的领队调了 `quote`、没有派活、回答有价格和数据时间。trunk 没有 `quote`，记下 trunk 是怎么答的和用了多久，作为 perf 的基线。
-- [ ] Lane 2. fixtures 里盘中的 NVDA 快照，假模型照技能调 `quote`。Save `r2a-watchlist.txt`. Pass when 回价格、昨收、涨跌幅、数据时间和「盘中」。
-- [ ] Lane 3. 查 META 和 TSM，都不在 fixtures 的自选股里。Save `r2a-off-list.txt`. Pass when 两只都有报价。
-- [ ] Lane 4. fixtures 里 17:30 美东的盘后成交。Save `r2a-after-hours.txt`. Pass when 照样回价格，标签是「盘后」，不报错。
-- [ ] Lane 5. fixtures 里周六和节假日的快照。Save `r2a-closed.txt`. Pass when 标签是「休市」，价格是上一交易日收盘。
-- [ ] Lane 6. 查 11 个代码，再在没有 `POLYGON_API_KEY` 时查一次。Save `r2a-limits.txt`. Pass when 第一次拒绝并说明最多 10 个，第二次一行说明怎么加密钥，两次都不发请求。
-- [ ] Lane 7. 网页上打开 lane 1 的任务。Save `r2a-no-dispatch.png`. Pass when 任务里只有领队，没有专家的回合。
-- [ ] Lane 8. 真行情 `quote` 查 NVDA、SPY、QQQ、META、TSM。Save `r2a-real.txt`. Pass when 5 只都有价格、涨跌幅和标签，数据时间是最近的交易时段。
-- [ ] Lane 9. 真模型分别问「NVDA 最新新闻」和「NVDA 跌了多少，为什么跌」。Save `r2a-news.png`. Pass when 只问新闻的问题没有开在 stock-ta 领域；混合问题里 stock-ta 的回答有涨跌幅（带 %），自己不说原因；原因如果答了，来自 domain 为空的任务。
-- [ ] Lane 10. 真模型在对话里说「从自选股去掉 AMZN 和 AAPL」（Appendix E 第 11 条）。Save `r2a-watchlist-edit.txt`. Pass when 任务开在 stock-ta，`watchlist` 里这两行写上了 `removedAt`，下一轮报价 feed 的请求里没有它们。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都关掉 us-market、开着 stock-ta，用真模型问「NVDA 现在多少」。Save `r2a-regression.txt`. Pass when head 的领队调了 `quote`、没有派活、回答有价格和数据时间。trunk 没有 `quote`，记下 trunk 是怎么答的和用了多久，作为 perf 的基线。
+- [x] Lane 2. fixtures 里盘中的 NVDA 快照，假模型照技能调 `quote`。Save `r2a-watchlist.txt`. Pass when 回价格、昨收、涨跌幅、数据时间和「盘中」。
+- [x] Lane 3. 查 META 和 TSM，都不在 fixtures 的自选股里。Save `r2a-off-list.txt`. Pass when 两只都有报价。
+- [x] Lane 4. fixtures 里 17:30 美东的盘后成交。Save `r2a-after-hours.txt`. Pass when 照样回价格，标签是「盘后」，不报错。
+- [x] Lane 5. fixtures 里周六和节假日的快照。Save `r2a-closed.txt`. Pass when 标签是「休市」，价格是上一交易日收盘。
+- [x] Lane 6. 查 11 个代码，再在没有 `POLYGON_API_KEY` 时查一次。Save `r2a-limits.txt`. Pass when 第一次拒绝并说明最多 10 个，第二次一行说明怎么加密钥，两次都不发请求。
+- [x] Lane 7. 网页上打开 lane 1 的任务。Save `r2a-no-dispatch.png`. Pass when 任务里只有领队，没有专家的回合。
+- [x] Lane 8. 真行情 `quote` 查 NVDA、SPY、QQQ、META、TSM。Save `r2a-real.txt`. Pass when 5 只都有价格、涨跌幅和标签，数据时间是最近的交易时段。
+- [x] Lane 9. 真模型分别问「NVDA 最新新闻」和「NVDA 跌了多少，为什么跌」。Save `r2a-news.png`. Pass when 只问新闻的问题没有开在 stock-ta 领域；混合问题里 stock-ta 的回答有涨跌幅（带 %），自己不说原因；原因如果答了，来自 domain 为空的任务。
+- [x] Lane 10. 真模型在对话里说「从自选股去掉 AMZN 和 AAPL」（Appendix E 第 11 条）。Save `r2a-watchlist-edit.txt`. Pass when 任务开在 stock-ta，`watchlist` 里这两行写上了 `removedAt`，下一轮报价 feed 的请求里没有它们。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 从你发出价格问题到 Telegram 收到第一行回答的时间。trunk 和 head 都有这条路，trunk 没有 `quote`。另量一次 `quote` 调用的宿主侧时间。
+- [x] Metric. 从你发出价格问题到 Telegram 收到第一行回答的时间。trunk 和 head 都有这条路，trunk 没有 `quote`。另量一次 `quote` 调用的宿主侧时间。
 - [ ] Probe. 真模型同一个问题，trunk 和 head 交替各 5 次。`quote` 调 20 次。部署到旧 Mac 后，从宿主日志和 `telegram_messages` 再算 3 次。
-- [ ] Baseline. Record the trunk 中位数 first.
-- [ ] Rule. head 中位数超过 25 秒，或比 trunk 慢，就失败。`quote` 中位数超过 3 秒，或任何一次超过 18 秒，就失败。旧 Mac 上中位数超过 25 秒就记成阻碍，回到这个 PR 修。
+- [x] Baseline. Record the trunk 中位数 first.
+- [x] Rule. head 中位数超过 25 秒，或比 trunk 慢，就失败。`quote` 中位数超过 3 秒，或任何一次超过 18 秒，就失败。旧 Mac 上中位数超过 25 秒就记成阻碍，回到这个 PR 修。
+
+2026-11-13 在 psa/rt-r2a-quote 上通过：`just test` 1743/1743，`check.mjs` 全绿，`just module check` ok。lane 1 到 10 全部 PASS（lane 7、9 在合入 main 96d3db8 后的 head 上重跑）。perf 真模型 trunk 和 head 交替各 5 次，trunk 中位数 24.9 s，head 18.0 s；`quote` 真行情 20 次中位数 313 ms，最慢 492 ms。旧 Mac 上的 3 次等部署后再算。lane 9 的标准 2026-11-13 改过，见上面 Build 第三条。 评审图 `r2a-review-no-dispatch.png`、`r2a-review-news.png`、`r2a-review-web.png` 和 60 秒视频 `r2a-review.mp4` 已放进 `docs/modules/evidence/`；Telegram 截图还没有，录像脚本在网页上提问，消息不经过假 Telegram。
 
 **Review gate.** The operator reviews before merge.
 
 - [ ] Copy lane 7、9 screenshots into `docs/modules/evidence/r2a-review-<slug>.png`，再加一张 Telegram 上价格回答的截图 `r2a-review-telegram.png`。
-- [ ] Record a 30 to 60 second video of the change on a lane VM，问一个价格问题和一个混合问题。Save it as `docs/modules/evidence/r2a-review.mp4`。
+- [x] Record a 30 to 60 second video of the change on a lane VM，问一个价格问题和一个混合问题。Save it as `docs/modules/evidence/r2a-review.mp4`。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
@@ -211,7 +213,7 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 **Review gate.** The operator reviews before merge.
 
 - [ ] Copy lane 8 screenshot（新旧提醒并排）into `docs/modules/evidence/r1-review-telegram.png`。
-- [ ] Record a 30 to 60 second video of the change on a lane VM，回放剧本、提醒到假 Telegram、迁移命令的三次输出。Save it as `docs/modules/evidence/r1-review.mp4`。
+- [x] Record a 30 to 60 second video of the change on a lane VM，回放剧本、提醒到假 Telegram、迁移命令的三次输出。Save it as `docs/modules/evidence/r1-review.mp4`。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
@@ -395,7 +397,7 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 **Review gate.** The operator reviews before merge.
 
 - [ ] Copy lane 3、4、8、10 screenshots into `docs/modules/evidence/r5-review-<slug>.png`，再加一张假 Telegram 上到档提醒和汇报的截图 `r5-review-telegram.png`。
-- [ ] Record a 30 to 60 second video of the change on a lane VM，回放剧本、Telegram 上的提醒行和汇报、网页的两栏。Save it as `docs/modules/evidence/r5-review.mp4`。
+- [x] Record a 30 to 60 second video of the change on a lane VM，回放剧本、Telegram 上的提醒行和汇报、网页的两栏。Save it as `docs/modules/evidence/r5-review.mp4`。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
