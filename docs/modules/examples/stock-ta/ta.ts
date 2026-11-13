@@ -1,8 +1,6 @@
 /**
- * Every call runs the `ta` that `just module setup` installed for this package copy, on a clone of the
- * module's own database, with the market API pointed at a closed port: even a read opens a write
- * transaction that bumps the SQLite header, and a cache miss would fetch from the network. Only the
- * `scan` feed writes the database itself.
+ * Every call works on a clone of the database with the market API pointed at a closed port: even a read
+ * in `ta` opens a write transaction that bumps the SQLite header, and a cache miss would fetch from the network.
  */
 import { spawnSync } from "node:child_process";
 import { constants, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
@@ -19,7 +17,6 @@ const UNDER_HOST_LIMIT_MS = 18_000;
 const DAY_MS = 86_400_000;
 const NOW_AFTER_SYNC_MS = 60_000;
 const GUIDE = "见 docs/modules/stock-ta.md";
-/** Rule definitions and notes come with the `ta` package and the imports, not from the database. */
 const WITHOUT_DATA: ReadonlySet<Command> = new Set(["rules", "note"]);
 const TIERS = [
 	{ items: 20, chars: 4000, depth: 8 },
@@ -31,7 +28,6 @@ const TIERS = [
 
 type Kind = "text" | "number" | "list" | "timeframe";
 
-/** The module only scans daily bars, so it has no 5-minute data. */
 const TIMEFRAMES = ["1d", "1w"];
 
 /** Copies only the named fields, because `ta` rejects any field it does not know. */
@@ -82,7 +78,7 @@ export function ta(command: Command, args: JsonObject): JsonObject {
 	}
 }
 
-/** Setup writes `.psa-lock` last, so a venv without it is half installed. Mirrors `src/modules/files.ts`, which the package cannot import. */
+/** Setup writes `.psa-lock` last, so a venv without it is half installed. */
 export function installedTa(): string {
 	const venv = process.env["PSA_MODULE_VENV"] ?? "";
 	if (venv !== "" && existsSync(join(venv, ".psa-lock"))) return join(venv, "bin/ta");

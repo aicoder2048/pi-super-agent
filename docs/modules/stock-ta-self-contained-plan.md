@@ -207,49 +207,51 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `docs/modules/examples/stock-ta/ta.ts`（去掉 `Command` 里的 `"screen"`、`market.sqlite` 那一支、带「技术分析项目」的报错）和每个 `tools/*/tool.json`（去掉 `"secrets": ["TA_ROOT"]`；`tools/signals/tool.json` 的周期去掉 `5m`）。
-- [ ] Delete `docs/modules/examples/stock-ta/tools/screen/`、`skills/ta-screen/`。按 Appendix E 第 1 条，使用者要留就不删。
-- [ ] Edit `agents/signal-triage.md`（`description`、正文、`uses` 里的 `screen` 和 `ta-screen`，OR30 延迟警告）、`agents/*.md`（`uses` 加 `data/scan-runs`）、`skills/principle-freshness/SKILL.md`（「技术分析项目」的说法，加 `scan-runs`）、`skills/ta-interpret/SKILL.md`（OR30 一节、5m 的说法）、`evals/nvda-structure.md`（准备步骤把 NVDA 放进自选股）。
-- [ ] Edit `docs/modules/stock-ta.md`、`docs/modules/examples/stock-ta/module.json`（`description` 不再说「你本机技术分析项目」）。
-- [ ] Edit `tests/stock-ta.test.ts`。
+- [x] Edit `docs/modules/examples/stock-ta/ta.ts`（去掉 `Command` 里的 `"screen"`、`market.sqlite` 那一支、带「技术分析项目」的报错）和每个 `tools/*/tool.json`（去掉 `"secrets": ["TA_ROOT"]`；`tools/signals/tool.json` 的周期去掉 `5m`）。
+- [x] Delete `docs/modules/examples/stock-ta/tools/screen/`、`skills/ta-screen/`。按 Appendix E 第 1 条，使用者要留就不删。
+- [x] Edit `agents/signal-triage.md`（`description`、正文、`uses` 里的 `screen` 和 `ta-screen`，OR30 延迟警告）、`agents/*.md`（`uses` 加 `data/scan-runs`）、`skills/principle-freshness/SKILL.md`（「技术分析项目」的说法，加 `scan-runs`）、`skills/ta-interpret/SKILL.md`（OR30 一节、5m 的说法）、`evals/nvda-structure.md`（准备步骤把 NVDA 放进自选股）。
+- [x] Edit `docs/modules/stock-ta.md`、`docs/modules/examples/stock-ta/module.json`（`description` 不再说「你本机技术分析项目」）。
+- [x] Edit `tests/stock-ta.test.ts`。
 
 **Build.**
 
-- [ ] `ta.ts` 不再读 `TA_ROOT`。可执行文件是和自己这份包副本 `py/uv.lock` 对得上的 `$PSA_MODULE_DATA/files/venv-<12 位>/bin/ta`，直接调用，不经过 `uv run`。实测两者启动时间一样（Appendix A），直接调用还省掉服务 PATH 里要有 `uv` 这个前提。
-- [ ] 数据库是 `$PSA_MODULE_DATA/files/ta/ta.sqlite`。每次调用照旧先克隆到临时目录再跑，`TA_DB_PATH` 指向副本。`MASSIVE_BASE_URL` 照旧指向关着的端口，另设 `MASSIVE_API_KEY=offline`。这样缓存缺数据时，报错是「行情不可用」，不会掉进 `ta` 找项目根目录的错误（Appendix A 的 key-status 实验）。
-- [ ] `note` 设 `TA_NOTES_DIR` 为临时目录，里面链接 `$PSA_MODULE_DATA/knowledge/*/` 下所有 `TA?? - *.md`。笔记靠 `just module import` 导入，导入步骤不变。没导入时说哪份没导入。
-- [ ] 调用前找 venv。对应的 `venv-<12 位>/.psa-lock` 存在才用。一个 venv 都没有时说「先跑 just module setup stock-ta」。有别的 venv、没有这一个时说「包里钉的 ta 版本变了，重跑 just module setup stock-ta」。没有 `ta.sqlite` 时说「还没有数据，等 scan feed 第一次跑完（打开后一小时内）」。
-- [ ] `structure` 的 `now` 规则不变：取这个标的和 QQQ、SPY 最近一次同步分红的时间加一分钟。
-- [ ] 模块只扫日线。`screen`、日内 5 分钟信号和 OR30 都去掉，`docs/modules/stock-ta.md` 里列一节「你会少什么」，写明这三样和原因。工具、技能、Worker 的文字都不再提它们和「技术分析项目」，只有导入的笔记出处（`knowledge/*/source.json` 的 `origin`）和导入的笔记正文例外。
-- [ ] 文档的安装步骤改成复制包、`just module setup stock-ta`、导入笔记、打开、等第一拍扫描。`TA_ROOT` 那一步删掉。
+- [x] `ta.ts` 不再读 `TA_ROOT`。可执行文件是和自己这份包副本 `py/uv.lock` 对得上的 `$PSA_MODULE_DATA/files/venv-<12 位>/bin/ta`，直接调用，不经过 `uv run`。实测两者启动时间一样（Appendix A），直接调用还省掉服务 PATH 里要有 `uv` 这个前提。
+- [x] 数据库是 `$PSA_MODULE_DATA/files/ta/ta.sqlite`。每次调用照旧先克隆到临时目录再跑，`TA_DB_PATH` 指向副本。`MASSIVE_BASE_URL` 照旧指向关着的端口，另设 `MASSIVE_API_KEY=offline`。这样缓存缺数据时，报错是「行情不可用」，不会掉进 `ta` 找项目根目录的错误（Appendix A 的 key-status 实验）。
+- [x] `note` 设 `TA_NOTES_DIR` 为临时目录，里面链接 `$PSA_MODULE_DATA/knowledge/*/` 下所有 `TA?? - *.md`。笔记靠 `just module import` 导入，导入步骤不变。没导入时说哪份没导入。
+- [x] 调用前找 venv。对应的 `venv-<12 位>/.psa-lock` 存在才用。一个 venv 都没有时说「先跑 just module setup stock-ta」。有别的 venv、没有这一个时说「包里钉的 ta 版本变了，重跑 just module setup stock-ta」。没有 `ta.sqlite` 时说「还没有数据，等 scan feed 第一次跑完（打开后一小时内）」。
+- [x] `structure` 的 `now` 规则不变：取这个标的和 QQQ、SPY 最近一次同步分红的时间加一分钟。
+- [x] 模块只扫日线。`screen`、日内 5 分钟信号和 OR30 都去掉，`docs/modules/stock-ta.md` 里列一节「你会少什么」，写明这三样和原因。工具、技能、Worker 的文字都不再提它们和「技术分析项目」，只有导入的笔记出处（`knowledge/*/source.json` 的 `origin`）和导入的笔记正文例外。
+- [x] 文档的安装步骤改成复制包、`just module setup stock-ta`、导入笔记、打开、等第一拍扫描。`TA_ROOT` 那一步删掉。
 
 **You see.**
 
-- [ ] 一台没有技术分析项目的机器上，装好、打开、第一拍扫描以后，问「NVDA 现在的支撑阻力和动量怎么样」，汇报和今天一样带数据时间和笔记出处。宿主密钥文件里没有 `TA_ROOT`，工具列表里没有 `screen`。
+- [x] 一台没有技术分析项目的机器上，装好、打开、第一拍扫描以后，问「NVDA 现在的支撑阻力和动量怎么样」，汇报和今天一样带数据时间和笔记出处。宿主密钥文件里没有 `TA_ROOT`，工具列表里没有 `screen`。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/stock-ta.test.ts` 的假 `uv` 换成放在 `files/venv-<12 位>/bin/ta` 的假 `ta`。覆盖每个工具调的子命令和参数、`TA_DB_PATH` 是副本、原库不变、关着的端口和 `offline` 密钥、没 venv、只有别的锁文件的 venv、没写完的 venv（没有 `.psa-lock`）、没数据库、`note` 的链接目录、20 KB 裁剪、没有 `screen` 工具、`signals` 不收 `5m`。Run `just test`.
+- [x] `tests/stock-ta.test.ts` 的假 `uv` 换成放在 `files/venv-<12 位>/bin/ta` 的假 `ta`。覆盖每个工具调的子命令和参数、`TA_DB_PATH` 是副本、原库不变、关着的端口和 `offline` 密钥、没 venv、只有别的锁文件的 venv、没写完的 venv（没有 `.psa-lock`）、没数据库、`note` 的链接目录、20 KB 裁剪、没有 `screen` 工具、`signals` 不收 `5m`。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/s3-live.ts`。开头在临时状态目录里 `just module setup stock-ta`，再让 `scan` feed 用 `now` 补数跑一拍，lane 1 到 lane 8 都用这份数据库。没有 lane 需要真实的收盘时间窗。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 用 `TA_ROOT` 指向一个临时目录（技术分析项目 `app/trading` 的符号链接，加这份数据库的克隆），head 读 `files/ta/`，都调 `structure` 查 NVDA。Save `s3-regression.txt`. Pass when 两边 `levels` 和 `momentum` 相同。
-- [ ] Lane 2. `prices` 查 NVDA、QQQ。Save `s3-prices.txt`. Pass when 有价格和数据时间，`files/ta/ta.sqlite` 的 sha256 调用前后相同。
-- [ ] Lane 3. `signals`、`conditions` 查 NVDA，`rules` 查一个 rule_id。Save `s3-signals-rules.txt`. Pass when 信号和状态与 lane 1 那份数据一致，规则返回定义和出处。
-- [ ] Lane 4. 导入 TA02 后 `note` 查 `TA02#用法二：背离是 MACD 最核心的信号`。Save `s3-note.txt`. Pass when 返回这一节原文，没有 `path`。
-- [ ] Lane 5. 没导入就查 `note`。Save `s3-note-missing.txt`. Pass when 一行说明哪份没导入。
-- [ ] Lane 6. 删掉所有 `files/venv-*` 再调。Save `s3-no-venv.txt`. Pass when 「先跑 just module setup stock-ta」。
-- [ ] Lane 7. 一个 Worker 钉在当前版本上时，改包里 `py/uv.lock` 让宿主装上新版本。Save `s3-lock-changed.txt`. Pass when 钉在旧版本的 ticket 调 `structure` 照常（用旧 venv）；新版本调用说「重跑 just module setup stock-ta」；setup 以后新版本照常，两个 venv 都在。
-- [ ] Lane 8. 扫描进行中连调 20 次 `prices`。Save `s3-concurrent.txt`. Pass when 20 次都成功，没有一次读到坏库。
-- [ ] Lane 9. `rg -n 'screen|ta-screen|技术分析项目|TA_ROOT' docs/modules/examples/stock-ta`，再 `rg -n '5m|OR30' docs/modules/examples/stock-ta`。Save `s3-cleanup.txt`. Pass when 只剩 `knowledge/*/source.json` 的 `origin` 行和导入的笔记正文。
-- [ ] Lane 10. 真模型 `openai-codex/*` 问「NVDA 现在的支撑阻力和动量怎么样，数据是哪天的」。Save `s3-real-ask.txt`. Pass when 领队派给结构与形态和趋势与动量，汇报带数据时间并引用 `scan-runs` 最近一行的日期，宿主密钥文件里没有 `TA_ROOT`。
+- [x] Lane 1. Regression lane against trunk. trunk 用 `TA_ROOT` 指向一个临时目录（技术分析项目 `app/trading` 的符号链接，加这份数据库的克隆），head 读 `files/ta/`，都调 `structure` 查 NVDA。Save `s3-regression.txt`. Pass when 两边 `levels` 和 `momentum` 相同。
+- [x] Lane 2. `prices` 查 NVDA、QQQ。Save `s3-prices.txt`. Pass when 有价格和数据时间，`files/ta/ta.sqlite` 的 sha256 调用前后相同。
+- [x] Lane 3. `signals`、`conditions` 查 NVDA，`rules` 查一个 rule_id。Save `s3-signals-rules.txt`. Pass when 信号和状态与 lane 1 那份数据一致，规则返回定义和出处。
+- [x] Lane 4. 导入 TA02 后 `note` 查 `TA02#用法二：背离是 MACD 最核心的信号`。Save `s3-note.txt`. Pass when 返回这一节原文，没有 `path`。
+- [x] Lane 5. 没导入就查 `note`。Save `s3-note-missing.txt`. Pass when 一行说明哪份没导入。
+- [x] Lane 6. 删掉所有 `files/venv-*` 再调。Save `s3-no-venv.txt`. Pass when 「先跑 just module setup stock-ta」。
+- [x] Lane 7. 一个 Worker 钉在当前版本上时，改包里 `py/uv.lock` 让宿主装上新版本。Save `s3-lock-changed.txt`. Pass when 钉在旧版本的 ticket 调 `structure` 照常（用旧 venv）；新版本调用说「重跑 just module setup stock-ta」；setup 以后新版本照常，两个 venv 都在。
+- [x] Lane 8. 扫描进行中连调 20 次 `prices`。Save `s3-concurrent.txt`. Pass when 20 次都成功，没有一次读到坏库。
+- [x] Lane 9. `rg -n 'screen|ta-screen|技术分析项目|TA_ROOT' docs/modules/examples/stock-ta`，再 `rg -n '5m|OR30' docs/modules/examples/stock-ta`。Save `s3-cleanup.txt`. Pass when 只剩 `knowledge/*/source.json` 的 `origin` 行和导入的笔记正文。
+- [x] Lane 10. 真模型 `openai-codex/*` 问「NVDA 现在的支撑阻力和动量怎么样，数据是哪天的」。Save `s3-real-ask.txt`. Pass when 领队派给结构与形态和趋势与动量，汇报带数据时间并引用 `scan-runs` 最近一行的日期，宿主密钥文件里没有 `TA_ROOT`。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 一次 `structure` 工具调用的总时间，含克隆、起 `ta`、读结果。
-- [ ] Probe. trunk（`uv run --no-sync`）和 head（直接调 venv 里的 `ta`）交替各 10 次，同一份克隆数据，先各跑一次热身。
-- [ ] Baseline. Record the trunk 中位数 first.
-- [ ] Rule. head 中位数比 trunk 慢 100 毫秒以上就失败。
+- [x] Metric. 一次 `structure` 工具调用的总时间，含克隆、起 `ta`、读结果。
+- [x] Probe. trunk（`uv run --no-sync`）和 head（直接调 venv 里的 `ta`）交替各 10 次，同一份克隆数据，先各跑一次热身。
+- [x] Baseline. Record the trunk 中位数 first.
+- [x] Rule. head 中位数比 trunk 慢 100 毫秒以上就失败。
+
+2026-11-12 在 5faab06 上通过（之后只删了注释，修了 lane 3 的比较）：`tests/stock-ta.test.ts` 20 条、`tests/stock-ta-scan.test.ts` 加 1 条，先红后绿（红的输出在 `/tmp/swarm-s3/owner/red-1.txt`、`red-2.txt`、`red-3.txt`）。`just test` 1697 条全过（前一次 1696 条里只有 S2 记过的偶发失败「模块关掉时正在跑的 feed 进程组被杀掉」，单独重跑三次全过）；`check.mjs` 全绿。十条 lane 全 PASS，输出在 `/tmp/swarm-s3/owner/s3-*.txt`。开头的真扫描（NVDA、AMD 加 QQQ、SPY）12 个请求、12 秒，每只 502 根日线，数据到 2026-11-12。lane 1 trunk（`TA_ROOT` 加同一份库的克隆）和 head 的 `levels`、`momentum` 的 sha256 一样。lane 7 换锁文件以后，新副本说「包里钉的 ta 版本变了」，旧副本照常，setup 以后两个都照常、留两个 venv；这条 lane 按宿主给钉住的 ticket 传旧包副本的方式直接调工具，没有起宿主。lane 8 扫描进行中 8 次、之后 12 次 `prices` 都成功。lane 10 真模型 `openai-codex/gpt-6.1-terra`（Router）和 `gpt-6.1-sol`（Worker），领队派给结构与形态和趋势与动量，汇报写了 2026-11-12，Worker 读了 `scan-runs`。perf：`structure` 交替各 10 次，trunk 中位 1140 毫秒，head 中位 1115 毫秒，两边的时间都花在 `ta structure` 的计算上。和计划不同的地方：`rules` 和 `note` 不读数据库，第一次扫描前也能用；`signals` 和 `structure` 的周期都只收 `1d`、`1w`；`signals` 去掉 `ta` 的已读标记，因为第一次补数的历史信号全是未读；scan feed 和工具共用一个「venv 装好了」的判断，没有 `.psa-lock` 的 venv 两边都不用；scan feed 的 `limit` 写成 `300s`（同样 5 分钟），清理检查才只剩笔记出处；`evals/nvda-structure.md` 的前提写进题面开头一句，因为考题的 front matter 只认三个字段。还没做到的：`just module try` 只复制 `files/`，不复制 `knowledge/`，预演里 `note` 会说笔记没导入，要改得改 `src/cli/module-try.ts`，不在本 PR 的文件范围里。
 
 **Review gate.** None. S3 is not review-gated.
 

@@ -19,7 +19,6 @@ type Call = { argv: string[]; stdin: Record<string, unknown>; db: string | undef
 type Venv = "ready" | "none" | "other" | "half";
 type Setup = { synced?: Record<string, number> | null; venv?: Venv; notes?: Record<string, string[]> };
 
-/** A module data dir whose venv holds a fake `ta` that logs each call and answers from replies.json beside it. */
 function fakeModule(t: TestContext, replies: Record<string, Reply>, { synced = { NVDA: SYNCED, QQQ: SYNCED, SPY: SYNCED }, venv = "ready", notes = {} }: Setup = {}) {
 	const data = mkdtempSync(join(tmpdir(), "psa-stock-ta-"));
 	t.after(() => rmSync(data, { recursive: true, force: true }));

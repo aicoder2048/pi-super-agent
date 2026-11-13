@@ -91,7 +91,6 @@ function watch(state: string, ...symbols: string[]): void {
 const scanRuns = (state: string) => query(join(dataDir(state), "data.db"), `SELECT * FROM "scan-runs" ORDER BY rowid`).map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !k.startsWith("_"))));
 const scanOnce = (state: string, key: string) => runFeed(scanEntry(state), [], { data: instanceData(state), submit: () => undefined, alert: () => undefined, secret: (n: string) => (n === "POLYGON_API_KEY" ? key : undefined), now: () => Date.now() });
 
-/** Calls a tool the way the host does: `packageDir` is the copy a ticket is pinned to. */
 const tool = (name: string, input: unknown, state: string, packageDir = pkgOf(state), data = dataDir(state)): Promise<Reply> =>
 	runModuleCodeAsync({ packageDir, component: join("tools", name), dataDir: data }, "index.ts", input);
 
@@ -102,7 +101,6 @@ function realKey(): string {
 	if (!key) throw new Error("POLYGON_API_KEY is not in the host's secrets file");
 	return key;
 }
-/** Logs paths only: no query, no headers. */
 async function massiveCounter() {
 	const paths: string[] = [];
 	const server = createServer(async (req, res) => {
@@ -119,7 +117,6 @@ async function massiveCounter() {
 	return { base: `http://127.0.0.1:${port}`, paths, close: () => new Promise((done) => server.close(done)) };
 }
 
-/** Trunk's tools read TA_ROOT: the checkout's app/trading, linked, and a clone of the prelude's database. */
 function taRoot(state: string): string {
 	const project = process.env["TA_PROJECT"];
 	if (!project) throw new Error("set TA_PROJECT to the technical-analysis checkout");
@@ -200,9 +197,10 @@ async function lanes(): Promise<void> {
 		let same = true;
 		for (const [name, input] of [["signals", { symbol: "NVDA" }], ["conditions", { symbol: "NVDA" }]] as const) {
 			const [h, t] = [await tool(name, input, state), await trunkTool(name, input, root)];
-			const equal = h.ok && t.ok && JSON.stringify(h.output) === JSON.stringify(t.output);
+			const unread = (out: Record<string, unknown>) => JSON.stringify(out, (key, value) => (key === "read" ? undefined : value));
+			const equal = h.ok && t.ok && unread(h.output) === unread(t.output) && !JSON.stringify(h.output).includes('"read"');
 			same &&= equal;
-			lines.push(`${name} NVDA: head ok ${h.ok}, same as trunk on the same data: ${equal}; head ${show(outOf(h), 500)}`);
+			lines.push(`${name} NVDA: head ok ${h.ok}, same as trunk on the same data (trunk's read flag aside; head drops it): ${equal}; head ${show(outOf(h), 500)}`);
 		}
 		const first = await tool("signals", { symbol: "NVDA", limit: 1 }, state);
 		const ruleId = first.ok ? String((first.output["signals"] as Record<string, unknown>[])[0]?.["rule_id"] ?? "R-MACD-1") : "R-MACD-1";
