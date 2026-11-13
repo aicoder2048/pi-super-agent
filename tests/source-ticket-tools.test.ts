@@ -406,3 +406,74 @@ test("旧状态库里使用者开的任务订了邮件线程：Worker 读不到�
 	assert.ok(s.handOver(said, request).ok);
 	assert.equal((s.kernel.workerRead(request, said) as { type: string }).type, "trigger");
 });
+
+function privateFeedPackage(): string {
+	const dir = join(mkdtempSync(join(tmpdir(), "psa-pf-")), "mail");
+	const write = (path: string, body: string) => {
+		mkdirSync(join(dir, path, ".."), { recursive: true });
+		writeFileSync(join(dir, path), body);
+	};
+	write("module.json", JSON.stringify({ schema: 1, name: "mail", version: "0.1.0", title: "邮件", description: "读名单里的人的来信", team: "邮件组" }));
+	write("data/messages/collection.json", JSON.stringify({ title: "邮件", kind: "record", class: "private", fields: { body: { type: "text", title: "正文" } } }));
+	write("feeds/inbox/feed.json", JSON.stringify({ title: "收件箱", connector: "inbox", into: "messages" }));
+	write("agents/reader.md", "---\nname: reader\ntitle: 读信员\ndescription: 读信\ntools: read, bash, web_get\nuses: data/messages\n---\n你读信。\n");
+	return dir;
+}
+
+function privateFeedKernel(rules: Record<string, string> = {}) {
+	const stockTa = join(import.meta.dirname, "..", "docs", "modules", "examples", "stock-ta");
+	const book = new Modules([packageModule(privateFeedPackage(), "mail"), packageModule(stockTa, "stock-ta")], [], []).book;
+	const kernel = new Kernel({ db: openStore(":memory:"), clock: { now: () => Date.now() }, sourcePolicy: () => "candidate", domains: () => book, ruleAllows: (rule, source) => rules[rule] === source });
+	let n = 0;
+	const trigger = (source: string) =>
+		kernel.submitTrigger({ source, externalId: `e${++n}`, threads: [{ id: source === "conversation" ? CONVERSATION_THREAD_ID : `thr_${source}:${n}` }], sender: source, body: "到点了", occurredAt: Date.now() }).triggerId;
+	const open = (basis: Basis, triggerId: string | undefined, extra: { ruleId?: string; domain?: string } = {}) =>
+		kernel.route([{ kind: "open_ticket", title: "t", basis, triggerId, brief: "b", ...extra } as never])[0]!;
+	return { kernel, book, trigger, open };
+}
+
+test("模块包的 feed 写进私密集合，领域表就记下它；只写可分享集合的 stock-ta 不记", () => {
+	const { book } = privateFeedKernel();
+	assert.equal(book.get("mail")?.privateFeed, true);
+	assert.notEqual(book.get("stock-ta")?.privateFeed, true);
+});
+
+test("宿主来源开的任务不能落在私密 feed 的领域：使用者的定时规则填 mail 被拒，原因让幕僚长不带领域或在对话里开", () => {
+	const s = privateFeedKernel({ "user/morning": "timer" });
+	const refused = s.open("rule", s.trigger("timer"), { ruleId: "user/morning", domain: "mail" });
+	assert.equal(refused.ok, false, "有 bash 的规则任务读得到邮件正文");
+	assert.match(!refused.ok ? refused.reason : "", /domain mail holds private data its feed brought in.*opened from source timer/);
+	assert.ok(s.open("rule", s.trigger("timer"), { ruleId: "user/morning" }).ok, "不带领域照常开");
+});
+
+test("幕僚长为宿主来源的触发开推断任务：选 mail 领域被拒（推断任务有 web_get），选 stock-ta 或不选照常", () => {
+	const s = privateFeedKernel();
+	for (const source of ["timer", "us-market"]) {
+		const refused = s.open("inference", s.trigger(source), { domain: "mail" });
+		assert.equal(refused.ok, false, `${source} 开的推断任务有 web_get，却读得到邮件正文`);
+		assert.match(!refused.ok ? refused.reason : "", /domain mail holds private data/);
+	}
+	assert.ok(s.open("inference", s.trigger("us-market"), { domain: "stock-ta" }).ok, "stock-ta 的 feed 只写可分享集合，宿主来源照常能选");
+	assert.ok(s.open("inference", s.trigger("timer")).ok);
+});
+
+test("私密 feed 的领域照常收使用者开的任务（带团队）、它自己 feed 开的任务和没有触发的推断任务", () => {
+	const s = privateFeedKernel({ "user/triage": "mail/inbox" });
+	const request = s.open("request", s.trigger("conversation"), { domain: "mail" });
+	assert.ok(request.ok, !request.ok ? request.reason : "");
+	const helper = s.kernel.getTicket(request.ticketId!)!.helper;
+	assert.equal(helper && "team" in helper ? helper.team : null, "邮件组", "使用者开的 mail 任务由邮件组接，成员照常派");
+	assert.ok(s.open("rule", s.trigger("mail/inbox"), { ruleId: "user/triage", domain: "mail" }).ok);
+	assert.ok(s.open("inference", s.trigger("mail/inbox"), { domain: "mail" }).ok);
+	assert.ok(s.open("inference", undefined, { domain: "mail" }).ok);
+});
+
+test("宿主来源开的任务进不了带团队的私密 feed 领域，团队成员（写了 bash、web_get）也就碰不到邮件", () => {
+	const s = privateFeedKernel({ "user/morning": "timer" });
+	assert.equal(s.book.get("mail")?.team, "邮件组");
+	for (const basis of ["rule", "inference"] as const) {
+		const refused = s.open(basis, s.trigger("timer"), { ...(basis === "rule" && { ruleId: "user/morning" }), domain: "mail" });
+		assert.equal(refused.ok, false, `${basis}`);
+	}
+	assert.equal(s.kernel.listTickets().length, 0);
+});
