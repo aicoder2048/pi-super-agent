@@ -232,58 +232,60 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `src/modules/manifest.ts`、`src/modules/validate.ts`，`feed.json` 加可选的 `line`，feed 的回复加可选的 `problem`。
-- [ ] Create `src/modules/release.ts`，把放出的字段清洗、截断、填进模板，纯函数。
-- [ ] Edit `src/modules/feed-runner.ts`、`src/sources/feeds.ts`、`src/host/host.ts`、`src/kernel/kernel.ts`，放出的通知写一条宿主行和一条不私密的触发。
-- [ ] Edit `src/host/telegram/client.ts`、`src/host/telegram/rules.ts`，这种宿主行照原样发，不出链接预览。
-- [ ] Create `tests/fixtures/modules/private-line/`，一个带私密集合、`line` 和 `problem` 的测试模块。
-- [ ] Create `docs/adr/0020-a-private-feed-releases-the-fields-it-names.md`。Edit `docs/adr/0016-who-counts-as-the-user-on-an-im-client.md` 的出站清单，`docs/modules/architecture/design.md` 第 5 节，`docs/modules/module-user-guide.md`，`docs/web-client/copy.md`。
-- [ ] Create `tests/feed-line.test.ts`。Edit `tests/private-canary.test.ts`（#105 加的）和 `tests/e2e/` 里 Telegram 的用例。
+- [x] Edit `src/modules/manifest.ts`、`src/modules/validate.ts`，`feed.json` 加可选的 `line`，feed 的回复加可选的 `problem`。
+- [x] Create `src/modules/release.ts`，把放出的字段清洗、截断、填进模板，纯函数。
+- [x] Edit `src/modules/feed-runner.ts`、`src/sources/feeds.ts`、`src/host/host.ts`、`src/kernel/kernel.ts`，放出的通知写一条宿主行和一条不私密的触发。
+- [x] Edit `src/host/telegram/client.ts`、`src/host/telegram/rules.ts`，这种宿主行照原样发，不出链接预览。
+- [x] Create `tests/fixtures/modules/private-line/`，一个带私密集合、`line` 和 `problem` 的测试模块。
+- [x] Create `docs/adr/0020-a-private-feed-releases-the-fields-it-names.md`。Edit `docs/adr/0016-who-counts-as-the-user-on-an-im-client.md` 的出站清单，`docs/modules/architecture/design.md` 第 5 节，`docs/modules/module-user-guide.md`，`docs/web-client/copy.md`。
+- [x] Create `tests/feed-line.test.ts`。Edit `tests/private-canary.test.ts`（#105 加的）和 `tests/e2e/` 里 Telegram 的用例。
 
 **Build.**
 
-- [ ] `feed.json` 的 `line` 是一个最多三行的模板，只能引用这个 feed 的通知字段，只给私密 feed 用。检查时拒绝四行以上的模板、引用不存在的字段、写在不私密 feed 上的 `line`。
-- [ ] 放出的通知。私密 feed 写了 `line` 时，它的每条新通知（触发新写入，不是重复）由宿主做两件事。第一件，用 #103 的「通知」宿主行写一条，文字是模块标题加「：」开头，后面是填好的模板。第二件，给幕僚长的触发正文就是同一段填好的文字，触发写成不私密（`private = 0`）。私密集合里的那一行不变。没写 `line` 的私密 feed 和今天一样。
-- [ ] 幕僚长因此不会因为来信变成私密。#105 的 `routerSaw` 只对私密触发记一笔，放出的触发不私密，所以之后幕僚长在 Telegram 上的回复照旧是全文。幕僚长为这条通知开的任务读了私密集合以后，按今天的规则变成私密；它汇报以后，#105 的规则照常生效。这个代价写进 ADR-0020 和 Appendix C。
-- [ ] 重复的通知不写宿主行，所以同一封信手机只响一次。
-- [ ] 清洗在宿主的边界上做，写在 `release.ts`。每个值去掉 Unicode 类别 `\p{Cc}`、`\p{Cf}`、`\p{Zl}`、`\p{Zp}` 的字符（控制字符、换行、零宽字符、方向控制符、行和段落分隔符），连续空白并成一个空格。截断按字形（`Intl.Segmenter` 的 grapheme），每行最多 160 个字形，超出加省略号，总共最多三行。只去 `\p{Cc}` 时 U+2028、U+202E、U+200B 都会留下来，按 UTF-16 码元截断会把 emoji 切成半个代理对，两样都实测过（Appendix A）。值是别人写的，超长就截断，不报错。
-- [ ] Telegram 客户端对这种宿主行照原样发，带通知声音，带 `link_preview_options: { is_disabled: true }`，不换成 `privateLine`。私密模块的其他一切（任务的汇报、问题卡片）不变，仍然是一行。
-- [ ] feed 的 `problem`。feed 的回复可以带 `problem: { id, text }`，`text` 一行，最多 200 字。某个 feed 第一次报出一个 `id` 时，宿主写一条「通知」宿主行「<模块标题>：<text>」，网页和 Telegram 都有。同一个 `id` 再报不写；中间有一拍没报它（或报了别的 `id`），下次再报才再写。`problem` 的文字由模块代码写死，不能拼集合里的数据，ADR-0020 写明这一条。
-- [ ] `tests/private-canary.test.ts` 加放出字段的流程。私密行里不在模板中的字段放一个 canary，经过通知、幕僚长开任务、任务汇报，Telegram 发件箱里都没有它。放出的通知之后，一条 `toy-market` 的汇报和幕僚长的一句回复在 Telegram 上都是全文。
-- [ ] ADR-0020 记下：私密 feed 可以点名几个字段出本机，写在 `feed.json` 里就是使用者同意它们经过 Telegram 的服务器，也同意幕僚长不带私密标记地看到它们；只有通知本身，不扩到任务和回复；字段的值是别人写的，是输出不是授权（ADR-0003）。ADR-0016 的出站清单加这一项和 `problem`。
+- [x] `feed.json` 的 `line` 是一个最多三行的模板，只能引用这个 feed 的通知字段，只给私密 feed 用。检查时拒绝四行以上的模板、引用不存在的字段、写在不私密 feed 上的 `line`。
+- [x] 放出的通知。私密 feed 写了 `line` 时，它的每条新通知（触发新写入，不是重复）由宿主做两件事。第一件，用 #103 的「通知」宿主行写一条，文字是模块标题加「：」开头，后面是填好的模板。第二件，给幕僚长的触发正文就是同一段填好的文字，触发写成不私密（`private = 0`）。私密集合里的那一行不变。没写 `line` 的私密 feed 和今天一样。
+- [x] 幕僚长因此不会因为来信变成私密。#105 的 `routerSaw` 只对私密触发记一笔，放出的触发不私密，所以之后幕僚长在 Telegram 上的回复照旧是全文。幕僚长为这条通知开的任务读了私密集合以后，按今天的规则变成私密；它汇报以后，#105 的规则照常生效。这个代价写进 ADR-0020 和 Appendix C。
+- [x] 重复的通知不写宿主行，所以同一封信手机只响一次。
+- [x] 清洗在宿主的边界上做，写在 `release.ts`。每个值去掉 Unicode 类别 `\p{Cc}`、`\p{Cf}`、`\p{Zl}`、`\p{Zp}` 的字符（控制字符、换行、零宽字符、方向控制符、行和段落分隔符），连续空白并成一个空格。截断按字形（`Intl.Segmenter` 的 grapheme），每行最多 160 个字形，超出加省略号，总共最多三行。只去 `\p{Cc}` 时 U+2028、U+202E、U+200B 都会留下来，按 UTF-16 码元截断会把 emoji 切成半个代理对，两样都实测过（Appendix A）。值是别人写的，超长就截断，不报错。
+- [x] Telegram 客户端对这种宿主行照原样发，带通知声音，带 `link_preview_options: { is_disabled: true }`，不换成 `privateLine`。私密模块的其他一切（任务的汇报、问题卡片）不变，仍然是一行。
+- [x] feed 的 `problem`。feed 的回复可以带 `problem: { id, text }`，`text` 一行，最多 200 字。某个 feed 第一次报出一个 `id` 时，宿主写一条「通知」宿主行「<模块标题>：<text>」，网页和 Telegram 都有。同一个 `id` 再报不写；中间有一拍没报它（或报了别的 `id`），下次再报才再写。`problem` 的文字由模块代码写死，不能拼集合里的数据，ADR-0020 写明这一条。
+- [x] `tests/private-canary.test.ts` 加放出字段的流程。私密行里不在模板中的字段放一个 canary，经过通知、幕僚长开任务、任务汇报，Telegram 发件箱里都没有它。放出的通知之后，一条 `toy-market` 的汇报和幕僚长的一句回复在 Telegram 上都是全文。
+- [x] ADR-0020 记下：私密 feed 可以点名几个字段出本机，写在 `feed.json` 里就是使用者同意它们经过 Telegram 的服务器，也同意幕僚长不带私密标记地看到它们；只有通知本身，不扩到任务和回复；字段的值是别人写的，是输出不是授权（ADR-0003）。ADR-0016 的出站清单加这一项和 `problem`。
 
 **You see.**
 
-- [ ] 测试模块的私密 feed 来一条通知，Telegram 上响一条三行的消息，网页对话里同一条显示为「通知」。之后在 Telegram 上问幕僚长一个股票问题，回复是全文。feed 报一次 `problem`，网页和 Telegram 上各多一条「通知」，再报同一个不再多。
+- [x] 测试模块的私密 feed 来一条通知，Telegram 上响一条三行的消息，网页对话里同一条显示为「通知」。之后在 Telegram 上问幕僚长一个股票问题，回复是全文。feed 报一次 `problem`，网页和 Telegram 上各多一条「通知」，再报同一个不再多。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/feed-line.test.ts` 覆盖：四行模板被拒、引用不存在的字段被拒、不私密 feed 上的 `line` 被拒；新通知写一条宿主行和一条 `private = 0` 的触发；重复通知都不写；`routerSaw` 对放出的触发不记私密；没写 `line` 的私密 feed 仍让幕僚长变私密（#105 不变）；U+2028、U+2029、U+202E、U+2066、U+200B、U+FEFF、`\u0007` 都被去掉；在 emoji 处截断后字符串仍是合法 UTF-16；每行 160 个字形、最多三行；Telegram 请求带 `link_preview_options.is_disabled`；`problem` 同一个 `id` 只写一次，中断后再写。`tests/private-canary.test.ts` 的新流程通过。Run `just test`.
+- [x] `tests/feed-line.test.ts` 覆盖：四行模板被拒、引用不存在的字段被拒、不私密 feed 上的 `line` 被拒；新通知写一条宿主行和一条 `private = 0` 的触发；重复通知都不写；`routerSaw` 对放出的触发不记私密；没写 `line` 的私密 feed 仍让幕僚长变私密（#105 不变）；U+2028、U+2029、U+202E、U+2066、U+200B、U+FEFF、`\u0007` 都被去掉；在 emoji 处截断后字符串仍是合法 UTF-16；每行 160 个字形、最多三行；Telegram 请求带 `link_preview_options.is_disabled`；`problem` 同一个 `id` 只写一次，中断后再写。`tests/private-canary.test.ts` 的新流程通过。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 宿主 lane 用 `tests/e2e/harness.ts`、测试模块和假 Telegram 接口。lane 10 用真 Telegram 测试机器人，在时段 1 跑。
 
-- [ ] Lane 1. Regression lane against trunk. trunk（含 #105）和 head 都装测试模块，私密 feed 来一条通知，然后在假 Telegram 上问幕僚长一句，假模型回一句固定的话。Save `m3-regression.txt`. Pass when trunk 上 Telegram 发件箱没有三行消息、幕僚长那句回复是一行提示；head 上正好一条三行消息、那句回复是全文；两边私密集合的行相同。
-- [ ] Lane 2. 同一条通知送两次。Save `m3-dedupe.txt`. Pass when 只有一条宿主行、一条触发，Telegram 发件箱只有一条。
-- [ ] Lane 3. 主题里有换行、`\u0007`、U+2028、U+202E、U+200B，开头一句 300 字，第 160 个字形处是 emoji。Save `m3-sanitize.txt`. Pass when 三行，每行不超过 160 个字形，没有这些字符，字符串合法。
-- [ ] Lane 4. 放出的通知之后，`toy-market` 来一条触发，规则任务汇报。Save `m3-market-full.txt`. Pass when Telegram 上的汇报是全文。
-- [ ] Lane 5. canary。私密行的正文字段里放 `CANARY-7f3a`，幕僚长为通知开任务，任务读私密集合并在汇报里复述正文。Save `m3-canary.txt`. Pass when Telegram 发件箱的每条消息都没有 `CANARY-7f3a`，网页上的汇报有它；这次汇报之后幕僚长在 Telegram 上的回复是一行提示（#105 照常）。
-- [ ] Lane 6. `feed.json` 写四行的 `line`，再写一个引用私密正文字段的 `line`，各跑 `just module check`。Save `m3-check.txt`. Pass when 两次都失败，各一行说明。
-- [ ] Lane 7. 网页对话里看这条通知。Save `m3-web-notice.png`. Pass when 显示为「通知」，三行，没有回复和引用按钮。
-- [ ] Lane 8. TUI 里看这条通知。Save `m3-tui-notice.txt`. Pass when 显示为通知，三行。
-- [ ] Lane 9. feed 连报两拍同一个 `problem`，第三拍不报，第四拍再报。Save `m3-problem.png`. Pass when 网页和假 Telegram 上各两条「通知」，第一拍一条、第四拍一条。
+- [x] Lane 1. Regression lane against trunk. trunk（含 #105）和 head 都装测试模块，私密 feed 来一条通知，然后在假 Telegram 上问幕僚长一句，假模型回一句固定的话。Save `m3-regression.txt`. Pass when trunk 上 Telegram 发件箱没有三行消息、幕僚长那句回复是一行提示；head 上正好一条三行消息、那句回复是全文；两边私密集合的行相同。
+- [x] Lane 2. 同一条通知送两次。Save `m3-dedupe.txt`. Pass when 只有一条宿主行、一条触发，Telegram 发件箱只有一条。
+- [x] Lane 3. 主题里有换行、`\u0007`、U+2028、U+202E、U+200B，开头一句 300 字，第 160 个字形处是 emoji。Save `m3-sanitize.txt`. Pass when 三行，每行不超过 160 个字形，没有这些字符，字符串合法。
+- [x] Lane 4. 放出的通知之后，`toy-market` 来一条触发，规则任务汇报。Save `m3-market-full.txt`. Pass when Telegram 上的汇报是全文。
+- [x] Lane 5. canary。私密行的正文字段里放 `CANARY-7f3a`，幕僚长为通知开任务，任务读私密集合并在汇报里复述正文。Save `m3-canary.txt`. Pass when Telegram 发件箱的每条消息都没有 `CANARY-7f3a`，网页上的汇报有它；这次汇报之后幕僚长在 Telegram 上的回复是一行提示（#105 照常）。
+- [x] Lane 6. `feed.json` 写四行的 `line`，再写一个引用私密正文字段的 `line`，各跑 `just module check`。Save `m3-check.txt`. Pass when 两次都失败，各一行说明。
+- [x] Lane 7. 网页对话里看这条通知。Save `m3-web-notice.png`. Pass when 显示为「通知」，三行，没有回复和引用按钮。
+- [x] Lane 8. TUI 里看这条通知。Save `m3-tui-notice.txt`. Pass when 显示为通知，三行。
+- [x] Lane 9. feed 连报两拍同一个 `problem`，第三拍不报，第四拍再报。Save `m3-problem.png`. Pass when 网页和假 Telegram 上各两条「通知」，第一拍一条、第四拍一条。
 - [ ] Lane 10. 真 Telegram 测试机器人（时段 1）。测试 feed 来一条开头一句里带 `https://example.com/x` 的通知。Save `m3-real-phone.png`. Pass when 手机上响一条三行消息，内容和网页上的对得上，没有链接预览卡片。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 一条通知从 feed 交回到写进 Telegram 发件箱的时间，trunk 和 head 都量（trunk 量到触发写入为止）。
-- [ ] Probe. trunk 和 head 交替各 20 条通知。
-- [ ] Baseline. Record the trunk 触发写入的中位数 first。
-- [ ] Rule. head 的触发写入比 trunk 慢 10 毫秒以上，或宿主行写入加进发件箱超过 50 毫秒，就失败。
+- [x] Metric. 一条通知从 feed 交回到写进 Telegram 发件箱的时间，trunk 和 head 都量（trunk 量到触发写入为止）。
+- [x] Probe. trunk 和 head 交替各 20 条通知。
+- [x] Baseline. Record the trunk 触发写入的中位数 first。
+- [x] Rule. head 的触发写入比 trunk 慢 10 毫秒以上，或宿主行写入加进发件箱超过 50 毫秒，就失败。
+
+2026-11-13 在 04cf31f 上通过（证据在 `/tmp/swarm-m3/owner-live/`、`/tmp/swarm-m3/owner/`）：`just test` 1792 条里 1791 条过，`tests/watchdog-main.test.ts` 的「终端 Ctrl+C：Watchdog 不停别人启动的宿主」单独重跑通过（已知偶发）；`node docs/modules/architecture/check.mjs` 7 项 ok；`tests/e2e/telegram.e2e.ts` 7 个用例过。`docs/modules/evidence/m3-live.ts` lane 1 到 9 PASS，lane 10 等时段 1。`docs/modules/evidence/m3-perf.ts` 跑两次，每次两边交替各 20 条：通知交回到触发写入的中位数 trunk 4 毫秒、head 4 毫秒（3 到 6），宿主行写入到 Telegram 发件箱最多 1 毫秒；这几毫秒主要是 handler 子进程退出和交回 JSON，毫秒时钟，差 1 毫秒是噪声。`src/sources/feeds.ts` 不用改：宿主自带的来源不走模块 feed 的通知。审查后加了两条：放出的触发里通知 id 和线程名只以散列出现，`ignore` 仍按 `notice` 的文字过滤。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 7 and lane 9 screenshots into `docs/modules/evidence/m3-review-web.png` and `docs/modules/evidence/m3-review-problem.png`。lane 10 的真手机截图只在聊天里给使用者看，留在 `/tmp/swarm-m3/`，不提交。
-- [ ] Record a 30 to 60 second video of the change on a lane VM，从测试 feed 来通知到网页和假 Telegram 上出现三行，再到幕僚长在假 Telegram 上回全文。Save it as `/tmp/swarm-m3/m3-review.mp4`.
+- [x] Copy lane 7 and lane 9 screenshots into `docs/modules/evidence/m3-review-web.png` and `docs/modules/evidence/m3-review-problem.png`。lane 10 的真手机截图只在聊天里给使用者看，留在 `/tmp/swarm-m3/`，不提交。
+- [x] Record a 30 to 60 second video of the change on a lane VM，从测试 feed 来通知到网页和假 Telegram 上出现三行，再到幕僚长在假 Telegram 上回全文。Save it as `/tmp/swarm-m3/m3-review.mp4`.
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
