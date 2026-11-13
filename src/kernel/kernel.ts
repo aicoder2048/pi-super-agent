@@ -3,8 +3,10 @@ import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { CAP_ASK_PREFIX, type CapAsk, type CapAskStore } from "./cap-ask.ts";
 import { answerExternalId, answerSentence, type AnswerRefusal } from "./question.ts";
 import { quoteSnapshot } from "./quote.ts";
+import { RUN_ASK_PREFIX, RUN_ASK_TTL_MS, RUN_NOTE, RUN_OPTIONS, type RunAsk } from "./run-ask.ts";
 
 export type AnswerOutcome = { ok: true; triggerId: string; ticketId: string; text: string; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
+export type RunAnswerOutcome = { ok: true; ask: RunAsk; duplicate: boolean } | { ok: false; refusal: AnswerRefusal };
 import { deriveStage } from "./stage.ts";
 import { SOLO_NAMES, TEAM_NAMES, helperName, helperRole, newYorkDate } from "./helper-names.ts";
 import { oneLine, stallMinutes } from "../client/board-format.mjs";
@@ -161,6 +163,20 @@ function hostLine(r: Row): HostLine {
 // Node 22's node:sqlite reads a string back only up to its first U+0000, so drop U+0000 before it reaches the store.
 function sqlParams(params: SQLInputValue[]): SQLInputValue[] {
 	return params.map((p) => (typeof p === "string" ? p.replaceAll("\u0000", "") : p));
+}
+
+function toRunAsk(r: Row): RunAsk {
+	const base = { id: r.id, ticketId: r.ticket_id, command: r.command, why: r.why, origin: { source: r.origin_source, sender: r.origin_sender }, askedAt: r.asked_at, expiresAt: r.expires_at };
+	switch (r.state as RunAsk["state"]) {
+		case "open":
+			return { ...base, state: "open" };
+		case "approved":
+			return { ...base, state: "approved", answeredAt: r.answered_at };
+		case "ran":
+			return { ...base, state: "ran", answeredAt: r.answered_at, ranAt: r.ran_at, exitCode: r.exit_code, outputFile: r.output_file };
+		case "declined":
+			return { ...base, state: "declined", reason: r.reason, answeredAt: r.answered_at };
+	}
 }
 
 function toReport(r: Row): Report {
@@ -394,6 +410,89 @@ export class Kernel {
 		});
 	}
 
+	openRunAsk(ticketId: string, { command, why }: { command: string; why: string }): Result<{ askId: string }> {
+		return this.#tx(() => {
+			const ticket = this.#ticketRow(ticketId);
+			if (!ticket) return reject(`没有任务 ${ticketId}`);
+			if (ticket.stopped_at !== null || ticket.closed_at !== null) return reject("任务已经结束，不能再请使用者批准命令");
+			if (this.#get("SELECT 1 FROM run_asks WHERE ticket_id = ? AND state IN ('open', 'approved')", ticketId)) {
+				return reject("这个任务已经有一张卡片在等使用者批准或在运行，等它的结果作为新的输入到了再说");
+			}
+			const origin = this.#get("SELECT source, sender FROM triggers WHERE id = ?", ticket.origin_trigger_id);
+			const askId = `${RUN_ASK_PREFIX}${randomUUID()}`;
+			const now = this.#now();
+			this.#run(
+				"INSERT INTO run_asks (id, ticket_id, command, why, origin_source, origin_sender, asked_at, expires_at, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open')",
+				askId, ticketId, command, why, origin?.source ?? null, origin?.sender ?? null, now, now + RUN_ASK_TTL_MS,
+			);
+			return { ok: true, askId };
+		});
+	}
+
+	runAsk(askId: string): RunAsk | undefined {
+		const r = this.#get("SELECT * FROM run_asks WHERE id = ?", askId);
+		return r && toRunAsk(r);
+	}
+
+	/** Only the user's click reaches this. `fromIm`: a phone may not approve a command for a ticket that touched private data. */
+	answerRunAsk({ askId, option, fromIm }: { askId: string; option: number; fromIm: boolean }): RunAnswerOutcome {
+		return this.#tx((): RunAnswerOutcome => {
+			const refuse = (refusal: AnswerRefusal) => ({ ok: false as const, refusal });
+			this.#expireRunAsks();
+			const ask = this.runAsk(askId);
+			if (!ask) return refuse({ kind: "no_question" });
+			if (fromIm && this.touchedPrivate(ask.ticketId)) return refuse({ kind: "web_only" });
+			if (!Number.isInteger(option) || option < 0 || option >= RUN_OPTIONS.length) return refuse({ kind: "out_of_range", count: RUN_OPTIONS.length });
+			if (ask.state === "declined" && ask.reason !== "user") return refuse({ kind: "closed" });
+			if (ask.state !== "open") {
+				const chosen = ask.state === "declined" ? 1 : 0;
+				return chosen === option ? { ok: true, ask, duplicate: true } : refuse({ kind: "chosen", option: chosen, label: RUN_OPTIONS[chosen] });
+			}
+			const now = this.#now();
+			if (option === 0) {
+				this.#run("UPDATE run_asks SET state = 'approved', answered_at = ? WHERE id = ?", now, askId);
+				this.#run("UPDATE tickets SET last_progress_at = ? WHERE id = ?", now, ask.ticketId);
+			} else {
+				this.#run("UPDATE run_asks SET state = 'declined', reason = 'user', answered_at = ? WHERE id = ?", now, askId);
+				this.#addInput(ask.ticketId, "bg_result", RUN_NOTE.declined(ask.command));
+			}
+			return { ok: true, ask: this.runAsk(askId)!, duplicate: false };
+		});
+	}
+
+	runAskRan(askId: string, result: { exitCode: number | null; timedOut: boolean; outputFile: string; tail: string }): void {
+		this.#tx(() => {
+			this.#run("UPDATE run_asks SET state = 'ran', ran_at = ?, exit_code = ?, output_file = ? WHERE id = ?", this.#now(), result.exitCode, result.outputFile, askId);
+			const ask = this.runAsk(askId)!;
+			this.#addInput(ask.ticketId, "bg_result", RUN_NOTE.ran(ask.command, result));
+		});
+	}
+
+	expireRunAsks(): string[] {
+		return this.#tx(() => this.#expireRunAsks());
+	}
+
+	#expireRunAsks(): string[] {
+		const due = this.#all("SELECT id, ticket_id, command FROM run_asks WHERE state = 'open' AND expires_at <= ?", this.#now());
+		for (const r of due) {
+			this.#run("UPDATE run_asks SET state = 'declined', reason = 'expired', answered_at = ? WHERE id = ?", this.#now(), r.id);
+			this.#addInput(r.ticket_id, "bg_result", RUN_NOTE.expired(r.command));
+		}
+		return due.map((r) => r.id as string);
+	}
+
+	#endRunAsks(ticketId: string): void {
+		this.#run("UPDATE run_asks SET state = 'declined', reason = 'ticket-ended', answered_at = ? WHERE ticket_id = ? AND state = 'open'", this.#now(), ticketId);
+	}
+
+	#runAskCard(ticketId: string): RunAsk | null {
+		const r = this.#get("SELECT * FROM run_asks WHERE ticket_id = ? ORDER BY asked_at DESC, rowid DESC LIMIT 1", ticketId);
+		if (!r) return null;
+		const settledAt = r.ran_at ?? (r.state === "declined" ? r.answered_at : null);
+		if (settledAt !== null && this.#get("SELECT 1 FROM reports WHERE ticket_id = ? AND created_at > ?", ticketId, settledAt)) return null;
+		return toRunAsk(r);
+	}
+
 	route(decisions: Decision[]): DecisionResult[] {
 		const takenThisRoute = new Set<string>();
 		return this.#tx(() =>
@@ -568,15 +667,6 @@ export class Kernel {
 		this.#tx(() => this.#enqueue({ kind: "router.notify", payload: { kind: "notice", body } }));
 	}
 
-	addBackgroundResult(ticketId: string, body: string): Result {
-		return this.#tx(() => {
-			const problem = this.#acceptsInput(ticketId);
-			if (problem) return reject(problem);
-			this.#addInput(ticketId, "bg_result", body);
-			return { ok: true };
-		});
-	}
-
 	claimSlot(ticketId: string): boolean {
 		return this.#tx(() => {
 			const ticket = this.#requireTicket(ticketId);
@@ -725,6 +815,11 @@ export class Kernel {
 				this.#run("UPDATE tickets SET worker_state = 'queued', bg_running = 0 WHERE id = ?", ticketId);
 				this.#addInput(ticketId, "recovery", RECOVERY_NOTE);
 			}
+			// The host stopped while it ran an approved command, so nobody knows how it ended; running it again could do it twice.
+			for (const r of this.#all("SELECT r.id, r.ticket_id, r.command, r.output_file, t.stopped_at FROM run_asks r JOIN tickets t ON t.id = r.ticket_id WHERE r.state = 'approved'")) {
+				this.#run("UPDATE run_asks SET state = 'ran', ran_at = ? WHERE id = ?", this.#now(), r.id);
+				if (r.stopped_at === null) this.#addInput(r.ticket_id, "bg_result", RUN_NOTE.restarted(r.command, r.output_file));
+			}
 			return running;
 		});
 	}
@@ -826,6 +921,7 @@ export class Kernel {
 				endedAt: t.stoppedAt ?? t.closedAt,
 				outside: this.#outsideTally(t.id),
 				moduleOff: t.domain !== null && !serving.has(t.domain),
+				runAsk: this.#runAskCard(t.id),
 			};
 		});
 	}
@@ -1336,6 +1432,7 @@ export class Kernel {
 				if (!ticket) return reject(`unknown ticket ${d.ticketId}`);
 				if (ticket.stopped_at !== null) return { ok: true, ticketId: d.ticketId };
 				this.#run("UPDATE tickets SET stopped_at = ? WHERE id = ?", this.#now(), d.ticketId);
+				this.#endRunAsks(d.ticketId);
 				this.#run(
 					"UPDATE actions SET status = 'cancelled' WHERE status = 'pending' AND kind = 'worker.wake' AND ticket_id = ?",
 					d.ticketId,
@@ -1520,6 +1617,7 @@ export class Kernel {
 
 	#close(ticketId: string): void {
 		this.#run("UPDATE tickets SET closed_at = ? WHERE id = ?", this.#now(), ticketId);
+		this.#endRunAsks(ticketId);
 	}
 
 	#setState(ticketId: string, state: WorkerState): void {
@@ -1597,6 +1695,7 @@ export class Kernel {
 			workerState: r.worker_state,
 			latestReport: latest ? { status: latest.status, hasQuestion: !!latest.question } : null,
 			userSpokeAfterLatestReport,
+			runAsk: this.#get("SELECT state FROM run_asks WHERE ticket_id = ? AND state IN ('open', 'approved') LIMIT 1", ticketId)?.state ?? null,
 		});
 		return {
 			id: r.id,

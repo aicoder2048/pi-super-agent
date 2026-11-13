@@ -244,6 +244,7 @@ function mount(doc) {
 			fillChoices(box, card.choice);
 			node.append(box);
 		}
+		if (card.run) node.append(runBlock(card.run));
 		if (card.canStop) {
 			const row = el("div", "row");
 			const stop = el("button", "stop", "停止");
@@ -263,6 +264,18 @@ function mount(doc) {
 				watch(card.id);
 			}
 		});
+		return node;
+	};
+
+	/** @param {import("./view.mjs").RunCard} run */
+	const runBlock = (run) => {
+		const node = el("div", "run");
+		node.append(el("div", "by", run.by), el("div", "origin", run.origin), el("div", "command", run.command), el("div", "said", run.said));
+		if (run.choice) {
+			const box = el("div", "choices");
+			fillChoices(box, run.choice);
+			node.append(box);
+		} else node.append(el("div", "status", run.status));
 		return node;
 	};
 

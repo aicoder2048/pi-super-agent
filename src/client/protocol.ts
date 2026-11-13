@@ -79,7 +79,7 @@ export type ClientToHost =
 	| { type: "say"; text: string; requestId: string }
 	/** Shown as 通知; never reaches the Router. */
 	| { type: "notify"; text: string; requestId: string }
-	/** A click on option `option` of the question `reportId`: a helper's report, or the host's own question about the member cap. The host words it as the user's message. */
+	/** A click on option `option` of the question `reportId`: a helper's report, the host's own question about the member cap, or a card asking to run a command. The host words the first two as the user's message. */
 	| { type: "answer"; reportId: string; option: number; requestId: string }
 	| { type: "watch"; ticketId?: string };
 

@@ -23,6 +23,11 @@ export const BASIS_LABEL = { request: "请求", rule: "规则", inference: "推�
 /** Who asks the member-cap question. No helper's name, role or team can read like this, so a helper's look-alike question cannot carry it. */
 export const HOST_SOURCE = "白宫 · 系统";
 
+/** @param {{ source: string | null, sender: string | null }} origin */
+export const runOrigin = (origin) => `来源 ${origin.source ?? "无"} · 发件人 ${origin.sender ?? "无"}`;
+
+export const RUN_OPTIONS = /** @type {const} */ (["同意", "不要"]);
+
 /** @type {Record<InputKind, string>} */
 export const INPUT_LABEL = {
 	brief: "任务说明",
@@ -31,7 +36,7 @@ export const INPUT_LABEL = {
 	note: "Router 备注（不构成授权）",
 	status_query: "Router 问状态：请用 report 汇报现状",
 	recovery: "恢复说明",
-	bg_result: "后台命令结果",
+	bg_result: "批准卡片的结果",
 };
 
 export const QUOTE_WHO = { user: "你", router: "幕僚长" };

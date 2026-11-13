@@ -1,3 +1,4 @@
+import type { RunAsk } from "./run-ask.ts";
 export const BASES = ["request", "rule", "inference"] as const;
 export type Basis = (typeof BASES)[number];
 
@@ -312,6 +313,8 @@ export interface DashboardRow {
 	/** Every outside write in the ticket's reports, with up to three of their paths; null when there is none. */
 	outside: OutsideTally | null;
 	moduleOff: boolean;
+	/** The ticket's latest card asking to run a command: while it is open or running, and once settled until the ticket reports again. */
+	runAsk: RunAsk | null;
 }
 
 export interface OutsideTally {

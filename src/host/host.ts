@@ -6,6 +6,8 @@ import { endLeftoverMembers } from "./member-ledger.ts";
 import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
 import { join } from "node:path";
 import { isCapAskId } from "../kernel/cap-ask.ts";
+import { isRunAskId, RUN_TIMEOUT_MS, type RunAsk } from "../kernel/run-ask.ts";
+import { approvedEnv, runApproved, type ApprovedRun } from "./run-approved.ts";
 import { msUntilNextNewYorkDay } from "../kernel/helper-names.ts";
 import { Kernel, nextStallAt } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
@@ -121,8 +123,10 @@ export class Host {
 	readonly #stateDir: string;
 	#boardTimer: NodeJS.Timeout | undefined;
 	#midnightTimer: NodeJS.Timeout | undefined;
-	#stallTimer: NodeJS.Timeout | undefined;
-	#stallAt: number | null = null;
+	#dueTimer: NodeJS.Timeout | undefined;
+	#dueAt: number | null = null;
+	readonly #runs = new Set<ApprovedRun>();
+	#stopping = false;
 	#heartbeat: NodeJS.Timeout | undefined;
 	#web: WebGateway | undefined;
 	readonly #telegram: TelegramClient | undefined;
@@ -297,7 +301,7 @@ export class Host {
 		host.#heartbeat.unref();
 		host.#atNextMidnight();
 		if (host.#memberCap) host.#atNextNewYorkDay(host.#memberCap);
-		host.#pushBoardAtNextStall(host.kernel.listTickets());
+		host.#pushBoardWhenDue(host.kernel.listTickets());
 		// Only now do the Router and every client exist; a reply delivered earlier would miss the ones still missing.
 		host.dispatcher.start();
 		host.#telegram?.start();
@@ -343,6 +347,7 @@ export class Host {
 	 */
 	answer(reportId: string, option: number, { from }: { from?: ImChat } = {}): AnswerResult {
 		if (isCapAskId(reportId)) return from ? { ok: false, refusal: { kind: "not_here" } } : this.#answerCapAsk(reportId, option);
+		if (isRunAskId(reportId)) return this.#answerRunAsk(reportId, option, from);
 		const at = Date.now();
 		const result = this.kernel.answerQuestion({ reportId, option, at });
 		if (!result.ok) return result;
@@ -372,6 +377,36 @@ export class Host {
 		return { ok: true, triggerId: result.lineId };
 	}
 
+	/** Not a trigger and not a conversation line: the Router never sees the click (ADR-0021). */
+	#answerRunAsk(askId: string, option: number, from: ImChat | undefined): AnswerResult {
+		const result = this.kernel.answerRunAsk({ askId, option, fromIm: from !== undefined });
+		if (!result.ok) return result;
+		if (!result.duplicate) {
+			if (result.ask.state === "approved") this.#runApproved(result.ask);
+			this.#changed();
+		}
+		return { ok: true, triggerId: askId };
+	}
+
+	#runApproved(ask: RunAsk): void {
+		const workdir = join(this.#stateDir, "workers", ask.ticketId);
+		mkdirSync(workdir, { recursive: true });
+		const outputFile = join(workdir, `${ask.id}.log`);
+		const run = runApproved({ command: ask.command, cwd: workdir, env: approvedEnv(process.env), outputFile, timeoutMs: RUN_TIMEOUT_MS });
+		this.#runs.add(run);
+		void run.done.then((result) => {
+			this.#runs.delete(run);
+			// A stopping host leaves the card approved, and the next start records that nobody knows how it ended.
+			if (this.#stopping) return;
+			this.kernel.runAskRan(ask.id, { ...result, outputFile });
+			this.#changed();
+		}).catch((error) => this.#log(`[host] 没能记下批准的命令 ${ask.id} 的结果：${error instanceof Error ? error.message : String(error)}`));
+	}
+
+	#expireRunAsks(): void {
+		if (this.kernel.expireRunAsks().length) this.#changed();
+	}
+
 	snapshot() {
 		const { rows, ...board } = this.#boardState();
 		return { conversation: this.kernel.conversation(CONVERSATION_LINES), cleared: this.kernel.cleared(CONVERSATION_LINES), board: rows, ...board };
@@ -390,6 +425,7 @@ export class Host {
 	}
 
 	#boardState(): BoardState {
+		this.#expireRunAsks();
 		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard(), watching: this.#watchingNow(), modules: this.#modules?.cards() ?? [], alerts: this.kernel.alertsToday() };
 	}
 
@@ -505,23 +541,24 @@ export class Host {
 		});
 	}
 
-	#pushBoardAtNextStall(rows: DashboardRow[]): void {
-		const at = nextStallAt(rows, this.kernel.config.stuckMs);
-		if (at === this.#stallAt) return;
-		clearTimeout(this.#stallTimer);
-		this.#stallAt = at;
+	#pushBoardWhenDue(rows: DashboardRow[]): void {
+		const due = [nextStallAt(rows, this.kernel.config.stuckMs), ...rows.map((r) => (r.runAsk?.state === "open" ? r.runAsk.expiresAt : null))].filter((at) => at !== null);
+		const at = due.length ? Math.min(...due) : null;
+		if (at === this.#dueAt) return;
+		clearTimeout(this.#dueTimer);
+		this.#dueAt = at;
 		if (at === null) return;
-		this.#stallTimer = setTimeout(() => {
-			this.#stallAt = null;
+		this.#dueTimer = setTimeout(() => {
+			this.#dueAt = null;
 			this.#pushBoard();
 		}, Math.min(Math.max(0, at - this.#clock.now()), MAX_TIMER_MS));
-		this.#stallTimer.unref();
+		this.#dueTimer.unref();
 	}
 
 	#pushBoard(): void {
 		const state = this.#boardState();
 		this.#broadcast({ type: "board", ...state });
-		this.#pushBoardAtNextStall(state.rows);
+		this.#pushBoardWhenDue(state.rows);
 	}
 
 	#changed(): void {
@@ -543,6 +580,8 @@ export class Host {
 	}
 
 	async stop(): Promise<void> {
+		this.#stopping = true;
+		for (const run of this.#runs) run.kill();
 		await this.#telegram?.stop();
 		clearInterval(this.#heartbeat);
 		this.generic.stop();
@@ -553,7 +592,7 @@ export class Host {
 		clearTimeout(this.#boardTimer);
 		clearTimeout(this.#midnightTimer);
 		this.#cancelNewYorkDay?.();
-		clearTimeout(this.#stallTimer);
+		clearTimeout(this.#dueTimer);
 		await this.workers.shutdown();
 		this.router.dispose();
 		await Promise.all([this.server.close(), this.#web?.close()]);

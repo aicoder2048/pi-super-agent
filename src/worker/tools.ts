@@ -3,7 +3,7 @@ import type { Basis, Opener } from "../kernel/types.ts";
 /** Every tool a helper can have: Pi's built-ins and the ones the worker extension registers for it. */
 export const WORKER_TOOLS = [
 	"read", "bash", "edit", "write", "grep", "find", "ls",
-	"report", "hand_back", "read_ticket", "web_get", "lookup", "tripwire", "new_app", "bg_start", "bg_status", "bg_stop", "dispatch_agent", "domain_tool", "knowledge", "data", "watch",
+	"report", "hand_back", "read_ticket", "web_get", "lookup", "tripwire", "new_app", "bg_start", "bg_status", "bg_stop", "dispatch_agent", "domain_tool", "knowledge", "data", "watch", "ask_to_run",
 ] as const;
 
 const READ_TOOLS = ["read", "grep", "find", "ls", "web_get", "lookup"] as const;
@@ -19,7 +19,7 @@ export type Profile = Basis | "module-feed";
 
 export const profileOf = (basis: Basis, opener: Opener): Profile => (opener === "module-feed" ? "module-feed" : basis);
 
-const FEED_TOOLS = INFERENCE_TOOLS.filter((t) => t !== "web_get");
+const FEED_TOOLS = [...INFERENCE_TOOLS.filter((t) => t !== "web_get"), "ask_to_run"];
 const FEED_MEMBER_TOOLS = READ_TOOLS.filter((t) => t !== "web_get");
 
 /** No `helper`: no tool limit and no read roots. */
@@ -27,7 +27,7 @@ const PROFILES: Record<Profile, { helper?: { tools: readonly string[]; refusal: 
 	request: { member: MEMBER_TOOLS },
 	rule: { member: MEMBER_TOOLS },
 	inference: { helper: { tools: INFERENCE_TOOLS, refusal: (tool) => `依据为推断的任务只能读文件、读网页、查数据和汇报，不能用 ${tool}。需要对外动作时写成草稿，用 report 的 drafts 提交。` }, member: READ_TOOLS },
-	"module-feed": { helper: { tools: FEED_TOOLS, refusal: (tool) => `来源开的任务不能用 ${tool}。要运行命令，在汇报里请使用者在对话里提出。` }, member: FEED_MEMBER_TOOLS },
+	"module-feed": { helper: { tools: FEED_TOOLS, refusal: (tool) => `来源开的任务不能用 ${tool}。要运行一条命令，用 ask_to_run 请使用者批准，宿主会原样运行它一次。` }, member: FEED_MEMBER_TOOLS },
 };
 
 export const PATH_TOOLS: readonly string[] = ["read", "grep", "find", "ls"];
