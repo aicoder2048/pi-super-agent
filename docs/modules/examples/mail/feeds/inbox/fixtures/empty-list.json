@@ -1,0 +1,13 @@
+{
+  "input": {
+    "settings": {
+      "baseUrl": "https://gmail.googleapis.com",
+      "tokenUrl": "https://oauth2.googleapis.com/token"
+    },
+    "cursor": null,
+    "rows": {
+      "senders": []
+    }
+  },
+  "responses": {}
+}

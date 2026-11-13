@@ -1,0 +1,18 @@
+{
+  "title": "邮件",
+  "kind": "record",
+  "class": "private",
+  "fields": {
+    "gmailId": { "type": "text", "title": "Gmail 的消息 id" },
+    "threadId": { "type": "text", "title": "Gmail 的会话 id" },
+    "messageIdHeader": { "type": "text", "title": "Message-ID 头，回复时用" },
+    "fromName": { "type": "text", "title": "发件人显示名" },
+    "fromAddress": { "type": "text", "title": "发件人地址" },
+    "replyTo": { "type": "text", "title": "Reply-To 头" },
+    "subject": { "type": "text", "title": "主题" },
+    "date": { "type": "date", "title": "Gmail 收到的时间（UTC）" },
+    "snippet": { "type": "text", "title": "Gmail 给的开头一句" },
+    "body": { "type": "text", "title": "纯文字正文，HTML 转成文字，最多 64 KB，超出截断并标明" },
+    "attachments": { "type": "text", "title": "附件清单（JSON：partId、文件名、类型、字节数），不存内容" }
+  }
+}

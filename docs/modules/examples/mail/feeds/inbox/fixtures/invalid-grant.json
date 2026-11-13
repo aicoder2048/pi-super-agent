@@ -1,0 +1,27 @@
+{
+  "input": {
+    "settings": {
+      "baseUrl": "https://gmail.googleapis.com",
+      "tokenUrl": "https://oauth2.googleapis.com/token"
+    },
+    "cursor": "{\"historyId\":\"1000\",\"at\":\"2099-01-01T00:00:00.000Z\"}",
+    "rows": {
+      "senders": [
+        {
+          "id": "1",
+          "fields": {
+            "address": "ann@example.com",
+            "note": null,
+            "removedAt": null
+          }
+        }
+      ]
+    }
+  },
+  "responses": {
+    "https://oauth2.googleapis.com/token": {
+      "error": "invalid_grant",
+      "error_description": "Token has been expired or revoked."
+    }
+  }
+}
