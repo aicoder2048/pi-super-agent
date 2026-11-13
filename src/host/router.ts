@@ -315,7 +315,7 @@ export class Router {
 	readonly #afterCommand: () => void;
 	readonly #preamble: () => string;
 	#sentPreamble: string | undefined;
-	readonly #acks = new Map<string, () => void>();
+	readonly #unacked = new Map<string, { ack: () => void; item: PendingCard }>();
 	readonly #delivered = new Set<string>();
 	#buffer: PendingCard[] = [];
 	#flushScheduled = false;
@@ -392,10 +392,19 @@ export class Router {
 
 	#acknowledgeDelivered(): void {
 		for (const id of this.#delivered) {
-			this.#acks.get(id)?.();
-			this.#acks.delete(id);
+			this.#unacked.get(id)?.ack();
+			this.#unacked.delete(id);
 		}
 		this.#delivered.clear();
+	}
+
+	// A card the old session saw in a turn that never finished cleanly is still owed an answer, and the fresh session has never seen it.
+	#redeliverUnfinished(): void {
+		this.#delivered.clear();
+		clearTimeout(this.#retryTimer);
+		const queued = new Set(this.#buffer.map((p) => p.actionId));
+		const owed = [...this.#unacked].filter(([id]) => !queued.has(id)).map(([, { item }]) => item);
+		this.#buffer.unshift(...owed);
 	}
 
 	#retryAfterError(): void {
@@ -435,13 +444,15 @@ export class Router {
 	inject(notice: RouterNotice, actionId: string): Promise<void> {
 		const card = noticeCard(this.#kernel, notice, this.#rulesFor, actionId);
 		return new Promise((resolve) => {
-			this.#acks.set(actionId, resolve);
-			this.#push(card, actionId, carriedBy(notice));
+			const item = { card, actionId, carries: carriedBy(notice) };
+			this.#unacked.set(actionId, { ack: resolve, item });
+			this.#buffer.push(item);
+			this.#schedule();
 		});
 	}
 
-	#push(card: string, actionId?: string, carries?: string[]): void {
-		this.#buffer.push({ card, actionId, carries });
+	#push(card: string): void {
+		this.#buffer.push({ card });
 		this.#schedule();
 	}
 
@@ -464,6 +475,7 @@ export class Router {
 				.then((fresh) => {
 					this.#attach(fresh);
 					old.dispose();
+					this.#redeliverUnfinished();
 				})
 				.catch(this.#onError)
 				.finally(() => {

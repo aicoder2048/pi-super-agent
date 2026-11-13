@@ -125,3 +125,28 @@ test("清屏后 Router 正在开新会话时说的话，送进新会话并得到
 	}
 	await until(() => said.every((s) => replies().includes(`回：${s}`)), `新会话打开前后说的 ${said.length} 句话都得到回复`, 5000);
 });
+
+test("一句话的那一轮模型出错、重试前清屏：新会话里补上那句话，只回一次，重启后也不重回", async (t) => {
+	const stateDir = tempStateDir();
+	let failing = true;
+	const echo: Brain = (cards) => cards.flatMap((c) => (c.startsWith("[对话]") ? [{ name: "reply", args: { text: `回：${c.split("使用者：")[1]!.split("\n")[0]}`, cause: ids(c, "trg") } }] : []));
+	const options = { failOn: () => (failing ? "503 overloaded" : undefined), errorRetryMs: [1500] };
+	const first = await hostWith(stateDir, echo, options);
+	t.after(() => first.host.stop());
+	const replies = (host: Host) => [...host.kernel.conversation(500), ...(host.kernel.cleared(500)?.lines ?? [])].filter((l) => l.who === "router").map((l) => l.text);
+	const session = () => (first.host.router as Router).session;
+	first.host.say("一");
+	await until(() => (session().messages.at(-1) as { stopReason?: string } | undefined)?.stopReason === "error" && !session().isStreaming, "那一轮出错", 5000);
+	first.host.clearConversation();
+	failing = false;
+	await new Promise((r) => setTimeout(r, 100));
+	first.host.say("二");
+	await until(() => replies(first.host).includes("回：二") && replies(first.host).includes("回：一"), "两句都得到回复", 5000);
+	await new Promise((r) => setTimeout(r, 1800));
+	await first.host.stop();
+
+	const second = await hostWith(stateDir, echo);
+	t.after(() => second.host.stop());
+	await new Promise((r) => setTimeout(r, 500));
+	assert.deepEqual(replies(second.host).filter((x) => x === "回：一"), ["回：一"], "那句话只回了一次");
+});
