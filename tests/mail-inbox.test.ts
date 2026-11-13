@@ -232,6 +232,45 @@ test("名单：地址不分大小写；同一地址有好几行时，任何一�
 	assert.deepEqual(feed.messages().map((r) => r.fields["gmailId"]), ["m-2"], "划掉以后再加一行，就又在名单上");
 });
 
+test("From 必须正好是一个合法邮箱：多个地址、组、两个 @、坏域名都算名单外；带引号的显示名和注释照常认", async (t) => {
+	const feed = await mailFeed(t);
+	feed.senders("ann@example.com", "@corp.test");
+	await feed.beat();
+	const letters: [string, string, boolean][] = [
+		["two-listed-last", "evil@bad.test, Ann <ann@example.com>", false],
+		["two-listed-first", "Ann <ann@example.com>, evil@bad.test", false],
+		["double-at", "X <x@bad.test@corp.test>", false],
+		["double-at-bare", "x@bad.test@corp.test", false],
+		["group", "friends: Ann <ann@example.com>;", false],
+		["group-two", "friends: ann@example.com, evil@bad.test;", false],
+		["two-angles", "Ann <ann@example.com> <evil@bad.test>", false],
+		["trailing-junk", "Ann <ann@example.com> evil@bad.test", false],
+		["unclosed-angle", "Ann <ann@example.com", false],
+		["unclosed-comment", "ann@example.com (Ann", false],
+		["address-in-comment", "evil@bad.test (ann@example.com)", false],
+		["trailing-dot", "x@corp.test.", false],
+		["empty-label", "x@corp..test", false],
+		["no-local", "@corp.test", false],
+		["quoted-local", '"ann"@example.com', false],
+		["quoted-comma", '"Lee, Ann" <ann@example.com>', true],
+		["quoted-at", '"evil@bad.test" <ann@example.com>', true],
+		["comment-after", "Ann <ann@example.com> (work)", true],
+		["comment-before", "(work) Ann <ann@example.com>", true],
+		["comment-with-angle", "Ann (<evil@bad.test>) <ann@example.com>", true],
+		["upper-case", "ANN@Example.COM", true],
+		["domain", "X <x@corp.test>", true],
+	];
+	feed.box.deliver(...letters.map(([id, from]) => ({ ...ann(id), from })));
+	await feed.beat();
+	const stored = feed.messages().map((r) => r.fields["gmailId"]);
+	assert.deepEqual(stored.sort(), letters.filter(([, , kept]) => kept).map(([id]) => id).sort());
+	const field = (id: string, name: string) => feed.messages().find((r) => r.fields["gmailId"] === id)?.fields[name];
+	assert.equal(field("quoted-comma", "fromName"), "Lee, Ann");
+	assert.equal(field("quoted-at", "fromAddress"), "ann@example.com");
+	assert.equal(field("upper-case", "fromAddress"), "ann@example.com");
+	assert.ok(!JSON.stringify(feed.notices).includes("bad.test@"), "两个 @ 的地址不发通知");
+});
+
 test("正文按 Content-Type 的 charset 解码；认不出的 charset 按 UTF-8 并标明；只给 attachmentId 的正文标明没取", async (t) => {
 	const feed = await mailFeed(t);
 	feed.senders("ann@example.com");

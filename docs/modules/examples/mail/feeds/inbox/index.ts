@@ -129,7 +129,8 @@ export default async function inbox(input: Input): Promise<Reply> {
 	for (const id of new Set(found.ids)) {
 		const path = `/messages/${encodeURIComponent(id)}`;
 		const meta: GmailMessage | undefined = await stillThere(gmail, path, { format: "metadata", metadataHeaders: "From" });
-		if (meta === undefined || !listed(senders, parseFrom(header(meta, "From")).address)) continue;
+		const from = meta === undefined ? undefined : parseFrom(header(meta, "From"));
+		if (from === undefined || !listed(senders, from.address)) continue;
 		const full: GmailMessage | undefined = await stillThere(gmail, path, { format: "full" });
 		if (full !== undefined) records.push(messageRow(full));
 	}

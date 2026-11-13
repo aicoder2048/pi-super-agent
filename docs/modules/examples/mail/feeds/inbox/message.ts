@@ -31,10 +31,50 @@ const LIMITS = { name: 80, subject: 120, snippet: 100, line: 160 } as const;
 export const header = (message: GmailMessage, name: string): string =>
 	message.payload?.headers?.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
 
-export function parseFrom(from: string): { name: string; address: string } {
-	const angle = /^(.*?)\s*<([^<>]+)>\s*$/.exec(from.trim());
-	if (angle === null) return { name: "", address: from.trim().toLowerCase() };
-	return { name: angle[1]!.trim().replace(/^"(.*)"$/, "$1"), address: angle[2]!.trim().toLowerCase() };
+type Mailbox = { name: string; address: string };
+
+const ATOM = "[a-z0-9!#$%&'*+/=?^_`{|}~-]+";
+const LABEL = "[a-z0-9](?:[a-z0-9-]*[a-z0-9])?";
+const ADDRESS = new RegExp(`^${ATOM}(?:\\.${ATOM})*@${LABEL}(?:\\.${LABEL})+$`);
+
+/**
+ * The sender list trusts this, so anything but one RFC 5322 mailbox with a dot-atom address is off-list: a list or group
+ * can put a listed address beside an unlisted sender, and a second `@` can end an unlisted address in a listed domain.
+ * Quoted names and comments may hold `,` `@` `<`, hence a scan instead of a pattern.
+ */
+export function parseFrom(from: string): Mailbox | undefined {
+	let name = "";
+	let address = "";
+	let state: "name" | "angle" | "after" = "name";
+	let quoted = false;
+	for (let i = 0; i < from.length; i++) {
+		const ch = from[i]!;
+		if (ch === "(" && state !== "angle") {
+			for (let depth = 1; depth > 0; ) {
+				const next = from[++i];
+				if (next === undefined) return undefined;
+				if (next === "\\") i++;
+				else if (next === "(") depth++;
+				else if (next === ")") depth--;
+			}
+			name += " ";
+		} else if (state === "name" && ch === '"') {
+			quoted = true;
+			for (let next = from[++i]; next !== '"'; next = from[++i]) {
+				if (next === undefined) return undefined;
+				name += next === "\\" ? (from[++i] ?? "") : next;
+			}
+		} else if (state === "name" && ch === "<") state = "angle";
+		else if (state === "angle" && ch === ">") state = "after";
+		else if (state === "angle") address += ch;
+		else if (state === "name" && !",;:<>".includes(ch)) name += ch;
+		else if (state === "after" && /\s/.test(ch)) continue;
+		else return undefined;
+	}
+	if (state === "angle") return undefined;
+	if (state === "name") [name, address] = quoted ? ["", ""] : ["", name];
+	address = address.trim().toLowerCase();
+	return ADDRESS.test(address) ? { name: name.replace(/\s+/g, " ").trim(), address } : undefined;
 }
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
@@ -98,7 +138,7 @@ function bodyText(parts: readonly Part[]): string {
 
 export function messageRow(message: GmailMessage): MessageRow {
 	const parts = partsOf(message.payload);
-	const from = parseFrom(header(message, "From"));
+	const from = parseFrom(header(message, "From")) ?? { name: "", address: "" };
 	const attachments: Attachment[] = parts
 		.filter((p) => p.filename && p.body?.attachmentId)
 		.map((p) => ({ partId: p.partId ?? "", filename: p.filename!, mimeType: p.mimeType ?? "", size: p.body?.size ?? 0 }));
