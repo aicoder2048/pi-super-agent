@@ -9,7 +9,6 @@ const TIMES: Record<string, Time> = { bmo: "盘前", amc: "盘后", dmh: "盘中
 const MISSING_KEY = "没有设置 FINNHUB_API_KEY，没去查财报日：在宿主的密钥文件里加一行 FINNHUB_API_KEY=<你的 Finnhub 密钥>，见 docs/modules/stock-ta.md";
 
 type Time = "盘前" | "盘后" | "盘中" | "时间未公布";
-/** One calendar row as far as this tool cares: estimates and actuals stay at the boundary, only whether it has reported crosses. */
 type Row = { date: string; time: Time; reported: boolean };
 type Found = { symbol: string; today: string; date: string; time: Time; tradingDays: number };
 type None = { symbol: string; today: string; note: string };
