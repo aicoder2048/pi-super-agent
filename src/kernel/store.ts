@@ -295,8 +295,13 @@ export function moduleRows(db: DatabaseSync): ModuleRow[] {
 	return (db.prepare("SELECT name, switch, record FROM module_records ORDER BY name").all() as { name: string; switch: number | null; record: string | null }[]).map((r) => ({
 		name: r.name,
 		switch: r.switch === null ? null : r.switch === 1,
-		record: r.record === null ? null : (JSON.parse(r.record) as ModuleRecord),
+		record: r.record === null ? null : withOpened(JSON.parse(r.record)),
 	}));
+}
+
+function withOpened(record: Omit<ModuleRecord, "opened"> & { opened?: boolean }): ModuleRecord {
+	const { state } = record;
+	return { ...record, opened: record.opened ?? (record.attempts > 0 || state.at === "staging" || state.at === "active" || (state.at === "missing" && state.wasOn)) };
 }
 
 export function setModuleSwitch(db: DatabaseSync, name: string, on: boolean): void {
