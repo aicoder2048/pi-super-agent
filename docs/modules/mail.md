@@ -16,7 +16,7 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 
 ## 安装
 
-下面的命令在本仓库根目录运行。状态目录默认是 `~/.pi-super-agent`，设了 `PSA_STATE_DIR` 就是它。
+下面的命令在本仓库根目录运行。状态目录默认是 `~/.pi-super-agent`，设了 `PSA_STATE_DIR` 就是它。装到旧 Mac 时照 `docs/deploy/gmail.md` 第 3 节从头做，它包含下面三步。
 
 1. 先按 `docs/deploy/gmail.md` 做完授权。密钥文件里要有 `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` 三行，这三个密钥属于 `mail`，别的模块点不了。要写回信草稿，再跑 `just google-auth draft`，多一行 `GMAIL_DRAFT_REFRESH_TOKEN`。这一行属于宿主，模块代码拿不到，见下面「写回信草稿」。
 2. 把包复制进状态目录，再打开。
@@ -53,7 +53,7 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 - **Reply-To 不同时只提醒。** 原信写了另一个 `Reply-To` 时，草稿仍回给 `From` 地址，收据和给任务的回复里写一句「原信的 Reply-To 是……，和发件人地址不一样」。要回给它，在 Gmail 里改收件人。
 - **收据。** 建好以后，网页和终端的对话里多一条「邮件（只在本机）」，写着收件人、主题和草稿箱链接 `https://mail.google.com/mail/u/0/#drafts`。它不发 Telegram。
 - **谁能调。** 你在对话里开的任务能，`来源: mail/inbox` 的规则任务也能；推断开的任务不能，它只能把想回的话写进汇报。
-- **授权失效。** 换 token 时 Google 回 `invalid_grant`，工具回一句「写草稿的授权失效了」，照 `docs/deploy/gmail.md` 重跑 `just google-auth draft`。读邮件不受影响，两个 token 是分开的。
+- **授权失效。** 换 token 时 Google 回 `invalid_grant`，工具回一句「写草稿的授权失效了」。两个 token 是分开授权的，但撤销其中一个会两个一起失效（2026-11-13 实测，见 `docs/deploy/gmail.md` 的「撤销」），所以先在跑宿主的机器上看 `just google-auth read --check`，也失效了就两个都重新授权。
 
 ## 邮件名单
 
@@ -63,6 +63,7 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 - 「把 @example.com 加进邮件名单」，这个域名的所有地址都收（只认这个域名本身，不含子域名）。
 - 「把 a@example.com 从邮件名单划掉」，助手给那一行写上划掉的时间（`removedAt`），不删行。
 - 地址不分大小写，`Ann@Example.com` 和 `ann@example.com` 是同一个。
+- 只认 `From` 里的那个地址，不认别名。同一个人有几个地址（例如 QQ 邮箱的数字地址和英文别名）时，每个都要加（2026-11-13 时段 1 实测）。
 - 同一个地址有好几行时，任何一行写了 `removedAt` 都算划掉，重复的行留不住它。划掉以后再「加进邮件名单」，助手新加一行并写上加的时间（`addedAt`），比最后一次划掉晚才算回到名单上。行没有写入时间，分不出「划掉前就有的重复行」和「划掉后加回来的行」，所以要靠 `addedAt`。
 - 划掉一定生效，拿不准的都按划掉算。`removedAt` 和 `addedAt` 都写带时间和时区的完整 ISO，例如 `2026-11-13T09:30:00Z`。`removedAt` 写坏了（例如「yes」「今天」）算永远划掉；只写日期算到那一天在全世界都过完（第二天 12:00 UTC）；没写时区按最晚的时区算。`addedAt` 只写日期、没写时区、或者比现在还晚（时钟不准），都不算加回来。
 - 名单上有 `@example.com`、又划掉了 `ann@example.com` 时，ann 的信不收，划掉单个地址比收整个域名优先。
@@ -86,7 +87,7 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 
 ## 授权失效怎么办
 
-在笔记本上重跑 `just google-auth read`，再按 `docs/deploy/gmail.md` 把 `GMAIL_READ_REFRESH_TOKEN` 那一行复制到跑宿主的机器。下一拍就恢复，不用重启宿主。
+在笔记本上重跑 `just google-auth read` 和 `just google-auth draft`，再按 `docs/deploy/gmail.md` 第 3 节第 4、5 步把四行复制到跑宿主的机器并检查。撤销任何一个都会两个一起失效，所以两个都换。下一拍就恢复，不用重启宿主。
 
 ## 设计上的限制
 
