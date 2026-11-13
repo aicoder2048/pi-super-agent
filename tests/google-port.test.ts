@@ -122,6 +122,9 @@ for (const [name, raw] of [
 	["带 Cc", "To: ann@example.com\r\nCc: x@example.org\r\nSubject: hi\r\n\r\nok"],
 	["超过 1 MB", `To: ann@example.com\r\nSubject: hi\r\n\r\n${"x".repeat(1024 * 1024)}`],
 	["没有 To", "Subject: hi\r\n\r\nok"],
+	["两行 To", "To: ann@example.com\r\nTo: x@example.org\r\nSubject: hi\r\n\r\nok"],
+	["头里有单独的 CR", "To: ann@example.com\rCc: x@example.org\r\nSubject: hi\r\n\r\nok"],
+	["头名里有 NUL", "To: ann@example.com\r\nC\u0000c: x@example.org\r\nSubject: hi\r\n\r\nok"],
 ] as const) {
 	test(`网关：${name}的草稿被拒，不请求 Google`, async (t) => {
 		const { google } = await fakeGmail(t);

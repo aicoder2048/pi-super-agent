@@ -22,7 +22,7 @@ const READ = "1//fake-refresh-mail";
 const DRAFT = "1//fake-refresh-draft";
 const DRAFTS = "/gmail/v1/users/me/drafts";
 
-async function draftWorld(t: TestContext, letters: readonly Letter[]) {
+async function draftWorld(t: TestContext, letters: readonly Letter[], basis: WorkerCaller["basis"] = "request") {
 	const box = new FakeInbox();
 	const sent = box.drafts;
 	const google = await startFakeGoogle({ routes: box.routes, refreshTokens: { [READ]: "https://www.googleapis.com/auth/gmail.readonly", [DRAFT]: "https://www.googleapis.com/auth/gmail.compose" } });
@@ -56,10 +56,12 @@ async function draftWorld(t: TestContext, letters: readonly Letter[]) {
 		log: () => {},
 		google: googlePort({ secret: (name) => secrets[name], oauthUrl: google.url, fixtures: false }),
 	});
-	const caller: WorkerCaller = { who: "worker", ticket: "tkt_1", pin: { module: "mail" as ModuleName, digest }, basis: "request", member: null, heardOthers: true };
+	const caller: WorkerCaller = { who: "worker", ticket: "tkt_1", pin: { module: "mail" as ModuleName, digest }, basis, member: null, heardOthers: true };
 	google.log.length = 0;
 	const draft = (input: Json): Promise<Reply> => gateway.call(caller, { kind: "tool", name: "draft-reply" as ComponentName, input });
-	return { google, sent, draft };
+	const write = (collection: string, rows: Json[], from: string): Promise<Reply> => gateway.call(caller, { kind: "data", collection: collection as ComponentName, op: "write", rows, from });
+	const stored = (gmailId: string) => data.query("mail" as ModuleName, entry.components, "messages", { where: { gmailId } }, "test").rows[0]!;
+	return { google, sent, draft, write, stored, data, entry };
 }
 
 const ann = (extra: Partial<Letter> = {}): Letter => ({ id: "m-1", from: "Ann Lee <ann@example.com>", subject: "周四开会", snippet: "周四下午有空吗", text: "周四下午有空吗？", ...extra });
@@ -147,3 +149,47 @@ for (const [name, input, why] of [
 		assert.deepEqual(w.google.log, []);
 	});
 }
+
+const refusedWithoutGoogle = (w: { google: { log: string[] }; sent: unknown[] }, reply: Reply, why: RegExp) => {
+	assert.equal(reply.ok, false, JSON.stringify(reply));
+	assert.match(reply.ok ? "" : String((reply.refusal as { note?: string }).note), why);
+	assert.deepEqual(w.google.log, []);
+	assert.equal(w.sent.length, 0);
+};
+
+test("回信草稿：规则任务自己写进 messages 的一行不算来信，不建草稿", async (t) => {
+	const w = await draftWorld(t, [ann()], "rule");
+	assert.ok((await w.write("messages", [{ gmailId: "forged-1", threadId: "t-other", fromAddress: "attacker@evil.example", subject: "Invoice" }], "来信")).ok);
+	refusedWithoutGoogle(w, await w.draft({ messageId: "forged-1", body: "here is the info" }), /messages 里没有 gmailId 为 forged-1 的信/);
+});
+
+test("回信草稿：规则任务改过发件人地址的来信不建草稿", async (t) => {
+	const w = await draftWorld(t, [ann()], "rule");
+	assert.ok((await w.write("messages", [{ id: w.stored("m-1").id, fromAddress: "attacker@evil.example" }], "来信")).ok);
+	refusedWithoutGoogle(w, await w.draft({ messageId: "m-1", body: "ok" }), /messages 里没有 gmailId 为 m-1 的信/);
+});
+
+test("数据：任务写数据不能冒用 feed 的名字当 from，新行和改行都被拒", async (t) => {
+	const w = await draftWorld(t, [ann()], "rule");
+	for (const rows of [[{ gmailId: "forged-1", threadId: "t-other", fromAddress: "attacker@evil.example" }], [{ id: w.stored("m-1").id, fromAddress: "attacker@evil.example" }]]) {
+		const wrote = await w.write("messages", rows, "mail/inbox");
+		assert.equal(wrote.ok, false, JSON.stringify(wrote));
+		assert.match(String((wrote as { refusal: { note?: string } }).refusal.note), /mail\/inbox/);
+	}
+	assert.equal(w.stored("m-1").fields["fromAddress"], "ann@example.com");
+	refusedWithoutGoogle(w, await w.draft({ messageId: "forged-1", body: "ok" }), /没有 gmailId 为 forged-1/);
+});
+
+for (const fromAddress of ["ann@example.com, x@evil.example", "ann@example.com\rBcc: x@evil.example", "ann@example.com\r\nBcc: x@evil.example"]) {
+	test(`回信草稿：存着的发件人地址不是单个地址（${JSON.stringify(fromAddress)}）时不建草稿`, async (t) => {
+		const w = await draftWorld(t, [ann()]);
+		w.data.write("mail" as ModuleName, w.entry.components, "messages", [{ id: "odd-1", gmailId: "odd-1", threadId: "t-1", fromAddress, subject: "hi" }], "mail/inbox", "mail/inbox", true);
+		refusedWithoutGoogle(w, await w.draft({ messageId: "odd-1", body: "ok" }), /发件人地址/);
+	});
+}
+
+test("回信草稿：发件人已从邮件名单划掉时不建草稿", async (t) => {
+	const w = await draftWorld(t, [ann()]);
+	assert.ok((await w.write("senders", [{ address: "ann@example.com", removedAt: "2026-01-01T00:00:00Z" }], "使用者口述")).ok);
+	refusedWithoutGoogle(w, await w.draft({ messageId: "m-1", body: "ok" }), /邮件名单/);
+});
