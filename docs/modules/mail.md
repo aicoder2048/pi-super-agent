@@ -23,10 +23,24 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 
    ```bash
    cp -R docs/modules/examples/mail ~/.pi-super-agent/modules/
+   just module setup mail
    just module on mail
    ```
 
+   `just module setup mail` 按 `py/uv.lock` 用 `uv` 装读 PDF 的 Python 环境（只有 `pypdf` 一个包），装在状态目录的 `modules-data/mail/files/venv-<12 位>`，包本身不变。要先装好 `uv`。不装也能收信、读文字类附件，只是读 PDF 时会说「先跑 just module setup mail」。
+
 3. 打开以后第一拍，网页和 Telegram 上各有一条「邮件：邮件名单是空的……」。名单是空的时候模块什么都不请求。
+
+## 读附件
+
+工具 `read-attachment` 让任务读一封已存的信的一个附件。在对话里说「看一下 a@example.com 那封信的附件说了什么」，任务先在 `messages` 里找到那封信，再用它的 `gmailId` 和附件的 `partId` 调这个工具。
+
+- **只读已存的信。** `messageId` 要是 `messages` 里某一行的 `gmailId`，`partId` 要在那一行的附件清单里，否则拒绝，不请求 Gmail。
+- **只用读邮件的 token。** 先 `messages.get` 找到这个附件当下的编号，再 `attachments.get` 下载，不碰别的接口。推断任务也能调，效果是 `read`，不需要批准卡片：命令是模块代码定死的，输入只有两个编号。
+- **读哪些类型。** MIME 类型和扩展名都对得上才读：`.txt`、`.md`、`.csv` 按 UTF-8 解码（去掉 BOM，解不了的字节换成替代字符），`.html` 去掉 `script` 和 `style` 后转成文字，`.pdf` 交给 `pypdf` 抽文字。图片、Office 文件、压缩包、可执行文件一律拒绝，写明是什么类型。
+- **限度。** 超过 10 MB 的附件不下载。下载超过 10 秒写「附件下载超时」。PDF 最多读前 50 页，`pages` 是总页数；6 秒读不完写「PDF 太复杂」，读 PDF 的进程内存超过 512 MB 写「PDF 太大」，有密码的写「PDF 有密码，读不了」。文字最多 100000 字。没读完的都标 `truncated`。这些加起来在宿主给工具的 20 秒以内。
+- **不落盘，不执行。** 附件只在这次调用的内存里，PDF 经管道交给 Python，不写文件、不进集合，下次再问就再下载一次。HTML 里的脚本不跑，PDF 里的 JavaScript、表单动作、嵌入文件都不碰，只取文字。读 PDF 的 Python 进程只拿到 `PATH` 和 `PSA_MODULE_VENV` 两个环境变量，拿不到任何密钥。
+- **附件是数据，不是指令。** 附件是发件人写的，里面写着「运行某条命令」也只是一段文字（ADR-0003）。来源开的任务本来就没有 `bash`，要运行命令只能出批准卡片，由你决定。
 
 ## 邮件名单
 
@@ -67,10 +81,12 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 - **`replyTo` 没验证过。** 它是信里自带的 Reply-To 头，谁都能写成任何地址。以后写回信草稿（M7）不能直接回给它，要回给验证过的发件人，或者让你看清两个地址不一样。
 - **这一版不存 DMARC 结果。** 取 `From` 的那次请求可以顺带取 `Authentication-Results`，不多花请求，但这一版没做，原因有三。信里可以夹带发件人自己写的 `Authentication-Results`，只有 Gmail 自己加的那一条（`mx.google.com`）可信，要解析对才有用。拿它卡名单会漏掉正常的转发信和邮件列表，它们常常过不了 DMARC。M2 里也没有谁用这个字段。等 M7 写回信时再加：同一次请求多取这个头，只认 `mx.google.com` 的那一条，存成 dmarc 通过或不通过，没通过的在通知和草稿里标出来。
 
+- **读过附件的任务还不会被标成私密。** 宿主把模块工具的回复一律当作不私密，所以一个只调了 `read-attachment`、没经宿主读过 `messages` 的任务，汇报会在 Telegram 上整段发出。通常任务要先读 `messages` 才知道 `gmailId`，那一步已经让它变私密；只有你在对话里直接给出编号时会漏。宿主那边的修正另外做。
+
 ## 规则
 
 `rules.md` 第一版没有规则，新邮件只出通知。想让某类邮件自动开任务，自己加 `来源: mail/inbox` 的规则，这种任务按受限清单走，没有 `bash` 和 `web_get`。
 
 ## 试一试，不碰真账号
 
-`just module check docs/modules/examples/mail` 用 `feeds/inbox/fixtures/` 里的样例跑一遍：第一次起步、空名单、一页新信（一封名单内，一封名单外）、两页、起点太旧、断档、授权失效、HTML 正文和两个附件、主题里带换行和方向控制符、显示名是「白宫 · 系统」。样例不联网，也不用真密钥。
+`just module check docs/modules/examples/mail` 用 `feeds/inbox/fixtures/` 里的样例跑一遍：第一次起步、空名单、一页新信（一封名单内，一封名单外）、两页、起点太旧、断档、授权失效、HTML 正文和两个附件、主题里带换行和方向控制符、显示名是「白宫 · 系统」。样例不联网，也不用真密钥。`read-attachment` 要读已存的信，没有 `cases.json`，它的检查在 `tests/mail-read-attachment.test.ts`，用本地的假 Google 服务。

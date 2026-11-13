@@ -11,7 +11,8 @@ export type Letter = {
 	encoded?: { charset: string; bytes: Uint8Array };
 	/** A text/html part Gmail serves only by attachmentId, the way it does for a large body. */
 	htmlByAttachment?: boolean;
-	attachments?: readonly { filename: string; mimeType: string; size: number }[];
+	/** `data` is served by `attachments.get`; `size` is what `messages.get` says, so a test can make the two disagree. `trickleMs` makes the download that slow. */
+	attachments?: readonly { filename: string; mimeType: string; size: number; data?: string | Uint8Array; trickleMs?: number }[];
 	replyTo?: string;
 	at?: number;
 };
@@ -86,6 +87,11 @@ export class FakeInbox {
 			const at = letter.at ?? this.now();
 			this.letters.set(letter.id, { ...letter, at });
 			this.routes[`GET ${GMAIL}/messages/${letter.id}`] = (url: URL) => this.#ok(gmailMessage(this.letters.get(letter.id)!, url.searchParams.get("format") === "metadata" ? "metadata" : "full"));
+			for (const [i, a] of (letter.attachments ?? []).entries()) {
+				if (a.data === undefined) continue;
+				const data = b64(a.data);
+				this.routes[`GET ${GMAIL}/messages/${letter.id}/attachments/att-${letter.id}-${i + 1}`] = (): RouteReply => ({ status: 200, body: { size: a.size, data }, ...(a.trickleMs !== undefined && { trickleMs: a.trickleMs }) });
+			}
 		}
 		this.#history.push({ id: this.#historyId, added: letters.map((l) => l.id) });
 	}
