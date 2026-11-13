@@ -285,6 +285,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 				if (db?.isOpen) db.close();
 			}
 		},
+		dir: (module) => moduleDataDir(stateDir, module),
 		purge(module) {
 			rmSync(moduleDataDir(stateDir, module), { recursive: true, force: true });
 		},

@@ -23,7 +23,7 @@ const { searchKnowledge, foundText, moduleDataDir } = await import(join(HEAD, "s
 type Host = Awaited<ReturnType<(typeof import("../../tests/e2e/harness.ts"))["startHost"]>>;
 type Reply = { ok: true; output: Record<string, unknown> } | { ok: false; note: string };
 
-const call = (tool: string, input: unknown): Promise<Reply> => runModuleCodeAsync(join(PKG, "tools", tool), "index.ts", input, { TA_ROOT });
+const call = (tool: string, input: unknown): Promise<Reply> => runModuleCodeAsync({ packageDir: PKG, component: join("tools", tool), dataDir: mkdtempSync(join(tmpdir(), "psa-d1-data-")) }, "index.ts", input, { TA_ROOT });
 const hashes = () => DBS.map((f) => spawnSync("shasum", [f], { encoding: "utf8" }).stdout.trim()).join("\n");
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));

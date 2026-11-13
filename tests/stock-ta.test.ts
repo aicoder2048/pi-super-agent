@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import test, { type TestContext } from "node:test";
 import { runModuleCodeAsync, type CodeReply } from "../src/modules/run-code.ts";
 import { scanPackage, summary } from "../src/modules/validate.ts";
+import { codeSite } from "./helpers/code-site.ts";
 
 const PKG = join(import.meta.dirname, "../docs/modules/examples/stock-ta");
 const HOUR = 3_600_000;
@@ -46,7 +47,7 @@ process.stdin.on("data", (c) => (stdin += c)).on("end", () => {
 	const secrets = { TA_ROOT: root, PATH: `${join(root, "bin")}:${dirname(process.execPath)}:/usr/bin:/bin` };
 	return {
 		root,
-		call: (tool: string, input: unknown): Promise<CodeReply> => runModuleCodeAsync(join(PKG, "tools", tool), "index.ts", input, secrets),
+		call: (tool: string, input: unknown): Promise<CodeReply> => runModuleCodeAsync(codeSite(PKG, join("tools", tool)), "index.ts", input, secrets),
 		calls: (): Call[] => (existsSync(join(root, "calls.jsonl")) ? readFileSync(join(root, "calls.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as Call) : []),
 	};
 }
@@ -64,13 +65,13 @@ test("stock-ta 包通过检查：八个工具、五位专家，纯计算工具�
 });
 
 test("盈亏比工具：止损和目标在买入价同一侧时给出看得懂的错误", async () => {
-	const reply = await runModuleCodeAsync(join(PKG, "tools/risk-reward"), "index.ts", { entry: 100, stop: 105, target: 110 });
+	const reply = await runModuleCodeAsync(codeSite(PKG, "tools/risk-reward"), "index.ts", { entry: 100, stop: 105, target: 110 });
 	assert.equal(reply.ok, false);
 	assert.match(!reply.ok ? reply.note : "", /止损.*目标.*两侧/);
 });
 
 test("没设 TA_ROOT：工具不调用 ta，给一行说明怎么设", async () => {
-	const reply = await runModuleCodeAsync(join(PKG, "tools/structure"), "index.ts", { symbol: "NVDA" });
+	const reply = await runModuleCodeAsync(codeSite(PKG, "tools/structure"), "index.ts", { symbol: "NVDA" });
 	assert.equal(reply.ok, false);
 	const note = !reply.ok ? reply.note : "";
 	assert.match(note, /TA_ROOT/);
