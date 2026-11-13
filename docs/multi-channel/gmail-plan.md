@@ -121,7 +121,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] 拦截原因按 `Opener` 写。来源开的任务被拦时写「来源开的任务不能用 X。要运行命令，用 ask_to_run 请使用者批准」；M5 合并前这句话的后半句写「在汇报里请使用者在对话里提出」。
 - [x] 确认 kernel 拒绝用来源触发开请求任务（`kernel.ts` 的 `decide` 已有 `#inConversation` 检查），加一条测试钉住。
 - [x] 模块的 `prepare` 命令照旧只对非推断任务跑。它是模块代码，命令是定死的。
-- [x] 补丁（#109 审查后、M2 之前）：内核拒绝把模块 feed 的触发 `hand_over` 给不是 `module-feed` 的任务，也拒绝这种任务订阅模块 feed 的线程。决定记在 ADR-0018，不另开 ADR。
+- [x] 补丁（#109 审查后、M2 之前）：内核拒绝把模块 feed 的触发 `hand_over` 给不是 `module-feed` 的任务，也拒绝这种任务订阅模块 feed 的线程。决定记在 ADR-0018，不另开 ADR。2026-11-13 在 f188dee 上通过：`tests/source-ticket-tools.test.ts` 新的四条（先红：转交给请求任务的那条报「读得到模块 feed 的话，却有 bash 或 web_get」），`just test` 1785 条里 1784 条过，失败的 watchdog Ctrl+C 单独重跑通过；check.mjs 7 项 ok；`m4-live.ts` lane 2、3、5 到 8、10 PASS，lane 1、4 的 head 一侧过，trunk 一侧失败是因为 trunk 已含 M4、口子不在了。
 - [x] ADR-0018 记下：模块 feed 开的任务只读自己的文件夹和模块带的知识、技能，没有通用 shell 和 `web_get`；所有推断任务的读文件都受同样的根目录限制；使用者自己开的任务读过邮件也保留 `bash`；工具以外的事走 M5 的批准卡片。
 
 **You see.**
