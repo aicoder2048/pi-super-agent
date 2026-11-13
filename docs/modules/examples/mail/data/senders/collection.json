@@ -1,0 +1,11 @@
+{
+  "title": "邮件名单",
+  "kind": "record",
+  "class": "shareable",
+  "fields": {
+    "address": { "type": "text", "title": "发件人地址，例如 a@example.com；写 @example.com 就收这个域名的所有地址。只写一个地址，不带显示名" },
+    "note": { "type": "text", "title": "备注" },
+    "addedAt": { "type": "date", "title": "加进名单的时间，必须是带时间和时区的完整 ISO，例如 2026-11-13T09:30:00Z。划掉以后再加回来，新加的一行必须写上它；只写日期、没写时区、或比现在晚的都不算加回" },
+    "removedAt": { "type": "date", "title": "划掉的时间，写带时间和时区的完整 ISO，例如 2026-11-13T09:30:00Z。划掉就写上它，不删行；同一地址任何一行写了它就算划掉，除非之后又加了一行、addedAt 更晚。写坏了的值算永远划掉" }
+  }
+}

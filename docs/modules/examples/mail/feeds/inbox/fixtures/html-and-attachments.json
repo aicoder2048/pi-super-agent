@@ -1,0 +1,149 @@
+{
+  "input": {
+    "settings": {
+      "baseUrl": "https://gmail.googleapis.com",
+      "tokenUrl": "https://oauth2.googleapis.com/token"
+    },
+    "cursor": "{\"historyId\":\"1000\",\"at\":\"2099-01-01T00:00:00.000Z\"}",
+    "rows": {
+      "senders": [
+        {
+          "id": "1",
+          "fields": {
+            "address": "ann@example.com",
+            "note": null,
+            "removedAt": null
+          }
+        }
+      ]
+    }
+  },
+  "responses": {
+    "https://oauth2.googleapis.com/token": {
+      "access_token": "ya29.fixture",
+      "expires_in": 3599,
+      "scope": "https://www.googleapis.com/auth/gmail.readonly",
+      "token_type": "Bearer"
+    },
+    "https://gmail.googleapis.com/gmail/v1/users/me/history?startHistoryId=1000&historyTypes=messageAdded&labelId=INBOX": {
+      "history": [
+        {
+          "id": "1001",
+          "messagesAdded": [
+            {
+              "message": {
+                "id": "m-1",
+                "threadId": "t-m-1",
+                "labelIds": [
+                  "INBOX"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "historyId": "1001"
+    },
+    "https://gmail.googleapis.com/gmail/v1/users/me/messages/m-1?format=metadata&metadataHeaders=From": {
+      "id": "m-1",
+      "threadId": "t-m-1",
+      "labelIds": [
+        "INBOX",
+        "UNREAD"
+      ],
+      "snippet": "您好，附件是本季度的对账单",
+      "internalDate": "1794556800000",
+      "payload": {
+        "mimeType": "multipart/mixed",
+        "headers": [
+          {
+            "name": "From",
+            "value": "Ann Lee <ann@example.com>"
+          },
+          {
+            "name": "Subject",
+            "value": "季度对账单"
+          },
+          {
+            "name": "Message-ID",
+            "value": "<m-1@mail.example.com>"
+          }
+        ]
+      }
+    },
+    "https://gmail.googleapis.com/gmail/v1/users/me/messages/m-1?format=full": {
+      "id": "m-1",
+      "threadId": "t-m-1",
+      "labelIds": [
+        "INBOX",
+        "UNREAD"
+      ],
+      "snippet": "您好，附件是本季度的对账单",
+      "internalDate": "1794556800000",
+      "payload": {
+        "partId": "",
+        "mimeType": "multipart/mixed",
+        "headers": [
+          {
+            "name": "From",
+            "value": "Ann Lee <ann@example.com>"
+          },
+          {
+            "name": "Subject",
+            "value": "季度对账单"
+          },
+          {
+            "name": "Message-ID",
+            "value": "<m-1@mail.example.com>"
+          }
+        ],
+        "body": {
+          "size": 0
+        },
+        "parts": [
+          {
+            "partId": "0",
+            "mimeType": "multipart/alternative",
+            "filename": "",
+            "headers": [],
+            "body": {
+              "size": 0
+            },
+            "parts": [
+              {
+                "partId": "0.0",
+                "mimeType": "text/html",
+                "filename": "",
+                "headers": [],
+                "body": {
+                  "size": 51,
+                  "data": "PHA-5oKo5aW9Jm5ic3A7QW5u77yMPC9wPjxwPuivt-ecizxiPumZhOS7tjwvYj48L3A-"
+                }
+              }
+            ]
+          },
+          {
+            "partId": "1",
+            "mimeType": "application/pdf",
+            "filename": "statement.pdf",
+            "headers": [],
+            "body": {
+              "attachmentId": "att-m-1-1",
+              "size": 120000
+            }
+          },
+          {
+            "partId": "2",
+            "mimeType": "text/csv",
+            "filename": "detail.csv",
+            "headers": [],
+            "body": {
+              "attachmentId": "att-m-1-2",
+              "size": 2048
+            }
+          }
+        ]
+      }
+    }
+  }
+}

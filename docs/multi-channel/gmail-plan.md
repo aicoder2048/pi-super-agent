@@ -311,56 +311,58 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `docs/modules/examples/mail/module.json`、`rules.md`。
-- [ ] Create `docs/modules/examples/mail/data/messages/collection.json`、`data/senders/collection.json`。
-- [ ] Create `docs/modules/examples/mail/feeds/inbox/feed.json`、`feeds/inbox/index.ts`、`feeds/inbox/fixtures/`。
-- [ ] Create `docs/modules/mail.md`。
-- [ ] Create `tests/mail-inbox.test.ts`。Edit `tests/private-canary.test.ts`，加 `mail` 的流程。
+- [x] Create `docs/modules/examples/mail/module.json`、`rules.md`。
+- [x] Create `docs/modules/examples/mail/data/messages/collection.json`、`data/senders/collection.json`。
+- [x] Create `docs/modules/examples/mail/feeds/inbox/feed.json`、`feeds/inbox/index.ts`、`feeds/inbox/fixtures/`。
+- [x] Create `docs/modules/mail.md`。
+- [x] Create `tests/mail-inbox.test.ts`。Edit `tests/private-canary.test.ts`，加 `mail` 的流程。
 
 **Build.**
 
-- [ ] 这个 PR 不改宿主。`mail` 是 `docs/modules/examples/` 下的文件夹包，照 stock-ta 的样子装。
-- [ ] `messages` 集合，`class: "private"`。一行是一封邮件，id 是 Gmail 的消息 id。字段：`threadId`、`messageIdHeader`（`Message-ID` 头，M7 回复用）、`fromName`、`fromAddress`、`replyTo`、`subject`、`date`、`snippet`、`body`（纯文字正文，HTML 转成文字，最多 64 KB，超出截断并标明）、`attachments`（每个附件的 `partId`、文件名、类型、字节数，不存内容）。
-- [ ] `senders` 集合照 stock-ta 的 `watchlist` 写。`kind: "record"`，`class: "shareable"`，字段 `address`（地址或 `@域名`）、`note`、`removedAt`（划掉的日期，不删行）。在对话里说「把 a@example.com 加进邮件名单」，Worker 加一行；说「把 a@example.com 从邮件名单划掉」，给那一行写上 `removedAt`。下一拍就用新名单，不用重启。为什么标 `shareable` 见 Appendix E 第 9 条。
-- [ ] `inbox` feed 写 `handler`、`every: "5m"`、`limit: "1m"`、`secrets: ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GMAIL_READ_REFRESH_TOKEN"]`（M1 的表里都属于 `mail`）、`reads: ["senders"]`、`into: "messages"`。`line` 三行：`{{fromName}} <{{fromAddress}}>`、`{{subject}}`、`{{snippet}}`，地址一定写出，显示名冒充「白宫 · 系统」时手机上也看得到真地址。`settings` 有 `baseUrl`、`tokenUrl`，没有发件人名单。
-- [ ] 每一拍先用 refresh token 换一个 access token，不存 access token。换 token 回 `invalid_grant`（改过 Google 密码、半年没用、撤销过）时这一拍失败，cursor 不动，日志一行，回复带 `problem: { id: "auth", text: "Gmail 授权失效了，在笔记本上重跑 just google-auth read，再把那一行复制到这台机器" }`。网页和 Telegram 上各一条「通知」，修好之前不再重复。
-- [ ] 第一次没有 cursor 时，取 `users.getProfile` 的 `historyId` 当起点，再用 `messages.list?q=newer_than:1d&labelIds=INBOX` 补最近一天，免得装好以后要等下一封信才知道它通了。cursor 存 `{ historyId, at }`，`at` 是这一拍成功的时间。
-- [ ] 之后每一拍 `history.list?startHistoryId=<cursor>&historyTypes=messageAdded&labelId=INBOX`，翻完所有页。接口回 404（cursor 太旧）时按第一次的办法补最近一天，按消息 id 去重，日志一行。
-- [ ] 断档告诉使用者。这一拍发现上次成功的 `at` 早于 24 小时前（宿主停过），补完最近一天以后回复带 `problem: { id: "gap", text: "邮件 有 N 小时没查，一天以前的信没补，请在 Gmail 里看一下" }`，`N` 是整小时数。
-- [ ] 每个新消息先用 `messages.get?format=metadata` 取 `From`，`From` 的地址不在 `senders`（没划掉的行）里的直接跳过，不存、不发通知。名单里的再取 `format=full`，拼出上面的字段。
-- [ ] `senders` 没有有效行时什么都不请求，回复带 `problem: { id: "no-senders", text: "邮件名单是空的，什么都不收。在对话里说「把 a@example.com 加进邮件名单」" }`。装好打开后第一拍就出这条，网页和 Telegram 上各一条。
-- [ ] 每行发一个通知，id 是消息 id，所以同一封信不会叫醒幕僚长两次。通知字段只有 `fromName`、`fromAddress`、`subject`、`snippet`。feed 自己先按 M3 的同一组字符类清洗，`fromName` 最多 80 字形、`subject` 120、`snippet` 100，宿主在边界上再清洗一遍。
-- [ ] `rules.md` 第一版没有规则，写一段说明：新邮件只出通知，幕僚长可以忽略或开推断任务；想让某类邮件自动开任务，自己加 `来源: mail/inbox` 的规则，这种任务用 M4 的受限清单。要不要默认带一条规则是 Appendix E 第 5 条。
-- [ ] fixtures 有：第一次起步、空名单、一页新邮件（一封名单里的、一封名单外的）、两页、404 重新补、断档 30 小时、`invalid_grant`、带 HTML 正文和两个附件的邮件、主题里带换行和方向控制符的邮件、显示名是「白宫 · 系统」的邮件。
-- [ ] `docs/modules/mail.md` 写装模块、在对话里加和划掉发件人、打开开关、三种「通知」各是什么意思、`invalid_grant` 怎么办。
+- [x] 这个 PR 不改宿主。`mail` 是 `docs/modules/examples/` 下的文件夹包，照 stock-ta 的样子装。
+- [x] `messages` 集合，`class: "private"`。一行是一封邮件，id 是 Gmail 的消息 id。字段：`threadId`、`messageIdHeader`（`Message-ID` 头，M7 回复用）、`fromName`、`fromAddress`、`replyTo`、`subject`、`date`、`snippet`、`body`（纯文字正文，HTML 转成文字，最多 64 KB，超出截断并标明）、`attachments`（每个附件的 `partId`、文件名、类型、字节数，不存内容）。
+- [x] `senders` 集合照 stock-ta 的 `watchlist` 写。`kind: "record"`，`class: "shareable"`，字段 `address`（地址或 `@域名`）、`note`、`removedAt`（划掉的日期，不删行）。在对话里说「把 a@example.com 加进邮件名单」，Worker 加一行；说「把 a@example.com 从邮件名单划掉」，给那一行写上 `removedAt`。下一拍就用新名单，不用重启。为什么标 `shareable` 见 Appendix E 第 9 条。
+- [x] `inbox` feed 写 `handler`、`every: "5m"`、`limit: "1m"`、`secrets: ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GMAIL_READ_REFRESH_TOKEN"]`（M1 的表里都属于 `mail`）、`reads: ["senders"]`、`into: "messages"`。`line` 三行：`{{fromName}} <{{fromAddress}}>`、`{{subject}}`、`{{snippet}}`，地址一定写出，显示名冒充「白宫 · 系统」时手机上也看得到真地址。`settings` 有 `baseUrl`、`tokenUrl`，没有发件人名单。
+- [x] 每一拍先用 refresh token 换一个 access token，不存 access token。换 token 回 `invalid_grant`（改过 Google 密码、半年没用、撤销过）时这一拍失败，cursor 不动，日志一行，回复带 `problem: { id: "auth", text: "Gmail 授权失效了，在笔记本上重跑 just google-auth read，再把那一行复制到这台机器" }`。网页和 Telegram 上各一条「通知」，修好之前不再重复。
+- [x] 第一次没有 cursor 时，取 `users.getProfile` 的 `historyId` 当起点，再用 `messages.list?q=newer_than:1d&labelIds=INBOX` 补最近一天，免得装好以后要等下一封信才知道它通了。cursor 存 `{ historyId, at }`，`at` 是这一拍成功的时间。
+- [x] 之后每一拍 `history.list?startHistoryId=<cursor>&historyTypes=messageAdded&labelId=INBOX`，翻完所有页。接口回 404（cursor 太旧）时按第一次的办法补最近一天，按消息 id 去重，日志一行。
+- [x] 断档告诉使用者。这一拍发现上次成功的 `at` 早于 24 小时前（宿主停过），补完最近一天以后回复带 `problem: { id: "gap", text: "邮件 有 N 小时没查，一天以前的信没补，请在 Gmail 里看一下" }`，`N` 是整小时数。
+- [x] 每个新消息先用 `messages.get?format=metadata` 取 `From`，`From` 的地址不在 `senders`（没划掉的行）里的直接跳过，不存、不发通知。名单里的再取 `format=full`，拼出上面的字段。
+- [x] `senders` 没有有效行时什么都不请求，回复带 `problem: { id: "no-senders", text: "邮件名单是空的，什么都不收。在对话里说「把 a@example.com 加进邮件名单」" }`。装好打开后第一拍就出这条，网页和 Telegram 上各一条。
+- [x] 每行发一个通知，id 是消息 id，所以同一封信不会叫醒幕僚长两次。通知字段只有 `fromName`、`fromAddress`、`subject`、`snippet`。feed 自己先按 M3 的同一组字符类清洗，`fromName` 最多 80 字形、`subject` 120、`snippet` 100，宿主在边界上再清洗一遍。
+- [x] `rules.md` 第一版没有规则，写一段说明：新邮件只出通知，幕僚长可以忽略或开推断任务；想让某类邮件自动开任务，自己加 `来源: mail/inbox` 的规则，这种任务用 M4 的受限清单。要不要默认带一条规则是 Appendix E 第 5 条。
+- [x] fixtures 有：第一次起步、空名单、一页新邮件（一封名单里的、一封名单外的）、两页、404 重新补、断档 30 小时、`invalid_grant`、带 HTML 正文和两个附件的邮件、主题里带换行和方向控制符的邮件、显示名是「白宫 · 系统」的邮件。
+- [x] `docs/modules/mail.md` 写装模块、在对话里加和划掉发件人、打开开关、三种「通知」各是什么意思、`invalid_grant` 怎么办。
 
 **You see.**
 
-- [ ] 打开 `mail` 后第一拍，网页和 Telegram 上各有一条「邮件：邮件名单是空的……」。在对话里说「把 a@example.com 加进邮件名单」，下一拍起这个人的信进 `messages`，Telegram 上响三行；之后在 Telegram 上问幕僚长一只股票，回复是全文。
+- [x] 打开 `mail` 后第一拍，网页和 Telegram 上各有一条「邮件：邮件名单是空的……」。在对话里说「把 a@example.com 加进邮件名单」，下一拍起这个人的信进 `messages`，Telegram 上响三行；之后在 Telegram 上问幕僚长一只股票，回复是全文。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/mail-inbox.test.ts` 用 fixtures 覆盖：第一次起步补一天；`history.list` 翻页；cursor 只在行存好后保存；404 补一天且不重复；断档 30 小时报 `gap`；`invalid_grant` 不动 cursor 并报 `auth`；名单从 `senders` 读，划掉的行不算；名单外的不存；空名单不请求并报 `no-senders`；同一封信两拍只存一行只发一个通知；字段截断和清洗；`line` 的第一行有地址；HTML 转文字；正文 64 KB 截断；附件只存元数据。`tests/private-canary.test.ts` 的 `mail` 流程：fixture 正文里的 canary 不进 Telegram 发件箱。Run `just test` 和 `just module check mail`.
+- [x] `tests/mail-inbox.test.ts` 用 fixtures 覆盖：第一次起步补一天；`history.list` 翻页；cursor 只在行存好后保存；404 补一天且不重复；断档 30 小时报 `gap`；`invalid_grant` 不动 cursor 并报 `auth`；名单从 `senders` 读，划掉的行不算；名单外的不存；空名单不请求并报 `no-senders`；同一封信两拍只存一行只发一个通知；字段截断和清洗；`line` 的第一行有地址；HTML 转文字；正文 64 KB 截断；附件只存元数据。`tests/private-canary.test.ts` 的 `mail` 流程：fixture 正文里的 canary 不进 Telegram 发件箱。Run `just test` 和 `just module check mail`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成 `docs/modules/evidence/m2-live.ts`，lane 9、10 是真账号，在时段 1 跑。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 没有 `mail` 模块。两边都打开 personal-tax 调一次 `tax-bracket`，head 再装 `mail`、名单里放一个地址、对假服务跑一拍。Save `m2-regression.txt`. Pass when 两边 `tax-bracket` 结果相同，head 的 `messages` 有 fixture 里名单上的那封，假 Telegram 上一条三行消息。
-- [ ] Lane 2. 宿主运行中装 `mail`，名单为空，跑两拍。Save `m2-empty.png`. Pass when 没有请求 Gmail 的邮件接口，网页和假 Telegram 上各正好一条「邮件名单是空的」。
-- [ ] Lane 3. 在对话里说「把 a@example.com 加进邮件名单」（真模型 `openai-codex/*`），假服务里有这个人的一封信，等下一拍。Save `m2-add-sender.txt`. Pass when `senders` 多一行，下一拍 `messages` 多一行、一条三行通知，`no-senders` 不再出现。
-- [ ] Lane 4. 假服务加两封新信（一封名单内，一封名单外），等下一拍；之后同一个 `historyId` 再跑三拍。Save `m2-new-mail.txt`. Pass when 多一行、一个通知，名单外的那封只有一次 `format=metadata`；之后三拍每拍只有 token 和一次 `history.list` 两个请求。
-- [ ] Lane 5. 假服务对 `history.list` 回 404。Save `m2-stale-cursor.txt`. Pass when 日志一行，补了一天，没有重复的行，cursor 换成新的。
-- [ ] Lane 6. 假服务对 token 接口回 `invalid_grant` 两拍，然后恢复。Save `m2-invalid-grant.txt`. Pass when 两拍都失败，网页和假 Telegram 上各一条授权失效的「通知」，cursor 不变；恢复后照常存信。
-- [ ] Lane 7. cursor 的 `at` 设成 30 小时前，跑一拍。Save `m2-gap.txt`. Pass when 一条「邮件 有 30 小时没查」的通知，补进最近一天的信。
-- [ ] Lane 8. 一封显示名是「白宫 · 系统」、主题带换行和 U+202E、正文 100 KB HTML 的信，再在网页上打开 `messages`。Save `m2-sanitize.png`. Pass when 假 Telegram 上第一行写着真地址，各字段在上限内，`body` 是 64 KB 以内的纯文字并标明截断，网页上集合标着私密。
+- [x] Lane 1. Regression lane against trunk. trunk 没有 `mail` 模块。两边都打开 personal-tax 调一次 `tax-bracket`，head 再装 `mail`、名单里放一个地址、对假服务跑一拍。Save `m2-regression.txt`. Pass when 两边 `tax-bracket` 结果相同，head 的 `messages` 有 fixture 里名单上的那封，假 Telegram 上一条三行消息。
+- [x] Lane 2. 宿主运行中装 `mail`，名单为空，跑两拍。Save `m2-empty.png`. Pass when 没有请求 Gmail 的邮件接口，网页和假 Telegram 上各正好一条「邮件名单是空的」。
+- [x] Lane 3. 在对话里说「把 a@example.com 加进邮件名单」（真模型 `openai-codex/*`），假服务里有这个人的一封信，等下一拍。Save `m2-add-sender.txt`. Pass when `senders` 多一行，下一拍 `messages` 多一行、一条三行通知，`no-senders` 不再出现。
+- [x] Lane 4. 假服务加两封新信（一封名单内，一封名单外），等下一拍；之后同一个 `historyId` 再跑三拍。Save `m2-new-mail.txt`. Pass when 多一行、一个通知，名单外的那封只有一次 `format=metadata`；之后三拍每拍只有 token 和一次 `history.list` 两个请求。
+- [x] Lane 5. 假服务对 `history.list` 回 404。Save `m2-stale-cursor.txt`. Pass when 日志一行，补了一天，没有重复的行，cursor 换成新的。
+- [x] Lane 6. 假服务对 token 接口回 `invalid_grant` 两拍，然后恢复。Save `m2-invalid-grant.txt`. Pass when 两拍都失败，网页和假 Telegram 上各一条授权失效的「通知」，cursor 不变；恢复后照常存信。
+- [x] Lane 7. cursor 的 `at` 设成 30 小时前，跑一拍。Save `m2-gap.txt`. Pass when 一条「邮件 有 30 小时没查」的通知，补进最近一天的信。
+- [x] Lane 8. 一封显示名是「白宫 · 系统」、主题带换行和 U+202E、正文 100 KB HTML 的信，再在网页上打开 `messages`。Save `m2-sanitize.png`. Pass when 假 Telegram 上第一行写着真地址，各字段在上限内，`body` 是 64 KB 以内的纯文字并标明截断，网页上集合标着私密。
 - [ ] Lane 9. 真账号（时段 1）。在笔记本上用临时状态目录起宿主，装 `mail`，名单里放使用者常用的一个发件人，跑第一拍。Save `m2-real-first.txt`. Pass when 只记行数，没有写真实数据目录，假 Google 以外只有 token、`users.getProfile`、`messages.list`、`messages.get` 这几种请求，没有改邮箱的请求。
 - [ ] Lane 10. 真账号（时段 1）。使用者从名单上的另一个邮箱给自己发一封测试信，宿主连着真 Telegram 测试机器人；信到以后在 Telegram 上问幕僚长一只自选股。Save `m2-real-arrival.png`. Pass when 10 分钟内手机响三行，记下从发信到响铃的分钟数；幕僚长的回复在手机上是全文。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. trunk 没有这个 feed。只给绝对预算：没有新信的一拍的总时间，十封新信的一拍的总时间（对假服务），以及装着 `mail` 时宿主启动到就绪的时间（trunk 和 head 都量）。
-- [ ] Probe. 空拍 20 次，十封信的拍 10 次；宿主启动 trunk 和 head 交替各 5 次。
-- [ ] Baseline. Record the trunk 宿主启动中位数 first。
-- [ ] Rule. 空拍中位数超过 1 秒，或十封信的拍超过 5 秒，或宿主启动比 trunk 慢 200 毫秒以上，就失败。前两个预算是推断。
+- [x] Metric. trunk 没有这个 feed。只给绝对预算：没有新信的一拍的总时间，十封新信的一拍的总时间（对假服务），以及装着 `mail` 时宿主启动到就绪的时间（trunk 和 head 都量）。
+- [x] Probe. 空拍 20 次，十封信的拍 10 次；宿主启动 trunk 和 head 交替各 5 次。
+- [x] Baseline. Record the trunk 宿主启动中位数 first。
+- [x] Rule. 空拍中位数超过 1 秒，或十封信的拍超过 5 秒，或宿主启动比 trunk 慢 200 毫秒以上，就失败。前两个预算是推断。
+
+**Evidence (owner).** 2026-11-13 在 b8d1dec 上通过：`just test` 1841/1841，`node docs/modules/architecture/check.mjs` 全绿，`just module check docs/modules/examples/mail` ok（data-classes=shareable:1,private:1）。`tests/mail-inbox.test.ts` 14 条先红后绿（对着只回 `{ records: [] }` 的 handler 13 条红，原因是没存行、没报 problem）。`docs/modules/evidence/m2-live.ts` lane 1 到 8 PASS，lane 3 用 `openai-codex/gpt-6.1-terra` 和 `gpt-6.1-sol`。perf：空拍中位数 173 ms，十封信的拍 234 ms，宿主启动 trunk 876 ms、head 带 mail 821 ms。lane 9、10 是真账号，留到时段 1。与计划不同的三处：`line` 照 M3 的写法用 `{{from}}`（feed 拼成「显示名 <地址>」，地址始终完整）；`messages` 多一个 `gmailId` 字段，因为行 id 是宿主自增的数字，M6 要靠它找信；`invalid_grant` 和 404 补一天没有单独的日志行，宿主只记每拍的「N 行，M 条触发」，`problem` 的通知是使用者看得到的记录，要日志行得改宿主。网页上没有集合浏览器，lane 8 的「集合标着私密」用 `just module check` 的输出代替。
 
 **Review gate.** None. M2 is not review-gated.
 
