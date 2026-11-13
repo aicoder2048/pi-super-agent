@@ -1002,7 +1002,7 @@ export class Kernel {
 		return this.#get("SELECT MAX(hidden_at) AS at FROM conversation_hidden")?.at ?? null;
 	}
 
-	/** A Router session started before this was asked to start over and must never be continued. */
+	/** When the Router was last told to start over, or null. A session started before then must never be continued. */
 	lastStartOverAt(): number | null {
 		return this.#get("SELECT MAX(at) AS at FROM router_start_overs")?.at ?? null;
 	}

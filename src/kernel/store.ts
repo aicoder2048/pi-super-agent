@@ -299,8 +299,7 @@ export function openStore(path: string): DatabaseSync {
 			INSERT INTO router_private SELECT received_at, substr(source, 1, instr(source || '/', '/') - 1) FROM triggers WHERE private = 1;`);
 	}
 	if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'private_text'").get()) {
-		// Before this table nothing recorded what a session held, so everything the Router wrote after the first private data
-		// counts: replies, ignore reasons, and the tickets it opened, handed a line to or added a note to.
+		// Old stores never recorded what a session held, so everything the Router wrote after the first private data counts as private.
 		db.exec(`CREATE TABLE private_text (id TEXT PRIMARY KEY, module TEXT);
 			INSERT INTO private_text SELECT r.id, COALESCE(t.domain, (SELECT p.module FROM router_private p WHERE p.at <= r.created_at ORDER BY p.at DESC LIMIT 1))
 			FROM reply_receipts r LEFT JOIN tickets t ON t.id = r.cause AND t.touched_private_at IS NOT NULL
