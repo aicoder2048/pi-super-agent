@@ -282,6 +282,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 2026-11-13 在 04cf31f 上通过（证据在 `/tmp/swarm-m3/owner-live/`、`/tmp/swarm-m3/owner/`）：`just test` 1792 条里 1791 条过，`tests/watchdog-main.test.ts` 的「终端 Ctrl+C：Watchdog 不停别人启动的宿主」单独重跑通过（已知偶发）；`node docs/modules/architecture/check.mjs` 7 项 ok；`tests/e2e/telegram.e2e.ts` 7 个用例过。`docs/modules/evidence/m3-live.ts` lane 1 到 9 PASS，lane 10 等时段 1。`docs/modules/evidence/m3-perf.ts` 跑两次，每次两边交替各 20 条：通知交回到触发写入的中位数 trunk 4 毫秒、head 4 毫秒（3 到 6），宿主行写入到 Telegram 发件箱最多 1 毫秒；这几毫秒主要是 handler 子进程退出和交回 JSON，毫秒时钟，差 1 毫秒是噪声。`src/sources/feeds.ts` 不用改：宿主自带的来源不走模块 feed 的通知。审查后加了两条：放出的触发里通知 id 和线程名只以散列出现，`ignore` 仍按 `notice` 的文字过滤。
 
+2026-11-13 在 a78bf86 上通过（证据在 `/tmp/swarm-m3/fix/`）：验收时发现放出的 feed 的 `ignore` 跑了两遍，宿主内核又拿同样的规则去试放出的那几行，只匹配那几行的规则会把来信吞掉、手机不响。改成放出的 feed 的来源过滤不带 `ignore`，只在 feed 里按 `notice` 的文字过滤一次（`tests/feed-line.test.ts` 先红后绿）。金丝雀测试偶发失败是测试的等待条件：上一步的问题卡片晚到 Telegram，被当成了这一步的回复；改成按回复的行 id 找它自己的消息。`just test` 1793 条里 1791 条过，失败的两条是已知偶发（watchdog Ctrl+C、scheduler 进程组），单独重跑进程组那条过；check.mjs 7 项 ok；`tests/e2e/telegram.e2e.ts` 过；`m3-live.ts` lane 1 到 9 PASS。
+
 **Review gate.** The operator reviews before merge.
 
 - [x] Copy lane 7 and lane 9 screenshots into `docs/modules/evidence/m3-review-web.png` and `docs/modules/evidence/m3-review-problem.png`。lane 10 的真手机截图只在聊天里给使用者看，留在 `/tmp/swarm-m3/`，不提交。
