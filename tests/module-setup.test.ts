@@ -10,7 +10,6 @@ import { problemLine, scanPackage } from "../src/modules/validate.ts";
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 const venvName = (lock: string) => `venv-${sha(lock).slice(0, 12)}`;
 
-/** Logs each call as one JSON line, then builds the environment unless `FAKE_UV_FAIL` is set. */
 const FAKE_UV = `#!${process.execPath}
 const fs = require("node:fs");
 const env = process.env.UV_PROJECT_ENVIRONMENT;

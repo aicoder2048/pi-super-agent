@@ -52,7 +52,6 @@ function just(state: string, args: string[], { cwd = HEAD, env = {} as Record<st
 	return { status: run.status, ms: Math.round(performance.now() - started), out: (run.stdout + run.stderr).split("\n").filter((l) => !l.startsWith("node --import")).join("\n").trim() };
 }
 
-/** Every file under `dir` as `path sha256`, links as `path -> target`. */
 function snapshot(dir: string): string {
 	if (!existsSync(dir)) return "(absent)";
 	return (readdirSync(dir, { recursive: true }) as string[]).sort().flatMap((path) => {
@@ -148,7 +147,6 @@ async function lane(n: number, slug: string, body: () => Promise<{ pass: boolean
 const exchangesOf = (fake: Fake, conversation: string): Exchange[] => fake.exchanges.filter((e: Exchange) => e.conversation === conversation);
 const inDomain = (call: Call, domain: string) => ({ ...call, args: { decisions: (call.args.decisions as object[]).map((d) => ({ ...d, domain, basis: "request" })) } });
 const toolCard = (fake: Fake, brief: string) => exchangesOf(fake, brief).flatMap((e) => e.cards).find((c) => c.startsWith("[模块工具]")) ?? "";
-/** A Router that opens a ticket in the module the request names, and a Worker per module that calls `tool` once and reports its card. */
 const asks = (names: readonly string[], tool: string, input: Record<string, unknown>) => ({
 	router: names.map((name) => on(`开 ${name}`, new RegExp(`^\\[对话\\][\\s\\S]*问 ${name} `), (c: string) => [inDomain(openTicket(c, `问 ${name}`), name), reply(c, "好")])),
 	workers: names.map((name) => worker(`问 ${name}`, on("调用", /^\[任务说明\]/, () => [domainTool(tool, input)]), on("汇报", /^\[模块工具\]/, (c: string) => [report("ready", c)]))),
@@ -275,7 +273,7 @@ async function lanes(): Promise<void> {
 			const times = existsSync(written) ? (JSON.parse(readFileSync(written, "utf8")) as { startedAt: number; endedAt: number }) : undefined;
 			await sleep(1500);
 			const db = new DatabaseSync(join(state, "modules-data/slow/data.db"), { readOnly: true });
-			const rows = db.prepare(`SELECT id, note FROM "runs"`).all().map((r) => JSON.stringify({ ...r }));
+			const rows = db.prepare(`SELECT note FROM "runs"`).all().map((r) => JSON.stringify({ ...r }));
 			db.close();
 			const ran = times ? times.endedAt - times.startedAt : -1;
 			const feedLog = host.log().split("\n").filter((l: string) => /slow\/write|limit of/.test(l)).join("\n");
@@ -331,7 +329,7 @@ async function lanes(): Promise<void> {
 		const before = snapshot(real);
 		const fake = await FakeModel.start({
 			router: [on("开任务", /^\[对话\][\s\S]*数据目录在哪/, (c: string) => [inDomain(openTicket(c, "预演问目录"), "sample-py"), reply(c, "好")])],
-			workers: [worker("预演问目录", on("调用", /^\[任务说明\]/, () => [domainTool("where", { x: 1 })]), on("汇报", /^\[模块工具\]/, (c: string) => [report("ready", `数据目录下有 files：${c}`)]))],
+			workers: [worker("预演问目录", on("调用", /^\[任务说明\]/, () => [domainTool("where", { x: 1 })]), on("汇报", /^\[模块工具\]/, (c: string) => [report("ready", `数据目录下有 files：${c}`)], 4000))],
 		});
 		writeFileSync(join(state, "config.json"), JSON.stringify({ models: fakeModels }));
 		const scratch = mkdtempSync(join(tmpdir(), "psa-s1-try-"));
@@ -346,6 +344,7 @@ async function lanes(): Promise<void> {
 			let status: number | null | undefined;
 			void closed.then((code) => (status = code));
 			while (status === undefined) {
+				if (existsSync(temp())) seen = `rehearsal files/ at ${temp()}: ${ls(temp()).join(" ")}`;
 				if (existsSync(join(temp(), "written-by-fixture"))) {
 					const venv = ls(temp()).find((f) => f.startsWith("venv-")) ?? "";
 					const link = venv !== "" && lstatSync(join(temp(), venv)).isSymbolicLink();

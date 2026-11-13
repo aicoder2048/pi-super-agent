@@ -14,7 +14,7 @@ const VENV = /^venv-[0-9a-f]{12}$/;
 
 export const filesDir = (dataDir: string): string => join(dataDir, "files");
 
-/** The sha256 of the package's `py/uv.lock`. Undefined: the package has no Python project. */
+/** Undefined: the package has no Python project. */
 export function lockOf(packageDir: string): string | undefined {
 	const lock = join(packageDir, PY_DIR, "uv.lock");
 	return existsSync(lock) ? createHash("sha256").update(readFileSync(lock)).digest("hex") : undefined;
@@ -24,7 +24,7 @@ export const venvDir = (dataDir: string, lock: string): string => join(filesDir(
 
 export const venvsIn = (dataDir: string): string[] => (existsSync(filesDir(dataDir)) ? readdirSync(filesDir(dataDir)).filter((name) => VENV.test(name)) : []);
 
-/** For a rehearsal's throwaway state dir. A venv's scripts hold its absolute path, so it is linked, never copied. */
+/** A venv's scripts hold its absolute path, so it is linked, never copied. */
 export function cloneFiles(realDataDir: string, tempDataDir: string): void {
 	const [real, temp] = [filesDir(realDataDir), filesDir(tempDataDir)];
 	if (!existsSync(real)) return;

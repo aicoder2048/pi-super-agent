@@ -523,7 +523,6 @@ export async function runCasesAsync(scan: PackageScan, secret: SecretLookup): Pr
 	return problems;
 }
 
-/** A package may carry one Python project, which `just module setup` installs outside the package. */
 function checkPy(report: Report, root: string): void {
 	for (const file of ["pyproject.toml", "uv.lock"]) {
 		if (!existsSync(join(root, PY_DIR, file))) report(PY_DIR, `needs ${PY_DIR}/${file}: \`just module setup\` installs exactly what the lock file names (write it with \`uv lock --project ${PY_DIR}\`)`);

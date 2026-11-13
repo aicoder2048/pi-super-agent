@@ -37,7 +37,6 @@ const WHERE_TOOL = {
 	"index.ts": `export default () => ({ data: process.env.PSA_MODULE_DATA ?? null, venv: process.env.PSA_MODULE_VENV ?? null });`,
 };
 
-/** The handler writes into `files/` and leaves the data dir it was given in the file `settings.out` names. */
 const WRITING_FEED = (limit?: string) => ({
 	"feed.json": JSON.stringify({ title: "写文件", handler: "index.ts", every: "1h", into: "runs", settings: { out: "", sleepMs: 0 }, ...(limit !== undefined && { limit }) }),
 	"index.ts": `import { writeFileSync } from "node:fs";
