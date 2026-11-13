@@ -219,6 +219,7 @@ CREATE TABLE IF NOT EXISTS reply_receipts (
 	thread_id TEXT NOT NULL REFERENCES threads(id),
 	ticket_id TEXT REFERENCES tickets(id),
 	cause TEXT,
+	answers TEXT,
 	text TEXT NOT NULL,
 	created_at INTEGER NOT NULL,
 	delivered_at INTEGER
@@ -258,6 +259,8 @@ export function openStore(path: string): DatabaseSync {
 	const replyColumns = db.prepare("PRAGMA table_info(reply_receipts)").all().map((c) => (c as { name: string }).name);
 	if (!replyColumns.includes("cause")) db.exec("ALTER TABLE reply_receipts ADD COLUMN cause TEXT");
 	db.exec("CREATE INDEX IF NOT EXISTS reply_receipts_cause ON reply_receipts(cause)");
+	// NULL marks a reply from before replies named their cards; Kernel.answered falls back to its cause for those.
+	if (!replyColumns.includes("answers")) db.exec("ALTER TABLE reply_receipts ADD COLUMN answers TEXT");
 	const reportColumns = db.prepare("PRAGMA table_info(reports)").all().map((c) => (c as { name: string }).name);
 	if (!reportColumns.includes("options")) db.exec("ALTER TABLE reports ADD COLUMN options TEXT NOT NULL DEFAULT '[]'");
 	if (!reportColumns.includes("outside_writes")) db.exec("ALTER TABLE reports ADD COLUMN outside_writes TEXT NOT NULL DEFAULT '[]'");
@@ -292,6 +295,38 @@ export function openStore(path: string): DatabaseSync {
 		);
 	}
 	if (!ticketColumns.includes("tokens_cached")) db.exec("ALTER TABLE tickets ADD COLUMN tokens_cached INTEGER NOT NULL DEFAULT 0");
+	if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'router_private'").get()) {
+		// Seeded from what the Router may already have read: a session from before this table keeps everything it saw.
+		inTransaction(db, () =>
+			db.exec(`CREATE TABLE router_private (at INTEGER NOT NULL, module TEXT);
+				INSERT INTO router_private SELECT touched_private_at, domain FROM tickets WHERE touched_private_at IS NOT NULL;
+				INSERT INTO router_private SELECT received_at, substr(source, 1, instr(source || '/', '/') - 1) FROM triggers WHERE private = 1;`),
+		);
+	}
+	if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'private_text'").get()) {
+		// Old stores never recorded what a session held, so everything the Router wrote after the first private data counts as private.
+		inTransaction(db, () =>
+			db.exec(`CREATE TABLE private_text (id TEXT PRIMARY KEY, module TEXT);
+				INSERT INTO private_text SELECT r.id, COALESCE(t.domain, (SELECT p.module FROM router_private p WHERE p.at <= r.created_at ORDER BY p.at DESC LIMIT 1))
+				FROM reply_receipts r LEFT JOIN tickets t ON t.id = r.cause AND t.touched_private_at IS NOT NULL
+				WHERE t.id IS NOT NULL OR r.created_at >= (SELECT MIN(at) FROM router_private);
+				INSERT OR IGNORE INTO private_text SELECT json_extract(d.decision, '$.triggerId'), (SELECT p.module FROM router_private p WHERE p.at <= d.created_at ORDER BY p.at DESC LIMIT 1)
+				FROM decisions d WHERE d.ok = 1 AND json_extract(d.decision, '$.kind') = 'ignore' AND d.created_at >= (SELECT MIN(at) FROM router_private);
+				UPDATE tickets SET touched_private_at = w.at FROM (
+					SELECT ticket_id, MIN(created_at) AS at FROM (
+						SELECT ticket_id, created_at FROM decisions WHERE ok = 1 AND json_extract(decision, '$.kind') IN ('open_ticket', 'hand_over')
+						UNION ALL SELECT ticket_id, created_at FROM ticket_inputs WHERE kind = 'note'
+					) WHERE created_at >= (SELECT MIN(at) FROM router_private) GROUP BY ticket_id
+				) w WHERE tickets.id = w.ticket_id AND tickets.touched_private_at IS NULL;`),
+		);
+	}
+	if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'router_start_overs'").get()) {
+		// Old stores logged a 清屏 only as hidden lines; seeding the latest costs at most one extra fresh session, which loses nothing durable.
+		inTransaction(db, () =>
+			db.exec(`CREATE TABLE router_start_overs (at INTEGER NOT NULL);
+				INSERT INTO router_start_overs SELECT hidden_at FROM conversation_hidden ORDER BY hidden_at DESC LIMIT 1;`),
+		);
+	}
 	const retitle = db.prepare("UPDATE tickets SET title = ? WHERE id = ?");
 	for (const { id, title } of db.prepare("SELECT id, title FROM tickets").all() as { id: string; title: string }[]) {
 		if (oneLine(title) !== title) retitle.run(oneLine(title), id);

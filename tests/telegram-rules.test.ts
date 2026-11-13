@@ -134,7 +134,7 @@ const click = (option: number, state: "sent" | "handed_over" | "dropped") => ({ 
 test("看板上没有问题的任务没有卡片；有问题的卡片带任务标题、助手全名、问题和选项", () => {
 	assert.equal(cardView(row(null)), null);
 	const view = cardView(row(question()))!;
-	assert.deepEqual({ ...view, status: undefined }, { reportId: RPT, title: "查天气", helper: "青檀 · 对话助手 #1", question: "查哪个城市？", options: ["北京", "上海"], status: undefined });
+	assert.deepEqual({ ...view, status: undefined }, { reportId: RPT, ticketId: "tkt_1", title: "查天气", helper: "青檀 · 对话助手 #1", question: "查哪个城市？", options: ["北京", "上海"], status: undefined });
 });
 
 test("卡片状态和网页卡片一致：点过的选项优先，然后是插话，再是幕僚长没有转交", () => {

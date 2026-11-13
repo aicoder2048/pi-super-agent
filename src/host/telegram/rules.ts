@@ -75,6 +75,8 @@ export type CardStatus =
 
 export interface CardView {
 	reportId: string;
+	/** Missing on a card stored before cards named their ticket. */
+	ticketId?: string;
 	title: string;
 	/** Empty for a ticket from before helpers had names. */
 	helper: string;
@@ -97,7 +99,7 @@ export function cardView(row: DashboardRow): CardView | null {
 					: click?.state === "dropped"
 						? { kind: "dropped" }
 						: { kind: "open" };
-	return { reportId: q.reportId, title: row.title, helper: helperFullName(row.helper), question: q.text, options: q.options, status };
+	return { reportId: q.reportId, ticketId: row.id, title: row.title, helper: helperFullName(row.helper), question: q.text, options: q.options, status };
 }
 
 /**

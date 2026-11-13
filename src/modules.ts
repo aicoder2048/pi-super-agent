@@ -298,7 +298,7 @@ export class Modules {
 		this.modules = serving;
 		this.userRules = userRules;
 		this.skippedUserRules = skippedUserRules;
-		this.book = new Map(this.modules.map((m) => [m.name, { team: m.team?.name ?? null, onRoster: onRoster(m), ...(m.digest && { digest: m.digest }), ...(m.manifest.title && { title: m.manifest.title }) }]));
+		this.book = new Map(this.modules.map((m) => [m.name, { team: m.team?.name ?? null, onRoster: onRoster(m), ...(m.digest && { digest: m.digest }), ...(m.manifest.title && { title: m.manifest.title }), ...(m.feeds?.some((f) => f.private) && { privateFeed: true as const }) }]));
 		this.#scopes = new Map(this.allRules().map((r) => [r.id, r.sources]));
 	}
 

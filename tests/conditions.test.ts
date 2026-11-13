@@ -140,12 +140,13 @@ test("数据没写 watch.zone：提醒里的时间照存的原样写，不换算
 	assert.ok(!alert.text.includes("美东"), alert.text);
 });
 
-test("提醒文字由程序拼出：带模块的数据名、key、这一行的数值、时间和来源，只有一行", async (t) => {
+test("提醒文字由程序拼出：key、这一行的数值、时间和来源，只有一行；不写数据名，前缀「提醒 · 模块名」已经写了", async (t) => {
 	const { gateway, me } = health(t);
 	ok(await gateway.call(me(), set("空腹血糖", { when: "above", value: 7 }, { note: "复查后告诉内分泌科" })));
 	const [alert] = alertsOf(await gateway.call(me(), write([glucose(7.4, "2026-11-12")], "blobs/checkup-2026-11.pdf")));
 	assert.ok(alert);
-	for (const part of ["检验指标", "空腹血糖", "7.4", "高于 7", "2026-11-12", "blobs/checkup-2026-11.pdf", "复查后告诉内分泌科"]) assert.ok(alert.text.includes(part), `${alert.text} 缺 ${part}`);
+	for (const part of ["空腹血糖", "7.4", "高于 7", "2026-11-12", "来自 blobs/checkup-2026-11.pdf", "复查后告诉内分泌科"]) assert.ok(alert.text.includes(part), `${alert.text} 缺 ${part}`);
+	assert.ok(!alert.text.includes("检验指标"), alert.text);
 	assert.ok(!/[\n\r]/.test(alert.text));
 	assert.equal(alert.private, true);
 	assert.equal(alert.at, "2026-11-12");
@@ -232,7 +233,7 @@ test("检查提醒条件出错时，写进去的行照样算写成功，出错�
 	assert.ok(logs.some((l) => l.includes("lab-results") && l.includes("提醒")), logs.join("\n"));
 });
 
-test("watch.key 要指向文字字段，watch.at 要指向日期或文字字段，否则包检查不过", (t) => {
+test("watch.key 要指向文字字段，watch.at 要指向日期或文字字段，watch.prevClose 要指向数字字段，否则包检查不过", (t) => {
 	const root = mkdtempSync(join(tmpdir(), "psa-watch-scan-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const scan = (watch: object) => {
@@ -247,6 +248,10 @@ test("watch.key 要指向文字字段，watch.at 要指向日期或文字字段�
 	assert.deepEqual(scan({ key: "who", value: "kg", at: "on" }), []);
 	assert.ok(scan({ key: "code", value: "kg", at: "on" }).some((r) => r.includes("watch.key")));
 	assert.ok(scan({ key: "who", value: "kg", at: "epoch" }).some((r) => r.includes("watch.at")));
+	assert.deepEqual(scan({ key: "who", value: "kg", at: "on", prevClose: "epoch", label: "延迟行情" }), []);
+	assert.ok(scan({ key: "who", value: "kg", at: "on", prevClose: "who" }).some((r) => r.includes("watch.prevClose")));
+	assert.ok(scan({ key: "who", value: "kg", at: "on", prevClose: "close" }).some((r) => r.includes("watch.prevClose")));
+	assert.ok(scan({ key: "who", value: "kg", at: "on", label: "" }).some((r) => r.includes("watch.label")));
 });
 
 test("set 回一行回执；list 列出；带 id 的 set 改那一条；remove 去掉", async (t) => {
@@ -393,4 +398,82 @@ test("宿主：推断开的任务设条件被拒，说明推断任务只读、�
 		return worker.request("worker.watch", setAbove7);
 	}, "inference");
 	assert.match(String(result), /\[提醒条件\].*只读.*提醒条件/);
+});
+
+const STOCK_TA = join(import.meta.dirname, "../docs/modules/examples/stock-ta");
+const STOCK = "stock-ta" as ModuleName;
+const quotes = (t: TestContext) => {
+	const w = world(t);
+	const digest = w.keep(STOCK, STOCK_TA);
+	const me = w.caller(STOCK, digest);
+	const setMove = (atLeast: number, direction?: string, id?: string): Request => ({ kind: "watch", collection: "quotes" as never, op: "set", watch: { key: "NVDA", condition: { when: "day-move", atLeast, ...(direction && { direction }) } as never, ...(id && { id }) } });
+	// `hhmm` is New York time, -05:00 in November.
+	const quote = (price: number, hhmm: string, day = "2026-11-12", prevClose: number | null = 100) => ({ symbol: "NVDA", price, ...(prevClose !== null && { prevClose }), changePct: Number((price / (prevClose ?? price) * 100 - 100).toFixed(2)), at: `${day}T${String(Number(hhmm.slice(0, 2)) + 5).padStart(2, "0")}:${hhmm.slice(3)}:00.000Z` });
+	const writeQuotes = async (...rows: ReturnType<typeof quote>[]) => {
+		const alerts: Alert[] = [];
+		for (const row of rows) alerts.push(...alertsOf(await w.gateway.call(me, { kind: "data", collection: "quotes" as never, op: "write", rows: [row], from: "stock-ta/quotes" })));
+		return alerts;
+	};
+	return { ...w, me, setMove, quote, writeQuotes };
+};
+const distinct = (alerts: readonly Alert[]) => [...new Set(alerts.map((a) => a.externalId))];
+
+test("day-move：atLeast 只收 0.1 到 100，direction 只收 up、down、either，默认 either；别的字段被拒", async (t) => {
+	const { gateway, me, setMove } = quotes(t);
+	for (const atLeast of [0, 0.05, 100.5]) assert.match(refusal(await gateway.call(me, setMove(atLeast))).code, /bad-input/);
+	assert.match(JSON.stringify(refusal(await gateway.call(me, setMove(5, "sideways")))), /direction/);
+	const extra: Request = { kind: "watch", collection: "quotes" as never, op: "set", watch: { key: "NVDA", condition: { when: "day-move", atLeast: 5, basis: 100 } as never } };
+	assert.match(JSON.stringify(refusal(await gateway.call(me, extra))), /day-move 不认 basis/);
+	const kept = ok(await gateway.call(me, setMove(5))).output as { condition: { condition: Condition }; receipt: string };
+	assert.deepEqual(kept.condition.condition, { when: "day-move", atLeast: 5, direction: "either" });
+	assert.match(kept.receipt, /NVDA 当天相对昨收涨跌到 5%/);
+});
+
+test("day-move：数据没有声明昨收那一列时拒绝，说明这类数据没有昨收", async (t) => {
+	const { gateway, me } = health(t);
+	const reply = await gateway.call(me(), set("空腹血糖", { when: "day-move", atLeast: 5 } as never));
+	assert.match(JSON.stringify(refusal(reply)), /没有昨收/);
+});
+
+test("day-move：价格相对昨收到线时提醒，用不取整的涨跌幅；4.996% 不算 5%，刚好 5.00% 算", async (t) => {
+	const { gateway, me, setMove, quote, writeQuotes } = quotes(t);
+	ok(await gateway.call(me, setMove(5)));
+	assert.equal((await writeQuotes(quote(104.996, "09:46"))).length, 0);
+	const alerts = await writeQuotes(quote(105, "09:47"));
+	assert.equal(alerts.length, 1);
+});
+
+test("day-move：同一天同一方向来回穿线只有一个提醒编号；两个方向各一个；第二天重新开始", async (t) => {
+	const { gateway, me, setMove, quote, writeQuotes } = quotes(t);
+	ok(await gateway.call(me, setMove(5)));
+	const day1 = await writeQuotes(quote(104.996, "09:46"), quote(105.3, "10:05"), quote(104.8, "10:20"), quote(105.6, "10:40"), quote(94.5, "11:00"), quote(96, "11:10"), quote(94, "11:20"));
+	assert.equal(distinct(day1).length, 2);
+	assert.equal(day1[0]!.at, quote(105.3, "10:05").at);
+	const day2 = await writeQuotes(quote(106, "10:00", "2026-11-13"), quote(94, "10:30", "2026-11-13"));
+	assert.equal(distinct([...day1, ...day2]).length, 4);
+});
+
+test("day-move：盘中把 5% 改成 3%，同一天按新阈值再提醒一次", async (t) => {
+	const { gateway, me, setMove, quote, writeQuotes } = quotes(t);
+	const id = ((ok(await gateway.call(me, setMove(5))).output) as { condition: { id: string } }).condition.id;
+	const at5 = await writeQuotes(quote(105.2, "10:05"));
+	ok(await gateway.call(me, setMove(3, undefined, id)));
+	const at3 = await writeQuotes(quote(105.2, "10:06"));
+	assert.equal(distinct([...at5, ...at3]).length, 2);
+});
+
+test("day-move：没有昨收的旧行跳过，不提醒", async (t) => {
+	const { gateway, me, setMove, quote, writeQuotes } = quotes(t);
+	ok(await gateway.call(me, setMove(5)));
+	assert.equal((await writeQuotes(quote(120, "10:05", "2026-11-12", null))).length, 0);
+});
+
+test("报价提醒的文字：不写数据名和「来自」，带昨收和「延迟行情」", async (t) => {
+	const { gateway, me, setMove, quote, writeQuotes } = quotes(t);
+	ok(await gateway.call(me, setMove(5)));
+	const [alert] = await writeQuotes(quote(105.3, "10:05"));
+	assert.equal(alert?.text, "NVDA 105.30，相对昨收 100.00 涨了 5.30%，到了你设的涨跌 5% 提醒线（2026-11-12 10:05 美东，延迟行情）");
+	ok(await gateway.call(me, { kind: "watch", collection: "quotes" as never, op: "set", watch: { key: "NVDA", condition: { when: "above", value: 105.5 } } }));
+	const above = (await writeQuotes(quote(105.6, "10:06"))).find((a) => a.text.includes("高于"));
+	assert.equal(above?.text, "NVDA 105.6，高于 105.5（2026-11-12 10:06 美东，延迟行情）");
 });

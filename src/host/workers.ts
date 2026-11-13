@@ -99,7 +99,7 @@ export interface WorkerSpawner {
 }
 
 export function quoteSuffix(kernel: Kernel, quote: Quote | null): string {
-	return quote ? `\n${quoteContext(quote, quote.ticketId ? kernel.getTicket(quote.ticketId)?.title : undefined)}` : "";
+	return quote ? `\n${quoteContext(quote, quote.ticketId ? kernel.ticketName(quote.ticketId) : undefined)}` : "";
 }
 
 export function formatInputs(kernel: Kernel, inputs: TicketInput[]): string {
@@ -385,7 +385,7 @@ export class WorkerExecutor {
 					kernel.workerHandBack(ticketId, { body: p.body });
 					return { handedBack: true };
 				case "worker.read":
-					return this.#readForWorker(ticketId, typeof p.id === "string" ? p.id : undefined);
+					return kernel.workerRead(ticketId, typeof p.id === "string" ? p.id : undefined);
 				case "worker.lookup":
 					if (!this.#mayLookup(ticketId, live.profile, holder)) throw new Error("这项任务里不能用 lookup：任务的领域没有在 module.json 的 tools 里开 lookup，或这位成员的 tools 没写 lookup");
 					if (!this.#o.lookup) throw new Error("没有可查询的来源");
@@ -546,19 +546,5 @@ export class WorkerExecutor {
 				}
 			},
 		});
-	}
-
-	#readForWorker(ticketId: string, id: string | undefined): unknown {
-		const { kernel } = this.#o;
-		const own = kernel.read(ticketId);
-		if (own?.type !== "ticket") throw new Error(`找不到任务 ${ticketId}`);
-		if (!id || id === ticketId) return own;
-		const target = kernel.read(id);
-		const allowed =
-			(target?.type === "thread" && own.threadIds.includes(id)) ||
-			(target?.type === "trigger" &&
-				(target.threadIds.some((t) => own.threadIds.includes(t)) || own.recentInputs.some((i) => i.triggerId === id)));
-		if (!allowed) throw new Error(`${id} 不属于本任务，读不到`);
-		return target;
 	}
 }

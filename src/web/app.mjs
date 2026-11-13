@@ -1,7 +1,7 @@
 // @ts-check
 
 import {
-	BAR_HINT, CLEAR_FAILED, SWITCH_FAILED, moduleBody, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
+	BAR_HINT, CLEAR_FAILED, SWITCH_FAILED, moduleBody, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
 	questionOf, choiceOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
 	laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory, firstPanel, panelStep, overviewTabs, phoneScreen, panelText, savedPanel,
 } from "./view.mjs";
@@ -651,7 +651,6 @@ function mount(doc) {
 		}
 		for (const line of [...view.lines.values()].slice(rendered)) thread.append(lineNode(line, true));
 		rendered = view.lines.size;
-		clearButton.disabled = !canClear(view);
 		renderRoutes();
 		renderChoices();
 		if (atBottom) box.scrollTop = box.scrollHeight;
@@ -980,7 +979,7 @@ function mount(doc) {
 		} catch {
 			setSay("rejected", undefined, CLEAR_FAILED);
 		} finally {
-			clearButton.disabled = !canClear(view);
+			clearButton.disabled = false;
 		}
 	});
 

@@ -72,6 +72,56 @@ const OUTSIDE_SAMPLE = 3;
 const RECOVERY_NOTE = "process restarted; inspect your workdir before repeating any external action";
 
 const reject = (reason: string) => ({ ok: false as const, reason });
+/** What a card in `actions a` is about: its trigger, its ticket, or for a notice the card itself. A reply about that answers it. */
+const CARD_CAUSE = "COALESCE(json_extract(a.payload, '$.triggerId'), json_extract(a.payload, '$.ticketId'), a.id)";
+
+/**
+ * A module feed's source is `<module>/<feed>` and no host source has a slash; the shape decides, not the live
+ * module table, so switching a module off never loosens an open ticket.
+ */
+const isModuleFeed = (source: string) => source.includes("/");
+
+/** A ticket's basis, the source of the trigger that opened it (null when nothing triggered it), and the domain whose data and tools it may use. */
+type Origin = { basis: Basis; source: string | null; domain: string | null };
+
+/** An inference ticket without a trigger counts as a feed's: the Router may have copied a feed's text into its brief. */
+function openerOf({ basis, source }: Origin): Opener {
+	if (basis === "request") return "user";
+	return source === null || isModuleFeed(source) ? "module-feed" : "host-source";
+}
+
+/**
+ * A ticket's tools come from its opener and its module data and tools from its domain, both fixed when it opens, so a
+ * feed's text may only reach a ticket that same module's feed opened (or a triggerless inference ticket) whose domain
+ * is that module or none (ADR-0018).
+ */
+function feedMayReach(origin: Origin, feed: string): boolean {
+	if (!isModuleFeed(feed)) return true;
+	const module = ruleNamespace(feed);
+	if (openerOf(origin) !== "module-feed") return false;
+	if (origin.domain !== null && origin.domain !== module) return false;
+	return origin.source === null || ruleNamespace(origin.source) === module;
+}
+
+const feedProblem = (origin: Origin, feed: string, what: string) =>
+	feedMayReach(origin, feed)
+		? undefined
+		: `${what} belongs to module feed ${feed}, and only a ticket that module's feed opened (no bash, no web_get), in domain ${ruleNamespace(feed)} or no domain, may take a feed's text; open a ticket for it instead`;
+
+function writtenBy(d: Decision, ticketId: string | undefined): string[] {
+	switch (d.kind) {
+		case "open_ticket":
+			return [ticketId!];
+		case "hand_over":
+			return [d.ticketId];
+		case "ignore":
+			return [d.triggerId];
+		case "stop":
+			return [];
+		default:
+			throw new Error(`decision ${(d as { kind: string }).kind} does not say where it writes`);
+	}
+}
 
 const answerOnly = (triggerId: string, ticketId: string) =>
 	`${triggerId} is the user's click answering ${ticketId}'s question; route hand_over to ${ticketId}`;
@@ -238,7 +288,7 @@ export class Kernel {
 			const isConversation = threadIds.includes(CONVERSATION_THREAD_ID);
 			const policy = isConversation ? "candidate" : this.#sourcePolicy(sub);
 			const ignored = policy === "ignore";
-			const subscribers = isConversation || policy !== "candidate" ? [] : this.#openSubscribersOf(threadIds);
+			const subscribers = isConversation || policy !== "candidate" ? [] : this.#openSubscribersOf(threadIds, sub.source);
 			const disposition: Disposition = ignored ? "ignored" : subscribers.length > 0 ? "delivered" : "to_router";
 
 			const triggerId = this.#id("trg");
@@ -348,6 +398,7 @@ export class Kernel {
 		return this.#tx(() =>
 			decisions.map((decision) => {
 				const result = this.#decide(decision, takenThisRoute);
+				if (result.ok) for (const id of writtenBy(decision, result.ticketId)) this.#routerWrote(id);
 				this.#run(
 					"INSERT INTO decisions (decision, ok, reason, ticket_id, created_at) VALUES (?, ?, ?, ?, ?)",
 					JSON.stringify(decision),
@@ -361,7 +412,8 @@ export class Kernel {
 		);
 	}
 
-	reply({ threadId, text, cause }: { threadId: string; text: string; cause: string }): Result<{ replyId: string }> {
+	/** `answers` are the act_ ids of the cards the reply answers. */
+	reply({ threadId, text, cause, answers = [] }: { threadId: string; text: string; cause: string; answers?: string[] }): Result<{ replyId: string }> {
 		return this.#tx(() => {
 			if (!this.#get("SELECT 1 FROM threads WHERE id = ?", threadId)) return reject(`unknown thread ${threadId}`);
 			const length = [...text].length;
@@ -370,17 +422,21 @@ export class Kernel {
 			}
 			const problem = this.#causeProblem(cause);
 			if (problem) return reject(problem);
+			const stray = answers.filter((id) => !this.#get(`SELECT 1 FROM actions a WHERE a.id = ? AND a.kind = 'router.notify' AND ${CARD_CAUSE} = ?`, id, cause));
+			if (stray.length) return reject(`answers 里的 ${stray.join("、")} 不是关于 ${cause} 的卡片；只列关于 ${cause} 的卡片第一行末尾的 act_ id，不带「卡片」两个字`);
 			const used = this.#get("SELECT COUNT(*) AS n FROM reply_receipts WHERE cause = ?", cause).n as number;
 			if (used >= this.config.repliesPerCause) return reject(`already replied ${used} times about ${cause}`);
 			const replyId = this.#id("rpl");
 			this.#run(
-				"INSERT INTO reply_receipts (id, thread_id, cause, text, created_at) VALUES (?, ?, ?, ?, ?)",
+				"INSERT INTO reply_receipts (id, thread_id, cause, answers, text, created_at) VALUES (?, ?, ?, ?, ?, ?)",
 				replyId,
 				threadId,
 				cause,
+				JSON.stringify(answers),
 				text,
 				this.#now(),
 			);
+			this.#routerWrote(replyId, this.#privateTicket(cause));
 			this.#enqueue({ kind: "channel.reply", payload: { threadId, text, replyId, ticketId: cause.startsWith("tkt_") ? cause : null } });
 			return { ok: true, replyId };
 		});
@@ -421,6 +477,7 @@ export class Kernel {
 			const problem = this.#acceptsInput(ticketId);
 			if (problem) return reject(problem);
 			this.#addInput(ticketId, "note", text);
+			this.#routerWrote(ticketId);
 			return { ok: true };
 		});
 	}
@@ -725,16 +782,14 @@ export class Kernel {
 		});
 	}
 
-	/**
-	 * A module feed's source is `<module>/<feed>` and no host source has a slash; the shape decides, not the live
-	 * module table, so switching a module off never loosens an open ticket. An inference ticket without a trigger
-	 * counts as a feed's: the Router may have copied a feed's text into its brief.
-	 */
 	openedBySource(ticketId: string): Opener {
-		const row = this.#get("SELECT t.basis, g.source FROM tickets t LEFT JOIN triggers g ON g.id = t.origin_trigger_id WHERE t.id = ?", ticketId);
+		return openerOf(this.#originOf(ticketId));
+	}
+
+	#originOf(ticketId: string): Origin {
+		const row = this.#get("SELECT t.basis, g.source, t.domain FROM tickets t LEFT JOIN triggers g ON g.id = t.origin_trigger_id WHERE t.id = ?", ticketId);
 		if (!row) throw new Error(`unknown ticket ${ticketId}`);
-		if (row.basis === "request") return "user";
-		return row.source == null || String(row.source).includes("/") ? "module-feed" : "host-source";
+		return { basis: row.basis, source: row.source ?? null, domain: row.domain };
 	}
 
 	getTicket(ticketId: string): Ticket | undefined {
@@ -971,17 +1026,18 @@ export class Kernel {
 
 	/** The latest 清屏 and the newest `limit` lines hidden so far, or null if there was never an effective 清屏. */
 	cleared(limit = 50): Cleared | null {
-		const at = this.#lastClearAt();
+		const at = this.lastClearAt();
 		return at === null ? null : { at, lines: this.#lines(HIDDEN, limit) };
 	}
 
 	/**
-	 * 清屏: hides every line that is on the screens now. It writes no trigger, wakes no one and changes no conversation row.
-	 * Returns null when nothing on screen was left to hide, and then writes nothing.
+	 * 清屏: hides every line that is on the screens now and records that the Router starts over, even when nothing was on screen.
+	 * It writes no trigger, wakes no one and changes no conversation row. Returns null when nothing on screen was left to hide.
 	 */
 	clearConversation(limit = 50): Cleared | null {
 		return this.#tx(() => {
-			const last = this.#lastClearAt();
+			this.#run("INSERT INTO router_start_overs (at) VALUES (?)", this.#now());
+			const last = this.lastClearAt();
 			const at = last === null ? this.#now() : Math.max(this.#now(), last + 1);
 			const { changes } = this.#run(
 				`INSERT OR IGNORE INTO conversation_hidden (line_id, hidden_at) SELECT id, ? FROM (${LINES}) WHERE shown`,
@@ -992,8 +1048,13 @@ export class Kernel {
 		});
 	}
 
-	#lastClearAt(): number | null {
+	lastClearAt(): number | null {
 		return this.#get("SELECT MAX(hidden_at) AS at FROM conversation_hidden")?.at ?? null;
+	}
+
+	/** When the Router was last told to start over, or null. A session started before then must never be continued. */
+	lastStartOverAt(): number | null {
+		return this.#get("SELECT MAX(at) AS at FROM router_start_overs")?.at ?? null;
 	}
 
 	#lines(where: string, limit: number): ConversationLine[] {
@@ -1069,7 +1130,106 @@ export class Kernel {
 	}
 
 	touchedPrivate(ticketId: string): boolean {
-		return this.#get("SELECT 1 FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) !== undefined;
+		return this.#privateTicket(ticketId) !== null;
+	}
+
+	#privateTicket(ticketId: string): { module: string | null } | null {
+		return this.#get("SELECT domain AS module FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) ?? null;
+	}
+
+	moduleLabel(module: string | null): string {
+		return module === null ? "模块" : (this.#domains().get(module)?.title ?? module);
+	}
+
+	privateLabel(ticketId: string): string | null {
+		const ticket = this.#privateTicket(ticketId);
+		return ticket && this.moduleLabel(ticket.module);
+	}
+
+	/** A private ticket's title was written with private data at hand, so text about anything else names it only by its module. */
+	ticketName(ticketId: string): string {
+		const row = this.#get("SELECT title, domain, touched_private_at FROM tickets WHERE id = ?", ticketId);
+		return `${ticketId}「${row?.touched_private_at == null ? (row?.title ?? "") : `一个${this.moduleLabel(row.domain)}的私密任务`}」`;
+	}
+
+	/**
+	 * A card is answered once a reply names it or its trigger backed a decision. A reply from before replies
+	 * named their cards answers every card about its cause that came before it.
+	 */
+	answered(actionId: string): boolean {
+		return Boolean(
+			this.#get(
+				`SELECT EXISTS (SELECT 1 FROM reply_receipts r, json_each(r.answers) j WHERE j.value = ?)
+					OR EXISTS (SELECT 1 FROM actions a JOIN triggers t ON t.id = json_extract(a.payload, '$.triggerId') WHERE a.id = ? AND t.disposition != 'to_router')
+					OR EXISTS (SELECT 1 FROM actions a JOIN reply_receipts r ON r.answers IS NULL AND r.created_at >= a.created_at
+						AND r.cause = ${CARD_CAUSE} WHERE a.id = ?) AS answered`,
+				actionId,
+				actionId,
+				actionId,
+			).answered,
+		);
+	}
+
+	routerSaw(id: string): void {
+		const heard = this.#privacyOf(id);
+		if (heard) this.#run("INSERT INTO router_private (at, module) VALUES (?, ?)", this.#now(), heard.module);
+	}
+
+	/** What a Worker's `read_ticket` returns: its own ticket, a thread it subscribes, or a trigger in one of those threads or among its inputs. */
+	workerRead(ticketId: string, id: string | undefined): ReadResult {
+		const own = this.read(ticketId);
+		if (own?.type !== "ticket") throw new Error(`找不到任务 ${ticketId}`);
+		if (!id || id === ticketId) return own;
+		const target = this.read(id);
+		const origin = this.#originOf(ticketId);
+		const allowed =
+			(target?.type === "thread" && own.threadIds.includes(id) && feedMayReach(origin, target.thread.source)) ||
+			(target?.type === "trigger" &&
+				((target.threadIds.some((t) => own.threadIds.includes(t)) && feedMayReach(origin, target.trigger.source)) ||
+					own.recentInputs.some((i) => i.triggerId === id)));
+		if (!allowed) throw new Error(`${id} 不属于本任务，读不到`);
+		if (this.#privacyOf(id)) this.touchPrivate(ticketId);
+		return target;
+	}
+
+	/** A subscriber can read every trigger in the thread, so subscribing is reading them. Reading the thread itself shows only ids. */
+	#holdsPrivate(threadId: string): boolean {
+		return this.#column("SELECT trigger_id AS v FROM trigger_threads WHERE thread_id = ?", threadId).some((id) => this.#privacyOf(id) !== null);
+	}
+
+	#privacyOf(id: string): { module: string | null } | null {
+		if (id.startsWith("tkt_")) return this.#privateTicket(id);
+		const written = this.#get("SELECT module FROM private_text WHERE id = ?", id);
+		if (written) return { module: written.module };
+		if (!id.startsWith("trg_")) return null;
+		const feed = this.#get("SELECT source FROM triggers WHERE id = ? AND private = 1", id);
+		if (feed) return { module: ruleNamespace(feed.source) };
+		const answered = this.#answerOf(id)?.ticketId;
+		const quoted = this.#get("SELECT line_id FROM trigger_quotes WHERE trigger_id = ?", id)?.line_id;
+		return (answered && this.#privacyOf(answered)) || (quoted && this.#privacyOf(quoted)) || null;
+	}
+
+	/** The newest private data the current Router session holds, or null when it holds none. */
+	lastPrivate(): { module: string | null } | null {
+		const row = this.#get("SELECT module FROM router_private ORDER BY at DESC, rowid DESC LIMIT 1");
+		return row ? { module: row.module } : null;
+	}
+
+	/** Recorded when the reply was written, so a 清屏 between writing and sending does not change it. */
+	privateReply(replyId: string): { module: string | null } | null {
+		const row = this.#get("SELECT module FROM private_text WHERE id = ?", replyId);
+		return row ? { module: row.module } : null;
+	}
+
+	#routerWrote(id: string, privateCause: { module: string | null } | null = null): void {
+		const heard = privateCause ?? this.lastPrivate();
+		if (!heard) return;
+		if (id.startsWith("tkt_")) this.touchPrivate(id);
+		else this.#run("INSERT INTO private_text (id, module) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", id, heard.module);
+	}
+
+	routerStartedFresh(): void {
+		this.#run("DELETE FROM router_private");
 	}
 
 	heardOtherThanUser(ticketId: string): "trigger" | "note" | "web" | undefined {
@@ -1140,13 +1300,13 @@ export class Kernel {
 			case "open_ticket":
 				return this.#openTicket(d, takenThisRoute);
 			case "hand_over": {
-				const trigger = this.#get("SELECT id, body FROM triggers WHERE id = ?", d.triggerId);
+				const trigger = this.#get("SELECT id, body, source FROM triggers WHERE id = ?", d.triggerId);
 				if (!trigger) return reject(`unknown trigger ${d.triggerId}`);
 				const unusable = this.#evidenceProblem(d.triggerId, takenThisRoute);
 				if (unusable) return reject(unusable);
 				const bound = this.#boundTicket(d.triggerId);
 				if (bound && bound !== d.ticketId) return reject(answerOnly(d.triggerId, bound));
-				const problem = this.#acceptsInput(d.ticketId);
+				const problem = this.#acceptsInput(d.ticketId) ?? feedProblem(this.#originOf(d.ticketId), trigger.source, `trigger ${d.triggerId}`);
 				if (problem) return reject(problem);
 				const kind: InputKind = this.#inConversation(d.triggerId) ? "user_message" : "trigger";
 				this.#addInput(d.ticketId, kind, trigger.body, d.triggerId);
@@ -1202,18 +1362,29 @@ export class Kernel {
 				return reject(`rule ${d.ruleId} does not exist in the user's rule files or does not apply to source ${trigger.source}`);
 			}
 		}
-		const threads = [...new Set(d.threads ?? [])];
-		for (const threadId of threads) {
-			if (threadId === CONVERSATION_THREAD_ID) return reject("the conversation thread cannot be subscribed");
-			if (!this.#get("SELECT 1 FROM threads WHERE id = ?", threadId) && !SOURCE_THREAD.test(threadId)) {
-				return reject(`unknown thread ${threadId}; new threads must look like thr_<source>:<thread>`);
-			}
-		}
 		const asked = typeof d.domain === "string" ? d.domain.trim() || undefined : (d.domain ?? undefined);
 		const ruled = d.basis === "rule" ? this.#domainOfRule(d.ruleId!) : null;
 		const unpickable = asked === undefined || asked === ruled ? undefined : this.#whyNotPickable(asked);
 		if (unpickable) return reject(unpickable);
 		const domain = ruled ?? asked ?? null;
+		const origin: Origin = { basis: d.basis, source: trigger?.source ?? null, domain };
+		if (trigger && !feedMayReach(origin, trigger.source)) {
+			const whose = ruled === null ? `domain ${domain}` : `rule ${d.ruleId} belongs to domain ${ruled}`;
+			return reject(`trigger ${trigger.id} comes from module feed ${trigger.source}, so its ticket must be in domain ${ruleNamespace(trigger.source)} or have no domain; ${whose}`);
+		}
+		if (domain !== null && openerOf(origin) === "host-source" && this.#domains().get(domain)?.privateFeed) {
+			return reject(`domain ${domain} holds private data its feed brought in, and a ticket opened from source ${origin.source} has bash or web_get; omit domain, or let the user ask for it in the conversation`);
+		}
+		const threads = [...new Set(d.threads ?? [])];
+		for (const threadId of threads) {
+			if (threadId === CONVERSATION_THREAD_ID) return reject("the conversation thread cannot be subscribed");
+			const known = this.#get("SELECT source FROM threads WHERE id = ?", threadId);
+			if (!known && !SOURCE_THREAD.test(threadId)) {
+				return reject(`unknown thread ${threadId}; new threads must look like thr_<source>:<thread>`);
+			}
+			const feed = known && feedProblem(origin, known.source, `thread ${threadId}`);
+			if (feed) return reject(feed);
+		}
 		if (d.basis === "inference") {
 			const limitProblem = this.#inferenceDailyLimitProblem();
 			if (limitProblem) return reject(limitProblem);
@@ -1243,6 +1414,7 @@ export class Kernel {
 			const source = threadId.match(SOURCE_THREAD)?.[1];
 			if (source) this.#run("INSERT INTO threads (id, source, title) VALUES (?, ?, NULL) ON CONFLICT (id) DO NOTHING", threadId, source);
 			this.#run("INSERT INTO subscriptions (ticket_id, thread_id) VALUES (?, ?)", ticketId, threadId);
+			if (this.#holdsPrivate(threadId)) this.touchPrivate(ticketId);
 		}
 		this.#addInput(ticketId, "brief", d.brief, d.triggerId ?? null);
 		if (d.triggerId !== undefined) takenThisRoute.add(d.triggerId);
@@ -1299,7 +1471,7 @@ export class Kernel {
 			this.#servingDigest(this.#ticketRow(ticketId)!.domain),
 			ticketId,
 		);
-		if (triggerId !== null && this.#get("SELECT private FROM triggers WHERE id = ?", triggerId)?.private === 1) this.touchPrivate(ticketId);
+		if (triggerId !== null && this.#privacyOf(triggerId)) this.touchPrivate(ticketId);
 		this.#wake(ticketId);
 	}
 
@@ -1348,14 +1520,18 @@ export class Kernel {
 		this.#run("UPDATE triggers SET disposition = ?, disposition_detail = ? WHERE id = ?", disposition, detail, triggerId);
 	}
 
-	#openSubscribersOf(threadIds: string[]): string[] {
+	/** Checked again at delivery: a state DB from before ADR-0018 may hold a subscription the decision would refuse now. */
+	#openSubscribersOf(threadIds: string[], source: string): string[] {
 		if (threadIds.length === 0) return [];
-		return this.#column(
-			`SELECT DISTINCT s.ticket_id AS v FROM subscriptions s JOIN tickets t ON t.id = s.ticket_id
+		return this.#all(
+			`SELECT DISTINCT s.ticket_id AS id, t.basis, g.source, t.domain, t.created_at FROM subscriptions s JOIN tickets t ON t.id = s.ticket_id
+			 LEFT JOIN triggers g ON g.id = t.origin_trigger_id
 			 WHERE t.stopped_at IS NULL AND t.closed_at IS NULL AND s.thread_id IN (${threadIds.map(() => "?").join(", ")})
 			 ORDER BY t.created_at`,
 			...threadIds,
-		);
+		)
+			.filter((row) => feedMayReach({ basis: row.basis, source: row.source ?? null, domain: row.domain }, source))
+			.map((row) => row.id);
 	}
 
 	#inConversation(triggerId: string): boolean {

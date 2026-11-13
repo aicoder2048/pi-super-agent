@@ -241,6 +241,8 @@ flowchart TB
 
   它把环境装进数据目录的 `files/venv-<12 位>`，打印一行装好了。代码里用 `process.env.PSA_MODULE_VENV` 找到它，例如 `join(process.env.PSA_MODULE_VENV, "bin", "python")`。换了依赖（`uv.lock` 变了）要再跑一次 setup，换机器也要跑一次。`just module check` 跑工具用例时也用这个环境，所以用到 Python 的用例要先 setup。没有 `uv` 或者拿不到依赖时，它说明怎么办。
 - **跑得久的 feed。** 一次调用默认最多 20 秒。在 `feed.json` 写 `"limit": "5m"` 放宽，最多 `"10m"`。
+- **feed 里的时间。** feed 的输入里有 `now`，是宿主时钟的 ISO 时间。判断数据新不新鲜、是不是换了一天，都用它，不要读自己进程的挂钟，这样测试和回放能用假时钟。样例（fixtures）的 `input` 里可以写 `now`，固定排练时的时间。
+- **按昨收提醒。** 行情一类的 `series` 在 `collection.json` 的 `watch` 里多写 `"prevClose": "<昨收那一列>"`，就能设 `day-move`（当天相对昨收涨跌到 N%）。`"label"` 写一句短说明（例如 `"延迟行情"`），提醒里用它代替「来自 <原件>」。
 
 ## 4. 动手前：你的领域属于哪一档
 

@@ -57,8 +57,8 @@ export function parseCollected(output: Json, into?: CollectionDescriptor): Colle
 export const intoOf = (feed: Pick<FeedDescriptor, "into">, components: readonly Component[]): CollectionDescriptor | undefined =>
 	components.find((c): c is Extract<Component, { kind: "data" }> => c.kind === "data" && c.name === feed.into)?.collection;
 
-export type Held = { cursor: string | null; rows(collection: string): readonly Row[]; watchedKeys: readonly string[] };
-export const NOTHING_HELD: Held = { cursor: null, rows: () => [], watchedKeys: [] };
+export type Held = { cursor: string | null; rows(collection: string): readonly Row[]; watchedKeys: readonly string[]; now: number };
+export const nothingHeld = (now: number): Held => ({ cursor: null, rows: () => [], watchedKeys: [], now });
 
 export function feedInput(feed: FeedDescriptor, items: readonly Json[], held: Held, fixture?: FeedFixture): FeedInput {
 	const given = fixture?.input ?? {};
@@ -66,6 +66,7 @@ export function feedInput(feed: FeedDescriptor, items: readonly Json[], held: He
 		items,
 		cursor: held.cursor,
 		watchedKeys: held.watchedKeys,
+		now: new Date(held.now).toISOString(),
 		...given,
 		settings: { ...feed.settings, ...(given["settings"] as object | undefined) },
 		rows: { ...Object.fromEntries((feed.reads ?? []).map((c) => [c, held.rows(c)])), ...(given["rows"] as object | undefined) },
@@ -82,6 +83,7 @@ async function fromHandler({ module, source, feed, name, dir, components }: Feed
 		cursor: data.feedState(module, source).cursor,
 		rows: (c) => data.query(module, components, c, { limit: READ_LIMIT }, source).rows,
 		watchedKeys: "conditions" in watched ? [...new Set(watched.conditions.map((c) => c.key))] : [],
+		now: ports.now(),
 	}, fixture);
 	const site = { packageDir: dir, component: join("feeds", name), dataDir: data.dir(module) };
 	const limitMs = feed.limit === undefined ? (ports.limitMs ?? LIMIT_MS) : everyMs(feed.limit);
