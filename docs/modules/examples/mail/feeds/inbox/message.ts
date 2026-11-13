@@ -163,7 +163,7 @@ export function messageRow(message: GmailMessage): MessageRow {
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
-const clean = (text: string) =>
+export const clean = (text: string) =>
 	text
 		.replace(/\p{Cf}/gu, "")
 		.replace(/[\s\p{Cc}\p{Zl}\p{Zp}]+/gu, " ")

@@ -3,10 +3,12 @@ import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writ
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { hostLineLabel } from "../src/client/board-format.mjs";
 import { Host } from "../src/host/host.ts";
 import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { createGateway } from "../src/modules/gateway.ts";
+import { googlePort } from "../src/modules/google-port.ts";
 import { instanceData } from "../src/modules/instance-data.ts";
 import { moduleDataDir } from "../src/modules/knowledge.ts";
 import { ModuleStore } from "../src/modules/live.ts";
@@ -413,7 +415,7 @@ test("金丝雀：mail 模块的信，正文里的一串字经过三行通知、
 	const root = mkdtempSync(join(tmpdir(), "psa-canary-mail-"));
 	const stateDir = join(root, "state");
 	const box = new FakeInbox();
-	const google = await startFakeGoogle({ routes: box.routes, refreshTokens: { "1//fake-refresh-mail": "https://www.googleapis.com/auth/gmail.readonly" } });
+	const google = await startFakeGoogle({ routes: box.routes, refreshTokens: { "1//fake-refresh-mail": "https://www.googleapis.com/auth/gmail.readonly", "1//fake-refresh-draft": "https://www.googleapis.com/auth/gmail.compose" } });
 	const pkg = join(root, "modules", "mail");
 	cpSync(join(import.meta.dirname, "../docs/modules/examples/mail"), pkg, { recursive: true });
 	const feedJson = join(pkg, "feeds", "inbox", "feed.json");
@@ -423,7 +425,7 @@ test("金丝雀：mail 模块的信，正文里的一串字经过三行通知、
 	const store = new ModuleStore(join(stateDir, "module-store"));
 	assert.ok(store.keep(MAIL, scan.scan.digest, pkg));
 	const modules = servedAsHost(Modules.load([join(root, "modules")]));
-	const secrets: Record<string, string> = { GOOGLE_OAUTH_CLIENT_ID: google.client.id, GOOGLE_OAUTH_CLIENT_SECRET: google.client.secret, GMAIL_READ_REFRESH_TOKEN: "1//fake-refresh-mail" };
+	const secrets: Record<string, string> = { GOOGLE_OAUTH_CLIENT_ID: google.client.id, GOOGLE_OAUTH_CLIENT_SECRET: google.client.secret, GMAIL_READ_REFRESH_TOKEN: "1//fake-refresh-mail", GMAIL_DRAFT_REFRESH_TOKEN: "1//fake-refresh-draft" };
 	const rows = instanceData(stateDir);
 	const mailComponents = modules.feeds().find((e) => e.source === "mail/inbox")!.components;
 	rows.write(MAIL, mailComponents, "senders", [{ address: "ann@example.com" }], "使用者口述", "test");
@@ -434,11 +436,13 @@ test("金丝雀：mail 模块的信，正文里的一串字经过三行通知、
 		rows,
 		secret: () => undefined,
 		log: () => {},
+		google: googlePort({ secret: (name) => secrets[name], oauthUrl: google.url, fixtures: false }),
 	});
 	const brain: Brain = (cards) =>
 		cards.flatMap((card): ToolCallSpec[] => {
 			if (card.startsWith("[候选触发]") && card.includes("季度对账单")) return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "inference", triggerId: ids(card, "trg"), title: "看信", brief: "看信", domain: MAIL }] } }];
 			if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `转述：${card.split("\n")[1]}`, cause: ids(card, "tkt") } }];
+			if (card.startsWith("[对话]") && card.includes("回那封信")) return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId: ids(card, "trg"), title: "回信", brief: "回信", domain: MAIL }] } }];
 			return [];
 		});
 	const tg = await FakeTelegram.start();
@@ -446,6 +450,11 @@ test("金丝雀：mail 模块的信，正文里的一串字经过三行通知、
 	const spawner = new FakeSpawner((worker, input) => {
 		if (!input.startsWith("[任务说明]")) return;
 		void (async () => {
+			if (host.kernel.getTicket(worker.spec.ticketId)!.title === "回信") {
+				const made = (await worker.request("worker.domain_tool", { name: "draft-reply", input: { messageId: "m-1", body: `周四可以 ${CANARY_MAIL}` } })) as { subject: string };
+				worker.report({ status: "ready", summary: `草稿写好了：${made.subject}` });
+				return worker.settle();
+			}
 			const read = (await worker.request("worker.data", { op: "query", collection: "messages" })) as { rows: { fields: { body: string } }[] };
 			worker.report({ status: "ready", summary: `信里说：${read.rows.map((r) => r.fields.body).join("；")}` });
 			worker.settle();
@@ -477,7 +486,16 @@ test("金丝雀：mail 模块的信，正文里的一串字经过三行通知、
 	await until(() => phone().includes("通知：邮件：Ann Lee <ann@example.com>\n季度对账单\n附件是对账单"), "三行通知到了 Telegram", 10_000);
 	await until(() => host.kernel.conversation(500).some((l) => l.text.includes(CANARY_MAIL)), "网页上的转述有正文", 10_000);
 	await until(() => phone().includes(privateLine("邮件")), "看信任务的转述在 Telegram 上是一行提示", 10_000);
+	host.say("帮我回那封信");
+	await until(() => host.kernel.conversation(500).some((l) => l.who === "receipt" && l.text.includes("收件人：ann@example.com")), "网页上有写草稿的收据", 10_000);
+	const receipt = host.kernel.conversation(500).find((l) => l.who === "receipt")!;
+	assert.equal(hostLineLabel(receipt), "邮件（只在本机）", "收据在网页和终端上标着模块名和只在本机");
+	await until(() => host.kernel.conversation(500).some((l) => l.text.includes("草稿写好了")), "网页上的转述说草稿写好了", 10_000);
+	await until(() => phone().filter((text) => text === privateLine("邮件")).length === 2, "回信任务的转述在 Telegram 上是一行提示", 10_000);
+	assert.equal(box.drafts.length, 1, "建了一封草稿");
+	assert.match(box.drafts[0]!.raw, /^To: ann@example\.com\r\n/);
 	await new Promise((r) => setTimeout(r, 200));
+	assert.deepEqual([...tg.sent.map((m) => m.text), ...tg.edits.map((e) => e.text)].filter((text) => text.includes("收件人") || text.includes("草稿")), [], "收据和草稿的转述都不上 Telegram");
 	assert.deepEqual([...tg.sent.map((m) => m.text), ...tg.edits.map((e) => e.text)].filter((text) => text.includes(CANARY_MAIL)), []);
 	assert.ok(!google.log.some((line) => line.includes("SEND")), "没有发信的请求");
 });
