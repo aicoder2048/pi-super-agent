@@ -313,44 +313,52 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 
 **Files.**
 
-- [ ] Create `docs/modules/examples/stock-ta/tools/earnings-date/`（`tool.json`、`index.ts`、fixtures）。
-- [ ] Edit `docs/modules/examples/stock-ta/agents/risk-plan.md`，`uses` 加 `earnings-date`，写清什么时候提示跳空风险。
-- [ ] Create `docs/modules/examples/stock-ta/evals/earnings-gap.md`。
-- [ ] Edit `docs/modules/stock-ta.md`。Edit `tests/stock-ta.test.ts`。Create `docs/modules/evidence/r3-live.ts`。
+- [x] Create `docs/modules/examples/stock-ta/tools/earnings-date/`（`tool.json`、`index.ts`、fixtures）。
+- [x] Edit `docs/modules/examples/stock-ta/agents/risk-plan.md`，`uses` 加 `earnings-date`，写清什么时候提示跳空风险。
+- [x] Create `docs/modules/examples/stock-ta/evals/earnings-gap.md`。
+- [x] Edit `docs/modules/stock-ta.md`。Edit `tests/stock-ta.test.ts`。Create `docs/modules/evidence/r3-live.ts`。
 
 **Build.**
 
-- [ ] `earnings-date` 工具。输入 `symbol`。请求 Finnhub `/calendar/earnings?from=<今天>&to=<今天+120 天>&symbol=`，请求头 `X-Finnhub-Token`，解析照抄 `src/sources/market/finnhub.ts` 的 `parseCalendar`。回下一次财报的日期、盘前还是盘后、离今天几个交易日，没有就回「120 天内没有已公布的财报日」。不回预期、实际 EPS 和营收，不碰 `/stock/earnings`。`secrets: ["FINNHUB_API_KEY"]`，只读，18 秒内结束。
-- [ ] 风险计划每次给计划都查一次。财报日在计划的持有期内，或在 10 个交易日内（Appendix E 第 7 条），计划里单独一行写「财报日 <日期>（盘前/盘后），持有过财报有跳空风险，止损可能按跳空价成交」。查不到时写「没查到财报日」，不编。
-- [ ] 不加财报解读，不读新闻。模块的说明里写明它只管客观交易数据。
+- [x] `earnings-date` 工具。输入 `symbol`。请求 Finnhub `/calendar/earnings?from=<今天>&to=<今天+120 天>&symbol=`，请求头 `X-Finnhub-Token`，解析照抄 `src/sources/market/finnhub.ts` 的 `parseCalendar`。回下一次财报的日期、盘前还是盘后、离今天几个交易日，没有就回「120 天内没有已公布的财报日」。不回预期、实际 EPS 和营收，不碰 `/stock/earnings`。`secrets: ["FINNHUB_API_KEY"]`，只读，18 秒内结束。
+- [x] 风险计划每次给计划都查一次。财报日在计划的持有期内，或在 10 个交易日内（Appendix E 第 7 条），计划里单独一行写「财报日 <日期>（盘前/盘后），持有过财报有跳空风险，止损可能按跳空价成交」。查不到时写「没查到财报日」，不编。
+- [x] 不加财报解读，不读新闻。模块的说明里写明它只管客观交易数据。
 
 **You see.**
 
-- [ ] 问 stock-ta「NVDA 在 170 进、160 止损、190 目标，怎么看」，风险计划的汇报里有一行财报日和跳空风险（财报在窗口内时），或者一行「下一次财报在 <日期>，不在持有期内」。
+- [x] 问 stock-ta「NVDA 在 170 进、160 止损、190 目标，怎么看」，风险计划的汇报里有一行财报日和跳空风险（财报在窗口内时），或者一行「下一次财报在 <日期>，不在持有期内」。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/stock-ta.test.ts` 新增：日历解析（多条取最近的未来一条、今天盘后算今天、空列表）、交易日计数跳过周末和节假日、没有密钥一行说明、429 一行说明。用 fixtures。Run `just test`.
+- [x] `tests/stock-ta.test.ts` 新增：日历解析（多条取最近的未来一条、今天盘后算今天、空列表）、交易日计数跳过周末和节假日、没有密钥一行说明、429 一行说明。用 fixtures。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/r3-live.ts`，lane 5、6、8 用真接口。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都调 `risk-reward`（同样的进场、止损、目标）。Save `r3-regression.txt`. Pass when 结果相同。trunk 没有财报日工具，这一点记下来，由 lane 2 到 9 把关。
-- [ ] Lane 2. fixtures 里财报在 3 个交易日后。Save `r3-near.txt`. Pass when 工具回日期、盘前或盘后、3。
-- [ ] Lane 3. fixtures 里 120 天内没有财报。Save `r3-none.txt`. Pass when 回「120 天内没有已公布的财报日」。
-- [ ] Lane 4. 没有 `FINNHUB_API_KEY`。Save `r3-no-key.txt`. Pass when 一行说明，不发请求。
-- [ ] Lane 5. 真接口查 NVDA、MSFT、SPY。Save `r3-real.txt`. Pass when NVDA、MSFT 有日期，SPY 回没有财报日，不报错。
-- [ ] Lane 6. 真模型跑 `evals/earnings-gap.md`。Save `r3-eval.txt`. Pass when 汇报里有财报日和跳空风险那一行，日期和 lane 5 的一致。
-- [ ] Lane 7. 假模型让结构形态越出 `uses` 调 `earnings-date`。Save `r3-uses.txt`. Pass when 被拒，只有风险计划能用。
-- [ ] Lane 8. 同一个代码连查 5 次。Save `r3-repeat.txt`. Pass when 5 次结果相同，没有 429。
-- [ ] Lane 9. 读工具的输出 schema。Save `r3-schema.txt`. Pass when 没有 EPS、营收、预期这些字段。
-- [ ] Lane 10. `just module check docs/modules/examples/stock-ta`。Save `r3-check.txt`. Pass when ok。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都调 `risk-reward`（同样的进场、止损、目标）。Save `r3-regression.txt`. Pass when 结果相同。trunk 没有财报日工具，这一点记下来，由 lane 2 到 9 把关。
+- [x] Lane 2. fixtures 里财报在 3 个交易日后。Save `r3-near.txt`. Pass when 工具回日期、盘前或盘后、3。
+- [x] Lane 3. fixtures 里 120 天内没有财报。Save `r3-none.txt`. Pass when 回「120 天内没有已公布的财报日」。
+- [x] Lane 4. 没有 `FINNHUB_API_KEY`。Save `r3-no-key.txt`. Pass when 一行说明，不发请求。
+- [x] Lane 5. 真接口查 NVDA、MSFT、SPY。Save `r3-real.txt`. Pass when NVDA、MSFT 有日期，SPY 回没有财报日，不报错。
+- [x] Lane 6. 真模型跑 `evals/earnings-gap.md`。Save `r3-eval.txt`. Pass when 汇报里有财报日和跳空风险那一行，日期和 lane 5 的一致。
+- [x] Lane 7. 假模型让结构形态越出 `uses` 调 `earnings-date`。Save `r3-uses.txt`. Pass when 被拒，只有风险计划能用。
+- [x] Lane 8. 同一个代码连查 5 次。Save `r3-repeat.txt`. Pass when 5 次结果相同，没有 429。
+- [x] Lane 9. 读工具的输出 schema。Save `r3-schema.txt`. Pass when 没有 EPS、营收、预期这些字段。
+- [x] Lane 10. `just module check docs/modules/examples/stock-ta`。Save `r3-check.txt`. Pass when ok。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. trunk 没有这个工具。量一次 `earnings-date` 调用的宿主侧时间，和风险计划一次汇报的输入 token 数（trunk 和 head 都有风险计划）。
-- [ ] Probe. 工具调 20 次。风险计划同一道题 trunk 和 head 交替各 3 次。
-- [ ] Baseline. Record the trunk 风险计划输入 token 中位数 first.
-- [ ] Rule. 工具中位数超过 2 秒就失败。风险计划输入 token 比 trunk 多 15% 以上就失败。
+- [x] Metric. trunk 没有这个工具。量一次 `earnings-date` 调用的宿主侧时间，和风险计划一次汇报的输入 token 数（trunk 和 head 都有风险计划）。
+- [x] Probe. 工具调 20 次。风险计划同一道题 trunk 和 head 交替各 3 次。
+- [x] Baseline. Record the trunk 风险计划输入 token 中位数 first.
+- [x] Rule. 工具中位数超过 2 秒就失败。风险计划输入 token 比 trunk 多 15% 以上就失败。
+
+**Evidence.** 2026-11-13 在 psa/rt-r3-earnings 上（8aee262、b7d193e），美东 14:50 到 15:40 跑 `docs/modules/evidence/r3-live.ts`，输出在 `/tmp/swarm-r3/owner/`。`just test` 1937 个全过，`check.mjs` 全绿，`just module check` 为 ok（tools=10 skills=5 agents=6 evals=4）。
+
+- 单元：`tests/stock-ta.test.ts` 新增 8 条、改 1 条（包检查改成十个工具），先红后绿（红：`tools/earnings-date/tool.json is missing`、`Cannot find module .../tools/earnings-date/index.ts`，9 条全失败）。
+- 数据形状：日历行在边界上只留 `date`、`time`（盘前、盘后、盘中、时间未公布）、`reported`（有没有实际 EPS，只用来跳过已公布的，不往外给）；输出是 `{symbol, today, date, time, tradingDays}` 或 `{symbol, today, note}`。休市日表从 `intraday` 挪进 `market-days.ts` 共用，HTTP 的错误说法由 `massive.ts` 的 `getJson`、`oneLine` 按服务名共用。
+- Lane 1 到 10 全 PASS。Lane 5 真 Finnhub：NVDA 2026-11-17 盘后、2 个交易日；MSFT 2027-01-26 时间未公布、48 个交易日；SPY 回「120 天内没有已公布的财报日」。Lane 8 连查 5 次结果相同，没有 429。旧 Mac 只读查过，密钥文件里有 `FINNHUB_API_KEY`。
+- Lane 6 第一次 FAIL（`r3-eval-first-fail.txt`）：风险计划查到了 11-17 和跳空风险，领队汇总时改写成一句话，汇报里没有「财报日」三个字。`ta-interpret` 原来写「不引财报」，改成财报日这个日期是例外、那一行原样保留以后，第二次 PASS，汇报里单独一行「财报日 2026-11-17（盘后），持有过财报有跳空风险，止损可能按跳空价成交」。这是提示规则，不是结构限制，只跑了这一次通过。
+- Perf：工具 20 次（NVDA、MSFT 交替，真 Finnhub）中位数 234 毫秒（216 到 312）。风险计划输入 token（含缓存，成员会话里每次模型调用相加），trunk cc6f171 和 head b7d193e 交替各 3 次：trunk 中位数 43583（38132 到 45626），head 46709（42111 到 46935），多 7.2%；第一次调用 4615 对 5001，多 8.4%，是多出来的工具说明和提示。head 三次都调了 `earnings-date`。
 
 **Review gate.** None. R3 is not review-gated.
 
