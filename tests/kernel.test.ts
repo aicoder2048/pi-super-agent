@@ -2319,3 +2319,19 @@ test("幕僚长会话里的私密数据：引用一行私密的话也算交给�
 	quote(answer.triggerId);
 	assert.deepEqual(s.kernel.lastPrivate(), { module: "mail" }, "点选回答私密任务的那句话");
 });
+
+test("幕僚长会话里有私密数据时，它开的任务和它补给任务的话都让任务算私密；没有时不算", () => {
+	const s = setup({ domains: DOMAINS });
+	const before = s.open("request", { title: "查天气" });
+	assert.equal(s.kernel.touchedPrivate(before), false);
+	const health = s.open("request", { title: "记 CEA", domain: "mail" });
+	s.kernel.touchPrivate(health);
+	s.kernel.routerSaw(health);
+
+	assert.equal(s.kernel.touchedPrivate(s.open("request", { title: "解释 CEA 4.2" })), true, "会话里有私密数据时开的任务");
+	assert.ok(s.kernel.note({ ticketId: before, text: "CEA 是 4.2" }).ok);
+	assert.equal(s.kernel.touchedPrivate(before), true, "会话里有私密数据时补的话");
+
+	s.kernel.routerStartedFresh();
+	assert.equal(s.kernel.touchedPrivate(s.open("request", { title: "查明天天气" })), false, "换新会话后开的任务");
+});

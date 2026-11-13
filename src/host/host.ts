@@ -259,7 +259,7 @@ export class Host {
 			this.#log,
 		);
 		// Built before any client can say a line, so every line and reply reaches it; it touches the network only once started.
-		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }), privateTitle: (ticketId) => this.#privateTitle(ticketId), routerHeardPrivate: () => this.#routerHeardPrivate() }, db: this.#db, clock, log: this.#log });
+		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }), privateTitle: (ticketId) => this.#privateTitle(ticketId), privateReply: (replyId) => this.#privateReply(replyId) }, db: this.#db, clock, log: this.#log });
 	}
 
 	static async start(options: HostOptions): Promise<Host> {
@@ -382,9 +382,8 @@ export class Host {
 
 	clearConversation(): void {
 		const cleared = this.kernel.clearConversation(CONVERSATION_LINES);
-		if (!cleared) return;
 		this.router.startOver();
-		this.#broadcast({ type: "cleared", conversation: this.kernel.conversation(CONVERSATION_LINES), cleared });
+		if (cleared) this.#broadcast({ type: "cleared", conversation: this.kernel.conversation(CONVERSATION_LINES), cleared });
 	}
 
 	#boardState(): BoardState {
@@ -408,15 +407,16 @@ export class Host {
 
 	#privateTitle(ticketId: string): string | null {
 		if (!this.kernel.touchedPrivate(ticketId)) return null;
-		const domain = this.kernel.getTicket(ticketId)?.domain;
-		if (!domain) return "模块";
-		return this.#moduleTitle(domain);
+		return this.#privateLabel(this.kernel.getTicket(ticketId)?.domain ?? null);
 	}
 
-	#routerHeardPrivate(): string | null {
-		const last = this.kernel.lastPrivate();
-		if (!last) return null;
-		return last.module === null ? "模块" : this.#moduleTitle(last.module);
+	#privateReply(replyId: string): string | null {
+		const heard = this.kernel.privateReply(replyId);
+		return heard && this.#privateLabel(heard.module);
+	}
+
+	#privateLabel(module: string | null): string {
+		return module ? this.#moduleTitle(module) : "模块";
 	}
 
 	#deliverReply(threadId: string, text: string, replyId: string, ticketId: string | null | undefined): void {

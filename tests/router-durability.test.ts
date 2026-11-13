@@ -76,3 +76,13 @@ test("清屏换一个新的 Router 会话：会话 id 变了，新会话里没�
 	assert.ok(!remembers(restarted), "重启后没有接回清屏前的会话");
 	assert.deepEqual(titles(second.host), ["记一下旧的话"], "任务还在");
 });
+
+test("清屏时对话里一行都没有，也换一个新的 Router 会话", async (t) => {
+	const { host } = await hostWith(tempStateDir(), opensTickets);
+	t.after(() => host.stop());
+	const session = () => (host.router as Router).session;
+	const oldId = session().sessionManager.getSessionId();
+	assert.equal(host.kernel.conversation().length, 0);
+	host.clearConversation();
+	await until(() => session().sessionManager.getSessionId() !== oldId, "清屏后换了会话");
+});

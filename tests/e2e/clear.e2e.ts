@@ -39,7 +39,7 @@ test("清屏：两个页面都打开，一边点清屏两边都清空并出现�
 				await page.click("#clear");
 				await showsOnlyTheBar(page);
 				await showsOnlyTheBar(second);
-				assert.equal(await page.locator("#clear").isDisabled(), true, "对话空了，清屏按钮不可点");
+				assert.equal(await page.locator("#clear").isDisabled(), false, "对话空了，清屏按钮仍可点：幕僚长的会话里可能还有没显示成一行的私密数据");
 			});
 			await step("第二个页面点细线，只在这一页展开被清掉的行", async (page) => {
 				await bar(second).click();

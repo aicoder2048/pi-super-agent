@@ -39,8 +39,8 @@ export interface TelegramHost {
 	board(): Board;
 	/** The module's title when the ticket touched private data: its reports and cards then go out as one line pointing to the web page. Null: in full. */
 	privateTitle(ticketId: string): string | null;
-	/** The Router's session keeps what it read across turns, restarts and compaction, so while it holds private data every reply goes out as the one line. Null: in full. */
-	routerHeardPrivate(): string | null;
+	/** The module's title when the Router's session held private data as it wrote this reply: it then goes out as the one line. Null: in full. */
+	privateReply(replyId: string): string | null;
 }
 
 export const DEFAULT_TIMING: TelegramTiming = {
@@ -130,7 +130,7 @@ export class TelegramClient {
 				case "reply": {
 					const title = message.ticketId === undefined ? null : this.#host.privateTitle(message.ticketId);
 					if (title !== null || !this.#cardStandsIn(message)) {
-						const text = telegramText(message.text, title ?? this.#host.routerHeardPrivate());
+						const text = telegramText(message.text, title ?? this.#host.privateReply(message.replyId));
 						for (const chat of this.#store.openChats()) this.#store.put(chat, `line:${message.replyId}`, message.replyId, { kind: "line", text, silent: false });
 					}
 					break;

@@ -422,6 +422,7 @@ export class Kernel {
 			const problem = this.#acceptsInput(ticketId);
 			if (problem) return reject(problem);
 			this.#addInput(ticketId, "note", text);
+			this.#privateIfRouterHoldsPrivate(ticketId);
 			return { ok: true };
 		});
 	}
@@ -1069,7 +1070,7 @@ export class Kernel {
 			if (ticket) heard(ticket.domain);
 		}
 		if (id.startsWith("rpl_")) {
-			const reply = this.#get("SELECT module FROM private_replies WHERE reply_id = ?", id);
+			const reply = this.privateReply(id);
 			if (reply) heard(reply.module);
 		}
 		if (!id.startsWith("trg_")) return;
@@ -1085,6 +1086,16 @@ export class Kernel {
 	lastPrivate(): { module: string | null } | null {
 		const row = this.#get("SELECT module FROM router_private ORDER BY at DESC, rowid DESC LIMIT 1");
 		return row ? { module: row.module } : null;
+	}
+
+	/** Recorded when the reply was written, so a 清屏 between writing and sending does not change it. */
+	privateReply(replyId: string): { module: string | null } | null {
+		const row = this.#get("SELECT module FROM private_replies WHERE reply_id = ?", replyId);
+		return row ? { module: row.module } : null;
+	}
+
+	#privateIfRouterHoldsPrivate(ticketId: string): void {
+		if (this.lastPrivate()) this.touchPrivate(ticketId);
 	}
 
 	routerStartedFresh(): void {
@@ -1264,6 +1275,7 @@ export class Kernel {
 			this.#run("INSERT INTO subscriptions (ticket_id, thread_id) VALUES (?, ?)", ticketId, threadId);
 		}
 		this.#addInput(ticketId, "brief", d.brief, d.triggerId ?? null);
+		this.#privateIfRouterHoldsPrivate(ticketId);
 		if (d.triggerId !== undefined) takenThisRoute.add(d.triggerId);
 		if (d.triggerId !== undefined) this.#setDisposition(d.triggerId, "opened_ticket", ticketId);
 		return { ok: true, ticketId };

@@ -295,7 +295,7 @@ async function cardClient(t: TestContext, { allowed = [USER], answer = (): Answe
 		},
 		board: () => state,
 		privateTitle: (ticketId) => state.private.get(ticketId) ?? null,
-		routerHeardPrivate: () => null,
+		privateReply: () => null,
 	};
 	const store = openStore(join(stateDir, "state.db"));
 	const client = new TelegramClient({ api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set(allowed), timing: FAST, host, db: store, clock: { now: () => Date.now() }, log: (l) => logs.push(l) });
