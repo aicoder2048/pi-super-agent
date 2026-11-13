@@ -10,12 +10,32 @@ import {
 	DISPOSITIONS,
 	HELPER_ROLES,
 	INPUT_KINDS,
+	NOTICE_MAX,
 	REPORT_STATUSES,
 	WORKER_STATES,
 } from "./types.ts";
 
 const oneOf = (column: string, values: readonly string[]) =>
 	`CHECK (${column} IN (${values.map((v) => `'${v}'`).join(", ")}))`;
+
+const HOST_LINES_TABLE = (name: string) => `CREATE TABLE IF NOT EXISTS ${name} (
+	id TEXT PRIMARY KEY CHECK (id GLOB 'hln_*'),
+	kind TEXT NOT NULL CHECK (kind IN ('alert', 'receipt', 'notice')),
+	source TEXT NOT NULL,
+	external_id TEXT,
+	text TEXT NOT NULL,
+	occurred_at INTEGER NOT NULL,
+	created_at INTEGER NOT NULL,
+	delivered_at INTEGER,
+	module_title TEXT,
+	module_private INTEGER,
+	CHECK (
+		(kind = 'alert' AND external_id IS NOT NULL AND length(text) BETWEEN 1 AND 1000 AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0)
+		OR (kind = 'receipt' AND external_id IS NULL AND length(text) BETWEEN 1 AND 16000)
+		OR (kind = 'notice' AND external_id IS NULL AND length(text) BETWEEN 1 AND ${NOTICE_MAX})
+	),
+	UNIQUE (source, external_id)
+);`;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS sequence (id INTEGER PRIMARY KEY CHECK (id = 1), value INTEGER NOT NULL);
@@ -219,23 +239,7 @@ CREATE TABLE IF NOT EXISTS conversation_hidden (
 );
 CREATE INDEX IF NOT EXISTS conversation_hidden_at ON conversation_hidden(hidden_at);
 
-CREATE TABLE IF NOT EXISTS host_lines (
-	id TEXT PRIMARY KEY CHECK (id GLOB 'hln_*'),
-	kind TEXT NOT NULL CHECK (kind IN ('alert', 'receipt')),
-	source TEXT NOT NULL,
-	external_id TEXT,
-	text TEXT NOT NULL,
-	occurred_at INTEGER NOT NULL,
-	created_at INTEGER NOT NULL,
-	delivered_at INTEGER,
-	module_title TEXT,
-	module_private INTEGER,
-	CHECK (
-		(kind = 'alert' AND external_id IS NOT NULL AND length(text) BETWEEN 1 AND 1000 AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0)
-		OR (kind = 'receipt' AND external_id IS NULL AND length(text) BETWEEN 1 AND 16000)
-	),
-	UNIQUE (source, external_id)
-);
+${HOST_LINES_TABLE("host_lines")}
 CREATE INDEX IF NOT EXISTS host_lines_today ON host_lines (kind, created_at, source);
 
 -- Two writers, one column each: the user's switch (just module on|off, the first-boot import) and the host's lifecycle record (JSON).
@@ -275,6 +279,18 @@ export function openStore(path: string): DatabaseSync {
 	const triggerColumns = db.prepare("PRAGMA table_info(triggers)").all().map((c) => (c as { name: string }).name);
 	if (!triggerColumns.includes("private")) db.exec("ALTER TABLE triggers ADD COLUMN private INTEGER NOT NULL DEFAULT 0");
 	if (!hostLineColumns.includes("module_title")) db.exec("ALTER TABLE host_lines ADD COLUMN module_title TEXT; ALTER TABLE host_lines ADD COLUMN module_private INTEGER");
+	const hostLinesSql = (db.prepare("SELECT sql FROM sqlite_master WHERE name = 'host_lines'").get() as { sql: string }).sql;
+	// SQLite cannot change a CHECK in place, so a table from before notices is copied into a new one.
+	if (!hostLinesSql.includes("'notice'")) {
+		const columns = "id, kind, source, external_id, text, occurred_at, created_at, delivered_at, module_title, module_private";
+		inTransaction(db, () =>
+			db.exec(`${HOST_LINES_TABLE("host_lines_next")}
+				INSERT INTO host_lines_next (${columns}) SELECT ${columns} FROM host_lines;
+				DROP TABLE host_lines;
+				ALTER TABLE host_lines_next RENAME TO host_lines;
+				CREATE INDEX host_lines_today ON host_lines (kind, created_at, source);`),
+		);
+	}
 	if (!ticketColumns.includes("tokens_cached")) db.exec("ALTER TABLE tickets ADD COLUMN tokens_cached INTEGER NOT NULL DEFAULT 0");
 	const retitle = db.prepare("UPDATE tickets SET title = ? WHERE id = ?");
 	for (const { id, title } of db.prepare("SELECT id, title FROM tickets").all() as { id: string; title: string }[]) {
@@ -295,8 +311,13 @@ export function moduleRows(db: DatabaseSync): ModuleRow[] {
 	return (db.prepare("SELECT name, switch, record FROM module_records ORDER BY name").all() as { name: string; switch: number | null; record: string | null }[]).map((r) => ({
 		name: r.name,
 		switch: r.switch === null ? null : r.switch === 1,
-		record: r.record === null ? null : (JSON.parse(r.record) as ModuleRecord),
+		record: r.record === null ? null : withOpened(JSON.parse(r.record)),
 	}));
+}
+
+function withOpened(record: Omit<ModuleRecord, "opened"> & { opened?: boolean }): ModuleRecord {
+	const { state } = record;
+	return { ...record, opened: record.opened ?? (record.attempts > 0 || state.at === "staging" || state.at === "active" || (state.at === "missing" && state.wasOn)) };
 }
 
 export function setModuleSwitch(db: DatabaseSync, name: string, on: boolean): void {

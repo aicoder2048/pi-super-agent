@@ -215,6 +215,49 @@ test("just say：client-token 和宿主的不一致时打印一行说明，退�
 	assert.deepEqual(host.kernel.conversation(), []);
 });
 
+test("just notify：对着真实宿主发一条通知，对话里多一行「通知」，tail 打成「通知>」；Router 没被叫，没开任务，退出码 0", async (t) => {
+	const stateDir = tempStateDir();
+	let routerTurns = 0;
+	const { host } = await startHost(() => (routerTurns++, []), () => {}, { stateDir });
+	t.after(() => host.stop());
+	const tail = tailSay(stateDir);
+	t.after(tail.stop);
+	const run = await runSay(stateDir, ["notify", "G3", "合并了"]);
+	assert.equal(run.code, 0, run.stderr);
+	await until(() => tail.output().includes("G3 合并了"), "tail 打出通知", 15_000);
+	assert.deepEqual(tail.lines(), ["TIME 通知> G3 合并了"]);
+	assert.deepEqual(host.kernel.conversation().map((l) => [l.who, l.text]), [["notice", "G3 合并了"]]);
+	await new Promise((r) => setTimeout(r, 300));
+	assert.equal(routerTurns, 0);
+	assert.deepEqual(host.kernel.listTickets(), []);
+});
+
+test("just notify：空的通知不连宿主，打一行用法，退出码 1", async () => {
+	const run = await runSay(tempStateDir(), ["notify", " "]);
+	assert.equal(run.code, 1);
+	assert.match(run.stderr.trim(), /^用法：just notify/);
+	assert.equal(run.stderr.trim().split("\n").length, 1, run.stderr);
+});
+
+test("just notify：没有宿主在运行时打一行话，退出码 1", async () => {
+	const stateDir = tempStateDir();
+	writeFileSync(tokenFile(stateDir), `${"ab".repeat(32)}\n`, { mode: 0o600 });
+	const run = await runSay(stateDir, ["notify", "没人收"]);
+	assert.equal(run.code, 1);
+	assert.match(run.stderr.trim(), /连不上宿主.*just host/);
+	assert.equal(run.stderr.trim().split("\n").length, 1, run.stderr);
+});
+
+test("just notify：超过 2000 字时宿主拒收，打出原因，退出码 1，什么都没记", async (t) => {
+	const stateDir = tempStateDir();
+	const { host } = await startHost(() => [], () => {}, { stateDir });
+	t.after(() => host.stop());
+	const run = await runSay(stateDir, ["notify", "长".repeat(2001)]);
+	assert.equal(run.code, 1);
+	assert.match(run.stderr.trim(), /2000/);
+	assert.deepEqual(host.kernel.conversation(), []);
+});
+
 test("socket：升级前就开着的旧客户端每秒重连一次，宿主一分钟内只记一行拒绝日志，每次都照样断开", async (t) => {
 	const lines: string[] = [];
 	const { host } = await startHost(() => [], () => {}, { log: (line) => lines.push(line) });

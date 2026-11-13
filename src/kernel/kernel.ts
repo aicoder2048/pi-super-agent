@@ -1104,8 +1104,8 @@ export class Kernel {
 			.map((r) => ({ externalId: r.external_id, text: r.text, at: r.created_at }));
 	}
 
-	undeliveredAlerts(): HostLine[] {
-		return this.#all("SELECT id, kind, text, created_at, module_title, module_private FROM host_lines WHERE kind = 'alert' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
+	undeliveredLines(): HostLine[] {
+		return this.#all("SELECT id, kind, text, created_at, module_title, module_private FROM host_lines WHERE kind <> 'receipt' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
 	}
 
 	/** Alerts posted since local midnight, oldest first. */

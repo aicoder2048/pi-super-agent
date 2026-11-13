@@ -181,7 +181,7 @@ export function mirrorText(text: string, from?: ImChat): string {
 	return `${from ? "你在另一个 Telegram 账号说" : "你在网页或终端说"}：${text}`;
 }
 
-export function alertText(line: HostLine): string {
+export function hostLineText(line: HostLine): string {
 	return `${hostLineLabel(line)}：${line.text}`;
 }
 

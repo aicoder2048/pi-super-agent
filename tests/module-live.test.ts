@@ -420,11 +420,27 @@ test("模块卡：每个模块一张，写开关、状态和原因、版本和�
 	const tax = cardOf(modules, "tax");
 	assert.deepEqual(
 		{ on: tax.on, label: tax.label, reason: tax.reason, version: tax.version.label, components: tax.components, problems: tax.problems, pinnedOld: tax.pinnedOld },
-		{ on: false, label: "已停用", reason: "你把它关了，数据还留着", version: "0.1.0", components: { skills: 1 }, problems: [], pinnedOld: 0 },
+		{ on: false, label: "已停用", reason: "还没打开过", version: "0.1.0", components: { skills: 1 }, problems: [], pinnedOld: 0 },
 	);
 	assert.equal(tax.title, "报税");
 	assert.equal(tax.version.digest, digestOf(join(dir, "modules/tax")).slice(0, 12));
 	assert.deepEqual([cardOf(modules, "old").on, cardOf(modules, "old").label, cardOf(modules, "old").version.label], [true, "运行中", "旧布局"]);
+});
+
+test("模块卡：打开过再关掉写「你把它关了」；升级前存的记录按有没有跑过来判断", async (t) => {
+	const dir = stateDir(t);
+	const { db, modules } = boot(t, dir);
+	modules.setSwitch("tax", true);
+	await until(() => cardOf(modules, "tax").label === "运行中", "tax 运行中", 2000);
+	modules.setSwitch("tax", false);
+	await until(() => cardOf(modules, "tax").label === "已停用", "tax 已停用", 2000);
+	assert.equal(cardOf(modules, "tax").reason, "你把它关了，数据还留着");
+	const stored = (name: string, attempts: number) => {
+		const { opened: _, ...old } = { ...moduleRows(db).find((r) => r.name === "tax")!.record!, name, attempts };
+		db.prepare("INSERT INTO module_records (name, record) VALUES (?, ?)").run(name, JSON.stringify(old));
+		return describe(moduleRows(db).find((r) => r.name === name)!.record!).reason;
+	};
+	assert.deepEqual([stored("ran-before", 1), stored("never-ran", 0)], ["你把它关了，数据还留着", "还没打开过"]);
 });
 
 test("模块卡的开关写进状态库的同一列，下一次轮询生效并通知；没发现的模块不写", async (t) => {
