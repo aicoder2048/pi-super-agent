@@ -121,6 +121,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 2026-11-12 在 f613e6d 上通过：`tests/module-files.test.ts` 14 条、`tests/module-setup.test.ts` 8 条、`tests/modules-cli.test.ts` 加 1 条（try 的克隆加符号链接），每条先红后绿；`just test` 1664 条里只有已知偶发的「终端 Ctrl+C：Watchdog 不停别人启动的宿主」失败（基线 2ec205d 上也失败，单独重跑三次两次全过），`check.mjs` 全绿。十条 lane 全 PASS，输出在 `/tmp/swarm-s1/owner/s1-*.txt`；样例的 `py/` 依赖公开包 `six`，lane 3 到 5 用真 `uv` 从 PyPI 装，setup 0.4 秒，重跑 0.35 秒，换两次锁文件后只剩当前和上一个 venv。perf 启动 trunk 中位 395.4 ms、head 396.5 ms（各 5 次）；空工具调用 trunk 40.9 ms、head 40.8 ms、带 200 KB `uv.lock` 的包 41.1 ms（各 20 次，每次调用都算一遍锁文件的 sha256）。接缝选环境变量（`PSA_MODULE_DATA`、`PSA_MODULE_VENV`），不在输入里加字段，理由见 PR。
 
+2026-11-12 修复轮在 bd73c2e 上通过（合进 main d03b0d5 之后）：两条检查路径的临时 `files/` 链上已装好的 venv，没装时失败行写着先跑 `just module setup <名字>`（`tests/module-files.test.ts` 4 条，先红在 ENOENT）；模块关掉和宿主停下时调度器杀掉还在跑的 feed 进程组（`tests/scheduler.test.ts` 2 条，先红在数据目录被写回、宿主停下后进程还活着）。`just test` 1670 条全过，`check.mjs` 全绿。十条 lane 对 origin/main 全 PASS，输出在 `/tmp/swarm-s1/fix/s1-*.txt`（lane 10 第一次因临时目录太长、socket 路径超限失败，换短目录重跑通过）。perf 启动 trunk 中位 401.9 ms、head 400.0 ms（各 5 次）；空工具调用 trunk 42.0 ms、head 42.3 ms（各 20 次）。
+
 **Review gate.** None. S1 is not review-gated.
 
 **Merge.**
