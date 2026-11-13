@@ -169,6 +169,40 @@ test("读附件：不认的类型拒绝并写明类型，类型和扩展名对�
 	assert.deepEqual(w.downloads(), []);
 });
 
+test("读附件：通用类型（QQ 邮箱发的 octet-stream 等）按扩展名选读法", async (t) => {
+	const w = await attachmentWorld(t, [ann("m-1", [
+		file("note.txt", "application/octet-stream", "对账单已出"),
+		file("rows.csv", "binary/octet-stream", "a,b\n1,2\n"),
+		file("statement.pdf", "application/octet-stream", textPdf(["Balance 1234.56"])),
+		file("plan.md", "application/x-download", "# 计划"),
+		file("page.html", "", "<p>你好</p>"),
+	])]);
+	const read = async (partId: string) => {
+		const reply = await w.call({ messageId: "m-1", partId });
+		assert.ok(reply.ok, `${partId} ${JSON.stringify(reply)}`);
+		return reply.output as { type: string; text: string; pages: number | null };
+	};
+	assert.deepEqual(await read("1"), { name: "note.txt", type: "application/octet-stream", pages: null, text: "对账单已出", truncated: false });
+	assert.equal((await read("2")).text, "a,b\n1,2\n");
+	const pdf = await read("3");
+	assert.equal(pdf.pages, 1);
+	assert.match(pdf.text, /Balance 1234\.56/);
+	assert.equal((await read("4")).text, "# 计划");
+	assert.equal((await read("5")).text, "你好");
+});
+
+test("读附件：通用类型的 .pdf 开头不是 %PDF- 就拒绝；不认的扩展名不下载就拒绝", async (t) => {
+	const w = await attachmentWorld(t, [ann("m-1", [file("fake.pdf", "application/octet-stream", "MZ not a pdf"), file("run.exe", "application/octet-stream", "MZ")])]);
+	const fake = await w.call({ messageId: "m-1", partId: "1" });
+	assert.ok(!fake.ok);
+	assert.match(fake.note, /fake\.pdf.*不是 PDF/);
+	const before = w.downloads().length;
+	const exe = await w.call({ messageId: "m-1", partId: "2" });
+	assert.ok(!exe.ok);
+	assert.ok(exe.note.includes("这个附件是 application/octet-stream（run.exe），只读 txt、md、csv、html、pdf"), exe.note);
+	assert.equal(w.downloads().length, before, "exe 不下载");
+});
+
 test("读附件：下载超过上限就拒绝，写「附件下载超时」", async (t) => {
 	const w = await attachmentWorld(t, [ann("m-1", [file("slow.txt", "text/plain", "x".repeat(4000), { trickleMs: 3000 })])]);
 	const started = Date.now();

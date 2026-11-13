@@ -60,12 +60,24 @@ function stored({ messageId, partId }: Input): Attachment {
 	}
 }
 
+/** Clients such as QQ Mail label every attachment with one of these, so the extension picks the reader. */
+const GENERIC = new Set(["", "application/octet-stream", "binary/octet-stream", "application/x-download"]);
+
 function readerFor(part: Part): Reader {
 	const filename = part.filename ?? "";
-	const reader = READERS[(part.mimeType ?? "").toLowerCase()];
+	const mimeType = (part.mimeType ?? "").toLowerCase();
 	const extension = filename.includes(".") ? filename.toLowerCase().slice(filename.lastIndexOf(".")) : "";
+	const generic = GENERIC.has(mimeType);
+	const reader = generic ? Object.values(READERS).find((r) => r.extensions.includes(extension)) : READERS[mimeType];
 	if (reader === undefined || !reader.extensions.includes(extension)) throw new Error(`这个附件是 ${part.mimeType}（${filename}），只读 txt、md、csv、html、pdf`);
-	return reader;
+	if (!generic || reader !== READERS["application/pdf"]) return reader;
+	return {
+		...reader,
+		read: (bytes, part, limits) => {
+			if (!bytes.subarray(0, 5).equals(Buffer.from("%PDF-"))) throw new Error(`${filename} 不是 PDF：开头没有 %PDF-`);
+			return reader.read(bytes, part, limits);
+		},
+	};
 }
 
 /** Gmail's attachmentId may change between two messages.get calls, so the part is looked up afresh each time. */
