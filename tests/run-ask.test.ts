@@ -102,7 +102,7 @@ async function openCard(t: TestContext, asking: Asking, options: Partial<HostOpt
 	return { ...booted, stateDir, row, askId: row.runAsk!.id, ticketId: row.id };
 }
 
-test("工具的参数：命令 1 到 2000 字、不能有 NUL，说法最多 200 字", () => {
+test("工具的参数：命令 1 到 2000 字，说法最多 200 字、不能有 NUL", () => {
 	assert.deepEqual(parseRunRequest({ command: "date", why: "看时间" }), { command: "date", why: "看时间" });
 	assert.equal(parseRunRequest({ command: "x".repeat(RUN_COMMAND_MAX), why: "满" }).command.length, RUN_COMMAND_MAX);
 	assert.equal(parseRunRequest({ command: "𝐱".repeat(RUN_COMMAND_MAX), why: "按字算，不按 UTF-16" }).command.length, RUN_COMMAND_MAX * 2);
@@ -111,12 +111,32 @@ test("工具的参数：命令 1 到 2000 字、不能有 NUL，说法最多 200
 	}
 });
 
-test("命令里有不显示的控制字符就拒绝：双向排版控制会让卡片显示的和运行的不是一条；换行和 Tab 照常", () => {
-	const reordered = "echo safe \u202E\u2066&& touch /tmp/PWNED\u2069 \u2066# just a note\u2069";
-	for (const command of [reordered, "echo a\u200Bb", "echo \u200Fx", "\uFEFFdate", "echo a\x1bb"]) {
-		assert.throws(() => parseRunRequest({ command, why: "看看" }), /看不见的控制字符/, JSON.stringify(command));
+test("命令只收看得见的字：卡片上像注释的地方，bash 不会当命令运行", () => {
+	const looksLikeComment = {
+		bidi: "echo safe \u202E\u2066&& touch /tmp/PWNED\u2069 \u2066# just a note\u2069",
+		cr: "echo safe # note\r touch P",
+		lineSeparator: "echo safe\u2028# ; touch P",
+		paragraphSeparator: "echo safe\u2029# ; touch P",
+		graphemeJoiner: "true \u034F# ; touch P",
+		variationSelector16: "true \uFE0F# ; touch P",
+		mongolianSelector: "true \u180B# ; touch P",
+		hangulFiller: "true\u3164# ; touch P",
+		combiningOverSemicolon: "echo safe;\u0338 touch P",
+		nbsp: "echo safe\u00A0# ; touch P",
+		zeroWidthSpace: "echo a\u200Bb",
+		rlm: "echo \u200Fx",
+		bom: "\uFEFFdate",
+		escape: "echo a\x1bb",
+		ideographicSpace: "echo a\u3000b",
+		privateUse: "echo \uE000",
+		unassigned: "echo \u0378",
+	};
+	for (const [name, command] of Object.entries(looksLikeComment)) {
+		assert.throws(() => parseRunRequest({ command, why: "看看" }), /只能有看得见的字/, name);
 	}
-	assert.equal(parseRunRequest({ command: "echo a\n\techo b", why: "两行" }).command, "echo a\n\techo b");
+	for (const command of ["echo a\n\techo b", "echo '你好，世界'", "echo caf\u00E9", "echo 🎉👍", "grep -E '[a-z]+$' ~/x | wc -l"]) {
+		assert.equal(parseRunRequest({ command, why: "照常" }).command, command);
+	}
 });
 
 test("ask_to_run 只给模块 feed 开的任务：使用者、宿主来源的规则和推断任务都没有；提示里写着要运行命令就用它", () => {

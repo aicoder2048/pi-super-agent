@@ -389,7 +389,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Build.**
 
-- [x] 数据形状。`RunAsk` 有 `id`、`ticketId`、`command`（原样的字符串，1 到 2000 字，不能有 NUL）、`why`（任务的一句话，最多 200 字，页面上标成「任务的说法」）、`origin`（开任务的来源和触发的发件人地址，由宿主填，不取自模型）、`private`（任务碰过私密数据）、`expiresAt`（开卡后 24 小时）、状态。状态只能往后走：`open` 到 `approved` 到 `ran`（退出码、输出文件）；`open` 到 `declined`，带原因 `user`、`expired` 或 `ticket-ended`。状态写在 `run_asks` 表里，表的 CHECK 守住。
+- [x] 数据形状。`RunAsk` 有 `id`、`ticketId`、`command`（原样的字符串，1 到 2000 字，只收看得见的字，规则见 ADR-0021）、`why`（任务的一句话，最多 200 字，页面上标成「任务的说法」）、`origin`（开任务的来源和触发的发件人地址，由宿主填，不取自模型）、`private`（任务碰过私密数据）、`expiresAt`（开卡后 24 小时）、状态。状态只能往后走：`open` 到 `approved` 到 `ran`（退出码、输出文件）；`open` 到 `declined`，带原因 `user`、`expired` 或 `ticket-ended`。状态写在 `run_asks` 表里，表的 CHECK 守住。
 - [x] `ask_to_run({ command, why })` 只注册给 M4 的受限任务。调用后宿主建一张卡片，任务进入「卡住」状态，和 ADR-0006 里任务提问以后的状态一样：看板上标成等你回答，Watchdog 不把它算成久无进展。工具返回「已请使用者批准」，任务这一轮停下等。同一任务同时最多一张开着的卡片。
 - [x] 卡片在网页左栏「待你处理」里，挂在这个任务的卡片下面，和任务的提问同一个位置。卡片的文字由程序拼出来。标题位置写「白宫 · 系统」（ADR-0010 的写法），正文写哪个任务、哪个来源和发件人地址、等宽字体的原样命令、任务的说法，两个按钮「同意」「不要」。命令不截断；网页上超长时折行，不省略。
 - [x] 回答只认使用者的点选，走 ADR-0010 那条线路（网页 `POST /say` 带 `answer`、TUI 的 `answer`、Telegram 的按钮），不写成触发，不经幕僚长。打字说「同意」不算。重复点同一项成功不重复，换一项被拒。
@@ -404,7 +404,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [x] `tests/run-ask.test.ts` 覆盖：状态只能往后走；命令长度和 NUL；同一任务第二张卡片被拒；`user` 任务没有 `ask_to_run`；开卡后任务是卡住，Watchdog 不报它；点「同意」运行的是表里的那一条；运行环境没有 `_TOKEN`、`_KEY` 结尾的变量；10 分钟时限；输出写进输出目录；「不要」不运行；注入的时钟过 24 小时转 `declined`（`expired`）且再点无效；任务结束转 `declined`（`ticket-ended`）；重启后卡片还在；打字「同意」不算；私密任务在 Telegram 上一行无按钮；超长命令退成一行。Run `just test`.
+- [x] `tests/run-ask.test.ts` 覆盖：状态只能往后走；命令长度；命令只收看得见的字（卡片上像注释、bash 却会运行的十几种写法都拒绝）；同一任务第二张卡片被拒；`user` 任务没有 `ask_to_run`；开卡后任务是卡住，Watchdog 不报它；点「同意」运行的是表里的那一条；运行环境没有 `_TOKEN`、`_KEY` 结尾的变量；10 分钟时限；输出写进输出目录；「不要」不运行；注入的时钟过 24 小时转 `declined`（`expired`）且再点无效；任务结束转 `declined`（`ticket-ended`）；重启后卡片还在；打字「同意」不算；私密任务在 Telegram 上一行无按钮；超长命令退成一行。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 宿主和网页 lane 用 `tests/e2e/harness.ts` 加 Playwright 和假 Telegram 接口，lane 10 用真模型。
 
