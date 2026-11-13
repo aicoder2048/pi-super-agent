@@ -198,7 +198,7 @@ export class Host {
 		};
 		this.feedScheduler = createScheduler({
 			feeds: options.moduleFeeds?.feeds ?? (() => []),
-			run: (entry, items, fixture) => runFeed(entry, items, feedPorts, fixture),
+			run: (entry, items, fixture, signal) => runFeed(entry, items, feedPorts, fixture, signal),
 			state: data,
 			inboxDir: join(options.stateDir, "inbox"),
 			now: clock.now,

@@ -43,7 +43,7 @@ export type Secrets = Readonly<Record<string, string>>;
 
 export type Responses = FeedFixture["responses"];
 
-export type RunOptions = { limitMs?: number; responses?: Responses };
+export type RunOptions = { limitMs?: number; responses?: Responses; signal?: AbortSignal };
 
 export type SecretLookup = (name: string) => string | undefined;
 
@@ -86,7 +86,7 @@ export function runModuleCode(site: CodeSite, entry: string, input: unknown, sec
 }
 
 /** Node's "close" waits for every process holding the stdio pipes, so a grandchild could keep a call open forever. The tool's whole process group is SIGKILLed at the limit, past the stdout cap, or once the tool exits. */
-export function runModuleCodeAsync(site: CodeSite, entry: string, input: unknown, secrets: Secrets = {}, { limitMs = LIMIT_MS, responses }: RunOptions = {}): Promise<CodeReply> {
+export function runModuleCodeAsync(site: CodeSite, entry: string, input: unknown, secrets: Secrets = {}, { limitMs = LIMIT_MS, responses, signal }: RunOptions = {}): Promise<CodeReply> {
 	const { args, options } = codeProcess(site, entry, secrets);
 	return new Promise((done) => {
 		const child = spawn(process.execPath, args, { ...options, detached: true });
@@ -107,6 +107,9 @@ export function runModuleCodeAsync(site: CodeSite, entry: string, input: unknown
 			killGroup();
 		};
 		const timer = setTimeout(() => stop(`stopped at the limit of ${limitMs / 1000} s`), limitMs);
+		const cancel = () => stop("stopped by the host (its feed was switched off, or the host is stopping)");
+		signal?.addEventListener("abort", cancel, { once: true });
+		if (signal?.aborted) cancel();
 		child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
 			if (stopped !== undefined) return;
 			stdout += chunk;
@@ -118,6 +121,7 @@ export function runModuleCodeAsync(site: CodeSite, entry: string, input: unknown
 		child.on("exit", killGroup);
 		const finish = (reply: CodeReply) => {
 			clearTimeout(timer);
+			signal?.removeEventListener("abort", cancel);
 			done(reply);
 		};
 		child.on("error", (error) => finish(readReply(stdout, stderr, null, error)));

@@ -62,7 +62,7 @@ function world(t: TestContext, feeds: Record<string, Record<string, Feed>>, opti
 			data,
 			scheduler: createScheduler({
 				feeds: () => serving,
-				run: (entry: FeedEntry, items, fixture) => runFeed(entry, items, ports, fixture),
+				run: (entry: FeedEntry, items, fixture, signal) => runFeed(entry, items, ports, fixture, signal),
 				state: data,
 				inboxDir: join(state, "inbox"),
 				now: () => clock.now,
@@ -403,4 +403,51 @@ test("日志里的行数只算真存下的：同一批重跑一次写 0 行", as
 	w.clock.now += MINUTE;
 	await scheduler.tick();
 	assert.deepEqual(w.logged, ["[feeds] lab/pull：2 行，1 条触发", "[feeds] lab/pull：0 行，1 条触发"]);
+});
+
+const alive = (pid: number) => {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+};
+const pidsIn = (file: string) => (existsSync(file) ? readFileSync(file, "utf8").trim().split("\n").filter(Boolean).map(Number) : []);
+const SLOW_WRITER = `import { spawn } from "node:child_process";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+export default async function () {
+	const sleeper = spawn("sleep", ["30"], { stdio: "ignore" });
+	appendFileSync("pids.txt", process.pid + "\\n" + sleeper.pid + "\\n");
+	await new Promise((r) => setTimeout(r, 3000));
+	mkdirSync(process.env.PSA_MODULE_DATA + "/files/ta", { recursive: true });
+	writeFileSync(process.env.PSA_MODULE_DATA + "/files/ta/written-after", "x");
+	return {};
+}
+`;
+const slowFeed = { json: { title: "慢慢取", handler: "index.ts", every: "1m", into: "readings" }, handler: SLOW_WRITER };
+
+test("模块关掉时正在跑的 feed 进程组被杀掉：跑到一半删掉的数据不会被它写回来", async (t) => {
+	const w = world(t, { lab: { slow: slowFeed } });
+	const { scheduler, data } = w.make();
+	const pids = join(w.root, "modules", "lab", "feeds", "slow", "pids.txt");
+	const first = scheduler.tick();
+	await until(() => pidsIn(pids).length === 2, "feed 进程起来了");
+	data.purge("lab" as ModuleName);
+	w.switchOff();
+	await scheduler.tick();
+	await first;
+	assert.deepEqual(pidsIn(pids).filter(alive), [], "feed 进程和它起的子进程都没了");
+	assert.equal(existsSync(join(w.state, "modules-data", "lab")), false, "删掉的数据目录没有被写回");
+});
+
+test("宿主停下时正在跑的 feed 进程组被杀掉，不留孤儿", async (t) => {
+	const modules = hostFeeds(t, { slow: slowFeed });
+	const { host } = await hostWith(t, modules);
+	const pids = join(modules.feeds()[0]!.dir, "feeds", "slow", "pids.txt");
+	const ticked = host.feedScheduler.tick();
+	await until(() => pidsIn(pids).length === 2, "feed 进程起来了");
+	await host.stop();
+	await until(() => pidsIn(pids).filter(alive).length === 0, "feed 进程和它起的子进程在宿主停下时就没了", 1500);
+	await ticked;
 });
