@@ -1,4 +1,3 @@
-// Stands in for the venv's `ta` in this feed's fixture: answers `calendar` and `scan` without the network.
 import { DatabaseSync } from "node:sqlite";
 
 let text = "";

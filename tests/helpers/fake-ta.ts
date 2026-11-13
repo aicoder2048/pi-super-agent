@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** What the fake `ta scan` does. Every call is logged with its input and what it found on disk. */
 export type ScanPlan =
 	| { kind: "ok"; rows?: number; signals?: number }
 	| { kind: "partial"; failing: string[] }
@@ -63,10 +62,7 @@ if (plan.kind === "ok") errors.push({ symbol: "QQQ", error: { code: "DIVIDENDS_U
 out({ scan_id: 1, symbol_count: symbols.length, new_signals: Array.from({ length: plan.signals ?? 0 }, (_, i) => ({ id: i })), errors });
 `;
 
-/**
- * A stand-in for the venv's `ta` in `dir`. The scan feed runs it as `node <dir>/ta.mjs <sub>` (its
- * `settings.ta`), and it reads its plan from the config.json beside it, since the feed passes it no env of ours.
- */
+/** Reads its plan from the config.json beside it, since the feed passes it no env of ours. */
 export function fakeTa(dir: string, plan: ScanPlan = { kind: "ok" }) {
 	mkdirSync(dir, { recursive: true });
 	const log = join(dir, "calls.log");

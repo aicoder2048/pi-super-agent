@@ -88,7 +88,7 @@ const liveDb = (state: string) => join(dataDir(state), "files", "ta", "ta.sqlite
 const leftovers = (state: string) => [".next", ".next-journal", ".next.scan.lock"].filter((s) => existsSync(liveDb(state) + s));
 
 type Copy = { ta?: string; now?: string; every?: string; scanSeconds?: number; baseUrl?: string };
-/** A copy of stock-ta in the lane's modules dir. The quotes feed points at a closed port so no lane asks Massive for snapshots. */
+/** The quotes feed points at a closed port so no lane asks Massive for snapshots. */
 function stockTa(state: string, copy: Copy = {}): string {
 	const pkg = join(state, "modules", "stock-ta");
 	cpSync(PKG, pkg, { recursive: true });
@@ -151,7 +151,6 @@ function count(path: string, sql: string): number {
 const scanLog = (host: Host) => host.log().split("\n").filter((l: string) => l.includes("stock-ta/scan")).join("\n");
 const scanLines = (host: Host) => scanLog(host).split("\n").filter((l: string) => /\[feeds\] stock-ta\/scan[：:]|stock-ta\/scan 这一次失败/.test(l));
 
-/** Boots a host with the copy on, waits for `ticks` runs of the scan feed, and stops. */
 async function hostTicks(state: string, ticks: number, between: (tick: number) => void = () => undefined, limitMs = 90_000): Promise<{ log: string; lines: string[] }> {
 	const fake = await FakeModel.start({ router: [] });
 	const host = await boot(state, fake, { POLYGON_API_KEY: "lane-fake-key" });
@@ -187,7 +186,6 @@ const exchangesOf = (fake: Fake, conversation: string): Exchange[] => fake.excha
 const inDomain = (call: Call, domain: string) => ({ ...call, args: { decisions: (call.args.decisions as object[]).map((d) => ({ ...d, domain, basis: "request" })) } });
 const toolCard = (fake: Fake, brief: string) => exchangesOf(fake, brief).flatMap((e) => e.cards).find((c) => c.startsWith("[模块工具]")) ?? "";
 
-/** Lane 1: the TA_ROOT the tools read, a link to app/trading plus a clone of the database. */
 function taRoot(): string {
 	const project = process.env["TA_PROJECT"];
 	if (!project) throw new Error("set TA_PROJECT to the technical-analysis checkout");
@@ -206,7 +204,7 @@ function realKey(): string {
 	return key;
 }
 
-/** Forwards to Massive and counts requests. Logs paths only: no query, no headers. */
+/** Logs paths only: no query, no headers. */
 async function massiveCounter() {
 	const paths: string[] = [];
 	const server = createServer(async (req, res) => {

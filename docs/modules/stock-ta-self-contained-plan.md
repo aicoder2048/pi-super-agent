@@ -138,59 +138,61 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `docs/modules/examples/stock-ta/py/pyproject.toml`、`py/uv.lock`。
-- [ ] Create `docs/modules/examples/stock-ta/feeds/scan/feed.json`、`feeds/scan/index.ts`、`feeds/scan/fixtures/`。
-- [ ] Create `docs/modules/examples/stock-ta/data/scan-runs/collection.json`。
-- [ ] Edit `docs/modules/stock-ta.md`，加 `just module setup stock-ta` 和 `scan` feed 两节。`TA_ROOT` 那一步这次不动。
-- [ ] Create `tests/stock-ta-scan.test.ts`。
+- [x] Create `docs/modules/examples/stock-ta/py/pyproject.toml`、`py/uv.lock`。
+- [x] Create `docs/modules/examples/stock-ta/feeds/scan/feed.json`、`feeds/scan/index.ts`、`feeds/scan/fixtures/`。
+- [x] Create `docs/modules/examples/stock-ta/data/scan-runs/collection.json`。
+- [x] Edit `docs/modules/stock-ta.md`，加 `just module setup stock-ta` 和 `scan` feed 两节。`TA_ROOT` 那一步这次不动。
+- [x] Create `tests/stock-ta-scan.test.ts`。
 
 **Build.**
 
-- [ ] 这个 PR 只加不减。工具照旧读 `TA_ROOT`，回答不变。模块多了自己的 `py/`、自己的 `scan` feed 和 `scan-runs`，把数据写进 `files/ta/ta.sqlite`。S3 才把工具切过去。
-- [ ] `py/pyproject.toml` 只依赖 `ta-trading`，`[tool.uv] package = false`，来源是 `{ git = "https://github.com/aicoder2048/TechnicalAnalysis", subdirectory = "app/trading", rev = "<40 位提交>" }`。用 HTTPS 不用 SSH，原因见 Appendix A。提交选技术分析仓库 `main` 上已推送的最新一个，写进 PR 正文。`uv lock` 生成锁文件。
-- [ ] `feeds/scan/feed.json` 写 `timer`，`every` 1 小时，不写 `when`，`limit` 5 分钟，`reads: ["watchlist"]`，`secrets: ["POLYGON_API_KEY"]`（handler 把它设成 `ta` 进程的 `MASSIVE_API_KEY`），`into: "scan-runs"`。不写 `when` 是因为日线扫描要等收盘后 15 分钟，`us-market-hours` 只到收盘后 20 分钟，一小时一拍会错过。handler 用的 `ta` 是和自己这份包副本的 `py/uv.lock` 对得上的 `files/venv-<12 位>/bin/ta`；fixture 用 `settings.ta` 指向 `fixtures/fake-ta.mjs`，用 `settings.now` 固定时间。
-- [ ] 提前返回。cursor 记最近一次换上了库的扫描的交易日和当时的标的列表。这一拍的美东日期和标的列表都和 cursor 一样时，handler 直接返回，不起 `ta`。不这样的话，16:15 到 24:00 ET 每小时一次，一天要跑约 8 次完整扫描（按时间表推算）。标的列表也算进去，是为了改了自选股当天下一拍就生效。部分标的出错的那次也移动 cursor，出错的标的第二个交易日重试，免得一只退市的股票让每一拍都整轮重扫。
-- [ ] 准备副本。先删掉残留的 `ta.sqlite.next`、`ta.sqlite.next-journal`、`ta.sqlite.next.scan.lock`。残留的回滚日志会在打开时把新副本悄悄回滚（实测 5000 行，应为 7000 行，`integrity_check` 仍是 ok，Appendix A）。然后把 `files/ta/ta.sqlite` 克隆成 `ta.sqlite.next`，没有旧库就从空库开始。
-- [ ] 跑扫描。输入是 `{"mode":"daily","symbols":<标的>}`。标的是 G5 `watchlist` 的前 30 只，再总是加上 QQQ、SPY，自选股是空的也加。空的标的列表会「成功」，但 0 根日线、没有基准（实测）。超过 30 只时只扫前 30 只，在 `scan-runs` 那一行说明。30 是推断的上限：断网时每个标的约 8.4 秒（实测 3 只加 QQQ、SPY 共 42 秒），8.4 秒乘 32 小于 5 分钟的 `limit`，没有在 30 只上实测过。
-- [ ] 第一次补数。数据库是空的时，传 `now` = 上一个交易日收盘加 16 分钟，第一拍就有数据，不用等到当天 16:15 ET（周末装的话要等到周一）。`ta scan` 接受 `now`（实测）。上一个交易日从 `ta calendar` 取，返回字段由 owner 实现时核对。
-- [ ] 判断成败只看 `ta scan` 输出的 JSON，不看退出码。断网和跳过的退出码都是 0（实测）。
-  - [ ] 跳过（不是交易日或还没到时间）：删掉副本，不存行，不换库，不动 cursor。
-  - [ ] 每个标的都出错（例如断网时全是 `MARKET_UNAVAILABLE`）：算失败，删掉副本，旧库不动，存一行带错误原因的 `scan-runs`。
-  - [ ] 部分标的出错：把副本改名成 `ta.sqlite` 换上，那一行列出哪些标的出错、原因是什么。
-  - [ ] 进程退出码非零或超时：删掉副本，旧库不动，日志一行。
-- [ ] `ta scan` 的日线扫描自己会补齐两年日线、分红，以及 QQQ、SPY 两个基准（读代码确认，见 Appendix A），handler 不另调同步命令。
-- [ ] `scan-runs` 每一行的 id 是交易日加开始时间，每次运行都不同。feed 存行用 `INSERT OR IGNORE`，id 重复的行只存第一次（实测），如果只用交易日做 id，当天第一次失败的那一行会一直留着。字段是交易日、开始时间、结果（换上、失败）、标的数、自选股是不是空的、有没有因为上限少扫、新信号数、出错的标的和原因。
-- [ ] 不发触发。新信号要不要叫醒领队，是 Appendix E 第 3 条，默认不叫。
+- [x] 这个 PR 只加不减。工具照旧读 `TA_ROOT`，回答不变。模块多了自己的 `py/`、自己的 `scan` feed 和 `scan-runs`，把数据写进 `files/ta/ta.sqlite`。S3 才把工具切过去。
+- [x] `py/pyproject.toml` 只依赖 `ta-trading`，`[tool.uv] package = false`，来源是 `{ git = "https://github.com/aicoder2048/TechnicalAnalysis", subdirectory = "app/trading", rev = "<40 位提交>" }`。用 HTTPS 不用 SSH，原因见 Appendix A。提交选技术分析仓库 `main` 上已推送的最新一个，写进 PR 正文。`uv lock` 生成锁文件。
+- [x] `feeds/scan/feed.json` 写 `timer`，`every` 1 小时，不写 `when`，`limit` 5 分钟，`reads: ["watchlist"]`，`secrets: ["POLYGON_API_KEY"]`（handler 把它设成 `ta` 进程的 `MASSIVE_API_KEY`），`into: "scan-runs"`。不写 `when` 是因为日线扫描要等收盘后 15 分钟，`us-market-hours` 只到收盘后 20 分钟，一小时一拍会错过。handler 用的 `ta` 是和自己这份包副本的 `py/uv.lock` 对得上的 `files/venv-<12 位>/bin/ta`；fixture 用 `settings.ta` 指向 `fixtures/fake-ta.mjs`，用 `settings.now` 固定时间。
+- [x] 提前返回。cursor 记最近一次换上了库的扫描的交易日和当时的标的列表。这一拍的美东日期和标的列表都和 cursor 一样时，handler 直接返回，不起 `ta`。不这样的话，16:15 到 24:00 ET 每小时一次，一天要跑约 8 次完整扫描（按时间表推算）。标的列表也算进去，是为了改了自选股当天下一拍就生效。部分标的出错的那次也移动 cursor，出错的标的第二个交易日重试，免得一只退市的股票让每一拍都整轮重扫。
+- [x] 准备副本。先删掉残留的 `ta.sqlite.next`、`ta.sqlite.next-journal`、`ta.sqlite.next.scan.lock`。残留的回滚日志会在打开时把新副本悄悄回滚（实测 5000 行，应为 7000 行，`integrity_check` 仍是 ok，Appendix A）。然后把 `files/ta/ta.sqlite` 克隆成 `ta.sqlite.next`，没有旧库就从空库开始。
+- [x] 跑扫描。输入是 `{"mode":"daily","symbols":<标的>}`。标的是 G5 `watchlist` 的前 30 只，再总是加上 QQQ、SPY，自选股是空的也加。空的标的列表会「成功」，但 0 根日线、没有基准（实测）。超过 30 只时只扫前 30 只，在 `scan-runs` 那一行说明。30 是推断的上限：断网时每个标的约 8.4 秒（实测 3 只加 QQQ、SPY 共 42 秒），8.4 秒乘 32 小于 5 分钟的 `limit`，没有在 30 只上实测过。
+- [x] 第一次补数。数据库是空的时，传 `now` = 上一个交易日收盘加 16 分钟，第一拍就有数据，不用等到当天 16:15 ET（周末装的话要等到周一）。`ta scan` 接受 `now`（实测）。上一个交易日从 `ta calendar` 取，返回字段由 owner 实现时核对。
+- [x] 判断成败只看 `ta scan` 输出的 JSON，不看退出码。断网和跳过的退出码都是 0（实测）。
+  - [x] 跳过（不是交易日或还没到时间）：删掉副本，不存行，不换库，不动 cursor。
+  - [x] 每个标的都出错（例如断网时全是 `MARKET_UNAVAILABLE`）：算失败，删掉副本，旧库不动，存一行带错误原因的 `scan-runs`。
+  - [x] 部分标的出错：把副本改名成 `ta.sqlite` 换上，那一行列出哪些标的出错、原因是什么。
+  - [x] 进程退出码非零或超时：删掉副本，旧库不动，日志一行。
+- [x] `ta scan` 的日线扫描自己会补齐两年日线、分红，以及 QQQ、SPY 两个基准（读代码确认，见 Appendix A），handler 不另调同步命令。
+- [x] `scan-runs` 每一行的 id 是交易日加开始时间，每次运行都不同。feed 存行用 `INSERT OR IGNORE`，id 重复的行只存第一次（实测），如果只用交易日做 id，当天第一次失败的那一行会一直留着。字段是交易日、开始时间、结果（换上、失败）、标的数、自选股是不是空的、有没有因为上限少扫、新信号数、出错的标的和原因。
+- [x] 不发触发。新信号要不要叫醒领队，是 Appendix E 第 3 条，默认不叫。
 
 **You see.**
 
-- [ ] 打开 stock-ta 后的第一拍（一小时内），`scan-runs` 出现一行。`files/ta/ta.sqlite` 里每只自选股约 500 根日线，QQQ、SPY 也在，数据时间是上一个交易日收盘。工具这时还读 `TA_ROOT`，回答和以前一样。
+- [x] 打开 stock-ta 后的第一拍（一小时内），`scan-runs` 出现一行。`files/ta/ta.sqlite` 里每只自选股约 500 根日线，QQQ、SPY 也在，数据时间是上一个交易日收盘。工具这时还读 `TA_ROOT`，回答和以前一样。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/stock-ta-scan.test.ts` 用假 `ta` 覆盖：传的是自选股加 QQQ、SPY、空自选股也带基准并在行里说明、超过 30 只只扫前 30 只并说明、全部成功换上、部分出错换上并列出、全部出错不换并存错误行、断网（退出码 0、全是 `MARKET_UNAVAILABLE`）同上、跳过不换不存行、退出码非零时旧库一字不差、残留的 `.next`、`-journal`、`.scan.lock` 先被删掉、同一天两次运行存两行、cursor 命中时不起 `ta`、改自选股当天下一拍重扫、空库第一次传上一个收盘加 16 分钟的 `now`、用的是自己包副本锁文件对应的 venv、缺密钥时一行说明。Run `just test`.
+- [x] `tests/stock-ta-scan.test.ts` 用假 `ta` 覆盖：传的是自选股加 QQQ、SPY、空自选股也带基准并在行里说明、超过 30 只只扫前 30 只并说明、全部成功换上、部分出错换上并列出、全部出错不换并存错误行、断网（退出码 0、全是 `MARKET_UNAVAILABLE`）同上、跳过不换不存行、退出码非零时旧库一字不差、残留的 `.next`、`-journal`、`.scan.lock` 先被删掉、同一天两次运行存两行、cursor 命中时不起 `ta`、改自选股当天下一拍重扫、空库第一次传上一个收盘加 16 分钟的 `now`、用的是自己包副本锁文件对应的 venv、缺密钥时一行说明。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/s2-live.ts`。lane 3 到 lane 9 用假 `ta`。lane 2 和 lane 10 用真 GitHub 凭据、真 Massive、真 `ta`；靠 `now` 补数，上一个交易日收盘以后任何时候都能跑，不需要真实的收盘时间窗。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都用 `TA_ROOT` 指向同一个临时目录（技术分析项目 `app/trading` 的符号链接，加一份数据库克隆），调 `structure` 查 NVDA。Save `s2-regression.txt`. Pass when 两边 `levels` 和 `momentum` 相同，head 多一个 `scan` feed。
-- [ ] Lane 2. 在临时状态目录里 `just module setup stock-ta`。Save `s2-setup.txt`. Pass when `files/venv-<12 位>/bin/ta` 存在，`.psa-lock` 等于包里 `uv.lock` 的 sha256，输出里没有 token。
-- [ ] Lane 3. `just module check` stock-ta。Save `s2-check.txt`. Pass when ok，假 `ta` 跑过，真实数据目录不变。
-- [ ] Lane 4. 断网：假 `ta` 对每个标的回 `MARKET_UNAVAILABLE`，退出码 0。Save `s2-network-down.txt`. Pass when 旧 `ta.sqlite` 的 sha256 不变，没有 `.next`，`scan-runs` 一行带错误原因。
-- [ ] Lane 5. 跳过：假 `ta` 回「跳过」。Save `s2-skipped.txt`. Pass when 不换库，不存行，cursor 不变。
-- [ ] Lane 6. 残留：先放一份 `ta.sqlite.next` 和一份能回滚它的 `ta.sqlite.next-journal`，假 `ta` 用 `node:sqlite` 写 7000 行。Save `s2-leftover-journal.txt`. Pass when 换上的库正好 7000 行，残留文件都没了。
-- [ ] Lane 7. 假 `ta` 睡过 `limit`。Save `s2-timeout.txt`. Pass when 这一次被停，旧库不变，没有 `.next`，下一拍照常。
-- [ ] Lane 8. 同一个 `settings.now` 先跑一轮成功，再跑一拍，然后往自选股加 AMD 再跑一拍。Save `s2-second-tick.txt`. Pass when 第二拍假 `ta` 的调用日志没有新增、没有新行；第三拍起了 `ta`，标的里有 AMD。
-- [ ] Lane 9. 自选股是空的，跑一拍。Save `s2-empty-watchlist.txt`. Pass when 假 `ta` 收到的标的是 QQQ、SPY，`scan-runs` 那一行写明自选股是空的。
-- [ ] Lane 10. 空数据目录，自选股 10 只，真行情第一拍。Save `s2-backfill.txt`. Pass when 5 分钟内结束，传的 `now` 是上一个交易日收盘加 16 分钟，12 个标的（含 QQQ、SPY）各约 500 根日线，`scan-runs` 一行；记下时间、行数和请求数。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都用 `TA_ROOT` 指向同一个临时目录（技术分析项目 `app/trading` 的符号链接，加一份数据库克隆），调 `structure` 查 NVDA。Save `s2-regression.txt`. Pass when 两边 `levels` 和 `momentum` 相同，head 多一个 `scan` feed。
+- [x] Lane 2. 在临时状态目录里 `just module setup stock-ta`。Save `s2-setup.txt`. Pass when `files/venv-<12 位>/bin/ta` 存在，`.psa-lock` 等于包里 `uv.lock` 的 sha256，输出里没有 token。
+- [x] Lane 3. `just module check` stock-ta。Save `s2-check.txt`. Pass when ok，假 `ta` 跑过，真实数据目录不变。
+- [x] Lane 4. 断网：假 `ta` 对每个标的回 `MARKET_UNAVAILABLE`，退出码 0。Save `s2-network-down.txt`. Pass when 旧 `ta.sqlite` 的 sha256 不变，没有 `.next`，`scan-runs` 一行带错误原因。
+- [x] Lane 5. 跳过：假 `ta` 回「跳过」。Save `s2-skipped.txt`. Pass when 不换库，不存行，cursor 不变。
+- [x] Lane 6. 残留：先放一份 `ta.sqlite.next` 和一份能回滚它的 `ta.sqlite.next-journal`，假 `ta` 用 `node:sqlite` 写 7000 行。Save `s2-leftover-journal.txt`. Pass when 换上的库正好 7000 行，残留文件都没了。
+- [x] Lane 7. 假 `ta` 睡过 `limit`。Save `s2-timeout.txt`. Pass when 这一次被停，旧库不变，没有 `.next`，下一拍照常。
+- [x] Lane 8. 同一个 `settings.now` 先跑一轮成功，再跑一拍，然后往自选股加 AMD 再跑一拍。Save `s2-second-tick.txt`. Pass when 第二拍假 `ta` 的调用日志没有新增、没有新行；第三拍起了 `ta`，标的里有 AMD。
+- [x] Lane 9. 自选股是空的，跑一拍。Save `s2-empty-watchlist.txt`. Pass when 假 `ta` 收到的标的是 QQQ、SPY，`scan-runs` 那一行写明自选股是空的。
+- [x] Lane 10. 空数据目录，自选股 10 只，真行情第一拍。Save `s2-backfill.txt`. Pass when 5 分钟内结束，传的 `now` 是上一个交易日收盘加 16 分钟，12 个标的（含 QQQ、SPY）各约 500 根日线，`scan-runs` 一行；记下时间、行数和请求数。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. trunk 没有这个 feed。只给绝对预算：第一次扫描（10 只加 QQQ、SPY）的总时间，日常一次扫描的总时间，克隆加改名的时间，cursor 命中时一拍的时间。
-- [ ] Probe. lane 10 的第一次扫描一次。日常扫描是 lane 10 之后清掉 cursor、用同一个 `now` 连跑 3 次，没有新的一天数据，量的是一次扫描的固定开销；有新一天数据的增量在 S4 的真实拍里记。克隆加改名在 5 MB 的库上量 20 次。cursor 命中的一拍量 10 次。
-- [ ] Baseline. Record the 第一次扫描的时间和 Massive 请求数 first。按代码估算是 36 个请求左右，见 Appendix A。
-- [ ] Rule. 第一次扫描超过 120 秒，或日常扫描中位数超过 20 秒，或克隆加改名超过 200 毫秒，或 cursor 命中的一拍中位数超过 2 秒，就失败。四个预算都是推断，不是量出来的。
+- [x] Metric. trunk 没有这个 feed。只给绝对预算：第一次扫描（10 只加 QQQ、SPY）的总时间，日常一次扫描的总时间，克隆加改名的时间，cursor 命中时一拍的时间。
+- [x] Probe. lane 10 的第一次扫描一次。日常扫描是 lane 10 之后清掉 cursor、用同一个 `now` 连跑 3 次，没有新的一天数据，量的是一次扫描的固定开销；有新一天数据的增量在 S4 的真实拍里记。克隆加改名在 5 MB 的库上量 20 次。cursor 命中的一拍量 10 次。
+- [x] Baseline. Record the 第一次扫描的时间和 Massive 请求数 first。按代码估算是 36 个请求左右，见 Appendix A。
+- [x] Rule. 第一次扫描超过 120 秒，或日常扫描中位数超过 20 秒，或克隆加改名超过 200 毫秒，或 cursor 命中的一拍中位数超过 2 秒，就失败。四个预算都是推断，不是量出来的。
 
 **Review gate.** None. S2 is not review-gated.
+
+2026-11-12 在 e90608d 上通过：`tests/stock-ta-scan.test.ts` 18 条，先全红（没有 `scan` feed）；之后对每条规则做一次变异（不看出错就换上、分红提醒算出错、不删残留、不看 cursor、不补数、不带基准、不设上限、id 只用交易日、跳过当成扫描、从不换上、失败也动 cursor、不传密钥、缺密钥不说明、超时不报），15 个变异各有测试变红，输出在 `/tmp/swarm-s2/owner/mutations.txt`。`just test` 1688 条里只有 S1 的「模块关掉时正在跑的 feed 进程组被杀掉」在全量里失败一次，单独重跑三次全过；`check.mjs` 全绿。十条 lane 全 PASS，输出在 `/tmp/swarm-s2/owner/s2-*.txt`。lane 10 在美东周四 22:31（收盘后，off-hours）跑真 Massive：上一个交易日收盘加 16 分钟是 2026-11-12T21:16:00Z，`ta` 的 scans 表记的正是这个时间；12 个标的各 502 根日线，36 个请求，22 秒结束。perf：第一次扫描 22.1 秒、36 个请求；没有新一天数据的日常扫描中位 8.9 秒（三次 8.9/8.9/9.0，0 个请求，都是本地计算）；5.3 MB 的库克隆加改名中位 2.3 毫秒；cursor 命中一拍中位 56 毫秒，不起 `ta`。核对结果：`ta calendar` 不直接给上一个交易日，`{"date"}` 一次答一天，handler 从今天往回查，最多 10 天。和计划不同的地方：fixture 用的假 `ta` 放在 `feeds/scan/fake-ta.mjs`，因为 `fixtures/` 只能放 JSON；`settings` 多了 `baseUrl`（和 quotes 一样，lane 10 靠它数请求）和 `scanSeconds`（270，所有 `ta` 调用共用一个期限，留 30 秒给宿主的 5 分钟 `limit`）。第一次补数会把两年里的历史信号都算成新信号（实测 7050 条），只记在 `scan-runs`，不发提醒。
 
 **Merge.**
 
