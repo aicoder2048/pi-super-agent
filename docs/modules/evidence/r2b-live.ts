@@ -10,6 +10,7 @@
  * feed   Lane 7 and the feed probe, in market hours: a real host on head runs the quotes feed every 60 s while the 盘面
  *        answers three questions on openai-codex models; meanwhile trunk's and head's quotes feed rounds alternate, 10 each.
  * real   Lanes 8 and 9 on openai-codex models: `just module try` runs evals/ (market-desk among them); a support question goes to 结构与形态.
+ * old    Lane 9 alone.
  * media  The You-see question on the web page: the team shows 6 members and the 盘面 answers, screenshotted.
  */
 import { spawnSync } from "node:child_process";
@@ -471,13 +472,19 @@ async function realLanes(): Promise<void> {
 		return { pass: Object.values(checks).every(Boolean), evidence: `just module try (openai-codex models ${JSON.stringify(REAL)}, real Massive)\nchecks:\n${Object.entries(checks).map(([k, v]) => `${v ? "ok  " : "FAIL"} ${k}`).join("\n")}\n\nfull output:\n${run.out.replace(/临时状态目录 \S+/, "临时状态目录 <tmp>")}` };
 	});
 
+	await oldQuestion();
+}
+
+async function oldQuestion(): Promise<void> {
+	await seed();
 	await lane(9, "old-question", async () => {
 		const real = await realHost(HEAD);
 		try {
 			const a = await askDesk(real, "NVDA 的支撑在哪");
-			const sent = a.tickets.flatMap((t) => (t["dispatched_to"] ? (JSON.parse(String(t["dispatched_to"])) as string[]) : []));
+			// The seeded watchlist holds AMD, so a big-move ticket can open beside the question's own.
+			const sent = a.tickets.filter((t) => String(t["title"]).includes("NVDA")).flatMap((t) => (t["dispatched_to"] ? (JSON.parse(String(t["dispatched_to"])) as string[]) : []));
 			return {
-				pass: sent.includes("structure-pattern") && !sent.includes("market-desk"),
+				pass: sent.includes("结构与形态") && !sent.includes("盘面"),
 				evidence: `asked on the fake Telegram: NVDA 的支撑在哪 (${secs(a.ms)})\ntickets:\n${show(a.tickets)}\ndispatched to: ${sent.join(", ") || "(nobody)"}\nreport:\n${a.summary}`,
 			};
 		} finally {
@@ -501,7 +508,8 @@ async function media(): Promise<void> {
 		const tickets = ticketsOf(real.state);
 		const summary = query(join(real.state, "state.db"), "SELECT summary FROM reports WHERE status = 'ready' ORDER BY seq").map((r) => String(r["summary"])).join("\n---\n");
 		const members = memberReplies(real.state);
-		writeFileSync(join(outDir, "r2b-review-desk.txt"), `asked on the web page: ${MEDIA_Q}\ntickets:\n${show(tickets)}\nreport:\n${summary}\n\nmember replies:\n${members.map((m) => `[${m.member}]\n${m.text}`).join("\n\n")}\n\ngateway:\n${hostLog(real.state).filter((l) => l.includes("[gateway]")).join("\n")}\n`);
+		const web = query(join(real.state, "state.db"), "SELECT id, read_web_at FROM tickets WHERE read_web_at IS NOT NULL");
+		writeFileSync(join(outDir, "r2b-review-desk.txt"), `asked on the web page: ${MEDIA_Q}\ntickets that read a web page: ${show(web)}\ntickets:\n${show(tickets)}\nreport:\n${summary}\n\nmember replies:\n${members.map((m) => `[${m.member}]\n${m.text}`).join("\n\n")}\n\ngateway:\n${hostLog(real.state).filter((l) => l.includes("[gateway]")).join("\n")}\n`);
 		console.log(`media in ${outDir}: r2b-review-desk.png, r2b-review-desk.txt`);
 	} finally {
 		await browser.close();
@@ -509,5 +517,5 @@ async function media(): Promise<void> {
 	}
 }
 
-await (mode === "replay" ? regression() : mode === "page" ? page() : mode === "feed" ? feed() : mode === "real" ? realLanes() : mode === "media" ? media() : tools());
+await (mode === "old" ? oldQuestion() : mode === "replay" ? regression() : mode === "page" ? page() : mode === "feed" ? feed() : mode === "real" ? realLanes() : mode === "media" ? media() : tools());
 process.exit(0);

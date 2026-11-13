@@ -235,49 +235,59 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 
 **Files.**
 
-- [ ] Create `docs/modules/examples/stock-ta/agents/market-desk.md`（盘面）。
-- [ ] Create `docs/modules/examples/stock-ta/tools/intraday/`（`tool.json`、`index.ts`、fixtures）。
-- [ ] Create `docs/modules/examples/stock-ta/skills/market-desk/SKILL.md`。
-- [ ] Create `docs/modules/examples/stock-ta/evals/market-desk.md`。
-- [ ] Edit `docs/modules/stock-ta.md`，写上 `intraday` 和三路请求共用一个密钥。
-- [ ] Edit `tests/stock-ta.test.ts`。Create `docs/modules/evidence/r2b-live.ts`。
+- [x] Create `docs/modules/examples/stock-ta/agents/market-desk.md`（盘面）。
+- [x] Create `docs/modules/examples/stock-ta/tools/intraday/`（`tool.json`、`index.ts`、fixtures）。
+- [x] Create `docs/modules/examples/stock-ta/skills/market-desk/SKILL.md`。
+- [x] Create `docs/modules/examples/stock-ta/evals/market-desk.md`。
+- [x] Edit `docs/modules/stock-ta.md`，写上 `intraday` 和三路请求共用一个密钥。
+- [x] Edit `tests/stock-ta.test.ts`。Create `docs/modules/evidence/r2b-live.ts`。
 
 **Build.**
 
-- [ ] 盘面专家照搬 us-market 的 `market-analyst.md` 的职责和做法，去掉 `web_get` 和读报道那一步。它判断这次波动是个股的，还是大盘、板块的。用一次 `quote` 同时查这只股票、SPY、QQQ 和一两只板块 ETF 或同板块代表，用差值说话；用 `intraday` 看当天走势里的跳空、急动时间、反弹、量集中在哪段。汇报写结论、证据、数据时间三段，不超过 600 字。`uses` 是 `quote`、`intraday`、`prices`、`note`。
-- [ ] `intraday` 工具。输入 `symbol`、`span`（minute、hour）、可选 `from`、`to`（默认今天，最多回看 4 个交易日），`limit` 最多 500 根。请求 `/v2/aggs/ticker/{s}/range/1/{span}/{from}/{to}?adjusted=true&sort=desc&limit=`，和 `src/sources/market/client.ts` 的 `bars` 一样。回 K 线和分钟线的 VWAP。只读，18 秒内结束。
-- [ ] 技能 `market-desk` 写 us-market-desk 里和数据有关的部分：K 线粒度怎么选、报价怎么写（数据时间、延迟 15 分钟）、同时最多两个联网工具调用。去掉 `lookup us-market`、盯盘条件和新闻那几节。
-- [ ] 不改 `rules.md`，不改报价 feed。这一步只加人和工具，提醒不变。
+- [x] 盘面专家照搬 us-market 的 `market-analyst.md` 的职责和做法，去掉 `web_get` 和读报道那一步。它判断这次波动是个股的，还是大盘、板块的。用一次 `quote` 同时查这只股票、SPY、QQQ 和一两只板块 ETF 或同板块代表，用差值说话；用 `intraday` 看当天走势里的跳空、急动时间、反弹、量集中在哪段。汇报写结论、证据、数据时间三段，不超过 600 字。`uses` 是 `quote`、`intraday`、`prices`、`note`。
+- [x] `intraday` 工具。输入 `symbol`、`span`（minute、hour）、可选 `from`、`to`（默认今天，最多回看 4 个交易日），`limit` 最多 500 根。请求 `/v2/aggs/ticker/{s}/range/1/{span}/{from}/{to}?adjusted=true&sort=desc&limit=`，和 `src/sources/market/client.ts` 的 `bars` 一样。回 K 线和分钟线的 VWAP。只读，18 秒内结束。
+- [x] 技能 `market-desk` 写 us-market-desk 里和数据有关的部分：K 线粒度怎么选、报价怎么写（数据时间、延迟 15 分钟）、同时最多两个联网工具调用。去掉 `lookup us-market`、盯盘条件和新闻那几节。
+- [x] 不改 `rules.md`，不改报价 feed。这一步只加人和工具，提醒不变。
 
 **You see.**
 
-- [ ] 网页上 stock-ta 的专家队显示 6 位，多了「盘面」。
-- [ ] 问 stock-ta「NVDA 今天跌 4% 是它自己的事还是板块的事」，汇报里有 NVDA、SPY、QQQ、SMH 的涨跌幅和差值，有当天急跌的时间段，有数据时间。
+- [x] 网页上 stock-ta 的专家队显示 6 位，多了「盘面」。
+- [x] 问 stock-ta「NVDA 今天跌 4% 是它自己的事还是板块的事」，汇报里有 NVDA、SPY、QQQ、SMH 的涨跌幅和差值，有当天急跌的时间段，有数据时间。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/stock-ta.test.ts` 新增：`intraday` 的地址和参数、回看超过 4 天被拒、`limit` 上限、VWAP、没有密钥时一行说明、HTTP 错误和 429 一行说明。用 fixtures，不连网。Run `just test`.
-- [ ] `just module check docs/modules/examples/stock-ta` 为 ok。Run `just module check docs/modules/examples/stock-ta`.
+- [x] `tests/stock-ta.test.ts` 新增：`intraday` 的地址和参数、回看超过 4 天被拒、`limit` 上限、VWAP、没有密钥时一行说明、HTTP 错误和 429 一行说明。用 fixtures，不连网。Run `just test`.
+- [x] `just module check docs/modules/examples/stock-ta` 为 ok。Run `just module check docs/modules/examples/stock-ta`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/r2b-live.ts`，lane 6 到 9 用真行情。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都回放 R1 的剧本，看 stock-ta 的提醒和触发。Save `r2b-regression.txt`. Pass when 两边相同，说明加人加工具没有改提醒。
-- [ ] Lane 2. `just modules` 和网页的模块面板。Save `r2b-team.png`. Pass when stock-ta 有 6 位专家，盘面的工具是 `quote`、`intraday`、`prices`、`note`。
-- [ ] Lane 3. 假模型让盘面越出 `uses` 调 `structure`。Save `r2b-uses.txt`. Pass when 被拒，码是 `not-in-uses`。
-- [ ] Lane 4. `intraday` 用 fixtures 回看 5 个交易日、`limit` 600。Save `r2b-intraday-cap.txt`. Pass when 两次都拒绝并说明上限，不发请求。
-- [ ] Lane 5. 没有 `POLYGON_API_KEY` 时调 `intraday`。Save `r2b-no-key.txt`. Pass when 一行说明怎么加密钥，不发请求。
-- [ ] Lane 6. 真行情 `intraday` 查 NVDA 当天分钟线和 SPY 的小时线。Save `r2b-intraday-real.txt`. Pass when 回 K 线，最新一根的时间离数据时间不超过 20 分钟，分钟线有 VWAP。
-- [ ] Lane 7. 交易时段里报价 feed 照常每 60 秒跑，同时盘面连续做 3 道题。Save `r2b-shared-key.txt`. Pass when 报价 feed 没有漏轮，三路请求里 429 的次数是 0。
-- [ ] Lane 8. 真模型 `openai-codex/*` 跑 `evals/market-desk.md`（「这次跌是个股还是板块」）。Save `r2b-eval.txt`. Pass when 汇报有三段、有相对 SPY 和板块 ETF 的差值、有数据时间，没有新闻和财报的说法。
-- [ ] Lane 9. 真模型问一个 S3 已有的技术面问题（「NVDA 的支撑在哪」）。Save `r2b-old-question.txt`. Pass when 领队照旧派给结构形态，不派给盘面。
-- [ ] Lane 10. 读 `docs/modules/stock-ta.md` 的工具一节。Save `r2b-doc.txt`. Pass when 写明 `quote` 和 `intraday` 联网、只读、用哪个密钥、每次几个请求，以及报价 feed、这两个工具和扫描共用一个密钥。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都回放 R1 的剧本，看 stock-ta 的提醒和触发。Save `r2b-regression.txt`. Pass when 两边相同，说明加人加工具没有改提醒。
+- [x] Lane 2. `just modules` 和网页的模块面板。Save `r2b-team.png`. Pass when stock-ta 有 6 位专家，盘面的工具是 `quote`、`intraday`、`prices`、`note`。
+- [x] Lane 3. 假模型让盘面越出 `uses` 调 `structure`。Save `r2b-uses.txt`. Pass when 被拒，码是 `not-in-uses`。
+- [x] Lane 4. `intraday` 用 fixtures 回看 5 个交易日、`limit` 600。Save `r2b-intraday-cap.txt`. Pass when 两次都拒绝并说明上限，不发请求。
+- [x] Lane 5. 没有 `POLYGON_API_KEY` 时调 `intraday`。Save `r2b-no-key.txt`. Pass when 一行说明怎么加密钥，不发请求。
+- [x] Lane 6. 真行情 `intraday` 查 NVDA 当天分钟线和 SPY 的小时线。Save `r2b-intraday-real.txt`. Pass when 回 K 线，最新一根的时间离数据时间不超过 20 分钟，分钟线有 VWAP。
+- [x] Lane 7. 交易时段里报价 feed 照常每 60 秒跑，同时盘面连续做 3 道题。Save `r2b-shared-key.txt`. Pass when 报价 feed 没有漏轮，三路请求里 429 的次数是 0。
+- [x] Lane 8. 真模型 `openai-codex/*` 跑 `evals/market-desk.md`（「这次跌是个股还是板块」）。Save `r2b-eval.txt`. Pass when 汇报有三段、有相对 SPY 和板块 ETF 的差值、有数据时间，没有新闻和财报的说法。
+- [x] Lane 9. 真模型问一个 S3 已有的技术面问题（「NVDA 的支撑在哪」）。Save `r2b-old-question.txt`. Pass when 领队照旧派给结构形态，不派给盘面。
+- [x] Lane 10. 读 `docs/modules/stock-ta.md` 的工具一节。Save `r2b-doc.txt`. Pass when 写明 `quote` 和 `intraday` 联网、只读、用哪个密钥、每次几个请求，以及报价 feed、这两个工具和扫描共用一个密钥。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. trunk 没有 `intraday`。量 `intraday`（一天分钟线）一次调用的宿主侧时间，以及盘面汇报任务从派活到交回的时间。另量报价 feed 一轮的时间和交易时段里每小时 429 的次数，trunk 和 head 都有。
-- [ ] Probe. 交易时段内 `intraday` 调 20 次，报价 feed trunk 和 head 交替各 10 轮，期间盘面做题。429 次数用宿主日志和工具的错误行数。
-- [ ] Baseline. Record the trunk 报价 feed 一轮的中位数和 429 次数 first.
-- [ ] Rule. 报价 feed 比 trunk 慢 50 毫秒以上就失败。`intraday` 中位数超过 3 秒、或任何一次超过 18 秒，就失败。head 的 429 次数多于 trunk 就失败。
+- [x] Metric. trunk 没有 `intraday`。量 `intraday`（一天分钟线）一次调用的宿主侧时间，以及盘面汇报任务从派活到交回的时间。另量报价 feed 一轮的时间和交易时段里每小时 429 的次数，trunk 和 head 都有。
+- [x] Probe. 交易时段内 `intraday` 调 20 次，报价 feed trunk 和 head 交替各 10 轮，期间盘面做题。429 次数用宿主日志和工具的错误行数。
+- [x] Baseline. Record the trunk 报价 feed 一轮的中位数和 429 次数 first.
+- [x] Rule. 报价 feed 比 trunk 慢 50 毫秒以上就失败。`intraday` 中位数超过 3 秒、或任何一次超过 18 秒，就失败。head 的 429 次数多于 trunk 就失败。
+
+**Evidence.** 2026-11-13 在 psa/rt-r2b-intraday 上，交易时段（美东 13:20 到 14:00）跑 `docs/modules/evidence/r2b-live.ts`，输出在 `/tmp/swarm-r2b/owner/`。`just test` 1879 个全过，`just module check` 为 ok（tools=9 skills=5 agents=6 evals=3）。
+
+- 单元：`tests/stock-ta.test.ts` 新增 10 条，先红后绿（红：`tools/intraday/tool.json is missing`、`Cannot find module .../tools/intraday/index.ts`）。
+- Lane 1 PASS：十个回放剧本 trunk 78e18e8 和 head 两边的提醒、触发、报价行数相同（条件编号是每次新的 UUID，比较前换掉）。replay-day.ts 补传 M3（#113）加的 `problem` 口，不补的话 trunk 上回放直接抛错。
+- Lane 2 PASS：网页模块卡写「成员 6」，盘面的 uses 是 quote、intraday、prices、note。`just modules` 不列成员数，所以另跑 `just module check` 看 `agents=6`。
+- Lane 3 到 5、10 PASS。Lane 6 PASS：NVDA 分钟线 500 根（04:50 到 13:09，含盘前），最新一根和报价数据时间差 1 分钟，每根有 VWAP。
+- Lane 7 PASS：6.7 分钟里报价 feed 7 轮都成，最大间隔 60 秒，429 为 0。Lane 8 PASS（`just module try`，三道考题）。Lane 9 PASS：「NVDA 的支撑在哪」只派给结构与形态。
+- Perf：`intraday` 20 次中位数 363 毫秒（355 到 376）；报价 feed 一轮 trunk 中位数 315 毫秒、head 307 毫秒，429 两边都是 0；盘面三道题从提问到任务空闲 73 到 195 秒，中位数 131 秒。
+- 实跑看到的：领队有全部工具，lane 7 第一题里领队自己读了两页网页、给盘面的结论补了原因。成员读不了网页（`tools: read`）。这次只在 `ta-interpret` 里写了「领队不读网页、不补原因」，结构上的限制（宿主 `leadTools`）是另一件事。之后 lane 8、媒体那一题领队都没读网页。
 
 **Review gate.** None. R2b is not review-gated.
 
