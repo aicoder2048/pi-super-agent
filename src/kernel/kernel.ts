@@ -1382,6 +1382,9 @@ export class Kernel {
 			const whose = ruled === null ? `domain ${domain}` : `rule ${d.ruleId} belongs to domain ${ruled}`;
 			return reject(`trigger ${trigger.id} comes from module feed ${trigger.source}, so its ticket must be in domain ${ruleNamespace(trigger.source)} or have no domain; ${whose}`);
 		}
+		if (domain !== null && openerOf(origin) === "host-source" && this.#domains().get(domain)?.privateFeed) {
+			return reject(`domain ${domain} holds private data its feed brought in, and a ticket opened from source ${origin.source} has bash or web_get; omit domain, or let the user ask for it in the conversation`);
+		}
 		const threads = [...new Set(d.threads ?? [])];
 		for (const threadId of threads) {
 			if (threadId === CONVERSATION_THREAD_ID) return reject("the conversation thread cannot be subscribed");
