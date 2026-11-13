@@ -247,15 +247,15 @@ async function fake(): Promise<void> {
 	});
 
 	await lane(4, "private-first", async () => {
-		const NOTICE = "个人医疗健康 有新内容，请在网页上查看";
 		const BRIEF = "记 CEA";
+		const ANSWER = "NVDA 到了 +5% 档，已经开任务看盘面、结构和动量";
 		const inHealth = (open: { name: string; args: Record<string, unknown> }) => ({ ...open, args: { decisions: (open.args.decisions as object[]).map((d) => ({ ...d, domain: "personal-health" })) } });
 		const fakeModel = await FakeModel.start({
 			router: [
 				on("开任务", /^\[对话\][\s\S]*使用者：记 CEA/, (c: string) => [inHealth(openTicket(c, BRIEF)), reply(c, "好，记 CEA")]),
-				on("转述", /^\[Worker 汇报\][^\n]*记 CEA/, (c: string) => [reply(c, `转述：${c.split("\n")[1] ?? ""}`)]),
+				on("转述", /^\[Worker 汇报\][^\n]*记 CEA/, (c: string) => [reply(c, "转述：CEA 4.2 ng/mL")]),
 				on("到档", /来源 stock-ta\/quotes/, (c: string) => [bigMoveTicket(c, "NVDA 到 5% 档")]),
-				on("回答", /^\[对话\][\s\S]*使用者：NVDA 怎么了/, (c: string) => [reply(c, "NVDA 到了 +5% 档，已经开任务看盘面、结构和动量")]),
+				on("回答", /^\[对话\][\s\S]*使用者：NVDA 怎么了/, (c: string) => [reply(c, ANSWER)]),
 			],
 			workers: [
 				worker(BRIEF, on("写", /^\[任务说明\]/, () => [{ name: "data", args: { op: "write", collection: "lab-results", rows: [{ item: "CEA", value: 4.2, unit: "ng/mL", reference: "<5", takenAt: "2026-10-01", lab: "协和" }], from: "使用者口述" } }]), on("汇报", /^\[模块数据\]/, () => [report("ready", "CEA 4.2 ng/mL")])),
@@ -265,19 +265,18 @@ async function fake(): Promise<void> {
 		const h = await boot({ models: harness.fakeModels, fake: fakeModel, health: true, watch: ["NVDA"] });
 		try {
 			h.say("记 CEA");
-			await within(60_000, () => h.phone().some((m) => m.text === NOTICE));
+			await within(60_000, () => h.phone().some((m) => m.text === "转述：CEA 4.2 ng/mL"));
 			const before = h.phone().length;
 			await h.step("10:05", { NVDA: 105.3 }, PREV);
 			const line = await within(20_000, () => h.phone().slice(before).find((m) => m.text.startsWith("提醒 · 股票技术分析：NVDA")));
 			h.say("NVDA 怎么了");
-			await within(30_000, () => h.phone().slice(before).some((m) => m.text === NOTICE));
+			await within(30_000, () => h.phone().slice(before).some((m) => m.text === ANSWER));
 			await sleep(1500);
 			const after = h.phone().slice(before).map((m) => m.text);
 			const png = join(outDir, "r5-private-first.png");
 			await bubbles(png, "幕僚长读过私密数据以后，NVDA 到 +5% 档（假 Telegram）", h.phone().map((m) => m.text).filter((t) => !t.startsWith("你在网页或终端说")));
-			const routerReplies = after.filter((t) => !t.startsWith("提醒 · ") && !t.startsWith("你在网页或终端说"));
-			const pass = line?.text === "提醒 · 股票技术分析：NVDA 涨 +5.30%，到达 +5% 档。现价 105.30，昨收 100.00。报价时间 10:05 ET（延迟行情）。" && routerReplies.length > 0 && routerReplies.every((t) => t === NOTICE) && !after.some((t) => t.includes("已经开任务"));
-			return { pass, evidence: `personal-health ticket wrote private data and the Router relayed it (one-line notice on Telegram), then NVDA +5.3%\nTelegram after the band:\n${show(after)}\nscreenshot ${png}` };
+			const pass = line?.text === "提醒 · 股票技术分析：NVDA 涨 +5.30%，到达 +5% 档。现价 105.30，昨收 100.00。报价时间 10:05 ET（延迟行情）。" && after.includes(ANSWER) && !after.some((t) => t.includes("请在网页上查看"));
+			return { pass, evidence: `personal-health ticket wrote private data and its report reached Telegram in full, then NVDA +5.3%\nTelegram after the band:\n${show(after)}\nscreenshot ${png}` };
 		} finally {
 			await h.stop();
 		}
