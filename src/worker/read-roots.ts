@@ -14,13 +14,11 @@ export async function piReadResolver(piCli: string): Promise<ResolveReadPath> {
 	return utils.resolveReadPath;
 }
 
-/** True when `child` is `parent` or inside it; both absolute. */
 export const within = (parent: string, child: string) => {
 	const rel = relative(parent, child);
 	return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 };
 
-/** Real paths of the ones that exist, deduped, order kept. */
 export function realRoots(paths: readonly string[]): string[] {
 	const roots: string[] = [];
 	for (const path of paths) {

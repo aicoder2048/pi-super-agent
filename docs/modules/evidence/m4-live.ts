@@ -80,7 +80,6 @@ function files(root: string, tree: Record<string, string>): void {
 	}
 }
 
-/** A new-layout package: one handler feed whose fixture brings `text`, a rule on it, a `read` and a `write` tool, one member. */
 function m4lab(w: World, text = "测试通知 m4"): void {
 	const tool = (title: string, effect: string, key: string) => JSON.stringify({ title, description: `${title}，测试用`, effect, input: { q: { type: "text", title: "输入" } }, output: { [key]: { type: "text", title: "结果" } } });
 	files(join(w.state, "modules", "m4lab"), {
@@ -145,7 +144,6 @@ const turns = (fake: FakeModel | undefined, brief: string) => fake?.exchanges.fi
 const resultsOf = (fake: FakeModel | undefined, brief: string, n = 1) => turns(fake, brief).find((e) => e.toolResults.length >= n)?.toolResults;
 const paired = (calls: ToolCall[], results: readonly string[] | undefined) => calls.map((c, i) => `${c.name} ${JSON.stringify(c.args)}\n  -> ${JSON.stringify(results?.[i] ?? "(no result)")}`).join("\n");
 
-/** One helper turn that makes `calls`, then waits for their results at the fake model. */
 async function oneTurn(repo: string, w: World, brief: string, router: Step, calls: ToolCall[] | ((w: World) => ToolCall[]), o: { config?: Record<string, unknown>; on?: string[]; after?: () => void; limitMs?: number } = {}) {
 	const asked: ToolCall[] = [];
 	const run = await boot(repo, w, {
@@ -195,7 +193,6 @@ async function lane(n: number, slug: string, body: () => Promise<Verdict>): Prom
 	console.log(results.at(-1));
 }
 
-/** Every tool call and its result in the Pi sessions under the state dir. */
 type Called = { name: string; args: { path?: string } | undefined; cwd: string; error: boolean; text: string };
 function transcripts(w: World): Called[] {
 	const calls = new Map<string, { name: string; args: Called["args"] }>();
@@ -519,7 +516,6 @@ async function lanes(): Promise<void> {
 
 const line = (name: string, xs: number[]) => `${name}: median ${median(xs).toFixed(2)} ms, min ${Math.min(...xs).toFixed(2)}, max ${Math.max(...xs).toFixed(2)}, spread ${(Math.max(...xs) - Math.min(...xs)).toFixed(2)} ms, runs ${xs.length}`;
 
-/** One checkout's Worker extension with a fake `pi`, its `tool_call` hook, then Pi's real read tool on a file inside the workdir. */
 async function readProbe(repo: string, workdir: string, file: string, mark: string): Promise<() => Promise<number>> {
 	Object.assign(process.env, { PSA_SOCKET: "/nonexistent.sock", PSA_TICKET: "tkt_perf", PSA_TOKEN: "tok", PSA_BASIS: "inference", PSA_PROFILE: "inference", PSA_READ_ROOTS: JSON.stringify([realpathSync(workdir)]), PSA_PI_CLI: piCliPath() });
 	const { default: extension } = await import(`${pathToFileURL(join(repo, "src/worker/extension.ts")).href}?m4perf`);
@@ -538,7 +534,7 @@ async function readProbe(repo: string, workdir: string, file: string, mark: stri
 	};
 }
 
-/** Trigger received (fixture submitted) to the helper's first request at the fake model, and ticket created to that request. */
+/** Perf intervals: trigger to the helper's first model request, and ticket to that request. */
 async function openOnce(repo: string): Promise<{ fromTrigger: number; fromTicket: number }> {
 	const brief = "M4 perf：开任务";
 	const w = world();

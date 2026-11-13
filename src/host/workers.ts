@@ -57,10 +57,9 @@ export interface WorkerSpec extends DomainKit {
 	ticketId: string;
 	sessionId: string;
 	workdir: string;
-	/** Still read for `prepare`, which runs for every ticket but an inference one, and for `tripwire`, only a request ticket's. */
+	/** Beside `profile` because `prepare` and `tripwire` go by basis: an inference ticket runs no `prepare`, only a request ticket gets `tripwire`. */
 	basis: Basis;
 	profile: Profile;
-	/** Real paths the helper and its members may read when the profile is rooted. */
 	readRoots: readonly string[];
 	token: string;
 	model: ModelRef;

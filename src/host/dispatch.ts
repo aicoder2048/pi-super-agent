@@ -102,7 +102,6 @@ export interface MemberRun {
 	callId: string;
 	member: Member;
 	task: string;
-	/** The helper's: a member is held to its ticket's profile and read roots. */
 	profile: Profile;
 	readRoots: readonly string[];
 	/** Lets the member's `lookup` through the host, and its `web_get` tell the host it read a page; nothing else. */

@@ -1,7 +1,6 @@
 export const BASES = ["request", "rule", "inference"] as const;
 export type Basis = (typeof BASES)[number];
 
-/** Who opened a ticket: the user in the conversation, a source the host runs itself, or a module's feed (ADR-0018). */
 export type Opener = "user" | "host-source" | "module-feed";
 
 export const WORKER_STATES = ["none", "queued", "running", "idle"] as const;

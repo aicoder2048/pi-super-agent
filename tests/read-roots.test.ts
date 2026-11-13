@@ -9,7 +9,6 @@ import { piReadResolver, realRoots, rootRefusal } from "../src/worker/read-roots
 
 const SECRET = "s3cr3t-m4-value";
 
-/** A fake home: the secrets file and Pi's auth.json beside a state dir, one ticket's workdir and an installed package. */
 function layout() {
 	const home = mkdtempSync(join(tmpdir(), "psa-roots-"));
 	const secrets = join(home, "secrets", ".env");

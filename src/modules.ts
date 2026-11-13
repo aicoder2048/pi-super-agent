@@ -79,7 +79,6 @@ export function moduleNameProblem(name: string): string | undefined {
 /** What a helper is handed from its ticket's domain, however the ticket was opened. */
 export interface DomainKit {
 	skillsDir: string | undefined;
-	/** The package's `knowledge/`, one of the folders a ticket restricted to its read roots may read. */
 	knowledgeDir: string | undefined;
 	/** Runs once in the ticket's workdir before the helper first starts. Never for an inference ticket. */
 	prepare: string | undefined;

@@ -105,7 +105,6 @@ test.afterEach(() => {
 	process.env.HOME = home;
 });
 
-/** The worker extension as Pi loads it, with only its `tool_call` hook driven. */
 async function hook(profile: string, roots: string[], extra: Record<string, string> = {}) {
 	Object.assign(process.env, { PSA_SOCKET: "/nonexistent.sock", PSA_TICKET: "tkt_1", PSA_TOKEN: "tok", PSA_PROFILE: profile, PSA_READ_ROOTS: JSON.stringify(roots), PSA_PI_CLI: piCliPath() }, extra);
 	const { default: workerExtension } = await import(`../src/worker/extension.ts?hook=${++loads}`);
