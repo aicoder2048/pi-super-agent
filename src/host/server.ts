@@ -5,6 +5,7 @@ import { ConfigError } from "../config-error.ts";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
 import type { HostToClient } from "../client/protocol.ts";
 import { refusalText, type AnswerRefusal } from "../kernel/question.ts";
+import { NOTICE_MAX } from "../kernel/types.ts";
 import { tokenMatches } from "./web-token.ts";
 
 export type Broadcast = Extract<HostToClient, { type: "user" | "reply" | "board" | "cleared" | "host_line" }>;
@@ -24,6 +25,7 @@ const ANSWER_FAILED = "宿主内部出错，这次点选没有生效，请再点
 
 export interface ClientHandlers {
 	onSay(text: string): string;
+	onNotify(text: string): void;
 	onAnswer(reportId: string, option: number): AnswerResult;
 	snapshot(): unknown;
 	transcript?(ticketId: string): unknown[];
@@ -108,6 +110,15 @@ export class HostServer {
 						const triggerId = clients.onSay(r.text);
 						if (typeof r.requestId === "string") writeJsonLine(socket, { type: "ack", requestId: r.requestId, triggerId });
 					}, () => {});
+				}
+				else if (r.type === "notify" && typeof r.text === "string" && typeof r.requestId === "string") {
+					const requestId = r.requestId;
+					const reason = !hasVisibleText(r.text) ? "通知是空的。" : r.text.length > NOTICE_MAX ? `通知最长 ${NOTICE_MAX} 字，这条有 ${r.text.length} 字。` : null;
+					if (reason) writeJsonLine(socket, { type: "refused", requestId, reason });
+					else this.#guard("notify", () => {
+						clients.onNotify(r.text);
+						writeJsonLine(socket, { type: "notified", requestId });
+					}, () => writeJsonLine(socket, { type: "refused", requestId, reason: "宿主内部出错，通知没有记下；详情见宿主日志。" }));
 				}
 				else if (r.type === "answer" && typeof r.reportId === "string" && Number.isInteger(r.option) && typeof r.requestId === "string") {
 					this.#guard("answer", () => {

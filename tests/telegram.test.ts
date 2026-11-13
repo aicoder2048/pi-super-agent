@@ -758,6 +758,17 @@ test("模块的提醒前面写「提醒 · 模块名：」，不写盯盘提醒�
 	assert.deepEqual(sentTo(tg, USER).slice(1), ["提醒 · 身体：体重 我 81，高于 80", "个人医疗健康 有新内容，请在网页上查看"]);
 });
 
+test("真宿主：通知带响铃发到手机一次，前面写「通知：」，网页和终端的对话里也有这一行", async (t) => {
+	const { host, tg } = await telegramHost(t);
+	tg.userSays(USER, "/start");
+	await until(() => sentTo(tg, USER).length === 1, "说明");
+	host.notify("G3 合并了\n下一步 G4");
+	await until(() => sentTo(tg, USER).includes("通知：G3 合并了\n下一步 G4"), "通知到手机");
+	await settle();
+	assert.deepEqual(tg.sent.filter((m) => m.chatId === USER).slice(1).map((m) => [m.text, m.silent]), [["通知：G3 合并了\n下一步 G4", false]]);
+	assert.deepEqual(host.snapshot().conversation.map((l) => [l.who, l.text]), [["notice", "G3 合并了\n下一步 G4"]]);
+});
+
 test("盯盘条件的收据只在本机：广播收据，Telegram 什么都不发", async (t) => {
 	const { tg, open, client } = await cardClient(t);
 	await open(USER);

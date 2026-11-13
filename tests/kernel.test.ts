@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { Kernel, nextStallAt } from "../src/kernel/kernel.ts";
 import { SOLO_NAMES, TEAM_NAMES } from "../src/kernel/helper-names.ts";
@@ -2115,7 +2116,7 @@ test("宿主行：模块的提醒记着是哪个模块、私密不私密；刚�
 	const module = { title: "个人医疗健康", private: true };
 	const { line } = s.kernel.postHostLine("module:personal-health", { ...alert("cnd_1:1", "检验指标 CEA 9"), module });
 	assert.deepEqual(line.module, module);
-	assert.deepEqual(s.kernel.undeliveredAlerts().map((l) => l.module), [module]);
+	assert.deepEqual(s.kernel.undeliveredLines().map((l) => l.module), [module]);
 	assert.deepEqual(s.kernel.conversation().map((l) => (l.who === "alert" ? l.module : undefined)), [module]);
 	s.kernel.postHostLine("us-market", alert("NVDA:2026-11-08:day-up-5"));
 	assert.equal(s.kernel.conversation().at(-1)!.who === "alert" && "module" in s.kernel.conversation().at(-1)!, false);
@@ -2152,6 +2153,33 @@ test("宿主行：不合规的提醒（换行、空、超过 1000 字）和超�
 	assert.throws(() => s.kernel.postHostLine("us-market", { kind: "receipt", text: "长".repeat(16001) }), /CHECK constraint failed/);
 	assert.deepEqual(s.kernel.conversation(), []);
 	assert.equal(s.kernel.raised("us-market", "id-0"), false);
+});
+
+test("宿主行：通知不去重，可以多行，最长 2000 字；空的和更长的报错，什么都不写", () => {
+	const s = setup();
+	const text = `第一行\n${"长".repeat(1990)}`;
+	const a = s.kernel.postHostLine("notify", { kind: "notice", text });
+	const b = s.kernel.postHostLine("notify", { kind: "notice", text });
+	assert.deepEqual([a.duplicate, b.duplicate, a.line.who], [false, false, "notice"]);
+	for (const bad of ["", "长".repeat(2001)]) assert.throws(() => s.kernel.postHostLine("notify", { kind: "notice", text: bad }), /CHECK constraint failed/);
+	assert.deepEqual(s.kernel.conversation().map((l) => [l.who, l.text]), [["notice", text], ["notice", text]]);
+});
+
+test("旧数据库的宿主行表不认通知：打开时改表，旧提醒和收据原样读回，之后能贴通知", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const old = new DatabaseSync(path);
+	old.exec(`CREATE TABLE host_lines (
+		id TEXT PRIMARY KEY CHECK (id GLOB 'hln_*'),
+		kind TEXT NOT NULL CHECK (kind IN ('alert', 'receipt')),
+		source TEXT NOT NULL, external_id TEXT, text TEXT NOT NULL, occurred_at INTEGER NOT NULL, created_at INTEGER NOT NULL, delivered_at INTEGER,
+		UNIQUE (source, external_id));
+		INSERT INTO host_lines VALUES ('hln_a', 'alert', 'us-market', 'NVDA:x', 'NVDA 涨了 5.3%', 1, 1, 1);
+		INSERT INTO host_lines VALUES ('hln_r', 'receipt', 'us-market', NULL, '已记下：NVDA', 2, 2, NULL);`);
+	old.close();
+	const s = setup({ path });
+	s.kernel.postHostLine("notify", { kind: "notice", text: "测试" });
+	assert.deepEqual(s.kernel.conversation().map((l) => [l.who, l.text]), [["alert", "NVDA 涨了 5.3%"], ["receipt", "已记下：NVDA"], ["notice", "测试"]]);
+	assert.equal(s.kernel.postHostLine("us-market", alert("NVDA:x")).duplicate, true, "旧提醒的去重还在");
 });
 
 test("宿主行：raised 只认这个来源已经贴过的提醒 id", () => {
@@ -2216,13 +2244,14 @@ test("宿主行：alertsToday 里模块的提醒带着模块名和是否私密",
 	assert.deepEqual(line.module, { title: "个人医疗健康", private: true });
 });
 
-test("宿主行：undeliveredAlerts 只列没标记送达的提醒，不列收据", () => {
+test("宿主行：undeliveredLines 只列没标记送达的提醒和通知，不列收据", () => {
 	const s = setup();
 	s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下" });
 	const done = s.kernel.postHostLine("us-market", alert("a")).line;
 	const pending = s.kernel.postHostLine("us-market", alert("b")).line;
+	const notice = s.kernel.postHostLine("notify", { kind: "notice", text: "测试" }).line;
 	s.kernel.markHostLineDelivered(done.id);
-	assert.deepEqual(s.kernel.undeliveredAlerts(), [pending]);
+	assert.deepEqual(s.kernel.undeliveredLines(), [pending, notice]);
 });
 
 test("宿主行：不能引用提醒和收据，和不认识的行一样返回 null，什么都不写", () => {
