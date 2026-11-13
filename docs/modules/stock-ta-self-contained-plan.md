@@ -270,16 +270,16 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `docs/modules/stock-ta.md`，加「在另一台机器上装」一节。
-- [ ] Create `docs/modules/evidence/s4-old-mac.md`（只记命令输出摘要，不写机器名和路径）。
+- [x] Edit `docs/modules/stock-ta.md`，加「在另一台机器上装」一节。
+- [x] Create `docs/modules/evidence/s4-old-mac.md`（只记命令输出摘要，不写机器名和路径）。
 
 **Build.**
 
-- [ ] 文档写清旧 Mac 要的东西。旧 Mac 现在没有 `uv`，也没有 `gh`。它没有能访问 GitHub 的 SSH 密钥。登录钥匙串在终端里常是锁着的，`osxkeychain` 存凭据会被悄悄丢掉，所以改用 git 的 `store` helper（Appendix A）。
-- [ ] 默认做法（Appendix E 第 2 条）。使用者在 GitHub 网页上建一个 fine-grained token，只给技术分析这一个仓库的 Contents 只读权限，设过期时间。在旧 Mac 上设 `git config --global credential.helper store`，`~/.git-credentials` 权限 600，第一次 `git ls-remote` 时填入 token。2026-11-12 使用者已做完，旧 Mac 读到 main c9e7536，不再问密码。凭据只在跑 `just module setup` 时用，宿主服务运行时不需要。
-- [ ] 装 uv（官方安装脚本或 Homebrew）。`#91` 已经把装机时 PATH 里 `uv` 的目录写进服务 PATH，S3 起工具和 S2 的 feed 都直接调 venv，所以只有 setup 需要 `uv`。uv 会下载 Python 3.12。旧 Mac 是 Intel、macOS 12，numpy 和 pandas 都有 `macosx_10_13_x86_64` 的 wheel，不用编译。
-- [ ] 复制包、`just module setup stock-ta`、密钥文件里确认有 `POLYGON_API_KEY`、把笔记文件拷过去并导入、`just module on stock-ta`、等第一拍扫描（`now` 补数，一小时内）。自选股超过 30 只时只扫前 30 只，`scan-runs` 里会说。
-- [ ] 换钉的提交时，改 `py/pyproject.toml` 的 `rev`，跑 `uv lock`，提交。每台机器复制新包以后重跑 `just module setup stock-ta`。旧的 venv 留着，钉在旧版本上的 ticket 照常；工具在新版本没有 venv 时会提醒（S3）。
+- [x] 文档写清旧 Mac 要的东西。旧 Mac 现在没有 `uv`，也没有 `gh`。它没有能访问 GitHub 的 SSH 密钥。登录钥匙串在终端里常是锁着的，`osxkeychain` 存凭据会被悄悄丢掉，所以改用 git 的 `store` helper（Appendix A）。
+- [x] 默认做法（Appendix E 第 2 条）。使用者在 GitHub 网页上建一个 fine-grained token，只给技术分析这一个仓库的 Contents 只读权限，设过期时间。在旧 Mac 上设 `git config --global credential.helper store`，`~/.git-credentials` 权限 600，第一次 `git ls-remote` 时填入 token。2026-11-12 使用者已做完，旧 Mac 读到 main c9e7536，不再问密码。凭据只在跑 `just module setup` 时用，宿主服务运行时不需要。
+- [x] 装 uv（官方安装脚本或 Homebrew）。`#91` 已经把装机时 PATH 里 `uv` 的目录写进服务 PATH，S3 起工具和 S2 的 feed 都直接调 venv，所以只有 setup 需要 `uv`。uv 会下载 Python 3.12。旧 Mac 是 Intel、macOS 12，numpy 和 pandas 都有 `macosx_10_13_x86_64` 的 wheel，不用编译。
+- [x] 复制包、`just module setup stock-ta`、密钥文件里确认有 `POLYGON_API_KEY`、把笔记文件拷过去并导入、`just module on stock-ta`、等第一拍扫描（`now` 补数，一小时内）。自选股超过 30 只时只扫前 30 只，`scan-runs` 里会说。
+- [x] 换钉的提交时，改 `py/pyproject.toml` 的 `rev`，跑 `uv lock`，提交。每台机器复制新包以后重跑 `just module setup stock-ta`。旧的 venv 留着，钉在旧版本上的 ticket 照常；工具在新版本没有 venv 时会提醒（S3）。
 
 **You see.**
 
@@ -291,23 +291,25 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. lane 2 和 lane 3 要使用者亲手做，owner 等使用者说做完了再接着跑。lane 7 靠 `now` 补数，任何时候都能跑；lane 9 的「下一拍提前返回」也不需要收盘时间窗。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 上旧 Mac 没有 stock-ta。记下这一点，在旧 Mac 上跑 `just modules`，确认 us-market 照常。Save `s4-regression.txt`. Pass when 装之前和装之后 us-market 的状态相同。
-- [ ] Lane 2. 使用者建 token、存进 `~/.git-credentials`。owner 跑 `git ls-remote https://github.com/aicoder2048/TechnicalAnalysis HEAD`。Save `s4-auth.txt`. Pass when 打印一个提交，没有要密码。
-- [ ] Lane 3. 使用者装 uv。owner 跑 `uv --version`。Save `s4-uv.txt`. Pass when 有版本号。
-- [ ] Lane 4. `just module setup stock-ta`。Save `s4-setup.txt`. Pass when 装好，记下用时和 `files/venv-<12 位>` 的大小。
-- [ ] Lane 5. `just module check` 和 `just modules`。Save `s4-check.txt`. Pass when ok，stock-ta 有效。
-- [ ] Lane 6. 导入 18 份笔记。Save `s4-import.txt`. Pass when `knowledge` 显示都导入了。
-- [ ] Lane 7. 打开 stock-ta，等第一拍扫描。Save `s4-first-scan.txt`. Pass when `scan-runs` 一行，12 个标的有日线，记下用时。
-- [ ] Lane 8. 旧 Mac 上调 `structure` 查 NVDA。Save `s4-structure.txt`. Pass when 有结果，数据时间是最近一个交易日收盘。
+- [x] Lane 1. Regression lane against trunk. trunk 上旧 Mac 没有 stock-ta。记下这一点，在旧 Mac 上跑 `just modules`，确认 us-market 照常。Save `s4-regression.txt`. Pass when 装之前和装之后 us-market 的状态相同。
+- [x] Lane 2. 使用者建 token、存进 `~/.git-credentials`。owner 跑 `git ls-remote https://github.com/aicoder2048/TechnicalAnalysis HEAD`。Save `s4-auth.txt`. Pass when 打印一个提交，没有要密码。
+- [x] Lane 3. 使用者装 uv。owner 跑 `uv --version`。Save `s4-uv.txt`. Pass when 有版本号。
+- [x] Lane 4. `just module setup stock-ta`。Save `s4-setup.txt`. Pass when 装好，记下用时和 `files/venv-<12 位>` 的大小。
+- [x] Lane 5. `just module check` 和 `just modules`。Save `s4-check.txt`. Pass when ok，stock-ta 有效。
+- [x] Lane 6. 导入 18 份笔记。Save `s4-import.txt`. Pass when `knowledge` 显示都导入了。
+- [x] Lane 7. 打开 stock-ta，等第一拍扫描。Save `s4-first-scan.txt`. Pass when `scan-runs` 一行，12 个标的有日线，记下用时。
+- [x] Lane 8. 旧 Mac 上调 `structure` 查 NVDA。Save `s4-structure.txt`. Pass when 有结果，数据时间是最近一个交易日收盘。
 - [ ] Lane 9. 重启宿主服务。Save `s4-restart.txt`. Pass when stock-ta 仍然有效，下一拍按 cursor 提前返回、没有起 `ta`。
 - [ ] Lane 10. 真模型从手机（Telegram）问 NVDA 的支撑阻力和动量。Save `s4-phone.txt`. Pass when 汇报带数据时间和笔记出处。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 旧 Mac 上一次 `structure` 调用的时间，`just module setup` 第一次的时间，第一次扫描的时间。trunk 上旧 Mac 没有这个模块，只给绝对预算。
-- [ ] Probe. `structure` 先热身一次再连调 10 次；setup 和第一次扫描各一次。之后遇到的第一个有新数据的真实拍，记下增量扫描的时间。
-- [ ] Baseline. Record the 本机同一份数据上 `structure` 的中位数 first（S3 的 perf 结果）。
+- [x] Metric. 旧 Mac 上一次 `structure` 调用的时间，`just module setup` 第一次的时间，第一次扫描的时间。trunk 上旧 Mac 没有这个模块，只给绝对预算。
+- [x] Probe. `structure` 先热身一次再连调 10 次；setup 和第一次扫描各一次。之后遇到的第一个有新数据的真实拍，记下增量扫描的时间。
+- [x] Baseline. Record the 本机同一份数据上 `structure` 的中位数 first（S3 的 perf 结果）。
 - [ ] Rule. 旧 Mac 上 `structure` 中位数超过 3 秒，或 setup 超过 10 分钟，或第一次扫描超过 5 分钟（feed 的 `limit`），就失败。
+
+2026-11-13 在旧 Mac 上 7129edd 跑通（详见 `docs/modules/evidence/s4-old-mac.md`）：setup 12 秒、环境 161 MB；第一拍约 73 秒，`scan-runs` 一行「换上」，9 只（自选股照 us-market，含 QQQ、SPY）各 502 根日线；`structure` NVDA 的 `data_end` 是 11-12 收盘；从宿主问 NVDA，约 112 秒出带数据时间和笔记出处的汇报。没打勾的：Rule 没通过（`structure` 中位数 5872 毫秒，超过 3 秒，本机约 1.1 秒）；lane 9 的「下一拍提前返回」要等下一拍；lane 10 和「You see」的手机提问要使用者自己问；文档命令在本机临时状态目录照抄跑一遍没做（只改了文档）。
 
 **Review gate.** None. S4 is not review-gated.
 
