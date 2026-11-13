@@ -375,62 +375,62 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 
 **Files.**
 
-- [ ] Edit `docs/modules/examples/stock-ta/feeds/quotes/feed.json`、`index.ts`、fixtures。
-- [ ] Edit `src/modules/feed-runner.ts`，handler 可以交回 `alerts`。
-- [ ] Edit `docs/modules/examples/stock-ta/rules.md`、`skills/market-desk/SKILL.md`。
-- [ ] Delete `modules/us-market/`。
-- [ ] Edit `src/host/wiring.ts`（`sources.us-market` 的报错说明）、`src/host/host.ts` 和 `src/web/view.mjs`（stock-ta 卡片的两行）。
+- [x] Edit `docs/modules/examples/stock-ta/feeds/quotes/feed.json`、`index.ts`、fixtures。
+- [x] Edit `src/modules/feed-runner.ts`，handler 可以交回 `alerts`。
+- [x] Edit `docs/modules/examples/stock-ta/rules.md`、`skills/market-desk/SKILL.md`。
+- [x] Delete `modules/us-market/`。
+- [x] Edit `src/host/wiring.ts`（`sources.us-market` 的报错说明）、`src/host/host.ts` 和 `src/web/view.mjs`（stock-ta 卡片的两行）。
 - [ ] Edit `src/cli/migrate-us-market.ts`，不再读 `modules/us-market/module.json`。
-- [ ] Edit `tests/stock-ta-quotes.test.ts`、`tests/feed-runner.test.ts`、`tests/wiring.test.ts`、`tests/web.test.ts` 和因为 us-market 包不在而失败的测试（`tests/first-teams.test.ts`、`tests/modules.test.ts`、`tests/modules-cli.test.ts` 等），改成断言新的行为，不跳过。
-- [ ] Create `tests/fixtures/us-market-day/expected.json`、`docs/modules/evidence/r5-parity.ts`、`docs/modules/evidence/r5-live.ts`。
-- [ ] Edit `docs/modules/stock-ta.md`、`docs/modules/module-user-guide.md`、`docs/deploy/home-mac.md`、`docs/web-client/look-and-feel-plan.md`（L3、L4 的说明）。
+- [x] Edit `tests/stock-ta-quotes.test.ts`、`tests/feed-runner.test.ts`、`tests/wiring.test.ts`、`tests/web.test.ts` 和因为 us-market 包不在而失败的测试（`tests/first-teams.test.ts`、`tests/modules.test.ts`、`tests/modules-cli.test.ts` 等），改成断言新的行为，不跳过。
+- [x] Create `tests/fixtures/us-market-day/expected.json`、`docs/modules/evidence/r5-parity.ts`、`docs/modules/evidence/r5-live.ts`。
+- [x] Edit `docs/modules/stock-ta.md`、`docs/modules/module-user-guide.md`、`docs/deploy/home-mac.md`、`docs/web-client/look-and-feel-plan.md`（L3、L4 的说明）。
 
 **Build.**
 
-- [ ] 报价 feed 每轮都带上 SPY、QQQ，不管它们在不在自选股里，还是一次快照请求。这是有意的新行为，列在 Appendix B 的已知不同里。
-- [ ] 分档。`feed.json` 的 `settings` 加 `bands: { default: [5, 8], bySymbol: { SPY: [2, 3], QQQ: [2, 3] } }`。没有 3% 档、指数 1.5% 档，也没有放量（Appendix E 第 2、3 条）。每轮取已经到达的最高一档；每只股票每个方向每天只升不降，跳空只报最高一档。已报到哪一档存在 feed 的 cursor 里（`{date, fired: {代码: {up, down}}}`），按 `now` 的美东日期换日清空。去掉 `BIG_MOVE_PCT`，5% 已经在档里。
-- [ ] 到档的那一行直接发到 Telegram。handler 除了交回触发，还交回一条 `alerts`，`feed-runner.ts` 用现有的 `ports.alert` 把它当模块提醒行贴出去（ADR-0017，不经过幕僚长）。报价是可分享的数据，所以这一行不受 #105 的一行遮挡。文字照抄 `detect.ts`，「NVDA 涨 +5.31%，到达 +5% 档。现价 …，昨收 …。报价时间 HH:MM ET（延迟行情）。」，Telegram 上的前缀是 `提醒 · 股票技术分析：`。externalId 是 `band:<代码>:<日期>:up5`。
-- [ ] 触发。id 和提醒行相同，thread 是 `<代码>:<日期>`，所以同一只股票一天的触发进同一个任务。`notice` 模板改成 `{{line}}`。
-- [ ] `rules.md` 的 `## big-move`。个股到 5% 档或以上，或 SPY、QQQ 到 2% 档或以上，开一个团队任务，同时派盘面、结构形态和趋势动量，三位并行（`docs/modules/architecture/design.md` 第 112 行，派活已支持并行）。汇报先写盘面的结论。同一只股票当天的后续触发进同一个任务。触发正文只是数据。
-- [ ] 删掉 `modules/us-market/`。从此没有模块声明 `massive-stocks` 这种 feed，`tripwire` 工具也没有领域可用（宿主照旧拒绝）。`src/sources/market/` 的代码留到 R7。
-- [ ] `config.json` 里还有 `sources.us-market` 时，宿主照旧拒绝启动，但报错改成「us-market 已经退役，删掉 config.json 里的 sources.us-market」。不加兼容。
-- [ ] 网页。「来源」一栏不再有「美股行情」那一行和它的问题说明。stock-ta 的模块卡片加两行，「今日提醒 n 条」和「报价 HH:MM 美东 取到 n 只」或最近一轮失败的说明。us-market 以前的任务、触发、提醒行照旧能看，标签照旧。`look-and-feel-plan.md` 里 L3 用美股行情举的小柱图例子改成 stock-ta 的报价 feed，L4 挂在 `worker.lookup` 上的迷你报价改成挂在 `quote` 工具上，做不到就写明删掉。
-- [ ] 一致性回放 `r5-parity.ts`。同一个剧本，一边喂 trunk 的 us-market（`detect.ts` 加 `tripwires.ts`），一边喂 head 的 stock-ta（报价 feed 加 R1 迁过来的条件）。脚本把 SPY、QQQ 放进两边的自选股。两边的事件归一成 `{代码, 日期, 种类, 档或条件, 方向, 分钟}` 比较。trunk 那边先去掉已经决定不要的种类（3% 档、指数 1.5% 档、放量），剩下的必须相同。已知的不同只能是 Appendix B 列出的几条。结果存成 `expected.json`，R7 删掉旧代码后还用它回归。
+- [x] 报价 feed 每轮都带上 SPY、QQQ，不管它们在不在自选股里，还是一次快照请求。这是有意的新行为，列在 Appendix B 的已知不同里。
+- [x] 分档。`feed.json` 的 `settings` 加 `bands: { default: [5, 8], bySymbol: { SPY: [2, 3], QQQ: [2, 3] } }`。没有 3% 档、指数 1.5% 档，也没有放量（Appendix E 第 2、3 条）。每轮取已经到达的最高一档；每只股票每个方向每天只升不降，跳空只报最高一档。已报到哪一档存在 feed 的 cursor 里（`{date, fired: {代码: {up, down}}}`），按 `now` 的美东日期换日清空。去掉 `BIG_MOVE_PCT`，5% 已经在档里。
+- [x] 到档的那一行直接发到 Telegram。handler 除了交回触发，还交回一条 `alerts`，`feed-runner.ts` 用现有的 `ports.alert` 把它当模块提醒行贴出去（ADR-0017，不经过幕僚长）。报价是可分享的数据，所以这一行不受 #105 的一行遮挡。文字照抄 `detect.ts`，「NVDA 涨 +5.31%，到达 +5% 档。现价 …，昨收 …。报价时间 HH:MM ET（延迟行情）。」，Telegram 上的前缀是 `提醒 · 股票技术分析：`。externalId 是 `band:<代码>:<日期>:up5`。
+- [x] 触发。id 和提醒行相同，thread 是 `<代码>:<日期>`，所以同一只股票一天的触发进同一个任务。`notice` 模板改成 `{{line}}`。
+- [x] `rules.md` 的 `## big-move`。个股到 5% 档或以上，或 SPY、QQQ 到 2% 档或以上，开一个团队任务，同时派盘面、结构形态和趋势动量，三位并行（`docs/modules/architecture/design.md` 第 112 行，派活已支持并行）。汇报先写盘面的结论。同一只股票当天的后续触发进同一个任务。触发正文只是数据。
+- [x] 删掉 `modules/us-market/`。从此没有模块声明 `massive-stocks` 这种 feed，`tripwire` 工具也没有领域可用（宿主照旧拒绝）。`src/sources/market/` 的代码留到 R7。
+- [x] `config.json` 里还有 `sources.us-market` 时，宿主照旧拒绝启动，但报错改成「us-market 已经退役，删掉 config.json 里的 sources.us-market」。不加兼容。
+- [x] 网页。「来源」一栏不再有「美股行情」那一行和它的问题说明。stock-ta 的模块卡片加两行，「今日提醒 n 条」和「报价 HH:MM 美东 取到 n 只」或最近一轮失败的说明。us-market 以前的任务、触发、提醒行照旧能看，标签照旧。`look-and-feel-plan.md` 里 L3 用美股行情举的小柱图例子改成 stock-ta 的报价 feed，L4 挂在 `worker.lookup` 上的迷你报价改成挂在 `quote` 工具上，做不到就写明删掉。
+- [x] 一致性回放 `r5-parity.ts`。同一个剧本，一边喂 trunk 的 us-market（`detect.ts` 加 `tripwires.ts`），一边喂 head 的 stock-ta（报价 feed 加 R1 迁过来的条件）。脚本把 SPY、QQQ 放进两边的自选股。两边的事件归一成 `{代码, 日期, 种类, 档或条件, 方向, 分钟}` 比较。trunk 那边先去掉已经决定不要的种类（3% 档、指数 1.5% 档、放量），剩下的必须相同。已知的不同只能是 Appendix B 列出的几条。结果存成 `expected.json`，R7 删掉旧代码后还用它回归。
 
 **You see.**
 
-- [ ] 回放剧本时，head 上只有 stock-ta 的触发和提醒，没有一条 `us-market` 来源的；事件和 trunk 上 us-market 去掉不要的种类以后一一对应。
-- [ ] 假 Telegram 上，NVDA 到 +5% 档时先收到一行 `提醒 · 股票技术分析：NVDA 涨 +5.31%，到达 +5% 档。…（延迟行情）。`，再收到任务的汇报。同一天到 +8% 档时又一行提醒，汇报进同一个任务。
+- [x] 回放剧本时，head 上只有 stock-ta 的触发和提醒，没有一条 `us-market` 来源的；事件和 trunk 上 us-market 去掉不要的种类以后一一对应。
+- [x] 假 Telegram 上，NVDA 到 +5% 档时先收到一行 `提醒 · 股票技术分析：NVDA 涨 +5.31%，到达 +5% 档。…（延迟行情）。`，再收到任务的汇报。同一天到 +8% 档时又一行提醒，汇报进同一个任务。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/stock-ta-quotes.test.ts` 新增：分档取最高、只升不降、跳空只报最高档、两个方向独立、按 `now` 换日清空、SPY 和 QQQ 用自己的档、个股 3% 和 SPY 1.6% 不触发、没有放量、SPY 和 QQQ 总在请求里、cursor 重启后接着用、每次到档都交回一条 `alerts`。每条先红后绿。Run `just test`.
-- [ ] `tests/feed-runner.test.ts` 新增 handler 交回的 `alerts` 经 `ports.alert` 贴出、同一个 externalId 只贴一次。`tests/wiring.test.ts` 新增 `sources.us-market` 的报错说明。`tests/web.test.ts` 新增 stock-ta 卡片的两行。其他因为 us-market 不在而改的测试，在 PR 正文里逐个列出改了什么断言。Run `just test`.
+- [x] `tests/stock-ta-quotes.test.ts` 新增：分档取最高、只升不降、跳空只报最高档、两个方向独立、按 `now` 换日清空、SPY 和 QQQ 用自己的档、个股 3% 和 SPY 1.6% 不触发、没有放量、SPY 和 QQQ 总在请求里、cursor 重启后接着用、每次到档都交回一条 `alerts`。每条先红后绿。Run `just test`.
+- [x] `tests/feed-runner.test.ts` 新增 handler 交回的 `alerts` 经 `ports.alert` 贴出、同一个 externalId 只贴一次。`tests/wiring.test.ts` 新增 `sources.us-market` 的报错说明。`tests/web.test.ts` 新增 stock-ta 卡片的两行。其他因为 us-market 不在而改的测试，在 PR 正文里逐个列出改了什么断言。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/r5-live.ts`，lane 3、9 用真模型，lane 9 用真行情。
 
-- [ ] Lane 1. Regression lane against trunk. 一致性回放 `r5-parity.ts`，trunk 跑 us-market，head 跑 stock-ta，同一个剧本、同一份盯盘条件，SPY、QQQ 在自选股里。Save `r5-parity.txt`. Pass when 去掉不要的种类后，归一的事件完全相同，不同之处只有 Appendix B 列出的几条。
-- [ ] Lane 2. head 宿主回放剧本，查 `triggers` 和 `host_lines` 的来源。Save `r5-one-path.txt`. Pass when 没有一行来源是 `us-market`，每个到档事件正好一条触发和一行提醒。
-- [ ] Lane 3. 剧本里 NVDA 到 +5% 再到 +8%，真模型照 `rules.md` 开任务。Save `r5-ticket.png`. Pass when 只开一个团队任务，盘面、结构形态、趋势动量在同一轮里派出，+8% 的触发进了同一个任务。
-- [ ] Lane 4. 先让一个私密模块的任务读过私密数据（和 #105 的 `private-reply-live.ts` 一样），再回放 NVDA 到 +5%。Save `r5-private-first.png`. Pass when 假 Telegram 收到完整的到档那一行；幕僚长的回复照 #105 只有一行提示。
-- [ ] Lane 5. 剧本里 SPY 到 +1.6% 和 +2.1%，SPY 不在自选股里。Save `r5-spy.txt`. Pass when 1.6% 没有任何触发和提醒；2.1% 有一行提醒、开一个任务。
-- [ ] Lane 6. 节假日和 2026-11-27 提前收盘日两个剧本。Save `r5-calendar.txt`. Pass when 节假日没有任何触发；提前收盘日 13:00 以后的成交不写行、不触发。
-- [ ] Lane 7. 临时状态目录的 `config.json` 里留着 `sources.us-market`，启动宿主。Save `r5-config.txt`. Pass when 拒绝启动，报错写着删掉哪一项。删掉后启动正常。
-- [ ] Lane 8. 网页的「来源」和「模块」两栏。Save `r5-page.png`. Pass when 「来源」里没有「美股行情」那一行，stock-ta 卡片有「今日提醒」和报价那两行，以前 us-market 的任务点得开。
+- [x] Lane 1. Regression lane against trunk. 一致性回放 `r5-parity.ts`，trunk 跑 us-market，head 跑 stock-ta，同一个剧本、同一份盯盘条件，SPY、QQQ 在自选股里。Save `r5-parity.txt`. Pass when 去掉不要的种类后，归一的事件完全相同，不同之处只有 Appendix B 列出的几条。
+- [x] Lane 2. head 宿主回放剧本，查 `triggers` 和 `host_lines` 的来源。Save `r5-one-path.txt`. Pass when 没有一行来源是 `us-market`，每个到档事件正好一条触发和一行提醒。
+- [x] Lane 3. 剧本里 NVDA 到 +5% 再到 +8%，真模型照 `rules.md` 开任务。Save `r5-ticket.png`. Pass when 只开一个团队任务，盘面、结构形态、趋势动量在同一轮里派出，+8% 的触发进了同一个任务。
+- [x] Lane 4. 先让一个私密模块的任务读过私密数据（和 #105 的 `private-reply-live.ts` 一样），再回放 NVDA 到 +5%。Save `r5-private-first.png`. Pass when 假 Telegram 收到完整的到档那一行；幕僚长的回复照 #105 只有一行提示。
+- [x] Lane 5. 剧本里 SPY 到 +1.6% 和 +2.1%，SPY 不在自选股里。Save `r5-spy.txt`. Pass when 1.6% 没有任何触发和提醒；2.1% 有一行提醒、开一个任务。
+- [x] Lane 6. 节假日和 2026-11-27 提前收盘日两个剧本。Save `r5-calendar.txt`. Pass when 节假日没有任何触发；提前收盘日 13:00 以后的成交不写行、不触发。
+- [x] Lane 7. 临时状态目录的 `config.json` 里留着 `sources.us-market`，启动宿主。Save `r5-config.txt`. Pass when 拒绝启动，报错写着删掉哪一项。删掉后启动正常。
+- [x] Lane 8. 网页的「来源」和「模块」两栏。Save `r5-page.png`. Pass when 「来源」里没有「美股行情」那一行，stock-ta 卡片有「今日提醒」和报价那两行，以前 us-market 的任务点得开。
 - [ ] Lane 9. 交易时段真行情跑 30 分钟，宿主只开 stock-ta。Save `r5-real.txt`. Pass when 每轮一次 Massive 请求，SPY、QQQ 有行，429 是 0，提醒和触发都按数据时间去重。
-- [ ] Lane 10. 对话里让领队「给 TSLA 设个当天涨跌 4% 的提醒」。Save `r5-chat-set.png`. Pass when 设的是 stock-ta 的 `day-move`，没有调 `tripwire`，回执在网页上。
+- [x] Lane 10. 对话里让领队「给 TSLA 设个当天涨跌 4% 的提醒」。Save `r5-chat-set.png`. Pass when 设的是 stock-ta 的 `day-move`，没有调 `tripwire`，回执在网页上。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 报价 feed 一轮的时间（trunk 和 head 都有）；每小时的 Massive 请求数和 429 次数；从到档那一轮到 Telegram 收到提醒行的时间；从触发到 Telegram 收到第一行汇报的时间。
-- [ ] Probe. 回放同一个剧本，trunk 和 head 交替各 3 遍，每遍 390 轮，请求数用回放器的计数。到档的两段时间用 lane 3 的真模型各跑 5 次。
-- [ ] Baseline. Record the trunk 一轮中位数、每小时请求数，和旧 Mac 上 us-market 从触发到第一行汇报的中位数 first（对抗审查 B 量过约 2 分钟，开工时重量）。
+- [x] Metric. 报价 feed 一轮的时间（trunk 和 head 都有）；每小时的 Massive 请求数和 429 次数；从到档那一轮到 Telegram 收到提醒行的时间；从触发到 Telegram 收到第一行汇报的时间。
+- [x] Probe. 回放同一个剧本，trunk 和 head 交替各 3 遍，每遍 390 轮，请求数用回放器的计数。到档的两段时间用 lane 3 的真模型各跑 5 次。
+- [x] Baseline. Record the trunk 一轮中位数、每小时请求数，和旧 Mac 上 us-market 从触发到第一行汇报的中位数 first（对抗审查 B 量过约 2 分钟，开工时重量）。
 - [ ] Rule. 一轮中位数比 trunk 慢 20 毫秒以上就失败。head 每小时请求数多于 trunk 就失败。提醒行晚于那一轮 1 秒以上就失败。到第一行汇报的中位数比基线慢就失败。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 3、4、8、10 screenshots into `docs/modules/evidence/r5-review-<slug>.png`，再加一张假 Telegram 上到档提醒和汇报的截图 `r5-review-telegram.png`。
-- [ ] Record a 30 to 60 second video of the change on a lane VM，回放剧本、Telegram 上的提醒行和汇报、网页的两栏。Save it as `docs/modules/evidence/r5-review.mp4`。
+- [x] Copy lane 3、4、8、10 screenshots into `docs/modules/evidence/r5-review-<slug>.png`，再加一张假 Telegram 上到档提醒和汇报的截图 `r5-review-telegram.png`。
+- [x] Record a 30 to 60 second video of the change on a lane VM，回放剧本、Telegram 上的提醒行和汇报、网页的两栏。Save it as `docs/modules/evidence/r5-review.mp4`。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
@@ -439,6 +439,8 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 - [ ] Bugbot triage done.
 - [ ] Rebased onto current trunk after the verdict, patch-id unchanged.
 - [ ] The root appends it to the base-branch stack and the operator lands it bottom-up.
+
+2026-11-13 在 psa/rt-r5-bands 上：`just test` 2007 条，2006 过，1 条是已知的 watchdog Ctrl+C（本机另有别的会话的宿主在跑，trunk 上同样失败）；`check.mjs` 全绿；`just module check docs/modules/examples/stock-ta` ok。`r5-live.ts` lane 1 到 8、10 PASS，输出在 `/tmp/swarm-r5/owner/`。lane 9 没跑：写完时是周五美东 17:20，休市，等交易日跑。lane 3 第一次真跑领队把六位专家都派了，撞上成员上限；加了领队技能 `band-move` 以后 4 次都只派三位、几秒内一起派出，+8% 的触发都进了同一个任务。lane 10 第一次真跑领队向你要 TSLA 的昨收，因为 `watch` 工具的说明里没有 `day-move`（R1 漏了），补上后一次设好。perf：报价一轮 trunk 中位数 74.4 ms，head 75.3 ms，多 0.9 ms，每轮一个快照请求，两边一样；到档那一行从那一轮到假 Telegram 中位数 65 ms。没勾的 Rule 框：到第一行汇报的中位数 head 4 次是 130 秒左右（101.5、127.8、133.1、151.9 秒，本机，假行情，真模型），旧 Mac 上 us-market 按 `state.db` 只读算的基线是 101.7 秒（7 次），按规则算失败。和计划不一样的两处：迁过来的条件和档位同一轮、同一方向到时只发一行（档位那一行后面接「也到了你设的…提醒线」），这一行的 externalId 是条件的；`src/cli/migrate-us-market.ts` 本来就不读 us-market 的 `module.json`，没改。`config.json` 里留着 `modules.us-market` 也会拒绝启动并说删掉哪一项，R6 部署前两项都要删。
 
 ## Remove us-market from the old Mac's config and deploy R5 (R6)
 
@@ -454,7 +456,7 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 
 - [ ] us-market 在 2026-11-13 已经关掉了，你的盯盘条件在 R1 部署时已经迁过去。R6 不关模块，也不迁移，只删配置、换代码。
 - [ ] 时间定在 R5 合并后的第一个周六，美东上午。例如 R5 在 2026-11-18 合并，就是 2026-11-21。周末没有行情，切换中不会漏提醒，也不会两套一起响。
-- [ ] 按「Deploy to the old Mac」做，只在 `git pull` 之前多一步，从 `config.json` 删掉 `sources.us-market`。旧代码没有这一项也能跑（轮询回到默认的每 60 秒，读代码），所以这一步先做。
+- [ ] 按「Deploy to the old Mac」做，只在 `git pull` 之前多一步，从 `config.json` 删掉 `sources.us-market`，有 `modules.us-market` 的话也删（R5 以后两项都会让宿主拒绝启动）。旧代码没有这一项也能跑（轮询回到默认的每 60 秒，读代码），所以这一步先做。
 - [ ] 部署后查 stock-ta 的 `_conditions` 还是 R1 迁来的那 1 行 `day-move`。
 - [ ] 回退照「Deploy to the old Mac」的回退步骤。R6 之前的代码已经认识 `day-move`，所以这里不需要 `--undo`。
 - [ ] 下一个交易日只读查看：提醒行和触发的来源只有 stock-ta，`us-market` 来源在部署之后没有新行。
