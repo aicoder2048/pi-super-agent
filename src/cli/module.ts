@@ -1,5 +1,6 @@
 import { statSync } from "node:fs";
 import { exitOnConfigError } from "../config-error.ts";
+import { moduleDataDir } from "../modules/knowledge.ts";
 import { problemLine, scanPackage, summary } from "../modules/validate.ts";
 import { configuredSecretsFile, secretLookup } from "../secrets.ts";
 import { defaultStateDir } from "../state-dir.ts";
@@ -15,12 +16,13 @@ function check(target: string, previous: string | undefined): number {
 		return 1;
 	}
 	let secretsFile: string | undefined;
+	const stateDir = defaultStateDir();
 	try {
-		secretsFile = configuredSecretsFile(defaultStateDir());
+		secretsFile = configuredSecretsFile(stateDir);
 	} catch (error) {
 		return exitOnConfigError(error);
 	}
-	const result = scanPackage(target, { previous, secret: secretLookup(secretsFile) });
+	const result = scanPackage(target, { previous, secret: secretLookup(secretsFile), dataDirOf: (name) => moduleDataDir(stateDir, name) });
 	if (result.ok) {
 		for (const note of result.scan.notes) console.log(`note ${note}`);
 		console.log(summary(result.scan));

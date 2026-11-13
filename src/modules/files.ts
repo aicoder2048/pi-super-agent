@@ -4,7 +4,7 @@
  * package copy keeps the versions that copy was locked to.
  */
 import { createHash } from "node:crypto";
-import { constants, cpSync, existsSync, readdirSync, readFileSync, symlinkSync } from "node:fs";
+import { constants, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 
 export const PY_DIR = "py";
@@ -22,13 +22,24 @@ export function lockOf(packageDir: string): string | undefined {
 
 export const venvDir = (dataDir: string, lock: string): string => join(filesDir(dataDir), `venv-${lock.slice(0, 12)}`);
 
+export const venvInstalled = (dataDir: string, lock: string): boolean => {
+	const mark = join(venvDir(dataDir, lock), VENV_MARK);
+	return existsSync(mark) && readFileSync(mark, "utf8") === lock;
+};
+
 export const venvsIn = (dataDir: string): string[] => (existsSync(filesDir(dataDir)) ? readdirSync(filesDir(dataDir)).filter((name) => VENV.test(name)) : []);
 
 /** A venv's scripts hold its absolute path, so it is linked, never copied. */
+export function linkVenvs(realDataDir: string, tempDataDir: string): void {
+	const venvs = venvsIn(realDataDir);
+	if (venvs.length > 0) mkdirSync(filesDir(tempDataDir), { recursive: true });
+	for (const name of venvs) symlinkSync(join(filesDir(realDataDir), name), join(filesDir(tempDataDir), name));
+}
+
 export function cloneFiles(realDataDir: string, tempDataDir: string): void {
 	const [real, temp] = [filesDir(realDataDir), filesDir(tempDataDir)];
 	if (!existsSync(real)) return;
 	const venvs = venvsIn(realDataDir);
 	cpSync(real, temp, { recursive: true, mode: constants.COPYFILE_FICLONE, filter: (path) => !venvs.some((name) => path === join(real, name)) });
-	for (const name of venvs) symlinkSync(join(real, name), join(temp, name));
+	linkVenvs(realDataDir, tempDataDir);
 }

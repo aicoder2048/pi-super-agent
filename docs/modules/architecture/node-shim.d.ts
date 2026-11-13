@@ -106,6 +106,15 @@ declare const process: {
 	kill(pid: number, signal: string): void;
 	once(event: "exit", listener: () => void): void;
 };
+declare interface AbortSignal {
+	readonly aborted: boolean;
+	addEventListener(type: "abort", listener: () => void, options?: { once: true }): void;
+	removeEventListener(type: "abort", listener: () => void): void;
+}
+declare class AbortController {
+	readonly signal: AbortSignal;
+	abort(): void;
+}
 declare function setTimeout(run: () => void, ms: number): unknown;
 declare function clearTimeout(timer: unknown): void;
 declare function setInterval(run: () => void, ms: number): { unref(): void };

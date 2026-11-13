@@ -73,7 +73,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 - [x] Edit `src/modules/run-code.ts`。`codeProcess` 多给一个环境变量 `PSA_MODULE_DATA`，值是 `<stateDir>/modules-data/<模块>/`。
 - [x] Edit 调 `runModuleCode` 和 `runModuleCodeAsync` 的地方（`src/modules/feed-runner.ts`、`src/modules/gateway.ts`、`src/modules/validate.ts`），把模块的数据目录传下去。
-- [x] Edit `src/modules/manifest.ts`、`src/modules/validate.ts`、`src/modules/live.ts`。`feed.json` 加可选的 `limit`；包里可以有 `py/` 子项目，命令行检查和宿主装包时的检查都认它；`__pycache__` 不算进版本 digest（`allFiles`、`digestOf`）。
+- [x] Edit `src/modules/manifest.ts`、`src/modules/validate.ts`、`src/host/live-modules.ts`。`feed.json` 加可选的 `limit`；包里可以有 `py/` 子项目，命令行检查和宿主装包时的检查都认它；`__pycache__` 不算进版本 digest（`allFiles`、`digestOf`）。
+- [x] Edit `src/modules/scheduler.ts`、`src/host/host.ts`，模块关掉或宿主停下时杀掉还在跑的 feed 进程组。
 - [x] Create `src/cli/module-setup.ts`。Edit `src/cli/module.ts`，加 `just module setup <名字>`。
 - [x] Edit `src/cli/module-try.ts`，预演的临时状态目录接上真实的 `files/`。
 - [x] Edit `docs/modules/architecture/design.md` 第 2、3 节和 `docs/modules/module-user-guide.md`。
@@ -81,9 +82,9 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Build.**
 
-- [x] 每个工具和 feed 的进程都拿到 `PSA_MODULE_DATA`。模块代码只往其中的 `files/` 写。`data.db` 和 `knowledge/` 由宿主管，代码只读。宿主在模块打开时建好 `files/`。`just module purge` 本来就删整个目录，`files/` 跟着删。
-- [x] 两条检查路径（`just module check`，和宿主在 `live.ts` 里装新版本前的检查）跑 feed 的 fixtures 时，都给 handler 一个临时的 `PSA_MODULE_DATA`，跑完删掉。fixture 里的假 `ta` 永远看不到真实的数据目录。
-- [x] `feed.json` 的 `limit`（例如 `"5m"`，最多 `"10m"`）代替默认的 20 秒，调度器照这个时限停掉这一次调用。不写还是 20 秒。
+- [x] 每个工具和 feed 的进程都拿到 `PSA_MODULE_DATA`。模块代码只往其中的 `files/` 写。`data.db` 和 `knowledge/` 由宿主管，代码只读。宿主每次调用模块代码前建好 `files/`（`run-code.ts`）。`just module purge` 本来就删整个目录，`files/` 跟着删。
+- [x] 两条检查路径（`just module check`，和宿主在 `src/host/live-modules.ts` 里装新版本前的检查）跑用例和 feed 的 fixtures 时，都给代码一个临时的 `PSA_MODULE_DATA`，跑完删掉。fixture 里的假 `ta` 永远看不到真实的数据目录。临时 `files/` 里的 `venv-*` 是指向这个模块已装好的 venv 的符号链接，所以用 venv 的工具用例也能通过；还没装时，失败的用例那一行写着先跑 `just module setup <名字>`。
+- [x] `feed.json` 的 `limit`（例如 `"5m"`，最多 `"10m"`）代替默认的 20 秒，调度器照这个时限停掉这一次调用。不写还是 20 秒。模块关掉（feed 不在模块表里了）或宿主停下时，调度器马上杀掉还在跑的调用的整个进程组，所以 purge 以后不会有进程把数据目录写回来，宿主退出也不留孤儿。
 - [x] `py/` 是允许的非组件目录，两条检查路径都认。今天 `just module check` 对它报 `py: is not a component kind`（实测，Appendix A）。包里有 `py/pyproject.toml` 时，检查要求同一目录有 `py/uv.lock`，缺一个就拒绝并说明。`__pycache__` 不进版本 digest，否则 Python 跑一次就让宿主以为包变了。
 - [x] venv 按锁文件分开放：`files/venv-<py/uv.lock 的 sha256 前 12 位>`。工具和 feed 用和**自己这份包副本**里 `py/uv.lock` 对得上的那个 venv，所以 `rev` 换了以后，钉在旧版本上的 ticket 照样能跑。
 - [x] `just module setup <名字>` 跑 `uv sync --frozen --compile-bytecode --project <包>/py`，设 `UV_PROJECT_ENVIRONMENT=<数据目录>/files/venv-<12 位>`。环境不进包目录，包不被改动（实测见 Appendix A）。装完最后一步写 `venv-<12 位>/.psa-lock`，内容是完整的 sha256；没有这个文件的 venv 算没装完，下次 setup 重装。重跑同一个锁文件什么都不变。setup 删掉当前和上一个以外的 venv（按 `.psa-lock` 的修改时间）。找不到 `uv` 或 git 拿不到私有仓库时，一行说明怎么办，指向 `docs/modules/stock-ta.md`。
@@ -119,6 +120,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] Rule. 启动比 trunk 慢 200 毫秒以上，或空工具调用慢 20 毫秒以上，就失败。
 
 2026-11-12 在 f613e6d 上通过：`tests/module-files.test.ts` 14 条、`tests/module-setup.test.ts` 8 条、`tests/modules-cli.test.ts` 加 1 条（try 的克隆加符号链接），每条先红后绿；`just test` 1664 条里只有已知偶发的「终端 Ctrl+C：Watchdog 不停别人启动的宿主」失败（基线 2ec205d 上也失败，单独重跑三次两次全过），`check.mjs` 全绿。十条 lane 全 PASS，输出在 `/tmp/swarm-s1/owner/s1-*.txt`；样例的 `py/` 依赖公开包 `six`，lane 3 到 5 用真 `uv` 从 PyPI 装，setup 0.4 秒，重跑 0.35 秒，换两次锁文件后只剩当前和上一个 venv。perf 启动 trunk 中位 395.4 ms、head 396.5 ms（各 5 次）；空工具调用 trunk 40.9 ms、head 40.8 ms、带 200 KB `uv.lock` 的包 41.1 ms（各 20 次，每次调用都算一遍锁文件的 sha256）。接缝选环境变量（`PSA_MODULE_DATA`、`PSA_MODULE_VENV`），不在输入里加字段，理由见 PR。
+
+2026-11-12 修复轮在 bd73c2e 上通过（合进 main d03b0d5 之后）：两条检查路径的临时 `files/` 链上已装好的 venv，没装时失败行写着先跑 `just module setup <名字>`（`tests/module-files.test.ts` 4 条，先红在 ENOENT）；模块关掉和宿主停下时调度器杀掉还在跑的 feed 进程组（`tests/scheduler.test.ts` 2 条，先红在数据目录被写回、宿主停下后进程还活着）。`just test` 1670 条全过，`check.mjs` 全绿。十条 lane 对 origin/main 全 PASS，输出在 `/tmp/swarm-s1/fix/s1-*.txt`（lane 10 第一次因临时目录太长、socket 路径超限失败，换短目录重跑通过）。perf 启动 trunk 中位 401.9 ms、head 400.0 ms（各 5 次）；空工具调用 trunk 42.0 ms、head 42.3 ms（各 20 次）。
 
 **Review gate.** None. S1 is not review-gated.
 
@@ -385,7 +388,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - `docs/modules/stock-ta.md`，现在的安装步骤和工具的保证。
 - `docs/modules/examples/stock-ta/ta.ts`，克隆、关着的端口、`structure` 的 `now` 规则。
 - `docs/modules/module-data-feeds-plan.md`（G4、G5），feed 的 handler、fixtures、`reads`、cursor、调度器不重叠同一个 feed。
-- `src/modules/protocol.ts` 的 `FeedInput` 和 `Collected`（cursor 只在行存好以后才保存），`src/modules/validate.ts` 的 `allFiles`、`digestOf` 和组件目录检查，`src/modules/live.ts` 的装包检查。
+- `src/modules/protocol.ts` 的 `FeedInput` 和 `Collected`（cursor 只在行存好以后才保存），`src/modules/validate.ts` 的 `allFiles`、`digestOf` 和组件目录检查，`src/host/live-modules.ts` 的装包检查。
 - `docs/modules/architecture/design.md` 第 2、3 节，模块代码的环境和 feed。
 - 技术分析仓库 `app/trading` 的 `ta/cli.py`（环境变量和子命令）、`ta/scanner.py`（`_window`、`_benchmarks`、`_skip_details`）、`ta/market.py`（请求和分页）、`ta/models.py`（`project_root`）。只读。
 - S1 的 owner 在实现前写两种接缝草图再选（`pstack/skills/architect/SKILL.md`，缩小版）：环境变量，还是给代码的输入里加一个字段。

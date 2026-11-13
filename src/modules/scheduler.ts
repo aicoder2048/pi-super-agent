@@ -11,7 +11,7 @@ const INBOX_TRIES = 3;
 
 export interface SchedulerOptions {
 	feeds(): readonly FeedEntry[];
-	run(entry: FeedEntry, items: readonly Json[], fixture?: FeedFixture): Promise<FeedRun>;
+	run(entry: FeedEntry, items: readonly Json[], fixture: FeedFixture | undefined, signal: AbortSignal): Promise<FeedRun>;
 	state: FeedStates;
 	inboxDir: string;
 	now(): number;
@@ -24,19 +24,20 @@ export interface SchedulerOptions {
 export interface Scheduler {
 	tick(): Promise<void>;
 	start(everyMs: number): void;
+	/** Also aborts every running call, so a stopped host leaves no feed writing behind it. */
 	stop(): void;
 }
 
 export function createScheduler(o: SchedulerOptions): Scheduler {
 	const lastRun = new Map<string, number | null>();
-	const running = new Set<string>();
+	const running = new Map<string, AbortController>();
 	const rehearsed = new Set<string>();
 	const waiting = new Set<string>();
 	const failures = new Map<string, number>();
 	let timer: ReturnType<typeof setInterval> | undefined;
 
-	const call = async (entry: FeedEntry, items: readonly Json[], fixture?: FeedFixture): Promise<FeedRun> => {
-		const run = await o.run(entry, items, fixture);
+	const call = async (entry: FeedEntry, items: readonly Json[], signal: AbortSignal, fixture?: FeedFixture): Promise<FeedRun> => {
+		const run = await o.run(entry, items, fixture, signal);
 		o.log(run.ok ? `[feeds] ${entry.source}${fixture ? ` 样例 ${fixture.name}` : ""}：${run.records} 行，${run.notices} 条触发` : `[feeds] ${entry.source} 这一次失败：${run.note}`);
 		return run;
 	};
@@ -44,14 +45,14 @@ export function createScheduler(o: SchedulerOptions): Scheduler {
 		if (!lastRun.has(entry.source)) lastRun.set(entry.source, o.state.feedState(entry.module, entry.source).lastRunAt);
 		return lastRun.get(entry.source)!;
 	};
-	const work = (entry: FeedEntry, now: number): Promise<unknown> | undefined => {
+	const work = (entry: FeedEntry, now: number, signal: AbortSignal): Promise<unknown> | undefined => {
 		const { feed, source } = entry;
 		if (o.fixtures) {
 			const key = `${source}@${entry.dir}`;
 			if (rehearsed.has(key)) return undefined;
 			rehearsed.add(key);
 			return (async () => {
-				for (const fixture of entry.fixtures) await call(entry, [], fixture);
+				for (const fixture of entry.fixtures) if (!signal.aborted) await call(entry, [], signal, fixture);
 			})();
 		}
 		if (feed.connector !== undefined && !RUNNING.includes(feed.connector)) {
@@ -68,7 +69,8 @@ export function createScheduler(o: SchedulerOptions): Scheduler {
 			const mayBeNetwork = feed.handler !== undefined;
 			return (async () => {
 				for (const { file, item } of taken) {
-					const run = await call(entry, [item]);
+					const run = await call(entry, [item], signal);
+					if (signal.aborted) return;
 					const key = join(dir, file);
 					const tries = run.ok ? 0 : (failures.get(key) ?? 0) + 1;
 					if (!run.ok && mayBeNetwork && tries < INBOX_TRIES) {
@@ -84,17 +86,22 @@ export function createScheduler(o: SchedulerOptions): Scheduler {
 		if (feed.every === undefined || !timerDue(feed.every, lastRunOf(entry), now) || !open()) return undefined;
 		lastRun.set(source, now);
 		o.state.saveFeedState(entry.module, source, { lastRunAt: now });
-		return call(entry, feed.connector === "timer" ? [timerItem(feed.every, now)] : []);
+		return call(entry, feed.connector === "timer" ? [timerItem(feed.every, now)] : [], signal);
 	};
 	const tick = async () => {
 		const now = o.now();
 		const calls: Promise<unknown>[] = [];
-		for (const entry of o.feeds()) {
+		const feeds = o.feeds();
+		const serving = new Set(feeds.map((entry) => entry.source));
+		// Its module was switched off and may be purged next.
+		for (const [source, controller] of running) if (!serving.has(source)) controller.abort();
+		for (const entry of feeds) {
 			if (running.has(entry.source)) continue;
 			try {
-				const started = work(entry, now);
+				const controller = new AbortController();
+				const started = work(entry, now, controller.signal);
 				if (started === undefined) continue;
-				running.add(entry.source);
+				running.set(entry.source, controller);
 				calls.push(started.catch((error) => o.log(`[feeds] ${entry.source} 出错：${String(error)}`)).finally(() => running.delete(entry.source)));
 			} catch (error) {
 				o.log(`[feeds] ${entry.source} 出错：${String(error)}`);
@@ -108,6 +115,9 @@ export function createScheduler(o: SchedulerOptions): Scheduler {
 			timer = setInterval(() => void tick().catch((error) => o.log(`[feeds] 调度出错：${String(error)}`)), everyMs);
 			timer.unref();
 		},
-		stop: () => clearInterval(timer),
+		stop() {
+			clearInterval(timer);
+			for (const controller of running.values()) controller.abort();
+		},
 	};
 }

@@ -230,7 +230,7 @@ flowchart TB
   just module setup <名字>
   ```
 
-  它把环境装进数据目录的 `files/venv-<12 位>`，打印一行装好了。代码里用 `process.env.PSA_MODULE_VENV` 找到它，例如 `join(process.env.PSA_MODULE_VENV, "bin", "python")`。换了依赖（`uv.lock` 变了）要再跑一次 setup，换机器也要跑一次。没有 `uv` 或者拿不到依赖时，它说明怎么办。
+  它把环境装进数据目录的 `files/venv-<12 位>`，打印一行装好了。代码里用 `process.env.PSA_MODULE_VENV` 找到它，例如 `join(process.env.PSA_MODULE_VENV, "bin", "python")`。换了依赖（`uv.lock` 变了）要再跑一次 setup，换机器也要跑一次。`just module check` 跑工具用例时也用这个环境，所以用到 Python 的用例要先 setup。没有 `uv` 或者拿不到依赖时，它说明怎么办。
 - **跑得久的 feed。** 一次调用默认最多 20 秒。在 `feed.json` 写 `"limit": "5m"` 放宽，最多 `"10m"`。
 
 ## 4. 动手前：你的领域属于哪一档
