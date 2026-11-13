@@ -119,6 +119,24 @@ test("读附件：带 BOM 的 txt 去掉 BOM，解不了的字节换成替代字
 	assert.equal((reply.output as { text: string }).text, "前��后");
 });
 
+test("读附件：文字附件按 Content-Type 的 charset 解码；认不出的 charset 按 UTF-8 并标明", async (t) => {
+	const w = await attachmentWorld(t, [ann("m-1", [
+		file("gbk.txt", "text/plain", Buffer.from("c4e3bac3a3accac0bde7", "hex"), { charset: "gbk" }),
+		file("big5.csv", "text/csv", Buffer.from("bb4fc657a741a66e", "hex"), { charset: "big5" }),
+		file("odd.txt", "text/plain", "plain words", { charset: "x-made-up" }),
+	])]);
+	const text = async (partId: string) => {
+		const reply = await w.call({ messageId: "m-1", partId });
+		assert.ok(reply.ok, JSON.stringify(reply));
+		return (reply.output as { text: string }).text;
+	};
+	assert.equal(await text("1"), "你好，世界");
+	assert.equal(await text("2"), "臺灣你好");
+	const odd = await text("3");
+	assert.match(odd, /^plain words/);
+	assert.match(odd, /附件.*x-made-up/, "认不出的 charset 写明");
+});
+
 test("读附件：messageId 不在 messages 里、partId 不属于这封信，都拒绝，不下载", async (t) => {
 	const w = await attachmentWorld(t, [ann("m-1", [file("a.txt", "text/plain", "x")])]);
 	const stranger = await w.call({ messageId: "m-404", partId: "1" });

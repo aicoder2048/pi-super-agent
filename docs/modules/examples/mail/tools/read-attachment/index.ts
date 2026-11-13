@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { htmlToText, partsOf, type Attachment, type Part } from "../../feeds/inbox/message.ts";
+import { decodeText, htmlToText, partsOf, type Attachment, type Part } from "../../feeds/inbox/message.ts";
 import { accessToken, AUTH_TEXT, gmailClient, type Gmail, type Settings } from "../../google.ts";
 
 type Input = { messageId: string; partId: string };
@@ -17,24 +17,22 @@ export const LIMITS = { maxBytes: 10 * 1024 * 1024, downloadMs: 10_000, pdfMs: 6
 
 export type Limits = typeof LIMITS;
 
-const asText = (bytes: Buffer): Extracted => plain(utf8(bytes));
+const asText = (bytes: Buffer, part: Part): Extracted => plain(decodeText(bytes, part, "附件"));
 
-type Reader = { extensions: readonly string[]; read: (bytes: Buffer, limits: Limits) => Promise<Extracted> | Extracted };
+type Reader = { extensions: readonly string[]; read: (bytes: Buffer, part: Part, limits: Limits) => Promise<Extracted> | Extracted };
 
 const READERS: Readonly<Record<string, Reader>> = {
 	"text/plain": { extensions: [".txt", ".text"], read: asText },
 	"text/markdown": { extensions: [".md", ".markdown"], read: asText },
 	"text/csv": { extensions: [".csv"], read: asText },
-	"text/html": { extensions: [".html", ".htm"], read: (bytes) => plain(htmlToText(utf8(bytes))) },
-	"application/pdf": { extensions: [".pdf"], read: (bytes, limits) => pdfText(bytes, limits) },
+	"text/html": { extensions: [".html", ".htm"], read: (bytes, part) => plain(htmlToText(decodeText(bytes, part, "附件"))) },
+	"application/pdf": { extensions: [".pdf"], read: (bytes, _part, limits) => pdfText(bytes, limits) },
 };
 
 const PDF_SCRIPT = fileURLToPath(new URL("../../py/pdf_text.py", import.meta.url));
 const FEED_JSON = fileURLToPath(new URL("../../feeds/inbox/feed.json", import.meta.url));
 const TOO_BIG = "PDF 太大，读不了";
 const SETUP = "mail 的 Python 环境还没装：在跑宿主的机器上跑 just module setup mail，见 docs/modules/mail.md";
-
-const utf8 = (bytes: Buffer) => new TextDecoder("utf-8", { fatal: false, ignoreBOM: false }).decode(bytes);
 
 const plain = (text: string): Extracted => ({ text, pages: null, truncated: false });
 
@@ -152,7 +150,7 @@ export async function readAttachment(input: unknown, limits: Limits = LIMITS): P
 	const token = await accessToken(settings);
 	if (token === undefined) throw new Error(AUTH_TEXT);
 	const { part, bytes, reader } = await download(gmailClient(settings.baseUrl, token), ids, limits);
-	const extracted = await reader.read(bytes, limits);
+	const extracted = await reader.read(bytes, part, limits);
 	const { text, clipped } = clip(extracted.text, limits.maxChars);
 	return { name: part.filename ?? entry.filename, type: part.mimeType ?? entry.mimeType, pages: extracted.pages, text, truncated: extracted.truncated || clipped };
 }
