@@ -480,6 +480,8 @@ flowchart TB
 - 数据源的密钥只经宿主读取：环境变量，或 `config.json` 里 `secretsFile` 指向的 `.env` 文件。
 - **不要把密钥写进模块的任何文件。** 技能、规则和成员提示词都会进模型的上下文；仓库里的模块还会进版本库。
 - `prepare` 里也不要放密钥，它是一条明文的 shell 命令。
+- **每个密钥属于一个模块。** 新布局包的 feed 和工具在 `secrets` 里只能点名属于本模块的密钥（ADR-0019）。主人记在 `src/modules/secret-owners.ts`，例如 Gmail 的三个属于 `mail`，`POLYGON_API_KEY` 属于 `stock-ta`；表里没有的名字要以本模块的前缀开头（`MAIL__`、`STOCK_TA__`）。属于宿主的（Telegram 的 token、写草稿的 Gmail token）模块点不了，`just module check` 一行写明主人。工具的 `cases.json` 拿到的是假密钥。
+- **能做坏事的 token 留在宿主。** 写草稿的 Gmail token 也能发信，所以它只在宿主手里，模块经宿主的 `gmail.createDraft` 口子建草稿（ADR-0022）。例子是 `docs/modules/mail.md`，上线步骤在 `docs/deploy/gmail.md`。
 
 ### 7.6 prepare
 
