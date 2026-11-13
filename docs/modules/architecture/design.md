@@ -74,7 +74,7 @@ personal-health/
 
 原件（PDF、图片）进 `blobs/`，结构化的行进 `data.db`。Worker 用 `data` 工具读写，每次调用在访问记录里记一笔，带结果：成功，或者被拒和拒绝的原因。没走到这份数据就被拦下的调用（模块停用、成员的 `uses` 没列、推断任务想写、参数不成形）只记在宿主日志里。Worker 从一份报告里提取出的行，带着 `from` 指向那份原件。`record` 的一行后来按 id 从别的来源改了几项，这几项各自的来源另记在 `sources` 里，`from` 不变。模型读数值会读错，所以出处一直留着，你随时能对照。提取出的行直接生效，不等你确认。`class` 只有 `shareable` 和 `private` 两个值，它的作用见第 5 节。
 
-**提醒条件（K4 D7）。** 写了 `watch` 的 `series` 可以设提醒条件。条件是你的实例数据。种类是宿主内置的一小组：`above`、`below`、`rising-streak`、`falling-streak`、`change-pct`、`crosses-average`。有新的行写进来时，宿主对这个 key 的条件算一遍，满足了就直接提醒你。提醒的文字由程序拼出来，带数值、时间和数值来自哪份原件，模型不参与。时间照存的原样写；`watch` 多写一个 `"zone"`（IANA 时区名，例如 `"America/New_York"`）时，带时区的完整时刻换算到那个时区再写，`America/New_York` 标「美东」，别的时区标时区名。行情数据写 `zone`，个人读数不写。这是今天盯盘条件（tripwire）的通用版，和数据层在同一步实现。us-market 的盯盘是它的第一个使用者，肿瘤标志物预警是第二个。
+**提醒条件（K4 D7）。** 写了 `watch` 的 `series` 可以设提醒条件。条件是你的实例数据。种类是宿主内置的一小组：`above`、`below`、`rising-streak`、`falling-streak`、`change-pct`、`crosses-average`、`day-move`。有新的行写进来时，宿主对这个 key 的条件算一遍，满足了就直接提醒你。提醒的文字由程序拼出来，带数值、时间和数值来自哪份原件，模型不参与；正文不写数据名，Telegram 和网页的前缀「提醒 · 模块名」已经写了。`watch` 写了 `"label"`（例如行情数据的 `"延迟行情"`）时，它代替「来自 <原件>」。`day-move` 是「当天相对昨收涨跌到 N%」：`watch` 要多写 `"prevClose"`，指向行里昨收那一列数字，宿主用价格和昨收算不取整的涨跌幅，所以 4.996% 不到 5% 的线。它按 `zone` 里的日期、方向和阈值每天只提醒一次，价格来回穿线不重复，改了阈值按新阈值再提醒一次。没写 `prevClose` 的数据设 `day-move` 会被拒。时间照存的原样写；`watch` 多写一个 `"zone"`（IANA 时区名，例如 `"America/New_York"`）时，带时区的完整时刻换算到那个时区再写，`America/New_York` 标「美东」，别的时区标时区名。行情数据写 `zone`，个人读数不写。这是今天盯盘条件（tripwire）的通用版，和数据层在同一步实现。us-market 的盯盘是它的第一个使用者，肿瘤标志物预警是第二个。
 
 **工具（K3 D2 S1）。** 一个工具一个文件夹。`tool.json` 写输入输出，`index.ts` 默认导出一个函数，`cases.json` 是测试用例。
 

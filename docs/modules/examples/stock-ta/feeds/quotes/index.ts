@@ -5,6 +5,7 @@ import { listedSymbols, type WatchRow } from "../../watchlist.ts";
 interface Input {
 	settings: { baseUrl: string };
 	rows: { watchlist?: WatchRow[] };
+	now: string;
 }
 
 type Notice = { id: string; thread: string; fields: Record<string, string> };
@@ -24,11 +25,18 @@ function bigMove(q: Quote): Notice[] {
 	}];
 }
 
+/** Stale: a pre-market trade in the first snapshot, yesterday's quote on a holiday, a trade after an early close. */
+function fresh(q: Quote, today: string): boolean {
+	const session = sessionAt(Date.parse(q.at));
+	return session.phase === "regular" && session.nyDate === today;
+}
+
 export default async function quotes(input: Input) {
 	const symbols = listedSymbols(input.rows.watchlist ?? []).sort();
 	if (symbols.length === 0) return { records: [] };
 	const key = process.env.POLYGON_API_KEY ?? "";
 	if (key === "") throw new Error("没有设置 POLYGON_API_KEY，这一轮没去取报价：在宿主的密钥文件里加一行 POLYGON_API_KEY=<你的 Massive/Polygon 密钥>，见 docs/modules/stock-ta.md");
-	const quotes = await snapshot(input.settings.baseUrl, key, symbols);
-	return { records: quotes.map(({ prevClose: _, ...q }) => ({ id: `${q.symbol}@${q.at}`, ...q })), notices: quotes.flatMap(bigMove) };
+	const today = sessionAt(Date.parse(input.now)).nyDate;
+	const quotes = (await snapshot(input.settings.baseUrl, key, symbols)).filter((q) => fresh(q, today));
+	return { records: quotes.map((q) => ({ id: `${q.symbol}@${q.at}`, ...q })), notices: quotes.flatMap(bigMove) };
 }
