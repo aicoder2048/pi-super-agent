@@ -381,7 +381,8 @@ async function real(): Promise<void> {
 				const THREE = ["盘面", "结构与形态", "趋势与动量"];
 				const members = await within(240_000, () => {
 					const to = h.tickets().find((t) => t["domain"] === "stock-ta")?.["dispatched_to"];
-					return to ? (JSON.parse(String(to)) as string[]) : undefined;
+					const names = to ? (JSON.parse(String(to)) as string[]) : [];
+					return names.length > 0 ? names : undefined;
 				});
 				await h.step("10:30", { NVDA: 108.1 }, PREV);
 				const second = await within(20_000, () => h.ticketTriggers().find((r) => String(r["trigger"]).endsWith("up8")));
@@ -419,6 +420,7 @@ async function real(): Promise<void> {
 	await lane(10, "chat-set", async () => {
 		const h = await boot({ models: REAL, watch: ["NVDA", "TSLA"], seed: SEED });
 		try {
+			Object.assign(h.massive.market, { prices: { TSLA: 251.2, NVDA: 101 }, prevClose: { TSLA: 248, NVDA: 100 }, at: ny("10:45") });
 			const before = h.phone().length;
 			h.tg.userSays(USER, "给 TSLA 设个当天涨跌 4% 的提醒");
 			const conditions = () => query(join(h.state, "modules-data/stock-ta/data.db"), "SELECT id, key, kind, params FROM _conditions");
