@@ -8,9 +8,7 @@
  * Lane 1, lane 3 and perf need TA_PROJECT (the technical-analysis checkout, only read: its app/trading is linked
  * and the prelude's database cloned beside it, so trunk's tools run on the same data) and a worktree of S3_TRUNK
  * (default origin/main) at <outDir>/trunk. Lane 4 imports TA02 from TA_PROJECT's docs. Lane 10 calls real
- * openai-codex models through the Pi login in ~/.pi/agent. Lane 11 builds its own database with s3-two-scans.py on the
- * installed venv and calls structure through a wrapper of the venv's `ta` that logs its input and sends any market
- * request to a local counter.
+ * openai-codex models through the Pi login in ~/.pi/agent.
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";

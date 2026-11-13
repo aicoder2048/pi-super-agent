@@ -14,14 +14,12 @@ const PKG = join(import.meta.dirname, "../docs/modules/examples/stock-ta");
 const LOCK = lockOf(PKG)!;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-/** A Thursday close, and the hourly scan tick that lands 1 h later. */
 const CLOSE = Date.UTC(2026, 10, 12, 21, 0);
 const SYNCED = CLOSE + HOUR + 400;
 
 type Reply = { status?: number; stdout?: unknown; stderr?: string };
 type Call = { argv: string[]; stdin: Record<string, unknown>; db: string | undefined; network: string | undefined; key: string | undefined; root: string | undefined; notes: string[] | null };
 type Venv = "ready" | "none" | "other" | "half";
-/** `closes`: the end of each symbol's newest daily bar, by default CLOSE for every symbol in `synced`. */
 type Setup = { synced?: Record<string, number> | null; closes?: Record<string, number>; watchlist?: { symbol: string; removedAt?: string }[]; venv?: Venv; notes?: Record<string, string[]> };
 
 function fakeModule(t: TestContext, replies: Record<string, Reply>, { synced = { NVDA: SYNCED, QQQ: SYNCED, SPY: SYNCED }, closes, watchlist = [], venv = "ready", notes = {} }: Setup = {}) {

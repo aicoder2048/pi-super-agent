@@ -16,7 +16,6 @@ export type JsonObject = { [key: string]: Json };
 const LIMIT_BYTES = 20_000;
 const UNDER_HOST_LIMIT_MS = 18_000;
 const DAY_MS = 86_400_000;
-/** `ta` only serves bars that closed at least 15 minutes before `now`. */
 const TA_DELAY_MS = 15 * 60_000;
 const NOW_MARGIN_MS = 60_000;
 const GUIDE = "见 docs/modules/stock-ta.md";
@@ -116,10 +115,9 @@ function importedNotes(data: string, source: string, into: string): string {
 }
 
 /**
- * `ta structure` refetches a symbol's dividends unless `now` falls 0 to 1 day after its last sync, and
- * reads QQQ and SPY the same way. The scan refreshes a sync only once it is a full day old, so on the next
- * day's scan, which lands about 24 h later, the sync often stays at yesterday. So `now` is the newest sync
- * or the symbol's newest daily close plus ta's delay, whichever is later.
+ * `ta structure` refetches dividends for the symbol, QQQ and SPY unless `now` is 0 to 1 day after their last sync,
+ * and serves only bars that closed 15 minutes before `now`. The scan keeps a sync until it is a full day old, so
+ * after a day-two scan the newest sync can still be yesterday's.
  */
 function structureInput(args: JsonObject, db: string, data: string): JsonObject {
 	const symbol = String(args["symbol"] ?? "").toUpperCase().replace("-", ".");
