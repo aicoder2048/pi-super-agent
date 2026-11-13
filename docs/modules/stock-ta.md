@@ -1,59 +1,70 @@
 # 股票技术分析模块（stock-ta）
 
-stock-ta 让 Pi Super Agent 回答美股个股的技术面问题，例如「NVDA 现在的支撑阻力和动量怎么样」。数据和计算都来自你本机的技术分析项目（`ta` 命令行），这个模块只是把它的只读查询接进来，再配上笔记、技能和一个五人的专家队「技术分析研究组」。
+stock-ta 让 Pi Super Agent 回答美股个股的技术面问题，例如「NVDA 现在的支撑阻力和动量怎么样」。计算来自技术分析私有仓库里的 `ta-trading`（`ta` 命令行），模块用 `just module setup` 把钉住的版本装进自己的数据目录；数据也归模块自己，`scan` feed 每个交易日收盘后扫一次自选股。工具只读这份数据，再配上笔记、技能和一个五人的专家队「技术分析研究组」。它不需要你本机的技术分析项目，跑服务的旧 Mac 上也能用。
 
-包在 `docs/modules/examples/stock-ta/`，不在仓库的 `modules/` 下。仓库 `modules/` 里的新布局包第一次被发现时默认打开，而这个模块离开你本机的技术分析项目就用不了：在没有这个项目的机器上（例如跑服务的旧 Mac），它会默认打开、工具全失败，还会在幕僚长的名单上和 us-market 抢美股问题。所以它放在例子目录里，你在要用的那台机器上复制一份，自己打开。
+包在 `docs/modules/examples/stock-ta/`，不在仓库的 `modules/` 下。仓库 `modules/` 里的新布局包第一次被发现时默认打开，而这个模块要先在那台机器上跑一次 `just module setup`、有一把 Massive 密钥才能用，没准备好就打开的话工具全失败，还会在幕僚长的名单上和 us-market 抢美股问题。所以它放在例子目录里，你在要用的那台机器上复制一份，自己打开。
 
 ## 里面有什么
 
-- **工具。** 七个只读工具调 `ta` 的子命令：`structure`（支撑阻力、形态、动能）、`signals`（技术信号）、`note`（笔记原文）、`prices`（缓存里的最新价）、`conditions`（规则状态）、`rules`（规则定义）、`screen`（已经跑过的选股结果）。另有一个纯计算工具 `risk-reward`，算盈亏比和止损距离，用例在 `cases.json` 里，每次检查都跑。
+- **工具。** 六个只读工具调 `ta` 的子命令：`structure`（支撑阻力、形态、动能）、`signals`（技术信号，日线和周线）、`note`（笔记原文）、`prices`（数据库里的最新价）、`conditions`（规则状态）、`rules`（规则定义）。另有一个纯计算工具 `risk-reward`，算盈亏比和止损距离，用例在 `cases.json` 里，每次检查都跑。
 - **专家。** 趋势与动量、结构与形态、信号分诊、市场情绪、风险与交易计划。每位专家只够得到 `uses` 里列的工具。
-- **技能。** `principle-evidence`、`principle-freshness`、`ta-interpret`、`ta-screen`，从技术分析项目的 Pi 技能搬过来，去掉了桌面界面的部分。
+- **技能。** `principle-evidence`、`principle-freshness`、`ta-interpret`，从技术分析项目的 Pi 技能搬过来，去掉了桌面界面、选股和日内的部分。
 - **报价。** feed `quotes` 在交易时段（美东 9:30 到收盘后 20 分钟）每 60 秒向 Massive 发一次快照请求，取回整张自选股，每只存一行进 `quotes`：价格、相对昨收的涨跌幅、当天成交量和数据时间。Starter 套餐的数据延迟 15 分钟，所以数据时间比现在早约 15 分钟。同一数据时间的行只存一次。自选股在 `watchlist` 里。
-- **日线扫描。** feed `scan` 每小时看一次，每个交易日收盘 15 分钟后用模块自己装的 `ta` 扫一次自选股和 QQQ、SPY，把两年日线、分红和信号写进模块自己的数据库 `modules-data/stock-ta/files/ta/ta.sqlite`，每次运行在 `scan-runs` 里记一行。这个版本的工具还读 `TA_ROOT`，下一个版本才改读这份数据库。见下文「日线扫描」。
+- **日线扫描。** feed `scan` 每小时看一次，每个交易日收盘 15 分钟后用模块自己装的 `ta` 扫一次自选股和 QQQ、SPY，把两年日线、分红和信号写进模块自己的数据库 `modules-data/stock-ta/files/ta/ta.sqlite`，每次运行在 `scan-runs` 里记一行。工具读的就是这份数据库。见下文「日线扫描」。
 - **大涨大跌自动分析。** 自选股里一只股票当天相对昨收涨跌达到 5%，`quotes` 发一条触发，规则 `big-move`（`rules.md`）让幕僚长给技术分析研究组开任务：结构与形态和趋势与动量各看一遍，汇报带数据时间和出处，并说明不是交易指令。同一只股票同一天同一方向只开一次；当天先跌 5% 再涨 5% 是两次，哪怕跌 5% 的任务还没结束，涨 5% 也另开一个任务。5% 写死在 `feeds/quotes/index.ts` 的 `BIG_MOVE_PCT`。
 - **知识。** 术语表随包自带。十八份笔记包里只有出处（`source.json`，`"license": "user-import"`），全文要你从本机导入，见下文。笔记不是你写的，仓库是公开的，所以全文不进仓库。
 
-## 工具保证不改你的技术分析项目
+## 工具只读、不联网
 
-- 每次调用先把 `app/data/ta.sqlite`（选股还有 `market.sqlite`）在临时目录里克隆一份，`ta` 只在副本上跑，跑完删掉。实测 `ta` 哪怕只是读，也会开一次写事务，改掉数据库文件头的计数，所以不能直接对原库跑。APFS 上克隆不占时间也不占空间。
-- 行情接口指向一个关着的端口（`MASSIVE_BASE_URL=http://127.0.0.1:9`），不联网。
-- `structure` 的 `now` 取这个标的和 QQQ、SPY 最近一次同步分红的时间再加一分钟，正好落在缓存有效的窗口里，`ta` 不会去补数据。缓存里没有这个标的，或者它比 QQQ、SPY 旧了一天以上，工具直接说明，不调用 `ta`。所以要分析的标的得在技术分析项目里扫描过（自选股里的标的每次扫描都会同步）。
-- 只用只读子命令。`signals` 不传 `mark_read`，`rules` 不传 `patch`，`screen` 只查 `results`。
+- 工具直接调 `modules-data/stock-ta/files/venv-<12 位>/bin/ta`，不经过 `uv`，所以服务的 PATH 里不需要 `uv`。用的是和这份包副本的 `py/uv.lock` 对得上的那个环境，钉在旧版本上的任务照样用旧环境。
+- 每次调用先把 `files/ta/ta.sqlite` 在临时目录里克隆一份，`ta` 只在副本上跑，跑完删掉。实测 `ta` 哪怕只是读，也会开一次写事务，改掉数据库文件头的计数，所以不能直接对原库跑。只有 `scan` feed 写这份库，而且是整份换上，所以工具读到的总是一整份旧库或一整份新库。
+- 行情接口指向一个关着的端口（`MASSIVE_BASE_URL=http://127.0.0.1:9`），密钥设成 `offline`，不联网。缓存缺数据时 `ta` 报「行情不可用」。
+- `structure` 的 `now` 取两者里晚的那个（不再多加时间，`ta` 的两个判断都含端点）：这个标的和 QQQ、SPY 最近一次同步分红的时间，或这个标的最新一根日线收盘再加 `ta` 的 15 分钟延迟。`ta` 只在上次同步满一天时才刷新分红，第二天的扫描差不多正好隔 24 小时，常常不刷新，所以只看同步时间会用到前一天的收盘。这样取的 `now` 用上最新日线，又落在分红缓存有效的窗口里，`ta` 不会去补数据。数据库里没有这个标的，或者它或 QQQ、SPY 的同步旧了一天以上，工具直接说明，不调用 `ta`：标的在自选股里就让你等下一次收盘后的扫描，不在就让你先加进自选股。
+- 只用只读子命令。`signals` 不传 `mark_read`，`rules` 不传 `patch`。
+- `note` 读你用 `just module import` 导入的笔记：每次调用把 `modules-data/stock-ta/knowledge/` 下的 `TA?? - *.md` 链进一个临时目录交给 `ta`。没导入的那份，工具说出导入命令。同一个笔记文件导进了两份知识文档时只链一次。
 - 每个结果裁剪到 20 KB 以内，裁剪过的带 `"truncated": true`。`note` 不返回笔记在你电脑上的绝对路径。
+- 还没准备好时，工具回一行说明，不调用 `ta`：一个环境都没装，说「先跑 just module setup stock-ta」；只装了别的版本（包里钉的提交换了），说「重跑 just module setup stock-ta」；还没有数据库，说「还没有数据，等 scan feed 第一次跑完」。`rules` 和 `note` 不读数据库，第一次扫描前也能用。
+
+## 你会少什么
+
+这个模块只扫日线，和在你本机直接用技术分析项目比，少了三样：
+
+- **全市场选股 `screen`。** 它要一份全市场的数据库（你本机那份 419 MB），从零同步约 2400 个 Massive 请求，旧 Mac 上还要每周刷新市值，不适合放进一个每天跑的 feed。信号、结构、盈亏比都不受影响。
+- **日内 5 分钟信号。** 要每 5 分钟起一次 `ta`、每只每次一个请求。今天的问题都是日线问题。`signals` 的周期只收 `1d` 和 `1w`。
+- **OR30（开盘 30 分钟区间突破）。** 它是 5 分钟信号的一种，跟着一起没了。
+
+想要回来，见 `docs/modules/stock-ta-self-contained-plan.md` 的 Appendix E 第 1 条（`screen`）和第 5 条（5 分钟信号和 OR30）。
 
 ## 安装
 
 下面的命令在本仓库根目录运行。状态目录默认是 `~/.pi-super-agent`，设了 `PSA_STATE_DIR` 就是它。
 
-1. 确认技术分析项目能用：`uv` 在宿主的 PATH 里（`which uv`），项目的 `app/trading` 跑过 `uv sync`。宿主作为服务运行时，服务的 PATH 也要有 `uv`：`just service-install` 会把装机时 PATH 里 `uv` 的目录写进去，装了 uv 之后重跑一次。
-
-2. 把包复制进状态目录。新包被发现时是停用的。
+1. 把包复制进状态目录。新包被发现时是停用的。
 
    ```bash
    cp -R docs/modules/examples/stock-ta ~/.pi-super-agent/modules/
    ```
 
-3. 告诉宿主技术分析项目在哪。在宿主的密钥文件里加一行（密钥文件是 `config.json` 里 `secretsFile` 指向的 .env 文件，没有就新建一个，再在 `config.json` 里写 `"secretsFile": "secrets.env"`）：
+2. 装模块自己的 `ta`。模块带一个小的 Python 子项目 `py/`，钉在技术分析私有仓库 `ta-trading` 的一个提交上，用 HTTPS 地址拿。先确认 `uv` 在 PATH 里，而且这台机器的 git 能拿到这个私有仓库（`git ls-remote https://github.com/aicoder2048/TechnicalAnalysis` 不报错），然后：
 
    ```bash
-   TA_ROOT=<你的技术分析项目>
+   just module setup stock-ta
    ```
 
-   报价用 Massive（原来的 Polygon）的 REST 密钥，名字是 `POLYGON_API_KEY`。宿主的密钥文件里已经有这一行就不用再加；没有的话加一行：
+   环境装在 `modules-data/stock-ta/files/venv-<12 位>/`，不进包目录，大约 75 MB。重跑什么都不变。仓库里的例子换了钉的提交以后，复制新包再跑一次。只在这一步用 `uv`，工具和 `scan` 运行时直接调环境里的 `ta`。
+
+3. 密钥。`scan` 用 Massive（原来的 Polygon）的 REST 密钥，名字是 `POLYGON_API_KEY`，报价也用它。宿主的密钥文件里已经有这一行就不用再加；没有的话加一行（密钥文件是 `config.json` 里 `secretsFile` 指向的 .env 文件，没有就新建一个，再在 `config.json` 里写 `"secretsFile": "secrets.env"`）：
 
    ```bash
    POLYGON_API_KEY=<你的 Massive/Polygon REST 密钥>
    ```
 
-   `MASSIVE_S3_ACCESS_KEY` 和 `MASSIVE_S3_SECRET_KEY` 是下载整日文件用的，报价用不上。没设 `POLYGON_API_KEY` 的时候，报价 feed 每一轮不发请求，只在宿主日志里记一行「没有设置 POLYGON_API_KEY」，宿主和其他工具照常。`just module check` 和样例排练不需要这把密钥。
+   `MASSIVE_S3_ACCESS_KEY` 和 `MASSIVE_S3_SECRET_KEY` 是下载整日文件用的，这里用不上。没设 `POLYGON_API_KEY` 的时候，报价和扫描每一轮不发请求，只在宿主日志里记一行「没有设置 POLYGON_API_KEY」，宿主和其他工具照常。`just module check` 和样例排练不需要这把密钥。以前的 `TA_ROOT` 不用了，密钥文件里有的话可以删掉。
 
-   也可以在启动宿主的环境里设 `TA_ROOT`，环境变量优先。这个路径只在你的机器上，不进模块包。没设的时候，工具会回一行「没有设置 TA_ROOT」并指向这份文档。
-
-4. 导入笔记全文。每条命令导入一份，只收 `.md` 文件，导入后马上能用 `knowledge` 查到。
+4. 导入笔记全文。每条命令导入一份，只收 `.md` 文件，导入后 `knowledge` 和 `note` 马上能用。笔记在你本机技术分析项目的 `docs/` 里；在别的机器上装时，先把这个 `docs/` 目录复制过去，`T` 指向复制过去的那一份的上一级。
 
    ```bash
-   T=<你的技术分析项目>
+   T=<放着笔记 docs/ 目录的地方>
    just module import stock-ta ta01-moving-averages "$T/docs/ta-knowhow/TA01 - 均线实战精华总结.md"
    just module import stock-ta ta01-moving-averages-2 "$T/docs/ta-knowhow/TA01 - 均线实战精华总结之二.md"
    just module import stock-ta ta02-macd "$T/docs/ta-knowhow/TA02 - MACD 实战精华总结.md"
@@ -74,25 +85,19 @@ stock-ta 让 Pi Super Agent 回答美股个股的技术面问题，例如「NVDA
    just module import stock-ta small-account "$T/docs/投资理念和策略/小资金做大策略.md"
    ```
 
-   不导入也能用工具，`knowledge` 会说哪几份还没导入。`note` 工具不靠导入，它直接读技术分析项目里的笔记。
+   不导入也能用别的工具。`knowledge` 会说哪几份还没导入，`note` 查没导入的笔记时说出导入命令。
 
-5. 装模块自己的 `ta`。模块带一个小的 Python 子项目 `py/`，钉在技术分析私有仓库 `ta-trading` 的一个提交上，用 HTTPS 地址拿。先确认 `uv` 在 PATH 里，而且这台机器的 git 能拿到这个私有仓库（`git ls-remote https://github.com/aicoder2048/TechnicalAnalysis` 不报错），然后：
-
-   ```bash
-   just module setup stock-ta
-   ```
-
-   环境装在 `modules-data/stock-ta/files/venv-<12 位>/`，不进包目录，大约 75 MB。重跑什么都不变。仓库里的例子换了钉的提交以后，复制新包再跑一次。没装的话，`scan` 每一拍报一行「还没装」，工具不受影响。
-
-6. 检查、预演、打开。
+5. 检查、预演、打开。
 
    ```bash
    just module check ~/.pi-super-agent/modules/stock-ta
-   TA_ROOT=<你的技术分析项目> just module try stock-ta
+   just module try stock-ta
    just module on stock-ta
    ```
 
-   `just module try` 在临时状态目录里起宿主，读不到你的密钥文件，所以 `TA_ROOT` 要放在命令前面。它会用 `config.json` 里的模型，按量计费的模型会被拒绝。
+   `just module try` 在临时状态目录里起宿主，用的是真实 `files/` 的副本，所以要先装好环境；考题 `nvda-structure` 还要 NVDA 在自选股里、`scan` 扫过一次。它会用 `config.json` 里的模型，按量计费的模型会被拒绝。
+
+6. 等第一拍扫描。打开后一小时内 `scan` 跑第一拍，用上一个交易日的收盘补齐两年日线。在这之前，读数据的工具都说「还没有数据」。`scan-runs` 里出现一行「换上」就好了。
 
 打开以后在对话里问「NVDA 现在的支撑阻力和动量怎么样」，领队会把支撑阻力派给结构与形态，把动量派给趋势与动量，再汇总，汇报带数据时间和笔记出处。
 

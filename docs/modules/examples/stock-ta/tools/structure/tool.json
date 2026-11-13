@@ -1,8 +1,7 @@
 {
   "title": "支撑阻力与结构",
-  "description": "一只美股的最新结构：支撑阻力区、突破与回踩、通道、形态候选、缺口、成交量分布和动能（均线排列、ATR、离 52 周高点多远、相对 QQQ/SPY 的强弱）。只读本机缓存，数据截止到 data_end",
+  "description": "一只美股的最新结构：支撑阻力区、突破与回踩、通道、形态候选、缺口、成交量分布和动能（均线排列、ATR、离 52 周高点多远、相对 QQQ/SPY 的强弱）。只读模块自己的数据库，数据截止到 data_end",
   "effect": "read",
-  "secrets": ["TA_ROOT"],
   "input": {
     "symbol": { "type": "text", "title": "美股代码，例如 NVDA" },
     "timeframe": { "type": "text", "title": "周期，1d（默认）或 1w" }

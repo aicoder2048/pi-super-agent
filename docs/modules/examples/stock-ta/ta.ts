@@ -1,23 +1,24 @@
 /**
- * Every call works on clones of the project's databases with the market API pointed at a closed
- * port, because even a read opens a write transaction that bumps the SQLite header, and a cache
- * miss would fetch from the network.
+ * Every call works on a clone of the database with the market API pointed at a closed port: even a read
+ * in `ta` opens a write transaction that bumps the SQLite header, and a cache miss would fetch from the network.
  */
 import { spawnSync } from "node:child_process";
-import { constants, copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { constants, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { listedSymbols, type WatchRow } from "./watchlist.ts";
 
-export type Command = "structure" | "signals" | "note" | "prices" | "conditions" | "rules" | "screen";
+export type Command = "structure" | "signals" | "note" | "prices" | "conditions" | "rules";
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
 
 const LIMIT_BYTES = 20_000;
 const UNDER_HOST_LIMIT_MS = 18_000;
 const DAY_MS = 86_400_000;
-const NOW_AFTER_SYNC_MS = 60_000;
-const SETUP = "见 docs/modules/stock-ta.md";
+const TA_DELAY_MS = 15 * 60_000;
+const GUIDE = "见 docs/modules/stock-ta.md";
+const WITHOUT_DATA: ReadonlySet<Command> = new Set(["rules", "note"]);
 const TIERS = [
 	{ items: 20, chars: 4000, depth: 8 },
 	{ items: 10, chars: 1000, depth: 6 },
@@ -26,7 +27,9 @@ const TIERS = [
 	{ items: 1, chars: 60, depth: 3 },
 ];
 
-type Kind = "text" | "number" | "list";
+type Kind = "text" | "number" | "list" | "timeframe";
+
+const TIMEFRAMES = ["1d", "1w"];
 
 /** Copies only the named fields, because `ta` rejects any field it does not know. */
 export function argsOf(input: unknown, fields: Readonly<Record<string, Kind>>): JsonObject {
@@ -41,68 +44,116 @@ export function argsOf(input: unknown, fields: Readonly<Record<string, Kind>>): 
 			args[key] = number;
 		} else if (kind === "list") {
 			args[key] = (Array.isArray(value) ? value : String(value).split(/[,，\s]+/)).map(String).filter((item) => item !== "");
-		} else args[key] = String(value).trim();
+		} else {
+			const text = String(value).trim();
+			if (kind === "timeframe" && !TIMEFRAMES.includes(text)) throw new Error(`周期只有 1d 和 1w，模块只扫日线，收到 ${JSON.stringify(value)}`);
+			args[key] = text;
+		}
 	}
 	return args;
 }
 
 export function ta(command: Command, args: JsonObject): JsonObject {
-	const root = process.env["TA_ROOT"];
-	if (!root) throw new Error(`没有设置 TA_ROOT：在宿主的密钥文件里写一行 TA_ROOT=<你的技术分析项目>，${SETUP}`);
-	const project = join(root, "app/trading");
-	if (!existsSync(project)) throw new Error(`TA_ROOT 指向的目录里没有 app/trading，不像技术分析项目，${SETUP}`);
+	const data = process.env["PSA_MODULE_DATA"] ?? "";
+	const bin = installedTa();
+	const live = join(data, "files/ta/ta.sqlite");
+	const hasData = existsSync(live);
+	if (!hasData && !WITHOUT_DATA.has(command)) throw new Error(`还没有数据：等 scan feed 第一次跑完（打开模块后一小时内）再问，${GUIDE}`);
 	const scratch = mkdtempSync(join(tmpdir(), "stock-ta-"));
 	try {
-		const env: Record<string, string> = {
-			PATH: process.env["PATH"] ?? "",
-			HOME: process.env["HOME"] ?? "",
-			TA_ROOT: root,
-			MASSIVE_BASE_URL: "http://127.0.0.1:9",
-			TA_DB_PATH: clone(join(root, "app/data/ta.sqlite"), scratch),
-		};
-		if (command === "screen") env["TA_MARKET_DB_PATH"] = clone(join(root, "app/data/market.sqlite"), scratch);
-		const input = command === "structure" ? structureInput(args, env["TA_DB_PATH"]!) : args;
-		const run = spawnSync("uv", ["run", "--no-sync", "--project", project, "ta", command], {
+		const db = join(scratch, "ta.sqlite");
+		if (!WITHOUT_DATA.has(command)) copyFileSync(live, db, constants.COPYFILE_FICLONE);
+		const env: Record<string, string> = { PATH: process.env["PATH"] ?? "", HOME: process.env["HOME"] ?? "", MASSIVE_BASE_URL: "http://127.0.0.1:9", MASSIVE_API_KEY: "offline", TA_DB_PATH: db };
+		if (command === "note") env["TA_NOTES_DIR"] = importedNotes(data, String(args["source"] ?? ""), join(scratch, "notes"));
+		const input = command === "structure" ? structureInput(args, db, data) : args;
+		const run = spawnSync(bin, [command], {
 			input: JSON.stringify(input), env, cwd: scratch, encoding: "utf8", timeout: UNDER_HOST_LIMIT_MS, maxBuffer: 64 * 1024 * 1024,
 		});
-		if (run.error) throw new Error((run.error as NodeJS.ErrnoException).code === "ENOENT" ? "找不到 uv：宿主的 PATH 里要有 uv" : `ta ${command} 没跑完：${run.error.message}`);
+		if (run.error) throw new Error(`ta ${command} 没跑完：${run.error.message}`);
 		if (run.status !== 0) throw new Error(failure(command, run.status, run.stderr));
 		const last = run.stdout.trim().split("\n").at(-1);
-		if (!last) throw new Error(`ta ${command} 没有输出结果（退出码 0），再试一次；还是这样就在技术分析项目里直接跑这个子命令看看`);
+		if (!last) throw new Error(`ta ${command} 没有输出结果（退出码 0），再试一次；还是这样就重跑 just module setup stock-ta`);
 		return trim(JSON.parse(last) as JsonObject);
 	} finally {
 		rmSync(scratch, { recursive: true, force: true });
 	}
 }
 
-/** A copy-on-write clone on APFS, so even the 400 MB market database costs nothing. */
-function clone(file: string, into: string): string {
-	if (!existsSync(file)) throw new Error(`技术分析项目里没有 app/data/${basename(file)}，${SETUP}`);
-	const copy = join(into, basename(file));
-	copyFileSync(file, copy, constants.COPYFILE_FICLONE);
-	return copy;
+/** Setup writes `.psa-lock` last, so a venv without it is half installed. */
+export function installedTa(): string {
+	const venv = process.env["PSA_MODULE_VENV"] ?? "";
+	if (venv !== "" && existsSync(join(venv, ".psa-lock"))) return join(venv, "bin/ta");
+	const files = join(process.env["PSA_MODULE_DATA"] ?? "", "files");
+	const another = existsSync(files) && readdirSync(files).some((name) => /^venv-[0-9a-f]{12}$/.test(name) && existsSync(join(files, name, ".psa-lock")));
+	if (another) throw new Error(`包里钉的 ta 版本变了：在跑宿主的机器上重跑 just module setup stock-ta，${GUIDE}`);
+	throw new Error(`stock-ta 的 Python 环境还没装：先跑 just module setup stock-ta，${GUIDE}`);
+}
+
+/** `ta note` looks for `TA02 - *.md` in one directory, and `just module import` keeps each note's file name. */
+function importedNotes(data: string, source: string, into: string): string {
+	mkdirSync(into);
+	const knowledge = join(data, "knowledge");
+	const imported = existsSync(knowledge) ? readdirSync(knowledge, { withFileTypes: true }).filter((entry) => entry.isDirectory()) : [];
+	const linked: string[] = [];
+	for (const { name } of imported) {
+		for (const file of readdirSync(join(knowledge, name))) {
+			if (!/^TA\d{2} - .*\.md$/.test(file) || linked.includes(file)) continue;
+			symlinkSync(join(knowledge, name, file), join(into, file));
+			linked.push(file);
+		}
+	}
+	const number = /^TA\d{2}/.exec(source)?.[0];
+	if (number === undefined || linked.some((file) => file.startsWith(`${number} - `))) return into;
+	const shipped = join(import.meta.dirname, "knowledge");
+	const docs = readdirSync(shipped).filter((doc) => {
+		const sourceFile = join(shipped, doc, "source.json");
+		return existsSync(sourceFile) && (JSON.parse(readFileSync(sourceFile, "utf8")) as { title?: string }).title?.startsWith(`${number} `);
+	});
+	const how = docs.length > 0 ? docs.map((doc) => `just module import stock-ta ${doc} <笔记文件>`).join("；") : "模块的知识清单里没有这份笔记";
+	throw new Error(`笔记 ${number} 还没导入：${how}，${GUIDE}`);
 }
 
 /**
- * `ta structure` refetches a symbol's dividends unless `now` falls 0 to 1 day after its last
- * sync, and its momentum part reads QQQ and SPY the same way. A `now` just after the newest of
- * those syncs keeps every read on the cache only while the oldest sync is under a day before that now.
+ * `ta structure` refetches dividends for the symbol, QQQ and SPY unless `now` is 0 to 1 day after their last sync (both ends inclusive in ta),
+ * and serves only bars that closed 15 minutes before `now`. The scan keeps a sync until it is a full day old, so
+ * after a day-two scan the newest sync can still be yesterday's.
  */
-function structureInput(args: JsonObject, db: string): JsonObject {
+function structureInput(args: JsonObject, db: string, data: string): JsonObject {
 	const symbol = String(args["symbol"] ?? "").toUpperCase().replace("-", ".");
 	const opened = new DatabaseSync(db, { readOnly: true });
-	let synced: { symbol: string; synced_ms: number }[];
+	let synced: Map<string, number>;
+	let close: number | null;
 	try {
-		synced = opened.prepare("SELECT symbol, synced_ms FROM dividend_sync WHERE symbol IN (?, 'QQQ', 'SPY')").all(symbol) as typeof synced;
+		const rows = opened.prepare("SELECT symbol, synced_ms FROM dividend_sync WHERE symbol IN (?, 'QQQ', 'SPY')").all(symbol) as { symbol: string; synced_ms: number }[];
+		synced = new Map(rows.map((row) => [row.symbol, row.synced_ms]));
+		close = (opened.prepare("SELECT max(end_ms) AS close FROM bars WHERE symbol = ? AND timeframe = '1d' AND complete = 1").get(symbol) as { close: number | null }).close;
 	} finally {
 		opened.close();
 	}
-	const times = synced.map((row) => row.synced_ms);
-	const newest = Math.max(...times);
-	if (!synced.some((row) => row.symbol === symbol) || newest + NOW_AFTER_SYNC_MS - Math.min(...times) >= DAY_MS) {
-		throw new Error(`本机缓存里没有 ${symbol || "这个标的"} 足够新的日线，这个工具不联网；先在技术分析项目里扫描一次，或换一个自选股里的标的`);
+	if (!synced.has(symbol) || close === null) throw notScanned(symbol, data);
+	const now = Math.max(...synced.values(), close + TA_DELAY_MS);
+	const behind = [...synced].filter(([, ms]) => now - ms >= DAY_MS).map(([name]) => name);
+	if (behind.includes(symbol)) throw notScanned(symbol, data);
+	if (behind.length > 0) throw new Error(`基准 ${behind.join("、")} 的数据落后一天以上（上次扫描没更新到它），这个工具不联网；等下一次扫描（每个交易日收盘后）再问`);
+	return { timeframe: "1d", ...args, symbol, now: new Date(now).toISOString() };
+}
+
+function notScanned(symbol: string, data: string): Error {
+	if (watched(data).includes(symbol)) return new Error(`${symbol} 在自选股里，但模块的数据库还没扫到它最新的日线，这个工具不联网；等下一次扫描（每个交易日收盘后）再问`);
+	return new Error(`模块的数据库里没有 ${symbol || "这个标的"} 足够新的日线，这个工具不联网；把它加进自选股，等下一次 scan 扫完再问`);
+}
+
+function watched(data: string): string[] {
+	const file = join(data, "data.db");
+	if (!existsSync(file)) return [];
+	const opened = new DatabaseSync(file, { readOnly: true });
+	try {
+		if (opened.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'watchlist'").get() === undefined) return [];
+		const rows = opened.prepare(`SELECT "_id" AS id, "symbol", "removedAt" FROM "watchlist"`).all() as { id: number; symbol: unknown; removedAt: unknown }[];
+		return listedSymbols(rows.map((row): WatchRow => ({ id: String(row.id), fields: { symbol: row.symbol, removedAt: row.removedAt } })));
+	} finally {
+		opened.close();
 	}
-	return { timeframe: "1d", ...args, symbol, now: new Date(newest + NOW_AFTER_SYNC_MS).toISOString() };
 }
 
 function failure(command: Command, status: number | null, stderr: string): string {

@@ -3,7 +3,7 @@ name: structure-pattern
 title: 结构与形态
 description: 支撑阻力区、突破与回踩、通道、缺口和双底头肩等形态候选。问「NVDA 的支撑阻力在哪里、突破有没有站稳」找它
 tools: read
-uses: knowledge, tools/structure, tools/signals, tools/conditions, tools/rules, tools/note, tools/prices, data/quotes, data/watchlist, watch/quotes
+uses: knowledge, tools/structure, tools/signals, tools/conditions, tools/rules, tools/note, tools/prices, data/quotes, data/scan-runs, data/watchlist, watch/quotes
 ---
 你是技术分析研究组的结构与形态专家，只看价格结构。
 

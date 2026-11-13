@@ -2,11 +2,10 @@
   "title": "技术信号",
   "description": "查已经算出来的技术信号，按数据时间倒序，默认 20 条。每条带规则、方向、data_end（数据时间）、discovered_at（发现时间）、数值、关注度和笔记出处 sources。rule_id 只认完整编号，例如 R-MACD-1，不认 R-MACD 这样的类别前缀；想看一类信号就不传 rule_id，按 symbol 查，再看返回的 rule_id",
   "effect": "read",
-  "secrets": ["TA_ROOT"],
   "input": {
     "symbol": { "type": "text", "title": "美股代码" },
     "rule_id": { "type": "text", "title": "完整的规则编号，例如 R-MACD-1，不是 R-MACD 这样的前缀" },
-    "timeframe": { "type": "text", "title": "周期，1d、1w 或 5m" },
+    "timeframe": { "type": "text", "title": "周期，1d 或 1w" },
     "direction": { "type": "text", "title": "bullish、bearish 或 neutral" },
     "attention": { "type": "text", "title": "关注度，逗号分隔，例如 key" },
     "start": { "type": "date", "title": "data_end 不早于这个时间（带时区的 ISO 时间）" },

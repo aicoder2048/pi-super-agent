@@ -6,4 +6,4 @@ import type { CodeSite } from "../../src/modules/run-code.ts";
 const scratchData = join(tmpdir(), `psa-test-data-${process.pid}`);
 process.once("exit", () => rmSync(scratchData, { recursive: true, force: true }));
 
-export const codeSite = (packageDir: string, component = ""): CodeSite => ({ packageDir, component, dataDir: scratchData });
+export const codeSite = (packageDir: string, component = "", dataDir = scratchData): CodeSite => ({ packageDir, component, dataDir });

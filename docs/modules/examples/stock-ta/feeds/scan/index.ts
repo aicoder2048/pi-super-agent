@@ -5,6 +5,7 @@
 import { spawn } from "node:child_process";
 import { constants, copyFileSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { installedTa } from "../../ta.ts";
 import { listedSymbols, type WatchRow } from "../../watchlist.ts";
 
 interface Input {
@@ -94,9 +95,7 @@ function taOf(settings: Input["settings"], key: string, db: string): Ta {
 	const env = { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", TA_DB_PATH: db, MASSIVE_API_KEY: key, MASSIVE_BASE_URL: settings.baseUrl };
 	const deadline = Date.now() + settings.scanSeconds * 1000;
 	if (settings.ta !== undefined) return { command: process.execPath, args: [resolve(settings.ta)], env, deadline };
-	const ta = join(process.env.PSA_MODULE_VENV ?? "", "bin", "ta");
-	if (!existsSync(ta)) throw new Error(`stock-ta 的 Python 环境还没装：在跑宿主的这台机器上执行 just module setup stock-ta，见 ${GUIDE}`);
-	return { command: ta, args: [], env, deadline };
+	return { command: installedTa(), args: [], env, deadline };
 }
 
 const errorLine = (errors: readonly TaError[]) => errors.map((e) => `${e.symbol ?? "整体"}：${e.error.code} ${e.error.message ?? ""}`.trim()).join("；");

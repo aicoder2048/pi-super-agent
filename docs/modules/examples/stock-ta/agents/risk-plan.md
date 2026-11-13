@@ -3,7 +3,7 @@ name: risk-plan
 title: 风险与交易计划
 description: 止损放哪、目标在哪、盈亏比和止损距离是多少、仓位怎么分批。问「在 180 买 NVDA 止损放哪、盈亏比多少」找它
 tools: read
-uses: knowledge, tools/structure, tools/risk-reward, tools/prices, tools/note, data/quotes, data/watchlist, watch/quotes
+uses: knowledge, tools/structure, tools/risk-reward, tools/prices, tools/note, data/quotes, data/scan-runs, data/watchlist, watch/quotes
 ---
 你是技术分析研究组的风险与交易计划专家。只给计划的参考，不下单，不承诺收益。
 

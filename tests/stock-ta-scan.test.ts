@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import test, { type TestContext } from "node:test";
 import { Modules } from "../src/modules.ts";
 import { runFeed, type FeedPorts } from "../src/modules/feed-runner.ts";
-import { lockOf, venvDir } from "../src/modules/files.ts";
+import { lockOf, VENV_MARK, venvDir } from "../src/modules/files.ts";
 import { instanceData } from "../src/modules/instance-data.ts";
 import { fakeTa } from "./helpers/fake-ta.ts";
 import { servedAsHost } from "./helpers/fakes.ts";
@@ -18,7 +18,7 @@ const WEDNESDAY_EVENING = "2026-11-11T23:00:00.000Z";
 const SATURDAY = "2026-11-14T15:00:00.000Z";
 
 
-async function scanFeed(t: TestContext, { key = KEY, viaVenv = false } = {}) {
+async function scanFeed(t: TestContext, { key = KEY, viaVenv = false, installed = true } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "psa-stock-ta-scan-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const pkg = join(root, "modules", "stock-ta");
@@ -28,8 +28,10 @@ async function scanFeed(t: TestContext, { key = KEY, viaVenv = false } = {}) {
 	const data = instanceData(state);
 	const dataDir = data.dir("stock-ta");
 	if (viaVenv) {
-		const bin = join(venvDir(dataDir, lockOf(pkg)!), "bin");
+		const venv = venvDir(dataDir, lockOf(pkg)!);
+		const bin = join(venv, "bin");
 		mkdirSync(bin, { recursive: true });
+		if (installed) writeFileSync(join(venv, VENV_MARK), lockOf(pkg)!);
 		writeFileSync(join(bin, "ta"), `#!/bin/sh\nexec "${process.execPath}" "${fake.script}" "$@"\n`);
 		chmodSync(join(bin, "ta"), 0o755);
 	}
@@ -304,6 +306,15 @@ test("没有 settings.ta 时用的是和自己这份包副本 uv.lock 对得上�
 	const run = await feed.tick();
 	assert.equal(run.ok, true, JSON.stringify(run));
 	assert.equal(feed.scans().length, 1);
+});
+
+test("venv 没装完（没有 .psa-lock）：这一拍失败，说先跑 just module setup stock-ta，不起 ta", async (t) => {
+	const feed = await scanFeed(t, { viaVenv: true, installed: false });
+	feed.watch("NVDA");
+	const run = await feed.tick();
+	assert.equal(run.ok, false, JSON.stringify(run));
+	assert.match(run.ok ? "" : run.note, /先跑 just module setup stock-ta/);
+	assert.equal(feed.calls().length, 0);
 });
 
 test("缺 POLYGON_API_KEY：这一拍失败，一行说明，不起 ta", async (t) => {
