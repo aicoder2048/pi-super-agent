@@ -1,0 +1,11 @@
+{
+  "title": "来信",
+  "kind": "record",
+  "class": "private",
+  "fields": {
+    "from": { "type": "text", "title": "发件人" },
+    "subject": { "type": "text", "title": "主题" },
+    "snippet": { "type": "text", "title": "开头一句" },
+    "body": { "type": "text", "title": "正文" }
+  }
+}

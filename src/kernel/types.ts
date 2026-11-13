@@ -71,16 +71,19 @@ export interface Clock {
 	now(): number;
 }
 
-export interface TriggerSubmission {
+export type TriggerSubmission = {
 	source: string;
 	externalId: string;
 	threads: { id: string; title?: string }[];
 	sender: string;
 	body: string;
 	occurredAt: number;
+} & (
 	/** From a feed that fills private data (design.md §5): a ticket that takes it has touched private data. */
-	private?: boolean;
-}
+	| { private?: boolean; announce?: never }
+	/** A private feed's released `line` (ADR-0020): a new trigger that is not ignored is also posted as a notice host line, in the same transaction. */
+	| { private?: false; announce: true }
+);
 
 export type SourcePolicy = (trigger: TriggerSubmission) => "ignore" | "candidate" | "notice";
 

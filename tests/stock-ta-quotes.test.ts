@@ -29,7 +29,7 @@ async function quotesFeed(t: TestContext, key = "sk-test") {
 	const notices: FeedNotice[] = [];
 	const alerts: string[] = [];
 	const clock = { now: AT + 15 * 60_000 };
-	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: (_, a) => void alerts.push(a.text), secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined), now: () => clock.now };
+	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: (_, a) => void alerts.push(a.text), problem: () => {}, secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined), now: () => clock.now };
 	const watch = (...symbols: string[]) => data.write("stock-ta", entry.components, "watchlist", symbols.map((symbol) => ({ symbol })), "使用者口述", "test");
 	const quotes = () => data.query("stock-ta", entry.components, "quotes", {}, "test").rows;
 	return { massive, modules, entry, data, notices, alerts, watch, quotes, clock, round: () => runFeed(entry, [], ports), rehearse: () => runFeed(entry, [], ports, entry.fixtures[0]) };

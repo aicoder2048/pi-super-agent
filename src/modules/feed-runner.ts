@@ -6,16 +6,25 @@ import type { FeedStates, ModuleRows } from "./instance-data.ts";
 import type { CollectionDescriptor, Component, ComponentName, FeedDescriptor, FeedFixture, ModuleName } from "./manifest.ts";
 import type { InstanceData } from "./registry.ts";
 import type { Alert, Collected, FeedInput, Json, Row } from "./protocol.ts";
+import { fill, release } from "./release.ts";
 import { fixtureSecrets, LIMIT_MS, runModuleCodeAsync, secretsFor } from "./run-code.ts";
 
 export type FeedEntry = { source: string; module: ModuleName; dir: string; name: ComponentName; feed: FeedDescriptor; fixtures: readonly FeedFixture[]; components: readonly Component[]; private: boolean };
 
-export type FeedNotice = { source: string; id: string; thread: string; body: string; at: number; private: boolean };
+/** `released`: `body` is the private feed's filled `line`, which the host also posts to the user and hands the Router as data that is not private. */
+export type Reach = "shareable" | "private" | "released";
+export type FeedNotice = { source: string; id: string; thread: string; body: string; at: number; reach: Reach };
+
+export const reachOf = ({ feed, private: held }: Pick<FeedEntry, "feed" | "private">): Reach => (!held ? "shareable" : feed.line !== undefined ? "released" : "private");
+
+export type FeedProblem = NonNullable<Collected["problem"]>;
 
 export interface FeedPorts {
 	data: ModuleRows & FeedStates & Pick<InstanceData, "dir">;
 	submit(notice: FeedNotice): void;
 	alert(module: ModuleName, alert: Alert): void;
+	/** Every beat that ran, with what it reported, so the host can tell a new problem from one still standing. */
+	problem(source: string, problem: FeedProblem | undefined): void;
 	secret(name: string): string | undefined;
 	now(): number;
 	limitMs?: number;
@@ -28,6 +37,8 @@ const READ_LIMIT = 500;
 type JsonObject = { readonly [key: string]: Json };
 const isObject = (value: Json | undefined): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);
 const failed = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+const opaque = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 16);
 
 const itemId = (item: JsonObject) => (typeof item["id"] === "string" && item["id"] !== "" ? item["id"] : createHash("sha256").update(JSON.stringify(item)).digest("hex").slice(0, 16));
 
@@ -47,6 +58,8 @@ export function parseCollected(output: Json, into?: CollectionDescriptor): Colle
 		return `notices 要是一列 { id, fields }，fields 的值都是文字`;
 	}
 	if (cursor !== undefined && typeof cursor !== "string") return `cursor 要是文字，收到 ${JSON.stringify(cursor)}`;
+	const { problem } = output;
+	if (problem !== undefined && !(isObject(problem) && typeof problem["id"] === "string" && typeof problem["text"] === "string")) return `problem 要是 { id, text }，两个都是文字`;
 	if (into !== undefined) {
 		const unknown = (records as JsonObject[]).flatMap((r) => Object.keys(r)).find((key) => key !== "id" && !Object.hasOwn(into.fields, key));
 		if (unknown !== undefined) return `records 里的字段 "${unknown}" 不是 ${into.title} 的字段（有：${Object.keys(into.fields).join("、")}）`;
@@ -72,8 +85,6 @@ export function feedInput(feed: FeedDescriptor, items: readonly Json[], held: He
 		rows: { ...Object.fromEntries((feed.reads ?? []).map((c) => [c, held.rows(c)])), ...(given["rows"] as object | undefined) },
 	} as FeedInput;
 }
-
-const fill = (template: string, fields: Readonly<Record<string, string>>) => template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => fields[key] ?? "");
 
 async function fromHandler({ module, source, feed, name, dir, components }: FeedEntry, handler: string, items: readonly Json[], ports: FeedPorts, fixture: FeedFixture | undefined, signal: AbortSignal | undefined): Promise<Collected | string> {
 	const { data } = ports;
@@ -104,8 +115,17 @@ export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: F
 			for (const alert of written.alerts) ports.alert(module, alert);
 		}
 		const template = feed.notice;
-		const notices = template === undefined ? [] : (collected.notices ?? []).map((n) => ({ ...n, body: fill(template, n.fields) }));
-		for (const n of notices) ports.submit({ source, id: n.id, thread: n.thread ?? entry.name, body: n.body, at: ports.now(), private: entry.private });
+		const reach = reachOf(entry);
+		const line = reach === "released" ? feed.line : undefined;
+		const ignored = (feed.ignore ?? []).map((p) => new RegExp(p));
+		const notices = template === undefined ? [] : (collected.notices ?? []).flatMap((n) => {
+			if (line === undefined) return [{ id: n.id, thread: n.thread ?? entry.name, body: fill(template, n.fields) }];
+			// The Router sees a released trigger unmarked, so nothing but the line may reach it: not the feed's own id or thread, and not the notice text the ignore patterns were written against.
+			if (ignored.some((pattern) => pattern.test(fill(template, n.fields)))) return [];
+			return [{ id: opaque(n.id), thread: opaque(n.thread ?? entry.name), body: release(line, n.fields) }];
+		});
+		for (const n of notices) ports.submit({ source, ...n, at: ports.now(), reach });
+		ports.problem(source, collected.problem);
 		if (collected.cursor !== undefined) ports.data.saveFeedState(module, source, { cursor: collected.cursor });
 		return { ok: true, records: stored, notices: notices.length };
 	} catch (error) {

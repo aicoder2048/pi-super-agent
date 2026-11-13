@@ -57,7 +57,7 @@ function world(t: TestContext, feeds: Record<string, Record<string, Feed>>, opti
 	const logged: string[] = [];
 	const make = () => {
 		const data = instanceData(state);
-		const ports = { data, submit: (n: FeedNotice) => void submitted.push(n), alert: (module: ModuleName, alert: Alert) => void alerts.push({ module, alert }), secret: () => undefined, now: () => clock.now, ...(options.limitMs !== undefined && { limitMs: options.limitMs }) };
+		const ports = { data, submit: (n: FeedNotice) => void submitted.push(n), alert: (module: ModuleName, alert: Alert) => void alerts.push({ module, alert }), problem: () => {}, secret: () => undefined, now: () => clock.now, ...(options.limitMs !== undefined && { limitMs: options.limitMs }) };
 		return {
 			data,
 			scheduler: createScheduler({
@@ -204,7 +204,7 @@ test("预演：连接器换成 fixtures，每个样例跑一次，网络请求�
 	const modules = servedAsHost(Modules.load([join(w.root, "modules")]));
 	const entries = modules.feeds();
 	const data = instanceData(w.state);
-	const ports = { data, submit: () => {}, alert: () => {}, secret: () => undefined, now: () => w.clock.now };
+	const ports = { data, submit: () => {}, alert: () => {}, problem: () => {}, secret: () => undefined, now: () => w.clock.now };
 	const scheduler = createScheduler({ feeds: () => entries, run: (e, items, f) => runFeed(e, items, ports, f), state: data, inboxDir: join(w.state, "inbox"), now: () => w.clock.now, when: { "us-market-hours": inPollWindow }, fixtures: true, log: (line) => void w.logged.push(line) });
 	await scheduler.tick();
 	await scheduler.tick();
@@ -293,7 +293,7 @@ test("预演时样例给的 rows 交给 handler", async (t) => {
 	writeFixture(w.root, "lab", "count", "two", { input: { rows: { readings: [{ item: "CEA" }, { item: "CEA" }] } }, responses: {} });
 	const entries = servedAsHost(Modules.load([join(w.root, "modules")])).feeds();
 	const data = instanceData(w.state);
-	const ports = { data, submit: (n: FeedNotice) => void w.submitted.push(n), alert: () => {}, secret: () => undefined, now: () => w.clock.now };
+	const ports = { data, submit: (n: FeedNotice) => void w.submitted.push(n), alert: () => {}, problem: () => {}, secret: () => undefined, now: () => w.clock.now };
 	await runFeed(entries[0]!, [], ports, entries[0]!.fixtures[0]);
 	assert.deepEqual(w.submitted.map((n) => n.body), ["n=2"]);
 });
@@ -388,7 +388,7 @@ test("进度最后才存：存了行、交触发时崩了，下一次从原来�
 		if (crash) throw new Error("host went down");
 		w.submitted.push(n);
 	};
-	const ports = { data, submit, alert: () => {}, secret: () => undefined, now: () => w.clock.now };
+	const ports = { data, submit, alert: () => {}, problem: () => {}, secret: () => undefined, now: () => w.clock.now };
 	assert.equal((await runFeed(entry, [], ports)).ok, false);
 	crash = false;
 	await runFeed(entry, [], ports);

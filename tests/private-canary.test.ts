@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Host } from "../src/host/host.ts";
 import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
+import { openStore } from "../src/kernel/store.ts";
 import { createGateway } from "../src/modules/gateway.ts";
 import { instanceData } from "../src/modules/instance-data.ts";
 import { moduleDataDir } from "../src/modules/knowledge.ts";
@@ -12,11 +13,11 @@ import { ModuleStore } from "../src/modules/live.ts";
 import type { Digest, ModuleName } from "../src/modules/manifest.ts";
 import { privateLine } from "../src/modules/protocol.ts";
 import { scanPackage } from "../src/modules/validate.ts";
-import type { Domains } from "../src/modules.ts";
+import { Modules, type Domains } from "../src/modules.ts";
 import type { Member } from "../src/teams.ts";
 import { Watchdog } from "../src/watchdog/watchdog.ts";
 import { FAKE_BOT_TOKEN, FakeTelegram } from "./helpers/fake-telegram.ts";
-import { defaultWorkerModels, FakeSpawner, fauxRouter, ids, until, type Brain, type FakeWorker, type ToolCallSpec } from "./helpers/fakes.ts";
+import { defaultWorkerModels, FakeSpawner, fauxRouter, ids, servedAsHost, until, type Brain, type FakeWorker, type ToolCallSpec } from "./helpers/fakes.ts";
 
 const CANARY = "CANARY-7Q4";
 const USER = 42;
@@ -184,11 +185,23 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 		sweep(name);
 		return phone().slice(before);
 	};
-	const replyCount = () => host.kernel.conversation(500).filter((l) => l.who === "router").length;
-	const replied = (name: string, drive: () => unknown) => {
-		const before = replyCount();
-		const phoneBefore = phone().length;
-		return flow(name, drive, () => replyCount() > before && phone().length > phoneBefore);
+	const replyIds = () => host.kernel.conversation(500).flatMap((l) => (l.who === "router" ? [l.id] : []));
+	const sentFor = (lineIds: string[]): number[] => {
+		const db = openStore(join(stateDir, "state.db"));
+		try {
+			const rows = db.prepare("SELECT message_id FROM telegram_messages WHERE chat_id = ? AND line_id IN (SELECT value FROM json_each(?)) AND sent_version >= version").all(USER, JSON.stringify(lineIds));
+			return rows.map((r) => Number(r["message_id"]));
+		} finally {
+			db.close();
+		}
+	};
+	// Only the reply's own messages: a card from an earlier flow can still reach the phone after that flow ended.
+	const replied = async (name: string, drive: () => unknown) => {
+		const before = new Set(replyIds());
+		const fresh = () => replyIds().filter((id) => !before.has(id));
+		await flow(name, drive, () => fresh().length > 0 && sentFor(fresh()).length > 0);
+		const shown = new Set(sentFor(fresh()));
+		return tg.sent.filter((m) => shown.has(m.messageId)).map((m) => m.text);
 	};
 	const said = (name: string, text: string) => replied(name, () => host.say(text));
 	const ticket = (prefix: string) => host.kernel.listTickets().find((r) => r.title.startsWith(prefix));
@@ -298,4 +311,92 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 	sweep("收尾");
 
 	assert.deepEqual(problems, []);
+});
+
+test("金丝雀：私密 feed 放出三行之后，正文里的一串字经过通知、幕僚长开的任务和它的汇报，都不出现在 Telegram 上；放出之后行情汇报和幕僚长的回复是全文", async (t) => {
+	const CANARY_BODY = "CANARY-7f3a";
+	const LETTERS = "private-line" as ModuleName;
+	const root = mkdtempSync(join(tmpdir(), "psa-canary-line-"));
+	const stateDir = join(root, "state");
+	const pkg = join(import.meta.dirname, "fixtures/modules/private-line");
+	const scan = scanPackage(pkg, { runCases: false, folder: LETTERS });
+	assert.ok(scan.ok);
+	const store = new ModuleStore(join(stateDir, "module-store"));
+	assert.ok(store.keep(LETTERS, scan.scan.digest, pkg));
+	const modules = servedAsHost(Modules.load([join(import.meta.dirname, "fixtures/modules")]));
+	const gateway = createGateway({
+		copyDir: (module, d) => store.dirOf(module, d),
+		serving: (module) => (module === LETTERS ? scan.scan.digest : undefined),
+		dataDir: (module) => moduleDataDir(stateDir, module),
+		rows: instanceData(stateDir),
+		secret: () => undefined,
+		log: () => {},
+	});
+	const brain: Brain = (cards) =>
+		cards.flatMap((card): ToolCallSpec[] => {
+			const open = (title: string, basis: string, extra: object) => ({ name: "route", args: { decisions: [{ kind: "open_ticket", basis, triggerId: ids(card, "trg"), title, brief: title, ...extra }] } });
+			if (card.startsWith("[候选触发]") && card.includes("TOYX")) return [open("核实 TOYX 波动", "rule", { ruleId: "toy-market/big-move", threads: ["thr_toy-market:TOYX"] })];
+			if (card.startsWith("[候选触发]") && card.includes("请处理")) return [open("看信", "inference", { domain: LETTERS })];
+			if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `转述：${card.split("\n")[1]}`, cause: ids(card, "tkt") } }];
+			if (card.startsWith("[对话]")) return [{ name: "reply", args: { text: "回：大盘平稳", cause: ids(card, "trg") } }];
+			return [];
+		});
+	const tg = await FakeTelegram.start();
+	t.after(() => tg.close());
+	let host!: Host;
+	const spawner = new FakeSpawner((worker, input) => {
+		if (!input.startsWith("[任务说明]")) return;
+		void (async () => {
+			const title = host.kernel.getTicket(worker.spec.ticketId)!.title;
+			if (title === "看信") {
+				const read = (await worker.request("worker.data", { op: "query", collection: "messages" })) as { rows: { fields: { body: string } }[] };
+				worker.report({ status: "ready", summary: `信里说：${read.rows.map((r) => r.fields.body).join("；")}` });
+			} else worker.report({ status: "ready", summary: "TOYX 跌了 5.2%，成交量放大" });
+			worker.settle();
+		})().catch((e: Error) => worker.report({ status: "failed", summary: e.message }));
+	});
+	host = await Host.start({
+		stateDir,
+		createRouter: fauxRouter(brain).createRouter,
+		createSpawner: () => spawner,
+		log: () => {},
+		ruleAllows: () => true,
+		workerModels: defaultWorkerModels(),
+		domains: { book: () => modules.book, kitFor: (d) => (d === LETTERS ? { skillsDir: undefined, prepare: undefined, crew: [], granted: [] } : undefined) },
+		gateway,
+		moduleFeeds: { feeds: () => modules.feeds(), fixtures: false, tickMs: 20 },
+		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set([USER]), timing: { pollTimeoutSec: 1, minGapMs: 5 } },
+	});
+	spawner.request = (...args) => host.workers.handleRequest(...args);
+	t.after(async () => {
+		await host.stop();
+		rmSync(root, { recursive: true, force: true });
+	});
+	tg.userSays(USER, "/start");
+	await until(() => tg.sent.length > 0, "聊天打开");
+
+	const inbox = join(stateDir, "inbox", LETTERS, "inbox");
+	const deliver = async (name: string, subject: string) => {
+		mkdirSync(inbox, { recursive: true });
+		writeFileSync(join(inbox, `${name}.json`), JSON.stringify({ id: name, from: "Ann <ann@example.com>", subject, snippet: "附件是对账单", body: `正文 ${CANARY_BODY}` }));
+		await until(() => !readdirSync(inbox).some((f) => f.endsWith(".json")), "收件箱处理完", 10_000);
+		await host.router.waitForIdle();
+	};
+	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => m.text);
+
+	await deliver("m-1", "季度对账单");
+	await until(() => phone().some((text) => text.includes("季度对账单")), "三行通知到了 Telegram");
+	host.kernel.submitTrigger({ source: "toy-market", externalId: "q-1", threads: [{ id: "thr_toy-market:TOYX" }], sender: "feed", body: "TOYX 价格 94.8，涨跌 -5.2%", occurredAt: Date.now() });
+	await until(() => phone().includes("转述：TOYX 跌了 5.2%，成交量放大"), "放出之后行情汇报的转述全文到了 Telegram", 10_000);
+	host.say("今天大盘怎么样");
+	await until(() => phone().includes("回：大盘平稳"), "放出之后幕僚长的回复全文到了 Telegram", 10_000);
+
+	await deliver("m-2", "请处理");
+	await until(() => host.kernel.conversation(500).some((l) => l.text.includes(CANARY_BODY)), "网页上的转述有正文", 10_000);
+	await until(() => phone().includes(privateLine("测试信箱")), "看信任务的转述在 Telegram 上是一行提示", 10_000);
+	host.say("刚才那封信呢");
+	await until(() => host.kernel.conversation(500).filter((l) => l.text === "回：大盘平稳").length === 2, "幕僚长回了第二句", 10_000);
+	await until(() => phone().filter((text) => text === privateLine("测试信箱")).length === 2, "看信任务汇报之后幕僚长的回复是一行提示（#105 照常）", 10_000);
+	await new Promise((r) => setTimeout(r, 200));
+	assert.deepEqual([...tg.sent.map((m) => m.text), ...tg.edits.map((e) => e.text)].filter((text) => text.includes(CANARY_BODY)), []);
 });

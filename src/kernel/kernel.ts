@@ -269,7 +269,7 @@ export class Kernel {
 		this.config = { ...DEFAULT_CONFIG, ...config };
 	}
 
-	submitTrigger(sub: TriggerSubmission): { triggerId: string; duplicate: boolean } {
+	submitTrigger(sub: TriggerSubmission): { triggerId: string; duplicate: boolean; line?: HostLine } {
 		return this.#tx(() => {
 			const existing = this.#get("SELECT id FROM triggers WHERE source = ? AND external_id = ?", sub.source, sub.externalId);
 			if (existing) return { triggerId: existing.id, duplicate: true };
@@ -316,6 +316,7 @@ export class Kernel {
 					policy === "notice" ? { kind: "notice", body: sub.body } : { kind: isConversation ? "conversation" : "candidate", triggerId };
 				this.#enqueue({ kind: "router.notify", payload });
 			}
+			if (sub.announce && !ignored) return { triggerId, duplicate: false, line: this.#insertHostLine(sub.source, { kind: "notice", text: this.moduleNotice(sub.source, sub.body) }) };
 			return { triggerId, duplicate: false };
 		});
 	}
@@ -1141,6 +1142,11 @@ export class Kernel {
 		return module === null ? "模块" : (this.#domains().get(module)?.title ?? module);
 	}
 
+	/** A notice a module's feed gives the user starts with the module's title, so the phone shows whose words they are. */
+	moduleNotice(source: string, text: string): string {
+		return `${this.moduleLabel(ruleNamespace(source))}：${text}`;
+	}
+
 	privateLabel(ticketId: string): string | null {
 		const ticket = this.#privateTicket(ticketId);
 		return ticket && this.moduleLabel(ticket.module);
@@ -1244,23 +1250,27 @@ export class Kernel {
 				const existing = this.#get("SELECT id, kind, text, created_at, module_title, module_private FROM host_lines WHERE source = ? AND external_id = ?", source, post.externalId);
 				if (existing) return { line: hostLine(existing), duplicate: true };
 			}
-			const id = this.#id("hln");
-			const at = this.#now();
-			const module = post.kind === "alert" ? post.module : undefined;
-			this.#run(
-				"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at, module_title, module_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-				id,
-				post.kind,
-				source,
-				post.kind === "alert" ? post.externalId : null,
-				post.text,
-				post.kind === "alert" ? post.occurredAt : at,
-				at,
-				module?.title ?? null,
-				module === undefined ? null : Number(module.private),
-			);
-			return { line: { id, who: post.kind, text: post.text, at, ...(module && { module }) }, duplicate: false };
+			return { line: this.#insertHostLine(source, post), duplicate: false };
 		});
+	}
+
+	#insertHostLine(source: string, post: HostLinePost): HostLine {
+		const id = this.#id("hln");
+		const at = this.#now();
+		const module = post.kind === "alert" ? post.module : undefined;
+		this.#run(
+			"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at, module_title, module_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			id,
+			post.kind,
+			source,
+			post.kind === "alert" ? post.externalId : null,
+			post.text,
+			post.kind === "alert" ? post.occurredAt : at,
+			at,
+			module?.title ?? null,
+			module === undefined ? null : Number(module.private),
+		);
+		return { id, who: post.kind, text: post.text, at, ...(module && { module }) };
 	}
 
 	raised(source: string, externalId: string): boolean {

@@ -135,6 +135,11 @@ export interface FeedDescriptor {
 	reads?: readonly string[];
 	/** The trigger body for the Router. `{{field}}` is filled from each notice. */
 	notice?: string;
+	/**
+	 * Only on a feed into a private collection: up to three lines over the placeholders of `notice`. Each new
+	 * notice is then posted to the user's front ends as written here, and the Router's trigger carries only this text and is not private.
+	 */
+	line?: string;
 	/** Regular expressions. A trigger whose body matches one is dropped before the Router sees it. */
 	ignore?: readonly string[];
 }

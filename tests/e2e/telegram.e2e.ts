@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -370,5 +370,52 @@ test("Telegram 滑动回复：对幕僚长的回复滑动回复，网页上这�
 			});
 		},
 		telegramStory(tg, [USER]),
+	);
+});
+
+test("私密 feed 放出三行：来一封信，网页上一条「通知」三行，手机上一条三行的消息、带通知、不出链接预览；之后在手机上问幕僚长，回复是全文", async (t) => {
+	const tg = await FakeTelegram.start();
+	t.after(() => tg.close());
+	const pkg = join(import.meta.dirname, "../fixtures/modules/private-line");
+	const files = Object.fromEntries(
+		readdirSync(pkg, { recursive: true, withFileTypes: true })
+			.filter((entry) => entry.isFile())
+			.map((entry) => {
+				const path = join(entry.parentPath, entry.name);
+				return [join("modules/private-line", path.slice(pkg.length + 1)), readFileSync(path, "utf8")];
+			}),
+	);
+	const LINE = "测试信箱：Ann <ann@example.com>\n季度对账单\n您好，对账单在 https://example.com/x";
+	const noticeLine = (page: Page) => page.locator(".line.notice", { hasText: "测试信箱" });
+	await story(
+		t,
+		{
+			router: [
+				on("幕僚长看到来信的三行，不开任务", /^\[候选触发\][^\n]*来源 private-line\/inbox[\s\S]*季度对账单/, () => "ok"),
+				on("幕僚长回一句固定的话", /^\[对话\][\s\S]*使用者：今天大盘怎么样/, (c) => [reply(c, "固定的回答：今天大盘平稳")]),
+			],
+		},
+		async ({ step, stateDir }) => {
+			await step("收件箱放进一封信：网页出现一条三行的「通知」，手机收到一条同样三行、带通知、不出链接预览的消息", async (page) => {
+				tg.userSays(USER, "/start");
+				await until(() => sentTo(tg, USER).length === 1, "说明");
+				const inbox = join(stateDir, "inbox/private-line/inbox");
+				mkdirSync(inbox, { recursive: true });
+				writeFileSync(join(inbox, "m-1.json"), JSON.stringify({ id: "m-1", from: "Ann <ann@example.com>", subject: "季度对账单", snippet: "您好，对账单在 https://example.com/x", body: "正文 CANARY-7f3a" }));
+				await noticeLine(page).waitFor({ timeout: 20_000 });
+				assert.equal(await noticeLine(page).locator(".who").textContent(), "通知");
+				assert.equal(await noticeLine(page).locator(".bubble").innerText(), LINE);
+				await until(() => sentTo(tg, USER).some((m) => m.text === `通知：${LINE}`), "三行到达 Telegram");
+				const sent = sentTo(tg, USER).find((m) => m.text === `通知：${LINE}`)!;
+				assert.equal(sent.silent, false, "手机响");
+				assert.equal(sent.preview, false, "不出链接预览");
+			});
+			await step("在手机上问幕僚长：回复全文到手机，不是一行提示；正文没出本机", async () => {
+				tg.userSays(USER, "今天大盘怎么样");
+				await until(() => sentTo(tg, USER).some((m) => m.text === "固定的回答：今天大盘平稳"), "全文回复到达 Telegram");
+				assert.equal(tg.sent.filter((m) => m.text.includes("CANARY-7f3a")).length, 0);
+			});
+		},
+		telegramStory(tg, [USER], { files, config: { modules: { "private-line": true } } }),
 	);
 });

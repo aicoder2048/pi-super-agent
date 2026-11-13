@@ -17,6 +17,7 @@ export interface SentMessage {
 	silent: boolean;
 	/** Null when the message has no inline keyboard. */
 	buttons: Button[][] | null;
+	preview: boolean;
 	messageId: number;
 	at: number;
 }
@@ -186,7 +187,7 @@ export class FakeTelegram {
 			case "getMe":
 				return reply(200, { ok: true, result: { id: Number(this.#token.split(":")[0]), is_bot: true, first_name: "白宫", username: FAKE_BOT_USERNAME } });
 			case "sendMessage": {
-				const sent = { chatId: params.chat_id, text: params.text, silent: params.disable_notification === true, buttons: buttonsOf(params.reply_markup), messageId: this.#nextMessageId++, at: Date.now() };
+				const sent = { chatId: params.chat_id, text: params.text, silent: params.disable_notification === true, buttons: buttonsOf(params.reply_markup), preview: params.link_preview_options?.is_disabled !== true, messageId: this.#nextMessageId++, at: Date.now() };
 				this.sent.push(sent);
 				this.#shown.set(sent.messageId, sent);
 				return reply(200, { ok: true, result: { message_id: sent.messageId, chat: { id: sent.chatId, type: "private" }, date: Math.floor(sent.at / 1000), text: sent.text } });

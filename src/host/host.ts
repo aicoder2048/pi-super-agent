@@ -29,7 +29,8 @@ import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpa
 import type { Domains } from "../modules.ts";
 import type { LiveModules } from "./live-modules.ts";
 import type { Alert, Gateway } from "../modules/protocol.ts";
-import { runFeed, type FeedEntry, type FeedPorts } from "../modules/feed-runner.ts";
+import { runFeed, type FeedEntry, type FeedPorts, type FeedProblem } from "../modules/feed-runner.ts";
+import { oneLine } from "../modules/release.ts";
 import { instanceData } from "../modules/instance-data.ts";
 import { createScheduler, type Scheduler } from "../modules/scheduler.ts";
 import { threadId } from "../sources/generic.ts";
@@ -93,6 +94,7 @@ const afterRealTime: NonNullable<HostOptions["after"]> = (ms, run) => {
 // setTimeout fires at once for a longer delay.
 const MAX_TIMER_MS = 2 ** 31 - 1;
 const CONVERSATION_LINES = 50;
+const PROBLEM_MAX = 200;
 const SOCKET_PATH_MAX_BYTES = process.platform === "darwin" ? 103 : 107;
 
 function assertSocketPathFits(socketPath: string): void {
@@ -132,6 +134,7 @@ export class Host {
 	readonly #memberCap: MemberCap | undefined;
 	readonly #after: NonNullable<HostOptions["after"]>;
 	#cancelNewYorkDay: (() => void) | undefined;
+	readonly #feedProblems = new Map<string, string>();
 	#duty!: Duty;
 
 	private constructor(options: HostOptions) {
@@ -161,7 +164,8 @@ export class Host {
 		const output = new OutputRoot({ root: options.outputDir ?? join(options.stateDir, "output"), stateDir: options.stateDir, ledger: this.kernel });
 		output.prepare();
 		const submit = (trigger: TriggerSubmission) => {
-			this.kernel.submitTrigger(trigger);
+			const { line } = this.kernel.submitTrigger(trigger);
+			if (line) this.#deliverHostLine(line);
 			this.#changed();
 		};
 		this.generic = new GenericSource({ inboxDir: join(options.stateDir, "inbox"), submit, now: clock.now, log: this.#log });
@@ -190,8 +194,9 @@ export class Host {
 		const data = instanceData(options.stateDir);
 		const feedPorts: FeedPorts = {
 			data,
-			submit: ({ source, id, thread, body, at, private: touched }) => submit({ source, externalId: id, threads: [{ id: threadId(source, thread) }], sender: source, body, occurredAt: at, private: touched }),
+			submit: ({ source, id, thread, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(source, thread) }], sender: source, body, occurredAt: at, ...(reach === "released" ? { announce: true } : { private: reach === "private" }) }),
 			alert: (module, alert) => this.#postModuleAlert(module, alert),
+			problem: (source, problem) => this.#feedProblem(source, problem),
 			secret: options.moduleFeeds?.secret ?? (() => undefined),
 			now: clock.now,
 		};
@@ -424,6 +429,17 @@ export class Host {
 			occurredAt: Number.isNaN(occurredAt) ? this.#clock.now() : occurredAt,
 			module: { title: this.kernel.moduleLabel(module), private: alert.private },
 		});
+	}
+
+	/** In memory: after a restart a problem still standing is told once more. */
+	#feedProblem(source: string, problem: FeedProblem | undefined): void {
+		if (problem === undefined) {
+			this.#feedProblems.delete(source);
+			return;
+		}
+		if (this.#feedProblems.get(source) === problem.id) return;
+		this.#feedProblems.set(source, problem.id);
+		this.#postHostLine(source, { kind: "notice", text: this.kernel.moduleNotice(source, oneLine(problem.text, PROBLEM_MAX)) });
 	}
 
 	#postHostLine(source: string, post: HostLinePost): void {
