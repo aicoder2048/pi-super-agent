@@ -1,6 +1,6 @@
 import { header, messageRow, parseFrom, released, type GmailMessage, type MessageRow } from "./message.ts";
 
-type SenderRow = { id: string; fields: { address?: unknown; removedAt?: unknown } };
+type SenderRow = { id: string; fields: { address?: unknown; addedAt?: unknown; removedAt?: unknown } };
 
 interface Input {
 	settings: { baseUrl: string; tokenUrl: string };
@@ -21,13 +21,25 @@ const AUTH: Problem = { id: "auth", text: "Gmail 授权失效了，在笔记本�
 const NO_SENDERS: Problem = { id: "no-senders", text: "邮件名单是空的，什么都不收。在对话里说「把 a@example.com 加进邮件名单」" };
 const gap = (hours: number): Problem => ({ id: "gap", text: `有 ${hours} 小时没查，一天以前的信没补，请在 Gmail 里看一下` });
 
+const time = (value: unknown) => {
+	const at = Date.parse(String(value ?? ""));
+	return Number.isNaN(at) ? -Infinity : at;
+};
+
+/**
+ * Rows carry no write time, so a duplicate row cannot be told from a later re-add by its id. A removal on any row of an
+ * address takes it off; only an unmarked row whose `addedAt` is after the latest removal puts it back.
+ */
 function listedSenders(rows: readonly SenderRow[]): Set<string> {
-	const removed = new Map<string, boolean>();
-	for (const row of [...rows].sort((x, y) => Number(x.id) - Number(y.id))) {
+	const removed = new Map<string, number>();
+	const added = new Map<string, number>();
+	for (const row of rows) {
 		const address = String(row.fields.address ?? "").trim().toLowerCase();
-		if (address !== "") removed.set(address, Boolean(row.fields.removedAt));
+		if (address === "") continue;
+		const [into, at] = row.fields.removedAt ? [removed, time(row.fields.removedAt)] : [added, time(row.fields.addedAt)];
+		into.set(address, Math.max(into.get(address) ?? -Infinity, at));
 	}
-	return new Set([...removed].filter(([, out]) => !out).map(([address]) => address));
+	return new Set([...added].filter(([address, at]) => !removed.has(address) || at > removed.get(address)!).map(([address]) => address));
 }
 
 const listed = (senders: ReadonlySet<string>, address: string) => senders.has(address) || senders.has(address.slice(address.lastIndexOf("@")));

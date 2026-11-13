@@ -217,6 +217,21 @@ test("信在 history.list 和 messages.get 之间被删了（404）：跳过它�
 	assert.equal(JSON.parse(feed.cursor()!).historyId, feed.box.historyId, "cursor 往前走，下一拍不再碰删掉的信");
 });
 
+test("名单：地址不分大小写；同一地址有好几行时，任何一行划掉都算划掉，除非之后又加了一行", async (t) => {
+	const feed = await mailFeed(t);
+	const [older] = feed.senders("ann@example.com");
+	feed.senders("Ann@Example.com", "bob@example.com");
+	await feed.beat();
+	feed.data.write("mail", feed.entry.components, "senders", [{ id: older!.id, removedAt: "2026-11-13T09:00:00Z" }], "使用者口述", "test");
+	feed.box.deliver(ann("m-1"));
+	await feed.beat();
+	assert.equal(feed.messages().length, 0, "划掉旧的一行，大小写不同的重复行不能把它留在名单上");
+	feed.data.write("mail", feed.entry.components, "senders", [{ address: "ANN@example.com", addedAt: "2026-11-13T10:00:00Z" }], "使用者口述", "test");
+	feed.box.deliver(ann("m-2"));
+	await feed.beat();
+	assert.deepEqual(feed.messages().map((r) => r.fields["gmailId"]), ["m-2"], "划掉以后再加一行，就又在名单上");
+});
+
 test("通知：三行是 显示名 <地址>、主题、开头一句；清洗控制符和换行，按字形截断；冒充的显示名后面也看得到真地址", async (t) => {
 	const feed = await mailFeed(t);
 	feed.senders("@example.com");
