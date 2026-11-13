@@ -15,7 +15,8 @@ import type { ComponentName, Digest, ModuleName } from "../modules/manifest.ts";
 import type { Alert, Gateway, Json, Query, Request, WorkerCaller } from "../modules/protocol.ts";
 import type { Member } from "../teams.ts";
 import type { TranscriptMessage } from "../client/protocol.ts";
-import { canCode, memberTools } from "../worker/tools.ts";
+import { canCode, isRooted, memberTools, profileOf, type Profile } from "../worker/tools.ts";
+import { realRoots } from "../worker/read-roots.ts";
 import type { OutputRoot } from "./output.ts";
 import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberLimit, type MemberRun } from "./dispatch.ts";
 
@@ -56,7 +57,11 @@ export interface WorkerSpec extends DomainKit {
 	ticketId: string;
 	sessionId: string;
 	workdir: string;
+	/** Still read for `prepare`, which runs for every ticket but an inference one, and for `tripwire`, only a request ticket's. */
 	basis: Basis;
+	profile: Profile;
+	/** Real paths the helper and its members may read when the profile is rooted. */
+	readRoots: readonly string[];
 	token: string;
 	model: ModelRef;
 	resume: boolean;
@@ -114,6 +119,8 @@ interface Live {
 	bgRunning: number;
 	stopping: boolean;
 	crew: readonly Member[];
+	profile: Profile;
+	readRoots: readonly string[];
 }
 
 export interface DispatchOptions {
@@ -276,10 +283,12 @@ export class WorkerExecutor {
 		};
 		const kit = this.#kitFor(ticketId, ticket);
 		const catalogue = this.#catalogue(ticketId, null);
+		const profile = profileOf(ticket.basis, kernel.openedBySource(ticketId));
+		const readRoots = realRoots([workdir, kit.knowledgeDir, kit.skillsDir, ...kit.crew.flatMap((m) => m.skills)].filter((d) => d !== undefined));
 		let handle: WorkerHandle;
 		try {
 			handle = await spawner.spawn(
-				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, ...kit, token, model: choice.model, resume, ...(ticket.basis !== "inference" && { outputRule: this.#o.output.prompt("helper") }), ...catalogue },
+				{ ticketId, sessionId: ticket.workerSessionId, workdir, basis: ticket.basis, profile, readRoots, ...kit, token, model: choice.model, resume, ...(!isRooted(profile) && { outputRule: this.#o.output.prompt("helper") }), ...catalogue },
 				events,
 			);
 		} catch (error) {
@@ -287,7 +296,7 @@ export class WorkerExecutor {
 			afterCommand();
 			throw error;
 		}
-		live = { handle, token, bgRunning: 0, stopping: false, crew: kit.crew };
+		live = { handle, token, bgRunning: 0, stopping: false, crew: kit.crew, profile, readRoots };
 		this.#live.set(ticketId, live);
 		if (kernel.getTicket(ticketId)?.stoppedAt != null) {
 			await this.stop(ticketId);
@@ -379,7 +388,7 @@ export class WorkerExecutor {
 				case "worker.read":
 					return this.#readForWorker(ticketId, typeof p.id === "string" ? p.id : undefined);
 				case "worker.lookup":
-					if (!this.#mayLookup(ticketId, holder)) throw new Error("这项任务里不能用 lookup：任务的领域没有在 module.json 的 tools 里开 lookup，或这位成员的 tools 没写 lookup");
+					if (!this.#mayLookup(ticketId, live.profile, holder)) throw new Error("这项任务里不能用 lookup：任务的领域没有在 module.json 的 tools 里开 lookup，或这位成员的 tools 没写 lookup");
 					if (!this.#o.lookup) throw new Error("没有可查询的来源");
 					return this.#o.lookup(String(p.source), String(p.op), p.args);
 				case "worker.domain_tool":
@@ -428,9 +437,9 @@ export class WorkerExecutor {
 		return output.checkWrites(kernel.getTicket(ticketId)!, kernel.writeScan(ticketId));
 	}
 
-	#mayLookup(ticketId: string, holder: Member | undefined): boolean {
+	#mayLookup(ticketId: string, profile: Profile, holder: Member | undefined): boolean {
 		const ticket = this.#o.kernel.getTicket(ticketId)!;
-		return holder ? memberTools(ticket.basis, holder.tools).includes("lookup") : this.#kitFor(ticketId, ticket).granted.includes("lookup");
+		return holder ? memberTools(profile, holder.tools).includes("lookup") : this.#kitFor(ticketId, ticket).granted.includes("lookup");
 	}
 
 	/** Assembled at each call: `heardOthers` changes while the ticket runs. */
@@ -508,12 +517,12 @@ export class WorkerExecutor {
 		const refused = refusal();
 		if (refused !== undefined) throw new Error(refused);
 		kernel.recordDispatch(ticketId, member.title);
-		const { basis } = kernel.getTicket(ticketId)!;
+		const { profile, readRoots } = live;
 		const { timeoutMs, codingTimeoutMs } = this.#o.dispatch!;
-		const codes = canCode(memberTools(basis, member.tools));
+		const codes = canCode(memberTools(profile, member.tools));
 		const catalogue = this.#catalogue(ticketId, member.name);
 		return this.#desk.dispatch({
-			ticketId, callId, member, task, basis,
+			ticketId, callId, member, task, profile, readRoots,
 			limitMs: codes ? codingTimeoutMs : timeoutMs,
 			...(codes && { outputRule: this.#o.output.prompt("member") }),
 			...catalogue,

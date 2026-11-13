@@ -253,7 +253,7 @@ test("按领域取助手要的东西：模块的 skills/、prepare 和成员；�
 	const watch = kitFor("watch")!;
 	assert.deepEqual([watch.skillsDir, watch.prepare], [shared, "npm ci"]);
 	assert.deepEqual(watch.crew.map((m) => [m.name, m.title, m.skills]), [["market-analyst", "行情分析师", [shared]], ["news-researcher", "新闻研究员", [shared, join(root, "watch/agents/own")]]]);
-	assert.deepEqual(kitFor("mail"), { skillsDir: join(root, "mail/skills"), prepare: undefined, crew: [], granted: [] });
+	assert.deepEqual(kitFor("mail"), { skillsDir: join(root, "mail/skills"), knowledgeDir: undefined, prepare: undefined, crew: [], granted: [] });
 	assert.deepEqual([kitFor("bare")!.skillsDir, kitFor("bare")!.crew[0].skills], [undefined, []]);
 	assert.equal(kitFor("gone"), undefined);
 });

@@ -79,6 +79,8 @@ export function moduleNameProblem(name: string): string | undefined {
 /** What a helper is handed from its ticket's domain, however the ticket was opened. */
 export interface DomainKit {
 	skillsDir: string | undefined;
+	/** The package's `knowledge/`, one of the folders a ticket restricted to its read roots may read. */
+	knowledgeDir: string | undefined;
 	/** Runs once in the ticket's workdir before the helper first starts. Never for an inference ticket. */
 	prepare: string | undefined;
 	/** The module's members the helper may dispatch to, each with the module's `skills/` ahead of its own and `tools` capped by what the domain turns on. Empty: it works alone. */
@@ -87,7 +89,7 @@ export interface DomainKit {
 }
 
 /** The kit of a ticket with no domain, or whose module is gone. */
-export const NO_DOMAIN: DomainKit = { skillsDir: undefined, prepare: undefined, crew: [], granted: [] };
+export const NO_DOMAIN: DomainKit = { skillsDir: undefined, knowledgeDir: undefined, prepare: undefined, crew: [], granted: [] };
 
 /** The serving modules as the host uses them once tickets belong to them. Asked each time, because modules switch on and off while the host runs. */
 export interface Domains {
@@ -362,8 +364,10 @@ export class Modules {
 		const { skillsDir } = module;
 		const shared = skillsDir ? [skillsDir] : [];
 		const granted = module.manifest.tools ?? [];
+		const knowledgeDir = join(module.dir, "knowledge");
 		return {
 			skillsDir,
+			knowledgeDir: existsSync(knowledgeDir) ? knowledgeDir : undefined,
 			prepare: module.manifest.prepare,
 			crew: (module.team?.members ?? []).map((m) => ({ ...m, skills: [...shared, ...m.skills], tools: cappedTools(m.tools, granted) })),
 			granted,

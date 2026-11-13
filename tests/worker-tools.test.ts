@@ -8,14 +8,14 @@ const base = { sessionDir: "/s", sessionId: "sid", extension: "/ext.ts", prompt:
 const flag = (args: string[], name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 
 test("推断任务的 Worker 只拿只读工具、网页读取和汇报类工具，并关掉 MCP", () => {
-	const args = workerArgs({ ...base, basis: "inference" });
+	const args = workerArgs({ ...base, profile: "inference" });
 	assert.deepEqual(flag(args, "--tools")!.split(",").sort(), ["data", "domain_tool", "find", "grep", "hand_back", "knowledge", "lookup", "ls", "read", "read_ticket", "report", "watch", "web_get"]);
 	assert.ok(args.includes("--no-mcp"));
 });
 
 test("请求和规则任务的 Worker 保留全部工具", () => {
 	for (const basis of ["request", "rule"] as const) {
-		const args = workerArgs({ ...base, basis });
+		const args = workerArgs({ ...base, profile: basis });
 		assert.equal(flag(args, "--tools"), undefined);
 		assert.ok(!args.includes("--no-mcp"));
 	}
@@ -44,14 +44,14 @@ test("成员的工具 = 任务依据允许的工具 ∩ 成员自己的 tools；
 });
 
 test("没有成员可派的助手：启动参数和单个助手一模一样，提示词只有那一段", () => {
-	assert.deepEqual(workerArgs({ ...base, basis: "request", crew: [] }), ["--session-dir", "/s", "--session-id", "sid", "--no-extensions", "-e", "/ext.ts", "--no-skills", "--append-system-prompt", "p"]);
-	assert.deepEqual(workerArgs({ ...base, basis: "request", crew: [] }), workerArgs({ ...base, basis: "request" }));
-	assert.deepEqual(workerArgs({ ...base, basis: "inference", crew: [] }), workerArgs({ ...base, basis: "inference" }));
+	assert.deepEqual(workerArgs({ ...base, profile: "request", crew: [] }), ["--session-dir", "/s", "--session-id", "sid", "--no-extensions", "-e", "/ext.ts", "--no-skills", "--append-system-prompt", "p"]);
+	assert.deepEqual(workerArgs({ ...base, profile: "request", crew: [] }), workerArgs({ ...base, profile: "request" }));
+	assert.deepEqual(workerArgs({ ...base, profile: "inference", crew: [] }), workerArgs({ ...base, profile: "inference" }));
 });
 
 test("本队有成员的助手：提示词末尾多一段本队名册（名字、职称、说明），写明简单的事自己做、需要专门判断或可以并行时才派；推断任务的工具清单多一个 dispatch_agent", () => {
 	const crew = [{ name: "market-analyst", title: "行情分析师", description: "看盘面和大盘" }, { name: "news-researcher", title: "新闻研究员", description: "查新闻、核对来源" }];
-	const args = workerArgs({ ...base, basis: "inference", crew });
+	const args = workerArgs({ ...base, profile: "inference", crew });
 	const roster = args.at(-1)!;
 	assert.deepEqual(args.slice(-4, -1), ["--append-system-prompt", "p", "--append-system-prompt"]);
 	assert.match(roster, /market-analyst · 行情分析师：看盘面和大盘\n- news-researcher · 新闻研究员：查新闻、核对来源$/);
@@ -60,7 +60,7 @@ test("本队有成员的助手：提示词末尾多一段本队名册（名字�
 	assert.match(roster, /并行/);
 	assert.match(roster, /dispatch_agent/);
 	assert.ok(flag(args, "--tools")!.split(",").includes("dispatch_agent"));
-	assert.equal(flag(workerArgs({ ...base, basis: "request", crew }), "--tools"), undefined, "请求任务的助手保留全部工具");
+	assert.equal(flag(workerArgs({ ...base, profile: "request", crew }), "--tools"), undefined, "请求任务的助手保留全部工具");
 });
 
 test("能写文件、改文件或执行命令的成员算写代码的：按这次任务里实际能用的工具判断", () => {

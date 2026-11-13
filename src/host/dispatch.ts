@@ -2,10 +2,9 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { formatSpan, formatTokens } from "../client/board-format.mjs";
-import type { Basis } from "../kernel/types.ts";
 import type { ModelRef } from "../models.ts";
 import type { Member } from "../teams.ts";
-import { DISPATCH_MARK } from "../worker/tools.ts";
+import { DISPATCH_MARK, type Profile } from "../worker/tools.ts";
 import type { TranscriptMessage } from "../client/protocol.ts";
 import { readSessionEntries } from "../jsonl.ts";
 import type { Usage } from "./worker-events.ts";
@@ -103,7 +102,9 @@ export interface MemberRun {
 	callId: string;
 	member: Member;
 	task: string;
-	basis: Basis;
+	/** The helper's: a member is held to its ticket's profile and read roots. */
+	profile: Profile;
+	readRoots: readonly string[];
 	/** Lets the member's `lookup` through the host, and its `web_get` tell the host it read a page; nothing else. */
 	token: string;
 	model: ModelRef;

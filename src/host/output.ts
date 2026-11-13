@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSy
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { helperSessionDir } from "./dispatch.ts";
+import { within } from "../worker/read-roots.ts";
 import type { ScanCursor, WriteCheck } from "../kernel/types.ts";
 import { scanSessions, type Placement, type SessionToScan } from "./write-check.ts";
 
@@ -69,12 +70,6 @@ export interface App {
 	dir: string;
 	isNew: boolean;
 }
-
-/** True when `child` is `parent` or inside it; both absolute. */
-export const within = (parent: string, child: string) => {
-	const rel = relative(parent, child);
-	return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
-};
 
 /** The real path of `path`, through its nearest existing ancestor when it does not exist yet (/tmp is /private/tmp on macOS). */
 function real(path: string): string {

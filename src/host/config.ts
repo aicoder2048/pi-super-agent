@@ -6,7 +6,7 @@ import type { KernelConfig } from "../kernel/types.ts";
 import { ConfigError, readJsonFile } from "../config-error.ts";
 import { Modules } from "../modules.ts";
 import { MEMBER_CAP_DEFAULT, MEMBER_CAP_MAX } from "./member-cap.ts";
-import { within } from "./output.ts";
+import { within } from "../worker/read-roots.ts";
 import { parseWebHosts, type TailnetName } from "./web-hosts.ts";
 import { parseSecretsFile } from "../secrets.ts";
 import { defaultStateDir } from "../state-dir.ts";
