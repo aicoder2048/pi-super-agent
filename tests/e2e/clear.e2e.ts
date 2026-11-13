@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test, { after } from "node:test";
 import type { Page } from "playwright-core";
 import { on, reply } from "./fake-model.ts";
-import { closeBrowser, sayInPage, story, waitStatus } from "./harness.ts";
+import { closeBrowser, sayInPage, story, waitStatus, showScreen } from "./harness.ts";
 
 after(closeBrowser);
 
@@ -180,6 +180,7 @@ test("清屏是输入框下方状态文字右端的下划线文字，对话栏�
 				};
 				const desktop = await measure();
 				await page.setViewportSize({ width: 390, height: 844 });
+				await showScreen(page, "chat");
 				const phone = await measure();
 				await page.setViewportSize({ width: 1280, height: 720 });
 				check(desktop, "桌面");

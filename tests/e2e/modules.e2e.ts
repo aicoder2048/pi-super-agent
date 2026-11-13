@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test, { after } from "node:test";
 import type { Page } from "playwright-core";
 import { fakeAgentEnv, on, openTicket, report, reply, worker, type ToolCall } from "./fake-model.ts";
-import { REPO, closeBrowser, fakeModels, sayInPage, startHost, story } from "./harness.ts";
+import { REPO, closeBrowser, contrastOf, fakeModels, packageFiles, sayInPage, startHost, story, showScreen } from "./harness.ts";
 
 after(closeBrowser);
 
@@ -13,13 +13,6 @@ const SHOTS = process.env.PSA_F2C_SHOTS ?? join(REPO, "tests/e2e/.out/f2c");
 mkdirSync(SHOTS, { recursive: true });
 const SAMPLE = join(REPO, "docs/modules/architecture/sample");
 const STOCK_TA = join(REPO, "docs/modules/examples/stock-ta");
-
-const packageFiles = (from: string, as: string): Record<string, string> =>
-	Object.fromEntries(
-		readdirSync(from, { recursive: true, withFileTypes: true })
-			.filter((e) => e.isFile())
-			.map((e) => [join("modules", as, e.parentPath.slice(from.length), e.name), readFileSync(join(e.parentPath, e.name), "utf8")]),
-	);
 
 const FILES = {
 	...packageFiles(join(SAMPLE, "personal-tax"), "personal-tax"),
@@ -31,32 +24,20 @@ const FILES = {
 const TAX = { title: "估算今年的税", brief: "按今年的成交估算税额" };
 const inDomain = (call: ToolCall, domain: string): ToolCall => ({ ...call, args: { decisions: (call.args.decisions as object[]).map((d) => ({ ...d, domain })) } });
 
-const card = (page: Page, name: string) => page.locator(`#left .card.module[data-module="${name}"]`);
-const modulesSection = (page: Page) => page.locator("#left section", { has: page.locator("h2", { hasText: /^模块 · / }) });
+const card = (page: Page, name: string) => page.locator(`#modules .card.module[data-module="${name}"]`);
+const modulesSection = (page: Page) => page.locator("#modules");
+async function openModules(page: Page): Promise<void> {
+	await showScreen(page, "overview");
+	await page.locator("#tab-modules").click();
+	const more = page.locator("#modules .more");
+	if ((await more.getAttribute("aria-expanded")) === "false") await more.click();
+}
 const shoot = (page: Page, file: string) => modulesSection(page).screenshot({ path: join(SHOTS, file) });
 
 async function within2s(page: Page, name: string, label: string): Promise<number> {
 	const started = Date.now();
 	await card(page, name).locator(".state", { hasText: new RegExp(`^${label}`) }).waitFor({ timeout: 2000 });
 	return Date.now() - started;
-}
-
-function contrastOf(page: Page, selector: string): Promise<number> {
-	return page.locator(selector).first().evaluate((node) => {
-		const rgb = (css: string) => css.match(/[\d.]+/g)!.slice(0, 3).map(Number);
-		const lum = (css: string) => {
-			const [r, g, b] = rgb(css).map((v) => {
-				const c = v / 255;
-				return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-			});
-			return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-		};
-		let painted: Element | null = node;
-		while (painted && /rgba\(.*, 0\)|transparent/.test(getComputedStyle(painted).backgroundColor)) painted = painted.parentElement;
-		const back = getComputedStyle(painted ?? document.body).backgroundColor;
-		const [a, b] = [lum(getComputedStyle(node).color), lum(back)].sort((x, y) => y - x);
-		return (a + 0.05) / (b + 0.05);
-	});
 }
 
 test("模块栏：每个模块一张卡，开关两秒内生效，无效写出哪个文件哪一处，没导入的知识带命令，钉着旧版本的任务有数；窄屏、深色、没有 token", (t) =>
@@ -72,8 +53,10 @@ test("模块栏：每个模块一张卡，开关两秒内生效，无效写出�
 			await step("Lane 2. 模块栏每个模块一张卡，状态正确", async (page) => {
 				// Tall enough to screenshot the whole section without scrolling.
 				await page.setViewportSize({ width: 1280, height: 1800 });
+				await page.locator("#tab-modules .count", { hasText: "4" }).waitFor();
+				await openModules(page);
 				await card(page, "unknown-key").waitFor();
-				assert.deepEqual(await page.locator("#left .card.module").evaluateAll((cards) => cards.map((c) => (c as HTMLElement).dataset.module)), ["personal-health", "personal-tax", "stock-ta", "unknown-key"]);
+				assert.deepEqual(await page.locator("#modules .card.module").evaluateAll((cards) => cards.map((c) => (c as HTMLElement).dataset.module)), ["personal-health", "personal-tax", "stock-ta", "unknown-key"]);
 				for (const name of ["personal-health", "personal-tax", "stock-ta", "unknown-key"]) assert.match((await card(page, name).locator(".state").textContent()) ?? "", /^已停用/, name);
 				assert.match((await card(page, "personal-tax").textContent()) ?? "", /版本 0\.1\.0 · [0-9a-f]{12}.*密钥 EXAMPLE_BROKER_TOKEN/);
 				assert.match((await card(page, "stock-ta").textContent()) ?? "", /股票技术分析 · stock-ta.*版本 0\.1\.0 · [0-9a-f]{12}.*密钥 POLYGON_API_KEY、TA_ROOT/);
@@ -120,11 +103,13 @@ test("模块栏：每个模块一张卡，开关两秒内生效，无效写出�
 			});
 			await step("Lane 8. 390 像素宽：没有横向滚动", async () => {
 				const narrow = await open(host.url, { context: { viewport: { width: 390, height: 844 } } });
+				await narrow.locator("#tab-modules .count", { hasText: "4" }).waitFor({ state: "attached" });
+				await openModules(narrow);
 				await card(narrow, "personal-tax").waitFor();
 				const widths = await narrow.evaluate(() => ({
 					scroll: document.documentElement.scrollWidth,
 					client: document.documentElement.clientWidth,
-					rightmost: Math.max(...[...document.querySelectorAll("#left .card.module *")].map((n) => n.getBoundingClientRect().right)),
+					rightmost: Math.max(...[...document.querySelectorAll("#modules .card.module *")].map((n) => n.getBoundingClientRect().right)),
 				}));
 				assert.ok(widths.scroll <= widths.client && widths.rightmost <= widths.client, JSON.stringify(widths));
 				// The page scrolls inside its columns, so a full-page shot stops at the viewport; a tall viewport shows the whole section.
@@ -133,6 +118,8 @@ test("模块栏：每个模块一张卡，开关两秒内生效，无效写出�
 			});
 			await step("Lane 9. 深色主题：模块卡上的字对比度不低于 4.5 比 1", async () => {
 				const dark = await open(host.url, { context: { colorScheme: "dark", viewport: { width: 1280, height: 1800 } } });
+				await dark.locator("#tab-modules .count", { hasText: "4" }).waitFor();
+				await openModules(dark);
 				await card(dark, "personal-tax").waitFor();
 				const ratios: Record<string, number> = {};
 				for (const selector of [".card.module .title", ".card.module .state", ".card.module .meta", ".card.module .problems li", ".card.module .imports code", ".card.module button.switch"]) ratios[selector] = await contrastOf(dark, selector);
@@ -184,11 +171,11 @@ test("Lane 1. 和 trunk 比：其余各栏一样；看板推送字节数", { ski
 				await step("trunk 和 head 的页面除了模块栏都一样", async (page) => {
 					const trunkPage = await open(other.url);
 					const others = (p: Page) =>
-						p.evaluate(() => [...document.querySelectorAll("#left > *")].filter((n) => !n.querySelector("h2")?.textContent?.startsWith("模块 · ")).map((n) => (n as HTMLElement).innerText));
+						p.evaluate(() => [...document.querySelectorAll("#left > section")].slice(0, 2).map((n) => (n as HTMLElement).innerText));
+					await openModules(page);
 					await card(page, "personal-tax").waitFor();
-					await trunkPage.locator("#left #done").waitFor();
+					await trunkPage.locator("#left section").nth(1).waitFor();
 					assert.deepEqual(await others(page), await others(trunkPage));
-					assert.equal(await trunkPage.locator("#left .card.module").count(), 0);
 					await trunkPage.screenshot({ path: join(SHOTS, "f2c-regression-trunk.png"), fullPage: true });
 					await page.screenshot({ path: join(SHOTS, "f2c-regression.png"), fullPage: true });
 				});
@@ -226,6 +213,8 @@ test("评审录像：打开模块栏，开关 stock-ta，看无效模块和没�
 				const dir = mkdtempSync(join(tmpdir(), "psa-f2c-video-"));
 				const page = await open(host.url, { context: { viewport: { width: 1280, height: 800 }, recordVideo: { dir, size: { width: 1280, height: 800 } } } });
 				const pause = (ms: number) => page.waitForTimeout(ms);
+				await page.locator("#tab-modules .count", { hasText: "4" }).waitFor();
+				await openModules(page);
 				await card(page, "personal-tax").waitFor();
 				await pause(3000);
 				await modulesSection(page).scrollIntoViewIfNeeded();

@@ -2,8 +2,8 @@
 
 import {
 	BAR_HINT, CLEAR_FAILED, SWITCH_FAILED, moduleBody, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canClear, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
-	questionOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
-	laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory,
+	questionOf, choiceOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
+	laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory, firstPanel, panelStep, overviewTabs, phoneScreen, panelText, savedPanel,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperLine, hostLineLabel } from "../client/board-format.mjs";
 
@@ -16,6 +16,7 @@ const STATUS_TEXT = {
 
 const THEME_KEY = "psa-theme";
 const PANEL_KEY = "psa-panel-open";
+const TAB_KEY = "psa-right-panel";
 const MARK = { ok: "✓", error: "!", pending: "…", stopped: "■" };
 
 /** @param {Document} doc */
@@ -57,6 +58,9 @@ function mount(doc) {
 	/** @type {import("./view.mjs").Sending} */
 	const sending = new Map();
 	const switching = new Set();
+	let panel = firstPanel();
+	let restored = false;
+	let moduleDetails = false;
 
 	/** @param {string} tag @param {string} className @param {string} [text] */
 	const el = (tag, className, text = "") => {
@@ -298,7 +302,7 @@ function mount(doc) {
 	/** @param {string} name @param {boolean} on */
 	const switchModule = async (name, on) => {
 		switching.add(name);
-		renderLeft();
+		renderOverview();
 		try {
 			const res = await fetch(`/module?${query}`, { method: "POST", headers: { "content-type": "application/json" }, body: moduleBody(name, on), cache: "no-store", signal: AbortSignal.timeout(DEFAULT_ACK_TIMEOUT_MS) });
 			if (res.status === 401) setStatus("expired");
@@ -307,7 +311,7 @@ function mount(doc) {
 			setSay("rejected", undefined, SWITCH_FAILED);
 		} finally {
 			switching.delete(name);
-			renderLeft();
+			renderOverview();
 		}
 	};
 
@@ -343,32 +347,151 @@ function mount(doc) {
 		return node;
 	};
 
-	const renderLeft = () => {
-		const left = leftColumn(view, Date.now(), sending);
-		const today = el("section", "");
-		today.id = "today";
-		today.append(el("div", "headline", left.today.headline), el("div", "detail", left.today.detail));
-		const done = el("details", "");
-		done.id = "done";
-		done.open = /** @type {HTMLDetailsElement | null} */ (doc.getElementById("done"))?.open ?? false;
-		const list = el("div", "list");
-		list.append(...left.done.map((c) => taskCard(c, "done")));
-		done.append(el("summary", "", left.doneLine), list);
+	const renderLeft = (left = leftColumn(view, Date.now(), sending)) => {
+		/** @type {HTMLElement} */ ($("bottom").querySelector(".badge")).textContent = left.needsYouCount ? String(left.needsYouCount) : "";
 		$("left").replaceChildren(
 			section(left.needsYouLine, [...(left.capCard ? [capCard(left.capCard)] : []), ...left.needsYou.map((c) => taskCard(c, "ask"))], "暂无待处理事项。", "warn"),
 			section(`进行中 · ${left.doing.length}`, left.doing.map((c) => taskCard(c, "doing")), "暂无进行中的任务。"),
-			section(`关注的来源 · ${left.watching.length}`, left.watching.map((w) => {
-				const node = el("div", w.problem ? "watch problem" : "watch");
-				node.dataset.source = w.source;
-				const body = el("div", "");
-				body.append(el("div", "name", w.name), el("div", "rule", [w.rule, w.hits, w.alerts].filter(Boolean).join(" · ")), ...w.lists.map((l) => panelList(w.source, l)));
-				node.append(body);
-				return node;
-			}), "暂无关注的来源。"),
-			today,
-			done,
-			section(`模块 · ${left.modules.length}`, left.modules.map(moduleCard), "没有发现模块。"),
 		);
+	};
+
+	/** @param {import("./view.mjs").ModuleView} m */
+	const moduleRow = (m) => {
+		const node = el("div", `module-row ${m.tone}`);
+		node.dataset.module = m.name;
+		const toggle = el("button", "toggle");
+		toggle.type = "button";
+		toggle.setAttribute("role", "switch");
+		toggle.setAttribute("aria-checked", String(m.on));
+		toggle.setAttribute("aria-label", m.name);
+		toggle.disabled = switching.has(m.name);
+		toggle.addEventListener("click", () => void switchModule(m.name, !m.on));
+		node.append(el("span", "dot"), el("span", "name", m.name), el("span", "note", m.note), toggle);
+		return node;
+	};
+
+	const renderOverview = (left = leftColumn(view, Date.now(), sending)) => {
+		const today = el("div", "box");
+		today.append(el("div", "headline", left.today.headline || "今日暂无来源消息"), el("div", "detail", left.today.detail));
+		const alerts = el("div", "box");
+		const list = el("ul", "alerts");
+		list.append(...left.alerts.map((a) => {
+			const item = el("li", a.id === panel.flash ? "flash" : "", a.text);
+			item.dataset.line = a.id;
+			return item;
+		}));
+		alerts.append(el("div", "headline", left.alertsLine), list);
+		$("today").replaceChildren(today, alerts, el("p", "empty", "来源和盯盘条件在「来源」，模块开关在「模块」。"));
+		const watches = left.watching.map((w) => {
+			const node = el("div", w.problem ? "watch problem" : "watch");
+			node.dataset.source = w.source;
+			const body = el("div", "");
+			body.append(el("div", "name", w.name), el("div", "rule", [w.rule, w.hits, w.alerts].filter(Boolean).join(" · ")), ...w.lists.map((l) => panelList(w.source, l)));
+			node.append(body);
+			return node;
+		});
+		$("sources").replaceChildren(...(watches.length ? watches : [el("p", "empty", "暂无关注的来源。")]));
+		const head = el("div", "pane-head");
+		const more = el("button", "more", moduleDetails ? "‹ 收起" : "详情 ›");
+		more.type = "button";
+		more.setAttribute("aria-expanded", String(moduleDetails));
+		more.addEventListener("click", () => {
+			moduleDetails = !moduleDetails;
+			renderOverview();
+		});
+		head.append(el("h2", "", left.modulesLine), ...(left.modules.length ? [more] : []));
+		const rows = el("div", moduleDetails ? "module-cards" : "box module-rows");
+		rows.append(...left.modules.map(moduleDetails ? moduleCard : moduleRow));
+		$("modules").replaceChildren(head, left.modules.length ? rows : el("p", "empty", "没有发现模块。"));
+		const done = left.done.map((c) => taskCard(c, "done"));
+		$("done").replaceChildren(...(done.length ? done : [el("p", "empty", "暂无已完成的任务。")]));
+	};
+
+	/** @param {import("./view.mjs").PanelTab} tab */
+	const tabNode = (tab) => {
+		const node = el("button", "tab", tab.label);
+		node.type = "button";
+		node.id = `tab-${tab.key}`;
+		node.dataset.tab = tab.key;
+		node.setAttribute("role", "tab");
+		node.setAttribute("aria-selected", String(tab.selected));
+		node.setAttribute("aria-controls", tab.key === "task" ? "how" : tab.key);
+		node.tabIndex = tab.selected ? 0 : -1;
+		if (tab.count !== null) node.append(el("span", "count", String(tab.count)));
+		node.addEventListener("click", () => showPanel(panelStep(panel, { kind: "pick", tab: tab.key })));
+		if (tab.key !== "task") return node;
+		const close = el("button", "tab-close", "×");
+		close.type = "button";
+		close.setAttribute("aria-label", `关闭${tab.label}`);
+		close.addEventListener("click", () => showPanel(panelStep(panel, { kind: "close" })));
+		const wrap = el("span", "task-tab");
+		wrap.append(node, close);
+		return wrap;
+	};
+
+	// Counts change with every board push; the bar is rebuilt only when what it shows changed, so a focused tab keeps focus.
+	let tabsShown = "";
+	const renderTabs = () => {
+		const tabs = overviewTabs(view, panel);
+		const key = JSON.stringify(tabs);
+		if (key !== tabsShown) {
+			tabsShown = key;
+			const focused = /** @type {HTMLElement | null} */ (doc.activeElement)?.closest?.(".tab")?.getAttribute("data-tab");
+			$("tabs").replaceChildren(...tabs.map(tabNode));
+			if (focused) /** @type {HTMLElement | null} */ ($("tabs").querySelector(`.tab[data-tab="${focused}"]`))?.focus();
+		}
+		for (const pane of ["how", "today", "sources", "modules", "done"]) $(pane).hidden = pane !== (panel.showing === "task" ? "how" : panel.showing);
+	};
+
+	const PLACE_NAME = { todo: "待办", chat: "对话", overview: "概况" };
+	const renderScreen = () => {
+		const screen = phoneScreen(panel);
+		const entered = doc.body.dataset.screen !== screen;
+		doc.body.dataset.screen = screen;
+		for (const button of $("bottom").querySelectorAll("button")) button.setAttribute("aria-current", String(/** @type {HTMLElement} */ (button).dataset.place === screen));
+		/** @type {HTMLElement} */ ($("bottom").querySelector(".dot")).hidden = !panel.dot;
+		$("back").textContent = `‹ ${PLACE_NAME[panel.place]}`;
+		// A hidden conversation keeps scrollTop at 0, so coming back to it would show the oldest lines.
+		if (entered && screen === "chat") $("conversation").scrollTop = $("conversation").scrollHeight;
+	};
+
+	/** @param {string | null} ticketId */
+	const follow = (ticketId) => {
+		watching?.source.close();
+		watching = undefined;
+		if (!ticketId) return;
+		const w = emptyWatch(ticketId);
+		const source = new EventSource(`/transcript?${query}&ticket=${encodeURIComponent(ticketId)}`);
+		source.onmessage = (e) => {
+			if (applyTranscript(w, JSON.parse(e.data))) renderSteps();
+		};
+		watching = { watch: w, source };
+	};
+
+	const renderPanel = () => {
+		const left = leftColumn(view, Date.now(), sending);
+		renderTabs();
+		renderLeft(left);
+		renderOverview(left);
+		renderHelpers();
+		renderHow();
+		renderAsk();
+		renderSteps();
+	};
+
+	/** @param {import("./view.mjs").Panel} next */
+	const showPanel = (next) => {
+		const reopen = next.task !== (watching?.watch.ticketId ?? null);
+		panel = next;
+		store.set(TAB_KEY, panelText(panel));
+		renderScreen();
+		if (!reopen) {
+			renderTabs();
+			renderOverview();
+			return;
+		}
+		follow(panel.task);
+		renderPanel();
 	};
 
 	/** @param {import("./view.mjs").HelperChip} chip */
@@ -554,6 +677,17 @@ function mount(doc) {
 		$("small-print").textContent = smallPrint(row);
 	};
 
+	// Built on board pushes only, not by the 1 s tick, so a focused option button survives.
+	const renderAsk = () => {
+		const row = view.rows.find((r) => r.id === watching?.watch.ticketId);
+		const box = $("how-ask");
+		box.hidden = !row?.question;
+		if (!row?.question) return void box.replaceChildren();
+		const choices = el("div", "choices");
+		fillChoices(choices, choiceOf(row.question, sending));
+		box.replaceChildren(md("latest", row.question.text), choices);
+	};
+
 	let stepsShown = "";
 	/** runningSince moves a little with every frame, so only the phase and the fixed numbers decide a rebuild. @param {import("./view.mjs").DispatchClock} clock */
 	const clockKey = (clock) => clock && [clock.phase, clock.limitMs, clock.phase === "ended" ? clock.ranMs : null];
@@ -675,7 +809,7 @@ function mount(doc) {
 		const steps = watching ? liveSteps(watching.watch, view) : [];
 		stepsShown = stepsKey(steps);
 		ticking = [];
-		if (!watching) return void $("steps").replaceChildren(el("li", "empty", "选择左侧的任务，查看助手的执行过程。"));
+		if (!watching) return void $("steps").replaceChildren();
 		if (!steps.length) return void $("steps").replaceChildren(el("li", "empty", "暂无步骤。"));
 		const open = new Set([...$("steps").querySelectorAll("details[open]")].map((d) => d.getAttribute("data-i")));
 		const row = view.rows.find((r) => r.id === watching?.watch.ticketId);
@@ -685,7 +819,11 @@ function mount(doc) {
 	const render = {
 		conversation: renderConversation,
 		left: () => {
-			renderLeft();
+			const left = leftColumn(view, Date.now(), sending);
+			renderLeft(left);
+			renderOverview(left);
+			renderTabs();
+			renderAsk();
 			renderChoices();
 			renderHelpers();
 			renderStepsIfMoved();
@@ -728,20 +866,36 @@ function mount(doc) {
 		}
 	};
 
-	/** @param {string} ticketId */
+	/** Clicking the task already open reopens its stream, which recovers after a host restart. @param {string} ticketId */
 	const watch = (ticketId) => {
-		watching?.source.close();
-		const w = emptyWatch(ticketId);
-		const source = new EventSource(`/transcript?${query}&ticket=${encodeURIComponent(ticketId)}`);
-		source.onmessage = (e) => {
-			if (applyTranscript(w, JSON.parse(e.data))) renderSteps();
-		};
-		watching = { watch: w, source };
-		renderLeft();
-		renderHelpers();
-		renderHow();
-		renderSteps();
+		panel = panelStep(panel, { kind: "open", ticketId });
+		store.set(TAB_KEY, panelText(panel));
+		renderScreen();
+		follow(ticketId);
+		renderPanel();
 	};
+
+	/** @param {import("./view.mjs").PanelTab["key"]} key @param {1 | -1} by */
+	const nextTab = (key, by) => {
+		const keys = overviewTabs(view, panel).map((t) => t.key);
+		return keys[(keys.indexOf(key) + by + keys.length) % keys.length];
+	};
+	for (const button of $("bottom").querySelectorAll("button")) {
+		const place = /** @type {import("./view.mjs").Place} */ (/** @type {HTMLElement} */ (button).dataset.place);
+		const icon = /** @type {HTMLElement} */ (button.querySelector(".icon"));
+		icon.replaceWith(/** @type {Element} */ (icons.get(icon.dataset.icon ?? "")).cloneNode(true));
+		button.addEventListener("click", () => showPanel(panelStep(panel, { kind: "place", place })));
+	}
+	renderScreen();
+	$("back").addEventListener("click", () => showPanel(panelStep(panel, { kind: "pick", tab: panel.last })));
+	$("tabs").addEventListener("keydown", (e) => {
+		const key = /** @type {HTMLElement} */ (e.target).closest(".tab")?.getAttribute("data-tab");
+		if (!key || (e.key !== "ArrowRight" && e.key !== "ArrowLeft")) return;
+		e.preventDefault();
+		const tab = nextTab(/** @type {import("./view.mjs").PanelTab["key"]} */ (key), e.key === "ArrowRight" ? 1 : -1);
+		showPanel(panelStep(panel, { kind: "pick", tab }));
+		/** @type {HTMLElement | null} */ ($("tabs").querySelector(`.tab[data-tab="${tab}"]`))?.focus();
+	});
 
 	const connect = () => {
 		setStatus("connecting");
@@ -767,10 +921,16 @@ function mount(doc) {
 		events.addEventListener("ping", alive);
 		events.onmessage = (e) => {
 			alive();
-			const panes = applyMessage(view, JSON.parse(e.data), Date.now());
+			const message = JSON.parse(e.data);
+			const panes = applyMessage(view, message, Date.now());
 			if (panes.includes("left")) settleSending(view, sending);
 			for (const pane of panes) render[pane]();
 			if (panes.includes("left")) renderHow();
+			if (message.type === "snapshot" && !restored) {
+				restored = true;
+				showPanel(savedPanel(store.get(TAB_KEY), new Set(view.rows.map((r) => r.id))));
+			}
+			if (message.type === "host_line" && message.who === "alert") showPanel(panelStep(panel, { kind: "alert", lineId: message.id, phone: getComputedStyle($("bottom")).display !== "none" }));
 		};
 		events.onerror = () => {
 			setStatus("disconnected");
@@ -858,8 +1018,7 @@ function mount(doc) {
 		void say();
 	});
 
-	renderLeft();
-	renderSteps();
+	renderPanel();
 	setInterval(() => {
 		renderHelpers();
 		if (watching) {
