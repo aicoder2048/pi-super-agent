@@ -325,11 +325,15 @@ export interface Quote {
 
 /**
  * What a source says to the user directly, past the Router (ADR-0017). The kind alone decides where it may go:
- * an alert reaches every front end, Telegram included, and is deduped on (source, externalId); a receipt never leaves this machine.
+ * an alert reaches every front end, Telegram included, and is deduped on (source, externalId); a receipt never leaves this machine;
+ * a notice is the user's own one-way note from `just notify` and reaches every front end like an alert, never deduped.
  */
 export type HostLinePost =
 	| { kind: "alert"; externalId: string; text: string; occurredAt: number; module?: AlertModule }
-	| { kind: "receipt"; text: string };
+	| { kind: "receipt"; text: string }
+	| { kind: "notice"; text: string };
+
+export const NOTICE_MAX = 2000;
 
 /** A private module's alert leaves this machine only as a notice naming the module. */
 export type AlertModule = { title: string; private: boolean };
