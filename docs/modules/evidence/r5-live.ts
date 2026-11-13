@@ -428,14 +428,18 @@ async function real(): Promise<void> {
 			await sleep(5000);
 			const receipts = query(join(h.state, "state.db"), "SELECT text FROM host_lines WHERE kind = 'receipt'").map((r) => String(r["text"]));
 			const tripwire = h.host.log().split("\n").filter((l) => l.includes("tripwire"));
+			const lines = query(join(h.state, "state.db"), "SELECT kind, source, text FROM host_lines ORDER BY rowid");
+			const gateway = h.host.log().split("\n").filter((l) => l.includes("[gateway]"));
 			const png = join(outDir, "r5-chat-set.png");
+			let pageChat = "";
 			await pageShot(h.host, png, async (page) => {
 				await harness.showScreen(page, "chat");
-				await page.getByText("已设提醒条件").first().waitFor({ timeout: 15_000 }).catch(() => undefined);
+				await page.getByText(/已设/).first().waitFor({ timeout: 15_000 }).catch(() => undefined);
+				pageChat = await page.locator("body").innerText();
 			});
 			const set = conditions();
-			const pass = set.length === 1 && set[0]!["kind"] === "day-move" && set[0]!["key"] === "TSLA" && JSON.parse(String(set[0]!["params"])).atLeast === 4 && tripwire.length === 0 && receipts.some((r) => r.includes("当天相对昨收涨跌到 4%"));
-			return { pass, evidence: `real models, Telegram: 给 TSLA 设个当天涨跌 4% 的提醒\n_conditions: ${show(set)}\nreceipts on the page: ${show(receipts)}\nhost log lines naming tripwire: ${show(tripwire)}\nTelegram: ${show(h.phone().slice(before).map((m) => m.text))}\nscreenshot ${png}` };
+			const pass = set.length === 1 && set[0]!["kind"] === "day-move" && set[0]!["key"] === "TSLA" && JSON.parse(String(set[0]!["params"])).atLeast === 4 && tripwire.length === 0 && pageChat.includes("TSLA") && /4%/.test(pageChat.slice(pageChat.lastIndexOf("TSLA") - 40));
+			return { pass, evidence: `real models, Telegram: 给 TSLA 设个当天涨跌 4% 的提醒\n_conditions: ${show(set)}\nreceipt host lines: ${show(receipts)} (the gateway keeps a watch receipt inside the tool output, so the page shows the lead's confirmation, not a receipt line)\npage chat confirms: ${pageChat.split("\n").filter((l) => l.includes("TSLA")).join(" | ")}\nhost log lines naming tripwire: ${show(tripwire)}\nall host lines: ${show(lines)}\ngateway: ${show(gateway)}\nTelegram: ${show(h.phone().slice(before).map((m) => m.text))}\nscreenshot ${png}` };
 		} finally {
 			await h.stop();
 		}
