@@ -8,7 +8,7 @@ import { inTransaction } from "../../kernel/store.ts";
 import type { Clock } from "../../kernel/types.ts";
 import type { AnswerResult, Broadcast, ImChat, SayOptions } from "../server.ts";
 import { TelegramError, type BotApi, type TelegramErrorKind, type Update } from "./bot-api.ts";
-import { alertText, cardView, closedView, decide, mirrorText, NOTES, render, repeatsQuestion } from "./rules.ts";
+import { hostLineText, cardView, closedView, decide, mirrorText, NOTES, render, repeatsQuestion } from "./rules.ts";
 import { privateLine, telegramText } from "../../modules/protocol.ts";
 import { TelegramStore, type Pending } from "./store.ts";
 
@@ -143,9 +143,9 @@ export class TelegramClient {
 					for (const chat of this.#store.openChats()) this.#syncCards(chat, message);
 					break;
 				case "host_line":
-					if (message.who === "alert") {
-						const text = telegramText(alertText(message), message.module?.private ? message.module.title : null);
-						for (const chat of this.#store.openChats()) this.#store.put(chat, `alert:${message.id}`, null, { kind: "line", text, silent: false });
+					if (message.who !== "receipt") {
+						const text = telegramText(hostLineText(message), message.module?.private ? message.module.title : null);
+						for (const chat of this.#store.openChats()) this.#store.put(chat, `${message.who}:${message.id}`, null, { kind: "line", text, silent: false });
 					}
 					break;
 				case "cleared":

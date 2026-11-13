@@ -85,6 +85,11 @@ client:
 say +text:
     {{run}} src/cli/say.ts say {{text}}
 
+# 发一条「通知」到网页、终端和 Telegram，不交给 Router：just notify <话>
+[positional-arguments]
+notify +text:
+    {{run}} src/cli/say.ts notify "$@"
+
 # 通过通用来源投递一条触发：just drop <来源> <线程> <正文>
 drop source thread +body:
     {{run}} src/cli/drop.ts {{source}} {{thread}} {{body}}
