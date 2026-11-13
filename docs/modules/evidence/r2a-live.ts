@@ -1,5 +1,6 @@
 /**
- *   R2A_SECRETS=<host secrets .env> node --import ./src/pi-runtime.mjs docs/modules/evidence/r2a-live.ts [tools|real|news|page|media] [outDir]
+ *   R2A_SECRETS=<host secrets .env> node --import ./src/pi-runtime.mjs docs/modules/evidence/r2a-live.ts [tools|real|news|page|media|perf] [outDir]
+ *   node --import ./src/pi-runtime.mjs docs/modules/evidence/r2a-live.ts web <stateDir>
  *
  * R2A_SECRETS names a .env file the script reads POLYGON_API_KEY from; the environment wins over the file. Nothing prints a value.
  *
@@ -9,7 +10,8 @@
  *        Lane 1 asks trunk (a detached worktree of origin/main at <outDir>/trunk) and head alternately, five times
  *        each, which is also the perf probe. Every run starts from one seed data dir (`just module setup stock-ta`
  *        and one scan of NVDA and AMD, about 12 Massive requests), so trunk's experts have data as on the old Mac.
- * news   Lane 9 alone.
+ * news   Lane 9 alone. Its last check asks the follow-up the stock-ta report suggests, alone on a fresh host.
+ * perf   The price question on head only, three fresh hosts.
  * web    Lane 9's check 4 alone, on a state dir a news run left behind: node … r2a-live.ts web <stateDir>
  * page   Lane 7 alone: a real host on head answers the price question and the page is screenshotted.
  * media  The review screenshots and video: a real host on head answers a price question and a mixed one.
@@ -411,6 +413,7 @@ async function real(): Promise<void> {
 
 const PERCENT = /\d+(\.\d+)?%/;
 const CAUSE = /因为|由于|导致|源于|影响|拖累|打压|利空|利好/;
+const FOLLOW_UP = /可以问「([^」]+)」/;
 
 /** Every way a stock-ta ticket reached the web: `read_web_at` (any `web_get`, lead or member) and the lead's bash calls that name a URL or a fetcher. */
 function webReads(state: string): string[] {
@@ -432,7 +435,24 @@ function webReads(state: string): string[] {
 
 const idle = (real: Real) => within(300_000, () => (query(join(real.state, "state.db"), "SELECT 1 FROM tickets WHERE worker_state IN ('queued', 'running')").length === 0 ? true : undefined), 1000);
 
+/** The question the stock-ta report suggests, asked with no conversation before it: it must open a domain-null ticket, not loop back to stock-ta. */
+async function followUp(question: string | undefined): Promise<{ ok: boolean; text: string }> {
+	if (question === undefined) return { ok: false, text: "the stock-ta report suggested no follow-up question" };
+	const host = await realHost(HEAD);
+	try {
+		const a = await ask(host, question, (t) => t.length > 20, 300_000);
+		await idle(host);
+		const tickets = query(join(host.state, "state.db"), "SELECT id, title, domain, dispatched_to FROM tickets ORDER BY rowid");
+		return { ok: tickets.length > 0 && tickets.every((t) => t["domain"] === null), text: `asked alone on a fresh host: ${question}\n${asked({ ...a, tickets })}` };
+	} finally {
+		await host.close();
+	}
+}
+
 async function newsLane(): Promise<Verdict> {
+	let checks: Record<string, boolean>;
+	let evidence: string;
+	let suggested: string | undefined;
 	const host = await realHost(HEAD);
 	const db = join(host.state, "state.db");
 	const allTickets = () => query(db, "SELECT id, title, domain, dispatched_to FROM tickets ORDER BY rowid");
@@ -450,22 +470,26 @@ async function newsLane(): Promise<Verdict> {
 		const ta = ready.filter((r) => r["domain"] === "stock-ta").map((r) => String(r["summary"]));
 		const general = ready.filter((r) => r["domain"] === null).map((r) => String(r["summary"]));
 		const told = host.tg.sent.slice(before).filter((m: { chatId: number }) => m.chatId === USER).map((m: { text: string }) => m.text).join("\n");
-		const checks = {
+		suggested = ta.map((t) => FOLLOW_UP.exec(t)?.[1]).find(Boolean);
+		checks = {
 			"1 news only is not stock-ta": newsTickets.length > 0 && newsTickets.every((t) => t["domain"] !== "stock-ta"),
-			"2 stock-ta reports the move, no cause, and the line to ask the cause separately": ta.length > 0 && ta.every((t) => PERCENT.test(t) && !CAUSE.test(t) && /单独问/.test(t)),
+			"2 stock-ta reports the move, no cause, and the line suggesting a follow-up question": ta.length > 0 && ta.every((t) => PERCENT.test(t) && !CAUSE.test(t) && FOLLOW_UP.test(t)),
 			"3 a cause can only come from a domain-null ticket": mixedTickets.every((t) => t["domain"] === "stock-ta" || t["domain"] === null),
 			"4 no stock-ta ticket reached the web": webReads(host.state).length === 0,
 			"5 the mixed question dispatched no expert": mixedTickets.every((t) => t["dispatched_to"] === null || t["dispatched_to"] === "[]"),
 		};
 		const file = join(outDir, "r2a-news.png");
 		await screenshot(host, file, (page) => harness.showScreen(page, "chat").then(() => page.getByText(PERCENT).first().waitFor({ timeout: 20_000 })).catch(() => undefined));
-		return {
-			pass: Object.values(checks).every(Boolean),
-			evidence: `news only:\n${asked(news)}\n\nmixed:\n${asked(mixed)}\nevery Telegram line after the mixed question:\n${told}\n\nchecks:\n${Object.entries(checks).map(([k, v]) => `${v ? "ok  " : "FAIL"} ${k}`).join("\n")}\n\nstock-ta web reads:\n${webReads(host.state).join("\n") || "(none)"}\n\nstock-ta ready reports on the mixed question:\n${ta.join("\n---\n") || "(none)"}\n\ndomain-null ready reports on the mixed question (${general.length > 0 ? "the cause was answered by a general ticket" : "no general ticket answered"}):\n${general.join("\n---\n") || "(none)"}\n\nall tickets:\n${show(tickets)}\nscreenshot ${file}`,
-		};
+		evidence = `news only:\n${asked(news)}\n\nmixed:\n${asked(mixed)}\nevery Telegram line after the mixed question:\n${told}\n\nstock-ta web reads:\n${webReads(host.state).join("\n") || "(none)"}\n\nstock-ta ready reports on the mixed question:\n${ta.join("\n---\n") || "(none)"}\n\ndomain-null ready reports on the mixed question (${general.length > 0 ? "the cause was answered by a general ticket" : "no general ticket answered"}):\n${general.join("\n---\n") || "(none)"}\n\nall tickets:\n${show(tickets)}\nscreenshot ${file}`;
 	} finally {
 		await host.close();
 	}
+	const next = await followUp(suggested);
+	checks["6 the suggested follow-up, asked alone, opens a domain-null ticket"] = next.ok;
+	return {
+		pass: Object.values(checks).every(Boolean),
+		evidence: `checks:\n${Object.entries(checks).map(([k, v]) => `${v ? "ok  " : "FAIL"} ${k}`).join("\n")}\n\n${evidence}\n\nfollow-up:\n${next.text}`,
+	};
 }
 
 /** Lane 7: the ticket card on the web page shows the lead worked alone. */
@@ -492,6 +516,25 @@ ${a.gateway.join("\n")}` };
 
 async function news(): Promise<void> {
 	await lane(9, "news", newsLane);
+}
+
+async function perf(): Promise<void> {
+	const times: number[] = [];
+	const lines: string[] = [];
+	for (let i = 0; i < 3; i++) {
+		const host = await realHost(HEAD);
+		try {
+			const a = await ask(host, PRICE_Q, (t) => PRICE.test(t), 300_000);
+			times.push(a.answerMs ?? Infinity);
+			lines.push(`run ${i + 1}: answer after ${a.answerMs === undefined ? "never" : secs(a.answerMs)}\ntickets:\n${show(a.tickets)}\n${a.sent.join("\n")}`);
+		} finally {
+			await host.close();
+		}
+	}
+	await lane("perf-head", "perf-head", async () => ({
+		pass: median(times) <= 25_000,
+		evidence: `head only, ${PRICE_Q} on the fake Telegram, three fresh hosts (rule: median over 25 s fails)\nmedian ${secs(median(times))}, runs ${times.map((x) => (Number.isFinite(x) ? secs(x) : "never")).join(", ")}, spread ${secs(Math.max(...times) - Math.min(...times))}\n${lines.join("\n\n")}`,
+	}));
 }
 
 async function page(): Promise<void> {
@@ -538,5 +581,5 @@ if (mode === "web") {
 	console.log(reads.length === 0 ? "ok   no stock-ta ticket reached the web" : `FAIL stock-ta reached the web\n${reads.join("\n")}`);
 	process.exit(reads.length === 0 ? 0 : 1);
 }
-await (mode === "real" ? real() : mode === "page" ? page() : mode === "news" ? news() : mode === "media" ? media() : tools());
+await (mode === "real" ? real() : mode === "page" ? page() : mode === "news" ? news() : mode === "media" ? media() : mode === "perf" ? perf() : tools());
 process.exit(0);
