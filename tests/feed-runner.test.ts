@@ -64,7 +64,7 @@ test("feed 的输入里有 now：宿主时钟的 ISO 时间，handler 不用读�
 	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), "export default (input: { now: string }) => ({ cursor: input.now });\n");
 	const entry = brokerage(root);
 	const data = instanceData(join(root, "state"));
-	const run = await runFeed(entry, [], { data, submit: () => {}, alert: () => {}, secret: () => "token", now: () => Date.parse("2026-11-12T15:05:00Z") });
+	const run = await runFeed(entry, [], { data, submit: () => {}, alert: () => {}, problem: () => {}, secret: () => "token", now: () => Date.parse("2026-11-12T15:05:00Z") });
 	assert.deepEqual(run, { ok: true, records: 0, notices: 0 });
 	assert.equal(data.feedState(entry.module, entry.source).cursor, "2026-11-12T15:05:00.000Z");
 });
