@@ -132,6 +132,11 @@ modules:
 module *args:
     {{run}} src/cli/module.ts "$@"
 
+# 把 us-market 的盯盘条件搬成 stock-ta 的 day-move 提醒条件，并从 stock-ta 自选股划掉 AMZN、AAPL。默认只打印；--apply 写入，重跑只补差；--undo 只撤销它写的；--keep-watchlist 不动自选股。不用停宿主。
+[positional-arguments]
+migrate-us-market *args:
+    {{run}} src/cli/migrate-us-market.ts "$@"
+
 # 真实宿主、Worker 子进程和无头浏览器，模型换成 tests/e2e/fake-model.ts 的本地假模型，不请求任何真实模型或行情接口。
 # 首次运行自动装 playwright-core 和浏览器。失败报告在 tests/e2e/.out/<测试>/index.html。
 # 故意弄坏某一步：PSA_E2E_SABOTAGE="Router 回复" just e2e；让 Worker 崩溃：PSA_E2E_SABOTAGE="Worker 汇报:crash" just e2e

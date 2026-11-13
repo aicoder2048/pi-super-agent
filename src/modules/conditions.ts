@@ -1,10 +1,13 @@
 /** Level conditions (above, below, change-pct against a basis) alert when a row crosses into them, not on every row inside, so a feed writing every minute does not repeat itself. */
+import type { CollectionDescriptor } from "./manifest.ts";
 import type { Condition, Json, Watch } from "./protocol.ts";
 
 export type SetCondition = Watch & { collection: string; setAt: string };
 
-/** Oldest first; the last is the row just written. */
-export type Point = { value: number; at: string; from: string };
+/** Oldest first; the last is the row just written. `prevClose` is read only when the collection names `watch.prevClose`. */
+export type Point = { value: number; at: string; from: string; prevClose?: number | null };
+
+type WatchSpec = NonNullable<CollectionDescriptor["watch"]>;
 
 type Kind = Condition["when"];
 type Of<K extends Kind> = Extract<Condition, { when: K }>;
@@ -16,6 +19,10 @@ type Spec<K extends Kind> = {
 	need(c: Of<K>): number;
 	describe(c: Of<K>): string;
 	met(c: Of<K>, points: readonly Point[]): string | undefined;
+	/** What makes a firing distinct, when it is not the row: the host posts one alert per value. */
+	once?(c: Of<K>, point: Point, zone: string | undefined): string;
+	/** How the alert shows the row's value. */
+	shown?(point: Point): string;
 };
 
 // Float rounding can put a move of exactly a threshold a hair below it (5.5 / 5 - 1 < 10%).
@@ -44,16 +51,35 @@ const entered = (points: readonly Point[], sideOf: (value: number) => string | b
 const parseTimes = (times: Json | undefined) => (wholeIn(times, 1, 100) ? times : "times 要是 1 到 100 的整数");
 
 type ChangePct = Of<"change-pct">;
+type DayMove = Of<"day-move">;
 const DIRECTIONS = ["up", "down", "either"] as const;
 
-function moveOf(c: ChangePct, value: number, ref: number): number | undefined {
+function moveOf(c: Pick<ChangePct, "atLeast" | "direction">, value: number, ref: number): number | undefined {
 	if (ref === 0) return undefined;
 	const move = ((value - ref) / ref) * 100;
 	const side = move >= 0 ? "up" : "down";
 	return (c.direction === "either" || c.direction === side) && Math.abs(move) >= c.atLeast - EPSILON ? move : undefined;
 }
 const moved = (move: number) => `${move >= 0 ? "涨" : "跌"}了 ${round(Math.abs(move))}%`;
-const directionWord = { up: "涨", down: "跌", either: "涨跌" } as const;
+export const directionWord = { up: "涨", down: "跌", either: "涨跌" } as const;
+
+/** Unrounded, so 4.996% stays under a 5% line. */
+const dayMoveOf = (c: DayMove, { value, prevClose }: Point) => (isNumber(prevClose) && prevClose > 0 ? moveOf(c, value, prevClose) : undefined);
+
+const formats = new Map<string, Intl.DateTimeFormat>();
+/** One formatter per zone: building one costs more than formatting, and a quote row is checked every minute. */
+const zoneParts = (ms: number, zone: string) => {
+	let format = formats.get(zone);
+	if (format === undefined) formats.set(zone, (format = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })));
+	return Object.fromEntries(format.formatToParts(ms).map((x) => [x.type, x.value]));
+};
+
+function dayOf(at: string, zone: string | undefined): string {
+	const ms = Date.parse(at);
+	if (zone === undefined || Number.isNaN(ms)) return at.slice(0, 10);
+	const p = zoneParts(ms, zone);
+	return `${p.year}-${p.month}-${p.day}`;
+}
 
 const SPECS: { [K in Kind]: Spec<K> } = {
 	above: {
@@ -115,6 +141,23 @@ const SPECS: { [K in Kind]: Spec<K> } = {
 			return move === undefined ? undefined : `比上一次（${prev!.value}，${prev!.at}）${moved(move)}`;
 		},
 	},
+	"day-move": {
+		fields: ["atLeast", "direction"],
+		parse: ({ atLeast, direction = "either" }) => {
+			if (!isNumber(atLeast) || atLeast < 0.1 || atLeast > 100) return "atLeast 要是 0.1 到 100 之间的百分数";
+			if (!DIRECTIONS.includes(direction as never)) return `direction 只能是 ${DIRECTIONS.join("、")}`;
+			return { when: "day-move", atLeast, direction: direction as DayMove["direction"] };
+		},
+		need: () => 1,
+		describe: (c) => `当天相对昨收${directionWord[c.direction]}到 ${c.atLeast}%`,
+		met: (c, points) => {
+			const point = points.at(-1)!;
+			const move = dayMoveOf(c, point);
+			return move === undefined ? undefined : `相对昨收 ${point.prevClose!.toFixed(2)} ${move >= 0 ? "涨" : "跌"}了 ${Math.abs(move).toFixed(2)}%，到了你设的${directionWord[c.direction]} ${c.atLeast}% 提醒线`;
+		},
+		once: (c, point, zone) => `${dayOf(point.at, zone)}:${point.value >= point.prevClose! ? "up" : "down"}:${c.atLeast}`,
+		shown: (point) => point.value.toFixed(2),
+	},
 	"crosses-average": {
 		fields: ["points", "direction"],
 		parse: ({ points, direction }) => {
@@ -162,19 +205,22 @@ export const describe = (c: Condition) => specOf(c).describe(c);
 
 export const met = (c: Condition, points: readonly Point[]) => specOf(c).met(c, points);
 
+/** The alert's id: a condition fires once per row, or once per what its `once` names. */
+export const firingId = (c: SetCondition, points: readonly Point[], rowId: string | number, zone: string | undefined) => `${c.id}:${specOf(c.condition).once?.(c.condition, points.at(-1)!, zone) ?? rowId}`;
+
 // 1000: the kernel's host_lines length check.
 const oneLine = (text: string) => [...text.replace(/\s+/g, " ").trim()].slice(0, 1000).join("");
 
 function zoneTime(at: string, zone: string | undefined): string {
 	const ms = Date.parse(at);
 	if (zone === undefined || !/T.*(Z|[+-]\d\d:\d\d)$/.test(at) || Number.isNaN(ms)) return at;
-	const format = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-	const p = Object.fromEntries(format.formatToParts(ms).map((x) => [x.type, x.value]));
+	const p = zoneParts(ms, zone);
 	return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute} ${zone === "America/New_York" ? "美东" : zone}`;
 }
 
-export function alertText(title: string, condition: SetCondition, point: Point, happened: string, zone?: string): string {
-	return oneLine(`${title} ${condition.key} ${point.value}，${happened}（${zoneTime(point.at, zone)}，来自 ${point.from}）${condition.note ? `。备注：${condition.note}` : ""}`);
+export function alertText(condition: SetCondition, point: Point, happened: string, watch: Pick<WatchSpec, "zone" | "label">): string {
+	const shown = specOf(condition.condition).shown?.(point) ?? String(point.value);
+	return oneLine(`${condition.key} ${shown}，${happened}（${zoneTime(point.at, watch.zone)}，${watch.label ?? `来自 ${point.from}`}）${condition.note ? `。备注：${condition.note}` : ""}`);
 }
 
 export function receiptText(done: "已设" | "已改" | "已去掉", title: string, condition: SetCondition): string {
