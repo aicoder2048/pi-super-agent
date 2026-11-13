@@ -227,3 +227,9 @@ test("数字字段收到 true 或空白：一行拒绝，不调用 ta", async (t
 	for (const limit of [true, " "]) assert.match(noteOf(await ta.call("signals", { symbol: "NVDA", limit })), /limit 要是数字/, JSON.stringify(limit));
 	assert.deepEqual(ta.calls(), []);
 });
+
+test("signals 不把 ta 的已读状态交给模型：第一次补数后两年的历史信号都是未读，不能当成新信号", async (t) => {
+	const ta = fakeModule(t, { signals: { stdout: { signals: [{ id: 1, rule_id: "R-MACD-1", data_end: "2024-12-02T21:00:00+00:00", read: false }] } } });
+	const out = output(await ta.call("signals", { symbol: "NVDA" }));
+	assert.deepEqual(out["signals"], [{ id: 1, rule_id: "R-MACD-1", data_end: "2024-12-02T21:00:00+00:00" }]);
+});
