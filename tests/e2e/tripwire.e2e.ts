@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test, { after } from "node:test";
 import { FAKE_BOT_TOKEN, FakeTelegram } from "../helpers/fake-telegram.ts";
 import { on, openTicket, reply, report, worker, type ToolCall } from "./fake-model.ts";
-import { closeBrowser, sayInPage, story } from "./harness.ts";
+import { closeBrowser, sayInPage, story, showScreen } from "./harness.ts";
 
 after(closeBrowser);
 
@@ -136,6 +136,8 @@ test("盯盘条件：网页上说一句，幕僚长开 us-market 的请求任务
 			await step("「来源」截图：亮色和暗色，桌面宽度和 390px 手机宽度", async (page) => {
 				for (const [width, height] of [[1280, 800], [390, 844]]) {
 					await page.setViewportSize({ width, height });
+					await showScreen(page, "overview");
+					await page.locator("#tab-sources").click();
 					for (const theme of ["light", "dark"]) {
 						await page.evaluate((t) => (document.documentElement.dataset.theme = t), theme);
 						await page.locator('.watch[data-source="us-market"]').screenshot({ path: join(PANEL_SHOTS, `source-${theme}-${width}.png`) });

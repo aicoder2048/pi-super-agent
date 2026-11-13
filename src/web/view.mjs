@@ -288,9 +288,11 @@ export function leftColumn(view, now, sending = new Map()) {
 	for (const row of view.rows) groups[groupOf(row)].push(card(row, now, sending));
 	const hits = view.today?.bySource ?? {};
 	const cap = capCard(view, sending);
+	const needsYouCount = groups.needsYou.length + (cap ? 1 : 0);
 	return {
 		capCard: cap,
-		needsYouLine: `待你处理 · ${groups.needsYou.length + (cap ? 1 : 0)}`,
+		needsYouCount,
+		needsYouLine: `待你处理 · ${needsYouCount}`,
 		needsYou: groups.needsYou,
 		doing: groups.doing,
 		done: groups.done.reverse(),
@@ -341,15 +343,21 @@ function moduleCard(m) {
 
 /** @typedef {"today" | "sources" | "modules" | "done"} OverviewTab */
 
+/** A phone shows one screen at a time; the bottom bar picks one. @typedef {"todo" | "chat" | "overview"} Place */
+
 /**
- * The right column. `last` is the overview tab the task tab's × returns to; `flash` is the alert line to highlight in 今天.
- * @typedef {{ showing: OverviewTab | "task", task: string | null, last: OverviewTab, flash: string | null }} Panel
+ * The right column, and on a phone the screen. `last` is the overview tab the task tab's × returns to; `flash` is the alert line to highlight in 今天;
+ * `dot` marks 概况 on the bottom bar for an alert the phone has not shown yet.
+ * @typedef {{ showing: OverviewTab | "task", task: string | null, last: OverviewTab, flash: string | null, place: Place, dot: boolean }} Panel
  */
 
-/** @typedef {{ kind: "pick", tab: OverviewTab | "task" } | { kind: "open", ticketId: string } | { kind: "close" } | { kind: "alert", lineId: string, ticketId?: string }} PanelEvent */
+/** @typedef {{ kind: "pick", tab: OverviewTab | "task" } | { kind: "open", ticketId: string } | { kind: "close" } | { kind: "alert", lineId: string, ticketId?: string, phone?: boolean } | { kind: "place", place: Place }} PanelEvent */
 
 /** @returns {Panel} */
-export const firstPanel = () => ({ showing: "today", task: null, last: "today", flash: null });
+export const firstPanel = () => ({ showing: "today", task: null, last: "today", flash: null, place: "todo", dot: false });
+
+/** An open task covers the phone's screen until a back or a bottom-bar tap. @param {Panel} panel @returns {Place | "task"} */
+export const phoneScreen = (panel) => (panel.showing === "task" ? "task" : panel.place);
 
 /** @param {Panel} panel @param {PanelEvent} event @returns {Panel} */
 export function panelStep(panel, event) {
@@ -361,9 +369,14 @@ export function panelStep(panel, event) {
 			return { ...panel, showing: "task", task: event.ticketId };
 		case "close":
 			return { ...panel, task: null, showing: panel.showing === "task" ? panel.last : panel.showing };
-		case "alert":
+		case "alert": {
+			const screen = phoneScreen(panel);
+			if (event.phone) return { ...panel, showing: screen === "task" ? "task" : "today", last: "today", flash: event.lineId, dot: screen !== "overview" };
 			if (event.ticketId) return { ...panel, showing: "task", task: event.ticketId, flash: null };
 			return { ...panel, showing: "today", last: "today", flash: event.lineId };
+		}
+		case "place":
+			return { ...panel, place: event.place, showing: panel.showing === "task" ? panel.last : panel.showing, dot: event.place === "overview" ? false : panel.dot };
 	}
 }
 
