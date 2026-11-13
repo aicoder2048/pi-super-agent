@@ -1,13 +1,13 @@
 # 股票技术分析模块（stock-ta）
 
-stock-ta 让 Pi Super Agent 回答美股的报价和技术面问题，例如「NVDA 现在多少」「NVDA 现在的支撑阻力和动量怎么样」。它只管行情数据和由它算出的技术面，不管新闻和财报解读。计算来自技术分析私有仓库里的 `ta-trading`（`ta` 命令行），模块用 `just module setup` 把钉住的版本装进自己的数据目录；数据也归模块自己，`scan` feed 每个交易日收盘后扫一次自选股。工具只读这份数据，再配上笔记、技能和一个六人的专家队「技术分析研究组」。它不需要你本机的技术分析项目，跑服务的旧 Mac 上也能用。
+stock-ta 让 Pi Super Agent 回答美股的报价和技术面问题，例如「NVDA 现在多少」「NVDA 现在的支撑阻力和动量怎么样」。它只管客观的交易数据和由它算出的技术面，外加下一次财报日这个日期，不管新闻、财报解读和宏观。计算来自技术分析私有仓库里的 `ta-trading`（`ta` 命令行），模块用 `just module setup` 把钉住的版本装进自己的数据目录；数据也归模块自己，`scan` feed 每个交易日收盘后扫一次自选股。工具只读这份数据，再配上笔记、技能和一个六人的专家队「技术分析研究组」。它不需要你本机的技术分析项目，跑服务的旧 Mac 上也能用。
 
 包在 `docs/modules/examples/stock-ta/`，不在仓库的 `modules/` 下。仓库 `modules/` 里的新布局包第一次被发现时默认打开，而这个模块要先在那台机器上跑一次 `just module setup`、有一把 Massive 密钥才能用，没准备好就打开的话工具全失败，还会在幕僚长的名单上和 us-market 抢美股问题。所以它放在例子目录里，你在要用的那台机器上复制一份，自己打开。
 
 ## 里面有什么
 
-- **工具。** `quote` 向 Massive 要一次快照，回现价，见下文「问现价」。`intraday` 向 Massive 要一只股票当天的分钟线或小时线，见下文「联网的工具和密钥」。六个只读工具调 `ta` 的子命令：`structure`（支撑阻力、形态、动能）、`signals`（技术信号，日线和周线）、`note`（笔记原文）、`prices`（数据库里的最新价）、`conditions`（规则状态）、`rules`（规则定义）。另有一个纯计算工具 `risk-reward`，算盈亏比和止损距离，用例在 `cases.json` 里，每次检查都跑。
-- **专家。** 趋势与动量、结构与形态、信号分诊、市场情绪、风险与交易计划、盘面。每位专家只够得到 `uses` 里列的工具，成员只有读文件的 `read`，不能读网页。盘面判断当天的涨跌是个股还是大盘、板块，用 `quote`、`intraday`、`prices`、`note`，汇报分结论、证据、数据时间三段，不找原因。
+- **工具。** `quote` 向 Massive 要一次快照，回现价，见下文「问现价」。`intraday` 向 Massive 要一只股票当天的分钟线或小时线，`earnings-date` 向 Finnhub 要下一次财报日，见下文「联网的工具和密钥」。六个只读工具调 `ta` 的子命令：`structure`（支撑阻力、形态、动能）、`signals`（技术信号，日线和周线）、`note`（笔记原文）、`prices`（数据库里的最新价）、`conditions`（规则状态）、`rules`（规则定义）。另有一个纯计算工具 `risk-reward`，算盈亏比和止损距离，用例在 `cases.json` 里，每次检查都跑。
+- **专家。** 趋势与动量、结构与形态、信号分诊、市场情绪、风险与交易计划、盘面。每位专家只够得到 `uses` 里列的工具，成员只有读文件的 `read`，不能读网页。盘面判断当天的涨跌是个股还是大盘、板块，用 `quote`、`intraday`、`prices`、`note`，汇报分结论、证据、数据时间三段，不找原因。风险与交易计划每次给计划都查一次 `earnings-date`，财报日在持有期内或 10 个交易日内时单独写一行跳空风险，只有它能用这个工具。
 - **技能。** `principle-evidence`、`principle-freshness`、`ta-interpret`，从技术分析项目的 Pi 技能搬过来，去掉了桌面界面、选股和日内的部分。`quick-quote` 让领队自己回答只问价格的问题，`market-desk` 是盘面查当天行情的做法。
 - **报价。** feed `quotes` 在交易时段（美东 9:30 到收盘后 20 分钟）每 60 秒向 Massive 发一次快照请求，取回整张自选股，每只存一行进 `quotes`：价格、相对昨收的涨跌幅、当天成交量和数据时间。Starter 套餐的数据延迟 15 分钟，所以数据时间比现在早约 15 分钟。同一数据时间的行只存一次。自选股在 `watchlist` 里。
 - **日线扫描。** feed `scan` 每小时看一次，每个交易日收盘 15 分钟后用模块自己装的 `ta` 扫一次自选股和 QQQ、SPY，把两年日线、分红和信号写进模块自己的数据库 `modules-data/stock-ta/files/ta/ta.sqlite`，每次运行在 `scan-runs` 里记一行。工具读的就是这份数据库。见下文「日线扫描」。
@@ -16,12 +16,13 @@ stock-ta 让 Pi Super Agent 回答美股的报价和技术面问题，例如「N
 
 ## 联网的工具和密钥
 
-`quote` 和 `intraday` 现查 Massive，只读，不写模块数据，用宿主密钥文件里的 `POLYGON_API_KEY`。没有这把密钥时一行说明去哪里加，不发请求。
+`quote` 和 `intraday` 现查 Massive，只读，不写模块数据，用宿主密钥文件里的 `POLYGON_API_KEY`。`earnings-date` 现查 Finnhub，只读，用 `FINNHUB_API_KEY`。没有密钥时一行说明去哪里加，不发请求。
 
 - **`quote`。** 每次一个快照请求，1 到 10 个代码。
 - **`intraday`。** 每次一个分钟聚合请求（`/v2/aggs/ticker/{代码}/range/1/{minute 或 hour}/{from}/{to}?adjusted=true&sort=desc&limit=50000`）。Massive 的 `limit` 限的是它读的分钟数据，不是回几根，所以请求要得大，工具自己只留离 `to` 最近的 500 根以内，真截掉了更早的才标 `truncated`。`from`、`to` 是纽约日期，可带时刻（`2026-11-12 09:30`），工具在本地筛出那一段，这样也能看过去某天的开盘；不填是今天，周末是上一个交易日，`to` 不能晚于今天；最多回看 4 个交易日（只跳过周末，节假日也算一天）。回放时填的 `now` 之后还没走完的 K 线不给。每根 K 线带 Massive 给的 VWAP，另算最新那一天的 VWAP（`dayVwap`）。超过上限一行拒绝，不发请求。没有 K 线时一行说明是休市、代码可能不对、盘前 04:00 还没开始，还是那段时刻里没有。
+- **`earnings-date`。** 每次一个 Finnhub 财报日历请求（`/calendar/earnings?from=<今天>&to=<今天+120 天>&symbol=<代码>`，请求头 `X-Finnhub-Token`）。回下一次财报的日期（纽约日期，今天盘后发布的算今天，已公布实际数字的跳过）、盘前盘后盘中或时间未公布、离今天几个交易日（跳过周末和 `market-days.ts` 里的休市日，今天是 0）。120 天内没有时回「120 天内没有已公布的财报日」，ETF 也是这样。只回日期，不回预期、实际 EPS 和营收，不请求 `/stock/earnings`。Finnhub 回 429 时说「请求太多，稍后再查」。Finnhub 地址在 `tools/earnings-date/finnhub.json`。
 - **一把密钥，几路请求。** 报价 feed（交易时段每 60 秒一个快照请求）、`scan` feed（每个交易日收盘后扫一次自选股）、`quote` 和 `intraday`（按需，每次一个）共用这一把 `POLYGON_API_KEY`。Starter 套餐没有次数上限；Massive 回 HTTP 429 时工具说「请求太多，稍后再查」，盘面的技能让它等手上的查询回来再重试一次，同时在途的联网查询最多两个。
-- 两个工具都在 15 秒内放弃并说明，宿主的 20 秒上限之前一定结束。读的 Massive 地址和报价 feed 是同一个（`feeds/quotes/feed.json` 的 `settings.baseUrl`）。
+- 三个联网工具都在 15 秒内放弃并说明，宿主的 20 秒上限之前一定结束。读的 Massive 地址和报价 feed 是同一个（`feeds/quotes/feed.json` 的 `settings.baseUrl`）。
 
 ## 读日线数据库的工具不联网
 
@@ -66,9 +67,10 @@ stock-ta 让 Pi Super Agent 回答美股的报价和技术面问题，例如「N
 
    ```bash
    POLYGON_API_KEY=<你的 Massive/Polygon REST 密钥>
+   FINNHUB_API_KEY=<你的 Finnhub 密钥>
    ```
 
-   `MASSIVE_S3_ACCESS_KEY` 和 `MASSIVE_S3_SECRET_KEY` 是下载整日文件用的，这里用不上。没设 `POLYGON_API_KEY` 的时候，报价和扫描每一轮不发请求，只在宿主日志里记一行「没有设置 POLYGON_API_KEY」，宿主和其他工具照常。`just module check` 和样例排练不需要这把密钥。以前的 `TA_ROOT` 不用了，密钥文件里有的话可以删掉。
+   `MASSIVE_S3_ACCESS_KEY` 和 `MASSIVE_S3_SECRET_KEY` 是下载整日文件用的，这里用不上。没设 `POLYGON_API_KEY` 的时候，报价和扫描每一轮不发请求，只在宿主日志里记一行「没有设置 POLYGON_API_KEY」，宿主和其他工具照常。`just module check` 和样例排练不需要这把密钥。`FINNHUB_API_KEY` 只给 `earnings-date` 查财报日用，us-market 用的是同一把，已经有就不用再加；没有时风险计划写「没查到财报日」，别的照常。以前的 `TA_ROOT` 不用了，密钥文件里有的话可以删掉。
 
 4. 导入笔记全文。每条命令导入一份，只收 `.md` 文件，导入后 `knowledge` 和 `note` 马上能用。笔记在你本机技术分析项目的 `docs/` 里；在别的机器上装时，先把这个 `docs/` 目录复制过去，`T` 指向复制过去的那一份的上一级。
 

@@ -1,0 +1,18 @@
+{
+  "title": "下一次财报日",
+  "description": "向 Finnhub 的财报日历要一只美股从今天起 120 天内的下一次财报日，回日期、盘前还是盘后、离今天几个交易日。只回日期，不回预期、实际数字和解读。ETF 和 120 天内没公布的回一行说明。只读，一次一个请求",
+  "effect": "read",
+  "secrets": ["FINNHUB_API_KEY"],
+  "input": {
+    "symbol": { "type": "text", "title": "一个美股代码，例如 NVDA" },
+    "now": { "type": "text", "title": "只在回放时填：当作现在的时间（ISO 8601）；回答使用者时不填" }
+  },
+  "output": {
+    "symbol": { "type": "text", "title": "代码" },
+    "today": { "type": "text", "title": "纽约的今天" },
+    "date": { "type": "text", "title": "下一次财报日（纽约日期）；今天盘后发布的算今天" },
+    "time": { "type": "text", "title": "盘前、盘后、盘中或时间未公布" },
+    "tradingDays": { "type": "number", "title": "离今天几个交易日（跳过周末和休市日），今天是 0" },
+    "note": { "type": "text", "title": "120 天内没有已公布的财报日时的一行说明，这时没有 date" }
+  }
+}

@@ -9,7 +9,7 @@ import { instanceData } from "../src/modules/instance-data.ts";
 import { runModuleCodeAsync, type CodeReply } from "../src/modules/run-code.ts";
 import { scanPackage, summary } from "../src/modules/validate.ts";
 import { codeSite } from "./helpers/code-site.ts";
-import { fakeMassive, minuteRow, SNAPSHOT, snapshotBody, stockTaCopy, tickerRow } from "./helpers/market.ts";
+import { fakeMassive, minuteRow, type Answer, SNAPSHOT, snapshotBody, stockTaCopy, tickerRow } from "./helpers/market.ts";
 
 const PKG = join(import.meta.dirname, "../docs/modules/examples/stock-ta");
 const LOCK = lockOf(PKG)!;
@@ -93,10 +93,10 @@ const noteOf = (reply: CodeReply) => {
 	return !reply.ok ? reply.note : "";
 };
 
-test("stock-ta 包通过检查：九个工具、五个技能、六位专家，纯计算工具的用例都过", () => {
+test("stock-ta 包通过检查：十个工具、五个技能、六位专家，纯计算工具的用例都过", () => {
 	const result = scanPackage(PKG);
 	assert.ok(result.ok, JSON.stringify(!result.ok && result.problems));
-	assert.match(summary(result.scan), /^ok stock-ta@0\.1\.0 .*tools=9 skills=5 .*agents=6 evals=\d/);
+	assert.match(summary(result.scan), /^ok stock-ta@0\.1\.0 .*tools=10 skills=5 .*agents=6 evals=\d/);
 	assert.equal(result.scan.manifest.team, "技术分析研究组");
 });
 
@@ -571,4 +571,87 @@ test("intraday：那天没有 K 线（节假日）时说明休市，让改日期
 	const out = output(await tool.intraday({ symbol: "NVDA", span: "minute", now: new Date(ny("2026-11-26", "11:00")).toISOString() }));
 	assert.deepEqual(out["bars"], []);
 	assert.match(String(out["note"]), /2026-11-26.*没有 K 线.*from/);
+});
+
+const CALENDAR = "/calendar/earnings";
+const calendarFixture = (name: string): unknown => JSON.parse(readFileSync(join(PKG, "tools/earnings-date/fixtures", `${name}.json`), "utf8")).body;
+const calendarRow = (date: string, hour: string, epsActual: number | null = null) => ({ symbol: "NVDA", date, hour, quarter: 3, year: 2027, epsEstimate: 2.5, epsActual, revenueEstimate: 1e11, revenueActual: null });
+const at = (date: string, time: string) => new Date(ny(date, time)).toISOString();
+
+async function earningsTool(t: TestContext, secrets: Record<string, string> = { FINNHUB_API_KEY: "fh-test" }) {
+	const finnhub = await fakeMassive(t);
+	const pkg = stockTaCopy(t, "http://127.0.0.1:9");
+	writeFileSync(join(pkg, "tools/earnings-date/finnhub.json"), JSON.stringify({ baseUrl: finnhub.base }));
+	return { finnhub, earnings: (input: unknown) => runModuleCodeAsync(codeSite(pkg, "tools/earnings-date"), "index.ts", input, secrets) };
+}
+
+test("earnings-date：一次 Finnhub 财报日历请求（今天到 120 天后），多条里取最近的未来一条，回日期、盘前盘后和离今天几个交易日", async (t) => {
+	const tool = await earningsTool(t);
+	tool.finnhub.answer({ status: 200, body: calendarFixture("nvda") });
+	const out = output(await tool.earnings({ symbol: "nvda", now: at("2026-11-12", "11:00") }));
+	assert.deepEqual(tool.finnhub.hits.map((h) => [h.url, h.token]), [[`${CALENDAR}?from=2026-11-12&to=2027-03-12&symbol=NVDA`, "fh-test"]]);
+	assert.deepEqual(out, { symbol: "NVDA", today: "2026-11-12", date: "2026-11-17", time: "盘后", tradingDays: 3 });
+});
+
+test("earnings-date：今天盘后的财报算今天（0 个交易日）；今天已公布的、日历里比今天早的都跳过", async (t) => {
+	const tool = await earningsTool(t);
+	tool.finnhub.answer({ status: 200, body: { earningsCalendar: [calendarRow("2026-11-19", "bmo"), calendarRow("2026-11-12", "amc")] } });
+	assert.deepEqual(output(await tool.earnings({ symbol: "NVDA", now: at("2026-11-12", "15:00") })), { symbol: "NVDA", today: "2026-11-12", date: "2026-11-12", time: "盘后", tradingDays: 0 });
+	tool.finnhub.answer({ status: 200, body: { earningsCalendar: [calendarRow("2026-11-11", "amc"), calendarRow("2026-11-12", "bmo", 2.6), calendarRow("2026-11-19", "dmh")] } });
+	assert.deepEqual(output(await tool.earnings({ symbol: "NVDA", now: at("2026-11-12", "15:00") })), { symbol: "NVDA", today: "2026-11-12", date: "2026-11-19", time: "盘中", tradingDays: 5 });
+});
+
+test("earnings-date：交易日只数工作日，跳过周末和休市的节假日；周末问时下周一算 1 个交易日", async (t) => {
+	const tool = await earningsTool(t);
+	tool.finnhub.answer({ status: 200, body: { earningsCalendar: [calendarRow("2026-11-30", "")] } });
+	assert.deepEqual(output(await tool.earnings({ symbol: "NVDA", now: at("2026-11-25", "11:00") })), { symbol: "NVDA", today: "2026-11-25", date: "2026-11-30", time: "时间未公布", tradingDays: 2 });
+	tool.finnhub.answer({ status: 200, body: { earningsCalendar: [calendarRow("2026-11-16", "bmo")] } });
+	assert.equal(output(await tool.earnings({ symbol: "NVDA", now: at("2026-11-14", "11:00") }))["tradingDays"], 1);
+});
+
+test("earnings-date：120 天内没有财报（ETF、空列表）时回一行说明，不编日期", async (t) => {
+	const tool = await earningsTool(t);
+	tool.finnhub.answer({ status: 200, body: calendarFixture("spy-none") });
+	assert.deepEqual(output(await tool.earnings({ symbol: "SPY", now: at("2026-11-13", "11:00") })), { symbol: "SPY", today: "2026-11-13", note: "120 天内没有已公布的财报日" });
+});
+
+test("earnings-date：只回日期，不回预期、实际 EPS 和营收，应答里有也不带出来；tool.json 的输出也没有这些字段", async (t) => {
+	const tool = await earningsTool(t);
+	tool.finnhub.answer({ status: 200, body: calendarFixture("nvda") });
+	const text = JSON.stringify(output(await tool.earnings({ symbol: "NVDA", now: at("2026-11-12", "11:00") })));
+	const schema = JSON.stringify(JSON.parse(readFileSync(join(PKG, "tools/earnings-date/tool.json"), "utf8")).output);
+	for (const shown of [text, schema]) assert.doesNotMatch(shown, /eps|revenue|estimate|actual|营收|预期|EPS/i);
+});
+
+test("earnings-date：没有 FINNHUB_API_KEY 时一行说明去哪里加，不发请求", async (t) => {
+	const tool = await earningsTool(t, {});
+	const note = noteOf(await tool.earnings({ symbol: "NVDA" }));
+	assert.match(note, /FINNHUB_API_KEY/);
+	assert.match(note, /密钥文件/);
+	assert.equal(note.split("\n").length, 1);
+	assert.equal(tool.finnhub.hits.length, 0);
+});
+
+test("earnings-date：Finnhub 回 429 说请求太多、稍后再查，回别的错误码、不是 JSON、没有日历都一行说明", async (t) => {
+	const tool = await earningsTool(t);
+	const cases: [answer: Answer, line: RegExp][] = [
+		[{ status: 429, body: { error: "API limit reached" } }, /429.*请求太多.*稍后/],
+		[{ status: 401, body: { error: "Invalid API key" } }, /HTTP 401/],
+		[{ status: 200, body: null, raw: "<html>maintenance</html>" }, /不是 JSON/],
+		[{ status: 200, body: { error: "unexpected" } }, /没有财报日历/],
+	];
+	for (const [answer, line] of cases) {
+		tool.finnhub.answer(answer);
+		const note = noteOf(await tool.earnings({ symbol: "NVDA" }));
+		assert.match(note, line);
+		assert.doesNotMatch(note, /Unexpected token|SyntaxError|fetch failed/);
+		assert.equal(note.split("\n").length, 1);
+	}
+});
+
+test("只有风险与交易计划够得到 earnings-date，别的专家的 uses 里没有它", () => {
+	const result = scanPackage(PKG);
+	assert.ok(result.ok);
+	const agents = result.scan.components.flatMap((c) => (c.kind === "agents" ? [c.agent] : []));
+	assert.deepEqual(agents.filter((a) => a.uses.includes("tools/earnings-date")).map((a) => a.name), ["risk-plan"]);
 });
