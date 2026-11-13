@@ -299,7 +299,7 @@ OAuth 客户端建在他自己的 Google Cloud 项目里，桌面应用类型，
 
 ## 9. 没核实的地方
 
-- 用撤销接口撤掉一个 refresh token，同一个应用、同一个账号的另一个 refresh token 会不会一起失效。
+- ~~用撤销接口撤掉一个 refresh token，同一个应用、同一个账号的另一个 refresh token 会不会一起失效。~~ 会。2026-11-13 时段 2 实测（Gmail 计划 M7 lane 10），撤掉写草稿的 token 以后，读邮件的 token 换 access token 时回 `400 invalid_grant`。撤销接口撤的是这个应用在这个账号上的整份授权。
 - 删掉 OAuth 客户端以后，它签发的 refresh token 是否立刻不能用。
 - 生产状态、未送审的 Google 应用，refresh token 是否长期有效。文档只写了测试状态 7 天过期。
 - 只有 `notifications` 权限的 classic PAT，私有仓库的通知标题是否完整。
