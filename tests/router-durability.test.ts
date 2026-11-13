@@ -150,3 +150,49 @@ test("一句话的那一轮模型出错、重试前清屏：新会话里补上�
 	await new Promise((r) => setTimeout(r, 500));
 	assert.deepEqual(replies(second.host).filter((x) => x === "回：一"), ["回：一"], "那句话只回了一次");
 });
+
+function answerOnceThenFail(errorRetryMs: number[]) {
+	let failing = false;
+	let failed = false;
+	const brain: Brain = (cards) =>
+		cards.flatMap((c) => {
+			if (!c.startsWith("[对话]")) return [];
+			const said = c.split("使用者：")[1]!.split("\n")[0]!;
+			if (said === "一" && !failed) failing = failed = true;
+			return [{ name: "reply", args: { text: `回：${said}`, cause: ids(c, "trg") } }];
+		});
+	return { brain, options: { failOn: () => (failing ? "503 overloaded" : undefined), errorRetryMs }, recover: () => (failing = false) };
+}
+
+async function answeredThenErrored(errorRetryMs: number[]) {
+	const rig = answerOnceThenFail(errorRetryMs);
+	const { host } = await hostWith(tempStateDir(), rig.brain, rig.options);
+	const session = () => (host.router as Router).session;
+	const replies = () => [...host.kernel.conversation(500), ...(host.kernel.cleared(500)?.lines ?? [])].filter((l) => l.who === "router").map((l) => l.text);
+	host.say("一");
+	await until(() => (session().messages.at(-1) as { stopReason?: string } | undefined)?.stopReason === "error" && !session().isStreaming, "回复之后的那次模型调用出错", 5000);
+	assert.deepEqual(replies(), ["回：一"], "出错前已经回了");
+	return { host, replies, recover: rig.recover };
+}
+
+test("回复了一句话之后同一轮的下一次模型调用出错，重试后那句话只回一次", async (t) => {
+	const { host, replies, recover } = await answeredThenErrored([300]);
+	t.after(() => host.stop());
+	recover();
+	await new Promise((r) => setTimeout(r, 1000));
+	host.say("二");
+	await until(() => replies().includes("回：二"), "后一句得到回复", 5000);
+	assert.deepEqual(replies().filter((x) => x === "回：一"), ["回：一"]);
+});
+
+test("回复了一句话之后同一轮的下一次模型调用出错、重试前清屏：新会话不再回那句话", async (t) => {
+	const { host, replies, recover } = await answeredThenErrored([1500]);
+	t.after(() => host.stop());
+	host.clearConversation();
+	recover();
+	await new Promise((r) => setTimeout(r, 100));
+	host.say("二");
+	await until(() => replies().includes("回：二"), "后一句得到回复", 5000);
+	await new Promise((r) => setTimeout(r, 2000));
+	assert.deepEqual(replies().filter((x) => x === "回：一"), ["回：一"]);
+});
