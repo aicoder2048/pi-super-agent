@@ -71,6 +71,8 @@ const OUTSIDE_SAMPLE = 3;
 const RECOVERY_NOTE = "process restarted; inspect your workdir before repeating any external action";
 
 const reject = (reason: string) => ({ ok: false as const, reason });
+/** What a card in `actions a` is about: its trigger, its ticket, or for a notice the card itself. A reply about that answers it. */
+const CARD_CAUSE = "COALESCE(json_extract(a.payload, '$.triggerId'), json_extract(a.payload, '$.ticketId'), a.id)";
 
 function writtenBy(d: Decision, ticketId: string | undefined): string[] {
 	switch (d.kind) {
@@ -386,6 +388,8 @@ export class Kernel {
 			}
 			const problem = this.#causeProblem(cause);
 			if (problem) return reject(problem);
+			const stray = answers.filter((id) => !this.#get(`SELECT 1 FROM actions a WHERE a.id = ? AND a.kind = 'router.notify' AND ${CARD_CAUSE} = ?`, id, cause));
+			if (stray.length) return reject(`answers 里的 ${stray.join("、")} 不是关于 ${cause} 的卡片；只列关于 ${cause} 的卡片第一行末尾的 act_ id，不带「卡片」两个字`);
 			const used = this.#get("SELECT COUNT(*) AS n FROM reply_receipts WHERE cause = ?", cause).n as number;
 			if (used >= this.config.repliesPerCause) return reject(`already replied ${used} times about ${cause}`);
 			const replyId = this.#id("rpl");
@@ -1114,7 +1118,7 @@ export class Kernel {
 				`SELECT EXISTS (SELECT 1 FROM reply_receipts r, json_each(r.answers) j WHERE j.value = ?)
 					OR EXISTS (SELECT 1 FROM actions a JOIN triggers t ON t.id = json_extract(a.payload, '$.triggerId') WHERE a.id = ? AND t.disposition != 'to_router')
 					OR EXISTS (SELECT 1 FROM actions a JOIN reply_receipts r ON r.answers IS NULL AND r.created_at >= a.created_at
-						AND r.cause = COALESCE(json_extract(a.payload, '$.triggerId'), json_extract(a.payload, '$.ticketId'), a.id) WHERE a.id = ?) AS answered`,
+						AND r.cause = ${CARD_CAUSE} WHERE a.id = ?) AS answered`,
 				actionId,
 				actionId,
 				actionId,

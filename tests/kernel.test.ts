@@ -2510,3 +2510,29 @@ test("别处提到任务时：普通任务写标题，私密任务只写它属�
 	assert.equal(s.kernel.ticketName(health), `${health}「一个mail的私密任务」`);
 	assert.equal(s.kernel.ticketName(loose), `${loose}「一个模块的私密任务」`);
 });
+
+test("回复的 answers 只能列这条回复起因的卡片：别的任务的卡片、不存在的 id、带「卡片」前缀的 id 都被拒绝，什么也不记", () => {
+	const { kernel, open, run, due, clock } = setup();
+	const card = (step: () => void) => {
+		const before = new Set(due("router.notify").map((a) => a.id));
+		step();
+		return due("router.notify").find((a) => !before.has(a.id))!.id;
+	};
+	const jia = open("request");
+	const yi = open("request");
+	run(jia);
+	run(yi);
+	const jiaCard = card(() => kernel.workerReport(jia, { status: "ready", summary: "完成：甲" }));
+	const yiCard = card(() => kernel.workerReport(yi, { status: "ready", summary: "完成：乙" }));
+	clock.t += 1000;
+	const reply = (answers: string[]) => kernel.reply({ threadId: CONVERSATION_THREAD_ID, text: "甲做完了", cause: jia, answers });
+	for (const wrong of [[yiCard], [jiaCard, yiCard], ["act_doesnotexist"], [`卡片 ${jiaCard}`]]) {
+		const result = reply(wrong);
+		assert.equal(result.ok, false, `拒绝 ${wrong.join(",")}`);
+		assert.match(!result.ok ? result.reason : "", new RegExp(jia), "原因说出这条回复的起因");
+	}
+	assert.deepEqual([jiaCard, yiCard].map((id) => kernel.answered(id)), [false, false], "被拒的回复不算回答了任何卡片");
+	assert.equal(kernel.conversation(50).filter((l) => l.who === "router").length, 0, "被拒的回复没有说出去");
+	assert.equal(reply([jiaCard]).ok, true);
+	assert.deepEqual([jiaCard, yiCard].map((id) => kernel.answered(id)), [true, false]);
+});
