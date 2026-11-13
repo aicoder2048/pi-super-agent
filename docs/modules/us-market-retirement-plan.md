@@ -107,7 +107,7 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 **You see.**
 
 - [x] 在 Telegram 上问「NVDA 现在多少」，25 秒内收到一句带价格、涨跌幅、数据时间和「延迟 15 分钟」的回答，网页上这个任务没有派活记录。
-- [ ] 问「NVDA 跌了多少，为什么跌」，回答里有跌幅；原因如果答了，不来自 stock-ta。网页上 stock-ta 任务的汇报最后有一句建议接着问「NVDA 最新新闻」，单独问这一句开出的任务不在 stock-ta 领域。
+- [x] 问「NVDA 跌了多少，为什么跌」，回答里有跌幅；原因如果答了，不来自 stock-ta。网页上 stock-ta 任务的汇报最后有一句建议接着问「NVDA 最新新闻」，单独问这一句开出的任务不在 stock-ta 领域。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -123,7 +123,7 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 - [x] Lane 6. 查 11 个代码，再在没有 `POLYGON_API_KEY` 时查一次。Save `r2a-limits.txt`. Pass when 第一次拒绝并说明最多 10 个，第二次一行说明怎么加密钥，两次都不发请求。
 - [x] Lane 7. 网页上打开 lane 1 的任务。Save `r2a-no-dispatch.png`. Pass when 任务里只有领队，没有专家的回合。
 - [x] Lane 8. 真行情 `quote` 查 NVDA、SPY、QQQ、META、TSM。Save `r2a-real.txt`. Pass when 5 只都有价格、涨跌幅和标签，数据时间是最近的交易时段。
-- [ ] Lane 9. 真模型分别问「NVDA 最新新闻」和「NVDA 跌了多少，为什么跌」。Save `r2a-news.png`. Pass when 只问新闻的问题没有开在 stock-ta 领域；混合问题里 stock-ta 的回答有涨跌幅（带 %），自己不说原因；stock-ta 的汇报里有建议接着问的那一句；把那一句建议的问题单独拿到一个新宿主上问，开出的任务 domain 为空；原因如果答了，来自 domain 为空的任务；stock-ta 的任务没有读网页（`read_web_at` 为空，领队的 bash 里没有网址、curl、wget），混合问题没有派专家。Telegram 上的转述不算在内（幕僚长会改写这一句，见上面的新闻问题那条）。
+- [x] Lane 9. 真模型分别问「NVDA 最新新闻」和「NVDA 跌了多少，为什么跌」。Save `r2a-news.png`. Pass when 只问新闻的问题没有开在 stock-ta 领域；混合问题里 stock-ta 的回答有涨跌幅（带 %），自己不说原因；stock-ta 的汇报里有建议接着问的那一句；把那一句建议的问题单独拿到一个新宿主上问，开出的任务 domain 为空；原因如果答了，来自 domain 为空的任务；stock-ta 的任务没有读网页（`read_web_at` 为空，领队的 bash 里没有网址、curl、wget），混合问题没有派专家。Telegram 上的转述不算在内（幕僚长会改写这一句，见上面的新闻问题那条）。
 - [x] Lane 10. 真模型在对话里说「从自选股去掉 AMZN 和 AAPL」（Appendix E 第 11 条）。Save `r2a-watchlist-edit.txt`. Pass when 任务开在 stock-ta，`watchlist` 里这两行写上了 `removedAt`，下一轮报价 feed 的请求里没有它们。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
@@ -136,6 +136,8 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 2026-11-13 在 psa/rt-r2a-quote 上通过：`just test` 1743/1743，`check.mjs` 全绿，`just module check` ok。lane 1 到 8 和 10 PASS（lane 7 在合入 main 96d3db8 后的 head 上重跑）。perf 真模型 trunk 和 head 交替各 5 次，trunk 中位数 24.9 s，head 18.0 s；`quote` 真行情 20 次中位数 313 ms，最慢 492 ms。旧 Mac 上的 3 次等部署后再算。lane 9 的标准 2026-11-13 改过，见上面 Build 第三条。按改后的标准在 head 上重跑一次没过：这次领队没照 quick-quote 做，派了趋势与动量，自己读了 NVIDIA 官网公告，汇报里写了可能的原因，也没有「单独问」那一句；同一个技能之前 4 次领队都只报涨跌并留了这一句。 评审图 `r2a-review-no-dispatch.png`、`r2a-review-news.png`、`r2a-review-web.png` 和 60 秒视频 `r2a-review.mp4` 已放进 `docs/modules/evidence/`；Telegram 截图还没有，录像脚本在网页上提问，消息不经过假 Telegram。
 
 2026-11-13 在 ec5bdd8 上通过：lane 9 加了两条结构检查（stock-ta 任务没读网页、混合问题没派专家），在上次失败的那次运行留下的状态上重判是 FAIL，在其余 21 次运行上是 ok。quick-quote 写明问「为什么涨跌」不派专家。lane 9 在 head 上连跑 3 次都 PASS：3 次都没派专家、没读网页、没说原因、有「单独问」那一句；lane 7 重跑 PASS。`just test` 1743/1743。领队本身仍有 `web_get` 和 `bash`，模块包关不掉，要关得改宿主，见 PR 评论。
+
+2026-11-13 在 1c7decd 上通过：审查后把汇报最后一句改成「原因不在行情数据里，想知道原因可以问「NVDA 最新新闻」。」，原来建议问「NVDA 为什么跌」会绕回 stock-ta。lane 9 加第 6 条检查：把汇报建议的问题单独拿到新宿主上问，开出的任务 domain 要为空。lane 9 连跑 2 次都 PASS，6 条检查全 ok，2 次建议的都是「NVDA 最新新闻」，单独问开出的任务 domain 为空、没派专家；lane 7 重跑 PASS。head 上价格问题 3 次 16.6、17.3、18.7 s，中位数 17.3 s。`quote` 连不上行情服务或回非 JSON 时改成一行中文。`just test` 1745/1745。
 
 **Review gate.** The operator reviews before merge.
 
