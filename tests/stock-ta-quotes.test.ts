@@ -28,10 +28,11 @@ async function quotesFeed(t: TestContext, key = "sk-test") {
 	const data = instanceData(state);
 	const notices: FeedNotice[] = [];
 	const alerts: string[] = [];
-	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: (_, a) => void alerts.push(a.text), problem: () => {}, secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined), now: () => AT + 15 * 60_000 };
+	const clock = { now: AT + 15 * 60_000 };
+	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: (_, a) => void alerts.push(a.text), problem: () => {}, secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined), now: () => clock.now };
 	const watch = (...symbols: string[]) => data.write("stock-ta", entry.components, "watchlist", symbols.map((symbol) => ({ symbol })), "使用者口述", "test");
 	const quotes = () => data.query("stock-ta", entry.components, "quotes", {}, "test").rows;
-	return { massive, modules, entry, data, notices, alerts, watch, quotes, round: () => runFeed(entry, [], ports), rehearse: () => runFeed(entry, [], ports, entry.fixtures[0]) };
+	return { massive, modules, entry, data, notices, alerts, watch, quotes, clock, round: () => runFeed(entry, [], ports), rehearse: () => runFeed(entry, [], ports, entry.fixtures[0]) };
 }
 
 test("快照解析：一次请求取回整张自选股，每只一行，带价格、相对昨收的涨跌幅、成交量和数据时间", async (t) => {
@@ -43,7 +44,7 @@ test("快照解析：一次请求取回整张自选股，每只一行，带价�
 	assert.equal(feed.massive.hits[0]!.url, `${SNAPSHOT}?tickers=AMD,NVDA`);
 	assert.equal(feed.massive.hits[0]!.auth, "Bearer sk-test");
 	const nvda = feed.quotes().find((r) => r.fields["symbol"] === "NVDA");
-	assert.deepEqual(nvda?.fields, { symbol: "NVDA", price: 180.4, changePct: 2.5, volume: 5_000_000, at: "2026-11-12T15:44:00.000Z" });
+	assert.deepEqual(nvda?.fields, { symbol: "NVDA", price: 180.4, prevClose: 176, changePct: 2.5, volume: 5_000_000, at: "2026-11-12T15:44:00.000Z" });
 	assert.equal(nvda?.from, "stock-ta/quotes");
 });
 
@@ -166,7 +167,7 @@ test("报价的提醒条件：提醒里的数据时间按美东写，存的仍�
 	feed.massive.answer(snapshot([tickerRow("NVDA", 170, 176, AT)]));
 	await feed.round();
 	assert.equal(feed.alerts.length, 1);
-	assert.match(feed.alerts[0]!, /（2026-11-12 10:44 美东，来自 stock-ta\/quotes）/);
+	assert.equal(feed.alerts[0]!, "NVDA 170，低于 171（2026-11-12 10:44 美东，延迟行情）");
 	assert.equal(feed.quotes()[0]!.fields["at"], "2026-11-12T15:44:00.000Z");
 });
 
@@ -184,4 +185,33 @@ test("stock-ta 包通过检查：quotes 的样例跑过 handler，不需要真�
 	const feed = result.scan.components.find((c) => c.kind === "feeds" && c.name === "quotes");
 	assert.ok(feed?.kind === "feeds" && feed.fixtures.length > 0);
 	assert.deepEqual({ every: feed.feed.every, when: feed.feed.when, secrets: feed.feed.secrets, into: feed.feed.into, reads: feed.feed.reads }, { every: "60s", when: "us-market-hours", secrets: ["POLYGON_API_KEY"], into: "quotes", reads: ["watchlist"] });
+});
+
+const ny = (local: string) => Date.parse(`${local}-05:00`);
+
+test("只写新鲜的报价：开盘第一份快照里 9:15 的盘前成交不写行，也不发 5% 触发；9:31 的成交照写", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.clock.now = ny("2026-11-12T09:31:00");
+	feed.massive.answer(snapshot([tickerRow("NVDA", 106, 100, ny("2026-11-12T09:15:00"))]), snapshot([tickerRow("NVDA", 106, 100, ny("2026-11-12T09:31:00"))]));
+	assert.deepEqual(await feed.round(), { ok: true, records: 0, notices: 0 });
+	feed.clock.now = ny("2026-11-12T09:32:00");
+	assert.deepEqual(await feed.round(), { ok: true, records: 1, notices: 1 });
+});
+
+test("只写新鲜的报价：节假日整天拿到的是昨天的报价，不写行", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.clock.now = ny("2026-11-26T10:00:00");
+	feed.massive.answer(snapshot([tickerRow("NVDA", 106, 100, ny("2026-11-25T15:59:00"))]));
+	assert.deepEqual(await feed.round(), { ok: true, records: 0, notices: 0 });
+});
+
+test("只写新鲜的报价：提前收盘日 13:00 以后的成交不写行，12:59 的照写", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.clock.now = ny("2026-11-27T13:10:00");
+	feed.massive.answer(snapshot([tickerRow("NVDA", 101, 100, ny("2026-11-27T12:59:00"))]), snapshot([tickerRow("NVDA", 102, 100, ny("2026-11-27T13:05:00"))]));
+	assert.deepEqual(await feed.round(), { ok: true, records: 1, notices: 0 });
+	assert.deepEqual(await feed.round(), { ok: true, records: 0, notices: 0 });
 });

@@ -22,7 +22,9 @@ export type Condition =
 	/** Against `basis` when given, else against the row before. */
 	| { when: "change-pct"; atLeast: number; direction: "up" | "down" | "either"; basis?: number }
 	/** The market's moving-average cross, as a condition on any series. */
-	| { when: "crosses-average"; points: number; direction: "up" | "down" };
+	| { when: "crosses-average"; points: number; direction: "up" | "down" }
+	/** Against the row's own previous close (`watch.prevClose`), once per day in the watch's zone, direction and threshold. */
+	| { when: "day-move"; atLeast: number; direction: "up" | "down" | "either" };
 
 /** One condition the user set. `key` is a value of the collection's watch key, e.g. `CEA` or `NVDA`. */
 export type Watch = { id: string; key: string; condition: Condition; note?: string };
@@ -172,6 +174,8 @@ export interface FeedInput {
 	rows: Readonly<Record<string, readonly Row[]>>;
 	/** The keys the user watches in the `into` collection, so the feed fetches what the conditions need. */
 	watchedKeys: readonly string[];
+	/** The host's clock as an ISO time. A handler judges freshness against it, so a fake clock replays a day. */
+	now: string;
 }
 
 /** What a feed's work produces. The host, not the feed, stores, submits and moves the cursor. */

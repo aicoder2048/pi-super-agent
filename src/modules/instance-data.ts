@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import { alertText, met, need, parseWatch, receiptText, type Point, type SetCondition } from "./conditions.ts";
+import { alertText, firingId, met, need, parseWatch, receiptText, type Point, type SetCondition } from "./conditions.ts";
 import { moduleDataDir } from "./knowledge.ts";
 import { structureChanges, type CollectionDescriptor, type Component, type ComponentName, type DataClass, type FieldDescriptor, type ModuleName } from "./manifest.ts";
 import type { Alert, Condition, Json, Query, Request, Row } from "./protocol.ts";
@@ -181,7 +181,8 @@ function watchBeforeWrite(db: DatabaseSync, { name, collection }: DataComponent)
 		if (conditions.length === 0) return () => [];
 		const [key, value, at] = [watch.key, watch.value, watch.at].map(quote);
 		db.exec(`CREATE INDEX IF NOT EXISTS ${quote(`_watch_${name}`)} ON ${quote(name)} (${key}, ${at})`);
-		const history = db.prepare(`SELECT ${value} AS value, ${at} AS at, "_from" AS "from" FROM ${quote(name)} WHERE ${key} = ? AND ${value} IS NOT NULL AND ${at} IS NOT NULL AND (${at} < ? OR (${at} = ? AND "_id" <= ?)) ORDER BY ${at} DESC, "_id" DESC LIMIT ?`);
+		const prevClose = watch.prevClose === undefined ? "" : `, ${quote(watch.prevClose)} AS "prevClose"`;
+		const history = db.prepare(`SELECT ${value} AS value, ${at} AS at, "_from" AS "from"${prevClose} FROM ${quote(name)} WHERE ${key} = ? AND ${value} IS NOT NULL AND ${at} IS NOT NULL AND (${at} < ? OR (${at} = ? AND "_id" <= ?)) ORDER BY ${at} DESC, "_id" DESC LIMIT ?`);
 		const latestOf = db.prepare(`SELECT MAX(${at}) AS at FROM ${quote(name)} WHERE ${key} = ?`);
 		const latest = (k: string) => (latestOf.get(k) as { at: Value }).at;
 		const before = new Map([...new Set(conditions.map((c) => c.key))].map((k) => [k, latest(k)]));
@@ -201,7 +202,7 @@ function watchBeforeWrite(db: DatabaseSync, { name, collection }: DataComponent)
 				const points = (history.all(k, t, t, row._id!, Math.max(...mine.map((c) => need(c.condition)))) as Point[]).reverse();
 				return mine.flatMap((c) => {
 					const happened = met(c.condition, points);
-					return happened === undefined ? [] : [{ externalId: `${c.id}:${row._id}`, text: alertText(collection.title, c, points.at(-1)!, happened, watch.zone), at: t, private: collection.class === "private" }];
+					return happened === undefined ? [] : [{ externalId: firingId(c, points, row._id!, watch.zone), text: alertText(c, points.at(-1)!, happened, watch), at: t, private: collection.class === "private" }];
 				});
 			});
 		};
@@ -394,15 +395,17 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 				}
 				const id = request.op === "remove" ? request.id : request.watch.id;
 				const before = id === undefined ? undefined : conditionsOf(db, name).find((c) => c.id === id);
-				if (id !== undefined && before === undefined) throw new DataInputError(`「${name}」没有编号为 ${id} 的提醒条件，现有的用 list 看`);
+				// Only the user (the page, or a CLI acting as it) may name a new id, so the us-market migration finds its own on a rerun.
+				if (id !== undefined && before === undefined && (request.op === "remove" || who !== "page")) throw new DataInputError(`「${name}」没有编号为 ${id} 的提醒条件，现有的用 list 看`);
 				if (request.op === "remove") {
 					db.prepare("DELETE FROM _conditions WHERE id = ?").run(id!);
 					return answer({ condition: before!, receipt: receiptText("已去掉", collection.title, before!) }, "write", 1);
 				}
 				const parsed = parseWatch(request.watch);
 				if (typeof parsed === "string") throw new DataInputError(parsed);
+				if (parsed.condition.when === "day-move" && collection.watch.prevClose === undefined) throw new DataInputError(`「${name}」没有昨收这一列（watch.prevClose），不能设 day-move；可以用 change-pct 带 basis`);
 				const { condition: { when, ...params }, key, note } = parsed;
-				const kept: SetCondition = { id: before?.id ?? `cnd_${randomUUID()}`, collection: name, key, condition: parsed.condition, ...(note !== undefined && { note }), setAt: new Date().toISOString() };
+				const kept: SetCondition = { id: id ?? `cnd_${randomUUID()}`, collection: name, key, condition: parsed.condition, ...(note !== undefined && { note }), setAt: new Date().toISOString() };
 				db.prepare("INSERT OR REPLACE INTO _conditions VALUES (?, ?, ?, ?, ?, ?, ?)").run(kept.id, name, key, when, JSON.stringify(params), kept.setAt, note ?? null);
 				return answer({ condition: kept, receipt: receiptText(before ? "已改" : "已设", collection.title, kept) }, "write", 1);
 			});

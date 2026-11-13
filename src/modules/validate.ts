@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { EVERY, everyMs } from "./connectors/timer.ts";
-import { feedInput, intoOf, NOTHING_HELD, parseCollected } from "./feed-runner.ts";
+import { feedInput, intoOf, nothingHeld, parseCollected } from "./feed-runner.ts";
 import { linkVenvs, lockOf, PY_DIR, venvInstalled } from "./files.ts";
 import { fixtureSecrets, runModuleCode, runModuleCodeAsync, type CodeReply, type CodeSite, type RunOptions, type Secrets } from "./run-code.ts";
 import { secretRefusal } from "./secret-owners.ts";
@@ -237,6 +237,16 @@ function readCollection(report: Report, root: string, name: string): Component |
 			if (zone !== undefined) {
 				if (typeof zone !== "string" || !isTimeZone(zone)) report(where, `watch.zone ${JSON.stringify(zone)} is not a time zone name, e.g. "America/New_York"`);
 				else collection.watch.zone = zone;
+			}
+			const prevClose = watch["prevClose"];
+			if (prevClose !== undefined) {
+				if (typeof prevClose !== "string" || !Object.hasOwn(described, prevClose) || described[prevClose]!.type !== "number") report(where, `watch.prevClose must name a number field`);
+				else collection.watch.prevClose = prevClose;
+			}
+			const label = watch["label"];
+			if (label !== undefined) {
+				if (typeof label !== "string" || label.trim() === "" || label.length > 40) report(where, `watch.label must be a short non-empty string`);
+				else collection.watch.label = label;
 			}
 		}
 	}
@@ -501,7 +511,7 @@ function feedRun({ name, feed }: Extract<Component, { kind: "feeds" }>, componen
 		component: join("feeds", name),
 		entry: feed.handler!,
 		secrets: fixtureSecrets(feed.secrets ?? []),
-		input: feedInput(feed, [], NOTHING_HELD, fixture),
+		input: feedInput(feed, [], nothingHeld(Date.now()), fixture),
 		options: { responses: fixture.responses },
 		problem: (reply) => {
 			if (!reply.ok) return { where, reason: `the handler threw on this fixture: ${reply.note}` };

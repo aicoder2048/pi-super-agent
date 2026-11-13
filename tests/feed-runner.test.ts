@@ -58,3 +58,13 @@ test("just module check 用 fixtures 跑 handler：样例包通过；handler 交
 	assert.equal(bad.ok, false);
 	assert.match(bad.ok ? "" : bad.problems.map(problemLine).join("\n"), /feeds\/brokerage-statements\/fixtures\/two-trades\.json.*"ticker"/);
 });
+
+test("feed 的输入里有 now：宿主时钟的 ISO 时间，handler 不用读自己的挂钟", async (t) => {
+	const { root, pkg } = taxCopy(t);
+	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), "export default (input: { now: string }) => ({ cursor: input.now });\n");
+	const entry = brokerage(root);
+	const data = instanceData(join(root, "state"));
+	const run = await runFeed(entry, [], { data, submit: () => {}, alert: () => {}, secret: () => "token", now: () => Date.parse("2026-11-12T15:05:00Z") });
+	assert.deepEqual(run, { ok: true, records: 0, notices: 0 });
+	assert.equal(data.feedState(entry.module, entry.source).cursor, "2026-11-12T15:05:00.000Z");
+});
