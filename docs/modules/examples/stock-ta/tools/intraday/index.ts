@@ -1,5 +1,5 @@
 import { bars, massiveBase, MISSING_KEY, oneLine, REQUEST_LIMIT_MS, type Bar, type Span } from "../../massive.ts";
-import { nyTime, sessionAt } from "../../market-days.ts";
+import { isTradingDay, nyTime, sessionAt, shiftDate, weekday } from "../../market-days.ts";
 import { argsOf } from "../../ta.ts";
 
 const SPANS: readonly Span[] = ["minute", "hour"];
@@ -9,29 +9,19 @@ const MAX_BARS = 500;
 const MASSIVE_LIMIT = 50_000;
 const LOOKBACK_DAYS = 4;
 const WHEN = /^(\d{4}-\d{2}-\d{2})(?: (\d{2}:\d{2}))?$/;
-const DAY_MS = 86_400_000;
-// NYSE full-day closures as published on nyse.com/markets/hours-calendars, the same horizon as market-days.ts's early closes.
-const HOLIDAYS = new Set([
-	"2025-01-01", "2025-01-09", "2025-01-20", "2025-02-17", "2025-04-18", "2025-05-26", "2025-06-19", "2025-07-04", "2025-09-01", "2025-11-27", "2025-12-25",
-	"2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
-	"2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31", "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
-	"2028-01-17", "2028-02-21", "2028-04-14", "2028-05-29", "2028-06-19", "2028-07-04", "2028-09-04", "2028-11-23", "2028-12-25",
-]);
 
 // Holidays count as trading days for the lookback: the cap only bounds how much a member asks for.
-const weekday = (date: string) => ![0, 6].includes(new Date(`${date}T00:00:00Z`).getUTCDay());
-const shift = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 function lastWeekday(date: string): string {
-	while (!weekday(date)) date = shift(date, -1);
+	while (!weekday(date)) date = shiftDate(date, -1);
 	return date;
 }
 function tradingDayBefore(date: string): string {
-	do date = shift(date, -1);
-	while (!weekday(date) || HOLIDAYS.has(date));
+	do date = shiftDate(date, -1);
+	while (!isTradingDay(date));
 	return date;
 }
 function anyTradingDay(from: string, to: string): boolean {
-	for (let date = from; date <= to; date = shift(date, 1)) if (weekday(date) && !HOLIDAYS.has(date)) return true;
+	for (let date = from; date <= to; date = shiftDate(date, 1)) if (isTradingDay(date)) return true;
 	return false;
 }
 
@@ -62,7 +52,7 @@ export default async function intraday(input: unknown) {
 	if (from.at > to.at) throw new Error(`from 不能晚于 to，收到 ${fromText} 到 ${toText}`);
 	if (to.date > calendarToday) throw new Error(`to 不能晚于今天（纽约 ${calendarToday}），收到 ${toText}`);
 	let earliest = today;
-	for (let n = 1; n < LOOKBACK_DAYS; n++) earliest = lastWeekday(shift(earliest, -1));
+	for (let n = 1; n < LOOKBACK_DAYS; n++) earliest = lastWeekday(shiftDate(earliest, -1));
 	if (from.date < earliest) throw new Error(`最多回看 ${LOOKBACK_DAYS} 个交易日，from 最早 ${earliest}，收到 ${fromText}`);
 	const key = process.env["POLYGON_API_KEY"] ?? "";
 	if (key === "") throw new Error(MISSING_KEY);
