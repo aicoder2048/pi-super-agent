@@ -1,0 +1,14 @@
+{
+  "title": "现价快照",
+  "description": "向 Massive 要一次快照，回每只股票或 ETF 的现价、昨收、相对昨收的涨跌幅、当天成交量、数据时间（美东，行情延迟 15 分钟）和时段（盘中、盘前、盘后、休市）。不限自选股，盘前盘后照样回价格",
+  "effect": "read",
+  "secrets": ["POLYGON_API_KEY"],
+  "input": {
+    "symbols": { "type": "text", "title": "1 到 10 个美股或 ETF 代码，逗号分隔，例如 NVDA,SPY" },
+    "now": { "type": "text", "title": "只在回放时填：当作现在的时间（ISO 8601）；回答使用者时不填" }
+  },
+  "output": {
+    "quotes": { "type": "text", "title": "每只的 symbol、price、prevClose、changePct（%）、volume、at（美东数据时间）、session（时段）" },
+    "missing": { "type": "text", "title": "行情服务没有给出报价的代码" }
+  }
+}
