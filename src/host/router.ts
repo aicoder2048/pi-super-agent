@@ -292,6 +292,8 @@ interface PendingCard {
 	actionId?: string;
 	/** Tickets and triggers the card carries; counted as seen only once the card reaches a session. */
 	carries?: string[];
+	/** The trigger or ticket the card asks the Router to answer, and how many answers it had when the card arrived. */
+	answers?: { cause: string; before: number };
 }
 
 function carriedBy(notice: RouterNotice): string[] {
@@ -402,7 +404,14 @@ export class Router {
 		this.#delivered.clear();
 		clearTimeout(this.#retryTimer);
 		const queued = new Set(this.#buffer.map((p) => p.actionId));
-		const owed = [...this.#unacked].filter(([id]) => !queued.has(id)).map(([, { item }]) => item);
+		const owed: PendingCard[] = [];
+		for (const [id, { ack, item }] of this.#unacked) {
+			if (queued.has(id)) continue;
+			if (item.answers && this.#kernel.answersTo(item.answers.cause) > item.answers.before) {
+				ack();
+				this.#unacked.delete(id);
+			} else owed.push(item);
+		}
 		this.#buffer.unshift(...owed);
 	}
 
@@ -443,7 +452,8 @@ export class Router {
 	inject(notice: RouterNotice, actionId: string): Promise<void> {
 		const card = noticeCard(this.#kernel, notice, this.#rulesFor, actionId);
 		return new Promise((resolve) => {
-			const item = { card, actionId, carries: carriedBy(notice) };
+			const carries = carriedBy(notice);
+			const item = { card, actionId, carries, ...(carries[0] && { answers: { cause: carries[0], before: this.#kernel.answersTo(carries[0]) } }) };
 			this.#unacked.set(actionId, { ack: resolve, item });
 			this.#buffer.push(item);
 			this.#schedule();

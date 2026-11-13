@@ -1102,6 +1102,13 @@ export class Kernel {
 		return `${ticketId}「${row?.touched_private_at == null ? (row?.title ?? "") : `一个${this.moduleLabel(row.domain)}的私密任务`}」`;
 	}
 
+	/** Replies about a trigger or ticket, plus one when a trigger already backed a decision. */
+	answersTo(cause: string): number {
+		const replies = this.#get("SELECT COUNT(*) AS n FROM reply_receipts WHERE cause = ?", cause).n as number;
+		const decided = cause.startsWith("trg_") && this.#get("SELECT disposition FROM triggers WHERE id = ?", cause)?.disposition !== "to_router";
+		return replies + (decided ? 1 : 0);
+	}
+
 	routerSaw(id: string): void {
 		const heard = this.#privacyOf(id);
 		if (heard) this.#run("INSERT INTO router_private (at, module) VALUES (?, ?)", this.#now(), heard.module);
