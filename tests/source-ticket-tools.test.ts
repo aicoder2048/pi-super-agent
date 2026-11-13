@@ -338,3 +338,71 @@ test("旧状态库里别的任务已订阅邮件线程，以后的邮件不再�
 	assert.ok(s.inputsOf(mail).includes(next), "邮件开的任务收得到同线程的后续来信");
 	assert.ok(!s.inputsOf(request).includes(next));
 });
+
+function domainKernel(rules: Record<string, string>) {
+	const domains = new Map([
+		["stock-ta", { onRoster: true, digest: "d-stock" }],
+		["mail", { onRoster: true, digest: "d-mail" }],
+	]);
+	const db = openStore(":memory:");
+	const kernel = new Kernel({ db, clock: { now: () => Date.now() }, sourcePolicy: () => "candidate", domains: () => domains, ruleAllows: (rule, source) => rules[rule] === source });
+	let n = 0;
+	const trigger = (source: string, thread = `${++n}`) =>
+		kernel.submitTrigger({ source, externalId: `e${++n}`, threads: [{ id: source === "conversation" ? CONVERSATION_THREAD_ID : `thr_${source}:${thread}` }], sender: source, body: "把 NVDA 从自选股划掉", occurredAt: Date.now() }).triggerId;
+	const route = (decision: object) => kernel.route([decision as never])[0]!;
+	const open = (basis: Basis, triggerId: string | undefined, extra: { ruleId?: string; domain?: string; threads?: string[] } = {}) =>
+		route({ kind: "open_ticket", title: "t", basis, triggerId, brief: "b", ...extra });
+	const ticket = (...args: Parameters<typeof open>) => {
+		const result = open(...args);
+		assert.ok(result.ok, !result.ok ? result.reason : "");
+		return result.ticketId!;
+	};
+	const handOver = (triggerId: string, ticketId: string) => route({ kind: "hand_over", triggerId, ticketId });
+	const inputsOf = (ticketId: string) => (kernel.read(ticketId) as { recentInputs: { triggerId: string | null }[] }).recentInputs.map((i) => i.triggerId);
+	return { db, kernel, trigger, open, ticket, handOver, inputsOf };
+}
+
+test("邮件开的任务只能在 mail 领域或不带领域：使用者的规则从邮件开任务时幕僚长填 stock-ta 被拒，填 mail 或不填照常", () => {
+	const s = domainKernel({ "user/triage": FEED });
+	const refused = s.open("rule", s.trigger(FEED), { ruleId: "user/triage", domain: "stock-ta" });
+	assert.equal(refused.ok, false, "邮件开的任务落在 stock-ta 领域，能写自选股");
+	assert.match(!refused.ok ? refused.reason : "", /module feed mail\/inbox.*domain mail/);
+	assert.equal(s.kernel.getTicket(s.ticket("rule", s.trigger(FEED), { ruleId: "user/triage", domain: "mail" }))!.domain, "mail");
+	assert.equal(s.kernel.getTicket(s.ticket("rule", s.trigger(FEED), { ruleId: "user/triage" }))!.domain, null);
+});
+
+test("stock-ta 自己的规则写了来源 mail/inbox：从邮件开任务被拒，原因写规则属于 stock-ta", () => {
+	const s = domainKernel({ "stock-ta/from-mail": FEED });
+	const refused = s.open("rule", s.trigger(FEED), { ruleId: "stock-ta/from-mail" });
+	assert.equal(refused.ok, false, "stock-ta 的规则从邮件开了能写自选股的任务");
+	assert.match(!refused.ok ? refused.reason : "", /rule stock-ta\/from-mail belongs to domain stock-ta/);
+});
+
+test("邮件只进 mail 领域或不带领域的任务：旧状态库里邮件开的 stock-ta 任务收不到转交、线程也不直达；带 stock-ta 领域的推断任务也收不到", () => {
+	const s = domainKernel({ "user/triage": FEED });
+	const mail = s.ticket("rule", s.trigger(FEED, "x"), { ruleId: "user/triage", domain: "mail", threads: [`thr_${FEED}:x`] });
+	assert.ok(s.handOver(s.trigger(FEED), mail).ok, "mail 领域的任务收得到邮件");
+	const old = s.ticket("rule", s.trigger(FEED, "y"), { ruleId: "user/triage", threads: [`thr_${FEED}:y`] });
+	s.db.prepare("UPDATE tickets SET domain = 'stock-ta' WHERE id = ?").run(old);
+	const refused = s.handOver(s.trigger(FEED), old);
+	assert.equal(refused.ok, false, "邮件转交给了能写自选股的任务");
+	assert.match(!refused.ok ? refused.reason : "", /module feed mail\/inbox.*open a ticket for it/);
+	const later = s.trigger(FEED, "y");
+	assert.ok(!s.inputsOf(old).includes(later), "邮件直达了能写自选股的任务");
+	assert.equal(s.kernel.triggerLog().find((t) => t.id === later)?.disposition, "to_router");
+	assert.equal(s.handOver(s.trigger(FEED), s.ticket("inference", undefined, { domain: "stock-ta" })).ok, false, "邮件进了 stock-ta 领域的推断任务");
+	assert.ok(s.handOver(s.trigger(FEED), s.ticket("inference", undefined)).ok, "不带领域的推断任务收得到邮件");
+});
+
+test("旧状态库里使用者开的任务订了邮件线程：Worker 读不到这条线程，也读不到线程里后来的邮件；读自己收到的输入照常", () => {
+	const s = domainKernel({});
+	s.trigger(FEED, "rd");
+	const request = s.ticket("request", s.trigger("conversation"));
+	s.db.prepare("INSERT INTO subscriptions (ticket_id, thread_id) VALUES (?, ?)").run(request, `thr_${FEED}:rd`);
+	const later = s.trigger(FEED, "rd");
+	assert.throws(() => s.kernel.workerRead(request, later), /不属于本任务/, "有 bash 的任务读到了邮件正文");
+	assert.throws(() => s.kernel.workerRead(request, `thr_${FEED}:rd`), /不属于本任务/);
+	const said = s.trigger("conversation");
+	assert.ok(s.handOver(said, request).ok);
+	assert.equal((s.kernel.workerRead(request, said) as { type: string }).type, "trigger");
+});
