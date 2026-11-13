@@ -45,10 +45,12 @@ export function massiveBase(): string {
 export type Span = "minute" | "hour";
 export type Bar = [t: number, o: number, h: number, l: number, c: number, v: number, vw: number];
 
-/** Newest `limit` bars from `from` to `to` (New York dates), oldest first, as the host's MarketClient.bars asks. */
+/** Bars from `from` to `to` (New York dates), oldest first. Massive's `limit` caps the minute aggregates it reads, not the bars it returns. */
 export async function bars(baseUrl: string, key: string, symbol: string, span: Span, from: string, to: string, limit: number, signal?: AbortSignal): Promise<Bar[]> {
 	const url = `${baseUrl}/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/1/${span}/${from}/${to}?adjusted=true&sort=desc&limit=${limit}`;
-	const results = (await get(url, key, signal)).results;
+	const body = await get(url, key, signal);
+	if (body.status === "ERROR") throw new Error(`行情服务回了错误：${String(body.error ?? body.message ?? "没说原因").replace(/\s+/g, " ")}`);
+	const results = body.results;
 	return (Array.isArray(results) ? results : []).flatMap((raw): Bar[] => {
 		const b = object(raw);
 		const bar = [positive(b.t), positive(b.o), positive(b.h), positive(b.l), positive(b.c), typeof b.v === "number" ? b.v : undefined, positive(b.vw)];

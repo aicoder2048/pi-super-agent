@@ -407,7 +407,7 @@ test("intraday：一次分钟聚合请求，地址和参数照宿主的 bars；K
 	const fx = aggsFixture("minute");
 	tool.massive.answer({ status: 200, body: fx.aggs });
 	const out = output(await tool.intraday({ ...fx.input, now: fx.now }));
-	assert.deepEqual(tool.massive.hits.map((h) => [h.url, h.auth]), [[`${AGGS}/NVDA/range/1/minute/2026-11-12/2026-11-12?adjusted=true&sort=desc&limit=500`, "Bearer sk-test"]]);
+	assert.deepEqual(tool.massive.hits.map((h) => [h.url, h.auth]), [[`${AGGS}/NVDA/range/1/minute/2026-11-12/2026-11-12?adjusted=true&sort=desc&limit=50000`, "Bearer sk-test"]]);
 	assert.deepEqual(out, {
 		symbol: "NVDA",
 		span: "minute",
@@ -431,7 +431,7 @@ test("intraday：小时线跨两天时，当天的 VWAP 只算最新那一天", 
 	const fx = aggsFixture("hour");
 	tool.massive.answer({ status: 200, body: fx.aggs });
 	const out = output(await tool.intraday({ ...fx.input, now: fx.now }));
-	assert.equal(tool.massive.hits[0]?.url, `${AGGS}/SPY/range/1/hour/2026-11-11/2026-11-12?adjusted=true&sort=desc&limit=500`);
+	assert.equal(tool.massive.hits[0]?.url, `${AGGS}/SPY/range/1/hour/2026-11-11/2026-11-12?adjusted=true&sort=desc&limit=50000`);
 	assert.deepEqual(out["dayVwap"], { date: "2026-11-12", vwap: 669.96, since: "09:00" });
 	assert.equal((out["bars"] as unknown[]).length, 4);
 });
@@ -440,7 +440,7 @@ test("intraday：周末不填日期时查上一个交易日（周五）", async 
 	const tool = await intradayTool(t);
 	tool.massive.answer({ status: 200, body: { status: "OK", results: [] } });
 	await tool.intraday({ symbol: "nvda", span: "minute", now: new Date(ny("2026-11-14", "11:00")).toISOString() });
-	assert.equal(tool.massive.hits[0]?.url, `${AGGS}/NVDA/range/1/minute/2026-11-13/2026-11-13?adjusted=true&sort=desc&limit=500`);
+	assert.equal(tool.massive.hits[0]?.url, `${AGGS}/NVDA/range/1/minute/2026-11-13/2026-11-13?adjusted=true&sort=desc&limit=50000`);
 });
 
 test("intraday：回看超过 4 个交易日、limit 超过 500、span 不是 minute 或 hour，都一行拒绝，不发请求", async (t) => {
@@ -470,13 +470,78 @@ test("intraday：周一往回数 4 个交易日跨过周末，从上周三起都
 	assert.equal(tool.massive.hits.length, 1);
 });
 
-test("intraday：给满 limit 根时标明 truncated，说更早的没给", async (t) => {
+const firstAt = (out: Record<string, unknown>) => (out["bars"] as string[][])[0]?.[0];
+const lastAt = (out: Record<string, unknown>) => (out["bars"] as string[][]).at(-1)?.[0];
+
+test("intraday：三天的小时线全给（04:00 起），limit 截掉更早的才标 truncated，正好 limit 根不标", async (t) => {
 	const tool = await intradayTool(t);
-	const fx = aggsFixture("minute");
+	const fx = aggsFixture("hour-days");
 	tool.massive.answer({ status: 200, body: fx.aggs });
-	const out = output(await tool.intraday({ ...fx.input, limit: 4, now: fx.now }));
-	assert.equal(out["truncated"], true);
-	assert.match(tool.massive.hits[0]?.url ?? "", /limit=4$/);
+	const all = output(await tool.intraday({ ...fx.input, now: fx.now }));
+	assert.equal(tool.massive.hits[0]?.url, `${AGGS}/NVDA/range/1/hour/2026-11-10/2026-11-12?adjusted=true&sort=desc&limit=50000`);
+	assert.deepEqual([(all["bars"] as unknown[]).length, firstAt(all), lastAt(all), all["truncated"]], [48, "2026-11-10 04:00", "2026-11-12 19:00", false]);
+	const cut = output(await tool.intraday({ ...fx.input, limit: 20, now: fx.now }));
+	assert.deepEqual([(cut["bars"] as unknown[]).length, firstAt(cut), lastAt(cut), cut["truncated"]], [20, "2026-11-11 16:00", "2026-11-12 19:00", true]);
+	const exact = output(await tool.intraday({ ...fx.input, limit: 48, now: fx.now }));
+	assert.equal(exact["truncated"], false);
+});
+
+test("intraday：过去某天的早盘分钟线，from、to 带纽约时刻就只给那一段", async (t) => {
+	const tool = await intradayTool(t);
+	const fx = aggsFixture("minute-day");
+	tool.massive.answer({ status: 200, body: fx.aggs });
+	const out = output(await tool.intraday({ ...fx.input, now: fx.now }));
+	assert.equal(tool.massive.hits[0]?.url, `${AGGS}/NVDA/range/1/minute/2026-11-12/2026-11-12?adjusted=true&sort=desc&limit=50000`);
+	assert.deepEqual([out["from"], out["to"], (out["bars"] as unknown[]).length, out["truncated"]], ["2026-11-12 09:30", "2026-11-12 10:00", 31, false]);
+	assert.deepEqual((out["bars"] as unknown[])[0], ["2026-11-12 09:30", 151.005, 151.38, 149.23, 149.27, 33303449.43127, 150.5265]);
+	assert.equal(lastAt(out), "2026-11-12 10:00");
+	const day = output(await tool.intraday({ symbol: "NVDA", span: "minute", to: "2026-11-12", now: fx.now }));
+	assert.deepEqual([(day["bars"] as unknown[]).length, firstAt(day), day["truncated"]], [500, "2026-11-12 11:40", true]);
+});
+
+test("intraday：回放时填的 now 之后的 K 线不给，小时线只给到 now 前已走完的那根", async (t) => {
+	const tool = await intradayTool(t);
+	const hours = aggsFixture("hour-days");
+	tool.massive.answer({ status: 200, body: hours.aggs });
+	const hour = output(await tool.intraday({ ...hours.input, now: new Date(ny("2026-11-12", "12:30")).toISOString() }));
+	assert.equal(lastAt(hour), "2026-11-12 11:00");
+	const minutes = aggsFixture("minute-day");
+	tool.massive.answer({ status: 200, body: minutes.aggs });
+	const minute = output(await tool.intraday({ symbol: "NVDA", span: "minute", now: new Date(ny("2026-11-12", "09:45")).toISOString() }));
+	assert.deepEqual([firstAt(minute), lastAt(minute)], ["2026-11-12 04:00", "2026-11-12 09:44"]);
+});
+
+test("intraday：to 晚于今天、时刻写错格式，一行拒绝，不发请求", async (t) => {
+	const tool = await intradayTool(t);
+	const now = new Date(ny("2026-11-13", "11:00")).toISOString();
+	const future = noteOf(await tool.intraday({ symbol: "NVDA", span: "minute", to: "2026-11-16", now }));
+	assert.match(future, /to 不能晚于今天.*2026-11-13/);
+	const badTime = noteOf(await tool.intraday({ symbol: "NVDA", span: "minute", from: "2026-11-12 9:30", now }));
+	assert.match(badTime, /2026-11-12 09:30/);
+	const backwards = noteOf(await tool.intraday({ symbol: "NVDA", span: "minute", from: "2026-11-12 10:00", to: "2026-11-12 09:30", now }));
+	assert.match(backwards, /from 不能晚于 to/);
+	assert.equal(tool.massive.hits.length, 0);
+});
+
+test("intraday：行情服务回 200 但 status 是 ERROR 时一行说出它的错误，不说休市", async (t) => {
+	const tool = await intradayTool(t);
+	tool.massive.answer({ status: 200, body: { status: "ERROR", error: "Could not parse the time parameter" } });
+	const note = noteOf(await tool.intraday({ symbol: "NVDA", span: "minute", now: new Date(ny("2026-11-13", "11:00")).toISOString() }));
+	assert.match(note, /行情服务回了错误.*Could not parse the time parameter/);
+	assert.equal(note.split("\n").length, 1);
+});
+
+test("intraday：交易日没有 K 线时说代码可能不对，凌晨 04:00 前说盘前还没开始，时段里没有 K 线时说这段没有，都不说休市", async (t) => {
+	const tool = await intradayTool(t);
+	tool.massive.answer({ status: 200, body: { ticker: "ZZZZQX", queryCount: 0, resultsCount: 0, status: "OK" } });
+	const unknown = output(await tool.intraday({ symbol: "ZZZZQX", span: "hour", now: new Date(ny("2026-11-13", "11:00")).toISOString() }));
+	assert.match(String(unknown["note"]), /ZZZZQX.*代码.*quote/);
+	const early = output(await tool.intraday({ symbol: "NVDA", span: "minute", now: new Date(ny("2026-11-13", "03:00")).toISOString() }));
+	assert.match(String(early["note"]), /04:00.*2026-11-12/);
+	tool.massive.answer({ status: 200, body: aggsFixture("minute-day").aggs });
+	const quiet = output(await tool.intraday({ symbol: "NVDA", span: "minute", from: "2026-11-12 02:00", to: "2026-11-12 03:00", now: new Date(ny("2026-11-13", "11:00")).toISOString() }));
+	assert.match(String(quiet["note"]), /02:00.*03:00.*这段没有 K 线/);
+	for (const out of [unknown, early, quiet]) assert.doesNotMatch(String(out["note"]), /休市/);
 });
 
 test("intraday：没有 POLYGON_API_KEY 时一行说明去哪里加，不发请求", async (t) => {

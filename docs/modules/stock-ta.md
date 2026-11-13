@@ -19,7 +19,7 @@ stock-ta 让 Pi Super Agent 回答美股的报价和技术面问题，例如「N
 `quote` 和 `intraday` 现查 Massive，只读，不写模块数据，用宿主密钥文件里的 `POLYGON_API_KEY`。没有这把密钥时一行说明去哪里加，不发请求。
 
 - **`quote`。** 每次一个快照请求，1 到 10 个代码。
-- **`intraday`。** 每次一个分钟聚合请求（`/v2/aggs/ticker/{代码}/range/1/{minute 或 hour}/{from}/{to}?adjusted=true&sort=desc`），和宿主 us-market 的 `bars` 一样。`from`、`to` 是纽约日期，不填是今天，周末是上一个交易日；最多回看 4 个交易日（只跳过周末，节假日也算一天），一次最多 500 根，取离 `to` 最近的那些，给满时标 `truncated`。每根 K 线带 Massive 给的 VWAP，另算最新那一天的 VWAP（`dayVwap`）。超过上限一行拒绝，不发请求。
+- **`intraday`。** 每次一个分钟聚合请求（`/v2/aggs/ticker/{代码}/range/1/{minute 或 hour}/{from}/{to}?adjusted=true&sort=desc&limit=50000`）。Massive 的 `limit` 限的是它读的分钟数据，不是回几根，所以请求要得大，工具自己只留离 `to` 最近的 500 根以内，真截掉了更早的才标 `truncated`。`from`、`to` 是纽约日期，可带时刻（`2026-11-12 09:30`），工具在本地筛出那一段，这样也能看过去某天的开盘；不填是今天，周末是上一个交易日，`to` 不能晚于今天；最多回看 4 个交易日（只跳过周末，节假日也算一天）。回放时填的 `now` 之后还没走完的 K 线不给。每根 K 线带 Massive 给的 VWAP，另算最新那一天的 VWAP（`dayVwap`）。超过上限一行拒绝，不发请求。没有 K 线时一行说明是休市、代码可能不对、盘前 04:00 还没开始，还是那段时刻里没有。
 - **一把密钥，几路请求。** 报价 feed（交易时段每 60 秒一个快照请求）、`scan` feed（每个交易日收盘后扫一次自选股）、`quote` 和 `intraday`（按需，每次一个）共用这一把 `POLYGON_API_KEY`。Starter 套餐没有次数上限；Massive 回 HTTP 429 时工具说「请求太多，稍后再查」，盘面的技能让它等手上的查询回来再重试一次，同时在途的联网查询最多两个。
 - 两个工具都在 15 秒内放弃并说明，宿主的 20 秒上限之前一定结束。读的 Massive 地址和报价 feed 是同一个（`feeds/quotes/feed.json` 的 `settings.baseUrl`）。
 
