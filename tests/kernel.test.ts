@@ -2405,6 +2405,47 @@ test("升级：旧库里第一次有私密数据之后幕僚长写的回复，�
 	}
 });
 
+test("升级：旧库里第一次有私密数据之后幕僚长开的任务、转交或补话过的任务、写下忽略理由的触发，打开后都算私密；之前的不算", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-private-seed-"));
+	try {
+		const path = join(dir, "state.db");
+		const first = setup({ path, domains: DOMAINS });
+		const earlyTicket = first.open("request", { title: "查天气" });
+		const handed = first.open("request", { title: "查航班" });
+		const noted = first.open("request", { title: "查快递" });
+		const ignoreTrigger = () => {
+			const triggerId = first.trigger({ body: "广告" }).triggerId;
+			assert.ok(first.kernel.route([{ kind: "ignore", triggerId, reason: "和 CEA 4.2 无关" }])[0]!.ok);
+			return triggerId;
+		};
+		const earlyIgnored = ignoreTrigger();
+		first.clock.t += 1000;
+		const health = first.open("request", { title: "记 CEA", domain: "mail" });
+		first.kernel.touchPrivate(health);
+		first.clock.t += 1000;
+		const opened = first.open("request", { title: "解释 CEA 4.2" });
+		assert.ok(first.kernel.route([{ kind: "hand_over", triggerId: first.say("按 4.2 改").triggerId, ticketId: handed }])[0]!.ok);
+		assert.ok(first.kernel.note({ ticketId: noted, text: "CEA 是 4.2" }).ok);
+		const lateIgnored = ignoreTrigger();
+		first.db.exec("DROP TABLE router_private; DROP TABLE private_text");
+		first.db.close();
+
+		const second = setup({ path, domains: DOMAINS });
+		const privateNow = (id: string) => second.kernel.touchedPrivate(id);
+		assert.deepEqual([earlyTicket, opened, handed, noted].map(privateNow), [false, true, true, true]);
+		const sawPrivate = (triggerId: string) => {
+			second.kernel.routerStartedFresh();
+			second.kernel.routerSaw(triggerId);
+			return second.kernel.lastPrivate();
+		};
+		assert.equal(sawPrivate(earlyIgnored), null, "私密数据之前写的忽略理由");
+		assert.deepEqual(sawPrivate(lateIgnored), { module: "mail" }, "私密数据之后写的忽略理由");
+		second.db.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("别处提到任务时：普通任务写标题，私密任务只写它属于哪个模块", () => {
 	const s = setup({ domains: DOMAINS });
 	const plain = s.open("request", { title: "查天气" });

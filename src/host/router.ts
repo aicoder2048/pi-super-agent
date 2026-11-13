@@ -306,6 +306,7 @@ export class Router {
 	#session: RouterSession;
 	readonly #open: (fresh: boolean) => Promise<RouterSession>;
 	#startOver = false;
+	#opening = false;
 	readonly #kernel: Kernel;
 	readonly #onError: (error: unknown) => void;
 	readonly #models: RouterModels;
@@ -454,9 +455,11 @@ export class Router {
 	// first is starting gets appended after the run, so idle batches go out as one triggering message.
 	#flush(): void {
 		this.#flushScheduled = false;
+		// Cards that arrive while the fresh session opens wait for it; the old session would take them and never answer.
+		if (this.#opening) return;
 		if (this.#startOver && !this.#busy && !this.session.isStreaming) {
 			this.#startOver = false;
-			this.#busy = true;
+			this.#opening = true;
 			const old = this.session;
 			void this.#open(true)
 				.then((fresh) => {
@@ -465,7 +468,7 @@ export class Router {
 				})
 				.catch(this.#onError)
 				.finally(() => {
-					this.#busy = false;
+					this.#opening = false;
 					this.#flush();
 				});
 			return;
@@ -525,14 +528,17 @@ export class Router {
 	}
 }
 
-/** A session from before the latest 清屏 is never continued, so a restart cannot bring the old context back. */
+/**
+ * A session from before the latest 清屏 is never continued, so a restart cannot bring the old context back. The fresh
+ * session has no file until its first turn, so the newest file on disk can be the one the 清屏 left behind.
+ */
 function openSessionManager(options: RouterOptions, fresh: boolean): SessionManager {
 	if (!options.sessionDir) return SessionManager.inMemory(options.cwd);
 	if (fresh) return SessionManager.create(options.cwd, options.sessionDir);
 	const recent = SessionManager.continueRecent(options.cwd, options.sessionDir);
-	const clearedAt = options.kernel.lastClearAt();
+	const startOverAt = options.kernel.lastStartOverAt();
 	const startedAt = Date.parse(recent.getHeader()?.timestamp ?? "");
-	return clearedAt !== null && startedAt < clearedAt ? SessionManager.create(options.cwd, options.sessionDir) : recent;
+	return startOverAt !== null && startedAt < startOverAt ? SessionManager.create(options.cwd, options.sessionDir) : recent;
 }
 
 const hashOf = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);

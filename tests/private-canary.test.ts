@@ -282,6 +282,18 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 	await host.stop();
 	await start();
 	expect((await said("清屏再重启后说话", "早上好")).includes(`回：${FORGOT}`), "清屏再重启后普通回复完整发到 Telegram");
+
+	host.clearConversation();
+	const letters = () => host.kernel.listTickets().filter((r) => r.title.startsWith("看信")).length;
+	const lettersBefore = letters();
+	await flow("清屏后私密 feed 触发，推断任务不回复", () => host.kernel.submitTrigger({ source: "personal-health/hospital-mail", externalId: "mail-3", threads: [{ id: "thr_recheck" }], sender: "hospital", body: `复查单 ${CANARY}`, occurredAt: Date.now(), private: true }), () => letters() > lettersBefore);
+	await host.router.waitForIdle();
+	assert.equal(host.kernel.conversation(500).length, 0, "对话栏是空的");
+	host.clearConversation();
+	await until(() => host.kernel.lastPrivate() === null, "空对话清屏后幕僚长换了新会话");
+	await host.stop();
+	await start();
+	expect((await said("空对话清屏再重启后说话", "刚才是多少")).join() === `回：${FORGOT}`, "空对话清屏再重启后不接回清屏前的会话，回复完整发到 Telegram");
 	await new Promise((r) => setTimeout(r, 300));
 	sweep("收尾");
 

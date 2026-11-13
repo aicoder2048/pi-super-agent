@@ -981,11 +981,12 @@ export class Kernel {
 	}
 
 	/**
-	 * 清屏: hides every line that is on the screens now. It writes no trigger, wakes no one and changes no conversation row.
-	 * Returns null when nothing on screen was left to hide, and then writes nothing.
+	 * 清屏: hides every line that is on the screens now and records that the Router starts over, even when nothing was on screen.
+	 * It writes no trigger, wakes no one and changes no conversation row. Returns null when nothing on screen was left to hide.
 	 */
 	clearConversation(limit = 50): Cleared | null {
 		return this.#tx(() => {
+			this.#run("INSERT INTO router_start_overs (at) VALUES (?)", this.#now());
 			const last = this.lastClearAt();
 			const at = last === null ? this.#now() : Math.max(this.#now(), last + 1);
 			const { changes } = this.#run(
@@ -999,6 +1000,11 @@ export class Kernel {
 
 	lastClearAt(): number | null {
 		return this.#get("SELECT MAX(hidden_at) AS at FROM conversation_hidden")?.at ?? null;
+	}
+
+	/** A Router session started before this was asked to start over and must never be continued. */
+	lastStartOverAt(): number | null {
+		return this.#get("SELECT MAX(at) AS at FROM router_start_overs")?.at ?? null;
 	}
 
 	#lines(where: string, limit: number): ConversationLine[] {

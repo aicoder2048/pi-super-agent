@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Host } from "../src/host/host.ts";
 import type { Router } from "../src/host/router.ts";
-import { defaultWorkerModels, FakeSpawner, fauxRouter, openOnConversation, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
+import { defaultWorkerModels, FakeSpawner, fauxRouter, ids, openOnConversation, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
 
 const opensTickets: Brain = (cards) => cards.flatMap((c) => (c.startsWith("[对话]") ? openOnConversation(c) : []));
 
@@ -85,4 +85,43 @@ test("清屏时对话里一行都没有，也换一个新的 Router 会话", asy
 	assert.equal(host.kernel.conversation().length, 0);
 	host.clearConversation();
 	await until(() => session().sessionManager.getSessionId() !== oldId, "清屏后换了会话");
+});
+
+test("对话里一行都没有时清屏，宿主重启后也不接回清屏前的会话", async (t) => {
+	const stateDir = tempStateDir();
+	const first = await hostWith(stateDir, opensTickets);
+	t.after(() => first.host.stop());
+	const session = () => (first.host.router as Router).session;
+	first.host.kernel.submitTrigger({ source: "generic", externalId: "mail-1", threads: [{ id: "thr_mail" }], sender: "mail", body: "清屏之间来的信", occurredAt: Date.now() });
+	await until(() => JSON.stringify(session().messages).includes("清屏之间来的信") && !session().isStreaming, "信进了会话");
+	const holding = session().sessionManager.getSessionId();
+	assert.equal(first.host.kernel.conversation().length, 0);
+	first.host.clearConversation();
+	await until(() => session().sessionManager.getSessionId() !== holding, "空对话清屏也换了会话");
+	await first.host.stop();
+
+	const second = await hostWith(stateDir, opensTickets);
+	t.after(() => second.host.stop());
+	const restarted = (second.host.router as Router).session;
+	assert.notEqual(restarted.sessionManager.getSessionId(), holding);
+	assert.ok(!JSON.stringify(restarted.messages).includes("清屏之间来的信"), "重启后没有接回空对话清屏前的会话");
+});
+
+test("清屏后 Router 正在开新会话时说的话，送进新会话并得到回复", async (t) => {
+	const echo: Brain = (cards) => cards.flatMap((c) => (c.startsWith("[对话]") ? [{ name: "reply", args: { text: `回：${c.split("使用者：")[1]!.split("\n")[0]}`, cause: ids(c, "trg") } }] : []));
+	const { host } = await hostWith(tempStateDir(), echo);
+	t.after(() => host.stop());
+	const replies = () => [...host.kernel.conversation(500), ...(host.kernel.cleared(500)?.lines ?? [])].filter((l) => l.who === "router").map((l) => l.text);
+	host.say("零");
+	await until(() => replies().includes("回：零"), "第一句");
+	const session = () => (host.router as Router).session;
+	const oldId = session().sessionManager.getSessionId();
+	host.clearConversation();
+	const said: string[] = [];
+	while (session().sessionManager.getSessionId() === oldId) {
+		said.push(`话${said.length}`);
+		host.say(said.at(-1)!);
+		await new Promise((r) => setImmediate(r));
+	}
+	await until(() => said.every((s) => replies().includes(`回：${s}`)), `新会话打开前后说的 ${said.length} 句话都得到回复`, 5000);
 });
