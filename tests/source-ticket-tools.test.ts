@@ -331,6 +331,7 @@ test("旧状态库里别的任务已订阅邮件线程，以后的邮件不再�
 	const later = s.trigger(FEED, "old");
 	assert.ok(!s.inputsOf(request).includes(later), "使用者开的任务收到了邮件");
 	assert.ok(!s.inputsOf(stock).includes(later), "股票的任务收到了邮件");
+	assert.equal(s.kernel.triggerLog().find((t) => t.id === later)?.disposition, "to_router");
 
 	s.db.prepare("INSERT INTO subscriptions (ticket_id, thread_id) VALUES (?, ?)").run(mail, `thr_${FEED}:old`);
 	const next = s.trigger(FEED, "old");
