@@ -1,11 +1,4 @@
-/**
- *   node --import ./src/pi-runtime.mjs docs/modules/evidence/r1-live.ts [lanes|perf] [outDir]
- *
- * No real model and no network. Lanes 1 to 5, 9 and 10 replay days from tests/fixtures/us-market-day/ through
- * docs/modules/evidence/replay-day.ts. Lanes 6 and 8 run an in-process host with a fake clock, a fake Massive
- * server, a fake Router and Worker, and a fake Telegram. Trunk is a detached worktree of origin/main at
- * <outDir>/trunk. Each lane uses its own throwaway state directory and deletes it.
- */
+// node --import ./src/pi-runtime.mjs docs/modules/evidence/r1-live.ts [lanes|perf] [outDir]
 import { spawnSync } from "node:child_process";
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -216,7 +209,6 @@ async function lanes(): Promise<void> {
 	console.log(results.join("\n"));
 }
 
-/** Writes us-market tripwires the way trunk's tripwire tool does (applyEdit, serializeBook, kernel user data), on a trunk stock-ta with the nine default symbols, backs up data.db as the deploy step does, then puts head's package in place. */
 async function trunkTripwire(state: string, day: Record<string, unknown>, more: { symbol: string; condition: Record<string, unknown> }[] = []): Promise<string> {
 	const { applyEdit, parseSym, serializeBook } = await import(join(TRUNK, "src/sources/market/tripwires.ts"));
 	const { Kernel } = await import(join(TRUNK, "src/kernel/kernel.ts"));
@@ -265,7 +257,6 @@ async function trunkHost(state: string): Promise<{ started: boolean; note: strin
 	}
 }
 
-/** g5-live's feed host, with a fake Telegram and a Worker that sets conditions the way a request ticket does. */
 async function stockTaHost() {
 	const { startLiveModules } = await import(join(HEAD, "src/host/live-modules.ts"));
 	const { Modules } = await import(join(HEAD, "src/modules.ts"));

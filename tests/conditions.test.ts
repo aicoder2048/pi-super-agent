@@ -407,7 +407,7 @@ const quotes = (t: TestContext) => {
 	const digest = w.keep(STOCK, STOCK_TA);
 	const me = w.caller(STOCK, digest);
 	const setMove = (atLeast: number, direction?: string, id?: string): Request => ({ kind: "watch", collection: "quotes" as never, op: "set", watch: { key: "NVDA", condition: { when: "day-move", atLeast, ...(direction && { direction }) } as never, ...(id && { id }) } });
-	/** One NVDA quote against a previous close of 100, at New York time `hhmm` on `day`. */
+	// `hhmm` is New York time, -05:00 in November.
 	const quote = (price: number, hhmm: string, day = "2026-11-12", prevClose: number | null = 100) => ({ symbol: "NVDA", price, ...(prevClose !== null && { prevClose }), changePct: Number((price / (prevClose ?? price) * 100 - 100).toFixed(2)), at: `${day}T${String(Number(hhmm.slice(0, 2)) + 5).padStart(2, "0")}:${hhmm.slice(3)}:00.000Z` });
 	const writeQuotes = async (...rows: ReturnType<typeof quote>[]) => {
 		const alerts: Alert[] = [];

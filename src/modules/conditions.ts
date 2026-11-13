@@ -4,7 +4,7 @@ import type { Condition, Json, Watch } from "./protocol.ts";
 
 export type SetCondition = Watch & { collection: string; setAt: string };
 
-/** Oldest first; the last is the row just written. `prevClose` is read only when the collection names `watch.prevClose`. */
+/** Oldest first; the last is the row just written. */
 export type Point = { value: number; at: string; from: string; prevClose?: number | null };
 
 type WatchSpec = NonNullable<CollectionDescriptor["watch"]>;
@@ -19,9 +19,7 @@ type Spec<K extends Kind> = {
 	need(c: Of<K>): number;
 	describe(c: Of<K>): string;
 	met(c: Of<K>, points: readonly Point[]): string | undefined;
-	/** What makes a firing distinct, when it is not the row: the host posts one alert per value. */
-	once?(c: Of<K>, point: Point, zone: string | undefined): string;
-	/** How the alert shows the row's value. */
+	firingKey?(c: Of<K>, point: Point, zone: string | undefined): string;
 	shown?(point: Point): string;
 };
 
@@ -155,7 +153,7 @@ const SPECS: { [K in Kind]: Spec<K> } = {
 			const move = dayMoveOf(c, point);
 			return move === undefined ? undefined : `相对昨收 ${point.prevClose!.toFixed(2)} ${move >= 0 ? "涨" : "跌"}了 ${Math.abs(move).toFixed(2)}%，到了你设的${directionWord[c.direction]} ${c.atLeast}% 提醒线`;
 		},
-		once: (c, point, zone) => `${dayOf(point.at, zone)}:${point.value >= point.prevClose! ? "up" : "down"}:${c.atLeast}`,
+		firingKey: (c, point, zone) => `${dayOf(point.at, zone)}:${point.value >= point.prevClose! ? "up" : "down"}:${c.atLeast}`,
 		shown: (point) => point.value.toFixed(2),
 	},
 	"crosses-average": {
@@ -205,8 +203,7 @@ export const describe = (c: Condition) => specOf(c).describe(c);
 
 export const met = (c: Condition, points: readonly Point[]) => specOf(c).met(c, points);
 
-/** The alert's id: a condition fires once per row, or once per what its `once` names. */
-export const firingId = (c: SetCondition, points: readonly Point[], rowId: string | number, zone: string | undefined) => `${c.id}:${specOf(c.condition).once?.(c.condition, points.at(-1)!, zone) ?? rowId}`;
+export const firingId = (c: SetCondition, points: readonly Point[], rowId: string | number, zone: string | undefined) => `${c.id}:${specOf(c.condition).firingKey?.(c.condition, points.at(-1)!, zone) ?? rowId}`;
 
 // 1000: the kernel's host_lines length check.
 const oneLine = (text: string) => [...text.replace(/\s+/g, " ").trim()].slice(0, 1000).join("");

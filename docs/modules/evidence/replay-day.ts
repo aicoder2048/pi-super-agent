@@ -1,10 +1,3 @@
-/**
- * Replays a trading day from tests/fixtures/us-market-day/ minute by minute through stock-ta's quotes feed, with a
- * fake clock passed as the feed input's `now`. Alerts go through the kernel's host-line dedupe the way the host
- * posts them, so a repeat of the same firing is dropped. `tree` is the checkout whose code runs (this tree or a
- * worktree of trunk); a trunk handler simply ignores `now`. Scenario times are New York wall times in November,
- * all after daylight saving ended, so they are -05:00.
- */
 import { cpSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -20,6 +13,7 @@ export type Posted = { minute: string; externalId: string; text: string };
 export type Watched = { key: string; condition: Record<string, unknown>; id?: string };
 
 export const scenario = (name: string): Scenario => JSON.parse(readFileSync(join(HEAD, "tests/fixtures/us-market-day", `${name}.json`), "utf8"));
+// Scenario days are all in November after daylight saving ended.
 export const ny = (date: string, hhmm: string) => Date.parse(`${date}T${hhmm}:00-05:00`);
 export const nyMinute = (ms: number) => new Date(ms - 5 * 60 * MINUTE).toISOString().slice(5, 16).replace("T", " ");
 
@@ -32,8 +26,6 @@ export function ticks(s: Scenario): Tick[] {
 
 const tickerRow = (ticker: string, price: number, prevClose: number, at: number) => ({ ticker, lastTrade: { p: price, t: at * 1_000_000 }, min: { c: price, t: at, v: 1000 }, day: { c: price, v: 5_000_000 }, prevDay: { c: prevClose, v: 39_000_000 } });
 
-/** One stock-ta host in `state` running `tree`'s code. `restart()` drops every in-memory object and opens the state again. */
-/** `watchlist` is added to what the state already lists; the feed asks for every listed symbol, as it does in the host. */
 export async function stockTaDay(tree: string, state: string, watchlist: readonly string[]) {
 	const { Modules } = await import(join(tree, "src/modules.ts"));
 	const { servedAsHost } = await import(join(tree, "tests/helpers/fakes.ts"));
@@ -65,7 +57,6 @@ export async function stockTaDay(tree: string, state: string, watchlist: readonl
 			host.db.close();
 			host = open();
 		},
-		/** Runs the feed once at `tick.now` and returns the alerts the host would post. */
 		async round(tick: Tick): Promise<{ ok: boolean; records: number; notices: string[]; alerts: Posted[]; ms: number }> {
 			clock.now = tick.now;
 			const tickers = Object.entries(tick.prices).map(([symbol, price]) => tickerRow(symbol, price, tick.prevClose[symbol]!, tick.at));
@@ -93,7 +84,6 @@ export async function stockTaDay(tree: string, state: string, watchlist: readonl
 	};
 }
 
-/** Replays `s` and returns every alert posted, with the minute of its data time. `restartAfter` restarts the host after that many rounds. */
 export async function replay(tree: string, state: string, s: Scenario, watchlist: readonly string[], conditions: readonly Watched[], restartAfter?: number): Promise<{ posted: Posted[]; rows: number; notices: string[] }> {
 	const day = await stockTaDay(tree, state, watchlist);
 	for (const c of conditions) day.watch(c);
@@ -107,7 +97,6 @@ export async function replay(tree: string, state: string, s: Scenario, watchlist
 	return { posted: day.posted, rows, notices };
 }
 
-/** us-market's 盯盘条件 on the same day, from `tree`'s src/sources/market: the minutes it fires, deduped by its firingId. */
 export async function oldTripwire(tree: string, s: Scenario, wire: { symbol: string; condition: Record<string, unknown> }): Promise<Posted[]> {
 	const { checkIntraday, firingId, alertText } = await import(join(tree, "src/sources/market/tripwires.ts"));
 	const { parseQuote } = await import(join(tree, "src/sources/market/client.ts"));

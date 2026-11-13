@@ -395,7 +395,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 				}
 				const id = request.op === "remove" ? request.id : request.watch.id;
 				const before = id === undefined ? undefined : conditionsOf(db, name).find((c) => c.id === id);
-				// The user may name a new condition's id, so a migration can find its own on a rerun. A Worker's unknown id is a typo.
+				// Only the user (the page, or a CLI acting as it) may name a new id, so the us-market migration finds its own on a rerun.
 				if (id !== undefined && before === undefined && (request.op === "remove" || who !== "page")) throw new DataInputError(`「${name}」没有编号为 ${id} 的提醒条件，现有的用 list 看`);
 				if (request.op === "remove") {
 					db.prepare("DELETE FROM _conditions WHERE id = ?").run(id!);

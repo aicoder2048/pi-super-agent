@@ -158,66 +158,66 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 
 **Files.**
 
-- [ ] Edit `src/modules/protocol.ts`。`Condition` 加 `day-move`，`Watch` 加可选的 `prevClose`（行里昨收那一列的名字）和 `label`（提醒时间后面的一句说明）。
-- [ ] Edit `src/modules/feed-runner.ts`，`feedInput` 加 `now`（宿主时钟的 ISO 时间）。
-- [ ] Edit `src/modules/conditions.ts`，加 `day-move` 的 spec，改 `alertText`。
-- [ ] Edit `src/modules/instance-data.ts`，`day-move` 按美东交易日、方向和阈值去重。
-- [ ] Edit `src/modules/validate.ts`，`watch.prevClose` 必须是这个 collection 里的数字字段。
-- [ ] Edit `docs/modules/examples/stock-ta/data/quotes/collection.json`（加 `prevClose` 字段，`watch` 加 `"prevClose": "prevClose"` 和 `"label": "延迟行情"`）和 `feeds/quotes/index.ts`（写 `prevClose`，丢掉不新鲜的报价）。
-- [ ] Create `src/cli/migrate-us-market.ts`。Edit `justfile`，加 `just migrate-us-market`。
-- [ ] Edit `docs/modules/architecture/design.md` 第 2 节、`docs/modules/module-user-guide.md`、`docs/modules/stock-ta.md`（「从 us-market 搬过来」一节）。
-- [ ] Edit `tests/conditions.test.ts`、`tests/stock-ta-quotes.test.ts`、`tests/feed-runner.test.ts`。Create `tests/migrate-us-market.test.ts`。
-- [ ] Create `docs/modules/evidence/replay-day.ts`、`docs/modules/evidence/r1-live.ts`、`tests/fixtures/us-market-day/`。
+- [x] Edit `src/modules/protocol.ts`。`Condition` 加 `day-move`，`Watch` 加可选的 `prevClose`（行里昨收那一列的名字）和 `label`（提醒时间后面的一句说明）。
+- [x] Edit `src/modules/feed-runner.ts`，`feedInput` 加 `now`（宿主时钟的 ISO 时间）。
+- [x] Edit `src/modules/conditions.ts`，加 `day-move` 的 spec，改 `alertText`。
+- [x] Edit `src/modules/instance-data.ts`，`day-move` 按美东交易日、方向和阈值去重。
+- [x] Edit `src/modules/validate.ts`，`watch.prevClose` 必须是这个 collection 里的数字字段。
+- [x] Edit `docs/modules/examples/stock-ta/data/quotes/collection.json`（加 `prevClose` 字段，`watch` 加 `"prevClose": "prevClose"` 和 `"label": "延迟行情"`）和 `feeds/quotes/index.ts`（写 `prevClose`，丢掉不新鲜的报价）。
+- [x] Create `src/cli/migrate-us-market.ts`。Edit `justfile`，加 `just migrate-us-market`。
+- [x] Edit `docs/modules/architecture/design.md` 第 2 节、`docs/modules/module-user-guide.md`、`docs/modules/stock-ta.md`（「从 us-market 搬过来」一节）。
+- [x] Edit `tests/conditions.test.ts`、`tests/stock-ta-quotes.test.ts`、`tests/feed-runner.test.ts`。Create `tests/migrate-us-market.test.ts`。
+- [x] Create `docs/modules/evidence/replay-day.ts`、`docs/modules/evidence/r1-live.ts`、`tests/fixtures/us-market-day/`。
 
 **Build.**
 
-- [ ] `feedInput` 加 `now`。handler 不再读自己的挂钟，回放器和测试用假时钟就能重现新鲜度、换日、节假日和提前收盘。
-- [ ] 报价 feed 每行写 `prevClose`，`changePct` 照旧两位小数只给人看。新鲜才写行，规则和旧的 `isFresh` 一样。数据时间要在 `now` 所在美东交易日的常规时段里（9:30 到 16:00，提前收盘日到 13:00，按 `market-days.ts`）。所以开盘第一份快照里的盘前成交、节假日里昨天的报价都不写行，G5 的 5% 规则也不会被它们触发。
-- [ ] `{ when: "day-move", atLeast, direction }`，`atLeast` 0.1 到 100（和旧盯盘条件的 `pct` 同一个范围），`direction` 是 up、down、either，默认 either。判断用行里的价格和 `watch.prevClose` 那一列算不取整的涨跌幅，不读两位小数的 `changePct`。4.996% 不到 5% 的线。没有 `watch.prevClose` 的 collection 设这种条件时拒绝并说明，没有 `prevClose` 的旧行跳过。
-- [ ] 去重和旧盯盘条件一样。提醒行的 externalId 是 `<条件 id>:<美东日期>:<up|down>:<atLeast>`。同一条件同一天同一方向只提醒一次，价格在线上线下来回穿也不重复；盘中把 5% 改成 3% 会按新阈值再提醒一次，和旧的 `firingId` 一样。
-- [ ] `alertText` 不再在正文里写模块名和「来自 <collection>」，Telegram 和网页的前缀 `提醒 · <模块名>：` 已经写了模块名。`watch.label` 有值时写在时间后面。`day-move` 的说法带上昨收。迁过来的条件在 Telegram 上是 `提醒 · 股票技术分析：NVDA 105.30，相对昨收 100.00 涨了 5.30%，到了你设的涨跌 5% 提醒线（11-12 10:05 美东，延迟行情）`。`describe` 写成「当天相对昨收涨跌到 5%」。
+- [x] `feedInput` 加 `now`。handler 不再读自己的挂钟，回放器和测试用假时钟就能重现新鲜度、换日、节假日和提前收盘。
+- [x] 报价 feed 每行写 `prevClose`，`changePct` 照旧两位小数只给人看。新鲜才写行，规则和旧的 `isFresh` 一样。数据时间要在 `now` 所在美东交易日的常规时段里（9:30 到 16:00，提前收盘日到 13:00，按 `market-days.ts`）。所以开盘第一份快照里的盘前成交、节假日里昨天的报价都不写行，G5 的 5% 规则也不会被它们触发。
+- [x] `{ when: "day-move", atLeast, direction }`，`atLeast` 0.1 到 100（和旧盯盘条件的 `pct` 同一个范围），`direction` 是 up、down、either，默认 either。判断用行里的价格和 `watch.prevClose` 那一列算不取整的涨跌幅，不读两位小数的 `changePct`。4.996% 不到 5% 的线。没有 `watch.prevClose` 的 collection 设这种条件时拒绝并说明，没有 `prevClose` 的旧行跳过。
+- [x] 去重和旧盯盘条件一样。提醒行的 externalId 是 `<条件 id>:<美东日期>:<up|down>:<atLeast>`。同一条件同一天同一方向只提醒一次，价格在线上线下来回穿也不重复；盘中把 5% 改成 3% 会按新阈值再提醒一次，和旧的 `firingId` 一样。
+- [x] `alertText` 不再在正文里写模块名和「来自 <collection>」，Telegram 和网页的前缀 `提醒 · <模块名>：` 已经写了模块名。`watch.label` 有值时写在时间后面。`day-move` 的说法带上昨收。迁过来的条件在 Telegram 上是 `提醒 · 股票技术分析：NVDA 105.30，相对昨收 100.00 涨了 5.30%，到了你设的涨跌 5% 提醒线（11-12 10:05 美东，延迟行情）`。`describe` 写成「当天相对昨收涨跌到 5%」。
 - [ ] `just migrate-us-market`。通过宿主 socket 工作，宿主要在运行，stock-ta 要开着。读 `state.db` 里 `source_user_data` 的 `us-market` 那一行（`{version, tripwires: [{symbol, condition, setAt}]}`）。
-  - [ ] 只搬 `day {pct, dir}`，变成 `day-move {atLeast: pct, direction: dir}`。遇到任何别的种类（cost、cross）就退出码非零，什么都不写，说明是哪一种、怎么处理（Appendix E 第 6 条）。
-  - [ ] 代码不在 stock-ta 自选股里，或者已经划掉，就退出码非零，什么都不写，说明先把它加回自选股。
+  - [x] 只搬 `day {pct, dir}`，变成 `day-move {atLeast: pct, direction: dir}`。遇到任何别的种类（cost、cross）就退出码非零，什么都不写，说明是哪一种、怎么处理（Appendix E 第 6 条）。
+  - [x] 代码不在 stock-ta 自选股里，或者已经划掉，就退出码非零，什么都不写，说明先把它加回自选股。
   - [ ] 默认只打印一张表（种类、要变成的条件、结果是新建、不变或更新），不写。`--apply` 才写。条件 id 由内容定，`cnd_usm_<代码>_day`，重跑只补差。备注写「从盯盘条件搬来，原设于 <美东日期>」。写入走 `page` 权限，回执只在本机显示。`--undo` 只删 `cnd_usm_*`。
-  - [ ] 不改、不删 `source_user_data` 的 `us-market` 那一行（Appendix E 第 5 条）。
-- [ ] 回放器 `replay-day.ts` 第一版只喂 stock-ta 这一边：按分钟把剧本里的快照和假的 `now` 交给报价 feed 的 handler，再把行写进临时状态目录，收集提醒行。
+  - [x] 不改、不删 `source_user_data` 的 `us-market` 那一行（Appendix E 第 5 条）。
+- [x] 回放器 `replay-day.ts` 第一版只喂 stock-ta 这一边：按分钟把剧本里的快照和假的 `now` 交给报价 feed 的 handler，再把行写进临时状态目录，收集提醒行。
 
 **You see.**
 
-- [ ] 对 stock-ta 设「NVDA 当天涨跌 5%」以后，剧本里 NVDA 在 9:46 到 +4.996%、10:05 到 +5.3%、10:20 回到 +4.8%、10:40 再到 +5.6%，只有 10:05 一条提醒，文字和上面 Build 里的一样。
+- [x] 对 stock-ta 设「NVDA 当天涨跌 5%」以后，剧本里 NVDA 在 9:46 到 +4.996%、10:05 到 +5.3%、10:20 回到 +4.8%、10:40 再到 +5.6%，只有 10:05 一条提醒，文字和上面 Build 里的一样。
 - [ ] 部署到旧 Mac、迁移以后，stock-ta 的 `_conditions` 有 1 行 `day-move`，你的盯盘条件从下一个交易日起重新会响。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/conditions.test.ts` 新增：解析（范围、方向、多余字段被拒）、没有 `watch.prevClose` 时拒绝、到线提醒、来回穿不重复、两个方向各一次、第二天重新开始、改阈值重新提醒、4.996% 不算 5%、刚好 5.00% 算、没有 `prevClose` 的行跳过、`alertText` 没有模块名和「来自」。每条先红后绿。Run `just test`.
-- [ ] `tests/feed-runner.test.ts` 新增 feed 输入里有 `now`。`tests/stock-ta-quotes.test.ts` 新增：行里有 `prevClose`、盘前成交和节假日的旧报价不写行、提前收盘日 13:00 以后不写行。Run `just test`.
-- [ ] `tests/migrate-us-market.test.ts` 覆盖：一条 day 变成一条 `day-move`、默认不写、重跑不变、参数变了就更新、`--undo` 只删自己建的、cost 或 cross 让 `--apply` 失败且什么都不写、代码不在自选股里时失败、宿主没运行或 stock-ta 关着时一行说明、`source_user_data` 没有 us-market 时打印「没有盯盘条件」。每条先红后绿。Run `just test`.
+- [x] `tests/conditions.test.ts` 新增：解析（范围、方向、多余字段被拒）、没有 `watch.prevClose` 时拒绝、到线提醒、来回穿不重复、两个方向各一次、第二天重新开始、改阈值重新提醒、4.996% 不算 5%、刚好 5.00% 算、没有 `prevClose` 的行跳过、`alertText` 没有模块名和「来自」。每条先红后绿。Run `just test`.
+- [x] `tests/feed-runner.test.ts` 新增 feed 输入里有 `now`。`tests/stock-ta-quotes.test.ts` 新增：行里有 `prevClose`、盘前成交和节假日的旧报价不写行、提前收盘日 13:00 以后不写行。Run `just test`.
+- [x] `tests/migrate-us-market.test.ts` 覆盖：一条 day 变成一条 `day-move`、默认不写、重跑不变、参数变了就更新、`--undo` 只删自己建的、cost 或 cross 让 `--apply` 失败且什么都不写、代码不在自选股里时失败、宿主没运行或 stock-ta 关着时一行说明、`source_user_data` 没有 us-market 时打印「没有盯盘条件」。每条先红后绿。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/r1-live.ts`。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 和 head 都给 stock-ta 设一条 `above` 条件（NVDA 价格到 105）并回放同一个剧本。Save `r1-regression.txt`. Pass when 两边提醒的分钟和代码完全相同，文字只差 Build 里说的那两处。trunk 没有 `day-move`，这一点记下来，day-move 由 lane 2 到 7 把关。
-- [ ] Lane 2. 设 `day-move` 涨跌 5%，回放「5 到 8 逐档上升再回落再上升」，中途重启宿主。Save `r1-once.txt`. Pass when 一天只有一条提醒，时间是第一次到线那一分钟，重启后不再提醒。
-- [ ] Lane 3. 设 `direction: either`，回放「先涨 5% 后跌 5%」，再回放第二个交易日。Save `r1-both-ways.txt`. Pass when 第一天涨一条、跌一条，第二天又各有一条。
-- [ ] Lane 4. 回放「4.996% 再到 5.00%」。Save `r1-rounding.txt`. Pass when 4.996% 那一分钟不提醒，5.00% 那一分钟提醒一次。
-- [ ] Lane 5. 回放「开盘第一份快照是 9:15 的盘前成交，涨 6%」和「节假日整天是昨天的报价」。Save `r1-fresh.txt`. Pass when 两个剧本里那些报价都没写成行，没有提醒；第一份新鲜报价到线时才提醒。
-- [ ] Lane 6. 宿主运行中，通过对话让领队设「AMD 当天涨跌 5% 提醒我」，回放到 +5.2%，再让领队改成 3%（假模型照剧本调 `watch`）。Save `r1-chat-set.txt`. Pass when `_conditions` 多一行 `day-move`，回执写着「当天相对昨收涨跌到 5%」，改成 3% 后同一天按 3% 再提醒一次。
-- [ ] Lane 7. 往一个没有声明 `watch.prevClose` 的 series（lane 脚本里临时建的样例模块）设 `day-move`。Save `r1-no-prev-close.txt`. Pass when 拒绝，说明这个 collection 没有昨收这一列。
-- [ ] Lane 8. 提醒行经宿主发到假 Telegram，同一个剧本在 trunk 上用 `tripwire` 设同样的盯盘条件。Save `r1-telegram.png`. Pass when 新旧两条提醒并排截图；新的一行、前缀 `提醒 · 股票技术分析：` 只出现一次模块名、有昨收、有「延迟行情」、没有「来自 quotes」。
-- [ ] Lane 9. 临时状态目录先用 trunk 的 `tripwire` 工具设一条 day 盯盘条件，切到 head 跑 `just migrate-us-market`、`--apply`、再 `--apply`，然后回放剧本；另一个目录放一条 cost 和一条 cross。Save `r1-migrate.txt`. Pass when 第一个目录打印 1 行「新建」、`_conditions` 多一行 `cnd_usm_<代码>_day`、第二次「全部不变」、新条件在旧条件会响的同一分钟响一次；第二个目录退出码非零，什么都没写。
-- [ ] Lane 10. 回退演练。lane 9 迁移以后，按「Deploy to the old Mac」的回退步骤恢复 `data.db` 备份，切回 trunk 启动宿主。Save `r1-rollback.txt`. Pass when 宿主正常启动，`_conditions` 里没有 `day-move` 行；不恢复备份时 trunk 启动或判断条件报错（记下报错，证明这一步必须做）。
+- [x] Lane 1. Regression lane against trunk. trunk 和 head 都给 stock-ta 设一条 `above` 条件（NVDA 价格到 105）并回放同一个剧本。Save `r1-regression.txt`. Pass when 两边提醒的分钟和代码完全相同，文字只差 Build 里说的那两处。trunk 没有 `day-move`，这一点记下来，day-move 由 lane 2 到 7 把关。
+- [x] Lane 2. 设 `day-move` 涨跌 5%，回放「5 到 8 逐档上升再回落再上升」，中途重启宿主。Save `r1-once.txt`. Pass when 一天只有一条提醒，时间是第一次到线那一分钟，重启后不再提醒。
+- [x] Lane 3. 设 `direction: either`，回放「先涨 5% 后跌 5%」，再回放第二个交易日。Save `r1-both-ways.txt`. Pass when 第一天涨一条、跌一条，第二天又各有一条。
+- [x] Lane 4. 回放「4.996% 再到 5.00%」。Save `r1-rounding.txt`. Pass when 4.996% 那一分钟不提醒，5.00% 那一分钟提醒一次。
+- [x] Lane 5. 回放「开盘第一份快照是 9:15 的盘前成交，涨 6%」和「节假日整天是昨天的报价」。Save `r1-fresh.txt`. Pass when 两个剧本里那些报价都没写成行，没有提醒；第一份新鲜报价到线时才提醒。
+- [x] Lane 6. 宿主运行中，通过对话让领队设「AMD 当天涨跌 5% 提醒我」，回放到 +5.2%，再让领队改成 3%（假模型照剧本调 `watch`）。Save `r1-chat-set.txt`. Pass when `_conditions` 多一行 `day-move`，回执写着「当天相对昨收涨跌到 5%」，改成 3% 后同一天按 3% 再提醒一次。
+- [x] Lane 7. 往一个没有声明 `watch.prevClose` 的 series（lane 脚本里临时建的样例模块）设 `day-move`。Save `r1-no-prev-close.txt`. Pass when 拒绝，说明这个 collection 没有昨收这一列。
+- [x] Lane 8. 提醒行经宿主发到假 Telegram，同一个剧本在 trunk 上用 `tripwire` 设同样的盯盘条件。Save `r1-telegram.png`. Pass when 新旧两条提醒并排截图；新的一行、前缀 `提醒 · 股票技术分析：` 只出现一次模块名、有昨收、有「延迟行情」、没有「来自 quotes」。
+- [x] Lane 9. 临时状态目录先用 trunk 的 `tripwire` 工具设一条 day 盯盘条件，切到 head 跑 `just migrate-us-market`、`--apply`、再 `--apply`，然后回放剧本；另一个目录放一条 cost 和一条 cross。Save `r1-migrate.txt`. Pass when 第一个目录打印 1 行「新建」、`_conditions` 多一行 `cnd_usm_<代码>_day`、第二次「全部不变」、新条件在旧条件会响的同一分钟响一次；第二个目录退出码非零，什么都没写。
+- [x] Lane 10. 回退演练。lane 9 迁移以后，按「Deploy to the old Mac」的回退步骤恢复 `data.db` 备份，切回 trunk 启动宿主。Save `r1-rollback.txt`. Pass when 宿主正常启动，`_conditions` 里没有 `day-move` 行；不恢复备份时 trunk 启动或判断条件报错（记下报错，证明这一步必须做）。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. 报价 feed 写一轮 9 行（每只股票各有 3 条条件）时，handler 加宿主侧写入和判断条件的时间。
-- [ ] Probe. trunk 和 head 交替各 30 轮，trunk 用 `above`，head 用 `day-move`，条件数相同。另跑 `just migrate-us-market --apply` 5 次，每次新的临时目录。
-- [ ] Baseline. Record the trunk 中位数 first.
-- [ ] Rule. head 中位数比 trunk 慢 5 毫秒以上就失败。迁移中位数超过 3 秒就失败。
+- [x] Metric. 报价 feed 写一轮 9 行（每只股票各有 3 条条件）时，handler 加宿主侧写入和判断条件的时间。
+- [x] Probe. trunk 和 head 交替各 30 轮，trunk 用 `above`，head 用 `day-move`，条件数相同。另跑 `just migrate-us-market --apply` 5 次，每次新的临时目录。
+- [x] Baseline. Record the trunk 中位数 first.
+- [x] Rule. head 中位数比 trunk 慢 5 毫秒以上就失败。迁移中位数超过 3 秒就失败。
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 8 screenshot（新旧提醒并排）into `docs/modules/evidence/r1-review-telegram.png`。
-- [ ] Record a 30 to 60 second video of the change on a lane VM，回放剧本、提醒到假 Telegram、迁移命令的三次输出。Save it as `docs/modules/evidence/r1-review.mp4`。
+- [x] Copy lane 8 screenshot（新旧提醒并排）into `docs/modules/evidence/r1-review-telegram.png`。
+- [x] Record a 30 to 60 second video of the change on a lane VM，回放剧本、提醒到假 Telegram、迁移命令的三次输出。Save it as `docs/modules/evidence/r1-review.mp4`。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
@@ -226,6 +226,8 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 - [ ] Bugbot triage done.
 - [ ] Rebased onto current trunk after the verdict, patch-id unchanged.
 - [ ] The root appends it to the base-branch stack and the operator lands it bottom-up. 合并后按「Deploy to the old Mac」部署并迁移，等你说「部署」。
+
+2026-11-13 在 psa/rt-r1-daymove 上通过：`just test` 全绿，`check.mjs` 全绿，`just module check` ok。`r1-live.ts` 十条 lane 都 PASS（输出在 `/tmp/swarm-r1/owner/`）。perf 交替各 30 轮，trunk 中位数 67.3 ms，head 68.1 ms，多 0.8 ms，一轮的时间几乎全是起 handler 进程；迁移 `--apply` 5 次中位数 370 ms。评审图 `r1-review-telegram.png` 和 36 秒视频 `r1-review.mp4` 在 `docs/modules/evidence/`。和上面写的不一样的三处，所以那两个框没勾：迁移命令直接读写状态目录（和 `just module import` 一样），不经宿主 socket，宿主开着关着都能跑，因为宿主每写一行报价都重新读条件；迁过来的条件不写备注，因为备注会出现在每一条提醒里，和 Build 里给的提醒文字对不上，来历由编号 `cnd_usm_` 看出；按使用者的决定，迁移默认同时从自选股划掉 AMZN、AAPL，`--keep-watchlist` 不动。提醒里的时间照旧写年份（`2026-11-12 10:05 美东`），和其他条件一致。
 
 ## Bring the 盘面 expert into stock-ta with intraday bars (R2b)
 

@@ -1,9 +1,4 @@
-/**
- * Moves the user's us-market 盯盘条件 into stock-ta's quote conditions, and by the user's decision takes AMZN and AAPL
- * off stock-ta's watchlist. Prints the plan by default; `--apply` writes it, `--undo` takes back only what it wrote.
- * Works on the state directory like `just module import`: the host reads conditions on every write, so it need not stop.
- * The us-market row in state.db is never changed.
- */
+// The host rereads conditions on every write, so it need not stop while this runs.
 import { join } from "node:path";
 import { exitOnConfigError } from "../config-error.ts";
 import { loadConfig, loadModules } from "../host/config.ts";
@@ -31,7 +26,6 @@ type Step =
 
 
 type WatchRow = { symbol: string; removedAt: unknown; from: string };
-/** The latest row of each symbol, in the order symbols were first added: the same reading as stock-ta's watchlist.ts. */
 function latestRows(rows: readonly { id: string; from: string; fields: { readonly [f: string]: unknown } }[]): Map<string, WatchRow> {
 	const latest = new Map<string, WatchRow>();
 	for (const row of [...rows].sort((x, y) => Number(x.id) - Number(y.id))) {

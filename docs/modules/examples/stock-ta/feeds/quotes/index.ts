@@ -25,7 +25,7 @@ function bigMove(q: Quote): Notice[] {
 	}];
 }
 
-/** In the regular session of the trading day `now` is in: a pre-market trade in the first snapshot, yesterday's quote on a holiday and a trade after an early close are all stale. */
+/** Stale: a pre-market trade in the first snapshot, yesterday's quote on a holiday, a trade after an early close. */
 function fresh(q: Quote, today: string): boolean {
 	const session = sessionAt(Date.parse(q.at));
 	return session.phase === "regular" && session.nyDate === today;
