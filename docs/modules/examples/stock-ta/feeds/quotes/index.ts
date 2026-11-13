@@ -1,7 +1,9 @@
 /** Parsing mirrors src/sources/market/client.ts: module code cannot import the host's. */
+import { listedSymbols, type WatchRow } from "../../watchlist.ts";
+
 interface Input {
 	settings: { baseUrl: string };
-	rows: { watchlist?: { id: string; fields: { symbol?: unknown; removedAt?: unknown } }[] };
+	rows: { watchlist?: WatchRow[] };
 }
 
 type Quote = { id: string; symbol: string; price: number; changePct: number; volume: number | null; at: string };
@@ -54,17 +56,8 @@ function bigMove(q: Quote): Notice[] {
 	}];
 }
 
-function listedSymbols(rows: NonNullable<Input["rows"]["watchlist"]>): string[] {
-	const latestRemoved = new Map<string, boolean>();
-	for (const row of [...rows].sort((x, y) => Number(x.id) - Number(y.id))) {
-		const symbol = String(row.fields.symbol ?? "").trim().toUpperCase();
-		if (symbol !== "") latestRemoved.set(symbol, Boolean(row.fields.removedAt));
-	}
-	return [...latestRemoved].filter(([, out]) => !out).map(([symbol]) => symbol).sort();
-}
-
 export default async function quotes(input: Input) {
-	const symbols = listedSymbols(input.rows.watchlist ?? []);
+	const symbols = listedSymbols(input.rows.watchlist ?? []).sort();
 	if (symbols.length === 0) return { records: [] };
 	const key = process.env.POLYGON_API_KEY ?? "";
 	if (key === "") throw new Error("没有设置 POLYGON_API_KEY，这一轮没去取报价：在宿主的密钥文件里加一行 POLYGON_API_KEY=<你的 Massive/Polygon 密钥>，见 docs/modules/stock-ta.md");

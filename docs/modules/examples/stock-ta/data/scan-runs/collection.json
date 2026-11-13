@@ -1,0 +1,15 @@
+{
+  "title": "日线扫描记录",
+  "kind": "series",
+  "class": "shareable",
+  "fields": {
+    "startedAt": { "type": "date", "title": "这次扫描开始的时间（UTC）" },
+    "tradingDate": { "type": "date", "title": "扫的是哪个交易日的收盘（美东日期）" },
+    "outcome": { "type": "text", "title": "结果：换上（新数据库已换上）或失败（旧数据库没动）" },
+    "symbols": { "type": "number", "title": "扫了几个标的，含 QQQ、SPY" },
+    "watchlist": { "type": "number", "title": "自选股有几只，0 就是自选股是空的" },
+    "newSignals": { "type": "number", "title": "新信号数" },
+    "errors": { "type": "text", "title": "出错的标的和原因；分红不可用只是提醒，不算出错" },
+    "note": { "type": "text", "title": "说明：自选股是空的、超过 30 只上限少扫了哪些" }
+  }
+}

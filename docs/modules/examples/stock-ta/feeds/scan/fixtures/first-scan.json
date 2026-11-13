@@ -1,0 +1,11 @@
+{
+  "input": {
+    "settings": { "ta": "fake-ta.mjs", "now": "2026-11-14T15:00:00Z" },
+    "rows": {
+      "watchlist": [
+        { "id": "1", "fields": { "symbol": "NVDA" }, "from": "使用者口述" },
+        { "id": "2", "fields": { "symbol": "AMD" }, "from": "使用者口述" }
+      ]
+    }
+  }
+}
