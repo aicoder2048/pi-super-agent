@@ -1,0 +1,10 @@
+{
+  "title": "邮件名单",
+  "kind": "record",
+  "class": "shareable",
+  "fields": {
+    "address": { "type": "text", "title": "发件人地址，例如 a@example.com；写 @example.com 就收这个域名的所有地址" },
+    "note": { "type": "text", "title": "备注" },
+    "removedAt": { "type": "date", "title": "划掉的日期。划掉一个就写上它，不删行；空着就还在名单上" }
+  }
+}

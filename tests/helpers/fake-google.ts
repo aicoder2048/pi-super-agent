@@ -14,15 +14,19 @@ export type FakeGoogleOptions = {
 	deny?: boolean;
 	/** The token endpoint closes the connection without a reply. */
 	dropToken?: boolean;
-	/** `"GET /gmail/v1/users/me/profile"` → the JSON to reply with. */
+	/** `"GET /gmail/v1/users/me/profile"` → the JSON to reply with, or a function of the request URL for a reply that depends on the query or changes between calls. Read on every request, so a test may change it. */
 	routes?: Record<string, unknown>;
+	/** Refresh token → scope, as if an earlier `google-auth` had granted them. */
+	refreshTokens?: Record<string, string>;
 };
+
+export type RouteReply = { status: number; body: unknown };
 
 export type FakeGoogle = {
 	/** Set `PSA_GOOGLE_OAUTH_URL` to this. */
 	url: string;
 	client: { id: string; secret: string };
-	/** `METHOD /path` of every request, in order; a path ending in `/send` adds a `SEND ATTEMPT` line. */
+	/** `METHOD /path?query` of every request, in order; a path ending in `/send` adds a `SEND ATTEMPT` line. */
 	log: string[];
 	/** Every authorization code, refresh token and access token this fake handed out, for leak scans. */
 	issued: string[];
@@ -46,7 +50,7 @@ export async function startFakeGoogle(options: FakeGoogleOptions = {}): Promise<
 	const log: string[] = [];
 	const issued: string[] = [];
 	const codes = new Map<string, { challenge: string; redirect: string; scope: string }>();
-	const refreshTokens = new Map<string, string>();
+	const refreshTokens = new Map<string, string>(Object.entries(options.refreshTokens ?? {}));
 	const mint = (prefix: string) => {
 		const value = `${prefix}${base64url(randomBytes(12))}`;
 		issued.push(value);
@@ -55,7 +59,7 @@ export async function startFakeGoogle(options: FakeGoogleOptions = {}): Promise<
 
 	const server = createServer(async (req, res) => {
 		const url = new URL(req.url ?? "/", "http://fake");
-		log.push(`${req.method} ${url.pathname}`);
+		log.push(`${req.method} ${url.pathname}${url.search}`);
 		const json = (status: number, value: unknown) => res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(value));
 		if (url.pathname.endsWith("/send")) {
 			log.push("SEND ATTEMPT");
@@ -91,7 +95,10 @@ export async function startFakeGoogle(options: FakeGoogleOptions = {}): Promise<
 			return json(200, { access_token: mint("ya29.fake-"), expires_in: 3599, scope: granted.scope, token_type: "Bearer", ...(refresh !== null && { refresh_token: refresh }) });
 		}
 		const route = options.routes?.[`${req.method} ${url.pathname}`];
-		return route === undefined ? json(404, { error: "not_found" }) : json(200, route);
+		if (route === undefined) return json(404, { error: "not_found" });
+		if (typeof route !== "function") return json(200, route);
+		const { status, body: reply } = (route as (url: URL) => RouteReply)(url);
+		return json(status, reply);
 	});
 	await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
 	return {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -16,6 +16,8 @@ import { Modules, type Domains } from "../src/modules.ts";
 import type { Member } from "../src/teams.ts";
 import { Watchdog } from "../src/watchdog/watchdog.ts";
 import { FAKE_BOT_TOKEN, FakeTelegram } from "./helpers/fake-telegram.ts";
+import { FakeInbox } from "./helpers/fake-gmail.ts";
+import { startFakeGoogle } from "./helpers/fake-google.ts";
 import { defaultWorkerModels, FakeSpawner, fauxRouter, ids, servedAsHost, until, type Brain, type FakeWorker, type ToolCallSpec } from "./helpers/fakes.ts";
 
 const CANARY = "CANARY-7Q4";
@@ -386,4 +388,79 @@ test("金丝雀：私密 feed 放出三行之后，正文里的一串字经过�
 	await until(() => phone().filter((text) => text === privateLine("测试信箱")).length === 2, "看信任务汇报之后幕僚长的回复是一行提示（#105 照常）", 10_000);
 	await new Promise((r) => setTimeout(r, 200));
 	assert.deepEqual([...tg.sent.map((m) => m.text), ...tg.edits.map((e) => e.text)].filter((text) => text.includes(CANARY_BODY)), []);
+});
+
+test("金丝雀：mail 模块的信，正文里的一串字经过三行通知、幕僚长开的任务和它的汇报，都不出现在 Telegram 上", async (t) => {
+	const CANARY_MAIL = "CANARY-M2-9d1";
+	const MAIL = "mail" as ModuleName;
+	const root = mkdtempSync(join(tmpdir(), "psa-canary-mail-"));
+	const stateDir = join(root, "state");
+	const box = new FakeInbox();
+	const google = await startFakeGoogle({ routes: box.routes, refreshTokens: { "1//fake-refresh-mail": "https://www.googleapis.com/auth/gmail.readonly" } });
+	const pkg = join(root, "modules", "mail");
+	cpSync(join(import.meta.dirname, "../docs/modules/examples/mail"), pkg, { recursive: true });
+	const feedJson = join(pkg, "feeds", "inbox", "feed.json");
+	writeFileSync(feedJson, JSON.stringify({ ...JSON.parse(readFileSync(feedJson, "utf8")), every: "1s", settings: { baseUrl: google.url, tokenUrl: `${google.url}/token` } }));
+	const scan = scanPackage(pkg, { runCases: false, folder: MAIL });
+	assert.ok(scan.ok);
+	const store = new ModuleStore(join(stateDir, "module-store"));
+	assert.ok(store.keep(MAIL, scan.scan.digest, pkg));
+	const modules = servedAsHost(Modules.load([join(root, "modules")]));
+	const secrets: Record<string, string> = { GOOGLE_OAUTH_CLIENT_ID: google.client.id, GOOGLE_OAUTH_CLIENT_SECRET: google.client.secret, GMAIL_READ_REFRESH_TOKEN: "1//fake-refresh-mail" };
+	const rows = instanceData(stateDir);
+	const mailComponents = modules.feeds().find((e) => e.source === "mail/inbox")!.components;
+	rows.write(MAIL, mailComponents, "senders", [{ address: "ann@example.com" }], "使用者口述", "test");
+	const gateway = createGateway({
+		copyDir: (module, d) => store.dirOf(module, d),
+		serving: (module) => (module === MAIL ? scan.scan.digest : undefined),
+		dataDir: (module) => moduleDataDir(stateDir, module),
+		rows,
+		secret: () => undefined,
+		log: () => {},
+	});
+	const brain: Brain = (cards) =>
+		cards.flatMap((card): ToolCallSpec[] => {
+			if (card.startsWith("[候选触发]") && card.includes("季度对账单")) return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "inference", triggerId: ids(card, "trg"), title: "看信", brief: "看信", domain: MAIL }] } }];
+			if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `转述：${card.split("\n")[1]}`, cause: ids(card, "tkt") } }];
+			return [];
+		});
+	const tg = await FakeTelegram.start();
+	let host!: Host;
+	const spawner = new FakeSpawner((worker, input) => {
+		if (!input.startsWith("[任务说明]")) return;
+		void (async () => {
+			const read = (await worker.request("worker.data", { op: "query", collection: "messages" })) as { rows: { fields: { body: string } }[] };
+			worker.report({ status: "ready", summary: `信里说：${read.rows.map((r) => r.fields.body).join("；")}` });
+			worker.settle();
+		})().catch((e: Error) => worker.report({ status: "failed", summary: e.message }));
+	});
+	host = await Host.start({
+		stateDir,
+		createRouter: fauxRouter(brain).createRouter,
+		createSpawner: () => spawner,
+		log: () => {},
+		ruleAllows: () => true,
+		workerModels: defaultWorkerModels(),
+		domains: { book: () => modules.book, kitFor: (d) => (d === MAIL ? { skillsDir: undefined, prepare: undefined, crew: [], granted: [] } : undefined) },
+		gateway,
+		moduleFeeds: { feeds: () => modules.feeds(), fixtures: false, tickMs: 20, secret: (name) => secrets[name] },
+		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set([USER]), timing: { pollTimeoutSec: 1, minGapMs: 5 } },
+	});
+	spawner.request = (...args) => host.workers.handleRequest(...args);
+	t.after(async () => {
+		await host.stop();
+		await tg.close();
+		await google.close();
+		rmSync(root, { recursive: true, force: true });
+	});
+	tg.userSays(USER, "/start");
+	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => m.text);
+	await until(() => phone().length > 0, "聊天打开");
+	box.deliver({ id: "m-1", from: "Ann Lee <ann@example.com>", subject: "季度对账单", snippet: "附件是对账单", text: `正文 ${CANARY_MAIL}` });
+	await until(() => phone().includes("通知：邮件：Ann Lee <ann@example.com>\n季度对账单\n附件是对账单"), "三行通知到了 Telegram", 10_000);
+	await until(() => host.kernel.conversation(500).some((l) => l.text.includes(CANARY_MAIL)), "网页上的转述有正文", 10_000);
+	await until(() => phone().includes(privateLine("邮件")), "看信任务的转述在 Telegram 上是一行提示", 10_000);
+	await new Promise((r) => setTimeout(r, 200));
+	assert.deepEqual([...tg.sent.map((m) => m.text), ...tg.edits.map((e) => e.text)].filter((text) => text.includes(CANARY_MAIL)), []);
+	assert.ok(!google.log.some((line) => line.includes("SEND")), "没有发信的请求");
 });

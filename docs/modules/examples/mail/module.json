@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "name": "mail",
+  "version": "0.1.0",
+  "title": "邮件",
+  "description": "你的 Gmail 收件箱里邮件名单上的发件人来信：发件人、主题、正文、附件清单"
+}

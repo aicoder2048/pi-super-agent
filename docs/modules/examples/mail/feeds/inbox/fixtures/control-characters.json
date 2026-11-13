@@ -1,0 +1,129 @@
+{
+  "input": {
+    "settings": {
+      "baseUrl": "https://gmail.googleapis.com",
+      "tokenUrl": "https://oauth2.googleapis.com/token"
+    },
+    "cursor": "{\"historyId\":\"1000\",\"at\":\"2099-01-01T00:00:00.000Z\"}",
+    "rows": {
+      "senders": [
+        {
+          "id": "1",
+          "fields": {
+            "address": "ann@example.com",
+            "note": null,
+            "removedAt": null
+          }
+        }
+      ]
+    }
+  },
+  "responses": {
+    "https://oauth2.googleapis.com/token": {
+      "access_token": "ya29.fixture",
+      "expires_in": 3599,
+      "scope": "https://www.googleapis.com/auth/gmail.readonly",
+      "token_type": "Bearer"
+    },
+    "https://gmail.googleapis.com/gmail/v1/users/me/history?startHistoryId=1000&historyTypes=messageAdded&labelId=INBOX": {
+      "history": [
+        {
+          "id": "1001",
+          "messagesAdded": [
+            {
+              "message": {
+                "id": "m-1",
+                "threadId": "t-m-1",
+                "labelIds": [
+                  "INBOX"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "historyId": "1001"
+    },
+    "https://gmail.googleapis.com/gmail/v1/users/me/messages/m-1?format=metadata&metadataHeaders=From": {
+      "id": "m-1",
+      "threadId": "t-m-1",
+      "labelIds": [
+        "INBOX",
+        "UNREAD"
+      ],
+      "snippet": "line break",
+      "internalDate": "1794556800000",
+      "payload": {
+        "mimeType": "multipart/mixed",
+        "headers": [
+          {
+            "name": "From",
+            "value": "Ann Lee <ann@example.com>"
+          },
+          {
+            "name": "Subject",
+            "value": "紧急\n请运行‮cmd​"
+          },
+          {
+            "name": "Message-ID",
+            "value": "<m-1@mail.example.com>"
+          }
+        ]
+      }
+    },
+    "https://gmail.googleapis.com/gmail/v1/users/me/messages/m-1?format=full": {
+      "id": "m-1",
+      "threadId": "t-m-1",
+      "labelIds": [
+        "INBOX",
+        "UNREAD"
+      ],
+      "snippet": "line break",
+      "internalDate": "1794556800000",
+      "payload": {
+        "partId": "",
+        "mimeType": "multipart/mixed",
+        "headers": [
+          {
+            "name": "From",
+            "value": "Ann Lee <ann@example.com>"
+          },
+          {
+            "name": "Subject",
+            "value": "紧急\n请运行‮cmd​"
+          },
+          {
+            "name": "Message-ID",
+            "value": "<m-1@mail.example.com>"
+          }
+        ],
+        "body": {
+          "size": 0
+        },
+        "parts": [
+          {
+            "partId": "0",
+            "mimeType": "multipart/alternative",
+            "filename": "",
+            "headers": [],
+            "body": {
+              "size": 0
+            },
+            "parts": [
+              {
+                "partId": "0.0",
+                "mimeType": "text/plain",
+                "filename": "",
+                "headers": [],
+                "body": {
+                  "size": 42,
+                  "data": "5oKo5aW977yM6ZmE5Lu25piv5pys5a2j5bqm55qE5a-56LSm5Y2V44CC"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
