@@ -20,7 +20,8 @@ export type FakeGoogleOptions = {
 	refreshTokens?: Record<string, string>;
 };
 
-export type RouteReply = { status: number; body: unknown };
+/** `trickleMs`: the body is sent in slices spread over this long, like a slow link. */
+export type RouteReply = { status: number; body: unknown; trickleMs?: number };
 
 export type FakeGoogle = {
 	/** Set `PSA_GOOGLE_OAUTH_URL` to this. */
@@ -97,8 +98,16 @@ export async function startFakeGoogle(options: FakeGoogleOptions = {}): Promise<
 		const route = options.routes?.[`${req.method} ${url.pathname}`];
 		if (route === undefined) return json(404, { error: "not_found" });
 		if (typeof route !== "function") return json(200, route);
-		const { status, body: reply } = (route as (url: URL) => RouteReply)(url);
-		return json(status, reply);
+		const { status, body: reply, trickleMs } = (route as (url: URL) => RouteReply)(url);
+		if (trickleMs === undefined) return json(status, reply);
+		const text = JSON.stringify(reply);
+		const slices = 20;
+		res.writeHead(status, { "content-type": "application/json" });
+		for (let i = 0; i < slices && !res.destroyed; i++) {
+			res.write(text.slice(Math.floor((i * text.length) / slices), Math.floor(((i + 1) * text.length) / slices)));
+			await new Promise((done) => setTimeout(done, trickleMs / slices));
+		}
+		return res.end();
 	});
 	await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
 	return {

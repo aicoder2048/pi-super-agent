@@ -1,9 +1,10 @@
+import { accessToken, AUTH_TEXT, gmailClient, type Gmail, type Settings } from "../../google.ts";
 import { header, messageRow, parseFrom, released, type GmailMessage, type MessageRow } from "./message.ts";
 
 type SenderRow = { id: string; fields: { address?: unknown; addedAt?: unknown; removedAt?: unknown } };
 
 interface Input {
-	settings: { baseUrl: string; tokenUrl: string };
+	settings: Settings;
 	cursor: string | null;
 	now: string;
 	rows: { senders?: SenderRow[] };
@@ -17,8 +18,7 @@ type Problem = { id: "auth" | "gap" | "no-senders" | "too-many" | "removal-unrea
 type Reply = { records: MessageRow[]; notices?: { id: string; thread: string; fields: Record<string, string> }[]; cursor?: string; problem?: Problem };
 
 const DAY_MS = 24 * 3_600_000;
-const GMAIL = "/gmail/v1/users/me";
-const AUTH: Problem = { id: "auth", text: "Gmail 授权失效了，在笔记本上重跑 just google-auth read，再把那一行复制到这台机器" };
+const AUTH: Problem = { id: "auth", text: AUTH_TEXT };
 const NO_SENDERS: Problem = { id: "no-senders", text: "邮件名单是空的，什么都不收。在对话里说「把 a@example.com 加进邮件名单」" };
 const TOO_MANY: Problem = { id: "too-many", text: "邮件名单到了 500 行，宿主一次只读 500 行，划掉的地址可能读不到，所以先不收信。见 docs/modules/mail.md 的「名单太长」" };
 const REMOVAL_UNREADABLE: Problem = { id: "removal-unreadable", text: "邮件名单里有一行划掉的地址读不出来，像它的发件人一律不收。请在对话里把那一行的地址改成 a@example.com 或 @example.com 这样的写法" };
@@ -89,30 +89,6 @@ function parseCursor(text: string | null): Cursor | undefined {
 	const value = JSON.parse(text);
 	return typeof value?.historyId === "string" && typeof value?.at === "string" ? value : undefined;
 }
-
-async function accessToken(settings: Input["settings"]): Promise<string | undefined> {
-	const form = new URLSearchParams({
-		client_id: process.env.GOOGLE_OAUTH_CLIENT_ID ?? "",
-		client_secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? "",
-		refresh_token: process.env.GMAIL_READ_REFRESH_TOKEN ?? "",
-		grant_type: "refresh_token",
-	});
-	if (form.get("refresh_token") === "") throw new Error("没有设置 GMAIL_READ_REFRESH_TOKEN：在笔记本上跑 just google-auth read，见 docs/modules/mail.md");
-	const reply = await fetch(settings.tokenUrl, { method: "POST", body: form, headers: { "content-type": "application/x-www-form-urlencoded" }, redirect: "error" });
-	const body = await reply.json().catch(() => ({}));
-	if (body?.error === "invalid_grant") return undefined;
-	if (typeof body?.access_token !== "string") throw new Error(`Google 的 token 接口返回 HTTP ${reply.status}${typeof body?.error === "string" ? ` ${body.error}` : ""}`);
-	return body.access_token;
-}
-
-type Gmail = (path: string, query: Record<string, string>) => Promise<{ status: number; body: any }>;
-
-// Fixtures replay every body with status 200, and Gmail's error bodies carry the code too.
-const gmailClient = (baseUrl: string, token: string): Gmail => async (path, query) => {
-	const reply = await fetch(`${baseUrl}${GMAIL}${path}?${new URLSearchParams(query)}`, { headers: { Accept: "application/json", Authorization: `Bearer ${token}` }, redirect: "error" });
-	const body = await reply.json().catch(() => ({}));
-	return { status: typeof body?.error?.code === "number" ? body.error.code : reply.status, body };
-};
 
 /** A letter deleted after history.list named it answers 404; it is gone for good, so the beat skips it rather than retrying forever. */
 async function stillThere(gmail: Gmail, path: string, query: Record<string, string>): Promise<any | undefined> {

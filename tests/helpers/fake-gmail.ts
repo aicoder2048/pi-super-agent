@@ -11,7 +11,8 @@ export type Letter = {
 	encoded?: { charset: string; bytes: Uint8Array };
 	/** A text/html part Gmail serves only by attachmentId, the way it does for a large body. */
 	htmlByAttachment?: boolean;
-	attachments?: readonly { filename: string; mimeType: string; size: number }[];
+	/** `data` is served by `attachments.get`; `size` is what `messages.get` says, so a test can make the two disagree. `trickleMs` makes the download that slow. `charset` goes in the part's Content-Type. */
+	attachments?: readonly { filename: string; mimeType: string; size: number; data?: string | Uint8Array; trickleMs?: number; charset?: string }[];
 	replyTo?: string;
 	at?: number;
 };
@@ -41,7 +42,7 @@ export function gmailMessage(letter: Letter, format: "full" | "metadata" = "full
 		bodies.push({ partId: `0.${bodies.length}`, mimeType: "text/plain", filename: "", headers: [{ name: "Content-Type", value: `text/plain; charset="${charset}"` }], body: { size: bytes.length, data: b64(bytes) } });
 	}
 	if (letter.htmlByAttachment) bodies.push({ partId: `0.${bodies.length}`, mimeType: "text/html", filename: "", headers: [], body: { size: 900_000, attachmentId: `att-${letter.id}-html` } });
-	const files = (letter.attachments ?? []).map((a, i) => ({ partId: String(i + 1), mimeType: a.mimeType, filename: a.filename, headers: [], body: { attachmentId: `att-${letter.id}-${i + 1}`, size: a.size } }));
+	const files = (letter.attachments ?? []).map((a, i) => ({ partId: String(i + 1), mimeType: a.mimeType, filename: a.filename, headers: a.charset === undefined ? [] : [{ name: "Content-Type", value: `${a.mimeType}; charset="${a.charset}"` }], body: { attachmentId: `att-${letter.id}-${i + 1}`, size: a.size } }));
 	return {
 		...top,
 		payload: {
@@ -86,6 +87,11 @@ export class FakeInbox {
 			const at = letter.at ?? this.now();
 			this.letters.set(letter.id, { ...letter, at });
 			this.routes[`GET ${GMAIL}/messages/${letter.id}`] = (url: URL) => this.#ok(gmailMessage(this.letters.get(letter.id)!, url.searchParams.get("format") === "metadata" ? "metadata" : "full"));
+			for (const [i, a] of (letter.attachments ?? []).entries()) {
+				if (a.data === undefined) continue;
+				const data = b64(a.data);
+				this.routes[`GET ${GMAIL}/messages/${letter.id}/attachments/att-${letter.id}-${i + 1}`] = (): RouteReply => ({ status: 200, body: { size: a.size, data }, ...(a.trickleMs !== undefined && { trickleMs: a.trickleMs }) });
+			}
 		}
 		this.#history.push({ id: this.#historyId, added: letters.map((l) => l.id) });
 	}

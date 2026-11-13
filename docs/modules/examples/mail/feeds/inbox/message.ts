@@ -1,6 +1,6 @@
 /** Module code cannot import the host's, so the cleaning repeats src/modules/release.ts; the host cleans the released fields again at its edge. */
 
-type Attachment = { partId: string; filename: string; mimeType: string; size: number };
+export type Attachment = { partId: string; filename: string; mimeType: string; size: number };
 
 export type MessageRow = {
 	id: string;
@@ -19,12 +19,12 @@ export type MessageRow = {
 
 type Released = { from: string; subject: string; snippet: string };
 
-type Part = { partId?: string; mimeType?: string; filename?: string; headers?: { name: string; value: string }[]; body?: { data?: string; size?: number; attachmentId?: string }; parts?: Part[] };
+export type Part = { partId?: string; mimeType?: string; filename?: string; headers?: { name: string; value: string }[]; body?: { data?: string; size?: number; attachmentId?: string }; parts?: Part[] };
 export type GmailMessage = { id: string; threadId?: string; snippet?: string; internalDate?: string; payload?: Part };
 
 const BODY_BYTES = 64 * 1024;
 const CUT = "\n\n[正文超过 64 KB，后面截掉了，全文在 Gmail 里看]";
-const UNKNOWN_CHARSET = (charset: string) => `\n\n[正文的字符集 ${charset} 认不出，按 UTF-8 显示，可能有乱码，原文在 Gmail 里看]`;
+const UNKNOWN_CHARSET = (what: string, charset: string) => `\n\n[${what}的字符集 ${charset} 认不出，按 UTF-8 显示，可能有乱码，原文在 Gmail 里看]`;
 const NOT_FETCHED = "[正文太大，Gmail 单独存放，这里没取，全文在 Gmail 里看]";
 const LIMITS = { name: 80, subject: 120, snippet: 100, line: 160 } as const;
 
@@ -112,20 +112,22 @@ function clipBytes(text: string): string {
 	return kept + CUT;
 }
 
-const partsOf = (part: Part | undefined): Part[] => (part === undefined ? [] : [part, ...(part.parts ?? []).flatMap(partsOf)]);
+export const partsOf = (part: Part | undefined): Part[] => (part === undefined ? [] : [part, ...(part.parts ?? []).flatMap(partsOf)]);
 
 /** Gmail hands over a part's bytes as sent, in the charset its Content-Type names (GBK, Big5, Shift_JIS, ISO-8859-x). */
-function decode(part: Part): string {
-	const bytes = Buffer.from(part.body?.data ?? "", "base64url");
+export function decodeText(bytes: Buffer, part: Part, what: "正文" | "附件"): string {
 	const contentType = part.headers?.find((h) => h.name.toLowerCase() === "content-type")?.value ?? "";
 	const charset = /charset\s*=\s*"?([^";\s]+)/i.exec(contentType)?.[1];
-	if (charset === undefined) return bytes.toString("utf8");
+	const utf8 = () => new TextDecoder("utf-8").decode(bytes);
+	if (charset === undefined) return utf8();
 	try {
 		return new TextDecoder(charset).decode(bytes);
 	} catch {
-		return `${bytes.toString("utf8")}${UNKNOWN_CHARSET(charset.slice(0, 40))}`;
+		return `${utf8()}${UNKNOWN_CHARSET(what, charset.slice(0, 40))}`;
 	}
 }
+
+const decode = (part: Part) => decodeText(Buffer.from(part.body?.data ?? "", "base64url"), part, "正文");
 
 function bodyText(parts: readonly Part[]): string {
 	const inline = parts.filter((p) => !p.filename && p.body?.data);
