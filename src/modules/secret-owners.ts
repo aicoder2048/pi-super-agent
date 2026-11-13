@@ -1,8 +1,4 @@
-/**
- * Who may name a secret in a package's `secrets` (ADR-0019). The host reads its own secrets
- * without this table; it only decides which module code a value may reach.
- * Secret name → the module that owns it, or "host".
- */
+/** Decides only which module code a secret may reach; the host reads its own secrets without this table (ADR-0019). */
 export const SECRET_OWNERS: Readonly<Record<string, string>> = {
 	GOOGLE_OAUTH_CLIENT_ID: "mail",
 	GOOGLE_OAUTH_CLIENT_SECRET: "mail",
@@ -15,10 +11,8 @@ export const SECRET_OWNERS: Readonly<Record<string, string>> = {
 	FINNHUB_API_KEY: "host",
 };
 
-/** `stock-ta` → `STOCK_TA_`: a name outside the table is the module's own when it starts with this. */
 export const prefixOf = (module: string): string => `${module.toUpperCase().replaceAll("-", "_")}_`;
 
-/** Why `module` may not name `secret`, or undefined when it may. */
 export function secretRefusal(module: string, secret: string): string | undefined {
 	const owner = SECRET_OWNERS[secret];
 	if (owner === "host") return `${secret} 属于宿主，模块不能用`;

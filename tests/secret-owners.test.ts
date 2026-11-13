@@ -23,7 +23,6 @@ function write(root: string, files: Record<string, string>): string {
 	return root;
 }
 
-/** A package named `module` whose feed (or tool) names `secrets`. */
 function keyed(t: TestContext, module: string, secrets: string[], on: "feed" | "tool" = "feed"): string {
 	const root = join(scratch(t, "psa-owners-"), module);
 	const component: Record<string, string> =

@@ -6,12 +6,11 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
-/** What the fake consent screen grants for a requested scope. `refresh_token: null` leaves it out of the reply. */
+/** `refresh_token`: undefined mints one, null leaves it out of the reply. */
 export type Grant = { scope: string; refresh_token?: string | null };
 
 export type FakeGoogleOptions = {
 	grant?: (requested: string) => Grant;
-	/** The consent screen answers `error=access_denied`, as when the user clicks Cancel. */
 	deny?: boolean;
 	/** `"GET /gmail/v1/users/me/profile"` → the JSON to reply with. */
 	routes?: Record<string, unknown>;
@@ -38,11 +37,7 @@ async function body(req: IncomingMessage): Promise<string> {
 	return text;
 }
 
-/**
- * A local stand-in for accounts.google.com, oauth2.googleapis.com and the Gmail API.
- * The consent page redirects straight back with a code, so `fetch(authUrl)` plays the browser.
- * The token endpoint checks the client, the redirect URI and the PKCE verifier like Google does.
- */
+/** The consent page redirects straight back with a code, so `fetch(authUrl)` plays the browser. */
 export async function startFakeGoogle(options: FakeGoogleOptions = {}): Promise<FakeGoogle> {
 	const client = FAKE_CLIENT;
 	const grant = options.grant ?? ((requested): Grant => ({ scope: requested }));
@@ -111,7 +106,6 @@ export async function startFakeGoogle(options: FakeGoogleOptions = {}): Promise<
 
 export type AuthWorld = { fake: FakeGoogle; state: string; secrets: string };
 
-/** Puts config.json and a 600 secretsFile (the fake's OAuth client, unless `secretsText` replaces it) into `state`. */
 export function authWorld(fake: FakeGoogle, state: string, secretsText = `GOOGLE_OAUTH_CLIENT_ID=${fake.client.id}\nGOOGLE_OAUTH_CLIENT_SECRET=${fake.client.secret}\n`, config: Record<string, unknown> = {}): AuthWorld {
 	const secrets = join(state, "secrets.env");
 	writeFileSync(join(state, "config.json"), JSON.stringify({ ...config, secretsFile: "secrets.env" }));
@@ -119,10 +113,7 @@ export function authWorld(fake: FakeGoogle, state: string, secretsText = `GOOGLE
 	return { fake, state, secrets };
 }
 
-/**
- * Runs the auth command (`command` is `node ... src/cli/google-auth.ts` or `just google-auth`) against the world's fake.
- * `url` resolves when it prints the authorization URL; `fetch(url)` then plays the browser.
- */
+/** `url` resolves when the command prints the authorization URL; `fetch(url)` then plays the browser. */
 export function runGoogleAuth(w: AuthWorld, command: readonly string[], args: readonly string[], { cwd, timeoutMs = 20_000 }: { cwd: string; timeoutMs?: number }) {
 	const env = { PATH: process.env["PATH"], HOME: process.env["HOME"], PSA_STATE_DIR: w.state, PSA_GOOGLE_OAUTH_URL: w.fake.url, PSA_GOOGLE_AUTH_TIMEOUT_MS: String(timeoutMs) };
 	const child = spawn(command[0]!, [...command.slice(1), ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });

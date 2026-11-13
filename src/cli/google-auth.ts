@@ -21,9 +21,7 @@ const PAGE = { "content-type": "text/plain; charset=utf-8", connection: "close" 
 
 type Args = { scope: Scope; port: number; check: boolean };
 type Endpoints = { auth: string; token: string };
-/** What every step needs: the OAuth client, where to store tokens and how to read them back, and Google's addresses. */
 type Google = { client: { id: string; secret: string }; secretsFile: string; secretOf: SecretLookup; endpoints: Endpoints };
-/** What the browser brought back to the loopback port. */
 type Callback = { code: string; page: ServerResponse } | { error: string; page: ServerResponse };
 
 const short = (scope: string) => scope.replace("https://www.googleapis.com/auth/", "");
@@ -41,7 +39,6 @@ function parseArgs(args: readonly string[]): Args | undefined {
 	return parsed;
 }
 
-/** `PSA_GOOGLE_OAUTH_URL` points both endpoints at a local fake Google; unset, they are Google's. */
 const endpointsOf = (env: NodeJS.ProcessEnv): Endpoints =>
 	env.PSA_GOOGLE_OAUTH_URL ? { auth: `${env.PSA_GOOGLE_OAUTH_URL}/o/oauth2/v2/auth`, token: `${env.PSA_GOOGLE_OAUTH_URL}/token` } : { auth: "https://accounts.google.com/o/oauth2/v2/auth", token: "https://oauth2.googleapis.com/token" };
 
@@ -52,7 +49,6 @@ async function postToken(endpoints: Endpoints, form: Record<string, string>): Pr
 	return reply.ok ? { ok: true, body } : { ok: false, why: `${reply.status} ${typeof body.error === "string" ? body.error : "（没有错误码）"}` };
 }
 
-/** Waits for the one callback whose `state` matches; any other request gets 400 and the wait goes on. */
 function listen(port: number, state: string, timeoutMs: number) {
 	let settle: (callback: Callback | "timeout") => void;
 	const outcome = new Promise<Callback | "timeout">((done) => (settle = done));
@@ -87,7 +83,6 @@ function authUrl({ endpoints, client }: Google, scope: string, redirect: string,
 	return url.toString();
 }
 
-/** Why Google's token reply cannot be stored, or the refresh token to store. */
 function grantOf(requested: string, body: Record<string, unknown>): { refreshToken: string } | { why: string } {
 	const granted = typeof body.scope === "string" ? body.scope.split(" ").filter(Boolean) : [];
 	if (granted.length !== 1 || granted[0] !== requested) return { why: `Google 给的 scope 是 ${granted.map(short).join(" ") || "（空）"}，不是只有 ${short(requested)}，什么都没写` };

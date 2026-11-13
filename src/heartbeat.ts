@@ -9,7 +9,7 @@ export interface Heartbeat {
 
 export const heartbeatPath = (stateDir: string) => join(stateDir, "heartbeat.json");
 
-/** With `mode`, the temporary file is created with it (a leftover one is removed first), so the text is never readable more widely. */
+/** `mode` applies only when a file is created, so a leftover tmp is removed and `wx` refuses a racing one. */
 export function writeFileAtomic(path: string, text: string, mode?: number): void {
 	const tmp = `${path}.tmp`;
 	if (mode === undefined) writeFileSync(tmp, text);

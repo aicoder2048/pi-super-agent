@@ -5,7 +5,6 @@ import { ConfigError, readJsonFile } from "./config-error.ts";
 import { writeFileAtomic } from "./heartbeat.ts";
 import type { SecretLookup } from "./modules/run-code.ts";
 
-/** Printable ASCII without spaces: what a secret read back may hold. */
 const SECRET_CHARS = /^[\x21-\x7e]+$/;
 
 export interface LoadedSecret {
@@ -43,11 +42,7 @@ export function parseSecretsFile(raw: unknown, stateDir: string, configFile: str
 	return secretsFile;
 }
 
-/**
- * Sets `name=value` in the .env `file`: the line that sets `name` is replaced, or one is appended, and every other line
- * stays byte for byte. The file is swapped in whole with mode 600. `readSecret` must read back exactly `value`, so the
- * writer never disagrees with the reader about the .env grammar.
- */
+/** Other lines that set `name` are dropped, so no duplicate shadows the new value. */
 export function writeSecret(file: string, name: string, value: string): void {
 	const target = realpathSync(file);
 	const text = readFileSync(target, "utf8");

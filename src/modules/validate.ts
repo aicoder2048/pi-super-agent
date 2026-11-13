@@ -424,7 +424,7 @@ const namedSecrets = (item: Component): { where: string; secret: string }[] => {
 	return [];
 };
 
-/** Every reference from one component to another resolves, and every secret named is this module's to name. */
+/** Every reference from one component to another resolves. */
 function crossCheck(report: Report, manifest: ModuleManifest, components: readonly Component[]): void {
 	const has = (kind: Component["kind"], name: string | undefined): boolean => components.some((item) => item.kind === kind && item.name === name);
 	const resolves = (use: string): boolean => {
@@ -447,10 +447,6 @@ function crossCheck(report: Report, manifest: ModuleManifest, components: readon
 				if (!resolves(use)) report(`${item.kind}/${item.name}.md`, `uses "${use}", which this package does not have`);
 			}
 		}
-	}
-	for (const { where, secret } of components.flatMap(namedSecrets)) {
-		const refusal = secretRefusal(manifest.name, secret);
-		if (refusal !== undefined) report(where, refusal);
 	}
 	const members = components.filter((item) => item.kind === "agents").length;
 	if (members > 0 && manifest.team === undefined) report("module.json", `needs "team" because agents/ has members`);
@@ -603,6 +599,10 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, d
 	const feeds = new Set(components.filter((item) => item.kind === "feeds").map((item) => item.name as string));
 	const rules = readRules(report, root, manifest.name, feeds);
 	crossCheck(report, manifest, components);
+	for (const { where, secret } of components.flatMap(namedSecrets)) {
+		const refusal = secretRefusal(manifest.name, secret);
+		if (refusal !== undefined) report(where, refusal);
+	}
 	const runs = runCases && problems.length === 0 ? caseRuns(components) : [];
 	if (runs.length > 0) {
 		const data = scratchData(root, manifest.name, dataDirOf?.(manifest.name));
