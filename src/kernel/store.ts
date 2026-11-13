@@ -34,7 +34,6 @@ const HOST_LINES_TABLE = (name: string) => `CREATE TABLE IF NOT EXISTS ${name} (
 	created_at INTEGER NOT NULL,
 	delivered_at INTEGER,
 	module_title TEXT,
-	module_private INTEGER,
 	CHECK (
 		(kind = 'alert' AND external_id IS NOT NULL AND length(text) BETWEEN 1 AND 1000 AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0)
 		OR (kind = 'receipt' AND external_id IS NULL AND length(text) BETWEEN 1 AND 16000)
@@ -102,7 +101,6 @@ CREATE TABLE IF NOT EXISTS tickets (
 	module_digest TEXT,
 	dispatched_to TEXT,
 	read_web_at INTEGER,
-	touched_private_at INTEGER,
 	CHECK (basis <> 'rule' OR rule_id IS NOT NULL)
 );
 
@@ -310,15 +308,12 @@ export function openStore(path: string): DatabaseSync {
 	if (!ticketColumns.includes("module_digest")) db.exec("ALTER TABLE tickets ADD COLUMN module_digest TEXT");
 	if (!ticketColumns.includes("dispatched_to")) db.exec("ALTER TABLE tickets ADD COLUMN dispatched_to TEXT");
 	if (!ticketColumns.includes("read_web_at")) db.exec("ALTER TABLE tickets ADD COLUMN read_web_at INTEGER");
-	if (!ticketColumns.includes("touched_private_at")) db.exec("ALTER TABLE tickets ADD COLUMN touched_private_at INTEGER");
 	const hostLineColumns = db.prepare("PRAGMA table_info(host_lines)").all().map((c) => (c as { name: string }).name);
-	const triggerColumns = db.prepare("PRAGMA table_info(triggers)").all().map((c) => (c as { name: string }).name);
-	if (!triggerColumns.includes("private")) db.exec("ALTER TABLE triggers ADD COLUMN private INTEGER NOT NULL DEFAULT 0");
-	if (!hostLineColumns.includes("module_title")) db.exec("ALTER TABLE host_lines ADD COLUMN module_title TEXT; ALTER TABLE host_lines ADD COLUMN module_private INTEGER");
+	if (!hostLineColumns.includes("module_title")) db.exec("ALTER TABLE host_lines ADD COLUMN module_title TEXT");
 	const hostLinesSql = (db.prepare("SELECT sql FROM sqlite_master WHERE name = 'host_lines'").get() as { sql: string }).sql;
 	// SQLite cannot change a CHECK in place, so a table from before notices is copied into a new one.
 	if (!hostLinesSql.includes("'notice'")) {
-		const columns = "id, kind, source, external_id, text, occurred_at, created_at, delivered_at, module_title, module_private";
+		const columns = "id, kind, source, external_id, text, occurred_at, created_at, delivered_at, module_title";
 		inTransaction(db, () =>
 			db.exec(`${HOST_LINES_TABLE("host_lines_next")}
 				INSERT INTO host_lines_next (${columns}) SELECT ${columns} FROM host_lines;
@@ -328,31 +323,8 @@ export function openStore(path: string): DatabaseSync {
 		);
 	}
 	if (!ticketColumns.includes("tokens_cached")) db.exec("ALTER TABLE tickets ADD COLUMN tokens_cached INTEGER NOT NULL DEFAULT 0");
-	if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'router_private'").get()) {
-		// Seeded from what the Router may already have read: a session from before this table keeps everything it saw.
-		inTransaction(db, () =>
-			db.exec(`CREATE TABLE router_private (at INTEGER NOT NULL, module TEXT);
-				INSERT INTO router_private SELECT touched_private_at, domain FROM tickets WHERE touched_private_at IS NOT NULL;
-				INSERT INTO router_private SELECT received_at, substr(source, 1, instr(source || '/', '/') - 1) FROM triggers WHERE private = 1;`),
-		);
-	}
-	if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'private_text'").get()) {
-		// Old stores never recorded what a session held, so everything the Router wrote after the first private data counts as private.
-		inTransaction(db, () =>
-			db.exec(`CREATE TABLE private_text (id TEXT PRIMARY KEY, module TEXT);
-				INSERT INTO private_text SELECT r.id, COALESCE(t.domain, (SELECT p.module FROM router_private p WHERE p.at <= r.created_at ORDER BY p.at DESC LIMIT 1))
-				FROM reply_receipts r LEFT JOIN tickets t ON t.id = r.cause AND t.touched_private_at IS NOT NULL
-				WHERE t.id IS NOT NULL OR r.created_at >= (SELECT MIN(at) FROM router_private);
-				INSERT OR IGNORE INTO private_text SELECT json_extract(d.decision, '$.triggerId'), (SELECT p.module FROM router_private p WHERE p.at <= d.created_at ORDER BY p.at DESC LIMIT 1)
-				FROM decisions d WHERE d.ok = 1 AND json_extract(d.decision, '$.kind') = 'ignore' AND d.created_at >= (SELECT MIN(at) FROM router_private);
-				UPDATE tickets SET touched_private_at = w.at FROM (
-					SELECT ticket_id, MIN(created_at) AS at FROM (
-						SELECT ticket_id, created_at FROM decisions WHERE ok = 1 AND json_extract(decision, '$.kind') IN ('open_ticket', 'hand_over')
-						UNION ALL SELECT ticket_id, created_at FROM ticket_inputs WHERE kind = 'note'
-					) WHERE created_at >= (SELECT MIN(at) FROM router_private) GROUP BY ticket_id
-				) w WHERE tickets.id = w.ticket_id AND tickets.touched_private_at IS NULL;`),
-		);
-	}
+	// Left by the Router privacy tracking that ADR-0023 retired; nothing reads them.
+	db.exec("DROP TABLE IF EXISTS router_private; DROP TABLE IF EXISTS private_text");
 	if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'router_start_overs'").get()) {
 		// Old stores logged a 清屏 only as hidden lines; seeding the latest costs at most one extra fresh session, which loses nothing durable.
 		inTransaction(db, () =>

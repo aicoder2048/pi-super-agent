@@ -3,7 +3,7 @@
  *
  * Lanes 1 to 9 boot real host processes and Worker subprocesses on the fake model of tests/e2e/fake-model.ts, each on a
  * throwaway HOME and state dir. A mail arrives as an inbox file whose source is `mail/inbox`, so the task it opens is a
- * module-feed task. Lane 5 instead uses a test package `m5mail` whose fixture feed fills a private collection. Lane 1
+ * module-feed task. Lane 5 instead uses a test package `m5mail` whose fixture feed fills a private collection, and approves its card on the phone. Lane 1
  * also runs on a detached worktree of origin/main at /tmp/psa-m5-trunk. Lane 10 calls real openai-codex models through
  * the Pi login in ~/.pi/agent. `perf` runs in-process hosts of trunk and head; `video` records the review video.
  */
@@ -287,21 +287,15 @@ async function lanes(): Promise<void> {
 		const run = await boot(HEAD, w, { script: { router: [byRule, relay], workers: [asking(brief, [askToRun(command, "解锁 M5-PRIVATE-CANARY")])] }, on: ["m5mail"], telegram: true });
 		try {
 			const card = await cardOpen(run);
-			await until(15_000, () => run.tg!.sent.some((m) => m.text.includes("想运行一条命令")));
-			await sleep(1500);
 			const tg = run.tg!;
-			const line = tg.sent.filter((m) => m.text.includes("想运行一条命令"));
-			const all = [...tg.sent.map((m) => m.text), ...tg.edits.map((e) => e.text)];
-			const leaked = all.filter((t) => t.includes("M5-PRIVATE-CANARY") || t.includes(command));
-			const forged = card ? await (async () => {
-				const tap = tg.userTaps(USER, line[0]?.messageId ?? 1, `a:${card.id}:0`);
-				await until(10_000, () => tg.toastFor(tap) !== undefined);
-				return tg.toastFor(tap);
-			})() : undefined;
-			await sleep(500);
+			await until(15_000, () => tg.sent.some((m) => m.text.includes(command) && m.buttons !== null));
+			const message = tg.sent.find((m) => m.text.includes(command) && m.buttons !== null);
+			const yes = message?.buttons?.flat().find((b) => b.text === "同意");
+			if (message && yes) tg.userTaps(USER, message.messageId, yes.data);
+			await until(30_000, () => asks(w)[0]?.state === "ran");
 			writeFileSync(join(outDir, "m5-private-telegram.json"), JSON.stringify({ sent: tg.sent, edits: tg.edits }, null, 2));
-			const ok = card !== undefined && line.length === 1 && line[0]!.text === "M5 邮件 的任务想运行一条命令，请在网页上批准" && line[0]!.buttons === null && leaked.length === 0 && asks(w)[0]?.state === "open";
-			return { pass: ok, evidence: `card ${JSON.stringify(card)}\nTelegram lines about it: ${show(line.map((m) => ({ text: m.text, buttons: m.buttons })))}\nmessages holding the canary or the command: ${leaked.length}\nforged tap on 同意 -> toast ${JSON.stringify(forged)}; card still ${asks(w)[0]?.state}\nall Telegram texts:\n${all.join("\n")}` };
+			const ok = card !== undefined && message !== undefined && message.text.includes("解锁 M5-PRIVATE-CANARY") && yes !== undefined && asks(w)[0]?.state === "ran";
+			return { pass: ok, evidence: `card ${JSON.stringify(card)}\nTelegram card: ${show(message ? [{ text: message.text, buttons: message.buttons }] : [])}\nafter tapping 同意 on the phone: run_asks ${show(asks(w))}\nall Telegram texts:\n${tg.sent.map((m) => m.text).join("\n")}` };
 		} finally {
 			await run.stop();
 		}

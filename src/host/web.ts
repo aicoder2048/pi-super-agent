@@ -272,7 +272,7 @@ function sseFrame(message: HostToClient): string {
 	return `data: ${JSON.stringify(message)}\n\n`;
 }
 
-const REFUSED_STATUS: Record<AnswerRefusal["kind"], number> = { no_question: 404, no_options: 409, out_of_range: 409, chosen: 409, spoke: 409, closed: 409, not_here: 409, web_only: 409 };
+const REFUSED_STATUS: Record<AnswerRefusal["kind"], number> = { no_question: 404, no_options: 409, out_of_range: 409, chosen: 409, spoke: 409, closed: 409, not_here: 409 };
 
 // The body is JSON so the page can pick its own copy by `refused`; `reason` is for curl users.
 function refuse(res: ServerResponse, refusal: AnswerRefusal): void {

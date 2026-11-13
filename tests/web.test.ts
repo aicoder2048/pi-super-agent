@@ -203,7 +203,7 @@ test("页面：宿主行（提醒、收据）进对话；刷新后的快照里�
 test("页面：盯盘的提醒标「盯盘提醒」，模块的提醒标「提醒 · 模块名」，收据标「盯盘条件（只在本机）」", () => {
 	const at = AT_1405;
 	assert.equal(format.hostLineLabel({ id: "hln_1", who: "alert", text: "NVDA 涨了 5.3%", at }), "盯盘提醒");
-	assert.equal(format.hostLineLabel({ id: "hln_2", who: "alert", text: "检验指标 CEA 9", at, module: { title: "个人医疗健康", private: true } }), "提醒 · 个人医疗健康");
+	assert.equal(format.hostLineLabel({ id: "hln_2", who: "alert", text: "检验指标 CEA 9", at, module: { title: "个人医疗健康" } }), "提醒 · 个人医疗健康");
 	assert.equal(format.hostLineLabel({ id: "hln_3", who: "receipt", text: "已记下：NVDA", at }), "盯盘条件（只在本机）");
 });
 

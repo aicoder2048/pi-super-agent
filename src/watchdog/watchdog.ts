@@ -16,8 +16,7 @@ export interface WatchdogConfig {
 export interface WatchdogInput {
 	now: number;
 	heartbeatAt: number | undefined;
-	/** `name` comes from `Kernel.ticketName`, so a private ticket's title stays out of the notice. */
-	tickets: { id: string; name: string; stall: Stall | null }[];
+	tickets: { id: string; title: string; stall: Stall | null }[];
 	problems: SystemProblem[];
 }
 
@@ -35,7 +34,7 @@ export function checkWatchdog(input: WatchdogInput, config: WatchdogConfig): { r
 		notices.push({
 			id: `stuck:${t.id}:${t.stall.since}`,
 			thread: `stuck-${t.id}`,
-			body: `[Watchdog] 任务 ${t.name}已经 ${t.stall.minutes} 分钟没有进展，可能卡住了。请告诉使用者。`,
+			body: `[Watchdog] 任务 ${t.id}「${t.title}」已经 ${t.stall.minutes} 分钟没有进展，可能卡住了。请告诉使用者。`,
 		});
 	}
 	for (const p of input.problems) {
@@ -78,7 +77,7 @@ export class Watchdog {
 	checkOnce(): void {
 		const now = this.#o.clock.now();
 		const kernel = this.#readKernel();
-		const tickets = kernel?.listTickets().filter((t) => t.stall).map((t) => ({ id: t.id, name: kernel.ticketName(t.id), stall: t.stall })) ?? [];
+		const tickets = kernel?.listTickets() ?? [];
 		const problems = kernel?.systemProblems() ?? [];
 		const result = checkWatchdog(
 			{ now, heartbeatAt: liveHeartbeat(this.#o.stateDir)?.at, tickets, problems },

@@ -100,7 +100,7 @@ export interface WorkerSpawner {
 }
 
 export function quoteSuffix(kernel: Kernel, quote: Quote | null): string {
-	return quote ? `\n${quoteContext(quote, quote.ticketId ? kernel.ticketName(quote.ticketId) : undefined)}` : "";
+	return quote ? `\n${quoteContext(quote, quote.ticketId ? kernel.getTicket(quote.ticketId)?.title : undefined)}` : "";
 }
 
 export function formatInputs(kernel: Kernel, inputs: TicketInput[]): string {
@@ -475,7 +475,6 @@ export class WorkerExecutor {
 		if (!caller || !this.#o.gateway) throw new Error(`${tag} 这个任务不属于模块包，没有模块的工具和知识可用`);
 		const reply = await this.#o.gateway.call(caller, request);
 		if (!reply.ok) throw new Error(`${tag} ${refusalText(reply.refusal)}`);
-		if (reply.private) this.#o.kernel.touchPrivate(ticketId);
 		for (const alert of reply.alerts ?? []) this.#o.alert?.(caller.pin.module, alert);
 		if (reply.receipt !== undefined) this.#o.receipt?.(caller.pin.module, reply.receipt);
 		return reply.output;

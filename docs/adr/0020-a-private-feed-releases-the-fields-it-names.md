@@ -2,6 +2,8 @@
 
 2026-11-13 在使用者授权的无人值守运行中拟定，使用者合并即确认。它是 Gmail 计划（`docs/multi-channel/gmail-plan.md`）的 M3，依据是 `docs/multi-channel/research.md` 7.3 节使用者的决定。补充 ADR-0016 的出站清单；ADR-0003（权威只来自使用者）不变。
 
+> 2026-11-13 补：「只有通知本身」一段和代价里关于 #105 的部分被 ADR-0023 取代。为通知开的任务、它的汇报和问题卡片、幕僚长此后的回复，在 Telegram 上都是全文。三行通知的格式、清洗和截断不变。
+
 ## 问题
 
 使用者要在手机上看到来信：发件人、主题、开头一句，三行。全文和附件在网页上看。
@@ -41,6 +43,6 @@
 
 ## 怎么看它在起作用
 
-- `tests/feed-line.test.ts` 覆盖检查、清洗、截断、放出的通知、重复、幕僚长不变私密、`problem`。
-- `tests/private-canary.test.ts` 的放出流程：私密行的正文里放一串金丝雀字，经过通知、幕僚长开的任务和它的汇报，Telegram 上都没有它；放出之后，行情汇报和幕僚长的回复在 Telegram 上是全文。
+- `tests/feed-line.test.ts` 覆盖检查、清洗、截断、放出的通知、重复、放出之后的回复是全文、`problem`。
+- `tests/telegram-full-text.test.ts`（ADR-0023 之后）：来信的三行通知照旧，为它开的任务的转述和幕僚长之后的回复在 Telegram 上是全文。
 - 测试模块在 `tests/fixtures/modules/private-line/`。
