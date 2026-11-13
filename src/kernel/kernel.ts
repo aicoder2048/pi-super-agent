@@ -1172,9 +1172,19 @@ export class Kernel {
 		if (heard) this.#run("INSERT INTO router_private (at, module) VALUES (?, ?)", this.#now(), heard.module);
 	}
 
-	/** Called before the read's content goes back to the Worker. */
-	workerSaw(ticketId: string, id: string): void {
+	/** What a Worker's `read_ticket` returns: its own ticket, a thread it subscribes, or a trigger in one of those threads or among its inputs. */
+	workerRead(ticketId: string, id: string | undefined): ReadResult {
+		const own = this.read(ticketId);
+		if (own?.type !== "ticket") throw new Error(`找不到任务 ${ticketId}`);
+		if (!id || id === ticketId) return own;
+		const target = this.read(id);
+		const allowed =
+			(target?.type === "thread" && own.threadIds.includes(id)) ||
+			(target?.type === "trigger" &&
+				(target.threadIds.some((t) => own.threadIds.includes(t)) || own.recentInputs.some((i) => i.triggerId === id)));
+		if (!allowed) throw new Error(`${id} 不属于本任务，读不到`);
 		if (this.#privacyOf(id)) this.touchPrivate(ticketId);
+		return target;
 	}
 
 	/** A subscriber can read every trigger in the thread, so subscribing is reading them. Reading the thread itself shows only ids. */
