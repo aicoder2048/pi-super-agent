@@ -72,6 +72,21 @@ const RECOVERY_NOTE = "process restarted; inspect your workdir before repeating 
 
 const reject = (reason: string) => ({ ok: false as const, reason });
 
+function writtenBy(d: Decision, ticketId: string | undefined): string[] {
+	switch (d.kind) {
+		case "open_ticket":
+			return [ticketId!];
+		case "hand_over":
+			return [d.ticketId];
+		case "ignore":
+			return [d.triggerId];
+		case "stop":
+			return [];
+		default:
+			throw new Error(`decision ${(d as { kind: string }).kind} does not say where it writes`);
+	}
+}
+
 const answerOnly = (triggerId: string, ticketId: string) =>
 	`${triggerId} is the user's click answering ${ticketId}'s question; route hand_over to ${ticketId}`;
 
@@ -347,6 +362,7 @@ export class Kernel {
 		return this.#tx(() =>
 			decisions.map((decision) => {
 				const result = this.#decide(decision, takenThisRoute);
+				if (result.ok) for (const id of writtenBy(decision, result.ticketId)) this.#routerWrote(id);
 				this.#run(
 					"INSERT INTO decisions (decision, ok, reason, ticket_id, created_at) VALUES (?, ?, ?, ?, ?)",
 					JSON.stringify(decision),
@@ -380,8 +396,7 @@ export class Kernel {
 				text,
 				this.#now(),
 			);
-			const heard = this.#privateTicket(cause) ?? this.lastPrivate();
-			if (heard) this.#run("INSERT INTO private_replies (reply_id, module) VALUES (?, ?)", replyId, heard.module);
+			this.#routerWrote(replyId, this.#privateTicket(cause));
 			this.#enqueue({ kind: "channel.reply", payload: { threadId, text, replyId, ticketId: cause.startsWith("tkt_") ? cause : null } });
 			return { ok: true, replyId };
 		});
@@ -422,7 +437,7 @@ export class Kernel {
 			const problem = this.#acceptsInput(ticketId);
 			if (problem) return reject(problem);
 			this.#addInput(ticketId, "note", text);
-			this.#privateIfRouterHoldsPrivate(ticketId);
+			this.#routerWrote(ticketId);
 			return { ok: true };
 		});
 	}
@@ -1081,24 +1096,21 @@ export class Kernel {
 		return `${ticketId}「${row?.touched_private_at == null ? (row?.title ?? "") : `一个${this.moduleLabel(row.domain)}的私密任务`}」`;
 	}
 
-	/** A trigger brings along the ticket it answers and the line it quotes, which can hold private data from before a 清屏. */
 	routerSaw(id: string): void {
-		const heard = (module: string | null) => this.#run("INSERT INTO router_private (at, module) VALUES (?, ?)", this.#now(), module);
-		if (id.startsWith("tkt_")) {
-			const ticket = this.#privateTicket(id);
-			if (ticket) heard(ticket.module);
-		}
-		if (id.startsWith("rpl_")) {
-			const reply = this.privateReply(id);
-			if (reply) heard(reply.module);
-		}
-		if (!id.startsWith("trg_")) return;
-		const trigger = this.#get("SELECT source FROM triggers WHERE id = ? AND private = 1", id);
-		if (trigger) heard(ruleNamespace(trigger.source));
+		const heard = this.#privacyOf(id);
+		if (heard) this.#run("INSERT INTO router_private (at, module) VALUES (?, ?)", this.#now(), heard.module);
+	}
+
+	#privacyOf(id: string): { module: string | null } | null {
+		if (id.startsWith("tkt_")) return this.#privateTicket(id);
+		const written = this.#get("SELECT module FROM private_text WHERE id = ?", id);
+		if (written) return { module: written.module };
+		if (!id.startsWith("trg_")) return null;
+		const feed = this.#get("SELECT source FROM triggers WHERE id = ? AND private = 1", id);
+		if (feed) return { module: ruleNamespace(feed.source) };
 		const answered = this.#answerOf(id)?.ticketId;
-		if (answered) this.routerSaw(answered);
 		const quoted = this.#get("SELECT line_id FROM trigger_quotes WHERE trigger_id = ?", id)?.line_id;
-		if (quoted) this.routerSaw(quoted);
+		return (answered && this.#privacyOf(answered)) || (quoted && this.#privacyOf(quoted)) || null;
 	}
 
 	/** The newest private data the current Router session holds, or null when it holds none. */
@@ -1109,12 +1121,15 @@ export class Kernel {
 
 	/** Recorded when the reply was written, so a 清屏 between writing and sending does not change it. */
 	privateReply(replyId: string): { module: string | null } | null {
-		const row = this.#get("SELECT module FROM private_replies WHERE reply_id = ?", replyId);
+		const row = this.#get("SELECT module FROM private_text WHERE id = ?", replyId);
 		return row ? { module: row.module } : null;
 	}
 
-	#privateIfRouterHoldsPrivate(ticketId: string): void {
-		if (this.lastPrivate()) this.touchPrivate(ticketId);
+	#routerWrote(id: string, privateCause: { module: string | null } | null = null): void {
+		const heard = privateCause ?? this.lastPrivate();
+		if (!heard) return;
+		if (id.startsWith("tkt_")) this.touchPrivate(id);
+		else this.#run("INSERT INTO private_text (id, module) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", id, heard.module);
 	}
 
 	routerStartedFresh(): void {
@@ -1294,7 +1309,6 @@ export class Kernel {
 			this.#run("INSERT INTO subscriptions (ticket_id, thread_id) VALUES (?, ?)", ticketId, threadId);
 		}
 		this.#addInput(ticketId, "brief", d.brief, d.triggerId ?? null);
-		this.#privateIfRouterHoldsPrivate(ticketId);
 		if (d.triggerId !== undefined) takenThisRoute.add(d.triggerId);
 		if (d.triggerId !== undefined) this.#setDisposition(d.triggerId, "opened_ticket", ticketId);
 		return { ok: true, ticketId };
@@ -1349,7 +1363,7 @@ export class Kernel {
 			this.#servingDigest(this.#ticketRow(ticketId)!.domain),
 			ticketId,
 		);
-		if (triggerId !== null && this.#get("SELECT private FROM triggers WHERE id = ?", triggerId)?.private === 1) this.touchPrivate(ticketId);
+		if (triggerId !== null && this.#privacyOf(triggerId)) this.touchPrivate(ticketId);
 		this.#wake(ticketId);
 	}
 

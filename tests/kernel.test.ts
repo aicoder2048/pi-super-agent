@@ -2336,6 +2336,68 @@ test("幕僚长会话里有私密数据时，它开的任务和它补给任务�
 	assert.equal(s.kernel.touchedPrivate(s.open("request", { title: "查明天天气" })), false, "换新会话后开的任务");
 });
 
+test("幕僚长会话里有私密数据时，转交过去的任务和忽略理由也算私密；换新会话后不算", () => {
+	const s = setup({ domains: DOMAINS });
+	const plain = s.open("request", { title: "查天气" });
+	const health = s.open("request", { title: "记 CEA", domain: "mail" });
+	s.kernel.touchPrivate(health);
+	s.kernel.routerSaw(health);
+	const handOver = () => s.kernel.route([{ kind: "hand_over", triggerId: s.say("按刚才的数改").triggerId, ticketId: plain }])[0]!;
+	const ignore = () => {
+		const triggerId = s.trigger({ body: "广告" }).triggerId;
+		assert.ok(s.kernel.route([{ kind: "ignore", triggerId, reason: "和 CEA 4.2 无关" }])[0]!.ok);
+		return triggerId;
+	};
+
+	assert.ok(handOver().ok);
+	assert.equal(s.kernel.touchedPrivate(plain), true, "会话里有私密数据时转交过去的任务");
+	const ignoredHolding = ignore();
+	s.kernel.routerStartedFresh();
+	s.kernel.routerSaw(ignoredHolding);
+	assert.deepEqual(s.kernel.lastPrivate(), { module: "mail" }, "读到会话里有私密数据时写的忽略理由");
+
+	s.kernel.routerStartedFresh();
+	const later = s.open("request", { title: "查明天天气" });
+	s.kernel.route([{ kind: "hand_over", triggerId: s.say("改成后天").triggerId, ticketId: later }]);
+	assert.equal(s.kernel.touchedPrivate(later), false, "换新会话后转交过去的任务");
+	s.kernel.routerSaw(ignore());
+	assert.equal(s.kernel.lastPrivate(), null, "换新会话后写的忽略理由");
+});
+
+test("引用了私密话的那句话转交给哪个任务，那个任务就算私密，不看幕僚长会话里有没有私密数据", () => {
+	const s = setup({ domains: DOMAINS });
+	const plain = s.open("request", { title: "查天气" });
+	const health = s.open("request", { title: "记 CEA", domain: "mail" });
+	s.kernel.touchPrivate(health);
+	const relayed = replied(s, health, "CEA 4.2");
+	s.kernel.routerStartedFresh();
+	const said = s.kernel.userSaidQuoting({ text: "按这个改", at: s.clock.t, lineId: relayed })!;
+	assert.ok(s.kernel.route([{ kind: "hand_over", triggerId: said.triggerId, ticketId: plain }])[0]!.ok);
+	assert.equal(s.kernel.touchedPrivate(plain), true);
+});
+
+test("升级：旧库里第一次有私密数据之后幕僚长写的回复，打开后都算私密回复；之前的不算", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-private-seed-"));
+	try {
+		const path = join(dir, "state.db");
+		const first = setup({ path, domains: DOMAINS });
+		const early = replied(first, first.say("早上好").triggerId, "早");
+		first.clock.t += 1000;
+		const health = first.open("request", { title: "记 CEA", domain: "mail" });
+		first.kernel.touchPrivate(health);
+		first.clock.t += 1000;
+		const later = replied(first, first.say("刚才是多少").triggerId, "4.2");
+		first.db.exec("DROP TABLE router_private; DROP TABLE private_text");
+		first.db.close();
+		const second = setup({ path, domains: DOMAINS });
+		assert.equal(second.kernel.privateReply(early), null);
+		assert.deepEqual(second.kernel.privateReply(later), { module: "mail" });
+		second.db.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("别处提到任务时：普通任务写标题，私密任务只写它属于哪个模块", () => {
 	const s = setup({ domains: DOMAINS });
 	const plain = s.open("request", { title: "查天气" });

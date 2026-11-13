@@ -37,20 +37,22 @@ const echoesSession = (): Brain => {
 			name: "route",
 			args: { decisions: [{ kind: "open_ticket", basis, triggerId, title: `${title}${tail}`, brief: `${title}${tail}`, domain }] },
 		});
-		if (cards.length === 0) return toolResults.some((r) => r.includes('"type": "ticket"')) ? [{ name: "reply", args: { text: recalled, cause: asking } }] : [];
+		if (cards.length === 0) return toolResults.some((r) => r.includes('"type": "ticket"') || r.includes('"type": "trigger"')) ? [{ name: "reply", args: { text: recalled, cause: asking } }] : [];
 		return cards.flatMap((card): ToolCallSpec[] => {
 			const kind = card.slice(0, card.indexOf("]") + 1);
 			if (kind === "[Worker 汇报]" || kind === "[Worker 提问]") return [{ name: "reply", args: { text: `转述：${recalled}`, cause: ids(card, "tkt") } }];
 			if (kind === "[通知]") return [{ name: "reply", args: { text: `通知：${recalled}`, cause: card.match(/act_[\w-]+/)![0] } }];
-			if (kind === "[候选触发]") return [open(ids(card, "trg"), "看信", HEALTH, "inference")];
+			if (kind === "[候选触发]") return card.includes("广告") ? [{ name: "route", args: { decisions: [{ kind: "ignore", triggerId: ids(card, "trg"), reason: `广告${tail}` }] } }] : [open(ids(card, "trg"), "看信", HEALTH, "inference")];
 			if (kind !== "[对话]") return [];
 			const triggerId = ids(card, "trg")!;
 			const said = card.split("使用者：")[1]!.split("\n")[0]!;
 			const answered = card.match(/点选回答：(tkt_[\w-]+)/)?.[1];
 			if (answered) return [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId, ticketId: answered }] } }, { name: "reply", args: { text: `回：${recalled}`, cause: triggerId } }];
 			const task = said.match(/^开个任务 (\S+)/)?.[1];
-			if (task) return [open(triggerId, task, task === "天气" || task === "查一下" ? undefined : HEALTH), { name: "reply", args: { text: `收到：${task}`, cause: triggerId } }];
-			const browse = said.match(/^翻看 (tkt_[\w-]+)/)?.[1];
+			if (task) return [open(triggerId, task, task === "天气" || task === "查一下" || task === "接手" ? undefined : HEALTH), { name: "reply", args: { text: `收到：${task}`, cause: triggerId } }];
+			const handTo = said.match(/^转交 (tkt_[\w-]+)/)?.[1];
+			if (handTo) return [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId, ticketId: handTo }] } }, { name: "reply", args: { text: `回：${recalled}`, cause: triggerId } }];
+			const browse = said.match(/^翻看 ((?:tkt|trg)_[\w-]+)/)?.[1];
 			if (browse) {
 				asking = triggerId;
 				return [{ name: "read", args: { id: browse } }];
@@ -93,6 +95,10 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 		const heard = input.includes(CANARY) ? `｜听到 ${CANARY}` : "";
 		if (!input.startsWith("[任务说明]")) {
 			if (title.startsWith("卡住")) return;
+			if (title.startsWith("接手") && heard) {
+				worker.report({ status: "blocked", summary: `接手${heard}`, question: `按 ${CANARY} 办吗？`, options: ["好", "不"] });
+				return worker.settle();
+			}
 			worker.report({ status: "ready", summary: `好了${heard}` });
 			return worker.settle();
 		}
@@ -178,6 +184,7 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 	sweep("聊天打开");
 
 	expect((await flow("私密数据之前开普通任务", () => host.say("开个任务 天气"), () => summary("天气") !== "" && phone().includes("收到：天气"))).includes("收到：天气"), "私密数据之前的回复完整发到 Telegram");
+	await flow("私密数据之前开普通任务，之后转交给它", () => host.say("开个任务 接手"), () => summary("接手") !== "" && phone().includes("收到：接手"));
 	await flow("私密任务汇报", () => host.say("开个任务 记指标"), () => web().includes(`转述：记得：${CANARY}`));
 	expect((await said("私密汇报之后问幕僚长", "刚才是多少")).join() === NOTICE, "私密汇报之后的回复是一行提示");
 	await flow("幕僚长有私密数据时开任务，任务提问", () => host.say("开个任务 查一下"), () => ticket("查一下")?.question != null);
@@ -187,6 +194,12 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 	await flow("G3 私密数据上的提醒", () => host.say("开个任务 设提醒"), () => host.kernel.alertsToday().length > 0 && summary("设提醒") !== "");
 	await flow("派活给成员", () => host.say("开个任务 派活"), () => summary("派活").includes(CANARY));
 	await flow("私密 feed 触发", () => host.kernel.submitTrigger({ source: "personal-health/hospital-mail", externalId: "mail-1", threads: [{ id: "thr_mail" }], sender: "hospital", body: `检验单 ${CANARY}`, occurredAt: Date.now(), private: true }), () => summary("看信") !== "");
+
+	await flow("幕僚长有私密数据时忽略一条普通候选触发", () => host.kernel.submitTrigger({ source: "generic", externalId: "ad-1", threads: [{ id: "thr_ad" }], sender: "shop", body: "广告 优惠", occurredAt: Date.now() }), () => host.kernel.triggerLog().some((t) => t.externalId === "ad-1" && t.disposition === "router_ignored"));
+
+	host.clearConversation();
+	const ad = host.kernel.triggerLog().find((t) => t.externalId === "ad-1")!;
+	expect((await said("清屏后 read 幕僚长有私密数据时忽略的触发", `翻看 ${ad.id}`)).join() === NOTICE, "read 幕僚长有私密数据时写下忽略理由的触发之后，回复是一行提示");
 
 	host.clearConversation();
 	const watchdog = new Watchdog({ stateDir, clock: { now: () => Date.now() + 3_600_000 }, config: { heartbeatStaleMs: Number.POSITIVE_INFINITY, restartGraceMs: 0 }, kernel: { stuckMs: 60_000 }, startHost: () => {} });
@@ -199,6 +212,14 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 	host.clearConversation();
 	const relay = host.kernel.cleared(500)!.lines.find((l) => l.text === `转述：记得：${CANARY}`)!.id;
 	expect((await replied("清屏后引用私密转述", () => host.sayQuoting("这个呢", relay))).includes(NOTICE), "引用私密转述之后的回复是一行提示");
+
+	host.clearConversation();
+	const relayAgain = host.kernel.cleared(500)!.lines.find((l) => l.text === `转述：记得：${CANARY}`)!.id;
+	await flow("清屏后引用私密转述，转交给普通任务", () => host.sayQuoting(`转交 ${ticket("接手")!.id}`, relayAgain), () => ticket("接手")?.question != null);
+	expect(host.kernel.touchedPrivate(ticket("接手")!.id), "带着私密引用转交过去的普通任务算私密任务");
+
+	host.clearConversation();
+	expect((await said("清屏后 read 收到私密引用的任务", `翻看 ${ticket("接手")!.id}`)).join() === privateLine("模块"), "read 收到私密引用的任务之后的回复是一行提示");
 
 	host.clearConversation();
 	const notice = tg.sent.find((m) => m.chatId === USER && m.text === NOTICE)!.messageId;

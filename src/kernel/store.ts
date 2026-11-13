@@ -298,9 +298,12 @@ export function openStore(path: string): DatabaseSync {
 			INSERT INTO router_private SELECT touched_private_at, domain FROM tickets WHERE touched_private_at IS NOT NULL;
 			INSERT INTO router_private SELECT received_at, substr(source, 1, instr(source || '/', '/') - 1) FROM triggers WHERE private = 1;`);
 	}
-	if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'private_replies'").get()) {
-		db.exec(`CREATE TABLE private_replies (reply_id TEXT PRIMARY KEY, module TEXT);
-			INSERT INTO private_replies SELECT r.id, t.domain FROM reply_receipts r JOIN tickets t ON t.id = r.cause WHERE t.touched_private_at IS NOT NULL;`);
+	if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'private_text'").get()) {
+		// Before this table nothing recorded what a session held, so every reply after the first private data counts.
+		db.exec(`CREATE TABLE private_text (id TEXT PRIMARY KEY, module TEXT);
+			INSERT INTO private_text SELECT r.id, COALESCE(t.domain, (SELECT p.module FROM router_private p WHERE p.at <= r.created_at ORDER BY p.at DESC LIMIT 1))
+			FROM reply_receipts r LEFT JOIN tickets t ON t.id = r.cause AND t.touched_private_at IS NOT NULL
+			WHERE t.id IS NOT NULL OR r.created_at >= (SELECT MIN(at) FROM router_private);`);
 	}
 	const retitle = db.prepare("UPDATE tickets SET title = ? WHERE id = ?");
 	for (const { id, title } of db.prepare("SELECT id, title FROM tickets").all() as { id: string; title: string }[]) {
