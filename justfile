@@ -132,6 +132,12 @@ modules:
 module *args:
     {{run}} src/cli/module.ts "$@"
 
+# 在这台电脑上授权 Gmail，一次一个 scope：read 是 gmail.readonly，draft 是 gmail.compose。refresh token 写进 secretsFile，屏幕上只打印密钥名和 scope。
+# --port 指定回调端口（给 ssh -L 用），--check 拿已存的 token 向 Google 换一次 access token 看它还能不能用。见 docs/deploy/gmail.md。
+[positional-arguments]
+google-auth *args:
+    {{run}} src/cli/google-auth.ts "$@"
+
 # 把 us-market 的盯盘条件搬成 stock-ta 的 day-move 提醒条件，并从 stock-ta 自选股划掉 AMZN、AAPL。默认只打印；--apply 写入，重跑只补差；--undo 只撤销它写的；--keep-watchlist 不动自选股。不用停宿主。
 [positional-arguments]
 migrate-us-market *args:

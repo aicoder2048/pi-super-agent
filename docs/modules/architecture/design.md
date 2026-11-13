@@ -267,7 +267,7 @@ stateDiagram-v2
 
 ```
 $ just module check ~/.pi-super-agent/modules/personal-tax
-ok personal-tax@0.1.0 | knowledge=0 data=1 tools=1 skills=1 feeds=1 agents=2 evals=1 | rules=1 | data-classes=shareable:0,private:1 | secrets=EXAMPLE_BROKER_TOKEN | digest=046bcc94d2fd
+ok personal-tax@0.1.0 | knowledge=0 data=1 tools=1 skills=1 feeds=1 agents=2 evals=1 | rules=1 | data-classes=shareable:0,private:1 | secrets=PERSONAL_TAX__BROKER_TOKEN | digest=20dbe9de7c92
 $ just module check sample/broken/unknown-key
 module.json: unknown key "descripton" (known keys: schema, name, version, title, description, team)
 ```

@@ -134,9 +134,19 @@ test("just module new：名字不合法或模板不存在时拒绝，不建目�
 	for (const args of [["../evil"], ["中文"], ["-x"], ["demo", "--template", "nope"]]) {
 		const run = newModule(dir, args);
 		assert.notEqual(run.status, 0, args.join(" "));
-		assert.match(run.stdout + run.stderr, args[2] === "nope" ? /notes、team、full/ : /模块名/, args.join(" "));
+		assert.match(run.stdout + run.stderr, args[2] === "nope" ? /notes、team、full/ : /is not a usable module name/, args.join(" "));
 	}
 	assert.ok(!existsSync(join(dir, "evil")));
+	assert.ok(!existsSync(join(dir, "modules")) || readdirSync(join(dir, "modules")).length === 0);
+});
+
+test("just module new：名字带连续或结尾的连字符时拒绝，原因和 just module check 是同一句，不建目录", (t) => {
+	const dir = stateDir(t);
+	for (const name of ["mail--x", "mail-"]) {
+		const run = newModule(dir, [name]);
+		assert.equal(run.status, 1, name);
+		assert.match(run.stdout + run.stderr, new RegExp(`"${name}" is not a usable module name \\(lowercase letters and digits, joined by single hyphens\\)`), name);
+	}
 	assert.ok(!existsSync(join(dir, "modules")) || readdirSync(join(dir, "modules")).length === 0);
 });
 
@@ -163,23 +173,6 @@ test("just module check：好包打印一行 ok 名字@版本 和各类组件数
 	const run = check(join(SAMPLE, "personal-tax"));
 	assert.equal(run.status, 0, run.stderr);
 	assert.match(run.stdout, /^ok personal-tax@0\.1\.0 \| knowledge=0 data=1 tools=1 .*digest=[0-9a-f]{12}\n$/);
-});
-
-test("just module check：密钥只写在 config.json 的 secretsFile 里时，用例照样拿到密钥", (t) => {
-	const dir = stateDir(t, { secretsFile: "secrets.env" });
-	writeFileSync(join(dir, "secrets.env"), "LAB_KEY=k\n");
-	const pkg = join(dir, "keyed");
-	for (const [path, content] of Object.entries({
-		"module.json": JSON.stringify({ schema: 1, name: "keyed", version: "0.1.0", title: "带密钥", description: "要密钥的工具" }),
-		"tools/probe/tool.json": JSON.stringify({ title: "probe", description: "reads its key", input: { x: { type: "number", title: "x" } }, output: { y: { type: "number", title: "y" } }, secrets: ["LAB_KEY"] }),
-		"tools/probe/index.ts": `export default async () => ({ y: process.env.LAB_KEY === "k" ? 1 : 0 });`,
-		"tools/probe/cases.json": JSON.stringify([{ name: "has-key", input: { x: 1 }, expect: { y: 1 } }]),
-	})) {
-		mkdirSync(join(pkg, path, ".."), { recursive: true });
-		writeFileSync(join(pkg, path), content);
-	}
-	const run = cli("src/cli/module.ts", dir, ["check", pkg]);
-	assert.equal(run.status, 0, run.stdout + run.stderr);
 });
 
 test("just module check：坏包每个问题一行，带路径和原因，以 1 退出", () => {
@@ -411,13 +404,13 @@ test("just module try：临时状态目录里的 files/ 是真实 files/ 的副�
 	assert.equal(run.userDirChanged, false);
 });
 
-test("just module try：工具要的密钥只写在 config.json 的 secretsFile 里时，检查和临时宿主都拿到它，预演照常判通过", async (t) => {
+test("just module try：工具要密钥时，检查用假密钥跑用例，预演照常判通过", async (t) => {
 	const pkg = mkdtempSync(join(tmpdir(), "psa-keyed-"));
 	t.after(() => rmSync(pkg, { recursive: true, force: true }));
 	cpSync(join(SAMPLE, "personal-tax"), pkg, { recursive: true });
 	for (const [path, content] of Object.entries({
-		"tools/probe/tool.json": JSON.stringify({ title: "probe", description: "reads its key", input: { x: { type: "number", title: "x" } }, output: { y: { type: "number", title: "y" } }, secrets: ["LAB_KEY"] }),
-		"tools/probe/index.ts": `export default async () => ({ y: process.env.LAB_KEY === "k" ? 1 : 0 });`,
+		"tools/probe/tool.json": JSON.stringify({ title: "probe", description: "reads its key", input: { x: { type: "number", title: "x" } }, output: { y: { type: "number", title: "y" } }, secrets: ["PERSONAL_TAX__LAB_KEY"] }),
+		"tools/probe/index.ts": `export default async () => ({ y: process.env.PERSONAL_TAX__LAB_KEY ? 1 : 0 });`,
 		"tools/probe/cases.json": JSON.stringify([{ name: "has-key", input: { x: 1 }, expect: { y: 1 } }]),
 	})) {
 		mkdirSync(join(pkg, path, ".."), { recursive: true });
@@ -429,7 +422,7 @@ test("just module try：工具要的密钥只写在 config.json 的 secretsFile 
 			router: [opensTaxTicket],
 			workers: [worker("预演算税", on("调工具", /^\[任务说明\]/, () => [domainTool("tax-bracket", { taxableIncome: 25000 })]), on("汇报", /^\[模块工具\]/, () => [report("ready", "落在第 2 档，估算税额 4000 美元")]))],
 		},
-		{ pkg, secrets: "LAB_KEY=k\n" },
+		{ pkg, secrets: "PERSONAL_TAX__LAB_KEY=k\n" },
 	);
 	assert.equal(run.status, 0, run.out);
 	assert.match(run.out, /^PASS bracket-uses-tool/m);
