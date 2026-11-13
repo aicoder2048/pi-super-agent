@@ -85,6 +85,11 @@ test("the owner of a secret may name it", (t) => {
 	assert.deepEqual(problems(join(REPO, "docs/modules/examples/stock-ta")), []);
 });
 
+test("FINNHUB_API_KEY belongs to stock-ta: stock-ta may name it, another module may not", (t) => {
+	assert.deepEqual(problems(keyed(t, "stock-ta", ["FINNHUB_API_KEY"], "tool")), []);
+	assert.deepEqual(problems(keyed(t, "mail", ["FINNHUB_API_KEY"], "tool")), ["tools/probe/tool.json: FINNHUB_API_KEY 属于模块 stock-ta，别的模块不能用"]);
+});
+
 test("just module check prints the refusal and exits 1", (t) => {
 	const run = cli(scratch(t, "psa-owners-state-"), ["check", keyed(t, "mail", ["TELEGRAM_BOT_TOKEN"])]);
 	assert.equal(run.status, 1, run.out);

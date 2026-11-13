@@ -15,8 +15,8 @@
 | 密钥 | 主人 |
 | --- | --- |
 | `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` | `mail` |
-| `POLYGON_API_KEY` | `stock-ta` |
-| `GMAIL_DRAFT_REFRESH_TOKEN`、`TELEGRAM_BOT_TOKEN`、`MASSIVE_API_KEY`、`STOCK_HEATMAP_API_KEY`、`FINNHUB_API_KEY`、`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GITHUB_TOKEN` | 宿主 |
+| `POLYGON_API_KEY`、`FINNHUB_API_KEY` | `stock-ta` |
+| `GMAIL_DRAFT_REFRESH_TOKEN`、`TELEGRAM_BOT_TOKEN`、`MASSIVE_API_KEY`、`STOCK_HEATMAP_API_KEY`、`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GITHUB_TOKEN` | 宿主 |
 
 包的检查（`src/modules/validate.ts`）对每个 feed 和工具点名的密钥查表。点名别的模块或宿主的密钥就报错，一行写明密钥名和主人。表里没有的名字，只有以本模块的前缀开头才放行：模块名转大写、`-` 换成 `_`，再加 `__`，例如 `MAIL__`、`STOCK_TA__`、`PERSONAL_TAX__`。新模块用自己前缀的密钥不用改宿主（计划 Appendix E 第 10 条的默认）。
 
@@ -24,7 +24,7 @@
 
 **模块的密钥只从 `secretsFile` 取。** 宿主读自己的密钥时环境变量优先，模块代码的密钥不看环境变量。宿主进程的环境里可能有模型的 key（`DEEPSEEK_API_KEY` 这类）和 `GITHUB_TOKEN`，它们不在 `secretsFile` 里，模块点了名也拿不到；表里把常见的几个记成宿主的，检查时就报出主人。旧 Mac 的 launchd 服务只给 `HOME`、`PATH`、`PSA_STATE_DIR` 三个环境变量（2026-11-13 只读看过），模块的密钥本来就在 `secretsFile` 里。
 
-**宿主自己读密钥不经过这张表。** 表只管值能到哪个模块的代码里。宿主自带的 `us-market` 来源也读 `POLYGON_API_KEY`（它是行情密钥的别名之一），这不和「属于 `stock-ta`」冲突：主人说的是哪个模块的包能点名它。宿主读 `TELEGRAM_BOT_TOKEN`、行情密钥，`just google-auth` 读 OAuth 客户端，M7 宿主用写草稿的 token，都照旧用 `readSecret`。
+**宿主自己读密钥不经过这张表。** 表只管值能到哪个模块的代码里。宿主自带的 `us-market` 来源也读 `POLYGON_API_KEY`（它是行情密钥的别名之一），这不和「属于 `stock-ta`」冲突：主人说的是哪个模块的包能点名它。`FINNHUB_API_KEY` 同理：宿主的 `us-market` 读它查财报日，`us-market` 要退役，按退役计划财报日改由 `stock-ta` 的 `earnings-date` 工具点名，所以表里记成 `stock-ta` 的；`us-market` 退役前照旧用 `readSecret` 读。宿主读 `TELEGRAM_BOT_TOKEN`、行情密钥，`just google-auth` 读 OAuth 客户端，M7 宿主用写草稿的 token，都照旧用 `readSecret`。
 
 **工具的测试用例只用假密钥。** 工具的 `cases.json` 和 feed 的样例一样，拿到的是固定的假值（`fixtureSecrets`），不是 `secretsFile` 里的值。检查因此不再读 `secretsFile`，`scanPackage`、`runCasesAsync` 和宿主的模块表都去掉了读密钥的参数。
 
