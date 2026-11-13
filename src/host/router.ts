@@ -156,7 +156,7 @@ function ticketsLine(kernel: Kernel): string {
 	const recent = rows.filter((r) => r.stage === "closed" || r.stage === "stopped").slice(-RECENT_CLOSED);
 	const listed = [...open, ...recent].slice(-LISTED_TICKETS);
 	if (listed.length === 0) return "进行中和最近的任务：无";
-	return `进行中和最近的任务：${listed.map((r) => `${r.id}「${r.title}」${STAGE_NAME[r.stage]}`).join("；")}`;
+	return `进行中和最近的任务：${listed.map((r) => `${kernel.ticketName(r.id)}${STAGE_NAME[r.stage]}`).join("；")}`;
 }
 
 function reportCard(kind: "report" | "question", head: string, r: Report): string {

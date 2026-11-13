@@ -129,7 +129,6 @@ export class Host {
 	readonly #clock: Clock;
 	readonly #kitFor: Domains["kitFor"] | undefined;
 	readonly #modules: HostOptions["modules"];
-	readonly #book: Domains["book"] | undefined;
 	readonly #memberCap: MemberCap | undefined;
 	readonly #after: NonNullable<HostOptions["after"]>;
 	#cancelNewYorkDay: (() => void) | undefined;
@@ -148,7 +147,6 @@ export class Host {
 		this.#watching = options.watching ?? [];
 		this.#kitFor = options.domains?.kitFor;
 		this.#modules = options.modules;
-		this.#book = options.domains?.book;
 		this.#db = openStore(join(options.stateDir, "state.db"));
 		this.kernel = new Kernel({
 			db: this.#db,
@@ -259,7 +257,7 @@ export class Host {
 			this.#log,
 		);
 		// Built before any client can say a line, so every line and reply reaches it; it touches the network only once started.
-		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }), privateTitle: (ticketId) => this.#privateTitle(ticketId), privateReply: (replyId) => this.#privateReply(replyId) }, db: this.#db, clock, log: this.#log });
+		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }), privateTitle: (ticketId) => this.kernel.privateLabel(ticketId), privateReply: (replyId) => this.#privateReply(replyId) }, db: this.#db, clock, log: this.#log });
 	}
 
 	static async start(options: HostOptions): Promise<Host> {
@@ -405,28 +403,15 @@ export class Host {
 		return cap ? { limit: cap.limit(), question: cap.question(this.workers.membersWaitingForSlot()) } : null;
 	}
 
-	#privateTitle(ticketId: string): string | null {
-		if (!this.kernel.touchedPrivate(ticketId)) return null;
-		return this.#privateLabel(this.kernel.getTicket(ticketId)?.domain ?? null);
-	}
-
 	#privateReply(replyId: string): string | null {
 		const heard = this.kernel.privateReply(replyId);
-		return heard && this.#privateLabel(heard.module);
-	}
-
-	#privateLabel(module: string | null): string {
-		return module ? this.#moduleTitle(module) : "模块";
+		return heard && this.kernel.moduleLabel(heard.module);
 	}
 
 	#deliverReply(threadId: string, text: string, replyId: string, ticketId: string | null | undefined): void {
 		if (threadId !== CONVERSATION_THREAD_ID) throw new Error(`线程 ${threadId} 没有渠道`);
 		this.#broadcast({ type: "reply", text, at: Date.now(), replyId, ...(ticketId ? { ticketId } : {}) });
 		this.kernel.markReplyDelivered(replyId);
-	}
-
-	#moduleTitle(module: string): string {
-		return this.#book?.().get(module)?.title ?? module;
 	}
 
 	/** Bypasses the Router (ADR-0017). */
@@ -437,7 +422,7 @@ export class Host {
 			externalId: alert.externalId,
 			text: alert.text,
 			occurredAt: Number.isNaN(occurredAt) ? this.#clock.now() : occurredAt,
-			module: { title: this.#moduleTitle(module), private: alert.private },
+			module: { title: this.kernel.moduleLabel(module), private: alert.private },
 		});
 	}
 

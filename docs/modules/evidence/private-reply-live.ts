@@ -51,6 +51,7 @@ const fake = await FakeModel.start({
 		on("不回慢任务的汇报", /^\[Worker 汇报\][^\n]*慢记 CEA/, () => "ok"),
 		on("转述提问", /^\[Worker 提问\]/, (c: string) => [reply(c, `转述：${c.split("\n").slice(1).join(" ")}`)]),
 		answers(/^\[对话\][\s\S]*使用者：晚上好/, "晚上好，今天没有待办"),
+		on("复述任务列表", /^\[对话\][\s\S]*使用者：最近有什么任务/, (c: string) => [reply(c, `列表：${c.match(/「[^」]*」/g)?.join("") ?? "无"}`)]),
 		...[1, 2, 3].map(() => on("转述", /^\[Worker 汇报\]/, (c: string) => [reply(c, `转述：${c.split("\n")[1] ?? ""}`)])),
 		...[1, 2, 3, 4, 5].map(() => answers(/^\[对话\][\s\S]*使用者：刚才的 CEA 是多少/, "记得：CEA 4.2 ng/mL")),
 	],
@@ -185,6 +186,19 @@ try {
 		"ticket-after-private",
 		ticket.length === 1 && ticket[0]!.touched_private_at !== null && !explainPhone.some((m) => m.includes("4.2")) && explainPhone.includes(MODULE_NOTICE) && answered.status === 200,
 		`ticket on the web page: ${JSON.stringify(ticket)}\nPOST /say answer option 0 from the web: ${answered.status}\nTelegram recorder from "解释这个指标" on:\n${explainPhone.join("\n")}`,
+	);
+
+	const listClear = await post("/clear", {});
+	const listMark = phone().length;
+	just(["say", "最近有什么任务"]);
+	await within(30_000, () => said().some((t) => t.startsWith("列表：")));
+	await within(20_000, () => phone().slice(listMark).some((m) => m.startsWith("列表：")));
+	await sleep(1500);
+	const listPhone = phone().slice(listMark);
+	check(
+		"ticket-list-after-clear",
+		listClear.status === 204 && listPhone.some((m) => m.startsWith("列表：") && m.includes("一个模块的私密任务")) && !listPhone.some((m) => m.includes("4.2")),
+		`POST /clear: ${listClear.status}\nthe Router repeats the ticket list of its [对话] card: ${said().find((t) => t.startsWith("列表："))}\nTelegram recorder after the clear:\n${listPhone.join("\n")}`,
 	);
 
 	const slowReplies = said().length;

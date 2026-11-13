@@ -27,8 +27,8 @@ test("宿主没有心跳或心跳过期时要求重启", () => {
 });
 
 test("看板行标着久无进展的任务发一条通知，同一段停滞只对应一个触发 id", () => {
-	const stuck = { id: "tkt_a", title: "跑回归", stall: { since: 60 * MIN, minutes: 40 } };
-	const fresh = { id: "tkt_b", title: "刚开始", stall: null };
+	const stuck = { id: "tkt_a", name: "tkt_a「跑回归」", stall: { since: 60 * MIN, minutes: 40 } };
+	const fresh = { id: "tkt_b", name: "tkt_b「刚开始」", stall: null };
 	const { notices } = checkWatchdog({ ...base, tickets: [stuck, fresh] }, config);
 	assert.equal(notices.length, 1);
 	assert.match(notices[0].body, /跑回归.*40 分钟没有进展/);

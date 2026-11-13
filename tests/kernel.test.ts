@@ -2335,3 +2335,15 @@ test("幕僚长会话里有私密数据时，它开的任务和它补给任务�
 	s.kernel.routerStartedFresh();
 	assert.equal(s.kernel.touchedPrivate(s.open("request", { title: "查明天天气" })), false, "换新会话后开的任务");
 });
+
+test("别处提到任务时：普通任务写标题，私密任务只写它属于哪个模块", () => {
+	const s = setup({ domains: DOMAINS });
+	const plain = s.open("request", { title: "查天气" });
+	const health = s.open("request", { title: "记 CEA 4.2", domain: "mail" });
+	const loose = s.open("request", { title: "解释 CEA 4.2" });
+	s.kernel.touchPrivate(health);
+	s.kernel.touchPrivate(loose);
+	assert.equal(s.kernel.ticketName(plain), `${plain}「查天气」`);
+	assert.equal(s.kernel.ticketName(health), `${health}「一个mail的私密任务」`);
+	assert.equal(s.kernel.ticketName(loose), `${loose}「一个模块的私密任务」`);
+});

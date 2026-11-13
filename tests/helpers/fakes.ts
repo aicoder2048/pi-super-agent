@@ -40,7 +40,7 @@ export function domainsOf(modules: Record<string, FakeModule>): Domains {
 }
 
 export type ToolCallSpec = { name: string; args: Record<string, unknown> };
-export type Brain = (cards: string[], call: number, toolResults: string[]) => ToolCallSpec[] | Promise<ToolCallSpec[]>;
+export type Brain = (cards: string[], call: number, toolResults: string[], sessionText: string) => ToolCallSpec[] | Promise<ToolCallSpec[]>;
 
 function messageText(m: any): string {
 	if (typeof m.content === "string") return m.content;
@@ -81,7 +81,7 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 		const toolResults: string[] = [];
 		for (let i = messages.length - 1; i >= 0 && messages[i].role === "toolResult"; i--) toolResults.unshift(messageText(messages[i]));
 		if (trailing.length) batches.push(trailing);
-		const calls = trailing.length || toolResults.length ? await brain(trailing, callCount, toolResults) : [];
+		const calls = trailing.length || toolResults.length ? await brain(trailing, callCount, toolResults, messages.map(messageText).join("\n")) : [];
 		if (calls.length === 0) return fauxAssistantMessage(fauxText("ok"));
 		return fauxAssistantMessage(calls.map((c) => fauxToolCall(c.name, c.args as any)), { stopReason: "toolUse" });
 	};

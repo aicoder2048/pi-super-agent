@@ -95,7 +95,7 @@ export interface WorkerSpawner {
 }
 
 export function quoteSuffix(kernel: Kernel, quote: Quote | null): string {
-	return quote ? `\n${quoteContext(quote, quote.ticketId ? kernel.getTicket(quote.ticketId)?.title : undefined)}` : "";
+	return quote ? `\n${quoteContext(quote, quote.ticketId ? kernel.ticketName(quote.ticketId) : undefined)}` : "";
 }
 
 export function formatInputs(kernel: Kernel, inputs: TicketInput[]): string {

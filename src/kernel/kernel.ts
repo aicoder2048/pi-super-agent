@@ -380,7 +380,7 @@ export class Kernel {
 				text,
 				this.#now(),
 			);
-			const heard = this.#get("SELECT domain AS module FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", cause) ?? this.lastPrivate();
+			const heard = this.#privateTicket(cause) ?? this.lastPrivate();
 			if (heard) this.#run("INSERT INTO private_replies (reply_id, module) VALUES (?, ?)", replyId, heard.module);
 			this.#enqueue({ kind: "channel.reply", payload: { threadId, text, replyId, ticketId: cause.startsWith("tkt_") ? cause : null } });
 			return { ok: true, replyId };
@@ -1059,15 +1059,34 @@ export class Kernel {
 	}
 
 	touchedPrivate(ticketId: string): boolean {
-		return this.#get("SELECT 1 FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) !== undefined;
+		return this.#privateTicket(ticketId) !== null;
+	}
+
+	#privateTicket(ticketId: string): { module: string | null } | null {
+		return this.#get("SELECT domain AS module FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) ?? null;
+	}
+
+	moduleLabel(module: string | null): string {
+		return module === null ? "模块" : (this.#domains().get(module)?.title ?? module);
+	}
+
+	privateLabel(ticketId: string): string | null {
+		const ticket = this.#privateTicket(ticketId);
+		return ticket && this.moduleLabel(ticket.module);
+	}
+
+	/** A private ticket's title was written with private data at hand, so text about anything else names it only by its module. */
+	ticketName(ticketId: string): string {
+		const row = this.#get("SELECT title, domain, touched_private_at FROM tickets WHERE id = ?", ticketId);
+		return `${ticketId}「${row?.touched_private_at == null ? (row?.title ?? "") : `一个${this.moduleLabel(row.domain)}的私密任务`}」`;
 	}
 
 	/** A trigger brings along the ticket it answers and the line it quotes, which can hold private data from before a 清屏. */
 	routerSaw(id: string): void {
 		const heard = (module: string | null) => this.#run("INSERT INTO router_private (at, module) VALUES (?, ?)", this.#now(), module);
 		if (id.startsWith("tkt_")) {
-			const ticket = this.#get("SELECT domain FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", id);
-			if (ticket) heard(ticket.domain);
+			const ticket = this.#privateTicket(id);
+			if (ticket) heard(ticket.module);
 		}
 		if (id.startsWith("rpl_")) {
 			const reply = this.privateReply(id);
