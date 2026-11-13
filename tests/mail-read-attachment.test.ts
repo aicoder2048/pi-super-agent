@@ -263,7 +263,7 @@ test("读附件：推断任务也能调", async (t) => {
 	assert.equal((reply.output as { text: string }).text, "推断任务读到的附件");
 });
 
-test("读附件：回复标为私密，任务在 Telegram 上只剩一行", { todo: "要宿主改动：src/modules/gateway.ts 的 runTool 对每个工具回复都写 private: false，tool.json 也没有声明读哪些集合的字段" }, async (t) => {
+test("读附件：模块有私密集合，读附件的回复标为私密", async (t) => {
 	const w = await attachmentWorld(t, [ann("m-1", [file("a.txt", "text/plain", "私密附件")])]);
 	const { gateway, caller } = gatewayOver(t, w);
 	const reply = await gateway.call(caller, { kind: "tool", name: "read-attachment" as ComponentName, input: { messageId: "m-1", partId: "1" } });

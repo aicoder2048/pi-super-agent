@@ -133,7 +133,9 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			return value === undefined ? [] : [[name, value]];
 		}));
 		const ran = await runModuleCodeAsync({ packageDir: copy.dir, component: join("tools", tool.name), dataDir: ports.dataDir(copy.module) }, RUNTIMES[tool.tool.runtime ?? "node"], input, secrets, { limitMs: ports.limitMs ?? LIMIT_MS });
-		return ran.ok ? { ok: true, output: ran.output, private: false } : { ok: false, refusal: { code: "provider-failed", note: ran.note } };
+		// Tool code gets the module's data dir and can open any collection, so a tool that is not pure may carry private rows out.
+		const mayCarryPrivate = toolEffect(tool.tool) !== "pure" && copy.collections.some((c) => c.collection.class === "private");
+		return ran.ok ? { ok: true, output: ran.output, private: mayCarryPrivate } : { ok: false, refusal: { code: "provider-failed", note: ran.note } };
 	};
 
 	return {
