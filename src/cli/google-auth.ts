@@ -42,12 +42,17 @@ function parseArgs(args: readonly string[]): Args | undefined {
 const endpointsOf = (env: NodeJS.ProcessEnv): Endpoints =>
 	env.PSA_GOOGLE_OAUTH_URL ? { auth: `${env.PSA_GOOGLE_OAUTH_URL}/o/oauth2/v2/auth`, token: `${env.PSA_GOOGLE_OAUTH_URL}/token` } : { auth: "https://accounts.google.com/o/oauth2/v2/auth", token: "https://oauth2.googleapis.com/token" };
 
+type TokenReply = { ok: true; body: Record<string, unknown> } | { ok: false; refused: string } | { ok: false; unreachable: string };
+
 /** Only Google's `error` code is shown: an error reply carries no token, but its other fields are not ours to print. */
-async function postToken(endpoints: Endpoints, form: Record<string, string>): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; why: string }> {
-	const reply = await fetch(endpoints.token, { method: "POST", body: new URLSearchParams(form), signal: AbortSignal.timeout(TOKEN_FETCH_MS) });
+async function postToken(endpoints: Endpoints, form: Record<string, string>): Promise<TokenReply> {
+	const reply = await fetch(endpoints.token, { method: "POST", body: new URLSearchParams(form), signal: AbortSignal.timeout(TOKEN_FETCH_MS) }).catch((error: Error) => error);
+	if (reply instanceof Error) return { ok: false, unreachable: `连不上 Google 的 token 接口（${causeOf(reply)}）` };
 	const body = (await reply.json().catch(() => ({}))) as Record<string, unknown>;
-	return reply.ok ? { ok: true, body } : { ok: false, why: `${reply.status} ${typeof body.error === "string" ? body.error : "（没有错误码）"}` };
+	return reply.ok ? { ok: true, body } : { ok: false, refused: `${reply.status} ${typeof body.error === "string" ? body.error : "（没有错误码）"}` };
 }
+
+const causeOf = (error: Error): string => (error.cause instanceof Error ? error.cause.message : error.message).replace(/\s+/g, " ");
 
 function listen(port: number, state: string, timeoutMs: number) {
 	let settle: (callback: Callback | "timeout") => void;
@@ -114,7 +119,8 @@ async function authorize(args: Args, google: Google, timeoutMs: number): Promise
 		if ("error" in back) return finish(`Google 没有授权（${back.error}），什么都没写`, 1);
 		const { client, endpoints, secretsFile } = google;
 		const reply = await postToken(endpoints, { grant_type: "authorization_code", code: back.code, code_verifier: verifier, client_id: client.id, client_secret: client.secret, redirect_uri: redirect });
-		if (!reply.ok) return finish(`Google 拒绝了换 token：${reply.why}，什么都没写`, 1);
+		if ("unreachable" in reply) return finish(`${reply.unreachable}，什么都没写`, 1);
+		if ("refused" in reply) return finish(`Google 拒绝了换 token：${reply.refused}，什么都没写`, 1);
 		const grant = grantOf(scope, reply.body);
 		if ("why" in grant) return finish(grant.why, 1);
 		writeSecret(secretsFile, secret, grant.refreshToken);
@@ -129,7 +135,8 @@ async function check(args: Args, { client, endpoints, secretOf }: Google): Promi
 	const refreshToken = secretOf(secret);
 	if (refreshToken === undefined) return refuse(`secretsFile 里没有 ${secret}，先跑 just google-auth ${args.scope}`);
 	const reply = await postToken(endpoints, { grant_type: "refresh_token", refresh_token: refreshToken, client_id: client.id, client_secret: client.secret });
-	if (!reply.ok) return refuse(`Google 拒绝了 ${secret}：${reply.why}`);
+	if ("unreachable" in reply) return refuse(reply.unreachable);
+	if ("refused" in reply) return refuse(`Google 拒绝了 ${secret}：${reply.refused}`);
 	console.log(`${secret} 能换到 access token（${short(String(reply.body.scope))}，${String(reply.body.expires_in)} 秒内有效）`);
 	return 0;
 }

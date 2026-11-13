@@ -127,6 +127,25 @@ test("the user clicking Cancel on the consent screen ends the command and writes
 	assert.equal(sha(w.secrets), before);
 });
 
+test("the token endpoint dropping the connection gives one line and exit 1, a short page, and writes nothing", async (t) => {
+	const w = await world(t, { dropToken: true });
+	writeFileSync(w.secrets, `${readFileSync(w.secrets, "utf8")}GMAIL_READ_REFRESH_TOKEN=1//stored\n`);
+	const before = sha(w.secrets);
+	const { url, done } = run(w, ["read"]);
+	const page = await fetch(await url);
+	const result = await done;
+	assert.equal(result.status, 1, result.out);
+	assert.match(result.out, /^连不上 Google 的 token 接口（.+），什么都没写$/m);
+	assert.doesNotMatch(result.out, /^\s+at |Node\.js v/m);
+	assert.equal(page.status, 400);
+	assert.match(await page.text(), /^连不上 Google 的 token 接口/);
+	assert.equal(sha(w.secrets), before);
+	const check = await run(w, ["read", "--check"]).done;
+	assert.equal(check.status, 1, check.out);
+	assert.match(check.out, /^连不上 Google 的 token 接口（.+）$/m);
+	assert.doesNotMatch(check.out, /^\s+at |Node\.js v/m);
+});
+
 test("no callback before the timeout: exits non-zero, closes the port, writes nothing", async (t) => {
 	const w = await world(t);
 	const before = sha(w.secrets);

@@ -12,6 +12,8 @@ export type Grant = { scope: string; refresh_token?: string | null };
 export type FakeGoogleOptions = {
 	grant?: (requested: string) => Grant;
 	deny?: boolean;
+	/** The token endpoint closes the connection without a reply. */
+	dropToken?: boolean;
 	/** `"GET /gmail/v1/users/me/profile"` → the JSON to reply with. */
 	routes?: Record<string, unknown>;
 };
@@ -72,6 +74,7 @@ export async function startFakeGoogle(options: FakeGoogleOptions = {}): Promise<
 			return res.writeHead(302, { location: back.toString() }).end();
 		}
 		if (req.method === "POST" && url.pathname === "/token") {
+			if (options.dropToken) return void req.socket.destroy();
 			const form = new URLSearchParams(await body(req));
 			if (form.get("client_id") !== client.id || form.get("client_secret") !== client.secret) return json(401, { error: "invalid_client" });
 			if (form.get("grant_type") === "refresh_token") {
