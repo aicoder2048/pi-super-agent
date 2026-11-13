@@ -26,7 +26,8 @@ export function readSecret(names: readonly string[], label: string, env: Readonl
 	return found;
 }
 
-export const secretLookup = (secretsFile: string | undefined, env: Readonly<NodeJS.ProcessEnv> = process.env): SecretLookup => (name) => readSecret([name], name, env, secretsFile)?.key;
+/** secretsFile only: the host's environment holds its own keys (model providers, GITHUB_TOKEN), which module code must not reach by naming them (ADR-0019). */
+export const secretLookup = (secretsFile: string | undefined): SecretLookup => (name) => readSecret([name], name, {}, secretsFile)?.key;
 
 /** Kept out of loadConfig so `just google-auth` reads it without loading Pi. */
 export const configuredSecretsFile = (stateDir: string): string | undefined => {

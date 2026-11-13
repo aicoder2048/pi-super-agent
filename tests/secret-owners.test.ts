@@ -59,6 +59,12 @@ test("a package that names a host secret is refused, on a feed and on a tool", (
 	assert.deepEqual(problems(keyed(t, "mail", ["GMAIL_DRAFT_REFRESH_TOKEN"], "tool")), ["tools/probe/tool.json: GMAIL_DRAFT_REFRESH_TOKEN 属于宿主，模块不能用"]);
 });
 
+test("a model provider key the host may keep in its environment is the host's", (t) => {
+	for (const [module, secret] of [["deepseek", "DEEPSEEK_API_KEY"], ["openai", "OPENAI_API_KEY"], ["anthropic", "ANTHROPIC_API_KEY"], ["github", "GITHUB_TOKEN"]]) {
+		assert.deepEqual(problems(keyed(t, module!, [secret!])), [`feeds/inbox/feed.json: ${secret} 属于宿主，模块不能用`]);
+	}
+});
+
 test("a secret the table does not list passes only with the module's own prefix", (t) => {
 	assert.deepEqual(problems(keyed(t, "stock-ta", ["STOCK_TA__EXTRA_KEY"])), []);
 	assert.deepEqual(problems(keyed(t, "mail", ["FOO_KEY"])), ["feeds/inbox/feed.json: FOO_KEY 不在密钥归属表里，本模块自己的密钥要以 MAIL__ 开头"]);

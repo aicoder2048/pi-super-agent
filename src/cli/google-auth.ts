@@ -148,7 +148,7 @@ async function googleAuth(argv: readonly string[], env: NodeJS.ProcessEnv): Prom
 	const stateDir = defaultStateDir();
 	const secretsFile = configuredSecretsFile(stateDir);
 	if (secretsFile === undefined) return refuse(`${stateDir}/config.json 里没有 "secretsFile"。加一行 "secretsFile": "<.env 文件的路径>"（相对路径从状态目录算起），再跑一次`);
-	const secretOf = secretLookup(secretsFile, env);
+	const secretOf = secretLookup(secretsFile);
 	const [id, secret] = CLIENT.map(secretOf);
 	if (id === undefined || secret === undefined) return refuse(`secretsFile 里缺 ${CLIENT.join(" 或 ")}，先照 docs/deploy/gmail.md 第一节建 OAuth 客户端，把这两行写进 ${secretsFile}`);
 	const google: Google = { client: { id, secret }, secretsFile, secretOf, endpoints: endpointsOf(env) };

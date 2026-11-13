@@ -16,11 +16,13 @@
 | --- | --- |
 | `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` | `mail` |
 | `POLYGON_API_KEY` | `stock-ta` |
-| `GMAIL_DRAFT_REFRESH_TOKEN`、`TELEGRAM_BOT_TOKEN`、`MASSIVE_API_KEY`、`STOCK_HEATMAP_API_KEY`、`FINNHUB_API_KEY` | 宿主 |
+| `GMAIL_DRAFT_REFRESH_TOKEN`、`TELEGRAM_BOT_TOKEN`、`MASSIVE_API_KEY`、`STOCK_HEATMAP_API_KEY`、`FINNHUB_API_KEY`、`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GITHUB_TOKEN` | 宿主 |
 
 包的检查（`src/modules/validate.ts`）对每个 feed 和工具点名的密钥查表。点名别的模块或宿主的密钥就报错，一行写明密钥名和主人。表里没有的名字，只有以本模块的前缀开头才放行：模块名转大写、`-` 换成 `_`，再加 `__`，例如 `MAIL__`、`STOCK_TA__`、`PERSONAL_TAX__`。新模块用自己前缀的密钥不用改宿主（计划 Appendix E 第 10 条的默认）。
 
 前缀以两个下划线收尾，是因为单个 `_` 分不清主人：`MAIL_X_TOKEN` 既可能是 `mail` 的 X token，也可能是模块 `mail-x` 的 token，`stock` 也能点名 `STOCK_TA_KEY`。检查只看得到这一个包，不知道装了哪些别的模块，所以规则要只凭名字就能判定。模块名里的连字符只能单个出现在字母数字之间（`mail--x`、`mail-` 都拒绝），模块的大写名里就不会有 `__`，一个密钥名最多落在一个模块的前缀下。`just module check`、`just module try` 和宿主装包时的检查是同一段代码，所以三处一样拒绝；检查不过的包不会打开，它的代码就拿不到任何密钥。
+
+**模块的密钥只从 `secretsFile` 取。** 宿主读自己的密钥时环境变量优先，模块代码的密钥不看环境变量。宿主进程的环境里可能有模型的 key（`DEEPSEEK_API_KEY` 这类）和 `GITHUB_TOKEN`，它们不在 `secretsFile` 里，模块点了名也拿不到；表里把常见的几个记成宿主的，检查时就报出主人。旧 Mac 的 launchd 服务只给 `HOME`、`PATH`、`PSA_STATE_DIR` 三个环境变量（2026-11-13 只读看过），模块的密钥本来就在 `secretsFile` 里。
 
 **宿主自己读密钥不经过这张表。** 表只管值能到哪个模块的代码里。宿主自带的 `us-market` 来源也读 `POLYGON_API_KEY`（它是行情密钥的别名之一），这不和「属于 `stock-ta`」冲突：主人说的是哪个模块的包能点名它。宿主读 `TELEGRAM_BOT_TOKEN`、行情密钥，`just google-auth` 读 OAuth 客户端，M7 宿主用写草稿的 token，都照旧用 `readSecret`。
 

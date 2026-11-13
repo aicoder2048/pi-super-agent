@@ -9,6 +9,10 @@ export const SECRET_OWNERS: Readonly<Record<string, string>> = {
 	MASSIVE_API_KEY: "host",
 	STOCK_HEATMAP_API_KEY: "host",
 	FINNHUB_API_KEY: "host",
+	DEEPSEEK_API_KEY: "host",
+	OPENAI_API_KEY: "host",
+	ANTHROPIC_API_KEY: "host",
+	GITHUB_TOKEN: "host",
 };
 
 /** `__` ends the prefix: `MAIL_X_TOKEN` could belong to a module `mail-x`, `MAIL__X_TOKEN` only to `mail` (ADR-0019). */
