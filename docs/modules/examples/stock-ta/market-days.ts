@@ -1,7 +1,4 @@
-/**
- * A copy of src/sources/market/session.ts (module code cannot import the host's). tests/market-hours.test.ts
- * checks the two agree, so a new early close goes into both tables.
- */
+/** A copy of src/sources/market/session.ts (module code cannot import the host's); tests/market-hours.test.ts keeps the two equal. */
 export type Phase = "pre" | "regular" | "post" | "closed";
 
 export interface Session {

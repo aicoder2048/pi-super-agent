@@ -17,7 +17,7 @@ export default async function quote(input: unknown) {
 	if (key === "") throw new Error("没有设置 POLYGON_API_KEY，没去查报价：在宿主的密钥文件里加一行 POLYGON_API_KEY=<你的 Massive/Polygon 密钥>，见 docs/modules/stock-ta.md");
 	const now = args["now"] === undefined ? Date.now() : Date.parse(args["now"] as string);
 	if (Number.isNaN(now)) throw new Error(`now 要是 ISO 8601 时间，收到 ${JSON.stringify(args["now"])}`);
-	// Shares the quotes feed's Massive address, so the tests' fake server reaches both; the scan feed keeps its own.
+	// A tool.json has no settings, so the tool borrows the quotes feed's Massive address.
 	const { baseUrl } = JSON.parse(readFileSync(new URL("../../feeds/quotes/feed.json", import.meta.url), "utf8")).settings;
 	const quotes = await snapshot(baseUrl, key, symbols, AbortSignal.timeout(REQUEST_LIMIT_MS)).catch((error: Error) => {
 		throw error.name === "TimeoutError" ? new Error(`行情服务 ${REQUEST_LIMIT_MS / 1000} 秒没有应答，稍后再查`) : error;

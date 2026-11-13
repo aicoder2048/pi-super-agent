@@ -44,7 +44,6 @@ export function dailyBarsBody(closes: Record<string, number>, url: string) {
 export type Answer = { status: number; body: unknown };
 type Hit = { url: string; auth: string | undefined };
 
-/** A local server standing in for Massive: answers in order, repeating the last one, and records every request. */
 export async function fakeMassive(t: TestContext) {
 	const hits: Hit[] = [];
 	let answers: Answer[] = [];
@@ -62,7 +61,6 @@ export async function fakeMassive(t: TestContext) {
 export const SNAPSHOT = "/v2/snapshot/locale/us/markets/stocks/tickers";
 const STOCK_TA = join(import.meta.dirname, "../../docs/modules/examples/stock-ta");
 
-/** A copy of the stock-ta package whose Massive address (the quotes feed's settings, which the quote tool reads too) is `baseUrl`. */
 export function stockTaCopy(t: TestContext, baseUrl: string): string {
 	const root = mkdtempSync(join(tmpdir(), "psa-stock-ta-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));

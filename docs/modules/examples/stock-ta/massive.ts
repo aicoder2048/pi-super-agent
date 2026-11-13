@@ -1,4 +1,4 @@
-/** Massive's stock snapshot, shared by the quotes feed and the quote tool. Parsing mirrors src/sources/market/client.ts: module code cannot import the host's. */
+/** Parsing mirrors src/sources/market/client.ts: module code cannot import the host's. */
 
 export type Quote = { symbol: string; price: number; prevClose: number; changePct: number; volume: number | null; at: string };
 
@@ -23,7 +23,6 @@ export function parseQuote(raw: unknown): Quote | undefined {
 	return { symbol: r.ticker, price, prevClose, changePct, volume: typeof day.v === "number" ? day.v : null, at: new Date(ms).toISOString() };
 }
 
-/** One request for all `symbols`; quotes come back only for the symbols asked, in Massive's order. */
 export async function snapshot(baseUrl: string, key: string, symbols: readonly string[], signal?: AbortSignal): Promise<Quote[]> {
 	const url = `${baseUrl}/v2/snapshot/locale/us/markets/stocks/tickers?tickers=${symbols.map(encodeURIComponent).join(",")}`;
 	const reply = await fetch(url, { headers: { Accept: "application/json", Authorization: `Bearer ${key}` }, redirect: "error", signal });
