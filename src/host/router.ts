@@ -28,7 +28,7 @@ function json(value: unknown) {
 	return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }], details: {} };
 }
 
-export function routerTools(kernel: Kernel, afterCommand: () => void): ToolDefinition[] {
+export function routerTools(kernel: Kernel, afterCommand: () => void, answering: (cause: string) => string | undefined): ToolDefinition[] {
 	const committed = <T>(value: T) => {
 		afterCommand();
 		return json(value);
@@ -77,7 +77,7 @@ export function routerTools(kernel: Kernel, afterCommand: () => void): ToolDefin
 			cause: Type.String({ description: "回应的对象：trg_（使用者的话）、tkt_（任务结果）或 act_（通知）" }),
 		}),
 		async execute(_id, { text, threadId, cause }) {
-			return committed(kernel.reply({ text, threadId: threadId ?? CONVERSATION_THREAD_ID, cause }));
+			return committed(kernel.reply({ text, threadId: threadId ?? CONVERSATION_THREAD_ID, cause, actionId: answering(cause) }));
 		},
 	});
 	const note = defineTool({
@@ -292,8 +292,6 @@ interface PendingCard {
 	actionId?: string;
 	/** Tickets and triggers the card carries; counted as seen only once the card reaches a session. */
 	carries?: string[];
-	/** The trigger or ticket the card asks the Router to answer, and how many answers it had when the card arrived. */
-	answers?: { cause: string; before: number };
 }
 
 function carriedBy(notice: RouterNotice): string[] {
@@ -407,7 +405,7 @@ export class Router {
 		const owed: PendingCard[] = [];
 		for (const [id, { ack, item }] of this.#unacked) {
 			if (queued.has(id)) continue;
-			if (item.answers && this.#kernel.answersTo(item.answers.cause) > item.answers.before) {
+			if (this.#kernel.answered(id)) {
 				ack();
 				this.#unacked.delete(id);
 			} else owed.push(item);
@@ -430,6 +428,7 @@ export class Router {
 			steeringMode: "all",
 			followUpMode: "all",
 		});
+		let router: Router | undefined;
 		const open = async (fresh: boolean) => {
 			const { session } = await createAgentSession({
 				cwd: options.cwd,
@@ -437,27 +436,32 @@ export class Router {
 				modelRuntime: options.modelRuntime,
 				resourceLoader: emptyResources(routerSystemPrompt(options.kernel.config.replyMaxChars)),
 				tools: [...ROUTER_TOOL_NAMES],
-				customTools: routerTools(options.kernel, options.afterCommand),
+				customTools: routerTools(options.kernel, options.afterCommand, (cause) => router!.#answering(cause)),
 				sessionManager: openSessionManager(options, fresh),
 				settingsManager,
 			});
 			if (session.messages.length === 0) options.kernel.routerStartedFresh();
 			return session;
 		};
-		return new Router(await open(false), open, options);
+		router = new Router(await open(false), open, options);
+		return router;
 	}
 
 	// Resolves only after a Router turn that saw the card finishes cleanly. The session file is not
 	// written before the first assistant message, so an earlier ack could lose the card in a crash.
 	inject(notice: RouterNotice, actionId: string): Promise<void> {
-		const card = noticeCard(this.#kernel, notice, this.#rulesFor, actionId);
+		if (this.#kernel.answered(actionId)) return Promise.resolve();
+		const item = { card: noticeCard(this.#kernel, notice, this.#rulesFor, actionId), actionId, carries: carriedBy(notice) };
 		return new Promise((resolve) => {
-			const carries = carriedBy(notice);
-			const item = { card, actionId, carries, ...(carries[0] && { answers: { cause: carries[0], before: this.#kernel.answersTo(carries[0]) } }) };
 			this.#unacked.set(actionId, { ack: resolve, item });
 			this.#buffer.push(item);
 			this.#schedule();
 		});
+	}
+
+	/** The oldest card in the session about `cause` that no reply answers yet. */
+	#answering(cause: string): string | undefined {
+		return [...this.#delivered].find((id) => (id === cause || this.#unacked.get(id)?.item.carries?.includes(cause)) && !this.#kernel.answered(id));
 	}
 
 	#push(card: string): void {

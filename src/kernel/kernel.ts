@@ -376,7 +376,8 @@ export class Kernel {
 		);
 	}
 
-	reply({ threadId, text, cause }: { threadId: string; text: string; cause: string }): Result<{ replyId: string }> {
+	/** `actionId` is the card the reply answers, when the Router was given one about `cause`. */
+	reply({ threadId, text, cause, actionId }: { threadId: string; text: string; cause: string; actionId?: string }): Result<{ replyId: string }> {
 		return this.#tx(() => {
 			if (!this.#get("SELECT 1 FROM threads WHERE id = ?", threadId)) return reject(`unknown thread ${threadId}`);
 			const length = [...text].length;
@@ -389,10 +390,11 @@ export class Kernel {
 			if (used >= this.config.repliesPerCause) return reject(`already replied ${used} times about ${cause}`);
 			const replyId = this.#id("rpl");
 			this.#run(
-				"INSERT INTO reply_receipts (id, thread_id, cause, text, created_at) VALUES (?, ?, ?, ?, ?)",
+				"INSERT INTO reply_receipts (id, thread_id, cause, action_id, text, created_at) VALUES (?, ?, ?, ?, ?, ?)",
 				replyId,
 				threadId,
 				cause,
+				actionId ?? null,
 				text,
 				this.#now(),
 			);
@@ -1102,11 +1104,16 @@ export class Kernel {
 		return `${ticketId}「${row?.touched_private_at == null ? (row?.title ?? "") : `一个${this.moduleLabel(row.domain)}的私密任务`}」`;
 	}
 
-	/** Replies about a trigger or ticket, plus one when a trigger already backed a decision. */
-	answersTo(cause: string): number {
-		const replies = this.#get("SELECT COUNT(*) AS n FROM reply_receipts WHERE cause = ?", cause).n as number;
-		const decided = cause.startsWith("trg_") && this.#get("SELECT disposition FROM triggers WHERE id = ?", cause)?.disposition !== "to_router";
-		return replies + (decided ? 1 : 0);
+	/** A card is answered once a reply answers it or its trigger backed a decision. */
+	answered(actionId: string): boolean {
+		return Boolean(
+			this.#get(
+				`SELECT EXISTS (SELECT 1 FROM reply_receipts WHERE action_id = ?)
+					OR EXISTS (SELECT 1 FROM actions a JOIN triggers t ON t.id = json_extract(a.payload, '$.triggerId') WHERE a.id = ? AND t.disposition != 'to_router') AS answered`,
+				actionId,
+				actionId,
+			).answered,
+		);
 	}
 
 	routerSaw(id: string): void {

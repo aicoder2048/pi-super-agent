@@ -55,7 +55,7 @@ test("幕僚长的提示词：使用者要给某个模块的数据设提醒（�
 test("route 工具的 open_ticket 可以带 domain，原样交给内核；没有 team 参数", async () => {
 	const seen: Decision[][] = [];
 	const kernel = { config: { replyMaxChars: 200 }, route: (d: Decision[]) => (seen.push(d), [{ ok: true }]) } as unknown as Kernel;
-	const route = routerTools(kernel, () => {}).find((t) => t.name === "route")!;
+	const route = routerTools(kernel, () => {}, () => undefined).find((t) => t.name === "route")!;
 	const item = (route.parameters as any).properties.decisions.items;
 	assert.equal(item.properties.domain.type, "string");
 	assert.ok(!(item.required ?? []).includes("domain"));

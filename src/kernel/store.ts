@@ -219,6 +219,7 @@ CREATE TABLE IF NOT EXISTS reply_receipts (
 	thread_id TEXT NOT NULL REFERENCES threads(id),
 	ticket_id TEXT REFERENCES tickets(id),
 	cause TEXT,
+	action_id TEXT,
 	text TEXT NOT NULL,
 	created_at INTEGER NOT NULL,
 	delivered_at INTEGER
@@ -258,6 +259,8 @@ export function openStore(path: string): DatabaseSync {
 	const replyColumns = db.prepare("PRAGMA table_info(reply_receipts)").all().map((c) => (c as { name: string }).name);
 	if (!replyColumns.includes("cause")) db.exec("ALTER TABLE reply_receipts ADD COLUMN cause TEXT");
 	db.exec("CREATE INDEX IF NOT EXISTS reply_receipts_cause ON reply_receipts(cause)");
+	if (!replyColumns.includes("action_id")) db.exec("ALTER TABLE reply_receipts ADD COLUMN action_id TEXT");
+	db.exec("CREATE INDEX IF NOT EXISTS reply_receipts_action ON reply_receipts(action_id)");
 	const reportColumns = db.prepare("PRAGMA table_info(reports)").all().map((c) => (c as { name: string }).name);
 	if (!reportColumns.includes("options")) db.exec("ALTER TABLE reports ADD COLUMN options TEXT NOT NULL DEFAULT '[]'");
 	if (!reportColumns.includes("outside_writes")) db.exec("ALTER TABLE reports ADD COLUMN outside_writes TEXT NOT NULL DEFAULT '[]'");
