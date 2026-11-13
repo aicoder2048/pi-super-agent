@@ -2,7 +2,7 @@
 
 让 stock-ta 不再依赖你本机的技术分析项目和它的两个数据库。装好以后，它在任何一台机器上都能用，包括跑服务的旧 Mac。
 不复制源码。模块带一个小的 Python 子项目，用 uv 的 git 依赖装你私有仓库里的 `ta-trading`（`app/trading`），钉在一个提交上。
-数据归模块自己。新的 `scan` feed 按 G5 的自选股每天收盘后跑一次 `ta scan`，同步日线和分红（含 QQQ、SPY），写进模块自己的数据目录，密钥用 G5 的 `MASSIVE_API_KEY`。
+数据归模块自己。新的 `scan` feed 按 G5 的自选股每天收盘后跑一次 `ta scan`，同步日线和分红（含 QQQ、SPY），写进模块自己的数据目录，密钥用 G5 的 `POLYGON_API_KEY`（Massive 报价接口的钥匙；`MASSIVE_S3_*` 是批量文件凭证，用不上），由 handler 以 `ta` 认的环境变量名 `MASSIVE_API_KEY` 传给它。
 工具照旧只读、不联网，只是读的换成模块自己数据库的副本。全市场选股 `screen` 默认拿掉，理由见 Appendix B。
 程序守的规则是：只有 `scan` feed 写技术分析数据库，而且它先写副本、成功后整个换上；工具只读克隆。
 PR 顺序是 S1、S2、S3、S4，依次叠在上一个之上。S1 叠在 G5 上。
@@ -61,7 +61,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 - [ ] `git fetch origin <head-branch> && git checkout <head SHA>`.
 - [ ] 命令行 lane 设 `PSA_STATE_DIR=$(mktemp -d)` 后跑 `just ...`。宿主 lane 用 `tests/e2e/harness.ts` 的 `startHost`，假模型用 `tests/e2e/fake-model.ts`，真模型只用 `openai-codex/*`。
-- [ ] 不连 Massive 的 lane 用假的 `ta`（一个 node 脚本，按子命令回放 JSON）。真行情 lane 用宿主密钥文件里的 `MASSIVE_API_KEY`，只读，在美东收盘 15 分钟以后跑。
+- [ ] 不连 Massive 的 lane 用假的 `ta`（一个 node 脚本，按子命令回放 JSON）。真行情 lane 用宿主密钥文件里的 `POLYGON_API_KEY`，只读，在美东收盘 15 分钟以后跑。
 - [ ] 输入只走 `just` 命令、宿主 socket 和网页。只读诊断是 `just modules`、对克隆跑的 `sqlite3 -readonly`、宿主日志。S4 在旧 Mac 上只用 `ssh -o BatchMode=yes` 跑文档里写的命令和只读诊断。
 - [ ] Save every screenshot to `/tmp/swarm-<pr-id>/worker-<n>/<slug>.png` and return the paths with the report. 命令行 lane 存 `<slug>.txt`。
 
@@ -198,7 +198,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Build.**
 
-- [ ] `feeds/scan/feed.json` 写 `timer`，`every` 1 小时，不写 `when`，`limit` 5 分钟，`reads: ["watchlist"]`，`secrets: ["MASSIVE_API_KEY"]`，`into: "scan-runs"`。不写 `when` 是因为日线扫描要等收盘后 15 分钟，`us-market-hours` 只到收盘后 20 分钟，一小时一拍会错过。不是交易日或还没到时间，`ta` 自己说跳过，一次只花起进程的时间。
+- [ ] `feeds/scan/feed.json` 写 `timer`，`every` 1 小时，不写 `when`，`limit` 5 分钟，`reads: ["watchlist"]`，`secrets: ["POLYGON_API_KEY"]`（handler 把它设成 `ta` 进程的 `MASSIVE_API_KEY`），`into: "scan-runs"`。不写 `when` 是因为日线扫描要等收盘后 15 分钟，`us-market-hours` 只到收盘后 20 分钟，一小时一拍会错过。不是交易日或还没到时间，`ta` 自己说跳过，一次只花起进程的时间。
 - [ ] handler 先把 `files/ta/ta.sqlite` 克隆成 `files/ta/ta.sqlite.next`。没有旧库就从空库开始。然后对副本跑 `ta scan`，输入是 `{"mode":"daily","symbols":<自选股>}`，自选股来自 G5 的 `watchlist`。成功后把副本改名成 `ta.sqlite`。失败或超时就删掉副本，旧库不动。下一次运行看到残留的 `.next` 就覆盖，所以中途崩溃也能接着跑。
 - [ ] `ta scan` 的日线扫描自己会补齐两年日线、分红，以及 QQQ、SPY 两个基准（读代码确认，见 Appendix A），handler 不另调同步命令。
 - [ ] 跑完存一行 `scan-runs`，内容是扫描日期（做 id）、开始时间、标的数、新信号数、出错的标的和原因。跳过的那几次不存。
@@ -257,7 +257,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [ ] 文档写清旧 Mac 要的东西。旧 Mac 现在没有 `uv`，也没有 `gh`。它没有能访问 GitHub 的 SSH 密钥。登录钥匙串在终端里常是锁着的，`osxkeychain` 存凭据会被悄悄丢掉，所以改用 git 的 `store` helper（Appendix A）。
 - [ ] 默认做法（Appendix E 第 2 条）。使用者在 GitHub 网页上建一个 fine-grained token，只给技术分析这一个仓库的 Contents 只读权限，设过期时间。在旧 Mac 上设 `git config --global credential.helper store`，`~/.git-credentials` 权限 600，第一次 `git ls-remote` 时填入 token。2026-11-12 使用者已做完，旧 Mac 读到 main c9e7536，不再问密码。凭据只在跑 `just module setup` 时用，宿主服务运行时不需要。
 - [ ] 装 uv（官方安装脚本或 Homebrew）。`#91` 已经把装机时 PATH 里 `uv` 的目录写进服务 PATH，S2 起工具不再依赖它，所以只有 setup 需要。uv 会下载 Python 3.12。旧 Mac 是 Intel、macOS 12，numpy 和 pandas 都有 `macosx_10_13_x86_64` 的 wheel，不用编译。
-- [ ] 复制包、`just module setup stock-ta`、密钥文件里确认有 `MASSIVE_API_KEY`、把笔记文件拷过去并导入、`just module on stock-ta`、等第一次扫描。
+- [ ] 复制包、`just module setup stock-ta`、密钥文件里确认有 `POLYGON_API_KEY`、把笔记文件拷过去并导入、`just module on stock-ta`、等第一次扫描。
 - [ ] 换钉的提交时，改 `py/pyproject.toml` 的 `rev`，跑 `uv lock`，提交。每台机器复制新包以后重跑 `just module setup stock-ta`。工具在锁文件变了时会提醒（S2）。
 
 **You see.**
