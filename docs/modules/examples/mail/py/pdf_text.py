@@ -1,6 +1,4 @@
-"""Reads a PDF from stdin and prints one JSON line: {"pages", "text", "truncated"} or {"error"}.
-
-Only text is taken: pypdf never runs the file's JavaScript, form actions or embedded files.
+"""Only text is taken: pypdf never runs the file's JavaScript, form actions or embedded files.
 """
 
 import io

@@ -1,6 +1,6 @@
 /** Module code cannot import the host's, so the cleaning repeats src/modules/release.ts; the host cleans the released fields again at its edge. */
 
-type Attachment = { partId: string; filename: string; mimeType: string; size: number };
+export type Attachment = { partId: string; filename: string; mimeType: string; size: number };
 
 export type MessageRow = {
 	id: string;
@@ -19,7 +19,7 @@ export type MessageRow = {
 
 type Released = { from: string; subject: string; snippet: string };
 
-type Part = { partId?: string; mimeType?: string; filename?: string; headers?: { name: string; value: string }[]; body?: { data?: string; size?: number; attachmentId?: string }; parts?: Part[] };
+export type Part = { partId?: string; mimeType?: string; filename?: string; headers?: { name: string; value: string }[]; body?: { data?: string; size?: number; attachmentId?: string }; parts?: Part[] };
 export type GmailMessage = { id: string; threadId?: string; snippet?: string; internalDate?: string; payload?: Part };
 
 const BODY_BYTES = 64 * 1024;
@@ -112,7 +112,7 @@ function clipBytes(text: string): string {
 	return kept + CUT;
 }
 
-const partsOf = (part: Part | undefined): Part[] => (part === undefined ? [] : [part, ...(part.parts ?? []).flatMap(partsOf)]);
+export const partsOf = (part: Part | undefined): Part[] => (part === undefined ? [] : [part, ...(part.parts ?? []).flatMap(partsOf)]);
 
 /** Gmail hands over a part's bytes as sent, in the charset its Content-Type names (GBK, Big5, Shift_JIS, ISO-8859-x). */
 function decode(part: Part): string {

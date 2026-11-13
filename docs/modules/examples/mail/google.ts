@@ -1,5 +1,3 @@
-/** The read token's Gmail client, shared by the inbox feed and the read-attachment tool. */
-
 export type Settings = { baseUrl: string; tokenUrl: string };
 
 export const AUTH_TEXT = "Gmail 授权失效了，在笔记本上重跑 just google-auth read，再把那一行复制到这台机器";
