@@ -1,0 +1,11 @@
+{
+  "title": "自选股日线扫描",
+  "description": "每小时看一次；每个交易日收盘 15 分钟后用 ta scan 扫一次自选股和 QQQ、SPY，同步两年日线和分红，写进模块自己的数据库（先写副本，成功后整份换上）",
+  "handler": "index.ts",
+  "secrets": ["POLYGON_API_KEY"],
+  "every": "1h",
+  "limit": "5m",
+  "settings": { "scanSeconds": 270 },
+  "reads": ["watchlist"],
+  "into": "scan-runs"
+}
