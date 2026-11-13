@@ -196,10 +196,11 @@ async function tools(): Promise<void> {
 			const now = "2026-11-13T16:00:00.000Z";
 			const five = await intraday(pkg, { symbol: "NVDA", span: "minute", from: "2026-11-09", now }, "fixture-key");
 			const many = await intraday(pkg, { symbol: "NVDA", span: "minute", limit: 600, now }, "fixture-key");
+			const future = await intraday(pkg, { symbol: "NVDA", span: "minute", to: "2026-11-16", now }, "fixture-key");
 			const oneLine = (r: Reply) => !r.ok && r.note.split("\n").length === 1;
 			return {
-				pass: oneLine(five) && oneLine(many) && !five.ok && /最多回看 4 个交易日/.test(five.note) && !many.ok && /limit 最多 500/.test(many.note) && massive.urls.length === 0,
-				evidence: `now 2026-11-13 11:00 美东 (Friday)\nfrom 2026-11-09, five trading days back: ${JSON.stringify(five)}\nlimit 600: ${JSON.stringify(many)}\nrequests to the stand-in Massive: ${massive.urls.length}`,
+				pass: oneLine(five) && oneLine(many) && oneLine(future) && !five.ok && /最多回看 4 个交易日/.test(five.note) && !many.ok && /limit 最多 500/.test(many.note) && !future.ok && /to 不能晚于今天/.test(future.note) && massive.urls.length === 0,
+				evidence: `now 2026-11-13 11:00 美东 (Friday)\nfrom 2026-11-09, five trading days back: ${JSON.stringify(five)}\nlimit 600: ${JSON.stringify(many)}\nto 2026-11-16, after today: ${JSON.stringify(future)}\nrequests to the stand-in Massive: ${massive.urls.length}`,
 			};
 		} finally {
 			await massive.close();
@@ -230,9 +231,16 @@ async function tools(): Promise<void> {
 		const vwapOk = minuteBars.length > 0 && minuteBars.every((b) => typeof b[6] === "number") && minute.ok && typeof (minute.output["dayVwap"] as { vwap?: number } | null)?.vwap === "number";
 		const hourBars = hour.ok ? (hour.output["bars"] as unknown[][]) : [];
 		const brief = (r: Reply) => (r.ok ? JSON.stringify({ ...r.output, bars: `${(r.output["bars"] as unknown[]).length} bars`, first: (r.output["bars"] as unknown[])[0], last: (r.output["bars"] as unknown[]).at(-1) }) : r.note);
+		// Two earlier trading days, so the bars are whole whatever the clock says.
+		const days = await intraday(pkgOf(HEAD), { symbol: "NVDA", span: "hour", from: "2026-11-11", to: "2026-11-12", now: "2026-11-13T19:00:00Z" });
+		const morning = await intraday(pkgOf(HEAD), { symbol: "NVDA", span: "minute", from: "2026-11-12 09:30", to: "2026-11-12 10:30", now: "2026-11-13T19:00:00Z" });
+		const dayBars = days.ok ? (days.output["bars"] as unknown[][]) : [];
+		const morningBars = morning.ok ? (morning.output["bars"] as unknown[][]) : [];
+		const daysOk = dayBars[0]?.[0] === "2026-11-11 04:00" && dayBars.at(-1)?.[0] === "2026-11-12 19:00" && days.ok && days.output["truncated"] === false;
+		const morningOk = morningBars[0]?.[0] === "2026-11-12 09:30" && morningBars.at(-1)?.[0] === "2026-11-12 10:30" && morningBars.length > 50;
 		return {
-			pass: minuteBars.length > 0 && hourBars.length > 0 && gapMin <= 20 && vwapOk,
-			evidence: `real Massive, asked at ${asked.toISOString()}\nNVDA minute (today by default): ${brief(minute)}\nSPY hour: ${brief(hour)}\nNVDA quote data time ${dataAt}; newest minute bar ${lastOf(minute)}; gap ${gapMin} min (rule: at most 20)\nevery minute bar has a VWAP and the day VWAP is a number: ${vwapOk}`,
+			pass: minuteBars.length > 0 && hourBars.length > 0 && gapMin <= 20 && vwapOk && daysOk && morningOk,
+			evidence: `real Massive, asked at ${asked.toISOString()}\nNVDA minute (today by default): ${brief(minute)}\nSPY hour: ${brief(hour)}\nNVDA quote data time ${dataAt}; newest minute bar ${lastOf(minute)}; gap ${gapMin} min (rule: at most 20)\nevery minute bar has a VWAP and the day VWAP is a number: ${vwapOk}\nNVDA hour 2026-11-11 to 2026-11-12 (rule: 04:00 of the first day to 19:00 of the last, not truncated): ${brief(days)}\nNVDA minute 2026-11-12 09:30 to 10:30, a past morning (rule: starts 09:30, ends 10:30): ${brief(morning)}`,
 		};
 	});
 
@@ -452,7 +460,9 @@ async function feed(): Promise<void> {
 	}));
 }
 
-const NEWS = /新闻|报道|财报|业绩|分析师|据.*消息|利好|利空/;
+const NEWS = /新闻|报道|财报|业绩|分析师|消息|传闻|公告|利好|利空/;
+// A sentence that names news but negates it ("不能确认新闻层面的因果") is the disclaimer the 盘面 should write, not a claim.
+const newsClaims = (text: string) => text.split(/[。；！\n]/).filter((s) => NEWS.test(s) && !/不|没|无|未|非/.test(s));
 const PCT = /[+-−]?\d+(\.\d+)?%/;
 
 async function realLanes(): Promise<void> {
@@ -467,9 +477,9 @@ async function realLanes(): Promise<void> {
 			"the rehearsal judged market-desk PASS (stock-ta ticket, used quote and intraday, SPY and 数据时间 in the report)": /^PASS market-desk/.test(block),
 			"three parts: 结论, 证据, 数据时间": ["结论", "证据", "数据时间"].every((h) => block.includes(h)),
 			"relative to SPY and the sector ETF, with differences": /SPY/.test(block) && /SMH|XLK|SOXX/.test(block) && /差/.test(block) && PCT.test(block),
-			"no news or earnings claims": !NEWS.test(block.replace(/不(读|看|找)[^，。]*(新闻|财报)[^，。]*/g, "").replace(/原因不在行情数据里/g, "")),
+			"no news or earnings claims": newsClaims(block).length === 0,
 		};
-		return { pass: Object.values(checks).every(Boolean), evidence: `just module try (openai-codex models ${JSON.stringify(REAL)}, real Massive)\nchecks:\n${Object.entries(checks).map(([k, v]) => `${v ? "ok  " : "FAIL"} ${k}`).join("\n")}\n\nfull output:\n${run.out.replace(/临时状态目录 \S+/, "临时状态目录 <tmp>")}` };
+		return { pass: Object.values(checks).every(Boolean), evidence: `just module try (openai-codex models ${JSON.stringify(REAL)}, real Massive)\nchecks:\n${Object.entries(checks).map(([k, v]) => `${v ? "ok  " : "FAIL"} ${k}`).join("\n")}\nnews claims: ${JSON.stringify(newsClaims(block))}\n\nfull output:\n${run.out.replace(/临时状态目录 \S+/, "临时状态目录 <tmp>")}` };
 	});
 
 	await oldQuestion();
