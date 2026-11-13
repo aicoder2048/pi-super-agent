@@ -11,6 +11,7 @@ export type Scenario = { title: string; quoteDate?: string; days: { date: string
 export type Tick = { day: string; now: number; at: number; prices: Record<string, number>; prevClose: Record<string, number> };
 export type Posted = { minute: string; externalId: string; text: string };
 export type Watched = { key: string; condition: Record<string, unknown>; id?: string };
+export type Triggered = { minute: string; id: string; thread: string; body: string };
 
 export const scenario = (name: string): Scenario => JSON.parse(readFileSync(join(HEAD, "tests/fixtures/us-market-day", `${name}.json`), "utf8"));
 // Scenario days are all in November after daylight saving ended.
@@ -37,6 +38,7 @@ export async function stockTaDay(tree: string, state: string, watchlist: readonl
 	cpSync(join(tree, "docs/modules/examples/stock-ta"), join(state, "modules", "stock-ta"), { recursive: true });
 	const clock = { now: 0 };
 	const posted: Posted[] = [];
+	const triggered: Triggered[] = [];
 	const open = () => {
 		const entry = servedAsHost(Modules.load([join(state, "modules")])).feeds().find((e: { source: string }) => e.source === "stock-ta/quotes");
 		if (entry === undefined) throw new Error(`${tree}: stock-ta has no quotes feed`);
@@ -49,6 +51,7 @@ export async function stockTaDay(tree: string, state: string, watchlist: readonl
 	const listed = () => listedSymbols(host.data.query("stock-ta", host.entry.components, "watchlist", { limit: 500 }, "replay").rows).sort();
 	return {
 		posted,
+		triggered,
 		watch(w: Watched) {
 			return host.data.watch("stock-ta", host.entry.components, { kind: "watch", collection: "quotes", op: "set", watch: w }, "page").output;
 		},
@@ -60,16 +63,23 @@ export async function stockTaDay(tree: string, state: string, watchlist: readonl
 		async round(tick: Tick): Promise<{ ok: boolean; records: number; notices: string[]; alerts: Posted[]; ms: number }> {
 			clock.now = tick.now;
 			const tickers = Object.entries(tick.prices).map(([symbol, price]) => tickerRow(symbol, price, tick.prevClose[symbol]!, tick.at));
-			const fixture = { name: "replay", input: { now: new Date(tick.now).toISOString() }, responses: { [`${SNAPSHOT}?tickers=${listed().join(",")}`]: { status: "DELAYED", tickers } } };
+			// R5's feed always adds SPY and QQQ; a tree before it asks for the watchlist alone.
+			const body = { status: "DELAYED", tickers };
+			const asked = [listed(), [...new Set([...listed(), "SPY", "QQQ"])].sort()];
+			const fixture = { name: "replay", input: { now: new Date(tick.now).toISOString() }, responses: Object.fromEntries(asked.map((symbols) => [`${SNAPSHOT}?tickers=${symbols.join(",")}`, body])) };
 			const notices: string[] = [];
 			const fresh: Posted[] = [];
 			const started = performance.now();
 			const run = await runFeed(host.entry, [], {
 				data: host.data,
-				submit: (n: { id: string }) => void notices.push(n.id),
+				submit: (n: { id: string; thread: string; body: string }) => {
+					notices.push(n.id);
+					triggered.push({ minute: nyMinute(tick.at), id: n.id, thread: n.thread, body: n.body });
+				},
 				alert: (_: string, a: { externalId: string; text: string; at: string }) => {
 					const { duplicate } = host.kernel.postHostLine("module:stock-ta", { kind: "alert", externalId: a.externalId, text: a.text, occurredAt: Date.parse(a.at), module: { title: "股票技术分析", private: false } });
 					if (!duplicate) fresh.push({ minute: nyMinute(Date.parse(a.at)), externalId: a.externalId, text: a.text });
+					return !duplicate;
 				},
 				secret: () => undefined,
 				problem: () => {},
@@ -85,7 +95,7 @@ export async function stockTaDay(tree: string, state: string, watchlist: readonl
 	};
 }
 
-export async function replay(tree: string, state: string, s: Scenario, watchlist: readonly string[], conditions: readonly Watched[], restartAfter?: number): Promise<{ posted: Posted[]; rows: number; notices: string[] }> {
+export async function replay(tree: string, state: string, s: Scenario, watchlist: readonly string[], conditions: readonly Watched[], restartAfter?: number): Promise<{ posted: Posted[]; rows: number; notices: string[]; triggered: Triggered[] }> {
 	const day = await stockTaDay(tree, state, watchlist);
 	for (const c of conditions) day.watch(c);
 	const notices: string[] = [];
@@ -95,7 +105,26 @@ export async function replay(tree: string, state: string, s: Scenario, watchlist
 	}
 	const rows = watchlist.reduce((n, symbol) => n + day.rows(symbol), 0);
 	day.close();
-	return { posted: day.posted, rows, notices };
+	return { posted: day.posted, rows, notices, triggered: day.triggered };
+}
+
+export type Band = { minute: string; symbol: string; date: string; kind: "band" | "volume"; side?: "up" | "down"; pct?: number };
+
+/** us-market's own band and volume detection (src/sources/market/detect.ts) over the same snapshots, with the bands in its module.json. */
+export async function oldBands(tree: string, s: Scenario, watchlist: readonly string[], settings: { bands: unknown; volumeSpikeX: number }): Promise<Band[]> {
+	const { detect } = await import(join(tree, "src/sources/market/detect.ts"));
+	const { parseQuote } = await import(join(tree, "src/sources/market/client.ts"));
+	const { sessionAt } = await import(join(tree, "src/sources/market/session.ts"));
+	let cursor: unknown;
+	const out: Band[] = [];
+	for (const tick of ticks(s)) {
+		const session = sessionAt(tick.now);
+		const quotes = Object.entries(tick.prices).flatMap(([symbol, price]) => parseQuote(tickerRow(symbol, price, tick.prevClose[symbol]!, tick.at), [...watchlist], true, tick.now));
+		const result = detect(cursor, quotes, session, settings);
+		cursor = result.cursor;
+		for (const m of result.moves) out.push({ minute: nyMinute(m.quote.at), symbol: m.quote.symbol, date: m.nyDate, kind: m.signal.kind, ...(m.signal.kind === "band" && { side: m.signal.dir, pct: m.signal.pct }) });
+	}
+	return out;
 }
 
 export async function oldTripwire(tree: string, s: Scenario, wire: { symbol: string; condition: Record<string, unknown> }): Promise<Posted[]> {
