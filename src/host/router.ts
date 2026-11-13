@@ -398,7 +398,6 @@ export class Router {
 		this.#delivered.clear();
 	}
 
-	// A card the old session saw in a turn that never finished cleanly is still owed an answer, and the fresh session has never seen it.
 	#redeliverUnfinished(): void {
 		this.#delivered.clear();
 		clearTimeout(this.#retryTimer);

@@ -318,7 +318,7 @@ export function openStore(path: string): DatabaseSync {
 		);
 	}
 	if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'router_start_overs'").get()) {
-		// On main a 清屏 hid lines but kept the Router session. Seeding the last one still only makes the next start a fresh session, which never loses anything durable.
+		// Old stores logged a 清屏 only as hidden lines; seeding the latest costs at most one extra fresh session, which loses nothing durable.
 		inTransaction(db, () =>
 			db.exec(`CREATE TABLE router_start_overs (at INTEGER NOT NULL);
 				INSERT INTO router_start_overs SELECT hidden_at FROM conversation_hidden ORDER BY hidden_at DESC LIMIT 1;`),
