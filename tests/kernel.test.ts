@@ -2364,6 +2364,13 @@ test("幕僚长会话里有私密数据时，转交过去的任务和忽略理�
 	assert.equal(s.kernel.lastPrivate(), null, "换新会话后写的忽略理由");
 });
 
+test("订阅一个装着私密 feed 触发的线程，任务就算私密；线程里没有私密触发时不算", () => {
+	const s = setup({ domains: DOMAINS });
+	s.trigger({ source: "mail/inbox", threads: [{ id: "thr_mail:1" }], body: "检验单 CEA 4.2", private: true });
+	assert.equal(s.kernel.touchedPrivate(s.open("request", { title: "看医院来信", threads: ["thr_mail:1"] })), true);
+	assert.equal(s.kernel.touchedPrivate(s.open("request", { title: "看杂项", threads: ["thr_misc:2"] })), false);
+});
+
 test("引用了私密话的那句话转交给哪个任务，那个任务就算私密，不看幕僚长会话里有没有私密数据", () => {
 	const s = setup({ domains: DOMAINS });
 	const plain = s.open("request", { title: "查天气" });

@@ -10,7 +10,7 @@ import type { AnswerResult, Broadcast, ImChat, SayOptions } from "../server.ts";
 import { TelegramError, type BotApi, type TelegramErrorKind, type Update } from "./bot-api.ts";
 import { hostLineText, cardView, closedView, decide, mirrorText, NOTES, render, repeatsQuestion } from "./rules.ts";
 import { privateLine, telegramText } from "../../modules/protocol.ts";
-import { TelegramStore, type Pending } from "./store.ts";
+import { TelegramStore, type Pending, type SendableBody } from "./store.ts";
 
 export interface TelegramTiming {
 	pollTimeoutSec: number;
@@ -311,19 +311,24 @@ export class TelegramClient {
 	#syncCards(chatId: number, { rows, memberCap }: Board): void {
 		inTransaction(this.#db, () => {
 			const onBoard = new Set<string>();
+			const notice = (ticketId: string | undefined): SendableBody | null => {
+				const title = ticketId === undefined ? null : this.#host.privateTitle(ticketId);
+				return title === null ? null : { kind: "line", text: privateLine(title), silent: false };
+			};
 			for (const row of rows) {
 				const view = cardView(row);
 				if (!view) continue;
-				const title = this.#host.privateTitle(row.id);
-				if (title !== null) {
-					this.#store.put(chatId, `private:${view.reportId}`, null, { kind: "line", text: privateLine(title), silent: false });
+				const line = notice(row.id);
+				if (line) {
+					if (!this.#store.has(chatId, `ask:${view.reportId}`)) this.#store.put(chatId, `private:${view.reportId}`, null, line);
 					continue;
 				}
 				onBoard.add(view.reportId);
 				this.#store.put(chatId, `ask:${view.reportId}`, null, { kind: "card", view });
 			}
+			// A card shown before its ticket turned private becomes the notice in place.
 			for (const view of this.#store.openCards(chatId)) {
-				if (!onBoard.has(view.reportId)) this.#store.put(chatId, `ask:${view.reportId}`, null, { kind: "card", view: closedView(view) });
+				if (!onBoard.has(view.reportId)) this.#store.put(chatId, `ask:${view.reportId}`, null, notice(view.ticketId) ?? { kind: "card", view: closedView(view) });
 			}
 			const cap = memberCap?.question;
 			if (cap) this.#store.put(chatId, `cap:${cap.reportId}`, null, { kind: "note", text: NOTES.cap });

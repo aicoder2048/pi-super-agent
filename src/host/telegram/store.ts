@@ -49,10 +49,10 @@ const STANDALONE_NOTE: SendableBody = { kind: "note", text: "" };
 
 /**
  * `line:<lineId>` shows a conversation line, `ask:<reportId>` is the card for a helper's question, `cap:<capAskId>` the member-cap note,
- * `note:<updateId>` answers one update, `setup` tells a writer their id, `missed` carries an owed note when nothing else will,
+ * `private:<reportId>` stands in for the card of a private ticket's question, `note:<updateId>` answers one update, `setup` tells a writer their id, `missed` carries an owed note when nothing else will,
  * `alert:<hostLineId>` is a source's alert.
  */
-export type MessageKey = `line:${string}` | `ask:${string}` | `cap:${string}` | `note:${number}` | `alert:${string}` | "setup" | "missed";
+export type MessageKey = `line:${string}` | `ask:${string}` | `private:${string}` | `cap:${string}` | `note:${number}` | `alert:${string}` | "setup" | "missed";
 
 export type SendableBody = Exclude<OutboundBody, { kind: "received" }>;
 
@@ -148,6 +148,10 @@ export class TelegramStore {
 	lineOf(chatId: number, messageId: number): string | undefined {
 		const row = this.#db.prepare("SELECT line_id FROM telegram_messages WHERE chat_id = ? AND message_id = ?").get(chatId, messageId) as { line_id: string | null } | undefined;
 		return row?.line_id ?? undefined;
+	}
+
+	has(chatId: number, key: MessageKey): boolean {
+		return this.#db.prepare("SELECT 1 FROM telegram_messages WHERE chat_id = ? AND key = ?").get(chatId, key) !== undefined;
 	}
 
 	openCards(chatId: number): CardView[] {

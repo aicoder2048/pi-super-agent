@@ -1101,6 +1101,16 @@ export class Kernel {
 		if (heard) this.#run("INSERT INTO router_private (at, module) VALUES (?, ?)", this.#now(), heard.module);
 	}
 
+	/** Called before the read's content goes back to the Worker. */
+	workerSaw(ticketId: string, id: string): void {
+		if (this.#privacyOf(id)) this.touchPrivate(ticketId);
+	}
+
+	/** A subscriber can read every trigger in the thread, so subscribing is reading them. Reading the thread itself shows only ids. */
+	#holdsPrivate(threadId: string): boolean {
+		return this.#column("SELECT trigger_id AS v FROM trigger_threads WHERE thread_id = ?", threadId).some((id) => this.#privacyOf(id) !== null);
+	}
+
 	#privacyOf(id: string): { module: string | null } | null {
 		if (id.startsWith("tkt_")) return this.#privateTicket(id);
 		const written = this.#get("SELECT module FROM private_text WHERE id = ?", id);
@@ -1307,6 +1317,7 @@ export class Kernel {
 			const source = threadId.match(SOURCE_THREAD)?.[1];
 			if (source) this.#run("INSERT INTO threads (id, source, title) VALUES (?, ?, NULL) ON CONFLICT (id) DO NOTHING", threadId, source);
 			this.#run("INSERT INTO subscriptions (ticket_id, thread_id) VALUES (?, ?)", ticketId, threadId);
+			if (this.#holdsPrivate(threadId)) this.touchPrivate(ticketId);
 		}
 		this.#addInput(ticketId, "brief", d.brief, d.triggerId ?? null);
 		if (d.triggerId !== undefined) takenThisRoute.add(d.triggerId);

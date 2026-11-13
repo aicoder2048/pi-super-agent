@@ -551,6 +551,7 @@ export class WorkerExecutor {
 			(target?.type === "trigger" &&
 				(target.threadIds.some((t) => own.threadIds.includes(t)) || own.recentInputs.some((i) => i.triggerId === id)));
 		if (!allowed) throw new Error(`${id} 不属于本任务，读不到`);
+		kernel.workerSaw(ticketId, id);
 		return target;
 	}
 }

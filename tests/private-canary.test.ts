@@ -42,6 +42,7 @@ const echoesSession = (): Brain => {
 			const kind = card.slice(0, card.indexOf("]") + 1);
 			if (kind === "[Worker 汇报]" || kind === "[Worker 提问]") return [{ name: "reply", args: { text: `转述：${recalled}`, cause: ids(card, "tkt") } }];
 			if (kind === "[通知]") return [{ name: "reply", args: { text: `通知：${recalled}`, cause: card.match(/act_[\w-]+/)![0] } }];
+			if (kind === "[候选触发]" && card.includes("行情")) return [open(ids(card, "trg"), "行情", undefined, "inference")];
 			if (kind === "[候选触发]") return card.includes("广告") ? [{ name: "route", args: { decisions: [{ kind: "ignore", triggerId: ids(card, "trg"), reason: `广告${tail}` }] } }] : [open(ids(card, "trg"), "看信", HEALTH, "inference")];
 			if (kind !== "[对话]") return [];
 			const triggerId = ids(card, "trg")!;
@@ -49,7 +50,9 @@ const echoesSession = (): Brain => {
 			const answered = card.match(/点选回答：(tkt_[\w-]+)/)?.[1];
 			if (answered) return [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId, ticketId: answered }] } }, { name: "reply", args: { text: `回：${recalled}`, cause: triggerId } }];
 			const task = said.match(/^开个任务 (\S+)/)?.[1];
-			if (task) return [open(triggerId, task, task === "天气" || task === "查一下" || task === "接手" ? undefined : HEALTH), { name: "reply", args: { text: `收到：${task}`, cause: triggerId } }];
+			if (task === "订阅") return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId, title: "订阅医院来信", brief: "看看 thr_mail 线程里来过什么", threads: ["thr_mail"] }] } }, { name: "reply", args: { text: "收到：订阅", cause: triggerId } }];
+			if (task === "旁听") return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId, title: "旁听", brief: "留意 thr_later:1 线程", threads: ["thr_later:1"] }] } }, { name: "reply", args: { text: "收到：旁听", cause: triggerId } }];
+			if (task) return [open(triggerId, task, task === "天气" || task === "问天气" || task === "查一下" || task === "接手" ? undefined : HEALTH), { name: "reply", args: { text: `收到：${task}`, cause: triggerId } }];
 			const handTo = said.match(/^转交 (tkt_[\w-]+)/)?.[1];
 			if (handTo) return [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId, ticketId: handTo }] } }, { name: "reply", args: { text: `回：${recalled}`, cause: triggerId } }];
 			const browse = said.match(/^翻看 ((?:tkt|trg)_[\w-]+)/)?.[1];
@@ -89,6 +92,7 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 	t.after(() => tg.close());
 
 	let host!: Host;
+	let spawner!: FakeSpawner;
 	const data = (worker: FakeWorker, params: object) => worker.request("worker.data", params);
 	const work = async (worker: FakeWorker, input: string) => {
 		const title = host.kernel.getTicket(worker.spec.ticketId)!.title;
@@ -102,7 +106,17 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 			worker.report({ status: "ready", summary: `好了${heard}` });
 			return worker.settle();
 		}
-		if (title.startsWith("记指标")) {
+		if (title.startsWith("旁听")) return;
+		if (title.startsWith("订阅")) {
+			const thread = (await worker.request("worker.read", { id: "thr_mail" })) as { recentTriggerIds: string[] };
+			const bodies: string[] = [];
+			for (const id of thread.recentTriggerIds) bodies.push(((await worker.request("worker.read", { id })) as { trigger: { body: string } }).trigger.body);
+			worker.report({ status: "blocked", summary: `线程里有：${bodies.join("；")}`, question: `要处理「${bodies.join("；")}」吗？`, options: ["要", "不要"] });
+		} else if (title.startsWith("问天气")) {
+			worker.report({ status: "blocked", summary: "要带伞吗", question: "明天要带伞吗？", options: ["带", "不带"] });
+		} else if (title.startsWith("行情")) {
+			worker.report({ status: "blocked", summary: `看到 ${title}`, question: `任务 ${title} 要继续吗？`, options: ["继续", "停"] });
+		} else if (title.startsWith("记指标")) {
 			await data(worker, write(4.2));
 			worker.report({ status: "ready", summary: `CEA 4.2，${CANARY}` });
 		} else if (title.startsWith("提问")) {
@@ -127,7 +141,7 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 	};
 
 	const start = async () => {
-		const spawner = new FakeSpawner((worker, input) => work(worker, input).catch((e: Error) => worker.report({ status: "failed", summary: e.message })));
+		spawner = new FakeSpawner((worker, input) => work(worker, input).catch((e: Error) => worker.report({ status: "failed", summary: e.message })));
 		spawner.runner = async (run) => {
 			const read = await spawner.request(run.ticketId, run.token, "worker.data", { op: "query", collection: "lab-results" });
 			return `看了，${JSON.stringify(read).includes(CANARY) ? CANARY : "无"}`;
@@ -137,6 +151,7 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 			createRouter: fauxRouter(echoesSession(), { persist: true }).createRouter,
 			createSpawner: () => spawner,
 			log: () => {},
+			sourcePolicy: (trigger) => (trigger.externalId === "mail-2" ? "ignore" : "candidate"),
 			workerModels: defaultWorkerModels(),
 			domains,
 			gateway,
@@ -185,10 +200,16 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 
 	expect((await flow("私密数据之前开普通任务", () => host.say("开个任务 天气"), () => summary("天气") !== "" && phone().includes("收到：天气"))).includes("收到：天气"), "私密数据之前的回复完整发到 Telegram");
 	await flow("私密数据之前开普通任务，之后转交给它", () => host.say("开个任务 接手"), () => summary("接手") !== "" && phone().includes("收到：接手"));
+	await flow("私密数据之前普通任务发出问题卡片", () => host.say("开个任务 问天气"), () => tg.sent.some((m) => m.text.includes("明天要带伞吗")));
 	await flow("私密任务汇报", () => host.say("开个任务 记指标"), () => web().includes(`转述：记得：${CANARY}`));
 	expect((await said("私密汇报之后问幕僚长", "刚才是多少")).join() === NOTICE, "私密汇报之后的回复是一行提示");
 	await flow("幕僚长有私密数据时开任务，任务提问", () => host.say("开个任务 查一下"), () => ticket("查一下")?.question != null);
 	await flow("note()：幕僚长补话给普通任务", () => host.say(`备注 ${ticket("天气")!.id}`), () => summary("天气").includes(CANARY));
+	await flow("卡片已完整发出的普通任务之后被幕僚长补话变私密", () => host.say(`备注 ${ticket("问天气")!.id}`), () => host.kernel.touchedPrivate(ticket("问天气")!.id) && tg.edits.length > 0);
+	const umbrella = tg.sent.find((m) => m.text.includes("明天要带伞吗"))!.messageId;
+	expect(tg.edits.filter((e) => e.messageId === umbrella).at(-1)?.text === privateLine("模块"), "变私密的任务已发出的问题卡片改成一行提示，不是已结束");
+	await flow("幕僚长有私密数据时由普通来源开推断任务", () => host.kernel.submitTrigger({ source: "us-market/quotes", externalId: "q-1", threads: [{ id: "thr_q" }], sender: "market", body: "行情 NVDA 跌 5%", occurredAt: Date.now() }), () => ticket("行情")?.question != null);
+	expect(host.kernel.touchedPrivate(ticket("行情")!.id), "幕僚长有私密数据时由普通来源开的任务算私密");
 	await flow("私密任务提问", () => host.say("开个任务 提问"), () => ticket("提问")?.question != null);
 	await said("会卡住的私密任务", "开个任务 卡住");
 	await flow("G3 私密数据上的提醒", () => host.say("开个任务 设提醒"), () => host.kernel.alertsToday().length > 0 && summary("设提醒") !== "");
@@ -206,6 +227,26 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 	expect((await replied("清屏后 Watchdog 报卡住的私密任务", () => watchdog.checkOnce())).includes(`通知：${FORGOT}`), "清屏后 Watchdog 的通知完整发到 Telegram");
 	expect((await said("清屏后说话，对话卡片列着最近的任务", "早上好")).includes(`回：${FORGOT}`), "清屏后普通回复完整发到 Telegram");
 
+	await said("清屏后开任务订阅一个空线程", "开个任务 旁听");
+	const later = ticket("旁听")!.id;
+	expect(!host.kernel.touchedPrivate(later), "订阅空线程的任务不算私密");
+	host.kernel.submitTrigger({ source: "personal-health/hospital-mail", externalId: "mail-2", threads: [{ id: "thr_later:1" }], sender: "hospital", body: `复查单 ${CANARY}`, occurredAt: Date.now(), private: true });
+	const listener = spawner.workers.get(later)!;
+	const [arrived] = ((await listener.request("worker.read", { id: "thr_later:1" })) as { recentTriggerIds: string[] }).recentTriggerIds;
+	const body = ((await listener.request("worker.read", { id: arrived })) as { trigger: { body: string } }).trigger.body;
+	assert.ok(body.includes(CANARY), "Worker 读到了线程里后来进来的私密触发");
+	expect(host.kernel.touchedPrivate(later), "Worker 读到私密触发，读之前任务就算私密");
+	const relaysOfLater = web().filter((t) => t.startsWith("转述")).length;
+	await flow("Worker 读到线程里后来的私密触发之后提问", () => {
+		listener.report({ status: "blocked", summary: body, question: `要处理「${body}」吗？`, options: ["要", "不要"] });
+		listener.settle();
+	}, () => ticket("旁听")?.question != null && web().filter((t) => t.startsWith("转述")).length > relaysOfLater);
+	host.clearConversation();
+
+	const relaysBefore = web().filter((t) => t.startsWith("转述")).length;
+	await flow("清屏后开任务订阅私密 feed 的线程，Worker 读线程里的旧触发", () => host.say("开个任务 订阅"), () => ticket("订阅")?.question != null && web().filter((t) => t.startsWith("转述")).length > relaysBefore);
+	expect(host.kernel.touchedPrivate(ticket("订阅")!.id), "读过私密 feed 旧触发的任务算私密");
+	host.clearConversation();
 	expect((await said("清屏后 read 私密任务", `翻看 ${ticket("记指标")!.id}`)).join() === NOTICE, "read 私密任务之后的回复是一行提示");
 	assert.ok(web().at(-1)?.includes(CANARY), "read 把金丝雀带进了幕僚长的会话");
 
