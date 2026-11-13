@@ -368,6 +368,16 @@ const row = (over: Partial<DashboardRow>): DashboardRow => ({
 const asking = (id: string, reportId: string, over: Partial<NonNullable<DashboardRow["question"]>> = {}) =>
 	row({ id, title: `任务${id}`, stage: "awaiting_answer", question: { reportId, text: "要看哪部分？", options: ["只看营收", "营收和利润", "先不查"], askedAt: 0, click: null, spoke: false, ...over } });
 
+test("看板：批准卡片的命令每个真实的行前面有行号，折到下一行的部分没有", () => {
+	const command = `ls -la # ${"note ".repeat(14)}\ntouch P`;
+	const runAsk = { id: "run_1", ticketId: "tkt_r1", command, why: "看看", origin: { source: "mail/inbox", sender: "a@b.example" }, askedAt: 0, expiresAt: 1, state: "open" } as const;
+	const lines = renderBoard({ rows: [row({ id: "tkt_r1", stage: "awaiting_answer", runAsk })], receivedAt: 0, connected: true }, 60, 0);
+	const first = lines.findIndex((l) => l.trimStart().startsWith("1│ ls -la # note"));
+	assert.ok(first >= 0, lines.join("\n"));
+	assert.doesNotMatch(lines[first + 1], /\d│/, "折行接着的部分没有行号");
+	assert.equal(lines[first + 2].trim(), "2│ touch P");
+});
+
 test("看板：等回答的任务列出问题和编号选项，底部提示怎么作答；点过的按转交进度写明；久无进展的任务标出分钟数", () => {
 	const click = (option: number, state: "sent" | "handed_over" | "dropped") => ({ click: { option, state, triggerId: "trg_1" } });
 	const rows = [asking("tkt_ab12", "rpt_1"), asking("tkt_cd34", "rpt_2", click(1, "handed_over")), asking("tkt_gh78", "rpt_3", click(2, "sent")), asking("tkt_ij90", "rpt_4", click(0, "dropped")), row({ id: "tkt_ef56", stall: { since: 0, minutes: 42 } })];

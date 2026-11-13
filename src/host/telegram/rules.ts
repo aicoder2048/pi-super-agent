@@ -1,6 +1,7 @@
 // Pure: who counts as the user on Telegram, what a message or a tap means, and how each outbound message reads.
-import { clip, helperFullName, hostLineLabel } from "../../client/board-format.mjs";
+import { clip, HOST_SOURCE, helperFullName, hostLineLabel, RUN_OPTIONS, runOrigin } from "../../client/board-format.mjs";
 import { isCapAskId } from "../../kernel/cap-ask.ts";
+import { isRunAskId, type RunAsk } from "../../kernel/run-ask.ts";
 import { OPTIONS_MAX, refusalText } from "../../kernel/question.ts";
 import type { DashboardRow, HostLine, PendingQuestion } from "../../kernel/types.ts";
 import { hasVisibleText, type ImChat } from "../server.ts";
@@ -102,6 +103,22 @@ export function cardView(row: DashboardRow): CardView | null {
 	return { reportId: q.reportId, ticketId: row.id, title: row.title, helper: helperFullName(row.helper), question: q.text, options: q.options, status };
 }
 
+/** A number on each real line, so a line the phone soft-wraps reads as the same line and a real newline cannot hide in a wrap. */
+const numberLines = (command: string) => command.split("\n").map((line, i) => `${i + 1}│ ${line}`).join("\n");
+
+export function runAskView(row: DashboardRow, ask: RunAsk): CardView {
+	const label = ask.state === "open" || (ask.state === "declined" && ask.reason !== "user") ? null : RUN_OPTIONS[ask.state === "declined" ? 1 : 0];
+	const question = [`任务想运行一条命令。${runOrigin(ask.origin)}`, "命令：", numberLines(ask.command), `任务的说法：${ask.why}`].join("\n");
+	return { reportId: ask.id, ticketId: row.id, title: row.title, helper: HOST_SOURCE, question, options: RUN_OPTIONS, status: ask.state === "open" ? { kind: "open" } : { kind: "closed", label } };
+}
+
+/** A command is shown whole or not at all, so a card that would be clipped goes to the web page instead. */
+export const fitsOneMessage = (view: CardView) => cardText(view).length <= MESSAGE_MAX;
+
+export const runAskLine = (title: string) => `任务「${clip(title, TITLE_MAX)}」想运行一条命令，请在网页上批准`;
+
+export const privateRunAskLine = (module: string) => `${module} 的任务想运行一条命令，请在网页上批准`;
+
 /**
  * The chief of staff relaying a helper's question the card already shows: the question itself, give or take edge
  * punctuation and one of a few fixed lead-ins such as 「请问：」, with nothing after it. Anything more might be news the phone would lose,
@@ -160,7 +177,7 @@ export type OutboundBody =
 
 /** `note`: the chat owes the may-be-missing note, and it goes first so a clipped text keeps it. A card never carries it. */
 export function render(body: Exclude<OutboundBody, { kind: "received" }>, note = false): OutboundMessage {
-	if (body.kind === "card") return { text: fitMessage(cardText(body.view)), keyboard: cardKeyboard(body.view), silent: false };
+	if (body.kind === "card") return { text: fitMessage(cardText(body.view)), keyboard: cardKeyboard(body.view), silent: false, noPreview: true };
 	const text = note ? (body.text ? `${NOTES.missed}\n${body.text}` : NOTES.missed) : body.text;
 	return { text: fitMessage(text), keyboard: null, silent: body.kind === "line" && body.silent, ...(body.kind === "line" && body.noPreview && { noPreview: true }) };
 }
@@ -177,7 +194,7 @@ export function parseAnswerData(data: string): { reportId: string; option: numbe
 	const match = ANSWER_DATA.exec(data);
 	if (!match) return null;
 	if (isCapAskId(match[1])) return "cap";
-	return REPORT_ID.test(match[1]) ? { reportId: match[1], option: Number(match[2]) } : null;
+	return REPORT_ID.test(match[1]) || isRunAskId(match[1]) ? { reportId: match[1], option: Number(match[2]) } : null;
 }
 
 export function mirrorText(text: string, from?: ImChat): string {

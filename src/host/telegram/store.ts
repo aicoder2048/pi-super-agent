@@ -52,7 +52,7 @@ const STANDALONE_NOTE: SendableBody = { kind: "note", text: "" };
  * `private:<reportId>` stands in for the card of a private ticket's question, `note:<updateId>` answers one update, `setup` tells a writer their id, `missed` carries an owed note when nothing else will,
  * `alert:<hostLineId>` is a source's alert.
  */
-export type MessageKey = `line:${string}` | `ask:${string}` | `private:${string}` | `cap:${string}` | `note:${number}` | `alert:${string}` | "setup" | "missed";
+export type MessageKey = `line:${string}` | `ask:${string}` | `private:${string}` | `cap:${string}` | `run:${string}` | `note:${number}` | `alert:${string}` | "setup" | "missed";
 
 export type SendableBody = Exclude<OutboundBody, { kind: "received" }>;
 

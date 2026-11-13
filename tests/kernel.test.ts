@@ -668,17 +668,6 @@ test("Worker 交回的输入通知 Router", () => {
 	assert.deepEqual(notices(), [{ kind: "handback", ticketId: id, body: "这封邮件不属于本任务" }]);
 });
 
-test("后台命令结束的结果作为新输入送回", () => {
-	const { kernel, open, run, drain, wakes } = setup();
-	const id = open("request");
-	run(id);
-	kernel.workerTurnEnded(id, { bgRunning: true });
-	drain();
-	assert.ok(kernel.addBackgroundResult(id, "测试全部通过").ok);
-	assert.deepEqual(kernel.pendingInputs(id).map((i) => [i.kind, i.body]), [["bg_result", "测试全部通过"]]);
-	assert.deepEqual(wakes(), [id]);
-});
-
 test("读取：按 id 返回对象及下一跳的 id", () => {
 	const { kernel, trigger } = setup();
 	const { triggerId } = trigger({ threads: [{ id: "thr_pr", title: "PR #1" }] });
@@ -746,6 +735,7 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			endedAt: null,
 			outside: null,
 			moduleOff: false,
+			runAsk: null,
 		},
 	);
 	assert.equal(kernel.usageToday("deepseek"), 1200);

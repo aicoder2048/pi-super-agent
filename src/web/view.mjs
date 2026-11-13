@@ -11,6 +11,7 @@
 /** @typedef {import("../client/protocol.ts").TodayCounts} TodayCounts */
 /** @typedef {import("../client/protocol.ts").MemberCapBoard} MemberCapBoard */
 /** @typedef {import("../kernel/types.ts").CapQuestion} CapQuestion */
+/** @typedef {import("../kernel/run-ask.ts").RunAsk} RunAsk */
 /** @typedef {import("../client/protocol.ts").TranscriptMessage} TranscriptMessage */
 /** @typedef {import("../client/protocol.ts").WatchedSource} WatchedSource */
 /** @typedef {import("../client/protocol.ts").ModuleCard} ModuleCard */
@@ -20,7 +21,7 @@
 /** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
 /** @typedef {import("../client/board-format.mjs").StepIcon} StepIcon */
 
-import { HOST_SOURCE, INPUT_LABEL, QUOTE_WHO, blocks, clip, firstLine, formatElapsed, formatSpan, formatTokens, helperFullName, helperLabel, modelText, oneLine, outsideLine, shortId, stallMinutes, teamWork, textOf, toolStep } from "../client/board-format.mjs";
+import { HOST_SOURCE, INPUT_LABEL, QUOTE_WHO, RUN_OPTIONS, runOrigin, blocks, clip, firstLine, formatElapsed, formatSpan, formatTokens, helperFullName, helperLabel, modelText, oneLine, outsideLine, shortId, stallMinutes, teamWork, textOf, toolStep } from "../client/board-format.mjs";
 
 /** @type {Record<DashboardRow["basis"], string>} */
 export const BASIS_PHRASE = { request: "你的请求", rule: "规则触发", inference: "主动发现" };
@@ -195,7 +196,43 @@ export function settleSending(view, sending) {
 /** The open question with this id: a helper's, or the host's own. @param {View} view @param {string} reportId */
 export function questionOf(view, reportId) {
 	const cap = view.memberCap?.question;
-	return cap?.reportId === reportId ? cap : view.rows.find((r) => r.question?.reportId === reportId)?.question;
+	if (cap?.reportId === reportId) return cap;
+	const run = view.rows.find((r) => r.runAsk?.id === reportId && r.runAsk.state === "open")?.runAsk;
+	return run ? runQuestion(run) : view.rows.find((r) => r.question?.reportId === reportId)?.question;
+}
+
+/** A run card's two buttons as a question with no click, so a posted click locks it until the host's board shows the answer. @param {RunAsk} run */
+const runQuestion = (run) => ({ reportId: run.id, options: [...RUN_OPTIONS] });
+
+/** @param {RunAsk} run */
+function runStatus(run) {
+	switch (run.state) {
+		case "open":
+			return "";
+		case "approved":
+			return "已同意 · 运行中";
+		case "ran":
+			return run.exitCode === null ? "已运行 · 没有退出码" : `已运行 · 退出码 ${run.exitCode}`;
+		case "declined":
+			return run.reason === "user" ? "你选了不要" : run.reason === "expired" ? "24 小时没有回答，已按「不要」处理" : "任务已结束";
+	}
+}
+
+/**
+ * @typedef {{ by: string, origin: string, command: string, said: string, choice: Choice | null, status: string }} RunCard
+ */
+
+/** @param {RunAsk | null} run @param {Sending} sending @returns {RunCard | null} */
+function runCard(run, sending) {
+	if (!run) return null;
+	return {
+		by: HOST_SOURCE,
+		origin: runOrigin(run.origin),
+		command: run.command,
+		said: `任务的说法：${run.why}`,
+		choice: run.state === "open" ? choiceOf(runQuestion(run), sending, CAP_SENT_NOTE) : null,
+		status: runStatus(run),
+	};
 }
 
 /**
@@ -221,6 +258,7 @@ export function questionOf(view, reportId) {
  * @property {string} outside the host's count of writes outside the output root, or ""
  * @property {boolean} canStop
  * @property {Choice | null} choice
+ * @property {RunCard | null} run
  */
 
 /** @param {DashboardRow} row @param {number} now @param {Sending} sending @returns {TaskCard} */
@@ -237,6 +275,7 @@ function card(row, now, sending) {
 		outside: outsideLine(row.outside),
 		canStop: GROUP[row.stage] === "doing",
 		choice: choiceOf(row.question, sending),
+		run: runCard(row.runAsk, sending),
 	};
 }
 
@@ -609,7 +648,7 @@ const INPUT_STEP = {
 	note: "幕僚长附加说明",
 	status_query: "进度询问",
 	recovery: "重启后恢复",
-	bg_result: "后台命令完成",
+	bg_result: "批准卡片的结果",
 };
 
 const KIND_BY_LABEL = new Map(/** @type {[InputKind, string][]} */ (Object.entries(INPUT_LABEL)).map(([kind, label]) => [label, kind]));

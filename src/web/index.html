@@ -89,6 +89,11 @@
 		.card .by:empty, #how-helper:empty, #how-life:empty { display: none; }
 		.card .why, .card .latest { font-size: 12px; color: var(--muted); margin-top: 6px; overflow-wrap: anywhere; white-space: pre-wrap; }
 		.card.ask .latest { color: var(--ink); font-size: 13px; }
+		.card .run { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--warn-line); }
+		.card .run .by { font-weight: 700; margin-top: 0; }
+		.card .run .origin, .card .run .said, .card .run .status { font-size: 12px; color: var(--muted); margin-top: 4px; overflow-wrap: anywhere; white-space: pre-wrap; }
+		.card .run .command { margin-top: 6px; padding: 6px 8px 6px calc(8px + 5ch); font: 12px/1.5 ui-monospace, Menlo, monospace; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+		.card .run .command [data-n]::before { content: attr(data-n) "│ "; display: inline-block; width: 5ch; margin-left: -5ch; text-align: right; color: var(--muted); user-select: none; }
 		.card .outside { font-size: 12px; color: var(--warn-ink); background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 6px; padding: 4px 8px; margin-top: 6px; overflow-wrap: anywhere; }
 		.crew { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--accent-ink); }
 		.crew .stack { display: inline-flex; padding-left: 2px; }

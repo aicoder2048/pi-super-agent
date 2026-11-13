@@ -15,6 +15,7 @@ import type { ComponentName, Digest, ModuleName } from "../modules/manifest.ts";
 import type { Alert, Gateway, Json, Query, Request, WorkerCaller } from "../modules/protocol.ts";
 import type { Member } from "../teams.ts";
 import type { TranscriptMessage } from "../client/protocol.ts";
+import { parseRunRequest } from "../kernel/run-ask.ts";
 import { canCode, isRooted, memberTools, profileOf, type Profile } from "../worker/tools.ts";
 import { realRoots } from "../worker/read-roots.ts";
 import type { OutputRoot } from "./output.ts";
@@ -412,6 +413,12 @@ export class WorkerExecutor {
 					return this.#o.output.newApp(ticketId, p.short);
 				case "worker.dispatch":
 					return this.#dispatch(ticketId, live, params);
+				case "worker.ask_to_run": {
+					if (live.profile !== "module-feed") throw new Error("只有模块的来源开的任务能请使用者批准命令；这项任务不是来源开的任务，用自己的工具做。");
+					const opened = kernel.openRunAsk(ticketId, parseRunRequest(p));
+					if (!opened.ok) throw new Error(opened.reason);
+					return "已请使用者批准这条命令。现在结束这一轮，不要再调工具；使用者回答以后，结果会作为新的输入交给你。";
+				}
 				case "worker.bg":
 					live.bgRunning = Number(p.running) || 0;
 					return { ok: true };

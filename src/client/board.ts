@@ -1,7 +1,7 @@
 import { replaceControlCharacters, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { DashboardRow } from "../kernel/types.ts";
 import type { MemberCapBoard } from "./protocol.ts";
-import { BASIS_LABEL, HOST_SOURCE, STAGE_LABEL, formatElapsed, formatTokens, helperFullName, isLive, modelText, outsideLine, selectRows, shortId, stallMinutes } from "./board-format.mjs";
+import { BASIS_LABEL, HOST_SOURCE, RUN_OPTIONS, runOrigin, STAGE_LABEL, formatElapsed, formatTokens, helperFullName, isLive, modelText, outsideLine, selectRows, shortId, stallMinutes } from "./board-format.mjs";
 
 export { shortId };
 
@@ -12,6 +12,25 @@ function clip(text: string, width: number): string {
 
 /** pi-tui draws each string as one terminal row, so a newline in a report would push the rest of the board down. */
 const fit = (text: string, width: number) => clip(replaceControlCharacters(text), width);
+
+function wrap(text: string, lead: string, width: number): string[] {
+	const indent = " ".repeat(visibleWidth(lead));
+	const room = Math.max(1, width - indent.length);
+	const rows: string[] = [];
+	let row = "";
+	let used = 0;
+	for (const char of replaceControlCharacters(text)) {
+		const w = visibleWidth(char);
+		if (used + w > room && row) {
+			rows.push((rows.length ? indent : lead) + row);
+			row = "";
+			used = 0;
+		}
+		row += char;
+		used += w;
+	}
+	return [...rows, (rows.length ? indent : lead) + row];
+}
 
 function spread(left: string, right: string, width: number): string {
 	const rightFit = fit(right, Math.max(0, Math.floor(width / 2)));
@@ -43,6 +62,7 @@ export function openQuestions({ rows, memberCap }: Pick<BoardView, "rows" | "mem
 	return [
 		...(cap ? [{ id: CAP_ID, title: CAP_TITLE, reportId: cap.reportId, options: cap.options }] : []),
 		...openChoices(rows).map((r) => ({ id: r.id, title: r.title, reportId: r.question!.reportId, options: r.question!.options })),
+		...rows.filter((r) => r.runAsk?.state === "open").map((r) => ({ id: r.id, title: r.title, reportId: r.runAsk!.id, options: [...RUN_OPTIONS] })),
 	];
 }
 
@@ -83,6 +103,13 @@ export function renderBoard(view: BoardView, width: number, now: number): string
 				if (q.spoke) lines.push(fit("   你刚发了一句话，等幕僚长处理完再选", width));
 				else if (c?.state === "dropped") lines.push(fit("   幕僚长没有转交上次的选择，可以重选", width));
 			}
+		}
+		const run = row.runAsk;
+		if (run?.state === "open") {
+			lines.push(fit(`   ${HOST_SOURCE}：任务想运行一条命令 · ${runOrigin(run.origin)}`, width));
+			run.command.split("\n").forEach((line, i) => lines.push(...wrap(line, `   ${i + 1}│ `, width)));
+			lines.push(fit(`   任务的说法：${run.why}`, width));
+			lines.push(fit(`   ${numbered([...RUN_OPTIONS])}`, width));
 		}
 		lines.push(fit(`   最近：${row.latestSummary ?? "（暂无汇报）"}`, width));
 		const outside = outsideLine(row.outside);
