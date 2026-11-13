@@ -122,10 +122,10 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/host-main.
 	open -e ~/.pi-super-agent/secrets.env
 	```
 
-2. 在 `secrets.env` 里写下面两行，等号后面换成你的密钥。行情密钥也可以叫 `POLYGON_API_KEY` 或 `STOCK_HEATMAP_API_KEY`。
+2. 在 `secrets.env` 里写下面两行，等号后面换成你的密钥。股票技术分析模块（stock-ta）用 `POLYGON_API_KEY` 取报价和日线，用 `FINNHUB_API_KEY` 查下一次财报日，装法见 `docs/modules/stock-ta.md`。
 
 	```sh
-	MASSIVE_API_KEY=<你的 Massive 密钥>
+	POLYGON_API_KEY=<你的 Massive 密钥>
 	FINNHUB_API_KEY=<你的 Finnhub 密钥>
 	```
 
@@ -153,15 +153,11 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/host-main.
 	预期日志里有这几行（时间戳和路径因机器而异）：
 
 	```text
-	[us-market] 美股行情：密钥来自 secretsFile ~/.pi-super-agent/secrets.env；自选 META TSLA NVDA ...
-	[us-market] Finnhub 密钥来自 secretsFile ~/.pi-super-agent/secrets.env
 	[host] 已启动，状态目录 ~/.pi-super-agent，Router openai-codex/gpt-6.1-terra，Worker openai-codex/gpt-6.1-sol，回退 openai-codex/gpt-6.1-sol
 	[host] 网页 http://127.0.0.1:4517/?token=…
 	```
 
 	这时还没有 `[host] 网页（远程）` 那一行。它在「远程访问」一节加上 `webHosts` 以后才出现。
-
-	如果写的是「密钥来自 环境变量 MASSIVE_API_KEY」，说明你的终端里 `export` 了同名变量，环境变量优先。开机自动启动时没有这些变量，宿主会用 `secretsFile`。
 
 5. 在这台 Mac 的浏览器里打开 `[host] 网页` 那一行的网址，确认网页能打开。
 6. 按 Ctrl+C 停掉宿主。日志最后一行是 `[host] 已停止`。下一节由 launchd 接管，前台的宿主必须先停，否则两个宿主抢同一个端口。

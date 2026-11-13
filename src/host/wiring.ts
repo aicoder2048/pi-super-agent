@@ -57,6 +57,7 @@ export function feedSpecs(config: Pick<HostConfig, "stateDir" | "secretsFile" | 
 	const declared = declaredBy(modules.modules);
 	const names = declaredBy(modules.found).map((d) => d.source.name);
 	const unknown = Object.keys(config.sources).find((name) => !names.includes(name));
+	if (unknown === "us-market") throw new ConfigError(`us-market 已经退役，删掉 ${join(config.stateDir, "config.json")} 里的 sources.us-market`);
 	if (unknown) throw new ConfigError(`${join(config.stateDir, "config.json")}：sources.${unknown} 不是可配置的来源，可配置：${names.join("、") || "（没有）"}`);
 	return declared.map(({ module: m, source: s }) => {
 		const build = FEEDS[s.feed!.kind];

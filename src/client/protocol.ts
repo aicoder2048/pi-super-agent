@@ -55,7 +55,14 @@ export interface ModuleCard {
 	pinnedOld: number;
 	/** Names only; the page builds each import command so a card stays under 1 KB. */
 	notImported: string[];
+	/** Alert lines the module posted since local midnight. The host fills it and `beats`. */
+	alertsToday?: number;
+	/** Each feed's last beat since the host started. */
+	beats?: FeedBeat[];
 }
+
+/** `zone`: the zone the feed's data is written in, so a time reads as the user reads its rows. */
+export type FeedBeat = { title: string; at: number; zone?: string } & ({ ok: true; records: number } | { ok: false; note: string });
 
 export interface BoardState {
 	rows: DashboardRow[];

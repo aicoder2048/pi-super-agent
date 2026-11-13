@@ -24,7 +24,7 @@
     }
   },
   "responses": {
-    "https://api.massive.com/v2/snapshot/locale/us/markets/stocks/tickers?tickers=AMD,NVDA": {
+    "https://api.massive.com/v2/snapshot/locale/us/markets/stocks/tickers?tickers=AMD,NVDA,QQQ,SPY": {
       "status": "DELAYED",
       "tickers": [
         {

@@ -3,10 +3,10 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import { alertText, firingId, met, need, parseWatch, receiptText, type Point, type SetCondition } from "./conditions.ts";
+import { alertText, firingId, foldOf, met, need, parseWatch, receiptText, type Point, type SetCondition } from "./conditions.ts";
 import { moduleDataDir } from "./knowledge.ts";
 import { structureChanges, type CollectionDescriptor, type Component, type ComponentName, type DataClass, type FieldDescriptor, type ModuleName } from "./manifest.ts";
-import type { Alert, Condition, Json, Query, Request, Row } from "./protocol.ts";
+import type { Alert, Condition, DayMoveFold, Json, Query, Request, Row } from "./protocol.ts";
 import type { InstanceData } from "./registry.ts";
 
 /** `aliases` maps each old name to the current one, so a ticket pinned to an older version still reads and writes. */
@@ -105,7 +105,8 @@ export interface ModuleRows {
 }
 
 /** `alerts`: the conditions the written rows met, for the host to post. `alertProblem`: why they could not be checked; the rows are written anyway. */
-export type Written = Accessed & { alerts: readonly Alert[]; alertProblem?: string };
+export type ConditionAlert = Alert & { fold?: DayMoveFold };
+export type Written = Accessed & { alerts: readonly ConditionAlert[]; alertProblem?: string };
 
 export type FeedState = { cursor: string | null; lastRunAt: number | null };
 
@@ -173,7 +174,7 @@ function conditionsOf(db: DatabaseSync, collection: string): SetCondition[] {
  * times count as new, because a date-only time cannot order two readings taken the same day. A key with
  * no stored reading takes the write as history, so only its latest time counts.
  */
-function watchBeforeWrite(db: DatabaseSync, { name, collection }: DataComponent): (written: readonly Record<string, Value>[]) => Alert[] {
+function watchBeforeWrite(db: DatabaseSync, { name, collection }: DataComponent): (written: readonly Record<string, Value>[]) => ConditionAlert[] {
 	const watch = collection.watch;
 	if (watch === undefined) return () => [];
 	try {
@@ -202,7 +203,9 @@ function watchBeforeWrite(db: DatabaseSync, { name, collection }: DataComponent)
 				const points = (history.all(k, t, t, row._id!, Math.max(...mine.map((c) => need(c.condition)))) as Point[]).reverse();
 				return mine.flatMap((c) => {
 					const happened = met(c.condition, points);
-					return happened === undefined ? [] : [{ externalId: firingId(c, points, row._id!, watch.zone), text: alertText(c, points.at(-1)!, happened, watch), at: t, private: collection.class === "private" }];
+					if (happened === undefined) return [];
+					const fold = foldOf(c, points.at(-1)!);
+					return [{ externalId: firingId(c, points, row._id!, watch.zone), text: alertText(c, points.at(-1)!, happened, watch), at: t, private: collection.class === "private", ...(fold && { fold }) }];
 				});
 			});
 		};

@@ -6,6 +6,7 @@ import test, { type TestContext } from "node:test";
 import { Modules } from "../src/modules.ts";
 import { instanceData } from "../src/modules/instance-data.ts";
 import { runFeed, type FeedNotice } from "../src/modules/feed-runner.ts";
+import type { Alert } from "../src/modules/protocol.ts";
 import { problemLine, scanPackage } from "../src/modules/validate.ts";
 import { servedAsHost } from "./helpers/fakes.ts";
 
@@ -67,4 +68,33 @@ test("feed 的输入里有 now：宿主时钟的 ISO 时间，handler 不用读�
 	const run = await runFeed(entry, [], { data, submit: () => {}, alert: () => {}, problem: () => {}, secret: () => "token", now: () => Date.parse("2026-11-12T15:05:00Z") });
 	assert.deepEqual(run, { ok: true, records: 0, notices: 0 });
 	assert.equal(data.feedState(entry.module, entry.source).cursor, "2026-11-12T15:05:00.000Z");
+});
+
+test("handler 交回的 alerts 经 ports.alert 当模块提醒行贴出，在触发之前；宿主说贴过了的 externalId 不再算新的", async (t) => {
+	const { root, pkg } = taxCopy(t);
+	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ alerts: [{ id: "a-1", text: "到了一档", at: "2026-11-12T15:05:00Z" }], notices: [{ id: "a-1", fields: {} }] });\n`);
+	const entry = brokerage(root);
+	const data = instanceData(join(root, "state"));
+	const order: string[] = [];
+	const seen = new Set<string>();
+	const ports = {
+		data, problem: () => {}, secret: () => "token", now: () => 0,
+		submit: (n: FeedNotice) => void order.push(`trigger ${n.id}`),
+		alert: (module: string, a: Alert) => {
+			order.push(`line ${module} ${a.externalId} ${a.text} ${a.at} ${a.private}`);
+			return !seen.has(a.externalId) && seen.add(a.externalId).size > 0;
+		},
+	};
+	await runFeed(entry, [], ports);
+	await runFeed(entry, [], ports);
+	assert.deepEqual(order.slice(0, 2), ["line personal-tax a-1 到了一档 2026-11-12T15:05:00Z true", "trigger a-1"]);
+	assert.equal(seen.size, 1);
+});
+
+test("alerts 的形状不对：这一轮失败，说出要什么", async (t) => {
+	const { root, pkg } = taxCopy(t);
+	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ alerts: [{ id: "a-1" }] });\n`);
+	const run = await runFeed(brokerage(root), [], { data: instanceData(join(root, "state")), submit: () => {}, alert: () => true, problem: () => {}, secret: () => "token", now: () => 0 });
+	assert.equal(run.ok, false);
+	assert.match(run.ok ? "" : run.note, /alerts 要是一列 \{ id, text, at \}/);
 });

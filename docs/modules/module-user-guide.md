@@ -36,15 +36,15 @@
 
 ### 1.2 三种形态
 
-仓库自带的三个模块正好是三种形态，做新模块前先看它们：
+这三个模块正好是三种形态，做新模块前先看它们：
 
 | 模块 | 来源和规则 | 技能 | 成员 | 形态 |
 |---|---|---|---|---|
 | `toy-market` | 有，演示用的假行情 | 1 个 | 无 | 带技能的单个助手，默认关闭 |
-| `us-market` | 有，真实行情 | 1 个 | 4 位，美股看盘队 | 来源、规则、知识、团队都有 |
+| `stock-ta`（在 `docs/modules/examples/` 里，要自己复制进状态目录） | 有，报价 feed 和日线扫描 | 5 个 | 6 位，技术分析研究组 | 新布局包，数据、工具、feed、知识、团队都有 |
 | `pi-pi` | 无，只从对话进来 | 2 个 | 9 位，Pi施工队 | 只有知识和团队 |
 
-**范本用 `us-market`（美股看盘队）。** 它的成员按「要做的判断」分工，共同做法写在技能里，每位成员的汇报格式固定。`pi-pi` 的九位专家是按文档章节切的，早期一个任务要花 389 万到 463 万输入 token，第 8 章会讲它的教训。
+**范本用 `stock-ta`（技术分析研究组）。** us-market（美股看盘队）已经退役，并进了 stock-ta。它的成员按「要做的判断」分工，共同做法写在技能里，每位成员的汇报格式固定。`pi-pi` 的九位专家是按文档章节切的，早期一个任务要花 389 万到 463 万输入 token，第 8 章会讲它的教训。
 
 ## 2. 模块在两层结构里的位置
 
@@ -131,7 +131,7 @@ flowchart TB
 
 - 助手只有 `read`、`grep`、`find`、`ls`、汇报、模块的工具、知识、数据和提醒，领域开了时加 `lookup`。没有 `bash`、`edit`、`write`、`web_get`，派的成员也只有读文件的工具。
 - 读文件只能在三个地方：任务自己的工作目录，模块包里的 `knowledge/` 和 `skills/`。读别处被拒，原因只有一行，不写路径。
-- 所有推断任务读文件都受同样的限制，所以读不到 `secretsFile` 和 `~/.pi/agent/auth.json`。宿主自带来源（`timer`、`us-market` 这些）开的推断任务保留 `web_get`。
+- 所有推断任务读文件都受同样的限制，所以读不到 `secretsFile` 和 `~/.pi/agent/auth.json`。宿主自带来源（`timer` 这些）开的推断任务保留 `web_get`。
 - 你在对话里开的任务和宿主自带来源开的规则任务不变。
 - 真要一条工具以外的命令时，助手调 `ask_to_run` 请你批准（ADR-0021）。网页左栏「待你处理」里这个任务的卡片下面出现一张「白宫 · 系统」的卡片，写着来源、原样的命令和任务的说法，两个按钮「同意」「不要」。点「同意」后由宿主在任务的工作目录里运行这一条，环境里没有密钥变量，时限 10 分钟，输出交回任务。24 小时没人答按「不要」算。碰过私密数据的任务只能在网页或终端上批准，Telegram 上只有一行提示。
 
@@ -182,7 +182,7 @@ flowchart TB
 | `ignore` | 一组正则。触发正文匹配任何一条，就在到达幕僚长之前被丢弃 |
 | `mode` | 写 `"ignore"` 时这个来源的触发全部丢弃 |
 | `market` | 写 `true` 时，这个来源的规则任务得到「行情助手」的名字 |
-| `feed` | 让宿主自己运行一个数据源。`kind` 必须是宿主里登记过的，目前只有 `massive-stocks` |
+| `feed` | 让宿主自己运行一个数据源。`kind` 必须是宿主里登记过的，目前只有 `massive-stocks`，us-market 退役以后没有模块再用它 |
 
 `timers` 里每一项：`id`（编号）、`everyMinutes`（间隔分钟数）、`thread`（线程名）、`body`（触发正文）。不写 `source` 时，来源名就是模块名。宿主停机期间错过的定时，恢复后只补最近的一次。
 
@@ -192,8 +192,8 @@ flowchart TB
 
 ```markdown
 ## big-move
-来源: us-market
-个股涨跌到达 5% 档或更高时，开一个任务核实这次波动……
+来源: stock-ta/quotes
+个股到了 5% 档或 8% 档时，开一个任务给技术分析研究组……
 ```
 
 - 「来源:」一行可选。不写时，规则适用于模块自己的全部来源（模块名、`sources` 里的名字、定时器的来源）。
@@ -244,6 +244,7 @@ flowchart TB
 - **跑得久的 feed。** 一次调用默认最多 20 秒。在 `feed.json` 写 `"limit": "5m"` 放宽，最多 `"10m"`。
 - **私密 feed 在手机上露几行。** 写进 `private` 集合的 feed，通知在 Telegram 上默认只有一行「<模块> 有新内容，请在网页上查看」。在 `feed.json` 写 `"line": "{{from}}\n{{subject}}\n{{snippet}}"`，每条新通知就照这个模板发三行到网页和 Telegram，开头是「<模块标题>：」，幕僚长也只看到这几行。最多三行，只能引用 `notice` 里有的字段，每行最多 160 个字，值里的换行、零宽和方向控制字符都会去掉。写进 `line` 就是同意这几个字段经过 Telegram 的服务器（ADR-0020）。正文这类字段不要写进去。通知的 `id` 和 `thread` 只以散列交给幕僚长，`ignore` 仍按 `notice` 填好的文字过滤。
 - **feed 报问题。** handler 交回的对象可以带 `"problem": { "id": "auth", "text": "授权过期了，请重新授权" }`。同一个 `id` 只说一次，中间有一拍没报，再报才再说。`text` 写死在代码里，不要拼集合里的数据。
+- **feed 直接提醒一行。** handler 交回的对象可以带 `"alerts": [{ "id": "band:NVDA:2026-11-12:up5", "text": "NVDA 涨 +5.31%，到达 +5% 档。…", "at": "<数据时间 ISO>" }]`。每一项是一行提醒，宿主不经幕僚长直接发到网页和 Telegram，开头是「提醒 · <模块标题>：」，在同一轮的触发之前发出。同一个 `id` 只发一次。写进不私密集合的 feed，这一行在 Telegram 上不受「私密数据到过幕僚长以后只回一行」的遮挡。带上 `"fold": { "key": "NVDA", "side": "up" }` 时，你在同一个 key 上设的 `day-move` 条件如果同一轮、同一方向第一次到线，只发一行：这一行后面接上「也到了你设的…提醒线」，不再另发一行。
 - **feed 里的时间。** feed 的输入里有 `now`，是宿主时钟的 ISO 时间。判断数据新不新鲜、是不是换了一天，都用它，不要读自己进程的挂钟，这样测试和回放能用假时钟。样例（fixtures）的 `input` 里可以写 `now`，固定排练时的时间。
 - **按昨收提醒。** 行情一类的 `series` 在 `collection.json` 的 `watch` 里多写 `"prevClose": "<昨收那一列>"`，就能设 `day-move`（当天相对昨收涨跌到 N%）。`"label"` 写一句短说明（例如 `"延迟行情"`），提醒里用它代替「来自 <原件>」。
 
@@ -311,7 +312,7 @@ flowchart TB
 
 ### 第 4 步：起草文件
 
-照第 10 章的配方起一份。让 AI 起草时，把第 1、2 步的答案和 `us-market` 的三个文件一起给它当范本，提示词模板见 6.3 节。起草后你自己逐条审这几处：
+照第 10 章的配方起一份。让 AI 起草时，把第 1、2 步的答案和 `stock-ta` 的三个文件一起给它当范本，提示词模板见 6.3 节。起草后你自己逐条审这几处：
 
 - `description` 会不会让幕僚长把别的领域的事也归过来。
 - 规则有没有写「做到哪一步为止」。
@@ -407,9 +408,9 @@ flowchart TB
 我要给 Pi Super Agent 加一个领域模块，请照范本起草全套文件。
 
 范本（先读）：
-- modules/us-market/module.json
-- modules/us-market/skills/us-market-desk/SKILL.md
-- modules/us-market/agents/news-researcher.md
+- docs/modules/examples/stock-ta/module.json
+- docs/modules/examples/stock-ta/skills/market-desk/SKILL.md
+- docs/modules/examples/stock-ta/agents/market-desk.md
 - docs/modules/module-user-guide.md 的第 3、7、8 章
 
 我的领域：
@@ -1090,5 +1091,5 @@ tools: read, grep
 | 助手、成员和派活 | `src/host/pi-worker.ts`、`src/host/workers.ts`、`src/host/dispatch.ts` |
 | 来源和定时器 | `src/sources/generic.ts`、`src/sources/timer.ts`、`src/host/wiring.ts` |
 | 配置默认值 | `src/host/config.ts` |
-| 范本 | `modules/us-market`、`modules/toy-market`、`modules/pi-pi` |
+| 范本 | `docs/modules/examples/stock-ta`、`modules/toy-market`、`modules/pi-pi` |
 | 相关文档 | `docs/modules/module-design-review.md`（设计评审和 token 分析）、`docs/modules/module-skills-memo.md`（技能备忘） |

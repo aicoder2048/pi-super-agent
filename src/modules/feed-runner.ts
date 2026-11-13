@@ -2,10 +2,10 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { everyMs } from "./connectors/timer.ts";
-import type { FeedStates, ModuleRows } from "./instance-data.ts";
+import type { ConditionAlert, FeedStates, ModuleRows } from "./instance-data.ts";
 import type { CollectionDescriptor, Component, ComponentName, FeedDescriptor, FeedFixture, ModuleName } from "./manifest.ts";
 import type { InstanceData } from "./registry.ts";
-import type { Alert, Collected, FeedInput, Json, Row } from "./protocol.ts";
+import type { Alert, Collected, FeedAlert, FeedInput, Json, Row } from "./protocol.ts";
 import { fill, release } from "./release.ts";
 import { fixtureSecrets, LIMIT_MS, runModuleCodeAsync, secretsFor } from "./run-code.ts";
 
@@ -22,7 +22,8 @@ export type FeedProblem = NonNullable<Collected["problem"]>;
 export interface FeedPorts {
 	data: ModuleRows & FeedStates & Pick<InstanceData, "dir">;
 	submit(notice: FeedNotice): void;
-	alert(module: ModuleName, alert: Alert): void;
+	/** False when the host already posted this externalId. */
+	alert(module: ModuleName, alert: Alert): boolean;
 	/** Every beat that ran, with what it reported, so the host can tell a new problem from one still standing. */
 	problem(source: string, problem: FeedProblem | undefined): void;
 	secret(name: string): string | undefined;
@@ -58,7 +59,10 @@ export function parseCollected(output: Json, into?: CollectionDescriptor): Colle
 		return `notices 要是一列 { id, fields }，fields 的值都是文字`;
 	}
 	if (cursor !== undefined && typeof cursor !== "string") return `cursor 要是文字，收到 ${JSON.stringify(cursor)}`;
-	const { problem } = output;
+	const { alerts = [], problem } = output;
+	if (!Array.isArray(alerts) || !alerts.every((a) => isObject(a) && ["id", "text", "at"].every((f) => typeof a[f] === "string" && a[f] !== "") && (a["fold"] === undefined || (isObject(a["fold"]) && typeof a["fold"]["key"] === "string" && ["up", "down"].includes(a["fold"]["side"] as string))))) {
+		return `alerts 要是一列 { id, text, at }，都是文字，可选 fold { key, side: up 或 down }`;
+	}
 	if (problem !== undefined && !(isObject(problem) && typeof problem["id"] === "string" && typeof problem["text"] === "string")) return `problem 要是 { id, text }，两个都是文字`;
 	if (into !== undefined) {
 		const unknown = (records as JsonObject[]).flatMap((r) => Object.keys(r)).find((key) => key !== "id" && !Object.hasOwn(into.fields, key));
@@ -102,6 +106,17 @@ async function fromHandler({ module, source, feed, name, dir, components }: Feed
 	return reply.ok ? parseCollected(reply.output, into) : reply.note;
 }
 
+/** A day-move condition that fires anew with a feed alert of the same key and direction posts that alert's line, its own clause added, once. */
+function postAlerts({ module, private: held }: FeedEntry, conditions: readonly ConditionAlert[], feed: readonly FeedAlert[], ports: FeedPorts): void {
+	const joined = new Set<FeedAlert>();
+	for (const { fold, ...alert } of conditions) {
+		const into = fold && feed.find((a) => !joined.has(a) && a.fold?.key === fold.key && a.fold.side === fold.side);
+		if (into === undefined) ports.alert(module, alert);
+		else if (ports.alert(module, { ...alert, text: `${into.text}${fold!.clause}` })) joined.add(into);
+	}
+	for (const a of feed) if (!joined.has(a)) ports.alert(module, { externalId: a.id, text: a.text, at: a.at, private: held });
+}
+
 export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: FeedPorts, fixture?: FeedFixture, signal?: AbortSignal): Promise<FeedRun> {
 	const { module, source, feed, components } = entry;
 	try {
@@ -109,11 +124,13 @@ export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: F
 		if (typeof collected === "string") return { ok: false, note: collected };
 		const records = collected.records ?? [];
 		let stored = 0;
+		let conditionAlerts: readonly ConditionAlert[] = [];
 		if (records.length > 0 && feed.into !== undefined) {
 			const written = ports.data.write(module, components, feed.into, records, source, source, true);
 			stored = written.rows.length;
-			for (const alert of written.alerts) ports.alert(module, alert);
+			conditionAlerts = written.alerts;
 		}
+		postAlerts(entry, conditionAlerts, collected.alerts ?? [], ports);
 		const template = feed.notice;
 		const reach = reachOf(entry);
 		const line = reach === "released" ? feed.line : undefined;

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, existsSync, rmSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -10,45 +10,37 @@ import { piPackageRoot } from "../src/pi-runtime.mjs";
 import { servedAsHost, tempStateDir } from "./helpers/fakes.ts";
 
 const REPO_MODULES = fileURLToPath(new URL("../modules", import.meta.url));
+const RETIRED_MODULES = fileURLToPath(new URL("./fixtures/retired", import.meta.url));
 const defaultProviders = memberProviders(loadConfig(tempStateDir()));
-const load = (dir = REPO_MODULES) => servedAsHost(Modules.load([dir], { allowedProviders: defaultProviders, switches: { values: { "toy-market": true }, file: "config.json" } }));
+const load = (...dirs: string[]) => servedAsHost(Modules.load(dirs.length ? dirs : [REPO_MODULES], { allowedProviders: defaultProviders, switches: { values: { "toy-market": true }, file: "config.json" } }));
 
-const WATCHERS = { "earnings-reader": "财报解读", "market-analyst": "行情分析师", "news-researcher": "新闻研究员", "technical-analyst": "技术分析师" };
 const PI_EXPERTS = ["agent-expert", "cli-expert", "config-expert", "ext-expert", "keybinding-expert", "prompt-expert", "skill-expert", "theme-expert", "tui-expert"];
 const teamOf = (modules: Modules, name: string) => modules.modules.find((m) => m.name === name)?.team;
 
-test("仓库自带的两支队伍用默认配置的提供方都能加载：us-market 是美股看盘队的四位，pi-pi 是 Pi施工队的九位", () => {
+test("仓库自带的队伍用默认配置的提供方都能加载：pi-pi 是 Pi施工队的九位", () => {
 	const modules = load();
-	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "module-builder": { team: "模块工坊", onRoster: true }, "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true }, "us-market": { team: "美股看盘队", onRoster: true } });
-	assert.deepEqual(Object.fromEntries(teamOf(modules, "us-market")!.members.map((m) => [m.name, m.title])), WATCHERS);
+	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "module-builder": { team: "模块工坊", onRoster: true }, "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true } });
 	const experts = teamOf(modules, "pi-pi")!.members;
 	assert.deepEqual(experts.map((m) => m.name), PI_EXPERTS);
 	for (const m of experts) assert.match(m.title, /\p{Script=Han}/u, `${m.name} 有中文职称`);
 });
 
-test("幕僚长的名册里有这两个领域：行情、个股、财报、相关新闻和盯盘提醒归 us-market，Pi 的扩展、主题、技能、配置、提示模板和界面组件归 pi-pi", () => {
+test("幕僚长的名册里有 pi-pi：Pi 的扩展、主题、技能、配置、提示模板和界面组件归 pi-pi", () => {
 	const roster = load().rosterPrompt().split("\n");
 	const line = (name: string) => roster.find((l) => l.startsWith(`- ${name}（`)) ?? "";
-	for (const word of ["行情", "个股", "财报", "新闻", "盯盘提醒"]) assert.ok(line("us-market").includes(word), `us-market 的说明提到${word}：${line("us-market")}`);
 	for (const word of ["Pi", "扩展", "主题", "技能", "配置", "提示模板", "界面组件"]) assert.ok(line("pi-pi").includes(word), `pi-pi 的说明提到${word}：${line("pi-pi")}`);
 });
 
-test("美股看盘队每位成员只列它用得上的只读工具；九位 Pi 专家都是读文件和读网页", () => {
+test("九位 Pi 专家只列读文件和读网页", () => {
 	const tools = (module: string) => Object.fromEntries(teamOf(load(), module)!.members.map((m) => [m.name, m.tools]));
-	assert.deepEqual(tools("us-market"), {
-		"earnings-reader": ["read", "lookup", "web_get"],
-		"market-analyst": ["read", "lookup", "web_get"],
-		"news-researcher": ["read", "lookup", "web_get"],
-		"technical-analyst": ["read", "lookup"],
-	});
 	assert.deepEqual(tools("pi-pi"), Object.fromEntries(PI_EXPERTS.map((name) => [name, ["read", "grep", "find", "ls", "web_get"]])));
 });
 
 const readOnlyCrews = () => load().modules.filter((m) => m.name !== "module-builder").flatMap((m) => m.team?.members ?? []);
 
-test("仓库自带的看盘队和施工队十三位成员都写了工具清单，没有一位能执行命令、写文件或改文件", () => {
+test("仓库自带的施工队九位成员都写了工具清单，没有一位能执行命令、写文件或改文件", () => {
 	const all = readOnlyCrews();
-	assert.equal(all.length, 13);
+	assert.equal(all.length, 9);
 	for (const member of all) {
 		assert.ok(member.tools, `${member.file} 写了 tools`);
 		assert.deepEqual(memberTools("request", member.tools).filter((t) => ["bash", "write", "edit"].includes(t)), [], member.file);
@@ -150,30 +142,6 @@ test("写扩展和界面的两位专家、派活技能都先指向扩展技能�
 	assert.match(readFileSync(join(REPO_MODULES, "pi-pi/skills/pi-pi-desk/SKILL.md"), "utf8"), /pi-extension-basics/);
 });
 
-test("看盘技能不说小时线一定看得到开盘：收盘后查到的小时线可能从中午才开始", () => {
-	const skill = readFileSync(join(REPO_MODULES, "us-market/skills/us-market-desk/SKILL.md"), "utf8");
-	assert.ok(!skill.includes("看得到开盘"));
-	assert.match(skill, /开盘价.*`day`/);
-});
-
-test("看盘技能有一节盯盘条件：领队自己用 tripwire 不派活，改之前不读网页，中文名换成代码，请使用者看网页上「盯盘条件（只在本机）」那一行或左栏关注的来源，写明默认值，汇报不复述成本价和股数，被拒照实转告", () => {
-	const skill = readFileSync(join(REPO_MODULES, "us-market/skills/us-market-desk/SKILL.md"), "utf8");
-	const section = skill.split(/\n(?=## )/).find((s) => s.startsWith("## 盯盘条件")) ?? "";
-	for (const pattern of [/`tripwire`/, /不派/, /代码/, /盯盘条件（只在本机）/, /关注的来源/, /either/, /5 和 20/, /不复述成本价和股数/, /拒绝/, /web_get/]) assert.match(section, pattern);
-	assert.doesNotMatch(skill, /收据/);
-});
-
-test("看盘模块的经验放在它的技能里：us-market 的任务，助手拿到这份技能，每位成员也拿到，而且都有读它的工具", () => {
-	const kit = load().kitFor("us-market")!;
-	assert.equal(kit.skillsDir, join(REPO_MODULES, "us-market/skills"));
-	assert.ok(existsSync(join(kit.skillsDir, "us-market-desk/SKILL.md")));
-	assert.equal(kit.crew.length, 4);
-	for (const member of kit.crew) {
-		assert.deepEqual(member.skills, [kit.skillsDir], member.name);
-		assert.ok(memberTools("inference", member.tools).includes("read"), `${member.name} 没有 read 就读不到技能，Pi 也不会把技能写进它的提示词`);
-	}
-});
-
 test("Pi 模块的经验放在它的技能里：pi-pi 的任务，助手拿到这份技能，九位专家也拿到，而且都有读它的工具", () => {
 	const kit = load().kitFor("pi-pi")!;
 	assert.equal(kit.skillsDir, join(REPO_MODULES, "pi-pi/skills"));
@@ -185,38 +153,8 @@ test("Pi 模块的经验放在它的技能里：pi-pi 的任务，助手拿到�
 	}
 });
 
-test("美股看盘队每位成员的汇报格式是三行要填的标题：结论、证据、来源和时间", () => {
-	for (const member of teamOf(load(), "us-market")!.members) {
-		const format = member.prompt.slice(member.prompt.indexOf("汇报格式"));
-		for (const heading of ["结论：", "证据：", "来源和时间："]) assert.ok(format.split("\n").some((line) => line.startsWith(heading)), `${member.name} 的汇报格式有一行以「${heading}」开头`);
-	}
-});
-
-test("美股看盘队每位成员的汇报格式写了全文不超过 600 字，链接不计", () => {
-	for (const member of teamOf(load(), "us-market")!.members) {
-		const format = member.prompt.slice(member.prompt.indexOf("汇报格式"));
-		assert.match(format, /全文不超过 600 字，链接不计/, member.name);
-	}
-});
-
-test("大波动规则要任务说明照抄触发里的代码、涨跌幅、档位、现价和报价时间，并写明现在的报价和触发是否一致", () => {
-	const rule = load().allRules().find((r) => r.id === "us-market/big-move")!.text;
-	for (const field of ["代码", "涨跌幅", "档位", "现价", "报价时间"]) assert.ok(rule.includes(field), `任务说明要带触发的${field}`);
-	assert.match(rule, /照抄/);
-	assert.match(rule, /是否一致/);
-});
-
-test("大波动规则不写「团队：」，它开的任务属于 us-market 领域，也就归美股看盘队", () => {
+test("仓库不再带 us-market：加载不报错，没有它的领域、队伍和成员，pi-pi 不受影响", () => {
 	const modules = load();
-	assert.ok(modules.ruleAllows("us-market/big-move", "us-market"));
-	assert.equal(modules.book.get("us-market")?.team, "美股看盘队");
-});
-
-test("拿掉 us-market 模块：加载不报错，它的领域、队伍和成员一起消失，pi-pi 不受影响", () => {
-	const dir = join(tempStateDir(), "modules");
-	cpSync(REPO_MODULES, dir, { recursive: true });
-	rmSync(join(dir, "us-market"), { recursive: true });
-	const modules = load(dir);
 	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "module-builder": { team: "模块工坊", onRoster: true }, "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true } });
 	assert.equal(modules.kitFor("us-market"), undefined);
 	assert.ok(!modules.rosterPrompt().includes("us-market"));
@@ -225,7 +163,7 @@ test("拿掉 us-market 模块：加载不报错，它的领域、队伍和成员
 });
 
 test("只有 us-market 的 module.json 开了 lookup 和 tripwire：美股看盘队的助手和四位成员都能查数据，助手能改盯盘条件，pi-pi 和 toy-market 的都不能", () => {
-	const modules = load();
+	const modules = load(REPO_MODULES, RETIRED_MODULES);
 	const kit = modules.kitFor("us-market")!;
 	assert.deepEqual(kit.granted, ["lookup", "tripwire"]);
 	for (const member of kit.crew) assert.ok(memberTools("request", member.tools).includes("lookup"), member.name);

@@ -1,0 +1,61 @@
+{
+ "watchlist": [
+  "NVDA",
+  "AMD",
+  "SPY",
+  "QQQ"
+ ],
+ "condition": {
+  "symbol": "NVDA",
+  "day": {
+   "pct": 1,
+   "dir": "either"
+  }
+ },
+ "events": {
+  "after-hours": [
+   "2026-11-12 15:58 NVDA day-move up 1"
+  ],
+  "both-ways": [
+   "2026-11-12 10:00 NVDA band up 5",
+   "2026-11-12 10:00 NVDA day-move up 1",
+   "2026-11-12 11:00 NVDA day-move down 1",
+   "2026-11-12 13:00 NVDA band down 5",
+   "2026-11-13 10:00 NVDA band up 5",
+   "2026-11-13 10:00 NVDA day-move up 1",
+   "2026-11-13 12:00 NVDA day-move down 1",
+   "2026-11-13 14:00 NVDA band down 5"
+  ],
+  "early-close": [
+   "2026-11-27 12:30 NVDA day-move up 1"
+  ],
+  "gap-8": [
+   "2026-11-12 09:31 NVDA band up 8",
+   "2026-11-12 09:31 NVDA day-move up 1"
+  ],
+  "holiday": [],
+  "ladder": [
+   "2026-11-12 09:31 NVDA day-move up 1",
+   "2026-11-12 09:50 NVDA band up 5",
+   "2026-11-12 10:30 NVDA band up 8"
+  ],
+  "nvda-5": [
+   "2026-11-12 09:31 NVDA day-move up 1",
+   "2026-11-12 10:05 NVDA band up 5"
+  ],
+  "premarket-first": [
+   "2026-11-12 09:31 NVDA day-move up 1",
+   "2026-11-12 09:40 NVDA band up 5"
+  ],
+  "rounding": [
+   "2026-11-12 09:31 NVDA day-move up 1",
+   "2026-11-12 09:47 NVDA band up 5"
+  ],
+  "spy-index": [
+   "2026-11-12 11:30 SPY band up 2"
+  ],
+  "three-pct": [
+   "2026-11-12 10:00 NVDA day-move up 1"
+  ]
+ }
+}
