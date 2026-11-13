@@ -21,8 +21,9 @@ type TaError = { symbol?: string; error: { code: string; message?: string } };
 type ScanReply = { skipped: true } | { skipped?: false; new_signals: unknown[]; errors: TaError[] };
 
 const BENCHMARKS = ["QQQ", "SPY"];
-/** Inferred: about 8.4 s per symbol with the network down, and 32 x 8.4 s stays under the scan limit. */
 const MAX_WATCHLIST = 30;
+/** ta-trading's `normalize_symbol` at the pinned commit; `ta scan` rejects the whole call over one symbol that fails it. */
+const TA_SYMBOL = /^[A-Z]{1,10}(?:\.[A-Z]{1,2})?$/;
 /** `ta scan` needs the close plus its 15-minute data delay. */
 const AFTER_CLOSE_MS = 16 * 60_000;
 /** Bars came through and only the dividend refresh failed, so the symbol did not fail. */
@@ -42,6 +43,8 @@ function readCursor(text: string | null): Cursor | undefined {
 		return undefined;
 	}
 }
+
+class Late extends Error {}
 
 /** One deadline covers every `ta` run of the tick, so the handler fails with its own message before the feed's limit. */
 type Ta = { command: string; args: string[]; env: NodeJS.ProcessEnv; deadline: number };
@@ -63,7 +66,7 @@ function runTa(ta: Ta, sub: string, input: unknown): Promise<unknown> {
 		child.on("error", (error) => (clearTimeout(timer), fail(new Error(`起不来 ta ${sub}：${error.message}`))));
 		child.on("close", (status) => {
 			clearTimeout(timer);
-			if (late) return fail(new Error(`ta ${sub} 到了扫描时限还没结束，停掉了，旧数据库没动`));
+			if (late) return fail(new Late(`超时：ta ${sub} 到了扫描时限还没结束，停掉了，旧数据库没动`));
 			if (status !== 0) return fail(new Error(`ta ${sub} 退出码 ${status}：${stderr.trim().split("\n")[0] ?? ""}`.slice(0, 300)));
 			try {
 				done(JSON.parse(stdout.trim().split("\n").at(-1) ?? ""));
@@ -98,16 +101,31 @@ function taOf(settings: Input["settings"], key: string, db: string): Ta {
 
 const errorLine = (errors: readonly TaError[]) => errors.map((e) => `${e.symbol ?? "整体"}：${e.error.code} ${e.error.message ?? ""}`.trim()).join("；");
 
-function noteOf(listed: readonly string[]): string | undefined {
-	if (listed.length === 0) return "自选股是空的，只扫了 QQQ、SPY";
-	if (listed.length > MAX_WATCHLIST) return `自选股有 ${listed.length} 只，超过 ${MAX_WATCHLIST} 只的上限，这次没扫：${listed.slice(MAX_WATCHLIST).join("、")}`;
-	return undefined;
+function splitByTaRule(listed: readonly string[]): { valid: string[]; rejected: string[] } {
+	const valid = new Set<string>();
+	const rejected: string[] = [];
+	for (const symbol of listed) {
+		const dotted = symbol.replaceAll("-", ".");
+		if (TA_SYMBOL.test(dotted)) valid.add(dotted);
+		else rejected.push(symbol);
+	}
+	return { valid: [...valid], rejected };
+}
+
+function noteOf(listed: readonly string[], valid: readonly string[], rejected: readonly string[]): string | undefined {
+	const notes = [
+		listed.length === 0 && "自选股是空的，只扫了 QQQ、SPY",
+		rejected.length > 0 && `这些代码 ta 不认，没扫：${rejected.join("、")}`,
+		valid.length > MAX_WATCHLIST && `自选股有 ${valid.length} 只，超过 ${MAX_WATCHLIST} 只的上限，这次没扫：${valid.slice(MAX_WATCHLIST).join("、")}`,
+	].filter((note) => note !== false);
+	return notes.length > 0 ? notes.join("；") : undefined;
 }
 
 export default async function scan(input: Input) {
 	const tickMs = input.settings.now === undefined ? Date.now() : Date.parse(input.settings.now);
 	const listed = listedSymbols(input.rows.watchlist ?? []);
-	const picked = listed.slice(0, MAX_WATCHLIST);
+	const { valid, rejected } = splitByTaRule(listed);
+	const picked = valid.slice(0, MAX_WATCHLIST);
 	const symbols = [...picked, ...BENCHMARKS.filter((s) => !picked.includes(s))];
 	const last = readCursor(input.cursor);
 	if (last !== undefined && last.date === newYorkDate(tickMs) && sameSymbols(last.symbols, symbols)) return { records: [] };
@@ -128,25 +146,32 @@ export default async function scan(input: Input) {
 	dropCopy();
 	try {
 		if (hadLive) copyFileSync(live, next, constants.COPYFILE_FICLONE);
-		const reply = (await runTa(ta, "scan", { mode: "daily", symbols, now })) as ScanReply;
+		const tradingDate = newYorkDate(Date.parse(now));
+		const note = noteOf(listed, valid, rejected);
+		const row = (outcome: "换上" | "失败", newSignals: number, errors: string) => ({
+			id: `${tradingDate}@${startedAt}`,
+			startedAt,
+			tradingDate,
+			outcome,
+			symbols: symbols.length,
+			watchlist: listed.length,
+			newSignals,
+			...(errors !== "" && { errors }),
+			...(note !== undefined && { note }),
+		});
+		let reply: ScanReply;
+		try {
+			reply = (await runTa(ta, "scan", { mode: "daily", symbols, now })) as ScanReply;
+		} catch (error) {
+			if (error instanceof Late) return { records: [row("失败", 0, error.message)] };
+			throw error;
+		}
 		if (reply.skipped) return { records: [] };
 		// ta exits 0 when the network is down, so success is read from the per-symbol errors, never the exit code.
 		const failed = new Set(reply.errors.filter((e) => e.error.code !== WARNING_ONLY).map((e) => e.symbol));
 		const swapped = symbols.some((s) => !failed.has(s));
 		if (swapped) renameSync(next, live);
-		const tradingDate = newYorkDate(Date.parse(now));
-		const note = noteOf(listed);
-		const record = {
-			id: `${tradingDate}@${startedAt}`,
-			startedAt,
-			tradingDate,
-			outcome: swapped ? "换上" : "失败",
-			symbols: symbols.length,
-			watchlist: listed.length,
-			newSignals: reply.new_signals.length,
-			...(reply.errors.length > 0 && { errors: errorLine(reply.errors) }),
-			...(note !== undefined && { note }),
-		};
+		const record = row(swapped ? "换上" : "失败", reply.new_signals.length, errorLine(reply.errors));
 		return { records: [record], ...(swapped && { cursor: JSON.stringify({ date: tradingDate, symbols } satisfies Cursor) }) };
 	} finally {
 		dropCopy();

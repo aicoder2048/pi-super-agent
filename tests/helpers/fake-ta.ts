@@ -32,6 +32,11 @@ if (cmd === "calendar") {
 	process.exit(0);
 }
 const plan = config.scan;
+const invalid = input.symbols.find((s) => !/^[A-Z]{1,10}(?:\\.[A-Z]{1,2})?$/.test(String(s).trim().toUpperCase().replaceAll("-", ".")));
+if (invalid !== undefined) {
+	console.error(JSON.stringify({ error: { code: "INVALID_SYMBOL", message: "标的代码格式无效。" } }));
+	process.exit(1);
+}
 const symbols = input.symbols;
 const write = (rows) => {
 	const store = new DatabaseSync(db);

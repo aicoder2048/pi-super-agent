@@ -123,13 +123,33 @@ test("自选股是空的：也扫 QQQ、SPY，那一行写明自选股是空的"
 
 test("自选股超过 30 只：只扫最早加的 30 只加 QQQ、SPY，那一行说明少扫了哪些", async (t) => {
 	const feed = await scanFeed(t);
-	const many = Array.from({ length: 33 }, (_, i) => `S${String(i).padStart(2, "0")}`);
+	const many = Array.from({ length: 33 }, (_, i) => `S${String.fromCharCode(65 + Math.floor(i / 26))}${String.fromCharCode(65 + (i % 26))}`);
 	feed.watch(...many);
 	await feed.tick();
 	assert.deepEqual(feed.scans()[0]?.input["symbols"], [...many.slice(0, 30), "QQQ", "SPY"]);
 	const [row] = feed.runs();
 	assert.equal(row?.fields["watchlist"], 33);
-	assert.match(String(row?.fields["note"]), /30 只.*S30、S31、S32/);
+	assert.match(String(row?.fields["note"]), /30 只.*SBE、SBF、SBG/);
+});
+
+test("自选股里有 ta 不认的代码：跳过它们照样扫，那一行点名跳过了哪些；BRK.B 照扫", async (t) => {
+	const feed = await scanFeed(t);
+	const bad = ["腾讯", "NVDA US", "$NVDA", "0700.HK", "ABCDEFGHIJK"];
+	feed.watch(...bad, "BRK.B", "NVDA");
+	const run = await feed.tick();
+	assert.equal(run.ok, true, JSON.stringify(run));
+	assert.deepEqual(feed.scans()[0]?.input["symbols"], ["BRK.B", "NVDA", "QQQ", "SPY"]);
+	const [row] = feed.runs();
+	assert.equal(row?.fields["outcome"], "换上");
+	assert.equal(row?.fields["watchlist"], 7);
+	for (const symbol of bad) assert.ok(String(row?.fields["note"]).includes(symbol), `说明里点名 ${symbol}`);
+});
+
+test("BRK-B 按 ta 的规矩写成 BRK.B 传给 ta", async (t) => {
+	const feed = await scanFeed(t);
+	feed.watch("brk-b");
+	await feed.tick();
+	assert.deepEqual(feed.scans()[0]?.input["symbols"], ["BRK.B", "QQQ", "SPY"]);
 });
 
 test("部分标的出错：照样换上，那一行列出出错的标的和原因，cursor 前进", async (t) => {
@@ -193,20 +213,24 @@ test("ta 退出码非零：这一拍失败并说明，旧库一字不差，没�
 	assert.equal(feed.runs().length, 1);
 });
 
-test("ta 超过扫描时限：被停掉，这一拍失败，旧库不变，没有副本；下一拍照常", async (t) => {
+test("ta 超过扫描时限：被停掉，存一行「失败」写明超时，旧库不变，没有副本，cursor 不动；下一拍照常", async (t) => {
 	const feed = await scanFeed(t);
 	feed.watch("NVDA");
 	await feed.tick();
 	const before = sha(feed.live);
+	const cursor = feed.cursor();
 	feed.at("2026-11-12T23:00:00.000Z", { scanSeconds: 1 });
 	feed.setPlan({ kind: "sleep" });
 	const started = Date.now();
 	const run = await feed.tick();
 	assert.ok(Date.now() - started < 10_000, "停在扫描时限，不是 60 秒");
-	assert.equal(run.ok, false);
-	assert.match(run.ok ? "" : run.note, /扫描时限/);
+	assert.equal(run.ok, true, JSON.stringify(run));
+	const late = feed.runs().find((r) => r.fields["tradingDate"] === "2026-11-12");
+	assert.equal(late?.fields["outcome"], "失败");
+	assert.match(String(late?.fields["errors"]), /超时/);
 	assert.equal(sha(feed.live), before);
 	assert.deepEqual(leftovers(feed.live), []);
+	assert.equal(feed.cursor(), cursor);
 	feed.setPlan({ kind: "ok" });
 	assert.equal((await feed.tick()).ok, true);
 	assert.equal(feed.runs().filter((r) => r.fields["outcome"] === "换上").length, 2);
