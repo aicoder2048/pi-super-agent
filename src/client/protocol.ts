@@ -77,6 +77,8 @@ export interface BoardState {
 export type ClientToHost =
 	| { type: "hello"; role: "client"; token: string }
 	| { type: "say"; text: string; requestId: string }
+	/** Shown as 通知; never reaches the Router. */
+	| { type: "notify"; text: string; requestId: string }
 	/** A click on option `option` of the question `reportId`: a helper's report, or the host's own question about the member cap. The host words it as the user's message. */
 	| { type: "answer"; reportId: string; option: number; requestId: string }
 	| { type: "watch"; ticketId?: string };
@@ -86,6 +88,7 @@ export type HostToClient =
 	| ({ type: "user" } & ConversationLine & { who: "user" })
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }
+	| { type: "notified"; requestId: string }
 	| { type: "reply"; text: string; at: number; replyId: string; ticketId?: string }
 	| ({ type: "host_line" } & HostLine)
 	| ({ type: "board" } & BoardState)

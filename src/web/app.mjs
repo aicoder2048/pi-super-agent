@@ -590,7 +590,7 @@ function mount(doc) {
 	/** @param {import("./view.mjs").ConversationLine} line @param {boolean} withChoices */
 	const lineNode = (line, withChoices) => {
 		const item = el("div", `line ${line.who}`);
-		if (line.who === "alert" || line.who === "receipt") {
+		if (line.who === "alert" || line.who === "receipt" || line.who === "notice") {
 			const said = el("div", "said");
 			said.append(el("div", "who", hostLineLabel(line)), el("div", "bubble", line.text));
 			item.append(said);

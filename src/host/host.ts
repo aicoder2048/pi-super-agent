@@ -249,6 +249,7 @@ export class Host {
 		this.server = new HostServer(
 			{
 				onSay: (text) => this.say(text),
+				onNotify: (text) => this.notify(text),
 				onAnswer: (reportId, option) => this.answer(reportId, option),
 				snapshot: () => this.snapshot(),
 				transcript: (ticketId) => this.transcript(ticketId).messages,
@@ -282,7 +283,7 @@ export class Host {
 		const recovered = host.kernel.recoverOnStartup();
 		host.#duty = { since: host.#clock.now(), resumed: recovered.length };
 		if (recovered.length) host.#log(`[host] 恢复 ${recovered.length} 个执行中的任务：${recovered.join(", ")}`);
-		for (const line of host.kernel.undeliveredAlerts()) host.#deliverHostLine(line);
+		for (const line of host.kernel.undeliveredLines()) host.#deliverHostLine(line);
 		host.generic.start();
 		host.timer.start();
 		for (const feed of host.feeds.values()) feed.start();
@@ -315,6 +316,10 @@ export class Host {
 		this.#broadcast({ type: "user", id: triggerId, who: "user", text, at }, from);
 		this.#changed();
 		return triggerId;
+	}
+
+	notify(text: string): void {
+		this.#postHostLine("notify", { kind: "notice", text });
 	}
 
 	/** Null when lineId is not a shown conversation line. A repeated externalId returns the first line's id and changes nothing. */
@@ -442,7 +447,7 @@ export class Host {
 
 	#deliverHostLine(line: HostLine): void {
 		this.#broadcast({ type: "host_line", ...line });
-		if (line.who === "alert") this.kernel.markHostLineDelivered(line.id);
+		if (line.who !== "receipt") this.kernel.markHostLineDelivered(line.id);
 	}
 
 	#broadcast(message: Broadcast, from?: ImChat): void {
