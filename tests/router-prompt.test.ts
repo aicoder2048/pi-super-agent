@@ -158,6 +158,16 @@ test("幕僚长的提示词：汇报带「宿主检查」时，用一句话告�
 	assert.match(line, /不要因此新开任务/);
 });
 
+test("幕僚长的提示词：这一轮看到的卡片这一轮都要处理完，只有出错、清屏或重启后没列的卡片才会再送来；reply 的 answers 不说省略会算作回答", () => {
+	const prompt = routerSystemPrompt(200);
+	const speaking = prompt.slice(prompt.indexOf("## 怎么说话"), prompt.indexOf("## 成员上限"));
+	assert.match(speaking, /这一轮看到的每张卡片，这一轮都要处理/);
+	assert.match(speaking, /只有这一轮出错、清屏或宿主重启/);
+	assert.doesNotMatch(speaking, /没列的会再送给你/);
+	const reply = routerTools({ config: { replyMaxChars: 200 } } as unknown as Kernel, () => {}, () => []).find((t) => t.name === "reply")!;
+	assert.doesNotMatch(JSON.stringify(reply.parameters), /省略时算作/);
+});
+
 const isBlock = (card: string) => card.startsWith("[名单和规则]");
 
 async function routerHost(stateDir: string, preamble: () => string) {

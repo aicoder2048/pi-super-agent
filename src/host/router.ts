@@ -75,10 +75,12 @@ export function routerTools(kernel: Kernel, afterCommand: () => void, unanswered
 			text: Type.String(),
 			threadId: Type.Optional(Type.String({ description: `默认 ${CONVERSATION_THREAD_ID}` })),
 			cause: Type.String({ description: "回应的对象：trg_（使用者的话）、tkt_（任务结果）或 act_（通知）" }),
-			answers: Type.Optional(Type.Array(Type.String(), { description: "这条回复回答的卡片的 act_ id；省略时算作回答了这一轮里起因相同、还没回答的所有卡片" })),
+			answers: Type.Optional(Type.Array(Type.String(), { description: "这条回复回答的卡片的 act_ id，只写 act_ 开头的 id" })),
 		}),
 		async execute(_id, { text, threadId, cause, answers }) {
-			return committed(kernel.reply({ text, threadId: threadId ?? CONVERSATION_THREAD_ID, cause, answers: answers ?? unansweredAbout(cause) }));
+			const unanswered = answers ? [] : unansweredAbout(cause);
+			if (unanswered.length >= 2) return json({ ok: false, reason: `同一起因有 ${unanswered.length} 张卡片没回答，请在 answers 里列出这条回复回答的「卡片 act_」` });
+			return committed(kernel.reply({ text, threadId: threadId ?? CONVERSATION_THREAD_ID, cause, answers: answers ?? unanswered }));
 		},
 	});
 	const note = defineTool({
@@ -229,7 +231,7 @@ export function routerSystemPrompt(replyMaxChars: number): string {
 - 需要 Worker 知道一条事实时用 note；note 不构成授权。
 
 ## 怎么说话
-- 只通过 reply 对使用者说话，你的普通文字输出使用者看不到。reply 的 cause 填你在回应的那张卡片开头的 id，answers 列出这条回复回答的每张卡片第一行末尾的「卡片 act_」。同一任务来了几张卡片、你只回答了其中几张时，只列那几张，没列的会再送给你。
+- 只通过 reply 对使用者说话，你的普通文字输出使用者看不到。reply 的 cause 填你在回应的那张卡片开头的 id，answers 列出这条回复回答的每张卡片第一行末尾的「卡片 act_」。同一任务来了几张卡片、一条回复只回答了其中几张时，只列那几张。这一轮看到的每张卡片，这一轮都要处理：一轮正常结束，没列进任何 answers 的卡片也算处理过，不会再送来。只有这一轮出错、清屏或宿主重启，没列的卡片才会再送给你。
 - 候选触发不能作为 cause：对原始事件不要主动开口，要么开任务，要么忽略。推断任务在有结果之前也不能作为 cause。
 - 每条 reply 不超过 ${replyMaxChars} 字。确认一次之后保持安静，只在有结果、需要使用者做决定、或做不下去时才说话。
 - Worker 提问时，只把那一个具体问题转给使用者，reply 的 cause 填该任务的 tkt_。问题带选项时，选项会显示成按钮和编号，reply 里只说问题本身，不要逐条抄写选项。
@@ -467,7 +469,7 @@ export class Router {
 		});
 	}
 
-	/** A reply that names no cards answers every card about its cause the Router has seen this turn. */
+	/** The cards about a cause the Router has seen since its last clean turn and no reply has answered. */
 	#unansweredAbout(cause: string): string[] {
 		return [...this.#delivered].filter((id) => (id === cause || this.#unacked.get(id)?.item.carries?.includes(cause)) && !this.#kernel.answered(id));
 	}

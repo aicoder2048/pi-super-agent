@@ -200,13 +200,20 @@ async function chatRig(t: test.TestContext, routerOptions: object = {}) {
 }
 
 // Opens a ticket per line and relays Worker reports, naming the cards each reply answers. `relayOne` relays the
-// oldest report of a turn, `relayLast` only the latest, `combine` all of them in one reply.
+// oldest report of a turn, `relayLast` only the latest, `combine` all of them in one reply. `omit` leaves `answers`
+// out and, when a reply is refused, sends it again naming its cards. `failOnceRelayed` makes every model call fail
+// once that many relays reached the user.
 async function taskRig(t: test.TestContext, script: WorkerScript, options: { stateDir?: string; retry?: number[] } = {}) {
-	const st = { failing: false, failNext: false, relayOne: false, relayLast: false, combine: false, failAfterLine: false };
+	const st = { failing: false, failNext: false, relayOne: false, relayLast: false, combine: false, failAfterLine: false, omit: false, failOnceRelayed: 0 };
 	const tg = await FakeTelegram.start();
 	t.after(() => tg.close());
 	const pending: string[] = [];
-	const brain: Brain = (cards) => {
+	let sent: ToolCallSpec[] = [];
+	const named = (spec: ToolCallSpec) => ({ ...spec, args: { ...spec.args, answers: (spec as { cards?: string[] }).cards!.map((c) => ids(c, "act")) } });
+	const brain: Brain = (cards, _n, results) => {
+		const refused = sent.filter((spec, i) => spec.name === "reply" && results[i]?.includes('"ok": false'));
+		sent = [];
+		if (refused.length) return (sent = refused.map(named));
 		const out: ToolCallSpec[] = [];
 		for (const c of cards) {
 			if (c.startsWith("[对话]")) {
@@ -216,11 +223,14 @@ async function taskRig(t: test.TestContext, script: WorkerScript, options: { sta
 			if (c.startsWith("[Worker")) pending.push(c);
 		}
 		const take = st.relayOne ? pending.splice(0, 1) : st.relayLast ? pending.splice(0).slice(-1) : pending.splice(0);
-		const relay = (cards: string[]) => ({ name: "reply", args: { text: `转达：${cards.map((c) => c.split("\n")[1]).join("＋")}`, cause: ids(cards[0]!, "tkt"), answers: cards.map((c) => ids(c, "act")) } });
+		const relay = (cards: string[]) => {
+			const spec = { name: "reply", args: { text: `转达：${cards.map((c) => c.split("\n")[1]).join("＋")}`, cause: ids(cards[0]!, "tkt") }, cards };
+			return st.omit ? spec : named(spec);
+		};
 		if (st.combine && take.length) out.push(relay(take));
 		else for (const c of take) out.push(relay([c]));
 		if (take.length && st.failNext) st.failing = true;
-		return out;
+		return (sent = out);
 	};
 	const stateDir = options.stateDir ?? tempStateDir();
 	let host!: Host;
@@ -228,7 +238,7 @@ async function taskRig(t: test.TestContext, script: WorkerScript, options: { sta
 		const spawner = new FakeSpawner(script);
 		host = await Host.start({
 			stateDir,
-			createRouter: fauxRouter(brain, { persist: true, failOn: () => (st.failing ? "boom: overloaded" : undefined), errorRetryMs: options.retry ?? [1500] }).createRouter,
+			createRouter: fauxRouter(brain, { persist: true, failOn: () => (st.failing || (st.failOnceRelayed > 0 && relays() >= st.failOnceRelayed) ? "boom: overloaded" : undefined), errorRetryMs: options.retry ?? [1500] }).createRouter,
 			createSpawner: () => spawner,
 			log: () => {},
 			workerModels: defaultWorkerModels(),
@@ -236,6 +246,7 @@ async function taskRig(t: test.TestContext, script: WorkerScript, options: { sta
 		});
 		spawner.request = (...a) => host.workers.handleRequest(...a);
 	};
+	const relays = () => routerReplies(host).filter((x) => x.startsWith("转达")).length;
 	await start();
 	t.after(() => host.stop());
 	return {
@@ -473,4 +484,32 @@ test("A3：只转达了后一份就出错，宿主重启：前一份补转达，
 	await sleep(3000);
 	assert.equal(r.mentions("完成了"), 1, "完成了 转达一次");
 	assert.equal(r.mentions("卡住了"), 1, "卡住了 补转达一次");
+});
+
+test("P1：两份报告进了一轮，只转达后一份、没列 answers：回复被拒，重发时列出卡片；出错、清屏后前一份补转达一次", async (t) => {
+	const r = await taskRig(t, twoReports);
+	r.st.omit = r.st.relayLast = true;
+	r.st.failOnceRelayed = 1;
+	r.host.say("做事");
+	await until(() => erroredOut(r.session()), "转达后一份之后出错", 8000);
+	r.host.clearConversation();
+	r.st.failOnceRelayed = 0;
+	await sleep(3000);
+	assert.equal(r.mentions("完成了"), 1, "完成了 转达一次");
+	assert.equal(r.mentions("卡住了"), 1, "卡住了 补转达一次，0 就是汇报丢了");
+});
+
+test("P2：两份报告进了一轮，只转达前一份、没列 answers，出错后宿主重启：后一份补转达一次", async (t) => {
+	const r = await taskRig(t, twoReports, { retry: [60000] });
+	r.st.omit = r.st.relayOne = true;
+	r.st.failOnceRelayed = 1;
+	r.host.say("做事");
+	await until(() => erroredOut(r.session()), "转达前一份之后出错", 8000);
+	await r.host.stop();
+	r.pending.splice(0);
+	r.st.failOnceRelayed = 0;
+	await r.start();
+	await sleep(3000);
+	assert.equal(r.mentions("卡住了"), 1, "卡住了 转达一次");
+	assert.equal(r.mentions("完成了"), 1, "完成了 补转达一次，0 就是汇报丢了");
 });
