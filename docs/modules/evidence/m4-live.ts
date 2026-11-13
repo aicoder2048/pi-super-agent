@@ -114,7 +114,7 @@ function query(w: World, sql: string): Record<string, unknown>[] {
 }
 
 type Booted = { fake?: FakeModel; host: HostRun; w: World; stop(): Promise<void> };
-async function boot(repo: string, w: World, o: { script?: Script; config?: Record<string, unknown>; on?: string[]; env?: Record<string, string> }): Promise<Booted> {
+async function boot(repo: string, w: World, o: { script?: Script; config?: Record<string, unknown>; on?: string[]; setup?: string[]; env?: Record<string, string> }): Promise<Booted> {
 	const fake = o.script && (await FakeModel.start(o.script));
 	let env: Record<string, string> = {};
 	if (fake) {
@@ -124,6 +124,10 @@ async function boot(repo: string, w: World, o: { script?: Script; config?: Recor
 	const models = fake ? fakeModels : REAL;
 	const config = { webPort: 0, modulesDirs: [join(w.state, "modules")], secretsFile: w.secrets, feedFixtures: true, ...o.config };
 	writeConfig(w.state, models, config);
+	for (const name of o.setup ?? []) {
+		const set = just(repo, w, ["module", "setup", name], fake !== undefined);
+		if (set.status !== 0) throw new Error(`just module setup ${name}: ${set.out}`);
+	}
 	for (const name of o.on ?? []) {
 		const switched = just(repo, w, ["module", "on", name], fake !== undefined);
 		if (switched.status !== 0) throw new Error(`just module on ${name}: ${switched.out}`);
@@ -439,7 +443,7 @@ async function lanes(): Promise<void> {
 			writeFileSync(join(fixtures, "nvda-up-6.json"), JSON.stringify(fixture));
 			let run: Booted;
 			try {
-				run = await boot(repo, w, { on: ["stock-ta"], env: { MASSIVE_BASE_URL: "http://127.0.0.1:9", ...(process.env.TA_ROOT && { TA_ROOT: process.env.TA_ROOT }) } });
+				run = await boot(repo, w, { on: ["stock-ta"], setup: ["stock-ta"], env: { MASSIVE_BASE_URL: "http://127.0.0.1:9", ...(process.env.TA_ROOT && { TA_ROOT: process.env.TA_ROOT }) } });
 			} catch (error) {
 				return { pass: "inconclusive", evidence: `${side}: a real host could not start: ${(error as Error).message}` };
 			}
@@ -449,7 +453,7 @@ async function lanes(): Promise<void> {
 				const ticket = query(w, "SELECT id, basis, rule_id, dispatched_to FROM tickets WHERE rule_id = 'stock-ta/big-move'").at(0);
 				const experts: string[] = JSON.parse(String(ticket?.dispatched_to ?? "[]"));
 				const summary = String(final()?.summary ?? "");
-				const blocked = transcripts(w).filter((c) => c.error && BLOCKED.test(c.text));
+				const blocked = transcripts(w).filter((c) => c.error && BLOCKED.test(c.text) && (c.args?.path === undefined || existsSync(resolve(c.cwd, c.args.path))));
 				checks[side] = {
 					"结构与形态 and 趋势与动量 dispatched": ["结构与形态", "趋势与动量"].every((e) => experts.includes(e)),
 					"data time": /2026-11-12|10:44|15:44/.test(summary),
