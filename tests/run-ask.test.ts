@@ -111,6 +111,14 @@ test("工具的参数：命令 1 到 2000 字、不能有 NUL，说法最多 200
 	}
 });
 
+test("命令里有不显示的控制字符就拒绝：双向排版控制会让卡片显示的和运行的不是一条；换行和 Tab 照常", () => {
+	const reordered = "echo safe \u202E\u2066&& touch /tmp/PWNED\u2069 \u2066# just a note\u2069";
+	for (const command of [reordered, "echo a\u200Bb", "echo \u200Fx", "\uFEFFdate", "echo a\x1bb"]) {
+		assert.throws(() => parseRunRequest({ command, why: "看看" }), /看不见的控制字符/, JSON.stringify(command));
+	}
+	assert.equal(parseRunRequest({ command: "echo a\n\techo b", why: "两行" }).command, "echo a\n\techo b");
+});
+
 test("ask_to_run 只给模块 feed 开的任务：使用者、宿主来源的规则和推断任务都没有；提示里写着要运行命令就用它", () => {
 	assert.ok(toolAllowlist("module-feed")!.includes("ask_to_run"));
 	assert.ok(!toolAllowlist("inference")!.includes("ask_to_run"));

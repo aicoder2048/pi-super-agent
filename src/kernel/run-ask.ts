@@ -46,7 +46,7 @@ export const RUN_ASK_NEXT: Record<RunAskState["state"], readonly RunAskState["st
 export function parseRunRequest(raw: unknown): { command: string; why: string } {
 	const { command, why } = (raw ?? {}) as { command?: unknown; why?: unknown };
 	if (typeof command !== "string" || command.trim() === "") throw new Error("command 要写出一条完整的命令");
-	if (command.includes("\0")) throw new Error("command 里不能有 NUL 字符");
+	if (/[^\P{Cc}\n\t]|\p{Cf}/u.test(command)) throw new Error("command 里不能有换行和 Tab 以外看不见的控制字符（如双向排版、零宽字符），卡片会显示得和运行的不一样");
 	const length = [...command].length;
 	if (length > RUN_COMMAND_MAX) throw new Error(`command 不超过 ${RUN_COMMAND_MAX} 个字，现在有 ${length} 个字`);
 	if (typeof why !== "string" || why.trim() === "") throw new Error("why 要用一句话说明为什么要运行这条命令");
