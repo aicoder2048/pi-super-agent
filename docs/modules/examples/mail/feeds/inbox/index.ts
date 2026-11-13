@@ -1,7 +1,7 @@
 import { accessToken, AUTH_TEXT, gmailClient, type Gmail, type Settings } from "../../google.ts";
 import { header, messageRow, parseFrom, released, type GmailMessage, type MessageRow } from "./message.ts";
 
-type SenderRow = { id: string; fields: { address?: unknown; addedAt?: unknown; removedAt?: unknown } };
+export type SenderRow = { id: string; fields: { address?: unknown; addedAt?: unknown; removedAt?: unknown } };
 
 interface Input {
 	settings: Settings;
@@ -62,7 +62,7 @@ type Senders = { list: Map<string, boolean>; unreadable: string[] };
  * address takes it off; only an unmarked row whose `addedAt` is after the latest removal puts it back. The answer per key
  * is listed or removed, and a removed address stays off even when its domain is listed.
  */
-function senderList(rows: readonly SenderRow[], now: number): Senders {
+export function senderList(rows: readonly SenderRow[], now: number): Senders {
 	const removed = new Map<string, number>();
 	const added = new Map<string, number>();
 	const unreadable: string[] = [];
@@ -78,7 +78,7 @@ function senderList(rows: readonly SenderRow[], now: number): Senders {
 	return { list, unreadable };
 }
 
-function listed({ list, unreadable }: Senders, address: string): boolean {
+export function listed({ list, unreadable }: Senders, address: string): boolean {
 	const domain = address.slice(address.lastIndexOf("@"));
 	if (unreadable.some((text) => text.includes(address) || text.includes(domain.slice(1)))) return false;
 	return list.get(address) ?? list.get(domain) ?? false;

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { listed, senderList, type SenderRow } from "../../feeds/inbox/index.ts";
 import { clean, parseFrom } from "../../feeds/inbox/message.ts";
 
 type Original = { threadId: string; messageIdHeader: string; fromAddress: string; replyTo: string; subject: string };
@@ -20,16 +21,24 @@ function parseInput(input: unknown): { messageId: string; body: string } {
 	return { messageId, body };
 }
 
-function storedLetter(messageId: string): Original {
+const FEED = "mail/inbox";
+
+/**
+ * Only a row the feed stored and nothing edited since: the host refuses a task write whose `from` is the feed's source, so
+ * `_from` names the feed and an empty `_sources` means no later write touched it. A task's own or edited row could name anyone.
+ */
+function storedLetter(messageId: string): { letter: Original; senders: SenderRow[] } {
 	const db = join(process.env["PSA_MODULE_DATA"] ?? "", "data.db");
-	const notFound = new Error(`messages 里没有 gmailId 为 ${messageId} 的信`);
+	const notFound = new Error(`messages 里没有 gmailId 为 ${messageId} 的信（只认 feed 收下、之后没被改过的那一行）`);
 	if (!existsSync(db)) throw notFound;
 	const reader = new DatabaseSync(db, { readOnly: true });
 	try {
 		const columns = ["threadId", "messageIdHeader", "fromAddress", "replyTo", "subject"].map((c) => `COALESCE(${c}, '') AS ${c}`).join(", ");
-		const row = reader.prepare(`SELECT ${columns} FROM messages WHERE gmailId = ? LIMIT 1`).get(messageId) as Original | undefined;
-		if (row === undefined) throw notFound;
-		return row;
+		const letter = reader.prepare(`SELECT ${columns} FROM messages WHERE gmailId = ? AND "_from" = ? AND "_sources" IS NULL LIMIT 1`).get(messageId, FEED) as Original | undefined;
+		if (letter === undefined) throw notFound;
+		const hasSenders = reader.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'senders'`).get() !== undefined;
+		const rows = hasSenders ? (reader.prepare(`SELECT "_id" AS id, address, addedAt, removedAt FROM senders`).all() as Record<string, unknown>[]) : [];
+		return { letter, senders: rows.map(({ id, ...fields }) => ({ id: String(id), fields })) };
 	} finally {
 		reader.close();
 	}
@@ -61,8 +70,10 @@ function replyToNote({ replyTo, fromAddress }: Original): string | undefined {
 
 export default function draftReply(input: unknown) {
 	const { messageId, body } = parseInput(input);
-	const letter = storedLetter(messageId);
+	const { letter, senders } = storedLetter(messageId);
 	if (letter.fromAddress === "") throw new Error("这封信的发件人地址是空的，没法回");
+	if (parseFrom(letter.fromAddress)?.address !== letter.fromAddress) throw new Error(`这封信存着的发件人地址不是单个地址：${JSON.stringify(letter.fromAddress.slice(0, 120))}，没法回`);
+	if (!listed(senderList(senders, Date.now()), letter.fromAddress)) throw new Error(`${letter.fromAddress} 现在不在邮件名单上（可能划掉了），不写草稿`);
 	const reference = clean(letter.messageIdHeader);
 	const text = body.replace(/\r?\n/g, "\r\n");
 	const raw = [

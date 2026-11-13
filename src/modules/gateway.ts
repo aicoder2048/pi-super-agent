@@ -23,7 +23,7 @@ export interface GatewayPorts {
 
 type Tool = Extract<Component, { kind: "tools" }>;
 type Collection = Extract<Component, { kind: "data" }>;
-type Copy = { module: ModuleName; digest: Digest; dir: string; tools: readonly Tool[]; knowledge: readonly Knowledge[]; collections: readonly Collection[]; agents: readonly AgentDescriptor[] };
+type Copy = { module: ModuleName; digest: Digest; dir: string; tools: readonly Tool[]; knowledge: readonly Knowledge[]; collections: readonly Collection[]; agents: readonly AgentDescriptor[]; feedSources: readonly string[] };
 type Capability = { effect: ToolEffect; run: () => Promise<Reply> };
 
 const fieldsHelp = (fields: Readonly<Record<string, FieldDescriptor>>) =>
@@ -53,6 +53,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			knowledge: components.filter((c): c is Knowledge => c.kind === "knowledge"),
 			collections: components.filter((c): c is Collection => c.kind === "data"),
 			agents: components.flatMap((c) => (c.kind === "agents" ? [c.agent] : [])),
+			feedSources: components.flatMap((c) => (c.kind === "feeds" ? [`${module}/${c.name}`] : [])),
 		};
 		copies.set(key, copy);
 		return copy;
@@ -103,28 +104,30 @@ export function createGateway(ports: GatewayPorts): Gateway {
 	};
 
 	/** Rows and conditions are kept in the serving version's structure: a ticket pinned to an older one reaches them through the stored aliases. */
-	const withServing = (module: ModuleName, use: (collections: readonly Collection[]) => Reply): Reply => {
+	const withServing = (module: ModuleName, use: (serving: Copy) => Reply): Reply => {
 		const serving = copyOf(module, ports.serving(module));
 		if (serving === undefined) return { ok: false, refusal: { code: "module-disabled" } };
 		try {
-			return use(serving.collections);
+			return use(serving);
 		} catch (error) {
 			if (error instanceof DataInputError) return { ok: false, refusal: { code: "bad-input", note: error.message } };
 			throw error;
 		}
 	};
 	const rows = (module: ModuleName, request: Extract<Request, { kind: "data" }>, who: string): Reply =>
-		withServing(module, (collections) => {
+		withServing(module, ({ collections, feedSources }) => {
 			if (request.op !== "write") {
 				const read = ports.rows.query(module, collections, request.collection, request.op === "query" ? request.query : {}, who);
 				return { ok: true, output: { collection: read.collection, rows: read.rows as unknown as Json }, private: read.class === "private" };
 			}
+			// Rows marked with a feed's source and no later edit are what the feed stored; draft-reply trusts exactly that.
+			if (feedSources.includes(request.from.trim())) return { ok: false, refusal: { code: "bad-input", note: `from 不能写 ${request.from.trim()}：那是 feed 存信用的来源名，任务写的行要写自己的来源` } };
 			const written = ports.rows.write(module, collections, request.collection, request.rows, request.from, who);
 			if (written.alertProblem !== undefined) ports.log(`[gateway] ${module} ${written.collection}：写进去了，但提醒条件没检查成：${written.alertProblem}`);
 			return { ok: true, output: { collection: written.collection, rows: written.rows as unknown as Json }, private: written.class === "private", alerts: written.alerts };
 		});
 	const conditions = (module: ModuleName, request: WatchRequest, who: string): Reply =>
-		withServing(module, (collections) => {
+		withServing(module, ({ collections }) => {
 			const watched = ports.rows.watch(module, collections, request, who);
 			return { ok: true, output: { collection: watched.collection, ...watched.output } as unknown as Json, private: watched.class === "private" };
 		});

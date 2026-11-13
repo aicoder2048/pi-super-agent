@@ -38,11 +38,14 @@ export async function writeDraft(port: GooglePort, output: Json): Promise<{ outp
 	const threadId = reply?.draft?.threadId;
 	if (typeof raw !== "string" || typeof threadId !== "string" || threadId === "") return "工具要回 { draft: { raw, threadId } }";
 	if (Buffer.byteLength(raw) > MAX_RAW_BYTES) return "草稿超过 1 MB";
+	// Gmail's parser may split on a lone CR or skip a NUL where this one does not, so either could hide a header from the checks below.
+	if (/\r(?!\n)|\0/.test(raw.split(/\r?\n\r?\n/, 1)[0] ?? "")) return "草稿的信头里不许有单独的 CR 或 NUL";
 	const found = headers(raw);
 	const value = (name: string) => found.find((h) => h.name === name)?.value;
 	if (value("bcc") !== undefined || value("cc") !== undefined) return "草稿不许带抄送或密送";
 	const to = value("to");
 	if (to === undefined) return "草稿没有收件人";
+	if (found.filter((h) => h.name === "to").length > 1) return "草稿只能有一行 To";
 	const toolNote = typeof reply?.note === "string" && reply.note !== "" ? reply.note : null;
 	const draftId = await port.createDraft(raw, threadId);
 	const subject = decodeWords(value("subject") ?? "");
