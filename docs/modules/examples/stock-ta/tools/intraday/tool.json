@@ -1,0 +1,20 @@
+{
+  "title": "分钟线和小时线",
+  "description": "向 Massive 要一只美股或 ETF 的分钟或小时 K 线（行情延迟 15 分钟），看当天的跳空、急动在几点、有没有反弹、量集中在哪段。默认查今天（周末查上一个交易日），最多回看 4 个交易日，一次最多 500 根，取离 to 最近的。每根带 VWAP，另给最新那一天的 VWAP。只读，一次一个请求",
+  "effect": "read",
+  "secrets": ["POLYGON_API_KEY"],
+  "input": {
+    "symbol": { "type": "text", "title": "一个美股或 ETF 代码，例如 NVDA" },
+    "span": { "type": "text", "title": "minute 或 hour" },
+    "from": { "type": "text", "title": "可选，纽约日期，例如 2026-11-12；不填同 to" },
+    "to": { "type": "text", "title": "可选，纽约日期；不填是今天，周末是上一个交易日" },
+    "limit": { "type": "number", "title": "可选，最多几根，1 到 500，默认 500" },
+    "now": { "type": "text", "title": "只在回放时填：当作现在的时间（ISO 8601）；回答使用者时不填" }
+  },
+  "output": {
+    "columns": { "type": "text", "title": "bars 每一行的字段：at（美东时间）、open、high、low、close、volume、vwap" },
+    "bars": { "type": "text", "title": "K 线，从早到晚" },
+    "dayVwap": { "type": "text", "title": "最新那一天的 date、vwap 和从几点算起（since）" },
+    "truncated": { "type": "text", "title": "true 表示给满了 limit 根，更早的没给" }
+  }
+}

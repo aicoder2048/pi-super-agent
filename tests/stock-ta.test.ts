@@ -93,10 +93,10 @@ const noteOf = (reply: CodeReply) => {
 	return !reply.ok ? reply.note : "";
 };
 
-test("stock-ta 包通过检查：八个工具、四个技能、五位专家，纯计算工具的用例都过", () => {
+test("stock-ta 包通过检查：九个工具、五个技能、六位专家，纯计算工具的用例都过", () => {
 	const result = scanPackage(PKG);
 	assert.ok(result.ok, JSON.stringify(!result.ok && result.problems));
-	assert.match(summary(result.scan), /^ok stock-ta@0\.1\.0 .*tools=8 skills=4 .*agents=5 evals=\d/);
+	assert.match(summary(result.scan), /^ok stock-ta@0\.1\.0 .*tools=9 skills=5 .*agents=6 evals=\d/);
 	assert.equal(result.scan.manifest.team, "技术分析研究组");
 });
 
@@ -381,4 +381,121 @@ test("quote：行情服务回 200 但不是 JSON 时一行中文说明，不露�
 	assert.match(note, /不是 JSON/);
 	assert.doesNotMatch(note, /Unexpected token|SyntaxError/);
 	assert.equal(note.split("\n").length, 1);
+});
+
+test("盘面专家只够得到报价、分钟线、缓存价和笔记，只有读文件的工具，不能读网页", () => {
+	const result = scanPackage(PKG);
+	assert.ok(result.ok);
+	const desk = result.scan.components.flatMap((c) => (c.kind === "agents" && c.name === "market-desk" ? [c.agent] : []))[0];
+	assert.equal(desk?.title, "盘面");
+	assert.deepEqual(desk?.uses, ["tools/quote", "tools/intraday", "tools/prices", "tools/note"]);
+	assert.deepEqual(desk?.tools, ["read"]);
+});
+
+const AGGS = "/v2/aggs/ticker";
+type AggsFixture = { now: string; input: Record<string, unknown>; aggs: unknown };
+const aggsFixture = (name: string): AggsFixture => JSON.parse(readFileSync(join(PKG, "tools/intraday/fixtures", `${name}.json`), "utf8"));
+
+async function intradayTool(t: TestContext, secrets: Record<string, string> = { POLYGON_API_KEY: "sk-test" }) {
+	const massive = await fakeMassive(t);
+	const pkg = stockTaCopy(t, massive.base);
+	return { massive, intraday: (input: unknown) => runModuleCodeAsync(codeSite(pkg, "tools/intraday"), "index.ts", input, secrets) };
+}
+
+test("intraday：一次分钟聚合请求，地址和参数照宿主的 bars；K 线从早到晚、美东时间、每根带 VWAP，另给当天的 VWAP", async (t) => {
+	const tool = await intradayTool(t);
+	const fx = aggsFixture("minute");
+	tool.massive.answer({ status: 200, body: fx.aggs });
+	const out = output(await tool.intraday({ ...fx.input, now: fx.now }));
+	assert.deepEqual(tool.massive.hits.map((h) => [h.url, h.auth]), [[`${AGGS}/NVDA/range/1/minute/2026-11-12/2026-11-12?adjusted=true&sort=desc&limit=500`, "Bearer sk-test"]]);
+	assert.deepEqual(out, {
+		symbol: "NVDA",
+		span: "minute",
+		from: "2026-11-12",
+		to: "2026-11-12",
+		columns: ["at", "open", "high", "low", "close", "volume", "vwap"],
+		bars: [
+			["2026-11-12 09:30", 180, 181.2, 179.6, 180.9, 900000, 180.5],
+			["2026-11-12 09:31", 180.9, 181, 179.9, 180.1, 500000, 180.4],
+			["2026-11-12 09:32", 180.1, 180.2, 176.8, 177.2, 1600000, 178.1],
+			["2026-11-12 09:33", 177.2, 178.4, 177, 178.3, 700000, 177.8],
+		],
+		dayVwap: { date: "2026-11-12", vwap: 178.94, since: "09:30" },
+		truncated: false,
+		timeZone: "美东，行情延迟 15 分钟",
+	});
+});
+
+test("intraday：小时线跨两天时，当天的 VWAP 只算最新那一天", async (t) => {
+	const tool = await intradayTool(t);
+	const fx = aggsFixture("hour");
+	tool.massive.answer({ status: 200, body: fx.aggs });
+	const out = output(await tool.intraday({ ...fx.input, now: fx.now }));
+	assert.equal(tool.massive.hits[0]?.url, `${AGGS}/SPY/range/1/hour/2026-11-11/2026-11-12?adjusted=true&sort=desc&limit=500`);
+	assert.deepEqual(out["dayVwap"], { date: "2026-11-12", vwap: 669.96, since: "09:00" });
+	assert.equal((out["bars"] as unknown[]).length, 4);
+});
+
+test("intraday：周末不填日期时查上一个交易日（周五）", async (t) => {
+	const tool = await intradayTool(t);
+	tool.massive.answer({ status: 200, body: { status: "OK", results: [] } });
+	await tool.intraday({ symbol: "nvda", span: "minute", now: new Date(ny("2026-11-14", "11:00")).toISOString() });
+	assert.equal(tool.massive.hits[0]?.url, `${AGGS}/NVDA/range/1/minute/2026-11-13/2026-11-13?adjusted=true&sort=desc&limit=500`);
+});
+
+test("intraday：回看超过 4 个交易日、limit 超过 500、span 不是 minute 或 hour，都一行拒绝，不发请求", async (t) => {
+	const tool = await intradayTool(t);
+	const now = new Date(ny("2026-11-13", "11:00")).toISOString();
+	const refused: [input: Record<string, unknown>, says: RegExp][] = [
+		[{ symbol: "NVDA", span: "minute", from: "2026-11-09", now }, /最多回看 4 个交易日.*2026-11-10/],
+		[{ symbol: "NVDA", span: "minute", limit: 600, now }, /limit 最多 500/],
+		[{ symbol: "NVDA", span: "day", now }, /minute 或 hour/],
+		[{ symbol: "NVDA", span: "minute", from: "2026-11-13", to: "2026-11-12", now }, /from 不能晚于 to/],
+		[{ span: "minute", now }, /symbol/],
+	];
+	for (const [input, says] of refused) {
+		const note = noteOf(await tool.intraday(input));
+		assert.match(note, says, JSON.stringify(input));
+		assert.equal(note.split("\n").length, 1);
+	}
+	assert.equal(tool.massive.hits.length, 0);
+});
+
+test("intraday：周一往回数 4 个交易日跨过周末，从上周三起都收", async (t) => {
+	const tool = await intradayTool(t);
+	tool.massive.answer({ status: 200, body: { status: "OK", results: [] } });
+	const now = new Date(ny("2026-11-16", "11:00")).toISOString();
+	assert.equal((await tool.intraday({ symbol: "NVDA", span: "hour", from: "2026-11-11", now })).ok, true);
+	assert.match(noteOf(await tool.intraday({ symbol: "NVDA", span: "hour", from: "2026-11-10", now })), /2026-11-11/);
+	assert.equal(tool.massive.hits.length, 1);
+});
+
+test("intraday：给满 limit 根时标明 truncated，说更早的没给", async (t) => {
+	const tool = await intradayTool(t);
+	const fx = aggsFixture("minute");
+	tool.massive.answer({ status: 200, body: fx.aggs });
+	const out = output(await tool.intraday({ ...fx.input, limit: 4, now: fx.now }));
+	assert.equal(out["truncated"], true);
+	assert.match(tool.massive.hits[0]?.url ?? "", /limit=4$/);
+});
+
+test("intraday：没有 POLYGON_API_KEY 时一行说明去哪里加，不发请求", async (t) => {
+	const tool = await intradayTool(t, {});
+	const note = noteOf(await tool.intraday({ symbol: "NVDA", span: "minute" }));
+	assert.match(note, /POLYGON_API_KEY/);
+	assert.match(note, /密钥文件/);
+	assert.equal(note.split("\n").length, 1);
+	assert.equal(tool.massive.hits.length, 0);
+});
+
+test("intraday：行情服务回 HTTP 500 或 429 时一行说明，429 说请求太多、稍后再查", async (t) => {
+	const tool = await intradayTool(t);
+	tool.massive.answer({ status: 500, body: { status: "ERROR" } });
+	const failed = noteOf(await tool.intraday({ symbol: "NVDA", span: "minute" }));
+	assert.match(failed, /HTTP 500/);
+	assert.equal(failed.split("\n").length, 1);
+	tool.massive.answer({ status: 429, body: { status: "ERROR" } });
+	const limited = noteOf(await tool.intraday({ symbol: "NVDA", span: "minute" }));
+	assert.match(limited, /429.*请求太多.*稍后/);
+	assert.equal(limited.split("\n").length, 1);
 });
