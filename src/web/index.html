@@ -24,7 +24,7 @@
 		button { font: inherit; cursor: pointer; }
 		.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 		/* A .sr inside a pane must take the pane as its containing block, or it sits below the fold and scrolls the page. */
-		#left, #conversation, #how { position: relative; }
+		#left, #conversation, .pane { position: relative; }
 
 		header { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 14px 28px; background: var(--panel); border-bottom: 1px solid var(--line); }
 		.mark-bg { fill: var(--brand); }
@@ -58,11 +58,13 @@
 		.helper-chip .dot[data-duty="running"] { color: var(--ok); }
 		.helper-chip .dot[data-duty="idle"] { color: var(--accent); }
 
-		.columns { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(300px, 380px); }
+		.columns { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(260px, 22vw, 320px) minmax(0, 1fr) clamp(320px, 28vw, 420px); }
 		#left { overflow-y: auto; padding: 22px 18px; display: flex; flex-direction: column; gap: 22px; border-right: 1px solid var(--line); }
 		#left section { display: flex; flex-direction: column; gap: 10px; }
-		#left h2 { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); }
+		#left h2, .pane h2 { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); }
 		#left h2.warn { color: var(--warn-ink); }
+		#left .card { padding: 12px; }
+		#left .card .latest { max-height: calc(1.6em * 3); overflow: hidden; }
 		.empty { font-size: 12px; color: var(--muted); margin: 0; }
 		.card { display: block; width: 100%; text-align: left; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
 		.card.ask { background: var(--warn-bg); border-color: var(--warn-line); }
@@ -130,11 +132,48 @@
 		.watch .panel summary { color: var(--muted); cursor: pointer; }
 		.watch .panel ul { list-style: none; margin: 4px 0 0; padding: 0 0 0 12px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 2px; line-height: 1.45; overflow-wrap: anywhere; }
 		.watch .panel.watchlist ul { flex-direction: row; flex-wrap: wrap; gap: 2px 10px; }
-		#today .headline { font-size: 13px; font-weight: 600; }
-		#today .detail { font-size: 12px; color: var(--muted); }
-		#done summary { font-size: 13px; color: var(--muted); cursor: pointer; }
-		#done .list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+		#context { min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--line); }
+		#tabs { flex: none; display: flex; align-items: stretch; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+		.tab { flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 12px 8px 10px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font-size: 13px; white-space: nowrap; }
+		.tab .count { font-weight: 700; }
+		.tab[aria-selected="true"] { color: var(--accent-ink); border-bottom-color: var(--accent); font-weight: 600; }
+		.tab:focus-visible, .tab-close:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+		.task-tab { flex: none; display: inline-flex; align-items: center; margin: 6px 4px 4px 0; border-radius: 8px; background: var(--accent-bg); }
+		.task-tab .tab { padding: 6px 4px 6px 10px; border-bottom: 0; }
+		.tab-close { width: 26px; height: 26px; border: 0; background: none; color: var(--muted); font-size: 15px; line-height: 1; border-radius: 6px; }
+		.tab-close:hover { color: var(--ink); background: var(--track); }
+		.pane { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+		.pane[hidden] { display: none; }
+		.box { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+		.box .headline { font-size: 13px; font-weight: 600; }
+		.box .detail { font-size: 12px; color: var(--muted); }
+		.alerts { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+		.alerts li { font-size: 12px; line-height: 1.5; padding: 4px 8px; margin: 0 -8px; border: 1px solid transparent; border-radius: 8px; overflow-wrap: anywhere; }
+		.alerts li.flash { background: var(--warn-bg); border-color: var(--warn-line); color: var(--ink); animation: flash 1.2s ease-out 2; }
+		@keyframes flash { 50% { box-shadow: 0 0 0 3px var(--warn-line); } }
+		@media (prefers-reduced-motion: reduce) { .alerts li.flash { animation: none; } }
+		.pane-head { display: flex; align-items: center; gap: 8px; }
+		.pane-head h2 { flex: 1; }
+		.more { border: 0; background: none; padding: 0; font-size: 12px; color: var(--accent-ink); }
+		.module-rows { display: flex; flex-direction: column; }
+		.module-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); min-width: 0; }
+		.module-row:first-child { border-top: 0; }
+		.module-row .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--muted); flex: none; }
+		.module-row.ok .dot { background: var(--ok); }
+		.module-row.busy .dot { background: var(--accent); }
+		.module-row.bad .dot { background: var(--warn); }
+		.module-row .name { flex: none; font-size: 13px; font-weight: 600; }
+		.module-row .note { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+		.module-row.bad .note { color: var(--warn-ink); }
+		.toggle { flex: none; position: relative; width: 36px; height: 20px; padding: 0; border-radius: 999px; border: 1px solid var(--line); background: var(--track); }
+		.toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 999px; background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: left 0.15s; }
+		.toggle[aria-checked="true"] { background: var(--ok); border-color: var(--ok); }
+		.toggle[aria-checked="true"]::after { left: 18px; }
+		.toggle:disabled { cursor: default; opacity: 0.6; }
+		.toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 		#done .card { opacity: 0.75; padding: 10px 12px; }
+		#how-ask { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 12px; background: var(--warn-bg); border: 1px solid var(--warn-line); font-size: 13px; overflow-wrap: anywhere; }
+		#how-ask[hidden] { display: none; }
 
 		main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 		#conversation { flex: 1; overflow-y: auto; padding: 22px 32px; }
@@ -200,7 +239,6 @@
 		#say-status[data-state="maybe_lost"], #say-status[data-state="rejected"] { color: var(--warn-ink); }
 		#say-status[data-state="expired"] { color: var(--bad-ink); }
 
-		#how { overflow-y: auto; border-left: 1px solid var(--line); padding: 22px 20px; display: flex; flex-direction: column; gap: 16px; }
 		.label { font-size: 12px; color: var(--muted); }
 		.how-head { display: flex; align-items: flex-start; gap: 8px; margin-top: 4px; }
 		.how-head:has(#how-title:empty) { display: none; }
@@ -274,7 +312,7 @@
 
 		@media (max-width: 900px) {
 			.columns { display: flex; flex-direction: column; overflow-y: auto; }
-			#left, #how { border: 0; border-bottom: 1px solid var(--line); overflow: visible; }
+			#left, #context, .pane { border: 0; border-bottom: 1px solid var(--line); overflow: visible; }
 			#conversation { overflow: visible; padding: 16px; }
 			main { min-height: 70vh; flex: none; }
 			header, form, #helpers { padding-left: 16px; padding-right: 16px; }
@@ -296,7 +334,7 @@
 	</header>
 	<nav id="helpers" aria-label="在岗助手" hidden></nav>
 	<div class="columns">
-		<aside id="left" aria-label="概况"></aside>
+		<aside id="left" aria-label="要你处理的事"></aside>
 		<main aria-label="对话">
 			<div id="conversation"><div class="thread"><div class="welcome">幕僚长持续关注你的消息来源，在后台安排助手处理任务，只在需要你决定时通知你。</div></div></div>
 			<form id="say" autocomplete="off">
@@ -312,16 +350,24 @@
 				</div>
 			</form>
 		</main>
-		<aside id="how" aria-label="执行过程">
-			<div>
+		<aside id="context" aria-label="概况">
+			<div id="tabs" role="tablist" aria-label="概况"></div>
+			<section id="how" class="pane" role="tabpanel" aria-labelledby="tab-task" hidden>
+				<div>
+					<div class="how-head"><span id="how-badge"></span><div id="how-title"></div></div>
+					<div id="how-helper"></div>
+					<div id="how-meta"></div>
+					<div id="how-life"></div>
+				</div>
+				<div id="how-ask" hidden></div>
 				<div class="label">执行过程</div>
-				<div class="how-head"><span id="how-badge"></span><div id="how-title"></div></div>
-				<div id="how-helper"></div>
-				<div id="how-meta"></div>
-				<div id="how-life"></div>
-			</div>
-			<ol id="steps"></ol>
-			<div id="small-print"></div>
+				<ol id="steps"></ol>
+				<div id="small-print"></div>
+			</section>
+			<section id="today" class="pane" role="tabpanel" aria-labelledby="tab-today"></section>
+			<section id="sources" class="pane" role="tabpanel" aria-labelledby="tab-sources" hidden></section>
+			<section id="modules" class="pane" role="tabpanel" aria-labelledby="tab-modules" hidden></section>
+			<section id="done" class="pane" role="tabpanel" aria-labelledby="tab-done" hidden></section>
 		</aside>
 	</div>
 	<template id="router-avatar"><svg class="avatar" viewBox="0 0 72 72" aria-hidden="true"><circle class="mark-bg" cx="36" cy="36" r="36"></circle><path d="M22 30h28M30 30v16M42 30v12c0 2.5 1.2 4 3.5 4" stroke="#fff" stroke-width="4.5" stroke-linecap="round" fill="none"></path><circle cx="52" cy="20" r="5" fill="#f59f00"></circle></svg></template>

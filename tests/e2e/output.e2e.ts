@@ -77,7 +77,7 @@ test("助手用 new_app 开应用、把目录派给成员；成员和助手写�
 				assert.doesNotMatch(card, /extensions\/joke\.ts（/);
 			});
 			await step("页面的任务卡片写着「写到成品目录之外 1 处，另有 1 处可能」：bash 推测的不算成确切写入", async (page) => {
-				const line = page.locator("#left .card", { hasText: JOKE.title }).locator(".outside");
+				const line = page.locator("#left .card, #done .card", { hasText: JOKE.title }).locator(".outside");
 				const text = (await line.textContent()) ?? "";
 				assert.match(text, /^写到成品目录之外 1 处，另有 1 处可能：\S+、\S+$/);
 				assert.ok(text.includes("/stray.md") && text.includes("/stray-bash.md"), text);
@@ -100,7 +100,7 @@ test("助手用 new_app 开应用、把目录派给成员；成员和助手写�
 				await page.locator(".line.router .bubble", { hasText: "天气扩展做好了" }).waitFor({ timeout: 20_000 });
 				assert.ok(existsSync(join(output, "apps", "app-002-weather")));
 				assert.ok(!existsSync(join(output, "apps", "app-001-weather")));
-				assert.equal(await page.locator("#left .card", { hasText: WEATHER.title }).locator(".outside").count(), 0);
+				assert.equal(await page.locator("#left .card, #done .card", { hasText: WEATHER.title }).locator(".outside").count(), 0);
 			});
 		},
 		{ files: STATE_FILES, fixedPort: true },

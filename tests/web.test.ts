@@ -81,7 +81,6 @@ test("页面：每个任务恰好进一个分组：待回复、待确认、受�
 	assert.deepEqual(ids(left.needsYou), ["awaiting_answer", "awaiting_review", "blocked_or_failed"]);
 	assert.deepEqual(ids(left.doing), ["queued", "running", "idle"]);
 	assert.deepEqual(ids(left.done), ["stopped", "closed"], "后开的在前");
-	assert.equal(left.doneLine, "已完成 · 2");
 });
 
 test("页面：待你处理的卡片先显示问题，受阻的显示最近汇报；进行中的显示最近汇报，没有时说已开始", () => {
@@ -348,7 +347,7 @@ test("页面：模块栏每个模块一张卡：标题和名字、状态、版�
 	page.applyMessage(view, { ...board([]), modules: [health, taxCard({ title: undefined })] } as HostToClient, 0);
 	const [on, off] = page.leftColumn(view, 0).modules;
 	assert.deepEqual(on, {
-		name: "personal-health", heading: "个人医疗健康 · personal-health", on: true, button: "关掉", state: "运行中", tone: "ok", version: "版本 0.1.0 · abcdef123456",
+		name: "personal-health", heading: "个人医疗健康 · personal-health", on: true, button: "关掉", state: "运行中", note: "个人医疗健康", tone: "ok", version: "版本 0.1.0 · abcdef123456",
 		lines: ["知识 2 · 工具 1 · 成员 5 · 规则 1", "密钥 EXAMPLE_TOKEN", "2 个任务还在用旧版本"], problems: [],
 		importsHeading: "还没导入的知识 2 份",
 		imports: [{ name: "hf", command: "just module import personal-health hf <文件或目录>" }, { name: "ccs", command: "just module import personal-health ccs <文件或目录>" }],
@@ -2407,6 +2406,16 @@ test("网关：改了盯盘条件、贴了提醒，开着的网页从 board 帧�
 	await until(() => ofType(stream.got, "board").some((m) => panelOf(m)?.alertsToday === 1), "board 帧带今日提醒数");
 });
 
+test("网关：贴了提醒，开着的网页从 board 帧拿到今天的提醒列表，快照里也有", async (t) => {
+	const market = fakeFeed("us-market");
+	const { events, host } = await webHost(t, () => [], { feeds: [market.spec], watching: [{ source: "us-market", timers: [], rules: [] }] });
+	const stream = events();
+	await until(() => ofType(stream.got, "snapshot").length === 1, "快照");
+	market.ctx!.post({ kind: "alert", externalId: "NVDA:x", text: "NVDA 涨了 5.3%", occurredAt: 1 });
+	await until(() => ofType(stream.got, "board").some((m) => m.alerts?.[0]?.text === "NVDA 涨了 5.3%"), "board 帧带今天的提醒");
+	assert.deepEqual(host.snapshot().alerts.map((l) => [l.who, l.text]), [["alert", "NVDA 涨了 5.3%"]]);
+});
+
 test("网关：来源贴的提醒和收据经事件流到网页，各一帧；重复的提醒不再发；之后连上的网页在快照里看到它们", async (t) => {
 	const feed = fakeFeed("us-market");
 	const { events } = await webHost(t, () => [], { feeds: [feed.spec] });
@@ -2421,4 +2430,102 @@ test("网关：来源贴的提醒和收据经事件流到网页，各一帧；�
 	const later = events();
 	await until(() => ofType(later.got, "snapshot").length === 1, "新网页的快照");
 	assert.deepEqual(ofType(later.got, "snapshot")[0].conversation.map((l) => [l.who, l.text]), [["alert", "NVDA 涨了 5.3%"], ["receipt", "已记下：NVDA"]]);
+});
+
+const panelAfter = (...events: Parameters<typeof page.panelStep>[1][]) => events.reduce(page.panelStep, page.firstPanel());
+
+test("右栏：开始停在「今天」，没有任务标签", () => {
+	assert.deepEqual(page.firstPanel(), { showing: "today", task: null, last: "today", flash: null });
+});
+
+test("右栏：选中任务，任务标签切过去；切到别的标签任务标签留着；在任务标签上点 × 回到选任务之前的标签", () => {
+	const opened = panelAfter({ kind: "pick", tab: "sources" }, { kind: "open", ticketId: "tkt_a" });
+	assert.deepEqual([opened.showing, opened.task], ["task", "tkt_a"]);
+	const away = page.panelStep(opened, { kind: "pick", tab: "modules" });
+	assert.deepEqual([away.showing, away.task], ["modules", "tkt_a"]);
+	const back = page.panelStep(away, { kind: "pick", tab: "task" });
+	assert.equal(back.showing, "task");
+	assert.equal(page.panelStep(opened, { kind: "close" }).showing, "sources");
+	assert.deepEqual(page.panelStep(back, { kind: "close" }), { showing: "modules", task: null, last: "modules", flash: null });
+});
+
+test("右栏：在别的标签上关任务，停在原地", () => {
+	const closed = panelAfter({ kind: "open", ticketId: "tkt_a" }, { kind: "pick", tab: "done" }, { kind: "close" });
+	assert.deepEqual([closed.showing, closed.task], ["done", null]);
+});
+
+test("右栏：选另一个任务换掉任务标签，× 仍回到最早那个概况标签", () => {
+	const second = panelAfter({ kind: "pick", tab: "modules" }, { kind: "open", ticketId: "tkt_a" }, { kind: "open", ticketId: "tkt_b" });
+	assert.deepEqual([second.showing, second.task], ["task", "tkt_b"]);
+	assert.equal(page.panelStep(second, { kind: "close" }).showing, "modules");
+});
+
+test("右栏：没有任务时点任务标签不动", () => {
+	assert.equal(page.panelStep(page.firstPanel(), { kind: "pick", tab: "task" }).showing, "today");
+});
+
+test("右栏：来了不属于任务的提醒，切到「今天」并高亮这条，任务标签留着；再选标签高亮消失", () => {
+	const alerted = panelAfter({ kind: "open", ticketId: "tkt_a" }, { kind: "pick", tab: "sources" }, { kind: "alert", lineId: "hln_1" });
+	assert.deepEqual(alerted, { showing: "today", task: "tkt_a", last: "today", flash: "hln_1" });
+	assert.equal(page.panelStep(alerted, { kind: "pick", tab: "modules" }).flash, null);
+	assert.equal(page.panelStep(alerted, { kind: "close" }).flash, "hln_1", "关任务标签不影响高亮");
+});
+
+test("右栏：来了属于某个任务的提醒，打开那个任务的标签", () => {
+	const alerted = panelAfter({ kind: "pick", tab: "modules" }, { kind: "alert", lineId: "hln_1", ticketId: "tkt_b" });
+	assert.deepEqual([alerted.showing, alerted.task, alerted.flash], ["task", "tkt_b", null]);
+	assert.equal(page.panelStep(alerted, { kind: "close" }).showing, "modules");
+});
+
+test("右栏刷新：任务标签和最后看的标签存下来，刷新后任务还在就照原样恢复，高亮不留", () => {
+	const before = panelAfter({ kind: "pick", tab: "modules" }, { kind: "open", ticketId: "tkt_a" }, { kind: "alert", lineId: "hln_1" });
+	assert.deepEqual(page.savedPanel(page.panelText(before), new Set(["tkt_a"])), { ...before, flash: null });
+	const onTask = panelAfter({ kind: "pick", tab: "sources" }, { kind: "open", ticketId: "tkt_a" });
+	assert.deepEqual(page.savedPanel(page.panelText(onTask), new Set(["tkt_a"])), onTask);
+});
+
+test("右栏刷新：存下的任务已经不在看板上，丢掉任务标签，回到最后看的概况标签", () => {
+	const onTask = panelAfter({ kind: "pick", tab: "sources" }, { kind: "open", ticketId: "tkt_gone" });
+	assert.deepEqual(page.savedPanel(page.panelText(onTask), new Set(["tkt_a"])), { ...page.firstPanel(), showing: "sources", last: "sources" });
+});
+
+test("右栏刷新：没存过或存的东西读不懂，从「今天」开始", () => {
+	for (const text of [null, "", "{", "null", '{"showing":"nope","task":3,"last":"today"}', '{"showing":"task","task":null,"last":"today"}']) {
+		assert.deepEqual(page.savedPanel(text, new Set(["tkt_a"])), page.firstPanel(), String(text));
+	}
+});
+
+const hostAlert = (id: string, text: string) => ({ id, who: "alert" as const, text, at: 1 });
+
+test("右栏标签：今天 = 今日来源消息 + 今日提醒，来源、模块、已完成各带数字；有任务时任务标签排第一，写编号前 4 位", () => {
+	const view = page.emptyView();
+	const today = zeroToday();
+	today.byDisposition.opened_ticket = 2;
+	today.byDisposition.ignored = 1;
+	page.applyMessage(view, {
+		...board([row({ id: "tkt_9f3a77", stage: "closed" }), row({ id: "tkt_b", stage: "running" })], today, noHelpers, {}, {}, [{ source: "inbox", timers: [], rules: [] }]),
+		modules: [taxCard(), taxCard({ name: "health" })],
+		alerts: [hostAlert("hln_1", "NVDA 涨了 5.3%")],
+	} as HostToClient, 0);
+	const tabs = (panel: ReturnType<typeof page.firstPanel>) => page.overviewTabs(view, panel).map((t) => [t.key, t.label, t.count, t.selected]);
+	assert.deepEqual(tabs(page.firstPanel()), [["today", "今天", 4, true], ["sources", "来源", 1, false], ["modules", "模块", 2, false], ["done", "已完成", 1, false]]);
+	assert.deepEqual(tabs(panelAfter({ kind: "open", ticketId: "tkt_9f3a77" }))[0], ["task", "任务 #9f3a", null, true]);
+});
+
+test("右栏「今天」：今日提醒新的在前，写条数；没有提醒时写一句", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, { ...board([]), alerts: [hostAlert("hln_1", "NVDA 涨了 5.3%"), hostAlert("hln_2", "SPY 跌了 3%")] } as HostToClient, 0);
+	const left = page.leftColumn(view, 0);
+	assert.equal(left.alertsLine, "今日提醒 · 2");
+	assert.deepEqual(left.alerts, [{ id: "hln_2", text: "SPY 跌了 3%" }, { id: "hln_1", text: "NVDA 涨了 5.3%" }]);
+	const quiet = page.leftColumn(withRows([]), 0);
+	assert.deepEqual([quiet.alertsLine, quiet.alerts], ["今日暂无提醒", []]);
+});
+
+test("右栏「模块」：一行一个模块，运行中的写标题，别的写状态；标题行写运行中几个", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, { ...board([]), modules: [taxCard({ name: "stock-ta", title: "股票技术分析", on: true, label: "运行中", reason: "0.1.0", tone: "ok" }), taxCard({ title: undefined })] } as HostToClient, 0);
+	const left = page.leftColumn(view, 0);
+	assert.equal(left.modulesLine, "模块 · 2 · 运行中 1");
+	assert.deepEqual(left.modules.map((m) => [m.name, m.on, m.note]), [["stock-ta", true, "股票技术分析"], ["tax", false, "已停用"]]);
 });

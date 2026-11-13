@@ -2199,6 +2199,23 @@ test("宿主行：alertCountsToday 按来源数本地今天贴的提醒，不数
 	assert.deepEqual(s.kernel.alertCountsToday(), { "us-market": 2, "other-feed": 1 });
 });
 
+test("宿主行：alertsToday 按先后列出本地今天贴的提醒，不列收据和昨天的提醒", () => {
+	const s = setup({ at: "2026-11-08T23:30:00" });
+	s.kernel.postHostLine("us-market", alert("yesterday"));
+	s.clock.t = new Date("2026-11-09T00:10:00").getTime();
+	const a = s.kernel.postHostLine("us-market", alert("a")).line;
+	s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下" });
+	const b = s.kernel.postHostLine("other-feed", alert("b")).line;
+	assert.deepEqual(s.kernel.alertsToday(), [a, b]);
+});
+
+test("宿主行：alertsToday 里模块的提醒带着模块名和是否私密", () => {
+	const s = setup();
+	const line = s.kernel.postHostLine("health", { ...alert("cea"), module: { title: "个人医疗健康", private: true } }).line;
+	assert.deepEqual(s.kernel.alertsToday(), [line]);
+	assert.deepEqual(line.module, { title: "个人医疗健康", private: true });
+});
+
 test("宿主行：undeliveredAlerts 只列没标记送达的提醒，不列收据", () => {
 	const s = setup();
 	s.kernel.postHostLine("us-market", { kind: "receipt", text: "已记下" });

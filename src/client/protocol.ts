@@ -70,6 +70,8 @@ export interface BoardState {
 	memberCap: MemberCapBoard;
 	watching: WatchedSource[];
 	modules: ModuleCard[];
+	/** Today's alerts (host local day), oldest first. */
+	alerts: HostLine[];
 }
 
 export type ClientToHost =
@@ -80,7 +82,7 @@ export type ClientToHost =
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
-	| { type: "snapshot"; conversation: ConversationLine[]; cleared: Cleared | null; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; memberCap: MemberCapBoard; watching: WatchedSource[]; modules: ModuleCard[] }
+	| { type: "snapshot"; conversation: ConversationLine[]; cleared: Cleared | null; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; memberCap: MemberCapBoard; watching: WatchedSource[]; modules: ModuleCard[]; alerts: HostLine[] }
 	| ({ type: "user" } & ConversationLine & { who: "user" })
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }

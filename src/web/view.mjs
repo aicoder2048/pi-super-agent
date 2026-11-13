@@ -14,6 +14,7 @@
 /** @typedef {import("../client/protocol.ts").TranscriptMessage} TranscriptMessage */
 /** @typedef {import("../client/protocol.ts").WatchedSource} WatchedSource */
 /** @typedef {import("../client/protocol.ts").ModuleCard} ModuleCard */
+/** @typedef {import("../client/protocol.ts").HostLine} HostLine */
 /** @typedef {import("../host/dispatch.ts").Dispatching} Dispatching */
 /** @typedef {import("../host/dispatch.ts").BoardDispatch} BoardDispatch */
 /** @typedef {import("../host/dispatch.ts").DispatchState} DispatchState */
@@ -60,6 +61,7 @@ const GROUP = {
  * @property {HelpersToday | undefined} helpers
  * @property {WatchedSource[]} watching
  * @property {ModuleCard[]} modules empty from a host older than this field
+ * @property {HostLine[]} alerts today's, oldest first; empty from a host older than this field
  * @property {Routes} routes
  * @property {Dispatching} dispatching
  * @property {MemberCapBoard} memberCap null from a host that cannot dispatch, or one older than this field
@@ -70,7 +72,7 @@ const GROUP = {
 
 /** @returns {View} */
 export function emptyView() {
-	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], modules: [], routes: {}, dispatching: {}, memberCap: null, lastOnBoard: new Map(), cleared: null, showEarlier: false };
+	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], modules: [], alerts: [], routes: {}, dispatching: {}, memberCap: null, lastOnBoard: new Map(), cleared: null, showEarlier: false };
 }
 
 /** @param {View} view @param {Dispatching | undefined} dispatching */
@@ -100,7 +102,7 @@ function resetConversation(view, lines, cleared) {
 
 /** @param {View} view @param {import("../client/protocol.ts").BoardState} board @param {number} now */
 function applyBoard(view, board, now) {
-	Object.assign(view, { rows: board.rows, today: board.today, duty: board.duty, helpers: board.helpers, watching: board.watching, modules: board.modules ?? [], routes: board.routes, memberCap: board.memberCap ?? null, receivedAt: now });
+	Object.assign(view, { rows: board.rows, today: board.today, duty: board.duty, helpers: board.helpers, watching: board.watching, modules: board.modules ?? [], alerts: board.alerts ?? [], routes: board.routes, memberCap: board.memberCap ?? null, receivedAt: now });
 	setDispatching(view, board.dispatching);
 }
 
@@ -163,7 +165,7 @@ const CAP_SENT_NOTE = "已发送";
  * @param {(CapQuestion & Partial<Pick<NonNullable<DashboardRow["question"]>, "click" | "spoke">>) | null | undefined} q a helper's question, or the host's own, which is never clicked on the board and never locked
  * @param {Sending} sending @param {string} [sentNote] @returns {Choice | null}
  */
-function choiceOf(q, sending, sentNote = CHOICE_NOTE.sent) {
+export function choiceOf(q, sending, sentNote = CHOICE_NOTE.sent) {
 	if (!q || q.options.length === 0) return null;
 	const local = sending.get(q.reportId);
 	const click = q.click ?? null;
@@ -292,7 +294,6 @@ export function leftColumn(view, now, sending = new Map()) {
 		needsYou: groups.needsYou,
 		doing: groups.doing,
 		done: groups.done.reverse(),
-		doneLine: `已完成 · ${groups.done.length}`,
 		watching: view.watching.map((w) => ({
 			source: w.source,
 			name: w.title ?? w.source,
@@ -303,15 +304,20 @@ export function leftColumn(view, now, sending = new Map()) {
 			lists: panelLists(w.panel),
 		})),
 		today: todayCopy(view.today),
+		alertsLine: view.alerts.length ? `今日提醒 · ${view.alerts.length}` : "今日暂无提醒",
+		alerts: view.alerts.map((l) => ({ id: l.id, text: l.text })).reverse(),
+		modulesLine: `模块 · ${view.modules.length} · 运行中 ${view.modules.filter((m) => m.label === RUNNING).length}`,
 		modules: view.modules.map(moduleCard),
 	};
 }
+
+const RUNNING = "运行中";
 
 /** @type {[keyof ModuleCard["components"], string][]} */
 const COMPONENT_NAMES = [["knowledge", "知识"], ["data", "数据"], ["tools", "工具"], ["skills", "技能"], ["feeds", "feed"], ["agents", "成员"], ["evals", "考题"], ["rules", "规则"]];
 
 /**
- * @typedef {{ name: string, heading: string, on: boolean, button: string, state: string, tone: "ok" | "busy" | "bad" | "off", version: string, lines: string[], problems: string[], importsHeading: string, imports: { name: string, command: string }[] }} ModuleView
+ * @typedef {{ name: string, heading: string, on: boolean, button: string, state: string, note: string, tone: "ok" | "busy" | "bad" | "off", version: string, lines: string[], problems: string[], importsHeading: string, imports: { name: string, command: string }[] }} ModuleView
  */
 
 /** @param {ModuleCard} m @returns {ModuleView} */
@@ -323,6 +329,7 @@ function moduleCard(m) {
 		on: m.on,
 		button: m.on ? "关掉" : "打开",
 		state: m.reason ? `${m.label} · ${m.reason}` : m.label,
+		note: m.label === RUNNING ? (m.title ?? m.reason) : m.label,
 		tone: m.tone,
 		version: `版本 ${m.version.label}${m.version.digest ? ` · ${m.version.digest}` : ""}`,
 		lines: [parts.join(" · "), m.secrets.length ? `密钥 ${m.secrets.join("、")}` : "", m.pinnedOld ? `${m.pinnedOld} 个任务还在用旧版本` : ""].filter(Boolean),
@@ -330,6 +337,69 @@ function moduleCard(m) {
 		importsHeading: `还没导入的知识 ${m.notImported.length} 份`,
 		imports: m.notImported.map((doc) => ({ name: doc, command: `just module import ${m.name} ${doc} <文件或目录>` })),
 	};
+}
+
+/** @typedef {"today" | "sources" | "modules" | "done"} OverviewTab */
+
+/**
+ * The right column. `last` is the overview tab the task tab's × returns to; `flash` is the alert line to highlight in 今天.
+ * @typedef {{ showing: OverviewTab | "task", task: string | null, last: OverviewTab, flash: string | null }} Panel
+ */
+
+/** @typedef {{ kind: "pick", tab: OverviewTab | "task" } | { kind: "open", ticketId: string } | { kind: "close" } | { kind: "alert", lineId: string, ticketId?: string }} PanelEvent */
+
+/** @returns {Panel} */
+export const firstPanel = () => ({ showing: "today", task: null, last: "today", flash: null });
+
+/** @param {Panel} panel @param {PanelEvent} event @returns {Panel} */
+export function panelStep(panel, event) {
+	switch (event.kind) {
+		case "pick":
+			if (event.tab !== "task") return { ...panel, showing: event.tab, last: event.tab, flash: null };
+			return panel.task ? { ...panel, showing: "task" } : panel;
+		case "open":
+			return { ...panel, showing: "task", task: event.ticketId };
+		case "close":
+			return { ...panel, task: null, showing: panel.showing === "task" ? panel.last : panel.showing };
+		case "alert":
+			if (event.ticketId) return { ...panel, showing: "task", task: event.ticketId, flash: null };
+			return { ...panel, showing: "today", last: "today", flash: event.lineId };
+	}
+}
+
+const OVERVIEW_TABS = ["today", "sources", "modules", "done"];
+
+/** @param {Panel} panel */
+export const panelText = (panel) => JSON.stringify({ showing: panel.showing, task: panel.task, last: panel.last });
+
+/** @param {string | null} text @param {Set<string>} ticketIds the tickets on the first board after a reload @returns {Panel} */
+export function savedPanel(text, ticketIds) {
+	let saved;
+	try {
+		saved = JSON.parse(text ?? "");
+	} catch {
+		return firstPanel();
+	}
+	const { showing, task, last } = saved ?? {};
+	const valid = OVERVIEW_TABS.includes(last) && (task === null || typeof task === "string") && (OVERVIEW_TABS.includes(showing) || (showing === "task" && task !== null));
+	if (!valid) return firstPanel();
+	const panel = { ...firstPanel(), showing, task, last };
+	return task === null || ticketIds.has(task) ? panel : panelStep(panel, { kind: "close" });
+}
+
+/** @typedef {{ key: OverviewTab | "task", label: string, count: number | null, selected: boolean }} PanelTab */
+
+/** @param {View} view @param {Panel} panel @returns {PanelTab[]} */
+export function overviewTabs(view, panel) {
+	/** @type {[OverviewTab, string, number][]} */
+	const overview = [
+		["today", "今天", todayTotal(view.today) + view.alerts.length],
+		["sources", "来源", view.watching.length],
+		["modules", "模块", view.modules.length],
+		["done", "已完成", view.rows.filter((r) => groupOf(r) === "done").length],
+	];
+	const tabs = overview.map(([key, label, count]) => ({ key, label, count, selected: panel.showing === key }));
+	return panel.task ? [{ key: "task", label: `任务 #${shortId(panel.task)}`, count: null, selected: panel.showing === "task" }, ...tabs] : tabs;
 }
 
 /** @param {string} name @param {boolean} on */
@@ -364,11 +434,14 @@ function every(minutes) {
 	return `每 ${minutes} 分钟`;
 }
 
+/** @param {TodayCounts | undefined} counts */
+const todayTotal = (counts) => Object.values(counts?.byDisposition ?? {}).reduce((a, b) => a + b, 0);
+
 /** @param {TodayCounts | undefined} counts @returns {{ headline: string, detail: string }} */
 export function todayCopy(counts) {
 	if (!counts) return { headline: "", detail: "" };
 	const d = counts.byDisposition;
-	const total = Object.values(d).reduce((a, b) => a + b, 0);
+	const total = todayTotal(counts);
 	if (total === 0) return { headline: "今日暂无来源消息", detail: "" };
 	const handed = d.delivered + d.handed_over;
 	const ignored = d.ignored + d.router_ignored;

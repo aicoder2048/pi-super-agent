@@ -118,7 +118,8 @@ test("盯盘条件：网页上说一句，幕僚长开 us-market 的请求任务
 				assert.ok(sentTo().some((m) => m.text.startsWith("你在网页或终端说：帮我盯英伟达")));
 				assert.deepEqual(sentTo().filter((m) => /成本价 120|盯盘条件（只在本机）|现在共 1 条/.test(m.text)), []);
 			});
-			await step("不用刷新，左栏关注的来源下展开着「盯盘条件 1 条」，写着成本价；「自选 2 只」默认收起，点开后刷新页面还开着", async (page) => {
+			await step("不用刷新，右栏「来源」里关注的来源下展开着「盯盘条件 1 条」，写着成本价；「自选 2 只」默认收起，点开后刷新页面还开着", async (page) => {
+				await page.locator("#tab-sources").click();
 				const source = page.locator('.watch[data-source="us-market"]');
 				await source.locator(".panel.tripwires li", { hasText: NVDA_LINE }).waitFor();
 				assert.equal(await source.locator(".panel.tripwires summary").textContent(), "盯盘条件 1 条");
@@ -129,22 +130,23 @@ test("盯盘条件：网页上说一句，幕僚长开 us-market 的请求任务
 				await watchlist.locator("summary").click();
 				await page.waitForFunction(() => localStorage.getItem("psa-panel-open")?.includes('"us-market/watchlist":true'), null, { timeout: 5_000 });
 				await page.reload();
+				await page.locator("#tab-sources").click();
 				await page.locator('.watch[data-source="us-market"] .panel.watchlist[open] li', { hasText: "SPY" }).waitFor();
 			});
-			await step("左栏截图：亮色和暗色，桌面宽度和 390px 手机宽度", async (page) => {
+			await step("「来源」截图：亮色和暗色，桌面宽度和 390px 手机宽度", async (page) => {
 				for (const [width, height] of [[1280, 800], [390, 844]]) {
 					await page.setViewportSize({ width, height });
 					for (const theme of ["light", "dark"]) {
 						await page.evaluate((t) => (document.documentElement.dataset.theme = t), theme);
 						await page.locator('.watch[data-source="us-market"]').screenshot({ path: join(PANEL_SHOTS, `source-${theme}-${width}.png`) });
-						await page.locator("#left").screenshot({ path: join(PANEL_SHOTS, `left-${theme}-${width}.png`) });
+						await page.locator("#sources").screenshot({ path: join(PANEL_SHOTS, `sources-${theme}-${width}.png`) });
 						const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 						assert.ok(overflow <= 0, `${width}px ${theme} 横向溢出 ${overflow}px`);
 					}
 				}
 				await page.setViewportSize({ width: 1280, height: 800 });
 			});
-			await step("网页上说不用盯英伟达了：左栏的「盯盘条件」不再列出，Telegram 照样收不到成本价", async (page) => {
+			await step("网页上说不用盯英伟达了：「来源」里的「盯盘条件」不再列出，Telegram 照样收不到成本价", async (page) => {
 				await sayInPage(page, "不用盯英伟达了");
 				await page.locator(".line.router .bubble", { hasText: "已去掉 NVDA 的盯盘提醒。" }).waitFor();
 				await page.locator('.watch[data-source="us-market"] .panel.tripwires').waitFor({ state: "detached" });
