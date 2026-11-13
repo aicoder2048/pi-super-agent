@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { piCliPath } from "../pi-runtime.mjs";
 import { toolStep } from "../client/board-format.mjs";
 import type { ModelRef } from "../models.ts";
-import { memberTools, toolAllowlist, type Profile } from "../worker/tools.ts";
+import { helperLimits, memberTools, toolAllowlist, type Profile } from "../worker/tools.ts";
 import type { Member } from "../teams.ts";
 import { onJsonLines } from "../jsonl.ts";
 import { isMemberMessage, REPLY_MAX, type MemberRun, type ToolEdge } from "./dispatch.ts";
@@ -73,6 +73,7 @@ export interface WorkerArgsInput {
 export function workerArgs(input: WorkerArgsInput): string[] {
 	const crew = input.crew ?? [];
 	const allowlist = toolAllowlist(input.profile, crew.length > 0);
+	const limits = helperLimits(input.profile);
 	return [
 		"--session-dir", input.sessionDir,
 		"--session-id", input.sessionId,
@@ -80,6 +81,7 @@ export function workerArgs(input: WorkerArgsInput): string[] {
 		"--no-skills", ...(input.skillsDir ? ["--skill", input.skillsDir] : []),
 		...(allowlist ? ["--tools", allowlist.join(","), "--no-mcp"] : []),
 		"--append-system-prompt", input.prompt,
+		...(limits ? ["--append-system-prompt", limits] : []),
 		...(crew.length ? ["--append-system-prompt", teamPrompt(crew)] : []),
 		...(input.outputRule ? ["--append-system-prompt", input.outputRule] : []),
 	];

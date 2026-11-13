@@ -28,7 +28,7 @@
 | `inference`（宿主来源的推断） | 读文件、`web_get`、`lookup`、汇报、模块的工具知识数据提醒 | 读文件、`web_get`、`lookup` | 是 |
 | `module-feed`（规则和推断都算） | 读文件、`lookup`、汇报、模块的工具知识数据提醒 | 读文件、`lookup` | 是 |
 
-`module-feed` 没有 `bash`、`edit`、`write`、`web_get`、后台命令、`new_app`、`tripwire`。`lookup` 仍要领域开了才注册，宿主照旧校验参数（ADR-0013）。模块工具照权威表走（`src/modules/protocol.ts` 的 `AUTHORITY` 不改）：规则任务能调 `write` 效果的工具，推断任务不能。被拦时原因写「来源开的任务不能用 X。要运行命令，在汇报里请使用者在对话里提出」，M5 加了批准卡片以后，后半句改成用 `ask_to_run`。
+`module-feed` 没有 `bash`、`edit`、`write`、`web_get`、后台命令、`new_app`、`tripwire`。`lookup` 仍要领域开了才注册，宿主照旧校验参数（ADR-0013）。模块工具照权威表走（`src/modules/protocol.ts` 的 `AUTHORITY` 不改）：规则任务能调 `write` 效果的工具，推断任务不能。被拦时原因写「来源开的任务不能用 X。要运行命令，在汇报里请使用者在对话里提出」，M5 加了批准卡片以后，后半句改成用 `ask_to_run`。不在清单里的工具，Pi 在扩展的 `tool_call` 钩子之前就只回一句 `Tool X not found`，所以受限任务的助手提示词里也写着这句原因，列出它没有的工具。
 
 **读文件用允许清单，不用黑名单。** 受限的两档（`inference`、`module-feed`）里，`read`、`grep`、`find`、`ls` 的路径只能落在三个根下：任务自己的工作目录 `workers/<ticket>`，任务所属模块装好的那份包里的 `knowledge/` 和 `skills/`（老布局模块再加成员自己的技能目录）。宿主在任务开始时算出这些根并各取真实路径，交给 Worker。
 

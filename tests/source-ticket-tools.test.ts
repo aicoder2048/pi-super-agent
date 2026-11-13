@@ -89,6 +89,16 @@ test("模块 feed 开的任务的 Worker 启动参数：只给受限清单并关
 	assert.ok(args.includes("--no-mcp"));
 });
 
+test("模块 feed 开的任务的 Worker 提示写明为什么没有 bash 和 web_get：调不在清单里的工具，Pi 只回 Tool X not found", () => {
+	const args = workerArgs({ sessionDir: "/s", sessionId: "sid", extension: "/ext.ts", prompt: "p", profile: "module-feed" });
+	const prompts = args.filter((_, i) => args[i - 1] === "--append-system-prompt");
+	const line = prompts.find((p) => p.startsWith("来源开的任务不能用"));
+	assert.ok(line, prompts.join("\n"));
+	assert.match(line, /bash/);
+	assert.match(line, /web_get/);
+	assert.match(line, /在汇报里请使用者在对话里提出/);
+});
+
 let loads = 0;
 const home = process.env.HOME;
 test.afterEach(() => {

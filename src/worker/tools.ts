@@ -42,6 +42,12 @@ export const isRooted = (profile: Profile) => PROFILES[profile].helper !== undef
 /** Why the helper of a rooted profile may not use `tool`. */
 export const helperRefusal = (profile: Profile, tool: string) => PROFILES[profile].helper!.refusal(tool);
 
+/** For a rooted helper's prompt: Pi answers a call to a tool off the list with only "Tool X not found", so the reason goes up front. */
+export function helperLimits(profile: Profile): string | undefined {
+	const helper = PROFILES[profile].helper;
+	return helper?.refusal(WORKER_TOOLS.filter((t) => t !== "dispatch_agent" && !helper.tools.includes(t)).join("、"));
+}
+
 export function toolAllowlist(profile: Profile, canDispatch = false): readonly string[] | undefined {
 	const tools = PROFILES[profile].helper?.tools;
 	return tools && canDispatch ? [...tools, "dispatch_agent"] : tools;

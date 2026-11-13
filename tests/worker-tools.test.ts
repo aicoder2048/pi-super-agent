@@ -53,7 +53,7 @@ test("本队有成员的助手：提示词末尾多一段本队名册（名字�
 	const crew = [{ name: "market-analyst", title: "行情分析师", description: "看盘面和大盘" }, { name: "news-researcher", title: "新闻研究员", description: "查新闻、核对来源" }];
 	const args = workerArgs({ ...base, profile: "inference", crew });
 	const roster = args.at(-1)!;
-	assert.deepEqual(args.slice(-4, -1), ["--append-system-prompt", "p", "--append-system-prompt"]);
+	assert.equal(args.at(-2), "--append-system-prompt");
 	assert.match(roster, /market-analyst · 行情分析师：看盘面和大盘\n- news-researcher · 新闻研究员：查新闻、核对来源$/);
 	assert.match(roster, /简单的事自己做/);
 	assert.match(roster, /专门判断/);
