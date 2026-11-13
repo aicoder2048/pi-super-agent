@@ -32,6 +32,10 @@ export type Watch = { id: string; key: string; condition: Condition; note?: stri
 /** `externalId` is the condition's id and the row's time, so a row never alerts twice. */
 export type Alert = { externalId: string; text: string; at: string };
 
+export type Side = "up" | "down";
+export type DayMoveFold = { key: string; side: Side; clause: string };
+export type FeedAlert = { id: string; text: string; at: string; fold?: { key: string; side: Side } };
+
 export type Query = { where?: Readonly<Record<string, string | number>>; since?: string; until?: string; limit?: number };
 
 /**
@@ -171,6 +175,11 @@ export interface Collected {
 	records?: readonly ({ id: string } & { readonly [field: string]: Json })[];
 	/** Values for the placeholders of the feed's `notice`. One trigger per entry, deduped by `id`. */
 	notices?: readonly { id: string; thread?: string; fields: Readonly<Record<string, string>> }[];
+	/**
+	 * Lines the host posts to the user before any trigger, with no Router in between (ADR-0017), deduped by `id`. A `day-move`
+	 * condition on `fold.key` that fires the same beat in the same direction joins this line, so one move reads as one line.
+	 */
+	alerts?: readonly FeedAlert[];
 	/** The feed's next cursor. The host saves it only after the records and notices are stored. */
 	cursor?: string;
 	/**

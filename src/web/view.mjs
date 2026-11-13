@@ -361,6 +361,12 @@ const COMPONENT_NAMES = [["knowledge", "知识"], ["data", "数据"], ["tools", 
  * @typedef {{ name: string, heading: string, on: boolean, button: string, state: string, note: string, tone: "ok" | "busy" | "bad" | "off", version: string, lines: string[], problems: string[], importsHeading: string, imports: { name: string, command: string }[] }} ModuleView
  */
 
+/** @param {import("../client/protocol.ts").FeedBeat} beat */
+function beatTime({ at, zone }) {
+	const hhmm = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", ...(zone && { timeZone: zone }) }).format(at);
+	return zone === "America/New_York" ? `${hhmm} 美东` : hhmm;
+}
+
 /** @param {ModuleCard} m @returns {ModuleView} */
 function moduleCard(m) {
 	const parts = COMPONENT_NAMES.flatMap(([kind, label]) => (m.components[kind] ? [`${label} ${m.components[kind]}`] : []));
@@ -373,7 +379,13 @@ function moduleCard(m) {
 		note: m.label === RUNNING ? (m.title ?? m.reason) : m.label,
 		tone: m.tone,
 		version: `版本 ${m.version.label}${m.version.digest ? ` · ${m.version.digest}` : ""}`,
-		lines: [parts.join(" · "), m.secrets.length ? `密钥 ${m.secrets.join("、")}` : "", m.pinnedOld ? `${m.pinnedOld} 个任务还在用旧版本` : ""].filter(Boolean),
+		lines: [
+			parts.join(" · "),
+			m.secrets.length ? `密钥 ${m.secrets.join("、")}` : "",
+			m.pinnedOld ? `${m.pinnedOld} 个任务还在用旧版本` : "",
+			m.components.feeds ? `今日提醒 ${m.alertsToday ?? 0} 条` : "",
+			...(m.beats ?? []).map((b) => `${b.title} ${beatTime(b)} ${b.ok ? `取到 ${b.records} 行` : `这一轮失败：${b.note}`}`),
+		].filter(Boolean),
 		problems: m.problems,
 		importsHeading: `还没导入的知识 ${m.notImported.length} 份`,
 		imports: m.notImported.map((doc) => ({ name: doc, command: `just module import ${m.name} ${doc} <文件或目录>` })),

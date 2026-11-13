@@ -11,6 +11,7 @@ import { onJsonLines, writeJsonLine } from "../src/jsonl.ts";
 import { WORKER_TOOLS } from "../src/worker/tools.ts";
 import { piCliPath } from "../src/pi-runtime.mjs";
 import { until } from "./helpers/fakes.ts";
+import { parseWatch } from "../src/modules/conditions.ts";
 
 let loads = 0;
 
@@ -305,4 +306,13 @@ test("一次性进程用过 lookup 后能自己退出：扩展只在有请求等
 	if (code === "hung") child.kill("SIGKILL");
 	assert.match(out, /price/);
 	assert.equal(code, 0, "查完数据后进程应自己退出");
+});
+
+test("watch 工具的说明列出宿主认的每一种条件，包括当天相对昨收的 day-move", async (t) => {
+	const w = await load("request", { PSA_WATCH: "quotes（自选股报价）" });
+	t.after(w.close);
+	const refusal = parseWatch({ key: "x", condition: { when: "nope" } });
+	const kinds = String(refusal).replace(/^.*只能是 /, "").split("、");
+	assert.ok(kinds.includes("day-move"), String(refusal));
+	for (const kind of kinds) assert.match(w.tools.get("watch").description, new RegExp(kind), kind);
 });

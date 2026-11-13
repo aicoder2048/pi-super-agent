@@ -328,6 +328,7 @@ export class Modules {
 		}
 		const names = all.map((m) => m.name);
 		const unknown = Object.keys(switches.values).find((name) => !names.includes(name));
+		if (unknown === "us-market") throw new ConfigError(`${switches.file}：us-market 已经退役，删掉 modules.us-market`);
 		if (unknown) throw new ConfigError(`${switches.file}：modules.${unknown} 不是已发现的模块，已发现：${names.join("、") || "（没有）"}`);
 		const parsed = userRulesFile && existsSync(userRulesFile) ? parseRules(userRulesFile, USER_NAMESPACE, readFileSync(userRulesFile, "utf8")) : [];
 		const userRules = parsed.filter((r): r is ScopedRule => !!r.sources?.length);

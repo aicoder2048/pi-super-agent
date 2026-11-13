@@ -3,6 +3,7 @@ import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writ
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
+import type { ModuleCard } from "../src/client/protocol.ts";
 import { Host } from "../src/host/host.ts";
 import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
 import { release, oneLine } from "../src/modules/release.ts";
@@ -88,7 +89,7 @@ const letter = (id: string, extra: object = {}) => ({ id, from: "Ann <ann@exampl
 const answersEveryone: Brain = (cards) =>
 	cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "reply", args: { text: ANSWER, cause: ids(card, "trg") } }] : []));
 
-async function lettersHost(t: TestContext, edit?: (pkg: string) => void) {
+async function lettersHost(t: TestContext, edit?: (pkg: string) => void, cards: () => ModuleCard[] = () => []) {
 	const { root, pkg } = lettersCopy(t, false);
 	edit?.(pkg);
 	const modules = servedAsHost(Modules.load([join(root, "modules")]));
@@ -102,6 +103,7 @@ async function lettersHost(t: TestContext, edit?: (pkg: string) => void) {
 		sourcePolicy: modules.sourcePolicy,
 		domains: { book: () => modules.book, kitFor: () => undefined },
 		moduleFeeds: { feeds: () => modules.feeds(), fixtures: false, tickMs: 20 },
+		modules: { cards, setSwitch: () => false, onChange: () => {} },
 		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set([USER]), timing: { pollTimeoutSec: 1, minGapMs: 5 } },
 	});
 	t.after(async () => {
@@ -184,4 +186,14 @@ test("feed 的 problem：同一个 id 连报两拍只写一条「通知」，中
 	await deliver({ problem: "auth" });
 	assert.deepEqual(notices().map((l) => l.text).filter((text) => text === PROBLEM), [PROBLEM, PROBLEM]);
 	await until(() => phone().filter((m) => m.text === `通知：${PROBLEM}`).length === 2, "两条 problem 到了 Telegram");
+});
+
+test("模块卡：宿主给有 feed 的模块填上今日提醒条数和每个 feed 最近一轮的时间、行数", async (t) => {
+	const card: ModuleCard = { name: "private-line", on: true, label: "运行中", reason: "", tone: "ok", problems: [], version: { label: "0.1.0", digest: "" }, components: { feeds: 1 }, secrets: [], pinnedOld: 0, notImported: [] };
+	const { host, deliver } = await lettersHost(t, undefined, () => [card, { ...card, name: "quiet", components: {} }]);
+	await deliver(letter("m-1"));
+	const [lines, quiet] = host.snapshot().modules;
+	assert.equal(lines!.alertsToday, 0);
+	assert.deepEqual(lines!.beats?.map((b) => ({ ...b, at: typeof b.at })), [{ title: "来信", at: "number", ok: true, records: 1 }]);
+	assert.equal(quiet!.beats, undefined, "没有 feed 的模块不填");
 });

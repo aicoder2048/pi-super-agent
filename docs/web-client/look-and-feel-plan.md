@@ -209,7 +209,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **You see.**
 
-- [ ] 左栏顶部两个大数字。美股行情旁有一条小柱图，柱数和今日小时数一致。
+- [ ] 左栏顶部两个大数字。stock-ta 模块卡片的报价 feed（`stock-ta/quotes`）旁有一条小柱图，柱数和今日小时数一致。us-market 已在 R5 退役，「来源」里不再有「美股行情」这一行，小柱图跟着报价 feed 画在模块卡片上。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -267,7 +267,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Build.**
 
 - [ ] 新表 `ticket_market(ticket_id, symbol, ...)`，只存摘要。每个代码存最新一条报价（价格、前收盘、涨跌幅、报价时间、是否延迟），当天的分钟或小时 K 线降采样到 48 个点，再加最后一次 `session` 的交易时段。类型叫 `MarketDigest`，避开已有的 `Quote`（引用）。
-- [ ] `WorkerExecutor.handleRequest` 的 `worker.lookup` 在拿到结果后记一份，助手和成员查的都算，记完主动推一帧看板。
+- [ ] 记的是 stock-ta 的 `quote` 和 `intraday` 工具交回的结果：宿主在 gateway 收到 `stock-ta` 的 `tools/quote`、`tools/intraday` 应答后记一份，助手和成员查的都算，记完主动推一帧看板。us-market 在 R5 退役，`worker.lookup` 不再有行情可查，所以不挂在它上面。
 - [ ] 看板行加 `market`，行情任务的卡片加一行迷你报价：代码、价格、涨跌（颜色加 ▲▼）、有当日 K 线时画走势线。
 - [ ] 涨跌颜色默认红涨绿跌，跟设计稿一致。
 

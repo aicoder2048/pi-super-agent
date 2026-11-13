@@ -1,6 +1,6 @@
 /** Level conditions (above, below, change-pct against a basis) alert when a row crosses into them, not on every row inside, so a feed writing every minute does not repeat itself. */
 import type { CollectionDescriptor } from "./manifest.ts";
-import type { Condition, Json, Watch } from "./protocol.ts";
+import type { Condition, DayMoveFold, Json, Watch } from "./protocol.ts";
 
 export type SetCondition = Watch & { collection: string; setAt: string };
 
@@ -213,6 +213,13 @@ function zoneTime(at: string, zone: string | undefined): string {
 	if (zone === undefined || !/T.*(Z|[+-]\d\d:\d\d)$/.test(at) || Number.isNaN(ms)) return at;
 	const p = zoneParts(ms, zone);
 	return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute} ${zone === "America/New_York" ? "美东" : zone}`;
+}
+
+export function foldOf(condition: SetCondition, point: Point): DayMoveFold | undefined {
+	const c = condition.condition;
+	if (c.when !== "day-move") return undefined;
+	const note = condition.note ? `（备注：${condition.note}）` : "";
+	return { key: condition.key, side: point.value >= point.prevClose! ? "up" : "down", clause: `也到了你设的${directionWord[c.direction]} ${c.atLeast}% 提醒线${note}。` };
 }
 
 export function alertText(condition: SetCondition, point: Point, happened: string, watch: Pick<WatchSpec, "zone" | "label">): string {

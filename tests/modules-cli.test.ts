@@ -28,12 +28,17 @@ const list = (dir: string, env?: Record<string, string>) => cli("src/cli/modules
 const lineOf = (out: string, name: string) => out.split("\n").find((l) => l.startsWith(`${name} `)) ?? "";
 const SAMPLE = join(import.meta.dirname, "..", "docs", "modules", "architecture", "sample");
 const check = (dir: string) => cli("src/cli/module.ts", tmpdir(), ["check", dir]);
+const RETIRED_US_MARKET = join(import.meta.dirname, "fixtures", "retired", "us-market");
+const withRetired = (dir: string): string => {
+	cpSync(RETIRED_US_MARKET, join(dir, "modules", "us-market"), { recursive: true });
+	return dir;
+};
 
 test("just modules：不连宿主列出仓库模块，toy-market 默认关闭，us-market 没有密钥时看盘停用", (t) => {
-	const run = list(stateDir(t));
+	const run = list(withRetired(stateDir(t)));
 	assert.equal(run.status, 0, run.stderr);
 	assert.match(lineOf(run.stdout, "toy-market"), /停用（模块默认关闭）\s+modules\/toy-market$/);
-	assert.match(lineOf(run.stdout, "us-market"), /启用（默认）\s+modules\/us-market$/);
+	assert.match(lineOf(run.stdout, "us-market"), /启用（默认）\s+\S+\/modules\/us-market$/);
 	assert.match(run.stdout, /来源\s+us-market\s+massive-stocks：未配置行情密钥，看盘停用/);
 	assert.match(run.stdout, /来源\s+toy-market\s+投递/);
 	assert.match(run.stdout, /规则\s+toy-market\/big-move/);
@@ -41,7 +46,7 @@ test("just modules：不连宿主列出仓库模块，toy-market 默认关闭，
 });
 
 test("just modules：列出模块在 module.json 里开的工具，没开的写无", (t) => {
-	const run = list(stateDir(t));
+	const run = list(withRetired(stateDir(t)));
 	assert.equal(run.status, 0, run.stderr);
 	const block = (name: string) => run.stdout.split(/\n(?=\S)/).find((b) => b.startsWith(`${name} `)) ?? "";
 	assert.match(block("us-market"), /\n  工具\s+lookup、tripwire\n/);
@@ -49,7 +54,7 @@ test("just modules：列出模块在 module.json 里开的工具，没开的写�
 });
 
 test("just modules：按 config.json 的开关显示启用原因，停用模块的来源写模块停用", (t) => {
-	const run = list(stateDir(t, { modules: { "toy-market": true, "us-market": false } }));
+	const run = list(withRetired(stateDir(t, { modules: { "toy-market": true, "us-market": false } })));
 	assert.equal(run.status, 0, run.stderr);
 	assert.match(lineOf(run.stdout, "toy-market"), /启用（config\.json 打开）/);
 	assert.match(lineOf(run.stdout, "us-market"), /停用（config\.json 关闭）/);
@@ -57,7 +62,7 @@ test("just modules：按 config.json 的开关显示启用原因，停用模块�
 });
 
 test("just modules：列出状态目录里的模块，名字、状态和目录三列对齐", (t) => {
-	const dir = stateDir(t);
+	const dir = withRetired(stateDir(t));
 	mkdirSync(join(dir, "modules", "mail", "skills", "triage"), { recursive: true });
 	writeFileSync(join(dir, "modules", "mail", "module.json"), JSON.stringify({ name: "mail", sources: [{ name: "mail" }] }));
 	writeFileSync(join(dir, "modules", "mail", "rules.md"), "## urgent\n加急邮件开任务\n\n## digest\n每天汇总\n");
@@ -72,7 +77,7 @@ test("just modules：列出状态目录里的模块，名字、状态和目录�
 });
 
 test("just modules：有密钥时只写密钥来源，不打印密钥", (t) => {
-	const run = list(stateDir(t), { MASSIVE_API_KEY: "sk-list-secret" });
+	const run = list(withRetired(stateDir(t)), { MASSIVE_API_KEY: "sk-list-secret" });
 	assert.equal(run.status, 0, run.stderr);
 	assert.match(run.stdout, /massive-stocks：密钥来自 环境变量 MASSIVE_API_KEY/);
 	assert.doesNotMatch(run.stdout + run.stderr, /sk-list-secret/);
@@ -190,8 +195,7 @@ test("just module check：目录不存在时一行原因，以 1 退出", () => 
 });
 
 test("just modules：状态目录里的新布局包列成新布局，没打开的写已停用，无效的写原因；旧模块照列", (t) => {
-	const dir = stateDir(t);
-	mkdirSync(join(dir, "modules"));
+	const dir = withRetired(stateDir(t));
 	cpSync(join(SAMPLE, "personal-tax"), join(dir, "modules", "personal-tax"), { recursive: true });
 	mkdirSync(join(dir, "modules", "bad"));
 	writeFileSync(join(dir, "modules", "bad", "module.json"), JSON.stringify({ schema: 1, name: "bad", version: "0.1.0", descripton: "拼错" }));
@@ -211,7 +215,7 @@ test("just module check 的 --previous 指向不存在的目录：打印一行�
 });
 
 test("just modules：新布局包按生命周期显示，没跑过工具用例的包不说有效；宿主把它打开以后显示运行中", async (t) => {
-	const dir = stateDir(t);
+	const dir = withRetired(stateDir(t));
 	cpSync("docs/modules/architecture/sample/personal-tax", join(dir, "modules/personal-tax"), { recursive: true });
 	const before = lineOf(list(dir).stdout, "personal-tax");
 	assert.match(before, /新布局\s+已停用\s/);
