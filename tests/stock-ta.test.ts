@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { type TestContext } from "node:test";
 import { lockOf, VENV_MARK, venvDir } from "../src/modules/files.ts";
+import { instanceData } from "../src/modules/instance-data.ts";
 import { runModuleCodeAsync, type CodeReply } from "../src/modules/run-code.ts";
 import { scanPackage, summary } from "../src/modules/validate.ts";
 import { codeSite } from "./helpers/code-site.ts";
@@ -12,23 +13,39 @@ import { codeSite } from "./helpers/code-site.ts";
 const PKG = join(import.meta.dirname, "../docs/modules/examples/stock-ta");
 const LOCK = lockOf(PKG)!;
 const HOUR = 3_600_000;
-const SYNCED = Date.UTC(2026, 10, 10, 8, 28, 40);
+const DAY = 24 * HOUR;
+/** A Thursday close, and the hourly scan tick that lands 1 h later. */
+const CLOSE = Date.UTC(2026, 10, 12, 21, 0);
+const SYNCED = CLOSE + HOUR + 400;
 
 type Reply = { status?: number; stdout?: unknown; stderr?: string };
 type Call = { argv: string[]; stdin: Record<string, unknown>; db: string | undefined; network: string | undefined; key: string | undefined; root: string | undefined; notes: string[] | null };
 type Venv = "ready" | "none" | "other" | "half";
-type Setup = { synced?: Record<string, number> | null; venv?: Venv; notes?: Record<string, string[]> };
+/** `closes`: the end of each symbol's newest daily bar, by default CLOSE for every symbol in `synced`. */
+type Setup = { synced?: Record<string, number> | null; closes?: Record<string, number>; watchlist?: { symbol: string; removedAt?: string }[]; venv?: Venv; notes?: Record<string, string[]> };
 
-function fakeModule(t: TestContext, replies: Record<string, Reply>, { synced = { NVDA: SYNCED, QQQ: SYNCED, SPY: SYNCED }, venv = "ready", notes = {} }: Setup = {}) {
-	const data = mkdtempSync(join(tmpdir(), "psa-stock-ta-"));
-	t.after(() => rmSync(data, { recursive: true, force: true }));
+function fakeModule(t: TestContext, replies: Record<string, Reply>, { synced = { NVDA: SYNCED, QQQ: SYNCED, SPY: SYNCED }, closes, watchlist = [], venv = "ready", notes = {} }: Setup = {}) {
+	const state = mkdtempSync(join(tmpdir(), "psa-stock-ta-"));
+	t.after(() => rmSync(state, { recursive: true, force: true }));
+	const data = join(state, "modules-data", "stock-ta");
+	mkdirSync(data, { recursive: true });
 	const live = join(data, "files/ta/ta.sqlite");
 	if (synced !== null) {
 		mkdirSync(join(data, "files/ta"), { recursive: true });
 		const db = new DatabaseSync(live);
 		db.exec("CREATE TABLE dividend_sync (symbol TEXT PRIMARY KEY, start_date TEXT NOT NULL, synced_ms INTEGER NOT NULL)");
+		db.exec("CREATE TABLE bars (symbol TEXT NOT NULL, timeframe TEXT NOT NULL, start_ms INTEGER NOT NULL, end_ms INTEGER NOT NULL, complete INTEGER NOT NULL)");
 		for (const [symbol, ms] of Object.entries(synced)) db.prepare("INSERT INTO dividend_sync VALUES (?, '2024-11-05', ?)").run(symbol, ms);
+		for (const [symbol, end] of Object.entries(closes ?? Object.fromEntries(Object.keys(synced).map((s) => [s, CLOSE])))) {
+			db.prepare("INSERT INTO bars VALUES (?, '1d', ?, ?, 1)").run(symbol, end - 6.5 * HOUR, end);
+			db.prepare("INSERT INTO bars VALUES (?, '1d', ?, ?, 1)").run(symbol, end - DAY - 6.5 * HOUR, end - DAY);
+		}
 		db.close();
+	}
+	if (watchlist.length > 0) {
+		const scanned = scanPackage(PKG);
+		assert.ok(scanned.ok);
+		instanceData(state).write("stock-ta", scanned.scan.components, "watchlist", watchlist, "使用者口述", "test");
 	}
 	for (const [doc, files] of Object.entries(notes)) {
 		mkdirSync(join(data, "knowledge", doc), { recursive: true });
@@ -206,6 +223,45 @@ test("模块数据库里没有或太旧的标的：不调用 ta，说明不联�
 test("ta 报业务错误：把 message 和 hint 转成一行说明", async (t) => {
 	const ta = fakeModule(t, { note: { status: 1, stderr: JSON.stringify({ error: { code: "NOTE_SECTION_NOT_FOUND", message: "笔记中没有这个标题。", hint: "可用标题为 一；二" } }) } }, { notes: { "ta02-macd": ["TA02 - MACD.md"] } });
 	assert.match(noteOf(await ta.call("note", { source: "TA02#三" })), /笔记中没有这个标题。可用标题为 一；二/);
+});
+
+test("第二天的扫描离上次差 250 毫秒不到 24 小时、ta 没刷新分红：structure 的 now 落在今天收盘之后，分红缓存仍有效", async (t) => {
+	const yesterdayScan = SYNCED - DAY + 250;
+	const ta = fakeModule(t, { structure: { stdout: { levels: [] } } }, { synced: { NVDA: yesterdayScan, QQQ: yesterdayScan, SPY: yesterdayScan } });
+	output(await ta.call("structure", { symbol: "NVDA" }));
+	const now = Date.parse(String(ta.calls()[0]?.stdin["now"]));
+	assert.ok(now - 15 * 60_000 >= CLOSE, `ta's 15-minute delay cutoff ${new Date(now - 15 * 60_000).toISOString()} must reach today's close`);
+	assert.ok(now - yesterdayScan >= 0 && now - yesterdayScan < DAY, `now ${new Date(now).toISOString()} keeps the dividend cache synced at ${new Date(yesterdayScan).toISOString()}`);
+});
+
+test("今天的扫描刷新了分红：now 不早于这次同步，否则 ta 会当缓存无效去联网", async (t) => {
+	const ta = fakeModule(t, { structure: { stdout: { levels: [] } } });
+	output(await ta.call("structure", { symbol: "NVDA" }));
+	assert.equal(ta.calls()[0]?.stdin["now"], new Date(SYNCED + 60_000).toISOString());
+});
+
+test("标的在自选股里但还没扫到：说等下一次收盘后的扫描，不叫人再加自选股", async (t) => {
+	const ta = fakeModule(t, {}, { watchlist: [{ symbol: "AMD" }, { symbol: "TSLA" }, { symbol: "TSLA", removedAt: "2026-11-12" }] });
+	const listed = noteOf(await ta.call("structure", { symbol: "amd" }));
+	assert.match(listed, /AMD 在自选股里.*等下一次扫描.*收盘后/);
+	assert.doesNotMatch(listed, /加进自选股/);
+	assert.match(noteOf(await ta.call("structure", { symbol: "TSLA" })), /把它加进自选股/);
+	assert.deepEqual(ta.calls(), []);
+});
+
+test("基准 QQQ 的分红同步落后一天多：说基准数据落后、等下一次扫描，不叫人加自选股", async (t) => {
+	const ta = fakeModule(t, {}, { synced: { NVDA: SYNCED, QQQ: SYNCED - 25 * HOUR, SPY: SYNCED }, watchlist: [{ symbol: "NVDA" }] });
+	const note = noteOf(await ta.call("structure", { symbol: "NVDA" }));
+	assert.match(note, /QQQ.*落后.*等下一次扫描/);
+	assert.doesNotMatch(note, /加进自选股/);
+	assert.deepEqual(ta.calls(), []);
+});
+
+test("同一份笔记导进了两份知识文档：note 照样能查，只链一次", async (t) => {
+	const file = "TA02 - MACD 实战精华总结.md";
+	const ta = fakeModule(t, { note: { stdout: { source: "TA09", text: "# 支撑" } } }, { notes: { "ta02-macd": [file], "ta15-ma-trend": [file], "ta09-support-resistance": ["TA09 - 支撑阻力.md"] } });
+	output(await ta.call("note", { source: "TA09" }));
+	assert.deepEqual(ta.calls()[0]?.notes, [file, "TA09 - 支撑阻力.md"]);
 });
 
 test("QQQ 的缓存比标的旧一天差 30 秒：加 60 秒的 now 会让 ta 联网补数据，所以不调用 ta", async (t) => {

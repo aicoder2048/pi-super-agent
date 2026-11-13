@@ -7,6 +7,7 @@ import { constants, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { listedSymbols, type WatchRow } from "./watchlist.ts";
 
 export type Command = "structure" | "signals" | "note" | "prices" | "conditions" | "rules";
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -15,7 +16,9 @@ export type JsonObject = { [key: string]: Json };
 const LIMIT_BYTES = 20_000;
 const UNDER_HOST_LIMIT_MS = 18_000;
 const DAY_MS = 86_400_000;
-const NOW_AFTER_SYNC_MS = 60_000;
+/** `ta` only serves bars that closed at least 15 minutes before `now`. */
+const TA_DELAY_MS = 15 * 60_000;
+const NOW_MARGIN_MS = 60_000;
 const GUIDE = "见 docs/modules/stock-ta.md";
 const WITHOUT_DATA: ReadonlySet<Command> = new Set(["rules", "note"]);
 const TIERS = [
@@ -64,7 +67,7 @@ export function ta(command: Command, args: JsonObject): JsonObject {
 		if (!WITHOUT_DATA.has(command)) copyFileSync(live, db, constants.COPYFILE_FICLONE);
 		const env: Record<string, string> = { PATH: process.env["PATH"] ?? "", HOME: process.env["HOME"] ?? "", MASSIVE_BASE_URL: "http://127.0.0.1:9", MASSIVE_API_KEY: "offline", TA_DB_PATH: db };
 		if (command === "note") env["TA_NOTES_DIR"] = importedNotes(data, String(args["source"] ?? ""), join(scratch, "notes"));
-		const input = command === "structure" ? structureInput(args, db) : args;
+		const input = command === "structure" ? structureInput(args, db, data) : args;
 		const run = spawnSync(bin, [command], {
 			input: JSON.stringify(input), env, cwd: scratch, encoding: "utf8", timeout: UNDER_HOST_LIMIT_MS, maxBuffer: 64 * 1024 * 1024,
 		});
@@ -96,7 +99,7 @@ function importedNotes(data: string, source: string, into: string): string {
 	const linked: string[] = [];
 	for (const { name } of imported) {
 		for (const file of readdirSync(join(knowledge, name))) {
-			if (!/^TA\d{2} - .*\.md$/.test(file)) continue;
+			if (!/^TA\d{2} - .*\.md$/.test(file) || linked.includes(file)) continue;
 			symlinkSync(join(knowledge, name, file), join(into, file));
 			linked.push(file);
 		}
@@ -113,25 +116,47 @@ function importedNotes(data: string, source: string, into: string): string {
 }
 
 /**
- * `ta structure` refetches a symbol's dividends unless `now` falls 0 to 1 day after its last
- * sync, and its momentum part reads QQQ and SPY the same way. A `now` just after the newest of
- * those syncs keeps every read on the cache only while the oldest sync is under a day before that now.
+ * `ta structure` refetches a symbol's dividends unless `now` falls 0 to 1 day after its last sync, and
+ * reads QQQ and SPY the same way. The scan refreshes a sync only once it is a full day old, so on the next
+ * day's scan, which lands about 24 h later, the sync often stays at yesterday. So `now` is the newest sync
+ * or the symbol's newest daily close plus ta's delay, whichever is later.
  */
-function structureInput(args: JsonObject, db: string): JsonObject {
+function structureInput(args: JsonObject, db: string, data: string): JsonObject {
 	const symbol = String(args["symbol"] ?? "").toUpperCase().replace("-", ".");
 	const opened = new DatabaseSync(db, { readOnly: true });
-	let synced: { symbol: string; synced_ms: number }[];
+	let synced: Map<string, number>;
+	let close: number | null;
 	try {
-		synced = opened.prepare("SELECT symbol, synced_ms FROM dividend_sync WHERE symbol IN (?, 'QQQ', 'SPY')").all(symbol) as typeof synced;
+		const rows = opened.prepare("SELECT symbol, synced_ms FROM dividend_sync WHERE symbol IN (?, 'QQQ', 'SPY')").all(symbol) as { symbol: string; synced_ms: number }[];
+		synced = new Map(rows.map((row) => [row.symbol, row.synced_ms]));
+		close = (opened.prepare("SELECT max(end_ms) AS close FROM bars WHERE symbol = ? AND timeframe = '1d' AND complete = 1").get(symbol) as { close: number | null }).close;
 	} finally {
 		opened.close();
 	}
-	const times = synced.map((row) => row.synced_ms);
-	const newest = Math.max(...times);
-	if (!synced.some((row) => row.symbol === symbol) || newest + NOW_AFTER_SYNC_MS - Math.min(...times) >= DAY_MS) {
-		throw new Error(`模块的数据库里没有 ${symbol || "这个标的"} 足够新的日线，这个工具不联网；把它加进自选股，等下一次 scan 扫完再问`);
+	if (!synced.has(symbol) || close === null) throw notScanned(symbol, data);
+	const now = Math.max(...synced.values(), close + TA_DELAY_MS) + NOW_MARGIN_MS;
+	const behind = [...synced].filter(([, ms]) => now - ms >= DAY_MS).map(([name]) => name);
+	if (behind.includes(symbol)) throw notScanned(symbol, data);
+	if (behind.length > 0) throw new Error(`基准 ${behind.join("、")} 的数据落后一天以上（上次扫描没更新到它），这个工具不联网；等下一次扫描（每个交易日收盘后）再问`);
+	return { timeframe: "1d", ...args, symbol, now: new Date(now).toISOString() };
+}
+
+function notScanned(symbol: string, data: string): Error {
+	if (watched(data).includes(symbol)) return new Error(`${symbol} 在自选股里，但模块的数据库还没扫到它最新的日线，这个工具不联网；等下一次扫描（每个交易日收盘后）再问`);
+	return new Error(`模块的数据库里没有 ${symbol || "这个标的"} 足够新的日线，这个工具不联网；把它加进自选股，等下一次 scan 扫完再问`);
+}
+
+function watched(data: string): string[] {
+	const file = join(data, "data.db");
+	if (!existsSync(file)) return [];
+	const opened = new DatabaseSync(file, { readOnly: true });
+	try {
+		if (opened.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'watchlist'").get() === undefined) return [];
+		const rows = opened.prepare(`SELECT "_id" AS id, "symbol", "removedAt" FROM "watchlist"`).all() as { id: number; symbol: unknown; removedAt: unknown }[];
+		return listedSymbols(rows.map((row): WatchRow => ({ id: String(row.id), fields: { symbol: row.symbol, removedAt: row.removedAt } })));
+	} finally {
+		opened.close();
 	}
-	return { timeframe: "1d", ...args, symbol, now: new Date(newest + NOW_AFTER_SYNC_MS).toISOString() };
 }
 
 function failure(command: Command, status: number | null, stderr: string): string {

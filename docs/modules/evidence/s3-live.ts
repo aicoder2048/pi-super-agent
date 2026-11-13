@@ -8,7 +8,9 @@
  * Lane 1, lane 3 and perf need TA_PROJECT (the technical-analysis checkout, only read: its app/trading is linked
  * and the prelude's database cloned beside it, so trunk's tools run on the same data) and a worktree of S3_TRUNK
  * (default origin/main) at <outDir>/trunk. Lane 4 imports TA02 from TA_PROJECT's docs. Lane 10 calls real
- * openai-codex models through the Pi login in ~/.pi/agent.
+ * openai-codex models through the Pi login in ~/.pi/agent. Lane 11 builds its own database with s3-two-scans.py on the
+ * installed venv and calls structure through a wrapper of the venv's `ta` that logs its input and sends any market
+ * request to a local counter.
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -286,9 +288,9 @@ async function lanes(): Promise<void> {
 		const rg = (pattern: string) => spawnSync("rg", ["-n", pattern, "docs/modules/examples/stock-ta"], { cwd: HEAD, encoding: "utf8" }).stdout.trim().split("\n").filter(Boolean);
 		const words = rg("screen|ta-screen|技术分析项目|TA_ROOT");
 		const intraday = rg("5m|OR30");
-		const allowed = (line: string) => /\/knowledge\/[^/]+\/source\.json:\d+:\s+"origin"/.test(line) || /\/knowledge\/glossary\/glossary\.md:/.test(line);
+		const allowed = (line: string) => /\/knowledge\/[^/]+\/source\.json:\d+:\s+"origin"/.test(line) || /\/knowledge\/glossary\/glossary\.md:/.test(line) || /\/feeds\/scan\/feed\.json:\d+:\s+"limit": "5m",$/.test(line);
 		const stray = [...words, ...intraday].filter((l) => !allowed(l));
-		return { pass: stray.length === 0, evidence: `rg 'screen|ta-screen|技术分析项目|TA_ROOT': ${words.length} lines\n${words.join("\n")}\n\nrg '5m|OR30': ${intraday.length} lines\n${intraday.join("\n")}\n\nlines outside knowledge/*/source.json "origin" and the bundled glossary text: ${stray.length}\n${stray.join("\n")}` };
+		return { pass: stray.length === 0, evidence: `rg 'screen|ta-screen|技术分析项目|TA_ROOT': ${words.length} lines\n${words.join("\n")}\n\nrg '5m|OR30': ${intraday.length} lines\n${intraday.join("\n")}\n\nlines outside knowledge/*/source.json "origin", the bundled glossary text and the scan feed's "limit": "5m": ${stray.length}\n${stray.join("\n")}` };
 	});
 
 	await lane(10, "real-ask", async () => {
@@ -317,6 +319,38 @@ async function lanes(): Promise<void> {
 			return { pass: Object.values(checks).every(Boolean), evidence: `models ${JSON.stringify(REAL)}\nasked: ${asked}\nchecks: ${JSON.stringify(checks)}\ndispatched to: ${experts.join("、")}\ngateway log:\n${gateway.join("\n")}\nreport (${found?.["status"]}):\n${text}` };
 		} finally {
 			await host.stop();
+		}
+	});
+
+	await lane(11, "day-two", async () => {
+		const day1 = Date.UTC(2026, 10, 11, 22, 0, 0, 400);
+		const day2 = day1 + 24 * 3_600_000 - 250;
+		const lock = lockOf(pkgOf(state));
+		const realTa = join(venvDir(dataDir(state), lock), "bin", "ta");
+		const data = mkdtempSync(join(tmpdir(), "psa-s3-day2-"));
+		const db = join(data, "files", "ta", "ta.sqlite");
+		mkdirSync(join(data, "files", "ta"), { recursive: true });
+		const built = spawnSync(join(venvDir(dataDir(state), lock), "bin", "python"), ["-I", join(HEAD, "docs/modules/evidence/s3-two-scans.py"), db, String(day1), String(day2)], { encoding: "utf8" });
+		const market: string[] = [];
+		const server = createServer((req, res) => (market.push(req.url ?? ""), res.writeHead(500).end()));
+		await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+		const log = join(data, "ta-input.log");
+		const wrapper = join(venvDir(data, lock), "bin", "ta");
+		mkdirSync(join(venvDir(data, lock), "bin"), { recursive: true });
+		writeFileSync(join(venvDir(data, lock), ".psa-lock"), lock);
+		writeFileSync(wrapper, `#!/bin/sh\ntee -a '${log}' | MASSIVE_BASE_URL=http://127.0.0.1:${(server.address() as { port: number }).port} '${realTa}' "$@"\n`, { mode: 0o755 });
+		try {
+			const reply = await tool("structure", { symbol: "NVDA" }, state, pkgOf(state), data);
+			const sent = existsSync(log) ? (JSON.parse(readFileSync(log, "utf8").trim()) as { now?: string }) : {};
+			const synced = Number(query(db, "SELECT max(synced_ms) AS s FROM dividend_sync")[0]?.["s"]);
+			const oldNow = new Date(synced + 60_000).toISOString();
+			const old = spawnSync(realTa, ["structure"], { input: JSON.stringify({ symbol: "NVDA", timeframe: "1d", now: oldNow }), env: { PATH: process.env["PATH"] ?? "", HOME: homedir(), TA_DB_PATH: db, MASSIVE_BASE_URL: "http://127.0.0.1:9", MASSIVE_API_KEY: "offline" }, encoding: "utf8" });
+			const oldEnd = (() => { try { return String(JSON.parse(old.stdout.trim().split("\n").at(-1) ?? "{}")["data_end"]); } catch { return `(no reply) ${old.stderr.slice(0, 200)}`; } })();
+			const dataEnd = reply.ok ? String(reply.output["data_end"]) : "-";
+			const ok = reply.ok && dataEnd.startsWith("2026-11-12T21:00") && market.length === 0 && synced < day2 - 23 * 3_600_000;
+			return { pass: ok, evidence: `${built.stdout.trim()}${built.stderr.trim() ? `\nstderr ${built.stderr.trim().slice(0, 300)}` : ""}\nstructure NVDA through the tool: ok ${reply.ok}, ta got now ${sent.now}, data_end ${dataEnd}, market requests ${market.length}\nthe old rule (newest dividend sync + 1 min = ${oldNow}) on the same database: data_end ${oldEnd}\nreply: ${show(outOf(reply), 300)}` };
+		} finally {
+			await new Promise((done) => server.close(done));
 		}
 	});
 
