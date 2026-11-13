@@ -89,6 +89,8 @@ export default function insulinSensitivity(input: { fastingGlucose: number; fast
 - 工具可以联网。它在 `tool.json` 里多写一个 `"effect"`。`"read"` 表示只向外查询，`"write"` 表示会改变外面的东西。不写就是只做计算，这时 `cases.json` 必须有，每次检查都跑。
 - 要用密钥就写名字，例如 `"secrets": ["MASSIVE_API_KEY"]`。值在宿主的密钥文件里，宿主把它作为环境变量交给这个工具的进程。实测，进程拿得到写了名字的密钥，拿不到宿主别的密钥。
 - **模块的代码在子进程里运行，每次调用一个新进程（S1）。** 宿主把输入写成一行 JSON 交给它，读回一行 JSON。这样做是为了热插拔和不拖累宿主，不是为了安全。一次调用崩了只是这一次失败，换了新版本不用重启宿主，停用以后没有东西留着。进程是普通的 Node 进程，没有沙箱。实测，每次调用大约 43 毫秒，包括启动 Node 和加载一个 `.ts` 文件。和备忘相比这里答得轻，S1 只取了「不进宿主进程」，没有做隔离。
+- **模块的代码有一个自己能写的地方，`files/`。** 每个工具和 feed 的进程都拿到环境变量 `PSA_MODULE_DATA`，值是这个模块的实例数据目录 `<stateDir>/modules-data/<模块>/`。代码只往其中的 `files/` 写，宿主在调用前建好它。同一个目录里的 `data.db` 和 `knowledge/` 归宿主管，代码只读。`just module purge` 删整个目录，`files/` 跟着删。检查时跑的用例和 fixtures 拿到的是一个临时目录，跑完删掉，看不到真实数据。`just module try` 的临时状态目录里是真实 `files/` 的副本，预演只写副本。
+- **包里可以带一个 Python 子项目 `py/`。** 里面是 `pyproject.toml` 和 `uv.lock`，两个都要有，检查时缺一个就拒绝。`just module setup <名字>` 用 `uv sync --frozen` 把它装进 `files/venv-<uv.lock 的 sha256 前 12 位>`，环境不进包目录，包不被改动。有 `py/uv.lock` 的包，进程多拿到一个 `PSA_MODULE_VENV`，指向和**这份包副本**的锁文件对得上的环境，所以换了依赖版本以后，钉在旧版本上的任务照样用旧环境。setup 留当前和上一个环境，更老的删掉。装完才写 `.psa-lock`，没有它的环境算没装完，下次重装。`__pycache__` 不算进版本，Python 跑一次不会让宿主以为包变了。入口还是 Node 的 `index.ts`，由它去调环境里的可执行文件（`$PSA_MODULE_VENV/bin/...`），运行时不需要 `uv`。
 - 现在只有 Node 一种运行方式。哪个领域需要 Python 的库时，下一步是加第二种。接入点是 `tool.json` 的一个字段 `"runtime": "python"`，入口换成 `index.py`，宿主用 `uv run` 启动，进程两头的 JSON 约定不变。这一版没有做。
 
 **技能（K4）。** 和今天一样，一个文件夹一个 `SKILL.md`。问诊、复诊、多学科会诊、报告复核、指标跟踪都是技能。Pi 从任务钉住的副本里读它们。
@@ -146,6 +148,7 @@ uses: knowledge, data/lab-results
 - 给已有的连接器再加一个 feed，不写代码。多放一个 `feeds/<名字>/feed.json` 就行。医疗样例四个 feed 里有三个是纯声明。
 - **接一种宿主没有连接器的服务，模块自己带代码。** `feed.json` 写 `"handler": "index.ts"`，这段代码直接联网，私密数据也可以。报税样例的 `brokerage-statements` 就是这样去一个虚构的券商接口取交易记录，用到的密钥只写名字。实测，用样例应答代替网络运行这段代码，得到两行记录、一条触发和新的进度。
 - feed 的代码是一个「输入到输出」的函数。宿主的调度器到点调用它，把连接器给的内容、你填的设置、上次的进度交给它，拿回要存的行、要发的触发和新的进度。存、发、记进度都由宿主做。同一批内容跑两次，行和触发按 `id` 去重。
+- 一次调用默认最多 20 秒。要更久的 feed 在 `feed.json` 写 `"limit"`，例如 `"5m"`，最多 `"10m"`，调度器照这个时限停掉这一次调用。
 - feed 可以写 `ignore`，一组正则表达式。触发的正文匹配上任何一条就丢掉。这是今天 `sources[].ignore` 的原样搬迁。
 - feed 跟着模块走。模块运行，它的 feed 就排上。模块停用或被拿掉，它的 feed 立刻停（H3）。
 - feed 拿不到任何权威。它送来的内容一律是数据，读过它的任务改不了提醒条件。
@@ -329,7 +332,7 @@ module.json: unknown key "descripton" (known keys: schema, name, version, title,
 
 | 编号 | 问题 | 现在怎么守着 |
 |---|---|---|
-| A1-F5 | 校验器把宿主的全部环境变量传给工具 | 进程只拿到 `PATH`、`HOME` 和写了名字的密钥。测试 `module code gets the secrets its descriptor names…` |
+| A1-F5 | 校验器把宿主的全部环境变量传给工具 | 进程只拿到 `PATH`、`HOME`、写了名字的密钥，和自己模块的 `PSA_MODULE_DATA`、`PSA_MODULE_VENV`。测试 `module code gets the secrets its descriptor names…` |
 | A1-F9（一半） | 专家的 `tools` 和 `uses` 不校验 | 拼错的工具名和不存在的能力被指出来。坏包 `agent-unknown-tool`、`agent-unknown-capability`。「改了要出卡片」那一半搁置 |
 | A1-F12（两项） | 改单位不算结构变化。`watch` 能指向不存在的字段 | 改单位被拒绝，`sample/update/0.2.0-changes-unit`。坏包 `watch-names-missing-field`。「地址加一个尾点算两个」那一项随网络声明一起搁置 |
 | A2-1 | 包不在时关掉的开关被丢掉 | 测试 `a disable while the package is away…` |
