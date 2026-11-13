@@ -10,6 +10,7 @@
  *        each, which is also the perf probe. Every run starts from one seed data dir (`just module setup stock-ta`
  *        and one scan of NVDA and AMD, about 12 Massive requests), so trunk's experts have data as on the old Mac.
  * news   Lane 9 alone.
+ * web    Lane 9's check 4 alone, on a state dir a news run left behind: node … r2a-live.ts web <stateDir>
  * page   Lane 7 alone: a real host on head answers the price question and the page is screenshotted.
  * media  The review screenshots and video: a real host on head answers a price question and a mixed one.
  */
@@ -411,6 +412,24 @@ async function real(): Promise<void> {
 const PERCENT = /\d+(\.\d+)?%/;
 const CAUSE = /因为|由于|导致|源于|影响|拖累|打压|利空|利好/;
 
+/** Every way a stock-ta ticket reached the web: `read_web_at` (any `web_get`, lead or member) and the lead's bash calls that name a URL or a fetcher. */
+function webReads(state: string): string[] {
+	const tickets = query(join(state, "state.db"), "SELECT id, worker_session_id, read_web_at FROM tickets WHERE domain = 'stock-ta'");
+	const dir = join(state, "sessions/workers");
+	const files = existsSync(dir) ? readdirSync(dir) : [];
+	return tickets.flatMap((t) => {
+		const reads = t["read_web_at"] === null ? [] : [`${t["id"]} read a web page (read_web_at ${t["read_web_at"]})`];
+		const session = files.find((f) => f.endsWith(`_${t["worker_session_id"]}.jsonl`));
+		const lines = session ? readFileSync(join(dir, session), "utf8").trim().split("\n") : [];
+		const calls = lines.flatMap((l) => {
+			const content = JSON.parse(l).message?.content;
+			return Array.isArray(content) ? content.filter((p: { type: string; name: string }) => p.type === "toolCall" && p.name === "bash") : [];
+		});
+		const fetched = calls.map((c: { arguments: { command?: string } }) => String(c.arguments.command ?? "")).filter((cmd: string) => /https?:\/\/|\bcurl\b|\bwget\b/.test(cmd));
+		return [...reads, ...fetched.map((cmd: string) => `${t["id"]} lead ran: ${cmd.slice(0, 120)}`)];
+	});
+}
+
 const idle = (real: Real) => within(300_000, () => (query(join(real.state, "state.db"), "SELECT 1 FROM tickets WHERE worker_state IN ('queued', 'running')").length === 0 ? true : undefined), 1000);
 
 async function newsLane(): Promise<Verdict> {
@@ -435,12 +454,14 @@ async function newsLane(): Promise<Verdict> {
 			"1 news only is not stock-ta": newsTickets.length > 0 && newsTickets.every((t) => t["domain"] !== "stock-ta"),
 			"2 stock-ta reports the move, no cause, and the line to ask the cause separately": ta.length > 0 && ta.every((t) => PERCENT.test(t) && !CAUSE.test(t) && /单独问/.test(t)),
 			"3 a cause can only come from a domain-null ticket": mixedTickets.every((t) => t["domain"] === "stock-ta" || t["domain"] === null),
+			"4 no stock-ta ticket reached the web": webReads(host.state).length === 0,
+			"5 the mixed question dispatched no expert": mixedTickets.every((t) => t["dispatched_to"] === null || t["dispatched_to"] === "[]"),
 		};
 		const file = join(outDir, "r2a-news.png");
 		await screenshot(host, file, (page) => harness.showScreen(page, "chat").then(() => page.getByText(PERCENT).first().waitFor({ timeout: 20_000 })).catch(() => undefined));
 		return {
 			pass: Object.values(checks).every(Boolean),
-			evidence: `news only:\n${asked(news)}\n\nmixed:\n${asked(mixed)}\nevery Telegram line after the mixed question:\n${told}\n\nchecks:\n${Object.entries(checks).map(([k, v]) => `${v ? "ok  " : "FAIL"} ${k}`).join("\n")}\n\nstock-ta ready reports on the mixed question:\n${ta.join("\n---\n") || "(none)"}\n\ndomain-null ready reports on the mixed question (${general.length > 0 ? "the cause was answered by a general ticket" : "no general ticket answered"}):\n${general.join("\n---\n") || "(none)"}\n\nall tickets:\n${show(tickets)}\nscreenshot ${file}`,
+			evidence: `news only:\n${asked(news)}\n\nmixed:\n${asked(mixed)}\nevery Telegram line after the mixed question:\n${told}\n\nchecks:\n${Object.entries(checks).map(([k, v]) => `${v ? "ok  " : "FAIL"} ${k}`).join("\n")}\n\nstock-ta web reads:\n${webReads(host.state).join("\n") || "(none)"}\n\nstock-ta ready reports on the mixed question:\n${ta.join("\n---\n") || "(none)"}\n\ndomain-null ready reports on the mixed question (${general.length > 0 ? "the cause was answered by a general ticket" : "no general ticket answered"}):\n${general.join("\n---\n") || "(none)"}\n\nall tickets:\n${show(tickets)}\nscreenshot ${file}`,
 		};
 	} finally {
 		await host.close();
@@ -512,5 +533,10 @@ async function media(): Promise<void> {
 	}
 }
 
+if (mode === "web") {
+	const reads = webReads(outDir);
+	console.log(reads.length === 0 ? "ok   no stock-ta ticket reached the web" : `FAIL stock-ta reached the web\n${reads.join("\n")}`);
+	process.exit(reads.length === 0 ? 0 : 1);
+}
 await (mode === "real" ? real() : mode === "page" ? page() : mode === "news" ? news() : mode === "media" ? media() : tools());
 process.exit(0);

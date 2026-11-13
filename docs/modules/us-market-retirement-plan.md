@@ -123,7 +123,7 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 - [x] Lane 6. 查 11 个代码，再在没有 `POLYGON_API_KEY` 时查一次。Save `r2a-limits.txt`. Pass when 第一次拒绝并说明最多 10 个，第二次一行说明怎么加密钥，两次都不发请求。
 - [x] Lane 7. 网页上打开 lane 1 的任务。Save `r2a-no-dispatch.png`. Pass when 任务里只有领队，没有专家的回合。
 - [x] Lane 8. 真行情 `quote` 查 NVDA、SPY、QQQ、META、TSM。Save `r2a-real.txt`. Pass when 5 只都有价格、涨跌幅和标签，数据时间是最近的交易时段。
-- [ ] Lane 9. 真模型分别问「NVDA 最新新闻」和「NVDA 跌了多少，为什么跌」。Save `r2a-news.png`. Pass when 只问新闻的问题没有开在 stock-ta 领域；混合问题里 stock-ta 的回答有涨跌幅（带 %），自己不说原因；stock-ta 的汇报里有「单独问」那一句；原因如果答了，来自 domain 为空的任务。Telegram 上的转述不算在内（幕僚长会改写这一句，见上面的新闻问题那条）。
+- [ ] Lane 9. 真模型分别问「NVDA 最新新闻」和「NVDA 跌了多少，为什么跌」。Save `r2a-news.png`. Pass when 只问新闻的问题没有开在 stock-ta 领域；混合问题里 stock-ta 的回答有涨跌幅（带 %），自己不说原因；stock-ta 的汇报里有「单独问」那一句；原因如果答了，来自 domain 为空的任务；stock-ta 的任务没有读网页（`read_web_at` 为空，领队的 bash 里没有网址、curl、wget），混合问题没有派专家。Telegram 上的转述不算在内（幕僚长会改写这一句，见上面的新闻问题那条）。
 - [x] Lane 10. 真模型在对话里说「从自选股去掉 AMZN 和 AAPL」（Appendix E 第 11 条）。Save `r2a-watchlist-edit.txt`. Pass when 任务开在 stock-ta，`watchlist` 里这两行写上了 `removedAt`，下一轮报价 feed 的请求里没有它们。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
