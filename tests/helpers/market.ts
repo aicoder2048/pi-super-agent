@@ -41,7 +41,7 @@ export function dailyBarsBody(closes: Record<string, number>, url: string) {
 	return { status: "OK", results };
 }
 
-export type Answer = { status: number; body: unknown };
+export type Answer = { status: number; body: unknown; raw?: string };
 type Hit = { url: string; auth: string | undefined };
 
 export async function fakeMassive(t: TestContext) {
@@ -50,7 +50,7 @@ export async function fakeMassive(t: TestContext) {
 	const server = createServer((req, res) => {
 		hits.push({ url: req.url ?? "", auth: req.headers.authorization });
 		const answer = answers.length > 1 ? answers.shift()! : answers[0]!;
-		res.writeHead(answer.status, { "content-type": "application/json" }).end(JSON.stringify(answer.body));
+		res.writeHead(answer.status, { "content-type": "application/json" }).end(answer.raw ?? JSON.stringify(answer.body));
 	});
 	await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
 	t.after(() => new Promise((done) => server.close(done)));

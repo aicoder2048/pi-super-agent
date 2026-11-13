@@ -365,3 +365,20 @@ test("quote：行情服务出错时一行说出状态码", async (t) => {
 	assert.match(note, /HTTP 500/);
 	assert.equal(note.split("\n").length, 1);
 });
+
+test("quote：连不上行情服务时一行中文说明，不露出 fetch failed", async (t) => {
+	const pkg = stockTaCopy(t, "http://127.0.0.1:9");
+	const note = noteOf(await runModuleCodeAsync(codeSite(pkg, "tools/quote"), "index.ts", { symbols: "NVDA" }, { POLYGON_API_KEY: "sk-test" }));
+	assert.match(note, /连不上行情服务/);
+	assert.doesNotMatch(note, /fetch failed/);
+	assert.equal(note.split("\n").length, 1);
+});
+
+test("quote：行情服务回 200 但不是 JSON 时一行中文说明，不露出解析错误", async (t) => {
+	const tool = await quoteTool(t);
+	tool.massive.answer({ status: 200, body: null, raw: "<html>maintenance</html>" });
+	const note = noteOf(await tool.quote({ symbols: "NVDA" }));
+	assert.match(note, /不是 JSON/);
+	assert.doesNotMatch(note, /Unexpected token|SyntaxError/);
+	assert.equal(note.split("\n").length, 1);
+});

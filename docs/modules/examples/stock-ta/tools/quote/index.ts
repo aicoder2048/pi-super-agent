@@ -20,7 +20,7 @@ export default async function quote(input: unknown) {
 	// A tool.json has no settings, so the tool borrows the quotes feed's Massive address.
 	const { baseUrl } = JSON.parse(readFileSync(new URL("../../feeds/quotes/feed.json", import.meta.url), "utf8")).settings;
 	const quotes = await snapshot(baseUrl, key, symbols, AbortSignal.timeout(REQUEST_LIMIT_MS)).catch((error: Error) => {
-		throw error.name === "TimeoutError" ? new Error(`行情服务 ${REQUEST_LIMIT_MS / 1000} 秒没有应答，稍后再查`) : error;
+		throw new Error(oneLine(error));
 	});
 	const bySymbol = new Map(quotes.map((q) => [q.symbol, q]));
 	const today = sessionAt(now).nyDate;
@@ -33,4 +33,12 @@ export default async function quote(input: unknown) {
 		}),
 		missing: symbols.filter((s) => !bySymbol.has(s)),
 	};
+}
+
+/** fetch rejects in English (fetch failed for a refused connection or a redirect, a parse error for a non-JSON body). */
+function oneLine(error: Error): string {
+	if (error.name === "TimeoutError") return `行情服务 ${REQUEST_LIMIT_MS / 1000} 秒没有应答，稍后再查`;
+	if (error.name === "SyntaxError") return "行情服务的应答不是 JSON，稍后再查";
+	if (error.name === "TypeError") return "连不上行情服务，稍后再查";
+	return error.message;
 }
