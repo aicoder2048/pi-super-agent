@@ -75,6 +75,18 @@ const reject = (reason: string) => ({ ok: false as const, reason });
 /** What a card in `actions a` is about: its trigger, its ticket, or for a notice the card itself. A reply about that answers it. */
 const CARD_CAUSE = "COALESCE(json_extract(a.payload, '$.triggerId'), json_extract(a.payload, '$.ticketId'), a.id)";
 
+/**
+ * A module feed's source is `<module>/<feed>` and no host source has a slash; the shape decides, not the live
+ * module table, so switching a module off never loosens an open ticket.
+ */
+const isModuleFeed = (source: string) => source.includes("/");
+
+/** An inference ticket without a trigger counts as a feed's: the Router may have copied a feed's text into its brief. */
+function openerOf(basis: Basis, source: string | null): Opener {
+	if (basis === "request") return "user";
+	return source === null || isModuleFeed(source) ? "module-feed" : "host-source";
+}
+
 function writtenBy(d: Decision, ticketId: string | undefined): string[] {
 	switch (d.kind) {
 		case "open_ticket":
@@ -750,16 +762,16 @@ export class Kernel {
 		});
 	}
 
-	/**
-	 * A module feed's source is `<module>/<feed>` and no host source has a slash; the shape decides, not the live
-	 * module table, so switching a module off never loosens an open ticket. An inference ticket without a trigger
-	 * counts as a feed's: the Router may have copied a feed's text into its brief.
-	 */
 	openedBySource(ticketId: string): Opener {
 		const row = this.#get("SELECT t.basis, g.source FROM tickets t LEFT JOIN triggers g ON g.id = t.origin_trigger_id WHERE t.id = ?", ticketId);
 		if (!row) throw new Error(`unknown ticket ${ticketId}`);
-		if (row.basis === "request") return "user";
-		return row.source == null || String(row.source).includes("/") ? "module-feed" : "host-source";
+		return openerOf(row.basis, row.source);
+	}
+
+	/** A ticket's tools are fixed when its Worker starts, so a feed's text may only reach a ticket a feed opened (ADR-0018). */
+	#feedProblem(opener: Opener, source: string, what: string): string | undefined {
+		if (!isModuleFeed(source) || opener === "module-feed") return undefined;
+		return `${what} belongs to module feed ${source}, and only a ticket a module feed opened (no bash, no web_get) may take a feed's text; open a ticket for it instead`;
 	}
 
 	getTicket(ticketId: string): Ticket | undefined {
@@ -1267,13 +1279,13 @@ export class Kernel {
 			case "open_ticket":
 				return this.#openTicket(d, takenThisRoute);
 			case "hand_over": {
-				const trigger = this.#get("SELECT id, body FROM triggers WHERE id = ?", d.triggerId);
+				const trigger = this.#get("SELECT id, body, source FROM triggers WHERE id = ?", d.triggerId);
 				if (!trigger) return reject(`unknown trigger ${d.triggerId}`);
 				const unusable = this.#evidenceProblem(d.triggerId, takenThisRoute);
 				if (unusable) return reject(unusable);
 				const bound = this.#boundTicket(d.triggerId);
 				if (bound && bound !== d.ticketId) return reject(answerOnly(d.triggerId, bound));
-				const problem = this.#acceptsInput(d.ticketId);
+				const problem = this.#acceptsInput(d.ticketId) ?? this.#feedProblem(this.openedBySource(d.ticketId), trigger.source, `trigger ${d.triggerId}`);
 				if (problem) return reject(problem);
 				const kind: InputKind = this.#inConversation(d.triggerId) ? "user_message" : "trigger";
 				this.#addInput(d.ticketId, kind, trigger.body, d.triggerId);
@@ -1330,11 +1342,15 @@ export class Kernel {
 			}
 		}
 		const threads = [...new Set(d.threads ?? [])];
+		const opener = openerOf(d.basis, trigger?.source ?? null);
 		for (const threadId of threads) {
 			if (threadId === CONVERSATION_THREAD_ID) return reject("the conversation thread cannot be subscribed");
-			if (!this.#get("SELECT 1 FROM threads WHERE id = ?", threadId) && !SOURCE_THREAD.test(threadId)) {
+			const known = this.#get("SELECT source FROM threads WHERE id = ?", threadId);
+			if (!known && !SOURCE_THREAD.test(threadId)) {
 				return reject(`unknown thread ${threadId}; new threads must look like thr_<source>:<thread>`);
 			}
+			const feed = known && this.#feedProblem(opener, known.source, `thread ${threadId}`);
+			if (feed) return reject(feed);
 		}
 		const asked = typeof d.domain === "string" ? d.domain.trim() || undefined : (d.domain ?? undefined);
 		const ruled = d.basis === "rule" ? this.#domainOfRule(d.ruleId!) : null;
