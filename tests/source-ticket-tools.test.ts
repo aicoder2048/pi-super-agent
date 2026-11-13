@@ -407,7 +407,6 @@ test("旧状态库里使用者开的任务订了邮件线程：Worker 读不到�
 	assert.equal((s.kernel.workerRead(request, said) as { type: string }).type, "trigger");
 });
 
-/** A package like M2's `mail`: its `inbox` feed fills the private `messages` collection, and it has a team. */
 function privateFeedPackage(): string {
 	const dir = join(mkdtempSync(join(tmpdir(), "psa-pf-")), "mail");
 	const write = (path: string, body: string) => {

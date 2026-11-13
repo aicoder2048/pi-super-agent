@@ -21,7 +21,7 @@ export interface DomainEntry {
 	digest?: string;
 	/** The module's Chinese name, for the line Telegram gets instead of a report that touched private data. */
 	title?: string;
-	/** A feed of this module fills a `private` collection, e.g. `mail`'s inbox. A ticket in this domain reads that data, so a host source may not open one (ADR-0018). */
+	/** A feed fills a `private` collection, so a ticket a host source opened (bash or web_get) may not take this domain (ADR-0018). */
 	privateFeed?: true;
 }
 
