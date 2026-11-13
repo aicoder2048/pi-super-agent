@@ -9,6 +9,7 @@ import { instanceData } from "../src/modules/instance-data.ts";
 import { runModuleCodeAsync, type CodeReply } from "../src/modules/run-code.ts";
 import { scanPackage, summary } from "../src/modules/validate.ts";
 import { codeSite } from "./helpers/code-site.ts";
+import { fakeMassive, minuteRow, SNAPSHOT, snapshotBody, stockTaCopy, tickerRow } from "./helpers/market.ts";
 
 const PKG = join(import.meta.dirname, "../docs/modules/examples/stock-ta");
 const LOCK = lockOf(PKG)!;
@@ -92,10 +93,10 @@ const noteOf = (reply: CodeReply) => {
 	return !reply.ok ? reply.note : "";
 };
 
-test("stock-ta 包通过检查：七个工具、三个技能、五位专家，纯计算工具的用例都过", () => {
+test("stock-ta 包通过检查：八个工具、四个技能、五位专家，纯计算工具的用例都过", () => {
 	const result = scanPackage(PKG);
 	assert.ok(result.ok, JSON.stringify(!result.ok && result.problems));
-	assert.match(summary(result.scan), /^ok stock-ta@0\.1\.0 .*tools=7 skills=3 .*agents=5 evals=\d/);
+	assert.match(summary(result.scan), /^ok stock-ta@0\.1\.0 .*tools=8 skills=4 .*agents=5 evals=\d/);
 	assert.equal(result.scan.manifest.team, "技术分析研究组");
 });
 
@@ -286,4 +287,81 @@ test("signals 不把 ta 的已读状态交给模型：第一次补数后两年�
 	const ta = fakeModule(t, { signals: { stdout: { signals: [{ id: 1, rule_id: "R-MACD-1", data_end: "2024-12-02T21:00:00+00:00", read: false }] } } });
 	const out = output(await ta.call("signals", { symbol: "NVDA" }));
 	assert.deepEqual(out["signals"], [{ id: 1, rule_id: "R-MACD-1", data_end: "2024-12-02T21:00:00+00:00" }]);
+});
+
+const ny = (date: string, time: string) => Date.parse(`${date}T${time}:00-05:00`);
+
+async function quoteTool(t: TestContext, secrets: Record<string, string> = { POLYGON_API_KEY: "sk-test" }) {
+	const massive = await fakeMassive(t);
+	const pkg = stockTaCopy(t, massive.base);
+	return { massive, quote: (input: unknown) => runModuleCodeAsync(codeSite(pkg, "tools/quote"), "index.ts", input, secrets) };
+}
+
+const quotesOf = (reply: CodeReply) => output(reply)["quotes"] as Record<string, unknown>[];
+
+test("quote：一次快照请求，回价格、昨收、涨跌幅、当天量、美东数据时间和时段；有成交价用成交价（纳秒时间），没有就退到分钟收盘（毫秒时间）", async (t) => {
+	const tool = await quoteTool(t);
+	tool.massive.answer({ status: 200, body: snapshotBody([tickerRow("NVDA", 180.4, 176, ny("2026-11-12", "10:44")), minuteRow("AMD", 151.5, 150, ny("2026-11-12", "10:43"))]) });
+	const reply = await tool.quote({ symbols: "nvda, AMD", now: new Date(ny("2026-11-12", "11:00")).toISOString() });
+	assert.deepEqual(tool.massive.hits.map((h) => [h.url, h.auth]), [[`${SNAPSHOT}?tickers=NVDA,AMD`, "Bearer sk-test"]]);
+	assert.deepEqual(output(reply), {
+		quotes: [
+			{ symbol: "NVDA", price: 180.4, prevClose: 176, changePct: 2.5, volume: 5_000_000, at: "2026-11-12 10:44 美东", session: "盘中" },
+			{ symbol: "AMD", price: 151.5, prevClose: 150, changePct: 1, volume: 5_000_000, at: "2026-11-12 10:43 美东", session: "盘中" },
+		],
+		missing: [],
+	});
+});
+
+test("quote：自选股以外的股票和 ETF 照查，行情服务没有的代码列进 missing", async (t) => {
+	const tool = await quoteTool(t);
+	tool.massive.answer({ status: 200, body: snapshotBody([minuteRow("META", 600, 590, ny("2026-11-12", "10:44")), minuteRow("TSM", 300, 303, ny("2026-11-12", "10:44")), minuteRow("XLK", 290, 290, ny("2026-11-12", "10:44"))]) });
+	const reply = await tool.quote({ symbols: ["META", "TSM", "XLK", "NOPE"], now: new Date(ny("2026-11-12", "11:00")).toISOString() });
+	assert.deepEqual(quotesOf(reply).map((q) => [q["symbol"], q["changePct"]]), [["META", 1.69], ["TSM", -0.99], ["XLK", 0]]);
+	assert.deepEqual(output(reply)["missing"], ["NOPE"]);
+});
+
+test("quote 的时段标签：盘中、盘前、盘后；周末、节假日和夜里是休市（数据是上一交易日的）；提前收盘日 13:00 以后算盘后", async (t) => {
+	const tool = await quoteTool(t);
+	const cases: [label: string, data: number, now: number, session: string][] = [
+		["盘中", ny("2026-11-12", "10:44"), ny("2026-11-12", "11:00"), "盘中"],
+		["盘前", ny("2026-11-12", "08:10"), ny("2026-11-12", "08:26"), "盘前"],
+		["盘后", ny("2026-11-12", "17:30"), ny("2026-11-12", "17:46"), "盘后"],
+		["周六", ny("2026-11-13", "19:59"), ny("2026-11-14", "11:00"), "休市"],
+		["感恩节", ny("2026-11-25", "19:59"), ny("2026-11-26", "11:00"), "休市"],
+		["凌晨", ny("2026-11-12", "19:59"), ny("2026-11-13", "03:00"), "休市"],
+		["提前收盘日 12:59", ny("2026-11-27", "12:59"), ny("2026-11-27", "13:14"), "盘中"],
+		["提前收盘日 13:30", ny("2026-11-27", "13:30"), ny("2026-11-27", "13:46"), "盘后"],
+	];
+	for (const [label, data, now, session] of cases) {
+		tool.massive.answer({ status: 200, body: snapshotBody([minuteRow("NVDA", 170, 176, data)]) });
+		const [quote] = quotesOf(await tool.quote({ symbols: "NVDA", now: new Date(now).toISOString() }));
+		assert.equal(quote?.["session"], session, label);
+		assert.equal(quote?.["price"], 170, `${label}：价格照样回，不拒绝`);
+	}
+});
+
+test("quote：超过 10 个代码一行拒绝，不发请求", async (t) => {
+	const tool = await quoteTool(t);
+	const note = noteOf(await tool.quote({ symbols: "A,B,C,D,E,F,G,H,I,J,K" }));
+	assert.match(note, /最多 10 个/);
+	assert.equal(note.split("\n").length, 1);
+	assert.equal(tool.massive.hits.length, 0);
+});
+
+test("quote：没有 POLYGON_API_KEY 时一行说明去哪里加，不发请求", async (t) => {
+	const tool = await quoteTool(t, {});
+	const note = noteOf(await tool.quote({ symbols: "NVDA" }));
+	assert.match(note, /POLYGON_API_KEY/);
+	assert.match(note, /密钥文件/);
+	assert.equal(note.split("\n").length, 1);
+	assert.equal(tool.massive.hits.length, 0);
+});
+
+test("quote：行情服务出错时一行说出状态码", async (t) => {
+	const tool = await quoteTool(t);
+	tool.massive.answer({ status: 500, body: { status: "ERROR" } });
+	const note = noteOf(await tool.quote({ symbols: "NVDA" }));
+	assert.match(note, /HTTP 500/);
+	assert.equal(note.split("\n").length, 1);
 });
