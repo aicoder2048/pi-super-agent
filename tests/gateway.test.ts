@@ -78,7 +78,7 @@ const call = (name: string, input: Json = {}): Request => ({ kind: "tool", name:
 test("任务所属模块钉住的版本里的工具：按 cases.json 的输入算出 cases.json 的结果", async (t) => {
 	const { gateway, caller } = setup(t);
 	for (const item of CASES) {
-		assert.deepEqual(await gateway.call(caller(), call("tax-bracket", item.input)), { ok: true, output: item.expect, private: false });
+		assert.deepEqual(await gateway.call(caller(), call("tax-bracket", item.input)), { ok: true, output: item.expect });
 	}
 });
 
@@ -106,12 +106,12 @@ test("推断开的任务调 effect 是 write 的工具被拒绝；使用者开�
 	const refused = await gateway.call(caller({ basis: "inference" }), call("file-return"));
 	assert.equal(refused.ok, false);
 	assert.equal(!refused.ok && refused.refusal.code, "not-allowed");
-	assert.deepEqual(await gateway.call(caller(), call("file-return")), { ok: true, output: { filed: true }, private: true });
+	assert.deepEqual(await gateway.call(caller(), call("file-return")), { ok: true, output: { filed: true } });
 });
 
 test("工具的进程只拿到 tool.json 写了名字的密钥，宿主别的密钥拿不到", async (t) => {
 	const { gateway, caller } = setup(t);
-	assert.deepEqual(await gateway.call(caller(), call("env-probe")), { ok: true, output: { named: "named-value", unnamed: null }, private: true });
+	assert.deepEqual(await gateway.call(caller(), call("env-probe")), { ok: true, output: { named: "named-value", unnamed: null } });
 });
 
 test("读密钥出错（值不合法、密钥文件读不到）：这次调用失败并说明原因，宿主日志照样记一笔", async (t) => {

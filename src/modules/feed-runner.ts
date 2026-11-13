@@ -106,14 +106,14 @@ async function fromHandler({ module, source, feed, name, dir, components }: Feed
 	return reply.ok ? parseCollected(reply.output, into) : reply.note;
 }
 
-function postAlerts({ module, private: held }: FeedEntry, conditions: readonly ConditionAlert[], feed: readonly FeedAlert[], ports: FeedPorts): void {
+function postAlerts({ module }: FeedEntry, conditions: readonly ConditionAlert[], feed: readonly FeedAlert[], ports: FeedPorts): void {
 	const joined = new Set<FeedAlert>();
 	for (const { fold, ...alert } of conditions) {
 		const into = fold && feed.find((a) => !joined.has(a) && a.fold?.key === fold.key && a.fold.side === fold.side);
 		if (into === undefined) ports.alert(module, alert);
 		else if (ports.alert(module, { ...alert, text: `${into.text}${fold!.clause}` })) joined.add(into);
 	}
-	for (const a of feed) if (!joined.has(a)) ports.alert(module, { externalId: a.id, text: a.text, at: a.at, private: held });
+	for (const a of feed) if (!joined.has(a)) ports.alert(module, { externalId: a.id, text: a.text, at: a.at });
 }
 
 export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: FeedPorts, fixture?: FeedFixture, signal?: AbortSignal): Promise<FeedRun> {

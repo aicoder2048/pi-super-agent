@@ -168,20 +168,12 @@ test("ignore 只照 notice 的文字过滤一次：只匹配放出的那几行�
 	assert.deepEqual(host.kernel.triggerLog().filter((tr) => tr.source === "private-line/inbox").map((tr) => tr.disposition), ["to_router"]);
 });
 
-test("来信不让幕僚长变私密：放出的触发之后，幕僚长在 Telegram 上的回复是全文；没写 line 的私密 feed 照旧让它变私密", async (t) => {
+test("放出的触发之后，幕僚长在 Telegram 上的回复是全文", async (t) => {
 	const released = await lettersHost(t);
 	await released.deliver(letter("m-1"));
 	await released.routerSawLetter();
-	assert.equal(released.host.kernel.lastPrivate(), null);
 	released.tg.userSays(USER, "今天大盘怎么样");
 	await until(() => released.phone().some((m) => m.text === ANSWER), "幕僚长的回复全文到了 Telegram", 10_000);
-
-	const held = await lettersHost(t, (pkg) => editFeed(pkg, (f) => void delete f["line"]));
-	await held.deliver(letter("m-1"));
-	await held.routerSawLetter();
-	await held.host.router.waitForIdle();
-	assert.equal(held.notices().length, 0);
-	assert.notEqual(held.host.kernel.lastPrivate(), null);
 });
 
 test("feed 的 problem：同一个 id 连报两拍只写一条「通知」，中间一拍没报，再报时再写一条；网页和 Telegram 都有", async (t) => {

@@ -239,7 +239,7 @@ async function lanes() {
 			w.tg.userSays(USER, "看一下 ann 那封信的附件说了什么");
 			await within(60_000, () => w.replies().some((t) => t.startsWith("转述：")));
 			await within(10_000, () => w.phone().some((t) => t.startsWith("转述：") || t.includes("有新内容")));
-			const tickets = query(join(w.state, "state.db"), "SELECT worker_state, title, domain, touched_private_at FROM tickets");
+			const tickets = query(join(w.state, "state.db"), "SELECT worker_state, title, domain FROM tickets");
 			return w.replies().find((t) => t.startsWith("转述：")) ?? `(no relay; tickets ${JSON.stringify(tickets)}; replies ${JSON.stringify(w.replies())}; worker saw ${JSON.stringify(w.workerSaw())})`;
 		};
 		const old = await hostWorld({ repo: trunk(), letters });

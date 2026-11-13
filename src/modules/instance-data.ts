@@ -205,7 +205,7 @@ function watchBeforeWrite(db: DatabaseSync, { name, collection }: DataComponent)
 					const happened = met(c.condition, points);
 					if (happened === undefined) return [];
 					const fold = foldOf(c, points.at(-1)!);
-					return [{ externalId: firingId(c, points, row._id!, watch.zone), text: alertText(c, points.at(-1)!, happened, watch), at: t, private: collection.class === "private", ...(fold && { fold }) }];
+					return [{ externalId: firingId(c, points, row._id!, watch.zone), text: alertText(c, points.at(-1)!, happened, watch), at: t, ...(fold && { fold }) }];
 				});
 			});
 		};

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ComponentName, Digest, ModuleName, ToolEffect } from "../src/modules/manifest.ts";
-import { allowed, SENDERS, senderOf, telegramText } from "../src/modules/protocol.ts";
+import { allowed, SENDERS, senderOf } from "../src/modules/protocol.ts";
 import type { Caller, Request, Sender } from "../src/modules/protocol.ts";
 
 const C = "c" as ComponentName;
@@ -44,9 +44,4 @@ test("allowed agrees with the written table for every request and every kind of 
 test("only a request ticket that has heard nobody but the user carries the user's authority", () => {
 	for (const sender of SENDERS) assert.equal(senderOf(CALLERS[sender]), sender);
 	assert.equal(senderOf(worker("rule", false)), "rule");
-});
-
-test("Telegram gets the full text unless the ticket has touched private data", () => {
-	assert.equal(telegramText("CEA 5.2", null), "CEA 5.2");
-	assert.equal(telegramText("CEA 5.2", "个人医疗健康"), "个人医疗健康 有新内容，请在网页上查看");
 });

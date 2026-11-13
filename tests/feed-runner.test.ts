@@ -81,13 +81,13 @@ test("handler 交回的 alerts 经 ports.alert 当模块提醒行贴出，在触
 		data, problem: () => {}, secret: () => "token", now: () => 0,
 		submit: (n: FeedNotice) => void order.push(`trigger ${n.id}`),
 		alert: (module: string, a: Alert) => {
-			order.push(`line ${module} ${a.externalId} ${a.text} ${a.at} ${a.private}`);
+			order.push(`line ${module} ${a.externalId} ${a.text} ${a.at}`);
 			return !seen.has(a.externalId) && seen.add(a.externalId).size > 0;
 		},
 	};
 	await runFeed(entry, [], ports);
 	await runFeed(entry, [], ports);
-	assert.deepEqual(order.slice(0, 2), ["line personal-tax a-1 到了一档 2026-11-12T15:05:00Z true", "trigger a-1"]);
+	assert.deepEqual(order.slice(0, 2), ["line personal-tax a-1 到了一档 2026-11-12T15:05:00Z", "trigger a-1"]);
 	assert.equal(seen.size, 1);
 });
 

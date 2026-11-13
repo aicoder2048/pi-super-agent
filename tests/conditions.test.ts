@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
@@ -47,9 +47,9 @@ function world(t: TestContext, log: (line: string) => void = () => {}) {
 	return { root, keep, gateway, caller };
 }
 
-const health = (t: TestContext, log?: (line: string) => void, pkg = join(SAMPLE, "personal-health")) => {
+const health = (t: TestContext, log?: (line: string) => void) => {
 	const w = world(t, log);
-	const digest = w.keep(HEALTH, pkg);
+	const digest = w.keep(HEALTH, join(SAMPLE, "personal-health"));
 	return { ...w, me: (over: Partial<WorkerCaller> = {}) => w.caller(HEALTH, digest, over) };
 };
 
@@ -148,7 +148,6 @@ test("提醒文字由程序拼出：key、这一行的数值、时间和来源�
 	for (const part of ["空腹血糖", "7.4", "高于 7", "2026-11-12", "来自 blobs/checkup-2026-11.pdf", "复查后告诉内分泌科"]) assert.ok(alert.text.includes(part), `${alert.text} 缺 ${part}`);
 	assert.ok(!alert.text.includes("检验指标"), alert.text);
 	assert.ok(!/[\n\r]/.test(alert.text));
-	assert.equal(alert.private, true);
 	assert.equal(alert.at, "2026-11-12");
 });
 
@@ -311,14 +310,12 @@ test("这类数据改名后，原来设的条件跟着走，照常提醒", async
 	assert.equal(conditionsOf(await w.gateway.call(v2, { kind: "watch", collection: "body-weights" as never, op: "list" })).length, 1);
 	const written = await w.gateway.call(v2, { kind: "data", collection: "body-weights" as never, op: "write", rows: [{ who: "我", kg: 81, on: "2026-11-12" }], from: "体重秤" });
 	assert.equal(alertsOf(written).length, 1);
-	assert.equal(alertsOf(written)[0]!.private, false);
 });
 
 const USER = 42;
-const NOTICE = "个人医疗健康 有新内容，请在网页上查看";
 
-async function hostWithHealth(t: TestContext, script: (worker: FakeWorker) => Promise<unknown>, basis: "request" | "inference" = "request", pkg?: string) {
-	const w = health(t, undefined, pkg);
+async function hostWithHealth(t: TestContext, script: (worker: FakeWorker) => Promise<unknown>, basis: "request" | "inference" = "request") {
+	const w = health(t);
 	const tg = await FakeTelegram.start();
 	t.after(() => tg.close());
 	const digest = w.me().pin.digest;
@@ -353,7 +350,7 @@ async function hostWithHealth(t: TestContext, script: (worker: FakeWorker) => Pr
 const setAbove7 = { op: "set", collection: "lab-results", key: "空腹血糖", condition: { when: "above", value: 7 } };
 const write74 = { op: "write", collection: "lab-results", rows: [glucose(7.4, "2026-11-12")], from: "使用者口述" };
 
-test("宿主：助手设条件后写进 7.4，网页对话里有一条完整提醒；Telegram 上是一行提示，不带数值", async (t) => {
+test("宿主：助手设条件后写进私密数据 7.4，网页对话里有一条完整提醒；Telegram 上也是全文，前面写「提醒 · 模块名」", async (t) => {
 	const { result, phone, alerts, spawner } = await hostWithHealth(t, async (worker) => {
 		const receipt = await worker.request("worker.watch", setAbove7);
 		await worker.request("worker.data", write74);
@@ -362,8 +359,7 @@ test("宿主：助手设条件后写进 7.4，网页对话里有一条完整提�
 	assert.match((result as { receipt: string }).receipt, /空腹血糖.*高于 7/);
 	assert.equal(alerts().length, 1);
 	assert.match(alerts()[0]!, /空腹血糖 7\.4.*2026-11-12/);
-	await until(() => phone().filter((m) => m === NOTICE).length >= 2, "提醒的一行提示和汇报的一行提示都到了手机");
-	assert.ok(!phone().some((m) => m.includes("7.4")), phone().join(" / "));
+	await until(() => phone().some((m) => m.startsWith("提醒 · 个人医疗健康：") && m.includes("空腹血糖 7.4")), "提醒全文带模块名到了手机");
 	assert.match([...spawner.workers.values()][0]!.spec.watch ?? "", /lab-results · 检验指标/);
 });
 
@@ -375,20 +371,6 @@ test("宿主：同一天里两次越线，网页上两条提醒都在，都标�
 	const lines = host.kernel.conversation().filter((l) => l.who === "alert");
 	assert.equal(lines.length, 2);
 	for (const line of lines) assert.equal(hostLineLabel(line), "提醒 · 个人医疗健康");
-});
-
-test("宿主：可分享数据上的提醒，Telegram 上带全文，前面写「提醒 · 模块名」", async (t) => {
-	const pkg = mkdtempSync(join(tmpdir(), "psa-shareable-health-"));
-	t.after(() => rmSync(pkg, { recursive: true, force: true }));
-	cpSync(join(SAMPLE, "personal-health"), pkg, { recursive: true });
-	const collection = join(pkg, "data", "lab-results", "collection.json");
-	writeFileSync(collection, JSON.stringify({ ...JSON.parse(readFileSync(collection, "utf8")), class: "shareable" }));
-	const { phone } = await hostWithHealth(t, async (worker) => {
-		await worker.request("worker.watch", setAbove7);
-		await worker.request("worker.data", write74);
-	}, "request", pkg);
-	await until(() => phone().some((m) => m.startsWith("提醒 · 个人医疗健康：")), "提醒带模块名到了手机");
-	assert.ok(phone().some((m) => m.startsWith("提醒 · 个人医疗健康：") && m.includes("空腹血糖 7.4")), phone().join(" / "));
 });
 
 test("宿主：推断开的任务设条件被拒，说明推断任务只读、不能改提醒条件；list 可以", async (t) => {

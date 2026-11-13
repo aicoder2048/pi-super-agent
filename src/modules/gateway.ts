@@ -100,7 +100,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 
 	const search = (copy: Copy, query: string): Reply => {
 		const found = searchKnowledge(knowledgeOf(copy), query);
-		return { ok: true, output: foundText(copy.module, query, found), private: false, passages: found.passages };
+		return { ok: true, output: foundText(copy.module, query, found), passages: found.passages };
 	};
 
 	/** Rows and conditions are kept in the serving version's structure: a ticket pinned to an older one reaches them through the stored aliases. */
@@ -118,18 +118,18 @@ export function createGateway(ports: GatewayPorts): Gateway {
 		withServing(module, ({ collections, feedSources }) => {
 			if (request.op !== "write") {
 				const read = ports.rows.query(module, collections, request.collection, request.op === "query" ? request.query : {}, who);
-				return { ok: true, output: { collection: read.collection, rows: read.rows as unknown as Json }, private: read.class === "private" };
+				return { ok: true, output: { collection: read.collection, rows: read.rows as unknown as Json } };
 			}
 			// Rows marked with a feed's source and no later edit are what the feed stored; draft-reply trusts exactly that.
 			if (feedSources.includes(request.from.trim())) return { ok: false, refusal: { code: "bad-input", note: `from 不能写 ${request.from.trim()}：那是 feed 存信用的来源名，任务写的行要写自己的来源` } };
 			const written = ports.rows.write(module, collections, request.collection, request.rows, request.from, who);
 			if (written.alertProblem !== undefined) ports.log(`[gateway] ${module} ${written.collection}：写进去了，但提醒条件没检查成：${written.alertProblem}`);
-			return { ok: true, output: { collection: written.collection, rows: written.rows as unknown as Json }, private: written.class === "private", alerts: written.alerts };
+			return { ok: true, output: { collection: written.collection, rows: written.rows as unknown as Json }, alerts: written.alerts };
 		});
 	const conditions = (module: ModuleName, request: WatchRequest, who: string): Reply =>
 		withServing(module, ({ collections }) => {
 			const watched = ports.rows.watch(module, collections, request, who);
-			return { ok: true, output: { collection: watched.collection, ...watched.output } as unknown as Json, private: watched.class === "private" };
+			return { ok: true, output: { collection: watched.collection, ...watched.output } as unknown as Json };
 		});
 
 	const runTool = async (copy: Copy, tool: Tool, input: Json): Promise<Reply> => {
@@ -138,13 +138,11 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			return value === undefined ? [] : [[name, value]];
 		}));
 		const ran = await runModuleCodeAsync({ packageDir: copy.dir, component: join("tools", tool.name), dataDir: ports.dataDir(copy.module) }, RUNTIMES[tool.tool.runtime ?? "node"], input, secrets, { limitMs: ports.limitMs ?? LIMIT_MS });
-		// Tool code gets the module's data dir and can open any collection, so a tool that is not pure may carry private rows out.
-		const mayCarryPrivate = toolEffect(tool.tool) !== "pure" && copy.collections.some((c) => c.collection.class === "private");
 		if (!ran.ok) return { ok: false, refusal: { code: "provider-failed", note: ran.note } };
-		if (tool.tool.port === undefined) return { ok: true, output: ran.output, private: mayCarryPrivate };
+		if (tool.tool.port === undefined) return { ok: true, output: ran.output };
 		if (ports.google === undefined) return { ok: false, refusal: { code: "provider-failed", note: "这台宿主没有接 Google，建不了草稿" } };
 		const done = await writeDraft(ports.google, ran.output);
-		return typeof done === "string" ? { ok: false, refusal: { code: "provider-failed", note: done } } : { ok: true, output: done.output, private: mayCarryPrivate, receipt: done.receipt };
+		return typeof done === "string" ? { ok: false, refusal: { code: "provider-failed", note: done } } : { ok: true, output: done.output, receipt: done.receipt };
 	};
 
 	return {

@@ -23,11 +23,11 @@ const READINGS = {
 	watch: { key: "item", value: "value", at: "at" },
 };
 
-function writePackage(root: string, name: string, feeds: Record<string, Feed>, { privateData = false } = {}): string {
+function writePackage(root: string, name: string, feeds: Record<string, Feed>): string {
 	const dir = join(root, name);
 	mkdirSync(join(dir, "data", "readings"), { recursive: true });
 	writeFileSync(join(dir, "module.json"), JSON.stringify({ schema: 1, name, version: "0.1.0", title: `${name} 模块`, description: "测试模块" }));
-	writeFileSync(join(dir, "data", "readings", "collection.json"), JSON.stringify({ ...READINGS, class: privateData ? "private" : "shareable" }));
+	writeFileSync(join(dir, "data", "readings", "collection.json"), JSON.stringify({ ...READINGS, class: "shareable" }));
 	for (const [feed, { json, handler }] of Object.entries(feeds)) {
 		mkdirSync(join(dir, "feeds", feed), { recursive: true });
 		writeFileSync(join(dir, "feeds", feed, "feed.json"), JSON.stringify(json));
@@ -44,11 +44,11 @@ const callsOf = (root: string, module: string, feed: string) => {
 
 const TUESDAY_10AM_NY = Date.parse("2026-11-10T15:00:00Z");
 
-function world(t: TestContext, feeds: Record<string, Record<string, Feed>>, options: { limitMs?: number; fixtures?: boolean; privateData?: boolean } = {}) {
+function world(t: TestContext, feeds: Record<string, Record<string, Feed>>, options: { limitMs?: number; fixtures?: boolean } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "psa-scheduler-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const state = join(root, "state");
-	for (const [name, list] of Object.entries(feeds)) writePackage(join(root, "modules"), name, list, options);
+	for (const [name, list] of Object.entries(feeds)) writePackage(join(root, "modules"), name, list);
 	const modules = servedAsHost(Modules.load([join(root, "modules")]));
 	let serving = modules.feeds();
 	const clock = { now: TUESDAY_10AM_NY };
@@ -211,10 +211,10 @@ test("预演：连接器换成 fixtures，每个样例跑一次，网络请求�
 	assert.equal(data.query(entries[0]!.module, entries[0]!.components, "readings", {}, "test").rows.length, 1, w.logged.join("\n"));
 });
 
-const hostFeeds = (t: TestContext, feeds: Record<string, Feed>, privateData = false) => {
+const hostFeeds = (t: TestContext, feeds: Record<string, Feed>) => {
 	const root = mkdtempSync(join(tmpdir(), "psa-scheduler-host-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
-	writePackage(join(root, "modules"), "lab", feeds, { privateData });
+	writePackage(join(root, "modules"), "lab", feeds);
 	return servedAsHost(Modules.load([join(root, "modules")]));
 };
 
@@ -251,7 +251,6 @@ test("宿主：timer 的触发到了幕僚长那里开出任务；同一批 noti
 	const triggers = host.kernel.triggerLog().filter((r) => r.source === "lab/pull");
 	assert.equal(triggers.length, 1, JSON.stringify(triggers));
 	assert.equal(triggers[0]!.body, "新读数 2 条");
-	assert.equal(host.kernel.touchedPrivate(host.kernel.listTickets()[0]!.id), false);
 });
 
 test("宿主：feed 的 ignore 匹配上的触发被丢掉，不到幕僚长", async (t) => {
@@ -263,14 +262,6 @@ test("宿主：feed 的 ignore 匹配上的触发被丢掉，不到幕僚长", a
 	assert.equal(triggers.length, 1);
 	assert.equal(triggers[0]!.disposition, "ignored");
 	assert.equal(host.kernel.listTickets().length, 0);
-});
-
-test("宿主：写进 private 数据的 feed 触发的任务标成读过私密数据", async (t) => {
-	const modules = hostFeeds(t, { pull: handlerFeed }, true);
-	const { host } = await hostWith(t, modules);
-	await host.feedScheduler.tick();
-	await until(() => host.kernel.listTickets().length === 1, "开了任务");
-	assert.equal(host.kernel.touchedPrivate(host.kernel.listTickets()[0]!.id), true);
 });
 
 const countReadings = { title: "数读数", handler: "index.ts", every: "1m", reads: ["readings"], notice: "n={{n}}" };

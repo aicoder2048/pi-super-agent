@@ -33,8 +33,7 @@ export type AnswerRefusal =
 	| { kind: "chosen"; option: number; label: string }
 	| { kind: "spoke" }
 	| { kind: "closed" }
-	| { kind: "not_here" }
-	| { kind: "web_only" };
+	| { kind: "not_here" };
 
 export function refusalText(r: AnswerRefusal): string {
 	switch (r.kind) {
@@ -52,8 +51,6 @@ export function refusalText(r: AnswerRefusal): string {
 			return "这个问题已经回答过，或已不在等待回答";
 		case "not_here":
 			return "成员上限只能在网页或终端的「待你处理」里回答";
-		case "web_only":
-			return "这条命令只能在网页或终端上批准";
 	}
 }
 
