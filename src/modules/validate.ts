@@ -6,7 +6,8 @@ import { EVERY, everyMs } from "./connectors/timer.ts";
 import { feedInput, intoOf, NOTHING_HELD, parseCollected } from "./feed-runner.ts";
 import { linkVenvs, lockOf, PY_DIR, venvInstalled } from "./files.ts";
 import { fixtureSecrets, runModuleCode, runModuleCodeAsync, secretsFor, type CodeReply, type CodeSite, type RunOptions, type SecretLookup, type Secrets } from "./run-code.ts";
-import { CONNECTORS, DATA_CLASSES, FEED_WHEN, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS } from "./manifest.ts";
+import { CONNECTORS, DATA_CLASSES, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS } from "./manifest.ts";
+import { LINE_MAX_LINES, placeholders } from "./release.ts";
 import type {
 	AgentDescriptor, CapabilityUse, CollectionDescriptor, Component, ComponentName, Digest, FeedDescriptor, FeedFixture, FieldDescriptor, KindDir, MemberTool, ModuleManifest, ModuleName, PackageScan, Problem, RuleRef, Runtime, ScanResult, ToolCase, ToolDescriptor,
 } from "./manifest.ts";
@@ -298,18 +299,19 @@ function readSkill(report: Report, root: string, name: string): Component | unde
 function readFeed(report: Report, root: string, name: string): Component | undefined {
 	const dir = `feeds/${name}`;
 	const where = `${dir}/feed.json`;
-	const raw = readObject(report, root, where, ["title"], ["description", "connector", "handler", "secrets", "every", "limit", "when", "settings", "ask", "into", "reads", "notice", "ignore"]);
+	const raw = readObject(report, root, where, ["title"], ["description", "connector", "handler", "secrets", "every", "limit", "when", "settings", "ask", "into", "reads", "notice", "line", "ignore"]);
 	if (raw === undefined) return undefined;
 	const feed: FeedDescriptor = { title: String(raw["title"]) };
 	const connector = raw["connector"];
 	if (oneOf(CONNECTORS, connector)) feed.connector = connector;
 	else if (connector !== undefined) report(where, `connector ${JSON.stringify(connector)} is not one of the host's connectors (${CONNECTORS.join(", ")})`);
-	for (const key of ["description", "handler", "every", "limit", "into", "notice"] as const) {
+	for (const key of ["description", "handler", "every", "limit", "into", "notice", "line"] as const) {
 		const value = optionalText(report, where, raw, key);
 		if (value !== undefined) feed[key] = value;
 	}
 	if (connector === undefined && feed.handler === undefined) report(where, `needs a "connector", a "handler", or both`);
 	if (feed.into === undefined && feed.notice === undefined) report(where, `needs "into" (store records), "notice" (tell the Router), or both`);
+	if (feed.line !== undefined) checkLine(report, where, feed.line, feed.notice);
 	if (feed.every !== undefined && !EVERY.test(feed.every)) report(where, `"every" must look like 30s, 15m, 6h or 1d`);
 	if (feed.limit !== undefined && !(EVERY.test(feed.limit) && everyMs(feed.limit) > 0 && everyMs(feed.limit) <= MAX_LIMIT_MS)) report(where, `"limit" must look like 90s or 5m, and be at most 10m`);
 	const scheduledBy = connector === "timer" ? "the timer connector" : connector === undefined && feed.handler !== undefined ? "a handler and no connector" : undefined;
@@ -342,6 +344,13 @@ function readFeed(report: Report, root: string, name: string): Component | undef
 	if (ignore !== undefined) feed.ignore = ignore;
 	if (ignore !== undefined && feed.notice === undefined) report(where, `"ignore" filters triggers, so it needs a "notice"`);
 	return { kind: "feeds", name: name as ComponentName, feed, fixtures: readFixtures(report, root, `${dir}/fixtures`) };
+}
+
+function checkLine(report: Report, where: string, line: string, notice: string | undefined): void {
+	if (notice === undefined) report(where, `"line" releases a notice's fields, so it needs a "notice"`);
+	if (line.split("\n").length > LINE_MAX_LINES) report(where, `"line" has at most ${LINE_MAX_LINES} lines`);
+	const known = new Set(placeholders(notice ?? ""));
+	for (const name of placeholders(line)) if (!known.has(name)) report(where, `"line" names {{${name}}}, which "notice" does not; a line releases only the notice's fields`);
 }
 
 function readFixtures(report: Report, root: string, dir: string): FeedFixture[] {
@@ -420,6 +429,7 @@ function readRules(report: Report, root: string, module: string, feeds: Readonly
 /** Every reference from one component to another resolves. */
 function crossCheck(report: Report, manifest: ModuleManifest, components: readonly Component[]): void {
 	const has = (kind: Component["kind"], name: string | undefined): boolean => components.some((item) => item.kind === kind && item.name === name);
+	const collections = new Map(components.flatMap((item) => (item.kind === "data" ? [[item.name as string, item.collection] as const] : [])));
 	const resolves = (use: string): boolean => {
 		const [kind, name, more] = use.split("/");
 		if (use === "knowledge") return components.some((item) => item.kind === "knowledge");
@@ -434,6 +444,7 @@ function crossCheck(report: Report, manifest: ModuleManifest, components: readon
 			for (const collection of [item.feed.into, ...(item.feed.reads ?? [])]) {
 				if (collection !== undefined && !has("data", collection)) report(`feeds/${item.name}/feed.json`, `names collection "${collection}", but there is no data/${collection}`);
 			}
+			if (item.feed.line !== undefined && feedClass(item.feed, collections) !== "private") report(`feeds/${item.name}/feed.json`, `"line" is only for a feed into a private collection; any other feed's notice already reaches Telegram in full`);
 		}
 		if (item.kind === "agents" || item.kind === "evals") {
 			for (const use of item.kind === "agents" ? item.agent.uses : item.eval.uses) {

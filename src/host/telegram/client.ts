@@ -148,7 +148,7 @@ export class TelegramClient {
 				case "host_line":
 					if (message.who !== "receipt") {
 						const text = telegramText(hostLineText(message), message.module?.private ? message.module.title : null);
-						for (const chat of this.#store.openChats()) this.#store.put(chat, `${message.who}:${message.id}`, null, { kind: "line", text, silent: false });
+						for (const chat of this.#store.openChats()) this.#store.put(chat, `${message.who}:${message.id}`, null, { kind: "line", text, silent: false, noPreview: true });
 					}
 					break;
 				case "cleared":

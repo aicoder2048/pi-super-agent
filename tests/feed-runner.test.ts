@@ -31,7 +31,7 @@ test("fixtures 代替网络：券商样例按样例应答得到两行记录、�
 	assert.ok(fixture, "样例读进了 fixtures");
 	const data = instanceData(join(root, "state"));
 	const submitted: FeedNotice[] = [];
-	const run = await runFeed(entry, [], { data, submit: (n) => void submitted.push(n), alert: () => {}, secret: () => undefined, now: () => Date.parse("2026-11-12T00:00:00Z") }, fixture);
+	const run = await runFeed(entry, [], { data, submit: (n) => void submitted.push(n), alert: () => {}, problem: () => {}, secret: () => undefined, now: () => Date.parse("2026-11-12T00:00:00Z") }, fixture);
 	assert.deepEqual(run, { ok: true, records: 2, notices: 1 });
 	assert.equal(data.query(entry.module, entry.components, "transactions", {}, "test").rows.length, 2);
 	assert.equal(submitted[0]!.body, "券商有 2 笔新成交，已实现盈亏合计 294.20 美元。");
@@ -43,7 +43,7 @@ test("fixtures 没给的网址：这一次失败，说出是哪个网址，不�
 	const entry = brokerage(root);
 	const fixture = { name: "wrong", input: { settings: { account: "OTHER" } }, responses: entry.fixtures[0]!.responses };
 	const data = instanceData(join(root, "state"));
-	const run = await runFeed(entry, [], { data, submit: () => {}, alert: () => {}, secret: () => undefined, now: () => 0 }, fixture);
+	const run = await runFeed(entry, [], { data, submit: () => {}, alert: () => {}, problem: () => {}, secret: () => undefined, now: () => 0 }, fixture);
 	assert.equal(run.ok, false);
 	assert.match(!run.ok ? run.note : "", /accounts\/OTHER\/trades/);
 	assert.equal(data.feedState(entry.module, entry.source).cursor, null);
