@@ -189,7 +189,7 @@ test("报价的提醒条件：提醒里的数据时间按美东写，存的仍�
 	feed.massive.answer(snapshot([tickerRow("NVDA", 170, 176, AT)]));
 	await feed.round();
 	assert.equal(feed.alerts.length, 1);
-	assert.match(feed.alerts[0]!, /（2026-11-12 10:44（美东），来自 stock-ta\/quotes）/);
+	assert.match(feed.alerts[0]!, /（2026-11-12 10:44 美东，来自 stock-ta\/quotes）/);
 	assert.equal(feed.quotes()[0]!.fields["at"], "2026-11-12T15:44:00.000Z");
 });
 

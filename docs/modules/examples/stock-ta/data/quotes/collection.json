@@ -9,5 +9,5 @@
     "volume": { "type": "number", "title": "当天成交量" },
     "at": { "type": "date", "title": "数据时间（UTC），不是取回的时间" }
   },
-  "watch": { "key": "symbol", "value": "price", "at": "at" }
+  "watch": { "key": "symbol", "value": "price", "at": "at", "zone": "America/New_York" }
 }

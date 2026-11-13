@@ -177,6 +177,15 @@ function readKnowledge(report: Report, root: string, name: string): Component | 
 	return { kind: "knowledge", name: name as ComponentName, source, texts };
 }
 
+function isTimeZone(zone: string): boolean {
+	try {
+		new Intl.DateTimeFormat("en-CA", { timeZone: zone });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 const WATCH_TYPES: Record<"key" | "value" | "at", readonly FieldDescriptor["type"][]> = { key: ["text"], value: ["number"], at: ["date", "text"] };
 
 function readCollection(report: Report, root: string, name: string): Component | undefined {
@@ -211,6 +220,11 @@ function readCollection(report: Report, root: string, name: string): Component |
 				else if (!WATCH_TYPES[part].includes(described[named]!.type)) report(where, `watch.${part} must name a ${WATCH_TYPES[part].join(" or ")} field`);
 			}
 			collection.watch = { key: watch["key"], value: watch["value"], at: watch["at"] };
+			const zone = watch["zone"];
+			if (zone !== undefined) {
+				if (typeof zone !== "string" || !isTimeZone(zone)) report(where, `watch.zone ${JSON.stringify(zone)} is not a time zone name, e.g. "America/New_York"`);
+				else collection.watch.zone = zone;
+			}
 		}
 	}
 	return { kind: "data", name: name as ComponentName, collection, seeded: existsSync(join(root, dir, "seed.json")) };

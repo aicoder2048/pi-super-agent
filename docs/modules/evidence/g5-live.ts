@@ -276,7 +276,7 @@ async function lanes(): Promise<void> {
 			const alerts = net.alerts();
 			const text = String(alerts[0]?.text ?? "");
 			const at = String(net.quotes().findLast((q) => q.symbol === "NVDA")?.at);
-			const shown = "2026-11-09 09:47（美东）";
+			const shown = "（2026-11-09 09:47 美东，来自 stock-ta/quotes）";
 			return { pass: conditions.length === 1 && alerts.length === 1 && text.includes("NVDA 170") && at === "2026-11-09T14:47:00.000Z" && text.includes(shown), evidence: `the user said NVDA 跌破 171 提醒我 (request ticket, worker.watch set); NVDA was 180.4, the next round brings 170\nconditions: ${show(conditions)}\nthe 170 row's stored data time: ${at}; the alert should show ${shown}\nalerts:\n${show(alerts)}` };
 		});
 

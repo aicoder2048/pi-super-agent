@@ -201,7 +201,7 @@ function watchBeforeWrite(db: DatabaseSync, { name, collection }: DataComponent)
 				const points = (history.all(k, t, t, row._id!, Math.max(...mine.map((c) => need(c.condition)))) as Point[]).reverse();
 				return mine.flatMap((c) => {
 					const happened = met(c.condition, points);
-					return happened === undefined ? [] : [{ externalId: `${c.id}:${row._id}`, text: alertText(collection.title, c, points.at(-1)!, happened), at: t, private: collection.class === "private" }];
+					return happened === undefined ? [] : [{ externalId: `${c.id}:${row._id}`, text: alertText(collection.title, c, points.at(-1)!, happened, watch.zone), at: t, private: collection.class === "private" }];
 				});
 			});
 		};

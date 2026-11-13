@@ -363,6 +363,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 2026-11-12 修复轮在 704b409 上通过：审计（PR #97）的四点都改了。线程改成和 id 一样的 `big-move:<代码>:<美东日期>:<up|down>`；密钥名改成 `POLYGON_API_KEY`（使用者定），没有密钥不发请求；fixtures 排练和 `just module check` 用替身密钥；提醒里的时间按美东写；同一只两行以最新一行为准。红灯先行，见 `/tmp/swarm-g5/fix/red-quotes.txt` 和 `red-fixture-and-alert.txt`。`tests/stock-ta-quotes.test.ts` 13 条，`just test` 1616 条全过，`check.mjs` 全 ok，`tests/e2e/modules.e2e.ts` 12 条全过，`just module check` 不带密钥 ok。lane 1 到 7、11、10b 全 PASS，输出在 `/tmp/swarm-g5/fix/`；lane 11 让第一个大跌任务开着（Worker 提了问题），涨 5% 仍另开任务。lane 10b 前两次 FAIL 是 Router 调 openai-codex 时 `fetch failed`（网络），第三次 PASS。lane 8、9、10a 和 perf 仍等交易时段。
 
+2026-11-12 第二轮修复（复核 4c8d21b 的问题）：换美东时间原来写在框架的 `alertText` 里，所有模块带时区的时刻都被改成美东，西海岸使用者的个人读数也会显示成美东。现在 `watch` 多一个可选的 `zone`（IANA 时区名，检查时拒收不认识的名字，坏包 `watch-unknown-zone`），只有写了 `zone` 的数据才换算并标时区，`America/New_York` 标「美东」；只有 stock-ta 的 `quotes` 写了。提醒文字去掉套着的括号，写成「（2026-11-09 09:47 美东，来自 stock-ta/quotes）」。红灯先行，见 `/tmp/swarm-g5/fix2/red.log`。`just test` 1617 条全过，`check.mjs` 全 ok（坏包 14 个），`just module check` stock-ta 不带密钥 ok，lane 1 到 7、11 全 PASS，输出在 `/tmp/swarm-g5/fix2/out/`。
+
 **Merge.**
 
 - [ ] Root's clean verdict at the exact head SHA.
