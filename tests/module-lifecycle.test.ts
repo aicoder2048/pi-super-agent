@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { initialRecord, settle, transition } from "../src/modules/lifecycle.ts";
+import { describe, initialRecord, settle, transition } from "../src/modules/lifecycle.ts";
 import type { Effect, ModuleEvent, ModuleRecord, Version } from "../src/modules/lifecycle.ts";
 import type { Digest, ModuleName } from "../src/modules/manifest.ts";
 
@@ -67,6 +67,13 @@ test("the result of an earlier migration is ignored by the one that replaced it"
 	const second = play([found(V2), { type: "checked", digest: V2.digest, problems: [] }], first);
 	assert.equal(play([{ type: "migrated", attempt: first.attempts }], second), second);
 	assert.equal(play([{ type: "migrated", attempt: second.attempts }], second).state.at, "active");
+});
+
+test("a module the user never switched on says so, not that the user switched it off", () => {
+	assert.deepEqual(describe(play([found(V1)])), { label: "已停用", reason: "还没打开过" });
+	assert.deepEqual(describe(play([found(V1), { type: "enable" }, found(BAD), { type: "disable" }])), { label: "已停用", reason: "你把它关了，数据还留着" });
+	assert.deepEqual(describe(play([{ type: "disable" }], serving())), { label: "已停用", reason: "你把它关了，数据还留着" });
+	assert.deepEqual(describe(play([{ type: "package-gone" }, found(V1)], play([{ type: "disable" }], serving()))), { label: "已停用", reason: "你把它关了，数据还留着" });
 });
 
 test("fuzz: whatever the user and the folder do, the module ends up where the last switch and the last good save say", () => {

@@ -43,6 +43,8 @@ export interface ModuleRecord {
 	state: ModuleState;
 	/** Migrations started so far. The next `migrate` carries this number plus one. */
 	attempts: number;
+	/** The user has switched it on at least once, so being off now is the user's doing. */
+	opened: boolean;
 	/** The outbox. `transition` appends, the driver runs the first entry and calls `settle`. */
 	pending: readonly Effect[];
 }
@@ -72,7 +74,7 @@ export type Effect =
 	| { do: "purge-data" };
 
 export function initialRecord(name: ModuleName): ModuleRecord {
-	return { name, state: { at: "missing", last: null, wasOn: false }, attempts: 0, pending: [] };
+	return { name, state: { at: "missing", last: null, wasOn: false }, attempts: 0, opened: false, pending: [] };
 }
 
 /** The record after the driver has run `pending[0]`. */
@@ -108,7 +110,7 @@ export function transition(record: ModuleRecord, event: ModuleEvent): { record: 
 	const unchanged = { record, effects: [] };
 	const state = record.state;
 	const to = (next: ModuleState, effects: Effect[] = [], attempts = record.attempts) => ({
-		record: { ...record, attempts, state: next, pending: [...record.pending, ...effects] },
+		record: { ...record, attempts, opened: record.opened || event.type === "enable", state: next, pending: [...record.pending, ...effects] },
 		effects,
 	});
 	const check = (version: Version): [Stage, Effect[]] => [{ at: "checking", version }, [{ do: "check", version }]];
@@ -186,7 +188,7 @@ export function describe(record: ModuleRecord): { label: string; reason: string 
 	};
 	const state = record.state;
 	if (state.at === "missing") return { label: "包不在了", reason: state.last === null ? "没有见过这个模块包" : "模块包被拿掉了，数据还留着" };
-	if (state.at === "disabled") return { label: "已停用", reason: "你把它关了，数据还留着" };
+	if (state.at === "disabled") return { label: "已停用", reason: record.opened ? "你把它关了，数据还留着" : "还没打开过" };
 	if (state.at === "staging") return stageLine(state.stage);
 	if (state.update === null) return { label: "运行中", reason: state.serving.label };
 	const next = stageLine(state.update);

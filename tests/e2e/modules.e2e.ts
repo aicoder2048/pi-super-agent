@@ -59,9 +59,10 @@ test("模块栏：每个模块一张卡，开关两秒内生效，无效写出�
 				assert.deepEqual(await page.locator("#modules .card.module").evaluateAll((cards) => cards.map((c) => (c as HTMLElement).dataset.module)), ["personal-health", "personal-tax", "stock-ta", "unknown-key"]);
 				for (const name of ["personal-health", "personal-tax", "stock-ta", "unknown-key"]) assert.match((await card(page, name).locator(".state").textContent()) ?? "", /^已停用/, name);
 				assert.match((await card(page, "personal-tax").textContent()) ?? "", /版本 0\.1\.0 · [0-9a-f]{12}.*密钥 EXAMPLE_BROKER_TOKEN/);
-				assert.match((await card(page, "stock-ta").textContent()) ?? "", /股票技术分析 · stock-ta.*版本 0\.1\.0 · [0-9a-f]{12}.*密钥 POLYGON_API_KEY、TA_ROOT/);
+				assert.match((await card(page, "stock-ta").textContent()) ?? "", /股票技术分析 · stock-ta.*版本 0\.1\.0 · [0-9a-f]{12}.*密钥 POLYGON_API_KEY/);
 				assert.equal(await card(page, "stock-ta").locator("button.switch").textContent(), "打开");
 				await shoot(page, "f2c-list.png");
+				assert.equal(await card(page, "personal-tax").locator(".state").textContent(), "已停用 · 还没打开过", "没打开过的模块不说是使用者关的");
 			});
 			await step("Lane 3. 点 stock-ta 的「打开」，两秒内卡片变成运行中", async (page) => {
 				await card(page, "stock-ta").locator("button.switch").click();
@@ -74,6 +75,7 @@ test("模块栏：每个模块一张卡，开关两秒内生效，无效写出�
 				await card(page, "stock-ta").locator("button.switch").click();
 				const ms = await within2s(page, "stock-ta", "已停用");
 				writeFileSync(join(SHOTS, "f2c-off.txt"), `已停用用了 ${ms} ms\n`);
+				assert.equal(await card(page, "stock-ta").locator(".state").textContent(), "已停用 · 你把它关了，数据还留着");
 				await shoot(page, "f2c-off.png");
 			});
 			await step("Lane 5. 打开无效的模块：卡片写无效，列出 module.json 哪一处", async (page) => {
