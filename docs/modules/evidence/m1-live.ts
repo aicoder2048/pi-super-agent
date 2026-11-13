@@ -240,7 +240,7 @@ async function lanes(): Promise<void> {
 		pass: "pending",
 		evidence: [
 			"真账号, 时段 1, after lane 9. Default route of docs/deploy/gmail.md section 2:",
-			"  grep '^GOOGLE_OAUTH_CLIENT_\\|^GMAIL_READ_REFRESH_TOKEN=' <laptop secretsFile> | ssh -o BatchMode=yes <old Mac> 'cat >> <old Mac secretsFile>'   (only the lines the old Mac lacks)",
+			"  the copy command in the section 给旧 Mac（默认：笔记本上授权，复制三行）, run as written with ssh -o BatchMode=yes: it replaces same-named lines on the old Mac and is safe to rerun",
 			"  ssh -o BatchMode=yes <old Mac> 'cd <repo checkout with this PR> && just google-auth read --check' > /tmp/swarm-m1/worker-10/m1-real-copy.txt",
 			"Pass when the old Mac prints 能换到 access token（gmail.readonly，...） and m1-real-copy.txt contains no token (rg '1//|ya29\\.' finds nothing).",
 		].join("\n"),

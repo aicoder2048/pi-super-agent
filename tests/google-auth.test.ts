@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -233,4 +234,29 @@ test("writeSecret refuses a value the .env reader would read back differently, a
 	writeFileSync(file, "A=1\n");
 	for (const value of ["has#hash", "two words", "line\nbreak"]) assert.throws(() => writeSecret(file, "B", value), /写不下/, JSON.stringify(value));
 	assert.equal(readFileSync(file, "utf8"), "A=1\n");
+});
+
+/** The single-quoted script the old Mac runs in docs/deploy/gmail.md's copy command, with `f=` set by the caller. */
+function oldMacCopyScript(): string {
+	const doc = readFileSync(join(REPO, "docs/deploy/gmail.md"), "utf8");
+	const match = /\|\s*ssh <旧 Mac> '([^']*)'/.exec(doc.slice(doc.indexOf("### 给旧 Mac（默认")));
+	assert.ok(match, "the copy command is in docs/deploy/gmail.md");
+	return match[1]!.replace(/^f=<旧 Mac 的 secretsFile>\n?/, "");
+}
+
+test("the docs' old-Mac copy command replaces same-named lines, keeps a last line without newline whole, and reruns unchanged", (t) => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-gcopy-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const target = join(dir, "mac.env");
+	writeFileSync(target, "TELEGRAM_BOT_TOKEN=tg\nexport GMAIL_READ_REFRESH_TOKEN=1//old\nLAST=no-newline", { mode: 0o600 });
+	const lines = "GOOGLE_OAUTH_CLIENT_ID=id\nGOOGLE_OAUTH_CLIENT_SECRET=sec\nGMAIL_READ_REFRESH_TOKEN=1//new\n";
+	const copy = (file: string) => spawnSync("/bin/sh", ["-c", oldMacCopyScript()], { input: lines, env: { PATH: process.env["PATH"], f: file }, encoding: "utf8" });
+	assert.equal(copy(target).status, 0);
+	const once = readFileSync(target, "utf8");
+	assert.deepEqual(once.split("\n"), ["TELEGRAM_BOT_TOKEN=tg", "LAST=no-newline", "GOOGLE_OAUTH_CLIENT_ID=id", "GOOGLE_OAUTH_CLIENT_SECRET=sec", "GMAIL_READ_REFRESH_TOKEN=1//new", ""]);
+	assert.equal(copy(target).status, 0);
+	assert.equal(readFileSync(target, "utf8"), once, "a rerun changes nothing");
+	assert.equal(statSync(target).mode & 0o777, 0o600);
+	assert.notEqual(copy(join(dir, "missing.env")).status, 0);
+	assert.deepEqual(readdirSync(dir), ["mac.env"], "a wrong path creates no file");
 });

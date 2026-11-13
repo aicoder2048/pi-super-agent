@@ -55,21 +55,27 @@ just google-auth read --check
 GMAIL_READ_REFRESH_TOKEN 能换到 access token（gmail.readonly，3599 秒内有效）
 ```
 
-### 给旧 Mac（默认：笔记本上授权，复制那一行）
+### 给旧 Mac（默认：笔记本上授权，复制三行）
 
-旧 Mac 没有浏览器。在笔记本上跑完 `just google-auth read`，把那一行直接经 ssh 追加到旧 Mac 的 `secretsFile`，token 不经过终端屏幕：
+旧 Mac 没有浏览器。在笔记本上跑完 `just google-auth read`，把 OAuth 客户端和读邮件的 token 三行直接经 ssh 写进旧 Mac 的 `secretsFile`，token 不经过终端屏幕。旧 Mac 上同名的旧行先删掉再写新的，别的行不动，文件末尾没有换行也不会粘到上一行，重跑一次文件不变；`secretsFile` 路径写错时退出 1，不新建文件：
 
 ```bash
-grep '^GMAIL_READ_REFRESH_TOKEN=' <笔记本的 secretsFile> | ssh <旧 Mac> 'cat >> <旧 Mac 的 secretsFile>'
+grep -E '^(GOOGLE_OAUTH_CLIENT_ID|GOOGLE_OAUTH_CLIENT_SECRET|GMAIL_READ_REFRESH_TOKEN)=' <笔记本的 secretsFile> |
+  ssh <旧 Mac> 'f=<旧 Mac 的 secretsFile>
+new=$(cat); [ -f "$f" ] && [ -n "$new" ] || exit 1
+names=$(printf "%s\n" "$new" | cut -d= -f1 | paste -s -d "|" -)
+t=$(mktemp) || exit 1
+{ grep -Ev "^[[:space:]]*(export[[:space:]]+)?($names)[[:space:]]*=" "$f"; printf "%s\n" "$new"; } > "$t" && cat "$t" > "$f"
+rm -f "$t"'
 ```
 
-`GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET` 两行也照这样复制一次（旧 Mac 的 `secretsFile` 里已有就不用）。然后在旧 Mac 上看一次：
+然后在旧 Mac 上看一次：
 
 ```bash
 ssh <旧 Mac> 'cd <旧 Mac 上的仓库> && just google-auth read --check'
 ```
 
-复制完，笔记本 `secretsFile` 里那一行默认删掉（计划 Appendix E 第 3 条），笔记本上不跑宿主就用不到它。
+复制完，笔记本 `secretsFile` 里 token 那一行默认删掉（计划 Appendix E 第 3 条），笔记本上不跑宿主就用不到它。
 
 ### 给旧 Mac（另一条路：在旧 Mac 上授权，转发端口）
 

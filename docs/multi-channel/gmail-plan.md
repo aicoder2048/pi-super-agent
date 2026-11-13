@@ -186,7 +186,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] 密钥归属表。`src/modules/secret-owners.ts` 导出一张表，密钥名对应一个模块名或 `"host"`：`GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` 属于 `mail`，`POLYGON_API_KEY` 属于 `stock-ta`，`GMAIL_DRAFT_REFRESH_TOKEN`、`TELEGRAM_BOT_TOKEN` 和宿主自己读的其他密钥属于 `"host"`。宿主自己读密钥不经过这张表。
 - [x] 包的检查（`validate.ts`）对每个 feed 和工具的 `secrets` 查表。点名属于别的模块或 `"host"` 的密钥就报错，一行写明密钥名和它的主人。表里没有的名字，只有以本模块的前缀开头（模块名转大写、`-` 换成 `_`，再加 `__`，例如 `MAIL__`、`STOCK_TA__`）才放行，见 Appendix E 第 10 条。`just module try` 走同一个检查，不另写一份。
 - [x] 工具的 `cases.json` 改用假密钥跑。今天 `validate.ts` 用 `secretsFor` 把真密钥交给工具的测试用例，feed 的 fixtures 已经用 `fixtureSecrets`，工具照 feed 改。这样装模块、改模块、`just module check` 都不会用真 token 发请求。
-- [x] 旧 Mac 没有浏览器。`docs/deploy/gmail.md` 写两条路。默认是在笔记本上跑 `just google-auth read`，然后把 `secretsFile` 里那一行用 `grep '^GMAIL_READ_REFRESH_TOKEN=' <笔记本的 secretsFile> | ssh <旧 Mac> 'cat >> <旧 Mac 的 secretsFile>'` 复制过去，token 不经过终端屏幕。另一条是在旧 Mac 上跑 `just google-auth read --port 8765`，笔记本上 `ssh -L 8765:127.0.0.1:8765 <旧 Mac>`，浏览器打开打印出的网址。复制以后笔记本上那一行留不留，是 Appendix E 第 3 条。
+- [x] 旧 Mac 没有浏览器。`docs/deploy/gmail.md` 写两条路。默认是在笔记本上跑 `just google-auth read`，然后用一条 `grep … | ssh <旧 Mac> '…'` 把 OAuth 客户端和 token 三行写进旧 Mac 的 `secretsFile`：同名的旧行先删再写，文件末尾没有换行也不粘行，重跑不变，token 不经过终端屏幕（命令在 `docs/deploy/gmail.md`）。另一条是在旧 Mac 上跑 `just google-auth read --port 8765`，笔记本上 `ssh -L 8765:127.0.0.1:8765 <旧 Mac>`，浏览器打开打印出的网址。复制以后笔记本上那一行留不留，是 Appendix E 第 3 条。
 - [x] ADR-0019 记下：每个密钥属于一个模块或宿主，包只能点名自己的密钥；工具的测试用例只用假密钥；宿主读密钥不受这张表限制。
 
 **You see.**
