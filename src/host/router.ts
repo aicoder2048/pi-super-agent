@@ -28,7 +28,7 @@ function json(value: unknown) {
 	return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }], details: {} };
 }
 
-export function routerTools(kernel: Kernel, afterCommand: () => void, answering: (cause: string) => string | undefined): ToolDefinition[] {
+export function routerTools(kernel: Kernel, afterCommand: () => void, unansweredAbout: (cause: string) => string[]): ToolDefinition[] {
 	const committed = <T>(value: T) => {
 		afterCommand();
 		return json(value);
@@ -70,14 +70,15 @@ export function routerTools(kernel: Kernel, afterCommand: () => void, answering:
 	const reply = defineTool({
 		name: "reply",
 		label: "回复",
-		description: `通过某个线程的渠道对使用者说话。单条不超过 ${kernel.config.replyMaxChars} 字。cause 填你在回应的卡片开头的 id：对话的 trg_、任务的 tkt_ 或通知的 act_。`,
+		description: `通过某个线程的渠道对使用者说话。单条不超过 ${kernel.config.replyMaxChars} 字。cause 填你在回应的卡片开头的 id：对话的 trg_、任务的 tkt_ 或通知的 act_。answers 列出这条回复回答的每张卡片第一行末尾的「卡片 act_」。`,
 		parameters: Type.Object({
 			text: Type.String(),
 			threadId: Type.Optional(Type.String({ description: `默认 ${CONVERSATION_THREAD_ID}` })),
 			cause: Type.String({ description: "回应的对象：trg_（使用者的话）、tkt_（任务结果）或 act_（通知）" }),
+			answers: Type.Optional(Type.Array(Type.String(), { description: "这条回复回答的卡片的 act_ id；省略时算作回答了这一轮里起因相同、还没回答的所有卡片" })),
 		}),
-		async execute(_id, { text, threadId, cause }) {
-			return committed(kernel.reply({ text, threadId: threadId ?? CONVERSATION_THREAD_ID, cause, actionId: answering(cause) }));
+		async execute(_id, { text, threadId, cause, answers }) {
+			return committed(kernel.reply({ text, threadId: threadId ?? CONVERSATION_THREAD_ID, cause, answers: answers ?? unansweredAbout(cause) }));
 		},
 	});
 	const note = defineTool({
@@ -111,6 +112,13 @@ function time(ms: number): string {
 }
 
 export function noticeCard(kernel: Kernel, notice: RouterNotice, rulesFor: (source: string) => string[], actionId: string): string {
+	const card = cardText(kernel, notice, rulesFor, actionId);
+	if (notice.kind === "notice" || notice.kind === "candidate") return card;
+	const [head, ...rest] = card.split("\n");
+	return [`${head} · 卡片 ${actionId}`, ...rest].join("\n");
+}
+
+function cardText(kernel: Kernel, notice: RouterNotice, rulesFor: (source: string) => string[], actionId: string): string {
 	if (notice.kind === "notice") return `[通知] ${actionId}\n${notice.body}`;
 	if (notice.kind === "conversation" || notice.kind === "candidate") {
 		const found = kernel.read(notice.triggerId);
@@ -221,7 +229,7 @@ export function routerSystemPrompt(replyMaxChars: number): string {
 - 需要 Worker 知道一条事实时用 note；note 不构成授权。
 
 ## 怎么说话
-- 只通过 reply 对使用者说话，你的普通文字输出使用者看不到。reply 的 cause 填你在回应的那张卡片开头的 id。
+- 只通过 reply 对使用者说话，你的普通文字输出使用者看不到。reply 的 cause 填你在回应的那张卡片开头的 id，answers 列出这条回复回答的每张卡片第一行末尾的「卡片 act_」。同一任务来了几张卡片、你只回答了其中几张时，只列那几张，没列的会再送给你。
 - 候选触发不能作为 cause：对原始事件不要主动开口，要么开任务，要么忽略。推断任务在有结果之前也不能作为 cause。
 - 每条 reply 不超过 ${replyMaxChars} 字。确认一次之后保持安静，只在有结果、需要使用者做决定、或做不下去时才说话。
 - Worker 提问时，只把那一个具体问题转给使用者，reply 的 cause 填该任务的 tkt_。问题带选项时，选项会显示成按钮和编号，reply 里只说问题本身，不要逐条抄写选项。
@@ -436,7 +444,7 @@ export class Router {
 				modelRuntime: options.modelRuntime,
 				resourceLoader: emptyResources(routerSystemPrompt(options.kernel.config.replyMaxChars)),
 				tools: [...ROUTER_TOOL_NAMES],
-				customTools: routerTools(options.kernel, options.afterCommand, (cause) => router!.#answering(cause)),
+				customTools: routerTools(options.kernel, options.afterCommand, (cause) => router!.#unansweredAbout(cause)),
 				sessionManager: openSessionManager(options, fresh),
 				settingsManager,
 			});
@@ -459,9 +467,9 @@ export class Router {
 		});
 	}
 
-	/** The oldest card in the session about `cause` that no reply answers yet. */
-	#answering(cause: string): string | undefined {
-		return [...this.#delivered].find((id) => (id === cause || this.#unacked.get(id)?.item.carries?.includes(cause)) && !this.#kernel.answered(id));
+	/** A reply that names no cards answers every card about its cause the Router has seen this turn. */
+	#unansweredAbout(cause: string): string[] {
+		return [...this.#delivered].filter((id) => (id === cause || this.#unacked.get(id)?.item.carries?.includes(cause)) && !this.#kernel.answered(id));
 	}
 
 	#push(card: string): void {

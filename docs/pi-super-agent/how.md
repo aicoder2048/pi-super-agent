@@ -111,7 +111,7 @@ trigger 有三个来源。最终都调用 `Host` 的 `submit`。`submit` 执行 
   - `hand_over` 把 trigger 作为 `user_message`（对话 trigger）或 `trigger` input 交给一个未 stopped 的 ticket。
   - `ignore` 把 disposition 设为 `router_ignored`。
   - `stop` 是幂等的。它设置 `stopped_at`，取消该 ticket 所有 pending 的 `worker.wake`，再入队 `worker.stop`。
-- `reply` 检查 thread 存在、长度不超过 `replyMaxChars`（默认 200 个 code point），以及 inference 确认规则。通过后插入 `reply_receipts`，入队 `channel.reply`。回复同时记下它回答的是哪张卡片（`action_id`）：送进会话、还没确认、起因相同、还没有回复的最早那张。清屏后补送和重启后重送卡片时，跳过已经有回复的卡片，或触发已经被处理过的卡片（`Kernel.answered`），其余照送。被拒绝时，原因作为工具结果的 JSON 返回给模型，不会抛错。
+- `reply` 检查 thread 存在、长度不超过 `replyMaxChars`（默认 200 个 code point），以及 inference 确认规则。通过后插入 `reply_receipts`，入队 `channel.reply`。回复在 `answers` 列里记下它回答的卡片（JSON 数组，元素是 `act_`）：Router 在 `reply` 的 `answers` 里列出的卡片，每张卡片的第一行末尾印着「卡片 act_」。Router 没列时，算作回答了这一轮送进会话、起因相同、还没有回复的所有卡片，因为它都看过了。清屏后补送和重启后重送卡片时，跳过已经有回复的卡片，或触发已经被处理过的卡片（`Kernel.answered`），其余照送。升级前写下的回复 `answers` 为空值，算作回答了同一起因、在它之前进来的所有卡片。被拒绝时，原因作为工具结果的 JSON 返回给模型，不会抛错。
 - `note` 加一条 `note` input。`ask_status` 只在 stage 为 `idle` 时允许，加一条 `status_query` input。
 
 Router 的普通文字输出不会发到任何地方。系统提示里也明确告诉了模型这一点。用户只能看到经 `reply` 发出的内容。
