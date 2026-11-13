@@ -121,6 +121,9 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] 拦截原因按 `Opener` 写。来源开的任务被拦时写「来源开的任务不能用 X。要运行命令，用 ask_to_run 请使用者批准」；M5 合并前这句话的后半句写「在汇报里请使用者在对话里提出」。
 - [x] 确认 kernel 拒绝用来源触发开请求任务（`kernel.ts` 的 `decide` 已有 `#inConversation` 检查），加一条测试钉住。
 - [x] 模块的 `prepare` 命令照旧只对非推断任务跑。它是模块代码，命令是定死的。
+- [x] 补丁（#109 审查后、M2 之前）：内核拒绝把模块 feed 的触发 `hand_over` 给不是 `module-feed` 的任务，也拒绝这种任务订阅模块 feed 的线程。决定记在 ADR-0018，不另开 ADR。2026-11-13 在 f188dee 上通过：`tests/source-ticket-tools.test.ts` 新的四条（先红：转交给请求任务的那条报「读得到模块 feed 的话，却有 bash 或 web_get」），`just test` 1785 条里 1784 条过，失败的 watchdog Ctrl+C 单独重跑通过；check.mjs 7 项 ok；`m4-live.ts` lane 2、3、5 到 8、10 PASS，lane 1、4 的 head 一侧过，trunk 一侧失败是因为 trunk 已含 M4、口子不在了。
+- [x] 补丁第二轮（独立验证后）：只认「模块 feed 开的」不够，`stock-ta` 的规则任务能写自选股，邮件转交给它就能借它删 NVDA。`hand_over` 和订阅还要求同一个模块（来源名斜杠前相同），没有触发的推断任务照旧可收（推断任务不能写）；线程直达订阅任务时按同一条规则再查，旧状态库里的订阅不再投递。幕僚长 `note`、`brief` 仍能抄 feed 的话给有 `bash` 或 `web_get` 的任务，记为已知剩余口子，这次不做。2026-11-13 在 4de0989 上通过：`tests/source-ticket-tools.test.ts` 新的三条先红（转交和订阅那两条报 `true !== false`，旧订阅那条报「使用者开的任务收到了邮件」）；`just test` 1788 条里 1787 条过，失败的 watchdog Ctrl+C 单独重跑通过；check.mjs 7 项 ok；`m4-live.ts` lane 2、3、5 到 8、10 PASS。
+- [x] 补丁第三轮（第二次独立验证 A11 到 A14 后）：写权限看任务的领域，不看开任务的触发。模块 feed 的话到得了的任务（开任务的触发、`hand_over`、订阅直达、Worker 经订阅读），领域只能是这个模块或不带。别的模块的规则写了 feed 当来源，开任务时拒绝；没有触发的推断任务带别的领域也不收；旧订阅在 Worker 读时按同一条规则挡，不写迁移。决定记在 ADR-0018。2026-11-13 在 83539e5 上通过：`tests/source-ticket-tools.test.ts` 新的四条先红（报「邮件开的任务落在 stock-ta 领域，能写自选股」「stock-ta 的规则从邮件开了能写自选股的任务」「邮件转交给了能写自选股的任务」「有 bash 的任务读到了邮件正文」）；`just test` 1792 条全过；check.mjs 7 项 ok；`m4-live.ts` lane 2、3、5 到 8、10 PASS。
 - [x] ADR-0018 记下：模块 feed 开的任务只读自己的文件夹和模块带的知识、技能，没有通用 shell 和 `web_get`；所有推断任务的读文件都受同样的根目录限制；使用者自己开的任务读过邮件也保留 `bash`；工具以外的事走 M5 的批准卡片。
 
 **You see.**

@@ -50,8 +50,8 @@ const echoesSession = (): Brain => {
 			const answered = card.match(/点选回答：(tkt_[\w-]+)/)?.[1];
 			if (answered) return [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId, ticketId: answered }] } }, { name: "reply", args: { text: `回：${recalled}`, cause: triggerId } }];
 			const task = said.match(/^开个任务 (\S+)/)?.[1];
-			if (task === "订阅") return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId, title: "订阅医院来信", brief: "看看 thr_mail 线程里来过什么", threads: ["thr_mail"] }] } }, { name: "reply", args: { text: "收到：订阅", cause: triggerId } }];
-			if (task === "旁听") return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "request", triggerId, title: "旁听", brief: "留意 thr_later:1 线程", threads: ["thr_later:1"] }] } }, { name: "reply", args: { text: "收到：旁听", cause: triggerId } }];
+			if (task === "订阅") return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "inference", title: "订阅医院来信", brief: "看看 thr_mail 线程里来过什么", threads: ["thr_mail"] }] } }, { name: "reply", args: { text: "收到：订阅", cause: triggerId } }];
+			if (task === "旁听") return [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "inference", title: "旁听", brief: "留意 thr_later:1 线程", threads: ["thr_later:1"] }] } }, { name: "reply", args: { text: "收到：旁听", cause: triggerId } }];
 			if (task) return [open(triggerId, task, task === "天气" || task === "问天气" || task === "查一下" || task === "接手" ? undefined : HEALTH), { name: "reply", args: { text: `收到：${task}`, cause: triggerId } }];
 			const handTo = said.match(/^转交 (tkt_[\w-]+)/)?.[1];
 			if (handTo) return [{ name: "route", args: { decisions: [{ kind: "hand_over", triggerId, ticketId: handTo }] } }, { name: "reply", args: { text: `回：${recalled}`, cause: triggerId } }];
@@ -97,6 +97,7 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 	const work = async (worker: FakeWorker, input: string) => {
 		const title = host.kernel.getTicket(worker.spec.ticketId)!.title;
 		const heard = input.includes(CANARY) ? `｜听到 ${CANARY}` : "";
+		if (title.startsWith("旁听")) return;
 		if (!input.startsWith("[任务说明]")) {
 			if (title.startsWith("卡住")) return;
 			if (title.startsWith("接手") && heard) {
@@ -106,7 +107,6 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 			worker.report({ status: "ready", summary: `好了${heard}` });
 			return worker.settle();
 		}
-		if (title.startsWith("旁听")) return;
 		if (title.startsWith("订阅")) {
 			const thread = (await worker.request("worker.read", { id: "thr_mail" })) as { recentTriggerIds: string[] };
 			const bodies: string[] = [];
