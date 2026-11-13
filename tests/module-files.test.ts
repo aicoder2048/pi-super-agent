@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -246,4 +247,50 @@ test("purge 删掉整个数据目录，files/ 和里面的 venv 跟着删", asyn
 	files(dataOf("alpha"), { "files/venv-aaaaaaaaaaaa/.psa-lock": "a" });
 	data.purge("alpha" as ModuleName);
 	assert.ok(!existsSync(dataOf("alpha")));
+});
+
+const VENV_TOOL = {
+	"tools/py/tool.json": JSON.stringify({ title: "py", description: "runs the module's venv", input: { x: { type: "number", title: "x" } }, output: { out: { type: "text", title: "out" } }, effect: "read" }),
+	"tools/py/index.ts": `import { execFileSync } from "node:child_process";\nexport default () => ({ out: execFileSync(process.env.PSA_MODULE_VENV + "/bin/python", { encoding: "utf8" }).trim() });`,
+	"tools/py/cases.json": JSON.stringify([{ name: "venv 能跑", input: { x: 1 }, expect: { out: "42" } }]),
+};
+
+function installFakeVenv(dataDir: string): void {
+	const venv = join(dataDir, "files", `venv-${sha(PY["py/uv.lock"]).slice(0, 12)}`);
+	files(venv, { "bin/python": "#!/bin/sh\necho 42\n", ".psa-lock": sha(PY["py/uv.lock"]) });
+	chmodSync(join(venv, "bin/python"), 0o755);
+}
+
+const checkCli = (stateDir: string, pkg: string) =>
+	spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/cli/module.ts", "check", pkg], { env: { ...process.env, PSA_STATE_DIR: stateDir }, encoding: "utf8", timeout: 20_000 });
+
+test("just module check：用 venv 的工具用例用上这个模块已装好的 venv", (t) => {
+	const root = scratch(t);
+	files(root, pack("alpha", { ...PY, ...VENV_TOOL }));
+	installFakeVenv(moduleDataDir(join(root, "state"), "alpha"));
+	const run = checkCli(join(root, "state"), join(root, "alpha"));
+	assert.equal(run.status, 0, run.stdout + run.stderr);
+});
+
+test("just module check：venv 还没装时，用例失败的那一行叫人先跑 just module setup", (t) => {
+	const root = scratch(t);
+	files(root, pack("alpha", { ...PY, ...VENV_TOOL }));
+	const run = checkCli(join(root, "state"), join(root, "alpha"));
+	assert.equal(run.status, 1, run.stdout + run.stderr);
+	assert.match(run.stdout, /tools\/py\/cases\.json: .*just module setup alpha/);
+});
+
+test("宿主跑用例：用 venv 的工具用上这个模块已装好的 venv，模块运行中", async (t) => {
+	const { dir, db } = host(t, pack("alpha", { ...PY, ...VENV_TOOL }));
+	installFakeVenv(moduleDataDir(dir, "alpha"));
+	setModuleSwitch(db, "alpha", true);
+	await until(() => ["运行中", "无效"].includes(label(dir, "alpha")?.label ?? ""), "alpha 检查完", 15_000);
+	assert.equal(label(dir, "alpha")?.label, "运行中", label(dir, "alpha")?.reason);
+});
+
+test("宿主跑用例：venv 还没装时模块无效，原因叫人先跑 just module setup", async (t) => {
+	const { dir, db } = host(t, pack("alpha", { ...PY, ...VENV_TOOL }));
+	setModuleSwitch(db, "alpha", true);
+	await until(() => ["运行中", "无效"].includes(label(dir, "alpha")?.label ?? ""), "alpha 检查完", 15_000);
+	assert.match(label(dir, "alpha")?.reason ?? "", /just module setup alpha/);
 });

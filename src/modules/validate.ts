@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { EVERY, everyMs } from "./connectors/timer.ts";
 import { feedInput, intoOf, NOTHING_HELD, parseCollected } from "./feed-runner.ts";
-import { PY_DIR } from "./files.ts";
+import { linkVenvs, lockOf, PY_DIR, venvInstalled } from "./files.ts";
 import { fixtureSecrets, runModuleCode, runModuleCodeAsync, secretsFor, type CodeReply, type CodeSite, type RunOptions, type SecretLookup, type Secrets } from "./run-code.ts";
 import { CONNECTORS, DATA_CLASSES, FEED_WHEN, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS } from "./manifest.ts";
 import type {
@@ -498,24 +498,34 @@ function caseRuns(components: readonly Component[], secret: SecretLookup): CaseR
 
 export const hasCases = (scan: PackageScan): boolean => caseRuns(scan.components, () => undefined).length > 0;
 
-/** A check never shows module code the module's real data: every case of one check shares a data dir that is deleted after the last. */
-function scratchData(): { dir: string; drop(): void } {
+/**
+ * A check never shows module code the module's real data: every case of one check shares a data dir that is deleted after the last.
+ * The module's installed venvs are linked in, so a case can run the Python the package names.
+ */
+function scratchData(packageDir: string, module: string, realDataDir: string | undefined): { dir: string; drop(): void; explain(problem: Problem): Problem } {
 	const dir = mkdtempSync(join(tmpdir(), "psa-check-data-"));
-	return { dir, drop: () => rmSync(dir, { recursive: true, force: true }) };
+	if (realDataDir !== undefined) linkVenvs(realDataDir, dir);
+	const lock = lockOf(packageDir);
+	const noVenv = lock !== undefined && (realDataDir === undefined || !venvInstalled(realDataDir, lock));
+	return {
+		dir,
+		drop: () => rmSync(dir, { recursive: true, force: true }),
+		explain: (problem) => (noVenv ? { ...problem, reason: `${problem.reason} (the Python environment is not installed: run \`just module setup ${module}\` first)` } : problem),
+	};
 }
 
 const siteOf = (packageDir: string, run: CaseRun, dataDir: string): CodeSite => ({ packageDir, component: run.component, dataDir });
 
-/** For a package scanned with `runCases: false`. */
-export async function runCasesAsync(scan: PackageScan, secret: SecretLookup): Promise<Problem[]> {
+/** For a package scanned with `runCases: false`. `realDataDir` is the module's instance data, whose venvs the cases may use. */
+export async function runCasesAsync(scan: PackageScan, secret: SecretLookup, realDataDir?: string): Promise<Problem[]> {
 	const problems: Problem[] = [];
 	const runs = caseRuns(scan.components, secret);
 	if (runs.length === 0) return problems;
-	const data = scratchData();
+	const data = scratchData(scan.dir, scan.manifest.name, realDataDir);
 	try {
 		for (const run of runs) {
 			const problem = run.problem(await runModuleCodeAsync(siteOf(scan.dir, run, data.dir), run.entry, run.input, run.secrets, run.options));
-			if (problem) problems.push(problem);
+			if (problem) problems.push(data.explain(problem));
 		}
 	} finally {
 		data.drop();
@@ -571,10 +581,13 @@ export function scanPackage(packageDir: string, options: ScanOptions = {}): Scan
 	}
 }
 
-/** `folder`: the module name the folder stands for. A copy in the module store sits in a folder named by its digest. */
-type ScanOptions = { previous?: string | undefined; runCases?: boolean; folder?: string; secret?: SecretLookup };
+/**
+ * `folder`: the module name the folder stands for. A copy in the module store sits in a folder named by its digest.
+ * `dataDirOf`: where a module's instance data is, whose venvs the test cases may use.
+ */
+type ScanOptions = { previous?: string | undefined; runCases?: boolean; folder?: string; secret?: SecretLookup; dataDirOf?: (module: string) => string };
 
-function scanReadable(packageDir: string, { previous, runCases = true, folder, secret = (name) => process.env[name] }: ScanOptions): ScanResult {
+function scanReadable(packageDir: string, { previous, runCases = true, folder, secret = (name) => process.env[name], dataDirOf }: ScanOptions): ScanResult {
 	const root = resolve(packageDir);
 	const problems: Problem[] = [];
 	const report: Report = (where, reason) => void problems.push({ where, reason });
@@ -587,11 +600,11 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, s
 	crossCheck(report, manifest, components);
 	const runs = runCases && problems.length === 0 ? caseRuns(components, secret) : [];
 	if (runs.length > 0) {
-		const data = scratchData();
+		const data = scratchData(root, manifest.name, dataDirOf?.(manifest.name));
 		try {
 			for (const run of runs) {
 				const problem = run.problem(runModuleCode(siteOf(root, run, data.dir), run.entry, run.input, run.secrets, run.options));
-				if (problem) problems.push(problem);
+				if (problem) problems.push(data.explain(problem));
 			}
 		} finally {
 			data.drop();

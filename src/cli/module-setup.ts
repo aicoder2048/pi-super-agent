@@ -1,14 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { exitOnConfigError } from "../config-error.ts";
 import { loadConfig, loadModules } from "../host/config.ts";
-import { filesDir, lockOf, PY_DIR, VENV_MARK, venvDir, venvsIn } from "../modules/files.ts";
+import { filesDir, lockOf, PY_DIR, VENV_MARK, venvDir, venvInstalled, venvsIn } from "../modules/files.ts";
 import { moduleDataDir } from "../modules/knowledge.ts";
 
 const GUIDE = "docs/modules/stock-ta.md";
-
-const markOf = (venv: string): string | undefined => (existsSync(join(venv, VENV_MARK)) ? readFileSync(join(venv, VENV_MARK), "utf8") : undefined);
 
 /** Keeps `current` and the most recently finished other one, for tickets still pinned to the version before. */
 function dropOlder(dataDir: string, current: string): void {
@@ -31,7 +29,7 @@ export function setupModule(module: string): number {
 		}
 		const dataDir = moduleDataDir(config.stateDir, module);
 		const venv = venvDir(dataDir, lock);
-		if (markOf(venv) === lock) {
+		if (venvInstalled(dataDir, lock)) {
 			console.log(`${module} 的 Python 环境已经装好：${venv}`);
 			return 0;
 		}
