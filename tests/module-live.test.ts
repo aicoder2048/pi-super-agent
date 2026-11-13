@@ -336,8 +336,8 @@ test("宿主跑工具用例时给的是假密钥：宿主不读密钥文件也�
 	const dir = stateDir(t);
 	files(join(dir, "modules"), {
 		"keyed/module.json": JSON.stringify({ schema: 1, name: "keyed", version: "0.1.0", title: "带密钥", description: "要密钥的工具" }),
-		"keyed/tools/probe/tool.json": JSON.stringify({ title: "probe", description: "reads its key", input: { x: { type: "number", title: "x" } }, output: { y: { type: "number", title: "y" } }, secrets: ["KEYED_LAB_KEY"] }),
-		"keyed/tools/probe/index.ts": `export default async () => ({ y: process.env.KEYED_LAB_KEY ? 1 : 0 });`,
+		"keyed/tools/probe/tool.json": JSON.stringify({ title: "probe", description: "reads its key", input: { x: { type: "number", title: "x" } }, output: { y: { type: "number", title: "y" } }, secrets: ["KEYED__LAB_KEY"] }),
+		"keyed/tools/probe/index.ts": `export default async () => ({ y: process.env.KEYED__LAB_KEY ? 1 : 0 });`,
 		"keyed/tools/probe/cases.json": JSON.stringify([{ name: "has-key", input: { x: 1 }, expect: { y: 1 } }]),
 	});
 	const { db } = boot(t, dir);
@@ -455,7 +455,7 @@ test("模块卡：还钉着旧版本的开着的任务数；用到的密钥名�
 	const dir = stateDir(t);
 	files(join(dir, "modules/tax"), {
 		"knowledge/irs-pub-17/source.json": JSON.stringify({ title: "IRS 第 17 号出版物", version: "2025", published: "2025-01-01", authority: "authoritative", license: "user-import", origin: "https://www.irs.gov/pub17" }),
-		"feeds/statements/feed.json": JSON.stringify({ title: "券商交易记录", description: "取成交", handler: "index.ts", secrets: ["TAX_BROKER_TOKEN"], every: "1d", into: "transactions", notice: "有新成交" }),
+		"feeds/statements/feed.json": JSON.stringify({ title: "券商交易记录", description: "取成交", handler: "index.ts", secrets: ["TAX__BROKER_TOKEN"], every: "1d", into: "transactions", notice: "有新成交" }),
 		"feeds/statements/index.ts": "export default async function () { return []; }\n",
 		"data/transactions/collection.json": JSON.stringify({ title: "交易", kind: "record", class: "private", fields: { amount: { type: "number", title: "金额" } } }),
 	});
@@ -471,6 +471,6 @@ test("模块卡：还钉着旧版本的开着的任务数；用到的密钥名�
 	const { modules } = boot(t, dir);
 	const tax = cardOf(modules, "tax");
 	assert.equal(tax.pinnedOld, 1);
-	assert.deepEqual(tax.secrets, ["TAX_BROKER_TOKEN"]);
+	assert.deepEqual(tax.secrets, ["TAX__BROKER_TOKEN"]);
 	assert.deepEqual(tax.notImported, ["irs-pub-17"]);
 });

@@ -399,8 +399,8 @@ test("just module try：工具要密钥时，检查用假密钥跑用例，预�
 	t.after(() => rmSync(pkg, { recursive: true, force: true }));
 	cpSync(join(SAMPLE, "personal-tax"), pkg, { recursive: true });
 	for (const [path, content] of Object.entries({
-		"tools/probe/tool.json": JSON.stringify({ title: "probe", description: "reads its key", input: { x: { type: "number", title: "x" } }, output: { y: { type: "number", title: "y" } }, secrets: ["PERSONAL_TAX_LAB_KEY"] }),
-		"tools/probe/index.ts": `export default async () => ({ y: process.env.PERSONAL_TAX_LAB_KEY ? 1 : 0 });`,
+		"tools/probe/tool.json": JSON.stringify({ title: "probe", description: "reads its key", input: { x: { type: "number", title: "x" } }, output: { y: { type: "number", title: "y" } }, secrets: ["PERSONAL_TAX__LAB_KEY"] }),
+		"tools/probe/index.ts": `export default async () => ({ y: process.env.PERSONAL_TAX__LAB_KEY ? 1 : 0 });`,
 		"tools/probe/cases.json": JSON.stringify([{ name: "has-key", input: { x: 1 }, expect: { y: 1 } }]),
 	})) {
 		mkdirSync(join(pkg, path, ".."), { recursive: true });
@@ -412,7 +412,7 @@ test("just module try：工具要密钥时，检查用假密钥跑用例，预�
 			router: [opensTaxTicket],
 			workers: [worker("预演算税", on("调工具", /^\[任务说明\]/, () => [domainTool("tax-bracket", { taxableIncome: 25000 })]), on("汇报", /^\[模块工具\]/, () => [report("ready", "落在第 2 档，估算税额 4000 美元")]))],
 		},
-		{ pkg, secrets: "PERSONAL_TAX_LAB_KEY=k\n" },
+		{ pkg, secrets: "PERSONAL_TAX__LAB_KEY=k\n" },
 	);
 	assert.equal(run.status, 0, run.out);
 	assert.match(run.out, /^PASS bracket-uses-tool/m);

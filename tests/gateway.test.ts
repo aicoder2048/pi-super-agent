@@ -33,8 +33,8 @@ function storeWithTax(t: TestContext) {
 	files(pkg, {
 		"tools/file-return/tool.json": tool("write"),
 		"tools/file-return/index.ts": "export default () => ({ filed: true });",
-		"tools/env-probe/tool.json": tool("read", ["PERSONAL_TAX_KEY"]),
-		"tools/env-probe/index.ts": "export default () => ({ named: process.env.PERSONAL_TAX_KEY ?? null, unnamed: process.env.OTHER_KEY ?? null });",
+		"tools/env-probe/tool.json": tool("read", ["PERSONAL_TAX__KEY"]),
+		"tools/env-probe/index.ts": "export default () => ({ named: process.env.PERSONAL_TAX__KEY ?? null, unnamed: process.env.OTHER_KEY ?? null });",
 		"tools/spin/tool.json": tool("read"),
 		"tools/spin/index.ts": "export default () => { for (;;) {} };",
 		"agents/clerk.md": "---\nname: clerk\ntitle: 记账员\ndescription: 只整理交易记录\ntools: read\nuses: data/transactions\n---\n你是记账员。",
@@ -47,7 +47,7 @@ function storeWithTax(t: TestContext) {
 	return { store, digest };
 }
 
-const hostSecrets = (name: string): string | undefined => ({ PERSONAL_TAX_KEY: "named-value", OTHER_KEY: "unnamed-value" })[name];
+const hostSecrets = (name: string): string | undefined => ({ PERSONAL_TAX__KEY: "named-value", OTHER_KEY: "unnamed-value" })[name];
 
 function setup(t: TestContext, { serving = true, limitMs = 20_000, secret = hostSecrets } = {}) {
 	const { store, digest } = storeWithTax(t);
@@ -115,9 +115,9 @@ test("工具的进程只拿到 tool.json 写了名字的密钥，宿主别的密
 });
 
 test("读密钥出错（值不合法、密钥文件读不到）：这次调用失败并说明原因，宿主日志照样记一笔", async (t) => {
-	const { gateway, caller, logs } = setup(t, { secret: () => { throw new Error("PERSONAL_TAX_KEY 含有空白或非 ASCII 字符，请检查"); } });
+	const { gateway, caller, logs } = setup(t, { secret: () => { throw new Error("PERSONAL_TAX__KEY 含有空白或非 ASCII 字符，请检查"); } });
 	const reply = await gateway.call(caller(), call("env-probe"));
-	assert.deepEqual(reply, { ok: false, refusal: { code: "provider-failed", note: "PERSONAL_TAX_KEY 含有空白或非 ASCII 字符，请检查" } });
+	assert.deepEqual(reply, { ok: false, refusal: { code: "provider-failed", note: "PERSONAL_TAX__KEY 含有空白或非 ASCII 字符，请检查" } });
 	assert.match(logs.at(-1)!, /\[gateway\] personal-tax tools\/env-probe .* provider-failed \d+ ms/);
 });
 

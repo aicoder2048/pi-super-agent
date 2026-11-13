@@ -184,7 +184,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] `writeSecret` 改写 `.env` 里同名的那一行，没有就加一行，其他行原样保留。先写同目录的临时文件，权限 600，再改名换上。`secretsFile` 没配置时说明怎么在 `config.json` 里加。
 - [x] 输出只写密钥名和 scope，不写 token、不写授权码。授权网址里没有秘密，可以打印。
 - [x] 密钥归属表。`src/modules/secret-owners.ts` 导出一张表，密钥名对应一个模块名或 `"host"`：`GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` 属于 `mail`，`POLYGON_API_KEY` 属于 `stock-ta`，`GMAIL_DRAFT_REFRESH_TOKEN`、`TELEGRAM_BOT_TOKEN` 和宿主自己读的其他密钥属于 `"host"`。宿主自己读密钥不经过这张表。
-- [x] 包的检查（`validate.ts`）对每个 feed 和工具的 `secrets` 查表。点名属于别的模块或 `"host"` 的密钥就报错，一行写明密钥名和它的主人。表里没有的名字，只有以本模块的前缀开头（模块名转大写、`-` 换成 `_`，再加 `_`，例如 `MAIL_`、`STOCK_TA_`）才放行，见 Appendix E 第 10 条。`just module try` 走同一个检查，不另写一份。
+- [x] 包的检查（`validate.ts`）对每个 feed 和工具的 `secrets` 查表。点名属于别的模块或 `"host"` 的密钥就报错，一行写明密钥名和它的主人。表里没有的名字，只有以本模块的前缀开头（模块名转大写、`-` 换成 `_`，再加 `__`，例如 `MAIL__`、`STOCK_TA__`）才放行，见 Appendix E 第 10 条。`just module try` 走同一个检查，不另写一份。
 - [x] 工具的 `cases.json` 改用假密钥跑。今天 `validate.ts` 用 `secretsFor` 把真密钥交给工具的测试用例，feed 的 fixtures 已经用 `fixtureSecrets`，工具照 feed 改。这样装模块、改模块、`just module check` 都不会用真 token 发请求。
 - [x] 旧 Mac 没有浏览器。`docs/deploy/gmail.md` 写两条路。默认是在笔记本上跑 `just google-auth read`，然后把 `secretsFile` 里那一行用 `grep '^GMAIL_READ_REFRESH_TOKEN=' <笔记本的 secretsFile> | ssh <旧 Mac> 'cat >> <旧 Mac 的 secretsFile>'` 复制过去，token 不经过终端屏幕。另一条是在旧 Mac 上跑 `just google-auth read --port 8765`，笔记本上 `ssh -L 8765:127.0.0.1:8765 <旧 Mac>`，浏览器打开打印出的网址。复制以后笔记本上那一行留不留，是 Appendix E 第 3 条。
 - [x] ADR-0019 记下：每个密钥属于一个模块或宿主，包只能点名自己的密钥；工具的测试用例只用假密钥；宿主读密钥不受这张表限制。
@@ -732,6 +732,6 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 7. **哪些任务收紧，收多紧。** 默认模块 feed 开的任务（规则和推断）用允许清单，没有 `bash`、`web_get`；所有推断任务读文件都只在允许的根目录下；宿主自带来源开的推断任务保留 `web_get`；使用者和宿主自带来源开的规则任务不变。另一条是所有推断任务都去掉 `web_get`，`us-market` 的推断任务就不能查网页了。再一条是所有规则任务都收紧，包括你自己写的定时规则。
 8. **不私密任务的批准能不能在手机上点。** 默认能（GitHub 这类）。另一条是所有批准卡片都只在网页上点，手机上一行。
 9. **发件人名单标不标私密。** 默认 `shareable`，地址本来就是你在对话里说的，加人的任务不会让幕僚长在 Telegram 上变一行。另一条是 `private`，地址不会出现在 Telegram 上，代价是每加一次人，之后幕僚长在 Telegram 上只剩一行。
-10. **表里没有的密钥名。** 默认只有以本模块前缀开头的才放行（`MAIL_`、`STOCK_TA_`），新模块不用改宿主。另一条是一律拒绝，每个新密钥都要在表里登记，是一个宿主 PR。
+10. **表里没有的密钥名。** 默认只有以本模块前缀开头的才放行（`MAIL__`、`STOCK_TA__`），新模块不用改宿主。另一条是一律拒绝，每个新密钥都要在表里登记，是一个宿主 PR。
 11. **附件多大。** 默认 10 MB，20 秒内做完（下载 10 秒、PDF 6 秒）；时段 2 实测旧 Mac 太慢就降到 5 MB。另一条是给工具加 `limit` 字段（最多 10 分钟，和 feed 一样），多一个小的宿主改动，大附件也能读。
 12. **读过邮件以后，幕僚长在 Telegram 上只剩一行。** 默认照 #105 的规则，直到换一个干净的幕僚长会话，这一版不做换会话。另一条是另开一个 PR，让你在网页上一键给幕僚长换新会话，之后 Telegram 恢复全文。

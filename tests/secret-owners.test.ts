@@ -60,8 +60,18 @@ test("a package that names a host secret is refused, on a feed and on a tool", (
 });
 
 test("a secret the table does not list passes only with the module's own prefix", (t) => {
-	assert.deepEqual(problems(keyed(t, "stock-ta", ["STOCK_TA_EXTRA_KEY"])), []);
-	assert.deepEqual(problems(keyed(t, "mail", ["FOO_KEY"])), ["feeds/inbox/feed.json: FOO_KEY 不在密钥归属表里，本模块自己的密钥要以 MAIL_ 开头"]);
+	assert.deepEqual(problems(keyed(t, "stock-ta", ["STOCK_TA__EXTRA_KEY"])), []);
+	assert.deepEqual(problems(keyed(t, "mail", ["FOO_KEY"])), ["feeds/inbox/feed.json: FOO_KEY 不在密钥归属表里，本模块自己的密钥要以 MAIL__ 开头"]);
+});
+
+test("a module cannot name a secret under the prefix of a module whose name continues its own", (t) => {
+	assert.deepEqual(problems(keyed(t, "mail", ["MAIL_X_TOKEN"])), ["feeds/inbox/feed.json: MAIL_X_TOKEN 不在密钥归属表里，本模块自己的密钥要以 MAIL__ 开头"]);
+	assert.deepEqual(problems(keyed(t, "stock", ["STOCK_TA_KEY"])), ["feeds/inbox/feed.json: STOCK_TA_KEY 不在密钥归属表里，本模块自己的密钥要以 STOCK__ 开头"]);
+	assert.deepEqual(problems(keyed(t, "mail-x", ["MAIL_X__TOKEN"])), []);
+});
+
+test("a module name with a doubled or trailing hyphen is refused, so no two modules share a secret prefix", (t) => {
+	for (const name of ["mail--x", "mail-"]) assert.match(problems(keyed(t, name, []))[0] ?? "", /is not a usable module name/, name);
 });
 
 test("the owner of a secret may name it", (t) => {
@@ -87,14 +97,14 @@ test("just module try refuses the same package before starting a host", (t) => {
 test("a tool's test cases get a fake value for its secret, never the one in secretsFile", (t) => {
 	const state = scratch(t, "psa-owners-state-");
 	writeFileSync(join(state, "config.json"), JSON.stringify({ secretsFile: "secrets.env" }));
-	writeFileSync(join(state, "secrets.env"), "MAIL_PROBE_KEY=real-value-from-secrets-file\n");
+	writeFileSync(join(state, "secrets.env"), "MAIL__PROBE_KEY=real-value-from-secrets-file\n");
 	const pkg = write(join(scratch(t, "psa-owners-"), "mail"), {
 		"module.json": JSON.stringify({ schema: 1, name: "mail", version: "0.1.0", title: "mail", description: "mail" }),
-		"tools/probe/tool.json": JSON.stringify({ title: "probe", description: "echoes its key", input: { x: { type: "number", title: "x" } }, output: { set: { type: "number", title: "set" }, real: { type: "number", title: "real" } }, secrets: ["MAIL_PROBE_KEY"] }),
-		"tools/probe/index.ts": `export default async () => ({ set: process.env.MAIL_PROBE_KEY ? 1 : 0, real: process.env.MAIL_PROBE_KEY === "real-value-from-secrets-file" ? 1 : 0 });\n`,
+		"tools/probe/tool.json": JSON.stringify({ title: "probe", description: "echoes its key", input: { x: { type: "number", title: "x" } }, output: { set: { type: "number", title: "set" }, real: { type: "number", title: "real" } }, secrets: ["MAIL__PROBE_KEY"] }),
+		"tools/probe/index.ts": `export default async () => ({ set: process.env.MAIL__PROBE_KEY ? 1 : 0, real: process.env.MAIL__PROBE_KEY === "real-value-from-secrets-file" ? 1 : 0 });\n`,
 		"tools/probe/cases.json": JSON.stringify([{ name: "fake-key", input: { x: 1 }, expect: { set: 1, real: 0 } }]),
 	});
 	const run = cli(state, ["check", pkg]);
 	assert.equal(run.status, 0, run.out);
-	assert.match(run.out, /^ok mail@0\.1\.0 .*secrets=MAIL_PROBE_KEY/m);
+	assert.match(run.out, /^ok mail@0\.1\.0 .*secrets=MAIL__PROBE_KEY/m);
 });

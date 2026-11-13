@@ -3,7 +3,7 @@
   "description": "每天去券商接口取一次新的成交，存成交易记录",
   "handler": "index.ts",
   "secrets": [
-    "PERSONAL_TAX_BROKER_TOKEN"
+    "PERSONAL_TAX__BROKER_TOKEN"
   ],
   "every": "1d",
   "settings": {

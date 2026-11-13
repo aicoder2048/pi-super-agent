@@ -187,7 +187,8 @@ async function lanes(): Promise<void> {
 		for (const [module, secret, expect] of [
 			["lab7-polygon", "POLYGON_API_KEY", /POLYGON_API_KEY 属于模块 stock-ta，别的模块不能用/],
 			["lab7-draft", "GMAIL_DRAFT_REFRESH_TOKEN", /GMAIL_DRAFT_REFRESH_TOKEN 属于宿主，模块不能用/],
-			["lab7-foo", "FOO_KEY", /FOO_KEY 不在密钥归属表里，本模块自己的密钥要以 LAB7_FOO_ 开头/],
+			["lab7-foo", "FOO_KEY", /FOO_KEY 不在密钥归属表里，本模块自己的密钥要以 LAB7_FOO__ 开头/],
+			["lab7", "LAB7_FOO_KEY", /LAB7_FOO_KEY 不在密钥归属表里，本模块自己的密钥要以 LAB7__ 开头/],
 		] as const) {
 			const pkg = write(join(scratch("m1-pkg-"), module), {
 				"module.json": JSON.stringify({ schema: 1, name: module, version: "0.1.0", title: module, description: module }),
@@ -199,16 +200,16 @@ async function lanes(): Promise<void> {
 			writeConfig(state, fakeModels);
 			for (const command of ["check", "try"]) runs.push({ ...just(HEAD, state, ["module", command, pkg]), expect });
 		}
-		const pass = runs.length === 6 && runs.every((r) => r.status !== 0 && r.expect.test(r.out) && !/预演 lab7/.test(r.out));
+		const pass = runs.length === 8 && runs.every((r) => r.status !== 0 && r.expect.test(r.out) && !/预演 lab7/.test(r.out));
 		return { pass, evidence: runs.map((r) => r.out).join("\n\n") };
 	});
 
 	await lane(8, "no-leak", async () => {
-		const w = await world({}, "LAB8_ECHO_KEY=value-from-secrets-file-lane8\n");
+		const w = await world({}, "LAB8__ECHO_KEY=value-from-secrets-file-lane8\n");
 		const pkg = write(join(scratch("m1-pkg-"), "lab8"), {
 			"module.json": JSON.stringify({ schema: 1, name: "lab8", version: "0.1.0", title: "lab8", description: "lab8" }),
-			"tools/echo/tool.json": JSON.stringify({ title: "echo", description: "echoes its key", input: { x: { type: "number", title: "x" } }, output: { got: { type: "text", title: "got" } }, secrets: ["LAB8_ECHO_KEY"] }),
-			"tools/echo/index.ts": "export default async () => ({ got: process.env.LAB8_ECHO_KEY ?? null });\n",
+			"tools/echo/tool.json": JSON.stringify({ title: "echo", description: "echoes its key", input: { x: { type: "number", title: "x" } }, output: { got: { type: "text", title: "got" } }, secrets: ["LAB8__ECHO_KEY"] }),
+			"tools/echo/index.ts": "export default async () => ({ got: process.env.LAB8__ECHO_KEY ?? null });\n",
 			"tools/echo/cases.json": JSON.stringify([{ name: "echo", input: { x: 1 }, expect: { got: "value-from-secrets-file-lane8" } }]),
 		});
 		const check = just(HEAD, w.state, ["module", "check", pkg]);

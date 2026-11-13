@@ -11,7 +11,8 @@ export const SECRET_OWNERS: Readonly<Record<string, string>> = {
 	FINNHUB_API_KEY: "host",
 };
 
-export const prefixOf = (module: string): string => `${module.toUpperCase().replaceAll("-", "_")}_`;
+/** `__` ends the prefix: `MAIL_X_TOKEN` could belong to a module `mail-x`, `MAIL__X_TOKEN` only to `mail` (ADR-0019). */
+export const prefixOf = (module: string): string => `${module.toUpperCase().replaceAll("-", "_")}__`;
 
 export function secretRefusal(module: string, secret: string): string | undefined {
 	const owner = SECRET_OWNERS[secret];
