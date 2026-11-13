@@ -2446,6 +2446,30 @@ test("升级：旧库里第一次有私密数据之后幕僚长开的任务、�
 	}
 });
 
+test("升级：补记私密的迁移中途失败（比如宿主崩了），下次打开时整步重来，不会只建了表没补记", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-private-seed-"));
+	try {
+		const path = join(dir, "state.db");
+		const first = setup({ path, domains: DOMAINS });
+		const health = first.open("request", { title: "记 CEA", domain: "mail" });
+		first.kernel.touchPrivate(health);
+		first.clock.t += 1000;
+		const opened = first.open("request", { title: "解释 CEA 4.2" });
+		first.db.exec("DROP TABLE router_private; DROP TABLE private_text; CREATE TRIGGER crash BEFORE UPDATE ON tickets BEGIN SELECT RAISE(ABORT, 'crash'); END;");
+		first.db.close();
+		assert.throws(() => openStore(path), /crash/);
+		const raw = new DatabaseSync(path);
+		raw.exec("DROP TRIGGER crash");
+		raw.close();
+
+		const second = setup({ path, domains: DOMAINS });
+		assert.equal(second.kernel.touchedPrivate(opened), true);
+		second.db.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("别处提到任务时：普通任务写标题，私密任务只写它属于哪个模块", () => {
 	const s = setup({ domains: DOMAINS });
 	const plain = s.open("request", { title: "查天气" });
