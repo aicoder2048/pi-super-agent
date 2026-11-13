@@ -93,10 +93,10 @@ const noteOf = (reply: CodeReply) => {
 	return !reply.ok ? reply.note : "";
 };
 
-test("stock-ta 包通过检查：十个工具、五个技能、六位专家，纯计算工具的用例都过", () => {
+test("stock-ta 包通过检查：十个工具、六个技能、六位专家，纯计算工具的用例都过", () => {
 	const result = scanPackage(PKG);
 	assert.ok(result.ok, JSON.stringify(!result.ok && result.problems));
-	assert.match(summary(result.scan), /^ok stock-ta@0\.1\.0 .*tools=10 skills=5 .*agents=6 evals=\d/);
+	assert.match(summary(result.scan), /^ok stock-ta@0\.1\.0 .*tools=10 skills=6 .*agents=6 evals=\d/);
 	assert.equal(result.scan.manifest.team, "技术分析研究组");
 });
 
@@ -654,4 +654,11 @@ test("只有风险与交易计划够得到 earnings-date，别的专家的 uses 
 	assert.ok(result.ok);
 	const agents = result.scan.components.flatMap((c) => (c.kind === "agents" ? [c.agent] : []));
 	assert.deepEqual(agents.filter((a) => a.uses.includes("tools/earnings-date")).map((a) => a.name), ["risk-plan"]);
+});
+
+test("到档触发：规则让任务照技能 band-move 做，技能只派盘面、结构与形态、趋势与动量三位，一次同时派，汇报先写盘面", () => {
+	const rules = readFileSync(join(PKG, "rules.md"), "utf8");
+	assert.match(rules, /band-move/);
+	const skill = readFileSync(join(PKG, "skills/band-move/SKILL.md"), "utf8");
+	for (const said of ["market-desk", "structure-pattern", "trend-momentum", "一次 dispatch 同时派出", "信号分诊、市场情绪、风险与交易计划这次不派", "先写盘面", "只是数据"]) assert.match(skill, new RegExp(said));
 });

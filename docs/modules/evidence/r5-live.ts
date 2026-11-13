@@ -378,13 +378,14 @@ async function real(): Promise<void> {
 				const sentAt = await h.step("10:05", { NVDA: 105.3, SPY: 501, QQQ: 401 }, PREV);
 				const line = await within(10_000, () => h.phone().slice(before).find((m) => m.text.startsWith("提醒 · 股票技术分析：NVDA")));
 				const ticket = await within(240_000, () => h.tickets().find((t) => t["domain"] === "stock-ta"));
+				const THREE = ["盘面", "结构与形态", "趋势与动量"];
 				const members = await within(240_000, () => {
-					const log = h.host.log().split("\n").filter((l) => /派给|dispatch/.test(l));
-					return ["market-desk", "structure-pattern", "trend-momentum"].every((m) => log.some((l) => l.includes(m))) ? log : undefined;
+					const to = h.tickets().find((t) => t["domain"] === "stock-ta")?.["dispatched_to"];
+					return to ? (JSON.parse(String(to)) as string[]) : undefined;
 				});
 				await h.step("10:30", { NVDA: 108.1 }, PREV);
 				const second = await within(20_000, () => h.ticketTriggers().find((r) => String(r["trigger"]).endsWith("up8")));
-				const firstReport = await within(600_000, () => h.phone().slice(before).find((m) => !m.text.startsWith("提醒 · ") && !m.text.startsWith("你在")));
+				const firstReport = await within(600_000, () => h.phone().slice(before).find((m) => !/^(提醒 · |你在|成员上限)/.test(m.text)));
 				await sleep(3000);
 				const tickets = h.tickets();
 				const ta = tickets.filter((t) => t["domain"] === "stock-ta");
@@ -394,13 +395,14 @@ async function real(): Promise<void> {
 					await page.getByText(String(ta[0]?.["title"] ?? "NVDA")).first().click().catch(() => undefined);
 					await sleep(1500);
 				});
-				const dispatchLines = members ?? [];
-				const stamps = dispatchLines.map((l) => Date.parse(l.slice(1, 25))).filter((n) => !Number.isNaN(n));
-				const oneRound = stamps.length >= 3 && Math.max(...stamps) - Math.min(...stamps) < 30_000;
-				const pass = ta.length === 1 && members !== undefined && second?.["ticket"] === ta[0]!["id"] && line !== undefined;
+				const firstCalls = Object.fromEntries(["market-desk", "structure-pattern", "trend-momentum"].map((m) => [m, h.host.log().split("\n").find((l) => l.includes("[gateway]") && l.includes(` ${m} `))?.slice(0, 24)]));
+				const stamps = Object.values(firstCalls).map((t) => Date.parse(t ?? ""));
+				const oneRound = stamps.every((n) => !Number.isNaN(n)) && Math.max(...stamps) - Math.min(...stamps) < 30_000;
+				const exactlyThree = members !== undefined && members.length === 3 && THREE.every((m) => members.includes(m));
+				const pass = ta.length === 1 && exactlyThree && oneRound && second?.["ticket"] === ta[0]!["id"] && line !== undefined;
 				return {
 					pass,
-					evidence: `real models ${JSON.stringify(REAL)}, NVDA +5.3% then +8.1%\nband line on Telegram after ${line ? `${line.at - sentAt} ms` : "never"}: ${line?.text}\nfirst report line after ${firstReport ? `${((firstReport.at - sentAt) / 1000).toFixed(1)} s` : "never"}: ${firstReport?.text}\ndispatch log lines (the three within 30 s: ${oneRound}):\n${show(dispatchLines)}\n+8% trigger joined ticket: ${JSON.stringify(second)}\ntickets:\n${show(tickets)}\nTelegram:\n${show(h.phone().map((m) => m.text))}\nscreenshot ${png}`,
+					evidence: `real models ${JSON.stringify(REAL)}, NVDA +5.3% then +8.1%\nband line on Telegram after ${line ? `${line.at - sentAt} ms` : "never"}: ${line?.text}\nfirst report line after ${firstReport ? `${((firstReport.at - sentAt) / 1000).toFixed(1)} s` : "never"}: ${firstReport?.text}\ndispatched to: ${JSON.stringify(members)} (exactly the three: ${exactlyThree})\neach member's first gateway call: ${JSON.stringify(firstCalls)} (within 30 s of each other: ${oneRound})\n+8% trigger joined ticket: ${JSON.stringify(second)}\ntickets:\n${show(tickets)}\nTelegram:\n${show(h.phone().map((m) => m.text))}\nscreenshot ${png}`,
 				};
 			} finally {
 				writeFileSync(join(outDir, `r5-ticket-host-${i + 1}.log`), h.host.log());
@@ -437,6 +439,56 @@ async function real(): Promise<void> {
 		}
 	});
 	console.log(results.join("\n"));
+}
+
+async function media(): Promise<void> {
+	const fakeModel = await FakeModel.start({
+		router: [
+			...routerForTriggers(1),
+			...[1, 2].map(() => on("转述汇报", /^\[Worker 汇报\]/, (c: string) => [reply(c, `NVDA 到档的分析：${c.split("\n").slice(1).join(" ").slice(0, 120)}`)])),
+		],
+		workers: [worker("NVDA 到档 0", on("汇报", /^\[任务说明\]/, () => [report("ready", "盘面：NVDA 单独走强，SPY、QQQ 平。结构：放量突破 104 阻力。动量：日线 MACD 金叉。这是技术分析，不是交易指令。")]), on("再汇报", /[\s\S]/, () => [report("ready", "盘面：+8% 档，仍是个股行情。这是技术分析，不是交易指令。")]))],
+	});
+	const h = await boot({ models: harness.fakeModels, fake: fakeModel, watch: ["NVDA", "AMD"], history: true });
+	const browser = await chromium.launch();
+	const videoDir = temp();
+	try {
+		const entry = servedAsHost(Modules.load([join(h.state, "modules")])).feeds().find((e: { source: string }) => e.source === "stock-ta/quotes");
+		instanceData(h.state).watch("stock-ta", entry.components, { kind: "watch", collection: "quotes", op: "set", watch: { key: "NVDA", condition: { when: "day-move", atLeast: 1, direction: "either" } } }, "page");
+		const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, recordVideo: { dir: videoDir, size: { width: 1280, height: 800 } } });
+		const page = await context.newPage();
+		await page.goto(h.host.url.href);
+		await page.waitForTimeout(2500);
+		await h.step("10:04", { NVDA: 100.4, AMD: 150.5, SPY: 500.5, QQQ: 400.2 }, { ...PREV, AMD: 150 });
+		await page.waitForTimeout(2000);
+		await h.step("10:05", { NVDA: 105.31 }, PREV);
+		await within(30_000, () => h.phone().some((m) => m.text.startsWith("NVDA 到档的分析")));
+		await page.waitForTimeout(4000);
+		await h.step("10:30", { NVDA: 108.12 }, PREV);
+		await within(30_000, () => h.phone().filter((m) => m.text.startsWith("NVDA 到档的分析")).length >= 2 || undefined);
+		await page.waitForTimeout(4000);
+		await harness.showScreen(page, "overview");
+		await page.locator('.tab[data-tab="sources"]').click();
+		await page.waitForTimeout(3000);
+		await page.locator('.tab[data-tab="modules"]').click();
+		await page.locator("#modules button.more").click();
+		await page.locator('#modules [data-module="stock-ta"]').scrollIntoViewIfNeeded();
+		await page.waitForTimeout(5000);
+		await page.getByText(h.oldTitle!).first().click();
+		await page.waitForTimeout(4000);
+		await context.close();
+		const [webm] = (await import("node:fs")).readdirSync(videoDir);
+		const mp4 = join(outDir, "r5-review.mp4");
+		const ff = spawnSync("ffmpeg", ["-y", "-loglevel", "error", "-i", join(videoDir, webm!), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", mp4], { encoding: "utf8" });
+		if (ff.status !== 0) throw new Error(ff.stderr);
+		const sent = h.phone().map((m) => m.text).filter((t) => !t.startsWith("你在网页或终端说") && !t.startsWith("这里是白宫"));
+		await bubbles(join(outDir, "r5-review-telegram.png"), "到档提醒和汇报（假 Telegram，回放 NVDA +5.31% 再 +8.12%，你设了 NVDA 当天涨跌 1%）", sent);
+		writeFileSync(join(outDir, "r5-review.txt"), `fake Telegram, sent to the user:\n${show(sent)}\nalert lines:\n${show(h.lines())}\n`);
+		console.log(`media in ${outDir}: r5-review.mp4, r5-review-telegram.png, r5-review.txt`);
+	} finally {
+		await browser.close();
+		await h.stop();
+	}
 }
 
 async function market(): Promise<void> {
@@ -486,7 +538,7 @@ async function perf(): Promise<void> {
 }
 
 try {
-	await ({ fake, real, market, perf } as Record<string, () => Promise<void>>)[mode]!();
+	await ({ fake, real, market, perf, media } as Record<string, () => Promise<void>>)[mode]!();
 } finally {
 	for (const dir of made) rmSync(dir, { recursive: true, force: true });
 	// The fake model servers and Playwright leave handles open.
