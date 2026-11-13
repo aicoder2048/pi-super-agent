@@ -21,6 +21,8 @@ export interface DomainEntry {
 	digest?: string;
 	/** The module's Chinese name, for the line Telegram gets instead of a report that touched private data. */
 	title?: string;
+	/** A feed of this module fills a `private` collection, e.g. `mail`'s inbox. A ticket in this domain reads that data, so a host source may not open one (ADR-0018). */
+	privateFeed?: true;
 }
 
 /** All the kernel knows about domains: one entry per serving module, by the module's name. */
