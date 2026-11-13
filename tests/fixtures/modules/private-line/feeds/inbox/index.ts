@@ -12,7 +12,7 @@ export default function collect(input: { items: Letter[] }) {
 	const problem = input.items.find((item) => item.problem !== undefined)?.problem;
 	return {
 		records: letters.map(({ id, from, subject, snippet, body }) => ({ id, from, subject, snippet, body })),
-		notices: letters.map(({ id, from, subject, snippet }) => ({ id, fields: { from, subject, snippet } })),
+		notices: letters.map(({ id, from, subject, snippet, body }) => ({ id: `${id}:${from}`, thread: body, fields: { from, subject, snippet } })),
 		...(problem !== undefined && { problem: { id: problem, text: "收件箱的授权过期了，请重新授权" } }),
 	};
 }

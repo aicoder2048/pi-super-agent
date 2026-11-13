@@ -35,10 +35,10 @@ const PLACEHOLDER = /\{\{(\w+)\}\}/g;
 
 export const placeholders = (template: string): string[] => [...template.matchAll(PLACEHOLDER)].map((m) => m[1]!);
 
-export const fill = (template: string, fields: Readonly<Record<string, string>>): string => template.replace(PLACEHOLDER, (_, key: string) => fields[key] ?? "");
+export const fill = (template: string, fields: Readonly<Record<string, string>>): string => template.replace(PLACEHOLDER, (_, key: string) => (Object.hasOwn(fields, key) ? fields[key]! : ""));
 
 export function release(template: string, fields: Readonly<Record<string, string>>): string {
-	const cleaned = Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, clean(value)]));
+	const cleaned = Object.fromEntries(placeholders(template).flatMap((key) => (Object.hasOwn(fields, key) ? [[key, clean(fields[key]!)]] : [])));
 	return template
 		.split("\n")
 		.slice(0, LINE_MAX_LINES)

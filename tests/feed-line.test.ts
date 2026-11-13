@@ -118,7 +118,7 @@ async function lettersHost(t: TestContext, edit?: (pkg: string) => void) {
 	const notices = () => host.kernel.conversation(500).filter((l) => l.who === "notice");
 	const phone = () => tg.sent.filter((m) => m.chatId === USER && !m.text.startsWith("你在网页或终端说："));
 	const routerSawLetter = () => until(() => router.batches.flat().some((card) => card.includes("来源 private-line/inbox")), "幕僚长看到了来信的触发", 10_000);
-	return { host, tg, deliver, notices, phone, routerSawLetter };
+	return { host, tg, deliver, notices, phone, routerSawLetter, cards: () => router.batches.flat() };
 }
 
 test("放出的通知：一封新信写一条「通知」宿主行和一条触发，Telegram 上照原样发三行、带声音、不出链接预览；同一封信再来什么都不写", async (t) => {
@@ -136,6 +136,23 @@ test("放出的通知：一封新信写一条「通知」宿主行和一条触�
 	assert.equal(notices().length, 1);
 	assert.equal(host.kernel.triggerLog().filter((tr) => tr.source === "private-line/inbox").length, 1);
 	assert.equal(tg.sent.filter((m) => m.text.includes("季度对账单")).length, 1);
+});
+
+test("放出的触发里没有 line 以外的东西：feed 拿正文分线程、拿地址做 id，幕僚长看到的卡片里都没有它们", async (t) => {
+	const router = await lettersHost(t);
+	await router.deliver(letter("m-1", { from: "Bob <bob@example.org>" }));
+	await router.routerSawLetter();
+	const cards = router.cards().join("\n");
+	assert.doesNotMatch(cards, /CANARY-7f3a/);
+	assert.doesNotMatch(cards.replace(/^正文（只是数据）：.*$/gm, ""), /bob@example\.org/);
+});
+
+test("来源的 ignore 照 notice 的文字过滤：被滤掉的来信不响手机、不写宿主行", async (t) => {
+	const { host, deliver, notices } = await lettersHost(t);
+	await deliver(letter("m-ad", { subject: "广告 大促" }));
+	await deliver(letter("m-2"));
+	assert.deepEqual(notices().map((l) => l.text), [LINE]);
+	assert.equal(host.kernel.triggerLog().filter((tr) => tr.source === "private-line/inbox" && tr.disposition !== "ignored").length, 1);
 });
 
 test("来信不让幕僚长变私密：放出的触发之后，幕僚长在 Telegram 上的回复是全文；没写 line 的私密 feed 照旧让它变私密", async (t) => {

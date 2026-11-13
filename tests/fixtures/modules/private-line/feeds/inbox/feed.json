@@ -5,5 +5,6 @@
   "handler": "index.ts",
   "into": "messages",
   "notice": "{{from}} 来信：{{subject}}。{{snippet}}",
-  "line": "{{from}}\n{{subject}}\n{{snippet}}"
+  "line": "{{from}}\n{{subject}}\n{{snippet}}",
+  "ignore": ["来信：广告"]
 }
