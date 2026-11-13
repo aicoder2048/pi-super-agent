@@ -5,7 +5,7 @@ import { CONVERSATION_SOURCE, ruleId, type DomainBook, type SourcePolicy } from 
 import type { TimerEntry } from "./sources/timer.ts";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { feedClass, type CollectionDescriptor, type Digest, type ScanResult } from "./modules/manifest.ts";
-import type { FeedEntry } from "./modules/feed-runner.ts";
+import { type FeedEntry, reachOf } from "./modules/feed-runner.ts";
 import { parseModelRef } from "./models.ts";
 import { moduleNameProblem, problemLine, scanPackage } from "./modules/validate.ts";
 import { loadTeam, type Member, type Team } from "./teams.ts";
@@ -260,11 +260,12 @@ export function packageModule(dir: string, name: string): LoadedModule {
 	const feeds = components.flatMap((c): FeedEntry[] =>
 		c.kind === "feeds" ? [{ source: `${manifest.name}/${c.name}`, module: manifest.name, dir, name: c.name, feed: c.feed, fixtures: c.fixtures, components, private: feedClass(c.feed, collections) === "private" }] : [],
 	);
-	const sources = feeds.map(({ source, feed }): SourceFilter => ({
-		name: source,
-		title: feed.title,
-		...(feed.description !== undefined && { description: feed.description }),
-		...(feed.ignore !== undefined && { ignore: [...feed.ignore] }),
+	// A released feed's ignore runs in the feed runner against the notice text; the kernel only ever sees its line.
+	const sources = feeds.map((entry): SourceFilter => ({
+		name: entry.source,
+		title: entry.feed.title,
+		...(entry.feed.description !== undefined && { description: entry.feed.description }),
+		...(entry.feed.ignore !== undefined && reachOf(entry) !== "released" && { ignore: [...entry.feed.ignore] }),
 	}));
 	const rulesPath = join(dir, "rules.md");
 	const skillsDir = join(dir, "skills");

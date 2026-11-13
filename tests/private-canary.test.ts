@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { Host } from "../src/host/host.ts";
 import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
+import { openStore } from "../src/kernel/store.ts";
 import { createGateway } from "../src/modules/gateway.ts";
 import { instanceData } from "../src/modules/instance-data.ts";
 import { moduleDataDir } from "../src/modules/knowledge.ts";
@@ -186,11 +187,23 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 		sweep(name);
 		return phone().slice(before);
 	};
-	const replyCount = () => host.kernel.conversation(500).filter((l) => l.who === "router").length;
-	const replied = (name: string, drive: () => unknown) => {
-		const before = replyCount();
-		const phoneBefore = phone().length;
-		return flow(name, drive, () => replyCount() > before && phone().length > phoneBefore);
+	const replyIds = () => host.kernel.conversation(500).flatMap((l) => (l.who === "router" ? [l.id] : []));
+	const sentFor = (lineIds: string[]): number[] => {
+		const db = openStore(join(stateDir, "state.db"));
+		try {
+			const rows = db.prepare("SELECT message_id FROM telegram_messages WHERE chat_id = ? AND line_id IN (SELECT value FROM json_each(?)) AND sent_version >= version").all(USER, JSON.stringify(lineIds));
+			return rows.map((r) => Number(r["message_id"]));
+		} finally {
+			db.close();
+		}
+	};
+	// Only the reply's own messages: a card from an earlier flow can still reach the phone after that flow ended.
+	const replied = async (name: string, drive: () => unknown) => {
+		const before = new Set(replyIds());
+		const fresh = () => replyIds().filter((id) => !before.has(id));
+		await flow(name, drive, () => fresh().length > 0 && sentFor(fresh()).length > 0);
+		const shown = new Set(sentFor(fresh()));
+		return tg.sent.filter((m) => shown.has(m.messageId)).map((m) => m.text);
 	};
 	const said = (name: string, text: string) => replied(name, () => host.say(text));
 	const ticket = (prefix: string) => host.kernel.listTickets().find((r) => r.title.startsWith(prefix));

@@ -12,7 +12,10 @@ import { fixtureSecrets, LIMIT_MS, runModuleCodeAsync, secretsFor } from "./run-
 export type FeedEntry = { source: string; module: ModuleName; dir: string; name: ComponentName; feed: FeedDescriptor; fixtures: readonly FeedFixture[]; components: readonly Component[]; private: boolean };
 
 /** `released`: `body` is the private feed's filled `line`, which the host also posts to the user and hands the Router as data that is not private. */
-export type FeedNotice = { source: string; id: string; thread: string; body: string; at: number; reach: "shareable" | "private" | "released" };
+export type Reach = "shareable" | "private" | "released";
+export type FeedNotice = { source: string; id: string; thread: string; body: string; at: number; reach: Reach };
+
+export const reachOf = ({ feed, private: held }: Pick<FeedEntry, "feed" | "private">): Reach => (!held ? "shareable" : feed.line !== undefined ? "released" : "private");
 
 export type FeedProblem = NonNullable<Collected["problem"]>;
 
@@ -110,8 +113,8 @@ export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: F
 			for (const alert of written.alerts) ports.alert(module, alert);
 		}
 		const template = feed.notice;
-		const line = entry.private ? feed.line : undefined;
-		const reach = line !== undefined ? "released" : entry.private ? "private" : "shareable";
+		const reach = reachOf(entry);
+		const line = reach === "released" ? feed.line : undefined;
 		const ignored = (feed.ignore ?? []).map((p) => new RegExp(p));
 		const notices = template === undefined ? [] : (collected.notices ?? []).flatMap((n) => {
 			if (line === undefined) return [{ id: n.id, thread: n.thread ?? entry.name, body: fill(template, n.fields) }];
