@@ -105,36 +105,34 @@ async function openCard(t: TestContext, asking: Asking, options: Partial<HostOpt
 test("工具的参数：命令 1 到 2000 字，说法最多 200 字、不能有 NUL", () => {
 	assert.deepEqual(parseRunRequest({ command: "date", why: "看时间" }), { command: "date", why: "看时间" });
 	assert.equal(parseRunRequest({ command: "x".repeat(RUN_COMMAND_MAX), why: "满" }).command.length, RUN_COMMAND_MAX);
-	assert.equal(parseRunRequest({ command: "𝐱".repeat(RUN_COMMAND_MAX), why: "按字算，不按 UTF-16" }).command.length, RUN_COMMAND_MAX * 2);
 	for (const bad of [{ command: "", why: "空" }, { command: "   ", why: "空白" }, { command: "x".repeat(RUN_COMMAND_MAX + 1), why: "长" }, { command: "echo a\0b", why: "NUL" }, { command: "date" }, { command: "date", why: "y".repeat(201) }, { why: "没有命令" }]) {
 		assert.throws(() => parseRunRequest(bad), JSON.stringify(bad).slice(0, 40));
 	}
 });
 
-test("命令只收看得见的字：卡片上像注释的地方，bash 不会当命令运行", () => {
-	const looksLikeComment = {
+test("命令只收可打印 ASCII、换行和 Tab：别的字可能显示成空白或和注释混在一起，卡片上看不出 bash 会运行什么", () => {
+	const notAscii = {
 		bidi: "echo safe \u202E\u2066&& touch /tmp/PWNED\u2069 \u2066# just a note\u2069",
 		cr: "echo safe # note\r touch P",
 		lineSeparator: "echo safe\u2028# ; touch P",
-		paragraphSeparator: "echo safe\u2029# ; touch P",
 		graphemeJoiner: "true \u034F# ; touch P",
 		variationSelector16: "true \uFE0F# ; touch P",
-		mongolianSelector: "true \u180B# ; touch P",
 		hangulFiller: "true\u3164# ; touch P",
 		combiningOverSemicolon: "echo safe;\u0338 touch P",
 		nbsp: "echo safe\u00A0# ; touch P",
 		zeroWidthSpace: "echo a\u200Bb",
-		rlm: "echo \u200Fx",
-		bom: "\uFEFFdate",
 		escape: "echo a\x1bb",
-		ideographicSpace: "echo a\u3000b",
-		privateUse: "echo \uE000",
-		unassigned: "echo \u0378",
+		braille: "true \u2800# ; touch P",
+		objectReplacement: "true \uFFFC# ; touch P",
+		cjkCompatibility: "true \uFA2E# ; touch P",
+		chinese: "echo '你好，世界'",
+		accented: "echo caf\u00E9",
+		emoji: "echo 🎉",
 	};
-	for (const [name, command] of Object.entries(looksLikeComment)) {
-		assert.throws(() => parseRunRequest({ command, why: "看看" }), /只能有看得见的字/, name);
+	for (const [name, command] of Object.entries(notAscii)) {
+		assert.throws(() => parseRunRequest({ command, why: "看看" }), /只能用 ASCII/, name);
 	}
-	for (const command of ["echo a\n\techo b", "echo '你好，世界'", "echo caf\u00E9", "echo 🎉👍", "grep -E '[a-z]+$' ~/x | wc -l"]) {
+	for (const command of ["echo a\n\techo b", "grep -E '[a-z]+$' ~/x | sort | uniq -c > counts.txt && wc -l counts.txt"]) {
 		assert.equal(parseRunRequest({ command, why: "照常" }).command, command);
 	}
 });
@@ -351,11 +349,12 @@ test("私密任务的卡片在 Telegram 上只有一行，没有按钮，不带�
 	assert.ok(!existsSync(join(stateDir, "workers", ticketId, "tg-private-marker")));
 });
 
-test("不私密任务的卡片在 Telegram 上带原样命令、来源、发件人、任务的说法和「同意」「不要」；点「同意」运行一次，卡片改成已结束", async (t) => {
-	const command = "printf 'tg\\n' >> tg-marker # https://bank-verify.example/fix.sh";
+test("不私密任务的卡片在 Telegram 上带原样命令（每个真实的行前面有行号）、来源、发件人、任务的说法和「同意」「不要」；点「同意」运行一次，卡片改成已结束", async (t) => {
+	const command = "printf 'tg\\n' >> tg-marker\n# https://bank-verify.example/fix.sh";
+	const shown = "1│ printf 'tg\\n' >> tg-marker\n2│ # https://bank-verify.example/fix.sh";
 	const { tg, host, askId, stateDir, ticketId } = await withTelegram(t, { command, why: "看看能不能跑" }, false);
-	await until(() => tg.sent.some((m) => m.text.includes(command)), "Telegram 收到卡片", 5000);
-	const card = tg.sent.find((m) => m.text.includes(command))!;
+	await until(() => tg.sent.some((m) => m.text.includes(shown)), "Telegram 收到卡片", 5000);
+	const card = tg.sent.find((m) => m.text.includes(shown))!;
 	for (const part of ["白宫 · 系统", MAIL, SENDER, "看看能不能跑"]) assert.ok(card.text.includes(part), part);
 	assert.deepEqual(card.buttons!.flat().map((b) => b.text), ["同意", "不要"]);
 	assert.equal(card.preview, false, "命令里的网址不出链接预览：Telegram 的服务器不去碰它");
@@ -368,10 +367,10 @@ test("不私密任务的卡片在 Telegram 上带原样命令、来源、发件�
 	assert.equal(readFileSync(join(stateDir, "workers", ticketId, "tg-marker"), "utf8"), "tg\n");
 });
 
-test("命令加卡片超过 Telegram 一条消息的长度：不私密的任务也退成一行，请在网页上批准", async (t) => {
-	const command = `echo ${"𝐱".repeat(RUN_COMMAND_MAX - 5)}`;
+test("命令加上行号和卡片超过 Telegram 一条消息的长度：不私密的任务也退成一行，请在网页上批准", async (t) => {
+	const command = `${":\n".repeat(RUN_COMMAND_MAX / 2 - 1)}:`;
 	const { tg } = await withTelegram(t, { command }, false);
 	await until(() => tg.sent.some((m) => m.text.includes("想运行一条命令，请在网页上批准")), "Telegram 收到一行", 5000);
 	await new Promise((r) => setTimeout(r, 200));
-	assert.ok(tg.sent.every((m) => !m.text.includes("𝐱𝐱𝐱") && m.buttons === null));
+	assert.ok(tg.sent.every((m) => m.buttons === null && !m.text.includes(":\n")));
 });

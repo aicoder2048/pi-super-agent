@@ -8,7 +8,7 @@ import { closeBrowser, story } from "./harness.ts";
 after(closeBrowser);
 
 const SENDER = "billing@bank-verify.example";
-const COMMAND = "printf 'approved-%s\\n' run > approved.txt; cat approved.txt";
+const COMMAND = "printf 'approved-%s\\n' run > approved.txt\ncat approved.txt";
 const WHY = "按邮件说的解锁对账单";
 const TASK = { title: "看信", brief: "看这封银行来信" };
 const SHOTS = process.env.PSA_E2E_RUN_ASK_SHOTS;
@@ -45,6 +45,7 @@ test("邮件开的任务请求运行一条命令：看板上它等你回答，�
 				assert.match((await card.locator(".why").first().textContent())!, /待回复/);
 				assert.equal(await run.locator(".by").textContent(), "白宫 · 系统");
 				assert.equal(await run.locator(".command").textContent(), COMMAND);
+				assert.deepEqual(await run.locator(".command [data-n]").evaluateAll((lines) => lines.map((l) => `${l.getAttribute("data-n")}│ ${l.textContent}`)), COMMAND.split("\n").map((l, i) => `${i + 1}│ ${l}`), "每个真实的行标着行号");
 				assert.match((await run.locator(".origin").textContent())!, new RegExp(`mail/inbox[\\s\\S]*${SENDER.replace(".", "\\.")}`));
 				assert.match((await run.locator(".said").textContent())!, new RegExp(WHY));
 				assert.deepEqual(await run.locator(".choices button").allTextContents(), ["同意", "不要"]);

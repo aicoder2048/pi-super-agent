@@ -103,9 +103,12 @@ export function cardView(row: DashboardRow): CardView | null {
 	return { reportId: q.reportId, ticketId: row.id, title: row.title, helper: helperFullName(row.helper), question: q.text, options: q.options, status };
 }
 
+/** A number on each real line, so a line the phone soft-wraps reads as the same line and a real newline cannot hide in a wrap. */
+const numberLines = (command: string) => command.split("\n").map((line, i) => `${i + 1}│ ${line}`).join("\n");
+
 export function runAskView(row: DashboardRow, ask: RunAsk): CardView {
 	const label = ask.state === "open" || (ask.state === "declined" && ask.reason !== "user") ? null : RUN_OPTIONS[ask.state === "declined" ? 1 : 0];
-	const question = [`任务想运行一条命令。${runOrigin(ask.origin)}`, "命令：", ask.command, `任务的说法：${ask.why}`].join("\n");
+	const question = [`任务想运行一条命令。${runOrigin(ask.origin)}`, "命令：", numberLines(ask.command), `任务的说法：${ask.why}`].join("\n");
 	return { reportId: ask.id, ticketId: row.id, title: row.title, helper: HOST_SOURCE, question, options: RUN_OPTIONS, status: ask.state === "open" ? { kind: "open" } : { kind: "closed", label } };
 }
 

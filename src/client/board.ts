@@ -107,7 +107,7 @@ export function renderBoard(view: BoardView, width: number, now: number): string
 		const run = row.runAsk;
 		if (run?.state === "open") {
 			lines.push(fit(`   ${HOST_SOURCE}：任务想运行一条命令 · ${runOrigin(run.origin)}`, width));
-			lines.push(...wrap(run.command, "   $ ", width));
+			run.command.split("\n").forEach((line, i) => lines.push(...wrap(line, `   ${i + 1}│ `, width)));
 			lines.push(fit(`   任务的说法：${run.why}`, width));
 			lines.push(fit(`   ${numbered([...RUN_OPTIONS])}`, width));
 		}
