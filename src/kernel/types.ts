@@ -340,7 +340,7 @@ export interface Quote {
  */
 export type HostLinePost =
 	| { kind: "alert"; externalId: string; text: string; occurredAt: number; module?: AlertModule }
-	| { kind: "receipt"; text: string }
+	| { kind: "receipt"; text: string; module?: AlertModule }
 	| { kind: "notice"; text: string };
 
 export const NOTICE_MAX = 2000;

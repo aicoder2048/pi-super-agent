@@ -139,8 +139,8 @@ export type Refusal =
 /** One hit of a knowledge search, with the citation a skill asks the Worker to carry. */
 export type Passage = { doc: ComponentName; title: string; version: string; authority: "authoritative" | "reference"; section: string; text: string };
 
-/** `private` is true when the call read or wrote a `private` collection. The host then marks the ticket. */
-export type Reply = { ok: true; output: Json; private: boolean; passages?: readonly Passage[]; alerts?: readonly Alert[] } | { ok: false; refusal: Refusal };
+/** `private` is true when the call read or wrote a `private` collection. The host then marks the ticket. `receipt`: a line the host shows only on this machine. */
+export type Reply = { ok: true; output: Json; private: boolean; passages?: readonly Passage[]; alerts?: readonly Alert[]; receipt?: string } | { ok: false; refusal: Refusal };
 
 export interface Gateway {
 	/**

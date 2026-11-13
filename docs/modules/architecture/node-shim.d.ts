@@ -55,6 +55,9 @@ declare module "node:url" {
 	export function pathToFileURL(path: string): { href: string };
 	export function fileURLToPath(url: string): string;
 }
+declare module "node:buffer" {
+	export const Buffer: { from(text: string, encoding?: "utf8" | "base64"): { toString(encoding?: "utf8" | "base64url"): string }; byteLength(text: string): number };
+}
 declare module "node:crypto" {
 	export interface Hash {
 		update(data: string | Uint8Array): Hash;
@@ -111,6 +114,11 @@ declare interface AbortSignal {
 	addEventListener(type: "abort", listener: () => void, options?: { once: true }): void;
 	removeEventListener(type: "abort", listener: () => void): void;
 }
+declare const AbortSignal: { timeout(ms: number): AbortSignal };
+declare class URLSearchParams {
+	constructor(init: Record<string, string>);
+}
+declare function fetch(url: string, init: { method: "POST"; body: string | URLSearchParams; headers?: Record<string, string>; redirect: "error"; signal: AbortSignal }): Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 declare class AbortController {
 	readonly signal: AbortSignal;
 	abort(): void;

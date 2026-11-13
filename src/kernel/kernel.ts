@@ -1353,7 +1353,7 @@ export class Kernel {
 	#insertHostLine(source: string, post: HostLinePost): HostLine {
 		const id = this.#id("hln");
 		const at = this.#now();
-		const module = post.kind === "alert" ? post.module : undefined;
+		const module = post.kind === "notice" ? undefined : post.module;
 		this.#run(
 			"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at, module_title, module_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			id,

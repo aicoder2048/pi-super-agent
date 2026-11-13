@@ -7,10 +7,10 @@ import { feedInput, intoOf, nothingHeld, parseCollected } from "./feed-runner.ts
 import { linkVenvs, lockOf, PY_DIR, venvInstalled } from "./files.ts";
 import { fixtureSecrets, runModuleCode, runModuleCodeAsync, type CodeReply, type CodeSite, type RunOptions, type Secrets } from "./run-code.ts";
 import { secretRefusal } from "./secret-owners.ts";
-import { CONNECTORS, DATA_CLASSES, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS } from "./manifest.ts";
+import { CONNECTORS, DATA_CLASSES, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS, TOOL_PORTS } from "./manifest.ts";
 import { LINE_MAX_LINES, placeholders } from "./release.ts";
 import type {
-	AgentDescriptor, CapabilityUse, CollectionDescriptor, Component, ComponentName, Digest, FeedDescriptor, FeedFixture, FieldDescriptor, KindDir, MemberTool, ModuleManifest, ModuleName, PackageScan, Problem, RuleRef, Runtime, ScanResult, ToolCase, ToolDescriptor,
+	AgentDescriptor, CapabilityUse, CollectionDescriptor, Component, ComponentName, Digest, FeedDescriptor, FeedFixture, FieldDescriptor, KindDir, MemberTool, ModuleManifest, ModuleName, PackageScan, Problem, RuleRef, Runtime, ScanResult, ToolCase, ToolDescriptor, ToolPort,
 } from "./manifest.ts";
 
 const NAME = /^[a-z0-9][a-z0-9-]*$/;
@@ -263,7 +263,7 @@ function runtimeOf(report: Report, where: string, raw: JsonObject): Runtime {
 function readTool(report: Report, root: string, name: string): Component | undefined {
 	const dir = `tools/${name}`;
 	const where = `${dir}/tool.json`;
-	const raw = readObject(report, root, where, ["title", "description", "input", "output"], ["cites", "effect", "secrets", "runtime"]);
+	const raw = readObject(report, root, where, ["title", "description", "input", "output"], ["cites", "effect", "secrets", "runtime", "port"]);
 	if (raw === undefined) return undefined;
 	const tool: ToolDescriptor = {
 		title: String(raw["title"]),
@@ -278,6 +278,10 @@ function readTool(report: Report, root: string, name: string): Component | undef
 	else if (effect !== undefined) report(where, `"effect" must be ${TOOL_EFFECTS.join(" or ")}; leave it out for a tool that only computes`);
 	const secrets = nameList(report, where, raw, "secrets", SECRET_NAME);
 	if (secrets !== undefined) tool.secrets = secrets;
+	const port = raw["port"];
+	if (typeof port === "string" && Object.hasOwn(TOOL_PORTS, port)) tool.port = port as ToolPort;
+	else if (port !== undefined) report(where, `"port" must be ${Object.keys(TOOL_PORTS).join(" or ")}`);
+	if (port !== undefined && tool.effect !== "write") report(where, `a tool with "port" hands the host a write, so it states "effect": "write"`);
 	const entry = RUNTIMES[tool.runtime ?? "node"];
 	if (!existsSync(join(root, dir, entry))) report(`${dir}/${entry}`, `is missing; a tool is tool.json and ${entry}, whose default export is the tool`);
 	const cases: ToolCase[] = [];
@@ -628,6 +632,9 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, d
 	for (const { where, secret } of components.flatMap(namedSecrets)) {
 		const refusal = secretRefusal(manifest.name, secret);
 		if (refusal !== undefined) report(where, refusal);
+	}
+	for (const item of components) {
+		if (item.kind === "tools" && item.tool.port !== undefined && TOOL_PORTS[item.tool.port] !== manifest.name) report(`tools/${item.name}/tool.json`, `"port" ${item.tool.port} 只有模块 ${TOOL_PORTS[item.tool.port]} 能用`);
 	}
 	const runs = runCases && problems.length === 0 ? caseRuns(components) : [];
 	if (runs.length > 0) {

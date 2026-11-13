@@ -14,7 +14,7 @@ export type FakeGoogleOptions = {
 	deny?: boolean;
 	/** The token endpoint closes the connection without a reply. */
 	dropToken?: boolean;
-	/** `"GET /gmail/v1/users/me/profile"` → the JSON to reply with, or a function of the request URL for a reply that depends on the query or changes between calls. Read on every request, so a test may change it. */
+	/** `"GET /gmail/v1/users/me/profile"` → the JSON to reply with, or a function of the request URL and body for a reply that depends on the query or changes between calls. Read on every request, so a test may change it. */
 	routes?: Record<string, unknown>;
 	/** Refresh token → scope, as if an earlier `google-auth` had granted them. */
 	refreshTokens?: Record<string, string>;
@@ -98,7 +98,7 @@ export async function startFakeGoogle(options: FakeGoogleOptions = {}): Promise<
 		const route = options.routes?.[`${req.method} ${url.pathname}`];
 		if (route === undefined) return json(404, { error: "not_found" });
 		if (typeof route !== "function") return json(200, route);
-		const { status, body: reply, trickleMs } = (route as (url: URL) => RouteReply)(url);
+		const { status, body: reply, trickleMs } = (route as (url: URL, sent: string) => RouteReply)(url, req.method === "GET" ? "" : await body(req));
 		if (trickleMs === undefined) return json(status, reply);
 		const text = JSON.stringify(reply);
 		const slices = 20;

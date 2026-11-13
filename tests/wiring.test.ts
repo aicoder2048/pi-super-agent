@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -11,6 +11,8 @@ import { Host } from "../src/host/host.ts";
 import { Modules } from "../src/modules.ts";
 import { FINNHUB_KEY_NAMES, KEY_NAMES } from "../src/sources/market/key.ts";
 import { servedAsHost, until } from "./helpers/fakes.ts";
+import { FakeInbox } from "./helpers/fake-gmail.ts";
+import { startFakeGoogle, type FakeGoogle } from "./helpers/fake-google.ts";
 import { liveRegistry, ModuleStore } from "../src/modules/live.ts";
 import type { ComponentName, Digest, ModuleName } from "../src/modules/manifest.ts";
 
@@ -397,6 +399,47 @@ test("入口：宿主进程环境里的同名变量到不了模块代码，模�
 	t.after(() => delete process.env.PERSONAL_TAX__KEY);
 	assert.deepEqual((await envProbe("PERSONAL_TAX__KEY=from-file\n")).reply, { ok: true, output: { named: "from-file" }, private: true });
 	assert.deepEqual((await envProbe("OTHER=x\n")).reply, { ok: true, output: { named: null }, private: true });
+});
+
+async function draftProbe(t: TestContext, feedFixtures: boolean, oauthUrl: (google: FakeGoogle) => string | undefined) {
+	const box = new FakeInbox();
+	const sent = box.drafts;
+	const google = await startFakeGoogle({ refreshTokens: { "1//draft": "https://www.googleapis.com/auth/gmail.compose" }, routes: box.routes });
+	t.after(() => google.close());
+	const url = oauthUrl(google);
+	if (url === undefined) delete process.env.PSA_GOOGLE_OAUTH_URL;
+	else process.env.PSA_GOOGLE_OAUTH_URL = url;
+	t.after(() => delete process.env.PSA_GOOGLE_OAUTH_URL);
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const config = hostConfig(provider);
+	const pkg = join(mkdtempSync(join(tmpdir(), "psa-wire-pkg-")), "mail");
+	mkdirSync(join(pkg, "tools/echo"), { recursive: true });
+	writeFileSync(join(pkg, "module.json"), JSON.stringify({ schema: 1, name: "mail", version: "0.1.0", title: "邮件", description: "测试" }));
+	writeFileSync(join(pkg, "tools/echo/tool.json"), JSON.stringify({ title: "草稿", description: "草稿", effect: "write", port: "gmail.createDraft", input: { x: { type: "text", title: "x" } }, output: { draftId: { type: "text", title: "d" } } }));
+	writeFileSync(join(pkg, "tools/echo/index.ts"), 'export default () => ({ draft: { raw: "To: ann@example.com\\r\\nSubject: hi\\r\\n\\r\\nok", threadId: "t-1" } });');
+	const secretsFile = join(config.stateDir, "secrets.env");
+	writeFileSync(secretsFile, `GOOGLE_OAUTH_CLIENT_ID=${google.client.id}\nGOOGLE_OAUTH_CLIENT_SECRET=${google.client.secret}\nGMAIL_DRAFT_REFRESH_TOKEN=1//draft\n`);
+	const modules = servedAsHost(Modules.load([join(pkg, "..")]));
+	const digest = modules.book.get("mail")!.digest! as Digest;
+	new ModuleStore(join(config.stateDir, "module-store")).keep("mail" as ModuleName, digest, pkg);
+	const options = createHostOptions({ config: { ...config, secretsFile, feedFixtures }, modules: fixed(modules), modelRuntime, log: () => {} });
+	const caller = { who: "worker" as const, ticket: "tkt_1", pin: { module: "mail" as ModuleName, digest }, basis: "request" as const, member: null, heardOthers: false };
+	return { reply: await options.gateway!.call(caller, { kind: "tool", name: "echo" as ComponentName, input: {} }), google, sent };
+}
+
+test("入口：宿主的 Gateway 用 secretsFile 里写草稿的 token 经口子建草稿", async (t) => {
+	const { reply, google, sent } = await draftProbe(t, false, (g) => g.url);
+	assert.ok(reply.ok, JSON.stringify(reply));
+	assert.equal((reply.output as { draftId: string }).draftId, "r-1");
+	assert.deepEqual(google.log, ["POST /token", "POST /gmail/v1/users/me/drafts"]);
+	assert.equal(sent.length, 1);
+});
+
+test("入口：fixtures 预演的宿主不建真草稿", async (t) => {
+	const { reply, google } = await draftProbe(t, true, () => undefined);
+	assert.equal(reply.ok, false);
+	assert.match(reply.ok ? "" : String((reply.refusal as { note: string }).note), /fixtures/);
+	assert.deepEqual(google.log, []);
 });
 
 test("入口：宿主的 Gateway 查模块知识，索引建在状态目录的 modules-data/<模块>/index/knowledge.db", async () => {

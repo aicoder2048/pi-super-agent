@@ -4,6 +4,7 @@ import { RUNTIMES, toolEffect, type AgentDescriptor, type Component, type Digest
 import { DataInputError, type ModuleRows, type WatchRequest } from "./instance-data.ts";
 import { catalogueText, foundText, searchKnowledge, type Knowledge, type KnowledgeBase } from "./knowledge.ts";
 import { AUTHORITY, effectOf, senderOf, type Caller, type Gateway, type Refusal, type Json, type Reply, type Request } from "./protocol.ts";
+import { writeDraft, type GooglePort } from "./google-port.ts";
 import { LIMIT_MS, runModuleCodeAsync } from "./run-code.ts";
 import { scanPackage } from "./validate.ts";
 
@@ -17,6 +18,8 @@ export interface GatewayPorts {
 	secret(name: string): string | undefined;
 	log(line: string): void;
 	limitMs?: number;
+	/** Without it a tool that names a port fails. */
+	google?: GooglePort;
 }
 
 type Tool = Extract<Component, { kind: "tools" }>;
@@ -135,7 +138,11 @@ export function createGateway(ports: GatewayPorts): Gateway {
 		const ran = await runModuleCodeAsync({ packageDir: copy.dir, component: join("tools", tool.name), dataDir: ports.dataDir(copy.module) }, RUNTIMES[tool.tool.runtime ?? "node"], input, secrets, { limitMs: ports.limitMs ?? LIMIT_MS });
 		// Tool code gets the module's data dir and can open any collection, so a tool that is not pure may carry private rows out.
 		const mayCarryPrivate = toolEffect(tool.tool) !== "pure" && copy.collections.some((c) => c.collection.class === "private");
-		return ran.ok ? { ok: true, output: ran.output, private: mayCarryPrivate } : { ok: false, refusal: { code: "provider-failed", note: ran.note } };
+		if (!ran.ok) return { ok: false, refusal: { code: "provider-failed", note: ran.note } };
+		if (tool.tool.port === undefined) return { ok: true, output: ran.output, private: mayCarryPrivate };
+		if (ports.google === undefined) return { ok: false, refusal: { code: "provider-failed", note: "这台宿主没有接 Google，建不了草稿" } };
+		const done = await writeDraft(ports.google, ran.output);
+		return typeof done === "string" ? { ok: false, refusal: { code: "provider-failed", note: done } } : { ok: true, output: done.output, private: mayCarryPrivate, receipt: done.receipt };
 	};
 
 	return {

@@ -155,6 +155,7 @@ export interface WorkerExecutorOptions {
 	dispatch?: DeskDispatchOptions;
 	gateway?: Gateway;
 	alert?: (module: ModuleName, alert: Alert) => void;
+	receipt?: (module: ModuleName, text: string) => void;
 }
 
 export interface WorkerModels {
@@ -476,6 +477,7 @@ export class WorkerExecutor {
 		if (!reply.ok) throw new Error(`${tag} ${refusalText(reply.refusal)}`);
 		if (reply.private) this.#o.kernel.touchPrivate(ticketId);
 		for (const alert of reply.alerts ?? []) this.#o.alert?.(caller.pin.module, alert);
+		if (reply.receipt !== undefined) this.#o.receipt?.(caller.pin.module, reply.receipt);
 		return reply.output;
 	}
 

@@ -62,6 +62,8 @@ export function gmailMessage(letter: Letter, format: "full" | "metadata" = "full
 export class FakeInbox {
 	readonly routes: Record<string, unknown> = {};
 	readonly letters = new Map<string, Letter>();
+	/** Each `drafts.create` as the decoded RFC 2822 text and the thread it names. */
+	readonly drafts: { raw: string; threadId: string }[] = [];
 	#history: { id: number; added: string[] }[] = [];
 	#historyId = 1000;
 	#oldest = 0;
@@ -75,6 +77,11 @@ export class FakeInbox {
 		this.routes[`GET ${GMAIL}/profile`] = () => this.#ok({ emailAddress: "me@example.com", messagesTotal: this.letters.size, historyId: String(this.#historyId) });
 		this.routes[`GET ${GMAIL}/history`] = (url: URL) => this.#historyPage(url);
 		this.routes[`GET ${GMAIL}/messages`] = (url: URL) => this.#listPage(url);
+		this.routes[`POST ${GMAIL}/drafts`] = (_url: URL, body: string) => {
+			const { message } = JSON.parse(body) as { message: { raw: string; threadId: string } };
+			this.drafts.push({ raw: Buffer.from(message.raw, "base64url").toString("utf8"), threadId: message.threadId });
+			return this.#ok({ id: `r-${this.drafts.length}`, message: { id: `d-${this.drafts.length}`, threadId: message.threadId } });
+		};
 	}
 
 	get historyId(): string {
