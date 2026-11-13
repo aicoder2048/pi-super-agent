@@ -148,16 +148,17 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 - [x] 这个 PR 只加不减。工具照旧读 `TA_ROOT`，回答不变。模块多了自己的 `py/`、自己的 `scan` feed 和 `scan-runs`，把数据写进 `files/ta/ta.sqlite`。S3 才把工具切过去。
 - [x] `py/pyproject.toml` 只依赖 `ta-trading`，`[tool.uv] package = false`，来源是 `{ git = "https://github.com/aicoder2048/TechnicalAnalysis", subdirectory = "app/trading", rev = "<40 位提交>" }`。用 HTTPS 不用 SSH，原因见 Appendix A。提交选技术分析仓库 `main` 上已推送的最新一个，写进 PR 正文。`uv lock` 生成锁文件。
-- [x] `feeds/scan/feed.json` 写 `timer`，`every` 1 小时，不写 `when`，`limit` 5 分钟，`reads: ["watchlist"]`，`secrets: ["POLYGON_API_KEY"]`（handler 把它设成 `ta` 进程的 `MASSIVE_API_KEY`），`into: "scan-runs"`。不写 `when` 是因为日线扫描要等收盘后 15 分钟，`us-market-hours` 只到收盘后 20 分钟，一小时一拍会错过。handler 用的 `ta` 是和自己这份包副本的 `py/uv.lock` 对得上的 `files/venv-<12 位>/bin/ta`；fixture 用 `settings.ta` 指向 `fixtures/fake-ta.mjs`，用 `settings.now` 固定时间。
+- [x] `feeds/scan/feed.json` 写 `timer`，`every` 1 小时，不写 `when`，`limit` 5 分钟，`reads: ["watchlist"]`，`secrets: ["POLYGON_API_KEY"]`（handler 把它设成 `ta` 进程的 `MASSIVE_API_KEY`），`into: "scan-runs"`。不写 `when` 是因为日线扫描要等收盘后 15 分钟，`us-market-hours` 只到收盘后 20 分钟，一小时一拍会错过。handler 用的 `ta` 是和自己这份包副本的 `py/uv.lock` 对得上的 `files/venv-<12 位>/bin/ta`；fixture 用 `settings.ta` 指向 `feeds/scan/fake-ta.mjs`，用 `settings.now` 固定时间。
 - [x] 提前返回。cursor 记最近一次换上了库的扫描的交易日和当时的标的列表。这一拍的美东日期和标的列表都和 cursor 一样时，handler 直接返回，不起 `ta`。不这样的话，16:15 到 24:00 ET 每小时一次，一天要跑约 8 次完整扫描（按时间表推算）。标的列表也算进去，是为了改了自选股当天下一拍就生效。部分标的出错的那次也移动 cursor，出错的标的第二个交易日重试，免得一只退市的股票让每一拍都整轮重扫。
 - [x] 准备副本。先删掉残留的 `ta.sqlite.next`、`ta.sqlite.next-journal`、`ta.sqlite.next.scan.lock`。残留的回滚日志会在打开时把新副本悄悄回滚（实测 5000 行，应为 7000 行，`integrity_check` 仍是 ok，Appendix A）。然后把 `files/ta/ta.sqlite` 克隆成 `ta.sqlite.next`，没有旧库就从空库开始。
-- [x] 跑扫描。输入是 `{"mode":"daily","symbols":<标的>}`。标的是 G5 `watchlist` 的前 30 只，再总是加上 QQQ、SPY，自选股是空的也加。空的标的列表会「成功」，但 0 根日线、没有基准（实测）。超过 30 只时只扫前 30 只，在 `scan-runs` 那一行说明。30 是推断的上限：断网时每个标的约 8.4 秒（实测 3 只加 QQQ、SPY 共 42 秒），8.4 秒乘 32 小于 5 分钟的 `limit`，没有在 30 只上实测过。
-- [x] 第一次补数。数据库是空的时，传 `now` = 上一个交易日收盘加 16 分钟，第一拍就有数据，不用等到当天 16:15 ET（周末装的话要等到周一）。`ta scan` 接受 `now`（实测）。上一个交易日从 `ta calendar` 取，返回字段由 owner 实现时核对。
+- [x] 跑扫描。输入是 `{"mode":"daily","symbols":<标的>,"now":<时间>}`。标的是 G5 `watchlist` 里 `ta` 认的代码的前 30 只，再总是加上 QQQ、SPY，自选股是空的也加。空的标的列表会「成功」，但 0 根日线、没有基准（实测）。超过 30 只时只扫前 30 只，在 `scan-runs` 那一行说明。`ta` 不认的代码（按技术分析仓库 c9e7536 的 `normalize_symbol`：1 到 10 个字母，可带一个点和 1 到 2 个字母，`-` 当成 `.`）一只就会让 `ta scan` 整次退出码 1，所以 handler 先按同一条规则筛掉，在那一行点名，`BRK-B` 写成 `BRK.B` 传。30 只的上限不变，断网时可能超时，超时也存「失败」行（见下）。算术：计划时实测断网约 8.4 秒一只（3 只加 QQQ、SPY 共 42 秒），审查时实测约 12 秒一只，修复时用真 `ta` 复测 3 个标的 36 秒；32 乘 12 约 384 秒，超过 270 秒的扫描时限，所以 30 只全满又断网时这一行写超时，不是逐个 `MARKET_UNAVAILABLE`。不为此降低上限：有网时 12 个标的第一次扫描 22 秒（lane 10 实测），上限卡的是断网，而断网时两种行都是「失败」，下一拍再试。
+- [x] 第一次补数。数据库是空的时，传 `now` = 上一个交易日收盘加 16 分钟，第一拍就有数据，不用等到当天 16:15 ET（周末装的话要等到周一）。`ta scan` 接受 `now`（实测）。上一个交易日从 `ta calendar` 取，返回字段由 owner 实现时核对。库已经存在时，每一拍都传这一拍自己的时间当 `now`。
 - [x] 判断成败只看 `ta scan` 输出的 JSON，不看退出码。断网和跳过的退出码都是 0（实测）。
   - [x] 跳过（不是交易日或还没到时间）：删掉副本，不存行，不换库，不动 cursor。
   - [x] 每个标的都出错（例如断网时全是 `MARKET_UNAVAILABLE`）：算失败，删掉副本，旧库不动，存一行带错误原因的 `scan-runs`。
   - [x] 部分标的出错：把副本改名成 `ta.sqlite` 换上，那一行列出哪些标的出错、原因是什么。
-  - [x] 进程退出码非零或超时：删掉副本，旧库不动，日志一行。
+  - [x] 进程退出码非零：删掉副本，旧库不动，日志一行。
+  - [x] 超过 `scanSeconds`（270 秒）：停掉 `ta`，删掉副本，旧库不动，存一行「失败」，原因写超时，cursor 不动。`ta` 只在结束时输出一次 JSON，所以停掉时不知道扫到第几只。
 - [x] `ta scan` 的日线扫描自己会补齐两年日线、分红，以及 QQQ、SPY 两个基准（读代码确认，见 Appendix A），handler 不另调同步命令。
 - [x] `scan-runs` 每一行的 id 是交易日加开始时间，每次运行都不同。feed 存行用 `INSERT OR IGNORE`，id 重复的行只存第一次（实测），如果只用交易日做 id，当天第一次失败的那一行会一直留着。字段是交易日、开始时间、结果（换上、失败）、标的数、自选股是不是空的、有没有因为上限少扫、新信号数、出错的标的和原因。
 - [x] 不发触发。新信号要不要叫醒领队，是 Appendix E 第 3 条，默认不叫。
@@ -168,7 +169,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [x] `tests/stock-ta-scan.test.ts` 用假 `ta` 覆盖：传的是自选股加 QQQ、SPY、空自选股也带基准并在行里说明、超过 30 只只扫前 30 只并说明、全部成功换上、部分出错换上并列出、全部出错不换并存错误行、断网（退出码 0、全是 `MARKET_UNAVAILABLE`）同上、跳过不换不存行、退出码非零时旧库一字不差、残留的 `.next`、`-journal`、`.scan.lock` 先被删掉、同一天两次运行存两行、cursor 命中时不起 `ta`、改自选股当天下一拍重扫、空库第一次传上一个收盘加 16 分钟的 `now`、用的是自己包副本锁文件对应的 venv、缺密钥时一行说明。Run `just test`.
+- [x] `tests/stock-ta-scan.test.ts` 用假 `ta` 覆盖：传的是自选股加 QQQ、SPY、空自选股也带基准并在行里说明、超过 30 只只扫前 30 只并说明、全部成功换上、部分出错换上并列出、全部出错不换并存错误行、断网（退出码 0、全是 `MARKET_UNAVAILABLE`）同上、跳过不换不存行、退出码非零时旧库一字不差、残留的 `.next`、`-journal`、`.scan.lock` 先被删掉、同一天两次运行存两行、cursor 命中时不起 `ta`、改自选股当天下一拍重扫、空库第一次传上一个收盘加 16 分钟的 `now`、用的是自己包副本锁文件对应的 venv、缺密钥时一行说明、`ta` 不认的代码（「腾讯」「NVDA US」「$NVDA」「0700.HK」、11 个字母）被筛掉并点名而 `BRK.B` 照扫、超时存「失败」行。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/s2-live.ts`。lane 3 到 lane 9 用假 `ta`。lane 2 和 lane 10 用真 GitHub 凭据、真 Massive、真 `ta`；靠 `now` 补数，上一个交易日收盘以后任何时候都能跑，不需要真实的收盘时间窗。
 
@@ -178,7 +179,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] Lane 4. 断网：假 `ta` 对每个标的回 `MARKET_UNAVAILABLE`，退出码 0。Save `s2-network-down.txt`. Pass when 旧 `ta.sqlite` 的 sha256 不变，没有 `.next`，`scan-runs` 一行带错误原因。
 - [x] Lane 5. 跳过：假 `ta` 回「跳过」。Save `s2-skipped.txt`. Pass when 不换库，不存行，cursor 不变。
 - [x] Lane 6. 残留：先放一份 `ta.sqlite.next` 和一份能回滚它的 `ta.sqlite.next-journal`，假 `ta` 用 `node:sqlite` 写 7000 行。Save `s2-leftover-journal.txt`. Pass when 换上的库正好 7000 行，残留文件都没了。
-- [x] Lane 7. 假 `ta` 睡过 `limit`。Save `s2-timeout.txt`. Pass when 这一次被停，旧库不变，没有 `.next`，下一拍照常。
+- [x] Lane 7. 假 `ta` 睡过 `limit`。Save `s2-timeout.txt`. Pass when 这一次被停，`scan-runs` 一行「失败」写着超时，旧库不变，没有 `.next`，下一拍照常。
 - [x] Lane 8. 同一个 `settings.now` 先跑一轮成功，再跑一拍，然后往自选股加 AMD 再跑一拍。Save `s2-second-tick.txt`. Pass when 第二拍假 `ta` 的调用日志没有新增、没有新行；第三拍起了 `ta`，标的里有 AMD。
 - [x] Lane 9. 自选股是空的，跑一拍。Save `s2-empty-watchlist.txt`. Pass when 假 `ta` 收到的标的是 QQQ、SPY，`scan-runs` 那一行写明自选股是空的。
 - [x] Lane 10. 空数据目录，自选股 10 只，真行情第一拍。Save `s2-backfill.txt`. Pass when 5 分钟内结束，传的 `now` 是上一个交易日收盘加 16 分钟，12 个标的（含 QQQ、SPY）各约 500 根日线，`scan-runs` 一行；记下时间、行数和请求数。

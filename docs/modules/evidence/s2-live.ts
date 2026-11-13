@@ -387,12 +387,13 @@ async function lanes(): Promise<void> {
 		watch(state, "NVDA");
 		const before = seedOldDb(state, 5);
 		let afterFirst = { sha: "", leftovers: [] as string[] };
-		const { log, lines } = await hostTicks(state, 2, () => {
+		const { log } = await hostTicks(state, 2, () => {
 			afterFirst = { sha: fileSha(liveDb(state)), leftovers: leftovers(state) };
 			ta.setPlan({ kind: "ok" });
 		});
 		const rows = scanRuns(state);
-		const ok = /扫描时限/.test(lines[0] ?? "") && afterFirst.sha === before && afterFirst.leftovers.length === 0 && rows.length === 1 && rows[0]!["outcome"] === "换上";
+		const late = rows.find((r) => r["outcome"] === "失败");
+		const ok = /超时/.test(String(late?.["errors"])) && afterFirst.sha === before && afterFirst.leftovers.length === 0 && rows.length === 2 && rows.some((r) => r["outcome"] === "换上");
 		return { pass: ok, evidence: `feed copy: scanSeconds 3, every 10s; fake ta sleeps 60 s on the first tick, answers ok on the next\nafter the first tick: old ta.sqlite unchanged ${afterFirst.sha === before}, leftovers ${afterFirst.leftovers.join(",") || "(none)"}\nscan-runs: ${JSON.stringify(rows)}\nhost log:\n${log}` };
 	});
 
