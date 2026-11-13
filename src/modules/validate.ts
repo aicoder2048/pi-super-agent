@@ -498,10 +498,7 @@ function caseRuns(components: readonly Component[], secret: SecretLookup): CaseR
 
 export const hasCases = (scan: PackageScan): boolean => caseRuns(scan.components, () => undefined).length > 0;
 
-/**
- * A check never shows module code the module's real data: every case of one check shares a data dir that is deleted after the last.
- * The module's installed venvs are linked in, so a case can run the Python the package names.
- */
+/** A check never shows module code the module's real data: every case of one check shares a data dir that is deleted after the last. */
 function scratchData(packageDir: string, module: string, realDataDir: string | undefined): { dir: string; drop(): void; explain(problem: Problem): Problem } {
 	const dir = mkdtempSync(join(tmpdir(), "psa-check-data-"));
 	if (realDataDir !== undefined) linkVenvs(realDataDir, dir);
@@ -581,10 +578,7 @@ export function scanPackage(packageDir: string, options: ScanOptions = {}): Scan
 	}
 }
 
-/**
- * `folder`: the module name the folder stands for. A copy in the module store sits in a folder named by its digest.
- * `dataDirOf`: where a module's instance data is, whose venvs the test cases may use.
- */
+/** `folder`: the module name the folder stands for. A copy in the module store sits in a folder named by its digest. */
 type ScanOptions = { previous?: string | undefined; runCases?: boolean; folder?: string; secret?: SecretLookup; dataDirOf?: (module: string) => string };
 
 function scanReadable(packageDir: string, { previous, runCases = true, folder, secret = (name) => process.env[name], dataDirOf }: ScanOptions): ScanResult {

@@ -24,13 +24,12 @@ export interface SchedulerOptions {
 export interface Scheduler {
 	tick(): Promise<void>;
 	start(everyMs: number): void;
-	/** Also kills every running call's process group, so a stopped host leaves no feed writing behind it. */
+	/** Also aborts every running call, so a stopped host leaves no feed writing behind it. */
 	stop(): void;
 }
 
 export function createScheduler(o: SchedulerOptions): Scheduler {
 	const lastRun = new Map<string, number | null>();
-	/** A call whose feed drops out of feeds() is killed: its module was switched off and may be purged next. */
 	const running = new Map<string, AbortController>();
 	const rehearsed = new Set<string>();
 	const waiting = new Set<string>();
@@ -94,6 +93,7 @@ export function createScheduler(o: SchedulerOptions): Scheduler {
 		const calls: Promise<unknown>[] = [];
 		const feeds = o.feeds();
 		const serving = new Set(feeds.map((entry) => entry.source));
+		// Its module was switched off and may be purged next.
 		for (const [source, controller] of running) if (!serving.has(source)) controller.abort();
 		for (const entry of feeds) {
 			if (running.has(entry.source)) continue;

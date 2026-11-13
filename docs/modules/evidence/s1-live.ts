@@ -3,7 +3,7 @@
  *
  * Every lane runs in its own throwaway state dir, hosts on the fake model from tests/e2e/fake-model.ts.
  * Lanes 3 to 5 run the real `uv` against PyPI (the sample's one dependency is `six`). Lane 1 and perf also
- * run a detached worktree of S1_TRUNK (default origin/psa/mod-g5-quotes, the branch S1 stacks on) at <outDir>/trunk.
+ * run a detached worktree of S1_TRUNK (default origin/main) at <outDir>/trunk.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -14,7 +14,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const HEAD = resolve(import.meta.dirname, "../../..");
 const SAMPLE = join(HEAD, "docs/modules/architecture/sample");
-const TRUNK_REF = process.env["S1_TRUNK"] ?? "origin/psa/mod-g5-quotes";
+const TRUNK_REF = process.env["S1_TRUNK"] ?? "origin/main";
 const [mode = "lanes", outDir = "/tmp/swarm-s1/owner", ...only] = process.argv.slice(2);
 const TRUNK = join(outDir, "trunk");
 mkdirSync(outDir, { recursive: true });
