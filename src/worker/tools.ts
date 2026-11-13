@@ -1,4 +1,4 @@
-import type { Basis } from "../kernel/types.ts";
+import type { Basis, Opener } from "../kernel/types.ts";
 
 /** Every tool a helper can have: Pi's built-ins and the ones the worker extension registers for it. */
 export const WORKER_TOOLS = [
@@ -15,14 +15,40 @@ const INFERENCE_TOOLS = ["read", "grep", "find", "ls", "report", "hand_back", "r
  */
 export const MEMBER_TOOLS: readonly string[] = ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup"];
 
-export function toolAllowlist(basis: Basis, canDispatch = false): readonly string[] | undefined {
-	if (basis !== "inference") return undefined;
-	return canDispatch ? [...INFERENCE_TOOLS, "dispatch_agent"] : INFERENCE_TOOLS;
+export type Profile = Basis | "module-feed";
+
+export const profileOf = (basis: Basis, opener: Opener): Profile => (opener === "module-feed" ? "module-feed" : basis);
+
+const FEED_TOOLS = INFERENCE_TOOLS.filter((t) => t !== "web_get");
+const FEED_MEMBER_TOOLS = READ_TOOLS.filter((t) => t !== "web_get");
+
+/** No `helper`: no tool limit and no read roots. */
+const PROFILES: Record<Profile, { helper?: { tools: readonly string[]; refusal: (tool: string) => string }; member: readonly string[] }> = {
+	request: { member: MEMBER_TOOLS },
+	rule: { member: MEMBER_TOOLS },
+	inference: { helper: { tools: INFERENCE_TOOLS, refusal: (tool) => `依据为推断的任务只能读文件、读网页、查数据和汇报，不能用 ${tool}。需要对外动作时写成草稿，用 report 的 drafts 提交。` }, member: READ_TOOLS },
+	"module-feed": { helper: { tools: FEED_TOOLS, refusal: (tool) => `来源开的任务不能用 ${tool}。要运行命令，在汇报里请使用者在对话里提出。` }, member: FEED_MEMBER_TOOLS },
+};
+
+export const PATH_TOOLS: readonly string[] = ["read", "grep", "find", "ls"];
+
+export const isRooted = (profile: Profile) => PROFILES[profile].helper !== undefined;
+
+export const helperRefusal = (profile: Profile, tool: string) => PROFILES[profile].helper!.refusal(tool);
+
+/** For a rooted helper's prompt: Pi answers a call to a tool off the list with only "Tool X not found", so the reason goes up front. */
+export function helperLimits(profile: Profile): string | undefined {
+	const helper = PROFILES[profile].helper;
+	return helper?.refusal(WORKER_TOOLS.filter((t) => t !== "dispatch_agent" && !helper.tools.includes(t)).join("、"));
 }
 
-/** What the ticket's basis allows a member ∩ the member's own `tools` (undefined: no further limit). */
-export function memberTools(basis: Basis, own: readonly string[] | undefined): string[] {
-	const allowed: readonly string[] = basis === "inference" ? READ_TOOLS : MEMBER_TOOLS;
+export function toolAllowlist(profile: Profile, canDispatch = false): readonly string[] | undefined {
+	const tools = PROFILES[profile].helper?.tools;
+	return tools && canDispatch ? [...tools, "dispatch_agent"] : tools;
+}
+
+export function memberTools(profile: Profile, own: readonly string[] | undefined): string[] {
+	const allowed = PROFILES[profile].member;
 	return MEMBER_TOOLS.filter((t) => allowed.includes(t) && (!own || own.includes(t)));
 }
 

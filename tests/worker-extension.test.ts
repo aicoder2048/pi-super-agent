@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,7 @@ import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { onJsonLines, writeJsonLine } from "../src/jsonl.ts";
 import { WORKER_TOOLS } from "../src/worker/tools.ts";
+import { piCliPath } from "../src/pi-runtime.mjs";
 import { until } from "./helpers/fakes.ts";
 
 let loads = 0;
@@ -29,7 +30,7 @@ async function load(basis: string, extra: Record<string, string> = {}, refuse?: 
 		});
 	});
 	await new Promise<void>((resolve) => server.listen(socketPath, resolve));
-	Object.assign(process.env, { PSA_SOCKET: socketPath, PSA_TICKET: "tkt_1", PSA_TOKEN: "tok", PSA_BASIS: basis }, extra);
+	Object.assign(process.env, { PSA_SOCKET: socketPath, PSA_TICKET: "tkt_1", PSA_TOKEN: "tok", PSA_PROFILE: basis, PSA_READ_ROOTS: JSON.stringify([realpathSync(dir)]) }, extra);
 	const { default: workerExtension } = await import(`../src/worker/extension.ts?load=${++loads}`);
 	const tools = new Map<string, any>();
 	const handlers = new Map<string, any>();
@@ -42,7 +43,7 @@ async function load(basis: string, extra: Record<string, string> = {}, refuse?: 
 		appendEntry: (customType: string, data: unknown) => entries.push({ customType, data }),
 	});
 	const run = (name: string, params: any, callId = "call") => tools.get(name).execute(callId, params, undefined, undefined, { cwd: dir });
-	return { tools, handlers, sent, entries, requests, run, close: () => { for (const s of sockets) s.destroy(); server.close(); } };
+	return { dir, tools, handlers, sent, entries, requests, run, close: () => { for (const s of sockets) s.destroy(); server.close(); } };
 }
 
 test("后台命令启动后立即返回，结束时结果作为新输入送回", async (t) => {
@@ -69,15 +70,15 @@ test("汇报经宿主连接提交", async (t) => {
 });
 
 test("推断任务的 Worker 只能调用只读工具和汇报类工具，其余一律拦截；请求任务不拦", async (t) => {
-	const inference = await load("inference");
+	const inference = await load("inference", { PSA_PI_CLI: piCliPath() });
 	const request = await load("request");
 	t.after(() => { inference.close(); request.close(); });
-	const call = (toolName: string) => ({ toolName, input: { command: "git -C . push", path: "x" } });
+	const call = (toolName: string) => ({ toolName, input: { command: "git -C . push", path: "." } });
 	for (const tool of ["bash", "write", "edit", "bg_start", "mcp__mail__send"]) {
-		assert.equal((await inference.handlers.get("tool_call")(call(tool)))?.block, true, tool);
-		assert.equal(await request.handlers.get("tool_call")(call(tool)), undefined, tool);
+		assert.equal((await inference.handlers.get("tool_call")(call(tool), { cwd: inference.dir }))?.block, true, tool);
+		assert.equal(await request.handlers.get("tool_call")(call(tool), { cwd: request.dir }), undefined, tool);
 	}
-	for (const tool of ["read", "grep", "report", "read_ticket", "web_get"]) assert.equal(await inference.handlers.get("tool_call")(call(tool)), undefined, tool);
+	for (const tool of ["read", "grep", "report", "read_ticket", "web_get"]) assert.equal(await inference.handlers.get("tool_call")(call(tool), { cwd: inference.dir }), undefined, tool);
 });
 
 test("每种依据的 Worker 都有 web_get，它只收一个网址并拒绝非公网地址", async (t) => {
@@ -110,7 +111,7 @@ test("扩展读完宿主连接信息后从环境变量里删掉，命令子进�
 		delete process.env.PSA_REPO;
 		return w.close();
 	});
-	for (const name of ["PSA_SOCKET", "PSA_TOKEN", "PSA_TICKET", "PSA_BASIS"]) assert.equal(process.env[name], undefined, name);
+	for (const name of ["PSA_SOCKET", "PSA_TOKEN", "PSA_TICKET", "PSA_PROFILE"]) assert.equal(process.env[name], undefined, name);
 	assert.equal(process.env.PSA_REPO, "/repo");
 });
 
@@ -294,7 +295,7 @@ test("一次性进程用过 lookup 后能自己退出：扩展只在有请求等
 		process.stdout.write(result.content[0].text);
 	`);
 	const child = spawn(process.execPath, ["--import", fileURLToPath(new URL("../src/pi-runtime.mjs", import.meta.url)), script], {
-		env: { ...process.env, PSA_SOCKET: socketPath, PSA_TICKET: "tkt_1", PSA_TOKEN: "tok", PSA_BASIS: "inference", PSA_MEMBER_TOOLS: "lookup", PSA_LOOKUPS: "us-market quote" },
+		env: { ...process.env, PSA_SOCKET: socketPath, PSA_TICKET: "tkt_1", PSA_TOKEN: "tok", PSA_PROFILE: "inference", PSA_MEMBER_TOOLS: "lookup", PSA_LOOKUPS: "us-market quote" },
 		stdio: ["ignore", "pipe", "inherit"],
 	});
 	let out = "";

@@ -39,6 +39,7 @@ import type {
 	DomainBook,
 	Helper,
 	HelpersToday,
+	Opener,
 	InputKind,
 	OutsideTally,
 	OutsideWrite,
@@ -722,6 +723,18 @@ export class Kernel {
 			).at as number;
 			return [{ kind, lastError: recent[0].error, since }];
 		});
+	}
+
+	/**
+	 * A module feed's source is `<module>/<feed>` and no host source has a slash; the shape decides, not the live
+	 * module table, so switching a module off never loosens an open ticket. An inference ticket without a trigger
+	 * counts as a feed's: the Router may have copied a feed's text into its brief.
+	 */
+	openedBySource(ticketId: string): Opener {
+		const row = this.#get("SELECT t.basis, g.source FROM tickets t LEFT JOIN triggers g ON g.id = t.origin_trigger_id WHERE t.id = ?", ticketId);
+		if (!row) throw new Error(`unknown ticket ${ticketId}`);
+		if (row.basis === "request") return "user";
+		return row.source == null || String(row.source).includes("/") ? "module-feed" : "host-source";
 	}
 
 	getTicket(ticketId: string): Ticket | undefined {
