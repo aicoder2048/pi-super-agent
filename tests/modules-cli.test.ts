@@ -134,9 +134,19 @@ test("just module new：名字不合法或模板不存在时拒绝，不建目�
 	for (const args of [["../evil"], ["中文"], ["-x"], ["demo", "--template", "nope"]]) {
 		const run = newModule(dir, args);
 		assert.notEqual(run.status, 0, args.join(" "));
-		assert.match(run.stdout + run.stderr, args[2] === "nope" ? /notes、team、full/ : /模块名/, args.join(" "));
+		assert.match(run.stdout + run.stderr, args[2] === "nope" ? /notes、team、full/ : /is not a usable module name/, args.join(" "));
 	}
 	assert.ok(!existsSync(join(dir, "evil")));
+	assert.ok(!existsSync(join(dir, "modules")) || readdirSync(join(dir, "modules")).length === 0);
+});
+
+test("just module new：名字带连续或结尾的连字符时拒绝，原因和 just module check 是同一句，不建目录", (t) => {
+	const dir = stateDir(t);
+	for (const name of ["mail--x", "mail-"]) {
+		const run = newModule(dir, [name]);
+		assert.equal(run.status, 1, name);
+		assert.match(run.stdout + run.stderr, new RegExp(`"${name}" is not a usable module name \\(lowercase letters and digits, joined by single hyphens\\)`), name);
+	}
 	assert.ok(!existsSync(join(dir, "modules")) || readdirSync(join(dir, "modules")).length === 0);
 });
 

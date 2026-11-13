@@ -15,6 +15,8 @@ import type {
 const NAME = /^[a-z0-9][a-z0-9-]*$/;
 /** Single hyphens only, so no module's secret prefix (`prefixOf`) starts another's. */
 const MODULE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const moduleNameProblem = (name: string): string | undefined =>
+	MODULE_NAME.test(name) ? undefined : `"${name}" is not a usable module name (lowercase letters and digits, joined by single hyphens)`;
 const FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
 const MAX_LIMIT_MS = 600_000;
@@ -154,8 +156,9 @@ function readManifest(report: Report, root: string, folder: string): ModuleManif
 	if (raw === undefined) return undefined;
 	if (raw["schema"] !== 1) report(where, `"schema" must be 1: that key is what marks a folder as a package of this layout`);
 	const name = typeof raw["name"] === "string" ? raw["name"] : "";
+	const nameProblem = moduleNameProblem(name);
 	if (name !== folder) report(where, `"name" is "${name}" but the folder is "${folder}"`);
-	else if (!MODULE_NAME.test(name)) report(where, `"${name}" is not a usable module name (lowercase letters and digits, joined by single hyphens)`);
+	else if (nameProblem) report(where, nameProblem);
 	else if (RESERVED_NAMES.includes(name)) report(where, `"${name}" is reserved: "user" names your own rules and "conversation" names the chat source`);
 	const version = typeof raw["version"] === "string" ? raw["version"] : "";
 	if (!/^\d+\.\d+\.\d+$/.test(version)) report(where, `"version" must look like 1.2.3`);

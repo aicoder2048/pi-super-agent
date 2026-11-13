@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, r
 import { join, resolve } from "node:path";
 import { ConfigError, exitOnConfigError } from "../config-error.ts";
 import { loadConfig, loadModules } from "../host/config.ts";
-import { moduleNameProblem } from "../modules.ts";
+import { moduleNameProblem } from "../modules/validate.ts";
 
 const TEMPLATES = ["notes", "team", "full"];
 const TEMPLATES_DIR = join(import.meta.dirname, "..", "modules", "templates");
