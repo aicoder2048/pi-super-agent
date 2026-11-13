@@ -1059,7 +1059,6 @@ export class Kernel {
 		return this.#get("SELECT 1 FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) !== undefined;
 	}
 
-	/** Records that the Router's session was handed `id` (a card or a read), when that ticket touched private data or that trigger came from a private feed. */
 	routerSaw(id: string): void {
 		const ticket = id.startsWith("tkt_") ? this.#get("SELECT domain FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", id) : undefined;
 		const trigger = id.startsWith("trg_") ? this.#get("SELECT source FROM triggers WHERE id = ? AND private = 1", id) : undefined;
@@ -1073,7 +1072,6 @@ export class Kernel {
 		return row ? { module: row.module } : null;
 	}
 
-	/** The Router starts a session that has seen nothing. */
 	routerStartedFresh(): void {
 		this.#run("DELETE FROM router_private");
 	}

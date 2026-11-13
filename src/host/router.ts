@@ -361,7 +361,7 @@ export class Router {
 		});
 	}
 
-	/** 清屏: the next turn runs in a new session with none of the old context, once the current turn settles. */
+	/** Takes effect after the current turn settles. */
 	startOver(): void {
 		this.#startOver = true;
 		this.#schedule();
