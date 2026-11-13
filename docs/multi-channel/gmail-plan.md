@@ -219,6 +219,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 2026-11-13 在 3e099c4 上通过（证据在 `/tmp/swarm-m1/owner/`，lane 脚本 `docs/modules/evidence/m1-live.ts`）：`just test` 1758 条里 1757 条过，没过的是 `tests/scheduler.test.ts` 的「模块关掉时正在跑的 feed 进程组被杀掉」，单独重跑 head 和 trunk 各 3 次都过；`node docs/modules/architecture/check.mjs` 7 项 ok；`tests/e2e/modules.e2e.ts` 12 条过。先红后绿：`tests/secret-owners.test.ts` 先跑时点名别的模块、宿主、表外密钥都没被拒（`actual: []`），`try` 一直跑到「没有考题」，工具用例拿到的是 `secretsFile` 的真值（`got {"set":1,"real":1}`）；`tests/google-auth.test.ts` 先跑时 `writeSecret` 不存在（`does not provide an export named 'writeSecret'`），命令不存在时测试等不到授权网址。Lane 1 到 8 PASS：trunk 没有 `google-auth`，head 写入一行，stock-ta 两边都通过，`just test` head 比 trunk 多 23 条通过（只在 head 通过的 27 条，含 trunk 这次偶发失败的 watchdog Ctrl+C，减去删掉或改名的 4 条）；多一个 scope 时退出码 1、sha256 不变；错的 `state` 回 400 且假服务没收到换 token 的请求；超时退出、端口已关；十一行的文件只变了那一行，权限 600；三个包的 `check` 和 `try` 六次都拒，一行写明主人或前缀；工具用例拿到的是 `fixture`，十条一起跑时 17 份命令输出里没有假服务发出的 15 个授权码和 token。十条一起跑在 a85ac59 上；之后的提交只删注释、把归属检查挪出 `crossCheck`，在它上面重跑 lane 2 到 8 仍然 PASS（12 份输出、12 个 token，0 处泄漏）。Lane 9、10 是真账号，等时段 1。Perf：回调到命令退出 10 次中位数 14 毫秒（14 到 22），stock-ta 的 `just module check` 交替各 5 次，trunk 408 毫秒（403 到 411），head 410 毫秒（409 到 412）。
 
+2026-11-13 独立验收后的修正（四个非阻塞问题）：密钥前缀改成以 `__` 收尾、模块名只许单个连字符；模块的密钥只从 `secretsFile` 取，模型 key 和 `GITHUB_TOKEN` 记成宿主的；换 token 时连不上 Google 只打一行、退出 1；旧 Mac 的复制命令改成同名行先删再写、可重跑。每条先红后绿，`just test` 1764 条里 1763 条过，没过的是已知偶发的 watchdog Ctrl+C；lane 1 到 8 在修正后重跑 PASS（`/tmp/swarm-m1/fix/lanes/`）。
+
 **Review gate.** None. M1 is not review-gated.
 
 **Merge.**
