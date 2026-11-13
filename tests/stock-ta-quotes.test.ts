@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { Modules } from "../src/modules.ts";
 import { runFeed, type FeedNotice, type FeedPorts } from "../src/modules/feed-runner.ts";
@@ -12,43 +11,21 @@ import { Kernel } from "../src/kernel/kernel.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { threadId } from "../src/sources/generic.ts";
 import { servedAsHost } from "./helpers/fakes.ts";
-import { snapshotBody, tickerRow } from "./helpers/market.ts";
+import { fakeMassive, SNAPSHOT, snapshotBody, stockTaCopy, tickerRow, type Answer } from "./helpers/market.ts";
 
 const PKG = join(import.meta.dirname, "../docs/modules/examples/stock-ta");
-const SNAPSHOT = "/v2/snapshot/locale/us/markets/stocks/tickers";
 const AT = Date.parse("2026-11-12T15:44:00Z");
-
-type Answer = { status: number; body: unknown };
-type Hit = { url: string; auth: string | undefined };
-
-async function fakeMassive(t: TestContext) {
-	const hits: Hit[] = [];
-	let answers: Answer[] = [];
-	const server = createServer((req, res) => {
-		hits.push({ url: req.url ?? "", auth: req.headers.authorization });
-		const answer = answers.length > 1 ? answers.shift()! : answers[0]!;
-		res.writeHead(answer.status, { "content-type": "application/json" }).end(JSON.stringify(answer.body));
-	});
-	await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-	t.after(() => new Promise((done) => server.close(done)));
-	const { port } = server.address() as { port: number };
-	return { hits, base: `http://127.0.0.1:${port}`, answer: (...next: Answer[]) => void (answers = next) };
-}
 
 const snapshot = (rows: Record<string, unknown>[]): Answer => ({ status: 200, body: snapshotBody(rows) });
 
 async function quotesFeed(t: TestContext, key = "sk-test") {
 	const massive = await fakeMassive(t);
-	const root = mkdtempSync(join(tmpdir(), "psa-stock-ta-quotes-"));
-	t.after(() => rmSync(root, { recursive: true, force: true }));
-	const pkg = join(root, "modules", "stock-ta");
-	cpSync(PKG, pkg, { recursive: true });
-	const feedJson = join(pkg, "feeds", "quotes", "feed.json");
-	writeFileSync(feedJson, JSON.stringify({ ...JSON.parse(readFileSync(feedJson, "utf8")), settings: { baseUrl: massive.base } }));
-	const modules = servedAsHost(Modules.load([join(root, "modules")]));
+	const modules = servedAsHost(Modules.load([dirname(stockTaCopy(t, massive.base))]));
 	const entry = modules.feeds().find((e) => e.source === "stock-ta/quotes");
 	assert.ok(entry, "stock-ta 有 quotes feed");
-	const data = instanceData(join(root, "state"));
+	const state = mkdtempSync(join(tmpdir(), "psa-stock-ta-quotes-"));
+	t.after(() => rmSync(state, { recursive: true, force: true }));
+	const data = instanceData(state);
 	const notices: FeedNotice[] = [];
 	const alerts: string[] = [];
 	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: (_, a) => void alerts.push(a.text), problem: () => {}, secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined), now: () => AT + 15 * 60_000 };
