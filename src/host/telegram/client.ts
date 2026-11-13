@@ -39,7 +39,7 @@ export interface TelegramHost {
 	board(): Board;
 	/** The module's title when the ticket touched private data: its reports and cards then go out as one line pointing to the web page. Null: in full. */
 	privateTitle(ticketId: string): string | null;
-	/** The module's title once private data may have reached the Router. Its session keeps what it read across turns, restarts and compaction, so any later reply could quote it: every reply then goes out as the one line. */
+	/** The Router's session keeps what it read across turns, restarts and compaction, so once private data may have reached it every reply goes out as the one line. Null: in full. */
 	routerHeardPrivate(): string | null;
 }
 

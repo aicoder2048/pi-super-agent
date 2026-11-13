@@ -1,9 +1,4 @@
-/**
- *   node --import ./src/pi-runtime.mjs docs/modules/evidence/private-reply-live.ts [outDir]
- *
- * One real host with the fake model and a fake Telegram chat. The user chats before and after a personal-health
- * ticket writes a lab result; the Router answers each chat message from the conversation (cause trg_).
- */
+/** node --import ./src/pi-runtime.mjs docs/modules/evidence/private-reply-live.ts [outDir] */
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

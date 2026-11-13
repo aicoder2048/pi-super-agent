@@ -1059,7 +1059,7 @@ export class Kernel {
 		return this.#get("SELECT 1 FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) !== undefined;
 	}
 
-	/** The module of the newest private data the Router may have read: a ticket that touched it, or a private feed's trigger, which reaches the Router as a card even when ignored. */
+	/** Private feed triggers count: they reach the Router as a card even when ignored. */
 	lastPrivate(): { module: string | null } | null {
 		const row = this.#get(
 			`SELECT 'ticket' AS kind, domain AS ref, touched_private_at AS at FROM tickets WHERE touched_private_at IS NOT NULL
