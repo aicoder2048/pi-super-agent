@@ -120,6 +120,53 @@ stock-ta 让 Pi Super Agent 回答美股个股的技术面问题，例如「NVDA
 - **请求量。** 第一次扫 10 只加 QQQ、SPY 用了 36 个请求、22 秒（2026-11-12 实测），以后每个交易日一次。第一次补数会把两年里的历史信号都记成新信号（实测 7050 条），只写进 `scan-runs` 的计数。
 - **不发提醒。** 新信号不叫醒领队，你问的时候再查。
 
+## 在另一台机器上装
+
+跑服务的旧 Mac 上没有技术分析项目，也不需要。2026-11-13 在旧 Mac（Intel，macOS 12）上照下面做了一遍，记录在 `docs/modules/evidence/s4-old-mac.md`。
+
+1. **git 能拿到私有仓库。** 旧 Mac 没有 `gh`，没有能访问 GitHub 的 SSH 密钥，终端里的登录钥匙串常是锁着的，`osxkeychain` 存的凭据会被悄悄丢掉，所以用 git 的 `store` helper。在 GitHub 网页上建一个 fine-grained token，只给技术分析这一个仓库的 Contents 只读权限，设过期时间，然后：
+
+   ```bash
+   git config --global credential.helper store
+   git ls-remote https://github.com/aicoder2048/TechnicalAnalysis HEAD   # 第一次按提示填用户名和 token
+   chmod 600 ~/.git-credentials
+   ```
+
+   再跑一次 `git ls-remote` 不问密码、打印一个提交就好了。凭据只在 `just module setup` 时用，服务运行时用不上。
+
+2. **装 uv。** 用官方安装脚本，装到 `~/.local/bin`：
+
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   uv --version
+   ```
+
+   uv 第一次 setup 时会自己下载 Python 3.12。numpy 和 pandas 都有 Intel、macOS 10.13 以上的 wheel，不用编译。
+
+3. **服务的 PATH。** 只有 `just module setup` 用 `uv`，工具和 `scan` 直接调环境里的 `ta`。想让 Worker 也能跑 setup，就在装好 uv 以后的新终端里重装一次服务，装机时 PATH 里 `uv` 所在的目录会写进服务的 PATH：
+
+   ```bash
+   just redeploy --no-pull
+   ```
+
+4. **复制包、装环境、确认密钥。** 照上面「安装」的第 1 到 3 步。旧 Mac 上 setup 用了 12 秒（含下载 Python），环境 161 MB。密钥文件里有 `POLYGON_API_KEY` 就行，以前的 `TA_ROOT` 不要了。
+
+5. **把笔记带过去。** 笔记只在你本机的技术分析项目里。在本机把要的 18 份打个包传过去，放进旧 Mac 的一个临时目录，再照「安装」第 4 步导入，`T` 指向那个临时目录：
+
+   ```bash
+   cd <本机技术分析项目> && tar cf - docs/ta-knowhow/TA*.md docs/ta-knowhow/经典技术分析形态完全指南.md docs/投资理念和策略/盈亏比VS胜率.md docs/投资理念和策略/小资金做大策略.md | ssh <旧 Mac> 'mkdir -p /tmp/ta-notes && tar xf - -C /tmp/ta-notes'
+   ```
+
+   导入以后临时目录可以删掉，全文已经在模块的数据目录里。
+
+6. **检查、打开、自选股。** `just module check`、`just module on stock-ta`，再在对话里把自选股告诉它（例如「把 NVDA、AAPL 加进 stock-ta 的自选股」）。打开后几秒内就跑第一拍，这时自选股还是空的，只扫 QQQ、SPY；改了自选股以后，按下文「日线扫描」的规则，收盘后的拍子扫你的标的。旧 Mac 上那次是先用脚本照 us-market 写好 9 只自选股再打开的，第一拍扫 9 只（含 QQQ、SPY）用了约 73 秒，每只两年日线 502 根。
+
+7. **问一句。** 在手机上问「NVDA 现在的支撑阻力和动量怎么样」，汇报写出最近一个交易日收盘的数据时间和笔记出处。
+
+8. **换钉的提交以后。** 仓库里改了 `py/pyproject.toml` 的 `rev` 并重新 `uv lock` 以后，每台机器复制新包、重跑 `just module setup stock-ta`。旧的环境留着，钉在旧版本上的任务照常用它；新版本没装环境时工具会提醒你重跑 setup。
+
+旧 Mac 的 CPU 慢，`structure` 一次约 6 秒（本机约 1.1 秒），一个专家任务里会调好几次，所以旧 Mac 上一份技术分析汇报要两分钟左右。
+
 ## 更新和关掉
 
 仓库里的例子更新以后，再执行一次第 2 步的 `cp -R`，宿主几秒内换上新版本，不用重启。关掉用 `just module off stock-ta`。导入的笔记在 `~/.pi-super-agent/modules-data/stock-ta/`，关掉或删掉包都不会删它。
