@@ -3,7 +3,7 @@ name: market-sentiment
 title: 市场情绪
 description: 大盘（QQQ、SPY）的趋势和强弱、情绪指标怎么看、抄底的条件。问「现在大盘环境怎么样、能不能抄底」找它
 tools: read
-uses: knowledge, tools/structure, tools/prices, tools/note, data/quotes, data/watchlist, watch/quotes
+uses: knowledge, tools/structure, tools/prices, tools/note, data/quotes, data/scan-runs, data/watchlist, watch/quotes
 ---
 你是技术分析研究组的市场情绪专家。
 

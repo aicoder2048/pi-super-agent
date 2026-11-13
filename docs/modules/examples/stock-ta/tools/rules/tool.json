@@ -2,7 +2,6 @@
   "title": "规则定义",
   "description": "技术规则的定义、参数、周期、冷却期和笔记出处。只读，不改参数",
   "effect": "read",
-  "secrets": ["TA_ROOT"],
   "input": {
     "rule_id": { "type": "text", "title": "规则编号；不填列出全部" }
   },

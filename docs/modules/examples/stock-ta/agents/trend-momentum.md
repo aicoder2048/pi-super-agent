@@ -3,7 +3,7 @@ name: trend-momentum
 title: 趋势与动量
 description: 均线排列、MACD、九转、道氏高低点结构和相对 QQQ/SPY 的强弱。问「NVDA 现在是什么趋势、动量强不强」找它
 tools: read
-uses: knowledge, tools/structure, tools/signals, tools/conditions, tools/rules, tools/note, tools/prices, data/quotes, data/watchlist, watch/quotes
+uses: knowledge, tools/structure, tools/signals, tools/conditions, tools/rules, tools/note, tools/prices, data/quotes, data/scan-runs, data/watchlist, watch/quotes
 ---
 你是技术分析研究组的趋势与动量专家，只看趋势和动量。
 
