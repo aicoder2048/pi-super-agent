@@ -36,6 +36,7 @@ workerArgs({ basis: "inference", ... }); // --tools read,grep,find,ls,report,han
    - 任务 `tkt_`：任务的最近汇报必须是可以回应的结果。推断任务只有就绪、受阻、失败或带问题时可回应；进展和无需处理都不行；
    - 通知 `act_`：`router.notify` 里 kind 为 notice 的动作，卡片上印出它的 id。
    每个 cause 最多回复 2 条（`repliesPerCause`）。候选触发不能作为 cause：Router 不能为一条原始事件主动开口，只能开推断任务等结果。
+   `reply` 还可以带 `answers`，列出这条回复回答的卡片的 `act_`（对话、汇报、提问、交回和通知卡片的第一行都印着「卡片 act_」）。列的必须是关于这条回复起因的卡片，否则回复被拒绝。它只决定出错、清屏和重启后哪些卡片不再重送，不是授权。一轮正常结束时，这一轮看到的卡片全部算处理过，所以提示词要 Router 在这一轮里处理完每张卡片。
 4. **推断 Worker 只读（G、F）。** 依据为推断的任务，Worker 只拿 Pi 的 `read, grep, find, ls`、读网页的 `web_get` 和 `report, hand_back, read_ticket`，并加 `--no-mcp`。扩展里再按工具名白名单拦一次，两层有一层生效即可。没有 bash、不能写文件、没有后台命令，也就连不上宿主 socket，正则黑名单 `external-actions.ts` 删除。
    - `web_get` 只发 GET，只收一个网址。程序自己解析域名，解析出的地址只要有一个不是公网（本机、内网、链路本地、云元数据、保留段）就不发请求；每次重定向和直接写 IP 的网址都重新检查。整次调用限时 15 秒，最多读 1 MB、返回 2 万字，只接受文本类内容。返回的网页内容只当数据。
 5. **环境变量只在扩展里用一次（F 的补充）。** 扩展加载时读完 `PSA_*` 就从 `process.env` 删掉，请求和规则 Worker 的 bash 子进程不再继承 socket 路径和令牌。

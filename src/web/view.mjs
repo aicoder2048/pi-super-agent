@@ -932,9 +932,6 @@ export const toggleEarlier = (view) => {
 	view.showEarlier = view.cleared !== null && !view.showEarlier;
 };
 
-/** @param {View} view */
-export const canClear = (view) => view.lines.size > 0;
-
 export const CLEAR_FAILED = "清屏没有成功，请稍后再试。";
 export const SWITCH_FAILED = "模块开关没有切换成功，请稍后再试。";
 
