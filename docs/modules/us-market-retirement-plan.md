@@ -215,7 +215,7 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 **Review gate.** The operator reviews before merge.
 
 - [ ] Copy lane 8 screenshot（新旧提醒并排）into `docs/modules/evidence/r1-review-telegram.png`。
-- [x] Record a 30 to 60 second video of the change on a lane VM，回放剧本、提醒到假 Telegram、迁移命令的三次输出。Save it as `docs/modules/evidence/r1-review.mp4`。
+- [ ] Record a 30 to 60 second video of the change on a lane VM，回放剧本、提醒到假 Telegram、迁移命令的三次输出。Save it as `docs/modules/evidence/r1-review.mp4`。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
@@ -399,7 +399,7 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 **Review gate.** The operator reviews before merge.
 
 - [ ] Copy lane 3、4、8、10 screenshots into `docs/modules/evidence/r5-review-<slug>.png`，再加一张假 Telegram 上到档提醒和汇报的截图 `r5-review-telegram.png`。
-- [x] Record a 30 to 60 second video of the change on a lane VM，回放剧本、Telegram 上的提醒行和汇报、网页的两栏。Save it as `docs/modules/evidence/r5-review.mp4`。
+- [ ] Record a 30 to 60 second video of the change on a lane VM，回放剧本、Telegram 上的提醒行和汇报、网页的两栏。Save it as `docs/modules/evidence/r5-review.mp4`。
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
