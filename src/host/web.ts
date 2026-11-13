@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { ConfigError } from "../config-error.ts";
 import { isCapAskId } from "../kernel/cap-ask.ts";
+import { isRunAskId } from "../kernel/run-ask.ts";
 import { OPTIONS_MAX, refusalText, type AnswerRefusal } from "../kernel/question.ts";
 import type { HostToClient, TranscriptHistory, TranscriptMessage } from "../client/protocol.ts";
 import { hasVisibleText, HistoryEchoFilter, type AnswerResult, type Broadcast } from "./server.ts";
@@ -245,7 +246,7 @@ function parseSayBody(body: string): SayBody | undefined {
 	}
 	if (keys !== "answer" || typeof answer !== "object" || answer === null || Object.keys(answer).length !== 2) return undefined;
 	const { reportId, option } = answer as { reportId?: unknown; option?: unknown };
-	if (typeof reportId !== "string" || !(REPORT_ID.test(reportId) || isCapAskId(reportId))) return undefined;
+	if (typeof reportId !== "string" || !(REPORT_ID.test(reportId) || isCapAskId(reportId) || isRunAskId(reportId))) return undefined;
 	if (typeof option !== "number" || !Number.isInteger(option) || option < 0 || option >= OPTIONS_MAX) return undefined;
 	return { kind: "answer", reportId, option };
 }
@@ -271,7 +272,7 @@ function sseFrame(message: HostToClient): string {
 	return `data: ${JSON.stringify(message)}\n\n`;
 }
 
-const REFUSED_STATUS: Record<AnswerRefusal["kind"], number> = { no_question: 404, no_options: 409, out_of_range: 409, chosen: 409, spoke: 409, closed: 409, not_here: 409 };
+const REFUSED_STATUS: Record<AnswerRefusal["kind"], number> = { no_question: 404, no_options: 409, out_of_range: 409, chosen: 409, spoke: 409, closed: 409, not_here: 409, web_only: 409 };
 
 // The body is JSON so the page can pick its own copy by `refused`; `reason` is for curl users.
 function refuse(res: ServerResponse, refusal: AnswerRefusal): void {

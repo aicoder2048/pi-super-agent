@@ -64,7 +64,7 @@ test("工具档按依据和开任务的人选：模块 feed 开的规则和推�
 
 test("模块 feed 开的任务：读文件、汇报、模块的工具知识数据和提醒，没有 web_get、bash、edit、write、后台命令、开应用和盯盘条件", () => {
 	const tools = toolAllowlist("module-feed")!;
-	assert.deepEqual([...tools].sort(), ["data", "domain_tool", "find", "grep", "hand_back", "knowledge", "lookup", "ls", "read", "read_ticket", "report", "watch"]);
+	assert.deepEqual([...tools].sort(), ["ask_to_run", "data", "domain_tool", "find", "grep", "hand_back", "knowledge", "lookup", "ls", "read", "read_ticket", "report", "watch"]);
 	for (const banned of ["web_get", "bash", "edit", "write", "bg_start", "bg_status", "bg_stop", "new_app", "tripwire"]) assert.ok(!tools.includes(banned), banned);
 	assert.deepEqual(toolAllowlist("module-feed", true), [...tools, "dispatch_agent"]);
 });
@@ -96,7 +96,7 @@ test("模块 feed 开的任务的 Worker 提示写明为什么没有 bash 和 we
 	assert.ok(line, prompts.join("\n"));
 	assert.match(line, /bash/);
 	assert.match(line, /web_get/);
-	assert.match(line, /在汇报里请使用者在对话里提出/);
+	assert.match(line, /用 ask_to_run 请使用者批准/);
 });
 
 let loads = 0;
@@ -149,7 +149,7 @@ test("模块 feed 开的任务：read secretsFile、grep 状态目录、web_get�
 		const result = await toolCall(tool, {}, workdir);
 		assert.equal(result?.block, true, tool);
 		assert.match(result!.reason, new RegExp(`来源开的任务不能用 ${tool}`));
-		assert.match(result!.reason, /在汇报里请使用者在对话里提出/);
+		assert.match(result!.reason, /用 ask_to_run 请使用者批准/);
 	}
 	assert.equal(await toolCall("domain_tool", { name: "x", input: {} }, workdir), undefined, "模块工具照常");
 	assert.equal(await toolCall("grep", { pattern: "笔记" }, workdir), undefined, "在自己的工作目录里 grep 照常");

@@ -160,8 +160,8 @@ const HEAD = "青檀 · 对话助手 #1 问你（任务「查天气」）：\n�
 
 test("卡片的文字和按钮：可以点时每个选项一行按钮；点过、插话、结束后按钮消失，最后一行说明状态", () => {
 	const buttons = [[{ label: "北京", data: `a:${RPT}:0` }], [{ label: "上海", data: `a:${RPT}:1` }]];
-	assert.deepEqual(render({ kind: "card", view: card({ kind: "open" }) }), { text: HEAD, keyboard: buttons, silent: false });
-	assert.deepEqual(render({ kind: "card", view: card({ kind: "dropped" }) }), { text: `${HEAD}\n\n幕僚长没有转交这次选择，请重选或直接回复`, keyboard: buttons, silent: false });
+	assert.deepEqual(render({ kind: "card", view: card({ kind: "open" }) }), { text: HEAD, keyboard: buttons, silent: false, noPreview: true });
+	assert.deepEqual(render({ kind: "card", view: card({ kind: "dropped" }) }), { text: `${HEAD}\n\n幕僚长没有转交这次选择，请重选或直接回复`, keyboard: buttons, silent: false, noPreview: true });
 	const locked: [CardView["status"], string][] = [
 		[{ kind: "sent", label: "上海" }, "已选「上海」，已发送，等待幕僚长转交"],
 		[{ kind: "answered", label: "上海" }, "已选「上海」，已回答"],
@@ -169,11 +169,11 @@ test("卡片的文字和按钮：可以点时每个选项一行按钮；点过�
 		[{ kind: "closed", label: "上海" }, "已结束：你选了「上海」"],
 		[{ kind: "closed", label: null }, "已结束：这个问题已经回答过，或已不在等待回答"],
 	];
-	for (const [status, line] of locked) assert.deepEqual(render({ kind: "card", view: card(status) }), { text: `${HEAD}\n\n${line}`, keyboard: null, silent: false }, line);
+	for (const [status, line] of locked) assert.deepEqual(render({ kind: "card", view: card(status) }), { text: `${HEAD}\n\n${line}`, keyboard: null, silent: false, noPreview: true }, line);
 });
 
 test("没有选项的问题：没有按钮，写「直接打字回答。」；插话后写已插话", () => {
-	assert.deepEqual(render({ kind: "card", view: card({ kind: "open" }, []) }), { text: `${HEAD}\n\n直接打字回答。`, keyboard: null, silent: false });
+	assert.deepEqual(render({ kind: "card", view: card({ kind: "open" }, []) }), { text: `${HEAD}\n\n直接打字回答。`, keyboard: null, silent: false, noPreview: true });
 	assert.deepEqual(render({ kind: "card", view: card({ kind: "spoke" }, []) }).text, `${HEAD}\n\n已插话：你刚发了一句话，等幕僚长处理`);
 });
 

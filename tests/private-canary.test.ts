@@ -26,6 +26,7 @@ const USER = 42;
 const HEALTH = "personal-health" as ModuleName;
 const NOTICE = privateLine("个人医疗健康");
 const FORGOT = "记得：（没有）";
+const RUN_LINE = "个人医疗健康 的任务想运行一条命令，请在网页上批准";
 const SAMPLE = join(import.meta.dirname, "../docs/modules/architecture/sample/personal-health");
 const oncologist: Member = { name: "oncologist", title: "肿瘤科医生", description: "看肿瘤标志物", tools: ["read"], skills: [], model: undefined, prompt: "oncologist", file: "/agents/oncologist.md" };
 const write = (value: number, from = "使用者口述") => ({ op: "write", collection: "lab-results", rows: [{ item: "CEA", value, unit: "ng/mL", reference: "<5", takenAt: "2026-10-01", lab: CANARY }], from });
@@ -134,6 +135,8 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 			await worker.request("worker.watch", { collection: "lab-results", op: "set", key: "CEA", condition: { when: "above", value: 5 } });
 			await data(worker, write(9, `blobs/${CANARY}.pdf`));
 			worker.report({ status: "ready", summary: "设好了" });
+		} else if (title.startsWith("看信")) {
+			await worker.request("worker.ask_to_run", { command: `echo ${CANARY}`, why: `解锁 ${CANARY}` });
 		} else if (title.startsWith("派活")) {
 			const member = await worker.request("worker.dispatch", { agent: "oncologist", task: "看 CEA", callId: "call_1" });
 			worker.report({ status: "ready", summary: `成员说：${JSON.stringify(member)}` });
@@ -229,7 +232,8 @@ test("金丝雀：私密模块数据里的一串字，走遍每条流程、清�
 	await said("会卡住的私密任务", "开个任务 卡住");
 	await flow("G3 私密数据上的提醒", () => host.say("开个任务 设提醒"), () => host.kernel.alertsToday().length > 0 && summary("设提醒") !== "");
 	await flow("派活给成员", () => host.say("开个任务 派活"), () => summary("派活").includes(CANARY));
-	await flow("私密 feed 触发", () => host.kernel.submitTrigger({ source: "personal-health/hospital-mail", externalId: "mail-1", threads: [{ id: "thr_mail" }], sender: "hospital", body: `检验单 ${CANARY}`, occurredAt: Date.now(), private: true }), () => summary("看信") !== "");
+	await flow("私密 feed 触发", () => host.kernel.submitTrigger({ source: "personal-health/hospital-mail", externalId: "mail-1", threads: [{ id: "thr_mail" }], sender: "hospital", body: `检验单 ${CANARY}`, occurredAt: Date.now(), private: true }), () => ticket("看信")?.runAsk?.state === "open" && phone().includes(RUN_LINE));
+	await flow("网页上批准私密 feed 开的任务请求的命令，任务汇报输出", () => host.answer(ticket("看信")!.runAsk!.id, 0), () => summary("看信").includes(CANARY));
 
 	await flow("幕僚长有私密数据时忽略一条普通候选触发", () => host.kernel.submitTrigger({ source: "generic", externalId: "ad-1", threads: [{ id: "thr_ad" }], sender: "shop", body: "广告 优惠", occurredAt: Date.now() }), () => host.kernel.triggerLog().some((t) => t.externalId === "ad-1" && t.disposition === "router_ignored"));
 

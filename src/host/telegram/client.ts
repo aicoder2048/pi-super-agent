@@ -5,10 +5,11 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { BoardState } from "../../client/protocol.ts";
 import { refusalText } from "../../kernel/question.ts";
 import { inTransaction } from "../../kernel/store.ts";
-import type { Clock } from "../../kernel/types.ts";
+import type { RunAsk } from "../../kernel/run-ask.ts";
+import type { Clock, DashboardRow } from "../../kernel/types.ts";
 import type { AnswerResult, Broadcast, ImChat, SayOptions } from "../server.ts";
 import { TelegramError, type BotApi, type TelegramErrorKind, type Update } from "./bot-api.ts";
-import { hostLineText, cardView, closedView, decide, mirrorText, NOTES, render, repeatsQuestion } from "./rules.ts";
+import { hostLineText, cardView, closedView, decide, fitsOneMessage, mirrorText, NOTES, privateRunAskLine, render, repeatsQuestion, runAskLine, runAskView } from "./rules.ts";
 import { privateLine, telegramText } from "../../modules/protocol.ts";
 import { TelegramStore, type Pending, type SendableBody } from "./store.ts";
 
@@ -316,6 +317,7 @@ export class TelegramClient {
 				return title === null ? null : { kind: "line", text: privateLine(title), silent: false };
 			};
 			for (const row of rows) {
+				if (row.runAsk) this.#syncRunAsk(chatId, row, row.runAsk, onBoard);
 				const view = cardView(row);
 				if (!view) continue;
 				const line = notice(row.id);
@@ -333,6 +335,18 @@ export class TelegramClient {
 			const cap = memberCap?.question;
 			if (cap) this.#store.put(chatId, `cap:${cap.reportId}`, null, { kind: "note", text: NOTES.cap });
 		});
+	}
+
+	#syncRunAsk(chatId: number, row: DashboardRow, ask: RunAsk, onBoard: Set<string>): void {
+		const card = `ask:${ask.id}` as const;
+		const privateTitle = this.#host.privateTitle(row.id);
+		const view = runAskView(row, ask);
+		if (privateTitle === null && fitsOneMessage(view)) {
+			onBoard.add(ask.id);
+			this.#store.put(chatId, card, null, { kind: "card", view });
+		} else if (ask.state === "open" && !this.#store.has(chatId, card)) {
+			this.#store.put(chatId, `run:${ask.id}`, null, { kind: "line", text: privateTitle === null ? runAskLine(row.title) : privateRunAskLine(privateTitle), silent: false });
+		}
 	}
 
 	/** Straight to Telegram, not through the outbox: a toast is only worth showing right after the tap. */

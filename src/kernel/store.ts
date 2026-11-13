@@ -14,9 +14,15 @@ import {
 	REPORT_STATUSES,
 	WORKER_STATES,
 } from "./types.ts";
+import { RUN_ASK_NEXT, RUN_COMMAND_MAX } from "./run-ask.ts";
 
 const oneOf = (column: string, values: readonly string[]) =>
 	`CHECK (${column} IN (${values.map((v) => `'${v}'`).join(", ")}))`;
+
+const RUN_ASK_FORWARD = Object.entries(RUN_ASK_NEXT)
+	.filter(([, next]) => next.length > 0)
+	.map(([from, next]) => `(OLD.state = '${from}' AND NEW.state IN (${next.map((s) => `'${s}'`).join(", ")}))`)
+	.join(" OR ");
 
 const HOST_LINES_TABLE = (name: string) => `CREATE TABLE IF NOT EXISTS ${name} (
 	id TEXT PRIMARY KEY CHECK (id GLOB 'hln_*'),
@@ -162,6 +168,33 @@ CREATE TABLE IF NOT EXISTS cap_asks (
 	expired_at INTEGER,
 	CHECK ((state = 'asked') = (answered_at IS NULL) AND (state = 'asked') = (said IS NULL))
 );
+
+-- One card per ask_to_run call (ADR-0021). origin_* is copied from the trigger that opened the ticket, never from the model.
+CREATE TABLE IF NOT EXISTS run_asks (
+	id TEXT PRIMARY KEY,
+	ticket_id TEXT NOT NULL REFERENCES tickets(id),
+	command TEXT NOT NULL CHECK (length(command) BETWEEN 1 AND ${RUN_COMMAND_MAX}),
+	why TEXT NOT NULL,
+	origin_source TEXT,
+	origin_sender TEXT,
+	asked_at INTEGER NOT NULL,
+	expires_at INTEGER NOT NULL,
+	state TEXT NOT NULL CHECK (state IN ('open', 'approved', 'ran', 'declined')),
+	reason TEXT CHECK (reason IN ('user', 'expired', 'ticket-ended')),
+	answered_at INTEGER,
+	ran_at INTEGER,
+	exit_code INTEGER,
+	output_file TEXT,
+	CHECK ((state = 'declined') = (reason IS NOT NULL)),
+	CHECK ((state = 'open') = (answered_at IS NULL)),
+	CHECK ((state = 'ran') = (ran_at IS NOT NULL)),
+	CHECK (state = 'ran' OR exit_code IS NULL)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS run_asks_one_open ON run_asks (ticket_id) WHERE state = 'open';
+CREATE INDEX IF NOT EXISTS run_asks_ticket ON run_asks (ticket_id, asked_at);
+CREATE TRIGGER IF NOT EXISTS run_asks_forward BEFORE UPDATE OF state ON run_asks
+WHEN NOT (${RUN_ASK_FORWARD})
+BEGIN SELECT RAISE(ABORT, 'a run card only moves forward'); END;
 
 CREATE TABLE IF NOT EXISTS decisions (
 	seq INTEGER PRIMARY KEY AUTOINCREMENT,

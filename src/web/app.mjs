@@ -244,6 +244,7 @@ function mount(doc) {
 			fillChoices(box, card.choice);
 			node.append(box);
 		}
+		if (card.run) node.append(runBlock(card.run));
 		if (card.canStop) {
 			const row = el("div", "row");
 			const stop = el("button", "stop", "停止");
@@ -263,6 +264,30 @@ function mount(doc) {
 				watch(card.id);
 			}
 		});
+		return node;
+	};
+
+	/** Each real line is a span numbered by CSS, so a newline never passes for a wrap and copying still yields the bare command. @param {string} command */
+	const commandBlock = (command) => {
+		const node = el("div", "command");
+		command.split("\n").forEach((line, i) => {
+			if (i) node.append("\n");
+			const span = el("span", "", line);
+			span.dataset.n = String(i + 1);
+			node.append(span);
+		});
+		return node;
+	};
+
+	/** @param {import("./view.mjs").RunCard} run */
+	const runBlock = (run) => {
+		const node = el("div", "run");
+		node.append(el("div", "by", run.by), el("div", "origin", run.origin), commandBlock(run.command), el("div", "said", run.said));
+		if (run.choice) {
+			const box = el("div", "choices");
+			fillChoices(box, run.choice);
+			node.append(box);
+		} else node.append(el("div", "status", run.status));
 		return node;
 	};
 
