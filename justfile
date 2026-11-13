@@ -132,6 +132,12 @@ modules:
 module *args:
     {{run}} src/cli/module.ts "$@"
 
+# 在这台电脑上授权 Gmail，一次一个 scope：read 是 gmail.readonly，draft 是 gmail.compose。refresh token 写进 secretsFile，屏幕上只打印密钥名和 scope。
+# --port 指定回调端口（给 ssh -L 用），--check 拿已存的 token 向 Google 换一次 access token 看它还能不能用。见 docs/deploy/gmail.md。
+[positional-arguments]
+google-auth *args:
+    {{run}} src/cli/google-auth.ts "$@"
+
 # 真实宿主、Worker 子进程和无头浏览器，模型换成 tests/e2e/fake-model.ts 的本地假模型，不请求任何真实模型或行情接口。
 # 首次运行自动装 playwright-core 和浏览器。失败报告在 tests/e2e/.out/<测试>/index.html。
 # 故意弄坏某一步：PSA_E2E_SABOTAGE="Router 回复" just e2e；让 Worker 崩溃：PSA_E2E_SABOTAGE="Worker 汇报:crash" just e2e

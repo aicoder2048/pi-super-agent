@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export interface Heartbeat {
@@ -9,9 +9,15 @@ export interface Heartbeat {
 
 export const heartbeatPath = (stateDir: string) => join(stateDir, "heartbeat.json");
 
-export function writeFileAtomic(path: string, text: string): void {
-	writeFileSync(`${path}.tmp`, text);
-	renameSync(`${path}.tmp`, path);
+/** With `mode`, the temporary file is created with it (a leftover one is removed first), so the text is never readable more widely. */
+export function writeFileAtomic(path: string, text: string, mode?: number): void {
+	const tmp = `${path}.tmp`;
+	if (mode === undefined) writeFileSync(tmp, text);
+	else {
+		rmSync(tmp, { force: true });
+		writeFileSync(tmp, text, { mode, flag: "wx" });
+	}
+	renameSync(tmp, path);
 }
 
 export function writeHeartbeat(stateDir: string, beat: Heartbeat): void {
