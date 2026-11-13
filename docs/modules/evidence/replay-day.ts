@@ -72,6 +72,7 @@ export async function stockTaDay(tree: string, state: string, watchlist: readonl
 					if (!duplicate) fresh.push({ minute: nyMinute(Date.parse(a.at)), externalId: a.externalId, text: a.text });
 				},
 				secret: () => undefined,
+				problem: () => {},
 				now: () => clock.now,
 			}, fixture);
 			const ms = performance.now() - started;
