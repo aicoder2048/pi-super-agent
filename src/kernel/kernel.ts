@@ -81,8 +81,8 @@ const CARD_CAUSE = "COALESCE(json_extract(a.payload, '$.triggerId'), json_extrac
  */
 const isModuleFeed = (source: string) => source.includes("/");
 
-/** A ticket's basis and the source of the trigger that opened it; null when nothing triggered it. */
-type Origin = { basis: Basis; source: string | null };
+/** A ticket's basis, the source of the trigger that opened it (null when nothing triggered it), and the domain whose data and tools it may use. */
+type Origin = { basis: Basis; source: string | null; domain: string | null };
 
 /** An inference ticket without a trigger counts as a feed's: the Router may have copied a feed's text into its brief. */
 function openerOf({ basis, source }: Origin): Opener {
@@ -91,19 +91,22 @@ function openerOf({ basis, source }: Origin): Opener {
 }
 
 /**
- * A ticket's tools are fixed when its Worker starts, so a feed's text may only reach a ticket that same module's
- * feed opened, or a triggerless inference ticket, which writes nothing (ADR-0018).
+ * A ticket's tools come from its opener and its module data and tools from its domain, both fixed when it opens, so a
+ * feed's text may only reach a ticket that same module's feed opened (or a triggerless inference ticket) whose domain
+ * is that module or none (ADR-0018).
  */
 function feedMayReach(origin: Origin, feed: string): boolean {
 	if (!isModuleFeed(feed)) return true;
+	const module = ruleNamespace(feed);
 	if (openerOf(origin) !== "module-feed") return false;
-	return origin.source === null || ruleNamespace(origin.source) === ruleNamespace(feed);
+	if (origin.domain !== null && origin.domain !== module) return false;
+	return origin.source === null || ruleNamespace(origin.source) === module;
 }
 
 const feedProblem = (origin: Origin, feed: string, what: string) =>
 	feedMayReach(origin, feed)
 		? undefined
-		: `${what} belongs to module feed ${feed}, and only a ticket that module's feed opened (no bash, no web_get) may take a feed's text; open a ticket for it instead`;
+		: `${what} belongs to module feed ${feed}, and only a ticket that module's feed opened (no bash, no web_get), in domain ${ruleNamespace(feed)} or no domain, may take a feed's text; open a ticket for it instead`;
 
 function writtenBy(d: Decision, ticketId: string | undefined): string[] {
 	switch (d.kind) {
@@ -784,9 +787,9 @@ export class Kernel {
 	}
 
 	#originOf(ticketId: string): Origin {
-		const row = this.#get("SELECT t.basis, g.source FROM tickets t LEFT JOIN triggers g ON g.id = t.origin_trigger_id WHERE t.id = ?", ticketId);
+		const row = this.#get("SELECT t.basis, g.source, t.domain FROM tickets t LEFT JOIN triggers g ON g.id = t.origin_trigger_id WHERE t.id = ?", ticketId);
 		if (!row) throw new Error(`unknown ticket ${ticketId}`);
-		return { basis: row.basis, source: row.source ?? null };
+		return { basis: row.basis, source: row.source ?? null, domain: row.domain };
 	}
 
 	getTicket(ticketId: string): Ticket | undefined {
@@ -1178,10 +1181,12 @@ export class Kernel {
 		if (own?.type !== "ticket") throw new Error(`找不到任务 ${ticketId}`);
 		if (!id || id === ticketId) return own;
 		const target = this.read(id);
+		const origin = this.#originOf(ticketId);
 		const allowed =
-			(target?.type === "thread" && own.threadIds.includes(id)) ||
+			(target?.type === "thread" && own.threadIds.includes(id) && feedMayReach(origin, target.thread.source)) ||
 			(target?.type === "trigger" &&
-				(target.threadIds.some((t) => own.threadIds.includes(t)) || own.recentInputs.some((i) => i.triggerId === id)));
+				((target.threadIds.some((t) => own.threadIds.includes(t)) && feedMayReach(origin, target.trigger.source)) ||
+					own.recentInputs.some((i) => i.triggerId === id)));
 		if (!allowed) throw new Error(`${id} 不属于本任务，读不到`);
 		if (this.#privacyOf(id)) this.touchPrivate(ticketId);
 		return target;
@@ -1357,6 +1362,16 @@ export class Kernel {
 				return reject(`rule ${d.ruleId} does not exist in the user's rule files or does not apply to source ${trigger.source}`);
 			}
 		}
+		const asked = typeof d.domain === "string" ? d.domain.trim() || undefined : (d.domain ?? undefined);
+		const ruled = d.basis === "rule" ? this.#domainOfRule(d.ruleId!) : null;
+		const unpickable = asked === undefined || asked === ruled ? undefined : this.#whyNotPickable(asked);
+		if (unpickable) return reject(unpickable);
+		const domain = ruled ?? asked ?? null;
+		const origin: Origin = { basis: d.basis, source: trigger?.source ?? null, domain };
+		if (trigger && !feedMayReach(origin, trigger.source)) {
+			const whose = ruled === null ? `domain ${domain}` : `rule ${d.ruleId} belongs to domain ${ruled}`;
+			return reject(`trigger ${trigger.id} comes from module feed ${trigger.source}, so its ticket must be in domain ${ruleNamespace(trigger.source)} or have no domain; ${whose}`);
+		}
 		const threads = [...new Set(d.threads ?? [])];
 		for (const threadId of threads) {
 			if (threadId === CONVERSATION_THREAD_ID) return reject("the conversation thread cannot be subscribed");
@@ -1364,14 +1379,9 @@ export class Kernel {
 			if (!known && !SOURCE_THREAD.test(threadId)) {
 				return reject(`unknown thread ${threadId}; new threads must look like thr_<source>:<thread>`);
 			}
-			const feed = known && feedProblem({ basis: d.basis, source: trigger?.source ?? null }, known.source, `thread ${threadId}`);
+			const feed = known && feedProblem(origin, known.source, `thread ${threadId}`);
 			if (feed) return reject(feed);
 		}
-		const asked = typeof d.domain === "string" ? d.domain.trim() || undefined : (d.domain ?? undefined);
-		const ruled = d.basis === "rule" ? this.#domainOfRule(d.ruleId!) : null;
-		const unpickable = asked === undefined || asked === ruled ? undefined : this.#whyNotPickable(asked);
-		if (unpickable) return reject(unpickable);
-		const domain = ruled ?? asked ?? null;
 		if (d.basis === "inference") {
 			const limitProblem = this.#inferenceDailyLimitProblem();
 			if (limitProblem) return reject(limitProblem);
@@ -1511,13 +1521,13 @@ export class Kernel {
 	#openSubscribersOf(threadIds: string[], source: string): string[] {
 		if (threadIds.length === 0) return [];
 		return this.#all(
-			`SELECT DISTINCT s.ticket_id AS id, t.basis, g.source, t.created_at FROM subscriptions s JOIN tickets t ON t.id = s.ticket_id
+			`SELECT DISTINCT s.ticket_id AS id, t.basis, g.source, t.domain, t.created_at FROM subscriptions s JOIN tickets t ON t.id = s.ticket_id
 			 LEFT JOIN triggers g ON g.id = t.origin_trigger_id
 			 WHERE t.stopped_at IS NULL AND t.closed_at IS NULL AND s.thread_id IN (${threadIds.map(() => "?").join(", ")})
 			 ORDER BY t.created_at`,
 			...threadIds,
 		)
-			.filter((row) => feedMayReach({ basis: row.basis, source: row.source ?? null }, source))
+			.filter((row) => feedMayReach({ basis: row.basis, source: row.source ?? null, domain: row.domain }, source))
 			.map((row) => row.id);
 	}
 
