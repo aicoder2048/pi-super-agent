@@ -21,28 +21,53 @@ const AUTH: Problem = { id: "auth", text: "Gmail 授权失效了，在笔记本�
 const NO_SENDERS: Problem = { id: "no-senders", text: "邮件名单是空的，什么都不收。在对话里说「把 a@example.com 加进邮件名单」" };
 const gap = (hours: number): Problem => ({ id: "gap", text: `有 ${hours} 小时没查，一天以前的信没补，请在 Gmail 里看一下` });
 
-const time = (value: unknown) => {
-	const at = Date.parse(String(value ?? ""));
-	return Number.isNaN(at) ? -Infinity : at;
-};
+const DOMAIN = /^@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
+const ISO = /^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?(Z|[+-]\d{2}:\d{2})?$/;
+
+/** A row's address goes through the same parser as From, so `Ann <ann@example.com>` names ann; anything else is no row. */
+function senderKey(value: unknown): string | undefined {
+	const text = String(value ?? "").trim().toLowerCase();
+	return DOMAIN.test(text) ? text : parseFrom(text)?.address;
+}
+
+/**
+ * The latest instant a removal could mean, so a doubtful removal is never undone by a re-add: a date alone ends once that
+ * day is over everywhere (UTC-12), a time without a zone once it has passed everywhere (UTC-14), and an unreadable one never.
+ */
+function removedUntil(value: unknown): number {
+	const [, date, clock, zone] = ISO.exec(String(value).trim()) ?? [];
+	const at = Date.parse(clock === undefined ? `${date}T00:00:00Z` : `${date}${clock}${zone ?? "Z"}`);
+	if (date === undefined || Number.isNaN(at)) return Infinity;
+	return at + (clock === undefined ? 36 * 3_600_000 : zone === undefined ? 14 * 3_600_000 : 0);
+}
+
+/** Only an exact past instant counts as a re-add; a date alone, a missing zone or a time ahead of the clock does not. */
+function addedAt(value: unknown, now: number): number {
+	const [, date, clock, zone] = ISO.exec(String(value ?? "").trim()) ?? [];
+	const at = date && clock && zone ? Date.parse(`${date}${clock}${zone}`) : NaN;
+	return Number.isNaN(at) || at > now ? -Infinity : at;
+}
 
 /**
  * Rows carry no write time, so a duplicate row cannot be told from a later re-add by its id. A removal on any row of an
- * address takes it off; only an unmarked row whose `addedAt` is after the latest removal puts it back.
+ * address takes it off; only an unmarked row whose `addedAt` is after the latest removal puts it back. The answer per key
+ * is listed or removed, and a removed address stays off even when its domain is listed.
  */
-function listedSenders(rows: readonly SenderRow[]): Set<string> {
+function senderList(rows: readonly SenderRow[], now: number): Map<string, boolean> {
 	const removed = new Map<string, number>();
 	const added = new Map<string, number>();
 	for (const row of rows) {
-		const address = String(row.fields.address ?? "").trim().toLowerCase();
-		if (address === "") continue;
-		const [into, at] = row.fields.removedAt ? [removed, time(row.fields.removedAt)] : [added, time(row.fields.addedAt)];
-		into.set(address, Math.max(into.get(address) ?? -Infinity, at));
+		const key = senderKey(row.fields.address);
+		if (key === undefined) continue;
+		const [into, at] = row.fields.removedAt ? [removed, removedUntil(row.fields.removedAt)] : [added, addedAt(row.fields.addedAt, now)];
+		into.set(key, Math.max(into.get(key) ?? -Infinity, at));
 	}
-	return new Set([...added].filter(([address, at]) => !removed.has(address) || at > removed.get(address)!).map(([address]) => address));
+	const list = new Map([...removed.keys()].map((key) => [key, false]));
+	for (const [key, at] of added) list.set(key, !removed.has(key) || at > removed.get(key)!);
+	return list;
 }
 
-const listed = (senders: ReadonlySet<string>, address: string) => senders.has(address) || senders.has(address.slice(address.lastIndexOf("@")));
+const listed = (senders: ReadonlyMap<string, boolean>, address: string) => senders.get(address) ?? senders.get(address.slice(address.lastIndexOf("@"))) ?? false;
 
 function parseCursor(text: string | null): Cursor | undefined {
 	if (text === null) return undefined;
@@ -115,9 +140,9 @@ async function lastDay(gmail: Gmail): Promise<{ ids: string[]; historyId: string
 }
 
 export default async function inbox(input: Input): Promise<Reply> {
-	const senders = listedSenders(input.rows.senders ?? []);
-	if (senders.size === 0) return { records: [], problem: NO_SENDERS };
 	const now = Date.now();
+	const senders = senderList(input.rows.senders ?? [], now);
+	if (![...senders.values()].includes(true)) return { records: [], problem: NO_SENDERS };
 	const token = await accessToken(input.settings);
 	if (token === undefined) return { records: [], problem: AUTH };
 	const gmail = gmailClient(input.settings.baseUrl, token);

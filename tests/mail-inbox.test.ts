@@ -105,7 +105,7 @@ test("名单从 senders 读：@域名收整个域名，划掉的行不算，下�
 	feed.box.deliver(stranger("m-1"));
 	await feed.beat();
 	assert.equal(feed.messages().length, 1, "@example.org 收 deals@example.org");
-	feed.data.write("mail", feed.entry.components, "senders", [{ id: row!.id, removedAt: "2026-11-13" }], "使用者口述", "test");
+	feed.data.write("mail", feed.entry.components, "senders", [{ id: row!.id, removedAt: new Date().toISOString() }], "使用者口述", "test");
 	feed.senders("ann@example.com");
 	feed.box.deliver(stranger("m-2"), ann("m-3"));
 	await feed.beat();
@@ -230,6 +230,44 @@ test("名单：地址不分大小写；同一地址有好几行时，任何一�
 	feed.box.deliver(ann("m-2"));
 	await feed.beat();
 	assert.deepEqual(feed.messages().map((r) => r.fields["gmailId"]), ["m-2"], "划掉以后再加一行，就又在名单上");
+});
+
+test("划掉一定生效：划掉的时间写坏、只写日期、加回的时间在未来、域名在名单上、地址带显示名，都按划掉算", async (t) => {
+	const now = Date.now();
+	const iso = (offset: number) => new Date(now + offset).toISOString();
+	const today = iso(-1000).slice(0, 10);
+	const ann = "ann@example.com";
+	const cases: [string, object[], boolean][] = [
+		["S1 只有一行，划掉了", [{ address: ann, removedAt: iso(-2 * HOUR) }], false],
+		["S2 划掉以后又加回来", [{ address: ann, removedAt: iso(-2 * HOUR) }, { address: ann, addedAt: iso(-HOUR) }], true],
+		["S3 重复行的 addedAt 比划掉早", [{ address: ann, addedAt: iso(-4 * HOUR), removedAt: iso(-2 * HOUR) }, { address: ann, addedAt: iso(-3 * HOUR) }], false],
+		["S4 同一毫秒", [{ address: ann, removedAt: iso(-HOUR) }, { address: ann, addedAt: iso(-HOUR) }], false],
+		["S4b 加回的行没写 addedAt", [{ address: ann, removedAt: iso(-HOUR) }, { address: ann }], false],
+		["S5 只写日期的划掉，同一天更早加的重复行", [{ address: ann, addedAt: iso(-1000), removedAt: today }, { address: ann, addedAt: iso(-1000) }], false],
+		["S6 removedAt 写成 yes", [{ address: ann, addedAt: iso(-HOUR), removedAt: "yes" }, { address: ann, addedAt: iso(-HOUR) }], false],
+		["S6b removedAt 写成 今天", [{ address: ann, removedAt: "今天" }, { address: ann, addedAt: iso(-HOUR) }], false],
+		["S7 removedAt 写坏，没有重复行", [{ address: ann, removedAt: "yes" }], false],
+		["S8 划掉的时间没写时区", [{ address: ann, removedAt: iso(-HOUR).slice(0, 19) }, { address: ann, addedAt: iso(-2 * HOUR) }], false],
+		["S9 划掉的时间在未来", [{ address: ann, removedAt: iso(30 * 24 * HOUR) }, { address: ann, addedAt: iso(-HOUR) }], false],
+		["S10 加回的时间在未来", [{ address: ann, removedAt: iso(-HOUR) }, { address: ann, addedAt: iso(24 * HOUR) }], false],
+		["S11 域名在名单上，地址划掉了", [{ address: "@example.com" }, { address: ann, removedAt: iso(-HOUR) }], false],
+		["S11b 域名在名单上，地址划掉后又加回", [{ address: "@example.com" }, { address: ann, removedAt: iso(-2 * HOUR) }, { address: ann, addedAt: iso(-HOUR) }], true],
+		["S12 划掉的行写成 Ann <ann@example.com>", [{ address: ann }, { address: "Ann <ann@example.com>", removedAt: iso(-HOUR) }], false],
+		["S13 划掉的行带空格和大写", [{ address: ann }, { address: " ANN@Example.com ", removedAt: iso(-HOUR) }], false],
+		["S14 removedAt 是空字符串", [{ address: ann, removedAt: "" }], true],
+		["S15 划掉、加回、再划掉", [{ address: ann, removedAt: iso(-3 * HOUR) }, { address: ann, addedAt: iso(-2 * HOUR), removedAt: iso(-HOUR) }], false],
+		["S16 加回以后又划掉旧的一行", [{ address: ann, removedAt: iso(-HOUR) }, { address: ann, addedAt: iso(-2 * HOUR) }], false],
+	];
+	const stored: Record<string, boolean> = {};
+	for (const [label, rows] of cases) {
+		const feed = await mailFeed(t);
+		feed.data.write("mail", feed.entry.components, "senders", rows as Record<string, unknown>[], "使用者口述", "test");
+		await feed.beat();
+		feed.box.deliver({ id: "m-1", from: "Ann <ann@example.com>", subject: "x", text: "t" });
+		await feed.beat();
+		stored[label] = feed.messages().length > 0;
+	}
+	assert.deepEqual(stored, Object.fromEntries(cases.map(([label, , expected]) => [label, expected])));
 });
 
 test("From 必须正好是一个合法邮箱：多个地址、组、两个 @、坏域名都算名单外；带引号的显示名和注释照常认", async (t) => {
