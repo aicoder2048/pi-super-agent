@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { runModuleCodeAsync } from "../src/modules/run-code.ts";
+import { codeSite } from "./helpers/code-site.ts";
 import { until, within } from "./helpers/fakes.ts";
 
 const TEST_LIMIT_MS = 2000;
@@ -24,7 +25,7 @@ const alive = (pid: number) => {
 	}
 };
 
-const run = (dir: string) => runModuleCodeAsync(dir, "index.ts", {}, {}, { limitMs: TEST_LIMIT_MS });
+const run = (dir: string) => runModuleCodeAsync(codeSite(dir), "index.ts", {}, {}, { limitMs: TEST_LIMIT_MS });
 const failsInTime = async (dir: string) => assert.equal((await within(run(dir), TEST_LIMIT_MS + 1500, "到时限没有结束")).ok, false);
 const pidGone = (dir: string) => {
 	const pid = Number(readFileSync(join(dir, "pid"), "utf8"));

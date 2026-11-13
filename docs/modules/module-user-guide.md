@@ -219,6 +219,20 @@ flowchart TB
 
 正文最多 20000 字，但好的成员提示词只有 1 到 2KB：只写分工、判断方法和汇报格式，知识放技能。
 
+### 3.6 新布局包里的代码：写文件和用 Python
+
+新布局的包（有 `tools/`、`feeds/` 的那种，见 `docs/modules/architecture/design.md` 第 2、3 节）里，代码可以写文件，也可以用 Python 的库。
+
+- **写文件。** 工具和 feed 的进程里有环境变量 `PSA_MODULE_DATA`，是这个模块的数据目录。只往它下面的 `files/` 写。`just module check` 和 `just module try` 给的是临时目录或副本，不会碰真实数据。`just module purge <名字>` 把 `files/` 一起删掉。
+- **用 Python。** 在包里放 `py/pyproject.toml`，跑 `uv lock --project py` 生成 `py/uv.lock`，两个文件都提交。然后跑一次：
+
+  ```
+  just module setup <名字>
+  ```
+
+  它把环境装进数据目录的 `files/venv-<12 位>`，打印一行装好了。代码里用 `process.env.PSA_MODULE_VENV` 找到它，例如 `join(process.env.PSA_MODULE_VENV, "bin", "python")`。换了依赖（`uv.lock` 变了）要再跑一次 setup，换机器也要跑一次。`just module check` 跑工具用例时也用这个环境，所以用到 Python 的用例要先 setup。没有 `uv` 或者拿不到依赖时，它说明怎么办。
+- **跑得久的 feed。** 一次调用默认最多 20 秒。在 `feed.json` 写 `"limit": "5m"` 放宽，最多 `"10m"`。
+
 ## 4. 动手前：你的领域属于哪一档
 
 三档的难度差得很远，先分清再动手：

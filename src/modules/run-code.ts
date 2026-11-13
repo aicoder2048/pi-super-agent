@@ -2,11 +2,14 @@
  * The whole contract between the host and a module's code: one fresh process per call, the
  * call as one JSON line on stdin, the reply as the last line of stdout. The process is an
  * ordinary one. Its working directory is the component's folder, and its environment is
- * `PATH` and `HOME` plus the secrets the descriptor names.
+ * `PATH` and `HOME` plus the secrets the descriptor names, `PSA_MODULE_DATA` (the module's instance data, where
+ * it may write under `files/`) and, for a package with a `py/` project, `PSA_MODULE_VENV`.
  */
 import { spawn, spawnSync } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { filesDir, lockOf, venvDir } from "./files.ts";
 import type { FeedFixture } from "./manifest.ts";
 import type { Json } from "./protocol.ts";
 
@@ -40,7 +43,7 @@ export type Secrets = Readonly<Record<string, string>>;
 
 export type Responses = FeedFixture["responses"];
 
-export type RunOptions = { limitMs?: number; responses?: Responses };
+export type RunOptions = { limitMs?: number; responses?: Responses; signal?: AbortSignal };
 
 export type SecretLookup = (name: string) => string | undefined;
 
@@ -50,8 +53,18 @@ const FIXTURE_SECRET = "fixture";
 
 export const fixtureSecrets = (names: readonly string[]): Secrets => Object.fromEntries(names.map((name) => [name, FIXTURE_SECRET]));
 
-function codeProcess(dir: string, entry: string, secrets: Secrets) {
-	const env = { PATH: process.env["PATH"] ?? "", HOME: process.env["HOME"] ?? "", ...secrets };
+/**
+ * Where one call's code runs. `component` is its folder inside the package, e.g. `tools/add`.
+ * `dataDir` is the module's instance data, or a scratch one when the call is a test case.
+ * `packageDir` is the copy the caller is pinned to, so the venv is the one that copy's lock names.
+ */
+export type CodeSite = { packageDir: string; component: string; dataDir: string };
+
+function codeProcess({ packageDir, component, dataDir }: CodeSite, entry: string, secrets: Secrets) {
+	const dir = join(packageDir, component);
+	const lock = lockOf(packageDir);
+	mkdirSync(filesDir(dataDir), { recursive: true });
+	const env = { PATH: process.env["PATH"] ?? "", HOME: process.env["HOME"] ?? "", ...secrets, PSA_MODULE_DATA: dataDir, ...(lock !== undefined && { PSA_MODULE_VENV: venvDir(dataDir, lock) }) };
 	const args = ["--input-type=module", "-e", NODE_RUNNER, pathToFileURL(join(dir, entry)).href];
 	return { args, options: { env, cwd: dir } };
 }
@@ -66,15 +79,15 @@ function readReply(stdout: string, stderr: string, status: number | null, error:
 	return { ok: false, note: (error?.message ?? stderr).trim().split("\n").slice(0, 3).join(" ") || `exit ${status}` };
 }
 
-export function runModuleCode(dir: string, entry: string, input: unknown, secrets: Secrets = {}, { responses }: Pick<RunOptions, "responses"> = {}): CodeReply {
-	const { args, options } = codeProcess(dir, entry, secrets);
+export function runModuleCode(site: CodeSite, entry: string, input: unknown, secrets: Secrets = {}, { responses }: Pick<RunOptions, "responses"> = {}): CodeReply {
+	const { args, options } = codeProcess(site, entry, secrets);
 	const run = spawnSync(process.execPath, args, { ...options, timeout: LIMIT_MS, encoding: "utf8", input: JSON.stringify({ input, responses }) });
 	return readReply(run.stdout, run.stderr, run.status, run.error);
 }
 
 /** Node's "close" waits for every process holding the stdio pipes, so a grandchild could keep a call open forever. The tool's whole process group is SIGKILLed at the limit, past the stdout cap, or once the tool exits. */
-export function runModuleCodeAsync(dir: string, entry: string, input: unknown, secrets: Secrets = {}, { limitMs = LIMIT_MS, responses }: RunOptions = {}): Promise<CodeReply> {
-	const { args, options } = codeProcess(dir, entry, secrets);
+export function runModuleCodeAsync(site: CodeSite, entry: string, input: unknown, secrets: Secrets = {}, { limitMs = LIMIT_MS, responses, signal }: RunOptions = {}): Promise<CodeReply> {
+	const { args, options } = codeProcess(site, entry, secrets);
 	return new Promise((done) => {
 		const child = spawn(process.execPath, args, { ...options, detached: true });
 		const killGroup = () => {
@@ -94,6 +107,9 @@ export function runModuleCodeAsync(dir: string, entry: string, input: unknown, s
 			killGroup();
 		};
 		const timer = setTimeout(() => stop(`stopped at the limit of ${limitMs / 1000} s`), limitMs);
+		const cancel = () => stop("stopped by the host (its feed was switched off, or the host is stopping)");
+		signal?.addEventListener("abort", cancel, { once: true });
+		if (signal?.aborted) cancel();
 		child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
 			if (stopped !== undefined) return;
 			stdout += chunk;
@@ -105,6 +121,7 @@ export function runModuleCodeAsync(dir: string, entry: string, input: unknown, s
 		child.on("exit", killGroup);
 		const finish = (reply: CodeReply) => {
 			clearTimeout(timer);
+			signal?.removeEventListener("abort", cancel);
 			done(reply);
 		};
 		child.on("error", (error) => finish(readReply(stdout, stderr, null, error)));

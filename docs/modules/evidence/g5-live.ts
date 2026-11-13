@@ -209,7 +209,7 @@ async function lanes(): Promise<void> {
 		const trunk = mkdtempSync(join(tmpdir(), "psa-g5-trunk-"));
 		const archive = spawnSync("sh", ["-c", `git archive origin/main docs/modules/examples/stock-ta | tar -x -C '${trunk}'`], { cwd: HEAD, encoding: "utf8" });
 		if (archive.status !== 0) throw new Error(archive.stderr);
-		const call = (pkg: string) => runModuleCodeAsync(join(pkg, "tools", "structure"), "index.ts", { symbol: "NVDA" }, { TA_ROOT });
+		const call = (pkg: string) => runModuleCodeAsync({ packageDir: pkg, component: "tools/structure", dataDir: mkdtempSync(join(tmpdir(), "psa-g5-data-")) }, "index.ts", { symbol: "NVDA" }, { TA_ROOT });
 		const before = await call(join(trunk, "docs/modules/examples/stock-ta"));
 		const after = await call(PKG);
 		rmSync(trunk, { recursive: true, force: true });

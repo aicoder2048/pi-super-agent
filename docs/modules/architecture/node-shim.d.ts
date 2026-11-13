@@ -15,6 +15,9 @@ declare module "node:fs" {
 	export function mkdirSync(path: string, options: { recursive: true }): void;
 	export function copyFileSync(from: string, to: string): void;
 	export function renameSync(from: string, to: string): void;
+	export const constants: { COPYFILE_FICLONE: number };
+	export function cpSync(from: string, to: string, options: { recursive: true; mode?: number; filter?(path: string): boolean }): void;
+	export function symlinkSync(target: string, path: string): void;
 	export function mkdtempSync(prefix: string): string;
 	export function writeFileSync(path: string, content: string): void;
 	export function rmSync(path: string, options: { recursive?: true; force: true }): void;
@@ -101,7 +104,17 @@ declare const process: {
 	exitCode: number | undefined;
 	env: Record<string, string | undefined>;
 	kill(pid: number, signal: string): void;
+	once(event: "exit", listener: () => void): void;
 };
+declare interface AbortSignal {
+	readonly aborted: boolean;
+	addEventListener(type: "abort", listener: () => void, options?: { once: true }): void;
+	removeEventListener(type: "abort", listener: () => void): void;
+}
+declare class AbortController {
+	readonly signal: AbortSignal;
+	abort(): void;
+}
 declare function setTimeout(run: () => void, ms: number): unknown;
 declare function clearTimeout(timer: unknown): void;
 declare function setInterval(run: () => void, ms: number): { unref(): void };

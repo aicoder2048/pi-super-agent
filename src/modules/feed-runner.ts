@@ -1,8 +1,10 @@
 /** Saves the cursor last: a crash before the end repeats the call, and the ids make the repeat a no-op. */
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { everyMs } from "./connectors/timer.ts";
 import type { FeedStates, ModuleRows } from "./instance-data.ts";
 import type { CollectionDescriptor, Component, ComponentName, FeedDescriptor, FeedFixture, ModuleName } from "./manifest.ts";
+import type { InstanceData } from "./registry.ts";
 import type { Alert, Collected, FeedInput, Json, Row } from "./protocol.ts";
 import { fixtureSecrets, LIMIT_MS, runModuleCodeAsync, secretsFor } from "./run-code.ts";
 
@@ -11,7 +13,7 @@ export type FeedEntry = { source: string; module: ModuleName; dir: string; name:
 export type FeedNotice = { source: string; id: string; thread: string; body: string; at: number; private: boolean };
 
 export interface FeedPorts {
-	data: ModuleRows & FeedStates;
+	data: ModuleRows & FeedStates & Pick<InstanceData, "dir">;
 	submit(notice: FeedNotice): void;
 	alert(module: ModuleName, alert: Alert): void;
 	secret(name: string): string | undefined;
@@ -72,7 +74,7 @@ export function feedInput(feed: FeedDescriptor, items: readonly Json[], held: He
 
 const fill = (template: string, fields: Readonly<Record<string, string>>) => template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => fields[key] ?? "");
 
-async function fromHandler({ module, source, feed, name, dir, components }: FeedEntry, handler: string, items: readonly Json[], ports: FeedPorts, fixture: FeedFixture | undefined): Promise<Collected | string> {
+async function fromHandler({ module, source, feed, name, dir, components }: FeedEntry, handler: string, items: readonly Json[], ports: FeedPorts, fixture: FeedFixture | undefined, signal: AbortSignal | undefined): Promise<Collected | string> {
 	const { data } = ports;
 	const into = intoOf(feed, components);
 	const watched = into?.watch === undefined ? [] : data.watch(module, components, { kind: "watch", collection: feed.into as ComponentName, op: "list" }, source).output;
@@ -81,14 +83,16 @@ async function fromHandler({ module, source, feed, name, dir, components }: Feed
 		rows: (c) => data.query(module, components, c, { limit: READ_LIMIT }, source).rows,
 		watchedKeys: "conditions" in watched ? [...new Set(watched.conditions.map((c) => c.key))] : [],
 	}, fixture);
-	const reply = await runModuleCodeAsync(join(dir, "feeds", name), handler, input, fixture ? fixtureSecrets(feed.secrets ?? []) : secretsFor(feed.secrets ?? [], ports.secret), { limitMs: ports.limitMs ?? LIMIT_MS, ...(fixture && { responses: fixture.responses }) });
+	const site = { packageDir: dir, component: join("feeds", name), dataDir: data.dir(module) };
+	const limitMs = feed.limit === undefined ? (ports.limitMs ?? LIMIT_MS) : everyMs(feed.limit);
+	const reply = await runModuleCodeAsync(site, handler, input, fixture ? fixtureSecrets(feed.secrets ?? []) : secretsFor(feed.secrets ?? [], ports.secret), { limitMs, ...(fixture && { responses: fixture.responses }), ...(signal && { signal }) });
 	return reply.ok ? parseCollected(reply.output, into) : reply.note;
 }
 
-export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: FeedPorts, fixture?: FeedFixture): Promise<FeedRun> {
+export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: FeedPorts, fixture?: FeedFixture, signal?: AbortSignal): Promise<FeedRun> {
 	const { module, source, feed, components } = entry;
 	try {
-		const collected = feed.handler === undefined ? fromItems((fixture?.input["items"] as Json[] | undefined) ?? items) : await fromHandler(entry, feed.handler, items, ports, fixture);
+		const collected = feed.handler === undefined ? fromItems((fixture?.input["items"] as Json[] | undefined) ?? items) : await fromHandler(entry, feed.handler, items, ports, fixture, signal);
 		if (typeof collected === "string") return { ok: false, note: collected };
 		const records = collected.records ?? [];
 		let stored = 0;

@@ -53,6 +53,8 @@ export interface InstanceData {
 	 * the old structure or the new one. Safe to run again after a crash.
 	 */
 	migrate(module: ModuleName, components: readonly Component[]): { ok: true } | { ok: false; reason: string };
+	/** `<stateDir>/modules-data/<module>/`. The module's code gets this path and writes only under its `files/`. */
+	dir(module: ModuleName): string;
 	/** Irreversible. */
 	purge(module: ModuleName): void;
 }

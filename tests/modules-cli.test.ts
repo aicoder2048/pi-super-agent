@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -337,14 +337,15 @@ function snapshot(dir: string): string {
 		.join("\n");
 }
 
-type Rehearsal = { models?: { router: string; worker: string; fallback: string }; pkg?: string; secrets?: string; during?: (child: import("node:child_process").ChildProcess, fake: FakeModel) => Promise<void> };
+type Rehearsal = { models?: { router: string; worker: string; fallback: string }; pkg?: string; secrets?: string; during?: (child: import("node:child_process").ChildProcess, fake: FakeModel, scratch: string) => Promise<void>; seed?: (dir: string) => void };
 
-async function rehearse(t: import("node:test").TestContext, script: Script, { models = { router: "psa-fake/router", worker: "psa-fake/worker", fallback: "psa-fake/fallback" }, pkg = join(SAMPLE, "personal-tax"), secrets, during }: Rehearsal = {}) {
+async function rehearse(t: import("node:test").TestContext, script: Script, { models = { router: "psa-fake/router", worker: "psa-fake/worker", fallback: "psa-fake/fallback" }, pkg = join(SAMPLE, "personal-tax"), secrets, during, seed }: Rehearsal = {}) {
 	const fake = await FakeModel.start(script);
 	t.after(() => fake.close());
 	const dir = stateDir(t, { models, ...(secrets !== undefined && { secretsFile: "secrets.env" }) });
 	if (secrets !== undefined) writeFileSync(join(dir, "secrets.env"), secrets);
 	cpSync(pkg, join(dir, "modules", "personal-tax"), { recursive: true });
+	seed?.(dir);
 	const scratch = mkdtempSync(join(tmpdir(), "psa-tt-"));
 	t.after(() => rmSync(scratch, { recursive: true, force: true }));
 	const pi = mkdtempSync(join(tmpdir(), "psa-pi-"));
@@ -362,7 +363,7 @@ async function rehearse(t: import("node:test").TestContext, script: Script, { mo
 	child.stderr.setEncoding("utf8").on("data", (s: string) => (out += s));
 	const timer = setTimeout(() => child.kill("SIGKILL"), 25_000);
 	const closed = new Promise<number | null>((done) => child.once("close", done));
-	await during?.(child, fake);
+	await during?.(child, fake, scratch);
 	const status = await closed;
 	clearTimeout(timer);
 	return { status, out, leftover: tryDirs(), leftWhenSaidGone, userDirChanged: snapshot(dir) !== before };
@@ -378,6 +379,35 @@ test("just module try：假模型调了考题要的工具、汇报里有该有�
 	assert.match(run.out, /落在第 2 档，估算税额 4000 美元/);
 	assert.deepEqual(run.leftover, []);
 	assert.deepEqual(run.leftWhenSaidGone, [], "说临时状态目录已删时它已经删了");
+	assert.equal(run.userDirChanged, false);
+});
+
+test("just module try：临时状态目录里的 files/ 是真实 files/ 的副本，venv 是指向真实 venv 的符号链接", async (t) => {
+	let seen: { note: string; venvIsLink: boolean; venvTarget: string } | undefined;
+	let real = "";
+	const run = await rehearse(
+		t,
+		{
+			router: [opensTaxTicket],
+			workers: [worker("预演算税", on("调工具", /^\[任务说明\]/, () => [domainTool("tax-bracket", { taxableIncome: 25000 })]), on("汇报", /^\[模块工具\]/, () => [report("ready", "落在第 2 档，估算税额 4000 美元")]))],
+		},
+		{
+			seed: (dir) => {
+				real = join(dir, "modules-data/personal-tax/files");
+				mkdirSync(join(real, "venv-aaaaaaaaaaaa/bin"), { recursive: true });
+				writeFileSync(join(real, "venv-aaaaaaaaaaaa/.psa-lock"), "a");
+				writeFileSync(join(real, "note.txt"), "kept by the module");
+			},
+			during: async (_child, fake, scratch) => {
+				await until(() => fake.exchanges.length > 0, "临时宿主开始问模型", 20_000);
+				const temp = join(scratch, readdirSync(scratch).find((f) => f.startsWith("psa-try-")) ?? "", "modules-data/personal-tax/files");
+				if (!existsSync(join(temp, "note.txt"))) return;
+				seen = { note: readFileSync(join(temp, "note.txt"), "utf8"), venvIsLink: lstatSync(join(temp, "venv-aaaaaaaaaaaa")).isSymbolicLink(), venvTarget: realpathSync(join(temp, "venv-aaaaaaaaaaaa")) };
+			},
+		},
+	);
+	assert.equal(run.status, 0, run.out);
+	assert.deepEqual(seen, { note: "kept by the module", venvIsLink: true, venvTarget: realpathSync(join(real, "venv-aaaaaaaaaaaa")) });
 	assert.equal(run.userDirChanged, false);
 });
 

@@ -132,7 +132,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			const value = ports.secret(name);
 			return value === undefined ? [] : [[name, value]];
 		}));
-		const ran = await runModuleCodeAsync(join(copy.dir, "tools", tool.name), RUNTIMES[tool.tool.runtime ?? "node"], input, secrets, { limitMs: ports.limitMs ?? LIMIT_MS });
+		const ran = await runModuleCodeAsync({ packageDir: copy.dir, component: join("tools", tool.name), dataDir: ports.dataDir(copy.module) }, RUNTIMES[tool.tool.runtime ?? "node"], input, secrets, { limitMs: ports.limitMs ?? LIMIT_MS });
 		return ran.ok ? { ok: true, output: ran.output, private: false } : { ok: false, refusal: { code: "provider-failed", note: ran.note } };
 	};
 

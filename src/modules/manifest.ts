@@ -118,6 +118,8 @@ export interface FeedDescriptor {
 	secrets?: readonly string[];
 	/** Poll interval such as `15m` or `1d`. Push connectors need none. */
 	every?: string;
+	/** How long one call of the handler may run, such as `5m`. At most `10m`. Without it the host's 20 seconds. */
+	limit?: string;
 	/** Called only while this is true. `us-market-hours`: a trading day from the open to 20 minutes after the close. */
 	when?: FeedWhen;
 	/** Defaults that are the same for every user. */

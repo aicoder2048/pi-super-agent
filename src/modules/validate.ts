@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { EVERY } from "./connectors/timer.ts";
+import { EVERY, everyMs } from "./connectors/timer.ts";
 import { feedInput, intoOf, NOTHING_HELD, parseCollected } from "./feed-runner.ts";
-import { fixtureSecrets, runModuleCode, runModuleCodeAsync, secretsFor, type CodeReply, type RunOptions, type SecretLookup, type Secrets } from "./run-code.ts";
+import { linkVenvs, lockOf, PY_DIR, venvInstalled } from "./files.ts";
+import { fixtureSecrets, runModuleCode, runModuleCodeAsync, secretsFor, type CodeReply, type CodeSite, type RunOptions, type SecretLookup, type Secrets } from "./run-code.ts";
 import { CONNECTORS, DATA_CLASSES, FEED_WHEN, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS } from "./manifest.ts";
 import type {
 	AgentDescriptor, CapabilityUse, CollectionDescriptor, Component, ComponentName, Digest, FeedDescriptor, FeedFixture, FieldDescriptor, KindDir, MemberTool, ModuleManifest, ModuleName, PackageScan, Problem, RuleRef, Runtime, ScanResult, ToolCase, ToolDescriptor,
@@ -12,6 +14,7 @@ import type {
 const NAME = /^[a-z0-9][a-z0-9-]*$/;
 const FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
+const MAX_LIMIT_MS = 600_000;
 const FIELD_TYPES = ["text", "number", "date", "blob"] as const;
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -89,9 +92,12 @@ function commaList(value: string | undefined): string[] {
 	return (value ?? "").split(",").map((item) => item.trim()).filter((item) => item !== "");
 }
 
-/** Names that start with a dot are skipped, so a `.git` or `.DS_Store` in the folder does not matter. */
+/**
+ * Names that start with a dot are skipped, so a `.git` or `.DS_Store` in the folder does not matter.
+ * So is `__pycache__`: Python writes it when the code runs, and a run must not make a new version.
+ */
 function entries(root: string, where: string): { dirs: string[]; files: string[] } {
-	const found = readdirSync(join(root, where), { withFileTypes: true }).filter((entry) => !entry.name.startsWith("."));
+	const found = readdirSync(join(root, where), { withFileTypes: true }).filter((entry) => !entry.name.startsWith(".") && entry.name !== "__pycache__");
 	return {
 		dirs: found.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(),
 		files: found.filter((entry) => entry.isFile()).map((entry) => entry.name).sort(),
@@ -292,19 +298,20 @@ function readSkill(report: Report, root: string, name: string): Component | unde
 function readFeed(report: Report, root: string, name: string): Component | undefined {
 	const dir = `feeds/${name}`;
 	const where = `${dir}/feed.json`;
-	const raw = readObject(report, root, where, ["title"], ["description", "connector", "handler", "secrets", "every", "when", "settings", "ask", "into", "reads", "notice", "ignore"]);
+	const raw = readObject(report, root, where, ["title"], ["description", "connector", "handler", "secrets", "every", "limit", "when", "settings", "ask", "into", "reads", "notice", "ignore"]);
 	if (raw === undefined) return undefined;
 	const feed: FeedDescriptor = { title: String(raw["title"]) };
 	const connector = raw["connector"];
 	if (oneOf(CONNECTORS, connector)) feed.connector = connector;
 	else if (connector !== undefined) report(where, `connector ${JSON.stringify(connector)} is not one of the host's connectors (${CONNECTORS.join(", ")})`);
-	for (const key of ["description", "handler", "every", "into", "notice"] as const) {
+	for (const key of ["description", "handler", "every", "limit", "into", "notice"] as const) {
 		const value = optionalText(report, where, raw, key);
 		if (value !== undefined) feed[key] = value;
 	}
 	if (connector === undefined && feed.handler === undefined) report(where, `needs a "connector", a "handler", or both`);
 	if (feed.into === undefined && feed.notice === undefined) report(where, `needs "into" (store records), "notice" (tell the Router), or both`);
 	if (feed.every !== undefined && !EVERY.test(feed.every)) report(where, `"every" must look like 30s, 15m, 6h or 1d`);
+	if (feed.limit !== undefined && !(EVERY.test(feed.limit) && everyMs(feed.limit) > 0 && everyMs(feed.limit) <= MAX_LIMIT_MS)) report(where, `"limit" must look like 90s or 5m, and be at most 10m`);
 	const scheduledBy = connector === "timer" ? "the timer connector" : connector === undefined && feed.handler !== undefined ? "a handler and no connector" : undefined;
 	if (feed.every === undefined && scheduledBy !== undefined) report(where, `needs "every": with ${scheduledBy} it runs only on that schedule`);
 	const when = raw["when"];
@@ -446,13 +453,13 @@ function same(actual: Json | undefined, expected: Json, tolerance: number): bool
 	return actual === expected;
 }
 
-type CaseRun = { dir: string; entry: string; secrets: Secrets; input: unknown; options: RunOptions; problem(reply: CodeReply): Problem | undefined };
+type CaseRun = { component: string; entry: string; secrets: Secrets; input: unknown; options: RunOptions; problem(reply: CodeReply): Problem | undefined };
 
-function toolRun(root: string, component: Extract<Component, { kind: "tools" }>, item: ToolCase, index: number, secret: SecretLookup): CaseRun {
+function toolRun(component: Extract<Component, { kind: "tools" }>, item: ToolCase, index: number, secret: SecretLookup): CaseRun {
 	const where = `tools/${component.name}/cases.json`;
 	const label = `test case ${index + 1} "${item.name}"`;
 	return {
-		dir: join(root, "tools", component.name),
+		component: join("tools", component.name),
 		entry: RUNTIMES[component.tool.runtime ?? "node"],
 		secrets: secretsFor(component.tool.secrets ?? [], secret),
 		input: item.input,
@@ -465,10 +472,10 @@ function toolRun(root: string, component: Extract<Component, { kind: "tools" }>,
 	};
 }
 
-function feedRun(root: string, { name, feed }: Extract<Component, { kind: "feeds" }>, components: readonly Component[], fixture: FeedFixture): CaseRun {
+function feedRun({ name, feed }: Extract<Component, { kind: "feeds" }>, components: readonly Component[], fixture: FeedFixture): CaseRun {
 	const where = `feeds/${name}/fixtures/${fixture.name}.json`;
 	return {
-		dir: join(root, "feeds", name),
+		component: join("feeds", name),
 		entry: feed.handler!,
 		secrets: fixtureSecrets(feed.secrets ?? []),
 		input: feedInput(feed, [], NOTHING_HELD, fixture),
@@ -481,24 +488,52 @@ function feedRun(root: string, { name, feed }: Extract<Component, { kind: "feeds
 	};
 }
 
-function caseRuns(root: string, components: readonly Component[], secret: SecretLookup): CaseRun[] {
+function caseRuns(components: readonly Component[], secret: SecretLookup): CaseRun[] {
 	return components.flatMap((component) => {
-		if (component.kind === "tools") return component.cases.map((item, index) => toolRun(root, component, item, index, secret));
-		if (component.kind === "feeds" && component.feed.handler !== undefined) return component.fixtures.map((fixture) => feedRun(root, component, components, fixture));
+		if (component.kind === "tools") return component.cases.map((item, index) => toolRun(component, item, index, secret));
+		if (component.kind === "feeds" && component.feed.handler !== undefined) return component.fixtures.map((fixture) => feedRun(component, components, fixture));
 		return [];
 	});
 }
 
-export const hasCases = (scan: PackageScan): boolean => caseRuns(scan.dir, scan.components, () => undefined).length > 0;
+export const hasCases = (scan: PackageScan): boolean => caseRuns(scan.components, () => undefined).length > 0;
 
-/** For a package scanned with `runCases: false`. */
-export async function runCasesAsync(scan: PackageScan, secret: SecretLookup): Promise<Problem[]> {
+/** A check never shows module code the module's real data: every case of one check shares a data dir that is deleted after the last. */
+function scratchData(packageDir: string, module: string, realDataDir: string | undefined): { dir: string; drop(): void; explain(problem: Problem): Problem } {
+	const dir = mkdtempSync(join(tmpdir(), "psa-check-data-"));
+	if (realDataDir !== undefined) linkVenvs(realDataDir, dir);
+	const lock = lockOf(packageDir);
+	const noVenv = lock !== undefined && (realDataDir === undefined || !venvInstalled(realDataDir, lock));
+	return {
+		dir,
+		drop: () => rmSync(dir, { recursive: true, force: true }),
+		explain: (problem) => (noVenv ? { ...problem, reason: `${problem.reason} (the Python environment is not installed: run \`just module setup ${module}\` first)` } : problem),
+	};
+}
+
+const siteOf = (packageDir: string, run: CaseRun, dataDir: string): CodeSite => ({ packageDir, component: run.component, dataDir });
+
+/** For a package scanned with `runCases: false`. `realDataDir` is the module's instance data, whose venvs the cases may use. */
+export async function runCasesAsync(scan: PackageScan, secret: SecretLookup, realDataDir?: string): Promise<Problem[]> {
 	const problems: Problem[] = [];
-	for (const run of caseRuns(scan.dir, scan.components, secret)) {
-		const problem = run.problem(await runModuleCodeAsync(run.dir, run.entry, run.input, run.secrets, run.options));
-		if (problem) problems.push(problem);
+	const runs = caseRuns(scan.components, secret);
+	if (runs.length === 0) return problems;
+	const data = scratchData(scan.dir, scan.manifest.name, realDataDir);
+	try {
+		for (const run of runs) {
+			const problem = run.problem(await runModuleCodeAsync(siteOf(scan.dir, run, data.dir), run.entry, run.input, run.secrets, run.options));
+			if (problem) problems.push(data.explain(problem));
+		}
+	} finally {
+		data.drop();
 	}
 	return problems;
+}
+
+function checkPy(report: Report, root: string): void {
+	for (const file of ["pyproject.toml", "uv.lock"]) {
+		if (!existsSync(join(root, PY_DIR, file))) report(PY_DIR, `needs ${PY_DIR}/${file}: \`just module setup\` installs exactly what the lock file names (write it with \`uv lock --project ${PY_DIR}\`)`);
+	}
 }
 
 const READERS: Record<KindDir, { each: "dirs" | "files"; read(report: Report, root: string, name: string): Component | undefined }> = {
@@ -514,8 +549,12 @@ const READERS: Record<KindDir, { each: "dirs" | "files"; read(report: Report, ro
 function readComponents(report: Report, root: string): Component[] {
 	const components: Component[] = [];
 	for (const dir of entries(root, "").dirs) {
+		if (dir === PY_DIR) {
+			checkPy(report, root);
+			continue;
+		}
 		if (!oneOf(KIND_DIRS, dir)) {
-			report(dir, `is not a component kind (the kinds are ${KIND_DIRS.join(", ")})`);
+			report(dir, `is not a component kind (the kinds are ${KIND_DIRS.join(", ")}; ${PY_DIR}/ holds a Python project)`);
 			continue;
 		}
 		for (const name of entries(root, dir)[READERS[dir].each]) {
@@ -540,9 +579,9 @@ export function scanPackage(packageDir: string, options: ScanOptions = {}): Scan
 }
 
 /** `folder`: the module name the folder stands for. A copy in the module store sits in a folder named by its digest. */
-type ScanOptions = { previous?: string | undefined; runCases?: boolean; folder?: string; secret?: SecretLookup };
+type ScanOptions = { previous?: string | undefined; runCases?: boolean; folder?: string; secret?: SecretLookup; dataDirOf?: (module: string) => string };
 
-function scanReadable(packageDir: string, { previous, runCases = true, folder, secret = (name) => process.env[name] }: ScanOptions): ScanResult {
+function scanReadable(packageDir: string, { previous, runCases = true, folder, secret = (name) => process.env[name], dataDirOf }: ScanOptions): ScanResult {
 	const root = resolve(packageDir);
 	const problems: Problem[] = [];
 	const report: Report = (where, reason) => void problems.push({ where, reason });
@@ -553,10 +592,16 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, s
 	const feeds = new Set(components.filter((item) => item.kind === "feeds").map((item) => item.name as string));
 	const rules = readRules(report, root, manifest.name, feeds);
 	crossCheck(report, manifest, components);
-	if (runCases && problems.length === 0) {
-		for (const run of caseRuns(root, components, secret)) {
-			const problem = run.problem(runModuleCode(run.dir, run.entry, run.input, run.secrets, run.options));
-			if (problem) problems.push(problem);
+	const runs = runCases && problems.length === 0 ? caseRuns(components, secret) : [];
+	if (runs.length > 0) {
+		const data = scratchData(root, manifest.name, dataDirOf?.(manifest.name));
+		try {
+			for (const run of runs) {
+				const problem = run.problem(runModuleCode(siteOf(root, run, data.dir), run.entry, run.input, run.secrets, run.options));
+				if (problem) problems.push(data.explain(problem));
+			}
+		} finally {
+			data.drop();
 		}
 	}
 	let notes: string[] = [];

@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { runModuleCode, secretsFor } from "../src/modules/run-code.ts";
 import { scanPackage } from "../src/modules/validate.ts";
+import { codeSite } from "./helpers/code-site.ts";
 
 const SAMPLE = join(dirname(fileURLToPath(import.meta.url)), "..", "docs", "modules", "architecture", "sample");
 const update = (to: string) => scanPackage(join(SAMPLE, "update", to, "health-lite"), { previous: join(SAMPLE, "update", "0.1.0", "health-lite") });
@@ -20,7 +21,7 @@ test("both sample modules pass the scan, a health domain and a tax domain with t
 });
 
 test("a tool may bring its own data file and read it", () => {
-	const reply = runModuleCode(join(SAMPLE, "personal-tax", "tools", "tax-bracket"), "index.ts", { taxableIncome: 25000 });
+	const reply = runModuleCode(codeSite(join(SAMPLE, "personal-tax"), "tools/tax-bracket"), "index.ts", { taxableIncome: 25000 });
 	assert.deepEqual(reply, { ok: true, output: { bracket: 2, marginalRate: 0.2, tax: 4000 } });
 });
 
@@ -30,14 +31,14 @@ test("module code gets the secrets its descriptor names as environment variables
 	process.env["NAMED_KEY"] = "n";
 	process.env["OTHER_KEY"] = "o";
 	try {
-		assert.deepEqual(runModuleCode(dir, "index.ts", {}, secretsFor(["NAMED_KEY"], (name) => process.env[name])), { ok: true, output: { named: "n", other: null } });
+		assert.deepEqual(runModuleCode(codeSite(dir), "index.ts", {}, secretsFor(["NAMED_KEY"], (name) => process.env[name])), { ok: true, output: { named: "n", other: null } });
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
 
 test("a crash in module code fails that one call and says why", () => {
-	const reply = runModuleCode(join(SAMPLE, "personal-tax", "tools", "tax-bracket"), "index.ts", { taxableIncome: -1 });
+	const reply = runModuleCode(codeSite(join(SAMPLE, "personal-tax"), "tools/tax-bracket"), "index.ts", { taxableIncome: -1 });
 	assert.deepEqual(reply, { ok: false, note: "应税所得不能是负数" });
 });
 
