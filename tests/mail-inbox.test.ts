@@ -37,7 +37,8 @@ async function mailFeed(t: TestContext) {
 	const notices: FeedNotice[] = [];
 	const problems: (FeedProblem | undefined)[] = [];
 	const secrets: Record<string, string> = { GOOGLE_OAUTH_CLIENT_ID: google.client.id, GOOGLE_OAUTH_CLIENT_SECRET: google.client.secret, GMAIL_READ_REFRESH_TOKEN: REFRESH };
-	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: () => {}, problem: (_, p) => void problems.push(p), secret: (name) => secrets[name], now: Date.now };
+	const clock = { offset: 0 };
+	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: () => {}, problem: (_, p) => void problems.push(p), secret: (name) => secrets[name], now: () => Date.now() + clock.offset };
 	const senders = (...addresses: string[]) => data.write("mail", entry.components, "senders", addresses.map((address) => ({ address })), "使用者口述", "test").rows;
 	const messages = () => data.query("mail", entry.components, "messages", {}, "test").rows;
 	const cursor = () => data.feedState("mail", SOURCE).cursor;
@@ -47,7 +48,7 @@ async function mailFeed(t: TestContext) {
 		google.log.length = 0;
 		return runFeed(entry, [], ports);
 	};
-	return { box, google, entry, data, notices, problems, secrets, senders, messages, cursor, setCursor, requests, beat };
+	return { box, google, entry, data, notices, problems, secrets, clock, senders, messages, cursor, setCursor, requests, beat };
 }
 
 test("第一次起步：取 profile 的 historyId 当起点，再补最近一天的收件箱", async (t) => {
@@ -164,6 +165,63 @@ test("断档 30 小时：补最近一天，报 gap，写出整小时数", async 
 	assert.match(feed.problems.at(-1)!.text, /有 30 小时没查/);
 	await feed.beat();
 	assert.equal(feed.problems.at(-1), undefined, "下一拍不再是断档");
+});
+
+test("时间取宿主时钟（input.now），不读自己的挂钟：断档按宿主时钟算，cursor 记的也是它", async (t) => {
+	const feed = await mailFeed(t);
+	feed.senders("ann@example.com");
+	feed.clock.offset = -10 * 24 * HOUR;
+	const host = Date.now() + feed.clock.offset;
+	feed.setCursor({ historyId: feed.box.historyId, at: new Date(host - 2 * HOUR).toISOString() });
+	feed.box.deliver(ann("m-1"));
+	await feed.beat();
+	assert.equal(feed.problems.at(-1), undefined, "按宿主时钟只隔了 2 小时，不是断档");
+	assert.ok(Math.abs(Date.parse(JSON.parse(feed.cursor()!).at) - host) < HOUR, "cursor 的 at 是宿主时钟");
+});
+
+test("名单到了宿主一次读的上限 500 行：这一拍不请求、不存，报 too-many；499 行照常收", async (t) => {
+	const filler = (n: number) => Array.from({ length: n }, (_, i) => ({ address: `f${i}@filler.test` }));
+	const full = await mailFeed(t);
+	full.data.write("mail", full.entry.components, "senders", [...filler(499), { address: "ann@example.com" }], "使用者口述", "test");
+	full.box.deliver(ann("m-1"));
+	await full.beat();
+	assert.equal(full.messages().length, 0, "500 行时可能有划掉的行没读到，一封都不存");
+	assert.deepEqual(full.google.log, [], "不敲 Google 的门");
+	assert.equal(full.problems.at(-1)?.id, "too-many");
+	assert.match(full.problems.at(-1)!.text, /500 行/);
+	const under = await mailFeed(t);
+	under.data.write("mail", under.entry.components, "senders", [...filler(498), { address: "ann@example.com" }], "使用者口述", "test");
+	under.box.deliver(ann("m-1"));
+	await under.beat();
+	assert.equal(under.messages().length, 1);
+});
+
+test("inbox 写死的 500 行和宿主的 READ_LIMIT 一致：改了一边要改另一边", () => {
+	const runner = readFileSync(join(import.meta.dirname, "../src/modules/feed-runner.ts"), "utf8");
+	const inbox = readFileSync(join(PKG, "feeds/inbox/index.ts"), "utf8");
+	assert.equal(/const READ_LIMIT = (\d+);/.exec(runner)?.[1], /const READ_LIMIT = (\d+);/.exec(inbox)?.[1]);
+});
+
+test("划掉的行地址读不出来：报 removal-unreadable；文字里含发件人地址或域名的都不收，别的照常", async (t) => {
+	const removedAt = new Date(Date.now() - HOUR).toISOString();
+	const cases: [string, string, string, boolean][] = [
+		["U1 写成 example.com", "example.com", "ann@example.com", false],
+		["U2 写成 mailto:", "mailto:ann@example.com", "ann@example.com", false],
+		["U3 末尾多个逗号", "ann@example.com,", "ann@example.com", false],
+		["U4 跟发件人无关", "mailto:ann@example.com", "bob@example.org", true],
+	];
+	const stored: Record<string, boolean> = {};
+	for (const [label, address, from] of cases) {
+		const feed = await mailFeed(t);
+		feed.senders("ann@example.com", "bob@example.org");
+		feed.data.write("mail", feed.entry.components, "senders", [{ address, removedAt }], "使用者口述", "test");
+		feed.box.deliver({ id: "m-1", from: `X <${from}>`, subject: "x", text: "t" });
+		await feed.beat();
+		stored[label] = feed.messages().length > 0;
+		assert.equal(feed.problems.at(-1)?.id, "removal-unreadable", label);
+		assert.match(feed.problems.at(-1)!.text, /划掉/, label);
+	}
+	assert.deepEqual(stored, Object.fromEntries(cases.map(([label, , , expected]) => [label, expected])));
 });
 
 test("invalid_grant：这一拍不前进，cursor 不动，报 auth；恢复后照常存信", async (t) => {

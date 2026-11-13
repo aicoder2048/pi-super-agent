@@ -5,13 +5,14 @@ type SenderRow = { id: string; fields: { address?: unknown; addedAt?: unknown; r
 interface Input {
 	settings: { baseUrl: string; tokenUrl: string };
 	cursor: string | null;
+	now: string;
 	rows: { senders?: SenderRow[] };
 }
 
 /** `at` is when the last beat succeeded, so a host that was off for a day can say so. */
 type Cursor = { historyId: string; at: string };
 
-type Problem = { id: "auth" | "gap" | "no-senders"; text: string };
+type Problem = { id: "auth" | "gap" | "no-senders" | "too-many" | "removal-unreadable"; text: string };
 
 type Reply = { records: MessageRow[]; notices?: { id: string; thread: string; fields: Record<string, string> }[]; cursor?: string; problem?: Problem };
 
@@ -19,7 +20,12 @@ const DAY_MS = 24 * 3_600_000;
 const GMAIL = "/gmail/v1/users/me";
 const AUTH: Problem = { id: "auth", text: "Gmail 授权失效了，在笔记本上重跑 just google-auth read，再把那一行复制到这台机器" };
 const NO_SENDERS: Problem = { id: "no-senders", text: "邮件名单是空的，什么都不收。在对话里说「把 a@example.com 加进邮件名单」" };
+const TOO_MANY: Problem = { id: "too-many", text: "邮件名单到了 500 行，宿主一次只读 500 行，划掉的地址可能读不到，所以先不收信。见 docs/modules/mail.md 的「名单太长」" };
+const REMOVAL_UNREADABLE: Problem = { id: "removal-unreadable", text: "邮件名单里有一行划掉的地址读不出来，像它的发件人一律不收。请在对话里把那一行的地址改成 a@example.com 或 @example.com 这样的写法" };
 const gap = (hours: number): Problem => ({ id: "gap", text: `有 ${hours} 小时没查，一天以前的信没补，请在 Gmail 里看一下` });
+
+/** The host reads at most this many rows of a collection (READ_LIMIT in src/modules/feed-runner.ts); a test keeps the two equal. */
+const READ_LIMIT = 500;
 
 const DOMAIN = /^@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
 const ISO = /^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?(Z|[+-]\d{2}:\d{2})?$/;
@@ -48,26 +54,35 @@ function addedAt(value: unknown, now: number): number {
 	return Number.isNaN(at) || at > now ? -Infinity : at;
 }
 
+/** `unreadable` keeps the text of removal rows whose address does not parse, so a letter that looks like one is held back. */
+type Senders = { list: Map<string, boolean>; unreadable: string[] };
+
 /**
  * Rows carry no write time, so a duplicate row cannot be told from a later re-add by its id. A removal on any row of an
  * address takes it off; only an unmarked row whose `addedAt` is after the latest removal puts it back. The answer per key
  * is listed or removed, and a removed address stays off even when its domain is listed.
  */
-function senderList(rows: readonly SenderRow[], now: number): Map<string, boolean> {
+function senderList(rows: readonly SenderRow[], now: number): Senders {
 	const removed = new Map<string, number>();
 	const added = new Map<string, number>();
+	const unreadable: string[] = [];
 	for (const row of rows) {
 		const key = senderKey(row.fields.address);
+		if (key === undefined && row.fields.removedAt) unreadable.push(String(row.fields.address ?? "").trim().toLowerCase());
 		if (key === undefined) continue;
 		const [into, at] = row.fields.removedAt ? [removed, removedUntil(row.fields.removedAt)] : [added, addedAt(row.fields.addedAt, now)];
 		into.set(key, Math.max(into.get(key) ?? -Infinity, at));
 	}
 	const list = new Map([...removed.keys()].map((key) => [key, false]));
 	for (const [key, at] of added) list.set(key, !removed.has(key) || at > removed.get(key)!);
-	return list;
+	return { list, unreadable };
 }
 
-const listed = (senders: ReadonlyMap<string, boolean>, address: string) => senders.get(address) ?? senders.get(address.slice(address.lastIndexOf("@"))) ?? false;
+function listed({ list, unreadable }: Senders, address: string): boolean {
+	const domain = address.slice(address.lastIndexOf("@"));
+	if (unreadable.some((text) => text.includes(address) || text.includes(domain.slice(1)))) return false;
+	return list.get(address) ?? list.get(domain) ?? false;
+}
 
 function parseCursor(text: string | null): Cursor | undefined {
 	if (text === null) return undefined;
@@ -140,9 +155,11 @@ async function lastDay(gmail: Gmail): Promise<{ ids: string[]; historyId: string
 }
 
 export default async function inbox(input: Input): Promise<Reply> {
-	const now = Date.now();
-	const senders = senderList(input.rows.senders ?? [], now);
-	if (![...senders.values()].includes(true)) return { records: [], problem: NO_SENDERS };
+	const now = Date.parse(input.now);
+	const rows = input.rows.senders ?? [];
+	if (rows.length >= READ_LIMIT) return { records: [], problem: TOO_MANY };
+	const senders = senderList(rows, now);
+	if (![...senders.list.values()].includes(true)) return { records: [], problem: NO_SENDERS };
 	const token = await accessToken(input.settings);
 	if (token === undefined) return { records: [], problem: AUTH };
 	const gmail = gmailClient(input.settings.baseUrl, token);
@@ -163,6 +180,8 @@ export default async function inbox(input: Input): Promise<Reply> {
 		records,
 		notices: records.map((row) => ({ id: row.id, thread: row.threadId || row.id, fields: released(row) })),
 		cursor: JSON.stringify({ historyId: found.historyId, at: new Date(now).toISOString() } satisfies Cursor),
+		// A gap is said once and wins this beat; a removal row still unreadable is said again on the next one.
+		...(senders.unreadable.length > 0 && { problem: REMOVAL_UNREADABLE }),
 		...(away > DAY_MS && { problem: gap(Math.floor(away / 3_600_000)) }),
 	};
 }
