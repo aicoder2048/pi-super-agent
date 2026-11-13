@@ -141,7 +141,7 @@ const answer = (run: Booted, reportId: string, option: number) => say(run, { ans
 const openLetter = (brief: string): Step =>
 	on("Router 为来信开推断任务", /^\[候选触发\][\s\S]*来源 mail\/inbox/, (c) => [{ name: "route", args: { decisions: [{ kind: "open_ticket", basis: "inference", triggerId: triggerOf(c), title: "看信", brief }] } }]);
 const relay = on("Router 转告汇报", /^\[Worker 汇报\]/, (c) => [reply(c, "任务汇报了。")]);
-const asking = (brief: string, calls: ToolCall[], after: (card: string) => ToolCall[] = (c) => [report("ready", `收到：${c.slice(0, 300)}`)]) =>
+const asking = (brief: string, calls: ToolCall[], after: (card: string) => ToolCall[] | string = (c) => [report("ready", `收到：${c.slice(0, 300)}`)]) =>
 	worker(brief, on("助手请批准", /^\[任务说明\]/, () => calls), on("助手收到批准卡片的结果", RESULT_CARD, after));
 const cardsOf = (fake: FakeModel | undefined, brief: string) => fake?.exchanges.filter((e) => e.conversation === brief).flatMap((e) => e.cards) ?? [];
 const toolResultsOf = (fake: FakeModel | undefined, brief: string) => fake?.exchanges.filter((e) => e.conversation === brief).flatMap((e) => e.toolResults) ?? [];
@@ -181,10 +181,10 @@ async function lane(n: number, slug: string, body: () => Promise<Verdict>): Prom
 	console.log(results.at(-1));
 }
 
-async function oneCard(n: number, command: string, o: { telegram?: boolean; imports?: string[]; env?: Record<string, string>; router?: Step[]; repo?: string } = {}) {
+async function oneCard(n: number, command: string, o: { telegram?: boolean; imports?: string[]; env?: Record<string, string>; router?: Step[]; repo?: string; after?: (card: string) => string } = {}) {
 	const brief = `M5 lane ${n}：看这封信`;
 	const w = world();
-	const run = await boot(o.repo ?? HEAD, w, { script: { router: [openLetter(brief), relay, ...(o.router ?? [])], workers: [asking(brief, [askToRun(command, "按信里说的解锁对账单")])] }, telegram: o.telegram, imports: o.imports, env: o.env });
+	const run = await boot(o.repo ?? HEAD, w, { script: { router: [openLetter(brief), relay, ...(o.router ?? [])], workers: [asking(brief, [askToRun(command, "按信里说的解锁对账单")], o.after)] }, telegram: o.telegram, imports: o.imports, env: o.env });
 	letter(w, n);
 	const card = await cardOpen(run);
 	if (!card) {
@@ -253,7 +253,7 @@ async function lanes(): Promise<void> {
 	});
 
 	await lane(4, "expired", async () => {
-		const { w, run, card, brief } = await oneCard(4, "touch m5-late-marker", { imports: [CLOCK_PRELOAD] });
+		const { w, run, card, brief } = await oneCard(4, "touch m5-late-marker", { imports: [CLOCK_PRELOAD], after: () => "好，不运行了。" });
 		try {
 			const p = await page(run);
 			await p.locator("#left .card.ask .run .choices button").first().waitFor({ timeout: 20_000 });
@@ -455,7 +455,6 @@ async function perfHost(repo: string, tickets: number) {
 	const fakes = await import(pathToFileURL(join(repo, "tests/helpers/fakes.ts")).href);
 	const stateDir = mkdtempSync("/tmp/m5p-");
 	const spawner = new fakes.FakeSpawner((worker: any, input: string) => {
-		if (input.startsWith("[任务说明]") && worker.spec.profile === "module-feed") return void Promise.resolve(worker.request("worker.ask_to_run", { command: "true", why: "perf" })).then(() => worker.settle());
 		worker.report({ status: "progress", summary: "在做" });
 		worker.settle();
 	});
@@ -498,7 +497,7 @@ async function perf(): Promise<void> {
 			host.answer(askId, 0);
 			const workdir = join(stateDir, "workers", ticketId);
 			for (;;) {
-				const file = readdirSync(workdir, { withFileTypes: true }).find((e) => e.isFile() && e.name.startsWith("ask-run"));
+				const file = readdirSync(workdir, { withFileTypes: true }).find((e) => e.isFile() && e.name.startsWith("ask_run_"));
 				if (file && statSync(join(workdir, file.name)).size > 0) break;
 				await new Promise((r) => setImmediate(r));
 			}
