@@ -4,10 +4,6 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import test from "node:test";
 
-/**
- * A lint, not the guarantee: code can build `send` at run time and this scan cannot see it.
- * The guarantee is the host port, which issues only `POST .../drafts` (ADR-0022).
- */
 const SEND = /messages\.send|drafts\.send|\/messages\/send|\/drafts\/send|gmail\.send/;
 const ROOT = join(import.meta.dirname, "..");
 const SCANNED = ["src", "docs/modules/examples"];

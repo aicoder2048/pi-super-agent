@@ -62,7 +62,6 @@ export function gmailMessage(letter: Letter, format: "full" | "metadata" = "full
 export class FakeInbox {
 	readonly routes: Record<string, unknown> = {};
 	readonly letters = new Map<string, Letter>();
-	/** Each `drafts.create` as the decoded RFC 2822 text and the thread it names. */
 	readonly drafts: { raw: string; threadId: string }[] = [];
 	#history: { id: number; added: string[] }[] = [];
 	#historyId = 1000;

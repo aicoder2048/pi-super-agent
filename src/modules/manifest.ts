@@ -105,7 +105,7 @@ export interface ToolDescriptor {
 	/** Names of secrets in the host's secrets file. The host sets each as an environment variable of the tool's process. */
 	secrets?: readonly string[];
 	runtime?: Runtime;
-	/** The tool returns what the port needs and the host does the write. Implies `effect: "write"`. */
+	/** The tool returns what the port needs and the host does the write. Requires `effect: "write"`. */
 	port?: ToolPort;
 }
 

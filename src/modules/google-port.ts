@@ -10,7 +10,6 @@ export interface GooglePort {
 	createDraft(raw: string, threadId: string): Promise<string>;
 }
 
-/** What the task gets back once Gmail holds the draft. `to` and `subject` are read from the message Gmail got, not taken from the tool. */
 type DraftMade = { draftId: string; threadId: string; to: string; subject: string; note: string };
 
 const DRAFTS_LINK = "https://mail.google.com/mail/u/0/#drafts";
@@ -18,7 +17,6 @@ const MAX_RAW_BYTES = 1024 * 1024;
 const TIMEOUT_MS = 10_000;
 const AGAIN = "在笔记本上跑 just google-auth draft，再把那一行复制到跑宿主的机器，见 docs/deploy/gmail.md";
 
-/** The header block, unfolded, as lowercase name and value. */
 function headers(raw: string): { name: string; value: string }[] {
 	const block = raw.split(/\r?\n\r?\n/, 1)[0] ?? "";
 	return block
@@ -30,15 +28,10 @@ function headers(raw: string): { name: string; value: string }[] {
 		});
 }
 
-/** Only the UTF-8 base64 encoded words the mail tool writes are decoded; anything else shows as written. */
 const decodeWords = (value: string) => value.replace(/=\?UTF-8\?B\?([A-Za-z0-9+/=]*)\?=\s*/gi, (_, text: string) => Buffer.from(text, "base64").toString("utf8"));
 
 export const headerOf = (raw: string, name: string): string => decodeWords(headers(raw).find((h) => h.name === name)?.value ?? "");
 
-/**
- * Takes a `gmail.createDraft` tool's reply, `{ draft: { raw, threadId }, note? }`, checks it and has the port create
- * the draft. A string is the reason nothing was sent to Gmail.
- */
 export async function writeDraft(port: GooglePort, output: Json): Promise<{ output: DraftMade; receipt: string } | string> {
 	const reply = output as { draft?: { raw?: unknown; threadId?: unknown }; note?: unknown } | null;
 	const raw = reply?.draft?.raw;
@@ -60,7 +53,6 @@ export async function writeDraft(port: GooglePort, output: Json): Promise<{ outp
 
 type GooglePortOptions = { secret: (name: string) => string | undefined; oauthUrl: string | undefined; fixtures: boolean };
 
-/** `oauthUrl` is `PSA_GOOGLE_OAUTH_URL`, set only by tests and lanes to the fake Google server. */
 export function googlePort({ secret, oauthUrl, fixtures }: GooglePortOptions): GooglePort {
 	const token = oauthUrl === undefined ? "https://oauth2.googleapis.com/token" : `${oauthUrl}/token`;
 	const drafts = `${oauthUrl ?? "https://gmail.googleapis.com"}/gmail/v1/users/me/drafts`;

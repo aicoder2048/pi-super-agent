@@ -20,8 +20,7 @@ function parseInput(input: unknown): { messageId: string; body: string } {
 	return { messageId, body };
 }
 
-/** Only letters the inbox feed stored (listed senders) can be answered. */
-function original(messageId: string): Original {
+function storedLetter(messageId: string): Original {
 	const db = join(process.env["PSA_MODULE_DATA"] ?? "", "data.db");
 	const notFound = new Error(`messages 里没有 gmailId 为 ${messageId} 的信`);
 	if (!existsSync(db)) throw notFound;
@@ -53,7 +52,6 @@ function encodedWords(text: string): string {
 
 const replySubject = (subject: string) => (/^re:/i.test(subject) ? subject : `Re: ${subject}`);
 
-/** Reply-To is whatever the sender wrote (header values from the sender are cleaned, so CR and LF cannot start a header such as `Bcc:`). The draft goes to the From address the sender list let in, and a different Reply-To is only pointed out (docs/modules/mail.md). */
 function replyToNote({ replyTo, fromAddress }: Original): string | undefined {
 	const written = clean(replyTo);
 	const address = parseFrom(written)?.address;
@@ -63,7 +61,7 @@ function replyToNote({ replyTo, fromAddress }: Original): string | undefined {
 
 export default function draftReply(input: unknown) {
 	const { messageId, body } = parseInput(input);
-	const letter = original(messageId);
+	const letter = storedLetter(messageId);
 	if (letter.fromAddress === "") throw new Error("这封信的发件人地址是空的，没法回");
 	const reference = clean(letter.messageIdHeader);
 	const text = body.replace(/\r?\n/g, "\r\n");

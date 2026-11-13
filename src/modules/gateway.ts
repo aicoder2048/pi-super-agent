@@ -18,7 +18,6 @@ export interface GatewayPorts {
 	secret(name: string): string | undefined;
 	log(line: string): void;
 	limitMs?: number;
-	/** Without it a tool that names a port fails. */
 	google?: GooglePort;
 }
 
