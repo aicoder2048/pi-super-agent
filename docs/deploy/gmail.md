@@ -75,6 +75,8 @@ rm -f "$t"'
 ssh <旧 Mac> 'cd <旧 Mac 上的仓库> && just google-auth read --check'
 ```
 
+写草稿的 token 用同一条命令复制，只把第一行换成 `grep -E '^GMAIL_DRAFT_REFRESH_TOKEN=' <笔记本的 secretsFile> |`。这一行由旧 Mac 上的宿主读，`mail` 模块的代码拿不到（ADR-0022）。复制后在旧 Mac 上看一次 `just google-auth draft --check`。
+
 复制完，笔记本 `secretsFile` 里 token 那一行默认删掉（计划 Appendix E 第 3 条），笔记本上不跑宿主就用不到它。
 
 ### 给旧 Mac（另一条路：在旧 Mac 上授权，转发端口）
@@ -96,4 +98,12 @@ ssh -N -L 8765:127.0.0.1:8765 <旧 Mac>
 ### 撤销
 
 - 全部撤掉。到 `https://myaccount.google.com/connections` 找到 `PSA mail`，删除它的访问权限，两个 token 一起失效。
-- 撤完把旧 Mac 和笔记本 `secretsFile` 里对应的行删掉，在模块页关掉 `mail`。
+- 只撤写草稿的那个。在跑宿主的机器上用 Google 的撤销接口撤掉它，token 不经过屏幕，打印 `200` 就是撤掉了：
+
+  ```bash
+  grep '^GMAIL_DRAFT_REFRESH_TOKEN=' <secretsFile> | cut -d= -f2- |
+    curl -s -o /dev/null -w '%{http_code}\n' --data-urlencode token@- https://oauth2.googleapis.com/revoke
+  ```
+
+  之后 `draft-reply` 回一句「写草稿的授权失效了」。读邮件的 token 是不是跟着失效，要在时段 2 实测（计划 M7 lane 10），结果记在这里。
+- 撤完把旧 Mac 和笔记本 `secretsFile` 里对应的行删掉。全部撤掉时再在模块页关掉 `mail`。
