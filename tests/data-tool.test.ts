@@ -314,11 +314,14 @@ async function hostWithHealth(t: TestContext, script: (worker: FakeWorker) => Pr
 	const kit: DomainKit = { skillsDir: undefined, prepare: undefined, crew: [], granted: [] };
 	const domains: Domains = { book: () => new Map([["personal-health", { team: "健康顾问团", onRoster: true, digest: w.digest, title: "个人医疗健康" }]]), kitFor: (d) => (d === "personal-health" ? kit : undefined) };
 	const results: unknown[] = [];
+	let browsing: string | undefined;
 	const { host, spawner } = await startHost(
-		(cards) => cards.flatMap((card) => {
+		(cards, _call, toolResults) => toolResults.some((r) => r.includes("recentReports")) ? [{ name: "reply", args: { text: "翻到了：CEA 4.2 ng/mL", cause: browsing } }] : cards.flatMap((card) => {
 			if (card.startsWith("[Worker 汇报]")) return [{ name: "reply", args: { text: `转述：${card.split("\n")[1]}`, cause: ids(card, "tkt") } }];
 			if (!card.startsWith("[对话]")) return [];
 			if (card.includes("刚才")) return [{ name: "reply", args: { text: "记得：CEA 4.2 ng/mL", cause: ids(card, "trg") } }];
+			if (card.includes("翻看")) browsing = ids(card, "trg");
+			if (card.includes("翻看")) return [{ name: "read", args: { id: card.match(/翻看 (tkt_[\w-]+)/)![1] } }];
 			const [route, reply] = openOnConversation(card, "记指标", "personal-health");
 			(route!.args.decisions as Record<string, unknown>[])[0]!.basis = basis;
 			return [route!, reply!];
@@ -361,13 +364,17 @@ test("宿主：只读过 shareable 数据的任务，Telegram 收到完整转述
 	assert.ok(!phone().includes(NOTICE));
 });
 
-async function followUp(host: Awaited<ReturnType<typeof hostWithHealth>>["host"], phone: () => string[]) {
+async function exchange(host: Awaited<ReturnType<typeof hostWithHealth>>["host"], phone: () => string[], said: string, answer: string) {
 	const before = phone().length;
-	await host.say("刚才的 CEA 是多少？");
-	await until(() => host.kernel.conversation().some((l) => l.text === "记得：CEA 4.2 ng/mL"), "幕僚长在对话里回了", 10_000);
+	const answered = () => host.kernel.conversation().filter((l) => l.text === answer).length;
+	const seen = answered();
+	await host.say(said);
+	await until(() => answered() > seen, "幕僚长在对话里回了", 10_000);
 	await until(() => phone().length >= before + 2, "这一问一答到了手机");
 	return phone().slice(before);
 }
+
+const followUp = (host: Awaited<ReturnType<typeof hostWithHealth>>["host"], phone: () => string[]) => exchange(host, phone, "刚才的 CEA 是多少？", "记得：CEA 4.2 ng/mL");
 
 test("宿主：私密任务汇报之后，幕僚长回使用者的话在 Telegram 上也只是一行提示，网页和终端是完整回复", async (t) => {
 	const { host, phone } = await hostWithHealth(t, (worker) => Promise.resolve(worker.request("worker.data", writeCea)));
@@ -379,6 +386,31 @@ test("宿主：私密任务汇报之后，幕僚长回使用者的话在 Telegra
 test("宿主：没碰过私密数据时，幕僚长回使用者的话完整发到 Telegram", async (t) => {
 	const { host, phone } = await hostWithHealth(t, (worker) => Promise.resolve(worker.request("worker.data", { op: "list", collection: "research-updates" })));
 	assert.ok((await followUp(host, phone)).includes("记得：CEA 4.2 ng/mL"));
+});
+
+test("宿主：清屏之后，幕僚长回使用者的话在 Telegram 上又是完整的", async (t) => {
+	const { host, phone } = await hostWithHealth(t, (worker) => Promise.resolve(worker.request("worker.data", writeCea)));
+	host.clearConversation();
+	assert.ok((await followUp(host, phone)).includes("记得：CEA 4.2 ng/mL"), phone().join(" / "));
+	assert.ok(host.kernel.listTickets().some((r) => r.title === "记指标"), "任务还在");
+});
+
+test("宿主：清屏之后又有任务读写私密数据，幕僚长的回复在 Telegram 上回到一行提示", async (t) => {
+	const { host, phone } = await hostWithHealth(t, (worker) => Promise.resolve(worker.request("worker.data", writeCea)));
+	host.clearConversation();
+	await host.say("帮我记一下这次的 CEA");
+	await until(() => phone().filter((m) => m === NOTICE).length === 2, "清屏后的私密任务汇报到了手机", 10_000);
+	const after = await followUp(host, phone);
+	assert.ok(after.includes(NOTICE), after.join(" / "));
+	assert.ok(!after.some((m) => m.includes("4.2")), after.join(" / "));
+});
+
+test("宿主：清屏之后幕僚长用 read 翻看清屏前的私密任务，它的回复在 Telegram 上是一行提示", async (t) => {
+	const { host, phone } = await hostWithHealth(t, (worker) => Promise.resolve(worker.request("worker.data", writeCea)));
+	host.clearConversation();
+	const after = await exchange(host, phone, `翻看 ${host.kernel.listTickets()[0]!.id}`, "翻到了：CEA 4.2 ng/mL");
+	assert.ok(after.includes(NOTICE), after.join(" / "));
+	assert.ok(!after.some((m) => m.includes("4.2")), after.join(" / "));
 });
 
 test("宿主：推断开的任务用 data 写被拒，说明推断任务只读", async (t) => {

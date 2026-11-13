@@ -39,6 +39,7 @@ export function routerTools(kernel: Kernel, afterCommand: () => void): ToolDefin
 		description: "按 id 读取任务（tkt_）、线程（thr_）或触发（trg_）。结果里带相邻对象的 id，可以继续读下一跳。",
 		parameters: Type.Object({ id: Type.String() }),
 		async execute(_id, { id }) {
+			kernel.routerSaw(id);
 			return json(kernel.read(id) ?? { error: `找不到 ${id}` });
 		},
 	});
@@ -289,12 +290,26 @@ export type RouterSession = Awaited<ReturnType<typeof createAgentSession>>["sess
 interface PendingCard {
 	card: string;
 	actionId?: string;
+	/** Tickets and triggers the card carries; counted as seen only once the card reaches a session. */
+	carries?: string[];
+}
+
+function carriedBy(kernel: Kernel, notice: RouterNotice): string[] {
+	if (notice.kind === "notice") return [];
+	if (notice.kind === "candidate") return [notice.triggerId];
+	if (notice.kind === "conversation") {
+		const found = kernel.read(notice.triggerId);
+		return [notice.triggerId, ...(found?.type === "trigger" && found.answers ? [found.answers.ticketId] : [])];
+	}
+	return [notice.ticketId];
 }
 
 const INTERRUPTED = "[通知] 上一轮没有处理完（宿主重启或模型出错），请继续处理上面还没处理完的消息。";
 
 export class Router {
-	readonly session: RouterSession;
+	#session: RouterSession;
+	readonly #open: (fresh: boolean) => Promise<RouterSession>;
+	#startOver = false;
 	readonly #kernel: Kernel;
 	readonly #onError: (error: unknown) => void;
 	readonly #models: RouterModels;
@@ -311,8 +326,9 @@ export class Router {
 	#errorStreak = 0;
 	#retryTimer: NodeJS.Timeout | undefined;
 
-	private constructor(session: RouterSession, options: RouterOptions) {
-		this.session = session;
+	private constructor(session: RouterSession, open: (fresh: boolean) => Promise<RouterSession>, options: RouterOptions) {
+		this.#session = session;
+		this.#open = open;
 		this.#kernel = options.kernel;
 		this.#onError = options.onError ?? ((e) => console.error("[router]", e));
 		this.#models = options.models;
@@ -320,6 +336,16 @@ export class Router {
 		this.#rulesFor = options.rulesFor ?? (() => []);
 		this.#afterCommand = options.afterCommand;
 		this.#preamble = options.preamble;
+		this.#attach(session);
+		if (interrupted(session.messages.at(-1))) this.#push(INTERRUPTED);
+	}
+
+	get session(): RouterSession {
+		return this.#session;
+	}
+
+	#attach(session: RouterSession): void {
+		this.#session = session;
 		this.#sentPreamble = preambleInContext(session.messages);
 		session.subscribe((event) => {
 			if (event.type === "compaction_end") this.#sentPreamble = preambleInContext(session.messages);
@@ -333,7 +359,12 @@ export class Router {
 			}
 			if (event.type === "agent_settled") void this.#settled().catch(this.#onError);
 		});
-		if (interrupted(session.messages.at(-1))) this.#push(INTERRUPTED);
+	}
+
+	/** 清屏: the next turn runs in a new session with none of the old context, once the current turn settles. */
+	startOver(): void {
+		this.#startOver = true;
+		this.#schedule();
 	}
 
 	async #settled(): Promise<void> {
@@ -359,7 +390,7 @@ export class Router {
 		}
 		this.#busy = false;
 		if (last?.role === "custom") this.#buffer.push({ card: "[通知] 上面还有未处理的消息，请处理。" });
-		if (this.#buffer.length) this.#schedule();
+		if (this.#buffer.length || this.#startOver) this.#schedule();
 	}
 
 	#acknowledgeDelivered(): void {
@@ -385,20 +416,21 @@ export class Router {
 			steeringMode: "all",
 			followUpMode: "all",
 		});
-		const sessionManager = options.sessionDir
-			? SessionManager.continueRecent(options.cwd, options.sessionDir)
-			: SessionManager.inMemory(options.cwd);
-		const { session } = await createAgentSession({
-			cwd: options.cwd,
-			model: options.models.resolve(options.models.selector.current().model),
-			modelRuntime: options.modelRuntime,
-			resourceLoader: emptyResources(routerSystemPrompt(options.kernel.config.replyMaxChars)),
-			tools: [...ROUTER_TOOL_NAMES],
-			customTools: routerTools(options.kernel, options.afterCommand),
-			sessionManager,
-			settingsManager,
-		});
-		return new Router(session, options);
+		const open = async (fresh: boolean) => {
+			const { session } = await createAgentSession({
+				cwd: options.cwd,
+				model: options.models.resolve(options.models.selector.current().model),
+				modelRuntime: options.modelRuntime,
+				resourceLoader: emptyResources(routerSystemPrompt(options.kernel.config.replyMaxChars)),
+				tools: [...ROUTER_TOOL_NAMES],
+				customTools: routerTools(options.kernel, options.afterCommand),
+				sessionManager: openSessionManager(options, fresh),
+				settingsManager,
+			});
+			if (session.messages.length === 0) options.kernel.routerStartedFresh();
+			return session;
+		};
+		return new Router(await open(false), open, options);
 	}
 
 	// Resolves only after a Router turn that saw the card finishes cleanly. The session file is not
@@ -407,12 +439,12 @@ export class Router {
 		const card = noticeCard(this.#kernel, notice, this.#rulesFor, actionId);
 		return new Promise((resolve) => {
 			this.#acks.set(actionId, resolve);
-			this.#push(card, actionId);
+			this.#push(card, actionId, carriedBy(this.#kernel, notice));
 		});
 	}
 
-	#push(card: string, actionId?: string): void {
-		this.#buffer.push({ card, actionId });
+	#push(card: string, actionId?: string, carries?: string[]): void {
+		this.#buffer.push({ card, actionId, carries });
 		this.#schedule();
 	}
 
@@ -426,6 +458,22 @@ export class Router {
 	// first is starting gets appended after the run, so idle batches go out as one triggering message.
 	#flush(): void {
 		this.#flushScheduled = false;
+		if (this.#startOver && !this.#busy && !this.session.isStreaming) {
+			this.#startOver = false;
+			this.#busy = true;
+			const old = this.session;
+			void this.#open(true)
+				.then((fresh) => {
+					this.#attach(fresh);
+					old.dispose();
+				})
+				.catch(this.#onError)
+				.finally(() => {
+					this.#busy = false;
+					this.#flush();
+				});
+			return;
+		}
 		if (this.#buffer.length === 0) return;
 		if (!this.#busy && !this.session.isStreaming) {
 			const choice = this.#models.selector.forTurn();
@@ -447,6 +495,7 @@ export class Router {
 			const preamble = block === "" ? undefined : hashOf(block);
 			const fresh = preamble !== undefined && preamble !== this.#sentPreamble;
 			if (fresh) this.#sentPreamble = preamble;
+			for (const id of items.flatMap((p) => p.carries ?? [])) this.#kernel.routerSaw(id);
 			return this.session
 				.sendCustomMessage(
 					{
@@ -478,6 +527,16 @@ export class Router {
 		clearTimeout(this.#retryTimer);
 		this.session.dispose();
 	}
+}
+
+/** A session from before the latest 清屏 is never continued, so a restart cannot bring the old context back. */
+function openSessionManager(options: RouterOptions, fresh: boolean): SessionManager {
+	if (!options.sessionDir) return SessionManager.inMemory(options.cwd);
+	if (fresh) return SessionManager.create(options.cwd, options.sessionDir);
+	const recent = SessionManager.continueRecent(options.cwd, options.sessionDir);
+	const clearedAt = options.kernel.lastClearAt();
+	const startedAt = Date.parse(recent.getHeader()?.timestamp ?? "");
+	return clearedAt !== null && startedAt < clearedAt ? SessionManager.create(options.cwd, options.sessionDir) : recent;
 }
 
 const hashOf = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);

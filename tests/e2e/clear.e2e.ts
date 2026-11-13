@@ -75,13 +75,13 @@ test("清屏：两个页面都打开，一边点清屏两边都清空并出现�
 		{ fixedPort: true },
 	));
 
-test("清屏后问「刚才那件事」，幕僚长这一轮的模型请求里仍有清屏前那句话", (t) =>
+test("清屏后问「刚才那件事」，幕僚长这一轮的模型请求里没有清屏前那句话", (t) =>
 	story(
 		t,
 		{
 			router: [
 				on("Router 回答查天气", /^\[对话\][\s\S]*查天气/, (c) => [reply(c, "好的，去查了。")]),
-				on("Router 回答刚才那件事", /^\[对话\][\s\S]*刚才那件事呢/, (c) => [reply(c, "你刚才问的是天气。")]),
+				on("Router 回答刚才那件事", /^\[对话\][\s\S]*刚才那件事呢/, (c) => [reply(c, "清屏之前的话我不记得了。")]),
 			],
 		},
 		async ({ step, fake }) => {
@@ -95,13 +95,13 @@ test("清屏后问「刚才那件事」，幕僚长这一轮的模型请求里�
 			});
 			await step("问「刚才那件事呢」，幕僚长回答", async (page) => {
 				await sayInPage(page, "刚才那件事呢");
-				await page.locator(".line.router .bubble", { hasText: "你刚才问的是天气。" }).waitFor();
+				await page.locator(".line.router .bubble", { hasText: "清屏之前的话我不记得了。" }).waitFor();
 			});
-			await step("这一轮的模型请求里仍有清屏前那句话", async () => {
+			await step("这一轮的模型请求里没有清屏前那句话", async () => {
 				const asked = fake.exchanges.find((e) => e.steps.includes("Router 回答刚才那件事"));
 				assert.ok(asked, "幕僚长收到了清屏后的那句话");
 				assert.ok(!asked.cards.some((card) => card.includes("查天气")), "清屏后那张卡片本身不带清屏前的话");
-				assert.ok(asked.userTexts.some((text) => text.includes("查天气")), `请求里的使用者消息：${JSON.stringify(asked.userTexts)}`);
+				assert.ok(!asked.userTexts.some((text) => text.includes("查天气")), `请求里的使用者消息：${JSON.stringify(asked.userTexts)}`);
 			});
 		},
 	));

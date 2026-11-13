@@ -2264,13 +2264,18 @@ test("宿主行：不能引用提醒和收据，和不认识的行一样返回 n
 	assert.deepEqual(quoteCounts(s), before);
 });
 
-test("幕僚长可能读过的私密数据：最新一个读过私密数据的任务，或私密 feed 来的触发；都没有时是 null", () => {
+test("幕僚长会话里的私密数据：交给它的私密任务或私密 feed 触发里最新的一个；换新会话后是 null", () => {
 	const s = setup({ domains: DOMAINS });
-	s.open("request");
+	const plain = s.open("request");
+	s.kernel.routerSaw(plain);
 	assert.equal(s.kernel.lastPrivate(), null);
-	s.kernel.touchPrivate(s.open("request", { title: "记 CEA", domain: "mail" }));
+	const health = s.open("request", { title: "记 CEA", domain: "mail" });
+	s.kernel.touchPrivate(health);
+	s.kernel.routerSaw(health);
 	assert.deepEqual(s.kernel.lastPrivate(), { module: "mail" });
 	s.clock.t += 1000;
-	s.trigger({ source: "personal-health/pull", private: true });
+	s.kernel.routerSaw(s.trigger({ source: "personal-health/pull", private: true }).triggerId);
 	assert.deepEqual(s.kernel.lastPrivate(), { module: "personal-health" });
+	s.kernel.routerStartedFresh();
+	assert.equal(s.kernel.lastPrivate(), null);
 });

@@ -1,6 +1,6 @@
 /** node --import ./src/pi-runtime.mjs docs/modules/evidence/private-reply-live.ts [outDir] */
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -35,6 +35,7 @@ async function within(limitMs: number, ok: () => boolean): Promise<boolean> {
 }
 
 const BRIEF = "记 CEA";
+const AGAIN = "再记 CEA";
 const answers = (asked: RegExp, text: string) => on(`回 ${text}`, asked, (c: string) => [reply(c, text)]);
 const tg = await FakeTelegram.start();
 const fake = await FakeModel.start({
@@ -44,16 +45,20 @@ const fake = await FakeModel.start({
 			const open = openTicket(c, BRIEF);
 			return [{ ...open, args: { decisions: (open.args.decisions as object[]).map((d) => ({ ...d, domain: "personal-health" })) } }, reply(c, "好，记 CEA")];
 		}),
-		on("转述", /^\[Worker 汇报\]/, (c: string) => [reply(c, `转述：${c.split("\n")[1] ?? ""}`)]),
-		answers(/^\[对话\][\s\S]*使用者：刚才的 CEA 是多少/, "记得：CEA 4.2 ng/mL"),
+		on("再开任务", /^\[对话\][\s\S]*使用者：再记 CEA/, (c: string) => {
+			const open = openTicket(c, AGAIN);
+			return [{ ...open, args: { decisions: (open.args.decisions as object[]).map((d) => ({ ...d, domain: "personal-health" })) } }, reply(c, "好，再记 CEA")];
+		}),
+		...[1, 2].map(() => on("转述", /^\[Worker 汇报\]/, (c: string) => [reply(c, `转述：${c.split("\n")[1] ?? ""}`)])),
+		...[1, 2, 3].map(() => answers(/^\[对话\][\s\S]*使用者：刚才的 CEA 是多少/, "记得：CEA 4.2 ng/mL")),
 	],
-	workers: [
+	workers: [BRIEF, AGAIN].map((brief) =>
 		worker(
-			BRIEF,
+			brief,
 			on("写", /^\[任务说明\]/, () => [{ name: "data", args: { op: "write", collection: "lab-results", rows: [{ item: "CEA", value: 4.2, unit: "ng/mL", reference: "<5", takenAt: "2026-10-01", lab: "协和" }], from: "使用者口述" } }]),
 			on("汇报", /^\[模块数据\]/, () => [report("ready", "CEA 4.2 ng/mL，比参考上限低")]),
 		),
-	],
+	),
 });
 writeFileSync(join(state, "secrets.env"), `TELEGRAM_BOT_TOKEN=${FAKE_BOT_TOKEN}\n`);
 const host = await startHost({
@@ -96,6 +101,42 @@ try {
 		"chat-reply-after-private",
 		asked() >= 0 && phone().slice(asked() + 1).join("\n") === NOTICE && !phone().some((m) => m.includes("4.2")) && said().includes("记得：CEA 4.2 ng/mL"),
 		`tickets touched_private_at: ${JSON.stringify(touched)}\nTelegram recorder, whole chat:\n${phone().join("\n")}\nRouter replies the web page and TUI show:\n${said().join("\n")}`,
+	);
+
+	const sessionDir = join(state, "sessions", "router");
+	const sessions = () => (existsSync(sessionDir) ? readdirSync(sessionDir).filter((f) => f.endsWith(".jsonl")).sort() : []);
+	const before = sessions();
+	const cleared = await fetch(new URL(`/clear${host.url.search}`, host.url), { method: "POST", headers: { "content-type": "application/json", origin: host.url.origin }, body: "{}" });
+	const mark = phone().length;
+	just(["say", "刚才的 CEA 是多少？"]);
+	await within(30_000, () => phone().slice(mark).includes("记得：CEA 4.2 ng/mL"));
+	await within(10_000, () => sessions().length > before.length);
+	const fresh = sessions().filter((f) => !before.includes(f));
+	const freshText = fresh.map((f) => readFileSync(join(sessionDir, f), "utf8")).join("\n");
+	check(
+		"clear-restores-full-reply",
+		cleared.status === 204 && phone().slice(mark).includes("记得：CEA 4.2 ng/mL"),
+		`POST /clear: ${cleared.status}\nTelegram recorder after the clear:\n${phone().slice(mark).join("\n")}`,
+	);
+	check(
+		"clear-fresh-router-session",
+		fresh.length === 1 && !freshText.includes("早上好") && !freshText.includes("转述：CEA") && freshText.includes("刚才的 CEA 是多少"),
+		`session files before: ${JSON.stringify(before)}\nnew after the clear: ${JSON.stringify(fresh)}\nnew file holds the old turns 早上好 / 转述：CEA: ${freshText.includes("早上好")} / ${freshText.includes("转述：CEA")}`,
+	);
+
+	const again = phone().length;
+	just(["say", "再记 CEA"]);
+	await within(60_000, () => said().filter((t) => t.startsWith("转述：CEA 4.2")).length === 2);
+	await within(10_000, () => phone().slice(again).includes(NOTICE));
+	just(["say", "刚才的 CEA 是多少？"]);
+	await within(30_000, () => said().filter((t) => t === "记得：CEA 4.2 ng/mL").length === 3);
+	const asked2 = () => phone().findLastIndex((m) => m.includes("刚才的 CEA 是多少"));
+	await within(20_000, () => asked2() >= again && phone().length > asked2() + 1);
+	await sleep(1500);
+	check(
+		"private-after-clear",
+		asked2() >= again && phone().slice(asked2() + 1).join("\n") === NOTICE && !phone().slice(again).some((m) => m.includes("4.2")),
+		`Telegram recorder after the second private task:\n${phone().slice(again).join("\n")}`,
 	);
 } finally {
 	cpSync(join(state, "host.log"), join(outDir, "host.log"));

@@ -958,7 +958,7 @@ export class Kernel {
 
 	/** The latest 清屏 and the newest `limit` lines hidden so far, or null if there was never an effective 清屏. */
 	cleared(limit = 50): Cleared | null {
-		const at = this.#lastClearAt();
+		const at = this.lastClearAt();
 		return at === null ? null : { at, lines: this.#lines(HIDDEN, limit) };
 	}
 
@@ -968,7 +968,7 @@ export class Kernel {
 	 */
 	clearConversation(limit = 50): Cleared | null {
 		return this.#tx(() => {
-			const last = this.#lastClearAt();
+			const last = this.lastClearAt();
 			const at = last === null ? this.#now() : Math.max(this.#now(), last + 1);
 			const { changes } = this.#run(
 				`INSERT OR IGNORE INTO conversation_hidden (line_id, hidden_at) SELECT id, ? FROM (${LINES}) WHERE shown`,
@@ -979,7 +979,7 @@ export class Kernel {
 		});
 	}
 
-	#lastClearAt(): number | null {
+	lastClearAt(): number | null {
 		return this.#get("SELECT MAX(hidden_at) AS at FROM conversation_hidden")?.at ?? null;
 	}
 
@@ -1059,15 +1059,23 @@ export class Kernel {
 		return this.#get("SELECT 1 FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) !== undefined;
 	}
 
-	/** Private feed triggers count: they reach the Router as a card even when ignored. */
+	/** Records that the Router's session was handed `id` (a card or a read), when that ticket touched private data or that trigger came from a private feed. */
+	routerSaw(id: string): void {
+		const ticket = id.startsWith("tkt_") ? this.#get("SELECT domain FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", id) : undefined;
+		const trigger = id.startsWith("trg_") ? this.#get("SELECT source FROM triggers WHERE id = ? AND private = 1", id) : undefined;
+		if (ticket) this.#run("INSERT INTO router_private (at, module) VALUES (?, ?)", this.#now(), ticket.domain);
+		if (trigger) this.#run("INSERT INTO router_private (at, module) VALUES (?, ?)", this.#now(), ruleNamespace(trigger.source));
+	}
+
+	/** The newest private data the current Router session holds, or null when it holds none. */
 	lastPrivate(): { module: string | null } | null {
-		const row = this.#get(
-			`SELECT 'ticket' AS kind, domain AS ref, touched_private_at AS at FROM tickets WHERE touched_private_at IS NOT NULL
-			 UNION ALL SELECT 'trigger', source, received_at FROM triggers WHERE private = 1
-			 ORDER BY at DESC LIMIT 1`,
-		);
-		if (!row) return null;
-		return { module: row.kind === "ticket" ? row.ref : ruleNamespace(row.ref) };
+		const row = this.#get("SELECT module FROM router_private ORDER BY at DESC, rowid DESC LIMIT 1");
+		return row ? { module: row.module } : null;
+	}
+
+	/** The Router starts a session that has seen nothing. */
+	routerStartedFresh(): void {
+		this.#run("DELETE FROM router_private");
 	}
 
 	heardOtherThanUser(ticketId: string): "trigger" | "note" | "web" | undefined {

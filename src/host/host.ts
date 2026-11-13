@@ -39,6 +39,8 @@ import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
 	waitForIdle(): Promise<void>;
+	/** 清屏 also gives the Router a new session that has none of the old context. */
+	startOver(): void;
 	dispose(): void;
 }
 
@@ -381,7 +383,9 @@ export class Host {
 
 	clearConversation(): void {
 		const cleared = this.kernel.clearConversation(CONVERSATION_LINES);
-		if (cleared) this.#broadcast({ type: "cleared", conversation: this.kernel.conversation(CONVERSATION_LINES), cleared });
+		if (!cleared) return;
+		this.router.startOver();
+		this.#broadcast({ type: "cleared", conversation: this.kernel.conversation(CONVERSATION_LINES), cleared });
 	}
 
 	#boardState(): BoardState {

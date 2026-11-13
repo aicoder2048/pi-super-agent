@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Host } from "../src/host/host.ts";
+import type { Router } from "../src/host/router.ts";
 import { defaultWorkerModels, FakeSpawner, fauxRouter, openOnConversation, tempStateDir, until, type Brain } from "./helpers/fakes.ts";
 
 const opensTickets: Brain = (cards) => cards.flatMap((c) => (c.startsWith("[对话]") ? openOnConversation(c) : []));
@@ -51,4 +52,27 @@ test("Router 一轮以普通模型错误结束时，退避后重试，直到处�
 	t.after(() => host.stop());
 	host.say("整理下载目录");
 	await until(() => titles(host).length === 1, "错误之后重试并处理完", 5000);
+});
+
+test("清屏换一个新的 Router 会话：会话 id 变了，新会话里没有清屏前的话，宿主重启后也不接回旧会话", async (t) => {
+	const stateDir = tempStateDir();
+	const first = await hostWith(stateDir, opensTickets);
+	t.after(() => first.host.stop());
+	first.host.say("记一下旧的话");
+	await until(() => titles(first.host).length === 1, "第一句处理完");
+	const session = () => (first.host.router as Router).session;
+	const oldId = session().sessionManager.getSessionId();
+	const remembers = (s: Router["session"]) => JSON.stringify(s.messages).includes("记一下旧的话");
+	assert.ok(remembers(session()), "清屏前会话里有这句话");
+	first.host.clearConversation();
+	await until(() => session().sessionManager.getSessionId() !== oldId, "清屏后换了会话");
+	assert.ok(!remembers(session()), "新会话里没有清屏前的话");
+	await first.host.stop();
+
+	const second = await hostWith(stateDir, opensTickets);
+	t.after(() => second.host.stop());
+	const restarted = (second.host.router as Router).session;
+	assert.notEqual(restarted.sessionManager.getSessionId(), oldId);
+	assert.ok(!remembers(restarted), "重启后没有接回清屏前的会话");
+	assert.deepEqual(titles(second.host), ["记一下旧的话"], "任务还在");
 });

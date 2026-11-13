@@ -292,6 +292,12 @@ export function openStore(path: string): DatabaseSync {
 		);
 	}
 	if (!ticketColumns.includes("tokens_cached")) db.exec("ALTER TABLE tickets ADD COLUMN tokens_cached INTEGER NOT NULL DEFAULT 0");
+	if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'router_private'").get()) {
+		// Seeded from what the Router may already have read: a session from before this table keeps everything it saw.
+		db.exec(`CREATE TABLE router_private (at INTEGER NOT NULL, module TEXT);
+			INSERT INTO router_private SELECT touched_private_at, domain FROM tickets WHERE touched_private_at IS NOT NULL;
+			INSERT INTO router_private SELECT received_at, substr(source, 1, instr(source || '/', '/') - 1) FROM triggers WHERE private = 1;`);
+	}
 	const retitle = db.prepare("UPDATE tickets SET title = ? WHERE id = ?");
 	for (const { id, title } of db.prepare("SELECT id, title FROM tickets").all() as { id: string; title: string }[]) {
 		if (oneLine(title) !== title) retitle.run(oneLine(title), id);
