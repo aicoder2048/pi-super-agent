@@ -4,4 +4,4 @@
 
 - `tools/tax-bracket/` 把税率表放在一个数据文件 `rates-2025.json` 里，代码读它。表里的数字是编的，只为演示，不是真实税率。
 - `feeds/brokerage-statements/` 的代码自己联网，去一个虚构的券商接口取交易记录。宿主没有这家券商的连接器，也不需要有。
-- 取回来的交易记录是 `private` 数据。密钥 `EXAMPLE_BROKER_TOKEN` 只写名字，值在宿主的密钥文件里。
+- 取回来的交易记录是 `private` 数据。密钥 `PERSONAL_TAX__BROKER_TOKEN` 只写名字，值在宿主的密钥文件里。

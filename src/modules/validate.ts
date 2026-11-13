@@ -3,9 +3,10 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { EVERY, everyMs } from "./connectors/timer.ts";
-import { feedInput, intoOf, NOTHING_HELD, parseCollected } from "./feed-runner.ts";
+import { feedInput, intoOf, nothingHeld, parseCollected } from "./feed-runner.ts";
 import { linkVenvs, lockOf, PY_DIR, venvInstalled } from "./files.ts";
-import { fixtureSecrets, runModuleCode, runModuleCodeAsync, secretsFor, type CodeReply, type CodeSite, type RunOptions, type SecretLookup, type Secrets } from "./run-code.ts";
+import { fixtureSecrets, runModuleCode, runModuleCodeAsync, type CodeReply, type CodeSite, type RunOptions, type Secrets } from "./run-code.ts";
+import { secretRefusal } from "./secret-owners.ts";
 import { CONNECTORS, DATA_CLASSES, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS } from "./manifest.ts";
 import { LINE_MAX_LINES, placeholders } from "./release.ts";
 import type {
@@ -13,6 +14,10 @@ import type {
 } from "./manifest.ts";
 
 const NAME = /^[a-z0-9][a-z0-9-]*$/;
+/** Single hyphens only, so no module's secret prefix (`prefixOf`) starts another's. */
+const MODULE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const moduleNameProblem = (name: string): string | undefined =>
+	MODULE_NAME.test(name) ? undefined : `"${name}" is not a usable module name (lowercase letters and digits, joined by single hyphens)`;
 const FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
 const MAX_LIMIT_MS = 600_000;
@@ -152,8 +157,9 @@ function readManifest(report: Report, root: string, folder: string): ModuleManif
 	if (raw === undefined) return undefined;
 	if (raw["schema"] !== 1) report(where, `"schema" must be 1: that key is what marks a folder as a package of this layout`);
 	const name = typeof raw["name"] === "string" ? raw["name"] : "";
+	const nameProblem = moduleNameProblem(name);
 	if (name !== folder) report(where, `"name" is "${name}" but the folder is "${folder}"`);
-	else if (!NAME.test(name)) report(where, `"${name}" is not a usable module name (lowercase letters, digits and hyphens)`);
+	else if (nameProblem) report(where, nameProblem);
 	else if (RESERVED_NAMES.includes(name)) report(where, `"${name}" is reserved: "user" names your own rules and "conversation" names the chat source`);
 	const version = typeof raw["version"] === "string" ? raw["version"] : "";
 	if (!/^\d+\.\d+\.\d+$/.test(version)) report(where, `"version" must look like 1.2.3`);
@@ -231,6 +237,16 @@ function readCollection(report: Report, root: string, name: string): Component |
 			if (zone !== undefined) {
 				if (typeof zone !== "string" || !isTimeZone(zone)) report(where, `watch.zone ${JSON.stringify(zone)} is not a time zone name, e.g. "America/New_York"`);
 				else collection.watch.zone = zone;
+			}
+			const prevClose = watch["prevClose"];
+			if (prevClose !== undefined) {
+				if (typeof prevClose !== "string" || !Object.hasOwn(described, prevClose) || described[prevClose]!.type !== "number") report(where, `watch.prevClose must name a number field`);
+				else collection.watch.prevClose = prevClose;
+			}
+			const label = watch["label"];
+			if (label !== undefined) {
+				if (typeof label !== "string" || label.trim() === "" || label.length > 40) report(where, `watch.label must be a short non-empty string`);
+				else collection.watch.label = label;
 			}
 		}
 	}
@@ -426,6 +442,12 @@ function readRules(report: Report, root: string, module: string, feeds: Readonly
 	return rules;
 }
 
+const namedSecrets = (item: Component): { where: string; secret: string }[] => {
+	if (item.kind === "tools") return (item.tool.secrets ?? []).map((secret) => ({ where: `tools/${item.name}/tool.json`, secret }));
+	if (item.kind === "feeds") return (item.feed.secrets ?? []).map((secret) => ({ where: `feeds/${item.name}/feed.json`, secret }));
+	return [];
+};
+
 /** Every reference from one component to another resolves. */
 function crossCheck(report: Report, manifest: ModuleManifest, components: readonly Component[]): void {
 	const has = (kind: Component["kind"], name: string | undefined): boolean => components.some((item) => item.kind === kind && item.name === name);
@@ -466,13 +488,13 @@ function same(actual: Json | undefined, expected: Json, tolerance: number): bool
 
 type CaseRun = { component: string; entry: string; secrets: Secrets; input: unknown; options: RunOptions; problem(reply: CodeReply): Problem | undefined };
 
-function toolRun(component: Extract<Component, { kind: "tools" }>, item: ToolCase, index: number, secret: SecretLookup): CaseRun {
+function toolRun(component: Extract<Component, { kind: "tools" }>, item: ToolCase, index: number): CaseRun {
 	const where = `tools/${component.name}/cases.json`;
 	const label = `test case ${index + 1} "${item.name}"`;
 	return {
 		component: join("tools", component.name),
 		entry: RUNTIMES[component.tool.runtime ?? "node"],
-		secrets: secretsFor(component.tool.secrets ?? [], secret),
+		secrets: fixtureSecrets(component.tool.secrets ?? []),
 		input: item.input,
 		options: {},
 		problem: (reply) => {
@@ -489,7 +511,7 @@ function feedRun({ name, feed }: Extract<Component, { kind: "feeds" }>, componen
 		component: join("feeds", name),
 		entry: feed.handler!,
 		secrets: fixtureSecrets(feed.secrets ?? []),
-		input: feedInput(feed, [], NOTHING_HELD, fixture),
+		input: feedInput(feed, [], nothingHeld(Date.now()), fixture),
 		options: { responses: fixture.responses },
 		problem: (reply) => {
 			if (!reply.ok) return { where, reason: `the handler threw on this fixture: ${reply.note}` };
@@ -499,15 +521,15 @@ function feedRun({ name, feed }: Extract<Component, { kind: "feeds" }>, componen
 	};
 }
 
-function caseRuns(components: readonly Component[], secret: SecretLookup): CaseRun[] {
+function caseRuns(components: readonly Component[]): CaseRun[] {
 	return components.flatMap((component) => {
-		if (component.kind === "tools") return component.cases.map((item, index) => toolRun(component, item, index, secret));
+		if (component.kind === "tools") return component.cases.map((item, index) => toolRun(component, item, index));
 		if (component.kind === "feeds" && component.feed.handler !== undefined) return component.fixtures.map((fixture) => feedRun(component, components, fixture));
 		return [];
 	});
 }
 
-export const hasCases = (scan: PackageScan): boolean => caseRuns(scan.components, () => undefined).length > 0;
+export const hasCases = (scan: PackageScan): boolean => caseRuns(scan.components).length > 0;
 
 /** A check never shows module code the module's real data: every case of one check shares a data dir that is deleted after the last. */
 function scratchData(packageDir: string, module: string, realDataDir: string | undefined): { dir: string; drop(): void; explain(problem: Problem): Problem } {
@@ -525,9 +547,9 @@ function scratchData(packageDir: string, module: string, realDataDir: string | u
 const siteOf = (packageDir: string, run: CaseRun, dataDir: string): CodeSite => ({ packageDir, component: run.component, dataDir });
 
 /** For a package scanned with `runCases: false`. `realDataDir` is the module's instance data, whose venvs the cases may use. */
-export async function runCasesAsync(scan: PackageScan, secret: SecretLookup, realDataDir?: string): Promise<Problem[]> {
+export async function runCasesAsync(scan: PackageScan, realDataDir?: string): Promise<Problem[]> {
 	const problems: Problem[] = [];
-	const runs = caseRuns(scan.components, secret);
+	const runs = caseRuns(scan.components);
 	if (runs.length === 0) return problems;
 	const data = scratchData(scan.dir, scan.manifest.name, realDataDir);
 	try {
@@ -590,9 +612,9 @@ export function scanPackage(packageDir: string, options: ScanOptions = {}): Scan
 }
 
 /** `folder`: the module name the folder stands for. A copy in the module store sits in a folder named by its digest. */
-type ScanOptions = { previous?: string | undefined; runCases?: boolean; folder?: string; secret?: SecretLookup; dataDirOf?: (module: string) => string };
+type ScanOptions = { previous?: string | undefined; runCases?: boolean; folder?: string; dataDirOf?: (module: string) => string };
 
-function scanReadable(packageDir: string, { previous, runCases = true, folder, secret = (name) => process.env[name], dataDirOf }: ScanOptions): ScanResult {
+function scanReadable(packageDir: string, { previous, runCases = true, folder, dataDirOf }: ScanOptions): ScanResult {
 	const root = resolve(packageDir);
 	const problems: Problem[] = [];
 	const report: Report = (where, reason) => void problems.push({ where, reason });
@@ -603,7 +625,11 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, s
 	const feeds = new Set(components.filter((item) => item.kind === "feeds").map((item) => item.name as string));
 	const rules = readRules(report, root, manifest.name, feeds);
 	crossCheck(report, manifest, components);
-	const runs = runCases && problems.length === 0 ? caseRuns(components, secret) : [];
+	for (const { where, secret } of components.flatMap(namedSecrets)) {
+		const refusal = secretRefusal(manifest.name, secret);
+		if (refusal !== undefined) report(where, refusal);
+	}
+	const runs = runCases && problems.length === 0 ? caseRuns(components) : [];
 	if (runs.length > 0) {
 		const data = scratchData(root, manifest.name, dataDirOf?.(manifest.name));
 		try {
@@ -628,8 +654,7 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, s
 
 export const problemLine = (problem: Problem): string => `${problem.where}: ${problem.reason}`;
 
-export const secretNames = (components: readonly Component[]): string[] =>
-	[...new Set(components.flatMap((item) => (item.kind === "tools" ? item.tool.secrets : item.kind === "feeds" ? item.feed.secrets : undefined) ?? []))].sort();
+export const secretNames = (components: readonly Component[]): string[] => [...new Set(components.flatMap(namedSecrets).map((named) => named.secret))].sort();
 
 export function summary(scan: Extract<ScanResult, { ok: true }>["scan"]): string {
 	const count = (kind: Component["kind"]): number => scan.components.filter((item) => item.kind === kind).length;

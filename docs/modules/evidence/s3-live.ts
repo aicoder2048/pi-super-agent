@@ -97,7 +97,7 @@ const tool = (name: string, input: unknown, state: string, packageDir = pkgOf(st
 function realKey(): string {
 	const keyState = process.env["PSA_KEY_STATE"] ?? join(homedir(), ".pi-super-agent");
 	const config = JSON.parse(readFileSync(join(keyState, "config.json"), "utf8")) as { secretsFile?: string };
-	const key = config.secretsFile === undefined ? undefined : secretLookup(resolve(keyState, config.secretsFile), {})("POLYGON_API_KEY");
+	const key = config.secretsFile === undefined ? undefined : secretLookup(resolve(keyState, config.secretsFile))("POLYGON_API_KEY");
 	if (!key) throw new Error("POLYGON_API_KEY is not in the host's secrets file");
 	return key;
 }

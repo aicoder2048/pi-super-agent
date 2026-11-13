@@ -5,7 +5,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { ConfigError } from "../src/config-error.ts";
-import { Modules, moduleNameProblem, parseRules } from "../src/modules.ts";
+import { Modules, parseRules } from "../src/modules.ts";
+import { moduleNameProblem } from "../src/modules/validate.ts";
 import { servedAsHost } from "./helpers/fakes.ts";
 
 const repoModules = fileURLToPath(new URL("../modules", import.meta.url));
@@ -109,13 +110,14 @@ test("模块开关：found 列出全部模块和启用原因", () => {
 	]);
 });
 
-test("模块名和对象原型上的属性同名时（constructor、toString），没写开关就按清单默认", () => {
-	const root = moduleRoot({ constructor: { defaultEnabled: false }, toString: {} });
-	const modules = Modules.load([root], { switches: switches({}) });
-	assert.deepEqual(modules.found.map((m) => [m.name, m.state]), [
-		["constructor", { enabled: false, by: "manifest" }],
-		["toString", { enabled: true, by: "default" }],
-	]);
+test("模块名和对象原型上的属性同名时（constructor），没写开关就按清单默认", () => {
+	for (const [manifest, state] of [
+		[{ defaultEnabled: false }, { enabled: false, by: "manifest" }],
+		[{}, { enabled: true, by: "default" }],
+	] as const) {
+		const modules = Modules.load([moduleRoot({ constructor: manifest })], { switches: switches({}) });
+		assert.deepEqual(modules.found.map((m) => [m.name, m.state]), [["constructor", state]]);
+	}
 });
 
 test("toy-market 默认关闭，开关打开后它的规则和过滤才生效", () => {
@@ -138,9 +140,9 @@ test("module.json 的 defaultEnabled 不是 true 或 false 时报 ConfigError", 
 	assert.throws(() => Modules.load([root]), (e: Error) => e.name === "ConfigError" && /module\.json.*defaultEnabled/.test(e.message));
 });
 
-test("模块名只能用字母、数字、- 和 _，并以字母或数字开头", () => {
-	assert.equal(moduleNameProblem("us-market_2"), undefined);
-	for (const bad of ["", "-x", "../evil", "a/b", ".hidden", "中文", "a b"]) assert.ok(moduleNameProblem(bad), bad);
+test("模块名只能用小写字母和数字，用单个 - 连接", () => {
+	assert.equal(moduleNameProblem("us-market2"), undefined);
+	for (const bad of ["", "-x", "../evil", "a/b", ".hidden", "中文", "a b", "us-market_2", "Us-market", "mail--x", "mail-"]) assert.ok(moduleNameProblem(bad), bad);
 	const root = moduleRoot({ "a b": {} });
 	assert.throws(() => Modules.load([root]), (e: Error) => e.name === "ConfigError" && /a b/.test(e.message));
 });

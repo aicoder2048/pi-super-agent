@@ -1,5 +1,6 @@
 {
   "input": {
+    "now": "2026-11-12T15:59:00.000Z",
     "settings": {
       "baseUrl": "https://api.massive.com"
     },

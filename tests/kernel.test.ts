@@ -2396,7 +2396,7 @@ test("幕僚长会话里有私密数据时，转交过去的任务和忽略理�
 test("订阅一个装着私密 feed 触发的线程，任务就算私密；线程里没有私密触发时不算", () => {
 	const s = setup({ domains: DOMAINS });
 	s.trigger({ source: "mail/inbox", threads: [{ id: "thr_mail:1" }], body: "检验单 CEA 4.2", private: true });
-	assert.equal(s.kernel.touchedPrivate(s.open("request", { title: "看医院来信", threads: ["thr_mail:1"] })), true);
+	assert.equal(s.kernel.touchedPrivate(s.open("rule", { title: "看医院来信", source: "mail/inbox", threads: ["thr_mail:1"] })), true);
 	assert.equal(s.kernel.touchedPrivate(s.open("request", { title: "看杂项", threads: ["thr_misc:2"] })), false);
 });
 

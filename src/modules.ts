@@ -7,7 +7,7 @@ import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { feedClass, type CollectionDescriptor, type Digest, type ScanResult } from "./modules/manifest.ts";
 import { type FeedEntry, reachOf } from "./modules/feed-runner.ts";
 import { parseModelRef } from "./models.ts";
-import { problemLine, scanPackage } from "./modules/validate.ts";
+import { moduleNameProblem, problemLine, scanPackage } from "./modules/validate.ts";
 import { loadTeam, type Member, type Team } from "./teams.ts";
 import { MEMBER_TOOLS, DOMAIN_GATED_TOOLS, type DomainGatedTool } from "./worker/tools.ts";
 
@@ -68,12 +68,6 @@ export interface ModuleState {
 export interface ModuleSwitches {
 	values: Record<string, boolean>;
 	file: string;
-}
-
-const MODULE_NAME = /^[A-Za-z0-9][\w-]*$/;
-
-export function moduleNameProblem(name: string): string | undefined {
-	return MODULE_NAME.test(name) ? undefined : `模块名「${name}」只能用字母、数字、- 和 _，并以字母或数字开头`;
 }
 
 /** What a helper is handed from its ticket's domain, however the ticket was opened. */
@@ -305,7 +299,7 @@ export class Modules {
 		this.modules = serving;
 		this.userRules = userRules;
 		this.skippedUserRules = skippedUserRules;
-		this.book = new Map(this.modules.map((m) => [m.name, { team: m.team?.name ?? null, onRoster: onRoster(m), ...(m.digest && { digest: m.digest }), ...(m.manifest.title && { title: m.manifest.title }) }]));
+		this.book = new Map(this.modules.map((m) => [m.name, { team: m.team?.name ?? null, onRoster: onRoster(m), ...(m.digest && { digest: m.digest }), ...(m.manifest.title && { title: m.manifest.title }), ...(m.feeds?.some((f) => f.private) && { privateFeed: true as const }) }]));
 		this.#scopes = new Map(this.allRules().map((r) => [r.id, r.sources]));
 	}
 

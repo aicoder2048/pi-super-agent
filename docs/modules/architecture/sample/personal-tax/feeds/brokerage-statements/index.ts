@@ -17,7 +17,7 @@ interface Trade {
 export default async function collect(input: Input) {
 	const since = input.cursor ?? "1970-01-01";
 	const url = `${input.settings.baseUrl}/accounts/${input.settings.account}/trades?since=${since}`;
-	const reply = await fetch(url, { headers: { authorization: `Bearer ${process.env.EXAMPLE_BROKER_TOKEN}` } });
+	const reply = await fetch(url, { headers: { authorization: `Bearer ${process.env.PERSONAL_TAX__BROKER_TOKEN}` } });
 	if (!reply.ok) throw new Error(`券商接口返回 ${reply.status}`);
 	const trades = ((await reply.json()) as { trades: Trade[] }).trades;
 	if (trades.length === 0) return { records: [] };

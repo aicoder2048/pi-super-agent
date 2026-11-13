@@ -121,6 +121,10 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] 拦截原因按 `Opener` 写。来源开的任务被拦时写「来源开的任务不能用 X。要运行命令，用 ask_to_run 请使用者批准」；M5 合并前这句话的后半句写「在汇报里请使用者在对话里提出」。
 - [x] 确认 kernel 拒绝用来源触发开请求任务（`kernel.ts` 的 `decide` 已有 `#inConversation` 检查），加一条测试钉住。
 - [x] 模块的 `prepare` 命令照旧只对非推断任务跑。它是模块代码，命令是定死的。
+- [x] 补丁（#109 审查后、M2 之前）：内核拒绝把模块 feed 的触发 `hand_over` 给不是 `module-feed` 的任务，也拒绝这种任务订阅模块 feed 的线程。决定记在 ADR-0018，不另开 ADR。2026-11-13 在 f188dee 上通过：`tests/source-ticket-tools.test.ts` 新的四条（先红：转交给请求任务的那条报「读得到模块 feed 的话，却有 bash 或 web_get」），`just test` 1785 条里 1784 条过，失败的 watchdog Ctrl+C 单独重跑通过；check.mjs 7 项 ok；`m4-live.ts` lane 2、3、5 到 8、10 PASS，lane 1、4 的 head 一侧过，trunk 一侧失败是因为 trunk 已含 M4、口子不在了。
+- [x] 补丁第二轮（独立验证后）：只认「模块 feed 开的」不够，`stock-ta` 的规则任务能写自选股，邮件转交给它就能借它删 NVDA。`hand_over` 和订阅还要求同一个模块（来源名斜杠前相同），没有触发的推断任务照旧可收（推断任务不能写）；线程直达订阅任务时按同一条规则再查，旧状态库里的订阅不再投递。幕僚长 `note`、`brief` 仍能抄 feed 的话给有 `bash` 或 `web_get` 的任务，记为已知剩余口子，这次不做。2026-11-13 在 4de0989 上通过：`tests/source-ticket-tools.test.ts` 新的三条先红（转交和订阅那两条报 `true !== false`，旧订阅那条报「使用者开的任务收到了邮件」）；`just test` 1788 条里 1787 条过，失败的 watchdog Ctrl+C 单独重跑通过；check.mjs 7 项 ok；`m4-live.ts` lane 2、3、5 到 8、10 PASS。
+- [x] 补丁第三轮（第二次独立验证 A11 到 A14 后）：写权限看任务的领域，不看开任务的触发。模块 feed 的话到得了的任务（开任务的触发、`hand_over`、订阅直达、Worker 经订阅读），领域只能是这个模块或不带。别的模块的规则写了 feed 当来源，开任务时拒绝；没有触发的推断任务带别的领域也不收；旧订阅在 Worker 读时按同一条规则挡，不写迁移。决定记在 ADR-0018。2026-11-13 在 83539e5 上通过：`tests/source-ticket-tools.test.ts` 新的四条先红（报「邮件开的任务落在 stock-ta 领域，能写自选股」「stock-ta 的规则从邮件开了能写自选股的任务」「邮件转交给了能写自选股的任务」「有 bash 的任务读到了邮件正文」）；`just test` 1792 条全过；check.mjs 7 项 ok；`m4-live.ts` lane 2、3、5 到 8、10 PASS。
+- [x] 补丁第四轮（#112 独立验证 V11 后，M2 之前）：#112 管 feed 的触发到哪，管不到 feed 写进私密集合以后谁读。宿主来源（`timer`、`us-market`）开的规则和推断任务落在 `mail` 领域就能经 `data` 读 `messages`，还有 `bash` 或 `web_get`。内核在 `open_ticket` 时拒绝宿主来源开的任务落在「有 feed 写私密集合」的领域，领域表从包里算出这一点；使用者开的任务、本模块 feed 开的任务、没有触发的推断任务照收。决定记在 ADR-0018。2026-11-13 通过：`tests/source-ticket-tools.test.ts` 新的五条里四条先红（定时规则填 mail 报「有 bash 的规则任务读得到邮件正文」，推断任务报「timer 开的推断任务有 web_get，却读得到邮件正文」，领域表那条 `undefined !== true`，团队那条 `true !== false`）；`just test` 1797 条里 1796 条过，失败的 watchdog Ctrl+C 单独重跑通过；check.mjs 7 项 ok；`m4-live.ts` lane 2、3、5 到 8、10 PASS。
 - [x] ADR-0018 记下：模块 feed 开的任务只读自己的文件夹和模块带的知识、技能，没有通用 shell 和 `web_get`；所有推断任务的读文件都受同样的根目录限制；使用者自己开的任务读过邮件也保留 `bash`；工具以外的事走 M5 的批准卡片。
 
 **You see.**
@@ -168,54 +172,58 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Create `src/cli/google-auth.ts`。Edit `justfile`，加 `google-auth *args`。
-- [ ] Edit `src/secrets.ts`，加 `writeSecret(file, name, value)`。
-- [ ] Create `src/modules/secret-owners.ts`。Edit `src/modules/validate.ts`、`src/cli/module-try.ts`。
-- [ ] Create `docs/adr/0019-a-secret-belongs-to-one-module.md`。
-- [ ] Create `tests/helpers/fake-google.ts`、`tests/google-auth.test.ts`、`tests/secret-owners.test.ts`。
-- [ ] Create `docs/deploy/gmail.md`，先写「建 Cloud 项目和 OAuth 客户端」（抄第 0 步）和「授权」两节。
+- [x] Create `src/cli/google-auth.ts`。Edit `justfile`，加 `google-auth *args`。
+- [x] Edit `src/secrets.ts`，加 `writeSecret(file, name, value)`。
+- [x] Create `src/modules/secret-owners.ts`。Edit `src/modules/validate.ts`、`src/cli/module-try.ts`。
+- [x] Create `docs/adr/0019-a-secret-belongs-to-one-module.md`。
+- [x] Create `tests/helpers/fake-google.ts`、`tests/google-auth.test.ts`、`tests/secret-owners.test.ts`。
+- [x] Create `docs/deploy/gmail.md`，先写「建 Cloud 项目和 OAuth 客户端」（抄第 0 步）和「授权」两节。
 
 **Build.**
 
-- [ ] 数据形状先定。`Scope = "read" | "draft"`，一张表把它映射到 scope 和密钥名：`read` 是 `https://www.googleapis.com/auth/gmail.readonly` 和 `GMAIL_READ_REFRESH_TOKEN`，`draft` 是 `https://www.googleapis.com/auth/gmail.compose` 和 `GMAIL_DRAFT_REFRESH_TOKEN`。没有第三项，也没有一次要两个 scope 的写法。
-- [ ] `just google-auth read|draft [--port <n>]`。客户端 id 和密钥从 `secretsFile` 的 `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET` 读（`readSecret`），缺了一行说明去 `docs/deploy/gmail.md` 第一节。
-- [ ] 回环流程。在 `127.0.0.1` 上开一个端口（默认随机，`--port` 指定时用它，给 `ssh -L` 用），打印授权网址。网址带 PKCE（S256）、随机 `state`、`access_type=offline`、`prompt=consent`，不带 `include_granted_scopes`。回调只接受 `state` 对得上的一次，之后关掉端口。5 分钟没有回调就退出，什么都不写。
-- [ ] 换 token 后检查 Google 返回的 `scope` 正好等于申请的那一个。多了或少了都拒绝，一行说明，什么都不写。没有 `refresh_token` 时也拒绝，提示到 Google 账号的「第三方应用和服务」里删掉这个应用再来一次。
-- [ ] `writeSecret` 改写 `.env` 里同名的那一行，没有就加一行，其他行原样保留。先写同目录的临时文件，权限 600，再改名换上。`secretsFile` 没配置时说明怎么在 `config.json` 里加。
-- [ ] 输出只写密钥名和 scope，不写 token、不写授权码。授权网址里没有秘密，可以打印。
-- [ ] 密钥归属表。`src/modules/secret-owners.ts` 导出一张表，密钥名对应一个模块名或 `"host"`：`GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` 属于 `mail`，`POLYGON_API_KEY` 属于 `stock-ta`，`GMAIL_DRAFT_REFRESH_TOKEN`、`TELEGRAM_BOT_TOKEN` 和宿主自己读的其他密钥属于 `"host"`。宿主自己读密钥不经过这张表。
-- [ ] 包的检查（`validate.ts`）对每个 feed 和工具的 `secrets` 查表。点名属于别的模块或 `"host"` 的密钥就报错，一行写明密钥名和它的主人。表里没有的名字，只有以本模块的前缀开头（模块名转大写、`-` 换成 `_`，再加 `_`，例如 `MAIL_`、`STOCK_TA_`）才放行，见 Appendix E 第 10 条。`just module try` 走同一个检查，不另写一份。
-- [ ] 工具的 `cases.json` 改用假密钥跑。今天 `validate.ts` 用 `secretsFor` 把真密钥交给工具的测试用例，feed 的 fixtures 已经用 `fixtureSecrets`，工具照 feed 改。这样装模块、改模块、`just module check` 都不会用真 token 发请求。
-- [ ] 旧 Mac 没有浏览器。`docs/deploy/gmail.md` 写两条路。默认是在笔记本上跑 `just google-auth read`，然后把 `secretsFile` 里那一行用 `grep '^GMAIL_READ_REFRESH_TOKEN=' <笔记本的 secretsFile> | ssh <旧 Mac> 'cat >> <旧 Mac 的 secretsFile>'` 复制过去，token 不经过终端屏幕。另一条是在旧 Mac 上跑 `just google-auth read --port 8765`，笔记本上 `ssh -L 8765:127.0.0.1:8765 <旧 Mac>`，浏览器打开打印出的网址。复制以后笔记本上那一行留不留，是 Appendix E 第 3 条。
-- [ ] ADR-0019 记下：每个密钥属于一个模块或宿主，包只能点名自己的密钥；工具的测试用例只用假密钥；宿主读密钥不受这张表限制。
+- [x] 数据形状先定。`Scope = "read" | "draft"`，一张表把它映射到 scope 和密钥名：`read` 是 `https://www.googleapis.com/auth/gmail.readonly` 和 `GMAIL_READ_REFRESH_TOKEN`，`draft` 是 `https://www.googleapis.com/auth/gmail.compose` 和 `GMAIL_DRAFT_REFRESH_TOKEN`。没有第三项，也没有一次要两个 scope 的写法。
+- [x] `just google-auth read|draft [--port <n>]`。客户端 id 和密钥从 `secretsFile` 的 `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET` 读（`readSecret`），缺了一行说明去 `docs/deploy/gmail.md` 第一节。
+- [x] 回环流程。在 `127.0.0.1` 上开一个端口（默认随机，`--port` 指定时用它，给 `ssh -L` 用），打印授权网址。网址带 PKCE（S256）、随机 `state`、`access_type=offline`、`prompt=consent`，不带 `include_granted_scopes`。回调只接受 `state` 对得上的一次，之后关掉端口。5 分钟没有回调就退出，什么都不写。
+- [x] 换 token 后检查 Google 返回的 `scope` 正好等于申请的那一个。多了或少了都拒绝，一行说明，什么都不写。没有 `refresh_token` 时也拒绝，提示到 Google 账号的「第三方应用和服务」里删掉这个应用再来一次。
+- [x] `writeSecret` 改写 `.env` 里同名的那一行，没有就加一行，其他行原样保留。先写同目录的临时文件，权限 600，再改名换上。`secretsFile` 没配置时说明怎么在 `config.json` 里加。
+- [x] 输出只写密钥名和 scope，不写 token、不写授权码。授权网址里没有秘密，可以打印。
+- [x] 密钥归属表。`src/modules/secret-owners.ts` 导出一张表，密钥名对应一个模块名或 `"host"`：`GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` 属于 `mail`，`POLYGON_API_KEY` 属于 `stock-ta`，`GMAIL_DRAFT_REFRESH_TOKEN`、`TELEGRAM_BOT_TOKEN` 和宿主自己读的其他密钥属于 `"host"`。宿主自己读密钥不经过这张表。
+- [x] 包的检查（`validate.ts`）对每个 feed 和工具的 `secrets` 查表。点名属于别的模块或 `"host"` 的密钥就报错，一行写明密钥名和它的主人。表里没有的名字，只有以本模块的前缀开头（模块名转大写、`-` 换成 `_`，再加 `__`，例如 `MAIL__`、`STOCK_TA__`）才放行，见 Appendix E 第 10 条。`just module try` 走同一个检查，不另写一份。
+- [x] 工具的 `cases.json` 改用假密钥跑。今天 `validate.ts` 用 `secretsFor` 把真密钥交给工具的测试用例，feed 的 fixtures 已经用 `fixtureSecrets`，工具照 feed 改。这样装模块、改模块、`just module check` 都不会用真 token 发请求。
+- [x] 旧 Mac 没有浏览器。`docs/deploy/gmail.md` 写两条路。默认是在笔记本上跑 `just google-auth read`，然后用一条 `grep … | ssh <旧 Mac> '…'` 把 OAuth 客户端和 token 三行写进旧 Mac 的 `secretsFile`：同名的旧行先删再写，文件末尾没有换行也不粘行，重跑不变，token 不经过终端屏幕（命令在 `docs/deploy/gmail.md`）。另一条是在旧 Mac 上跑 `just google-auth read --port 8765`，笔记本上 `ssh -L 8765:127.0.0.1:8765 <旧 Mac>`，浏览器打开打印出的网址。复制以后笔记本上那一行留不留，是 Appendix E 第 3 条。
+- [x] ADR-0019 记下：每个密钥属于一个模块或宿主，包只能点名自己的密钥；工具的测试用例只用假密钥；宿主读密钥不受这张表限制。
 
 **You see.**
 
-- [ ] 对着假 Google 服务跑 `just google-auth read`，打印一个授权网址；脚本模拟浏览器回调后，命令打印「已写入 secretsFile 的 GMAIL_READ_REFRESH_TOKEN（gmail.readonly）」，`secretsFile` 多了这一行，别的行不变，权限 600。一个测试包的 feed 写 `"secrets": ["TELEGRAM_BOT_TOKEN"]`，`just module check` 报错「TELEGRAM_BOT_TOKEN 属于宿主，模块不能用」。
+- [x] 对着假 Google 服务跑 `just google-auth read`，打印一个授权网址；脚本模拟浏览器回调后，命令打印「已写入 secretsFile 的 GMAIL_READ_REFRESH_TOKEN（gmail.readonly）」，`secretsFile` 多了这一行，别的行不变，权限 600。一个测试包的 feed 写 `"secrets": ["TELEGRAM_BOT_TOKEN"]`，`just module check` 报错「TELEGRAM_BOT_TOKEN 属于宿主，模块不能用」。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/google-auth.test.ts` 用假 Google 服务覆盖：网址带 PKCE、`state`、`access_type=offline`、`prompt=consent`，没有 `include_granted_scopes`；`state` 不对的回调被拒；返回的 `scope` 多一个或少一个都拒绝且不写；没有 `refresh_token` 拒绝；超时退出不写；`writeSecret` 替换同名行、保留其他行和注释、权限 600、临时文件改名；输出里没有 token 和授权码；缺客户端 id 时的说明。`tests/secret-owners.test.ts` 覆盖：点名别的模块的密钥报错，点名 `"host"` 的密钥报错，表外带本模块前缀的放行，表外不带前缀的报错，`just module try` 同样报错，工具的 `cases.json` 拿到的是假密钥，stock-ta 包照常通过。Run `just test`.
+- [x] `tests/google-auth.test.ts` 用假 Google 服务覆盖：网址带 PKCE、`state`、`access_type=offline`、`prompt=consent`，没有 `include_granted_scopes`；`state` 不对的回调被拒；返回的 `scope` 多一个或少一个都拒绝且不写；没有 `refresh_token` 拒绝；超时退出不写；`writeSecret` 替换同名行、保留其他行和注释、权限 600、临时文件改名；输出里没有 token 和授权码；缺客户端 id 时的说明。`tests/secret-owners.test.ts` 覆盖：点名别的模块的密钥报错，点名 `"host"` 的密钥报错，表外带本模块前缀的放行，表外不带前缀的报错，`just module try` 同样报错，工具的 `cases.json` 拿到的是假密钥，stock-ta 包照常通过。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. 十条 lane 写成一个脚本 `docs/modules/evidence/m1-live.ts`，lane 9、10 是真账号，在时段 1 跑。
 
-- [ ] Lane 1. Regression lane against trunk. trunk 没有 `just google-auth`，记下 trunk 上 `just --list` 没有它；在 head 上对假服务跑完整授权。两边都跑 `just module check docs/modules/examples/stock-ta`。Save `m1-regression.txt`. Pass when trunk 没有这个命令，head 写进一行 `GMAIL_READ_REFRESH_TOKEN`，stock-ta 两边都通过，`just test` 在两边的通过数之差等于新加的测试数。
-- [ ] Lane 2. `just google-auth draft` 对假服务。Save `m1-draft.txt`. Pass when 写进的是 `GMAIL_DRAFT_REFRESH_TOKEN`，申请的 scope 只有 `gmail.compose`。
-- [ ] Lane 3. 假服务返回的 `scope` 是 `gmail.readonly gmail.compose`。Save `m1-extra-scope.txt`. Pass when 退出码非零，一行说明，`secretsFile` 的 sha256 不变。
-- [ ] Lane 4. 回调带错的 `state`，再带对的。Save `m1-state.txt`. Pass when 错的那次回 400 且什么都不写，对的那次写入。
-- [ ] Lane 5. 不回调，等超时（测试里把 5 分钟改短）。Save `m1-timeout.txt`. Pass when 退出码非零，端口已关，`secretsFile` 不变。
-- [ ] Lane 6. `secretsFile` 里已有一行旧的 `GMAIL_READ_REFRESH_TOKEN` 和十行别的密钥，重新授权。Save `m1-replace.txt`. Pass when 只有那一行变了，行数不变，权限 600。
-- [ ] Lane 7. 三个测试包，一个点名 `POLYGON_API_KEY`（属于 stock-ta），一个点名 `GMAIL_DRAFT_REFRESH_TOKEN`（属于宿主），一个点名表外的 `FOO_KEY`，各跑 `just module check` 和 `just module try`。Save `m1-owners.txt`. Pass when 六次都失败，每次一行写明密钥名和主人或前缀规则。
-- [ ] Lane 8. 一个测试工具的 `cases.json` 把收到的密钥原样回显，`secretsFile` 里放一个已知的假值，跑 `just module check`；再扫这次所有 lane 的输出和日志。Save `m1-no-leak.txt`. Pass when 回显的是 fixture 密钥，不是 `secretsFile` 里的值；假服务发出的 token 和授权码一次都没出现。
+- [x] Lane 1. Regression lane against trunk. trunk 没有 `just google-auth`，记下 trunk 上 `just --list` 没有它；在 head 上对假服务跑完整授权。两边都跑 `just module check docs/modules/examples/stock-ta`。Save `m1-regression.txt`. Pass when trunk 没有这个命令，head 写进一行 `GMAIL_READ_REFRESH_TOKEN`，stock-ta 两边都通过，`just test` 在两边的通过数之差等于新加的测试数。
+- [x] Lane 2. `just google-auth draft` 对假服务。Save `m1-draft.txt`. Pass when 写进的是 `GMAIL_DRAFT_REFRESH_TOKEN`，申请的 scope 只有 `gmail.compose`。
+- [x] Lane 3. 假服务返回的 `scope` 是 `gmail.readonly gmail.compose`。Save `m1-extra-scope.txt`. Pass when 退出码非零，一行说明，`secretsFile` 的 sha256 不变。
+- [x] Lane 4. 回调带错的 `state`，再带对的。Save `m1-state.txt`. Pass when 错的那次回 400 且什么都不写，对的那次写入。
+- [x] Lane 5. 不回调，等超时（测试里把 5 分钟改短）。Save `m1-timeout.txt`. Pass when 退出码非零，端口已关，`secretsFile` 不变。
+- [x] Lane 6. `secretsFile` 里已有一行旧的 `GMAIL_READ_REFRESH_TOKEN` 和十行别的密钥，重新授权。Save `m1-replace.txt`. Pass when 只有那一行变了，行数不变，权限 600。
+- [x] Lane 7. 三个测试包，一个点名 `POLYGON_API_KEY`（属于 stock-ta），一个点名 `GMAIL_DRAFT_REFRESH_TOKEN`（属于宿主），一个点名表外的 `FOO_KEY`，各跑 `just module check` 和 `just module try`。Save `m1-owners.txt`. Pass when 六次都失败，每次一行写明密钥名和主人或前缀规则。
+- [x] Lane 8. 一个测试工具的 `cases.json` 把收到的密钥原样回显，`secretsFile` 里放一个已知的假值，跑 `just module check`；再扫这次所有 lane 的输出和日志。Save `m1-no-leak.txt`. Pass when 回显的是 fixture 密钥，不是 `secretsFile` 里的值；假服务发出的 token 和授权码一次都没出现。
 - [ ] Lane 9. 真账号（时段 1）。使用者在笔记本上跑 `just google-auth read`，在浏览器里点过「未验证」提示。Save `m1-real-read.png`. Pass when 写入一行，用它向 Google 换一次 access token 成功（只调 token 接口，不读邮件）。
 - [ ] Lane 10. 真账号（时段 1）。按 `docs/deploy/gmail.md` 的默认路把那一行复制到旧 Mac，在旧 Mac 上换一次 access token。Save `m1-real-copy.txt`. Pass when 旧 Mac 换 token 成功，旧 Mac 的终端输出里没有 token。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. trunk 没有授权命令，只给绝对预算：从回调到写完 `secretsFile` 的时间（对假服务）。另量 stock-ta 包的 `just module check` 时间，trunk 和 head 都量，看查表有没有拖慢检查。
-- [ ] Probe. 对假服务连跑 10 次授权，脚本模拟回调，量回调到命令退出；trunk 和 head 交替各 5 次 `just module check docs/modules/examples/stock-ta`。
-- [ ] Baseline. Record the trunk `just module check` 中位数 first。
-- [ ] Rule. 回调到退出的中位数超过 500 毫秒，或 `just module check` 比 trunk 慢 200 毫秒以上，就失败。前一个预算是推断。
+- [x] Metric. trunk 没有授权命令，只给绝对预算：从回调到写完 `secretsFile` 的时间（对假服务）。另量 stock-ta 包的 `just module check` 时间，trunk 和 head 都量，看查表有没有拖慢检查。
+- [x] Probe. 对假服务连跑 10 次授权，脚本模拟回调，量回调到命令退出；trunk 和 head 交替各 5 次 `just module check docs/modules/examples/stock-ta`。
+- [x] Baseline. Record the trunk `just module check` 中位数 first。
+- [x] Rule. 回调到退出的中位数超过 500 毫秒，或 `just module check` 比 trunk 慢 200 毫秒以上，就失败。前一个预算是推断。
+
+2026-11-13 在 3e099c4 上通过（证据在 `/tmp/swarm-m1/owner/`，lane 脚本 `docs/modules/evidence/m1-live.ts`）：`just test` 1758 条里 1757 条过，没过的是 `tests/scheduler.test.ts` 的「模块关掉时正在跑的 feed 进程组被杀掉」，单独重跑 head 和 trunk 各 3 次都过；`node docs/modules/architecture/check.mjs` 7 项 ok；`tests/e2e/modules.e2e.ts` 12 条过。先红后绿：`tests/secret-owners.test.ts` 先跑时点名别的模块、宿主、表外密钥都没被拒（`actual: []`），`try` 一直跑到「没有考题」，工具用例拿到的是 `secretsFile` 的真值（`got {"set":1,"real":1}`）；`tests/google-auth.test.ts` 先跑时 `writeSecret` 不存在（`does not provide an export named 'writeSecret'`），命令不存在时测试等不到授权网址。Lane 1 到 8 PASS：trunk 没有 `google-auth`，head 写入一行，stock-ta 两边都通过，`just test` head 比 trunk 多 23 条通过（只在 head 通过的 27 条，含 trunk 这次偶发失败的 watchdog Ctrl+C，减去删掉或改名的 4 条）；多一个 scope 时退出码 1、sha256 不变；错的 `state` 回 400 且假服务没收到换 token 的请求；超时退出、端口已关；十一行的文件只变了那一行，权限 600；三个包的 `check` 和 `try` 六次都拒，一行写明主人或前缀；工具用例拿到的是 `fixture`，十条一起跑时 17 份命令输出里没有假服务发出的 15 个授权码和 token。十条一起跑在 a85ac59 上；之后的提交只删注释、把归属检查挪出 `crossCheck`，在它上面重跑 lane 2 到 8 仍然 PASS（12 份输出、12 个 token，0 处泄漏）。Lane 9、10 是真账号，等时段 1。Perf：回调到命令退出 10 次中位数 14 毫秒（14 到 22），stock-ta 的 `just module check` 交替各 5 次，trunk 408 毫秒（403 到 411），head 410 毫秒（409 到 412）。
+
+2026-11-13 独立验收后的修正（四个非阻塞问题）：密钥前缀改成以 `__` 收尾、模块名只许单个连字符；模块的密钥只从 `secretsFile` 取，模型 key 和 `GITHUB_TOKEN` 记成宿主的；换 token 时连不上 Google 只打一行、退出 1；旧 Mac 的复制命令改成同名行先删再写、可重跑。每条先红后绿，`just test` 1764 条里 1763 条过，没过的是已知偶发的 watchdog Ctrl+C；lane 1 到 8 在修正后重跑 PASS（`/tmp/swarm-m1/fix/lanes/`）。
 
 **Review gate.** None. M1 is not review-gated.
 
@@ -734,6 +742,6 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 7. **哪些任务收紧，收多紧。** 默认模块 feed 开的任务（规则和推断）用允许清单，没有 `bash`、`web_get`；所有推断任务读文件都只在允许的根目录下；宿主自带来源开的推断任务保留 `web_get`；使用者和宿主自带来源开的规则任务不变。另一条是所有推断任务都去掉 `web_get`，`us-market` 的推断任务就不能查网页了。再一条是所有规则任务都收紧，包括你自己写的定时规则。
 8. **不私密任务的批准能不能在手机上点。** 默认能（GitHub 这类）。另一条是所有批准卡片都只在网页上点，手机上一行。
 9. **发件人名单标不标私密。** 默认 `shareable`，地址本来就是你在对话里说的，加人的任务不会让幕僚长在 Telegram 上变一行。另一条是 `private`，地址不会出现在 Telegram 上，代价是每加一次人，之后幕僚长在 Telegram 上只剩一行。
-10. **表里没有的密钥名。** 默认只有以本模块前缀开头的才放行（`MAIL_`、`STOCK_TA_`），新模块不用改宿主。另一条是一律拒绝，每个新密钥都要在表里登记，是一个宿主 PR。
+10. **表里没有的密钥名。** 默认只有以本模块前缀开头的才放行（`MAIL__`、`STOCK_TA__`），新模块不用改宿主。另一条是一律拒绝，每个新密钥都要在表里登记，是一个宿主 PR。
 11. **附件多大。** 默认 10 MB，20 秒内做完（下载 10 秒、PDF 6 秒）；时段 2 实测旧 Mac 太慢就降到 5 MB。另一条是给工具加 `limit` 字段（最多 10 分钟，和 feed 一样），多一个小的宿主改动，大附件也能读。
 12. **读过邮件以后，幕僚长在 Telegram 上只剩一行。** 默认照 #105 的规则，直到换一个干净的幕僚长会话，这一版不做换会话。另一条是另开一个 PR，让你在网页上一键给幕僚长换新会话，之后 Telegram 恢复全文。

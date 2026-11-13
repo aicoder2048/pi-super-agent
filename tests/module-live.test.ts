@@ -40,12 +40,12 @@ function stateDir(t: TestContext): string {
 	return dir;
 }
 
-function boot(t: TestContext, dir: string, configSwitches: Record<string, boolean> = {}, secret: (name: string) => string | undefined = () => undefined) {
+function boot(t: TestContext, dir: string, configSwitches: Record<string, boolean> = {}) {
 	const db = openStore(join(dir, "state.db"));
 	const logs: string[] = [];
 	const roots = [join(dir, "modules")];
 	const discovered = Modules.load(roots, { switches: { values: configSwitches, file: "config.json" } });
-	const modules = startLiveModules({ db, stateDir: dir, roots, discovered, configSwitches, secret, log: (line) => logs.push(line) });
+	const modules = startLiveModules({ db, stateDir: dir, roots, discovered, configSwitches, log: (line) => logs.push(line) });
 	const stop = () => {
 		modules.stop();
 		if (db.isOpen) db.close();
@@ -332,35 +332,18 @@ test("工具测试用例不过：记录是无效，原因写着哪个用例，�
 	assert.equal(serving(modules).includes("slow"), false);
 });
 
-test("宿主跑用例时的密钥和运行时同一个来源：密钥只在密钥文件里也能通过", async (t) => {
+test("宿主跑工具用例时给的是假密钥：宿主不读密钥文件也能通过", async (t) => {
 	const dir = stateDir(t);
 	files(join(dir, "modules"), {
 		"keyed/module.json": JSON.stringify({ schema: 1, name: "keyed", version: "0.1.0", title: "带密钥", description: "要密钥的工具" }),
-		"keyed/tools/probe/tool.json": JSON.stringify({ title: "probe", description: "reads its key", input: { x: { type: "number", title: "x" } }, output: { y: { type: "number", title: "y" } }, secrets: ["LAB_KEY"] }),
-		"keyed/tools/probe/index.ts": `export default async () => ({ y: process.env.LAB_KEY === "k" ? 1 : 0 });`,
+		"keyed/tools/probe/tool.json": JSON.stringify({ title: "probe", description: "reads its key", input: { x: { type: "number", title: "x" } }, output: { y: { type: "number", title: "y" } }, secrets: ["KEYED__LAB_KEY"] }),
+		"keyed/tools/probe/index.ts": `export default async () => ({ y: process.env.KEYED__LAB_KEY ? 1 : 0 });`,
 		"keyed/tools/probe/cases.json": JSON.stringify([{ name: "has-key", input: { x: 1 }, expect: { y: 1 } }]),
 	});
-	const { db } = boot(t, dir, {}, (name) => (name === "LAB_KEY" ? "k" : undefined));
+	const { db } = boot(t, dir);
 	setModuleSwitch(db, "keyed", true);
 	await until(() => ["运行中", "无效"].includes(label(dir, "keyed") ?? ""), "keyed 检查完", 15_000);
 	assert.equal(label(dir, "keyed"), "运行中");
-});
-
-test("读密钥时出错（密钥值有空白、密钥文件跑着时被删）：模块记为无效，原因写着出错的话，宿主不崩", async (t) => {
-	const dir = stateDir(t);
-	files(join(dir, "modules"), {
-		"keyed/module.json": JSON.stringify({ schema: 1, name: "keyed", version: "0.1.0", title: "带密钥", description: "要密钥的工具" }),
-		"keyed/tools/probe/tool.json": JSON.stringify({ title: "probe", description: "reads its key", input: { x: { type: "number", title: "x" } }, output: { y: { type: "number", title: "y" } }, secrets: ["LAB_KEY"] }),
-		"keyed/tools/probe/index.ts": `export default async () => ({ y: 1 });`,
-		"keyed/tools/probe/cases.json": JSON.stringify([{ name: "has-key", input: { x: 1 }, expect: { y: 1 } }]),
-	});
-	const { db } = boot(t, dir, {}, () => {
-		throw new Error("LAB_KEY 含有空白");
-	});
-	setModuleSwitch(db, "keyed", true);
-	await until(() => label(dir, "keyed") === "无效", "keyed 检查不过", 15_000);
-	const record = moduleRows(db).find((r) => r.name === "keyed")!.record!;
-	assert.match(describe(record).reason, /LAB_KEY 含有空白/);
 });
 
 test("副本只复制摘要算进去的文件：包里的 .git 不进副本，副本的摘要就是它的目录名", (t) => {
@@ -472,7 +455,7 @@ test("模块卡：还钉着旧版本的开着的任务数；用到的密钥名�
 	const dir = stateDir(t);
 	files(join(dir, "modules/tax"), {
 		"knowledge/irs-pub-17/source.json": JSON.stringify({ title: "IRS 第 17 号出版物", version: "2025", published: "2025-01-01", authority: "authoritative", license: "user-import", origin: "https://www.irs.gov/pub17" }),
-		"feeds/statements/feed.json": JSON.stringify({ title: "券商交易记录", description: "取成交", handler: "index.ts", secrets: ["EXAMPLE_BROKER_TOKEN"], every: "1d", into: "transactions", notice: "有新成交" }),
+		"feeds/statements/feed.json": JSON.stringify({ title: "券商交易记录", description: "取成交", handler: "index.ts", secrets: ["TAX__BROKER_TOKEN"], every: "1d", into: "transactions", notice: "有新成交" }),
 		"feeds/statements/index.ts": "export default async function () { return []; }\n",
 		"data/transactions/collection.json": JSON.stringify({ title: "交易", kind: "record", class: "private", fields: { amount: { type: "number", title: "金额" } } }),
 	});
@@ -488,6 +471,6 @@ test("模块卡：还钉着旧版本的开着的任务数；用到的密钥名�
 	const { modules } = boot(t, dir);
 	const tax = cardOf(modules, "tax");
 	assert.equal(tax.pinnedOld, 1);
-	assert.deepEqual(tax.secrets, ["EXAMPLE_BROKER_TOKEN"]);
+	assert.deepEqual(tax.secrets, ["TAX__BROKER_TOKEN"]);
 	assert.deepEqual(tax.notImported, ["irs-pub-17"]);
 });
