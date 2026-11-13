@@ -409,3 +409,5 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 3. **扫描出新信号时要不要叫醒领队。** 默认不叫，信号只在你问的时候查。要叫的话，`scan` feed 加一个 `notice`，每个新信号发一个触发，和技术分析应用的提醒一样。
 4. **钉哪个提交。** 默认是 S2 开工时技术分析仓库 `main` 上已推送的最新提交（今天是 `c9e7536`）。你有还没推送的规则改动的话，先推送。
 5. **日内 5 分钟信号和 OR30 要不要。** 默认不要，模块只扫日线，S3 删掉相关的说法。要的话，再加一个 `every: 5m`、`when: us-market-hours` 的 feed，每 5 分钟每只一个请求。
+
+2026-11-12 修复轮在 394eb8f 上通过（审计 ISSUES 的四条）：`structure` 的 `now` 改取最新分红同步和这个标的最新日线收盘加 15 分钟里晚的那个，再加一分钟；`note` 遇到同名笔记只链一次；标的在自选股里但还没扫到、或 QQQ、SPY 同步落后时，提示等下一次收盘后的扫描；scan feed 的 `limit` 改回 `5m`，lane 9 的通过条件写明保留的几行。`tests/stock-ta.test.ts` 新增 5 条，其中 4 条先红（第二天的 `now` 截止在前一天、两条提示文字不对、`EEXIST`），输出在 `/tmp/swarm-s3/fix/red-unit.txt`。`just test` 1704 条全过，`check.mjs` 全绿，`just module check` ok。lane 1 到 11 全 PASS，输出在 `/tmp/swarm-s3/fix/s3-*.txt`；开头真扫描 12 个请求。lane 11 用真 `ta` 的扫描器扫两天（第二天早 250 毫秒），分红同步停在前一天，工具给的 `now` 是 2026-11-12T21:16Z，`data_end` 是 11-12 收盘，行情请求 0 个；旧规则在同一份库上停在 11-11。perf：trunk 中位 1131 毫秒，head 中位 1113 毫秒。
