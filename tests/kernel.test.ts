@@ -2279,3 +2279,43 @@ test("幕僚长会话里的私密数据：交给它的私密任务或私密 feed
 	s.kernel.routerStartedFresh();
 	assert.equal(s.kernel.lastPrivate(), null);
 });
+
+test("幕僚长会话里的私密数据：引用一行私密的话也算交给它，引用普通的话不算", () => {
+	const s = setup({ domains: DOMAINS });
+	const health = s.open("request", { title: "记 CEA", domain: "mail" });
+	s.kernel.touchPrivate(health);
+	const plain = s.open("request", { title: "查天气" });
+	const quote = (lineId: string) => {
+		s.clock.t += 1000;
+		const said = s.kernel.userSaidQuoting({ text: "刚才那个", at: s.clock.t, lineId });
+		assert.ok(said, lineId);
+		s.kernel.routerSaw(said.triggerId);
+		return said.triggerId;
+	};
+
+	quote(replied(s, plain, "晴，20 度"));
+	assert.equal(s.kernel.lastPrivate(), null, "普通的话");
+
+	const relayed = replied(s, health, "CEA 4.2");
+	s.kernel.routerSaw(health);
+	const remembered = replied(s, plain, "记得是 4.2");
+	s.kernel.routerStartedFresh();
+	assert.equal(s.kernel.lastPrivate(), null);
+	quote(relayed);
+	assert.deepEqual(s.kernel.lastPrivate(), { module: "mail" }, "转述私密任务的话");
+	s.kernel.routerStartedFresh();
+	const quoting = quote(remembered);
+	assert.deepEqual(s.kernel.lastPrivate(), { module: "mail" }, "会话里有私密数据时说的话");
+	s.kernel.routerStartedFresh();
+	quote(quoting);
+	assert.deepEqual(s.kernel.lastPrivate(), { module: "mail" }, "引用了私密话的那句话");
+
+	s.run(health);
+	const { reportId } = s.kernel.workerReport(health, { status: "blocked", summary: "两种口径", question: "按哪次？", options: ["10 月那次", "9 月那次"] });
+	s.drain();
+	const answer = s.kernel.answerQuestion({ reportId, option: 0, at: s.clock.t });
+	assert.ok(answer.ok);
+	s.kernel.routerStartedFresh();
+	quote(answer.triggerId);
+	assert.deepEqual(s.kernel.lastPrivate(), { module: "mail" }, "点选回答私密任务的那句话");
+});

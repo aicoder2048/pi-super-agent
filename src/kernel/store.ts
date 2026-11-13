@@ -298,6 +298,10 @@ export function openStore(path: string): DatabaseSync {
 			INSERT INTO router_private SELECT touched_private_at, domain FROM tickets WHERE touched_private_at IS NOT NULL;
 			INSERT INTO router_private SELECT received_at, substr(source, 1, instr(source || '/', '/') - 1) FROM triggers WHERE private = 1;`);
 	}
+	if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'private_replies'").get()) {
+		db.exec(`CREATE TABLE private_replies (reply_id TEXT PRIMARY KEY, module TEXT);
+			INSERT INTO private_replies SELECT r.id, t.domain FROM reply_receipts r JOIN tickets t ON t.id = r.cause WHERE t.touched_private_at IS NOT NULL;`);
+	}
 	const retitle = db.prepare("UPDATE tickets SET title = ? WHERE id = ?");
 	for (const { id, title } of db.prepare("SELECT id, title FROM tickets").all() as { id: string; title: string }[]) {
 		if (oneLine(title) !== title) retitle.run(oneLine(title), id);

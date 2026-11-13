@@ -294,13 +294,9 @@ interface PendingCard {
 	carries?: string[];
 }
 
-function carriedBy(kernel: Kernel, notice: RouterNotice): string[] {
+function carriedBy(notice: RouterNotice): string[] {
 	if (notice.kind === "notice") return [];
-	if (notice.kind === "candidate") return [notice.triggerId];
-	if (notice.kind === "conversation") {
-		const found = kernel.read(notice.triggerId);
-		return [notice.triggerId, ...(found?.type === "trigger" && found.answers ? [found.answers.ticketId] : [])];
-	}
+	if (notice.kind === "candidate" || notice.kind === "conversation") return [notice.triggerId];
 	return [notice.ticketId];
 }
 
@@ -439,7 +435,7 @@ export class Router {
 		const card = noticeCard(this.#kernel, notice, this.#rulesFor, actionId);
 		return new Promise((resolve) => {
 			this.#acks.set(actionId, resolve);
-			this.#push(card, actionId, carriedBy(this.#kernel, notice));
+			this.#push(card, actionId, carriedBy(notice));
 		});
 	}
 

@@ -340,7 +340,7 @@ async function hostWithHealth(t: TestContext, script: (worker: FakeWorker) => Pr
 	await until(() => host.kernel.conversation().some((l) => l.text.startsWith("转述：")), "幕僚长转述了汇报", 10_000);
 	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => m.text);
 	await until(() => phone().some((m) => m.startsWith("转述：") || m === NOTICE), "汇报到了手机");
-	return { ...w, result: results[0], host, spawner, phone };
+	return { ...w, result: results[0], host, spawner, phone, tg };
 }
 
 const writeCea = { op: "write", collection: "lab-results", rows: [cea(4.2, "2026-10-01")], from: "blobs/report-2026-10.pdf" };
@@ -409,6 +409,53 @@ test("宿主：清屏之后幕僚长用 read 翻看清屏前的私密任务，�
 	const { host, phone } = await hostWithHealth(t, (worker) => Promise.resolve(worker.request("worker.data", writeCea)));
 	host.clearConversation();
 	const after = await exchange(host, phone, `翻看 ${host.kernel.listTickets()[0]!.id}`, "翻到了：CEA 4.2 ng/mL");
+	assert.ok(after.includes(NOTICE), after.join(" / "));
+	assert.ok(!after.some((m) => m.includes("4.2")), after.join(" / "));
+});
+
+const relayLine = (host: Awaited<ReturnType<typeof hostWithHealth>>["host"]) => host.kernel.cleared()!.lines.find((l) => l.text.startsWith("转述："))!.id;
+
+async function quoting(host: Awaited<ReturnType<typeof hostWithHealth>>["host"], phone: () => string[], lineId: string) {
+	const before = phone().length;
+	assert.ok(host.sayQuoting("刚才的 CEA 是多少？", lineId), "引用成功");
+	await until(() => host.kernel.conversation().some((l) => l.text === "记得：CEA 4.2 ng/mL"), "幕僚长在对话里回了", 10_000);
+	await until(() => phone().length >= before + 2, "这一问一答到了手机");
+	return phone().slice(before);
+}
+
+test("宿主：清屏之后引用清屏前私密任务的转述，幕僚长的回复在 Telegram 上是一行提示", async (t) => {
+	const { host, phone } = await hostWithHealth(t, (worker) => Promise.resolve(worker.request("worker.data", writeCea)));
+	host.clearConversation();
+	const after = await quoting(host, phone, relayLine(host));
+	assert.ok(after.includes(NOTICE), after.join(" / "));
+	assert.ok(!after.some((m) => m.includes("4.2")), after.join(" / "));
+});
+
+test("宿主：清屏之后引用一行不私密的转述，幕僚长的回复完整发到 Telegram", async (t) => {
+	const { host, phone } = await hostWithHealth(t, (worker) => Promise.resolve(worker.request("worker.data", { op: "list", collection: "research-updates" })));
+	host.clearConversation();
+	assert.ok((await quoting(host, phone, relayLine(host))).includes("记得：CEA 4.2 ng/mL"), phone().join(" / "));
+});
+
+test("宿主：清屏之后引用清屏前幕僚长凭记忆说出的私密内容，回复在 Telegram 上是一行提示", async (t) => {
+	const { host, phone } = await hostWithHealth(t, (worker) => Promise.resolve(worker.request("worker.data", writeCea)));
+	await followUp(host, phone);
+	host.clearConversation();
+	const remembered = host.kernel.cleared()!.lines.find((l) => l.text === "记得：CEA 4.2 ng/mL")!.id;
+	const after = await quoting(host, phone, remembered);
+	assert.ok(after.includes(NOTICE), after.join(" / "));
+	assert.ok(!after.some((m) => m.includes("4.2")), after.join(" / "));
+});
+
+test("宿主：清屏之后在 Telegram 上回复那行私密提示，幕僚长的回复仍是一行提示", async (t) => {
+	const { host, phone, tg } = await hostWithHealth(t, (worker) => Promise.resolve(worker.request("worker.data", writeCea)));
+	host.clearConversation();
+	const before = phone().length;
+	tg.userSays(USER, "刚才的 CEA 是多少？", { replyTo: tg.sent.find((m) => m.chatId === USER && m.text === NOTICE)!.messageId });
+	await until(() => host.kernel.conversation().some((l) => l.text === "记得：CEA 4.2 ng/mL"), "幕僚长在对话里回了", 10_000);
+	assert.ok(host.kernel.conversation().some((l) => l.quote?.text.startsWith("转述：")), "Telegram 的回复带着整行转述进了对话");
+	await until(() => phone().length > before, "回复到了手机");
+	const after = phone().slice(before);
 	assert.ok(after.includes(NOTICE), after.join(" / "));
 	assert.ok(!after.some((m) => m.includes("4.2")), after.join(" / "));
 });

@@ -380,6 +380,8 @@ export class Kernel {
 				text,
 				this.#now(),
 			);
+			const heard = this.#get("SELECT domain AS module FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", cause) ?? this.lastPrivate();
+			if (heard) this.#run("INSERT INTO private_replies (reply_id, module) VALUES (?, ?)", replyId, heard.module);
 			this.#enqueue({ kind: "channel.reply", payload: { threadId, text, replyId, ticketId: cause.startsWith("tkt_") ? cause : null } });
 			return { ok: true, replyId };
 		});
@@ -1059,11 +1061,24 @@ export class Kernel {
 		return this.#get("SELECT 1 FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", ticketId) !== undefined;
 	}
 
+	/** A trigger brings along the ticket it answers and the line it quotes, which can hold private data from before a 清屏. */
 	routerSaw(id: string): void {
-		const ticket = id.startsWith("tkt_") ? this.#get("SELECT domain FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", id) : undefined;
-		const trigger = id.startsWith("trg_") ? this.#get("SELECT source FROM triggers WHERE id = ? AND private = 1", id) : undefined;
-		if (ticket) this.#run("INSERT INTO router_private (at, module) VALUES (?, ?)", this.#now(), ticket.domain);
-		if (trigger) this.#run("INSERT INTO router_private (at, module) VALUES (?, ?)", this.#now(), ruleNamespace(trigger.source));
+		const heard = (module: string | null) => this.#run("INSERT INTO router_private (at, module) VALUES (?, ?)", this.#now(), module);
+		if (id.startsWith("tkt_")) {
+			const ticket = this.#get("SELECT domain FROM tickets WHERE id = ? AND touched_private_at IS NOT NULL", id);
+			if (ticket) heard(ticket.domain);
+		}
+		if (id.startsWith("rpl_")) {
+			const reply = this.#get("SELECT module FROM private_replies WHERE reply_id = ?", id);
+			if (reply) heard(reply.module);
+		}
+		if (!id.startsWith("trg_")) return;
+		const trigger = this.#get("SELECT source FROM triggers WHERE id = ? AND private = 1", id);
+		if (trigger) heard(ruleNamespace(trigger.source));
+		const answered = this.#answerOf(id)?.ticketId;
+		if (answered) this.routerSaw(answered);
+		const quoted = this.#get("SELECT line_id FROM trigger_quotes WHERE trigger_id = ?", id)?.line_id;
+		if (quoted) this.routerSaw(quoted);
 	}
 
 	/** The newest private data the current Router session holds, or null when it holds none. */

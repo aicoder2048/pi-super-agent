@@ -50,7 +50,7 @@ const fake = await FakeModel.start({
 			return [{ ...open, args: { decisions: (open.args.decisions as object[]).map((d) => ({ ...d, domain: "personal-health" })) } }, reply(c, "好，再记 CEA")];
 		}),
 		...[1, 2].map(() => on("转述", /^\[Worker 汇报\]/, (c: string) => [reply(c, `转述：${c.split("\n")[1] ?? ""}`)])),
-		...[1, 2, 3].map(() => answers(/^\[对话\][\s\S]*使用者：刚才的 CEA 是多少/, "记得：CEA 4.2 ng/mL")),
+		...[1, 2, 3, 4, 5].map(() => answers(/^\[对话\][\s\S]*使用者：刚才的 CEA 是多少/, "记得：CEA 4.2 ng/mL")),
 	],
 	workers: [BRIEF, AGAIN].map((brief) =>
 		worker(
@@ -138,6 +138,23 @@ try {
 		asked2() >= again && phone().slice(asked2() + 1).join("\n") === NOTICE && !phone().slice(again).some((m) => m.includes("4.2")),
 		`Telegram recorder after the second private task:\n${phone().slice(again).join("\n")}`,
 	);
+
+	const quoteAfterClear = async (quoted: string) => {
+		const lineId = rows("SELECT id, text FROM reply_receipts ORDER BY created_at").find((r) => String(r.text).startsWith(quoted))!.id;
+		const clearedAgain = await fetch(new URL(`/clear${host.url.search}`, host.url), { method: "POST", headers: { "content-type": "application/json", origin: host.url.origin }, body: "{}" });
+		const replies = said().length;
+		const mark = phone().length;
+		const posted = await fetch(new URL(`/say${host.url.search}`, host.url), { method: "POST", headers: { "content-type": "application/json", origin: host.url.origin }, body: JSON.stringify({ text: "刚才的 CEA 是多少？", quoteOf: lineId }) });
+		await within(30_000, () => said().length > replies);
+		await within(20_000, () => phone().length >= mark + 2);
+		await sleep(1500);
+		return { mark, evidence: `quoted ${lineId}: ${quoted}\nPOST /clear: ${clearedAgain.status}, POST /say with quoteOf: ${posted.status}\nTelegram recorder after the clear:\n${phone().slice(mark).join("\n")}` };
+	};
+	const plain = await quoteAfterClear("早上好，今天没有待办");
+	check("quote-plain-keeps-full", phone().slice(plain.mark).includes("记得：CEA 4.2 ng/mL"), plain.evidence);
+	const privateQuote = await quoteAfterClear("转述：CEA 4.2");
+	const afterQuote = phone().slice(privateQuote.mark);
+	check("quote-private-after-clear", afterQuote.includes(NOTICE) && !afterQuote.some((m) => m.includes("4.2")) && said().at(-1) === "记得：CEA 4.2 ng/mL", privateQuote.evidence);
 } finally {
 	cpSync(join(state, "host.log"), join(outDir, "host.log"));
 	await host.stop();
