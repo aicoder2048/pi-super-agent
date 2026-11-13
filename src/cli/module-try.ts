@@ -14,7 +14,6 @@ import type { ModuleState } from "../modules/lifecycle.ts";
 import { formatModelRef, PAY_PER_USE_PROVIDERS, parseModelRef, type ModelRef } from "../models.ts";
 import { examsOf, judge, verdictLine, type Attempt, type Exam } from "../modules/rehearse.ts";
 import { problemLine, scanPackage } from "../modules/validate.ts";
-import { secretLookup } from "../secrets.ts";
 
 const REPO = resolve(import.meta.dirname, "../..");
 const ACTIVE_MS = 60_000;
@@ -76,7 +75,7 @@ export async function tryModule(target: string): Promise<number> {
 		if (refused) return payPerUse(refused);
 		const source = target.includes(sep) ? resolve(target) : loadModules(config).packages.find((p) => p.name === target)?.dir;
 		if (source === undefined || statSync(source, { throwIfNoEntry: false })?.isDirectory() !== true) return refuse(`${target} 不是已发现的新布局模块，也不是一个包文件夹（just modules 看有哪些）`);
-		const scanned = scanPackage(source, { secret: secretLookup(config.secretsFile), dataDirOf: (name) => moduleDataDir(config.stateDir, name) });
+		const scanned = scanPackage(source, { dataDirOf: (name) => moduleDataDir(config.stateDir, name) });
 		if (!scanned.ok) {
 			for (const problem of scanned.problems) console.log(problemLine(problem));
 			return refuse(`${scanned.name} 没通过检查，先按上面改好（just module check ${source}）`);

@@ -1,8 +1,6 @@
 import { statSync } from "node:fs";
-import { exitOnConfigError } from "../config-error.ts";
 import { moduleDataDir } from "../modules/knowledge.ts";
 import { problemLine, scanPackage, summary } from "../modules/validate.ts";
-import { configuredSecretsFile, secretLookup } from "../secrets.ts";
 import { defaultStateDir } from "../state-dir.ts";
 
 const USAGE = "usage: just module check <packageDir> [--previous <packageDir>] | just module new <name> [--template notes|team|full] | just module try <name or packageDir> | just module on <name> | just module off <name> | just module import <name> <knowledge> <file or folder> | just module purge <name> [--confirm <name>] | just module setup <name>";
@@ -15,14 +13,8 @@ function check(target: string, previous: string | undefined): number {
 		console.log(`${missing}: no such folder`);
 		return 1;
 	}
-	let secretsFile: string | undefined;
 	const stateDir = defaultStateDir();
-	try {
-		secretsFile = configuredSecretsFile(stateDir);
-	} catch (error) {
-		return exitOnConfigError(error);
-	}
-	const result = scanPackage(target, { previous, secret: secretLookup(secretsFile), dataDirOf: (name) => moduleDataDir(stateDir, name) });
+	const result = scanPackage(target, { previous, dataDirOf: (name) => moduleDataDir(stateDir, name) });
 	if (result.ok) {
 		for (const note of result.scan.notes) console.log(`note ${note}`);
 		console.log(summary(result.scan));

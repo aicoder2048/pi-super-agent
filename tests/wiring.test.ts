@@ -373,10 +373,10 @@ test("入口：宿主的 Gateway 从状态目录的模块副本里跑工具，�
 	const pkg = join(mkdtempSync(join(tmpdir(), "psa-wire-pkg-")), "personal-tax");
 	cpSync(join(import.meta.dirname, "../docs/modules/architecture/sample/personal-tax"), pkg, { recursive: true });
 	mkdirSync(join(pkg, "tools/env-probe"));
-	writeFileSync(join(pkg, "tools/env-probe/tool.json"), JSON.stringify({ title: "密钥", description: "回显密钥", effect: "read", secrets: ["TAX_KEY"], input: { x: { type: "text", title: "x" } }, output: { named: { type: "text", title: "n" } } }));
-	writeFileSync(join(pkg, "tools/env-probe/index.ts"), "export default () => ({ named: process.env.TAX_KEY ?? null });");
+	writeFileSync(join(pkg, "tools/env-probe/tool.json"), JSON.stringify({ title: "密钥", description: "回显密钥", effect: "read", secrets: ["PERSONAL_TAX_KEY"], input: { x: { type: "text", title: "x" } }, output: { named: { type: "text", title: "n" } } }));
+	writeFileSync(join(pkg, "tools/env-probe/index.ts"), "export default () => ({ named: process.env.PERSONAL_TAX_KEY ?? null });");
 	const secretsFile = join(config.stateDir, "secrets.env");
-	writeFileSync(secretsFile, "TAX_KEY=from-file\n");
+	writeFileSync(secretsFile, "PERSONAL_TAX_KEY=from-file\n");
 	const modules = servedAsHost(Modules.load([join(pkg, "..")]));
 	const digest = modules.book.get("personal-tax")!.digest! as Digest;
 	new ModuleStore(join(config.stateDir, "module-store")).keep("personal-tax" as ModuleName, digest, pkg);
