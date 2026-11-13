@@ -1,7 +1,4 @@
-/**
- * node --import ./src/pi-runtime.mjs docs/modules/evidence/m3-live.ts <trunk checkout> [outDir]
- * Lanes 1 to 9 of M3 against real host processes, a fake model and a fake Telegram. Lane 10 needs the real phone.
- */
+/** node --import ./src/pi-runtime.mjs docs/modules/evidence/m3-live.ts <trunk checkout> [outDir] */
 import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";

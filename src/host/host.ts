@@ -433,7 +433,10 @@ export class Host {
 
 	/** In memory: after a restart a problem still standing is told once more. */
 	#feedProblem(source: string, problem: FeedProblem | undefined): void {
-		if (problem === undefined) return void this.#feedProblems.delete(source);
+		if (problem === undefined) {
+			this.#feedProblems.delete(source);
+			return;
+		}
 		if (this.#feedProblems.get(source) === problem.id) return;
 		this.#feedProblems.set(source, problem.id);
 		this.#postHostLine(source, { kind: "notice", text: this.kernel.moduleNotice(source, oneLine(problem.text, PROBLEM_MAX)) });

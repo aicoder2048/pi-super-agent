@@ -17,7 +17,6 @@ export interface SentMessage {
 	silent: boolean;
 	/** Null when the message has no inline keyboard. */
 	buttons: Button[][] | null;
-	/** False when the request asked Telegram not to show a link preview. */
 	preview: boolean;
 	messageId: number;
 	at: number;

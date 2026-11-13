@@ -1,6 +1,5 @@
 /**
  * node --import ./src/pi-runtime.mjs docs/modules/evidence/m3-perf.ts <trunk checkout> [outFile]
- * One notice from the feed handing it back to the trigger write (trunk and head) and on to the Telegram outbox (head).
  * The two hosts run side by side in this process and take the notices in turn.
  */
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

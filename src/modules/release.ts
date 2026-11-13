@@ -11,28 +11,22 @@ const ELLIPSIS = "…";
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
-/** Drops format characters (zero-width, direction controls, BOM), then turns control characters, line and paragraph separators and runs of white space into one space. */
 const clean = (value: string) =>
 	value
 		.replace(/\p{Cf}/gu, "")
 		.replace(/[\s\p{Cc}\p{Zl}\p{Zp}]+/gu, " ")
 		.trim();
 
-/** Cut on grapheme boundaries, so an emoji is never split into half a surrogate pair. */
 function clip(text: string, graphemes: number): string {
-	if (text.length <= graphemes) return text;
-	const kept: string[] = [];
-	let length = 0;
-	for (const { segment } of segmenter.segment(text)) {
-		if (kept.length === graphemes || length + segment.length > LINE_UNITS) {
-			let cut = kept.length;
-			while (cut > 0 && (cut === graphemes || length + ELLIPSIS.length > LINE_UNITS)) length -= kept[--cut]!.length;
-			return kept.slice(0, cut).join("") + ELLIPSIS;
-		}
-		kept.push(segment);
-		length += segment.length;
+	const parts: string[] = [];
+	for (const { segment } of segmenter.segment(text)) if (parts.push(segment) > graphemes) break;
+	if (parts.length <= graphemes && text.length <= LINE_UNITS) return text;
+	let kept = "";
+	for (const part of parts.slice(0, graphemes - 1)) {
+		if (kept.length + part.length > LINE_UNITS - ELLIPSIS.length) break;
+		kept += part;
 	}
-	return text;
+	return kept + ELLIPSIS;
 }
 
 export const oneLine = (text: string, graphemes: number): string => clip(clean(text), graphemes);
@@ -41,10 +35,8 @@ const PLACEHOLDER = /\{\{(\w+)\}\}/g;
 
 export const placeholders = (template: string): string[] => [...template.matchAll(PLACEHOLDER)].map((m) => m[1]!);
 
-/** `{{field}}` is replaced by the field's value, or by nothing. */
 export const fill = (template: string, fields: Readonly<Record<string, string>>): string => template.replace(PLACEHOLDER, (_, key: string) => fields[key] ?? "");
 
-/** Fills `template` with the cleaned values: at most three lines, each at most 160 graphemes. */
 export function release(template: string, fields: Readonly<Record<string, string>>): string {
 	const cleaned = Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, clean(value)]));
 	return template

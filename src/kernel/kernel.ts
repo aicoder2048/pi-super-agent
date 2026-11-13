@@ -236,7 +236,6 @@ export class Kernel {
 		this.config = { ...DEFAULT_CONFIG, ...config };
 	}
 
-	/** `line`: the notice an announced trigger posted, for the caller to deliver. */
 	submitTrigger(sub: TriggerSubmission): { triggerId: string; duplicate: boolean; line?: HostLine } {
 		return this.#tx(() => {
 			const existing = this.#get("SELECT id FROM triggers WHERE source = ? AND external_id = ?", sub.source, sub.externalId);
