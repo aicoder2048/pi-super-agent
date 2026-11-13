@@ -14,9 +14,9 @@ import { FakeSpawner, fauxRouter, ids, servedAsHost, until, type Brain } from ".
 const LETTERS = join(import.meta.dirname, "fixtures/modules/private-line");
 const graphemes = (text: string) => [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)].length;
 
-function lettersCopy(t: TestContext) {
+function lettersCopy(t: TestContext, drop = true) {
 	const root = mkdtempSync(join(tmpdir(), "psa-feed-line-"));
-	t.after(() => rmSync(root, { recursive: true, force: true }));
+	if (drop) t.after(() => rmSync(root, { recursive: true, force: true }));
 	const pkg = join(root, "modules", "private-line");
 	cpSync(LETTERS, pkg, { recursive: true });
 	return { root, pkg };
@@ -89,11 +89,10 @@ const answersEveryone: Brain = (cards) =>
 	cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "reply", args: { text: ANSWER, cause: ids(card, "trg") } }] : []));
 
 async function lettersHost(t: TestContext, edit?: (pkg: string) => void) {
-	const { root, pkg } = lettersCopy(t);
+	const { root, pkg } = lettersCopy(t, false);
 	edit?.(pkg);
 	const modules = servedAsHost(Modules.load([join(root, "modules")]));
 	const tg = await FakeTelegram.start();
-	t.after(() => tg.close());
 	const router = fauxRouter(answersEveryone);
 	const host = await Host.start({
 		stateDir: join(root, "state"),
@@ -104,7 +103,11 @@ async function lettersHost(t: TestContext, edit?: (pkg: string) => void) {
 		moduleFeeds: { feeds: () => modules.feeds(), fixtures: false, tickMs: 20 },
 		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set([USER]), timing: { pollTimeoutSec: 1, minGapMs: 5 } },
 	});
-	t.after(() => host.stop());
+	t.after(async () => {
+		await host.stop();
+		await tg.close();
+		rmSync(root, { recursive: true, force: true });
+	});
 	tg.userSays(USER, "/start");
 	await until(() => tg.sent.length > 0, "聊天打开");
 	const inbox = join(root, "state", "inbox", "private-line", "inbox");

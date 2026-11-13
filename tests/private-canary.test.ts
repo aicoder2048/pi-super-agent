@@ -304,7 +304,6 @@ test("金丝雀：私密 feed 放出三行之后，正文里的一串字经过�
 	const CANARY_BODY = "CANARY-7f3a";
 	const LETTERS = "private-line" as ModuleName;
 	const root = mkdtempSync(join(tmpdir(), "psa-canary-line-"));
-	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const stateDir = join(root, "state");
 	const pkg = join(import.meta.dirname, "fixtures/modules/private-line");
 	const scan = scanPackage(pkg, { runCases: false, folder: LETTERS });
@@ -356,7 +355,10 @@ test("金丝雀：私密 feed 放出三行之后，正文里的一串字经过�
 		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set([USER]), timing: { pollTimeoutSec: 1, minGapMs: 5 } },
 	});
 	spawner.request = (...args) => host.workers.handleRequest(...args);
-	t.after(() => host.stop());
+	t.after(async () => {
+		await host.stop();
+		rmSync(root, { recursive: true, force: true });
+	});
 	tg.userSays(USER, "/start");
 	await until(() => tg.sent.length > 0, "聊天打开");
 
