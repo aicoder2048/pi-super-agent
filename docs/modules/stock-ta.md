@@ -1,14 +1,14 @@
 # 股票技术分析模块（stock-ta）
 
-stock-ta 让 Pi Super Agent 回答美股个股的技术面问题，例如「NVDA 现在的支撑阻力和动量怎么样」。计算来自技术分析私有仓库里的 `ta-trading`（`ta` 命令行），模块用 `just module setup` 把钉住的版本装进自己的数据目录；数据也归模块自己，`scan` feed 每个交易日收盘后扫一次自选股。工具只读这份数据，再配上笔记、技能和一个五人的专家队「技术分析研究组」。它不需要你本机的技术分析项目，跑服务的旧 Mac 上也能用。
+stock-ta 让 Pi Super Agent 回答美股的报价和技术面问题，例如「NVDA 现在多少」「NVDA 现在的支撑阻力和动量怎么样」。它只管行情数据和由它算出的技术面，不管新闻和财报解读。计算来自技术分析私有仓库里的 `ta-trading`（`ta` 命令行），模块用 `just module setup` 把钉住的版本装进自己的数据目录；数据也归模块自己，`scan` feed 每个交易日收盘后扫一次自选股。工具只读这份数据，再配上笔记、技能和一个五人的专家队「技术分析研究组」。它不需要你本机的技术分析项目，跑服务的旧 Mac 上也能用。
 
 包在 `docs/modules/examples/stock-ta/`，不在仓库的 `modules/` 下。仓库 `modules/` 里的新布局包第一次被发现时默认打开，而这个模块要先在那台机器上跑一次 `just module setup`、有一把 Massive 密钥才能用，没准备好就打开的话工具全失败，还会在幕僚长的名单上和 us-market 抢美股问题。所以它放在例子目录里，你在要用的那台机器上复制一份，自己打开。
 
 ## 里面有什么
 
-- **工具。** 六个只读工具调 `ta` 的子命令：`structure`（支撑阻力、形态、动能）、`signals`（技术信号，日线和周线）、`note`（笔记原文）、`prices`（数据库里的最新价）、`conditions`（规则状态）、`rules`（规则定义）。另有一个纯计算工具 `risk-reward`，算盈亏比和止损距离，用例在 `cases.json` 里，每次检查都跑。
+- **工具。** `quote` 向 Massive 要一次快照，回现价，见下文「问现价」。六个只读工具调 `ta` 的子命令：`structure`（支撑阻力、形态、动能）、`signals`（技术信号，日线和周线）、`note`（笔记原文）、`prices`（数据库里的最新价）、`conditions`（规则状态）、`rules`（规则定义）。另有一个纯计算工具 `risk-reward`，算盈亏比和止损距离，用例在 `cases.json` 里，每次检查都跑。
 - **专家。** 趋势与动量、结构与形态、信号分诊、市场情绪、风险与交易计划。每位专家只够得到 `uses` 里列的工具。
-- **技能。** `principle-evidence`、`principle-freshness`、`ta-interpret`，从技术分析项目的 Pi 技能搬过来，去掉了桌面界面、选股和日内的部分。
+- **技能。** `principle-evidence`、`principle-freshness`、`ta-interpret`，从技术分析项目的 Pi 技能搬过来，去掉了桌面界面、选股和日内的部分。`quick-quote` 让领队自己回答只问价格的问题。
 - **报价。** feed `quotes` 在交易时段（美东 9:30 到收盘后 20 分钟）每 60 秒向 Massive 发一次快照请求，取回整张自选股，每只存一行进 `quotes`：价格、相对昨收的涨跌幅、当天成交量和数据时间。Starter 套餐的数据延迟 15 分钟，所以数据时间比现在早约 15 分钟。同一数据时间的行只存一次。自选股在 `watchlist` 里。
 - **日线扫描。** feed `scan` 每小时看一次，每个交易日收盘 15 分钟后用模块自己装的 `ta` 扫一次自选股和 QQQ、SPY，把两年日线、分红和信号写进模块自己的数据库 `modules-data/stock-ta/files/ta/ta.sqlite`，每次运行在 `scan-runs` 里记一行。工具读的就是这份数据库。见下文「日线扫描」。
 - **大涨大跌自动分析。** 自选股里一只股票当天相对昨收涨跌达到 5%，`quotes` 发一条触发，规则 `big-move`（`rules.md`）让幕僚长给技术分析研究组开任务：结构与形态和趋势与动量各看一遍，汇报带数据时间和出处，并说明不是交易指令。同一只股票同一天同一方向只开一次；当天先跌 5% 再涨 5% 是两次，哪怕跌 5% 的任务还没结束，涨 5% 也另开一个任务。5% 写死在 `feeds/quotes/index.ts` 的 `BIG_MOVE_PCT`。
@@ -104,10 +104,27 @@ stock-ta 让 Pi Super Agent 回答美股个股的技术面问题，例如「NVDA
 ## 自选股、报价和提醒
 
 - **改自选股。** 在对话里说「把 AAPL 加进 stock-ta 的自选股」或「NVDA 从自选股划掉」。Worker 往 `watchlist` 加一行，划掉是给那一行写上 `removedAt`，不删行。同一只股票有好几行时以最新的一行为准。下一轮报价就用新名单，不用重启。自选股是空的时候不发请求。
-- **问现价。** 「NVDA 现在多少，离 170 还有多远」：专家读 `quotes` 里最新的一行，回答写出数据时间，并说明延迟 15 分钟。
+- **问现价。** 「NVDA 现在多少」「META 和 TSM 今天涨了多少」：领队按技能 `quick-quote` 自己调一次 `quote`，不派专家，回答写价格、相对昨收的涨跌幅、数据时间（美东）、时段和「行情延迟 15 分钟」。问到为什么涨跌、要技术面时才派专家。`quote` 的细节：
+  - 一次 1 到 10 个代码，自选股以外的股票和 ETF 也能查，一次快照请求，用 `POLYGON_API_KEY`。超过 10 个、没有密钥，都一行说明，不发请求。行情服务 15 秒没应答就放弃并说明，宿主的 20 秒上限之前一定结束。
+  - 时段看数据时间：盘前（4:00 起）、盘中、盘后（到 20:00）。数据的美东日期早于今天时是「休市」，这样周末、节假日和夜里不用节假日表也能认出来，价格是上一交易日最后一笔（可能是盘后的），数据时间照实写。提前收盘日 13:00 以后算盘后，表在 `market-days.ts`，是宿主 `src/sources/market/session.ts` 的副本，`tests/market-hours.test.ts` 比对两份相同，每年加提前收盘日时两处都改。
+  - Starter 套餐的快照没有成交明细，价格是延迟 15 分钟的那根分钟线的收盘价。每天凌晨 3:30 美东 Massive 清空当天的日线，盘前的当天成交量是 0，不代表没有成交。
+  - 读的 Massive 地址和报价 feed 是同一个（`feeds/quotes/feed.json` 的 `settings.baseUrl`）。
+- **问新闻。** 股票技术分析不管新闻和财报解读。只问新闻的问题，幕僚长按模块说明不交给 stock-ta，交给不属于任何领域的通用助手，它能读网页。一句话里既问数据又问新闻时，领队回答数据那一半，明说新闻要单独问一句。
 - **设提醒。** 「NVDA 跌破 170 提醒我」：只有你本人发起的任务能设，条件存在 `quotes` 上，满足时网页和手机直接提醒你，带价格和数据时间。提醒里的时间按美东写，例如「2026-11-09 09:47 美东」；`quotes` 里存的还是 UTC。这是因为 `quotes` 的 `watch` 写了 `"zone": "America/New_York"`，别的模块的数据不写就照存的原样显示。
 - **和 us-market 分开取。** 模块的代码不能用宿主的行情客户端，所以 stock-ta 自己发快照请求、有自己的自选股，和 us-market 用同一把密钥时请求量相加（交易时段每分钟各一次）。`quotes` 不会自动清理，十只股票一年大约一百万行。
 - **盘后和周末不请求。** 休市日没有日历，开盘时段照常请求，Massive 返回的还是上一个交易日的数据，数据时间不变就不会存新行。
+
+## 旧 Mac 部署
+
+R2a、R1、R6 合并后各在旧 Mac 部署一次，每次都等你说「部署」。下面的命令在旧 Mac 的仓库目录跑，状态目录是 `~/.pi-super-agent`。
+
+1. **只读预检。** 记下 `git rev-parse --short HEAD`、`just modules` 里各模块的开关、stock-ta 的 `_conditions` 条数和自选股条数（`sqlite3 -readonly ~/.pi-super-agent/modules-data/stock-ta/data.db`）、`config.json` 的键、当天的提醒行和触发条数。
+2. **时间。** 美东 16:20 以后或周末，切换中没有盘中行情。
+3. **备份。** 复制一份 `config.json`；`sqlite3 ~/.pi-super-agent/state.db ".backup <备份目录>/state.db"`，`modules-data/stock-ta/data.db` 也这样备份。
+4. **换代码。** `just redeploy`（拉 main 并重装服务，见 `docs/deploy/home-mac.md` 的「更新」），再 `cp -R docs/modules/examples/stock-ta ~/.pi-super-agent/modules/` 和 `just module setup stock-ta`（钉的提交没变时什么都不做）。包换上不用重启，宿主几秒内换新版本。
+5. **发一行测试。** `just notify` 发一行。事后在 `state.db` 的 `telegram_messages` 里查到这一行的 `message_id` 就算发出。
+6. **R2a 这次的检查。** 在 Telegram 上问「NVDA 现在多少」，25 秒内收到带价格、涨跌幅、数据时间和「延迟 15 分钟」的回答，网页上这个任务没有派活记录。再从宿主日志的 `[gateway] stock-ta tools/quote` 行和 `telegram_messages` 算 3 次从提问到回答的时间，中位数超过 25 秒就记成阻碍，回到 R2a 修。周末第一次问时顺便看「休市」的价格和数据时间是不是上一交易日最后一笔。
+7. **回退。** 恢复 `config.json` 和 `data.db` 的备份（`state.db` 只在它出问题时恢复），`git checkout` 部署前的 SHA，从那个 SHA 重新 `cp -R` stock-ta 包，重启。R2a 不改数据格式，回退到 R2a 以前不需要恢复 `data.db`。
 
 ## 日线扫描
 
