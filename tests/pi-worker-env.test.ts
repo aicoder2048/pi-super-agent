@@ -33,7 +33,7 @@ test("Worker 子进程和领域的 prepare 拿不到宿主环境里的密钥类�
 		cliPath,
 	});
 	const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
-	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", skillsDir: "/modules/news/skills", prepare: "env > prepare-env.txt", crew: [], granted: [], token: "secret-ticket-token", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
+	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", profile: "request", readRoots: [dir], skillsDir: "/modules/news/skills", prepare: "env > prepare-env.txt", crew: [], granted: [], token: "secret-ticket-token", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
 	t.after(() => handle.stop());
 	const env = JSON.parse(readFileSync(join(dir, "worker-env.json"), "utf8")) as Record<string, string>;
 	for (const name of ["MASSIVE_API_KEY", "FINNHUB_API_KEY", "FOO_TOKEN", "TELEGRAM_BOT_TOKEN", "DEEPSEEK_API_KEY", "DB_PASSWORD", "SECRET_SAUCE"]) assert.equal(env[name], undefined, `Worker 环境里不该有 ${name}`);
@@ -68,7 +68,7 @@ test("Worker 子进程和模块 prepare 的环境里没有客户端凭据，也�
 		cliPath,
 	});
 	const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
-	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir, basis: "request", prepare: "env > prepare-env.txt", crew: [], granted: [], token: "secret-ticket-token", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
+	const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir, basis: "request", profile: "request", readRoots: [workdir], prepare: "env > prepare-env.txt", crew: [], granted: [], token: "secret-ticket-token", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
 	t.after(() => handle.stop());
 	const env = JSON.parse(readFileSync(join(workdir, "worker-env.json"), "utf8")) as Record<string, string>;
 	const prepared = readFileSync(join(workdir, "prepare-env.txt"), "utf8");
@@ -89,7 +89,7 @@ test("本队有成员时，成员名单经 PSA_CREW 交给助手进程；没有�
 		writeFileSync(cliPath, FAKE_PI);
 		const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath });
 		const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
-		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", skillsDir: undefined, prepare: undefined, crew: members as never, granted: [], token: "t", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
+		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", profile: "request", readRoots: [dir], skillsDir: undefined, prepare: undefined, crew: members as never, granted: [], token: "t", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
 		t.after(() => handle.stop());
 		return JSON.parse(readFileSync(join(dir, "worker-env.json"), "utf8")) as Record<string, string>;
 	};
@@ -106,7 +106,7 @@ test("推断开的任务只读：领域的 prepare 不跑，领域的技能目�
 		writeFileSync(cliPath, FAKE_PI);
 		const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath });
 		const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
-		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis, skillsDir: "/modules/news/skills", prepare: "echo ran > prepared.txt", crew: [], granted: [], token: "t", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
+		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis, profile: basis, readRoots: [dir], skillsDir: "/modules/news/skills", prepare: "echo ran > prepared.txt", crew: [], granted: [], token: "t", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
 		t.after(() => handle.stop());
 		const argv = JSON.parse(readFileSync(join(dir, "worker-argv.json"), "utf8")) as string[];
 		return { prepared: existsSync(join(dir, "prepared.txt")), skills: argv.flatMap((a, i) => (a === "--skill" ? [argv[i + 1]] : [])) };
@@ -122,7 +122,7 @@ test("助手的领域开了 lookup，宿主才把可查来源交给它；没配�
 		writeFileSync(cliPath, FAKE_PI);
 		const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath, lookupHelp });
 		const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
-		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", skillsDir: undefined, prepare: undefined, crew: [], granted: lookup ? ["lookup"] : [], token: "tok", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
+		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", profile: "request", readRoots: [dir], skillsDir: undefined, prepare: undefined, crew: [], granted: lookup ? ["lookup"] : [], token: "tok", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
 		t.after(() => handle.stop());
 		return JSON.parse(readFileSync(join(dir, "worker-env.json"), "utf8")) as Record<string, string>;
 	};
@@ -138,7 +138,7 @@ test("只有使用者开的任务、领域又开了 tripwire，宿主才把盯�
 		writeFileSync(cliPath, FAKE_PI);
 		const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath, tripwireHelp });
 		const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
-		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis, skillsDir: undefined, prepare: undefined, crew: [], granted, token: "tok", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
+		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis, profile: basis, readRoots: [dir], skillsDir: undefined, prepare: undefined, crew: [], granted, token: "tok", model: { provider: "openai-codex", id: "gpt" }, resume: false }, events);
 		t.after(() => handle.stop());
 		return JSON.parse(readFileSync(join(dir, "worker-env.json"), "utf8")) as Record<string, string>;
 	};
@@ -155,7 +155,7 @@ test("宿主给了成品规则的助手，argv 里多一段 --append-system-prom
 		writeFileSync(cliPath, FAKE_PI);
 		const spawner = new PiWorkerSpawner({ socketPath: join(dir, "h.sock"), sessionDir: join(dir, "sessions"), cliPath });
 		const events = { turnStarted() {}, toolCalled() {}, usage() {}, settled() {}, exited() {}, transcript() {} };
-		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", crew: [], granted: [], token: "t", model: { provider: "openai-codex", id: "gpt" }, resume: false, outputRule }, events);
+		const handle = await spawner.spawn({ ticketId: "tkt_1", sessionId: "s1", workdir: dir, basis: "request", profile: "request", readRoots: [dir], crew: [], granted: [], token: "t", model: { provider: "openai-codex", id: "gpt" }, resume: false, outputRule }, events);
 		t.after(() => handle.stop());
 		return JSON.parse(readFileSync(join(dir, "worker-argv.json"), "utf8")) as string[];
 	};

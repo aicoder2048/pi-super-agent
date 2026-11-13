@@ -4,9 +4,9 @@ import { Type } from "typebox";
 import { spawn, type ChildProcess } from "node:child_process";
 import { connect, type Socket } from "node:net";
 import { onJsonLines, writeJsonLine } from "../jsonl.ts";
-import type { Basis } from "../kernel/types.ts";
 import { OPTION_MAX_CHARS, OPTIONS_MAX, OPTIONS_MIN } from "../kernel/question.ts";
-import { DISPATCH_MARK, toolAllowlist } from "./tools.ts";
+import { DISPATCH_MARK, helperRefusal, isRooted, PATH_TOOLS, toolAllowlist, type Profile } from "./tools.ts";
+import { piReadResolver, rootRefusal, type ResolveReadPath } from "./read-roots.ts";
 import { webGet } from "./web-get.ts";
 
 interface BgCommand {
@@ -73,7 +73,10 @@ export default function workerExtension(pi: ExtensionAPI) {
 	const crew = process.env.PSA_CREW?.split(",").filter(Boolean) ?? [];
 	const memberTools = process.env.PSA_MEMBER_TOOLS?.split(",").filter(Boolean);
 	const callId = process.env.PSA_CALL_ID;
-	const allowlist = memberTools ?? toolAllowlist(env("PSA_BASIS") as Basis, crew.length > 0);
+	const profile = env("PSA_PROFILE") as Profile;
+	const allowlist = memberTools ?? toolAllowlist(profile, crew.length > 0);
+	const readRoots: string[] = JSON.parse(process.env.PSA_READ_ROOTS ?? "[]");
+	const piCli = process.env.PSA_PI_CLI;
 	const bgMaxMs = Number(process.env.PSA_BG_MAX_MS ?? 120 * 60_000);
 	const call = hostClient(env("PSA_SOCKET"), { ticketId, token: env("PSA_TOKEN") });
 	const lookupHelp = process.env.PSA_LOOKUPS;
@@ -396,10 +399,21 @@ export default function workerExtension(pi: ExtensionAPI) {
 		});
 	}
 
-	pi.on("tool_call", async (event) => {
-		if (!allowlist || allowlist.includes(event.toolName)) return;
-		if (memberTools) return { block: true, reason: `成员在这项任务里只能用 ${memberTools.join("、") || "（没有工具）"}，不能用 ${event.toolName}。做不了的部分在回复里说明。` };
-		return { block: true, reason: `依据为推断的任务只能读文件、读网页、查数据和汇报，不能用 ${event.toolName}。需要对外动作时写成草稿，用 report 的 drafts 提交。` };
+	let resolver: Promise<ResolveReadPath> | undefined;
+	pi.on("tool_call", async (event, ctx) => {
+		if (allowlist && !allowlist.includes(event.toolName)) {
+			if (memberTools) return { block: true, reason: `成员在这项任务里只能用 ${memberTools.join("、") || "（没有工具）"}，不能用 ${event.toolName}。做不了的部分在回复里说明。` };
+			return { block: true, reason: helperRefusal(profile, event.toolName) };
+		}
+		if (!isRooted(profile) || !PATH_TOOLS.includes(event.toolName)) return;
+		let resolve: ResolveReadPath;
+		try {
+			resolve = await (resolver ??= piReadResolver(piCli ?? ""));
+		} catch {
+			return { block: true, reason: "Worker 没能加载 Pi 的路径解析，这项任务暂时不能读文件。" };
+		}
+		const refusal = rootRefusal(String(event.input.path ?? "."), ctx.cwd, readRoots, resolve);
+		return refusal === undefined ? undefined : { block: true, reason: refusal };
 	});
 
 	pi.on("agent_start", async () => {

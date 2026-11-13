@@ -5,9 +5,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { piCliPath } from "../pi-runtime.mjs";
 import { toolStep } from "../client/board-format.mjs";
-import type { Basis } from "../kernel/types.ts";
 import type { ModelRef } from "../models.ts";
-import { memberTools, toolAllowlist } from "../worker/tools.ts";
+import { helperLimits, memberTools, toolAllowlist, type Profile } from "../worker/tools.ts";
 import type { Member } from "../teams.ts";
 import { onJsonLines } from "../jsonl.ts";
 import { isMemberMessage, REPLY_MAX, type MemberRun, type ToolEdge } from "./dispatch.ts";
@@ -66,14 +65,15 @@ export interface WorkerArgsInput {
 	extension: string;
 	prompt: string;
 	skillsDir?: string;
-	basis: Basis;
+	profile: Profile;
 	crew?: readonly RosterEntry[];
 	outputRule?: string;
 }
 
 export function workerArgs(input: WorkerArgsInput): string[] {
 	const crew = input.crew ?? [];
-	const allowlist = toolAllowlist(input.basis, crew.length > 0);
+	const allowlist = toolAllowlist(input.profile, crew.length > 0);
+	const limits = helperLimits(input.profile);
 	return [
 		"--session-dir", input.sessionDir,
 		"--session-id", input.sessionId,
@@ -81,6 +81,7 @@ export function workerArgs(input: WorkerArgsInput): string[] {
 		"--no-skills", ...(input.skillsDir ? ["--skill", input.skillsDir] : []),
 		...(allowlist ? ["--tools", allowlist.join(","), "--no-mcp"] : []),
 		"--append-system-prompt", input.prompt,
+		...(limits ? ["--append-system-prompt", limits] : []),
 		...(crew.length ? ["--append-system-prompt", teamPrompt(crew)] : []),
 		...(input.outputRule ? ["--append-system-prompt", input.outputRule] : []),
 	];
@@ -116,7 +117,7 @@ export class PiWorkerSpawner implements WorkerSpawner {
 			extension: WORKER_EXTENSION,
 			prompt: WORKER_PROMPT,
 			skillsDir: spec.skillsDir,
-			basis: spec.basis,
+			profile: spec.profile,
 			crew: spec.crew,
 			outputRule: spec.outputRule,
 		});
@@ -128,12 +129,13 @@ export class PiWorkerSpawner implements WorkerSpawner {
 			args,
 			env: {
 				...workerEnv(process.env),
-				PSA_PI_CLI: this.#o.cliPath || piCliPath(),
+				PSA_PI_CLI: this.#cli(),
 				PSA_SOCKET: this.#o.socketPath,
 				PSA_TICKET: spec.ticketId,
 				...(spec.resume && { PSA_WORKER_RESUME: "1" }),
 				PSA_TOKEN: spec.token,
-				PSA_BASIS: spec.basis,
+				PSA_PROFILE: spec.profile,
+				PSA_READ_ROOTS: JSON.stringify(spec.readRoots),
 				...(spec.crew.length && { PSA_CREW: spec.crew.map((m) => m.name).join(",") }),
 				PSA_BG_MAX_MS: String(this.#o.bgMaxMs ?? 120 * 60_000),
 				...this.#lookupEnv(spec.granted.includes("lookup")),
@@ -189,9 +191,10 @@ export class PiWorkerSpawner implements WorkerSpawner {
 	/** One dispatch: `pi --mode json -p` continuing the member's session, in its own process group, killed as a group on abort. */
 	runMember(run: MemberRun): Promise<string> {
 		const { member } = run;
-		const tools = [...memberTools(run.basis, member.tools), ...(run.domainTools ? ["domain_tool"] : []), ...(run.knowledge ? ["knowledge"] : []), ...(run.data ? ["data"] : [])];
+		const tools = [...memberTools(run.profile, member.tools), ...(run.domainTools ? ["domain_tool"] : []), ...(run.knowledge ? ["knowledge"] : []), ...(run.data ? ["data"] : [])];
+		const cli = this.#cli();
 		const args = [
-			this.#o.cliPath ?? piCliPath(),
+			cli,
 			"--mode", "json", "-p", "--session-dir", run.sessionDir, "--continue", "--no-context-files",
 			"--model", formatModelRef(run.model),
 			"--no-extensions", "-e", WORKER_EXTENSION,
@@ -207,7 +210,9 @@ export class PiWorkerSpawner implements WorkerSpawner {
 			PSA_SOCKET: this.#o.socketPath,
 			PSA_TICKET: run.ticketId,
 			PSA_TOKEN: run.token,
-			PSA_BASIS: run.basis,
+			PSA_PROFILE: run.profile,
+			PSA_READ_ROOTS: JSON.stringify(run.readRoots),
+			PSA_PI_CLI: cli,
 			PSA_MEMBER_TOOLS: tools.join(","),
 			PSA_CALL_ID: run.callId,
 			...this.#lookupEnv(tools.includes("lookup")),
@@ -216,6 +221,10 @@ export class PiWorkerSpawner implements WorkerSpawner {
 			...(run.data && { PSA_DATA: run.data }),
 		};
 		return runMemberProcess(args, env, run);
+	}
+
+	#cli(): string {
+		return this.#o.cliPath || piCliPath();
 	}
 
 	#lookupEnv(granted: boolean): { PSA_LOOKUPS?: string } {

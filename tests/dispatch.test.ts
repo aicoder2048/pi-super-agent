@@ -275,7 +275,7 @@ test("助手一轮里派给两位成员：同时开始，各自拿回自己的�
 	]);
 	assert.match(out[0].text, /^成员回复 · 行情分析师（market-analyst） · 完成[\s\S]*行情分析师的回复/);
 	const stateDir = spawner.workers.get(ticketId())!.spec.workdir.split("/workers/")[0];
-	assert.deepEqual(runs.map((r) => [r.sessionDir, r.workdir, r.basis, r.ticketId]), [
+	assert.deepEqual(runs.map((r) => [r.sessionDir, r.workdir, r.profile, r.ticketId]), [
 		[join(stateDir, "workers", ticketId(), "team", "market-analyst"), join(stateDir, "workers", ticketId()), "request", ticketId()],
 		[join(stateDir, "workers", ticketId(), "team", "news-researcher"), join(stateDir, "workers", ticketId()), "request", ticketId()],
 	]);
@@ -302,7 +302,7 @@ test("被回退上限拒掉的派活不算派过：看板上仍是一个也没�
 
 test("推断任务的依据原样交给成员进程，由它把工具收窄成只读", async (t) => {
 	const bases: string[] = [];
-	const { host, results } = await dispatching(t, async (run) => (bases.push(run.basis), "答"), [two[0]], { say: "推断：盯一下" });
+	const { host, results } = await dispatching(t, async (run) => (bases.push(run.profile), "答"), [two[0]], { say: "推断：盯一下" });
 	await results();
 	assert.deepEqual(bases, ["inference"]);
 });
@@ -630,7 +630,7 @@ test("成员的动静推给页面有节流：一次派活大约一秒最多推�
 			return "答";
 		},
 	});
-	const result = desk.dispatch({ ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", basis: "request", model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {}, onMessage() {}, onProgress: () => progress++ });
+	const result = desk.dispatch({ ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", profile: "request", readRoots: [], model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {}, onMessage() {}, onProgress: () => progress++ });
 	await tick(350);
 	const afterBurst = changes;
 	assert.equal(progress, 1, "30 次动静只推了开头那一次");
@@ -651,7 +651,7 @@ test("名额用完、有派活在等名额时，派活台告诉管上限的一�
 		cap: { limit: () => max, membersWaiting: (n) => void waits.push(n) },
 		run: (run) => new Promise((done) => (finish[run.callId] = () => done("答"))),
 	});
-	const order = (callId: string, member: Member) => desk.dispatch({ ticketId: "tkt_1", callId, member, task: "x", basis: "request", model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {}, onMessage() {}, onProgress() {} });
+	const order = (callId: string, member: Member) => desk.dispatch({ ticketId: "tkt_1", callId, member, task: "x", profile: "request", readRoots: [], model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {}, onMessage() {}, onProgress() {} });
 	const first = order("c1", CREW[0]);
 	const again = order("c2", CREW[0]);
 	await tick();
@@ -886,7 +886,7 @@ test("助手崩溃后马上停宿主：宿主等那些成员进程没了才停�
 test("结束一个任务的派活可以调两次：两次都等到成员进程没了才返回，之后同一任务还能再派", async () => {
 	const gone: string[] = [];
 	const desk = new DispatchDesk({ queueTimeoutMs: 5000, stallMs: 5000, cap: fixedCap(4), onChange() {}, run: slowToDie(150, gone) });
-	const order = { ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", basis: "request" as const, model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {}, onProgress() {}, onMessage() {} };
+	const order = { ticketId: "tkt_1", callId: "c1", member: CREW[1], task: "x", profile: "request" as const, readRoots: [], model: MARKET_MODEL, workdir: "/tmp", sessionDir: "/tmp/x", limitMs: 5000, onUsage() {}, onProgress() {}, onMessage() {} };
 	const first = desk.dispatch(order);
 	await tick();
 	const ends = [desk.end("tkt_1"), desk.end("tkt_1")];

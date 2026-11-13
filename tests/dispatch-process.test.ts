@@ -6,8 +6,8 @@ import test, { type TestContext } from "node:test";
 import { DispatchDesk, memberSessionDir, type MemberRun } from "../src/host/dispatch.ts";
 import { PiWorkerSpawner } from "../src/host/pi-worker.ts";
 import type { TranscriptMessage } from "../src/client/protocol.ts";
-import type { Basis } from "../src/kernel/types.ts";
 import type { Member } from "../src/teams.ts";
+import type { Profile } from "../src/worker/tools.ts";
 import { FAKE_PROVIDER, FakeModel, fakeAgentEnv, on, worker } from "./e2e/fake-model.ts";
 import { until, within } from "./helpers/fakes.ts";
 
@@ -68,9 +68,9 @@ function setup(t: TestContext, env: Record<string, string> = {}) {
 	const usage: number[] = [];
 	const activity: (string | undefined)[] = [];
 	const messages: TranscriptMessage[] = [];
-	const run = (who: Member, tag: string, basis: Basis = "request", signal = new AbortController().signal, outputRule?: string, domainTools?: string) =>
+	const run = (who: Member, tag: string, profile: Profile = "request", signal = new AbortController().signal, outputRule?: string, domainTools?: string) =>
 		spawner.runMember({
-			ticketId: "tkt_helper", member: who, task: `${tag}\n细节`, basis, token: `token-${tag}`, workdir: dir, sessionDir: memberSessionDir(dir, "tkt_helper", who.name), signal,
+			ticketId: "tkt_helper", member: who, task: `${tag}\n细节`, profile, readRoots: [dir], token: `token-${tag}`, workdir: dir, sessionDir: memberSessionDir(dir, "tkt_helper", who.name), signal,
 			model: { provider: "openai-codex", id: "gpt-6.1-sol" },
 			onUsage: (u) => usage.push(u.tokensIn + u.tokensOut),
 			onActivity: (step) => activity.push(step),
@@ -149,7 +149,7 @@ test("成员进程拿不到密钥类变量；扩展以成员身份运行：带�
 	assert.equal(env.PSA_MEMBER_TOOLS, "read,web_get");
 	assert.equal(env.PSA_TICKET, "tkt_helper");
 	assert.equal(env.PSA_TOKEN, "token-m");
-	assert.equal(env.PSA_BASIS, "inference");
+	assert.equal(env.PSA_PROFILE, "inference");
 	assert.equal(env.PSA_CREW, undefined, "成员不能再往下派");
 	assert.equal(env.PSA_CALL_ID, "call-m", "成员进程知道这是助手的哪一次派活");
 });
@@ -293,7 +293,7 @@ test("真的 Pi 进程：成员跑一条比无进展时限还久、一声不吭�
 	const desk = new DispatchDesk({ queueTimeoutMs: 5000, stallMs: STALL_MS, cap: { limit: () => 1, membersWaiting() {} }, run: (run) => spawner.runMember(run), onChange() {} });
 	const coder = member({ name: "coder", title: "程序员", tools: ["bash"], prompt: "你是程序员。" });
 	const { details } = await desk.dispatch({
-		ticketId: "tkt_helper", callId: "call-quiet", member: coder, task, basis: "request", model: { provider: FAKE_PROVIDER, id: "worker" },
+		ticketId: "tkt_helper", callId: "call-quiet", member: coder, task, profile: "request", readRoots: [], model: { provider: FAKE_PROVIDER, id: "worker" },
 		workdir: dir, sessionDir: memberSessionDir(dir, "tkt_helper", coder.name), limitMs: 25_000, onUsage() {}, onMessage() {}, onProgress() {},
 	});
 	assert.deepEqual([details.state, details.reply, details.note ?? null], ["done", "命令跑完了，没有报错。", null]);

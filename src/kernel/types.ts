@@ -1,6 +1,8 @@
 export const BASES = ["request", "rule", "inference"] as const;
 export type Basis = (typeof BASES)[number];
 
+export type Opener = "user" | "host-source" | "module-feed";
+
 export const WORKER_STATES = ["none", "queued", "running", "idle"] as const;
 export type WorkerState = (typeof WORKER_STATES)[number];
 
