@@ -220,7 +220,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] 数据库是 `$PSA_MODULE_DATA/files/ta/ta.sqlite`。每次调用照旧先克隆到临时目录再跑，`TA_DB_PATH` 指向副本。`MASSIVE_BASE_URL` 照旧指向关着的端口，另设 `MASSIVE_API_KEY=offline`。这样缓存缺数据时，报错是「行情不可用」，不会掉进 `ta` 找项目根目录的错误（Appendix A 的 key-status 实验）。
 - [x] `note` 设 `TA_NOTES_DIR` 为临时目录，里面链接 `$PSA_MODULE_DATA/knowledge/*/` 下所有 `TA?? - *.md`。笔记靠 `just module import` 导入，导入步骤不变。没导入时说哪份没导入。
 - [x] 调用前找 venv。对应的 `venv-<12 位>/.psa-lock` 存在才用。一个 venv 都没有时说「先跑 just module setup stock-ta」。有别的 venv、没有这一个时说「包里钉的 ta 版本变了，重跑 just module setup stock-ta」。没有 `ta.sqlite` 时说「还没有数据，等 scan feed 第一次跑完（打开后一小时内）」。
-- [x] `structure` 的 `now` 规则不变：取这个标的和 QQQ、SPY 最近一次同步分红的时间加一分钟。
+- [x] `structure` 的 `now` 规则改了：取这个标的和 QQQ、SPY 最近一次同步分红的时间与这个标的最新完整日线收盘加 15 分钟中较晚的那个，不再加一分钟（ta 的两个判断都含端点，多加的一分钟会把 24 小时前的同步推出缓存窗口）。
 - [x] 模块只扫日线。`screen`、日内 5 分钟信号和 OR30 都去掉，`docs/modules/stock-ta.md` 里列一节「你会少什么」，写明这三样和原因。工具、技能、Worker 的文字都不再提它们和「技术分析项目」，只有导入的笔记出处（`knowledge/*/source.json` 的 `origin`）和导入的笔记正文例外。
 - [x] 文档的安装步骤改成复制包、`just module setup stock-ta`、导入笔记、打开、等第一拍扫描。`TA_ROOT` 那一步删掉。
 
@@ -410,4 +410,4 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 4. **钉哪个提交。** 默认是 S2 开工时技术分析仓库 `main` 上已推送的最新提交（今天是 `c9e7536`）。你有还没推送的规则改动的话，先推送。
 5. **日内 5 分钟信号和 OR30 要不要。** 默认不要，模块只扫日线，S3 删掉相关的说法。要的话，再加一个 `every: 5m`、`when: us-market-hours` 的 feed，每 5 分钟每只一个请求。
 
-2026-11-12 修复轮在 394eb8f 上通过（审计 ISSUES 的四条）：`structure` 的 `now` 改取最新分红同步和这个标的最新日线收盘加 15 分钟里晚的那个，再加一分钟；`note` 遇到同名笔记只链一次；标的在自选股里但还没扫到、或 QQQ、SPY 同步落后时，提示等下一次收盘后的扫描；scan feed 的 `limit` 改回 `5m`，lane 9 的通过条件写明保留的几行。`tests/stock-ta.test.ts` 新增 5 条，其中 4 条先红（第二天的 `now` 截止在前一天、两条提示文字不对、`EEXIST`），输出在 `/tmp/swarm-s3/fix/red-unit.txt`。`just test` 1704 条全过，`check.mjs` 全绿，`just module check` ok。lane 1 到 11 全 PASS，输出在 `/tmp/swarm-s3/fix/s3-*.txt`；开头真扫描 12 个请求。lane 11 用真 `ta` 的扫描器扫两天（第二天早 250 毫秒），分红同步停在前一天，工具给的 `now` 是 2026-11-12T21:16Z，`data_end` 是 11-12 收盘，行情请求 0 个；旧规则在同一份库上停在 11-11。perf：trunk 中位 1131 毫秒，head 中位 1113 毫秒。
+2026-11-12 修复轮在 394eb8f 上通过（审计 ISSUES 的四条）：`structure` 的 `now` 改取最新分红同步和这个标的最新日线收盘加 15 分钟里晚的那个（当时还再加一分钟，复查发现会把差几百毫秒不到 24 小时的基准同步推出缓存窗口，随后去掉，见下一条）；`note` 遇到同名笔记只链一次；标的在自选股里但还没扫到、或 QQQ、SPY 同步落后时，提示等下一次收盘后的扫描；scan feed 的 `limit` 改回 `5m`，lane 9 的通过条件写明保留的几行。`tests/stock-ta.test.ts` 新增 5 条，其中 4 条先红（第二天的 `now` 截止在前一天、两条提示文字不对、`EEXIST`），输出在 `/tmp/swarm-s3/fix/red-unit.txt`。`just test` 1704 条全过，`check.mjs` 全绿，`just module check` ok。lane 1 到 11 全 PASS，输出在 `/tmp/swarm-s3/fix/s3-*.txt`；开头真扫描 12 个请求。lane 11 用真 `ta` 的扫描器扫两天（第二天早 250 毫秒），分红同步停在前一天，工具给的 `now` 是 2026-11-12T21:16Z，`data_end` 是 11-12 收盘，行情请求 0 个；旧规则在同一份库上停在 11-11。perf：trunk 中位 1131 毫秒，head 中位 1113 毫秒。

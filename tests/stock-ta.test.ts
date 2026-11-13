@@ -127,7 +127,7 @@ test("每个读数据的工具直接调 venv 里的 ta（不经过 uv），传�
 			[["signals"], { limit: 20, symbol: "NVDA", timeframe: "1w", attention: ["key"] }],
 			[["conditions"], { symbol: "NVDA" }],
 			[["rules"], { rule_id: "R-MACD-1" }],
-			[["structure"], { timeframe: "1d", symbol: "NVDA", now: new Date(SYNCED + 60_000).toISOString() }],
+			[["structure"], { timeframe: "1d", symbol: "NVDA", now: new Date(SYNCED).toISOString() }],
 		],
 	);
 });
@@ -139,7 +139,7 @@ test("ta 在模块数据库的副本上跑：关着的端口、offline 密钥、
 	assert.equal(out["data_end"], "2026-11-09T21:00:00+00:00");
 	const [call] = ta.calls();
 	assert.ok(call);
-	assert.deepEqual(call.stdin, { symbol: "NVDA", timeframe: "1d", now: new Date(SYNCED + 60_000).toISOString() });
+	assert.deepEqual(call.stdin, { symbol: "NVDA", timeframe: "1d", now: new Date(SYNCED).toISOString() });
 	assert.equal(call.network, "http://127.0.0.1:9");
 	assert.equal(call.key, "offline");
 	assert.equal(call.root, undefined);
@@ -235,7 +235,7 @@ test("第二天的扫描离上次差 250 毫秒不到 24 小时、ta 没刷新�
 test("今天的扫描刷新了分红：now 不早于这次同步，否则 ta 会当缓存无效去联网", async (t) => {
 	const ta = fakeModule(t, { structure: { stdout: { levels: [] } } });
 	output(await ta.call("structure", { symbol: "NVDA" }));
-	assert.equal(ta.calls()[0]?.stdin["now"], new Date(SYNCED + 60_000).toISOString());
+	assert.equal(ta.calls()[0]?.stdin["now"], new Date(SYNCED).toISOString());
 });
 
 test("标的在自选股里但还没扫到：说等下一次收盘后的扫描，不叫人再加自选股", async (t) => {
@@ -262,10 +262,11 @@ test("同一份笔记导进了两份知识文档：note 照样能查，只链一
 	assert.deepEqual(ta.calls()[0]?.notes, [file, "TA09 - 支撑阻力.md"]);
 });
 
-test("QQQ 的缓存比标的旧一天差 30 秒：加 60 秒的 now 会让 ta 联网补数据，所以不调用 ta", async (t) => {
-	const ta = fakeModule(t, {}, { synced: { NVDA: SYNCED, QQQ: SYNCED - 24 * HOUR + 30_000, SPY: SYNCED } });
-	assert.match(noteOf(await ta.call("structure", { symbol: "NVDA" })), /不联网/);
-	assert.deepEqual(ta.calls(), []);
+test("今天新加进自选股的 AMD 刚扫完，QQQ、SPY 的分红还是差 150 毫秒不到 24 小时的昨天那次：照样调 ta，不说基准落后", async (t) => {
+	const yesterdayScan = SYNCED - DAY + 150;
+	const ta = fakeModule(t, { structure: { stdout: { levels: [] } } }, { synced: { NVDA: SYNCED, QQQ: yesterdayScan, SPY: yesterdayScan }, watchlist: [{ symbol: "NVDA" }] });
+	output(await ta.call("structure", { symbol: "NVDA" }));
+	assert.equal(ta.calls()[0]?.stdin["now"], new Date(SYNCED).toISOString());
 });
 
 test("ta 退出码 0 却没有输出：给一行中文说明，不露出 JSON 解析错误", async (t) => {

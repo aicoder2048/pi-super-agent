@@ -17,7 +17,6 @@ const LIMIT_BYTES = 20_000;
 const UNDER_HOST_LIMIT_MS = 18_000;
 const DAY_MS = 86_400_000;
 const TA_DELAY_MS = 15 * 60_000;
-const NOW_MARGIN_MS = 60_000;
 const GUIDE = "见 docs/modules/stock-ta.md";
 const WITHOUT_DATA: ReadonlySet<Command> = new Set(["rules", "note"]);
 const TIERS = [
@@ -115,7 +114,7 @@ function importedNotes(data: string, source: string, into: string): string {
 }
 
 /**
- * `ta structure` refetches dividends for the symbol, QQQ and SPY unless `now` is 0 to 1 day after their last sync,
+ * `ta structure` refetches dividends for the symbol, QQQ and SPY unless `now` is 0 to 1 day after their last sync (both ends inclusive in ta),
  * and serves only bars that closed 15 minutes before `now`. The scan keeps a sync until it is a full day old, so
  * after a day-two scan the newest sync can still be yesterday's.
  */
@@ -132,7 +131,7 @@ function structureInput(args: JsonObject, db: string, data: string): JsonObject 
 		opened.close();
 	}
 	if (!synced.has(symbol) || close === null) throw notScanned(symbol, data);
-	const now = Math.max(...synced.values(), close + TA_DELAY_MS) + NOW_MARGIN_MS;
+	const now = Math.max(...synced.values(), close + TA_DELAY_MS);
 	const behind = [...synced].filter(([, ms]) => now - ms >= DAY_MS).map(([name]) => name);
 	if (behind.includes(symbol)) throw notScanned(symbol, data);
 	if (behind.length > 0) throw new Error(`基准 ${behind.join("、")} 的数据落后一天以上（上次扫描没更新到它），这个工具不联网；等下一次扫描（每个交易日收盘后）再问`);
