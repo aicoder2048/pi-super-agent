@@ -33,6 +33,7 @@ export function ticks(s: Scenario): Tick[] {
 const tickerRow = (ticker: string, price: number, prevClose: number, at: number) => ({ ticker, lastTrade: { p: price, t: at * 1_000_000 }, min: { c: price, t: at, v: 1000 }, day: { c: price, v: 5_000_000 }, prevDay: { c: prevClose, v: 39_000_000 } });
 
 /** One stock-ta host in `state` running `tree`'s code. `restart()` drops every in-memory object and opens the state again. */
+/** `watchlist` is added to what the state already lists; the feed asks for every listed symbol, as it does in the host. */
 export async function stockTaDay(tree: string, state: string, watchlist: readonly string[]) {
 	const { Modules } = await import(join(tree, "src/modules.ts"));
 	const { servedAsHost } = await import(join(tree, "tests/helpers/fakes.ts"));
@@ -40,6 +41,7 @@ export async function stockTaDay(tree: string, state: string, watchlist: readonl
 	const { runFeed } = await import(join(tree, "src/modules/feed-runner.ts"));
 	const { Kernel } = await import(join(tree, "src/kernel/kernel.ts"));
 	const { openStore } = await import(join(tree, "src/kernel/store.ts"));
+	const { listedSymbols } = await import(join(tree, "docs/modules/examples/stock-ta/watchlist.ts"));
 	cpSync(join(tree, "docs/modules/examples/stock-ta"), join(state, "modules", "stock-ta"), { recursive: true });
 	const clock = { now: 0 };
 	const posted: Posted[] = [];
@@ -51,8 +53,8 @@ export async function stockTaDay(tree: string, state: string, watchlist: readonl
 		return { entry, db, kernel, data: instanceData(state) };
 	};
 	let host = open();
-	host.data.write("stock-ta", host.entry.components, "watchlist", watchlist.map((symbol) => ({ symbol })), "使用者口述", "replay");
-	const listed = [...watchlist].sort();
+	if (watchlist.length > 0) host.data.write("stock-ta", host.entry.components, "watchlist", watchlist.map((symbol) => ({ symbol })), "使用者口述", "replay");
+	const listed = () => listedSymbols(host.data.query("stock-ta", host.entry.components, "watchlist", { limit: 500 }, "replay").rows).sort();
 	return {
 		posted,
 		watch(w: Watched) {
@@ -67,7 +69,7 @@ export async function stockTaDay(tree: string, state: string, watchlist: readonl
 		async round(tick: Tick): Promise<{ ok: boolean; records: number; notices: string[]; alerts: Posted[]; ms: number }> {
 			clock.now = tick.now;
 			const tickers = Object.entries(tick.prices).map(([symbol, price]) => tickerRow(symbol, price, tick.prevClose[symbol]!, tick.at));
-			const fixture = { name: "replay", input: { now: new Date(tick.now).toISOString() }, responses: { [`${SNAPSHOT}?tickers=${listed.join(",")}`]: { status: "DELAYED", tickers } } };
+			const fixture = { name: "replay", input: { now: new Date(tick.now).toISOString() }, responses: { [`${SNAPSHOT}?tickers=${listed().join(",")}`]: { status: "DELAYED", tickers } } };
 			const notices: string[] = [];
 			const fresh: Posted[] = [];
 			const started = performance.now();
