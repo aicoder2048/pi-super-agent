@@ -10,7 +10,7 @@ import { listedSymbols, type WatchRow } from "../../watchlist.ts";
 
 interface Input {
 	/** `ta`: a node script that stands in for the venv's `ta` (fixtures and tests). `now`: a fixed time for this tick. */
-	settings: { baseUrl: string; scanSeconds: number; ta?: string; now?: string };
+	settings: { baseUrl: string; scanSeconds: number; signals: { rules: string[] }; ta?: string; now?: string };
 	cursor: string | null;
 	rows: { watchlist?: WatchRow[] };
 }
@@ -19,7 +19,9 @@ interface Input {
 type Cursor = { date: string; symbols: string[] };
 
 type TaError = { symbol?: string; error: { code: string; message?: string } };
-type ScanReply = { skipped: true } | { skipped?: false; new_signals: unknown[]; errors: TaError[] };
+/** The fields of ta's `new_signals` rows (`record_signal` at the pinned commit) that a trigger carries. */
+type TaSignal = { symbol: string; rule_id: string; timeframe: string; kind: string; direction: string; data_end_ms: number; price: number | null };
+type ScanReply = { skipped: true } | { skipped?: false; new_signals: TaSignal[]; errors: TaError[] };
 
 const BENCHMARKS = ["QQQ", "SPY"];
 const MAX_WATCHLIST = 30;
@@ -34,6 +36,20 @@ const DAY_MS = 86_400_000;
 
 const NEW_YORK = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
 const newYorkDate = (ms: number): string => NEW_YORK.format(new Date(ms));
+
+/**
+ * One trigger per signal of the session just scanned, on a watchlist symbol, whose rule the settings name. The first
+ * scan of an empty database is a two-year backfill, so it sends none; a missed evening's signals stay unsent too.
+ */
+function signalNotices(signals: readonly TaSignal[], rules: readonly string[], watchlist: readonly string[], tradingDate: string) {
+	return signals
+		.filter((s) => rules.includes(s.rule_id) && watchlist.includes(s.symbol) && newYorkDate(s.data_end_ms) === tradingDate)
+		.map((s) => ({
+			id: `signal:${s.symbol}:${s.rule_id}:${s.timeframe}:${tradingDate}:${s.direction}`,
+			thread: `signal:${s.symbol}:${tradingDate}`,
+			fields: { symbol: s.symbol, rule: s.rule_id, kind: s.kind, direction: s.direction, timeframe: s.timeframe, date: tradingDate, price: s.price === null ? "—" : String(s.price) },
+		}));
+}
 
 const sameSymbols = (a: readonly string[], b: readonly string[]) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
 
@@ -171,7 +187,9 @@ export default async function scan(input: Input) {
 		const swapped = symbols.some((s) => !failed.has(s));
 		if (swapped) renameSync(next, live);
 		const record = row(swapped ? "换上" : "失败", reply.new_signals.length, errorLine(reply.errors));
-		return { records: [record], ...(swapped && { cursor: JSON.stringify({ date: tradingDate, symbols } satisfies Cursor) }) };
+		if (!swapped) return { records: [record] };
+		const notices = hadLive ? signalNotices(reply.new_signals, input.settings.signals.rules, picked, tradingDate) : [];
+		return { records: [record], notices, cursor: JSON.stringify({ date: tradingDate, symbols } satisfies Cursor) };
 	} finally {
 		dropCopy();
 	}
