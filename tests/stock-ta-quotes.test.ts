@@ -452,6 +452,62 @@ test("你的改动写坏了（表里没有的规则、层级不在 0 到 6、门
 	assert.doesNotMatch(feed.problems[0]!.text, /move-9/, "问题的文字不抄集合里的内容");
 });
 
+test("写坏的一行能清掉：同样的 rule 和 symbol 加一行 removedAt，或再加一行写对的，下一轮问题就消失", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.levels({ rule: "move-9", level: 2 }, { rule: "move-1", level: 9 }, { rule: "move-1", symbol: "NVDA", threshold: -1 });
+	feed.massive.answer(snapshot([tickerRow("NVDA", 100, 100, AT)]), snapshot([tickerRow("NVDA", 106.5, 100, AT + 60_000)]));
+	await feed.round();
+	assert.match(feed.problems[0]!.text, /rule-levels 第 1、2、3 行/);
+	feed.levels({ rule: "move-9", removedAt: "2026-11-12" }, { rule: "move-1", removedAt: "2026-11-12" }, { rule: "move-1", symbol: "NVDA", threshold: 6 });
+	await feed.round();
+	assert.deepEqual(feed.problemIds(), ["bad-level", "-"]);
+	assert.deepEqual(band(feed), [`band:NVDA:${DAY}:up6`], "写对的那行接替了坏的那行");
+});
+
+test("你的改动让第一档门槛不低于第二档：报问题 bad-level 说是哪一行，这一行不生效；SPY、QQQ 按自己的档比", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA", "TSLA");
+	feed.levels({ rule: "move-1", symbol: "TSLA", threshold: 9 }, { rule: "move-1", symbol: "SPY", threshold: 4 }, { rule: "move-1", threshold: 4 }, { rule: "move-2", symbol: "NVDA", threshold: 4 });
+	feed.massive.answer(snapshot([tickerRow("TSLA", 105.5, 100, AT), tickerRow("SPY", 510.5, 500, AT), tickerRow("NVDA", 104.5, 100, AT)]));
+	await feed.round();
+	assert.deepEqual(feed.problemIds(), ["bad-level"]);
+	assert.match(feed.problems[0]!.text, /rule-levels 第 1、2、4 行/);
+	assert.deepEqual(band(feed).sort(), [`band:NVDA:${DAY}:up4`, `band:SPY:${DAY}:up2`, `band:TSLA:${DAY}:up4`], "坏的行不生效，全部个股的第一档 4% 照算");
+});
+
+test("一轮跳过两档、第二档调低了：第二档 0 层不吞掉第一档，照发第一档的静音一行和任务", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.levels({ rule: "move-2", level: 0 });
+	feed.massive.answer(snapshot([tickerRow("NVDA", 108.2, 100, AT)]), snapshot([tickerRow("NVDA", 109, 100, AT + 60_000)]));
+	await feed.round();
+	await feed.round();
+	assert.deepEqual(feed.lines.map((l) => [l.externalId, l.push ?? "ring"]), [[`band:NVDA:${DAY}:up5`, "silent"]]);
+	assert.match(feed.alerts()[0]!, /到达 \+5% 档/);
+	assert.deepEqual(feed.notices.map((n) => [n.id, n.body.replace(/^.*（/, "（")]), [[`band:NVDA:${DAY}:up5`, "（规则 move-1，层级 5，做法 band-move）"]]);
+});
+
+test("一轮跳过两档、第二档调成 3 层：响铃的第二档一行，任务照第一档开", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.levels({ rule: "move-2", level: 3 });
+	feed.massive.answer(snapshot([tickerRow("NVDA", 108.2, 100, AT)]));
+	await feed.round();
+	assert.deepEqual(feed.lines.map((l) => [l.externalId, l.push ?? "ring"]), [[`band:NVDA:${DAY}:up8`, "ring"]]);
+	assert.deepEqual(feed.notices.map((n) => [n.id, n.body.replace(/^.*（/, "（")]), [[`band:NVDA:${DAY}:up8`, "（规则 move-1，层级 5，做法 band-move）"]]);
+});
+
+test("一轮跳过两档：第一档 3 层、第二档 2 层，有一档响铃这一行就响", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.levels({ rule: "move-1", level: 3 }, { rule: "move-2", level: 2 });
+	feed.massive.answer(snapshot([tickerRow("NVDA", 108.2, 100, AT)]));
+	await feed.round();
+	assert.deepEqual(feed.lines.map((l) => [l.externalId, l.push ?? "ring"]), [[`band:NVDA:${DAY}:up8`, "ring"]]);
+	assert.deepEqual(feed.notices, []);
+});
+
 test("档位只在盯盘规则表 watch-rules.ts 里：feed.json 没有 settings.bands，幕僚长读的规则、领队和盘面读的技能、feed 的说明都不写死档位数字", () => {
 	const read = (path: string) => readFileSync(join(PKG, path), "utf8");
 	const feedJson = JSON.parse(read("feeds/quotes/feed.json"));

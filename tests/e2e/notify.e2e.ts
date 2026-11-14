@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import test, { after } from "node:test";
-import { FAKE_BOT_TOKEN, FakeTelegram } from "../helpers/fake-telegram.ts";
+import { FAKE_BOT_TOKEN, FakeTelegram, unmarked } from "../helpers/fake-telegram.ts";
 import { closeBrowser, story } from "./harness.ts";
 
 after(closeBrowser);
 
 const USER = 42;
 const SHOTS = process.env.PSA_E2E_NOTIFY_SHOTS;
+const sent = (tg: FakeTelegram) => tg.sent.map((m) => ({ ...m, text: unmarked(m.text) }));
 
 async function until(predicate: () => boolean, label: string, timeoutMs = 15_000): Promise<void> {
 	for (const start = Date.now(); !predicate(); await new Promise((r) => setTimeout(r, 50))) {
@@ -31,8 +32,8 @@ test("just notify：一条通知出现在网页对话里，标着「通知」；
 				await line.waitFor();
 				assert.equal(await line.locator(".who").textContent(), "通知");
 				assert.equal(await line.locator(".bubble").textContent(), "测试");
-				await until(() => tg.sent.some((m) => m.text === "通知：测试"), "通知到达 Telegram");
-				assert.deepEqual(tg.sent.filter((m) => m.text.includes("测试")).map((m) => [m.text, m.silent]), [["通知：测试", false]]);
+				await until(() => sent(tg).some((m) => m.text === "通知：测试"), "通知到达 Telegram");
+				assert.deepEqual(sent(tg).filter((m) => m.text.includes("测试")).map((m) => [m.text, m.silent]), [["通知：测试", false]]);
 				await page.waitForTimeout(1000);
 				assert.equal(fake.exchanges.length, routerCalls, "Router 没被叫");
 				if (SHOTS) {
