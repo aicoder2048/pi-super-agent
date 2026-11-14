@@ -266,6 +266,16 @@ test("set 回一行回执；list 列出；带 id 的 set 改那一条；remove �
 	assert.equal(refusal(await gateway.call(me(), remove(condition.id))).code, "bad-input");
 });
 
+test("设条件时这一项还一行数据都没有：回执里说要等来源写进它的数据才会提醒；有了就不说", async (t) => {
+	const { gateway, me } = health(t);
+	const receiptOf = async (key: string) => ((ok(await gateway.call(me(), set(key, { when: "above", value: 7 }))).output as { receipt: string }).receipt);
+	const unseen = await receiptOf("空腹血糖");
+	assert.match(unseen, /还没有 空腹血糖 的数据.*才会提醒/);
+	assert.ok(!unseen.includes("\n"));
+	ok(await gateway.call(me(), write([glucose(6.1, "2026-11-12")])));
+	assert.doesNotMatch(await receiptOf("空腹血糖"), /还没有/);
+});
+
 test("推断任务、读过别人内容的 request 任务、规则任务设或删条件被拒，条件表不变；list 谁都能用", async (t) => {
 	const { gateway, me } = health(t);
 	const kept = ok(await gateway.call(me(), set("空腹血糖", { when: "above", value: 7 })));
