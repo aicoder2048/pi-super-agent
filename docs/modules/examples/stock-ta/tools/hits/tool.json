@@ -1,0 +1,15 @@
+{
+  "title": "当天命中",
+  "description": "读盯盘规则这几天的命中：报价 feed 每一轮写下的 files/hits/<日期>/quotes.json。每条带规则、代码、方向（bull 看多、bear 看空、null 没有方向）、层级（0 只记录到 6 问你）、事实和那一行的原文，还标出是否升了一层（bumped）、是否因来回翻降到 0 层（whipsaw）、是否并进了组合（combo）、是否在免打扰时段留着（held）。命中是报价 feed 用当天报价算出的事实，和日线扫描无关，扫描失败时照样有效。默认只看今天，新的在前。只读，不联网，不算新信号",
+  "effect": "read",
+  "input": {
+    "days": { "type": "number", "title": "看最近几个有命中的日期，默认 1，最多 10" },
+    "symbol": { "type": "text", "title": "只看这只票" },
+    "minLevel": { "type": "number", "title": "只看不低于这一层的命中，例如 2 是推送过一行的" }
+  },
+  "output": {
+    "hits": { "type": "text", "title": "命中列表，新的在前" },
+    "dates": { "type": "text", "title": "读了哪几天的文件" },
+    "truncated": { "type": "text", "title": "true 表示超过 200 条，只给了最新的 200 条" }
+  }
+}

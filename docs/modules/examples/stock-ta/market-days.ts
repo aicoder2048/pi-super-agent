@@ -56,6 +56,9 @@ export function regularCloseAt(ms: number): number {
 	return w.midnight + (EARLY_CLOSES.has(w.nyDate) ? EARLY_CLOSE : CLOSE) * MINUTE;
 }
 
+/** The regular session's opening moment, 9:30, on the New York date that holds `ms`. */
+export const regularOpenAt = (ms: number): number => nyWall(ms).midnight + OPEN * MINUTE;
+
 export function sessionAt(now: number): Session {
 	const w = nyWall(now);
 	const openAt = w.midnight + OPEN * MINUTE;

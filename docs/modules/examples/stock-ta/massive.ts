@@ -4,8 +4,11 @@ import { readFileSync } from "node:fs";
 // The host stops a tool at 20 s; the request gives up first so the user hears why.
 export const REQUEST_LIMIT_MS = 15_000;
 
-/** `dayClose` is the day bar's close: the running price during the regular session, the official close once it ends. */
-export type Quote = { symbol: string; price: number; prevClose: number; changePct: number; volume: number | null; at: string; dayClose: number | null };
+/**
+ * `dayClose` is the day bar's close: the running price during the regular session, the official close once it ends. The day
+ * bar's open, high and low (`day.o/h/l`) feed the gap, reversal and 52-week rules; they are null when the snapshot has none.
+ */
+export type Quote = { symbol: string; price: number; prevClose: number; changePct: number; volume: number | null; at: string; dayClose: number | null; dayOpen: number | null; dayHigh: number | null; dayLow: number | null };
 
 export const object = (v: unknown): Record<string, any> => (v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, any>) : {});
 const positive = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined);
@@ -26,7 +29,7 @@ export function parseQuote(raw: unknown): Quote | undefined {
 	const prevClose = positive(prev.c);
 	const ms = (positive(trade.p) && epochMs(trade.t)) || (positive(minute.c) && epochMs(minute.t)) || epochMs(r.updated);
 	if (typeof r.ticker !== "string" || !price || !prevClose || !ms) return undefined;
-	return { symbol: r.ticker, price, prevClose, changePct: changePct(price, prevClose), volume: typeof day.v === "number" ? day.v : null, at: new Date(ms).toISOString(), dayClose: positive(day.c) ?? null };
+	return { symbol: r.ticker, price, prevClose, changePct: changePct(price, prevClose), volume: typeof day.v === "number" ? day.v : null, at: new Date(ms).toISOString(), dayClose: positive(day.c) ?? null, dayOpen: positive(day.o) ?? null, dayHigh: positive(day.h) ?? null, dayLow: positive(day.l) ?? null };
 }
 
 export async function snapshot(baseUrl: string, key: string, symbols: readonly string[], signal?: AbortSignal): Promise<Quote[]> {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -44,7 +45,8 @@ async function quotesFeed(t: TestContext, key = "sk-test", settings: Record<stri
 	const levels = (...rows: Record<string, unknown>[]) => data.write("stock-ta", entry.components, "rule-levels", rows as never, "使用者口述", "test");
 	const quotes = () => data.query("stock-ta", entry.components, "quotes", {}, "test").rows;
 	const restart = () => (ports.data = instanceData(state));
-	return { massive, modules, entry, data, notices, lines, problems, problemIds: () => problems.map((p) => p?.id ?? "-"), alerts: () => lines.map((l) => l.text), watch, levels, quotes, clock, restart, round: () => runFeed(entry, [], ports), rehearse: () => runFeed(entry, [], ports, entry.fixtures[0]) };
+	const hitsFile = (date = DAY) => join(data.dir("stock-ta"), "files", "hits", date, "quotes.json");
+	return { massive, modules, entry, data, hitsFile, notices, lines, problems, problemIds: () => problems.map((p) => p?.id ?? "-"), alerts: () => lines.map((l) => l.text), watch, levels, quotes, clock, restart, round: () => runFeed(entry, [], ports), rehearse: () => runFeed(entry, [], ports, entry.fixtures[0]) };
 }
 
 test("快照解析：一次请求取回整张自选股，每只一行，带价格、相对昨收的涨跌幅、成交量和数据时间", async (t) => {
@@ -53,7 +55,7 @@ test("快照解析：一次请求取回整张自选股，每只一行，带价�
 	feed.massive.answer(snapshot([tickerRow("AMD", 151.5, 150, AT), tickerRow("NVDA", 180.4, 176, AT)]));
 	assert.deepEqual(await feed.round(), { ok: true, records: 2, notices: 0 });
 	assert.equal(feed.massive.hits.length, 1);
-	assert.equal(feed.massive.hits[0]!.url, `${SNAPSHOT}?tickers=AMD,NVDA,QQQ,SPY`);
+	assert.equal(feed.massive.hits[0]!.url, `${SNAPSHOT}?tickers=AMD,NVDA,QQQ,SPY,VIXY`);
 	assert.equal(feed.massive.hits[0]!.auth, "Bearer sk-test");
 	const nvda = feed.quotes().find((r) => r.fields["symbol"] === "NVDA");
 	assert.deepEqual(nvda?.fields, { symbol: "NVDA", price: 180.4, prevClose: 176, changePct: 2.5, volume: 5_000_000, at: "2026-11-12T15:44:00.000Z" });
@@ -81,10 +83,10 @@ test("自选股改了下一轮就用新名单；划掉的不再请求；名单�
 	await feed.round();
 	feed.watch("AAPL");
 	await feed.round();
-	assert.deepEqual(feed.massive.hits.map((h) => h.url), [`${SNAPSHOT}?tickers=QQQ,SPY`, `${SNAPSHOT}?tickers=NVDA,QQQ,SPY`, `${SNAPSHOT}?tickers=AAPL,NVDA,QQQ,SPY`]);
+	assert.deepEqual(feed.massive.hits.map((h) => h.url), [`${SNAPSHOT}?tickers=QQQ,SPY,VIXY`, `${SNAPSHOT}?tickers=NVDA,QQQ,SPY,VIXY`, `${SNAPSHOT}?tickers=AAPL,NVDA,QQQ,SPY,VIXY`]);
 	feed.data.write("stock-ta", feed.entry.components, "watchlist", [{ id: written.rows[0]!.id, removedAt: "2026-11-12" }], "使用者口述", "test");
 	await feed.round();
-	assert.equal(feed.massive.hits.at(-1)!.url, `${SNAPSHOT}?tickers=AAPL,QQQ,SPY`);
+	assert.equal(feed.massive.hits.at(-1)!.url, `${SNAPSHOT}?tickers=AAPL,QQQ,SPY,VIXY`);
 });
 
 test("同一只股票有两行：以最新的一行为准，最新一行划掉了就不再请求它，划掉后又加回来就照常请求", async (t) => {
@@ -94,10 +96,10 @@ test("同一只股票有两行：以最新的一行为准，最新一行划掉�
 	const [second] = feed.watch("NVDA").rows;
 	feed.data.write("stock-ta", feed.entry.components, "watchlist", [{ id: second!.id, removedAt: "2026-11-12" }], "使用者口述", "test");
 	assert.deepEqual(await feed.round(), { ok: true, records: 0, notices: 0 });
-	assert.equal(feed.massive.hits.at(-1)?.url, `${SNAPSHOT}?tickers=QQQ,SPY`, `最新一行（${second!.id}）划掉了，较早的 ${first!.id} 不算`);
+	assert.equal(feed.massive.hits.at(-1)?.url, `${SNAPSHOT}?tickers=QQQ,SPY,VIXY`, `最新一行（${second!.id}）划掉了，较早的 ${first!.id} 不算`);
 	feed.watch("NVDA");
 	await feed.round();
-	assert.equal(feed.massive.hits.at(-1)?.url, `${SNAPSHOT}?tickers=NVDA,QQQ,SPY`);
+	assert.equal(feed.massive.hits.at(-1)?.url, `${SNAPSHOT}?tickers=NVDA,QQQ,SPY,VIXY`);
 });
 
 test("缺密钥：不发请求，每一轮都报问题 no-key，一行说明去哪里设 POLYGON_API_KEY（宿主只在头一轮说）", async (t) => {
@@ -305,7 +307,7 @@ test("SPY、QQQ 总在请求里，不在自选股里也取、也存行；还是�
 	await feed.round();
 	feed.watch("NVDA");
 	await feed.round();
-	assert.deepEqual(feed.massive.hits.map((h) => h.url), [`${SNAPSHOT}?tickers=QQQ,SPY`, `${SNAPSHOT}?tickers=NVDA,QQQ,SPY`]);
+	assert.deepEqual(feed.massive.hits.map((h) => h.url), [`${SNAPSHOT}?tickers=QQQ,SPY,VIXY`, `${SNAPSHOT}?tickers=NVDA,QQQ,SPY,VIXY`]);
 	assert.deepEqual(feed.quotes().map((r) => r.fields["symbol"]).sort(), ["QQQ", "SPY"]);
 });
 
@@ -516,4 +518,105 @@ test("档位只在盯盘规则表 watch-rules.ts 里：feed.json 没有 settings
 	const texts = { "rules.md watch-task": watchTask, "feeds/quotes/feed.json description": feedJson.description, "skills/market-desk": read("skills/market-desk/SKILL.md"), "skills/band-move 正文": read("skills/band-move/SKILL.md").split("---").at(-1)!, "skills/rule-levels 正文": read("skills/rule-levels/SKILL.md").split("---").at(-1)! };
 	for (const [where, text] of Object.entries(texts)) assert.doesNotMatch(text, /\d+(\.\d+)?% ?档|\d+%、/, `${where} 写死了档位`);
 	assert.match(read("watch-rules.ts"), /"move-1"[\s\S]*stock: 5[\s\S]*index: 2[\s\S]*"move-2"[\s\S]*stock: 8[\s\S]*index: 3/);
+});
+
+/** The module's daily-bar database as the scan leaves it: `days` complete daily bars before 2026-11-12 per symbol. */
+function taDatabase(dataDir: string, bars: Record<string, { days: number; high: number; low: number; volume: number }>) {
+	mkdirSync(join(dataDir, "files", "ta"), { recursive: true });
+	const db = new DatabaseSync(join(dataDir, "files", "ta", "ta.sqlite"));
+	db.exec("CREATE TABLE bars (symbol TEXT NOT NULL, timeframe TEXT NOT NULL, start_ms INTEGER NOT NULL, end_ms INTEGER NOT NULL, session_date TEXT NOT NULL, open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, volume REAL NOT NULL, vw REAL, complete INTEGER NOT NULL, PRIMARY KEY (symbol, timeframe, start_ms))");
+	const insert = db.prepare("INSERT INTO bars VALUES (?, '1d', ?, ?, ?, 100, ?, ?, 100, ?, NULL, 1)");
+	for (const [symbol, b] of Object.entries(bars)) {
+		for (let i = 1; i <= b.days; i++) {
+			const start = Date.parse("2026-11-12T05:00:00Z") - i * 86_400_000;
+			insert.run(symbol, start, start + 86_400_000, new Date(start).toISOString().slice(0, 10), b.high, b.low, b.volume);
+		}
+	}
+	insert.run("NVDA", Date.parse("2026-11-12T05:00:00Z"), Date.parse("2026-11-13T05:00:00Z"), DAY, 999, 1, 1);
+	db.close();
+}
+
+test("VIXY 总在快照请求里，但不存进自选股报价", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.massive.answer(snapshot([tickerRow("NVDA", 180.4, 176, AT), tickerRow("VIXY", 17, 16.8, AT)]));
+	assert.deepEqual(await feed.round(), { ok: true, records: 1, notices: 0 });
+	assert.equal(feed.massive.hits[0]!.url, `${SNAPSHOT}?tickers=NVDA,QQQ,SPY,VIXY`);
+	assert.deepEqual(feed.quotes().map((r) => r.fields["symbol"]), ["NVDA"]);
+});
+
+test("52 周新高：第一轮只读打开模块自己的日线库，算出此前 252 根日线的最高；当天的日线不算；快照的 day.h 过了就静音一行", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	taDatabase(feed.data.dir("stock-ta"), { NVDA: { days: 260, high: 110, low: 90, volume: 1_000_000 } });
+	feed.massive.answer(snapshot([tickerRow("NVDA", 109, 105, AT, { day: { o: 105.5, h: 111.2, l: 104.9, c: 109, v: 400_000 } })]));
+	await feed.round();
+	assert.deepEqual(feed.lines.map((l) => [l.externalId, l.push ?? "ring"]), [[`high-52w:NVDA:${DAY}`, "silent"]]);
+	assert.match(feed.lines[0]!.text, /^NVDA 创 52 周新高 111\.20（此前最高 110\.00）。/);
+	assert.deepEqual(feed.notices, []);
+});
+
+test("日线库还没有（扫描没跑过）：要历史的规则不算，不报问题，到档照常", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.massive.answer(snapshot([tickerRow("NVDA", 105.3, 100, AT, { day: { o: 100, h: 999, l: 1, c: 105.3, v: 9e9 } })]));
+	await feed.round();
+	assert.deepEqual(feed.lines.map((l) => l.externalId), [`band:NVDA:${DAY}:up5`]);
+	assert.deepEqual(feed.problemIds(), ["-"]);
+});
+
+test("当天命中写进 files/hits/<日期>/quotes.json，和 cursor 里的一样；文件写坏、留下半截的临时文件，下一轮从 cursor 整份重写", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.massive.answer(snapshot([tickerRow("NVDA", 105.3, 100, AT, { day: { o: 103.2, h: 105.4, l: 102, c: 105.3, v: 1 } })]));
+	await feed.round();
+	const first = JSON.parse(readFileSync(feed.hitsFile(), "utf8"));
+	assert.deepEqual([first.feed, first.date, first.hits.map((h: { rule: string }) => h.rule)], ["quotes", DAY, ["move-1", "gap"]]);
+	assert.deepEqual(first.hits, JSON.parse(feed.data.feedState("stock-ta", "stock-ta/quotes").cursor!).hits);
+	writeFileSync(feed.hitsFile(), '{"feed":"quotes","hits":[{"id":"half');
+	writeFileSync(`${feed.hitsFile()}.tmp`, "half");
+	feed.restart();
+	await feed.round();
+	assert.deepEqual(JSON.parse(readFileSync(feed.hitsFile(), "utf8")), first);
+	assert.equal(existsSync(`${feed.hitsFile()}.tmp`), false);
+	assert.equal(feed.lines.length, 1, "重启后不重发");
+});
+
+test("当天没有命中就不写文件", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.massive.answer(snapshot([tickerRow("NVDA", 101, 100, AT)]));
+	await feed.round();
+	assert.equal(existsSync(feed.hitsFile()), false);
+});
+
+test("来回翻：前几个交易日的命中文件里开盘跳空翻了 3 次，今天再翻就只记成 0 层", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	const past = [["2026-11-06", "bull"], ["2026-11-09", "bear"], ["2026-11-10", "bull"], ["2026-10-20", "bear"]] as const;
+	for (const [date, lean] of past) {
+		mkdirSync(dirname(feed.hitsFile(date)), { recursive: true });
+		writeFileSync(feed.hitsFile(date), JSON.stringify({ feed: "quotes", date, hits: [{ id: `gap:NVDA:${date}`, rule: "gap", symbol: "NVDA", date, at: `${date}T15:00:00.000Z`, lean, fact: "开盘跳空", level: 1, text: "" }] }));
+	}
+	feed.massive.answer(snapshot([tickerRow("NVDA", 96.8, 100, AT, { day: { o: 96.5, h: 97, l: 96, c: 96.8, v: 1 } })]));
+	await feed.round();
+	const [hit] = JSON.parse(readFileSync(feed.hitsFile(), "utf8")).hits;
+	assert.deepEqual([hit.rule, hit.level, hit.whipsaw], ["gap", 0, 3], "10 个交易日以外的 10-20 那条不算");
+});
+
+test("工具 hits：读最近几天的命中文件，可按代码和最低层级筛，新的在前", async (t) => {
+	const feed = await quotesFeed(t);
+	const dir = feed.data.dir("stock-ta");
+	const hit = (date: string, symbol: string, rule: string, level: number, at: string) => ({ id: `${rule}:${symbol}:${date}`, rule, symbol, date, at, lean: "bull", fact: rule, level, text: `${symbol} ${rule}` });
+	for (const [date, hits] of [["2026-11-11", [hit("2026-11-11", "NVDA", "gap", 1, "2026-11-11T15:00:00Z")]], [DAY, [hit(DAY, "NVDA", "high-52w", 2, "2026-11-12T15:00:00Z"), hit(DAY, "AMD", "gap", 1, "2026-11-12T16:00:00Z")]]] as const) {
+		mkdirSync(join(dir, "files", "hits", date), { recursive: true });
+		writeFileSync(join(dir, "files", "hits", date, "quotes.json"), JSON.stringify({ feed: "quotes", date, hits }));
+	}
+	const tool = (await import(join(PKG, "tools/hits/index.ts"))).default as (input: unknown) => { hits: { id: string }[]; dates: string[] };
+	process.env["PSA_MODULE_DATA"] = dir;
+	t.after(() => delete process.env["PSA_MODULE_DATA"]);
+	assert.deepEqual(tool({}).hits.map((h) => h.id), [`gap:AMD:${DAY}`, `high-52w:NVDA:${DAY}`]);
+	assert.deepEqual(tool({ days: 2, symbol: "nvda" }).hits.map((h) => h.id), [`high-52w:NVDA:${DAY}`, "gap:NVDA:2026-11-11"]);
+	assert.deepEqual(tool({ days: 2, minLevel: 2 }).hits.map((h) => h.id), [`high-52w:NVDA:${DAY}`]);
+	assert.deepEqual(tool({ days: 2 }).dates, [DAY, "2026-11-11"]);
 });
