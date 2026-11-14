@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { History } from "./feeds/quotes/watch.ts";
+import type { DailyBar } from "./feeds/scan/close.ts";
 
 const YEAR = 252;
 const VOLUME_DAYS = 20;
@@ -30,6 +31,19 @@ export function readHistory(dataDir: string, symbols: readonly string[], today: 
 				avgVolume20: recent.length >= VOLUME_DAYS ? recent.reduce((sum, r) => sum + r.volume, 0) / VOLUME_DAYS : null,
 			}];
 		}));
+	} finally {
+		db.close();
+	}
+}
+
+/** Per symbol, the newest `count` complete daily bars up to and including `through`, oldest first. Undefined when the database does not exist yet. */
+export function readDaily(dataDir: string, symbols: readonly string[], through: string, count: number): Record<string, DailyBar[]> | undefined {
+	const file = taDatabase(dataDir);
+	if (!existsSync(file)) return undefined;
+	const db = new DatabaseSync(file, { readOnly: true });
+	try {
+		const query = db.prepare("SELECT session_date AS date, close, volume FROM bars WHERE symbol = ? AND timeframe = '1d' AND complete = 1 AND session_date <= ? ORDER BY start_ms DESC LIMIT ?");
+		return Object.fromEntries(symbols.map((symbol) => [symbol, (query.all(symbol.replaceAll("-", "."), through, count) as DailyBar[]).reverse()]));
 	} finally {
 		db.close();
 	}

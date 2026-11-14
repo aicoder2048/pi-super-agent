@@ -5,7 +5,8 @@
 // to the day before, as bars.ts reads it; whipsaw leans carry over from the replay's own earlier days.
 // P2_BASELINE=1 replays what runs today instead: the two move bands only (no history, no day open/high/low, no VIXY, 逆大盘 off).
 import { daily, minutes, OPEN, STOCKS, vixyDays, type Day, type Minute } from "./p2-measure-data.ts";
-import { newDay, watch, type Hit, type History } from "../examples/stock-ta/feeds/quotes/watch.ts";
+import { newDay, watch, type History } from "../examples/stock-ta/feeds/quotes/watch.ts";
+import type { Hit } from "../examples/stock-ta/hits.ts";
 import type { Quote } from "../examples/stock-ta/massive.ts";
 import { parseRuleLevels, WATCH_RULES, WHIPSAW, type Lean } from "../examples/stock-ta/watch-rules.ts";
 

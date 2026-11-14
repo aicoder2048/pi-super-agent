@@ -219,7 +219,7 @@ export class Host {
 		const data = instanceData(options.stateDir);
 		const feedPorts: Omit<FeedPorts, "problem"> = {
 			data,
-			submit: ({ source, id, thread, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(source, thread) }], sender: source, body, occurredAt: at, ...(reach === "released" && { announce: true }) }),
+			submit: ({ source, id, thread, threadOwner, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(threadOwner ?? source, thread) }], sender: source, body, occurredAt: at, ...(reach === "released" && { announce: true }) }),
 			alert: (module, alert) => this.#postModuleAlert(module, alert),
 			secret: options.moduleFeeds?.secret ?? (() => undefined),
 			now: clock.now,

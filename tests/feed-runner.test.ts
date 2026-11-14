@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -9,6 +9,9 @@ import { runFeed, type FeedNotice } from "../src/modules/feed-runner.ts";
 import type { Alert } from "../src/modules/protocol.ts";
 import { problemLine, scanPackage } from "../src/modules/validate.ts";
 import { servedAsHost } from "./helpers/fakes.ts";
+import { Kernel } from "../src/kernel/kernel.ts";
+import { openStore } from "../src/kernel/store.ts";
+import { threadId } from "../src/sources/generic.ts";
 
 const TAX = join(import.meta.dirname, "../docs/modules/architecture/sample/personal-tax");
 
@@ -121,4 +124,39 @@ test("problem 的 once 不是 true：这一轮失败，说出要什么", async (
 	const run = await runFeed(brokerage(root), [], { data: instanceData(join(root, "state")), submit: () => {}, alert: () => true, problem: () => {}, secret: () => "token", now: () => 0 });
 	assert.equal(run.ok, false);
 	assert.match(run.ok ? "" : run.note, /once 只能是 true/);
+});
+
+test("触发写了 threadScope: module：线程挂在模块名下，同一模块的两个 feed 落进同一个线程；没写的挂在 feed 自己的来源名下", async (t) => {
+	const { root, pkg } = taxCopy(t);
+	const feed = join(pkg, "feeds", "brokerage-statements");
+	const descriptor = JSON.parse(readFileSync(join(feed, "feed.json"), "utf8"));
+	writeFileSync(join(feed, "feed.json"), JSON.stringify({ ...descriptor, notice: "{{line}}" }));
+	writeFileSync(join(feed, "index.ts"), `export default () => ({ notices: [{ id: "a", thread: "VTI:2026-11-13", threadScope: "module", fields: { line: "共用" } }, { id: "b", thread: "VTI:2026-11-13", fields: { line: "自己的" } }] });\n`);
+	const submitted: FeedNotice[] = [];
+	const run = await runFeed(brokerage(root), [], { data: instanceData(join(root, "state")), submit: (n) => void submitted.push(n), alert: () => true, problem: () => {}, secret: () => "token", now: () => 0 });
+	assert.deepEqual(run, { ok: true, records: 0, notices: 2 });
+	assert.deepEqual(submitted.map((n) => [n.id, threadId(n.threadOwner ?? n.source, n.thread)]), [
+		["a", "thr_personal-tax:VTI:2026-11-13"],
+		["b", "thr_personal-tax/brokerage-statements:VTI:2026-11-13"],
+	]);
+});
+
+test("threadScope 只认 module：别的值这一轮失败，说出要什么", async (t) => {
+	const { root, pkg } = taxCopy(t);
+	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ notices: [{ id: "a", thread: "x", threadScope: "host", fields: {} }] });\n`);
+	const run = await runFeed(brokerage(root), [], { data: instanceData(join(root, "state")), submit: () => {}, alert: () => true, problem: () => {}, secret: () => "token", now: () => 0 });
+	assert.equal(run.ok, false);
+	assert.match(run.ok ? "" : run.note, /threadScope 只能是 module/);
+});
+
+test("模块名下的线程：报价 feed 的触发开的任务还开着时，扫描 feed 同一线程的触发直接交给这个任务", () => {
+	const kernel = new Kernel({ db: openStore(":memory:"), clock: { now: () => Date.now() }, sourcePolicy: () => "candidate" });
+	const thread = "thr_stock-ta:NVDA:2026-11-13";
+	const submit = (source: string, externalId: string) => kernel.submitTrigger({ source, externalId, threads: [{ id: thread }], sender: source, body: "事件", occurredAt: Date.now() });
+	const band = submit("stock-ta/quotes", "band:NVDA:2026-11-13:down5");
+	const [opened] = kernel.route([{ kind: "open_ticket", title: "NVDA 到档", basis: "rule", ruleId: "stock-ta/watch-task", triggerId: band.triggerId, threads: [thread], brief: "看一下" }]);
+	assert.ok(opened.ok, !opened.ok ? opened.reason : "");
+	submit("stock-ta/scan", "R-MA-2-200:NVDA:2026-11-13");
+	const view = kernel.read(opened.ticketId!) as { recentInputs: { triggerId: string | null }[] };
+	assert.equal(view.recentInputs.filter((i) => i.triggerId !== null).length, 2, "收盘的触发进了白天开的同一个任务");
 });

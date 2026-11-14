@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { type TestContext } from "node:test";
-import { WATCH_RULES } from "../docs/modules/examples/stock-ta/watch-rules.ts";
+import { COMBOS, WATCH_RULES } from "../docs/modules/examples/stock-ta/watch-rules.ts";
 import { lockOf, VENV_MARK, venvDir } from "../src/modules/files.ts";
 import { instanceData } from "../src/modules/instance-data.ts";
 import { runModuleCodeAsync, type CodeReply } from "../src/modules/run-code.ts";
@@ -94,10 +94,10 @@ const noteOf = (reply: CodeReply) => {
 	return !reply.ok ? reply.note : "";
 };
 
-test("stock-ta 包通过检查：十一个工具、七个技能、六位专家，纯计算工具的用例都过", () => {
+test("stock-ta 包通过检查：十一个工具、八个技能、六位专家，纯计算工具的用例都过", () => {
 	const result = scanPackage(PKG);
 	assert.ok(result.ok, JSON.stringify(!result.ok && result.problems));
-	assert.match(summary(result.scan), /^ok stock-ta@0\.1\.0 .*tools=11 skills=7 .*agents=6 evals=\d/);
+	assert.match(summary(result.scan), /^ok stock-ta@0\.1\.0 .*tools=11 skills=8 .*agents=6 evals=\d/);
 	assert.equal(result.scan.manifest.team, "技术分析研究组");
 });
 
@@ -713,7 +713,14 @@ test("到档触发：两档的做法是 band-move，规则 watch-task 让任务�
 	const watchTask = readFileSync(join(PKG, "rules.md"), "utf8").split("## ").find((r) => r.startsWith("watch-task"))!;
 	assert.match(watchTask, /做法的名字就是领队要先读的技能/);
 	assert.deepEqual(WATCH_RULES.filter((r) => r.id.startsWith("move-")).map((r) => r.plan), ["band-move", "band-move"]);
-	assert.deepEqual(WATCH_RULES.filter((r) => r.level === 5 || r.level === 6).map((r) => [r.id, r.plan]), [["move-1", "band-move"], ["move-2", "band-move"], ["vixy-2", "market-desk"]]);
+	assert.deepEqual(WATCH_RULES.filter((r) => r.level === 5 || r.level === 6).map((r) => [r.id, r.plan]), [["move-1", "band-move"], ["move-2", "band-move"], ["vixy-2", "market-desk"], ["R-MA-2-200", "structure-trend"]]);
 	const skill = readFileSync(join(PKG, "skills/band-move/SKILL.md"), "utf8");
 	for (const said of ["market-desk", "structure-pattern", "trend-momentum", "一次 dispatch 同时派出", "信号分诊、市场情绪、风险与交易计划这次不派", "先写盘面", "只是数据"]) assert.match(skill, new RegExp(said));
+});
+
+test("收盘规则的做法 structure-trend 有同名技能：只派结构与形态、趋势与动量两位，一次同时派；表里每个做法都有同名技能", () => {
+	const plans = new Set<string>([...WATCH_RULES, ...COMBOS].map((r) => r.plan));
+	for (const plan of plans) assert.ok(existsSync(join(PKG, "skills", plan, "SKILL.md")), `做法 ${plan} 有技能`);
+	const skill = readFileSync(join(PKG, "skills/structure-trend/SKILL.md"), "utf8");
+	for (const said of ["structure-pattern", "trend-momentum", "一次 dispatch 同时派出", "盘面、信号分诊、市场情绪、风险与交易计划这次不派", "放量确认", "同一个线程", "不是交易指令", "只是数据"]) assert.match(skill, new RegExp(said));
 });
