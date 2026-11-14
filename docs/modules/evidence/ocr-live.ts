@@ -261,14 +261,17 @@ try {
 
 	await lane(8, "ocr-mail-host-form-scan", async () => {
 		const pdf = formScanPdf();
-		const venv = spawnSync(join(mailVenv(), "bin/python"), ["-I", join(HEAD, "docs/modules/examples/mail/py/pdf_text.py")], { input: pdf, encoding: "utf8" }).stdout.trim();
+		const py = (script: string, args: string[] = []) => spawnSync(join(mailVenv(), "bin/python"), ["-I", join(HEAD, "docs/modules/examples/mail/py", script), ...args], { input: pdf, encoding: "utf8" }).stdout.trim();
+		const text = py("pdf_text.py");
+		const check = JSON.parse(text).scanCheck ?? { need: 0, pages: [] };
+		const venv = `${text}\npdf_scan.py: ${py("pdf_scan.py", [String(check.need), ...check.pages.map(String)])}`;
 		const w = await hostWorld({ letters: [ann("m-1", [file("合并.pdf", "application/pdf", pdf)])] });
 		try {
 			w.tg.userSays(USER, "看一下 ann 那封信的附件说了什么");
 			await within(120_000, () => w.replies().some((t) => t.startsWith("转述：")));
 			const relay = w.replies().find((t) => t.startsWith("转述：")) ?? "(no relay)";
 			const pass = /"scan": true/.test(venv) && /空腹血糖/.test(relay) && /engine=vision/.test(relay) && w.filesLeft().length === 0;
-			return { pass, evidence: `pdf_text.py on the Form-wrapped PDF: ${venv}\nrelay: ${relay}\nreplies: ${JSON.stringify(w.replies())}\nfiles left in files/: ${JSON.stringify(w.filesLeft())}` };
+			return { pass, evidence: `pdf_text.py then pdf_scan.py on the Form-wrapped PDF: ${venv}\nrelay: ${relay}\nreplies: ${JSON.stringify(w.replies())}\nfiles left in files/: ${JSON.stringify(w.filesLeft())}` };
 		} finally {
 			await w.stop("ocr-mail-host-form-scan");
 		}
