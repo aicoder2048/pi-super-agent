@@ -212,7 +212,7 @@ test("看盘队的领队把一个问题并行派给两位成员再合成一份�
 				assert.ok(toolsOf(TASK.brief).includes("dispatch_agent"));
 				assert.ok(toolsOf(TASK.brief).includes("report") && toolsOf(TASK.brief).includes("bash"), "助手保留自己的工具");
 				assert.deepEqual(sorted(toolsOf(MARKET_TASK)), ["lookup", "read", "web_get"]);
-				assert.deepEqual(sorted(toolsOf(NEWS_TASK)), sorted(["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup"]));
+				assert.deepEqual(sorted(toolsOf(NEWS_TASK)), sorted(["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup", "ocr"]));
 				assert.ok(!toolsOf(WEATHER.brief).includes("dispatch_agent"));
 				assert.ok(toolsOf(TASK.brief).includes("lookup") && !toolsOf(WEATHER.brief).includes("lookup"), "只有领域开了 lookup 的助手能查数据");
 				assert.deepEqual(sorted(toolsOf(WEATHER.brief)), sorted(toolsOf(TASK.brief).filter((name) => !["dispatch_agent", "lookup"].includes(name))), "除了派活和 lookup，两种助手的工具一样");
