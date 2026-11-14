@@ -198,6 +198,26 @@ test("名单到了宿主一次读的上限 500 行：这一拍不请求、不存
 	assert.equal(under.messages().length, 1);
 });
 
+test("名单不认通配符：*@example.org 不收 example.org 的信，报 wildcard 说改成 @example.org；别的地址照收", async (t) => {
+	const feed = await mailFeed(t);
+	feed.senders("ann@example.com", "*@example.org");
+	await feed.beat();
+	feed.box.deliver(ann("m-1"), stranger("m-2"));
+	await feed.beat();
+	assert.deepEqual(feed.messages().map((r) => r.fields["gmailId"]), ["m-1"]);
+	assert.equal(feed.problems.at(-1)?.id, "wildcard");
+	assert.match(feed.problems.at(-1)!.text, /\*@example\.org/);
+	assert.match(feed.problems.at(-1)!.text, /写 @example\.org/);
+});
+
+test("名单里只有通配符的行：报 wildcard，不报 no-senders，什么都不请求", async (t) => {
+	const feed = await mailFeed(t);
+	feed.senders("*@example.org");
+	await feed.beat();
+	assert.equal(feed.problems.at(-1)?.id, "wildcard");
+	assert.deepEqual(feed.requests(), []);
+});
+
 test("inbox 写死的 500 行和宿主的 READ_LIMIT 一致：改了一边要改另一边", () => {
 	const runner = readFileSync(join(import.meta.dirname, "../../src/modules/feed-runner.ts"), "utf8");
 	const inbox = readFileSync(join(PKG, "feeds/inbox/index.ts"), "utf8");
