@@ -126,10 +126,26 @@ test("接口出错：不存任何东西；连着 5 轮取不到报价才报问�
 	}
 	assert.deepEqual(feed.problemIds(), ["-", "-", "-", "-", "massive-down", "massive-down"]);
 	assert.match(feed.problems[4]!.text, /连着 5 轮/);
+	assert.match(feed.problems[4]!.text, /最近一次：行情服务返回 HTTP 500/);
+	assert.match(feed.problems[4]!.text, /恢复后自动接着取/);
 	feed.massive.answer(snapshot([tickerRow("NVDA", 180.4, 176, feed.clock.now - 15 * 60_000)]));
 	assert.deepEqual(await feed.round(), { ok: true, records: 1, notices: 0 });
 	assert.equal(feed.problems.at(-1), undefined);
 	assert.equal(feed.quotes().length, 1);
+});
+
+test("密钥被拒（HTTP 401、403）：问题里写上最近一次的错误，让你去查密钥，不说等它自己恢复", async (t) => {
+	for (const status of [401, 403]) {
+		const feed = await quotesFeed(t);
+		feed.massive.answer({ status, body: {} });
+		for (let i = 0; i < 5; i++) await feed.round();
+		const problem = feed.problems.at(-1);
+		assert.equal(problem?.id, "massive-down");
+		assert.match(problem!.text, new RegExp(`最近一次：行情服务返回 HTTP ${status}`));
+		assert.match(problem!.text, /POLYGON_API_KEY/);
+		assert.doesNotMatch(problem!.text, /恢复后自动接着取/);
+		assert.ok(problem!.text.length <= 200, "宿主只留问题的前 200 个字");
+	}
 });
 
 test("接口出错的轮数在宿主重启后接着数；隔了一天重新数", async (t) => {
@@ -175,6 +191,28 @@ test("报价旧了：开盘后第一份快照还是盘前的（行情延迟 15 �
 	feed.clock.now = ny("2026-11-12T09:50:00");
 	await feed.round();
 	assert.deepEqual(feed.problemIds(), ["-", "-", "-", "stale"]);
+});
+
+test("报价旧了：节假日（感恩节）宿主照样在美股时段跑，拿到的一直是昨天的报价，不报 stale", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	for (const minute of ["09:30", "09:40", "09:50", "10:30"]) {
+		feed.clock.now = ny(`2026-11-26T${minute}:00`);
+		feed.massive.answer(snapshot([tickerRow("NVDA", 180.4, 176, ny("2026-11-25T15:59:00"))]));
+		await feed.round();
+	}
+	assert.deepEqual(feed.problemIds(), ["-", "-", "-", "-"]);
+});
+
+test("报价旧了：提前收盘日 13:00 收盘后不再有新报价，不报 stale", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	for (const minute of ["12:50", "13:10", "13:30", "15:00"]) {
+		feed.clock.now = ny(`2026-11-27T${minute}:00`);
+		feed.massive.answer(snapshot([tickerRow("NVDA", 180.4, 176, ny("2026-11-27T12:45:00"))]));
+		await feed.round();
+	}
+	assert.deepEqual(feed.problemIds(), ["-", "-", "-", "-"]);
 });
 
 const DAY = "2026-11-12";
