@@ -1,12 +1,22 @@
 {
   "title": "自选股日线扫描",
-  "description": "每小时看一次；每个交易日收盘 15 分钟后用 ta scan 扫一次自选股和 QQQ、SPY，同步两年日线和分红，写进模块自己的数据库（先写副本，成功后整份换上）；自选股当天出现 settings.signals.rules 里的信号时，每条发一条触发",
+  "description": "每 5 分钟看一次；每个交易日收盘 20 分钟后（按模块自己的日历，提前收盘日跟着提前）用 ta scan 扫一次自选股和 QQQ、SPY，同步两年日线和分红，写进模块自己的数据库（先写副本，成功后整份换上）；再按盯盘规则表 watch-rules.ts 判当天的收盘规则（200 日线、50 日线、50/200 日均线交叉、RSI、财报临近、收盘放量、ta 的其余信号，ta 判为噪音的降成只记录），命中记进 files/hits/<日期>/scan.json，和当天报价 feed 的命中一起算同向升级和多空分歧，按层级发一行提醒或开任务的触发，线程和当天到档的任务共用；最后发一行静音的收盘小结，补发免打扰时段留下的任务",
   "handler": "index.ts",
-  "secrets": ["POLYGON_API_KEY"],
-  "every": "1h",
+  "secrets": [
+    "POLYGON_API_KEY",
+    "FINNHUB_API_KEY"
+  ],
+  "every": "5m",
   "limit": "5m",
-  "settings": { "baseUrl": "https://api.massive.com", "scanSeconds": 270, "signals": { "rules": ["R-MA-2-50"] } },
-  "reads": ["watchlist"],
+  "settings": {
+    "baseUrl": "https://api.massive.com",
+    "finnhubBaseUrl": "https://finnhub.io/api/v1",
+    "scanSeconds": 270
+  },
+  "reads": [
+    "watchlist",
+    "rule-levels"
+  ],
   "into": "scan-runs",
-  "notice": "日线扫描新信号：{{symbol}} {{kind}}（规则 {{rule}}，方向 {{direction}}，周期 {{timeframe}}），数据日期 {{date}}（美东交易日），收盘价 {{price}}。"
+  "notice": "{{line}}（规则 {{rule}}，层级 {{level}}，做法 {{plan}}）"
 }

@@ -2,13 +2,16 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export type ScanPlan =
-	| { kind: "ok"; rows?: number; signals?: number | Record<string, unknown>[] }
+	| { kind: "ok"; rows?: number; signals?: number | Record<string, unknown>[]; bars?: DailyRow[] }
 	| { kind: "partial"; failing: string[] }
 	| { kind: "down" }
 	| { kind: "dividends" }
 	| { kind: "skip" }
 	| { kind: "exit" }
 	| { kind: "sleep" };
+
+/** A complete daily bar in ta's own bars table, which the scan feed reads after the swap. */
+export type DailyRow = { symbol: string; date: string; close: number; volume: number };
 
 export type TaCall = { cmd: string; input: Record<string, unknown>; key?: string; base?: string; db?: string; seen: { next: string | null; journal: boolean; lock: boolean } };
 
@@ -61,7 +64,13 @@ if (plan.kind === "skip") {
 	out({ scan_id: 1, symbol_count: 0, new_signals: [], errors: [], skipped: true, reason: "纽约日期不是交易日。", next_scan: "2026-11-16T21:15:30+00:00" });
 	process.exit(0);
 }
-write(plan.rows ?? symbols.length);
+if (plan.kind === "ok" && plan.bars) {
+	const store = new DatabaseSync(db);
+	store.exec("DROP TABLE IF EXISTS bars; CREATE TABLE bars (symbol TEXT, timeframe TEXT, session_date TEXT, start_ms INTEGER, open REAL, high REAL, low REAL, close REAL, volume REAL, complete INTEGER)");
+	const insert = store.prepare("INSERT INTO bars VALUES (?, '1d', ?, ?, ?, ?, ?, ?, ?, 1)");
+	for (const b of plan.bars) insert.run(b.symbol, b.date, Date.parse(b.date + "T14:30:00Z"), b.close, b.close, b.close, b.close, b.volume);
+	store.close();
+} else write(plan.rows ?? symbols.length);
 const errors = plan.kind === "dividends" ? symbols.map((s) => ({ symbol: s, error: { code: "DIVIDENDS_UNAVAILABLE", message: "分红不可用，当前仅拆股复权。" } })) : plan.kind === "down" ? symbols.map((s) => error(s, "MARKET_UNAVAILABLE")) : plan.kind === "partial" ? plan.failing.map((s) => error(s, "MARKET_DATA_INVALID")) : [];
 if (plan.kind === "ok") errors.push({ symbol: "QQQ", error: { code: "DIVIDENDS_UNAVAILABLE", message: "分红更新不可用，使用已缓存分红。" } });
 out({ scan_id: 1, symbol_count: symbols.length, new_signals: Array.isArray(plan.signals) ? plan.signals : Array.from({ length: plan.signals ?? 0 }, (_, i) => ({ id: i })), errors });
