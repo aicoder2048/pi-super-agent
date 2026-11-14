@@ -327,4 +327,5 @@ try {
 	for (const dir of made) rmSync(dir, { recursive: true, force: true });
 }
 writeFileSync(join(outDir, `proactive-${mode}-summary.txt`), `${results.join("\n")}\n`);
-if (results.some((r) => r.startsWith("FAIL"))) process.exitCode = 1;
+// The fake model servers stay listening, so leave explicitly.
+process.exit(results.some((r) => r.startsWith("FAIL")) ? 1 : 0);
