@@ -44,6 +44,9 @@ export const WATCH_RULES = [
 	{ id: "volume-close", title: "收盘放量", feed: "scan", threshold: { stock: 1.5 }, level: 0, plan: "structure-trend" },
 	{ id: "ta-key", title: "ta 重点形态", feed: "scan", threshold: { stock: 0 }, level: 1, plan: "structure-trend" },
 	{ id: "ta-other", title: "ta 其余信号", feed: "scan", threshold: { stock: 0 }, level: 0, plan: "structure-trend" },
+	{ id: "cross-50-200", title: "50/200 日均线交叉", feed: "scan", threshold: { stock: 0 }, level: 2, plan: "structure-trend" },
+	{ id: "rsi", title: "RSI 超买超卖", feed: "scan", threshold: { stock: 70 }, level: 1, plan: "structure-trend" },
+	{ id: "earnings", title: "财报临近", feed: "scan", threshold: { stock: 5 }, level: 1, plan: "structure-trend" },
 ] as const satisfies readonly WatchRule[];
 
 export type RuleId = (typeof WATCH_RULES)[number]["id"];

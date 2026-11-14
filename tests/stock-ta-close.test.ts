@@ -6,9 +6,9 @@ import { parseRuleLevels, type LevelRow } from "../docs/modules/examples/stock-t
 
 const DATE = "2026-11-12";
 const AT = "2026-11-12T21:00:00.000Z";
-/** 21 sessions of 1,000,000 shares closing at 100, then the session itself. */
+/** 21 sessions of 1,000,000 shares swinging 99 to 101 and closing at 100 (RSI near 50), then the session itself. */
 const bars = (close: number, volume: number): DailyBar[] => [
-	...Array.from({ length: 21 }, (_, i) => ({ date: `2026-10-${String(i + 1).padStart(2, "0")}`, close: 100, volume: 1_000_000 })),
+	...Array.from({ length: 21 }, (_, i) => ({ date: `2026-10-${String(i + 1).padStart(2, "0")}`, close: i === 20 ? 100 : i % 2 ? 101 : 99, volume: 1_000_000 })),
 	{ date: DATE, close, volume },
 ];
 const ma = (period: number, direction: "bullish" | "bearish", attention = "normal", extra: Partial<TaSignal> = {}): TaSignal => ({
@@ -135,4 +135,39 @@ test("免打扰时段：静音一行和任务都先留着，命中标成 held", 
 test("理由写成事实：不出现分数、评分、胜率", () => {
 	const r = close(input({ earlier: [quoteHit("high-52w", "bull", 2)], signals: [ma(50, "bearish"), ta("R-PAT-1-B", "bullish")], bars: { NVDA: bars(97, 1_600_000) } }));
 	for (const h of r.hits) assert.doesNotMatch(h.text, /分数|评分|胜率|score/);
+});
+
+/** `n` closes ending at the session: a flat run at `base`, then the given tail. */
+const series = (base: number, n: number, tail: number[]): DailyBar[] => {
+	const closes = [...Array.from({ length: n - tail.length }, () => base), ...tail];
+	return closes.map((close, i) => ({ date: i === closes.length - 1 ? DATE : `2025-${String(1 + Math.floor(i / 28)).padStart(2, "0")}-${String(1 + (i % 28)).padStart(2, "0")}`, close, volume: 1_000_000 }));
+};
+
+test("50 日均线上穿 200 日均线（金叉）：2 层静音一行，看多；下穿（死叉）看空", () => {
+	const golden = series(100, 210, [...Array.from({ length: 9 }, () => 99), 140]);
+	const r = close(input({ bars: { NVDA: golden } }));
+	assert.deepEqual(r.hits.filter((h) => h.rule !== "rsi").map((h) => [h.rule, h.level, h.lean]), [["cross-50-200", 2, "bull"]]);
+	assert.match(r.alerts.find((a) => a.id.startsWith("cross-50-200"))!.text, /^NVDA 50 日均线上穿 200 日均线（金叉，50 日 100\.\d\d，200 日 100\.\d\d）。/);
+	const death = series(100, 210, [...Array.from({ length: 9 }, () => 101), 60]);
+	assert.deepEqual(close(input({ bars: { NVDA: death } })).hits.filter((h) => h.rule !== "rsi").map((h) => [h.rule, h.lean]), [["cross-50-200", "bear"]]);
+	assert.deepEqual(close(input({ bars: { NVDA: series(100, 150, [140]) } })).hits.filter((h) => h.rule === "cross-50-200"), [], "不到 201 根日线不算");
+});
+
+test("RSI(14) 上穿 70 记 1 层（Wilder 平滑），下穿 30 也是；只在穿过的那天，不在一直高于 70 的日子", () => {
+	const up = close(input({ bars: { NVDA: series(100, 60, [101, 100, 101, 100, 101, 100, 101, 100, 101, 100, 101, 100, 101, 100, 110]) } }));
+	assert.deepEqual(up.hits.map((h) => [h.rule, h.level, h.lean]), [["rsi", 1, null]]);
+	assert.match(up.hits[0]!.text, /^NVDA RSI\(14\) 上穿 70（7\d\.\d）。/);
+	const down = close(input({ bars: { NVDA: series(100, 60, [101, 100, 101, 100, 101, 100, 101, 100, 101, 100, 101, 100, 101, 100, 90]) } }));
+	assert.match(down.hits.find((h) => h.rule === "rsi")!.fact, /^RSI\(14\) 下穿 30（[12]\d\.\d）$/);
+	const still = close(input({ bars: { NVDA: series(100, 60, [102, 104, 106, 108, 110, 112, 114, 116]) } }));
+	assert.deepEqual(still.hits.filter((h) => h.rule === "rsi"), [], "已经在 70 以上的日子不再记");
+});
+
+test("财报临近：下一次财报在 5 个交易日内记 1 层，id 用财报日期，同一次财报以后的日子不再记", () => {
+	const earnings = { NVDA: { date: "2026-11-17", time: "盘后", tradingDays: 3 } };
+	const r = close(input({ earnings }));
+	assert.deepEqual(r.hits.map((h) => [h.id, h.rule, h.level, h.lean, h.date]), [["earnings:NVDA:2026-11-17", "earnings", 1, null, DATE]]);
+	assert.equal(r.hits[0]!.fact, "财报还有 3 个交易日，11-17 盘后");
+	assert.deepEqual(close(input({ earnings, seen: ["earnings:NVDA:2026-11-17"] })).hits, [], "前几天记过的同一次财报不再记");
+	assert.deepEqual(close(input({ earnings: { NVDA: { ...earnings.NVDA, tradingDays: 6 } } })).hits, []);
 });
