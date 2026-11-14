@@ -5,7 +5,8 @@ import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi
 import { cpSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createHostOptions, modelSelectors, telegramOptions, watchedSources } from "../src/host/wiring.ts";
+import { createHostOptions, modelSelectors, watchedSources } from "../src/host/wiring.ts";
+import { telegramOptions } from "../src/host/telegram/options.ts";
 import { memberProviders } from "../src/host/config.ts";
 import { Host } from "../src/host/host.ts";
 import { Modules } from "../src/modules.ts";

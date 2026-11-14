@@ -14,7 +14,7 @@ import type { HostOptions } from "./host.ts";
 import { helperSessionDir } from "./dispatch.ts";
 import { PiWorkerSpawner } from "./pi-worker.ts";
 import { Router, routerPreamble } from "./router.ts";
-import { readSecret, secretLookup } from "../secrets.ts";
+import { secretLookup } from "../secrets.ts";
 import { createGateway } from "../modules/gateway.ts";
 import { googlePort } from "../modules/google-port.ts";
 import { createOcr } from "../ocr/ocr.ts";
@@ -22,8 +22,7 @@ import { instanceData } from "../modules/instance-data.ts";
 import { moduleDataDir } from "../modules/knowledge.ts";
 import { ModuleStore } from "../modules/live.ts";
 import type { Digest } from "../modules/manifest.ts";
-import { BotApi, BotToken } from "./telegram/bot-api.ts";
-import type { TelegramOptions } from "./telegram/client.ts";
+import { telegramOptions } from "./telegram/options.ts";
 
 export type ModelWiringConfig = Pick<HostConfig, "models" | "probePrimaryMinutes">;
 
@@ -74,15 +73,6 @@ export function feedSpecs(config: Pick<HostConfig, "stateDir" | "secretsFile" | 
 			log,
 		});
 	});
-}
-
-export function telegramOptions(config: Pick<HostConfig, "stateDir" | "secretsFile" | "telegram">, env: Readonly<NodeJS.ProcessEnv>, log: (line: string) => void): TelegramOptions | undefined {
-	if (!config.telegram) return undefined;
-	const found = readSecret(["TELEGRAM_BOT_TOKEN"], "TELEGRAM_BOT_TOKEN", env, config.secretsFile);
-	if (!found) throw new ConfigError(`${join(config.stateDir, "config.json")}：写了 telegram 段，但环境变量和 secretsFile 里都没有 TELEGRAM_BOT_TOKEN`);
-	const token = new BotToken(found.key, found.origin);
-	log(`[telegram] bot token 来自${found.origin}`);
-	return { api: new BotApi({ token }), allowedUserIds: new Set(config.telegram.allowedUserIds) };
 }
 
 export interface HostWiringInput {
