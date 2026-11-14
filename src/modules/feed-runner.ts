@@ -54,7 +54,9 @@ function fromItems(items: readonly Json[]): Collected | string {
 
 const badgeText = (text: string) => {
 	const line = text.replace(/[\r\n]+/g, " ");
-	return line.length <= BADGE_TEXT_MAX ? line : `${line.slice(0, BADGE_TEXT_MAX - 1)}…`;
+	if (line.length <= BADGE_TEXT_MAX) return line;
+	const kept = line.slice(0, BADGE_TEXT_MAX - 1);
+	return `${/[\ud800-\udbff]$/.test(kept) ? kept.slice(0, -1) : kept}…`;
 };
 
 export function parseCollected(output: Json, into?: CollectionDescriptor): Collected | string {
