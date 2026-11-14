@@ -1,5 +1,5 @@
-import { nyTime, sessionAt } from "../../market-days.ts";
-import { snapshot, type Quote } from "../../massive.ts";
+import { isTradingDay, nyTime, sessionAt } from "../../market-days.ts";
+import { oneLine, snapshot, type Quote } from "../../massive.ts";
 import { listedSymbols, type WatchRow } from "../../watchlist.ts";
 
 type Side = "up" | "down";
@@ -20,8 +20,15 @@ const GUIDE = "docs/modules/stock-ta.md";
 const FAILURES_BEFORE_PROBLEM = 5;
 const STALE_MS = 20 * 60_000;
 const NO_KEY: Problem = { id: "no-key", text: `没有设置 POLYGON_API_KEY，报价没去取，到档提醒和你设的条件都不会响：在宿主的密钥文件里加一行 POLYGON_API_KEY=<你的 Massive/Polygon 密钥>，见 ${GUIDE}` };
-const MASSIVE_DOWN: Problem = { id: "massive-down", text: `连着 ${FAILURES_BEFORE_PROBLEM} 轮取不到报价（Massive 出错或连不上），到档提醒和你设的条件都停了；恢复后自动接着取，见 ${GUIDE}` };
 const STALE: Problem = { id: "stale", text: `交易时段里 ${STALE_MS / 60_000} 分钟没有新的报价（行情本来就延迟 15 分钟，这是在那之外），到档提醒和你设的条件可能停了；Massive 可能在维护，或者套餐变了` };
+
+const KEY_REJECTED = /HTTP 40[13]\b/;
+
+function massiveDown(error: Error): Problem {
+	const reason = oneLine(error);
+	const advice = KEY_REJECTED.test(reason) ? "密钥失效或套餐到期，不会自己好：检查宿主密钥文件里的 POLYGON_API_KEY" : "恢复后自动接着取";
+	return { id: "massive-down", text: `连着 ${FAILURES_BEFORE_PROBLEM} 轮取不到报价（最近一次：${reason}），到档提醒和你设的条件都停了；${advice}，见 ${GUIDE}` };
+}
 
 const INDEXES = ["QQQ", "SPY"];
 // Prices are cents, so a move of exactly a band can compute a hair below it (609 / 600 → 1.4999…%).
@@ -68,14 +75,14 @@ export default async function quotes(input: Input) {
 	let snapped: Quote[];
 	try {
 		snapped = await snapshot(input.settings.baseUrl, key, symbols);
-	} catch {
+	} catch (error) {
 		const failures = cursor.failures + 1;
-		return { records: [], cursor: JSON.stringify({ ...cursor, failures }), ...(failures >= FAILURES_BEFORE_PROBLEM && { problem: MASSIVE_DOWN }) };
+		return { records: [], cursor: JSON.stringify({ ...cursor, failures }), ...(failures >= FAILURES_BEFORE_PROBLEM && { problem: massiveDown(error as Error) }) };
 	}
 	const quotes = snapped.filter((q) => fresh(q, today));
 	cursor.failures = 0;
 	cursor.lastQuote = lastQuote(cursor, quotes, input.now);
-	const stale = session.phase === "regular" && nowMs - Date.parse(cursor.lastQuote.seenAt) >= STALE_MS;
+	const stale = session.phase === "regular" && isTradingDay(today) && nowMs - Date.parse(cursor.lastQuote.seenAt) >= STALE_MS;
 	const moves = quotes.flatMap((q) => bandMove(q, input.settings.bands, cursor).map((m) => ({ ...m, symbol: q.symbol })));
 	return {
 		records: quotes.map((q) => ({ id: `${q.symbol}@${q.at}`, ...q })),
