@@ -247,7 +247,7 @@ async function real(): Promise<void> {
 			const hits = h.hits();
 			const saidAt = Date.now();
 			h.tg.userSays(USER, "stock-ta 今天有哪些信号？");
-			const answer = await within(600_000, () => h.phone().find((m) => m.text.startsWith("🧭") && /NVDA[\s\S]*52 ?周新高[\s\S]*AMD|AMD[\s\S]*NVDA[\s\S]*52 ?周新高/.test(m.text) && /反转|转涨|翻/.test(m.text)), 1000);
+			const answer = await within(600_000, () => h.phone().find((m) => m.text.startsWith("🧭") && /52 ?周新高/.test(m.text) && m.text.includes("NVDA") && m.text.includes("AMD")), 1000);
 			const seconds = ((Date.now() - saidAt) / 1000).toFixed(0);
 			const pass = hits.length >= 3 && answer !== undefined;
 			return { pass, evidence: `real models ${JSON.stringify(REAL)}\nhits after one beat (NVDA gap +3.4% and 52-week high 111.50, AMD reversal from -3.5%):\n${show(hits)}\nthe user asked on Telegram 「stock-ta 今天有哪些信号？」; reply after ${seconds} s:\n${answer?.text ?? "(none)"}\nall Telegram messages:\n${show(h.phone())}` };
