@@ -17,13 +17,19 @@ function namedFile(dataDir: string, file: unknown): string | undefined {
 	}
 }
 
+/** A tool that read some text itself (a PDF with only some pages scanned) gets that text back with the reason instead of a refusal. */
+function fallBack(rest: { readonly [key: string]: Json }, why: string): { output: Json } | string {
+	if (typeof rest["text"] !== "string" || rest["text"].trim() === "") return why;
+	return { output: { ...rest, ocr: { failed: `${why}。text 只有工具不用 OCR 读出的字，扫描的部分没读出来` } } };
+}
+
 export async function readForTool(ocr: Ocr | undefined, dataDir: string, output: Json): Promise<{ output: Json } | string> {
 	if (output === null || typeof output !== "object" || Array.isArray(output) || !("ocr" in output)) return { output };
 	const { ocr: asked, ...rest } = output as { readonly [key: string]: Json };
 	const file = namedFile(dataDir, (asked as { file?: unknown } | null)?.file);
 	if (file === undefined) return NOT_IN_FILES;
 	try {
-		if (ocr === undefined) return OCR_OFF;
+		if (ocr === undefined) return fallBack(rest, OCR_OFF);
 		const read = await ocr.read(file);
 		const done = {
 			engine: read.engine,
@@ -35,7 +41,7 @@ export async function readForTool(ocr: Ocr | undefined, dataDir: string, output:
 		};
 		return { output: { ...rest, text: pagesText(read.pages), truncated: rest["truncated"] === true || read.truncated, ocr: done } };
 	} catch (error) {
-		return `OCR 没读成：${(error as Error).message}`;
+		return fallBack(rest, `OCR 没读成：${(error as Error).message}`);
 	} finally {
 		rmSync(file, { force: true });
 	}

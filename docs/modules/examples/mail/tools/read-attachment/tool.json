@@ -14,6 +14,6 @@
     "pages": { "type": "number", "title": "PDF 的总页数，其他类型没有" },
     "text": { "type": "text", "title": "读出的文字" },
     "truncated": { "type": "text", "title": "true 表示文字超过 100000 字、PDF 超过 50 页或 OCR 只读了前几页，后面没读" },
-    "ocr": { "type": "text", "title": "扫描件或图片才有：宿主 OCR 的引擎、读了几页、共几页、秒数、平均置信度和说明" }
+    "ocr": { "type": "text", "title": "扫描件或图片才有：宿主 OCR 的引擎、读了几页、共几页、秒数、平均置信度和说明；OCR 没开或没读成、PDF 又有部分页带字时只有 failed 一项写原因，text 是 PDF 本来带的字，扫描页没读出来" }
   }
 }

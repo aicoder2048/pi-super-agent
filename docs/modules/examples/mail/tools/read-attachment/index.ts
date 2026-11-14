@@ -52,10 +52,11 @@ const extensionOf = (part: Part): string => {
 	return filename.includes(".") ? filename.toLowerCase().slice(filename.lastIndexOf(".")) : "";
 };
 
-function forOcr(bytes: Buffer, extension: string, pages: number | null): Extracted {
+/** `text` is what was read without OCR; the host keeps it when its OCR is off or fails. */
+function forOcr(bytes: Buffer, extension: string, pages: number | null, text = ""): Extracted {
 	const name = `ocr-${randomBytes(8).toString("hex")}${extension}`;
 	writeFileSync(join(process.env["PSA_MODULE_DATA"] ?? "", "files", name), bytes);
-	return { text: "", pages, truncated: false, ocr: { file: `files/${name}` } };
+	return { text, pages, truncated: false, ocr: { file: `files/${name}` } };
 }
 
 function parseInput(input: unknown): Input {
@@ -163,7 +164,7 @@ function pdfText(bytes: Buffer, limits: Limits): Promise<Extracted> {
 			if (reply.error === "encrypted") return fail(new Error("PDF 有密码，读不了"));
 			if (reply.error === "too-big") return fail(new Error(TOO_BIG));
 			if (typeof reply.text !== "string") return fail(new Error("PDF 读不出来，文件可能坏了"));
-			done(reply.scan === true ? { ...forOcr(bytes, ".pdf", reply.pages), truncated: reply.truncated === true } : { text: reply.text, pages: reply.pages, truncated: reply.truncated === true });
+			done(reply.scan === true ? { ...forOcr(bytes, ".pdf", reply.pages, reply.text), truncated: reply.truncated === true } : { text: reply.text, pages: reply.pages, truncated: reply.truncated === true });
 		});
 	});
 }

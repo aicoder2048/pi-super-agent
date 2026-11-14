@@ -89,7 +89,8 @@ export type ToolEffect = "pure" | (typeof TOOL_EFFECTS)[number];
  * A host port takes a tool's reply and does what the host holds for it: the one outside write it holds the token for
  * (ADR-0022), or OCR, whose engine and time budget live in the host. `module` is the only module that may use it, null for any.
  * `ocr`: a reply with `ocr: { file }` names a file under the module data's `files/`; the host reads it, puts the text in `text`
- * and what it did in `ocr`, and deletes the file.
+ * and what it did in `ocr`, and deletes the file. When OCR is off or fails, a reply whose `text` already holds words keeps them
+ * with `ocr: { failed }`; one with no text is refused.
  */
 export const TOOL_PORTS = {
 	"gmail.createDraft": { module: "mail", effect: "write" },
