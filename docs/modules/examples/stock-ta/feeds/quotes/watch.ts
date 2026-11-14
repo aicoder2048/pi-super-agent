@@ -6,7 +6,7 @@
 import { nyTime, regularCloseAt, regularOpenAt } from "../../market-days.ts";
 import { opened, resonate, type Hit } from "../../hits.ts";
 import type { Quote } from "../../massive.ts";
-import { COMBOS, effective, lineOf, opensTask, scopeOf, TIERS, VIXY, WATCH_RULES, WHIPSAW, type Effective, type Lean, type Level, type Line, type Plan, type RuleId, type RuleLevels, type WatchRule } from "../../watch-rules.ts";
+import { COMBOS, effective, lineOf, opensTask, scopeOf, TIERS, VIXY, WATCH_RULES, WHIPSAW, type Effective, type Lean, type Line, type Plan, type RuleLevels, type WatchRule } from "../../watch-rules.ts";
 
 export type Side = "up" | "down";
 /** From the module's daily bars up to yesterday (bars.ts). A null field means too little history for it. */
