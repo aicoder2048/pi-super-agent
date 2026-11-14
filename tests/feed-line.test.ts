@@ -9,6 +9,8 @@ import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
 import { release, oneLine } from "../src/modules/release.ts";
 import { problemLine, scanPackage } from "../src/modules/validate.ts";
 import { Modules } from "../src/modules.ts";
+import { openStore } from "../src/kernel/store.ts";
+import { startLiveModules } from "../src/host/live-modules.ts";
 import { FAKE_BOT_TOKEN, FakeTelegram, unmarked } from "./helpers/fake-telegram.ts";
 import { FakeSpawner, fauxRouter, ids, servedAsHost, until, type Brain } from "./helpers/fakes.ts";
 
@@ -240,6 +242,71 @@ test("模块关掉了：它的 feed 的警报悄悄撤下，不发 ✅", async (
 	assert.deepEqual(alarms(), []);
 	await new Promise((r) => setTimeout(r, 200));
 	assert.ok(!phone().some((m) => m.text.startsWith("✅")));
+});
+
+/** The host wired to the real live modules, the way main.ts does it, so switching, deleting and editing go through publish. */
+async function liveLettersHost(t: TestContext) {
+	const { root, pkg } = lettersCopy(t, false);
+	const stateDir = join(root, "state");
+	mkdirSync(stateDir, { recursive: true });
+	const roots = [join(root, "modules")];
+	const db = openStore(join(stateDir, "state.db"));
+	const modules = startLiveModules({ db, stateDir, roots, discovered: Modules.load(roots), configSwitches: { "private-line": true }, log: () => {} });
+	const tg = await FakeTelegram.start();
+	const host = await Host.start({
+		stateDir,
+		createRouter: fauxRouter(answersEveryone).createRouter,
+		createSpawner: () => new FakeSpawner(() => {}),
+		log: () => {},
+		sourcePolicy: (trigger) => modules.live.current().sourcePolicy(trigger),
+		domains: { book: () => modules.live.current().book, kitFor: modules.kitFor },
+		moduleFeeds: { feeds: () => modules.live.current().feeds(), fixtures: false, tickMs: 20 },
+		modules,
+		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set([USER]), timing: { pollTimeoutSec: 1, minGapMs: 5 } },
+	});
+	t.after(async () => {
+		await host.stop();
+		modules.stop();
+		await tg.close();
+		if (db.isOpen) db.close();
+		rmSync(root, { recursive: true, force: true });
+	});
+	tg.userSays(USER, "/start");
+	await until(() => tg.sent.length > 0, "聊天打开");
+	const inbox = join(stateDir, "inbox", "private-line", "inbox");
+	mkdirSync(inbox, { recursive: true });
+	writeFileSync(join(inbox, "001.json"), JSON.stringify({ problem: "auth" }));
+	const alarms = () => host.snapshot().health.active;
+	await until(() => alarms().length === 1, "收件箱的警报亮了", 10_000);
+	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => unmarked(m.text));
+	return { modules, pkg, alarms, phone, host };
+}
+
+const withdrawnQuietly = async ({ alarms, phone, host }: Awaited<ReturnType<typeof liveLettersHost>>) => {
+	await until(() => alarms().length === 0, "警报撤下了", 10_000);
+	await new Promise((r) => setTimeout(r, 200));
+	assert.ok(!phone().some((m) => m.startsWith("✅")), "撤下不发 ✅");
+	assert.deepEqual(host.snapshot().health.recent, [], "撤下不进最近恢复");
+};
+
+test("真的开关模块：亮着收件箱警报时关掉模块，警报悄悄撤下", async (t) => {
+	const live = await liveLettersHost(t);
+	assert.ok(live.modules.setSwitch("private-line", false));
+	live.modules.tick();
+	assert.deepEqual(live.alarms(), [], "关掉的那一拍就撤下");
+	await withdrawnQuietly(live);
+});
+
+test("真的删掉模块包：亮着收件箱警报时删掉整个包，警报悄悄撤下", async (t) => {
+	const live = await liveLettersHost(t);
+	rmSync(live.pkg, { recursive: true, force: true });
+	await withdrawnQuietly(live);
+});
+
+test("真的拿掉 feed：亮着收件箱警报时从包里删掉这个 feed，警报悄悄撤下", async (t) => {
+	const live = await liveLettersHost(t);
+	rmSync(join(live.pkg, "feeds"), { recursive: true, force: true });
+	await withdrawnQuietly(live);
 });
 
 test("模块卡：宿主给有 feed 的模块填上今日提醒条数和每个 feed 最近一轮的时间、行数", async (t) => {
