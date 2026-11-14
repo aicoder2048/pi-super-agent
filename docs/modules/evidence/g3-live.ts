@@ -1,3 +1,6 @@
+// Historical record of G3 (#93). It ran at e13a5e8 and is not kept in step with main.
+// On today's schema the lanes that read host_lines.module_private fail (#123 dropped that column), and lane 1
+// runs the us-market tripwire, which #124 retired. To rerun it, check out e13a5e8.
 /**
  *   node --import ./src/pi-runtime.mjs docs/modules/evidence/g3-live.ts [lanes|perf] [outDir]
  *

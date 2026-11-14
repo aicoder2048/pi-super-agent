@@ -1,3 +1,6 @@
+// Historical record of R1 (#116). It ran at e0b838a and is not kept in step with main.
+// Its lanes compare head with an origin/main that had no day-move yet and with us-market's tripwire, which #124
+// retired, so on today's main they no longer test what they say. To rerun it, check out e0b838a.
 // node --import ./src/pi-runtime.mjs docs/modules/evidence/r1-live.ts [lanes|perf] [outDir]
 import { spawnSync } from "node:child_process";
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";

@@ -381,7 +381,8 @@ async function perf() {
 	const scanMs: number[] = [];
 	for (let i = 0; i < 5; i++) {
 		const t0 = performance.now();
-		spawnSync(process.execPath, ["--test", "tests/unit/no-gmail-send.test.ts"], { cwd: HEAD });
+		const scan = spawnSync(process.execPath, ["--test", "tests/unit/no-gmail-send.test.ts"], { cwd: HEAD, encoding: "utf8" });
+		if (scan.status !== 0) throw new Error(`no-gmail-send scan exited ${scan.status}:\n${scan.stdout}${scan.stderr}`);
 		scanMs.push(performance.now() - t0);
 	}
 	const suite = (dir: string) => {

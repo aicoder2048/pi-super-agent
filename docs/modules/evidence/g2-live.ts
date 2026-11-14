@@ -1,3 +1,6 @@
+// Historical record of G2 (#92). It ran at d7eee1f and is not kept in step with main.
+// On today's schema the lanes that read tickets.touched_private_at fail: #123 dropped that column.
+// To rerun it, check out d7eee1f.
 /**
  *   node --import ./src/pi-runtime.mjs docs/modules/evidence/g2-live.ts [lanes|perf] [outDir]
  *   LANES=2,3,4 runs only those lanes.

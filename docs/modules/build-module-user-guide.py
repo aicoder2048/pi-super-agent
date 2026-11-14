@@ -22,7 +22,7 @@ HERE = Path(__file__).resolve().parent
 SRC = HERE / "module-user-guide.md"
 TITLE = "领域模块用户指南"
 SUBTITLE = "给 Super Agent（白宫）加一个新领域：概念、制作流程、安全、Token 性能、Playbook 与 Cookbook"
-META = "Pi Super Agent · main 8cab96a · 2026-11-10"
+META = "Pi Super Agent · main 98d19d6 · 2026-11-14"
 
 MERMAID_INIT = "%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#E6F0FA', 'primaryBorderColor': '#0B5CAB', 'lineColor': '#57606A', 'fontSize': '15px'}, 'flowchart': {'wrappingWidth': 700, 'htmlLabels': true}}}%%\n"
 
@@ -70,10 +70,10 @@ QUIZZES = {
             "why": "它进幕僚长的领域名册，幕僚长靠它决定任务归不归这个领域。不写这一句，名册里就没有这个领域。",
         },
         {
-            "q": "做新模块时，应该拿哪个自带模块当范本？",
-            "options": ["pi-pi（Pi施工队）", "us-market（美股看盘队）", "toy-market"],
+            "q": "做新模块时，应该拿哪个模块当范本？",
+            "options": ["pi-pi（Pi施工队）", "stock-ta（技术分析研究组）", "module-builder（模块工坊）"],
             "answer": 1,
-            "why": "美股看盘队按要做的判断分工，共同做法写在技能里，汇报格式固定。Pi施工队按文档章节切，早期一个任务花过 389 万到 463 万输入 token。",
+            "why": "技术分析研究组按要做的判断分工，共同做法写在技能里，每位成员的汇报格式固定。Pi施工队按文档章节切，早期一个任务花过 389 万到 463 万输入 token。模块工坊是帮你做模块的队，不是范本。",
         },
     ],
     "2": [

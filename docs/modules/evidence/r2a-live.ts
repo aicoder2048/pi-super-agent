@@ -1,3 +1,6 @@
+// Historical record of R2a (#111). It ran at cf3a987 and is not kept in step with main.
+// On today's main its runFeed calls lack the problem (#113) and badge (#145) ports, and the real mode runs
+// `just module off us-market`, which #124 retired. To rerun it, check out cf3a987.
 /**
  *   R2A_SECRETS=<host secrets .env> node --import ./src/pi-runtime.mjs docs/modules/evidence/r2a-live.ts [tools|real|news|page|media|perf] [outDir]
  *   node --import ./src/pi-runtime.mjs docs/modules/evidence/r2a-live.ts web <stateDir>

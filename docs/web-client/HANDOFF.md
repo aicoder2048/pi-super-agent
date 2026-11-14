@@ -75,7 +75,7 @@ What was in flight when the pause came (each owner was told to commit and stop; 
 | #33 | psa/brand | 白宫 name, W1 logo, U2 user avatar. Stays; restack later |
 | #17 | psa/trial-fixes | old, untouched |
 
-The user merges. Never merge unless they ask in that turn. #27 turns toy-market off by default; demo 3 now enables it in its config, and the e2e suites do not load it.
+The user merges. Never merge unless they ask in that turn. #27 turned toy-market off by default; #130 later deleted toy-market and demo 3.
 
 ## Not done
 
