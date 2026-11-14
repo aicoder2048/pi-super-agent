@@ -39,7 +39,7 @@ import { createScheduler, type Scheduler } from "../modules/scheduler.ts";
 import { threadId } from "../sources/generic.ts";
 import { inPollWindow } from "../sources/market/session.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
-import { causeOf, clearedText, Health, HEALTH_DEFAULTS, ModelHealth, raisedText, type HealthConfig } from "./health.ts";
+import { causeOf, clearedText, Health, scrub, HEALTH_DEFAULTS, ModelHealth, raisedText, type HealthConfig } from "./health.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -237,6 +237,10 @@ export class Host {
 			when: { "us-market-hours": inPollWindow },
 			fixtures: options.moduleFeeds?.fixtures ?? false,
 			log: this.#log,
+			rejected: (entry, note, tries) => {
+				if (causeOf(note) === "auth") return;
+				this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(`收件箱里有一件试了 ${tries} 次都没处理成，已放进 rejected：${scrub(note)}`, PROBLEM_MAX)) });
+			},
 		});
 		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []), routerHealth: this.#routerHealth };
 		const memberCap = options.dispatch && new MemberCap({ configured: options.dispatch.maxConcurrent, clock, store: this.kernel.capAsks, log: this.#log });
@@ -506,6 +510,8 @@ export class Host {
 	#feedHealth(entry: FeedEntry, run: FeedRun, problem: FeedProblem | undefined): void {
 		const id = feedAlarmId(entry.source);
 		const subject = `${this.kernel.moduleLabel(entry.module)} ${entry.feed.title}`;
+		// One bad inbox item is said once when it is rejected; a rejected key stays broken, so it still shows.
+		if (!run.ok && entry.feed.connector === "inbox" && causeOf(run.note) !== "auth") return;
 		if (!run.ok) {
 			const after = causeOf(run.note) === "auth" ? 1 : this.#feedFailuresBeforeAlarm;
 			this.#health.failed(id, { area: "data", subject, error: run.note, after });
