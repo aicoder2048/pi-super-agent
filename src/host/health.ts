@@ -79,11 +79,16 @@ export const ADVICE: Readonly<Record<Area, Record<Cause, string>>> = {
 	},
 };
 
+// A secret's name ends in one of these, whatever comes before it: api_key, TELEGRAM_BOT_TOKEN, client_secret.
+const SECRET_NAME = String.raw`[\w-]*(?:key|token|secret|password)`;
+
 const SECRETS: readonly [RegExp, string][] = [
-	[/(\b(?:api[_-]?key|apikey|key|token|access_token|refresh_token|secret|password|client_secret)=)[^&\s]+/gi, "$1…"],
-	[/("(?:api[_-]?key|apikey|token|access_token|refresh_token|secret|password|client_secret)"\s*:\s*")[^"]*/gi, "$1…"],
-	[/\b(x-api-key\s*:\s*)\S+/gi, "$1…"],
+	[new RegExp(String.raw`("${SECRET_NAME}"\s*:\s*")(?:[^"\\]|\\.)*`, "gi"), "$1…"],
+	[new RegExp(String.raw`(\b${SECRET_NAME}=)[^&\s]+`, "gi"), "$1…"],
+	[new RegExp(String.raw`(\b${SECRET_NAME}\s*:\s*)[^\s"]+`, "gi"), "$1…"],
+	[/(\b(?:set-)?cookie\s*:\s*)[^;\s]+(?:;\s*[^;\s]+)*/gi, "$1…"],
 	[/\bbot(\d+):[\w-]+/g, "bot$1:…"],
+	[/(?<!\w)(\d{6,12}):[\w-]{30,}/g, "$1:…"],
 	[/(\/\/[^/\s:@]+:)[^@\s/]+@/g, "$1…@"],
 	[/\b(Bearer|Basic)\s+[\w.~+/=-]+/gi, "$1 …"],
 	[/\b(sk|pk|rk)-[\w-]{8,}/g, "$1-…"],
