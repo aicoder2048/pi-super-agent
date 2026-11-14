@@ -2612,3 +2612,12 @@ test("旧宿主的 board 没有 health：横幅不显示", () => {
 	page.applyMessage(view, { type: "board", rows: [], today: { byDisposition: {}, bySource: {} }, duty: { since: 0, resumed: 0 }, helpers: {}, routes: {}, dispatching: {}, memberCap: null, watching: [], modules: [], alerts: [] } as any, 0);
 	assert.equal(page.healthBanner(view.health, 0), null);
 });
+
+test("宿主停过：横幅的最近恢复写「宿主停了约 N 分钟（几点起）」，一小时后消失", () => {
+	const since = Date.UTC(2026, 10, 13, 6, 2);
+	const health = { active: [], recent: [{ id: "host", area: "host" as const, subject: "宿主", since, clearedAt: since + 4 * 60_000 }], offline: false };
+	const hhmm = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(since);
+	assert.deepEqual(page.healthBanner(health, since + 10 * 60_000)!.recent, [`宿主停了约 4 分钟（${hhmm} 起）`]);
+	assert.deepEqual(page.healthBanner({ ...health, recent: [{ ...health.recent[0], clearedAt: since + 20_000 }] }, since + 60_000)!.recent, [`宿主停了不到 1 分钟（${hhmm} 起）`]);
+	assert.equal(page.healthBanner(health, since + 65 * 60_000), null);
+});

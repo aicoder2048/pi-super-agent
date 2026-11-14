@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { ModelSelector } from "../src/model-selector.ts";
 import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
@@ -181,4 +183,25 @@ test("阈值来自配置：modelFailuresBeforeAlarm 设成 4，三次失败还�
 	const { active } = await healthHost(t, { failOn: () => (failures++, "500 Internal Server Error"), options: { health: { modelFailuresBeforeAlarm: 100, feedFailuresBeforeAlarm: 3 } } });
 	await until(() => failures >= 12, "失败了几轮");
 	assert.deepEqual(active(), []);
+});
+
+test("看门狗记下过宿主停机：宿主启动时把它放进最近恢复，只列不发 Telegram", async (t) => {
+	const stateDir = tempStateDir();
+	writeFileSync(join(stateDir, "outage.json"), JSON.stringify({ since: Date.now() - 4 * 60_000 }));
+	const started = Date.now();
+	const { host, phone } = await healthHost(t, { options: { stateDir } });
+	const [recent] = host.snapshot().health.recent;
+	assert.equal(recent.id, "host");
+	assert.equal(recent.area, "host");
+	assert.equal(recent.subject, "宿主");
+	assert.ok(recent.clearedAt >= started && Date.now() - recent.since >= 4 * 60_000, JSON.stringify(recent));
+	assert.deepEqual(host.snapshot().health.active, []);
+	assert.ok(!phone().some((text) => text.includes("宿主")), phone().join("\n"));
+});
+
+test("看门狗已经记下宿主几点回来的：宿主用这个时间", async (t) => {
+	const stateDir = tempStateDir();
+	writeFileSync(join(stateDir, "outage.json"), JSON.stringify({ since: 1_000, endedAt: 241_000 }));
+	const { host } = await healthHost(t, { options: { stateDir } });
+	assert.deepEqual(host.snapshot().health.recent, [{ id: "host", area: "host", subject: "宿主", since: 1_000, clearedAt: 241_000 }]);
 });

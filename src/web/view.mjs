@@ -1243,13 +1243,20 @@ export function parseMarkdown(text) {
 
 const RECENT_SHOWN_MS = 60 * 60_000;
 
+/** The host cannot report its own outage while it lasts; the Watchdog records it and the host lists it when it is back. @param {import("../client/protocol.ts").ClearedAlarm} a */
+function hostOutage({ since, clearedAt }) {
+	const ms = clearedAt - since;
+	const hhmm = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(since);
+	return `宿主停了${ms < 60_000 ? "不到 1 分钟" : `约 ${Math.round(ms / 60_000)} 分钟`}（${hhmm} 起）`;
+}
+
 /**
  * The strip under the header. Up while anything is broken; for an hour after the last recovery it stays, calm, so a fix is seen.
  * @typedef {{ tone: "bad" | "ok", heading: string, offline: string, alarms: { id: string, subject: string, when: string, error: string, advice: string }[], recent: string[] }} HealthBanner
  * @param {HealthBoard} health @param {number} now @returns {HealthBanner | null}
  */
 export function healthBanner(health, now) {
-	const recent = health.recent.filter((a) => now - a.clearedAt < RECENT_SHOWN_MS).map((a) => `${a.subject} ${ago(now - a.clearedAt)}恢复`);
+	const recent = health.recent.filter((a) => now - a.clearedAt < RECENT_SHOWN_MS).map((a) => (a.area === "host" ? hostOutage(a) : `${a.subject} ${ago(now - a.clearedAt)}恢复`));
 	if (health.active.length === 0 && recent.length === 0) return null;
 	return {
 		tone: health.active.length ? "bad" : "ok",
