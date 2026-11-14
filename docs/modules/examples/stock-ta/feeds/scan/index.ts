@@ -40,10 +40,7 @@ const DAY_MS = 86_400_000;
 const NEW_YORK = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
 const newYorkDate = (ms: number): string => NEW_YORK.format(new Date(ms));
 
-/**
- * One trigger per signal of the session just scanned, on a watchlist symbol, whose rule the settings name. The first
- * scan of an empty database is a two-year backfill, so it sends none; a missed evening's signals stay unsent too.
- */
+/** ta's first scan of an empty database backfills two years of signals; the trading-date filter keeps those, and a missed evening's, unsent. */
 function signalNotices(signals: readonly TaSignal[], rules: readonly string[], watchlist: readonly string[], tradingDate: string) {
 	return signals
 		.filter((s) => rules.includes(s.rule_id) && watchlist.includes(s.symbol) && newYorkDate(s.data_end_ms) === tradingDate)

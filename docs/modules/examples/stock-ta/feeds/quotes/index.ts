@@ -12,12 +12,8 @@ interface Input {
 	now: string;
 }
 
-/**
- * Today's state. `fired`: the highest band each symbol reached in each direction; bands only climb, so a fall back and a
- * second rise stay quiet. `failures`: rounds in a row without a snapshot. `heard`: the newest quote time seen and the
- * round it first came in (or the day's first round), which tells a stalled feed from a quiet one.
- */
-type Cursor = { date: string; fired: Record<string, Partial<Record<Side, number>>>; failures: number; heard: { data: string | null; at: string } };
+/** `fired` holds the highest band per symbol and side: bands only climb, so a fall back and a second rise stay quiet. */
+type Cursor = { date: string; fired: Record<string, Partial<Record<Side, number>>>; failures: number; lastQuote: { quotedAt: string | null; seenAt: string } };
 
 type Problem = { id: "no-key" | "massive-down" | "stale"; text: string };
 const GUIDE = "docs/modules/stock-ta.md";
@@ -39,13 +35,13 @@ function fresh(q: Quote, today: string): boolean {
 
 function cursorFor(raw: string | null, today: string, now: string): Cursor {
 	const saved = raw === null ? undefined : (JSON.parse(raw) as Partial<Cursor>);
-	const fresh: Cursor = { date: today, fired: {}, failures: 0, heard: { data: null, at: now } };
+	const fresh: Cursor = { date: today, fired: {}, failures: 0, lastQuote: { quotedAt: null, seenAt: now } };
 	return saved?.date === today ? { ...fresh, ...saved } : fresh;
 }
 
-function heard(cursor: Cursor, quotes: readonly Quote[], now: string): Cursor["heard"] {
-	const newest = quotes.reduce<string | null>((max, q) => (max === null || q.at > max ? q.at : max), cursor.heard.data);
-	return newest === cursor.heard.data ? cursor.heard : { data: newest, at: now };
+function lastQuote(cursor: Cursor, quotes: readonly Quote[], now: string): Cursor["lastQuote"] {
+	const newest = quotes.reduce<string | null>((max, q) => (max === null || q.at > max ? q.at : max), cursor.lastQuote.quotedAt);
+	return newest === cursor.lastQuote.quotedAt ? cursor.lastQuote : { quotedAt: newest, seenAt: now };
 }
 
 /** Unrounded, so 4.996% stays under the 5% band. */
@@ -78,8 +74,8 @@ export default async function quotes(input: Input) {
 	}
 	const quotes = snapped.filter((q) => fresh(q, today));
 	cursor.failures = 0;
-	cursor.heard = heard(cursor, quotes, input.now);
-	const stale = session.phase === "regular" && nowMs - Date.parse(cursor.heard.at) >= STALE_MS;
+	cursor.lastQuote = lastQuote(cursor, quotes, input.now);
+	const stale = session.phase === "regular" && nowMs - Date.parse(cursor.lastQuote.seenAt) >= STALE_MS;
 	const moves = quotes.flatMap((q) => bandMove(q, input.settings.bands, cursor).map((m) => ({ ...m, symbol: q.symbol })));
 	return {
 		records: quotes.map((q) => ({ id: `${q.symbol}@${q.at}`, ...q })),
