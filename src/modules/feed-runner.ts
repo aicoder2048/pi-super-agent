@@ -39,8 +39,6 @@ type JsonObject = { readonly [key: string]: Json };
 const isObject = (value: Json | undefined): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);
 const failed = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-const opaque = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 16);
-
 const itemId = (item: JsonObject) => (typeof item["id"] === "string" && item["id"] !== "" ? item["id"] : createHash("sha256").update(JSON.stringify(item)).digest("hex").slice(0, 16));
 
 function fromItems(items: readonly Json[]): Collected | string {
@@ -135,10 +133,10 @@ export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: F
 		const line = reach === "released" ? feed.line : undefined;
 		const ignored = (feed.ignore ?? []).map((p) => new RegExp(p));
 		const notices = template === undefined ? [] : (collected.notices ?? []).flatMap((n) => {
-			if (line === undefined) return [{ id: n.id, thread: n.thread ?? entry.name, body: fill(template, n.fields) }];
-			// The Router sees a released trigger unmarked, so nothing but the line may reach it: not the feed's own id or thread, and not the notice text the ignore patterns were written against.
-			if (ignored.some((pattern) => pattern.test(fill(template, n.fields)))) return [];
-			return [{ id: opaque(n.id), thread: opaque(n.thread ?? entry.name), body: release(line, n.fields) }];
+			const text = fill(template, n.fields);
+			if (line !== undefined && ignored.some((pattern) => pattern.test(text))) return [];
+			// The feed's own id and thread stay as they are: a task opened from the trigger finds the stored row by them.
+			return [{ id: n.id, thread: n.thread ?? entry.name, body: line === undefined ? text : release(line, n.fields) }];
 		});
 		for (const n of notices) ports.submit({ source, ...n, at: ports.now(), reach });
 		ports.problem(source, collected.problem);

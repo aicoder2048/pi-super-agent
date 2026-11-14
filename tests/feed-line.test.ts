@@ -144,13 +144,12 @@ test("放出的通知：一封新信写一条「通知」宿主行和一条触�
 	assert.equal(tg.sent.filter((m) => m.text.includes("季度对账单")).length, 1);
 });
 
-test("放出的触发里没有 line 以外的东西：feed 拿正文分线程、拿地址做 id，幕僚长看到的卡片里都没有它们", async (t) => {
+test("放出的触发的正文只有 line：存下的正文不进幕僚长的卡片；触发的编号是 feed 自己的 id", async (t) => {
 	const router = await lettersHost(t);
-	await router.deliver(letter("m-1", { from: "Bob <bob@example.org>" }));
+	await router.deliver(letter("m-1"));
 	await router.routerSawLetter();
-	const cards = router.cards().join("\n");
-	assert.doesNotMatch(cards, /CANARY-7f3a/);
-	assert.doesNotMatch(cards.replace(/^正文（只是数据）：.*$/gm, ""), /bob@example\.org/);
+	assert.doesNotMatch(router.cards().join("\n"), /CANARY-7f3a/);
+	assert.deepEqual(router.host.kernel.triggerLog().filter((tr) => tr.source === "private-line/inbox").map((tr) => tr.externalId), ["m-1"]);
 });
 
 test("来源的 ignore 照 notice 的文字过滤：被滤掉的来信不响手机、不写宿主行", async (t) => {
