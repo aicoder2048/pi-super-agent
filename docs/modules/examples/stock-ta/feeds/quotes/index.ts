@@ -85,7 +85,7 @@ export default async function quotes(input: Input) {
 	const stale = session.phase === "regular" && isTradingDay(today) && nowMs - Date.parse(cursor.lastQuote.seenAt) >= STALE_MS;
 	const moves = quotes.flatMap((q) => bandMove(q, input.settings.bands, cursor).map((m) => ({ ...m, symbol: q.symbol })));
 	return {
-		records: quotes.map((q) => ({ id: `${q.symbol}@${q.at}`, ...q })),
+		records: quotes.map(({ dayClose: _, ...q }) => ({ id: `${q.symbol}@${q.at}`, ...q })),
 		alerts: moves.map((m) => ({ id: m.id, text: m.line, at: m.at, fold: { key: m.symbol, side: m.side } })),
 		notices: moves.map((m) => ({ id: m.id, thread: `${m.symbol}:${today}`, fields: { line: m.line } })),
 		cursor: JSON.stringify(cursor),

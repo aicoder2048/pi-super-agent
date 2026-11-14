@@ -50,10 +50,16 @@ export function nyTime(ms: number): string {
 	return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
+/** The regular session's closing moment on the New York date that holds `ms`: 16:00, or 13:00 on an early-close day. */
+export function regularCloseAt(ms: number): number {
+	const w = nyWall(ms);
+	return w.midnight + (EARLY_CLOSES.has(w.nyDate) ? EARLY_CLOSE : CLOSE) * MINUTE;
+}
+
 export function sessionAt(now: number): Session {
 	const w = nyWall(now);
 	const openAt = w.midnight + OPEN * MINUTE;
-	const closeAt = w.midnight + (EARLY_CLOSES.has(w.nyDate) ? EARLY_CLOSE : CLOSE) * MINUTE;
+	const closeAt = regularCloseAt(now);
 	const phase: Phase = w.weekend || w.minutes < 4 * 60 || w.minutes >= 20 * 60 ? "closed" : now < openAt ? "pre" : now < closeAt ? "regular" : "post";
 	return { nyDate: w.nyDate, phase };
 }

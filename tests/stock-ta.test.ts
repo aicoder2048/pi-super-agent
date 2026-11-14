@@ -341,6 +341,58 @@ test("quote 的时段标签：盘中、盘前、盘后；周末、节假日和�
 	}
 });
 
+type QuoteFixture = { now: string; symbols: string[]; snapshot: unknown };
+const quoteFixture = (name: string): QuoteFixture => JSON.parse(readFileSync(join(PKG, "tools/quote/fixtures", `${name}.json`), "utf8"));
+const quoteFrom = async (t: TestContext, name: string) => {
+	const tool = await quoteTool(t);
+	const { now, symbols, snapshot } = quoteFixture(name);
+	tool.massive.answer({ status: 200, body: snapshot });
+	return quotesOf(await tool.quote({ symbols: symbols.join(","), now }))[0];
+};
+
+test("quote 盘后：价格是最新的盘后成交，另外回常规时段的正式收盘价、收盘日期和收盘相对昨收的涨跌幅", async (t) => {
+	assert.deepEqual(await quoteFrom(t, "after-hours"), {
+		symbol: "QQQ", price: 674.25, prevClose: 688.17, changePct: -2.02, volume: 42_108_955, at: "2026-11-13 19:59 美东", session: "盘后",
+		close: 679.89, closeDate: "2026-11-13", closeChangePct: -1.2,
+	});
+});
+
+test("quote 休市：周六和节假日回上一交易日的正式收盘价和日期，不是盘后价", async (t) => {
+	const pick = (q: Record<string, unknown> | undefined) => [q?.["session"], q?.["price"], q?.["close"], q?.["closeDate"]];
+	assert.deepEqual(pick(await quoteFrom(t, "saturday")), ["休市", 674.25, 679.89, "2026-11-13"]);
+	assert.deepEqual(pick(await quoteFrom(t, "holiday")), ["休市", 190.5, 191.2, "2026-11-25"]);
+});
+
+test("quote 盘中：还没收盘，不回收盘价", async (t) => {
+	const q = await quoteFrom(t, "regular");
+	assert.equal(q?.["session"], "盘中");
+	assert.equal("close" in (q ?? {}), false);
+});
+
+test("quote 收盘以后：没有盘后成交的票（最后一根分钟线 15:59）也回正式收盘价，当天收盘以后的数据都算盘后", async (t) => {
+	assert.deepEqual(await quoteFrom(t, "no-after-hours"), {
+		symbol: "PFFD", price: 16.6, prevClose: 16.66, changePct: -0.36, volume: 1_547_070, at: "2026-11-13 15:59 美东", session: "盘后",
+		close: 16.59, closeDate: "2026-11-13", closeChangePct: -0.42,
+	});
+});
+
+test("quote 刚过 16:00：延迟 15 分钟的行情还在常规时段里，日线还不是正式收盘，不回收盘价", async (t) => {
+	const q = await quoteFrom(t, "just-closed");
+	assert.equal(q?.["session"], "盘中");
+	assert.equal("close" in (q ?? {}), false);
+});
+
+test("quote 提前收盘日：13:00 收盘，过了行情延迟才回收盘价", async (t) => {
+	const tool = await quoteTool(t);
+	const at = async (time: string) => {
+		tool.massive.answer({ status: 200, body: snapshotBody([minuteRow("NVDA", 170, 176, ny("2026-11-27", "12:59"))]) });
+		const [q] = quotesOf(await tool.quote({ symbols: "NVDA", now: new Date(ny("2026-11-27", time)).toISOString() }));
+		return [q?.["session"], q?.["close"]];
+	};
+	assert.deepEqual(await at("13:10"), ["盘中", undefined]);
+	assert.deepEqual(await at("13:30"), ["盘后", 170]);
+});
+
 test("quote：超过 10 个代码一行拒绝，不发请求", async (t) => {
 	const tool = await quoteTool(t);
 	const note = noteOf(await tool.quote({ symbols: "A,B,C,D,E,F,G,H,I,J,K" }));
