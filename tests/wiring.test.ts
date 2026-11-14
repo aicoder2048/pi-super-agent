@@ -127,6 +127,7 @@ test("在替你盯着：每个来源一项，带上管它的规则（使用者�
 
 const REPO_MODULES = new URL("../modules", import.meta.url).pathname;
 const RETIRED_MODULES = new URL("./fixtures/retired", import.meta.url).pathname;
+const LEGACY_MODULES = new URL("./fixtures/legacy", import.meta.url).pathname;
 const withRetired = (options?: Parameters<typeof Modules.load>[1]) => Modules.load([REPO_MODULES, RETIRED_MODULES], options);
 
 function withoutKeyVars(t: import("node:test").TestContext) {
@@ -321,11 +322,11 @@ test("真实接线：宿主知道每个领域的助手能派给谁，时限和�
 	assert.deepEqual(dispatch, { timeoutMs: 60_000, codingTimeoutMs: 600_000, stallMs: 45_000, maxConcurrent: 2 });
 });
 
-test("真实接线：仓库里的玩具行情模块按领域交出自己的 skills/", async () => {
+test("真实接线：旧布局模块按领域交出自己的 skills/", async () => {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
-	const modules = Modules.load([REPO_MODULES], { switches: { values: { "toy-market": true }, file: "config.json" } });
+	const modules = Modules.load([LEGACY_MODULES], { switches: { values: { "toy-market": true }, file: "config.json" } });
 	const { domains } = createHostOptions({ config: hostConfig(provider), modules: fixed(modules), modelRuntime, log: () => {} });
-	assert.equal(domains!.kitFor("toy-market", null)!.skillsDir, join(REPO_MODULES, "toy-market/skills"));
+	assert.equal(domains!.kitFor("toy-market", null)!.skillsDir, join(LEGACY_MODULES, "toy-market/skills"));
 });
 
 const TG_TOKEN = "123456789:AAH-fake_token_for_wiring_tests_00";

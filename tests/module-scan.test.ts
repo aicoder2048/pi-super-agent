@@ -8,6 +8,7 @@ import { Modules } from "../src/modules.ts";
 
 const SAMPLE = fileURLToPath(new URL("../docs/modules/architecture/sample", import.meta.url));
 const repoModules = fileURLToPath(new URL("../modules", import.meta.url));
+const legacyModules = fileURLToPath(new URL("./fixtures/legacy", import.meta.url));
 const switches = (values: Record<string, boolean>) => ({ values, file: "/state/config.json" });
 
 function root(packages: Record<string, object> = {}, samples: string[] = []): string {
@@ -28,8 +29,8 @@ const legacy = (name: string): string => {
 };
 
 test("schema 1 的坏包不阻止加载：它被记成无效并带原因，旧布局模块照常加载", () => {
-	const modules = Modules.load([repoModules, root({ bad: { descripton: "拼错" } })]);
-	assert.deepEqual(modules.found.map((m) => m.name), ["toy-market"]);
+	const modules = Modules.load([legacy("old"), root({ bad: { descripton: "拼错" } })]);
+	assert.deepEqual(modules.found.map((m) => m.name), ["old"]);
 	const bad = modules.packages.find((p) => p.name === "bad");
 	assert.equal(bad?.name, "bad");
 	assert.ok(bad && !bad.scan.ok && bad.scan.problems.some((p) => p.where === "module.json" && p.reason.includes(`unknown key "descripton"`)));
@@ -44,8 +45,8 @@ test("schema 1 的好包出现在 packages 里，不算旧布局模块，也不�
 	assert.equal(tax.scan.scan.manifest.version, "0.1.0");
 });
 
-test("旧布局模块行为不变：仓库里只有 module-builder 和 pi-pi 是新布局包，其余的 found 和 modules 和以前一样", () => {
-	const modules = Modules.load([repoModules], { switches: switches({ "toy-market": true }) });
+test("旧布局模块行为不变：仓库里的 module-builder 和 pi-pi 是新布局包，旧布局夹具照常进 found 和 modules", () => {
+	const modules = Modules.load([repoModules, legacyModules], { switches: switches({ "toy-market": true }) });
 	assert.deepEqual(modules.packages.map((p) => p.name), ["module-builder", "pi-pi"]);
 	assert.deepEqual(modules.modules.map((m) => m.name), ["toy-market"]);
 });

@@ -37,7 +37,7 @@ Pi Super Agent 是一个常驻本机的 headless host 进程，入口是 `src/ho
 ```mermaid
 flowchart LR
   subgraph Producers
-    Inbox["inbox/*.json<br/>(drop.ts, toy-market feed, Watchdog)"]
+    Inbox["inbox/*.json<br/>(drop.ts, Watchdog)"]
     Timer[TimerSource]
     Client["Pi TUI client<br/>extensions/super-agent.ts"]
   end
@@ -353,7 +353,7 @@ tools: read, web_get
 | `src/model-selector.ts`, `src/models.ts`, `src/host/config.ts` | 模型切换、默认模型、配置默认值。 |
 | `src/watchdog/` | Watchdog 判定函数和进程入口。 |
 | `extensions/super-agent.ts`, `src/client/` | TUI client、协议、看板、transcript 格式化。 |
-| `modules/toy-market/`, `modules/us-market/`, `modules/pi-pi/` | 仓库自带的三个模块。玩具行情是示例，没有成员，`defaultEnabled: false`：在 `config.json` 写 `"modules": { "toy-market": true }` 才加载，`just toy-feed` 在它关闭时提示怎么打开。美股行情带美股看盘队（行情分析师、技术分析师、新闻研究员、财报解读）和技能 `us-market-desk`。pi-pi 带 Pi施工队（九位 Pi 开发专家，只读文件和网页，出处见 `modules/pi-pi/NOTICE.md`）和技能 `pi-pi-desk`，没有来源和规则。 |
+| `modules/module-builder/`, `modules/pi-pi/` | 仓库自带的两个模块，都是新布局包，没有来源。module-builder 带模块工坊和做模块的技能。pi-pi 带 Pi施工队（九位 Pi 开发专家，只读文件和网页，出处见 `modules/pi-pi/NOTICE.md`）和技能 `pi-pi-desk`，没有规则。股票技术分析模块 stock-ta 在 `docs/modules/examples/` 里，要自己复制进状态目录。 |
 | `docs/pi-super-agent/mvp-spec.md`, `docs/adr/0001-0003` | 规格与架构决策。 |
 | `tests/` | `kernel`、`host`、`recovery`、`fallback`、`watchdog`、`client` 测试。`helpers/fakes.ts` 提供 `fauxRouter` 和 `FakeSpawner`。 |
 

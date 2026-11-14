@@ -11,17 +11,18 @@ import { servedAsHost } from "./helpers/fakes.ts";
 
 const repoModules = fileURLToPath(new URL("../modules", import.meta.url));
 const switches = (values: Record<string, boolean>) => ({ values, file: "/state/config.json" });
-const withToy = () => Modules.load([repoModules], { switches: switches({ "toy-market": true }) });
+const legacyModules = fileURLToPath(new URL("./fixtures/legacy", import.meta.url));
+const withToy = (...roots: string[]) => Modules.load([...roots, legacyModules], { switches: switches({ "toy-market": true }) });
 const quote = (body: string) => ({ source: "toy-market", externalId: "x", threads: [], sender: "feed", body, occurredAt: 0 });
 
-test("仓库里的模块都被发现，规则带模块前缀", () => {
-	const modules = withToy();
+test("仓库里的模块和旧布局夹具都被发现，规则带模块前缀", () => {
+	const modules = withToy(repoModules);
 	assert.deepEqual(modules.found.map((m) => m.name), ["toy-market"]);
 	assert.deepEqual(modules.packages.map((p) => p.name), ["module-builder", "pi-pi"]);
 	assert.ok(modules.ruleAllows("toy-market/big-move", "toy-market"));
 	assert.ok(!modules.ruleAllows("big-move", "toy-market"));
 	assert.match(modules.rulesPrompt(), /### toy-market\/big-move/);
-	assert.equal(modules.kitFor("toy-market")?.skillsDir, join(repoModules, "toy-market/skills"));
+	assert.equal(modules.kitFor("toy-market")?.skillsDir, join(legacyModules, "toy-market/skills"));
 });
 
 test("程序层过滤：小于 1% 的波动在调用模型前被筛掉", () => {
@@ -120,8 +121,8 @@ test("模块名和对象原型上的属性同名时（constructor），没写开
 	}
 });
 
-test("toy-market 默认关闭，开关打开后它的规则和过滤才生效", () => {
-	assert.deepEqual(Modules.load([repoModules]).modules.map((m) => m.name), []);
+test("旧布局夹具 toy-market 默认关闭，开关打开后它的规则和过滤才生效", () => {
+	assert.deepEqual(Modules.load([repoModules, legacyModules]).modules.map((m) => m.name), []);
 	const on = withToy();
 	assert.ok(on.ruleAllows("toy-market/big-move", "toy-market"));
 	assert.equal(on.sourcePolicy(quote("TOYX 价格 100.4，涨跌 +0.4%，成交量 500 股")), "ignore");
@@ -178,11 +179,11 @@ test("模块不能叫 user：这个名字留给使用者自己的规则，加载
 	assert.throws(() => Modules.load([root]), (e: Error) => e instanceof ConfigError && e.message.startsWith(join(root, "user/module.json")) && /不能叫 user/.test(e.message) && !e.message.includes("\n"));
 });
 
-test("仓库里的三个模块都有领域名和给幕僚长的说明，出现在领域名册里；玩具行情没有成员", () => {
-	const modules = servedAsHost(withToy());
+test("仓库里的模块和旧布局夹具都有领域名和给幕僚长的说明，出现在领域名册里；旧布局夹具没有成员", () => {
+	const modules = servedAsHost(withToy(repoModules));
 	assert.equal(
 		modules.rosterPrompt(),
-		"- toy-market（玩具行情）：演示用的假行情，只管玩具代码（如 TOYX）的波动\n- module-builder（模块制作）：用聊天做一个新模块，或改一个已有模块：访谈、搭包、整理知识、出考题、检查\n- pi-pi（Pi 开发）：怎么写 Pi 的扩展、主题、技能、配置、提示模板和终端界面组件",
+		"- toy-market（玩具行情）：测试用的旧布局行情模块\n- module-builder（模块制作）：用聊天做一个新模块，或改一个已有模块：访谈、搭包、整理知识、出考题、检查\n- pi-pi（Pi 开发）：怎么写 Pi 的扩展、主题、技能、配置、提示模板和终端界面组件",
 	);
 	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "module-builder": { team: "模块工坊", onRoster: true }, "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true } });
 });
