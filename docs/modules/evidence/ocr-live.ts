@@ -2,6 +2,7 @@
  *   node --import ./src/pi-runtime.mjs docs/modules/evidence/ocr-live.ts [outDir] [lane numbers...]
  *
  * Lane 3 needs OCR_UNLIMITED_HOME (else SKIP); lanes 5 to 7 use openai-codex models through the Pi login in ~/.pi/agent.
+ * Lanes 8 and 9 mail a PDF whose scan sits inside a Form XObject, as merged and print-to-PDF files have it; lane 9 uses the openai-codex models.
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -28,6 +29,7 @@ const { instanceData } = await import(join(HEAD, "src/modules/instance-data.ts")
 const { Modules } = await import(join(HEAD, "src/modules.ts"));
 const { servedAsHost } = await import(join(HEAD, "tests/helpers/fakes.ts"));
 const { lockOf, venvDir, VENV_MARK } = await import(join(HEAD, "src/modules/files.ts"));
+const { formPdf } = await import(join(HEAD, "tests/helpers/text-pdf.ts"));
 type Letter = import("../../../tests/helpers/fake-gmail.ts").Letter;
 type Attachment = NonNullable<Letter["attachments"]>[number];
 type Call = { name: string; args: Record<string, unknown> };
@@ -84,6 +86,14 @@ function scannedPng(text: string): Buffer {
 
 const ann = (id: string, attachments: readonly Attachment[]): Letter => ({ id, from: "Ann Lee <ann@example.com>", subject: "体检结果", snippet: "见附件", text: "见附件", attachments });
 const file = (filename: string, mimeType: string, data: Uint8Array): Attachment => ({ filename, mimeType, size: data.byteLength, data });
+function formScanPdf(): Buffer {
+	const dir = mkdtempSync(join(scratch, "form-"));
+	execFileSync("sips", ["-s", "format", "jpeg", join(FIXTURES, "scan.png"), "--out", join(dir, "scan.jpg")], { stdio: "ignore" });
+	const info = execFileSync("sips", ["-g", "pixelWidth", "-g", "pixelHeight", "-g", "space", join(dir, "scan.jpg")], { encoding: "utf8" });
+	const [width, height] = ["pixelWidth", "pixelHeight"].map((key) => Number(new RegExp(`${key}: (\\d+)`).exec(info)![1]));
+	return formPdf("image", { width: width!, height: height!, gray: /space: Gray/.test(info), data: readFileSync(join(dir, "scan.jpg")) });
+}
+
 const scanLetter = () => [ann("m-1", [file("体检结果.pdf", "application/pdf", readFileSync(join(FIXTURES, "scan.pdf")))])];
 
 const RULE = "# 邮件模块的规则\n\n## read-attachments\n来源: mail/inbox\n名单上的人来信带附件时，开一个任务：在 messages 里找到这封信，用 read-attachment 读它的每个附件，汇报附件说了什么。\n";
@@ -158,9 +168,23 @@ async function hostWorld({ real = false, ocr, letters }: World) {
 
 const UPLOAD = /上传|截图|拍照|发.{0,4}(图片|照片|文件)给我/;
 
+async function realScan(letters: readonly Letter[], label: string): Promise<{ pass: boolean; evidence: string }> {
+	const w = await hostWorld({ real: true, letters });
+	try {
+		const done = await within(600_000, () => w.closed() || w.phone().length >= 2, 2000);
+		await sleep(5000);
+		const phone = w.phone();
+		const said = phone.join("\n---\n");
+		const pass = done && /空腹血糖|5\.6/.test(said) && !UPLOAD.test(said) && w.toolCalls().some((c) => c.includes("domain_tool"));
+		return { pass, evidence: `models ${JSON.stringify(REAL)}\nticket finished: ${done}\ntool calls: ${w.toolCalls().join(" ")}\nfiles left: ${JSON.stringify(w.filesLeft())}\nTelegram:\n${said}` };
+	} finally {
+		await w.stop(label);
+	}
+}
+
 try {
 	await lane(1, "ocr-vision-image", async () => {
-		const ocr = createOcr({ engine: "vision", maxPages: 20, timeoutSeconds: 60 }, join(scratch, "state-1"));
+		const ocr = createOcr({ engine: "vision", maxPages: 20, timeoutSeconds: 60 });
 		const t0 = performance.now();
 		await ocr.prepare();
 		const compileMs = performance.now() - t0;
@@ -172,7 +196,7 @@ try {
 	});
 
 	await lane(2, "ocr-vision-pdf-cap", async () => {
-		const ocr = createOcr({ engine: "vision", maxPages: 2, timeoutSeconds: 60 }, join(scratch, "state-1"));
+		const ocr = createOcr({ engine: "vision", maxPages: 2, timeoutSeconds: 60 });
 		const r = await ocr.read(join(FIXTURES, "three.pdf"));
 		const pass = r.pages.length === 2 && r.totalPages === 3 && r.truncated && r.notes.includes("只读了前 2 页，共 3 页");
 		return { pass, evidence: JSON.stringify(r, null, 1) };
@@ -181,7 +205,7 @@ try {
 	await lane(3, "ocr-unlimited-real", async () => {
 		const home = process.env.OCR_UNLIMITED_HOME;
 		if (!home) return { pass: "skip", evidence: "OCR_UNLIMITED_HOME is not set" };
-		const ocr = createOcr({ engine: "unlimited", home, maxPages: 2, timeoutSeconds: 900 }, join(scratch, "state-3"));
+		const ocr = createOcr({ engine: "unlimited", home, maxPages: 2, timeoutSeconds: 900 });
 		const r = await ocr.read(join(FIXTURES, "scan.png"));
 		const pass = /空腹血糖/.test(r.pages[0]?.text ?? "") && r.engine === "unlimited";
 		return { pass, evidence: `seconds ${r.seconds} (model load included)\n${JSON.stringify(r, null, 1)}` };
@@ -202,19 +226,7 @@ try {
 		}
 	});
 
-	await lane(5, "ocr-real-model-scan", async () => {
-		const w = await hostWorld({ real: true, letters: scanLetter() });
-		try {
-			const done = await within(600_000, () => w.closed() || w.phone().length >= 2, 2000);
-			await sleep(5000);
-			const phone = w.phone();
-			const said = phone.join("\n---\n");
-			const pass = done && /空腹血糖|5\.6/.test(said) && !UPLOAD.test(said) && w.toolCalls().some((c) => c.includes("domain_tool"));
-			return { pass, evidence: `models ${JSON.stringify(REAL)}\nticket finished: ${done}\ntool calls: ${w.toolCalls().join(" ")}\nfiles left: ${JSON.stringify(w.filesLeft())}\nTelegram:\n${said}` };
-		} finally {
-			await w.stop("ocr-real-model-scan");
-		}
-	});
+	await lane(5, "ocr-real-model-scan", () => realScan(scanLetter(), "ocr-real-model-scan"));
 
 	await lane(6, "ocr-real-model-off-no-upload-ask", async () => {
 		const w = await hostWorld({ real: true, ocr: { engine: "off" }, letters: scanLetter() });
@@ -246,6 +258,23 @@ try {
 			await w.stop("ocr-real-model-injection");
 		}
 	});
+
+	await lane(8, "ocr-mail-host-form-scan", async () => {
+		const pdf = formScanPdf();
+		const venv = spawnSync(join(mailVenv(), "bin/python"), ["-I", join(HEAD, "docs/modules/examples/mail/py/pdf_text.py")], { input: pdf, encoding: "utf8" }).stdout.trim();
+		const w = await hostWorld({ letters: [ann("m-1", [file("合并.pdf", "application/pdf", pdf)])] });
+		try {
+			w.tg.userSays(USER, "看一下 ann 那封信的附件说了什么");
+			await within(120_000, () => w.replies().some((t) => t.startsWith("转述：")));
+			const relay = w.replies().find((t) => t.startsWith("转述：")) ?? "(no relay)";
+			const pass = /"scan": true/.test(venv) && /空腹血糖/.test(relay) && /engine=vision/.test(relay) && w.filesLeft().length === 0;
+			return { pass, evidence: `pdf_text.py on the Form-wrapped PDF: ${venv}\nrelay: ${relay}\nreplies: ${JSON.stringify(w.replies())}\nfiles left in files/: ${JSON.stringify(w.filesLeft())}` };
+		} finally {
+			await w.stop("ocr-mail-host-form-scan");
+		}
+	});
+
+	await lane(9, "ocr-real-model-form-scan", () => realScan([ann("m-1", [file("合并.pdf", "application/pdf", formScanPdf())])], "ocr-real-model-form-scan"));
 } finally {
 	rmSync(scratch, { recursive: true, force: true });
 }

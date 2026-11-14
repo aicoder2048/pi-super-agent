@@ -14,17 +14,22 @@ export function textPdf(pages: readonly (string | Buffer)[]): Buffer {
 	return pdfOf(objects);
 }
 
-/** One page that draws a Form XObject, as merged or print-to-PDF files do. "image": the form draws a scanned image. "loop": the form names itself in its own resources and draws no image. */
-export function formPdf(inside: "image" | "loop"): Buffer {
-	const pixels = "\x80".repeat(64);
-	const form = `q 612 0 0 792 0 0 cm /Im0 Do Q`;
+export type Jpeg = { width: number; height: number; gray: boolean; data: Buffer };
+
+/** One page that draws a Form XObject, as merged or print-to-PDF files do. "image": the form draws a scanned image, a gray square unless a JPEG is given. "loop": the form names itself in its own resources and draws no image. */
+export function formPdf(inside: "image" | "loop", jpeg?: Jpeg): Buffer {
+	const image = jpeg
+		? `<< /Type /XObject /Subtype /Image /Width ${jpeg.width} /Height ${jpeg.height} /ColorSpace /${jpeg.gray ? "DeviceGray" : "DeviceRGB"} /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.data.length} >>\nstream\n${jpeg.data.toString("latin1")}\nendstream`
+		: `<< /Type /XObject /Subtype /Image /Width 8 /Height 8 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 64 >>\nstream\n${"\x80".repeat(64)}\nendstream`;
+	const [width, height] = jpeg ? [jpeg.width, jpeg.height] : [612, 792];
+	const form = `q ${width} 0 0 ${height} 0 0 cm /Im0 Do Q`;
 	const innerXObject = inside === "image" ? "/Im0 5 0 R" : "/Fm0 4 0 R";
 	const objects = [
 		"<< /Type /Catalog /Pages 2 0 R >>",
 		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Fm0 4 0 R >> >> /Contents 6 0 R >>",
-		`<< /Type /XObject /Subtype /Form /BBox [0 0 612 792] /Resources << /XObject << ${innerXObject} >> >> /Length ${form.length} >>\nstream\n${form}\nendstream`,
-		`<< /Type /XObject /Subtype /Image /Width 8 /Height 8 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length ${pixels.length} >>\nstream\n${pixels}\nendstream`,
+		`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /XObject << /Fm0 4 0 R >> >> /Contents 6 0 R >>`,
+		`<< /Type /XObject /Subtype /Form /BBox [0 0 ${width} ${height}] /Resources << /XObject << ${innerXObject} >> >> /Length ${form.length} >>\nstream\n${form}\nendstream`,
+		image,
 		"<< /Length 7 >>\nstream\n/Fm0 Do\nendstream",
 	];
 	return pdfOf(objects);
