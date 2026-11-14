@@ -165,8 +165,8 @@ export class Host {
 		const healthConfig = options.health ?? HEALTH_DEFAULTS;
 		this.#health = new Health({
 			now: clock.now,
-			onRaised: (alarm) => this.#tellPhone(`health:raised:${alarm.id}:${alarm.since}`, raisedText(alarm)),
-			onCleared: (alarm) => this.#tellPhone(`health:cleared:${alarm.id}:${alarm.since}`, clearedText(alarm)),
+			onRaised: (alarm) => this.#tellPhone(`health:raised:${alarm.id}:${alarm.since}`, raisedText(alarm), false),
+			onCleared: (alarm) => this.#tellPhone(`health:cleared:${alarm.id}:${alarm.since}`, clearedText(alarm), true),
 		});
 		this.#routerHealth = new ModelHealth(this.#health, "router", healthConfig.modelFailuresBeforeAlarm);
 		this.#db = openStore(join(options.stateDir, "state.db"));
@@ -506,9 +506,9 @@ export class Host {
 		this.#postHostLine(source, { kind: "notice", text: this.kernel.moduleNotice(source, oneLine(problem.text, PROBLEM_MAX)) });
 	}
 
-	/** The page reads the banner from the next board frame; the phone gets one message per raise and per clear. */
-	#tellPhone(key: `health:${string}`, text: string): void {
-		this.#telegram?.tell(key, text);
+	/** The page reads the banner from the next board frame; the phone gets one notice per raise, which rings, and one per clear, which does not. */
+	#tellPhone(key: `health:${string}`, text: string, silent: boolean): void {
+		this.#telegram?.tell(key, text, silent);
 		this.#changed();
 	}
 

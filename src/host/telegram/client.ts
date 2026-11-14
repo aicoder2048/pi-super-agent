@@ -158,11 +158,11 @@ export class TelegramClient {
 		}
 	}
 
-	/** One message to every open chat, sent once per key even across restarts. Synchronous and never throws, like broadcast. */
-	tell(key: `health:${string}`, text: string): void {
+	/** One notice to every open chat, sent once per key even across restarts. Synchronous and never throws, like broadcast. */
+	tell(key: `health:${string}`, text: string, silent: boolean): void {
 		if (this.#state === "off") return;
 		try {
-			for (const chat of this.#store.openChats()) this.#store.put(chat, key, null, { kind: "line", text, silent: false, noPreview: true });
+			for (const chat of this.#store.openChats()) this.#store.put(chat, key, null, { kind: "line", role: "notice", text, silent, noPreview: true });
 			this.#wake?.();
 		} catch (error) {
 			this.#log(`[telegram] 没能记下要发到 Telegram 的消息：${(error as Error).message}`);

@@ -81,8 +81,8 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **You see.**
 
-- [x] With the Router's model returning HTTP 500, the banner shows 幕僚长模型 with the error and advice after the second failed turn, and Telegram gets one message starting with `⚠️ 幕僚长模型出问题了`.
-- [x] On recovery the banner turns green with 都恢复了 and Telegram gets one `✅ 幕僚长模型恢复了`.
+- [x] With the Router's model returning HTTP 500, the banner shows 幕僚长模型 with the error and advice after the second failed turn, and Telegram gets one ringing message starting with `🔔 ⚠️ 幕僚长模型出问题了`.
+- [x] On recovery the banner turns green with 都恢复了 and Telegram gets one silent `🔔 ✅ 幕僚长模型恢复了`.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 

@@ -47,15 +47,16 @@ async function healthHost(t: TestContext, { failOn, models, script = (w) => (w.r
 	});
 	const said = () => host.kernel.conversation().filter((m) => m.who === "router").map((m) => m.text);
 	const active = () => host.snapshot().health.active;
-	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => m.text);
+	const sentToUser = () => tg.sent.filter((m) => m.chatId === USER);
+	const phone = () => sentToUser().map((m) => m.text);
 	// Telegram writes only to chats that have spoken, and that first line goes to the Router too.
 	tg.userSays(USER, "你好");
 	await until(() => host.kernel.conversation().some((l) => l.who === "user"), "手机上的第一句到了");
-	return { host, tg, said, active, phone, spawner };
+	return { host, tg, said, active, phone, sentToUser, spawner };
 }
 
 test("幕僚长的模型一直 500：不靠幕僚长自己说，第二次失败时横幅亮起，Telegram 收到一条 ⚠️", async (t) => {
-	const { active, phone } = await healthHost(t, { failOn: () => "500 Internal Server Error" });
+	const { active, phone, sentToUser } = await healthHost(t, { failOn: () => "500 Internal Server Error" });
 	await until(() => active().length === 1, "幕僚长模型的警报");
 	const [alarm] = active();
 	assert.equal(alarm.id, "model:router");
@@ -64,10 +65,11 @@ test("幕僚长的模型一直 500：不靠幕僚长自己说，第二次失败�
 	assert.equal(alarm.cause, "provider");
 	assert.ok(alarm.count >= 2);
 	assert.match(alarm.lastError, /500/);
-	await until(() => phone().some((m) => m.startsWith("⚠️")), "Telegram 的 ⚠️");
+	await until(() => phone().some((m) => m.startsWith("🔔 ⚠️")), "Telegram 的 🔔 ⚠️");
 	await new Promise((r) => setTimeout(r, 300));
-	assert.equal(phone().filter((m) => m.startsWith("⚠️")).length, 1, "同一个警报只发一次");
-	assert.match(phone().find((m) => m.startsWith("⚠️"))!, /幕僚长模型.*500/);
+	assert.equal(phone().filter((m) => m.startsWith("🔔 ⚠️")).length, 1, "同一个警报只发一次");
+	assert.match(phone().find((m) => m.startsWith("🔔 ⚠️"))!, /幕僚长模型.*500/);
+	assert.equal(sentToUser().find((m) => m.text.startsWith("🔔 ⚠️"))!.silent, false, "警报响铃");
 });
 
 test("幕僚长的模型 401：第一次就亮，建议检查登录或密钥", async (t) => {
@@ -80,13 +82,14 @@ test("幕僚长的模型 401：第一次就亮，建议检查登录或密钥", a
 
 test("模型恢复后警报解除：横幅上没了，进最近恢复，Telegram 收到一条 ✅", async (t) => {
 	let failures = 0;
-	const { host, active, phone, said } = await healthHost(t, { failOn: () => (failures < 8 ? (failures++, "503 Service Unavailable") : undefined) });
+	const { host, active, phone, said, sentToUser } = await healthHost(t, { failOn: () => (failures < 8 ? (failures++, "503 Service Unavailable") : undefined) });
 	await until(() => active().length === 1, "先亮");
 	await until(() => said().some((s) => s.startsWith("结果：")), "恢复后处理完");
 	await until(() => active().length === 0, "解除");
 	assert.deepEqual(host.snapshot().health.recent.map((a) => a.id), ["model:router"]);
-	await until(() => phone().some((m) => m.startsWith("✅")), "Telegram 的 ✅");
-	assert.match(phone().find((m) => m.startsWith("✅"))!, /幕僚长模型/);
+	await until(() => phone().some((m) => m.startsWith("🔔 ✅")), "Telegram 的 🔔 ✅");
+	assert.match(phone().find((m) => m.startsWith("🔔 ✅"))!, /幕僚长模型/);
+	assert.equal(sentToUser().find((m) => m.text.startsWith("🔔 ✅"))!.silent, true, "恢复不响铃");
 });
 
 test("幕僚长的主模型限流：切到回退模型时就亮「已切到回退」，不再让幕僚长去说", async (t) => {
