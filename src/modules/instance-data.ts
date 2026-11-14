@@ -216,12 +216,19 @@ function watchBeforeWrite(db: DatabaseSync, { name, collection }: DataComponent)
 	}
 }
 
+// The host, a feed and a module's own code can each hold data.db for a moment; wait for them instead of failing at once.
+const openData = (path: string) => {
+	const db = new DatabaseSync(path);
+	db.exec("PRAGMA busy_timeout = 5000");
+	return db;
+};
+
 export function instanceData(stateDir: string): InstanceData & ModuleRows & FeedStates {
 	const pathOf = (module: ModuleName) => join(moduleDataDir(stateDir, module), "data.db");
 	const withRows = <T>(module: ModuleName, components: readonly Component[], access: { who: string; collection: string; op: Op }, use: (db: DatabaseSync, stored: Stored) => T): T => {
 		const ensured = data.migrate(module, components);
 		if (!ensured.ok) throw new Error(ensured.reason);
-		const db = new DatabaseSync(pathOf(module));
+		const db = openData(pathOf(module));
 		try {
 			db.exec(`CREATE TABLE IF NOT EXISTS _access (at TEXT NOT NULL, who TEXT NOT NULL, collection TEXT NOT NULL, op TEXT NOT NULL, rows INTEGER NOT NULL, outcome TEXT NOT NULL); ${CONDITIONS}; ${FEED_TABLES}`);
 			return use(db, readStored(db));
@@ -237,7 +244,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 
 	const withFeeds = <T>(module: ModuleName, use: (db: DatabaseSync) => T): T => {
 		mkdirSync(moduleDataDir(stateDir, module), { recursive: true });
-		const db = new DatabaseSync(pathOf(module));
+		const db = openData(pathOf(module));
 		try {
 			db.exec(FEED_TABLES);
 			return use(db);
@@ -251,7 +258,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 			const path = pathOf(module);
 			if (!existsSync(path)) return [];
 			try {
-				const db = new DatabaseSync(path);
+				const db = openData(path);
 				try {
 					return problemsFor(readStored(db), components);
 				} finally {
@@ -267,7 +274,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 			let db: DatabaseSync | undefined;
 			try {
 				mkdirSync(join(dirname(path), "blobs"), { recursive: true });
-				db = new DatabaseSync(path);
+				db = openData(path);
 				const before = readStored(db);
 				const problems = problemsFor(before, components);
 				if (problems.length > 0) return { ok: false, reason: problemText(problems) };
