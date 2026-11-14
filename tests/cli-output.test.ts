@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import test from "node:test";
 import { tempStateDir } from "./helpers/fakes.ts";
 
@@ -11,14 +9,6 @@ const run = (script: string, args: string[], stateDir: string) =>
 test("just drop 写明投递到了哪个目录", () => {
 	const dir = tempStateDir();
 	const out = run("src/cli/drop.ts", ["ci", "pr-7", "CI", "失败"], dir);
-	assert.equal(out.status, 0, out.stderr);
-	assert.ok(out.stdout.includes(dir), out.stdout);
-});
-
-test("just toy-feed 写明投递到了哪个目录", () => {
-	const dir = tempStateDir();
-	writeFileSync(join(dir, "config.json"), JSON.stringify({ modules: { "toy-market": true } }));
-	const out = run("modules/toy-market/feed.ts", ["TOYX", "-2", "100"], dir);
 	assert.equal(out.status, 0, out.stderr);
 	assert.ok(out.stdout.includes(dir), out.stdout);
 });

@@ -12,14 +12,14 @@ import { servedAsHost, tempStateDir } from "./helpers/fakes.ts";
 const REPO_MODULES = fileURLToPath(new URL("../modules", import.meta.url));
 const RETIRED_MODULES = fileURLToPath(new URL("./fixtures/retired", import.meta.url));
 const defaultProviders = memberProviders(loadConfig(tempStateDir()));
-const load = (...dirs: string[]) => servedAsHost(Modules.load(dirs.length ? dirs : [REPO_MODULES], { allowedProviders: defaultProviders, switches: { values: { "toy-market": true }, file: "config.json" } }));
+const load = (...dirs: string[]) => servedAsHost(Modules.load(dirs.length ? dirs : [REPO_MODULES], { allowedProviders: defaultProviders }));
 
 const PI_EXPERTS = ["agent-expert", "cli-expert", "config-expert", "ext-expert", "keybinding-expert", "prompt-expert", "skill-expert", "theme-expert", "tui-expert"];
 const teamOf = (modules: Modules, name: string) => modules.modules.find((m) => m.name === name)?.team;
 
 test("仓库自带的队伍用默认配置的提供方都能加载：pi-pi 是 Pi施工队的九位", () => {
 	const modules = load();
-	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "module-builder": { team: "模块工坊", onRoster: true }, "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true } });
+	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "module-builder": { team: "模块工坊", onRoster: true }, "pi-pi": { team: "Pi施工队", onRoster: true } });
 	const experts = teamOf(modules, "pi-pi")!.members;
 	assert.deepEqual(experts.map((m) => m.name), PI_EXPERTS);
 	for (const m of experts) assert.match(m.title, /\p{Script=Han}/u, `${m.name} 有中文职称`);
@@ -155,23 +155,21 @@ test("Pi 模块的经验放在它的技能里：pi-pi 的任务，助手拿到�
 
 test("仓库不再带 us-market：加载不报错，没有它的领域、队伍和成员，pi-pi 不受影响", () => {
 	const modules = load();
-	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "module-builder": { team: "模块工坊", onRoster: true }, "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true } });
+	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "module-builder": { team: "模块工坊", onRoster: true }, "pi-pi": { team: "Pi施工队", onRoster: true } });
 	assert.equal(modules.kitFor("us-market"), undefined);
 	assert.ok(!modules.rosterPrompt().includes("us-market"));
 	assert.deepEqual(modules.rulesFor("us-market"), []);
 	assert.equal(modules.kitFor("pi-pi")!.crew.length, 9);
 });
 
-test("只有 us-market 的 module.json 开了 lookup 和 tripwire：美股看盘队的助手和四位成员都能查数据，助手能改盯盘条件，pi-pi 和 toy-market 的都不能", () => {
+test("只有 us-market 的 module.json 开了 lookup 和 tripwire：美股看盘队的助手和四位成员都能查数据，助手能改盯盘条件，pi-pi 的不能", () => {
 	const modules = load(REPO_MODULES, RETIRED_MODULES);
 	const kit = modules.kitFor("us-market")!;
 	assert.deepEqual(kit.granted, ["lookup", "tripwire"]);
 	for (const member of kit.crew) assert.ok(memberTools("request", member.tools).includes("lookup"), member.name);
-	for (const domain of ["pi-pi", "toy-market"]) {
-		const other = modules.kitFor(domain)!;
-		assert.deepEqual(other.granted, [], domain);
-		for (const member of other.crew) assert.ok(!memberTools("request", member.tools).includes("lookup"), member.name);
-	}
+	const pipi = modules.kitFor("pi-pi")!;
+	assert.deepEqual(pipi.granted, []);
+	for (const member of pipi.crew) assert.ok(!memberTools("request", member.tools).includes("lookup"), member.name);
 });
 
 test("pi-pi 是新布局包：module.json 写了 schema 1 和 version，检查通过，九位成员", () => {

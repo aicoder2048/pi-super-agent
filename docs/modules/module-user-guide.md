@@ -34,13 +34,12 @@
 
 模块不引入新的运行机制。它只是把内容放到宿主、幕僚长、助手和成员各自会读的位置。
 
-### 1.2 三种形态
+### 1.2 两种形态
 
-这三个模块正好是三种形态，做新模块前先看它们：
+这两个模块正好是两种形态，做新模块前先看它们：
 
 | 模块 | 来源和规则 | 技能 | 成员 | 形态 |
 |---|---|---|---|---|
-| `toy-market` | 有，演示用的假行情 | 1 个 | 无 | 带技能的单个助手，默认关闭 |
 | `stock-ta`（在 `docs/modules/examples/` 里，要自己复制进状态目录） | 有，报价 feed 和日线扫描 | 5 个 | 6 位，技术分析研究组 | 新布局包，数据、工具、feed、知识、团队都有 |
 | `pi-pi` | 无，只从对话进来 | 2 个 | 9 位，Pi施工队 | 只有知识和团队 |
 
@@ -630,7 +629,7 @@ flowchart TB
 
 - 停用：在 `config.json` 写 `"modules": { "<模块名>": false }`，然后重启宿主。写了没找到的模块名，宿主启动时报一行错。
 - 停用的模块什么都不贡献：没有来源和数据源（不看盘、不发提醒、不读盯盘条件），没有规则、技能、定时器、成员，不在幕僚长的名册里，也不开 `lookup` 和 `tripwire`。
-- 模块的 `module.json` 可以写 `"defaultEnabled": false`，没在 `config.json` 里打开就不加载。`toy-market` 就是这样。
+- 模块的 `module.json` 可以写 `"defaultEnabled": false`，没在 `config.json` 里打开就不加载。
 - `just modules` 列出找到的全部模块：启用还是停用、为什么、来源和数据源能不能运行、开了哪些工具、规则、技能。它不连宿主，不打印密钥。
 - 删除：把模块文件夹移出模块目录，重启宿主。`config.json` 里还写着它的开关时要一起删掉。
 - 已经开出的、属于这个领域的任务不会丢：助手照常启动，按没有领域的单个助手继续，没有这个领域的技能，也不能派活，日志里记一行说明。停用和删除在这一点上一样。
@@ -1093,5 +1092,5 @@ tools: read, grep
 | 助手、成员和派活 | `src/host/pi-worker.ts`、`src/host/workers.ts`、`src/host/dispatch.ts` |
 | 来源和定时器 | `src/sources/generic.ts`、`src/sources/timer.ts`、`src/host/wiring.ts` |
 | 配置默认值 | `src/host/config.ts` |
-| 范本 | `docs/modules/examples/stock-ta`、`modules/toy-market`、`modules/pi-pi` |
+| 范本 | `docs/modules/examples/stock-ta`、`modules/pi-pi` |
 | 相关文档 | `docs/modules/module-design-review.md`（设计评审和 token 分析）、`docs/modules/module-skills-memo.md`（技能备忘） |
