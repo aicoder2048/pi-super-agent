@@ -38,7 +38,7 @@ host:
     if [ -t 0 ]; then set -m; fi
     {{run}} src/host/main.ts
 
-# 启动 Watchdog：宿主没有心跳时把它拉起，任务卡住或动作连续失败时经 Router 通知你。
+# 启动 Watchdog：宿主没有心跳时把它拉起，并直接发 Telegram 告诉你宿主停了、恢复了；任务卡住或动作连续失败时经 Router 通知你。
 watchdog:
     #!/usr/bin/env bash
     # 同 host：有终端时 Ctrl+C 只发给 Watchdog。
