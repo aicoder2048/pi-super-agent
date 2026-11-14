@@ -205,7 +205,7 @@ test("ta 说跳过（不是交易日或还没到时间）：不换库，不存�
 	assert.deepEqual(leftovers(feed.live), []);
 });
 
-test("ta 退出码非零：这一拍失败并说明，旧库一字不差，没有副本，不存行", async (t) => {
+test("ta 退出码非零：旧库一字不差，没有副本，存一行「失败」写明退出码，报问题 scan-failed", async (t) => {
 	const feed = await scanFeed(t);
 	feed.watch("NVDA");
 	await feed.tick();
@@ -213,11 +213,13 @@ test("ta 退出码非零：这一拍失败并说明，旧库一字不差，没�
 	feed.at("2026-11-12T23:00:00.000Z");
 	feed.setPlan({ kind: "exit" });
 	const run = await feed.tick();
-	assert.equal(run.ok, false);
-	assert.match(run.ok ? "" : run.note, /退出码 2/);
+	assert.equal(run.ok, true, JSON.stringify(run));
 	assert.equal(sha(feed.live), before);
 	assert.deepEqual(leftovers(feed.live), []);
-	assert.equal(feed.runs().length, 1);
+	const failed = feed.runs().find((r) => r.fields["tradingDate"] === "2026-11-12");
+	assert.equal(failed?.fields["outcome"], "失败");
+	assert.match(String(failed?.fields["errors"]), /退出码 2/);
+	assert.deepEqual(feed.problems.map((p) => p?.id ?? "-"), ["-", "scan-failed"]);
 });
 
 test("ta 超过扫描时限：被停掉，存一行「失败」写明超时，旧库不变，没有副本，cursor 不动；下一拍照常", async (t) => {
@@ -313,22 +315,24 @@ test("没有 settings.ta 时用的是和自己这份包副本 uv.lock 对得上�
 	assert.equal(feed.scans().length, 1);
 });
 
-test("venv 没装完（没有 .psa-lock）：这一拍失败，说先跑 just module setup stock-ta，不起 ta", async (t) => {
+test("venv 没装完（没有 .psa-lock）：不起 ta，报问题 scan-failed，那一行「失败」说先跑 just module setup stock-ta", async (t) => {
 	const feed = await scanFeed(t, { viaVenv: true, installed: false });
 	feed.watch("NVDA");
 	const run = await feed.tick();
-	assert.equal(run.ok, false, JSON.stringify(run));
-	assert.match(run.ok ? "" : run.note, /先跑 just module setup stock-ta/);
+	assert.equal(run.ok, true, JSON.stringify(run));
+	assert.deepEqual(feed.problems.map((p) => p?.id), ["scan-failed"]);
+	assert.equal(feed.runs()[0]?.fields["outcome"], "失败");
+	assert.match(String(feed.runs()[0]?.fields["errors"]), /先跑 just module setup stock-ta/);
 	assert.equal(feed.calls().length, 0);
 });
 
-test("缺 POLYGON_API_KEY：这一拍失败，一行说明，不起 ta", async (t) => {
+test("缺 POLYGON_API_KEY：不起 ta，报问题 no-key，一行说明", async (t) => {
 	const feed = await scanFeed(t, { key: "" });
 	feed.watch("NVDA");
-	const run = await feed.tick();
-	assert.equal(run.ok, false);
-	assert.match(run.ok ? "" : run.note, /POLYGON_API_KEY/);
-	assert.equal(run.ok ? "" : run.note.split("\n").length, 1);
+	assert.deepEqual(await feed.tick(), { ok: true, records: 0, notices: 0 });
+	assert.deepEqual(feed.problems.map((p) => p?.id), ["no-key"]);
+	assert.match(feed.problems[0]!.text, /POLYGON_API_KEY/);
+	assert.equal(feed.problems[0]!.text.split("\n").length, 1);
 	assert.equal(feed.calls().length, 0);
 });
 
@@ -414,4 +418,20 @@ test("规则：stock-ta/scan 的触发有规则 ma-break，默认只有 50 日�
 	for (const said of ["R-MA-2-50", "跌破", "structure-pattern", "trend-momentum", "数据日期", "不是交易指令", "只是数据"]) assert.match(rule?.text ?? "", new RegExp(said));
 	const scan = JSON.parse(readFileSync(join(PKG, "feeds", "scan", "feed.json"), "utf8"));
 	assert.deepEqual(scan.settings.signals, { rules: ["R-MA-2-50"] });
+});
+
+test("扫描失败报问题 scan-failed（断网、超时都算），文字不带数据；下一次换上的扫描清掉", async (t) => {
+	const feed = await scanFeed(t);
+	feed.watch("NVDA");
+	feed.setPlan({ kind: "down" });
+	await feed.tick();
+	feed.at(THURSDAY_EVENING, { scanSeconds: 1 });
+	feed.setPlan({ kind: "sleep" });
+	await feed.tick();
+	feed.at(THURSDAY_EVENING, { scanSeconds: 270 });
+	feed.setPlan({ kind: "ok" });
+	await feed.tick();
+	assert.deepEqual(feed.problems.map((p) => p?.id ?? "-"), ["scan-failed", "scan-failed", "-"]);
+	assert.doesNotMatch(feed.problems[0]!.text, /NVDA|MARKET_UNAVAILABLE/);
+	assert.match(feed.problems[0]!.text, /扫描记录/);
 });

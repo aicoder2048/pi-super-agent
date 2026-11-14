@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { Modules } from "../src/modules.ts";
-import { runFeed, type FeedNotice, type FeedPorts } from "../src/modules/feed-runner.ts";
+import { runFeed, type FeedNotice, type FeedPorts, type FeedProblem } from "../src/modules/feed-runner.ts";
 import { instanceData } from "../src/modules/instance-data.ts";
 import type { Alert } from "../src/modules/protocol.ts";
 import { problemLine, scanPackage } from "../src/modules/validate.ts";
@@ -17,6 +17,7 @@ import { fakeMassive, SNAPSHOT, snapshotBody, stockTaCopy, tickerRow, type Answe
 const PKG = join(import.meta.dirname, "../docs/modules/examples/stock-ta");
 const AT = Date.parse("2026-11-12T15:44:00Z");
 
+const ny = (local: string) => Date.parse(`${local}-05:00`);
 const snapshot = (rows: Record<string, unknown>[]): Answer => ({ status: 200, body: snapshotBody(rows) });
 
 async function quotesFeed(t: TestContext, key = "sk-test") {
@@ -30,18 +31,19 @@ async function quotesFeed(t: TestContext, key = "sk-test") {
 	const notices: FeedNotice[] = [];
 	const lines: Alert[] = [];
 	const clock = { now: AT + 15 * 60_000 };
+	const problems: (FeedProblem | undefined)[] = [];
 	const ports: FeedPorts = {
 		data,
 		submit: (n) => void notices.push(n),
 		alert: (_, a) => !lines.some((l) => l.externalId === a.externalId) && lines.push(a) > 0,
-		problem: () => {},
+		problem: (_, p) => void problems.push(p),
 		secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined),
 		now: () => clock.now,
 	};
 	const watch = (...symbols: string[]) => data.write("stock-ta", entry.components, "watchlist", symbols.map((symbol) => ({ symbol })), "使用者口述", "test");
 	const quotes = () => data.query("stock-ta", entry.components, "quotes", {}, "test").rows;
 	const restart = () => (ports.data = instanceData(state));
-	return { massive, modules, entry, data, notices, lines, alerts: () => lines.map((l) => l.text), watch, quotes, clock, restart, round: () => runFeed(entry, [], ports), rehearse: () => runFeed(entry, [], ports, entry.fixtures[0]) };
+	return { massive, modules, entry, data, notices, lines, problems, problemIds: () => problems.map((p) => p?.id ?? "-"), alerts: () => lines.map((l) => l.text), watch, quotes, clock, restart, round: () => runFeed(entry, [], ports), rehearse: () => runFeed(entry, [], ports, entry.fixtures[0]) };
 }
 
 test("快照解析：一次请求取回整张自选股，每只一行，带价格、相对昨收的涨跌幅、成交量和数据时间", async (t) => {
@@ -97,15 +99,14 @@ test("同一只股票有两行：以最新的一行为准，最新一行划掉�
 	assert.equal(feed.massive.hits.at(-1)?.url, `${SNAPSHOT}?tickers=NVDA,QQQ,SPY`);
 });
 
-test("缺密钥：不发请求，这一轮失败，一行说明去哪里设 POLYGON_API_KEY", async (t) => {
+test("缺密钥：不发请求，每一轮都报问题 no-key，一行说明去哪里设 POLYGON_API_KEY（宿主只在头一轮说）", async (t) => {
 	const feed = await quotesFeed(t, "");
 	feed.watch("NVDA");
-	feed.massive.answer({ status: 401, body: { status: "ERROR" } });
-	const run = await feed.round();
-	assert.equal(run.ok, false);
-	const note = run.ok ? "" : run.note;
-	assert.match(note, /没有设置 POLYGON_API_KEY/);
-	assert.equal(note.split("\n").length, 1);
+	assert.deepEqual(await feed.round(), { ok: true, records: 0, notices: 0 });
+	await feed.round();
+	assert.deepEqual(feed.problemIds(), ["no-key", "no-key"]);
+	assert.match(feed.problems[0]!.text, /没有设置 POLYGON_API_KEY/);
+	assert.equal(feed.problems[0]!.text.split("\n").length, 1);
 	assert.equal(feed.massive.hits.length, 0, "没有密钥就不去敲行情服务的门");
 	assert.equal(feed.quotes().length, 0);
 });
@@ -115,17 +116,65 @@ test("样例排练：样例代替网络，没有密钥也照常跑完", async (t
 	assert.deepEqual(await feed.rehearse(), { ok: true, records: 2, notices: 1 });
 });
 
-test("接口出错：这一轮失败，说出状态码，不存任何东西", async (t) => {
+test("接口出错：不存任何东西；连着 5 轮取不到报价才报问题 massive-down，之后每轮照报，取到了那一轮清掉", async (t) => {
 	const feed = await quotesFeed(t);
 	feed.watch("NVDA");
-	feed.massive.answer({ status: 500, body: { status: "ERROR" } });
-	const run = await feed.round();
-	assert.equal(run.ok, false);
-	assert.match(run.ok ? "" : run.note, /500/);
-	feed.massive.answer({ status: 200, body: { status: "OK" } });
-	const shapeless = await feed.round();
-	assert.equal(shapeless.ok, false, "应答里没有 tickers 也算这一轮失败");
-	assert.equal(feed.quotes().length, 0);
+	feed.massive.answer({ status: 500, body: { status: "ERROR" } }, { status: 200, body: { status: "OK" } }, { status: 401, body: {} }, { status: 500, body: {} }, { status: 500, body: {} }, { status: 500, body: {} });
+	for (let i = 0; i < 6; i++) {
+		assert.deepEqual(await feed.round(), { ok: true, records: 0, notices: 0 }, "应答出错或没有 tickers 都不算这一轮跑坏");
+		feed.clock.now += 60_000;
+	}
+	assert.deepEqual(feed.problemIds(), ["-", "-", "-", "-", "massive-down", "massive-down"]);
+	assert.match(feed.problems[4]!.text, /连着 5 轮/);
+	feed.massive.answer(snapshot([tickerRow("NVDA", 180.4, 176, feed.clock.now - 15 * 60_000)]));
+	assert.deepEqual(await feed.round(), { ok: true, records: 1, notices: 0 });
+	assert.equal(feed.problems.at(-1), undefined);
+	assert.equal(feed.quotes().length, 1);
+});
+
+test("接口出错的轮数在宿主重启后接着数；隔了一天重新数", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.massive.answer({ status: 500, body: {} });
+	for (let i = 0; i < 3; i++) await feed.round();
+	feed.restart();
+	for (let i = 0; i < 2; i++) await feed.round();
+	assert.equal(feed.problemIds().at(-1), "massive-down");
+	feed.clock.now += 86_400_000;
+	await feed.round();
+	assert.equal(feed.problemIds().at(-1), "-");
+});
+
+test("报价旧了：交易时段 20 分钟没有数据时间更新的报价就报问题 stale，新的报价来了清掉；收盘后不报", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	const at = (local: string) => ny(`2026-11-12T${local}:00`);
+	const quote = (data: string) => snapshot([tickerRow("NVDA", 180.4, 176, at(data))]);
+	const roundAt = async (local: string, answer: Answer) => {
+		feed.clock.now = at(local);
+		feed.massive.answer(answer);
+		await feed.round();
+	};
+	await roundAt("10:00", quote("09:45"));
+	await roundAt("10:19", quote("09:45"));
+	await roundAt("10:20", quote("09:45"));
+	await roundAt("10:21", quote("09:46"));
+	await roundAt("15:59", quote("09:46"));
+	await roundAt("16:05", quote("09:46"));
+	assert.deepEqual(feed.problemIds(), ["-", "-", "stale", "-", "stale", "-"]);
+	assert.match(feed.problems[2]!.text, /20 分钟/);
+});
+
+test("报价旧了：开盘后第一份快照还是盘前的（行情延迟 15 分钟），开盘 20 分钟内不报", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	for (const minute of ["09:30", "09:40", "09:49"]) {
+		feed.clock.now = ny(`2026-11-12T${minute}:00`);
+		feed.massive.answer(snapshot([tickerRow("NVDA", 180.4, 176, ny("2026-11-11T15:59:00"))]));
+		await feed.round();
+	}
+	feed.clock.now = ny("2026-11-12T09:50:00");
+	await feed.round();
+	assert.deepEqual(feed.problemIds(), ["-", "-", "-", "stale"]);
 });
 
 const DAY = "2026-11-12";
@@ -270,7 +319,6 @@ test("stock-ta 包通过检查：quotes 的样例跑过 handler，不需要真�
 	assert.deepEqual({ every: feed.feed.every, when: feed.feed.when, secrets: feed.feed.secrets, into: feed.feed.into, reads: feed.feed.reads }, { every: "60s", when: "us-market-hours", secrets: ["POLYGON_API_KEY"], into: "quotes", reads: ["watchlist"] });
 });
 
-const ny = (local: string) => Date.parse(`${local}-05:00`);
 
 test("只写新鲜的报价：开盘第一份快照里 9:15 的盘前成交不写行，也不发 5% 触发；9:31 的成交照写", async (t) => {
 	const feed = await quotesFeed(t);

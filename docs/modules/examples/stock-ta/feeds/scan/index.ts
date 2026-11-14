@@ -32,6 +32,9 @@ const AFTER_CLOSE_MS = 16 * 60_000;
 /** Bars came through and only the dividend refresh failed, so the symbol did not fail. */
 const WARNING_ONLY = "DIVIDENDS_UNAVAILABLE";
 const GUIDE = "docs/modules/stock-ta.md";
+type Problem = { id: "no-key" | "scan-failed"; text: string };
+const NO_KEY: Problem = { id: "no-key", text: `没有设置 POLYGON_API_KEY，收盘后的日线扫描没跑，日线和信号不会更新：在宿主的密钥文件里加一行 POLYGON_API_KEY=<你的 Massive/Polygon 密钥>，见 ${GUIDE}` };
+const SCAN_FAILED: Problem = { id: "scan-failed", text: "收盘后的日线扫描失败了，日线和信号没更新，旧数据照用，下一拍再试；原因写在扫描记录里，问「最近一次日线扫描怎么样」就能看到" };
 const DAY_MS = 86_400_000;
 
 const NEW_YORK = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
@@ -61,8 +64,6 @@ function readCursor(text: string | null): Cursor | undefined {
 	}
 }
 
-class Late extends Error {}
-
 /** One deadline covers every `ta` run of the tick, so the handler fails with its own message before the feed's limit. */
 type Ta = { command: string; args: string[]; env: NodeJS.ProcessEnv; deadline: number };
 
@@ -83,7 +84,7 @@ function runTa(ta: Ta, sub: string, input: unknown): Promise<unknown> {
 		child.on("error", (error) => (clearTimeout(timer), fail(new Error(`起不来 ta ${sub}：${error.message}`))));
 		child.on("close", (status) => {
 			clearTimeout(timer);
-			if (late) return fail(new Late(`超时：ta ${sub} 到了扫描时限还没结束，停掉了，旧数据库没动`));
+			if (late) return fail(new Error(`超时：ta ${sub} 到了扫描时限还没结束，停掉了，旧数据库没动`));
 			if (status !== 0) return fail(new Error(`ta ${sub} 退出码 ${status}：${stderr.trim().split("\n")[0] ?? ""}`.slice(0, 300)));
 			try {
 				done(JSON.parse(stdout.trim().split("\n").at(-1) ?? ""));
@@ -146,50 +147,46 @@ export default async function scan(input: Input) {
 	if (last !== undefined && last.date === newYorkDate(tickMs) && sameSymbols(last.symbols, symbols)) return { records: [] };
 
 	const key = process.env.POLYGON_API_KEY ?? "";
-	if (key === "") throw new Error(`没有设置 POLYGON_API_KEY，这一拍没扫：在宿主的密钥文件里加一行 POLYGON_API_KEY=<你的 Massive/Polygon 密钥>，见 ${GUIDE}`);
+	if (key === "") return { records: [], problem: NO_KEY };
 	const dir = join(process.env.PSA_MODULE_DATA ?? "", "files", "ta");
 	mkdirSync(dir, { recursive: true });
 	const live = join(dir, "ta.sqlite");
 	const next = `${live}.next`;
 	// A leftover rollback journal would silently roll the fresh copy back when ta opens it.
 	const dropCopy = () => [next, `${next}-journal`, `${next}.scan.lock`].forEach((path) => rmSync(path, { force: true }));
-	const ta = taOf(input.settings, key, next);
 	const startedAt = new Date().toISOString();
-	const hadLive = existsSync(live);
-	const now = hadLive ? new Date(tickMs).toISOString() : await lastSessionNow(ta, tickMs);
-
-	dropCopy();
+	const note = noteOf(listed, valid, rejected);
+	const row = (tradingDate: string, outcome: "换上" | "失败", newSignals: number, errors: string) => ({
+		id: `${tradingDate}@${startedAt}`,
+		startedAt,
+		tradingDate,
+		outcome,
+		symbols: symbols.length,
+		watchlist: listed.length,
+		newSignals,
+		...(errors !== "" && { errors }),
+		...(note !== undefined && { note }),
+	});
+	let tradingDate = newYorkDate(tickMs);
 	try {
+		const ta = taOf(input.settings, key, next);
+		const hadLive = existsSync(live);
+		const now = hadLive ? new Date(tickMs).toISOString() : await lastSessionNow(ta, tickMs);
+		tradingDate = newYorkDate(Date.parse(now));
+		dropCopy();
 		if (hadLive) copyFileSync(live, next, constants.COPYFILE_FICLONE);
-		const tradingDate = newYorkDate(Date.parse(now));
-		const note = noteOf(listed, valid, rejected);
-		const row = (outcome: "换上" | "失败", newSignals: number, errors: string) => ({
-			id: `${tradingDate}@${startedAt}`,
-			startedAt,
-			tradingDate,
-			outcome,
-			symbols: symbols.length,
-			watchlist: listed.length,
-			newSignals,
-			...(errors !== "" && { errors }),
-			...(note !== undefined && { note }),
-		});
-		let reply: ScanReply;
-		try {
-			reply = (await runTa(ta, "scan", { mode: "daily", symbols, now })) as ScanReply;
-		} catch (error) {
-			if (error instanceof Late) return { records: [row("失败", 0, error.message)] };
-			throw error;
-		}
+		const reply = (await runTa(ta, "scan", { mode: "daily", symbols, now })) as ScanReply;
 		if (reply.skipped) return { records: [] };
 		// ta exits 0 when the network is down, so success is read from the per-symbol errors, never the exit code.
 		const failed = new Set(reply.errors.filter((e) => e.error.code !== WARNING_ONLY).map((e) => e.symbol));
 		const swapped = symbols.some((s) => !failed.has(s));
-		if (swapped) renameSync(next, live);
-		const record = row(swapped ? "换上" : "失败", reply.new_signals.length, errorLine(reply.errors));
-		if (!swapped) return { records: [record] };
+		const record = row(tradingDate, swapped ? "换上" : "失败", reply.new_signals.length, errorLine(reply.errors));
+		if (!swapped) return { records: [record], problem: SCAN_FAILED };
+		renameSync(next, live);
 		const notices = hadLive ? signalNotices(reply.new_signals, input.settings.signals.rules, picked, tradingDate) : [];
 		return { records: [record], notices, cursor: JSON.stringify({ date: tradingDate, symbols } satisfies Cursor) };
+	} catch (error) {
+		return { records: [row(tradingDate, "失败", 0, error instanceof Error ? error.message : String(error))], problem: SCAN_FAILED };
 	} finally {
 		dropCopy();
 	}
