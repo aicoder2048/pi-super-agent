@@ -10,7 +10,7 @@ import type { Clock, DashboardRow } from "../../kernel/types.ts";
 import type { AnswerResult, Broadcast, ImChat, SayOptions } from "../server.ts";
 import { TelegramError, type BotApi, type TelegramErrorKind, type Update } from "./bot-api.ts";
 import { hostLineText, cardView, closedView, decide, fitsOneMessage, mirrorText, NOTES, render, repeatsQuestion, runAskLine, runAskView } from "./rules.ts";
-import { TelegramStore, type Pending } from "./store.ts";
+import { TelegramStore, type MessageKey, type Pending, type SendableBody } from "./store.ts";
 
 export interface TelegramTiming {
 	pollTimeoutSec: number;
@@ -37,6 +37,8 @@ export interface TelegramHost {
 	sayQuoting(text: string, lineId: string, options: SayOptions): string | null;
 	answer(reportId: string, option: number, options: { from: ImChat }): AnswerResult;
 	board(): Board;
+	/** The conversation line that started the task; null when none did, such as a task a source opened. */
+	originOf(ticketId: string): string | null;
 }
 
 export const DEFAULT_TIMING: TelegramTiming = {
@@ -125,12 +127,13 @@ export class TelegramClient {
 			switch (message.type) {
 				case "reply":
 					if (!this.#cardStandsIn(message)) {
-						for (const chat of this.#store.openChats()) this.#store.put(chat, `line:${message.replyId}`, message.replyId, { kind: "line", text: message.text, silent: false });
+						const body: SendableBody = { kind: "line", role: "router", text: message.text, silent: false, ...(message.ticketId && { ticketId: message.ticketId }) };
+						for (const chat of this.#store.openChats()) this.#put(chat, `line:${message.replyId}`, message.replyId, body);
 					}
 					break;
 				case "user":
 					for (const chat of this.#store.openChats()) {
-						if (chat !== from?.chatId) this.#store.put(chat, `line:${message.id}`, message.id, { kind: "line", text: mirrorText(message.text, from), silent: true });
+						if (chat !== from?.chatId) this.#store.put(chat, `line:${message.id}`, message.id, { kind: "line", role: "system", text: mirrorText(message.text, from), silent: true });
 					}
 					break;
 				case "board":
@@ -138,7 +141,7 @@ export class TelegramClient {
 					break;
 				case "host_line":
 					if (message.who !== "receipt") {
-						for (const chat of this.#store.openChats()) this.#store.put(chat, `${message.who}:${message.id}`, null, { kind: "line", text: hostLineText(message), silent: false, noPreview: true });
+						for (const chat of this.#store.openChats()) this.#store.put(chat, `${message.who}:${message.id}`, null, { kind: "line", role: "notice", text: hostLineText(message), silent: false, noPreview: true });
 					}
 					break;
 				case "cleared":
@@ -155,11 +158,11 @@ export class TelegramClient {
 		}
 	}
 
-	/** One message to every open chat, sent once per key even across restarts. Synchronous and never throws, like broadcast. */
-	tell(key: `health:${string}`, text: string): void {
+	/** One notice to every open chat, sent once per key even across restarts. Synchronous and never throws, like broadcast. */
+	tell(key: `health:${string}`, text: string, silent: boolean): void {
 		if (this.#state === "off") return;
 		try {
-			for (const chat of this.#store.openChats()) this.#store.put(chat, key, null, { kind: "line", text, silent: false, noPreview: true });
+			for (const chat of this.#store.openChats()) this.#store.put(chat, key, null, { kind: "line", role: "notice", text, silent, noPreview: true });
 			this.#wake?.();
 		} catch (error) {
 			this.#log(`[telegram] 没能记下要发到 Telegram 的消息：${(error as Error).message}`);
@@ -317,7 +320,7 @@ export class TelegramClient {
 				const view = cardView(row);
 				if (!view) continue;
 				onBoard.add(view.reportId);
-				this.#store.put(chatId, `ask:${view.reportId}`, null, { kind: "card", view });
+				this.#put(chatId, `ask:${view.reportId}`, null, { kind: "card", view });
 			}
 			for (const view of this.#store.openCards(chatId)) {
 				if (!onBoard.has(view.reportId)) this.#store.put(chatId, `ask:${view.reportId}`, null, { kind: "card", view: closedView(view) });
@@ -332,9 +335,25 @@ export class TelegramClient {
 		const view = runAskView(row, ask);
 		if (fitsOneMessage(view)) {
 			onBoard.add(ask.id);
-			this.#store.put(chatId, card, null, { kind: "card", view });
+			this.#put(chatId, card, null, { kind: "card", view });
 		} else if (ask.state === "open" && !this.#store.has(chatId, card)) {
-			this.#store.put(chatId, `run:${ask.id}`, null, { kind: "line", text: runAskLine(row.title), silent: false });
+			this.#put(chatId, `run:${ask.id}`, null, { kind: "line", role: "system", text: runAskLine(row.title), silent: false, ticketId: row.id });
+		}
+	}
+
+	/** A message about a task gets the task's color and threading. Fails open: when the host can't say how the task started, the message goes out without threading. */
+	#put(chatId: number, key: MessageKey, lineId: string | null, body: SendableBody): void {
+		const ticketId = body.kind === "card" ? body.view.ticketId : body.kind === "line" ? body.ticketId : undefined;
+		if (ticketId) this.#store.track(ticketId, () => this.#originOf(ticketId));
+		this.#store.put(chatId, key, lineId, body);
+	}
+
+	#originOf(ticketId: string): string | null {
+		try {
+			return this.#host.originOf(ticketId);
+		} catch (error) {
+			this.#log(`[telegram] 没能查到任务是哪句话开的，这个任务的消息不挂在那句话下：${(error as Error).message}`);
+			return null;
 		}
 	}
 
@@ -391,7 +410,7 @@ export class TelegramClient {
 				await this.#pause(Math.max(this.#lastSendAt + this.#timing.minGapMs, this.#pauseUntil) - Date.now());
 				if (this.#state !== "running") return;
 				this.#lastSendAt = Date.now();
-				const message = render(row.body, row.note);
+				const message = render(row.body, row.note, row.task);
 				let messageId: number;
 				try {
 					if (row.messageId === null) messageId = await this.#api.send(row.chatId, message, this.#sending.signal);

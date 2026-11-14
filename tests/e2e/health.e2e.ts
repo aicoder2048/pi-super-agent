@@ -66,7 +66,7 @@ test("模型断了要看得见：幕僚长的模型 500、401、429 时，网页
 				assert.match(text, /500/);
 				assert.match(text, /怎么办：/);
 				assert.ok((fake.failed.get("router") ?? 0) >= 2, "横幅在第二次失败之后才亮");
-				await until(() => phone().some((m) => m.startsWith("⚠️ 幕僚长模型")), "Telegram 的 ⚠️");
+				await until(() => phone().some((m) => m.startsWith("🔔 ⚠️ 幕僚长模型")), "Telegram 的 ⚠️");
 				await shot(page, "1-router-500");
 			});
 			await step("模型恢复：再说一句，幕僚长回答两句话，横幅变成「都恢复了」；Telegram 收到一条 ✅，⚠️ 没有重复", async (page) => {
@@ -76,8 +76,8 @@ test("模型断了要看得见：幕僚长的模型 500、401、429 时，网页
 				await routerLine(page, "刚才断了一会儿。").waitFor();
 				await page.locator('#health[data-tone="ok"]').waitFor();
 				assert.match(await page.locator("#health").innerText(), /幕僚长模型.*恢复/);
-				await until(() => phone().some((m) => m.startsWith("✅ 幕僚长模型恢复了")), "Telegram 的 ✅");
-				assert.equal(phone().filter((m) => m.startsWith("⚠️")).length, 1);
+				await until(() => phone().some((m) => m.startsWith("🔔 ✅ 幕僚长模型恢复了")), "Telegram 的 ✅");
+				assert.equal(phone().filter((m) => m.startsWith("🔔 ⚠️")).length, 1);
 				await shot(page, "2-recovered");
 			});
 			await step("模型回 401：第一次失败就亮，怎么办里写着登录或密钥；修好后自动重试，回答到了", async (page) => {
@@ -90,7 +90,7 @@ test("模型断了要看得见：幕僚长的模型 500、401、429 时，网页
 				await shot(page, "3-router-401");
 				fake.heal("router");
 				await routerLine(page, "密钥好了。").waitFor({ timeout: 30_000 });
-				await until(() => phone().filter((m) => m.startsWith("✅ 幕僚长模型恢复了")).length === 2, "第二条 ✅");
+				await until(() => phone().filter((m) => m.startsWith("🔔 ✅ 幕僚长模型恢复了")).length === 2, "第二条 ✅");
 			});
 			await step("主模型回 429：切到回退模型，横幅写「主模型限流」和回退模型的名字，回退模型照常回答", async (page) => {
 				fake.fail("router", 429, "Rate limit reached for requests");
@@ -98,7 +98,7 @@ test("模型断了要看得见：幕僚长的模型 500、401、429 时，网页
 				await routerLine(page, "回退模型接上了。").waitFor({ timeout: 30_000 });
 				const text = await alarm(page, "主模型限流").innerText();
 				assert.match(text, /psa-fake\/fallback/);
-				await until(() => phone().some((m) => m.startsWith("⚠️ 幕僚长模型（主模型限流）")), "限流的 ⚠️");
+				await until(() => phone().some((m) => m.startsWith("🔔 ⚠️ 幕僚长模型（主模型限流）")), "限流的 ⚠️");
 				await shot(page, "4-router-429-fallback");
 				assert.ok(!host.log().includes(FAKE_BOT_TOKEN.split(":")[1]), "日志里没有 bot token");
 			});

@@ -9,7 +9,7 @@ import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
 import { release, oneLine } from "../src/modules/release.ts";
 import { problemLine, scanPackage } from "../src/modules/validate.ts";
 import { Modules } from "../src/modules.ts";
-import { FAKE_BOT_TOKEN, FakeTelegram } from "./helpers/fake-telegram.ts";
+import { FAKE_BOT_TOKEN, FakeTelegram, unmarked } from "./helpers/fake-telegram.ts";
 import { FakeSpawner, fauxRouter, ids, servedAsHost, until, type Brain } from "./helpers/fakes.ts";
 
 const LETTERS = join(import.meta.dirname, "fixtures/modules/private-line");
@@ -129,7 +129,7 @@ async function lettersHost(t: TestContext, edit?: (pkg: string) => void, cards: 
 		await host.router.waitForIdle();
 	};
 	const notices = () => host.kernel.conversation(500).filter((l) => l.who === "notice");
-	const phone = () => tg.sent.filter((m) => m.chatId === USER && !m.text.startsWith("你在网页或终端说："));
+	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => ({ ...m, text: unmarked(m.text) })).filter((m) => !m.text.startsWith("你在网页或终端说："));
 	const routerSawLetter = () => until(() => router.batches.flat().some((card) => card.includes("来源 private-line/inbox")), "幕僚长看到了来信的触发", 10_000);
 	const alarms = () => host.snapshot().health.active;
 	return { host, tg, deliver, notices, phone, alarms, inbox, routerSawLetter, cards: () => router.batches.flat() };

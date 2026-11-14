@@ -164,8 +164,8 @@ export class Host {
 		const healthConfig = options.health ?? HEALTH_DEFAULTS;
 		this.#health = new Health({
 			now: clock.now,
-			onRaised: (alarm) => this.#tellPhone(`health:raised:${alarm.id}:${alarm.since}`, raisedText(alarm)),
-			onCleared: (alarm) => this.#tellPhone(`health:cleared:${alarm.id}:${alarm.since}`, clearedText(alarm)),
+			onRaised: (alarm) => this.#tellPhone(`health:raised:${alarm.id}:${alarm.since}`, raisedText(alarm), false),
+			onCleared: (alarm) => this.#tellPhone(`health:cleared:${alarm.id}:${alarm.since}`, clearedText(alarm), true),
 		});
 		this.#routerHealth = new ModelHealth(this.#health, "router", healthConfig.modelFailuresBeforeAlarm);
 		this.#feedFailuresBeforeAlarm = healthConfig.feedFailuresBeforeAlarm;
@@ -291,7 +291,7 @@ export class Host {
 			this.#log,
 		);
 		// Built before any client can say a line, so every line and reply reaches it; it touches the network only once started.
-		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }) }, db: this.#db, clock, log: this.#log });
+		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }), originOf: (ticketId) => this.kernel.getTicket(ticketId)?.originTriggerId ?? null }, db: this.#db, clock, log: this.#log });
 	}
 
 	static async start(options: HostOptions): Promise<Host> {
@@ -520,9 +520,9 @@ export class Host {
 		this.#health.forget((id) => id.startsWith(FEED_ALARM) && !serving.has(id));
 	}
 
-	/** The page reads the banner from the next board frame; the phone gets one message per raise and per clear. */
-	#tellPhone(key: `health:${string}`, text: string): void {
-		this.#telegram?.tell(key, text);
+	/** The page reads the banner from the next board frame; the phone gets one notice per raise, which rings, and one per clear, which does not. */
+	#tellPhone(key: `health:${string}`, text: string, silent: boolean): void {
+		this.#telegram?.tell(key, text, silent);
 		this.#changed();
 	}
 
