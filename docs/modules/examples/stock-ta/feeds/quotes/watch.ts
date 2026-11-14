@@ -52,16 +52,10 @@ export type Beat = { hits: Hit[]; alerts: Alert[]; notices: Notice[] };
 // Prices are cents, so a move of exactly a band can compute a hair below it (609 / 600 → 1.4999…%).
 const EPSILON = 1e-9;
 const FIRST_HOUR_MS = 60 * 60_000;
-const LEAN_NAME: Record<Lean, string> = { bull: "看多", bear: "看空" };
 const signed = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}`;
 const moveOf = (q: Quote) => (q.price / q.prevClose - 1) * 100;
 const leanOf = (move: number): Lean | null => (move > 0 ? "bull" : move < 0 ? "bear" : null);
 const stamp = (q: Quote) => `报价时间 ${nyTime(Date.parse(q.at))} ET（延迟行情）。`;
-/** With the space Chinese text puts before a title that starts with a digit or a Latin letter. */
-const titleOf = (rule: string) => {
-	const title = WATCH_RULES.find((r) => r.id === rule)?.title ?? COMBOS.find((c) => c.id === rule)?.title ?? rule;
-	return /^[\x21-\x7e]/.test(title) ? ` ${title}` : title;
-};
 const isIndex = (symbol: string) => scopeOf(symbol) === "index";
 const opened = (h: Hit) => opensTask(h) && !h.held;
 
@@ -145,9 +139,10 @@ function bands(day: DayState, q: Quote, ctx: Context, out: Beat): void {
 	const band = (lead ?? crossed[0]!).threshold;
 	const line = `${q.symbol} ${side === "up" ? "涨" : "跌"} ${move >= 0 ? "+" : ""}${move.toFixed(2)}%，到达 ${sign}${band}% 档。现价 ${q.price.toFixed(2)}，昨收 ${q.prevClose.toFixed(2)}。报价时间 ${nyTime(Date.parse(q.at))} ET（延迟行情）。`;
 	const held = ctx.quiet && lead !== undefined;
-	const market = isIndex(q.symbol) ? undefined : day.hits.find((h) => isIndex(h.symbol) && h.rule.startsWith("move-") && opened(h));
+	const lean: Lean = side === "up" ? "bull" : "bear";
+	const market = isIndex(q.symbol) ? undefined : day.hits.find((h) => isIndex(h.symbol) && h.rule.startsWith("move-") && h.lean === lean && opened(h));
 	for (const e of [...crossed].reverse()) {
-		const hit: Hit = { id: `${e.rule.id}:${q.symbol}:${day.date}:${side}`, rule: e.rule.id, symbol: q.symbol, date: day.date, at: q.at, lean: side === "up" ? "bull" : "bear", fact: `到 ${sign}${e.threshold}% 档`, level: e.level, text: line, ...(held && { held: true as const }) };
+		const hit: Hit = { id: `${e.rule.id}:${q.symbol}:${day.date}:${side}`, rule: e.rule.id, symbol: q.symbol, date: day.date, at: q.at, lean, fact: `到 ${sign}${e.threshold}% 档`, level: e.level, text: line, ...(held && { held: true as const }) };
 		day.hits.push(hit);
 		out.hits.push(hit);
 	}
@@ -167,18 +162,23 @@ function whipsawFlips(rule: WatchRule, symbol: string, lean: Lean | null, ctx: C
 	return leans.slice(1).filter((l, i) => l !== leans[i]).length;
 }
 
-/** Same day, same symbol, leaning the same way; an opposite lean earlier today means 多空分歧 and no escalation. */
+/**
+ * Counts today's hits on the symbol that point a way and are not demoted (level 0); a combo's line is left out because its two
+ * members already count. Same-lean hits, this one included, must be at least two and more than the opposite ones to escalate;
+ * otherwise an opposite lean that ties or outnumbers them means 多空分歧. Only levels 1 and 2 move up: level 3 is the highest
+ * level that still has a line below the task levels.
+ */
 function resonate(day: DayState, hit: Hit): { level: Level; why?: string; bumped?: true } {
 	if (hit.lean === null || hit.level < 1 || hit.level > 3) return { level: hit.level };
-	const earlier = day.hits.filter((h) => h.symbol === hit.symbol && h.lean !== null && h.level >= 1 && h.level <= 3);
-	const opposite = earlier.filter((h) => h.lean !== hit.lean);
-	const same = earlier.filter((h) => h.lean === hit.lean);
-	if (opposite.length > 0) return { level: hit.level, why: `多空分歧：前一条是${titleOf(opposite.at(-1)!.rule)}（${LEAN_NAME[opposite.at(-1)!.lean!]}）` };
+	const counted = day.hits.filter((h) => h.symbol === hit.symbol && h.lean !== null && h.level >= 1 && !COMBOS.some((c) => c.id === h.rule));
+	const same = counted.filter((h) => h.lean === hit.lean).length + 1;
+	const opposite = counted.length + 1 - same;
+	const tally = `（看多 ${hit.lean === "bull" ? same : opposite} 条，看空 ${hit.lean === "bear" ? same : opposite} 条）`;
+	if (opposite >= same) return { level: hit.level, why: `多空分歧${tally}` };
 	const taskOpen = day.hits.some((h) => h.symbol === hit.symbol && opened(h));
 	const bumpedToday = day.hits.some((h) => h.symbol === hit.symbol && h.bumped);
-	if (same.length === 0 || taskOpen || bumpedToday) return { level: hit.level };
-	const last = same.at(-1)!;
-	return { level: (hit.level + 1) as Level, bumped: true, why: `${hit.symbol} 今天第 ${same.length + 1} 条同向信号，前一条是${titleOf(last.rule)}（${LEAN_NAME[last.lean!]}），升一层` };
+	if (same < 2 || hit.level > 2 || taskOpen || bumpedToday) return { level: hit.level };
+	return { level: (hit.level + 1) as Level, bumped: true, why: `同向升一层${tally}` };
 }
 
 /** `told`: rules whose facts the head already carries, left out of the 同日 list. */

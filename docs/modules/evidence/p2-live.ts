@@ -211,7 +211,7 @@ async function fake(): Promise<void> {
 			await h.beat();
 			await sleep(1500);
 			const lines = stockLines(h.phone());
-			const pass = lines.length === 2 && lines.every((l) => l.silent) && lines[1]!.text.includes("多空分歧：前一条是 52 周新高（看多）") && h.triggers().length === 0 && h.tickets().filter((t) => t["domain"] === "stock-ta").length === 0;
+			const pass = lines.length === 2 && lines.every((l) => l.silent) && lines[1]!.text.includes("多空分歧（看多 1 条，看空 1 条）") && h.triggers().length === 0 && h.tickets().filter((t) => t["domain"] === "stock-ta").length === 0;
 			return { pass, evidence: `beat 1: NVDA 109 over prev close 108, day high 111 (10:00 ET); beat 2: NVDA 106 under prev close, volume 3.6x paced (12:00 ET)\nTelegram lines:\n${show(lines)}\nalerts:\n${show(h.alerts())}\ntriggers:\n${show(h.triggers())}\nhits file:\n${show(h.hits())}\nexpected: two silent lines, the volume one says 多空分歧, no trigger, no ticket` };
 		} finally {
 			await h.stop();
