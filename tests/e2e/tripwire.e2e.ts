@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
-import { FAKE_BOT_TOKEN, FakeTelegram } from "../helpers/fake-telegram.ts";
+import { FAKE_BOT_TOKEN, FakeTelegram, unmarked } from "../helpers/fake-telegram.ts";
 import { on, openTicket, reply, report, worker, type ToolCall } from "./fake-model.ts";
 import { closeBrowser, sayInPage, story, showScreen } from "./harness.ts";
 
@@ -92,7 +92,7 @@ async function until(predicate: () => boolean, label: string, timeoutMs = 15_000
 test("盯盘条件：网页上说一句，幕僚长开 us-market 的请求任务，助手用 tripwire 写入；网页出现带成本价的收据，左栏列出这条，Telegram 收不到收据；说去掉后左栏不再列出", async (t) => {
 	const tg = await FakeTelegram.start();
 	t.after(() => tg.close());
-	const sentTo = () => tg.sent.filter((m) => m.chatId === USER);
+	const sentTo = () => tg.sent.filter((m) => m.chatId === USER).map((m) => ({ ...m, text: unmarked(m.text) }));
 	await story(
 		t,
 		CHAT_SETS_THEN_REMOVES_COST,
@@ -166,7 +166,7 @@ test("盯盘提醒：聊天里设好成本条件后，盘中报价越过 +10% �
 	t.after(() => tg.close());
 	const quotes = mkdtempSync(join(tmpdir(), "psa-e2e-quotes-"));
 	const alertText = "NVDA 相对成本价 +10.40%，到了你设的 +10% 提醒线。现价 132.48。报价时间 09:59 ET。";
-	const rang = () => tg.sent.filter((m) => m.chatId === USER && m.text.startsWith("盯盘提醒："));
+	const rang = () => tg.sent.filter((m) => m.chatId === USER).map((m) => ({ ...m, text: unmarked(m.text) })).filter((m) => m.text.startsWith("盯盘提醒："));
 	const tick = async (name: string, price: number) => {
 		writeFileSync(join(quotes, name), JSON.stringify({ symbol: "NVDA", price, prevClose: 130 }));
 		await until(() => existsSync(join(quotes, `${name}.ticked`)), `看盘 ${name}`);
@@ -212,7 +212,7 @@ test("均线交叉：盘中现价拉出金叉，手机响一条「疑似金叉�
 	const tg = await FakeTelegram.start();
 	t.after(() => tg.close());
 	const ticks = mkdtempSync(join(tmpdir(), "psa-e2e-quotes-"));
-	const rang = () => tg.sent.filter((m) => m.chatId === USER && m.text.startsWith("盯盘提醒："));
+	const rang = () => tg.sent.filter((m) => m.chatId === USER).map((m) => ({ ...m, text: unmarked(m.text) })).filter((m) => m.text.startsWith("盯盘提醒："));
 	const tick = async (name: string, body: object) => {
 		writeFileSync(join(ticks, name), JSON.stringify(body));
 		await until(() => existsSync(join(ticks, `${name}.ticked`)), `看盘 ${name}`);
