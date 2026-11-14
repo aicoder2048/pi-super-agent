@@ -1,9 +1,11 @@
 import { changePct, massiveBase, MISSING_KEY, oneLine, REQUEST_LIMIT_MS, snapshot } from "../../massive.ts";
-import { nyTime, sessionAt, type Phase } from "../../market-days.ts";
+import { nyTime, regularCloseAt, sessionAt, type Phase } from "../../market-days.ts";
 import { argsOf } from "../../ta.ts";
 
 const MAX_SYMBOLS = 10;
 const LABEL: Record<Phase, string> = { pre: "盘前", regular: "盘中", post: "盘后", closed: "休市" };
+// The quotes run 15 minutes late, so the day bar is the official close only once the late feed has passed the close and its closing prints.
+const CLOSE_SETTLES_MS = 20 * 60_000;
 
 export default async function quote(input: unknown) {
 	const args = argsOf(input, { symbols: "list", now: "text" });
@@ -19,19 +21,22 @@ export default async function quote(input: unknown) {
 	});
 	const bySymbol = new Map(quotes.map((q) => [q.symbol, q]));
 	const today = sessionAt(now).nyDate;
+	const endedToday = now >= regularCloseAt(now) + CLOSE_SETTLES_MS;
 	return {
 		quotes: symbols.flatMap((symbol) => bySymbol.get(symbol) ?? []).map(({ dayClose, ...q }) => {
 			const at = Date.parse(q.at);
 			const { nyDate, phase } = sessionAt(at);
 			// Data from an earlier New York date (a weekend, a holiday, the small hours) is the last session's: the market is closed.
-			const session = nyDate === today ? phase : "closed";
+			const earlier = nyDate !== today;
+			// The clock decides whether today's session is over: a ticker with no after-hours trades keeps its 15:59 bar all evening.
+			const ended = earlier || endedToday;
+			const session = earlier ? "closed" : ended ? "post" : phase;
 			// After the regular session the day bar keeps the official close while the minute bar follows after-hours trades.
-			const ended = (session === "post" || session === "closed") && dayClose !== null;
 			return {
 				...q,
 				at: `${nyDate} ${nyTime(at)} 美东`,
 				session: LABEL[session],
-				...(ended && { close: dayClose, closeDate: nyDate, closeChangePct: changePct(dayClose, q.prevClose) }),
+				...(ended && dayClose !== null && { close: dayClose, closeDate: nyDate, closeChangePct: changePct(dayClose, q.prevClose) }),
 			};
 		}),
 		missing: symbols.filter((s) => !bySymbol.has(s)),
