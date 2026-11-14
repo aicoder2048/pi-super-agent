@@ -115,7 +115,7 @@ test("持仓命中之后同一天别的触发：同日里只写持仓的状态�
 test("回撤：从建仓日期以来的最高（日线库到昨天，盘中再和当天最高比）回撤 15% 响铃一行，不开任务；写明高点", () => {
 	const holdings = held({ symbol: "NVDA", cost: 100, boughtAt: "2026-10-01" });
 	const [r] = run(newDay(DATE), ctx({ holdings, peaks: { NVDA: 210 } }), [q("NVDA", 175.98, 180, "10:41", { dayHigh: 181 })]);
-	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level, h.lean, h.fact]), [["drawdown", 3, null, "从建仓以来高点回撤 16.2%"]]);
+	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level, h.lean, h.fact]), [["drawdown", 3, null, "从持仓高点回撤到回撤线"]]);
 	assert.deepEqual(r!.alerts.map((a) => [a.push ?? "ring", a.text]), [["ring", "NVDA 从建仓以来的高点 210.00 回撤 16.20%，现价 175.98，当天跌 -2.23%。报价时间 10:41 ET（延迟行情）。"]]);
 	assert.deepEqual(r!.notices, []);
 });
@@ -123,7 +123,7 @@ test("回撤：从建仓日期以来的最高（日线库到昨天，盘中再�
 test("回撤：没写建仓日期用 52 周最高；当天最高比日线库的高就按当天的算；没有高点（日线库里一根也没有）就不算", () => {
 	const holdings = held({ symbol: "NVDA", cost: 100 }, { symbol: "AMD", cost: 50 });
 	const [r] = run(newDay(DATE), ctx({ holdings, peaks: { NVDA: 200, AMD: null } }), [q("NVDA", 178, 185, "10:41", { dayHigh: 220 }), q("AMD", 60, 61, "10:41", { dayHigh: 100 })]);
-	assert.deepEqual(r!.hits.filter((h) => h.rule === "drawdown").map((h) => [h.symbol, h.fact]), [["NVDA", "从 52 周高点回撤 19.1%"]]);
+	assert.deepEqual(r!.hits.filter((h) => h.rule === "drawdown").map((h) => [h.symbol, h.fact]), [["NVDA", "从持仓高点回撤到回撤线"]]);
 	assert.match(r!.alerts.find((a) => a.id.startsWith("drawdown:"))!.text, /^NVDA 从 52 周高点 220\.00 回撤 19\.09%，现价 178\.00，当天跌 -3\.78%。/);
 });
 

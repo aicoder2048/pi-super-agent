@@ -62,7 +62,7 @@ type Spec = {
 	price(t: Today): number;
 	/** A stop counts at the line; the other states begin below it. */
 	touch: boolean;
-	/** For other lines' 同日 list, which can reach a trigger: no cost, stop or peak. */
+	/** For other lines' 同日 list, which can reach a trigger: no number at all, so no cost, stop, peak or drawdown. */
 	fact(e: Entry): string;
 	/** The line to the user directly, numbers included, after the symbol and before the price. */
 	head(e: Entry): string;
@@ -73,7 +73,7 @@ type Spec = {
 };
 
 const money = (n: number) => n.toFixed(2);
-const peakName = (h: Holding, of: "" | "的") => (h.boughtAt !== undefined ? `建仓以来${of}高点` : "52 周高点");
+const peakName = (h: Holding) => (h.boughtAt !== undefined ? "建仓以来的高点" : "52 周高点");
 const drop = (e: Entry) => (1 - e.price / e.peak!) * 100;
 function stopSource(h: Holding, threshold: number): string {
 	if (h.stop === undefined) return `没设止损线，按成本 ${money(h.cost)} 的 -${threshold}%`;
@@ -95,8 +95,8 @@ export const HOLDING_RULES: Readonly<Record<HoldingRuleId, Spec>> = {
 		line: (_, threshold, peak) => (peak === undefined ? undefined : peak * (1 - threshold / 100)),
 		price: (t) => t.price,
 		touch: true,
-		fact: (e) => `从${e.holding.boughtAt !== undefined ? "" : " "}${peakName(e.holding, "")}回撤 ${drop(e).toFixed(1)}%`,
-		head: (e) => `从${e.holding.boughtAt !== undefined ? "" : " "}${peakName(e.holding, "的")} ${money(e.peak!)} 回撤 ${drop(e).toFixed(2)}%`,
+		fact: () => "从持仓高点回撤到回撤线",
+		head: (e) => `从${e.holding.boughtAt !== undefined ? "" : " "}${peakName(e.holding)} ${money(e.peak!)} 回撤 ${drop(e).toFixed(2)}%`,
 		notice: "从持仓高点回撤到你的回撤线",
 		state: "回撤线下",
 	},
