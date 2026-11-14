@@ -27,8 +27,6 @@ export const WATCH_RULES = [
 	{ id: "move-2", title: "第二档", feed: "quotes", threshold: { stock: 8, index: 3 }, level: 5, line: "ring", plan: "band-move" },
 ] as const satisfies readonly WatchRule[];
 
-export type RuleId = (typeof WATCH_RULES)[number]["id"];
-
 export type LevelRow = { id: string; fields: { readonly [field: string]: unknown } };
 type Change = { level?: Level; threshold?: number };
 /** The user's latest change per rule: the one for all symbols under "", each symbol's under its code. */
