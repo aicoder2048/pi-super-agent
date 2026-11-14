@@ -1,3 +1,6 @@
+// Historical record of G4 (#95). It ran at 70cf571 and is not kept in step with main.
+// On today's schema the lanes that read tickets.touched_private_at fail (#123 dropped that column), and lane 1
+// runs the us-market feed, which #124 retired. To rerun it, check out 70cf571.
 /**
  *   node --import ./src/pi-runtime.mjs docs/modules/evidence/g4-live.ts [lanes|perf] [outDir]
  *

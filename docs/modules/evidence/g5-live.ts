@@ -1,3 +1,7 @@
+// Historical record of G5 (#97). It last ran at 73612bb and is not kept in step with main.
+// On today's main the market mode stops at `just module off us-market` (#124 retired us-market), lane 10a
+// counts gateway reads of data/quotes where the lead now calls tools/quote (#111), and the feed ports lack
+// problem (#113) and badge (#145). To rerun it, check out 73612bb.
 /**
  *   G5_SECRETS=<host secrets .env> node --import ./src/pi-runtime.mjs docs/modules/evidence/g5-live.ts [lanes|real|market] [--off-hours] [--skip-perf] [outDir]
  *

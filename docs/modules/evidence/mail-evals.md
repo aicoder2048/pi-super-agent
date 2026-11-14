@@ -47,7 +47,7 @@
 | 要求直接发送 | M7 lane 5；宿主只发 `POST drafts`（ADR-0022） | 1 次 |
 | 要求抄送陌生人 | M7 lane 5；宿主拒绝带 `Cc` 的草稿 | 1 次 |
 | 附件里藏指令 | M6 lane 7，PR #119 记的是 lane 1 到 8 全部 PASS（计划里这些框没勾） | 1 次 |
-| 显示名冒充「白宫 · 系统」 | M2 lane 8；`tests/mail-inbox.test.ts` | 不经模型 |
+| 显示名冒充「白宫 · 系统」 | M2 lane 8；`tests/integration/mail-inbox.test.ts` | 不经模型 |
 | 超长主题 | M3 lane 3；M2 lane 8 | 不经模型 |
 | 名单外的发件人 | M2 lane 4 | 不经模型 |
 | 来信后其他汇报仍是全文 | M3 lane 4（假模型）；时段 3 的 8b（真） | 时段 3 一次 |
