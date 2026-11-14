@@ -4,6 +4,7 @@ import { writeHeartbeat } from "../heartbeat.ts";
 import { relocateState } from "./relocate.ts";
 import { endLeftoverMembers } from "./member-ledger.ts";
 import { WATCHDOG_SOURCE } from "../watchdog/watchdog.ts";
+import { readOutage } from "../watchdog/outage.ts";
 import { join } from "node:path";
 import { isCapAskId } from "../kernel/cap-ask.ts";
 import { isRunAskId, RUN_TIMEOUT_MS, type RunAsk } from "../kernel/run-ask.ts";
@@ -169,6 +170,8 @@ export class Host {
 			onRaised: (alarm) => this.#tellPhone(`health:raised:${alarm.id}:${alarm.since}`, raisedText(alarm), false),
 			onCleared: (alarm) => this.#tellPhone(`health:cleared:${alarm.id}:${alarm.since}`, clearedText(alarm), true),
 		});
+		const outage = readOutage(options.stateDir);
+		if (outage) this.#health.remember({ id: "host", area: "host", subject: "宿主", since: outage.since, clearedAt: outage.endedAt ?? clock.now() });
 		this.#routerHealth = new ModelHealth(this.#health, "router", healthConfig.modelFailuresBeforeAlarm);
 		this.#feedFailuresBeforeAlarm = healthConfig.feedFailuresBeforeAlarm;
 		this.#feedsNow = options.moduleFeeds?.feeds ?? (() => []);

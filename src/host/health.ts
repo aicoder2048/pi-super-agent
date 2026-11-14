@@ -32,8 +32,8 @@ export interface Alarm {
 	advice: string;
 }
 
-/** What the page lists under 最近恢复. */
-export type ClearedAlarm = Pick<Alarm, "id" | "area" | "subject" | "since"> & { clearedAt: number };
+/** What the page lists under 最近恢复. Area `host` is an outage of the host itself, which the Watchdog saw (docs/health/README.md). */
+export type ClearedAlarm = Pick<Alarm, "id" | "subject" | "since"> & { area: Area | "host"; clearedAt: number };
 
 export interface HealthBoard {
 	/** Oldest first. */
@@ -128,8 +128,13 @@ export class Health {
 		this.#runs.delete(id);
 		if (!run.raised) return;
 		const cleared: ClearedAlarm = { id, area: run.area, subject: run.subject, since: run.since, clearedAt: this.#o.now() };
-		this.#recent = [cleared, ...this.#recent.filter((r) => r.id !== id)].slice(0, this.#o.recentMax ?? RECENT_MAX);
+		this.remember(cleared);
 		this.#o.onCleared(cleared);
+	}
+
+	/** A recovery someone else saw and already told the phone about: listed, not announced. */
+	remember(cleared: ClearedAlarm): void {
+		this.#recent = [cleared, ...this.#recent.filter((r) => r.id !== cleared.id)].slice(0, this.#o.recentMax ?? RECENT_MAX);
 	}
 
 	/** Drops matching runs without telling anyone: their subject is gone, not fixed. */

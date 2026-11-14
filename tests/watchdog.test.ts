@@ -8,7 +8,7 @@ import test from "node:test";
 import { Kernel } from "../src/kernel/kernel.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { CONVERSATION_THREAD_ID } from "../src/kernel/types.ts";
-import { checkWatchdog, Watchdog } from "../src/watchdog/watchdog.ts";
+import { checkWatchdog, errorLine, Watchdog } from "../src/watchdog/watchdog.ts";
 import { hostPid } from "../src/heartbeat.ts";
 import { until } from "./helpers/fakes.ts";
 
@@ -142,4 +142,125 @@ test("心跳新鲜且记录的 pid 是活着的宿主时，不拉起", async (t)
 	await until(() => hostPid(stateDir) === host.pid, "宿主进程被认出", 5000);
 	wd.checkOnce();
 	assert.equal(started.count, 0);
+});
+
+function fakeHostProcess(t: { after(fn: () => void): void }) {
+	const host = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", "src/host/main.ts"], { stdio: "ignore" });
+	t.after(() => host.kill("SIGKILL"));
+	return host;
+}
+
+async function beating(stateDir: string, pid: number, at: number) {
+	writeFileSync(join(stateDir, "heartbeat.json"), JSON.stringify({ pid, at }));
+	await until(() => hostPid(stateDir) === pid, "宿主进程被认出", 5000);
+}
+
+function phoneWatchdog(stateDir: string, now: { t: number }, lastError?: () => string | undefined) {
+	const told: { text: string; silent: boolean }[] = [];
+	const starts: number[] = [];
+	const wd = new Watchdog({ stateDir, clock: { now: () => now.t }, config, startHost: () => starts.push(now.t), tell: (text, silent) => told.push({ text, silent }), lastError });
+	return { wd, told, starts };
+}
+
+test("宿主被杀：只发一条响铃的 ⚠️，接着反复拉起失败也不再发；宿主回来后发一条不响铃的 ✅", async (t) => {
+	const stateDir = mkdtempSync(join(tmpdir(), "psa-wd-"));
+	const now = { t: 100 * MIN };
+	const first = fakeHostProcess(t);
+	await beating(stateDir, first.pid!, now.t);
+	const { wd, told, starts } = phoneWatchdog(stateDir, now);
+	wd.checkOnce();
+	assert.deepEqual(told, []);
+	first.kill("SIGKILL");
+	await once(first, "exit");
+	now.t += 3 * MIN;
+	wd.checkOnce();
+	assert.deepEqual(told, [{ text: "⚠️ 宿主停了（最后一次心跳 3 分钟前），看门狗正在重启", silent: false }]);
+	for (let i = 0; i < 5; i++) {
+		now.t += 3 * MIN;
+		wd.checkOnce();
+	}
+	assert.equal(told.length, 1, "一次停机只发一条 ⚠️");
+	const second = fakeHostProcess(t);
+	await beating(stateDir, second.pid!, now.t);
+	now.t += 1 * MIN;
+	wd.checkOnce();
+	wd.checkOnce();
+	assert.equal(starts.length, 6);
+	assert.deepEqual(told.slice(1), [{ text: "✅ 宿主恢复了，停了约 18 分钟", silent: true }]);
+	assert.deepEqual(JSON.parse(readFileSync(join(stateDir, "outage.json"), "utf8")), { since: 100 * MIN, endedAt: starts.at(-1) });
+});
+
+test("Watchdog 一启动宿主就起不来：连着 3 次拉起都失败后发一条 ⚠️，带最后一行错误；之后不再发", () => {
+	const stateDir = mkdtempSync(join(tmpdir(), "psa-wd-"));
+	const now = { t: 100 * MIN };
+	const { wd, told, starts } = phoneWatchdog(stateDir, now, () => "Error: listen EADDRINUSE 127.0.0.1:8080");
+	for (let i = 0; i < 3; i++) {
+		wd.checkOnce();
+		now.t += 1 * MIN;
+		wd.checkOnce();
+		now.t += 2 * MIN;
+	}
+	assert.equal(starts.length, 3);
+	assert.deepEqual(told, [], "第三次还在宽限期里，不算失败");
+	wd.checkOnce();
+	assert.deepEqual(told, [{ text: "⚠️ 宿主连续 3 次启动失败：Error: listen EADDRINUSE 127.0.0.1:8080。看门狗会接着重试，详情见状态目录里的 host.log", silent: false }]);
+	for (let i = 0; i < 5; i++) {
+		now.t += 3 * MIN;
+		wd.checkOnce();
+	}
+	assert.equal(told.length, 1);
+});
+
+test("Watchdog 一启动宿主就好好的：不发任何消息", async (t) => {
+	const stateDir = mkdtempSync(join(tmpdir(), "psa-wd-"));
+	const now = { t: 100 * MIN };
+	const { wd, told, starts } = phoneWatchdog(stateDir, now);
+	wd.checkOnce();
+	now.t += 3 * MIN;
+	const host = fakeHostProcess(t);
+	await beating(stateDir, host.pid!, now.t);
+	wd.checkOnce();
+	assert.equal(starts.length, 1);
+	assert.deepEqual(told, []);
+	assert.equal(existsSync(join(stateDir, "outage.json")), false);
+});
+
+test("停机中 Watchdog 自己重启：不再发 ⚠️，宿主回来时照样发 ✅", async (t) => {
+	const stateDir = mkdtempSync(join(tmpdir(), "psa-wd-"));
+	const now = { t: 100 * MIN };
+	const first = fakeHostProcess(t);
+	await beating(stateDir, first.pid!, now.t);
+	const before = phoneWatchdog(stateDir, now);
+	before.wd.checkOnce();
+	first.kill("SIGKILL");
+	await once(first, "exit");
+	now.t += 3 * MIN;
+	before.wd.checkOnce();
+	assert.equal(before.told.length, 1);
+	const after = phoneWatchdog(stateDir, now);
+	for (let i = 0; i < 4; i++) {
+		now.t += 3 * MIN;
+		after.wd.checkOnce();
+	}
+	assert.deepEqual(after.told, []);
+	const second = fakeHostProcess(t);
+	await beating(stateDir, second.pid!, now.t);
+	now.t += 1 * MIN;
+	after.wd.checkOnce();
+	assert.deepEqual(after.told.map((m) => m.text), [`✅ 宿主恢复了，停了约 ${Math.round((after.starts.at(-1)! - 100 * MIN) / MIN)} 分钟`]);
+});
+
+test("从 host.log 取最后一行错误：跳过调用栈，密钥换成 …", () => {
+	const log = [
+		"[host] 网页 http://127.0.0.1:8080/#token=abcdef0123456789",
+		"file:///repo/src/host/main.ts:12",
+		"Error: Telegram 401 at https://api.telegram.org/bot123456789:AAH-secret_part_0000000000000000/getMe?key=sk-abcdefgh12345678",
+		"    at main (file:///repo/src/host/main.ts:12:3)",
+		"",
+		"Node.js v22.23.4",
+		"",
+	].join("\n");
+	assert.equal(errorLine(log), "Error: Telegram 401 at https://api.telegram.org/bot123456789:…/getMe?key=…");
+	assert.equal(errorLine("/state/config.json：webPort 必须是端口号\n"), "/state/config.json：webPort 必须是端口号");
+	assert.equal(errorLine("\n"), undefined);
 });

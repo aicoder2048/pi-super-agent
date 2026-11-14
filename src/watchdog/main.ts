@@ -1,12 +1,14 @@
 import { spawn } from "node:child_process";
-import { fchmodSync, fstatSync, openSync } from "node:fs";
+import { fchmodSync, fstatSync, openSync, readFileSync } from "node:fs";
 import { HOST_ENTRY, hostPid } from "../heartbeat.ts";
 import { constants } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, type HostConfig } from "../host/config.ts";
 import { exitOnConfigError } from "../config-error.ts";
-import { Watchdog } from "./watchdog.ts";
+import { telegramOptions } from "../host/telegram/options.ts";
+import { Phone } from "./phone.ts";
+import { errorLine, Watchdog } from "./watchdog.ts";
 
 let config: HostConfig;
 try {
@@ -33,12 +35,35 @@ function openHostLog(): number {
 	return fd;
 }
 
+// A Watchdog that cannot reach the phone must still restart the host, so a bad Telegram setup is logged, not fatal.
+function phone(): Phone | undefined {
+	try {
+		const telegram = telegramOptions(config, process.env, log);
+		return telegram && new Phone({ api: telegram.api, chats: [...telegram.allowedUserIds], log });
+	} catch (error) {
+		log(`[watchdog] 宿主停了没法发到 Telegram：${(error as Error).message}`);
+		return undefined;
+	}
+}
+
+let logOffsetAtStart = 0;
+
+// The host's log since the latest start: a host that cannot start writes little, so reading it whole is cheap.
+function lastHostError(): string | undefined {
+	try {
+		return errorLine(readFileSync(join(config.stateDir, "host.log")).subarray(logOffsetAtStart).toString("utf8"));
+	} catch {
+		return undefined;
+	}
+}
+
 // Only the host this watchdog launched; a host the user started elsewhere keeps running on Ctrl+C.
 let launched: { pid: number; exited: Promise<void> } | undefined;
 
 function startHost(): void {
 	killHungHost();
 	const out = openHostLog();
+	logOffsetAtStart = fstatSync(out).size;
 	const child = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST_ENTRY], {
 		cwd: repo,
 		env: { ...process.env, PSA_STATE_DIR: config.stateDir },
@@ -53,6 +78,7 @@ function startHost(): void {
 	log(`[watchdog] 已拉起宿主，pid ${child.pid}，日志 ${join(config.stateDir, "host.log")}`);
 }
 
+const toPhone = phone();
 const watchdog = new Watchdog({
 	stateDir: config.stateDir,
 	clock: { now: () => Date.now() },
@@ -63,6 +89,8 @@ const watchdog = new Watchdog({
 	kernel: config.kernel,
 	startHost,
 	log,
+	tell: toPhone && ((text, silent) => toPhone.tell(text, silent)),
+	lastError: lastHostError,
 });
 
 let checks: NodeJS.Timeout | undefined;
