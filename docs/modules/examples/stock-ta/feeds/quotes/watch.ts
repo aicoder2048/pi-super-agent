@@ -4,35 +4,13 @@
  * yesterday, the hits earlier today and on the past few trading days); later beats never change a recorded hit.
  */
 import { nyTime, regularCloseAt, regularOpenAt } from "../../market-days.ts";
+import { opened, resonate, type Hit } from "../../hits.ts";
 import type { Quote } from "../../massive.ts";
 import { COMBOS, effective, lineOf, opensTask, scopeOf, TIERS, VIXY, WATCH_RULES, WHIPSAW, type Effective, type Lean, type Level, type Line, type Plan, type RuleId, type RuleLevels, type WatchRule } from "../../watch-rules.ts";
 
 export type Side = "up" | "down";
 /** From the module's daily bars up to yesterday (bars.ts). A null field means too little history for it. */
 export type History = { high52: number | null; low52: number | null; avgVolume20: number | null };
-
-export type Hit = {
-	/** `<rule>:<symbol>:<date>`, plus `:<side>` for the two move rules, which fire once per side. */
-	id: string;
-	rule: string;
-	symbol: string;
-	date: string;
-	/** The quote's time. */
-	at: string;
-	lean: Lean | null;
-	/** The fact in a few words, for other lines' 同日 list, e.g. 「放量 3.8 倍」. */
-	fact: string;
-	level: Level;
-	/** The line as sent, or as it would have been when held back or below level 2. */
-	text: string;
-	bumped?: true;
-	/** Flips counted when the whipsaw rule dropped it to level 0. */
-	whipsaw?: number;
-	/** Its line went out as part of this combo's line. */
-	combo?: string;
-	/** Quiet hours kept its line or trigger back (the close-of-day digest sends it). */
-	held?: true;
-};
 
 /** The quotes feed's own state for one New York date; `fired` holds the highest band per symbol and side. */
 export type DayState = { date: string; fired: Record<string, Partial<Record<Side, number>>>; hits: Hit[] };
@@ -46,7 +24,8 @@ export type Context = {
 	quiet: boolean;
 };
 export type Alert = { id: string; text: string; at: string; fold?: { key: string; side: Side }; push?: "silent" };
-export type Notice = { id: string; thread: string; fields: { line: string; rule: string; level: string; plan: Plan } };
+/** `threadScope: "module"`: the module's feeds share the symbol's thread for the day, so a close-of-day hit joins the task a band opened. */
+export type Notice = { id: string; thread: string; threadScope: "module"; fields: { line: string; rule: string; level: string; plan: Plan } };
 export type Beat = { hits: Hit[]; alerts: Alert[]; notices: Notice[] };
 
 // Prices are cents, so a move of exactly a band can compute a hair below it (609 / 600 → 1.4999…%).
@@ -57,14 +36,14 @@ const moveOf = (q: Quote) => (q.price / q.prevClose - 1) * 100;
 const leanOf = (move: number): Lean | null => (move > 0 ? "bull" : move < 0 ? "bear" : null);
 const stamp = (q: Quote) => `报价时间 ${nyTime(Date.parse(q.at))} ET（延迟行情）。`;
 const isIndex = (symbol: string) => scopeOf(symbol) === "index";
-const opened = (h: Hit) => opensTask(h) && !h.held;
 
 type Finding = { lean: Lean | null; fact: string };
 type Seen = { history: History | null | undefined; qqq: Quote | undefined };
 type Detect = (q: Quote, threshold: number, seen: Seen) => Finding | undefined;
 
 /** One detector per rule that is not a move band; the table says where each runs and how much it tells the user. */
-const DETECTORS: Record<Exclude<RuleId, "move-1" | "move-2">, Detect> = {
+type QuotesRule = Extract<(typeof WATCH_RULES)[number], { feed: "quotes" }>["id"];
+const DETECTORS: Record<Exclude<QuotesRule, "move-1" | "move-2">, Detect> = {
 	volume(q, threshold, { history }) {
 		const average = history?.avgVolume20;
 		if (!average || q.volume === null) return undefined;
@@ -153,32 +132,13 @@ function bands(day: DayState, q: Quote, ctx: Context, out: Beat): void {
 	if (task === undefined) return;
 	const vixy = isIndex(q.symbol) ? day.hits.find((h) => h.rule === "vixy-1") : undefined;
 	const note = market !== undefined ? `（大盘日：${market.symbol} 今天已${market.fact}，这只票并进指数的任务，汇报里逐只列出）` : vixy !== undefined ? `（VIXY 同日${vixy.fact}）` : "";
-	out.notices.push({ id, thread: `${market?.symbol ?? q.symbol}:${day.date}`, fields: { line: `${line}${note}`, rule: task.rule.id, level: String(task.level), plan: task.rule.plan } });
+	out.notices.push({ id, thread: `${market?.symbol ?? q.symbol}:${day.date}`, threadScope: "module", fields: { line: `${line}${note}`, rule: task.rule.id, level: String(task.level), plan: task.rule.plan } });
 }
 
 function whipsawFlips(rule: WatchRule, symbol: string, lean: Lean | null, ctx: Context): number {
 	if (!rule.whipsaw || lean === null) return 0;
 	const leans = [...(ctx.past[`${rule.id}:${symbol}`] ?? []), lean];
 	return leans.slice(1).filter((l, i) => l !== leans[i]).length;
-}
-
-/**
- * Counts today's hits on the symbol that point a way and are not demoted (level 0); a combo's line is left out because its two
- * members already count. Same-lean hits, this one included, must be at least two and more than the opposite ones to escalate;
- * otherwise an opposite lean that ties or outnumbers them means 多空分歧. Only levels 1 and 2 move up: level 3 is the highest
- * level that still has a line below the task levels.
- */
-function resonate(day: DayState, hit: Hit): { level: Level; why?: string; bumped?: true } {
-	if (hit.lean === null || hit.level < 1 || hit.level > 3) return { level: hit.level };
-	const counted = day.hits.filter((h) => h.symbol === hit.symbol && h.lean !== null && h.level >= 1 && !COMBOS.some((c) => c.id === h.rule));
-	const same = counted.filter((h) => h.lean === hit.lean).length + 1;
-	const opposite = counted.length + 1 - same;
-	const tally = `（看多 ${hit.lean === "bull" ? same : opposite} 条，看空 ${hit.lean === "bear" ? same : opposite} 条）`;
-	if (opposite >= same) return { level: hit.level, why: `多空分歧${tally}` };
-	const taskOpen = day.hits.some((h) => h.symbol === hit.symbol && opened(h));
-	const bumpedToday = day.hits.some((h) => h.symbol === hit.symbol && h.bumped);
-	if (same < 2 || hit.level > 2 || taskOpen || bumpedToday) return { level: hit.level };
-	return { level: (hit.level + 1) as Level, bumped: true, why: `同向升一层${tally}` };
 }
 
 /** `told`: rules whose facts the head already carries, left out of the 同日 list. */
@@ -193,7 +153,7 @@ function rules(day: DayState, q: Quote, qqq: Quote | undefined, ctx: Context): G
 	const scope = scopeOf(q.symbol);
 	const graded: Graded[] = [];
 	// Hits in one beat happen together; grading the quieter ones first lets the louder one be the second hit that escalates.
-	const ordered = WATCH_RULES.filter((r) => r.id !== "move-1" && r.id !== "move-2").map((rule) => ({ rule, e: effective(rule, q.symbol, scope, ctx.levels) })).sort((a, b) => a.e.level - b.e.level);
+	const ordered = WATCH_RULES.filter((r): r is Extract<(typeof WATCH_RULES)[number], { feed: "quotes" }> & { id: Exclude<QuotesRule, "move-1" | "move-2"> } => r.feed === "quotes" && r.id !== "move-1" && r.id !== "move-2").map((rule) => ({ rule, e: effective(rule, q.symbol, scope, ctx.levels) })).sort((a, b) => a.e.level - b.e.level);
 	for (const { rule, e } of ordered) {
 		const id = `${rule.id}:${q.symbol}:${day.date}`;
 		if (e.threshold === undefined || day.hits.some((h) => h.id === id)) continue;
@@ -221,7 +181,7 @@ function rules(day: DayState, q: Quote, qqq: Quote | undefined, ctx: Context): G
 			graded.push({ hit, delivery: { line: combo.line, plan: combo.plan }, quote: q });
 			continue;
 		}
-		const r = resonate(day, { ...base, level: e.level, text: "" });
+		const r = resonate(day.hits, { ...base, level: e.level, text: "" });
 		const market = rule.id === "vixy-1" ? day.hits.find((h) => isIndex(h.symbol) && h.rule.startsWith("move-")) : undefined;
 		const why = [r.why, market && `同日 ${market.symbol} 已${market.fact}`].filter((w): w is string => typeof w === "string");
 		const hit: Hit = { ...base, level: r.level, ...(r.bumped && { bumped: true as const }), text: lineText(day, q, base, `${q.symbol} ${found.fact}`, why) };
@@ -245,7 +205,7 @@ function deliver({ hit, delivery }: Graded, ctx: Context, out: Beat): void {
 		return;
 	}
 	if (loud) out.alerts.push({ id: hit.id, text: hit.text, at: hit.at, ...(delivery.line === "silent" && { push: "silent" as const }) });
-	if (task) out.notices.push({ id: hit.id, thread: `${hit.symbol}:${hit.date}`, fields: { line: hit.text, rule: hit.rule, level: String(hit.level), plan: delivery.plan! } });
+	if (task) out.notices.push({ id: hit.id, thread: `${hit.symbol}:${hit.date}`, threadScope: "module", fields: { line: hit.text, rule: hit.rule, level: String(hit.level), plan: delivery.plan! } });
 }
 
 /** Mutates `day`: its new hits are appended and the bands it reached are remembered. */

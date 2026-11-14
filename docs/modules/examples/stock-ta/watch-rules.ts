@@ -6,8 +6,8 @@
 export type Level = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 /** The line put in front of the user. Levels 1 to 3 imply it; a level 5 or 6 rule names it. */
 export type Line = "none" | "badge" | "silent" | "ring";
-/** The skill a task opened by the rule follows. */
-export type Plan = "band-move" | "market-desk";
+/** The skill a task opened by the rule follows: band-move sends three, market-desk one, structure-trend two (structure and trend). */
+export type Plan = "band-move" | "market-desk" | "structure-trend";
 export type Scope = "stock" | "index" | "vixy";
 /** Which way a hit points: bull and bear take part in resonance, a hit without a lean never does. */
 export type Lean = "bull" | "bear";
@@ -17,8 +17,9 @@ type Reaction = { level: 0 | 1 | 2 | 3 | 4 } | { level: 5 | 6; line: Line };
 export type WatchRule = Reaction & {
 	id: string;
 	title: string;
-	feed: "quotes";
-	/** Per scope; a rule runs only on the scopes it names. The unit is the rule's own (percent, or times the 20-day volume). */
+	/** quotes grades every beat of the session; scan grades the day's complete daily bar and `ta`'s signals after the close. */
+	feed: "quotes" | "scan";
+	/** Per scope; a rule runs only on the scopes it names. The unit is the rule's own (percent, or times the 20-day volume); 0 where it has none. */
 	threshold: Readonly<Partial<Record<Scope, number>>>;
 	/** Also on rules below level 5: the task to open when the user raises the rule to 5. */
 	plan: Plan;
@@ -37,6 +38,12 @@ export const WATCH_RULES = [
 	{ id: "rel-strength", title: "逆大盘", feed: "quotes", threshold: { stock: 3 }, level: 1, plan: "band-move", whipsaw: true },
 	{ id: "vixy-1", title: "VIXY 第一档", feed: "quotes", threshold: { vixy: 10 }, level: 2, plan: "market-desk" },
 	{ id: "vixy-2", title: "VIXY 第二档", feed: "quotes", threshold: { vixy: 20 }, level: 5, line: "silent", plan: "market-desk" },
+	{ id: "R-MA-2-200", title: "200 日线", feed: "scan", threshold: { stock: 0 }, level: 5, line: "none", plan: "structure-trend" },
+	{ id: "R-MA-2-50:down", title: "跌破 50 日线", feed: "scan", threshold: { stock: 0 }, level: 2, plan: "structure-trend" },
+	{ id: "R-MA-2-50:up", title: "站上 50 日线", feed: "scan", threshold: { stock: 0 }, level: 0, plan: "structure-trend" },
+	{ id: "volume-close", title: "收盘放量", feed: "scan", threshold: { stock: 1.5 }, level: 0, plan: "structure-trend" },
+	{ id: "ta-key", title: "ta 重点形态", feed: "scan", threshold: { stock: 0 }, level: 1, plan: "structure-trend" },
+	{ id: "ta-other", title: "ta 其余信号", feed: "scan", threshold: { stock: 0 }, level: 0, plan: "structure-trend" },
 ] as const satisfies readonly WatchRule[];
 
 export type RuleId = (typeof WATCH_RULES)[number]["id"];
@@ -48,7 +55,23 @@ export type Combo = { id: string; title: string; all: readonly [RuleId, RuleId];
 export const COMBOS = [
 	{ id: "volume+high-52w", title: "放量创 52 周新高", all: ["volume", "high-52w"], lean: "bull", level: 5, line: "silent", plan: "band-move" },
 	{ id: "volume+low-52w", title: "放量创 52 周新低", all: ["volume", "low-52w"], lean: "bear", level: 5, line: "ring", plan: "band-move" },
+	{ id: "volume-close+R-MA-2-50:down", title: "放量跌破 50 日线", all: ["volume-close", "R-MA-2-50:down"], lean: "bear", level: 5, line: "silent", plan: "structure-trend" },
 ] as const satisfies readonly Combo[];
+
+/** Same symbol, same day, both hits leaning the same way: the second member's line and trigger carry the note and the partner's fact. */
+export type Note = { id: string; all: readonly [RuleId, RuleId]; note: string };
+export const NOTES = [{ id: "volume-close+R-MA-2-200", all: ["volume-close", "R-MA-2-200"], note: "放量确认" }] as const satisfies readonly Note[];
+
+/** `ta`'s signals with their own row: the rule id, with the side when the two sides differ in level. */
+const TA_ROWS = new Set<string>(["R-MA-2-200", "R-MA-2-50:down", "R-MA-2-50:up"]);
+/** Patterns, Dow trend ends, TD 13 and MACD divergence: `ta`'s structural signals (design section 5, ta-key). */
+const TA_KEY = /^(R-PAT-.+|R-DOW-1-UE|R-DOW-1-DE|R-TD-2|R-MACD-3)$/;
+export const sideOf = (direction: string) => (direction === "bullish" ? "up" : direction === "bearish" ? "down" : "flat");
+/** The row a `ta` signal is graded by. */
+export function taRow(rule: string, direction: string): RuleId {
+	const own = [`${rule}:${sideOf(direction)}`, rule].find((id) => TA_ROWS.has(id));
+	return (own ?? (TA_KEY.test(rule) ? "ta-key" : "ta-other")) as RuleId;
+}
 
 /** Three flips in ten trading days means the rule changed lean about every other day it fired (design section 4.3). */
 export const WHIPSAW = { days: 10, flips: 3 } as const;

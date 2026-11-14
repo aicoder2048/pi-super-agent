@@ -9,8 +9,11 @@ import { Modules } from "../src/modules.ts";
 import { runFeed, type FeedNotice, type FeedPorts, type FeedProblem } from "../src/modules/feed-runner.ts";
 import { lockOf, VENV_MARK, venvDir } from "../src/modules/files.ts";
 import { instanceData } from "../src/modules/instance-data.ts";
-import { fakeTa } from "./helpers/fake-ta.ts";
+import { fakeTa, type DailyRow } from "./helpers/fake-ta.ts";
+import type { Alert } from "../src/modules/protocol.ts";
+import { readHits, writeHits, type Hit } from "../docs/modules/examples/stock-ta/hits.ts";
 import { servedAsHost } from "./helpers/fakes.ts";
+import { threadId } from "../src/sources/generic.ts";
 
 const PKG = join(import.meta.dirname, "../docs/modules/examples/stock-ta");
 const KEY = "sk-scan-test";
@@ -47,12 +50,15 @@ async function scanFeed(t: TestContext, { key = KEY, viaVenv = false, installed 
 		return found;
 	};
 	const notices: FeedNotice[] = [];
+	const alerts: Alert[] = [];
 	const problems: (FeedProblem | undefined)[] = [];
-	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: () => undefined, problem: (_, p) => void problems.push(p), secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined), now: () => Date.now() };
+	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: (_, a) => alerts.push(a) > 0, problem: (_, p) => void problems.push(p), secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined), now: () => Date.now() };
 	const live = join(dataDir, "files", "ta", "ta.sqlite");
 	return {
 		live,
+		dataDir,
 		notices,
+		alerts,
 		problems,
 		modules: () => modules,
 		setPlan: fake.setPlan,
@@ -62,6 +68,7 @@ async function scanFeed(t: TestContext, { key = KEY, viaVenv = false, installed 
 			modules = servedAsHost(Modules.load([join(root, "modules")]));
 		},
 		watch: (...symbols: string[]) => data.write("stock-ta", entry().components, "watchlist", symbols.map((symbol) => ({ symbol })), "使用者口述", "test"),
+		level: (fields: Record<string, unknown>) => data.write("stock-ta", entry().components, "rule-levels", [fields], "使用者口述", "test"),
 		runs: () => data.query("stock-ta", entry().components, "scan-runs", {}, "test").rows,
 		cursor: () => data.feedState("stock-ta", "stock-ta/scan").cursor,
 		calls: fake.calls,
@@ -365,77 +372,117 @@ async function scannedOnce(t: TestContext) {
 	return feed;
 }
 
-test("扫描新信号：这次扫的交易日上、规则在 settings.signals.rules 里、标的在自选股里的信号，每条发一条触发，正文写明代码、规则、名称、方向、周期、数据日期和收盘价", async (t) => {
+/** 21 sessions before `date` at 100 on a million shares, then `date` itself. */
+const daily = (symbol: string, date: string, close: number, volume: number): DailyRow[] => [
+	...Array.from({ length: 21 }, (_, i) => ({ symbol, date: `2026-10-${String(i + 1).padStart(2, "0")}`, close: 100, volume: 1_000_000 })),
+	{ symbol, date, close, volume },
+];
+const ma = (symbol: string, period: number, direction: "bullish" | "bearish", date: string, attention = "normal") => ({ ...signal(symbol, `R-MA-2-${period}`, `${direction === "bullish" ? "站上" : "跌破"} MA${period}`, direction, date, 97), attention, values: { left: 97, right: 98.5 } });
+
+test("收盘规则：当天的信号按盯盘规则表判，跌破 50 日线静音一行不开任务；别的日期、不在自选股里的、SPY 的不判", async (t) => {
 	const feed = await scannedOnce(t);
 	feed.setPlan({ kind: "ok", signals: [
-		signal("NVDA", "R-MA-2-50", "跌破 MA50", "bearish", "2026-11-12"),
-		signal("NVDA", "R-MA-2-50", "站上 MA50", "bullish", "2026-11-11"),
+		ma("NVDA", 50, "bearish", "2026-11-12"),
+		ma("NVDA", 50, "bullish", "2026-11-11"),
 		signal("AMD", "R-MACD-2", "金叉", "bullish", "2026-11-12"),
-		signal("SPY", "R-MA-2-50", "跌破 MA50", "bearish", "2026-11-12"),
+		ma("SPY", 50, "bearish", "2026-11-12"),
 	] });
+	assert.deepEqual(await feed.tick(), { ok: true, records: 1, notices: 0 });
+	assert.deepEqual(feed.alerts.map((a) => [a.externalId, a.push]), [["R-MA-2-50:down:NVDA:2026-11-12", "silent"]]);
+	assert.match(feed.alerts[0]!.text, /^NVDA 收盘跌破 50 日线（收盘 97\.00，50 日均线 98\.50）。/);
+	const hits = readHits(feed.dataDir, "2026-11-12", "scan");
+	assert.deepEqual(hits.map((h) => [h.id, h.level]), [["R-MACD-2:up:AMD:2026-11-12", 0], ["R-MA-2-50:down:NVDA:2026-11-12", 2]]);
+});
+
+test("收盘跌破 200 日线：开任务的触发，线程挂在模块下，和报价 feed 同一只票同一天的线程是同一个；同日放量写「放量确认」", async (t) => {
+	const feed = await scannedOnce(t);
+	feed.setPlan({ kind: "ok", signals: [ma("NVDA", 200, "bearish", "2026-11-12")], bars: daily("NVDA", "2026-11-12", 97, 2_400_000) });
 	assert.deepEqual(await feed.tick(), { ok: true, records: 1, notices: 1 });
 	const [notice] = feed.notices;
-	assert.equal(notice?.source, "stock-ta/scan");
-	assert.equal(notice?.id, "signal:NVDA:R-MA-2-50:1d:2026-11-12:bearish");
-	assert.equal(notice?.thread, "signal:NVDA:2026-11-12");
-	for (const said of ["NVDA", "跌破 MA50", "R-MA-2-50", "bearish", "1d", "2026-11-12", "150.2"]) assert.ok(notice?.body.includes(said), `正文有 ${said}：${notice?.body}`);
+	assert.deepEqual([notice?.source, notice?.id, threadId(notice!.threadOwner ?? notice!.source, notice!.thread)], ["stock-ta/scan", "R-MA-2-200:NVDA:2026-11-12", "thr_stock-ta:NVDA:2026-11-12"]);
+	assert.match(notice!.body, /^NVDA 收盘跌破 200 日线（收盘 97\.00，200 日均线 98\.50）。当天跌 -3\.00%。放量确认（收盘成交量是 20 日均量的 2\.4 倍）。收盘日线 11-12（美东）。（规则 R-MA-2-200，层级 5，做法 structure-trend）$/);
+	assert.deepEqual(feed.alerts, [], "200 日线不发提醒行，汇报就是第一次");
 });
 
-test("扫描新信号：空库第一次扫描补的两年信号一条触发都不发", async (t) => {
+test("扫描新信号：空库第一次扫描补的两年信号一条也不判", async (t) => {
 	const feed = await scanFeed(t);
 	feed.watch("NVDA");
-	feed.setPlan({ kind: "ok", signals: [signal("NVDA", "R-MA-2-50", "跌破 MA50", "bearish", "2026-11-11"), signal("NVDA", "R-MA-2-50", "站上 MA50", "bullish", "2025-03-03")] });
+	feed.setPlan({ kind: "ok", signals: [ma("NVDA", 200, "bearish", "2026-11-11"), ma("NVDA", 50, "bullish", "2025-03-03")] });
 	assert.deepEqual(await feed.tick(), { ok: true, records: 1, notices: 0 });
+	assert.deepEqual([feed.alerts, readHits(feed.dataDir, "2026-11-11")], [[], []]);
 });
 
-test("扫描新信号：同一只、同一规则、同一天、同一方向的信号再扫到一次，触发 id 一样（内核按 id 只收一次）", async (t) => {
+test("同一天再扫一次（加了自选股）：之前判过的命中留着、不再发，新扫到的照判", async (t) => {
 	const feed = await scannedOnce(t);
-	const nvda = signal("NVDA", "R-MA-2-50", "跌破 MA50", "bearish", "2026-11-12");
-	feed.setPlan({ kind: "ok", signals: [nvda] });
+	feed.setPlan({ kind: "ok", signals: [ma("NVDA", 200, "bearish", "2026-11-12")] });
 	await feed.tick();
 	feed.watch("MSFT");
+	feed.setPlan({ kind: "ok", signals: [ma("NVDA", 200, "bearish", "2026-11-12"), ma("MSFT", 50, "bearish", "2026-11-12")] });
 	await feed.tick();
-	assert.equal(feed.notices.length, 2);
-	assert.equal(feed.notices[0]!.id, feed.notices[1]!.id);
+	assert.deepEqual(feed.notices.map((n) => n.id), ["R-MA-2-200:NVDA:2026-11-12"]);
+	assert.deepEqual(feed.alerts.map((a) => a.externalId), ["R-MA-2-50:down:MSFT:2026-11-12"]);
+	assert.deepEqual(readHits(feed.dataDir, "2026-11-12", "scan").map((h) => h.id).sort(), ["R-MA-2-200:NVDA:2026-11-12", "R-MA-2-50:down:MSFT:2026-11-12"]);
 });
 
-test("扫描新信号：settings.signals.rules 改了，下一次扫描就按新的名单发；没有换上的扫描不发", async (t) => {
+test("rule-levels 改了收盘规则，下一次扫描就按新的层级：跌破 50 日线改成 5 层开任务", async (t) => {
 	const feed = await scannedOnce(t);
-	feed.at(THURSDAY_EVENING, { signals: { rules: ["R-MACD-2"] } });
-	feed.setPlan({ kind: "ok", signals: [signal("NVDA", "R-MA-2-50", "跌破 MA50", "bearish", "2026-11-12"), signal("AMD", "R-MACD-2", "金叉", "bullish", "2026-11-12", null)] });
+	feed.level({ rule: "R-MA-2-50:down", level: 5, note: "跌破 50 日线也开任务" });
+	feed.setPlan({ kind: "ok", signals: [ma("NVDA", 50, "bearish", "2026-11-12")] });
 	await feed.tick();
-	assert.deepEqual(feed.notices.map((n) => n.id), ["signal:AMD:R-MACD-2:1d:2026-11-12:bullish"]);
-	feed.at("2026-11-13T23:00:00.000Z");
-	feed.setPlan({ kind: "down" });
-	await feed.tick();
-	assert.equal(feed.notices.length, 1);
+	assert.deepEqual(feed.notices.map((n) => n.id), ["R-MA-2-50:down:NVDA:2026-11-12"]);
+	assert.match(feed.notices[0]!.body, /做法 structure-trend/);
 });
 
-test("规则：stock-ta/scan 的触发有规则 ma-break，默认只有 50 日线的信号发触发", async (t) => {
+test("跨 feed：报价 feed 当天的命中算进多空分歧（盘中 52 周新高看多，收盘跌破 50 日线看空）", async (t) => {
+	const feed = await scannedOnce(t);
+	const high: Hit = { id: "high-52w:NVDA:2026-11-12", rule: "high-52w", symbol: "NVDA", date: "2026-11-12", at: "2026-11-12T16:00:00.000Z", lean: "bull", fact: "创 52 周新高 212.40（此前最高 210.88）", level: 2, text: "" };
+	writeHits(feed.dataDir, "quotes", "2026-11-12", [high]);
+	feed.setPlan({ kind: "ok", signals: [ma("NVDA", 50, "bearish", "2026-11-12")] });
+	await feed.tick();
+	assert.match(feed.alerts[0]!.text, /同日：创 52 周新高 212\.40（此前最高 210\.88）。多空分歧（看多 1 条，看空 1 条）。/);
+});
+
+test("收盘以后才扫：每 5 分钟一拍，收盘 20 分钟以前不起 ta；提前收盘日（13:00）跟着提前", async (t) => {
+	const feed = await scanFeed(t);
+	feed.watch("NVDA");
+	feed.at("2026-11-25T23:00:00.000Z");
+	await feed.tick();
+	const scans = feed.scans().length;
+	feed.at("2026-11-27T18:15:00.000Z");
+	await feed.tick();
+	assert.equal(feed.scans().length, scans, "感恩节后的提前收盘日 13:15 还没到时间");
+	feed.at("2026-11-27T18:20:00.000Z");
+	await feed.tick();
+	assert.equal(feed.scans().length, scans + 1);
+	assert.equal(feed.runs()[0]?.fields["tradingDate"], "2026-11-27");
+	feed.at("2026-11-30T21:15:00.000Z");
+	await feed.tick();
+	assert.equal(feed.scans().length, scans + 1, "周一 16:15 还没到时间");
+});
+
+test("规则：stock-ta/scan 的触发和报价 feed 一样走 watch-task，ma-break 删掉了；扫描每 5 分钟一拍，名单设置删掉了", async (t) => {
 	const modules = (await scanFeed(t)).modules();
-	assert.deepEqual(modules.rulesFor("stock-ta/scan"), ["stock-ta/ma-break"]);
-	const rule = modules.allRules().find((r) => r.id === "stock-ta/ma-break");
-	for (const said of ["R-MA-2-50", "跌破", "structure-pattern", "trend-momentum", "数据日期", "不是交易指令", "只是数据"]) assert.match(rule?.text ?? "", new RegExp(said));
+	assert.deepEqual(modules.rulesFor("stock-ta/scan"), ["stock-ta/watch-task"]);
+	assert.deepEqual(modules.rulesFor("stock-ta/quotes"), ["stock-ta/watch-task"]);
+	assert.equal(modules.allRules().some((r) => r.id === "stock-ta/ma-break"), false);
 	const scan = JSON.parse(readFileSync(join(PKG, "feeds", "scan", "feed.json"), "utf8"));
-	assert.deepEqual(scan.settings.signals, { rules: ["R-MA-2-50"] });
+	assert.deepEqual([scan.every, scan.settings.signals, scan.reads], ["5m", undefined, ["watchlist", "rule-levels"]]);
 });
 
-test("一直扫不成功：同一晚的几拍都报 scan-failed，过了美东午夜 ta 说跳过的那一拍清掉，下一个交易日收盘后再报", async (t) => {
+test("一直扫不成功：同一个交易日的几拍都报 scan-failed；过了美东午夜还按那个交易日（收盘加 16 分钟）补扫，换上了才清掉", async (t) => {
 	const feed = await scanFeed(t);
 	feed.watch("NVDA");
 	await feed.tick();
 	feed.setPlan({ kind: "down" });
-	for (const now of ["2026-11-12T22:00:00.000Z", "2026-11-12T23:00:00.000Z"]) {
+	for (const now of ["2026-11-12T22:00:00.000Z", "2026-11-12T23:00:00.000Z", "2026-11-13T06:00:00.000Z"]) {
 		feed.at(now);
 		await feed.tick();
 	}
-	feed.at("2026-11-13T06:00:00.000Z");
-	feed.setPlan({ kind: "skip" });
+	assert.equal(feed.scans().at(-1)?.input["now"], "2026-11-12T21:16:00.000Z");
+	feed.setPlan({ kind: "ok" });
 	await feed.tick();
-	feed.at("2026-11-13T22:00:00.000Z");
-	feed.setPlan({ kind: "down" });
-	await feed.tick();
-	assert.deepEqual(feed.problems.map((p) => p?.id ?? "-"), ["-", "scan-failed", "scan-failed", "-", "scan-failed"]);
+	assert.deepEqual(feed.problems.map((p) => p?.id ?? "-"), ["-", "scan-failed", "scan-failed", "scan-failed", "-"]);
+	assert.equal(feed.runs()[0]?.fields["tradingDate"], "2026-11-12");
 });
 
 test("扫描失败报问题 scan-failed（断网、超时都算），文字不带数据；下一次换上的扫描清掉", async (t) => {

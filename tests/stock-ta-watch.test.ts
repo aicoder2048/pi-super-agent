@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { newDay, watch, type Context, type DayState, type Hit } from "../docs/modules/examples/stock-ta/feeds/quotes/watch.ts";
+import { newDay, watch, type Context, type DayState } from "../docs/modules/examples/stock-ta/feeds/quotes/watch.ts";
+import type { Hit } from "../docs/modules/examples/stock-ta/hits.ts";
 import type { Quote } from "../docs/modules/examples/stock-ta/massive.ts";
 import { parseRuleLevels, quietAt, type LevelRow } from "../docs/modules/examples/stock-ta/watch-rules.ts";
 
@@ -261,4 +262,11 @@ test("rule-levels 改了新规则的层级：52 周新高改成 0 层就只记�
 test("rule-levels：VIXY 第一档改得不低于第二档时这一行不生效", () => {
 	const { bad } = parseRuleLevels([{ id: "4", fields: { rule: "vixy-1", threshold: 25 } }]);
 	assert.deepEqual(bad, ["4"]);
+});
+
+test("到档一个方向只算一条：两档同一拍到（层级改成 2，没开任务），后来的放量写「看空 2 条」，不是 3 条", () => {
+	const c = ctx({ levels: parseRuleLevels([{ id: "1", fields: { rule: "move-1", level: 2 } }, { id: "2", fields: { rule: "move-2", level: 2 } }]).levels });
+	const [, r] = run(newDay(DATE), c, [q("NVDA", 91.5, 100, "10:00")], [q("NVDA", 91.5, 100, "11:00", { volume: paced(4, "11:00") })]);
+	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level]), [["volume", 3]]);
+	assert.match(r!.hits[0]!.text, /同向升一层（看多 0 条，看空 2 条）/);
 });

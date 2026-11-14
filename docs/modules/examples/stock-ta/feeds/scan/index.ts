@@ -1,54 +1,65 @@
 /**
  * Only this feed writes the module's technical-analysis database. It scans a copy and renames the
  * copy into place on success, so a reader sees the whole old database or the whole new one.
+ * It ticks every five minutes and does the work once per session, after the close by its own calendar (early closes included);
+ * the other ticks return at once.
  */
 import { spawn } from "node:child_process";
 import { constants, copyFileSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { readDaily } from "../../bars.ts";
+import { readHits, writeHits, type Hit } from "../../hits.ts";
+import { isTradingDay, regularCloseAt, shiftDate } from "../../market-days.ts";
 import { installedTa } from "../../ta.ts";
+import { parseRuleLevels, quietAt, type LevelRow } from "../../watch-rules.ts";
 import { listedSymbols, type WatchRow } from "../../watchlist.ts";
+import { close, type TaSignal } from "./close.ts";
 
 interface Input {
 	/** `ta`: a node script that stands in for the venv's `ta` (fixtures and tests). `now`: a fixed time for this tick. */
-	settings: { baseUrl: string; scanSeconds: number; signals: { rules: string[] }; ta?: string; now?: string };
+	settings: { baseUrl: string; scanSeconds: number; ta?: string; now?: string };
 	cursor: string | null;
-	rows: { watchlist?: WatchRow[] };
+	rows: { watchlist?: WatchRow[]; "rule-levels"?: LevelRow[] };
+	now: string;
 }
 
-/** The last scan that was swapped in: the New York date of the `now` it scanned at, and the symbols it scanned. */
-type Cursor = { date: string; symbols: string[] };
+/** The session last scanned and swapped in, the symbols it scanned, and the hits graded on it. */
+type Cursor = { date: string; symbols: string[]; hits?: Hit[] };
 
 type TaError = { symbol?: string; error: { code: string; message?: string } };
-/** The fields of ta's `new_signals` rows (`record_signal` at the pinned commit) that a trigger carries. */
-type TaSignal = { symbol: string; rule_id: string; timeframe: string; kind: string; direction: string; data_end_ms: number; price: number | null };
-type ScanReply = { skipped: true } | { skipped?: false; new_signals: TaSignal[]; errors: TaError[] };
+type Signal = TaSignal & { timeframe: string; data_end_ms: number };
+type ScanReply = { skipped: true } | { skipped?: false; new_signals: Signal[]; errors: TaError[] };
 
 const BENCHMARKS = ["QQQ", "SPY"];
 const MAX_WATCHLIST = 30;
 /** ta-trading's `normalize_symbol` at the pinned commit; `ta scan` rejects the whole call over one symbol that fails it. */
 const TA_SYMBOL = /^[A-Z]{1,10}(?:\.[A-Z]{1,2})?$/;
 /** `ta scan` needs the close plus its 15-minute data delay. */
-const AFTER_CLOSE_MS = 16 * 60_000;
+const TA_AFTER_CLOSE_MS = 16 * 60_000;
+/** The quotes feed runs 20 minutes past the close for the delayed last quotes; grading after it sees all of the day's quote hits. */
+const SCAN_AFTER_CLOSE_MS = 20 * 60_000;
+/** 200-day lines and a 14-day RSI need a little over 200 bars. */
+const BARS = 260;
 /** Bars came through and only the dividend refresh failed, so the symbol did not fail. */
 const WARNING_ONLY = "DIVIDENDS_UNAVAILABLE";
 const GUIDE = "docs/modules/stock-ta.md";
-type Problem = { id: "no-key" | "scan-failed"; text: string };
+type Problem = { id: "no-key" | "scan-failed" | "hits-file"; text: string };
 const NO_KEY: Problem = { id: "no-key", text: `没有设置 POLYGON_API_KEY，收盘后的日线扫描没跑，日线和信号不会更新：在宿主的密钥文件里加一行 POLYGON_API_KEY=<你的 Massive/Polygon 密钥>，见 ${GUIDE}` };
 const SCAN_FAILED: Problem = { id: "scan-failed", text: "收盘后的日线扫描失败了，日线和信号没更新，旧数据照用，下一拍再试；原因写在扫描记录里，问「最近一次日线扫描怎么样」就能看到" };
-const DAY_MS = 86_400_000;
+const hitsFile = (error: unknown): Problem => ({ id: "hits-file", text: `收盘命中的文件没写成（${error instanceof Error ? error.message : String(error)}），提醒和触发照发，「今天有哪些信号」暂时看不到收盘的命中；下一次扫描再写` });
 
 const NEW_YORK = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
 const newYorkDate = (ms: number): string => NEW_YORK.format(new Date(ms));
 
-/** ta's first scan of an empty database backfills two years of signals; the trading-date filter keeps those, and a missed evening's, unsent. */
-function signalNotices(signals: readonly TaSignal[], rules: readonly string[], watchlist: readonly string[], tradingDate: string) {
-	return signals
-		.filter((s) => rules.includes(s.rule_id) && watchlist.includes(s.symbol) && newYorkDate(s.data_end_ms) === tradingDate)
-		.map((s) => ({
-			id: `signal:${s.symbol}:${s.rule_id}:${s.timeframe}:${tradingDate}:${s.direction}`,
-			thread: `signal:${s.symbol}:${tradingDate}`,
-			fields: { symbol: s.symbol, rule: s.rule_id, kind: s.kind, direction: s.direction, timeframe: s.timeframe, date: tradingDate, price: s.price === null ? "—" : String(s.price) },
-		}));
+/** The session's close, from the module's own calendar: 16:00 New York time, 13:00 on an early-close day. */
+const closeOf = (date: string) => regularCloseAt(Date.parse(`${date}T17:00:00Z`));
+
+/** The latest session whose close is far enough behind `tickMs` to scan. */
+function lastSession(tickMs: number): string {
+	for (let date = newYorkDate(tickMs), back = 0; back < 10; date = shiftDate(date, -1), back++) {
+		if (isTradingDay(date) && closeOf(date) + SCAN_AFTER_CLOSE_MS <= tickMs) return date;
+	}
+	throw new Error("往前 10 天都没找到收盘过的交易日");
 }
 
 const sameSymbols = (a: readonly string[], b: readonly string[]) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
@@ -93,18 +104,6 @@ function runTa(ta: Ta, sub: string, input: unknown): Promise<unknown> {
 	});
 }
 
-/** `ta calendar` answers one date at a time, so walk back to the latest session whose close is old enough to scan. */
-async function lastSessionNow(ta: Ta, tickMs: number): Promise<string> {
-	const [y, m, d] = newYorkDate(tickMs).split("-").map(Number) as [number, number, number];
-	for (let back = 0; back < 10; back++) {
-		const date = new Date(Date.UTC(y, m - 1, d) - back * DAY_MS).toISOString().slice(0, 10);
-		const day = (await runTa(ta, "calendar", { date })) as { is_trading_day?: boolean; close?: string | null };
-		const scanAt = day.is_trading_day && day.close ? Date.parse(day.close) + AFTER_CLOSE_MS : Infinity;
-		if (scanAt <= tickMs) return new Date(scanAt).toISOString();
-	}
-	throw new Error("ta calendar 往前 10 天都没找到收盘过的交易日");
-}
-
 function taOf(settings: Input["settings"], key: string, db: string): Ta {
 	const env = { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", TA_DB_PATH: db, MASSIVE_API_KEY: key, MASSIVE_BASE_URL: settings.baseUrl };
 	const deadline = Date.now() + settings.scanSeconds * 1000;
@@ -134,18 +133,40 @@ function noteOf(listed: readonly string[], valid: readonly string[], rejected: r
 	return notes.length > 0 ? notes.join("；") : undefined;
 }
 
+/** Grades the session's own signals on the watchlist: ta's first scan of an empty database backfills two years, and those are never graded. */
+function grade(input: Input, signals: readonly Signal[], picked: readonly string[], date: string, earlier: readonly Hit[], tickMs: number, dataDir: string) {
+	let bars: Parameters<typeof close>[0]["bars"] = {};
+	try {
+		bars = readDaily(dataDir, picked, date, BARS) ?? {};
+	} catch {
+		// A database without the daily bars table leaves the rules computed from bars off; ta's own signals still grade.
+	}
+	return close({
+		date,
+		at: new Date(closeOf(date)).toISOString(),
+		symbols: picked,
+		signals: signals.filter((s) => s.timeframe === "1d" && newYorkDate(s.data_end_ms) === date),
+		bars,
+		earlier: [...readHits(dataDir, date, "quotes"), ...earlier],
+		levels: parseRuleLevels(input.rows["rule-levels"] ?? []).levels,
+		quiet: quietAt(tickMs, false),
+	});
+}
+
 export default async function scan(input: Input) {
-	const tickMs = input.settings.now === undefined ? Date.now() : Date.parse(input.settings.now);
+	const tickMs = Date.parse(input.settings.now ?? input.now);
 	const listed = listedSymbols(input.rows.watchlist ?? []);
 	const { valid, rejected } = splitByTaRule(listed);
 	const picked = valid.slice(0, MAX_WATCHLIST);
 	const symbols = [...picked, ...BENCHMARKS.filter((s) => !picked.includes(s))];
 	const last = readCursor(input.cursor);
-	if (last !== undefined && last.date === newYorkDate(tickMs) && sameSymbols(last.symbols, symbols)) return { records: [] };
+	const session = lastSession(tickMs);
+	if (last !== undefined && last.date === session && sameSymbols(last.symbols, symbols)) return { records: [] };
 
 	const key = process.env.POLYGON_API_KEY ?? "";
 	if (key === "") return { records: [], problem: NO_KEY };
-	const dir = join(process.env.PSA_MODULE_DATA ?? "", "files", "ta");
+	const dataDir = process.env.PSA_MODULE_DATA ?? "";
+	const dir = join(dataDir, "files", "ta");
 	mkdirSync(dir, { recursive: true });
 	const live = join(dir, "ta.sqlite");
 	const next = `${live}.next`;
@@ -153,10 +174,10 @@ export default async function scan(input: Input) {
 	const dropCopy = () => [next, `${next}-journal`, `${next}.scan.lock`].forEach((path) => rmSync(path, { force: true }));
 	const startedAt = new Date().toISOString();
 	const note = noteOf(listed, valid, rejected);
-	const row = (tradingDate: string, outcome: "换上" | "失败", newSignals: number, errors: string) => ({
-		id: `${tradingDate}@${startedAt}`,
+	const row = (outcome: "换上" | "失败", newSignals: number, errors: string) => ({
+		id: `${session}@${startedAt}`,
 		startedAt,
-		tradingDate,
+		tradingDate: session,
 		outcome,
 		symbols: symbols.length,
 		watchlist: listed.length,
@@ -164,12 +185,11 @@ export default async function scan(input: Input) {
 		...(errors !== "" && { errors }),
 		...(note !== undefined && { note }),
 	});
-	let tradingDate = newYorkDate(tickMs);
 	try {
 		const ta = taOf(input.settings, key, next);
 		const hadLive = existsSync(live);
-		const now = hadLive ? new Date(tickMs).toISOString() : await lastSessionNow(ta, tickMs);
-		tradingDate = newYorkDate(Date.parse(now));
+		// ta scans the New York date of `now`: a tick on a later date (a weekend, past midnight) asks for the session it missed.
+		const now = newYorkDate(tickMs) === session ? new Date(tickMs).toISOString() : new Date(closeOf(session) + TA_AFTER_CLOSE_MS).toISOString();
 		dropCopy();
 		if (hadLive) copyFileSync(live, next, constants.COPYFILE_FICLONE);
 		const reply = (await runTa(ta, "scan", { mode: "daily", symbols, now })) as ScanReply;
@@ -177,13 +197,21 @@ export default async function scan(input: Input) {
 		// ta exits 0 when the network is down, so success is read from the per-symbol errors, never the exit code.
 		const failed = new Set(reply.errors.filter((e) => e.error.code !== WARNING_ONLY).map((e) => e.symbol));
 		const swapped = symbols.some((s) => !failed.has(s));
-		const record = row(tradingDate, swapped ? "换上" : "失败", reply.new_signals.length, errorLine(reply.errors));
+		const record = row(swapped ? "换上" : "失败", reply.new_signals.length, errorLine(reply.errors));
 		if (!swapped) return { records: [record], problem: SCAN_FAILED };
 		renameSync(next, live);
-		const notices = hadLive ? signalNotices(reply.new_signals, input.settings.signals.rules, picked, tradingDate) : [];
-		return { records: [record], notices, cursor: JSON.stringify({ date: tradingDate, symbols } satisfies Cursor) };
+		const earlier = last?.date === session ? (last.hits ?? []) : [];
+		const graded = hadLive ? grade(input, reply.new_signals, picked, session, earlier, tickMs, dataDir) : { hits: [], alerts: [], notices: [] };
+		const hits = [...earlier, ...graded.hits];
+		let problem: Problem | undefined;
+		try {
+			if (hits.length > 0) writeHits(dataDir, "scan", session, hits);
+		} catch (error) {
+			problem = hitsFile(error);
+		}
+		return { records: [record], alerts: graded.alerts, notices: graded.notices, cursor: JSON.stringify({ date: session, symbols, hits } satisfies Cursor), ...(problem && { problem }) };
 	} catch (error) {
-		return { records: [row(tradingDate, "失败", 0, error instanceof Error ? error.message : String(error))], problem: SCAN_FAILED };
+		return { records: [row("失败", 0, error instanceof Error ? error.message : String(error))], problem: SCAN_FAILED };
 	} finally {
 		dropCopy();
 	}
