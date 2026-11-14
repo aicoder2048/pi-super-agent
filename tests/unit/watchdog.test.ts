@@ -19,6 +19,48 @@ test("host.log 里宿主崩溃的输出排在 Telegram 取消息失败之前：�
 	assert.equal(errorLine(log), "Error: SQLITE_CANTOPEN: unable to open database file");
 });
 
+test("带属性的错误（node:sqlite 打不开库）：报 Error 那行，不报 code 或收尾的大括号", () => {
+	const log = [
+		`${at} [host] 已启动，状态目录 /state`,
+		"file:///repo/src/host/host.ts:3",
+		'new DatabaseSync("/state/psa.db");',
+		"^",
+		"",
+		"Error: unable to open database file",
+		"    at file:///repo/src/host/host.ts:3:1",
+		"    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {",
+		"  code: 'ERR_SQLITE_ERROR',",
+		"  errcode: 14,",
+		"  errstr: 'unable to open database file'",
+		"}",
+		"",
+		"Node.js v24.11.0",
+	].join("\n");
+	assert.equal(errorLine(log), "Error: unable to open database file");
+});
+
+test("没捕获的错误带着自己的属性：报 Error 那行", () => {
+	const log = [
+		`${at} [router] Error: boom`,
+		"    at file:///repo/src/router.ts:1:11 {",
+		"  code: 'ERR_BOOM',",
+		"  detail: { a: 1 }",
+		"}",
+		"node:internal/modules/run_main:107",
+		"    triggerUncaughtException(",
+		"    ^",
+		"",
+		"Error: boom",
+		"    at file:///repo/src/router.ts:1:11 {",
+		"  code: 'ERR_BOOM',",
+		"  detail: { a: 1 }",
+		"}",
+		"",
+		"Node.js v24.11.0",
+	].join("\n");
+	assert.equal(errorLine(log), "Error: boom");
+});
+
 test("没有崩溃输出时报宿主自己的错误行（去掉时间戳），不报别的部件的失败", () => {
 	const log = [
 		`${at} [host] OCR（vision）没准备好，扫描件和图片会读不出：swift 失败`,
