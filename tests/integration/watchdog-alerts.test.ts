@@ -16,11 +16,13 @@ const heartbeatPid = (dir: string) => {
 	return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as { pid: number }).pid : undefined;
 };
 
-async function watchdog(t: TestContext, { webPort = 0, graceMs }: { webPort?: number; graceMs: number }) {
+const goodConfig = (webPort: unknown) => ({ heartbeatSeconds: 0.1, watchdog: { intervalMinutes: 0.005, staleSeconds: 0.5 }, webPort, secretsFile: "secrets.env", telegram: { allowedUserIds: [USER] } });
+
+async function watchdog(t: TestContext, { webPort = 0 as unknown, graceMs }: { webPort?: unknown; graceMs: number }) {
 	const tg = await FakeTelegram.start();
 	const dir = mkdtempSync(join(tmpdir(), "psa-wdtg-"));
 	writeFileSync(join(dir, "secrets.env"), `TELEGRAM_BOT_TOKEN=${FAKE_BOT_TOKEN}\n`);
-	writeFileSync(join(dir, "config.json"), JSON.stringify({ heartbeatSeconds: 0.1, watchdog: { intervalMinutes: 0.005, staleSeconds: 0.5 }, webPort, secretsFile: "secrets.env", telegram: { allowedUserIds: [USER] } }));
+	writeFileSync(join(dir, "config.json"), JSON.stringify(goodConfig(webPort)));
 	const wd: ChildProcess = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/watchdog/main.ts"], {
 		env: { ...process.env, PSA_STATE_DIR: dir, NODE_OPTIONS: `--import ${PRELOAD}`, PSA_E2E_TELEGRAM_URL: tg.url, PSA_RESTART_GRACE_MS: String(graceMs) },
 		stdio: ["ignore", "ignore", openSync(join(dir, "watchdog.log"), "a")],
@@ -74,4 +76,15 @@ test("真实的 Watchdog：Telegram 一直发不出去时照样把被杀的宿�
 	await until(() => tg.calls("sendMessage").length > 0, "Watchdog 试着发 ⚠️", 20_000);
 	await until(() => { const pid = heartbeatPid(dir); return !!pid && pid !== first && alive(pid); }, "新宿主写出心跳", 30_000);
 	assert.deepEqual(tg.sent.filter((m) => m.text.includes("宿主")), []);
+});
+
+test("真实的 Watchdog：config.json 读不了时不退出，手机收到一条 ⚠️；改好后接着拉起宿主", { timeout: 60_000 }, async (t) => {
+	const { tg, dir, wd } = await watchdog(t, { webPort: "x", graceMs: 1500 });
+	const broken = () => tg.sent.filter((m) => m.chatId === USER && m.text.startsWith("🔔 ⚠️ config.json 读不了"));
+	await until(() => broken().length > 0, "手机收到 config.json 的 ⚠️", 20_000).catch((error) => { throw new Error(`${error.message}\n${readFileSync(join(dir, "watchdog.log"), "utf8")}`); });
+	assert.match(broken()[0].text, /webPort/);
+	assert.equal(wd.exitCode, null, "Watchdog 还在");
+	writeFileSync(join(dir, "config.json"), JSON.stringify(goodConfig(0)));
+	await until(() => { const pid = heartbeatPid(dir); return !!pid && pid !== wd.pid && alive(pid); }, "改好后宿主写出心跳", 30_000).catch((error) => { throw new Error(`${error.message}\n${readFileSync(join(dir, "watchdog.log"), "utf8")}`); });
+	assert.equal(broken().length, 1, "坏着的这段时间只有一条");
 });
