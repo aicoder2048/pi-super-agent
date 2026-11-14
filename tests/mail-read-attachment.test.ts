@@ -18,7 +18,7 @@ import { runModuleCodeAsync } from "../src/modules/run-code.ts";
 import { scanPackage } from "../src/modules/validate.ts";
 import { startFakeGoogle } from "./helpers/fake-google.ts";
 import { FakeInbox, type Letter } from "./helpers/fake-gmail.ts";
-import { formPdf, textPdf } from "./helpers/text-pdf.ts";
+import { brokenImagePdf, formPdf, textPdf } from "./helpers/text-pdf.ts";
 import { servedAsHost } from "./helpers/fakes.ts";
 import { createOcr } from "../src/ocr/ocr.ts";
 import type { Ocr } from "../src/ocr/result.ts";
@@ -328,6 +328,14 @@ test("读附件：扫描图包在 Form XObject 里的 PDF（合并、另存、�
 	assert.ok(reply.ok, JSON.stringify(reply));
 	assert.match((reply.output as { ocr?: { file: string } }).ocr?.file ?? "", /^files\/ocr-[0-9a-f]{16}\.pdf$/, JSON.stringify(reply.output));
 	assert.deepEqual(await w.call({ messageId: "m-1", partId: "2" }), { ok: true, output: { name: "loop.pdf", type: "application/pdf", pages: 1, text: "", truncated: false } });
+});
+
+test("读附件：某页的图片表坏了（指向不存在的对象、条目是 null、整个是数组），那页只是不算扫描件，别的页的字照常读出来", async (t) => {
+	const broken = { dangling: "<< /Im9 99 0 R >>", "null-entry": "<< /Im9 null >>", array: "[1 2]" };
+	const w = await attachmentWorld(t, [ann("m-1", Object.entries(broken).map(([name, xobject]) => file(`${name}.pdf`, "application/pdf", brokenImagePdf("Fasting glucose 5.6 mmol/L", xobject))))]);
+	for (const [i, name] of Object.keys(broken).entries()) {
+		assert.deepEqual(await w.call({ messageId: "m-1", partId: String(i + 1) }), { ok: true, output: { name: `${name}.pdf`, type: "application/pdf", pages: 2, text: "Fasting glucose 5.6 mmol/L", truncated: false } }, name);
+	}
 });
 
 test("读附件：png、jpg、heic、tiff、webp、bmp 图片附件交给宿主 OCR；通用类型按扩展名认", async (t) => {
