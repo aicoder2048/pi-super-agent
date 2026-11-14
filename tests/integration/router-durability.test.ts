@@ -200,10 +200,10 @@ async function chatRig(t: test.TestContext, routerOptions: object = {}) {
 
 // Opens a ticket per line and relays Worker reports, naming the cards each reply answers. `relayOne` relays the
 // oldest report of a turn, `relayLast` only the latest, `combine` all of them in one reply. `omit` leaves `answers`
-// out and, when a reply is refused, sends it again naming its cards. `failOnceRelayed` makes every model call fail
+// out and, when a reply is refused, sends it again naming its cards. `emptyAnswers` sends `answers: []`. `failOnceRelayed` makes every model call fail
 // once that many relays reached the user.
 async function taskRig(t: test.TestContext, script: WorkerScript, options: { stateDir?: string; retry?: number[] } = {}) {
-	const st = { failing: false, failNext: false, relayOne: false, relayLast: false, combine: false, failAfterLine: false, omit: false, failOnceRelayed: 0 };
+	const st = { failing: false, failNext: false, relayOne: false, relayLast: false, combine: false, failAfterLine: false, omit: false, emptyAnswers: false, failOnceRelayed: 0 };
 	const tg = await FakeTelegram.start();
 	t.after(() => tg.close());
 	const pending: string[] = [];
@@ -224,7 +224,7 @@ async function taskRig(t: test.TestContext, script: WorkerScript, options: { sta
 		const take = st.relayOne ? pending.splice(0, 1) : st.relayLast ? pending.splice(0).slice(-1) : pending.splice(0);
 		const relay = (cards: string[]) => {
 			const spec = { name: "reply", args: { text: `转达：${cards.map((c) => c.split("\n")[1]).join("＋")}`, cause: ids(cards[0]!, "tkt") }, cards };
-			return st.omit ? spec : named(spec);
+			return st.emptyAnswers ? { ...spec, args: { ...spec.args, answers: [] } } : st.omit ? spec : named(spec);
 		};
 		if (st.combine && take.length) out.push(relay(take));
 		else for (const c of take) out.push(relay([c]));
@@ -373,6 +373,20 @@ test("T1：转达了任务报告，同一轮出错，清屏：只转达一次", 
 	r.st.failing = r.st.failNext = false;
 	await sleep(3000);
 	assert.equal(r.count("转达"), 1);
+});
+
+test("T1c：转达任务报告时 answers 写了空数组，同一轮出错，清屏：当没写 answers，只转达一次", async (t) => {
+	const r = await taskRig(t, (w) => {
+		w.report({ status: "ready", summary: "完成了" });
+		w.settle();
+	});
+	r.st.emptyAnswers = r.st.failNext = true;
+	r.host.say("做事");
+	await until(() => erroredOut(r.session()), "转达之后出错", 8000);
+	r.host.clearConversation();
+	r.st.failing = r.st.failNext = false;
+	await sleep(3000);
+	assert.equal(r.count("转达"), 1, "2 就是 answers: [] 让那张卡片又送来一次");
 });
 
 test("T1b：转达了任务报告，同一轮出错，重试：只转达一次", async (t) => {

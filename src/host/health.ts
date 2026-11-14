@@ -79,11 +79,25 @@ export const ADVICE: Readonly<Record<Area, Record<Cause, string>>> = {
 	},
 };
 
+// Every pattern below then runs on a bounded text, however long the error a feed printed.
+const INPUT_MAX = 2000;
+
+// A secret's name ends in one of these words: api_key, TELEGRAM_BOT_TOKEN, clientSecret, x-api-key. The word must start
+// a part of the name (after a separator or a lower-to-upper case change), so monkey and turkey are not names of secrets.
+// apikey, accesstoken and the like are written as one word often enough to list. No `i` flag: the case change is the cue.
+const WORD = "(?:KEY|[Kk]ey|TOKEN|[Tt]oken|SECRET|[Ss]ecret|PASSWORD|[Pp]assword)";
+const GLUED = ["api", "access", "auth", "refresh", "csrf", "bot", "client"].flatMap((p) => [p, p.toUpperCase()]).join("|");
+const SECRET_NAME = String.raw`[\w-]{0,64}(?:(?<![A-Za-z0-9])|(?<=[a-z0-9])(?=[A-Z])|(?<=${GLUED}))${WORD}`;
+const VALUE = String.raw`(?:"(?:[^"\\]|\\.)*"?|'[^']*'?)`;
+
 const SECRETS: readonly [RegExp, string][] = [
-	[/(\b(?:api[_-]?key|apikey|key|token|access_token|refresh_token|secret|password|client_secret)=)[^&\s]+/gi, "$1…"],
-	[/("(?:api[_-]?key|apikey|token|access_token|refresh_token|secret|password|client_secret)"\s*:\s*")[^"]*/gi, "$1…"],
-	[/\b(x-api-key\s*:\s*)\S+/gi, "$1…"],
+	[/-----BEGIN [A-Z0-9 ]+-----.*?(?:-----END [A-Z0-9 ]+-----|$)/g, "…"],
+	[/(\b(?:set-)?cookie\s*:\s*)[^;\s]+(?:;\s*[^;\s]+)*/gi, "$1…"],
+	[new RegExp(String.raw`("${SECRET_NAME}"\s*:\s*")(?:[^"\\]|\\.)*`, "g"), "$1…"],
+	[new RegExp(String.raw`(\b${SECRET_NAME}\s*=\s*)(?:${VALUE}|[^&\s]+)`, "g"), "$1…"],
+	[new RegExp(String.raw`(\b${SECRET_NAME}\s*:\s*)(?:${VALUE}|[^\s"]+)`, "g"), "$1…"],
 	[/\bbot(\d+):[\w-]+/g, "bot$1:…"],
+	[/(?<!\w)(\d{6,12}):[\w-]{30,}/g, "$1:…"],
 	[/(\/\/[^/\s:@]+:)[^@\s/]+@/g, "$1…@"],
 	[/\b(Bearer|Basic)\s+[\w.~+/=-]+/gi, "$1 …"],
 	[/\b(sk|pk|rk)-[\w-]{8,}/g, "$1-…"],
@@ -91,7 +105,7 @@ const SECRETS: readonly [RegExp, string][] = [
 ];
 
 export function scrub(error: string): string {
-	let text = error.replace(/\s+/g, " ").trim();
+	let text = error.slice(0, INPUT_MAX).replace(/\s+/g, " ").trim();
 	for (const [pattern, replacement] of SECRETS) text = text.replace(pattern, replacement);
 	return text.length <= ERROR_MAX ? text : `${text.slice(0, ERROR_MAX - 1)}…`;
 }

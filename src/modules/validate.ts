@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { EVERY, everyMs } from "./connectors/timer.ts";
 import { feedInput, intoOf, nothingHeld, parseCollected } from "./feed-runner.ts";
-import { linkVenvs, lockOf, PY_DIR, venvInstalled } from "./files.ts";
+import { linkVenvs, lockOf, PY_DIR, venvDir, venvInstalled } from "./files.ts";
 import { fixtureSecrets, runModuleCode, runModuleCodeAsync, type CodeReply, type CodeSite, type RunOptions, type Secrets } from "./run-code.ts";
 import { secretRefusal } from "./secret-owners.ts";
 import { CONNECTORS, DATA_CLASSES, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS, TOOL_PORTS } from "./manifest.ts";
@@ -541,10 +541,12 @@ function scratchData(packageDir: string, module: string, realDataDir: string | u
 	if (realDataDir !== undefined) linkVenvs(realDataDir, dir);
 	const lock = lockOf(packageDir);
 	const noVenv = lock !== undefined && (realDataDir === undefined || !venvInstalled(realDataDir, lock));
+	// Only a failure that names the missing venv's path is about it; a pure TypeScript case can fail on its own.
+	const venvName = lock === undefined ? undefined : basename(venvDir(dir, lock));
 	return {
 		dir,
 		drop: () => rmSync(dir, { recursive: true, force: true }),
-		explain: (problem) => (noVenv ? { ...problem, reason: `${problem.reason} (the Python environment is not installed: run \`just module setup ${module}\` first)` } : problem),
+		explain: (problem) => (noVenv && problem.reason.includes(venvName!) ? { ...problem, reason: `${problem.reason} (the Python environment is not installed: run \`just module setup ${module}\` first)` } : problem),
 	};
 }
 

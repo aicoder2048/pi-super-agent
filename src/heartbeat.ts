@@ -35,11 +35,18 @@ export function readHeartbeat(stateDir: string): Heartbeat | undefined {
 
 export const HOST_ENTRY = "src/host/main.ts";
 
+const PS_TRIES = 3;
+
+// ps exits 1 when the pid is gone. Killed by a signal instead, it says nothing about the pid: a terminal Ctrl+C reaches
+// the caller's whole process group, and "not the host" would make the Watchdog restart a running one. Its own group
+// keeps ps out of that; the retry covers a signal that lands before ps has left the caller's group.
 function commandOf(pid: number): string | undefined {
-	try {
-		return execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" }).trim();
-	} catch {
-		return undefined;
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", detached: true }).trim();
+		} catch (error) {
+			if ((error as { signal?: string | null }).signal == null || attempt === PS_TRIES) return undefined;
+		}
 	}
 }
 

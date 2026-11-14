@@ -4,20 +4,52 @@ import { HOST_ENTRY, hostPid } from "../heartbeat.ts";
 import { constants } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig, type HostConfig } from "../host/config.ts";
-import { exitOnConfigError } from "../config-error.ts";
+import { loadConfig, loadPhoneConfig, type HostConfig } from "../host/config.ts";
+import { ConfigError } from "../config-error.ts";
+import { scrub } from "../host/health.ts";
 import { telegramOptions } from "../host/telegram/options.ts";
 import { Phone } from "./phone.ts";
 import { errorLine, Watchdog } from "./watchdog.ts";
 
-let config: HostConfig;
-try {
-	config = loadConfig();
-} catch (error) {
-	exitOnConfigError(error);
-}
 const log = (line: string) => console.error(`${new Date().toISOString()} ${line}`);
 const repo = fileURLToPath(new URL("../..", import.meta.url));
+const CONFIG_RETRY_FIRST_MS = 5_000;
+const CONFIG_RETRY_MAX_MS = 5 * 60_000;
+
+// A Watchdog that cannot reach the phone must still restart the host, so a bad Telegram setup is logged, not fatal.
+function phone(read: () => Pick<HostConfig, "stateDir" | "secretsFile" | "telegram">): Phone | undefined {
+	try {
+		const telegram = telegramOptions(read(), process.env, log);
+		return telegram && new Phone({ api: telegram.api, chats: [...telegram.allowedUserIds], log });
+	} catch (error) {
+		log(`[watchdog] 没法发到 Telegram：${(error as Error).message}`);
+		return undefined;
+	}
+}
+
+// Exiting on a broken config.json would only make launchd start the Watchdog again and again, silently. It reads the
+// file again with backoff instead, and tells the phone once if the token and the allowlist can still be read.
+async function readConfig(): Promise<HostConfig> {
+	let waitMs = CONFIG_RETRY_FIRST_MS;
+	let told = false;
+	for (;;) {
+		try {
+			return loadConfig();
+		} catch (error) {
+			if (!(error instanceof ConfigError)) throw error;
+			const reason = scrub(error.message);
+			log(`[watchdog] config.json 读不了，${waitMs / 1000} 秒后再读：${error.message}`);
+			if (!told) {
+				told = true;
+				phone(() => loadPhoneConfig())?.tell(`⚠️ config.json 读不了：${reason}。改好后看门狗会自己拉起宿主`, false);
+			}
+			await new Promise((r) => setTimeout(r, waitMs));
+			waitMs = Math.min(waitMs * 2, CONFIG_RETRY_MAX_MS);
+		}
+	}
+}
+
+const config = await readConfig();
 const intervalMs = config.watchdog.intervalMinutes * 60_000;
 const HOST_STOP_MS = 15_000;
 
@@ -33,17 +65,6 @@ function openHostLog(): number {
 	const fd = openSync(join(config.stateDir, "host.log"), "a", 0o600);
 	if (fstatSync(fd).mode & 0o077) fchmodSync(fd, 0o600);
 	return fd;
-}
-
-// A Watchdog that cannot reach the phone must still restart the host, so a bad Telegram setup is logged, not fatal.
-function phone(): Phone | undefined {
-	try {
-		const telegram = telegramOptions(config, process.env, log);
-		return telegram && new Phone({ api: telegram.api, chats: [...telegram.allowedUserIds], log });
-	} catch (error) {
-		log(`[watchdog] 宿主停了没法发到 Telegram：${(error as Error).message}`);
-		return undefined;
-	}
 }
 
 let logOffsetAtStart = 0;
@@ -78,7 +99,7 @@ function startHost(): void {
 	log(`[watchdog] 已拉起宿主，pid ${child.pid}，日志 ${join(config.stateDir, "host.log")}`);
 }
 
-const toPhone = phone();
+const toPhone = phone(() => config);
 const watchdog = new Watchdog({
 	stateDir: config.stateDir,
 	clock: { now: () => Date.now() },

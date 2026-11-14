@@ -24,6 +24,9 @@ const HEAD_LINES = 5;
 const CODE = "\u0000";
 const LINK = "\u0001";
 
+// The URL stops at a code placeholder, which would put a tag inside href, and keeps one level of balanced parentheses: Foo_(bar).
+const LINK_MARKDOWN = /\[([^\]]+)\]\((https?:\/\/(?:[^\s()\u0000]|\([^\s()\u0000]*\))+)\)/g;
+
 export const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /** What the phone shows for an HTML message: Telegram counts its length limit on this. */
@@ -104,7 +107,7 @@ function inline(text: string): string {
 	const codes: string[] = [];
 	const links: string[] = [];
 	const withCode = text.replace(/`([^`]+)`/g, (_, code: string) => `${CODE}${codes.push(code) - 1}${CODE}`);
-	const withLinks = withCode.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label: string, url: string) => `${LINK}${links.push(`<a href="${escapeHtml(url)}">${emphasis(escapeHtml(label))}</a>`) - 1}${LINK}`);
+	const withLinks = withCode.replace(LINK_MARKDOWN, (_, label: string, url: string) => `${LINK}${links.push(`<a href="${escapeHtml(url)}">${emphasis(escapeHtml(label))}</a>`) - 1}${LINK}`);
 	return emphasis(escapeHtml(withLinks))
 		.replace(new RegExp(`${LINK}(\\d+)${LINK}`, "g"), (_, n: string) => links[Number(n)])
 		.replace(new RegExp(`${CODE}(\\d+)${CODE}`, "g"), (_, n: string) => `<code>${escapeHtml(codes[Number(n)])}</code>`);

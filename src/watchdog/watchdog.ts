@@ -6,7 +6,7 @@ import type { Clock, KernelConfig, Stall, SystemProblem } from "../kernel/types.
 import { liveHeartbeat, readHeartbeat } from "../heartbeat.ts";
 import { scrub } from "../host/health.ts";
 import { dropTrigger } from "../sources/generic.ts";
-import { readOutage, writeOutage } from "./outage.ts";
+import { readOutage, writeOutage, type Outage } from "./outage.ts";
 
 export const WATCHDOG_SOURCE = "watchdog";
 
@@ -84,10 +84,23 @@ const hostFailingText = (starts: number, error: string | undefined) =>
 
 const hostBackText = (downMs: number) => `✅ 宿主恢复了，停了${downMs < 60_000 ? "" : "约 "}${minutes(downMs)}`;
 
-/** The line that says why the host stopped: the last one naming an error, else the last line, such as a config error. */
+const STAMP = /^\d{4}-\d\d-\d\dT[\d:.]+Z /;
+const TAGGED = /^\[[\w-]+\]/;
+const ERRORISH = /error|错误|失败/i;
+// Node's crash output around the message: source location, caret, stack frames, version, warnings, and the error's
+// own properties, printed indented under it up to a closing brace (code: 'ERR_SQLITE_ERROR', errcode: 14, }).
+const CRASH_NOISE = /^(?:file:\/\/|\s*at |\s*\^+$|Node\.js v|\(node:\d+\)|\s+\[?[\w$]+\]?: |\s*[}\]],?$)/;
+
+/**
+ * The line that says why the host stopped. Its own log lines carry a timestamp and a [tag]; what it prints as it dies
+ * (a config error, an uncaught exception) carries neither, so that comes first. Next a [host] line naming an error.
+ * A failing part such as [telegram] is not the reason the host stopped, so nothing is better than that guess.
+ */
 export function errorLine(log: string): string | undefined {
-	const lines = log.split("\n").map((l) => l.trim()).filter(Boolean);
-	const line = lines.findLast((l) => /error|错误|失败/i.test(l)) ?? lines.at(-1);
+	const raw = log.split("\n").map((l) => l.trimEnd().replace(STAMP, "")).filter(Boolean);
+	const lines = raw.map((l) => l.trim());
+	const fatal = raw.filter((l) => !TAGGED.test(l) && !CRASH_NOISE.test(l)).map((l) => l.trim());
+	const line = fatal.findLast((l) => ERRORISH.test(l)) ?? fatal.at(-1) ?? lines.findLast((l) => l.startsWith("[host]") && ERRORISH.test(l));
 	return line === undefined ? undefined : scrub(line);
 }
 
@@ -109,13 +122,22 @@ export class Watchdog {
 		this.#o.tell?.(text, silent);
 	}
 
+	// A full disk or a bad permission must not stop the restart or the ⚠️; the page only loses the outage record.
+	#recordOutage(outage: Outage): void {
+		try {
+			writeOutage(this.#o.stateDir, outage);
+		} catch (error) {
+			this.#o.log?.(`[watchdog] outage.json 写不进去：${scrub((error as Error).message)}`);
+		}
+	}
+
 	/** One ⚠️ per outage and one ✅ when it ends, and only for an outage the user was told about. */
 	#watchHost(now: number, beating: boolean): void {
 		const host = this.#host;
 		if (beating) {
 			if (host.kind === "down" && host.told) {
 				const endedAt = host.startedAt ?? now;
-				writeOutage(this.#o.stateDir, { since: host.since, endedAt });
+				this.#recordOutage({ since: host.since, endedAt });
 				this.#tell(hostBackText(endedAt - host.since), true);
 			}
 			this.#host = { kind: "up" };
@@ -129,7 +151,7 @@ export class Watchdog {
 		const lastBeat = readHeartbeat(this.#o.stateDir)?.at;
 		const since = lastBeat ?? now;
 		this.#host = { kind: "down", since, told: true, starts: 0, startedAt: undefined };
-		writeOutage(this.#o.stateDir, { since });
+		this.#recordOutage({ since });
 		this.#tell(hostDownText(lastBeat === undefined ? undefined : now - lastBeat), false);
 	}
 
@@ -139,7 +161,7 @@ export class Watchdog {
 		if (host.kind !== "down") return;
 		if (!host.told && host.starts >= FAILED_STARTS_BEFORE_ALARM) {
 			host.told = true;
-			writeOutage(this.#o.stateDir, { since: host.since });
+			this.#recordOutage({ since: host.since });
 			this.#tell(hostFailingText(host.starts, this.#o.lastError?.()), false);
 		}
 		host.starts++;

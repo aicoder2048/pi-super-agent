@@ -70,6 +70,21 @@ test("回复带通知，转过来的话静默，说明带通知", () => {
 	assert.deepEqual(render({ kind: "note", text: NOTES.help }), { text: `⚙️ ${NOTES.help}`, plain: `⚙️ ${NOTES.help}`, keyboard: null, silent: false });
 });
 
+const reply = (text: string) => render({ kind: "line", role: "router", text, silent: false }).text;
+
+test("链接网址里夹着行内代码时不拼进 href：标签照样成对，Telegram 收得下", () => {
+	assert.equal(reply("看 [文档](https://example.com/`v2`/x)"), "🧭 <b>幕僚长</b>：看 [文档](https://example.com/<code>v2</code>/x)");
+});
+
+test("网址里带成对括号的链接整个保留，不在括号处截断", () => {
+	assert.equal(reply("见 [Foo](https://en.wikipedia.org/wiki/Foo_(bar)) 一条"), '🧭 <b>幕僚长</b>：见 <a href="https://en.wikipedia.org/wiki/Foo_(bar)">Foo</a> 一条');
+	assert.equal(reply("（见 [维基](https://en.wikipedia.org/wiki/Foo)）"), '🧭 <b>幕僚长</b>：（见 <a href="https://en.wikipedia.org/wiki/Foo">维基</a>）');
+});
+
+test("幕僚长的回复是空的：不只发一个身份标记，写明这次没有回复文字", () => {
+	for (const text of ["", "  \n\n "]) assert.equal(render({ kind: "line", role: "router", text, silent: false }).plain, "🧭 幕僚长：（这次没有回复文字）");
+});
+
 test("欠着说明时，文字消息第一行是那句说明；单独的说明只有这一句；截断时说明还在", () => {
 	assert.equal(render({ kind: "line", role: "system", text: "收到。", silent: false }, true).plain, `⚙️ ${NOTES.missed}\n⚙️ 收到。`);
 	assert.equal(render({ kind: "note", text: "" }, true).plain, `⚙️ ${NOTES.missed}`);

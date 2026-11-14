@@ -119,7 +119,7 @@ test("终端 Ctrl+C：Watchdog 不停别人启动的宿主", async (t) => {
 	process.kill(-wd.pid!, "SIGINT");
 	assert.equal(await exited, 0, stderr);
 	assert.match(stderr, /\[watchdog\] 已停止/);
-	assert.ok(alive(host.pid!), "使用者自己启动的宿主不能被停掉");
+	assert.ok(alive(host.pid!), `使用者自己启动的宿主不能被停掉\n${stderr}`);
 });
 
 test("hostPid 只认心跳里命令行是宿主入口的进程：没有心跳、无关进程、自己都不算", async (t) => {
@@ -133,4 +133,23 @@ test("hostPid 只认心跳里命令行是宿主入口的进程：没有心跳、
 	writeFileSync(join(dir, "heartbeat.json"), JSON.stringify({ pid: host.pid, at: Date.now() }));
 	await until(() => hostPid(dir) === host.pid, "宿主进程被认出", 5000);
 	assert.equal(hostPid(dir, host.pid), undefined, "调用者自己");
+});
+
+test("终端的 Ctrl+C 打到 Watchdog 的进程组时，它查进程用的 ps 不跟着被打断，宿主照样认得出", async (t) => {
+	const dir = stateDir();
+	const host = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", "src/host/main.ts"], { stdio: "ignore" });
+	t.after(cleanup(dir, host));
+	writeFileSync(join(dir, "heartbeat.json"), JSON.stringify({ pid: host.pid, at: Date.now() }));
+	await until(() => hostPid(dir) === host.pid, "宿主进程被认出", 5000);
+	const probe = `process.on("SIGINT", () => {}); const { hostPid } = await import("./src/heartbeat.ts"); console.log("ready"); await new Promise((r) => setTimeout(r, 50)); let missed = 0; for (let i = 0; i < 150; i++) if (hostPid(${JSON.stringify(dir)}) === undefined) missed++; console.log(missed);`;
+	const child = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", "--input-type=module", "-e", probe], { stdio: ["ignore", "pipe", "inherit"], detached: true });
+	t.after(() => { try { process.kill(-child.pid!, "SIGKILL"); } catch {} });
+	let out = "";
+	child.stdout!.setEncoding("utf8").on("data", (chunk: string) => (out += chunk));
+	const exited = new Promise((r) => child.on("exit", r));
+	await until(() => out.includes("ready"), "子进程装好了 SIGINT 处理", 10_000);
+	const ctrlC = setInterval(() => { try { process.kill(-child.pid!, "SIGINT"); } catch {} }, 3);
+	await exited;
+	clearInterval(ctrlC);
+	assert.equal(out.replace("ready", "").trim(), "0", "Ctrl+C 打断 ps 时把活着的宿主当成了没有");
 });

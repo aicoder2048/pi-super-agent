@@ -201,12 +201,18 @@ export function render(body: Exclude<OutboundBody, { kind: "received" }>, note =
 	const missed = note ? `${MARK.system} ${NOTES.missed}` : "";
 	const silent = body.kind === "line" && body.silent;
 	const extra = { ...(body.kind === "line" && body.noPreview && { noPreview: true as const }), ...replyTo };
-	if (body.kind === "line" && body.role === "router") return { ...formatted(replyHtml(missed ? `${escapeHtml(missed)}\n` : "", `${MARK.router} ${dot}<b>幕僚长</b>`, markdownBlocks(body.text))), keyboard: null, silent, ...extra };
+	if (body.kind === "line" && body.role === "router") return { ...formatted(replyHtml(missed ? `${escapeHtml(missed)}\n` : "", `${MARK.router} ${dot}<b>幕僚长</b>`, replyBlocks(body.text))), keyboard: null, silent, ...extra };
 	// A line queued before lines had a role has none.
 	const mark = MARK[(body.kind === "line" && body.role) || "system"];
 	const own = body.text ? `${mark} ${dot}${body.text}` : "";
 	return { ...formatted(escapeHtml(fitMessage([missed, own].filter(Boolean).join("\n")))), keyboard: null, silent, ...extra };
 }
+
+// A reply with no text would go out as the speaker's name alone.
+const replyBlocks = (text: string) => {
+	const blocks = markdownBlocks(text);
+	return blocks.length ? blocks : markdownBlocks("（这次没有回复文字）");
+};
 
 const formatted = (html: string) => ({ text: html, plain: visibleText(html) });
 

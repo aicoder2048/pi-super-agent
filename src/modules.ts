@@ -284,21 +284,28 @@ export function packageModule(dir: string, name: string): LoadedModule {
 
 const onRoster = (module: LoadedModule) => module.manifest.description !== undefined;
 
+// A switch left for one of these does nothing, so the host starts anyway. A name never seen is still refused: it may be
+// a typo for a module the user meant to turn off.
+const DELETED_MODULES: ReadonlySet<string> = new Set(["toy-market"]);
+
 export class Modules {
 	readonly found: LoadedModule[];
 	readonly packages: readonly FoundPackage[];
 	readonly modules: LoadedModule[];
 	readonly userRules: ScopedRule[];
 	readonly skippedUserRules: string[];
+	/** config.json switches for modules that were deleted: ignored, with a line telling the user to remove them. */
+	readonly switchNotes: string[];
 	readonly book: DomainBook;
 	readonly #scopes: Map<string, string[]>;
 
-	constructor(found: LoadedModule[], userRules: ScopedRule[], skippedUserRules: string[], packages: readonly FoundPackage[] = [], serving = found.filter((m) => m.state.enabled)) {
+	constructor(found: LoadedModule[], userRules: ScopedRule[], skippedUserRules: string[], packages: readonly FoundPackage[] = [], switchNotes: string[] = [], serving = found.filter((m) => m.state.enabled)) {
 		this.found = found;
 		this.packages = packages;
 		this.modules = serving;
 		this.userRules = userRules;
 		this.skippedUserRules = skippedUserRules;
+		this.switchNotes = switchNotes;
 		this.book = new Map(this.modules.map((m) => [m.name, { team: m.team?.name ?? null, onRoster: onRoster(m), ...(m.digest && { digest: m.digest }), ...(m.manifest.title && { title: m.manifest.title }), ...(m.feeds?.some((f) => f.private) && { privateFeed: true as const }) }]));
 		this.#scopes = new Map(this.allRules().map((r) => [r.id, r.sources]));
 	}
@@ -327,18 +334,20 @@ export class Modules {
 			if (first) throw new ConfigError(`${first.dir}：模块重名：${module.name} 也定义在 ${module.dir}。给其中一个文件夹改名（module.json 的 name 跟着改），或删掉一个`);
 		}
 		const names = all.map((m) => m.name);
-		const unknown = Object.keys(switches.values).find((name) => !names.includes(name));
+		const notFound = Object.keys(switches.values).filter((name) => !names.includes(name));
+		const switchNotes = notFound.filter((name) => DELETED_MODULES.has(name)).map((name) => `${switches.file}：${name} 已删除，请删掉 config.json 里的 modules.${name}；这一项先不管`);
+		const unknown = notFound.find((name) => !DELETED_MODULES.has(name));
 		if (unknown === "us-market") throw new ConfigError(`${switches.file}：us-market 已经退役，删掉 modules.us-market`);
 		if (unknown) throw new ConfigError(`${switches.file}：modules.${unknown} 不是已发现的模块，已发现：${names.join("、") || "（没有）"}`);
 		const parsed = userRulesFile && existsSync(userRulesFile) ? parseRules(userRulesFile, USER_NAMESPACE, readFileSync(userRulesFile, "utf8")) : [];
 		const userRules = parsed.filter((r): r is ScopedRule => !!r.sources?.length);
 		const skipped = parsed.filter((r) => !r.sources?.length).map((r) => r.id);
-		return new Modules(modules, userRules, skipped, packages);
+		return new Modules(modules, userRules, skipped, packages, switchNotes);
 	}
 
 	/** The same load serving exactly `modules`, in their order. */
 	serve(modules: LoadedModule[]): Modules {
-		return new Modules(this.found, this.userRules, this.skippedUserRules, this.packages, modules);
+		return new Modules(this.found, this.userRules, this.skippedUserRules, this.packages, this.switchNotes, modules);
 	}
 
 	allRules(): ScopedRule[] {

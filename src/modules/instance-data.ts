@@ -216,12 +216,19 @@ function watchBeforeWrite(db: DatabaseSync, { name, collection }: DataComponent)
 	}
 }
 
+// The host, a feed and a module's own code can each hold data.db for a moment; wait for them instead of failing at once.
+const openData = (path: string) => {
+	const db = new DatabaseSync(path);
+	db.exec("PRAGMA busy_timeout = 5000");
+	return db;
+};
+
 export function instanceData(stateDir: string): InstanceData & ModuleRows & FeedStates {
 	const pathOf = (module: ModuleName) => join(moduleDataDir(stateDir, module), "data.db");
 	const withRows = <T>(module: ModuleName, components: readonly Component[], access: { who: string; collection: string; op: Op }, use: (db: DatabaseSync, stored: Stored) => T): T => {
 		const ensured = data.migrate(module, components);
 		if (!ensured.ok) throw new Error(ensured.reason);
-		const db = new DatabaseSync(pathOf(module));
+		const db = openData(pathOf(module));
 		try {
 			db.exec(`CREATE TABLE IF NOT EXISTS _access (at TEXT NOT NULL, who TEXT NOT NULL, collection TEXT NOT NULL, op TEXT NOT NULL, rows INTEGER NOT NULL, outcome TEXT NOT NULL); ${CONDITIONS}; ${FEED_TABLES}`);
 			return use(db, readStored(db));
@@ -237,7 +244,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 
 	const withFeeds = <T>(module: ModuleName, use: (db: DatabaseSync) => T): T => {
 		mkdirSync(moduleDataDir(stateDir, module), { recursive: true });
-		const db = new DatabaseSync(pathOf(module));
+		const db = openData(pathOf(module));
 		try {
 			db.exec(FEED_TABLES);
 			return use(db);
@@ -251,7 +258,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 			const path = pathOf(module);
 			if (!existsSync(path)) return [];
 			try {
-				const db = new DatabaseSync(path);
+				const db = openData(path);
 				try {
 					return problemsFor(readStored(db), components);
 				} finally {
@@ -267,7 +274,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 			let db: DatabaseSync | undefined;
 			try {
 				mkdirSync(join(dirname(path), "blobs"), { recursive: true });
-				db = new DatabaseSync(path);
+				db = openData(path);
 				const before = readStored(db);
 				const problems = problemsFor(before, components);
 				if (problems.length > 0) return { ok: false, reason: problemText(problems) };
@@ -410,7 +417,10 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 				const { condition: { when, ...params }, key, note } = parsed;
 				const kept: SetCondition = { id: id ?? `cnd_${randomUUID()}`, collection: name, key, condition: parsed.condition, ...(note !== undefined && { note }), setAt: new Date().toISOString() };
 				db.prepare("INSERT OR REPLACE INTO _conditions VALUES (?, ?, ?, ?, ?, ?, ?)").run(kept.id, name, key, when, JSON.stringify(params), kept.setAt, note ?? null);
-				return answer({ condition: kept, receipt: receiptText(before ? "已改" : "已设", collection.title, kept) }, "write", 1);
+				// A condition only fires on a new row for its key: with none yet, say so, since the feed may never fetch it (a symbol off the watchlist).
+				const seen = db.prepare(`SELECT 1 FROM ${quote(name)} WHERE ${quote(collection.watch.key)} = ? LIMIT 1`).get(key) !== undefined;
+				const receipt = `${receiptText(before ? "已改" : "已设", collection.title, kept)}${seen ? "" : `；${collection.title}里还没有 ${key} 的数据，要等来源写进它的数据才会提醒`}`;
+				return answer({ condition: kept, receipt }, "write", 1);
 			});
 		},
 	};

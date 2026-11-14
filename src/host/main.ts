@@ -20,6 +20,7 @@ async function main(): Promise<void> {
 	const off = [...discovered.found, ...discovered.packages.filter((p) => p.scan.ok)].map((m) => m.name).filter((name) => !modules.book.has(name));
 	log(`[host] 模块：${modules.modules.map((m) => (m.team ? `${m.name}（${m.team.name}）` : m.name)).join(", ") || "无"}${off.length ? `；停用 ${off.join(", ")}` : ""}；规则 ${modules.allRules().length} 条`);
 	for (const id of modules.skippedUserRules) log(`[host] 规则 ${id} 没写「来源:」，不生效`);
+	for (const note of modules.switchNotes) log(`[host] ${note}`);
 
 	const options = createHostOptions({ config, modules: live, modelRuntime: await ModelRuntime.create(), log });
 	const host = await Host.start(options);

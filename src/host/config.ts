@@ -151,6 +151,14 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 	};
 }
 
+/** What the Watchdog needs to reach the phone, read from a config.json whose other fields may be broken. Throws when these are. */
+export function loadPhoneConfig(stateDir = defaultStateDir()): Pick<HostConfig, "stateDir" | "secretsFile" | "telegram"> {
+	const file = join(stateDir, "config.json");
+	const raw = existsSync(file) ? readJsonFile<Record<string, any>>(file) : {};
+	const telegram = raw.telegram === undefined ? undefined : parseTelegram(raw.telegram, file);
+	return { stateDir, secretsFile: parseSecretsFile(raw.secretsFile, stateDir, file), ...(telegram && { telegram }) };
+}
+
 function parseHealth(raw: unknown, file: string): HealthConfig {
 	if (raw === undefined) return { ...HEALTH_DEFAULTS };
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new ConfigError(`${file}：health 要是一个对象，例如 {"modelFailuresBeforeAlarm": 2, "feedFailuresBeforeAlarm": 3}`);
