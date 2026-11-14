@@ -280,6 +280,22 @@ test("just module check：venv 还没装时，用例失败的那一行叫人先�
 	assert.match(run.stdout, /tools\/py\/cases\.json: .*just module setup alpha/);
 });
 
+test("just module check：venv 还没装时，不用 Python 的工具用例失败不叫人跑 setup", (t) => {
+	const root = scratch(t);
+	const pure = {
+		"tools/pure/tool.json": JSON.stringify({ title: "pure", description: "no python", input: { x: { type: "number", title: "x" } }, output: { out: { type: "text", title: "out" } }, effect: "read" }),
+		"tools/pure/index.ts": `export default () => ({ out: "1" });`,
+		"tools/pure/cases.json": JSON.stringify([{ name: "算错了", input: { x: 1 }, expect: { out: "2" } }]),
+	};
+	files(root, pack("alpha", { ...PY, ...VENV_TOOL, ...pure }));
+	const run = checkCli(join(root, "state"), join(root, "alpha"));
+	assert.equal(run.status, 1, run.stdout + run.stderr);
+	assert.match(run.stdout, /tools\/py\/cases\.json: .*just module setup alpha/);
+	const pureLine = run.stdout.split("\n").find((l) => l.includes("tools/pure/cases.json"));
+	assert.ok(pureLine, run.stdout);
+	assert.doesNotMatch(pureLine, /module setup/);
+});
+
 test("宿主跑用例：用 venv 的工具用上这个模块已装好的 venv，模块运行中", async (t) => {
 	const { dir, db } = host(t, pack("alpha", { ...PY, ...VENV_TOOL }));
 	installFakeVenv(moduleDataDir(dir, "alpha"));
