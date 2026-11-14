@@ -254,3 +254,14 @@ test("OCR 的 engine、页数和秒数不对时拒绝启动，报错指出是哪
 		assert.throws(() => loadConfig(stateWith({ ocr })), (e: Error) => e.name === "ConfigError" && e.message.includes(key), JSON.stringify(ocr));
 	}
 });
+
+test("警报阈值有默认值：模型连着 2 轮、来源连着 3 拍；config.json 的 health 可以改，只改一项时另一项用默认", () => {
+	assert.deepEqual(loadConfig(stateWith({})).health, { modelFailuresBeforeAlarm: 2, feedFailuresBeforeAlarm: 3 });
+	assert.deepEqual(loadConfig(stateWith({ health: { feedFailuresBeforeAlarm: 5 } })).health, { modelFailuresBeforeAlarm: 2, feedFailuresBeforeAlarm: 5 });
+});
+
+test("警报阈值不是 1 以上的整数时拒绝启动，报错指出是哪一项", () => {
+	assert.throws(() => loadConfig(stateWith({ health: { modelFailuresBeforeAlarm: 0 } })), /health\.modelFailuresBeforeAlarm/);
+	assert.throws(() => loadConfig(stateWith({ health: { feedFailuresBeforeAlarm: "3" } })), /health\.feedFailuresBeforeAlarm/);
+	assert.throws(() => loadConfig(stateWith({ health: { typo: 1 } })), /health\.typo/);
+});

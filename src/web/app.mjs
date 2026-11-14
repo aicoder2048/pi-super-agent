@@ -3,7 +3,7 @@
 import {
 	BAR_HINT, CLEAR_FAILED, SWITCH_FAILED, moduleBody, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
 	questionOf, choiceOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
-	laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory, firstPanel, panelStep, overviewTabs, phoneScreen, panelText, savedPanel,
+	healthBanner, laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory, firstPanel, panelStep, overviewTabs, phoneScreen, panelText, savedPanel,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperLine, hostLineLabel } from "../client/board-format.mjs";
 
@@ -163,6 +163,25 @@ function mount(doc) {
 	const renderHeader = () => {
 		$("duty").textContent = dutyLine(view.duty, Date.now(), status.dataset.status === "connected");
 		$("restart").textContent = restartNotice(view.duty, Date.now());
+		renderHealth();
+	};
+
+	const renderHealth = () => {
+		const box = $("health");
+		const banner = healthBanner(view.health, Date.now());
+		box.hidden = banner === null;
+		box.replaceChildren();
+		if (!banner) return;
+		box.dataset.tone = banner.tone;
+		box.append(el("strong", "heading", banner.heading));
+		if (banner.offline) box.append(el("div", "offline", banner.offline));
+		for (const alarm of banner.alarms) {
+			const item = el("div", "alarm");
+			item.dataset.id = alarm.id;
+			item.append(el("div", "subject", alarm.subject), el("div", "when", alarm.when), el("div", "error", `最近的错误：${alarm.error}`), el("div", "advice", `怎么办：${alarm.advice}`));
+			box.append(item);
+		}
+		if (banner.recent.length) box.append(el("div", "recent", `最近恢复：${banner.recent.join("；")}`));
 	};
 
 	/** @param {import("./view.mjs").Avatar} avatar */

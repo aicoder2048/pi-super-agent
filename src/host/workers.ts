@@ -5,6 +5,7 @@ import type { Kernel } from "../kernel/kernel.ts";
 import type { Basis, Quote, ReportStatus, Ticket, TicketInput, WorkerReport, WriteCheck } from "../kernel/types.ts";
 import { REPORT_STATUSES } from "../kernel/types.ts";
 import type { ModelSelector } from "../model-selector.ts";
+import type { ModelHealth } from "./health.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import { INPUT_LABEL, quoteContext } from "../client/board-format.mjs";
 import { parseOptions } from "../kernel/question.ts";
@@ -158,6 +159,7 @@ export interface WorkerExecutorOptions {
 	ocr?: Ocr;
 	alert?: (module: ModuleName, alert: Alert) => void;
 	receipt?: (module: ModuleName, text: string) => void;
+	health?: ModelHealth;
 }
 
 export interface WorkerModels {
@@ -315,11 +317,14 @@ export class WorkerExecutor {
 		if (live && !live.stopping) {
 			if (error) {
 				const result = models.selector.onError(error);
-				if (result.switched && result.notify) {
-					kernel.notifyRouter(`Worker 的主模型额度用尽或被限流，已切到回退模型 ${formatModelRef(models.selector.current().model)}。请用一句话告诉使用者。`);
-				}
+				const now = models.selector.current();
+				if (result.switched) this.#o.health?.fellBack(formatModelRef(now.model), error);
+				else if (!now.fellBack) this.#o.health?.failed(error, false);
+				else if (live.handle.model === formatModelRef(now.model)) this.#o.health?.failed(error, true);
+				// Otherwise this turn ran on the primary after another Worker switched: not a failure, it goes on below on the fallback.
 			} else {
 				models.selector.onSuccess();
+				this.#o.health?.succeeded(models.selector.current().fellBack);
 			}
 			const current = models.selector.current();
 			if (this.#capReached()) {
@@ -348,16 +353,16 @@ export class WorkerExecutor {
 	#capReached(): boolean {
 		const { selector, fallbackDailyTokens } = this.#o.models;
 		const current = selector.current();
-		return current.fellBack && this.#o.kernel.usageToday(current.model.provider) >= fallbackDailyTokens;
+		const reached = current.fellBack && this.#o.kernel.usageToday(current.model.provider) >= fallbackDailyTokens;
+		if (!reached) this.#o.health?.capCleared();
+		return reached;
 	}
 
 	#blockForCap(ticketId: string): void {
 		const { kernel, models } = this.#o;
-		kernel.blockForCap(
-			ticketId,
-			`回退模型 ${formatModelRef(models.selector.current().model)} 今日用量已达上限（${models.fallbackDailyTokens} token），等主模型恢复或明天再继续。`,
-			this.#checkWrites(ticketId),
-		);
+		const text = `回退模型 ${formatModelRef(models.selector.current().model)} 今日用量已达上限（${models.fallbackDailyTokens} token），等主模型恢复或明天再继续。`;
+		this.#o.health?.capReached(text);
+		kernel.blockForCap(ticketId, text, this.#checkWrites(ticketId));
 	}
 
 	handleRequest(ticketId: string, token: string, method: string, params: unknown): unknown {

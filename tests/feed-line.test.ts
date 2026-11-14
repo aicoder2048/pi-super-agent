@@ -4,11 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import type { ModuleCard } from "../src/client/protocol.ts";
-import { Host } from "../src/host/host.ts";
+import { Host, type HostOptions } from "../src/host/host.ts";
 import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
 import { release, oneLine } from "../src/modules/release.ts";
 import { problemLine, scanPackage } from "../src/modules/validate.ts";
 import { Modules } from "../src/modules.ts";
+import { openStore } from "../src/kernel/store.ts";
+import { startLiveModules } from "../src/host/live-modules.ts";
 import { FAKE_BOT_TOKEN, FakeTelegram, unmarked } from "./helpers/fake-telegram.ts";
 import { FakeSpawner, fauxRouter, ids, servedAsHost, until, type Brain } from "./helpers/fakes.ts";
 
@@ -89,7 +91,13 @@ const letter = (id: string, extra: object = {}) => ({ id, from: "Ann <ann@exampl
 const answersEveryone: Brain = (cards) =>
 	cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "reply", args: { text: ANSWER, cause: ids(card, "trg") } }] : []));
 
-async function lettersHost(t: TestContext, edit?: (pkg: string) => void, cards: () => ModuleCard[] = () => []) {
+interface LettersOptions {
+	health?: HostOptions["health"];
+	/** Lets a test take the feed away, the way switching its module off does. */
+	serving?: { on: boolean; changed?: () => void };
+}
+
+async function lettersHost(t: TestContext, edit?: (pkg: string) => void, cards: () => ModuleCard[] = () => [], { health, serving }: LettersOptions = {}) {
 	const { root, pkg } = lettersCopy(t, false);
 	edit?.(pkg);
 	const modules = servedAsHost(Modules.load([join(root, "modules")]));
@@ -102,8 +110,9 @@ async function lettersHost(t: TestContext, edit?: (pkg: string) => void, cards: 
 		log: () => {},
 		sourcePolicy: modules.sourcePolicy,
 		domains: { book: () => modules.book, kitFor: () => undefined },
-		moduleFeeds: { feeds: () => modules.feeds(), fixtures: false, tickMs: 20 },
-		modules: { cards, setSwitch: () => false, onChange: () => {} },
+		moduleFeeds: { feeds: () => (serving?.on === false ? [] : modules.feeds()), fixtures: false, tickMs: 20 },
+		modules: { cards, setSwitch: () => false, onChange: (listener) => serving && (serving.changed = listener) },
+		...(health && { health }),
 		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set([USER]), timing: { pollTimeoutSec: 1, minGapMs: 5 } },
 	});
 	t.after(async () => {
@@ -124,7 +133,8 @@ async function lettersHost(t: TestContext, edit?: (pkg: string) => void, cards: 
 	const notices = () => host.kernel.conversation(500).filter((l) => l.who === "notice");
 	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => ({ ...m, text: unmarked(m.text) })).filter((m) => !m.text.startsWith("你在网页或终端说："));
 	const routerSawLetter = () => until(() => router.batches.flat().some((card) => card.includes("来源 private-line/inbox")), "幕僚长看到了来信的触发", 10_000);
-	return { host, tg, deliver, notices, phone, routerSawLetter, cards: () => router.batches.flat() };
+	const alarms = () => host.snapshot().health.active;
+	return { host, tg, deliver, notices, phone, alarms, inbox, routerSawLetter, cards: () => router.batches.flat() };
 }
 
 test("放出的通知：一封新信写一条「通知」宿主行和一条触发，Telegram 上照原样发三行、带声音、不出链接预览；同一封信再来什么都不写", async (t) => {
@@ -185,16 +195,125 @@ test("放出的触发之后，幕僚长在 Telegram 上的回复是全文", asyn
 	await until(() => released.phone().some((m) => m.text === ANSWER), "幕僚长的回复全文到了 Telegram", 10_000);
 });
 
-test("feed 的 problem：同一个 id 连报两拍只写一条「通知」，中间一拍没报，再报时再写一条；网页和 Telegram 都有", async (t) => {
-	const { deliver, notices, phone } = await lettersHost(t);
-	const PROBLEM = "测试信箱：收件箱的授权过期了，请重新授权";
+test("feed 报的 problem：第一拍就在横幅上亮，文字是 feed 自己写的，对话里不写「通知」；连报只发一条 ⚠️，没报的一拍解除并发一条 ✅", async (t) => {
+	const { deliver, notices, phone, alarms } = await lettersHost(t);
 	await deliver({ problem: "auth" });
 	await deliver({ problem: "auth" });
-	assert.deepEqual(notices().map((l) => l.text), [PROBLEM]);
+	assert.deepEqual(alarms().map((a) => [a.id, a.area, a.subject, a.lastError, a.count]), [["data:private-line/inbox", "data", "测试信箱 来信", "收件箱的授权过期了，请重新授权", 2]]);
+	assert.deepEqual(notices(), [], "不再写「通知」宿主行");
 	await deliver(letter("m-2"));
+	assert.deepEqual(alarms(), []);
+	await until(() => phone().some((m) => m.text.startsWith("✅ 测试信箱 来信恢复了")), "✅ 到了 Telegram");
+	assert.deepEqual(phone().flatMap((m) => (m.text.startsWith("⚠️") ? ["⚠️"] : m.text.startsWith("✅") ? ["✅"] : [])), ["⚠️", "✅"]);
+	assert.match(phone().find((m) => m.text.startsWith("⚠️"))!.text, /^⚠️ 测试信箱 来信出问题了.*收件箱的授权过期了/);
+});
+
+test("feed 报的一次性 problem（once）：只写一条「通知」，Telegram 一条通知，不亮警报，下一拍也不发 ✅", async (t) => {
+	const { deliver, notices, phone, alarms } = await lettersHost(t);
+	await deliver({ problem: "gap", once: true });
+	assert.deepEqual(alarms(), [], "一次性的问题不算断了");
+	assert.deepEqual(notices().map((l) => l.text), ["测试信箱：有 30 小时没查，请在信箱里看一下"]);
+	await until(() => phone().some((m) => m.text === "通知：测试信箱：有 30 小时没查，请在信箱里看一下"), "通知到了 Telegram");
+	await deliver(letter("m-4"));
+	await new Promise((r) => setTimeout(r, 200));
+	assert.ok(!phone().some((m) => m.text.startsWith("⚠️") || m.text.startsWith("✅")), "没有 ⚠️ 也没有 ✅");
+});
+
+test("收件箱里的一件重试三次都失败：只写一条「通知」，Telegram 一条通知，不亮警报，下一封信也不发 ✅", async (t) => {
+	const { deliver, notices, phone, alarms, host } = await lettersHost(t);
+	await deliver({ fail: "HTTP 503 Service Unavailable" });
+	assert.deepEqual(alarms(), [], "收件箱里坏掉的一件不算断了");
+	assert.deepEqual(notices().map((l) => l.text), ["测试信箱：收件箱里有一件试了 3 次都没处理成，已放进 rejected：HTTP 503 Service Unavailable"]);
+	await until(() => phone().some((m) => m.text.startsWith("通知：测试信箱：收件箱里有一件试了 3 次")), "通知到了 Telegram");
+	await deliver(letter("m-3"));
+	await new Promise((r) => setTimeout(r, 200));
+	assert.ok(!phone().some((m) => m.text.startsWith("⚠️") || m.text.startsWith("✅")), "没有 ⚠️ 也没有 ✅");
+	assert.deepEqual(host.snapshot().health.recent, []);
+});
+
+test("feed 被拒了密钥（401、invalid_grant）：第一拍就亮，怎么办里写着密钥或授权", async (t) => {
+	const { deliver, alarms } = await lettersHost(t, undefined, undefined, { health: { modelFailuresBeforeAlarm: 2, feedFailuresBeforeAlarm: 100 } });
+	await deliver({ fail: "token refresh failed: invalid_grant" });
+	const [alarm] = alarms();
+	assert.equal(alarm.cause, "auth");
+	assert.match(alarm.advice, /密钥|授权/);
+});
+
+test("模块关掉了：它的 feed 的警报悄悄撤下，不发 ✅", async (t) => {
+	const serving: { on: boolean; changed?: () => void } = { on: true };
+	const { deliver, alarms, phone } = await lettersHost(t, undefined, undefined, { serving });
 	await deliver({ problem: "auth" });
-	assert.deepEqual(notices().map((l) => l.text).filter((text) => text === PROBLEM), [PROBLEM, PROBLEM]);
-	await until(() => phone().filter((m) => m.text === `通知：${PROBLEM}`).length === 2, "两条 problem 到了 Telegram");
+	assert.equal(alarms().length, 1);
+	serving.on = false;
+	serving.changed!();
+	assert.deepEqual(alarms(), []);
+	await new Promise((r) => setTimeout(r, 200));
+	assert.ok(!phone().some((m) => m.text.startsWith("✅")));
+});
+
+/** The host wired to the real live modules, the way main.ts does it, so switching, deleting and editing go through publish. */
+async function liveLettersHost(t: TestContext) {
+	const { root, pkg } = lettersCopy(t, false);
+	const stateDir = join(root, "state");
+	mkdirSync(stateDir, { recursive: true });
+	const roots = [join(root, "modules")];
+	const db = openStore(join(stateDir, "state.db"));
+	const modules = startLiveModules({ db, stateDir, roots, discovered: Modules.load(roots), configSwitches: { "private-line": true }, log: () => {} });
+	const tg = await FakeTelegram.start();
+	const host = await Host.start({
+		stateDir,
+		createRouter: fauxRouter(answersEveryone).createRouter,
+		createSpawner: () => new FakeSpawner(() => {}),
+		log: () => {},
+		sourcePolicy: (trigger) => modules.live.current().sourcePolicy(trigger),
+		domains: { book: () => modules.live.current().book, kitFor: modules.kitFor },
+		moduleFeeds: { feeds: () => modules.live.current().feeds(), fixtures: false, tickMs: 20 },
+		modules,
+		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set([USER]), timing: { pollTimeoutSec: 1, minGapMs: 5 } },
+	});
+	t.after(async () => {
+		await host.stop();
+		modules.stop();
+		await tg.close();
+		if (db.isOpen) db.close();
+		rmSync(root, { recursive: true, force: true });
+	});
+	tg.userSays(USER, "/start");
+	await until(() => tg.sent.length > 0, "聊天打开");
+	const inbox = join(stateDir, "inbox", "private-line", "inbox");
+	mkdirSync(inbox, { recursive: true });
+	writeFileSync(join(inbox, "001.json"), JSON.stringify({ problem: "auth" }));
+	const alarms = () => host.snapshot().health.active;
+	await until(() => alarms().length === 1, "收件箱的警报亮了", 10_000);
+	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => unmarked(m.text));
+	return { modules, pkg, alarms, phone, host };
+}
+
+const withdrawnQuietly = async ({ alarms, phone, host }: Awaited<ReturnType<typeof liveLettersHost>>) => {
+	await until(() => alarms().length === 0, "警报撤下了", 10_000);
+	await new Promise((r) => setTimeout(r, 200));
+	assert.ok(!phone().some((m) => m.startsWith("✅")), "撤下不发 ✅");
+	assert.deepEqual(host.snapshot().health.recent, [], "撤下不进最近恢复");
+};
+
+test("真的开关模块：亮着收件箱警报时关掉模块，警报悄悄撤下", async (t) => {
+	const live = await liveLettersHost(t);
+	assert.ok(live.modules.setSwitch("private-line", false));
+	live.modules.tick();
+	assert.deepEqual(live.alarms(), [], "关掉的那一拍就撤下");
+	await withdrawnQuietly(live);
+});
+
+test("真的删掉模块包：亮着收件箱警报时删掉整个包，警报悄悄撤下", async (t) => {
+	const live = await liveLettersHost(t);
+	rmSync(live.pkg, { recursive: true, force: true });
+	await withdrawnQuietly(live);
+});
+
+test("真的拿掉 feed：亮着收件箱警报时从包里删掉这个 feed，警报悄悄撤下", async (t) => {
+	const live = await liveLettersHost(t);
+	rmSync(join(live.pkg, "feeds"), { recursive: true, force: true });
+	await withdrawnQuietly(live);
 });
 
 test("模块卡：宿主给有 feed 的模块填上今日提醒条数和每个 feed 最近一轮的时间、行数", async (t) => {

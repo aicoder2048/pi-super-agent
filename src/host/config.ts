@@ -11,6 +11,7 @@ import { parseWebHosts, type TailnetName } from "./web-hosts.ts";
 import { parseSecretsFile } from "../secrets.ts";
 import { defaultStateDir } from "../state-dir.ts";
 import { UNLIMITED, type OcrConfig } from "../ocr/ocr.ts";
+import { HEALTH_DEFAULTS, type HealthConfig } from "./health.ts";
 
 export const BUNDLED_MODULES = fileURLToPath(new URL("../../modules", import.meta.url));
 export interface HostConfig {
@@ -45,6 +46,7 @@ export interface HostConfig {
 	/** Present means the Telegram client runs. An empty list is setup mode: it only tells whoever writes their own numeric id. */
 	telegram?: { allowedUserIds: readonly number[] };
 	ocr: OcrConfig;
+	health: HealthConfig;
 }
 
 const STUCK_MINUTES_MAX = 1440;
@@ -145,7 +147,21 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		feedFixtures: raw.feedFixtures === true,
 		...(telegram && { telegram }),
 		ocr,
+		health: parseHealth(raw.health, file),
 	};
+}
+
+function parseHealth(raw: unknown, file: string): HealthConfig {
+	if (raw === undefined) return { ...HEALTH_DEFAULTS };
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new ConfigError(`${file}：health 要是一个对象，例如 {"modelFailuresBeforeAlarm": 2, "feedFailuresBeforeAlarm": 3}`);
+	for (const key of Object.keys(raw)) {
+		if (!(key in HEALTH_DEFAULTS)) throw new ConfigError(`${file}：health.${key} 不认识，只能写 ${Object.keys(HEALTH_DEFAULTS).join("、")}`);
+	}
+	const health = { ...HEALTH_DEFAULTS, ...(raw as Partial<HealthConfig>) };
+	for (const [key, value] of Object.entries(health)) {
+		if (!Number.isInteger(value) || value < 1) throw new ConfigError(`${file}：health.${key}（${JSON.stringify(value)}）必须是 1 以上的整数：连着失败几次才在网页和 Telegram 上报警`);
+	}
+	return health;
 }
 
 export function loadModules(config: Pick<HostConfig, "stateDir" | "modulesDirs" | "moduleSwitches" | "models">): Modules {

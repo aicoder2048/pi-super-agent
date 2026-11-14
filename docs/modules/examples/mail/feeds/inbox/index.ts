@@ -13,7 +13,8 @@ interface Input {
 /** `at` is when the last beat succeeded, so a host that was off for a day can say so. */
 type Cursor = { historyId: string; at: string };
 
-type Problem = { id: "auth" | "gap" | "no-senders" | "too-many" | "removal-unreadable"; text: string };
+/** `once`: the next beat no longer reports it, so it is a notice, not an alarm. */
+type Problem = { id: "auth" | "gap" | "no-senders" | "too-many" | "removal-unreadable"; text: string; once?: true };
 
 type Reply = { records: MessageRow[]; notices?: { id: string; thread: string; fields: Record<string, string> }[]; cursor?: string; problem?: Problem };
 
@@ -22,7 +23,7 @@ const AUTH: Problem = { id: "auth", text: AUTH_TEXT };
 const NO_SENDERS: Problem = { id: "no-senders", text: "邮件名单是空的，什么都不收。在对话里说「把 a@example.com 加进邮件名单」" };
 const TOO_MANY: Problem = { id: "too-many", text: "邮件名单到了 500 行，宿主一次只读 500 行，划掉的地址可能读不到，所以先不收信。见 docs/modules/mail.md 的「名单太长」" };
 const REMOVAL_UNREADABLE: Problem = { id: "removal-unreadable", text: "邮件名单里有一行划掉的地址读不出来，像它的发件人一律不收。请在对话里把那一行的地址改成 a@example.com 或 @example.com 这样的写法" };
-const gap = (hours: number): Problem => ({ id: "gap", text: `有 ${hours} 小时没查，一天以前的信没补，请在 Gmail 里看一下` });
+const gap = (hours: number): Problem => ({ id: "gap", text: `有 ${hours} 小时没查，一天以前的信没补，请在 Gmail 里看一下`, once: true });
 
 /** The host reads at most this many rows of a collection (READ_LIMIT in src/modules/feed-runner.ts); a test keeps the two equal. */
 const READ_LIMIT = 500;

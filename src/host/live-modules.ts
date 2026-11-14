@@ -125,7 +125,7 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 			caseResults.set(name, { digest: scan.digest, problems });
 			safely("工具测试用例跑完后更新模块", () => {
 				step(name, null);
-				live.publish(table());
+				publish();
 			});
 		});
 	};
@@ -197,7 +197,6 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 	const step = (name: string, event: ModuleEvent | null) => {
 		records.set(name, drive(records.get(name) ?? initialRecord(name as ModuleName), event, (r) => saveModuleRecord(db, r), run(name)));
 		receipt(name);
-		changed();
 	};
 
 	const table = (): Modules => {
@@ -236,10 +235,15 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 	for (const name of records.keys()) if (!found.has(name)) step(name, { type: "package-gone" });
 	reconcile();
 	const live = liveRegistry(table());
+	// Listeners read the served table, so they hear of a change only after it is published.
+	const publish = () => {
+		live.publish(table());
+		changed();
+	};
 	collect();
 
 	const tick = () => {
-		if (reconcile()) live.publish(table());
+		if (reconcile()) publish();
 		collect();
 	};
 	const rescan = (dir: string, files: ReadonlySet<string>) => {
@@ -271,7 +275,7 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 	const onSaved = (saved: Saved) =>
 		safely("处理存盘", () => {
 			for (const [dir, files] of saved) rescan(dir, files);
-			live.publish(table());
+			publish();
 			collect();
 		});
 	for (const root of roots) safely(`建模块目录 ${root} `, () => mkdirSync(root, { recursive: true }));

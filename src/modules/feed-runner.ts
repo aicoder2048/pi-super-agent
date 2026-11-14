@@ -63,6 +63,7 @@ export function parseCollected(output: Json, into?: CollectionDescriptor): Colle
 	}
 	if (!alerts.every((a) => a["push"] === undefined || a["push"] === "silent")) return `alerts 的 push 只能是 silent（不写就响铃）`;
 	if (problem !== undefined && !(isObject(problem) && typeof problem["id"] === "string" && typeof problem["text"] === "string")) return `problem 要是 { id, text }，两个都是文字`;
+	if (problem !== undefined && problem["once"] !== undefined && problem["once"] !== true) return `problem 的 once 只能是 true，收到 ${JSON.stringify(problem["once"])}`;
 	if (into !== undefined) {
 		const unknown = (records as JsonObject[]).flatMap((r) => Object.keys(r)).find((key) => key !== "id" && !Object.hasOwn(into.fields, key));
 		if (unknown !== undefined) return `records 里的字段 "${unknown}" 不是 ${into.title} 的字段（有：${Object.keys(into.fields).join("、")}）`;

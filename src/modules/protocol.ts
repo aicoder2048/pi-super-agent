@@ -186,8 +186,9 @@ export interface Collected {
 	/** The feed's next cursor. The host saves it only after the records and notices are stored. */
 	cursor?: string;
 	/**
-	 * Something the user should fix, such as an expired authorization. The host tells the user the first beat an `id` is reported, and
-	 * again only after a beat without it. `text` is written in the module's code: it never carries collection data (ADR-0020).
+	 * Something broken the user should fix, such as an expired authorization: the host raises the feed's alarm and clears it on the first
+	 * beat without a problem (ADR-0026). `once` marks news the next beat no longer reports, such as a gap after the host was off: the host
+	 * writes one notice line instead, every beat it is reported. `text` is written in the module's code: it never carries collection data (ADR-0020).
 	 */
-	problem?: { id: string; text: string };
+	problem?: { id: string; text: string; once?: true };
 }

@@ -32,13 +32,14 @@ import type { Domains } from "../modules.ts";
 import type { LiveModules } from "./live-modules.ts";
 import type { Alert, Gateway } from "../modules/protocol.ts";
 import type { Ocr } from "../ocr/result.ts";
-import { intoOf, runFeed, type FeedEntry, type FeedPorts, type FeedProblem } from "../modules/feed-runner.ts";
 import { oneLine } from "../modules/release.ts";
+import { intoOf, runFeed, type FeedEntry, type FeedPorts, type FeedProblem, type FeedRun } from "../modules/feed-runner.ts";
 import { instanceData } from "../modules/instance-data.ts";
 import { createScheduler, type Scheduler } from "../modules/scheduler.ts";
 import { threadId } from "../sources/generic.ts";
 import { inPollWindow } from "../sources/market/session.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
+import { causeOf, clearedText, Health, scrub, HEALTH_DEFAULTS, ModelHealth, raisedText, type HealthConfig } from "./health.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -53,6 +54,7 @@ export interface HostDeps {
 	stateDir: string;
 	socketPath: string;
 	rulesFor: (triggerSource: string) => string[];
+	routerHealth: ModelHealth;
 }
 
 export interface HostOptions {
@@ -85,6 +87,7 @@ export interface HostOptions {
 	/** Runs `run` once, `ms` from now, and returns its cancel. The host waits for the New York day change with it; tests pass their own to make that moment arrive. */
 	after?: (ms: number, run: () => void) => () => void;
 	telegram?: TelegramOptions;
+	health?: HealthConfig;
 }
 
 const afterRealTime: NonNullable<HostOptions["after"]> = (ms, run) => {
@@ -140,8 +143,11 @@ export class Host {
 	readonly #memberCap: MemberCap | undefined;
 	readonly #after: NonNullable<HostOptions["after"]>;
 	#cancelNewYorkDay: (() => void) | undefined;
-	readonly #feedProblems = new Map<string, string>();
 	readonly #beats = new Map<string, FeedBeat & { module: string }>();
+	readonly #health: Health;
+	readonly #routerHealth: ModelHealth;
+	readonly #feedFailuresBeforeAlarm: number;
+	readonly #feedsNow: () => readonly FeedEntry[];
 	#duty!: Duty;
 
 	private constructor(options: HostOptions) {
@@ -157,6 +163,15 @@ export class Host {
 		this.#watching = options.watching ?? [];
 		this.#kitFor = options.domains?.kitFor;
 		this.#modules = options.modules;
+		const healthConfig = options.health ?? HEALTH_DEFAULTS;
+		this.#health = new Health({
+			now: clock.now,
+			onRaised: (alarm) => this.#tellPhone(`health:raised:${alarm.id}:${alarm.since}`, raisedText(alarm), false),
+			onCleared: (alarm) => this.#tellPhone(`health:cleared:${alarm.id}:${alarm.since}`, clearedText(alarm), true),
+		});
+		this.#routerHealth = new ModelHealth(this.#health, "router", healthConfig.modelFailuresBeforeAlarm);
+		this.#feedFailuresBeforeAlarm = healthConfig.feedFailuresBeforeAlarm;
+		this.#feedsNow = options.moduleFeeds?.feeds ?? (() => []);
 		this.#db = openStore(join(options.stateDir, "state.db"));
 		this.kernel = new Kernel({
 			db: this.#db,
@@ -199,18 +214,19 @@ export class Host {
 			log: this.#log,
 		})]));
 		const data = instanceData(options.stateDir);
-		const feedPorts: FeedPorts = {
+		const feedPorts: Omit<FeedPorts, "problem"> = {
 			data,
 			submit: ({ source, id, thread, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(source, thread) }], sender: source, body, occurredAt: at, ...(reach === "released" && { announce: true }) }),
 			alert: (module, alert) => this.#postModuleAlert(module, alert),
-			problem: (source, problem) => this.#feedProblem(source, problem),
 			secret: options.moduleFeeds?.secret ?? (() => undefined),
 			now: clock.now,
 		};
 		this.feedScheduler = createScheduler({
 			feeds: options.moduleFeeds?.feeds ?? (() => []),
 			run: async (entry, items, fixture, signal) => {
-				const run = await runFeed(entry, items, feedPorts, fixture, signal);
+				let problem: FeedProblem | undefined;
+				const run = await runFeed(entry, items, { ...feedPorts, problem: (_, reported) => (problem = reported) }, fixture, signal);
+				this.#feedHealth(entry, run, problem);
 				const zone = intoOf(entry.feed, entry.components)?.watch?.zone;
 				this.#beats.set(entry.source, { module: entry.module, title: entry.feed.title, at: clock.now(), ...(zone && { zone }), ...(run.ok ? { ok: true, records: run.records } : { ok: false, note: run.note }) });
 				return run;
@@ -221,8 +237,12 @@ export class Host {
 			when: { "us-market-hours": inPollWindow },
 			fixtures: options.moduleFeeds?.fixtures ?? false,
 			log: this.#log,
+			rejected: (entry, note, tries) => {
+				if (causeOf(note) === "auth") return;
+				this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(`收件箱里有一件试了 ${tries} 次都没处理成，已放进 rejected：${scrub(note)}`, PROBLEM_MAX)) });
+			},
 		});
-		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []) };
+		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []), routerHealth: this.#routerHealth };
 		const memberCap = options.dispatch && new MemberCap({ configured: options.dispatch.maxConcurrent, clock, store: this.kernel.capAsks, log: this.#log });
 		this.#memberCap = memberCap;
 		this.workers = new WorkerExecutor({
@@ -235,6 +255,7 @@ export class Host {
 			onMemberTranscript: (ticketId, member, message) => this.#web?.sendTranscript(ticketId, message, member),
 			onError: (ticketId, error) => this.#log(`[worker ${ticketId}] ${String(error)}`),
 			models: options.workerModels,
+			health: new ModelHealth(this.#health, "worker", healthConfig.modelFailuresBeforeAlarm),
 			kitFor: this.#kitFor,
 			gateway: options.gateway,
 			ocr: options.ocr,
@@ -287,7 +308,7 @@ export class Host {
 		}
 		try {
 			const clientToken = loadToken(options.stateDir, "client-token", host.#log);
-			const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath, rulesFor: options.rulesFor ?? (() => []) };
+			const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath, rulesFor: options.rulesFor ?? (() => []), routerHealth: host.#routerHealth };
 			// The socket bind is what turns a second host on this state directory away; with webPort 0 the web port does not.
 			await host.server.listen(host.socketPath, clientToken);
 			await endLeftoverMembers(options.stateDir, host.#log);
@@ -296,7 +317,10 @@ export class Host {
 			await Promise.all([host.server.close(), host.#web?.close()]);
 			throw error;
 		}
-		host.#modules?.onChange(() => host.#changed());
+		host.#modules?.onChange(() => {
+			host.#forgetGoneFeeds();
+			host.#changed();
+		});
 		host.kernel.nameUnnamedHelpers();
 		const recovered = host.kernel.recoverOnStartup();
 		host.#duty = { since: host.#clock.now(), resumed: recovered.length };
@@ -436,7 +460,7 @@ export class Host {
 
 	#boardState(): BoardState {
 		this.#expireRunAsks();
-		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard(), watching: this.#watchingNow(), modules: this.#moduleCards(), alerts: this.kernel.alertsToday() };
+		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard(), watching: this.#watchingNow(), modules: this.#moduleCards(), alerts: this.kernel.alertsToday(), health: this.#health.board() };
 	}
 
 	#moduleCards(): ModuleCard[] {
@@ -483,15 +507,35 @@ export class Host {
 		});
 	}
 
-	/** In memory: after a restart a problem still standing is told once more. */
-	#feedProblem(source: string, problem: FeedProblem | undefined): void {
-		if (problem === undefined) {
-			this.#feedProblems.delete(source);
-			return;
+	/** A failed beat counts toward the streak; a problem the feed reports, or a rejected key, shows at once; a clean beat clears. A one-shot problem is a notice line on a clean beat. */
+	#feedHealth(entry: FeedEntry, run: FeedRun, problem: FeedProblem | undefined): void {
+		const id = feedAlarmId(entry.source);
+		const subject = `${this.kernel.moduleLabel(entry.module)} ${entry.feed.title}`;
+		// One bad inbox item is said once when it is rejected; a rejected key stays broken, so it still shows.
+		if (!run.ok && entry.feed.connector === "inbox" && causeOf(run.note) !== "auth") return;
+		if (!run.ok) {
+			const after = causeOf(run.note) === "auth" ? 1 : this.#feedFailuresBeforeAlarm;
+			this.#health.failed(id, { area: "data", subject, error: run.note, after });
+		} else if (problem?.once) {
+			this.#health.ok(id);
+			this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(problem.text, PROBLEM_MAX)) });
+		} else if (problem) {
+			this.#health.failed(id, { area: "data", subject, error: problem.text, after: 1, advice: "照上面这句处理；哪一拍不再报这个问题，这条自动消失" });
+		} else {
+			this.#health.ok(id);
 		}
-		if (this.#feedProblems.get(source) === problem.id) return;
-		this.#feedProblems.set(source, problem.id);
-		this.#postHostLine(source, { kind: "notice", text: this.kernel.moduleNotice(source, oneLine(problem.text, PROBLEM_MAX)) });
+	}
+
+	/** A switched-off module's feeds stop beating, so their alarms would never clear. Nothing recovered, so no ✅. */
+	#forgetGoneFeeds(): void {
+		const serving = new Set(this.#feedsNow().map((entry) => feedAlarmId(entry.source)));
+		this.#health.forget((id) => id.startsWith(FEED_ALARM) && !serving.has(id));
+	}
+
+	/** The page reads the banner from the next board frame; the phone gets one notice per raise, which rings, and one per clear, which does not. */
+	#tellPhone(key: `health:${string}`, text: string, silent: boolean): void {
+		this.#telegram?.tell(key, text, silent);
+		this.#changed();
 	}
 
 	/** False when this source already posted the externalId. */
@@ -616,6 +660,9 @@ export class Host {
 		await Promise.all([this.server.close(), this.#web?.close()]);
 	}
 }
+
+const FEED_ALARM = "data:";
+const feedAlarmId = (source: string) => `${FEED_ALARM}${source}`;
 
 function todayCounts(rows: { source: string; disposition: Disposition; count: number }[]): TodayCounts {
 	const byDisposition = Object.fromEntries(DISPOSITIONS.map((d) => [d, 0])) as Record<Disposition, number>;

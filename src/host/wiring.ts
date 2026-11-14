@@ -145,6 +145,7 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 		feeds,
 		...(telegram && { telegram }),
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
+		health: config.health,
 		outputDir: config.outputDir,
 		dispatch: {
 			timeoutMs: config.dispatchTimeoutSeconds * 1000,
@@ -166,6 +167,7 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 				},
 				rulesFor: deps.rulesFor,
 				afterCommand: deps.afterCommand,
+				health: deps.routerHealth,
 				onError: (e) => log(`[router] ${String(e)}`),
 			}),
 		createSpawner: (deps) =>

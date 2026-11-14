@@ -2580,3 +2580,35 @@ test("手机：「待办」上的数字是待你处理的条数", () => {
 	const view = withRows([row({ id: "tkt_a", stage: "awaiting_answer" }), row({ id: "tkt_b", stage: "running" })]);
 	assert.equal(page.leftColumn(view, 0).needsYouCount, 1);
 });
+
+const alarmAt = (id: string, extra: Record<string, unknown> = {}) => ({ id, area: "model" as const, subject: "幕僚长模型", cause: "provider" as const, since: 0, lastAt: 0, lastError: "500 Internal Server Error", count: 3, advice: "模型服务出错或太忙：通常会自己恢复", ...extra });
+
+test("出问题的横幅：没有警报时不显示；有警报时每条写清楚是什么、从多久前、几次、最近的错误和怎么办", () => {
+	assert.equal(page.healthBanner({ active: [], recent: [], offline: false }, 0), null);
+	const banner = page.healthBanner({ active: [alarmAt("model:router", { since: 0, lastAt: 9 * 60_000 })], recent: [], offline: false }, 12 * 60_000)!;
+	assert.equal(banner.tone, "bad");
+	assert.equal(banner.heading, "⚠️ 有 1 处断了，修好之前这里一直显示");
+	assert.deepEqual(banner.alarms, [{ id: "model:router", subject: "幕僚长模型", when: "12 分钟前开始 · 连着 3 次 · 最近一次 3 分钟前", error: "500 Internal Server Error", advice: "模型服务出错或太忙：通常会自己恢复" }]);
+	assert.equal(banner.offline, "");
+});
+
+test("出问题的横幅：模型和数据都因联网断了时加一句本机可能断网；最近恢复的列在后面", () => {
+	const banner = page.healthBanner({ active: [alarmAt("model:router"), alarmAt("data:x", { area: "data", subject: "stock-ta 报价" })], recent: [{ ...alarmAt("model:worker", { subject: "助手模型" }), clearedAt: 60_000 }], offline: true }, 5 * 60_000)!;
+	assert.match(banner.offline, /本机可能断网/);
+	assert.deepEqual(banner.recent, ["助手模型 4 分钟前恢复"]);
+});
+
+test("都恢复了：一小时内恢复的还用平静的颜色列一会儿，之后横幅消失", () => {
+	const health = { active: [], recent: [{ ...alarmAt("a"), clearedAt: 0 }], offline: false };
+	const calm = page.healthBanner(health, 10 * 60_000)!;
+	assert.equal(calm.tone, "ok");
+	assert.equal(calm.heading, "✅ 都恢复了");
+	assert.deepEqual(calm.recent, ["幕僚长模型 10 分钟前恢复"]);
+	assert.equal(page.healthBanner(health, 61 * 60_000), null);
+});
+
+test("旧宿主的 board 没有 health：横幅不显示", () => {
+	const view = page.emptyView();
+	page.applyMessage(view, { type: "board", rows: [], today: { byDisposition: {}, bySource: {} }, duty: { since: 0, resumed: 0 }, helpers: {}, routes: {}, dispatching: {}, memberCap: null, watching: [], modules: [], alerts: [] } as any, 0);
+	assert.equal(page.healthBanner(view.health, 0), null);
+});
