@@ -27,8 +27,17 @@ async function watchdog(t: TestContext, { webPort = 0 as unknown, graceMs }: { w
 		env: { ...process.env, PSA_STATE_DIR: dir, NODE_OPTIONS: `--import ${PRELOAD}`, PSA_E2E_TELEGRAM_URL: tg.url, PSA_RESTART_GRACE_MS: String(graceMs) },
 		stdio: ["ignore", "ignore", openSync(join(dir, "watchdog.log"), "a")],
 	});
+	// Every host the watchdog launched leads its own process group; one launched just before the end has no heartbeat yet.
 	t.after(async () => {
-		for (const pid of [wd.pid, heartbeatPid(dir)]) if (pid && alive(pid)) process.kill(pid, "SIGKILL");
+		if (wd.pid && alive(wd.pid)) process.kill(wd.pid, "SIGKILL");
+		const launched = [...readFileSync(join(dir, "watchdog.log"), "utf8").matchAll(/已拉起宿主，pid (\d+)/g)].map((m) => Number(m[1]));
+		for (const pid of launched) {
+			try {
+				process.kill(-pid, "SIGKILL");
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+			}
+		}
 		await tg.close();
 	});
 	const about = (mark: string) => tg.sent.filter((m) => m.chatId === USER && m.text.startsWith(`🔔 ${mark} 宿主`));
