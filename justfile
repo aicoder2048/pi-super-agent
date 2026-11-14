@@ -16,15 +16,15 @@ stock-heatmap:
 
 # 无网络、无真实 API Key 的股票热力图测试。
 test-stock-heatmap:
-    node --test tests/stock-heatmap.test.mjs
+    node --test tests/unit/stock-heatmap.test.mjs
 
 # 财报日历、EPS、历史行情及共享视图专项测试（离线）。
 test-stock-earnings:
-    node --test tests/stock-earnings.test.mjs
+    node --test tests/unit/stock-earnings.test.mjs
 
 # 需要 Node.js 22.18+ 或 24+，以及已安装的 Pi（本地或全局依赖）。
 test-now:
-    node --test tests/now.test.mjs
+    node --test tests/unit/now.test.mjs
 
 # ---- Pi Super Agent ----
 # 状态目录默认 ~/.pi-super-agent，可用 PSA_STATE_DIR 覆盖。
@@ -114,9 +114,17 @@ client-token-rotate:
 tail:
     {{run}} src/cli/say.ts tail
 
-# 内核、宿主组装点和其余全部自动测试。
+# 单元测试和集成测试一起跑（不含 e2e）。两类的划分见 tests/README.md。
 test:
-    {{run}} --test --test-timeout=30000 tests/*.test.ts tests/*.test.mjs
+    {{run}} --test --test-timeout=30000 tests/unit/*.test.* tests/integration/*.test.*
+
+# 只跑单元测试。测试里起子进程或监听端口会直接报错。
+test-unit:
+    {{run}} --import ./tests/helpers/unit-guard.mjs --test --test-timeout=30000 tests/unit/*.test.*
+
+# 只跑集成测试：子进程、假 HTTP 服务器、真实宿主栈。
+test-integration:
+    {{run}} --test --test-timeout=30000 tests/integration/*.test.*
 
 # 列出找到的模块：启用还是停用、为什么、来源、规则、技能。不需要宿主在运行。
 modules:

@@ -1,4 +1,4 @@
-/** The session clock is a copy of src/sources/market/session.ts (module code cannot import the host's); tests/market-hours.test.ts keeps the two equal. */
+/** The session clock is a copy of src/sources/market/session.ts (module code cannot import the host's); tests/unit/market-hours.test.ts keeps the two equal. */
 export type Phase = "pre" | "regular" | "post" | "closed";
 
 export interface Session {

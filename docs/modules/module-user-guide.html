@@ -1306,7 +1306,7 @@ console.log(skills.map((s) =&gt; s.name), diagnostics);</code></pre>
 <pre class="bash"><code>node --import ./src/pi-runtime.mjs check-skills.mjs ~/.pi-super-agent/modules/paper-review/skills
 # [ &#39;paper-review-desk&#39; ] []</code></pre>
 <p>第二个方括号是诊断，应该是空的。</p>
-<p>提炼自外部文档的技能，再加一条测试核对它写到的名字。写法参考 <code>tests/first-teams.test.ts</code> 里「Pi 扩展技能」那三条。</p>
+<p>提炼自外部文档的技能，再加一条测试核对它写到的名字。写法参考 <code>tests/unit/first-teams.test.ts</code> 里「Pi 扩展技能」那三条。</p>
 <h3 id="配方-7共同技能的骨架">配方 7：共同技能的骨架</h3>
 <p>任何带团队的模块，共同技能都可以从这六节起步：</p>
 <pre class="markdown"><code># &lt;队名&gt;的共同做法

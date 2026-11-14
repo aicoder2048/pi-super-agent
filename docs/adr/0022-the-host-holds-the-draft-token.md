@@ -18,7 +18,7 @@
 
 **预演不建真草稿。** `config.json` 的 `feedFixtures` 打开时（`just module try` 就是这样起宿主的），没有 `PSA_GOOGLE_OAUTH_URL` 的口子一律拒绝，不请求 Google。`cases.json` 和 `just module check` 只跑工具进程，不经网关，碰不到口子。
 
-**仓库扫描只是 lint。** `tests/no-gmail-send.test.ts` 扫 `src/` 和 `docs/modules/examples/`，出现 `messages.send`、`drafts.send`、`/messages/send`、`/drafts/send`、`gmail.send` 就失败。代码能在运行时拼出 `send`，扫描看不见（计划 Appendix A 实测过），所以不发信的保证是这个口子，扫描只拦手误。
+**仓库扫描只是 lint。** `tests/unit/no-gmail-send.test.ts` 扫 `src/` 和 `docs/modules/examples/`，出现 `messages.send`、`drafts.send`、`/messages/send`、`/drafts/send`、`gmail.send` 就失败。代码能在运行时拼出 `send`，扫描看不见（计划 Appendix A 实测过），所以不发信的保证是这个口子，扫描只拦手误。
 
 ## 为什么这样做
 

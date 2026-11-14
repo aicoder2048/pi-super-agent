@@ -43,6 +43,6 @@
 
 ## 怎么看它在起作用
 
-- `tests/feed-line.test.ts` 覆盖检查、清洗、截断、放出的通知、重复、放出之后的回复是全文、`problem`。
-- `tests/telegram-full-text.test.ts`（ADR-0023 之后）：来信的三行通知照旧，为它开的任务的转述和幕僚长之后的回复在 Telegram 上是全文。
+- `tests/integration/feed-line.test.ts` 覆盖检查、清洗、截断、放出的通知、重复、放出之后的回复是全文、`problem`。
+- `tests/integration/telegram-full-text.test.ts`（ADR-0023 之后）：来信的三行通知照旧，为它开的任务的转述和幕僚长之后的回复在 Telegram 上是全文。
 - 测试模块在 `tests/fixtures/modules/private-line/`。

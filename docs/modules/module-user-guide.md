@@ -941,7 +941,7 @@ node --import ./src/pi-runtime.mjs check-skills.mjs ~/.pi-super-agent/modules/pa
 
 第二个方括号是诊断，应该是空的。
 
-提炼自外部文档的技能，再加一条测试核对它写到的名字。写法参考 `tests/first-teams.test.ts` 里「Pi 扩展技能」那三条。
+提炼自外部文档的技能，再加一条测试核对它写到的名字。写法参考 `tests/unit/first-teams.test.ts` 里「Pi 扩展技能」那三条。
 
 ### 配方 7：共同技能的骨架
 

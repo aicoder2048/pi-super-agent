@@ -40,5 +40,5 @@
 
 ## 验证
 
-- `tests/telegram-full-text.test.ts`：私密模块的信经过幕僚长和任务以后，命令卡片和问题卡片在手机上能点，转述带正文，之后无关的回复是全文；mail 模块的三行通知、转述全文、收据只在本机、不发信。
-- `tests/kernel.test.ts`「升级：旧库里记私密的两张表打开时删掉」。
+- `tests/integration/telegram-full-text.test.ts`：私密模块的信经过幕僚长和任务以后，命令卡片和问题卡片在手机上能点，转述带正文，之后无关的回复是全文；mail 模块的三行通知、转述全文、收据只在本机、不发信。
+- `tests/unit/kernel.test.ts`「升级：旧库里记私密的两张表打开时删掉」。

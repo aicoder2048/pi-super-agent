@@ -22,8 +22,8 @@
     "node-shim.d.ts",
     "../../../src/modules/*.ts",
     "../examples/stock-ta/watch-rules.ts",
-    "../../../tests/module-validate.test.ts",
-    "../../../tests/module-lifecycle.test.ts",
-    "../../../tests/module-protocol.test.ts"
+    "../../../tests/integration/module-validate.test.ts",
+    "../../../tests/unit/module-lifecycle.test.ts",
+    "../../../tests/unit/module-protocol.test.ts"
   ]
 }
