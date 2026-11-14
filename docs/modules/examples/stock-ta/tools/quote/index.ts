@@ -1,4 +1,4 @@
-import { massiveBase, MISSING_KEY, oneLine, REQUEST_LIMIT_MS, snapshot } from "../../massive.ts";
+import { changePct, massiveBase, MISSING_KEY, oneLine, REQUEST_LIMIT_MS, snapshot } from "../../massive.ts";
 import { nyTime, sessionAt, type Phase } from "../../market-days.ts";
 import { argsOf } from "../../ta.ts";
 
@@ -20,11 +20,19 @@ export default async function quote(input: unknown) {
 	const bySymbol = new Map(quotes.map((q) => [q.symbol, q]));
 	const today = sessionAt(now).nyDate;
 	return {
-		quotes: symbols.flatMap((symbol) => bySymbol.get(symbol) ?? []).map((q) => {
+		quotes: symbols.flatMap((symbol) => bySymbol.get(symbol) ?? []).map(({ dayClose, ...q }) => {
 			const at = Date.parse(q.at);
 			const { nyDate, phase } = sessionAt(at);
 			// Data from an earlier New York date (a weekend, a holiday, the small hours) is the last session's: the market is closed.
-			return { ...q, at: `${nyDate} ${nyTime(at)} 美东`, session: nyDate === today ? LABEL[phase] : LABEL.closed };
+			const session = nyDate === today ? phase : "closed";
+			// After the regular session the day bar keeps the official close while the minute bar follows after-hours trades.
+			const ended = (session === "post" || session === "closed") && dayClose !== null;
+			return {
+				...q,
+				at: `${nyDate} ${nyTime(at)} 美东`,
+				session: LABEL[session],
+				...(ended && { close: dayClose, closeDate: nyDate, closeChangePct: changePct(dayClose, q.prevClose) }),
+			};
 		}),
 		missing: symbols.filter((s) => !bySymbol.has(s)),
 	};
