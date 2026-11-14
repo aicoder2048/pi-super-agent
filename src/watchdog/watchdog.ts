@@ -87,8 +87,9 @@ const hostBackText = (downMs: number) => `✅ 宿主恢复了，停了${downMs <
 const STAMP = /^\d{4}-\d\d-\d\dT[\d:.]+Z /;
 const TAGGED = /^\[[\w-]+\]/;
 const ERRORISH = /error|错误|失败/i;
-// Node's crash output around the message: source location, caret, stack frames, version, warnings.
-const CRASH_NOISE = /^(?:file:\/\/|at |\^+$|Node\.js v|\(node:\d+\))/;
+// Node's crash output around the message: source location, caret, stack frames, version, warnings, and the error's
+// own properties, printed indented under it up to a closing brace (code: 'ERR_SQLITE_ERROR', errcode: 14, }).
+const CRASH_NOISE = /^(?:file:\/\/|\s*at |\s*\^+$|Node\.js v|\(node:\d+\)|\s+\[?[\w$]+\]?: |\s*[}\]],?$)/;
 
 /**
  * The line that says why the host stopped. Its own log lines carry a timestamp and a [tag]; what it prints as it dies
@@ -96,8 +97,9 @@ const CRASH_NOISE = /^(?:file:\/\/|at |\^+$|Node\.js v|\(node:\d+\))/;
  * A failing part such as [telegram] is not the reason the host stopped, so nothing is better than that guess.
  */
 export function errorLine(log: string): string | undefined {
-	const lines = log.split("\n").map((l) => l.trim().replace(STAMP, "")).filter(Boolean);
-	const fatal = lines.filter((l) => !TAGGED.test(l) && !CRASH_NOISE.test(l));
+	const raw = log.split("\n").map((l) => l.trimEnd().replace(STAMP, "")).filter(Boolean);
+	const lines = raw.map((l) => l.trim());
+	const fatal = raw.filter((l) => !TAGGED.test(l) && !CRASH_NOISE.test(l)).map((l) => l.trim());
 	const line = fatal.findLast((l) => ERRORISH.test(l)) ?? fatal.at(-1) ?? lines.findLast((l) => l.startsWith("[host]") && ERRORISH.test(l));
 	return line === undefined ? undefined : scrub(line);
 }
