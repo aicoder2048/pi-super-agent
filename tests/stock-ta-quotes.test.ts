@@ -473,7 +473,7 @@ test("你的改动让第一档门槛不低于第二档：报问题 bad-level 说
 	await feed.round();
 	assert.deepEqual(feed.problemIds(), ["bad-level"]);
 	assert.match(feed.problems[0]!.text, /rule-levels 第 1、2、4 行/);
-	assert.deepEqual(band(feed).sort(), [`band:NVDA:${DAY}:up4`, `band:SPY:${DAY}:up2`, `band:TSLA:${DAY}:up5`], "坏的行不生效，全部个股的第一档 4% 照算");
+	assert.deepEqual(band(feed).sort(), [`band:NVDA:${DAY}:up4`, `band:SPY:${DAY}:up2`, `band:TSLA:${DAY}:up4`], "坏的行不生效，全部个股的第一档 4% 照算");
 });
 
 test("一轮跳过两档、第二档调低了：第二档 0 层不吞掉第一档，照发第一档的静音一行和任务", async (t) => {

@@ -34,26 +34,55 @@ export type RuleLevels = ReadonlyMap<string, ReadonlyMap<string, Change>>;
 
 const isLevel = (n: unknown): n is Level => Number.isInteger(n) && (n as number) >= 0 && (n as number) <= 6;
 const known = new Set<string>(WATCH_RULES.map((r) => r.id));
+const INDEXES: readonly string[] = ["QQQ", "SPY"];
 
-/** The latest row of a rule and symbol wins; a latest row with `removedAt` goes back to the table. `bad` lists rows that do not apply. */
+export const scopeOf = (symbol: string): Scope => (INDEXES.includes(symbol) ? "index" : "stock");
+
+function changeOf(fields: LevelRow["fields"]): Change | undefined {
+	const { rule, level, threshold } = fields;
+	const ok = typeof rule === "string" && known.has(rule) && (level == null || isLevel(level)) && (threshold == null || (typeof threshold === "number" && threshold > 0 && threshold < 100));
+	return ok ? { ...(level != null && { level: level as Level }), ...(threshold != null && { threshold: threshold as number }) } : undefined;
+}
+
+/**
+ * Only the latest row of a rule and symbol counts: a latest row with `removedAt` goes back to the table unchecked, so a bad row
+ * is cleared by retracting it or writing a correct one. `bad` lists latest rows that do not apply, including a threshold change
+ * that puts a symbol's first tier at or above its second.
+ */
 export function parseRuleLevels(rows: readonly LevelRow[]): { levels: RuleLevels; bad: string[] } {
-	const latest = new Map<string, Map<string, Change | null>>();
-	const bad: string[] = [];
+	const latest = new Map<string, Map<string, LevelRow>>();
 	for (const row of [...rows].sort((x, y) => Number(x.id) - Number(y.id))) {
-		const { rule, symbol, level, threshold, removedAt } = row.fields;
-		const ok = typeof rule === "string" && known.has(rule) && (level == null || isLevel(level)) && (threshold == null || (typeof threshold === "number" && threshold > 0 && threshold < 100));
-		if (!ok) {
-			bad.push(row.id);
-			continue;
-		}
-		const code = String(symbol ?? "").trim().toUpperCase();
-		const change: Change = { ...(level != null && { level: level as Level }), ...(threshold != null && { threshold: threshold as number }) };
-		const bySymbol = latest.get(rule) ?? new Map<string, Change | null>();
-		bySymbol.set(code, removedAt ? null : change);
-		latest.set(rule, bySymbol);
+		const rule = String(row.fields["rule"]);
+		const code = String(row.fields["symbol"] ?? "").trim().toUpperCase();
+		latest.set(rule, (latest.get(rule) ?? new Map()).set(code, row));
 	}
-	const levels = new Map([...latest].map(([rule, bySymbol]) => [rule, new Map([...bySymbol].flatMap(([code, c]) => (c === null ? [] : [[code, c] as const])))]));
-	return { levels, bad };
+	const bad: string[] = [];
+	const applied = new Map<string, Map<string, { row: LevelRow; change: Change }>>();
+	for (const [rule, bySymbol] of latest) {
+		for (const [code, row] of bySymbol) {
+			if (row.fields["removedAt"]) continue;
+			const change = changeOf(row.fields);
+			if (change === undefined) bad.push(row.id);
+			else applied.set(rule, (applied.get(rule) ?? new Map()).set(code, { row, change }));
+		}
+	}
+	const levelsOf = (): RuleLevels => new Map([...applied].map(([rule, bySymbol]) => [rule, new Map([...bySymbol].map(([code, a]) => [code, a.change]))]));
+	const [first, second] = WATCH_RULES;
+	const symbols = [...new Set([...applied.values()].flatMap((bySymbol) => [...bySymbol.keys()]))].sort();
+	for (const code of symbols) {
+		const scope = code === "" ? "stock" : scopeOf(code);
+		while (effective(first, code, scope, levelsOf()).threshold >= effective(second, code, scope, levelsOf()).threshold) {
+			const sources = [first, second].flatMap(({ id }) => {
+				const [own, all] = [applied.get(id)?.get(code), scope === "stock" ? applied.get(id)?.get("") : undefined];
+				const source = own?.change.threshold != null ? own : all?.change.threshold != null ? all : undefined;
+				return source ? [{ id, code: source === own ? code : "", row: source.row }] : [];
+			});
+			const culprit = sources.reduce((top, s) => (Number(s.row.id) > Number(top.row.id) ? s : top));
+			bad.push(culprit.row.id);
+			applied.get(culprit.id)!.delete(culprit.code);
+		}
+	}
+	return { levels: levelsOf(), bad: bad.sort((x, y) => Number(x) - Number(y)) };
 }
 
 export type Effective = { rule: WatchRule; level: Level; line: Line; threshold: number };
