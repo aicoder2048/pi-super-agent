@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { scanPackage } from "../src/modules/validate.ts";
+import { close } from "../docs/modules/examples/stock-ta/feeds/scan/close.ts";
 import { newDay, watch, type Context, type DayState } from "../docs/modules/examples/stock-ta/feeds/quotes/watch.ts";
 import { parseHoldings, stillIn, type HoldingRow } from "../docs/modules/examples/stock-ta/holdings.ts";
 import type { Quote } from "../docs/modules/examples/stock-ta/massive.ts";
@@ -94,10 +95,27 @@ test("持仓规则的触发不带成本、止损价和高点：只有现价、�
 	assert.ok(r!.alerts.some((a) => /152\.35/.test(a.text)), "直接给你的那一行照写成本");
 });
 
+test("持仓命中之后同一天别的触发：同日里只写持仓的状态，不带成本、止损价、高点和回撤百分比（盘中和收盘都一样）", () => {
+	const holdings = held({ symbol: "NVDA", cost: 152.35, stopPrice: 141.65, boughtAt: "2026-10-01" });
+	const day = newDay(DATE);
+	const c = ctx({ holdings, levels: levels({ rule: "gap", level: 5 }, { rule: "move-1", level: 0 }, { rule: "move-2", level: 0 }), peaks: { NVDA: 197.45 } });
+	const [first, later] = run(day, c, [q("NVDA", 141.9, 170, "10:41", { dayLow: 141.6, dayHigh: 170.5 })], [q("NVDA", 142, 170, "10:42", { dayOpen: 160, dayLow: 141.6, dayHigh: 170.5 })]);
+	assert.deepEqual(first!.hits.filter((h) => !h.rule.startsWith("move-")).map((h) => h.rule), ["stop-loss", "drawdown", "below-cost"]);
+	const bars = [...Array.from({ length: 21 }, (_, i) => ({ date: `2026-10-${String(i + 1).padStart(2, "0")}`, close: 170, volume: 1_000_000 })), { date: DATE, close: 142, volume: 1_000_000 }];
+	const closing = close({ date: DATE, at: "2026-11-12T21:00:00.000Z", symbols: ["NVDA"], signals: [{ symbol: "NVDA", rule_id: "R-MA-2-200", kind: "跌破 MA200", direction: "bearish", price: 142, attention: "normal", values: { left: 142, right: 150 } }], bars: { NVDA: bars }, earlier: day.hits, levels: c.levels, quiet: false });
+	const triggers = [...later!.notices, ...closing.notices].map((n) => n.fields.line);
+	assert.deepEqual([later!.notices.map((n) => n.fields.rule), closing.notices.map((n) => n.fields.rule)], [["gap"], ["R-MA-2-200"]]);
+	for (const line of triggers) {
+		assert.match(line, /同日：[^。]*触到止损线[^。]*从持仓高点回撤到回撤线[^。]*跌破成本价/, line);
+		assert.doesNotMatch(line, /(止损|回撤|成本)[^、。]*\d/, `持仓的事实不带数字：${line}`);
+		assert.doesNotMatch(line, /152\.35|141\.65|197\.45|28\.1/, `没有持仓数字：${line}`);
+	}
+});
+
 test("回撤：从建仓日期以来的最高（日线库到昨天，盘中再和当天最高比）回撤 15% 响铃一行，不开任务；写明高点", () => {
 	const holdings = held({ symbol: "NVDA", cost: 100, boughtAt: "2026-10-01" });
 	const [r] = run(newDay(DATE), ctx({ holdings, peaks: { NVDA: 210 } }), [q("NVDA", 175.98, 180, "10:41", { dayHigh: 181 })]);
-	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level, h.lean, h.fact]), [["drawdown", 3, null, "从建仓以来高点回撤 16.2%"]]);
+	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level, h.lean, h.fact]), [["drawdown", 3, null, "从持仓高点回撤到回撤线"]]);
 	assert.deepEqual(r!.alerts.map((a) => [a.push ?? "ring", a.text]), [["ring", "NVDA 从建仓以来的高点 210.00 回撤 16.20%，现价 175.98，当天跌 -2.23%。报价时间 10:41 ET（延迟行情）。"]]);
 	assert.deepEqual(r!.notices, []);
 });
@@ -105,7 +123,7 @@ test("回撤：从建仓日期以来的最高（日线库到昨天，盘中再�
 test("回撤：没写建仓日期用 52 周最高；当天最高比日线库的高就按当天的算；没有高点（日线库里一根也没有）就不算", () => {
 	const holdings = held({ symbol: "NVDA", cost: 100 }, { symbol: "AMD", cost: 50 });
 	const [r] = run(newDay(DATE), ctx({ holdings, peaks: { NVDA: 200, AMD: null } }), [q("NVDA", 178, 185, "10:41", { dayHigh: 220 }), q("AMD", 60, 61, "10:41", { dayHigh: 100 })]);
-	assert.deepEqual(r!.hits.filter((h) => h.rule === "drawdown").map((h) => [h.symbol, h.fact]), [["NVDA", "从 52 周高点回撤 19.1%"]]);
+	assert.deepEqual(r!.hits.filter((h) => h.rule === "drawdown").map((h) => [h.symbol, h.fact]), [["NVDA", "从持仓高点回撤到回撤线"]]);
 	assert.match(r!.alerts.find((a) => a.id.startsWith("drawdown:"))!.text, /^NVDA 从 52 周高点 220\.00 回撤 19\.09%，现价 178\.00，当天跌 -3\.78%。/);
 });
 
