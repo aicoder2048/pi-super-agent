@@ -32,9 +32,12 @@ const READERS: Readonly<Record<string, Reader>> = {
 	"application/pdf": { extensions: [".pdf"], read: (bytes, _part, limits) => pdfText(bytes, limits) },
 	"image/png": image([".png"]),
 	"image/jpeg": image([".jpg", ".jpeg"]),
+	"image/jpg": image([".jpg", ".jpeg"]),
 	"image/heic": image([".heic"]),
 	"image/heif": image([".heif"]),
 	"image/tiff": image([".tif", ".tiff"]),
+	"image/webp": image([".webp"]),
+	"image/bmp": image([".bmp"]),
 };
 
 const PDF_SCRIPT = fileURLToPath(new URL("../../py/pdf_text.py", import.meta.url));
@@ -88,7 +91,7 @@ function readerFor(part: Part): Reader {
 	const extension = extensionOf(part);
 	const generic = GENERIC.has(mimeType);
 	const reader = generic ? Object.values(READERS).find((r) => r.extensions.includes(extension)) : READERS[mimeType];
-	if (reader === undefined || !reader.extensions.includes(extension)) throw new Error(`这个附件是 ${part.mimeType}（${filename}），只读 txt、md、csv、html、pdf 和图片（png、jpg、heic、tiff）`);
+	if (reader === undefined || !reader.extensions.includes(extension)) throw new Error(`这个附件是 ${part.mimeType}（${filename}），只读 txt、md、csv、html、pdf 和图片（png、jpg、heic、tiff、webp、bmp）`);
 	if (!generic || reader !== READERS["application/pdf"]) return reader;
 	return {
 		...reader,

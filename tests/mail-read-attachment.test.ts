@@ -167,7 +167,7 @@ test("读附件：不认的类型拒绝并写明类型，类型和扩展名对�
 	for (const [partId, shown] of [["1", "image/jpeg（photo.png）"], ["2", "text/plain（run.exe）"], ["3", "application/zip（a.zip）"]] as const) {
 		const reply = await w.call({ messageId: "m-1", partId });
 		assert.ok(!reply.ok, partId);
-		assert.ok(reply.note.includes(`这个附件是 ${shown}，只读 txt、md、csv、html、pdf 和图片（png、jpg、heic、tiff）`), reply.note);
+		assert.ok(reply.note.includes(`这个附件是 ${shown}，只读 txt、md、csv、html、pdf 和图片（png、jpg、heic、tiff、webp、bmp）`), reply.note);
 	}
 	assert.deepEqual(w.downloads(), []);
 });

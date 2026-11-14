@@ -15,13 +15,29 @@ MAX_PAGES = 50
 SCAN_TEXT_CHARS = 20
 
 
-def is_scan(page, text: str) -> bool:
-    resources = page.get("/Resources")
+# Merged, optimized and print-to-PDF files often wrap the page image in a Form XObject.
+FORM_DEPTH = 4
+
+
+def has_image(holder, depth: int, seen: set) -> bool:
+    resources = holder.get("/Resources")
     xobjects = resources.get_object().get("/XObject") if resources is not None else None
     if xobjects is None:
         return False
-    images = any(x.get_object().get("/Subtype") == "/Image" for x in xobjects.get_object().values())
-    return images and len(re.sub(r"\s", "", text)) < SCAN_TEXT_CHARS
+    for ref in xobjects.get_object().values():
+        xobject = ref.get_object()
+        subtype = xobject.get("/Subtype")
+        if subtype == "/Image":
+            return True
+        if subtype == "/Form" and depth > 0 and id(xobject) not in seen:
+            seen.add(id(xobject))
+            if has_image(xobject, depth - 1, seen):
+                return True
+    return False
+
+
+def is_scan(page, text: str) -> bool:
+    return len(re.sub(r"\s", "", text)) < SCAN_TEXT_CHARS and has_image(page, FORM_DEPTH, set())
 
 
 def main() -> None:
