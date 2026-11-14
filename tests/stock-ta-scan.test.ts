@@ -565,6 +565,63 @@ test("免打扰：收盘扫描落在宿主本地 22:00 到 07:00，任务和静�
 	assert.match(feed.notices[0]!.body, /免打扰时段留下，收盘小结时补发）（规则 R-MA-2-200，层级 5，做法 structure-trend）$/);
 });
 
+const firstQuiet = (fromMs: number) => {
+	let ms = fromMs;
+	while (!quietAt(ms, false)) ms += 30 * 60_000;
+	return ms;
+};
+const firstOpen = (fromMs: number) => {
+	let ms = fromMs;
+	while (quietAt(ms, false)) ms += 30 * 60_000;
+	return ms;
+};
+
+test("免打扰：17:30 小结已照发，补扫落在时段里；时段结束后的第一拍补开留着的任务，留着的静音行并成一行补发，只发一次", async (t) => {
+	const feed = await scannedOnce(t);
+	writeHits(feed.dataDir, "quotes", "2026-11-12", [high52]);
+	feed.setPlan({ kind: "down" });
+	feed.at("2026-11-12T22:30:00.000Z");
+	await feed.tick();
+	assert.equal(feed.digests().length, 1, "扫描失败，17:30 照发小结");
+	const quietMs = firstQuiet(Date.parse("2026-11-12T23:00:00.000Z"));
+	feed.setPlan({ kind: "ok", signals: [ma("NVDA", 200, "bearish", "2026-11-12"), ma("AMD", 50, "bearish", "2026-11-12")] });
+	feed.at(new Date(quietMs).toISOString());
+	await feed.tick();
+	assert.deepEqual([feed.notices, feed.lines()], [[], []], "时段里什么都不发");
+	const openMs = firstOpen(quietMs);
+	feed.at(new Date(openMs).toISOString());
+	await feed.tick();
+	assert.deepEqual(feed.notices.map((n) => [n.id, threadId(n.threadOwner ?? n.source, n.thread)]), [["R-MA-2-200:NVDA:2026-11-12", "thr_stock-ta:NVDA:2026-11-12"]]);
+	assert.match(feed.notices[0]!.body, /免打扰时段留下，收盘小结时补发）（规则 R-MA-2-200，层级 5，做法 structure-trend）$/);
+	assert.deepEqual(feed.lines().map((a) => [a.externalId, a.push]), [["held:2026-11-12", "silent"]]);
+	assert.equal(feed.lines()[0]!.text, "免打扰时段留下的收盘命中 11-12（美东）：AMD 收盘跌破 50 日线（免打扰时留下）。问「今天有哪些信号」看全部。");
+	for (let ms = openMs + 60 * 60_000; ms < Date.parse("2026-11-13T21:19:00.000Z"); ms += 60 * 60_000) {
+		feed.at(new Date(ms).toISOString());
+		await feed.tick();
+	}
+	assert.deepEqual([feed.notices.length, feed.lines().length, feed.digests().length, feed.scans().length], [1, 1, 1, 4], "补发一次；之后的拍（每拍都重新载入模块）不再发、不重扫");
+});
+
+test("免打扰：小结补发过留着的任务以后重启宿主，同一个交易日的拍不再补发", async (t) => {
+	const feed = await scannedOnce(t);
+	const quietMs = firstQuiet(Date.parse("2026-11-12T21:20:00.000Z"));
+	feed.setPlan({ kind: "ok", signals: [ma("NVDA", 200, "bearish", "2026-11-12")] });
+	feed.at(new Date(quietMs).toISOString());
+	await feed.tick();
+	const openMs = firstOpen(quietMs);
+	feed.at(new Date(openMs).toISOString());
+	await feed.tick();
+	assert.deepEqual([feed.notices.map((n) => n.id), feed.digests().length], [["R-MA-2-200:NVDA:2026-11-12"], 1]);
+	const cursor = feed.cursor()!;
+	const again = await scanFeed(t);
+	again.watch("NVDA", "AMD");
+	cpSync(join(feed.dataDir, "files"), join(again.dataDir, "files"), { recursive: true });
+	again.setCursor(cursor);
+	again.at(new Date(openMs + 5 * 60_000).toISOString());
+	await again.tick();
+	assert.deepEqual([again.notices, again.alerts, again.scans().length], [[], [], 0], "新宿主读同一个 cursor 和命中文件：不补发、不重扫");
+});
+
 test("报价 feed 免打扰时留下的任务也由收盘小结补发", async (t) => {
 	const feed = await scannedOnce(t);
 	const band: Hit = { id: "move-1:NVDA:2026-11-12:down", rule: "move-1", symbol: "NVDA", date: "2026-11-12", at: "2026-11-12T20:59:00.000Z", lean: "bear", fact: "到 -5% 档", level: 5, text: "NVDA 跌 -5.10%，到达 -5% 档。", held: true };
