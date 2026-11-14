@@ -420,6 +420,24 @@ test("规则：stock-ta/scan 的触发有规则 ma-break，默认只有 50 日�
 	assert.deepEqual(scan.settings.signals, { rules: ["R-MA-2-50"] });
 });
 
+test("一直扫不成功：同一晚的几拍都报 scan-failed，过了美东午夜 ta 说跳过的那一拍清掉，下一个交易日收盘后再报", async (t) => {
+	const feed = await scanFeed(t);
+	feed.watch("NVDA");
+	await feed.tick();
+	feed.setPlan({ kind: "down" });
+	for (const now of ["2026-11-12T22:00:00.000Z", "2026-11-12T23:00:00.000Z"]) {
+		feed.at(now);
+		await feed.tick();
+	}
+	feed.at("2026-11-13T06:00:00.000Z");
+	feed.setPlan({ kind: "skip" });
+	await feed.tick();
+	feed.at("2026-11-13T22:00:00.000Z");
+	feed.setPlan({ kind: "down" });
+	await feed.tick();
+	assert.deepEqual(feed.problems.map((p) => p?.id ?? "-"), ["-", "scan-failed", "scan-failed", "-", "scan-failed"]);
+});
+
 test("扫描失败报问题 scan-failed（断网、超时都算），文字不带数据；下一次换上的扫描清掉", async (t) => {
 	const feed = await scanFeed(t);
 	feed.watch("NVDA");
