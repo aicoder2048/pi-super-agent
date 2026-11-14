@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
-import { errorLine } from "../../src/watchdog/watchdog.ts";
+import { errorLine, Watchdog } from "../../src/watchdog/watchdog.ts";
 
 const at = "2026-11-14T03:00:00.000Z";
 
@@ -31,4 +34,30 @@ test("只有别的部件的失败行时不猜原因", () => {
 
 test("配置错误没有时间戳也没有 error 字样：照样报出来", () => {
 	assert.equal(errorLine("/state/config.json：modules.toy-market 不是已发现的模块\n"), "/state/config.json：modules.toy-market 不是已发现的模块");
+});
+
+test("outage.json 写不进去：照样拉起宿主、照样发 ⚠️，写失败记进日志", () => {
+	const MIN = 60_000;
+	const stateDir = mkdtempSync(join(tmpdir(), "psa-wd-"));
+	mkdirSync(join(stateDir, "outage.json"));
+	writeFileSync(join(stateDir, "outage.json", "x"), "");
+	const now = { t: 100 * MIN };
+	const told: string[] = [];
+	const logs: string[] = [];
+	let starts = 0;
+	const wd = new Watchdog({
+		stateDir,
+		clock: { now: () => now.t },
+		config: { heartbeatStaleMs: 2 * MIN, restartGraceMs: 3 * MIN },
+		startHost: () => starts++,
+		tell: (text) => told.push(text),
+		log: (line) => logs.push(line),
+	});
+	for (let i = 0; i < 4; i++) {
+		wd.checkOnce();
+		now.t += 3 * MIN;
+	}
+	assert.equal(starts, 4, "每次都拉起");
+	assert.match(told.join("\n"), /宿主连续 3 次启动失败/);
+	assert.ok(logs.some((l) => l.includes("outage.json")), logs.join("\n"));
 });
