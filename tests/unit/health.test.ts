@@ -138,6 +138,20 @@ test("错误文字里的各种密钥写法都去掉", () => {
 	for (const [error, secret] of secrets) assert.ok(!scrub(error).includes(secret), `${secret} 还在：${scrub(error)}`);
 });
 
+test("环境变量名、裸 bot token、私钥、冒号写法、Cookie、带转义引号的 JSON 也都去掉", () => {
+	const secrets: [string, string][] = [
+		["launchd env TELEGRAM_BOT_TOKEN=7312345678:AAH3kd9fJ2lQwXyZ0aBcDeFgHiJkLmNoPqR rejected", "AAH3kd9fJ2lQwXyZ0aBcDeFgHiJkLmNoPqR"],
+		["MASSIVE_API_KEY=mv-SECRET-1234 rejected", "mv-SECRET-1234"],
+		["telegram 401 for 7312345678:AAH3kd9fJ2lQwXyZ0aBcDeFgHiJkLmNoPqR", "AAH3kd9fJ2lQwXyZ0aBcDeFgHiJkLmNoPqR"],
+		["gmail service account private_key=pk-SECRET-5566 invalid", "pk-SECRET-5566"],
+		["config token: tok-SECRET-8899 is invalid", "tok-SECRET-8899"],
+		["request headers Cookie: session=sess-SECRET-3141; theme=dark rejected", "sess-SECRET-3141"],
+		['400 {"token":"ab\\"SECRET-in-quotes\\"cd"}', "SECRET-in-quotes"],
+	];
+	for (const [error, secret] of secrets) assert.ok(!scrub(error).includes(secret), `${secret} 还在：${scrub(error)}`);
+	assert.match(scrub("TELEGRAM_BOT_TOKEN=7312345678:AAH3kd9fJ2lQwXyZ0aBcDeFgHiJkLmNoPqR"), /^TELEGRAM_BOT_TOKEN=…$/, "保留变量名，看得出是哪个密钥");
+});
+
 test("恢复的话：不到一分钟说不到 1 分钟，否则说约几分钟", () => {
 	const alarm = { id: "model:router", area: "model" as const, subject: "幕僚长模型", since: 0 };
 	assert.match(clearedText({ ...alarm, clearedAt: 20_000 }), /不到 1 分钟/);
