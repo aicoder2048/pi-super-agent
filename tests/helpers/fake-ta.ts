@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export type ScanPlan =
-	| { kind: "ok"; rows?: number; signals?: number }
+	| { kind: "ok"; rows?: number; signals?: number | Record<string, unknown>[] }
 	| { kind: "partial"; failing: string[] }
 	| { kind: "down" }
 	| { kind: "dividends" }
@@ -64,7 +64,7 @@ if (plan.kind === "skip") {
 write(plan.rows ?? symbols.length);
 const errors = plan.kind === "dividends" ? symbols.map((s) => ({ symbol: s, error: { code: "DIVIDENDS_UNAVAILABLE", message: "分红不可用，当前仅拆股复权。" } })) : plan.kind === "down" ? symbols.map((s) => error(s, "MARKET_UNAVAILABLE")) : plan.kind === "partial" ? plan.failing.map((s) => error(s, "MARKET_DATA_INVALID")) : [];
 if (plan.kind === "ok") errors.push({ symbol: "QQQ", error: { code: "DIVIDENDS_UNAVAILABLE", message: "分红更新不可用，使用已缓存分红。" } });
-out({ scan_id: 1, symbol_count: symbols.length, new_signals: Array.from({ length: plan.signals ?? 0 }, (_, i) => ({ id: i })), errors });
+out({ scan_id: 1, symbol_count: symbols.length, new_signals: Array.isArray(plan.signals) ? plan.signals : Array.from({ length: plan.signals ?? 0 }, (_, i) => ({ id: i })), errors });
 `;
 
 /** Reads its plan from the config.json beside it, since the feed passes it no env of ours. */

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { type TestContext } from "node:test";
 import { Modules } from "../src/modules.ts";
-import { runFeed, type FeedPorts } from "../src/modules/feed-runner.ts";
+import { runFeed, type FeedNotice, type FeedPorts, type FeedProblem } from "../src/modules/feed-runner.ts";
 import { lockOf, VENV_MARK, venvDir } from "../src/modules/files.ts";
 import { instanceData } from "../src/modules/instance-data.ts";
 import { fakeTa } from "./helpers/fake-ta.ts";
@@ -46,10 +46,15 @@ async function scanFeed(t: TestContext, { key = KEY, viaVenv = false, installed 
 		assert.ok(found, "stock-ta 有 scan feed");
 		return found;
 	};
-	const ports: FeedPorts = { data, submit: () => undefined, alert: () => undefined, problem: () => undefined, secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined), now: () => Date.now() };
+	const notices: FeedNotice[] = [];
+	const problems: (FeedProblem | undefined)[] = [];
+	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: () => undefined, problem: (_, p) => void problems.push(p), secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined), now: () => Date.now() };
 	const live = join(dataDir, "files", "ta", "ta.sqlite");
 	return {
 		live,
+		notices,
+		problems,
+		modules: () => modules,
 		setPlan: fake.setPlan,
 		at(now: string, extra: Record<string, unknown> = {}) {
 			settings = { ...settings, now, ...extra };
@@ -200,7 +205,7 @@ test("ta 说跳过（不是交易日或还没到时间）：不换库，不存�
 	assert.deepEqual(leftovers(feed.live), []);
 });
 
-test("ta 退出码非零：这一拍失败并说明，旧库一字不差，没有副本，不存行", async (t) => {
+test("ta 退出码非零：旧库一字不差，没有副本，存一行「失败」写明退出码，报问题 scan-failed", async (t) => {
 	const feed = await scanFeed(t);
 	feed.watch("NVDA");
 	await feed.tick();
@@ -208,11 +213,13 @@ test("ta 退出码非零：这一拍失败并说明，旧库一字不差，没�
 	feed.at("2026-11-12T23:00:00.000Z");
 	feed.setPlan({ kind: "exit" });
 	const run = await feed.tick();
-	assert.equal(run.ok, false);
-	assert.match(run.ok ? "" : run.note, /退出码 2/);
+	assert.equal(run.ok, true, JSON.stringify(run));
 	assert.equal(sha(feed.live), before);
 	assert.deepEqual(leftovers(feed.live), []);
-	assert.equal(feed.runs().length, 1);
+	const failed = feed.runs().find((r) => r.fields["tradingDate"] === "2026-11-12");
+	assert.equal(failed?.fields["outcome"], "失败");
+	assert.match(String(failed?.fields["errors"]), /退出码 2/);
+	assert.deepEqual(feed.problems.map((p) => p?.id ?? "-"), ["-", "scan-failed"]);
 });
 
 test("ta 超过扫描时限：被停掉，存一行「失败」写明超时，旧库不变，没有副本，cursor 不动；下一拍照常", async (t) => {
@@ -308,22 +315,24 @@ test("没有 settings.ta 时用的是和自己这份包副本 uv.lock 对得上�
 	assert.equal(feed.scans().length, 1);
 });
 
-test("venv 没装完（没有 .psa-lock）：这一拍失败，说先跑 just module setup stock-ta，不起 ta", async (t) => {
+test("venv 没装完（没有 .psa-lock）：不起 ta，报问题 scan-failed，那一行「失败」说先跑 just module setup stock-ta", async (t) => {
 	const feed = await scanFeed(t, { viaVenv: true, installed: false });
 	feed.watch("NVDA");
 	const run = await feed.tick();
-	assert.equal(run.ok, false, JSON.stringify(run));
-	assert.match(run.ok ? "" : run.note, /先跑 just module setup stock-ta/);
+	assert.equal(run.ok, true, JSON.stringify(run));
+	assert.deepEqual(feed.problems.map((p) => p?.id), ["scan-failed"]);
+	assert.equal(feed.runs()[0]?.fields["outcome"], "失败");
+	assert.match(String(feed.runs()[0]?.fields["errors"]), /先跑 just module setup stock-ta/);
 	assert.equal(feed.calls().length, 0);
 });
 
-test("缺 POLYGON_API_KEY：这一拍失败，一行说明，不起 ta", async (t) => {
+test("缺 POLYGON_API_KEY：不起 ta，报问题 no-key，一行说明", async (t) => {
 	const feed = await scanFeed(t, { key: "" });
 	feed.watch("NVDA");
-	const run = await feed.tick();
-	assert.equal(run.ok, false);
-	assert.match(run.ok ? "" : run.note, /POLYGON_API_KEY/);
-	assert.equal(run.ok ? "" : run.note.split("\n").length, 1);
+	assert.deepEqual(await feed.tick(), { ok: true, records: 0, notices: 0 });
+	assert.deepEqual(feed.problems.map((p) => p?.id), ["no-key"]);
+	assert.match(feed.problems[0]!.text, /POLYGON_API_KEY/);
+	assert.equal(feed.problems[0]!.text.split("\n").length, 1);
 	assert.equal(feed.calls().length, 0);
 });
 
@@ -342,4 +351,105 @@ test("每个标的都只有「分红不可用」的提醒：日线到了，照�
 	await feed.tick();
 	assert.equal(feed.runs()[0]?.fields["outcome"], "换上");
 	assert.ok(existsSync(feed.live));
+});
+
+const THURSDAY_EVENING = "2026-11-12T23:00:00.000Z";
+const CLOSE = (date: string) => Date.parse(`${date}T21:00:00Z`);
+const signal = (symbol: string, rule_id: string, kind: string, direction: string, date: string, price: number | null = 150.2) => ({ id: 1, symbol, rule_id, timeframe: "1d", kind, direction, data_start_ms: CLOSE(date) - 23_400_000, data_end_ms: CLOSE(date), discovered_ms: CLOSE(date) + 960_000, price, attention: "key", read: 0 });
+
+async function scannedOnce(t: TestContext) {
+	const feed = await scanFeed(t);
+	feed.watch("NVDA", "AMD");
+	await feed.tick();
+	feed.at(THURSDAY_EVENING);
+	return feed;
+}
+
+test("扫描新信号：这次扫的交易日上、规则在 settings.signals.rules 里、标的在自选股里的信号，每条发一条触发，正文写明代码、规则、名称、方向、周期、数据日期和收盘价", async (t) => {
+	const feed = await scannedOnce(t);
+	feed.setPlan({ kind: "ok", signals: [
+		signal("NVDA", "R-MA-2-50", "跌破 MA50", "bearish", "2026-11-12"),
+		signal("NVDA", "R-MA-2-50", "站上 MA50", "bullish", "2026-11-11"),
+		signal("AMD", "R-MACD-2", "金叉", "bullish", "2026-11-12"),
+		signal("SPY", "R-MA-2-50", "跌破 MA50", "bearish", "2026-11-12"),
+	] });
+	assert.deepEqual(await feed.tick(), { ok: true, records: 1, notices: 1 });
+	const [notice] = feed.notices;
+	assert.equal(notice?.source, "stock-ta/scan");
+	assert.equal(notice?.id, "signal:NVDA:R-MA-2-50:1d:2026-11-12:bearish");
+	assert.equal(notice?.thread, "signal:NVDA:2026-11-12");
+	for (const said of ["NVDA", "跌破 MA50", "R-MA-2-50", "bearish", "1d", "2026-11-12", "150.2"]) assert.ok(notice?.body.includes(said), `正文有 ${said}：${notice?.body}`);
+});
+
+test("扫描新信号：空库第一次扫描补的两年信号一条触发都不发", async (t) => {
+	const feed = await scanFeed(t);
+	feed.watch("NVDA");
+	feed.setPlan({ kind: "ok", signals: [signal("NVDA", "R-MA-2-50", "跌破 MA50", "bearish", "2026-11-11"), signal("NVDA", "R-MA-2-50", "站上 MA50", "bullish", "2025-03-03")] });
+	assert.deepEqual(await feed.tick(), { ok: true, records: 1, notices: 0 });
+});
+
+test("扫描新信号：同一只、同一规则、同一天、同一方向的信号再扫到一次，触发 id 一样（内核按 id 只收一次）", async (t) => {
+	const feed = await scannedOnce(t);
+	const nvda = signal("NVDA", "R-MA-2-50", "跌破 MA50", "bearish", "2026-11-12");
+	feed.setPlan({ kind: "ok", signals: [nvda] });
+	await feed.tick();
+	feed.watch("MSFT");
+	await feed.tick();
+	assert.equal(feed.notices.length, 2);
+	assert.equal(feed.notices[0]!.id, feed.notices[1]!.id);
+});
+
+test("扫描新信号：settings.signals.rules 改了，下一次扫描就按新的名单发；没有换上的扫描不发", async (t) => {
+	const feed = await scannedOnce(t);
+	feed.at(THURSDAY_EVENING, { signals: { rules: ["R-MACD-2"] } });
+	feed.setPlan({ kind: "ok", signals: [signal("NVDA", "R-MA-2-50", "跌破 MA50", "bearish", "2026-11-12"), signal("AMD", "R-MACD-2", "金叉", "bullish", "2026-11-12", null)] });
+	await feed.tick();
+	assert.deepEqual(feed.notices.map((n) => n.id), ["signal:AMD:R-MACD-2:1d:2026-11-12:bullish"]);
+	feed.at("2026-11-13T23:00:00.000Z");
+	feed.setPlan({ kind: "down" });
+	await feed.tick();
+	assert.equal(feed.notices.length, 1);
+});
+
+test("规则：stock-ta/scan 的触发有规则 ma-break，默认只有 50 日线的信号发触发", async (t) => {
+	const modules = (await scanFeed(t)).modules();
+	assert.deepEqual(modules.rulesFor("stock-ta/scan"), ["stock-ta/ma-break"]);
+	const rule = modules.allRules().find((r) => r.id === "stock-ta/ma-break");
+	for (const said of ["R-MA-2-50", "跌破", "structure-pattern", "trend-momentum", "数据日期", "不是交易指令", "只是数据"]) assert.match(rule?.text ?? "", new RegExp(said));
+	const scan = JSON.parse(readFileSync(join(PKG, "feeds", "scan", "feed.json"), "utf8"));
+	assert.deepEqual(scan.settings.signals, { rules: ["R-MA-2-50"] });
+});
+
+test("一直扫不成功：同一晚的几拍都报 scan-failed，过了美东午夜 ta 说跳过的那一拍清掉，下一个交易日收盘后再报", async (t) => {
+	const feed = await scanFeed(t);
+	feed.watch("NVDA");
+	await feed.tick();
+	feed.setPlan({ kind: "down" });
+	for (const now of ["2026-11-12T22:00:00.000Z", "2026-11-12T23:00:00.000Z"]) {
+		feed.at(now);
+		await feed.tick();
+	}
+	feed.at("2026-11-13T06:00:00.000Z");
+	feed.setPlan({ kind: "skip" });
+	await feed.tick();
+	feed.at("2026-11-13T22:00:00.000Z");
+	feed.setPlan({ kind: "down" });
+	await feed.tick();
+	assert.deepEqual(feed.problems.map((p) => p?.id ?? "-"), ["-", "scan-failed", "scan-failed", "-", "scan-failed"]);
+});
+
+test("扫描失败报问题 scan-failed（断网、超时都算），文字不带数据；下一次换上的扫描清掉", async (t) => {
+	const feed = await scanFeed(t);
+	feed.watch("NVDA");
+	feed.setPlan({ kind: "down" });
+	await feed.tick();
+	feed.at(THURSDAY_EVENING, { scanSeconds: 1 });
+	feed.setPlan({ kind: "sleep" });
+	await feed.tick();
+	feed.at(THURSDAY_EVENING, { scanSeconds: 270 });
+	feed.setPlan({ kind: "ok" });
+	await feed.tick();
+	assert.deepEqual(feed.problems.map((p) => p?.id ?? "-"), ["scan-failed", "scan-failed", "-"]);
+	assert.doesNotMatch(feed.problems[0]!.text, /NVDA|MARKET_UNAVAILABLE/);
+	assert.match(feed.problems[0]!.text, /扫描记录/);
 });

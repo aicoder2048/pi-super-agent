@@ -1,6 +1,6 @@
 {
   "title": "自选股报价",
-  "description": "交易时段每 60 秒取一次自选股和 SPY、QQQ 的快照（Massive Starter 套餐，延迟 15 分钟）；当天涨跌到档时发一行提醒和一条触发：个股 5%、8%，SPY、QQQ 2%、3%",
+  "description": "交易时段每 60 秒取一次自选股和 SPY、QQQ 的快照（Massive Starter 套餐，延迟 15 分钟）；当天涨跌到 settings.bands 里的一档时发一行提醒和一条触发（bySymbol 写了的代码用自己的档，其余用 default）",
   "handler": "index.ts",
   "secrets": ["POLYGON_API_KEY"],
   "every": "60s",
