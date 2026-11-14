@@ -6,8 +6,8 @@
 export type Level = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 /** The line put in front of the user. Levels 1 to 3 imply it; a level 5 or 6 rule names it. */
 export type Line = "none" | "badge" | "silent" | "ring";
-/** The skill a task opened by the rule follows: band-move sends three, market-desk one, structure-trend two (structure and trend). */
-export type Plan = "band-move" | "market-desk" | "structure-trend";
+/** The skill a task opened by the rule follows: band-move sends three, market-desk one, structure-trend two (structure and trend), holding-ask asks the user first. */
+export type Plan = "band-move" | "market-desk" | "structure-trend" | "holding-ask";
 export type Scope = "stock" | "index" | "vixy";
 /** Which way a hit points: bull and bear take part in resonance, a hit without a lean never does. */
 export type Lean = "bull" | "bear";
@@ -25,6 +25,8 @@ export type WatchRule = Reaction & {
 	plan: Plan;
 	/** The same symbol and rule flipping lean WHIPSAW.flips times within WHIPSAW.days drops the hit to level 0. */
 	whipsaw?: true;
+	/** A rule on the user's holdings (holdings.ts): graded from the holding, never by a detector of its own. */
+	holding?: true;
 };
 
 export const WATCH_RULES = [
@@ -47,6 +49,9 @@ export const WATCH_RULES = [
 	{ id: "cross-50-200", title: "50/200 日均线交叉", feed: "scan", threshold: { stock: 0 }, level: 2, plan: "structure-trend" },
 	{ id: "rsi", title: "RSI 超买超卖", feed: "scan", threshold: { stock: 70 }, level: 1, plan: "structure-trend" },
 	{ id: "earnings", title: "财报临近", feed: "scan", threshold: { stock: 5 }, level: 1, plan: "structure-trend" },
+	{ id: "stop-loss", title: "触到止损线", feed: "quotes", threshold: { stock: 8, index: 8 }, level: 6, line: "ring", plan: "holding-ask", holding: true },
+	{ id: "drawdown", title: "持仓回撤", feed: "quotes", threshold: { stock: 15, index: 15 }, level: 3, plan: "holding-ask", holding: true },
+	{ id: "below-cost", title: "跌破成本价", feed: "quotes", threshold: { stock: 0, index: 0 }, level: 2, plan: "holding-ask", holding: true },
 ] as const satisfies readonly WatchRule[];
 
 export type RuleId = (typeof WATCH_RULES)[number]["id"];

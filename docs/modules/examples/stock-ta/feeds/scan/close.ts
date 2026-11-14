@@ -9,7 +9,7 @@ import { COMBOS, effective, lineOf, NOTES, opensTask, ruleOf, scopeOf, sideOf, t
 /** The fields of `ta`'s `new_signals` rows (`record_signal` at the pinned commit) that grading reads. */
 export type TaSignal = { symbol: string; rule_id: string; kind: string; direction: string; price: number | null; attention?: string | null; values?: Readonly<Record<string, unknown>> | null };
 /** A complete daily bar from the module's database, oldest first; the last one is the session being graded. */
-export type DailyBar = { date: string; close: number; volume: number };
+export type DailyBar = { date: string; close: number; high: number; volume: number };
 /** `tradingDays`: trading days from the session to the earnings date, 0 when it is the session itself. */
 export type Earnings = { date: string; time: string; tradingDays: number };
 

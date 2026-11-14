@@ -43,10 +43,11 @@ async function quotesFeed(t: TestContext, key = "sk-test", settings: Record<stri
 	};
 	const watch = (...symbols: string[]) => data.write("stock-ta", entry.components, "watchlist", symbols.map((symbol) => ({ symbol })), "使用者口述", "test");
 	const levels = (...rows: Record<string, unknown>[]) => data.write("stock-ta", entry.components, "rule-levels", rows as never, "使用者口述", "test");
+	const hold = (...rows: Record<string, unknown>[]) => data.write("stock-ta", entry.components, "holdings", rows as never, "使用者口述", "test");
 	const quotes = () => data.query("stock-ta", entry.components, "quotes", {}, "test").rows;
 	const restart = () => (ports.data = instanceData(state));
 	const hitsFile = (date = DAY) => join(data.dir("stock-ta"), "files", "hits", date, "quotes.json");
-	return { massive, modules, entry, data, hitsFile, notices, lines, problems, problemIds: () => problems.map((p) => p?.id ?? "-"), alerts: () => lines.map((l) => l.text), watch, levels, quotes, clock, restart, round: () => runFeed(entry, [], ports), rehearse: () => runFeed(entry, [], ports, entry.fixtures[0]) };
+	return { massive, modules, entry, data, hitsFile, notices, lines, problems, problemIds: () => problems.map((p) => p?.id ?? "-"), alerts: () => lines.map((l) => l.text), watch, levels, hold, quotes, clock, restart, round: () => runFeed(entry, [], ports), rehearse: () => runFeed(entry, [], ports, entry.fixtures[0]) };
 }
 
 test("快照解析：一次请求取回整张自选股，每只一行，带价格、相对昨收的涨跌幅、成交量和数据时间", async (t) => {
@@ -374,7 +375,7 @@ test("stock-ta 包通过检查：quotes 的样例跑过 handler，不需要真�
 	assert.ok(result.ok, result.ok ? "" : result.problems.map(problemLine).join("\n"));
 	const feed = result.scan.components.find((c) => c.kind === "feeds" && c.name === "quotes");
 	assert.ok(feed?.kind === "feeds" && feed.fixtures.length > 0);
-	assert.deepEqual({ every: feed.feed.every, when: feed.feed.when, secrets: feed.feed.secrets, into: feed.feed.into, reads: feed.feed.reads }, { every: "60s", when: "us-market-hours", secrets: ["POLYGON_API_KEY"], into: "quotes", reads: ["watchlist", "rule-levels"] });
+	assert.deepEqual({ every: feed.feed.every, when: feed.feed.when, secrets: feed.feed.secrets, into: feed.feed.into, reads: feed.feed.reads }, { every: "60s", when: "us-market-hours", secrets: ["POLYGON_API_KEY"], into: "quotes", reads: ["watchlist", "rule-levels", "holdings"] });
 });
 
 
@@ -619,4 +620,62 @@ test("工具 hits：读最近几天的命中文件，可按代码和最低层级
 	assert.deepEqual(tool({ days: 2, symbol: "nvda" }).hits.map((h) => h.id), [`high-52w:NVDA:${DAY}`, "gap:NVDA:2026-11-11"]);
 	assert.deepEqual(tool({ days: 2, minLevel: 2 }).hits.map((h) => h.id), [`high-52w:NVDA:${DAY}`]);
 	assert.deepEqual(tool({ days: 2 }).dates, [DAY, "2026-11-11"]);
+});
+
+test("持仓：读 holdings，触到止损线响铃一行写数字；触发进这只票当天的持仓线程，正文不带成本和止损价", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.hold({ symbol: "NVDA", cost: 150, stopPrice: 138, note: "NVDA 成本 150，止损 138" });
+	feed.massive.answer(snapshot([tickerRow("NVDA", 139.1, 145.2, AT, { day: { o: 145, h: 145.5, l: 137.8, c: 139.1, v: 1 } })]));
+	assert.deepEqual(await feed.round(), { ok: true, records: 1, notices: 1 });
+	assert.deepEqual(feed.lines.map((l) => [l.externalId, l.push ?? "ring", l.text]), [[`stop-loss:NVDA:${DAY}`, "ring", "NVDA 触到你的止损线 138.00（你设的止损价）。当天最低 137.80，现价 139.10，当天跌 -4.20%。报价时间 10:44 ET（延迟行情）。"]]);
+	const [notice] = feed.notices;
+	assert.deepEqual([notice!.id, threadId(notice!.threadOwner ?? notice!.source, notice!.thread)], [`stop-loss:NVDA:${DAY}`, `thr_stock-ta:NVDA:${DAY}:holding`]);
+	assert.equal(notice!.body, "NVDA 触到你的止损线。现价 139.10，当天跌 -4.20%。报价时间 10:44 ET（延迟行情）。（规则 stop-loss，层级 6，做法 holding-ask）");
+	assert.doesNotMatch(notice!.body, /150|138/);
+});
+
+test("持仓：从自选股划掉的票，持仓那一行还在也不再盯", async (t) => {
+	const feed = await quotesFeed(t);
+	const [row] = feed.watch("NVDA").rows;
+	feed.watch("AMD");
+	feed.hold({ symbol: "NVDA", cost: 150 });
+	feed.data.write("stock-ta", feed.entry.components, "watchlist", [{ id: row!.id, removedAt: DAY }], "使用者口述", "test");
+	feed.massive.answer(snapshot([tickerRow("NVDA", 139.1, 145.2, AT, { day: { o: 145, h: 145.5, l: 137.8, c: 139.1, v: 1 } })]));
+	await feed.round();
+	assert.deepEqual([feed.lines, feed.notices], [[], []]);
+});
+
+test("持仓写坏了：报问题 bad-holding 说是哪几行、怎么清掉，这只票的持仓规则先停；rule-levels 也写坏时先报 bad-level；加一行写对的就清掉", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA", "AMD");
+	feed.hold({ symbol: "NVDA", cost: 0 }, { symbol: "AMD", cost: 100, stopPct: 120 });
+	feed.massive.answer(snapshot([tickerRow("NVDA", 101, 100, AT)]));
+	await feed.round();
+	assert.deepEqual(feed.problemIds(), ["bad-holding"]);
+	assert.match(feed.problems[0]!.text, /holdings 第 1、2 行不生效/);
+	assert.match(feed.problems[0]!.text, /removedAt/);
+	feed.levels({ rule: "move-9", level: 2 });
+	await feed.round();
+	assert.equal(feed.problemIds().at(-1), "bad-level");
+	feed.levels({ rule: "move-9", removedAt: DAY });
+	feed.hold({ symbol: "NVDA", cost: 150 }, { symbol: "AMD", removedAt: DAY });
+	await feed.round();
+	assert.equal(feed.problemIds().at(-1), "-");
+});
+
+test("回撤的高点每天从日线库读一次（建仓日期到昨天，当天的日线不算）：当天库换了也照用读到的；换了建仓日期就重读", async (t) => {
+	const feed = await quotesFeed(t);
+	const dir = feed.data.dir("stock-ta");
+	feed.watch("NVDA", "AMD");
+	feed.hold({ symbol: "NVDA", cost: 50, boughtAt: "2026-11-01" }, { symbol: "AMD", cost: 50, boughtAt: "2026-11-01" });
+	taDatabase(dir, { NVDA: { days: 30, high: 110, low: 90, volume: 1e9 }, AMD: { days: 30, high: 110, low: 90, volume: 1e9 } });
+	feed.massive.answer(snapshot([tickerRow("NVDA", 100, 100, AT), tickerRow("AMD", 260, 260, AT)]), snapshot([tickerRow("NVDA", 92, 100, AT + 60_000), tickerRow("AMD", 250, 260, AT + 60_000)]));
+	await feed.round();
+	assert.deepEqual(feed.lines, []);
+	rmSync(join(dir, "files", "ta", "ta.sqlite"));
+	taDatabase(dir, { NVDA: { days: 30, high: 300, low: 90, volume: 1e9 }, AMD: { days: 30, high: 300, low: 90, volume: 1e9 } });
+	feed.hold({ symbol: "AMD", cost: 50, boughtAt: "2026-11-02" });
+	await feed.round();
+	assert.deepEqual(feed.lines.filter((l) => l.externalId.startsWith("drawdown:")).map((l) => l.text.split("，")[0]), ["NVDA 从建仓以来的高点 110.00 回撤 16.36%", "AMD 从建仓以来的高点 300.00 回撤 16.67%"]);
 });

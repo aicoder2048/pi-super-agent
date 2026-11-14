@@ -6,7 +6,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isTradingDay, shiftDate } from "./market-days.ts";
-import { COMBOS, opensTask, type Lean, type Level } from "./watch-rules.ts";
+import { COMBOS, opensTask, WATCH_RULES, type Lean, type Level } from "./watch-rules.ts";
 
 export type Hit = {
 	/** `<rule>:<symbol>:<date>`, plus `:<side>` for the two move rules, which fire once per side; `ta`'s signals graded by a shared row use `<ta rule>:<side>` for `<rule>`. */
@@ -82,11 +82,14 @@ export function pastLeans(dataDir: string, today: string, days: number, rules: r
 /** A task is open on the symbol today: a hit at level 5 or 6 whose trigger went out. */
 export const opened = (h: Hit) => opensTask(h) && !h.held;
 
+const HOLDING = new Set<string>(WATCH_RULES.filter((r) => "holding" in r).map((r) => r.id));
+
 /**
  * Counts the symbol's hits today that point a way and are not demoted (level 0); a combo's line is left out because its two
  * members already count, and a band counts once per side (crossing 5% and 8% is one move). Same-lean hits, this one included, must
  * be at least two and more than the opposite ones to escalate; otherwise an opposite lean that ties or outnumbers them means
- * 多空分歧. Only levels 1 and 2 move up: level 3 is the highest level that still has a line below the task levels. `mayBump`
+ * 多空分歧. Only levels 1 and 2 move up: level 3 is the highest level that still has a line below the task levels, and a task already
+ * open on the symbol stops it, unless that task is a holding rule's question, which is about the position, not the move. `mayBump`
  * false still counts and still says 多空分歧, for a hit that may not escalate (a `ta` signal `ta` did not grade key).
  */
 export function resonate(hits: readonly Hit[], hit: Hit, mayBump = true): { level: Level; why?: string; bumped?: true } {
@@ -98,7 +101,7 @@ export function resonate(hits: readonly Hit[], hit: Hit, mayBump = true): { leve
 	const opposite = counted.length + 1 - same;
 	const tally = `（看多 ${hit.lean === "bull" ? same : opposite} 条，看空 ${hit.lean === "bear" ? same : opposite} 条）`;
 	if (opposite >= same) return { level: hit.level, why: `多空分歧${tally}` };
-	const taskOpen = hits.some((h) => h.symbol === hit.symbol && opened(h));
+	const taskOpen = hits.some((h) => h.symbol === hit.symbol && opened(h) && !HOLDING.has(h.rule));
 	const bumpedToday = hits.some((h) => h.symbol === hit.symbol && h.bumped);
 	if (!mayBump || same < 2 || hit.level > 2 || taskOpen || bumpedToday) return { level: hit.level };
 	return { level: (hit.level + 1) as Level, bumped: true, why: `同向升一层${tally}` };

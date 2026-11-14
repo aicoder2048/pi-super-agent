@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { History } from "./feeds/quotes/watch.ts";
 import type { DailyBar } from "./feeds/scan/close.ts";
+import { peakKey, type Holding } from "./holdings.ts";
 
 const YEAR = 252;
 const VOLUME_DAYS = 20;
@@ -42,8 +43,30 @@ export function readDaily(dataDir: string, symbols: readonly string[], through: 
 	if (!existsSync(file)) return undefined;
 	const db = new DatabaseSync(file, { readOnly: true });
 	try {
-		const query = db.prepare("SELECT session_date AS date, close, volume FROM bars WHERE symbol = ? AND timeframe = '1d' AND complete = 1 AND session_date <= ? ORDER BY start_ms DESC LIMIT ?");
+		const query = db.prepare("SELECT session_date AS date, close, high, volume FROM bars WHERE symbol = ? AND timeframe = '1d' AND complete = 1 AND session_date <= ? ORDER BY start_ms DESC LIMIT ?");
 		return Object.fromEntries(symbols.map((symbol) => [symbol, (query.all(symbol.replaceAll("-", "."), through, count) as DailyBar[]).reverse()]));
+	} finally {
+		db.close();
+	}
+}
+
+/**
+ * Per holding, under `peakKey`, the highest daily high it measures from, through the day before `today`: since `boughtAt`
+ * (inclusive), or over the last year of bars without it (fewer when that is all there is); null without a bar. Undefined when the
+ * database does not exist yet.
+ */
+export function readPeaks(dataDir: string, holdings: readonly Pick<Holding, "symbol" | "boughtAt">[], today: string): Record<string, number | null> | undefined {
+	const file = taDatabase(dataDir);
+	if (!existsSync(file)) return undefined;
+	const db = new DatabaseSync(file, { readOnly: true });
+	try {
+		const since = db.prepare("SELECT max(high) AS peak FROM bars WHERE symbol = ? AND timeframe = '1d' AND complete = 1 AND session_date >= ? AND session_date < ?");
+		const year = db.prepare("SELECT max(high) AS peak FROM (SELECT high FROM bars WHERE symbol = ? AND timeframe = '1d' AND complete = 1 AND session_date < ? ORDER BY start_ms DESC LIMIT ?)");
+		return Object.fromEntries(holdings.map((h) => {
+			const symbol = h.symbol.replaceAll("-", ".");
+			const row = (h.boughtAt !== undefined ? since.get(symbol, h.boughtAt, today) : year.get(symbol, today, YEAR)) as { peak: number | null };
+			return [peakKey(h), row.peak];
+		}));
 	} finally {
 		db.close();
 	}

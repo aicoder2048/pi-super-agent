@@ -1,12 +1,20 @@
 {
   "title": "自选股报价",
-  "description": "交易时段每 60 秒取一次自选股和 SPY、QQQ、VIXY 的快照（Massive Starter 套餐，延迟 15 分钟），按盯盘规则表 watch-rules.ts 算到档、放量、52 周新高新低、跳空、反转、逆大盘和 VIXY 档位，命中记进 files/hits/<日期>/quotes.json，按层级发一行提醒（静音或响铃）或开任务的触发；同向的两条会升级，方向相反写多空分歧，来回翻的降成只记录；你在 rule-levels 里的改动叠在表上",
+  "description": "交易时段每 60 秒取一次自选股和 SPY、QQQ、VIXY 的快照（Massive Starter 套餐，延迟 15 分钟），按盯盘规则表 watch-rules.ts 算到档、放量、52 周新高新低、跳空、反转、逆大盘和 VIXY 档位，自选股里带持仓的票再算触到止损线、持仓回撤和跌破成本价（只在进入的那天算），命中记进 files/hits/<日期>/quotes.json，按层级发一行提醒（静音或响铃）或开任务的触发；同向的两条会升级，方向相反写多空分歧，来回翻的降成只记录；你在 rule-levels 里的改动叠在表上",
   "handler": "index.ts",
-  "secrets": ["POLYGON_API_KEY"],
+  "secrets": [
+    "POLYGON_API_KEY"
+  ],
   "every": "60s",
   "when": "us-market-hours",
-  "settings": { "baseUrl": "https://api.massive.com" },
-  "reads": ["watchlist", "rule-levels"],
+  "settings": {
+    "baseUrl": "https://api.massive.com"
+  },
+  "reads": [
+    "watchlist",
+    "rule-levels",
+    "holdings"
+  ],
   "into": "quotes",
   "notice": "{{line}}（规则 {{rule}}，层级 {{level}}，做法 {{plan}}）"
 }
