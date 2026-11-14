@@ -100,6 +100,13 @@ test("入口：按真实接线启动的宿主，Router 遇到最终的限流错�
 	await until(() => (host.router as any).session.model?.id === "fallback", "Router 切到回退模型", 5000);
 });
 
+test("入口：Vision 的 OCR 程序编进所有宿主共用的缓存，临时状态目录里的宿主不再各编译一份", { skip: process.platform !== "darwin", timeout: 300_000 }, async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const configs = [hostConfig(provider), hostConfig(provider)].map((c) => ({ ...c, ocr: { engine: "vision" as const, maxPages: 1, timeoutSeconds: 60 } }));
+	for (const config of configs) await createHostOptions({ config, modules: fixed(Modules.load([])), modelRuntime, log: () => {} }).ocr!.prepare();
+	for (const config of configs) assert.ok(!existsSync(join(config.stateDir, "ocr")), `${config.stateDir} 里不该有 ocr/`);
+});
+
 test("在替你盯着：每个来源一项，带上管它的规则（使用者的在前）和定时器，忽略的来源不算", () => {
 	const mod = (name: string, manifest: Partial<import("../src/modules.ts").ModuleManifest>, rules: { id: string; text: string; sources: string[] }[]) =>
 		({ name, dir: `/m/${name}`, manifest: { name, ...manifest }, rules, skillsDir: undefined, state: { enabled: true, by: "default" as const } });
