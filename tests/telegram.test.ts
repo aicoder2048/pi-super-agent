@@ -10,10 +10,10 @@ import { randomUUID } from "node:crypto";
 import type { MemberCapBoard } from "../src/client/protocol.ts";
 import type { AnswerResult, Broadcast, ImChat } from "../src/host/server.ts";
 import { TelegramClient, type TelegramHost, type TelegramTiming } from "../src/host/telegram/client.ts";
-import { NOTES } from "../src/host/telegram/rules.ts";
+import { DOTS, NOTES } from "../src/host/telegram/rules.ts";
 import { openStore } from "../src/kernel/store.ts";
 import type { DashboardRow, PendingQuestion } from "../src/kernel/types.ts";
-import { FAKE_BOT_TOKEN, FakeTelegram } from "./helpers/fake-telegram.ts";
+import { FAKE_BOT_TOKEN, FakeTelegram, unmarked } from "./helpers/fake-telegram.ts";
 import { Kernel } from "../src/kernel/kernel.ts";
 import type { FeedSpec } from "../src/sources/feeds.ts";
 import { fakeFeed, ids, ofType, openOnConversation, startHost, tempStateDir, until, within, type Brain, type WorkerScript } from "./helpers/fakes.ts";
@@ -86,7 +86,7 @@ function watch(t: TestContext, host: Host) {
 }
 
 const userLines = (host: Host) => host.kernel.conversation().filter((l) => l.who === "user").map((l) => l.text);
-const sentTo = (tg: FakeTelegram, chatId: number) => tg.sent.filter((m) => m.chatId === chatId).map((m) => m.text);
+const sentTo = (tg: FakeTelegram, chatId: number) => tg.sent.filter((m) => m.chatId === chatId).map((m) => unmarked(m.text));
 const db = (stateDir: string): DatabaseSync => openStore(join(stateDir, "state.db"));
 
 test("名单上的人私聊说一句：对话里出现这句话；幕僚长的回复带通知发回这个聊天，网页和终端各收到一次", async (t) => {
@@ -99,7 +99,7 @@ test("名单上的人私聊说一句：对话里出现这句话；幕僚长的�
 	assert.deepEqual(userLines(host), ["查一下 NVDA"]);
 	assert.deepEqual(ofType(client.got, "user").map((m) => m.text), ["查一下 NVDA"]);
 	assert.deepEqual(ofType(client.got, "reply").map((m) => m.text), ["收到：查一下 NVDA"]);
-	assert.deepEqual(tg.sent.map((m) => [m.chatId, m.text, m.silent]), [[USER, "收到：查一下 NVDA", false]], "自己在 Telegram 说的话不再发回给自己");
+	assert.deepEqual(tg.sent.map((m) => [m.chatId, unmarked(m.text), m.silent]), [[USER, "收到：查一下 NVDA", false]], "自己在 Telegram 说的话不再发回给自己");
 });
 
 test("陌生人和群里的话：不进对话、不回复、不进 Telegram 的表；日志只记条数，不记 id 和内容，一小时最多一行", async (t) => {
@@ -128,7 +128,7 @@ test("设置模式（名单为空）：私聊的人只收到自己的 id，每�
 	tg.userSays(555003, "群里", { chatId: -100, group: true });
 	await until(() => tg.sent.length === 2, "两个人各收到自己的 id");
 	await new Promise((r) => setTimeout(r, 200));
-	assert.deepEqual(tg.sent.map((m) => [m.chatId, m.text]), [
+	assert.deepEqual(tg.sent.map((m) => [m.chatId, unmarked(m.text)]), [
 		[555001, NOTES.setup(555001)],
 		[555002, NOTES.setup(555002)],
 	]);
@@ -174,7 +174,7 @@ test("网页或终端说的话静默转到 Telegram，带前缀；之后幕僚�
 	await until(() => tg.sent.length === 1, "说明");
 	host.say("网页上说的");
 	await until(() => tg.sent.length === 3, "转过来的话和回复");
-	assert.deepEqual(tg.sent.slice(1).map((m) => [m.text, m.silent]), [
+	assert.deepEqual(tg.sent.slice(1).map((m) => [unmarked(m.text), m.silent]), [
 		["你在网页或终端说：网页上说的", true],
 		["收到：网页上说的", false],
 	]);
@@ -294,6 +294,7 @@ async function cardClient(t: TestContext, { allowed = [USER], answer = (): Answe
 			return answer();
 		},
 		board: () => state,
+		originOf: () => null,
 	};
 	const store = openStore(join(stateDir, "state.db"));
 	const client = new TelegramClient({ api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set(allowed), timing: FAST, host, db: store, clock: { now: () => Date.now() }, log: (l) => logs.push(l) });
@@ -329,7 +330,7 @@ test("助手的问题在每个聊天里只发一张带按钮的卡片；十个�
 	await settle();
 	for (const chat of [USER, OTHER]) {
 		const [card] = cards(tg, chat);
-		assert.equal(card.text, "青檀 · 对话助手 #1 问你（任务「查天气」）：\n查哪个城市？");
+		assert.equal(card.text, `🙋 ${DOTS[0]} 青檀 · 对话助手 #1 问你（任务「查天气」）：\n查哪个城市？`, "卡片带任务的颜色");
 		assert.deepEqual(labels(card), [["北京"], ["上海"]]);
 		assert.equal(card.silent, false, "新问题带通知");
 	}
@@ -408,7 +409,7 @@ test("成员上限：只发一条说明，没有按钮，看板帧再来也不�
 	for (let i = 0; i < 10; i++) frame([], capBoard());
 	await until(() => sentTo(tg, USER).includes(NOTES.cap), "成员上限的说明");
 	await settle();
-	const notes = tg.sent.filter((m) => m.text === NOTES.cap);
+	const notes = tg.sent.filter((m) => unmarked(m.text) === NOTES.cap);
 	assert.equal(notes.length, 1);
 	assert.equal(notes[0].buttons, null);
 	const forged = tg.userTaps(USER, notes[0].messageId, `a:${CAP}:0`);
@@ -544,8 +545,8 @@ test("聊天欠着「可能没送到」的说明时：卡片发出和编辑都�
 	frame([ticket(pending(id, { click: { option: 1, state: "sent", triggerId: "trg_1" } }))]);
 	await until(() => tg.edits.length === 1, "卡片编辑");
 	const card = tg.shown(cards(tg, USER)[0].messageId)!;
-	assert.ok(card.text.startsWith("青檀"), "卡片编辑后不带说明");
-	assert.ok(cards(tg, USER)[0].text.startsWith("青檀"), "卡片发出时不带说明");
+	assert.ok(unmarked(card.text).startsWith("青檀"), "卡片编辑后不带说明");
+	assert.ok(unmarked(cards(tg, USER)[0].text).startsWith("青檀"), "卡片发出时不带说明");
 	tg.userSays(USER, "/help");
 	await until(() => sentTo(tg, USER).includes(`${NOTES.missed}\n${NOTES.help}`), "下一条文字带上说明");
 	tg.userSays(USER, "/help");
@@ -556,7 +557,7 @@ test("聊天欠着「可能没送到」的说明时：卡片发出和编辑都�
 test("点一条不是卡片的消息，按钮数据写成卡片的：被拒，不问宿主", async (t) => {
 	const { tg, open, frame, answered } = await cardClient(t);
 	await open(USER);
-	const help = tg.sent.find((m) => m.chatId === USER && m.text === NOTES.help)!;
+	const help = tg.sent.find((m) => m.chatId === USER && unmarked(m.text) === NOTES.help)!;
 	frame([ticket(pending(rpt()))]);
 	await until(() => cards(tg, USER).length === 1, "卡片");
 	const tap = tg.userTaps(USER, help.messageId, cards(tg, USER)[0].buttons![1][0].data);
@@ -605,7 +606,7 @@ test("真宿主：点一次，幕僚长没转交；Telegram 重投这次点的 u
 });
 
 const lastUserLine = (host: Host) => host.kernel.conversation().filter((l) => l.who === "user").at(-1)!;
-const sentMessage = (tg: FakeTelegram, text: string) => tg.sent.find((m) => m.text === text)!;
+const sentMessage = (tg: FakeTelegram, text: string) => tg.sent.find((m) => unmarked(m.text) === text)!;
 
 async function swipeReplied(tg: FakeTelegram, host: Host, text: string, replyTo: number) {
 	const updateId = tg.userSays(USER, text, { replyTo });
@@ -744,7 +745,7 @@ test("盯盘提醒带通知发到每个聊天，前面写「盯盘提醒：」�
 	await until(() => sentTo(tg, USER).length === 2 && sentTo(tg, OTHER).length === 2, "两个聊天都收到提醒");
 	await settle();
 	for (const chat of [USER, OTHER]) {
-		assert.deepEqual(tg.sent.filter((m) => m.chatId === chat).slice(1).map((m) => [m.text, m.silent]), [["盯盘提醒：NVDA 涨了 5.3%，现价 150.20", false]]);
+		assert.deepEqual(tg.sent.filter((m) => m.chatId === chat).slice(1).map((m) => [unmarked(m.text), m.silent]), [["盯盘提醒：NVDA 涨了 5.3%，现价 150.20", false]]);
 	}
 });
 
@@ -764,7 +765,7 @@ test("真宿主：通知带响铃发到手机一次，前面写「通知：」�
 	host.notify("G3 合并了\n下一步 G4");
 	await until(() => sentTo(tg, USER).includes("通知：G3 合并了\n下一步 G4"), "通知到手机");
 	await settle();
-	assert.deepEqual(tg.sent.filter((m) => m.chatId === USER).slice(1).map((m) => [m.text, m.silent]), [["通知：G3 合并了\n下一步 G4", false]]);
+	assert.deepEqual(tg.sent.filter((m) => m.chatId === USER).slice(1).map((m) => [unmarked(m.text), m.silent]), [["通知：G3 合并了\n下一步 G4", false]]);
 	assert.deepEqual(host.snapshot().conversation.map((l) => [l.who, l.text]), [["notice", "G3 合并了\n下一步 G4"]]);
 });
 
@@ -819,7 +820,7 @@ test("真宿主：来源贴的提醒带通知到手机一次，同一个 id 再�
 	feed.ctx!.post({ kind: "receipt", text: "已记下：NVDA 成本价 120.00、100 股" });
 	assert.equal(feed.ctx!.raised("NVDA:2026-11-11:day-up-5"), true);
 	await until(() => sentTo(tg, USER).includes(PHONE_ALERT), "提醒到手机");
-	assert.equal(tg.sent.find((m) => m.text === PHONE_ALERT)!.silent, false, "提醒带通知");
+	assert.equal(tg.sent.find((m) => unmarked(m.text) === PHONE_ALERT)!.silent, false, "提醒带通知");
 	assert.deepEqual(first.host.kernel.conversation().map((l) => [l.who, l.text]), [["alert", ALERT], ["receipt", "已记下：NVDA 成本价 120.00、100 股"]]);
 	await first.stop();
 	await telegramHost(t, { fake: tg, stateDir, feeds: [fakeFeed("us-market").spec] });

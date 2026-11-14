@@ -13,7 +13,7 @@ import type { Json, Query, Reply, Request, WorkerCaller } from "../src/modules/p
 import { scanPackage } from "../src/modules/validate.ts";
 import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
 import type { DomainKit, Domains } from "../src/modules.ts";
-import { FAKE_BOT_TOKEN, FakeTelegram } from "./helpers/fake-telegram.ts";
+import { FAKE_BOT_TOKEN, FakeTelegram, unmarked } from "./helpers/fake-telegram.ts";
 import { ids, openOnConversation, startHost, until, type FakeWorker } from "./helpers/fakes.ts";
 
 const SAMPLE = join(import.meta.dirname, "../docs/modules/architecture/sample");
@@ -325,7 +325,7 @@ async function hostWithHealth(t: TestContext, script: (worker: FakeWorker) => Pr
 	await until(() => tg.sent.length > 0, "聊天打开");
 	await host.say("帮我记一下这次的 CEA");
 	await until(() => host.kernel.conversation().some((l) => l.text.startsWith("转述：")), "幕僚长转述了汇报", 10_000);
-	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => m.text);
+	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => unmarked(m.text));
 	await until(() => phone().some((m) => m.startsWith("转述：")), "汇报到了手机");
 	return { ...w, result: results[0], host, spawner, phone };
 }

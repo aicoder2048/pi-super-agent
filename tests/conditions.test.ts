@@ -14,7 +14,7 @@ import { scanPackage } from "../src/modules/validate.ts";
 import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
 import { hostLineLabel } from "../src/client/board-format.mjs";
 import type { DomainKit, Domains } from "../src/modules.ts";
-import { FAKE_BOT_TOKEN, FakeTelegram } from "./helpers/fake-telegram.ts";
+import { FAKE_BOT_TOKEN, FakeTelegram, unmarked } from "./helpers/fake-telegram.ts";
 import { ids, openOnConversation, startHost, until, type FakeWorker } from "./helpers/fakes.ts";
 
 const SAMPLE = join(import.meta.dirname, "../docs/modules/architecture/sample");
@@ -342,7 +342,7 @@ async function hostWithHealth(t: TestContext, script: (worker: FakeWorker) => Pr
 	await until(() => tg.sent.length > 0, "聊天打开");
 	await host.say("空腹血糖高于 7 提醒我");
 	await until(() => host.kernel.conversation().some((l) => l.text === "好的"), "幕僚长转述了汇报", 10_000);
-	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => m.text);
+	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => unmarked(m.text));
 	const alerts = () => host.kernel.conversation().filter((l) => l.who === "alert").map((l) => l.text);
 	return { result: results[0], host, spawner, phone, alerts };
 }
