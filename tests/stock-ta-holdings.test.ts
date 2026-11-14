@@ -170,3 +170,11 @@ test("做法 holding-ask 的技能：先读持仓和现价不派人，恰好三�
 	assert.match(watchTask, /holding-ask[^。]*代码:日期:holding/);
 	assert.match(watchTask, /不带成本和止损价/);
 });
+
+test("技能 holdings：只照使用者亲口说的写，改动写整行，不在自选股里的票先问、不自己加；技能 rule-levels 列出三条持仓规则", () => {
+	const skill = readFileSync(join(PKG, "skills/holdings/SKILL.md"), "utf8");
+	for (const said of ["亲口说", "写一整行", "removedAt", "没问过不加", "bad-holding"]) assert.match(skill, new RegExp(said));
+	const levels = readFileSync(join(PKG, "skills/rule-levels/SKILL.md"), "utf8");
+	for (const rule of ["stop-loss", "drawdown", "below-cost", "R-MA-2-200", "volume-close", "earnings"]) assert.match(levels, new RegExp(`\\| \`${rule}\` \\|`));
+	assert.match(levels, /技能 `holdings`/);
+});
