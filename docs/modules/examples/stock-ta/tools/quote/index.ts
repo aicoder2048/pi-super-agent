@@ -23,7 +23,7 @@ export default async function quote(input: unknown) {
 	const today = sessionAt(now).nyDate;
 	const endedToday = now >= regularCloseAt(now) + CLOSE_SETTLES_MS;
 	return {
-		quotes: symbols.flatMap((symbol) => bySymbol.get(symbol) ?? []).map(({ dayClose, ...q }) => {
+		quotes: symbols.flatMap((symbol) => bySymbol.get(symbol) ?? []).map(({ dayClose, dayOpen: _o, dayHigh: _h, dayLow: _l, ...q }) => {
 			const at = Date.parse(q.at);
 			const { nyDate, phase } = sessionAt(at);
 			// Data from an earlier New York date (a weekend, a holiday, the small hours) is the last session's: the market is closed.

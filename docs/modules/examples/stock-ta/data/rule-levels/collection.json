@@ -3,7 +3,7 @@
   "kind": "record",
   "class": "shareable",
   "fields": {
-    "rule": { "type": "text", "title": "规则 id，例如 move-1（第一档）、move-2（第二档）" },
+    "rule": { "type": "text", "title": "规则 id，例如 move-1（第一档）、move-2（第二档）、volume（放量）、high-52w（52 周新高）；全表见技能 rule-levels" },
     "symbol": { "type": "text", "title": "只对这只票生效；空着就是全部。门槛空着代码只改个股，SPY、QQQ 的门槛要写代码" },
     "level": { "type": "number", "title": "新的层级，0 到 6；空着就是不改层级" },
     "threshold": { "type": "number", "title": "新的门槛，到档规则是当天涨跌的百分比，例如 7；空着就是不改门槛" },
