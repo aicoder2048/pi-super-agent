@@ -78,9 +78,11 @@ export function routerTools(kernel: Kernel, afterCommand: () => void, unanswered
 			answers: Type.Optional(Type.Array(Type.String(), { description: "这条回复回答的卡片的 act_ id，只写 act_ 开头的 id" })),
 		}),
 		async execute(_id, { text, threadId, cause, answers }) {
-			const unanswered = answers ? [] : unansweredAbout(cause);
+			// An empty list names no card, the same as leaving answers out; kept as is it would mark the reply as answering nothing.
+			const named = answers?.length ? answers : undefined;
+			const unanswered = named ? [] : unansweredAbout(cause);
 			if (unanswered.length >= 2) return json({ ok: false, reason: `同一起因有 ${unanswered.length} 张卡片没回答，请在 answers 里列出这条回复回答的「卡片 act_」` });
-			return committed(kernel.reply({ text, threadId: threadId ?? CONVERSATION_THREAD_ID, cause, answers: answers ?? unanswered }));
+			return committed(kernel.reply({ text, threadId: threadId ?? CONVERSATION_THREAD_ID, cause, answers: named ?? unanswered }));
 		},
 	});
 	const note = defineTool({
