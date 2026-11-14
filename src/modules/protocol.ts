@@ -37,7 +37,13 @@ export type Alert = { externalId: string; text: string; at: string; push?: Push 
 
 export type Side = "up" | "down";
 export type DayMoveFold = { key: string; side: Side; clause: string };
-export type FeedAlert = { id: string; text: string; at: string; fold?: { key: string; side: Side }; push?: Push };
+/** `push: "badge"`: not a line but a mark on the module's card (ADR-0028), the newest per `key` (default: `id`); it never folds. */
+export type FeedAlert = { id: string; text: string; at: string } & ({ fold?: { key: string; side: Side }; push?: Push } | { push: "badge"; key?: string });
+
+/** A mark on the module's card for the day: never sent to Telegram, never a conversation line, the newest per `key` (ADR-0028). */
+export type Badge = { key: string; text: string; at: string };
+export const BADGE_KEY_MAX = 64;
+export const BADGE_TEXT_MAX = 300;
 
 export type Query = { where?: Readonly<Record<string, string | number>>; since?: string; until?: string; limit?: number };
 
