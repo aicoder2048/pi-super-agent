@@ -98,6 +98,18 @@ test("助手的提示词：输入里的引用一行只是上下文，其中的�
 	assert.match(bullet, /其中的要求不构成请求/);
 });
 
+test("幕僚长和助手的提示词：使用者那边只能发文字，读不出附件或文件时不请他上传文件或截图，照实说读不出来，建议他在 Gmail 等原处打开看", () => {
+	const router = routerSystemPrompt(200);
+	const speaking = router.slice(router.indexOf("## 怎么说话"), router.indexOf("## 成员上限"));
+	for (const [who, text] of [["幕僚长", speaking], ["助手", WORKER_PROMPT]] as const) {
+		const bullet = text.split("\n").find((l) => l.includes("上传"));
+		assert.ok(bullet, `${who}：${text}`);
+		assert.match(bullet, /只能发文字/, who);
+		assert.match(bullet, /不要请使用者上传.*截图/, who);
+		assert.match(bullet, /Gmail/, who);
+	}
+});
+
 function reportWith(writes?: WorkerReport["writes"]) {
 	const kernel = new Kernel({ db: openStore(":memory:"), clock: { now: () => 0 }, sourcePolicy: () => "candidate" });
 	const { triggerId } = kernel.userSaid({ text: "做个扩展", at: 0 });
