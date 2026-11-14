@@ -144,11 +144,14 @@ R2a、R1、R6 合并后各在旧 Mac 部署一次，每次都等你说「部署�
 1. **只读预检。** 记下 `git rev-parse --short HEAD`、`just modules` 里各模块的开关、stock-ta 的 `_conditions` 条数和自选股条数（`sqlite3 -readonly ~/.pi-super-agent/modules-data/stock-ta/data.db`）、`config.json` 的键、当天的提醒行和触发条数。
 2. **时间。** 美东 16:20 以后或周末，切换中没有盘中行情。
 3. **备份。** 复制一份 `config.json`；`sqlite3 ~/.pi-super-agent/state.db ".backup <备份目录>/state.db"`，`modules-data/stock-ta/data.db` 也这样备份。
-4. **换代码。** `just redeploy`（拉 main 并重装服务，见 `docs/deploy/home-mac.md` 的「更新」），再 `cp -R docs/modules/examples/stock-ta ~/.pi-super-agent/modules/` 和 `just module setup stock-ta`（钉的提交没变时什么都不做）。包换上不用重启，宿主几秒内换新版本。
-5. **发一行测试。** `just notify` 发一行。事后在 `state.db` 的 `telegram_messages` 里查到这一行的 `message_id` 就算发出。
-6. **R2a 这次的检查。** 在 Telegram 上问「NVDA 现在多少」，25 秒内收到带价格、涨跌幅、数据时间和「延迟 15 分钟」的回答，网页上这个任务没有派活记录。再从宿主日志的 `[gateway] stock-ta tools/quote` 行和 `telegram_messages` 算 3 次从提问到回答的时间，中位数超过 25 秒就记成阻碍，回到 R2a 修。周末第一次问时顺便看「休市」的价格和数据时间是不是上一交易日最后一笔。
-7. **R1 这次迁移。** 换完代码后跑 `just migrate-us-market`，应该打印 1 行「新建」（种类和预检相同）和 2 行「划掉」（AMZN、AAPL）；看过再 `just migrate-us-market --apply`；再跑一次 `--apply`，打印「全部不变」。`_conditions` 多 1 行 `day-move`，你的盯盘条件从这时起重新会响。
-8. **回退。** 恢复 `config.json` 和 `data.db` 的备份（`state.db` 只在它出问题时恢复），`git checkout` 部署前的 SHA，从那个 SHA 重新 `cp -R` stock-ta 包，重启。R2a 不改数据格式，回退到 R2a 以前不需要恢复 `data.db`。回退到 R1 以前必须恢复 `data.db`：旧代码遇到 `day-move` 条件会出错。`just migrate-us-market --undo` 只在新代码能启动时用。
+4. **删 us-market 的配置。** 从 R6 那次起，换代码之前先做这一步。打开 `~/.pi-super-agent/config.json`，删掉 `sources` 里的 `us-market` 一项，`sources` 删空了就把整个 `sources` 删掉；有 `modules.us-market` 也删。新代码看到这两项会拒绝启动。旧代码没有这一项也能跑（轮询回到默认的每 60 秒），所以先删，再 `just redeploy --no-pull` 用旧代码重启一次，`just modules` 和删之前一样。
+5. **换代码。** `just redeploy`（拉 main 并重装服务，见 `docs/deploy/home-mac.md` 的「更新」），再 `cp -R docs/modules/examples/stock-ta ~/.pi-super-agent/modules/` 和 `just module setup stock-ta`（钉的提交没变时什么都不做）。包换上不用重启，宿主几秒内换新版本。
+   注意，`cp -R` 用仓库里的包覆盖状态目录里的 `modules/stock-ta`。你在旧 Mac 上直接改过的包文件（例如 `feeds/quotes/feed.json` 里的档位）会被换回仓库的版本。想留下的改动先改进仓库，或者复制前另存那个文件、复制后再改回去。
+6. **发一行测试。** `just notify` 发一行。事后在 `state.db` 的 `telegram_messages` 里查到这一行的 `message_id` 就算发出。
+7. **R2a 这次的检查。** 在 Telegram 上问「NVDA 现在多少」，25 秒内收到带价格、涨跌幅、数据时间和「延迟 15 分钟」的回答，网页上这个任务没有派活记录。再从宿主日志的 `[gateway] stock-ta tools/quote` 行和 `telegram_messages` 算 3 次从提问到回答的时间，中位数超过 25 秒就记成阻碍，回到 R2a 修。周末第一次问时顺便看「休市」的价格和数据时间是不是上一交易日最后一笔。
+8. **R1 这次迁移。** 换完代码后跑 `just migrate-us-market`，应该打印 1 行「新建」（种类和预检相同）和 2 行「划掉」（AMZN、AAPL）；看过再 `just migrate-us-market --apply`；再跑一次 `--apply`，打印「全部不变」。`_conditions` 多 1 行 `day-move`，你的盯盘条件从这时起重新会响。
+9. **R6 这次的检查。** `just modules` 里没有 us-market，stock-ta 运行中，版本括号里的 digest 和 `just module check docs/modules/examples/stock-ta` 打印的 `digest=` 相同；`config.json` 没有 `sources`；`_conditions` 还是 R1 迁来的那 1 行 `day-move`。下一个交易日只读查看，提醒行和触发只来自 stock-ta，部署之后没有 `us-market` 来源的新行。
+10. **回退。** 恢复 `config.json` 和 `data.db` 的备份（`state.db` 只在它出问题时恢复），`git checkout` 部署前的 SHA，从那个 SHA 重新 `cp -R` stock-ta 包，重启。恢复的 `config.json` 带回 `sources.us-market`，R6 以前的代码认它。R2a 不改数据格式，回退到 R2a 以前不需要恢复 `data.db`。回退到 R1 以前必须恢复 `data.db`：旧代码遇到 `day-move` 条件会出错。`just migrate-us-market --undo` 只在新代码能启动时用。
 
 ## 日线扫描
 

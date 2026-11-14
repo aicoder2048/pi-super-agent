@@ -448,16 +448,16 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 
 **Files.**
 
-- [ ] Edit `docs/modules/stock-ta.md` 的「旧 Mac 部署」一节，加删 `sources.us-market` 这一步。
-- [ ] Edit `docs/deploy/home-mac.md`，删掉 us-market 的设置说明。
-- [ ] Create `docs/modules/evidence/r6-old-mac.md`，记录每一步的输出（只写条数、种类、SHA，不写代码和数值）。
+- [x] Edit `docs/modules/stock-ta.md` 的「旧 Mac 部署」一节，加删 `sources.us-market` 这一步。
+- [x] Edit `docs/deploy/home-mac.md`，删掉 us-market 的设置说明。
+- [x] Create `docs/modules/evidence/r6-old-mac.md`，记录每一步的输出（只写条数、种类、SHA，不写代码和数值）。
 
 **Build.**
 
-- [ ] us-market 在 2026-11-13 已经关掉了，你的盯盘条件在 R1 部署时已经迁过去。R6 不关模块，也不迁移，只删配置、换代码。
+- [x] us-market 在 2026-11-13 已经关掉了，你的盯盘条件在 R1 部署时已经迁过去。R6 不关模块，也不迁移，只删配置、换代码。
 - [ ] 时间定在 R5 合并后的第一个周六，美东上午。例如 R5 在 2026-11-18 合并，就是 2026-11-21。周末没有行情，切换中不会漏提醒，也不会两套一起响。
-- [ ] 按「Deploy to the old Mac」做，只在 `git pull` 之前多一步，从 `config.json` 删掉 `sources.us-market`，有 `modules.us-market` 的话也删（R5 以后两项都会让宿主拒绝启动）。旧代码没有这一项也能跑（轮询回到默认的每 60 秒，读代码），所以这一步先做。
-- [ ] 部署后查 stock-ta 的 `_conditions` 还是 R1 迁来的那 1 行 `day-move`。
+- [x] 按「Deploy to the old Mac」做，只在 `git pull` 之前多一步，从 `config.json` 删掉 `sources.us-market`，有 `modules.us-market` 的话也删（R5 以后两项都会让宿主拒绝启动）。旧代码没有这一项也能跑（轮询回到默认的每 60 秒，读代码），所以这一步先做。
+- [x] 部署后查 stock-ta 的 `_conditions` 还是 R1 迁来的那 1 行 `day-move`。
 - [ ] 回退照「Deploy to the old Mac」的回退步骤。R6 之前的代码已经认识 `day-move`，所以这里不需要 `--undo`。
 - [ ] 下一个交易日只读查看：提醒行和触发的来源只有 stock-ta，`us-market` 来源在部署之后没有新行。
 
@@ -468,17 +468,17 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] R6 只改文档。在 R6 的 head 上跑一遍，确认文档里的每个 `just` 命令都在 `justfile` 里。Run `just test`.
+- [x] R6 只改文档。在 R6 的 head 上跑一遍，确认文档里的每个 `just` 命令都在 `justfile` 里。Run `just test`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. lane 在旧 Mac 上跑，lane 1、2 只读、随时可跑，lane 3 到 8 在你说「部署」以后，lane 9、10 在部署后第一个交易日收盘后。
 
-- [ ] Lane 1. Regression lane against trunk. 部署前在旧 Mac 现在的版本上只读记下当天的提醒和触发（预检）。trunk 是旧 Mac 现在跑的 SHA，head 是 main。Save `r6-before.txt`. Pass when 预检的每一项都有数。
-- [ ] Lane 2. 部署前只读检查 `config.json` 只多 `sources.us-market` 这一项，us-market 开关是关，`_conditions` 有 1 行 `day-move`。Save `r6-shape.txt`. Pass when 三项都对；对不上就停下来问你。
-- [ ] Lane 3. 备份和删 `sources.us-market` 之后，旧代码重启。Save `r6-config.txt`. Pass when 服务正常，`just modules` 照旧。
-- [ ] Lane 4. 拉代码、装包、setup、重启后 `just modules`。Save `r6-modules.txt`. Pass when 没有 us-market，stock-ta 开着，版本 digest 和 R5 的包一致。
-- [ ] Lane 5. 部署后读 `_conditions`。Save `r6-conditions.txt`. Pass when 条数和种类等于 lane 2。
-- [ ] Lane 6. 读状态目录里 `modules/stock-ta/feeds/quotes/feed.json`。Save `r6-feed.txt`. Pass when 档位是个股 5、8 和 SPY、QQQ 2、3，没有放量设置，`every` 是 60s。
-- [ ] Lane 7. `just notify` 一行。Save `r6-notify.txt`. Pass when `telegram_messages` 里有这一行的 message_id。你看到后回一句确认，不用当场。
+- [x] Lane 1. Regression lane against trunk. 部署前在旧 Mac 现在的版本上只读记下当天的提醒和触发（预检）。trunk 是旧 Mac 现在跑的 SHA，head 是 main。Save `r6-before.txt`. Pass when 预检的每一项都有数。
+- [x] Lane 2. 部署前只读检查 `config.json` 只多 `sources.us-market` 这一项，us-market 开关是关，`_conditions` 有 1 行 `day-move`。Save `r6-shape.txt`. Pass when 三项都对；对不上就停下来问你。
+- [x] Lane 3. 备份和删 `sources.us-market` 之后，旧代码重启。Save `r6-config.txt`. Pass when 服务正常，`just modules` 照旧。
+- [x] Lane 4. 拉代码、装包、setup、重启后 `just modules`。Save `r6-modules.txt`. Pass when 没有 us-market，stock-ta 开着，版本 digest 和 R5 的包一致。
+- [x] Lane 5. 部署后读 `_conditions`。Save `r6-conditions.txt`. Pass when 条数和种类等于 lane 2。
+- [x] Lane 6. 读状态目录里 `modules/stock-ta/feeds/quotes/feed.json`。Save `r6-feed.txt`. Pass when 档位是个股 5、8 和 SPY、QQQ 2、3，没有放量设置，`every` 是 60s。
+- [x] Lane 7. `just notify` 一行。Save `r6-notify.txt`. Pass when `telegram_messages` 里有这一行的 message_id。你看到后回一句确认，不用当场。
 - [ ] Lane 8. 网页截图。Save `r6-page.png`. Pass when 「来源」没有「美股行情」，stock-ta 卡片有「今日提醒」和报价两行，以前 us-market 的任务点得开。
 - [ ] Lane 9. 部署后第一个交易日收盘后只读查看。Save `r6-first-day.txt`. Pass when 部署之后没有 `us-market` 来源的新行；有到档时来源是 `stock-ta/quotes`，提醒行在任务汇报之前发出。
 - [ ] Lane 10. 同一天对比。你的盯盘条件和档位在那天的行情下该不该响，按 R5 的一致性规则用当天记录的报价算一遍。Save `r6-parity-day.txt`. Pass when 该响的都响了一次，不该响的没响。
@@ -489,6 +489,13 @@ R2a、R1、R6 合并后各部署一次。R2b、R3 跟着下一次部署走，你
 - [ ] Probe. 宿主日志和 `telegram_messages`，部署前一个交易日和部署后第一个交易日各算一遍。
 - [ ] Baseline. Record the 部署前那一天 first（us-market 已关，只有 stock-ta 每 60 秒）。
 - [ ] Rule. 部署后每小时请求数多于部署前就失败。延迟中位数比部署前多 60 秒以上就失败。
+
+**Evidence.**
+
+- 2026-11-13 在旧 Mac 上部署到 e222bb9，记录在 `docs/modules/evidence/r6-old-mac.md`，lane 1 到 7 通过。部署前 `config.json` 只多 `sources.us-market`，删掉后旧代码 07d2114 照常重启；换代码后 `just modules` 没有 us-market，stock-ta 版本 036959d812aa 等于 R5 的包；`_conditions` 还是 1 行 `day-move`；feed 每 60 秒，档位 5、8 和 SPY、QQQ 2、3，没有放量；`just notify` 那一行在 `telegram_messages` 里有 message_id。
+- 时间没按「第一个周六」。使用者放行后在周五美东 17:56 收盘后做，切换中同样没有盘中行情，那个格子不勾。回退没用上，备份已做，回退格子留到真用上时再勾。
+- 没勾的格子。lane 8 等使用者看一眼网页（截图要用网页 token，旧 Mac 上不写东西就截不到）；Build 里「下一个交易日只读查看」、You see 两格、lane 9、10 和性能都要 2026-11-16 周一收盘后只读查。
+- R6 head 上 `just test` 通过；文档里出现的 `just` 命令（redeploy、modules、module、notify、migrate-us-market、test 等）都在 `justfile` 里。
 
 **Review gate.** None. R6 is not review-gated. 它的写操作由你说「部署」放行，见上面 Build。
 

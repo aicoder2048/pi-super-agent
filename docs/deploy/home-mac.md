@@ -15,7 +15,7 @@
 
 - 一个 ChatGPT 订阅，宿主经 Pi 的 `openai-codex` 用它。不要在配置里写 `anthropic/*`、`deepseek/*` 这些按量付费的模型。
 - 一个 Tailscale 账户。手机、笔记本和这台 Mac 都登录同一个账户。
-- 行情密钥（可选）。美股看盘队要用，没有就只是看盘停用。
+- 行情密钥（可选）。股票技术分析模块（stock-ta）取报价、日线和财报日要用，没有时它不发请求，别的照常。
 - 宿主的状态都在 `~/.pi-super-agent`（下文叫状态目录）。全文只有「搬家」一节会动另一台机器的状态目录。
 
 ## 装 Node
@@ -332,6 +332,8 @@ just redeploy
 ```
 
 `just redeploy` 先确认当前在 `main` 分支，再 `git pull --ff-only`，然后依次运行 `just service-uninstall`、`just service-install` 和 `just service-status`，最后一步会打印装上的版本和最近一次心跳。不在 `main` 分支，或者本地有改动让快进失败时，它停下来报错，不会重装。
+
+从 us-market 退役以前的版本更新时，`config.json` 里的 `sources.us-market` 要先删掉，否则新代码拒绝启动，步骤见 `docs/modules/stock-ta.md` 的「旧 Mac 部署」。
 
 重启会让宿主停几秒，正在跑的任务会被停掉，所以挑没有任务在跑的时候做。只改了配置时，用 `just redeploy --no-pull`：不拉代码，只重装。
 
