@@ -317,8 +317,11 @@ export class WorkerExecutor {
 		if (live && !live.stopping) {
 			if (error) {
 				const result = models.selector.onError(error);
-				if (result.switched) this.#o.health?.fellBack(formatModelRef(models.selector.current().model), error);
-				else this.#o.health?.failed(error, models.selector.current().fellBack);
+				const now = models.selector.current();
+				if (result.switched) this.#o.health?.fellBack(formatModelRef(now.model), error);
+				else if (!now.fellBack) this.#o.health?.failed(error, false);
+				else if (live.handle.model === formatModelRef(now.model)) this.#o.health?.failed(error, true);
+				// Otherwise this turn ran on the primary after another Worker switched: not a failure, it goes on below on the fallback.
 			} else {
 				models.selector.onSuccess();
 				this.#o.health?.succeeded(models.selector.current().fellBack);
