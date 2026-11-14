@@ -10,6 +10,8 @@ import { COMBOS, effective, lineOf, NOTES, opensTask, ruleOf, scopeOf, sideOf, t
 export type TaSignal = { symbol: string; rule_id: string; kind: string; direction: string; price: number | null; attention?: string | null; values?: Readonly<Record<string, unknown>> | null };
 /** A complete daily bar from the module's database, oldest first; the last one is the session being graded. */
 export type DailyBar = { date: string; close: number; volume: number };
+/** `tradingDays`: trading days from the session to the earnings date, 0 when it is the session itself. */
+export type Earnings = { date: string; time: string; tradingDays: number };
 
 export type CloseInput = {
 	/** The New York session date. */
@@ -23,6 +25,10 @@ export type CloseInput = {
 	bars: Readonly<Record<string, readonly DailyBar[] | undefined>>;
 	/** Today's hits graded before this run: the quotes feed's, and this feed's own from an earlier run today. */
 	earlier: readonly Hit[];
+	/** The next earnings date per symbol, from Finnhub; a symbol without one is left out. */
+	earnings?: Readonly<Record<string, Earnings>>;
+	/** Ids of hits on the trading days before, so a state is told on the day it begins (one earnings date, one hit). */
+	seen?: readonly string[];
 	levels: RuleLevels;
 	quiet: boolean;
 };
@@ -31,12 +37,38 @@ export type Notice = { id: string; thread: string; threadScope: "module"; fields
 export type CloseResult = { hits: Hit[]; alerts: Alert[]; notices: Notice[] };
 
 type Finding = { lean: Lean | null; fact: string };
+/** 「财报还有 3 个交易日，11-17 盘后」, the same words in the hit and in the digest's line for a state still under way. */
+export const earningsFact = (e: Earnings) => `${e.tradingDays === 0 ? "今天发财报" : `财报还有 ${e.tradingDays} 个交易日`}，${e.date.slice(5)} ${e.time}`;
 type ScanRule = Extract<(typeof WATCH_RULES)[number], { feed: "scan" }>["id"];
 /** The rows the module computes from daily bars; the rest are `ta`'s signals. */
-type Computed = Extract<ScanRule, "volume-close">;
+type Computed = Extract<ScanRule, "volume-close" | "cross-50-200" | "rsi">;
 type Detect = (bars: readonly DailyBar[], threshold: number) => Finding | undefined;
 
 const VOLUME_DAYS = 20;
+const RSI_DAYS = 14;
+const average = (xs: readonly number[]) => xs.reduce((sum, x) => sum + x, 0) / xs.length;
+/** Simple moving averages of the closes ending yesterday and today; undefined without `period + 1` bars. */
+function smaPair(bars: readonly DailyBar[], period: number): [number, number] | undefined {
+	if (bars.length < period + 1) return undefined;
+	const closes = bars.map((b) => b.close);
+	return [average(closes.slice(-period - 1, -1)), average(closes.slice(-period))];
+}
+
+/** Wilder's RSI(14) on yesterday's and today's close: the first average is a simple one, then each day weighs 13 to 1. */
+function rsiPair(bars: readonly DailyBar[]): [number, number] | undefined {
+	if (bars.length < RSI_DAYS + 2) return undefined;
+	const changes = bars.slice(1).map((b, i) => b.close - bars[i]!.close);
+	let gain = average(changes.slice(0, RSI_DAYS).map((c) => Math.max(c, 0)));
+	let loss = average(changes.slice(0, RSI_DAYS).map((c) => Math.max(-c, 0)));
+	const rsi = () => (gain === 0 && loss === 0 ? 50 : loss === 0 ? 100 : 100 - 100 / (1 + gain / loss));
+	const out: number[] = [rsi()];
+	for (const c of changes.slice(RSI_DAYS)) {
+		gain = (gain * (RSI_DAYS - 1) + Math.max(c, 0)) / RSI_DAYS;
+		loss = (loss * (RSI_DAYS - 1) + Math.max(-c, 0)) / RSI_DAYS;
+		out.push(rsi());
+	}
+	return [out.at(-2)!, out.at(-1)!];
+}
 const signed = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}`;
 const leanOf = (move: number): Lean | null => (move > 0 ? "bull" : move < 0 ? "bear" : null);
 const moveOf = (bars: readonly DailyBar[]) => (bars.at(-1)!.close / bars.at(-2)!.close - 1) * 100;
@@ -47,6 +79,24 @@ const DETECTORS: Record<Computed, Detect> = {
 		if (before.length < VOLUME_DAYS) return undefined;
 		const ratio = bars.at(-1)!.volume / (before.reduce((sum, b) => sum + b.volume, 0) / VOLUME_DAYS);
 		return ratio >= threshold ? { lean: leanOf(moveOf(bars)), fact: `收盘成交量是 20 日均量的 ${ratio.toFixed(1)} 倍` } : undefined;
+	},
+	"cross-50-200"(bars) {
+		const [fast, slow] = [smaPair(bars, 50), smaPair(bars, 200)];
+		if (fast === undefined || slow === undefined) return undefined;
+		const values = `50 日 ${fast[1].toFixed(2)}，200 日 ${slow[1].toFixed(2)}`;
+		if (fast[0] <= slow[0] && fast[1] > slow[1]) return { lean: "bull", fact: `50 日均线上穿 200 日均线（金叉，${values}）` };
+		if (fast[0] >= slow[0] && fast[1] < slow[1]) return { lean: "bear", fact: `50 日均线下穿 200 日均线（死叉，${values}）` };
+		return undefined;
+	},
+	// An RSI extreme warns of a stretch against the move, so it takes no side in resonance (design section 14).
+	rsi(bars, threshold) {
+		const pair = rsiPair(bars);
+		if (pair === undefined) return undefined;
+		const [before, now] = pair;
+		const low = 100 - threshold;
+		if (before < threshold && now >= threshold) return { lean: null, fact: `RSI(14) 上穿 ${threshold}（${now.toFixed(1)}）` };
+		if (before > low && now <= low) return { lean: null, fact: `RSI(14) 下穿 ${low}（${now.toFixed(1)}）` };
+		return undefined;
 	},
 };
 
@@ -66,7 +116,8 @@ function noiseOf(s: TaSignal): { why: string; flips?: number } {
 	return flips === undefined ? { why: "ta 判为噪音" } : { why: `ta 判为噪音：近 12 根日线反复翻转 ${flips} 次`, flips };
 }
 
-type Candidate = { symbol: string; rule: WatchRule; key: string; finding: Finding; signal?: TaSignal };
+/** `id`: a hit whose id is not `<key>:<symbol>:<date>`, such as one earnings date told once. */
+type Candidate = { symbol: string; rule: WatchRule; key: string; finding: Finding; signal?: TaSignal; id?: string };
 
 function candidates(input: CloseInput): Candidate[] {
 	const listed = new Set(input.symbols);
@@ -84,7 +135,14 @@ function candidates(input: CloseInput): Candidate[] {
 			return finding === undefined ? [] : [{ symbol, rule: ruleOf(id), key: id, finding }];
 		});
 	});
-	return [...fromTa, ...computed];
+	const earnings = input.symbols.flatMap((symbol): Candidate[] => {
+		const next = input.earnings?.[symbol];
+		const threshold = effective(ruleOf("earnings"), symbol, scopeOf(symbol), input.levels).threshold;
+		if (next === undefined || threshold === undefined || next.tradingDays > threshold) return [];
+		const fact = earningsFact(next);
+		return [{ symbol, rule: ruleOf("earnings"), key: "earnings", finding: { lean: null, fact }, id: `earnings:${symbol}:${next.date}` }];
+	});
+	return [...fromTa, ...computed, ...earnings];
 }
 
 type Delivery = { line: Line; plan?: Plan };
@@ -108,8 +166,8 @@ export function close(input: CloseInput): CloseResult {
 		.sort((x, y) => x.e.level - y.e.level);
 	// Hits graded together happen together; the quieter ones go first so the louder one is the second hit that escalates.
 	for (const { c, e } of all) {
-		const id = `${c.key}:${c.symbol}:${input.date}`;
-		if (day.some((h) => h.id === id)) continue;
+		const id = c.id ?? `${c.key}:${c.symbol}:${input.date}`;
+		if (day.some((h) => h.id === id) || input.seen?.includes(id)) continue;
 		const base = { id, rule: c.rule.id, symbol: c.symbol, date: input.date, at: input.at, lean: c.finding.lean, fact: c.finding.fact, ...(c.signal && { signal: c.signal.rule_id }) };
 		if (c.signal?.attention === "noise") {
 			const noise = noiseOf(c.signal);
