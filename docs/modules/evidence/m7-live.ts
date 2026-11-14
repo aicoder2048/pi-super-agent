@@ -261,12 +261,12 @@ async function lanes() {
 		const copy = (extra: (dir: string) => void) => {
 			const dir = mkdtempSync("/tmp/m7l/lint-");
 			mkdirSync(join(dir, "docs/modules"), { recursive: true });
-			mkdirSync(join(dir, "tests"));
+			mkdirSync(join(dir, "tests/unit"), { recursive: true });
 			cpSync(join(HEAD, "src"), join(dir, "src"), { recursive: true });
 			cpSync(join(HEAD, "docs/modules/examples"), join(dir, "docs/modules/examples"), { recursive: true });
-			cpSync(join(HEAD, "tests/no-gmail-send.test.ts"), join(dir, "tests/no-gmail-send.test.ts"));
+			cpSync(join(HEAD, "tests/unit/no-gmail-send.test.ts"), join(dir, "tests/unit/no-gmail-send.test.ts"));
 			extra(dir);
-			const run = spawnSync(process.execPath, ["--test", "tests/no-gmail-send.test.ts"], { cwd: dir, encoding: "utf8" });
+			const run = spawnSync(process.execPath, ["--test", "tests/unit/no-gmail-send.test.ts"], { cwd: dir, encoding: "utf8" });
 			rmSync(dir, { recursive: true, force: true });
 			return { status: run.status, lines: (run.stdout + run.stderr).split("\n").filter((l) => /^[✔✖]|\.ts:\d+:/.test(l.trim())).slice(0, 6).join("\n") };
 		};
@@ -381,7 +381,7 @@ async function perf() {
 	const scanMs: number[] = [];
 	for (let i = 0; i < 5; i++) {
 		const t0 = performance.now();
-		spawnSync(process.execPath, ["--test", "tests/no-gmail-send.test.ts"], { cwd: HEAD });
+		spawnSync(process.execPath, ["--test", "tests/unit/no-gmail-send.test.ts"], { cwd: HEAD });
 		scanMs.push(performance.now() - t0);
 	}
 	const suite = (dir: string) => {
