@@ -1,12 +1,12 @@
 {
   "title": "自选股报价",
-  "description": "交易时段每 60 秒取一次自选股和 SPY、QQQ 的快照（Massive Starter 套餐，延迟 15 分钟）；当天涨跌到 settings.bands 里的一档时发一行提醒和一条触发（bySymbol 写了的代码用自己的档，其余用 default）",
+  "description": "交易时段每 60 秒取一次自选股和 SPY、QQQ 的快照（Massive Starter 套餐，延迟 15 分钟）；当天涨跌到盯盘规则表 watch-rules.ts 里的一档时，按那一档的层级发一行提醒（静音或响铃）和一条开任务的触发，你在 rule-levels 里的改动叠在表上",
   "handler": "index.ts",
   "secrets": ["POLYGON_API_KEY"],
   "every": "60s",
   "when": "us-market-hours",
-  "settings": { "baseUrl": "https://api.massive.com", "bands": { "default": [5, 8], "bySymbol": { "SPY": [2, 3], "QQQ": [2, 3] } } },
-  "reads": ["watchlist"],
+  "settings": { "baseUrl": "https://api.massive.com" },
+  "reads": ["watchlist", "rule-levels"],
   "into": "quotes",
-  "notice": "{{line}}"
+  "notice": "{{line}}（规则 {{rule}}，层级 {{level}}，做法 {{plan}}）"
 }

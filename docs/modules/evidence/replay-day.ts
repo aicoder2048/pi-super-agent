@@ -9,7 +9,7 @@ const SNAPSHOT = `${BASE}/v2/snapshot/locale/us/markets/stocks/tickers`;
 export type Step = { at: string; now?: string; prices: Record<string, number> };
 export type Scenario = { title: string; quoteDate?: string; days: { date: string; prevClose: Record<string, number>; steps: Step[] }[] };
 export type Tick = { day: string; now: number; at: number; prices: Record<string, number>; prevClose: Record<string, number> };
-export type Posted = { minute: string; externalId: string; text: string };
+export type Posted = { minute: string; externalId: string; text: string; push?: string };
 export type Watched = { key: string; condition: Record<string, unknown>; id?: string };
 export type Triggered = { minute: string; id: string; thread: string; body: string };
 
@@ -76,9 +76,9 @@ export async function stockTaDay(tree: string, state: string, watchlist: readonl
 					notices.push(n.id);
 					triggered.push({ minute: nyMinute(tick.at), id: n.id, thread: n.thread, body: n.body });
 				},
-				alert: (_: string, a: { externalId: string; text: string; at: string }) => {
-					const { duplicate } = host.kernel.postHostLine("module:stock-ta", { kind: "alert", externalId: a.externalId, text: a.text, occurredAt: Date.parse(a.at), module: { title: "股票技术分析", private: false } });
-					if (!duplicate) fresh.push({ minute: nyMinute(Date.parse(a.at)), externalId: a.externalId, text: a.text });
+				alert: (_: string, a: { externalId: string; text: string; at: string; push?: string }) => {
+					const { duplicate } = host.kernel.postHostLine("module:stock-ta", { kind: "alert", externalId: a.externalId, text: a.text, occurredAt: Date.parse(a.at), module: { title: "股票技术分析", private: false }, ...(a.push && { push: a.push }) });
+					if (!duplicate) fresh.push({ minute: nyMinute(Date.parse(a.at)), externalId: a.externalId, text: a.text, ...(a.push && { push: a.push }) });
 					return !duplicate;
 				},
 				secret: () => undefined,

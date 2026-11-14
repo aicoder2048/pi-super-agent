@@ -29,12 +29,15 @@ export type Condition =
 /** One condition the user set. `key` is a value of the collection's watch key, e.g. `CEA` or `NVDA`. */
 export type Watch = { id: string; key: string; condition: Condition; note?: string };
 
+/** How a line reaches the user's phone. Absent: it rings. `silent`: Telegram sends it with `disable_notification` (ADR-0027). */
+export type Push = "silent";
+
 /** `externalId` is the condition's id and the row's time, so a row never alerts twice. */
-export type Alert = { externalId: string; text: string; at: string };
+export type Alert = { externalId: string; text: string; at: string; push?: Push };
 
 export type Side = "up" | "down";
 export type DayMoveFold = { key: string; side: Side; clause: string };
-export type FeedAlert = { id: string; text: string; at: string; fold?: { key: string; side: Side } };
+export type FeedAlert = { id: string; text: string; at: string; fold?: { key: string; side: Side }; push?: Push };
 
 export type Query = { where?: Readonly<Record<string, string | number>>; since?: string; until?: string; limit?: number };
 

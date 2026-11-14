@@ -973,7 +973,7 @@ function mount(doc) {
 				restored = true;
 				showPanel(savedPanel(store.get(TAB_KEY), new Set(view.rows.map((r) => r.id))));
 			}
-			if (message.type === "host_line" && message.who === "alert") showPanel(panelStep(panel, { kind: "alert", lineId: message.id, phone: getComputedStyle($("bottom")).display !== "none" }));
+			if (message.type === "host_line" && message.who === "alert" && message.push !== "silent") showPanel(panelStep(panel, { kind: "alert", lineId: message.id, phone: getComputedStyle($("bottom")).display !== "none" }));
 		};
 		events.onerror = () => {
 			setStatus("disconnected");

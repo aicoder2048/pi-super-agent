@@ -61,6 +61,7 @@ export function parseCollected(output: Json, into?: CollectionDescriptor): Colle
 	if (!Array.isArray(alerts) || !alerts.every((a) => isObject(a) && ["id", "text", "at"].every((f) => typeof a[f] === "string" && a[f] !== "") && (a["fold"] === undefined || (isObject(a["fold"]) && typeof a["fold"]["key"] === "string" && ["up", "down"].includes(a["fold"]["side"] as string))))) {
 		return `alerts 要是一列 { id, text, at }，都是文字，可选 fold { key, side: up 或 down }`;
 	}
+	if (!alerts.every((a) => a["push"] === undefined || a["push"] === "silent")) return `alerts 的 push 只能是 silent（不写就响铃）`;
 	if (problem !== undefined && !(isObject(problem) && typeof problem["id"] === "string" && typeof problem["text"] === "string")) return `problem 要是 { id, text }，两个都是文字`;
 	if (problem !== undefined && problem["once"] !== undefined && problem["once"] !== true) return `problem 的 once 只能是 true，收到 ${JSON.stringify(problem["once"])}`;
 	if (into !== undefined) {
@@ -112,7 +113,7 @@ function postAlerts({ module }: FeedEntry, conditions: readonly ConditionAlert[]
 		if (into === undefined) ports.alert(module, alert);
 		else if (ports.alert(module, { ...alert, text: `${into.text}${fold!.clause}` })) joined.add(into);
 	}
-	for (const a of feed) if (!joined.has(a)) ports.alert(module, { externalId: a.id, text: a.text, at: a.at });
+	for (const a of feed) if (!joined.has(a)) ports.alert(module, { externalId: a.id, text: a.text, at: a.at, ...(a.push && { push: a.push }) });
 }
 
 export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: FeedPorts, fixture?: FeedFixture, signal?: AbortSignal): Promise<FeedRun> {

@@ -219,6 +219,21 @@ test("重启时还没送出的回复，等 Telegram 客户端在了才送，手�
 	await until(() => sentTo(tg, USER).includes("收到：pending"), "停机前没送出的回复到了 Telegram", 4000);
 });
 
+test("重启时还没送出的静音提醒，补发时照样静音；响铃的照样响", async (t) => {
+	const tg = await fakeTelegram(t);
+	const stateDir = tempStateDir();
+	const first = await tgHost(t, tg, { stateDir });
+	tg.userSays(USER, "before");
+	await until(() => sentTo(tg, USER).includes("收到：before"), "第一条回复");
+	await first.stop();
+	const kernel = new Kernel({ db: openStore(join(stateDir, "state.db")), clock: { now: () => Date.now() }, sourcePolicy: () => "candidate" });
+	kernel.postHostLine("module:stock-ta", { kind: "alert", externalId: "band:NVDA:2026-11-13:up5", text: "NVDA 涨 +5.31%，到达 +5% 档", occurredAt: Date.now(), push: "silent" });
+	kernel.postHostLine("module:stock-ta", { kind: "alert", externalId: "band:NVDA:2026-11-13:up8", text: "NVDA 涨 +8.10%，到达 +8% 档", occurredAt: Date.now() });
+	await tgHost(t, tg, { stateDir });
+	await until(() => tg.sent.filter((m) => m.text.includes("档")).length === 2, "停机前没送出的两行提醒到了 Telegram", 4000);
+	assert.deepEqual(tg.sent.filter((m) => m.text.includes("档")).map((m) => [m.text.includes("+5%"), m.silent]), [[true, true], [false, false]]);
+});
+
 test("宿主启动、Router 还没好时网页上说的话，也静默转到 Telegram", async (t) => {
 	const tg = await fakeTelegram(t);
 	const stateDir = tempStateDir();

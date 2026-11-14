@@ -34,6 +34,7 @@ const HOST_LINES_TABLE = (name: string) => `CREATE TABLE IF NOT EXISTS ${name} (
 	created_at INTEGER NOT NULL,
 	delivered_at INTEGER,
 	module_title TEXT,
+	push TEXT CHECK (push IS NULL OR (push = 'silent' AND kind = 'alert')),
 	CHECK (
 		(kind = 'alert' AND external_id IS NOT NULL AND length(text) BETWEEN 1 AND 1000 AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0)
 		OR (kind = 'receipt' AND external_id IS NULL AND length(text) BETWEEN 1 AND 16000)
@@ -321,6 +322,9 @@ export function openStore(path: string): DatabaseSync {
 				ALTER TABLE host_lines_next RENAME TO host_lines;
 				CREATE INDEX host_lines_today ON host_lines (kind, created_at, source);`),
 		);
+	}
+	if (!db.prepare("PRAGMA table_info(host_lines)").all().some((c) => (c as { name: string }).name === "push")) {
+		db.exec("ALTER TABLE host_lines ADD COLUMN push TEXT CHECK (push IS NULL OR (push = 'silent' AND kind = 'alert'))");
 	}
 	if (!ticketColumns.includes("tokens_cached")) db.exec("ALTER TABLE tickets ADD COLUMN tokens_cached INTEGER NOT NULL DEFAULT 0");
 	db.exec("DROP TABLE IF EXISTS router_private; DROP TABLE IF EXISTS private_text");

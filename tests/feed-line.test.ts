@@ -154,6 +154,16 @@ test("放出的通知：一封新信写一条「通知」宿主行和一条触�
 	assert.equal(tg.sent.filter((m) => m.text.includes("季度对账单")).length, 1);
 });
 
+test("提醒行可以静音：feed 写了 push: silent 的那一行，Telegram 用 disable_notification 发；没写的照旧带声音", async (t) => {
+	const alerting = (pkg: string) =>
+		writeFileSync(join(pkg, "feeds", "inbox", "index.ts"), `export default (input) => ({ alerts: input.items.map((i) => ({ id: i.id, text: i.subject, at: "2026-11-13T15:00:00Z", ...(i.quiet && { push: "silent" }) })) });\n`);
+	const { deliver, phone } = await lettersHost(t, alerting);
+	await deliver({ id: "a-1", subject: "NVDA 涨 +5.31%，到达 +5% 档", quiet: true });
+	await deliver({ id: "a-2", subject: "NVDA 涨 +8.10%，到达 +8% 档" });
+	await until(() => phone().filter((m) => m.text.includes("档")).length === 2, "两行提醒到了 Telegram");
+	assert.deepEqual(phone().filter((m) => m.text.includes("档")).map((m) => [m.text.replace(/^.*：/, ""), m.silent]), [["NVDA 涨 +5.31%，到达 +5% 档", true], ["NVDA 涨 +8.10%，到达 +8% 档", false]]);
+});
+
 test("放出的触发的正文只有 line：存下的正文不进幕僚长的卡片；触发的编号是 feed 自己的 id", async (t) => {
 	const router = await lettersHost(t);
 	await router.deliver(letter("m-1"));

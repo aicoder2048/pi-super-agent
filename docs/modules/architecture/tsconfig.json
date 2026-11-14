@@ -21,6 +21,7 @@
   "include": [
     "node-shim.d.ts",
     "../../../src/modules/*.ts",
+    "../examples/stock-ta/watch-rules.ts",
     "../../../tests/module-validate.test.ts",
     "../../../tests/module-lifecycle.test.ts",
     "../../../tests/module-protocol.test.ts"
