@@ -14,7 +14,7 @@
  *       beat does.
  * real  Lane 5 on openai-codex models through the Pi login: the user tells the host his NVDA holding on Telegram; the real Worker
  *       writes the row; a stop-loss beat rings and opens a ticket whose brief names holding-ask; a question card, if one comes
- *       within a few minutes, is recorded.
+ *       within a few minutes, is recorded with whether it names the stop 138.00, the cost 150.00 and the price 140.00.
  * The scan feed runs a stand-in for `ta` that reports a clean scan, so no lane starts with a 日线扫描出问题 notice.
  * P4_LANES=1,3 runs only those lanes.
  */
@@ -249,6 +249,7 @@ async function fake(): Promise<void> {
 			const ticket = await within(20_000, () => h.tickets().find((t) => t["rule_id"] === "stock-ta/watch-task"));
 			const card = await within(30_000, () => h.phone().find((m) => m.buttons !== null && m.text.includes("止损")));
 			const ring = holdingLines(h.phone());
+			const numbers = card ? ["138.00", "150.00", "140.00"].map((n) => `${n} ${card.text.includes(n) ? "yes" : "no"}`).join(", ") : "(no card)";
 			const triggers = h.triggers();
 			const body = String(triggers[0]?.["body"] ?? "");
 			const buttons = card?.buttons?.flat().map((b) => b.text) ?? [];
@@ -359,8 +360,9 @@ async function real(): Promise<void> {
 			const brief = ticket ? h.briefs().filter((b) => b["ticket_id"] === ticket["id"]).map((b) => String(b["body"])) : [];
 			const card = ticket ? await within(300_000, () => h.phone().find((m) => m.buttons !== null), 2000) : undefined;
 			const ring = holdingLines(h.phone());
+			const numbers = card ? ["138.00", "150.00", "140.00"].map((n) => `${n} ${card.text.includes(n) ? "yes" : "no"}`).join(", ") : "(no card)";
 			const pass = row !== undefined && ring.length === 1 && !ring[0]!.silent && ticket !== undefined && brief.some((b) => b.includes("holding-ask"));
-			return { pass, evidence: `real models ${JSON.stringify(REAL)}\nthe user said on Telegram 「${said}」\nholdings row after ${rowSeconds} s:\n${show([row ?? "(none)"])}\nall holdings rows:\n${show(h.holdings())}\nTelegram after the row:\n${show(answered)}\nbeat (11:00 ET): NVDA 140, prev close 145, day low 137.50\nholding lines:\n${show(plain(ring))}\ntriggers:\n${show(h.triggers())}\ntickets:\n${show(h.tickets())}\nticket inputs:\n${show(brief)}\nquestion card (recorded, not required):\n${show([card ? { text: card.text, buttons: card.buttons?.flat().map((b) => b.text) } : "(none within 5 min)"])}\nall Telegram messages:\n${show(plain(h.phone()))}` };
+			return { pass, evidence: `real models ${JSON.stringify(REAL)}\nthe user said on Telegram 「${said}」\nholdings row after ${rowSeconds} s:\n${show([row ?? "(none)"])}\nall holdings rows:\n${show(h.holdings())}\nTelegram after the row:\n${show(answered)}\nbeat (11:00 ET): NVDA 140, prev close 145, day low 137.50\nholding lines:\n${show(plain(ring))}\ntriggers:\n${show(h.triggers())}\ntickets:\n${show(h.tickets())}\nticket inputs:\n${show(brief)}\nquestion card carries stop, cost, price: ${numbers}\nquestion card (recorded, not required):\n${show([card ? { text: card.text, buttons: card.buttons?.flat().map((b) => b.text) } : "(none within 5 min)"])}\nall Telegram messages:\n${show(plain(h.phone()))}` };
 		} finally {
 			writeFileSync(join(outDir, "p4-real-host.log"), scrub(h.host.log()));
 			await h.stop();
