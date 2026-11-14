@@ -188,6 +188,12 @@ test("仓库里的模块和旧布局夹具都有领域名和给幕僚长的说�
 	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "module-builder": { team: "模块工坊", onRoster: true }, "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true } });
 });
 
+test("toy-market 删掉以后 config.json 的 modules 里还写着它：照常加载，留一句说删掉 modules.toy-market", () => {
+	const modules = Modules.load([repoModules], { switches: { values: { "toy-market": true }, file: "/s/config.json" } });
+	assert.deepEqual([...modules.found, ...modules.packages].map((m) => m.name).sort(), ["module-builder", "pi-pi"]);
+	assert.deepEqual(modules.switchNotes, ["/s/config.json：toy-market 已删除，请删掉 config.json 里的 modules.toy-market；这一项先不管"]);
+});
+
 test("us-market 退役以后 config.json 的 modules 里还写着它：报错说删掉 modules.us-market", () => {
 	assert.throws(() => Modules.load([repoModules], { switches: { values: { "us-market": false }, file: "/s/config.json" } }), (e: Error) => e instanceof ConfigError && e.message === "/s/config.json：us-market 已经退役，删掉 modules.us-market");
 });
