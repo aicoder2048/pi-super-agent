@@ -1,11 +1,12 @@
 {
   "title": "自选股日线扫描",
-  "description": "每小时看一次；每个交易日收盘 15 分钟后用 ta scan 扫一次自选股和 QQQ、SPY，同步两年日线和分红，写进模块自己的数据库（先写副本，成功后整份换上）",
+  "description": "每小时看一次；每个交易日收盘 15 分钟后用 ta scan 扫一次自选股和 QQQ、SPY，同步两年日线和分红，写进模块自己的数据库（先写副本，成功后整份换上）；自选股当天出现 settings.signals.rules 里的信号时，每条发一条触发",
   "handler": "index.ts",
   "secrets": ["POLYGON_API_KEY"],
   "every": "1h",
   "limit": "5m",
-  "settings": { "baseUrl": "https://api.massive.com", "scanSeconds": 270 },
+  "settings": { "baseUrl": "https://api.massive.com", "scanSeconds": 270, "signals": { "rules": ["R-MA-2-50"] } },
   "reads": ["watchlist"],
-  "into": "scan-runs"
+  "into": "scan-runs",
+  "notice": "日线扫描新信号：{{symbol}} {{kind}}（规则 {{rule}}，方向 {{direction}}，周期 {{timeframe}}），数据日期 {{date}}（美东交易日），收盘价 {{price}}。"
 }

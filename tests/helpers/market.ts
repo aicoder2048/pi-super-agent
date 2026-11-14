@@ -61,13 +61,13 @@ export async function fakeMassive(t: TestContext) {
 export const SNAPSHOT = "/v2/snapshot/locale/us/markets/stocks/tickers";
 const STOCK_TA = join(import.meta.dirname, "../../docs/modules/examples/stock-ta");
 
-export function stockTaCopy(t: TestContext, baseUrl: string): string {
+export function stockTaCopy(t: TestContext, baseUrl: string, settings: Record<string, unknown> = {}): string {
 	const root = mkdtempSync(join(tmpdir(), "psa-stock-ta-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const pkg = join(root, "stock-ta");
 	cpSync(STOCK_TA, pkg, { recursive: true });
 	const feedJson = join(pkg, "feeds/quotes/feed.json");
 	const feed = JSON.parse(readFileSync(feedJson, "utf8"));
-	writeFileSync(feedJson, JSON.stringify({ ...feed, settings: { ...feed.settings, baseUrl } }));
+	writeFileSync(feedJson, JSON.stringify({ ...feed, settings: { ...feed.settings, baseUrl, ...settings } }));
 	return pkg;
 }
