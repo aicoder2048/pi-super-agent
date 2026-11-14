@@ -15,7 +15,7 @@ import { installedTa } from "../../ta.ts";
 import { COMBOS, effective, opensTask, parseRuleLevels, quietAt, ruleOf, scopeOf, WATCH_RULES, type LevelRow, type RuleLevels } from "../../watch-rules.ts";
 import { listedSymbols, type WatchRow } from "../../watchlist.ts";
 import { close, earningsFact, type Earnings, type Notice, type TaSignal } from "./close.ts";
-import { digest } from "./digest.ts";
+import { digest, heldLine } from "./digest.ts";
 
 interface Input {
 	/** `ta`: a node script that stands in for the venv's `ta` (fixtures and tests). `now`: a fixed time for this tick. */
@@ -27,10 +27,11 @@ interface Input {
 
 /**
  * The session the feed is on: the symbols its swapped-in scan covered (none yet when every try failed), the hits graded on it, the
- * lines for states that began earlier (earnings coming), and whether the digest went out. A cursor without `hits` is from before
- * phase 3; its session counts as scanned and digested, so a deploy does not send a late digest.
+ * lines for states that began earlier (earnings coming), whether the digest went out, and the ids of held hits (both feeds) already
+ * sent. The digest goes out once; a scan that grades later in quiet hours still holds hits, released once quiet hours end. A cursor
+ * without `hits` is from before phase 3; its session counts as scanned and digested, so a deploy does not send a late digest.
  */
-type Cursor = { date: string; symbols: string[]; hits?: Hit[]; states?: string[]; digest?: true };
+type Cursor = { date: string; symbols: string[]; hits?: Hit[]; states?: string[]; digest?: true; released?: string[] };
 
 type TaError = { symbol?: string; error: { code: string; message?: string } };
 type Signal = TaSignal & { timeframe: string; data_end_ms: number };
@@ -191,9 +192,9 @@ async function grade(input: Input, signals: readonly Signal[], picked: readonly 
 
 const planOf = (rule: string) => [...WATCH_RULES, ...COMBOS].find((r) => r.id === rule)?.plan;
 
-/** Triggers quiet hours held back on the session, from both feeds, sent with the digest (design section 4.4). */
-function released(hits: readonly Hit[]): Notice[] {
-	return hits.filter((h) => h.held && opensTask(h) && planOf(h.rule) !== undefined).map((h) => ({
+/** Triggers quiet hours held back on the session, from both feeds, sent once quiet hours end (design section 4.4). */
+function heldTasks(held: readonly Hit[]): Notice[] {
+	return held.filter((h) => opensTask(h) && planOf(h.rule) !== undefined).map((h) => ({
 		id: h.id,
 		thread: `${h.symbol}:${h.date}`,
 		threadScope: "module",
@@ -210,22 +211,26 @@ export default async function scan(input: Input) {
 	const last = readCursor(input.cursor);
 	const session = lastSession(tickMs);
 	const quiet = quietAt(tickMs, false);
-	const cursor: Cursor = last?.date !== session ? { date: session, symbols: [], hits: [] } : last.hits === undefined ? { ...last, hits: [], digest: true } : last;
+	const dataDir = process.env.PSA_MODULE_DATA ?? "";
+	const cursor: Cursor = last?.date !== session ? { date: session, symbols: [], hits: [] } : last.hits === undefined ? { ...last, hits: [], digest: true, released: readHits(dataDir, session, "quotes").filter((h) => h.held).map((h) => h.id) } : last;
+	const dayHits = () => [...readHits(dataDir, session, "quotes"), ...(cursor.hits ?? [])];
+	const unreleased = () => dayHits().filter((h) => h.held && !cursor.released?.includes(h.id));
 	const scanned = sameSymbols(cursor.symbols, symbols);
-	if (scanned && cursor.digest) return { records: [] };
+	if (scanned && cursor.digest && (quiet || unreleased().length === 0)) return { records: [] };
 
 	const key = process.env.POLYGON_API_KEY ?? "";
 	if (key === "") return { records: [], problem: NO_KEY };
-	const dataDir = process.env.PSA_MODULE_DATA ?? "";
 	const out: { records: object[]; alerts: { id: string; text: string; at: string; push?: "silent" }[]; notices: Notice[]; problem?: Problem } = { records: [], alerts: [], notices: [] };
 	const swapped = scanned || (await scanOnce(input, { key, dataDir, session, symbols, picked, listed, valid, rejected, tickMs, quiet, cursor, out }));
 	const due = swapped || tickMs >= closeOf(session) + DIGEST_ANYWAY_MS;
-	if (!cursor.digest && due && !quiet) {
-		const hits = [...readHits(dataDir, session, "quotes"), ...(cursor.hits ?? [])];
-		const text = digest(session, hits, cursor.states ?? [], !swapped);
-		if (text !== undefined) out.alerts.push({ id: `digest:${session}`, text, at: new Date(tickMs).toISOString(), push: "silent" });
-		out.notices.push(...released(hits));
+	if ((cursor.digest || due) && !quiet) {
+		const held = unreleased();
+		const at = new Date(tickMs).toISOString();
+		const text = cursor.digest ? heldLine(session, held) : digest(session, dayHits(), cursor.states ?? [], !swapped);
+		if (text !== undefined) out.alerts.push({ id: cursor.digest ? `held:${held[0]!.id}` : `digest:${session}`, text, at, push: "silent" });
+		out.notices.push(...heldTasks(held));
 		cursor.digest = true;
+		cursor.released = [...(cursor.released ?? []), ...held.map((h) => h.id)];
 	}
 	return { ...out, cursor: JSON.stringify(cursor satisfies Cursor) };
 }

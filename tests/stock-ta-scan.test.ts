@@ -593,13 +593,13 @@ test("免打扰：17:30 小结已照发，补扫落在时段里；时段结束�
 	await feed.tick();
 	assert.deepEqual(feed.notices.map((n) => [n.id, threadId(n.threadOwner ?? n.source, n.thread)]), [["R-MA-2-200:NVDA:2026-11-12", "thr_stock-ta:NVDA:2026-11-12"]]);
 	assert.match(feed.notices[0]!.body, /免打扰时段留下，收盘小结时补发）（规则 R-MA-2-200，层级 5，做法 structure-trend）$/);
-	assert.deepEqual(feed.lines().map((a) => [a.externalId, a.push]), [["held:2026-11-12", "silent"]]);
+	assert.deepEqual(feed.lines().map((a) => [a.externalId, a.push]), [["held:R-MA-2-50:down:AMD:2026-11-12", "silent"]]);
 	assert.equal(feed.lines()[0]!.text, "免打扰时段留下的收盘命中 11-12（美东）：AMD 收盘跌破 50 日线（免打扰时留下）。问「今天有哪些信号」看全部。");
 	for (let ms = openMs + 60 * 60_000; ms < Date.parse("2026-11-13T21:19:00.000Z"); ms += 60 * 60_000) {
 		feed.at(new Date(ms).toISOString());
 		await feed.tick();
 	}
-	assert.deepEqual([feed.notices.length, feed.lines().length, feed.digests().length, feed.scans().length], [1, 1, 1, 4], "补发一次；之后的拍（每拍都重新载入模块）不再发、不重扫");
+	assert.deepEqual([feed.notices.length, feed.lines().length, feed.digests().length, feed.scans().length], [1, 1, 1, 3], "补发一次；之后的拍（每拍都重新载入模块）不再发、不重扫");
 });
 
 test("免打扰：小结补发过留着的任务以后重启宿主，同一个交易日的拍不再补发", async (t) => {

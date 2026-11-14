@@ -47,21 +47,33 @@ function segmentOf(symbol: string, hits: readonly Hit[]): Segment | undefined {
 	return { text, rank, count: listed.length + flips.length };
 }
 
-/** Undefined when nothing above level 0 happened today. `states` are lines for states that began on an earlier day. */
-export function digest(date: string, hits: readonly Hit[], states: readonly string[], scanFailed: boolean): string | undefined {
-	if (!hits.some((h) => h.level >= 1)) return undefined;
-	const symbols = [...new Set(hits.map((h) => h.symbol))].sort();
-	const segments = symbols.flatMap((s) => segmentOf(s, hits.filter((h) => h.symbol === s)) ?? [])
-		.concat(states.map((text) => ({ text, rank: 0, count: 1 })))
-		.sort((a, b) => (b.rank === a.rank ? 0 : b.rank - a.rank));
-	const ordered = [...segments.filter((s) => s.rank > 0), ...segments.filter((s) => s.rank === 0), ...segments.filter((s) => s.rank < 0)];
-	const recorded = hits.filter((h) => h.level === 0).length;
-	const tail = `${scanFailed ? "今天的日线扫描失败，收盘规则没有算。" : ""}${recorded > 0 ? `只记录的 ${recorded} 条，` : ""}问「今天有哪些信号」看全部。`;
-	const head = `收盘小结 ${date.slice(5)}（美东）：`;
+/** The head, then segments, folding from the last one back into 「另有 n 条」 until the line fits. */
+function fit(head: string, ordered: readonly Segment[], tail: string): string {
 	const line = (kept: readonly Segment[], folded: number) => `${head}${[...kept.map((s) => s.text), ...(folded > 0 ? [`另有 ${folded} 条`] : [])].join("；")}。${tail}`;
 	for (let keep = ordered.length; keep >= 0; keep--) {
 		const text = line(ordered.slice(0, keep), ordered.slice(keep).reduce((n, s) => n + s.count, 0));
 		if ([...text].length <= LIMIT) return text;
 	}
 	return [...line([], ordered.reduce((n, s) => n + s.count, 0))].slice(0, LIMIT).join("");
+}
+
+const segmentsOf = (hits: readonly Hit[]) => [...new Set(hits.map((h) => h.symbol))].sort().flatMap((s) => segmentOf(s, hits.filter((h) => h.symbol === s)) ?? []);
+
+/** Undefined when nothing above level 0 happened today. `states` are lines for states that began on an earlier day. */
+export function digest(date: string, hits: readonly Hit[], states: readonly string[], scanFailed: boolean): string | undefined {
+	if (!hits.some((h) => h.level >= 1)) return undefined;
+	const segments = segmentsOf(hits)
+		.concat(states.map((text) => ({ text, rank: 0, count: 1 })))
+		.sort((a, b) => (b.rank === a.rank ? 0 : b.rank - a.rank));
+	const ordered = [...segments.filter((s) => s.rank > 0), ...segments.filter((s) => s.rank === 0), ...segments.filter((s) => s.rank < 0)];
+	const recorded = hits.filter((h) => h.level === 0).length;
+	const tail = `${scanFailed ? "今天的日线扫描失败，收盘规则没有算。" : ""}${recorded > 0 ? `只记录的 ${recorded} 条，` : ""}问「今天有哪些信号」看全部。`;
+	return fit(`收盘小结 ${date.slice(5)}（美东）：`, ordered, tail);
+}
+
+/** The lines quiet hours held back after the day's digest already went out, as one silent line; undefined when there are none. */
+export function heldLine(date: string, held: readonly Hit[]): string | undefined {
+	const segments = segmentsOf(held.filter((h) => !opensTask(h))).sort((a, b) => b.rank - a.rank);
+	if (segments.length === 0) return undefined;
+	return fit(`免打扰时段留下的收盘命中 ${date.slice(5)}（美东）：`, segments, "问「今天有哪些信号」看全部。");
 }
