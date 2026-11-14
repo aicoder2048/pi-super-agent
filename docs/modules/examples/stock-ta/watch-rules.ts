@@ -108,42 +108,51 @@ function changeOf(fields: LevelRow["fields"]): Change | undefined {
 }
 
 /**
- * Only the latest row of a rule and symbol counts: a latest row with `removedAt` goes back to the table unchecked, so a bad row
- * is cleared by retracting it or writing a correct one. `bad` lists latest rows that do not apply, including a threshold change
- * that puts a symbol's first tier at or above its second.
+ * The latest row of a rule and symbol counts: one with `removedAt` goes back to the table unchecked. A latest row that does not
+ * apply is listed in `bad` and the good row before it (since the last retraction) stays in force, so a typo never undoes the
+ * user's earlier change. That includes a threshold change that puts a symbol's first tier at or above its second; dropping one
+ * row can break another symbol's order, so the check runs again until no row is dropped.
  */
 export function parseRuleLevels(rows: readonly LevelRow[]): { levels: RuleLevels; bad: string[] } {
-	const latest = new Map<string, Map<string, LevelRow>>();
+	const applied = new Map<string, Map<string, { row: LevelRow; change: Change }[]>>();
+	const invalid = new Map<string, string>();
 	for (const row of [...rows].sort((x, y) => Number(x.id) - Number(y.id))) {
 		const rule = String(row.fields["rule"]);
 		const code = String(row.fields["symbol"] ?? "").trim().toUpperCase();
-		latest.set(rule, (latest.get(rule) ?? new Map()).set(code, row));
-	}
-	const bad: string[] = [];
-	const applied = new Map<string, Map<string, { row: LevelRow; change: Change }>>();
-	for (const [rule, bySymbol] of latest) {
-		for (const [code, row] of bySymbol) {
-			if (row.fields["removedAt"]) continue;
-			const change = changeOf(row.fields);
-			if (change === undefined) bad.push(row.id);
-			else applied.set(rule, (applied.get(rule) ?? new Map()).set(code, { row, change }));
+		const bySymbol = applied.get(rule) ?? new Map();
+		const kept = bySymbol.get(code) ?? [];
+		applied.set(rule, bySymbol.set(code, kept));
+		invalid.delete(`${rule}\0${code}`);
+		if (row.fields["removedAt"]) {
+			kept.length = 0;
+			continue;
 		}
+		const change = changeOf(row.fields);
+		if (change === undefined) invalid.set(`${rule}\0${code}`, row.id);
+		else kept.push({ row, change });
 	}
-	const levelsOf = (): RuleLevels => new Map([...applied].map(([rule, bySymbol]) => [rule, new Map([...bySymbol].map(([code, a]) => [code, a.change]))]));
-	const symbols = [...new Set([...applied.values()].flatMap((bySymbol) => [...bySymbol.keys()]))].sort();
-	for (const [first, second] of TIERS.map(([a, b]) => [ruleOf(a), ruleOf(b)] as const)) {
-		for (const code of symbols) {
-			const scope = code === "" ? homeScope(first) : scopeOf(code);
-			if (first.threshold[scope] === undefined) continue;
-			while (effective(first, code, scope, levelsOf()).threshold! >= effective(second, code, scope, levelsOf()).threshold!) {
-				const sources = [first, second].flatMap(({ id }) => {
-					const [own, all] = [applied.get(id)?.get(code), scope !== "index" ? applied.get(id)?.get("") : undefined];
-					const source = own?.change.threshold != null ? own : all?.change.threshold != null ? all : undefined;
-					return source ? [{ id, code: source === own ? code : "", row: source.row }] : [];
-				});
-				const culprit = sources.reduce((top, s) => (Number(s.row.id) > Number(top.row.id) ? s : top));
-				bad.push(culprit.row.id);
-				applied.get(culprit.id)!.delete(culprit.code);
+	const bad = [...invalid.values()];
+	const top = (rule: string, code: string) => applied.get(rule)?.get(code)?.at(-1);
+	const levelsOf = (): RuleLevels =>
+		new Map([...applied].map(([rule, bySymbol]) => [rule, new Map([...bySymbol].flatMap(([code, kept]) => (kept.length > 0 ? [[code, kept.at(-1)!.change] as const] : [])))]));
+	for (let dropped = true; dropped; ) {
+		dropped = false;
+		const symbols = [...new Set([...applied.values()].flatMap((bySymbol) => [...bySymbol.keys()]))].sort();
+		for (const [first, second] of TIERS.map(([a, b]) => [ruleOf(a), ruleOf(b)] as const)) {
+			for (const code of symbols) {
+				const scope = code === "" ? homeScope(first) : scopeOf(code);
+				if (first.threshold[scope] === undefined) continue;
+				while (effective(first, code, scope, levelsOf()).threshold! >= effective(second, code, scope, levelsOf()).threshold!) {
+					const sources = [first, second].flatMap(({ id }) => {
+						const [own, all] = [top(id, code), scope !== "index" ? top(id, "") : undefined];
+						const source = own?.change.threshold != null ? own : all?.change.threshold != null ? all : undefined;
+						return source ? [{ id, code: source === own ? code : "", row: source.row }] : [];
+					});
+					const culprit = sources.reduce((latest, s) => (Number(s.row.id) > Number(latest.row.id) ? s : latest));
+					bad.push(culprit.row.id);
+					applied.get(culprit.id)!.get(culprit.code)!.pop();
+					dropped = true;
+				}
 			}
 		}
 	}
