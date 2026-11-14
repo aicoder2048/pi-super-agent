@@ -1,0 +1,15 @@
+{
+  "title": "持仓",
+  "kind": "record",
+  "class": "private",
+  "fields": {
+    "symbol": { "type": "text", "title": "代码，例如 NVDA；只有自选股里还在的票才盯持仓规则" },
+    "cost": { "type": "number", "title": "平均成本，美元，必填；加仓后使用者自己说新的平均成本" },
+    "boughtAt": { "type": "date", "title": "建仓日期；回撤从这天以来的最高价算，空着就用 52 周最高" },
+    "stopPrice": { "type": "number", "title": "止损价，美元；和 stopPct 都写了时用它" },
+    "stopPct": { "type": "number", "title": "止损线是成本以下百分之几，例如 -8；两个都空着就按成本 -8%" },
+    "quantity": { "type": "number", "title": "数量，只记下，不算盈亏" },
+    "note": { "type": "text", "title": "使用者当时怎么说的" },
+    "removedAt": { "type": "date", "title": "写上就是这只不再持有，持仓规则停下；不是卖出记录，不删行" }
+  }
+}
