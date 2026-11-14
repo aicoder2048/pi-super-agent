@@ -53,12 +53,10 @@ const cases = [
 		message: /状态目录路径太长.*PSA_STATE_DIR/,
 	},
 	{ name: "config.json 的 Watchdog 间隔不合理时，just host", entry: HOST, stateDir: stateWith(badInterval), message: /watchdog\.staleSeconds.*heartbeatSeconds/ },
-	{ name: "config.json 的 Watchdog 间隔不合理时，just watchdog", entry: WATCHDOG, stateDir: stateWith(badInterval), message: /watchdog\.staleSeconds.*heartbeatSeconds/ },
 	{ name: "webHosts 写了端口时，just host", entry: HOST, stateDir: stateWith({ webPort: 4517, webHosts: ["psa-home.example.ts.net:443"] }), message: /config\.json：webHosts\[0\]（"psa-home\.example\.ts\.net:443"）/ },
 	{ name: "webHosts 写了路径时，just host", entry: HOST, stateDir: stateWith({ webPort: 4517, webHosts: ["psa-home.example.ts.net/x"] }), message: /config\.json：webHosts\[0\]（"psa-home\.example\.ts\.net\/x"）/ },
 	{ name: "webHosts 写了名字而 webPort 是 0 时，just host", entry: HOST, stateDir: stateWith({ webHosts: ["psa-home.example.ts.net"] }), message: /config\.json：webHosts 需要固定的 webPort/ },
 	{ name: "config.json 不是合法 JSON 时，just host", entry: HOST, stateDir: stateWith("{bad"), message: /config\.json 不是合法的 JSON/ },
-	{ name: "config.json 不是合法 JSON 时，just watchdog", entry: WATCHDOG, stateDir: stateWith("{bad"), message: /config\.json 不是合法的 JSON/ },
 	{ name: "模型写法缺少 provider 时，just host", entry: HOST, stateDir: stateWith({ models: { router: "gpt" } }), message: /config\.json.*模型写法应为 provider\/id：gpt/ },
 	{ name: "模型用了禁用的提供方时，just host", entry: HOST, stateDir: stateWith({ models: { worker: "anthropic/x" } }), message: /config\.json.*拒绝使用 anthropic\/x/ },
 	{ name: "模型是 Claude 时，just host", entry: HOST, stateDir: stateWith({ models: { fallback: "openai-codex/claude-x" } }), message: /config\.json.*Claude 模型/ },
@@ -148,6 +146,24 @@ for (const c of cases) {
 		assert.match(run.stderr, c.message);
 		assert.doesNotMatch(run.stderr, /^\s+at /m);
 		assert.doesNotMatch(run.stderr, /^file:\/\//m);
+	});
+}
+
+const brokenForWatchdog = [
+	{ name: "Watchdog 间隔不合理", stateDir: stateWith(badInterval), message: /watchdog\.staleSeconds.*heartbeatSeconds/ },
+	{ name: "不是合法 JSON", stateDir: stateWith("{bad"), message: /config\.json 不是合法的 JSON/ },
+];
+
+for (const c of brokenForWatchdog) {
+	test(`config.json ${c.name}时，just watchdog 不退出：打印一句说明、过一会儿再读，不打印堆栈`, async (t) => {
+		const wd = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", WATCHDOG], { env: { ...process.env, PSA_STATE_DIR: c.stateDir() }, stdio: ["ignore", "ignore", "pipe"] });
+		t.after(() => wd.kill("SIGKILL"));
+		let stderr = "";
+		wd.stderr.on("data", (chunk) => (stderr += chunk));
+		await until(() => /config\.json 读不了，5 秒后再读/.test(stderr), "Watchdog 说 config.json 读不了", 20_000);
+		assert.match(stderr, c.message);
+		assert.equal(wd.exitCode, null, stderr);
+		assert.doesNotMatch(stderr, /^\s+at /m);
 	});
 }
 
