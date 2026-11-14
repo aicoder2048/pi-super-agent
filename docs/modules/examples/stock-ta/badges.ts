@@ -9,7 +9,16 @@ export type BadgeAlert = { id: string; text: string; at: string; push: "badge"; 
 const badged = (h: Graded) => h.level === 1 && h.combo === undefined;
 /** The host's limit on a badge's text (BADGE_TEXT_MAX); the facts that do not fit end in 「…」. */
 const TEXT_MAX = 300;
-const cut = (text: string) => (text.length <= TEXT_MAX ? text : `${text.slice(0, TEXT_MAX - 1)}…`);
+/** The host counts UTF-16 units, so the cut stops on a whole code point within that count and never splits an emoji. */
+function cut(text: string): string {
+	if (text.length <= TEXT_MAX) return text;
+	let kept = "";
+	for (const char of text) {
+		if (kept.length + char.length > TEXT_MAX - 1) break;
+		kept += char;
+	}
+	return `${kept}…`;
+}
 
 /** `fresh`: this beat's hits; only symbols with a new level-1 hit among them send a badge. */
 export function badgeAlerts(today: readonly Graded[], fresh: readonly Graded[]): BadgeAlert[] {
