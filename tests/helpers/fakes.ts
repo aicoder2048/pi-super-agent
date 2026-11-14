@@ -113,6 +113,7 @@ export function fauxRouter(brain: Brain, options: FauxRouterOptions = {}): FauxR
 				cwd: deps.stateDir,
 				preamble: options.preamble ?? (() => ""),
 				afterCommand: deps.afterCommand,
+				health: deps.routerHealth,
 			});
 		},
 	};

@@ -15,6 +15,7 @@ import type { Kernel } from "../kernel/kernel.ts";
 import { usageOf } from "./worker-events.ts";
 import { quoteSuffix } from "./workers.ts";
 import type { ModelSelector } from "../model-selector.ts";
+import type { ModelHealth } from "./health.ts";
 import { formatModelRef, type ModelRef } from "../models.ts";
 import { CONVERSATION_THREAD_ID, RETRY_BACKOFF_MS, type Decision, type OutsideWrite, type Report, type RouterNotice, type Writer } from "../kernel/types.ts";
 
@@ -289,6 +290,8 @@ export interface RouterOptions {
 	retry?: { maxRetries: number; baseDelayMs?: number };
 	errorRetryMs?: number[];
 	rulesFor?: (triggerSource: string) => string[];
+	/** Shows a failing model on the page and the phone, since the Router cannot tell anyone while its model is down. */
+	health?: ModelHealth;
 }
 
 export interface RouterModels {
@@ -321,6 +324,7 @@ export class Router {
 	readonly #kernel: Kernel;
 	readonly #onError: (error: unknown) => void;
 	readonly #models: RouterModels;
+	readonly #health: ModelHealth | undefined;
 	readonly #errorRetryMs: number[];
 	readonly #rulesFor: (triggerSource: string) => string[];
 	readonly #afterCommand: () => void;
@@ -340,6 +344,7 @@ export class Router {
 		this.#kernel = options.kernel;
 		this.#onError = options.onError ?? ((e) => console.error("[router]", e));
 		this.#models = options.models;
+		this.#health = options.health;
 		this.#errorRetryMs = options.errorRetryMs ?? [...RETRY_BACKOFF_MS];
 		this.#rulesFor = options.rulesFor ?? (() => []);
 		this.#afterCommand = options.afterCommand;
@@ -378,22 +383,23 @@ export class Router {
 	async #settled(): Promise<void> {
 		const last = this.session.messages.at(-1) as { role?: string; stopReason?: string; errorMessage?: string } | undefined;
 		if (last?.role === "assistant" && last.stopReason === "error") {
-			const result = this.#models.selector.onError(String(last.errorMessage ?? ""));
+			const error = String(last.errorMessage ?? "");
+			const result = this.#models.selector.onError(error);
 			const current = this.#models.selector.current();
 			if (result.switched) {
+				this.#health?.fellBack(formatModelRef(current.model), error);
 				await this.session.setModel(this.#models.resolve(current.model)).catch(this.#onError);
 				this.#errorStreak = 0;
-				if (result.notify) {
-					this.#kernel.notifyRouter(`Router 的主模型额度用尽或被限流，已切到回退模型 ${formatModelRef(current.model)}。请用一句话告诉使用者。`);
-					this.#afterCommand();
-				}
 				this.#buffer.push({ card: "[通知] 刚才的一轮因模型错误中断，已换模型。请继续处理上面没处理完的消息。" });
 			} else {
+				const ranOnFallback = current.fellBack && this.session.model !== undefined && formatModelRef(this.session.model) === formatModelRef(current.model);
+				this.#health?.failed(error, ranOnFallback);
 				this.#retryAfterError();
 			}
 		} else if (last?.role === "assistant") {
 			this.#errorStreak = 0;
 			this.#models.selector.onSuccess();
+			this.#health?.succeeded(this.#models.selector.current().fellBack);
 			this.#acknowledgeDelivered();
 		}
 		this.#busy = false;

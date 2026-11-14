@@ -58,7 +58,7 @@ const TICKET = "COALESCE(m.body ->> '$.ticketId', m.body ->> '$.view.ticketId')"
  * `note:<updateId>` answers one update, `setup` tells a writer their id, `missed` carries an owed note when nothing else will,
  * `alert:<hostLineId>` is a source's alert.
  */
-export type MessageKey = `line:${string}` | `ask:${string}` | `cap:${string}` | `run:${string}` | `note:${number}` | `alert:${string}` | "setup" | "missed";
+export type MessageKey = `line:${string}` | `ask:${string}` | `cap:${string}` | `run:${string}` | `note:${number}` | `alert:${string}` | `health:${string}` | "setup" | "missed";
 
 export type SendableBody = Exclude<OutboundBody, { kind: "received" }>;
 

@@ -5,6 +5,7 @@
 /** @typedef {import("../client/protocol.ts").ConversationLine} ConversationLine */
 /** @typedef {import("../client/protocol.ts").Cleared} Cleared */
 /** @typedef {import("../client/protocol.ts").Duty} Duty */
+/** @typedef {import("../client/protocol.ts").HealthBoard} HealthBoard */
 /** @typedef {import("../kernel/types.ts").HelpersToday} HelpersToday */
 /** @typedef {import("../kernel/types.ts").Routes} Routes */
 /** @typedef {import("../client/protocol.ts").HostToClient} HostToClient */
@@ -66,6 +67,7 @@ const GROUP = {
  * @property {Routes} routes
  * @property {Dispatching} dispatching
  * @property {MemberCapBoard} memberCap null from a host that cannot dispatch, or one older than this field
+ * @property {HealthBoard} health empty from a host older than this field
  * @property {Map<string, Map<string, BoardDispatch>>} lastOnBoard each unfinished ticket's dispatches as the board last listed them, by ticket then call id
  * @property {Cleared | null} cleared the host's latest 清屏 (its `at` names it), or null
  * @property {boolean} showEarlier this tab shows the lines that 清屏 hid; only this tab, until the next 清屏 or a reload
@@ -73,8 +75,11 @@ const GROUP = {
 
 /** @returns {View} */
 export function emptyView() {
-	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], modules: [], alerts: [], routes: {}, dispatching: {}, memberCap: null, lastOnBoard: new Map(), cleared: null, showEarlier: false };
+	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], modules: [], alerts: [], routes: {}, dispatching: {}, memberCap: null, health: NO_HEALTH, lastOnBoard: new Map(), cleared: null, showEarlier: false };
 }
+
+/** @type {HealthBoard} */
+const NO_HEALTH = { active: [], recent: [], offline: false };
 
 /** @param {View} view @param {Dispatching | undefined} dispatching */
 function setDispatching(view, dispatching) {
@@ -103,7 +108,7 @@ function resetConversation(view, lines, cleared) {
 
 /** @param {View} view @param {import("../client/protocol.ts").BoardState} board @param {number} now */
 function applyBoard(view, board, now) {
-	Object.assign(view, { rows: board.rows, today: board.today, duty: board.duty, helpers: board.helpers, watching: board.watching, modules: board.modules ?? [], alerts: board.alerts ?? [], routes: board.routes, memberCap: board.memberCap ?? null, receivedAt: now });
+	Object.assign(view, { rows: board.rows, today: board.today, duty: board.duty, helpers: board.helpers, watching: board.watching, modules: board.modules ?? [], alerts: board.alerts ?? [], routes: board.routes, memberCap: board.memberCap ?? null, health: board.health ?? NO_HEALTH, receivedAt: now });
 	setDispatching(view, board.dispatching);
 }
 
@@ -1234,4 +1239,23 @@ export function parseMarkdown(text) {
 	}
 	flush();
 	return out;
+}
+
+const RECENT_SHOWN_MS = 60 * 60_000;
+
+/**
+ * The strip under the header. Up while anything is broken; for an hour after the last recovery it stays, calm, so a fix is seen.
+ * @typedef {{ tone: "bad" | "ok", heading: string, offline: string, alarms: { id: string, subject: string, when: string, error: string, advice: string }[], recent: string[] }} HealthBanner
+ * @param {HealthBoard} health @param {number} now @returns {HealthBanner | null}
+ */
+export function healthBanner(health, now) {
+	const recent = health.recent.filter((a) => now - a.clearedAt < RECENT_SHOWN_MS).map((a) => `${a.subject} ${ago(now - a.clearedAt)}恢复`);
+	if (health.active.length === 0 && recent.length === 0) return null;
+	return {
+		tone: health.active.length ? "bad" : "ok",
+		heading: health.active.length ? `⚠️ 有 ${health.active.length} 处断了，修好之前这里一直显示` : "✅ 都恢复了",
+		offline: health.offline ? "模型和数据都连不上：本机可能断网了，先检查这台电脑的网络" : "",
+		alarms: health.active.map((a) => ({ id: a.id, subject: a.subject, when: `${ago(now - a.since)}开始 · 连着 ${a.count} 次 · 最近一次 ${ago(now - a.lastAt)}`, error: a.lastError, advice: a.advice })),
+		recent,
+	};
 }

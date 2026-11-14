@@ -15,7 +15,7 @@ const brain: Brain = (cards) =>
 		return [];
 	});
 
-test("Worker 遇到最终的限流错误：切到回退模型继续做，使用者经 Router 收到一次通知", async (t) => {
+test("Worker 遇到最终的限流错误：切到回退模型继续做，宿主亮一条警报，不再交给 Router 转告", async (t) => {
 	const { host, spawner, said } = await startHost(brain, (w, input) => {
 		if (w.model === "openai-codex/gpt-6.1-sol") return w.settle("429 Too Many Requests");
 		w.report({ status: "ready", summary: `用 ${w.model} 做完了` });
@@ -25,12 +25,14 @@ test("Worker 遇到最终的限流错误：切到回退模型继续做，使用�
 	host.say("任务一");
 	await until(() => said().some((s) => s.startsWith("结果：")), "回退后完成");
 	assert.ok(said().includes("结果：用 deepseek/deepseek-flash 做完了"));
-	assert.equal(said().filter((s) => s.startsWith("通知：")).length, 1);
+	assert.equal(said().filter((s) => s.startsWith("通知：")).length, 0);
+	assert.deepEqual(host.snapshot().health.active.map((a) => a.id), ["model:worker:fallback"]);
 	assert.equal(host.kernel.listTickets()[0].fellBack, true);
 	host.say("任务二");
 	await until(() => said().filter((s) => s.startsWith("结果：")).length === 2, "第二个任务直接用回退模型");
-	assert.equal(said().filter((s) => s.startsWith("通知：")).length, 1);
+	assert.equal(said().filter((s) => s.startsWith("通知：")).length, 0);
 	assert.equal(spawner.spawned.length, 2);
+	assert.equal(host.snapshot().health.active.length, 1);
 });
 
 test("回退模型今日用量超过上限：Worker 汇报受阻并停下，Router 仍能回应", async (t) => {
@@ -62,7 +64,7 @@ test("用量按日累计：超过上限后，Worker 一轮结束时就停下汇�
 	await until(() => host.workers.liveCount() === 0, "Worker 停下");
 });
 
-test("Router 遇到最终的限流错误时切到回退模型，并处理完被打断的消息", async (t) => {
+test("Router 遇到最终的限流错误时切到回退模型，并处理完被打断的消息；宿主亮一条警报，不再让 Router 转告", async (t) => {
 	let errors = 0;
 	const router = fauxRouter((cards, n, results) => brain(cards, n, results), {
 		models: ["primary", "fallback"],
@@ -74,7 +76,8 @@ test("Router 遇到最终的限流错误时切到回退模型，并处理完被�
 	await until(() => said().some((s) => s.startsWith("结果：")), "回退后处理完");
 	assert.ok(errors >= 1);
 	assert.equal((host.router as any).session.model.id, "fallback");
-	assert.equal(said().filter((s) => s.startsWith("通知：")).length, 1);
+	assert.equal(said().filter((s) => s.startsWith("通知：")).length, 0);
+	assert.deepEqual(host.snapshot().health.active.map((a) => a.id), ["model:router:fallback"]);
 });
 
 test("Router 会话自行开启自动压缩和自动重试，不受全局设置影响", async (t) => {
