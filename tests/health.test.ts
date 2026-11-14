@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { causeOf, Health, scrub, type Alarm } from "../src/host/health.ts";
+import { causeOf, clearedText, Health, scrub, type Alarm } from "../src/host/health.ts";
 
 function board(start = 1_000) {
 	let now = start;
@@ -94,4 +94,30 @@ test("错误文字去掉密钥、换成一行、截短", () => {
 	assert.ok(!text.includes("0123456789abcdef"));
 	assert.ok(!text.includes("\n"));
 	assert.ok(scrub("x".repeat(500)).length <= 200);
+});
+
+test("没登录、没密钥、会话过期都算鉴权：不会自己好", () => {
+	assert.equal(causeOf("No API key for provider: openai-codex"), "auth");
+	assert.equal(causeOf("Your session has expired. Please log in again."), "auth");
+	assert.equal(causeOf("session expired"), "auth");
+	assert.equal(causeOf("please log in to continue"), "auth");
+});
+
+test("错误文字里的各种密钥写法都去掉", () => {
+	const secrets: [string, string][] = [
+		["POST https://api.telegram.org/bot123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw/getUpdates failed", "AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"],
+		["POST /token body refresh_token=1-abcdefSECRET&grant_type=refresh_token", "1-abcdefSECRET"],
+		['400 {"api_key":"live-key-SECRET-9","error":"bad"}', "live-key-SECRET-9"],
+		['401 {"token": "tok-SECRET-42"}', "tok-SECRET-42"],
+		["request headers x-api-key: hdr-SECRET-77 rejected", "hdr-SECRET-77"],
+		["fetch https://alice:pa55-SECRET@imap.example.com/inbox failed", "pa55-SECRET"],
+		["provider says apiKey=bare-SECRET-11 is invalid", "bare-SECRET-11"],
+	];
+	for (const [error, secret] of secrets) assert.ok(!scrub(error).includes(secret), `${secret} 还在：${scrub(error)}`);
+});
+
+test("恢复的话：不到一分钟说不到 1 分钟，否则说约几分钟", () => {
+	const alarm = { id: "model:router", area: "model" as const, subject: "幕僚长模型", since: 0 };
+	assert.match(clearedText({ ...alarm, clearedAt: 20_000 }), /不到 1 分钟/);
+	assert.match(clearedText({ ...alarm, clearedAt: 5 * 60_000 }), /约 5 分钟/);
 });
