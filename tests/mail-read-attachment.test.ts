@@ -353,9 +353,7 @@ test("读附件：png、jpg、heic、tiff、webp、bmp 图片附件交给宿主 
 
 test("读附件经过宿主：扫描的 PDF 由宿主的 Vision 读出中文，files/ 里不留东西", { skip: process.platform !== "darwin" }, async (t) => {
 	const w = await attachmentWorld(t, [ann("m-1", [file("scan.pdf", "application/pdf", readFileSync(join(SCANS, "scan.pdf")))])]);
-	const ocrState = mkdtempSync(join(tmpdir(), "psa-mail-ocr-"));
-	t.after(() => rmSync(ocrState, { recursive: true, force: true }));
-	const ocr = createOcr({ engine: "vision", maxPages: 20, timeoutSeconds: 60 }, ocrState);
+	const ocr = createOcr({ engine: "vision", maxPages: 20, timeoutSeconds: 60 });
 	await ocr.prepare();
 	const { gateway, caller } = gatewayOver(t, w, ocr);
 	const listing = () => readdirSync(join(w.dataDir, "files")).sort();

@@ -114,7 +114,7 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 	const telegram = telegramOptions(config, process.env, log);
 	const store = new ModuleStore(join(config.stateDir, "module-store"));
 	const secret = secretLookup(config.secretsFile);
-	const ocr = createOcr(config.ocr, config.stateDir);
+	const ocr = createOcr(config.ocr);
 	return {
 		stateDir: config.stateDir,
 		heartbeatMs: config.heartbeatSeconds * 1000,

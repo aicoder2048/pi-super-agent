@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { chmodSync, existsSync, realpathSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test, { after, before, type TestContext } from "node:test";
+import test, { before, type TestContext } from "node:test";
 import { createOcr } from "../src/ocr/ocr.ts";
 import { ocrText, type Ocr, type OcrResult } from "../src/ocr/result.ts";
 import { createGateway } from "../src/modules/gateway.ts";
@@ -16,17 +16,13 @@ import { openOnConversation, startHost, until } from "./helpers/fakes.ts";
 const FIXTURES = join(import.meta.dirname, "fixtures/ocr");
 const onMac = process.platform === "darwin";
 
-let state = "";
 let vision: Ocr | undefined;
 
 before(async () => {
-	state = mkdtempSync(join(tmpdir(), "psa-ocr-"));
 	if (!onMac) return;
-	vision = createOcr({ engine: "vision", maxPages: 2, timeoutSeconds: 60 }, state);
+	vision = createOcr({ engine: "vision", maxPages: 2, timeoutSeconds: 60 });
 	await vision.prepare();
 }, { timeout: 300_000 });
-
-after(() => rmSync(state, { recursive: true, force: true }));
 
 test("vision：读出扫描图片里的中文和英文，一页一段，带置信度和秒数", { skip: !onMac }, async () => {
 	const result = await vision!.read(join(FIXTURES, "scan.png"));
@@ -58,12 +54,12 @@ test("vision：透明底上的深色字也读得出（先铺白底再识别）",
 });
 
 test("不是 PDF 也不是图片的文件不交给引擎，直接拒绝并说只读哪些", async () => {
-	const off = createOcr({ engine: "vision", maxPages: 2, timeoutSeconds: 5 }, state);
+	const off = createOcr({ engine: "vision", maxPages: 2, timeoutSeconds: 5 });
 	await assert.rejects(off.read(join(FIXTURES, "notes.docx")), /只读 PDF 和图片/);
 });
 
 test("engine 是 off：读就拒绝，说这台宿主没开 OCR", async () => {
-	await assert.rejects(createOcr({ engine: "off" }, state).read(join(FIXTURES, "scan.png")), /这台宿主没开 OCR/);
+	await assert.rejects(createOcr({ engine: "off" }).read(join(FIXTURES, "scan.png")), /这台宿主没开 OCR/);
 });
 
 function fakeUnlimited(t: TestContext, body: string): string {
@@ -81,7 +77,7 @@ for n in 1 2; do mkdir -p "$out/doc/pages/page_000$n"; printf '第%s页的文字
 
 test("unlimited：用 home 里的 .venv 跑 unlimited-ocr 脚本，不连网，PDF 只交前 maxPages 页，按页读回结果", async (t) => {
 	const home = fakeUnlimited(t, WRITE_PAGES);
-	const result = await createOcr({ engine: "unlimited", home, maxPages: 2, timeoutSeconds: 10 }, state).read(join(FIXTURES, "three.pdf"));
+	const result = await createOcr({ engine: "unlimited", home, maxPages: 2, timeoutSeconds: 10 }).read(join(FIXTURES, "three.pdf"));
 	assert.equal(result.engine, "unlimited");
 	assert.deepEqual(result.pages, [{ page: 1, text: "第1页的文字", confidence: null }, { page: 2, text: "第2页的文字", confidence: null }]);
 	const argv = readFileSync(join(home, "argv"), "utf8").split("\n");
@@ -98,7 +94,7 @@ test("unlimited：用 home 里的 .venv 跑 unlimited-ocr 脚本，不连网，P
 test("超过时限就停下引擎的进程，报几秒内没读完", async (t) => {
 	const home = fakeUnlimited(t, "sleep 30");
 	const started = Date.now();
-	await assert.rejects(createOcr({ engine: "unlimited", home, maxPages: 2, timeoutSeconds: 1 }, state).read(join(FIXTURES, "scan.png")), /1 秒内没读完/);
+	await assert.rejects(createOcr({ engine: "unlimited", home, maxPages: 2, timeoutSeconds: 1 }).read(join(FIXTURES, "scan.png")), /1 秒内没读完/);
 	assert.ok(Date.now() - started < 5_000, `${Date.now() - started} ms`);
 });
 

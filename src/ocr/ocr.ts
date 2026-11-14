@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { OCR_OFF, type Ocr, type OcrPage } from "./result.ts";
@@ -19,6 +19,8 @@ type Read = { pages: OcrPage[]; totalPages: number | null };
 type Engine = { prepare(): Promise<void>; run(file: string, maxPages: number, timeoutMs: number): Promise<Read> };
 
 const VISION_SOURCE = fileURLToPath(new URL("./vision.swift", import.meta.url));
+/** Outside every state dir, so a host in a temporary state dir (tests, just module try) reuses the build instead of compiling again. */
+export const VISION_BUILD_DIR = join(homedir(), "Library", "Caches", "pi-super-agent", "ocr");
 /** The first build on a machine also builds Swift's module cache: 55 s on the old Mac. */
 const COMPILE_MS = 300_000;
 
@@ -50,12 +52,12 @@ function run(command: string, args: readonly string[], timeoutMs: number, option
 	});
 }
 
-function visionEngine(stateDir: string): Engine {
-	const binary = join(stateDir, "ocr", `vision-${createHash("sha256").update(readFileSync(VISION_SOURCE)).digest("hex").slice(0, 12)}`);
+function visionEngine(buildDir: string): Engine {
+	const binary = join(buildDir, `vision-${createHash("sha256").update(readFileSync(VISION_SOURCE)).digest("hex").slice(0, 12)}`);
 	let built: Promise<void> | undefined;
 	const build = async () => {
 		if (existsSync(binary)) return;
-		mkdirSync(join(stateDir, "ocr"), { recursive: true });
+		mkdirSync(buildDir, { recursive: true });
 		const partial = `${binary}.${process.pid}.partial`;
 		await run("swiftc", ["-O", "-o", partial, VISION_SOURCE], COMPILE_MS).catch((error: Error) => {
 			throw new Error(`准备 Vision 的 OCR 程序失败（要有 Xcode 命令行工具里的 swiftc）：${error.message}`);
@@ -105,7 +107,7 @@ function unlimitedEngine(home: string): Engine {
 	};
 }
 
-export function createOcr(config: OcrConfig, stateDir: string): Ocr {
+export function createOcr(config: OcrConfig, visionBuildDir = VISION_BUILD_DIR): Ocr {
 	if (config.engine === "off") {
 		return {
 			prepare: async () => {},
@@ -114,7 +116,7 @@ export function createOcr(config: OcrConfig, stateDir: string): Ocr {
 			},
 		};
 	}
-	const engine = config.engine === "vision" ? visionEngine(stateDir) : unlimitedEngine(config.home);
+	const engine = config.engine === "vision" ? visionEngine(visionBuildDir) : unlimitedEngine(config.home);
 	return {
 		prepare: () => engine.prepare(),
 		async read(file) {

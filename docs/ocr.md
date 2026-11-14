@@ -10,7 +10,7 @@
 | `unlimited` | unlimited-ocr 项目（模型 baidu/Unlimited-OCR）里的 `scripts/ocr.py`，`--no-crop`，CPU | 只有 Apple Silicon，模型 6.3 GB，一页约 6 秒，另加加载模型的时间 |
 | `off` | 不识别 | 扫描件和图片会说「这台宿主没开 OCR」 |
 
-`vision` 第一次用时宿主用 `swiftc` 把 `src/ocr/vision.swift` 编译到状态目录的 `ocr/vision-<12 位>`（要有 Xcode 命令行工具），宿主启动时就先编译好。老 Mac 上第一次编译约 55 秒，以后约 2 秒，源文件不变就不再编译。
+`vision` 第一次用时宿主用 `swiftc` 把 `src/ocr/vision.swift` 编译到 `~/Library/Caches/pi-super-agent/ocr/vision-<12 位>`（要有 Xcode 命令行工具），宿主启动时就先编译好。这个目录不在状态目录里，所以测试和 `just module try` 这类临时状态目录的宿主共用同一份，不再各编译一次。老 Mac 上第一次编译约 55 秒，以后约 2 秒，源文件不变就不再编译。
 
 ## 配置
 
