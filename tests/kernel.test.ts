@@ -2262,6 +2262,45 @@ test("宿主行：清屏收走收据和已送达的提醒；还没送达的提�
 	assert.deepEqual(s.kernel.cleared()!.lines.map((l) => l.id), [receipt.id, delivered.id]);
 });
 
+test("页面标记：同一个 key 新的换掉旧的，按 key 排；不是宿主行，不进对话、不算提醒", () => {
+	const s = setup({ at: "2026-11-13T09:00:00" });
+	const at = (hhmm: string) => new Date(`2026-11-13T${hhmm}:00`).getTime();
+	s.kernel.postBadge("module:stock-ta", { key: "NVDA", text: "NVDA · 开盘跳空 +3.40%", occurredAt: at("06:45") });
+	s.kernel.postBadge("module:stock-ta", { key: "AMD", text: "AMD · 盘中反转", occurredAt: at("07:00") });
+	s.kernel.postBadge("module:stock-ta", { key: "NVDA", text: "NVDA · 开盘跳空 +3.40% · 逆大盘", occurredAt: at("08:00") });
+	s.kernel.postBadge("module:stock-ta", { key: "NVDA", text: "NVDA · 开盘跳空 +3.40%", occurredAt: at("06:45") });
+	assert.deepEqual(s.kernel.badges("module:stock-ta"), { day: "2026-11-13", items: [{ key: "AMD", text: "AMD · 盘中反转" }, { key: "NVDA", text: "NVDA · 开盘跳空 +3.40% · 逆大盘" }] }, "崩溃后重发的旧标记不盖掉新的");
+	assert.equal(s.kernel.badges("module:other"), null);
+	assert.deepEqual(s.kernel.conversation(), []);
+	assert.deepEqual(s.kernel.alertCountsToday(), {});
+});
+
+test("页面标记：留到这个来源下一天的第一个标记；那时上一天的全部清掉，晚到的上一天的标记不再写", () => {
+	const s = setup({ at: "2026-11-13T09:00:00" });
+	const day = (d: string) => new Date(`${d}T07:00:00`).getTime();
+	s.kernel.postBadge("module:stock-ta", { key: "NVDA", text: "NVDA · 周五", occurredAt: day("2026-11-13") });
+	s.kernel.postBadge("module:stock-ta", { key: "AMD", text: "AMD · 周五", occurredAt: day("2026-11-13") });
+	s.kernel.postBadge("module:mail", { key: "x", text: "别的模块", occurredAt: day("2026-11-13") });
+	s.clock.t = day("2026-11-16");
+	assert.equal(s.kernel.badges("module:stock-ta")?.day, "2026-11-13", "周末和周一开盘前还看得到周五的");
+	s.kernel.postBadge("module:stock-ta", { key: "TSLA", text: "TSLA · 周一", occurredAt: day("2026-11-16") });
+	s.kernel.postBadge("module:stock-ta", { key: "NVDA", text: "NVDA · 周五重发", occurredAt: day("2026-11-13") });
+	assert.deepEqual(s.kernel.badges("module:stock-ta"), { day: "2026-11-16", items: [{ key: "TSLA", text: "TSLA · 周一" }] });
+	assert.equal(s.kernel.badges("module:mail")?.day, "2026-11-13", "各来源各自换天");
+});
+
+test("页面标记：旧数据库没有标记表，打开时建好，宿主行原样不动", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	first.kernel.postHostLine("module:stock-ta", { ...alert("band:NVDA:2026-11-08:up5"), push: "silent" });
+	first.db.exec("DROP TABLE badges");
+	first.db.close();
+	const again = setup({ path });
+	again.kernel.postBadge("module:stock-ta", { key: "NVDA", text: "NVDA · 开盘跳空 +3.40%", occurredAt: again.clock.t });
+	assert.deepEqual(again.kernel.badges("module:stock-ta")?.items, [{ key: "NVDA", text: "NVDA · 开盘跳空 +3.40%" }]);
+	assert.deepEqual(again.kernel.undeliveredLines().map((l) => l.push ?? "ring"), ["silent"]);
+});
+
 test("宿主行：alertCountsToday 按来源数本地今天贴的提醒，不数收据和昨天的提醒", () => {
 	const s = setup({ at: "2026-11-08T23:30:00" });
 	s.kernel.postHostLine("us-market", alert("yesterday"));

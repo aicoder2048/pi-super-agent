@@ -6,7 +6,7 @@ import test, { type TestContext } from "node:test";
 import { Modules } from "../src/modules.ts";
 import { instanceData } from "../src/modules/instance-data.ts";
 import { runFeed, type FeedNotice } from "../src/modules/feed-runner.ts";
-import type { Alert } from "../src/modules/protocol.ts";
+import type { Alert, Badge } from "../src/modules/protocol.ts";
 import { problemLine, scanPackage } from "../src/modules/validate.ts";
 import { servedAsHost } from "./helpers/fakes.ts";
 import { Kernel } from "../src/kernel/kernel.ts";
@@ -102,12 +102,32 @@ test("handler 交回的提醒写了 push: silent：ports.alert 收到的那一�
 	assert.deepEqual(lines, [{ externalId: "q", text: "静音一行", at: "2026-11-12T15:05:00Z", push: "silent" }, { externalId: "r", text: "响铃一行", at: "2026-11-12T15:05:00Z" }]);
 });
 
-test("提醒的 push 只认 silent：别的值这一轮失败，说出要什么", async (t) => {
+test("提醒的 push 只认 silent 和 badge：别的值这一轮失败，说出要什么", async (t) => {
 	const { root, pkg } = taxCopy(t);
 	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ alerts: [{ id: "a-1", text: "x", at: "2026-11-12T15:05:00Z", push: "loud" }] });\n`);
 	const run = await runFeed(brokerage(root), [], { data: instanceData(join(root, "state")), submit: () => {}, alert: () => true, problem: () => {}, secret: () => "token", now: () => 0 });
 	assert.equal(run.ok, false);
-	assert.match(run.ok ? "" : run.note, /push 只能是 silent/);
+	assert.match(run.ok ? "" : run.note, /push 只能是 silent 或 badge/);
+});
+
+test("页面标记：push: badge 的提醒交给 ports.badge，不走 ports.alert；key 不写就是 id", async (t) => {
+	const { root, pkg } = taxCopy(t);
+	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ alerts: [{ id: "b-1", text: "NVDA · 开盘跳空 +3.40%", at: "2026-11-12T15:05:00Z", push: "badge", key: "NVDA" }, { id: "b-2", text: "AMD · 盘中反转", at: "2026-11-12T15:05:00Z", push: "badge" }, { id: "r", text: "响铃一行", at: "2026-11-12T15:05:00Z" }] });\n`);
+	const lines: Alert[] = [];
+	const badges: Badge[] = [];
+	await runFeed(brokerage(root), [], { data: instanceData(join(root, "state")), submit: () => {}, alert: (_, a) => lines.push(a) > 0, badge: (_, b) => void badges.push(b), problem: () => {}, secret: () => "token", now: () => 0 });
+	assert.deepEqual(badges, [{ key: "NVDA", text: "NVDA · 开盘跳空 +3.40%", at: "2026-11-12T15:05:00Z" }, { key: "b-2", text: "AMD · 盘中反转", at: "2026-11-12T15:05:00Z" }]);
+	assert.deepEqual(lines.map((l) => l.externalId), ["r"]);
+});
+
+test("页面标记：key 只跟着 badge 走，要是不空的文字；写错这一轮失败，说出原因", async (t) => {
+	const { root, pkg } = taxCopy(t);
+	for (const alert of [`{ id: "a", text: "x", at: "2026-11-12T15:05:00Z", key: "NVDA" }`, `{ id: "a", text: "x", at: "2026-11-12T15:05:00Z", push: "silent", key: "NVDA" }`, `{ id: "a", text: "x", at: "2026-11-12T15:05:00Z", push: "badge", key: "" }`, `{ id: "a", text: "x", at: "2026-11-12T15:05:00Z", push: "badge", key: 7 }`, `{ id: "a", text: "x", at: "2026-11-12T15:05:00Z", push: "badge", fold: { key: "NVDA", side: "up" } }`]) {
+		writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ alerts: [${alert}] });\n`);
+		const run = await runFeed(brokerage(root), [], { data: instanceData(join(root, "state")), submit: () => {}, alert: () => true, problem: () => {}, secret: () => "token", now: () => 0 });
+		assert.equal(run.ok, false, alert);
+		assert.match(run.ok ? "" : run.note, /key 只给 push: badge 用|badge 的那一项不能 fold/, alert);
+	}
 });
 
 test("alerts 的形状不对：这一轮失败，说出要什么", async (t) => {

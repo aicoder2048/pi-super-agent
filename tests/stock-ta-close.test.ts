@@ -63,8 +63,17 @@ test("站上 50 日线只记录（0 层）；ta 的其余信号 0 层；重点�
 		[`R-PAT-1-T:down:NVDA:${DATE}`, "ta-key", 1],
 		[`R-SR-4:down:NVDA:${DATE}`, "ta-other", 0],
 	]);
-	assert.deepEqual([r.alerts, r.notices], [[], []]);
+	assert.deepEqual(r.alerts.map((a) => a.push), ["badge"], "只有 1 层的重点形态上卡片，0 层的不上");
+	assert.deepEqual(r.notices, []);
 	assert.equal(r.hits.find((h) => h.rule === "ta-key")!.signal, "R-PAT-1-T");
+});
+
+test("收盘的 1 层也是页面标记：同一只票的标记带上盘中的 1 层事实，换一个新 id，key 还是代码", () => {
+	const gap = quoteHit("gap", "bull", 1, { fact: "开盘跳空 +3.40%" });
+	const r = close(input({ signals: [ta("R-PAT-1-T", "bearish", "key", "三重顶跌破颈线（空）")], earlier: [gap] }));
+	const badges = r.alerts.filter((a) => a.push === "badge");
+	assert.deepEqual(badges.map((a) => [a.id, a.key, a.at]), [[`badge:NVDA:${DATE}:2`, "NVDA", AT]]);
+	assert.match(badges[0]!.text, /^NVDA · 开盘跳空 \+3\.40% · 三重顶跌破颈线（空）/);
 });
 
 test("ta 判为噪音的信号降到 0 层：200 日线也不开任务，写明 ta 判它来回翻", () => {
@@ -86,7 +95,7 @@ test("ta 不判重点的信号不升层：key 是升一层的条件之一", () =
 	const earlier = [quoteHit("high-52w", "bull", 2)];
 	const r = close(input({ earlier, signals: [ta("R-PAT-1-B", "bullish", "normal", "三重底突破颈线（多）")] }));
 	assert.deepEqual(r.hits.map((h) => [h.rule, h.level, h.bumped]), [["ta-key", 1, undefined]]);
-	assert.deepEqual(r.alerts, []);
+	assert.deepEqual(r.alerts.map((a) => a.push), ["badge"], "1 层照样上卡片");
 });
 
 test("多空分歧跨 feed：盘中 52 周新高（看多）以后收盘跌破 50 日线（看空），不升层，那一行写分歧", () => {

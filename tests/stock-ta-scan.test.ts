@@ -10,7 +10,7 @@ import { runFeed, type FeedNotice, type FeedPorts, type FeedProblem } from "../s
 import { lockOf, VENV_MARK, venvDir } from "../src/modules/files.ts";
 import { instanceData } from "../src/modules/instance-data.ts";
 import { fakeTa, type DailyRow } from "./helpers/fake-ta.ts";
-import type { Alert } from "../src/modules/protocol.ts";
+import type { Alert, Badge } from "../src/modules/protocol.ts";
 import { readHits, writeHits, type Hit } from "../docs/modules/examples/stock-ta/hits.ts";
 import { quietAt } from "../docs/modules/examples/stock-ta/watch-rules.ts";
 import { createServer } from "node:http";
@@ -54,14 +54,16 @@ async function scanFeed(t: TestContext, { key = KEY, viaVenv = false, installed 
 	};
 	const notices: FeedNotice[] = [];
 	const alerts: Alert[] = [];
+	const badges: Badge[] = [];
 	const problems: (FeedProblem | undefined)[] = [];
-	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: (_, a) => alerts.push(a) > 0, problem: (_, p) => void problems.push(p), secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : name === "FINNHUB_API_KEY" && finnhub !== "" ? finnhub : undefined), now: () => Date.now() };
+	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: (_, a) => alerts.push(a) > 0, badge: (_, b) => void badges.push(b), problem: (_, p) => void problems.push(p), secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : name === "FINNHUB_API_KEY" && finnhub !== "" ? finnhub : undefined), now: () => Date.now() };
 	const live = join(dataDir, "files", "ta", "ta.sqlite");
 	return {
 		live,
 		dataDir,
 		notices,
 		alerts,
+		badges: () => badges,
 		lines: () => alerts.filter((a) => !a.externalId.startsWith("digest:")),
 		digests: () => alerts.filter((a) => a.externalId.startsWith("digest:")),
 		problems,
@@ -649,6 +651,7 @@ test("财报临近：下一次财报在 5 个交易日内记 1 层（只记下�
 	await feed.tick();
 	assert.deepEqual(readHits(feed.dataDir, "2026-11-12", "scan").map((h) => [h.id, h.level, h.fact]), [["earnings:NVDA:2026-11-17", 1, "财报还有 3 个交易日，11-17 盘后"]]);
 	assert.match(feed.digests()[0]?.text ?? "", /NVDA 财报还有 3 个交易日，11-17 盘后/);
+	assert.deepEqual(feed.badges().map((b) => [b.key, b.text]), [["NVDA", "NVDA · 财报还有 3 个交易日，11-17 盘后"]], "1 层的财报临近上模块卡片");
 	feed.setPlan({ kind: "ok", signals: [ma("AMD", 50, "bearish", "2026-11-13")] });
 	feed.at("2026-11-13T23:00:00.000Z", { finnhubBaseUrl: base });
 	await feed.tick();

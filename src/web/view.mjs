@@ -353,7 +353,7 @@ export function leftColumn(view, now, sending = new Map()) {
 		alertsLine: view.alerts.length ? `今日提醒 · ${view.alerts.length}` : "今日暂无提醒",
 		alerts: view.alerts.map((l) => ({ id: l.id, text: l.text })).reverse(),
 		modulesLine: `模块 · ${view.modules.length} · 运行中 ${view.modules.filter((m) => m.label === RUNNING).length}`,
-		modules: view.modules.map(moduleCard),
+		modules: view.modules.map((m) => moduleCard(m, now)),
 	};
 }
 
@@ -363,8 +363,21 @@ const RUNNING = "运行中";
 const COMPONENT_NAMES = [["knowledge", "知识"], ["data", "数据"], ["tools", "工具"], ["skills", "技能"], ["feeds", "feed"], ["agents", "成员"], ["evals", "考题"], ["rules", "规则"]];
 
 /**
- * @typedef {{ name: string, heading: string, on: boolean, button: string, state: string, note: string, tone: "ok" | "busy" | "bad" | "off", version: string, lines: string[], problems: string[], importsHeading: string, imports: { name: string, command: string }[] }} ModuleView
+ * @typedef {{ name: string, heading: string, on: boolean, button: string, state: string, note: string, tone: "ok" | "busy" | "bad" | "off", version: string, lines: string[], problems: string[], importsHeading: string, imports: { name: string, command: string }[], badges: { heading: string, items: string[] } | null }} ModuleView
  */
+
+/** The page's local day, the way the host writes a badge's day. @param {number} ms */
+function localDay(ms) {
+	const d = new Date(ms);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Badges from an earlier day stay until the module's next day brings one (ADR-0028), so they carry their date. @param {ModuleCard["badges"]} badges @param {number} now */
+function badgeList(badges, now) {
+	if (!badges?.items.length) return null;
+	const when = badges.day === localDay(now) ? "今日标记" : `${badges.day.slice(5)} 的标记`;
+	return { heading: `${when} · ${badges.items.length}`, items: badges.items.map((b) => b.text) };
+}
 
 /** @param {import("../client/protocol.ts").FeedBeat} beat */
 function beatTime({ at, zone }) {
@@ -372,8 +385,8 @@ function beatTime({ at, zone }) {
 	return zone === "America/New_York" ? `${hhmm} 美东` : hhmm;
 }
 
-/** @param {ModuleCard} m @returns {ModuleView} */
-function moduleCard(m) {
+/** @param {ModuleCard} m @param {number} now @returns {ModuleView} */
+function moduleCard(m, now) {
 	const parts = COMPONENT_NAMES.flatMap(([kind, label]) => (m.components[kind] ? [`${label} ${m.components[kind]}`] : []));
 	return {
 		name: m.name,
@@ -394,6 +407,7 @@ function moduleCard(m) {
 		problems: m.problems,
 		importsHeading: `还没导入的知识 ${m.notImported.length} 份`,
 		imports: m.notImported.map((doc) => ({ name: doc, command: `just module import ${m.name} ${doc} <文件或目录>` })),
+		badges: badgeList(m.badges, now),
 	};
 }
 

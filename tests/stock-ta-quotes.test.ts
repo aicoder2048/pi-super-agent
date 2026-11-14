@@ -7,7 +7,7 @@ import test, { type TestContext } from "node:test";
 import { Modules } from "../src/modules.ts";
 import { runFeed, type FeedNotice, type FeedPorts, type FeedProblem } from "../src/modules/feed-runner.ts";
 import { instanceData } from "../src/modules/instance-data.ts";
-import type { Alert } from "../src/modules/protocol.ts";
+import type { Alert, Badge } from "../src/modules/protocol.ts";
 import { problemLine, scanPackage } from "../src/modules/validate.ts";
 import { Kernel } from "../src/kernel/kernel.ts";
 import { openStore } from "../src/kernel/store.ts";
@@ -31,12 +31,14 @@ async function quotesFeed(t: TestContext, key = "sk-test", settings: Record<stri
 	const data = instanceData(state);
 	const notices: FeedNotice[] = [];
 	const lines: Alert[] = [];
+	const badges: Badge[] = [];
 	const clock = { now: AT + 15 * 60_000 };
 	const problems: (FeedProblem | undefined)[] = [];
 	const ports: FeedPorts = {
 		data,
 		submit: (n) => void notices.push(n),
 		alert: (_, a) => !lines.some((l) => l.externalId === a.externalId) && lines.push(a) > 0,
+		badge: (_, b) => void badges.push(b),
 		problem: (_, p) => void problems.push(p),
 		secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined),
 		now: () => clock.now,
@@ -47,7 +49,7 @@ async function quotesFeed(t: TestContext, key = "sk-test", settings: Record<stri
 	const quotes = () => data.query("stock-ta", entry.components, "quotes", {}, "test").rows;
 	const restart = () => (ports.data = instanceData(state));
 	const hitsFile = (date = DAY) => join(data.dir("stock-ta"), "files", "hits", date, "quotes.json");
-	return { massive, modules, entry, data, hitsFile, notices, lines, problems, problemIds: () => problems.map((p) => p?.id ?? "-"), alerts: () => lines.map((l) => l.text), watch, levels, hold, quotes, clock, restart, round: () => runFeed(entry, [], ports), rehearse: () => runFeed(entry, [], ports, entry.fixtures[0]) };
+	return { massive, modules, entry, data, hitsFile, notices, lines, badges, problems, problemIds: () => problems.map((p) => p?.id ?? "-"), alerts: () => lines.map((l) => l.text), watch, levels, hold, quotes, clock, restart, round: () => runFeed(entry, [], ports), rehearse: () => runFeed(entry, [], ports, entry.fixtures[0]) };
 }
 
 test("快照解析：一次请求取回整张自选股，每只一行，带价格、相对昨收的涨跌幅、成交量和数据时间", async (t) => {
@@ -404,6 +406,15 @@ test("只写新鲜的报价：提前收盘日 13:00 以后的成交不写行，1
 	feed.massive.answer(snapshot([tickerRow("NVDA", 101, 100, ny("2026-11-27T12:59:00"))]), snapshot([tickerRow("NVDA", 102, 100, ny("2026-11-27T13:05:00"))]));
 	assert.deepEqual(await feed.round(), { ok: true, records: 1, notices: 0 });
 	assert.deepEqual(await feed.round(), { ok: true, records: 0, notices: 0 });
+});
+
+test("1 层的命中上模块卡：开盘跳空交给宿主一个页面标记，key 是代码，不发一行、不开任务", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.massive.answer(snapshot([tickerRow("NVDA", 103.5, 100, AT, { day: { o: 103.4, c: 103.5, v: 5_000_000 } })]));
+	await feed.round();
+	assert.deepEqual(feed.badges, [{ key: "NVDA", text: "NVDA · 开盘跳空 +3.40%", at: new Date(AT).toISOString() }]);
+	assert.deepEqual([feed.lines, feed.notices], [[], []]);
 });
 
 test("你的改动：rule-levels 一行写 TSLA 的第一档 7%，下一轮起 TSLA 按 7% 算；别的票照旧 5%", async (t) => {
