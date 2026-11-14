@@ -114,9 +114,17 @@ client-token-rotate:
 tail:
     {{run}} src/cli/say.ts tail
 
-# 单元测试和集成测试一起跑（不含 e2e）。
+# 单元测试和集成测试一起跑（不含 e2e）。两类的划分见 tests/README.md。
 test:
     {{run}} --test --test-timeout=30000 tests/unit/*.test.* tests/integration/*.test.*
+
+# 只跑单元测试。测试里起子进程或监听端口会直接报错。
+test-unit:
+    {{run}} --import ./tests/helpers/unit-guard.mjs --test --test-timeout=30000 tests/unit/*.test.*
+
+# 只跑集成测试：子进程、假 HTTP 服务器、真实宿主栈。
+test-integration:
+    {{run}} --test --test-timeout=30000 tests/integration/*.test.*
 
 # 列出找到的模块：启用还是停用、为什么、来源、规则、技能。不需要宿主在运行。
 modules:
