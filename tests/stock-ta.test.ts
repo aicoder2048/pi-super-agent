@@ -341,6 +341,34 @@ test("quote 的时段标签：盘中、盘前、盘后；周末、节假日和�
 	}
 });
 
+type QuoteFixture = { now: string; symbols: string[]; snapshot: unknown };
+const quoteFixture = (name: string): QuoteFixture => JSON.parse(readFileSync(join(PKG, "tools/quote/fixtures", `${name}.json`), "utf8"));
+const quoteFrom = async (t: TestContext, name: string) => {
+	const tool = await quoteTool(t);
+	const { now, symbols, snapshot } = quoteFixture(name);
+	tool.massive.answer({ status: 200, body: snapshot });
+	return quotesOf(await tool.quote({ symbols: symbols.join(","), now }))[0];
+};
+
+test("quote 盘后：价格是最新的盘后成交，另外回常规时段的正式收盘价、收盘日期和收盘相对昨收的涨跌幅", async (t) => {
+	assert.deepEqual(await quoteFrom(t, "after-hours"), {
+		symbol: "QQQ", price: 674.25, prevClose: 688.17, changePct: -2.02, volume: 42_108_955, at: "2026-11-13 19:59 美东", session: "盘后",
+		close: 679.89, closeDate: "2026-11-13", closeChangePct: -1.2,
+	});
+});
+
+test("quote 休市：周六和节假日回上一交易日的正式收盘价和日期，不是盘后价", async (t) => {
+	const pick = (q: Record<string, unknown> | undefined) => [q?.["session"], q?.["price"], q?.["close"], q?.["closeDate"]];
+	assert.deepEqual(pick(await quoteFrom(t, "saturday")), ["休市", 674.25, 679.89, "2026-11-13"]);
+	assert.deepEqual(pick(await quoteFrom(t, "holiday")), ["休市", 190.5, 191.2, "2026-11-25"]);
+});
+
+test("quote 盘中：还没收盘，不回收盘价", async (t) => {
+	const q = await quoteFrom(t, "regular");
+	assert.equal(q?.["session"], "盘中");
+	assert.equal("close" in (q ?? {}), false);
+});
+
 test("quote：超过 10 个代码一行拒绝，不发请求", async (t) => {
 	const tool = await quoteTool(t);
 	const note = noteOf(await tool.quote({ symbols: "A,B,C,D,E,F,G,H,I,J,K" }));
