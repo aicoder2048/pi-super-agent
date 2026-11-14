@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { extname, join } from "node:path";
@@ -58,11 +58,16 @@ function visionEngine(): Engine {
 	const build = async () => {
 		if (existsSync(binary)) return;
 		mkdirSync(VISION_BUILD_DIR, { recursive: true });
-		const partial = `${binary}.${process.pid}.partial`;
+		const partial = `${binary}.${randomUUID()}.partial`;
 		await run("swiftc", ["-O", "-o", partial, VISION_SOURCE], COMPILE_MS).catch((error: Error) => {
 			throw new Error(`准备 Vision 的 OCR 程序失败（要有 Xcode 命令行工具里的 swiftc）：${error.message}`);
 		});
-		renameSync(partial, binary);
+		try {
+			renameSync(partial, binary);
+		} catch (error) {
+			if (!existsSync(binary)) throw error;
+			rmSync(partial, { force: true });
+		}
 	};
 	const prepare = () =>
 		(built ??= build().catch((error) => {
