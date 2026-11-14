@@ -9,7 +9,9 @@
  *       Lane 2: NVDA 52-week high, then paced volume below the previous close: no combo, no escalation, 多空分歧 in the line.
  *       Lane 3: SPY -2.1%, then NVDA and AMD -5%: one ticket on SPY's thread holds all three triggers, the stock ones say 大盘日.
  * real  Lane 4 on openai-codex models through the Pi login: after a beat with hits, the user asks on Telegram for today's signals;
- *       the reply lists them from the hits tool.
+ *       the reply lists them from the hits tool. The module's Python env is installed (just module setup) so the daily-bar tools
+ *       answer instead of failing.
+ * The scan feed runs a stand-in for `ta` that reports a clean scan, so no lane starts with a 日线扫描出问题 notice.
  * P2_LANES=1,3 runs only those lanes.
  */
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -113,7 +115,17 @@ function seedHistory(dataDir: string, symbols: readonly string[]) {
 	db.close();
 }
 
-async function boot(o: { models: unknown; fake?: { close?: () => unknown }; watch: string[]; at: string }) {
+/** Answers `ta calendar` and reports `ta scan` as clean without touching the database, which seedHistory already filled. */
+const CLEAN_SCAN = `let text = "";
+for await (const chunk of process.stdin) text += chunk;
+const input = JSON.parse(text || "{}");
+if (process.argv[2] === "calendar") {
+	const trading = [1, 2, 3, 4, 5].includes(new Date(input.date + "T12:00:00Z").getUTCDay());
+	console.log(JSON.stringify({ date: input.date, is_trading_day: trading, close: trading ? input.date + "T21:00:00+00:00" : null }));
+} else console.log(JSON.stringify({ scan_id: 1, symbol_count: input.symbols.length, new_signals: [], errors: [] }));
+`;
+
+async function boot(o: { models: unknown; fake?: { close?: () => unknown }; watch: string[]; at: string; python?: true }) {
 	const state = mkdtempSync("/tmp/psa-p2-");
 	made.push(state);
 	const massive = await fakeMassive();
@@ -122,6 +134,11 @@ async function boot(o: { models: unknown; fake?: { close?: () => unknown }; watc
 	const feedJson = join(pkg, "feeds/quotes/feed.json");
 	const json = JSON.parse(readFileSync(feedJson, "utf8"));
 	writeFileSync(feedJson, JSON.stringify({ ...json, settings: { ...json.settings, baseUrl: massive.base } }, null, 2));
+	const scanJson = join(pkg, "feeds/scan/feed.json");
+	const scanTa = join(state, "clean-scan-ta.mjs");
+	writeFileSync(scanTa, CLEAN_SCAN);
+	const scan = JSON.parse(readFileSync(scanJson, "utf8"));
+	writeFileSync(scanJson, JSON.stringify({ ...scan, settings: { ...scan.settings, ta: scanTa } }, null, 2));
 	const entry = servedAsHost(Modules.load([join(state, "modules")])).feeds().find((e: { source: string }) => e.source === "stock-ta/quotes");
 	const data = instanceData(state);
 	data.write("stock-ta", entry.components, "watchlist", o.watch.map((symbol) => ({ symbol })), "使用者口述", "p2-live");
@@ -138,6 +155,10 @@ async function boot(o: { models: unknown; fake?: { close?: () => unknown }; watc
 	const beats = () => (host.log().match(/\[feeds\] stock-ta\/quotes/g) ?? []).length;
 	tg.userSays(USER, "/start");
 	await within(10_000, () => tg.sent.length > 0);
+	if (o.python) {
+		const setup = spawnSync("just", ["module", "setup", "stock-ta"], { cwd: HEAD, env: { ...process.env, PSA_STATE_DIR: state }, encoding: "utf8", timeout: 600_000 });
+		if (setup.status !== 0) throw new Error(`just module setup stock-ta failed:\n${setup.stdout}\n${setup.stderr}`);
+	}
 	spawnSync("just", ["module", "on", "stock-ta"], { cwd: HEAD, env: { ...process.env, PSA_STATE_DIR: state }, encoding: "utf8", timeout: 120_000 });
 	if (!(await within(30_000, () => query(db, "SELECT record FROM module_records WHERE name = 'stock-ta'").some((r) => String(r["record"]).includes('"at":"active"'))))) throw new Error("stock-ta did not turn on");
 	await within(30_000, () => beats() > 0);
@@ -240,7 +261,7 @@ async function fake(): Promise<void> {
 
 async function real(): Promise<void> {
 	await lane(4, "real-todays-signals", async () => {
-		const h = await boot({ models: REAL, watch: ["NVDA", "AMD"], at: "11:15" });
+		const h = await boot({ models: REAL, watch: ["NVDA", "AMD"], at: "11:15", python: true });
 		try {
 			h.quote({ NVDA: 104, AMD: 101 }, { NVDA: 100, AMD: 100 }, { NVDA: { o: 103.4, h: 111.5, v: 100_000 }, AMD: { o: 101, h: 101.5, l: 96.5, v: 100_000 } }, "11:00");
 			await h.beat();
