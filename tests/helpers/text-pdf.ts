@@ -51,6 +51,24 @@ export function brokenImagePdf(text: string, xobject: string, extra: readonly st
 	return pdfOf(objects);
 }
 
+/** Page 1 carries text; every other page names one /XObject dictionary of `forms` image-less Forms, and each Form names that same dictionary, as some merged files do. */
+export function sharedFormsPdf(text: string, forms: number, pages: number): Buffer {
+	const stream = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+	const firstPage = 8 + forms;
+	const objects = [
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		`<< /Type /Pages /Kids [4 0 R ${Array.from({ length: pages }, (_, i) => `${firstPage + i} 0 R`).join(" ")}] /Count ${pages + 1} >>`,
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>",
+		`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+		"<< /Length 0 >>\nstream\n\nendstream",
+		`<< ${Array.from({ length: forms }, (_, i) => `/F${i} ${8 + i} 0 R`).join(" ")} >>`,
+		...Array.from({ length: forms }, () => "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << /XObject 7 0 R >> /Length 0 >>\nstream\n\nendstream"),
+		...Array.from({ length: pages }, () => "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject 7 0 R >> /Contents 6 0 R >>"),
+	];
+	return pdfOf(objects);
+}
+
 function pdfOf(objects: readonly string[]): Buffer {
 	let out = "%PDF-1.4\n";
 	const offsets = objects.map((object, i) => {

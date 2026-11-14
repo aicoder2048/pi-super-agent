@@ -146,7 +146,7 @@ test("宿主：助手调 ocr，宿主用它的 OCR 读这个文件，回给助�
 const PORT_TOOL = (effect: string) =>
 	JSON.stringify({ title: "读扫描", description: "读扫描件", effect, port: "ocr", input: { name: { type: "text", title: "文件名" } }, output: { text: { type: "text", title: "文字" } } });
 
-/** `as` overrides the path the reply names. */
+/** `as` overrides the path the reply names; `keep` is text the tool read itself before asking for OCR. */
 function scanModule(t: TestContext, ocr: Ocr | undefined) {
 	const root = mkdtempSync(join(tmpdir(), "psa-ocr-port-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -156,7 +156,7 @@ function scanModule(t: TestContext, ocr: Ocr | undefined) {
 	writeFileSync(join(pkg, "tools/scan/tool.json"), PORT_TOOL("read"));
 	writeFileSync(
 		join(pkg, "tools/scan/index.ts"),
-		`import { copyFileSync } from "node:fs";\nimport { join } from "node:path";\nexport default (input) => {\n\tif (input.name === "text") return { name: "a.txt", text: "本来就有文字" };\n\tcopyFileSync(${JSON.stringify(join(FIXTURES, "scan.png"))}, join(process.env.PSA_MODULE_DATA, "files", "scan.png"));\n\treturn { name: "scan.png", text: "", truncated: false, ocr: { file: input.as ?? "files/scan.png" } };\n};\n`,
+		`import { copyFileSync } from "node:fs";\nimport { join } from "node:path";\nexport default (input) => {\n\tif (input.name === "text") return { name: "a.txt", text: "本来就有文字" };\n\tcopyFileSync(${JSON.stringify(join(FIXTURES, "scan.png"))}, join(process.env.PSA_MODULE_DATA, "files", "scan.png"));\n\treturn { name: "scan.png", text: input.keep ?? "", truncated: false, ocr: { file: input.as ?? "files/scan.png" } };\n};\n`,
 	);
 	const scan = scanPackage(pkg, { runCases: false });
 	assert.ok(scan.ok, JSON.stringify(scan));
@@ -207,6 +207,22 @@ test("port ocr：宿主没开 OCR 时拒绝，说读不出文字，文件照样�
 	assert.ok(!reply.ok && reply.refusal.code === "provider-failed", JSON.stringify(reply));
 	assert.match(reply.refusal.note, /没开 OCR/);
 	assert.equal(existsSync(join(dataDir, "files/scan.png")), false);
+});
+
+test("port ocr：工具自己读出了一些字又要 OCR，OCR 没开或没读成时回工具读出的字，ocr 写明为什么没读，文件照样删掉", async (t) => {
+	const cases: [string, Ocr | undefined, RegExp][] = [
+		["off", undefined, /没开 OCR/],
+		["failed", { prepare: async () => {}, read: async () => Promise.reject(new Error("引擎崩了")) }, /OCR 没读成：引擎崩了/],
+	];
+	for (const [name, ocr, why] of cases) {
+		const { call, dataDir } = scanModule(t, ocr);
+		const reply = await call({ name: "scan", keep: "第一页本来就有的字" });
+		assert.ok(reply.ok, `${name} ${JSON.stringify(reply)}`);
+		const output = reply.output as { text: string; ocr: { failed: string } };
+		assert.equal(output.text, "第一页本来就有的字", name);
+		assert.match(output.ocr.failed, why, name);
+		assert.equal(existsSync(join(dataDir, "files/scan.png")), false, name);
+	}
 });
 
 test("port ocr：任何模块的 effect 是 read 的工具都能声明；effect 是 write 的不行", (t) => {

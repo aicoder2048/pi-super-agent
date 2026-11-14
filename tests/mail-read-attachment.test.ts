@@ -18,7 +18,7 @@ import { runModuleCodeAsync } from "../src/modules/run-code.ts";
 import { scanPackage } from "../src/modules/validate.ts";
 import { startFakeGoogle } from "./helpers/fake-google.ts";
 import { FakeInbox, type Letter } from "./helpers/fake-gmail.ts";
-import { brokenImagePdf, formPdf, textPdf } from "./helpers/text-pdf.ts";
+import { brokenImagePdf, formPdf, sharedFormsPdf, textPdf } from "./helpers/text-pdf.ts";
 import { servedAsHost } from "./helpers/fakes.ts";
 import { createOcr } from "../src/ocr/ocr.ts";
 import type { Ocr } from "../src/ocr/result.ts";
@@ -341,6 +341,42 @@ test("读附件：某页的图片表坏了（指向不存在的对象、条目�
 	for (const [i, name] of Object.keys(broken).entries()) {
 		assert.deepEqual(await w.call({ messageId: "m-1", partId: String(i + 1) }), { ok: true, output: { name: `${name}.pdf`, type: "application/pdf", pages: 2, text: "Fasting glucose 5.6 mmol/L", truncated: false } }, name);
 	}
+});
+
+/** Page 1 is text, page 2 is one gray image and no text: half the pages are scans. */
+const textThenScanPdf = () => brokenImagePdf("Fasting glucose 5.6 mmol/L", "<< /Im0 8 0 R >>", ["<< /Type /XObject /Subtype /Image /Width 8 /Height 8 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 64 >>\nstream\n" + "\x80".repeat(64) + "\nendstream"]);
+
+test("读附件：所有页和 Form 共用一张有几千个 Form、没有图片的表，猜扫描件不会拖过时限，第一页的字照常读出来", async (t) => {
+	const text = "Fasting glucose 5.6 mmol/L, report page one";
+	const w = await attachmentWorld(t, [ann("m-1", [file("shared.pdf", "application/pdf", sharedFormsPdf(text, 2000, 15))])]);
+	const started = Date.now();
+	const reply = await w.call({ messageId: "m-1", partId: "1" });
+	assert.deepEqual(reply, { ok: true, output: { name: "shared.pdf", type: "application/pdf", pages: 16, text, truncated: false } });
+	assert.ok(Date.now() - started < 3000, `${Date.now() - started} ms`);
+});
+
+test("读附件：第一页是字、第二页是扫描图的 PDF 交给宿主 OCR 时，text 里留着 PDF 本来带的字", async (t) => {
+	const mixed = textThenScanPdf();
+	const w = await attachmentWorld(t, [ann("m-1", [file("mixed.pdf", "application/pdf", mixed)])]);
+	const reply = await w.call({ messageId: "m-1", partId: "1" });
+	assert.ok(reply.ok, JSON.stringify(reply));
+	const output = reply.output as { text: string; ocr?: { file: string } };
+	assert.match(output.ocr?.file ?? "", /^files\/ocr-[0-9a-f]{16}\.pdf$/, JSON.stringify(output));
+	assert.equal(output.text, "Fasting glucose 5.6 mmol/L");
+});
+
+test("读附件经过宿主：宿主没开 OCR 时，半扫描的 PDF 回 PDF 本来带的字，ocr 写明扫描页没读出来", async (t) => {
+	const mixed = textThenScanPdf();
+	const w = await attachmentWorld(t, [ann("m-1", [file("mixed.pdf", "application/pdf", mixed), file("scan.pdf", "application/pdf", readFileSync(join(SCANS, "three.pdf")))])]);
+	const { gateway, caller } = gatewayOver(t, w);
+	const reply = await gateway.call(caller, { kind: "tool", name: "read-attachment" as ComponentName, input: { messageId: "m-1", partId: "1" } });
+	assert.ok(reply.ok, JSON.stringify(reply));
+	const output = reply.output as { text: string; ocr: { failed: string } };
+	assert.equal(output.text, "Fasting glucose 5.6 mmol/L");
+	assert.match(output.ocr.failed, /没开 OCR/);
+	assert.deepEqual(readdirSync(join(w.dataDir, "files")).filter((f) => f.startsWith("ocr-")), [], "交给宿主的文件删了");
+	const scan = await gateway.call(caller, { kind: "tool", name: "read-attachment" as ComponentName, input: { messageId: "m-1", partId: "2" } });
+	assert.ok(!scan.ok && /没开 OCR/.test(scan.refusal.note), JSON.stringify(scan));
 });
 
 test("读附件：png、jpg、heic、tiff、webp、bmp 图片附件交给宿主 OCR；通用类型按扩展名认", async (t) => {
