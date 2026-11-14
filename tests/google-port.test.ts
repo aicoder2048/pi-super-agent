@@ -102,7 +102,6 @@ test("网关：带 port 的工具回的草稿交给宿主写进 Gmail，任务�
 	const reply = await w.call("echo-draft", { raw: RAW, threadId: "t-1" });
 	assert.ok(reply.ok, JSON.stringify(reply));
 	assert.deepEqual(reply.output, { draftId: "r-1", threadId: "t-1", to: "ann@example.com", subject: "Re: hi", note: "草稿在 Gmail 的草稿箱里，看过后自己发送" });
-	assert.equal(reply.private, true, "mail 有私密集合，写草稿的回复标为私密");
 	assert.equal(reply.receipt, "已写好回信草稿，没有发送\n收件人：ann@example.com\n主题：Re: hi\nhttps://mail.google.com/mail/u/0/#drafts");
 	assert.equal(sent.length, 1);
 });

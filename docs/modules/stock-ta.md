@@ -4,16 +4,17 @@ stock-ta 让 Pi Super Agent 回答美股的报价和技术面问题，例如「N
 
 按「你这样问，会得到什么」组织的使用手册见 [stock-ta-cookbook.md](stock-ta-cookbook.md)，例子是真实数据实测的。
 
-包在 `docs/modules/examples/stock-ta/`，不在仓库的 `modules/` 下。仓库 `modules/` 里的新布局包第一次被发现时默认打开，而这个模块要先在那台机器上跑一次 `just module setup`、有一把 Massive 密钥才能用，没准备好就打开的话工具全失败，还会在幕僚长的名单上和 us-market 抢美股问题。所以它放在例子目录里，你在要用的那台机器上复制一份，自己打开。
+包在 `docs/modules/examples/stock-ta/`，不在仓库的 `modules/` 下。仓库 `modules/` 里的新布局包第一次被发现时默认打开，而这个模块要先在那台机器上跑一次 `just module setup`、有一把 Massive 密钥才能用，没准备好就打开的话工具全失败。所以它放在例子目录里，你在要用的那台机器上复制一份，自己打开。
 
 ## 里面有什么
 
 - **工具。** `quote` 向 Massive 要一次快照，回现价，见下文「问现价」。`intraday` 向 Massive 要一只股票当天的分钟线或小时线，`earnings-date` 向 Finnhub 要下一次财报日，见下文「联网的工具和密钥」。六个只读工具调 `ta` 的子命令：`structure`（支撑阻力、形态、动能）、`signals`（技术信号，日线和周线）、`note`（笔记原文）、`prices`（数据库里的最新价）、`conditions`（规则状态）、`rules`（规则定义）。另有一个纯计算工具 `risk-reward`，算盈亏比和止损距离，用例在 `cases.json` 里，每次检查都跑。
 - **专家。** 趋势与动量、结构与形态、信号分诊、市场情绪、风险与交易计划、盘面。每位专家只够得到 `uses` 里列的工具，成员只有读文件的 `read`，不能读网页。盘面判断当天的涨跌是个股还是大盘、板块，用 `quote`、`intraday`、`prices`、`note`，汇报分结论、证据、数据时间三段，不找原因。风险与交易计划每次给计划都查一次 `earnings-date`，财报日在持有期内或 10 个交易日内时单独写一行跳空风险，只有它能用这个工具。
-- **技能。** `principle-evidence`、`principle-freshness`、`ta-interpret`，从技术分析项目的 Pi 技能搬过来，去掉了桌面界面、选股和日内的部分。`quick-quote` 让领队自己回答只问价格的问题，`market-desk` 是盘面查当天行情的做法。
-- **报价。** feed `quotes` 在交易时段（美东 9:30 到收盘后 20 分钟）每 60 秒向 Massive 发一次快照请求，取回整张自选股，每只存一行进 `quotes`：价格、相对昨收的涨跌幅、当天成交量和数据时间。Starter 套餐的数据延迟 15 分钟，所以数据时间比现在早约 15 分钟。同一数据时间的行只存一次。自选股在 `watchlist` 里。
+- **技能。** `principle-evidence`、`principle-freshness`、`ta-interpret`，从技术分析项目的 Pi 技能搬过来，去掉了桌面界面、选股和日内的部分。`quick-quote` 让领队自己回答只问价格的问题，`band-move` 是领队接到到档触发时只派盘面、结构与形态、趋势与动量三位的做法，`market-desk` 是盘面查当天行情的做法。
+- **报价。** feed `quotes` 在交易时段（美东 9:30 到收盘后 20 分钟）每 60 秒向 Massive 发一次快照请求，取回整张自选股，再加上 SPY 和 QQQ（不在自选股里也取），每只存一行进 `quotes`：价格、相对昨收的涨跌幅、当天成交量和数据时间。Starter 套餐的数据延迟 15 分钟，所以数据时间比现在早约 15 分钟。同一数据时间的行只存一次。自选股在 `watchlist` 里。
 - **日线扫描。** feed `scan` 每小时看一次，每个交易日收盘 15 分钟后用模块自己装的 `ta` 扫一次自选股和 QQQ、SPY，把两年日线、分红和信号写进模块自己的数据库 `modules-data/stock-ta/files/ta/ta.sqlite`，每次运行在 `scan-runs` 里记一行。工具读的就是这份数据库。见下文「日线扫描」。
-- **大涨大跌自动分析。** 自选股里一只股票当天相对昨收涨跌达到 5%，`quotes` 发一条触发，规则 `big-move`（`rules.md`）让幕僚长给技术分析研究组开任务：结构与形态和趋势与动量各看一遍，汇报带数据时间和出处，并说明不是交易指令。同一只股票同一天同一方向只开一次；当天先跌 5% 再涨 5% 是两次，哪怕跌 5% 的任务还没结束，涨 5% 也另开一个任务。5% 写死在 `feeds/quotes/index.ts` 的 `BIG_MOVE_PCT`。
+- **到档提醒和自动分析。** 档位在 `feeds/quotes/feed.json` 的 `settings.bands`：个股 5% 和 8%，SPY、QQQ 2% 和 3%（从 us-market 搬来，去掉了个股 3% 档、指数 1.5% 档和放量提醒）。涨跌幅按现价和昨收算，不取整，4.996% 不算到 5% 档。每轮取已经到达的最高一档；每只股票每个方向每天只升不降，回落再上来不重报，跳空直接到 8% 只报 8% 档。已报到哪一档存在 feed 的 cursor 里，按宿主时钟的美东日期换日清空，宿主重启后接着用。到档时先发一行提醒，不经幕僚长，直接到网页和 Telegram，例如 `提醒 · 股票技术分析：NVDA 涨 +5.31%，到达 +5% 档。现价 105.31，昨收 100.00。报价时间 10:05 ET（延迟行情）。`。报价不是私密数据，所以幕僚长读过私密模块以后，这一行在 Telegram 上照样完整。同时发一条触发，正文就是这一行，规则 `big-move`（`rules.md`）让幕僚长开一个任务，同一轮派盘面、结构与形态和趋势与动量三位，汇报先写盘面。同一只股票当天的后续触发（先到 5% 档再到 8% 档，或者先跌后涨）进同一个任务。
+- **你的当天涨跌条件和档位一起到。** 你设的 `day-move` 条件（例如 NVDA 当天涨跌 1%）和档位在同一轮、同一方向第一次到线时，只发一行：档位那一行后面接上「也到了你设的涨跌 1% 提醒线。」。不在同一轮的照旧各发各的。
 - **知识。** 术语表随包自带。十八份笔记包里只有出处（`source.json`，`"license": "user-import"`），全文要你从本机导入，见下文。笔记不是你写的，仓库是公开的，所以全文不进仓库。
 
 ## 联网的工具和密钥
@@ -124,8 +125,9 @@ stock-ta 让 Pi Super Agent 回答美股的报价和技术面问题，例如「N
   - 读的 Massive 地址和报价 feed 是同一个（`feeds/quotes/feed.json` 的 `settings.baseUrl`）。
 - **问新闻。** 股票技术分析不管新闻和财报解读。只问新闻的问题，幕僚长按模块说明不交给 stock-ta，交给不属于任何领域的通用助手，它能读网页。一句话里既问涨跌又问原因或新闻时，stock-ta 的领队只报涨跌，不猜原因，最后加一句「原因不在行情数据里，想知道原因可以问「NVDA 最新新闻」。」（代码换成问到的）。建议的接着问是只问新闻的问题，它不归 stock-ta，幕僚长交给通用助手。这一句在网页的任务卡片上看得到，Telegram 上幕僚长常把它改写或删掉。幕僚长有时会把原因那一半另开成通用任务（混合问题实跑 9 次里 1 次），那时原因从通用任务来。
 - **设提醒。** 「NVDA 跌破 170 提醒我」「NVDA 当天涨跌 5% 提醒我」：只有你本人发起的任务能设，条件存在 `quotes` 上，满足时网页和手机直接提醒你，例如 `提醒 · 股票技术分析：NVDA 105.30，相对昨收 100.00 涨了 5.30%，到了你设的涨跌 5% 提醒线（2026-11-12 10:05 美东，延迟行情）`。提醒里的时间按美东写；`quotes` 里存的还是 UTC。这是因为 `quotes` 的 `watch` 写了 `"zone": "America/New_York"`，别的模块的数据不写就照存的原样显示。当天涨跌用的是 `day-move` 条件，按每行的昨收（`prevClose`）算不取整的涨跌幅，同一天同一方向只提醒一次，盘中改了阈值按新阈值再提醒一次。
-- **只存新鲜的报价。** 报价 feed 只写数据时间落在当天常规时段（9:30 到 16:00，提前收盘日到 13:00）的报价，「当天」按宿主时钟（feed 输入里的 `now`）算。所以开盘第一份快照里的盘前成交、节假日拿到的昨天的报价、提前收盘后的成交都不写行，提醒条件和 5% 规则都不会被它们触发。
-- **和 us-market 分开取。** 模块的代码不能用宿主的行情客户端，所以 stock-ta 自己发快照请求、有自己的自选股，和 us-market 用同一把密钥时请求量相加（交易时段每分钟各一次）。`quotes` 不会自动清理，十只股票一年大约一百万行。
+- **只存新鲜的报价。** 报价 feed 只写数据时间落在当天常规时段（9:30 到 16:00，提前收盘日到 13:00）的报价，「当天」按宿主时钟（feed 输入里的 `now`）算。所以开盘第一份快照里的盘前成交、节假日拿到的昨天的报价、提前收盘后的成交都不写行，提醒条件和档位都不会被它们触发。
+- **us-market 退役。** us-market 的包在 R5 删掉了，档位提醒只走这个报价 feed 一条路。`config.json` 里还留着 `sources.us-market` 时宿主拒绝启动，报错说删掉哪一项。us-market 以前的任务、触发和提醒行照旧能在网页上看。`quotes` 不会自动清理，十只股票一年大约一百万行。
+- **网页上的模块卡片。** stock-ta 的卡片多两行：「今日提醒 n 条」，和每个 feed 最近一轮的时间和取到几行（报价按美东写，例如「自选股报价 10:05 美东 取到 11 行」），失败时写原因。宿主重启以后要等第一轮跑完才有这一行。
 - **盘后和周末不请求。** 休市日没有日历，开盘时段照常请求，Massive 返回的还是上一个交易日的数据，数据时间不变就不会存新行。
 
 ## 从 us-market 搬过来
@@ -144,11 +146,14 @@ R2a、R1、R6 合并后各在旧 Mac 部署一次，每次都等你说「部署�
 1. **只读预检。** 记下 `git rev-parse --short HEAD`、`just modules` 里各模块的开关、stock-ta 的 `_conditions` 条数和自选股条数（`sqlite3 -readonly ~/.pi-super-agent/modules-data/stock-ta/data.db`）、`config.json` 的键、当天的提醒行和触发条数。
 2. **时间。** 美东 16:20 以后或周末，切换中没有盘中行情。
 3. **备份。** 复制一份 `config.json`；`sqlite3 ~/.pi-super-agent/state.db ".backup <备份目录>/state.db"`，`modules-data/stock-ta/data.db` 也这样备份。
-4. **换代码。** `just redeploy`（拉 main 并重装服务，见 `docs/deploy/home-mac.md` 的「更新」），再 `cp -R docs/modules/examples/stock-ta ~/.pi-super-agent/modules/` 和 `just module setup stock-ta`（钉的提交没变时什么都不做）。包换上不用重启，宿主几秒内换新版本。
-5. **发一行测试。** `just notify` 发一行。事后在 `state.db` 的 `telegram_messages` 里查到这一行的 `message_id` 就算发出。
-6. **R2a 这次的检查。** 在 Telegram 上问「NVDA 现在多少」，25 秒内收到带价格、涨跌幅、数据时间和「延迟 15 分钟」的回答，网页上这个任务没有派活记录。再从宿主日志的 `[gateway] stock-ta tools/quote` 行和 `telegram_messages` 算 3 次从提问到回答的时间，中位数超过 25 秒就记成阻碍，回到 R2a 修。周末第一次问时顺便看「休市」的价格和数据时间是不是上一交易日最后一笔。
-7. **R1 这次迁移。** 换完代码后跑 `just migrate-us-market`，应该打印 1 行「新建」（种类和预检相同）和 2 行「划掉」（AMZN、AAPL）；看过再 `just migrate-us-market --apply`；再跑一次 `--apply`，打印「全部不变」。`_conditions` 多 1 行 `day-move`，你的盯盘条件从这时起重新会响。
-8. **回退。** 恢复 `config.json` 和 `data.db` 的备份（`state.db` 只在它出问题时恢复），`git checkout` 部署前的 SHA，从那个 SHA 重新 `cp -R` stock-ta 包，重启。R2a 不改数据格式，回退到 R2a 以前不需要恢复 `data.db`。回退到 R1 以前必须恢复 `data.db`：旧代码遇到 `day-move` 条件会出错。`just migrate-us-market --undo` 只在新代码能启动时用。
+4. **删 us-market 的配置。** 从 R6 那次起，换代码之前先做这一步。打开 `~/.pi-super-agent/config.json`，删掉 `sources` 里的 `us-market` 一项，`sources` 删空了就把整个 `sources` 删掉；有 `modules.us-market` 也删。新代码看到这两项会拒绝启动。旧代码没有这一项也能跑（轮询回到默认的每 60 秒），所以先删，再 `just redeploy --no-pull` 用旧代码重启一次，`just modules` 和删之前一样。
+5. **换代码。** `just redeploy`（拉 main 并重装服务，见 `docs/deploy/home-mac.md` 的「更新」），再 `cp -R docs/modules/examples/stock-ta ~/.pi-super-agent/modules/` 和 `just module setup stock-ta`（钉的提交没变时什么都不做）。包换上不用重启，宿主几秒内换新版本。
+   注意，`cp -R` 用仓库里的包覆盖状态目录里的 `modules/stock-ta`。你在旧 Mac 上直接改过的包文件（例如 `feeds/quotes/feed.json` 里的档位）会被换回仓库的版本。想留下的改动先改进仓库，或者复制前另存那个文件、复制后再改回去。
+6. **发一行测试。** `just notify` 发一行。事后在 `state.db` 的 `telegram_messages` 里查到这一行的 `message_id` 就算发出。
+7. **R2a 这次的检查。** 在 Telegram 上问「NVDA 现在多少」，25 秒内收到带价格、涨跌幅、数据时间和「延迟 15 分钟」的回答，网页上这个任务没有派活记录。再从宿主日志的 `[gateway] stock-ta tools/quote` 行和 `telegram_messages` 算 3 次从提问到回答的时间，中位数超过 25 秒就记成阻碍，回到 R2a 修。周末第一次问时顺便看「休市」的价格和数据时间是不是上一交易日最后一笔。
+8. **R1 这次迁移。** 换完代码后跑 `just migrate-us-market`，应该打印 1 行「新建」（种类和预检相同）和 2 行「划掉」（AMZN、AAPL）；看过再 `just migrate-us-market --apply`；再跑一次 `--apply`，打印「全部不变」。`_conditions` 多 1 行 `day-move`，你的盯盘条件从这时起重新会响。
+9. **R6 这次的检查。** `just modules` 里没有 us-market，stock-ta 运行中，版本括号里的 digest 和 `just module check docs/modules/examples/stock-ta` 打印的 `digest=` 相同；`config.json` 没有 `sources`；`_conditions` 还是 R1 迁来的那 1 行 `day-move`。下一个交易日只读查看，提醒行和触发只来自 stock-ta，部署之后没有 `us-market` 来源的新行。
+10. **回退。** 恢复 `config.json` 和 `data.db` 的备份（`state.db` 只在它出问题时恢复），`git checkout` 部署前的 SHA，从那个 SHA 重新 `cp -R` stock-ta 包，重启。恢复的 `config.json` 带回 `sources.us-market`，R6 以前的代码认它。R2a 不改数据格式，回退到 R2a 以前不需要恢复 `data.db`。回退到 R1 以前必须恢复 `data.db`：旧代码遇到 `day-move` 条件会出错。`just migrate-us-market --undo` 只在新代码能启动时用。
 
 ## 日线扫描
 

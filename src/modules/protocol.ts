@@ -30,7 +30,11 @@ export type Condition =
 export type Watch = { id: string; key: string; condition: Condition; note?: string };
 
 /** `externalId` is the condition's id and the row's time, so a row never alerts twice. */
-export type Alert = { externalId: string; text: string; at: string; private: boolean };
+export type Alert = { externalId: string; text: string; at: string };
+
+export type Side = "up" | "down";
+export type DayMoveFold = { key: string; side: Side; clause: string };
+export type FeedAlert = { id: string; text: string; at: string; fold?: { key: string; side: Side } };
 
 export type Query = { where?: Readonly<Record<string, string | number>>; since?: string; until?: string; limit?: number };
 
@@ -115,18 +119,6 @@ export function allowed(caller: Caller, request: Request, tool: ToolEffect): boo
 	return AUTHORITY[effectOf(request, tool)].includes(senderOf(caller));
 }
 
-/**
- * The one place a data class is enforced. A ticket has touched private data once it has
- * read a `private` collection or taken a trigger from a feed that fills one. Its reports
- * are shown in full on the web page and the TUI. Telegram gets this pointer instead. An
- * alert on a `private` collection follows the same rule.
- */
-export function telegramText(full: string, privateModule: string | null): string {
-	return privateModule === null ? full : privateLine(privateModule);
-}
-
-export const privateLine = (moduleTitle: string) => `${moduleTitle} 有新内容，请在网页上查看`;
-
 export type Refusal =
 	| { code: "no-such-capability" }
 	| { code: "not-in-uses"; member: string }
@@ -139,15 +131,14 @@ export type Refusal =
 /** One hit of a knowledge search, with the citation a skill asks the Worker to carry. */
 export type Passage = { doc: ComponentName; title: string; version: string; authority: "authoritative" | "reference"; section: string; text: string };
 
-/** `private` is true when the call read or wrote a `private` collection. The host then marks the ticket. `receipt`: a line the host shows only on this machine. */
-export type Reply = { ok: true; output: Json; private: boolean; passages?: readonly Passage[]; alerts?: readonly Alert[]; receipt?: string } | { ok: false; refusal: Refusal };
+/** `receipt`: a line the host shows only on this machine. */
+export type Reply = { ok: true; output: Json; passages?: readonly Passage[]; alerts?: readonly Alert[]; receipt?: string } | { ok: false; refusal: Refusal };
 
 export interface Gateway {
 	/**
 	 * The only entry point. Order: resolve the capability in the caller's pinned version,
 	 * read the module's state from its lifecycle record, check the member's `uses`, ask
-	 * `allowed`. Then call the provider, mark the ticket if the reply is private, and
-	 * append to the module's access log.
+	 * `allowed`. Then call the provider and append to the module's access log.
 	 */
 	call(caller: Caller, request: Request): Promise<Reply>;
 	/** The tool list a Worker registers at spawn, already narrowed to the caller. `help` is built from the descriptor. */
@@ -184,6 +175,11 @@ export interface Collected {
 	records?: readonly ({ id: string } & { readonly [field: string]: Json })[];
 	/** Values for the placeholders of the feed's `notice`. One trigger per entry, deduped by `id`. */
 	notices?: readonly { id: string; thread?: string; fields: Readonly<Record<string, string>> }[];
+	/**
+	 * Lines the host posts to the user before any trigger, with no Router in between (ADR-0017), deduped by `id`. A `day-move`
+	 * condition on `fold.key` that fires the same beat in the same direction joins this line, so one move reads as one line.
+	 */
+	alerts?: readonly FeedAlert[];
 	/** The feed's next cursor. The host saves it only after the records and notices are stored. */
 	cursor?: string;
 	/**

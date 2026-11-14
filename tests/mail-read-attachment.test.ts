@@ -315,14 +315,6 @@ test("读附件：推断任务也能调", async (t) => {
 	assert.equal((reply.output as { text: string }).text, "推断任务读到的附件");
 });
 
-test("读附件：模块有私密集合，读附件的回复标为私密", async (t) => {
-	const w = await attachmentWorld(t, [ann("m-1", [file("a.txt", "text/plain", "私密附件")])]);
-	const { gateway, caller } = gatewayOver(t, w);
-	const reply = await gateway.call(caller, { kind: "tool", name: "read-attachment" as ComponentName, input: { messageId: "m-1", partId: "1" } });
-	assert.ok(reply.ok, JSON.stringify(reply));
-	assert.equal(reply.private, true);
-});
-
 test("读附件：只请求 messages.get 和 attachments.get，不碰别的接口", async (t) => {
 	const w = await attachmentWorld(t, [ann("m-1", [file("a.txt", "text/plain", "x")])]);
 	w.google.log.length = 0;

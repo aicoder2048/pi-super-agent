@@ -119,6 +119,8 @@ test("在替你盯着：每个来源一项，带上管它的规则（使用者�
 });
 
 const REPO_MODULES = new URL("../modules", import.meta.url).pathname;
+const RETIRED_MODULES = new URL("./fixtures/retired", import.meta.url).pathname;
+const withRetired = (options?: Parameters<typeof Modules.load>[1]) => Modules.load([REPO_MODULES, RETIRED_MODULES], options);
 
 function withoutKeyVars(t: import("node:test").TestContext) {
 	const names = [...KEY_NAMES, ...FINNHUB_KEY_NAMES];
@@ -134,7 +136,7 @@ test("真实接线：美股行情出现在关注的来源里，用人话标题�
 	withoutKeyVars(t);
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const logs: string[] = [];
-	const options = createHostOptions({ config: hostConfig(provider), modules: fixed(Modules.load([REPO_MODULES])), modelRuntime, log: (l) => logs.push(l) });
+	const options = createHostOptions({ config: hostConfig(provider), modules: fixed(withRetired()), modelRuntime, log: (l) => logs.push(l) });
 	const host = await Host.start(options);
 	t.after(() => host.stop());
 	const entry = host.snapshot().watching.find((w) => w.source === "us-market")!;
@@ -150,7 +152,7 @@ test("真实接线：宿主从环境变量读到密钥，日志只写来源不�
 	process.env.MASSIVE_API_KEY = "sk-wire-secret";
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const logs: string[] = [];
-	const options = createHostOptions({ config: hostConfig(provider), modules: fixed(Modules.load([REPO_MODULES])), modelRuntime, log: (l) => logs.push(l) });
+	const options = createHostOptions({ config: hostConfig(provider), modules: fixed(withRetired()), modelRuntime, log: (l) => logs.push(l) });
 	assert.deepEqual(options.feeds?.map((f) => f.source), ["us-market"]);
 	assert.ok(logs.some((l) => l.includes("环境变量 MASSIVE_API_KEY")));
 	assert.ok(!logs.some((l) => l.includes("sk-wire-secret")));
@@ -160,16 +162,24 @@ test("真实接线：config.json 里 sources.us-market 拼错字段时启动前�
 	withoutKeyVars(t);
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = { ...hostConfig(provider), sources: { "us-market": { watchlst: ["AMD"] } } };
-	assert.throws(() => createHostOptions({ config, modules: fixed(Modules.load([REPO_MODULES])), modelRuntime, log: () => {} }), /config\.json.*watchlst/);
+	assert.throws(() => createHostOptions({ config, modules: fixed(withRetired()), modelRuntime, log: () => {} }), /config\.json.*watchlst/);
 	const odd = new Modules([{ name: "odd", dir: "/m/odd", manifest: { name: "odd", sources: [{ name: "odd", feed: { kind: "carrier-pigeon" } }] }, rules: [], skillsDir: undefined, state: { enabled: true, by: "default" } }], [], []);
 	assert.throws(() => createHostOptions({ config: hostConfig(provider), modules: fixed(odd), modelRuntime, log: () => {} }), /carrier-pigeon.*massive-stocks/);
+});
+
+test("真实接线：us-market 退役以后 config.json 里还留着 sources.us-market：启动前报错，说删掉哪一项", async (t) => {
+	withoutKeyVars(t);
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const config = { ...hostConfig(provider), sources: { "us-market": { everySeconds: 300 } } };
+	assert.throws(() => createHostOptions({ config, modules: fixed(Modules.load([REPO_MODULES])), modelRuntime, log: () => {} }), (e: Error) => e.name === "ConfigError" && /us-market 已经退役，删掉 .*config\.json 里的 sources\.us-market/.test(e.message));
+	assert.doesNotThrow(() => createHostOptions({ config: hostConfig(provider), modules: fixed(Modules.load([REPO_MODULES])), modelRuntime, log: () => {} }));
 });
 
 test("真实接线：config.json 的 sources 里写了没有 feed 的来源名时启动前报错，列出可配置的来源", async (t) => {
 	withoutKeyVars(t);
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = { ...hostConfig(provider), sources: { "us-markt": { watchlist: ["AMD"] } } };
-	assert.throws(() => createHostOptions({ config, modules: fixed(Modules.load([REPO_MODULES])), modelRuntime, log: () => {} }), (e: Error) => e.name === "ConfigError" && /us-markt.*us-market/.test(e.message));
+	assert.throws(() => createHostOptions({ config, modules: fixed(withRetired()), modelRuntime, log: () => {} }), (e: Error) => e.name === "ConfigError" && /us-markt.*us-market/.test(e.message));
 });
 
 test("宿主运行模块声明的来源：随宿主启停，触发进内核，游标和使用者数据存在自己名下", async (t) => {
@@ -211,7 +221,7 @@ test("真实接线：关掉 us-market 后不运行它的看盘，config.json 里
 	withoutKeyVars(t);
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = { ...hostConfig(provider), sources: { "us-market": { watchlist: ["AMD"] } } };
-	const modules = Modules.load([REPO_MODULES], { switches: { values: { "us-market": false }, file: "config.json" } });
+	const modules = withRetired({ switches: { values: { "us-market": false }, file: "config.json" } });
 	const options = createHostOptions({ config, modules: fixed(modules), modelRuntime, log: () => {} });
 	assert.deepEqual(options.feeds, []);
 	assert.ok(!options.watching?.some((w) => w.source === "us-market"));
@@ -221,7 +231,7 @@ test("真实接线：关掉 us-market 时有行情密钥也不建看盘，不开
 	withoutKeyVars(t);
 	process.env.MASSIVE_API_KEY = "sk-wiring-fake";
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
-	const modules = Modules.load([REPO_MODULES], { switches: { values: { "us-market": false }, file: "config.json" } });
+	const modules = withRetired({ switches: { values: { "us-market": false }, file: "config.json" } });
 	const options = createHostOptions({ config: hostConfig(provider), modules: fixed(modules), modelRuntime, log: () => {} });
 	assert.deepEqual(options.feeds, []);
 	assert.equal(options.domains!.kitFor("us-market", null), undefined);
@@ -364,7 +374,7 @@ test("接线把模块表交给宿主时不拍快照：换表以后宿主的领�
 	const options = createHostOptions({ config: hostConfig(provider), modules: { live, kitFor: (domain, pin) => (pin === null ? live.current().kitFor(domain) : pinned) }, modelRuntime, log: () => {} });
 	assert.deepEqual([...options.domains!.book().keys()], []);
 	live.publish(repo);
-	assert.deepEqual([...options.domains!.book().keys()], ["us-market", "module-builder", "pi-pi"]);
+	assert.deepEqual([...options.domains!.book().keys()], ["module-builder", "pi-pi"]);
 	assert.equal(options.domains!.kitFor("pi-pi", null)!.crew.length, 9);
 	assert.equal(options.domains!.kitFor("tax", "abc"), pinned);
 });
@@ -390,15 +400,15 @@ async function envProbe(secretsText: string) {
 
 test("入口：宿主的 Gateway 从状态目录的模块副本里跑工具，密钥值取自 secretsFile，每次调用记一行日志", async () => {
 	const { reply, logs } = await envProbe("PERSONAL_TAX__KEY=from-file\n");
-	assert.deepEqual(reply, { ok: true, output: { named: "from-file" }, private: true });
+	assert.deepEqual(reply, { ok: true, output: { named: "from-file" } });
 	assert.ok(logs.some((l) => l.startsWith("[gateway] personal-tax tools/env-probe")), logs.join("\n"));
 });
 
 test("入口：宿主进程环境里的同名变量到不了模块代码，模块的密钥只取自 secretsFile", async (t) => {
 	process.env.PERSONAL_TAX__KEY = "from-host-env";
 	t.after(() => delete process.env.PERSONAL_TAX__KEY);
-	assert.deepEqual((await envProbe("PERSONAL_TAX__KEY=from-file\n")).reply, { ok: true, output: { named: "from-file" }, private: true });
-	assert.deepEqual((await envProbe("OTHER=x\n")).reply, { ok: true, output: { named: null }, private: true });
+	assert.deepEqual((await envProbe("PERSONAL_TAX__KEY=from-file\n")).reply, { ok: true, output: { named: "from-file" } });
+	assert.deepEqual((await envProbe("OTHER=x\n")).reply, { ok: true, output: { named: null } });
 });
 
 async function draftProbe(t: TestContext, feedFixtures: boolean, oauthUrl: (google: FakeGoogle) => string | undefined) {

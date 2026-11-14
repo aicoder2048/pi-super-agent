@@ -67,6 +67,7 @@ export function stockTaCopy(t: TestContext, baseUrl: string): string {
 	const pkg = join(root, "stock-ta");
 	cpSync(STOCK_TA, pkg, { recursive: true });
 	const feedJson = join(pkg, "feeds/quotes/feed.json");
-	writeFileSync(feedJson, JSON.stringify({ ...JSON.parse(readFileSync(feedJson, "utf8")), settings: { baseUrl } }));
+	const feed = JSON.parse(readFileSync(feedJson, "utf8"));
+	writeFileSync(feedJson, JSON.stringify({ ...feed, settings: { ...feed.settings, baseUrl } }));
 	return pkg;
 }

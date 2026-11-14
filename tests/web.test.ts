@@ -203,7 +203,7 @@ test("页面：宿主行（提醒、收据）进对话；刷新后的快照里�
 test("页面：盯盘的提醒标「盯盘提醒」，模块的提醒标「提醒 · 模块名」，收据标「盯盘条件（只在本机）」", () => {
 	const at = AT_1405;
 	assert.equal(format.hostLineLabel({ id: "hln_1", who: "alert", text: "NVDA 涨了 5.3%", at }), "盯盘提醒");
-	assert.equal(format.hostLineLabel({ id: "hln_2", who: "alert", text: "检验指标 CEA 9", at, module: { title: "个人医疗健康", private: true } }), "提醒 · 个人医疗健康");
+	assert.equal(format.hostLineLabel({ id: "hln_2", who: "alert", text: "检验指标 CEA 9", at, module: { title: "个人医疗健康" } }), "提醒 · 个人医疗健康");
 	assert.equal(format.hostLineLabel({ id: "hln_3", who: "receipt", text: "已记下：NVDA", at }), "盯盘条件（只在本机）");
 });
 
@@ -345,6 +345,18 @@ test("页面：模块栏每个模块一张卡：标题和名字、状态、版�
 	});
 	assert.equal(on.imports[0].command, importCommand("personal-health" as ModuleName, "hf" as ComponentName), "和宿主给的导入命令一字不差");
 	assert.deepEqual([off.heading, off.button, off.state, off.tone, off.lines], ["tax", "打开", "已停用 · 你把它关了，数据还留着", "off", ["技能 1"]]);
+});
+
+test("页面：有 feed 的模块卡多两行，今日提醒几条，和每个 feed 最近一轮的时间、取到几行；失败时写原因", () => {
+	const view = page.emptyView();
+	const at = Date.parse("2026-11-13T15:05:00Z");
+	const stock = taxCard({ name: "stock-ta", title: "股票技术分析", on: true, label: "运行中", reason: "", tone: "ok", components: { feeds: 2 }, alertsToday: 3, beats: [{ title: "自选股报价", at, zone: "America/New_York", ok: true, records: 11 }, { title: "日线扫描", at, ok: false, note: "没有设置 POLYGON_API_KEY" }] });
+	const quiet = taxCard({ name: "mail", components: { feeds: 1 } });
+	page.applyMessage(view, { ...board([]), modules: [stock, quiet, taxCard()] } as HostToClient, 0);
+	const [a, b, c] = page.leftColumn(view, 0).modules;
+	assert.deepEqual(a.lines.slice(1), ["今日提醒 3 条", "自选股报价 10:05 美东 取到 11 行", `日线扫描 ${new Date(at).toTimeString().slice(0, 5)} 这一轮失败：没有设置 POLYGON_API_KEY`]);
+	assert.deepEqual(b.lines, ["feed 1", "今日提醒 0 条"], "还没跑过一轮的 feed 不写时间");
+	assert.deepEqual(c.lines, ["技能 1"], "没有 feed 的模块不写提醒行");
 });
 
 test("页面：无效的模块卡用宿主给的警示色，列出哪个文件哪一处；宿主没给原因时状态行只写状态", () => {
@@ -720,7 +732,7 @@ test("页面：成员头像取职称的第一个汉字，同一组里首字相�
 });
 
 test("页面：仓库自带的两支团队，每位成员的头像都是一个字，同队里不重复", () => {
-	for (const team of ["us-market", "pi-pi"]) {
+	for (const team of ["module-builder", "pi-pi"]) {
 		const dir = new URL(`../modules/${team}/agents/`, import.meta.url);
 		const titles = readdirSync(dir).map((f) => readFileSync(new URL(f, dir), "utf8").match(/^title: (.+)$/m)?.[1] ?? f);
 		const faces = page.memberAvatars(titles).map((a) => a.text);

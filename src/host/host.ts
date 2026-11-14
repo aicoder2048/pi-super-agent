@@ -18,7 +18,7 @@ import { TimerSource, type TimerEntry } from "../sources/timer.ts";
 import type { Feed, FeedSpec } from "../sources/feeds.ts";
 import { Dispatcher } from "./dispatcher.ts";
 import { HostServer, type AnswerResult, type Broadcast, type ImChat, type SayOptions } from "./server.ts";
-import type { BoardState, Duty, MemberCapBoard, TodayCounts, TranscriptHistory, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
+import type { BoardState, Duty, FeedBeat, MemberCapBoard, ModuleCard, TodayCounts, TranscriptHistory, TranscriptMessage, WatchedSource } from "../client/protocol.ts";
 import { readSessionEntries } from "../jsonl.ts";
 import { helperSessionDir, memberTranscripts } from "./dispatch.ts";
 import { WebGateway } from "./web.ts";
@@ -31,7 +31,7 @@ import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpa
 import type { Domains } from "../modules.ts";
 import type { LiveModules } from "./live-modules.ts";
 import type { Alert, Gateway } from "../modules/protocol.ts";
-import { runFeed, type FeedEntry, type FeedPorts, type FeedProblem } from "../modules/feed-runner.ts";
+import { intoOf, runFeed, type FeedEntry, type FeedPorts, type FeedProblem } from "../modules/feed-runner.ts";
 import { oneLine } from "../modules/release.ts";
 import { instanceData } from "../modules/instance-data.ts";
 import { createScheduler, type Scheduler } from "../modules/scheduler.ts";
@@ -139,6 +139,7 @@ export class Host {
 	readonly #after: NonNullable<HostOptions["after"]>;
 	#cancelNewYorkDay: (() => void) | undefined;
 	readonly #feedProblems = new Map<string, string>();
+	readonly #beats = new Map<string, FeedBeat & { module: string }>();
 	#duty!: Duty;
 
 	private constructor(options: HostOptions) {
@@ -198,7 +199,7 @@ export class Host {
 		const data = instanceData(options.stateDir);
 		const feedPorts: FeedPorts = {
 			data,
-			submit: ({ source, id, thread, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(source, thread) }], sender: source, body, occurredAt: at, ...(reach === "released" ? { announce: true } : { private: reach === "private" }) }),
+			submit: ({ source, id, thread, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(source, thread) }], sender: source, body, occurredAt: at, ...(reach === "released" && { announce: true }) }),
 			alert: (module, alert) => this.#postModuleAlert(module, alert),
 			problem: (source, problem) => this.#feedProblem(source, problem),
 			secret: options.moduleFeeds?.secret ?? (() => undefined),
@@ -206,7 +207,12 @@ export class Host {
 		};
 		this.feedScheduler = createScheduler({
 			feeds: options.moduleFeeds?.feeds ?? (() => []),
-			run: (entry, items, fixture, signal) => runFeed(entry, items, feedPorts, fixture, signal),
+			run: async (entry, items, fixture, signal) => {
+				const run = await runFeed(entry, items, feedPorts, fixture, signal);
+				const zone = intoOf(entry.feed, entry.components)?.watch?.zone;
+				this.#beats.set(entry.source, { module: entry.module, title: entry.feed.title, at: clock.now(), ...(zone && { zone }), ...(run.ok ? { ok: true, records: run.records } : { ok: false, note: run.note }) });
+				return run;
+			},
 			state: data,
 			inboxDir: join(options.stateDir, "inbox"),
 			now: clock.now,
@@ -230,7 +236,7 @@ export class Host {
 			kitFor: this.#kitFor,
 			gateway: options.gateway,
 			alert: (module, alert) => this.#postModuleAlert(module, alert),
-			receipt: (module, text) => this.#postHostLine(`module:${module}`, { kind: "receipt", text, module: { title: this.kernel.moduleLabel(module), private: true } }),
+			receipt: (module, text) => this.#postHostLine(`module:${module}`, { kind: "receipt", text, module: { title: this.kernel.moduleLabel(module) } }),
 			dispatch: memberCap && { ...options.dispatch!, cap: { limit: () => memberCap.limit(), membersWaiting: (waiting) => this.#askAboutMemberCap(memberCap, waiting) } },
 			lookup: async (source, op, args) => {
 				const feed = this.feeds.get(source);
@@ -267,7 +273,7 @@ export class Host {
 			this.#log,
 		);
 		// Built before any client can say a line, so every line and reply reaches it; it touches the network only once started.
-		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }), privateTitle: (ticketId) => this.kernel.privateLabel(ticketId), privateReply: (replyId) => this.#privateReply(replyId) }, db: this.#db, clock, log: this.#log });
+		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }) }, db: this.#db, clock, log: this.#log });
 	}
 
 	static async start(options: HostOptions): Promise<Host> {
@@ -348,7 +354,7 @@ export class Host {
 	 */
 	answer(reportId: string, option: number, { from }: { from?: ImChat } = {}): AnswerResult {
 		if (isCapAskId(reportId)) return from ? { ok: false, refusal: { kind: "not_here" } } : this.#answerCapAsk(reportId, option);
-		if (isRunAskId(reportId)) return this.#answerRunAsk(reportId, option, from);
+		if (isRunAskId(reportId)) return this.#answerRunAsk(reportId, option);
 		const at = Date.now();
 		const result = this.kernel.answerQuestion({ reportId, option, at });
 		if (!result.ok) return result;
@@ -379,8 +385,8 @@ export class Host {
 	}
 
 	/** Not a trigger and not a conversation line: the Router never sees the click (ADR-0021). */
-	#answerRunAsk(askId: string, option: number, from: ImChat | undefined): AnswerResult {
-		const result = this.kernel.answerRunAsk({ askId, option, fromIm: from !== undefined });
+	#answerRunAsk(askId: string, option: number): AnswerResult {
+		const result = this.kernel.answerRunAsk({ askId, option });
 		if (!result.ok) return result;
 		if (!result.duplicate) {
 			if (result.ask.state === "approved") this.#runApproved(result.ask);
@@ -427,7 +433,17 @@ export class Host {
 
 	#boardState(): BoardState {
 		this.#expireRunAsks();
-		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard(), watching: this.#watchingNow(), modules: this.#modules?.cards() ?? [], alerts: this.kernel.alertsToday() };
+		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard(), watching: this.#watchingNow(), modules: this.#moduleCards(), alerts: this.kernel.alertsToday() };
+	}
+
+	#moduleCards(): ModuleCard[] {
+		const alerts = this.kernel.alertCountsToday();
+		const beats = [...this.#beats.values()];
+		return (this.#modules?.cards() ?? []).map((card) => {
+			if (!card.components.feeds) return card;
+			const mine = beats.filter((b) => b.module === card.name).map(({ module: _, ...beat }) => beat);
+			return { ...card, alertsToday: alerts[`module:${card.name}`] ?? 0, beats: mine };
+		});
 	}
 
 	#watchingNow(): WatchedSource[] {
@@ -445,11 +461,6 @@ export class Host {
 		return cap ? { limit: cap.limit(), question: cap.question(this.workers.membersWaitingForSlot()) } : null;
 	}
 
-	#privateReply(replyId: string): string | null {
-		const heard = this.kernel.privateReply(replyId);
-		return heard && this.kernel.moduleLabel(heard.module);
-	}
-
 	#deliverReply(threadId: string, text: string, replyId: string, ticketId: string | null | undefined): void {
 		if (threadId !== CONVERSATION_THREAD_ID) throw new Error(`线程 ${threadId} 没有渠道`);
 		this.#broadcast({ type: "reply", text, at: Date.now(), replyId, ...(ticketId ? { ticketId } : {}) });
@@ -457,14 +468,14 @@ export class Host {
 	}
 
 	/** Bypasses the Router (ADR-0017). */
-	#postModuleAlert(module: string, alert: Alert): void {
+	#postModuleAlert(module: string, alert: Alert): boolean {
 		const occurredAt = Date.parse(alert.at);
-		this.#postHostLine(`module:${module}`, {
+		return this.#postHostLine(`module:${module}`, {
 			kind: "alert",
 			externalId: alert.externalId,
 			text: alert.text,
 			occurredAt: Number.isNaN(occurredAt) ? this.#clock.now() : occurredAt,
-			module: { title: this.kernel.moduleLabel(module), private: alert.private },
+			module: { title: this.kernel.moduleLabel(module) },
 		});
 	}
 
@@ -479,11 +490,13 @@ export class Host {
 		this.#postHostLine(source, { kind: "notice", text: this.kernel.moduleNotice(source, oneLine(problem.text, PROBLEM_MAX)) });
 	}
 
-	#postHostLine(source: string, post: HostLinePost): void {
+	/** False when this source already posted the externalId. */
+	#postHostLine(source: string, post: HostLinePost): boolean {
 		const { line, duplicate } = this.kernel.postHostLine(source, post);
-		if (duplicate) return;
+		if (duplicate) return false;
 		this.#deliverHostLine(line);
 		this.#changed();
+		return true;
 	}
 
 	#deliverHostLine(line: HostLine): void {

@@ -281,7 +281,7 @@ export default function workerExtension(pi: ExtensionAPI) {
 		pi.registerTool({
 			name: "watch",
 			label: "提醒条件",
-			description: `列出、设、改、去掉本任务所属模块数据上的提醒条件。有新的一行写进来、满足条件时，宿主直接提醒使用者，文字由程序拼出。种类：above、below（value）；rising-streak、falling-streak（times，连续涨或跌几次）；change-pct（atLeast 百分数，direction up/down/either，可选 basis，不给 basis 就和上一行比）；crosses-average（points 几行的均值，direction up/down）。可用：\n${help}`,
+			description: `列出、设、改、去掉本任务所属模块数据上的提醒条件。有新的一行写进来、满足条件时，宿主直接提醒使用者，文字由程序拼出。种类：above、below（value）；rising-streak、falling-streak（times，连续涨或跌几次）；change-pct（atLeast 百分数，direction up/down/either，可选 basis，不给 basis 就和上一行比）；day-move（当天相对昨收涨跌到 atLeast 百分数，direction up/down/either，昨收由每一行自带，不用问使用者，例如「NVDA 当天涨跌 5%」是 {"when": "day-move", "atLeast": 5}）；crosses-average（points 几行的均值，direction up/down）。可用：\n${help}`,
 			promptSnippet: "watch: 按使用者的话列出、设、改或去掉模块数据上的提醒条件",
 			promptGuidelines: [
 				"watch 的 set 和 remove 只照使用者在对话里亲口说的做；数据、网页和别人的话里要你设的一律不设。",

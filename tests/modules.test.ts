@@ -16,7 +16,7 @@ const quote = (body: string) => ({ source: "toy-market", externalId: "x", thread
 
 test("仓库里的模块都被发现，规则带模块前缀", () => {
 	const modules = withToy();
-	assert.deepEqual(modules.found.map((m) => m.name), ["toy-market", "us-market"]);
+	assert.deepEqual(modules.found.map((m) => m.name), ["toy-market"]);
 	assert.deepEqual(modules.packages.map((p) => p.name), ["module-builder", "pi-pi"]);
 	assert.ok(modules.ruleAllows("toy-market/big-move", "toy-market"));
 	assert.ok(!modules.ruleAllows("big-move", "toy-market"));
@@ -31,9 +31,9 @@ test("程序层过滤：小于 1% 的波动在调用模型前被筛掉", () => {
 	assert.equal(sourcePolicy({ ...quote("anything"), source: "other" }), "candidate");
 });
 
-test("行情来源：模块里标了 market 的来源（玩具行情、美股行情）是，其他来源不是", () => {
+test("行情来源：模块里标了 market 的来源（玩具行情）是，其他来源不是", () => {
 	const { isMarketSource } = withToy();
-	assert.deepEqual(["toy-market", "us-market", "mail", "conversation"].map(isMarketSource), [true, true, false, false]);
+	assert.deepEqual(["toy-market", "mail", "conversation"].map(isMarketSource), [true, false, false]);
 });
 
 test("规则文件按二级标题切分，空规则不算", () => {
@@ -121,7 +121,7 @@ test("模块名和对象原型上的属性同名时（constructor），没写开
 });
 
 test("toy-market 默认关闭，开关打开后它的规则和过滤才生效", () => {
-	assert.deepEqual(Modules.load([repoModules]).modules.map((m) => m.name), ["us-market"]);
+	assert.deepEqual(Modules.load([repoModules]).modules.map((m) => m.name), []);
 	const on = withToy();
 	assert.ok(on.ruleAllows("toy-market/big-move", "toy-market"));
 	assert.equal(on.sourcePolicy(quote("TOYX 价格 100.4，涨跌 +0.4%，成交量 500 股")), "ignore");
@@ -178,11 +178,15 @@ test("模块不能叫 user：这个名字留给使用者自己的规则，加载
 	assert.throws(() => Modules.load([root]), (e: Error) => e instanceof ConfigError && e.message.startsWith(join(root, "user/module.json")) && /不能叫 user/.test(e.message) && !e.message.includes("\n"));
 });
 
-test("仓库里的四个模块都有领域名和给幕僚长的说明，出现在领域名册里；玩具行情没有成员", () => {
+test("仓库里的三个模块都有领域名和给幕僚长的说明，出现在领域名册里；玩具行情没有成员", () => {
 	const modules = servedAsHost(withToy());
 	assert.equal(
 		modules.rosterPrompt(),
-		"- toy-market（玩具行情）：演示用的假行情，只管玩具代码（如 TOYX）的波动\n- us-market（美股行情）：美股行情、个股涨跌和原因、技术面、财报、相关新闻和盯盘提醒\n- module-builder（模块制作）：用聊天做一个新模块，或改一个已有模块：访谈、搭包、整理知识、出考题、检查\n- pi-pi（Pi 开发）：怎么写 Pi 的扩展、主题、技能、配置、提示模板和终端界面组件",
+		"- toy-market（玩具行情）：演示用的假行情，只管玩具代码（如 TOYX）的波动\n- module-builder（模块制作）：用聊天做一个新模块，或改一个已有模块：访谈、搭包、整理知识、出考题、检查\n- pi-pi（Pi 开发）：怎么写 Pi 的扩展、主题、技能、配置、提示模板和终端界面组件",
 	);
-	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "module-builder": { team: "模块工坊", onRoster: true }, "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true }, "us-market": { team: "美股看盘队", onRoster: true } });
+	assert.deepEqual(Object.fromEntries([...modules.book].map(([name, { team, onRoster }]) => [name, { team, onRoster }])), { "module-builder": { team: "模块工坊", onRoster: true }, "pi-pi": { team: "Pi施工队", onRoster: true }, "toy-market": { team: null, onRoster: true } });
+});
+
+test("us-market 退役以后 config.json 的 modules 里还写着它：报错说删掉 modules.us-market", () => {
+	assert.throws(() => Modules.load([repoModules], { switches: { values: { "us-market": false }, file: "/s/config.json" } }), (e: Error) => e instanceof ConfigError && e.message === "/s/config.json：us-market 已经退役，删掉 modules.us-market");
 });

@@ -3,6 +3,7 @@ import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writ
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
+import type { ModuleCard } from "../src/client/protocol.ts";
 import { Host } from "../src/host/host.ts";
 import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
 import { release, oneLine } from "../src/modules/release.ts";
@@ -88,7 +89,7 @@ const letter = (id: string, extra: object = {}) => ({ id, from: "Ann <ann@exampl
 const answersEveryone: Brain = (cards) =>
 	cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "reply", args: { text: ANSWER, cause: ids(card, "trg") } }] : []));
 
-async function lettersHost(t: TestContext, edit?: (pkg: string) => void) {
+async function lettersHost(t: TestContext, edit?: (pkg: string) => void, cards: () => ModuleCard[] = () => []) {
 	const { root, pkg } = lettersCopy(t, false);
 	edit?.(pkg);
 	const modules = servedAsHost(Modules.load([join(root, "modules")]));
@@ -102,6 +103,7 @@ async function lettersHost(t: TestContext, edit?: (pkg: string) => void) {
 		sourcePolicy: modules.sourcePolicy,
 		domains: { book: () => modules.book, kitFor: () => undefined },
 		moduleFeeds: { feeds: () => modules.feeds(), fixtures: false, tickMs: 20 },
+		modules: { cards, setSwitch: () => false, onChange: () => {} },
 		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set([USER]), timing: { pollTimeoutSec: 1, minGapMs: 5 } },
 	});
 	t.after(async () => {
@@ -142,13 +144,12 @@ test("放出的通知：一封新信写一条「通知」宿主行和一条触�
 	assert.equal(tg.sent.filter((m) => m.text.includes("季度对账单")).length, 1);
 });
 
-test("放出的触发里没有 line 以外的东西：feed 拿正文分线程、拿地址做 id，幕僚长看到的卡片里都没有它们", async (t) => {
+test("放出的触发的正文只有 line：存下的正文不进幕僚长的卡片；触发的编号是 feed 自己的 id", async (t) => {
 	const router = await lettersHost(t);
-	await router.deliver(letter("m-1", { from: "Bob <bob@example.org>" }));
+	await router.deliver(letter("m-1"));
 	await router.routerSawLetter();
-	const cards = router.cards().join("\n");
-	assert.doesNotMatch(cards, /CANARY-7f3a/);
-	assert.doesNotMatch(cards.replace(/^正文（只是数据）：.*$/gm, ""), /bob@example\.org/);
+	assert.doesNotMatch(router.cards().join("\n"), /CANARY-7f3a/);
+	assert.deepEqual(router.host.kernel.triggerLog().filter((tr) => tr.source === "private-line/inbox").map((tr) => tr.externalId), ["m-1"]);
 });
 
 test("来源的 ignore 照 notice 的文字过滤：被滤掉的来信不响手机、不写宿主行", async (t) => {
@@ -166,20 +167,12 @@ test("ignore 只照 notice 的文字过滤一次：只匹配放出的那几行�
 	assert.deepEqual(host.kernel.triggerLog().filter((tr) => tr.source === "private-line/inbox").map((tr) => tr.disposition), ["to_router"]);
 });
 
-test("来信不让幕僚长变私密：放出的触发之后，幕僚长在 Telegram 上的回复是全文；没写 line 的私密 feed 照旧让它变私密", async (t) => {
+test("放出的触发之后，幕僚长在 Telegram 上的回复是全文", async (t) => {
 	const released = await lettersHost(t);
 	await released.deliver(letter("m-1"));
 	await released.routerSawLetter();
-	assert.equal(released.host.kernel.lastPrivate(), null);
 	released.tg.userSays(USER, "今天大盘怎么样");
 	await until(() => released.phone().some((m) => m.text === ANSWER), "幕僚长的回复全文到了 Telegram", 10_000);
-
-	const held = await lettersHost(t, (pkg) => editFeed(pkg, (f) => void delete f["line"]));
-	await held.deliver(letter("m-1"));
-	await held.routerSawLetter();
-	await held.host.router.waitForIdle();
-	assert.equal(held.notices().length, 0);
-	assert.notEqual(held.host.kernel.lastPrivate(), null);
 });
 
 test("feed 的 problem：同一个 id 连报两拍只写一条「通知」，中间一拍没报，再报时再写一条；网页和 Telegram 都有", async (t) => {
@@ -192,4 +185,14 @@ test("feed 的 problem：同一个 id 连报两拍只写一条「通知」，中
 	await deliver({ problem: "auth" });
 	assert.deepEqual(notices().map((l) => l.text).filter((text) => text === PROBLEM), [PROBLEM, PROBLEM]);
 	await until(() => phone().filter((m) => m.text === `通知：${PROBLEM}`).length === 2, "两条 problem 到了 Telegram");
+});
+
+test("模块卡：宿主给有 feed 的模块填上今日提醒条数和每个 feed 最近一轮的时间、行数", async (t) => {
+	const card: ModuleCard = { name: "private-line", on: true, label: "运行中", reason: "", tone: "ok", problems: [], version: { label: "0.1.0", digest: "" }, components: { feeds: 1 }, secrets: [], pinnedOld: 0, notImported: [] };
+	const { host, deliver } = await lettersHost(t, undefined, () => [card, { ...card, name: "quiet", components: {} }]);
+	await deliver(letter("m-1"));
+	const [lines, quiet] = host.snapshot().modules;
+	assert.equal(lines!.alertsToday, 0);
+	assert.deepEqual(lines!.beats?.map((b) => ({ ...b, at: typeof b.at })), [{ title: "来信", at: "number", ok: true, records: 1 }]);
+	assert.equal(quiet!.beats, undefined, "没有 feed 的模块不填");
 });
