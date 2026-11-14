@@ -5,7 +5,7 @@ import { everyMs } from "./connectors/timer.ts";
 import type { ConditionAlert, FeedStates, ModuleRows } from "./instance-data.ts";
 import type { CollectionDescriptor, Component, ComponentName, FeedDescriptor, FeedFixture, ModuleName } from "./manifest.ts";
 import type { InstanceData } from "./registry.ts";
-import type { Alert, Collected, FeedAlert, FeedInput, Json, Row } from "./protocol.ts";
+import { BADGE_KEY_MAX, BADGE_TEXT_MAX, type Alert, type Badge, type Collected, type FeedAlert, type FeedInput, type Json, type Row } from "./protocol.ts";
 import { fill, release } from "./release.ts";
 import { fixtureSecrets, LIMIT_MS, runModuleCodeAsync, secretsFor } from "./run-code.ts";
 
@@ -25,6 +25,8 @@ export interface FeedPorts {
 	submit(notice: FeedNotice): void;
 	/** False when the host already posted this externalId. */
 	alert(module: ModuleName, alert: Alert): boolean;
+	/** A mark on the module's card; never a line (ADR-0028). */
+	badge(module: ModuleName, badge: Badge): void;
 	/** Every beat that ran, with what it reported, so the host can tell a new problem from one still standing. */
 	problem(source: string, problem: FeedProblem | undefined): void;
 	secret(name: string): string | undefined;
@@ -63,7 +65,12 @@ export function parseCollected(output: Json, into?: CollectionDescriptor): Colle
 	if (!Array.isArray(alerts) || !alerts.every((a) => isObject(a) && ["id", "text", "at"].every((f) => typeof a[f] === "string" && a[f] !== "") && (a["fold"] === undefined || (isObject(a["fold"]) && typeof a["fold"]["key"] === "string" && ["up", "down"].includes(a["fold"]["side"] as string))))) {
 		return `alerts 要是一列 { id, text, at }，都是文字，可选 fold { key, side: up 或 down }`;
 	}
-	if (!alerts.every((a) => a["push"] === undefined || a["push"] === "silent")) return `alerts 的 push 只能是 silent（不写就响铃）`;
+	if (!alerts.every((a) => a["push"] === undefined || a["push"] === "silent" || a["push"] === "badge")) return `alerts 的 push 只能是 silent 或 badge（不写就响铃）`;
+	if (!alerts.every((a) => a["key"] === undefined || a["push"] === "badge")) return `alerts 的 key 只给 push: badge 用`;
+	if (!alerts.every((a) => a["push"] !== "badge" || a["fold"] === undefined)) return `alerts 里 push: badge 的那一项不能 fold`;
+	const badgeKey = (k: unknown) => k === undefined || (typeof k === "string" && k !== "" && k.length <= BADGE_KEY_MAX && !/[\r\n]/.test(k));
+	if (!alerts.every((a) => a["push"] !== "badge" || badgeKey(a["key"]))) return `alerts 的 key 只给 push: badge 用，要是 1 到 ${BADGE_KEY_MAX} 个字的一行文字`;
+	if (!alerts.every((a) => a["push"] !== "badge" || ((a["text"] as string).length <= BADGE_TEXT_MAX && !/[\r\n]/.test(a["text"] as string)))) return `alerts 里 push: badge 的 text 要是一行，最多 ${BADGE_TEXT_MAX} 个字`;
 	if (problem !== undefined && !(isObject(problem) && typeof problem["id"] === "string" && typeof problem["text"] === "string")) return `problem 要是 { id, text }，两个都是文字`;
 	if (problem !== undefined && problem["once"] !== undefined && problem["once"] !== true) return `problem 的 once 只能是 true，收到 ${JSON.stringify(problem["once"])}`;
 	if (into !== undefined) {
@@ -111,11 +118,14 @@ async function fromHandler({ module, source, feed, name, dir, components }: Feed
 function postAlerts({ module }: FeedEntry, conditions: readonly ConditionAlert[], feed: readonly FeedAlert[], ports: FeedPorts): void {
 	const joined = new Set<FeedAlert>();
 	for (const { fold, ...alert } of conditions) {
-		const into = fold && feed.find((a) => !joined.has(a) && a.fold?.key === fold.key && a.fold.side === fold.side);
+		const into = fold && feed.find((a) => !joined.has(a) && a.push !== "badge" && a.fold?.key === fold.key && a.fold.side === fold.side);
 		if (into === undefined) ports.alert(module, alert);
 		else if (ports.alert(module, { ...alert, text: `${into.text}${fold!.clause}` })) joined.add(into);
 	}
-	for (const a of feed) if (!joined.has(a)) ports.alert(module, { externalId: a.id, text: a.text, at: a.at, ...(a.push && { push: a.push }) });
+	for (const a of feed) {
+		if (a.push === "badge") ports.badge(module, { key: a.key ?? a.id, text: a.text, at: a.at });
+		else if (!joined.has(a)) ports.alert(module, { externalId: a.id, text: a.text, at: a.at, ...(a.push && { push: a.push }) });
+	}
 }
 
 export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: FeedPorts, fixture?: FeedFixture, signal?: AbortSignal): Promise<FeedRun> {

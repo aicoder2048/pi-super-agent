@@ -3,6 +3,7 @@
  * to put in front of the user out. It grades by the same table as the quotes feed, counts the quotes feed's hits of the day for
  * resonance, and grades each hit once: a hit already recorded today is never graded again.
  */
+import { badgeAlerts, type BadgeAlert } from "../../badges.ts";
 import { resonate, type Hit } from "../../hits.ts";
 import { COMBOS, effective, lineOf, NOTES, opensTask, ruleOf, scopeOf, sideOf, taRow, WATCH_RULES, type Lean, type Line, type Plan, type RuleLevels, type WatchRule } from "../../watch-rules.ts";
 
@@ -32,7 +33,7 @@ export type CloseInput = {
 	levels: RuleLevels;
 	quiet: boolean;
 };
-export type Alert = { id: string; text: string; at: string; push?: "silent" };
+export type Alert = { id: string; text: string; at: string; push?: "silent" } | BadgeAlert;
 export type Notice = { id: string; thread: string; threadScope: "module"; fields: { line: string; rule: string; level: string; plan: Plan } };
 export type CloseResult = { hits: Hit[]; alerts: Alert[]; notices: Notice[] };
 
@@ -191,6 +192,7 @@ export function close(input: CloseInput): CloseResult {
 		record({ ...base, level: r.level, ...(r.bumped && { bumped: true as const }), text: lineText(base, `${c.symbol} ${c.finding.fact}`, why, confirmed ? [confirmed.rule] : []) }, { line: r.level === e.level ? e.line : lineOf(r.level, c.rule), plan: c.rule.plan });
 	}
 	for (const hit of out.hits) deliver(hit, delivered.get(hit)!, input.quiet, out);
+	out.alerts.push(...badgeAlerts(day, out.hits));
 	return out;
 }
 

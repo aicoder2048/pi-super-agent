@@ -221,6 +221,11 @@ export class Host {
 			data,
 			submit: ({ source, id, thread, threadOwner, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(threadOwner ?? source, thread) }], sender: source, body, occurredAt: at, ...(reach === "released" && { announce: true }) }),
 			alert: (module, alert) => this.#postModuleAlert(module, alert),
+			badge: (module, { key, text, at }) => {
+				const occurredAt = Date.parse(at);
+				this.kernel.postBadge(`module:${module}`, { key, text, occurredAt: Number.isNaN(occurredAt) ? clock.now() : occurredAt });
+				this.#changed();
+			},
 			secret: options.moduleFeeds?.secret ?? (() => undefined),
 			now: clock.now,
 		};
@@ -472,7 +477,8 @@ export class Host {
 		return (this.#modules?.cards() ?? []).map((card) => {
 			if (!card.components.feeds) return card;
 			const mine = beats.filter((b) => b.module === card.name).map(({ module: _, ...beat }) => beat);
-			return { ...card, alertsToday: alerts[`module:${card.name}`] ?? 0, beats: mine };
+			const badges = this.kernel.badges(`module:${card.name}`);
+			return { ...card, alertsToday: alerts[`module:${card.name}`] ?? 0, beats: mine, ...(badges && { badges }) };
 		});
 	}
 

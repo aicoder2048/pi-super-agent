@@ -347,6 +347,9 @@ export const NOTICE_MAX = 2000;
 export type AlertModule = { title: string };
 
 /** A host line in the conversation. `who` is the kind. It cannot be quoted. `module`: absent for the market source's alerts. */
+/** A module's marks on its card for one local day (`YYYY-MM-DD`), by key (ADR-0028). */
+export type Badges = { day: string; items: { key: string; text: string }[] };
+
 export type HostLine = { id: string; who: HostLinePost["kind"]; text: string; at: number; module?: AlertModule; push?: Push };
 
 /** One line of the 对话 column. ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. On a user line, the task whose question it answers. */

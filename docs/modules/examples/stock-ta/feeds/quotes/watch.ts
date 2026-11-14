@@ -3,6 +3,7 @@
  * Each hit is graded once, when it happens, from what is known by then (the table, the user's rule-levels, history up to
  * yesterday, the hits earlier today and on the past few trading days); later beats never change a recorded hit.
  */
+import { badgeAlerts, type BadgeAlert } from "../../badges.ts";
 import { nyTime, regularCloseAt, regularOpenAt } from "../../market-days.ts";
 import { opened, resonate, type Hit } from "../../hits.ts";
 import type { Quote } from "../../massive.ts";
@@ -23,7 +24,7 @@ export type Context = {
 	past: Readonly<Record<string, readonly Lean[]>>;
 	quiet: boolean;
 };
-export type Alert = { id: string; text: string; at: string; fold?: { key: string; side: Side }; push?: "silent" };
+export type Alert = { id: string; text: string; at: string; fold?: { key: string; side: Side }; push?: "silent" } | BadgeAlert;
 /** `threadScope: "module"`: the module's feeds share the symbol's thread for the day, so a close-of-day hit joins the task a band opened. */
 export type Notice = { id: string; thread: string; threadScope: "module"; fields: { line: string; rule: string; level: string; plan: Plan } };
 export type Beat = { hits: Hit[]; alerts: Alert[]; notices: Notice[] };
@@ -215,5 +216,6 @@ export function watch(day: DayState, quotes: readonly Quote[], ctx: Context): Be
 	for (const q of ordered) if (q.symbol !== VIXY) bands(day, q, ctx, out);
 	const qqq = quotes.find((q) => q.symbol === "QQQ");
 	for (const q of quotes) for (const g of rules(day, q, qqq, ctx)) deliver(g, ctx, out);
+	out.alerts.push(...badgeAlerts(day.hits, out.hits));
 	return out;
 }

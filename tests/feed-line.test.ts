@@ -154,6 +154,26 @@ test("放出的通知：一封新信写一条「通知」宿主行和一条触�
 	assert.equal(tg.sent.filter((m) => m.text.includes("季度对账单")).length, 1);
 });
 
+test("页面标记：feed 写了 push: badge 的提醒不发 Telegram、不进对话、不算今日提醒；模块卡按 key 列出，同一个 key 新的换掉旧的", async (t) => {
+	const badging = (pkg: string) =>
+		writeFileSync(join(pkg, "feeds", "inbox", "index.ts"), `export default (input) => ({ alerts: input.items.map((i) => ({ id: i.id, text: i.subject, at: "2026-11-13T15:00:00Z", ...(i.key ? { push: "badge", key: i.key } : {}) })) });\n`);
+	const card: ModuleCard = { name: "private-line", on: true, label: "运行中", reason: "", tone: "ok", problems: [], version: { label: "0.1.0", digest: "" }, components: { feeds: 1 }, secrets: [], pinnedOld: 0, notImported: [] };
+	const { host, deliver, phone } = await lettersHost(t, badging, () => [card]);
+	await deliver({ id: "b-1", subject: "NVDA · 开盘跳空 +3.40%", key: "NVDA" });
+	await deliver({ id: "b-2", subject: "AMD · 逆大盘：AMD +2.10%，QQQ -1.00%", key: "AMD" });
+	await deliver({ id: "b-3", subject: "NVDA · 开盘跳空 +3.40% · 盘中反转", key: "NVDA" });
+	await deliver({ id: "a-1", subject: "NVDA 涨 +8.10%，到达 +8% 档" });
+	await until(() => phone().some((m) => m.text.includes("+8% 档")), "响铃的提醒到了 Telegram");
+	const mine = host.snapshot().modules.find((m) => m.name === "private-line")!;
+	assert.deepEqual(mine.badges?.items, [{ key: "AMD", text: "AMD · 逆大盘：AMD +2.10%，QQQ -1.00%" }, { key: "NVDA", text: "NVDA · 开盘跳空 +3.40% · 盘中反转" }], "按 key 排");
+	assert.equal(mine.alertsToday, 1, "标记不算今日提醒");
+	assert.deepEqual(host.kernel.conversation(500).filter((l) => l.who === "alert").map((l) => l.text), ["NVDA 涨 +8.10%，到达 +8% 档"], "标记不进对话");
+	assert.deepEqual(host.kernel.alertsToday().map((l) => l.text), ["NVDA 涨 +8.10%，到达 +8% 档"]);
+	assert.equal(phone().some((m) => /开盘跳空|逆大盘/.test(m.text)), false, "标记不发 Telegram");
+	await deliver({ id: "b-3", subject: "NVDA · 开盘跳空 +3.40% · 盘中反转", key: "NVDA" });
+	assert.equal(host.snapshot().modules.find((m) => m.name === "private-line")!.badges?.items.length, 2, "同一个 id 再来不多一个");
+});
+
 test("提醒行可以静音：feed 写了 push: silent 的那一行，Telegram 用 disable_notification 发；没写的照旧带声音", async (t) => {
 	const alerting = (pkg: string) =>
 		writeFileSync(join(pkg, "feeds", "inbox", "index.ts"), `export default (input) => ({ alerts: input.items.map((i) => ({ id: i.id, text: i.subject, at: "2026-11-13T15:00:00Z", ...(i.quiet && { push: "silent" }) })) });\n`);

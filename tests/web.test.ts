@@ -342,6 +342,7 @@ test("页面：模块栏每个模块一张卡：标题和名字、状态、版�
 		lines: ["知识 2 · 工具 1 · 成员 5 · 规则 1", "密钥 EXAMPLE_TOKEN", "2 个任务还在用旧版本"], problems: [],
 		importsHeading: "还没导入的知识 2 份",
 		imports: [{ name: "hf", command: "just module import personal-health hf <文件或目录>" }, { name: "ccs", command: "just module import personal-health ccs <文件或目录>" }],
+		badges: null,
 	});
 	assert.equal(on.imports[0].command, importCommand("personal-health" as ModuleName, "hf" as ComponentName), "和宿主给的导入命令一字不差");
 	assert.deepEqual([off.heading, off.button, off.state, off.tone, off.lines], ["tax", "打开", "已停用 · 你把它关了，数据还留着", "off", ["技能 1"]]);
@@ -357,6 +358,17 @@ test("页面：有 feed 的模块卡多两行，今日提醒几条，和每个 f
 	assert.deepEqual(a.lines.slice(1), ["今日提醒 3 条", "自选股报价 10:05 美东 取到 11 行", `日线扫描 ${new Date(at).toTimeString().slice(0, 5)} 这一轮失败：没有设置 POLYGON_API_KEY`]);
 	assert.deepEqual(b.lines, ["feed 1", "今日提醒 0 条"], "还没跑过一轮的 feed 不写时间");
 	assert.deepEqual(c.lines, ["技能 1"], "没有 feed 的模块不写提醒行");
+});
+
+test("页面：模块卡列出页面标记；当天的写「今日标记」，还没换掉的上一天写日期；没有标记不写", () => {
+	const view = page.emptyView();
+	const day = (d: string) => Date.parse(`${d}T12:00:00`);
+	const items = [{ key: "AMD", text: "AMD · 逆大盘：AMD +2.10%，QQQ -1.00%" }, { key: "NVDA", text: "<img src=x onerror=alert(1)> · 开盘跳空 +3.40%" }];
+	page.applyMessage(view, { ...board([]), modules: [taxCard({ name: "stock-ta", components: { feeds: 2 }, badges: { day: "2026-11-13", items } }), taxCard()] } as HostToClient, 0);
+	const [today, none] = page.leftColumn(view, day("2026-11-13")).modules;
+	assert.deepEqual(today.badges, { heading: "今日标记 · 2", items: items.map((i) => i.text) });
+	assert.equal(none.badges, null);
+	assert.equal(page.leftColumn(view, day("2026-11-16")).modules[0].badges?.heading, "11-13 的标记 · 2", "周一还没有新标记时，周五的标着日期");
 });
 
 test("页面：无效的模块卡用宿主给的警示色，列出哪个文件哪一处；宿主没给原因时状态行只写状态", () => {

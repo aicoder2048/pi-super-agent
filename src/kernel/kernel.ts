@@ -37,6 +37,7 @@ import type {
 	QuestionClick,
 	Quote,
 	DecisionResult,
+	Badges,
 	Disposition,
 	DomainBook,
 	Helper,
@@ -1302,6 +1303,33 @@ export class Kernel {
 	/** Alerts posted since local midnight, oldest first. */
 	alertsToday(): HostLine[] {
 		return this.#all("SELECT id, kind, text, created_at, module_title, push FROM host_lines WHERE kind = 'alert' AND created_at >= ? ORDER BY rowid", localDayStart(this.#now())).map(hostLine);
+	}
+
+	/**
+	 * The badge's day is its own time's local day, so a replay after midnight stays on its day. A newer day clears the source's
+	 * older badges; an older one, or one older than the badge it would replace, changes nothing (a re-post after a crash).
+	 */
+	postBadge(source: string, badge: { key: string; text: string; occurredAt: number }): void {
+		const day = localDayKey(badge.occurredAt);
+		this.#tx(() => {
+			const latest = this.#get("SELECT MAX(day) AS day FROM badges WHERE source = ?", source)?.day as string | null | undefined;
+			if (latest && day < latest) return;
+			if (latest && day > latest) this.#run("DELETE FROM badges WHERE source = ?", source);
+			this.#run(
+				"INSERT INTO badges (source, key, text, day, occurred_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (source, key) DO UPDATE SET text = excluded.text, day = excluded.day, occurred_at = excluded.occurred_at WHERE excluded.occurred_at >= badges.occurred_at",
+				source,
+				badge.key,
+				badge.text,
+				day,
+				badge.occurredAt,
+			);
+		});
+	}
+
+	/** The source's badges on its latest day, by key; null when it has none. */
+	badges(source: string): Badges | null {
+		const rows = this.#all("SELECT key, text, day FROM badges WHERE source = ? ORDER BY key", source);
+		return rows.length === 0 ? null : { day: rows[0]!.day, items: rows.map((r) => ({ key: r.key, text: r.text })) };
 	}
 
 	alertCountsToday(): Record<string, number> {

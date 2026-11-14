@@ -275,6 +275,16 @@ CREATE INDEX IF NOT EXISTS conversation_hidden_at ON conversation_hidden(hidden_
 ${HOST_LINES_TABLE("host_lines")}
 CREATE INDEX IF NOT EXISTS host_lines_today ON host_lines (kind, created_at, source);
 
+-- A module's marks on its card (ADR-0028): one row per key, only the source's latest local day. Never a host line.
+CREATE TABLE IF NOT EXISTS badges (
+	source TEXT NOT NULL,
+	key TEXT NOT NULL CHECK (length(key) BETWEEN 1 AND 64 AND instr(key, char(10)) = 0 AND instr(key, char(13)) = 0),
+	text TEXT NOT NULL CHECK (length(text) BETWEEN 1 AND 300 AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0),
+	day TEXT NOT NULL CHECK (day GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+	occurred_at INTEGER NOT NULL,
+	PRIMARY KEY (source, key)
+);
+
 -- Two writers, one column each: the user's switch (just module on|off, the first-boot import) and the host's lifecycle record (JSON).
 CREATE TABLE IF NOT EXISTS module_records (
 	name TEXT PRIMARY KEY,

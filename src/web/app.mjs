@@ -359,6 +359,15 @@ function mount(doc) {
 		}
 	};
 
+	/** Text only, through el(): a badge is the module's words, never markup. @param {NonNullable<import("./view.mjs").ModuleView["badges"]>} b */
+	const badgeList = (b) => {
+		const box = el("div", "badges");
+		const list = el("ul", "");
+		list.append(...b.items.map((text) => el("li", "", text)));
+		box.append(el("div", "badges-head", b.heading), list);
+		return box;
+	};
+
 	/** @param {import("./view.mjs").ModuleView} m */
 	const moduleCard = (m) => {
 		const node = el("div", `card module ${m.tone}`);
@@ -371,7 +380,7 @@ function mount(doc) {
 		button.addEventListener("click", () => void switchModule(m.name, !m.on));
 		const head = el("div", "head");
 		head.append(el("span", "dot"), el("div", "title", m.heading), button);
-		node.append(head, el("div", "state", m.state), ...[m.version, ...m.lines].map((line) => el("div", "meta", line)));
+		node.append(head, el("div", "state", m.state), ...[m.version, ...m.lines].map((line) => el("div", "meta", line)), ...(m.badges ? [badgeList(m.badges)] : []));
 		if (m.problems.length) {
 			const list = el("ul", "problems");
 			list.append(...m.problems.map((p) => el("li", "", p)));
@@ -411,7 +420,10 @@ function mount(doc) {
 		toggle.disabled = switching.has(m.name);
 		toggle.addEventListener("click", () => void switchModule(m.name, !m.on));
 		node.append(el("span", "dot"), el("span", "name", m.name), el("span", "note", m.note), toggle);
-		return node;
+		if (!m.badges) return node;
+		const wrap = el("div", "module-row-wrap");
+		wrap.append(node, badgeList(m.badges));
+		return wrap;
 	};
 
 	const renderOverview = (left = leftColumn(view, Date.now(), sending)) => {

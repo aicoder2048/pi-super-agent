@@ -1,4 +1,4 @@
-import type { CapQuestion, Cleared, ConversationLine, DashboardRow, Disposition, HelpersToday, HostLine, Routes } from "../kernel/types.ts";
+import type { Badges, CapQuestion, Cleared, ConversationLine, DashboardRow, Disposition, HelpersToday, HostLine, Routes } from "../kernel/types.ts";
 import type { Dispatching } from "../host/dispatch.ts";
 import type { KindDir } from "../modules/manifest.ts";
 import type { HealthBoard } from "../host/health.ts";
@@ -60,6 +60,8 @@ export interface ModuleCard {
 	notImported: string[];
 	/** Alert lines the module posted since local midnight. The host fills it and `beats`. */
 	alertsToday?: number;
+	/** The module's marks on the card from its latest day with any (ADR-0028); the host fills it. */
+	badges?: Badges;
 	/** Each feed's last beat since the host started. */
 	beats?: FeedBeat[];
 }
