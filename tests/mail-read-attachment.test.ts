@@ -18,7 +18,7 @@ import { runModuleCodeAsync } from "../src/modules/run-code.ts";
 import { scanPackage } from "../src/modules/validate.ts";
 import { startFakeGoogle } from "./helpers/fake-google.ts";
 import { FakeInbox, type Letter } from "./helpers/fake-gmail.ts";
-import { textPdf } from "./helpers/text-pdf.ts";
+import { formPdf, textPdf } from "./helpers/text-pdf.ts";
 import { servedAsHost } from "./helpers/fakes.ts";
 import { createOcr } from "../src/ocr/ocr.ts";
 import type { Ocr } from "../src/ocr/result.ts";
@@ -322,15 +322,26 @@ test("读附件：一页页只有一张图、几乎没字的 PDF 当扫描件，
 	assert.deepEqual(await w.call({ messageId: "m-1", partId: "2" }), { ok: true, output: { name: "short.pdf", type: "application/pdf", pages: 1, text: "Paid", truncated: false } });
 });
 
-test("读附件：png、jpg、heic、tiff 图片附件交给宿主 OCR；通用类型按扩展名认", async (t) => {
+test("读附件：扫描图包在 Form XObject 里的 PDF（合并、另存、打印成 PDF 常见）也当扫描件交给宿主 OCR；Form 引用自己不会卡住", async (t) => {
+	const w = await attachmentWorld(t, [ann("m-1", [file("merged.pdf", "application/pdf", formPdf("image")), file("loop.pdf", "application/pdf", formPdf("loop"))])]);
+	const reply = await w.call({ messageId: "m-1", partId: "1" });
+	assert.ok(reply.ok, JSON.stringify(reply));
+	assert.match((reply.output as { ocr?: { file: string } }).ocr?.file ?? "", /^files\/ocr-[0-9a-f]{16}\.pdf$/, JSON.stringify(reply.output));
+	assert.deepEqual(await w.call({ messageId: "m-1", partId: "2" }), { ok: true, output: { name: "loop.pdf", type: "application/pdf", pages: 1, text: "", truncated: false } });
+});
+
+test("读附件：png、jpg、heic、tiff、webp、bmp 图片附件交给宿主 OCR；通用类型按扩展名认", async (t) => {
 	const png = readFileSync(join(SCANS, "scan.png"));
 	const w = await attachmentWorld(t, [ann("m-1", [
 		file("scan.png", "image/png", png),
 		file("photo.JPG", "image/jpeg", "jpg"),
 		file("IMG_1.heic", "image/heic", "heic"),
 		file("fax.tif", "application/octet-stream", "tif"),
+		file("shot.jpg", "image/jpg", "jpg"),
+		file("web.webp", "image/webp", "webp"),
+		file("old.bmp", "image/bmp", "bmp"),
 	])]);
-	for (const [partId, extension] of [["1", "png"], ["2", "jpg"], ["3", "heic"], ["4", "tif"]] as const) {
+	for (const [partId, extension] of [["1", "png"], ["2", "jpg"], ["3", "heic"], ["4", "tif"], ["5", "jpg"], ["6", "webp"], ["7", "bmp"]] as const) {
 		const reply = await w.call({ messageId: "m-1", partId });
 		assert.ok(reply.ok, JSON.stringify(reply));
 		const output = reply.output as { pages: number | null; text: string; ocr: { file: string } };
