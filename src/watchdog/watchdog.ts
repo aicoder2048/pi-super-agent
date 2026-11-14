@@ -6,7 +6,7 @@ import type { Clock, KernelConfig, Stall, SystemProblem } from "../kernel/types.
 import { liveHeartbeat, readHeartbeat } from "../heartbeat.ts";
 import { scrub } from "../host/health.ts";
 import { dropTrigger } from "../sources/generic.ts";
-import { readOutage, writeOutage } from "./outage.ts";
+import { readOutage, writeOutage, type Outage } from "./outage.ts";
 
 export const WATCHDOG_SOURCE = "watchdog";
 
@@ -120,13 +120,22 @@ export class Watchdog {
 		this.#o.tell?.(text, silent);
 	}
 
+	// A full disk or a bad permission must not stop the restart or the ⚠️; the page only loses the outage record.
+	#recordOutage(outage: Outage): void {
+		try {
+			writeOutage(this.#o.stateDir, outage);
+		} catch (error) {
+			this.#o.log?.(`[watchdog] outage.json 写不进去：${scrub((error as Error).message)}`);
+		}
+	}
+
 	/** One ⚠️ per outage and one ✅ when it ends, and only for an outage the user was told about. */
 	#watchHost(now: number, beating: boolean): void {
 		const host = this.#host;
 		if (beating) {
 			if (host.kind === "down" && host.told) {
 				const endedAt = host.startedAt ?? now;
-				writeOutage(this.#o.stateDir, { since: host.since, endedAt });
+				this.#recordOutage({ since: host.since, endedAt });
 				this.#tell(hostBackText(endedAt - host.since), true);
 			}
 			this.#host = { kind: "up" };
@@ -140,7 +149,7 @@ export class Watchdog {
 		const lastBeat = readHeartbeat(this.#o.stateDir)?.at;
 		const since = lastBeat ?? now;
 		this.#host = { kind: "down", since, told: true, starts: 0, startedAt: undefined };
-		writeOutage(this.#o.stateDir, { since });
+		this.#recordOutage({ since });
 		this.#tell(hostDownText(lastBeat === undefined ? undefined : now - lastBeat), false);
 	}
 
@@ -150,7 +159,7 @@ export class Watchdog {
 		if (host.kind !== "down") return;
 		if (!host.told && host.starts >= FAILED_STARTS_BEFORE_ALARM) {
 			host.told = true;
-			writeOutage(this.#o.stateDir, { since: host.since });
+			this.#recordOutage({ since: host.since });
 			this.#tell(hostFailingText(host.starts, this.#o.lastError?.()), false);
 		}
 		host.starts++;
