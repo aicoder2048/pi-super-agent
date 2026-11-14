@@ -75,15 +75,15 @@ export function parseCollected(output: Json, into?: CollectionDescriptor): Colle
 	if (!alerts.every((a) => a["push"] !== "badge" || a["fold"] === undefined)) return `alerts 里 push: badge 的那一项不能 fold`;
 	const badgeKey = (k: unknown) => k === undefined || (typeof k === "string" && k !== "" && k.length <= BADGE_KEY_MAX && !/[\r\n]/.test(k));
 	if (!alerts.every((a) => a["push"] !== "badge" || badgeKey(a["key"] ?? a["id"]))) return `alerts 的 key 只给 push: badge 用，要是 1 到 ${BADGE_KEY_MAX} 个字的一行文字；不写 key 时用 id，id 也要合这一条`;
-	// A badge is a label on a card: an overlong one is cut rather than failing the round, which would drop its records, lines and tasks too.
-	for (const a of alerts as JsonObject[]) if (a["push"] === "badge") a["text"] = badgeText(a["text"] as string);
 	if (problem !== undefined && !(isObject(problem) && typeof problem["id"] === "string" && typeof problem["text"] === "string")) return `problem 要是 { id, text }，两个都是文字`;
 	if (problem !== undefined && problem["once"] !== undefined && problem["once"] !== true) return `problem 的 once 只能是 true，收到 ${JSON.stringify(problem["once"])}`;
 	if (into !== undefined) {
 		const unknown = (records as JsonObject[]).flatMap((r) => Object.keys(r)).find((key) => key !== "id" && !Object.hasOwn(into.fields, key));
 		if (unknown !== undefined) return `records 里的字段 "${unknown}" 不是 ${into.title} 的字段（有：${Object.keys(into.fields).join("、")}）`;
 	}
-	return output as Collected;
+	// A badge is a label on a card: an overlong one is cut rather than failing the round, which would drop its records, lines and tasks too.
+	const cut = (alerts as JsonObject[]).map((a) => (a["push"] === "badge" ? { ...a, text: badgeText(a["text"] as string) } : a));
+	return { ...output, alerts: cut } as unknown as Collected;
 }
 
 export const intoOf = (feed: Pick<FeedDescriptor, "into">, components: readonly Component[]): CollectionDescriptor | undefined =>
