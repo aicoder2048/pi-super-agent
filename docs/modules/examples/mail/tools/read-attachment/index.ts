@@ -13,8 +13,8 @@ type Extracted = { text: string; pages: number | null; truncated: boolean; ocr?:
 
 export type Result = { name: string; type: string; pages: number | null; text: string; truncated: boolean; ocr?: { file: string } };
 
-/** The gateway gives a call 20 s: about 2 s for the token and messages.get, 10 s to download, 6 s for the PDF, 2 s spare. */
-export const LIMITS = { maxBytes: 10 * 1024 * 1024, downloadMs: 10_000, pdfMs: 6_000, rssBytes: 512 * 1024 * 1024, pollMs: 250, maxChars: 100_000 };
+/** The gateway gives a call 20 s: about 2 s for the token and messages.get, 10 s to download, 6 s for the PDF, 1.5 s to guess whether it is a scan, 0.5 s spare. */
+export const LIMITS = { maxBytes: 10 * 1024 * 1024, downloadMs: 10_000, pdfMs: 6_000, scanMs: 1_500, rssBytes: 512 * 1024 * 1024, pollMs: 250, maxChars: 100_000 };
 
 export type Limits = typeof LIMITS;
 
@@ -41,6 +41,7 @@ const READERS: Readonly<Record<string, Reader>> = {
 };
 
 const PDF_SCRIPT = fileURLToPath(new URL("../../py/pdf_text.py", import.meta.url));
+const SCAN_SCRIPT = fileURLToPath(new URL("../../py/pdf_scan.py", import.meta.url));
 const FEED_JSON = fileURLToPath(new URL("../../feeds/inbox/feed.json", import.meta.url));
 const TOO_BIG = "PDF 太大，读不了";
 const SETUP = "mail 的 Python 环境还没装：在跑宿主的机器上跑 just module setup mail，见 docs/modules/mail.md";
@@ -126,24 +127,24 @@ async function download(gmail: Gmail, { messageId, partId }: Input, limits: Limi
 
 const rssBytes = (pid: number) => new Promise<number>((done) => execFile("ps", ["-o", "rss=", "-p", String(pid)], (error, out) => done(error ? 0 : Number(out.trim()) * 1024)));
 
+type Ran = { stdout: string; stopped?: "slow" | "big" };
+
 /** macOS cannot cap a child's memory with setrlimit, so its RSS is polled. */
-function pdfText(bytes: Buffer, limits: Limits): Promise<Extracted> {
-	const venv = process.env["PSA_MODULE_VENV"] ?? "";
-	if (venv === "" || !existsSync(join(venv, ".psa-lock"))) throw new Error(SETUP);
-	const child = spawn(join(venv, "bin/python"), ["-I", PDF_SCRIPT], { env: { PATH: process.env["PATH"] ?? "", PSA_MODULE_VENV: venv }, stdio: ["pipe", "pipe", "ignore"] });
+function python(venv: string, args: readonly string[], bytes: Buffer, ms: number, limits: Limits): Promise<Ran> {
+	const child = spawn(join(venv, "bin/python"), ["-I", ...args], { env: { PATH: process.env["PATH"] ?? "", PSA_MODULE_VENV: venv }, stdio: ["pipe", "pipe", "ignore"] });
 	return new Promise((done, fail) => {
 		let stdout = "";
-		let stopped: string | undefined;
-		const stop = (why: string) => {
+		let stopped: Ran["stopped"];
+		const stop = (why: NonNullable<Ran["stopped"]>) => {
 			stopped ??= why;
 			child.kill("SIGKILL");
 		};
-		const timer = setTimeout(() => stop(`PDF 太复杂，${limits.pdfMs / 1000} 秒内读不完`), limits.pdfMs);
+		const timer = setTimeout(() => stop("slow"), ms);
 		let checking = false;
 		const poll = setInterval(async () => {
 			if (checking || child.pid === undefined) return;
 			checking = true;
-			if ((await rssBytes(child.pid)) > limits.rssBytes) stop(TOO_BIG);
+			if ((await rssBytes(child.pid)) > limits.rssBytes) stop("big");
 			checking = false;
 		}, limits.pollMs);
 		const settle = () => {
@@ -155,18 +156,42 @@ function pdfText(bytes: Buffer, limits: Limits): Promise<Extracted> {
 		child.stdin.end(bytes);
 		child.on("error", (error) => {
 			settle();
-			fail(new Error(`${SETUP}（${error.message}）`));
+			fail(error);
 		});
 		child.on("close", () => {
 			settle();
-			if (stopped !== undefined) return fail(new Error(stopped));
-			const reply = JSON.parse(stdout.trim().split("\n").at(-1) || "{}");
-			if (reply.error === "encrypted") return fail(new Error("PDF 有密码，读不了"));
-			if (reply.error === "too-big") return fail(new Error(TOO_BIG));
-			if (typeof reply.text !== "string") return fail(new Error("PDF 读不出来，文件可能坏了"));
-			done(reply.scan === true ? { ...forOcr(bytes, ".pdf", reply.pages, reply.text), truncated: reply.truncated === true } : { text: reply.text, pages: reply.pages, truncated: reply.truncated === true });
+			done({ stdout, ...(stopped && { stopped }) });
 		});
 	});
+}
+
+const lastJson = (stdout: string) => JSON.parse(stdout.trim().split("\n").at(-1) || "{}");
+
+async function pdfText(bytes: Buffer, limits: Limits): Promise<Extracted> {
+	const venv = process.env["PSA_MODULE_VENV"] ?? "";
+	if (venv === "" || !existsSync(join(venv, ".psa-lock"))) throw new Error(SETUP);
+	const ran = await python(venv, [PDF_SCRIPT], bytes, limits.pdfMs, limits).catch((error: Error) => {
+		throw new Error(`${SETUP}（${error.message}）`);
+	});
+	if (ran.stopped === "slow") throw new Error(`PDF 太复杂，${limits.pdfMs / 1000} 秒内读不完`);
+	if (ran.stopped === "big") throw new Error(TOO_BIG);
+	const reply = lastJson(ran.stdout);
+	if (reply.error === "encrypted") throw new Error("PDF 有密码，读不了");
+	if (reply.error === "too-big") throw new Error(TOO_BIG);
+	if (typeof reply.text !== "string") throw new Error("PDF 读不出来，文件可能坏了");
+	const read = { text: reply.text, pages: reply.pages, truncated: reply.truncated === true };
+	if (reply.scanCheck === undefined || !(await isScan(venv, bytes, reply.scanCheck, limits))) return read;
+	return { ...forOcr(bytes, ".pdf", read.pages, read.text), truncated: read.truncated };
+}
+
+/** A scan guess that fails, crashes or crosses its own limits means not a scan: the text already read stands, and the call takes at most scanMs longer. */
+async function isScan(venv: string, bytes: Buffer, check: { pages: number[]; need: number }, limits: Limits): Promise<boolean> {
+	try {
+		const ran = await python(venv, [SCAN_SCRIPT, String(check.need), ...check.pages.map(String)], bytes, limits.scanMs, limits);
+		return ran.stopped === undefined && lastJson(ran.stdout).scan === true;
+	} catch {
+		return false;
+	}
 }
 
 /** Counts code points without spreading a 10 MB string into an array. */
