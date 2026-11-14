@@ -18,7 +18,7 @@ import { runModuleCodeAsync } from "../src/modules/run-code.ts";
 import { scanPackage } from "../src/modules/validate.ts";
 import { startFakeGoogle } from "./helpers/fake-google.ts";
 import { FakeInbox, type Letter } from "./helpers/fake-gmail.ts";
-import { brokenImagePdf, formPdf, sharedFormsPdf, textPdf } from "./helpers/text-pdf.ts";
+import { brokenImagePdf, formPdf, hugeFormPdf, sharedFormsPdf, textPdf } from "./helpers/text-pdf.ts";
 import { servedAsHost } from "./helpers/fakes.ts";
 import { createOcr } from "../src/ocr/ocr.ts";
 import type { Ocr } from "../src/ocr/result.ts";
@@ -352,6 +352,24 @@ test("读附件：所有页和 Form 共用一张有几千个 Form、没有图片
 	const started = Date.now();
 	const reply = await w.call({ messageId: "m-1", partId: "1" });
 	assert.deepEqual(reply, { ok: true, output: { name: "shared.pdf", type: "application/pdf", pages: 16, text, truncated: false } });
+	assert.ok(Date.now() - started < 3000, `${Date.now() - started} ms`);
+});
+
+test("读附件：第二页的 Form 里塞了几百万项的 10 MB PDF，猜扫描件再慢再占内存也只多花固定的时间，第一页的字和不猜时一样", async (t) => {
+	const text = "Fasting glucose 5.6 mmol/L, invoice total 1234.56";
+	const w = await attachmentWorld(t, [ann("m-1", [file("huge.pdf", "application/pdf", hugeFormPdf(text, 1240, 4000))])]);
+	const started = Date.now();
+	const reply = await w.call({ messageId: "m-1", partId: "1" });
+	assert.deepEqual(reply, { ok: true, output: { name: "huge.pdf", type: "application/pdf", pages: 2, text, truncated: false } });
+	assert.ok(Date.now() - started < 5000, `${Date.now() - started} ms`);
+});
+
+test("读附件：猜扫描件的那一步卡住时到时限就停下，当不是扫描件，读出的字照常回来", async (t) => {
+	const hang = `#!/bin/sh\ncase "$2" in *pdf_scan.py) exec sleep 30 ;; esac\nexec ${join(realVenv, "bin/python")} "$@"\n`;
+	const w = await attachmentWorld(t, [ann("m-1", [file("scan.pdf", "application/pdf", readFileSync(join(SCANS, "three.pdf")))])], { venv: { fake: hang } });
+	const started = Date.now();
+	const reply = await w.call({ messageId: "m-1", partId: "1" }, w.lowered({ scanMs: 300 }));
+	assert.deepEqual(reply, { ok: true, output: { name: "scan.pdf", type: "application/pdf", pages: 3, text: "", truncated: false } });
 	assert.ok(Date.now() - started < 3000, `${Date.now() - started} ms`);
 });
 
