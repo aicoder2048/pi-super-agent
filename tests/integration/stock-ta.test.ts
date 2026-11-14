@@ -97,7 +97,7 @@ const noteOf = (reply: CodeReply) => {
 test("stock-ta 包通过检查：十一个工具、十个技能、六位专家，纯计算工具的用例都过", () => {
 	const result = scanPackage(PKG);
 	assert.ok(result.ok, JSON.stringify(!result.ok && result.problems));
-	assert.match(summary(result.scan), /^ok stock-ta@0\.1\.0 .*tools=11 skills=10 .*agents=6 evals=\d/);
+	assert.match(summary(result.scan), /^ok stock-ta@0\.1\.0 .*tools=11 skills=11 .*agents=6 evals=\d/);
 	assert.equal(result.scan.manifest.team, "技术分析研究组");
 });
 
@@ -377,10 +377,17 @@ test("quote 收盘以后：没有盘后成交的票（最后一根分钟线 15:5
 	});
 });
 
-test("quote 刚过 16:00：延迟 15 分钟的行情还在常规时段里，日线还不是正式收盘，不回收盘价", async (t) => {
+test("quote 刚过 16:00：延迟 15 分钟的行情还在常规时段里，日线还不是正式收盘，不回收盘价，标 closePending 说已经收盘、正式收盘价还没出来", async (t) => {
 	const q = await quoteFrom(t, "just-closed");
 	assert.equal(q?.["session"], "盘中");
 	assert.equal("close" in (q ?? {}), false);
+	assert.equal(q?.["closePending"], true);
+});
+
+test("quote 盘中和收盘价出来以后都没有 closePending", async (t) => {
+	assert.equal("closePending" in ((await quoteFrom(t, "regular")) ?? {}), false);
+	assert.equal("closePending" in ((await quoteFrom(t, "no-after-hours")) ?? {}), false);
+	assert.equal("closePending" in ((await quoteFrom(t, "saturday")) ?? {}), false);
 });
 
 test("quote 提前收盘日：13:00 收盘，过了行情延迟才回收盘价", async (t) => {
@@ -388,10 +395,11 @@ test("quote 提前收盘日：13:00 收盘，过了行情延迟才回收盘价",
 	const at = async (time: string) => {
 		tool.massive.answer({ status: 200, body: snapshotBody([minuteRow("NVDA", 170, 176, ny("2026-11-27", "12:59"))]) });
 		const [q] = quotesOf(await tool.quote({ symbols: "NVDA", now: new Date(ny("2026-11-27", time)).toISOString() }));
-		return [q?.["session"], q?.["close"]];
+		return [q?.["session"], q?.["close"], q?.["closePending"]];
 	};
-	assert.deepEqual(await at("13:10"), ["盘中", undefined]);
-	assert.deepEqual(await at("13:30"), ["盘后", 170]);
+	assert.deepEqual(await at("12:50"), ["盘中", undefined, undefined]);
+	assert.deepEqual(await at("13:10"), ["盘中", undefined, true]);
+	assert.deepEqual(await at("13:30"), ["盘后", 170, undefined]);
 });
 
 test("quote：超过 10 个代码一行拒绝，不发请求", async (t) => {

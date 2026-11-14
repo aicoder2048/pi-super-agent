@@ -14,7 +14,7 @@ interface Input {
 type Cursor = { historyId: string; at: string };
 
 /** `once`: the next beat no longer reports it, so it is a notice, not an alarm. */
-type Problem = { id: "auth" | "gap" | "no-senders" | "too-many" | "removal-unreadable"; text: string; once?: true };
+type Problem = { id: "auth" | "gap" | "no-senders" | "too-many" | "removal-unreadable" | "wildcard"; text: string; once?: true };
 
 type Reply = { records: MessageRow[]; notices?: { id: string; thread: string; fields: Record<string, string> }[]; cursor?: string; problem?: Problem };
 
@@ -23,6 +23,10 @@ const AUTH: Problem = { id: "auth", text: AUTH_TEXT };
 const NO_SENDERS: Problem = { id: "no-senders", text: "邮件名单是空的，什么都不收。在对话里说「把 a@example.com 加进邮件名单」" };
 const TOO_MANY: Problem = { id: "too-many", text: "邮件名单到了 500 行，宿主一次只读 500 行，划掉的地址可能读不到，所以先不收信。见 docs/modules/mail.md 的「名单太长」" };
 const REMOVAL_UNREADABLE: Problem = { id: "removal-unreadable", text: "邮件名单里有一行划掉的地址读不出来，像它的发件人一律不收。请在对话里把那一行的地址改成 a@example.com 或 @example.com 这样的写法" };
+const wildcard = (texts: readonly string[]): Problem => ({
+	id: "wildcard",
+	text: `邮件名单不认通配符，${texts.join("、")} 什么都不收。要收整个域名，写 ${texts[0]!.slice(texts[0]!.lastIndexOf("@"))} 这样的写法；请在对话里改那一行`,
+});
 const gap = (hours: number): Problem => ({ id: "gap", text: `有 ${hours} 小时没查，一天以前的信没补，请在 Gmail 里看一下`, once: true });
 
 /** The host reads at most this many rows of a collection (READ_LIMIT in src/modules/feed-runner.ts); a test keeps the two equal. */
@@ -31,9 +35,16 @@ const READ_LIMIT = 500;
 const DOMAIN = /^@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
 const ISO = /^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?(Z|[+-]\d{2}:\d{2})?$/;
 
-/** A row's address goes through the same parser as From, so `Ann <ann@example.com>` names ann; anything else is no row. */
-function senderKey(value: unknown): string | undefined {
-	const text = String(value ?? "").trim().toLowerCase();
+/** An address pasted from a chat can carry full-width forms or invisible characters that no From header has. */
+const ZERO_WIDTH = /[\u200b-\u200d\u2060\ufeff]/g;
+const rowText = (value: unknown) => String(value ?? "").normalize("NFKC").replace(ZERO_WIDTH, "").trim().toLowerCase();
+
+/**
+ * A row's address goes through the same parser as From, so `Ann <ann@example.com>` names ann; anything else is no row.
+ * `*` is legal in an address but means a wildcard here, which the list does not support, so it is no row either.
+ */
+function senderKey(text: string): string | undefined {
+	if (text.includes("*")) return undefined;
 	return DOMAIN.test(text) ? text : parseFrom(text)?.address;
 }
 
@@ -55,8 +66,11 @@ function addedAt(value: unknown, now: number): number {
 	return Number.isNaN(at) || at > now ? -Infinity : at;
 }
 
-/** `unreadable` keeps the text of removal rows whose address does not parse, so a letter that looks like one is held back. */
-type Senders = { list: Map<string, boolean>; unreadable: string[] };
+/**
+ * `unreadable` keeps the text of removal rows whose address does not parse, so a letter that looks like one is held back.
+ * `wildcards` keeps the text of added rows written with `*`, so the beat can say why they receive nothing.
+ */
+type Senders = { list: Map<string, boolean>; unreadable: string[]; wildcards: string[] };
 
 /**
  * Rows carry no write time, so a duplicate row cannot be told from a later re-add by its id. A removal on any row of an
@@ -67,16 +81,19 @@ export function senderList(rows: readonly SenderRow[], now: number): Senders {
 	const removed = new Map<string, number>();
 	const added = new Map<string, number>();
 	const unreadable: string[] = [];
+	const wildcards: string[] = [];
 	for (const row of rows) {
-		const key = senderKey(row.fields.address);
-		if (key === undefined && row.fields.removedAt) unreadable.push(String(row.fields.address ?? "").trim().toLowerCase());
+		const text = rowText(row.fields.address);
+		const key = senderKey(text);
+		if (key === undefined && row.fields.removedAt) unreadable.push(text);
+		else if (key === undefined && text.includes("*")) wildcards.push(text);
 		if (key === undefined) continue;
 		const [into, at] = row.fields.removedAt ? [removed, removedUntil(row.fields.removedAt)] : [added, addedAt(row.fields.addedAt, now)];
 		into.set(key, Math.max(into.get(key) ?? -Infinity, at));
 	}
 	const list = new Map([...removed.keys()].map((key) => [key, false]));
 	for (const [key, at] of added) list.set(key, !removed.has(key) || at > removed.get(key)!);
-	return { list, unreadable };
+	return { list, unreadable, wildcards };
 }
 
 export function listed({ list, unreadable }: Senders, address: string): boolean {
@@ -136,7 +153,7 @@ export default async function inbox(input: Input): Promise<Reply> {
 	const rows = input.rows.senders ?? [];
 	if (rows.length >= READ_LIMIT) return { records: [], problem: TOO_MANY };
 	const senders = senderList(rows, now);
-	if (![...senders.list.values()].includes(true)) return { records: [], problem: NO_SENDERS };
+	if (![...senders.list.values()].includes(true)) return { records: [], problem: senders.wildcards.length > 0 ? wildcard(senders.wildcards) : NO_SENDERS };
 	const token = await accessToken(input.settings);
 	if (token === undefined) return { records: [], problem: AUTH };
 	const gmail = gmailClient(input.settings.baseUrl, token);
@@ -158,6 +175,7 @@ export default async function inbox(input: Input): Promise<Reply> {
 		notices: records.map((row) => ({ id: row.id, thread: row.threadId || row.id, fields: released(row) })),
 		cursor: JSON.stringify({ historyId: found.historyId, at: new Date(now).toISOString() } satisfies Cursor),
 		// A gap is said once and wins this beat; a removal row still unreadable is said again on the next one.
+		...(senders.wildcards.length > 0 && { problem: wildcard(senders.wildcards) }),
 		...(senders.unreadable.length > 0 && { problem: REMOVAL_UNREADABLE }),
 		...(away > DAY_MS && { problem: gap(Math.floor(away / 3_600_000)) }),
 	};

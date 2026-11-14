@@ -21,7 +21,9 @@ export default async function quote(input: unknown) {
 	});
 	const bySymbol = new Map(quotes.map((q) => [q.symbol, q]));
 	const today = sessionAt(now).nyDate;
-	const endedToday = now >= regularCloseAt(now) + CLOSE_SETTLES_MS;
+	const closeAt = regularCloseAt(now);
+	const endedToday = now >= closeAt + CLOSE_SETTLES_MS;
+	const settling = now >= closeAt && !endedToday;
 	return {
 		quotes: symbols.flatMap((symbol) => bySymbol.get(symbol) ?? []).map(({ dayClose, dayOpen: _o, dayHigh: _h, dayLow: _l, ...q }) => {
 			const at = Date.parse(q.at);
@@ -37,6 +39,8 @@ export default async function quote(input: unknown) {
 				at: `${nyDate} ${nyTime(at)} 美东`,
 				session: LABEL[session],
 				...(ended && dayClose !== null && { close: dayClose, closeDate: nyDate, closeChangePct: changePct(dayClose, q.prevClose) }),
+				// The session is over but the late feed still shows regular-session prints, so the label alone reads as still open.
+				...(!earlier && settling && { closePending: true }),
 			};
 		}),
 		missing: symbols.filter((s) => !bySymbol.has(s)),
