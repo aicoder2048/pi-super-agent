@@ -176,8 +176,12 @@ export interface FeedInput {
 export interface Collected {
 	/** Rows for the feed's `into` collection. `id` makes a repeated row a no-op. */
 	records?: readonly ({ id: string } & { readonly [field: string]: Json })[];
-	/** Values for the placeholders of the feed's `notice`. One trigger per entry, deduped by `id`. */
-	notices?: readonly { id: string; thread?: string; fields: Readonly<Record<string, string>> }[];
+	/**
+	 * Values for the placeholders of the feed's `notice`. One trigger per entry, deduped by `id`. `threadScope: "module"` puts the
+	 * thread under the module (`thr_<module>:<thread>`) instead of the feed, so the module's feeds share it: a trigger from one feed
+	 * reaches the task another feed's trigger opened on the same thread.
+	 */
+	notices?: readonly { id: string; thread?: string; threadScope?: "module"; fields: Readonly<Record<string, string>> }[];
 	/**
 	 * Lines the host posts to the user before any trigger, with no Router in between (ADR-0017), deduped by `id`. A `day-move`
 	 * condition on `fold.key` that fires the same beat in the same direction joins this line, so one move reads as one line.
