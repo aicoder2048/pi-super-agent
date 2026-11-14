@@ -16,7 +16,7 @@
 - 每次都要遵守的短规则（例如「读过的文件不重读」）写进提示词。
 - 篇幅长、只有某些任务用得上的知识（例如接口速查、派活做法）写成技能。`description` 要写清什么时候该读，模型靠它决定读不读。
 
-技能要生效有两个前提：拿到它的助手或成员要有 `read` 工具（`tests/first-teams.test.ts` 里有断言）；`SKILL.md` 要符合 Pi 的格式。`name` 只用小写字母、数字和连字符，最多 64 字符，最好和目录名一致；`description` 最多 1024 字符（见 Pi 的 `docs/skills.md`）。
+技能要生效有两个前提：拿到它的助手或成员要有 `read` 工具（`tests/unit/first-teams.test.ts` 里有断言）；`SKILL.md` 要符合 Pi 的格式。`name` 只用小写字母、数字和连字符，最多 64 字符，最好和目录名一致；`description` 最多 1024 字符（见 Pi 的 `docs/skills.md`）。
 
 例子：pi-pi 模块的 `pi-pi-desk`（给助手的派活做法）和 `pi-extension-basics`（扩展接口速查和原文索引）都是技能。九位专家的 `agents/*.md` 是提示词。
 
@@ -78,7 +78,7 @@ Pi 本身有两种技能范围；Super Agent 不用这两种，用的是模块�
 2. 写好 `name` 和 `description`。`description` 写清「什么任务、什么时候读」，例如「动手前先读」或「成员不用读」。
 3. 依据外部文档提炼的知识，写明依据的版本和原文位置，并告诉读者版本不同时以原文为准。
 4. 长文档配一个章节索引，并写清怎么只读一节。注意 Pi 的 `grep` 工具用 ripgrep 正则：「或」写 `|`，不写 `\|`。
-5. 加测试。参考 `tests/first-teams.test.ts`：
+5. 加测试。参考 `tests/unit/first-teams.test.ts`：
    - 技能能被模块加载，助手和成员都拿得到。
    - 技能里写到的 `pi.*` / `ctx.*` 接口在本机 Pi 的 `types.d.ts` 里都有。
    - 索引里每一项都是原文里真实存在的标题。

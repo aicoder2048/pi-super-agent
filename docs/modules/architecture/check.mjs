@@ -98,7 +98,7 @@ check("an update may add or rename a field and may not change a unit", () => {
 });
 
 check("the lifecycle, access and validator tests pass", () => {
-  const tests = ["lifecycle", "protocol", "validate"].map((name) => `../../../tests/module-${name}.test.ts`);
+  const tests = ["unit/module-lifecycle", "unit/module-protocol", "integration/module-validate"].map((name) => `../../../tests/${name}.test.ts`);
   for (const test of tests) read(test);
   try {
     const output = node(["--test", ...tests]);

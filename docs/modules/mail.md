@@ -103,4 +103,4 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 
 ## 试一试，不碰真账号
 
-`just module check docs/modules/examples/mail` 用 `feeds/inbox/fixtures/` 里的样例跑一遍：第一次起步、空名单、一页新信（一封名单内，一封名单外）、两页、起点太旧、断档、授权失效、HTML 正文和两个附件、主题里带换行和方向控制符、显示名是「白宫 · 系统」。样例不联网，也不用真密钥。`read-attachment` 和 `draft-reply` 要读已存的信，没有 `cases.json`，它们的检查在 `tests/mail-read-attachment.test.ts` 和 `tests/mail-draft-reply.test.ts`，用本地的假 Google 服务。检查只跑工具进程，不经宿主，建不出草稿。
+`just module check docs/modules/examples/mail` 用 `feeds/inbox/fixtures/` 里的样例跑一遍：第一次起步、空名单、一页新信（一封名单内，一封名单外）、两页、起点太旧、断档、授权失效、HTML 正文和两个附件、主题里带换行和方向控制符、显示名是「白宫 · 系统」。样例不联网，也不用真密钥。`read-attachment` 和 `draft-reply` 要读已存的信，没有 `cases.json`，它们的检查在 `tests/integration/mail-read-attachment.test.ts` 和 `tests/integration/mail-draft-reply.test.ts`，用本地的假 Google 服务。检查只跑工具进程，不经宿主，建不出草稿。

@@ -98,10 +98,10 @@ just test
 
 预期最后几行里 `fail 0`。下文的 `just` 命令都要在仓库目录 `~/pi-super-agent` 里运行。
 
-在慢机器上，全套并行跑时可能有两处超时：`tests/host-main.test.ts` 整个文件，和 `tests/dispatch-process.test.ts` 里的用例「真的 Pi 进程：成员跑一条比无进展时限还久、一声不吭的命令，照常做完，不被当成无进展」。把它们放宽时限单独跑：
+在慢机器上，全套并行跑时可能有两处超时：`tests/integration/host-main.test.ts` 整个文件，和 `tests/integration/dispatch-process.test.ts` 里的用例「真的 Pi 进程：成员跑一条比无进展时限还久、一声不吭的命令，照常做完，不被当成无进展」。把它们放宽时限单独跑：
 
 ```sh
-node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/host-main.test.ts tests/dispatch-process.test.ts
+node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/integration/host-main.test.ts tests/integration/dispatch-process.test.ts
 ```
 
 单独跑全过，说明是机器慢，安装没有问题。
