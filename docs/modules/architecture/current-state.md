@@ -2,6 +2,8 @@
 
 Repo: this repository, HEAD `3a98800` (includes #27 module switches, #77 source panel, #78 redeploy). Line numbers are from that commit. Everything below was read from code; nothing was run.
 
+This is a snapshot of that commit, kept as the baseline the design in `design.md` started from. Since then the modules moved to the new layout, us-market retired and its quotes and alerts moved into stock-ta (#124), and toy-market was deleted (#130). The repo now ships `modules/module-builder` and `modules/pi-pi`; stock-ta and mail live under `docs/modules/examples/`. For how modules work today, read `docs/modules/module-user-guide.md`.
+
 ## Overview
 
 A **module** is a folder with a `module.json` that the host reads once, at startup, and turns into one immutable registry object, `Modules` (src/modules.ts:227). That object is the only thing that knows about modules. At wiring time it is taken apart: the kernel gets a frozen `DomainBook` plus four closures; the Router gets two prompt strings baked into its system prompt; the Worker executor gets a `kitFor` closure; the feed and timer machinery get their specs; the web page gets a static "关注的来源" list. Nothing reloads, watches files, or swaps any of these at runtime. Every module change (add, remove, enable, edit a rule, change a watchlist) needs a host restart, and in production that means `just redeploy` (uninstall and reinstall the launchd service), which also kills running Workers and members.

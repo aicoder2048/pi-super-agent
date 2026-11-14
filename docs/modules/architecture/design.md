@@ -158,8 +158,8 @@ webhook 不开公网入口。`webhook` 连接器挂在已有的网页服务上�
 
 | 今天的入口，或样例里的 feed | 连接器 | 模块里的 feed |
 |---|---|---|
-| 宿主里运行的行情 feed（us-market） | 没有 | `us-market/quotes`，一段联网的代码取报价，写进 `quotes`，发行情触发 |
-| 收件箱投递（toy-market） | `inbox` | `toy-market/ticks`，用 `ignore` 滤掉小波动 |
+| 宿主里运行的行情 feed（us-market，已退休，#124） | 没有 | `stock-ta/quotes`，一段联网的代码取报价，写进 `quotes`，到档时发提醒和触发 |
+| 收件箱投递 | `inbox` | 一个外部进程投进来的正文，用 `ignore` 滤掉不要的 |
 | 定时器 | `timer` | 只有 `every` 和一句 `notice` |
 | 网盘体检报告、医院邮件 | `google-drive`、`mail` | 原件进 `documents`，发一条触发 |
 | 设备数据 | `webhook` | 一段不联网的代码把厂商格式转成读数 |
@@ -265,7 +265,7 @@ module.json: unknown key "descripton" (known keys: schema, name, version, title,
 
 ## 7. 从现在走到那里
 
-**新旧两种布局共存。** 今天的三个模块不符合新布局。规则只有一条。`module.json` 里写着 `"schema": 1` 的文件夹是新布局，交给新的扫描。别的照旧交给今天的加载器，行为不变。一个模块在一步里整个转换。最后一个模块转换时，同一步删掉旧加载器。
+**新旧两种布局共存。** 写这份设计时仓库自带的三个模块（pi-pi、toy-market、us-market）不符合新布局。之后 pi-pi 转成了新布局，us-market 退休、行情和提醒并进 stock-ta（#124），toy-market 删掉了（#130）。规则只有一条。`module.json` 里写着 `"schema": 1` 的文件夹是新布局，交给新的扫描。别的照旧交给今天的加载器，行为不变。一个模块在一步里整个转换。最后一个模块转换时，同一步删掉旧加载器。
 
 | 步骤 | 内容 | 做完以后你看得见的 |
 |---|---|---|

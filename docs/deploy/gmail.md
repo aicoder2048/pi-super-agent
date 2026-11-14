@@ -127,7 +127,7 @@ just modules
 just service-status
 ```
 
-记下第一行的 SHA，回退时要用。`git status --short` 应该什么都不打印，否则第 2 步的快进会停下。`just modules` 里 stock-ta、module-builder、pi-pi 运行中，us-market、toy-market 已停用，还没有 `mail`。`just service-status` 写着运行中，心跳在一分钟以内。
+记下第一行的 SHA，回退时要用。`git status --short` 应该什么都不打印，否则第 2 步的快进会停下。`just modules` 里 stock-ta、module-builder、pi-pi 运行中，还没有 `mail`。`just service-status` 写着运行中，心跳在一分钟以内。
 
 再在 Telegram 上问一句「NVDA 的支撑阻力在哪」，记下从发问到收到汇报的分钟数和汇报里的数据时间。第 3 步换完代码后再问一次，两次都要有汇报和数据时间（旧 Mac 上一份技术分析汇报约两分钟）。
 
