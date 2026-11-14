@@ -1,5 +1,6 @@
-import { readHistory } from "../../bars.ts";
+import { readHistory, readPeaks } from "../../bars.ts";
 import { pastLeans, writeHits } from "../../hits.ts";
+import { parseHoldings, peakKey, type Holding, type HoldingRow } from "../../holdings.ts";
 import { isTradingDay, sessionAt } from "../../market-days.ts";
 import { oneLine, snapshot, type Quote } from "../../massive.ts";
 import { parseRuleLevels, quietAt, VIXY, WATCH_RULES, WHIPSAW, type Lean, type LevelRow } from "../../watch-rules.ts";
@@ -8,15 +9,18 @@ import { newDay, watch, type DayState, type History } from "./watch.ts";
 
 interface Input {
 	settings: { baseUrl: string };
-	rows: { watchlist?: WatchRow[]; "rule-levels"?: LevelRow[] };
+	rows: { watchlist?: WatchRow[]; "rule-levels"?: LevelRow[]; holdings?: HoldingRow[] };
 	cursor: string | null;
 	now: string;
 }
 
-/** The day's grading state (bands reached, hits) plus what the feed reads once a day: daily-bar history and whipsaw leans. */
-type Cursor = DayState & { failures: number; lastQuote: { quotedAt: string | null; seenAt: string }; history: Record<string, History | null>; past: Record<string, Lean[]> };
+/**
+ * The day's grading state (bands reached, hits) plus what the feed reads once a day: daily-bar history, whipsaw leans, and the
+ * holdings' peaks under `peakKey`.
+ */
+type Cursor = DayState & { failures: number; lastQuote: { quotedAt: string | null; seenAt: string }; history: Record<string, History | null>; past: Record<string, Lean[]>; peaks: Record<string, number | null> };
 
-type Problem = { id: "no-key" | "massive-down" | "stale" | "bad-level" | "hits-file"; text: string };
+type Problem = { id: "no-key" | "massive-down" | "stale" | "bad-level" | "bad-holding" | "hits-file"; text: string };
 const GUIDE = "docs/modules/stock-ta.md";
 const FAILURES_BEFORE_PROBLEM = 5;
 const STALE_MS = 20 * 60_000;
@@ -24,6 +28,8 @@ const NO_KEY: Problem = { id: "no-key", text: `没有设置 POLYGON_API_KEY，�
 const STALE: Problem = { id: "stale", text: `交易时段里 ${STALE_MS / 60_000} 分钟没有新的报价（行情本来就延迟 15 分钟，这是在那之外），到档提醒和你设的条件可能停了；Massive 可能在维护，或者套餐变了` };
 
 const badLevel = (rows: readonly string[]): Problem => ({ id: "bad-level", text: `rule-levels 第 ${rows.join("、")} 行不生效：规则不在盯盘规则表里，或层级不在 0 到 6，或门槛不是 0 到 100 之间的数，或让某只票的第一档门槛不低于第二档；加一行同样的 rule 和 symbol 写上 removedAt 或写对的值就清掉；其余的改动照常算` });
+
+const badHolding = (rows: readonly string[]): Problem => ({ id: "bad-holding", text: `holdings 第 ${rows.join("、")} 行不生效：没有成本价（要大于 0 的数），或止损价不是正数，或止损百分比不在 0 到 100 之间，或建仓日期不是 YYYY-MM-DD；这几只票的持仓规则先停。加一行同样的 symbol，写对的值或写上 removedAt 就清掉；其余的持仓照常算` });
 
 const hitsFile = (error: unknown): Problem => ({ id: "hits-file", text: `当天命中的文件没写成（${error instanceof Error ? error.message : String(error)}），提醒和触发照发，「今天有哪些信号」暂时看不到最新的；下一轮再写` });
 
@@ -43,9 +49,9 @@ function fresh(q: Quote, today: string): boolean {
 
 function cursorFor(raw: string | null, today: string, now: string, dataDir: string): Cursor {
 	const saved = raw === null ? undefined : (JSON.parse(raw) as Partial<Cursor>);
-	if (saved?.date === today) return { ...newDay(today), failures: 0, lastQuote: { quotedAt: null, seenAt: now }, history: {}, past: {}, ...saved };
+	if (saved?.date === today) return { ...newDay(today), failures: 0, lastQuote: { quotedAt: null, seenAt: now }, history: {}, past: {}, peaks: {}, ...saved };
 	const past = pastLeans(dataDir, today, WHIPSAW.days, WATCH_RULES.filter((r) => "whipsaw" in r).map((r) => r.id));
-	return { ...newDay(today), failures: 0, lastQuote: { quotedAt: null, seenAt: now }, history: {}, past };
+	return { ...newDay(today), failures: 0, lastQuote: { quotedAt: null, seenAt: now }, history: {}, past, peaks: {} };
 }
 
 function lastQuote(cursor: Cursor, quotes: readonly Quote[], now: string): Cursor["lastQuote"] {
@@ -67,8 +73,20 @@ function withHistory(cursor: Cursor, symbols: readonly string[], dataDir: string
 	}
 }
 
+/** Like history: once a day per holding, again when its `boughtAt` changes; a missing database leaves drawdown off for the beat. */
+function withPeaks(cursor: Cursor, holdings: readonly Holding[], dataDir: string): void {
+	const missing = holdings.filter((h) => !(peakKey(h) in cursor.peaks));
+	if (missing.length === 0) return;
+	try {
+		Object.assign(cursor.peaks, readPeaks(dataDir, missing, cursor.date) ?? {});
+	} catch {
+		return;
+	}
+}
+
 export default async function quotes(input: Input) {
-	const watched = [...new Set([...listedSymbols(input.rows.watchlist ?? []), "QQQ", "SPY"])];
+	const listed = listedSymbols(input.rows.watchlist ?? []);
+	const watched = [...new Set([...listed, "QQQ", "SPY"])];
 	const symbols = [...watched, VIXY].sort();
 	const key = process.env.POLYGON_API_KEY ?? "";
 	if (key === "") return { records: [], problem: NO_KEY };
@@ -89,15 +107,20 @@ export default async function quotes(input: Input) {
 	cursor.lastQuote = lastQuote(cursor, quotes, input.now);
 	const stale = session.phase === "regular" && isTradingDay(today) && nowMs - Date.parse(cursor.lastQuote.seenAt) >= STALE_MS;
 	const { levels, bad } = parseRuleLevels(input.rows["rule-levels"] ?? []);
-	if (quotes.length > 0) withHistory(cursor, quotes.map((q) => q.symbol), dataDir);
-	const beat = watch(cursor, quotes, { levels, history: cursor.history, past: cursor.past, quiet: quietAt(nowMs, session.phase === "regular") });
+	const { holdings, bad: badHoldings } = parseHoldings(input.rows.holdings ?? [], listed);
+	if (quotes.length > 0) {
+		withHistory(cursor, quotes.map((q) => q.symbol), dataDir);
+		withPeaks(cursor, [...holdings.values()], dataDir);
+	}
+	const peaks = Object.fromEntries([...holdings.values()].map((h) => [h.symbol, cursor.peaks[peakKey(h)]]));
+	const beat = watch(cursor, quotes, { levels, history: cursor.history, past: cursor.past, quiet: quietAt(nowMs, session.phase === "regular"), holdings, peaks });
 	let written: Problem | undefined;
 	try {
 		if (cursor.hits.length > 0) writeHits(dataDir, "quotes", today, cursor.hits);
 	} catch (error) {
 		written = hitsFile(error);
 	}
-	const problem = stale ? STALE : bad.length > 0 ? badLevel(bad) : written;
+	const problem = stale ? STALE : bad.length > 0 ? badLevel(bad) : badHoldings.length > 0 ? badHolding(badHoldings) : written;
 	return {
 		records: quotes.filter((q) => watched.includes(q.symbol)).map(({ dayClose: _c, dayOpen: _o, dayHigh: _h, dayLow: _l, ...q }) => ({ id: `${q.symbol}@${q.at}`, ...q })),
 		alerts: beat.alerts,

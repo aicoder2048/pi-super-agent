@@ -6,6 +6,7 @@
 import { badgeAlerts, type BadgeAlert } from "../../badges.ts";
 import { nyTime, regularCloseAt, regularOpenAt } from "../../market-days.ts";
 import { opened, resonate, type Hit } from "../../hits.ts";
+import { entered, HOLDING_RULES, type Holding } from "../../holdings.ts";
 import type { Quote } from "../../massive.ts";
 import { COMBOS, effective, lineOf, opensTask, scopeOf, TIERS, VIXY, WATCH_RULES, WHIPSAW, type Effective, type Lean, type Line, type Plan, type RuleLevels, type WatchRule } from "../../watch-rules.ts";
 
@@ -23,6 +24,10 @@ export type Context = {
 	/** Leans of whipsaw rules on the trading days before today inside the window, oldest first, keyed `<rule>:<symbol>`. */
 	past: Readonly<Record<string, readonly Lean[]>>;
 	quiet: boolean;
+	/** The user's holdings on watchlist symbols (holdings.ts). */
+	holdings?: ReadonlyMap<string, Holding>;
+	/** Per symbol, the highest daily high its holding measures from, through yesterday; null when the bars have none. */
+	peaks?: Readonly<Record<string, number | null | undefined>>;
 };
 export type Alert = { id: string; text: string; at: string; fold?: { key: string; side: Side }; push?: "silent" } | BadgeAlert;
 /** `threadScope: "module"`: the module's feeds share the symbol's thread for the day, so a close-of-day hit joins the task a band opened. */
@@ -42,8 +47,9 @@ type Finding = { lean: Lean | null; fact: string };
 type Seen = { history: History | null | undefined; qqq: Quote | undefined };
 type Detect = (q: Quote, threshold: number, seen: Seen) => Finding | undefined;
 
-/** One detector per rule that is not a move band; the table says where each runs and how much it tells the user. */
-type QuotesRule = Extract<(typeof WATCH_RULES)[number], { feed: "quotes" }>["id"];
+type HoldingRule = Extract<(typeof WATCH_RULES)[number], { holding: true }>;
+/** One detector per rule that is not a move band or a holding rule; the table says where each runs and how much it tells the user. */
+type QuotesRule = Exclude<Extract<(typeof WATCH_RULES)[number], { feed: "quotes" }>["id"], HoldingRule["id"]>;
 const DETECTORS: Record<Exclude<QuotesRule, "move-1" | "move-2">, Detect> = {
 	volume(q, threshold, { history }) {
 		const average = history?.avgVolume20;
@@ -154,7 +160,7 @@ function rules(day: DayState, q: Quote, qqq: Quote | undefined, ctx: Context): G
 	const scope = scopeOf(q.symbol);
 	const graded: Graded[] = [];
 	// Hits in one beat happen together; grading the quieter ones first lets the louder one be the second hit that escalates.
-	const ordered = WATCH_RULES.filter((r): r is Extract<(typeof WATCH_RULES)[number], { feed: "quotes" }> & { id: Exclude<QuotesRule, "move-1" | "move-2"> } => r.feed === "quotes" && r.id !== "move-1" && r.id !== "move-2").map((rule) => ({ rule, e: effective(rule, q.symbol, scope, ctx.levels) })).sort((a, b) => a.e.level - b.e.level);
+	const ordered = WATCH_RULES.filter((r): r is Extract<(typeof WATCH_RULES)[number], { feed: "quotes" }> & { id: Exclude<QuotesRule, "move-1" | "move-2"> } => r.feed === "quotes" && !("holding" in r) && r.id !== "move-1" && r.id !== "move-2").map((rule) => ({ rule, e: effective(rule, q.symbol, scope, ctx.levels) })).sort((a, b) => a.e.level - b.e.level);
 	for (const { rule, e } of ordered) {
 		const id = `${rule.id}:${q.symbol}:${day.date}`;
 		if (e.threshold === undefined || day.hits.some((h) => h.id === id)) continue;
@@ -196,6 +202,42 @@ function rules(day: DayState, q: Quote, qqq: Quote | undefined, ctx: Context): G
 	return graded;
 }
 
+const HOLDING_ROWS = WATCH_RULES.filter((r): r is HoldingRule => "holding" in r);
+
+/**
+ * The holding rules have no lean: the holding is the user's position, not market evidence, so they neither escalate other hits
+ * nor get escalated. Their trigger goes to the symbol's own holding thread, so its question card does not wait behind a band's
+ * analysis, and names no cost, stop or peak (design section 9). Rules a symbol enters in one beat give one line, as bands do: the
+ * highest level names it and the rest follow as 同时, it rings when any of them rings, and only the highest can open a task.
+ * Each entry is recorded as its own hit, so none of them fires again that day.
+ */
+function holdingRules(day: DayState, q: Quote, ctx: Context): Graded[] {
+	const holding = ctx.holdings?.get(q.symbol);
+	if (holding === undefined) return [];
+	const today = { prevClose: q.prevClose, price: q.price, low: q.dayLow ?? q.price, high: q.dayHigh ?? q.price };
+	const entries = HOLDING_ROWS.flatMap((rule) => {
+		const e = effective(rule, q.symbol, scopeOf(q.symbol), ctx.levels);
+		const id = `${rule.id}:${q.symbol}:${day.date}`;
+		if (e.threshold === undefined || day.hits.some((h) => h.id === id)) return [];
+		const entry = entered(rule.id, holding, e.threshold, today, ctx.peaks?.[q.symbol]);
+		return entry === undefined ? [] : [{ rule, e, id, entry, spec: HOLDING_RULES[rule.id] }];
+	}).sort((x, y) => y.e.level - x.e.level);
+	if (entries.length === 0) return [];
+	const [lead, rest] = [entries[0]!, entries.slice(1)];
+	const move = moveOf(q);
+	const tail = `现价 ${q.price.toFixed(2)}，当天${move >= 0 ? "涨" : "跌"} ${signed(move)}%。${stamp(q)}`;
+	const text = `${q.symbol} ${lead.spec.head(lead.entry)}${rest.length === 0 ? "" : `；同时${rest.map((r) => r.spec.head(r.entry)).join("、")}`}，${tail}`;
+	const notice = { line: `${q.symbol} ${lead.spec.notice}${rest.length === 0 ? "" : `，同时${rest.map((r) => r.spec.notice).join("、")}`}。${tail}`, thread: `${q.symbol}:${day.date}:holding` };
+	const lines = entries.map((r) => r.e.line);
+	const line: Line = lines.includes("ring") ? "ring" : lines.includes("silent") ? "silent" : lead.e.line;
+	return entries.map((r): Graded => {
+		const own = r === lead;
+		const hit: Hit = { id: r.id, rule: r.rule.id, symbol: q.symbol, date: day.date, at: q.at, lean: null, fact: r.spec.fact(r.entry), level: r.e.level, text: own ? text : `${q.symbol} ${r.spec.head(r.entry)}，${tail}`, ...(own && { notice }) };
+		day.hits.push(hit);
+		return { hit, delivery: own ? { line, plan: r.rule.plan } : { line: "none" }, quote: q };
+	});
+}
+
 function deliver({ hit, delivery }: Graded, ctx: Context, out: Beat): void {
 	out.hits.push(hit);
 	const loud = delivery.line === "silent" || delivery.line === "ring";
@@ -206,7 +248,7 @@ function deliver({ hit, delivery }: Graded, ctx: Context, out: Beat): void {
 		return;
 	}
 	if (loud) out.alerts.push({ id: hit.id, text: hit.text, at: hit.at, ...(delivery.line === "silent" && { push: "silent" as const }) });
-	if (task) out.notices.push({ id: hit.id, thread: `${hit.symbol}:${hit.date}`, threadScope: "module", fields: { line: hit.text, rule: hit.rule, level: String(hit.level), plan: delivery.plan! } });
+	if (task) out.notices.push({ id: hit.id, thread: hit.notice?.thread ?? `${hit.symbol}:${hit.date}`, threadScope: "module", fields: { line: hit.notice?.line ?? hit.text, rule: hit.rule, level: String(hit.level), plan: delivery.plan! } });
 }
 
 /** Mutates `day`: its new hits are appended and the bands it reached are remembered. */
@@ -215,7 +257,7 @@ export function watch(day: DayState, quotes: readonly Quote[], ctx: Context): Be
 	const ordered = [...quotes.filter((q) => isIndex(q.symbol)), ...quotes.filter((q) => !isIndex(q.symbol))];
 	for (const q of ordered) if (q.symbol !== VIXY) bands(day, q, ctx, out);
 	const qqq = quotes.find((q) => q.symbol === "QQQ");
-	for (const q of quotes) for (const g of rules(day, q, qqq, ctx)) deliver(g, ctx, out);
+	for (const q of quotes) for (const g of [...rules(day, q, qqq, ctx), ...holdingRules(day, q, ctx)]) deliver(g, ctx, out);
 	out.alerts.push(...badgeAlerts(day.hits, out.hits));
 	return out;
 }

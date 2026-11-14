@@ -11,7 +11,7 @@ export type ScanPlan =
 	| { kind: "sleep" };
 
 /** A complete daily bar in ta's own bars table, which the scan feed reads after the swap. */
-export type DailyRow = { symbol: string; date: string; close: number; volume: number };
+export type DailyRow = { symbol: string; date: string; close: number; volume: number; high?: number };
 
 export type TaCall = { cmd: string; input: Record<string, unknown>; key?: string; base?: string; db?: string; seen: { next: string | null; journal: boolean; lock: boolean } };
 
@@ -68,7 +68,7 @@ if (plan.kind === "ok" && plan.bars) {
 	const store = new DatabaseSync(db);
 	store.exec("DROP TABLE IF EXISTS bars; CREATE TABLE bars (symbol TEXT, timeframe TEXT, session_date TEXT, start_ms INTEGER, open REAL, high REAL, low REAL, close REAL, volume REAL, complete INTEGER)");
 	const insert = store.prepare("INSERT INTO bars VALUES (?, '1d', ?, ?, ?, ?, ?, ?, ?, 1)");
-	for (const b of plan.bars) insert.run(b.symbol, b.date, Date.parse(b.date + "T14:30:00Z"), b.close, b.close, b.close, b.close, b.volume);
+	for (const b of plan.bars) insert.run(b.symbol, b.date, Date.parse(b.date + "T14:30:00Z"), b.close, b.high ?? b.close, b.close, b.close, b.volume);
 	store.close();
 } else write(plan.rows ?? symbols.length);
 const errors = plan.kind === "dividends" ? symbols.map((s) => ({ symbol: s, error: { code: "DIVIDENDS_UNAVAILABLE", message: "分红不可用，当前仅拆股复权。" } })) : plan.kind === "down" ? symbols.map((s) => error(s, "MARKET_UNAVAILABLE")) : plan.kind === "partial" ? plan.failing.map((s) => error(s, "MARKET_DATA_INVALID")) : [];

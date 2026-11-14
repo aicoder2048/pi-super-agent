@@ -12,7 +12,10 @@ import { instanceData } from "../src/modules/instance-data.ts";
 import { fakeTa, type DailyRow } from "./helpers/fake-ta.ts";
 import type { Alert, Badge } from "../src/modules/protocol.ts";
 import { readHits, writeHits, type Hit } from "../docs/modules/examples/stock-ta/hits.ts";
-import { quietAt } from "../docs/modules/examples/stock-ta/watch-rules.ts";
+import { parseRuleLevels, quietAt } from "../docs/modules/examples/stock-ta/watch-rules.ts";
+import { newDay, watch } from "../docs/modules/examples/stock-ta/feeds/quotes/watch.ts";
+import { parseHoldings } from "../docs/modules/examples/stock-ta/holdings.ts";
+import type { Quote } from "../docs/modules/examples/stock-ta/massive.ts";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { servedAsHost } from "./helpers/fakes.ts";
@@ -76,6 +79,7 @@ async function scanFeed(t: TestContext, { key = KEY, viaVenv = false, installed 
 		},
 		watch: (...symbols: string[]) => data.write("stock-ta", entry().components, "watchlist", symbols.map((symbol) => ({ symbol })), "使用者口述", "test"),
 		level: (fields: Record<string, unknown>) => data.write("stock-ta", entry().components, "rule-levels", [fields], "使用者口述", "test"),
+		hold: (fields: Record<string, unknown>) => data.write("stock-ta", entry().components, "holdings", [fields], "使用者口述", "test"),
 		runs: () => data.query("stock-ta", entry().components, "scan-runs", {}, "test").rows,
 		cursor: () => data.feedState("stock-ta", "stock-ta/scan").cursor,
 		setCursor: (cursor: string) => data.saveFeedState("stock-ta", "stock-ta/scan", { cursor }),
@@ -471,7 +475,7 @@ test("规则：stock-ta/scan 的触发和报价 feed 一样走 watch-task，ma-b
 	assert.deepEqual(modules.rulesFor("stock-ta/quotes"), ["stock-ta/watch-task"]);
 	assert.equal(modules.allRules().some((r) => r.id === "stock-ta/ma-break"), false);
 	const scan = JSON.parse(readFileSync(join(PKG, "feeds", "scan", "feed.json"), "utf8"));
-	assert.deepEqual([scan.every, scan.settings.signals, scan.reads], ["5m", undefined, ["watchlist", "rule-levels"]]);
+	assert.deepEqual([scan.every, scan.settings.signals, scan.reads], ["5m", undefined, ["watchlist", "rule-levels", "holdings"]]);
 });
 
 test("一直扫不成功：同一个交易日的几拍都报 scan-failed；过了美东午夜还按那个交易日（收盘加 16 分钟）补扫，换上了才清掉", async (t) => {
@@ -675,4 +679,32 @@ test("第 3 期以前的 cursor（没有 hits）：那个交易日算扫过、�
 	feed.at("2026-11-13T15:00:00.000Z");
 	await feed.tick();
 	assert.deepEqual([feed.scans().length, feed.digests()], [1, []]);
+});
+
+test("持仓的状态：昨天收盘和今天收盘都在止损线、成本价下，收盘小结写一句「仍在…」，不另发提醒", async (t) => {
+	const feed = await scannedOnce(t);
+	feed.hold({ symbol: "NVDA", cost: 150, stopPrice: 138 });
+	const bars: DailyRow[] = [
+		...Array.from({ length: 20 }, (_, i) => ({ symbol: "NVDA", date: `2026-10-${String(i + 1).padStart(2, "0")}`, close: 150, high: 160, volume: 1_000_000 })),
+		{ symbol: "NVDA", date: "2026-11-11", close: 137, high: 140, volume: 1_000_000 },
+		{ symbol: "NVDA", date: "2026-11-12", close: 136, high: 138, volume: 1_000_000 },
+	];
+	feed.setPlan({ kind: "ok", signals: [ma("NVDA", 50, "bearish", "2026-11-12")], bars });
+	await feed.tick();
+	assert.match(feed.digests()[0]?.text ?? "", /；NVDA 仍在止损线下、成本价下。/);
+	assert.deepEqual(feed.lines().map((a) => a.externalId), ["R-MA-2-50:down:NVDA:2026-11-12"]);
+});
+
+test("免打扰时留下的止损触发由收盘小结补发时，仍走持仓线程，正文不带成本和止损价", async (t) => {
+	const feed = await scannedOnce(t);
+	const day = newDay("2026-11-12");
+	const holdings = parseHoldings([{ id: "1", fields: { symbol: "NVDA", cost: 150, stopPrice: 138 } }], ["NVDA"]).holdings;
+	const quote: Quote = { symbol: "NVDA", price: 137.5, prevClose: 145, changePct: -5.17, volume: null, at: "2026-11-12T20:59:00.000Z", dayClose: 137.5, dayOpen: null, dayHigh: null, dayLow: 137.2 };
+	watch(day, [quote], { levels: parseRuleLevels([]).levels, history: {}, past: {}, quiet: true, holdings });
+	assert.ok(day.hits.some((h) => h.rule === "stop-loss" && h.held), "止损在免打扰时段留下");
+	writeHits(feed.dataDir, "quotes", "2026-11-12", day.hits);
+	await feed.tick();
+	const stop = feed.notices.find((n) => n.id === "stop-loss:NVDA:2026-11-12");
+	assert.equal(stop?.thread, "NVDA:2026-11-12:holding");
+	assert.doesNotMatch(stop!.body, /150|138/);
 });

@@ -7,10 +7,11 @@
 import { spawn } from "node:child_process";
 import { constants, copyFileSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { readDaily } from "../../bars.ts";
+import { readDaily, readPeaks } from "../../bars.ts";
 import { nextEarningsOf } from "../../earnings.ts";
 import { readHits, tradingDaysBefore, writeHits, type Hit } from "../../hits.ts";
 import { isTradingDay, regularCloseAt, shiftDate } from "../../market-days.ts";
+import { parseHoldings, peakKey, stillIn, type HoldingRow, type HoldingRuleId } from "../../holdings.ts";
 import { installedTa } from "../../ta.ts";
 import { COMBOS, effective, opensTask, parseRuleLevels, quietAt, ruleOf, scopeOf, WATCH_RULES, type LevelRow, type RuleLevels } from "../../watch-rules.ts";
 import { listedSymbols, type WatchRow } from "../../watchlist.ts";
@@ -21,7 +22,7 @@ interface Input {
 	/** `ta`: a node script that stands in for the venv's `ta` (fixtures and tests). `now`: a fixed time for this tick. */
 	settings: { baseUrl: string; finnhubBaseUrl: string; scanSeconds: number; ta?: string; now?: string };
 	cursor: string | null;
-	rows: { watchlist?: WatchRow[]; "rule-levels"?: LevelRow[] };
+	rows: { watchlist?: WatchRow[]; "rule-levels"?: LevelRow[]; holdings?: HoldingRow[] };
 	now: string;
 }
 
@@ -164,6 +165,28 @@ function statesOf(earnings: Readonly<Record<string, Earnings>>, seen: readonly s
 	});
 }
 
+/** Lines for holdings still in a state they entered on an earlier day, for the digest; a missing bar or database leaves them out. */
+function holdingStates(input: Input, date: string, levels: RuleLevels, dataDir: string): string[] {
+	const holdings = [...parseHoldings(input.rows.holdings ?? [], listedSymbols(input.rows.watchlist ?? [])).holdings.values()];
+	if (holdings.length === 0) return [];
+	try {
+		const bars = readDaily(dataDir, holdings.map((h) => h.symbol), date, 2) ?? {};
+		const peaks = readPeaks(dataDir, holdings, date) ?? {};
+		return holdings.flatMap((h) => {
+			const [yesterday, today] = bars[h.symbol] ?? [];
+			if (yesterday === undefined || today === undefined || today.date !== date) return [];
+			const thresholds = Object.fromEntries(WATCH_RULES.filter((r) => "holding" in r).flatMap((r) => {
+				const e = effective(r, h.symbol, scopeOf(h.symbol), levels);
+				return e.level === 0 || e.threshold === undefined ? [] : [[r.id, e.threshold]];
+			})) as Partial<Record<HoldingRuleId, number>>;
+			const before = peaks[peakKey(h)] ?? undefined;
+			return stillIn(h, thresholds, [yesterday.close, today.close], [before, before === undefined ? undefined : Math.max(before, today.high)]) ?? [];
+		});
+	} catch {
+		return [];
+	}
+}
+
 /** Grades the session's own signals on the watchlist: ta's first scan of an empty database backfills two years, and those are never graded. */
 async function grade(input: Input, signals: readonly Signal[], picked: readonly string[], date: string, earlier: readonly Hit[], quiet: boolean, dataDir: string) {
 	let bars: Parameters<typeof close>[0]["bars"] = {};
@@ -187,7 +210,7 @@ async function grade(input: Input, signals: readonly Signal[], picked: readonly 
 		levels,
 		quiet,
 	});
-	return { ...graded, states: statesOf(earnings, seen, levels), note };
+	return { ...graded, states: [...statesOf(earnings, seen, levels), ...holdingStates(input, date, levels, dataDir)], note };
 }
 
 const planOf = (rule: string) => [...WATCH_RULES, ...COMBOS].find((r) => r.id === rule)?.plan;
@@ -196,9 +219,9 @@ const planOf = (rule: string) => [...WATCH_RULES, ...COMBOS].find((r) => r.id ==
 function heldTasks(held: readonly Hit[]): Notice[] {
 	return held.filter((h) => opensTask(h) && planOf(h.rule) !== undefined).map((h) => ({
 		id: h.id,
-		thread: `${h.symbol}:${h.date}`,
+		thread: h.notice?.thread ?? `${h.symbol}:${h.date}`,
 		threadScope: "module",
-		fields: { line: `${h.text}（免打扰时段留下，收盘小结时补发）`, rule: h.rule, level: String(h.level), plan: planOf(h.rule)! },
+		fields: { line: `${h.notice?.line ?? h.text}（免打扰时段留下，收盘小结时补发）`, rule: h.rule, level: String(h.level), plan: planOf(h.rule)! },
 	}));
 }
 
