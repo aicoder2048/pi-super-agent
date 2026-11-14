@@ -8,6 +8,8 @@
  *       ticket whose trigger carries both facts.
  *       Lane 2: NVDA 52-week high, then paced volume below the previous close: no combo, no escalation, 多空分歧 in the line.
  *       Lane 3: SPY -2.1%, then NVDA and AMD -5%: one ticket on SPY's thread holds all three triggers, the stock ones say 大盘日.
+ *       Lane 5 (phase 5): NVDA gaps +3.4%, later reverses: level 1 both times, so no line and no Telegram message; the module card
+ *       in the page's snapshot lists one NVDA badge with both facts (ADR-0028).
  * real  Lane 4 on openai-codex models through the Pi login: after a beat with hits, the user asks on Telegram for today's signals;
  *       the reply lists them from the hits tool. The module's Python env is installed (just module setup) so the daily-bar tools
  *       answer instead of failing.
@@ -200,6 +202,20 @@ const fakeTeam = (title: string) => FakeModel.start({
 	workers: [worker(title, on("汇报", /[\s\S]/, () => [report("ready", "这是技术分析，不是交易指令。")], 20_000))],
 });
 
+/** The module cards as the page gets them: the snapshot frame that opens the event stream. */
+async function cards(url: URL): Promise<Row[]> {
+	const events = new URL("/events", url);
+	events.search = url.search;
+	const controller = new AbortController();
+	const res = await fetch(events, { signal: controller.signal });
+	const reader = res.body!.getReader();
+	let text = "";
+	const frame = () => /^data: (.*)\n\n/m.exec(text)?.[1];
+	while (frame() === undefined) text += new TextDecoder().decode((await reader.read()).value);
+	controller.abort();
+	return JSON.parse(frame()!).modules as Row[];
+}
+
 async function fake(): Promise<void> {
 	await lane(1, "volume-high-combo", async () => {
 		const h = await boot({ models: harness.fakeModels, fake: await fakeTeam("NVDA 放量创新高"), watch: ["NVDA"], at: "11:15" });
@@ -218,6 +234,25 @@ async function fake(): Promise<void> {
 				triggers.length === 1 && body.includes("创 52 周新高 112.30（此前最高 110.00）") && body.includes("放量 3.8 倍") && body.endsWith("（规则 volume+high-52w，层级 5，做法 band-move）") &&
 				!/分数|评分|胜率/.test(body) && ticket !== undefined && triggers[0]!["ticket_id"] === ticket["id"];
 			return { pass, evidence: `host clock 11:15 ET ${DAY}; history: 52-week high 110, 20-day volume 1,000,000\nbeat 1: NVDA 103 (+3%), volume 3.8x paced (11:00 ET); beat 2: NVDA 104, day high 112.30 (11:01 ET)\nTelegram lines (silent = disable_notification):\n${show(lines)}\ntriggers with the ticket each went to:\n${show(triggers)}\ntickets:\n${show(h.tickets())}\nhits file:\n${show(h.hits())}\nexpected: a silent volume line, then a silent combo line; one trigger volume+high-52w with both facts, in one watch-task ticket` };
+		} finally {
+			await h.stop();
+		}
+	});
+
+	await lane(5, "level-1-badge", async () => {
+		const h = await boot({ models: harness.fakeModels, fake: await fakeTeam("不该开"), watch: ["NVDA"], at: "13:05" });
+		try {
+			h.quote({ NVDA: 103.5 }, { NVDA: 100 }, { NVDA: { o: 103.4, h: 103.5, v: 100_000 } }, "09:45");
+			await h.beat();
+			h.quote({ NVDA: 99.6 }, { NVDA: 100 }, { NVDA: { o: 103.4, h: 103.6, l: 99.5, v: 100_000 } }, "13:00");
+			await h.beat();
+			await within(10_000, () => query(join(h.state, "state.db"), "SELECT text FROM badges").some((r) => String(r["text"]).includes("盘中曾涨")));
+			const badges = (await cards(h.host.url)).find((c) => c["name"] === "stock-ta")?.["badges"] as { day: string; items: { key: string; text: string }[] } | undefined;
+			const stored = query(join(h.state, "state.db"), "SELECT source, key, text, day FROM badges");
+			const phone = h.phone().filter((m) => /开盘跳空|盘中曾涨/.test(m.text));
+			const pass = badges?.items.length === 1 && badges.items[0]!.key === "NVDA" && badges.items[0]!.text === "NVDA · 开盘跳空 +3.40% · 盘中曾涨 +3.60%，现在跌 -0.40%" && badges.day === DAY &&
+				phone.length === 0 && h.alerts().length === 0 && h.triggers().length === 0;
+			return { pass, evidence: `beat 1: NVDA opens 103.40 over prev close 100 (09:45 ET); beat 2: NVDA 99.60 after a day high of 103.60 (13:00 ET)\nmodule card badges in the page snapshot:\n${show([badges])}\nbadges table:\n${show(stored)}\nhost alert lines:\n${show(h.alerts())}\nTelegram messages naming either fact:\n${show(phone)}\nhits file:\n${show(h.hits())}\nexpected: one NVDA badge listing both level-1 facts; no host line, no Telegram message, no trigger` };
 		} finally {
 			await h.stop();
 		}

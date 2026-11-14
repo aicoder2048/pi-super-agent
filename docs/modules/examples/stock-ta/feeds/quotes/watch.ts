@@ -3,6 +3,7 @@
  * Each hit is graded once, when it happens, from what is known by then (the table, the user's rule-levels, history up to
  * yesterday, the hits earlier today and on the past few trading days); later beats never change a recorded hit.
  */
+import { badgeAlerts, type BadgeAlert } from "../../badges.ts";
 import { nyTime, regularCloseAt, regularOpenAt } from "../../market-days.ts";
 import type { Quote } from "../../massive.ts";
 import { COMBOS, effective, lineOf, opensTask, scopeOf, TIERS, VIXY, WATCH_RULES, WHIPSAW, type Effective, type Lean, type Level, type Line, type Plan, type RuleId, type RuleLevels, type WatchRule } from "../../watch-rules.ts";
@@ -45,7 +46,7 @@ export type Context = {
 	past: Readonly<Record<string, readonly Lean[]>>;
 	quiet: boolean;
 };
-export type Alert = { id: string; text: string; at: string; fold?: { key: string; side: Side }; push?: "silent" };
+export type Alert = { id: string; text: string; at: string; fold?: { key: string; side: Side }; push?: "silent" } | BadgeAlert;
 export type Notice = { id: string; thread: string; fields: { line: string; rule: string; level: string; plan: Plan } };
 export type Beat = { hits: Hit[]; alerts: Alert[]; notices: Notice[] };
 
@@ -255,5 +256,6 @@ export function watch(day: DayState, quotes: readonly Quote[], ctx: Context): Be
 	for (const q of ordered) if (q.symbol !== VIXY) bands(day, q, ctx, out);
 	const qqq = quotes.find((q) => q.symbol === "QQQ");
 	for (const q of quotes) for (const g of rules(day, q, qqq, ctx)) deliver(g, ctx, out);
+	out.alerts.push(...badgeAlerts(day.hits, out.hits));
 	return out;
 }

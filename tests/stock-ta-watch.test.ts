@@ -44,10 +44,37 @@ test("52 周新高静音一行，52 周新低响铃一行，都写出此前的�
 	assert.deepEqual(lines(r!).map((l) => l.split("。")[0]), ["silent NVDA 创 52 周新高 111.50（此前最高 110.00）", "ring AMD 创 52 周新低 89.20（此前最低 90.00）"]);
 });
 
-test("开盘跳空 3% 只记录（1 层，页面标记还没上线），不发一行", () => {
+test("开盘跳空 3% 是 1 层页面标记：一行 push: badge 的提醒，key 是代码，写的是事实；不响、不开任务", () => {
 	const [r] = run(newDay(DATE), ctx(), [q("NVDA", 103.5, 100, "09:45", { dayOpen: 103.4 })]);
 	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level, h.lean, h.fact]), [["gap", 1, "bull", "开盘跳空 +3.40%"]]);
-	assert.deepEqual(r!.alerts, []);
+	assert.deepEqual(r!.alerts, [{ id: `badge:NVDA:${DATE}:1`, text: "NVDA · 开盘跳空 +3.40%", at: ny("09:45"), push: "badge", key: "NVDA" }]);
+	assert.deepEqual(r!.notices, []);
+});
+
+test("页面标记一只票一个：同一天后来的 1 层命中换掉前一个，列出当天全部 1 层的事实；别的票各自一个", () => {
+	const day = newDay(DATE);
+	const [gap, rest] = run(day, ctx(), [q("NVDA", 103.5, 100, "09:45", { dayOpen: 103.4 })], [q("QQQ", 101.2, 100, "13:00"), q("NVDA", 99.6, 100, "13:00", { dayOpen: 103.4, dayHigh: 103.6 }), q("AMD", 101.5, 100, "13:00", { dayLow: 96.4 })]);
+	assert.deepEqual(gap!.alerts.map((a) => [a.id, a.key, a.text]), [[`badge:NVDA:${DATE}:1`, "NVDA", "NVDA · 开盘跳空 +3.40%"]]);
+	const badges = rest!.alerts.filter((a) => a.push === "badge");
+	assert.deepEqual(badges.map((a) => [a.id, a.key]), [[`badge:NVDA:${DATE}:2`, "NVDA"], [`badge:AMD:${DATE}:1`, "AMD"]]);
+	assert.match(badges[0]!.text, /^NVDA · 开盘跳空 \+3\.40% · 盘中曾涨 \+3\.60%，现在跌 -0\.40%/);
+});
+
+test("升了层的不做标记：跳空 1 层是标记，同一拍的新高升到 3 层响铃；标记只列 1 层的", () => {
+	const [r] = run(newDay(DATE), ctx(), [q("NVDA", 104, 100, "11:00", { dayOpen: 103.4, dayHigh: 111.5 })]);
+	assert.deepEqual(r!.alerts.map((a) => [a.push ?? "ring", a.text.split("。")[0]]), [["ring", "NVDA 创 52 周新高 111.50（此前最高 110.00）"], ["badge", "NVDA · 开盘跳空 +3.40%"]]);
+});
+
+test("rule-levels 把一条规则改成 1 层就做标记：52 周新高改成 1 层，不发静音一行，卡片上标出来", () => {
+	const rows: LevelRow[] = [{ id: "1", fields: { rule: "high-52w", level: 1 } }];
+	const [r] = run(newDay(DATE), ctx({ levels: parseRuleLevels(rows).levels }), [q("NVDA", 104, 100, "10:00", { dayHigh: 111 })]);
+	assert.deepEqual(r!.alerts.map((a) => [a.push, a.text]), [["badge", "NVDA · 创 52 周新高 111.00（此前最高 110.00）"]]);
+});
+
+test("免打扰不管页面标记：标记不打扰你，照样上卡片，命中不标 held", () => {
+	const [r] = run(newDay(DATE), ctx({ quiet: true }), [q("NVDA", 103.5, 100, "15:59", { dayOpen: 103.4 })]);
+	assert.deepEqual(r!.alerts.map((a) => a.push), ["badge"]);
+	assert.equal(r!.hits[0]!.held, undefined);
 });
 
 test("盘中反转：曾涨 3% 以上、现在翻成跌，记一条看空；曾跌 3% 以上翻成涨，记一条看多", () => {
@@ -104,7 +131,7 @@ test("方向相反不升级：先 52 周新高（看多），后放量下跌（�
 test("同向共振：同一只票同一天同向的命中到 2 条、多过反向的，1、2 层那条升一层，一行写明看多看空各几条；一天只升一次", () => {
 	const day = newDay(DATE);
 	const [gap, high, rel] = run(day, ctx(), [q("NVDA", 103.5, 100, "09:45", { dayOpen: 103.4 })], [q("NVDA", 104, 100, "10:00", { dayOpen: 103.4, dayHigh: 111 })], [q("QQQ", 98.5, 100, "11:00"), q("NVDA", 104, 100, "11:00", { dayOpen: 103.4, dayHigh: 111 })]);
-	assert.deepEqual(gap!.alerts, []);
+	assert.deepEqual(gap!.alerts.map((a) => a.push), ["badge"]);
 	assert.deepEqual(high!.hits.map((h) => [h.rule, h.level]), [["high-52w", 3]]);
 	assert.equal(high!.alerts[0]!.push, undefined, "2 层升到 3 层，响铃");
 	assert.match(high!.alerts[0]!.text, /。同向升一层（看多 2 条，看空 0 条）。/);
@@ -114,13 +141,13 @@ test("同向共振：同一只票同一天同向的命中到 2 条、多过反�
 test("同一拍里两条同向命中：先判层级低的，升的是层级高的那条（跳空 1 层在前，新高 2 层升成响铃）", () => {
 	const [r] = run(newDay(DATE), ctx(), [q("NVDA", 104, 100, "11:00", { dayOpen: 103.4, dayHigh: 111.5 })]);
 	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level]), [["gap", 1], ["high-52w", 3]]);
-	assert.deepEqual(r!.alerts.map((a) => a.push ?? "ring"), ["ring"]);
+	assert.deepEqual(r!.alerts.map((a) => a.push ?? "ring"), ["ring", "badge"]);
 });
 
 test("只升 1、2 层：同一拍跳空（1 层看空）加 52 周新低（3 层看空），新低照 3 层响铃，不升到没有那一行的 4 层", () => {
 	const [r] = run(newDay(DATE), ctx(), [q("AMD", 96.5, 100, "10:30", { dayOpen: 96.9, dayLow: 89.5, dayHigh: 97 })]);
 	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level, h.bumped ?? false]), [["gap", 1, false], ["low-52w", 3, false]]);
-	assert.deepEqual(r!.alerts.map((a) => [a.id.split(":")[0], a.push ?? "ring"]), [["low-52w", "ring"]]);
+	assert.deepEqual(r!.alerts.map((a) => [a.id.split(":")[0], a.push ?? "ring"]), [["low-52w", "ring"], ["badge", "badge"]]);
 });
 
 test("3 层的命中只计数：先 52 周新低（3 层看空），后盘中反转看空，反转升到 2 层", () => {
