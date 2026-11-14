@@ -191,9 +191,20 @@ test("feed 报的 problem：第一拍就在横幅上亮，文字是 feed 自己�
 	assert.deepEqual(notices(), [], "不再写「通知」宿主行");
 	await deliver(letter("m-2"));
 	assert.deepEqual(alarms(), []);
-	await until(() => phone().some((m) => m.text.startsWith("🔔 ✅ 测试信箱 来信恢复了")), "✅ 到了 Telegram");
-	assert.deepEqual(phone().flatMap((m) => (m.text.startsWith("🔔 ⚠️") ? ["⚠️"] : m.text.startsWith("🔔 ✅") ? ["✅"] : [])), ["⚠️", "✅"]);
-	assert.match(phone().find((m) => m.text.startsWith("🔔 ⚠️"))!.text, /^🔔 ⚠️ 测试信箱 来信出问题了.*收件箱的授权过期了/);
+	await until(() => phone().some((m) => m.text.startsWith("✅ 测试信箱 来信恢复了")), "✅ 到了 Telegram");
+	assert.deepEqual(phone().flatMap((m) => (m.text.startsWith("⚠️") ? ["⚠️"] : m.text.startsWith("✅") ? ["✅"] : [])), ["⚠️", "✅"]);
+	assert.match(phone().find((m) => m.text.startsWith("⚠️"))!.text, /^⚠️ 测试信箱 来信出问题了.*收件箱的授权过期了/);
+});
+
+test("feed 报的一次性 problem（once）：只写一条「通知」，Telegram 一条通知，不亮警报，下一拍也不发 ✅", async (t) => {
+	const { deliver, notices, phone, alarms } = await lettersHost(t);
+	await deliver({ problem: "gap", once: true });
+	assert.deepEqual(alarms(), [], "一次性的问题不算断了");
+	assert.deepEqual(notices().map((l) => l.text), ["测试信箱：有 30 小时没查，请在信箱里看一下"]);
+	await until(() => phone().some((m) => m.text === "通知：测试信箱：有 30 小时没查，请在信箱里看一下"), "通知到了 Telegram");
+	await deliver(letter("m-4"));
+	await new Promise((r) => setTimeout(r, 200));
+	assert.ok(!phone().some((m) => m.text.startsWith("⚠️") || m.text.startsWith("✅")), "没有 ⚠️ 也没有 ✅");
 });
 
 test("feed 的 handler 连着失败：到 feedFailuresBeforeAlarm 拍才亮，最近的错误是它抛出的那句；成功一拍就解除", async (t) => {
@@ -228,7 +239,7 @@ test("模块关掉了：它的 feed 的警报悄悄撤下，不发 ✅", async (
 	serving.changed!();
 	assert.deepEqual(alarms(), []);
 	await new Promise((r) => setTimeout(r, 200));
-	assert.ok(!phone().some((m) => m.text.startsWith("🔔 ✅")));
+	assert.ok(!phone().some((m) => m.text.startsWith("✅")));
 });
 
 test("模块卡：宿主给有 feed 的模块填上今日提醒条数和每个 feed 最近一轮的时间、行数", async (t) => {

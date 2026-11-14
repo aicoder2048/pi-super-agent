@@ -32,6 +32,7 @@ import type { Domains } from "../modules.ts";
 import type { LiveModules } from "./live-modules.ts";
 import type { Alert, Gateway } from "../modules/protocol.ts";
 import type { Ocr } from "../ocr/result.ts";
+import { oneLine } from "../modules/release.ts";
 import { intoOf, runFeed, type FeedEntry, type FeedPorts, type FeedProblem, type FeedRun } from "../modules/feed-runner.ts";
 import { instanceData } from "../modules/instance-data.ts";
 import { createScheduler, type Scheduler } from "../modules/scheduler.ts";
@@ -100,6 +101,7 @@ const afterRealTime: NonNullable<HostOptions["after"]> = (ms, run) => {
 // setTimeout fires at once for a longer delay.
 const MAX_TIMER_MS = 2 ** 31 - 1;
 const CONVERSATION_LINES = 50;
+const PROBLEM_MAX = 200;
 const SOCKET_PATH_MAX_BYTES = process.platform === "darwin" ? 103 : 107;
 
 function assertSocketPathFits(socketPath: string): void {
@@ -500,13 +502,16 @@ export class Host {
 		});
 	}
 
-	/** A failed beat counts toward the streak; a problem the feed reports, or a rejected key, shows at once; a clean beat clears. */
+	/** A failed beat counts toward the streak; a problem the feed reports, or a rejected key, shows at once; a clean beat clears. A one-shot problem is a notice line on a clean beat. */
 	#feedHealth(entry: FeedEntry, run: FeedRun, problem: FeedProblem | undefined): void {
 		const id = feedAlarmId(entry.source);
 		const subject = `${this.kernel.moduleLabel(entry.module)} ${entry.feed.title}`;
 		if (!run.ok) {
 			const after = causeOf(run.note) === "auth" ? 1 : this.#feedFailuresBeforeAlarm;
 			this.#health.failed(id, { area: "data", subject, error: run.note, after });
+		} else if (problem?.once) {
+			this.#health.ok(id);
+			this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(problem.text, PROBLEM_MAX)) });
 		} else if (problem) {
 			this.#health.failed(id, { area: "data", subject, error: problem.text, after: 1, advice: "照上面这句处理；哪一拍不再报这个问题，这条自动消失" });
 		} else {
