@@ -124,8 +124,13 @@ export class Health {
 		this.#runs.delete(id);
 		if (!run.raised) return;
 		const cleared: ClearedAlarm = { id, area: run.area, subject: run.subject, since: run.since, clearedAt: this.#o.now() };
-		this.#recent = [cleared, ...this.#recent].slice(0, this.#o.recentMax ?? RECENT_MAX);
+		this.#recent = [cleared, ...this.#recent.filter((r) => r.id !== id)].slice(0, this.#o.recentMax ?? RECENT_MAX);
 		this.#o.onCleared(cleared);
+	}
+
+	/** Drops matching runs without telling anyone: their subject is gone, not fixed. */
+	forget(matches: (id: string) => boolean): void {
+		for (const id of [...this.#runs.keys()]) if (matches(id)) this.#runs.delete(id);
 	}
 
 	board(): HealthBoard {

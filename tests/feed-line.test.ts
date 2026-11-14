@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import type { ModuleCard } from "../src/client/protocol.ts";
-import { Host } from "../src/host/host.ts";
+import { Host, type HostOptions } from "../src/host/host.ts";
 import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
 import { release, oneLine } from "../src/modules/release.ts";
 import { problemLine, scanPackage } from "../src/modules/validate.ts";
@@ -89,7 +89,13 @@ const letter = (id: string, extra: object = {}) => ({ id, from: "Ann <ann@exampl
 const answersEveryone: Brain = (cards) =>
 	cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "reply", args: { text: ANSWER, cause: ids(card, "trg") } }] : []));
 
-async function lettersHost(t: TestContext, edit?: (pkg: string) => void, cards: () => ModuleCard[] = () => []) {
+interface LettersOptions {
+	health?: HostOptions["health"];
+	/** Lets a test take the feed away, the way switching its module off does. */
+	serving?: { on: boolean; changed?: () => void };
+}
+
+async function lettersHost(t: TestContext, edit?: (pkg: string) => void, cards: () => ModuleCard[] = () => [], { health, serving }: LettersOptions = {}) {
 	const { root, pkg } = lettersCopy(t, false);
 	edit?.(pkg);
 	const modules = servedAsHost(Modules.load([join(root, "modules")]));
@@ -102,8 +108,9 @@ async function lettersHost(t: TestContext, edit?: (pkg: string) => void, cards: 
 		log: () => {},
 		sourcePolicy: modules.sourcePolicy,
 		domains: { book: () => modules.book, kitFor: () => undefined },
-		moduleFeeds: { feeds: () => modules.feeds(), fixtures: false, tickMs: 20 },
-		modules: { cards, setSwitch: () => false, onChange: () => {} },
+		moduleFeeds: { feeds: () => (serving?.on === false ? [] : modules.feeds()), fixtures: false, tickMs: 20 },
+		modules: { cards, setSwitch: () => false, onChange: (listener) => serving && (serving.changed = listener) },
+		...(health && { health }),
 		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set([USER]), timing: { pollTimeoutSec: 1, minGapMs: 5 } },
 	});
 	t.after(async () => {
@@ -124,7 +131,8 @@ async function lettersHost(t: TestContext, edit?: (pkg: string) => void, cards: 
 	const notices = () => host.kernel.conversation(500).filter((l) => l.who === "notice");
 	const phone = () => tg.sent.filter((m) => m.chatId === USER && !m.text.startsWith("你在网页或终端说："));
 	const routerSawLetter = () => until(() => router.batches.flat().some((card) => card.includes("来源 private-line/inbox")), "幕僚长看到了来信的触发", 10_000);
-	return { host, tg, deliver, notices, phone, routerSawLetter, cards: () => router.batches.flat() };
+	const alarms = () => host.snapshot().health.active;
+	return { host, tg, deliver, notices, phone, alarms, inbox, routerSawLetter, cards: () => router.batches.flat() };
 }
 
 test("放出的通知：一封新信写一条「通知」宿主行和一条触发，Telegram 上照原样发三行、带声音、不出链接预览；同一封信再来什么都不写", async (t) => {
@@ -175,16 +183,52 @@ test("放出的触发之后，幕僚长在 Telegram 上的回复是全文", asyn
 	await until(() => released.phone().some((m) => m.text === ANSWER), "幕僚长的回复全文到了 Telegram", 10_000);
 });
 
-test("feed 的 problem：同一个 id 连报两拍只写一条「通知」，中间一拍没报，再报时再写一条；网页和 Telegram 都有", async (t) => {
-	const { deliver, notices, phone } = await lettersHost(t);
-	const PROBLEM = "测试信箱：收件箱的授权过期了，请重新授权";
+test("feed 报的 problem：第一拍就在横幅上亮，文字是 feed 自己写的，对话里不写「通知」；连报只发一条 ⚠️，没报的一拍解除并发一条 ✅", async (t) => {
+	const { deliver, notices, phone, alarms } = await lettersHost(t);
 	await deliver({ problem: "auth" });
 	await deliver({ problem: "auth" });
-	assert.deepEqual(notices().map((l) => l.text), [PROBLEM]);
+	assert.deepEqual(alarms().map((a) => [a.id, a.area, a.subject, a.lastError, a.count]), [["data:private-line/inbox", "data", "测试信箱 来信", "收件箱的授权过期了，请重新授权", 2]]);
+	assert.deepEqual(notices(), [], "不再写「通知」宿主行");
 	await deliver(letter("m-2"));
+	assert.deepEqual(alarms(), []);
+	await until(() => phone().some((m) => m.text.startsWith("✅ 测试信箱 来信恢复了")), "✅ 到了 Telegram");
+	assert.deepEqual(phone().flatMap((m) => (m.text.startsWith("⚠️") ? ["⚠️"] : m.text.startsWith("✅") ? ["✅"] : [])), ["⚠️", "✅"]);
+	assert.match(phone().find((m) => m.text.startsWith("⚠️"))!.text, /^⚠️ 测试信箱 来信出问题了.*收件箱的授权过期了/);
+});
+
+test("feed 的 handler 连着失败：到 feedFailuresBeforeAlarm 拍才亮，最近的错误是它抛出的那句；成功一拍就解除", async (t) => {
+	const { deliver, alarms, host } = await lettersHost(t, undefined, undefined, { health: { modelFailuresBeforeAlarm: 2, feedFailuresBeforeAlarm: 4 } });
+	await deliver({ fail: "HTTP 503 Service Unavailable" });
+	assert.deepEqual(alarms(), [], "收件箱的一件重试三次，三拍还不到 4");
+	await deliver({ fail: "HTTP 502 Bad Gateway" });
+	const [alarm] = alarms();
+	assert.equal(alarm.id, "data:private-line/inbox");
+	assert.equal(alarm.cause, "provider");
+	assert.match(alarm.lastError, /HTTP 502 Bad Gateway/);
+	assert.ok(alarm.count >= 4);
+	await deliver(letter("m-3"));
+	assert.deepEqual(alarms(), []);
+	assert.deepEqual(host.snapshot().health.recent.map((a) => a.id), ["data:private-line/inbox"]);
+});
+
+test("feed 被拒了密钥（401、invalid_grant）：第一拍就亮，怎么办里写着密钥或授权", async (t) => {
+	const { deliver, alarms } = await lettersHost(t, undefined, undefined, { health: { modelFailuresBeforeAlarm: 2, feedFailuresBeforeAlarm: 100 } });
+	await deliver({ fail: "token refresh failed: invalid_grant" });
+	const [alarm] = alarms();
+	assert.equal(alarm.cause, "auth");
+	assert.match(alarm.advice, /密钥|授权/);
+});
+
+test("模块关掉了：它的 feed 的警报悄悄撤下，不发 ✅", async (t) => {
+	const serving: { on: boolean; changed?: () => void } = { on: true };
+	const { deliver, alarms, phone } = await lettersHost(t, undefined, undefined, { serving });
 	await deliver({ problem: "auth" });
-	assert.deepEqual(notices().map((l) => l.text).filter((text) => text === PROBLEM), [PROBLEM, PROBLEM]);
-	await until(() => phone().filter((m) => m.text === `通知：${PROBLEM}`).length === 2, "两条 problem 到了 Telegram");
+	assert.equal(alarms().length, 1);
+	serving.on = false;
+	serving.changed!();
+	assert.deepEqual(alarms(), []);
+	await new Promise((r) => setTimeout(r, 200));
+	assert.ok(!phone().some((m) => m.text.startsWith("✅")));
 });
 
 test("模块卡：宿主给有 feed 的模块填上今日提醒条数和每个 feed 最近一轮的时间、行数", async (t) => {

@@ -29,8 +29,23 @@
 { "health": { "modelFailuresBeforeAlarm": 2, "feedFailuresBeforeAlarm": 3 } }
 ```
 
-`feedFailuresBeforeAlarm` 给模块来源用，见下一个改动。必须是 1 以上的整数，写错了宿主不启动，报错指出是哪一项。
+`feedFailuresBeforeAlarm` 给模块来源用，见「模块的来源」。必须是 1 以上的整数，写错了宿主不启动，报错指出是哪一项。
 
 ## 错误文字
 
 横幅和 Telegram 上的错误是一行，最多 200 个字，网址里的 `key=`、`token=` 等参数值、`Bearer` 后面的值和 `sk-` 开头的密钥都换成 `…`。
+
+## 模块的来源
+
+每个模块 feed 一个警报，编号 `data:<模块>/<feed>`，网页上写成「<模块标题> <feed 标题>」，例如「测试信箱 来信」。
+
+| 情况 | 什么时候亮 | 什么时候灭 |
+| --- | --- | --- |
+| handler 抛错、超时、输出不对 | 连着 `feedFailuresBeforeAlarm` 拍（默认 3） | 下一拍成功 |
+| handler 的错误是 401、403、invalid_grant 这类鉴权错误 | 第一拍 | 下一拍成功 |
+| feed 自己报了 `problem`（比如 stock-ta 没设密钥、连着 5 轮取不到报价） | 第一拍，横幅上的错误就是 feed 写的那句 | 哪一拍不再报 |
+| 模块被关掉 | 悄悄撤下，不发 ✅ | |
+
+收件箱类的 feed 一件东西最多试三次，每次都算一拍。
+
+模块工具现查失败（比如问价时 `quote` 连不上）不算进警报：失败写在回答里，你当场就看到了；交易时段报价 feed 每分钟都在取同一家，断了会从 feed 那里响。见 ADR-0025。

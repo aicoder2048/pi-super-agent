@@ -32,14 +32,13 @@ import type { Domains } from "../modules.ts";
 import type { LiveModules } from "./live-modules.ts";
 import type { Alert, Gateway } from "../modules/protocol.ts";
 import type { Ocr } from "../ocr/result.ts";
-import { intoOf, runFeed, type FeedEntry, type FeedPorts, type FeedProblem } from "../modules/feed-runner.ts";
-import { oneLine } from "../modules/release.ts";
+import { intoOf, runFeed, type FeedEntry, type FeedPorts, type FeedProblem, type FeedRun } from "../modules/feed-runner.ts";
 import { instanceData } from "../modules/instance-data.ts";
 import { createScheduler, type Scheduler } from "../modules/scheduler.ts";
 import { threadId } from "../sources/generic.ts";
 import { inPollWindow } from "../sources/market/session.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
-import { clearedText, Health, HEALTH_DEFAULTS, ModelHealth, raisedText, type HealthConfig } from "./health.ts";
+import { causeOf, clearedText, Health, HEALTH_DEFAULTS, ModelHealth, raisedText, type HealthConfig } from "./health.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -101,7 +100,6 @@ const afterRealTime: NonNullable<HostOptions["after"]> = (ms, run) => {
 // setTimeout fires at once for a longer delay.
 const MAX_TIMER_MS = 2 ** 31 - 1;
 const CONVERSATION_LINES = 50;
-const PROBLEM_MAX = 200;
 const SOCKET_PATH_MAX_BYTES = process.platform === "darwin" ? 103 : 107;
 
 function assertSocketPathFits(socketPath: string): void {
@@ -143,10 +141,11 @@ export class Host {
 	readonly #memberCap: MemberCap | undefined;
 	readonly #after: NonNullable<HostOptions["after"]>;
 	#cancelNewYorkDay: (() => void) | undefined;
-	readonly #feedProblems = new Map<string, string>();
 	readonly #beats = new Map<string, FeedBeat & { module: string }>();
 	readonly #health: Health;
 	readonly #routerHealth: ModelHealth;
+	readonly #feedFailuresBeforeAlarm: number;
+	readonly #feedsNow: () => readonly FeedEntry[];
 	#duty!: Duty;
 
 	private constructor(options: HostOptions) {
@@ -169,6 +168,8 @@ export class Host {
 			onCleared: (alarm) => this.#tellPhone(`health:cleared:${alarm.id}:${alarm.since}`, clearedText(alarm)),
 		});
 		this.#routerHealth = new ModelHealth(this.#health, "router", healthConfig.modelFailuresBeforeAlarm);
+		this.#feedFailuresBeforeAlarm = healthConfig.feedFailuresBeforeAlarm;
+		this.#feedsNow = options.moduleFeeds?.feeds ?? (() => []);
 		this.#db = openStore(join(options.stateDir, "state.db"));
 		this.kernel = new Kernel({
 			db: this.#db,
@@ -211,18 +212,19 @@ export class Host {
 			log: this.#log,
 		})]));
 		const data = instanceData(options.stateDir);
-		const feedPorts: FeedPorts = {
+		const feedPorts: Omit<FeedPorts, "problem"> = {
 			data,
 			submit: ({ source, id, thread, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(source, thread) }], sender: source, body, occurredAt: at, ...(reach === "released" && { announce: true }) }),
 			alert: (module, alert) => this.#postModuleAlert(module, alert),
-			problem: (source, problem) => this.#feedProblem(source, problem),
 			secret: options.moduleFeeds?.secret ?? (() => undefined),
 			now: clock.now,
 		};
 		this.feedScheduler = createScheduler({
 			feeds: options.moduleFeeds?.feeds ?? (() => []),
 			run: async (entry, items, fixture, signal) => {
-				const run = await runFeed(entry, items, feedPorts, fixture, signal);
+				let problem: FeedProblem | undefined;
+				const run = await runFeed(entry, items, { ...feedPorts, problem: (_, reported) => (problem = reported) }, fixture, signal);
+				this.#feedHealth(entry, run, problem);
 				const zone = intoOf(entry.feed, entry.components)?.watch?.zone;
 				this.#beats.set(entry.source, { module: entry.module, title: entry.feed.title, at: clock.now(), ...(zone && { zone }), ...(run.ok ? { ok: true, records: run.records } : { ok: false, note: run.note }) });
 				return run;
@@ -309,7 +311,10 @@ export class Host {
 			await Promise.all([host.server.close(), host.#web?.close()]);
 			throw error;
 		}
-		host.#modules?.onChange(() => host.#changed());
+		host.#modules?.onChange(() => {
+			host.#forgetGoneFeeds();
+			host.#changed();
+		});
 		host.kernel.nameUnnamedHelpers();
 		const recovered = host.kernel.recoverOnStartup();
 		host.#duty = { since: host.#clock.now(), resumed: recovered.length };
@@ -495,15 +500,24 @@ export class Host {
 		});
 	}
 
-	/** In memory: after a restart a problem still standing is told once more. */
-	#feedProblem(source: string, problem: FeedProblem | undefined): void {
-		if (problem === undefined) {
-			this.#feedProblems.delete(source);
-			return;
+	/** A failed beat counts toward the streak; a problem the feed reports, or a rejected key, shows at once; a clean beat clears. */
+	#feedHealth(entry: FeedEntry, run: FeedRun, problem: FeedProblem | undefined): void {
+		const id = feedAlarmId(entry.source);
+		const subject = `${this.kernel.moduleLabel(entry.module)} ${entry.feed.title}`;
+		if (!run.ok) {
+			const after = causeOf(run.note) === "auth" ? 1 : this.#feedFailuresBeforeAlarm;
+			this.#health.failed(id, { area: "data", subject, error: run.note, after });
+		} else if (problem) {
+			this.#health.failed(id, { area: "data", subject, error: problem.text, after: 1, advice: "照上面这句处理；哪一拍不再报这个问题，这条自动消失" });
+		} else {
+			this.#health.ok(id);
 		}
-		if (this.#feedProblems.get(source) === problem.id) return;
-		this.#feedProblems.set(source, problem.id);
-		this.#postHostLine(source, { kind: "notice", text: this.kernel.moduleNotice(source, oneLine(problem.text, PROBLEM_MAX)) });
+	}
+
+	/** A switched-off module's feeds stop beating, so their alarms would never clear. Nothing recovered, so no ✅. */
+	#forgetGoneFeeds(): void {
+		const serving = new Set(this.#feedsNow().map((entry) => feedAlarmId(entry.source)));
+		this.#health.forget((id) => id.startsWith(FEED_ALARM) && !serving.has(id));
 	}
 
 	/** The page reads the banner from the next board frame; the phone gets one message per raise and per clear. */
@@ -634,6 +648,9 @@ export class Host {
 		await Promise.all([this.server.close(), this.#web?.close()]);
 	}
 }
+
+const FEED_ALARM = "data:";
+const feedAlarmId = (source: string) => `${FEED_ALARM}${source}`;
 
 function todayCounts(rows: { source: string; disposition: Disposition; count: number }[]): TodayCounts {
 	const byDisposition = Object.fromEntries(DISPOSITIONS.map((d) => [d, 0])) as Record<Disposition, number>;

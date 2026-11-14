@@ -5,9 +5,12 @@ interface Letter {
 	snippet: string;
 	body: string;
 	problem?: string;
+	fail?: string;
 }
 
 export default function collect(input: { items: Letter[] }) {
+	const failure = input.items.find((item) => item.fail !== undefined)?.fail;
+	if (failure !== undefined) throw new Error(failure);
 	const letters = input.items.filter((item) => item.id !== undefined);
 	const problem = input.items.find((item) => item.problem !== undefined)?.problem;
 	return {
