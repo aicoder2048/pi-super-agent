@@ -66,7 +66,8 @@ export async function stockTaDay(tree: string, state: string, watchlist: readonl
 			const body = { status: "DELAYED", tickers };
 			const watchlistOnly = listed();
 			const withIndexes = [...new Set([...listed(), "SPY", "QQQ"])].sort();
-			const fixture = { name: "replay", input: { now: new Date(tick.now).toISOString() }, responses: Object.fromEntries([watchlistOnly, withIndexes].map((symbols) => [`${SNAPSHOT}?tickers=${symbols.join(",")}`, body])) };
+			const withVixy = [...withIndexes, "VIXY"].sort();
+			const fixture = { name: "replay", input: { now: new Date(tick.now).toISOString() }, responses: Object.fromEntries([watchlistOnly, withIndexes, withVixy].map((symbols) => [`${SNAPSHOT}?tickers=${symbols.join(",")}`, body])) };
 			const notices: string[] = [];
 			const fresh: Posted[] = [];
 			const started = performance.now();

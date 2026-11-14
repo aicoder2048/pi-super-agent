@@ -1,9 +1,10 @@
-import { isTradingDay, nyTime, sessionAt } from "../../market-days.ts";
+import { readHistory } from "../../bars.ts";
+import { pastLeans, writeHits } from "../../hits.ts";
+import { isTradingDay, sessionAt } from "../../market-days.ts";
 import { oneLine, snapshot, type Quote } from "../../massive.ts";
-import { effective, opensTask, parseRuleLevels, scopeOf, WATCH_RULES, type Effective, type LevelRow, type RuleLevels } from "../../watch-rules.ts";
+import { parseRuleLevels, quietAt, VIXY, WATCH_RULES, WHIPSAW, type Lean, type LevelRow } from "../../watch-rules.ts";
 import { listedSymbols, type WatchRow } from "../../watchlist.ts";
-
-type Side = "up" | "down";
+import { newDay, watch, type DayState, type History } from "./watch.ts";
 
 interface Input {
 	settings: { baseUrl: string };
@@ -12,10 +13,10 @@ interface Input {
 	now: string;
 }
 
-/** `fired` holds the highest band per symbol and side: bands only climb, so a fall back and a second rise stay quiet. */
-type Cursor = { date: string; fired: Record<string, Partial<Record<Side, number>>>; failures: number; lastQuote: { quotedAt: string | null; seenAt: string } };
+/** The day's grading state (bands reached, hits) plus what the feed reads once a day: daily-bar history and whipsaw leans. */
+type Cursor = DayState & { failures: number; lastQuote: { quotedAt: string | null; seenAt: string }; history: Record<string, History | null>; past: Record<string, Lean[]> };
 
-type Problem = { id: "no-key" | "massive-down" | "stale" | "bad-level"; text: string };
+type Problem = { id: "no-key" | "massive-down" | "stale" | "bad-level" | "hits-file"; text: string };
 const GUIDE = "docs/modules/stock-ta.md";
 const FAILURES_BEFORE_PROBLEM = 5;
 const STALE_MS = 20 * 60_000;
@@ -23,6 +24,8 @@ const NO_KEY: Problem = { id: "no-key", text: `没有设置 POLYGON_API_KEY，�
 const STALE: Problem = { id: "stale", text: `交易时段里 ${STALE_MS / 60_000} 分钟没有新的报价（行情本来就延迟 15 分钟，这是在那之外），到档提醒和你设的条件可能停了；Massive 可能在维护，或者套餐变了` };
 
 const badLevel = (rows: readonly string[]): Problem => ({ id: "bad-level", text: `rule-levels 第 ${rows.join("、")} 行不生效：规则不在盯盘规则表里，或层级不在 0 到 6，或门槛不是 0 到 100 之间的数，或让某只票的第一档门槛不低于第二档；加一行同样的 rule 和 symbol 写上 removedAt 或写对的值就清掉；其余的改动照常算` });
+
+const hitsFile = (error: unknown): Problem => ({ id: "hits-file", text: `当天命中的文件没写成（${error instanceof Error ? error.message : String(error)}），提醒和触发照发，「今天有哪些信号」暂时看不到最新的；下一轮再写` });
 
 const KEY_REJECTED = /HTTP 40[13]\b/;
 
@@ -32,19 +35,17 @@ function massiveDown(error: Error): Problem {
 	return { id: "massive-down", text: `连着 ${FAILURES_BEFORE_PROBLEM} 轮取不到报价（最近一次：${reason}），到档提醒和你设的条件都停了；${advice}，见 ${GUIDE}` };
 }
 
-// Prices are cents, so a move of exactly a band can compute a hair below it (609 / 600 → 1.4999…%).
-const EPSILON = 1e-9;
-
 /** Stale: a pre-market trade in the first snapshot, yesterday's quote on a holiday, a trade after an early close. */
 function fresh(q: Quote, today: string): boolean {
 	const session = sessionAt(Date.parse(q.at));
 	return session.phase === "regular" && session.nyDate === today;
 }
 
-function cursorFor(raw: string | null, today: string, now: string): Cursor {
+function cursorFor(raw: string | null, today: string, now: string, dataDir: string): Cursor {
 	const saved = raw === null ? undefined : (JSON.parse(raw) as Partial<Cursor>);
-	const fresh: Cursor = { date: today, fired: {}, failures: 0, lastQuote: { quotedAt: null, seenAt: now } };
-	return saved?.date === today ? { ...fresh, ...saved } : fresh;
+	if (saved?.date === today) return { ...newDay(today), failures: 0, lastQuote: { quotedAt: null, seenAt: now }, history: {}, past: {}, ...saved };
+	const past = pastLeans(dataDir, today, WHIPSAW.days, WATCH_RULES.filter((r) => "whipsaw" in r).map((r) => r.id));
+	return { ...newDay(today), failures: 0, lastQuote: { quotedAt: null, seenAt: now }, history: {}, past };
 }
 
 function lastQuote(cursor: Cursor, quotes: readonly Quote[], now: string): Cursor["lastQuote"] {
@@ -52,42 +53,30 @@ function lastQuote(cursor: Cursor, quotes: readonly Quote[], now: string): Curso
 	return newest === cursor.lastQuote.quotedAt ? cursor.lastQuote : { quotedAt: newest, seenAt: now };
 }
 
-type Move = { id: string; line: string; at: string; side: Side; push: "silent" | "ring" | null; task: Effective | undefined };
-
 /**
- * Unrounded, so 4.996% stays under the 5% band. Tiers crossed in one beat give one line: the highest tier that puts a line in
- * front of the user names it, and it rings when any of them rings; a task opens when any of them opens one. A tier lowered to
- * level 0 never hides a lower tier.
+ * History is read once a day per symbol; a symbol added later in the day is read on its first beat. A database the scan has not
+ * written yet, or one that will not open, leaves the history rules off for this beat and the bands running.
  */
-function bandMove(q: Quote, levels: RuleLevels, cursor: Cursor): Move[] {
-	const move = (q.price / q.prevClose - 1) * 100;
-	const side: Side = move >= 0 ? "up" : "down";
-	const fired = cursor.fired[q.symbol]?.[side] ?? 0;
-	const crossed = WATCH_RULES.map((rule) => effective(rule, q.symbol, scopeOf(q.symbol), levels))
-		.filter((e) => Math.abs(move) >= e.threshold - EPSILON && e.threshold > fired)
-		.sort((x, y) => y.threshold - x.threshold);
-	if (crossed.length === 0) return [];
-	cursor.fired[q.symbol] = { ...cursor.fired[q.symbol], [side]: crossed[0]!.threshold };
-	const shown = crossed.filter((e) => e.line === "silent" || e.line === "ring");
-	const task = crossed.find(opensTask);
-	const lead = shown[0] ?? task;
-	if (lead === undefined) return [];
-	const band = lead.threshold;
-	const sign = side === "up" ? "+" : "-";
-	const id = `band:${q.symbol}:${cursor.date}:${side}${band}`;
-	const line = `${q.symbol} ${side === "up" ? "涨" : "跌"} ${move >= 0 ? "+" : ""}${move.toFixed(2)}%，到达 ${sign}${band}% 档。现价 ${q.price.toFixed(2)}，昨收 ${q.prevClose.toFixed(2)}。报价时间 ${nyTime(Date.parse(q.at))} ET（延迟行情）。`;
-	const push = shown.length === 0 ? null : shown.some((e) => e.line === "ring") ? "ring" : "silent";
-	return [{ id, line, at: q.at, side, push, task }];
+function withHistory(cursor: Cursor, symbols: readonly string[], dataDir: string): void {
+	const missing = symbols.filter((s) => !(s in cursor.history));
+	if (missing.length === 0) return;
+	try {
+		Object.assign(cursor.history, readHistory(dataDir, missing, cursor.date) ?? {});
+	} catch {
+		return;
+	}
 }
 
 export default async function quotes(input: Input) {
-	const symbols = [...new Set([...listedSymbols(input.rows.watchlist ?? []), "QQQ", "SPY"])].sort();
+	const watched = [...new Set([...listedSymbols(input.rows.watchlist ?? []), "QQQ", "SPY"])];
+	const symbols = [...watched, VIXY].sort();
 	const key = process.env.POLYGON_API_KEY ?? "";
 	if (key === "") return { records: [], problem: NO_KEY };
+	const dataDir = process.env.PSA_MODULE_DATA ?? "";
 	const nowMs = Date.parse(input.now);
 	const session = sessionAt(nowMs);
 	const today = session.nyDate;
-	const cursor = cursorFor(input.cursor, today, input.now);
+	const cursor = cursorFor(input.cursor, today, input.now, dataDir);
 	let snapped: Quote[];
 	try {
 		snapped = await snapshot(input.settings.baseUrl, key, symbols);
@@ -100,12 +89,19 @@ export default async function quotes(input: Input) {
 	cursor.lastQuote = lastQuote(cursor, quotes, input.now);
 	const stale = session.phase === "regular" && isTradingDay(today) && nowMs - Date.parse(cursor.lastQuote.seenAt) >= STALE_MS;
 	const { levels, bad } = parseRuleLevels(input.rows["rule-levels"] ?? []);
-	const moves = quotes.flatMap((q) => bandMove(q, levels, cursor).map((m) => ({ ...m, symbol: q.symbol })));
-	const problem = stale ? STALE : bad.length > 0 ? badLevel(bad) : undefined;
+	if (quotes.length > 0) withHistory(cursor, quotes.map((q) => q.symbol), dataDir);
+	const beat = watch(cursor, quotes, { levels, history: cursor.history, past: cursor.past, quiet: quietAt(nowMs, session.phase === "regular") });
+	let written: Problem | undefined;
+	try {
+		if (cursor.hits.length > 0) writeHits(dataDir, "quotes", today, cursor.hits);
+	} catch (error) {
+		written = hitsFile(error);
+	}
+	const problem = stale ? STALE : bad.length > 0 ? badLevel(bad) : written;
 	return {
-		records: quotes.map(({ dayClose: _, ...q }) => ({ id: `${q.symbol}@${q.at}`, ...q })),
-		alerts: moves.flatMap((m) => (m.push === null ? [] : [{ id: m.id, text: m.line, at: m.at, fold: { key: m.symbol, side: m.side }, ...(m.push === "silent" && { push: "silent" }) }])),
-		notices: moves.flatMap(({ task, ...m }) => (task === undefined ? [] : [{ id: m.id, thread: `${m.symbol}:${today}`, fields: { line: m.line, rule: task.rule.id, level: String(task.level), plan: task.rule.plan } }])),
+		records: quotes.filter((q) => watched.includes(q.symbol)).map(({ dayClose: _c, dayOpen: _o, dayHigh: _h, dayLow: _l, ...q }) => ({ id: `${q.symbol}@${q.at}`, ...q })),
+		alerts: beat.alerts,
+		notices: beat.notices,
 		cursor: JSON.stringify(cursor),
 		...(problem && { problem }),
 	};
