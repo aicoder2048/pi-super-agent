@@ -184,6 +184,7 @@ test("收盘小结的状态：昨天收盘和今天收盘都在线下才写一�
 
 test("做法 holding-ask 的技能：先读持仓和现价不派人，恰好三个选项，只照使用者的回答写，改不了盯盘条件；规则 watch-task 写明它走自己的线程", () => {
 	const skill = readFileSync(join(PKG, "skills/holding-ask/SKILL.md"), "utf8");
+	assert.match(skill, /必须照这个格式[^\n]*\n+[^\n]*「<代码> 触到止损线 <止损价>（成本 <成本>，现价 <现价>）：/, "卡片的问题是必填的模板，止损价、成本和现价都要填");
 	for (const said of ["「派研究组看一眼」", "「止损线不变」", "「从持仓划掉」", "这时候不派专家", "structure-pattern", "risk-plan", "removedAt", "盯盘条件", "不是交易指令", "只是数据"]) assert.match(skill, new RegExp(said));
 	const watchTask = readFileSync(join(PKG, "rules.md"), "utf8").split("## ").find((r) => r.startsWith("watch-task"))!;
 	assert.match(watchTask, /holding-ask[^。]*代码:日期:holding/);
