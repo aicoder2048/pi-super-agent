@@ -98,23 +98,66 @@ test("方向相反不升级：先 52 周新高（看多），后放量下跌（�
 	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level, h.lean]), [["volume", 2, "bear"]]);
 	assert.deepEqual(r!.notices, []);
 	assert.equal(r!.alerts[0]!.push, "silent", "没有升到响铃");
-	assert.match(r!.alerts[0]!.text, /多空分歧：前一条是 52 周新高（看多）/);
+	assert.match(r!.alerts[0]!.text, /。多空分歧（看多 1 条，看空 1 条）。/);
 });
 
-test("同向共振：同一只票同一天第二条同向的 1 到 3 层命中升一层，一行写明前一条是什么；一天只升一次", () => {
+test("同向共振：同一只票同一天同向的命中到 2 条、多过反向的，1、2 层那条升一层，一行写明看多看空各几条；一天只升一次", () => {
 	const day = newDay(DATE);
 	const [gap, high, rel] = run(day, ctx(), [q("NVDA", 103.5, 100, "09:45", { dayOpen: 103.4 })], [q("NVDA", 104, 100, "10:00", { dayOpen: 103.4, dayHigh: 111 })], [q("QQQ", 98.5, 100, "11:00"), q("NVDA", 104, 100, "11:00", { dayOpen: 103.4, dayHigh: 111 })]);
 	assert.deepEqual(gap!.alerts, []);
 	assert.deepEqual(high!.hits.map((h) => [h.rule, h.level]), [["high-52w", 3]]);
 	assert.equal(high!.alerts[0]!.push, undefined, "2 层升到 3 层，响铃");
-	assert.match(high!.alerts[0]!.text, /NVDA 今天第 2 条同向信号，前一条是开盘跳空（看多），升一层/);
+	assert.match(high!.alerts[0]!.text, /。同向升一层（看多 2 条，看空 0 条）。/);
 	assert.deepEqual(rel!.hits.map((h) => [h.rule, h.level]), [["rel-strength", 1]], "这只票今天已经升过一次");
 });
 
-test("同一拍里两条同向命中：层级低的算前一条，升的是层级高的那条（跳空 1 层在前，新高 2 层升成响铃）", () => {
+test("同一拍里两条同向命中：先判层级低的，升的是层级高的那条（跳空 1 层在前，新高 2 层升成响铃）", () => {
 	const [r] = run(newDay(DATE), ctx(), [q("NVDA", 104, 100, "11:00", { dayOpen: 103.4, dayHigh: 111.5 })]);
 	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level]), [["gap", 1], ["high-52w", 3]]);
 	assert.deepEqual(r!.alerts.map((a) => a.push ?? "ring"), ["ring"]);
+});
+
+test("只升 1、2 层：同一拍跳空（1 层看空）加 52 周新低（3 层看空），新低照 3 层响铃，不升到没有那一行的 4 层", () => {
+	const [r] = run(newDay(DATE), ctx(), [q("AMD", 96.5, 100, "10:30", { dayOpen: 96.9, dayLow: 89.5, dayHigh: 97 })]);
+	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level, h.bumped ?? false]), [["gap", 1, false], ["low-52w", 3, false]]);
+	assert.deepEqual(r!.alerts.map((a) => [a.id.split(":")[0], a.push ?? "ring"]), [["low-52w", "ring"]]);
+});
+
+test("3 层的命中只计数：先 52 周新低（3 层看空），后盘中反转看空，反转升到 2 层", () => {
+	const day = newDay(DATE);
+	const [, r] = run(day, ctx(), [q("AMD", 89.5, 92, "10:30", { dayLow: 89.5 })], [q("AMD", 91, 92, "13:00", { dayLow: 89.5, dayHigh: 95 })]);
+	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level, h.bumped ?? false]), [["reversal", 2, true]]);
+	assert.equal(r!.alerts[0]!.push, "silent");
+	assert.match(r!.alerts[0]!.text, /。同向升一层（看多 0 条，看空 2 条）。/);
+});
+
+test("同向多过反向才升：先跳空看空，再反转看多（分歧，一比一），再 52 周新高看多，看多 2 条多过看空 1 条，新高升到 3 层", () => {
+	const day = newDay(DATE);
+	const [gap, rev, high] = run(day, ctx(), [q("NVDA", 96.5, 100, "09:45", { dayOpen: 96.6 })], [q("NVDA", 100.5, 100, "12:00", { dayOpen: 96.6, dayLow: 96.5 })], [q("NVDA", 104, 100, "13:00", { dayOpen: 96.6, dayLow: 96.5, dayHigh: 111 })]);
+	assert.deepEqual(gap!.hits.map((h) => [h.rule, h.level]), [["gap", 1]]);
+	assert.deepEqual(rev!.hits.map((h) => [h.rule, h.level]), [["reversal", 1]]);
+	assert.match(rev!.hits[0]!.text, /。多空分歧（看多 1 条，看空 1 条）。/);
+	assert.deepEqual(high!.hits.map((h) => [h.rule, h.level, h.bumped ?? false]), [["high-52w", 3, true]]);
+	assert.equal(high!.alerts[0]!.push, undefined, "升到 3 层，响铃");
+	assert.match(high!.alerts[0]!.text, /。同向升一层（看多 2 条，看空 1 条）。/);
+});
+
+test("计数时组合那一行不重复算，组合的两条照方向算：放量加新高（看多）以后的反转看空写「看多 2 条，看空 1 条」", () => {
+	const day = newDay(DATE);
+	const [, r] = run(day, ctx(), [q("NVDA", 104, 100, "11:00", { dayHigh: 111, volume: paced(4, "11:00") })], [q("NVDA", 99.5, 100, "13:00", { dayHigh: 111, volume: paced(4, "13:00") })]);
+	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level]), [["reversal", 1]]);
+	assert.match(r!.hits[0]!.text, /。多空分歧（看多 2 条，看空 1 条）。/);
+});
+
+test("到档的命中照方向计数：先跌到 -5% 档，后反转看多，写多空分歧；来回翻降到 0 层的不算", () => {
+	const day = newDay(DATE);
+	const [, r] = run(day, ctx(), [q("NVDA", 94.8, 100, "10:30")], [q("NVDA", 100.5, 100, "12:00", { dayLow: 94.8 })]);
+	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level]), [["reversal", 1]]);
+	assert.match(r!.hits[0]!.text, /。多空分歧（看多 1 条，看空 1 条）。/);
+	const past = { "gap:NVDA": ["bull", "bear", "bull"] as const };
+	const [demoted, high] = run(newDay(DATE), ctx({ past }), [q("NVDA", 96.5, 100, "09:45", { dayOpen: 96.6 })], [q("NVDA", 101, 100, "13:00", { dayOpen: 96.6, dayHigh: 111 })]);
+	assert.equal(demoted!.hits[0]!.level, 0);
+	assert.doesNotMatch(high!.hits[0]!.text, /多空分歧/);
 });
 
 test("这只票今天已经开了任务就不升：先到第一档开任务，后来的新高照自己的 2 层", () => {
@@ -165,6 +208,13 @@ test("大盘日：SPY 当天已到档，之后个股到档的触发进 SPY 的�
 	assert.ok(stocks!.alerts.every((a) => !a.text.includes("大盘日")));
 	const [own] = run(newDay(DATE), ctx(), [q("NVDA", 94.8, 100, "10:30")]);
 	assert.equal(own!.notices[0]!.thread, `NVDA:${DATE}`, "指数没到档时个股照开自己的任务");
+});
+
+test("大盘日只并同方向的：SPY 跌到 -2% 档以后，个股涨到 +5% 档照开自己的任务", () => {
+	const day = newDay(DATE);
+	const [, r] = run(day, ctx(), [q("SPY", 489.5, 500, "10:00")], [q("SPY", 489, 500, "10:30"), q("NVDA", 105.5, 100, "10:30")]);
+	assert.deepEqual(r!.notices.map((n) => n.thread), [`NVDA:${DATE}`]);
+	assert.ok(!r!.notices[0]!.fields.line.includes("大盘日"));
 });
 
 test("同一拍里 SPY 和个股一起到档，也并进指数的任务", () => {
