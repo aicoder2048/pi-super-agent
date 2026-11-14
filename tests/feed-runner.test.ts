@@ -130,6 +130,28 @@ test("页面标记：key 只跟着 badge 走，要是不空的文字；写错这
 	}
 });
 
+test("页面标记：text 太长或带换行时宿主收成一行、截到上限加「…」，这一轮的记录和响铃照发", async (t) => {
+	const { root, pkg } = taxCopy(t);
+	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ alerts: [{ id: "b", text: "NVDA · " + "开盘跳空 +3.40% · ".repeat(40) + "\\n尾巴", at: "2026-11-12T15:05:00Z", push: "badge", key: "NVDA" }, { id: "r", text: "响铃一行", at: "2026-11-12T15:05:00Z" }] });\n`);
+	const lines: Alert[] = [];
+	const badges: Badge[] = [];
+	const run = await runFeed(brokerage(root), [], { data: instanceData(join(root, "state")), submit: () => {}, alert: (_, a) => lines.push(a) > 0, badge: (_, b) => void badges.push(b), problem: () => {}, secret: () => "token", now: () => 0 });
+	assert.equal(run.ok, true, run.ok ? "" : run.note);
+	assert.equal(badges[0]!.text.length, 300);
+	assert.ok(badges[0]!.text.endsWith("…") && !/[\r\n]/.test(badges[0]!.text));
+	assert.deepEqual(lines.map((l) => l.externalId), ["r"]);
+});
+
+test("页面标记：不写 key 时 id 就是 key，id 也要是 1 到 64 个字的一行，否则这一轮失败、说出原因", async (t) => {
+	const { root, pkg } = taxCopy(t);
+	for (const id of ["x".repeat(65), "a\\nb"]) {
+		writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ alerts: [{ id: "${id}", text: "NVDA · 跳空", at: "2026-11-12T15:05:00Z", push: "badge" }] });\n`);
+		const run = await runFeed(brokerage(root), [], { data: instanceData(join(root, "state")), submit: () => {}, alert: () => true, badge: () => {}, problem: () => {}, secret: () => "token", now: () => 0 });
+		assert.equal(run.ok, false, id);
+		assert.match(run.ok ? "" : run.note, /key/, id);
+	}
+});
+
 test("alerts 的形状不对：这一轮失败，说出要什么", async (t) => {
 	const { root, pkg } = taxCopy(t);
 	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ alerts: [{ id: "a-1" }] });\n`);

@@ -52,6 +52,11 @@ function fromItems(items: readonly Json[]): Collected | string {
 	return { records, notices };
 }
 
+const badgeText = (text: string) => {
+	const line = text.replace(/[\r\n]+/g, " ");
+	return line.length <= BADGE_TEXT_MAX ? line : `${line.slice(0, BADGE_TEXT_MAX - 1)}…`;
+};
+
 export function parseCollected(output: Json, into?: CollectionDescriptor): Collected | string {
 	if (!isObject(output)) return `要交回一个对象 { records, notices, cursor }，收到 ${JSON.stringify(output)}`;
 	const { records = [], notices = [], cursor } = output;
@@ -69,8 +74,9 @@ export function parseCollected(output: Json, into?: CollectionDescriptor): Colle
 	if (!alerts.every((a) => a["key"] === undefined || a["push"] === "badge")) return `alerts 的 key 只给 push: badge 用`;
 	if (!alerts.every((a) => a["push"] !== "badge" || a["fold"] === undefined)) return `alerts 里 push: badge 的那一项不能 fold`;
 	const badgeKey = (k: unknown) => k === undefined || (typeof k === "string" && k !== "" && k.length <= BADGE_KEY_MAX && !/[\r\n]/.test(k));
-	if (!alerts.every((a) => a["push"] !== "badge" || badgeKey(a["key"]))) return `alerts 的 key 只给 push: badge 用，要是 1 到 ${BADGE_KEY_MAX} 个字的一行文字`;
-	if (!alerts.every((a) => a["push"] !== "badge" || ((a["text"] as string).length <= BADGE_TEXT_MAX && !/[\r\n]/.test(a["text"] as string)))) return `alerts 里 push: badge 的 text 要是一行，最多 ${BADGE_TEXT_MAX} 个字`;
+	if (!alerts.every((a) => a["push"] !== "badge" || badgeKey(a["key"] ?? a["id"]))) return `alerts 的 key 只给 push: badge 用，要是 1 到 ${BADGE_KEY_MAX} 个字的一行文字；不写 key 时用 id，id 也要合这一条`;
+	// A badge is a label on a card: an overlong one is cut rather than failing the round, which would drop its records, lines and tasks too.
+	for (const a of alerts as JsonObject[]) if (a["push"] === "badge") a["text"] = badgeText(a["text"] as string);
 	if (problem !== undefined && !(isObject(problem) && typeof problem["id"] === "string" && typeof problem["text"] === "string")) return `problem 要是 { id, text }，两个都是文字`;
 	if (problem !== undefined && problem["once"] !== undefined && problem["once"] !== true) return `problem 的 once 只能是 true，收到 ${JSON.stringify(problem["once"])}`;
 	if (into !== undefined) {

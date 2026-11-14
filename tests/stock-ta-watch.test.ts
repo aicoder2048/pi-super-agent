@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { newDay, watch, type Context, type DayState } from "../docs/modules/examples/stock-ta/feeds/quotes/watch.ts";
+import { badgeAlerts } from "../docs/modules/examples/stock-ta/badges.ts";
 import type { Hit } from "../docs/modules/examples/stock-ta/hits.ts";
 import type { Quote } from "../docs/modules/examples/stock-ta/massive.ts";
 import { parseRuleLevels, quietAt, type LevelRow } from "../docs/modules/examples/stock-ta/watch-rules.ts";
@@ -296,4 +297,11 @@ test("到档一个方向只算一条：两档同一拍到（层级改成 2，没
 	const [, r] = run(newDay(DATE), c, [q("NVDA", 91.5, 100, "10:00")], [q("NVDA", 91.5, 100, "11:00", { volume: paced(4, "11:00") })]);
 	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level]), [["volume", 3]]);
 	assert.match(r!.hits[0]!.text, /同向升一层（看多 0 条，看空 2 条）/);
+});
+
+test("页面标记一只票当天 1 层的事实再多，也截在 300 字以内，末尾写「…」", () => {
+	const hits = Array.from({ length: 40 }, (_, i) => ({ symbol: "NVDA", date: "2026-11-12", at: "2026-11-12T15:05:00.000Z", fact: `ta 重点形态第 ${i} 条（ta R-PAT-${i}）`, level: 1 }));
+	const [badge] = badgeAlerts(hits, hits.slice(-1));
+	assert.ok(badge!.text.length <= 300 && badge!.text.endsWith("…"), badge!.text);
+	assert.ok(badge!.text.startsWith("NVDA · "));
 });
