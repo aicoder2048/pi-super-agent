@@ -101,7 +101,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [ ] Lane 7. Phone width 390 px with two alarms. Save `7-phone.png`. Pass when the banner fits without horizontal scroll and the composer is still reachable.
 - [ ] Lane 8. Dark theme with an alarm. Save `8-dark.png`. Pass when the banner text reads against its background.
 - [ ] Lane 9. Restart with an alarm standing. Save `9-restart.png`. Pass when the banner is gone after restart and comes back on the next failed turn, with one new ⚠️.
-- [x] Lane 10. One real-model sanity run on `openai-codex/*`. Save the snapshot's `health` field. Pass when a real Router turn succeeds and `health.active` is empty.
+- [ ] Lane 10. One real-model sanity run on `openai-codex/*`. Save `10-real.png`. Pass when a real Router turn succeeds and `health.active` is empty. The run passed, read from the page's event stream, but no screenshot was saved.
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
