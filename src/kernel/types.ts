@@ -1,3 +1,4 @@
+import type { Push } from "../modules/protocol.ts";
 import type { RunAsk } from "./run-ask.ts";
 export const BASES = ["request", "rule", "inference"] as const;
 export type Basis = (typeof BASES)[number];
@@ -332,11 +333,11 @@ export interface Quote {
 
 /**
  * What a source says to the user directly, past the Router (ADR-0017). The kind alone decides where it may go:
- * an alert reaches every front end, Telegram included, and is deduped on (source, externalId); a receipt never leaves this machine;
+ * an alert reaches every front end, Telegram included, and is deduped on (source, externalId); its `push` says whether the phone rings (ADR-0027); a receipt never leaves this machine;
  * a notice is the user's own one-way note from `just notify` and reaches every front end like an alert, never deduped.
  */
 export type HostLinePost =
-	| { kind: "alert"; externalId: string; text: string; occurredAt: number; module?: AlertModule }
+	| { kind: "alert"; externalId: string; text: string; occurredAt: number; module?: AlertModule; push?: Push }
 	| { kind: "receipt"; text: string; module?: AlertModule }
 	| { kind: "notice"; text: string };
 
@@ -346,7 +347,7 @@ export const NOTICE_MAX = 2000;
 export type AlertModule = { title: string };
 
 /** A host line in the conversation. `who` is the kind. It cannot be quoted. `module`: absent for the market source's alerts. */
-export type HostLine = { id: string; who: HostLinePost["kind"]; text: string; at: number; module?: AlertModule };
+export type HostLine = { id: string; who: HostLinePost["kind"]; text: string; at: number; module?: AlertModule; push?: Push };
 
 /** One line of the 对话 column. ticketId: on a 幕僚长 line, the task it concerns; the page puts that task's option buttons under its last such line. On a user line, the task whose question it answers. */
 export type ConversationLine = { id: string; who: "user" | "router"; text: string; at: number; ticketId?: string; quote?: Quote } | HostLine;

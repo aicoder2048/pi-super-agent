@@ -91,6 +91,22 @@ test("handler 交回的 alerts 经 ports.alert 当模块提醒行贴出，在触
 	assert.equal(seen.size, 1);
 });
 
+test("handler 交回的提醒写了 push: silent：ports.alert 收到的那一行也带着静音；没写的照旧响铃", async (t) => {
+	const { root, pkg } = taxCopy(t);
+	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ alerts: [{ id: "q", text: "静音一行", at: "2026-11-12T15:05:00Z", push: "silent" }, { id: "r", text: "响铃一行", at: "2026-11-12T15:05:00Z" }] });\n`);
+	const lines: Alert[] = [];
+	await runFeed(brokerage(root), [], { data: instanceData(join(root, "state")), submit: () => {}, alert: (_, a) => lines.push(a) > 0, problem: () => {}, secret: () => "token", now: () => 0 });
+	assert.deepEqual(lines, [{ externalId: "q", text: "静音一行", at: "2026-11-12T15:05:00Z", push: "silent" }, { externalId: "r", text: "响铃一行", at: "2026-11-12T15:05:00Z" }]);
+});
+
+test("提醒的 push 只认 silent：别的值这一轮失败，说出要什么", async (t) => {
+	const { root, pkg } = taxCopy(t);
+	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ alerts: [{ id: "a-1", text: "x", at: "2026-11-12T15:05:00Z", push: "loud" }] });\n`);
+	const run = await runFeed(brokerage(root), [], { data: instanceData(join(root, "state")), submit: () => {}, alert: () => true, problem: () => {}, secret: () => "token", now: () => 0 });
+	assert.equal(run.ok, false);
+	assert.match(run.ok ? "" : run.note, /push 只能是 silent/);
+});
+
 test("alerts 的形状不对：这一轮失败，说出要什么", async (t) => {
 	const { root, pkg } = taxCopy(t);
 	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ alerts: [{ id: "a-1" }] });\n`);

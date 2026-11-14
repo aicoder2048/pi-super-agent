@@ -142,7 +142,7 @@ function toTrigger(r: Row): Trigger {
 const moduleOf = (r: Row): { module?: AlertModule } => (r.module_title ? { module: { title: r.module_title } } : {});
 
 function hostLine(r: Row): HostLine {
-	return { id: r.id, who: r.kind, text: r.text, at: r.created_at, ...moduleOf(r) };
+	return { id: r.id, who: r.kind, text: r.text, at: r.created_at, ...moduleOf(r), ...(r.push === "silent" && { push: "silent" as const }) };
 }
 
 // Node 22's node:sqlite reads a string back only up to its first U+0000, so drop U+0000 before it reaches the store.
@@ -1254,7 +1254,7 @@ export class Kernel {
 	postHostLine(source: string, post: HostLinePost): { line: HostLine; duplicate: boolean } {
 		return this.#tx(() => {
 			if (post.kind === "alert") {
-				const existing = this.#get("SELECT id, kind, text, created_at, module_title FROM host_lines WHERE source = ? AND external_id = ?", source, post.externalId);
+				const existing = this.#get("SELECT id, kind, text, created_at, module_title, push FROM host_lines WHERE source = ? AND external_id = ?", source, post.externalId);
 				if (existing) return { line: hostLine(existing), duplicate: true };
 			}
 			return { line: this.#insertHostLine(source, post), duplicate: false };
@@ -1266,7 +1266,7 @@ export class Kernel {
 		const at = this.#now();
 		const module = post.kind === "notice" ? undefined : post.module;
 		this.#run(
-			"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at, module_title) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+			"INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at, module_title, push) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			id,
 			post.kind,
 			source,
@@ -1275,8 +1275,10 @@ export class Kernel {
 			post.kind === "alert" ? post.occurredAt : at,
 			at,
 			module?.title ?? null,
+			post.kind === "alert" ? (post.push ?? null) : null,
 		);
-		return { id, who: post.kind, text: post.text, at, ...(module && { module }) };
+		const push = post.kind === "alert" ? post.push : undefined;
+		return { id, who: post.kind, text: post.text, at, ...(module && { module }), ...(push && { push }) };
 	}
 
 	raised(source: string, externalId: string): boolean {
@@ -1294,12 +1296,12 @@ export class Kernel {
 	}
 
 	undeliveredLines(): HostLine[] {
-		return this.#all("SELECT id, kind, text, created_at, module_title FROM host_lines WHERE kind <> 'receipt' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
+		return this.#all("SELECT id, kind, text, created_at, module_title, push FROM host_lines WHERE kind <> 'receipt' AND delivered_at IS NULL ORDER BY rowid").map(hostLine);
 	}
 
 	/** Alerts posted since local midnight, oldest first. */
 	alertsToday(): HostLine[] {
-		return this.#all("SELECT id, kind, text, created_at, module_title FROM host_lines WHERE kind = 'alert' AND created_at >= ? ORDER BY rowid", localDayStart(this.#now())).map(hostLine);
+		return this.#all("SELECT id, kind, text, created_at, module_title, push FROM host_lines WHERE kind = 'alert' AND created_at >= ? ORDER BY rowid", localDayStart(this.#now())).map(hostLine);
 	}
 
 	alertCountsToday(): Record<string, number> {

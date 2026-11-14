@@ -141,7 +141,7 @@ export class TelegramClient {
 					break;
 				case "host_line":
 					if (message.who !== "receipt") {
-						for (const chat of this.#store.openChats()) this.#store.put(chat, `${message.who}:${message.id}`, null, { kind: "line", role: "notice", text: hostLineText(message), silent: false, noPreview: true });
+						for (const chat of this.#store.openChats()) this.#store.put(chat, `${message.who}:${message.id}`, null, { kind: "line", role: "notice", text: hostLineText(message), silent: message.push === "silent", noPreview: true });
 					}
 					break;
 				case "cleared":

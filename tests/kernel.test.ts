@@ -2153,6 +2153,34 @@ test("旧数据库的宿主行表没有模块列：打开时补上，旧提醒�
 	assert.deepEqual(again.kernel.conversation().map((l) => (l.who === "alert" ? l.module : "?")), [undefined, module]);
 });
 
+test("宿主行：静音的提醒记着静音；刚贴出、待发和今天的提醒里读回来都是静音，响铃的提醒不带这个字段", () => {
+	const s = setup();
+	const quiet = s.kernel.postHostLine("module:stock-ta", { ...alert("band:NVDA:2026-11-08:up5"), push: "silent" }).line;
+	const loud = s.kernel.postHostLine("module:stock-ta", alert("band:NVDA:2026-11-08:up8")).line;
+	assert.equal(quiet.push, "silent");
+	assert.equal("push" in loud, false);
+	assert.deepEqual(s.kernel.undeliveredLines().map((l) => l.push ?? "ring"), ["silent", "ring"]);
+	assert.deepEqual(s.kernel.alertsToday().map((l) => l.push ?? "ring"), ["silent", "ring"]);
+	assert.equal(s.kernel.postHostLine("module:stock-ta", alert("band:NVDA:2026-11-08:up5")).line.push, "silent", "重复的提醒返回第一行，静音照旧");
+});
+
+test("宿主行：只有提醒能静音；静音以外的值写库时报错", () => {
+	const s = setup();
+	assert.throws(() => s.db.prepare("INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at, push) VALUES ('hln_x', 'alert', 's', 'x', 'y', 1, 1, 'loud')").run(), /CHECK constraint failed/);
+	assert.throws(() => s.db.prepare("INSERT INTO host_lines (id, kind, source, external_id, text, occurred_at, created_at, push) VALUES ('hln_y', 'notice', 's', NULL, 'y', 1, 1, 'silent')").run(), /CHECK constraint failed/);
+});
+
+test("旧数据库的宿主行表没有静音列：打开时补上，旧提醒读回来照旧响铃，新提醒能静音", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "psa-kernel-")), "state.db");
+	const first = setup({ path });
+	first.kernel.postHostLine("us-market", alert("NVDA:2026-11-08:day-up-5"));
+	first.db.exec("ALTER TABLE host_lines DROP COLUMN push");
+	first.db.close();
+	const again = setup({ path });
+	again.kernel.postHostLine("module:stock-ta", { ...alert("band:NVDA:2026-11-08:up5"), push: "silent" });
+	assert.deepEqual(again.kernel.undeliveredLines().map((l) => l.push ?? "ring"), ["ring", "silent"]);
+});
+
 test("宿主行：收据不去重，可以多行、很长", () => {
 	const s = setup();
 	const text = Array.from({ length: 150 }, (_, i) => `第 ${i} 条：${"条件".repeat(40)}`).join("\n");

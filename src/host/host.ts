@@ -479,6 +479,7 @@ export class Host {
 			text: alert.text,
 			occurredAt: Number.isNaN(occurredAt) ? this.#clock.now() : occurredAt,
 			module: { title: this.kernel.moduleLabel(module) },
+			...(alert.push && { push: alert.push }),
 		});
 	}
 
