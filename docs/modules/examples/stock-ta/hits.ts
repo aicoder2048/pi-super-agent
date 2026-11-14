@@ -31,6 +31,8 @@ export type Hit = {
 	held?: true;
 	/** `ta`'s rule id, for a hit graded from one of `ta`'s signals. */
 	signal?: string;
+	/** A trigger whose line and thread differ from the hit's: a holding rule's names no cost or stop and asks on its own thread. Kept on the hit so a trigger held back by quiet hours goes out the same way. */
+	notice?: { line: string; thread: string };
 };
 
 export type Feed = "quotes" | "scan";

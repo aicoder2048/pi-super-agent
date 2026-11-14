@@ -99,8 +99,7 @@ function vixyRise(q: Quote, threshold: number): Finding | undefined {
 	return move >= threshold - EPSILON ? { lean: "bear", fact: `涨 ${signed(move)}%，到达 +${threshold}% 档` } : undefined;
 }
 
-/** `notice`: a trigger whose text and thread differ from the hit's line, such as a holding rule's, which carries no cost or stop. */
-type Delivery = { line: Line; plan?: Plan; notice?: { line: string; thread: string } };
+type Delivery = { line: Line; plan?: Plan };
 type Graded = { hit: Hit; delivery: Delivery; quote: Quote };
 
 /**
@@ -223,10 +222,9 @@ function holdingRules(day: DayState, q: Quote, ctx: Context): Graded[] {
 		const entry = entered(rule.id, holding, e.threshold, today, ctx.peaks?.[q.symbol]);
 		if (entry === undefined) return [];
 		const spec = HOLDING_RULES[rule.id];
-		const hit: Hit = { id, rule: rule.id, symbol: q.symbol, date: day.date, at: q.at, lean: null, fact: spec.fact(entry), level: e.level, text: `${spec.head(entry)}，${tail}` };
+		const hit: Hit = { id, rule: rule.id, symbol: q.symbol, date: day.date, at: q.at, lean: null, fact: spec.fact(entry), level: e.level, text: `${spec.head(entry)}，${tail}`, notice: { line: `${q.symbol} ${spec.notice}。现价 ${q.price.toFixed(2)}，${tail}`, thread: `${q.symbol}:${day.date}:holding` } };
 		day.hits.push(hit);
-		const notice = { line: `${q.symbol} ${spec.notice}。现价 ${q.price.toFixed(2)}，${tail}`, thread: `${q.symbol}:${day.date}:holding` };
-		return [{ hit, delivery: { line: e.line, plan: rule.plan, notice }, quote: q }];
+		return [{ hit, delivery: { line: e.line, plan: rule.plan }, quote: q }];
 	});
 }
 
@@ -240,7 +238,7 @@ function deliver({ hit, delivery }: Graded, ctx: Context, out: Beat): void {
 		return;
 	}
 	if (loud) out.alerts.push({ id: hit.id, text: hit.text, at: hit.at, ...(delivery.line === "silent" && { push: "silent" as const }) });
-	if (task) out.notices.push({ id: hit.id, thread: delivery.notice?.thread ?? `${hit.symbol}:${hit.date}`, threadScope: "module", fields: { line: delivery.notice?.line ?? hit.text, rule: hit.rule, level: String(hit.level), plan: delivery.plan! } });
+	if (task) out.notices.push({ id: hit.id, thread: hit.notice?.thread ?? `${hit.symbol}:${hit.date}`, threadScope: "module", fields: { line: hit.notice?.line ?? hit.text, rule: hit.rule, level: String(hit.level), plan: delivery.plan! } });
 }
 
 /** Mutates `day`: its new hits are appended and the bands it reached are remembered. */

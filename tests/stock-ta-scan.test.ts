@@ -12,7 +12,10 @@ import { instanceData } from "../src/modules/instance-data.ts";
 import { fakeTa, type DailyRow } from "./helpers/fake-ta.ts";
 import type { Alert, Badge } from "../src/modules/protocol.ts";
 import { readHits, writeHits, type Hit } from "../docs/modules/examples/stock-ta/hits.ts";
-import { quietAt } from "../docs/modules/examples/stock-ta/watch-rules.ts";
+import { parseRuleLevels, quietAt } from "../docs/modules/examples/stock-ta/watch-rules.ts";
+import { newDay, watch } from "../docs/modules/examples/stock-ta/feeds/quotes/watch.ts";
+import { parseHoldings } from "../docs/modules/examples/stock-ta/holdings.ts";
+import type { Quote } from "../docs/modules/examples/stock-ta/massive.ts";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { servedAsHost } from "./helpers/fakes.ts";
@@ -690,4 +693,18 @@ test("持仓的状态：昨天收盘和今天收盘都在止损线、成本价�
 	await feed.tick();
 	assert.match(feed.digests()[0]?.text ?? "", /；NVDA 仍在止损线下、成本价下。/);
 	assert.deepEqual(feed.lines().map((a) => a.externalId), ["R-MA-2-50:down:NVDA:2026-11-12"]);
+});
+
+test("免打扰时留下的止损触发由收盘小结补发时，仍走持仓线程，正文不带成本和止损价", async (t) => {
+	const feed = await scannedOnce(t);
+	const day = newDay("2026-11-12");
+	const holdings = parseHoldings([{ id: "1", fields: { symbol: "NVDA", cost: 150, stopPrice: 138 } }], ["NVDA"]).holdings;
+	const quote: Quote = { symbol: "NVDA", price: 137.5, prevClose: 145, changePct: -5.17, volume: null, at: "2026-11-12T20:59:00.000Z", dayClose: 137.5, dayOpen: null, dayHigh: null, dayLow: 137.2 };
+	watch(day, [quote], { levels: parseRuleLevels([]).levels, history: {}, past: {}, quiet: true, holdings });
+	assert.ok(day.hits.some((h) => h.rule === "stop-loss" && h.held), "止损在免打扰时段留下");
+	writeHits(feed.dataDir, "quotes", "2026-11-12", day.hits);
+	await feed.tick();
+	const stop = feed.notices.find((n) => n.id === "stop-loss:NVDA:2026-11-12");
+	assert.equal(stop?.thread, "NVDA:2026-11-12:holding");
+	assert.doesNotMatch(stop!.body, /150|138/);
 });

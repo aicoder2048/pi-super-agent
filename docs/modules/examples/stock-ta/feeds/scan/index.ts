@@ -219,9 +219,9 @@ const planOf = (rule: string) => [...WATCH_RULES, ...COMBOS].find((r) => r.id ==
 function heldTasks(held: readonly Hit[]): Notice[] {
 	return held.filter((h) => opensTask(h) && planOf(h.rule) !== undefined).map((h) => ({
 		id: h.id,
-		thread: `${h.symbol}:${h.date}`,
+		thread: h.notice?.thread ?? `${h.symbol}:${h.date}`,
 		threadScope: "module",
-		fields: { line: `${h.text}（免打扰时段留下，收盘小结时补发）`, rule: h.rule, level: String(h.level), plan: planOf(h.rule)! },
+		fields: { line: `${h.notice?.line ?? h.text}（免打扰时段留下，收盘小结时补发）`, rule: h.rule, level: String(h.level), plan: planOf(h.rule)! },
 	}));
 }
 
