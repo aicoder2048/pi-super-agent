@@ -56,7 +56,7 @@ const RECENT_MAX = 10;
 
 const CAUSES: readonly [Cause, RegExp][] = [
 	["quota", QUOTA_ERROR],
-	["auth", /\b40[13]\b|unauthori[sz]ed|forbidden|invalid[_ ]grant|invalid.{0,20}(api.?key|token|credential)|authenticat|revoked|expired.{0,20}token|token.{0,20}expired|not logged in|login/i],
+	["auth", /\b40[13]\b|unauthori[sz]ed|forbidden|invalid[_ ]grant|invalid.{0,20}(api.?key|token|credential)|authenticat|revoked|expired.{0,20}token|token.{0,20}expired|session.{0,30}expired|not logged in|\blog ?in\b|no api key/i],
 	["network", /fetch failed|network|ECONNREFUSED|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|socket hang up|getaddrinfo|connection error|timed? ?out/i],
 ];
 
@@ -80,7 +80,11 @@ export const ADVICE: Readonly<Record<Area, Record<Cause, string>>> = {
 };
 
 const SECRETS: readonly [RegExp, string][] = [
-	[/([?&](?:api[_-]?key|apikey|key|token|access_token|secret|password|client_secret)=)[^&\s]+/gi, "$1…"],
+	[/(\b(?:api[_-]?key|apikey|key|token|access_token|refresh_token|secret|password|client_secret)=)[^&\s]+/gi, "$1…"],
+	[/("(?:api[_-]?key|apikey|token|access_token|refresh_token|secret|password|client_secret)"\s*:\s*")[^"]*/gi, "$1…"],
+	[/\b(x-api-key\s*:\s*)\S+/gi, "$1…"],
+	[/\bbot(\d+):[\w-]+/g, "bot$1:…"],
+	[/(\/\/[^/\s:@]+:)[^@\s/]+@/g, "$1…@"],
 	[/\b(Bearer|Basic)\s+[\w.~+/=-]+/gi, "$1 …"],
 	[/\b(sk|pk|rk)-[\w-]{8,}/g, "$1-…"],
 	[/\b(?:ya29|1\/\/)[\w.-]{10,}/g, "…"],
@@ -195,6 +199,6 @@ export function raisedText(alarm: Alarm): string {
 }
 
 export function clearedText(alarm: ClearedAlarm): string {
-	const minutes = Math.max(1, Math.round((alarm.clearedAt - alarm.since) / 60_000));
-	return `✅ ${alarm.subject}恢复了（断了约 ${minutes} 分钟）`;
+	const minutes = Math.round((alarm.clearedAt - alarm.since) / 60_000);
+	return `✅ ${alarm.subject}恢复了（断了${minutes < 1 ? "不到 1 分钟" : `约 ${minutes} 分钟`}）`;
 }
