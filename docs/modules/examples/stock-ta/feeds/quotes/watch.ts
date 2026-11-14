@@ -207,24 +207,34 @@ const HOLDING_ROWS = WATCH_RULES.filter((r): r is HoldingRule => "holding" in r)
 /**
  * The holding rules have no lean: the holding is the user's position, not market evidence, so they neither escalate other hits
  * nor get escalated. Their trigger goes to the symbol's own holding thread, so its question card does not wait behind a band's
- * analysis, and names no cost, stop or peak (design section 9).
+ * analysis, and names no cost, stop or peak (design section 9). Rules a symbol enters in one beat give one line, as bands do: the
+ * highest level names it and the rest follow as 同时, it rings when any of them rings, and only the highest can open a task.
+ * Each entry is recorded as its own hit, so none of them fires again that day.
  */
 function holdingRules(day: DayState, q: Quote, ctx: Context): Graded[] {
 	const holding = ctx.holdings?.get(q.symbol);
 	if (holding === undefined) return [];
 	const today = { prevClose: q.prevClose, price: q.price, low: q.dayLow ?? q.price, high: q.dayHigh ?? q.price };
-	const move = moveOf(q);
-	const tail = `当天${move >= 0 ? "涨" : "跌"} ${signed(move)}%。${stamp(q)}`;
-	return HOLDING_ROWS.flatMap((rule): Graded[] => {
+	const entries = HOLDING_ROWS.flatMap((rule) => {
 		const e = effective(rule, q.symbol, scopeOf(q.symbol), ctx.levels);
 		const id = `${rule.id}:${q.symbol}:${day.date}`;
 		if (e.threshold === undefined || day.hits.some((h) => h.id === id)) return [];
 		const entry = entered(rule.id, holding, e.threshold, today, ctx.peaks?.[q.symbol]);
-		if (entry === undefined) return [];
-		const spec = HOLDING_RULES[rule.id];
-		const hit: Hit = { id, rule: rule.id, symbol: q.symbol, date: day.date, at: q.at, lean: null, fact: spec.fact(entry), level: e.level, text: `${spec.head(entry)}，${tail}`, notice: { line: `${q.symbol} ${spec.notice}。现价 ${q.price.toFixed(2)}，${tail}`, thread: `${q.symbol}:${day.date}:holding` } };
+		return entry === undefined ? [] : [{ rule, e, id, entry, spec: HOLDING_RULES[rule.id] }];
+	}).sort((x, y) => y.e.level - x.e.level);
+	if (entries.length === 0) return [];
+	const [lead, rest] = [entries[0]!, entries.slice(1)];
+	const move = moveOf(q);
+	const tail = `现价 ${q.price.toFixed(2)}，当天${move >= 0 ? "涨" : "跌"} ${signed(move)}%。${stamp(q)}`;
+	const text = `${q.symbol} ${lead.spec.head(lead.entry)}${rest.length === 0 ? "" : `；同时${rest.map((r) => r.spec.head(r.entry)).join("、")}`}，${tail}`;
+	const notice = { line: `${q.symbol} ${lead.spec.notice}${rest.length === 0 ? "" : `，同时${rest.map((r) => r.spec.notice).join("、")}`}。${tail}`, thread: `${q.symbol}:${day.date}:holding` };
+	const lines = entries.map((r) => r.e.line);
+	const line: Line = lines.includes("ring") ? "ring" : lines.includes("silent") ? "silent" : lead.e.line;
+	return entries.map((r): Graded => {
+		const own = r === lead;
+		const hit: Hit = { id: r.id, rule: r.rule.id, symbol: q.symbol, date: day.date, at: q.at, lean: null, fact: r.spec.fact(r.entry), level: r.e.level, text: own ? text : `${q.symbol} ${r.spec.head(r.entry)}，${tail}`, ...(own && { notice }) };
 		day.hits.push(hit);
-		return [{ hit, delivery: { line: e.line, plan: rule.plan }, quote: q }];
+		return { hit, delivery: own ? { line, plan: r.rule.plan } : { line: "none" }, quote: q };
 	});
 }
 

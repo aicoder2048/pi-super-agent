@@ -64,7 +64,7 @@ type Spec = {
 	touch: boolean;
 	/** For other lines' 同日 list, which can reach a trigger: no cost, stop or peak. */
 	fact(e: Entry): string;
-	/** The line to the user directly, numbers included. */
+	/** The line to the user directly, numbers included, after the symbol and before the price. */
 	head(e: Entry): string;
 	/** The head of the trigger, which the Router reads: no cost, stop or peak. */
 	notice: string;
@@ -87,7 +87,7 @@ export const HOLDING_RULES: Readonly<Record<HoldingRuleId, Spec>> = {
 		price: (t) => t.low,
 		touch: true,
 		fact: () => "触到止损线",
-		head: (e) => `${e.holding.symbol} 触到你的止损线 ${money(e.line)}（${stopSource(e.holding, e.threshold)}）。当天最低 ${money(e.today.low)}，现价 ${money(e.today.price)}`,
+		head: (e) => `触到你的止损线 ${money(e.line)}（${stopSource(e.holding, e.threshold)}）。当天最低 ${money(e.today.low)}`,
 		notice: "触到你的止损线",
 		state: "止损线下",
 	},
@@ -96,7 +96,7 @@ export const HOLDING_RULES: Readonly<Record<HoldingRuleId, Spec>> = {
 		price: (t) => t.price,
 		touch: true,
 		fact: (e) => `从${e.holding.boughtAt !== undefined ? "" : " "}${peakName(e.holding, "")}回撤 ${drop(e).toFixed(1)}%`,
-		head: (e) => `${e.holding.symbol} 从${e.holding.boughtAt !== undefined ? "" : " "}${peakName(e.holding, "的")} ${money(e.peak!)} 回撤 ${drop(e).toFixed(2)}%，现价 ${money(e.price)}`,
+		head: (e) => `从${e.holding.boughtAt !== undefined ? "" : " "}${peakName(e.holding, "的")} ${money(e.peak!)} 回撤 ${drop(e).toFixed(2)}%`,
 		notice: "从持仓高点回撤到你的回撤线",
 		state: "回撤线下",
 	},
@@ -105,7 +105,7 @@ export const HOLDING_RULES: Readonly<Record<HoldingRuleId, Spec>> = {
 		price: (t) => t.price,
 		touch: false,
 		fact: () => "跌破成本价",
-		head: (e) => `${e.holding.symbol} 跌破你的成本价 ${money(e.holding.cost)}${e.threshold > 0 ? ` 的 -${e.threshold}%（${money(e.line)}）` : ""}，现价 ${money(e.price)}`,
+		head: (e) => `跌破你的成本价 ${money(e.holding.cost)}${e.threshold > 0 ? ` 的 -${e.threshold}%（${money(e.line)}）` : ""}`,
 		notice: "跌破你的成本价",
 		state: "成本价下",
 	},

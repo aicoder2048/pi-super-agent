@@ -89,7 +89,7 @@ test("持仓规则的触发不带成本、止损价和高点：只有现价、�
 	const holdings = held({ symbol: "NVDA", cost: 152.35, stopPrice: 141.65, boughtAt: "2026-10-01" });
 	const raised = levels({ rule: "drawdown", level: 5 }, { rule: "below-cost", level: 5 }, { rule: "move-1", level: 0 }, { rule: "move-2", level: 0 });
 	const [r] = run(newDay(DATE), ctx({ holdings, levels: raised, peaks: { NVDA: 197.45 } }), [q("NVDA", 141.9, 170, "10:41", { dayLow: 141.6, dayHigh: 170.5 })]);
-	assert.deepEqual(r!.notices.map((n) => n.fields.rule), ["stop-loss", "drawdown", "below-cost"]);
+	assert.deepEqual(r!.notices.map((n) => n.fields.rule), ["stop-loss"], "同一轮三条持仓规则并成一个任务");
 	for (const n of r!.notices) for (const value of Object.values(n.fields)) assert.doesNotMatch(value, /152\.35|141\.65|197\.45/, `${n.id} 的触发没有持仓数字`);
 	assert.ok(r!.alerts.some((a) => /152\.35/.test(a.text)), "直接给你的那一行照写成本");
 });
@@ -114,6 +114,25 @@ test("跌破成本价：现价低于成本静音一行；正好等于成本不�
 	const [r] = run(newDay(DATE), ctx({ holdings }), [q("NVDA", 149.2, 151, "10:41"), q("AMD", 100, 101, "10:41")]);
 	assert.deepEqual(r!.hits.map((h) => [h.symbol, h.rule, h.level]), [["NVDA", "below-cost", 2]]);
 	assert.deepEqual(r!.alerts.map((a) => [a.push, a.text]), [["silent", "NVDA 跌破你的成本价 150.00，现价 149.20，当天跌 -1.19%。报价时间 10:41 ET（延迟行情）。"]]);
+});
+
+test("同一轮一只票进了几条持仓规则：并成一行，按最高的层级响铃，事实一起列；有 6 层的只开一个 holding-ask 任务；当天不再重复", () => {
+	const holdings = held({ symbol: "NVDA", cost: 150, stopPrice: 138, boughtAt: "2026-10-01" });
+	const day = newDay(DATE);
+	const bandsOff = levels({ rule: "move-1", level: 0 }, { rule: "move-2", level: 0 });
+	const [r, later] = run(day, ctx({ holdings, levels: bandsOff, peaks: { NVDA: 175 } }), [q("NVDA", 139, 152, "10:41", { dayLow: 137.5, dayHigh: 152.5 })], [q("NVDA", 135, 152, "10:42", { dayLow: 134, dayHigh: 152.5 })]);
+	assert.deepEqual(r!.hits.filter((h) => !h.rule.startsWith("move-")).map((h) => [h.id, h.level]), [[`stop-loss:NVDA:${DATE}`, 6], [`drawdown:NVDA:${DATE}`, 3], [`below-cost:NVDA:${DATE}`, 2]], "每条规则各记一条命中");
+	assert.deepEqual(r!.alerts.map((a) => [a.id, a.push ?? "ring", a.text]), [[`stop-loss:NVDA:${DATE}`, "ring", "NVDA 触到你的止损线 138.00（你设的止损价）。当天最低 137.50；同时从建仓以来的高点 175.00 回撤 20.57%、跌破你的成本价 150.00，现价 139.00，当天跌 -8.55%。报价时间 10:41 ET（延迟行情）。"]]);
+	assert.deepEqual(r!.notices.map((n) => [n.id, n.thread, n.fields.rule, n.fields.level, n.fields.plan, n.fields.line]), [[`stop-loss:NVDA:${DATE}`, `NVDA:${DATE}:holding`, "stop-loss", "6", "holding-ask", "NVDA 触到你的止损线，同时从持仓高点回撤到你的回撤线、跌破你的成本价。现价 139.00，当天跌 -8.55%。报价时间 10:41 ET（延迟行情）。"]]);
+	assert.deepEqual([later!.hits.filter((h) => !h.rule.startsWith("move-")), later!.alerts, later!.notices], [[], [], []]);
+});
+
+test("同一轮进了回撤和跌破成本（没有止损）：一行按回撤的响铃，不开任务", () => {
+	const holdings = held({ symbol: "NVDA", cost: 150, boughtAt: "2026-10-01" });
+	const [r] = run(newDay(DATE), ctx({ holdings, peaks: { NVDA: 180 } }), [q("NVDA", 149, 155, "10:41", { dayHigh: 155.5 })]);
+	assert.deepEqual(r!.hits.map((h) => h.rule), ["drawdown", "below-cost"]);
+	assert.deepEqual(r!.alerts.map((a) => [a.id, a.push ?? "ring", a.text]), [[`drawdown:NVDA:${DATE}`, "ring", "NVDA 从建仓以来的高点 180.00 回撤 17.22%；同时跌破你的成本价 150.00，现价 149.00，当天跌 -3.87%。报价时间 10:41 ET（延迟行情）。"]]);
+	assert.deepEqual(r!.notices, []);
 });
 
 test("状态型只在进入那天算：昨收已经在线下不算；同一天第二轮不再算；第二天回到线上又跌破，再算一次", () => {
