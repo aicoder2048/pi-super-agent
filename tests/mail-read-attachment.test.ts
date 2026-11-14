@@ -330,9 +330,14 @@ test("读附件：扫描图包在 Form XObject 里的 PDF（合并、另存、�
 	assert.deepEqual(await w.call({ messageId: "m-1", partId: "2" }), { ok: true, output: { name: "loop.pdf", type: "application/pdf", pages: 1, text: "", truncated: false } });
 });
 
-test("读附件：某页的图片表坏了（指向不存在的对象、条目是 null、整个是数组），那页只是不算扫描件，别的页的字照常读出来", async (t) => {
-	const broken = { dangling: "<< /Im9 99 0 R >>", "null-entry": "<< /Im9 null >>", array: "[1 2]" };
-	const w = await attachmentWorld(t, [ann("m-1", Object.entries(broken).map(([name, xobject]) => file(`${name}.pdf`, "application/pdf", brokenImagePdf("Fasting glucose 5.6 mmol/L", xobject))))]);
+test("读附件：某页的图片表坏了（指向不存在的对象、条目是 null、整个是数组、图片的数据流没有结尾），那页只是不算扫描件，别的页的字照常读出来", async (t) => {
+	const broken: Record<string, [string, ...string[]]> = {
+		dangling: ["<< /Im9 99 0 R >>"],
+		"null-entry": ["<< /Im9 null >>"],
+		array: ["[1 2]"],
+		"no-endstream": ["<< /Im9 8 0 R >>", "<< /Subtype /Image /Length 99999 >>\nstream\nxx"],
+	};
+	const w = await attachmentWorld(t, [ann("m-1", Object.entries(broken).map(([name, [xobject, ...extra]]) => file(`${name}.pdf`, "application/pdf", brokenImagePdf("Fasting glucose 5.6 mmol/L", xobject, extra))))]);
 	for (const [i, name] of Object.keys(broken).entries()) {
 		assert.deepEqual(await w.call({ messageId: "m-1", partId: String(i + 1) }), { ok: true, output: { name: `${name}.pdf`, type: "application/pdf", pages: 2, text: "Fasting glucose 5.6 mmol/L", truncated: false } }, name);
 	}

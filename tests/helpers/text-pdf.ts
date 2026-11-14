@@ -35,8 +35,8 @@ export function formPdf(inside: "image" | "loop", jpeg?: Jpeg): Buffer {
 	return pdfOf(objects);
 }
 
-/** Page 1 carries text; page 2 is blank but names its images through a broken /XObject value, as damaged files do. */
-export function brokenImagePdf(text: string, xobject: string): Buffer {
+/** Page 1 carries text; page 2 is blank but names its images through a broken /XObject value, as damaged files do. Extra objects are numbered from 8. */
+export function brokenImagePdf(text: string, xobject: string, extra: readonly string[] = []): Buffer {
 	const stream = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
 	const objects = [
 		"<< /Type /Catalog /Pages 2 0 R >>",
@@ -46,6 +46,7 @@ export function brokenImagePdf(text: string, xobject: string): Buffer {
 		`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
 		`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject ${xobject} >> /Contents 7 0 R >>`,
 		"<< /Length 0 >>\nstream\n\nendstream",
+		...extra,
 	];
 	return pdfOf(objects);
 }

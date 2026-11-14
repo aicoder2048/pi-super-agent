@@ -9,7 +9,6 @@ import unicodedata
 
 from pypdf import PdfReader
 from pypdf.errors import LimitReachedError, PdfReadError
-from pypdf.generic import DictionaryObject
 
 MAX_PAGES = 50
 # A scanner app may stamp a short line of text on a page that is otherwise one image.
@@ -21,9 +20,7 @@ FORM_DEPTH = 4
 
 
 def dictionary(value):
-    """A damaged file can point at a missing object, null or an array where a dictionary belongs."""
-    value = value.get_object() if value is not None else None
-    return value if isinstance(value, DictionaryObject) else DictionaryObject()
+    return value.get_object() if value is not None else {}
 
 
 def has_image(holder, depth: int, seen: set) -> bool:
@@ -41,7 +38,13 @@ def has_image(holder, depth: int, seen: set) -> bool:
 
 
 def is_scan(page, text: str) -> bool:
-    return len(re.sub(r"\s", "", text)) < SCAN_TEXT_CHARS and has_image(page, FORM_DEPTH, set())
+    if len(re.sub(r"\s", "", text)) >= SCAN_TEXT_CHARS:
+        return False
+    try:
+        return has_image(page, FORM_DEPTH, set())
+    except Exception:
+        # A guess that breaks on a damaged page means not a scan: the text already read stands.
+        return False
 
 
 def main() -> None:
