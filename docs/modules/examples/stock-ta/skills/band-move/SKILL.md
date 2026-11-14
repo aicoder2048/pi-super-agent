@@ -1,6 +1,6 @@
 ---
 name: band-move
-description: 任务来自报价 feed 的到档触发（正文像「NVDA 涨 +5.31%，到达 +5% 档。…」，来源 stock-ta/quotes）时，领队先读这份：派哪三位、怎么派、汇报怎么排。
+description: 任务来自报价 feed 的到档触发（正文像「NVDA 涨 +5.31%，到达 +5% 档。…（规则 move-1，层级 5，做法 band-move）」，来源 stock-ta/quotes）时，领队先读这份：派哪三位、怎么派、汇报怎么排。
 ---
 
 # 到档触发派来的任务

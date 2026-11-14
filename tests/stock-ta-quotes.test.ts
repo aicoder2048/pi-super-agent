@@ -41,9 +41,10 @@ async function quotesFeed(t: TestContext, key = "sk-test", settings: Record<stri
 		now: () => clock.now,
 	};
 	const watch = (...symbols: string[]) => data.write("stock-ta", entry.components, "watchlist", symbols.map((symbol) => ({ symbol })), "使用者口述", "test");
+	const levels = (...rows: Record<string, unknown>[]) => data.write("stock-ta", entry.components, "rule-levels", rows as never, "使用者口述", "test");
 	const quotes = () => data.query("stock-ta", entry.components, "quotes", {}, "test").rows;
 	const restart = () => (ports.data = instanceData(state));
-	return { massive, modules, entry, data, notices, lines, problems, problemIds: () => problems.map((p) => p?.id ?? "-"), alerts: () => lines.map((l) => l.text), watch, quotes, clock, restart, round: () => runFeed(entry, [], ports), rehearse: () => runFeed(entry, [], ports, entry.fixtures[0]) };
+	return { massive, modules, entry, data, notices, lines, problems, problemIds: () => problems.map((p) => p?.id ?? "-"), alerts: () => lines.map((l) => l.text), watch, levels, quotes, clock, restart, round: () => runFeed(entry, [], ports), rehearse: () => runFeed(entry, [], ports, entry.fixtures[0]) };
 }
 
 test("快照解析：一次请求取回整张自选股，每只一行，带价格、相对昨收的涨跌幅、成交量和数据时间", async (t) => {
@@ -226,8 +227,22 @@ test("分档：每轮取已经到达的最高一档，跳空直接到 8% 只报 
 	assert.deepEqual(band(feed), [`band:NVDA:${DAY}:up8`]);
 	assert.deepEqual(feed.notices.map((n) => n.id), [`band:NVDA:${DAY}:up8`]);
 	assert.equal(feed.alerts()[0], "NVDA 涨 +8.20%，到达 +8% 档。现价 108.20，昨收 100.00。报价时间 10:44 ET（延迟行情）。");
-	assert.equal(feed.notices[0]!.body, feed.alerts()[0], "触发正文就是那一行");
+	assert.equal(feed.lines[0]!.push, undefined, "第二档响铃");
+	assert.equal(feed.notices[0]!.body, `${feed.alerts()[0]}（规则 move-2，层级 5，做法 band-move）`, "触发正文是那一行，加上规则、层级和做法");
 	assert.equal(feed.notices[0]!.thread, `NVDA:${DAY}`);
+});
+
+test("个股第一档：静音一行加一条触发（三人小组）；第二档：响铃一行，触发进同一条线程", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA");
+	feed.massive.answer(snapshot([tickerRow("NVDA", 105.31, 100, AT)]), snapshot([tickerRow("NVDA", 108.1, 100, AT + 60_000)]));
+	await feed.round();
+	await feed.round();
+	assert.deepEqual(feed.lines.map((l) => [l.externalId, l.push ?? "ring"]), [[`band:NVDA:${DAY}:up5`, "silent"], [`band:NVDA:${DAY}:up8`, "ring"]]);
+	assert.deepEqual(feed.notices.map((n) => [n.id, n.thread, n.body.replace(/^.*（/, "（")]), [
+		[`band:NVDA:${DAY}:up5`, `NVDA:${DAY}`, "（规则 move-1，层级 5，做法 band-move）"],
+		[`band:NVDA:${DAY}:up8`, `NVDA:${DAY}`, "（规则 move-2，层级 5，做法 band-move）"],
+	]);
 });
 
 test("分档：只升不降，回落再上来不重报；再到更高一档才报，汇报进同一条线程", async (t) => {
@@ -280,6 +295,8 @@ test("SPY 和 QQQ 用自己的 2%、3% 档；个股 3% 和 SPY 1.6% 不报；没
 	assert.deepEqual(feed.lines, [], "个股 3.5%、SPY 1.6%、一分钟巨量都不报");
 	await feed.round();
 	assert.deepEqual(band(feed).sort(), [`band:QQQ:${DAY}:down3`, `band:SPY:${DAY}:up2`]);
+	assert.deepEqual(Object.fromEntries(feed.lines.map((l) => [l.externalId, l.push ?? "ring"])), { [`band:SPY:${DAY}:up2`]: "silent", [`band:QQQ:${DAY}:down3`]: "ring" }, "指数 2% 静音，3% 响铃");
+	assert.equal(feed.notices.length, 2, "两条都开任务");
 });
 
 test("SPY、QQQ 总在请求里，不在自选股里也取、也存行；还是一次快照请求", async (t) => {
@@ -341,11 +358,12 @@ test("报价的提醒条件：提醒里的数据时间按美东写，存的仍�
 	assert.equal(feed.quotes()[0]!.fields["at"], "2026-11-12T15:44:00.000Z");
 });
 
-test("规则：stock-ta/quotes 的触发有一条规则可用，规则把任务交给技术分析研究组", async (t) => {
+test("规则：stock-ta/quotes 的触发只有一条通用规则 watch-task，照触发里写的做法开任务给技术分析研究组", async (t) => {
 	const feed = await quotesFeed(t);
-	assert.deepEqual(feed.modules.rulesFor("stock-ta/quotes"), ["stock-ta/big-move"]);
-	const rule = feed.modules.allRules().find((r) => r.id === "stock-ta/big-move");
-	for (const said of ["market-desk", "structure-pattern", "trend-momentum", "同一轮", "先写盘面", "同一个任务", "数据时间", "不是交易指令", "只是数据"]) assert.match(rule?.text ?? "", new RegExp(said));
+	assert.deepEqual(feed.modules.rulesFor("stock-ta/quotes"), ["stock-ta/watch-task"]);
+	assert.equal(feed.modules.allRules().some((r) => r.id === "stock-ta/big-move"), false, "big-move 已经并进 watch-task");
+	const rule = feed.modules.allRules().find((r) => r.id === "stock-ta/watch-task");
+	for (const said of ["做法", "技能", "同一个任务", "数据时间", "不是交易指令", "只是数据"]) assert.match(rule?.text ?? "", new RegExp(said));
 	assert.equal(feed.modules.book.get("stock-ta")?.team, "技术分析研究组");
 });
 
@@ -354,7 +372,7 @@ test("stock-ta 包通过检查：quotes 的样例跑过 handler，不需要真�
 	assert.ok(result.ok, result.ok ? "" : result.problems.map(problemLine).join("\n"));
 	const feed = result.scan.components.find((c) => c.kind === "feeds" && c.name === "quotes");
 	assert.ok(feed?.kind === "feeds" && feed.fixtures.length > 0);
-	assert.deepEqual({ every: feed.feed.every, when: feed.feed.when, secrets: feed.feed.secrets, into: feed.feed.into, reads: feed.feed.reads }, { every: "60s", when: "us-market-hours", secrets: ["POLYGON_API_KEY"], into: "quotes", reads: ["watchlist"] });
+	assert.deepEqual({ every: feed.feed.every, when: feed.feed.when, secrets: feed.feed.secrets, into: feed.feed.into, reads: feed.feed.reads }, { every: "60s", when: "us-market-hours", secrets: ["POLYGON_API_KEY"], into: "quotes", reads: ["watchlist", "rule-levels"] });
 });
 
 
@@ -385,26 +403,61 @@ test("只写新鲜的报价：提前收盘日 13:00 以后的成交不写行，1
 	assert.deepEqual(await feed.round(), { ok: true, records: 0, notices: 0 });
 });
 
-test("档位只有 feed.json 的 settings.bands 一处：改成 3%、6% 后，3% 的涨幅就发一行提醒和一条触发，规则照样接得住", async (t) => {
-	const feed = await quotesFeed(t, "sk-test", { bands: { default: [3, 6], bySymbol: {} } });
-	feed.watch("NVDA");
-	feed.massive.answer(snapshot([tickerRow("NVDA", 103.2, 100, AT)]));
-	assert.deepEqual(await feed.round(), { ok: true, records: 1, notices: 1 });
-	assert.deepEqual(band(feed), [`band:NVDA:${DAY}:up3`]);
-	assert.deepEqual(feed.modules.rulesFor("stock-ta/quotes"), ["stock-ta/big-move"]);
+test("你的改动：rule-levels 一行写 TSLA 的第一档 7%，下一轮起 TSLA 按 7% 算；别的票照旧 5%", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA", "TSLA");
+	feed.levels({ rule: "move-1", symbol: "tsla", threshold: 7, note: "TSLA 的第一档改成 7%" });
+	feed.massive.answer(snapshot([tickerRow("TSLA", 105.5, 100, AT), tickerRow("NVDA", 105.5, 100, AT)]), snapshot([tickerRow("TSLA", 107.1, 100, AT + 60_000)]));
+	await feed.round();
+	assert.deepEqual(band(feed), [`band:NVDA:${DAY}:up5`]);
+	await feed.round();
+	assert.deepEqual(feed.lines.map((l) => [l.externalId, l.push ?? "ring"]), [[`band:NVDA:${DAY}:up5`, "silent"], [`band:TSLA:${DAY}:up7`, "silent"]]);
+	assert.match(feed.alerts()[1]!, /^TSLA 涨 \+7\.10%，到达 \+7% 档。/);
+	assert.deepEqual(feed.notices.map((n) => n.id), [`band:NVDA:${DAY}:up5`, `band:TSLA:${DAY}:up7`]);
+	assert.deepEqual(feed.problemIds(), ["-", "-"]);
 });
 
-test("档位只有一处：幕僚长读的规则、领队和盘面读的技能、feed 的说明都不写死档位数字", () => {
+test("你的改动：第一档改成 3 层，到档只响铃一行、不开任务；同一条规则以最新的一行为准，写上 removedAt 就回到默认", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA", "AMD", "META");
+	feed.levels({ rule: "move-1", level: 2 }, { rule: "move-1", level: 3 });
+	feed.massive.answer(snapshot([tickerRow("NVDA", 105.5, 100, AT)]));
+	await feed.round();
+	assert.deepEqual(feed.lines.map((l) => [l.externalId, l.push ?? "ring"]), [[`band:NVDA:${DAY}:up5`, "ring"]]);
+	assert.deepEqual(feed.notices, [], "3 层不开任务");
+	feed.levels({ rule: "move-1", level: 3, removedAt: "2026-11-12" });
+	feed.massive.answer(snapshot([tickerRow("AMD", 105.5, 100, AT + 60_000)]));
+	await feed.round();
+	assert.deepEqual(feed.lines.map((l) => l.push ?? "ring"), ["ring", "silent"], "撤回以后回到表里的 5 层静音");
+	assert.deepEqual(feed.notices.map((n) => n.id), [`band:AMD:${DAY}:up5`]);
+});
+
+test("你的改动：不写代码的门槛只改个股，SPY、QQQ 照旧用自己的档", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.levels({ rule: "move-1", threshold: 4 });
+	feed.massive.answer(snapshot([tickerRow("SPY", 510.5, 500, AT), tickerRow("QQQ", 409, 400, AT)]));
+	await feed.round();
+	assert.deepEqual(band(feed).sort(), [`band:QQQ:${DAY}:up2`, `band:SPY:${DAY}:up2`]);
+});
+
+test("你的改动写坏了（表里没有的规则、层级不在 0 到 6、门槛不是正数）：报问题 bad-level 说是哪几行，这几行不生效，其余照算", async (t) => {
+	const feed = await quotesFeed(t);
+	feed.watch("NVDA", "TSLA");
+	feed.levels({ rule: "move-9", level: 2 }, { rule: "move-1", level: 9 }, { rule: "move-1", symbol: "NVDA", threshold: -1 }, { rule: "move-1", symbol: "TSLA", threshold: 6 });
+	feed.massive.answer(snapshot([tickerRow("NVDA", 105.5, 100, AT), tickerRow("TSLA", 105.5, 100, AT)]));
+	await feed.round();
+	assert.deepEqual(band(feed), [`band:NVDA:${DAY}:up5`], "NVDA 坏的那行不生效，TSLA 按 6% 没到");
+	assert.deepEqual(feed.problemIds(), ["bad-level"]);
+	assert.match(feed.problems[0]!.text, /rule-levels 第 1、2、3 行/);
+	assert.doesNotMatch(feed.problems[0]!.text, /move-9/, "问题的文字不抄集合里的内容");
+});
+
+test("档位只在盯盘规则表 watch-rules.ts 里：feed.json 没有 settings.bands，幕僚长读的规则、领队和盘面读的技能、feed 的说明都不写死档位数字", () => {
 	const read = (path: string) => readFileSync(join(PKG, path), "utf8");
-	const bigMove = read("rules.md").split("## ").find((r) => r.startsWith("big-move"))!;
-	const texts = { "rules.md big-move": bigMove, "feeds/quotes/feed.json description": JSON.parse(read("feeds/quotes/feed.json")).description, "skills/market-desk": read("skills/market-desk/SKILL.md"), "skills/band-move 正文": read("skills/band-move/SKILL.md").split("---").at(-1)! };
+	const feedJson = JSON.parse(read("feeds/quotes/feed.json"));
+	assert.equal("bands" in feedJson.settings, false);
+	const watchTask = read("rules.md").split("## ").find((r) => r.startsWith("watch-task"))!;
+	const texts = { "rules.md watch-task": watchTask, "feeds/quotes/feed.json description": feedJson.description, "skills/market-desk": read("skills/market-desk/SKILL.md"), "skills/band-move 正文": read("skills/band-move/SKILL.md").split("---").at(-1)!, "skills/rule-levels 正文": read("skills/rule-levels/SKILL.md").split("---").at(-1)! };
 	for (const [where, text] of Object.entries(texts)) assert.doesNotMatch(text, /\d+(\.\d+)?% ?档|\d+%、/, `${where} 写死了档位`);
-	assert.match(bigMove, /settings\.bands/);
-});
-
-test("档位改坏了（不是 { default, bySymbol }）：检查不过，宿主不会换上，旧版本照用", (t) => {
-	const pkg = stockTaCopy(t, "https://api.massive.com", { bands: [5, 8] });
-	const result = scanPackage(pkg, { secret: () => undefined });
-	assert.equal(result.ok, false);
-	assert.match(result.ok ? "" : result.problems.map(problemLine).join("\n"), /feeds\/quotes/);
+	assert.match(read("watch-rules.ts"), /"move-1"[\s\S]*stock: 5[\s\S]*index: 2[\s\S]*"move-2"[\s\S]*stock: 8[\s\S]*index: 3/);
 });
