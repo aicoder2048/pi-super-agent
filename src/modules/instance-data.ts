@@ -417,7 +417,10 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 				const { condition: { when, ...params }, key, note } = parsed;
 				const kept: SetCondition = { id: id ?? `cnd_${randomUUID()}`, collection: name, key, condition: parsed.condition, ...(note !== undefined && { note }), setAt: new Date().toISOString() };
 				db.prepare("INSERT OR REPLACE INTO _conditions VALUES (?, ?, ?, ?, ?, ?, ?)").run(kept.id, name, key, when, JSON.stringify(params), kept.setAt, note ?? null);
-				return answer({ condition: kept, receipt: receiptText(before ? "已改" : "已设", collection.title, kept) }, "write", 1);
+				// A condition only fires on a new row for its key: with none yet, say so, since the feed may never fetch it (a symbol off the watchlist).
+				const seen = db.prepare(`SELECT 1 FROM ${quote(name)} WHERE ${quote(collection.watch.key)} = ? LIMIT 1`).get(key) !== undefined;
+				const receipt = `${receiptText(before ? "已改" : "已设", collection.title, kept)}${seen ? "" : `；${collection.title}里还没有 ${key} 的数据，要等来源写进它的数据才会提醒`}`;
+				return answer({ condition: kept, receipt }, "write", 1);
 			});
 		},
 	};
