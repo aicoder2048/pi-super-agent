@@ -6,6 +6,8 @@ import { DatabaseSync } from "node:sqlite";
 import test, { type TestContext } from "node:test";
 import { Host } from "../src/host/host.ts";
 import { memberSessionDir } from "../src/host/dispatch.ts";
+import { openStore, saveModuleRecord, setModuleSwitch } from "../src/kernel/store.ts";
+import type { Digest, ModuleName } from "../src/modules/manifest.ts";
 import { busyPort, defaultWorkerModels, domainsOf, FakeSpawner, fauxRouter, freePort, ids, tempStateDir, until, within } from "./helpers/fakes.ts";
 
 type ModuleFiles = Record<string, unknown>;
@@ -149,7 +151,7 @@ for (const c of cases) {
 	});
 }
 
-test("just host 启动时列出加载的模块，有成员的模块后面写队名，停用的模块另列", () => {
+test("just host 启动时列出加载的模块，有成员的模块后面写队名", () => {
 	const stateDir = stateWithFiles({ ...NEWS_MODULE, "modules/mail/module.json": JSON.stringify({ name: "mail" }) })();
 	writeFileSync(join(stateDir, "config.json"), JSON.stringify({ webPort: 0, models: { router: "openai-codex/no-such-model" } }));
 	const run = spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], {
@@ -158,7 +160,23 @@ test("just host 启动时列出加载的模块，有成员的模块后面写队�
 		timeout: 20_000,
 		killSignal: "SIGKILL",
 	});
-	assert.match(run.stderr, /\[host\] 模块：mail, news（新闻队）, module-builder（模块工坊）, pi-pi（Pi施工队）；停用 toy-market；规则 \d+ 条/);
+	assert.match(run.stderr, /\[host\] 模块：mail, news（新闻队）, module-builder（模块工坊）, pi-pi（Pi施工队）；规则 \d+ 条/);
+});
+
+test("状态库记着一个关掉的旧布局模块而它的包已被删掉时，just host 照常启动，模块列表里没有它，记录改成包不在了", () => {
+	const stateDir = stateWith({ models: { router: "openai-codex/no-such-model" } })();
+	const onDisk = { digest: "1adde3b94feeb9c6a00806727b41f339ff40e3c8e31c2200104eabdc001708ee" as Digest, label: "旧布局" };
+	const db = openStore(join(stateDir, "state.db"));
+	setModuleSwitch(db, "toy-market", false);
+	saveModuleRecord(db, { name: "toy-market" as ModuleName, state: { at: "disabled", onDisk }, attempts: 0, opened: false, pending: [] });
+	db.close();
+	const run = spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], { env: { ...process.env, PSA_STATE_DIR: stateDir }, encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL" });
+	assert.match(run.stderr, /\[host\] 模块：module-builder（模块工坊）, pi-pi（Pi施工队）；规则 \d+ 条/);
+	const after = new DatabaseSync(join(stateDir, "state.db"), { readOnly: true });
+	const row = after.prepare("SELECT switch, record FROM module_records WHERE name = 'toy-market'").get() as { switch: number; record: string };
+	after.close();
+	assert.equal(row.switch, 0);
+	assert.deepEqual(JSON.parse(row.record).state, { at: "missing", last: onDisk, wasOn: false });
 });
 
 test("状态目录 modules/ 里有坏的新布局包、或 module.json 存了一半时，just host 照常加载模块，并用一行写出这个包无效的原因", () => {
@@ -455,9 +473,9 @@ test("终端 Ctrl+C 时成员正在干活：宿主停下后不留成员进程，
 test("just host 第一次启动把 config.json 的模块开关导入状态库，启动日志按导入后的开关列模块", () => {
 	const stateDir = stateWith({ webPort: 0, modules: { "pi-pi": false }, models: { router: "openai-codex/no-such-model" } })();
 	const run = spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], { env: { ...process.env, PSA_STATE_DIR: stateDir }, encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL" });
-	assert.match(run.stderr, /\[host\] 模块：module-builder（模块工坊）；停用 toy-market, pi-pi；规则 \d+ 条/);
+	assert.match(run.stderr, /\[host\] 模块：module-builder（模块工坊）；停用 pi-pi；规则 \d+ 条/);
 	const db = new DatabaseSync(join(stateDir, "state.db"), { readOnly: true });
 	const switches = db.prepare("SELECT name, switch FROM module_records ORDER BY name").all().map((r) => [r.name, r.switch]);
 	db.close();
-	assert.deepEqual(switches, [["module-builder", 1], ["pi-pi", 0], ["toy-market", 0]]);
+	assert.deepEqual(switches, [["module-builder", 1], ["pi-pi", 0]]);
 });
