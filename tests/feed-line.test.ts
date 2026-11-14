@@ -191,9 +191,9 @@ test("feed 报的 problem：第一拍就在横幅上亮，文字是 feed 自己�
 	assert.deepEqual(notices(), [], "不再写「通知」宿主行");
 	await deliver(letter("m-2"));
 	assert.deepEqual(alarms(), []);
-	await until(() => phone().some((m) => m.text.startsWith("✅ 测试信箱 来信恢复了")), "✅ 到了 Telegram");
-	assert.deepEqual(phone().flatMap((m) => (m.text.startsWith("⚠️") ? ["⚠️"] : m.text.startsWith("✅") ? ["✅"] : [])), ["⚠️", "✅"]);
-	assert.match(phone().find((m) => m.text.startsWith("⚠️"))!.text, /^⚠️ 测试信箱 来信出问题了.*收件箱的授权过期了/);
+	await until(() => phone().some((m) => m.text.startsWith("🔔 ✅ 测试信箱 来信恢复了")), "✅ 到了 Telegram");
+	assert.deepEqual(phone().flatMap((m) => (m.text.startsWith("🔔 ⚠️") ? ["⚠️"] : m.text.startsWith("🔔 ✅") ? ["✅"] : [])), ["⚠️", "✅"]);
+	assert.match(phone().find((m) => m.text.startsWith("🔔 ⚠️"))!.text, /^🔔 ⚠️ 测试信箱 来信出问题了.*收件箱的授权过期了/);
 });
 
 test("feed 的 handler 连着失败：到 feedFailuresBeforeAlarm 拍才亮，最近的错误是它抛出的那句；成功一拍就解除", async (t) => {
@@ -228,7 +228,7 @@ test("模块关掉了：它的 feed 的警报悄悄撤下，不发 ✅", async (
 	serving.changed!();
 	assert.deepEqual(alarms(), []);
 	await new Promise((r) => setTimeout(r, 200));
-	assert.ok(!phone().some((m) => m.text.startsWith("✅")));
+	assert.ok(!phone().some((m) => m.text.startsWith("🔔 ✅")));
 });
 
 test("模块卡：宿主给有 feed 的模块填上今日提醒条数和每个 feed 最近一轮的时间、行数", async (t) => {

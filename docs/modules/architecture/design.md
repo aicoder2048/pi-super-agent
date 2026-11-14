@@ -233,7 +233,7 @@ stateDiagram-v2
 
 级别今天只管两件事。一是私密 feed 的通知怎么写（下一段）。二是领域里有 feed 往 `private` 集合写数据时，宿主来源开的任务不能落在这个领域（ADR-0018 的 V11 那条），这是防注入，不是防泄密。
 
-**私密 feed 可以放出几个字段（ADR-0020）。** 写进 `private` 集合的 feed 在 `feed.json` 里写了 `line`（最多三行，只引用 `notice` 里有的字段），它的每条新通知由宿主写成一条「通知」宿主行，网页、TUI 和 Telegram 照原样显示，给幕僚长的触发也只是这几行。值在宿主边界上清洗和截断（`src/modules/release.ts`）。feed 也可以报 `problem`，宿主把它当成这个 feed 的警报（ADR-0025，`docs/health/README.md`）。
+**私密 feed 可以放出几个字段（ADR-0020）。** 写进 `private` 集合的 feed 在 `feed.json` 里写了 `line`（最多三行，只引用 `notice` 里有的字段），它的每条新通知由宿主写成一条「通知」宿主行，网页、TUI 和 Telegram 照原样显示，给幕僚长的触发也只是这几行。值在宿主边界上清洗和截断（`src/modules/release.ts`）。feed 也可以报 `problem`，宿主把它当成这个 feed 的警报（ADR-0026，`docs/health/README.md`）。
 
 **清屏换一个新会话。** 清屏之后（对话栏里一行都没有时点清屏也一样），幕僚长等手上这一轮做完，下一轮在一个全新的会话里开始：旧会话的对话和压缩摘要都不带过去，宿主重启也不会接回清屏前的会话。任务、汇报和网页上的历史都不动，幕僚长仍能按 id 用 read 去读。代价是清屏之后幕僚长不记得清屏前聊过什么。
 

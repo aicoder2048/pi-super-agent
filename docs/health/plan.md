@@ -130,7 +130,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 **Files.**
 
 - [x] Edit `src/host/host.ts` and `src/host/health.ts`.
-- [x] Create `docs/adr/0025-the-host-says-what-is-broken.md`. Edit `docs/adr/0020-a-private-feed-releases-the-fields-it-names.md`, `docs/modules/architecture/design.md`, `docs/modules/stock-ta.md`, `docs/health/README.md`.
+- [x] Create `docs/adr/0026-the-host-says-what-is-broken.md`. Edit `docs/adr/0020-a-private-feed-releases-the-fields-it-names.md`, `docs/modules/architecture/design.md`, `docs/modules/stock-ta.md`, `docs/health/README.md`.
 - [x] Edit `tests/feed-line.test.ts`, `tests/health.test.ts`, `tests/fixtures/modules/private-line/feeds/inbox/index.ts`. Extend `tests/e2e/health.e2e.ts`.
 
 **Build.**

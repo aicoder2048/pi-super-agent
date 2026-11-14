@@ -169,13 +169,13 @@ test("数据断了要看得见：来源的接口 503、401、连不上时横幅�
 				const text = await alarm(page, "行情探针 报价").innerText();
 				assert.match(text, /HTTP 503/);
 				assert.match(text, /连着 3 次/);
-				await until(() => phone().some((m) => m.startsWith("⚠️ 行情探针 报价")), "Telegram 的 ⚠️");
+				await until(() => phone().some((m) => m.startsWith("🔔 ⚠️ 行情探针 报价")), "Telegram 的 ⚠️");
 				await shot(page, "5-feed-503");
 			});
 			await step("接口恢复：下一拍成功，横幅变成「都恢复了」；Telegram 收到一条 ✅", async (page) => {
 				provider.answer(200);
 				await page.locator('#health[data-tone="ok"]').waitFor({ timeout: 10_000 });
-				await until(() => phone().some((m) => m.startsWith("✅ 行情探针 报价恢复了")), "Telegram 的 ✅");
+				await until(() => phone().some((m) => m.startsWith("🔔 ✅ 行情探针 报价恢复了")), "Telegram 的 ✅");
 				await shot(page, "6-feed-recovered");
 			});
 			await step("接口回 401：第一拍就亮，怎么办里写着密钥", async (page) => {
