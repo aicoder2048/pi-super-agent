@@ -9,7 +9,7 @@ const flag = (args: string[], name: string) => (args.includes(name) ? args[args.
 
 test("推断任务的 Worker 只拿只读工具、网页读取和汇报类工具，并关掉 MCP", () => {
 	const args = workerArgs({ ...base, profile: "inference" });
-	assert.deepEqual(flag(args, "--tools")!.split(",").sort(), ["data", "domain_tool", "find", "grep", "hand_back", "knowledge", "lookup", "ls", "read", "read_ticket", "report", "watch", "web_get"]);
+	assert.deepEqual(flag(args, "--tools")!.split(",").sort(), ["data", "domain_tool", "find", "grep", "hand_back", "knowledge", "lookup", "ls", "ocr", "read", "read_ticket", "report", "watch", "web_get"]);
 	assert.ok(args.includes("--no-mcp"));
 });
 
@@ -35,9 +35,9 @@ test("能派活的助手：推断任务的工具清单多一个 dispatch_agent�
 });
 
 test("成员的工具 = 任务依据允许的工具 ∩ 成员自己的 tools；没有汇报、交回、读任务、后台命令和派活", () => {
-	assert.deepEqual(memberTools("request", undefined), ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup"]);
+	assert.deepEqual(memberTools("request", undefined), ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup", "ocr"]);
 	assert.deepEqual(memberTools("rule", ["bash", "read", "report", "hand_back", "read_ticket", "bg_start"]), ["read", "bash"]);
-	assert.deepEqual(memberTools("inference", undefined), ["read", "grep", "find", "ls", "web_get", "lookup"]);
+	assert.deepEqual(memberTools("inference", undefined), ["read", "grep", "find", "ls", "web_get", "lookup", "ocr"]);
 	assert.deepEqual(memberTools("inference", ["bash", "write", "web_get"]), ["web_get"], "推断任务里写了 bash 的成员仍只读");
 	assert.deepEqual(memberTools("inference", ["bash"]), []);
 	for (const basis of ["request", "rule", "inference"] as const) assert.ok(!memberTools(basis, undefined).includes("dispatch_agent"));

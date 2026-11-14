@@ -20,8 +20,11 @@ import { startFakeGoogle } from "./helpers/fake-google.ts";
 import { FakeInbox, type Letter } from "./helpers/fake-gmail.ts";
 import { textPdf } from "./helpers/text-pdf.ts";
 import { servedAsHost } from "./helpers/fakes.ts";
+import { createOcr } from "../src/ocr/ocr.ts";
+import type { Ocr } from "../src/ocr/result.ts";
 
 const PKG = join(import.meta.dirname, "../docs/modules/examples/mail");
+const SCANS = join(import.meta.dirname, "fixtures/ocr");
 const TOOL = "tools/read-attachment";
 const REFRESH = "1//fake-refresh-mail";
 const GMAIL = "/gmail/v1/users/me";
@@ -160,11 +163,11 @@ test("读附件：超过 10 MB 拒绝，不下载", async (t) => {
 });
 
 test("读附件：不认的类型拒绝并写明类型，类型和扩展名对不上也拒绝，都不下载", async (t) => {
-	const w = await attachmentWorld(t, [ann("m-1", [file("photo.png", "image/png", "png"), file("run.exe", "text/plain", "MZ"), file("a.zip", "application/zip", "PK")])]);
-	for (const [partId, shown] of [["1", "image/png（photo.png）"], ["2", "text/plain（run.exe）"], ["3", "application/zip（a.zip）"]] as const) {
+	const w = await attachmentWorld(t, [ann("m-1", [file("photo.png", "image/jpeg", "png"), file("run.exe", "text/plain", "MZ"), file("a.zip", "application/zip", "PK")])]);
+	for (const [partId, shown] of [["1", "image/jpeg（photo.png）"], ["2", "text/plain（run.exe）"], ["3", "application/zip（a.zip）"]] as const) {
 		const reply = await w.call({ messageId: "m-1", partId });
 		assert.ok(!reply.ok, partId);
-		assert.ok(reply.note.includes(`这个附件是 ${shown}，只读 txt、md、csv、html、pdf`), reply.note);
+		assert.ok(reply.note.includes(`这个附件是 ${shown}，只读 txt、md、csv、html、pdf 和图片（png、jpg、heic、tiff）`), reply.note);
 	}
 	assert.deepEqual(w.downloads(), []);
 });
@@ -296,16 +299,63 @@ test("读附件：调用前后 files/ 里没有多出东西，附件不落盘", 
 	assert.deepEqual(listing(), before);
 });
 
-function gatewayOver(t: TestContext, w: Awaited<ReturnType<typeof attachmentWorld>>) {
+function gatewayOver(t: TestContext, w: Awaited<ReturnType<typeof attachmentWorld>>, ocr?: Ocr) {
 	const scan = scanPackage(w.pkg, { runCases: false });
 	assert.ok(scan.ok, JSON.stringify(scan));
 	const store = new ModuleStore(join(w.dataDir, "..", "..", "store"));
 	const digest = scan.scan.digest;
 	assert.ok(store.keep("mail" as ModuleName, digest, w.pkg));
-	const gateway = createGateway({ copyDir: (module, pin) => store.dirOf(module, pin), serving: () => digest, dataDir: () => w.dataDir, rows: {} as never, secret: (name) => w.secrets[name], log: () => {} });
+	const gateway = createGateway({ copyDir: (module, pin) => store.dirOf(module, pin), serving: () => digest, dataDir: () => w.dataDir, rows: {} as never, secret: (name) => w.secrets[name], log: () => {}, ...(ocr && { ocr }) });
 	const caller: WorkerCaller = { who: "worker", ticket: "tkt_1", pin: { module: "mail" as ModuleName, digest }, basis: "inference", member: null, heardOthers: false };
 	return { gateway, caller };
 }
+
+test("读附件：一页页只有一张图、几乎没字的 PDF 当扫描件，附件原样放进 files/ 交给宿主 OCR，回的 text 是空的；只有几个字的文字 PDF 照常读", async (t) => {
+	const scanned = readFileSync(join(SCANS, "three.pdf"));
+	const w = await attachmentWorld(t, [ann("m-1", [file("scan.pdf", "application/pdf", scanned), file("short.pdf", "application/pdf", textPdf(["Paid"]))])]);
+	const reply = await w.call({ messageId: "m-1", partId: "1" });
+	assert.ok(reply.ok, JSON.stringify(reply));
+	const output = reply.output as { name: string; pages: number; text: string; ocr: { file: string } };
+	assert.deepEqual({ ...output, ocr: undefined }, { name: "scan.pdf", type: "application/pdf", pages: 3, text: "", truncated: false, ocr: undefined });
+	assert.match(output.ocr.file, /^files\/ocr-[0-9a-f]{16}\.pdf$/);
+	assert.ok(readFileSync(join(w.dataDir, output.ocr.file)).equals(scanned), "交给宿主的就是附件原样");
+	assert.deepEqual(await w.call({ messageId: "m-1", partId: "2" }), { ok: true, output: { name: "short.pdf", type: "application/pdf", pages: 1, text: "Paid", truncated: false } });
+});
+
+test("读附件：png、jpg、heic、tiff 图片附件交给宿主 OCR；通用类型按扩展名认", async (t) => {
+	const png = readFileSync(join(SCANS, "scan.png"));
+	const w = await attachmentWorld(t, [ann("m-1", [
+		file("scan.png", "image/png", png),
+		file("photo.JPG", "image/jpeg", "jpg"),
+		file("IMG_1.heic", "image/heic", "heic"),
+		file("fax.tif", "application/octet-stream", "tif"),
+	])]);
+	for (const [partId, extension] of [["1", "png"], ["2", "jpg"], ["3", "heic"], ["4", "tif"]] as const) {
+		const reply = await w.call({ messageId: "m-1", partId });
+		assert.ok(reply.ok, JSON.stringify(reply));
+		const output = reply.output as { pages: number | null; text: string; ocr: { file: string } };
+		assert.equal(output.pages, null);
+		assert.equal(output.text, "");
+		assert.match(output.ocr.file, new RegExp(`^files/ocr-[0-9a-f]{16}\\.${extension}$`));
+	}
+});
+
+test("读附件经过宿主：扫描的 PDF 由宿主的 Vision 读出中文，files/ 里不留东西", { skip: process.platform !== "darwin" }, async (t) => {
+	const w = await attachmentWorld(t, [ann("m-1", [file("scan.pdf", "application/pdf", readFileSync(join(SCANS, "scan.pdf")))])]);
+	const ocrState = mkdtempSync(join(tmpdir(), "psa-mail-ocr-"));
+	t.after(() => rmSync(ocrState, { recursive: true, force: true }));
+	const ocr = createOcr({ engine: "vision", maxPages: 20, timeoutSeconds: 60 }, ocrState);
+	await ocr.prepare();
+	const { gateway, caller } = gatewayOver(t, w, ocr);
+	const listing = () => readdirSync(join(w.dataDir, "files")).sort();
+	const before = listing();
+	const reply = await gateway.call(caller, { kind: "tool", name: "read-attachment" as ComponentName, input: { messageId: "m-1", partId: "1" } });
+	assert.ok(reply.ok, JSON.stringify(reply));
+	const output = reply.output as { text: string; ocr: { engine: string } };
+	assert.match(output.text, /空腹血糖/);
+	assert.equal(output.ocr.engine, "vision");
+	assert.deepEqual(listing(), before);
+});
 
 test("读附件：推断任务也能调", async (t) => {
 	const w = await attachmentWorld(t, [ann("m-1", [file("a.txt", "text/plain", "推断任务读到的附件")])]);

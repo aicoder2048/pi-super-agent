@@ -118,7 +118,7 @@ test("成员做一件事：Pi 打印模式，会话放在任务里这位成员�
 	assert.deepEqual(usage, [110, 110]);
 	await run(NEWS, "n");
 	assert.equal(flag(read("argv-n.json"), "--session-dir"), join(dir, "workers", "tkt_helper", "team", "news-researcher"), "每位成员各有会话目录");
-	assert.deepEqual(flag(read("argv-n.json"), "--tools")!.split(","), ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup"]);
+	assert.deepEqual(flag(read("argv-n.json"), "--tools")!.split(","), ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup", "ocr"]);
 });
 
 test("宿主给了模块工具目录的成员，工具清单多一个 domain_tool，目录交给扩展；没给的没有", async (t) => {

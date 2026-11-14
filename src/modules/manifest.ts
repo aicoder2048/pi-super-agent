@@ -20,7 +20,7 @@ export const CONNECTORS = ["inbox", "timer", "rss", "http-poll", "literature-sea
 export type ConnectorId = (typeof CONNECTORS)[number];
 
 /** The Pi tools a team member may list in `tools`. It is today's `MEMBER_TOOLS` in `src/worker/tools.ts`. */
-export const MEMBER_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup"] as const;
+export const MEMBER_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup", "ocr"] as const;
 export type MemberTool = (typeof MEMBER_TOOLS)[number];
 
 /** The kind directories, in the order the page lists them. The folder name is the kind. */
@@ -85,8 +85,16 @@ export interface CollectionDescriptor {
 export const TOOL_EFFECTS = ["read", "write"] as const;
 export type ToolEffect = "pure" | (typeof TOOL_EFFECTS)[number];
 
-/** A host port takes a tool's reply and does the one outside write the host holds the token for. Each names the only module that may use it (ADR-0022). */
-export const TOOL_PORTS = { "gmail.createDraft": "mail" } as const;
+/**
+ * A host port takes a tool's reply and does what the host holds for it: the one outside write it holds the token for
+ * (ADR-0022), or OCR, whose engine and time budget live in the host. `module` is the only module that may use it, null for any.
+ * `ocr`: a reply with `ocr: { file }` names a file under the module data's `files/`; the host reads it, puts the text in `text`
+ * and what it did in `ocr`, and deletes the file.
+ */
+export const TOOL_PORTS = {
+	"gmail.createDraft": { module: "mail", effect: "write" },
+	ocr: { module: null, effect: "read" },
+} as const satisfies Record<string, { module: string | null; effect: (typeof TOOL_EFFECTS)[number] }>;
 export type ToolPort = keyof typeof TOOL_PORTS;
 
 /**
@@ -105,7 +113,7 @@ export interface ToolDescriptor {
 	/** Names of secrets in the host's secrets file. The host sets each as an environment variable of the tool's process. */
 	secrets?: readonly string[];
 	runtime?: Runtime;
-	/** The tool returns what the port needs and the host does the write. Requires `effect: "write"`. */
+	/** Requires the effect the port names. */
 	port?: ToolPort;
 }
 

@@ -281,7 +281,7 @@ function readTool(report: Report, root: string, name: string): Component | undef
 	const port = raw["port"];
 	if (typeof port === "string" && Object.hasOwn(TOOL_PORTS, port)) tool.port = port as ToolPort;
 	else if (port !== undefined) report(where, `"port" must be ${Object.keys(TOOL_PORTS).join(" or ")}`);
-	if (port !== undefined && tool.effect !== "write") report(where, `a tool with "port" hands the host a write, so it states "effect": "write"`);
+	if (tool.port !== undefined && tool.effect !== TOOL_PORTS[tool.port].effect) report(where, `"port" ${tool.port} needs "effect": "${TOOL_PORTS[tool.port].effect}"`);
 	const entry = RUNTIMES[tool.runtime ?? "node"];
 	if (!existsSync(join(root, dir, entry))) report(`${dir}/${entry}`, `is missing; a tool is tool.json and ${entry}, whose default export is the tool`);
 	const cases: ToolCase[] = [];
@@ -634,7 +634,9 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, d
 		if (refusal !== undefined) report(where, refusal);
 	}
 	for (const item of components) {
-		if (item.kind === "tools" && item.tool.port !== undefined && TOOL_PORTS[item.tool.port] !== manifest.name) report(`tools/${item.name}/tool.json`, `"port" ${item.tool.port} 只有模块 ${TOOL_PORTS[item.tool.port]} 能用`);
+		if (item.kind !== "tools" || item.tool.port === undefined) continue;
+		const only = TOOL_PORTS[item.tool.port].module;
+		if (only !== null && only !== manifest.name) report(`tools/${item.name}/tool.json`, `"port" ${item.tool.port} 只有模块 ${only} 能用`);
 	}
 	const runs = runCases && problems.length === 0 ? caseRuns(components) : [];
 	if (runs.length > 0) {

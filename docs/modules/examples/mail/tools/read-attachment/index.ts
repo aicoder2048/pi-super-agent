@@ -1,5 +1,6 @@
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
@@ -8,9 +9,9 @@ import { accessToken, AUTH_TEXT, gmailClient, type Gmail, type Settings } from "
 
 type Input = { messageId: string; partId: string };
 
-type Extracted = { text: string; pages: number | null; truncated: boolean };
+type Extracted = { text: string; pages: number | null; truncated: boolean; ocr?: { file: string } };
 
-export type Result = { name: string; type: string; pages: number | null; text: string; truncated: boolean };
+export type Result = { name: string; type: string; pages: number | null; text: string; truncated: boolean; ocr?: { file: string } };
 
 /** The gateway gives a call 20 s: about 2 s for the token and messages.get, 10 s to download, 6 s for the PDF, 2 s spare. */
 export const LIMITS = { maxBytes: 10 * 1024 * 1024, downloadMs: 10_000, pdfMs: 6_000, rssBytes: 512 * 1024 * 1024, pollMs: 250, maxChars: 100_000 };
@@ -21,12 +22,19 @@ const asText = (bytes: Buffer, part: Part): Extracted => plain(decodeText(bytes,
 
 type Reader = { extensions: readonly string[]; read: (bytes: Buffer, part: Part, limits: Limits) => Promise<Extracted> | Extracted };
 
+const image = (extensions: readonly string[]): Reader => ({ extensions, read: (bytes, part) => forOcr(bytes, extensionOf(part), null) });
+
 const READERS: Readonly<Record<string, Reader>> = {
 	"text/plain": { extensions: [".txt", ".text"], read: asText },
 	"text/markdown": { extensions: [".md", ".markdown"], read: asText },
 	"text/csv": { extensions: [".csv"], read: asText },
 	"text/html": { extensions: [".html", ".htm"], read: (bytes, part) => plain(htmlToText(decodeText(bytes, part, "附件"))) },
 	"application/pdf": { extensions: [".pdf"], read: (bytes, _part, limits) => pdfText(bytes, limits) },
+	"image/png": image([".png"]),
+	"image/jpeg": image([".jpg", ".jpeg"]),
+	"image/heic": image([".heic"]),
+	"image/heif": image([".heif"]),
+	"image/tiff": image([".tif", ".tiff"]),
 };
 
 const PDF_SCRIPT = fileURLToPath(new URL("../../py/pdf_text.py", import.meta.url));
@@ -35,6 +43,17 @@ const TOO_BIG = "PDF 太大，读不了";
 const SETUP = "mail 的 Python 环境还没装：在跑宿主的机器上跑 just module setup mail，见 docs/modules/mail.md";
 
 const plain = (text: string): Extracted => ({ text, pages: null, truncated: false });
+
+const extensionOf = (part: Part): string => {
+	const filename = part.filename ?? "";
+	return filename.includes(".") ? filename.toLowerCase().slice(filename.lastIndexOf(".")) : "";
+};
+
+function forOcr(bytes: Buffer, extension: string, pages: number | null): Extracted {
+	const name = `ocr-${randomBytes(8).toString("hex")}${extension}`;
+	writeFileSync(join(process.env["PSA_MODULE_DATA"] ?? "", "files", name), bytes);
+	return { text: "", pages, truncated: false, ocr: { file: `files/${name}` } };
+}
 
 function parseInput(input: unknown): Input {
 	const { messageId, partId } = (input ?? {}) as Record<string, unknown>;
@@ -66,10 +85,10 @@ const GENERIC = new Set(["", "application/octet-stream", "binary/octet-stream", 
 function readerFor(part: Part): Reader {
 	const filename = part.filename ?? "";
 	const mimeType = (part.mimeType ?? "").toLowerCase();
-	const extension = filename.includes(".") ? filename.toLowerCase().slice(filename.lastIndexOf(".")) : "";
+	const extension = extensionOf(part);
 	const generic = GENERIC.has(mimeType);
 	const reader = generic ? Object.values(READERS).find((r) => r.extensions.includes(extension)) : READERS[mimeType];
-	if (reader === undefined || !reader.extensions.includes(extension)) throw new Error(`这个附件是 ${part.mimeType}（${filename}），只读 txt、md、csv、html、pdf`);
+	if (reader === undefined || !reader.extensions.includes(extension)) throw new Error(`这个附件是 ${part.mimeType}（${filename}），只读 txt、md、csv、html、pdf 和图片（png、jpg、heic、tiff）`);
 	if (!generic || reader !== READERS["application/pdf"]) return reader;
 	return {
 		...reader,
@@ -141,7 +160,7 @@ function pdfText(bytes: Buffer, limits: Limits): Promise<Extracted> {
 			if (reply.error === "encrypted") return fail(new Error("PDF 有密码，读不了"));
 			if (reply.error === "too-big") return fail(new Error(TOO_BIG));
 			if (typeof reply.text !== "string") return fail(new Error("PDF 读不出来，文件可能坏了"));
-			done({ text: reply.text, pages: reply.pages, truncated: reply.truncated === true });
+			done(reply.scan === true ? { ...forOcr(bytes, ".pdf", reply.pages), truncated: reply.truncated === true } : { text: reply.text, pages: reply.pages, truncated: reply.truncated === true });
 		});
 	});
 }
@@ -164,7 +183,7 @@ export async function readAttachment(input: unknown, limits: Limits = LIMITS): P
 	const { part, bytes, reader } = await download(gmailClient(settings.baseUrl, token), ids, limits);
 	const extracted = await reader.read(bytes, part, limits);
 	const { text, clipped } = clip(extracted.text, limits.maxChars);
-	return { name: part.filename ?? entry.filename, type: part.mimeType ?? entry.mimeType, pages: extracted.pages, text, truncated: extracted.truncated || clipped };
+	return { name: part.filename ?? entry.filename, type: part.mimeType ?? entry.mimeType, pages: extracted.pages, text, truncated: extracted.truncated || clipped, ...(extracted.ocr && { ocr: extracted.ocr }) };
 }
 
 export default (input: unknown) => readAttachment(input);

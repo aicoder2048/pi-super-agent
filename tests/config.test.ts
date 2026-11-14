@@ -230,3 +230,27 @@ test("feedFixtures 默认关；just module try 写 true 时预演用 fixtures �
 	assert.equal(loadConfig(stateWith({})).feedFixtures, false);
 	assert.equal(loadConfig(stateWith({ feedFixtures: true })).feedFixtures, true);
 });
+
+test("OCR 默认用 macOS 的 Vision，最多读 20 页、60 秒；engine 可以写 off 关掉", () => {
+	assert.deepEqual(loadConfig(stateWith({})).ocr, { engine: "vision", maxPages: 20, timeoutSeconds: 60 });
+	assert.deepEqual(loadConfig(stateWith({ ocr: { engine: "off" } })).ocr, { engine: "off" });
+	assert.deepEqual(loadConfig(stateWith({ ocr: { maxPages: 5, timeoutSeconds: 30 } })).ocr, { engine: "vision", maxPages: 5, timeoutSeconds: 30 });
+});
+
+test("OCR 用 unlimited 要写 unlimitedHome，那里要有模型和 .venv，宿主要是 Apple Silicon；默认时限 900 秒", () => {
+	const home = mkdtempSync(join(tmpdir(), "psa-unlimited-home-"));
+	const ocrOf = (ocr: object) => () => loadConfig(stateWith({ ocr })).ocr;
+	assert.throws(ocrOf({ engine: "unlimited" }), (e: Error) => e.name === "ConfigError" && /ocr\.unlimitedHome/.test(e.message));
+	assert.throws(ocrOf({ engine: "unlimited", unlimitedHome: home }), (e: Error) => e.name === "ConfigError" && /models\/unlimited_ocr_official/.test(e.message));
+	mkdirSync(join(home, "models/unlimited_ocr_official"), { recursive: true });
+	mkdirSync(join(home, ".venv/bin"), { recursive: true });
+	writeFileSync(join(home, ".venv/bin/python"), "");
+	if (process.arch === "arm64") assert.deepEqual(ocrOf({ engine: "unlimited", unlimitedHome: home })(), { engine: "unlimited", home, maxPages: 20, timeoutSeconds: 900 });
+	else assert.throws(ocrOf({ engine: "unlimited", unlimitedHome: home }), /Apple Silicon/);
+});
+
+test("OCR 的 engine、页数和秒数不对时拒绝启动，报错指出是哪一项", () => {
+	for (const [ocr, key] of [[{ engine: "tesseract" }, "ocr.engine"], [{ maxPages: 0 }, "ocr.maxPages"], [{ maxPages: 1.5 }, "ocr.maxPages"], [{ timeoutSeconds: 0 }, "ocr.timeoutSeconds"], ["vision", "ocr"]] as const) {
+		assert.throws(() => loadConfig(stateWith({ ocr })), (e: Error) => e.name === "ConfigError" && e.message.includes(key), JSON.stringify(ocr));
+	}
+});

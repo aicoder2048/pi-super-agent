@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_MODELS, parseModelRef, type ModelRef } from "../models.ts";
 import type { KernelConfig } from "../kernel/types.ts";
@@ -10,6 +10,7 @@ import { within } from "../worker/read-roots.ts";
 import { parseWebHosts, type TailnetName } from "./web-hosts.ts";
 import { parseSecretsFile } from "../secrets.ts";
 import { defaultStateDir } from "../state-dir.ts";
+import { UNLIMITED, type OcrConfig } from "../ocr/ocr.ts";
 
 export const BUNDLED_MODULES = fileURLToPath(new URL("../../modules", import.meta.url));
 export interface HostConfig {
@@ -43,6 +44,7 @@ export interface HostConfig {
 	feedFixtures: boolean;
 	/** Present means the Telegram client runs. An empty list is setup mode: it only tells whoever writes their own numeric id. */
 	telegram?: { allowedUserIds: readonly number[] };
+	ocr: OcrConfig;
 }
 
 const STUCK_MINUTES_MAX = 1440;
@@ -114,6 +116,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		throw new ConfigError(`${file}：modules（${JSON.stringify(moduleSwitches)}）必须是以模块名为键、值为 true 或 false 的对象`);
 	}
 	const telegram = raw.telegram === undefined ? undefined : parseTelegram(raw.telegram, file);
+	const ocr = parseOcr(raw.ocr, file);
 	return {
 		stateDir,
 		models: {
@@ -141,6 +144,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		sources,
 		feedFixtures: raw.feedFixtures === true,
 		...(telegram && { telegram }),
+		ocr,
 	};
 }
 
@@ -179,4 +183,26 @@ function parseTelegram(raw: unknown, file: string): { allowedUserIds: number[] }
 		throw new ConfigError(`${file}：telegram.allowedUserIds 必须是不重复的正整数数组：私聊里使用者的 Telegram 数字 id；空数组是设置模式`);
 	}
 	return { allowedUserIds: ids };
+}
+
+const OCR_TIMEOUT_DEFAULT = { vision: 60, unlimited: 900 } as const;
+
+/** Vision ships with macOS. Unlimited-OCR runs only on Apple Silicon and needs the unlimited-ocr project's model and `.venv`. */
+function parseOcr(raw: unknown, file: string): OcrConfig {
+	if (raw === undefined) raw = {};
+	if (raw === null || typeof raw !== "object" || Array.isArray(raw)) throw new ConfigError(`${file}：ocr 必须是对象，例如 {"engine": "vision"}`);
+	const { engine = "vision", unlimitedHome, maxPages = 20, timeoutSeconds } = raw as Record<string, unknown>;
+	if (engine === "off") return { engine };
+	if (engine !== "vision" && engine !== "unlimited") throw new ConfigError(`${file}：ocr.engine（${JSON.stringify(engine)}）只能是 vision、unlimited 或 off`);
+	if (!Number.isInteger(maxPages) || (maxPages as number) < 1 || (maxPages as number) > 200) throw new ConfigError(`${file}：ocr.maxPages（${JSON.stringify(maxPages)}）必须是 1 到 200 的整数`);
+	const seconds = timeoutSeconds ?? OCR_TIMEOUT_DEFAULT[engine];
+	if (typeof seconds !== "number" || !(seconds >= 1 && seconds <= 3600)) throw new ConfigError(`${file}：ocr.timeoutSeconds（${JSON.stringify(seconds)}）必须是 1 到 3600 的秒数`);
+	const limits = { maxPages: maxPages as number, timeoutSeconds: seconds };
+	if (engine === "vision") return { engine, ...limits };
+	if (typeof unlimitedHome !== "string" || !isAbsolute(unlimitedHome)) throw new ConfigError(`${file}：ocr.engine 是 unlimited 时要写 ocr.unlimitedHome：unlimited-ocr 项目目录的绝对路径`);
+	for (const need of [UNLIMITED.model, UNLIMITED.python]) {
+		if (!existsSync(join(unlimitedHome, need))) throw new ConfigError(`${file}：ocr.unlimitedHome（${unlimitedHome}）下面没有 ${need}`);
+	}
+	if (process.arch !== "arm64") throw new ConfigError(`${file}：ocr.engine 是 unlimited 只能用在 Apple Silicon 的 Mac 上，这台是 ${process.arch}；用 vision`);
+	return { engine, home: unlimitedHome, ...limits };
 }
