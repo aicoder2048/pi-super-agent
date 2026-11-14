@@ -6,10 +6,12 @@
 // signals, exported read-only from the host's ta.sqlite with their stored attention, and the module's daily bars to close().
 //   signals.csv  sqlite3 -readonly -header -csv ta.sqlite "select symbol, rule_id, kind, direction, data_start_ms, data_end_ms,
 //                price, \"values\" as vals, attention from signals where timeframe='1d' order by data_end_ms, id"
-// Sessions without minute bars (the first year) count the scan side alone.
+// Sessions without minute bars (the first year) count the scan side alone. Earnings dates are not in the export, so 财报临近
+// (level 1, no line) is left out; the digest is built by feeds/scan/digest.ts from the day's hits of both feeds.
 import { readFileSync } from "node:fs";
 import { daily, minutes, OPEN, STOCKS, vixyDays, type Day, type Minute } from "./p2-measure-data.ts";
 import { close, type DailyBar, type TaSignal } from "../examples/stock-ta/feeds/scan/close.ts";
+import { digest } from "../examples/stock-ta/feeds/scan/digest.ts";
 import { newDay, watch, type History } from "../examples/stock-ta/feeds/quotes/watch.ts";
 import type { Hit } from "../examples/stock-ta/hits.ts";
 import type { Quote } from "../examples/stock-ta/massive.ts";
@@ -119,6 +121,7 @@ type Tally = { sessions: number; ring: number; silent: number; tasks: number; sc
 const tally = (): Tally => ({ sessions: 0, ring: 0, silent: 0, tasks: 0, scanTasks: 0, scanSilent: 0, scanRing: 0, digestDays: 0, byRule: new Map(), levels: [0, 0, 0, 0, 0, 0, 0], bumped: 0, divergent: 0, noise: 0, taskDays: new Map() });
 const windows = { "two years, scan side (quotes where minute bars exist)": { before: tally(), after: tally() }, "the year with minute bars, both feeds": { before: tally(), after: tally() } };
 const add = (m: Map<string | number, number>, k: string | number, n = 1) => m.set(k, (m.get(k) ?? 0) + n);
+const digests: { date: string; length: number; text: string }[] = [];
 
 const sessions = (days.get("SPY") ?? []).filter((_, i) => i >= 21).map((b) => b.date).filter((d) => signalsByDate.has(d) || quoteSessions.includes(d));
 for (const date of sessions) {
@@ -126,6 +129,8 @@ for (const date of sessions) {
 	const signals = signalsByDate.get(date) ?? [];
 	const oldTriggers = signals.filter((s) => STOCKS.includes(s.symbol) && s.rule_id === "R-MA-2-50" && s.direction === "bearish");
 	const graded = close({ date, at: `${date}T21:00:00.000Z`, symbols: STOCKS, signals, bars: Object.fromEntries(STOCKS.map((s) => [s, barsThrough(s, date)])), earlier: quotes.hits, levels, quiet: false });
+	const line = digest(date, [...quotes.hits, ...graded.hits], [], false);
+	if (line !== undefined && quoteSessions.includes(date)) digests.push({ date, length: [...line].length, text: line });
 	const afterThreads = new Set([...quotes.pushes.threads, ...graded.notices.map((n) => n.thread)]);
 	const beforeThreads = quotes.pushes.threads.size + new Set(oldTriggers.map((s) => s.symbol)).size;
 	for (const [name, w] of Object.entries(windows)) {
@@ -157,3 +162,10 @@ for (const [name, { before, after }] of Object.entries(windows)) {
 	console.log(`  scan hits per session by rule@level: ${[...after.byRule].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${per(v, after)}`).join(", ")}`);
 	console.log(`  tasks per day histogram after: ${[...after.taskDays].sort((a, b) => Number(a[0]) - Number(b[0])).map(([k, v]) => `${k}:${v}`).join(" ")}`);
 }
+
+const lengths = digests.map((d) => d.length).sort((a, b) => a - b);
+const longest = digests.reduce((a, b) => (b.length > a.length ? b : a), digests[0]!);
+console.log(`\ndigests in the year with minute bars: ${digests.length}, length median ${lengths[Math.floor(lengths.length / 2)]}, 90th percentile ${lengths[Math.floor(lengths.length * 0.9)]}, longest ${longest.length} (${longest.date}), folded into 另有 n 条 on ${digests.filter((d) => d.text.includes("另有")).length} days`);
+console.log(`longest: ${longest.text}`);
+const median = digests.find((d) => d.length === lengths[Math.floor(lengths.length / 2)])!;
+console.log(`a median day (${median.date}): ${median.text}`);

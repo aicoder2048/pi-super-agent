@@ -5,27 +5,31 @@
  * line break, so segments that do not fit fold, lowest level first, into 「另有 n 条」.
  */
 import type { Hit } from "../../hits.ts";
-import { COMBOS, opensTask, WATCH_RULES } from "../../watch-rules.ts";
+import { COMBOS, opensTask, TIERS, WATCH_RULES } from "../../watch-rules.ts";
 
 const LIMIT = 1000;
 const GROUPS = new Set(["ta-key", "ta-other"]);
 const isCombo = (h: Hit) => COMBOS.some((c) => c.id === h.rule);
 const isBand = (h: Hit) => h.rule.startsWith("move-");
-const label = (h: Hit) => (isBand(h) || isCombo(h) ? h.fact : h.fact.split("（")[0]!);
-const titleOf = (h: Hit) => (GROUPS.has(h.rule) ? label(h) : (WATCH_RULES.find((r) => r.id === h.rule)?.title ?? label(h)));
+/** The fact up to its first aside: 「创 52 周新高 212.40」, 「逆大盘」. */
+const label = (h: Hit) => (isBand(h) || isCombo(h) ? h.fact : h.fact.split(/[（：]/)[0]!);
+const ruleOf = (h: Hit) => WATCH_RULES.find((r) => r.id === h.rule);
+const titleOf = (h: Hit) => (GROUPS.has(h.rule) ? label(h) : (ruleOf(h)?.title ?? label(h)));
+/** A whipsaw fold is worth a word only for a rule that would have shown; `ta`'s level-0 signals flip quietly. */
+const folds = (h: Hit) => h.whipsaw !== undefined && (ruleOf(h)?.level ?? 0) >= 1;
 
 type Segment = { text: string; rank: number; count: number };
 
-/** A band on one side shows only its highest tier; a combo's members show as the combo. */
+/** A two-tier rule (a band, VIXY) on one side shows only its higher tier; a combo's members show as the combo. */
 function shown(hits: readonly Hit[]): Hit[] {
 	const listed = hits.filter((h) => h.level >= 1 && h.combo === undefined);
-	return listed.filter((h) => !isBand(h) || !listed.some((o) => isBand(o) && o.lean === h.lean && o.rule > h.rule));
+	return listed.filter((h) => !TIERS.some(([low, high]) => h.rule === low && listed.some((o) => o.rule === high && o.lean === h.lean)));
 }
 
 function segmentOf(symbol: string, hits: readonly Hit[]): Segment | undefined {
 	const listed = shown(hits);
-	const folds = [...new Map(hits.filter((h) => h.whipsaw !== undefined).map((h) => [titleOf(h), h.whipsaw!])).entries()].map(([title, flips]) => `${title}来回翻 ${flips} 次`);
-	if (listed.length === 0 && folds.length === 0) return undefined;
+	const flips = [...new Map(hits.filter(folds).map((h) => [titleOf(h), h.whipsaw!])).entries()].map(([title, n]) => `${title}来回翻 ${n} 次`);
+	if (listed.length === 0 && flips.length === 0) return undefined;
 	const named = (h: Hit) => (h.held && !opensTask(h) ? `${label(h)}（免打扰时留下）` : label(h));
 	const [bull, bear, none] = (["bull", "bear", null] as const).map((lean) => listed.filter((h) => h.lean === lean).map(named));
 	const split = bull!.length > 0 && bear!.length > 0;
@@ -38,9 +42,9 @@ function segmentOf(symbol: string, hits: readonly Hit[]): Segment | undefined {
 	if (tasks.some((h) => !h.held)) parts.push("已开任务");
 	else if (tasks.length > 0) parts.push("免打扰时留下，现在补开任务");
 	const head = parts.length > 0 ? parts.join("，") : "";
-	const text = `${symbol} ${[head, ...folds].filter((p) => p !== "").join("，")}`;
+	const text = `${symbol} ${[head, ...flips].filter((p) => p !== "").join("，")}`;
 	const rank = listed.length === 0 ? -1 : Math.max(...listed.map((h) => (opensTask(h) ? 9 : h.level)));
-	return { text, rank, count: listed.length + folds.length };
+	return { text, rank, count: listed.length + flips.length };
 }
 
 /** Undefined when nothing above level 0 happened today. `states` are lines for states that began on an earlier day. */
