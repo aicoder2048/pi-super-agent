@@ -1,6 +1,9 @@
 import type { CapQuestion, Cleared, ConversationLine, DashboardRow, Disposition, HelpersToday, HostLine, Routes } from "../kernel/types.ts";
 import type { Dispatching } from "../host/dispatch.ts";
 import type { KindDir } from "../modules/manifest.ts";
+import type { HealthBoard } from "../host/health.ts";
+
+export type { Alarm, ClearedAlarm, HealthBoard } from "../host/health.ts";
 
 export type { Cleared, ConversationLine, HostLine, Quote } from "../kernel/types.ts";
 
@@ -79,6 +82,8 @@ export interface BoardState {
 	modules: ModuleCard[];
 	/** Today's alerts (host local day), oldest first. */
 	alerts: HostLine[];
+	/** What is broken right now, raised and cleared by the host (docs/health/README.md). */
+	health: HealthBoard;
 }
 
 export type ClientToHost =

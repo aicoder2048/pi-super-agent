@@ -2,7 +2,7 @@ import type { Clock } from "./kernel/types.ts";
 import type { ModelRef } from "./models.ts";
 import { assertAllowed } from "./models.ts";
 
-const QUOTA_ERROR = /\b429\b|rate.?limit|quota|usage.?limit|too many requests/i;
+export const QUOTA_ERROR = /\b429\b|rate.?limit|quota|usage.?limit|too many requests/i;
 
 export function isQuotaError(message: string): boolean {
 	return QUOTA_ERROR.test(message);
@@ -53,14 +53,14 @@ export class ModelSelector {
 		if (this.#mode === "probing") this.#mode = "primary";
 	}
 
-	onError(message: string): { switched: false } | { switched: true; notify: boolean } {
+	onError(message: string): { switched: false } | { switched: true } {
 		if (!isQuotaError(message) || this.#mode === "fallback") return { switched: false };
 		if (this.#mode === "probing") {
 			this.#mode = "fallback";
-			return { switched: true, notify: false };
+			return { switched: true };
 		}
 		this.#mode = "fallback";
 		this.#lastSwitchOrProbe = this.#o.clock.now();
-		return { switched: true, notify: true };
+		return { switched: true };
 	}
 }

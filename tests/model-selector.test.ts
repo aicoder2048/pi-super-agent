@@ -17,9 +17,9 @@ test("额度或限流错误能被识别，其他错误不算", () => {
 	for (const msg of ["500 Internal Server Error", "invalid tool arguments", "context length exceeded"]) assert.ok(!isQuotaError(msg), msg);
 });
 
-test("Pi 的重试用完后，第一次最终的限流错误就切到回退模型，并且只要求通知一次", () => {
+test("Pi 的重试用完后，第一次最终的限流错误就切到回退模型", () => {
 	const { s } = selector();
-	assert.deepEqual(s.onError("429"), { switched: true, notify: true });
+	assert.deepEqual(s.onError("429"), { switched: true });
 	assert.deepEqual(s.current(), { model: fallback, fellBack: true });
 	assert.deepEqual(s.onError("429"), { switched: false });
 });
@@ -41,24 +41,24 @@ test("回退期间每 15 分钟在新一轮开始时试一次主模型，成功�
 	assert.deepEqual(s.current(), { model: primary, fellBack: false });
 });
 
-test("试探主模型失败时立刻回到回退模型，15 分钟后再试，不再重复通知", () => {
+test("试探主模型失败时立刻回到回退模型，15 分钟后再试", () => {
 	const { s, now } = selector();
 	for (let i = 0; i < 3; i++) s.onError("429");
 	now.t += 15 * MIN;
 	s.forTurn();
-	assert.deepEqual(s.onError("429"), { switched: true, notify: false });
+	assert.deepEqual(s.onError("429"), { switched: true });
 	assert.equal(s.forTurn().probing, false);
 	now.t += 15 * MIN;
 	assert.equal(s.forTurn().probing, true);
 });
 
-test("切回主模型后再次限流回退，会再通知一次", () => {
+test("切回主模型后再次限流，再切到回退模型", () => {
 	const { s, now } = selector();
 	for (let i = 0; i < 3; i++) s.onError("429");
 	now.t += 15 * MIN;
 	s.forTurn();
 	s.onSuccess();
-	assert.deepEqual(s.onError("429"), { switched: true, notify: true });
+	assert.deepEqual(s.onError("429"), { switched: true });
 });
 
 test("成员这类旁支用 steady 选模型：主模型稳定时用主模型；回退或正在试探时用回退模型，而且不触发试探", () => {

@@ -30,6 +30,8 @@ export interface Step {
 export interface Script {
 	router: Step[];
 	workers?: WorkerScript[];
+	/** Cards no step claims and the run does not count as unmatched, such as the Router's own retry notice after a model error. */
+	ignore?: RegExp;
 }
 export type WorkerScript = { brief: string; steps: Step[] };
 
@@ -86,6 +88,10 @@ export class FakeModel {
 	readonly #pending = new Map<string, Step[]>();
 	readonly #systemPrompts = new Map<string, string>();
 	readonly #sabotage: { label: string; crash: boolean } | undefined;
+	readonly #ignore: RegExp | undefined;
+	readonly #faults = new Map<string, { status: number; message: string }>();
+	/** Requests answered with an HTTP error by fail(), per model id. */
+	readonly failed = new Map<string, number>();
 	#server!: Server;
 	#drained!: () => void;
 	readonly drained = new Promise<void>((done) => (this.#drained = done));
@@ -98,7 +104,17 @@ export class FakeModel {
 			this.#pending.set(brief, [...steps]);
 		}
 		this.#sabotage = parseSabotage(sabotage);
+		this.#ignore = script.ignore;
 		this.#checkDrained();
+	}
+
+	/** Until heal(model), every request for this model id gets this HTTP status, the way a provider that is down, limiting or rejecting the key answers. */
+	fail(model: string, status: number, message: string): void {
+		this.#faults.set(model, { status, message });
+	}
+
+	heal(model: string): void {
+		this.#faults.delete(model);
 	}
 
 	static async start(script: Script, sabotage = process.env.PSA_E2E_SABOTAGE): Promise<FakeModel> {
@@ -154,6 +170,12 @@ export class FakeModel {
 		let raw = "";
 		for await (const chunk of req) raw += chunk;
 		const body = JSON.parse(raw) as { model: string; messages: Message[]; tools?: { function?: { name?: string } }[] };
+		const fault = this.#faults.get(body.model);
+		if (fault) {
+			this.failed.set(body.model, (this.failed.get(body.model) ?? 0) + 1);
+			res.writeHead(fault.status, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: fault.message, code: fault.status } }));
+			return;
+		}
 		const { delayMs, ...decided } = this.#decide(body.model, body.messages);
 		const exchange = { ...decided, tools: (body.tools ?? []).map((t) => t.function?.name ?? "") };
 		this.exchanges.push(exchange);
@@ -177,7 +199,7 @@ export class FakeModel {
 			const i = pending.findIndex((s) => s.match.test(card));
 			if (i < 0) {
 				// The host resends the roster whenever the module table changes; scripts that don't test it ignore it.
-				if (!card.startsWith("[名单和规则]")) base.unmatched.push(card);
+				if (!card.startsWith("[名单和规则]") && !this.#ignore?.test(card)) base.unmatched.push(card);
 				continue;
 			}
 			const [step] = pending.splice(i, 1);

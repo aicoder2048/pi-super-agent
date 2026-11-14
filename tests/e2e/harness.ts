@@ -16,7 +16,7 @@ import { FAKE_PROVIDER, FakeModel, fakeAgentEnv, type Script } from "./fake-mode
 export const REPO = resolve(import.meta.dirname, "../..");
 // One folder per `just e2e` run, so two runs in the same checkout never clear each other's reports.
 // node --test runs each file as a child of one runner, so the runner pid names the run when PSA_E2E_RUN is unset.
-const OUT = join(REPO, "tests/e2e/.out", process.env.PSA_E2E_RUN || `run-${process.ppid}`);
+export const OUT = join(REPO, "tests/e2e/.out", process.env.PSA_E2E_RUN || `run-${process.ppid}`);
 const RUN = ["--import", "./src/pi-runtime.mjs"];
 /** The line the host prints once its web page is up; the trailing whitespace makes sure the URL is complete. */
 export const HOST_URL = /\[host\] 网页 (\S+)\s/g;

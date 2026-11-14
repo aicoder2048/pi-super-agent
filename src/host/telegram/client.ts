@@ -1,5 +1,5 @@
 // The Telegram client: a long-poll loop for what the user writes and taps, a send loop for the outbox, and the
-// fan-out of host broadcasts (lines and question cards) into the outbox. Its public surface is start / broadcast / stop.
+// fan-out of host broadcasts (lines and question cards) into the outbox. Its public surface is start / broadcast / tell / stop.
 import type { DatabaseSync } from "node:sqlite";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { BoardState } from "../../client/protocol.ts";
@@ -149,6 +149,17 @@ export class TelegramClient {
 					return;
 				}
 			}
+			this.#wake?.();
+		} catch (error) {
+			this.#log(`[telegram] 没能记下要发到 Telegram 的消息：${(error as Error).message}`);
+		}
+	}
+
+	/** One message to every open chat, sent once per key even across restarts. Synchronous and never throws, like broadcast. */
+	tell(key: `health:${string}`, text: string): void {
+		if (this.#state === "off") return;
+		try {
+			for (const chat of this.#store.openChats()) this.#store.put(chat, key, null, { kind: "line", text, silent: false, noPreview: true });
 			this.#wake?.();
 		} catch (error) {
 			this.#log(`[telegram] 没能记下要发到 Telegram 的消息：${(error as Error).message}`);

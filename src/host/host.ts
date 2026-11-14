@@ -39,6 +39,7 @@ import { createScheduler, type Scheduler } from "../modules/scheduler.ts";
 import { threadId } from "../sources/generic.ts";
 import { inPollWindow } from "../sources/market/session.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
+import { clearedText, Health, HEALTH_DEFAULTS, ModelHealth, raisedText, type HealthConfig } from "./health.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -53,6 +54,7 @@ export interface HostDeps {
 	stateDir: string;
 	socketPath: string;
 	rulesFor: (triggerSource: string) => string[];
+	routerHealth: ModelHealth;
 }
 
 export interface HostOptions {
@@ -85,6 +87,7 @@ export interface HostOptions {
 	/** Runs `run` once, `ms` from now, and returns its cancel. The host waits for the New York day change with it; tests pass their own to make that moment arrive. */
 	after?: (ms: number, run: () => void) => () => void;
 	telegram?: TelegramOptions;
+	health?: HealthConfig;
 }
 
 const afterRealTime: NonNullable<HostOptions["after"]> = (ms, run) => {
@@ -142,6 +145,8 @@ export class Host {
 	#cancelNewYorkDay: (() => void) | undefined;
 	readonly #feedProblems = new Map<string, string>();
 	readonly #beats = new Map<string, FeedBeat & { module: string }>();
+	readonly #health: Health;
+	readonly #routerHealth: ModelHealth;
 	#duty!: Duty;
 
 	private constructor(options: HostOptions) {
@@ -157,6 +162,13 @@ export class Host {
 		this.#watching = options.watching ?? [];
 		this.#kitFor = options.domains?.kitFor;
 		this.#modules = options.modules;
+		const healthConfig = options.health ?? HEALTH_DEFAULTS;
+		this.#health = new Health({
+			now: clock.now,
+			onRaised: (alarm) => this.#tellPhone(`health:raised:${alarm.id}:${alarm.since}`, raisedText(alarm)),
+			onCleared: (alarm) => this.#tellPhone(`health:cleared:${alarm.id}:${alarm.since}`, clearedText(alarm)),
+		});
+		this.#routerHealth = new ModelHealth(this.#health, "router", healthConfig.modelFailuresBeforeAlarm);
 		this.#db = openStore(join(options.stateDir, "state.db"));
 		this.kernel = new Kernel({
 			db: this.#db,
@@ -222,7 +234,7 @@ export class Host {
 			fixtures: options.moduleFeeds?.fixtures ?? false,
 			log: this.#log,
 		});
-		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []) };
+		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []), routerHealth: this.#routerHealth };
 		const memberCap = options.dispatch && new MemberCap({ configured: options.dispatch.maxConcurrent, clock, store: this.kernel.capAsks, log: this.#log });
 		this.#memberCap = memberCap;
 		this.workers = new WorkerExecutor({
@@ -235,6 +247,7 @@ export class Host {
 			onMemberTranscript: (ticketId, member, message) => this.#web?.sendTranscript(ticketId, message, member),
 			onError: (ticketId, error) => this.#log(`[worker ${ticketId}] ${String(error)}`),
 			models: options.workerModels,
+			health: new ModelHealth(this.#health, "worker", healthConfig.modelFailuresBeforeAlarm),
 			kitFor: this.#kitFor,
 			gateway: options.gateway,
 			ocr: options.ocr,
@@ -287,7 +300,7 @@ export class Host {
 		}
 		try {
 			const clientToken = loadToken(options.stateDir, "client-token", host.#log);
-			const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath, rulesFor: options.rulesFor ?? (() => []) };
+			const deps: HostDeps = { kernel: host.kernel, afterCommand: () => host.#changed(), stateDir: options.stateDir, socketPath: host.socketPath, rulesFor: options.rulesFor ?? (() => []), routerHealth: host.#routerHealth };
 			// The socket bind is what turns a second host on this state directory away; with webPort 0 the web port does not.
 			await host.server.listen(host.socketPath, clientToken);
 			await endLeftoverMembers(options.stateDir, host.#log);
@@ -436,7 +449,7 @@ export class Host {
 
 	#boardState(): BoardState {
 		this.#expireRunAsks();
-		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard(), watching: this.#watchingNow(), modules: this.#moduleCards(), alerts: this.kernel.alertsToday() };
+		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard(), watching: this.#watchingNow(), modules: this.#moduleCards(), alerts: this.kernel.alertsToday(), health: this.#health.board() };
 	}
 
 	#moduleCards(): ModuleCard[] {
@@ -491,6 +504,12 @@ export class Host {
 		if (this.#feedProblems.get(source) === problem.id) return;
 		this.#feedProblems.set(source, problem.id);
 		this.#postHostLine(source, { kind: "notice", text: this.kernel.moduleNotice(source, oneLine(problem.text, PROBLEM_MAX)) });
+	}
+
+	/** The page reads the banner from the next board frame; the phone gets one message per raise and per clear. */
+	#tellPhone(key: `health:${string}`, text: string): void {
+		this.#telegram?.tell(key, text);
+		this.#changed();
 	}
 
 	/** False when this source already posted the externalId. */
