@@ -35,7 +35,7 @@ test("Router 和 Worker 各有一个选择器，主模型分别是各自的配�
 
 test("Pi 自己的重试用完后，第一次最终的限流错误就切到回退模型", () => {
 	const { router } = modelSelectors(config, { now: () => 0 });
-	assert.deepEqual(router.onError("429 Too Many Requests"), { switched: true, notify: true });
+	assert.deepEqual(router.onError("429 Too Many Requests"), { switched: true });
 	assert.deepEqual(router.current().model, config.models.fallback);
 });
 
