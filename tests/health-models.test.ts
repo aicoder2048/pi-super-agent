@@ -114,6 +114,28 @@ test("助手的主模型限流：亮「助手模型已切到回退」，助手�
 	assert.equal(said().filter((s) => s.startsWith("通知：")).length, 0);
 });
 
+test("两个助手同时在主模型上被限流：第二个看到已切到回退，不误报「主模型和回退模型都被限流」", async (t) => {
+	const waiting: (() => void)[] = [];
+	const { host, active, phone } = await healthHost(t, {
+		script: async (w) => {
+			if (w.model === "openai-codex/gpt-6.1-sol") {
+				await new Promise<void>((resolve) => {
+					waiting.push(resolve);
+					if (waiting.length === 2) for (const go of waiting) go();
+				});
+				return w.settle("429 Too Many Requests");
+			}
+			w.report({ status: "ready", summary: `用 ${w.model} 做完了` });
+			w.settle();
+		},
+	});
+	host.say("第二个");
+	await until(() => phone().filter((m) => m.includes("结果：")).length >= 2, "两个都用回退模型做完，结果发到了手机");
+	assert.ok(!phone().some((m) => /都被限流/.test(m)), "没有误报主模型和回退模型都被限流");
+	assert.deepEqual(host.snapshot().health.recent, [], "没有亮过又马上恢复的警报");
+	assert.deepEqual(active().map((a) => a.id), ["model:worker:fallback"]);
+});
+
 test("助手的模型连着出错：一次不亮，两次连着失败才亮「助手模型」，下一轮成功就解除", async (t) => {
 	let rounds = 0;
 	const { host, active } = await healthHost(t, {
