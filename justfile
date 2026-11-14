@@ -94,11 +94,6 @@ notify +text:
 drop source thread +body:
     {{run}} src/cli/drop.ts {{source}} {{thread}} {{body}}
 
-# 玩具行情模块投递一条假行情：just toy-feed TOYX -5.2 12
-# toy-market 默认关闭，先在 config.json 写 "modules": { "toy-market": true } 并重启宿主。
-toy-feed symbol="TOYX" change="-5.2" volume="12":
-    {{run}} modules/toy-market/feed.ts {{symbol}} {{change}} {{volume}}
-
 # 用真实行情接口取一次自选股快照打印成表，再打印第一只自选股的日线指标和 Finnhub 财报（不打印密钥）。密钥来自环境变量或 config.json 的 secretsFile。
 market-smoke:
     {{run}} src/cli/market-smoke.ts
@@ -152,11 +147,11 @@ e2e: _browser
     {{run}} --test --test-reporter=spec --test-timeout=90000 tests/e2e/*.e2e.ts
 
 # 只跑一个：just demo 1-continuous。录屏和 summary.txt 在 demos/out/<名字>/。
-# 演示 1 到 4（连续、高效、主动、持久）：有界面的浏览器，真实 openai-codex 模型（订阅），手动运行。
+# 演示 1、2、4（连续、高效、持久）：有界面的浏览器，真实 openai-codex 模型（订阅），手动运行。
 demo name="all": (_browser "chromium")
     #!/usr/bin/env bash
     set -u; status=0
-    names=({{ if name == "all" { "1-continuous 2-efficient 3-proactive 4-durable" } else { name } }})
+    names=({{ if name == "all" { "1-continuous 2-efficient 4-durable" } else { name } }})
     for d in "${names[@]}"; do {{run}} "demos/demo-$d.mjs" || status=1; done
     for d in "${names[@]}"; do cat "demos/out/demo-$d/summary.txt" 2>/dev/null; done
     exit $status

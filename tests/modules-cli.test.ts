@@ -28,16 +28,18 @@ const list = (dir: string, env?: Record<string, string>) => cli("src/cli/modules
 const lineOf = (out: string, name: string) => out.split("\n").find((l) => l.startsWith(`${name} `)) ?? "";
 const SAMPLE = join(import.meta.dirname, "..", "docs", "modules", "architecture", "sample");
 const check = (dir: string) => cli("src/cli/module.ts", tmpdir(), ["check", dir]);
-const RETIRED_US_MARKET = join(import.meta.dirname, "fixtures", "retired", "us-market");
-const withRetired = (dir: string): string => {
-	cpSync(RETIRED_US_MARKET, join(dir, "modules", "us-market"), { recursive: true });
+const FIXTURES = { "us-market": join(import.meta.dirname, "fixtures", "retired", "us-market"), "toy-market": join(import.meta.dirname, "fixtures", "legacy", "toy-market") };
+const withFixtures = (dir: string, ...names: (keyof typeof FIXTURES)[]): string => {
+	for (const name of names) cpSync(FIXTURES[name], join(dir, "modules", name), { recursive: true });
 	return dir;
 };
+const withRetired = (dir: string): string => withFixtures(dir, "us-market");
+const withToy = (dir: string): string => withFixtures(dir, "us-market", "toy-market");
 
 test("just modules：不连宿主列出仓库模块，toy-market 默认关闭，us-market 没有密钥时看盘停用", (t) => {
-	const run = list(withRetired(stateDir(t)));
+	const run = list(withToy(stateDir(t)));
 	assert.equal(run.status, 0, run.stderr);
-	assert.match(lineOf(run.stdout, "toy-market"), /停用（模块默认关闭）\s+modules\/toy-market$/);
+	assert.match(lineOf(run.stdout, "toy-market"), /停用（模块默认关闭）\s+\S+\/modules\/toy-market$/);
 	assert.match(lineOf(run.stdout, "us-market"), /启用（默认）\s+\S+\/modules\/us-market$/);
 	assert.match(run.stdout, /来源\s+us-market\s+massive-stocks：未配置行情密钥，看盘停用/);
 	assert.match(run.stdout, /来源\s+toy-market\s+投递/);
@@ -46,7 +48,7 @@ test("just modules：不连宿主列出仓库模块，toy-market 默认关闭，
 });
 
 test("just modules：列出模块在 module.json 里开的工具，没开的写无", (t) => {
-	const run = list(withRetired(stateDir(t)));
+	const run = list(withToy(stateDir(t)));
 	assert.equal(run.status, 0, run.stderr);
 	const block = (name: string) => run.stdout.split(/\n(?=\S)/).find((b) => b.startsWith(`${name} `)) ?? "";
 	assert.match(block("us-market"), /\n  工具\s+lookup、tripwire\n/);
@@ -54,7 +56,7 @@ test("just modules：列出模块在 module.json 里开的工具，没开的写�
 });
 
 test("just modules：按 config.json 的开关显示启用原因，停用模块的来源写模块停用", (t) => {
-	const run = list(withRetired(stateDir(t, { modules: { "toy-market": true, "us-market": false } })));
+	const run = list(withToy(stateDir(t, { modules: { "toy-market": true, "us-market": false } })));
 	assert.equal(run.status, 0, run.stderr);
 	assert.match(lineOf(run.stdout, "toy-market"), /启用（config\.json 打开）/);
 	assert.match(lineOf(run.stdout, "us-market"), /停用（config\.json 关闭）/);
@@ -62,7 +64,7 @@ test("just modules：按 config.json 的开关显示启用原因，停用模块�
 });
 
 test("just modules：列出状态目录里的模块，名字、状态和目录三列对齐", (t) => {
-	const dir = withRetired(stateDir(t));
+	const dir = withToy(stateDir(t));
 	mkdirSync(join(dir, "modules", "mail", "skills", "triage"), { recursive: true });
 	writeFileSync(join(dir, "modules", "mail", "module.json"), JSON.stringify({ name: "mail", sources: [{ name: "mail" }] }));
 	writeFileSync(join(dir, "modules", "mail", "rules.md"), "## urgent\n加急邮件开任务\n\n## digest\n每天汇总\n");
@@ -124,7 +126,7 @@ test("just module new：重名时一行拒绝并以 1 退出，原目录不变",
 	const dir = stateDir(t);
 	mkdirSync(join(dir, "modules", "demo"), { recursive: true });
 	writeFileSync(join(dir, "modules", "demo", "notes.txt"), "mine");
-	for (const name of ["demo", "toy-market"]) {
+	for (const name of ["demo", "pi-pi"]) {
 		const run = newModule(dir, [name, "--template", "team"]);
 		assert.equal(run.status, 1, name);
 		assert.equal((run.stdout + run.stderr).trim().split("\n").length, 1, run.stdout + run.stderr);
@@ -161,18 +163,6 @@ test("模板不会被当成模块加载", (t) => {
 	for (const template of ["notes", "team", "full"]) assert.ok(!names.includes(template), names.join(", "));
 	assert.ok(!names.includes("templates"), names.join(", "));
 });
-
-test("just toy-feed：toy-market 关闭时说明怎么打开并以 1 退出，不投递；打开后照常投递", (t) => {
-	const off = stateDir(t);
-	const run = cli("modules/toy-market/feed.ts", off);
-	assert.equal(run.status, 1);
-	assert.match(run.stderr, /"modules": \{ "toy-market": true \}/);
-	assert.ok(!existsSync(join(off, "inbox")) || readdirSync(join(off, "inbox")).length === 0);
-	const on = stateDir(t, { modules: { "toy-market": true } });
-	assert.equal(cli("modules/toy-market/feed.ts", on).status, 0);
-	assert.equal(readdirSync(join(on, "inbox")).filter((f) => f.endsWith(".json")).length, 1);
-});
-
 
 test("just module check：好包打印一行 ok 名字@版本 和各类组件数，以 0 退出", () => {
 	const run = check(join(SAMPLE, "personal-tax"));
@@ -215,7 +205,7 @@ test("just module check 的 --previous 指向不存在的目录：打印一行�
 });
 
 test("just modules：新布局包按生命周期显示，没跑过工具用例的包不说有效；宿主把它打开以后显示运行中", async (t) => {
-	const dir = withRetired(stateDir(t));
+	const dir = withToy(stateDir(t));
 	cpSync("docs/modules/architecture/sample/personal-tax", join(dir, "modules/personal-tax"), { recursive: true });
 	const before = lineOf(list(dir).stdout, "personal-tax");
 	assert.match(before, /新布局\s+已停用\s/);
