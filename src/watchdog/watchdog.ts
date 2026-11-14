@@ -84,10 +84,21 @@ const hostFailingText = (starts: number, error: string | undefined) =>
 
 const hostBackText = (downMs: number) => `✅ 宿主恢复了，停了${downMs < 60_000 ? "" : "约 "}${minutes(downMs)}`;
 
-/** The line that says why the host stopped: the last one naming an error, else the last line, such as a config error. */
+const STAMP = /^\d{4}-\d\d-\d\dT[\d:.]+Z /;
+const TAGGED = /^\[[\w-]+\]/;
+const ERRORISH = /error|错误|失败/i;
+// Node's crash output around the message: source location, caret, stack frames, version, warnings.
+const CRASH_NOISE = /^(?:file:\/\/|at |\^+$|Node\.js v|\(node:\d+\))/;
+
+/**
+ * The line that says why the host stopped. Its own log lines carry a timestamp and a [tag]; what it prints as it dies
+ * (a config error, an uncaught exception) carries neither, so that comes first. Next a [host] line naming an error.
+ * A failing part such as [telegram] is not the reason the host stopped, so nothing is better than that guess.
+ */
 export function errorLine(log: string): string | undefined {
-	const lines = log.split("\n").map((l) => l.trim()).filter(Boolean);
-	const line = lines.findLast((l) => /error|错误|失败/i.test(l)) ?? lines.at(-1);
+	const lines = log.split("\n").map((l) => l.trim().replace(STAMP, "")).filter(Boolean);
+	const fatal = lines.filter((l) => !TAGGED.test(l) && !CRASH_NOISE.test(l));
+	const line = fatal.findLast((l) => ERRORISH.test(l)) ?? fatal.at(-1) ?? lines.findLast((l) => l.startsWith("[host]") && ERRORISH.test(l));
 	return line === undefined ? undefined : scrub(line);
 }
 
