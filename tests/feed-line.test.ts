@@ -209,19 +209,16 @@ test("feed 报的一次性 problem（once）：只写一条「通知」，Telegr
 	assert.ok(!phone().some((m) => m.text.startsWith("⚠️") || m.text.startsWith("✅")), "没有 ⚠️ 也没有 ✅");
 });
 
-test("feed 的 handler 连着失败：到 feedFailuresBeforeAlarm 拍才亮，最近的错误是它抛出的那句；成功一拍就解除", async (t) => {
-	const { deliver, alarms, host } = await lettersHost(t, undefined, undefined, { health: { modelFailuresBeforeAlarm: 2, feedFailuresBeforeAlarm: 4 } });
+test("收件箱里的一件重试三次都失败：只写一条「通知」，Telegram 一条通知，不亮警报，下一封信也不发 ✅", async (t) => {
+	const { deliver, notices, phone, alarms, host } = await lettersHost(t);
 	await deliver({ fail: "HTTP 503 Service Unavailable" });
-	assert.deepEqual(alarms(), [], "收件箱的一件重试三次，三拍还不到 4");
-	await deliver({ fail: "HTTP 502 Bad Gateway" });
-	const [alarm] = alarms();
-	assert.equal(alarm.id, "data:private-line/inbox");
-	assert.equal(alarm.cause, "provider");
-	assert.match(alarm.lastError, /HTTP 502 Bad Gateway/);
-	assert.ok(alarm.count >= 4);
+	assert.deepEqual(alarms(), [], "收件箱里坏掉的一件不算断了");
+	assert.deepEqual(notices().map((l) => l.text), ["测试信箱：收件箱里有一件试了 3 次都没处理成，已放进 rejected：HTTP 503 Service Unavailable"]);
+	await until(() => phone().some((m) => m.text.startsWith("通知：测试信箱：收件箱里有一件试了 3 次")), "通知到了 Telegram");
 	await deliver(letter("m-3"));
-	assert.deepEqual(alarms(), []);
-	assert.deepEqual(host.snapshot().health.recent.map((a) => a.id), ["data:private-line/inbox"]);
+	await new Promise((r) => setTimeout(r, 200));
+	assert.ok(!phone().some((m) => m.text.startsWith("⚠️") || m.text.startsWith("✅")), "没有 ⚠️ 也没有 ✅");
+	assert.deepEqual(host.snapshot().health.recent, []);
 });
 
 test("feed 被拒了密钥（401、invalid_grant）：第一拍就亮，怎么办里写着密钥或授权", async (t) => {
