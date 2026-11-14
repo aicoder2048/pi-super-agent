@@ -64,13 +64,13 @@ test("工具档按依据和开任务的人选：模块 feed 开的规则和推�
 
 test("模块 feed 开的任务：读文件、汇报、模块的工具知识数据和提醒，没有 web_get、bash、edit、write、后台命令、开应用和盯盘条件", () => {
 	const tools = toolAllowlist("module-feed")!;
-	assert.deepEqual([...tools].sort(), ["ask_to_run", "data", "domain_tool", "find", "grep", "hand_back", "knowledge", "lookup", "ls", "read", "read_ticket", "report", "watch"]);
+	assert.deepEqual([...tools].sort(), ["ask_to_run", "data", "domain_tool", "find", "grep", "hand_back", "knowledge", "lookup", "ls", "ocr", "read", "read_ticket", "report", "watch"]);
 	for (const banned of ["web_get", "bash", "edit", "write", "bg_start", "bg_status", "bg_stop", "new_app", "tripwire"]) assert.ok(!tools.includes(banned), banned);
 	assert.deepEqual(toolAllowlist("module-feed", true), [...tools, "dispatch_agent"]);
 });
 
 test("模块 feed 开的任务派的成员只有读文件的工具，领域开了时加 lookup；成员写了 bash、web_get 也拿不到", () => {
-	assert.deepEqual(memberTools("module-feed", undefined), ["read", "grep", "find", "ls", "lookup"]);
+	assert.deepEqual(memberTools("module-feed", undefined), ["read", "grep", "find", "ls", "lookup", "ocr"]);
 	assert.deepEqual(memberTools("module-feed", ["bash", "web_get", "write", "read"]), ["read"]);
 });
 
@@ -79,7 +79,7 @@ test("宿主来源开的推断任务保留 web_get；使用者和宿主来源开
 	assert.ok(memberTools("inference", undefined).includes("web_get"));
 	assert.equal(toolAllowlist("request"), undefined);
 	assert.equal(toolAllowlist("rule"), undefined);
-	assert.deepEqual(memberTools("rule", undefined), ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup"]);
+	assert.deepEqual(memberTools("rule", undefined), ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup", "ocr"]);
 });
 
 test("模块 feed 开的任务的 Worker 启动参数：只给受限清单并关掉 MCP", () => {

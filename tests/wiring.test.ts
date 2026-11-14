@@ -78,7 +78,7 @@ function hostConfig(provider: string, fallbackId = "fallback") {
 	const stateDir = mkdtempSync(join(tmpdir(), "psa-wire-"));
 	return {
 		stateDir, kernel: {}, bgMaxMinutes: 120, fallbackDailyTokens: 1000, dispatchTimeoutSeconds: 60, dispatchCodingTimeoutSeconds: 600, dispatchStallSeconds: 45, maxConcurrentExperts: 2, retryAttempts: 0, probePrimaryMinutes: 15,
-		heartbeatSeconds: 30, watchdog: { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120 }, modulesDirs: [], webPort: 0, webHosts: [], sources: {},
+		heartbeatSeconds: 30, watchdog: { intervalMinutes: 3, stuckMinutes: 30, staleSeconds: 120 }, modulesDirs: [], webPort: 0, webHosts: [], sources: {}, ocr: { engine: "off" as const },
 		models: { router: { provider, id: "router" }, worker: { provider, id: "worker" }, fallback: { provider, id: fallbackId } },
 	};
 }
@@ -98,6 +98,13 @@ test("入口：按真实接线启动的宿主，Router 遇到最终的限流错�
 	t.after(() => host.stop());
 	host.say("你好");
 	await until(() => (host.router as any).session.model?.id === "fallback", "Router 切到回退模型", 5000);
+});
+
+test("入口：Vision 的 OCR 程序编进所有宿主共用的缓存，临时状态目录里的宿主不再各编译一份", { skip: process.platform !== "darwin", timeout: 300_000 }, async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const configs = [hostConfig(provider), hostConfig(provider)].map((c) => ({ ...c, ocr: { engine: "vision" as const, maxPages: 1, timeoutSeconds: 60 } }));
+	for (const config of configs) await createHostOptions({ config, modules: fixed(Modules.load([])), modelRuntime, log: () => {} }).ocr!.prepare();
+	for (const config of configs) assert.ok(!existsSync(join(config.stateDir, "ocr")), `${config.stateDir} 里不该有 ocr/`);
 });
 
 test("在替你盯着：每个来源一项，带上管它的规则（使用者的在前）和定时器，忽略的来源不算", () => {
@@ -485,4 +492,12 @@ test("真实接线：模块包的 feed 交给调度器，写进 private 数据�
 	assert.equal(options.moduleFeeds?.fixtures, true);
 	assert.deepEqual(options.moduleFeeds?.feeds().map((f) => [f.source, f.private]).sort(), [["lab/drop", true], ["lab/tick", false]]);
 	assert.equal(options.sourcePolicy?.({ source: "lab/tick", externalId: "x", threads: [], sender: "lab/tick", body: "到点了", occurredAt: 0 }), "candidate");
+});
+
+test("入口：宿主带上 config 里的 OCR（助手的 ocr 和模块工具的 port 用的是同一个）；关掉时它一读就说没开", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const optionsWith = (ocr: object) => createHostOptions({ config: { ...hostConfig(provider), ocr } as never, modules: fixed(Modules.load([])), modelRuntime, log: () => {} });
+	const on = optionsWith({ engine: "vision", maxPages: 20, timeoutSeconds: 60 });
+	assert.equal(typeof on.ocr?.read, "function");
+	await assert.rejects(optionsWith({ engine: "off" }).ocr!.read("/tmp/scan.png"), /这台宿主没开 OCR/);
 });

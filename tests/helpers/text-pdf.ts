@@ -11,6 +11,82 @@ export function textPdf(pages: readonly (string | Buffer)[]): Buffer {
 			return [page, `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`];
 		}),
 	];
+	return pdfOf(objects);
+}
+
+export type Jpeg = { width: number; height: number; gray: boolean; data: Buffer };
+
+/** One page that draws a Form XObject, as merged or print-to-PDF files do. "image": the form draws a scanned image, a gray square unless a JPEG is given. "loop": the form names itself in its own resources and draws no image. */
+export function formPdf(inside: "image" | "loop", jpeg?: Jpeg): Buffer {
+	const image = jpeg
+		? `<< /Type /XObject /Subtype /Image /Width ${jpeg.width} /Height ${jpeg.height} /ColorSpace /${jpeg.gray ? "DeviceGray" : "DeviceRGB"} /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.data.length} >>\nstream\n${jpeg.data.toString("latin1")}\nendstream`
+		: `<< /Type /XObject /Subtype /Image /Width 8 /Height 8 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 64 >>\nstream\n${"\x80".repeat(64)}\nendstream`;
+	const [width, height] = jpeg ? [jpeg.width, jpeg.height] : [612, 792];
+	const form = `q ${width} 0 0 ${height} 0 0 cm /Im0 Do Q`;
+	const innerXObject = inside === "image" ? "/Im0 5 0 R" : "/Fm0 4 0 R";
+	const objects = [
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /XObject << /Fm0 4 0 R >> >> /Contents 6 0 R >>`,
+		`<< /Type /XObject /Subtype /Form /BBox [0 0 ${width} ${height}] /Resources << /XObject << ${innerXObject} >> >> /Length ${form.length} >>\nstream\n${form}\nendstream`,
+		image,
+		"<< /Length 7 >>\nstream\n/Fm0 Do\nendstream",
+	];
+	return pdfOf(objects);
+}
+
+/** Page 1 carries text; page 2 is blank but names its images through a broken /XObject value, as damaged files do. Extra objects are numbered from 8. */
+export function brokenImagePdf(text: string, xobject: string, extra: readonly string[] = []): Buffer {
+	const stream = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+	const objects = [
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>",
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>",
+		`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+		`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject ${xobject} >> /Contents 7 0 R >>`,
+		"<< /Length 0 >>\nstream\n\nendstream",
+		...extra,
+	];
+	return pdfOf(objects);
+}
+
+/** Page 1 carries text; every other page names one /XObject dictionary of `forms` image-less Forms, and each Form names that same dictionary, as some merged files do. */
+export function sharedFormsPdf(text: string, forms: number, pages: number): Buffer {
+	const stream = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+	const firstPage = 8 + forms;
+	const objects = [
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		`<< /Type /Pages /Kids [4 0 R ${Array.from({ length: pages }, (_, i) => `${firstPage + i} 0 R`).join(" ")}] /Count ${pages + 1} >>`,
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>",
+		`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+		"<< /Length 0 >>\nstream\n\nendstream",
+		`<< ${Array.from({ length: forms }, (_, i) => `/F${i} ${8 + i} 0 R`).join(" ")} >>`,
+		...Array.from({ length: forms }, () => "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << /XObject 7 0 R >> /Length 0 >>\nstream\n\nendstream"),
+		...Array.from({ length: pages }, () => "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject 7 0 R >> /Contents 6 0 R >>"),
+	];
+	return pdfOf(objects);
+}
+
+/** Page 1 carries text; page 2 draws one Form whose dictionary holds `arrays` arrays of `entries` empty strings: cheap to read the text, costly in time and memory to open the Form. */
+export function hugeFormPdf(text: string, arrays: number, entries: number): Buffer {
+	const stream = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+	const junk = Array.from({ length: arrays }, (_, i) => `/J${i} [${"<>".repeat(entries)}]`).join("");
+	const objects = [
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>",
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>",
+		`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Fm 8 0 R >> >> /Contents 7 0 R >>",
+		"<< /Length 0 >>\nstream\n\nendstream",
+		`<< /Subtype /Form${junk} /Length 0 >>\nstream\n\nendstream`,
+	];
+	return pdfOf(objects);
+}
+
+function pdfOf(objects: readonly string[]): Buffer {
 	let out = "%PDF-1.4\n";
 	const offsets = objects.map((object, i) => {
 		const at = out.length;

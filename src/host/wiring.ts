@@ -17,6 +17,7 @@ import { Router, routerPreamble } from "./router.ts";
 import { readSecret, secretLookup } from "../secrets.ts";
 import { createGateway } from "../modules/gateway.ts";
 import { googlePort } from "../modules/google-port.ts";
+import { createOcr } from "../ocr/ocr.ts";
 import { instanceData } from "../modules/instance-data.ts";
 import { moduleDataDir } from "../modules/knowledge.ts";
 import { ModuleStore } from "../modules/live.ts";
@@ -113,6 +114,7 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 	const telegram = telegramOptions(config, process.env, log);
 	const store = new ModuleStore(join(config.stateDir, "module-store"));
 	const secret = secretLookup(config.secretsFile);
+	const ocr = createOcr(config.ocr);
 	return {
 		stateDir: config.stateDir,
 		heartbeatMs: config.heartbeatSeconds * 1000,
@@ -134,7 +136,9 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 			secret,
 			log,
 			google: googlePort({ secret, oauthUrl: process.env.PSA_GOOGLE_OAUTH_URL, fixtures: config.feedFixtures }),
+			ocr,
 		}),
+		ocr,
 		rulesFor: (source) => live.current().rulesFor(source),
 		timers,
 		watching: watchedSources(modules, timers),

@@ -31,6 +31,7 @@ import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpa
 import type { Domains } from "../modules.ts";
 import type { LiveModules } from "./live-modules.ts";
 import type { Alert, Gateway } from "../modules/protocol.ts";
+import type { Ocr } from "../ocr/result.ts";
 import { intoOf, runFeed, type FeedEntry, type FeedPorts, type FeedProblem } from "../modules/feed-runner.ts";
 import { oneLine } from "../modules/release.ts";
 import { instanceData } from "../modules/instance-data.ts";
@@ -65,6 +66,7 @@ export interface HostOptions {
 	/** The serving modules, asked each time. Without it no ticket has a domain. */
 	domains?: Domains;
 	gateway?: Gateway;
+	ocr?: Ocr;
 	modules?: Pick<LiveModules, "cards" | "setSwitch" | "onChange">;
 	rulesFor?: (triggerSource: string) => string[];
 	timers?: TimerEntry[];
@@ -235,6 +237,7 @@ export class Host {
 			models: options.workerModels,
 			kitFor: this.#kitFor,
 			gateway: options.gateway,
+			ocr: options.ocr,
 			alert: (module, alert) => this.#postModuleAlert(module, alert),
 			receipt: (module, text) => this.#postHostLine(`module:${module}`, { kind: "receipt", text, module: { title: this.kernel.moduleLabel(module) } }),
 			dispatch: memberCap && { ...options.dispatch!, cap: { limit: () => memberCap.limit(), membersWaiting: (waiting) => this.#askAboutMemberCap(memberCap, waiting) } },

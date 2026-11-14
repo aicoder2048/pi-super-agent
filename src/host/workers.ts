@@ -18,10 +18,11 @@ import type { TranscriptMessage } from "../client/protocol.ts";
 import { parseRunRequest } from "../kernel/run-ask.ts";
 import { canCode, isRooted, memberTools, profileOf, type Profile } from "../worker/tools.ts";
 import { realRoots } from "../worker/read-roots.ts";
+import { OCR_OFF, ocrText, type Ocr } from "../ocr/result.ts";
 import type { OutputRoot } from "./output.ts";
 import { DispatchDesk, memberSessionDir, parseDispatch, type DispatchResult, type Dispatching, type MemberLimit, type MemberRun } from "./dispatch.ts";
 
-const MEMBER_METHODS = ["worker.lookup", "worker.read_web", "worker.domain_tool", "worker.knowledge", "worker.data"];
+const MEMBER_METHODS = ["worker.lookup", "worker.read_web", "worker.ocr", "worker.domain_tool", "worker.knowledge", "worker.data"];
 
 const TAGS: Record<Request["kind"], string> = { tool: "[模块工具]", knowledge: "[模块知识]", data: "[模块数据]", watch: "[提醒条件]" };
 
@@ -154,6 +155,7 @@ export interface WorkerExecutorOptions {
 	/** Without it every helper works alone. */
 	dispatch?: DeskDispatchOptions;
 	gateway?: Gateway;
+	ocr?: Ocr;
 	alert?: (module: ModuleName, alert: Alert) => void;
 	receipt?: (module: ModuleName, text: string) => void;
 }
@@ -362,7 +364,7 @@ export class WorkerExecutor {
 		const live = this.#live.get(ticketId);
 		const holder = live !== undefined && live.token !== token ? this.#desk?.holder(ticketId, token) : undefined;
 		if (!live || (live.token !== token && !holder)) throw new Error("未知的 Worker 或令牌不符");
-		if (holder && !MEMBER_METHODS.includes(method)) throw new Error("成员只能经宿主查数据（lookup）、调模块工具（domain_tool）、查模块知识（knowledge）和读写模块数据（data），不能汇报、交回、读任务或再派活");
+		if (holder && !MEMBER_METHODS.includes(method)) throw new Error("成员只能经宿主查数据（lookup）、识别文字（ocr）、调模块工具（domain_tool）、查模块知识（knowledge）和读写模块数据（data），不能汇报、交回、读任务或再派活");
 		const { kernel, afterCommand } = this.#o;
 		const p = (params ?? {}) as Record<string, unknown>;
 		try {
@@ -403,6 +405,10 @@ export class WorkerExecutor {
 				case "worker.read_web":
 					kernel.readWeb(ticketId);
 					return { recorded: true };
+				case "worker.ocr":
+					if (typeof p.path !== "string") throw new Error("ocr 要给 path：要识别的文件路径");
+					if (!this.#o.ocr) throw new Error(OCR_OFF);
+					return this.#o.ocr.read(p.path).then(ocrText);
 				case "worker.tripwire": {
 					const refusal = this.#tripwireRefusal(ticketId);
 					if (refusal) throw new Error(refusal);

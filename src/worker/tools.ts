@@ -3,17 +3,17 @@ import type { Basis, Opener } from "../kernel/types.ts";
 /** Every tool a helper can have: Pi's built-ins and the ones the worker extension registers for it. */
 export const WORKER_TOOLS = [
 	"read", "bash", "edit", "write", "grep", "find", "ls",
-	"report", "hand_back", "read_ticket", "web_get", "lookup", "tripwire", "new_app", "bg_start", "bg_status", "bg_stop", "dispatch_agent", "domain_tool", "knowledge", "data", "watch", "ask_to_run",
+	"report", "hand_back", "read_ticket", "web_get", "lookup", "ocr", "tripwire", "new_app", "bg_start", "bg_status", "bg_stop", "dispatch_agent", "domain_tool", "knowledge", "data", "watch", "ask_to_run",
 ] as const;
 
-const READ_TOOLS = ["read", "grep", "find", "ls", "web_get", "lookup"] as const;
-const INFERENCE_TOOLS = ["read", "grep", "find", "ls", "report", "hand_back", "read_ticket", "web_get", "lookup", "domain_tool", "knowledge", "data", "watch"] as const;
+const READ_TOOLS = ["read", "grep", "find", "ls", "web_get", "lookup", "ocr"] as const;
+const INFERENCE_TOOLS = ["read", "grep", "find", "ls", "report", "hand_back", "read_ticket", "web_get", "lookup", "ocr", "domain_tool", "knowledge", "data", "watch"] as const;
 /**
  * Every tool a member file may list, and so the most a member can use: it works and answers, it does
  * not report, hand back, read the ticket, dispatch or outlive its one turn. A member file that lists
  * any other tool is rejected at load.
  */
-export const MEMBER_TOOLS: readonly string[] = ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup"];
+export const MEMBER_TOOLS: readonly string[] = ["read", "bash", "edit", "write", "grep", "find", "ls", "web_get", "lookup", "ocr"];
 
 export type Profile = Basis | "module-feed";
 
@@ -30,7 +30,7 @@ const PROFILES: Record<Profile, { helper?: { tools: readonly string[]; refusal: 
 	"module-feed": { helper: { tools: FEED_TOOLS, refusal: (tool) => `来源开的任务不能用 ${tool}。要运行一条命令，用 ask_to_run 请使用者批准，宿主会原样运行它一次。` }, member: FEED_MEMBER_TOOLS },
 };
 
-export const PATH_TOOLS: readonly string[] = ["read", "grep", "find", "ls"];
+export const PATH_TOOLS: readonly string[] = ["read", "grep", "find", "ls", "ocr"];
 
 export const isRooted = (profile: Profile) => PROFILES[profile].helper !== undefined;
 

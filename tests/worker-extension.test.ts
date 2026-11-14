@@ -94,6 +94,18 @@ test("每种依据的 Worker 都有 web_get，它只收一个网址并拒绝非�
 	}
 });
 
+test("ocr 把相对工作目录的路径解析成真实的绝对路径交给宿主（worker.ocr）；只读目录受限的任务读不到目录外的文件", async (t) => {
+	const feed = await load("module-feed", { PSA_PI_CLI: piCliPath() });
+	t.after(feed.close);
+	writeFileSync(join(feed.dir, "scan.png"), "png");
+	const result = await feed.run("ocr", { path: "scan.png" });
+	assert.deepEqual([feed.requests.at(-1).method, feed.requests.at(-1).params], ["worker.ocr", { path: join(realpathSync(feed.dir), "scan.png") }]);
+	assert.match(result.content[0].text, /recorded/);
+	const gate = (path: string) => feed.handlers.get("tool_call")({ toolName: "ocr", input: { path } }, { cwd: feed.dir });
+	assert.equal(await gate("scan.png"), undefined);
+	assert.match((await gate("/etc/hosts"))?.reason ?? "", /只能读自己的工作目录/);
+});
+
 test("web_get 先请宿主记下这个任务读过网页（worker.read_web），宿主没记下就不读", async (t) => {
 	const helper = await load("request");
 	const member = await load("request", { PSA_MEMBER_TOOLS: "web_get" });
@@ -209,8 +221,8 @@ test("助手的工具清单包含助手扩展注册的每一个工具，带着�
 	assert.deepEqual([...w.tools.keys()].filter((name) => !(WORKER_TOOLS as readonly string[]).includes(name)), []);
 });
 
-const HELPER_TOOLS = ["report", "hand_back", "read_ticket", "web_get", "new_app", "bg_start", "bg_status", "bg_stop"];
-const READ_ONLY_HELPER_TOOLS = ["report", "hand_back", "read_ticket", "web_get"];
+const HELPER_TOOLS = ["report", "hand_back", "read_ticket", "web_get", "ocr", "new_app", "bg_start", "bg_status", "bg_stop"];
+const READ_ONLY_HELPER_TOOLS = ["report", "hand_back", "read_ticket", "web_get", "ocr"];
 
 test("能写文件的助手有 new_app，短名经宿主连接提交；推断任务的助手和成员没有", async (t) => {
 	const request = await load("request");
@@ -253,7 +265,7 @@ test("成员只有宿主给它的那几个工具：不注册汇报、交回、�
 	const member = await load("request", { PSA_MEMBER_TOOLS: "read,web_get,lookup", PSA_LOOKUPS: "us-market quote", PSA_CREW: "market-analyst" });
 	const none = await load("inference", { PSA_MEMBER_TOOLS: "" });
 	t.after(() => { member.close(); none.close(); });
-	assert.deepEqual([...member.tools.keys()], ["web_get", "lookup"]);
+	assert.deepEqual([...member.tools.keys()], ["web_get", "ocr", "lookup"]);
 	assert.equal(process.env.PSA_MEMBER_TOOLS, undefined);
 	const call = (w: typeof member, toolName: string) => w.handlers.get("tool_call")({ toolName, input: {} });
 	for (const tool of ["bash", "write", "report", "hand_back", "dispatch_agent", "bg_start", "grep"]) {

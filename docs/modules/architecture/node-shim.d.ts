@@ -11,7 +11,8 @@ declare module "node:fs" {
 	export function readdirSync(path: string, options: { withFileTypes: true }): Dirent[];
 	export function readdirSync(path: string): string[];
 	export function readdirSync(path: string, options: { recursive: true }): string[];
-	export function statSync(path: string): { size: number; mtimeMs: number; isDirectory(): boolean };
+	export function statSync(path: string): { size: number; mtimeMs: number; isDirectory(): boolean; isFile(): boolean };
+	export function realpathSync(path: string): string;
 	export function mkdirSync(path: string, options: { recursive: true }): void;
 	export function copyFileSync(from: string, to: string): void;
 	export function renameSync(from: string, to: string): void;

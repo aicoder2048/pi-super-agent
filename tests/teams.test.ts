@@ -76,7 +76,7 @@ test("成员文件写错的字段报错并列出可写的字段；consult 不是
 	memberFails(member("tool: read\n"), /不认识的字段 tool/);
 	memberFails(member("consult: true\n"), /不认识的字段 consult/);
 });
-test("成员的 tools 里有不认识的工具时报错并列出成员可用的工具", () => memberFails(member("tools: read, rm\n"), /tools 里的 rm 不是成员能用的工具，可用：read、bash、edit、write、grep、find、ls、web_get、lookup$/));
+test("成员的 tools 里有不认识的工具时报错并列出成员可用的工具", () => memberFails(member("tools: read, rm\n"), /tools 里的 rm 不是成员能用的工具，可用：read、bash、edit、write、grep、find、ls、web_get、lookup、ocr$/));
 
 test("成员的 tools 里写了只有助手才有的工具（汇报、交回、读任务记录、后台命令、派活）时报错，不再悄悄去掉", () => {
 	for (const tool of ["report", "hand_back", "read_ticket", "bg_start", "bg_status", "bg_stop", "dispatch_agent"]) {

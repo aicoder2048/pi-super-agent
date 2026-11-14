@@ -1,5 +1,6 @@
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
@@ -8,12 +9,12 @@ import { accessToken, AUTH_TEXT, gmailClient, type Gmail, type Settings } from "
 
 type Input = { messageId: string; partId: string };
 
-type Extracted = { text: string; pages: number | null; truncated: boolean };
+type Extracted = { text: string; pages: number | null; truncated: boolean; ocr?: { file: string } };
 
-export type Result = { name: string; type: string; pages: number | null; text: string; truncated: boolean };
+export type Result = { name: string; type: string; pages: number | null; text: string; truncated: boolean; ocr?: { file: string } };
 
-/** The gateway gives a call 20 s: about 2 s for the token and messages.get, 10 s to download, 6 s for the PDF, 2 s spare. */
-export const LIMITS = { maxBytes: 10 * 1024 * 1024, downloadMs: 10_000, pdfMs: 6_000, rssBytes: 512 * 1024 * 1024, pollMs: 250, maxChars: 100_000 };
+/** The gateway gives a call 20 s: about 2 s for the token and messages.get, 10 s to download, 6 s for the PDF, 1.5 s to guess whether it is a scan, 0.5 s spare. */
+export const LIMITS = { maxBytes: 10 * 1024 * 1024, downloadMs: 10_000, pdfMs: 6_000, scanMs: 1_500, rssBytes: 512 * 1024 * 1024, pollMs: 250, maxChars: 100_000 };
 
 export type Limits = typeof LIMITS;
 
@@ -21,20 +22,43 @@ const asText = (bytes: Buffer, part: Part): Extracted => plain(decodeText(bytes,
 
 type Reader = { extensions: readonly string[]; read: (bytes: Buffer, part: Part, limits: Limits) => Promise<Extracted> | Extracted };
 
+const image = (extensions: readonly string[]): Reader => ({ extensions, read: (bytes, part) => forOcr(bytes, extensionOf(part), null) });
+
 const READERS: Readonly<Record<string, Reader>> = {
 	"text/plain": { extensions: [".txt", ".text"], read: asText },
 	"text/markdown": { extensions: [".md", ".markdown"], read: asText },
 	"text/csv": { extensions: [".csv"], read: asText },
 	"text/html": { extensions: [".html", ".htm"], read: (bytes, part) => plain(htmlToText(decodeText(bytes, part, "附件"))) },
 	"application/pdf": { extensions: [".pdf"], read: (bytes, _part, limits) => pdfText(bytes, limits) },
+	"image/png": image([".png"]),
+	"image/jpeg": image([".jpg", ".jpeg"]),
+	"image/jpg": image([".jpg", ".jpeg"]),
+	"image/heic": image([".heic"]),
+	"image/heif": image([".heif"]),
+	"image/tiff": image([".tif", ".tiff"]),
+	"image/webp": image([".webp"]),
+	"image/bmp": image([".bmp"]),
 };
 
 const PDF_SCRIPT = fileURLToPath(new URL("../../py/pdf_text.py", import.meta.url));
+const SCAN_SCRIPT = fileURLToPath(new URL("../../py/pdf_scan.py", import.meta.url));
 const FEED_JSON = fileURLToPath(new URL("../../feeds/inbox/feed.json", import.meta.url));
 const TOO_BIG = "PDF 太大，读不了";
 const SETUP = "mail 的 Python 环境还没装：在跑宿主的机器上跑 just module setup mail，见 docs/modules/mail.md";
 
 const plain = (text: string): Extracted => ({ text, pages: null, truncated: false });
+
+const extensionOf = (part: Part): string => {
+	const filename = part.filename ?? "";
+	return filename.includes(".") ? filename.toLowerCase().slice(filename.lastIndexOf(".")) : "";
+};
+
+/** `text` is what was read without OCR; the host keeps it when its OCR is off or fails. */
+function forOcr(bytes: Buffer, extension: string, pages: number | null, text = ""): Extracted {
+	const name = `ocr-${randomBytes(8).toString("hex")}${extension}`;
+	writeFileSync(join(process.env["PSA_MODULE_DATA"] ?? "", "files", name), bytes);
+	return { text, pages, truncated: false, ocr: { file: `files/${name}` } };
+}
 
 function parseInput(input: unknown): Input {
 	const { messageId, partId } = (input ?? {}) as Record<string, unknown>;
@@ -66,10 +90,10 @@ const GENERIC = new Set(["", "application/octet-stream", "binary/octet-stream", 
 function readerFor(part: Part): Reader {
 	const filename = part.filename ?? "";
 	const mimeType = (part.mimeType ?? "").toLowerCase();
-	const extension = filename.includes(".") ? filename.toLowerCase().slice(filename.lastIndexOf(".")) : "";
+	const extension = extensionOf(part);
 	const generic = GENERIC.has(mimeType);
 	const reader = generic ? Object.values(READERS).find((r) => r.extensions.includes(extension)) : READERS[mimeType];
-	if (reader === undefined || !reader.extensions.includes(extension)) throw new Error(`这个附件是 ${part.mimeType}（${filename}），只读 txt、md、csv、html、pdf`);
+	if (reader === undefined || !reader.extensions.includes(extension)) throw new Error(`这个附件是 ${part.mimeType}（${filename}），只读 txt、md、csv、html、pdf 和图片（png、jpg、heic、tiff、webp、bmp）`);
 	if (!generic || reader !== READERS["application/pdf"]) return reader;
 	return {
 		...reader,
@@ -103,24 +127,24 @@ async function download(gmail: Gmail, { messageId, partId }: Input, limits: Limi
 
 const rssBytes = (pid: number) => new Promise<number>((done) => execFile("ps", ["-o", "rss=", "-p", String(pid)], (error, out) => done(error ? 0 : Number(out.trim()) * 1024)));
 
+type Ran = { stdout: string; stopped?: "slow" | "big" };
+
 /** macOS cannot cap a child's memory with setrlimit, so its RSS is polled. */
-function pdfText(bytes: Buffer, limits: Limits): Promise<Extracted> {
-	const venv = process.env["PSA_MODULE_VENV"] ?? "";
-	if (venv === "" || !existsSync(join(venv, ".psa-lock"))) throw new Error(SETUP);
-	const child = spawn(join(venv, "bin/python"), ["-I", PDF_SCRIPT], { env: { PATH: process.env["PATH"] ?? "", PSA_MODULE_VENV: venv }, stdio: ["pipe", "pipe", "ignore"] });
+function python(venv: string, args: readonly string[], bytes: Buffer, ms: number, limits: Limits): Promise<Ran> {
+	const child = spawn(join(venv, "bin/python"), ["-I", ...args], { env: { PATH: process.env["PATH"] ?? "", PSA_MODULE_VENV: venv }, stdio: ["pipe", "pipe", "ignore"] });
 	return new Promise((done, fail) => {
 		let stdout = "";
-		let stopped: string | undefined;
-		const stop = (why: string) => {
+		let stopped: Ran["stopped"];
+		const stop = (why: NonNullable<Ran["stopped"]>) => {
 			stopped ??= why;
 			child.kill("SIGKILL");
 		};
-		const timer = setTimeout(() => stop(`PDF 太复杂，${limits.pdfMs / 1000} 秒内读不完`), limits.pdfMs);
+		const timer = setTimeout(() => stop("slow"), ms);
 		let checking = false;
 		const poll = setInterval(async () => {
 			if (checking || child.pid === undefined) return;
 			checking = true;
-			if ((await rssBytes(child.pid)) > limits.rssBytes) stop(TOO_BIG);
+			if ((await rssBytes(child.pid)) > limits.rssBytes) stop("big");
 			checking = false;
 		}, limits.pollMs);
 		const settle = () => {
@@ -132,18 +156,42 @@ function pdfText(bytes: Buffer, limits: Limits): Promise<Extracted> {
 		child.stdin.end(bytes);
 		child.on("error", (error) => {
 			settle();
-			fail(new Error(`${SETUP}（${error.message}）`));
+			fail(error);
 		});
 		child.on("close", () => {
 			settle();
-			if (stopped !== undefined) return fail(new Error(stopped));
-			const reply = JSON.parse(stdout.trim().split("\n").at(-1) || "{}");
-			if (reply.error === "encrypted") return fail(new Error("PDF 有密码，读不了"));
-			if (reply.error === "too-big") return fail(new Error(TOO_BIG));
-			if (typeof reply.text !== "string") return fail(new Error("PDF 读不出来，文件可能坏了"));
-			done({ text: reply.text, pages: reply.pages, truncated: reply.truncated === true });
+			done({ stdout, ...(stopped && { stopped }) });
 		});
 	});
+}
+
+const lastJson = (stdout: string) => JSON.parse(stdout.trim().split("\n").at(-1) || "{}");
+
+async function pdfText(bytes: Buffer, limits: Limits): Promise<Extracted> {
+	const venv = process.env["PSA_MODULE_VENV"] ?? "";
+	if (venv === "" || !existsSync(join(venv, ".psa-lock"))) throw new Error(SETUP);
+	const ran = await python(venv, [PDF_SCRIPT], bytes, limits.pdfMs, limits).catch((error: Error) => {
+		throw new Error(`${SETUP}（${error.message}）`);
+	});
+	if (ran.stopped === "slow") throw new Error(`PDF 太复杂，${limits.pdfMs / 1000} 秒内读不完`);
+	if (ran.stopped === "big") throw new Error(TOO_BIG);
+	const reply = lastJson(ran.stdout);
+	if (reply.error === "encrypted") throw new Error("PDF 有密码，读不了");
+	if (reply.error === "too-big") throw new Error(TOO_BIG);
+	if (typeof reply.text !== "string") throw new Error("PDF 读不出来，文件可能坏了");
+	const read = { text: reply.text, pages: reply.pages, truncated: reply.truncated === true };
+	if (reply.scanCheck === undefined || !(await isScan(venv, bytes, reply.scanCheck, limits))) return read;
+	return { ...forOcr(bytes, ".pdf", read.pages, read.text), truncated: read.truncated };
+}
+
+/** A scan guess that fails, crashes or crosses its own limits means not a scan: the text already read stands, and the call takes at most scanMs longer. */
+async function isScan(venv: string, bytes: Buffer, check: { pages: number[]; need: number }, limits: Limits): Promise<boolean> {
+	try {
+		const ran = await python(venv, [SCAN_SCRIPT, String(check.need), ...check.pages.map(String)], bytes, limits.scanMs, limits);
+		return ran.stopped === undefined && lastJson(ran.stdout).scan === true;
+	} catch {
+		return false;
+	}
 }
 
 /** Counts code points without spreading a 10 MB string into an array. */
@@ -164,7 +212,7 @@ export async function readAttachment(input: unknown, limits: Limits = LIMITS): P
 	const { part, bytes, reader } = await download(gmailClient(settings.baseUrl, token), ids, limits);
 	const extracted = await reader.read(bytes, part, limits);
 	const { text, clipped } = clip(extracted.text, limits.maxChars);
-	return { name: part.filename ?? entry.filename, type: part.mimeType ?? entry.mimeType, pages: extracted.pages, text, truncated: extracted.truncated || clipped };
+	return { name: part.filename ?? entry.filename, type: part.mimeType ?? entry.mimeType, pages: extracted.pages, text, truncated: extracted.truncated || clipped, ...(extracted.ocr && { ocr: extracted.ocr }) };
 }
 
 export default (input: unknown) => readAttachment(input);
