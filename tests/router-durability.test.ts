@@ -3,7 +3,7 @@ import test from "node:test";
 import { Host } from "../src/host/host.ts";
 import type { Router } from "../src/host/router.ts";
 import { BotApi, BotToken } from "../src/host/telegram/bot-api.ts";
-import { FAKE_BOT_TOKEN, FakeTelegram } from "./helpers/fake-telegram.ts";
+import { FAKE_BOT_TOKEN, FakeTelegram, unmarked } from "./helpers/fake-telegram.ts";
 import { defaultWorkerModels, FakeSpawner, fauxRouter, ids, openOnConversation, tempStateDir, until, type Brain, type ToolCallSpec, type WorkerScript } from "./helpers/fakes.ts";
 
 const opensTickets: Brain = (cards) => cards.flatMap((c) => (c.startsWith("[对话]") ? openOnConversation(c) : []));
@@ -194,7 +194,7 @@ async function chatRig(t: test.TestContext, routerOptions: object = {}) {
 		hooks,
 		session: () => (host.router as Router).session,
 		count: (prefix: string) => routerReplies(host).filter((x) => x.startsWith(prefix)).length,
-		phone: () => tg.sent.filter((m) => m.chatId === USER).map((m) => m.text),
+		phone: () => tg.sent.filter((m) => m.chatId === USER).map((m) => unmarked(m.text)),
 	};
 }
 

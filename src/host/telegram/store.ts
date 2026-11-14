@@ -2,7 +2,7 @@
 // something to one bot, so they live together here and are wiped together when the bot changes.
 import type { DatabaseSync } from "node:sqlite";
 import { inTransaction } from "../../kernel/store.ts";
-import type { CardView, OutboundBody } from "./rules.ts";
+import { DOTS, type CardView, type OutboundBody, type TaskMark } from "./rules.ts";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS telegram_bot (
@@ -34,6 +34,11 @@ CREATE TABLE IF NOT EXISTS telegram_taps (
 CREATE TABLE IF NOT EXISTS telegram_owed_notes (
 	chat_id INTEGER PRIMARY KEY
 );
+CREATE TABLE IF NOT EXISTS telegram_tasks (
+	ticket_id TEXT PRIMARY KEY,
+	dot INTEGER NOT NULL,
+	origin_line_id TEXT
+);
 CREATE UNIQUE INDEX IF NOT EXISTS telegram_messages_shown ON telegram_messages(chat_id, message_id) WHERE message_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS telegram_messages_due ON telegram_messages(chat_id) WHERE gave_up IS NULL AND (sent_version IS NULL OR sent_version < version);
 `;
@@ -46,6 +51,7 @@ const NOTHING_TO_CLOSE = `message_id IS NULL AND ${CARD_STATUS} IS 'closed'`;
 const CARRIES_NOTE = "body ->> '$.kind' IN ('line', 'note') AND message_id IS NULL";
 // The standalone note is an empty text message: the note it carries is all it says.
 const STANDALONE_NOTE: SendableBody = { kind: "note", text: "" };
+const TICKET = "COALESCE(m.body ->> '$.ticketId', m.body ->> '$.view.ticketId')";
 
 /**
  * `line:<lineId>` shows a conversation line, `ask:<reportId>` is the card for a helper's question, `cap:<capAskId>` the member-cap note,
@@ -64,6 +70,8 @@ export interface Pending {
 	body: SendableBody;
 	/** The chat owes the may-be-missing note and this message carries it. */
 	note: boolean;
+	/** Null for a message about no task. */
+	task: TaskMark | null;
 }
 
 export class TelegramStore {
@@ -85,7 +93,7 @@ export class TelegramStore {
 		inTransaction(this.#db, () => {
 			const bot = this.#db.prepare("SELECT bot_id FROM telegram_bot WHERE id = 1").get() as { bot_id: number } | undefined;
 			if (bot?.bot_id !== this.#botId) {
-				this.#db.exec("DELETE FROM telegram_messages; DELETE FROM telegram_chats; DELETE FROM telegram_taps; DELETE FROM telegram_owed_notes; DELETE FROM telegram_bot");
+				this.#db.exec("DELETE FROM telegram_messages; DELETE FROM telegram_chats; DELETE FROM telegram_taps; DELETE FROM telegram_owed_notes; DELETE FROM telegram_tasks; DELETE FROM telegram_bot");
 				this.#db.prepare("INSERT INTO telegram_bot (id, bot_id) VALUES (1, ?)").run(this.#botId);
 			}
 			this.#db.prepare("DELETE FROM telegram_messages WHERE chat_id NOT IN (SELECT value FROM json_each(?))").run(keep);
@@ -132,6 +140,17 @@ export class TelegramStore {
 				 ON CONFLICT (chat_id, key) DO UPDATE SET body = excluded.body, version = version + 1 WHERE body != excluded.body`,
 			)
 			.run(chatId, key, lineId, JSON.stringify(body), this.#now());
+	}
+
+	/**
+	 * Gives a task its color the first time a message about it is queued, and remembers the conversation line that started it.
+	 * Kept so a restart keeps both; `origin` is asked only then.
+	 */
+	track(ticketId: string, origin: () => string | null): void {
+		if (this.#db.prepare("SELECT 1 FROM telegram_tasks WHERE ticket_id = ?").get(ticketId)) return;
+		this.#db
+			.prepare("INSERT INTO telegram_tasks (ticket_id, dot, origin_line_id) VALUES (?, (SELECT COUNT(*) FROM telegram_tasks) % ?, ?)")
+			.run(ticketId, DOTS.length, origin());
 	}
 
 	/** The user's own message: it is on the phone already, so it is recorded as sent. */
@@ -189,11 +208,15 @@ export class TelegramStore {
 			.run(JSON.stringify(STANDALONE_NOTE), this.#now());
 		const row = this.#db
 			.prepare(
-				`SELECT m.chat_id, key, version, message_id, body, o.chat_id IS NOT NULL AND ${CARRIES_NOTE} AS note
+				`SELECT m.chat_id, key, version, message_id, body, o.chat_id IS NOT NULL AND ${CARRIES_NOTE} AS note,
+				 (SELECT dot FROM telegram_tasks WHERE ticket_id = ${TICKET}) AS dot,
+				 (SELECT r.message_id FROM telegram_tasks t JOIN telegram_messages r ON r.key = 'line:' || t.origin_line_id WHERE t.ticket_id = ${TICKET} AND r.chat_id = m.chat_id) AS reply_to
 				 FROM telegram_messages m LEFT JOIN telegram_owed_notes o ON o.chat_id = m.chat_id WHERE ${DUE} AND NOT (${NOTHING_TO_CLOSE}) ORDER BY m.rowid LIMIT 1`,
 			)
-			.get() as { chat_id: number; key: MessageKey; version: number; message_id: number | null; body: string; note: number } | undefined;
-		return row && { chatId: row.chat_id, key: row.key, version: row.version, messageId: row.message_id, body: JSON.parse(row.body), note: row.note === 1 };
+			.get() as { chat_id: number; key: MessageKey; version: number; message_id: number | null; body: string; note: number; dot: number | null; reply_to: number | null } | undefined;
+		if (!row) return undefined;
+		const task = row.dot === null ? null : { dot: row.dot, replyTo: row.reply_to };
+		return { chatId: row.chat_id, key: row.key, version: row.version, messageId: row.message_id, body: JSON.parse(row.body), note: row.note === 1, task };
 	}
 
 	/** A late finish of an older version cannot undo a newer one. Telegram showing a message that carried the note settles the chat's debt. */

@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import test, { after } from "node:test";
 import type { Page } from "playwright-core";
 import { NOTES } from "../../src/host/telegram/rules.ts";
-import { FAKE_BOT_TOKEN, FakeTelegram } from "../helpers/fake-telegram.ts";
+import { FAKE_BOT_TOKEN, FakeTelegram, unmarked } from "../helpers/fake-telegram.ts";
 import { dispatch, on, openTicket, reply, report, worker, type ToolCall } from "./fake-model.ts";
 import { closeBrowser, sayInPage, story, waitStatus, type StoryOptions } from "./harness.ts";
 
@@ -16,7 +16,7 @@ const USER = 42;
 const SECRET = FAKE_BOT_TOKEN.split(":")[1];
 const userLine = (page: Page, text: string) => page.locator(".line.user .bubble", { hasText: text });
 const routerLine = (page: Page, text: string) => page.locator(".line.router .bubble", { hasText: text });
-const sentTo = (tg: FakeTelegram, chatId: number) => tg.sent.filter((m) => m.chatId === chatId);
+const sentTo = (tg: FakeTelegram, chatId: number) => tg.sent.filter((m) => m.chatId === chatId).map((m) => ({ ...m, text: unmarked(m.text) }));
 const unnoted = (text: string) => (text.startsWith(`${NOTES.missed}\n`) ? text.slice(NOTES.missed.length + 1) : text);
 const noteCount = (texts: string[]) => texts.filter((x) => x.split("\n")[0] === NOTES.missed).length;
 
