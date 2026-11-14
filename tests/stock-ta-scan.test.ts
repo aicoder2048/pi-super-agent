@@ -74,6 +74,7 @@ async function scanFeed(t: TestContext, { key = KEY, viaVenv = false, installed 
 		},
 		watch: (...symbols: string[]) => data.write("stock-ta", entry().components, "watchlist", symbols.map((symbol) => ({ symbol })), "使用者口述", "test"),
 		level: (fields: Record<string, unknown>) => data.write("stock-ta", entry().components, "rule-levels", [fields], "使用者口述", "test"),
+		hold: (fields: Record<string, unknown>) => data.write("stock-ta", entry().components, "holdings", [fields], "使用者口述", "test"),
 		runs: () => data.query("stock-ta", entry().components, "scan-runs", {}, "test").rows,
 		cursor: () => data.feedState("stock-ta", "stock-ta/scan").cursor,
 		setCursor: (cursor: string) => data.saveFeedState("stock-ta", "stock-ta/scan", { cursor }),
@@ -469,7 +470,7 @@ test("规则：stock-ta/scan 的触发和报价 feed 一样走 watch-task，ma-b
 	assert.deepEqual(modules.rulesFor("stock-ta/quotes"), ["stock-ta/watch-task"]);
 	assert.equal(modules.allRules().some((r) => r.id === "stock-ta/ma-break"), false);
 	const scan = JSON.parse(readFileSync(join(PKG, "feeds", "scan", "feed.json"), "utf8"));
-	assert.deepEqual([scan.every, scan.settings.signals, scan.reads], ["5m", undefined, ["watchlist", "rule-levels"]]);
+	assert.deepEqual([scan.every, scan.settings.signals, scan.reads], ["5m", undefined, ["watchlist", "rule-levels", "holdings"]]);
 });
 
 test("一直扫不成功：同一个交易日的几拍都报 scan-failed；过了美东午夜还按那个交易日（收盘加 16 分钟）补扫，换上了才清掉", async (t) => {
@@ -672,4 +673,18 @@ test("第 3 期以前的 cursor（没有 hits）：那个交易日算扫过、�
 	feed.at("2026-11-13T15:00:00.000Z");
 	await feed.tick();
 	assert.deepEqual([feed.scans().length, feed.digests()], [1, []]);
+});
+
+test("持仓的状态：昨天收盘和今天收盘都在止损线、成本价下，收盘小结写一句「仍在…」，不另发提醒", async (t) => {
+	const feed = await scannedOnce(t);
+	feed.hold({ symbol: "NVDA", cost: 150, stopPrice: 138 });
+	const bars: DailyRow[] = [
+		...Array.from({ length: 20 }, (_, i) => ({ symbol: "NVDA", date: `2026-10-${String(i + 1).padStart(2, "0")}`, close: 150, high: 160, volume: 1_000_000 })),
+		{ symbol: "NVDA", date: "2026-11-11", close: 137, high: 140, volume: 1_000_000 },
+		{ symbol: "NVDA", date: "2026-11-12", close: 136, high: 138, volume: 1_000_000 },
+	];
+	feed.setPlan({ kind: "ok", signals: [ma("NVDA", 50, "bearish", "2026-11-12")], bars });
+	await feed.tick();
+	assert.match(feed.digests()[0]?.text ?? "", /；NVDA 仍在止损线下、成本价下。/);
+	assert.deepEqual(feed.lines().map((a) => a.externalId), ["R-MA-2-50:down:NVDA:2026-11-12"]);
 });
