@@ -10,7 +10,7 @@ import { TelegramStore } from "../src/host/telegram/store.ts";
 import { Kernel } from "../src/kernel/kernel.ts";
 import { openStore } from "../src/kernel/store.ts";
 import { CONVERSATION_THREAD_ID } from "../src/kernel/types.ts";
-import { FAKE_BOT_TOKEN, FakeTelegram } from "./helpers/fake-telegram.ts";
+import { FAKE_BOT_TOKEN, FakeTelegram, unmarked } from "./helpers/fake-telegram.ts";
 import { fauxRouter, freePort, ids, startHost, tempStateDir, until, within, type Brain } from "./helpers/fakes.ts";
 
 const USER = 42;
@@ -18,7 +18,7 @@ const FAST: Partial<TelegramTiming> = { pollTimeoutSec: 2, minGapMs: 20, backoff
 const SECRET = FAKE_BOT_TOKEN.split(":")[1];
 const echo: Brain = (cards) =>
 	cards.flatMap((card) => (card.startsWith("[对话]") ? [{ name: "reply", args: { text: `收到：${card.split("使用者：")[1]?.split("\n")[0]}`, cause: ids(card, "trg") } }] : []));
-const sentTo = (tg: FakeTelegram, chatId: number) => tg.sent.filter((m) => m.chatId === chatId).map((m) => m.text);
+const sentTo = (tg: FakeTelegram, chatId: number) => tg.sent.filter((m) => m.chatId === chatId).map((m) => unmarked(m.text));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const noted = (text: string) => `${NOTES.missed}\n${text}`;
 const unnoted = (text: string) => (text.startsWith(`${NOTES.missed}\n`) ? text.slice(NOTES.missed.length + 1) : text);

@@ -64,16 +64,17 @@ test("网页和终端说的话转到 Telegram 时加前缀；另一个 Telegram 
 	assert.equal(mirrorText("查天气", { client: "telegram", chatId: 7 }), "你在另一个 Telegram 账号说：查天气");
 });
 
-test("回复带通知，转过来的话静默，说明带通知；都是纯文本", () => {
-	assert.deepEqual(render({ kind: "line", text: "收到。", silent: false }), { text: "收到。", keyboard: null, silent: false });
-	assert.deepEqual(render({ kind: "line", text: "你在网页或终端说：x", silent: true }), { text: "你在网页或终端说：x", keyboard: null, silent: true });
-	assert.deepEqual(render({ kind: "note", text: NOTES.help }), { text: NOTES.help, keyboard: null, silent: false });
+test("回复带通知，转过来的话静默，说明带通知", () => {
+	assert.deepEqual(render({ kind: "line", role: "router", text: "收到。", silent: false }), { text: "🧭 <b>幕僚长</b>：收到。", plain: "🧭 幕僚长：收到。", keyboard: null, silent: false });
+	assert.deepEqual(render({ kind: "line", role: "system", text: "你在网页或终端说：x", silent: true }), { text: "⚙️ 你在网页或终端说：x", plain: "⚙️ 你在网页或终端说：x", keyboard: null, silent: true });
+	assert.deepEqual(render({ kind: "note", text: NOTES.help }), { text: `⚙️ ${NOTES.help}`, plain: `⚙️ ${NOTES.help}`, keyboard: null, silent: false });
 });
 
 test("欠着说明时，文字消息第一行是那句说明；单独的说明只有这一句；截断时说明还在", () => {
-	assert.deepEqual(render({ kind: "line", text: "收到。", silent: false }, true), { text: `${NOTES.missed}\n收到。`, keyboard: null, silent: false });
-	assert.deepEqual(render({ kind: "note", text: "" }, true), { text: NOTES.missed, keyboard: null, silent: false });
-	assert.ok(render({ kind: "line", text: "x".repeat(5000), silent: false }, true).text.startsWith(`${NOTES.missed}\nxxx`));
+	assert.equal(render({ kind: "line", role: "system", text: "收到。", silent: false }, true).plain, `⚙️ ${NOTES.missed}\n⚙️ 收到。`);
+	assert.equal(render({ kind: "note", text: "" }, true).plain, `⚙️ ${NOTES.missed}`);
+	assert.ok(render({ kind: "line", role: "system", text: "x".repeat(5000), silent: false }, true).plain.startsWith(`⚙️ ${NOTES.missed}\n⚙️ xxx`));
+	assert.ok(render({ kind: "line", role: "router", text: "x".repeat(5000), silent: false }, true).plain.startsWith(`⚙️ ${NOTES.missed}\n🧭 幕僚长：xxx`));
 });
 
 test("超过 4000 个 UTF-16 单位的文字截断并提示去网页看全文；不拆开代理对；短的不动", () => {
@@ -134,7 +135,7 @@ const click = (option: number, state: "sent" | "handed_over" | "dropped") => ({ 
 test("看板上没有问题的任务没有卡片；有问题的卡片带任务标题、助手全名、问题和选项", () => {
 	assert.equal(cardView(row(null)), null);
 	const view = cardView(row(question()))!;
-	assert.deepEqual({ ...view, status: undefined }, { reportId: RPT, title: "查天气", helper: "青檀 · 对话助手 #1", question: "查哪个城市？", options: ["北京", "上海"], status: undefined });
+	assert.deepEqual({ ...view, status: undefined }, { reportId: RPT, ticketId: "tkt_1", title: "查天气", helper: "青檀 · 对话助手 #1", question: "查哪个城市？", options: ["北京", "上海"], status: undefined });
 });
 
 test("卡片状态和网页卡片一致：点过的选项优先，然后是插话，再是幕僚长没有转交", () => {
@@ -155,13 +156,14 @@ test("问题离开看板时卡片关闭：记得选过哪一项，别的都写�
 	for (const q of [question(), question({ spoke: true }), question({ click: click(0, "dropped") })]) assert.deepEqual(closedView(view(q)).status, { kind: "closed", label: null });
 });
 
-const card = (status: CardView["status"], options = ["北京", "上海"]): CardView => ({ reportId: RPT, title: "查天气", helper: "青檀 · 对话助手 #1", question: "查哪个城市？", options, status });
-const HEAD = "青檀 · 对话助手 #1 问你（任务「查天气」）：\n查哪个城市？";
+const card = (status: CardView["status"], options = ["北京", "上海"]): CardView => ({ reportId: RPT, ticketId: "tkt_1", title: "查天气", helper: "青檀 · 对话助手 #1", question: "查哪个城市？", options, status });
+const HEAD = "🙋 青檀 · 对话助手 #1 问你（任务「查天气」）：\n查哪个城市？";
+const sent = (text: string, keyboard: unknown) => ({ text, plain: text, keyboard, silent: false, noPreview: true });
 
 test("卡片的文字和按钮：可以点时每个选项一行按钮；点过、插话、结束后按钮消失，最后一行说明状态", () => {
 	const buttons = [[{ label: "北京", data: `a:${RPT}:0` }], [{ label: "上海", data: `a:${RPT}:1` }]];
-	assert.deepEqual(render({ kind: "card", view: card({ kind: "open" }) }), { text: HEAD, keyboard: buttons, silent: false, noPreview: true });
-	assert.deepEqual(render({ kind: "card", view: card({ kind: "dropped" }) }), { text: `${HEAD}\n\n幕僚长没有转交这次选择，请重选或直接回复`, keyboard: buttons, silent: false, noPreview: true });
+	assert.deepEqual(render({ kind: "card", view: card({ kind: "open" }) }), sent(HEAD, buttons));
+	assert.deepEqual(render({ kind: "card", view: card({ kind: "dropped" }) }), sent(`${HEAD}\n\n幕僚长没有转交这次选择，请重选或直接回复`, buttons));
 	const locked: [CardView["status"], string][] = [
 		[{ kind: "sent", label: "上海" }, "已选「上海」，已发送，等待幕僚长转交"],
 		[{ kind: "answered", label: "上海" }, "已选「上海」，已回答"],
@@ -169,23 +171,23 @@ test("卡片的文字和按钮：可以点时每个选项一行按钮；点过�
 		[{ kind: "closed", label: "上海" }, "已结束：你选了「上海」"],
 		[{ kind: "closed", label: null }, "已结束：这个问题已经回答过，或已不在等待回答"],
 	];
-	for (const [status, line] of locked) assert.deepEqual(render({ kind: "card", view: card(status) }), { text: `${HEAD}\n\n${line}`, keyboard: null, silent: false, noPreview: true }, line);
+	for (const [status, line] of locked) assert.deepEqual(render({ kind: "card", view: card(status) }), sent(`${HEAD}\n\n${line}`, null), line);
 });
 
 test("没有选项的问题：没有按钮，写「直接打字回答。」；插话后写已插话", () => {
-	assert.deepEqual(render({ kind: "card", view: card({ kind: "open" }, []) }), { text: `${HEAD}\n\n直接打字回答。`, keyboard: null, silent: false, noPreview: true });
+	assert.deepEqual(render({ kind: "card", view: card({ kind: "open" }, []) }), sent(`${HEAD}\n\n直接打字回答。`, null));
 	assert.deepEqual(render({ kind: "card", view: card({ kind: "spoke" }, []) }).text, `${HEAD}\n\n已插话：你刚发了一句话，等幕僚长处理`);
 });
 
 test("没有助手名的旧任务：卡片开头写「助手问你」；很长的任务标题截到 40 个字", () => {
 	const view = cardView(row(question(), { helper: null, title: "长".repeat(50) }))!;
 	assert.equal(view.helper, "");
-	assert.ok(render({ kind: "card", view }).text.startsWith(`助手问你（任务「${"长".repeat(40)}…」）：`));
+	assert.ok(render({ kind: "card", view }).text.startsWith(`🙋 助手问你（任务「${"长".repeat(40)}…」）：`));
 });
 
 test("成员上限只发一条说明，指向网页和终端的「待你处理」；/start 的说明提到按钮和滑动回复", () => {
 	assert.equal(NOTES.cap, "成员上限：现在有成员在排队，宿主在问要不要今天放宽上限。这个问题只能在网页或终端的「待你处理」里回答。");
-	assert.deepEqual(render({ kind: "note", text: NOTES.cap }), { text: NOTES.cap, keyboard: null, silent: false });
+	assert.equal(render({ kind: "note", text: NOTES.cap }).plain, `⚙️ ${NOTES.cap}`);
 	assert.match(NOTES.help, /点按钮就是回答/);
 	assert.match(NOTES.help, /成员上限只能在网页或终端回答/);
 	assert.match(NOTES.help, /滑动回复，就是引用那句话/);

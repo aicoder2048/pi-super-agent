@@ -14,7 +14,7 @@ import { ModuleStore } from "../src/modules/live.ts";
 import type { ModuleName } from "../src/modules/manifest.ts";
 import { scanPackage } from "../src/modules/validate.ts";
 import { Modules } from "../src/modules.ts";
-import { FAKE_BOT_TOKEN, FakeTelegram } from "./helpers/fake-telegram.ts";
+import { FAKE_BOT_TOKEN, FakeTelegram, unmarked } from "./helpers/fake-telegram.ts";
 import { FakeInbox } from "./helpers/fake-gmail.ts";
 import { startFakeGoogle } from "./helpers/fake-google.ts";
 import { defaultWorkerModels, FakeSpawner, fauxRouter, ids, servedAsHost, until, type Brain, type ToolCallSpec } from "./helpers/fakes.ts";
@@ -90,7 +90,7 @@ test("私密模块的信经过幕僚长和任务之后，Telegram 上照样是�
 	mkdirSync(inbox, { recursive: true });
 	writeFileSync(join(inbox, "m-1.json"), JSON.stringify({ id: "m-1", from: "Ann <ann@example.com>", subject: "复查通知", snippet: "请看正文", body: BODY }));
 	await until(() => !readdirSync(inbox).some((f) => f.endsWith(".json")), "收件箱处理完", 10_000);
-	await until(() => phone().some((m) => m.text === "通知：测试信箱：Ann <ann@example.com>\n复查通知\n请看正文"), "三行通知照旧到了 Telegram", 10_000);
+	await until(() => phone().some((m) => unmarked(m.text) === "通知：测试信箱：Ann <ann@example.com>\n复查通知\n请看正文"), "三行通知照旧到了 Telegram", 10_000);
 
 	await until(() => phone().some((m) => m.text.includes("printf ok > run-marker") && m.buttons !== null), "命令卡片带着命令和按钮到了手机", 10_000);
 	const runCard = phone().find((m) => m.text.includes("printf ok > run-marker"))!;
@@ -103,10 +103,10 @@ test("私密模块的信经过幕僚长和任务之后，Telegram 上照样是�
 	const question = phone().find((m) => m.text.includes("要回信吗") && m.buttons !== null)!;
 	assert.ok(question.text.includes(BODY), "问题卡片是全文");
 	tg.userTaps(USER, question.messageId, question.buttons!.flat()[1]!.data);
-	await until(() => phone().some((m) => m.text === `转述：信里说：${BODY}`), "看信任务的转述全文到了 Telegram", 10_000);
+	await until(() => phone().some((m) => unmarked(m.text) === `转述：信里说：${BODY}`), "看信任务的转述全文到了 Telegram", 10_000);
 
 	tg.userSays(USER, "TSLA 现在多少");
-	await until(() => phone().some((m) => m.text === PRICE), "之后无关的回复全文到了 Telegram", 10_000);
+	await until(() => phone().some((m) => unmarked(m.text) === PRICE), "之后无关的回复全文到了 Telegram", 10_000);
 	assert.deepEqual(phone().filter((m) => m.text.includes("请在网页上查看")).map((m) => m.text), []);
 });
 
@@ -180,7 +180,7 @@ test("mail 模块：三行通知、看信和回信任务的转述都全文到 Te
 		rmSync(root, { recursive: true, force: true });
 	});
 	tg.userSays(USER, "/start");
-	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => m.text);
+	const phone = () => tg.sent.filter((m) => m.chatId === USER).map((m) => unmarked(m.text));
 	await until(() => phone().length > 0, "聊天打开");
 	box.deliver({ id: "m-1", from: "Ann Lee <ann@example.com>", subject: "季度对账单", snippet: "附件是对账单", text: "正文 周四下午三点开会" });
 	await until(() => phone().includes("通知：邮件：Ann Lee <ann@example.com>\n季度对账单\n附件是对账单"), "三行通知到了 Telegram", 10_000);

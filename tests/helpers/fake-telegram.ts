@@ -13,7 +13,13 @@ export interface Button {
 
 export interface SentMessage {
 	chatId: number;
+	/** What the phone shows: with parse_mode HTML, the text without its tags, as Telegram stores it. */
 	text: string;
+	/** The text exactly as sent, tags included. */
+	raw: string;
+	parseMode: string | null;
+	/** The message this one replies to, from reply_parameters. */
+	replyTo: number | null;
 	silent: boolean;
 	/** Null when the message has no inline keyboard. */
 	buttons: Button[][] | null;
@@ -26,6 +32,8 @@ export interface Edit {
 	chatId: number;
 	messageId: number;
 	text: string;
+	raw: string;
+	parseMode: string | null;
 	buttons: Button[][] | null;
 	at: number;
 }
@@ -64,6 +72,8 @@ export class FakeTelegram {
 	readonly requests: RequestRecord[] = [];
 	/** Requests whose path carried another token than the one the fake was started with. */
 	wrongToken = 0;
+	/** Answers every parse_mode HTML message with Telegram's "can't parse entities" while on. */
+	rejectHtml = false;
 	readonly #token: string;
 	readonly #server: Server;
 	readonly #updates: { update_id: number }[] = [];
@@ -183,11 +193,18 @@ export class FakeTelegram {
 			return reply(failure.status, failure.body);
 		}
 		const params = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+		let shownText: string = params.text;
+		if ((method === "sendMessage" || method === "editMessageText") && params.parse_mode !== undefined) {
+			const parsed = params.parse_mode === "HTML" && !this.rejectHtml ? parseHtml(params.text) : null;
+			if (parsed === null) return reply(400, { ok: false, error_code: 400, description: "Bad Request: can't parse entities: Unsupported start tag" });
+			shownText = parsed;
+		}
+		const format = { raw: params.text, parseMode: params.parse_mode ?? null };
 		switch (method) {
 			case "getMe":
 				return reply(200, { ok: true, result: { id: Number(this.#token.split(":")[0]), is_bot: true, first_name: "白宫", username: FAKE_BOT_USERNAME } });
 			case "sendMessage": {
-				const sent = { chatId: params.chat_id, text: params.text, silent: params.disable_notification === true, buttons: buttonsOf(params.reply_markup), preview: params.link_preview_options?.is_disabled !== true, messageId: this.#nextMessageId++, at: Date.now() };
+				const sent = { chatId: params.chat_id, text: shownText, ...format, replyTo: params.reply_parameters?.message_id ?? null, silent: params.disable_notification === true, buttons: buttonsOf(params.reply_markup), preview: params.link_preview_options?.is_disabled !== true, messageId: this.#nextMessageId++, at: Date.now() };
 				this.sent.push(sent);
 				this.#shown.set(sent.messageId, sent);
 				return reply(200, { ok: true, result: { message_id: sent.messageId, chat: { id: sent.chatId, type: "private" }, date: Math.floor(sent.at / 1000), text: sent.text } });
@@ -196,12 +213,12 @@ export class FakeTelegram {
 				const shown = this.#shown.get(params.message_id);
 				if (!shown || shown.chatId !== params.chat_id) return reply(400, { ok: false, error_code: 400, description: "Bad Request: message to edit not found" });
 				const buttons = buttonsOf(params.reply_markup);
-				if (shown.text === params.text && JSON.stringify(shown.buttons) === JSON.stringify(buttons)) {
+				if (shown.text === shownText && shown.raw === params.text && JSON.stringify(shown.buttons) === JSON.stringify(buttons)) {
 					return reply(400, { ok: false, error_code: 400, description: "Bad Request: message is not modified: specified new message content and reply markup are exactly the same" });
 				}
-				const edit = { chatId: shown.chatId, messageId: shown.messageId, text: params.text, buttons, at: Date.now() };
+				const edit = { chatId: shown.chatId, messageId: shown.messageId, text: shownText, ...format, buttons, at: Date.now() };
 				this.edits.push(edit);
-				this.#shown.set(shown.messageId, { ...shown, text: edit.text, buttons });
+				this.#shown.set(shown.messageId, { ...shown, text: edit.text, raw: edit.raw, parseMode: edit.parseMode, buttons });
 				return reply(200, { ok: true, result: { message_id: shown.messageId, chat: { id: shown.chatId, type: "private" }, text: edit.text } });
 			}
 			case "answerCallbackQuery":
@@ -246,3 +263,28 @@ function buttonsOf(markup: { inline_keyboard?: { text: string; callback_data: st
 	const rows = markup?.inline_keyboard;
 	return rows?.length ? rows.map((row) => row.map((b) => ({ text: b.text, data: b.callback_data }))) : null;
 }
+
+const TELEGRAM_TAGS = new Set(["b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a", "blockquote", "tg-spoiler", "span"]);
+
+/** Telegram's HTML rules as far as the client uses them: known tags only, properly nested, no nested blockquote, four named entities. Null when Telegram would refuse. */
+function parseHtml(html: string): string | null {
+	const open: string[] = [];
+	for (const [, close, name] of html.matchAll(/<(\/?)([a-z-]+)(?:\s[^>]*)?>/g)) {
+		if (!TELEGRAM_TAGS.has(name)) return null;
+		if (close) {
+			if (open.pop() !== name) return null;
+		} else {
+			if (name === "blockquote" && open.includes("blockquote")) return null;
+			open.push(name);
+		}
+	}
+	if (open.length) return null;
+	const text = html.replace(/<[^>]*>/g, "");
+	if (/[<>]/.test(text) || /&(?!(?:lt|gt|amp|quot|#\d+);)/.test(text)) return null;
+	return text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&amp;/g, "&");
+}
+
+const MARK = /^(?:🧭|⚙️|🔔|🙋) (?:(?:🟢|🟣|🔵|🟠|🟡|🔴|🟤|⚪) )?(?:幕僚长(?:：|\n))?/gmu;
+
+/** A message's text without the speaker marks and task colors, for tests about what reaches the phone rather than how it is marked. */
+export const unmarked = (text: string) => text.replace(MARK, "");

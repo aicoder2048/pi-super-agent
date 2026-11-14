@@ -8,7 +8,7 @@ import { BotApi, BotToken, TELEGRAM_API, TelegramError, type Http, type Keyboard
 const RAW = "123456789:AAH-fake_token_for_tests_only_000000";
 const token = () => new BotToken(RAW, "测试");
 const never = new AbortController().signal;
-const text = (t: string, silent = false, keyboard: Keyboard | null = null) => ({ text: t, keyboard, silent });
+const text = (t: string, silent = false, keyboard: Keyboard | null = null) => ({ text: t, plain: t, keyboard, silent });
 
 type Call = { url: string; body: Record<string, unknown> };
 
@@ -61,14 +61,14 @@ test("baseUrl 只能是官方地址或 http://127.0.0.1:<端口>", () => {
 	new BotApi({ token: token(), baseUrl: "http://127.0.0.1:8081" });
 });
 
-test("发消息：POST JSON 到 <base>/bot<token>/sendMessage，纯文本不带 parse_mode；静默就带 disable_notification；返回 message_id", async () => {
+test("发消息：POST JSON 到 <base>/bot<token>/sendMessage，带 HTML parse_mode；静默就带 disable_notification；返回 message_id", async () => {
 	const f = fakeHttp(ok({ message_id: 77 }));
 	const api = new BotApi({ token: token(), baseUrl: "http://127.0.0.1:8081", http: f.http });
 	assert.equal(await api.send(42, text("你好"), never), 77);
 	assert.equal(await api.send(42, text("静默", true), never), 77);
 	assert.equal(f.calls[0].url, `http://127.0.0.1:8081/bot${RAW}/sendMessage`);
-	assert.deepEqual(f.calls[0].body, { chat_id: 42, text: "你好" });
-	assert.deepEqual(f.calls[1].body, { chat_id: 42, text: "静默", disable_notification: true });
+	assert.deepEqual(f.calls[0].body, { chat_id: 42, text: "你好", parse_mode: "HTML" });
+	assert.deepEqual(f.calls[1].body, { chat_id: 42, text: "静默", parse_mode: "HTML", disable_notification: true });
 });
 
 test("fetch 抛出的错误带着网址和 token：变成 network，报错里没有网址和 token", async () => {
@@ -256,6 +256,7 @@ test("带按钮的消息：reply_markup 是 inline_keyboard，每个按钮的 te
 	assert.deepEqual(f.calls[0].body, {
 		chat_id: 42,
 		text: "查哪个城市？",
+		parse_mode: "HTML",
 		reply_markup: { inline_keyboard: [[{ text: "北京", callback_data: "a:rpt_1:0" }], [{ text: "上海", callback_data: "a:rpt_1:1" }]] },
 	});
 });
@@ -266,7 +267,7 @@ test("编辑消息：editMessageText 带新文字；没有按钮时发空的 inl
 	await api.edit(42, 78, text("已选「上海」"), never);
 	await api.edit(42, 78, text("重选", false, KEYS), never);
 	assert.equal(f.calls[0].url, `${TELEGRAM_API}/bot${RAW}/editMessageText`);
-	assert.deepEqual(f.calls[0].body, { chat_id: 42, message_id: 78, text: "已选「上海」", reply_markup: { inline_keyboard: [] } });
+	assert.deepEqual(f.calls[0].body, { chat_id: 42, message_id: 78, text: "已选「上海」", parse_mode: "HTML", reply_markup: { inline_keyboard: [] } });
 	assert.deepEqual(f.calls[1].body.reply_markup, { inline_keyboard: [[{ text: "北京", callback_data: "a:rpt_1:0" }], [{ text: "上海", callback_data: "a:rpt_1:1" }]] });
 });
 
@@ -292,4 +293,32 @@ test("回应按钮点击：answerCallbackQuery 带 callback_query_id 和提示�
 	await api.answerTap("cb7", "已发送", never);
 	assert.equal(f.calls[0].url, `${TELEGRAM_API}/bot${RAW}/answerCallbackQuery`);
 	assert.deepEqual(f.calls[0].body, { callback_query_id: "cb7", text: "已发送" });
+});
+
+const html = (t: string, plain: string, replyTo?: number) => ({ text: t, plain, keyboard: null, silent: false, ...(replyTo !== undefined && { replyTo }) });
+
+test("发消息用 HTML parse_mode；挂在一条消息下时带 reply_parameters，原消息删了也照发", async () => {
+	const f = fakeHttp(ok({ message_id: 80 }));
+	const api = new BotApi({ token: token(), http: f.http });
+	await api.send(42, html("<b>幕僚长</b>：好", "幕僚长：好", 7), never);
+	assert.deepEqual(f.calls[0].body, { chat_id: 42, text: "<b>幕僚长</b>：好", parse_mode: "HTML", reply_parameters: { message_id: 7, allow_sending_without_reply: true } });
+	await api.edit(42, 80, html("<b>改</b>", "改"), never);
+	assert.deepEqual(f.calls[1].body, { chat_id: 42, message_id: 80, text: "<b>改</b>", parse_mode: "HTML", reply_markup: { inline_keyboard: [] } });
+});
+
+test("Telegram 说 HTML 解析不了：同一条改发纯文本，不带 parse_mode；编辑也一样；别的 400 不重发", async () => {
+	for (const method of ["send", "edit"] as const) {
+		const f = fakeHttp((call) => (call.body.parse_mode ? failed(400, "Bad Request: can't parse entities: Can't find end tag corresponding to start tag \"b\"")() : ok({ message_id: 81 })()));
+		const api = new BotApi({ token: token(), http: f.http });
+		if (method === "send") assert.equal(await api.send(42, html("<b>坏", "坏", 7), never), 81);
+		else await api.edit(42, 81, html("<b>坏", "坏"), never);
+		assert.equal(f.calls.length, 2, method);
+		assert.equal(f.calls[1].body.text, "坏");
+		assert.equal(f.calls[1].body.parse_mode, undefined);
+		if (method === "send") assert.deepEqual(f.calls[1].body.reply_parameters, { message_id: 7, allow_sending_without_reply: true });
+	}
+	const f = fakeHttp(failed(400, "Bad Request: chat not found"));
+	const api = new BotApi({ token: token(), http: f.http });
+	await assert.rejects(api.send(42, html("<b>x</b>", "x"), never), (e: TelegramError) => e.kind === "bad_request");
+	assert.equal(f.calls.length, 1);
 });

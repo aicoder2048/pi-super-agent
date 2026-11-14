@@ -9,6 +9,7 @@ const REQUEST_DEADLINE_MS = 30_000;
 const POLL_DEADLINE_EXTRA_MS = 15_000;
 const DESCRIPTION_MAX = 120;
 const NOT_MODIFIED = "message is not modified";
+const CANT_PARSE = "can't parse entities";
 const RETRY_AFTER_MIN_MS = 1000;
 const RETRY_AFTER_MAX_MS = 60 * 60_000;
 // Failures from before the request left this machine: Telegram surely did not get it.
@@ -62,10 +63,15 @@ export type TelegramEvent =
 export type Keyboard = readonly (readonly { label: string; data: string }[])[];
 
 export interface OutboundMessage {
+	/** Telegram HTML (parse_mode HTML). */
 	text: string;
+	/** The same message without tags, sent instead when Telegram refuses the HTML. */
+	plain: string;
 	keyboard: Keyboard | null;
 	silent: boolean;
 	noPreview?: true;
+	/** The message this one replies to. Only a new message can reply. */
+	replyTo?: number;
 }
 
 /** `event` is null for anything the client does not handle; the offset still moves past it. */
@@ -138,17 +144,24 @@ export class BotApi {
 		return result.map((u) => ({ updateId: u.update_id, event: u.callback_query ? parseTap(u.callback_query) : parseMessage(u.message) }));
 	}
 
-	/** Plain text, no parse_mode. Returns Telegram's message_id. */
-	async send(chatId: number, { text, keyboard, silent, noPreview }: OutboundMessage, signal: AbortSignal): Promise<number> {
-		const sent = await this.#call("sendMessage", { chat_id: chatId, text, ...(keyboard && { reply_markup: inlineKeyboard(keyboard) }), ...(silent && { disable_notification: true }), ...(noPreview && { link_preview_options: { is_disabled: true } }) }, signal);
+	/** Returns Telegram's message_id. A reply to a message the user deleted still goes out, as a plain message. */
+	async send(chatId: number, { text, plain, keyboard, silent, noPreview, replyTo }: OutboundMessage, signal: AbortSignal): Promise<number> {
+		const params = {
+			chat_id: chatId,
+			...(keyboard && { reply_markup: inlineKeyboard(keyboard) }),
+			...(silent && { disable_notification: true }),
+			...(noPreview && { link_preview_options: { is_disabled: true } }),
+			...(replyTo !== undefined && { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } }),
+		};
+		const sent = await this.#callFormatted("sendMessage", params, text, plain, signal);
 		if (!Number.isSafeInteger(sent?.message_id)) throw new TelegramError("sendMessage", "bad_response");
 		return sent.message_id;
 	}
 
 	/** Always sends reply_markup, so a card whose buttons went away loses them on the phone too. Telegram's "not modified" counts as done. */
-	async edit(chatId: number, messageId: number, { text, keyboard }: OutboundMessage, signal: AbortSignal): Promise<void> {
+	async edit(chatId: number, messageId: number, { text, plain, keyboard }: OutboundMessage, signal: AbortSignal): Promise<void> {
 		try {
-			await this.#call("editMessageText", { chat_id: chatId, message_id: messageId, text, reply_markup: inlineKeyboard(keyboard ?? []) }, signal);
+			await this.#callFormatted("editMessageText", { chat_id: chatId, message_id: messageId, reply_markup: inlineKeyboard(keyboard ?? []) }, text, plain, signal);
 		} catch (error) {
 			if (!(error instanceof TelegramError && error.kind === "bad_request" && error.message.includes(NOT_MODIFIED))) throw error;
 		}
@@ -156,6 +169,16 @@ export class BotApi {
 
 	async answerTap(callbackId: string, toast: string, signal: AbortSignal): Promise<void> {
 		await this.#call("answerCallbackQuery", { callback_query_id: callbackId, text: toast }, signal);
+	}
+
+	/** A message must never be lost to its formatting: when Telegram refuses the HTML, which it did not take, the plain text goes instead. */
+	async #callFormatted(method: string, params: object, html: string, plain: string, signal: AbortSignal): Promise<any> {
+		try {
+			return await this.#call(method, { ...params, text: html, parse_mode: "HTML" }, signal);
+		} catch (error) {
+			if (!(error instanceof TelegramError && error.kind === "bad_request" && error.message.includes(CANT_PARSE))) throw error;
+			return this.#call(method, { ...params, text: plain }, signal);
+		}
 	}
 
 	async #call(method: string, params: object, signal: AbortSignal, deadlineMs = REQUEST_DEADLINE_MS): Promise<any> {

@@ -8,7 +8,7 @@ import { TelegramStore } from "../src/host/telegram/store.ts";
 import { tempStateDir } from "./helpers/fakes.ts";
 
 const BOT = 123456789;
-const reply = (text: string) => ({ kind: "line" as const, text, silent: false });
+const reply = (text: string) => ({ kind: "line" as const, role: "router" as const, text, silent: false });
 
 function fresh(): { db: DatabaseSync; store: TelegramStore; reopen: (botId?: number) => TelegramStore } {
 	const db = openStore(join(tempStateDir(), "state.db"));
@@ -27,7 +27,7 @@ test("同一条消息写两次只有一行；内容变了版本加一，待发�
 	store.put(42, "line:rpl_1", "rpl_1", reply("收到。"));
 	store.put(42, "line:rpl_1", "rpl_1", reply("收到。"));
 	assert.equal(rows(db, "telegram_messages"), 1);
-	assert.deepEqual(store.next(), { chatId: 42, key: "line:rpl_1", version: 1, messageId: null, body: reply("收到。"), note: false });
+	assert.deepEqual(store.next(), { chatId: 42, key: "line:rpl_1", version: 1, messageId: null, body: reply("收到。"), note: false, task: null });
 	store.put(42, "line:rpl_1", "rpl_1", reply("改了。"));
 	assert.equal(store.next()?.version, 2);
 	assert.deepEqual(store.next()?.body, reply("改了。"));
@@ -146,7 +146,7 @@ test("卡片发出后内容变了是一次编辑：待发的那一行带着 Tele
 	store.put(42, "ask:rpt_1", null, card({ kind: "open" }));
 	assert.equal(store.next(), undefined, "同样的卡片不再发");
 	store.put(42, "ask:rpt_1", null, card({ kind: "sent", label: "上海" }));
-	assert.deepEqual(store.next(), { chatId: 42, key: "ask:rpt_1", version: 2, messageId: 600, body: card({ kind: "sent", label: "上海" }), note: false });
+	assert.deepEqual(store.next(), { chatId: 42, key: "ask:rpt_1", version: 2, messageId: 600, body: card({ kind: "sent", label: "上海" }), note: false, task: null });
 });
 
 test("还没发出就已结束的卡片不发；正在发的卡片发完后再编辑成已结束", () => {
@@ -159,7 +159,7 @@ test("还没发出就已结束的卡片不发；正在发的卡片发完后再�
 	store.put(42, "ask:rpt_2", null, card({ kind: "closed", label: null }, "rpt_2"));
 	assert.equal(store.next(), undefined, "发出去之前不知道 message_id，没有可编辑的");
 	store.sent(inFlight, 601);
-	assert.deepEqual(store.next(), { chatId: 42, key: "ask:rpt_2", version: 2, messageId: 601, body: card({ kind: "closed", label: null }, "rpt_2"), note: false });
+	assert.deepEqual(store.next(), { chatId: 42, key: "ask:rpt_2", version: 2, messageId: 601, body: card({ kind: "closed", label: null }, "rpt_2"), note: false, task: null });
 });
 
 test("还开着的卡片：只列这个聊天里没结束的问题卡片", () => {

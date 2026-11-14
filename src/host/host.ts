@@ -276,7 +276,7 @@ export class Host {
 			this.#log,
 		);
 		// Built before any client can say a line, so every line and reply reaches it; it touches the network only once started.
-		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }) }, db: this.#db, clock, log: this.#log });
+		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }), originOf: (ticketId) => this.kernel.getTicket(ticketId)?.originTriggerId ?? null }, db: this.#db, clock, log: this.#log });
 	}
 
 	static async start(options: HostOptions): Promise<Host> {

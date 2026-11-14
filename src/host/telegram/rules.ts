@@ -6,6 +6,7 @@ import { OPTIONS_MAX, refusalText } from "../../kernel/question.ts";
 import type { DashboardRow, HostLine, PendingQuestion } from "../../kernel/types.ts";
 import { hasVisibleText, type ImChat } from "../server.ts";
 import type { Keyboard, OutboundMessage, TelegramEvent } from "./bot-api.ts";
+import { escapeHtml, foldBlocks, markdownBlocks, visibleText, type Block } from "./format.ts";
 
 const MESSAGE_MAX = 4000;
 const CLIPPED = "…（全文见网页）";
@@ -21,7 +22,7 @@ const EDGES = /^[\s\p{P}]+|[\s\p{P}]+$/gu;
 export type Note = "help" | "text-only" | "no-forwards" | "no-via-bot";
 
 export const NOTES = {
-	help: "这里是白宫。你在这里打的字就是对幕僚长说的话，和网页、终端是同一个对话；幕僚长的回复也发到这里。对一条消息滑动回复，就是引用那句话。助手提问时会发来带按钮的问题，点按钮就是回答；成员上限只能在网页或终端回答。只收文字，转发的消息不会交给幕僚长。",
+	help: "这里是白宫。你在这里打的字就是对幕僚长说的话，和网页、终端是同一个对话；幕僚长的回复也发到这里。对一条消息滑动回复，就是引用那句话。助手提问时会发来带按钮的问题，点按钮就是回答；成员上限只能在网页或终端回答。消息开头的 🧭 是幕僚长，⚙️ 是系统，🔔 是通知，🙋 是助手的提问；同一个任务的消息带同一种颜色的圆点，挂在开这个任务的那句话下面。只收文字，转发的消息不会交给幕僚长。",
 	"text-only": "目前只收文字消息，这条没有交给幕僚长。",
 	"no-forwards": "转发的消息不会交给幕僚长。要问幕僚长，复制文字后用你自己的话发。",
 	cap: "成员上限：现在有成员在排队，宿主在问要不要今天放宽上限。这个问题只能在网页或终端的「待你处理」里回答。",
@@ -76,6 +77,8 @@ export type CardStatus =
 
 export interface CardView {
 	reportId: string;
+	/** Absent on a card stored before cards knew their task. */
+	ticketId?: string;
 	title: string;
 	/** Empty for a ticket from before helpers had names. */
 	helper: string;
@@ -98,7 +101,7 @@ export function cardView(row: DashboardRow): CardView | null {
 					: click?.state === "dropped"
 						? { kind: "dropped" }
 						: { kind: "open" };
-	return { reportId: q.reportId, title: row.title, helper: helperFullName(row.helper), question: q.text, options: q.options, status };
+	return { reportId: q.reportId, ticketId: row.id, title: row.title, helper: helperFullName(row.helper), question: q.text, options: q.options, status };
 }
 
 /** A number on each real line, so a line the phone soft-wraps reads as the same line and a real newline cannot hide in a wrap. */
@@ -107,11 +110,11 @@ const numberLines = (command: string) => command.split("\n").map((line, i) => `$
 export function runAskView(row: DashboardRow, ask: RunAsk): CardView {
 	const label = ask.state === "open" || (ask.state === "declined" && ask.reason !== "user") ? null : RUN_OPTIONS[ask.state === "declined" ? 1 : 0];
 	const question = [`任务想运行一条命令。${runOrigin(ask.origin)}`, "命令：", numberLines(ask.command), `任务的说法：${ask.why}`].join("\n");
-	return { reportId: ask.id, title: row.title, helper: HOST_SOURCE, question, options: RUN_OPTIONS, status: ask.state === "open" ? { kind: "open" } : { kind: "closed", label } };
+	return { reportId: ask.id, ticketId: row.id, title: row.title, helper: HOST_SOURCE, question, options: RUN_OPTIONS, status: ask.state === "open" ? { kind: "open" } : { kind: "closed", label } };
 }
 
 /** A command is shown whole or not at all, so a card that would be clipped goes to the web page instead. */
-export const fitsOneMessage = (view: CardView) => cardText(view).length <= MESSAGE_MAX;
+export const fitsOneMessage = (view: CardView) => cardPlain(view, DOTS[0]).length <= MESSAGE_MAX;
 
 export const runAskLine = (title: string) => `任务「${clip(title, TITLE_MAX)}」想运行一条命令，请在网页上批准`;
 
@@ -163,19 +166,66 @@ function cardKeyboard(view: CardView): Keyboard | null {
 	return view.options.map((label, option) => [{ label, data: answerData(view.reportId, option) }]);
 }
 
-/** What a row in the outbox asks Telegram to show. `received` is the user's own message: already on the phone, never sent. */
+/** Who a line speaks for: the chief of staff, the host itself (a mirrored line, a pointer to the web page), or a source's alert or notice. */
+export type Role = "router" | "system" | "notice";
+
+/** Each message opens with who speaks, since a bot's private chat shows one avatar for all of them. A question card is 🙋. */
+const MARK: Record<Role | "card", string> = { router: "🧭", system: "⚙️", notice: "🔔", card: "🙋" };
+
+/** One color per task, in the order tasks first reach Telegram, so the messages of interleaved tasks tell apart. */
+export const DOTS = ["🟢", "🟣", "🔵", "🟠", "🟡", "🔴", "🟤", "⚪"] as const;
+
+/** What the chat knows of a message's task: its color, and the user's message that started it (null when none is on this chat). */
+export interface TaskMark {
+	dot: number;
+	replyTo: number | null;
+}
+
+/** What a row in the outbox asks Telegram to show. `received` is the user's own message: already on the phone, never sent. `ticketId`: the task the message is about. */
 export type OutboundBody =
 	/** `noPreview`: a host line carries other people's text, such as a mail's first sentence, and a link in it gets no preview card. */
-	| { kind: "line"; text: string; silent: boolean; noPreview?: true }
+	| { kind: "line"; role: Role; text: string; silent: boolean; noPreview?: true; ticketId?: string }
 	| { kind: "note"; text: string }
 	| { kind: "card"; view: CardView }
 	| { kind: "received" };
 
-/** `note`: the chat owes the may-be-missing note, and it goes first so a clipped text keeps it. A card never carries it. */
-export function render(body: Exclude<OutboundBody, { kind: "received" }>, note = false): OutboundMessage {
-	if (body.kind === "card") return { text: fitMessage(cardText(body.view)), keyboard: cardKeyboard(body.view), silent: false, noPreview: true };
-	const text = note ? (body.text ? `${NOTES.missed}\n${body.text}` : NOTES.missed) : body.text;
-	return { text: fitMessage(text), keyboard: null, silent: body.kind === "line" && body.silent, ...(body.kind === "line" && body.noPreview && { noPreview: true }) };
+/**
+ * `note`: the chat owes the may-be-missing note, and it goes first so a clipped text keeps it. A card never carries it.
+ * The chief of staff writes Markdown, which becomes Telegram HTML; every other text is shown as it is. `plain` is the same message without tags, for when Telegram refuses the HTML.
+ */
+export function render(body: Exclude<OutboundBody, { kind: "received" }>, note = false, task: TaskMark | null = null): OutboundMessage {
+	const color = task ? DOTS[task.dot % DOTS.length] : "";
+	const dot = color && `${color} `;
+	const replyTo = task?.replyTo != null ? { replyTo: task.replyTo } : {};
+	if (body.kind === "card") return { ...formatted(escapeHtml(fitMessage(cardPlain(body.view, color)))), keyboard: cardKeyboard(body.view), silent: false, noPreview: true, ...replyTo };
+	const missed = note ? `${MARK.system} ${NOTES.missed}` : "";
+	const silent = body.kind === "line" && body.silent;
+	const extra = { ...(body.kind === "line" && body.noPreview && { noPreview: true as const }), ...replyTo };
+	if (body.kind === "line" && body.role === "router") return { ...formatted(replyHtml(missed ? `${escapeHtml(missed)}\n` : "", `${MARK.router} ${dot}<b>幕僚长</b>`, markdownBlocks(body.text))), keyboard: null, silent, ...extra };
+	// A line queued before lines had a role has none.
+	const mark = MARK[(body.kind === "line" && body.role) || "system"];
+	const own = body.text ? `${mark} ${dot}${body.text}` : "";
+	return { ...formatted(escapeHtml(fitMessage([missed, own].filter(Boolean).join("\n")))), keyboard: null, silent, ...extra };
+}
+
+const formatted = (html: string) => ({ text: html, plain: visibleText(html) });
+
+/** Whole blocks are dropped from the end until the converted message fits; one block too long on its own goes out as clipped text. */
+function replyHtml(prefix: string, speaker: string, blocks: Block[]): string {
+	for (let n = blocks.length; n > 0; n--) {
+		const html = prefix + replyBody(speaker, blocks.slice(0, n), n < blocks.length);
+		if (visibleText(html).length <= MESSAGE_MAX) return html;
+	}
+	return escapeHtml(fitMessage(visibleText(prefix + replyBody(speaker, blocks, false))));
+}
+
+function replyBody(speaker: string, blocks: Block[], clipped: boolean): string {
+	if (blocks.length === 1 && blocks[0].inline && !clipped) return `${speaker}：${blocks[0].html}`;
+	return `${speaker}\n${foldBlocks(blocks)}${clipped ? `\n${CLIPPED}` : ""}`;
+}
+
+function cardPlain(view: CardView, dot: string): string {
+	return `${MARK.card} ${dot ? `${dot} ` : ""}${cardText(view)}`;
 }
 
 /** Telegram drops a keyboard whose callback_data is longer than 64 bytes, so building one fails loudly instead. */
