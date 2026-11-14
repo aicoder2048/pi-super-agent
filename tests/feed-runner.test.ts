@@ -98,3 +98,11 @@ test("alerts 的形状不对：这一轮失败，说出要什么", async (t) => 
 	assert.equal(run.ok, false);
 	assert.match(run.ok ? "" : run.note, /alerts 要是一列 \{ id, text, at \}/);
 });
+
+test("problem 的 once 不是 true：这一轮失败，说出要什么", async (t) => {
+	const { root, pkg } = taxCopy(t);
+	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ problem: { id: "gap", text: "断了一天", once: "yes" } });\n`);
+	const run = await runFeed(brokerage(root), [], { data: instanceData(join(root, "state")), submit: () => {}, alert: () => true, problem: () => {}, secret: () => "token", now: () => 0 });
+	assert.equal(run.ok, false);
+	assert.match(run.ok ? "" : run.note, /once 只能是 true/);
+});

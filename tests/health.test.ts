@@ -96,6 +96,28 @@ test("错误文字去掉密钥、换成一行、截短", () => {
 	assert.ok(scrub("x".repeat(500)).length <= 200);
 });
 
+test("forget：撤下匹配的警报，不通知、不进最近恢复，之后再失败重新计数", () => {
+	const { health, cleared } = board();
+	health.failed("data:a", failure("x", 1));
+	health.failed("model:router", { ...failure("x", 1), area: "model", subject: "幕僚长模型" });
+	health.forget((id) => id.startsWith("data:"));
+	assert.deepEqual(health.board().active.map((a) => a.id), ["model:router"]);
+	assert.equal(cleared.length, 0);
+	assert.deepEqual(health.board().recent, []);
+	health.failed("data:a", failure("x", 2));
+	assert.equal(health.board().active.length, 1, "重新从 1 数起");
+});
+
+test("同一处断了又好、好了又断：最近恢复里只留最后一次", () => {
+	const { health, tick } = board();
+	for (const _ of [1, 2]) {
+		health.failed("data:a", failure("x", 1));
+		tick(1_000);
+		health.ok("data:a");
+	}
+	assert.deepEqual(health.board().recent.map((a) => [a.id, a.clearedAt]), [["data:a", 3_000]]);
+});
+
 test("没登录、没密钥、会话过期都算鉴权：不会自己好", () => {
 	assert.equal(causeOf("No API key for provider: openai-codex"), "auth");
 	assert.equal(causeOf("Your session has expired. Please log in again."), "auth");

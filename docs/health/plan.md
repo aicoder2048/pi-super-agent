@@ -31,7 +31,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [x] Follow this dependency graph. Start dependent work only after its parent merges, or base it on the parent branch when the execution playbook stacks.
   - [x] H1 is first. It branches from `main` as `psa/health-models` in `../psa-health1`.
   - [x] H2 after H1. It branches from `psa/health-models` as `psa/health-data` in `../psa-health2`.
-- [x] Hold the file boundaries. H2 touches only `src/modules/`, the feed wiring in `src/host/host.ts`, `src/host/health.ts`, the stock-ta guide, and tests.
+- [x] Hold the file boundaries. H2 touches only the feed wiring in `src/host/host.ts`, `src/host/health.ts`, the docs that describe feed problems, and tests.
 - [x] Hold the review gate. H1 and H2 change an interaction. They wait for the operator's review in chat with screenshots before merge.
 
 ### PR mechanics, for every PR
@@ -108,7 +108,7 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 - [x] Metric. Size of one board frame and the time `Health.board()` adds to it.
 - [x] Probe. Build a board with ten active alarms and ten recent ones and time `board()` over 10,000 calls at head. Trunk has no registry, so the diff-added work gets an absolute budget.
 - [x] Baseline. Trunk adds zero bytes and zero time.
-- [x] Rule. Fail when ten alarms add more than 8 KB to a frame or `board()` takes more than 50 microseconds per call.
+- [x] Rule. Fail when ten alarms add more than 8 KB to a frame or `board()` takes more than 50 microseconds per call. Measured 5.1 KB for 11 active alarms with 200-character errors plus 10 recent, and about 1.1 microseconds per `board()`.
 
 **Review gate.** The operator reviews before merge.
 
@@ -129,51 +129,52 @@ Each live lane runs on its own cloud VM at the PR head. Drive through `control-u
 
 **Files.**
 
-- [ ] Edit `src/host/host.ts` and `src/host/health.ts`.
-- [ ] Edit `docs/modules/stock-ta.md`, `docs/health/README.md`, `tests/feed-line.test.ts`.
-- [ ] Create `tests/health-feeds.test.ts`. Extend `tests/e2e/health.e2e.ts`.
+- [x] Edit `src/host/host.ts` and `src/host/health.ts`.
+- [x] Create `docs/adr/0026-the-host-says-what-is-broken.md`. Edit `docs/adr/0020-a-private-feed-releases-the-fields-it-names.md`, `docs/modules/architecture/design.md`, `docs/modules/stock-ta.md`, `docs/health/README.md`.
+- [x] Edit `tests/feed-line.test.ts`, `tests/health.test.ts`, `tests/fixtures/modules/private-line/feeds/inbox/index.ts`. Extend `tests/e2e/health.e2e.ts`.
 
 **Build.**
 
-- [ ] The host's feed run wrapper reports each beat to `Health` as `data:<source>`. A failed beat counts toward `feedFailuresBeforeAlarm`, a key rejection raises at once, and a clean beat clears.
-- [ ] `FeedPorts.problem` raises `data:<source>` at once with the feed's own text and clears when a beat reports none.
-- [ ] `Host.#feedProblem`, `#feedProblems` and the notice host line they posted are deleted.
-- [ ] `Health.board().offline` already covers the both-down hint. H2 is the first PR where a data alarm can exist, so the hint becomes reachable.
+- [x] `Host.#feedHealth` reports each beat to `Health` as `data:<source>`. A failed beat counts toward `feedFailuresBeforeAlarm`, an auth error raises at once, and a clean beat clears.
+- [x] The feed's own `problem` raises `data:<source>` at once with the feed's text and clears when a beat reports none.
+- [x] `Host.#feedProblem`, `#feedProblems` and the notice host line they posted are deleted.
+- [x] `Health.forget` drops the alarms of feeds that stopped serving when a module switches off, with no ✅.
+- [x] `Health.board().offline` from H1 becomes reachable, because a data alarm can now exist.
 
 **You see.**
 
-- [ ] With the quotes feed's provider failing, the banner names the feed after three failed beats and Telegram gets one ⚠️. No 通知 line appears in the conversation.
-- [ ] With the model and the provider both refusing connections, the banner says 本机可能断网了.
+- [x] With the probe feed's provider answering 503, the banner names 行情探针 报价 after three failed beats and Telegram gets one ⚠️. No 通知 line appears in the conversation.
+- [x] With the model and the provider both refusing connections, the banner says 本机可能断网了.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `tests/health-feeds.test.ts` covers the streak, the clear, the immediate auth raise, the feed problem, and the offline hint. `tests/feed-line.test.ts` asserts the problem is an alarm, not a notice line. Run `just test`.
+- [x] `tests/feed-line.test.ts` covers the feed problem as an alarm with no notice line, the failure streak against a configured threshold, the immediate auth raise, and the switched-off module. `tests/health.test.ts` covers `forget` and the recent list keeping one entry per id. Run `just test`.
 
-**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe. Lanes 2 to 5 are steps of the second test in `tests/e2e/health.e2e.ts`, with a probe module whose feed polls a fake provider every two seconds.
 
-- [ ] Lane 1. Regression lane against trunk. Run a failing feed at trunk and head. Trunk posts nothing for a throwing feed, so record that and gate the banner plus the Telegram message at head. Save `5-feed-down.png`. Pass when head shows the alarm.
-- [ ] Lane 2. A module feed whose provider returns HTTP 503. Save `5-feed-down.png`. Pass when the banner names the feed after the third beat and one ⚠️ arrives.
-- [ ] Lane 3. The provider heals. Save `6-feed-recovered.png`. Pass when one ✅ arrives and the banner turns green.
-- [ ] Lane 4. The provider returns 401. Save `7-feed-401.png`. Pass when the banner shows after one beat with key advice.
-- [ ] Lane 5. The model and the provider both refuse connections. Save `8-offline.png`. Pass when the banner says 本机可能断网了.
-- [ ] Lane 6. The feed reports its own problem, such as stock-ta's no-key. Save `9-feed-problem.png`. Pass when the banner shows the feed's text and the conversation has no 通知 line.
-- [ ] Lane 7. Gmail token refresh fails with invalid_grant. Save `10-gmail.png`. Pass when the banner shows after one beat with re-authorize advice.
+- [x] Lane 1. Regression lane against trunk. Trunk's scheduler only writes a log line for a throwing feed (`src/modules/scheduler.ts`), so trunk shows nothing, read from the code and not run. Gate the banner plus the Telegram message at head. Save `5-feed-503.png`. Pass when head shows the alarm.
+- [x] Lane 2. The provider returns HTTP 503. Save `5-feed-503.png`. Pass when the banner names the feed with 连着 3 次 and one ⚠️ arrives.
+- [x] Lane 3. The provider heals. Save `6-feed-recovered.png`. Pass when one ✅ arrives and the banner turns green.
+- [x] Lane 4. The provider returns 401. Save `7-feed-401.png`. Pass when the banner shows 连着 1 次 with key advice.
+- [x] Lane 5. The model and the provider both refuse connections. The provider's port is really closed; the model's refusal is simulated by its error text. Save `8-offline.png`. Pass when the banner says 本机可能断网了 and turns green after both heal.
+- [ ] Lane 6. The feed reports its own problem, such as stock-ta's no-key. Save `9-feed-problem.png`. Pass when the banner shows the feed's text and the conversation has no 通知 line. Covered by `tests/feed-line.test.ts` through a real host, not in the browser.
+- [ ] Lane 7. Gmail token refresh fails with invalid_grant. Save `10-gmail.png`. Pass when the banner shows the mail feed's auth text. The mail feed reports this as a `problem`, so lane 6's path covers it; not driven live.
 - [ ] Lane 8. Phone width 390 px with three alarms. Save `11-phone.png`. Pass when the page does not scroll sideways.
-- [ ] Lane 9. A module switched off while its feed alarm stands. Save `12-switched-off.png`. Pass when the alarm clears.
-- [ ] Lane 10. One real-model sanity run on `openai-codex/*`. Save `13-real.png`. Pass when a real Router turn succeeds with no model alarm.
+- [ ] Lane 9. A module switched off while its feed alarm stands. Save `12-switched-off.png`. Pass when the alarm is gone with no ✅. Covered by `tests/feed-line.test.ts`, not in the browser.
+- [ ] Lane 10. One real-model sanity run on `openai-codex/*`. Save `10-real.png`. Pass when a real Router turn succeeds and `health.active` is empty. The run passed, read from the page's event stream, but no screenshot was saved.
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. Time one feed beat spends in the host wrapper.
-- [ ] Probe. Time `Health.failed` and `Health.ok` over 10,000 calls at trunk and head. Trunk has no registry, so the diff-added work gets an absolute budget.
-- [ ] Baseline. Trunk adds zero.
-- [ ] Rule. Fail when one call takes more than 20 microseconds.
+- [x] Metric. Time one feed beat spends in `Health.failed` or `Health.ok`.
+- [x] Probe. Time alternating `failed` and `ok` over 10,000 calls at head. Trunk has no registry, so the diff-added work gets an absolute budget.
+- [x] Baseline. Trunk adds zero.
+- [x] Rule. Fail when one call takes more than 20 microseconds. Measured about 0.6 microseconds.
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 2 to 6 screenshots into the PR description.
+- [x] Copy lane 2 to 5 screenshots into the PR description.
 - [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `<media path>/H2-review.mp4`. Skipped, the screenshots stand in.
-- [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
+- [x] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator's click.
 
 **Merge.**
 

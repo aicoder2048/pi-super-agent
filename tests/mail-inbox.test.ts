@@ -119,6 +119,7 @@ test("名单为空：什么都不请求，报 no-senders", async (t) => {
 	assert.deepEqual(await feed.beat(), { ok: true, records: 0, notices: 0 });
 	assert.deepEqual(feed.google.log, [], "名单空着不敲 Google 的门");
 	assert.equal(feed.problems.at(-1)?.id, "no-senders");
+	assert.equal(feed.problems.at(-1)?.once, undefined, "名单为空是配置坏了，一直亮着");
 	assert.match(feed.problems.at(-1)!.text, /邮件名单是空的/);
 	feed.senders("ann@example.com");
 	await feed.beat();
@@ -162,6 +163,7 @@ test("断档 30 小时：补最近一天，报 gap，写出整小时数", async 
 	await feed.beat();
 	assert.deepEqual(feed.messages().map((r) => r.fields["gmailId"]), ["m-1"]);
 	assert.equal(feed.problems.at(-1)?.id, "gap");
+	assert.equal(feed.problems.at(-1)?.once, true, "断档是一次性的通知，不拉响警报");
 	assert.match(feed.problems.at(-1)!.text, /有 30 小时没查/);
 	await feed.beat();
 	assert.equal(feed.problems.at(-1), undefined, "下一拍不再是断档");

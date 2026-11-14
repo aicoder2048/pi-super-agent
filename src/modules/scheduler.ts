@@ -19,6 +19,8 @@ export interface SchedulerOptions {
 	/** `just module try`: each feed runs its fixtures once, and no connector runs. */
 	fixtures: boolean;
 	log(line: string): void;
+	/** An inbox item failed every try and went to rejected. */
+	rejected?(entry: FeedEntry, note: string, tries: number): void;
 }
 
 export interface Scheduler {
@@ -79,7 +81,10 @@ export function createScheduler(o: SchedulerOptions): Scheduler {
 					}
 					failures.delete(key);
 					if (run.ok) processInbox(dir, file);
-					else rejectInbox(dir, file, run.note, o.log);
+					else {
+						rejectInbox(dir, file, run.note, o.log);
+						o.rejected?.(entry, run.note, tries);
+					}
 				}
 			})();
 		}
