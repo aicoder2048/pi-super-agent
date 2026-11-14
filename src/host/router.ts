@@ -392,7 +392,8 @@ export class Router {
 				this.#errorStreak = 0;
 				this.#buffer.push({ card: "[通知] 刚才的一轮因模型错误中断，已换模型。请继续处理上面没处理完的消息。" });
 			} else {
-				this.#health?.failed(error, current.fellBack);
+				const ranOnFallback = current.fellBack && this.session.model !== undefined && formatModelRef(this.session.model) === formatModelRef(current.model);
+				this.#health?.failed(error, ranOnFallback);
 				this.#retryAfterError();
 			}
 		} else if (last?.role === "assistant") {

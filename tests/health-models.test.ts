@@ -136,6 +136,19 @@ test("两个助手同时在主模型上被限流：第二个看到已切到回�
 	assert.deepEqual(active().map((a) => a.id), ["model:worker:fallback"]);
 });
 
+test("助手的主模型和回退模型都限流：第一次就亮，说两个都被限流", async (t) => {
+	const { active } = await healthHost(t, { script: (w) => w.settle("429 Too Many Requests") });
+	await until(() => active().some((a) => a.id === "model:worker"), "助手模型的警报");
+	assert.match(active().find((a) => a.id === "model:worker")!.advice, /都被限流/);
+	assert.equal(active().find((a) => a.id === "model:worker")!.count, 1);
+});
+
+test("幕僚长的主模型和回退模型都限流：第一次就亮，说两个都被限流", async (t) => {
+	const { active } = await healthHost(t, { models: ["primary", "fallback"], failOn: () => "429 rate limit reached" });
+	await until(() => active().some((a) => a.id === "model:router"), "幕僚长模型的警报");
+	assert.match(active().find((a) => a.id === "model:router")!.advice, /都被限流/);
+});
+
 test("助手的模型连着出错：一次不亮，两次连着失败才亮「助手模型」，下一轮成功就解除", async (t) => {
 	let rounds = 0;
 	const { host, active } = await healthHost(t, {
