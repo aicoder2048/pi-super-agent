@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -20,9 +20,9 @@ const AT = Date.parse("2026-11-12T15:44:00Z");
 const ny = (local: string) => Date.parse(`${local}-05:00`);
 const snapshot = (rows: Record<string, unknown>[]): Answer => ({ status: 200, body: snapshotBody(rows) });
 
-async function quotesFeed(t: TestContext, key = "sk-test") {
+async function quotesFeed(t: TestContext, key = "sk-test", settings: Record<string, unknown> = {}) {
 	const massive = await fakeMassive(t);
-	const modules = servedAsHost(Modules.load([dirname(stockTaCopy(t, massive.base))]));
+	const modules = servedAsHost(Modules.load([dirname(stockTaCopy(t, massive.base, settings))]));
 	const entry = modules.feeds().find((e) => e.source === "stock-ta/quotes");
 	assert.ok(entry, "stock-ta 有 quotes feed");
 	const state = mkdtempSync(join(tmpdir(), "psa-stock-ta-quotes-"));
@@ -345,4 +345,28 @@ test("只写新鲜的报价：提前收盘日 13:00 以后的成交不写行，1
 	feed.massive.answer(snapshot([tickerRow("NVDA", 101, 100, ny("2026-11-27T12:59:00"))]), snapshot([tickerRow("NVDA", 102, 100, ny("2026-11-27T13:05:00"))]));
 	assert.deepEqual(await feed.round(), { ok: true, records: 1, notices: 0 });
 	assert.deepEqual(await feed.round(), { ok: true, records: 0, notices: 0 });
+});
+
+test("档位只有 feed.json 的 settings.bands 一处：改成 3%、6% 后，3% 的涨幅就发一行提醒和一条触发，规则照样接得住", async (t) => {
+	const feed = await quotesFeed(t, "sk-test", { bands: { default: [3, 6], bySymbol: {} } });
+	feed.watch("NVDA");
+	feed.massive.answer(snapshot([tickerRow("NVDA", 103.2, 100, AT)]));
+	assert.deepEqual(await feed.round(), { ok: true, records: 1, notices: 1 });
+	assert.deepEqual(band(feed), [`band:NVDA:${DAY}:up3`]);
+	assert.deepEqual(feed.modules.rulesFor("stock-ta/quotes"), ["stock-ta/big-move"]);
+});
+
+test("档位只有一处：幕僚长读的规则、领队和盘面读的技能、feed 的说明都不写死档位数字", () => {
+	const read = (path: string) => readFileSync(join(PKG, path), "utf8");
+	const bigMove = read("rules.md").split("## ").find((r) => r.startsWith("big-move"))!;
+	const texts = { "rules.md big-move": bigMove, "feeds/quotes/feed.json description": JSON.parse(read("feeds/quotes/feed.json")).description, "skills/market-desk": read("skills/market-desk/SKILL.md"), "skills/band-move 正文": read("skills/band-move/SKILL.md").split("---").at(-1)! };
+	for (const [where, text] of Object.entries(texts)) assert.doesNotMatch(text, /\d+(\.\d+)?% ?档|\d+%、/, `${where} 写死了档位`);
+	assert.match(bigMove, /settings\.bands/);
+});
+
+test("档位改坏了（不是 { default, bySymbol }）：检查不过，宿主不会换上，旧版本照用", (t) => {
+	const pkg = stockTaCopy(t, "https://api.massive.com", { bands: [5, 8] });
+	const result = scanPackage(pkg, { secret: () => undefined });
+	assert.equal(result.ok, false);
+	assert.match(result.ok ? "" : result.problems.map(problemLine).join("\n"), /feeds\/quotes/);
 });
