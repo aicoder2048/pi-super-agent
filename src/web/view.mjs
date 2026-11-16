@@ -286,7 +286,7 @@ function card(row, now, sending) {
 		canStop: GROUP[row.stage] === "doing",
 		canEnd: GROUP[row.stage] === "onWatch",
 		waits: GROUP[row.stage] === "onWatch" ? waitsLine(row.waitsFor) : "",
-		unread: row.unread,
+		unread: row.unread && GROUP[row.stage] !== "done",
 		choice: choiceOf(row.question, sending),
 		run: runCard(row.runAsk, sending),
 	};

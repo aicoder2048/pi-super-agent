@@ -110,6 +110,7 @@ test("页面：盯着的事的卡片能结束、能追问，不能停止；别�
 test("页面：任务有没看过的汇报时卡片标未读，看过就不标", () => {
 	const left = page.leftColumn(withRows([amd({ unread: true }), amd({ id: "tkt_seen" })]), 0);
 	assert.deepEqual(left.onWatch.map((c) => c.unread), [true, false]);
+	assert.equal(page.leftColumn(withRows([amd({ stage: "closed", unread: true })]), 0).done[0].unread, false, "已完成的不标");
 });
 
 test("页面：追问引用幕僚长关于这个任务说的最后一句；对话里没有这样一句时为空，按钮就在输入框里填一句带标题的话", () => {
