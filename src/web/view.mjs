@@ -40,6 +40,9 @@ export const STAGE_PHRASE = {
 	stopped: "已停止",
 };
 
+/** @type {Record<NonNullable<DashboardRow["closedBy"]>, string>} */
+const CLOSED_BY_PHRASE = { user: "你点了结束", expiry: "盯的时段过了，自动结束" };
+
 /** @typedef {"needsYou" | "onWatch" | "doing" | "done"} Group */
 
 /** @type {Record<DashboardRow["stage"], Group>} */
@@ -280,7 +283,7 @@ function card(row, now, sending) {
 		avatar: avatarOf(row),
 		crew: crewOf(row),
 		why: BASIS_PHRASE[row.basis],
-		stage: row.stall ? `久无进展 · ${stallMinutes(row.stall.since, now)} 分钟` : row.moduleOff && GROUP[row.stage] !== "done" ? "所属模块已停用" : STAGE_PHRASE[row.stage],
+		stage: row.stall ? `久无进展 · ${stallMinutes(row.stall.since, now)} 分钟` : row.moduleOff && GROUP[row.stage] !== "done" ? "所属模块已停用" : row.closedBy ? `${STAGE_PHRASE.closed} · ${CLOSED_BY_PHRASE[row.closedBy]}` : STAGE_PHRASE[row.stage],
 		latest: row.question?.text ?? row.latestSummary ?? "已开始，暂无进展",
 		outside: outsideLine(row.outside),
 		canStop: GROUP[row.stage] === "doing",

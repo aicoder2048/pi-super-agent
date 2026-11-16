@@ -27,7 +27,7 @@ function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
 		id: "tkt_abcd1234", title: "查天气", stage: "running", basis: "request", latestSummary: null, model: "openai-codex/gpt-6.1-sol",
 		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, question: null, stall: null,
-		helper: { name: "青檀", role: "conversation", seq: 1 }, dispatchedTo: null, workerState: "running", startedAt: 0, endedAt: null, waitsFor: [], unread: false, ...over,
+		helper: { name: "青檀", role: "conversation", seq: 1 }, dispatchedTo: null, workerState: "running", startedAt: 0, endedAt: null, waitsFor: [], unread: false, closedBy: null, ...over,
 	};
 }
 
@@ -111,6 +111,11 @@ test("页面：任务有没看过的汇报时卡片标未读，看过就不标",
 	const left = page.leftColumn(withRows([amd({ unread: true }), amd({ id: "tkt_seen" })]), 0);
 	assert.deepEqual(left.onWatch.map((c) => c.unread), [true, false]);
 	assert.equal(page.leftColumn(withRows([amd({ stage: "closed", unread: true })]), 0).done[0].unread, false, "已完成的不标");
+});
+
+test("页面：盯着的事结束后，已完成卡片的阶段写怎么结束的：你点了结束，或盯的时段过了自动结束；助手汇报完的照常写已完成", () => {
+	const left = page.leftColumn(withRows([amd({ id: "tkt_u", stage: "closed", closedBy: "user" }), amd({ id: "tkt_e", stage: "closed", closedBy: "expiry" }), amd({ id: "tkt_w", stage: "closed" })]), 0);
+	assert.deepEqual(left.done.map((c) => [c.id, c.stage]), [["tkt_w", "已完成"], ["tkt_e", "已完成 · 盯的时段过了，自动结束"], ["tkt_u", "已完成 · 你点了结束"]]);
 });
 
 test("页面：追问引用幕僚长关于这个任务说的最后一句；对话里没有这样一句时为空，按钮就在输入框里填一句带标题的话", () => {
@@ -1963,6 +1968,16 @@ test("网关：POST /end 一次结束盯着的任务，回 204 并推看板；�
 	assert.equal((await end(JSON.stringify({ ticket: id }))).status, 204);
 	assert.equal(web.host.kernel.getTicket(id)!.stage, "closed");
 	await until(() => ofType(stream.got, "board").some((b) => b.rows.find((r) => r.id === id)?.stage === "closed"), "看板帧");
+});
+
+test("宿主：盯着的任务等的线程过了来源给的期限，不用等别的事，宿主到点把它结束并推看板", async (t) => {
+	const web = await watchHost(t);
+	const endsAt = Date.now() + 1500;
+	web.host.kernel.submitTrigger({ source: "generic", externalId: "amd-until", threads: [{ id: "thr_generic:AMD", until: endsAt }], sender: "feed", body: "AMD 收盘扫描", occurredAt: Date.now() });
+	const id = await watchingTask(web);
+	const stream = web.events();
+	await until(() => ofType(stream.got, "board").some((b) => b.rows.find((r) => r.id === id)?.closedBy === "expiry"), "到点结束的看板帧", 5000);
+	assert.ok(Date.now() >= endsAt, "没有提前结束");
 });
 
 test("网关：网页打开一个任务就记作看过，卡片不再标未读；关掉时再记一次，开着时来的汇报也算看过", async (t) => {
