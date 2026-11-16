@@ -60,6 +60,7 @@ export const STAGES = [
 	"awaiting_answer",
 	"awaiting_review",
 	"blocked_or_failed",
+	"watching",
 	"queued",
 	"idle",
 	"running",
@@ -313,6 +314,16 @@ export interface DashboardRow {
 	moduleOff: boolean;
 	/** The ticket's latest card asking to run a command: while it is open or running, and once settled until the ticket reports again. */
 	runAsk: RunAsk | null;
+	/** The threads the ticket subscribes, in the order it subscribed them; empty when it subscribes none. */
+	waitsFor: WaitTarget[];
+	/** A report other than progress came after the user last had the ticket open on the web page. */
+	unread: boolean;
+}
+
+/** A thread a ticket waits on, as the user reads it: its own title when its source gave one, and the module (or source) it comes from. */
+export interface WaitTarget {
+	title: string | null;
+	from: string;
 }
 
 export interface OutsideTally {

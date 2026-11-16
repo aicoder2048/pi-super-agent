@@ -64,6 +64,7 @@ import type {
 	Trigger,
 	TriggerSubmission,
 	WorkerReport,
+	WaitTarget,
 	WorkerState,
 } from "./types.ts";
 
@@ -567,7 +568,7 @@ export class Kernel {
 		return this.#tx(() => {
 			const ticket = this.#ticket(ticketId);
 			if (!ticket) return reject(`unknown ticket ${ticketId}`);
-			if (ticket.stage !== "idle") return reject(`ticket is ${ticket.stage}, status queries need an idle worker`);
+			if (ticket.stage !== "idle" && ticket.stage !== "watching") return reject(`ticket is ${ticket.stage}, status queries need an idle worker`);
 			this.#addInput(ticketId, "status_query", "report your current status");
 			return { ok: true };
 		});
@@ -903,7 +904,40 @@ export class Kernel {
 				outside: this.#outsideTally(t.id),
 				moduleOff: t.domain !== null && !serving.has(t.domain),
 				runAsk: this.#runAskCard(t.id),
+				waitsFor: this.#waitsFor(t.id),
+				unread: this.#unread(t.id),
 			};
+		});
+	}
+
+	#waitsFor(ticketId: string): WaitTarget[] {
+		return this.#all("SELECT h.source, h.title FROM subscriptions s JOIN threads h ON h.id = s.thread_id WHERE s.ticket_id = ? ORDER BY s.rowid", ticketId).map((r) => ({
+			title: r.title,
+			from: this.moduleLabel(ruleNamespace(r.source)),
+		}));
+	}
+
+	#unread(ticketId: string): boolean {
+		return !!this.#get(
+			"SELECT 1 FROM reports r JOIN tickets t ON t.id = r.ticket_id WHERE r.ticket_id = ? AND r.status <> 'progress' AND r.created_at > COALESCE(t.seen_at, -1) LIMIT 1",
+			ticketId,
+		);
+	}
+
+	/** The user had the ticket open on the web page now. */
+	markSeen(ticketId: string): void {
+		this.#run("UPDATE tickets SET seen_at = ? WHERE id = ?", this.#now(), ticketId);
+	}
+
+	/** The user's 「结束」 on a ticket that only waits on its threads. Ending one that already ended is a no-op. */
+	endWatching(ticketId: string): Result {
+		return this.#tx(() => {
+			const ticket = this.#ticket(ticketId);
+			if (!ticket) return reject(`unknown ticket ${ticketId}`);
+			if (ticket.stage === "closed") return { ok: true };
+			if (ticket.stage !== "watching") return reject(`ticket is ${ticket.stage}, only a watching ticket ends this way`);
+			this.#close(ticketId);
+			return { ok: true };
 		});
 	}
 
@@ -1634,6 +1668,7 @@ export class Kernel {
 			latestReport: latest ? { status: latest.status, hasQuestion: !!latest.question } : null,
 			userSpokeAfterLatestReport,
 			runAsk: this.#get("SELECT state FROM run_asks WHERE ticket_id = ? AND state IN ('open', 'approved') LIMIT 1", ticketId)?.state ?? null,
+			subscribed: !!this.#get("SELECT 1 FROM subscriptions WHERE ticket_id = ? LIMIT 1", ticketId),
 		});
 		return {
 			id: r.id,

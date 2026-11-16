@@ -10,6 +10,7 @@ export const STAGE_LABEL = {
 	awaiting_answer: "等你回答",
 	awaiting_review: "等你验收",
 	blocked_or_failed: "受阻/失败",
+	watching: "盯着后续消息",
 	queued: "排队",
 	idle: "空闲",
 	running: "执行中",
