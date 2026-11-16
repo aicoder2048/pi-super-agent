@@ -10,7 +10,7 @@ import { join, resolve } from "node:path";
 import { readDaily, readPeaks } from "../../bars.ts";
 import { nextEarningsOf } from "../../earnings.ts";
 import { noticeThread, readHits, tradingDaysBefore, writeHits, type Hit } from "../../hits.ts";
-import { isTradingDay, regularCloseAt, shiftDate } from "../../market-days.ts";
+import { isTradingDay, regularCloseAt, SCAN_AFTER_CLOSE_MS, shiftDate } from "../../market-days.ts";
 import { parseHoldings, peakKey, stillIn, type HoldingRow, type HoldingRuleId } from "../../holdings.ts";
 import { installedTa } from "../../ta.ts";
 import { COMBOS, effective, opensTask, parseRuleLevels, quietAt, ruleOf, scopeOf, WATCH_RULES, type LevelRow, type RuleLevels } from "../../watch-rules.ts";
@@ -44,8 +44,6 @@ const MAX_WATCHLIST = 30;
 const TA_SYMBOL = /^[A-Z]{1,10}(?:\.[A-Z]{1,2})?$/;
 /** `ta scan` needs the close plus its 15-minute data delay. */
 const TA_AFTER_CLOSE_MS = 16 * 60_000;
-/** The quotes feed runs 20 minutes past the close for the delayed last quotes; grading after it sees all of the day's quote hits. */
-const SCAN_AFTER_CLOSE_MS = 20 * 60_000;
 /** 200-day lines and a 14-day RSI need a little over 200 bars. */
 const BARS = 260;
 /** A digest that waited for a scan that never swapped in goes out at 17:30 New York time without the close rules. */

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { close, type CloseInput, type DailyBar, type TaSignal } from "../../docs/modules/examples/stock-ta/feeds/scan/close.ts";
-import type { Hit } from "../../docs/modules/examples/stock-ta/hits.ts";
+import { noticeThread, type Hit } from "../../docs/modules/examples/stock-ta/hits.ts";
 import { parseRuleLevels, type LevelRow } from "../../docs/modules/examples/stock-ta/watch-rules.ts";
 
 const DATE = "2026-11-12";
@@ -179,4 +179,11 @@ test("财报临近：下一次财报在 5 个交易日内记 1 层，id 用财�
 	assert.equal(r.hits[0]!.fact, "财报还有 3 个交易日，11-17 盘后");
 	assert.deepEqual(close(input({ earnings, seen: ["earnings:NVDA:2026-11-17"] })).hits, [], "前几天记过的同一次财报不再记");
 	assert.deepEqual(close(input({ earnings: { NVDA: { ...earnings.NVDA, tradingDays: 6 } } })).hits, []);
+});
+
+test("线程的期限：当天收盘扫描做完以后，收盘后 30 分钟（收盘后 20 分钟起扫，每 5 分钟一拍，一拍最多 5 分钟）；提前收盘日跟着提前；持仓线程一样", () => {
+	assert.equal(noticeThread(`NVDA:${DATE}`).threadUntil, "2026-11-12T21:30:00.000Z", "16:30 美东");
+	assert.equal(noticeThread("NVDA:2026-11-27").threadUntil, "2026-11-27T18:30:00.000Z", "感恩节次日 13:00 收盘，13:30 美东");
+	assert.equal(noticeThread(`NVDA:${DATE}:holding`).threadUntil, "2026-11-12T21:30:00.000Z");
+	assert.equal(noticeThread("NVDA:2026-07-15").threadUntil, "2026-07-15T20:30:00.000Z", "夏令时 16:30 美东");
 });
