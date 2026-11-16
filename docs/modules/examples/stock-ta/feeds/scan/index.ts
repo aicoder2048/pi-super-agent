@@ -9,7 +9,7 @@ import { constants, copyFileSync, existsSync, mkdirSync, renameSync, rmSync } fr
 import { join, resolve } from "node:path";
 import { readDaily, readPeaks } from "../../bars.ts";
 import { nextEarningsOf } from "../../earnings.ts";
-import { readHits, tradingDaysBefore, writeHits, type Hit } from "../../hits.ts";
+import { noticeThread, readHits, tradingDaysBefore, writeHits, type Hit } from "../../hits.ts";
 import { isTradingDay, regularCloseAt, shiftDate } from "../../market-days.ts";
 import { parseHoldings, peakKey, stillIn, type HoldingRow, type HoldingRuleId } from "../../holdings.ts";
 import { installedTa } from "../../ta.ts";
@@ -219,8 +219,7 @@ const planOf = (rule: string) => [...WATCH_RULES, ...COMBOS].find((r) => r.id ==
 function heldTasks(held: readonly Hit[]): Notice[] {
 	return held.filter((h) => opensTask(h) && planOf(h.rule) !== undefined).map((h) => ({
 		id: h.id,
-		thread: h.notice?.thread ?? `${h.symbol}:${h.date}`,
-		threadScope: "module",
+		...noticeThread(h.notice?.thread ?? `${h.symbol}:${h.date}`),
 		fields: { line: `${h.notice?.line ?? h.text}（免打扰时段留下，收盘小结时补发）`, rule: h.rule, level: String(h.level), plan: planOf(h.rule)! },
 	}));
 }

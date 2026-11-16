@@ -408,7 +408,7 @@ test("收盘跌破 200 日线：开任务的触发，线程挂在模块下，和
 	feed.setPlan({ kind: "ok", signals: [ma("NVDA", 200, "bearish", "2026-11-12")], bars: daily("NVDA", "2026-11-12", 97, 2_400_000) });
 	assert.deepEqual(await feed.tick(), { ok: true, records: 1, notices: 1 });
 	const [notice] = feed.notices;
-	assert.deepEqual([notice?.source, notice?.id, threadId(notice!.threadOwner ?? notice!.source, notice!.thread)], ["stock-ta/scan", "R-MA-2-200:NVDA:2026-11-12", "thr_stock-ta:NVDA:2026-11-12"]);
+	assert.deepEqual([notice?.source, notice?.id, threadId(notice!.threadOwner ?? notice!.source, notice!.thread), notice?.threadTitle], ["stock-ta/scan", "R-MA-2-200:NVDA:2026-11-12", "thr_stock-ta:NVDA:2026-11-12", "NVDA 今天的盯盘提醒"]);
 	assert.match(notice!.body, /^NVDA 收盘跌破 200 日线（收盘 97\.00，200 日均线 98\.50）。当天跌 -3\.00%。放量确认（收盘成交量是 20 日均量的 2\.4 倍）。收盘日线 11-12（美东）。（规则 R-MA-2-200，层级 5，做法 structure-trend）$/);
 	assert.deepEqual(feed.lines(), [], "200 日线不发提醒行，汇报就是第一次");
 });
@@ -569,6 +569,7 @@ test("免打扰：收盘扫描落在宿主本地 22:00 到 07:00，任务和静�
 	assert.match(feed.digests()[0]?.text ?? "", /NVDA 收盘跌破 200 日线，免打扰时留下，现在补开任务；AMD 收盘跌破 50 日线（免打扰时留下）/);
 	assert.deepEqual(feed.notices.map((n) => [n.id, threadId(n.threadOwner ?? n.source, n.thread)]), [["R-MA-2-200:NVDA:2026-11-12", "thr_stock-ta:NVDA:2026-11-12"]]);
 	assert.match(feed.notices[0]!.body, /免打扰时段留下，收盘小结时补发）（规则 R-MA-2-200，层级 5，做法 structure-trend）$/);
+	assert.equal(feed.notices[0]!.threadTitle, "NVDA 今天的盯盘提醒", "补发的触发也带线程标题");
 });
 
 const firstQuiet = (fromMs: number) => {

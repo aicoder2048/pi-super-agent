@@ -8,6 +8,16 @@ import { join } from "node:path";
 import { isTradingDay, shiftDate } from "./market-days.ts";
 import { COMBOS, opensTask, WATCH_RULES, type Lean, type Level } from "./watch-rules.ts";
 
+/**
+ * Where a hit's task trigger goes: the symbol's thread for the day (`<symbol>:<date>`) or its holding thread (`…:holding`).
+ * `threadScope: "module"`: the module's feeds share the thread, so a close-of-day hit joins the task a band opened. The host shows
+ * the title on a task that waits on the thread.
+ */
+export function noticeThread(thread: string) {
+	const symbol = thread.split(":")[0];
+	return { thread, threadScope: "module" as const, threadTitle: `${symbol} 今天的${thread.endsWith(":holding") ? "持仓" : "盯盘"}提醒` };
+}
+
 export type Hit = {
 	/** `<rule>:<symbol>:<date>`, plus `:<side>` for the two move rules, which fire once per side; `ta`'s signals graded by a shared row use `<ta rule>:<side>` for `<rule>`. */
 	id: string;

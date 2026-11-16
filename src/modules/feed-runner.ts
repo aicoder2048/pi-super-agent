@@ -14,7 +14,7 @@ export type FeedEntry = { source: string; module: ModuleName; dir: string; name:
 /** `released`: `body` is the private feed's filled `line`, which the host also posts to the user and hands the Router as data that is not private. */
 export type Reach = "shareable" | "private" | "released";
 /** `threadOwner`: the module, when the feed put the thread under it so its other feeds land in the same thread; else the thread is under `source`. */
-export type FeedNotice = { source: string; id: string; thread: string; threadOwner?: ModuleName; body: string; at: number; reach: Reach };
+export type FeedNotice = { source: string; id: string; thread: string; threadOwner?: ModuleName; threadTitle?: string; body: string; at: number; reach: Reach };
 
 export const reachOf = ({ feed, private: held }: Pick<FeedEntry, "feed" | "private">): Reach => (!held ? "shareable" : feed.line !== undefined ? "released" : "private");
 
@@ -67,6 +67,7 @@ export function parseCollected(output: Json, into?: CollectionDescriptor): Colle
 		return `notices 要是一列 { id, fields }，fields 的值都是文字`;
 	}
 	if (!notices.every((n) => (n as JsonObject)["threadScope"] === undefined || (n as JsonObject)["threadScope"] === "module")) return `notices 的 threadScope 只能是 module（不写就是这个 feed 自己的线程）`;
+	if (!notices.every((n) => (n as JsonObject)["threadTitle"] === undefined || typeof (n as JsonObject)["threadTitle"] === "string")) return `notices 的 threadTitle 要是文字`;
 	if (cursor !== undefined && typeof cursor !== "string") return `cursor 要是文字，收到 ${JSON.stringify(cursor)}`;
 	const { alerts = [], problem } = output;
 	if (!Array.isArray(alerts) || !alerts.every((a) => isObject(a) && ["id", "text", "at"].every((f) => typeof a[f] === "string" && a[f] !== "") && (a["fold"] === undefined || (isObject(a["fold"]) && typeof a["fold"]["key"] === "string" && ["up", "down"].includes(a["fold"]["side"] as string))))) {
@@ -158,7 +159,7 @@ export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: F
 			const text = fill(template, n.fields);
 			if (line !== undefined && ignored.some((pattern) => pattern.test(text))) return [];
 			// The feed's own id and thread stay as they are: a task opened from the trigger finds the stored row by them.
-			return [{ id: n.id, thread: n.thread ?? entry.name, ...(n.threadScope === "module" && { threadOwner: module }), body: line === undefined ? text : release(line, n.fields) }];
+			return [{ id: n.id, thread: n.thread ?? entry.name, ...(n.threadScope === "module" && { threadOwner: module }), ...(n.threadTitle !== undefined && { threadTitle: n.threadTitle }), body: line === undefined ? text : release(line, n.fields) }];
 		});
 		for (const n of notices) ports.submit({ source, ...n, at: ports.now(), reach });
 		ports.problem(source, collected.problem);

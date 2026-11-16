@@ -183,6 +183,21 @@ test("触发写了 threadScope: module：线程挂在模块名下，同一模块
 	]);
 });
 
+test("触发写了 threadTitle：交给宿主时带着线程的标题；不是文字时这一轮失败", async (t) => {
+	const { root, pkg } = taxCopy(t);
+	const feed = join(pkg, "feeds", "brokerage-statements");
+	const descriptor = JSON.parse(readFileSync(join(feed, "feed.json"), "utf8"));
+	writeFileSync(join(feed, "feed.json"), JSON.stringify({ ...descriptor, notice: "{{line}}" }));
+	writeFileSync(join(feed, "index.ts"), `export default () => ({ notices: [{ id: "a", thread: "VTI:2026-11-13", threadTitle: "VTI 今天的提醒", fields: { line: "到档" } }, { id: "b", thread: "x", fields: { line: "没标题" } }] });\n`);
+	const submitted: FeedNotice[] = [];
+	const ports = { data: instanceData(join(root, "state")), submit: (n: FeedNotice) => void submitted.push(n), alert: () => true, problem: () => {}, secret: () => "token", now: () => 0 };
+	assert.deepEqual(await runFeed(brokerage(root), [], ports), { ok: true, records: 0, notices: 2 });
+	assert.deepEqual(submitted.map((n) => n.threadTitle), ["VTI 今天的提醒", undefined]);
+	writeFileSync(join(feed, "index.ts"), `export default () => ({ notices: [{ id: "c", thread: "x", threadTitle: 3, fields: {} }] });\n`);
+	const bad = await runFeed(brokerage(root), [], ports);
+	assert.match(bad.ok ? "" : bad.note, /threadTitle 要是文字/);
+});
+
 test("threadScope 只认 module：别的值这一轮失败，说出要什么", async (t) => {
 	const { root, pkg } = taxCopy(t);
 	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ notices: [{ id: "a", thread: "x", threadScope: "host", fields: {} }] });\n`);

@@ -219,7 +219,7 @@ export class Host {
 		const data = instanceData(options.stateDir);
 		const feedPorts: Omit<FeedPorts, "problem"> = {
 			data,
-			submit: ({ source, id, thread, threadOwner, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(threadOwner ?? source, thread) }], sender: source, body, occurredAt: at, ...(reach === "released" && { announce: true }) }),
+			submit: ({ source, id, thread, threadOwner, threadTitle, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(threadOwner ?? source, thread), ...(threadTitle !== undefined && { title: threadTitle }) }], sender: source, body, occurredAt: at, ...(reach === "released" && { announce: true }) }),
 			alert: (module, alert) => this.#postModuleAlert(module, alert),
 			badge: (module, { key, text, at }) => {
 				const occurredAt = Date.parse(at);
@@ -311,7 +311,7 @@ export class Host {
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), sayQuoting: (text, lineId) => host.sayQuoting(text, lineId), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation(), switchModule: (name, on) => host.switchModule(name, on) }, loadToken(options.stateDir, "web-token", host.#log), host.#log, options.webHosts ?? []);
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), sayQuoting: (text, lineId) => host.sayQuoting(text, lineId), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation(), switchModule: (name, on) => host.switchModule(name, on), endWatching: (ticketId) => host.endWatching(ticketId), seen: (ticketId) => host.seen(ticketId) }, loadToken(options.stateDir, "web-token", host.#log), host.#log, options.webHosts ?? []);
 			await host.#web.listen(options.webPort);
 		}
 		try {
@@ -452,6 +452,19 @@ export class Host {
 	snapshot() {
 		const { rows, ...board } = this.#boardState();
 		return { conversation: this.kernel.conversation(CONVERSATION_LINES), cleared: this.kernel.cleared(CONVERSATION_LINES), board: rows, ...board };
+	}
+
+	/** The web page's 「结束」 on a ticket that only waits on its threads. */
+	endWatching(ticketId: string): boolean {
+		const { ok } = this.kernel.endWatching(ticketId);
+		if (ok) this.#changed();
+		return ok;
+	}
+
+	/** The web page has the ticket open, so its reports so far are read. */
+	seen(ticketId: string): void {
+		this.kernel.markSeen(ticketId);
+		this.#changed();
 	}
 
 	switchModule(name: string, on: boolean): boolean {
