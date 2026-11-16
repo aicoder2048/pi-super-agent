@@ -32,6 +32,7 @@ export const STAGE_PHRASE = {
 	awaiting_answer: "待回复",
 	awaiting_review: "待确认",
 	blocked_or_failed: "受阻",
+	watching: "盯着",
 	queued: "排队中",
 	running: "进行中",
 	idle: "等待中",
@@ -39,13 +40,14 @@ export const STAGE_PHRASE = {
 	stopped: "已停止",
 };
 
-/** @typedef {"needsYou" | "doing" | "done"} Group */
+/** @typedef {"needsYou" | "onWatch" | "doing" | "done"} Group */
 
 /** @type {Record<DashboardRow["stage"], Group>} */
 const GROUP = {
 	awaiting_answer: "needsYou",
 	awaiting_review: "needsYou",
 	blocked_or_failed: "needsYou",
+	watching: "onWatch",
 	queued: "doing",
 	running: "doing",
 	idle: "doing",
@@ -262,6 +264,9 @@ function runCard(run, sending) {
  * @property {string} latest
  * @property {string} outside the host's count of writes outside the output root, or ""
  * @property {boolean} canStop
+ * @property {boolean} canEnd 「结束」: the task only waits on its threads, so one click ends it
+ * @property {string} waits 「在等：…」, from the threads' titles and modules; "" when the task waits on none
+ * @property {boolean} unread
  * @property {Choice | null} choice
  * @property {RunCard | null} run
  */
@@ -279,9 +284,18 @@ function card(row, now, sending) {
 		latest: row.question?.text ?? row.latestSummary ?? "已开始，暂无进展",
 		outside: outsideLine(row.outside),
 		canStop: GROUP[row.stage] === "doing",
+		canEnd: GROUP[row.stage] === "onWatch",
+		waits: GROUP[row.stage] === "onWatch" ? waitsLine(row.waitsFor) : "",
+		unread: row.unread,
 		choice: choiceOf(row.question, sending),
 		run: runCard(row.runAsk, sending),
 	};
+}
+
+/** @param {DashboardRow["waitsFor"]} targets */
+function waitsLine(targets) {
+	if (!targets.length) return "";
+	return `在等：${targets.map((t) => (t.title ? `${t.title}（${t.from}）` : `${t.from}的新消息`)).join("、")}`;
 }
 
 /** The host's question about the member cap. It belongs to no task, so it has no helper and nothing to open; `source` stands where a task card names its helper. @typedef {{ title: string, source: string, stage: string, latest: string, choice: Choice }} CapCard */
@@ -328,7 +342,7 @@ export const answerBody = (reportId, option) => JSON.stringify({ answer: { repor
 /** @param {View} view @param {number} now @param {Sending} [sending] */
 export function leftColumn(view, now, sending = new Map()) {
 	/** @type {Record<Group, TaskCard[]>} */
-	const groups = { needsYou: [], doing: [], done: [] };
+	const groups = { needsYou: [], onWatch: [], doing: [], done: [] };
 	for (const row of view.rows) groups[groupOf(row)].push(card(row, now, sending));
 	const hits = view.today?.bySource ?? {};
 	const cap = capCard(view, sending);
@@ -338,6 +352,8 @@ export function leftColumn(view, now, sending = new Map()) {
 		needsYouCount,
 		needsYouLine: `待你处理 · ${needsYouCount}`,
 		needsYou: groups.needsYou,
+		onWatchLine: `盯着的事 · ${groups.onWatch.length}`,
+		onWatch: groups.onWatch,
 		doing: groups.doing,
 		done: groups.done.reverse(),
 		watching: view.watching.map((w) => ({
@@ -599,6 +615,15 @@ function crewOf(row) {
 
 /** @param {string} title */
 export const stopSentence = (title) => `停止任务「${title}」`;
+
+/** @param {string} ticketId */
+export const endBody = (ticketId) => JSON.stringify({ ticket: ticketId });
+
+/** What 追问 quotes: the chief of staff's latest line about the task, or null when the conversation shows none. @param {View} view @param {string} ticketId */
+export const followUpLine = (view, ticketId) => [...view.lines.values()].findLast((l) => l.who === "router" && l.ticketId === ticketId) ?? null;
+
+/** What 追问 puts in the composer when there is no line to quote. @param {string} title */
+export const followUpSentence = (title) => `关于任务「${title}」：`;
 
 /**
  * @typedef {object} Step
@@ -1004,6 +1029,7 @@ export const toggleEarlier = (view) => {
 
 export const CLEAR_FAILED = "清屏没有成功，请稍后再试。";
 export const SWITCH_FAILED = "模块开关没有切换成功，请稍后再试。";
+export const END_FAILED = "没能结束这个任务：它可能又开始干活了，看看卡片再说。";
 
 /** @param {View} view */
 const knownLines = (view) => [...(view.cleared?.lines ?? []), ...view.lines.values()];

@@ -27,7 +27,7 @@ function row(over: Partial<DashboardRow> = {}): DashboardRow {
 	return {
 		id: "tkt_abcd1234", title: "查天气", stage: "running", basis: "request", latestSummary: null, model: "openai-codex/gpt-6.1-sol",
 		fellBack: false, toolCalls: 2, tokensIn: 1200, tokensOut: 300, elapsedMs: 5000, lastProgressAt: null, question: null, stall: null,
-		helper: { name: "青檀", role: "conversation", seq: 1 }, dispatchedTo: null, workerState: "running", startedAt: 0, endedAt: null, ...over,
+		helper: { name: "青檀", role: "conversation", seq: 1 }, dispatchedTo: null, workerState: "running", startedAt: 0, endedAt: null, waitsFor: [], unread: false, ...over,
 	};
 }
 
@@ -74,13 +74,55 @@ test("页面：每种消息只报告它改动的区域", () => {
 	assert.deepEqual(page.applyMessage(view, board([]), 0), ["conversation", "left", "header"], "看板带着对话里每句话的去向");
 });
 
-test("页面：每个任务恰好进一个分组：待回复、待确认、受阻进待你处理，排队中、进行中、等待中进进行中，已完成和已停止进已完成", () => {
-	const stages: DashboardRow["stage"][] = ["awaiting_answer", "awaiting_review", "blocked_or_failed", "queued", "running", "idle", "closed", "stopped"];
+test("页面：每个任务恰好进一个分组：待回复、待确认、受阻进待你处理，盯着的进盯着的事，排队中、进行中、等待中进进行中，已完成和已停止进已完成", () => {
+	const stages: DashboardRow["stage"][] = ["awaiting_answer", "awaiting_review", "blocked_or_failed", "watching", "queued", "running", "idle", "closed", "stopped"];
 	const left = page.leftColumn(withRows(stages.map((stage) => row({ id: `tkt_${stage}`, stage }))), 0);
 	const ids = (cards: { id: string }[]) => cards.map((c) => c.id.slice(4));
 	assert.deepEqual(ids(left.needsYou), ["awaiting_answer", "awaiting_review", "blocked_or_failed"]);
+	assert.deepEqual(ids(left.onWatch), ["watching"]);
 	assert.deepEqual(ids(left.doing), ["queued", "running", "idle"]);
 	assert.deepEqual(ids(left.done), ["stopped", "closed"], "后开的在前");
+	assert.equal(left.onWatchLine, "盯着的事 · 1");
+	assert.equal(left.needsYouLine, "待你处理 · 3");
+});
+
+const amd = (over: Partial<DashboardRow> = {}) =>
+	row({ id: "tkt_amd", title: "分析 AMD 到档走势", stage: "watching", basis: "rule", latestSummary: "AMD 冲到 260", workerState: "idle", waitsFor: [{ title: "AMD 今天的盯盘提醒", from: "股票技术分析" }], unread: false, ...over });
+
+test("页面：盯着的事的卡片写「在等：线程标题（模块）」，线程没有标题时写「在等：模块的新消息」，几条线程用顿号连起来", () => {
+	const two = [{ title: "AMD 今天的盯盘提醒", from: "股票技术分析" }, { title: null, from: "邮件" }];
+	const left = page.leftColumn(withRows([amd(), amd({ id: "tkt_two", waitsFor: two })]), 0);
+	assert.deepEqual(left.onWatch.map((c) => [c.waits, c.stage, c.why, c.latest]), [
+		["在等：AMD 今天的盯盘提醒（股票技术分析）", "盯着", "规则触发", "AMD 冲到 260"],
+		["在等：AMD 今天的盯盘提醒（股票技术分析）、邮件的新消息", "盯着", "规则触发", "AMD 冲到 260"],
+	]);
+	assert.equal(page.leftColumn(withRows([row()]), 0).doing[0].waits, "", "不盯线程的卡片没有这一行");
+	assert.equal(page.leftColumn(withRows([amd({ stage: "closed" })]), 0).done[0].waits, "", "结束了就不再写在等什么");
+});
+
+test("页面：盯着的事的卡片能结束、能追问，不能停止；别的分组的卡片不能结束", () => {
+	const left = page.leftColumn(withRows([amd(), row({ id: "tkt_run" }), row({ id: "tkt_rev", stage: "awaiting_review" })]), 0);
+	assert.deepEqual(left.onWatch.map((c) => [c.canEnd, c.canStop]), [[true, false]]);
+	assert.deepEqual([...left.needsYou, ...left.doing].map((c) => c.canEnd), [false, false]);
+	assert.deepEqual(JSON.parse(page.endBody("tkt_amd")), { ticket: "tkt_amd" });
+});
+
+test("页面：任务有没看过的汇报时卡片标未读，看过就不标", () => {
+	const left = page.leftColumn(withRows([amd({ unread: true }), amd({ id: "tkt_seen" })]), 0);
+	assert.deepEqual(left.onWatch.map((c) => c.unread), [true, false]);
+});
+
+test("页面：追问引用幕僚长关于这个任务说的最后一句；对话里没有这样一句时为空，按钮就在输入框里填一句带标题的话", () => {
+	const view = withRows([amd()]);
+	page.applyMessage(view, snapshot({ board: [amd()], conversation: [
+		{ id: "rpl_1", who: "router", text: "AMD 到档了，开了任务", at: 1, ticketId: "tkt_amd" },
+		{ id: "rpl_2", who: "router", text: "AMD 冲到 260", at: 2, ticketId: "tkt_amd" },
+		{ id: "rpl_3", who: "router", text: "别的事", at: 3, ticketId: "tkt_other" },
+		{ id: "trg_4", who: "user", text: "好的", at: 4 },
+	] }), 0);
+	assert.equal(page.followUpLine(view, "tkt_amd")?.id, "rpl_2");
+	assert.equal(page.followUpLine(view, "tkt_none"), null);
+	assert.equal(page.followUpSentence("分析 AMD 到档走势"), "关于任务「分析 AMD 到档走势」：");
 });
 
 test("页面：待你处理的卡片先显示问题，受阻的显示最近汇报；进行中的显示最近汇报，没有时说已开始", () => {
@@ -1885,6 +1927,59 @@ test("网关：处理请求时意外出错答 500，不带内部细节，记一�
 	assert.equal(logs.length, 2);
 	assert.match(logs[0], /内部秘密/, "日志里有原因，便于排查");
 	assert.equal((await request(`${url.origin}/?token=${token}`)).status, 200, "之后照常服务");
+});
+
+async function watchingTask(web: Awaited<ReturnType<typeof watchHost>>) {
+	const { host, spawner } = web;
+	host.kernel.submitTrigger({ source: "generic", externalId: "amd-1", threads: [{ id: "thr_generic:AMD", title: "AMD 今天的盯盘提醒" }], sender: "feed", body: "AMD 到档", occurredAt: Date.now() });
+	const { triggerId } = host.kernel.submitTrigger({ source: "conversation", externalId: "盯 AMD", threads: [{ id: "thr_conversation" }], sender: "user", body: "盯 AMD", occurredAt: Date.now() });
+	const [opened] = host.kernel.route([{ kind: "open_ticket", basis: "request", triggerId, title: "盯 AMD", brief: "盯 AMD", threads: ["thr_generic:AMD"] }]);
+	assert.ok(opened.ok);
+	const id = opened.ticketId!;
+	host.dispatcher.kick();
+	await until(() => spawner.workers.has(id), "Worker");
+	const worker = spawner.workers.get(id)!;
+	await worker.report({ status: "ready", summary: "AMD 冲到 260", waiting: true });
+	worker.settle();
+	await until(() => host.kernel.getTicket(id)!.stage === "watching", "盯着");
+	return id;
+}
+
+test("网关：POST /end 一次结束盯着的任务，回 204 并推看板；不是盯着的任务 409；正文不对 400；GET 405；要 token 和本机 Origin", async (t) => {
+	const web = await watchHost(t);
+	const id = await watchingTask(web);
+	const stream = web.events();
+	await until(() => stream.got.length > 0, "快照");
+	const end = (body: string, over: { token?: string; origin?: string } = {}) =>
+		request(web.at("/end", over.token ?? web.token), { method: "POST", body, headers: { "content-type": "application/json", origin: over.origin ?? web.url.origin } });
+	assert.equal((await end(JSON.stringify({ ticket: id }), { token: "" })).status, 401);
+	assert.equal((await end(JSON.stringify({ ticket: id }), { origin: "http://evil.example" })).status, 403);
+	for (const body of ["{}", JSON.stringify({ ticket: "../x" }), JSON.stringify({ ticket: id, x: 1 }), "[]"]) assert.equal((await end(body)).status, 400, body);
+	assert.equal((await request(web.at("/end"))).status, 405);
+	const { id: busy } = await web.open("读网页");
+	assert.equal((await end(JSON.stringify({ ticket: busy }))).status, 409);
+	assert.equal(web.host.kernel.getTicket(id)!.stage, "watching");
+	assert.equal((await end(JSON.stringify({ ticket: id }))).status, 204);
+	assert.equal(web.host.kernel.getTicket(id)!.stage, "closed");
+	await until(() => ofType(stream.got, "board").some((b) => b.rows.find((r) => r.id === id)?.stage === "closed"), "看板帧");
+});
+
+test("网关：网页打开一个任务就记作看过，卡片不再标未读；关掉时再记一次，开着时来的汇报也算看过", async (t) => {
+	const web = await watchHost(t);
+	const id = await watchingTask(web);
+	const unread = () => web.host.kernel.listTickets().find((r) => r.id === id)!.unread;
+	assert.equal(unread(), true);
+	const stream = web.watch(id);
+	await until(() => stream.got.length === 1, "历史");
+	assert.equal(unread(), false);
+	web.host.kernel.submitTrigger({ source: "generic", externalId: "amd-2", threads: [{ id: "thr_generic:AMD" }], sender: "feed", body: "AMD 又到档", occurredAt: Date.now() });
+	web.host.dispatcher.kick();
+	await until(() => web.spawner.workers.get(id)!.inputs.some((i) => i.includes("AMD 又到档")), "第二条消息");
+	await new Promise((r) => setTimeout(r, 5));
+	await web.spawner.workers.get(id)!.report({ status: "ready", summary: "回落了", waiting: true });
+	assert.equal(unread(), true);
+	stream.close();
+	await until(() => !unread(), "关掉后算看过");
 });
 
 test("网关：/transcript 没有 token 401；ticket 不像任务编号 400；没有这个任务时历史为空", async (t) => {
