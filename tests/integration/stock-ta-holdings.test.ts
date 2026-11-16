@@ -74,7 +74,7 @@ test("止损：没设止损线时按成本 -8%，当天最低价碰到就算；�
 	assert.deepEqual(r!.hits.map((h) => [h.rule, h.level, h.lean, h.fact]), [["stop-loss", 6, null, "触到止损线"]], "昨收已在成本下，跌破成本不再算");
 	assert.deepEqual(r!.alerts.map((a) => [a.id, a.push ?? "ring"]), [[`stop-loss:NVDA:${DATE}`, "ring"]]);
 	assert.equal(r!.alerts[0]!.text, "NVDA 触到你的止损线 138.00（没设止损线，按成本 150.00 的 -8%）。当天最低 137.80，现价 139.10，当天跌 -4.20%。报价时间 10:41 ET（延迟行情）。");
-	assert.deepEqual(r!.notices.map((n) => [n.id, n.thread, n.threadScope, n.fields.rule, n.fields.level, n.fields.plan]), [[`stop-loss:NVDA:${DATE}`, `NVDA:${DATE}:holding`, "module", "stop-loss", "6", "holding-ask"]]);
+	assert.deepEqual(r!.notices.map((n) => [n.id, n.thread, n.threadScope, n.threadTitle, n.fields.rule, n.fields.level, n.fields.plan]), [[`stop-loss:NVDA:${DATE}`, `NVDA:${DATE}:holding`, "module", "NVDA 今天的持仓提醒", "stop-loss", "6", "holding-ask"]]);
 	assert.equal(r!.notices[0]!.fields.line, "NVDA 触到你的止损线。现价 139.10，当天跌 -4.20%。报价时间 10:41 ET（延迟行情）。");
 });
 

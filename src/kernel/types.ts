@@ -60,6 +60,7 @@ export const STAGES = [
 	"awaiting_answer",
 	"awaiting_review",
 	"blocked_or_failed",
+	"watching",
 	"queued",
 	"idle",
 	"running",
@@ -76,7 +77,8 @@ export interface Clock {
 export type TriggerSubmission = {
 	source: string;
 	externalId: string;
-	threads: { id: string; title?: string }[];
+	/** `until`: when the thread is over, as the source declares it; a task that waits only on threads past theirs ends. */
+	threads: { id: string; title?: string; until?: number }[];
 	sender: string;
 	body: string;
 	occurredAt: number;
@@ -238,6 +240,7 @@ export interface Ticket {
 	bgRunning: boolean;
 	stoppedAt: number | null;
 	closedAt: number | null;
+	closedBy: ClosedBy | null;
 	lastProgressAt: number | null;
 	startedAt: number | null;
 	model: string | null;
@@ -313,7 +316,25 @@ export interface DashboardRow {
 	moduleOff: boolean;
 	/** The ticket's latest card asking to run a command: while it is open or running, and once settled until the ticket reports again. */
 	runAsk: RunAsk | null;
+	/** The threads the ticket subscribes, in the order it subscribed them; empty when it subscribes none. */
+	waitsFor: WaitTarget[];
+	/** A report other than progress came after the user last had the ticket open on the web page. */
+	unread: boolean;
+	/** Null while the ticket is open, and when its Worker's report closed it. */
+	closedBy: ClosedBy | null;
 }
+
+/** A thread a ticket waits on, as the user reads it: its own title when its source gave one, and the module (or source) it comes from. */
+export interface WaitTarget {
+	title: string | null;
+	from: string;
+	/** When the source said the thread is over; null when it never said. */
+	until: number | null;
+}
+
+export const CLOSED_BY = ["user", "expiry"] as const;
+/** Who closed a ticket other than its own Worker: the user's 「结束」, or the end of every thread it waited on. */
+export type ClosedBy = (typeof CLOSED_BY)[number];
 
 export interface OutsideTally {
 	/** Exact write and edit calls. */

@@ -235,6 +235,7 @@ test("分档：每轮取已经到达的最高一档，跳空直接到 8% 只报 
 	assert.equal(feed.lines[0]!.push, undefined, "第二档响铃");
 	assert.equal(feed.notices[0]!.body, `${feed.alerts()[0]}（规则 move-2，层级 5，做法 band-move）`, "触发正文是那一行，加上规则、层级和做法");
 	assert.equal(feed.notices[0]!.thread, `NVDA:${DAY}`);
+	assert.equal(feed.notices[0]!.threadTitle, "NVDA 今天的盯盘提醒", "线程带着给人看的标题，网页写「在等：…」用");
 });
 
 test("个股第一档：静音一行加一条触发（三人小组）；第二档：响铃一行，触发进同一条线程", async (t) => {

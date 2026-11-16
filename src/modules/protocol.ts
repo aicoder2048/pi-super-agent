@@ -185,9 +185,11 @@ export interface Collected {
 	/**
 	 * Values for the placeholders of the feed's `notice`. One trigger per entry, deduped by `id`. `threadScope: "module"` puts the
 	 * thread under the module (`thr_<module>:<thread>`) instead of the feed, so the module's feeds share it: a trigger from one feed
-	 * reaches the task another feed's trigger opened on the same thread.
+	 * reaches the task another feed's trigger opened on the same thread. `threadTitle` names the thread for the user, as the web page's
+	 * 「在等：…」 line on a task that waits on it. `threadUntil` (an ISO time) says when the thread is over: a task that waits only on
+	 * threads past theirs ends by itself. A later notice on the same thread may move it; one without it keeps the earlier one.
 	 */
-	notices?: readonly { id: string; thread?: string; threadScope?: "module"; fields: Readonly<Record<string, string>> }[];
+	notices?: readonly { id: string; thread?: string; threadScope?: "module"; threadTitle?: string; threadUntil?: string; fields: Readonly<Record<string, string>> }[];
 	/**
 	 * Lines the host posts to the user before any trigger, with no Router in between (ADR-0017), deduped by `id`. A `day-move`
 	 * condition on `fold.key` that fires the same beat in the same direction joins this line, so one move reads as one line.

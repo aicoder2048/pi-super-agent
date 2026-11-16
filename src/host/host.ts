@@ -10,7 +10,7 @@ import { isCapAskId } from "../kernel/cap-ask.ts";
 import { isRunAskId, RUN_TIMEOUT_MS, type RunAsk } from "../kernel/run-ask.ts";
 import { approvedEnv, runApproved, type ApprovedRun } from "./run-approved.ts";
 import { msUntilNextNewYorkDay } from "../kernel/helper-names.ts";
-import { Kernel, nextStallAt } from "../kernel/kernel.ts";
+import { Kernel, nextStallAt, watchEndsAt } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
 import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type DashboardRow, type Disposition, type HostLine, type HostLinePost, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
 import type { TriggerSubmission } from "../kernel/types.ts";
@@ -219,7 +219,7 @@ export class Host {
 		const data = instanceData(options.stateDir);
 		const feedPorts: Omit<FeedPorts, "problem"> = {
 			data,
-			submit: ({ source, id, thread, threadOwner, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(threadOwner ?? source, thread) }], sender: source, body, occurredAt: at, ...(reach === "released" && { announce: true }) }),
+			submit: ({ source, id, thread, threadOwner, threadTitle, threadUntil, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(threadOwner ?? source, thread), ...(threadTitle !== undefined && { title: threadTitle }), ...(threadUntil !== undefined && { until: threadUntil }) }], sender: source, body, occurredAt: at, ...(reach === "released" && { announce: true }) }),
 			alert: (module, alert) => this.#postModuleAlert(module, alert),
 			badge: (module, { key, text, at }) => {
 				const occurredAt = Date.parse(at);
@@ -311,7 +311,7 @@ export class Host {
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), sayQuoting: (text, lineId) => host.sayQuoting(text, lineId), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation(), switchModule: (name, on) => host.switchModule(name, on) }, loadToken(options.stateDir, "web-token", host.#log), host.#log, options.webHosts ?? []);
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), sayQuoting: (text, lineId) => host.sayQuoting(text, lineId), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation(), switchModule: (name, on) => host.switchModule(name, on), endWatching: (ticketId) => host.endWatching(ticketId), seen: (ticketId) => host.seen(ticketId) }, loadToken(options.stateDir, "web-token", host.#log), host.#log, options.webHosts ?? []);
 			await host.#web.listen(options.webPort);
 		}
 		try {
@@ -454,6 +454,19 @@ export class Host {
 		return { conversation: this.kernel.conversation(CONVERSATION_LINES), cleared: this.kernel.cleared(CONVERSATION_LINES), board: rows, ...board };
 	}
 
+	/** The web page's 「结束」 on a ticket that only waits on its threads. */
+	endWatching(ticketId: string): boolean {
+		const { ok } = this.kernel.endWatching(ticketId);
+		if (ok) this.#changed();
+		return ok;
+	}
+
+	/** The web page has the ticket open, so its reports so far are read. */
+	seen(ticketId: string): void {
+		this.kernel.markSeen(ticketId);
+		this.#changed();
+	}
+
 	switchModule(name: string, on: boolean): boolean {
 		if (!this.#modules?.setSwitch(name, on)) return false;
 		this.#changed();
@@ -468,6 +481,7 @@ export class Host {
 
 	#boardState(): BoardState {
 		this.#expireRunAsks();
+		this.kernel.endExpiredWatches();
 		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard(), watching: this.#watchingNow(), modules: this.#moduleCards(), alerts: this.kernel.alertsToday(), health: this.#health.board() };
 	}
 
@@ -613,7 +627,7 @@ export class Host {
 	}
 
 	#pushBoardWhenDue(rows: DashboardRow[]): void {
-		const due = [nextStallAt(rows, this.kernel.config.stuckMs), ...rows.map((r) => (r.runAsk?.state === "open" ? r.runAsk.expiresAt : null))].filter((at) => at !== null);
+		const due = [nextStallAt(rows, this.kernel.config.stuckMs), ...rows.map((r) => (r.runAsk?.state === "open" ? r.runAsk.expiresAt : null)), ...rows.map(watchEndsAt)].filter((at) => at !== null);
 		const at = due.length ? Math.min(...due) : null;
 		if (at === this.#dueAt) return;
 		clearTimeout(this.#dueTimer);

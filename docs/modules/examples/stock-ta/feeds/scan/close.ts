@@ -4,7 +4,7 @@
  * resonance, and grades each hit once: a hit already recorded today is never graded again.
  */
 import { badgeAlerts, type BadgeAlert } from "../../badges.ts";
-import { resonate, type Hit } from "../../hits.ts";
+import { noticeThread, resonate, type Hit } from "../../hits.ts";
 import { COMBOS, effective, lineOf, NOTES, opensTask, ruleOf, scopeOf, sideOf, taRow, WATCH_RULES, type Lean, type Line, type Plan, type RuleLevels, type WatchRule } from "../../watch-rules.ts";
 
 /** The fields of `ta`'s `new_signals` rows (`record_signal` at the pinned commit) that grading reads. */
@@ -34,7 +34,7 @@ export type CloseInput = {
 	quiet: boolean;
 };
 export type Alert = { id: string; text: string; at: string; push?: "silent" } | BadgeAlert;
-export type Notice = { id: string; thread: string; threadScope: "module"; fields: { line: string; rule: string; level: string; plan: Plan } };
+export type Notice = ReturnType<typeof noticeThread> & { id: string; fields: { line: string; rule: string; level: string; plan: Plan } };
 export type CloseResult = { hits: Hit[]; alerts: Alert[]; notices: Notice[] };
 
 type Finding = { lean: Lean | null; fact: string };
@@ -205,5 +205,5 @@ function deliver(hit: Hit, delivery: Delivery, quiet: boolean, out: CloseResult)
 		return;
 	}
 	if (loud) out.alerts.push({ id: hit.id, text: hit.text, at: hit.at, ...(delivery.line === "silent" && { push: "silent" as const }) });
-	if (task) out.notices.push({ id: hit.id, thread: `${hit.symbol}:${hit.date}`, threadScope: "module", fields: { line: hit.text, rule: hit.rule, level: String(hit.level), plan: delivery.plan! } });
+	if (task) out.notices.push({ id: hit.id, ...noticeThread(`${hit.symbol}:${hit.date}`), fields: { line: hit.text, rule: hit.rule, level: String(hit.level), plan: delivery.plan! } });
 }

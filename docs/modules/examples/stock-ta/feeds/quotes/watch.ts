@@ -5,7 +5,7 @@
  */
 import { badgeAlerts, type BadgeAlert } from "../../badges.ts";
 import { nyTime, regularCloseAt, regularOpenAt } from "../../market-days.ts";
-import { opened, resonate, type Hit } from "../../hits.ts";
+import { noticeThread, opened, resonate, type Hit } from "../../hits.ts";
 import { entered, HOLDING_RULES, type Holding } from "../../holdings.ts";
 import type { Quote } from "../../massive.ts";
 import { COMBOS, effective, lineOf, opensTask, scopeOf, TIERS, VIXY, WATCH_RULES, WHIPSAW, type Effective, type Lean, type Line, type Plan, type RuleLevels, type WatchRule } from "../../watch-rules.ts";
@@ -30,8 +30,7 @@ export type Context = {
 	peaks?: Readonly<Record<string, number | null | undefined>>;
 };
 export type Alert = { id: string; text: string; at: string; fold?: { key: string; side: Side }; push?: "silent" } | BadgeAlert;
-/** `threadScope: "module"`: the module's feeds share the symbol's thread for the day, so a close-of-day hit joins the task a band opened. */
-export type Notice = { id: string; thread: string; threadScope: "module"; fields: { line: string; rule: string; level: string; plan: Plan } };
+export type Notice = ReturnType<typeof noticeThread> & { id: string; fields: { line: string; rule: string; level: string; plan: Plan } };
 export type Beat = { hits: Hit[]; alerts: Alert[]; notices: Notice[] };
 
 // Prices are cents, so a move of exactly a band can compute a hair below it (609 / 600 → 1.4999…%).
@@ -139,7 +138,7 @@ function bands(day: DayState, q: Quote, ctx: Context, out: Beat): void {
 	if (task === undefined) return;
 	const vixy = isIndex(q.symbol) ? day.hits.find((h) => h.rule === "vixy-1") : undefined;
 	const note = market !== undefined ? `（大盘日：${market.symbol} 今天已${market.fact}，这只票并进指数的任务，汇报里逐只列出）` : vixy !== undefined ? `（VIXY 同日${vixy.fact}）` : "";
-	out.notices.push({ id, thread: `${market?.symbol ?? q.symbol}:${day.date}`, threadScope: "module", fields: { line: `${line}${note}`, rule: task.rule.id, level: String(task.level), plan: task.rule.plan } });
+	out.notices.push({ id, ...noticeThread(`${market?.symbol ?? q.symbol}:${day.date}`), fields: { line: `${line}${note}`, rule: task.rule.id, level: String(task.level), plan: task.rule.plan } });
 }
 
 function whipsawFlips(rule: WatchRule, symbol: string, lean: Lean | null, ctx: Context): number {
@@ -248,7 +247,7 @@ function deliver({ hit, delivery }: Graded, ctx: Context, out: Beat): void {
 		return;
 	}
 	if (loud) out.alerts.push({ id: hit.id, text: hit.text, at: hit.at, ...(delivery.line === "silent" && { push: "silent" as const }) });
-	if (task) out.notices.push({ id: hit.id, thread: hit.notice?.thread ?? `${hit.symbol}:${hit.date}`, threadScope: "module", fields: { line: hit.notice?.line ?? hit.text, rule: hit.rule, level: String(hit.level), plan: delivery.plan! } });
+	if (task) out.notices.push({ id: hit.id, ...noticeThread(hit.notice?.thread ?? `${hit.symbol}:${hit.date}`), fields: { line: hit.notice?.line ?? hit.text, rule: hit.rule, level: String(hit.level), plan: delivery.plan! } });
 }
 
 /** Mutates `day`: its new hits are appended and the bands it reached are remembered. */

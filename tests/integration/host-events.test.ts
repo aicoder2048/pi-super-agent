@@ -47,7 +47,7 @@ test("落到已订阅线程的触发直达 Worker，Router 没有模型调用", 
 	const quote = (id: string, body: string) =>
 		host.kernel.submitTrigger({ source: "toy-market", externalId: id, threads: [{ id: "thr_toy-market:TOYX" }], sender: "feed", body, occurredAt: Date.now() });
 	quote("q1", "TOYX 价格 94.8，涨跌 -5.2%，成交量 12 股");
-	await until(() => host.kernel.listTickets()[0]?.stage === "idle", "Worker 汇报后空闲");
+	await until(() => host.kernel.listTickets()[0]?.stage === "watching", "Worker 汇报后空闲，盯着线程");
 	const callsBefore = router.calls();
 	quote("q2", "TOYX 价格 93.0，涨跌 -7.0%，成交量 30 股");
 	await until(() => spawner.workers.get(host.kernel.listTickets()[0].id)!.inputs.some((i) => i.includes("93.0")), "后续报价到达 Worker");

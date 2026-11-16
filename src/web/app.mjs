@@ -1,7 +1,7 @@
 // @ts-check
 
 import {
-	BAR_HINT, CLEAR_FAILED, SWITCH_FAILED, moduleBody, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
+	BAR_HINT, CLEAR_FAILED, SWITCH_FAILED, END_FAILED, endBody, followUpLine, followUpSentence, moduleBody, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
 	questionOf, choiceOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
 	healthBanner, laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory, firstPanel, panelStep, overviewTabs, phoneScreen, panelText, savedPanel,
 } from "./view.mjs";
@@ -255,7 +255,10 @@ function mount(doc) {
 		node.setAttribute("aria-current", String(watching?.watch.ticketId === card.id));
 		const head = el("div", "head");
 		head.append(avatarNode(card.avatar), el("div", "title", card.title));
-		node.append(head, el("div", "by", card.helper), el("div", "why", `${card.why} · ${card.stage}`), md("latest", card.latest));
+		if (card.unread) head.append(el("span", "unread", "新"));
+		node.append(head, el("div", "by", card.helper), el("div", "why", `${card.why} · ${card.stage}`));
+		if (card.waits) node.append(el("div", "waits", card.waits));
+		node.append(md("latest", card.latest));
 		if (card.outside) node.append(el("div", "outside", card.outside));
 		if (card.crew) node.append(crewNode(card.crew));
 		if (card.choice) {
@@ -274,6 +277,27 @@ function mount(doc) {
 				composer.focus();
 			});
 			row.append(el("span", "spacer"), stop);
+			node.append(row);
+		}
+		if (card.canEnd) {
+			const row = el("div", "row");
+			const ask = el("button", "follow", "追问");
+			ask.type = "button";
+			ask.addEventListener("click", (e) => {
+				e.stopPropagation();
+				if (getComputedStyle($("bottom")).display !== "none") showPanel(panelStep(panel, { kind: "place", place: "chat" }));
+				const line = followUpLine(view, card.id);
+				setQuote(line);
+				if (!line) composer.value = followUpSentence(card.title);
+			});
+			const end = el("button", "stop", "结束");
+			end.type = "button";
+			end.addEventListener("click", (e) => {
+				e.stopPropagation();
+				/** @type {HTMLButtonElement} */ (end).disabled = true;
+				void endWatching(card.id);
+			});
+			row.append(el("span", "spacer"), ask, end);
 			node.append(row);
 		}
 		node.addEventListener("click", () => watch(card.id));
@@ -343,6 +367,19 @@ function mount(doc) {
 		return node;
 	};
 
+	/** @param {string} ticketId */
+	const endWatching = async (ticketId) => {
+		try {
+			const res = await fetch(`/end?${query}`, { method: "POST", headers: { "content-type": "application/json" }, body: endBody(ticketId), cache: "no-store", signal: AbortSignal.timeout(DEFAULT_ACK_TIMEOUT_MS) });
+			if (res.status === 401) setStatus("expired");
+			else if (!res.ok) setSay("rejected", res.status, END_FAILED);
+		} catch {
+			setSay("rejected", undefined, END_FAILED);
+		} finally {
+			renderLeft();
+		}
+	};
+
 	/** @param {string} name @param {boolean} on */
 	const switchModule = async (name, on) => {
 		switching.add(name);
@@ -404,6 +441,7 @@ function mount(doc) {
 		/** @type {HTMLElement} */ ($("bottom").querySelector(".badge")).textContent = left.needsYouCount ? String(left.needsYouCount) : "";
 		$("left").replaceChildren(
 			section(left.needsYouLine, [...(left.capCard ? [capCard(left.capCard)] : []), ...left.needsYou.map((c) => taskCard(c, "ask"))], "暂无待处理事项。", "warn"),
+			...(left.onWatch.length ? [section(left.onWatchLine, left.onWatch.map((c) => taskCard(c, "on-watch")), "")] : []),
 			section(`进行中 · ${left.doing.length}`, left.doing.map((c) => taskCard(c, "doing")), "暂无进行中的任务。"),
 		);
 	};

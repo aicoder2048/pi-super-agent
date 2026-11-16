@@ -156,7 +156,7 @@ function cardText(kernel: Kernel, notice: RouterNotice, rulesFor: (source: strin
 }
 
 const STAGE_NAME = {
-	awaiting_answer: "等回答", awaiting_review: "等验收", blocked_or_failed: "受阻/失败", queued: "排队",
+	awaiting_answer: "等回答", awaiting_review: "等验收", blocked_or_failed: "受阻/失败", watching: "盯着后续消息", queued: "排队",
 	idle: "空闲", running: "执行中", closed: "已结束", stopped: "已叫停",
 } as const;
 const RECENT_CLOSED = 3;

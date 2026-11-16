@@ -851,7 +851,7 @@ just drop disk-watch /Users "/Users 占用 93%"
 just log 5        # 看这条触发的去向
 ```
 
-`just drop` 的三个参数是来源、线程、正文。你自己的监控脚本可以调它，也可以直接往 `~/.pi-super-agent/inbox/` 写一个 `.json` 文件，内容是一个 JSON 对象，字段是 `source`、`thread`、`body`，可选 `threadTitle`、`sender`、`id`、`occurredAt`。来源名不能冒充对话。
+`just drop` 的三个参数是来源、线程、正文。你自己的监控脚本可以调它，也可以直接往 `~/.pi-super-agent/inbox/` 写一个 `.json` 文件，内容是一个 JSON 对象，字段是 `source`、`thread`、`body`，可选 `threadTitle`、`threadUntil`、`sender`、`id`、`occurredAt`。`threadTitle` 是网页「在等：…」那一行里线程的名字；`threadUntil` 是线程的期限（ISO 时间或毫秒），只在等这些线程的任务过了期限由宿主自动结束。来源名不能冒充对话。
 
 这个模块的任务依据是「规则」，所以助手能执行 `df` 和 `du`。边界写在规则和技能两处：只看，不删。
 

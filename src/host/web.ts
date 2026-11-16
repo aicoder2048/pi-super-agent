@@ -20,6 +20,9 @@ export interface WebHost {
 	answer(reportId: string, option: number): AnswerResult;
 	clear(): void;
 	switchModule(name: string, on: boolean): boolean;
+	/** False when the ticket is not one that only waits on its threads. */
+	endWatching(ticketId: string): boolean;
+	seen(ticketId: string): void;
 }
 
 const SAY_MAX_BYTES = 32 * 1024;
@@ -44,11 +47,12 @@ const KEEPALIVE_MS = 15_000;
 const INTERNAL_ERROR = "宿主内部出错，详情见宿主日志。";
 
 const DENIED = {
-	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"} 或 {\"answer\": {\"reportId\": \"rpt_…\", \"option\": 0}}，或这句话是空的；清屏的正文是 {}；开关模块的正文是 {\"module\": \"名字\", \"on\": true}，名字要是宿主发现过的模块。",
+	400: "请求无法解析：地址不对，或正文不是 {\"text\": \"…\"} 或 {\"answer\": {\"reportId\": \"rpt_…\", \"option\": 0}}，或这句话是空的；清屏的正文是 {}；开关模块的正文是 {\"module\": \"名字\", \"on\": true}，名字要是宿主发现过的模块；结束任务的正文是 {\"ticket\": \"tkt_…\"}。",
 	401: "token 缺失或已失效，请用宿主日志里最新的网址打开。",
 	403: "只接受本机这个页面（127.0.0.1 或 localhost）或 config.json 的 webHosts 里列出的地址发来的请求。",
 	404: "没有这个页面。",
-	405: "这个地址不接受这种请求；发话用 POST /say，清屏用 POST /clear，开关模块用 POST /module，其余只接受 GET。",
+	405: "这个地址不接受这种请求；发话用 POST /say，清屏用 POST /clear，开关模块用 POST /module，结束盯着的任务用 POST /end，其余只接受 GET。",
+	409: "这个任务不在盯着的事里，不能这样结束：它可能还在干活，或在等你回答。",
 	413: "这句话太长了，请分几次说。",
 	415: "发话的正文要用 application/json。",
 } as const;
@@ -67,6 +71,7 @@ export class WebGateway {
 		["/say", (body, res) => this.#say(body, res)],
 		["/clear", (body, res) => this.#clear(body, res)],
 		["/module", (body, res) => this.#switchModule(body, res)],
+		["/end", (body, res) => this.#endWatching(body, res)],
 	]);
 
 	constructor(host: WebHost, token: string, log: (line: string) => void, names: readonly TailnetName[] = []) {
@@ -154,6 +159,9 @@ export class WebGateway {
 			const watchers = this.#watchers.get(ticketId) ?? new Set();
 			this.#watchers.set(ticketId, watchers);
 			this.#echoes.opened(res, history.messages);
+			// A report that came while the page showed the ticket was read too, so closing counts as seen again.
+			this.#host.seen(ticketId);
+			res.on("close", () => this.#guard(req, res, () => this.#host.seen(ticketId)));
 			return this.#openStream(res, { type: "transcript_history", ticketId, ...history }, watchers, () => this.#watchers.delete(ticketId));
 		}
 		deny(res, 404);
@@ -207,6 +215,13 @@ export class WebGateway {
 		res.writeHead(204, NO_LEAK_HEADERS).end();
 	}
 
+	#endWatching(text: string, res: ServerResponse): void {
+		const ticketId = parseEndBody(text);
+		if (ticketId === undefined) return deny(res, 400);
+		if (!this.#host.endWatching(ticketId)) return deny(res, 409);
+		res.writeHead(204, NO_LEAK_HEADERS).end();
+	}
+
 	#openStream(res: ServerResponse, first: HostToClient, set: Set<ServerResponse>, onEmpty?: () => void): void {
 		res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "text/event-stream; charset=utf-8", connection: "keep-alive" });
 		res.write("retry: 1000\n\n");
@@ -256,6 +271,13 @@ function parseSwitchBody(body: string): { module: string; on: boolean } | undefi
 	if (parsed === undefined || Object.keys(parsed).sort().join() !== "module,on") return undefined;
 	const { module, on } = parsed as { module: unknown; on: unknown };
 	return typeof module === "string" && typeof on === "boolean" ? { module, on } : undefined;
+}
+
+function parseEndBody(body: string): string | undefined {
+	const parsed = parseObject(body);
+	if (parsed === undefined || Object.keys(parsed).join() !== "ticket") return undefined;
+	const { ticket } = parsed as { ticket: unknown };
+	return typeof ticket === "string" && TICKET_ID.test(ticket) ? ticket : undefined;
 }
 
 function isEmptyObject(body: string): boolean {

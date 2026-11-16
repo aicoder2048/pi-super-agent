@@ -117,7 +117,7 @@ test("使用者开的任务收到过来源正文（订阅的线程投进来、�
 		onConversation("us-market", ["thr_us-market:NVDA"]),
 		async (host) => {
 			host.say("帮我盯英伟达");
-			await until(() => host.kernel.listTickets().some((r) => r.stage === "idle"), "任务先空闲");
+			await until(() => host.kernel.listTickets().some((r) => r.stage === "watching"), "任务先空闲，盯着线程");
 			fromSource(host);
 		},
 		{ when: (input) => input.includes(SOURCE_TEXT) },

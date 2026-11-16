@@ -232,7 +232,7 @@ test("大盘日：SPY 当天已到档，之后个股到档的触发进 SPY 的�
 	const day = newDay(DATE);
 	const [spy, stocks] = run(day, ctx(), [q("SPY", 489.5, 500, "10:00")], [q("SPY", 489, 500, "10:30"), q("NVDA", 94.8, 100, "10:30"), q("AMD", 94.9, 100, "10:30")]);
 	assert.deepEqual(spy!.notices.map((n) => n.thread), [`SPY:${DATE}`]);
-	assert.deepEqual(stocks!.notices.map((n) => [n.id, n.thread]), [[`band:NVDA:${DATE}:down5`, `SPY:${DATE}`], [`band:AMD:${DATE}:down5`, `SPY:${DATE}`]]);
+	assert.deepEqual(stocks!.notices.map((n) => [n.id, n.thread, n.threadTitle]), [[`band:NVDA:${DATE}:down5`, `SPY:${DATE}`, "SPY 今天的盯盘提醒"], [`band:AMD:${DATE}:down5`, `SPY:${DATE}`, "SPY 今天的盯盘提醒"]]);
 	assert.ok(stocks!.notices.every((n) => n.fields.line.endsWith("（大盘日：SPY 今天已到 -2% 档，这只票并进指数的任务，汇报里逐只列出）")));
 	assert.ok(stocks!.alerts.every((a) => !a.text.includes("大盘日")));
 	const [own] = run(newDay(DATE), ctx(), [q("NVDA", 94.8, 100, "10:30")]);

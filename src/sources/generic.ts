@@ -8,6 +8,8 @@ export interface GenericDrop {
 	id?: string;
 	thread: string;
 	threadTitle?: string;
+	/** When the thread is over, as an ISO time or milliseconds; a task that waits only on threads past theirs ends. */
+	threadUntil?: string | number;
 	sender?: string;
 	body: string;
 	occurredAt?: string | number;
@@ -47,10 +49,15 @@ export function parseDrop(fallbackId: string, text: string, now: number): Trigge
 	}
 	const occurredAt = d.occurredAt === undefined ? now : new Date(d.occurredAt).getTime();
 	if (Number.isNaN(occurredAt)) throw new Error(`occurredAt 无法解析：${String(d.occurredAt)}`);
+	if (d.threadUntil !== undefined && typeof d.threadUntil !== "string" && typeof d.threadUntil !== "number") {
+		throw new Error(`threadUntil 必须是字符串或数字，实际是 ${JSON.stringify(d.threadUntil)}`);
+	}
+	const until = d.threadUntil === undefined ? undefined : new Date(d.threadUntil).getTime();
+	if (Number.isNaN(until)) throw new Error(`threadUntil 无法解析：${String(d.threadUntil)}`);
 	return {
 		source,
 		externalId: id || fallbackId,
-		threads: [{ id: threadId(source, thread), title: threadTitle }],
+		threads: [{ id: threadId(source, thread), title: threadTitle, ...(until !== undefined && { until }) }],
 		sender: sender || source,
 		body,
 		occurredAt,

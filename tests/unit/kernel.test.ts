@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { Kernel, nextStallAt } from "../../src/kernel/kernel.ts";
+import { Kernel, nextStallAt, watchEndsAt } from "../../src/kernel/kernel.ts";
 import { SOLO_NAMES, TEAM_NAMES } from "../../src/kernel/helper-names.ts";
 import { refusalText } from "../../src/kernel/question.ts";
 import { openStore } from "../../src/kernel/store.ts";
@@ -736,6 +736,9 @@ test("看板显示模型、工具调用、token 用量和已运行时长", () =>
 			outside: null,
 			moduleOff: false,
 			runAsk: null,
+			waitsFor: [],
+			unread: false,
+			closedBy: null,
 		},
 	);
 	assert.equal(kernel.usageToday("deepseek"), 1200);
@@ -2400,4 +2403,209 @@ test("回复的 answers 只能列这条回复起因的卡片：别的任务的�
 	assert.equal(kernel.conversation(50).filter((l) => l.who === "router").length, 0, "被拒的回复没有说出去");
 	assert.equal(reply([jiaCard]).ok, true);
 	assert.deepEqual([jiaCard, yiCard].map((id) => kernel.answered(id)), [true, false]);
+});
+
+const AMD_DAY = "thr_stock-ta:AMD:2026-11-16";
+const STOCK_TA = new Map([["stock-ta", { team: null, onRoster: true, title: "股票技术分析" }]]);
+
+function watchSetup() {
+	const s = setup({ domains: STOCK_TA });
+	const watchTask = ({ title = "AMD 今天的盯盘提醒" as string | null } = {}) => {
+		s.trigger({ source: "stock-ta/quotes", threads: [{ id: AMD_DAY, ...(title === null ? {} : { title }) }], body: "AMD 到档" });
+		const id = s.open("rule", { source: "stock-ta/quotes", threads: [AMD_DAY], ruleId: "stock-ta/watch-task", title: "分析 AMD 到档走势" });
+		s.run(id);
+		s.kernel.workerReport(id, { status: "ready", summary: "AMD 冲到 260，量能放大", waiting: true });
+		s.kernel.workerTurnEnded(id, { bgRunning: false });
+		return id;
+	};
+	const row = (id: string) => s.kernel.listTickets().find((r) => r.id === id)!;
+	return { ...s, watchTask, row };
+}
+
+test("阶段：做完一轮、还订着线程等后续消息的任务是「盯着」，看板写它在等哪条线程、出自哪个模块", () => {
+	const { watchTask, stage, row } = watchSetup();
+	const id = watchTask();
+	assert.equal(stage(id), "watching");
+	assert.deepEqual(row(id).waitsFor, [{ title: "AMD 今天的盯盘提醒", from: "股票技术分析", until: null }]);
+});
+
+test("阶段：线程没有标题时，看板只写出自哪个模块；不订线程的任务 waitsFor 是空的", () => {
+	const { watchTask, row, open, run, kernel, stage } = watchSetup();
+	assert.deepEqual(row(watchTask({ title: null })).waitsFor, [{ title: null, from: "股票技术分析", until: null }]);
+	const plain = open("request");
+	run(plain);
+	kernel.workerReport(plain, { status: "ready", summary: "做完了", waiting: true });
+	assert.equal(stage(plain), "awaiting_review", "没订线程的就绪还是等你验收");
+	assert.deepEqual(row(plain).waitsFor, []);
+});
+
+test("阶段：订着线程、Worker 空闲又没有汇报的任务也是「盯着」", () => {
+	const { open, idle, stage, trigger } = watchSetup();
+	trigger({ source: "stock-ta/quotes", threads: [{ id: AMD_DAY }] });
+	const id = open("rule", { source: "stock-ta/quotes", threads: [AMD_DAY], ruleId: "stock-ta/watch-task" });
+	idle(id);
+	assert.equal(stage(id), "watching");
+});
+
+test("阶段：订着线程也是先看问题和受阻；线程来了新消息就回到干活", () => {
+	const { watchTask, kernel, stage, trigger } = watchSetup();
+	const asking = watchTask();
+	kernel.workerReport(asking, { status: "ready", summary: "要不要加仓", question: "加仓吗？", waiting: true });
+	assert.equal(stage(asking), "awaiting_answer");
+	const blocked = watchTask();
+	kernel.workerReport(blocked, { status: "blocked", summary: "行情接口失败" });
+	assert.equal(stage(blocked), "blocked_or_failed");
+	const woken = watchTask();
+	trigger({ source: "stock-ta/quotes", threads: [{ id: AMD_DAY }], body: "AMD 又到档" });
+	assert.notEqual(stage(woken), "watching");
+});
+
+test("盯着的任务能问进度", () => {
+	const { watchTask, kernel } = watchSetup();
+	assert.deepEqual(kernel.askStatus({ ticketId: watchTask() }), { ok: true });
+});
+
+test("结束：盯着的任务一次结束，阶段已完成，线程再来消息不再送给它；别的阶段不能这样结束", () => {
+	const { watchTask, kernel, stage, trigger, open } = watchSetup();
+	const id = watchTask();
+	assert.deepEqual(kernel.endWatching(id), { ok: true });
+	assert.equal(stage(id), "closed");
+	assert.deepEqual(kernel.endWatching(id), { ok: true }, "再点一次也一样");
+	const { triggerId } = trigger({ source: "stock-ta/quotes", threads: [{ id: AMD_DAY }], body: "AMD 又到档" });
+	assert.equal(kernel.triggerLog().find((t) => t.id === triggerId)!.disposition, "to_router");
+	const running = open("request");
+	assert.equal(kernel.endWatching(running).ok, false);
+	assert.equal(kernel.endWatching("tkt_nope").ok, false);
+});
+
+test("未读：任务有了新汇报就标未读，网页打开看过就不标；再来新汇报又标上；只有进展的汇报不算", () => {
+	const { watchTask, kernel, row, clock, trigger, run } = watchSetup();
+	const id = watchTask();
+	assert.equal(row(id).unread, true);
+	clock.t += 1000;
+	kernel.markSeen(id);
+	assert.equal(row(id).unread, false);
+	clock.t += 1000;
+	trigger({ source: "stock-ta/quotes", threads: [{ id: AMD_DAY }], body: "AMD 又到档" });
+	run(id);
+	kernel.workerReport(id, { status: "progress", summary: "在看分时" });
+	assert.equal(row(id).unread, false);
+	clock.t += 1000;
+	kernel.workerReport(id, { status: "ready", summary: "回落了", waiting: true });
+	assert.equal(row(id).unread, true);
+});
+
+test("未读：从没有看过记录的旧状态库升上来，已有的任务都算看过", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-seen-"));
+	try {
+		const path = join(dir, "state.db");
+		const s = setup({ path, domains: STOCK_TA });
+		const id = s.open("request");
+		s.run(id);
+		s.kernel.workerReport(id, { status: "ready", summary: "做完了", waiting: true });
+		s.db.exec("ALTER TABLE tickets DROP COLUMN seen_at");
+		s.db.close();
+		const again = setup({ path, domains: STOCK_TA });
+		assert.equal(again.kernel.listTickets().find((r) => r.id === id)!.unread, false);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+const AMD_CLOSE = new Date("2026-11-16T21:30:00Z").getTime();
+
+test("到期：线程记下来源给的期限，之后没写期限的触发不把它抹掉；看板的 waitsFor 带着期限", () => {
+	const { watchTask, row, trigger, kernel, clock } = watchSetup();
+	clock.t = AMD_CLOSE - 6 * HOUR;
+	trigger({ source: "stock-ta/quotes", threads: [{ id: AMD_DAY, until: AMD_CLOSE }], body: "AMD 先到档" });
+	const id = watchTask();
+	assert.deepEqual(row(id).waitsFor, [{ title: "AMD 今天的盯盘提醒", from: "股票技术分析", until: AMD_CLOSE }]);
+	assert.equal(kernel.read(AMD_DAY)?.type, "thread");
+});
+
+test("到期：等的线程都过了期限，收尾把盯着的任务结束，记作到点结束；重复收尾不再动它", () => {
+	const { watchTask, kernel, stage, row, trigger, clock } = watchSetup();
+	clock.t = AMD_CLOSE - HOUR;
+	trigger({ source: "stock-ta/quotes", threads: [{ id: AMD_DAY, until: AMD_CLOSE }], body: "AMD 到档" });
+	const id = watchTask();
+	assert.deepEqual(kernel.endExpiredWatches(), [], "还没到点");
+	assert.equal(stage(id), "watching");
+	clock.t = AMD_CLOSE;
+	assert.deepEqual(kernel.endExpiredWatches(), [id]);
+	assert.equal(stage(id), "closed");
+	assert.equal(row(id).closedBy, "expiry");
+	assert.deepEqual(kernel.endExpiredWatches(), [], "第二次什么都不做");
+});
+
+test("到期：还有一条线程没期限、任务不在盯着（在问你）时不结束", () => {
+	const { watchTask, kernel, stage, trigger, clock, open, idle } = watchSetup();
+	clock.t = AMD_CLOSE - HOUR;
+	trigger({ source: "stock-ta/quotes", threads: [{ id: AMD_DAY, until: AMD_CLOSE }], body: "AMD 到档" });
+	const asking = watchTask();
+	kernel.workerReport(asking, { status: "ready", summary: "要不要加仓", question: "加仓吗？", waiting: true });
+	const nvda = "thr_stock-ta:NVDA:2026-11-16";
+	trigger({ source: "stock-ta/quotes", threads: [{ id: nvda, until: AMD_CLOSE }], body: "NVDA 到档" });
+	trigger({ threads: [{ id: "thr_generic:mail" }] });
+	const mixed = open("rule", { source: "stock-ta/quotes", threads: [nvda, "thr_generic:mail"], ruleId: "stock-ta/watch-task" });
+	idle(mixed);
+	clock.t = AMD_CLOSE + HOUR;
+	assert.deepEqual(kernel.endExpiredWatches(), []);
+	assert.equal(stage(mixed), "watching");
+	assert.equal(stage(asking), "awaiting_answer");
+});
+
+test("到期：watchEndsAt 是盯着的任务最晚那条线程的期限；有线程没期限、或不在盯着时为 null", () => {
+	const base = { stage: "watching", waitsFor: [{ title: null, from: "x", until: 5 }, { title: null, from: "y", until: 9 }] } as const;
+	assert.equal(watchEndsAt(base), 9);
+	assert.equal(watchEndsAt({ ...base, waitsFor: [{ title: null, from: "x", until: null }] }), null);
+	assert.equal(watchEndsAt({ ...base, stage: "running" }), null);
+	assert.equal(watchEndsAt({ ...base, waitsFor: [] }), null);
+});
+
+test("结束方式：点结束的记作你结束的，Worker 汇报完的没有记号", () => {
+	const { watchTask, kernel, row, open, run } = watchSetup();
+	const id = watchTask();
+	kernel.endWatching(id);
+	assert.equal(row(id).closedBy, "user");
+	const done = open("request");
+	run(done);
+	kernel.workerReport(done, { status: "ready", summary: "做完了" });
+	assert.equal(row(done).closedBy, null);
+});
+
+test("结束方式：结束了的盯盘任务又收到消息、重新开起来，就不再带结束记号；你点结束和到点结束都一样", () => {
+	const { watchTask, kernel, row, stage, trigger, clock, say } = watchSetup();
+	const byUser = watchTask();
+	kernel.endWatching(byUser);
+	assert.equal(row(byUser).closedBy, "user");
+	assert.ok(kernel.note({ ticketId: byUser, text: "再看一眼 AMD" }).ok);
+	assert.equal(stage(byUser), "queued");
+	assert.equal(row(byUser).closedBy, null);
+
+	clock.t = AMD_CLOSE - HOUR;
+	trigger({ source: "stock-ta/quotes", threads: [{ id: AMD_DAY, until: AMD_CLOSE }], body: "AMD 收盘扫描" });
+	const byExpiry = watchTask();
+	clock.t = AMD_CLOSE;
+	assert.deepEqual(kernel.endExpiredWatches(), [byExpiry]);
+	assert.equal(row(byExpiry).closedBy, "expiry");
+	const [handed] = kernel.route([{ kind: "hand_over", triggerId: say("AMD 后来怎样了").triggerId, ticketId: byExpiry }]);
+	assert.ok(handed.ok);
+	assert.notEqual(stage(byExpiry), "closed");
+	assert.equal(row(byExpiry).closedBy, null);
+});
+
+test("到期：从没有线程期限的旧状态库升上来，threads 多出 until 列", () => {
+	const dir = mkdtempSync(join(tmpdir(), "psa-until-"));
+	try {
+		const path = join(dir, "state.db");
+		const db = openStore(path);
+		db.exec("ALTER TABLE threads DROP COLUMN until; ALTER TABLE tickets DROP COLUMN closed_by");
+		db.close();
+		const again = openStore(path);
+		const cols = (t: string) => (again.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name);
+		assert.ok(cols("threads").includes("until"));
+		assert.ok(cols("tickets").includes("closed_by"));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });

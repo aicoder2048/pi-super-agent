@@ -65,7 +65,8 @@ CREATE INDEX IF NOT EXISTS triggers_today ON triggers (received_at, source, disp
 CREATE TABLE IF NOT EXISTS threads (
 	id TEXT PRIMARY KEY,
 	source TEXT NOT NULL,
-	title TEXT
+	title TEXT,
+	until INTEGER
 );
 INSERT OR IGNORE INTO threads (id, source, title) VALUES ('${CONVERSATION_THREAD_ID}', '${CONVERSATION_SOURCE}', '对话');
 
@@ -102,6 +103,8 @@ CREATE TABLE IF NOT EXISTS tickets (
 	module_digest TEXT,
 	dispatched_to TEXT,
 	read_web_at INTEGER,
+	seen_at INTEGER,
+	closed_by TEXT CHECK (closed_by IS NULL OR closed_by IN ('user', 'expiry')),
 	CHECK (basis <> 'rule' OR rule_id IS NOT NULL)
 );
 
@@ -319,6 +322,11 @@ export function openStore(path: string): DatabaseSync {
 	if (!ticketColumns.includes("module_digest")) db.exec("ALTER TABLE tickets ADD COLUMN module_digest TEXT");
 	if (!ticketColumns.includes("dispatched_to")) db.exec("ALTER TABLE tickets ADD COLUMN dispatched_to TEXT");
 	if (!ticketColumns.includes("read_web_at")) db.exec("ALTER TABLE tickets ADD COLUMN read_web_at INTEGER");
+	// Every report from before the page kept track counts as seen, so the upgrade does not mark the whole board unread.
+	if (!ticketColumns.includes("seen_at")) db.exec("ALTER TABLE tickets ADD COLUMN seen_at INTEGER; UPDATE tickets SET seen_at = (SELECT MAX(created_at) FROM reports WHERE ticket_id = tickets.id)");
+	if (!ticketColumns.includes("closed_by")) db.exec("ALTER TABLE tickets ADD COLUMN closed_by TEXT CHECK (closed_by IS NULL OR closed_by IN ('user', 'expiry'))");
+	const threadColumns = db.prepare("PRAGMA table_info(threads)").all().map((c) => (c as { name: string }).name);
+	if (!threadColumns.includes("until")) db.exec("ALTER TABLE threads ADD COLUMN until INTEGER");
 	const hostLineColumns = db.prepare("PRAGMA table_info(host_lines)").all().map((c) => (c as { name: string }).name);
 	if (!hostLineColumns.includes("module_title")) db.exec("ALTER TABLE host_lines ADD COLUMN module_title TEXT");
 	const hostLinesSql = (db.prepare("SELECT sql FROM sqlite_master WHERE name = 'host_lines'").get() as { sql: string }).sql;

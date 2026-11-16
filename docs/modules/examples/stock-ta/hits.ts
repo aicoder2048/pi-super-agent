@@ -5,8 +5,19 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { isTradingDay, shiftDate } from "./market-days.ts";
+import { DAY_THREAD_AFTER_CLOSE_MS, isTradingDay, regularCloseAt, shiftDate } from "./market-days.ts";
 import { COMBOS, opensTask, WATCH_RULES, type Lean, type Level } from "./watch-rules.ts";
+
+/**
+ * Where a hit's task trigger goes: the symbol's thread for the day (`<symbol>:<date>`) or its holding thread (`…:holding`).
+ * `threadScope: "module"`: the module's feeds share the thread, so a close-of-day hit joins the task a band opened. The host shows
+ * the title on a task that waits on the thread, and ends such a task once the day's close scan is done (`threadUntil`).
+ */
+export function noticeThread(thread: string) {
+	const [symbol, date] = thread.split(":");
+	const until = regularCloseAt(Date.parse(`${date}T17:00:00Z`)) + DAY_THREAD_AFTER_CLOSE_MS;
+	return { thread, threadScope: "module" as const, threadTitle: `${symbol} 今天的${thread.endsWith(":holding") ? "持仓" : "盯盘"}提醒`, threadUntil: new Date(until).toISOString() };
+}
 
 export type Hit = {
 	/** `<rule>:<symbol>:<date>`, plus `:<side>` for the two move rules, which fire once per side; `ta`'s signals graded by a shared row use `<ta rule>:<side>` for `<rule>`. */
