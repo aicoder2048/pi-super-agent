@@ -18,9 +18,9 @@ const openWatching = (card: string): ToolCall => ({
 	args: { decisions: [{ kind: "open_ticket", basis: "inference", triggerId: ids(card, "trg"), title: TITLE, brief: TITLE, threads: [THREAD] }] },
 });
 const waitingReport = (summary: string): ToolCall => ({ name: "report", args: { status: "ready", summary, waiting: true } });
-const drop = (stateDir: string, id: string, body: string) => {
+const drop = (stateDir: string, id: string, body: string, threadUntil?: number) => {
 	mkdirSync(join(stateDir, "inbox"), { recursive: true });
-	writeFileSync(join(stateDir, "inbox", `${id}.json`), JSON.stringify({ id, source: "watch", thread: "AMD", threadTitle: "AMD 今天的盯盘提醒", sender: "watch", body }));
+	writeFileSync(join(stateDir, "inbox", `${id}.json`), JSON.stringify({ id, source: "watch", thread: "AMD", threadTitle: "AMD 今天的盯盘提醒", sender: "watch", body, ...(threadUntil && { threadUntil }) }));
 };
 const watchCard = (page: Page) => page.locator("#left section", { has: page.locator("h2", { hasText: /^盯着的事/ }) }).locator(".card");
 
@@ -82,6 +82,34 @@ test("盯着的事：做完一轮还订着线程的任务进「盯着的事」�
 				let log = "";
 				while (!/AMD 回落到 250/.test(log) && Date.now() < deadline) log = await cli(["src/cli/log.ts", "5"]);
 				assert.match(log.split("\n").find((l) => l.includes("AMD 回落到 250")) ?? "", /等 Router 处理/);
+			});
+		},
+	));
+
+test("盯着的事到点自动结束：来源给线程写了期限，过了期限宿主把还在盯着的任务收进已完成，阶段写「盯的时段过了，自动结束」", (t) =>
+	story(
+		t,
+		{
+			router: [
+				on("幕僚长为到档开任务并订线程", /^\[候选触发\][^\n]*来源 watch[\s\S]*AMD 冲到 260/, (c) => [openWatching(c)]),
+				on("幕僚长转告第一轮", /^\[Worker 汇报\][\s\S]*放量站上 260/, (c) => [reply(c, "AMD 放量站上 260，我继续盯着。")]),
+			],
+			workers: [worker(TITLE, on("助手做完一轮，还在等", /^\[任务说明\]/, () => [waitingReport("AMD 放量站上 260，后面的提醒继续看。")]))],
+		},
+		async ({ step, stateDir }) => {
+			const endsAt = Date.now() + 8000;
+			await step("投递一条带期限的到档消息：任务先进「盯着的事」", async (page) => {
+				drop(stateDir, "amd-1", "AMD 冲到 260", endsAt);
+				await watchCard(page).waitFor({ timeout: 20_000 });
+				assert.ok(Date.now() < endsAt, "还没到期限");
+			});
+			await step("不做任何事，到了期限卡片离开盯着的事，已完成里写自动结束", async (page) => {
+				await page.locator("#left h2", { hasText: /^盯着的事/ }).waitFor({ state: "detached", timeout: 15_000 });
+				assert.ok(Date.now() >= endsAt, "没有提前结束");
+				await page.locator("#tab-done").click();
+				const done = page.locator("#done .card", { hasText: TITLE });
+				assert.match((await done.locator(".why").textContent())!, /已完成 · 盯的时段过了，自动结束$/);
+				await page.screenshot({ path: join(SHOTS, "watching-expired.png") });
 			});
 		},
 	));

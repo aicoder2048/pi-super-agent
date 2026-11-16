@@ -10,7 +10,7 @@ import { isCapAskId } from "../kernel/cap-ask.ts";
 import { isRunAskId, RUN_TIMEOUT_MS, type RunAsk } from "../kernel/run-ask.ts";
 import { approvedEnv, runApproved, type ApprovedRun } from "./run-approved.ts";
 import { msUntilNextNewYorkDay } from "../kernel/helper-names.ts";
-import { Kernel, nextStallAt } from "../kernel/kernel.ts";
+import { Kernel, nextStallAt, watchEndsAt } from "../kernel/kernel.ts";
 import { openStore } from "../kernel/store.ts";
 import { CONVERSATION_SOURCE, CONVERSATION_THREAD_ID, DISPOSITIONS, type Clock, type DashboardRow, type Disposition, type HostLine, type HostLinePost, type KernelConfig, type RouterNotice, type SourcePolicy } from "../kernel/types.ts";
 import type { TriggerSubmission } from "../kernel/types.ts";
@@ -219,7 +219,7 @@ export class Host {
 		const data = instanceData(options.stateDir);
 		const feedPorts: Omit<FeedPorts, "problem"> = {
 			data,
-			submit: ({ source, id, thread, threadOwner, threadTitle, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(threadOwner ?? source, thread), ...(threadTitle !== undefined && { title: threadTitle }) }], sender: source, body, occurredAt: at, ...(reach === "released" && { announce: true }) }),
+			submit: ({ source, id, thread, threadOwner, threadTitle, threadUntil, body, at, reach }) => submit({ source, externalId: id, threads: [{ id: threadId(threadOwner ?? source, thread), ...(threadTitle !== undefined && { title: threadTitle }), ...(threadUntil !== undefined && { until: threadUntil }) }], sender: source, body, occurredAt: at, ...(reach === "released" && { announce: true }) }),
 			alert: (module, alert) => this.#postModuleAlert(module, alert),
 			badge: (module, { key, text, at }) => {
 				const occurredAt = Date.parse(at);
@@ -481,6 +481,7 @@ export class Host {
 
 	#boardState(): BoardState {
 		this.#expireRunAsks();
+		this.kernel.endExpiredWatches();
 		return { rows: this.kernel.listTickets(), today: todayCounts(this.kernel.triggerCountsToday()), duty: this.#duty, helpers: this.kernel.helpersToday(), routes: this.kernel.conversationRoutes(CONVERSATION_LINES), dispatching: this.workers.dispatching(), memberCap: this.#memberCapBoard(), watching: this.#watchingNow(), modules: this.#moduleCards(), alerts: this.kernel.alertsToday(), health: this.#health.board() };
 	}
 
@@ -626,7 +627,7 @@ export class Host {
 	}
 
 	#pushBoardWhenDue(rows: DashboardRow[]): void {
-		const due = [nextStallAt(rows, this.kernel.config.stuckMs), ...rows.map((r) => (r.runAsk?.state === "open" ? r.runAsk.expiresAt : null))].filter((at) => at !== null);
+		const due = [nextStallAt(rows, this.kernel.config.stuckMs), ...rows.map((r) => (r.runAsk?.state === "open" ? r.runAsk.expiresAt : null)), ...rows.map(watchEndsAt)].filter((at) => at !== null);
 		const at = due.length ? Math.min(...due) : null;
 		if (at === this.#dueAt) return;
 		clearTimeout(this.#dueTimer);

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { TriggerSubmission } from "../../src/kernel/types.ts";
-import { dropTrigger, GenericSource } from "../../src/sources/generic.ts";
+import { dropTrigger, GenericSource, parseDrop } from "../../src/sources/generic.ts";
 import { TimerSource } from "../../src/sources/timer.ts";
 
 function generic(options: { submit?: (t: TriggerSubmission) => void; settleMs?: number; pollMs?: number } = {}) {
@@ -174,4 +174,12 @@ test("定时器：停机错过多个时间点，恢复后只补最近一个；�
 	t.source.tick();
 	assert.equal(t.submitted.length, 1);
 	assert.equal(t.submitted[0].externalId, `check@${Date.parse("2026-11-08T12:00:00Z")}`);
+});
+
+test("通用来源：threadUntil 是线程的期限，写成时间文字或毫秒；写不成时间的报错", () => {
+	const parse = (o: object) => parseDrop("f", JSON.stringify({ thread: "AMD", body: "到档", ...o }), 0);
+	assert.equal(parse({ threadUntil: "2026-11-16T21:30:00Z" }).threads[0].until, Date.parse("2026-11-16T21:30:00Z"));
+	assert.equal(parse({ threadUntil: 1234 }).threads[0].until, 1234);
+	assert.equal(parse({}).threads[0].until, undefined);
+	assert.throws(() => parse({ threadUntil: "收盘后" }), /threadUntil 无法解析/);
 });

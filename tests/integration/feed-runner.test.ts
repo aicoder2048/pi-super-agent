@@ -198,6 +198,21 @@ test("触发写了 threadTitle：交给宿主时带着线程的标题；不是�
 	assert.match(bad.ok ? "" : bad.note, /threadTitle 要是文字/);
 });
 
+test("触发写了 threadUntil：交给宿主时带着线程的期限（毫秒）；写不成时间时这一轮失败", async (t) => {
+	const { root, pkg } = taxCopy(t);
+	const feed = join(pkg, "feeds", "brokerage-statements");
+	const descriptor = JSON.parse(readFileSync(join(feed, "feed.json"), "utf8"));
+	writeFileSync(join(feed, "feed.json"), JSON.stringify({ ...descriptor, notice: "{{line}}" }));
+	writeFileSync(join(feed, "index.ts"), `export default () => ({ notices: [{ id: "a", thread: "x", threadUntil: "2026-11-13T21:30:00Z", fields: { line: "到档" } }] });\n`);
+	const submitted: FeedNotice[] = [];
+	const ports = { data: instanceData(join(root, "state")), submit: (n: FeedNotice) => void submitted.push(n), alert: () => true, problem: () => {}, secret: () => "token", now: () => 0 };
+	assert.deepEqual(await runFeed(brokerage(root), [], ports), { ok: true, records: 0, notices: 1 });
+	assert.equal(submitted[0].threadUntil, Date.parse("2026-11-13T21:30:00Z"));
+	writeFileSync(join(feed, "index.ts"), `export default () => ({ notices: [{ id: "b", thread: "x", threadUntil: "收盘后", fields: {} }] });\n`);
+	const bad = await runFeed(brokerage(root), [], ports);
+	assert.match(bad.ok ? "" : bad.note, /threadUntil 要是 ISO 时间/);
+});
+
 test("threadScope 只认 module：别的值这一轮失败，说出要什么", async (t) => {
 	const { root, pkg } = taxCopy(t);
 	writeFileSync(join(pkg, "feeds", "brokerage-statements", "index.ts"), `export default () => ({ notices: [{ id: "a", thread: "x", threadScope: "host", fields: {} }] });\n`);
