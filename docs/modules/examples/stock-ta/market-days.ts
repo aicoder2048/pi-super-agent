@@ -60,9 +60,10 @@ export function regularCloseAt(ms: number): number {
 export const SCAN_AFTER_CLOSE_MS = 20 * MINUTE;
 /**
  * A symbol's day thread is over once the scan feed's close scan is: it starts on the first 5-minute tick at least
- * SCAN_AFTER_CLOSE_MS past the close and runs at most 5 minutes (scan/feed.json `every` and `limit`).
+ * SCAN_AFTER_CLOSE_MS past the close and runs at most 5 minutes (scan/feed.json `every` and `limit`). The last
+ * 10 minutes let a trigger from the scan's final minute reach its task before the host ends it.
  */
-export const DAY_THREAD_AFTER_CLOSE_MS = SCAN_AFTER_CLOSE_MS + 5 * MINUTE + 5 * MINUTE;
+export const DAY_THREAD_AFTER_CLOSE_MS = SCAN_AFTER_CLOSE_MS + 5 * MINUTE + 5 * MINUTE + 10 * MINUTE;
 
 /** The regular session's opening moment, 9:30, on the New York date that holds `ms`. */
 export const regularOpenAt = (ms: number): number => nyWall(ms).midnight + OPEN * MINUTE;
