@@ -22,6 +22,7 @@ import {
 import type {
 	Action,
 	Cleared,
+	ClosedBy,
 	ConversationLine,
 	AlertModule,
 	HostLine,
@@ -197,6 +198,12 @@ function toInput(r: Row): TicketInput {
 
 const SOURCE_THREAD = /^thr_([\w-]+):.+$/;
 
+/** When a watching task's last thread ends, or null when it is not watching or waits on a thread with no end. */
+export function watchEndsAt(row: Pick<DashboardRow, "stage" | "waitsFor">): number | null {
+	if (row.stage !== "watching" || row.waitsFor.length === 0 || row.waitsFor.some((w) => w.until === null)) return null;
+	return Math.max(...row.waitsFor.map((w) => w.until!));
+}
+
 /** When the next running task that has not stalled yet will, or null when none is running. */
 export function nextStallAt(rows: DashboardRow[], stuckMs: number): number | null {
 	const at = rows.filter((r) => r.stage === "running" && !r.stall && r.lastProgressAt !== null).map((r) => r.lastProgressAt! + stuckMs);
@@ -279,11 +286,12 @@ export class Kernel {
 
 			for (const t of sub.threads) {
 				this.#run(
-					`INSERT INTO threads (id, source, title) VALUES (?, ?, ?)
-					 ON CONFLICT (id) DO UPDATE SET title = COALESCE(excluded.title, threads.title)`,
+					`INSERT INTO threads (id, source, title, until) VALUES (?, ?, ?, ?)
+					 ON CONFLICT (id) DO UPDATE SET title = COALESCE(excluded.title, threads.title), until = COALESCE(excluded.until, threads.until)`,
 					t.id,
 					sub.source,
 					t.title ?? null,
+					t.until ?? null,
 				);
 			}
 
@@ -906,14 +914,16 @@ export class Kernel {
 				runAsk: this.#runAskCard(t.id),
 				waitsFor: this.#waitsFor(t.id),
 				unread: this.#unread(t.id),
+				closedBy: t.closedBy,
 			};
 		});
 	}
 
 	#waitsFor(ticketId: string): WaitTarget[] {
-		return this.#all("SELECT h.source, h.title FROM subscriptions s JOIN threads h ON h.id = s.thread_id WHERE s.ticket_id = ? ORDER BY s.rowid", ticketId).map((r) => ({
+		return this.#all("SELECT h.source, h.title, h.until FROM subscriptions s JOIN threads h ON h.id = s.thread_id WHERE s.ticket_id = ? ORDER BY s.rowid", ticketId).map((r) => ({
 			title: r.title,
 			from: this.moduleLabel(ruleNamespace(r.source)),
+			until: r.until,
 		}));
 	}
 
@@ -936,8 +946,22 @@ export class Kernel {
 			if (!ticket) return reject(`unknown ticket ${ticketId}`);
 			if (ticket.stage === "closed") return { ok: true };
 			if (ticket.stage !== "watching") return reject(`ticket is ${ticket.stage}, only a watching ticket ends this way`);
-			this.#close(ticketId);
+			this.#close(ticketId, "user");
 			return { ok: true };
+		});
+	}
+
+	/** Closes every watching ticket whose threads are all past the end their source declared. Returns the ids it closed. */
+	endExpiredWatches(): string[] {
+		return this.#tx(() => {
+			const now = this.#now();
+			const due = this.#column(
+				`SELECT s.ticket_id AS v FROM subscriptions s JOIN threads h ON h.id = s.thread_id JOIN tickets t ON t.id = s.ticket_id
+				 WHERE t.closed_at IS NULL AND t.stopped_at IS NULL GROUP BY s.ticket_id HAVING COUNT(h.until) = COUNT(*) AND MAX(h.until) <= ?`,
+				now,
+			).filter((id) => this.#ticket(id)!.stage === "watching");
+			for (const id of due) this.#close(id, "expiry");
+			return due;
 		});
 	}
 
@@ -1587,8 +1611,8 @@ export class Kernel {
 		if (next) this.#wake(next.id);
 	}
 
-	#close(ticketId: string): void {
-		this.#run("UPDATE tickets SET closed_at = ? WHERE id = ?", this.#now(), ticketId);
+	#close(ticketId: string, by: ClosedBy | null = null): void {
+		this.#run("UPDATE tickets SET closed_at = ?, closed_by = ? WHERE id = ?", this.#now(), by, ticketId);
 		this.#endRunAsks(ticketId);
 	}
 
@@ -1684,6 +1708,7 @@ export class Kernel {
 			bgRunning: r.bg_running === 1,
 			stoppedAt: r.stopped_at,
 			closedAt: r.closed_at,
+			closedBy: r.closed_by,
 			lastProgressAt: r.last_progress_at,
 			startedAt: r.started_at,
 			model: r.model,
