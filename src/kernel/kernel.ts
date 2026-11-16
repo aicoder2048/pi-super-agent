@@ -1568,7 +1568,7 @@ export class Kernel {
 		);
 		// A closed ticket's copy may already be collected, so a reopened ticket runs on the serving version.
 		this.#run(
-			`UPDATE tickets SET closed_at = NULL,
+			`UPDATE tickets SET closed_at = NULL, closed_by = NULL,
 			 module_digest = CASE WHEN closed_at IS NULL THEN module_digest ELSE ? END,
 			 worker_state = CASE WHEN worker_state IN ('none', 'idle') THEN 'queued' ELSE worker_state END
 			 WHERE id = ?`,
