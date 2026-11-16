@@ -2573,6 +2573,27 @@ test("结束方式：点结束的记作你结束的，Worker 汇报完的没有�
 	assert.equal(row(done).closedBy, null);
 });
 
+test("结束方式：结束了的盯盘任务又收到消息、重新开起来，就不再带结束记号；你点结束和到点结束都一样", () => {
+	const { watchTask, kernel, row, stage, trigger, clock, say } = watchSetup();
+	const byUser = watchTask();
+	kernel.endWatching(byUser);
+	assert.equal(row(byUser).closedBy, "user");
+	assert.ok(kernel.note({ ticketId: byUser, text: "再看一眼 AMD" }).ok);
+	assert.equal(stage(byUser), "queued");
+	assert.equal(row(byUser).closedBy, null);
+
+	clock.t = AMD_CLOSE - HOUR;
+	trigger({ source: "stock-ta/quotes", threads: [{ id: AMD_DAY, until: AMD_CLOSE }], body: "AMD 收盘扫描" });
+	const byExpiry = watchTask();
+	clock.t = AMD_CLOSE;
+	assert.deepEqual(kernel.endExpiredWatches(), [byExpiry]);
+	assert.equal(row(byExpiry).closedBy, "expiry");
+	const [handed] = kernel.route([{ kind: "hand_over", triggerId: say("AMD 后来怎样了").triggerId, ticketId: byExpiry }]);
+	assert.ok(handed.ok);
+	assert.notEqual(stage(byExpiry), "closed");
+	assert.equal(row(byExpiry).closedBy, null);
+});
+
 test("到期：从没有线程期限的旧状态库升上来，threads 多出 until 列", () => {
 	const dir = mkdtempSync(join(tmpdir(), "psa-until-"));
 	try {

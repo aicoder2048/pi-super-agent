@@ -1980,6 +1980,18 @@ test("宿主：盯着的任务等的线程过了来源给的期限，不用等�
 	assert.ok(Date.now() >= endsAt, "没有提前结束");
 });
 
+test("页面：结束了的盯盘任务又收到消息、重新开起来，卡片回到进行里，不再写已完成", async (t) => {
+	const web = await watchHost(t);
+	const id = await watchingTask(web);
+	assert.ok(web.host.kernel.endWatching(id).ok);
+	assert.ok(web.host.kernel.note({ ticketId: id, text: "再看一眼 AMD" }).ok);
+	const left = page.leftColumn(withRows(web.host.kernel.listTickets()), Date.now());
+	assert.deepEqual(left.done.map((c) => c.id), []);
+	const reopened = [...left.needsYou, ...left.doing, ...left.onWatch].find((c) => c.id === id);
+	assert.ok(reopened, "重开的任务在进行里");
+	assert.doesNotMatch(reopened.stage, /已完成/);
+});
+
 test("网关：网页打开一个任务就记作看过，卡片不再标未读；关掉时再记一次，开着时来的汇报也算看过", async (t) => {
 	const web = await watchHost(t);
 	const id = await watchingTask(web);
