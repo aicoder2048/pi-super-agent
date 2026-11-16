@@ -181,9 +181,9 @@ test("财报临近：下一次财报在 5 个交易日内记 1 层，id 用财�
 	assert.deepEqual(close(input({ earnings: { NVDA: { ...earnings.NVDA, tradingDays: 6 } } })).hits, []);
 });
 
-test("线程的期限：当天收盘扫描做完以后，收盘后 30 分钟（收盘后 20 分钟起扫，每 5 分钟一拍，一拍最多 5 分钟）；提前收盘日跟着提前；持仓线程一样", () => {
-	assert.equal(noticeThread(`NVDA:${DATE}`).threadUntil, "2026-11-12T21:30:00.000Z", "16:30 美东");
-	assert.equal(noticeThread("NVDA:2026-11-27").threadUntil, "2026-11-27T18:30:00.000Z", "感恩节次日 13:00 收盘，13:30 美东");
-	assert.equal(noticeThread(`NVDA:${DATE}:holding`).threadUntil, "2026-11-12T21:30:00.000Z");
-	assert.equal(noticeThread("NVDA:2026-07-15").threadUntil, "2026-07-15T20:30:00.000Z", "夏令时 16:30 美东");
+test("线程的期限：当天收盘扫描做完再留 10 分钟，收盘后 40 分钟（收盘后 20 分钟起扫，每 5 分钟一拍，一拍最多 5 分钟），最后一拍的触发不和到点结束抢；提前收盘日跟着提前；持仓线程一样", () => {
+	assert.equal(noticeThread(`NVDA:${DATE}`).threadUntil, "2026-11-12T21:40:00.000Z", "16:40 美东");
+	assert.equal(noticeThread("NVDA:2026-11-27").threadUntil, "2026-11-27T18:40:00.000Z", "感恩节次日 13:00 收盘，13:40 美东");
+	assert.equal(noticeThread(`NVDA:${DATE}:holding`).threadUntil, "2026-11-12T21:40:00.000Z");
+	assert.equal(noticeThread("NVDA:2026-07-15").threadUntil, "2026-07-15T20:40:00.000Z", "夏令时 16:40 美东");
 });
