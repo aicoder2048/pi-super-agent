@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Fetched } from "./connectors/attachment.ts";
 import { externalTool, RUNTIMES, toolEffect, type AgentDescriptor, type Component, type Digest, type ExternalTool, type FieldDescriptor, type ModuleName, type ToolEffect, type ToolFetch, type ToolPort } from "./manifest.ts";
-import { DataInputError, type ModuleRows, type WatchRequest } from "./instance-data.ts";
+import { DataInputError, type ModuleRows, type ToolCalls, type WatchRequest } from "./instance-data.ts";
 import { catalogueText, foundText, searchKnowledge, type Knowledge, type KnowledgeBase } from "./knowledge.ts";
 import { AUTHORITY, effectOf, senderOf, type Caller, type Gateway, type Refusal, type Json, type Reply, type Request, type WorkerCaller } from "./protocol.ts";
 import { writeDraft, type GooglePort } from "./google-port.ts";
@@ -19,6 +19,8 @@ export interface GatewayPorts {
 	serving(module: ModuleName): Digest | undefined;
 	dataDir(module: ModuleName): string;
 	rows: ModuleRows;
+	/** Each tool call that ran goes into the data.db of the module it ran in; a failed write is logged, never the call's failure. */
+	toolCalls: ToolCalls;
 	/** `module` is the module whose code runs, so a tool reads its own module's `.env`. */
 	secret: ModuleSecretLookup;
 	log(line: string): void;
@@ -53,6 +55,9 @@ const fieldsHelp = (fields: Readonly<Record<string, FieldDescriptor>>) =>
 	Object.entries(fields).map(([name, f]) => `${name}（${f.type}，${f.title}${f.unit ? `，${f.unit}` : ""}）`).join("、") || "无";
 
 const toolHelp = ({ tool }: Tool) => `${tool.description} 输入：${fieldsHelp(tool.input)}。输出：${fieldsHelp(tool.output)}。`;
+
+/** A helper's catalogue is fixed when it starts, and the provider may open or upgrade after that. */
+const LIVE_NOTE = "说明取自启动时，以调用结果为准。";
 
 const useOf = (request: Request): string => (request.kind === "tool" ? `tools/${request.name}` : request.kind === "knowledge" ? "knowledge" : `${request.kind}/${request.collection}`);
 
@@ -248,15 +253,28 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			const started = Date.now();
 			const external = externalOf(caller, request);
 			let reply: Reply;
+			// Resolved to a capability: its code was started, even if it then failed, so the call counts in _tool_calls.
+			let ran = false;
 			try {
 				const resolved = external ? resolveExternal(external) : resolve(caller, request);
+				ran = !("refusal" in resolved);
 				reply = "refusal" in resolved ? { ok: false, refusal: resolved.refusal } : await resolved.run();
 			} catch (error) {
 				reply = { ok: false, refusal: { code: "provider-failed", note: String((error as Error)?.message ?? error) } };
 			}
+			const ms = Date.now() - started;
+			const outcome = reply.ok ? "ok" : reply.refusal.code;
 			const who = caller.who === "page" ? "page" : `${whoOf(caller)} ${caller.basis}`;
-			const what = external ? `${external.target.provider} tools/${external.target.tool}` : `${moduleOf(caller)} ${useOf(request)}`;
-			ports.log(`[gateway] ${what} ${who} ${reply.ok ? "ok" : reply.refusal.code} ${Date.now() - started} ms${external ? ` from=${moduleOf(caller)}` : ""}`);
+			const [owner, use] = external ? [external.target.provider, `tools/${external.target.tool}`] : [moduleOf(caller), useOf(request)];
+			ports.log(`[gateway] ${owner} ${use} ${who} ${outcome} ${ms} ms${external ? ` from=${moduleOf(caller)}` : ""}`);
+			if (ran && request.kind === "tool") {
+				const by = caller.who === "page" ? { ticket: null, member: null, basis: "page" } : { ticket: caller.ticket, member: caller.member, basis: caller.basis };
+				try {
+					ports.toolCalls.recordToolCall(owner, { caller: moduleOf(caller), ...by, tool: use, outcome, ms });
+				} catch (error) {
+					ports.log(`[gateway] ${owner} ${use}：_tool_calls 没记上：${String((error as Error)?.message ?? error)}`);
+				}
+			}
 			return reply;
 		},
 		catalogue(caller) {
@@ -269,8 +287,8 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			const external = externalUses(caller, copy).map((name) => {
 				const found = provided(externalTool(name)!);
 				return "refusal" in found
-					? { request: "tool" as const, name, title: name, help: `${externalTool(name)!.provider} 现在用不了，调用会回原因` }
-					: { request: "tool" as const, name, title: found.tool.tool.title, help: toolHelp(found.tool) };
+					? { request: "tool" as const, name, title: name, help: `${externalTool(name)!.provider} 现在用不了，调用会回原因。${LIVE_NOTE}` }
+					: { request: "tool" as const, name, title: found.tool.tool.title, help: `${toolHelp(found.tool)}${LIVE_NOTE}` };
 			});
 			const knowledge = copy.knowledge.length > 0 && !memberRefusal(caller, copy, "knowledge") ? [{ request: "knowledge" as const, name: "knowledge", title: "模块知识", help: catalogueText(knowledgeOf(copy)) }] : [];
 			const data = copy.collections

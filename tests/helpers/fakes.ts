@@ -11,6 +11,10 @@ import { ModelSelector } from "../../src/model-selector.ts";
 import { formatModelRef } from "../../src/models.ts";
 import type { WorkerModels } from "../../src/host/workers.ts";
 import type { FeedContext, FeedSpec } from "../../src/sources/feeds.ts";
+import type { ToolCalls } from "../../src/modules/instance-data.ts";
+
+/** For gateways whose tests do not read _tool_calls. */
+export const unrecordedToolCalls: ToolCalls = { recordToolCall() {} };
 
 export function defaultWorkerModels(): WorkerModels {
 	return {

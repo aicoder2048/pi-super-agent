@@ -41,6 +41,7 @@ test("邮件开的推断任务：用触发上的编号和线程在 messages 里�
 		serving: (module) => (module === MAIL ? scan.scan.digest : undefined),
 		dataDir: (module) => moduleDataDir(stateDir, module),
 		rows,
+		toolCalls: rows,
 		secret: () => undefined,
 		log: () => {},
 		google: googlePort({ secret: (name) => secrets[name], oauthUrl: google.url, fixtures: false }),

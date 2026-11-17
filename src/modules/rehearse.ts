@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { EvalDescriptor, PackageScan } from "./manifest.ts";
+import { externalTool, type EvalDescriptor, type ModuleName, type PackageScan } from "./manifest.ts";
 
 export type Exam = EvalDescriptor & { question: string };
 
@@ -16,6 +16,13 @@ export function examsOf(scan: PackageScan): Exam[] {
 		const text = readFileSync(join(scan.dir, "evals", `${c.name}.md`), "utf8");
 		return [{ ...c.eval, question: text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim() }];
 	});
+}
+
+/** The modules whose exported tools the package names in its members', exams' or `module.json`'s `uses`: a rehearsal brings their serving copies. */
+export function providersOf(scan: PackageScan): ModuleName[] {
+	const uses = [...(scan.manifest.uses ?? []), ...scan.components.flatMap((c) => (c.kind === "agents" ? c.agent.uses : c.kind === "evals" ? c.eval.uses : []))];
+	const providers = uses.flatMap((use) => externalTool(use)?.provider ?? []).filter((provider) => provider !== scan.manifest.name);
+	return [...new Set(providers)].sort();
 }
 
 /** A call of another module's tool logs that module first and `from=<caller>` last, so it counts as `<provider>/tools/<name>`. */

@@ -81,7 +81,7 @@ function gatewayOver(t: TestContext, tree: Record<string, string>) {
 		return scan.scan.digest;
 	};
 	const data = instanceData(join(root, "state"));
-	const gateway = createGateway({ copyDir: (m, d) => store.dirOf(m, d), serving: (m) => serving.get(m), dataDir: (m) => moduleDataDir(join(root, "state"), m), rows: data, secret: () => undefined, log: () => {} });
+	const gateway = createGateway({ copyDir: (m, d) => store.dirOf(m, d), serving: (m) => serving.get(m), dataDir: (m) => moduleDataDir(join(root, "state"), m), rows: data, toolCalls: data, secret: () => undefined, log: () => {} });
 	const where = async (name: string, digest: Digest) => {
 		const caller: WorkerCaller = { who: "worker", ticket: "tkt_1", pin: { module: name as ModuleName, digest }, basis: "request", member: null, heardOthers: false };
 		const reply = await gateway.call(caller, { kind: "tool", name: "where" as ComponentName, input: { x: 1 } });

@@ -38,7 +38,7 @@ test("私密模块的信经过幕僚长和任务之后，Telegram 上照样是�
 		copyDir: (module, d) => store.dirOf(module, d),
 		serving: (module) => (module === LETTERS ? scan.scan.digest : undefined),
 		dataDir: (module) => moduleDataDir(stateDir, module),
-		rows: instanceData(stateDir),
+		...((rows) => ({ rows, toolCalls: rows }))(instanceData(stateDir)),
 		secret: () => undefined,
 		log: () => {},
 	});
@@ -135,6 +135,7 @@ test("mail 模块：三行通知、看信和回信任务的转述都全文到 Te
 		serving: (module) => (module === MAIL ? scan.scan.digest : undefined),
 		dataDir: (module) => moduleDataDir(stateDir, module),
 		rows,
+		toolCalls: rows,
 		secret: () => undefined,
 		log: () => {},
 		google: googlePort({ secret: (name) => secrets[name], oauthUrl: google.url, fixtures: false }),

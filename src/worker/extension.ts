@@ -230,8 +230,8 @@ export default function workerExtension(pi: ExtensionAPI) {
 		pi.registerTool({
 			name: "domain_tool",
 			label: "模块工具",
-			description: `调用本任务所属模块带的工具，由宿主在单独的进程里运行，返回工具算出的结果。可用：\n${help}`,
-			promptSnippet: "domain_tool: 调用本任务所属模块的工具（按名字和输入）",
+			description: `调用本任务所属模块带的工具，或别的模块开放给本模块的工具（名字写成 <模块>/tools/<名字>），由宿主在单独的进程里运行，返回工具算出的结果。可用：\n${help}`,
+			promptSnippet: "domain_tool: 调用本任务所属模块的工具或别的模块开放的工具（按名字和输入）",
 			promptGuidelines: ["结论里引用 domain_tool 的结果时写明是哪个工具算的。", "宿主拒绝调用时，照拒绝说明在汇报里告诉使用者，不要换别的办法绕过。"],
 			parameters: Type.Object({
 				name: Type.String({ description: "工具名，例如 tax-bracket" }),

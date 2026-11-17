@@ -48,6 +48,7 @@ function world(t: TestContext) {
 		serving: (module) => serving.get(module),
 		dataDir: (module) => moduleDataDir(state, module),
 		rows: data,
+		toolCalls: data,
 		secret: () => undefined,
 		log: (line) => logs.push(line),
 	});

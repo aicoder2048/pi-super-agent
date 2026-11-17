@@ -53,6 +53,7 @@ async function draftWorld(t: TestContext, letters: readonly Letter[], basis: Wor
 		serving: () => digest,
 		dataDir: (module) => moduleDataDir(state, module),
 		rows: data,
+		toolCalls: data,
 		secret: (name) => secrets[name],
 		log: () => {},
 		google: googlePort({ secret: (name) => secrets[name], oauthUrl: google.url, fixtures: false }),

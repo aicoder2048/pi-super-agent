@@ -6,7 +6,7 @@ import test, { type TestContext } from "node:test";
 import type { DomainKit, Domains } from "../../src/modules.ts";
 import { createGateway } from "../../src/modules/gateway.ts";
 import type { Member } from "../../src/teams.ts";
-import { openOnConversation, startHost, until, type FakeSpawner, type FakeWorker } from "../helpers/fakes.ts";
+import { openOnConversation, startHost, unrecordedToolCalls, until, type FakeSpawner, type FakeWorker } from "../helpers/fakes.ts";
 import { ModuleStore } from "../../src/modules/live.ts";
 import type { ComponentName, Digest, ModuleName } from "../../src/modules/manifest.ts";
 import type { Json, Request, WorkerCaller } from "../../src/modules/protocol.ts";
@@ -58,6 +58,7 @@ function setup(t: TestContext, { serving = true, limitMs = 20_000, secret = modu
 		copyDir: (module, pin) => store.dirOf(module, pin),
 		serving: () => (state.serving ? digest : undefined),
 		dataDir: (module) => join(store.dirOf(module, digest), "..", "data"),
+		toolCalls: unrecordedToolCalls,
 		secret,
 		log: (line) => logs.push(line),
 		limitMs,
@@ -176,7 +177,7 @@ async function hostWithTax(t: TestContext, script: (scene: Scene) => Promise<unk
 	const state = { serving: true };
 	const kit: DomainKit = { skillsDir: undefined, prepare: undefined, crew: [member("tax-preparer"), member("clerk")], granted: [] };
 	const domains: Domains = { book: () => new Map(state.serving ? [["personal-tax", { team: "报税顾问团", onRoster: true, digest }]] : []), kitFor: (domain) => (domain === "personal-tax" ? kit : undefined) };
-	const gateway = createGateway({ copyDir: (m, d) => store.dirOf(m, d), serving: () => (state.serving ? digest : undefined), dataDir: (m) => join(store.dirOf(m, digest), "..", "data"), secret: () => undefined, log: (line) => logs.push(line) });
+	const gateway = createGateway({ copyDir: (m, d) => store.dirOf(m, d), serving: () => (state.serving ? digest : undefined), dataDir: (m) => join(store.dirOf(m, digest), "..", "data"), toolCalls: unrecordedToolCalls, secret: () => undefined, log: (line) => logs.push(line) });
 	const results: unknown[] = [];
 	let spawner!: FakeSpawner;
 	const started = await startHost(

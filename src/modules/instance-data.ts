@@ -17,6 +17,7 @@ const EMPTY: Stored = { collections: {}, aliases: {} };
 const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 const literal = (text: string) => `'${text.replaceAll("'", "''")}'`;
 const CONDITIONS = "CREATE TABLE IF NOT EXISTS _conditions (id TEXT PRIMARY KEY, collection TEXT NOT NULL, key TEXT NOT NULL, kind TEXT NOT NULL, params TEXT NOT NULL, set_at TEXT NOT NULL, note TEXT)";
+const TOOL_CALLS = "CREATE TABLE IF NOT EXISTS _tool_calls (at TEXT NOT NULL, caller TEXT NOT NULL, ticket TEXT, member TEXT, basis TEXT NOT NULL, tool TEXT NOT NULL, outcome TEXT NOT NULL, ms INTEGER NOT NULL)";
 const FEED_TABLES = "CREATE TABLE IF NOT EXISTS _feed_rows (source TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (source, id)); CREATE TABLE IF NOT EXISTS _feeds (source TEXT PRIMARY KEY, cursor TEXT, last_run_at INTEGER); CREATE TABLE IF NOT EXISTS _feed_connectors (source TEXT PRIMARY KEY, cursor TEXT)";
 const column = (name: string, field: FieldDescriptor) => `${quote(name)} ${field.type === "number" ? "REAL" : "TEXT"}`;
 const plain = ({ was: _, ...field }: FieldDescriptor) => field;
@@ -115,6 +116,13 @@ export interface FeedStates {
 	feedState(module: ModuleName, source: string): FeedState;
 	/** A field left out keeps its stored value. */
 	saveFeedState(module: ModuleName, source: string, state: { cursor?: string; connectorCursor?: string; lastRunAt?: number }): void;
+}
+
+/** One tool call that ran in a module: `caller` is the module whose ticket made it, the module itself for its own tools. */
+export type ToolCall = { caller: ModuleName; ticket: string | null; member: string | null; basis: string; tool: string; outcome: string; ms: number };
+
+export interface ToolCalls {
+	recordToolCall(module: ModuleName, call: ToolCall): void;
 }
 
 export type WatchRequest = Extract<Request, { kind: "watch" }>;
@@ -224,7 +232,7 @@ const openData = (path: string) => {
 	return db;
 };
 
-export function instanceData(stateDir: string): InstanceData & ModuleRows & FeedStates {
+export function instanceData(stateDir: string): InstanceData & ModuleRows & FeedStates & ToolCalls {
 	const pathOf = (module: ModuleName) => join(moduleDataDir(stateDir, module), "data.db");
 	const withRows = <T>(module: ModuleName, components: readonly Component[], access: { who: string; collection: string; op: Op }, use: (db: DatabaseSync, stored: Stored) => T): T => {
 		const ensured = data.migrate(module, components);
@@ -254,7 +262,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 		}
 	};
 
-	const data: InstanceData & ModuleRows & FeedStates = {
+	const data: InstanceData & ModuleRows & FeedStates & ToolCalls = {
 		check(module, components) {
 			const path = pathOf(module);
 			if (!existsSync(path)) return [];
@@ -392,6 +400,18 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 				db.prepare("INSERT INTO _feeds (source, cursor, last_run_at) VALUES (?, ?, ?) ON CONFLICT (source) DO UPDATE SET cursor = COALESCE(excluded.cursor, cursor), last_run_at = COALESCE(excluded.last_run_at, last_run_at)").run(source, cursor ?? null, lastRunAt ?? null);
 				if (connectorCursor !== undefined) db.prepare("INSERT INTO _feed_connectors (source, cursor) VALUES (?, ?) ON CONFLICT (source) DO UPDATE SET cursor = excluded.cursor").run(source, connectorCursor);
 			});
+		},
+		recordToolCall(module, { caller, ticket, member, basis, tool, outcome, ms }) {
+			mkdirSync(moduleDataDir(stateDir, module), { recursive: true });
+			// A short wait: the host writes this row on its own event loop, and a missed row costs less than a stalled host.
+			const db = new DatabaseSync(pathOf(module));
+			try {
+				db.exec("PRAGMA busy_timeout = 200");
+				db.exec(TOOL_CALLS);
+				db.prepare("INSERT INTO _tool_calls VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(new Date().toISOString(), caller, ticket, member, basis, tool, outcome, ms);
+			} finally {
+				db.close();
+			}
 		},
 		watch(module, components, request, who) {
 			return withRows(module, components, { who, collection: request.collection, op: request.op === "list" ? "read" : "write" }, (db, stored) => {
