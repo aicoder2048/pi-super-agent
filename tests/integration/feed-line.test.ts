@@ -157,7 +157,7 @@ test("放出的通知：一封新信写一条「通知」宿主行和一条触�
 test("页面标记：feed 写了 push: badge 的提醒不发 Telegram、不进对话、不算今日提醒；模块卡按 key 列出，同一个 key 新的换掉旧的", async (t) => {
 	const badging = (pkg: string) =>
 		writeFileSync(join(pkg, "feeds", "inbox", "index.ts"), `export default (input) => ({ alerts: input.items.map((i) => ({ id: i.id, text: i.subject, at: "2026-11-13T15:00:00Z", ...(i.key ? { push: "badge", key: i.key } : {}) })) });\n`);
-	const card: ModuleCard = { name: "private-line", on: true, label: "运行中", reason: "", tone: "ok", problems: [], version: { label: "0.1.0", digest: "" }, components: { feeds: 1 }, secrets: [], pinnedOld: 0, notImported: [] };
+	const card: ModuleCard = { name: "private-line", on: true, label: "运行中", reason: "", tone: "ok", problems: [], version: { label: "0.1.0", digest: "" }, components: { feeds: 1 }, secrets: [], pinnedOld: 0, notImported: [], notices: [], usedBy: [] };
 	const { host, deliver, phone } = await lettersHost(t, badging, () => [card]);
 	await deliver({ id: "b-1", subject: "NVDA · 开盘跳空 +3.40%", key: "NVDA" });
 	await deliver({ id: "b-2", subject: "AMD · 逆大盘：AMD +2.10%，QQQ -1.00%", key: "AMD" });
@@ -253,7 +253,7 @@ test("收件箱里的一件重试三次都失败：只写一条「通知」，�
 	assert.deepEqual(host.snapshot().health.recent, []);
 });
 
-const linesCard: ModuleCard = { name: "private-line", on: true, label: "运行中", reason: "", tone: "ok", problems: [], version: { label: "0.1.0", digest: "" }, components: { feeds: 1 }, secrets: [], pinnedOld: 0, notImported: [] };
+const linesCard: ModuleCard = { name: "private-line", on: true, label: "运行中", reason: "", tone: "ok", problems: [], version: { label: "0.1.0", digest: "" }, components: { feeds: 1 }, secrets: [], pinnedOld: 0, notImported: [], notices: [], usedBy: [] };
 const SUBJECT_FILE = "招商季度对账单.json";
 const failedBeat = (host: Host) => host.snapshot().modules[0]!.beats?.find((b) => !b.ok);
 
@@ -372,7 +372,7 @@ test("真的拿掉 feed：亮着收件箱警报时从包里删掉这个 feed，�
 });
 
 test("模块卡：宿主给有 feed 的模块填上今日提醒条数和每个 feed 最近一轮的时间、行数", async (t) => {
-	const card: ModuleCard = { name: "private-line", on: true, label: "运行中", reason: "", tone: "ok", problems: [], version: { label: "0.1.0", digest: "" }, components: { feeds: 1 }, secrets: [], pinnedOld: 0, notImported: [] };
+	const card: ModuleCard = { name: "private-line", on: true, label: "运行中", reason: "", tone: "ok", problems: [], version: { label: "0.1.0", digest: "" }, components: { feeds: 1 }, secrets: [], pinnedOld: 0, notImported: [], notices: [], usedBy: [] };
 	const { host, deliver } = await lettersHost(t, undefined, () => [card, { ...card, name: "quiet", components: {} }]);
 	await deliver(letter("m-1"));
 	const [lines, quiet] = host.snapshot().modules;

@@ -420,6 +420,8 @@ function moduleCard(m, now) {
 			parts.join(" · "),
 			m.secrets.length ? `密钥 ${m.secrets.join("、")}` : "",
 			m.pinnedOld ? `${m.pinnedOld} 个任务还在用旧版本` : "",
+			m.usedBy.length ? `谁在用 ${m.usedBy.join("、")}` : "",
+			...m.notices.map((notice) => `提醒 ${notice}`),
 			m.components.feeds ? `今日提醒 ${m.alertsToday ?? 0} 条` : "",
 			...(m.beats ?? []).map((b) => `${b.title} ${beatTime(b)} ${b.ok ? `取到 ${b.records} 行` : `这一轮失败：${b.note}`}`),
 		].filter(Boolean),
