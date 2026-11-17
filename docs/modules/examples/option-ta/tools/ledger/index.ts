@@ -71,6 +71,7 @@ export function facts(rows: readonly DbRow[]) {
 	let stockRows = 0;
 	const reversed = new Set(rows.filter((r) => r["record_type"] === "REVERSAL").map((r) => r["reversal_of"]).filter((k): k is string => typeof k === "string"));
 	let reversedRows = 0;
+	let undatedEvents = 0;
 	for (const row of rows) {
 		const type = row["record_type"] ?? "FILL";
 		if (type !== "FILL" && type !== "EVENT") continue;
@@ -97,6 +98,7 @@ export function facts(rows: readonly DbRow[]) {
 		}
 		seen.add(item.key);
 		items.push(item);
+		if (item.kind === "event" && row["trade_date"] !== item.date) undatedEvents++;
 	}
 	items.sort((a, b) => a.date.localeCompare(b.date) || a.row - b.row);
 	const notes = [
@@ -104,6 +106,7 @@ export function facts(rows: readonly DbRow[]) {
 		...(unreadable > 0 ? [`${unreadable} 行读不懂，没有算进去`] : []),
 		...(duplicates.length > 0 ? [`重复的 fill_id 只算一次：${duplicates.join("、")}`] : []),
 		...(reversedRows > 0 ? [`${reversedRows} 行已被冲销（REVERSAL），没有算`] : []),
+		...(undatedEvents > 0 ? [`${undatedEvents} 行事件的 trade_date 没写成 event_date：宿主按 trade_date 取最新 500 行，fills 超过 500 行后盯盘看不到这些到期、指派；以后写事件行把 trade_date 写成 event_date`] : []),
 		...(stockRows > 0 ? [`${stockRows} 行指派或行权产生的股票没有单算，股票那一笔从事件算`] : []),
 	];
 	return { items, notes, duplicates };

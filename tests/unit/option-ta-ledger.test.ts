@@ -181,3 +181,11 @@ test("指派：已知的开仓费用和指派费进股票成本；事件行没�
 	));
 	assert.deepEqual(out.stock.map((s) => [s["basis"], (s["marks"] as string[]).includes("费用未知，未扣")]), [["39615.70", false]]);
 });
+
+test("事件行没写 trade_date：notes 提醒补上（等于 event_date），不然 fills 超过 500 行后盯盘看不到它", () => {
+	const opened = fill({ option_symbol: "AAPL260320C00250000", side: "STO", qty: 1, price: "3", trade_date: "2026-03-02" });
+	const without = ledgerView({ view: "chain" }, rows(opened, event({ option_symbol: "AAPL260320C00250000", type: "EXPIRE", qty: 1, event_date: "2026-03-20" })));
+	assert.ok(((without as { notes: string[] }).notes).some((n) => n.includes("trade_date")), JSON.stringify(without["notes"]));
+	const withDate = ledgerView({ view: "chain" }, rows(opened, { ...event({ option_symbol: "AAPL260320C00250000", type: "EXPIRE", qty: 1, event_date: "2026-03-20" }), trade_date: "2026-03-20" }));
+	assert.ok(!((withDate as { notes: string[] }).notes).some((n) => n.includes("trade_date")), JSON.stringify(withDate["notes"]));
+});
