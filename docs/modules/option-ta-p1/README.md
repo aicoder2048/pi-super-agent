@@ -57,9 +57,9 @@
 | `open_interest` | 整数 | 张 | OI 墙、最大痛点、流动性 | 不缺；可能是 0 |
 | `implied_volatility` | 数字 | 小数（0.216 表示 21.6%） | IV 快照、波动率专家 | 二元期权缺；深度价内、极度价外的近月合约缺 |
 | `greeks.delta` / `gamma` / `theta` / `vega` | 数字 | 每股；theta 是每天的美元；vega 是 IV 变 1 个百分点的美元（按样本数值推断，供应方没写文档）。没有 rho | 策略计算、GEX、指派概率参考 | 同 IV：二元期权整个字段不在；深度价内或极度价外时 `greeks` 是空对象 `{}` |
-| `break_even_price` | 数字 | 美元；put = 行权价 − 中间价，call = 行权价 + 中间价（按样本验算） | 盈亏平衡 | 和 IV 一起缺 |
+| `break_even_price` | 数字 | 美元；put = 行权价 − 中间价，call = 行权价 + 中间价（按样本验算） | 盈亏平衡 | 只有二元期权缺；没有 IV 和希腊值的合约照样有 |
 | `underlying_asset.price` | 数字 | 正股价，`timeframe` 是 `DELAYED` | 离行权价多远 | 不缺 |
-| `underlying_asset.change_to_break_even` | 数字 | 正股价到盈亏平衡的距离（美元） | | 和 IV 一起缺 |
+| `underlying_asset.change_to_break_even` | 数字 | 正股价到盈亏平衡的距离（美元） | | 只有二元期权缺 |
 | `underlying_asset.last_updated` | 整数 | 纳秒 | 判断正股价新不新 | 不缺 |
 
 缺字段实测（各取一页 250 行）：
@@ -86,7 +86,7 @@
 | `results[].v` | 数字 | 张 |
 | `results[].vw` | 数字 | 成交量加权均价 |
 | `results[].n` | 整数 | 成交笔数 |
-| `results[].t` | 整数 | 毫秒时间戳（日线是美东当天 0 点对应的 UTC 毫秒） |
+| `results[].t` | 整数 | 毫秒时间戳。`/range` 的日线是美东当天 0 点对应的 UTC 毫秒；`/prev` 口径不同（期权 prev 是前一交易日美东 16:00，正股 prev 是 04:00），按日期取用，不要按时刻比 |
 | `adjusted`、`resultsCount`、`queryCount` | | |
 
 - `prev` 的成交量（26946）和快照 `day.volume`（27340）对同一合约同一天不一样，差 1.5%。猜测是两边对成交条件的取舍不同，没验证。做「异常成交」时选定一个来源，不要混。
@@ -132,7 +132,7 @@
 |---|---|
 | `last_quote` | 还在，停在 11-16 美东 16:14:57，也就是收盘时的报价。T 的代码注释说「休市时 last_quote 不在」，这次实测不对 |
 | `last_trade`、`day` | 还在，是 11-16 那个时段的 |
-| `underlying_asset.price` | **还在动**：04:14 更新过，736.17，而 SPY 11-16 收盘是 739.95。是盘前成交价 |
+| `underlying_asset.price` | **还在动**：04:15 更新过，736.17，而 SPY 11-16 收盘是 739.95。是盘前成交价 |
 | `implied_volatility`、`greeks` | **还在动**：两次调用相隔几十秒，IV 差 1e-6。说明供应方拿冻结的期权报价和移动的正股价、当前时刻重算 |
 | `break_even_price` | 不变（只依赖行权价和中间价） |
 | `change_to_break_even` | 跟着正股价变 |
@@ -246,7 +246,7 @@ T = `LearnTypeScript2PiAgent/playground/theta/app`，私有仓库，HEAD `ca23f0
 | `theta-weekly-review` | 组合体检，第一版不做仓位管理 |
 | `theta-defense-terrain` | 依赖 T 的组合工具 |
 | `theta-self-audit` | T 内部的代码自查 |
-| `theta-pb-email` | 给私人银行交易台写邮件，涉及私人账户；不在 T 的版本库里，没读 |
+| `theta-pb-email` | 涉及私人数据；不在 T 的版本库里，没读 |
 
 ### digest：和第一版相关的
 
@@ -277,7 +277,7 @@ T = `LearnTypeScript2PiAgent/playground/theta/app`，私有仓库，HEAD `ca23f0
 
 第二版再看：`2026-07-26-calendar-diagonal-pmcc.md`（跨期价差）、`2026-09-06-iron-condor-mechanics-management.md`（铁鹰，第一版不做）、`2026-10-10-single-stock-option-return-cross-section.md`（权利金贵不贵，机会筛选）。
 
-不进 option-ta：`2026-07-03-event-exit-management.md`（由 T 的一次实盘事件引出，没有公开出处）、`2026-07-01-wheel-book-postmortem-failure-attribution.md` 和 `2026-07-05-case-attribution-lesson-methodology.md`（基于 T 的账户复盘）、组合层的 6 篇（portfolio、pacing、whole-book ROC、dynamic ROC、beta、下跌相关性；最后一篇在 T 里还没提交）、和期权无关的 5 篇（harness、loop engineering、DoubleAgents、Jane Street 两篇）、`hypothesis-2026-07-05-community-mechanisms.md`（社区帖子汇总，不是权威出处）。信任源白名单在 `T/docs/research/scout-sources.md`，P2 写知识时可以对照。
+不进 option-ta：`2026-07-03-event-exit-management.md`（没有公开出处）、`2026-07-01-wheel-book-postmortem-failure-attribution.md` 和 `2026-07-05-case-attribution-lesson-methodology.md`（涉及私人数据）、组合层的 6 篇（portfolio、pacing、whole-book ROC、dynamic ROC、beta、下跌相关性；最后一篇在 T 里还没提交）、和期权无关的 5 篇（harness、loop engineering、DoubleAgents、Jane Street 两篇）、`hypothesis-2026-07-05-community-mechanisms.md`（社区帖子汇总，不是权威出处）。信任源白名单在 `T/docs/research/scout-sources.md`，P2 写知识时可以对照。
 
 这次没有打开 digest 正文，只读了标题和链接。P2 或 P3 引用某篇时要逐篇查版权。
 
