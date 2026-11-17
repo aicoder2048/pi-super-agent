@@ -18,11 +18,14 @@ export function examsOf(scan: PackageScan): Exam[] {
 	});
 }
 
+/** A call of another module's tool logs that module first and `from=<caller>` last, so it counts as `<provider>/tools/<name>`. */
 function usedBy(gateway: readonly string[], module: string, ticket: string): Set<string> {
 	const used = new Set<string>();
 	for (const line of gateway) {
-		const [, from, use, by] = line.match(/\[gateway\] (\S+) (\S+) (\S+) \S+ \S+ ok \d+ ms/) ?? [];
-		if (from === module && by === ticket && use !== undefined) used.add(use);
+		const [, owner, use, by, from] = line.match(/\[gateway\] (\S+) (\S+) (\S+) \S+ \S+ ok \d+ ms(?: from=(\S+))?/) ?? [];
+		if (by !== ticket || use === undefined) continue;
+		if (from === undefined && owner === module) used.add(use);
+		if (from === module) used.add(`${owner}/${use}`);
 	}
 	return used;
 }

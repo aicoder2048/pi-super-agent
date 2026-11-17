@@ -82,4 +82,26 @@ export class ModuleStore {
 	}
 }
 
+/** Copies a call from another module runs in. Counted, so two calls in one copy keep it until both end. Keys are `<module>/<digest>`, as `ModuleStore.collect` takes. */
+export class CopiesInUse {
+	readonly #calls = new Map<string, number>();
+
+	readonly hold = (module: ModuleName, digest: Digest): (() => void) => {
+		const key = `${module}/${digest}`;
+		this.#calls.set(key, (this.#calls.get(key) ?? 0) + 1);
+		let released = false;
+		return () => {
+			if (released) return;
+			released = true;
+			const left = (this.#calls.get(key) ?? 1) - 1;
+			if (left > 0) this.#calls.set(key, left);
+			else this.#calls.delete(key);
+		};
+	};
+
+	keys(): string[] {
+		return [...this.#calls.keys()];
+	}
+}
+
 const folders = (dir: string) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? [e.name] : []));

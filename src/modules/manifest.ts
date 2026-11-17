@@ -45,6 +45,21 @@ export interface ModuleManifest {
 	description?: string;
 	/** Team name. Required exactly when `agents/` has members. */
 	team?: string;
+	/** `tools/<name>` of this module that other modules may call. Only read tools, and only from a module with no private collection. */
+	exports?: readonly CapabilityUse[];
+	/** Only in a module without `agents/`: the other modules' tools its tickets may call, each `<module>/tools/<name>`. */
+	uses?: readonly CapabilityUse[];
+}
+
+const EXTERNAL_TOOL = /^([a-z0-9]+(?:-[a-z0-9]+)*)\/tools\/([a-z0-9][a-z0-9-]*)$/;
+
+/** A tool another module exports, named in `uses` and on `domain_tool` as `<module>/tools/<name>`. */
+export type ExternalTool = { provider: ModuleName; tool: ComponentName };
+
+/** Undefined: not of that shape. Whether `provider` is the caller's own module is the caller's to check. */
+export function externalTool(name: string): ExternalTool | undefined {
+	const match = EXTERNAL_TOOL.exec(name);
+	return match ? { provider: match[1] as ModuleName, tool: match[2] as ComponentName } : undefined;
 }
 
 /** `knowledge/<name>/source.json`, with `*.md` beside it when `license` is `bundled`. */
@@ -187,7 +202,7 @@ export interface AgentDescriptor {
 	model?: string;
 }
 
-/** `knowledge`, `data/<collection>`, `tools/<tool>` or `watch/<collection>`. */
+/** `knowledge`, `data/<collection>`, `tools/<tool>` or `watch/<collection>`, or another module's exported tool as `<module>/tools/<tool>`. */
 export type CapabilityUse = string & { readonly __brand: "CapabilityUse" };
 
 /** Front matter of `evals/<name>.md`: the capabilities the answer must have called and the phrases it must contain. The body is the question a dry run asks. */

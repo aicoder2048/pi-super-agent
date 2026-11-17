@@ -8,7 +8,7 @@ import { feedInput, intoOf, nothingHeld, parseCollected } from "./feed-runner.ts
 import { linkVenvs, lockOf, PY_DIR, venvDir, venvInstalled } from "./files.ts";
 import { fixtureSecrets, runModuleCode, runModuleCodeAsync, type CodeReply, type CodeSite, type RunOptions, type Secrets } from "./run-code.ts";
 import { identityNote } from "./identity-secrets.ts";
-import { CONNECTORS, DATA_CLASSES, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS, TOOL_FETCHES, TOOL_PORTS, type ToolFetch } from "./manifest.ts";
+import { CONNECTORS, DATA_CLASSES, externalTool, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS, TOOL_FETCHES, TOOL_PORTS, toolEffect, type ToolFetch } from "./manifest.ts";
 import { LINE_MAX_LINES, placeholders } from "./release.ts";
 import type {
 	AgentDescriptor, CapabilityUse, CollectionDescriptor, Component, ComponentName, Digest, FeedDescriptor, FeedFixture, FieldDescriptor, KindDir, MemberTool, ModuleManifest, ModuleName, PackageScan, Problem, RuleRef, Runtime, ScanResult, ToolCase, ToolDescriptor, ToolPort,
@@ -153,7 +153,7 @@ function readManifest(report: Report, root: string, folder: string): ModuleManif
 	const parsed = readJson(report, root, where);
 	const declared = isObject(parsed) ? Object.keys(parsed).filter((key) => derived.includes(key)) : [];
 	for (const key of declared) report(where, `must not list "${key}": components are derived from the folders, not declared`);
-	const raw = checkKeys(report, where, parsed, ["schema", "name", "version"], ["title", "description", "team", ...declared]);
+	const raw = checkKeys(report, where, parsed, ["schema", "name", "version"], ["title", "description", "team", "exports", "uses", ...declared]);
 	if (raw === undefined) return undefined;
 	if (raw["schema"] !== 1) report(where, `"schema" must be 1: that key is what marks a folder as a package of this layout`);
 	const name = typeof raw["name"] === "string" ? raw["name"] : "";
@@ -167,6 +167,12 @@ function readManifest(report: Report, root: string, folder: string): ModuleManif
 	for (const key of ["title", "description", "team"] as const) {
 		const value = optionalText(report, where, raw, key);
 		if (value !== undefined) manifest[key] = value;
+	}
+	for (const key of ["exports", "uses"] as const) {
+		const value = raw[key];
+		if (value === undefined) continue;
+		if (Array.isArray(value) && value.every((item) => typeof item === "string")) manifest[key] = value as CapabilityUse[];
+		else report(where, `"${key}" must be a list of strings`);
 	}
 	if ((manifest.description ?? "").length > 60) report(where, `"description" is the Router's roster line, at most 60 characters`);
 	return manifest;
@@ -456,10 +462,16 @@ const namedSecrets = (item: Component): { where: string; secret: string }[] => {
 	return [];
 };
 
-/** Every reference from one component to another resolves. */
-function crossCheck(report: Report, manifest: ModuleManifest, components: readonly Component[]): void {
+/** Every reference from one component to another resolves. A reference to another module's tool is only a note: this package cannot see that module. */
+function crossCheck(report: Report, note: Report, manifest: ModuleManifest, components: readonly Component[]): void {
 	const has = (kind: Component["kind"], name: string | undefined): boolean => components.some((item) => item.kind === kind && item.name === name);
 	const collections = new Map(components.flatMap((item) => (item.kind === "data" ? [[item.name as string, item.collection] as const] : [])));
+	const providerOf = (use: string): string | undefined => {
+		const provider = externalTool(use)?.provider;
+		return provider === manifest.name ? undefined : provider;
+	};
+	const external = (use: string): boolean => providerOf(use) !== undefined;
+	const externalNote = (use: string) => `uses "${use}", another module's tool; this check cannot see whether ${providerOf(use)} exports it`;
 	const resolves = (use: string): boolean => {
 		const [kind, name, more] = use.split("/");
 		if (use === "knowledge") return components.some((item) => item.kind === "knowledge");
@@ -483,13 +495,30 @@ function crossCheck(report: Report, manifest: ModuleManifest, components: readon
 		}
 		if (item.kind === "agents" || item.kind === "evals") {
 			for (const use of item.kind === "agents" ? item.agent.uses : item.eval.uses) {
-				if (!resolves(use)) report(`${item.kind}/${item.name}.md`, `uses "${use}", which this package does not have`);
+				if (external(use)) note(`${item.kind}/${item.name}.md`, externalNote(use));
+				else if (!resolves(use)) report(`${item.kind}/${item.name}.md`, `uses "${use}", which this package does not have`);
 			}
 		}
 	}
 	const members = components.filter((item) => item.kind === "agents").length;
 	if (members > 0 && manifest.team === undefined) report("module.json", `needs "team" because agents/ has members`);
 	if (members === 0 && manifest.team !== undefined) report("module.json", `has "team" but agents/ has no members`);
+	if (members > 0 && manifest.uses !== undefined) report("module.json", `has "uses" but agents/ has members: a team lists the other modules' tools in each member's uses`);
+	for (const use of manifest.uses ?? []) {
+		if (external(use)) note("module.json", externalNote(use));
+		else report("module.json", `"uses" lists "${use}", but it names only other modules' tools, as <module>/tools/<name>: this module's tickets reach its own capabilities without it`);
+	}
+	const privateData = [...collections].flatMap(([name, collection]) => (collection.class === "private" ? [`data/${name}`] : []));
+	if (manifest.exports !== undefined && privateData.length > 0) {
+		report("module.json", `has "exports" but ${privateData.join(", ")} is private: an exported tool's code can read every collection of this module`);
+	}
+	for (const use of manifest.exports ?? []) {
+		const [kind, name, more] = use.split("/");
+		const tool = kind === "tools" && more === undefined ? components.find((item) => item.kind === "tools" && item.name === name) : undefined;
+		if (kind !== "tools" || more !== undefined) report("module.json", `"exports" lists "${use}", but only a tool can be exported, as tools/<name>`);
+		else if (tool?.kind !== "tools") report("module.json", `"exports" lists "${use}", which this package does not have`);
+		else if (toolEffect(tool.tool) === "write") report("module.json", `"exports" lists "${use}", whose effect is write: only a read or pure tool can be exported`);
+	}
 }
 
 function same(actual: Json | undefined, expected: Json, tolerance: number): boolean {
@@ -639,7 +668,8 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, d
 	const components = readComponents(report, root);
 	const feeds = new Set(components.filter((item) => item.kind === "feeds").map((item) => item.name as string));
 	const rules = readRules(report, root, manifest.name, feeds);
-	crossCheck(report, manifest, components);
+	const notes: string[] = [];
+	crossCheck(report, (where, reason) => void notes.push(`${where}: ${reason}`), manifest, components);
 	for (const item of components) {
 		if (item.kind !== "tools" || item.tool.port === undefined) continue;
 		const only = TOOL_PORTS[item.tool.port].module;
@@ -657,10 +687,10 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, d
 			data.drop();
 		}
 	}
-	const notes = components.flatMap(namedSecrets).flatMap(({ where, secret }) => {
+	notes.push(...components.flatMap(namedSecrets).flatMap(({ where, secret }) => {
 		const note = identityNote(secret);
 		return note === undefined ? [] : [`${where}: ${note}`];
-	});
+	}));
 	if (previous !== undefined && problems.length === 0) {
 		const before = readComponents(() => undefined, resolve(previous));
 		const changes = structureChanges(before, components);

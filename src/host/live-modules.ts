@@ -14,7 +14,7 @@ import type { ModuleCard } from "../client/protocol.ts";
 import { instanceData } from "../modules/instance-data.ts";
 import { notImportedIn, moduleDataDir } from "../modules/knowledge.ts";
 import { describe, initialRecord, problemText, type Effect, type ModuleEvent, type ModuleRecord, type Stage, type Version } from "../modules/lifecycle.ts";
-import { drive, liveRegistry, ModuleStore, switchEvent } from "../modules/live.ts";
+import { CopiesInUse, drive, liveRegistry, ModuleStore, switchEvent } from "../modules/live.ts";
 import type { Digest, ModuleName, PackageScan, Problem, ScanResult } from "../modules/manifest.ts";
 import type { LiveRegistry } from "../modules/registry.ts";
 import { digestOf, hasCases, runCasesAsync, scanPackage, secretNames } from "../modules/validate.ts";
@@ -26,6 +26,8 @@ const LEGACY_LABEL = "旧布局";
 
 export interface LiveModules {
 	readonly live: LiveRegistry<Modules>;
+	/** The gateway holds a provider's copy here while a call from another module runs in it; collecting skips it. */
+	readonly copiesInUse: CopiesInUse;
 	/** `pin` null: the serving table. Otherwise the ticket's copy, served even after the module is switched off. */
 	kitFor(domain: string, pin: string | null): DomainKit | undefined;
 	cards(): ModuleCard[];
@@ -75,6 +77,7 @@ function packageComponents(scan: PackageScan): ModuleCard["components"] {
 
 export function startLiveModules({ db, stateDir, roots, discovered, configSwitches, log }: LiveModulesOptions): LiveModules {
 	const store = new ModuleStore(join(stateDir, "module-store"));
+	const copiesInUse = new CopiesInUse();
 	const data = instanceData(stateDir);
 	const found = new Map<string, Found>([
 		...discovered.found.map((m): [string, Found] => [m.name, { dir: m.dir, version: { digest: digestOf(m.dir), label: LEGACY_LABEL }, legacy: m }]),
@@ -209,7 +212,7 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 	};
 	const collect = () => {
 		const serving = [...records.values()].flatMap((r) => (r.state.at === "active" ? [`${r.name}/${r.state.serving.digest}`] : []));
-		safely("回收旧副本", () => store.collect(new Set([...serving, ...pinnedCopies(db).map((p) => `${p.module}/${p.digest}`)])));
+		safely("回收旧副本", () => store.collect(new Set([...serving, ...pinnedCopies(db).map((p) => `${p.module}/${p.digest}`), ...copiesInUse.keys()])));
 	};
 	const reconcile = (): boolean => {
 		let changed = false;
@@ -315,6 +318,7 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 
 	return {
 		live,
+		copiesInUse,
 		cards: () => {
 			const switches = new Map(moduleRows(db).map((r) => [r.name, r.switch]));
 			const pinned = pinnedCopies(db);

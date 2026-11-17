@@ -80,7 +80,7 @@ export function feedSpecs(config: Pick<HostConfig, "stateDir" | "secretsFile" | 
 export interface HostWiringInput {
 	config: HostConfig;
 	/** The timers, the feeds and `watching` are read once here; F5 makes them follow. */
-	modules: Pick<LiveModules, "live" | "kitFor" | "cards" | "setSwitch" | "onChange">;
+	modules: Pick<LiveModules, "live" | "kitFor" | "cards" | "setSwitch" | "onChange" | "copiesInUse">;
 	modelRuntime: ModelRuntime;
 	log: (line: string) => void;
 	clock?: Clock;
@@ -133,6 +133,7 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 			fetch: { "mail.attachment": (module, components, input, dir) => fetchAttachment({ account: mail, rows, now: Date.now }, module, components, input, dir) },
 			google: googlePort({ secret, oauthUrl: process.env.PSA_GOOGLE_OAUTH_URL, fixtures: config.feedFixtures }),
 			ocr,
+			hold: panel.copiesInUse.hold,
 		}),
 		ocr,
 		rulesFor: (source) => live.current().rulesFor(source),
