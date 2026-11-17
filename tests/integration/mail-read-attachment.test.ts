@@ -6,7 +6,10 @@ import { deflateSync } from "node:zlib";
 import { join } from "node:path";
 import test, { after, before, type TestContext } from "node:test";
 import { Modules } from "../../src/modules.ts";
-import { runFeed, type FeedPorts } from "../../src/modules/feed-runner.ts";
+import { FETCH_LIMITS, fetchAttachment, type FetchLimits } from "../../src/modules/connectors/attachment.ts";
+import { gmailAccount } from "../../src/modules/connectors/gmail.ts";
+import { MailConnector } from "../../src/modules/connectors/mail.ts";
+import type { FeedPorts } from "../../src/modules/feed-runner.ts";
 import { lockOf, venvDir, VENV_MARK } from "../../src/modules/files.ts";
 import { createGateway } from "../../src/modules/gateway.ts";
 import { instanceData } from "../../src/modules/instance-data.ts";
@@ -54,18 +57,19 @@ async function attachmentWorld(t: TestContext, letters: readonly Letter[], { ven
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const pkg = join(root, "modules", "mail");
 	cpSync(PKG, pkg, { recursive: true });
-	const feedJson = join(pkg, "feeds/inbox/feed.json");
-	writeFileSync(feedJson, JSON.stringify({ ...JSON.parse(readFileSync(feedJson, "utf8")), settings: { baseUrl: google.url, tokenUrl: `${google.url}/token` } }));
 	const state = join(root, "state");
 	const data = instanceData(state);
 	const dataDir = moduleDataDir(state, "mail");
 	const entry = servedAsHost(Modules.load([join(root, "modules")])).feeds().find((e) => e.source === "mail/inbox");
 	assert.ok(entry, "mail 有 inbox feed");
 	const secrets: Record<string, string> = { GOOGLE_OAUTH_CLIENT_ID: google.client.id, GOOGLE_OAUTH_CLIENT_SECRET: google.client.secret, GMAIL_READ_REFRESH_TOKEN: REFRESH };
-	const ports: FeedPorts = { data, submit: () => {}, alert: () => {}, problem: () => {}, secret: (name) => secrets[name], now: () => Date.now() };
+	const ports: FeedPorts = { data, submit: () => {}, alert: () => true, badge: () => {}, problem: () => {}, secret: () => undefined, now: () => Date.now() };
+	const account = gmailAccount({ secret: (name) => secrets[name], oauthUrl: google.url });
 	data.write("mail", entry.components, "senders", [{ address: "ann@example.com" }], "使用者口述", "test");
 	box.deliver(...letters);
-	assert.deepEqual(await runFeed(entry, [], ports), { ok: true, records: letters.length, notices: letters.length });
+	const mail = new MailConnector({ account, rejectedDir: () => join(root, "rejected"), rejected: () => {} });
+	assert.deepEqual(await mail.beat(entry, ports), { ok: true, records: letters.length, notices: letters.length });
+	const fetch = (input: Json, dir: string, limits?: Partial<FetchLimits>) => fetchAttachment({ account, rows: data, now: Date.now, limits: { ...FETCH_LIMITS, ...limits } }, "mail" as ModuleName, entry.components, input, dir);
 
 	const lock = lockOf(pkg)!;
 	const venvAt = venvDir(dataDir, lock);
@@ -84,9 +88,19 @@ async function attachmentWorld(t: TestContext, letters: readonly Letter[], { ven
 		writeFileSync(join(pkg, TOOL, name), `import { LIMITS, readAttachment } from "./index.ts";\nexport default (input) => readAttachment(input, { ...LIMITS, ...${JSON.stringify(limits)} });\n`);
 		return name;
 	};
-	const call = (input: Json, entryFile = "index.ts") => runModuleCodeAsync({ packageDir: pkg, component: TOOL, dataDir }, entryFile, input, secrets);
+	/** What the gateway does for a tool with `fetch`: the host downloads first, the tool reads the file, the folder goes. */
+	const call = async (input: Json, entryFile = "index.ts", limits?: Partial<FetchLimits>) => {
+		const dir = mkdtempSync(join(tmpdir(), "psa-fetch-"));
+		try {
+			const fetched = await fetch(input, dir, limits);
+			if (typeof fetched === "string") return { ok: false as const, note: fetched };
+			return await runModuleCodeAsync({ packageDir: pkg, component: TOOL, dataDir }, entryFile, { ...(input as object), fetched });
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	};
 	const downloads = () => google.log.filter((line) => line.includes("/attachments/"));
-	return { box, google, pkg, dataDir, secrets, call, lowered, downloads };
+	return { box, google, pkg, dataDir, data, fetch, secrets, call, lowered, downloads };
 }
 
 const ann = (id: string, attachments: readonly Attachment[]): Letter => ({ id, from: "Ann Lee <ann@example.com>", subject: "附件", snippet: "见附件", text: "见附件", attachments });
@@ -140,11 +154,15 @@ test("读附件：文字附件按 Content-Type 的 charset 解码；认不出的
 	assert.match(odd, /附件.*x-made-up/, "认不出的 charset 写明");
 });
 
-test("读附件：messageId 不在 messages 里、partId 不属于这封信，都拒绝，不下载", async (t) => {
+test("读附件：信不存在、发件人不在名单上、partId 不属于这封信，都拒绝，不下载", async (t) => {
 	const w = await attachmentWorld(t, [ann("m-1", [file("a.txt", "text/plain", "x")])]);
 	const stranger = await w.call({ messageId: "m-404", partId: "1" });
 	assert.ok(!stranger.ok);
-	assert.match(stranger.note, /messages 里没有 gmailId 为 m-404 的信/);
+	assert.match(stranger.note, /没有 gmailId 为 m-404 的信/);
+	w.box.deliver({ id: "m-out", from: "Promo <deals@example.org>", subject: "大促", text: "x", attachments: [file("a.txt", "text/plain", "名单外的附件")] });
+	const outside = await w.call({ messageId: "m-out", partId: "1" });
+	assert.ok(!outside.ok);
+	assert.match(outside.note, /不在 mail 收的信里/, "名单外的发件人：宿主不下载，工具也不运行");
 	const wrongPart = await w.call({ messageId: "m-1", partId: "0.0" });
 	assert.ok(!wrongPart.ok);
 	assert.match(wrongPart.note, /这封信没有 partId 为 0\.0 的附件.*1/);
@@ -162,14 +180,13 @@ test("读附件：超过 10 MB 拒绝，不下载", async (t) => {
 	assert.deepEqual(w.downloads(), []);
 });
 
-test("读附件：不认的类型拒绝并写明类型，类型和扩展名对不上也拒绝，都不下载", async (t) => {
+test("读附件：不认的类型拒绝并写明类型，类型和扩展名对不上也拒绝", async (t) => {
 	const w = await attachmentWorld(t, [ann("m-1", [file("photo.png", "image/jpeg", "png"), file("run.exe", "text/plain", "MZ"), file("a.zip", "application/zip", "PK")])]);
 	for (const [partId, shown] of [["1", "image/jpeg（photo.png）"], ["2", "text/plain（run.exe）"], ["3", "application/zip（a.zip）"]] as const) {
 		const reply = await w.call({ messageId: "m-1", partId });
 		assert.ok(!reply.ok, partId);
 		assert.ok(reply.note.includes(`这个附件是 ${shown}，只读 txt、md、csv、html、pdf 和图片（png、jpg、heic、tiff、webp、bmp）`), reply.note);
 	}
-	assert.deepEqual(w.downloads(), []);
 });
 
 test("读附件：通用类型（QQ 邮箱发的 octet-stream 等）按扩展名选读法", async (t) => {
@@ -194,22 +211,20 @@ test("读附件：通用类型（QQ 邮箱发的 octet-stream 等）按扩展名
 	assert.equal((await read("5")).text, "你好");
 });
 
-test("读附件：通用类型的 .pdf 开头不是 %PDF- 就拒绝；不认的扩展名不下载就拒绝", async (t) => {
+test("读附件：通用类型的 .pdf 开头不是 %PDF- 就拒绝；不认的扩展名也拒绝", async (t) => {
 	const w = await attachmentWorld(t, [ann("m-1", [file("fake.pdf", "application/octet-stream", "MZ not a pdf"), file("run.exe", "application/octet-stream", "MZ")])]);
 	const fake = await w.call({ messageId: "m-1", partId: "1" });
 	assert.ok(!fake.ok);
 	assert.match(fake.note, /fake\.pdf.*不是 PDF/);
-	const before = w.downloads().length;
 	const exe = await w.call({ messageId: "m-1", partId: "2" });
 	assert.ok(!exe.ok);
 	assert.ok(exe.note.includes("这个附件是 application/octet-stream（run.exe），只读 txt、md、csv、html、pdf"), exe.note);
-	assert.equal(w.downloads().length, before, "exe 不下载");
 });
 
 test("读附件：下载超过上限就拒绝，写「附件下载超时」", async (t) => {
 	const w = await attachmentWorld(t, [ann("m-1", [file("slow.txt", "text/plain", "x".repeat(4000), { trickleMs: 3000 })])]);
 	const started = Date.now();
-	const reply = await w.call({ messageId: "m-1", partId: "1" }, w.lowered({ downloadMs: 400 }));
+	const reply = await w.call({ messageId: "m-1", partId: "1" }, "index.ts", { downloadMs: 400 });
 	assert.ok(!reply.ok);
 	assert.match(reply.note, /附件下载超时/);
 	assert.ok(Date.now() - started < 2500, "不等下载传完");
@@ -305,7 +320,7 @@ function gatewayOver(t: TestContext, w: Awaited<ReturnType<typeof attachmentWorl
 	const store = new ModuleStore(join(w.dataDir, "..", "..", "store"));
 	const digest = scan.scan.digest;
 	assert.ok(store.keep("mail" as ModuleName, digest, w.pkg));
-	const gateway = createGateway({ copyDir: (module, pin) => store.dirOf(module, pin), serving: () => digest, dataDir: () => w.dataDir, rows: {} as never, secret: (name) => w.secrets[name], log: () => {}, ...(ocr && { ocr }) });
+	const gateway = createGateway({ copyDir: (module, pin) => store.dirOf(module, pin), serving: () => digest, dataDir: () => w.dataDir, rows: w.data, secret: () => undefined, log: () => {}, fetch: { "mail.attachment": (_module, _components, input, dir) => w.fetch(input, dir) }, ...(ocr && { ocr }) });
 	const caller: WorkerCaller = { who: "worker", ticket: "tkt_1", pin: { module: "mail" as ModuleName, digest }, basis: "inference", member: null, heardOthers: false };
 	return { gateway, caller };
 }

@@ -1,0 +1,9 @@
+{
+  "title": "医院发件人名单",
+  "kind": "record",
+  "class": "shareable",
+  "fields": {
+    "address": { "type": "text", "title": "医院或体检机构的发件地址，例如 report@hospital.example.com；写 @hospital.example.com 就收这个域名" },
+    "note": { "type": "text", "title": "备注" }
+  }
+}

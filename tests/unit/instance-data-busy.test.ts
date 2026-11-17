@@ -30,5 +30,5 @@ test("另一个连接正短暂锁着 data.db 时，模块数据等它放开再�
 	Atomics.wait(new Int32Array(flag), 0, 0, 5000);
 	data.saveFeedState(module, "quotes", { cursor: "b", lastRunAt: 2 });
 	await new Promise((r) => worker.once("exit", r));
-	assert.deepEqual(data.feedState(module, "quotes"), { cursor: "b", lastRunAt: 2 });
+	assert.deepEqual(data.feedState(module, "quotes"), { cursor: "b", connectorCursor: null, lastRunAt: 2 });
 });

@@ -20,16 +20,9 @@ export type MessageRow = {
 type Released = { from: string; subject: string; snippet: string };
 
 export type Part = { partId?: string; mimeType?: string; filename?: string; headers?: { name: string; value: string }[]; body?: { data?: string; size?: number; attachmentId?: string }; parts?: Part[] };
-export type GmailMessage = { id: string; threadId?: string; snippet?: string; internalDate?: string; payload?: Part };
 
-const BODY_BYTES = 64 * 1024;
-const CUT = "\n\n[正文超过 64 KB，后面截掉了，全文在 Gmail 里看]";
 const UNKNOWN_CHARSET = (what: string, charset: string) => `\n\n[${what}的字符集 ${charset} 认不出，按 UTF-8 显示，可能有乱码，原文在 Gmail 里看]`;
-const NOT_FETCHED = "[正文太大，Gmail 单独存放，这里没取，全文在 Gmail 里看]";
 const LIMITS = { name: 80, subject: 120, snippet: 100, line: 160 } as const;
-
-export const header = (message: GmailMessage, name: string): string =>
-	message.payload?.headers?.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
 
 type Mailbox = { name: string; address: string };
 
@@ -99,23 +92,8 @@ export function htmlToText(html: string): string {
 		.trim();
 }
 
-function clipBytes(text: string): string {
-	if (Buffer.byteLength(text, "utf8") <= BODY_BYTES) return text;
-	const room = BODY_BYTES - Buffer.byteLength(CUT, "utf8");
-	let kept = "";
-	let bytes = 0;
-	for (const ch of text) {
-		bytes += Buffer.byteLength(ch, "utf8");
-		if (bytes > room) break;
-		kept += ch;
-	}
-	return kept + CUT;
-}
-
-export const partsOf = (part: Part | undefined): Part[] => (part === undefined ? [] : [part, ...(part.parts ?? []).flatMap(partsOf)]);
-
 /** Gmail hands over a part's bytes as sent, in the charset its Content-Type names (GBK, Big5, Shift_JIS, ISO-8859-x). */
-export function decodeText(bytes: Buffer, part: Part, what: "正文" | "附件"): string {
+export function decodeText(bytes: Buffer, part: Part, what: "附件"): string {
 	const contentType = part.headers?.find((h) => h.name.toLowerCase() === "content-type")?.value ?? "";
 	const charset = /charset\s*=\s*"?([^";\s]+)/i.exec(contentType)?.[1];
 	const utf8 = () => new TextDecoder("utf-8").decode(bytes);
@@ -125,40 +103,6 @@ export function decodeText(bytes: Buffer, part: Part, what: "正文" | "附件")
 	} catch {
 		return `${utf8()}${UNKNOWN_CHARSET(what, charset.slice(0, 40))}`;
 	}
-}
-
-const decode = (part: Part) => decodeText(Buffer.from(part.body?.data ?? "", "base64url"), part, "正文");
-
-function bodyText(parts: readonly Part[]): string {
-	const inline = parts.filter((p) => !p.filename && p.body?.data);
-	const plain = inline.find((p) => p.mimeType === "text/plain");
-	if (plain) return decode(plain);
-	const html = inline.find((p) => p.mimeType === "text/html");
-	if (html) return htmlToText(decode(html));
-	return parts.some((p) => !p.filename && p.mimeType?.startsWith("text/") && p.body?.attachmentId) ? NOT_FETCHED : "";
-}
-
-export function messageRow(message: GmailMessage): MessageRow {
-	const parts = partsOf(message.payload);
-	const from = parseFrom(header(message, "From")) ?? { name: "", address: "" };
-	const attachments: Attachment[] = parts
-		.filter((p) => p.filename && p.body?.attachmentId)
-		.map((p) => ({ partId: p.partId ?? "", filename: p.filename!, mimeType: p.mimeType ?? "", size: p.body?.size ?? 0 }));
-	const at = Number(message.internalDate);
-	return {
-		id: message.id,
-		gmailId: message.id,
-		threadId: message.threadId ?? "",
-		messageIdHeader: header(message, "Message-ID"),
-		fromName: from.name,
-		fromAddress: from.address,
-		replyTo: header(message, "Reply-To"),
-		subject: header(message, "Subject"),
-		date: Number.isFinite(at) && at > 0 ? new Date(at).toISOString() : "",
-		snippet: decodeEntities(message.snippet ?? ""),
-		body: clipBytes(bodyText(parts)),
-		attachments: JSON.stringify(attachments),
-	};
 }
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });

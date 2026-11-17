@@ -108,12 +108,13 @@ export interface ModuleRows {
 export type ConditionAlert = Alert & { fold?: DayMoveFold };
 export type Written = Accessed & { alerts: readonly ConditionAlert[]; alertProblem?: string };
 
-export type FeedState = { cursor: string | null; lastRunAt: number | null };
+/** `connectorCursor`: where the feed's connector is in its service (the mail connector's Gmail history position); the handler never sees it. */
+export type FeedState = { cursor: string | null; connectorCursor: string | null; lastRunAt: number | null };
 
 export interface FeedStates {
 	feedState(module: ModuleName, source: string): FeedState;
 	/** A field left out keeps its stored value. */
-	saveFeedState(module: ModuleName, source: string, state: { cursor?: string; lastRunAt?: number }): void;
+	saveFeedState(module: ModuleName, source: string, state: { cursor?: string; connectorCursor?: string; lastRunAt?: number }): void;
 }
 
 export type WatchRequest = Extract<Request, { kind: "watch" }>;
@@ -247,6 +248,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 		const db = openData(pathOf(module));
 		try {
 			db.exec(FEED_TABLES);
+			if (!(db.prepare("PRAGMA table_info(_feeds)").all() as { name: string }[]).some((c) => c.name === "connector_cursor")) db.exec("ALTER TABLE _feeds ADD COLUMN connector_cursor TEXT");
 			return use(db);
 		} finally {
 			db.close();
@@ -381,13 +383,17 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 		},
 		feedState(module, source) {
 			return withFeeds(module, (db) => {
-				const row = db.prepare("SELECT cursor, last_run_at FROM _feeds WHERE source = ?").get(source) as { cursor: string | null; last_run_at: number | null } | undefined;
-				return { cursor: row?.cursor ?? null, lastRunAt: row?.last_run_at ?? null };
+				const row = db.prepare("SELECT cursor, connector_cursor, last_run_at FROM _feeds WHERE source = ?").get(source) as { cursor: string | null; connector_cursor: string | null; last_run_at: number | null } | undefined;
+				return { cursor: row?.cursor ?? null, connectorCursor: row?.connector_cursor ?? null, lastRunAt: row?.last_run_at ?? null };
 			});
 		},
-		saveFeedState(module, source, { cursor, lastRunAt }) {
+		saveFeedState(module, source, { cursor, connectorCursor, lastRunAt }) {
 			withFeeds(module, (db) =>
-				db.prepare("INSERT INTO _feeds VALUES (?, ?, ?) ON CONFLICT (source) DO UPDATE SET cursor = COALESCE(excluded.cursor, cursor), last_run_at = COALESCE(excluded.last_run_at, last_run_at)").run(source, cursor ?? null, lastRunAt ?? null),
+				db
+					.prepare(
+						"INSERT INTO _feeds (source, cursor, connector_cursor, last_run_at) VALUES (?, ?, ?, ?) ON CONFLICT (source) DO UPDATE SET cursor = COALESCE(excluded.cursor, cursor), connector_cursor = COALESCE(excluded.connector_cursor, connector_cursor), last_run_at = COALESCE(excluded.last_run_at, last_run_at)",
+					)
+					.run(source, cursor ?? null, connectorCursor ?? null, lastRunAt ?? null),
 			);
 		},
 		watch(module, components, request, who) {

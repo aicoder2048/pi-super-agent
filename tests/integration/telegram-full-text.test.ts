@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { hostLineLabel } from "../../src/client/board-format.mjs";
+import { gmailAccount } from "../../src/modules/connectors/gmail.ts";
 import { Host } from "../../src/host/host.ts";
 import { BotApi, BotToken } from "../../src/host/telegram/bot-api.ts";
 import { createGateway } from "../../src/modules/gateway.ts";
@@ -119,7 +120,7 @@ test("mail 模块：三行通知、看信和回信任务的转述都全文到 Te
 	const pkg = join(root, "modules", "mail");
 	cpSync(join(import.meta.dirname, "../../docs/modules/examples/mail"), pkg, { recursive: true });
 	const feedJson = join(pkg, "feeds", "inbox", "feed.json");
-	writeFileSync(feedJson, JSON.stringify({ ...JSON.parse(readFileSync(feedJson, "utf8")), every: "1s", settings: { baseUrl: google.url, tokenUrl: `${google.url}/token` } }));
+	writeFileSync(feedJson, JSON.stringify({ ...JSON.parse(readFileSync(feedJson, "utf8")), every: "1s" }));
 	const scan = scanPackage(pkg, { runCases: false, folder: MAIL });
 	assert.ok(scan.ok);
 	const store = new ModuleStore(join(stateDir, "module-store"));
@@ -169,7 +170,7 @@ test("mail 模块：三行通知、看信和回信任务的转述都全文到 Te
 		workerModels: defaultWorkerModels(),
 		domains: { book: () => modules.book, kitFor: (d) => (d === MAIL ? { skillsDir: undefined, prepare: undefined, crew: [], granted: [] } : undefined) },
 		gateway,
-		moduleFeeds: { feeds: () => modules.feeds(), fixtures: false, tickMs: 20, secret: (name) => secrets[name] },
+		moduleFeeds: { feeds: () => modules.feeds(), fixtures: false, tickMs: 20, mail: gmailAccount({ secret: (name) => secrets[name], oauthUrl: google.url }) },
 		telegram: { api: new BotApi({ token: new BotToken(FAKE_BOT_TOKEN, "测试"), baseUrl: tg.url }), allowedUserIds: new Set([USER]), timing: { pollTimeoutSec: 1, minGapMs: 5 } },
 	});
 	spawner.request = (...args) => host.workers.handleRequest(...args);

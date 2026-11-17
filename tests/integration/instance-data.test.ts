@@ -51,11 +51,11 @@ const columns = (state: string, module: string, table: string) => sql<{ name: st
 const tables = (state: string, module: string) => sql<{ name: string }>(state, module, "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE '\\_%' ESCAPE '\\' ORDER BY name").map((t) => t.name);
 const labRow = (state: string) => write(state, LITE, `INSERT INTO "lab-results" ("_from", item, value, takenAt, lab) VALUES ('blobs/report-1.pdf', 'CEA', 3.1, '2026-10-01', '协和')`);
 
-test("第一次迁移：personal-health 的五类数据各一张表，列是 collection.json 的字段，每行另有出处 _from 和后来改动的来源 _sources", (t) => {
+test("第一次迁移：personal-health 的六类数据各一张表，列是 collection.json 的字段，每行另有出处 _from 和后来改动的来源 _sources", (t) => {
 	const state = stateDir(t);
 	const result = instanceData(state).migrate("personal-health" as ModuleName, components(join(SAMPLE, "personal-health")));
 	assert.deepEqual(result, { ok: true });
-	assert.deepEqual(tables(state, "personal-health"), ["device-readings", "documents", "lab-results", "profile", "research-updates"]);
+	assert.deepEqual(tables(state, "personal-health"), ["device-readings", "documents", "lab-results", "profile", "research-updates", "senders"]);
 	assert.deepEqual(columns(state, "personal-health", "lab-results"), ["_id", "_from", "_sources", "item", "value", "unit", "reference", "takenAt", "lab"]);
 	assert.ok(existsSync(join(state, "modules-data", "personal-health", "blobs")), "blobs/ holds the originals rows point to");
 });

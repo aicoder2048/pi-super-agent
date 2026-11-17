@@ -1,8 +1,8 @@
 /** Decides only which module code a secret may reach; the host reads its own secrets without this table (ADR-0019). */
 export const SECRET_OWNERS: Readonly<Record<string, string>> = {
-	GOOGLE_OAUTH_CLIENT_ID: "mail",
-	GOOGLE_OAUTH_CLIENT_SECRET: "mail",
-	GMAIL_READ_REFRESH_TOKEN: "mail",
+	GOOGLE_OAUTH_CLIENT_ID: "host",
+	GOOGLE_OAUTH_CLIENT_SECRET: "host",
+	GMAIL_READ_REFRESH_TOKEN: "host",
 	POLYGON_API_KEY: "stock-ta",
 	FINNHUB_API_KEY: "stock-ta",
 	GMAIL_DRAFT_REFRESH_TOKEN: "host",

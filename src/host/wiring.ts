@@ -16,6 +16,8 @@ import { PiWorkerSpawner } from "./pi-worker.ts";
 import { Router, routerPreamble } from "./router.ts";
 import { secretLookup } from "../secrets.ts";
 import { createGateway } from "../modules/gateway.ts";
+import { fetchAttachment } from "../modules/connectors/attachment.ts";
+import { gmailAccount } from "../modules/connectors/gmail.ts";
 import { googlePort } from "../modules/google-port.ts";
 import { createOcr } from "../ocr/ocr.ts";
 import { instanceData } from "../modules/instance-data.ts";
@@ -104,6 +106,8 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 	const telegram = telegramOptions(config, process.env, log);
 	const store = new ModuleStore(join(config.stateDir, "module-store"));
 	const secret = secretLookup(config.secretsFile);
+	const mail = gmailAccount({ secret, oauthUrl: process.env.PSA_GOOGLE_OAUTH_URL });
+	const rows = instanceData(config.stateDir);
 	const ocr = createOcr(config.ocr);
 	return {
 		stateDir: config.stateDir,
@@ -115,16 +119,17 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 		sourcePolicy: (trigger) => live.current().sourcePolicy(trigger),
 		ruleAllows: (ruleId, source) => live.current().ruleAllows(ruleId, source),
 		isMarketSource: (source) => live.current().isMarketSource(source),
-		moduleFeeds: { feeds: () => live.current().feeds(), fixtures: config.feedFixtures, secret },
+		moduleFeeds: { feeds: () => live.current().feeds(), fixtures: config.feedFixtures, secret, mail },
 		domains: { book: () => live.current().book, kitFor },
 		modules: panel,
 		gateway: createGateway({
 			copyDir: (module, digest) => store.dirOf(module, digest),
 			serving: (module) => live.current().book.get(module)?.digest as Digest | undefined,
 			dataDir: (module) => moduleDataDir(config.stateDir, module),
-			rows: instanceData(config.stateDir),
+			rows,
 			secret,
 			log,
+			fetch: { "mail.attachment": (module, components, input, dir) => fetchAttachment({ account: mail, rows, now: Date.now }, module, components, input, dir) },
 			google: googlePort({ secret, oauthUrl: process.env.PSA_GOOGLE_OAUTH_URL, fixtures: config.feedFixtures }),
 			ocr,
 		}),
