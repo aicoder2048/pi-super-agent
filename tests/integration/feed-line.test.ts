@@ -124,9 +124,9 @@ async function lettersHost(t: TestContext, edit?: (pkg: string) => void, cards: 
 	await until(() => tg.sent.length > 0, "聊天打开");
 	const inbox = join(root, "state", "inbox", "private-line", "inbox");
 	let n = 0;
-	const deliver = async (item: object) => {
+	const deliver = async (item: object, name = `${String(++n).padStart(3, "0")}.json`) => {
 		mkdirSync(inbox, { recursive: true });
-		writeFileSync(join(inbox, `${String(++n).padStart(3, "0")}.json`), JSON.stringify(item));
+		writeFileSync(join(inbox, name), JSON.stringify(item));
 		await until(() => !readdirSync(inbox).some((f) => f.endsWith(".json")), "收件箱处理完", 10_000);
 		await host.router.waitForIdle();
 	};
@@ -243,14 +243,47 @@ test("收件箱里的一件重试三次都失败：只写一条「通知」，�
 	const { deliver, notices, phone, alarms, host, inbox } = await lettersHost(t);
 	await deliver({ fail: "HTTP 503，读不懂：账户尾号 8842 余额 31,337.00" });
 	assert.deepEqual(alarms(), [], "收件箱里坏掉的一件不算断了");
-	assert.deepEqual(notices().map((l) => l.text), ["测试信箱：来信：收件箱里的 001.json 试了 3 次都没处理成，放进了本机的 rejected，错误记在那里"]);
-	await until(() => phone().some((m) => m.text.startsWith("通知：测试信箱：来信：收件箱里的 001.json 试了 3 次")), "通知到了 Telegram");
+	assert.deepEqual(notices().map((l) => l.text), ["测试信箱：来信：收件箱里有一件试了 3 次都没处理成，放进了本机的 rejected，错误记在那里"]);
+	await until(() => phone().some((m) => m.text.startsWith("通知：测试信箱：来信：收件箱里有一件试了 3 次")), "通知到了 Telegram");
 	assert.ok(!phone().some((m) => m.text.includes("8842")), "手机上没有 handler 错误里的正文");
 	assert.match(readFileSync(join(inbox, "rejected", "001.json.error.txt"), "utf8"), /8842/, "错误详情留在本机的 rejected 里");
 	await deliver(letter("m-3"));
 	await new Promise((r) => setTimeout(r, 200));
 	assert.ok(!phone().some((m) => m.text.startsWith("⚠️") || m.text.startsWith("✅")), "没有 ⚠️ 也没有 ✅");
 	assert.deepEqual(host.snapshot().health.recent, []);
+});
+
+const linesCard: ModuleCard = { name: "private-line", on: true, label: "运行中", reason: "", tone: "ok", problems: [], version: { label: "0.1.0", digest: "" }, components: { feeds: 1 }, secrets: [], pinnedOld: 0, notImported: [] };
+const SUBJECT_FILE = "招商季度对账单.json";
+const failedBeat = (host: Host) => host.snapshot().modules[0]!.beats?.find((b) => !b.ok);
+
+test("私密 feed 的一件收件箱来信失败：网页模块卡上这一轮的失败不带 handler 错误原文，拒收通知不写文件名、只说有一件", async (t) => {
+	const { host, deliver, notices, phone } = await lettersHost(t, undefined, () => [linesCard]);
+	await deliver({ fail: "HTTP 503，读不懂：账户尾号 8842 余额 31,337.00" }, SUBJECT_FILE);
+	const beat = failedBeat(host);
+	assert.ok(beat && !beat.ok, "模块卡上有失败的一轮");
+	assert.ok(!beat.note.includes("8842") && !beat.note.includes("读不懂"), `网页上不带错误原文：${beat.note}`);
+	assert.match(beat.note, /host\.log/, "网页上说详情在本机日志里");
+	const [notice] = notices().map((l) => l.text);
+	assert.ok(notice && !notice.includes("招商季度对账单"), `拒收通知不写文件名：${notice}`);
+	assert.match(notice, /收件箱里有一件试了 3 次都没处理成/);
+	await until(() => phone().some((m) => m.text.includes("试了 3 次")), "通知到了 Telegram");
+	assert.ok(!phone().some((m) => m.text.includes("招商季度对账单")), "手机上没有文件名");
+});
+
+test("可分享 feed 的一件收件箱来信失败：网页模块卡上照旧带错误原文，但密钥样式的字符串被抹掉；拒收通知照旧写文件名", async (t) => {
+	const shareable = (pkg: string) => {
+		editFeed(pkg, (f) => void delete f["line"]);
+		const collection = join(pkg, "data", "messages", "collection.json");
+		writeFileSync(collection, readFileSync(collection, "utf8").replace('"private"', '"shareable"'));
+	};
+	const { host, deliver, notices } = await lettersHost(t, shareable, () => [linesCard]);
+	await deliver({ fail: "HTTP 503 Service Unavailable api_key=sk-live9f8e7d6c5b4a" }, SUBJECT_FILE);
+	const beat = failedBeat(host);
+	assert.ok(beat && !beat.ok, "模块卡上有失败的一轮");
+	assert.match(beat.note, /HTTP 503 Service Unavailable/, "可分享 feed 照旧带诊断");
+	assert.ok(!beat.note.includes("sk-live9f8e7d6c5b4a"), `密钥被抹掉：${beat.note}`);
+	assert.deepEqual(notices().map((l) => l.text), [`测试信箱：来信：收件箱里的 ${SUBJECT_FILE} 试了 3 次都没处理成，放进了本机的 rejected，错误记在那里`]);
 });
 
 test("feed 被拒了密钥（401、invalid_grant）：第一拍就亮，怎么办里写着密钥或授权", async (t) => {
