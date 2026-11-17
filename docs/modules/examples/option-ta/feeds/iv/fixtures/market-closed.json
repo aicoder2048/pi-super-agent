@@ -1,0 +1,19 @@
+{
+ "input": {
+  "now": "2026-11-21T17:00:00.000Z",
+  "rows": {
+   "watchlist": [
+    {
+     "id": "1",
+     "from": "fictional-fixture",
+     "fields": {
+      "symbol": "SPY",
+      "added_at": "2026-11-19T21:00:00.000Z"
+     }
+    }
+   ]
+  },
+  "cursor": "{\"methodology\":\"option-ta-iv-close-v1\",\"done\":{\"SPY\":\"2026-11-20\"},\"failures\":0}"
+ },
+ "responses": {}
+}

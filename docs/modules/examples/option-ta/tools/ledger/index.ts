@@ -16,7 +16,7 @@ type Base = { row: number; key: string; account: string; symbol: string; underly
 type Fill = Base & { kind: "fill"; side: Open | "BTC" | "STC"; orderKey: string; price: bigint; fee: bigint | null };
 type Event = Base & { kind: "event"; type: "EXPIRE" | "ASSIGNED" | "EXERCISED" | "CASH_SETTLED"; fee: bigint | null };
 type Lot = { fill: Fill; left: bigint };
-type Piece = { lot: Fill; qty: bigint; close: Fill | Event | null; owner: string };
+export type Piece = { lot: Fill; qty: bigint; close: Fill | Event | null; owner: string };
 
 const INDEX_ROOTS = new Set(["SPX", "SPXW", "NDX", "NDXP", "XND", "RUT", "RUTW", "MRUT", "VIX", "VIXW", "XSP", "DJX", "OEX", "XEO"]);
 const SHORT_OPENS = new Set(["STO"]);
@@ -62,7 +62,7 @@ function parse(row: DbRow): Fill | Event | undefined {
 }
 
 /** Facts in, plus what could not be read: rows without an account, unreadable rows, and repeated keys (counted once). */
-function facts(rows: readonly DbRow[]) {
+export function facts(rows: readonly DbRow[]) {
 	const items: (Fill | Event)[] = [];
 	const seen = new Set<string>();
 	const duplicates: string[] = [];
@@ -175,7 +175,7 @@ function sideOf(lot: Fill): "short" | "long" {
 }
 
 /** FIFO per account and contract; a close takes the lots on its side, an expiry any lot. */
-function pieces(items: readonly (Fill | Event)[], ownerOf: (account: string) => string): { pieces: Piece[]; orphans: (Fill | Event)[] } {
+export function pieces(items: readonly (Fill | Event)[], ownerOf: (account: string) => string): { pieces: Piece[]; orphans: (Fill | Event)[] } {
 	const lots = new Map<string, Lot[]>();
 	const out: Piece[] = [];
 	const orphans: (Fill | Event)[] = [];

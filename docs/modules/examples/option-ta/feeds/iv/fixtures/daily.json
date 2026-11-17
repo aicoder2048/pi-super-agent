@@ -1,0 +1,97 @@
+{
+ "input": {
+  "now": "2026-11-19T21:40:00.000Z",
+  "rows": {
+   "watchlist": [
+    {
+     "id": "1",
+     "from": "fictional-fixture",
+     "fields": {
+      "symbol": "SPY",
+      "added_at": "2026-11-19T21:00:00.000Z"
+     }
+    }
+   ]
+  },
+  "cursor": "{\"methodology\":\"option-ta-iv-close-v1\",\"done\":{\"SPY\":\"2026-11-18\"},\"failures\":0}"
+ },
+ "responses": {
+  "https://api.massive.com/v2/aggs/ticker/SPY/range/1/day/2026-11-19/2026-11-19?adjusted=false&sort=asc&limit=50000": {
+   "ticker": "SPY",
+   "adjusted": false,
+   "results": [
+    {
+     "o": 740,
+     "h": 740,
+     "l": 740,
+     "c": 740,
+     "v": 1000000,
+     "t": 1795064400000
+    }
+   ],
+   "status": "OK"
+  },
+  "https://api.massive.com/v3/reference/options/contracts?underlying_ticker=SPY&contract_type=put&expiration_date.gte=2026-12-10&expiration_date.lte=2027-01-03&strike_price.gte=703.00&strike_price.lte=777.00&sort=expiration_date&order=asc&limit=250": {
+   "results": [
+    {
+     "ticker": "O:B1SPY261210P00001000",
+     "underlying_ticker": "SPY",
+     "contract_type": "put",
+     "exercise_style": "european",
+     "expiration_date": "2026-12-10",
+     "strike_price": 1,
+     "type": "binary"
+    },
+    {
+     "ticker": "O:SPY261210P00740000",
+     "underlying_ticker": "SPY",
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2026-12-10",
+     "strike_price": 740,
+     "shares_per_contract": 100
+    },
+    {
+     "ticker": "O:SPY261211P00740000",
+     "underlying_ticker": "SPY",
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2026-12-11",
+     "strike_price": 740,
+     "shares_per_contract": 100
+    }
+   ],
+   "status": "OK"
+  },
+  "https://api.massive.com/v2/aggs/ticker/O:SPY261210P00740000/range/1/day/2026-11-19/2026-11-19?adjusted=false": {
+   "ticker": "x",
+   "resultsCount": 1,
+   "results": [
+    {
+     "o": 12.3,
+     "h": 12.3,
+     "l": 12.3,
+     "c": 12.3,
+     "v": 10,
+     "t": 1795064400000
+    }
+   ],
+   "status": "OK"
+  },
+  "https://api.massive.com/v3/snapshot/options/SPY/O:SPY261210P00740000": {
+   "results": {
+    "details": {
+     "ticker": "O:SPY261210P00740000"
+    },
+    "last_quote": {
+     "bid": 12.3,
+     "ask": 12.4,
+     "midpoint": 12.35,
+     "last_updated": 1795122840000000000,
+     "timeframe": "REAL-TIME"
+    }
+   },
+   "status": "OK"
+  }
+ }
+}

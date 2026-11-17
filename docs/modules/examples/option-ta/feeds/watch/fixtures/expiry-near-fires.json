@@ -1,0 +1,85 @@
+{
+ "input": {
+  "now": "2026-11-19T15:00:00.000Z",
+  "rows": {
+   "fills": [
+    {
+     "id": "2",
+     "from": "fictional-fixture",
+     "fields": {
+      "record_type": "FILL",
+      "fill_id": "SPY261127P00100000:STO:2026-11-02:acct-1:cum1",
+      "order_key": "SPY261127P00100000:STO:2026-11-02:acct-1",
+      "account_ref": "acct-1",
+      "underlying": "SPY",
+      "option_symbol": "SPY261127P00100000",
+      "right": "put",
+      "strike": 100,
+      "expiry": "2026-11-27",
+      "multiplier": 100,
+      "side": "STO",
+      "qty": 1,
+      "price": "2.0000",
+      "trade_date": "2026-11-02",
+      "source": "broker-email"
+     }
+    }
+   ]
+  }
+ },
+ "responses": {
+  "https://api.massive.com/v3/reference/dividends?ticker=SPY&limit=10": {
+   "results": [
+    {
+     "cash_amount": 1.888834,
+     "dividend_type": "CD",
+     "ex_dividend_date": "2026-09-18",
+     "frequency": 4,
+     "ticker": "SPY"
+    },
+    {
+     "cash_amount": 1.903516,
+     "dividend_type": "CD",
+     "ex_dividend_date": "2026-06-18",
+     "frequency": 4,
+     "ticker": "SPY"
+    }
+   ],
+   "status": "OK"
+  },
+  "https://finnhub.io/api/v1/calendar/earnings?from=2026-11-19&to=2027-03-19&symbol=SPY": {
+   "earningsCalendar": []
+  },
+  "https://api.massive.com/v3/snapshot/options/SPY/O:SPY261127P00100000": {
+   "results": {
+    "details": {
+     "ticker": "O:SPY261127P00100000",
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2026-11-27",
+     "strike_price": 100,
+     "shares_per_contract": 100
+    },
+    "last_quote": {
+     "bid": 1.45,
+     "ask": 1.55,
+     "midpoint": 1.5,
+     "last_updated": 1795100400000000000,
+     "timeframe": "REAL-TIME"
+    },
+    "last_trade": {},
+    "day": {},
+    "greeks": {},
+    "open_interest": 1000,
+    "underlying_asset": {
+     "price": 120,
+     "last_updated": 1795099440000000000,
+     "ticker": "SPY",
+     "timeframe": "DELAYED"
+    }
+   },
+   "status": "OK",
+   "request_id": "fixture"
+  }
+ }
+}
