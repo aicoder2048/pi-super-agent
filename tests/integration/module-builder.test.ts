@@ -330,20 +330,20 @@ test("description 原样复制说明书那一句，长度交给 module check 判
 	assert.ok(layout.includes("原样复制说明书那一句"), "照抄，不改写");
 	assert.ok(layout.includes("不自己数字数"), "不靠模型数字");
 	assert.ok(layout.includes("只有 `module check` 报 description 超长"), "检查报了才压缩");
-	const script = layout.match(/`node -e '([^']+)' "<句子>"`/)?.[1];
-	assert.ok(script, "技能给出量长度的命令");
-	const measure = (sentence: string) => Number(execFileSync(process.execPath, ["-e", script!, sentence], { encoding: "utf8" }).trim());
-	assert.equal(measure(OPTION_TA_SENTENCE), 58, "option-ta 说明书那句量出 58");
+	const script = layout.match(/`node -e '([^']+)' "\$STATE\/modules\/<名字>\/module\.json"`/)?.[1];
+	assert.ok(script, "技能给出量 module.json 里 description 长度的命令");
 	const [name, files] = examples().team;
-	const withDescription = (description: string) => {
+	const measured = (description: string) => {
 		const changed = new Map(files);
 		changed.set("module.json", JSON.stringify({ ...JSON.parse(files.get("module.json")!), description }));
-		return problemsOf(writePackage(t, name, changed)).filter((line) => line.includes("description"));
+		const dir = writePackage(t, name, changed);
+		const length = Number(execFileSync(process.execPath, ["-e", script!, join(dir, "module.json")], { encoding: "utf8" }).trim());
+		return { length, flagged: problemsOf(dir).some((line) => line.includes("description")) };
 	};
-	assert.deepEqual(withDescription(OPTION_TA_SENTENCE), [], "58 字检查收下");
-	const longer = `${OPTION_TA_SENTENCE}的期权`;
-	assert.equal(measure(longer), 61);
-	assert.equal(withDescription(longer).length, 1, "量出超过 60，检查也报");
+	assert.deepEqual(measured(OPTION_TA_SENTENCE), { length: 58, flagged: false }, "option-ta 说明书那句量出 58，检查收下");
+	assert.deepEqual(measured(`${OPTION_TA_SENTENCE}的期`), { length: 60, flagged: false }, "正好 60 也收");
+	assert.deepEqual(measured(`${OPTION_TA_SENTENCE}的期权`), { length: 61, flagged: true }, "量出超过 60，检查也报");
+	assert.ok(layout.includes("句子是工坊自己写的"), "没有使用者说明书时超长就自己重写，不问使用者");
 	const interviewer = AGENT("interviewer");
 	assert.ok(!interviewer.includes("超过 60 字"), "访谈不拿 60 字当冲突");
 	assert.ok(interviewer.includes("不判断 description 那一句的长度"));
@@ -361,6 +361,13 @@ test("expect 只取工具字面量或说明书、知识里逐字存在的用语�
 	assert.ok(writer.includes("不自造短语"));
 	assert.ok(writer.includes("只换 `expect`"), "因 FAIL 再派时只换 expect");
 	assert.ok(SKILL("build-module").includes("不为了过预演改专家、技能里给使用者看的措辞"));
+	assert.ok(text.includes("不含末尾访谈补的「假设和缺项」"), "说明书只认使用者给的原文");
+	assert.ok(writer.includes("不改 `knowledge/` 和 `spec.md`"), "不先把短语写进知识再引用");
+	assert.ok(text.includes("任何时候都可以补"), "工具字面量的原样照抄句是例外");
+	assert.ok(text.includes("去掉这个 `expect`，只留 `uses`"), "换不出稳定短语时有退路");
+	const team = examplePackages(SKILL("package-layout")).get("position-sizer")!;
+	const exam = [...team].find(([path]) => path.startsWith("evals/"))![1];
+	assert.ok(!/^expect:/m.test(exam), "示例考题不拿专家自定的栏目名当 expect");
 });
 
 test("考题覆盖：4 到 6 道，每位用外部工具的专家至少一道，核心意图各至少一道；工具没实现时 expect 用 NOT_IMPLEMENTED", () => {
@@ -371,4 +378,12 @@ test("考题覆盖：4 到 6 道，每位用外部工具的专家至少一道，
 	assert.ok(!text.includes("两三道题就够"));
 	assert.ok(!SKILL("build-module").includes("两三道"), "领队派活不再写两三道");
 	assert.ok(!AGENT("eval-writer").includes("两三道"));
+	assert.ok(text.includes("覆盖要求是下限"), "道数和覆盖冲突时先保覆盖");
+	assert.ok(text.includes("不要 throw"), "桩工具回状态，不抛错");
+	const exam: Exam = { name: "roll", uses: ["tools/strategy", "stock-ta/tools/earnings-date"], expect: ["NOT_IMPLEMENTED"], question: "q" };
+	const attempt = (gateway: string[]): Attempt => ({ opened: true, ticket: "T1", domain: "m", report: { status: "ready", summary: "strategy 工具返回 NOT_IMPLEMENTED" }, gateway });
+	const own = "[gateway] m tools/strategy T1 lead request ok 3 ms";
+	const external = "[gateway] stock-ta tools/earnings-date T1 lead request ok 9 ms from=m";
+	assert.equal(judge("m", exam, attempt([own, external])).pass, true, "桩工具回了状态也算用到");
+	assert.equal(judge("m", exam, attempt([own.replace(" ok ", " provider-failed "), external])).pass, false, "抛错的桩工具判没用到");
 });
