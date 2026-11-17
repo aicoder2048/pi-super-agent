@@ -15,7 +15,7 @@ theta 在 `LearnTypeScript2PiAgent/playground/theta/app`，下面记作 T。2026
 
 - **数据**：T 的期权链来自 `/v3/snapshot/options/<标的>`，和 Massive key 能用的端点一样，换基址就行。T 的网络调用都在 Python sidecar 里；option-ta 照 stock-ta 的做法用 TS 直接调，不搬 sidecar。
 - **纯计算**（`T/src/lib`，基本没有 IO）：options-math（BS、指派概率、年化）、first-passage（触及概率）、strike-scoring、liquidity、premium-quality（硬闸加权打分，硬闸不能被分数抵消）、premium-targets、scenario-pl、cc-yield、iv-crush、net-gamma-walls、oi-term-structure、limit-price。T 没有单元测试，只有离线 smoke 脚本，搬过来时要补 `cases.json` 和测试。
-- **不自包含**：iv-history 依赖 T 本地三年的期权收盘缓存。option-ta 自己每天落盘 IV 快照，从零攒 IV rank。
+- **不自包含**：iv-history 依赖 T 本地三年的期权收盘缓存。option-ta 在标的加进期权自选时用期权日线回填一年，之后每天收盘后存原始输入（`option-ta-spec.md`「IV 历史」）。
 - **theta 的规则**（只作参考，不照搬）：13 个技能带阈值，比如 pre-sto、premium-richness、roll-decision、btc-decision（固定 50/80 止盈）、assignment-cc（CC 行权价不低于成本）、earnings-cross。它们就是这个模块的专家知识。
 - **知识文档**：`T/docs/research/digests/` 38 篇 digest，主要引用 tastylive 和 CBOE 并带链接；`scout-sources.md` 是信任源白名单。书籍只有署名加一两句意译，没有全文。
 - **私人数据，一样都不搬**：positions.json、accounts/、state/、book-roc/、reports/、briefs/、advisories/、本机私有的成交邮件样例目录。持仓只借数据形状（Position 带 roll 链和入场上下文）。
@@ -59,13 +59,14 @@ grill-with-docs 就是两个技能合用：grilling（按决策树一轮轮拷�
   2. 日线库：首选真实库的副本，把 `modules-data/stock-ta/files/ta/ta.sqlite` 复制到临时目录的同一路径。没有真实库时，复制合成夹具 `docs/modules/examples/stock-ta/tools/structure/fixtures/data/files/ta/ta.sqlite`（只有 NVDA、QQQ、SPY，价格是编的。它的同步日期旧了一天以上，`structure` 不算，回「把它加进自选股，等下一次 scan 扫完再问」，因为预演里没有自选股的行）。合成库只够判「用到了」，考题的 `expect` 别指望它的数。
   3. 密钥：`just module secret stock-ta POLYGON_API_KEY`、`just module secret stock-ta FINNHUB_API_KEY`，写进临时目录的 `modules-data/stock-ta/.env`。`quote`、`earnings-date` 在预演里真联网。
   4. `just module on stock-ta`，起宿主，用 `just modules` 确认 stock-ta 已经打开。工坊的预演开头没有「stock-ta 现在没开」或「在临时宿主里没有打开」，才算准备好。
-  5. 副作用：临时宿主里 stock-ta 的 feed 用真 key 跑，交易时段 `quotes` 每 60 秒调一次 Massive，命中规则会发提醒、开任务，扣同一份额度。要避开就在收盘后做 P2，或在临时 `config.json` 里写 `"feedFixtures": true`（每个 feed 只把自己的样例跑一次，连接器都不跑）。
+  5. 副作用：临时宿主里 stock-ta 的 feed 用真 key 跑，命中规则会发提醒、开任务，扣同一份额度。交易时段 `quotes` 每 60 秒调一次 Massive；`scan` 不分时段，临时目录里的 cursor 是空的，宿主一起来它就扫最近一个已收盘的交易日，之后到下一个交易日收盘 20 分钟后再扫。所以只说「收盘后做」避不开真 key 调用。首推在临时 `config.json` 里写 `"feedFixtures": true`（每个 feed 只把自己的样例跑一次，连接器都不跑）。不写的话，收盘后起宿主，等 `scan` 把当天扫完一次再开工。
+  6. 用完删掉整个临时 `PSA_STATE_DIR`：里面 `modules-data/stock-ta/.env` 有真 key。
 - 记下工坊做到哪一步、哪里卡住、用了多少 token。工坊自己的毛病另开 PR 修，不在 option-ta 里绕开。
 - **完成标准**：工坊交出包和汇报，`module check` 打印 ok。工坊写不好的代码部分记下来交给 P3。
 
 ### P3 补强（Claude Code）
 - 独立复查工坊的包。从 T 移植纯计算到 `tools/`，先用 T 的 smoke 用例写成失败的测试，再搬代码。真模型跑 `module try`。
-- **完成标准**：检查 ok，考题全部 PASS，工具的 `cases.json` 覆盖休市、缺字段、429。
+- **完成标准**：检查 ok，考题全部 PASS，工具的 `cases.json` 覆盖休市、缺字段、应答体 `status: "ERROR"`、HTTP 429 和 5xx（宿主回放 HTTP 状态见 PR #171）。`fills` feed 的样例用 `option-ta-p1/mail-samples/` 的四封虚构信做。
 
 ### P4 入库上线
 - 包放进 `docs/modules/examples/option-ta/`，开 PR，独立复查，合并，按常设授权部署老 Mac。
@@ -77,11 +78,11 @@ grill-with-docs 就是两个技能合用：grilling（按决策树一轮轮拷�
 - 第一版记期权成交（含到期、指派、行权），外加被指派产生的股票和买方行权交割的股票（2026-11-16 使用者选 B）。股票的其余买卖不记。按账户记、按合约汇总；不做仓位管理（现金、保证金、仓位大小、组合配置）。
 - 要独立股票批次或持有期的税务判断（合格备兑 call、股票和期权的跨式、§1233 买 put 视为卖空、涉及股票的 wash sale）第一版一律标「待确认」。1099-B 导入、开 CC 时的行情快照、批次指定、跨式标识不进第一版。哪些判断降级、以后补要哪些数据，见 `option-ta-tax-memo.md` 第 14.3 节。
 - 一套原始成交，算出交易链和税务两种视图。和 1099-B 对账以后再做，要先能导入 1099-B。
-- 成交默认从券商成交邮件记，也接受使用者手动说；按合约、方向、成交日、张数去重，数以邮件为准，含糊就问。
+- 成交默认从券商交易台的成交回信记，也接受使用者手动说；按订单（合约、方向、成交日、账户）记累计成交的增量，部分成交也记，数以邮件为准，含糊就问。信怎么进来、怎么解析见 `option-ta-spec.md`「成交邮件（`fills`）」。
 - 主动提醒（只针对记下的仓位）：
-  - 到期临近：到期前 5 个交易日静音提醒一次；到期日开盘时正股离行权价不到 3%，响铃。
+  - 到期临近：到期前 5 个交易日静音提醒一次；到期日开盘时正股离行权价不到 3%，响铃（在美东 09:45 以后的第一次检查判断，09:30 读到的还是盘前价）。
   - 接近或穿过行权价（只限卖出的期权）：离行权价不到 2% 静音；穿过进入价内响铃。
   - 权利金达标（卖出的期权）：赚到五成静音，赚到八成响铃。
-  - 财报和除息：记下仓位时到期前有财报，马上提醒；财报前 2 个交易日再提醒；卖出的 call 在价内且到期前有除息，除息前 2 个交易日响铃。
-- 每天收盘后给期权自选存一份 IV 快照，基于 IV 的机会提醒放第二版。
+  - 财报和除息：记下仓位时到期前有财报，马上提醒；财报前 2 个交易日再提醒；卖出的 call 在价内且到期前有除息，除息前 2 个交易日响铃；除息还没宣布的，按预计除息日同样判断，只静音提醒（`option-ta-spec.md`「主动提醒的两处细节」）。
+- 标的加进期权自选时回填一年 IV，之后每天收盘后存原始输入；基于 IV 的机会提醒放第二版（2026-11-17 使用者再次确认）。
 - stock-ta 同一时刻开出的多个任务维持现状，不归并（2026-11-16 使用者决定）。

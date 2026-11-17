@@ -1,0 +1,59 @@
+{
+  "fills": [
+    {
+      "id": "AMZN260220P00210000:STO:2026-02-09:QRSTalfa:cum10",
+      "fill_id": "AMZN260220P00210000:STO:2026-02-09:QRSTalfa:cum10",
+      "order_key": "AMZN260220P00210000:STO:2026-02-09:QRSTalfa",
+      "account_ref": "QRSTalfa",
+      "side": "STO",
+      "instrument": {
+        "underlying": "AMZN",
+        "option_symbol": "AMZN260220P00210000",
+        "right": "put",
+        "strike": 210.0,
+        "expiry": "2026-02-20",
+        "multiplier": 100
+      },
+      "qty": 10,
+      "partial_fill": false,
+      "price": 4.25,
+      "limit": 4.25,
+      "trade_date": "2026-02-09",
+      "trade_time": null,
+      "settle_date": "2026-02-10",
+      "executed_at": null,
+      "order_id": null,
+      "commission": null,
+      "fees": null,
+      "source": "broker-email"
+    },
+    {
+      "id": "AMZN260220P00210000:STO:2026-02-09:LMNObeta:cum7",
+      "fill_id": "AMZN260220P00210000:STO:2026-02-09:LMNObeta:cum7",
+      "order_key": "AMZN260220P00210000:STO:2026-02-09:LMNObeta",
+      "account_ref": "LMNObeta",
+      "side": "STO",
+      "instrument": {
+        "underlying": "AMZN",
+        "option_symbol": "AMZN260220P00210000",
+        "right": "put",
+        "strike": 210.0,
+        "expiry": "2026-02-20",
+        "multiplier": 100
+      },
+      "qty": 7,
+      "partial_fill": false,
+      "price": 4.25,
+      "limit": 4.25,
+      "trade_date": "2026-02-09",
+      "trade_time": null,
+      "settle_date": "2026-02-10",
+      "executed_at": null,
+      "order_id": null,
+      "commission": null,
+      "fees": null,
+      "source": "broker-email"
+    }
+  ],
+  "skipped": []
+}
