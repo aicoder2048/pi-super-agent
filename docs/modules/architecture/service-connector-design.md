@@ -1,6 +1,6 @@
 # 模块之间的服务连接器（设计稿 C4）
 
-状态：第 2 版，2026-11-16。第 1 版经两个对抗复查，改动见末尾「复查改了什么」。使用者 2026-11-16 定了五件事（下一节）。权限上的取舍单独写在 ADR-0030。还有一件要使用者定的事（「待定」第 1 条），它挡着 C4c。
+状态：第 2 版，2026-11-16。第 1 版经两个对抗复查，改动见末尾「复查改了什么」。使用者 2026-11-16 定了七件事（下一节），后两件是看过第 2 版以后定的，改动也记在末尾。权限上的取舍单独写在 ADR-0030。没有挡着分期的待定事项。
 
 ## 为什么要做
 
@@ -19,6 +19,8 @@ stock-ta 是 option-ta 的底层。option-ta 的「方向与价位」专家要�
 3. **第 1 版的规则 6「有私密数据的模块不开放」保留**（第 2 版是规则 7）。理由补上：工具代码能读整个模块的数据，只能按整个模块来挡。
 4. **`tools/note` 不开放。**
 5. **方向不变。** 模块之间扁平隔离，外部服务经宿主共享。
+6. **stock-ta 的 `holdings` 改成 `shareable`（第 2 版「待定」第 1 条的 A）。** 理由：没有 feed 往它写，`private` 今天对它不起作用。规则 7 不变。改 `class` 是包的改动，排在 C4c 做，连带后果见规则 7。
+7. **没有专家（`agents/`）的模块也能调外部工具。** 取消第 2 版「没有 `agents/` 的模块不能调」那条默认。使用者认为没有特别理由限制；原来限制只是因为这种模块没有地方写 `uses`。改成在 `module.json` 写模块级的 `uses`（规则 3）。
 
 ## 规则
 
@@ -35,9 +37,9 @@ stock-ta 是 option-ta 的底层。option-ta 的「方向与价位」专家要�
 - `tools/note` 不开放。它按 `sources` 取笔记原文，原文是 stock-ta 的知识，使用方要的是结论。
 - 检查（`src/modules/validate.ts`）今天拒绝 `module.json` 里不认识的键，所以 `exports` 要加进 `readManifest` 的可选键。
 
-### 2. 使用方在专家的 `uses` 里写全名
+### 2. 使用方在 `uses` 里写全名
 
-格式是 `<模块>/tools/<名字>`：
+带专家的模块写在专家的 `uses` 里，没有专家的模块写在 `module.json` 的 `uses` 里（规则 3）。格式是 `<模块>/tools/<名字>`：
 
 ```yaml
 uses: knowledge, tools/chain, stock-ta/tools/structure, stock-ta/tools/signals
@@ -45,22 +47,41 @@ uses: knowledge, tools/chain, stock-ta/tools/structure, stock-ta/tools/signals
 
 考题（`evals/*.md`）的 `uses` 也可以写全名，表示这道题要用到这个外部工具。
 
-**包检查要改。** 今天 `crossCheck` 的 `resolves` 把 `use` 按 `/` 拆成三段，第三段存在就判为不认识，所以 `stock-ta/tools/structure` 会报 `uses "…", which this package does not have`。专家和考题共用这一段，两处都报错。C4a 把它改成：形如 `<模块>/tools/<名字>`、模块名合法、不是本模块的，算外部工具，只给一行提醒（「外部工具，检查不了提供方有没有开放它」），不报错。`crossCheck` 今天只有报问题的 `report`，提醒只来自 `structureChanges` 的 `notes`，所以 C4a 要给它接上 `notes`。这一步也要紧，因为宿主的 `copyOf` 遇到检查不过的副本就当它不存在（`gateway.ts` 的 `copyOf`）。检查只看得到这一个包，不知道装了哪些别的模块，所以不能查提供方。模块随时会装上、拿掉，宿主在调用时才判断（规则 6）。
+**包检查要改。** 今天 `crossCheck` 的 `resolves` 把 `use` 按 `/` 拆成三段，第三段存在就判为不认识，所以 `stock-ta/tools/structure` 会报 `uses "…", which this package does not have`。专家和考题共用这一段，两处都报错。C4a 把它改成：形如 `<模块>/tools/<名字>`、模块名合法、不是本模块的，算外部工具，只给一行提醒（「外部工具，检查不了提供方有没有开放它」），不报错。`module.json` 的 `uses` 也走这一段（规则 3 写了它另外的两条检查）。`crossCheck` 今天只有报问题的 `report`，提醒只来自 `structureChanges` 的 `notes`，所以 C4a 要给它接上 `notes`。这一步也要紧，因为宿主的 `copyOf` 遇到检查不过的副本就当它不存在（`gateway.ts` 的 `copyOf`）。检查只看得到这一个包，不知道装了哪些别的模块，所以不能查提供方。模块随时会装上、拿掉，宿主在调用时才判断（规则 6）。
 
 ### 3. 谁能调哪些外部工具
 
-外部工具只来自使用方模块包里专家的 `uses`。网关按任务钉住的那份副本（`caller.pin`）读 `uses`，不按提供方读。
+外部工具只来自使用方模块包里写的 `uses`：专家的 `uses`，或没有专家的模块在 `module.json` 写的 `uses`。网关按任务钉住的那份副本（`caller.pin`）读 `uses`，不按提供方读。
 
 | 调用者 | 能调的外部工具 |
 |---|---|
 | 专家（`member` 是名字） | 它自己 `uses` 里的外部工具 |
 | 领队（`member === null`，模块带 `agents/`） | 本队全部专家 `uses` 里外部工具的并集 |
-| 单个助手（`member === null`，宿主没有派活台，`crew` 是空的） | 和领队一样，取并集 |
-| 没有 `agents/` 的模块的助手 | 不能调外部工具 |
+| 单个助手（`member === null`，模块带 `agents/`，宿主没有派活台，`crew` 是空的） | 和领队一样，取并集 |
+| 没有 `agents/` 的模块的助手（`member === null`） | `module.json` 的 `uses` 里的外部工具 |
 
-代码里领队和单个助手是同一种调用者：`src/host/workers.ts` 的 `#gatewayCall` 都传 `member: null`，`memberRefusal` 对 `null` 直接放行，所以今天领队能调本模块的全部工具，不看谁的 `uses`。外部工具不照搬这条：领队取并集，因为外部工具是另一个模块的能力，要有一处写出来，并集让领队和它派的专家看到同一份清单。
+代码里领队和单个助手是同一种调用者：`src/host/workers.ts` 的 `#gatewayCall` 都传 `member: null`，`memberRefusal` 对 `null` 直接放行，所以今天领队能调本模块的全部工具，不看谁的 `uses`。外部工具不照搬这条：外部工具是另一个模块的能力，要有一处写出来。领队取并集，让领队和它派的专家看到同一份清单。
 
-没有 `agents/` 的模块就没有地方写 `uses`。C4 不在 `module.json` 加一处模块级的 `uses`（YAGNI）。今天唯一的使用方 option-ta 带专家。真有不带专家的模块要用，再加。
+**模块级的 `uses`。** `module.json` 加可选键 `uses`，是外部工具全名的列表：
+
+```json
+{ "name": "mail", "uses": ["stock-ta/tools/quote"] }
+```
+
+检查（`readManifest`）给它两条规则，和规则 2 那一行提醒一起：
+
+- 只收外部工具全名 `<模块>/tools/<名字>`，不能是本模块。写 `knowledge`、`tools/x`、`data/x` 报错：本模块的能力，`member === null` 的调用者今天全都调得到，写了也没有意思。
+- 模块带 `agents/` 时写 `uses` 报错（「外部工具写在专家的 `uses` 里」）。
+
+网关对 `member === null` 只有一条：取模块级 `uses` 和全部专家 `uses` 里外部工具的并集。有 `agents/` 时模块级的是空的，没有 `agents/` 时专家的是空的，所以上表后三行是同一段代码。拒绝码照旧是 `not-in-uses`，可今天的 `{ code: "not-in-uses"; member: string }`（`protocol.ts`）带的是成员名，`refusalText` 写成「成员 <名> 的 uses 没有列这一项」。C4a 让 `member` 可以是 `null`，`null` 时写成「本模块没有在 uses 里列这个外部工具」。
+
+带 `agents/` 的模块不收模块级 `uses`，理由：
+
+- **一个模块只有一处写。** 两处都能写，就要再定模块级的给不给专家用。给，专家的 `uses` 就不再是它能调的全部，按 `uses` 分工（`design.md` 第 2 节「专家团队」一段）被打穿；不给，它只多出「领队能调、专家都不能调」的工具，领队派活时派不出去。
+- **和 `team` 同一个形状。** `team` 只在带 `agents/` 时写，`uses` 只在不带时写，检查今天已经这样查 `team`（`validate.ts` 的 `needs "team"`、`has "team" but agents/ has no members`）。
+- **以后要放开容易。** 真有带专家的模块要领队独用一个外部工具，去掉这条检查即可，网关的并集不用改。
+
+今天没有不带专家的模块写模块级 `uses`。`mail` 是第一个可能写的：它是私密使用方（`inbox` feed 写私密集合），写了以后它的任务能把邮件里的内容当参数传给会联网的提供方工具。这条风险写在 ADR-0030「风险」一节。
 
 ### 4. 在提供方那边运行
 
@@ -69,7 +90,7 @@ uses: knowledge, tools/chain, stock-ta/tools/structure, stock-ta/tools/signals
 外部调用的解析不走 `callerCopy`。`callerCopy` 按调用方的模块和钉住的版本找副本，用在外部调用上就会到使用方自己的包里找 `tools/structure`。外部调用的顺序是：
 
 0. 调用方自己的模块照旧要在服务：`ports.serving(调用方)` 是 `undefined` 时回 `module-disabled`，和今天一样。使用方停了，它的任务也调不了外部工具。
-1. 在调用方钉住的副本里查成员（或并集）的 `uses` 有没有这个全名（规则 3）。没有就回 `not-in-uses`。`memberRefusal` 比对的是全名 `stock-ta/tools/structure`，不能拼成本模块的 `tools/structure`。
+1. 在调用方钉住的副本里查成员（或 `member === null` 时的并集）的 `uses` 有没有这个全名（规则 3）。没有就回 `not-in-uses`。`memberRefusal` 比对的是全名 `stock-ta/tools/structure`，不能拼成本模块的 `tools/structure`。
 2. 读提供方当前在服务的版本：`ports.serving(提供方)`。每次调用都读，不缓存。
 3. `copyOf(提供方, serving(提供方))` 取提供方的副本。
 4. 在这份副本里找工具，并查它的 `module.json` 的 `exports` 有没有列它。
@@ -106,7 +127,7 @@ uses: knowledge, tools/chain, stock-ta/tools/structure, stock-ta/tools/signals
 
 其余的失败照旧回 `provider-failed`，`note` 是工具自己的错误。外部调用的 `provider-failed` 由 `refusalText` 写成「`<提供方>` 的工具这一次出错：……」，让专家分清是哪个模块的错。`note` 本身不加前缀，免得和「工具这一次出错」叠成两层。
 
-**工具目录照列。** 助手和专家启动时拿到的 `domain_tool` 目录（`catalogue`）照列 `uses` 里的外部工具。提供方在时，说明取自提供方当前服务的副本里的 `tool.json`。提供方不在时，名字照列，说明写成「`<提供方>` 现在用不了，调用会回原因」。这样专家知道有这一项，调了以后拿到原因，在汇报里写明。
+**工具目录照列。** 助手和专家启动时拿到的 `domain_tool` 目录（`catalogue`）照列 `uses` 里的外部工具，`member === null` 的按规则 3 的并集列。提供方在时，说明取自提供方当前服务的副本里的 `tool.json`。提供方不在时，名字照列，说明写成「`<提供方>` 现在用不了，调用会回原因」。这样专家知道有这一项，调了以后拿到原因，在汇报里写明。
 
 ### 7. 有私密数据的模块不开放
 
@@ -114,7 +135,23 @@ uses: knowledge, tools/chain, stock-ta/tools/structure, stock-ta/tools/signals
 
 理由：工具代码拿得到模块的整个数据目录，能打开任何集合、读 `files/` 里的任何文件，网关看不出它读了哪个（`design.md` 第 5 节第 5 条，ADR-0018「模块工具的回复也按私密算」一段）。只读工具可能把私密内容带给别的模块的任务，这正是 ADR-0018 要挡的事。宿主没法按工具挡，只能按整个模块挡。
 
-stock-ta 今天有一个 `private` 集合 `holdings`（持仓，PR #146 加的）。按这条规则，stock-ta 开放不了。第 1 版写「stock-ta 没有私密集合」，和代码不符。怎么办见「待定」第 1 条。
+stock-ta 今天有一个 `private` 集合 `holdings`（持仓，PR #146 加的）。按这条规则，stock-ta 现在开放不了。第 1 版写「stock-ta 没有私密集合」，和代码不符。使用者定了把 `holdings` 改成 `shareable`（「使用者已定」第 6 条），C4c 在加 `exports` 之前改。
+
+**`holdings` 改成 `shareable` 以后变了什么。** 对照 `origin/main` 5c99224 的代码，宿主看集合 `class` 的地方只有下面几处：
+
+| 地方 | 改了以后 |
+|---|---|
+| feed 是不是私密（`manifest.ts` 的 `feedClass`，`modules.ts` 的 `private`）：决定通知到不到 Telegram 和网页（`feed-runner.ts` 的 `reachOf`）、`line` 能不能写（`validate.ts`）、领域的 `privateFeed`，也就是宿主来源的任务能不能带这个领域（`kernel.ts`，ADR-0018 V11） | 不变。三处都只看 feed 写进的集合，stock-ta 的 `quotes` 写 `quotes`、`scan` 写 `scan-runs`，没有 feed 写 `holdings`。stock-ta 今天就没有 `privateFeed`（`source-ticket-tools.test.ts` 第 438 行） |
+| 持仓提醒在 Telegram、网页上怎么显示 | 不变。宿主没有按集合 `class` 收起显示的代码。持仓提醒行带成本和止损价，今天就照全文到 Telegram，因为它是 `quotes` feed 的提醒；给幕僚长的触发不写持仓数字，是模块代码守的（`stock-ta-rules-design.md` 第 333 行） |
+| `data`、`watch` 的回复和 `domain_tool` 目录 | 回复里的 `class` 字段（`instance-data.ts`）和目录里集合的说明（`gateway.ts` 第 178 行，「record，private」）从 `private` 变成 `shareable`。这是给模型看的字，没有代码按它分支。模型会不会因此对持仓少一分小心，没验证过，是猜测 |
+| `just module check` 的摘要行 | `data-classes=` 那一段从 `shareable:N,private:1` 变成 `shareable:N+1,private:0` |
+| 已存的行 | 不变。`structureChanges` 和 `data.check` 不比对 `class`，换版本不报问题、不迁移，行原样留着。包的 digest 变了，按普通升级走 |
+| 备份 | 不变。宿主代码里没有按 `class` 区分的备份 |
+| 规则 7 和 C4c 的 `exports` | stock-ta 没有私密集合了，检查放行它的 `exports` |
+
+C4c 同时要改写着「私密」的四处文字和一条测试：`skills/holdings/SKILL.md` 第 8 行（这一处 Worker 每次记持仓都读）、`docs/modules/stock-ta.md` 第 17 行、`stock-ta-cookbook.md` 第 258 行、`stock-ta-rules-design.md` 第 316 行；`tests/integration/stock-ta-holdings.test.ts` 第 31 行断言 `class` 是 `private`，改成 `shareable`，测试名里的「私密的」一起改。
+
+代价是「持仓是私密数据」这个标签没了：以后给 `private` 加新含义时，持仓不受它保护。`files/hits` 里持仓命中的提醒行带成本和止损价，`hits` 工具读得到（`stock-ta-rules-design.md` 第 480 行）。`hits` 不在开放清单里，不会经开放工具出去，但说明「工具代码能读整个模块」这句话在 stock-ta 里是真的：以后往开放清单里加工具，要看它读不读 `holdings` 和 `files/hits`。
 
 ### 8. 访问记录
 
@@ -139,7 +176,7 @@ stock-ta 今天有一个 `private` 集合 `holdings`（持仓，PR #146 加的�
 
 C4b 改成：
 
-1. 从被预演的包里收集全部专家和考题 `uses` 里的外部模块名。
+1. 从被预演的包里收集专家、考题和 `module.json` 的 `uses` 里的外部模块名。
 2. 每个外部模块，从真实 `state.db` 的 `module_records` 读出它当前在服务的 digest，找到**这份副本**（`module-store/<模块>/<digest>`），复制进临时状态目录的 `modules/<模块>`，打开它的开关。不在服务的提供方不带，预演照常跑，外部调用回 `provider-absent`，打印一行「`<提供方>` 现在没开，预演里调不到它的工具」。
 3. 用 `cloneFiles` 带上提供方的 `files/`，Python 环境照旧链接不复制。C2 之后再复制提供方的 `.env`，和被预演的模块自己一样（`connectors-and-secrets-design.md` 第 3 节「预演」）。
 4. 等提供方也到「运行中」再出题，和等被预演的模块一样。
@@ -183,7 +220,6 @@ feed 的处理代码由 `src/modules/feed-runner.ts` 直接用 `runModuleCodeAsy
 - 不做依赖声明（`requires`）和版本约束。只有一对提供方和使用方时用不上（YAGNI），第二对出现再说。
 - 不缓存外部调用的结果。
 - 不经幕僚长。
-- 不在 `module.json` 加模块级的 `uses`（规则 3）。
 
 ## 和 C2 的先后
 
@@ -193,19 +229,14 @@ C4 不依赖 C2，两者谁先落地都行。C2 先落地时，C4a 的网关直�
 
 | 期 | 内容 | 验证 |
 |---|---|---|
-| C4a 宿主 | `exports` 的检查（只读、无私密集合）；包检查认外部工具名，只提醒；网关按规则 4 的顺序解析外部调用；领队和单个助手取并集，没有专家的模块不能调；`provider-absent` 和它的提示，含运行环境没装好；目录照列外部工具；日志行末尾加 `from=`；`judge` 认全名 | 测试模块 A 开放一个只读工具，模块 B 的专家调用成功，数据来自 A 的数据目录；推断任务和模块 feed 开的任务也调得成；A 关掉、没装、没开放这个工具、`uv.lock` 没装时，B 拿到各自固定的原因，任务不出错；A 开放写工具、或有私密集合时检查报错；B 的 `uses` 写外部工具只提醒；`wiring.test.ts` 钉住 `from=` 那一行 |
-| C4b 预演和运行 | `just module try` 带上提供方当前副本、`files/`（C2 后加 `.env`）；`collect` 保护进行中的外部调用占用的副本；目录说明加「以调用结果为准」；提供方 `data.db` 的 `_tool_calls` | 一个只用 A 的工具的临时模块预演通过，`judge` 认 `A/tools/x`；外部调用进行中 A 换版本，旧副本在调用结束前不被删；`_tool_calls` 有调用方 |
-| C4c stock-ta | 检查能带夹具数据目录；先补五个开放工具的 `cases.json`（夹具数据库）；`exports`；`--previous` 和宿主换版本的兼容提醒；模块页的「谁在用」。**挡在「待定」第 1 条** | 一个只用 stock-ta 工具的临时模块，在临时宿主上由真模型调用 `stock-ta/tools/structure`，结果和 stock-ta 自己调用一致；改一个开放工具的输出字段，`--previous` 给提醒 |
-| C4d 工坊 | 模块工坊的技能 `package-layout`、`build-module` 写进 `exports`、外部 `uses`、「请对提供方说」的转述 | 工坊做 option-ta 时用到 |
+| C4a 宿主 | `exports` 的检查（只读、无私密集合）；包检查认外部工具名，只提醒；`module.json` 的 `uses`（`readManifest` 的可选键、只收外部全名、带 `agents/` 时报错）；网关按规则 4 的顺序解析外部调用；`member === null` 取模块级和全部专家 `uses` 的并集；`provider-absent` 和它的提示，含运行环境没装好；目录照列外部工具；日志行末尾加 `from=`；`judge` 认全名 | 测试模块 A 开放一个只读工具，模块 B 的专家调用成功，数据来自 A 的数据目录；推断任务和模块 feed 开的任务也调得成；A 关掉、没装、没开放这个工具、`uv.lock` 没装时，B 拿到各自固定的原因，任务不出错；A 开放写工具、或有私密集合时检查报错；B 的 `uses` 写外部工具只提醒；没有专家的模块 C 在 `module.json` 写 `uses` 后，它的助手调得成，没写的外部工具回 `not-in-uses`；带 `agents/` 的包写模块级 `uses`、或模块级 `uses` 写本模块能力时检查报错；`wiring.test.ts` 钉住 `from=` 那一行 |
+| C4b 预演和运行 | `just module try` 按专家、考题和模块级的 `uses` 带上提供方当前副本、`files/`（C2 后加 `.env`）；`collect` 保护进行中的外部调用占用的副本；目录说明加「以调用结果为准」；提供方 `data.db` 的 `_tool_calls` | 一个只用 A 的工具的临时模块预演通过，`judge` 认 `A/tools/x`；只在模块级 `uses` 写了 A 的模块，预演也带上 A；外部调用进行中 A 换版本，旧副本在调用结束前不被删；`_tool_calls` 有调用方 |
+| C4c stock-ta | `holdings` 改成 `shareable`，连带改四处文字和一条测试（规则 7）；检查能带夹具数据目录；先补五个开放工具的 `cases.json`（夹具数据库）；`exports`；`--previous` 和宿主换版本的兼容提醒；模块页的「谁在用」 | `just module check` 通过，摘要里 `private:0`；老 Mac 上已存的持仓行升级后原样在，持仓规则照常命中；一个只用 stock-ta 工具的临时模块，在临时宿主上由真模型调用 `stock-ta/tools/structure`，结果和 stock-ta 自己调用一致；改一个开放工具的输出字段，`--previous` 给提醒 |
+| C4d 工坊 | 模块工坊的技能 `package-layout`、`build-module` 写进 `exports`、外部 `uses`（专家的和 `module.json` 的，两处什么时候用哪处）、「请对提供方说」的转述 | 工坊做 option-ta 时用到 |
 
 ## 待定
 
-1. **stock-ta 的 `holdings` 和规则 7。** 规则 7 按整个模块挡，stock-ta 有私密集合 `holdings`，开放不了，C4c 做不成。三个改法：
-   - **A. 把 `holdings` 改成 `shareable`。** 今天 `private` 只管两件事：私密 feed 的通知，和领域里有 feed 往私密集合写时宿主来源的任务进不来（`design.md` 第 5 节）。`holdings` 是使用者自己在对话里记的，没有 feed 往里写，这两件事都碰不到它，所以标 `private` 今天没有任何效果。改成 `shareable` 只改一个词，规则 7 原样。代价是「持仓是私密数据」这个标签没了，以后给 `private` 加新含义时它不受保护。
-   - **B. 规则 7 改成只看「有 feed 往私密集合写」。** 和 ADR-0018 的 V11 同一个条件，`mail` 照旧开放不了，stock-ta 能开放。理由是 ADR-0018 挡的是别人写进来的内容（邮件），使用者自己记的持仓本来就能被宿主来源的推断任务读到（它能选 stock-ta 领域经 `data` 读 `holdings`，还有 `web_get`）。开放 stock-ta 的只读工具没有让持仓多一条出去的路。代价是改了使用者刚定的规则。
-   - **C. 把 `holdings` 和持仓规则搬出 stock-ta，单独成一个模块。** 规则 7 原样。代价最大：报价 feed 读 `holdings` 算持仓规则，搬走以后 feed 读不到别的模块的集合，持仓规则要一起搬，或者等 C4 让 feed 也能调外部工具（规则 11 说今天不能）。
-
-   推荐 A。理由是 B 推翻刚定的规则，C 为一个今天没有效果的标签搬一大块代码。注意 `files/hits` 里持仓命中的提醒行带成本和止损价，`hits` 工具读得到（`stock-ta-rules-design.md` 第 480 行）。`hits` 不在开放清单里，选 A 也不会经开放工具出去，但说明了「工具代码能读整个模块」这句话在 stock-ta 里是真的。
+没有。第 2 版的「待定」第 1 条使用者选了 A（「使用者已定」第 6 条）。带 `agents/` 的模块不收模块级 `uses`（规则 3）是按最简单、一致的写法定的，使用者要改，只动一条检查。
 
 ## 复查改了什么
 
@@ -230,3 +261,5 @@ C4 不依赖 C2，两者谁先落地都行。C2 先落地时，C4a 的网关直�
 | （写第 2 版时发现）专家的目录每次派活都重算 | 缺口二只说助手 |
 | （开 PR 前的独立复查）解析顺序漏了调用方模块停用；没装和没开分不出；环境预检会挡掉不用环境的工具；外部工具名字格式没写；`provider-failed` 前缀会叠两层 | 规则 4 加第 0 步和「名字」一段；规则 6 合并前两种原因、环境检查改在失败以后、前缀放进 `refusalText` |
 | （开 PR 前的独立复查）ADR-0030 拿没有专家的 `mail` 当调用方，漏了 option-ta 本身是私密使用方 | ADR-0030 的风险和「没有采用的做法」改写；规则 5 写明 option-ta 是私密使用方 |
+| （使用者看过第 2 版后定）`holdings` 选 A | 「使用者已定」第 6 条；规则 7 写明改 `class` 的连带后果和要改的文字、测试；C4c 加这一步，不再挡着；「待定」清空 |
+| （使用者看过第 2 版后定）没有 `agents/` 的模块也能调外部工具 | 「使用者已定」第 7 条；规则 3 加模块级 `uses`，带 `agents/` 的模块不收；规则 2、4、6、9 和分期跟着改；「不做的」删掉对应一条；ADR-0030 写明 `mail` 写了 `uses` 以后的风险 |
