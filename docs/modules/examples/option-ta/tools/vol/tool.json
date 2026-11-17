@@ -1,0 +1,14 @@
+{
+  "title": "波动率状况",
+  "description": "IV、HV、rank、百分位、期限结构和偏斜接口；当前固定 NOT_IMPLEMENTED，不伪造历史序列",
+  "effect": "read",
+  "input": {
+    "symbol": { "type": "text", "title": "标的代码" },
+    "operation": { "type": "text", "title": "summary、history、skew、term 或 dividends" },
+    "as_of": { "type": "date", "title": "观察交易日" }
+  },
+  "output": {
+    "status": { "type": "text", "title": "固定 NOT_IMPLEMENTED" },
+    "reason": { "type": "text", "title": "未实现的能力及无数据说明" }
+  }
+}

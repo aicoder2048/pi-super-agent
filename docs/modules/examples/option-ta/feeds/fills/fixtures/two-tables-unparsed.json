@@ -1,0 +1,9 @@
+{
+  "input": {
+    "now": "2026-11-17T21:30:00.000Z",
+    "cursor": "unchanged",
+    "items": [{ "id": "fictional-two-tables", "threadId": "fictional-thread-1", "messageIdHeader": "<fictional@example.net>", "from": { "name": "Fictional Desk", "address": "desk@example.net" }, "replyTo": "", "subject": "FICTIONAL latest and quoted old table", "date": "2026-03-05T21:20:00.000Z", "snippet": "Fictional parser safety sample", "body": "Account Side Position Security Exe Qty Avg Price Open Qty\nQRSTalfa Sell Call Open AAPL 12 3.15\nQuoted old table below", "html": "<table><tr><td>Account</td><td>Side</td><td>Position</td><td>Security Description</td><td>Exe Qty</td><td>Avg Price</td><td>Open Qty</td></tr><tr><td>QRSTalfa</td><td>Sell Call</td><td>Open</td><td>APPLE INC CALL 03/20/2026 @ 250</td><td>12</td><td>3.15</td><td></td></tr></table><table><tr><td>Account</td></tr><tr><td>Old quoted table must not be parsed</td></tr></table>", "attachments": [] }],
+    "rows": { "fills": [] }
+  },
+  "responses": {}
+}

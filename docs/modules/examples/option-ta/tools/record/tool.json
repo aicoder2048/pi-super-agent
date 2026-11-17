@@ -1,0 +1,13 @@
+{
+  "title": "成交校验与查重",
+  "description": "按 fill_id 校验和查重接口；当前固定 NOT_IMPLEMENTED，不声称已验证，不读写库或入账",
+  "effect": "read",
+  "input": {
+    "fill": { "type": "text", "title": "拟记原始成交或事件的 JSON 文本" },
+    "operation": { "type": "text", "title": "validate 或 duplicate-check" }
+  },
+  "output": {
+    "status": { "type": "text", "title": "固定 NOT_IMPLEMENTED" },
+    "reason": { "type": "text", "title": "未实现的校验及停止入账说明" }
+  }
+}

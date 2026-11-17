@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "name": "option-ta",
+  "version": "0.1.0",
+  "title": "期权分析",
+  "description": "美股期权链、隐含波动、希腊值、策略盈亏，记你的期权开仓、Roll、平仓、到期、指派；股价和技术面归 stock-ta",
+  "team": "期权研究组",
+  "exports": []
+}

@@ -1,0 +1,12 @@
+node --import ./src/pi-runtime.mjs src/cli/module.ts "$@"
+note agents/direction.md: uses "stock-ta/tools/structure", another module's tool; this check cannot see whether stock-ta exports it
+note agents/direction.md: uses "stock-ta/tools/signals", another module's tool; this check cannot see whether stock-ta exports it
+note agents/direction.md: uses "stock-ta/tools/prices", another module's tool; this check cannot see whether stock-ta exports it
+note agents/direction.md: uses "stock-ta/tools/quote", another module's tool; this check cannot see whether stock-ta exports it
+note agents/volatility.md: uses "stock-ta/tools/earnings-date", another module's tool; this check cannot see whether stock-ta exports it
+note evals/private-entry-external.md: uses "stock-ta/tools/structure", another module's tool; this check cannot see whether stock-ta exports it
+note evals/private-entry-external.md: uses "stock-ta/tools/signals", another module's tool; this check cannot see whether stock-ta exports it
+note evals/private-entry-external.md: uses "stock-ta/tools/prices", another module's tool; this check cannot see whether stock-ta exports it
+note evals/private-entry-external.md: uses "stock-ta/tools/quote", another module's tool; this check cannot see whether stock-ta exports it
+note evals/private-entry-external.md: uses "stock-ta/tools/earnings-date", another module's tool; this check cannot see whether stock-ta exports it
+ok option-ta@0.1.0 | knowledge=4 data=6 tools=5 skills=1 feeds=3 agents=6 evals=6 | rules=3 | data-classes=shareable:2,private:4 | secrets=FINNHUB_API_KEY,POLYGON_API_KEY | digest=2bba3ea3c1a9
