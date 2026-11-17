@@ -1,0 +1,5 @@
+[
+  { "name": "manual-fill-is-not-validated-or-written", "input": { "operation": "validate", "fill": "{\"fill_id\":\"fictional-1\",\"account_ref\":\"QRSTalfa\",\"qty\":1,\"price\":\"2.1000\"}" }, "responses": {}, "expect": { "status": "NOT_IMPLEMENTED", "reason": "成交/事件校验、fill_id查重、累计成交增量和冲销校验尚未实现；未读取数据库、未验证、未入账，领队不得据此写成交。" } },
+  { "name": "missing-fields-do-not-pass-validation", "input": { "fill": "{}" }, "responses": {}, "expect": { "status": "NOT_IMPLEMENTED", "reason": "成交/事件校验、fill_id查重、累计成交增量和冲销校验尚未实现；未读取数据库、未验证、未入账，领队不得据此写成交。" } },
+  { "name": "duplicate-check-does-not-claim-unique", "input": { "operation": "duplicate-check", "fill": "{\"fill_id\":\"fictional-1\"}" }, "responses": {}, "expect": { "status": "NOT_IMPLEMENTED", "reason": "成交/事件校验、fill_id查重、累计成交增量和冲销校验尚未实现；未读取数据库、未验证、未入账，领队不得据此写成交。" } }
+]

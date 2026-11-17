@@ -1,0 +1,14 @@
+{
+  "title": "策略计算",
+  "description": "给定腿的盈亏、参考价和三种 Roll 比较接口；当前固定 NOT_IMPLEMENTED，不用模型代算",
+  "effect": "read",
+  "input": {
+    "kind": { "type": "text", "title": "CSP、CC、long-put、long-call、credit-vertical、debit-vertical、Calendar、Diagonal 或 Combo" },
+    "legs": { "type": "text", "title": "JSON 文本：方向、合约、张数、价格、乘数和时刻" },
+    "scenario_prices": { "type": "text", "title": "情景正股价 JSON 数组文本" }
+  },
+  "output": {
+    "status": { "type": "text", "title": "固定 NOT_IMPLEMENTED" },
+    "reason": { "type": "text", "title": "未实现的计算及不入账说明" }
+  }
+}

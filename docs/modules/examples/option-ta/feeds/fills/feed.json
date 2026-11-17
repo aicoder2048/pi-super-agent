@@ -1,0 +1,10 @@
+{
+  "title": "成交邮件安全占位（未接 mail）",
+  "handler": "index.ts",
+  "every": "5m",
+  "reads": ["fills"],
+  "settings": { "senders": "brokers", "parserStatus": "NOT_IMPLEMENTED" },
+  "into": "fills",
+  "notice": "{{status}}：{{message}}",
+  "line": "{{status}}\n{{message}}"
+}

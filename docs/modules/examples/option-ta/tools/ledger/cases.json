@@ -1,0 +1,5 @@
+[
+  { "name": "chain-pnl-is-not-zero-or-computed", "input": { "account_key": "fictional-account", "view": "chain", "year": 2026 }, "responses": {}, "expect": { "status": "NOT_IMPLEMENTED", "reason": "交易链汇总、仓位还原、逐腿税务、wash sale/跨式标记和§1256年末计价尚未实现；没有读库或返回盈亏，1099-B对账不在本轮范围。" } },
+  { "name": "tax-markers-are-not-fabricated", "input": { "account_key": "fictional-account", "view": "tax", "year": 2026 }, "responses": {}, "expect": { "status": "NOT_IMPLEMENTED", "reason": "交易链汇总、仓位还原、逐腿税务、wash sale/跨式标记和§1256年末计价尚未实现；没有读库或返回盈亏，1099-B对账不在本轮范围。" } },
+  { "name": "missing-fields-do-not-imply-empty-ledger", "input": {}, "responses": {}, "expect": { "status": "NOT_IMPLEMENTED", "reason": "交易链汇总、仓位还原、逐腿税务、wash sale/跨式标记和§1256年末计价尚未实现；没有读库或返回盈亏，1099-B对账不在本轮范围。" } }
+]

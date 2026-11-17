@@ -1,0 +1,12 @@
+{
+  "title": "期权自选",
+  "kind": "record",
+  "class": "shareable",
+  "fields": {
+    "symbol": { "type": "text", "title": "美股或 ETF 标的代码" },
+    "added_at": { "type": "date", "title": "加入时刻" },
+    "removed_at": { "type": "date", "title": "移除时刻" },
+    "methodology": { "type": "text", "title": "IV 原始输入口径版本" },
+    "backfill_requested_at": { "type": "date", "title": "一年回填请求时刻，不表示已完成" }
+  }
+}

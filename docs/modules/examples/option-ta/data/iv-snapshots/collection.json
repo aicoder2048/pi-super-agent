@@ -1,0 +1,21 @@
+{
+  "title": "每日 IV 原始输入",
+  "kind": "record",
+  "class": "shareable",
+  "fields": {
+    "symbol": { "type": "text", "title": "标的代码" },
+    "trade_date": { "type": "date", "title": "美东交易日，每标的每日一行" },
+    "option_symbol": { "type": "text", "title": "选定标准美式 put 合约代码" },
+    "strike": { "type": "number", "title": "行权价", "unit": "USD/share" },
+    "expiry": { "type": "date", "title": "到期日" },
+    "contract_close": { "type": "number", "title": "合约当日日线收盘成交价，回填与日常共用", "unit": "USD/share" },
+    "underlying_close": { "type": "number", "title": "正股同日日线收盘价", "unit": "USD/share" },
+    "quote_midpoint": { "type": "number", "title": "仅日常保存的报价中间价，非序列价格", "unit": "USD/share" },
+    "quote_at": { "type": "date", "title": "中间报价时刻" },
+    "fetched_at": { "type": "date", "title": "取数时刻" },
+    "source": { "type": "text", "title": "公开行情出处" },
+    "methodology": { "type": "text", "title": "口径版本，不同版本不能混接" },
+    "data_status": { "type": "text", "title": "ok 或 no-data；无合约日线留缺失，不用零补" },
+    "reason": { "type": "text", "title": "缺数据原因，不存供应方 IV 或派生 IV" }
+  }
+}

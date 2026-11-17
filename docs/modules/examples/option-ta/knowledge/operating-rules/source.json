@@ -1,0 +1,8 @@
+{
+  "title": "第一版规则与提醒门槛",
+  "version": "2026-11-17",
+  "published": "2026-11-17",
+  "authority": "reference",
+  "license": "bundled",
+  "origin": "使用者资料整理。docs/modules/option-ta-build-plan.md「已定的第一版范围」，提交 fd6becdc68dd0e84b36a04cbdeded8016777579f（2026-11-17）；docs/modules/option-ta-spec.md「管什么」「主动提醒的两处细节」「成交邮件」，提交 b0aafcb39c167d6dfd2c647e04ae16223ba664d5（2026-11-17）。只整理已定范围；推测另行标明。"
+}

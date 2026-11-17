@@ -1,0 +1,8 @@
+{
+  "title": "交易链与税务口径及待确认边界",
+  "version": "2026-11-17-scope",
+  "published": "2026-11-16",
+  "authority": "reference",
+  "license": "bundled",
+  "origin": "使用者 docs/modules/option-ta-tax-memo.md 第14节（第2至6、15至16节作上下文），提交 b8603d71e96230b85c2eb4eee34247895867b2d1（2026-11-16）。第一版范围受 docs/modules/option-ta-build-plan.md「已定的第一版范围」提交 fd6becdc68dd0e84b36a04cbdeded8016777579f（2026-11-17）和 docs/modules/option-ta-spec.md 提交 b0aafcb39c167d6dfd2c647e04ae16223ba664d5（2026-11-17）约束。转述用户备忘，不附外部全文，不代表重新核验税法。"
+}

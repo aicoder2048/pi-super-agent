@@ -1,0 +1,10 @@
+{
+  "input": {
+    "now": "2026-11-20T14:45:00.000Z", "cursor": "unchanged",
+    "rows": {
+      "fills": [{ "id": 1, "from": "fictional-fixture", "fields": { "record_type": "FILL", "fill_id": "fictional-1", "account_key": "fictional-account", "underlying": "SPY", "option_symbol": "SPY261120P00600000", "side": "STO", "qty": 1, "price": "2.1000", "expiry": "2026-11-20" } }],
+      "chains": []
+    }
+  },
+  "responses": {}
+}

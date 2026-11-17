@@ -1,0 +1,8 @@
+{
+  "title": "P1 行情实测与数据限制",
+  "version": "P1-2026-11-17",
+  "published": "2026-11-17",
+  "authority": "reference",
+  "license": "bundled",
+  "origin": "使用者 docs/modules/option-ta-p1/README.md，提交 a2b38d51e6d664008c6415eff77e48fd60154038（2026-11-17），实测时段为2026-11-17美东04:29至04:40。后续已定口径采用 docs/modules/option-ta-spec.md 提交 b0aafcb39c167d6dfd2c647e04ae16223ba664d5（2026-11-17）。仅整理实测事实、数据限制和已定口径，不收入 theta 原文、移植代码或私人数据。"
+}
