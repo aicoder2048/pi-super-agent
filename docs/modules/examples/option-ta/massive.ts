@@ -40,6 +40,11 @@ export async function getJson(url: string, key: string, signal: AbortSignal): Pr
 		const wait = reply.headers.get("retry-after");
 		return fail("RATE_LIMITED", `行情服务回 HTTP 429，请求太多，${wait ? `${wait} 秒后` : "稍后"}再查`);
 	}
+	if (reply.status === 401 || reply.status === 403) {
+		const said = object(await reply.json().catch(() => ({})));
+		const why = said.error ?? said.message;
+		return fail("UPSTREAM_ERROR", `行情服务回 HTTP ${reply.status}${why ? `（${oneLine(why)}）` : ""}：key 无效，或套餐不含期权快照。换 key：just module secret option-ta POLYGON_API_KEY`);
+	}
 	if (!reply.ok) return fail("UPSTREAM_ERROR", `行情服务返回 HTTP ${reply.status}，稍后再查`);
 	const body = object(await reply.json().catch(() => fail("UPSTREAM_ERROR", "行情服务的应答不是 JSON，稍后再查")));
 	if (body.status === "ERROR") return fail("UPSTREAM_ERROR", `行情服务回了错误：${oneLine(body.error ?? body.message)}`);
@@ -58,6 +63,8 @@ export async function snapshotPages(query: string, key: string, signal: AbortSig
 		pages += 1;
 		if (Array.isArray(body.results)) rows.push(...body.results);
 		url = typeof body.next_url === "string" && body.next_url !== "" ? body.next_url : undefined;
+		// The next request carries the key, so it only goes back to Massive.
+		if (url !== undefined && !url.startsWith(`${MASSIVE_BASE}/`)) fail("UPSTREAM_ERROR", "行情服务给的下一页地址不在 Massive，没跟");
 	}
 	return { rows, pages, truncated: url !== undefined };
 }

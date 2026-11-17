@@ -141,3 +141,55 @@ test("缺 key：不发请求，回 NO_KEY 和补 key 的命令", async () => {
 	assert.match(out.reason, /just module secret option-ta POLYGON_API_KEY/);
 	assert.equal(calls.length, 0);
 });
+
+const stripped = (zeroQuote: string) => {
+	const body = sample("chain-spy-puts-filtered");
+	for (const row of body.results) {
+		delete row.implied_volatility;
+		if (row.greeks) row.greeks = {};
+		if (row.details.ticker === zeroQuote) Object.assign(row.last_quote, { bid: 0, ask: 0 });
+	}
+	return body;
+};
+
+test("缺字段：供应方没给 IV 和希腊值时平值、偏斜用自算的值并标「自算」，没有报价的合约不参加挑选", async () => {
+	serve({ [PREV]: sample("aggs-prev-underlying"), [TERM]: stripped("O:SPY261120P00725000"), [SKEW]: stripped("O:SPY261120P00725000") });
+	const out = await run({ symbol: "SPY", now: NOW });
+	assert.equal(out.status, "OK");
+	assert.equal(out.atm.iv_source, "自算");
+	assert.equal(out.skew.put.greeks_source, "自算");
+	assert.notEqual(out.skew.put.contract, "O:SPY261120P00725000");
+});
+
+const asCall = (row: Reply, delta: number, iv: number) => ({
+	...row,
+	details: { ...row.details, contract_type: "call", ticker: row.details.ticker.replace("P00", "C00") },
+	greeks: { ...row.greeks, delta },
+	implied_volatility: iv,
+});
+
+test("偏斜：两边都有、来源相同时回 put 减 call 的 IV 差；一边自算一边供应方时不相减", async () => {
+	const body = sample("chain-spy-puts-filtered");
+	const call = asCall(body.results[3], 0.24, 0.15);
+	serve({ [PREV]: sample("aggs-prev-underlying"), [TERM]: sample("chain-spy-puts-filtered"), [SKEW]: { ...body, results: [...body.results, call] } });
+	const out = await run({ symbol: "SPY", now: NOW });
+	assert.equal(out.skew.call.contract, "O:SPY261120C00735000");
+	assert.equal(out.skew.put_minus_call, round4(0.2318 - 0.15));
+
+	const own = { ...call, greeks: {}, implied_volatility: undefined };
+	serve({ [PREV]: sample("aggs-prev-underlying"), [TERM]: sample("chain-spy-puts-filtered"), [SKEW]: { ...body, results: [...body.results, own] } });
+	const mixed = await run({ symbol: "SPY", now: NOW });
+	assert.equal(mixed.skew.call.iv_source, "自算");
+	assert.equal(mixed.skew.put_minus_call, null);
+	assert.match(mixed.skew.note, /不相减/);
+});
+
+test("正股价跳空、取回的行权价离平值太远：平值为空并说明，不把边上的合约当平值", async () => {
+	const body = sample("chain-spy-puts-filtered");
+	for (const row of body.results) row.underlying_asset.price = 780;
+	serve({ [PREV]: sample("aggs-prev-underlying"), [TERM]: body });
+	const out = await run({ symbol: "SPY", now: NOW });
+	assert.equal(out.atm, null);
+	assert.match(out.atm_note, /太远/);
+	assert.equal(out.skew, null);
+});

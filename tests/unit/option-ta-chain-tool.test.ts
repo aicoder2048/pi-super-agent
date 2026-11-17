@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test, { afterEach, beforeEach } from "node:test";
+import { bsGreeks } from "../../docs/modules/examples/option-ta/chain-rows.ts";
+import { MAX_PAGES } from "../../docs/modules/examples/option-ta/massive.ts";
 import { bsPutPrice } from "../../docs/modules/examples/option-ta/options-math.ts";
 import chain from "../../docs/modules/examples/option-ta/tools/chain/index.ts";
 
@@ -126,8 +128,8 @@ test("分页有上限：next_url 不断时停下，标 truncated", async () => {
 	serve({ [nvdaUrl]: whole, [loop]: whole });
 	const out = await run({ symbol: "NVDA", expiry_from: "2026-11-18", expiry_to: "2026-11-20", now: CLOSED_NOW });
 	assert.equal(out.truncated, true);
-	assert.ok(calls.length >= 2 && calls.length <= 10, `fetched ${calls.length} pages`);
-	assert.equal(out.pages, calls.length);
+	assert.equal(calls.length, MAX_PAGES);
+	assert.equal(out.pages, MAX_PAGES);
 });
 
 test("应答体 status ERROR：回 UPSTREAM_ERROR 和原因，不抛错", async () => {
@@ -171,4 +173,30 @@ test("没有符合条件的标准合约：回 NO_DATA", async () => {
 	serve({ [spyPutsUrl]: { status: "OK", results: [sample("chain-spy-puts-filtered").results[0]] } });
 	const out = await run({ symbol: "SPY", expiry: "2026-11-20", right: "put", strike_min: 720, strike_max: 740, now: CLOSED_NOW });
 	assert.equal(out.status, "NO_DATA");
+});
+
+test("自算希腊值和供应方同一合约的值单位一致、相差不大（theta 按天、vega 按 1 个 IV 点）", () => {
+	const row = sample("chain-single-contract").results;
+	const dte = (Date.parse("2026-11-20T21:00:00Z") - Number(row.underlying_asset.last_updated) / 1e6) / 86_400_000;
+	const own = bsGreeks("put", row.underlying_asset.price, 730, row.implied_volatility, dte);
+	for (const name of ["delta", "gamma", "theta", "vega"] as const) {
+		const given = row.greeks[name];
+		assert.ok(Math.abs(own[name] - given) / Math.abs(given) < 0.12, `${name}: own ${own[name]} vs provider ${given}`);
+	}
+});
+
+test("HTTP 401：说 key 无效或套餐不含，带换 key 的命令，不叫人稍后再查", async () => {
+	serve({ [spyPutsUrl]: { status: 401, body: { status: "ERROR", error: "Unknown API Key" } } });
+	const out = await run({ symbol: "SPY", expiry: "2026-11-20", right: "put", strike_min: 720, strike_max: 740, now: CLOSED_NOW });
+	assert.equal(out.status, "UPSTREAM_ERROR");
+	assert.match(out.reason, /Unknown API Key/);
+	assert.match(out.reason, /just module secret option-ta POLYGON_API_KEY/);
+	assert.doesNotMatch(out.reason, /稍后/);
+});
+
+test("下一页地址不在 Massive：不带 key 去请求", async () => {
+	serve({ [nvdaUrl]: { ...sample("chain-nvda-missing-greeks"), next_url: "https://elsewhere.example/v3/snapshot/options/NVDA?cursor=x" } });
+	const out = await run({ symbol: "NVDA", expiry_from: "2026-11-18", expiry_to: "2026-11-20", now: CLOSED_NOW });
+	assert.equal(out.status, "UPSTREAM_ERROR");
+	assert.equal(calls.length, 1);
 });

@@ -7,7 +7,7 @@
 - `module.json`：中文标题、路由说明和团队；有私密集合，所以 `exports: []`。
 - `skills/option-lead/SKILL.md`：分档、共同快照、一次会诊、输出五段和领队独占写入。
 - `agents/{direction,volatility,strategy,position,ledger,critic}.md`：六位只读专家，最小 `uses`；只有需要者接触私密集合。领队不另建专家文件。
-- 包根目录的纯计算 `*.ts`：从 theta 移植（BS 价格和反解 IV、首达概率、到期盈亏、方案经济、CC 收益、流动性、参考价、Roll 净收门槛、IV 压缩、GEX 墙、OI 期限结构、到期临近、交割物、IV rank 和 HV20）。不联网、不读写数据。门槛是命名常量，说明书没定的沿用 theta 的值，待使用者确认。
+- 包根目录的 `massive.ts`（Massive 请求、分页、错误）和 `chain-rows.ts`（解析快照行、补算 IV 和希腊值）联网取行情，只给 chain、vol 用。其余 `*.ts` 是纯计算：从 theta 移植（BS 价格和反解 IV、首达概率、到期盈亏、方案经济、CC 收益、流动性、参考价、Roll 净收门槛、IV 压缩、GEX 墙、OI 期限结构、到期临近、交割物、IV rank 和 HV20）。不联网、不读写数据。门槛是命名常量，说明书没定的沿用 theta 的值，待使用者确认。
 - `tools/{chain,vol,strategy,record,ledger}/`：每个包含 `tool.json`、`index.ts`、`cases.json`。`strategy` 只算不取数：给定腿，回权利金、参考价、盈亏平衡、到期盈亏、年化、指派概率、流动性和三种 Roll 的净收付。`chain`、`vol` 向 Massive 取数（行情辅助在包根目录的 `massive.ts`、`chain-rows.ts`），滤掉二元期权、跟分页，缺 IV 或希腊值用中间价自算并标「自算」，算不出标「无数据」，休市标「休市」；`chain` 的 OI 墙、GEX、最大痛点、异常成交还回 `NOT_IMPLEMENTED`。`vol` 只读 `iv-snapshots`，没有行时 history 回 `NO_HISTORY`。`record`、`ledger` 只读 `$PSA_MODULE_DATA/data.db`，不写库；它们的用例共用 `tools/ledger/fixtures/data/data.db`，这份库由 `tools/ledger/fixtures/seed.json` 经 `tests/helpers/option-ta-ledger-db.ts` 生成，全是虚构数据。
 - `fills.ts`：feed 和 `record` 共用的订单键、`fill_id`、OCC 代码和累计增量（整数万分之一美元）。`data-db.ts`：工具只读打开 data.db。
 - `data/{fills,chains,accounts,brokers}/collection.json`：四个 `private` 集合；`data/{watchlist,iv-snapshots}/collection.json`：两个 `shareable` 集合。全部初始为空。
@@ -69,7 +69,7 @@ just -f "$PSA_REPO/justfile" module check "$STATE/modules/option-ta"
 PSA_STATE_DIR="$STATE" just -f "$PSA_REPO/justfile" module try option-ta
 ```
 
-`strategy` 的 cases 用算出来的数断言，不联网，所以没有休市和 HTTP 用例。record/ledger 的 cases 用夹具库断言算出来的数，覆盖缺账户、费用未知、重复 `fill_id`、部分成交合计；它们没有 HTTP 路径。chain/vol 的 cases 用 P1 样本回放，覆盖休市、盘中、缺字段、分页、应答体 ERROR、HTTP 429 和 5xx；`vol` 有历史的那条读 `tools/vol/fixtures/history/data.db`（由 `tests/helpers/option-ta-iv-history.ts` 生成的虚构序列）。缺 key 回放写不出（检查给点名的密钥填假值），由 `tests/unit/option-ta-chain-tool.test.ts`、`option-ta-vol-tool.test.ts` 断言。`module check` 只检查 feed 样例交回的格式；解析对不对由仓库的 `tests/unit/option-ta-fills.test.ts` 断言（四封信的 HTML 和纯文本各一遍，期望取 `option-ta-p1/mail-samples/*.expected.json`），record/ledger 由 `tests/unit/option-ta-ledger.test.ts` 断言，纯计算由其余 `tests/unit/option-ta-*.test.ts` 断言，都由 `just test` 跑，包里不放测试文件。
+`strategy` 的 cases 用算出来的数断言，不联网，所以没有休市和 HTTP 用例。record/ledger 的 cases 用夹具库断言算出来的数，覆盖缺账户、费用未知、重复 `fill_id`、部分成交合计；它们没有 HTTP 路径。chain/vol 的 cases 用 P1 样本回放：chain 覆盖休市、盘中、缺字段、分页、应答体 ERROR、HTTP 429 和 5xx；vol 覆盖休市、缺字段（自算）、没有历史、有历史、21 到 45 天没有到期日、应答体 ERROR、HTTP 429 和 5xx；`vol` 有历史的那条读 `tools/vol/fixtures/history/data.db`（由 `tests/helpers/option-ta-iv-history.ts` 生成的虚构序列）。缺 key 回放写不出（检查给点名的密钥填假值），由 `tests/unit/option-ta-chain-tool.test.ts`、`option-ta-vol-tool.test.ts` 断言。`module check` 只检查 feed 样例交回的格式；解析对不对由仓库的 `tests/unit/option-ta-fills.test.ts` 断言（四封信的 HTML 和纯文本各一遍，期望取 `option-ta-p1/mail-samples/*.expected.json`），record/ledger 由 `tests/unit/option-ta-ledger.test.ts` 断言，纯计算由其余 `tests/unit/option-ta-*.test.ts` 断言，都由 `just test` 跑，包里不放测试文件。
 
 ## 范围与依据
 

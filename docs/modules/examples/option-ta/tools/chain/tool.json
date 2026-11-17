@@ -1,6 +1,6 @@
 {
   "title": "期权链快照",
-  "description": "向 Massive 取某个标的的期权链快照：按到期日（或到期范围）、put/call、行权价范围过滤，跟分页，滤掉二元期权。回每个合约的买卖价、中间价、未平仓量、IV 和希腊值，缺的用中间价按 BS 自算并标「自算」，算不出标「无数据」，不当 0；休市时标「休市」，那时的 IV 不是收盘 IV。正股价延迟 15 分钟。只读，不下单",
+  "description": "向 Massive 取某个标的的期权链快照：按到期日（或到期范围）、put/call、行权价范围过滤，跟分页，滤掉二元期权。回每个合约的买卖价、中间价、未平仓量、IV 和希腊值，缺的用中间价按 BS 自算并标「自算」，算不出标「无数据」，不当 0；休市时标「休市」，那时的 IV 不是收盘 IV。正股价标出延迟。只读，不下单",
   "effect": "read",
   "secrets": ["POLYGON_API_KEY"],
   "input": {
@@ -21,7 +21,7 @@
     "fetched_at": { "type": "text", "title": "取数时刻，美东" },
     "market": { "type": "text", "title": "盘中或休市" },
     "market_note": { "type": "text", "title": "休市时才有：为什么这时的 IV 和希腊值不是收盘值" },
-    "underlying": { "type": "text", "title": "正股 price（美元）、at（数据时刻，美东）、delay（延迟 15 分钟）" },
+    "underlying": { "type": "text", "title": "正股 price（美元）、at（数据时刻，美东）、delay（延迟 15 分钟或实时，照抄）" },
     "contracts": { "type": "text", "title": "每个合约：contract（合约代码）、right、strike、expiry、dte（天）、bid、ask、mid（没有双边报价为空）、quote_at、open_interest（张）、iv（小数）、iv_source（供应方、自算或无数据）、delta、gamma、theta、vega、greeks_source、break_even；按到期日、行权价排序" },
     "rows_dropped": { "type": "number", "title": "超过 60 行时按离正股价远近去掉的行数" },
     "skipped_binary": { "type": "number", "title": "滤掉的二元期权行数" },
