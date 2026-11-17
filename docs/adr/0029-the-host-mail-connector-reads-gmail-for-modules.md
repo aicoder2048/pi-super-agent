@@ -16,7 +16,7 @@ option-ta 要从券商的成交确认邮件里记成交。读 Gmail 的代码（
 
 过滤放在连接器里，是为了守住 ADR-0018 的隔离。一个模块只收到自己 feed 点名的信，它开的任务只进本模块。`mail` 不知道 option-ta 存在，也不转交信，幕僚长不参与。两个模块都收同一个发件人时，各收一份，各开各的任务。
 
-**两格进度，失败重取，三次拒收。** 每个 feed 有两格：`connectorCursor` 是 JSON `{historyId, at}`，存在模块 `data.db` 的另一张表 `_feed_connectors`（`source`、`cursor`），不交给 handler。`_feeds` 的列不变，回退到旧代码时它照旧按三个值写 `_feeds`，新表它不读。`cursor` 是 handler 自己的进度，和以前一样。一批信全部处理完或拒收以后，`connectorCursor` 才往前走。handler 出错或超时，这一拍算失败，下一拍重取同一批信，这一批里已经处理过的信在内存里记着，跳过。同一封信失败 3 次就拒收：宿主把它的编号、发件人、主题和 handler 的错误写进本机的 `<stateDir>/inbox/<模块>/<feed>/rejected/<gmailId>.json`，错误文字可能引用信的内容，所以只留在本机。再发一行通知，只写哪个 feed、Gmail 编号、试了几次，不带错误文字，也不带主题和正文。这一批照常往前走。这和 `inbox` 连接器的拒收规则一样。
+**两格进度，失败重取，三次拒收。** 每个 feed 有两格：`connectorCursor` 是 JSON `{historyId, at}`，存在模块 `data.db` 的另一张表 `_feed_connectors`（`source`、`cursor`），不交给 handler。`_feeds` 的列不变，回退到旧代码时它照旧按三个值写 `_feeds`，新表它不读。`cursor` 是 handler 自己的进度，和以前一样。一批信全部处理完或拒收以后，`connectorCursor` 才往前走。handler 出错或超时，这一拍算失败，下一拍重取同一批信，这一批里已经处理过的信在内存里记着，跳过。同一封信失败 3 次就拒收：宿主把它的编号、发件人、主题和 handler 的错误写进本机的 `<stateDir>/inbox/<模块>/<feed>/rejected/<gmailId>.json`，错误文字可能引用信的内容，所以只留在本机。再发一行通知，只写哪个 feed、Gmail 编号、试了几次，不带错误文字，也不带主题和正文。这一批照常往前走。这和 `inbox` 连接器的拒收规则一样：它的通知只写 feed、文件名和次数，错误写在本机 `rejected/` 里的 `<文件名>.error.txt`。没到 3 次的那几拍算这个 feed 失败，连着失败满 `feedFailuresBeforeAlarm` 拍会亮警报。mail feed 一律私密，私密 feed 的警报不写错误原文，只写「错误可能引用私密数据，只记在本机的 host.log」，原文只进本机的 `host.log`，原因（鉴权、网络等）仍按原文分。
 
 **mail feed 一律私密。** `into` 必须是 `private` 集合，不写或写了可分享的集合，检查报错。以前私密与否只看 `into`，现在连接器也要求它。哪些字段能出本机仍由 ADR-0020 定，只有 `line` 点名的几个。
 
