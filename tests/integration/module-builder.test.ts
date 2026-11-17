@@ -133,3 +133,67 @@ test("技能 build-module 原文写了「请对提供方说」的转述规则", 
 	assert.ok(text.includes("请对 <提供方> 说"), "写明转述的句式");
 	assert.ok(text.includes("请对 stock-ta 说"), "给出 stock-ta 的例句");
 });
+
+const REPO = fileURLToPath(new URL("../..", import.meta.url));
+
+test("技能 build-module 原文里提供方不在时的三句原因，和网关 gateway.ts 回的一字不差", () => {
+	const source = readFileSync(join(REPO, "src/modules/gateway.ts"), "utf8");
+	const reasons = [...source.matchAll(/code: "provider-absent", note: `([^`]+)`/g)].map(([, note]) =>
+		note!.replaceAll("${provider}", "stock-ta").replaceAll("${copy.module}", "stock-ta").replaceAll("${name}", "quote"),
+	);
+	assert.equal(new Set(reasons).size, 3, `网关有三句 provider-absent 原因，多了或少了要同步改技能：${reasons.join(" / ")}`);
+	const text = SKILL("build-module");
+	for (const reason of reasons) assert.ok(text.includes(`「${reason}」`), `技能写着「${reason}」`);
+});
+
+test("技能 build-module 找提供方的包也看仓库的示例包，三处都没有时汇报找不到，不当成没开放", () => {
+	const text = SKILL("build-module");
+	assert.ok(text.includes("$PSA_REPO/docs/modules/examples/<提供方>/module.json"), "写明示例包的路径");
+	assert.ok(text.includes("「找不到提供方的包」"), "写明找不到时怎么汇报");
+});
+
+test("写专家的人拿得到转述三条：package-layout 的外部 uses 一节指过去，搭结构的专家读那一节", () => {
+	const layout = SKILL("package-layout");
+	const external = layout.slice(layout.indexOf("## 用别的模块的工具"), layout.indexOf("## 两个示例包"));
+	assert.ok(external.includes("build-module「和别的模块连起来」的三条"), "外部 uses 一节指向三条");
+	const scaffolder = readFileSync(join(BUILDER, "agents", "scaffolder.md"), "utf8");
+	assert.ok(scaffolder.includes("「和别的模块连起来」"), "搭结构读 build-module 的那一节");
+	assert.ok(scaffolder.includes("data-and-feeds"), "搭结构写数据和 feed 时读技能 data-and-feeds");
+});
+
+test("package-layout 不再叫人照 full 模板写数据和 feed，full 模板的 README 指向真正的样例", () => {
+	assert.ok(!SKILL("package-layout").includes("数据、工具和 feed 照 `full` 模板写"));
+	const readme = readFileSync(join(REPO, "src/modules/templates/full/README.md"), "utf8");
+	assert.ok(!readme.includes("框架还没做"), "README 不再说框架没做数据和 feed");
+	assert.ok(readme.includes("docs/modules/examples/mail/"), "README 指向 mail 示例包");
+});
+
+function mailExample() {
+	const packages = [...examplePackages(SKILL("data-and-feeds"))];
+	assert.equal(packages.length, 1, "技能 data-and-feeds 给一个示例包");
+	return packages[0]!;
+}
+
+test("技能 data-and-feeds 的示例包写进目录，just module check 的同一段检查通过（连 feed 的样例一起跑），mail feed 写进私密集合", (t) => {
+	const [name, files] = mailExample();
+	const scan = checked(writePackage(t, name, files));
+	const feeds = scan.components.flatMap((c) => (c.kind === "feeds" ? [c] : []));
+	const mail = feeds.find((c) => c.feed.connector === "mail");
+	assert.ok(mail, "有一个 mail 连接器的 feed");
+	assert.ok(mail.fixtures.length > 0, "feed 带样例，检查会跑它");
+	const collections = new Map(scan.components.flatMap((c) => (c.kind === "data" ? [[c.name as string, c.collection] as const] : [])));
+	assert.equal(collections.get(mail.feed.into!)?.class, "private");
+	const senders = (mail.feed.settings as { senders?: unknown } | undefined)?.senders;
+	assert.equal(typeof senders, "string", "settings.senders 写集合名，不在包里写地址");
+	assert.equal(collections.get(senders as string)?.fields["address"]?.type, "text");
+});
+
+test("示例包的 mail feed 改写进非私密集合，检查报错", (t) => {
+	const [name, files] = mailExample();
+	const feedPath = [...files.keys()].find((path) => path.endsWith("feed.json"))!;
+	const into = JSON.parse(files.get(feedPath)!).into as string;
+	const changed = new Map(files);
+	const collectionPath = `data/${into}/collection.json`;
+	changed.set(collectionPath, files.get(collectionPath)!.replace(`"class": "private"`, `"class": "shareable"`));
+	assert.ok(problemsOf(writePackage(t, name, changed)).some((line) => line.includes("must write into a private collection")));
+});
