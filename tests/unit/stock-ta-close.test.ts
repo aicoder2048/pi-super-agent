@@ -77,7 +77,7 @@ test("收盘的 1 层也是页面标记：同一只票的标记带上盘中的 1
 });
 
 test("ta 判为噪音的信号降到 0 层：200 日线也不开任务，写明 ta 判它来回翻", () => {
-	const r = close(input({ signals: [ma(200, "bearish", "noise", { values: { left: 97, right: 98.5, whipsaw: { flips: 3, start_ms: 0 } } })] }));
+	const r = close(input({ signals: [ma(200, "bearish", "noise", { values: { left: 97, right: 98.5, whipsaw: { flips: 3, start_time: "2026-10-27T20:00:00+00:00" } } })] }));
 	assert.deepEqual(r.hits.map((h) => [h.rule, h.level, h.whipsaw]), [["R-MA-2-200", 0, 3]]);
 	assert.deepEqual([r.alerts, r.notices], [[], []]);
 	assert.match(r.hits[0]!.text, /近 12 根日线反复翻转 3 次/);

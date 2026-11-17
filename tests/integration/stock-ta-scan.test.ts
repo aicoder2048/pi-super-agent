@@ -371,7 +371,9 @@ test("每个标的都只有「分红不可用」的提醒：日线到了，照�
 
 const THURSDAY_EVENING = "2026-11-12T23:00:00.000Z";
 const CLOSE = (date: string) => Date.parse(`${date}T21:00:00Z`);
-const signal = (symbol: string, rule_id: string, kind: string, direction: string, date: string, price: number | null = 150.2) => ({ id: 1, symbol, rule_id, timeframe: "1d", kind, direction, data_start_ms: CLOSE(date) - 23_400_000, data_end_ms: CLOSE(date), discovered_ms: CLOSE(date) + 960_000, price, attention: "key", read: 0 });
+/** ta's CLI prints every `*_ms` time but duration_ms as ISO under a new name (`serialize` in ta/cli.py at the pinned commit). */
+const isoOf = (ms: number) => new Date(ms).toISOString().replace(".000Z", "+00:00");
+const signal = (symbol: string, rule_id: string, kind: string, direction: string, date: string, price: number | null = 150.2) => ({ id: 1, symbol, rule_id, timeframe: "1d", kind, direction, data_start: isoOf(CLOSE(date) - 23_400_000), data_end: isoOf(CLOSE(date)), discovered_at: isoOf(CLOSE(date) + 960_000), price, attention: "key", read: 0, time_sensitive: false, sources: [], delay_minutes: 15, warning: null });
 
 async function scannedOnce(t: TestContext) {
 	const feed = await scanFeed(t);
@@ -401,6 +403,15 @@ test("收盘规则：当天的信号按盯盘规则表判，跌破 50 日线静�
 	assert.match(feed.lines()[0]!.text, /^NVDA 收盘跌破 50 日线（收盘 97\.00，50 日均线 98\.50）。/);
 	const hits = readHits(feed.dataDir, "2026-11-12", "scan");
 	assert.deepEqual(hits.map((h) => [h.id, h.level]), [["R-MACD-2:up:AMD:2026-11-12", 0], ["R-MA-2-50:down:NVDA:2026-11-12", 2]]);
+});
+
+test("ta 原样的回复（data_end 是 ISO 时间，没有 data_end_ms）：当天的日线信号照判，这次扫描记「换上」", async (t) => {
+	const feed = await scannedOnce(t);
+	feed.setPlan({ kind: "ok", signals: [signal("AMD", "R-MACD-2", "金叉", "bullish", "2026-11-12")] });
+	await feed.tick();
+	const runs = feed.runs().filter((r) => r.fields["tradingDate"] === "2026-11-12");
+	assert.deepEqual(runs.map((r) => [r.fields["outcome"], r.fields["errors"] ?? null]), [["换上", "QQQ：DIVIDENDS_UNAVAILABLE 分红更新不可用，使用已缓存分红。"]]);
+	assert.deepEqual(readHits(feed.dataDir, "2026-11-12", "scan").map((h) => h.id), ["R-MACD-2:up:AMD:2026-11-12"]);
 });
 
 test("收盘跌破 200 日线：开任务的触发，线程挂在模块下，和报价 feed 同一只票同一天的线程是同一个；同日放量写「放量确认」", async (t) => {
