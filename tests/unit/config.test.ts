@@ -226,11 +226,11 @@ test("telegram 段写错时报错只点出字段名，不回显段里的值：�
 	}
 });
 
-test("feedFixtures 默认关；写 true 时用 fixtures 代替连接器，just module try 写 rows-only，别的值算关", () => {
+test("feedFixtures 默认关；写 true 时用 fixtures 代替连接器，just module try 写 rows-only，别的值报错", () => {
 	assert.equal(loadConfig(stateWith({})).feedFixtures, false);
 	assert.equal(loadConfig(stateWith({ feedFixtures: true })).feedFixtures, true);
 	assert.equal(loadConfig(stateWith({ feedFixtures: "rows-only" })).feedFixtures, "rows-only");
-	assert.equal(loadConfig(stateWith({ feedFixtures: "yes" })).feedFixtures, false);
+	for (const feedFixtures of ["rows_only", "true", 1]) assert.throws(() => loadConfig(stateWith({ feedFixtures })), (e: Error) => e.name === "ConfigError" && /feedFixtures/.test(e.message), JSON.stringify(feedFixtures));
 });
 
 test("OCR 默认用 macOS 的 Vision，最多读 20 页、60 秒；engine 可以写 off 关掉", () => {

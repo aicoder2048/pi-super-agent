@@ -253,14 +253,17 @@ export class Host {
 			run: async (entry, items, fixture, signal) => {
 				let problem: FeedProblem | undefined;
 				const dropped = { notices: 0, alerts: 0 };
-				const held: Pick<FeedPorts, "submit" | "alert"> = {
-					submit: () => void dropped.notices++,
-					alert: () => {
-						dropped.alerts++;
-						return true;
-					},
+				const ports = {
+					...feedPorts,
+					...(rowsOnly && {
+						submit: () => void dropped.notices++,
+						alert: () => {
+							dropped.alerts++;
+							return true;
+						},
+					}),
+					problem: (_: string, reported: FeedProblem | undefined) => (problem = reported),
 				};
-				const ports = { ...feedPorts, ...(rowsOnly && held), problem: (_: string, reported: FeedProblem | undefined) => (problem = reported) };
 				const run = mail && entry.feed.connector === "mail" && fixture === undefined ? await mail.beat(entry, ports, signal) : await runFeed(entry, items, ports, fixture, signal);
 				if (dropped.notices + dropped.alerts > 0) this.#log(`[预演] ${entry.source} 样例 ${fixture?.name}：丢掉 ${dropped.notices} 条触发、${dropped.alerts} 条提醒，没交出去`);
 				this.#feedHealth(entry, run, problem);

@@ -24,7 +24,8 @@ const OPEN_MS = 180_000;
 const REPORT_MS = 600_000;
 const ACK_MS = 5_000;
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
-const DROPPED = "[预演]";
+// The host prefixes each log line with its ISO time.
+const DROPPED = /^\S+ (\[预演\] .*)$/;
 
 type Models = { router: string; worker: string; fallback: string };
 
@@ -53,7 +54,10 @@ function startHost(stateDir: string) {
 			const lines = (partial + text).split("\n");
 			partial = lines.pop() ?? "";
 			gateway.push(...lines.filter((l) => l.includes("[gateway]")));
-			for (const l of lines) if (l.includes(DROPPED)) console.log(l.slice(l.indexOf(DROPPED)));
+			for (const l of lines) {
+				const dropped = l.match(DROPPED)?.[1];
+				if (dropped) console.log(dropped);
+			}
 			tail = [...tail, ...lines].slice(-3);
 		});
 	}
