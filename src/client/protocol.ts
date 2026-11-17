@@ -58,6 +58,10 @@ export interface ModuleCard {
 	pinnedOld: number;
 	/** Names only; the page builds each import command so a card stays under 1 KB. */
 	notImported: string[];
+	/** What this version changed in the tools the version it replaced exported, from the check before the swap. */
+	notices: string[];
+	/** 谁在用: the other modules whose tickets ran its tools, from its `_tool_calls`. */
+	usedBy: string[];
 	/** Alert lines the module posted since local midnight. The host fills it and `beats`. */
 	alertsToday?: number;
 	/** The module's marks on the card from its latest day with any (ADR-0028); the host fills it. */

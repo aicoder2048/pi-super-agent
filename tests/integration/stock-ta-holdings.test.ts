@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
+import { instanceData } from "../../src/modules/instance-data.ts";
+import type { ModuleName } from "../../src/modules/manifest.ts";
 import { scanPackage } from "../../src/modules/validate.ts";
 import { close } from "../../docs/modules/examples/stock-ta/feeds/scan/close.ts";
 import { newDay, watch, type Context, type DayState } from "../../docs/modules/examples/stock-ta/feeds/quotes/watch.ts";
@@ -22,13 +25,13 @@ const ctx = (over: Partial<Context> = {}): Context => ({ levels: parseRuleLevels
 const levels = (...fields: Record<string, unknown>[]) => parseRuleLevels(fields.map((f, i): LevelRow => ({ id: String(i + 1), fields: f }))).levels;
 const run = (day: DayState, c: Context, ...beats: Quote[][]) => beats.map((quotes) => watch(day, quotes, c));
 
-test("持仓集合：模块检查通过，holdings 是私密的 record 集合，字段是代码、成本、建仓日期、止损价、止损百分比、数量、原话和 removedAt", () => {
+test("持仓集合：模块检查通过，holdings 是可共享（shareable）的 record 集合，字段是代码、成本、建仓日期、止损价、止损百分比、数量、原话和 removedAt", () => {
 	const result = scanPackage(PKG);
 	assert.ok(result.ok, JSON.stringify(!result.ok && result.problems));
 	const data = result.scan.components.find((c) => c.kind === "data" && c.name === "holdings");
 	assert.ok(data?.kind === "data");
 	assert.equal(data.collection.kind, "record");
-	assert.equal(data.collection.class, "private");
+	assert.equal(data.collection.class, "shareable");
 	assert.deepEqual(Object.entries(data.collection.fields).map(([name, f]) => [name, f.type]), [
 		["symbol", "text"], ["cost", "number"], ["boughtAt", "date"], ["stopPrice", "number"], ["stopPct", "number"], ["quantity", "number"], ["note", "text"], ["removedAt", "date"],
 	]);
@@ -215,4 +218,55 @@ test("技能 holdings：只照使用者亲口说的写，改动写整行，不�
 	const levels = readFileSync(join(PKG, "skills/rule-levels/SKILL.md"), "utf8");
 	for (const rule of ["stop-loss", "drawdown", "below-cost", "R-MA-2-200", "volume-close", "earnings"]) assert.match(levels, new RegExp(`\\| \`${rule}\` \\|`));
 	assert.match(levels, /技能 `holdings`/);
+});
+
+/** Stands for the package the old Mac runs before C4c: the old class on the collection, no exports. */
+const OLD_CLASS = "private";
+function packageBeforeC4c(t: TestContext): string {
+	const root = mkdtempSync(join(tmpdir(), "psa-holdings-old-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	const old = join(root, "stock-ta");
+	cpSync(PKG, old, { recursive: true });
+	const collection = join(old, "data/holdings/collection.json");
+	writeFileSync(collection, JSON.stringify({ ...JSON.parse(readFileSync(collection, "utf8")), class: OLD_CLASS }));
+	const manifest = join(old, "module.json");
+	const { exports: _, ...before } = JSON.parse(readFileSync(manifest, "utf8"));
+	writeFileSync(manifest, JSON.stringify(before));
+	return old;
+}
+
+const componentsOf = (dir: string) => {
+	const result = scanPackage(dir, { runCases: false });
+	assert.ok(result.ok, JSON.stringify(!result.ok && result.problems));
+	return result.scan.components;
+};
+
+test("升级：旧版（集合级别还是旧的）写下的持仓行，换成新包后原样在，数据结构检查不报问题，持仓规则照常命中；退回旧包也照常读", (t) => {
+	const state = mkdtempSync(join(tmpdir(), "psa-holdings-upgrade-"));
+	t.after(() => rmSync(state, { recursive: true, force: true }));
+	const data = instanceData(state);
+	const oldComponents = componentsOf(packageBeforeC4c(t));
+	const newComponents = componentsOf(PKG);
+	const module = "stock-ta" as ModuleName;
+	data.write(module, oldComponents, "watchlist", [{ symbol: "NVDA" }], "使用者口述", "test");
+	data.write(module, oldComponents, "holdings", [{ symbol: "NVDA", cost: 150, stopPrice: 138, boughtAt: "2026-09-01", note: "成本 150 止损 138" }], "使用者口述", "test");
+	const stored = (components: typeof newComponents) => data.query(module, components, "holdings", {}, "test").rows.map(({ fields }) => fields);
+	const before = stored(oldComponents);
+
+	assert.deepEqual(data.check(module, newComponents), [], "宿主的「检查中」不因 class 报问题");
+	assert.deepEqual(data.migrate(module, newComponents), { ok: true });
+	assert.deepEqual(stored(newComponents), before);
+	const answer = data.query(module, newComponents, "holdings", {}, "test");
+	assert.equal(answer.class, "shareable");
+
+	const holdings = parseHoldings(answer.rows as HoldingRow[], ["NVDA"]).holdings;
+	const [r] = run(newDay(DATE), ctx({ holdings }), [q("NVDA", 139.1, 145.2, "10:41", { dayLow: 137.8 })]);
+	assert.deepEqual(r!.hits.map((h) => h.rule), ["stop-loss"]);
+	assert.match(r!.alerts[0]!.text, /^NVDA 触到你的止损线 138\.00（你设的止损价）/);
+
+	assert.deepEqual(data.check(module, oldComponents), [], "退回旧包：检查也不报问题");
+	assert.deepEqual(data.migrate(module, oldComponents), { ok: true });
+	assert.deepEqual(stored(oldComponents), before);
+	const back = data.query(module, oldComponents, "holdings", {}, "test");
+	assert.equal(back.class, OLD_CLASS);
 });

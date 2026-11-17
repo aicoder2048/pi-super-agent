@@ -1,0 +1,6 @@
+[
+  { "name": "夹具库里最新的两条信号", "input": { "symbol": "NVDA", "limit": 2 }, "data": "tools/structure/fixtures/data", "python": true,
+    "expect": { "signals": [{ "id": 277, "symbol": "NVDA", "rule_id": "R-TD-1", "direction": "bullish", "data_end": "2026-11-11T21:00:00+00:00", "sources": ["TA52"] }, { "id": 276, "rule_id": "R-SR-6", "direction": "bearish", "attention": "key" }], "truncated": false } },
+  { "name": "按完整规则编号查", "input": { "symbol": "NVDA", "rule_id": "R-SR-6", "limit": 1 }, "data": "tools/structure/fixtures/data", "python": true,
+    "expect": { "signals": [{ "id": 276, "rule_id": "R-SR-6" }], "truncated": false } }
+]

@@ -117,3 +117,37 @@ test("_tool_calls 写不进去：工具调用照常成功，宿主日志记一�
 	assert.deepEqual(await gateway.call(caller(), call("alpha/tools/level")), { ok: true, output: { level: 42 } });
 	assert.ok(logs.some((l) => l.includes("_tool_calls") && l.includes("database is locked")), logs.join("\n"));
 });
+
+const DAY_MS = 86_400_000;
+
+test("_tool_calls 只留 90 天：写一行时删掉 90 天以前的，90 天以内的留着", async (t) => {
+	const { gateway, caller, rows, stateDir } = setup(t);
+	assert.equal((await gateway.call(caller(), call("alpha/tools/level"))).ok, true);
+	const db = new DatabaseSync(join(moduleDataDir(stateDir, "alpha" as ModuleName), "data.db"));
+	const insert = db.prepare("INSERT INTO _tool_calls VALUES (?, 'gamma', 'tkt_old', NULL, 'request', 'tools/level', 'ok', 1)");
+	insert.run(new Date(Date.now() - 91 * DAY_MS).toISOString());
+	insert.run(new Date(Date.now() - 89 * DAY_MS).toISOString());
+	db.close();
+	assert.equal((await gateway.call(caller(), call("alpha/tools/level"))).ok, true);
+	assert.deepEqual(rows("alpha").map((r) => [r.caller, r.ticket]), [["beta", "tkt_1"], ["gamma", "tkt_old"], ["beta", "tkt_1"]]);
+});
+
+test("谁在用：提供方 _tool_calls 里的调用方模块，不列提供方自己；没调过的模块是空的", async (t) => {
+	const { gateway, caller, stateDir } = setup(t);
+	const data = instanceData(stateDir);
+	assert.deepEqual(data.callersOf("alpha" as ModuleName), []);
+	assert.equal((await gateway.call(caller(), call("alpha/tools/level"))).ok, true);
+	assert.equal((await gateway.call(caller(), call("alpha/tools/boom"))).ok, false);
+	assert.equal((await gateway.call(caller(), call("own"))).ok, true);
+	assert.deepEqual(data.callersOf("alpha" as ModuleName), ["beta"]);
+	assert.deepEqual(data.callersOf("beta" as ModuleName), [], "beta 只调过自己的工具");
+	assert.equal(existsSync(moduleDataDir(stateDir, "delta" as ModuleName)), false);
+	assert.deepEqual(data.callersOf("delta" as ModuleName), []);
+	assert.equal(existsSync(moduleDataDir(stateDir, "delta" as ModuleName)), false, "读谁在用不建数据目录");
+});
+
+test("谁在用：data.db 读不出来时回空，不抛异常（看板的定时刷新会调它）", (t) => {
+	const { stateDir } = setup(t);
+	mkdirSync(join(moduleDataDir(stateDir, "alpha" as ModuleName), "data.db"), { recursive: true });
+	assert.deepEqual(instanceData(stateDir).callersOf("alpha" as ModuleName), []);
+});

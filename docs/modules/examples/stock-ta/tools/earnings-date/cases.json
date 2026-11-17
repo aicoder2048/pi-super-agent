@@ -1,0 +1,8 @@
+[
+  { "name": "最近的未来一条（回放一份合成日历）", "input": { "symbol": "nvda", "now": "2026-11-13T15:00:00Z" },
+    "responses": { "https://finnhub.io/api/v1/calendar/earnings?from=2026-11-13&to=2027-03-13&symbol=NVDA": { "earningsCalendar": [{ "symbol": "NVDA", "date": "2027-02-24", "hour": "amc" }, { "symbol": "NVDA", "date": "2026-11-18", "hour": "bmo" }] } },
+    "expect": { "symbol": "NVDA", "today": "2026-11-13", "date": "2026-11-18", "time": "盘前", "tradingDays": 3 } },
+  { "name": "120 天内没有财报日", "input": { "symbol": "SPY", "now": "2026-11-13T15:00:00Z" },
+    "responses": { "https://finnhub.io/api/v1/calendar/earnings?from=2026-11-13&to=2027-03-13&symbol=SPY": { "earningsCalendar": [] } },
+    "expect": { "symbol": "SPY", "today": "2026-11-13", "note": "120 天内没有已公布的财报日" } }
+]

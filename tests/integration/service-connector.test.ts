@@ -147,7 +147,7 @@ test("A 没开放这个工具、或没有这个工具：B 拿到「alpha 现在�
 
 test("A 有私密集合、exports 写空列表：网关照常认这份副本，回「alpha 现在没有开放 level」而不是「没装或没开」", async (t) => {
 	const { fx, gateway, caller, serving } = setup(t);
-	const closed = { ...ALPHA, "module.json": JSON.stringify({ schema: 1, name: "alpha", version: "0.1.0", exports: [] }), "data/holdings/collection.json": JSON.stringify({ title: "持仓", kind: "record", class: "private", fields: { a: { type: "text", title: "a" } } }) };
+	const closed = { ...ALPHA, "module.json": JSON.stringify({ schema: 1, name: "alpha", version: "0.1.0", exports: [] }), "data/journal/collection.json": JSON.stringify({ title: "日记", kind: "record", class: "private", fields: { a: { type: "text", title: "a" } } }) };
 	serving.set("alpha", fx.keep("alpha", closed));
 	assert.deepEqual(await gateway.call(caller(), call("alpha/tools/level")), { ok: false, refusal: { code: "provider-absent", note: "alpha 现在没有开放 level" } });
 });
@@ -246,21 +246,24 @@ test("外部调用时 runTool 自己抛异常：调用方拿到带提供方名�
 	const fx = fixture(t);
 	const serving = new Map<string, Digest>([["alpha", fx.keep("alpha", ALPHA)], ["beta", fx.keep("beta", BETA)]]);
 	const inUse = new CopiesInUse();
+	const logs: string[] = [];
 	const gateway = createGateway({
 		copyDir: (module, digest) => fx.store.dirOf(module, digest),
 		serving: (module) => serving.get(module),
 		dataDir: (module) => join(fx.root, "data", module),
 		rows: undefined as never,
+		toolCalls: unrecordedToolCalls,
 		secret: (module) => {
 			if (module === "alpha") throw new Error("钥匙串读不出来");
 			return undefined;
 		},
-		log: () => {},
+		log: (line) => logs.push(line),
 		hold: inUse.hold,
 	});
 	const caller: WorkerCaller = { who: "worker", ticket: "tkt_1", pin: { module: "beta" as ModuleName, digest: serving.get("beta")! }, basis: "request", member: "analyst", heardOthers: false };
 	assert.deepEqual(await gateway.call(caller, call("alpha/tools/level")), { ok: false, refusal: { code: "provider-failed", note: "钥匙串读不出来", provider: "alpha" } });
 	assert.deepEqual(inUse.keys(), [], "抛异常后占用放开");
+	assert.deepEqual(logs.filter((l) => l.includes("没记上")), [], "记账照常，不是靠外层 catch 吞掉错误");
 	const old = serving.get("alpha")!;
 	serving.set("alpha", fx.keep("alpha", { ...ALPHA, "module.json": JSON.stringify({ schema: 1, name: "alpha", version: "0.2.0", exports: ["tools/level"] }) }));
 	fx.store.collect(new Set([...[...serving].map(([m, d]) => `${m}/${d}`), ...inUse.keys()]));

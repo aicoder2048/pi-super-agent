@@ -125,6 +125,14 @@ export interface ToolCalls {
 	recordToolCall(module: ModuleName, call: ToolCall): void;
 }
 
+/** The module page's 谁在用: the other modules whose tickets ran this module's tools in the days `_tool_calls` keeps. */
+export interface ToolCallers {
+	callersOf(module: ModuleName): ModuleName[];
+}
+
+/** Each write drops the rows older than this, so the table stays as long as the window it answers for. */
+const TOOL_CALLS_KEPT_MS = 90 * 86_400_000;
+
 export type WatchRequest = Extract<Request, { kind: "watch" }>;
 export type Watched = { collection: ComponentName; class: DataClass; output: { conditions: SetCondition[] } | { condition: SetCondition; receipt: string } };
 
@@ -232,7 +240,7 @@ const openData = (path: string) => {
 	return db;
 };
 
-export function instanceData(stateDir: string): InstanceData & ModuleRows & FeedStates & ToolCalls {
+export function instanceData(stateDir: string): InstanceData & ModuleRows & FeedStates & ToolCalls & ToolCallers {
 	const pathOf = (module: ModuleName) => join(moduleDataDir(stateDir, module), "data.db");
 	const withRows = <T>(module: ModuleName, components: readonly Component[], access: { who: string; collection: string; op: Op }, use: (db: DatabaseSync, stored: Stored) => T): T => {
 		const ensured = data.migrate(module, components);
@@ -262,7 +270,7 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 		}
 	};
 
-	const data: InstanceData & ModuleRows & FeedStates & ToolCalls = {
+	const data: InstanceData & ModuleRows & FeedStates & ToolCalls & ToolCallers = {
 		check(module, components) {
 			const path = pathOf(module);
 			if (!existsSync(path)) return [];
@@ -408,9 +416,32 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 			try {
 				db.exec("PRAGMA busy_timeout = 200");
 				db.exec(TOOL_CALLS);
-				db.prepare("INSERT INTO _tool_calls VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(new Date().toISOString(), caller, ticket, member, basis, tool, outcome, ms);
+				const now = Date.now();
+				db.prepare("INSERT INTO _tool_calls VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(new Date(now).toISOString(), caller, ticket, member, basis, tool, outcome, ms);
+				try {
+					db.prepare("DELETE FROM _tool_calls WHERE at < ?").run(new Date(now - TOOL_CALLS_KEPT_MS).toISOString());
+				} catch {
+					// The row is in; the old ones go on a later write.
+				}
 			} finally {
 				db.close();
+			}
+		},
+		callersOf(module) {
+			const path = pathOf(module);
+			if (!existsSync(path)) return [];
+			// The board refreshes on a timer: a locked or unreadable data.db shows nobody rather than stopping the host.
+			try {
+				const db = new DatabaseSync(path, { readOnly: true });
+				try {
+					db.exec("PRAGMA busy_timeout = 200");
+					if (db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = '_tool_calls'").get() === undefined) return [];
+					return (db.prepare("SELECT caller FROM _tool_calls WHERE caller != ? GROUP BY caller ORDER BY max(at) DESC").all(module) as { caller: ModuleName }[]).map((row) => row.caller);
+				} finally {
+					db.close();
+				}
+			} catch {
+				return [];
 			}
 		},
 		watch(module, components, request, who) {

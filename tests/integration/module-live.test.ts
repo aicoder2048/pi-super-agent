@@ -474,3 +474,49 @@ test("模块卡：还钉着旧版本的开着的任务数；用到的密钥名�
 	assert.deepEqual(tax.secrets, ["TAX__BROKER_TOKEN"]);
 	assert.deepEqual(tax.notImported, ["irs-pub-17"]);
 });
+
+const levelTool = (output: object) => JSON.stringify({ title: "价位", description: "给价位", effect: "read", input: { code: { type: "text", title: "代码" } }, output });
+const LEVEL = { level: { type: "number", title: "价位" }, note: { type: "text", title: "说明" } };
+
+function exporting(t: TestContext): string {
+	const dir = stateDir(t);
+	files(join(dir, "modules/tax"), {
+		"module.json": JSON.stringify({ schema: 1, name: "tax", version: "0.1.0", exports: ["tools/level"] }),
+		"tools/level/tool.json": levelTool(LEVEL),
+		"tools/level/index.ts": "export default () => ({ level: 42, note: '' });",
+	});
+	return dir;
+}
+
+async function swapped(modules: LiveModules, dir: string, change: () => void): Promise<string[]> {
+	const before = cardOf(modules, "tax").version.digest;
+	change();
+	await until(() => cardOf(modules, "tax").label === "运行中" && cardOf(modules, "tax").version.digest !== before, "tax 换上新版本", 5000);
+	return cardOf(modules, "tax").notices;
+}
+
+test("宿主换版本：新版改了开放工具的输出字段，检查以后模块卡提醒「这个工具开放给了别的模块」；只改技能的一版没有这条提醒", async (t) => {
+	const dir = exporting(t);
+	const { db, modules } = boot(t, dir);
+	setModuleSwitch(db, "tax", true);
+	await until(() => cardOf(modules, "tax").label === "运行中", "tax 运行中", 2000);
+	assert.deepEqual(cardOf(modules, "tax").notices, [], "第一次打开没有旧版可比");
+	assert.deepEqual(await swapped(modules, dir, () => writeFileSync(join(dir, "modules/tax/skills/estimate/SKILL.md"), skill(NEW_SKILL))), []);
+	assert.deepEqual(await swapped(modules, dir, () => writeFileSync(join(dir, "modules/tax/tools/level/tool.json"), levelTool({ level: LEVEL.level }))), [
+		`tools/level/tool.json: 这个工具开放给了别的模块，output 少了字段 "note"，用它的模块可能会坏`,
+	]);
+	assert.deepEqual(await swapped(modules, dir, () => writeFileSync(join(dir, "modules/tax/skills/estimate/SKILL.md"), skill(OLD_SKILL))), [], "再下一版没改开放工具，提醒跟着版本走");
+});
+
+test("模块卡的谁在用：别的模块调过它的工具就列出来，它自己的调用不列", async (t) => {
+	const { instanceData } = await import("../../src/modules/instance-data.ts");
+	const dir = exporting(t);
+	const { modules } = boot(t, dir);
+	assert.deepEqual(cardOf(modules, "tax").usedBy, []);
+	const calls = instanceData(dir);
+	const call = (caller: string) => calls.recordToolCall("tax" as ModuleName, { caller: caller as ModuleName, ticket: "tkt_1", member: null, basis: "request", tool: "tools/level", outcome: "ok", ms: 3 });
+	call("tax");
+	assert.deepEqual(cardOf(modules, "tax").usedBy, []);
+	call("option-ta");
+	assert.deepEqual(cardOf(modules, "tax").usedBy, ["option-ta"]);
+});

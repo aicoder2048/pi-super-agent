@@ -146,7 +146,7 @@ stock-ta 今天有一个 `private` 集合 `holdings`（持仓，PR #146 加的�
 | 持仓提醒在 Telegram、网页上怎么显示 | 不变。宿主没有按集合 `class` 收起显示的代码。持仓提醒行带成本和止损价，今天就照全文到 Telegram，因为它是 `quotes` feed 的提醒；给幕僚长的触发不写持仓数字，是模块代码守的（`stock-ta-rules-design.md` 第 333 行） |
 | `data`、`watch` 的回复和 `domain_tool` 目录 | 回复里的 `class` 字段（`instance-data.ts`）和目录里集合的说明（`src/modules/gateway.ts` 第 198 行，「record，private」）从 `private` 变成 `shareable`。这是给模型看的字，没有代码按它分支。模型会不会因此对持仓少一分小心，没验证过，是猜测 |
 | `just module check` 的摘要行 | `data-classes=` 那一段从 `shareable:N,private:1` 变成 `shareable:N+1,private:0` |
-| 已存的行 | 不变。`structureChanges` 和 `data.check` 不比对 `class`，换版本不报问题、不迁移，行原样留着。包的 digest 变了，按普通升级走 |
+| 已存的行 | 不变。`structureChanges` 和 `data.check` 不比对 `class`，换版本不报问题，行原样留着。C4c 实测：`migrate` 照常跑一次，只把 `_structure` 里记的 `class` 改写成 `shareable`，表结构和行都不动；退回旧包时再改写回去。包的 digest 变了，按普通升级走 |
 | 备份 | 不变。宿主代码里没有按 `class` 区分的备份 |
 | 规则 7 和 C4c 的 `exports` | stock-ta 没有私密集合了，检查放行它的 `exports` |
 
@@ -176,7 +176,7 @@ C4c 同时要改的，除了 `data/holdings/collection.json` 第 4 行的 `class
 - `src/modules/rehearse.ts` 的 `usedBy` 用正则 `\[gateway\] (\S+) (\S+) (\S+) \S+ \S+ ok \d+ ms` 取前三段，正则没锚在行尾，追加的 `from=` 不影响匹配。但它按 `from === module`（第一段等于预演的模块）过滤，外部调用的第一段是提供方，会被滤掉。`judge` 要改成认考题里的全名：`stock-ta/tools/structure` 对上第一段 `stock-ta`、第二段 `tools/structure`、任务相同、`from=` 是预演的模块的那一行。本模块的 `uses` 只认不带 `from=` 的行。
 - `tests/integration/wiring.test.ts` 第 413 行断言日志以 `[gateway] personal-tax tools/env-probe` 开头。那是本模块的调用，不受影响。C4a 加一条外部调用的断言，钉住 `from=` 在行尾。
 
-**C4b：提供方的访问记录表。** 在提供方的 `data.db` 加一张表 `_tool_calls`：时间、调用方模块、任务、成员、依据、工具、结果、毫秒。本模块的工具调用也记，「谁在用我开放的工具」按调用方模块不等于本模块筛。模块页的「谁在用」从这张表算。表由宿主建、宿主写，和 `_access` 一样。在 C4b 之前，要看谁在用，从宿主日志里数 `from=` 的行。
+**C4b：提供方的访问记录表。** 在提供方的 `data.db` 加一张表 `_tool_calls`：时间、调用方模块、任务、成员、依据、工具、结果、毫秒。本模块的工具调用也记，「谁在用我开放的工具」按调用方模块不等于本模块筛。模块页的「谁在用」从这张表算。表由宿主建、宿主写，和 `_access` 一样。在 C4b 之前，要看谁在用，从宿主日志里数 `from=` 的行。C4c：每写一行顺手删掉 90 天以前的行，所以「谁在用」是最近 90 天里调过的模块（不列本模块）。换版本的兼容提醒只在宿主内存里，宿主重启后不再显示。
 
 ### 9. 预演
 

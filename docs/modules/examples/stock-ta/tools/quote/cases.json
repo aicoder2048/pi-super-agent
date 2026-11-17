@@ -1,0 +1,8 @@
+[
+  { "name": "盘中的一只（回放一份合成快照）", "input": { "symbols": "nvda", "now": "2026-11-12T16:00:00.000Z" },
+    "responses": { "https://api.massive.com/v2/snapshot/locale/us/markets/stocks/tickers?tickers=NVDA": { "status": "OK", "tickers": [{ "ticker": "NVDA", "min": { "c": 101.5, "t": 1794498240000, "v": 1000 }, "day": { "c": 101.5, "v": 1234567 }, "prevDay": { "c": 100, "v": 2000000 } }] } },
+    "expect": { "quotes": [{ "symbol": "NVDA", "price": 101.5, "prevClose": 100, "changePct": 1.5, "volume": 1234567, "at": "2026-11-12 10:44 美东", "session": "盘中" }], "missing": [] } },
+  { "name": "行情服务没给的代码列进 missing", "input": { "symbols": "NVDA,ZZZZ", "now": "2026-11-12T16:00:00.000Z" },
+    "responses": { "https://api.massive.com/v2/snapshot/locale/us/markets/stocks/tickers?tickers=NVDA,ZZZZ": { "status": "OK", "tickers": [{ "ticker": "NVDA", "min": { "c": 101.5, "t": 1794498240000, "v": 1000 }, "day": { "c": 101.5, "v": 1234567 }, "prevDay": { "c": 100, "v": 2000000 } }] } },
+    "expect": { "quotes": [{ "symbol": "NVDA" }], "missing": ["ZZZZ"] } }
+]

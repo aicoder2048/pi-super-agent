@@ -1580,7 +1580,19 @@ function modulePanel(cards: ModuleCard[]) {
 
 const taxCard = (over: Partial<ModuleCard> = {}): ModuleCard => ({
 	name: "tax", title: "报税", on: false, label: "已停用", reason: "你把它关了，数据还留着", tone: "off", problems: [], version: { label: "0.1.0", digest: "abcdef123456" },
-	components: { skills: 1 }, secrets: [], pinnedOld: 0, notImported: [], ...over,
+	components: { skills: 1 }, secrets: [], pinnedOld: 0, notImported: [], notices: [], usedBy: [], ...over,
+});
+
+test("页面：开放了工具的模块卡写谁在用；这一版改了开放的工具时写提醒", () => {
+	const view = page.emptyView();
+	const notice = "tools/structure/tool.json: 这个工具开放给了别的模块，output 少了字段 \"levels\"，用它的模块可能会坏";
+	page.applyMessage(view, { ...board([]), modules: [taxCard({ usedBy: ["option-ta", "mail"], notices: [notice] }), taxCard({ name: "solo" })] } as HostToClient, 0);
+	const [used, solo] = page.leftColumn(view, 0).modules;
+	assert.deepEqual(used.lines, ["技能 1", "谁在用 option-ta、mail", `提醒 ${notice}`]);
+	assert.deepEqual(solo.lines, ["技能 1"]);
+	const { notices: _n, usedBy: _u, ...older } = taxCard();
+	page.applyMessage(view, { ...board([]), modules: [older] } as HostToClient, 0);
+	assert.deepEqual(page.leftColumn(view, 0).modules[0].lines, ["技能 1"], "回退后旧宿主发的卡片没有这两个字段");
 });
 
 test("网关：POST /module 写开关，回 204；要 token、本机 Origin、JSON 正文；没发现的模块、不合格的正文 400；GET 405", async (t) => {

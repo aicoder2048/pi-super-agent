@@ -143,8 +143,13 @@ export interface ToolDescriptor {
 	fetch?: ToolFetch;
 }
 
-/** One entry of `cases.json`. `tolerance` is absolute, for numbers, default 1e-9. */
-export type ToolCase = { name: string; input: Readonly<Record<string, unknown>>; expect: Readonly<Record<string, unknown>>; tolerance?: number };
+/**
+ * One entry of `cases.json`. `tolerance` is absolute, for numbers, default 1e-9. `data`: a folder of the package, relative to its
+ * root, copied into the case's data dir, so a tool that reads its module's data runs on a fixture. `responses`: replies by
+ * address that the tool's `fetch` gets instead of the network, as in a feed fixture. `python`: the case runs code from the
+ * package's Python environment, so a check where `just module setup` has not installed it skips the case.
+ */
+export type ToolCase = { name: string; input: Readonly<Record<string, unknown>>; expect: Readonly<Record<string, unknown>>; tolerance?: number; data?: string; responses?: FeedFixture["responses"]; python?: true };
 
 /**
  * `feeds/<name>/feed.json`. The source name on triggers is `<module>/<name>`.
@@ -323,4 +328,65 @@ export function structureChanges(previous: readonly Component[], next: readonly 
 		}
 	}
 	return { problems, notes };
+}
+
+/** One version of a package as the export comparison sees it. */
+export type ExportedSide = { exports: readonly CapabilityUse[]; components: readonly Component[] };
+
+const EXPORTED = "这个工具开放给了别的模块";
+const MAY_BREAK = "用它的模块可能会坏";
+
+type Shape = string | Shape[] | { [key: string]: Shape };
+const shapeOf = (value: unknown): Shape =>
+	value === null ? "null" : Array.isArray(value) ? value.slice(0, 1).map(shapeOf) : typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, shapeOf(v)])) : typeof value;
+
+/** Where `after` lost part of `before`'s shape: a key gone or a type changed. Keys and items `after` adds are fine. */
+function lostShape(before: Shape, after: Shape, path: string): string | undefined {
+	const kind = (s: Shape) => (typeof s === "string" ? s : Array.isArray(s) ? "array" : "object");
+	if (kind(before) !== kind(after)) return `${path || "输出"} 从 ${kind(before)} 变成 ${kind(after)}`;
+	if (Array.isArray(before) && Array.isArray(after)) return before[0] === undefined || after[0] === undefined ? undefined : lostShape(before[0], after[0], `${path}[0]`);
+	if (typeof before === "object" && typeof after === "object" && !Array.isArray(before) && !Array.isArray(after)) {
+		for (const [key, value] of Object.entries(before)) {
+			const where = path === "" ? key : `${path}.${key}`;
+			if (!Object.hasOwn(after, key)) return `${where} 没了`;
+			const lost = lostShape(value, after[key]!, where);
+			if (lost !== undefined) return lost;
+		}
+	}
+	return undefined;
+}
+
+/**
+ * What a new version changes in the tools the old one exported, for the modules that call them: an export dropped, a field of
+ * `input` or `output` gone or with another type or title, a case of the same name whose `expect` lost part of its shape. Notes, never problems.
+ */
+export function exportChanges(previous: ExportedSide, next: ExportedSide): string[] {
+	const notes: string[] = [];
+	const toolOf = (side: ExportedSide, use: string) => side.components.find((c): c is Extract<Component, { kind: "tools" }> => c.kind === "tools" && `tools/${c.name}` === use);
+	for (const use of previous.exports) {
+		const before = toolOf(previous, use);
+		const after = toolOf(next, use);
+		if (before === undefined) continue;
+		if (!next.exports.includes(use) || after === undefined) {
+			notes.push(`module.json: ${EXPORTED}的 ${use} 不在 exports 里了，用它的模块会调不到`);
+			continue;
+		}
+		for (const side of ["input", "output"] as const) {
+			for (const [field, was] of Object.entries(before.tool[side])) {
+				const now = after.tool[side][field];
+				const change =
+					now === undefined ? `${side} 少了字段 "${field}"`
+					: now.type !== was.type ? `${side} 的字段 "${field}" 的 type 从 ${was.type} 改成 ${now.type}`
+					: now.title !== was.title ? `${side} 的字段 "${field}" 的 title 从「${was.title}」改成「${now.title}」`
+					: undefined;
+				if (change !== undefined) notes.push(`${use}/tool.json: ${EXPORTED}，${change}，${MAY_BREAK}`);
+			}
+		}
+		for (const old of before.cases) {
+			const same = after.cases.find((c) => c.name === old.name);
+			const lost = same === undefined ? undefined : lostShape(shapeOf(old.expect), shapeOf(same.expect), "");
+			if (lost !== undefined) notes.push(`${use}/cases.json: ${EXPORTED}，用例「${old.name}」的输出形状变了（${lost}），${MAY_BREAK}`);
+		}
+	}
+	return notes;
 }

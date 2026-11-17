@@ -1,0 +1,6 @@
+[
+  { "name": "夹具库里的合成日线：最新结构、阻力区和动能", "input": { "symbol": "nvda" }, "data": "tools/structure/fixtures/data", "python": true,
+    "expect": { "symbol": "NVDA", "timeframe": "1d", "data_end": "2026-11-13T21:00:00+00:00", "levels": [{ "role": "resistance", "touches": 2, "last_touch_date": "2026-10-19", "dist_pct": -2.83 }], "momentum": { "bull_alignment": false, "partial": false }, "truncated": false } },
+  { "name": "周线", "input": { "symbol": "NVDA", "timeframe": "1w" }, "data": "tools/structure/fixtures/data", "python": true,
+    "expect": { "timeframe": "1w", "levels": [{ "role": "support", "touches": 2, "last_touch_date": "2026-06-15", "dist_pct": 8.98 }], "truncated": false } }
+]

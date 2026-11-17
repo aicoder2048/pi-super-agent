@@ -15,9 +15,9 @@ import { instanceData } from "../modules/instance-data.ts";
 import { notImportedIn, moduleDataDir } from "../modules/knowledge.ts";
 import { describe, initialRecord, problemText, type Effect, type ModuleEvent, type ModuleRecord, type Stage, type Version } from "../modules/lifecycle.ts";
 import { CopiesInUse, drive, liveRegistry, ModuleStore, switchEvent } from "../modules/live.ts";
-import type { Digest, ModuleName, PackageScan, Problem, ScanResult } from "../modules/manifest.ts";
+import { exportChanges, type Digest, type ModuleName, type PackageScan, type Problem, type ScanResult } from "../modules/manifest.ts";
 import type { LiveRegistry } from "../modules/registry.ts";
-import { digestOf, hasCases, runCasesAsync, scanPackage, secretNames } from "../modules/validate.ts";
+import { digestOf, exportedSide, hasCases, runCasesAsync, scanPackage, secretNames } from "../modules/validate.ts";
 import { watchModules, type Saved } from "../modules/watch.ts";
 
 const POLL_MS = 500;
@@ -132,12 +132,26 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 			});
 		});
 	};
+	/** Per module: the version a check compared with the one serving, and what it changed in that one's exported tools. */
+	const exportNotices = new Map<string, { digest: Digest; notices: string[] }>();
+	const noteExportChanges = (name: string, scan: PackageScan) => {
+		const serving = servingOf(name);
+		if (serving === undefined || serving.digest === scan.digest || exportNotices.get(name)?.digest === scan.digest) return;
+		// The serving copy can be missing while a publish of it was cut short; then there is nothing to compare with.
+		const copy = store.dirOf(name as ModuleName, serving.digest);
+		let notices: string[] = [];
+		safely("比对开放工具", () => {
+			if (existsSync(copy)) notices = exportChanges(exportedSide(copy, name), { exports: scan.manifest.exports ?? [], components: scan.components });
+		});
+		exportNotices.set(name, { digest: scan.digest, notices });
+	};
 	const check = (name: string, entry: Found, version: Version): ModuleEvent | "wait" => {
 		const ok = (problems: readonly Problem[] = []): ModuleEvent => ({ type: "checked", digest: version.digest, problems });
 		if (entry.legacy) return ok();
 		const result = scanPackage(entry.dir, { runCases: false });
 		if (!result.ok) return ok(result.problems);
 		if (result.scan.digest !== version.digest) return { type: "package-found", version: versionOf(entry.dir, result) };
+		noteExportChanges(name, result.scan);
 		const stored = data.check(name as ModuleName, result.scan.components);
 		if (stored.length > 0) return ok(stored);
 		if (!hasCases(result.scan)) return ok();
@@ -313,6 +327,8 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 			notImported: scan
 				? notImportedIn({ module: name, digest: scan.digest, copyDir: scan.dir, dataDir: moduleDataDir(stateDir, name), docs }).map((d) => d.name)
 				: [],
+			notices: exportNotices.get(name)?.digest === entry?.version.digest ? (exportNotices.get(name)?.notices.slice(0, CARD_PROBLEMS) ?? []) : [],
+			usedBy: entry?.legacy ? [] : data.callersOf(name as ModuleName),
 		};
 	};
 
