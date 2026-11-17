@@ -239,12 +239,14 @@ test("feed 报的一次性 problem（once）：只写一条「通知」，Telegr
 	assert.ok(!phone().some((m) => m.text.startsWith("⚠️") || m.text.startsWith("✅")), "没有 ⚠️ 也没有 ✅");
 });
 
-test("收件箱里的一件重试三次都失败：只写一条「通知」，Telegram 一条通知，不亮警报，下一封信也不发 ✅", async (t) => {
-	const { deliver, notices, phone, alarms, host } = await lettersHost(t);
-	await deliver({ fail: "HTTP 503 Service Unavailable" });
+test("收件箱里的一件重试三次都失败：只写一条「通知」，只说 feed、哪一件、试了几次，handler 错误里引用的正文只写进本机的 rejected；Telegram 一条通知，不亮警报，下一封信也不发 ✅", async (t) => {
+	const { deliver, notices, phone, alarms, host, inbox } = await lettersHost(t);
+	await deliver({ fail: "HTTP 503，读不懂：账户尾号 8842 余额 31,337.00" });
 	assert.deepEqual(alarms(), [], "收件箱里坏掉的一件不算断了");
-	assert.deepEqual(notices().map((l) => l.text), ["测试信箱：收件箱里有一件试了 3 次都没处理成，已放进 rejected：HTTP 503 Service Unavailable"]);
-	await until(() => phone().some((m) => m.text.startsWith("通知：测试信箱：收件箱里有一件试了 3 次")), "通知到了 Telegram");
+	assert.deepEqual(notices().map((l) => l.text), ["测试信箱：来信：收件箱里的 001.json 试了 3 次都没处理成，放进了本机的 rejected，错误记在那里"]);
+	await until(() => phone().some((m) => m.text.startsWith("通知：测试信箱：来信：收件箱里的 001.json 试了 3 次")), "通知到了 Telegram");
+	assert.ok(!phone().some((m) => m.text.includes("8842")), "手机上没有 handler 错误里的正文");
+	assert.match(readFileSync(join(inbox, "rejected", "001.json.error.txt"), "utf8"), /8842/, "错误详情留在本机的 rejected 里");
 	await deliver(letter("m-3"));
 	await new Promise((r) => setTimeout(r, 200));
 	assert.ok(!phone().some((m) => m.text.startsWith("⚠️") || m.text.startsWith("✅")), "没有 ⚠️ 也没有 ✅");

@@ -21,7 +21,7 @@ export interface SchedulerOptions {
 	fixtures: boolean;
 	log(line: string): void;
 	/** An inbox item failed every try and went to rejected. */
-	rejected?(entry: FeedEntry, note: string, tries: number): void;
+	rejected?(entry: FeedEntry, file: string, note: string, tries: number): void;
 }
 
 export interface Scheduler {
@@ -84,7 +84,7 @@ export function createScheduler(o: SchedulerOptions): Scheduler {
 					if (run.ok) processInbox(dir, file);
 					else {
 						rejectInbox(dir, file, run.note, o.log);
-						o.rejected?.(entry, run.note, tries);
+						o.rejected?.(entry, file, run.note, tries);
 					}
 				}
 			})();

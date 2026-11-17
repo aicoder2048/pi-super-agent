@@ -42,7 +42,7 @@ import { createScheduler, type Scheduler } from "../modules/scheduler.ts";
 import { threadId } from "../sources/generic.ts";
 import { inPollWindow } from "../sources/market/session.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
-import { causeOf, clearedText, Health, scrub, HEALTH_DEFAULTS, ModelHealth, raisedText, type HealthConfig } from "./health.ts";
+import { causeOf, clearedText, Health, HEALTH_DEFAULTS, ModelHealth, raisedText, type HealthConfig } from "./health.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -262,9 +262,9 @@ export class Host {
 			when: { "us-market-hours": inPollWindow },
 			fixtures: options.moduleFeeds?.fixtures ?? false,
 			log: this.#log,
-			rejected: (entry, note, tries) => {
+			rejected: (entry, file, note, tries) => {
 				if (causeOf(note) === "auth") return;
-				this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(`收件箱里有一件试了 ${tries} 次都没处理成，已放进 rejected：${scrub(note)}`, PROBLEM_MAX)) });
+				this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(`${entry.feed.title}：收件箱里的 ${file} 试了 ${tries} 次都没处理成，放进了本机的 rejected，错误记在那里`, PROBLEM_MAX)) });
 			},
 		});
 		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []), routerHealth: this.#routerHealth };
@@ -555,7 +555,7 @@ export class Host {
 		if (!run.ok && entry.feed.connector === "inbox" && causeOf(run.note) !== "auth") return;
 		if (!run.ok) {
 			const after = causeOf(run.note) === "auth" ? 1 : this.#feedFailuresBeforeAlarm;
-			this.#health.failed(id, { area: "data", subject, error: run.note, after });
+			this.#health.failed(id, { area: "data", subject, error: run.note, after, ...(entry.private && { shown: PRIVATE_ERROR }) });
 		} else if (problem?.once) {
 			this.#health.ok(id);
 			this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(problem.text, PROBLEM_MAX)) });
@@ -722,6 +722,8 @@ export class Host {
 
 const FEED_ALARM = "data:";
 const feedAlarmId = (source: string) => `${FEED_ALARM}${source}`;
+// A private feed's handler error may quote what it read; the scheduler already wrote it to host.log.
+const PRIVATE_ERROR = "错误可能引用私密数据，只记在本机的 host.log";
 const CONNECTOR_ALARM = "connector:";
 const connectorAlarmId = (connector: string) => `${CONNECTOR_ALARM}${connector}`;
 /** Feeds on one connector beat within minutes of each other after the host comes back; an hour folds their one-shot lines into one. */
