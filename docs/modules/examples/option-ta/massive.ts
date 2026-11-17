@@ -82,4 +82,3 @@ export function query(symbol: string, params: readonly (readonly [string, string
 	return `${encodeURIComponent(symbol)}?${pairs.join("&")}`;
 }
 
-export const SYMBOL = /^[A-Z][A-Z.]{0,5}$/;

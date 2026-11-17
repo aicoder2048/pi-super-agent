@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assignmentTouchProb, DEFAULT_EXTRINSIC_FLOORS, exDivCallVerdict, extrinsicGauge, putCarryCostVerdict } from "../../docs/modules/examples/option-ta/assignment-risk.ts";
+import { parseChain } from "../../docs/modules/examples/option-ta/chain-rows.ts";
 import { classifyDeliverable, coverableContracts } from "../../docs/modules/examples/option-ta/contract-deliverable.ts";
 import { IV_SERIES_TENOR, ivPercentile, ivRank, selectAtmContract, type ContractData } from "../../docs/modules/examples/option-ta/iv-history.ts";
 import { gexContribution, netGammaWalls } from "../../docs/modules/examples/option-ta/net-gamma-walls.ts";
@@ -246,4 +247,31 @@ test("IV/HV 分档：0.85、1.0、1.15、1.4", () => {
 	assert.equal(classifyIvHvRatio(1.5, 1.0), "very_rich");
 	assert.equal(classifyIvHvRatio(0.5, 0), null);
 	assert.equal(classifyIvHvRatio(null, 1), null);
+});
+
+const NS = 1_000_000;
+/** One snapshot row of Massive's option chain, with its quote and underlying stamped at `ms`. */
+const snapshotRow = (ticker: string, ms: number, details: Record<string, unknown> = {}) => ({
+	details: { ticker, contract_type: ticker.slice(-9, -8) === "C" ? "call" : "put", exercise_style: "american", expiration_date: "2026-12-18", strike_price: Number(ticker.slice(-8)) / 1000, shares_per_contract: 100, ...details },
+	last_quote: { bid: 1, ask: 1.2, last_updated: ms * NS },
+	underlying_asset: { price: 500, last_updated: ms * NS, timeframe: "DELAYED" },
+	implied_volatility: 0.3,
+	greeks: { delta: -0.3, gamma: 0.01, theta: -0.1, vega: 0.2 },
+});
+
+test("盘中还是休市按模块日历：感恩节当天、提前收盘日 13:00 以后都是休市", () => {
+	const at = (iso: string) => Date.parse(iso);
+	assert.equal(parseChain("SPY", [snapshotRow("O:SPY261218P00500000", at("2026-11-25T15:00:00Z"))], at("2026-11-25T15:00:00Z")).market, "盘中");
+	assert.equal(parseChain("SPY", [snapshotRow("O:SPY261218P00500000", at("2026-11-26T15:00:00Z"))], at("2026-11-26T15:00:00Z")).market, "休市");
+	assert.equal(parseChain("SPY", [snapshotRow("O:SPY261218P00500000", at("2026-11-27T18:30:00Z"))], at("2026-11-27T18:30:00Z")).market, "休市");
+	assert.equal(parseChain("SPY", [snapshotRow("O:SPY261218P00500000", at("2026-11-27T17:30:00Z"))], at("2026-11-27T17:30:00Z")).market, "盘中");
+});
+
+test("期权链只留 100 股的标准合约：调整合约单独计数；BRK.B 的期权根 BRKB 不当成二元期权", () => {
+	const ms = Date.parse("2026-11-25T15:00:00Z");
+	const nvda = parseChain("NVDA", [snapshotRow("O:NVDA261218P00135000", ms), snapshotRow("O:NVDA1261218P00135000", ms, { shares_per_contract: 10 }), snapshotRow("O:B1NVDA261218P00135000", ms, { exercise_style: "european" })], ms);
+	assert.deepEqual([nvda.rows.map((r) => r.contract), nvda.skippedBinary, nvda.skippedAdjusted], [["O:NVDA261218P00135000"], 1, 1]);
+	const brk = parseChain("BRK.B", [snapshotRow("O:BRKB261218C00500000", ms)], ms);
+	assert.deepEqual([brk.rows.map((r) => r.contract), brk.skippedBinary], [["O:BRKB261218C00500000"], 0]);
+	assert.deepEqual(parseChain("A", [snapshotRow("O:AAPL261218C00250000", ms)], ms).rows, [], "代码 A 的链不收 AAPL 的合约");
 });

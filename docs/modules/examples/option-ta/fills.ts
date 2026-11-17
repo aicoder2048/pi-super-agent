@@ -2,6 +2,8 @@
  * What the `fills` feed and the `record` tool share: contract and order keys, and the cumulative increment of an order
  * (spec「订单键和 `id`」). Prices are integers of 1/10000 USD, so no float ever touches a fill.
  */
+import { isTicker, occRoot } from "./symbols.ts";
+
 export type Side = "STO" | "BTO" | "BTC" | "STC";
 export type Right = "put" | "call";
 export type Contract = { underlying: string; option_symbol: string; right: Right; strike: number; expiry: string; multiplier: number };
@@ -10,7 +12,6 @@ export type Recorded = Readonly<Record<string, unknown>>;
 
 const UNIT = 10_000n;
 const DECIMAL = /^\d+(?:\.\d{1,4})?$/;
-const ROOT = /^[A-Z][A-Z0-9.]{0,5}$/;
 
 export function units(value: unknown): bigint | undefined {
 	const text = typeof value === "number" && Number.isFinite(value) ? String(value) : value;
@@ -37,12 +38,12 @@ export const isIsoDate = (text: unknown): text is string => {
 	return m !== null && isoDate(Number(m[1]), Number(m[2]), Number(m[3])) === text;
 };
 
-/** The OCC symbol without the root's space padding, as the spec writes it: `AAPL260320C00250000`. OCC roots carry no dot (BRK.B is BRKB). */
+/** The OCC symbol without the root's space padding, as the spec writes it: `AAPL260320C00250000`. */
 export function contractOf(underlying: string, right: Right, expiry: string, strike: string, multiplier = 100): Contract | undefined {
 	const milli = units(strike);
-	if (!ROOT.test(underlying) || !isIsoDate(expiry) || milli === undefined || milli % 10n !== 0n || milli <= 0n || milli / 10n > 99_999_999n) return undefined;
+	if (!isTicker(underlying) || !isIsoDate(expiry) || milli === undefined || milli % 10n !== 0n || milli <= 0n || milli / 10n > 99_999_999n) return undefined;
 	const code = (milli / 10n).toString().padStart(8, "0");
-	const option_symbol = `${underlying.replace(/\./g, "")}${expiry.slice(2).replace(/-/g, "")}${right === "call" ? "C" : "P"}${code}`;
+	const option_symbol = `${occRoot(underlying)}${expiry.slice(2).replace(/-/g, "")}${right === "call" ? "C" : "P"}${code}`;
 	return { underlying, option_symbol, right, strike: Number(milli / 10n) / 1000, expiry, multiplier };
 }
 

@@ -9,6 +9,7 @@ import { getJson, object } from "../../massive.ts";
 import { impliedVolPut } from "../../iv.ts";
 import { dteOn, IV_SERIES_TENOR, selectAtmContract, type ContractData } from "../../iv-history.ts";
 import { isTradingDay, regularCloseAt, shiftDate } from "../../market-days.ts";
+import { isTicker, occRoot } from "../../symbols.ts";
 
 /** When a session's daily bars are taken as final. Not measured yet (P1 left the after-close samples open); to be confirmed. */
 export const IV_AFTER_CLOSE_MS = 30 * 60_000;
@@ -24,7 +25,6 @@ const READY_DEADLINE_MS = 3 * 60 * 60_000;
 /** No new session starts past this: a session's 7 requests of up to 15 s each still end inside the feed's 5-minute limit. */
 const BEAT_MS = 150_000;
 const FAILURES_BEFORE_PROBLEM = 3;
-const SYMBOL = /^[A-Z][A-Z0-9.]{0,9}$/;
 const SOURCE = "Massive";
 
 type WatchRow = { id: string; fields: { symbol?: unknown; removed_at?: unknown } };
@@ -51,7 +51,7 @@ function listed(rows: readonly WatchRow[]): string[] {
 	const removed = new Map<string, boolean>();
 	for (const row of [...rows].sort((a, b) => Number(a.id) - Number(b.id))) {
 		const symbol = String(row.fields.symbol ?? "").trim().toUpperCase();
-		if (SYMBOL.test(symbol)) removed.set(symbol, Boolean(row.fields.removed_at));
+		if (isTicker(symbol)) removed.set(symbol, Boolean(row.fields.removed_at));
 	}
 	return [...removed].filter(([, out]) => !out).map(([symbol]) => symbol);
 }
@@ -116,7 +116,7 @@ export default async function iv(input: Input) {
 	async function rowOf(symbol: string, date: string, spot: number, daily: boolean, waiting: boolean): Promise<Row | null> {
 		const row: Row = { id: `${symbol}:${date}:${METHODOLOGY}`, symbol, trade_date: date, underlying_close: spot, fetched_at: fetchedAt, source: SOURCE, methodology: METHODOLOGY, data_status: "no-data" };
 		const [lo, hi] = [shiftDate(date, IV_SERIES_TENOR.min), shiftDate(date, IV_SERIES_TENOR.max)];
-		const standard = new RegExp(`^O:${symbol.replaceAll(".", "")}\\d{6}P\\d{8}$`);
+		const standard = new RegExp(`^O:${occRoot(symbol)}\\d{6}P\\d{8}$`);
 		const lists = [...(lo <= today ? [true] : []), ...(hi >= today ? [false] : [])];
 		const contracts = new Map<string, ContractData>();
 		for (const expired of lists) {

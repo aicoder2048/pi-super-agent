@@ -1,5 +1,6 @@
 import { MARKET_NOTE, nyParts, nyStamp, parseChain, UNITS, type ChainRow, type Right } from "../../chain-rows.ts";
-import { fail, MarketError, MISSING_KEY, query, REQUEST_LIMIT_MS, snapshotPages, SYMBOL } from "../../massive.ts";
+import { fail, MarketError, MISSING_KEY, query, REQUEST_LIMIT_MS, snapshotPages } from "../../massive.ts";
+import { isTicker } from "../../symbols.ts";
 
 /** Rows nearest the underlying price kept when a wide strike range returns more; the expert reads a compact result. */
 const MAX_ROWS = 60;
@@ -37,6 +38,7 @@ export default async function chain(input: Record<string, unknown>) {
 			contracts,
 			rows_dropped: parsed.rows.length - contracts.length,
 			skipped_binary: parsed.skippedBinary,
+			skipped_adjusted: parsed.skippedAdjusted,
 			pages: fetched.pages,
 			truncated: fetched.truncated,
 			units: UNITS,
@@ -55,7 +57,7 @@ function compact(rows: ChainRow[], spot: number | null): ChainRow[] {
 
 function parse(input: Record<string, unknown>): Request {
 	const symbol = typeof input["symbol"] === "string" ? input["symbol"].trim().toUpperCase() : "";
-	if (!SYMBOL.test(symbol)) fail("INVALID_INPUT", "symbol 要是美股或 ETF 代码，例如 SPY");
+	if (!isTicker(symbol)) fail("INVALID_INPUT", "symbol 要是美股或 ETF 代码，例如 SPY");
 	const date = (name: string) => {
 		const v = input[name];
 		if (v === undefined || v === "") return undefined;
