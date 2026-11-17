@@ -1,0 +1,4 @@
+[
+  { "name": "夹具库里的最新收盘价和涨跌幅", "input": { "symbols": "NVDA,QQQ" }, "data": "tools/structure/fixtures/data", "python": true, "tolerance": 0.0001,
+    "expect": { "prices": [{ "symbol": "NVDA", "price": 202.37, "data_time": "2026-11-13T21:00:00+00:00", "previous_close": 202.68, "change_percent": -0.15295 }, { "symbol": "QQQ", "price": 640.69, "data_time": "2026-11-13T21:00:00+00:00" }], "truncated": false } }
+]

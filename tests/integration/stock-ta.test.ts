@@ -101,6 +101,33 @@ test("stock-ta 包通过检查：十一个工具、十个技能、六位专家�
 	assert.equal(result.scan.manifest.team, "技术分析研究组");
 });
 
+test("stock-ta 开放五个只读工具，note 不开放；没有私密集合；开放的工具都带用例", () => {
+	const result = scanPackage(PKG);
+	assert.ok(result.ok, JSON.stringify(!result.ok && result.problems));
+	assert.deepEqual(result.scan.manifest.exports, ["tools/structure", "tools/signals", "tools/prices", "tools/quote", "tools/earnings-date"]);
+	assert.match(summary(result.scan), / data-classes=shareable:5,private:0 /);
+	for (const use of result.scan.manifest.exports ?? []) {
+		const tool = result.scan.components.find((c) => c.kind === "tools" && `tools/${c.name}` === use);
+		assert.ok(tool?.kind === "tools" && tool.cases.length > 0, use);
+	}
+});
+
+test("没装 ta 时检查跳过 structure、signals、prices 的用例，各提醒一行；quote、earnings-date 的用例离线回放照跑", () => {
+	const result = scanPackage(PKG);
+	assert.ok(result.ok, JSON.stringify(!result.ok && result.problems));
+	assert.deepEqual(result.scan.notes.filter((n) => n.includes("Python environment")).map((n) => n.split(":")[0]), ["tools/prices/cases.json", "tools/signals/cases.json", "tools/structure/cases.json"]);
+	const offline = result.scan.components.flatMap((c) => (c.kind === "tools" && c.cases.some((k) => k.responses !== undefined) ? [c.name] : []));
+	assert.deepEqual(offline.sort(), ["earnings-date", "quote"]);
+});
+
+// PSA_STOCK_TA_DATA: modules-data/stock-ta of a state dir where `just module setup stock-ta` ran.
+const TA_DATA = process.env["PSA_STOCK_TA_DATA"];
+test("structure、signals、prices 的用例在装好的 ta 上对着夹具库过（设 PSA_STOCK_TA_DATA 时跑）", { skip: TA_DATA === undefined && "PSA_STOCK_TA_DATA 没设：这台机器没装 stock-ta 的 Python 环境" }, () => {
+	const result = scanPackage(PKG, { dataDirOf: () => TA_DATA! });
+	assert.ok(result.ok, JSON.stringify(!result.ok && result.problems));
+	assert.deepEqual(result.scan.notes.filter((n) => n.includes("Python environment")), []);
+});
+
 test("没有 screen 工具，也没有工具要 TA_ROOT 这把密钥", () => {
 	assert.ok(!existsSync(join(PKG, "tools/screen")));
 	assert.ok(!existsSync(join(PKG, "skills/ta-screen")));
