@@ -510,7 +510,7 @@ test("终端 Ctrl+C 时成员正在干活：宿主停下后不留成员进程，
 test("just host 第一次启动把 config.json 的模块开关导入状态库，启动日志按导入后的开关列模块", () => {
 	const stateDir = stateWith({ webPort: 0, modules: { "pi-pi": false }, models: { router: "openai-codex/no-such-model" } })();
 	const run = spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], { env: { ...process.env, PSA_STATE_DIR: stateDir }, encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL" });
-	assert.match(run.stderr, /\[host\] 模块：module-builder（模块工坊）；停用 pi-pi；规则 \d+ 条/);
+	assert.match(run.stderr, /\[host\] 模块：module-builder（模块工坊）；已停用：pi-pi；规则 \d+ 条/);
 	const db = new DatabaseSync(join(stateDir, "state.db"), { readOnly: true });
 	const switches = db.prepare("SELECT name, switch FROM module_records ORDER BY name").all().map((r) => [r.name, r.switch]);
 	db.close();

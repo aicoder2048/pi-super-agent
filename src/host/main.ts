@@ -17,8 +17,10 @@ async function main(): Promise<void> {
 	for (const { name, scan } of discovered.packages) if (!scan.ok) log(`[host] 新布局包 ${name} 无效：${scan.problems.map(problemLine).join("；")}`);
 	const live = startLiveModules({ db: openStore(join(config.stateDir, "state.db")), stateDir: config.stateDir, roots: config.modulesDirs, discovered, configSwitches: config.moduleSwitches, log });
 	const modules = live.live.current();
-	const off = [...discovered.found, ...discovered.packages.filter((p) => p.scan.ok)].map((m) => m.name).filter((name) => !modules.book.has(name));
-	log(`[host] 模块：${modules.modules.map((m) => (m.team ? `${m.name}（${m.team.name}）` : m.name)).join(", ") || "无"}${off.length ? `；停用 ${off.join(", ")}` : ""}；规则 ${modules.allRules().length} 条`);
+	const found = new Set([...discovered.found, ...discovered.packages.filter((p) => p.scan.ok)].map((m) => m.name));
+	const notServing = Map.groupBy(live.cards().filter((c) => found.has(c.name) && !modules.book.has(c.name)), (c) => c.label);
+	const notServingText = [...notServing].map(([label, cards]) => `；${label}：${cards.map((c) => c.name).join(", ")}`).join("");
+	log(`[host] 模块：${modules.modules.map((m) => (m.team ? `${m.name}（${m.team.name}）` : m.name)).join(", ") || "无"}${notServingText}；规则 ${modules.allRules().length} 条`);
 	for (const id of modules.skippedUserRules) log(`[host] 规则 ${id} 没写「来源:」，不生效`);
 	for (const note of modules.switchNotes) log(`[host] ${note}`);
 
