@@ -47,9 +47,10 @@ function storeWithTax(t: TestContext) {
 	return { store, digest };
 }
 
-const hostSecrets = (name: string): string | undefined => ({ PERSONAL_TAX__KEY: "named-value", OTHER_KEY: "unnamed-value" })[name];
+const moduleSecrets = (module: ModuleName, name: string): string | undefined =>
+	({ "personal-tax": { PERSONAL_TAX__KEY: "named-value", OTHER_KEY: "unnamed-value" }, mail: { PERSONAL_TAX__KEY: "mail-value" } })[module as string]?.[name];
 
-function setup(t: TestContext, { serving = true, limitMs = 20_000, secret = hostSecrets } = {}) {
+function setup(t: TestContext, { serving = true, limitMs = 20_000, secret = moduleSecrets } = {}) {
 	const { store, digest } = storeWithTax(t);
 	const logs: string[] = [];
 	const state = { serving };
@@ -112,6 +113,13 @@ test("推断开的任务调 effect 是 write 的工具被拒绝；使用者开�
 test("工具的进程只拿到 tool.json 写了名字的密钥，宿主别的密钥拿不到", async (t) => {
 	const { gateway, caller } = setup(t);
 	assert.deepEqual(await gateway.call(caller(), call("env-probe")), { ok: true, output: { named: "named-value", unnamed: null } });
+});
+
+test("工具的密钥按工具所在的模块取：gateway 问的是这个模块的 .env", async (t) => {
+	const asked: string[] = [];
+	const { gateway, caller } = setup(t, { secret: (module: ModuleName, name: string) => (asked.push(`${module}/${name}`), moduleSecrets(module, name)) });
+	await gateway.call(caller(), call("env-probe"));
+	assert.deepEqual(asked, ["personal-tax/PERSONAL_TAX__KEY"]);
 });
 
 test("读密钥出错（值不合法、密钥文件读不到）：这次调用失败并说明原因，宿主日志照样记一笔", async (t) => {

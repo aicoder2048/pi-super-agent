@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { parseEnv } from "node:util";
 import { ConfigError, readJsonFile } from "./config-error.ts";
 import { writeFileAtomic } from "./heartbeat.ts";
-import type { SecretLookup } from "./modules/run-code.ts";
+import type { ModuleSecretLookup, SecretLookup } from "./modules/run-code.ts";
 
 const SECRET_CHARS = /^[\x21-\x7e]+$/;
 
@@ -26,8 +26,26 @@ export function readSecret(names: readonly string[], label: string, env: Readonl
 	return found;
 }
 
-/** secretsFile only: the host's environment holds its own keys (model providers, GITHUB_TOKEN), which module code must not reach by naming them (ADR-0019). */
+/** The host's own secrets: secretsFile only, never the environment. Module code never reads through this (ADR-0031). */
 export const secretLookup = (secretsFile: string | undefined): SecretLookup => (name) => readSecret([name], name, {}, secretsFile)?.key;
+
+/** The layout of `moduleDataDir`, spelled here so `just google-auth` does not load the module framework. */
+export const moduleEnvFile = (stateDir: string, module: string): string => join(stateDir, "modules-data", module, ".env");
+
+/** A module's code reads only its own `.env`; a missing file holds nothing, so the module reports the missing key itself (ADR-0031). */
+export const moduleSecretLookup = (stateDir: string): ModuleSecretLookup => (module, name) => {
+	const file = moduleEnvFile(stateDir, module);
+	let text: string;
+	try {
+		text = readFileSync(file, "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw error;
+	}
+	const value = parseEnv(text)[name];
+	if (value && !SECRET_CHARS.test(value)) throw new ConfigError(`${name}（模块的 ${file}）含有空白或非 ASCII 字符，请检查`);
+	return value || undefined;
+};
 
 /** Kept out of loadConfig so `just google-auth` reads it without loading Pi. */
 export const configuredSecretsFile = (stateDir: string): string | undefined => {

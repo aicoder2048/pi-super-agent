@@ -11,6 +11,8 @@ export interface Failure {
 	/** What broke, in the user's words: 幕僚长模型, stock-ta 报价. */
 	subject: string;
 	error: string;
+	/** Shown in place of `error` when the error may quote private data. The cause is still read from `error`. */
+	shown?: string;
 	/** What to do. Defaults to the advice for the error's cause. */
 	advice?: string;
 	/** Consecutive failures, this one included, before the alarm goes up. */
@@ -123,7 +125,7 @@ export class Health {
 
 	failed(id: string, failure: Failure): void {
 		const now = this.#o.now();
-		const lastError = scrub(failure.error);
+		const lastError = scrub(failure.shown ?? failure.error);
 		const cause = causeOf(failure.error);
 		const advice = failure.advice ?? ADVICE[failure.area][cause];
 		const previous = this.#runs.get(id);

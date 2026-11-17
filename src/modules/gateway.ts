@@ -1,13 +1,15 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RUNTIMES, toolEffect, type AgentDescriptor, type Component, type Digest, type FieldDescriptor, type ModuleName, type ToolEffect, type ToolPort } from "./manifest.ts";
+import type { Fetched } from "./connectors/attachment.ts";
+import { RUNTIMES, toolEffect, type AgentDescriptor, type Component, type Digest, type FieldDescriptor, type ModuleName, type ToolEffect, type ToolFetch, type ToolPort } from "./manifest.ts";
 import { DataInputError, type ModuleRows, type WatchRequest } from "./instance-data.ts";
 import { catalogueText, foundText, searchKnowledge, type Knowledge, type KnowledgeBase } from "./knowledge.ts";
 import { AUTHORITY, effectOf, senderOf, type Caller, type Gateway, type Refusal, type Json, type Reply, type Request } from "./protocol.ts";
 import { writeDraft, type GooglePort } from "./google-port.ts";
 import { readForTool } from "./ocr-port.ts";
 import type { Ocr } from "../ocr/result.ts";
-import { LIMIT_MS, runModuleCodeAsync } from "./run-code.ts";
+import { LIMIT_MS, runModuleCodeAsync, type ModuleSecretLookup } from "./run-code.ts";
 import { scanPackage } from "./validate.ts";
 
 export interface GatewayPorts {
@@ -16,17 +18,19 @@ export interface GatewayPorts {
 	serving(module: ModuleName): Digest | undefined;
 	dataDir(module: ModuleName): string;
 	rows: ModuleRows;
-	/** A value from the host's secrets file. */
-	secret(name: string): string | undefined;
+	/** `module` is the module whose code runs, so a tool reads its own module's `.env`. */
+	secret: ModuleSecretLookup;
 	log(line: string): void;
 	limitMs?: number;
 	google?: GooglePort;
 	ocr?: Ocr;
+	/** What a tool's `fetch` names, fetched into `dir` before its code runs; a string is the refusal. `components` are the serving version's. */
+	fetch?: Partial<Record<ToolFetch, (module: ModuleName, components: readonly Component[], input: Json, dir: string) => Promise<Fetched | string>>>;
 }
 
 type Tool = Extract<Component, { kind: "tools" }>;
 type Collection = Extract<Component, { kind: "data" }>;
-type Copy = { module: ModuleName; digest: Digest; dir: string; tools: readonly Tool[]; knowledge: readonly Knowledge[]; collections: readonly Collection[]; agents: readonly AgentDescriptor[]; feedSources: readonly string[] };
+type Copy = { module: ModuleName; digest: Digest; dir: string; components: readonly Component[]; tools: readonly Tool[]; knowledge: readonly Knowledge[]; collections: readonly Collection[]; agents: readonly AgentDescriptor[]; feedSources: readonly string[] };
 type Capability = { effect: ToolEffect; run: () => Promise<Reply> };
 
 const fieldsHelp = (fields: Readonly<Record<string, FieldDescriptor>>) =>
@@ -51,7 +55,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 		if (!scan?.ok) return undefined;
 		const { components } = scan.scan;
 		const copy = {
-			module, digest, dir,
+			module, digest, dir, components,
 			tools: components.filter((c): c is Tool => c.kind === "tools"),
 			knowledge: components.filter((c): c is Knowledge => c.kind === "knowledge"),
 			collections: components.filter((c): c is Collection => c.kind === "data"),
@@ -135,9 +139,25 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			return { ok: true, output: { collection: watched.collection, ...watched.output } as unknown as Json };
 		});
 
+	/** The fetched file lives only for the call: the folder goes once the tool and its port are done. */
 	const runTool = async (copy: Copy, tool: Tool, input: Json): Promise<Reply> => {
+		const kind = tool.tool.fetch;
+		if (kind === undefined) return runCode(copy, tool, input);
+		const fetch = ports.fetch?.[kind];
+		const serving = copyOf(copy.module, ports.serving(copy.module));
+		if (fetch === undefined || serving === undefined) return { ok: false, refusal: { code: "provider-failed", note: `这台宿主取不了 ${kind}` } };
+		const dir = mkdtempSync(join(tmpdir(), "psa-fetch-"));
+		try {
+			const fetched = await fetch(copy.module, serving.components, input, dir);
+			if (typeof fetched === "string") return { ok: false, refusal: { code: "provider-failed", note: fetched } };
+			return await runCode(copy, tool, { ...(input as object), fetched } as Json);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	};
+	const runCode = async (copy: Copy, tool: Tool, input: Json): Promise<Reply> => {
 		const secrets = Object.fromEntries((tool.tool.secrets ?? []).flatMap((name) => {
-			const value = ports.secret(name);
+			const value = ports.secret(copy.module, name);
 			return value === undefined ? [] : [[name, value]];
 		}));
 		const ran = await runModuleCodeAsync({ packageDir: copy.dir, component: join("tools", tool.name), dataDir: ports.dataDir(copy.module) }, RUNTIMES[tool.tool.runtime ?? "node"], input, secrets, { limitMs: ports.limitMs ?? LIMIT_MS });

@@ -27,6 +27,7 @@ import { loadToken } from "./web-token.ts";
 import type { TailnetName } from "./web-hosts.ts";
 import { MemberCap } from "./member-cap.ts";
 import { ConfigError } from "../config-error.ts";
+import type { ModuleSecretLookup } from "../modules/run-code.ts";
 import { OutputRoot } from "./output.ts";
 import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 import type { Domains } from "../modules.ts";
@@ -34,13 +35,15 @@ import type { LiveModules } from "./live-modules.ts";
 import type { Alert, Gateway } from "../modules/protocol.ts";
 import type { Ocr } from "../ocr/result.ts";
 import { oneLine } from "../modules/release.ts";
+import type { GmailAccount } from "../modules/connectors/gmail.ts";
+import { MailConnector } from "../modules/connectors/mail.ts";
 import { intoOf, runFeed, type FeedEntry, type FeedPorts, type FeedProblem, type FeedRun } from "../modules/feed-runner.ts";
 import { instanceData } from "../modules/instance-data.ts";
 import { createScheduler, type Scheduler } from "../modules/scheduler.ts";
 import { threadId } from "../sources/generic.ts";
 import { inPollWindow } from "../sources/market/session.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
-import { causeOf, clearedText, Health, scrub, HEALTH_DEFAULTS, ModelHealth, raisedText, type HealthConfig } from "./health.ts";
+import { causeOf, clearedText, Health, HEALTH_DEFAULTS, ModelHealth, raisedText, scrub, type HealthConfig } from "./health.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -65,7 +68,8 @@ export interface HostOptions {
 	sourcePolicy?: SourcePolicy;
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	isMarketSource?: (source: string) => boolean;
-	moduleFeeds?: { feeds(): readonly FeedEntry[]; fixtures: boolean; secret?: (name: string) => string | undefined; tickMs?: number };
+	/** `mail`: the host's Gmail read access; without it a feed on the mail connector waits. */
+	moduleFeeds?: { feeds(): readonly FeedEntry[]; fixtures: boolean; secret?: ModuleSecretLookup; tickMs?: number; mail?: GmailAccount };
 	/** The serving modules, asked each time. Without it no ticket has a domain. */
 	domains?: Domains;
 	gateway?: Gateway;
@@ -145,6 +149,8 @@ export class Host {
 	readonly #after: NonNullable<HostOptions["after"]>;
 	#cancelNewYorkDay: (() => void) | undefined;
 	readonly #beats = new Map<string, FeedBeat & { module: string }>();
+	/** The last one-shot connector problem posted, per connector, so the same gap from several feeds is one line. */
+	readonly #connectorOnce = new Map<string, { id: string; at: number }>();
 	readonly #health: Health;
 	readonly #routerHealth: ModelHealth;
 	readonly #feedFailuresBeforeAlarm: number;
@@ -228,26 +234,38 @@ export class Host {
 			},
 			secret: options.moduleFeeds?.secret ?? (() => undefined),
 			now: clock.now,
+			connectorProblem: (connector, source, problem) => this.#connectorHealth(connector, source, problem),
 		};
+		const account = options.moduleFeeds?.mail;
+		const mail =
+			account &&
+			new MailConnector({
+				account,
+				rejectedDir: (entry) => join(options.stateDir, "inbox", entry.module, entry.name, "rejected"),
+				rejected: (entry, gmailId, tries) =>
+					void this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(`${entry.feed.title}：Gmail 里编号 ${gmailId} 的信试了 ${tries} 次都没处理成，跳过了，信还在 Gmail 里，错误记在本机的 rejected 记录里`, PROBLEM_MAX)) }),
+			});
 		this.feedScheduler = createScheduler({
 			feeds: options.moduleFeeds?.feeds ?? (() => []),
 			run: async (entry, items, fixture, signal) => {
 				let problem: FeedProblem | undefined;
-				const run = await runFeed(entry, items, { ...feedPorts, problem: (_, reported) => (problem = reported) }, fixture, signal);
+				const ports = { ...feedPorts, problem: (_: string, reported: FeedProblem | undefined) => (problem = reported) };
+				const run = mail && entry.feed.connector === "mail" && fixture === undefined ? await mail.beat(entry, ports, signal) : await runFeed(entry, items, ports, fixture, signal);
 				this.#feedHealth(entry, run, problem);
 				const zone = intoOf(entry.feed, entry.components)?.watch?.zone;
-				this.#beats.set(entry.source, { module: entry.module, title: entry.feed.title, at: clock.now(), ...(zone && { zone }), ...(run.ok ? { ok: true, records: run.records } : { ok: false, note: run.note }) });
+				this.#beats.set(entry.source, { module: entry.module, title: entry.feed.title, at: clock.now(), ...(zone && { zone }), ...(run.ok ? { ok: true, records: run.records } : { ok: false, note: entry.private ? PRIVATE_ERROR : scrub(run.note) }) });
 				return run;
 			},
 			state: data,
+			running: ["timer", "inbox", ...(mail ? ["mail" as const] : [])],
 			inboxDir: join(options.stateDir, "inbox"),
 			now: clock.now,
 			when: { "us-market-hours": inPollWindow },
 			fixtures: options.moduleFeeds?.fixtures ?? false,
 			log: this.#log,
-			rejected: (entry, note, tries) => {
+			rejected: (entry, file, note, tries) => {
 				if (causeOf(note) === "auth") return;
-				this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(`收件箱里有一件试了 ${tries} 次都没处理成，已放进 rejected：${scrub(note)}`, PROBLEM_MAX)) });
+				this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(`${entry.feed.title}：收件箱里${entry.private ? "有一件" : `的 ${file} `}试了 ${tries} 次都没处理成，放进了本机的 rejected，错误记在那里`, PROBLEM_MAX)) });
 			},
 		});
 		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []), routerHealth: this.#routerHealth };
@@ -538,7 +556,7 @@ export class Host {
 		if (!run.ok && entry.feed.connector === "inbox" && causeOf(run.note) !== "auth") return;
 		if (!run.ok) {
 			const after = causeOf(run.note) === "auth" ? 1 : this.#feedFailuresBeforeAlarm;
-			this.#health.failed(id, { area: "data", subject, error: run.note, after });
+			this.#health.failed(id, { area: "data", subject, error: run.note, after, ...(entry.private && { shown: PRIVATE_ERROR }) });
 		} else if (problem?.once) {
 			this.#health.ok(id);
 			this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(problem.text, PROBLEM_MAX)) });
@@ -549,10 +567,29 @@ export class Host {
 		}
 	}
 
+	/**
+	 * A connector's problem is one alarm or one line for all its feeds, naming them: they share the user's authorization, and a host
+	 * that was off left every one of them behind. Any feed whose beat got past the connector clears the alarm.
+	 */
+	#connectorHealth(connector: string, source: string, problem: FeedProblem | undefined): void {
+		const id = connectorAlarmId(connector);
+		const feeds = this.#feedsNow().filter((entry) => entry.feed.connector === connector).map((entry) => `${this.kernel.moduleLabel(entry.module)} ${entry.feed.title}`).sort();
+		const text = problem && `${problem.text}（影响：${feeds.join("、")}）`;
+		if (problem === undefined || text === undefined) return this.#health.ok(id);
+		if (!problem.once) return this.#health.failed(id, { area: "data", subject: `${connector} 连接器`, error: text, after: 1, advice: "照上面这句处理；哪一拍不再报这个问题，这条自动消失" });
+		this.#health.ok(id);
+		const now = this.#clock.now();
+		const last = this.#connectorOnce.get(connector);
+		if (last?.id === problem.id && now - last.at < CONNECTOR_ONCE_MS) return;
+		this.#connectorOnce.set(connector, { id: problem.id, at: now });
+		this.#postHostLine(source, { kind: "notice", text: this.kernel.moduleNotice(source, oneLine(text, PROBLEM_MAX)) });
+	}
+
 	/** A switched-off module's feeds stop beating, so their alarms would never clear. Nothing recovered, so no ✅. */
 	#forgetGoneFeeds(): void {
-		const serving = new Set(this.#feedsNow().map((entry) => feedAlarmId(entry.source)));
-		this.#health.forget((id) => id.startsWith(FEED_ALARM) && !serving.has(id));
+		const feeds = this.#feedsNow();
+		const serving = new Set([...feeds.map((entry) => feedAlarmId(entry.source)), ...feeds.flatMap((entry) => (entry.feed.connector === undefined ? [] : [connectorAlarmId(entry.feed.connector)]))]);
+		this.#health.forget((id) => (id.startsWith(FEED_ALARM) || id.startsWith(CONNECTOR_ALARM)) && !serving.has(id));
 	}
 
 	/** The page reads the banner from the next board frame; the phone gets one notice per raise, which rings, and one per clear, which does not. */
@@ -686,6 +723,12 @@ export class Host {
 
 const FEED_ALARM = "data:";
 const feedAlarmId = (source: string) => `${FEED_ALARM}${source}`;
+// A private feed's handler error may quote what it read; the scheduler already wrote it to host.log.
+const PRIVATE_ERROR = "错误可能引用私密数据，只记在本机的 host.log";
+const CONNECTOR_ALARM = "connector:";
+const connectorAlarmId = (connector: string) => `${CONNECTOR_ALARM}${connector}`;
+/** Feeds on one connector beat within minutes of each other after the host comes back; an hour folds their one-shot lines into one. */
+const CONNECTOR_ONCE_MS = 3_600_000;
 
 function todayCounts(rows: { source: string; disposition: Disposition; count: number }[]): TodayCounts {
 	const byDisposition = Object.fromEntries(DISPOSITIONS.map((d) => [d, 0])) as Record<Disposition, number>;

@@ -17,7 +17,7 @@ const EMPTY: Stored = { collections: {}, aliases: {} };
 const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 const literal = (text: string) => `'${text.replaceAll("'", "''")}'`;
 const CONDITIONS = "CREATE TABLE IF NOT EXISTS _conditions (id TEXT PRIMARY KEY, collection TEXT NOT NULL, key TEXT NOT NULL, kind TEXT NOT NULL, params TEXT NOT NULL, set_at TEXT NOT NULL, note TEXT)";
-const FEED_TABLES = "CREATE TABLE IF NOT EXISTS _feed_rows (source TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (source, id)); CREATE TABLE IF NOT EXISTS _feeds (source TEXT PRIMARY KEY, cursor TEXT, last_run_at INTEGER)";
+const FEED_TABLES = "CREATE TABLE IF NOT EXISTS _feed_rows (source TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (source, id)); CREATE TABLE IF NOT EXISTS _feeds (source TEXT PRIMARY KEY, cursor TEXT, last_run_at INTEGER); CREATE TABLE IF NOT EXISTS _feed_connectors (source TEXT PRIMARY KEY, cursor TEXT)";
 const column = (name: string, field: FieldDescriptor) => `${quote(name)} ${field.type === "number" ? "REAL" : "TEXT"}`;
 const plain = ({ was: _, ...field }: FieldDescriptor) => field;
 const renamed = (aliases: Record<string, string>, from: string, to: string) => ({
@@ -108,12 +108,13 @@ export interface ModuleRows {
 export type ConditionAlert = Alert & { fold?: DayMoveFold };
 export type Written = Accessed & { alerts: readonly ConditionAlert[]; alertProblem?: string };
 
-export type FeedState = { cursor: string | null; lastRunAt: number | null };
+/** `connectorCursor`: where the feed's connector is in its service (the mail connector's Gmail history position); the handler never sees it. */
+export type FeedState = { cursor: string | null; connectorCursor: string | null; lastRunAt: number | null };
 
 export interface FeedStates {
 	feedState(module: ModuleName, source: string): FeedState;
 	/** A field left out keeps its stored value. */
-	saveFeedState(module: ModuleName, source: string, state: { cursor?: string; lastRunAt?: number }): void;
+	saveFeedState(module: ModuleName, source: string, state: { cursor?: string; connectorCursor?: string; lastRunAt?: number }): void;
 }
 
 export type WatchRequest = Extract<Request, { kind: "watch" }>;
@@ -382,13 +383,15 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 		feedState(module, source) {
 			return withFeeds(module, (db) => {
 				const row = db.prepare("SELECT cursor, last_run_at FROM _feeds WHERE source = ?").get(source) as { cursor: string | null; last_run_at: number | null } | undefined;
-				return { cursor: row?.cursor ?? null, lastRunAt: row?.last_run_at ?? null };
+				const connector = db.prepare("SELECT cursor FROM _feed_connectors WHERE source = ?").get(source) as { cursor: string | null } | undefined;
+				return { cursor: row?.cursor ?? null, connectorCursor: connector?.cursor ?? null, lastRunAt: row?.last_run_at ?? null };
 			});
 		},
-		saveFeedState(module, source, { cursor, lastRunAt }) {
-			withFeeds(module, (db) =>
-				db.prepare("INSERT INTO _feeds VALUES (?, ?, ?) ON CONFLICT (source) DO UPDATE SET cursor = COALESCE(excluded.cursor, cursor), last_run_at = COALESCE(excluded.last_run_at, last_run_at)").run(source, cursor ?? null, lastRunAt ?? null),
-			);
+		saveFeedState(module, source, { cursor, connectorCursor, lastRunAt }) {
+			withFeeds(module, (db) => {
+				db.prepare("INSERT INTO _feeds (source, cursor, last_run_at) VALUES (?, ?, ?) ON CONFLICT (source) DO UPDATE SET cursor = COALESCE(excluded.cursor, cursor), last_run_at = COALESCE(excluded.last_run_at, last_run_at)").run(source, cursor ?? null, lastRunAt ?? null);
+				if (connectorCursor !== undefined) db.prepare("INSERT INTO _feed_connectors (source, cursor) VALUES (?, ?) ON CONFLICT (source) DO UPDATE SET cursor = excluded.cursor").run(source, connectorCursor);
+			});
 		},
 		watch(module, components, request, who) {
 			return withRows(module, components, { who, collection: request.collection, op: request.op === "list" ? "read" : "write" }, (db, stored) => {

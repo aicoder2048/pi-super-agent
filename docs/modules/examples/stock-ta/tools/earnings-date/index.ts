@@ -3,7 +3,7 @@ import { nextEarningsOf, type Found, type None } from "../../earnings.ts";
 import { sessionAt } from "../../market-days.ts";
 import { argsOf } from "../../ta.ts";
 
-const MISSING_KEY = "没有设置 FINNHUB_API_KEY，没去查财报日：在宿主的密钥文件里加一行 FINNHUB_API_KEY=<你的 Finnhub 密钥>，见 docs/modules/stock-ta.md";
+const MISSING_KEY = "没有设置 FINNHUB_API_KEY，没去查财报日：用 just module secret stock-ta FINNHUB_API_KEY 写进 modules-data/stock-ta/.env，见 docs/modules/stock-ta.md";
 
 const finnhubBase = (): string => JSON.parse(readFileSync(new URL("./finnhub.json", import.meta.url), "utf8")).baseUrl;
 

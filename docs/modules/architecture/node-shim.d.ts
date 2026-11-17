@@ -20,7 +20,7 @@ declare module "node:fs" {
 	export function cpSync(from: string, to: string, options: { recursive: true; mode?: number; filter?(path: string): boolean }): void;
 	export function symlinkSync(target: string, path: string): void;
 	export function mkdtempSync(prefix: string): string;
-	export function writeFileSync(path: string, content: string): void;
+	export function writeFileSync(path: string, content: string | Uint8Array): void;
 	export function rmSync(path: string, options: { recursive?: true; force: true }): void;
 	export interface FSWatcher {
 		close(): void;
@@ -57,7 +57,11 @@ declare module "node:url" {
 	export function fileURLToPath(url: string): string;
 }
 declare module "node:buffer" {
-	export const Buffer: { from(text: string, encoding?: "utf8" | "base64"): { toString(encoding?: "utf8" | "base64url"): string }; byteLength(text: string): number };
+	export interface Buffer extends Uint8Array {
+		toString(encoding?: "utf8" | "base64url"): string;
+		subarray(start?: number, end?: number): Buffer;
+	}
+	export const Buffer: { from(data: string | Uint8Array, encoding?: "utf8" | "base64" | "base64url"): Buffer; byteLength(text: string, encoding?: "utf8"): number };
 }
 declare module "node:crypto" {
 	export interface Hash {
@@ -116,10 +120,15 @@ declare interface AbortSignal {
 	removeEventListener(type: "abort", listener: () => void): void;
 }
 declare const AbortSignal: { timeout(ms: number): AbortSignal };
+declare class TextDecoder {
+	constructor(label?: string);
+	decode(bytes: Uint8Array): string;
+}
 declare class URLSearchParams {
 	constructor(init: Record<string, string>);
+	get(name: string): string | null;
 }
-declare function fetch(url: string, init: { method: "POST"; body: string | URLSearchParams; headers?: Record<string, string>; redirect: "error"; signal: AbortSignal }): Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
+declare function fetch(url: string, init: { method?: "POST"; body?: string | URLSearchParams; headers?: Record<string, string>; redirect: "error"; signal?: AbortSignal }): Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 declare class AbortController {
 	readonly signal: AbortSignal;
 	abort(): void;

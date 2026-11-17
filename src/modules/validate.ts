@@ -3,23 +3,23 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { EVERY, everyMs } from "./connectors/timer.ts";
+import { mailFeedProblems } from "./connectors/mail.ts";
 import { feedInput, intoOf, nothingHeld, parseCollected } from "./feed-runner.ts";
 import { linkVenvs, lockOf, PY_DIR, venvDir, venvInstalled } from "./files.ts";
 import { fixtureSecrets, runModuleCode, runModuleCodeAsync, type CodeReply, type CodeSite, type RunOptions, type Secrets } from "./run-code.ts";
-import { secretRefusal } from "./secret-owners.ts";
-import { CONNECTORS, DATA_CLASSES, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS, TOOL_PORTS } from "./manifest.ts";
+import { identityNote } from "./identity-secrets.ts";
+import { CONNECTORS, DATA_CLASSES, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS, TOOL_FETCHES, TOOL_PORTS, type ToolFetch } from "./manifest.ts";
 import { LINE_MAX_LINES, placeholders } from "./release.ts";
 import type {
 	AgentDescriptor, CapabilityUse, CollectionDescriptor, Component, ComponentName, Digest, FeedDescriptor, FeedFixture, FieldDescriptor, KindDir, MemberTool, ModuleManifest, ModuleName, PackageScan, Problem, RuleRef, Runtime, ScanResult, ToolCase, ToolDescriptor, ToolPort,
 } from "./manifest.ts";
 
 const NAME = /^[a-z0-9][a-z0-9-]*$/;
-/** Single hyphens only, so no module's secret prefix (`prefixOf`) starts another's. */
 const MODULE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const moduleNameProblem = (name: string): string | undefined =>
 	MODULE_NAME.test(name) ? undefined : `"${name}" is not a usable module name (lowercase letters and digits, joined by single hyphens)`;
 const FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
-const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
+export const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
 const MAX_LIMIT_MS = 600_000;
 const FIELD_TYPES = ["text", "number", "date", "blob"] as const;
 
@@ -263,7 +263,7 @@ function runtimeOf(report: Report, where: string, raw: JsonObject): Runtime {
 function readTool(report: Report, root: string, name: string): Component | undefined {
 	const dir = `tools/${name}`;
 	const where = `${dir}/tool.json`;
-	const raw = readObject(report, root, where, ["title", "description", "input", "output"], ["cites", "effect", "secrets", "runtime", "port"]);
+	const raw = readObject(report, root, where, ["title", "description", "input", "output"], ["cites", "effect", "secrets", "runtime", "port", "fetch"]);
 	if (raw === undefined) return undefined;
 	const tool: ToolDescriptor = {
 		title: String(raw["title"]),
@@ -282,6 +282,10 @@ function readTool(report: Report, root: string, name: string): Component | undef
 	if (typeof port === "string" && Object.hasOwn(TOOL_PORTS, port)) tool.port = port as ToolPort;
 	else if (port !== undefined) report(where, `"port" must be ${Object.keys(TOOL_PORTS).join(" or ")}`);
 	if (tool.port !== undefined && tool.effect !== TOOL_PORTS[tool.port].effect) report(where, `"port" ${tool.port} needs "effect": "${TOOL_PORTS[tool.port].effect}"`);
+	const fetch = raw["fetch"];
+	if (typeof fetch === "string" && Object.hasOwn(TOOL_FETCHES, fetch)) tool.fetch = fetch as ToolFetch;
+	else if (fetch !== undefined) report(where, `"fetch" must be ${Object.keys(TOOL_FETCHES).join(" or ")}`);
+	if (tool.fetch !== undefined && tool.effect !== TOOL_FETCHES[tool.fetch].effect) report(where, `"fetch" ${tool.fetch} needs "effect": "${TOOL_FETCHES[tool.fetch].effect}"`);
 	const entry = RUNTIMES[tool.runtime ?? "node"];
 	if (!existsSync(join(root, dir, entry))) report(`${dir}/${entry}`, `is missing; a tool is tool.json and ${entry}, whose default export is the tool`);
 	const cases: ToolCase[] = [];
@@ -471,6 +475,11 @@ function crossCheck(report: Report, manifest: ModuleManifest, components: readon
 				if (collection !== undefined && !has("data", collection)) report(`feeds/${item.name}/feed.json`, `names collection "${collection}", but there is no data/${collection}`);
 			}
 			if (item.feed.line !== undefined && feedClass(item.feed, collections) !== "private") report(`feeds/${item.name}/feed.json`, `"line" is only for a feed into a private collection; any other feed's notice already reaches Telegram in full`);
+			if (item.feed.connector === "mail") for (const reason of mailFeedProblems(item.feed, collections)) report(`feeds/${item.name}/feed.json`, reason);
+		}
+		if (item.kind === "tools" && item.tool.fetch !== undefined) {
+			const connector = TOOL_FETCHES[item.tool.fetch].connector;
+			if (!components.some((c) => c.kind === "feeds" && c.feed.connector === connector)) report(`tools/${item.name}/tool.json`, `"fetch" ${item.tool.fetch} needs a feed of this module on the ${connector} connector: the host fetches only what this module's feeds receive`);
 		}
 		if (item.kind === "agents" || item.kind === "evals") {
 			for (const use of item.kind === "agents" ? item.agent.uses : item.eval.uses) {
@@ -631,10 +640,6 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, d
 	const feeds = new Set(components.filter((item) => item.kind === "feeds").map((item) => item.name as string));
 	const rules = readRules(report, root, manifest.name, feeds);
 	crossCheck(report, manifest, components);
-	for (const { where, secret } of components.flatMap(namedSecrets)) {
-		const refusal = secretRefusal(manifest.name, secret);
-		if (refusal !== undefined) report(where, refusal);
-	}
 	for (const item of components) {
 		if (item.kind !== "tools" || item.tool.port === undefined) continue;
 		const only = TOOL_PORTS[item.tool.port].module;
@@ -652,12 +657,15 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, d
 			data.drop();
 		}
 	}
-	let notes: string[] = [];
+	const notes = components.flatMap(namedSecrets).flatMap(({ where, secret }) => {
+		const note = identityNote(secret);
+		return note === undefined ? [] : [`${where}: ${note}`];
+	});
 	if (previous !== undefined && problems.length === 0) {
 		const before = readComponents(() => undefined, resolve(previous));
 		const changes = structureChanges(before, components);
 		problems.push(...changes.problems);
-		notes = changes.notes;
+		notes.push(...changes.notes);
 	}
 	if (problems.length > 0) return rejected(manifest.name);
 	return { ok: true, scan: { dir: root, manifest, components, rules, digest: digestOf(root), notes } };

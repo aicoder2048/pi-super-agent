@@ -24,7 +24,7 @@ type Problem = { id: "no-key" | "massive-down" | "stale" | "bad-level" | "bad-ho
 const GUIDE = "docs/modules/stock-ta.md";
 const FAILURES_BEFORE_PROBLEM = 5;
 const STALE_MS = 20 * 60_000;
-const NO_KEY: Problem = { id: "no-key", text: `没有设置 POLYGON_API_KEY，报价没去取，到档提醒和你设的条件都不会响：在宿主的密钥文件里加一行 POLYGON_API_KEY=<你的 Massive/Polygon 密钥>，见 ${GUIDE}` };
+const NO_KEY: Problem = { id: "no-key", text: `没有设置 POLYGON_API_KEY，报价没去取，到档提醒和你设的条件都不会响：用 just module secret stock-ta POLYGON_API_KEY 写进 modules-data/stock-ta/.env，见 ${GUIDE}` };
 const STALE: Problem = { id: "stale", text: `交易时段里 ${STALE_MS / 60_000} 分钟没有新的报价（行情本来就延迟 15 分钟，这是在那之外），到档提醒和你设的条件可能停了；Massive 可能在维护，或者套餐变了` };
 
 const badLevel = (rows: readonly string[]): Problem => ({ id: "bad-level", text: `rule-levels 第 ${rows.join("、")} 行不生效：规则不在盯盘规则表里，或层级不在 0 到 6，或门槛不是 0 到 100 之间的数，或让某只票的第一档门槛不低于第二档；加一行同样的 rule 和 symbol 写上 removedAt 或写对的值就清掉；这几条规则这几只票沿用前面最近一行写对的改动，其余的改动照常算` });
@@ -37,7 +37,7 @@ const KEY_REJECTED = /HTTP 40[13]\b/;
 
 function massiveDown(error: Error): Problem {
 	const reason = oneLine(error);
-	const advice = KEY_REJECTED.test(reason) ? "密钥失效或套餐到期，不会自己好：检查宿主密钥文件里的 POLYGON_API_KEY" : "恢复后自动接着取";
+	const advice = KEY_REJECTED.test(reason) ? "密钥失效或套餐到期，不会自己好：检查 modules-data/stock-ta/.env 里的 POLYGON_API_KEY" : "恢复后自动接着取";
 	return { id: "massive-down", text: `连着 ${FAILURES_BEFORE_PROBLEM} 轮取不到报价（最近一次：${reason}），到档提醒和你设的条件都停了；${advice}，见 ${GUIDE}` };
 }
 

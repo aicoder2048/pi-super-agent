@@ -52,7 +52,7 @@ async function portWorld(t: TestContext, { basis = "request" as WorkerCaller["ba
 	assert.ok(store.keep("mail" as ModuleName, digest, pkg));
 	mkdirSync(join(root, "data"), { recursive: true });
 	const logs: string[] = [];
-	const gateway = createGateway({ copyDir: (module, d) => store.dirOf(module, d), serving: () => digest, dataDir: () => join(root, "data"), rows: {} as never, secret: (name) => secrets[name], log: (line) => logs.push(line), ...(google && { google }) });
+	const gateway = createGateway({ copyDir: (module, d) => store.dirOf(module, d), serving: () => digest, dataDir: () => join(root, "data"), rows: {} as never, secret: (_module, name) => secrets[name], log: (line) => logs.push(line), ...(google && { google }) });
 	const caller: WorkerCaller = { who: "worker", ticket: "tkt_1", pin: { module: "mail" as ModuleName, digest }, basis, member: null, heardOthers: false };
 	const call = (name: string, input: Json): Promise<Reply> => gateway.call(caller, { kind: "tool", name: name as ComponentName, input });
 	return { call, logs };

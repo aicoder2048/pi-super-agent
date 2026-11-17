@@ -3,11 +3,11 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { everyMs } from "./connectors/timer.ts";
 import type { ConditionAlert, FeedStates, ModuleRows } from "./instance-data.ts";
-import type { CollectionDescriptor, Component, ComponentName, FeedDescriptor, FeedFixture, ModuleName } from "./manifest.ts";
+import type { CollectionDescriptor, Component, ComponentName, ConnectorId, FeedDescriptor, FeedFixture, ModuleName } from "./manifest.ts";
 import type { InstanceData } from "./registry.ts";
 import { BADGE_KEY_MAX, BADGE_TEXT_MAX, type Alert, type Badge, type Collected, type FeedAlert, type FeedInput, type Json, type Row } from "./protocol.ts";
 import { fill, release } from "./release.ts";
-import { fixtureSecrets, LIMIT_MS, runModuleCodeAsync, secretsFor } from "./run-code.ts";
+import { fixtureSecrets, LIMIT_MS, runModuleCodeAsync, secretsFor, type ModuleSecretLookup } from "./run-code.ts";
 
 export type FeedEntry = { source: string; module: ModuleName; dir: string; name: ComponentName; feed: FeedDescriptor; fixtures: readonly FeedFixture[]; components: readonly Component[]; private: boolean };
 
@@ -29,14 +29,16 @@ export interface FeedPorts {
 	badge(module: ModuleName, badge: Badge): void;
 	/** Every beat that ran, with what it reported, so the host can tell a new problem from one still standing. */
 	problem(source: string, problem: FeedProblem | undefined): void;
-	secret(name: string): string | undefined;
+	/** A problem of the shared connector, not of the feed (an expired authorization, a long gap): the host says it once for all the connector's feeds. Undefined: the connector worked this beat. */
+	connectorProblem?(connector: ConnectorId, source: string, problem: FeedProblem | undefined): void;
+	secret: ModuleSecretLookup;
 	now(): number;
 	limitMs?: number;
 }
 
 export type FeedRun = { ok: true; records: number; notices: number } | { ok: false; note: string };
 
-const READ_LIMIT = 500;
+export const READ_LIMIT = 500;
 
 type JsonObject = { readonly [key: string]: Json };
 const isObject = (value: Json | undefined): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -122,7 +124,7 @@ async function fromHandler({ module, source, feed, name, dir, components }: Feed
 	}, fixture);
 	const site = { packageDir: dir, component: join("feeds", name), dataDir: data.dir(module) };
 	const limitMs = feed.limit === undefined ? (ports.limitMs ?? LIMIT_MS) : everyMs(feed.limit);
-	const reply = await runModuleCodeAsync(site, handler, input, fixture ? fixtureSecrets(feed.secrets ?? []) : secretsFor(feed.secrets ?? [], ports.secret), { limitMs, ...(fixture && { responses: fixture.responses }), ...(signal && { signal }) });
+	const reply = await runModuleCodeAsync(site, handler, input, fixture ? fixtureSecrets(feed.secrets ?? []) : secretsFor(feed.secrets ?? [], (name) => ports.secret(module, name)), { limitMs, ...(fixture && { responses: fixture.responses }), ...(signal && { signal }) });
 	return reply.ok ? parseCollected(reply.output, into) : reply.note;
 }
 
@@ -140,10 +142,17 @@ function postAlerts({ module }: FeedEntry, conditions: readonly ConditionAlert[]
 }
 
 export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: FeedPorts, fixture?: FeedFixture, signal?: AbortSignal): Promise<FeedRun> {
+	const { run, problem } = await collectFeed(entry, items, ports, fixture, signal);
+	if (run.ok) ports.problem(entry.source, problem);
+	return run;
+}
+
+/** `runFeed` without reporting the problem, so the mail connector can join the problems of several calls into one beat. */
+export async function collectFeed(entry: FeedEntry, items: readonly Json[], ports: FeedPorts, fixture?: FeedFixture, signal?: AbortSignal): Promise<{ run: FeedRun; problem?: FeedProblem }> {
 	const { module, source, feed, components } = entry;
 	try {
 		const collected = feed.handler === undefined ? fromItems((fixture?.input["items"] as Json[] | undefined) ?? items) : await fromHandler(entry, feed.handler, items, ports, fixture, signal);
-		if (typeof collected === "string") return { ok: false, note: collected };
+		if (typeof collected === "string") return { run: { ok: false, note: collected } };
 		const records = collected.records ?? [];
 		let stored = 0;
 		let conditionAlerts: readonly ConditionAlert[] = [];
@@ -164,10 +173,9 @@ export async function runFeed(entry: FeedEntry, items: readonly Json[], ports: F
 			return [{ id: n.id, thread: n.thread ?? entry.name, ...(n.threadScope === "module" && { threadOwner: module }), ...(n.threadTitle !== undefined && { threadTitle: n.threadTitle }), ...(n.threadUntil !== undefined && { threadUntil: Date.parse(n.threadUntil) }), body: line === undefined ? text : release(line, n.fields) }];
 		});
 		for (const n of notices) ports.submit({ source, ...n, at: ports.now(), reach });
-		ports.problem(source, collected.problem);
 		if (collected.cursor !== undefined) ports.data.saveFeedState(module, source, { cursor: collected.cursor });
-		return { ok: true, records: stored, notices: notices.length };
+		return { run: { ok: true, records: stored, notices: notices.length }, ...(collected.problem && { problem: collected.problem }) };
 	} catch (error) {
-		return { ok: false, note: failed(error) };
+		return { run: { ok: false, note: failed(error) } };
 	}
 }

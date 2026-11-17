@@ -290,7 +290,7 @@ test("写进去的行在之后的加字段迁移里原样留着，新字段为�
 test("工具目录：每类数据一行，带字段说明；成员只见 uses 里的，没写 data 的成员没有这一项", async (t) => {
 	const { gateway, me } = health(t);
 	const names = (caller: WorkerCaller) => gateway.catalogue(caller).filter((e) => e.request === "data").map((e) => e.name);
-	assert.deepEqual(names(me()).sort(), ["device-readings", "documents", "lab-results", "profile", "research-updates"]);
+	assert.deepEqual(names(me()).sort(), ["device-readings", "documents", "lab-results", "profile", "research-updates", "senders"]);
 	assert.deepEqual(names(me({ member: "clinical-pharmacist" })), ["lab-results"]);
 	assert.match(gateway.catalogue(me()).find((e) => e.name === "lab-results")!.help, /item（text，项目/);
 });

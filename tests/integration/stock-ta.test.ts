@@ -414,7 +414,7 @@ test("quote：没有 POLYGON_API_KEY 时一行说明去哪里加，不发请求"
 	const tool = await quoteTool(t, {});
 	const note = noteOf(await tool.quote({ symbols: "NVDA" }));
 	assert.match(note, /POLYGON_API_KEY/);
-	assert.match(note, /密钥文件/);
+	assert.match(note, /modules-data\/stock-ta\/\.env/);
 	assert.equal(note.split("\n").length, 1);
 	assert.equal(tool.massive.hits.length, 0);
 });
@@ -609,7 +609,7 @@ test("intraday：没有 POLYGON_API_KEY 时一行说明去哪里加，不发请�
 	const tool = await intradayTool(t, {});
 	const note = noteOf(await tool.intraday({ symbol: "NVDA", span: "minute" }));
 	assert.match(note, /POLYGON_API_KEY/);
-	assert.match(note, /密钥文件/);
+	assert.match(note, /modules-data\/stock-ta\/\.env/);
 	assert.equal(note.split("\n").length, 1);
 	assert.equal(tool.massive.hits.length, 0);
 });
@@ -688,7 +688,7 @@ test("earnings-date：没有 FINNHUB_API_KEY 时一行说明去哪里加，不�
 	const tool = await earningsTool(t, {});
 	const note = noteOf(await tool.earnings({ symbol: "NVDA" }));
 	assert.match(note, /FINNHUB_API_KEY/);
-	assert.match(note, /密钥文件/);
+	assert.match(note, /modules-data\/stock-ta\/\.env/);
 	assert.equal(note.split("\n").length, 1);
 	assert.equal(tool.finnhub.hits.length, 0);
 });

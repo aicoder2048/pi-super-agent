@@ -80,4 +80,4 @@ export function oneLine(error: Error, service = "行情服务"): string {
 	return error.message;
 }
 
-export const MISSING_KEY = "没有设置 POLYGON_API_KEY，没去查行情：在宿主的密钥文件里加一行 POLYGON_API_KEY=<你的 Massive/Polygon 密钥>，见 docs/modules/stock-ta.md";
+export const MISSING_KEY = "没有设置 POLYGON_API_KEY，没去查行情：用 just module secret stock-ta POLYGON_API_KEY 写进 modules-data/stock-ta/.env，见 docs/modules/stock-ta.md";

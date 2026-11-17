@@ -57,7 +57,7 @@ const EARNINGS_LOOKBACK = 10;
 const WARNING_ONLY = "DIVIDENDS_UNAVAILABLE";
 const GUIDE = "docs/modules/stock-ta.md";
 type Problem = { id: "no-key" | "scan-failed" | "hits-file"; text: string };
-const NO_KEY: Problem = { id: "no-key", text: `没有设置 POLYGON_API_KEY，收盘后的日线扫描没跑，日线和信号不会更新：在宿主的密钥文件里加一行 POLYGON_API_KEY=<你的 Massive/Polygon 密钥>，见 ${GUIDE}` };
+const NO_KEY: Problem = { id: "no-key", text: `没有设置 POLYGON_API_KEY，收盘后的日线扫描没跑，日线和信号不会更新：用 just module secret stock-ta POLYGON_API_KEY 写进 modules-data/stock-ta/.env，见 ${GUIDE}` };
 const SCAN_FAILED: Problem = { id: "scan-failed", text: "收盘后的日线扫描失败了，日线和信号没更新，旧数据照用，下一拍再试；原因写在扫描记录里，问「最近一次日线扫描怎么样」就能看到" };
 const hitsFile = (error: unknown): Problem => ({ id: "hits-file", text: `收盘命中的文件没写成（${error instanceof Error ? error.message : String(error)}），提醒和触发照发，「今天有哪些信号」暂时看不到收盘的命中；下一次扫描再写` });
 

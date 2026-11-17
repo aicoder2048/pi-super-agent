@@ -99,6 +99,14 @@ export const TOOL_PORTS = {
 export type ToolPort = keyof typeof TOOL_PORTS;
 
 /**
+ * What the host fetches through a connector before it runs a tool's code, so the tool reads a local file and holds no identity
+ * secret. `mail.attachment`: input `messageId` and `partId` name one attachment of a letter that one of the module's mail feeds
+ * would receive; the host downloads it into the call's own temporary folder and adds `fetched` (see `Fetched` in connectors/attachment.ts) to the input.
+ */
+export const TOOL_FETCHES = { "mail.attachment": { connector: "mail", effect: "read" } } as const satisfies Record<string, { connector: ConnectorId; effect: (typeof TOOL_EFFECTS)[number] }>;
+export type ToolFetch = keyof typeof TOOL_FETCHES;
+
+/**
  * `tools/<name>/tool.json`. The folder may hold any other files: more code, data tables,
  * dependencies. The entry is the runtime's entry file, and its default export is the tool.
  */
@@ -111,11 +119,13 @@ export interface ToolDescriptor {
 	cites?: string;
 	/** `read` looks something up outside. `write` changes something outside, so an inference ticket may not call it. Left out: `pure`, and `cases.json` is required. */
 	effect?: (typeof TOOL_EFFECTS)[number];
-	/** Names of secrets in the host's secrets file. The host sets each as an environment variable of the tool's process. */
+	/** Names of secrets in the module's own `.env`. The host sets each as an environment variable of the tool's process. */
 	secrets?: readonly string[];
 	runtime?: Runtime;
 	/** Requires the effect the port names. */
 	port?: ToolPort;
+	/** Requires the effect it names and a feed of this module on its connector. May go with `port`. */
+	fetch?: ToolFetch;
 }
 
 /** One entry of `cases.json`. `tolerance` is absolute, for numbers, default 1e-9. */

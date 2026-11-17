@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Host } from "../../src/host/host.ts";
+import { gmailAccount } from "../../src/modules/connectors/gmail.ts";
 import { createGateway } from "../../src/modules/gateway.ts";
 import { googlePort } from "../../src/modules/google-port.ts";
 import { instanceData } from "../../src/modules/instance-data.ts";
@@ -26,7 +27,7 @@ test("邮件开的推断任务：用触发上的编号和线程在 messages 里�
 	const pkg = join(root, "modules", "mail");
 	cpSync(join(import.meta.dirname, "../../docs/modules/examples/mail"), pkg, { recursive: true });
 	const feedJson = join(pkg, "feeds", "inbox", "feed.json");
-	writeFileSync(feedJson, JSON.stringify({ ...JSON.parse(readFileSync(feedJson, "utf8")), every: "1s", settings: { baseUrl: google.url, tokenUrl: `${google.url}/token` } }));
+	writeFileSync(feedJson, JSON.stringify({ ...JSON.parse(readFileSync(feedJson, "utf8")), every: "1s" }));
 	const scan = scanPackage(pkg, { runCases: false, folder: MAIL });
 	assert.ok(scan.ok);
 	const store = new ModuleStore(join(stateDir, "module-store"));
@@ -71,7 +72,7 @@ test("邮件开的推断任务：用触发上的编号和线程在 messages 里�
 		workerModels: defaultWorkerModels(),
 		domains: { book: () => modules.book, kitFor: (d) => (d === MAIL ? { skillsDir: undefined, prepare: undefined, crew: [], granted: [] } : undefined) },
 		gateway,
-		moduleFeeds: { feeds: () => modules.feeds(), fixtures: false, tickMs: 20, secret: (name) => secrets[name] },
+		moduleFeeds: { feeds: () => modules.feeds(), fixtures: false, tickMs: 20, mail: gmailAccount({ secret: (name) => secrets[name], oauthUrl: google.url }) },
 	});
 	spawner.request = (...args) => host.workers.handleRequest(...args);
 	t.after(async () => {

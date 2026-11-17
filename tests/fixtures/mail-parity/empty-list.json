@@ -1,0 +1,24 @@
+{
+  "given": {
+    "input": {
+      "settings": {
+        "baseUrl": "https://gmail.googleapis.com",
+        "tokenUrl": "https://oauth2.googleapis.com/token"
+      },
+      "cursor": null,
+      "rows": {
+        "senders": []
+      }
+    },
+    "responses": {}
+  },
+  "expected": {
+    "records": [],
+    "notices": [],
+    "problem": {
+      "id": "no-senders",
+      "text": "邮件名单是空的，什么都不收。在对话里说「把 a@example.com 加进邮件名单」"
+    },
+    "historyId": null
+  }
+}

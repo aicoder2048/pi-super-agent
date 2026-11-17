@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { cpSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -14,6 +14,7 @@ import type { ModuleState } from "../modules/lifecycle.ts";
 import { formatModelRef, PAY_PER_USE_PROVIDERS, parseModelRef, type ModelRef } from "../models.ts";
 import { examsOf, judge, verdictLine, type Attempt, type Exam } from "../modules/rehearse.ts";
 import { problemLine, scanPackage } from "../modules/validate.ts";
+import { moduleEnvFile } from "../secrets.ts";
 
 const REPO = resolve(import.meta.dirname, "../..");
 const ACTIVE_MS = 60_000;
@@ -99,6 +100,16 @@ function refuse(line: string): number {
 	return 1;
 }
 
+/** The rehearsal's tools reach the same services as the real ones, so they get the module's real keys (ADR-0031). */
+function copyEnv(realStateDir: string, stateDir: string, module: string): void {
+	const real = moduleEnvFile(realStateDir, module);
+	if (!existsSync(real)) return;
+	const temp = moduleEnvFile(stateDir, module);
+	mkdirSync(moduleDataDir(stateDir, module), { recursive: true });
+	copyFileSync(real, temp);
+	chmodSync(temp, 0o600);
+}
+
 function invalidWhy(state: ModuleState | undefined): string | undefined {
 	return state?.at === "staging" && state.stage.at === "invalid" ? state.stage.problems.map(problemLine).join("；") : undefined;
 }
@@ -115,6 +126,7 @@ async function rehearse(source: string, module: string, exams: readonly Exam[], 
 	try {
 		cpSync(source, join(stateDir, "modules", module), { recursive: true });
 		cloneFiles(moduleDataDir(realStateDir, module), moduleDataDir(stateDir, module));
+		copyEnv(realStateDir, stateDir, module);
 		writeFileSync(join(stateDir, "config.json"), JSON.stringify({ models, modulesDirs: [join(stateDir, "modules")], webPort: 0, feedFixtures: true, secretsFile }));
 		const store = openStore(join(stateDir, "state.db"));
 		setModuleSwitch(store, module, true);

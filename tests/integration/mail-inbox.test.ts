@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { Modules } from "../../src/modules.ts";
-import { runFeed, type FeedNotice, type FeedPorts, type FeedProblem } from "../../src/modules/feed-runner.ts";
+import { gmailAccount } from "../../src/modules/connectors/gmail.ts";
+import { MailConnector } from "../../src/modules/connectors/mail.ts";
+import type { FeedNotice, FeedPorts, FeedProblem } from "../../src/modules/feed-runner.ts";
 import { instanceData } from "../../src/modules/instance-data.ts";
 import { scanPackage } from "../../src/modules/validate.ts";
 import { startFakeGoogle } from "../helpers/fake-google.ts";
@@ -28,27 +30,27 @@ async function mailFeed(t: TestContext) {
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const pkg = join(root, "modules", "mail");
 	cpSync(PKG, pkg, { recursive: true });
-	const feedJson = join(pkg, "feeds", "inbox", "feed.json");
-	writeFileSync(feedJson, JSON.stringify({ ...JSON.parse(readFileSync(feedJson, "utf8")), settings: { baseUrl: google.url, tokenUrl: `${google.url}/token` } }));
 	const modules = servedAsHost(Modules.load([join(root, "modules")]));
 	const entry = modules.feeds().find((e) => e.source === SOURCE);
 	assert.ok(entry, "mail 有 inbox feed");
 	const data = instanceData(join(root, "state"));
 	const notices: FeedNotice[] = [];
 	const problems: (FeedProblem | undefined)[] = [];
+	const connectorProblems: (FeedProblem | undefined)[] = [];
 	const secrets: Record<string, string> = { GOOGLE_OAUTH_CLIENT_ID: google.client.id, GOOGLE_OAUTH_CLIENT_SECRET: google.client.secret, GMAIL_READ_REFRESH_TOKEN: REFRESH };
 	const clock = { offset: 0 };
-	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: () => {}, problem: (_, p) => void problems.push(p), secret: (name) => secrets[name], now: () => Date.now() + clock.offset };
+	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: () => true, badge: () => {}, problem: (_, p) => void problems.push(p), connectorProblem: (_, __, p) => void connectorProblems.push(p), secret: () => undefined, now: () => Date.now() + clock.offset };
+	const mail = new MailConnector({ account: gmailAccount({ secret: (name) => secrets[name], oauthUrl: google.url }), rejectedDir: () => join(root, "rejected"), rejected: () => {} });
 	const senders = (...addresses: string[]) => data.write("mail", entry.components, "senders", addresses.map((address) => ({ address })), "使用者口述", "test").rows;
 	const messages = () => data.query("mail", entry.components, "messages", {}, "test").rows;
-	const cursor = () => data.feedState("mail", SOURCE).cursor;
-	const setCursor = (value: object) => data.saveFeedState("mail", SOURCE, { cursor: JSON.stringify(value) });
+	const cursor = () => data.feedState("mail", SOURCE).connectorCursor;
+	const setCursor = (value: object) => data.saveFeedState("mail", SOURCE, { connectorCursor: JSON.stringify(value) });
 	const requests = () => google.log.filter((line) => !line.startsWith("POST /token"));
 	const beat = async () => {
 		google.log.length = 0;
-		return runFeed(entry, [], ports);
+		return mail.beat(entry, ports);
 	};
-	return { box, google, entry, data, notices, problems, secrets, clock, senders, messages, cursor, setCursor, requests, beat };
+	return { box, google, entry, data, notices, problems, connectorProblems, secrets, clock, senders, messages, cursor, setCursor, requests, beat };
 }
 
 test("第一次起步：取 profile 的 historyId 当起点，再补最近一天的收件箱", async (t) => {
@@ -162,11 +164,11 @@ test("断档 30 小时：补最近一天，报 gap，写出整小时数", async 
 	feed.box.deliver(ann("m-1", { at: Date.now() - 3 * HOUR }));
 	await feed.beat();
 	assert.deepEqual(feed.messages().map((r) => r.fields["gmailId"]), ["m-1"]);
-	assert.equal(feed.problems.at(-1)?.id, "gap");
-	assert.equal(feed.problems.at(-1)?.once, true, "断档是一次性的通知，不拉响警报");
-	assert.match(feed.problems.at(-1)!.text, /有 30 小时没查/);
+	assert.equal(feed.connectorProblems.at(-1)?.id, "gap");
+	assert.equal(feed.connectorProblems.at(-1)?.once, true, "断档是一次性的通知，不拉响警报");
+	assert.match(feed.connectorProblems.at(-1)!.text, /有 30 小时没查/);
 	await feed.beat();
-	assert.equal(feed.problems.at(-1), undefined, "下一拍不再是断档");
+	assert.equal(feed.connectorProblems.at(-1), undefined, "下一拍不再是断档");
 });
 
 test("时间取宿主时钟（input.now），不读自己的挂钟：断档按宿主时钟算，cursor 记的也是它", async (t) => {
@@ -177,7 +179,7 @@ test("时间取宿主时钟（input.now），不读自己的挂钟：断档按�
 	feed.setCursor({ historyId: feed.box.historyId, at: new Date(host - 2 * HOUR).toISOString() });
 	feed.box.deliver(ann("m-1"));
 	await feed.beat();
-	assert.equal(feed.problems.at(-1), undefined, "按宿主时钟只隔了 2 小时，不是断档");
+	assert.equal(feed.connectorProblems.at(-1), undefined, "按宿主时钟只隔了 2 小时，不是断档");
 	assert.ok(Math.abs(Date.parse(JSON.parse(feed.cursor()!).at) - host) < HOUR, "cursor 的 at 是宿主时钟");
 });
 
@@ -218,12 +220,6 @@ test("名单里只有通配符的行：报 wildcard，不报 no-senders，什么
 	assert.deepEqual(feed.requests(), []);
 });
 
-test("inbox 写死的 500 行和宿主的 READ_LIMIT 一致：改了一边要改另一边", () => {
-	const runner = readFileSync(join(import.meta.dirname, "../../src/modules/feed-runner.ts"), "utf8");
-	const inbox = readFileSync(join(PKG, "feeds/inbox/index.ts"), "utf8");
-	assert.equal(/const READ_LIMIT = (\d+);/.exec(runner)?.[1], /const READ_LIMIT = (\d+);/.exec(inbox)?.[1]);
-});
-
 test("划掉的行地址读不出来：报 removal-unreadable；文字里含发件人地址或域名的都不收，别的照常", async (t) => {
 	const removedAt = new Date(Date.now() - HOUR).toISOString();
 	const cases: [string, string, string, boolean][] = [
@@ -256,14 +252,15 @@ test("invalid_grant：这一拍不前进，cursor 不动，报 auth；恢复后�
 	for (const _ of [1, 2]) {
 		await feed.beat();
 		assert.equal(feed.cursor(), before);
-		assert.equal(feed.problems.at(-1)?.id, "auth");
-		assert.match(feed.problems.at(-1)!.text, /just google-auth read/);
+		assert.equal(feed.connectorProblems.at(-1)?.id, "auth", "授权失效是连接器的问题");
+		assert.match(feed.connectorProblems.at(-1)!.text, /just google-auth read/);
+		assert.equal(feed.problems.at(-1), undefined, "feed 自己没有问题");
 		assert.deepEqual(feed.requests(), [], "换不到 token 就不读邮件");
 	}
 	feed.secrets["GMAIL_READ_REFRESH_TOKEN"] = REFRESH;
 	await feed.beat();
 	assert.deepEqual(feed.messages().map((r) => r.fields["gmailId"]), ["m-1"]);
-	assert.equal(feed.problems.at(-1), undefined);
+	assert.equal(feed.connectorProblems.at(-1), undefined, "换到 token，连接器的问题清掉");
 });
 
 test("cursor 只在行存好后保存：取信失败的一拍什么都不存，下一拍从原处再来", async (t) => {
@@ -460,14 +457,7 @@ test("正文：HTML 转成纯文字，超过 64 KB 截断并标明；附件只�
 	assert.ok(!Number.isNaN(Date.parse(String(row("m-html")["date"]))));
 });
 
-test("包本身通过 just module check：样例都跑得通，feed.json 的网址改到别处也一样", (t) => {
+test("包本身通过 just module check：样例都跑得通", () => {
 	const scan = scanPackage(PKG, { runCases: true, folder: "mail" });
 	assert.ok(scan.ok, scan.ok ? "" : JSON.stringify(scan.problems));
-	const root = mkdtempSync(join(tmpdir(), "psa-mail-check-"));
-	t.after(() => rmSync(root, { recursive: true, force: true }));
-	cpSync(PKG, root, { recursive: true });
-	const feedJson = join(root, "feeds", "inbox", "feed.json");
-	writeFileSync(feedJson, JSON.stringify({ ...JSON.parse(readFileSync(feedJson, "utf8")), settings: { baseUrl: "http://127.0.0.1:9", tokenUrl: "http://127.0.0.1:9/token" } }));
-	const moved = scanPackage(root, { runCases: true, folder: "mail" });
-	assert.ok(moved.ok, moved.ok ? "" : JSON.stringify(moved.problems));
 });

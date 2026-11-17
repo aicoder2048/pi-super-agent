@@ -62,3 +62,11 @@ test("工具什么都不返回：结果是 null，不是 undefined", async (t) =
 	const dir = toolDir(t, `export default () => undefined;`);
 	assert.deepEqual(await run(dir), { ok: true, output: null });
 });
+
+test("输入里的多字节字恰好跨过管道的分块边界：模块代码收到的和交进去的一字不差", async (t) => {
+	const dir = toolDir(t, "export default (input) => input.text;");
+	const text = `a${"长".repeat(100_000)}`;
+	const reply = await runModuleCodeAsync(codeSite(dir), "index.ts", { text }, {}, { limitMs: TEST_LIMIT_MS * 5 });
+	assert.ok(reply.ok, JSON.stringify(reply).slice(0, 200));
+	assert.equal(reply.output, text);
+});
