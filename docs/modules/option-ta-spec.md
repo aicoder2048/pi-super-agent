@@ -58,7 +58,7 @@
 `full`：要算东西、存数据、有 feed。
 
 - feeds：
-  - `fills`：`"connector": "mail"`，`settings.senders` 写本模块的集合名 `"brokers"`。`brokers` 每行一个文字字段 `address`，写地址或 `@域名`，可选 `addedAt`、`removedAt`，写法同 `mail` 的邮件名单（ADR-0029）。名单写交易台的发信地址（信经重定向进来，发件人还是交易台，见「成交邮件（`fills`）」）。不在包里直接写地址列表：包会进公开仓库，地址看得出在哪家券商开户；地址只由领队写进私密集合 `brokers`。`reads` 带 `fills`。handler 把交易台的成交回信解析成成交行，写进私密集合 `fills`，不经过模型。
+  - `fills`：`"connector": "mail"`，`settings.senders` 写本模块的集合名 `"brokers"`。`brokers` 每行一个文字字段 `address`，写地址或 `@域名`，可选 `addedAt`、`removedAt`，写法同 `mail` 的邮件名单（ADR-0029）。名单写交易台的发信地址（回信直接发到 Gmail，发件人就是交易台，见「成交邮件（`fills`）」）。不在包里直接写地址列表：包会进公开仓库，地址看得出在哪家券商开户；地址只由领队写进私密集合 `brokers`。`reads` 带 `fills`。handler 把交易台的成交回信解析成成交行，写进私密集合 `fills`，不经过模型。
   - `iv`：收盘后给期权自选的每个标的存一行 IV 原始输入，用 option-ta `.env` 里的 Massive 密钥。标的刚加进期权自选时，先回填最近一年。存什么、怎么算见「IV 历史」。每个交易日只存一次：`every` 写短间隔，cursor 记已经存过的交易日，当天存过就直接回空，写法照 stock-ta 的 `feeds/scan/index.ts`（cursor 带 `date`，用 `lastSession` 按模块自己的日历算最近一个已收盘交易日，同一交易日不重扫）。
   - `watch`：交易时段按门槛检查记下的仓位，发提醒或开任务。现价、期权报价、除息用 Massive 密钥，财报日用 Finnhub 密钥，都自己取，因为 feed 调不了外部工具（设计稿规则 11）。
   - `watch` 的提醒带持仓细节，全文发到使用者自己的 Telegram（2026-11-17 使用者接受）。宿主只按 `into` 判 feed 私密不私密（`src/modules/manifest.ts` 的 `feedClass`）：`watch` 不写 `into`，算非私密，虽然它 `reads` 私密的 `fills`、`chains`，提醒原文（合约、张数、权利金进度）照样全文进 Telegram。
