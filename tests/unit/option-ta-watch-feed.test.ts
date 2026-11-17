@@ -160,3 +160,35 @@ test("同一仓位同一天最多响一次：前一天已经发过的提醒再�
 	const before = new Set(next.output.alerts.map((a: { id: string }) => a.id));
 	assert.ok(later.output.alerts.every((a: { id: string }) => before.has(a.id)), "同一天下一拍没有新的 id");
 });
+
+test("旧格式 cursor（没有 sent）那一拍只认识已发的 id，不占当天的响铃：新出现的穿价照样响", async () => {
+	const old = JSON.stringify({ date: "2026-11-18", decided: [], events: {}, failures: 0 });
+	const out = await laterBeat("ex-div-fires", { days: 0, spot: 700, cursor: old });
+	assert.deepEqual(crossed(out.output.alerts).map((a) => a.push), ["bell"]);
+	assert.equal(JSON.parse(out.output.cursor).baseline, undefined);
+});
+
+test("某一拍正股价缺了，不清掉在价内的记录：第二天还在价内不重复响", async () => {
+	const first = await laterBeat("strike-crossed-fires", { days: 0, spot: 99 });
+	const gap = await replay("watch", "strike-crossed-fires", { change: (input) => ((input.now = "2026-11-19T15:05:00.000Z"), (input.cursor = first.output.cursor)), respond: (r) => { for (const reply of Object.values(r)) if (reply?.results?.underlying_asset) reply.results.underlying_asset.last_updated = 1; } });
+	const next = await laterBeat("strike-crossed-fires", { days: 1, spot: 98, cursor: gap.output.cursor });
+	assert.deepEqual(crossed(next.output.alerts), []);
+});
+
+test("同一标的的两个仓位各自有当天那一次响铃", async () => {
+	const two = await replay("watch", "strike-crossed-fires", {
+		change: (input) => {
+			const second = structuredClone(input.rows.fills[0]);
+			second.id = "9";
+			for (const k of ["account_ref", "fill_id", "order_key"]) second.fields[k] = String(second.fields[k]).replace("acct-1", "acct-2");
+			input.rows.fills.push(second);
+		},
+	});
+	assert.deepEqual(crossed(two.output.alerts).map((a) => a.push), ["bell", "bell"]);
+});
+
+test("同一拍财报前 2 天和权利金八成都要响时，财报那条占响铃", async () => {
+	const out = await replay("watch", "earnings-soon-fires", { respond: (r) => { for (const reply of Object.values(r)) if (reply?.results?.last_quote) Object.assign(reply.results.last_quote, { bid: 0.05, ask: 0.1, midpoint: 0.075 }); } });
+	assert.deepEqual(seen(out.output.alerts).filter((a) => a.push === "bell").map((a) => a.rule), ["earnings-soon"]);
+	assert.ok(seen(out.output.alerts).some((a) => a.rule === "profit-80" && a.push === "silent"), JSON.stringify(out.output.alerts));
+});

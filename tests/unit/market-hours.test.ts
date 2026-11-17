@@ -18,7 +18,8 @@ test("stock-ta、option-ta 的 market-days.ts 和宿主的 session.ts 对每个�
 
 test("option-ta 的交易日和假日表与 stock-ta 的一致：每年补假日表时两处都要改", () => {
 	for (let date = "2025-01-01"; date <= optionTa.CALENDAR_THROUGH; date = optionTa.shiftDate(date, 1)) assert.equal(optionTa.isTradingDay(date), stockTa.isTradingDay(date), date);
-	assert.ok(optionTa.HOLIDAYS.has("2026-11-26") && optionTa.HOLIDAYS.has("2028-12-25"));
+	assert.ok(optionTa.HOLIDAYS.has("2026-11-26"));
+	assert.equal([...optionTa.HOLIDAYS].sort().at(-1)!.slice(0, 4), optionTa.CALENDAR_THROUGH.slice(0, 4), "CALENDAR_THROUGH 只能跟着假日表一起往后改");
 });
 
 test("假日和提前收盘日表到期前 90 天就让测试失败：补上下一年的 NYSE 日历", () => {

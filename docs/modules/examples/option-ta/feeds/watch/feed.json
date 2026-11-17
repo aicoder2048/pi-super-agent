@@ -11,5 +11,5 @@
     "baseUrl": "https://api.massive.com",
     "finnhubBaseUrl": "https://finnhub.io/api/v1"
   },
-  "notice": "期权仓位提醒交回了一行记录，可它只该直接发提醒、不交记录：这是 option-ta 包的毛病，请领队转告使用者"
+  "notice": "期权仓位提醒交回了一条通知，可它只该直接发提醒、不交通知：这是 option-ta 包的毛病，请领队转告使用者"
 }

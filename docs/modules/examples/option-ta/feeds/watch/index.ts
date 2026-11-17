@@ -40,7 +40,8 @@ type Events = { earnings?: string | null; dividend?: NextDividend };
  * with a failed request, and positions that rang today. Kept across days: short positions last seen in the money, and the
  * ids already handed to the host, which posts each id once, so a repeat of one never counts as today's ring.
  */
-type Cursor = { date: string; decided: string[]; events: Record<string, Events>; failures: number; rang: string[]; inTheMoney: string[]; sent: string[] };
+/** `baseline`: the saved cursor had no `sent` (older or unreadable), so this beat only learns which ids the host already has. */
+type Cursor = { date: string; decided: string[]; events: Record<string, Events>; failures: number; rang: string[]; inTheMoney: string[]; sent: string[]; baseline?: true };
 
 type Check = { position: Position; quote: Quote; events: Events; today: string; firstOpenCheck: boolean; wasInTheMoney: boolean };
 type Rule = (c: Check) => Omit<Alert, "at"> | undefined;
@@ -95,6 +96,13 @@ const RULES: Rule[] = [
 		if (distance >= NEAR_STRIKE) return undefined;
 		return { id: `strike-near:${p.key}:${today}`, text: `${label(p)}：正股 ${money(quote.spot)} 离行权价 ${pct(distance)}，不到 2%`, push: "silent" };
 	},
+	function earnings({ position: p, events, today }) {
+		const date = events.earnings;
+		if (typeof date !== "string" || date < today || date > p.expiry) return undefined;
+		const left = tradingDaysUntil(today, date);
+		if (left <= EARNINGS_LEAD_TRADING_DAYS) return { id: `earnings-soon:${p.key}:${date}`, text: `${label(p)}：${date} 发财报，在到期前，还有 ${left} 个交易日` };
+		return { id: `earnings:${p.key}:${date}`, text: `${label(p)}：到期前有财报（${date}）`, push: "silent" };
+	},
 	function profit({ position: p, quote }) {
 		if (p.side !== "short" || quote.mid === null || !(p.openPrice > 0)) return undefined;
 		const earned = (p.openPrice - quote.mid) / p.openPrice;
@@ -102,13 +110,6 @@ const RULES: Rule[] = [
 		if (earned >= PROFIT_BELL) return { id: `profit-80:${p.key}`, text };
 		if (earned >= PROFIT_SILENT) return { id: `profit-50:${p.key}`, text, push: "silent" };
 		return undefined;
-	},
-	function earnings({ position: p, events, today }) {
-		const date = events.earnings;
-		if (typeof date !== "string" || date < today || date > p.expiry) return undefined;
-		const left = tradingDaysUntil(today, date);
-		if (left <= EARNINGS_LEAD_TRADING_DAYS) return { id: `earnings-soon:${p.key}:${date}`, text: `${label(p)}：${date} 发财报，在到期前，还有 ${left} 个交易日` };
-		return { id: `earnings:${p.key}:${date}`, text: `${label(p)}：到期前有财报（${date}）`, push: "silent" };
 	},
 ];
 
@@ -152,6 +153,7 @@ function ringOnce(alerts: Omit<Alert, "at">[], p: Position, today: string, curso
 	return alerts.map((alert) => {
 		if (cursor.sent.includes(alert.id)) return alert;
 		cursor.sent.push(alert.id);
+		if (cursor.baseline) return alert;
 		if (alert.push === "silent") return alert;
 		const quiet = p.expiry === today ? !alert.id.startsWith("expiry-open:") : cursor.rang.includes(p.key);
 		if (quiet) return { ...alert, push: "silent" };
@@ -168,7 +170,7 @@ function readCursor(text: string | null, today: string): Cursor {
 		saved = undefined;
 	}
 	const failures = typeof saved?.failures === "number" ? saved.failures : 0;
-	const kept = { failures, inTheMoney: saved?.inTheMoney ?? [], sent: saved?.sent ?? [] };
+	const kept = { failures, inTheMoney: saved?.inTheMoney ?? [], sent: saved?.sent ?? [], ...(text !== null && !Array.isArray(saved?.sent) && { baseline: true as const }) };
 	if (saved?.date !== today) return { date: today, decided: [], events: {}, rang: [], ...kept };
 	return { date: today, decided: saved.decided ?? [], events: saved.events ?? {}, rang: saved.rang ?? [], ...kept };
 }
@@ -220,6 +222,7 @@ export default async function watch(input: Input) {
 	const held = new Set(live.map((p) => p.key));
 	cursor.inTheMoney = cursor.inTheMoney.filter((k) => held.has(k));
 	cursor.sent = cursor.sent.filter((id) => held.has(keyOf(id)));
+	delete cursor.baseline;
 
 	cursor.failures = errors.length > 0 ? cursor.failures + 1 : 0;
 	const problem = cursor.failures >= FAILURES_BEFORE_PROBLEM ? failing(errors[0]!) : finnhub === "" ? NO_FINNHUB : undefined;
