@@ -116,7 +116,7 @@ uses: knowledge, data/lab-results
 
 不管任务属于哪个模块，Worker 只多出四个工具：`domain_tool`、`knowledge`、`data`、`watch`。它们都走宿主里的同一个入口 `Gateway.call`。这个入口做四件事。
 
-1. 只在任务所属的模块、任务钉住的那个版本里找能力。别的模块的东西不在目录里，今天「拿到 `lookup` 就能查宿主上所有 feed」的缺口因此关上。唯一的例外是别的模块在 `exports` 里开放的只读工具：专家在 `uses` 里写全名（`stock-ta/tools/structure`）才调得到，推断任务也能调，在提供方当前服务的版本里运行（ADR-0030，`service-connector-design.md`，还没做）。
+1. 只在任务所属的模块、任务钉住的那个版本里找能力。别的模块的东西不在目录里，今天「拿到 `lookup` 就能查宿主上所有 feed」的缺口因此关上。唯一的例外是别的模块在 `exports` 里开放的只读工具：专家在 `uses` 里写全名（`stock-ta/tools/structure`）才调得到，领队取全队的并集，推断任务和模块 feed 开的任务也能调，在提供方当前服务的版本里运行（ADR-0030，`service-connector-design.md`，还没做）。
 2. 模块停用了就拒绝。
 3. 专家调用时，对照它的 `uses`。
 4. 对照下面这张表，然后交给宿主的默认实现（知识、数据、提醒条件）或模块的代码（工具），并在访问记录里记一笔。
