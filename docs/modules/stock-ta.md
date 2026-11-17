@@ -68,7 +68,7 @@ stock-ta 让 Pi Super Agent 回答美股的报价和技术面问题，例如「N
 
    环境装在 `modules-data/stock-ta/files/venv-<12 位>/`，不进包目录，大约 75 MB。重跑什么都不变。仓库里的例子换了钉的提交以后，复制新包再跑一次。只在这一步用 `uv`，工具和 `scan` 运行时直接调环境里的 `ta`。
 
-3. 密钥。`scan` 用 Massive（原来的 Polygon）的 REST 密钥，名字是 `POLYGON_API_KEY`，报价也用它。密钥放在模块自己的 `.env` 里：状态目录下的 `modules-data/stock-ta/.env`（ADR-0031）。宿主的 `secretsFile` 里的不算，模块代码读不到它。用下面两条命令写，输入不显示，文件不存在会新建，权限 600：
+3. 密钥。`scan` 用 Massive（原来的 Polygon）的 REST 密钥，名字是 `POLYGON_API_KEY`，报价也用它。密钥放在模块自己的 `.env` 里：状态目录下的 `modules-data/stock-ta/.env`（ADR-0031）。宿主的 `secretsFile` 里的不算，宿主不会把它交给模块代码。用下面两条命令写，输入不显示，文件不存在会新建，权限 600：
 
    ```bash
    just module secret stock-ta POLYGON_API_KEY

@@ -1,6 +1,6 @@
 # 让白宫读你的 Gmail
 
-授权在你自己的 Google Cloud 项目里做，一次一个 scope，refresh token 只放在宿主的 `secretsFile` 里。读邮件的 token（`gmail.readonly`）由宿主的 `mail` 连接器用，`mail` 模块经连接器收信、读附件（ADR-0029）。写草稿的 token（`gmail.compose`）也只在宿主手里（ADR-0022）。两个 token 模块代码都拿不到，规则见 ADR-0019。
+授权在你自己的 Google Cloud 项目里做，一次一个 scope，refresh token 只放在宿主的 `secretsFile` 里。读邮件的 token（`gmail.readonly`）由宿主的 `mail` 连接器用，`mail` 模块经连接器收信、读附件（ADR-0029）。写草稿的 token（`gmail.compose`）也只在宿主手里（ADR-0022）。宿主不会把这两个 token 交给模块代码，规则见 ADR-0031。
 
 下面的命令都在仓库目录里运行。状态目录默认是 `~/.pi-super-agent`，设了 `PSA_STATE_DIR` 就是那个目录。
 

@@ -16,7 +16,7 @@ ADR-0019 让模块代码和宿主共用一个 `secretsFile`，靠一张表管每
 
 **取值的口子带模块名。** 网关和 feed 调度器的 `secret` 是 `(module, name)`。网关传的是被运行的那份副本的模块（`copy.module`），不是调用方。C4 让一个模块调另一个模块开放的工具时，被运行的是提供方的副本，所以取的自然是提供方 `.env` 里的 key，使用方的 `.env` 里不必有。
 
-**宿主自己的密钥照旧读全局 `secretsFile`。** 写草稿的 `googlePort`、`mail` 连接器的读授权、`just google-auth`、Telegram、`just market-smoke` 都照旧，经 `secretLookup`。这一路模块代码碰不到。
+**宿主自己的密钥照旧读全局 `secretsFile`。** 写草稿的 `googlePort`、`mail` 连接器的读授权、`just google-auth`、Telegram、`just market-smoke` 都照旧，经 `secretLookup`。宿主不会把这一路的值交给模块代码。
 
 **模块代码不再读全局 `secretsFile`。** 归属表 `src/modules/secret-owners.ts` 和前缀规则删掉。包里点名什么名字都能过检查，因为它只能从自己的 `.env` 里读到值。
 
@@ -37,4 +37,5 @@ ADR-0019 让模块代码和宿主共用一个 `secretsFile`，靠一张表管每
 
 - 业务类密钥两个模块都要用时要各存一份。值变了要改两处。
 - 上线时 stock-ta 的 `POLYGON_API_KEY`、`FINNHUB_API_KEY` 要先复制进 `modules-data/stock-ta/.env`，全局里的留着（`just market-smoke` 还读全局）。`just redeploy` 不复制 key，步骤见 `docs/deploy/home-mac.md` 的「模块自己的密钥」。
+- 这条规则管的是宿主把哪些值交给模块代码，不是沙箱。模块代码是普通进程，有 `HOME`，照样能直接读状态目录里的 `secretsFile` 和别的模块的 `.env`，C2 以前也一样。单人 MVP 不防恶意模块（`design.md` 第 9 节）。
 - 没有限制谁能写 `.env`：使用者开的任务的 `bash` 读写得到状态目录（ADR-0021 记过），和 `secretsFile` 一样。

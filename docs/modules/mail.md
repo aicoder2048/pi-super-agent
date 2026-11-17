@@ -21,7 +21,7 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 
 下面的命令在本仓库根目录运行。状态目录默认是 `~/.pi-super-agent`，设了 `PSA_STATE_DIR` 就是它。装到旧 Mac 时照 `docs/deploy/gmail.md` 第 3 节从头做，它包含下面三步。
 
-1. 先按 `docs/deploy/gmail.md` 做完授权。密钥文件里要有 `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` 三行。这三个密钥属于宿主，由 `mail` 连接器读，任何模块都点不了，`mail` 包里也不写它们（ADR-0029）。要写回信草稿，再跑 `just google-auth draft`，多一行 `GMAIL_DRAFT_REFRESH_TOKEN`。这一行属于宿主，模块代码拿不到，见下面「写回信草稿」。
+1. 先按 `docs/deploy/gmail.md` 做完授权。密钥文件里要有 `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` 三行。这三个密钥属于宿主，由 `mail` 连接器读，宿主不会把它们交给任何模块的代码，`mail` 包里也不写它们（ADR-0029、ADR-0031）。要写回信草稿，再跑 `just google-auth draft`，多一行 `GMAIL_DRAFT_REFRESH_TOKEN`。这一行属于宿主，模块代码拿不到，见下面「写回信草稿」。
 2. 把包复制进状态目录，再打开。
 
    ```bash

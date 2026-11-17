@@ -482,7 +482,7 @@ flowchart TB
 - 数据源的密钥只经宿主读取：环境变量，或 `config.json` 里 `secretsFile` 指向的 `.env` 文件。
 - **不要把密钥写进模块的任何文件。** 技能、规则和成员提示词都会进模型的上下文；仓库里的模块还会进版本库。
 - `prepare` 里也不要放密钥，它是一条明文的 shell 命令。
-- **模块只从自己的 `.env` 拿密钥。** 新布局包的 feed 和工具在 `secrets` 里点名密钥，宿主只从这个模块自己的 `modules-data/<模块>/.env` 取值（ADR-0031），全局的 `secretsFile` 模块代码读不到。文件不存在时点名的变量是空的，模块自己报缺密钥。用 `just module secret <模块> <名字>` 写，输入不显示，权限 600；也可以手动编辑。点名身份类密钥（Gmail 授权、Telegram 的 token、模型 key、GitHub token）时，`just module check` 打印一行提醒：这类密钥代表你本人，应该走宿主的连接器。`just module try` 把真实的 `.env` 复制进临时状态目录；工具的 `cases.json` 拿到的是假密钥。
+- **模块只从自己的 `.env` 拿密钥。** 新布局包的 feed 和工具在 `secrets` 里点名密钥，宿主只从这个模块自己的 `modules-data/<模块>/.env` 取值（ADR-0031），宿主不会把全局 `secretsFile` 的值交给模块代码。文件不存在时点名的变量是空的，模块自己报缺密钥。用 `just module secret <模块> <名字>` 写，输入不显示，权限 600；也可以手动编辑。点名身份类密钥（Gmail 授权、Telegram 的 token、模型 key、GitHub token）时，`just module check` 打印一行提醒：这类密钥代表你本人，应该走宿主的连接器。`just module try` 把真实的 `.env` 复制进临时状态目录；工具的 `cases.json` 拿到的是假密钥。
 - **代表你本人的授权归宿主，经连接器用。** 读 Gmail 的授权能读你整个邮箱，所以它只在宿主手里，模块经宿主的 `mail` 连接器收信、经 `fetch` 读附件（ADR-0029）。几个模块都要读邮件时共用这一份授权，各收各名单上的信。
 - **能做坏事的 token 留在宿主。** 写草稿的 Gmail token 也能发信，所以它只在宿主手里，模块经宿主的 `gmail.createDraft` 口子建草稿（ADR-0022）。例子是 `docs/modules/mail.md`，上线步骤在 `docs/deploy/gmail.md`。
 

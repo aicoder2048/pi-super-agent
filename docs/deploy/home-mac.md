@@ -110,7 +110,7 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/integratio
 
 ## 配置
 
-宿主自己的密钥（Telegram、Gmail 授权、`just market-smoke` 的行情密钥）只从两处读：进程的环境变量，或者 `config.json` 里 `secretsFile` 指向的文件。它不会自己去读仓库里的 `.env`。开机自动启动时，宿主由 launchd 拉起，`~/.zshrc` 里 `export` 的变量不存在，所以密钥必须写进 `secretsFile`。模块代码用的密钥不在这里，放在每个模块自己的 `.env` 里，见下文「模块自己的密钥」。
+宿主自己的密钥（Telegram、Gmail 授权、`just market-smoke` 的行情密钥）只从两处读：进程的环境变量，或者 `config.json` 里 `secretsFile` 指向的文件。它不会自己去读仓库里的 `.env`。开机自动启动时，宿主由 launchd 拉起，`~/.zshrc` 里 `export` 的变量不存在，所以密钥必须写进 `secretsFile`。宿主交给模块代码的密钥不从这里取，放在每个模块自己的 `.env` 里，见下文「模块自己的密钥」。
 
 1. 建状态目录和密钥文件：
 
@@ -339,7 +339,7 @@ just redeploy
 
 ## 模块自己的密钥
 
-模块的 feed 和工具只从模块自己的 `.env` 拿密钥：状态目录下的 `modules-data/<模块>/.env`（ADR-0031）。全局的 `secretsFile` 模块代码读不到。文件不存在时，模块照旧报「缺密钥」，宿主不出错。改了 `.env` 不用重启宿主，下一次调用就读新值。
+模块的 feed 和工具只从模块自己的 `.env` 拿密钥：状态目录下的 `modules-data/<模块>/.env`（ADR-0031）。宿主不会把全局 `secretsFile` 的值交给模块代码。文件不存在时，模块照旧报「缺密钥」，宿主不出错。改了 `.env` 不用重启宿主，下一次调用就读新值。
 
 写一个密钥，输入不显示，同名的行替换，文件不存在会新建，权限 600：
 
