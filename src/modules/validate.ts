@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, resolve, sep } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { EVERY, everyMs } from "./connectors/timer.ts";
 import { mailFeedProblems } from "./connectors/mail.ts";
 import { feedInput, intoOf, nothingHeld, parseCollected } from "./feed-runner.ts";
@@ -333,7 +333,7 @@ function readTool(report: Report, root: string, name: string): Component | undef
 
 function isPackageFolder(root: string, path: string): boolean {
 	const full = resolve(root, path);
-	return full.startsWith(`${root}${sep}`) && statSync(full, { throwIfNoEntry: false })?.isDirectory() === true;
+	return full.startsWith(`${root}/`) && existsSync(full) && statSync(full).isDirectory();
 }
 
 function readSkill(report: Report, root: string, name: string): Component | undefined {
