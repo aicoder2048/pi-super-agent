@@ -4,17 +4,19 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { decodeText, htmlToText, partsOf, type Attachment, type Part } from "../../feeds/inbox/message.ts";
-import { accessToken, AUTH_TEXT, gmailClient, type Gmail, type Settings } from "../../google.ts";
+import { decodeText, htmlToText, type Attachment, type Part } from "../../feeds/inbox/message.ts";
 
 type Input = { messageId: string; partId: string };
+
+/** What the host downloaded before this call (`fetch: mail.attachment` in tool.json); the file goes when the call ends. */
+type Fetched = { file: string; filename: string; mimeType: string; contentType: string; size: number };
 
 type Extracted = { text: string; pages: number | null; truncated: boolean; ocr?: { file: string } };
 
 export type Result = { name: string; type: string; pages: number | null; text: string; truncated: boolean; ocr?: { file: string } };
 
-/** The gateway gives a call 20 s: about 2 s for the token and messages.get, 10 s to download, 6 s for the PDF, 1.5 s to guess whether it is a scan, 0.5 s spare. */
-export const LIMITS = { maxBytes: 10 * 1024 * 1024, downloadMs: 10_000, pdfMs: 6_000, scanMs: 1_500, rssBytes: 512 * 1024 * 1024, pollMs: 250, maxChars: 100_000 };
+/** The host has downloaded the attachment (at most 10 MB) before the call; of the call's 20 s, 6 s go to the PDF and 1.5 s to guessing whether it is a scan. */
+export const LIMITS = { pdfMs: 6_000, scanMs: 1_500, rssBytes: 512 * 1024 * 1024, pollMs: 250, maxChars: 100_000 };
 
 export type Limits = typeof LIMITS;
 
@@ -42,7 +44,6 @@ const READERS: Readonly<Record<string, Reader>> = {
 
 const PDF_SCRIPT = fileURLToPath(new URL("../../py/pdf_text.py", import.meta.url));
 const SCAN_SCRIPT = fileURLToPath(new URL("../../py/pdf_scan.py", import.meta.url));
-const FEED_JSON = fileURLToPath(new URL("../../feeds/inbox/feed.json", import.meta.url));
 const TOO_BIG = "PDF 太大，读不了";
 const SETUP = "mail 的 Python 环境还没装：在跑宿主的机器上跑 just module setup mail，见 docs/modules/mail.md";
 
@@ -60,13 +61,14 @@ function forOcr(bytes: Buffer, extension: string, pages: number | null, text = "
 	return { text, pages, truncated: false, ocr: { file: `files/${name}` } };
 }
 
-function parseInput(input: unknown): Input {
-	const { messageId, partId } = (input ?? {}) as Record<string, unknown>;
+function parseInput(input: unknown): Input & { fetched: Fetched } {
+	const { messageId, partId, fetched } = (input ?? {}) as Record<string, unknown>;
 	if (typeof messageId !== "string" || messageId === "" || typeof partId !== "string" || partId === "") throw new Error("要给 messageId 和 partId 两个文字：messages 里那一行的 gmailId 和它 attachments 里一项的 partId");
-	return { messageId, partId };
+	if (typeof (fetched as Fetched | undefined)?.file !== "string") throw new Error("宿主没有先取来附件：tool.json 要写 \"fetch\": \"mail.attachment\"");
+	return { messageId, partId, fetched: fetched as Fetched };
 }
 
-/** Only letters the inbox feed stored (listed senders) can be read, and that is checked before any Gmail request. */
+/** Only letters the inbox feed stored can be read; the host already refused a sender the feed does not receive. */
 function stored({ messageId, partId }: Input): Attachment {
 	const db = join(process.env["PSA_MODULE_DATA"] ?? "", "data.db");
 	const notFound = new Error(`messages 里没有 gmailId 为 ${messageId} 的信`);
@@ -102,27 +104,6 @@ function readerFor(part: Part): Reader {
 			return reader.read(bytes, part, limits);
 		},
 	};
-}
-
-/** Gmail's attachmentId may change between two messages.get calls, so the part is looked up afresh each time. */
-async function download(gmail: Gmail, { messageId, partId }: Input, limits: Limits): Promise<{ part: Part; bytes: Buffer; reader: Reader }> {
-	const path = `/messages/${encodeURIComponent(messageId)}`;
-	const message = await gmail(path, { format: "full" });
-	if (message.status === 404) throw new Error("这封信在 Gmail 里已经删了");
-	if (message.status !== 200) throw new Error(`Gmail ${path} 返回 HTTP ${message.status}`);
-	const part = partsOf(message.body?.payload).find((p) => p.partId === partId && p.body?.attachmentId);
-	if (part === undefined) throw new Error(`Gmail 里这封信已经没有 partId 为 ${partId} 的附件`);
-	const reader = readerFor(part);
-	const size = part.body?.size ?? 0;
-	if (size > limits.maxBytes) throw new Error(`附件有 ${(size / 1024 / 1024).toFixed(1)} MB，超过 ${limits.maxBytes / 1024 / 1024} MB，不下载`);
-	try {
-		const got = await gmail(`${path}/attachments/${encodeURIComponent(part.body!.attachmentId!)}`, {}, AbortSignal.timeout(limits.downloadMs));
-		if (got.status !== 200 || typeof got.body?.data !== "string") throw new Error(`Gmail 的附件接口返回 HTTP ${got.status}`);
-		return { part, bytes: Buffer.from(got.body.data, "base64url"), reader };
-	} catch (error) {
-		if ((error as Error).name === "TimeoutError") throw new Error("附件下载超时");
-		throw error;
-	}
 }
 
 const rssBytes = (pid: number) => new Promise<number>((done) => execFile("ps", ["-o", "rss=", "-p", String(pid)], (error, out) => done(error ? 0 : Number(out.trim()) * 1024)));
@@ -204,13 +185,11 @@ function clip(text: string, maxChars: number): { text: string; clipped: boolean 
 }
 
 export async function readAttachment(input: unknown, limits: Limits = LIMITS): Promise<Result> {
-	const ids = parseInput(input);
+	const { fetched, ...ids } = parseInput(input);
 	const entry = stored(ids);
-	const settings: Settings = JSON.parse(readFileSync(FEED_JSON, "utf8")).settings;
-	const token = await accessToken(settings);
-	if (token === undefined) throw new Error(AUTH_TEXT);
-	const { part, bytes, reader } = await download(gmailClient(settings.baseUrl, token), ids, limits);
-	const extracted = await reader.read(bytes, part, limits);
+	const part: Part = { partId: ids.partId, filename: fetched.filename, mimeType: fetched.mimeType, headers: [{ name: "Content-Type", value: fetched.contentType }] };
+	const reader = readerFor(part);
+	const extracted = await reader.read(readFileSync(fetched.file), part, limits);
 	const { text, clipped } = clip(extracted.text, limits.maxChars);
 	return { name: part.filename ?? entry.filename, type: part.mimeType ?? entry.mimeType, pages: extracted.pages, text, truncated: extracted.truncated || clipped, ...(extracted.ocr && { ocr: extracted.ocr }) };
 }

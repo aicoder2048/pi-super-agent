@@ -80,8 +80,9 @@ test("a module name with a doubled or trailing hyphen is refused, so no two modu
 	for (const name of ["mail--x", "mail-"]) assert.match(problems(keyed(t, name, []))[0] ?? "", /is not a usable module name/, name);
 });
 
-test("the owner of a secret may name it", (t) => {
-	assert.deepEqual(problems(keyed(t, "mail", ["GMAIL_READ_REFRESH_TOKEN", "GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"])), []);
+test("the owner of a secret may name it; the Gmail read authorization belongs to the host's mail connector, so not even mail may", (t) => {
+	assert.deepEqual(problems(keyed(t, "mail", ["GMAIL_READ_REFRESH_TOKEN"])), ["feeds/inbox/feed.json: GMAIL_READ_REFRESH_TOKEN 属于宿主，模块不能用"]);
+	assert.deepEqual(problems(join(REPO, "docs/modules/examples/mail")), []);
 	assert.deepEqual(problems(join(REPO, "docs/modules/examples/stock-ta")), []);
 });
 

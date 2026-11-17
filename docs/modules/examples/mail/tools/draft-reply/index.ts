@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { listed, senderList, type SenderRow } from "../../feeds/inbox/index.ts";
+import { listed, senderList, type SenderRow } from "../../senders.ts";
 import { clean, parseFrom } from "../../feeds/inbox/message.ts";
 
 type Original = { threadId: string; messageIdHeader: string; fromAddress: string; replyTo: string; subject: string };

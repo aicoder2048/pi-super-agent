@@ -1,6 +1,6 @@
 # 让白宫读你的 Gmail
 
-授权在你自己的 Google Cloud 项目里做，一次一个 scope，refresh token 只放在宿主的 `secretsFile` 里。读邮件的 token（`gmail.readonly`）给 `mail` 模块，写草稿的 token（`gmail.compose`）只在宿主手里，模块代码拿不到。规则见 ADR-0019。
+授权在你自己的 Google Cloud 项目里做，一次一个 scope，refresh token 只放在宿主的 `secretsFile` 里。读邮件的 token（`gmail.readonly`）由宿主的 `mail` 连接器用，`mail` 模块经连接器收信、读附件（ADR-0029）。写草稿的 token（`gmail.compose`）也只在宿主手里（ADR-0022）。两个 token 模块代码都拿不到，规则见 ADR-0019。
 
 下面的命令都在仓库目录里运行。状态目录默认是 `~/.pi-super-agent`，设了 `PSA_STATE_DIR` 就是那个目录。
 
@@ -272,7 +272,7 @@ rm /tmp/senders-old-mac.txt
 默认不做。时段 2 已经在笔记本上证明撤销任何一个都会两个一起失效，网页和 Telegram 上的授权失效通知由 fixtures 测过。想在旧 Mac 上亲眼看一次，就做这一步（计划 Appendix E 第 14 条）：
 
 1. 到 `https://myaccount.google.com/connections` 删掉 `PSA mail` 的访问权限。
-2. 5 分钟以内，网页和 Telegram 上各出一条「邮件：Gmail 授权失效了……」。在网页上让任务回一封已存的信，回复写「写草稿的授权失效了」。
+2. 5 分钟以内，网页和 Telegram 上各出一条「mail 连接器出问题了……Gmail 授权失效了……（影响：邮件 收件箱）」。在网页上让任务回一封已存的信，回复写「写草稿的授权失效了」。
 3. 在笔记本上重跑 `just google-auth read` 和 `just google-auth draft`，再跑第 4 步的复制命令和第 5 步的检查。下一拍恢复收信，中间的信不丢（不超过一天）。
 
 ### 10. 回退（旧 Mac）
@@ -292,11 +292,13 @@ just modules
 
 旧代码不认 `mail` 包里的新字段，所以先关掉、挪出模块目录。stock-ta 包先删再从旧 SHA 复制，免得 R2b、R3 的文件留在旧包里；它的数据在 `modules-data/stock-ta/`，删包不删数据。`state.db` 和 stock-ta 的 `data.db` 这一次只多了一张表，不用恢复；它们坏了时才从第 1 步的备份恢复（先 `just service-uninstall`，`cp` 回去，再 `just service-install`）。密钥文件里新加的四行旧代码用不到，留着无害。修好以后回到 `main`：`git checkout main && just redeploy`，再从第 6 步做起。
 
+**从 mail 连接器（ADR-0029）退回去时，同样不用恢复数据库。** 连接器版本在每个模块的 `data.db` 里新建一张 `_feed_connectors`，记连接器在 Gmail 里的进度，`_feeds` 一列不加。旧代码不认识这张表，也不读它，照旧按三个值写 `_feeds`，所以所有模块的 feed 照常跑。连接器版本的 `mail/inbox` handler 不写自己的 `cursor`，`_feeds` 里留着的是上线前旧 handler 写的那格。退回去以后旧 handler 从那里接着读，隔了一天以上就补最近一天的信，行按 `id` 去重，不会多发通知。
+
 ## 4. 出问题怎么办
 
 | 看到的 | 原因 | 怎么办 |
 |---|---|---|
-| 邮件：Gmail 授权失效了…… | 撤销过授权、改过 Google 密码，或半年没用 | 笔记本上重跑 `just google-auth read` 和 `just google-auth draft`，再跑第 3 节第 4、5 步。两个 token 撤一个就两个都失效，所以两个都换 |
+| mail 连接器出问题了……Gmail 授权失效了……（影响：邮件 收件箱） | 撤销过授权、改过 Google 密码，或半年没用 | 笔记本上重跑 `just google-auth read` 和 `just google-auth draft`，再跑第 3 节第 4、5 步。两个 token 撤一个就两个都失效，所以两个都换 |
 | 邮件：邮件名单是空的…… | 名单上没有有效的地址 | 在对话里加发件人，见第 3 节第 7 步 |
 | 邮件：有 N 小时没查…… | 宿主停过一天以上 | 模块已补最近一天的信，更早的去 Gmail 里看 |
 | 「PDF 有密码，读不了」 | 附件 PDF 加了密码（银行对账单常见） | 这一版不读，在 Gmail 里打开看（计划 Appendix E 第 6 条） |

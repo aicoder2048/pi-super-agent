@@ -3,16 +3,17 @@ import { processInbox, rejectInbox, takeInbox } from "./connectors/inbox.ts";
 import { timerDue, timerItem } from "./connectors/timer.ts";
 import type { FeedEntry, FeedRun } from "./feed-runner.ts";
 import type { FeedStates } from "./instance-data.ts";
-import type { FeedFixture, FeedWhen } from "./manifest.ts";
+import type { ConnectorId, FeedFixture, FeedWhen } from "./manifest.ts";
 import type { Json } from "./protocol.ts";
 
-const RUNNING = ["timer", "inbox"];
 const INBOX_TRIES = 3;
 
 export interface SchedulerOptions {
 	feeds(): readonly FeedEntry[];
 	run(entry: FeedEntry, items: readonly Json[], fixture: FeedFixture | undefined, signal: AbortSignal): Promise<FeedRun>;
 	state: FeedStates;
+	/** The connectors this host has; a feed on another one waits. */
+	running?: readonly ConnectorId[];
 	inboxDir: string;
 	now(): number;
 	when: Readonly<Record<FeedWhen, (now: number) => boolean>>;
@@ -57,7 +58,7 @@ export function createScheduler(o: SchedulerOptions): Scheduler {
 				for (const fixture of entry.fixtures) if (!signal.aborted) await call(entry, [], signal, fixture);
 			})();
 		}
-		if (feed.connector !== undefined && !RUNNING.includes(feed.connector)) {
+		if (feed.connector !== undefined && !(o.running ?? ["timer", "inbox"]).includes(feed.connector)) {
 			if (!waiting.has(source)) o.log(`[feeds] ${source} 用的连接器 ${feed.connector} 宿主还没有，先不运行`);
 			waiting.add(source);
 			return undefined;

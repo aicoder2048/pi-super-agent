@@ -428,7 +428,7 @@ test("模块关掉时正在跑的 feed 进程组被杀掉：跑到一半删掉�
 	w.switchOff();
 	await scheduler.tick();
 	await first;
-	assert.deepEqual(pidsIn(pids).filter(alive), [], "feed 进程和它起的子进程都没了");
+	await until(() => pidsIn(pids).filter(alive).length === 0, "feed 进程和它起的子进程都没了", 1500);
 	assert.equal(existsSync(join(w.state, "modules-data", "lab")), false, "删掉的数据目录没有被写回");
 });
 

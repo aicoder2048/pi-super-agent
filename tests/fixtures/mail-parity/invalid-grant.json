@@ -1,0 +1,38 @@
+{
+  "given": {
+    "input": {
+      "settings": {
+        "baseUrl": "https://gmail.googleapis.com",
+        "tokenUrl": "https://oauth2.googleapis.com/token"
+      },
+      "cursor": "{\"historyId\":\"1000\",\"at\":\"2099-01-01T00:00:00.000Z\"}",
+      "rows": {
+        "senders": [
+          {
+            "id": "1",
+            "fields": {
+              "address": "ann@example.com",
+              "note": null,
+              "removedAt": null
+            }
+          }
+        ]
+      }
+    },
+    "responses": {
+      "https://oauth2.googleapis.com/token": {
+        "error": "invalid_grant",
+        "error_description": "Token has been expired or revoked."
+      }
+    }
+  },
+  "expected": {
+    "records": [],
+    "notices": [],
+    "problem": {
+      "id": "auth",
+      "text": "Gmail 授权失效了，在笔记本上重跑 just google-auth read，再把那一行复制到这台机器"
+    },
+    "historyId": null
+  }
+}

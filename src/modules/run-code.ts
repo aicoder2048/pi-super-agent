@@ -13,8 +13,10 @@ import { filesDir, lockOf, venvDir } from "./files.ts";
 import type { FeedFixture } from "./manifest.ts";
 import type { Json } from "./protocol.ts";
 
+// The encoding keeps a character split across two pipe chunks whole.
 const NODE_RUNNER = `
 let text = "";
+process.stdin.setEncoding("utf8");
 for await (const chunk of process.stdin) text += chunk;
 const call = JSON.parse(text);
 if (call.responses) {
