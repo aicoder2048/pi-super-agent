@@ -12,6 +12,8 @@ import { createScheduler } from "../../src/modules/scheduler.ts";
 import { problemLine, scanPackage } from "../../src/modules/validate.ts";
 import { inPollWindow } from "../../src/sources/market/session.ts";
 import { ids, servedAsHost, startHost, until } from "../helpers/fakes.ts";
+import type { Host } from "../../src/host/host.ts";
+import type { FeedFixtures } from "../../src/host/config.ts";
 
 type Feed = { json: Record<string, unknown>; handler?: string };
 
@@ -211,15 +213,18 @@ test("预演：连接器换成 fixtures，每个样例跑一次，网络请求�
 	assert.equal(data.query(entries[0]!.module, entries[0]!.components, "readings", {}, "test").rows.length, 1, w.logged.join("\n"));
 });
 
-const hostFeeds = (t: TestContext, feeds: Record<string, Feed>) => {
+const hostFeeds = (t: TestContext, feeds: Record<string, Feed>, fixtures: Record<string, object> = {}) => {
 	const root = mkdtempSync(join(tmpdir(), "psa-scheduler-host-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	writePackage(join(root, "modules"), "lab", feeds);
+	for (const [name, body] of Object.entries(fixtures)) writeFixture(root, "lab", Object.keys(feeds)[0]!, name, body);
 	return servedAsHost(Modules.load([join(root, "modules")]));
 };
 
-async function hostWith(t: TestContext, modules: Modules) {
+async function hostWith(t: TestContext, modules: Modules, fixtures: FeedFixtures = false, log: (line: string) => void = () => {}) {
 	let now = TUESDAY_10AM_NY;
+	const stateDir = mkdtempSync(join(tmpdir(), "psa-scheduler-state-"));
+	t.after(() => rmSync(stateDir, { recursive: true, force: true }));
 	const { host } = await startHost(
 		(cards) => cards.flatMap((card) => {
 			if (!card.startsWith("[候选触发]")) return [];
@@ -233,13 +238,43 @@ async function hostWith(t: TestContext, modules: Modules) {
 		{
 			sourcePolicy: (trigger) => modules.sourcePolicy(trigger),
 			domains: { book: () => modules.book, kitFor: modules.kitFor },
+			stateDir,
 			clock: { now: () => now },
-			moduleFeeds: { feeds: () => modules.feeds(), fixtures: false, tickMs: 3_600_000 },
+			log,
+			moduleFeeds: { feeds: () => modules.feeds(), fixtures, tickMs: 3_600_000 },
 		},
 	);
 	t.after(() => host.stop());
-	return { host, advance: (ms: number) => (now += ms) };
+	return { host, stateDir, advance: (ms: number) => (now += ms) };
 }
+
+const loudFeed = { ...handlerFeed, handler: counting(`\treturn { records: [{ id: "a", item: "CEA", value: 4, at: "2026-11-01" }, { id: "b", item: "CEA", value: 6, at: "2026-11-02" }], notices: [{ id: "batch-1", fields: { n: "2" } }], alerts: [{ id: "jump", text: "CEA 跳到 6", at: "2026-11-02T00:00:00Z" }] };`) };
+const saidAlert = (host: Host) => host.kernel.conversation(500).some((line) => line.text.includes("CEA 跳到 6"));
+
+test("预演宿主（feedFixtures 为 rows-only）：样例的行照写，触发不交给幕僚长、提醒不发，日志按 feed 记一行条数", async (t) => {
+	const modules = hostFeeds(t, { pull: loudFeed }, { one: {} });
+	const logged: string[] = [];
+	const { host, stateDir } = await hostWith(t, modules, "rows-only", (line) => void logged.push(line));
+	await host.feedScheduler.tick();
+	await host.settled();
+	const entry = modules.feeds()[0]!;
+	assert.equal(instanceData(stateDir).query(entry.module, entry.components, "readings", {}, "test").rows.length, 2);
+	assert.deepEqual(host.kernel.triggerLog().filter((r) => r.source === "lab/pull"), []);
+	assert.equal(host.kernel.listTickets().length, 0);
+	assert.equal(saidAlert(host), false);
+	assert.deepEqual(logged.filter((line) => line.startsWith("[预演]")), ["[预演] lab/pull 样例 one：丢掉 1 条触发、1 条提醒，没交出去"]);
+});
+
+test("feedFixtures 为 true 的宿主：样例交回的触发照旧交给幕僚长开任务，提醒照发", async (t) => {
+	const modules = hostFeeds(t, { pull: loudFeed }, { one: {} });
+	const logged: string[] = [];
+	const { host } = await hostWith(t, modules, true, (line) => void logged.push(line));
+	await host.feedScheduler.tick();
+	await until(() => host.kernel.listTickets().length === 1, "开了任务");
+	assert.equal(host.kernel.triggerLog().filter((r) => r.source === "lab/pull").length, 1);
+	assert.equal(saidAlert(host), true);
+	assert.deepEqual(logged.filter((line) => line.startsWith("[预演]")), []);
+});
 
 test("宿主：timer 的触发到了幕僚长那里开出任务；同一批 notice 跑两次只有一条触发", async (t) => {
 	const modules = hostFeeds(t, { pull: handlerFeed });

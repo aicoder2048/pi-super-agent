@@ -3,6 +3,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { loadConfig, loadModules } from "../../src/host/config.ts";
 import { startLiveModules } from "../../src/host/live-modules.ts";
@@ -367,6 +368,41 @@ test("just module try：假模型调了考题要的工具、汇报里有该有�
 	assert.deepEqual(run.leftover, []);
 	assert.deepEqual(run.leftWhenSaidGone, [], "说临时状态目录已删时它已经删了");
 	assert.equal(run.userDirChanged, false);
+});
+
+test("just module try：feed 样例的行写进临时集合，样例交回的触发不交给幕僚长，预演日志按 feed 记一行条数", async (t) => {
+	let router: FakeModel | undefined;
+	let stored = 0;
+	const run = await rehearse(
+		t,
+		{
+			router: [opensTaxTicket],
+			// The report waits past the scheduler's first beat, so the fixtures run while the host is up.
+			workers: [worker("预演算税", on("调工具", /^\[任务说明\]/, () => [domainTool("tax-bracket", { taxableIncome: 25000 })]), on("汇报", /^\[模块工具\]/, () => [report("ready", "落在第 2 档，估算税额 4000 美元")], 3000))],
+		},
+		{
+			during: async (_child, fake, scratch) => {
+				router = fake;
+				const db = () => join(scratch, readdirSync(scratch).find((f) => f.startsWith("psa-try-")) ?? "-", "modules-data/personal-tax/data.db");
+				await until(() => {
+					if (!existsSync(db())) return false;
+					const opened = new DatabaseSync(db(), { readOnly: true });
+					try {
+						stored = (opened.prepare("SELECT count(*) AS n FROM transactions").get() as { n: number }).n;
+					} catch {
+						stored = 0;
+					} finally {
+						opened.close();
+					}
+					return stored > 0;
+				}, "样例的行写进临时集合", 20_000);
+			},
+		},
+	);
+	assert.equal(run.status, 0, run.out);
+	assert.equal(stored, 2);
+	assert.match(run.out, /^\[预演\] personal-tax\/brokerage-statements 样例 two-trades：丢掉 1 条触发、0 条提醒，没交出去$/m);
+	assert.deepEqual(router!.exchanges.flatMap((e) => e.cards).filter((card) => card.includes("brokerage-statements")), []);
 });
 
 test("just module try：临时状态目录里的 files/ 是真实 files/ 的副本，venv 是指向真实 venv 的符号链接", async (t) => {

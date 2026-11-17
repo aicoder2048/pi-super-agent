@@ -132,7 +132,7 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 			secret: moduleSecret,
 			log,
 			fetch: { "mail.attachment": (module, components, input, dir) => fetchAttachment({ account: mail, rows, now: Date.now }, module, components, input, dir) },
-			google: googlePort({ secret, oauthUrl: process.env.PSA_GOOGLE_OAUTH_URL, fixtures: config.feedFixtures }),
+			google: googlePort({ secret, oauthUrl: process.env.PSA_GOOGLE_OAUTH_URL, fixtures: config.feedFixtures !== false }),
 			ocr,
 			hold: panel.copiesInUse.hold,
 		}),

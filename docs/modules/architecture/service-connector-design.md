@@ -189,7 +189,7 @@ C4b 改成：
 3. 用 `cloneFiles` 带上提供方的 `files/`，Python 环境照旧链接不复制。C2 之后再复制提供方的 `.env`，和被预演的模块自己一样（`connectors-and-secrets-design.md` 第 3 节「预演」）。
 4. 等提供方也到「运行中」再出题，和等被预演的模块一样。
 
-两件事照旧：`cloneFiles` 只带 `files/`，不带 `data.db`。所以预演里提供方读集合的地方都是空的，例如 `structure` 在库里没有足够新的日线、要提示「加进自选股」时，读 `data.db` 的 `watchlist` 判断在不在自选里，预演里总说不在。`ta.sqlite` 在 `files/ta/` 下，会被带上，所以 `structure` 多数时候照常出结果。临时宿主的配置是 `feedFixtures: true`，提供方的 feed 也按样例跑，写的是临时目录。
+两件事照旧：`cloneFiles` 只带 `files/`，不带 `data.db`。所以预演里提供方读集合的地方都是空的，例如 `structure` 在库里没有足够新的日线、要提示「加进自选股」时，读 `data.db` 的 `watchlist` 判断在不在自选里，预演里总说不在。`ta.sqlite` 在 `files/ta/` 下，会被带上，所以 `structure` 多数时候照常出结果。临时宿主的配置是 `feedFixtures: "rows-only"`，提供方的 feed 也按样例跑，写的是临时目录，交回的触发和提醒不交出去。
 
 ### 10. 热换版本
 

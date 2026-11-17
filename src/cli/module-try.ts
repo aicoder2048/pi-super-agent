@@ -24,6 +24,7 @@ const OPEN_MS = 180_000;
 const REPORT_MS = 600_000;
 const ACK_MS = 5_000;
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+const DROPPED = "[预演]";
 
 type Models = { router: string; worker: string; fallback: string };
 
@@ -52,6 +53,7 @@ function startHost(stateDir: string) {
 			const lines = (partial + text).split("\n");
 			partial = lines.pop() ?? "";
 			gateway.push(...lines.filter((l) => l.includes("[gateway]")));
+			for (const l of lines) if (l.includes(DROPPED)) console.log(l.slice(l.indexOf(DROPPED)));
 			tail = [...tail, ...lines].slice(-3);
 		});
 	}
@@ -163,7 +165,7 @@ async function rehearse(source: string, module: string, providers: readonly Modu
 			setModuleSwitch(store, name, true);
 		}
 		store.close();
-		writeFileSync(join(stateDir, "config.json"), JSON.stringify({ models, modulesDirs: [join(stateDir, "modules")], webPort: 0, feedFixtures: true, secretsFile }));
+		writeFileSync(join(stateDir, "config.json"), JSON.stringify({ models, modulesDirs: [join(stateDir, "modules")], webPort: 0, feedFixtures: "rows-only", secretsFile }));
 		console.log(`预演 ${module}：临时状态目录 ${stateDir}，模型 ${models.router}（Router）、${models.worker}（Worker）`);
 		for (const provider of absent) console.log(`${provider} 现在没开，预演里调不到它的工具`);
 
