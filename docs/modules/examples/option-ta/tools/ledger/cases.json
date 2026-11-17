@@ -1,5 +1,39 @@
 [
-  { "name": "chain-pnl-is-not-zero-or-computed", "input": { "account_key": "fictional-account", "view": "chain", "year": 2026 }, "responses": {}, "expect": { "status": "NOT_IMPLEMENTED", "reason": "交易链汇总、仓位还原、逐腿税务、wash sale/跨式标记和§1256年末计价尚未实现；没有读库或返回盈亏，1099-B对账不在本轮范围。" } },
-  { "name": "tax-markers-are-not-fabricated", "input": { "account_key": "fictional-account", "view": "tax", "year": 2026 }, "responses": {}, "expect": { "status": "NOT_IMPLEMENTED", "reason": "交易链汇总、仓位还原、逐腿税务、wash sale/跨式标记和§1256年末计价尚未实现；没有读库或返回盈亏，1099-B对账不在本轮范围。" } },
-  { "name": "missing-fields-do-not-imply-empty-ledger", "input": {}, "responses": {}, "expect": { "status": "NOT_IMPLEMENTED", "reason": "交易链汇总、仓位还原、逐腿税务、wash sale/跨式标记和§1256年末计价尚未实现；没有读库或返回盈亏，1099-B对账不在本轮范围。" } }
+  { "name": "部分成交合计：同一订单两行按 order_key 合计张数、均价和金额", "data": "tools/ledger/fixtures/data",
+    "input": { "view": "chain", "chain_id": "未归链:QRSTalfa:MSFT260327P00400000" },
+    "expect": { "status": "ok", "chains": [{ "orders": [{ "order_key": "MSFT260327P00400000:STO:2026-03-02:QRSTalfa", "side": "STO", "qty": 8, "avg_price": "12.0750", "amount": "9660.00", "rows": 2 }], "premium_received": "9660.00", "net": "9660.00", "open": [{ "option_symbol": "MSFT260327P00400000", "contracts": -8 }], "state": "open" }] } },
+  { "name": "缺账户、重复 fill_id、费用未知：链照算，说明哪些没算进去", "data": "tools/ledger/fixtures/data",
+    "input": { "view": "chain", "chain_id": "iwm-csp-1" },
+    "expect": { "status": "ok", "chains": [{ "chain_id": "iwm-csp-1", "premium_received": "3485.00", "premium_paid": "2050.00", "net": "1435.00", "fees": "未知", "net_after_fees": null, "open": [{ "option_symbol": "IWM260417P00235000", "contracts": -5 }], "state": "open" }],
+      "notes": ["1 行缺账户，没有算进链和税务视图，要问使用者", "重复的 fill_id 只算一次：AAPL260320C00250000:STO:2026-03-05:QRSTalfa:cum12", "链盈亏不含指派后的股票，也不含费用未知的部分"] } },
+  { "name": "费用已知：扣掉以后的净收", "data": "tools/ledger/fixtures/data",
+    "input": { "view": "chain", "chain_id": "未归链:LMNObeta:SPY260417P00600000" },
+    "expect": { "status": "ok", "chains": [{ "net": "1000.00", "fees": "1.40", "net_after_fees": "998.60" }] } },
+  { "name": "税务视图：到期、BTC 亏损、指派；CC 标 QCC 待确认", "data": "tools/ledger/fixtures/data",
+    "input": { "view": "tax", "year": 2026, "account_ref": "QRSTalfa" },
+    "expect": { "status": "ok", "year": 2026,
+      "legs": [
+        { "option_symbol": "AMZN260220P00210000", "close_kind": "EXPIRE", "gain": "4250.00", "term": "短期", "fees": "未知", "marks": ["费用未知，未扣"] },
+        { "option_symbol": "IWM260320P00240000", "close_kind": "BTC", "proceeds": "1535.00", "cost": "2050.00", "gain": "-515.00", "term": "短期", "marks": ["费用未知，未扣", "期权间 wash sale 标记（实质相同未证实）", "BTC 亏损算不算 wash sale 的卖出未证实", "涉及股票的 wash sale 待确认"] }
+      ],
+      "stock": [{ "option_symbol": "GOOGL260220P00180000", "event": "ASSIGNED", "stock": "BUY", "shares": 100, "basis": "17800.00", "holding_starts": "2026-02-21", "marks": ["涉及股票的 wash sale 待确认", "费用未知，未扣"] }],
+      "open": [
+        { "option_symbol": "MSFT260327P00400000", "qty": 5 },
+        { "option_symbol": "MSFT260327P00400000", "qty": 3 },
+        { "option_symbol": "AAPL260320C00250000", "qty": 12, "marks": ["QCC 待确认", "过了到期日，到期、指派或行权没记"] },
+        { "option_symbol": "IWM260417P00235000", "qty": 5 }
+      ],
+      "pending": ["BTC 亏损算不算 wash sale 的卖出未证实", "QCC 待确认", "期权间 wash sale 标记（实质相同未证实）", "涉及股票的 wash sale 待确认", "费用未知，未扣", "过了到期日，到期、指派或行权没记"] } },
+  { "name": "税务视图：持有超过一年的买入 put 长短期待确认；价差两腿标跨式", "data": "tools/ledger/fixtures/data",
+    "input": { "view": "tax", "year": 2026, "account_ref": "LMNObeta" },
+    "expect": { "status": "ok",
+      "legs": [{ "option_symbol": "NVDA270115P00100000", "open_date": "2025-01-02", "close_date": "2026-02-03", "gain": "200.00", "term": "待确认", "marks": ["长短期待确认（持有超过一年的买入 put，§1233(b)(1)）", "费用未知，未扣"] }],
+      "stock": [],
+      "open": [{ "option_symbol": "SPY260417P00600000", "marks": ["价差跨式标记", "过了到期日，到期、指派或行权没记"] }, { "option_symbol": "SPY260417P00590000", "marks": ["价差跨式标记", "过了到期日，到期、指派或行权没记"] }],
+      "notes": ["1 行缺账户，没有算进链和税务视图，要问使用者", "重复的 fill_id 只算一次：AAPL260320C00250000:STO:2026-03-05:QRSTalfa:cum12", "LMNObeta 没有税务归属人，wash sale 和跨式只在本账户里找"] } },
+  { "name": "税务视图没给税年：要问", "data": "tools/ledger/fixtures/data",
+    "input": { "view": "tax" },
+    "expect": { "status": "needs-input", "missing": ["year"] } },
+  { "name": "库里还没有成交：空的视图，不是零盈亏", "input": { "view": "chain" },
+    "expect": { "status": "ok", "chains": [], "notes": ["链盈亏不含指派后的股票，也不含费用未知的部分"] } }
 ]

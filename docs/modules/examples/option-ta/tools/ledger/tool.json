@@ -1,15 +1,22 @@
 {
   "title": "交易链与税务视图",
-  "description": "从原始成交重算交易链盈亏和税务标记接口；当前固定 NOT_IMPLEMENTED，不伪造汇总或税务结论",
+  "description": "只读 fills、chains、accounts，从原始成交和事件重算两种视图：交易链的权利金进出和净收，税务的逐腿盈亏、长短期、税年和标记；第一版范围外的判断标待确认，不做 1099-B 对账",
   "effect": "read",
   "input": {
-    "account_key": { "type": "text", "title": "账户匿名键" },
-    "chain_id": { "type": "text", "title": "交易链键" },
-    "year": { "type": "number", "title": "税年" },
-    "view": { "type": "text", "title": "chain 或 tax" }
+    "view": { "type": "text", "title": "chain（交易链）或 tax（税务）" },
+    "year": { "type": "number", "title": "税年，税务视图必给" },
+    "account_ref": { "type": "text", "title": "只看这个账户短码，不给就是全部账户" },
+    "account_key": { "type": "text", "title": "只看这个匿名账户键（按 accounts 映射到短码）" },
+    "chain_id": { "type": "text", "title": "只看这条链；没归链的写 未归链:<账户短码>:<OCC>" }
   },
   "output": {
-    "status": { "type": "text", "title": "固定 NOT_IMPLEMENTED" },
-    "reason": { "type": "text", "title": "未实现的视图与税务标记说明" }
+    "status": { "type": "text", "title": "ok 或 needs-input" },
+    "chains": { "type": "text", "title": "交易链视图：每条链的订单合计（张数、均价、金额、行数）、事件、权利金收付、净收、已知费用、扣费后净收、未平仓张数、open 或 closed" },
+    "legs": { "type": "text", "title": "税务视图：当年实现的每一腿，所得、成本、费用、盈亏、长短期（短期、长期、60/40、待确认）和标记" },
+    "stock": { "type": "text", "title": "税务视图：指派和行权进股票的那一笔，买进的成本或卖出的所得，和标记" },
+    "open": { "type": "text", "title": "税务视图：年底（今年就是现在）还开着的仓位和标记" },
+    "pending": { "type": "text", "title": "待确认清单，原样转述" },
+    "notes": { "type": "text", "title": "没算进去的行（缺账户、读不懂、重复 fill_id）和口径说明" },
+    "scope": { "type": "text", "title": "税务口径的范围说明" }
   }
 }
