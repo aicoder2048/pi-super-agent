@@ -1,0 +1,77 @@
+{
+  "fills": [
+    {
+      "id": "IWM260320P00240000:STO:2026-03-09:5:QRSTalfa",
+      "account_ref": "QRSTalfa",
+      "side": "STO",
+      "instrument": {
+        "underlying": "IWM",
+        "option_symbol": "IWM260320P00240000",
+        "right": "put",
+        "strike": 240.0,
+        "expiry": "2026-03-20",
+        "multiplier": 100
+      },
+      "qty": 5,
+      "price": 3.07,
+      "limit": 3.05,
+      "trade_date": "2026-03-09",
+      "trade_time": null,
+      "settle_date": "2026-03-10",
+      "executed_at": "2026-03-09",
+      "order_id": null,
+      "commission": null,
+      "fees": null,
+      "source": "broker-email"
+    },
+    {
+      "id": "IWM260320P00240000:STO:2026-03-09:25:LMNObeta",
+      "account_ref": "LMNObeta",
+      "side": "STO",
+      "instrument": {
+        "underlying": "IWM",
+        "option_symbol": "IWM260320P00240000",
+        "right": "put",
+        "strike": 240.0,
+        "expiry": "2026-03-20",
+        "multiplier": 100
+      },
+      "qty": 25,
+      "price": 3.07,
+      "limit": 3.05,
+      "trade_date": "2026-03-09",
+      "trade_time": null,
+      "settle_date": "2026-03-10",
+      "executed_at": "2026-03-09",
+      "order_id": null,
+      "commission": null,
+      "fees": null,
+      "source": "broker-email"
+    },
+    {
+      "id": "IWM260320P00240000:STO:2026-03-09:30:PERSgama",
+      "account_ref": "PERSgama",
+      "side": "STO",
+      "instrument": {
+        "underlying": "IWM",
+        "option_symbol": "IWM260320P00240000",
+        "right": "put",
+        "strike": 240.0,
+        "expiry": "2026-03-20",
+        "multiplier": 100
+      },
+      "qty": 30,
+      "price": 3.07,
+      "limit": 3.05,
+      "trade_date": "2026-03-09",
+      "trade_time": null,
+      "settle_date": "2026-03-10",
+      "executed_at": "2026-03-09",
+      "order_id": null,
+      "commission": null,
+      "fees": null,
+      "source": "broker-email"
+    }
+  ],
+  "skipped": []
+}

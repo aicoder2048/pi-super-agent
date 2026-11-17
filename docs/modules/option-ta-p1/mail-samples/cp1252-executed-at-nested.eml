@@ -1,0 +1,699 @@
+Content-Type: multipart/related; type="multipart/alternative";
+ boundary="_004_EXAMPLE04REL_"
+MIME-Version: 1.0
+Received: from EXAMPLE01MB0001.example.net ([2001:db8::1]) by mx.example.com
+ with HTTP; Mon, 09 Mar 2026 20:15:00 -0500
+Return-Path: <pat.example@example.com>
+From: Pat Example <pat.example@example.com>
+To: Pat Example <pat.example@example.com>
+Subject: [SAMPLE] FW: RE: Sell to Open IWM 03/20 $240 Put @ 3.05 Limit (0101 /
+ 0202 / 0303) - Mon 2026/03/09
+Thread-Topic: RE: Sell to Open IWM 03/20 $240 Put @ 3.05 Limit (0101 / 0202 /
+ 0303) - Mon 2026/03/09
+Thread-Index: AQHcEXAMPLE04AAAAAAAAAAAAAAAAAAAA==
+Date: Mon, 09 Mar 2026 20:15:00 +0000
+Message-ID: <EXAMPLE04FWD@example.com>
+References: <EXAMPLE04ORIG@example.net>
+In-Reply-To: <EXAMPLE04ORIG@example.net>
+Accept-Language: en-US
+Content-Language: en-US
+X-MS-Has-Attach: yes
+X-MS-Exchange-Organization-SCL: -1
+X-MS-TNEF-Correlator: 
+x-ms-reactions: allow
+X-MS-Exchange-Organization-RecordReviewCfmType: 0
+X-MS-Exchange-MessageSentRepresentingType: 1
+MIME-Version: 1.0
+
+--_004_EXAMPLE04REL_
+Content-Type: multipart/alternative; boundary="_000_EXAMPLE04ALT_"
+MIME-Version: 1.0
+
+--_000_EXAMPLE04ALT_
+MIME-Version: 1.0
+Content-Type: text/plain; charset="windows-1252"
+Content-Transfer-Encoding: quoted-printable
+
+
+
+________________________________
+From: EXB PB Trading <exb.pb.trading@example.net>
+Date: Monday, March 9, 2026 at 15:58
+To: Pat Example <pat.example@example.com>
+Cc: Team Sample <Team_Sample@example.net> Lee, Jordan <jordan.lee@example.n=
+et>
+Subject: RE: Sell to Open IWM 03/20 $240 Put @ 3.05 Limit (0101 / 0202 / 03=
+03) - Mon 2026/03/09
+
+Hi,
+
+Orders filled and done.
+
+Per our conversation, please see below for an unofficial update on your ord=
+ers
+
+Account
+Side
+Position
+Security
+Security Description
+Exe Qty
+Avg Price
+Open Qty
+Price Instructions
+Trade Date
+Settlement Date
+Executed At
+QRSTalfa
+Sell Put
+Open
+IWM
+ISHARES RUSSELL 2000 ETF PUT 03/20/2026 @ 240
+5
+3.07
+3.05 Limit
+09-Mar-2026
+10-Mar-2026
+09-Mar-2026
+LMNObeta
+Sell Put
+Open
+IWM
+ISHARES RUSSELL 2000 ETF PUT 03/20/2026 @ 240
+25
+3.07
+3.05 Limit
+09-Mar-2026
+10-Mar-2026
+09-Mar-2026
+PERSgama
+Sell Put
+Open
+IWM
+ISHARES RUSSELL 2000 ETF PUT 03/20/2026 @ 240
+30
+3.07
+3.05 Limit
+09-Mar-2026
+10-Mar-2026
+09-Mar-2026
+
+
+Regards,
+Alex
+________________________________
+Alex Sample | Vice President | Trade Execution Desk | Example Brokerage | 1=
+00 Example Street, Floor 10, Springfield, ST 00000 | T: +1 (555) 010-0100 /=
+ +1 (555) 010-0101 | exb.pb.trading@example.net
+[Example Brokerage]<https://www.example.net/>
+
+Example Brokerage LLC  |  Example Bank, N.A.
+
+NOT AN OFFICIAL CONFIRMATION OR VALUATION OF ANY TRANSACTION. Trade instruc=
+tions will not be accepted through Electronic Mail (E-mail). For informatio=
+nal purposes only. Please refer to your monthly account statement for the o=
+fficial record of all of your account activities.
+
+INVESTMENT PRODUCTS: NOT INSURED BY ANY AGENCY =95 NO GUARANTEE =95 MAY LOS=
+E VALUE
+
+From: Pat Example <pat.example@example.com>
+Sent: Monday, March 9, 2026 9:10 AM
+To: EXB PB Trading <exb.pb.trading@example.net>
+Cc: Team Sample <Team_Sample@example.net>; Lee, Jordan (PB, NYC) <jordan.le=
+e@example.net>
+Subject: Sell to Open IWM 03/20 $240 Put @ 3.05 Limit (0101 / 0202 / 0303) =
+- Mon 2026/03/09
+
+Hi EXB PB Trading,
+
+Pls help to place the following IWM put orders today (Mon 03/09):
+
+Sell to open IWM260320P00240000 (IWM 03/20/2026 $240 Put), limit 3.05, day =
+order, cash-secured:
+
+- QRST (a/c ending 0101): sell to open 5 contracts
+
+- LMNO (a/c ending 0202): sell to open 25 contracts
+
+- Personal (a/c ending 0303): sell to open 30 contracts
+
+Notes:
+
+- Please do not use market orders.
+
+- Each put must be fully cash-secured. If the available cash in an account =
+is not enough for the number of contracts listed, please reduce the count f=
+or that account and let me know.
+
+- If the 3.05 limit is not filled by the close, please let the order expire=
+ and let me know.
+
+Please call me at 555 010 0199 to confirm before placing the orders.
+
+Thank you,
+
+Pat Example
+
+This message is a fictional sample created for parser tests. It contains no=
+ real account information.
+
+
+--_000_EXAMPLE04ALT_
+MIME-Version: 1.0
+Content-Type: text/html; charset="windows-1252"
+Content-Transfer-Encoding: quoted-printable
+
+<html>
+<head>
+<meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3DWindows-1=
+252">
+</head>
+<body>
+<div style=3D"font-family: Aptos, Arial, Helvetica, sans-serif; font-size: =
+12pt; color: rgb(0, 0, 0);" dir=3D"ltr">
+<br>
+</div>
+<div id=3D"mail-editor-reference-message-container">
+<hr style=3D"border-width: 1pt medium medium; border-style: solid none none=
+; border-color: rgb(181, 196, 223) currentcolor currentcolor; display: inli=
+ne-block; width: 98%;">
+<div style=3D"text-align: left; font-family: Aptos; font-size: 12pt; color:=
+ black;">
+<b>From: </b>EXB PB Trading &lt;exb.pb.trading@example.net&gt;<br>
+<b>Date: </b>Monday, March 9, 2026 at 15:58<br>
+<b>To: </b>Pat Example &lt;pat.example@example.com&gt;<br>
+<b>Cc: </b>Team Sample &lt;Team_Sample@example.net&gt; Lee, Jordan &lt;jord=
+an.lee@example.net&gt;<br>
+<b>Subject: </b>RE: Sell to Open IWM 03/20 $240 Put @ 3.05 Limit (0101 / 02=
+02 / 0303) - Mon 2026/03/09<br>
+<br>
+</div>
+<div id=3D"mail-editor-reference-message-body">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">Hi,</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">Orders filled and done=
+.</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">Per our conversation, =
+please see below for an unofficial update on your orders</span></p>
+<table class=3D"MsoNormalTable" cellpadding=3D"0" border=3D"0">
+<tbody>
+<tr>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium 1pt 1.5pt medium=
+; border-style: none solid solid none; border-color: currentcolor rgb(204, =
+204, 204) rgb(204, 204, 204) currentcolor; padding: 0in 7.5pt;">
+<table class=3D"MsoNormalTable" cellpadding=3D"0" border=3D"0">
+<tbody>
+<tr>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium 1pt 1.5pt medium=
+; border-style: none solid solid none; border-color: currentcolor rgb(204, =
+204, 204) rgb(204, 204, 204) currentcolor; padding: 0in 7.5pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);"><b>Account</b></span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium 1pt 1.5pt medium=
+; border-style: none solid solid none; border-color: currentcolor rgb(204, =
+204, 204) rgb(204, 204, 204) currentcolor; padding: 0in 7.5pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);"><b>Side</b></span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium 1pt 1.5pt medium=
+; border-style: none solid solid none; border-color: currentcolor rgb(204, =
+204, 204) rgb(204, 204, 204) currentcolor; padding: 0in 7.5pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);"><b>Position</b></span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium 1pt 1.5pt medium=
+; border-style: none solid solid none; border-color: currentcolor rgb(204, =
+204, 204) rgb(204, 204, 204) currentcolor; padding: 0in 7.5pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);"><b>Security</b></span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium 1pt 1.5pt medium=
+; border-style: none solid solid none; border-color: currentcolor rgb(204, =
+204, 204) rgb(204, 204, 204) currentcolor; padding: 0in 7.5pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);"><b>Security Description</b></span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium 1pt 1.5pt medium=
+; border-style: none solid solid none; border-color: currentcolor rgb(204, =
+204, 204) rgb(204, 204, 204) currentcolor; padding: 0in 7.5pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);"><b>Exe Qty</b></span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium 1pt 1.5pt medium=
+; border-style: none solid solid none; border-color: currentcolor rgb(204, =
+204, 204) rgb(204, 204, 204) currentcolor; padding: 0in 7.5pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);"><b>Avg Price</b></span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium 1pt 1.5pt medium=
+; border-style: none solid solid none; border-color: currentcolor rgb(204, =
+204, 204) rgb(204, 204, 204) currentcolor; padding: 0in 7.5pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);"><b>Open Qty</b></span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium 1pt 1.5pt medium=
+; border-style: none solid solid none; border-color: currentcolor rgb(204, =
+204, 204) rgb(204, 204, 204) currentcolor; padding: 0in 7.5pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);"><b>Price Instructions</b></span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium 1pt 1.5pt medium=
+; border-style: none solid solid none; border-color: currentcolor rgb(204, =
+204, 204) rgb(204, 204, 204) currentcolor; padding: 0in 7.5pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);"><b>Trade Date</b></span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium 1pt 1.5pt medium=
+; border-style: none solid solid none; border-color: currentcolor rgb(204, =
+204, 204) rgb(204, 204, 204) currentcolor; padding: 0in 7.5pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);"><b>Settlement Date</b></span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium 1pt 1.5pt medium=
+; border-style: none solid solid none; border-color: currentcolor rgb(204, =
+204, 204) rgb(204, 204, 204) currentcolor; padding: 0in 7.5pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);"><b>Executed At</b></span></p>
+</td>
+</tr>
+<tr>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">QRSTalfa</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">Sell Put</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">Open</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">IWM</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">ISHARES RUSSELL 2000 ETF PUT 03/20/2026 @ 240</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">5</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">3.07</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">3.05 Limit</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">09-Mar-2026</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">10-Mar-2026</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">09-Mar-2026</span></p>
+</td>
+</tr>
+<tr>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">LMNObeta</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">Sell Put</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">Open</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">IWM</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">ISHARES RUSSELL 2000 ETF PUT 03/20/2026 @ 240</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">25</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">3.07</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">3.05 Limit</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">09-Mar-2026</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">10-Mar-2026</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">09-Mar-2026</span></p>
+</td>
+</tr>
+<tr>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">PERSgama</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">Sell Put</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">Open</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">IWM</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">ISHARES RUSSELL 2000 ETF PUT 03/20/2026 @ 240</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">30</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">3.07</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">3.05 Limit</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">09-Mar-2026</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">10-Mar-2026</span></p>
+</td>
+<td class=3D"MsoNormalTable" style=3D"border-width: medium medium 1pt; bord=
+er-style: none none solid; border-color: currentcolor currentcolor rgb(204,=
+ 204, 204); padding: 0in 9pt;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<span style=3D"font-family: Consolas; font-size: 9pt; color: rgb(113, 113, =
+113);">09-Mar-2026</span></p>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">Regards,</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">Alex</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 8pt; color: rgb(102, 102, 102=
+);">Alex Sample | Vice President | Trade Execution Desk | Example Brokerage=
+ | 100 Example Street, Floor 10, Springfield, ST 00000 | T: +1 (555) 010-01=
+00 / +1 (555) 010-0101 | exb.pb.trading@example.net</span></p>
+<p class=3D"MsoNormal"><a href=3D"https://www.example.net/"><img width=3D"1=
+20" height=3D"40" id=3D"Picture_x0020_1" src=3D"cid:image001.png@01DCAB04.E=
+XAMPLE4" alt=3D"Example Brokerage"></a></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 8pt;">Example Brokerage LLC&n=
+bsp; |&nbsp; Example Bank, N.A.</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 7pt;">NOT AN OFFICIAL CONFIRM=
+ATION OR VALUATION OF ANY TRANSACTION. Trade instructions will not be accep=
+ted through Electronic Mail (E-mail). For informational purposes only. Plea=
+se refer to your monthly account statement for the official record of all o=
+f your account activities.</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 7pt;">INVESTMENT PRODUCTS: NO=
+T INSURED BY ANY AGENCY =95 NO GUARANTEE =95 MAY LOSE VALUE</span></p>
+<div style=3D"border-width: 1pt medium medium; border-style: solid none non=
+e; border-color: rgb(225, 225, 225) currentcolor currentcolor; padding: 3pt=
+ 0in 0in;">
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;">
+<b>From:</b> Pat Example &lt;pat.example@example.com&gt;<br>
+<b>Sent:</b> Monday, March 9, 2026 9:10 AM<br>
+<b>To:</b> EXB PB Trading &lt;exb.pb.trading@example.net&gt;<br>
+<b>Cc:</b> Team Sample &lt;Team_Sample@example.net&gt;; Lee, Jordan (PB, NY=
+C) &lt;jordan.lee@example.net&gt;<br>
+<b>Subject:</b> Sell to Open IWM 03/20 $240 Put @ 3.05 Limit (0101 / 0202 /=
+ 0303) - Mon 2026/03/09<br>
+</p>
+</div>
+<div>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">Hi EXB PB Trading,</sp=
+an></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">Pls help to place the =
+following IWM put orders today (Mon 03/09):</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">Sell to open IWM260320=
+P00240000 (IWM 03/20/2026 $240 Put), limit 3.05, day order, cash-secured:</=
+span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">- QRST (a/c ending 010=
+1): sell to open 5 contracts</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">- LMNO (a/c ending 020=
+2): sell to open 25 contracts</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">- Personal (a/c ending=
+ 0303): sell to open 30 contracts</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">Notes:</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">- Please do not use ma=
+rket orders.</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">- Each put must be ful=
+ly cash-secured. If the available cash in an account is not enough for the =
+number of contracts listed, please reduce the count for that account and le=
+t me know.</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">- If the 3.05 limit is=
+ not filled by the close, please let the order expire and let me know.</spa=
+n></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">Please call me at 555 =
+010 0199 to confirm before placing the orders.</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">Thank you,</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 11pt;">Pat Example</span></p>
+<p class=3D"MsoNormal" style=3D"margin: 0in; font-family: Aptos, sans-serif=
+; font-size: 12pt;"><span style=3D"font-size: 8pt;">This message is a ficti=
+onal sample created for parser tests. It contains no real account informati=
+on.</span></p>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>
+
+--_000_EXAMPLE04ALT_--
+
+--_004_EXAMPLE04REL_
+Content-Type: image/png; name="image001.png"
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Description: image001.png
+Content-Disposition: inline; filename="image001.png"; size="170"
+Content-ID: <image001.png@01DCAB04.EXAMPLE4>
+
+iVBORw0KGgoAAAANSUhEUgAAAHgAAAAoCAIAAAC6iKlyAAAAcUlEQVR4nO3QQREAMAjAMPwrmyxc
+ZA8aBb3OCzG/A65oNNJopNFIo5FGI41GGo00Gmk00mik0UijkUYjjUYajTQaaTTSaKTRSKORRiON
+RhqNNBppNNJopNFIo5FGI41GGo00Gmk00mik0UijkUYjjUYWA5r0hoy87/QAAAAASUVORK5CYII=
+
+--_004_EXAMPLE04REL_--
