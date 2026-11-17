@@ -27,5 +27,6 @@ for (const file of readdirSync(import.meta.dirname).filter((f) => f.endsWith(".j
 	}
 	const cursor = given.input.cursor === null ? undefined : JSON.parse(given.input.cursor);
 	const { letters } = await fetchLetters(gmail, cursor, NOW, gate.accepts);
-	writeFileSync(join(FIXTURES, file), `${JSON.stringify({ input: { items: letters } }, null, 2)}\n`);
+	const items = letters.map(({ html: _, ...letter }) => letter);
+	writeFileSync(join(FIXTURES, file), `${JSON.stringify({ input: { items } }, null, 2)}\n`);
 }

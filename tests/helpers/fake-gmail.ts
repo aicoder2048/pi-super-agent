@@ -15,6 +15,8 @@ export type Letter = {
 	attachments?: readonly { filename: string; mimeType: string; size: number; data?: string | Uint8Array; trickleMs?: number; charset?: string }[];
 	replyTo?: string;
 	at?: number;
+	/** Served as the full message's payload instead of the one built from the fields above; its top-level headers are replaced by From, Subject and Message-ID. */
+	payload?: Record<string, unknown>;
 };
 
 const GMAIL = "/gmail/v1/users/me";
@@ -32,6 +34,7 @@ function headers(letter: Letter) {
 export function gmailMessage(letter: Letter, format: "full" | "metadata" = "full") {
 	const top = { id: letter.id, threadId: `t-${letter.id}`, labelIds: ["INBOX", "UNREAD"], snippet: letter.snippet ?? "", internalDate: String(letter.at ?? Date.now()) };
 	if (format === "metadata") return { ...top, payload: { mimeType: "multipart/mixed", headers: headers(letter) } };
+	if (letter.payload !== undefined) return { ...top, payload: { ...letter.payload, headers: headers(letter) } };
 	type Body = { partId: string; mimeType: string; filename: string; headers: { name: string; value: string }[]; body: { size: number; data?: string; attachmentId?: string } };
 	const bodies: Body[] = [
 		...(letter.text === undefined ? [] : [{ mimeType: "text/plain", text: letter.text }]),

@@ -146,6 +146,13 @@ test("技能 build-module 原文里提供方不在时的三句原因，和网关
 	for (const reason of reasons) assert.ok(text.includes(`「${reason}」`), `技能写着「${reason}」`);
 });
 
+test("技能 data-and-feeds 写的 html 截断尾串，和 letter.ts 截断时加的一字不差", () => {
+	const source = readFileSync(join(REPO, "src/modules/connectors/letter.ts"), "utf8");
+	const tail = /const HTML = \{ bytes: [^,]+, cut: "\\n\\n([^"]+)" \}/.exec(source)?.[1];
+	assert.ok(tail, "letter.ts 里找到 HTML 的截断尾串");
+	assert.ok(SKILL("data-and-feeds").includes(`「${tail}」`), `技能写着「${tail}」`);
+});
+
 test("技能 build-module 找提供方的包也看仓库的示例包，三处都没有时汇报找不到，不当成没开放", () => {
 	const text = SKILL("build-module");
 	assert.ok(text.includes("$PSA_REPO/docs/modules/examples/<提供方>/module.json"), "写明示例包的路径");
