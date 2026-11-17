@@ -50,7 +50,8 @@ const BODY_CUT = "\n\n[正文超过 64 KB，后面截掉了，全文在 Gmail �
 const COLUMNS = ["Account", "Side", "Position", "Security", "Security Description", "Exe Qty", "Avg Price", "Open Qty", "Price Instructions", "Trade Date", "Settlement Date"] as const;
 const EXECUTED_AT = "Executed At";
 type Column = (typeof COLUMNS)[number] | typeof EXECUTED_AT;
-type Cells = Partial<Record<Column, string>>;
+/** `misfit`: the row has more or fewer cells than the header, so no cell can be trusted to its column. */
+type Cells = Partial<Record<Column, string>> & { misfit?: true };
 /** `problem` names why the rest of the table, or all of it, could not be read; the rows in `cells` before it still count. */
 type Table = { cells: Cells[]; executedAt: boolean; problem?: string } | undefined;
 const broken = (problem: string): Table => ({ cells: [], executedAt: false, problem });
@@ -92,11 +93,23 @@ const quantity = (text: string | undefined) => (text !== undefined && QUANTITY.t
 function byName(header: readonly string[], rows: readonly string[][], problem?: string): Table {
 	if (new Set(header).size !== header.length) return broken("duplicate-columns");
 	if (COLUMNS.some((c) => !header.includes(c))) return broken("missing-columns");
-	const at = (row: readonly string[]) => Object.fromEntries(header.map((name, i) => [name, row[i] ?? ""])) as Cells;
+	const at = (row: readonly string[]) => ({ ...Object.fromEntries(header.map((name, i) => [name, row[i] ?? ""])), ...(row.length !== header.length && { misfit: true as const }) }) as Cells;
 	return { cells: rows.filter((row) => row.some((c) => c !== "")).map(at), executedAt: header.includes(EXECUTED_AT), ...(problem !== undefined && { problem }) };
 }
 
 type HtmlTable = { rows: string[][]; closed: boolean; row?: string[]; cell?: string };
+
+/** HTML lets `</td>` and `</tr>` go unwritten; the next cell, row or the table's end closes them. */
+function closeCell(table: HtmlTable): void {
+	if (table.cell !== undefined) table.row?.push(squash(decode(table.cell)));
+	delete table.cell;
+}
+
+function closeRow(table: HtmlTable): void {
+	closeCell(table);
+	if (table.row !== undefined) table.rows.push(table.row);
+	delete table.row;
+}
 
 /** Tables are tracked on a stack, so a desk table set inside a layout table's cell is found as itself. */
 function htmlTable(html: string): { header: string[]; rows: string[][]; closed: boolean } | undefined {
@@ -107,22 +120,22 @@ function htmlTable(html: string): { header: string[]; rows: string[][]; closed: 
 		const tag = /^<(\/?)([a-z]+)/i.exec(token);
 		const name = tag?.[2]!.toLowerCase();
 		const top = stack.at(-1);
-		if (name === "table" && tag![1] === "") {
+		const opening = tag?.[1] === "";
+		if (name === "table" && opening) {
 			const table: HtmlTable = { rows: [], closed: false };
 			stack.push(table);
 			found.push(table);
 		} else if (top === undefined) continue;
 		else if (name === "table") {
+			closeRow(top);
 			top.closed = true;
 			stack.pop();
-		} else if (name === "tr" && tag![1] === "") top.row = [];
-		else if (name === "tr") {
-			if (top.row !== undefined) top.rows.push(top.row);
-			delete top.row;
-		} else if ((name === "td" || name === "th") && tag![1] === "") top.cell = "";
-		else if (name === "td" || name === "th") {
-			if (top.cell !== undefined) top.row?.push(squash(decode(top.cell)));
-			delete top.cell;
+		} else if (name === "tr") {
+			closeRow(top);
+			if (opening) top.row = [];
+		} else if (name === "td" || name === "th") {
+			closeCell(top);
+			if (opening) top.cell = "";
 		} else if (tag === null && top.cell !== undefined) top.cell += token;
 		else if (top.cell !== undefined) top.cell += " ";
 	}
@@ -178,11 +191,13 @@ function tableOf(letter: FillLetter): Table {
 	return found === undefined ? undefined : broken("html-table");
 }
 
-type Row = { fill: Omit<FillRow, "id" | "fill_id" | "qty" | "price" | "cum_qty"> & { cum: number; avg: bigint } } | { skipped: Skipped };
+/** `key` is the order key whenever the row got that far, filled or not: only the first row of a key in a table counts. */
+type Row = { fill: Omit<FillRow, "id" | "fill_id" | "qty" | "price" | "cum_qty"> & { cum: number; avg: bigint } } | { skipped: Skipped; key?: string };
 
 function rowOf(cells: Cells, executedAt: boolean, letterId: string): Row {
 	const account = cells.Account ?? "";
 	const unparsed = (detail: string): Row => ({ skipped: { reason: "unparsed", detail, ...(ACCOUNT.test(account) && { account_ref: account }) } });
+	if (cells.misfit) return unparsed("row-shape");
 	if (!ACCOUNT.test(account)) return unparsed("account");
 	const description = cells["Security Description"] ?? "";
 	const security = cells.Security ?? "";
@@ -202,14 +217,14 @@ function rowOf(cells: Cells, executedAt: boolean, letterId: string): Row {
 	if (trade_date === undefined || settle_date === undefined || executed_at === undefined) return unparsed("date");
 	const order_key = orderKey(contract, direction.side, trade_date, account);
 	const openQty = open === "" ? null : quantity(open);
-	if (openQty === undefined) return unparsed("open-qty");
+	if (openQty === undefined) return { ...unparsed("open-qty"), key: order_key };
 	if (exe === "") {
-		if (avg !== "") return unparsed("avg-without-qty");
-		return { skipped: { reason: openQty === null ? "not-filled" : "working-order", account_ref: account, description, open_qty: openQty } };
+		if (avg !== "") return { ...unparsed("avg-without-qty"), key: order_key };
+		return { skipped: { reason: openQty === null ? "not-filled" : "working-order", account_ref: account, description, open_qty: openQty }, key: order_key };
 	}
 	const cum = quantity(exe);
 	const average = units(avg);
-	if (cum === undefined || average === undefined || average <= 0n) return unparsed("fill-qty-or-price");
+	if (cum === undefined || average === undefined || average <= 0n) return { ...unparsed("fill-qty-or-price"), key: order_key };
 	const limit = LIMIT.exec(cells["Price Instructions"] ?? "");
 	const limitUnits = limit ? units(limit[1]) : undefined;
 	return {
@@ -238,6 +253,8 @@ function rowOf(cells: Cells, executedAt: boolean, letterId: string): Row {
 	};
 }
 
+const account = (s: Skipped) => ("account_ref" in s ? (s.account_ref ?? "") : "");
+
 export function parseFills(letter: FillLetter, recorded: readonly StoredRow[]): { fills: FillRow[]; skipped: Skipped[] } {
 	const fills: FillRow[] = [];
 	const skipped: Skipped[] = [];
@@ -248,7 +265,9 @@ export function parseFills(letter: FillLetter, recorded: readonly StoredRow[]): 
 	for (const cells of table.cells) {
 		const row = rowOf(cells, table.executedAt, letter.id);
 		if ("skipped" in row) {
-			skipped.push(row.skipped);
+			if (row.key !== undefined && seen.has(row.key)) skipped.push({ reason: "duplicate-order-key", account_ref: account(row.skipped), order_key: row.key });
+			else skipped.push(row.skipped);
+			if (row.key !== undefined) seen.add(row.key);
 			continue;
 		}
 		const { cum, avg, ...fill } = row.fill;

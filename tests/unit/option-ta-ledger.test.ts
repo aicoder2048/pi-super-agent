@@ -117,3 +117,45 @@ test("record：增量价格按万分之一四舍五入；代码和 put/call 的�
 	const out = recordFill({ account_ref: "A1", side: "STO", underlying: "aapl", right: "CALL", strike: "250", expiry: "2026-03-20", cum_qty: 3, avg_price: "1.0001", trade_date: "2026-03-05" }, recorded) as { qty: number; price: string };
 	assert.deepEqual([out.qty, out.price], [2, "1.0002"]);
 });
+
+const owned = (data: ReturnType<typeof rows>, owner = "owner-1") => ({ ...data, accounts: ["A1", "A2"].map((account_ref) => ({ account_ref, tax_owner_key: owner })) });
+
+test("只看一个账户时，同一归属人别的账户里的开仓照样算进 wash sale 窗口", () => {
+	const data = owned(rows(
+		fill({ option_symbol: "QQQ260417C00600000", side: "BTO", qty: 1, price: "5", trade_date: "2026-03-02" }),
+		fill({ option_symbol: "QQQ260417C00600000", side: "STC", qty: 1, price: "3", trade_date: "2026-03-05" }),
+		fill({ option_symbol: "QQQ260417C00600000", side: "BTO", qty: 1, price: "3", trade_date: "2026-03-06", account_ref: "A2" }),
+	));
+	const out = ledgerView({ view: "tax", year: 2026, account_ref: "A1" }, data, "2026-11-17") as { legs: { marks: string[] }[]; open: unknown[] };
+	assert.ok(out.legs[0]!.marks.includes("期权间 wash sale 标记（同一合约）"));
+	assert.deepEqual(out.open, []);
+});
+
+test("被 REVERSAL 冲销的成交不算，notes 里说明", () => {
+	const data = rows(fill({ option_symbol: "AAPL260320C00250000", side: "STO", qty: 1, price: "3", trade_date: "2026-03-02" }), { record_type: "REVERSAL", reversal_of: "AAPL260320C00250000:STO:2026-03-02:A1:cum1" });
+	const out = ledgerView({ view: "chain" }, data) as { chains: unknown[]; notes: string[] };
+	assert.deepEqual(out.chains, []);
+	assert.ok(out.notes.includes("1 行已被冲销（REVERSAL），没有算"));
+});
+
+test("§1256 跨年平仓：不直接给 60/40，标上年年末计价待确认", () => {
+	const leg = tax(rows(fill({ option_symbol: "SPX260320P05000000", side: "BTO", qty: 1, price: "10", trade_date: "2025-12-10", tax_class: "nonequity" }), fill({ option_symbol: "SPX260320P05000000", side: "STC", qty: 1, price: "7", trade_date: "2026-01-10", tax_class: "nonequity" }))).legs[0]!;
+	assert.deepEqual([leg.term, leg.marks.includes("§1256 上年年末计价待确认（缺年末收盘快照）")], ["待确认", true]);
+});
+
+test("价差里持有超过一年的买入腿：长短期待确认，不判长期", () => {
+	const leg = tax(rows(
+		fill({ option_symbol: "MSFT270115C00400000", side: "BTO", qty: 1, price: "50", trade_date: "2025-01-02" }),
+		fill({ option_symbol: "MSFT270115C00450000", side: "STO", qty: 1, price: "30", trade_date: "2025-01-02" }),
+		fill({ option_symbol: "MSFT270115C00400000", side: "STC", qty: 1, price: "60", trade_date: "2026-02-03" }),
+	)).legs[0]!;
+	assert.deepEqual([leg.term, leg.marks.includes("长短期待确认（跨式里的持有期）")], ["待确认", true]);
+});
+
+test("指派：已知的开仓费用和指派费进股票成本；事件行没有佣金不算未知", () => {
+	const out = tax(rows(
+		fill({ option_symbol: "MSFT260320P00400000", side: "STO", qty: 1, price: "4", trade_date: "2026-03-02", commission: "0.65", fees: "0.05" }),
+		{ ...event({ option_symbol: "MSFT260320P00400000", type: "ASSIGNED", qty: 1, event_date: "2026-03-20" }), fees: "15" },
+	));
+	assert.deepEqual(out.stock.map((s) => [s["basis"], (s["marks"] as string[]).includes("费用未知，未扣")]), [["39615.70", false]]);
+});

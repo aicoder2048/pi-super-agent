@@ -32,7 +32,7 @@ export function recordFill(input: Input, recorded: readonly DbRow[]) {
 	const missing = REQUIRED.filter((name) => blank(input[name]));
 	if (missing.length > 0) return { status: "needs-input", missing, ask: missing.map((name) => ASK[name]) };
 	const problems: string[] = [];
-	const account = text(input.account_ref)!;
+	const account = text(input.account_ref) ?? "";
 	if (!ACCOUNT.test(account)) problems.push("account_ref 只能是字母、数字、短横线和下划线");
 	const side = text(input.side)?.toUpperCase() as Side;
 	if (!SIDES.has(side)) problems.push("side 要是 STO、BTO、BTC 或 STC");
@@ -40,7 +40,7 @@ export function recordFill(input: Input, recorded: readonly DbRow[]) {
 	if (right !== "put" && right !== "call") problems.push("right 要是 put 或 call");
 	const multiplier = blank(input.multiplier) ? 100 : count(input.multiplier);
 	if (multiplier === undefined) problems.push("multiplier 要是正整数");
-	const contract = right === "put" || right === "call" ? contractOf(text(input.underlying)!.toUpperCase(), right, text(input.expiry)!, text(input.strike)!, multiplier ?? 100) : undefined;
+	const contract = right === "put" || right === "call" ? contractOf((text(input.underlying) ?? "").toUpperCase(), right, text(input.expiry) ?? "", text(input.strike) ?? "", multiplier ?? 100) : undefined;
 	if (contract === undefined) problems.push("合约拼不出 OCC 代码：看标的代码、到期日（YYYY-MM-DD）、行权价（最多 3 位小数）");
 	const cum = count(input.cum_qty);
 	if (cum === undefined) problems.push("cum_qty 要是正整数");
@@ -48,9 +48,9 @@ export function recordFill(input: Input, recorded: readonly DbRow[]) {
 	if (open < 0) problems.push("open_qty 要是正整数，没有挂着的就不给");
 	const avg = units(text(input.avg_price));
 	if (avg === undefined || avg <= 0n) problems.push("avg_price 要是正数，最多 4 位小数");
-	const tradeDate = text(input.trade_date)!;
+	const tradeDate = text(input.trade_date) ?? "";
 	if (!isIsoDate(tradeDate)) problems.push("trade_date 要是 YYYY-MM-DD");
-	const settle = blank(input.settle_date) ? null : text(input.settle_date)!;
+	const settle = blank(input.settle_date) ? null : (text(input.settle_date) ?? "");
 	if (settle !== null && !isIsoDate(settle)) problems.push("settle_date 要是 YYYY-MM-DD");
 	const [commission, fees] = [input.commission, input.fees].map((value) => (blank(value) ? null : units(text(value))));
 	if (commission === undefined || fees === undefined) problems.push("commission、fees 要是不带符号的金额，最多 4 位小数；不知道就不给");

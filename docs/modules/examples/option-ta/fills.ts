@@ -37,12 +37,12 @@ export const isIsoDate = (text: unknown): text is string => {
 	return m !== null && isoDate(Number(m[1]), Number(m[2]), Number(m[3])) === text;
 };
 
-/** The OCC symbol without the root's space padding, as the spec writes it: `AAPL260320C00250000`. */
+/** The OCC symbol without the root's space padding, as the spec writes it: `AAPL260320C00250000`. OCC roots carry no dot (BRK.B is BRKB). */
 export function contractOf(underlying: string, right: Right, expiry: string, strike: string, multiplier = 100): Contract | undefined {
 	const milli = units(strike);
 	if (!ROOT.test(underlying) || !isIsoDate(expiry) || milli === undefined || milli % 10n !== 0n || milli <= 0n || milli / 10n > 99_999_999n) return undefined;
 	const code = (milli / 10n).toString().padStart(8, "0");
-	const option_symbol = `${underlying}${expiry.slice(2).replace(/-/g, "")}${right === "call" ? "C" : "P"}${code}`;
+	const option_symbol = `${underlying.replace(/\./g, "")}${expiry.slice(2).replace(/-/g, "")}${right === "call" ? "C" : "P"}${code}`;
 	return { underlying, option_symbol, right, strike: Number(milli / 10n) / 1000, expiry, multiplier };
 }
 
@@ -71,10 +71,15 @@ export function increment(key: string, cum: number, avg: bigint, recorded: reado
 		prevQty += BigInt(qty);
 		prevAmount += BigInt(qty) * price;
 	}
+	if (BigInt(cum) === prevQty && mine.some((row) => row["source"] !== "broker-email")) {
+		const gap = BigInt(cum) * avg - prevAmount;
+		if ((gap < 0n ? -gap : gap) * 2n > prevQty) return { kind: "unparsed", detail: "conflicts-with-recorded" };
+	}
 	if (BigInt(cum) <= prevQty) return { kind: "covered" };
 	if (mine.some((row) => row["fill_id"] === fillId(key, cum))) return { kind: "unparsed", detail: "conflicts-with-recorded" };
 	const delta = BigInt(cum) - prevQty;
 	const numerator = BigInt(cum) * avg - prevAmount;
-	if (numerator <= 0n) return { kind: "unparsed", detail: "nonpositive-increment" };
-	return { kind: "new", qty: Number(delta), price: divide(numerator, delta) };
+	const price = numerator <= 0n ? 0n : divide(numerator, delta);
+	if (price <= 0n) return { kind: "unparsed", detail: "nonpositive-increment" };
+	return { kind: "new", qty: Number(delta), price };
 }

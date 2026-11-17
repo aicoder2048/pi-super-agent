@@ -28,8 +28,10 @@ function cents(value: bigint): string {
 	return `${value < 0n ? "-" : ""}${c / 100n}.${(c % 100n).toString().padStart(2, "0")}`;
 }
 
+/** An event row has no commission, only fees (tax memo 14.1), so there a missing commission is not an unknown one. */
 function feeOf(row: DbRow): bigint | null {
-	const [commission, fees] = [row["commission"], row["fees"]].map((v) => (v === null || v === undefined || v === "" ? null : units(v)));
+	const event = row["record_type"] === "EVENT";
+	const [commission, fees] = [row["commission"], row["fees"]].map((v, i) => (v === null || v === undefined || v === "" ? (event && i === 0 ? 0n : null) : units(v)));
 	return commission === null || fees === null || commission === undefined || fees === undefined ? null : commission + fees;
 }
 
@@ -66,9 +68,20 @@ function facts(rows: readonly DbRow[]) {
 	const duplicates: string[] = [];
 	let missingAccount = 0;
 	let unreadable = 0;
+	let stockRows = 0;
+	const reversed = new Set(rows.filter((r) => r["record_type"] === "REVERSAL").map((r) => r["reversal_of"]).filter((k): k is string => typeof k === "string"));
+	let reversedRows = 0;
 	for (const row of rows) {
 		const type = row["record_type"] ?? "FILL";
 		if (type !== "FILL" && type !== "EVENT") continue;
+		if (reversed.has(row["fill_id"] as string) || reversed.has(row["event_id"] as string)) {
+			reversedRows++;
+			continue;
+		}
+		if (type === "FILL" && (row["side"] === "BUY" || row["side"] === "SELL")) {
+			stockRows++;
+			continue;
+		}
 		if (text(row["account_ref"]) === undefined) {
 			missingAccount++;
 			continue;
@@ -90,6 +103,8 @@ function facts(rows: readonly DbRow[]) {
 		...(missingAccount > 0 ? [`${missingAccount} 行缺账户，没有算进链和税务视图，要问使用者`] : []),
 		...(unreadable > 0 ? [`${unreadable} 行读不懂，没有算进去`] : []),
 		...(duplicates.length > 0 ? [`重复的 fill_id 只算一次：${duplicates.join("、")}`] : []),
+		...(reversedRows > 0 ? [`${reversedRows} 行已被冲销（REVERSAL），没有算`] : []),
+		...(stockRows > 0 ? [`${stockRows} 行指派或行权产生的股票没有单算，股票那一笔从事件算`] : []),
 	];
 	return { items, notes, duplicates };
 }
@@ -189,7 +204,7 @@ function pieces(items: readonly (Fill | Event)[], ownerOf: (account: string) => 
 }
 
 /** `today` bounds "past expiry" in a year still running. */
-function taxView(items: readonly (Fill | Event)[], year: number, accounts: readonly DbRow[], today: string) {
+function taxView(items: readonly (Fill | Event)[], year: number, accounts: readonly DbRow[], today: string, wanted: Set<string> | undefined) {
 	const owners = new Map(accounts.filter((a) => text(a["account_ref"]) && text(a["tax_owner_key"])).map((a) => [a["account_ref"] as string, a["tax_owner_key"] as string]));
 	const ownerOf = (account: string) => owners.get(account) ?? `account:${account}`;
 	const { pieces: all, orphans } = pieces(items, ownerOf);
@@ -212,7 +227,7 @@ function taxView(items: readonly (Fill | Event)[], year: number, accounts: reado
 		...classMarks(p).marks,
 	];
 
-	const legs = all
+	let legs = all
 		.filter((p) => p.close !== null && !(p.close.kind === "event" && (p.close.type === "ASSIGNED" || p.close.type === "EXERCISED")) && Number(p.close.date.slice(0, 4)) === year)
 		.map((p) => {
 			const close = p.close!;
@@ -226,9 +241,13 @@ function taxView(items: readonly (Fill | Event)[], year: number, accounts: reado
 			const { nonequity } = classMarks(p);
 			const held = longHeld(p.lot.date, close.date);
 			const putOverYear = sideOf(p.lot) === "long" && p.lot.right === "put" && held && !nonequity;
-			const term = nonequity ? "60/40" : classMarks(p).marks.length > 0 || putOverYear ? "待确认" : sideOf(p.lot) === "short" || !held ? "短期" : "长期";
 			const marks = commonMarks(p);
+			const priorMark = nonequity && p.lot.date < `${year}-01-01`;
+			const straddleLong = !nonequity && held && sideOf(p.lot) === "long" && marks.includes("价差跨式标记");
+			const term = priorMark ? "待确认" : nonequity ? "60/40" : classMarks(p).marks.length > 0 || putOverYear || straddleLong ? "待确认" : sideOf(p.lot) === "short" || !held ? "短期" : "长期";
+			if (priorMark) marks.push("§1256 上年年末计价待确认（缺年末收盘快照）");
 			if (putOverYear) marks.push("长短期待确认（持有超过一年的买入 put，§1233(b)(1)）");
+			if (straddleLong && !putOverYear) marks.push("长短期待确认（跨式里的持有期）");
 			if (feeTotal === null) marks.push("费用未知，未扣");
 			if (close.kind === "event" && close.type === "CASH_SETTLED") marks.push("现金交割金额没记，盈亏待确认");
 			if (gain < 0n) {
@@ -236,7 +255,7 @@ function taxView(items: readonly (Fill | Event)[], year: number, accounts: reado
 				if (window.some((o) => o.symbol === p.lot.symbol)) marks.push("期权间 wash sale 标记（同一合约）");
 				else if (window.length > 0) marks.push("期权间 wash sale 标记（实质相同未证实）");
 				if (window.length > 0 && close.kind === "fill" && close.side === "BTC") marks.push("BTC 亏损算不算 wash sale 的卖出未证实");
-				marks.push("涉及股票的 wash sale 待确认");
+				if (!nonequity && !INDEX_ROOTS.has(p.lot.underlying)) marks.push("涉及股票的 wash sale 待确认");
 				if (marks.includes("价差跨式标记") && spreadMates(p).some((q) => q.close === null || q.close.date > yearEnd)) marks.push("跨式损失递延待确认（缺年末收盘快照）");
 			}
 			return {
@@ -257,7 +276,7 @@ function taxView(items: readonly (Fill | Event)[], year: number, accounts: reado
 			};
 		});
 
-	const stock = all
+	let stock = all
 		.filter((p): p is Piece & { close: Event } => p.close?.kind === "event" && (p.close.type === "ASSIGNED" || p.close.type === "EXERCISED") && Number(p.close.date.slice(0, 4)) === year)
 		.map((p) => {
 			const shares = p.qty * p.lot.multiplier;
@@ -270,7 +289,10 @@ function taxView(items: readonly (Fill | Event)[], year: number, accounts: reado
 				const longPutOpen = all.some((q) => q.owner === p.owner && q.lot.underlying === p.lot.underlying && q.lot.right === "put" && sideOf(q.lot) === "long" && q.lot.date <= p.close.date && (closeDate(q) ?? "9999-12-31") > p.close.date);
 				if (longPutOpen) marks.push("持有期待确认（同一股票上还有买入的 put）");
 			} else marks.push("交出的股票批次待确认（成本和长短期）");
-			if (p.lot.fee === null || p.close.fee === null) marks.push("费用未知，未扣");
+			const fees = [share(p.lot.fee, p.qty, p.lot.qty), share(p.close.fee, p.qty, p.close.qty)];
+			const feeTotal = fees.includes(null) ? 0n : fees.reduce<bigint>((s, f) => s + f!, 0n);
+			if (fees.includes(null)) marks.push("费用未知，未扣");
+			const net = buys ? value + feeTotal : value - feeTotal;
 			return {
 				account_ref: p.lot.account,
 				option_symbol: p.lot.symbol,
@@ -278,12 +300,12 @@ function taxView(items: readonly (Fill | Event)[], year: number, accounts: reado
 				date: p.close.date,
 				stock: buys ? "BUY" : "SELL",
 				shares: Number(shares),
-				...(buys ? { basis: cents(value), holding_starts: addDays(p.close.date, 1) } : { proceeds: cents(value) }),
+				...(buys ? { basis: cents(net), holding_starts: addDays(p.close.date, 1) } : { proceeds: cents(net) }),
 				marks,
 			};
 		});
 
-	const open = all
+	let open = all
 		.filter((p) => p.lot.date <= yearEnd && (p.close === null || p.close.date > yearEnd))
 		.map((p) => {
 			const marks = commonMarks(p);
@@ -292,7 +314,9 @@ function taxView(items: readonly (Fill | Event)[], year: number, accounts: reado
 			return { account_ref: p.lot.account, option_symbol: p.lot.symbol, open_side: p.lot.side, open_date: p.lot.date, qty: Number(p.qty), marks };
 		});
 
-	const unowned = [...new Set(items.map((i) => i.account))].filter((a) => !owners.has(a)).sort();
+	const shown = <T extends { account_ref: string }>(rows: T[]) => (wanted === undefined ? rows : rows.filter((r) => wanted.has(r.account_ref)));
+	[legs, stock, open] = [shown(legs), shown(stock), shown(open)];
+	const unowned = [...new Set(items.map((i) => i.account))].filter((a) => !owners.has(a) && (wanted === undefined || wanted.has(a))).sort();
 	const notes = [
 		...(unowned.length > 0 ? [`${unowned.join("、")} 没有税务归属人，wash sale 和跨式只在本账户里找`] : []),
 		...(orphans.length > 0 ? [`${orphans.length} 笔平仓或事件找不到开仓记录，没有算`] : []),
@@ -311,7 +335,8 @@ export function ledgerView(input: Input, data: Collections, today = new Date().t
 	const mine = wanted === undefined ? items : items.filter((i) => wanted.has(i.account));
 	const scope = "第一版范围 B：只看期权记录和指派、行权；要股票批次、QCC 或 1099-B 的判断标待确认。只是标记，不是税务建议";
 	if (view === "chain") return { status: "ok", view, chains: chainView(mine, data.chains, text(input.chain_id)), notes: [...notes, "链盈亏不含指派后的股票，也不含费用未知的部分"] };
-	const tax = taxView(mine, year!, data.accounts, today);
+	// Wash sales and straddles look across every account of a tax owner (tax memo 9.1, 11), so the filter applies to the output only.
+	const tax = taxView(items, year!, data.accounts, today, wanted);
 	return { status: "ok", view, year, scope, legs: tax.legs, stock: tax.stock, open: tax.open, pending: tax.pending, notes: [...notes, ...tax.notes] };
 }
 

@@ -144,7 +144,7 @@ test("Side 和描述的 PUT/CALL 不一致、描述切不开、日期不对：�
 test("带小数的行权价拼进 OCC 代码；发行人名里有空格、连字符和 &", () => {
 	const row = ["A1", "Sell Put", "Open", "BRK.B", "BERKSHIRE HATHAWAY-CL B &amp; CO PUT 01/15/2027 @ 452.5", "2", "6.10", "", "6.10 Limit", "09-Mar-2026", "10-Mar-2026"];
 	const [fill] = parseFills(letter(table(row)), []).fills;
-	assert.equal(fill?.option_symbol, "BRK.B270115P00452500");
+	assert.equal(fill?.option_symbol, "BRKB270115P00452500");
 	assert.equal(fill?.strike, 452.5);
 });
 
@@ -213,4 +213,31 @@ test("handler：下一封信从 rows 里已记的行算增量", () => {
 	const prior = first.map((r, i) => stored(Object.fromEntries(Object.entries(r).filter(([k]) => k !== "id")), String(i + 1)));
 	const second = fills({ items: [letter(table(aapl("QRSTalfa", "12", "3.10", "")), "m-2")], rows: { fills: prior } }).records;
 	assert.deepEqual(second.map((r) => [r.id, r.qty, r.price, r.partial_fill]), [[`${KEY}:cum12`, 7, "3.1714", "false"]]);
+});
+
+test("手动记过同一单、数和邮件对不上：不写，进 unparsed 让领队问", () => {
+	const prior = [stored({ record_type: "FILL", fill_id: `${KEY}:cum12`, order_key: KEY, qty: 12, price: "2.5000", source: "manual" })];
+	assert.deepEqual(parseFills(letter(table(aapl("QRSTalfa", "12", "3.10", ""))), prior), { fills: [], skipped: [{ reason: "unparsed", detail: "conflicts-with-recorded", account_ref: "QRSTalfa" }] });
+});
+
+test("增量价格四舍五入以后是 0：不记，进 unparsed", () => {
+	const prior = [stored({ fill_id: `${KEY}:cum1`, order_key: KEY, qty: 1, price: "0.0003" })];
+	assert.deepEqual(parseFills(letter(table(aapl("QRSTalfa", "4", "0.0001", ""))), prior).skipped, [{ reason: "unparsed", detail: "nonpositive-increment", account_ref: "QRSTalfa" }]);
+});
+
+test("同一订单键先是挂单行、后是成交行：只认第一行，成交行进 duplicate-order-key", () => {
+	const { fills: rows, skipped } = parseFills(letter(table(aapl("QRSTalfa", "", "", "5"), aapl("QRSTalfa", "5", "3.00", ""))), []);
+	assert.deepEqual(rows, []);
+	assert.deepEqual(skipped.map((s) => s.reason), ["working-order", "duplicate-order-key"]);
+});
+
+test("HTML 省略了 </td> 和 </tr>：下一格、下一行或表尾替它收尾", () => {
+	const open = (row: readonly string[]) => `<tr>${row.map((c) => `<td>${c}`).join("")}`;
+	const html = `<table>${open(HEAD)}${open(aapl("QRSTalfa", "5", "3.00", ""))}${open(aapl("LMNObeta", "2", "3.00", ""))}</table>`;
+	assert.deepEqual(parseFills(letter(html), []).fills.map((r) => [r.account_ref, r.qty]), [["QRSTalfa", 5], ["LMNObeta", 2]]);
+});
+
+test("一行的格数和表头对不上（例如 colspan）：这一行进 unparsed，不按位置猜", () => {
+	const html = `<table><tr>${cells(HEAD)}</tr><tr>${cells(aapl("QRSTalfa", "5", "3.00", "").slice(1))}</tr></table>`;
+	assert.deepEqual(parseFills(letter(html), []), { fills: [], skipped: [{ reason: "unparsed", detail: "row-shape" }] });
 });
