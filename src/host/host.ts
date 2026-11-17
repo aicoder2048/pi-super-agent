@@ -42,7 +42,7 @@ import { createScheduler, type Scheduler } from "../modules/scheduler.ts";
 import { threadId } from "../sources/generic.ts";
 import { inPollWindow } from "../sources/market/session.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
-import { causeOf, clearedText, Health, HEALTH_DEFAULTS, ModelHealth, raisedText, type HealthConfig } from "./health.ts";
+import { causeOf, clearedText, Health, HEALTH_DEFAULTS, ModelHealth, raisedText, scrub, type HealthConfig } from "./health.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -252,7 +252,7 @@ export class Host {
 				const run = mail && entry.feed.connector === "mail" && fixture === undefined ? await mail.beat(entry, ports, signal) : await runFeed(entry, items, ports, fixture, signal);
 				this.#feedHealth(entry, run, problem);
 				const zone = intoOf(entry.feed, entry.components)?.watch?.zone;
-				this.#beats.set(entry.source, { module: entry.module, title: entry.feed.title, at: clock.now(), ...(zone && { zone }), ...(run.ok ? { ok: true, records: run.records } : { ok: false, note: run.note }) });
+				this.#beats.set(entry.source, { module: entry.module, title: entry.feed.title, at: clock.now(), ...(zone && { zone }), ...(run.ok ? { ok: true, records: run.records } : { ok: false, note: entry.private ? PRIVATE_ERROR : scrub(run.note) }) });
 				return run;
 			},
 			state: data,
@@ -264,7 +264,7 @@ export class Host {
 			log: this.#log,
 			rejected: (entry, file, note, tries) => {
 				if (causeOf(note) === "auth") return;
-				this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(`${entry.feed.title}：收件箱里的 ${file} 试了 ${tries} 次都没处理成，放进了本机的 rejected，错误记在那里`, PROBLEM_MAX)) });
+				this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(`${entry.feed.title}：收件箱里${entry.private ? "有一件" : `的 ${file} `}试了 ${tries} 次都没处理成，放进了本机的 rejected，错误记在那里`, PROBLEM_MAX)) });
 			},
 		});
 		const deps: HostDeps = { kernel: this.kernel, afterCommand: () => this.#changed(), stateDir: options.stateDir, socketPath: this.socketPath, rulesFor: options.rulesFor ?? (() => []), routerHealth: this.#routerHealth };
