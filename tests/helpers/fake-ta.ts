@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+/** `stored`: the signals in ta's database, which `ta signals` reads back; without it, this scan's `signals`. */
 export type ScanPlan =
-	| { kind: "ok"; rows?: number; signals?: number | Record<string, unknown>[]; bars?: DailyRow[] }
+	| { kind: "ok"; rows?: number; signals?: number | Record<string, unknown>[]; stored?: Record<string, unknown>[]; bars?: DailyRow[] }
 	| { kind: "partial"; failing: string[] }
 	| { kind: "down" }
 	| { kind: "dividends" }
@@ -35,6 +36,12 @@ if (cmd === "calendar") {
 	process.exit(0);
 }
 const plan = config.scan;
+if (cmd === "signals") {
+	const stored = plan.stored ?? (Array.isArray(plan.signals) ? plan.signals : []);
+	const inWindow = (s) => (input.timeframe === undefined || s.timeframe === input.timeframe) && (input.start === undefined || Date.parse(s.data_end) >= Date.parse(input.start)) && (input.end === undefined || Date.parse(s.data_end) < Date.parse(input.end));
+	out({ signals: stored.filter(inWindow).slice(0, input.limit ?? 1000) });
+	process.exit(0);
+}
 const invalid = input.symbols.find((s) => !/^[A-Z]{1,10}(?:\\.[A-Z]{1,2})?$/.test(String(s).trim().toUpperCase().replaceAll("-", ".")));
 if (invalid !== undefined) {
 	console.error(JSON.stringify({ error: { code: "INVALID_SYMBOL", message: "标的代码格式无效。" } }));
@@ -73,7 +80,7 @@ if (plan.kind === "ok" && plan.bars) {
 } else write(plan.rows ?? symbols.length);
 const errors = plan.kind === "dividends" ? symbols.map((s) => ({ symbol: s, error: { code: "DIVIDENDS_UNAVAILABLE", message: "分红不可用，当前仅拆股复权。" } })) : plan.kind === "down" ? symbols.map((s) => error(s, "MARKET_UNAVAILABLE")) : plan.kind === "partial" ? plan.failing.map((s) => error(s, "MARKET_DATA_INVALID")) : [];
 if (plan.kind === "ok") errors.push({ symbol: "QQQ", error: { code: "DIVIDENDS_UNAVAILABLE", message: "分红更新不可用，使用已缓存分红。" } });
-out({ scan_id: 1, symbol_count: symbols.length, new_signals: Array.isArray(plan.signals) ? plan.signals : Array.from({ length: plan.signals ?? 0 }, (_, i) => ({ id: i })), errors });
+out({ scan_id: 1, symbol_count: symbols.length, new_signals: Array.isArray(plan.signals) ? plan.signals : Array.from({ length: plan.signals ?? 0 }, (_, i) => ({ id: i + 1, symbol: symbols[i % symbols.length], rule_id: "R-MA-2-50", timeframe: "1d", kind: "站上 MA50", direction: "bullish", data_end: "2025-01-02T21:00:00+00:00", price: 100 })), errors });
 `;
 
 /** Reads its plan from the config.json beside it, since the feed passes it no env of ours. */
