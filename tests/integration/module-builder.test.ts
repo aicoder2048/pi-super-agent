@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { startLiveModules } from "../../src/host/live-modules.ts";
@@ -56,4 +56,80 @@ test("第一次启动：module-builder 随仓库发，默认打开，五位专�
 	assert.equal(modules.kitFor("module-builder", null)?.crew.length, 5);
 	const line = modules.live.current().rosterPrompt().split("\n").find((l) => l.startsWith("- module-builder"));
 	assert.match(line ?? "", /模块/);
+});
+
+const SKILL = (name: string) => readFileSync(join(BUILDER, "skills", name, "SKILL.md"), "utf8");
+const QUOTE = "stock-ta/tools/quote";
+
+/** Each fenced block whose info string carries `file=<package>/<path>` is one file of an example package, as the skill shows it. */
+function examplePackages(markdown: string): Map<string, Map<string, string>> {
+	const packages = new Map<string, Map<string, string>>();
+	for (const [, path, body] of markdown.matchAll(/^```\w* file=(\S+)\n([\s\S]*?)^```$/gm)) {
+		const [pkg, ...rest] = path!.split("/");
+		if (!packages.has(pkg!)) packages.set(pkg!, new Map());
+		packages.get(pkg!)!.set(rest.join("/"), body!);
+	}
+	return packages;
+}
+
+function writePackage(t: { after(fn: () => void): void }, name: string, files: Map<string, string>): string {
+	const root = mkdtempSync(join(tmpdir(), "psa-example-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	for (const [path, body] of files) {
+		mkdirSync(dirname(join(root, name, path)), { recursive: true });
+		writeFileSync(join(root, name, path), body);
+	}
+	return join(root, name);
+}
+
+const problemsOf = (dir: string) => {
+	const result = scanPackage(dir);
+	return result.ok ? [] : result.problems.map((p) => `${p.where}: ${p.reason}`);
+};
+
+function checked(dir: string) {
+	const result = scanPackage(dir);
+	assert.ok(result.ok, result.ok ? "" : result.problems.map((p) => `${p.where}: ${p.reason}`).join("\n"));
+	return result.scan;
+}
+
+function examples() {
+	const text = SKILL("package-layout");
+	const packages = [...examplePackages(text)];
+	const marked = text.match(/^```\w* file=/gm)?.length ?? 0;
+	assert.equal(packages.reduce((sum, [, files]) => sum + files.size, 0), marked, "每个标了 file= 的代码块都完整取出（代码块要合上）");
+	assert.equal(packages.length, 2, "技能 package-layout 给两个示例包");
+	const team = packages.find(([, files]) => [...files.keys()].some((path) => path.startsWith("agents/")));
+	const solo = packages.find(([, files]) => ![...files.keys()].some((path) => path.startsWith("agents/")));
+	assert.ok(team && solo, "一个带专家，一个不带专家");
+	return { team, solo };
+}
+
+test("技能 package-layout 原文里的两个示例包写进目录，just module check 的同一段检查都通过，都只用 stock-ta/tools/quote", (t) => {
+	const { team, solo } = examples();
+	const teamScan = checked(writePackage(t, ...team));
+	assert.equal(teamScan.manifest.uses, undefined, "带专家的包不写模块级 uses");
+	const agents = teamScan.components.flatMap((c) => (c.kind === "agents" ? [c.agent] : []));
+	assert.ok(agents.length > 0);
+	assert.deepEqual([...new Set(agents.flatMap((a) => a.uses))], [QUOTE], "外部工具写在专家的 uses 里");
+	const soloScan = checked(writePackage(t, ...solo));
+	assert.deepEqual(soloScan.manifest.uses, [QUOTE], "不带专家的包写在 module.json 的 uses 里");
+	const evalUses = [teamScan, soloScan].flatMap((scan) => scan.components.flatMap((c) => (c.kind === "evals" ? c.eval.uses : [])));
+	assert.ok(evalUses.every((use) => use === QUOTE), "考题的 uses 也只写 stock-ta/tools/quote 的全名");
+	for (const scan of [teamScan, soloScan]) assert.ok(scan.notes.some((n) => n.includes(`uses "${QUOTE}", another module's tool`)), `${scan.manifest.name} 的检查认出外部工具，只给提醒`);
+});
+
+test("带专家的示例包把 uses 从专家文件挪到 module.json，检查报错", (t) => {
+	const [name, files] = examples().team;
+	const moved = new Map(files);
+	for (const [path, body] of files) if (path.startsWith("agents/")) moved.set(path, body.replace(/^uses:.*\n/m, ""));
+	const manifest = JSON.parse(files.get("module.json")!);
+	moved.set("module.json", JSON.stringify({ ...manifest, uses: [QUOTE] }, null, 2));
+	assert.ok(problemsOf(writePackage(t, name, moved)).some((line) => line.startsWith(`module.json: has "uses" but agents/ has members`)));
+});
+
+test("技能 build-module 原文写了「请对提供方说」的转述规则", () => {
+	const text = SKILL("build-module");
+	assert.ok(text.includes("请对 <提供方> 说"), "写明转述的句式");
+	assert.ok(text.includes("请对 stock-ta 说"), "给出 stock-ta 的例句");
 });
