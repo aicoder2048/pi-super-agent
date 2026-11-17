@@ -137,7 +137,12 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 	const noteExportChanges = (name: string, scan: PackageScan) => {
 		const serving = servingOf(name);
 		if (serving === undefined || serving.digest === scan.digest || exportNotices.get(name)?.digest === scan.digest) return;
-		const notices = exportChanges(exportedSide(store.dirOf(name as ModuleName, serving.digest), name), { exports: scan.manifest.exports ?? [], components: scan.components });
+		// The serving copy can be missing while a publish of it was cut short; then there is nothing to compare with.
+		const copy = store.dirOf(name as ModuleName, serving.digest);
+		let notices: string[] = [];
+		safely("比对开放工具", () => {
+			if (existsSync(copy)) notices = exportChanges(exportedSide(copy, name), { exports: scan.manifest.exports ?? [], components: scan.components });
+		});
 		exportNotices.set(name, { digest: scan.digest, notices });
 	};
 	const check = (name: string, entry: Found, version: Version): ModuleEvent | "wait" => {
