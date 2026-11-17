@@ -7,16 +7,16 @@
 - `module.json`：中文标题、路由说明和团队；有私密集合，所以 `exports: []`。
 - `skills/option-lead/SKILL.md`：分档、共同快照、一次会诊、输出五段和领队独占写入。
 - `agents/{direction,volatility,strategy,position,ledger,critic}.md`：六位只读专家，最小 `uses`；只有需要者接触私密集合。领队不另建专家文件。
-- 包根目录的 `massive.ts`（Massive 请求、分页、错误）和 `chain-rows.ts`（解析快照行、补算 IV 和希腊值）联网取行情，给 chain、vol 和 iv、watch 两个 feed 用。其余 `*.ts` 是纯计算：从 theta 移植（BS 价格和反解 IV、首达概率、到期盈亏、方案经济、CC 收益、流动性、参考价、Roll 净收门槛、IV 压缩、GEX 墙、OI 期限结构、到期临近、交割物、IV rank 和 HV20）。不联网、不读写数据。门槛是命名常量，说明书没定的沿用 theta 的值，待使用者确认。
-- `tools/{chain,vol,strategy,record,ledger}/`：每个包含 `tool.json`、`index.ts`、`cases.json`。`strategy` 只算不取数：给定腿，回权利金、参考价、盈亏平衡、到期盈亏、年化、指派概率、流动性和三种 Roll 的净收付。`chain`、`vol` 向 Massive 取数（行情辅助在包根目录的 `massive.ts`、`chain-rows.ts`），滤掉二元期权、跟分页，缺 IV 或希腊值用中间价自算并标「自算」，算不出标「无数据」，休市标「休市」；`chain` 的 OI 墙、GEX、最大痛点、异常成交还回 `NOT_IMPLEMENTED`。`vol` 只读 `iv-snapshots`，没有行时 history 回 `NO_HISTORY`。`record`、`ledger` 只读 `$PSA_MODULE_DATA/data.db`，不写库；它们的用例共用 `tools/ledger/fixtures/data/data.db`，这份库由 `tools/ledger/fixtures/seed.json` 经 `tests/helpers/option-ta-ledger-db.ts` 生成，全是虚构数据。
-- `fills.ts`：feed 和 `record` 共用的订单键、`fill_id`、OCC 代码和累计增量（整数万分之一美元）。`data-db.ts`：工具只读打开 data.db。
+- 包根目录的 `massive.ts`（Massive 请求、分页、错误）和 `chain-rows.ts`（解析快照行、补算 IV 和希腊值）联网取行情，给 chain、vol 和 iv、watch 两个 feed 用。其余 `*.ts` 是纯计算：从 theta 移植（BS 价格和反解 IV、首达概率、到期盈亏、方案经济、CC 收益、流动性、参考价、Roll 净收门槛、IV 压缩、GEX 墙、OI 期限结构、到期临近、交割物、IV rank 和 HV20）。不联网、不读写数据。门槛是命名常量，说明书没定的沿用 theta 的值；Roll 净收不到平仓成本一成算「为几分钱 Roll」，使用者 2026-11-17 确认。
+- `tools/{chain,vol,strategy,record,ledger}/`：每个包含 `tool.json`、`index.ts`、`cases.json`。`strategy` 只算不取数：给定腿，回权利金、参考价、盈亏平衡、到期盈亏、年化、指派概率、流动性和三种 Roll 的净收付。`chain`、`vol` 向 Massive 取数（行情辅助在包根目录的 `massive.ts`、`chain-rows.ts`），滤掉二元期权、跟分页，缺 IV 或希腊值用中间价自算并标「自算」，算不出标「无数据」，休市标「休市」；`chain` 的 OI 墙、GEX、最大痛点、异常成交还回 `NOT_IMPLEMENTED`。`vol` 只读 `iv-snapshots`，没有行时 history 回 `NO_HISTORY`。`record`、`ledger`、`vol` 只读 `$PSA_MODULE_DATA/data.db`，没设这个变量就当库是空的，不写库。`record` 只认 `accounts` 和已记 `fills` 里有的账户短码，没见过的回 `needs-input` 并列出已知短码，防止手动记账和邮件因短码写法不同把同一笔记两遍；两处都空（第一次用）照常记，提示这是第一个短码。它们的用例共用 `tools/ledger/fixtures/data/data.db`，这份库由 `tools/ledger/fixtures/seed.json` 经 `tests/helpers/option-ta-ledger-db.ts` 生成，全是虚构数据。
+- `fills.ts`：feed 和 `record` 共用的订单键、`fill_id`、OCC 代码和累计增量（整数万分之一美元）。`symbols.ts`：标的代码的唯一规则（工具、两个 feed、成交共用），OCC 期权根去掉类别点（BRK.B 是 BRKB）。`data-db.ts`：工具只读打开 data.db。
 - `data/{fills,chains,accounts,brokers}/collection.json`：四个 `private` 集合；`data/{watchlist,iv-snapshots}/collection.json`：两个 `shareable` 集合。全部初始为空。
 - `feeds/fills/`：接宿主 `mail` 连接器，只收私密名单 `brokers` 上的发件人，写进私密集合 `fills`。`parse.ts` 是纯函数，`index.ts` 把结果交给宿主；样例是 P1 的四封虚构信和一份没有信的。
-- `feeds/iv/`：收盘 30 分钟后给期权自选每个标的存一行 IV 原始输入，新标的先回填一年，每拍最多 `requestsPerTick` 次请求；`feeds/watch/`：交易时段按门槛检查 `fills` 里的未平仓期权，仓位用 `ledger` 的先进先出算法汇总，提醒直接发（`alerts`），每条 id 固定、宿主只发一次。两者共用包根目录的 `market-days.ts`（宿主日历的副本）、`feed-fetch.ts`（Finnhub 请求和时间戳）、`dividends.ts`（预计除息日）。
+- `feeds/iv/`：收盘 30 分钟后给期权自选每个标的存一行 IV 原始输入，新标的先回填一年，每拍最多 `requestsPerTick` 次请求；`feeds/watch/`：交易时段按门槛检查 `fills` 里的未平仓期权，仓位用 `ledger` 的先进先出算法汇总，提醒直接发（`alerts`），每条 id 固定、宿主只发一次。两者和 `chain`、`vol` 的盘中判断共用包根目录的 `market-days.ts`（宿主时段和 stock-ta 假日表的副本，`tests/unit/market-hours.test.ts` 保持三者一致。假日和提前收盘日只填到 2028 年底，同一个测试在 2028-10-02 以后失败，提醒补下一年）、`feed-fetch.ts`（Finnhub 请求和时间戳）、`dividends.ts`（预计除息日）。
 - `rules.md`：状态通知的处理边界，不授权写集合或交易。
 - `knowledge/` 和 `evals/` 由独立成员维护；检查与预演以最终包为准。
 
-专家不写文件，也不写集合。工具不写库。领队写原始事实，派生盈亏/税务视图不能反写事实。`fills` 复用记录类型 FILL、EVENT、MARKET_SNAPSHOT、REVERSAL，保留指派/行权产生的股票和仍持有的 §1256/价差腿年末期权收盘观察；不增加股票或报税集合。价格、佣金、费用用十进制文本保精度；`partial_fill`、意图确认用文字，因为集合字段无 boolean。`instrument` 是合约 JSON 文本，兼有明确的合约事实字段；未来校验器须保证一致。未知费用留空，不当零。账户只存短码与匿名键，不存真实账号；税务归属和账户类型未知留空。
+专家不写文件，也不写集合。工具不写库。领队写原始事实，派生盈亏/税务视图不能反写事实。`fills` 复用记录类型 FILL、EVENT、MARKET_SNAPSHOT、REVERSAL；EVENT 行的 `trade_date` 写成 `event_date`，因为宿主按 `trade_date` 给 feed 最新 500 行，没写的事件排在最后，fills 多了以后 watch 看不到到期和指派（`ledger` 在 notes 里提醒没写的行）；保留指派/行权产生的股票和仍持有的 §1256/价差腿年末期权收盘观察；不增加股票或报税集合。价格、佣金、费用用十进制文本保精度；`partial_fill`、意图确认用文字，因为集合字段无 boolean。`instrument` 是合约 JSON 文本，兼有明确的合约事实字段；未来校验器须保证一致。未知费用留空，不当零。账户只存短码与匿名键，不存真实账号；税务归属和账户类型未知留空。
 
 ## fills：成交邮件
 
@@ -42,11 +42,13 @@
 
 提供方缺席、未开放或环境未就绪时原样报告原因，其余有依据的部分继续。note 未开放，sources 原文与自选写入需转述“请对 stock-ta 说……”。所有外部调用只传必要股票代码及明示短筛选参数，不传私密邮件、账户、成本、张数、仓位和使用者原话。feed 不调用任何外部模块工具。
 
-## 默认值（仅口径，不代表算法已实现）
+## 默认值
 
 - IV：口径 `option-ta-iv-close-v1`；收盘后 30 分钟开始尝试，含提前收盘日；每交易日一次，回填 365 日。取标准美式 put，照 theta 的 `selectAtmContract`：期限 21—45 天里最近的到期日，再取离正股收盘价最近、当天有成交的行权价，一样近取较低的；只试最近的 4 张、行权价只查正股收盘价上下 5%。无候选或当日合约日线记无数据，不补别日/供应方 IV。
 - 序列输入为合约日线收盘价；正股同日收盘、到期、行权价、抓取时刻同存。中间价仅日常对照，不进序列。BS 假设利率 0、连续股息率 0，剩余时间按 theta 的 `dteOn` 取日历天数 ÷ 365（不按到期日美东 16:00 细算）；均为近似、未计算，非 P1 已证实的就绪时刻。HV20 用 20 个交易日收盘对数收益率、样本标准差、252 日年化。口径变更整段重算，不混序列。
-- 提醒检查 5 分钟；到期前 5 个交易日静音；到期日 09:45 后首次检查离行权价小于 3% 响铃；卖方小于 2% 静音、穿价响铃；权利金五成静音、八成响铃，不等于强制买回。财报入仓发现即提醒、前 2 个交易日再提醒；价内卖 call 到期前有除息则前 2 个交易日响铃，预计但未宣布只静音。接近和穿过行权价每个仓位每个交易日各发一次；其余每个仓位（财报、除息按那一天）只发一次。报价不对齐不判断。
+- 提醒检查 5 分钟；到期前 5 个交易日静音；到期日 09:45 后首次检查离行权价小于 3% 响铃；卖方小于 2% 静音；权利金五成静音、八成响铃，不等于强制买回。价内卖 call 到期前有除息则前 2 个交易日响铃，预计但未宣布只静音。接近行权价每个仓位每个交易日发一次；其余每个仓位（财报、除息按那一天）只发一次。报价不对齐不判断。
+- 使用者 2026-11-17 定的三条：提醒正文带账户短码；穿过行权价只在刚穿过的那次响铃，之后一直在价内不再响，回到价外再穿过算新的一次；同一仓位同一天最多响一次铃，多出来的改成静音，到期日只有开盘离行权价不到 3% 那条响。同一拍里按到期、除息、穿价、财报、权利金的顺序占这一次。
+- 财报：到期前有财报静音提醒，财报前 2 个交易日响铃，使用者 2026-11-17 确认保持这样。
 - 预计除息仅最近一次常规 CD 且 frequency 为 1/2/4/12 时按月周期滚动，休市日前移；否则除息无数据。watch 每交易日重查一次除息接口和财报日。
 - 默认意图：卖 put/call 收租、买 put 买保险、买 call 看涨、贷方价差限定风险收租、借方价差限定成本看方向，均待确认，不证明持股覆盖。
 - QCC、涉及独立股票批次的跨式/§1233/wash sale、长期个股买 put、缺年末快照等标待确认。只做税务标记，不自动禁扣/递延，不做 1099-B 对账。`ledger` 的税务视图按 tax memo 第 14.3 节第一版范围算：每腿的盈亏、长短期、税年照算；价差两腿标跨式，期权之间按 30 天窗口标 wash sale；QCC、涉及股票的 wash sale、持有超过一年的买入 put、指派后交出的股票批次、§1256 类别没核实和缺年末快照一律标待确认。
@@ -55,14 +57,14 @@ watch 不设置 into，宿主按非私密 feed 处理；合约、张数、权利
 
 ## 密钥、检查与运行
 
-本轮不取 key、不联网、不启用模块，不改 config、不安装环境。未来实现取数后，使用者自行设置业务密钥：
+`chain`、`vol` 和 `iv`、`watch` 两个 feed 联网取行情。使用者自行设置业务密钥：
 
 ```sh
 just -f "$PSA_REPO/justfile" module secret option-ta POLYGON_API_KEY
 just -f "$PSA_REPO/justfile" module secret option-ta FINNHUB_API_KEY
 ```
 
-iv 声明 Massive key，watch 声明 Massive/Finnhub key；`chain`、`vol` 声明 Massive key，缺 key 时回 `NO_KEY` 和上面第一条命令；两个 feed 缺 key 回 problem，写明对应的命令。业务 key 各模块独存；共享同一个服务额度，宿主不替多个模块排队。缺 key 的未来实现必须给明确原因和上述命令，不能返回空成功。
+iv 声明 Massive key，watch 声明 Massive/Finnhub key；`chain`、`vol` 声明 Massive key，缺 key 时回 `NO_KEY` 和上面第一条命令；两个 feed 缺 key 回 problem，写明对应的命令。业务 key 各模块独存；共享同一个服务额度，宿主不替多个模块排队。缺 key 时都给明确原因和上述命令，不返回空成功。
 
 ```sh
 just -f "$PSA_REPO/justfile" module check "$STATE/modules/option-ta"
@@ -70,6 +72,10 @@ PSA_STATE_DIR="$STATE" just -f "$PSA_REPO/justfile" module try option-ta
 ```
 
 `strategy` 的 cases 用算出来的数断言，不联网，所以没有休市和 HTTP 用例。record/ledger 的 cases 用夹具库断言算出来的数，覆盖缺账户、费用未知、重复 `fill_id`、部分成交合计；它们没有 HTTP 路径。chain/vol 的 cases 用 P1 样本回放：chain 覆盖休市、盘中、缺字段、分页、应答体 ERROR、HTTP 429 和 5xx；vol 覆盖休市、缺字段（自算）、没有历史、有历史、21 到 45 天没有到期日、应答体 ERROR、HTTP 429 和 5xx；`vol` 有历史的那条读 `tools/vol/fixtures/history/data.db`（由 `tests/helpers/option-ta-iv-history.ts` 生成的虚构序列）。缺 key 回放写不出（检查给点名的密钥填假值），由 `tests/unit/option-ta-chain-tool.test.ts`、`option-ta-vol-tool.test.ts` 断言。`module check` 只检查 feed 样例交回的格式；解析对不对由仓库的 `tests/unit/option-ta-fills.test.ts` 断言（四封信的 HTML 和纯文本各一遍，期望取 `option-ta-p1/mail-samples/*.expected.json`），record/ledger 由 `tests/unit/option-ta-ledger.test.ts` 断言，`iv`、`watch` 的样例（每种门槛触发和不触发、回填、当天已存、休市、缺数据、429/5xx）由 `tests/unit/option-ta-{iv,watch}-*.test.ts` 回放断言，缺 key 也在那里测，纯计算由其余 `tests/unit/option-ta-*.test.ts` 断言，都由 `just test` 跑，包里不放测试文件。
+
+## 考题
+
+`evals/` 六道题：报价（chain）、开仓会诊（stock-ta 的 structure）、Roll 净收（strategy）、到期前财报（stock-ta 的 earnings-date）、记成交（record）、加自选（data/watchlist）。现在没有考 `knowledge` 的题。题里的到期日写成完整日期（2026-12-18、2027-01-15），`expect` 里的合约代码和 fill_id 跟着这些日子；2026-12-18 以后这些合约到期，要换成那时还没到期的日子再预演。记成交那道题的成交日故意不写年份，考领队按今年理解。
 
 ## 范围与依据
 
