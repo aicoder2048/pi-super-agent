@@ -276,3 +276,48 @@ test("module check 不跑包里的测试文件：一个必然失败的 tests/*.t
 	withTest.set(join(dirname(skill), "tests", "always-fails.test.ts"), 'import test from "node:test";\ntest("x", () => { throw new Error("ran"); });\n');
 	assert.deepEqual(problemsOf(writePackage(t, name, withTest)), []);
 });
+
+test("成员没有 report：package-layout 叫读它的成员回复领队，由领队用 report（blocked）问使用者", () => {
+	assert.ok(!MEMBER_TOOLS.includes("report"), "成员工具里没有 report");
+	const layout = SKILL("package-layout");
+	assert.ok(!layout.includes("还超，用一次 report"), "不叫成员自己用 report");
+	assert.ok(layout.includes("回复领队，由领队用 report（blocked）问使用者"));
+});
+
+test("工具字面量要专家写明原样照抄才能当 expect：出考题有编辑权限，没写就自己补并在回复里列出；专家原样转述 NOT_IMPLEMENTED 这类固定状态", () => {
+	const writer = scanned().components.flatMap((c) => (c.kind === "agents" && c.agent.name === "eval-writer" ? [c.agent] : []))[0]!;
+	assert.ok(writer.tools.includes("edit"), "出考题能改专家文件");
+	const text = AGENT("eval-writer");
+	assert.ok(text.includes("自己补上"), "出考题自己补「原样照抄」");
+	assert.ok(text.includes("回复里列出"), "补了哪几处写进回复");
+	assert.ok(SKILL("package-layout").includes("`NOT_IMPLEMENTED`"), "专家写法写明固定状态");
+	assert.ok(SKILL("package-layout").includes("原样转述这个状态"), "专家原样转述固定状态");
+});
+
+test("write-evals 的正例一次答得完，固定中文用语只在说明书或技能写死、专家被要求原样照抄时才可用", () => {
+	const text = SKILL("write-evals");
+	assert.ok(!text.includes("未扣费"), "不再拿模型会换说法的中文短语作例子");
+	assert.ok(text.includes("说明书或技能写死"), "中文固定用语有前提");
+	const good = text.slice(text.indexOf("正例："));
+	assert.ok(good.slice(0, good.indexOf("\n")).includes("腿"), "正例带上每条腿的价");
+});
+
+test("检查专家只把文字里的本机路径换成占位，工具代码里的路径回复领队", () => {
+	const checker = AGENT("checker");
+	assert.ok(checker.includes("工具代码里的路径"), "工具代码另说");
+	assert.ok(checker.includes("回复领队"));
+});
+
+test("模板考题：题面是使用者的原话，不教答法；工具题的 expect 是工具用例真的输出的字面量", () => {
+	const templates = join(REPO, "src/modules/templates");
+	for (const name of ["full", "team"]) {
+		const body = questionOf(readFileSync(join(templates, name, "evals", "cites-knowledge.md"), "utf8"));
+		assert.ok(!body.includes("请注明"), `${name} 的题面不教答法`);
+	}
+	const exam = readFileSync(join(templates, "full", "evals", "uses-tool.md"), "utf8");
+	const expect = exam.match(/^expect: (.*)$/m)![1]!.split(",").map((s) => s.trim());
+	const cases = JSON.parse(readFileSync(join(templates, "full", "tools", "percent-change", "cases.json"), "utf8")) as { expect: Record<string, unknown> }[];
+	const literals = new Set(cases.flatMap((c) => Object.values(c.expect).map(String)));
+	for (const phrase of expect) assert.ok(literals.has(phrase), `expect「${phrase}」是工具输出的字面量`);
+	assert.ok(readFileSync(join(templates, "full", "agents", "advisor.md"), "utf8").includes("原样照抄"), "顾问照抄工具的数");
+});

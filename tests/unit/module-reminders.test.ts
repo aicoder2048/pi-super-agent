@@ -42,6 +42,20 @@ test("网址里的 /home/、相对路径、占位符和二进制文件不提醒"
 	assert.deepEqual(pathNotes(root), []);
 });
 
+test("file:// 网址里的本机路径、/private/tmp/ 和 /var/tmp/ 也提醒", () => {
+	for (const [prefix, line] of [["/Users/", "打开 file:///Users/someone/report.html"], ["/private/tmp/", "输出在 /private/tmp/psa-1"], ["/var/tmp/", "缓存在 /var/tmp/psa-2"]] as const) {
+		const root = pkg({ "README.md": `# alpha\n\n${line}\n` });
+		assert.deepEqual(pathNotes(root), [`README.md: line 3 has a local absolute path starting "${prefix}"; write <状态目录>, $STATE or $PSA_REPO instead, a package may be published`]);
+	}
+});
+
+test("~/tmp/ 和网址查询串里的 =/tmp/ 不提醒；网址外的 STATE=/tmp/ 仍提醒", () => {
+	assert.deepEqual(pathNotes(pkg({ "README.md": "草稿放 ~/tmp/x，登录后跳到 https://example.com/login?next=/tmp/x&from=/Users/\n" })), []);
+	assert.deepEqual(pathNotes(pkg({ "README.md": "见 https://example.com/a?b=/tmp/x 再跑 STATE=/tmp/y\n" })), [
+		'README.md: line 1 has a local absolute path starting "/tmp/"; write <状态目录>, $STATE or $PSA_REPO instead, a package may be published',
+	]);
+});
+
 const question = (body: string) => `---\nname: q\nexpect: x\n---\n${body}\n`;
 
 test("考题题面超过 300 字给一行提醒，不挡检查；300 字以内不提醒", () => {

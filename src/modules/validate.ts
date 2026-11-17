@@ -711,13 +711,15 @@ function readComponents(report: Report, root: string): Component[] {
 }
 
 /** Paths that exist on one machine only. A package may be published, so it says `<状态目录>`, `$STATE` or `$PSA_REPO` instead. */
-const LOCAL_PATH = /(?<![\w.\/}>-])(\/Users\/|\/home\/|\/private\/var\/|\/var\/folders\/|\/tmp\/)/;
+const LOCAL_PATH = /(?:(?<=file:\/\/)|(?<![\w.\/}>~-]))(\/Users\/|\/home\/|\/private\/var\/|\/private\/tmp\/|\/var\/folders\/|\/var\/tmp\/|\/tmp\/)/;
+/** A web address (any scheme but `file:`): its path and query belong to that site, not this machine. */
+const WEB_ADDRESS = /\b(?!file:)[a-z][a-z0-9+.-]*:\/\/\S*/gi;
 
 function localPathNotes(root: string): string[] {
 	return allFiles(root).flatMap((path) => {
 		const content = readFileSync(join(root, path));
 		if (content.includes(0)) return [];
-		const lines = content.toString("utf8").split("\n");
+		const lines = content.toString("utf8").split("\n").map((line) => line.replace(WEB_ADDRESS, ""));
 		const index = lines.findIndex((line) => LOCAL_PATH.test(line));
 		if (index === -1) return [];
 		const prefix = LOCAL_PATH.exec(lines[index]!)![1];
