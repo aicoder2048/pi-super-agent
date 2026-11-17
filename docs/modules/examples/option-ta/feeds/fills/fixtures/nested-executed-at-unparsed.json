@@ -1,8 +1,0 @@
-{
-  "input": {
-    "now": "2026-11-17T21:30:00.000Z", "cursor": "unchanged",
-    "items": [{ "id": "fictional-nested-table", "threadId": "fictional-thread-3", "from": { "name": "Fictional Desk", "address": "desk@example.net" }, "subject": "FICTIONAL decoded windows-1252 • sample", "date": "2026-03-09T20:20:00.000Z", "body": "Account QRSTalfa Sell Put Open IWM 5 3.07 09-Mar-2026", "html": "<table><tr><td>Outer wrapper<table><tr><td>Account</td><td>Security Description</td><td>Executed At</td><td>Exe Qty</td><td>Avg Price</td></tr><tr><td>QRSTalfa</td><td>ISHARES RUSSELL 2000 ETF PUT 03/20/2026 @ 240</td><td>09-Mar-2026</td><td>5</td><td>3.07</td></tr></table></td></tr></table>", "attachments": [] }],
-    "rows": { "fills": [] }
-  },
-  "responses": {}
-}

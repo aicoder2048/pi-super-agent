@@ -1,8 +1,0 @@
-{
-  "input": {
-    "now": "2026-11-17T21:30:00.000Z", "cursor": "unchanged",
-    "items": [{ "id": "fictional-working-stock-partial", "threadId": "fictional-thread-2", "from": { "name": "Fictional Desk", "address": "desk@example.net" }, "subject": "FICTIONAL working, stock and partial", "date": "2026-02-09T21:20:00.000Z", "body": "Account | Side | Position | Security Description | Exe Qty | Avg Price | Open Qty\nQRSTalfa | Sell Put | Open | AMAZON.COM INC PUT 02/20/2026 @ 210 | 4 | 4.2500 | 6\nLMNObeta | Buy Call | Close | SAMPLE CALL 03/20/2026 @ 250 | | | 7\nQRSTalfa | Sell | | S&P SAMPLE STOCK | 100 | 10.00 |", "attachments": [] }],
-    "rows": { "fills": [] }
-  },
-  "responses": {}
-}

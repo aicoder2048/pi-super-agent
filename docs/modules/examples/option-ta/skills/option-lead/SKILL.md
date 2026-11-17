@@ -33,7 +33,7 @@ chains 只记链成员、Roll 组和意图变更。每链属于一个账户；Ro
 
 账户短码只在私密 accounts 映射稳定匿名 account_key，税务归属与应税/IRA 未知留空。四个 private 集合不得对外导出，模块 exports 留空。对 stock-ta 只传必要标的代码及明确支持的短筛选参数，绝不传邮件、账户、张数、成本、仓位或使用者原话。提供方不在时说清缺项而继续有依据部分；需读内部出处或加自选时转述“请对 stock-ta 说……”。
 
-fills 当前为未连接 mail 的安全占位 feed，不接真实信、不推进连接器 cursor、不入账；不得把 brokers 加成活动名单或把 connector 改为 mail 来试用。只有解析、查重和失败保留机制通过验证后才接 mail。收到 NOT_IMPLEMENTED notice 只报告能力缺失，不从邮件模型补录。iv/watch 也只报状态，不表示已回填或已监控。watch 将来无 into，持仓提醒全文进使用者自己的 Telegram，不能误称只发匿名摘要。rules 不授权任何写操作。
+fills 已接 mail，解析还没做：有信就抛 NOT_IMPLEMENTED，信试 3 拍后跳过、留在 Gmail，不入账。brokers 名单留空；宿主提示名单为空是预期的，解析做好以前不往名单加地址，使用者要加时先说明这一点。收到跳过提醒只报告能力缺失，不从邮件模型补录。iv/watch 也只报状态，不表示已回填或已监控。watch 将来无 into，持仓提醒全文进使用者自己的 Telegram，不能误称只发匿名摘要。rules 不授权任何写操作。
 
 ## 税务
 
