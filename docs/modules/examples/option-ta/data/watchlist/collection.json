@@ -1,0 +1,8 @@
+{
+  "title":"期权自选（独立于stock-ta，初始为空）","kind":"record","class":"shareable",
+  "fields": {
+    "symbol":{"type":"text","title":"公共标的代码；不附持仓/账户/意图"},
+    "addedAt":{"type":"date","title":"加入时间"},
+    "removedAt":{"type":"date","title":"移除时间"}
+  }
+}

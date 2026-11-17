@@ -1,0 +1,5 @@
+{
+  "title":"成交邮件（P2解析未实现）",
+  "connector":"mail","handler":"index.ts","every":"5m",
+  "into":"fills","reads":["fills"],"settings":{"senders":"brokers"}
+}

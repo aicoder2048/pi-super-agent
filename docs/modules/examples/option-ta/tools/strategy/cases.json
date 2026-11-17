@@ -1,0 +1,8 @@
+[
+  {"name":"给定买平卖开净收_非完整Roll能力","input":{"request":"{\"operation\":\"cashflow\",\"legs\":[{\"side\":\"BTC\",\"price\":\"2.00\",\"qty\":2,\"multiplier\":100},{\"side\":\"STO\",\"price\":\"2.50\",\"qty\":2,\"multiplier\":100}]}"},"expect":{"status":"CALCULATED_PARTIAL","payload":"{\"net_premium_usd\":\"100.0000\",\"leg_cashflows_usd\":[\"-400.0000\",\"500.0000\"],\"fees\":\"UNKNOWN_NOT_DEDUCTED\",\"source\":\"USER_PROVIDED\",\"market_data\":\"NOT_REQUESTED\"}"}},
+  {"name":"给定买入净付及非100乘数","input":{"request":"{\"operation\":\"cashflow\",\"legs\":[{\"side\":\"BTO\",\"price\":\"1.2345\",\"qty\":2,\"multiplier\":10}]}"},"expect":{"status":"CALCULATED_PARTIAL","payload":"{\"net_premium_usd\":\"-24.6900\",\"leg_cashflows_usd\":[\"-24.6900\"],\"fees\":\"UNKNOWN_NOT_DEDUCTED\",\"source\":\"USER_PROVIDED\",\"market_data\":\"NOT_REQUESTED\"}"}},
+  {"name":"完整策略未实现","input":{"request":"{\"operation\":\"vertical\"}"},"expect":{"status":"NOT_IMPLEMENTED"}},
+  {"name":"缺字段","input":{"request":"{}"},"expect":{"status":"INVALID_INPUT"}},
+  {"name":"不猜100乘数","input":{"request":"{\"operation\":\"cashflow\",\"legs\":[{\"side\":\"STO\",\"price\":\"2.50\",\"qty\":1}]}"},"expect":{"status":"INVALID_INPUT"}},
+  {"name":"禁止浮点价格和五位精度","input":{"request":"{\"operation\":\"cashflow\",\"legs\":[{\"side\":\"STO\",\"price\":\"1.23456\",\"qty\":1,\"multiplier\":100}]}"},"expect":{"status":"INVALID_INPUT"}}
+]

@@ -1,0 +1,8 @@
+{
+  "title": "使用者意图与第一版范围（目标，非上线能力）",
+  "version": "p2-reference-0.1",
+  "published": "2026-11-17",
+  "authority": "reference",
+  "license": "bundled",
+  "origin": "使用者自写 docs/modules/option-ta-glossary.md（未独立署日期）、option-ta-spec.md、option-ta-build-plan.md「已定的第一版范围」（2026-11-16/17 决定）；本轮过程说明书 spec.md 补充 P2 最简骨架、不得移植代码和未实现边界。仅整理材料，不含独立联网核验。"
+}

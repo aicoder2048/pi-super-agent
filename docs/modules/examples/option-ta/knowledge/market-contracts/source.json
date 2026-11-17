@@ -1,0 +1,8 @@
+{
+  "title": "P1 行情契约、IV 口径与已知限制（材料记录）",
+  "version": "p2-reference-0.1",
+  "published": "2026-11-17",
+  "authority": "reference",
+  "license": "bundled",
+  "origin": "使用者自写 docs/modules/option-ta-p1/README.md：P1 记录 2026-11-17 美东 04:29–04:40、SPY/NVDA、54 次调用，全部盘前/休市；结合 option-ta-spec.md「行情取数规则」「IV 历史」（2026-11-17 使用者决定）。本轮只读材料，未联网、未读密钥、未重放原始样本，不代表当前服务可用性。仅转述契约和限制，不分发供应方原始应答或 theta 代码/digest。"
+}

@@ -1,0 +1,6 @@
+[
+  {"name":"链视图明确未读库_不是零收益","input":{"view":"chain"},"expect":{"status":"NOT_IMPLEMENTED"}},
+  {"name":"税务视图明确未实现","input":{"view":"tax","tax_year":2026},"expect":{"status":"NOT_IMPLEMENTED"}},
+  {"name":"缺视图","input":{},"expect":{"status":"INVALID_INPUT"}},
+  {"name":"非法税年","input":{"view":"tax","tax_year":20.5},"expect":{"status":"INVALID_INPUT"}}
+]

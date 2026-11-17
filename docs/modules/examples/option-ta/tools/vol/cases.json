@@ -1,0 +1,6 @@
+[
+  {"name":"合法请求仅返回未实现","input":{"symbol":"NVDA"},"expect":{"status":"NOT_IMPLEMENTED"}},
+  {"name":"休市标签仍无IV_非休市算法覆盖","input":{"symbol":"SPY","session":"CLOSED"},"expect":{"status":"NOT_IMPLEMENTED"}},
+  {"name":"缺代码","input":{},"expect":{"status":"INVALID_INPUT"}},
+  {"name":"禁止自由文本代码","input":{"symbol":"NVDA account XYZ"},"expect":{"status":"INVALID_INPUT"}}
+]

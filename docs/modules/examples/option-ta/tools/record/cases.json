@@ -1,0 +1,7 @@
+[
+  {"name":"基础校验不授权写入或宣称查重","input":{"request":"{\"account_ref\":\"SAMPLE\",\"instrument\":{\"option_symbol\":\"TSLA261218C00300000\",\"multiplier\":100},\"side\":\"STO\",\"qty\":2,\"price\":\"2.1000\",\"trade_date\":\"2026-11-17\",\"cumulative_qty\":2}"},"expect":{"status":"VALIDATED_ONLY"}},
+  {"name":"缺账户等关键事实","input":{"request":"{}"},"expect":{"status":"INVALID_INPUT"}},
+  {"name":"坏JSON","input":{"request":"{"},"expect":{"status":"INVALID_INPUT"}},
+  {"name":"调整合约未实现","input":{"request":"{\"account_ref\":\"SAMPLE\",\"instrument\":{\"adjusted\":true},\"side\":\"STO\",\"qty\":2,\"price\":\"2.1000\",\"trade_date\":\"2026-11-17\",\"cumulative_qty\":2}"},"expect":{"status":"NOT_IMPLEMENTED"}},
+  {"name":"交割股票未实现不混入普通股票","input":{"request":"{\"account_ref\":\"SAMPLE\",\"instrument\":{},\"side\":\"BUY\",\"qty\":100,\"price\":\"30.0000\",\"trade_date\":\"2026-11-17\",\"cumulative_qty\":100}"},"expect":{"status":"NOT_IMPLEMENTED"}}
+]

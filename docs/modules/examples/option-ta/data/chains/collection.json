@@ -1,0 +1,13 @@
+{
+  "title":"交易链、Roll组与意图历史（非第二套盈亏原账）","kind":"record","class":"private",
+  "fields": {
+    "chain_id":{"type":"text","title":"链业务键"},
+    "account_key":{"type":"text","title":"一链一个匿名账户"},
+    "members":{"type":"blob","title":"按seq排列的fill_id或event_id；不自动按时间接近配对"},
+    "roll_groups":{"type":"blob","title":"roll_id、平旧开新成员、kind=Calendar/Diagonal/Combo"},
+    "intent":{"type":"text","title":"十种意图之一"},
+    "intent_changes":{"type":"blob","title":"意图、更改时间、更改原因的追加历史"},
+    "created_at":{"type":"date","title":"创建时间"},
+    "updated_at":{"type":"date","title":"最近一次意图/成员确认时间"}
+  }
+}

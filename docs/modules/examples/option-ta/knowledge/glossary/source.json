@@ -1,0 +1,8 @@
+{
+  "title": "option-ta 使用者术语表（原样草稿）",
+  "version": "p2-reference-0.1",
+  "published": "undated",
+  "authority": "reference",
+  "license": "bundled",
+  "origin": "使用者自写 docs/modules/option-ta-glossary.md，正文逐字打包。原文件未独立署修订日期；材料上下文为 2026-11-16/17，不能将上下文日期冒称术语表出版日。正文中的能力描述是产品目标，P2 工具/feed 最简骨架显式未实现，不代表已上线。"
+}

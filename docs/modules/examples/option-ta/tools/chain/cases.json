@@ -1,0 +1,6 @@
+[
+  {"name":"合法请求仅返回未实现","input":{"symbol":"QQQ","expiry":"2026-12-18","right":"put"},"expect":{"status":"NOT_IMPLEMENTED"}},
+  {"name":"休市标签不产生伪行情_非休市算法覆盖","input":{"symbol":"SPY","expiry":"2026-12-18","right":"call","session":"CLOSED"},"expect":{"status":"NOT_IMPLEMENTED"}},
+  {"name":"缺字段","input":{"symbol":"QQQ"},"expect":{"status":"INVALID_INPUT"}},
+  {"name":"非法日期","input":{"symbol":"QQQ","expiry":"2026-02-30","right":"put"},"expect":{"status":"INVALID_INPUT"}}
+]

@@ -1,0 +1,10 @@
+{
+  "title":"匿名账户与税务归属映射（初始为空）","kind":"record","class":"private",
+  "fields": {
+    "account_key":{"type":"text","title":"匿名键，不含账号尾码"},
+    "account_ref":{"type":"text","title":"邮件短码；不存真实完整账号"},
+    "tax_owner_key":{"type":"text","title":"匿名税务归属人；未知留空"},
+    "tax_type":{"type":"text","title":"taxable/IRA；未知留空，不默认应税"},
+    "confirmed_at":{"type":"date","title":"使用者确认时间"}
+  }
+}

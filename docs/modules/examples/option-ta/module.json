@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "name": "option-ta",
+  "version": "0.1.0",
+  "title": "期权分析（简版）",
+  "description": "美股期权链、波动率、策略与成交分析；P2骨架，行情记账提醒待实现，正股技术面归stock-ta",
+  "team": "期权研究组"
+}

@@ -1,0 +1,8 @@
+{
+  "title":"已记仓位提醒（P2未实现）",
+  "handler":"index.ts","every":"5m","limit":"20s","when":"us-market-hours",
+  "reads":["fills","chains","accounts"],
+  "secrets":["POLYGON_API_KEY","FINNHUB_API_KEY"],
+  "notice":"期权仓位提醒：{{status}}",
+  "settings":{"implementation":"P2_NOT_IMPLEMENTED"}
+}

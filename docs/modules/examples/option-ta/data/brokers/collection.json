@@ -1,0 +1,8 @@
+{
+  "title":"交易台发件人名单（初始为空）","kind":"record","class":"private",
+  "fields": {
+    "address":{"type":"text","title":"实际交易台地址或@域名；不认通配符，不写入包"},
+    "addedAt":{"type":"date","title":"添加时间，带时区完整ISO"},
+    "removedAt":{"type":"date","title":"移除时间；划掉不删行"}
+  }
+}

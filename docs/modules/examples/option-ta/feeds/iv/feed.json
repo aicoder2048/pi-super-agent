@@ -1,0 +1,6 @@
+{
+  "title":"IV原始输入与一年回填（P2未实现）",
+  "handler":"index.ts","every":"5m","limit":"20s",
+  "into":"iv-snapshots","reads":["watchlist","iv-snapshots"],
+  "secrets":["POLYGON_API_KEY"],"settings":{"implementation":"P2_NOT_IMPLEMENTED"}
+}

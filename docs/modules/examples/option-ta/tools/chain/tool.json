@@ -1,0 +1,16 @@
+{
+  "title": "期权链（P2未接入）",
+  "description": "仅校验代码、到期日和类型；行情/链指标待P3，不联网",
+  "effect": "read",
+  "input": {
+    "symbol": {"type":"text","title":"大写标的代码"},
+    "expiry": {"type":"text","title":"到期日 YYYY-MM-DD"},
+    "right": {"type":"text","title":"put 或 call"},
+    "session": {"type":"text","title":"可选使用者提供的时段标签；不作行情事实"}
+  },
+  "output": {
+    "status": {"type":"text","title":"INVALID_INPUT 或 NOT_IMPLEMENTED"},
+    "reason": {"type":"text","title":"明确失败或待P3原因"},
+    "payload": {"type":"text","title":"JSON文字；只有校验信息，不含伪行情"}
+  }
+}

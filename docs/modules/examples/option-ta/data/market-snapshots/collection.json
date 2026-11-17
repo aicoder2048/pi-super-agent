@@ -1,0 +1,14 @@
+{
+  "title":"年末§1256期权及价差腿快照（P2仅schema）","kind":"series","class":"private",
+  "fields": {
+    "snapshot_key":{"type":"text","title":"合约及交易日业务键"},
+    "option_symbol":{"type":"text","title":"需估值合约；选择范围可能暴露持仓"},
+    "trading_date":{"type":"date","title":"当年最后一个实际交易日"},
+    "close_price":{"type":"text","title":"合约收盘价USD规范小数字符串；缺失不是0"},
+    "source":{"type":"text","title":"价格来源"},
+    "data_at":{"type":"date","title":"原始行情数据时间"},
+    "fetched_at":{"type":"date","title":"取数时间"},
+    "purpose":{"type":"text","title":"section1256-yearend 或 spread-yearend"},
+    "problem":{"type":"text","title":"数据缺口或估值限制"}
+  }
+}

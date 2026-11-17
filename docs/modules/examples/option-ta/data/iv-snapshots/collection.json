@@ -1,0 +1,18 @@
+{
+  "title":"公共IV序列原始市场输入（P2无采集）","kind":"series","class":"shareable",
+  "fields": {
+    "symbol":{"type":"text","title":"公共标的代码"},
+    "trading_date":{"type":"date","title":"美东交易日"},
+    "option_symbol":{"type":"text","title":"按固定口径选定的合约"},
+    "strike":{"type":"number","title":"行权价","unit":"USD"},
+    "expiry":{"type":"date","title":"到期日"},
+    "option_close":{"type":"number","title":"合约日线收盘成交价；缺失不填0","unit":"USD"},
+    "underlying_close":{"type":"number","title":"正股同交易日日线收盘价","unit":"USD"},
+    "midpoint":{"type":"number","title":"仅日常报价中间价对照；不进历史IV序列","unit":"USD"},
+    "fetched_at":{"type":"date","title":"取数时间，完整ISO"},
+    "data_at":{"type":"date","title":"行情数据时间"},
+    "source":{"type":"text","title":"公共行情来源，不含持仓身份"},
+    "method_version":{"type":"text","title":"统一选约、剩余时间及BS参数口径版本；改口径整段重算"},
+    "problem":{"type":"text","title":"缺日线等原因；未知非零"}
+  }
+}

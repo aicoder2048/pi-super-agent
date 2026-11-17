@@ -1,0 +1,8 @@
+{
+  "title": "已定仓位提醒门槛与未定口径（尚未实现）",
+  "version": "p2-reference-0.1",
+  "published": "2026-11-17",
+  "authority": "reference",
+  "license": "bundled",
+  "origin": "使用者自写 docs/modules/option-ta-build-plan.md「已定的第一版范围」、option-ta-spec.md「主动提醒的两处细节」「模板」「预计除息日」（2026-11-16/17）；本轮过程说明书 spec.md 的开发假设均单列，不冒充使用者已确认门槛或已实测功能。未独立联网核验。"
+}

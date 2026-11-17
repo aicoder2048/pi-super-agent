@@ -1,0 +1,12 @@
+{
+  "title": "策略（仅给定输入权利金现金流）",
+  "description": "P2仅实现cashflow逐腿精确算术；完整策略/概率/年化待P3",
+  "input": {
+    "request": {"type":"text","title":"JSON文字：operation=cashflow，legs=[{side,price:小数字符串,qty,multiplier}]；乘数必填"}
+  },
+  "output": {
+    "status": {"type":"text","title":"CALCULATED_PARTIAL、INVALID_INPUT 或 NOT_IMPLEMENTED"},
+    "reason": {"type":"text","title":"限制：仅未扣费权利金，不是盈亏或完整Roll分析"},
+    "payload": {"type":"text","title":"JSON文字；金额为4位小数字符串USD，不含假行情"}
+  }
+}

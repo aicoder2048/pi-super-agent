@@ -1,0 +1,13 @@
+{
+  "title": "成交基础校验（禁止据此入账）",
+  "description": "只做离线字段格式校验；不查重、不写库、不生成fill_id，待P3",
+  "effect": "read",
+  "input": {
+    "request": {"type":"text","title":"JSON文字：account_ref,instrument{option_symbol,multiplier},side,qty,price(小数字符串),trade_date,cumulative_qty"}
+  },
+  "output": {
+    "status": {"type":"text","title":"VALIDATED_ONLY、INVALID_INPUT 或 NOT_IMPLEMENTED；没有可写成功状态"},
+    "reason": {"type":"text","title":"缺项与未实现边界"},
+    "payload": {"type":"text","title":"JSON文字；may_write=false，不构成最终规整记录"}
+  }
+}

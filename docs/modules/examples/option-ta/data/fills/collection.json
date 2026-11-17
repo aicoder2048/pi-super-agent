@@ -1,0 +1,31 @@
+{
+  "title":"不可变期权成交与事件（含关联交割股票）","kind":"record","class":"private",
+  "fields": {
+    "row_kind":{"type":"text","title":"Fill 或 Event；未知不猜"},
+    "fill_id":{"type":"text","title":"业务去重键，另存feed的id；事件时可为空"},
+    "event_id":{"type":"text","title":"事件业务键"},
+    "order_key":{"type":"text","title":"OCC:side:trade_date:account_ref；非券商订单编号"},
+    "order_id":{"type":"text","title":"券商订单号，未知留空"},
+    "account_ref":{"type":"text","title":"原始账户短码，仅私密存储"},
+    "account_key":{"type":"text","title":"匿名账户键；待映射不猜"},
+    "instrument":{"type":"blob","title":"合约事实：underlying,underlying_kind,option_symbol,right,strike,expiry,multiplier,deliverable,settlement,exercise_style,tax_class；乘数须核实"},
+    "side":{"type":"text","title":"STO/BTO/BTC/STC，关联交割股票BUY/SELL"},
+    "event_type":{"type":"text","title":"EXPIRE/ASSIGNED/EXERCISED/CASH_SETTLED"},
+    "qty":{"type":"number","title":"本次增量张数或股数"},
+    "cumulative_qty":{"type":"number","title":"原始累计成交张数，未知不猜"},
+    "partial_fill":{"type":"text","title":"true/false文字；只描述该次原始回信"},
+    "price":{"type":"text","title":"每股USD规范4位小数字符串；未知不能填0"},
+    "trade_date":{"type":"date","title":"成交日（美东），决定税年"},
+    "trade_time":{"type":"text","title":"成交时刻及美东时区，只有日期时留空"},
+    "settle_date":{"type":"date","title":"交割日，仅用于现金对账"},
+    "event_date":{"type":"date","title":"券商确认事件日期"},
+    "commission":{"type":"text","title":"佣金USD小数字符串，未知留空而非0"},
+    "fees":{"type":"blob","title":"逐类USD费用明细；未知留空"},
+    "source":{"type":"text","title":"broker-email/manual/confirmation/statement"},
+    "source_message_id":{"type":"text","title":"来源邮件业务id；禁止将正文放进通知"},
+    "caused_by_event":{"type":"text","title":"交割股票必须关联指派或行权事件"},
+    "reverses":{"type":"text","title":"冲销目标fill_id或event_id；不覆盖旧行"},
+    "correction_reason":{"type":"text","title":"新增更正记录的原因"},
+    "recorded_at":{"type":"date","title":"记录时间，完整带时区ISO"}
+  }
+}

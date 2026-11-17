@@ -1,0 +1,8 @@
+{
+  "title": "成交回信、累计增量与不可变事实契约（尚未实现）",
+  "version": "p2-reference-0.1",
+  "published": "2026-11-17",
+  "authority": "reference",
+  "license": "bundled",
+  "origin": "使用者自写 docs/modules/option-ta-spec.md「成交邮件（fills）」（2026-11-17 已定）、option-ta-glossary.md 和 option-ta-tax-memo.md 第14.1节；结合本轮过程说明书 spec.md 的缺项边界；检查员另核对宿主磁盘 src/modules/connectors/letter.ts 的 body/html 字段及大小/截断契约，不代表生产链路验收。本轮未读取真实邮件、持仓或账户数据，未运行解析器；样例和 expected 的存在不等于解析验证通过。"
+}

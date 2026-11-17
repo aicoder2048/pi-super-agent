@@ -1,0 +1,14 @@
+{
+  "title": "波动率（P2未实现）",
+  "description": "校验代码；IV/HV及历史序列计算均待P3，不联网",
+  "effect": "read",
+  "input": {
+    "symbol": {"type":"text","title":"大写标的代码"},
+    "session": {"type":"text","title":"可选使用者提供时段；不验证市场状态"}
+  },
+  "output": {
+    "status": {"type":"text","title":"INVALID_INPUT 或 NOT_IMPLEMENTED"},
+    "reason": {"type":"text","title":"原因"},
+    "payload": {"type":"text","title":"JSON文字；没有IV数值"}
+  }
+}

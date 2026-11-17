@@ -1,0 +1,14 @@
+{
+  "title": "账本与税务（P2未实现）",
+  "description": "校验视图和税年；不读数据库，不返回零盈亏，不冒充税务结果",
+  "effect": "read",
+  "input": {
+    "view": {"type":"text","title":"chain 或 tax"},
+    "tax_year": {"type":"number","title":"可选税年"}
+  },
+  "output": {
+    "status": {"type":"text","title":"INVALID_INPUT 或 NOT_IMPLEMENTED"},
+    "reason": {"type":"text","title":"未完成项"},
+    "payload": {"type":"text","title":"JSON文字；database=NOT_READ"}
+  }
+}
