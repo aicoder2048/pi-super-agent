@@ -35,8 +35,11 @@ interface Input {
 type Cursor = { date: string; symbols: string[]; hits?: Hit[]; states?: string[]; digest?: true; released?: string[] };
 
 type TaError = { symbol?: string; error: { code: string; message?: string } };
-type Signal = TaSignal & { timeframe: string; data_end_ms: number };
-type ScanReply = { skipped: true } | { skipped?: false; new_signals: Signal[]; errors: TaError[] };
+/** A signal as ta's CLI prints it: times are ISO under their own names (`data_end`), never the `_ms` numbers of its database. */
+type TaSignalRow = TaSignal & { timeframe: string; data_end: string };
+type ScanReply = { skipped: true } | { skipped?: false; new_signals: TaSignalRow[]; errors: TaError[] };
+/** `date`: the New York date of the bar the signal was computed on. */
+type Signal = TaSignal & { timeframe: string; date: string };
 
 const BENCHMARKS = ["QQQ", "SPY"];
 const MAX_WATCHLIST = 30;
@@ -60,6 +63,12 @@ const hitsFile = (error: unknown): Problem => ({ id: "hits-file", text: `收盘�
 
 const NEW_YORK = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
 const newYorkDate = (ms: number): string => NEW_YORK.format(new Date(ms));
+
+function signalOf(row: TaSignalRow): Signal {
+	const ms = Date.parse(row.data_end);
+	if (Number.isNaN(ms)) throw new Error(`ta scan 的信号 ${row.symbol} ${row.rule_id} 没有能读的 data_end：${JSON.stringify(row.data_end)}`);
+	return { ...row, date: newYorkDate(ms) };
+}
 
 /** The session's close, from the module's own calendar: 16:00 New York time, 13:00 on an early-close day. */
 const closeOf = (date: string) => regularCloseAt(Date.parse(`${date}T17:00:00Z`));
@@ -200,7 +209,7 @@ async function grade(input: Input, signals: readonly Signal[], picked: readonly 
 		date,
 		at: new Date(closeOf(date)).toISOString(),
 		symbols: picked,
-		signals: signals.filter((s) => s.timeframe === "1d" && newYorkDate(s.data_end_ms) === date),
+		signals: signals.filter((s) => s.timeframe === "1d" && s.date === date),
 		bars,
 		earlier: [...readHits(dataDir, date, "quotes"), ...earlier],
 		earnings,
@@ -280,6 +289,7 @@ async function scanOnce(input: Input, { key, dataDir, session, symbols, picked, 
 		if (hadLive) copyFileSync(live, next, constants.COPYFILE_FICLONE);
 		const reply = (await runTa(ta, "scan", { mode: "daily", symbols, now })) as ScanReply;
 		if (reply.skipped) return false;
+		const signals = reply.new_signals.map(signalOf);
 		// ta exits 0 when the network is down, so success is read from the per-symbol errors, never the exit code.
 		const failed = new Set(reply.errors.filter((e) => e.error.code !== WARNING_ONLY).map((e) => e.symbol));
 		if (!symbols.some((s) => !failed.has(s))) {
@@ -289,7 +299,7 @@ async function scanOnce(input: Input, { key, dataDir, session, symbols, picked, 
 		}
 		renameSync(next, live);
 		if (hadLive) {
-			const graded = await grade(input, reply.new_signals, picked, session, cursor.hits ?? [], quiet, dataDir);
+			const graded = await grade(input, signals, picked, session, cursor.hits ?? [], quiet, dataDir);
 			cursor.hits = [...(cursor.hits ?? []), ...graded.hits];
 			cursor.states = graded.states;
 			notes.push(graded.note);
