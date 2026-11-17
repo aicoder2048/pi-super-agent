@@ -53,6 +53,11 @@ grill-with-docs 就是两个技能合用：grilling（按决策树一轮轮拷�
 - **前置条件**：C2（模块自己的 `.env`，ADR-0031，已合并）、C4a、C4b、C4c、C4d 都合并以后才开工，分期见 `architecture/service-connector-design.md`。option-ta 的专家要调 stock-ta 开放的工具：C4a 之前包检查把外部 `uses` 当错误；C4b 之前 `just module try` 的预演不带 stock-ta 的副本，外部调用全回 `provider-absent`，P3 用真模型跑 `module try` 就测不到专家调 stock-ta；C4c 之前 stock-ta 没有开放任何工具；C4d 之前工坊的技能不会写外部 `uses` 和「请对 stock-ta 说」的转述。
 - 工坊负责包的骨架、技能、专家、知识、考题。移植代码不交给工坊，那是 P3 的工程活。
 - 在临时 `PSA_STATE_DIR` 起宿主，对幕僚长说一句话，带上 `spec.md` 和术语表，任务开到 `module-builder`。
+- **环境要求：临时状态目录里要有在服务的 stock-ta。** 工坊跑 `module try` 时，预演从这个临时 `PSA_STATE_DIR` 取提供方：stock-ta 在这里打开、检查通过、正在服务，预演才带上它在服务的那一版、它的 `files/`（`ta/ta.sqlite` 和 Python 环境的链接）和 `.env`。不然预演开头打印「stock-ta 现在没开」，外部调用全回 `provider-absent`，用到 stock-ta 的考题都判「没用到」，P2 就测不到专家调 stock-ta。集合里的行（自选股等）预演不带。起宿主之前，在仓库根目录、`PSA_STATE_DIR` 指向临时目录时准备：
+  1. `cp -R docs/modules/examples/stock-ta "$PSA_STATE_DIR/modules/"`，再 `just module setup stock-ta`（要拿得到私有仓库 ta-trading）。
+  2. 日线库：首选真实库的副本，把 `modules-data/stock-ta/files/ta/ta.sqlite` 复制到临时目录的同一路径。没有真实库时，复制合成夹具 `docs/modules/examples/stock-ta/tools/structure/fixtures/data/files/ta/ta.sqlite`（只有 NVDA、QQQ、SPY，价格是编的。它的同步日期旧了一天以上，`structure` 不算，回「先加进自选股」，因为预演里没有自选股的行）。合成库只够判「用到了」，考题的 `expect` 别指望它的数。
+  3. 密钥：`just module secret stock-ta POLYGON_API_KEY`、`just module secret stock-ta FINNHUB_API_KEY`，写进临时目录的 `modules-data/stock-ta/.env`。`quote`、`earnings-date` 在预演里真联网。
+  4. `just module on stock-ta`，起宿主，等 stock-ta 打开。工坊的预演开头没有「stock-ta 现在没开」或「在临时宿主里没有打开」，才算准备好。
 - 记下工坊做到哪一步、哪里卡住、用了多少 token。工坊自己的毛病另开 PR 修，不在 option-ta 里绕开。
 - **完成标准**：工坊交出包和汇报，`module check` 打印 ok。工坊写不好的代码部分记下来交给 P3。
 

@@ -23,7 +23,7 @@ PSA_STATE_DIR="$STATE" just -f "$PSA_REPO/justfile" module try <名字>
 
 1. **说明书。** 派给 interviewer，把使用者的话整理成 `spec.md`。使用者已经说清楚、或说了「不用问」，就按默认值做，假设写进汇报。缺了就做不下去的事，用一次 report（blocked）问，最多三个问题，每个附一个默认答案。
 2. **名字。** `ls "$STATE/modules/<名字>"`。已经有了就停：不覆盖，不删，汇报「已有同名模块」，问使用者换名字还是改那个模块。`module new` 遇到同名也会拒绝，那一行原样写进汇报。
-3. **搭结构。** 派给 scaffolder：`module new`，再按技能 package-layout 改 `module.json`、技能和专家。
+3. **搭结构。** 派给 scaffolder：`module new`，再按技能 package-layout 改 `module.json`、技能和专家；有数据集合、feed 或密钥时按技能 data-and-feeds。
 4. **知识。** 有资料就派给 knowledge-curator。受版权保护的全文不进包。
 5. **考题。** 派给 eval-writer，按技能 write-evals 写两三道。
 6. **检查。** 派给 checker，跑到 `module check` 打印 `ok` 为止。
@@ -41,7 +41,7 @@ PSA_STATE_DIR="$STATE" just -f "$PSA_REPO/justfile" module try <名字>
 
 一个模块要的只读数据别的模块已经有（例如现价、技术面结构在 stock-ta），就调它开放的工具，不在新模块里再做一套。文件怎么写见技能 package-layout 的 `exports`、外部 `uses` 两节和两个示例包。
 
-- **先确认提供方开放了。** 读 `$PSA_REPO/modules/<提供方>/module.json` 或 `$STATE/modules/<提供方>/module.json` 的 `exports`，只用列着的工具；再读那个工具的 `tools/<名字>/tool.json`，专家的提示词按它的 `input`、`output` 字段写。磁盘上的包可能比在服务的那一版新，以调用结果为准。没开放的，汇报说「要先请提供方开放 <工具>」，不自己做一份。
+- **先确认提供方开放了。** 提供方的包按顺序找这三处：`$STATE/modules/<提供方>/module.json`、`$PSA_REPO/modules/<提供方>/module.json`、`$PSA_REPO/docs/modules/examples/<提供方>/module.json`（stock-ta 在这里）。读它的 `exports`，只用列着的工具；再读那个工具的 `tools/<名字>/tool.json`，专家的提示词按它的 `input`、`output` 字段写。磁盘上的包可能比在服务的那一版新，以调用结果为准。没开放的，汇报说「要先请提供方开放 <工具>」，不自己做一份。三处都找不到，汇报「找不到提供方的包」，写明找过哪三处，不当成没开放。
 - **写在哪一处。** 有专家的模块写在要用它的专家的 `uses` 里；没有专家的写在 `module.json` 的 `uses` 里。两处只写一处，有专家时写 `module.json` 的 `uses` 检查报错。
 - **专家的提示词写进三条。** 下面三条写进用外部工具的专家文件（没有专家时写进技能），新模块的专家照着做。例子里的 stock-ta 和工具名，换成你用的提供方和工具：
   1. 提供方不在时，调用回一个固定原因（「stock-ta 没装或没开」「stock-ta 现在没有开放 quote」「stock-ta 的运行环境还没装好」）。汇报写明哪部分没做、为什么，其余照常做完，不整个停下。
