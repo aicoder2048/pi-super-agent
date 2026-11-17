@@ -3,9 +3,10 @@
  *
  * A capability is a component that can be called: a tool, the knowledge base, a data
  * collection, a collection's conditions. Every call goes through `Gateway.call`. It
- * resolves the capability in the module and version the ticket pinned, so a ticket never
- * reaches another module. It narrows by the member's `uses`, asks `allowed`, calls the
- * provider and writes the access log.
+ * resolves the capability in the module and version the ticket pinned, so a ticket reaches
+ * no other module's components. ADR-0030 plans one exception, not built yet: a read-only
+ * tool another module exports, which runs in that module's serving version. It narrows by
+ * the member's `uses`, asks `allowed`, calls the provider and writes the access log.
  *
  * Skills and agent files are not capabilities. Pi reads them as files from the ticket's
  * pinned copy. Feeds are not either: only the host's scheduler runs them.
