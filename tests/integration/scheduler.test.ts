@@ -262,7 +262,7 @@ test("预演宿主（feedFixtures 为 rows-only）：样例的行照写，触发
 	assert.deepEqual(host.kernel.triggerLog().filter((r) => r.source === "lab/pull"), []);
 	assert.equal(host.kernel.listTickets().length, 0);
 	assert.equal(saidAlert(host), false);
-	assert.deepEqual(logged.filter((line) => line.startsWith("[预演]")), ["[预演] lab/pull 样例 one：丢掉 1 条触发、1 条提醒，没交出去"]);
+	assert.deepEqual(logged.filter((line) => line.startsWith("[样例]")), ["[样例] lab/pull 样例 one：丢掉 1 条触发、1 条提醒，没交出去"]);
 });
 
 test("feedFixtures 为 true 的宿主：样例交回的触发照旧交给幕僚长开任务，提醒照发", async (t) => {
@@ -273,7 +273,7 @@ test("feedFixtures 为 true 的宿主：样例交回的触发照旧交给幕僚�
 	await until(() => host.kernel.listTickets().length === 1, "开了任务");
 	assert.equal(host.kernel.triggerLog().filter((r) => r.source === "lab/pull").length, 1);
 	assert.equal(saidAlert(host), true);
-	assert.deepEqual(logged.filter((line) => line.startsWith("[预演]")), []);
+	assert.deepEqual(logged.filter((line) => line.startsWith("[样例]")), []);
 });
 
 test("宿主：timer 的触发到了幕僚长那里开出任务；同一批 notice 跑两次只有一条触发", async (t) => {

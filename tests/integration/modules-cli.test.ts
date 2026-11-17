@@ -370,6 +370,35 @@ test("just module try：假模型调了考题要的工具、汇报里有该有�
 	assert.equal(run.userDirChanged, false);
 });
 
+test("just module try：Router 的转述晚到时仍记在它那道题下，最后一道题的转述也不丢", async (t) => {
+	const second = /^\[对话\][\s\S]*明年预缴/;
+	const ticketOf = (card: string) => card.match(/\btkt_[\w-]+/)?.[0];
+	const run = await rehearse(
+		t,
+		{
+			router: [
+				opensTaxTicket,
+				on("开第二道题的任务", second, (card) => {
+					const open = openTicket(card, "预演预缴");
+					return [{ ...open, args: { decisions: (open.args.decisions as object[]).map((d) => ({ ...d, domain: "personal-tax" })) } }, reply(card, "好")];
+				}),
+				on("转述第一题", /^\[Worker 汇报\][\s\S]*第 2 档/, (card) => [{ name: "reply", args: { text: "转述：第一题", cause: ticketOf(card) } }], 1500),
+				on("转述第二题", /^\[Worker 汇报\][\s\S]*预缴/, (card) => [{ name: "reply", args: { text: "转述：第二题", cause: ticketOf(card) } }], 1500),
+			],
+			workers: [
+				worker("预演算税", on("调工具", /^\[任务说明\]/, () => [domainTool("tax-bracket", { taxableIncome: 25000 })]), on("汇报", /^\[模块工具\]/, () => [report("ready", "落在第 2 档，估算税额 4000 美元")])),
+				worker("预演预缴", on("汇报", /^\[任务说明\]/, () => [report("ready", "明年预缴按季度交")])),
+			],
+		},
+		{ seed: (dir) => writeFileSync(join(dir, "modules", "personal-tax", "evals", "zz-prepay.md"), "---\nname: zz-prepay\nexpect: 预缴\n---\n明年预缴怎么交？\n") },
+	);
+	const block = (name: string) => run.out.split(/^(?=PASS |FAIL )/m).find((b) => b.includes(` ${name}`) || b.startsWith(`PASS ${name}`)) ?? "";
+	assert.match(block("bracket-uses-tool"), /Router：转述：第一题/, run.out);
+	assert.doesNotMatch(block("zz-prepay"), /转述：第一题/, run.out);
+	assert.match(block("zz-prepay"), /Router：转述：第二题/, run.out);
+	assert.equal(run.status, 0, run.out);
+});
+
 test("just module try：feed 样例的行写进临时集合，样例交回的触发不交给幕僚长，预演日志按 feed 记一行条数", async (t) => {
 	let router: FakeModel | undefined;
 	let stored = 0;
@@ -401,7 +430,7 @@ test("just module try：feed 样例的行写进临时集合，样例交回的触
 	);
 	assert.equal(run.status, 0, run.out);
 	assert.equal(stored, 2);
-	assert.match(run.out, /^\[预演\] personal-tax\/brokerage-statements 样例 two-trades：丢掉 1 条触发、0 条提醒，没交出去$/m);
+	assert.match(run.out, /^\[样例\] personal-tax\/brokerage-statements 样例 two-trades：丢掉 1 条触发、0 条提醒，没交出去$/m);
 	assert.deepEqual(router!.exchanges.flatMap((e) => e.cards).filter((card) => card.includes("brokerage-statements")), []);
 });
 
