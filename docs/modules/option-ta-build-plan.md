@@ -70,7 +70,7 @@ grill-with-docs 就是两个技能合用：grilling（按决策树一轮轮拷�
 
 #### P3 分步
 
-每步一个 PR，从 main 开，合并后才开下一步（P3-a 到 P3-d 改的是不同的工具和 feed，可以并行）。每步都要 `just module check docs/modules/examples/option-ta` 打印 ok、全量 `just test` 通过；工具实现了，就把考题里对应的 `NOT_IMPLEMENTED` 换成工具输出的字面量（规则见 `module-builder` 的 `write-evals` 技能）。P3-e 之前不跑真模型。
+每步一个 PR，从 main 开。P3-0 合并后开 P3-a。P3-b、P3-d 用 P3-a 的公式，等 P3-a 合并再开；P3-c 不依赖 P3-a，可以和它并行。P3-e 等前面几步都合并。每步都要 `just module check docs/modules/examples/option-ta` 打印 ok、全量 `just test` 通过；工具实现了，就把考题里对应的 `NOT_IMPLEMENTED` 换成工具输出的字面量（规则见 `module-builder` 的 `write-evals` 技能）。P3-e 之前不跑真模型。
 
 - **P3-0 底座。**把第三次 P2 的包（draft #181）原样放进 `docs/modules/examples/option-ta/`，三次 P2 的记录放进 `option-ta-p2/` 留档，按说明书和 #183 以后的工坊规则修包：`fills` 接 `mail`，解析没做时有信就抛固定的话、样例只放没有信的一份、`brokers` 留空；考题一题一件事。不做功能。完成标准：`module check` 打印 ok，提醒只剩外部 `uses`。
 - **P3-a 纯计算。**从 T 移植 P1 清单里「搬」的纯计算：options-math、first-passage、scenario-pl、strategy-economics、cc-yield、liquidity、limit-price、roll-credit-gate、iv-crush、iv-history（只搬 `selectAtmContract`、`ivRank`、`ivPercentile`）、`impliedVolPut`（补 call 版）、hv20 和 vol-regime、net-gamma-walls、oi-term-structure、pin-risk-check、check-assignment-risk 的纯函数、contract-deliverable。每一项先把 T 的 smoke 用例写成失败的测试，再搬代码；P1 清单写了「要补」的（买方策略、call 版反解、价格和 put-call 平价）一并补用例。T 的门槛常量（roll-credit-gate 的 10%、pin-risk 的门槛）换成说明书和 build plan 定的值，没定的问使用者。接进 `strategy` 工具：权利金、参考价、盈亏平衡、到期盈亏、年化、指派概率、流动性和三种 Roll。完成标准：移植的每项都有从 smoke 转来的测试且通过，`strategy` 的 `cases.json` 用算出来的数断言，Roll 考题的 `expect` 是工具算出的净收。
