@@ -7,7 +7,8 @@
   "reads": ["watchlist"],
   "settings": {
     "baseUrl": "https://api.massive.com",
-    "requestsPerTick": 60
+    "requestsPerTick": 60,
+    "methodology": "option-ta-iv-close-v1"
   },
   "secrets": ["POLYGON_API_KEY"],
   "into": "iv-snapshots"

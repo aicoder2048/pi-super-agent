@@ -4,7 +4,8 @@
  */
 import { exDivCallVerdict, extrinsicGauge } from "../../assignment-risk.ts";
 import { nextDividend, type NextDividend } from "../../dividends.ts";
-import { epochMs, FetchError, finnhubHeaders, getJson, massiveHeaders, object, positive } from "../../feed-fetch.ts";
+import { epochMs, failedRequest, finnhubJson, FinnhubError, positive, requestSignal } from "../../feed-fetch.ts";
+import { getJson, object } from "../../massive.ts";
 import { isTradingDay, nyTime, sessionAt, shiftDate } from "../../market-days.ts";
 import { pinRiskCheck } from "../../pin-risk-check.ts";
 import { openPositions, type FeedRow, type Position } from "./positions.ts";
@@ -112,7 +113,7 @@ function fresh(ms: number | undefined, today: string): boolean {
 }
 
 async function quoteOf(baseUrl: string, key: string, p: Position, today: string): Promise<Quote> {
-	const body = await getJson(`${baseUrl}/v3/snapshot/options/${encodeURIComponent(p.underlying)}/O:${p.occ}`, massiveHeaders(key), "行情服务");
+	const body = await getJson(`${baseUrl}/v3/snapshot/options/${encodeURIComponent(p.underlying)}/O:${p.occ}`, key, requestSignal());
 	const r = object(body.results);
 	const asset = object(r.underlying_asset);
 	const quote = object(r.last_quote);
@@ -125,15 +126,15 @@ async function quoteOf(baseUrl: string, key: string, p: Position, today: string)
 }
 
 async function dividendOf(baseUrl: string, key: string, symbol: string, today: string): Promise<NextDividend> {
-	const body = await getJson(`${baseUrl}/v3/reference/dividends?ticker=${encodeURIComponent(symbol)}&limit=10`, massiveHeaders(key), "行情服务");
+	const body = await getJson(`${baseUrl}/v3/reference/dividends?ticker=${encodeURIComponent(symbol)}&limit=10`, key, requestSignal());
 	return nextDividend(Array.isArray(body.results) ? body.results : [], today);
 }
 
 /** The next unreported earnings date on Finnhub's calendar, read the way stock-ta's earnings.ts reads it; null when none is announced. */
 async function earningsOf(baseUrl: string, key: string, symbol: string, today: string): Promise<string | null> {
 	const url = `${baseUrl}/calendar/earnings?from=${today}&to=${shiftDate(today, EARNINGS_AHEAD_DAYS)}&symbol=${encodeURIComponent(symbol)}`;
-	const rows = (await getJson(url, finnhubHeaders(key), "Finnhub")).earningsCalendar;
-	if (!Array.isArray(rows)) throw new FetchError("Finnhub 的应答里没有财报日历");
+	const rows = (await finnhubJson(url, key)).earningsCalendar;
+	if (!Array.isArray(rows)) throw new FinnhubError("Finnhub 的应答里没有财报日历");
 	const dates = rows.map(object).filter((r) => r.symbol === symbol && typeof r.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.date >= today && typeof r.epsActual !== "number");
 	return dates.map((r) => r.date as string).sort()[0] ?? null;
 }
@@ -165,7 +166,7 @@ export default async function watch(input: Input) {
 		try {
 			return await work;
 		} catch (error) {
-			if (!(error instanceof FetchError)) throw error;
+			if (!failedRequest(error)) throw error;
 			errors.push(error.message);
 			return undefined;
 		}

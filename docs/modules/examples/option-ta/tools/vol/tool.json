@@ -1,14 +1,27 @@
 {
   "title": "波动率状况",
-  "description": "IV、HV、rank、百分位、期限结构和偏斜接口；当前固定 NOT_IMPLEMENTED，不伪造历史序列",
+  "description": "向 Massive 取期权链，回平值 IV（21 到 45 天内最近的到期、离正股价最近的 put）、IV/HV20、期限结构（约 7、30、60、90 天）、25 delta 偏斜；再读 iv-snapshots 的收盘原始输入，用同一个公式反解出 IV 序列，算 IV rank、IV 百分位和 HV20。iv-snapshots 里还没有这只的行时 history 回 NO_HISTORY，不编。缺的 IV 用中间价自算并标注，休市时标「休市」。只读",
   "effect": "read",
+  "secrets": ["POLYGON_API_KEY"],
   "input": {
-    "symbol": { "type": "text", "title": "标的代码" },
-    "operation": { "type": "text", "title": "summary、history、skew、term 或 dividends" },
-    "as_of": { "type": "date", "title": "观察交易日" }
+    "symbol": { "type": "text", "title": "标的代码，例如 SPY" },
+    "now": { "type": "text", "title": "只在回放时填：当作现在的时间（ISO 8601）；回答使用者时不填" }
   },
   "output": {
-    "status": { "type": "text", "title": "固定 NOT_IMPLEMENTED" },
-    "reason": { "type": "text", "title": "未实现的能力及无数据说明" }
+    "status": { "type": "text", "title": "OK；INVALID_INPUT、NO_KEY（reason 里有补 key 的命令）、RATE_LIMITED、UPSTREAM_ERROR、NO_DATA 同 chain" },
+    "reason": { "type": "text", "title": "不是 OK 时的原因，一句话" },
+    "symbol": { "type": "text", "title": "标的代码" },
+    "fetched_at": { "type": "text", "title": "取数时刻，美东" },
+    "market": { "type": "text", "title": "盘中或休市" },
+    "market_note": { "type": "text", "title": "休市时才有：为什么这时的 IV 不是收盘 IV" },
+    "underlying": { "type": "text", "title": "正股 price（美元）、at（美东）、delay（延迟 15 分钟或实时，照抄）" },
+    "atm": { "type": "text", "title": "平值合约 contract、expiry、dte、strike、iv（小数）、iv_source（供应方、自算或无数据）；21 到 45 天内没有到期日时为空，atm_note 说明" },
+    "iv_hv": { "type": "text", "title": "hv20（小数，来自 iv-snapshots 的正股收盘）、ratio（平值 IV ÷ HV20）、class（便宜、略便宜、合理、偏贵、很贵）；没有历史时为空" },
+    "term": { "type": "text", "title": "期限结构：每个到期日的平值 put 的 contract、expiry、dte、strike、iv、iv_source" },
+    "skew": { "type": "text", "title": "平值那个到期日的 25 delta put 和 call（contract、strike、delta、iv、iv_source），put_minus_call 是两者 IV 之差；缺一边，或一边供应方一边自算时为空（note 说明）" },
+    "term_note": { "type": "text", "title": "期限结构里 IV 来源不一致时才有" },
+    "history": { "type": "text", "title": "status（OK 或 NO_HISTORY）、methodology（口径）、days（最近一年进序列的交易日数）、from、to、latest_iv（序列最新一天收盘价反解的 IV）、iv_rank、iv_percentile、hv20；NO_HISTORY 时有 reason" },
+    "truncated": { "type": "text", "title": "true 是到了分页上限，期限结构或偏斜不全" },
+    "units": { "type": "text", "title": "各字段的单位" }
   }
 }

@@ -40,6 +40,7 @@ const daily = {
 	[`${B}/v3/snapshot/options/SPY/${occ("2026-12-10", 740)}`]: { results: { details: { ticker: occ("2026-12-10", 740) }, last_quote: { bid: 12.3, ask: 12.4, midpoint: 12.35, last_updated: ny(D, "16:14") * 1e6, timeframe: "REAL-TIME" } }, status: "OK" },
 };
 write("daily", { now: iso(D, "16:40"), cursor: cursor({ SPY: "2026-11-18" }), responses: daily });
+write("daily-option-bars-not-ready", { now: iso(D, "16:40"), cursor: cursor({ SPY: "2026-11-18" }), responses: { ...daily, [barUrl(occ("2026-12-10", 740), D)]: optBar(D, null), [barUrl(occ("2026-12-11", 740), D)]: optBar(D, null) } });
 write("daily-not-ready", { now: iso(D, "16:40"), cursor: cursor({ SPY: "2026-11-18" }), responses: { [underlyingUrl(D, D)]: stockBars({}) } });
 // 回填：新加的标的，每拍有请求上限，这一拍做完 4 个交易日
 const start = shift(D, -365); // 2025-11-19
@@ -55,6 +56,7 @@ const bf = {
 	[barUrl(occ("2025-12-15", 680), "2025-11-24")]: optBar("2025-11-24", 9),
 };
 write("backfill-new-symbol", { now: iso(D, "16:40"), settings: { requestsPerTick: 15 }, responses: bf });
+write("backfill-no-bars", { now: iso(D, "16:40"), responses: { [underlyingUrl(start, D)]: stockBars({}) } });
 // 429 和 5xx
 write("http-429", { now: iso(D, "16:40"), cursor: cursor({ SPY: "2026-11-18" }), responses: { [underlyingUrl(D, D)]: stockBars({ [D]: 740 }), [contractsUrl(D, 740, false)]: { status: 429, headers: { "retry-after": "30" }, body: { status: "ERROR", error: "too many requests" } } } });
 write("http-5xx-third-beat", { now: iso(D, "16:45"), cursor: cursor({ SPY: "2026-11-18" }, 2), responses: { [underlyingUrl(D, D)]: { status: 503 } } });

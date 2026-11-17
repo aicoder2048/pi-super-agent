@@ -82,3 +82,22 @@ test("从自选里划掉的标的不再采集", async () => {
 	const { fetched } = await replay("iv", "daily", { change: (input) => input.rows.watchlist.push({ id: "2", from: "x", fields: { symbol: "SPY", removed_at: "2026-11-19T20:00:00.000Z" } }) });
 	assert.deepEqual(fetched, []);
 });
+
+test("当天合约日线还没出来（探的合约都没有成交）：收盘 3 小时内不记无数据，cursor 不前进", async () => {
+	const { output } = await replay("iv", "daily-option-bars-not-ready");
+	assert.deepEqual(output.records, []);
+	assert.deepEqual(done(output), { SPY: "2026-11-18" });
+});
+
+test("过了收盘 3 小时还没有成交，就记无数据并前进", async () => {
+	const { output } = await replay("iv", "daily-option-bars-not-ready", { change: (input) => (input.now = "2026-11-20T00:30:00.000Z") });
+	assert.deepEqual(output.records.map((r: Record<string, unknown>) => [r.trade_date, r.data_status]), [["2026-11-19", "no-data"]]);
+	assert.deepEqual(done(output), { SPY: "2026-11-19" });
+});
+
+test("要存的日子里一根正股日线都没有：不写一整年的无数据，回 problem 提示代码可能写错", async () => {
+	const { output } = await replay("iv", "backfill-no-bars");
+	assert.deepEqual(output.records, []);
+	assert.equal(output.problem?.id, "no-bars");
+	assert.deepEqual(done(output), {});
+});
