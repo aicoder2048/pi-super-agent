@@ -20,6 +20,11 @@ const FETCHER = `export default async (input) => {
 	return { price: (await reply.json()).last };
 };`;
 
+const STATUS_READER = `export default async () => {
+	const reply = await fetch("https://quotes.example/v1/last?symbol=X");
+	return { status: reply.status, ok: reply.ok, retryAfter: reply.headers.get("Retry-After"), type: reply.headers.get("content-type"), body: await reply.json() };
+};`;
+
 const tool = (extra: object = {}) => JSON.stringify({ title: "t", description: "d", effect: "read", input: { symbol: { type: "text", title: "代码" } }, output: { level: { type: "number", title: "价位" } }, ...extra });
 
 function pkg(t: TestContext, cases: Record<string, object[]>): string {
@@ -32,6 +37,8 @@ function pkg(t: TestContext, cases: Record<string, object[]>): string {
 		"tools/reader/fixtures/data/files/level.txt": "42",
 		"tools/fetcher/tool.json": tool({ secrets: ["QUOTE_KEY"] }),
 		"tools/fetcher/index.ts": FETCHER,
+		"tools/status/tool.json": tool(),
+		"tools/status/index.ts": STATUS_READER,
 		...Object.fromEntries(Object.entries(cases).map(([name, list]) => [`tools/${name}/cases.json`, JSON.stringify(list)])),
 	};
 	for (const [path, content] of Object.entries(tree)) {
@@ -44,6 +51,9 @@ function pkg(t: TestContext, cases: Record<string, object[]>): string {
 const FROM_FIXTURE = { name: "夹具里的价位", input: { symbol: "X" }, expect: { level: 42 }, data: "tools/reader/fixtures/data" };
 const WITHOUT_DATA = { name: "没有夹具时数据目录是空的", input: { symbol: "X" }, expect: { level: null } };
 const REPLAYED = { name: "回放的应答", input: { symbol: "X" }, expect: { price: 9.5 }, responses: { "https://quotes.example/v1/last?symbol=X": { last: 9.5 } } };
+
+const LAST_X = "https://quotes.example/v1/last?symbol=X";
+const statusCase = (reply: unknown, expect: object) => ({ name: "回放状态码", input: {}, expect, responses: { [LAST_X]: reply } });
 
 const problems = (root: string) => {
 	const result = scanPackage(root);
@@ -71,6 +81,34 @@ test("用例带 responses：工具的 fetch 按网址回放应答，不联网", 
 	assert.deepEqual(problems(root), []);
 	const missing = pkg(t, { fetcher: [{ ...REPLAYED, responses: {} }] });
 	assert.match(problems(missing).join("\n"), /threw: the fixture has no response for https:\/\/quotes\.example/);
+});
+
+test("回放的应答可以带状态码和响应头：工具读到 429 和 retry-after，res.ok 是 false", (t) => {
+	const limited = { status: 429, headers: { "Retry-After": "30" }, body: { status: "ERROR", error: "too many" } };
+	const root = pkg(t, { status: [statusCase(limited, { status: 429, ok: false, retryAfter: "30", type: "application/json", body: { status: "ERROR", error: "too many" } })] });
+	assert.deepEqual(problems(root), []);
+});
+
+test("只写应答体的旧写法照旧是 200；带 status 字段的接口应答体不当成状态码", (t) => {
+	const body = { status: "OK", tickers: [] };
+	const root = pkg(t, { status: [statusCase(body, { status: 200, ok: true, retryAfter: null, type: "application/json", body })] });
+	assert.deepEqual(problems(root), []);
+});
+
+test("宿主跑用例时（runCasesAsync）回放的状态码也生效", async (t) => {
+	const root = pkg(t, { status: [statusCase({ status: 503, body: { down: true } }, { status: 503, ok: false, body: { down: true } })] });
+	const scan = scanPackage(root, { runCases: false });
+	assert.ok(scan.ok, JSON.stringify(scan));
+	assert.deepEqual(await runCasesAsync(scan.scan), []);
+});
+
+test("回放应答的 status 不是 200 到 599 的整数、headers 不是文字对文字：检查报错", (t) => {
+	for (const status of [42, 700, 429.5, "429", "OK"]) {
+		const root = pkg(t, { status: [statusCase({ status, body: {} }, {})] });
+		assert.match(problems(root).join("\n"), /tools\/status\/cases\.json: case "回放状态码" replies to https:\/\/quotes\.example\/v1\/last\?symbol=X with "status" .*, which is not a whole number from 200 to 599/, String(status));
+	}
+	const root = pkg(t, { status: [statusCase({ status: 429, headers: { "retry-after": 30 } }, {})] });
+	assert.match(problems(root).join("\n"), /case "回放状态码" replies to https:\/\/quotes\.example\/v1\/last\?symbol=X with "headers" that are not names to text/);
 });
 
 test("宿主跑用例（runCasesAsync）也带夹具数据目录和回放应答", async (t) => {
