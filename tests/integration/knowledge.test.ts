@@ -12,7 +12,7 @@ import type { Passage, Reply, WorkerCaller } from "../../src/modules/protocol.ts
 import { scanPackage } from "../../src/modules/validate.ts";
 import type { DomainKit, Domains } from "../../src/modules.ts";
 import type { Member } from "../../src/teams.ts";
-import { openOnConversation, startHost, until, type FakeSpawner, type FakeWorker } from "../helpers/fakes.ts";
+import { openOnConversation, startHost, unrecordedToolCalls, until, type FakeSpawner, type FakeWorker } from "../helpers/fakes.ts";
 
 const SAMPLE = join(import.meta.dirname, "../../docs/modules/architecture/sample/personal-health");
 const HEALTH = "personal-health" as ModuleName;
@@ -38,6 +38,7 @@ function setup(t: TestContext) {
 		copyDir: (module, digest) => store.dirOf(module, digest),
 		serving: (module) => (module === HEALTH ? state.digest : undefined),
 		dataDir: (module) => join(root, "modules-data", module),
+		toolCalls: unrecordedToolCalls,
 		secret: () => undefined,
 		log: () => {},
 	});

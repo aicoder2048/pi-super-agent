@@ -11,7 +11,7 @@ import type { ComponentName, ModuleName } from "../../src/modules/manifest.ts";
 import type { Json, WorkerCaller } from "../../src/modules/protocol.ts";
 import { scanPackage } from "../../src/modules/validate.ts";
 import { PATH_TOOLS, toolAllowlist, MEMBER_TOOLS } from "../../src/worker/tools.ts";
-import { openOnConversation, startHost, until } from "../helpers/fakes.ts";
+import { openOnConversation, startHost, unrecordedToolCalls, until } from "../helpers/fakes.ts";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/ocr");
 const onMac = process.platform === "darwin";
@@ -164,7 +164,7 @@ function scanModule(t: TestContext, ocr: Ocr | undefined) {
 	const digest = scan.scan.digest;
 	assert.ok(store.keep("papers" as ModuleName, digest, pkg));
 	const dataDir = join(root, "data");
-	const gateway = createGateway({ copyDir: (m, d) => store.dirOf(m, d), serving: () => digest, dataDir: () => dataDir, secret: () => undefined, log: () => {}, ...(ocr && { ocr }) } as Parameters<typeof createGateway>[0]);
+	const gateway = createGateway({ copyDir: (m, d) => store.dirOf(m, d), serving: () => digest, dataDir: () => dataDir, toolCalls: unrecordedToolCalls, secret: () => undefined, log: () => {}, ...(ocr && { ocr }) } as Parameters<typeof createGateway>[0]);
 	const caller: WorkerCaller = { who: "worker", ticket: "tkt_1", pin: { module: "papers" as ModuleName, digest }, basis: "request", member: null, heardOthers: false };
 	const call = (input: Json) => gateway.call(caller, { kind: "tool", name: "scan" as ComponentName, input });
 	return { call, dataDir };

@@ -5,6 +5,7 @@ import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi
 import { cpSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { createHostOptions, modelSelectors, watchedSources } from "../../src/host/wiring.ts";
 import { telegramOptions } from "../../src/host/telegram/options.ts";
 import { memberProviders } from "../../src/host/config.ts";
@@ -15,6 +16,7 @@ import { servedAsHost, until } from "../helpers/fakes.ts";
 import { FakeInbox } from "../helpers/fake-gmail.ts";
 import { startFakeGoogle, type FakeGoogle } from "../helpers/fake-google.ts";
 import { CopiesInUse, liveRegistry, ModuleStore } from "../../src/modules/live.ts";
+import { moduleDataDir } from "../../src/modules/knowledge.ts";
 import type { ComponentName, Digest, ModuleName } from "../../src/modules/manifest.ts";
 
 const fixed = (modules: Modules) => ({ live: liveRegistry(modules), kitFor: (domain: string) => modules.kitFor(domain), cards: () => [], setSwitch: () => false, onChange: () => {}, copiesInUse: new CopiesInUse() });
@@ -459,6 +461,39 @@ test("入口：B 调 A 开放的工具，A 的工具拿到 A 自己 .env 里的 
 	assert.ok(logs.some((l) => /^\[gateway\] alpha tools\/key tkt_1 helper inference ok \d+ ms from=beta$/.test(l)), logs.join("\n"));
 	assert.deepEqual(held, [`alpha/${modules.book.get("alpha")!.digest}`], "宿主的网关在调用期间占着提供方的副本");
 	assert.deepEqual(inUse.keys(), [], "调用结束就放开");
+});
+
+test("入口：宿主的 Gateway 把本模块和外部的工具调用都记进提供方 data.db 的 _tool_calls，调用方各是谁", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const config = hostConfig(provider);
+	const root = mkdtempSync(join(tmpdir(), "psa-wire-toolcalls-"));
+	const write = (path: string, text: string) => {
+		mkdirSync(join(root, path, ".."), { recursive: true });
+		writeFileSync(join(root, path), text);
+	};
+	write("alpha/module.json", JSON.stringify({ schema: 1, name: "alpha", version: "0.1.0", exports: ["tools/level"] }));
+	write("alpha/tools/level/tool.json", JSON.stringify({ title: "价位", description: "给价位", effect: "read", input: { code: { type: "text", title: "代码" } }, output: { level: { type: "number", title: "价位" } } }));
+	write("alpha/tools/level/index.ts", "export default () => ({ level: 42 });");
+	write("beta/module.json", JSON.stringify({ schema: 1, name: "beta", version: "0.1.0", uses: ["alpha/tools/level"] }));
+	const modules = servedAsHost(Modules.load([root]));
+	const digest = (name: string) => modules.book.get(name)!.digest! as Digest;
+	const store = new ModuleStore(join(config.stateDir, "module-store"));
+	for (const name of ["alpha", "beta"]) store.keep(name as ModuleName, digest(name), join(root, name));
+	const options = createHostOptions({ config, modules: fixed(modules), modelRuntime, log: () => {} });
+	const caller = (module: string, ticket: string) => ({ who: "worker" as const, ticket, pin: { module: module as ModuleName, digest: digest(module) }, basis: "request" as const, member: null, heardOthers: false });
+	assert.deepEqual(await options.gateway!.call(caller("alpha", "tkt_own"), { kind: "tool", name: "level" as ComponentName, input: { code: "NVDA" } }), { ok: true, output: { level: 42 } });
+	assert.deepEqual(await options.gateway!.call(caller("beta", "tkt_ext"), { kind: "tool", name: "alpha/tools/level" as ComponentName, input: { code: "NVDA" } }), { ok: true, output: { level: 42 } });
+	const path = join(moduleDataDir(config.stateDir, "alpha" as ModuleName), "data.db");
+	assert.ok(existsSync(path), "提供方 alpha 的 data.db 建出来了");
+	const db = new DatabaseSync(path, { readOnly: true });
+	try {
+		assert.deepEqual(db.prepare("SELECT caller, ticket, tool, outcome FROM _tool_calls ORDER BY rowid").all().map((r) => ({ ...r })), [
+			{ caller: "alpha", ticket: "tkt_own", tool: "tools/level", outcome: "ok" },
+			{ caller: "beta", ticket: "tkt_ext", tool: "tools/level", outcome: "ok" },
+		]);
+	} finally {
+		db.close();
+	}
 });
 
 test("入口：模块没有 .env 时工具照常跑、拿到空，不报错", async () => {

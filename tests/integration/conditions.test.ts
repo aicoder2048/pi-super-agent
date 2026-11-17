@@ -33,11 +33,13 @@ function world(t: TestContext, log: (line: string) => void = () => {}) {
 		serving.set(module, scan.scan.digest);
 		return scan.scan.digest;
 	};
+	const rows = instanceData(state);
 	const gateway = createGateway({
 		copyDir: (module, digest) => store.dirOf(module, digest),
 		serving: (module) => serving.get(module),
 		dataDir: (module) => moduleDataDir(state, module),
-		rows: instanceData(state),
+		rows,
+		toolCalls: rows,
 		secret: () => undefined,
 		log,
 	});

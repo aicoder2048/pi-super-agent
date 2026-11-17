@@ -322,7 +322,7 @@ function gatewayOver(t: TestContext, w: Awaited<ReturnType<typeof attachmentWorl
 	const store = new ModuleStore(join(w.dataDir, "..", "..", "store"));
 	const digest = scan.scan.digest;
 	assert.ok(store.keep("mail" as ModuleName, digest, w.pkg));
-	const gateway = createGateway({ copyDir: (module, pin) => store.dirOf(module, pin), serving: () => digest, dataDir: () => w.dataDir, rows: w.data, secret: () => undefined, log: () => {}, fetch: { "mail.attachment": (_module, _components, input, dir) => w.fetch(input, dir) }, ...(ocr && { ocr }) });
+	const gateway = createGateway({ copyDir: (module, pin) => store.dirOf(module, pin), serving: () => digest, dataDir: () => w.dataDir, rows: w.data, toolCalls: w.data, secret: () => undefined, log: () => {}, fetch: { "mail.attachment": (_module, _components, input, dir) => w.fetch(input, dir) }, ...(ocr && { ocr }) });
 	const caller: WorkerCaller = { who: "worker", ticket: "tkt_1", pin: { module: "mail" as ModuleName, digest }, basis: "inference", member: null, heardOthers: false };
 	return { gateway, caller };
 }

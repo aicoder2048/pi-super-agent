@@ -20,7 +20,7 @@ export interface GatewayPorts {
 	dataDir(module: ModuleName): string;
 	rows: ModuleRows;
 	/** Each tool call that ran goes into the data.db of the module it ran in; a failed write is logged, never the call's failure. */
-	toolCalls?: ToolCalls;
+	toolCalls: ToolCalls;
 	/** `module` is the module whose code runs, so a tool reads its own module's `.env`. */
 	secret: ModuleSecretLookup;
 	log(line: string): void;
@@ -270,7 +270,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			if (ran && request.kind === "tool") {
 				const by = caller.who === "page" ? { ticket: null, member: null, basis: "page" } : { ticket: caller.ticket, member: caller.member, basis: caller.basis };
 				try {
-					ports.toolCalls?.recordToolCall(owner, { caller: moduleOf(caller), ...by, tool: use, outcome, ms });
+					ports.toolCalls.recordToolCall(owner, { caller: moduleOf(caller), ...by, tool: use, outcome, ms });
 				} catch (error) {
 					ports.log(`[gateway] ${owner} ${use}：_tool_calls 没记上：${String((error as Error)?.message ?? error)}`);
 				}

@@ -11,6 +11,7 @@ import type { Json, Reply, WorkerCaller } from "../../src/modules/protocol.ts";
 import { scanPackage } from "../../src/modules/validate.ts";
 import { FakeInbox } from "../helpers/fake-gmail.ts";
 import { startFakeGoogle, type FakeGoogle } from "../helpers/fake-google.ts";
+import { unrecordedToolCalls } from "../helpers/fakes.ts";
 
 const DRAFT_TOKEN = "1//fake-refresh-draft";
 const DRAFTS = "/gmail/v1/users/me/drafts";
@@ -52,7 +53,7 @@ async function portWorld(t: TestContext, { basis = "request" as WorkerCaller["ba
 	assert.ok(store.keep("mail" as ModuleName, digest, pkg));
 	mkdirSync(join(root, "data"), { recursive: true });
 	const logs: string[] = [];
-	const gateway = createGateway({ copyDir: (module, d) => store.dirOf(module, d), serving: () => digest, dataDir: () => join(root, "data"), rows: {} as never, secret: (_module, name) => secrets[name], log: (line) => logs.push(line), ...(google && { google }) });
+	const gateway = createGateway({ copyDir: (module, d) => store.dirOf(module, d), serving: () => digest, dataDir: () => join(root, "data"), rows: {} as never, toolCalls: unrecordedToolCalls, secret: (_module, name) => secrets[name], log: (line) => logs.push(line), ...(google && { google }) });
 	const caller: WorkerCaller = { who: "worker", ticket: "tkt_1", pin: { module: "mail" as ModuleName, digest }, basis, member: null, heardOthers: false };
 	const call = (name: string, input: Json): Promise<Reply> => gateway.call(caller, { kind: "tool", name: name as ComponentName, input });
 	return { call, logs };

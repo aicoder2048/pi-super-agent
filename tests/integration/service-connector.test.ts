@@ -9,6 +9,7 @@ import type { ComponentName, Digest, ModuleName } from "../../src/modules/manife
 import type { Json, Request, WorkerCaller } from "../../src/modules/protocol.ts";
 import { scanPackage } from "../../src/modules/validate.ts";
 import { venvDir, VENV_MARK, lockOf } from "../../src/modules/files.ts";
+import { unrecordedToolCalls } from "../helpers/fakes.ts";
 
 function files(root: string, tree: Record<string, string>): void {
 	for (const [path, content] of Object.entries(tree)) {
@@ -81,6 +82,7 @@ function setup(t: TestContext, { alpha = ALPHA as Record<string, string> | null 
 		serving: (module) => serving.get(module),
 		dataDir,
 		rows: undefined as never,
+		toolCalls: unrecordedToolCalls,
 		secret: (module, name) => envs[module]?.[name],
 		log: (line) => logs.push(line),
 		hold: (module, digest) => {
@@ -264,6 +266,7 @@ test("外部调用进行中 A 换了版本并跑 collect：旧副本在调用结
 		serving: (module) => modules.live.current().book.get(module)?.digest as Digest | undefined,
 		dataDir: (module) => moduleDataDir(dir, module),
 		rows: undefined as never,
+		toolCalls: unrecordedToolCalls,
 		secret: () => undefined,
 		log: () => {},
 		hold: modules.copiesInUse.hold,
