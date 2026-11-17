@@ -1,0 +1,15 @@
+{
+  "title": "交易链与税务视图",
+  "description": "从原始成交重算交易链盈亏和税务标记接口；当前固定 NOT_IMPLEMENTED，不伪造汇总或税务结论",
+  "effect": "read",
+  "input": {
+    "account_key": { "type": "text", "title": "账户匿名键" },
+    "chain_id": { "type": "text", "title": "交易链键" },
+    "year": { "type": "number", "title": "税年" },
+    "view": { "type": "text", "title": "chain 或 tax" }
+  },
+  "output": {
+    "status": { "type": "text", "title": "固定 NOT_IMPLEMENTED" },
+    "reason": { "type": "text", "title": "未实现的视图与税务标记说明" }
+  }
+}

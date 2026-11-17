@@ -1,0 +1,10 @@
+{
+  "title": "交易台发件人私密名单",
+  "kind": "record",
+  "class": "private",
+  "fields": {
+    "address": { "type": "text", "title": "发件人地址或 @域名，不认通配符；解析做好以前留空" },
+    "addedAt": { "type": "date", "title": "加入时刻，带时区 ISO" },
+    "removedAt": { "type": "date", "title": "移除时刻，带时区 ISO；划掉不删行" }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "title": "成交邮件",
+  "connector": "mail",
+  "handler": "index.ts",
+  "every": "5m",
+  "reads": ["fills"],
+  "settings": { "senders": "brokers" },
+  "into": "fills"
+}

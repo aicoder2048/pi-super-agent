@@ -1,0 +1,24 @@
+{
+  "title": "期权仓位提醒安全占位",
+  "handler": "index.ts",
+  "every": "5m",
+  "when": "us-market-hours",
+  "limit": "1m",
+  "reads": ["fills", "chains"],
+  "secrets": ["POLYGON_API_KEY", "FINNHUB_API_KEY"],
+  "settings": {
+    "zone": "America/New_York",
+    "expirySilentTradingDays": 5,
+    "expiryOpenCheckAfter": "09:45",
+    "expiryOpenDistancePct": 3,
+    "nearStrikePct": 2,
+    "profitSilentFraction": 0.5,
+    "profitBellFraction": 0.8,
+    "earningsLeadTradingDays": 2,
+    "dividendLeadTradingDays": 2,
+    "dividendRecheck": "each-trading-day",
+    "expectedDividendSilentOnly": true,
+    "dedup": "account-position-type-trading-day-and-escalation"
+  },
+  "notice": "{{status}}：{{message}}"
+}

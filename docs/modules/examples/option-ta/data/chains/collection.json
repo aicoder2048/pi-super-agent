@@ -1,0 +1,23 @@
+{
+  "title": "交易链、Roll 组与意图变更原始记录",
+  "kind": "record",
+  "class": "private",
+  "fields": {
+    "record_type": { "type": "text", "title": "CHAIN_LEG、ROLL_GROUP 或 INTENT_CHANGE" },
+    "chain_id": { "type": "text", "title": "链键，一条链仅属于一个账户" },
+    "account_key": { "type": "text", "title": "账户匿名键" },
+    "fill_id": { "type": "text", "title": "链成员成交键" },
+    "event_id": { "type": "text", "title": "链成员事件键" },
+    "seq": { "type": "number", "title": "链成员顺序" },
+    "roll_id": { "type": "text", "title": "Roll 组键，税务视图不读取" },
+    "close_fill_id": { "type": "text", "title": "Roll 平仓腿键或多腿 JSON 数组文本" },
+    "open_fill_id": { "type": "text", "title": "Roll 开仓腿键或多腿 JSON 数组文本" },
+    "kind": { "type": "text", "title": "Calendar、Diagonal 或 Combo" },
+    "intent": { "type": "text", "title": "十项意图之一，收租须结合卖 put/call 判断" },
+    "intent_confirmed": { "type": "text", "title": "已确认或待确认，默认意图不得自动当确认" },
+    "changed_at": { "type": "date", "title": "意图或链关系记录时刻" },
+    "reason": { "type": "text", "title": "变更原因" },
+    "source": { "type": "text", "title": "原始依据" },
+    "reversal_of": { "type": "text", "title": "更正冲销指向旧记录的键" }
+  }
+}

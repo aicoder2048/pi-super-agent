@@ -68,6 +68,17 @@ grill-with-docs 就是两个技能合用：grilling（按决策树一轮轮拷�
 - 独立复查工坊的包。从 T 移植纯计算到 `tools/`，先用 T 的 smoke 用例写成失败的测试，再搬代码。真模型跑 `module try`。
 - **完成标准**：检查 ok，考题全部 PASS，工具的 `cases.json` 覆盖休市、缺字段、应答体 `status: "ERROR"`、HTTP 429 和 5xx（宿主回放 HTTP 状态见 PR #171）。`fills` feed 的样例用 `option-ta-p1/mail-samples/` 的四封虚构信做。
 
+#### P3 分步
+
+每步一个 PR，从 main 开。P3-0 合并后开 P3-a。P3-b、P3-d 用 P3-a 的公式，等 P3-a 合并再开；P3-c 不依赖 P3-a，可以和它并行。P3-e 等前面几步都合并。每步都要 `just module check docs/modules/examples/option-ta` 打印 ok、全量 `just test` 通过；工具实现了，就把考题里对应的 `NOT_IMPLEMENTED` 换成工具输出的字面量（规则见 `module-builder` 的 `write-evals` 技能）。P3-e 之前不跑真模型。
+
+- **P3-0 底座。**把第三次 P2 的包（draft #181）原样放进 `docs/modules/examples/option-ta/`，三次 P2 的记录放进 `option-ta-p2/` 留档，按说明书和 #183 以后的工坊规则修包：`fills` 接 `mail`，解析没做时有信就抛固定的话、样例只放没有信的一份、`brokers` 留空；考题一题一件事。不做功能。完成标准：`module check` 打印 ok，提醒只剩外部 `uses`。
+- **P3-a 纯计算。**从 T 移植 P1 清单里「搬」的纯计算：options-math、first-passage、scenario-pl、strategy-economics、cc-yield、liquidity、limit-price、roll-credit-gate、iv-crush、iv-history（只搬 `selectAtmContract`、`ivRank`、`ivPercentile`）、`impliedVolPut`（补 call 版）、hv20 和 vol-regime、net-gamma-walls、oi-term-structure、pin-risk-check、check-assignment-risk 的纯函数、contract-deliverable。每一项先把 T 的 smoke 用例写成失败的测试，再搬代码；P1 清单写了「要补」的（买方策略、call 版反解、价格和 put-call 平价）一并补用例。T 的门槛常量（roll-credit-gate 的 10%、pin-risk 的门槛）换成说明书和 build plan 定的值，没定的问使用者。接进 `strategy` 工具：权利金、参考价、盈亏平衡、到期盈亏、年化、指派概率、流动性和三种 Roll。完成标准：移植的每项都有从 smoke 转来的测试且通过，`strategy` 的 `cases.json` 用算出来的数断言，Roll 考题的 `expect` 是工具算出的净收。
+- **P3-b 行情。**`chain`、`vol` 工具接 Massive：滤掉二元期权，按行权价范围取，跟分页，缺 IV 或希腊值时用 P3-a 的公式自算并标注「自算」，休市时标注休市。`vol` 读 `iv-snapshots`，用 P3-a 的 rank、百分位和 HV。完成标准：两个工具的 `cases.json` 覆盖休市、缺字段、应答体 `status: "ERROR"`、HTTP 429、5xx，夹具取自 P1 样本，回放写法照 #171；缺 key 时回一句话和 `just module secret` 命令。
+- **P3-c 成交。**`fills` feed 的 HTML 解析写成纯函数（输入信和已记的 `fills` 行，回 `fills` 和 `skipped`）：只取最新一张交易表，判定成交、挂单、没成交、股票行，算订单键和累计增量，标部分成交。先用 `option-ta-p1/mail-samples/` 的脱敏样例写成失败的夹具和测试，再实现；第二次 P2 的 `parser.ts`（#176 分支）可以拿来审，期望值要独立核对。解析通过以后 handler 不再抛错，`fills` 的样例换成这几封信。`record`（校验、拼 `fill_id`、只读查重、交回规整行）和 `ledger`（交易链盈亏和税务视图两种视图，税务口径按 tax memo 第 14.3 节的第一版范围，要股票批次的一律「待确认」）。完成标准：解析的测试对 `fills` 和 `skipped` 都断言，四封虚构信的夹具通过；`record`、`ledger` 的 `cases.json` 覆盖缺账户、费用未知、重复 `fill_id`、部分成交合计；README 写清什么时候往 `brokers` 加地址。
+- **P3-d 盯盘。**`iv` feed：期权自选加进新标的时回填一年，每个交易日收盘后存一行原始输入，cursor 按交易日记、同一交易日不重存（写法照 stock-ta 的 `feeds/scan/index.ts`），取数时刻用补录的收盘后样本定。`watch` feed：四种提醒的门槛（到期临近、接近或穿过行权价、权利金达标、到期前的财报和除息），到期日 09:45 以后的第一次检查，预计除息日的推算（「主动提醒的两处细节」）。完成标准：两个 feed 的样例覆盖空自选、回填、当天已存、休市、缺 key，`watch` 的每种门槛有触发和不触发的样例；P2 访谈假设的默认值（收盘后 30 分钟、目标 30 天、21 到 45 天等）和使用者或 T 对过一遍。
+- **P3-e 收尾。**用真模型跑 `just module try` 全部 PASS，模型只用 `openai-codex/*`。独立复查整个包。做 P4 入库上线的准备（部署说明、使用者要设的 key 和名单），不打开模块开关。完成标准：考题全部 PASS 的日志留档，复查的意见处理完。
+
 ### P4 入库上线
 - 包放进 `docs/modules/examples/option-ta/`，开 PR，独立复查，合并，按常设授权部署老 Mac。
 - 打开开关 `just module on option-ta` 由使用者来做。

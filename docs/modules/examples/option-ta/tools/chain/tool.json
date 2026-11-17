@@ -1,0 +1,17 @@
+{
+  "title": "期权链快照",
+  "description": "期权链紧凑结果接口；当前固定返回 NOT_IMPLEMENTED，不联网、不返回伪报价或希腊值",
+  "effect": "read",
+  "input": {
+    "symbol": { "type": "text", "title": "标的代码" },
+    "expiry": { "type": "date", "title": "到期日" },
+    "right": { "type": "text", "title": "put 或 call" },
+    "strike_min": { "type": "number", "title": "行权价下界" },
+    "strike_max": { "type": "number", "title": "行权价上界" },
+    "operation": { "type": "text", "title": "snapshot、oi、gex、max-pain 或 unusual-volume" }
+  },
+  "output": {
+    "status": { "type": "text", "title": "固定 NOT_IMPLEMENTED" },
+    "reason": { "type": "text", "title": "未实现的能力及无数据说明" }
+  }
+}

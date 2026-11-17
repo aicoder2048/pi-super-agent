@@ -1,0 +1,28 @@
+{
+  "title": "IV 原始输入安全占位",
+  "handler": "index.ts",
+  "every": "5m",
+  "limit": "1m",
+  "reads": ["watchlist"],
+  "settings": {
+    "methodology": "option-ta-iv-close-v1",
+    "zone": "America/New_York",
+    "afterCloseMinutes": 30,
+    "backfillCalendarDays": 365,
+    "targetDte": 30,
+    "minDte": 21,
+    "maxDte": 45,
+    "contractType": "put",
+    "exerciseStyle": "american",
+    "riskFreeRate": 0,
+    "dividendYield": 0,
+    "yearDays": 365,
+    "expiryTime": "16:00",
+    "seriesPrice": "contract-daily-close",
+    "hvSessions": 20,
+    "hvAnnualSessions": 252
+  },
+  "secrets": ["POLYGON_API_KEY"],
+  "into": "iv-snapshots",
+  "notice": "{{status}}：{{message}}"
+}

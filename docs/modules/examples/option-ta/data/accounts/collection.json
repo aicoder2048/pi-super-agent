@@ -1,0 +1,13 @@
+{
+  "title": "匿名账户与税务归属",
+  "kind": "record",
+  "class": "private",
+  "fields": {
+    "account_key": { "type": "text", "title": "稳定匿名账户键，不存真实账号" },
+    "account_ref": { "type": "text", "title": "邮件账户短码，仅私密映射" },
+    "tax_owner_key": { "type": "text", "title": "税务归属人匿名键，未知留空" },
+    "tax_type": { "type": "text", "title": "taxable 或 IRA，未知留空" },
+    "added_at": { "type": "date", "title": "映射建立时刻" },
+    "source": { "type": "text", "title": "映射依据" }
+  }
+}
