@@ -22,6 +22,7 @@ const REPO = resolve(import.meta.dirname, "../..");
 const ACTIVE_MS = 60_000;
 const OPEN_MS = 180_000;
 const REPORT_MS = 600_000;
+const RELAY_MS = 60_000;
 const ACK_MS = 5_000;
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 // The host prefixes each log line with its ISO time.
@@ -201,14 +202,12 @@ async function rehearse(source: string, module: string, providers: readonly Modu
 			console.log(`${name} 在临时宿主里没有打开：${why}，预演里调不到它的工具`);
 		}
 
-		const replies: string[] = [];
 		const answers = new Map<string, string | null>();
 		let greeted = false;
 		talk = new HostConnection({
 			socketPath: join(stateDir, "host.sock"),
 			onMessage: (m) => {
 				if (m.type === "snapshot") greeted = true;
-				else if (m.type === "reply") replies.push(m.text);
 				else if (m.type === "ack" || m.type === "refused") answers.set(m.requestId, m.type === "ack" ? m.triggerId : null);
 			},
 			retryMs: 200,
@@ -217,22 +216,26 @@ async function rehearse(source: string, module: string, providers: readonly Modu
 		if (!(await until(ACTIVE_MS, () => greeted || undefined))) return started.alive() ? refuse(`临时宿主 ${ACTIVE_MS / 1000} 秒内没有接通`) : hostGone();
 
 		const ticketOf = opened.prepare("SELECT id, domain FROM tickets WHERE origin_trigger_id = ?");
-		const reportOf = opened.prepare("SELECT status, summary FROM reports WHERE ticket_id = ? AND status <> 'progress' ORDER BY seq DESC LIMIT 1");
+		const reportOf = opened.prepare("SELECT id, status, summary FROM reports WHERE ticket_id = ? AND status <> 'progress' ORDER BY seq DESC LIMIT 1");
+		// The card's action turns done only after the Router turn that saw it ends, so its relay is in reply_receipts by then.
+		const relaying = opened.prepare("SELECT 1 FROM actions WHERE kind = 'router.notify' AND status = 'pending' AND json_extract(payload, '$.reportId') = ?");
+		// By cause, not by arrival: a relay often comes after the next question went out.
+		const repliesTo = opened.prepare("SELECT text FROM reply_receipts WHERE cause IN (?, ?) ORDER BY created_at, rowid");
 		let failed = 0;
 		for (const exam of exams) {
-			const heard = replies.length;
 			const requestId = talk.say(exam.question);
 			const trigger = requestId === undefined ? undefined : await until(ACK_MS, () => answers.get(requestId));
 			const ticket = trigger ? await until(OPEN_MS, () => ticketOf.get(trigger) as { id: string; domain: string | null } | undefined) : undefined;
-			const report = ticket ? await until(REPORT_MS, () => reportOf.get(ticket.id) as { status: string; summary: string } | undefined) : undefined;
+			const report = ticket ? await until(REPORT_MS, () => reportOf.get(ticket.id) as { id: string; status: string; summary: string } | undefined) : undefined;
+			if (report) await until(RELAY_MS, () => (relaying.get(report.id) ? undefined : true));
 			if (!started.alive()) return hostGone();
-			const said = replies.slice(heard);
-			const attempt: Attempt = ticket ? { opened: true, ticket: ticket.id, domain: ticket.domain, report: report ?? null, gateway: started.gateway } : { opened: false, replies: said };
+			const replies = (repliesTo.all(trigger ?? null, ticket?.id ?? null) as { text: string }[]).map((r) => r.text);
+			const attempt: Attempt = ticket ? { opened: true, ticket: ticket.id, domain: ticket.domain, report: report ?? null, gateway: started.gateway } : { opened: false, replies };
 			const verdict = judge(module, exam, attempt);
 			if (!verdict.pass) failed++;
 			console.log(verdictLine(exam, verdict));
 			console.log(`  问：${exam.question}`);
-			for (const text of said) console.log(`  Router：${text}`);
+			for (const text of replies) console.log(`  Router：${text}`);
 			if (report) console.log(`  汇报（${report.status}）：${report.summary}`);
 		}
 		passed = `${exams.length - failed}/${exams.length} 道考题通过`;
