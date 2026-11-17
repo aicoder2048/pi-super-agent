@@ -35,11 +35,11 @@ interface Input {
 type Cursor = { date: string; symbols: string[]; hits?: Hit[]; states?: string[]; digest?: true; released?: string[] };
 
 type TaError = { symbol?: string; error: { code: string; message?: string } };
+type ScanReply = { skipped: true } | { skipped?: false; new_signals: unknown[]; errors: TaError[] };
 /** A signal as ta's CLI prints it: times are ISO under their own names (`data_end`), never the `_ms` numbers of its database. */
-type TaSignalRow = TaSignal & { timeframe: string; data_end: string };
-type ScanReply = { skipped: true } | { skipped?: false; new_signals: TaSignalRow[]; errors: TaError[] };
+type TaSignalRow = TaSignal & { data_end: string };
 /** `date`: the New York date of the bar the signal was computed on. */
-type Signal = TaSignal & { timeframe: string; date: string };
+type Signal = TaSignal & { date: string };
 
 const BENCHMARKS = ["QQQ", "SPY"];
 const MAX_WATCHLIST = 30;
@@ -68,6 +68,16 @@ function signalOf(row: TaSignalRow): Signal {
 	const ms = Date.parse(row.data_end);
 	if (Number.isNaN(ms)) throw new Error(`ta scan 的信号 ${row.symbol} ${row.rule_id} 没有能读的 data_end：${JSON.stringify(row.data_end)}`);
 	return { ...row, date: newYorkDate(ms) };
+}
+
+/**
+ * The session's daily signals in ta's database, new to this scan or not, so a rescan after a failed grade still grades them.
+ * The window is wider than the day; the New York date of each bar decides.
+ */
+async function sessionSignals(ta: Ta, date: string): Promise<Signal[]> {
+	const window = { start: `${shiftDate(date, -1)}T12:00:00Z`, end: `${shiftDate(date, 1)}T12:00:00Z` };
+	const reply = (await runTa(ta, "signals", { timeframe: "1d", ...window, limit: 10_000 })) as { signals: TaSignalRow[] };
+	return reply.signals.map(signalOf).filter((s) => s.date === date);
 }
 
 /** The session's close, from the module's own calendar: 16:00 New York time, 13:00 on an early-close day. */
@@ -194,7 +204,7 @@ function holdingStates(input: Input, date: string, levels: RuleLevels, dataDir: 
 	}
 }
 
-/** Grades the session's own signals on the watchlist: ta's first scan of an empty database backfills two years, and those are never graded. */
+/** Grades the session's daily signals on the watchlist: ta's first scan of an empty database backfills two years, and those are never graded. */
 async function grade(input: Input, signals: readonly Signal[], picked: readonly string[], date: string, earlier: readonly Hit[], quiet: boolean, dataDir: string) {
 	let bars: Parameters<typeof close>[0]["bars"] = {};
 	try {
@@ -209,7 +219,7 @@ async function grade(input: Input, signals: readonly Signal[], picked: readonly 
 		date,
 		at: new Date(closeOf(date)).toISOString(),
 		symbols: picked,
-		signals: signals.filter((s) => s.timeframe === "1d" && s.date === date),
+		signals,
 		bars,
 		earlier: [...readHits(dataDir, date, "quotes"), ...earlier],
 		earnings,
@@ -289,7 +299,6 @@ async function scanOnce(input: Input, { key, dataDir, session, symbols, picked, 
 		if (hadLive) copyFileSync(live, next, constants.COPYFILE_FICLONE);
 		const reply = (await runTa(ta, "scan", { mode: "daily", symbols, now })) as ScanReply;
 		if (reply.skipped) return false;
-		const signals = reply.new_signals.map(signalOf);
 		// ta exits 0 when the network is down, so success is read from the per-symbol errors, never the exit code.
 		const failed = new Set(reply.errors.filter((e) => e.error.code !== WARNING_ONLY).map((e) => e.symbol));
 		if (!symbols.some((s) => !failed.has(s))) {
@@ -297,6 +306,7 @@ async function scanOnce(input: Input, { key, dataDir, session, symbols, picked, 
 			out.problem = SCAN_FAILED;
 			return false;
 		}
+		const signals = hadLive ? await sessionSignals(ta, session) : [];
 		renameSync(next, live);
 		if (hadLive) {
 			const graded = await grade(input, signals, picked, session, cursor.hits ?? [], quiet, dataDir);
