@@ -14,6 +14,11 @@ import { UNLIMITED, type OcrConfig } from "../ocr/ocr.ts";
 import { HEALTH_DEFAULTS, type HealthConfig } from "./health.ts";
 
 export const BUNDLED_MODULES = fileURLToPath(new URL("../../modules", import.meta.url));
+/**
+ * True or `rows-only`: each package feed runs its fixtures once, and no connector runs. `rows-only` is how `just module try`
+ * starts its host: the fixtures' rows are written, and their notices and alerts reach no one.
+ */
+export type FeedFixtures = boolean | "rows-only";
 export interface HostConfig {
 	stateDir: string;
 	models: { router: ModelRef; worker: ModelRef; fallback: ModelRef };
@@ -41,8 +46,7 @@ export interface HostConfig {
 	/** Absolute. Where helpers and members put what they make (ADR-0015). */
 	outputDir: string;
 	sources: Record<string, unknown>;
-	/** Set by `just module try`: each package feed runs its fixtures once, and no connector runs. */
-	feedFixtures: boolean;
+	feedFixtures: FeedFixtures;
 	/** Present means the Telegram client runs. An empty list is setup mode: it only tells whoever writes their own numeric id. */
 	telegram?: { allowedUserIds: readonly number[] };
 	ocr: OcrConfig;
@@ -144,7 +148,7 @@ export function loadConfig(stateDir = defaultStateDir()): HostConfig {
 		secretsFile,
 		outputDir,
 		sources,
-		feedFixtures: raw.feedFixtures === true,
+		feedFixtures: parseFeedFixtures(raw.feedFixtures, file),
 		...(telegram && { telegram }),
 		ocr,
 		health: parseHealth(raw.health, file),
@@ -229,4 +233,10 @@ function parseOcr(raw: unknown, file: string): OcrConfig {
 	}
 	if (process.arch !== "arm64") throw new ConfigError(`${file}：ocr.engine 是 unlimited 只能用在 Apple Silicon 的 Mac 上，这台是 ${process.arch}；用 vision`);
 	return { engine, home: unlimitedHome, ...limits };
+}
+
+function parseFeedFixtures(value: unknown, file: string): FeedFixtures {
+	if (value === undefined) return false;
+	if (value === true || value === false || value === "rows-only") return value;
+	throw new ConfigError(`${file}：feedFixtures（${JSON.stringify(value)}）只能是 true、false 或 "rows-only"`);
 }

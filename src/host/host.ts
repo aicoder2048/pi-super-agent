@@ -44,6 +44,7 @@ import { threadId } from "../sources/generic.ts";
 import { inPollWindow } from "../sources/market/session.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
 import { causeOf, clearedText, Health, HEALTH_DEFAULTS, ModelHealth, raisedText, scrub, type HealthConfig } from "./health.ts";
+import type { FeedFixtures } from "./config.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -69,7 +70,7 @@ export interface HostOptions {
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	isMarketSource?: (source: string) => boolean;
 	/** `mail`: the host's Gmail read access; without it a feed on the mail connector waits. */
-	moduleFeeds?: { feeds(): readonly FeedEntry[]; fixtures: boolean; secret?: ModuleSecretLookup; tickMs?: number; mail?: GmailAccount };
+	moduleFeeds?: { feeds(): readonly FeedEntry[]; fixtures: FeedFixtures; secret?: ModuleSecretLookup; tickMs?: number; mail?: GmailAccount };
 	/** The serving modules, asked each time. Without it no ticket has a domain. */
 	domains?: Domains;
 	gateway?: Gateway;
@@ -245,12 +246,26 @@ export class Host {
 				rejected: (entry, gmailId, tries) =>
 					void this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(`${entry.feed.title}：Gmail 里编号 ${gmailId} 的信试了 ${tries} 次都没处理成，跳过了，信还在 Gmail 里，错误记在本机的 rejected 记录里`, PROBLEM_MAX)) }),
 			});
+		const fixtures = options.moduleFeeds?.fixtures ?? false;
+		const rowsOnly = fixtures === "rows-only";
 		this.feedScheduler = createScheduler({
 			feeds: options.moduleFeeds?.feeds ?? (() => []),
 			run: async (entry, items, fixture, signal) => {
 				let problem: FeedProblem | undefined;
-				const ports = { ...feedPorts, problem: (_: string, reported: FeedProblem | undefined) => (problem = reported) };
+				const dropped = { notices: 0, alerts: 0 };
+				const ports = {
+					...feedPorts,
+					...(rowsOnly && {
+						submit: () => void dropped.notices++,
+						alert: () => {
+							dropped.alerts++;
+							return true;
+						},
+					}),
+					problem: (_: string, reported: FeedProblem | undefined) => (problem = reported),
+				};
 				const run = mail && entry.feed.connector === "mail" && fixture === undefined ? await mail.beat(entry, ports, signal) : await runFeed(entry, items, ports, fixture, signal);
+				if (dropped.notices + dropped.alerts > 0) this.#log(`[预演] ${entry.source} 样例 ${fixture?.name}：丢掉 ${dropped.notices} 条触发、${dropped.alerts} 条提醒，没交出去`);
 				this.#feedHealth(entry, run, problem);
 				const zone = intoOf(entry.feed, entry.components)?.watch?.zone;
 				this.#beats.set(entry.source, { module: entry.module, title: entry.feed.title, at: clock.now(), ...(zone && { zone }), ...(run.ok ? { ok: true, records: run.records } : { ok: false, note: entry.private ? PRIVATE_ERROR : scrub(run.note) }) });
@@ -261,7 +276,7 @@ export class Host {
 			inboxDir: join(options.stateDir, "inbox"),
 			now: clock.now,
 			when: { "us-market-hours": inPollWindow },
-			fixtures: options.moduleFeeds?.fixtures ?? false,
+			fixtures: fixtures !== false,
 			log: this.#log,
 			rejected: (entry, file, note, tries) => {
 				if (causeOf(note) === "auth") return;
