@@ -179,6 +179,27 @@ test("just host 启动时列出加载的模块，有成员的模块后面写队�
 	assert.match(run.stderr, /\[host\] 模块：mail, news（新闻队）, module-builder（模块工坊）, pi-pi（Pi施工队）；规则 \d+ 条/);
 });
 
+test("刚打开、工具用例还在后台跑的模块，just host 启动日志写检查中而不是停用；开关关着的模块写已停用", () => {
+	const tool = { title: "nap", description: "sleeps", input: { x: { type: "number", title: "x" } }, output: { y: { type: "number", title: "y" } } };
+	const pkg = (name: string) => ({
+		[`modules/${name}/module.json`]: JSON.stringify({ schema: 1, name, version: "0.1.0", title: name, description: "慢工具" }),
+		[`modules/${name}/tools/nap/tool.json`]: JSON.stringify(tool),
+		[`modules/${name}/tools/nap/index.ts`]: "export default async ({ x }: { x: number }) => { await new Promise((r) => setTimeout(r, 3000)); return { y: x }; };",
+		[`modules/${name}/tools/nap/cases.json`]: JSON.stringify([{ name: "c0", input: { x: 1 }, expect: { y: 1 } }]),
+	});
+	const stateDir = stateWithFiles({ ...pkg("slow"), ...pkg("shut") })();
+	writeFileSync(join(stateDir, "config.json"), JSON.stringify({ webPort: 0, models: { router: "openai-codex/no-such-model" } }));
+	const db = openStore(join(stateDir, "state.db"));
+	setModuleSwitch(db, "slow", true);
+	setModuleSwitch(db, "shut", false);
+	db.close();
+	const run = spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], { env: { ...process.env, PSA_STATE_DIR: stateDir }, encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL" });
+	const line = run.stderr.split("\n").find((l) => l.includes("[host] 模块：")) ?? run.stderr;
+	assert.match(line, /；检查中：slow；/);
+	assert.match(line, /；已停用：shut；/);
+	assert.doesNotMatch(line, /停用[^；]*slow/);
+});
+
 test("状态库记着一个关掉的旧布局模块而它的包已被删掉时，just host 照常启动，模块列表里没有它，记录改成包不在了", () => {
 	const stateDir = stateWith({ models: { router: "openai-codex/no-such-model" } })();
 	const onDisk = { digest: "1adde3b94feeb9c6a00806727b41f339ff40e3c8e31c2200104eabdc001708ee" as Digest, label: "旧布局" };
@@ -489,7 +510,7 @@ test("终端 Ctrl+C 时成员正在干活：宿主停下后不留成员进程，
 test("just host 第一次启动把 config.json 的模块开关导入状态库，启动日志按导入后的开关列模块", () => {
 	const stateDir = stateWith({ webPort: 0, modules: { "pi-pi": false }, models: { router: "openai-codex/no-such-model" } })();
 	const run = spawnSync(process.execPath, ["--import", "./src/pi-runtime.mjs", HOST], { env: { ...process.env, PSA_STATE_DIR: stateDir }, encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL" });
-	assert.match(run.stderr, /\[host\] 模块：module-builder（模块工坊）；停用 pi-pi；规则 \d+ 条/);
+	assert.match(run.stderr, /\[host\] 模块：module-builder（模块工坊）；已停用：pi-pi；规则 \d+ 条/);
 	const db = new DatabaseSync(join(stateDir, "state.db"), { readOnly: true });
 	const switches = db.prepare("SELECT name, switch FROM module_records ORDER BY name").all().map((r) => [r.name, r.switch]);
 	db.close();
