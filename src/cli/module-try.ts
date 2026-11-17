@@ -7,12 +7,14 @@ import { HostConnection } from "../client/connection.ts";
 import { exitOnConfigError } from "../config-error.ts";
 import { HOST_ENTRY } from "../heartbeat.ts";
 import { loadConfig, loadModules } from "../host/config.ts";
-import { openStore, setModuleSwitch } from "../kernel/store.ts";
+import { moduleRows, openStore, setModuleSwitch } from "../kernel/store.ts";
 import { cloneFiles } from "../modules/files.ts";
 import { moduleDataDir } from "../modules/knowledge.ts";
 import type { ModuleState } from "../modules/lifecycle.ts";
+import { ModuleStore } from "../modules/live.ts";
+import type { Digest, ModuleName } from "../modules/manifest.ts";
 import { formatModelRef, PAY_PER_USE_PROVIDERS, parseModelRef, type ModelRef } from "../models.ts";
-import { examsOf, judge, verdictLine, type Attempt, type Exam } from "../modules/rehearse.ts";
+import { examsOf, judge, providersOf, verdictLine, type Attempt, type Exam } from "../modules/rehearse.ts";
 import { problemLine, scanPackage } from "../modules/validate.ts";
 import { moduleEnvFile } from "../secrets.ts";
 
@@ -87,7 +89,7 @@ export async function tryModule(target: string): Promise<number> {
 		if (exams.length === 0) return refuse(`${scanned.scan.manifest.name} 没有考题（evals/ 是空的），没有可预演的`);
 		const worker = formatModelRef(config.models.worker);
 		// The fallback is the worker model, so a dry run never reaches a pay-per-use fallback.
-		return await rehearse(source, scanned.scan.manifest.name, exams, { router: formatModelRef(config.models.router), worker, fallback: worker }, config);
+		return await rehearse(source, scanned.scan.manifest.name, providersOf(scanned.scan), exams, { router: formatModelRef(config.models.router), worker, fallback: worker }, config);
 	} catch (error) {
 		return exitOnConfigError(error);
 	}
@@ -110,11 +112,27 @@ function copyEnv(realStateDir: string, stateDir: string, module: string): void {
 	chmodSync(temp, 0o600);
 }
 
+/** The copy `module` serves in the real host now. Undefined: not serving, or its copy is gone. */
+function servingCopy(realStateDir: string, module: ModuleName): string | undefined {
+	const file = join(realStateDir, "state.db");
+	if (!existsSync(file)) return undefined;
+	const db = openStore(file);
+	let state: ModuleState | undefined;
+	try {
+		state = moduleRows(db).find((r) => r.name === module)?.record?.state;
+	} finally {
+		db.close();
+	}
+	if (state?.at !== "active") return undefined;
+	const dir = new ModuleStore(join(realStateDir, "module-store")).dirOf(module, state.serving.digest as Digest);
+	return existsSync(dir) ? dir : undefined;
+}
+
 function invalidWhy(state: ModuleState | undefined): string | undefined {
 	return state?.at === "staging" && state.stage.at === "invalid" ? state.stage.problems.map(problemLine).join("；") : undefined;
 }
 
-async function rehearse(source: string, module: string, exams: readonly Exam[], models: Models, { stateDir: realStateDir, secretsFile }: { stateDir: string; secretsFile?: string | undefined }): Promise<number> {
+async function rehearse(source: string, module: string, providers: readonly ModuleName[], exams: readonly Exam[], models: Models, { stateDir: realStateDir, secretsFile }: { stateDir: string; secretsFile?: string | undefined }): Promise<number> {
 	const stateDir = mkdtempSync(join(tmpdir(), "psa-try-"));
 	let host: ReturnType<typeof startHost> | undefined;
 	let stopping = false;
@@ -124,14 +142,25 @@ async function rehearse(source: string, module: string, exams: readonly Exam[], 
 	let db: DatabaseSync | undefined;
 	let passed: string | undefined;
 	try {
-		cpSync(source, join(stateDir, "modules", module), { recursive: true });
-		cloneFiles(moduleDataDir(realStateDir, module), moduleDataDir(stateDir, module));
-		copyEnv(realStateDir, stateDir, module);
-		writeFileSync(join(stateDir, "config.json"), JSON.stringify({ models, modulesDirs: [join(stateDir, "modules")], webPort: 0, feedFixtures: true, secretsFile }));
+		// A provider comes as the copy the real host serves now, with its files/ and .env, so its exported tools answer as they do there.
+		const copies = new Map([[module, source]]);
+		const absent: ModuleName[] = [];
+		for (const provider of providers) {
+			const copy = servingCopy(realStateDir, provider);
+			if (copy === undefined) absent.push(provider);
+			else copies.set(provider, copy);
+		}
 		const store = openStore(join(stateDir, "state.db"));
-		setModuleSwitch(store, module, true);
+		for (const [name, from] of copies) {
+			cpSync(from, join(stateDir, "modules", name), { recursive: true });
+			cloneFiles(moduleDataDir(realStateDir, name), moduleDataDir(stateDir, name));
+			copyEnv(realStateDir, stateDir, name);
+			setModuleSwitch(store, name, true);
+		}
 		store.close();
+		writeFileSync(join(stateDir, "config.json"), JSON.stringify({ models, modulesDirs: [join(stateDir, "modules")], webPort: 0, feedFixtures: true, secretsFile }));
 		console.log(`预演 ${module}：临时状态目录 ${stateDir}，模型 ${models.router}（Router）、${models.worker}（Worker）`);
+		for (const provider of absent) console.log(`${provider} 现在没开，预演里调不到它的工具`);
 
 		const started = (host = startHost(stateDir));
 		const until = async <T>(ms: number, probe: () => T | undefined): Promise<T | undefined> => {
@@ -146,15 +175,17 @@ async function rehearse(source: string, module: string, exams: readonly Exam[], 
 		const opened = new DatabaseSync(join(stateDir, "state.db"), { readOnly: true });
 		db = opened;
 		const record = opened.prepare("SELECT record FROM module_records WHERE name = ?");
-		const stateOf = () => {
-			const row = record.get(module) as { record: string | null } | undefined;
+		const stateOf = (name: string) => {
+			const row = record.get(name) as { record: string | null } | undefined;
 			return row?.record ? (JSON.parse(row.record) as { state: ModuleState }).state : undefined;
 		};
-		const state = await until(ACTIVE_MS, () => {
-			const at = stateOf();
-			return at?.at === "active" || invalidWhy(at) !== undefined ? at : undefined;
-		});
-		if (state?.at !== "active") return refuse(`${module} 在临时宿主里没有打开：${invalidWhy(state) ?? started.tail()}`);
+		for (const name of copies.keys()) {
+			const state = await until(ACTIVE_MS, () => {
+				const at = stateOf(name);
+				return at?.at === "active" || invalidWhy(at) !== undefined ? at : undefined;
+			});
+			if (state?.at !== "active") return refuse(`${name} 在临时宿主里没有打开：${invalidWhy(state) ?? started.tail()}`);
+		}
 
 		const replies: string[] = [];
 		const answers = new Map<string, string | null>();

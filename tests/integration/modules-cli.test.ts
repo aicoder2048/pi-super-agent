@@ -324,22 +324,22 @@ function snapshot(dir: string): string {
 		.join("\n");
 }
 
-type Rehearsal = { models?: { router: string; worker: string; fallback: string }; pkg?: string; secrets?: string; during?: (child: import("node:child_process").ChildProcess, fake: FakeModel, scratch: string) => Promise<void>; seed?: (dir: string) => void };
+type Rehearsal = { models?: { router: string; worker: string; fallback: string }; name?: string; pkg?: string; secrets?: string; during?: (child: import("node:child_process").ChildProcess, fake: FakeModel, scratch: string) => Promise<void>; seed?: (dir: string) => void | Promise<void> };
 
-async function rehearse(t: import("node:test").TestContext, script: Script, { models = { router: "psa-fake/router", worker: "psa-fake/worker", fallback: "psa-fake/fallback" }, pkg = join(SAMPLE, "personal-tax"), secrets, during, seed }: Rehearsal = {}) {
+async function rehearse(t: import("node:test").TestContext, script: Script, { models = { router: "psa-fake/router", worker: "psa-fake/worker", fallback: "psa-fake/fallback" }, name = "personal-tax", pkg = join(SAMPLE, "personal-tax"), secrets, during, seed }: Rehearsal = {}) {
 	const fake = await FakeModel.start(script);
 	t.after(() => fake.close());
 	const dir = stateDir(t, { models, ...(secrets !== undefined && { secretsFile: "secrets.env" }) });
 	if (secrets !== undefined) writeFileSync(join(dir, "secrets.env"), secrets);
-	cpSync(pkg, join(dir, "modules", "personal-tax"), { recursive: true });
-	seed?.(dir);
+	cpSync(pkg, join(dir, "modules", name), { recursive: true });
+	await seed?.(dir);
 	const scratch = mkdtempSync(join(tmpdir(), "psa-tt-"));
 	t.after(() => rmSync(scratch, { recursive: true, force: true }));
 	const pi = mkdtempSync(join(tmpdir(), "psa-pi-"));
 	t.after(() => rmSync(pi, { recursive: true, force: true }));
 	const before = snapshot(dir);
 	const env = { ...process.env, ...fakeAgentEnv(fake, pi), PSA_STATE_DIR: dir, TMPDIR: scratch };
-	const child = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/cli/module.ts", "try", "personal-tax"], { env, stdio: ["ignore", "pipe", "pipe"] });
+	const child = spawn(process.execPath, ["--import", "./src/pi-runtime.mjs", "src/cli/module.ts", "try", name], { env, stdio: ["ignore", "pipe", "pipe"] });
 	let out = "";
 	const tryDirs = () => readdirSync(scratch).filter((f) => f.startsWith("psa-try-"));
 	let leftWhenSaidGone: string[] | undefined;
@@ -520,5 +520,79 @@ test("just module try：模块打开后临时宿主退出，写出一行原因�
 	assert.match(run.out, /临时宿主.*退出/);
 	assert.match(run.out, /找不到模型 psa-fake\/no-such-model/);
 	assert.doesNotMatch(run.out, /unsettled top-level await|临时状态目录已删/);
+	assert.deepEqual(run.leftover, []);
+});
+
+const ALPHA_PKG: Record<string, string | object> = {
+	"module.json": { schema: 1, name: "alpha", version: "0.1.0", exports: ["tools/level"] },
+	"tools/level/tool.json": { title: "价位", description: "读价位", effect: "read", input: { code: { type: "text", title: "代码" } }, output: { level: { type: "number", title: "价位" }, key: { type: "text", title: "key" } }, secrets: ["ALPHA_KEY"] },
+	"tools/level/index.ts": 'import { readFileSync } from "node:fs"; import { join } from "node:path";\nexport default () => ({ level: Number(readFileSync(join(process.env.PSA_MODULE_DATA, "files", "level.txt"), "utf8")), key: process.env.ALPHA_KEY ?? "no-key" });',
+};
+
+function writeTree(root: string, tree: Record<string, string | object>): string {
+	for (const [path, content] of Object.entries(tree)) {
+		mkdirSync(join(root, path, ".."), { recursive: true });
+		writeFileSync(join(root, path), typeof content === "string" ? content : JSON.stringify(content));
+	}
+	return root;
+}
+
+/** alpha serving in the user's state directory, with its own files/ and .env, as the real host leaves it. */
+async function serveAlpha(dir: string): Promise<void> {
+	writeTree(join(dir, "modules", "alpha"), ALPHA_PKG);
+	assert.equal(cli("src/cli/module.ts", dir, ["on", "alpha"]).status, 0);
+	const db = openStore(join(dir, "state.db"));
+	const config = loadConfig(dir);
+	const modules = startLiveModules({ db, stateDir: dir, roots: config.modulesDirs, discovered: loadModules(config), configSwitches: config.moduleSwitches, log: () => {} });
+	await until(() => modules.live.current().book.has("alpha"), "alpha 在服务", 15_000);
+	modules.stop();
+	db.close();
+	writeTree(join(dir, "modules-data", "alpha"), { "files/level.txt": "4242", ".env": "ALPHA_KEY=alpha-env-key\n" });
+}
+
+const userOf = (name: string, question: RegExp, title: string) =>
+	on("开任务", question, (card) => {
+		const open = openTicket(card, title);
+		return [{ ...open, args: { decisions: (open.args.decisions as object[]).map((d) => ({ ...d, domain: name })) } }, reply(card, "好")];
+	});
+const callsAlpha = (title: string) => worker(title, on("调 alpha", /^\[任务说明\]/, () => [domainTool("alpha/tools/level", { code: "NVDA" })]), on("汇报", /\[模块工具\]/, (card) => [report("ready", card)]));
+
+function consumer(t: import("node:test").TestContext, name: string, tree: Record<string, string | object>): string {
+	const root = join(mkdtempSync(join(tmpdir(), "psa-consumer-")), name);
+	t.after(() => rmSync(join(root, ".."), { recursive: true, force: true }));
+	return writeTree(root, tree);
+}
+
+const BETA_PKG = {
+	"module.json": { schema: 1, name: "beta", version: "0.1.0", description: "看价位", team: "乙队" },
+	"agents/analyst.md": "---\nname: analyst\ntitle: 分析员\ndescription: 看价位\ntools: read\nuses: alpha/tools/level\n---\n你是分析员。",
+	"evals/level.md": "---\nname: level\nuses: alpha/tools/level\nexpect: 4242, alpha-env-key\n---\nbeta 帮我看 NVDA 的价位",
+};
+
+test("just module try：只用 alpha 工具的模块，预演带上 alpha 当前在服务的副本、files/ 和 .env，judge 认 alpha/tools/level，判通过", async (t) => {
+	const run = await rehearse(t, { router: [userOf("beta", /^\[对话\][\s\S]*NVDA 的价位/, "预演看价位")], workers: [callsAlpha("预演看价位")] }, { name: "beta", pkg: consumer(t, "beta", BETA_PKG), seed: serveAlpha });
+	assert.equal(run.status, 0, run.out);
+	assert.match(run.out, /^PASS level/m);
+	assert.doesNotMatch(run.out, /现在没开/);
+	assert.equal(run.userDirChanged, false);
+	assert.deepEqual(run.leftover, []);
+});
+
+test("just module try：只在 module.json 的 uses 写了 alpha 的模块，预演也带上 alpha", async (t) => {
+	const gamma = consumer(t, "gamma", {
+		"module.json": { schema: 1, name: "gamma", version: "0.1.0", description: "看价位", uses: ["alpha/tools/level"] },
+		"evals/level.md": "---\nname: level\nexpect: 4242, alpha-env-key\n---\ngamma 帮我看 NVDA 的价位",
+	});
+	const run = await rehearse(t, { router: [userOf("gamma", /^\[对话\][\s\S]*NVDA 的价位/, "预演看价位")], workers: [callsAlpha("预演看价位")] }, { name: "gamma", pkg: gamma, seed: serveAlpha });
+	assert.equal(run.status, 0, run.out);
+	assert.match(run.out, /^PASS level/m);
+});
+
+test("just module try：alpha 不在服务时预演照跑，打印「alpha 现在没开」那一行，外部调用回 provider-absent", async (t) => {
+	const run = await rehearse(t, { router: [userOf("beta", /^\[对话\][\s\S]*NVDA 的价位/, "预演看价位")], workers: [callsAlpha("预演看价位")] }, { name: "beta", pkg: consumer(t, "beta", BETA_PKG) });
+	assert.equal(run.status, 1, run.out);
+	assert.match(run.out, /^alpha 现在没开，预演里调不到它的工具$/m);
+	assert.match(run.out, /^FAIL level：.*没用到 alpha\/tools\/level/m);
+	assert.match(run.out, /alpha 没装或没开，这部分没做/);
 	assert.deepEqual(run.leftover, []);
 });
