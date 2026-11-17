@@ -25,9 +25,9 @@
     "max_profit": { "type": "number", "title": "到期最大盈利，美元；买 call 无上限时为空" },
     "max_loss": { "type": "number", "title": "到期最大亏损，美元" },
     "breakeven": { "type": "number", "title": "到期盈亏平衡的正股价，美元" },
-    "annualized_return": { "type": "number", "title": "年化收益，小数（0.2433 是 24.33%）；买方、到期日当天、Roll 时为空" },
-    "roll": { "type": "text", "title": "Roll 时才有：type（Calendar、Diagonal 或 Combo）、close_cost（买回旧腿，美元）、open_credit（新腿收入，美元）、net（净收为正，美元）、verdict（ROLL_OK、ROLL_FOR_PENNIES 或 DO_NOT_ROLL_TAKE_LOSS；买方 Roll 为空）、verdict_note、penny_threshold（净收门槛，美元）" },
-    "legs": { "type": "text", "title": "每条腿：dte（天）、iv（小数）、iv_source（给定、自算或无数据）、assignment_probability（卖出腿到期被指派的概率，小数）、touch_probability（到期前碰到行权价的概率，小数）、liquidity（score 0 到 1、tier 好/偏薄/差/很差、nbbo 有报价/缺报价）" },
+    "annualized_return": { "type": "number", "title": "年化收益，小数（0.2433 是 24.33%）；买 put、买 call、借方价差、到期日当天、Roll 时为空" },
+    "roll": { "type": "text", "title": "Roll 时才有：type（Calendar、Diagonal 或 Combo）、close_cash（旧腿的现金，美元，正数是收、负数是付）、open_cash（新腿的现金，同上）、net（净收为正，美元）、verdict（ROLL_OK、ROLL_FOR_PENNIES 或 DO_NOT_ROLL_TAKE_LOSS；买方 Roll 为空）、verdict_note、penny_threshold（净收门槛，美元）" },
+    "legs": { "type": "text", "title": "每条腿：dte（天）、iv（小数）、iv_source（给定、自算或无数据）、assignment_probability（卖出腿到期被指派的概率，小数；缺 IV 或正股价、到期日当天为空）、touch_probability（到期前碰到行权价的概率，小数）、liquidity（score 0 到 1、tier 好/偏薄/差/很差、nbbo 有报价/缺报价）" },
     "expiry_pl": { "type": "text", "title": "每个情景正股价的到期盈亏：spot（美元）、pl（整单美元）；Roll 时为空" },
     "assumptions": { "type": "text", "title": "这次计算用到的假设" }
   }

@@ -117,13 +117,13 @@ test("方案经济：买 put、买 call（买方不年化）", () => {
 	assert.equal(longOptionEconomics(100, 0, 30, "call").bad_quote, true, "权利金不为正是坏报价");
 });
 
-test("方案经济：借方价差", () => {
+test("方案经济：借方价差（买方不年化）", () => {
 	const bullCall = debitSpreadEconomics(5, 2, 30, 100, "call");
 	near(bullCall.capital, 200);
 	near(bullCall.max_loss, 200);
 	near(bullCall.max_profit, 300);
 	near(bullCall.breakeven, 102);
-	near(bullCall.annualized_roc, (300 / 200) * (365 / 30));
+	assert.equal(bullCall.annualized_roc, null);
 	near(debitSpreadEconomics(5, 2, 30, 105, "put").breakeven, 103);
 	const overWidth = debitSpreadEconomics(5, 5, 30, 100, "call");
 	assert.equal(overWidth.bad_quote, true, "净付不低于宽度是坏报价");

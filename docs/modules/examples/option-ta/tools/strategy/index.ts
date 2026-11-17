@@ -79,7 +79,7 @@ const VERDICT_NOTE: Record<RollCreditVerdict, string> = {
 
 const ASSUMPTIONS = [
 	"BS 公式按利率 0、无股息算",
-	"被指派概率是到期时落在价内的概率，不含提前指派",
+	"被指派概率是到期时落在价内的概率，不含提前指派；到期日当天按日算不出，留空",
 	"金额按每张 100 股算，不含手续费",
 	"参考价不是可成交承诺，也不是下单指令",
 ];
@@ -149,11 +149,17 @@ function coveredCall(leg: Leg, ctx: Ctx): Economics {
 	};
 }
 
+function longOption(leg: Leg, type: Right): StrategyEconomics {
+	const e = longOptionEconomics(leg.strike, leg.price, leg.dte, type);
+	if (e.bad_quote) throw new Invalid("买入的权利金要大于 0，报价有问题");
+	return e;
+}
+
 const STRATEGIES: Record<string, (ctx: Ctx) => Economics> = {
 	CSP: single("sell", "put", (leg) => scale(cspEconomics(leg.strike, leg.price, leg.dte), leg.contracts, (s) => expiryPLShortPut(leg.strike, leg.price, s))),
 	CC: single("sell", "call", coveredCall),
-	"long-put": single("buy", "put", (leg) => scale(longOptionEconomics(leg.strike, leg.price, leg.dte, "put"), leg.contracts, (s) => expiryPLLongPut(leg.strike, leg.price, s))),
-	"long-call": single("buy", "call", (leg) => scale(longOptionEconomics(leg.strike, leg.price, leg.dte, "call"), leg.contracts, (s) => expiryPLLongCall(leg.strike, leg.price, s))),
+	"long-put": single("buy", "put", (leg) => scale(longOption(leg, "put"), leg.contracts, (s) => expiryPLLongPut(leg.strike, leg.price, s))),
+	"long-call": single("buy", "call", (leg) => scale(longOption(leg, "call"), leg.contracts, (s) => expiryPLLongCall(leg.strike, leg.price, s))),
 	"credit-vertical": (ctx) => vertical(ctx, true),
 	"debit-vertical": (ctx) => vertical(ctx, false),
 };
@@ -164,6 +170,8 @@ function rollKindOf(legs: Leg[]): RollKind {
 	const close = legs.filter((leg) => leg.role === "close");
 	const open = legs.filter((leg) => leg.role === "open");
 	if (close.length === 0 || open.length === 0 || close.length + open.length !== legs.length) throw new Invalid("Roll 的每条腿都要写 role：旧腿 close，新腿 open，两样都要有");
+	const mixed = (side: Leg[]) => side.some((leg) => leg.action !== side[0]!.action);
+	if (mixed(close) || mixed(open)) throw new Invalid("第一版只算单腿仓位的 Roll：旧腿方向一致、新腿方向一致；价差的 Roll 还不支持");
 	const closeAction = close[0]!.action;
 	if (close.some((leg) => leg.action !== closeAction) || open.some((leg) => leg.action === closeAction)) {
 		throw new Invalid("Roll 的旧腿和新腿方向要相反：卖方是买回旧腿、卖出新腿，买方是卖出旧腿、买入新腿");
@@ -192,8 +200,8 @@ function roll(legs: Leg[], kind: RollKind) {
 	const gate = shortRoll ? rollCreditGate(net, closeCost) : null;
 	return {
 		type,
-		close_cost: money(closeCost),
-		open_credit: money(Math.abs(cash(open))),
+		close_cash: money(cash(close)),
+		open_cash: money(cash(open)),
 		net: money(net),
 		verdict: gate?.verdict ?? null,
 		verdict_note: gate === null ? "买方 Roll 本来就多半净付，不套净收门槛" : VERDICT_NOTE[gate.verdict],
@@ -218,12 +226,14 @@ function reference(legs: Leg[]) {
 
 function legReport(leg: Leg, spot: number | null, rolling: boolean) {
 	const solve = leg.type === "put" ? impliedVolPut : impliedVolCall;
-	const solved = leg.iv === null && spot !== null && leg.dte > 0 ? solve(leg.price, spot, leg.strike, leg.dte) : null;
-	const iv = leg.iv ?? solved;
+	const given = leg.iv !== null && leg.iv > 0 ? leg.iv : null;
+	const solved = given === null && spot !== null && leg.dte > 0 ? solve(leg.price, spot, leg.strike, leg.dte) : null;
+	const iv = given ?? solved;
 	const shortOpen = leg.action === "sell" && (!rolling || leg.role === "open");
 	const assign = leg.type === "put" ? bsShortPutAssignProb : bsShortCallAssignProb;
-	const assignment = shortOpen && spot !== null && (iv !== null || leg.dte === 0) ? assign(spot, leg.strike, iv ?? 0, leg.dte) : null;
-	const touch = shortOpen ? assignmentTouchProb(leg.type, spot, leg.strike, iv, leg.dte) : null;
+	const priced = shortOpen && spot !== null && iv !== null && leg.dte > 0;
+	const assignment = priced ? assign(spot, leg.strike, iv, leg.dte) : null;
+	const touch = priced ? assignmentTouchProb(leg.type, spot, leg.strike, iv, leg.dte) : null;
 	const quoted = leg.bid !== null || leg.ask !== null || leg.open_interest !== null || leg.volume !== null;
 	const mid = leg.bid !== null && leg.ask !== null ? (leg.bid + leg.ask) / 2 : leg.price;
 	const liq = quoted ? scoreLiquidity({ bid: leg.bid, ask: leg.ask, mid, open_interest: leg.open_interest, volume: leg.volume }) : null;
@@ -237,7 +247,7 @@ function legReport(leg: Leg, spot: number | null, rolling: boolean) {
 		price: leg.price,
 		dte: leg.dte,
 		iv: ratio(iv),
-		iv_source: leg.iv !== null ? "给定" : solved !== null ? "自算" : "无数据",
+		iv_source: given !== null ? "给定" : solved !== null ? "自算" : "无数据",
 		assignment_probability: ratio(assignment),
 		touch_probability: ratio(touch),
 		liquidity: liq === null ? null : { score: ratio(liq.composite), tier: TIER_LABEL[liq.tier], nbbo: liq.nbbo_status === "live" ? "有报价" : "缺报价" },
@@ -245,6 +255,7 @@ function legReport(leg: Leg, spot: number | null, rolling: boolean) {
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const realDate = (text: string) => DATE.test(text) && !Number.isNaN(Date.parse(text)) && new Date(`${text}T00:00:00Z`).toISOString().startsWith(text);
 const days = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
 const todayInNewYork = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
 const blank = (value: unknown) => value === undefined || value === null || value === "";
@@ -277,13 +288,14 @@ function parseLeg(raw: unknown, index: number, asof: string): Leg {
 	if (action !== "sell" && action !== "buy") throw new Invalid(`${at}的 action 要是 sell 或 buy`);
 	if (type !== "put" && type !== "call") throw new Invalid(`${at}的 type 要是 put 或 call`);
 	if (typeof strike !== "number" || !(strike > 0)) throw new Invalid(`${at}的 strike 要是正数`);
-	if (typeof expiration !== "string" || !DATE.test(expiration) || Number.isNaN(Date.parse(expiration))) throw new Invalid(`${at}的 expiration 要写成 YYYY-MM-DD`);
+	if (typeof expiration !== "string" || !realDate(expiration)) throw new Invalid(`${at}的 expiration 要写成 YYYY-MM-DD`);
 	const dte = days(asof, expiration);
 	if (dte < 0) throw new Invalid(`${at}在 ${expiration} 已经到期，早于 ${asof}`);
 	if (typeof contracts !== "number" || !Number.isInteger(contracts) || contracts <= 0) throw new Invalid(`${at}的 contracts 要是正整数`);
 	if (role !== null && role !== "close" && role !== "open") throw new Invalid(`${at}的 role 要是 close 或 open`);
 	const bid = optionalNumber(leg["bid"], `${at}的 bid `);
 	const ask = optionalNumber(leg["ask"], `${at}的 ask `);
+	if (bid !== null && ask !== null && bid > ask) throw new Invalid(`${at}的 bid ${bid} 高于 ask ${ask}，报价交叉`);
 	const price = optionalNumber(leg["price"], `${at}的 price `) ?? (bid !== null && ask !== null && bid > 0 && ask > 0 ? (bid + ask) / 2 : null);
 	if (price === null) throw new Invalid(`${at}没有 price，也没有能取中间价的 bid 和 ask`);
 	return {
@@ -307,7 +319,8 @@ function adjustedFlag(rawLegs: unknown[]): string | null {
 	for (const raw of rawLegs) {
 		const declared = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>)["shares_per_contract"] : undefined;
 		if (blank(declared)) continue;
-		const deliverable = classifyDeliverable({ underlying: "", sharesPerContract: typeof declared === "number" ? declared : Number.NaN });
+		if (typeof declared !== "number" || !Number.isFinite(declared) || declared <= 0) throw new Invalid(`shares_per_contract 要是正数，收到 ${JSON.stringify(declared)}`);
+		const deliverable = classifyDeliverable({ underlying: "", sharesPerContract: declared });
 		if (!deliverable.standard) return deliverable.flag;
 	}
 	return null;
@@ -317,7 +330,7 @@ function compute(input: Input) {
 	const kind = input.kind;
 	if (typeof kind !== "string" || !KINDS.includes(kind)) throw new Invalid(`kind 要是 ${KINDS.join("、")} 之一`);
 	const asof = blank(input.asof) ? todayInNewYork() : input.asof;
-	if (typeof asof !== "string" || !DATE.test(asof)) throw new Invalid("asof 要写成 YYYY-MM-DD");
+	if (typeof asof !== "string" || !realDate(asof)) throw new Invalid("asof 要写成 YYYY-MM-DD");
 	const rawLegs = parseJson(input.legs, "legs ");
 	if (!Array.isArray(rawLegs) || rawLegs.length === 0) throw new Invalid("legs 要是至少一条腿的数组");
 	const flag = adjustedFlag(rawLegs);
@@ -325,6 +338,7 @@ function compute(input: Input) {
 	const legs = rawLegs.map((raw, i) => parseLeg(raw, i, asof));
 	const spot = optionalNumber(input.spot, "spot ");
 	const costBasis = optionalNumber(input.cost_basis, "cost_basis ");
+	if (costBasis === 0) throw new Invalid("cost_basis 要大于 0；不知道就不填");
 	const scenarios = blank(input.scenario_prices) ? [] : parseJson(input.scenario_prices, "scenario_prices ");
 	if (!Array.isArray(scenarios) || scenarios.some((s) => typeof s !== "number" || !Number.isFinite(s) || s < 0)) throw new Invalid("scenario_prices 要是不小于 0 的数组成的数组");
 

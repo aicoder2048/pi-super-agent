@@ -78,7 +78,9 @@ export function longOptionEconomics(
 /**
  * Debit spread (bull call OR bear put). `width` = |longStrike − shortStrike|, `netDebit` =
  * longMid − shortMid (> 0). Capital and max loss are the debit; max profit = width − debit.
- * A debit that is not positive or not below the width is a bad quote → ROC null.
+ * Like a long option it is a directional bet, so annualized_roc is null: annualizing the best
+ * case over a small debit reads as a return the position is unlikely to earn.
+ * A debit that is not positive or not below the width is a bad quote.
  */
 export function debitSpreadEconomics(
 	width: number,
@@ -91,5 +93,5 @@ export function debitSpreadEconomics(
 	const max_profit = width * 100 - capital;
 	const bad_quote = !(netDebit > 0) || netDebit >= width;
 	const breakeven = kind === "call" ? longStrike + netDebit : longStrike - netDebit;
-	return { capital, max_profit, max_loss: capital, annualized_roc: bad_quote ? null : annualizeOrNull(max_profit, capital, dte), breakeven, bad_quote };
+	return { capital, max_profit, max_loss: capital, annualized_roc: null, breakeven, bad_quote };
 }

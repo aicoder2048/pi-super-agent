@@ -69,17 +69,19 @@ test("缺 bid/ask：照算权利金，参考价留空并说明，流动性只按
 	assert.equal(out.legs[0].liquidity.nbbo, "缺报价");
 });
 
-test("到期日当天：不年化，指派概率按价内价外给 1 或 0", () => {
+test("到期日当天：不年化，按日算不出指派概率，留空", () => {
 	const out = run({ kind: "CSP", legs: legs({ ...csp, expiration: asof }), spot: 99, asof });
 	assert.equal(out.status, "OK");
 	assert.equal(out.dte, 0);
 	assert.equal(out.annualized_return, null);
-	assert.equal(out.legs[0].assignment_probability, 1);
+	assert.equal(out.legs[0].assignment_probability, null);
+	assert.equal(out.legs[0].touch_probability, null);
 });
 
-test("IV 为 0：指派概率只看价内价外", () => {
+test("IV 为 0 当缺 IV：用权利金反解，不当 0 用", () => {
 	const out = run({ kind: "CSP", legs: legs({ ...csp, iv: 0 }), spot: 105, asof });
-	assert.equal(out.legs[0].assignment_probability, 0);
+	assert.equal(out.legs[0].iv_source, "自算");
+	assert.equal(out.legs[0].assignment_probability, 0.3272);
 });
 
 test("CC：有持股成本时按成本算年化和被 call 走的收益", () => {
@@ -131,7 +133,7 @@ test("借方价差：净付、最大盈利是宽度减净付", () => {
 	assert.equal(out.max_profit, 300);
 	assert.equal(out.max_loss, 200);
 	assert.equal(out.breakeven, 102);
-	assert.equal(out.annualized_return, 18.25);
+	assert.equal(out.annualized_return, null);
 });
 
 test("买 call：最大盈利无上限，不年化", () => {
@@ -155,7 +157,7 @@ test("Diagonal Roll：净收 = 新腿收的减旧腿买回的", () => {
 	assert.equal(out.status, "OK");
 	assert.equal(out.net_premium, 190);
 	assert.equal(out.net_direction, "净收");
-	assert.deepEqual(out.roll, { type: "Diagonal", close_cost: 640, open_credit: 830, net: 190, verdict: "ROLL_OK", verdict_note: out.roll.verdict_note, penny_threshold: 64 });
+	assert.deepEqual(out.roll, { type: "Diagonal", close_cash: -640, open_cash: 830, net: 190, verdict: "ROLL_OK", verdict_note: out.roll.verdict_note, penny_threshold: 64 });
 	assert.equal(out.breakeven, null);
 	assert.equal(out.expiry_pl, null);
 });
@@ -195,6 +197,8 @@ test("买方 Roll 不套净收门槛", () => {
 		asof,
 	});
 	assert.equal(out.net_premium, -200);
+	assert.equal(out.roll.close_cash, 500, "卖出旧腿是收");
+	assert.equal(out.roll.open_cash, -700, "买入新腿是付");
 	assert.equal(out.roll.verdict, null);
 });
 
@@ -238,4 +242,20 @@ test("坏输入：拒算并说明", () => {
 	});
 	invalid({ kind: "Diagonal", legs: legs(closeLeg, { ...openLeg, role: undefined }), asof });
 	invalid({ kind: "CSP", legs: legs(csp), asof, scenario_prices: "[-1]" });
+	invalid({ kind: "CSP", legs: legs({ ...csp, shares_per_contract: "150" }), asof });
+	invalid({ kind: "CSP", legs: legs({ ...csp, price: undefined, bid: 2, ask: 1.5 }), asof });
+	invalid({ kind: "CSP", legs: legs({ ...csp, expiration: "2026-02-30" }), asof: "2026-01-02" });
+	invalid({ kind: "long-put", legs: legs({ action: "buy", type: "put", strike: 100, expiration: "2026-12-17", price: 0 }), asof });
+	invalid({ kind: "CC", legs: legs({ action: "sell", type: "call", strike: 110, expiration: "2026-12-17", price: 2 }), asof, cost_basis: 0 });
+	const spreadRoll = run({
+		kind: "Calendar",
+		legs: legs(
+			{ action: "buy", type: "put", strike: 100, expiration: "2026-12-18", price: 3, role: "close" },
+			{ action: "sell", type: "put", strike: 95, expiration: "2026-12-18", price: 1, role: "close" },
+			{ action: "sell", type: "put", strike: 100, expiration: "2027-01-15", price: 4, role: "open" },
+			{ action: "buy", type: "put", strike: 95, expiration: "2027-01-15", price: 2, role: "open" },
+		),
+		asof,
+	});
+	assert.match(spreadRoll.reason, /价差的 Roll 还不支持/);
 });
