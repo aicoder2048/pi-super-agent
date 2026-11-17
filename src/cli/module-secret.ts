@@ -42,13 +42,14 @@ export async function setModuleSecret(module: string, name: string): Promise<num
 	const value = await readValue(name);
 	if (value === "") return refuse(`没有输入 ${name} 的值，什么都没写`);
 	const file = moduleEnvFile(defaultStateDir(), module);
+	const newDir = existsSync(dirname(file)) ? undefined : mkdirSync(dirname(file), { recursive: true });
 	const created = !existsSync(file);
 	try {
-		mkdirSync(dirname(file), { recursive: true });
 		if (created) writeFileSync(file, "", { mode: 0o600 });
 		writeSecret(file, name, value);
 	} catch (error) {
-		if (created) rmSync(file, { force: true });
+		if (newDir !== undefined) rmSync(newDir, { recursive: true, force: true });
+		else if (created) rmSync(file, { force: true });
 		return exitOnConfigError(error);
 	}
 	console.log(`已把 ${name} 写进 ${file}（权限 600）`);

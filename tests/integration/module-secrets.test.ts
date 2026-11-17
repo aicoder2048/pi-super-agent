@@ -4,7 +4,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
+import type { ModuleName } from "../../src/modules/manifest.ts";
 import { problemLine, scanPackage } from "../../src/modules/validate.ts";
+import { moduleSecretLookup } from "../../src/secrets.ts";
 
 const REPO = join(import.meta.dirname, "../..");
 
@@ -100,6 +102,14 @@ function secretCli(stateDir: string, args: string[], input: string) {
 	return { status: run.status, out: run.stdout + run.stderr };
 }
 
+test("a module .env that holds a malformed value fails that read with the file named and the value left out", (t) => {
+	const state = scratch(t, "psa-secrets-state-");
+	mkdirSync(join(state, "modules-data", "stock-ta"), { recursive: true });
+	writeFileSync(join(state, "modules-data", "stock-ta", ".env"), 'POLYGON_API_KEY="bad value-xyz"\n');
+	assert.throws(() => moduleSecretLookup(state)("stock-ta" as ModuleName, "POLYGON_API_KEY"), (e: Error) => e.message.includes("modules-data/stock-ta/.env") && !e.message.includes("value-xyz") && !e.message.includes("secretsFile"));
+	assert.equal(moduleSecretLookup(state)("mail" as ModuleName, "POLYGON_API_KEY"), undefined);
+});
+
 test("just module secret writes one line into the module's own .env with mode 600, creating the folder and the file, and never prints the value", (t) => {
 	const state = scratch(t, "psa-secrets-state-");
 	const run = secretCli(state, ["stock-ta", "POLYGON_API_KEY"], "pk-test-value-123\n");
@@ -124,9 +134,10 @@ test("just module secret replaces the line of the same name and keeps every othe
 
 test("just module secret refuses a bad module name, a bad secret name, or an empty value, and writes nothing", (t) => {
 	const state = scratch(t, "psa-secrets-state-");
-	for (const [args, input] of [[["../x", "KEY"], "v"], [["stock-ta", "lower_case"], "v"], [["stock-ta", "POLYGON_API_KEY"], "\n"]] as const) {
+	for (const [args, input] of [[["../x", "KEY"], "v"], [["stock-ta", "lower_case"], "v"], [["stock-ta", "POLYGON_API_KEY"], "\n"], [["stock-ta", "POLYGON_API_KEY"], "has space-in-value"], [["stock-ta", "POLYGON_API_KEY"], "line-one\nline-two\n"]] as const) {
 		const run = secretCli(state, [...args], input);
 		assert.equal(run.status, 1, `${args.join(" ")}: ${run.out}`);
+		assert.doesNotMatch(run.out, /space-in-value|line-one/);
 	}
 	assert.equal(existsSync(join(state, "modules-data")), false);
 });
