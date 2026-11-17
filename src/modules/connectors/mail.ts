@@ -19,6 +19,7 @@ export type MailCursor = { historyId: string; at: string };
 
 const DAY_MS = 24 * 3_600_000;
 const TRIES = 3;
+const FETCH_MS = 60_000;
 const AUTH: FeedProblem = { id: "auth", text: AUTH_TEXT };
 const gap = (hours: number): FeedProblem => ({ id: "gap", text: `有 ${hours} 小时没查，一天以前的信没补，请在 Gmail 里看一下`, once: true });
 
@@ -120,6 +121,8 @@ export type MailOptions = {
 	/** Where a rejected letter's note goes: its ids, sender and subject, never its body. */
 	rejectedDir(entry: FeedEntry): string;
 	rejected(entry: FeedEntry, note: string, tries: number): void;
+	/** How long the connector waits for Gmail in one beat, before any handler runs. Default one minute. */
+	fetchMs?: number;
 };
 
 export class MailConnector {
@@ -147,15 +150,18 @@ export class MailConnector {
 				ports.problem(source, gate.problem);
 				return { ok: true, records: 0, notices: 0 };
 			}
-			const gmail = await this.#o.account.open(signal);
+			const limit = AbortSignal.timeout(this.#o.fetchMs ?? FETCH_MS);
+			const fetching = signal === undefined ? limit : AbortSignal.any([signal, limit]);
+			const gmail = await this.#o.account.open(fetching);
 			if (gmail === undefined) {
 				ports.connectorProblem?.("mail", source, AUTH);
 				ports.problem(source, gate.problem);
 				return { ok: true, records: 0, notices: 0 };
 			}
+			ports.connectorProblem?.("mail", source, undefined);
 			const held = parseCursor(ports.data.feedState(module, source).connectorCursor);
-			const { letters, next, awayHours } = await fetchLetters(gmail, held, now, gate.accepts, signal);
-			ports.connectorProblem?.("mail", source, awayHours === undefined ? undefined : gap(awayHours));
+			const { letters, next, awayHours } = await fetchLetters(gmail, held, now, gate.accepts, fetching);
+			if (awayHours !== undefined) ports.connectorProblem?.("mail", source, gap(awayHours));
 			const batch = this.#batches.get(source) ?? { tries: new Map(), done: new Set() };
 			this.#batches.set(source, batch);
 			let failed: string | undefined;
@@ -187,6 +193,7 @@ export class MailConnector {
 			ports.problem(source, problem);
 			return { ok: true, records, notices };
 		} catch (error) {
+			if (error instanceof Error && error.name === "TimeoutError") return { ok: false, note: `Gmail ${(this.#o.fetchMs ?? FETCH_MS) / 1000} 秒内没回完话，下一拍重取` };
 			return { ok: false, note: error instanceof Error ? error.message : String(error) };
 		}
 	}

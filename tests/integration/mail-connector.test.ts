@@ -133,3 +133,19 @@ test("授权失效：两个 feed 都只报连接器的问题，不读信；恢�
 	await w.mail.beat(w.fills, w.ports);
 	assert.equal(w.connectorProblems.at(-1)?.problem, undefined);
 });
+
+test("Gmail 不回话：这一拍到连接器的时限就失败，连接器进度不动，下一拍能再开始", async (t) => {
+	const w = await world(t);
+	await w.mail.beat(w.fills, w.ports);
+	const before = w.state(w.fills).connectorCursor;
+	const silent = (async (url: string | URL | Request, init?: RequestInit) => {
+		if (!String(url).includes("/gmail/v1/")) return fetch(url, init);
+		return new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)));
+	}) as typeof fetch;
+	const mail = new MailConnector({ account: gmailAccount({ secret: (name) => w.secrets[name], oauthUrl: w.google.url, fetch: silent }), rejectedDir: () => w.rejectedDir, rejected: () => {}, fetchMs: 200 });
+	const started = Date.now();
+	const run = await mail.beat(w.fills, w.ports);
+	assert.equal(run.ok, false, JSON.stringify(run));
+	assert.ok(Date.now() - started < 5_000, `用了 ${Date.now() - started} ms`);
+	assert.equal(w.state(w.fills).connectorCursor, before);
+});
