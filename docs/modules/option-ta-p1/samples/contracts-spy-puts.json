@@ -1,0 +1,56 @@
+{
+ "recorded": {
+  "at": "2026-11-17T09:29Z 至 09:36Z（美东 04:29 至 04:36，周二盘前，上一个交易时段是 11-16 周一）",
+  "request": "GET https://api.massive.com/v3/reference/options/contracts?underlying_ticker=SPY&expiration_date=2026-11-20&contract_type=put&strike_price.gte=725&strike_price.lte=735&limit=50",
+  "status": 200,
+  "note": "原应答 results 有 14 行（3 行二元期权 O:B1...，11 行标准期权），这里留 1 行二元 + 2 行标准；本次没有 next_url"
+ },
+ "body": {
+  "results": [
+   {
+    "cfi": "OPESCS",
+    "contract_type": "put",
+    "exercise_style": "european",
+    "expiration_date": "2026-11-20",
+    "primary_exchange": "XASE",
+    "shares_per_contract": 100,
+    "strike_price": 730,
+    "ticker": "O:B1SPY261120P00730000",
+    "underlying_ticker": "SPY",
+    "additional_underlyings": [
+     {
+      "type": "currency",
+      "underlying": "USD",
+      "amount": 100
+     }
+    ],
+    "type": "binary",
+    "underlying_type": "equity"
+   },
+   {
+    "cfi": "OPASPS",
+    "contract_type": "put",
+    "exercise_style": "american",
+    "expiration_date": "2026-11-20",
+    "primary_exchange": "BATO",
+    "shares_per_contract": 100,
+    "strike_price": 730,
+    "ticker": "O:SPY261120P00730000",
+    "underlying_ticker": "SPY"
+   },
+   {
+    "cfi": "OPASPS",
+    "contract_type": "put",
+    "exercise_style": "american",
+    "expiration_date": "2026-11-20",
+    "primary_exchange": "BATO",
+    "shares_per_contract": 100,
+    "strike_price": 731,
+    "ticker": "O:SPY261120P00731000",
+    "underlying_ticker": "SPY"
+   }
+  ],
+  "status": "OK",
+  "request_id": "6ab6f0e24fc4338cbef4d2a3bb563645"
+ }
+}

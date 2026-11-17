@@ -1,0 +1,55 @@
+{
+ "recorded": {
+  "at": "2026-11-17T09:29Z 至 09:36Z（美东 04:29 至 04:36，周二盘前，上一个交易时段是 11-16 周一）",
+  "request": "GET https://api.massive.com/v3/reference/options/contracts?underlying_ticker=SPY&expiration_date=2026-11-20&limit=10",
+  "status": 200,
+  "note": "默认按 ticker 升序，第一页全是二元期权 O:B1...；留 2 行和原样的 next_url（游标里只有查询条件，不含 key）"
+ },
+ "body": {
+  "results": [
+   {
+    "cfi": "OCESCS",
+    "contract_type": "call",
+    "exercise_style": "european",
+    "expiration_date": "2026-11-20",
+    "primary_exchange": "XASE",
+    "shares_per_contract": 100,
+    "strike_price": 710,
+    "ticker": "O:B1SPY261120C00710000",
+    "underlying_ticker": "SPY",
+    "additional_underlyings": [
+     {
+      "type": "currency",
+      "underlying": "USD",
+      "amount": 100
+     }
+    ],
+    "type": "binary",
+    "underlying_type": "equity"
+   },
+   {
+    "cfi": "OCESCS",
+    "contract_type": "call",
+    "exercise_style": "european",
+    "expiration_date": "2026-11-20",
+    "primary_exchange": "XASE",
+    "shares_per_contract": 100,
+    "strike_price": 715,
+    "ticker": "O:B1SPY261120C00715000",
+    "underlying_ticker": "SPY",
+    "additional_underlyings": [
+     {
+      "type": "currency",
+      "underlying": "USD",
+      "amount": 100
+     }
+    ],
+    "type": "binary",
+    "underlying_type": "equity"
+   }
+  ],
+  "status": "OK",
+  "request_id": "a496f994d1a425f824113c1338c5cb6e",
+  "next_url": "https://api.massive.com/v3/reference/options/contracts?cursor=YXA9JTdCJTIySUQlMjIlM0ElMjI1OTkyMDI5Mjk2MjEzMzc1MDk1JTIyJTJDJTIyU3RhcnREYXRlVXRjJTIyJTNBJTdCJTIyVGltZSUyMiUzQSUyMjIwMjYtMTAtMjlUMDAlM0EwMCUzQTAwWiUyMiUyQyUyMlZhbGlkJTIyJTNBdHJ1ZSU3RCUyQyUyMkVuZERhdGVVdGMlMjIlM0ElN0IlMjJUaW1lJTIyJTNBJTIyMDAwMS0wMS0wMVQwMCUzQTAwJTNBMDBaJTIyJTJDJTIyVmFsaWQlMjIlM0FmYWxzZSU3RCUyQyUyMnVuZGVybHlpbmdfdGlja2VyJTIyJTNBJTIyU1BZJTIyJTJDJTIydGlja2VyJTIyJTNBJTIyTyUzQUIxU1BZMjYxMTIwQzAwNzU1MDAwJTIyJTJDJTIyZXhwaXJhdGlvbl9kYXRlJTIyJTNBJTIyMjAyNi0xMS0yMFQwMCUzQTAwJTNBMDBaJTIyJTJDJTIyc3RyaWtlX3ByaWNlJTIyJTNBNzU1JTJDJTIyY2ZpJTIyJTNBJTIyT0NFU0NTJTIyJTJDJTIyY29udHJhY3RfdHlwZSUyMiUzQSUyMmNhbGwlMjIlMkMlMjJleGVyY2lzZV9zdHlsZSUyMiUzQSUyMmV1cm9wZWFuJTIyJTJDJTIycHJpbWFyeV9leGNoYW5nZSUyMiUzQSU3QiUyMlN0cmluZyUyMiUzQSUyMlhBU0UlMjIlMkMlMjJWYWxpZCUyMiUzQXRydWUlN0QlMkMlMjJzaGFyZXNfcGVyX2NvbnRyYWN0JTIyJTNBMTAwJTJDJTIyYWRkaXRpb25hbF91bmRlcmx5aW5ncyUyMiUzQSUyMiU1QiU3QiU1QyUyMnR5cGUlNUMlMjIlM0ElNUMlMjJjdXJyZW5jeSU1QyUyMiUyQyU1QyUyMnVuZGVybHlpbmclNUMlMjIlM0ElNUMlMjJVU0QlNUMlMjIlMkMlNUMlMjJhbW91bnQlNUMlMjIlM0ExMDAlN0QlNUQlMjIlN0QmYXM9JmV4cGlyYXRpb25fZGF0ZT0yMDI2LTExLTIwJmxpbWl0PTEwJm9yZGVyPWFzYyZzb3J0PXRpY2tlciZ1bmRlcmx5aW5nX3RpY2tlcj1TUFk"
+ }
+}

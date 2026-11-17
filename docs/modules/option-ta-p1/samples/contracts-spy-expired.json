@@ -1,0 +1,25 @@
+{
+ "recorded": {
+  "at": "2026-11-17T09:29Z 至 09:36Z（美东 04:29 至 04:36，周二盘前，上一个交易时段是 11-16 周一）",
+  "request": "GET https://api.massive.com/v3/reference/options/contracts?underlying_ticker=SPY&expiration_date=2026-10-30&contract_type=put&strike_price=680&expired=true",
+  "status": 200,
+  "note": "已到期合约要带 expired=true 才查得到；原样"
+ },
+ "body": {
+  "results": [
+   {
+    "cfi": "OPASPS",
+    "contract_type": "put",
+    "exercise_style": "american",
+    "expiration_date": "2026-10-30",
+    "primary_exchange": "BATO",
+    "shares_per_contract": 100,
+    "strike_price": 680,
+    "ticker": "O:SPY261030P00680000",
+    "underlying_ticker": "SPY"
+   }
+  ],
+  "status": "OK",
+  "request_id": "2fc81c60bc1922a6e69a68c86f9a817b"
+ }
+}

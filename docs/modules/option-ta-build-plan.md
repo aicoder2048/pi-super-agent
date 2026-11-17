@@ -48,6 +48,7 @@ grill-with-docs 就是两个技能合用：grilling（按决策树一轮轮拷�
 
 - **产出**：期权接口的字段说明、限流情况、休市时字段是否还在、有没有隐含波动的历史；录几份真实应答当工具的 `cases.json` 样本。
 - **完成标准**：每个打算用的字段都有实测样本。
+- **产出位置**：`option-ta-p1/README.md` 和 `option-ta-p1/samples/`（2026-11-17）。
 
 ### P2 模块工坊构建（真实产品路径）
 - **前置条件**：C2（模块自己的 `.env`，ADR-0031，已合并）、C4a、C4b、C4c、C4d 都合并以后才开工，分期见 `architecture/service-connector-design.md`。option-ta 的专家要调 stock-ta 开放的工具：C4a 之前包检查把外部 `uses` 当错误；C4b 之前 `just module try` 的预演不带 stock-ta 的副本，外部调用全回 `provider-absent`，P3 用真模型跑 `module try` 就测不到专家调 stock-ta；C4c 之前 stock-ta 没有开放任何工具；C4d 之前工坊的技能不会写外部 `uses` 和「请对 stock-ta 说」的转述。

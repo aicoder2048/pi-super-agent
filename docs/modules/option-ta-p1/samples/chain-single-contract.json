@@ -1,0 +1,71 @@
+{
+ "recorded": {
+  "at": "2026-11-17T09:29Z 至 09:36Z（美东 04:29 至 04:36，周二盘前，上一个交易时段是 11-16 周一）",
+  "request": "GET https://api.massive.com/v3/snapshot/options/SPY/O:SPY261120P00730000",
+  "status": 200,
+  "note": "单合约快照，results 是对象不是数组；原样"
+ },
+ "body": {
+  "results": {
+   "break_even_price": 726.265,
+   "day": {
+    "change": 2.21,
+    "change_percent": 146.358,
+    "close": 3.72,
+    "high": 4.81,
+    "last_updated": 1794863702053000000,
+    "low": 1.75,
+    "open": 1.75,
+    "previous_close": 1.51,
+    "volume": 27340,
+    "vwap": 3.1914
+   },
+   "details": {
+    "contract_type": "put",
+    "exercise_style": "american",
+    "expiration_date": "2026-11-20",
+    "shares_per_contract": 100,
+    "strike_price": 730,
+    "ticker": "O:SPY261120P00730000"
+   },
+   "greeks": {
+    "delta": -0.34797085702909397,
+    "gamma": 0.023869388682704076,
+    "theta": -0.8079600803115672,
+    "vega": 0.28828216158753484
+   },
+   "implied_volatility": 0.21634197270602765,
+   "last_quote": {
+    "ask": 3.75,
+    "ask_size": 11,
+    "ask_exchange": 307,
+    "bid": 3.72,
+    "bid_size": 42,
+    "bid_exchange": 316,
+    "last_updated": 1794863697027749797,
+    "midpoint": 3.735,
+    "timeframe": "REAL-TIME"
+   },
+   "last_trade": {
+    "sip_timestamp": 1794863696622979846,
+    "conditions": [
+     209
+    ],
+    "price": 3.72,
+    "size": 1,
+    "exchange": 313,
+    "timeframe": "REAL-TIME"
+   },
+   "open_interest": 61605,
+   "underlying_asset": {
+    "change_to_break_even": -9.91,
+    "last_updated": 1794906927774734817,
+    "price": 736.172,
+    "ticker": "SPY",
+    "timeframe": "DELAYED"
+   }
+  },
+  "status": "OK",
+  "request_id": "e87dffa34e9ab28c3716fa85cc9f160b"
+ }
+}
