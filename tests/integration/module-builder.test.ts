@@ -387,3 +387,80 @@ test("考题覆盖：4 到 6 道，每位用外部工具的专家至少一道，
 	assert.equal(judge("m", exam, attempt([own, external])).pass, true, "桩工具回了状态也算用到");
 	assert.equal(judge("m", exam, attempt([own.replace(" ok ", " provider-failed "), external])).pass, false, "抛错的桩工具判没用到");
 });
+
+test("说明书写死的结构不擅自改：要偏离先由领队用一次 report（blocked）说明理由和默认做法，「不用问」不算数；成员发现时回复领队", () => {
+	const text = SKILL("build-module");
+	const fixed = "说明书写死的结构（`connector`、集合的 `class`、feed、工具、专家的 `uses`）";
+	assert.ok(text.includes(fixed), "点名说明书写死的结构");
+	assert.ok(text.includes("不能擅自改"));
+	assert.ok(text.includes("用一次 report（blocked）写明理由和你的默认做法"), "领队先问再偏离");
+	assert.ok(text.includes("「不用问」管的是说明书没写的缺项"), "使用者说不用问也要问");
+	assert.ok(text.includes("`fills` 没接 `mail`"), "带这次的反例");
+	for (const member of ["scaffolder", "checker"]) assert.ok(AGENT(member).includes(fixed), `${member} 发现要偏离时回复领队`);
+});
+
+function section(text: string, heading: string): string {
+	const start = text.indexOf(heading);
+	assert.ok(start >= 0, `找到「${heading}」一节`);
+	const next = text.indexOf("\n#", start + heading.length);
+	return text.slice(start, next < 0 ? undefined : next);
+}
+
+const FENCE = (markdown: string, lang: string) => new RegExp("^```" + lang + "\\n([\\s\\S]*?)^```$", "m").exec(markdown)?.[1];
+
+test("解析还没做的 mail feed：照说明书接 mail，handler 遇到信就抛错、不回成功；回 problem 也算成功会推进进度；技能写的 3 次和 mail.ts 一致", (t) => {
+	const recipe = section(SKILL("data-and-feeds"), "### 解析还没做的 mail feed");
+	assert.ok(recipe.includes("回 `problem` 也算这一拍处理成了"), "problem 不挡进度");
+	assert.ok(recipe.includes("试满 3 拍"), "写明拒收前试几拍");
+	assert.ok(recipe.includes("名单是空的，连接器一封信都不收"), "名单空着就不收信");
+	assert.ok(/const TRIES = 3;/.test(readFileSync(join(REPO, "src/modules/connectors/mail.ts"), "utf8")), "mail.ts 拒收前试 3 次，和技能一致");
+	const skipped = "次都没处理成，跳过了，信还在 Gmail 里";
+	assert.ok(readFileSync(join(REPO, "src/host/host.ts"), "utf8").includes(skipped) && recipe.includes(`「试了 3 ${skipped}」`), "技能引的跳过提醒和 host.ts 一字不差");
+	assert.ok(readFileSync(join(REPO, "src/modules/connectors/senders.ts"), "utf8").includes("是空的，什么都不收") && recipe.includes("「<名单标题>是空的，什么都不收」"), "空名单的告警和 senders.ts 一致，技能说它是预期的");
+	const stub = FENCE(recipe, "ts");
+	const fixture = FENCE(recipe, "json");
+	assert.ok(stub && fixture, "这一节给出 handler 和样例");
+	const [name, files] = mailExample();
+	const feedDir = [...files.keys()].find((path) => path.endsWith("feed.json"))!.replace(/feed\.json$/, "");
+	const swapped = new Map([...files].filter(([path]) => !path.startsWith(`${feedDir}fixtures/`)));
+	swapped.set(`${feedDir}index.ts`, stub);
+	swapped.set(`${feedDir}fixtures/no-letters.json`, fixture);
+	const feeds = checked(writePackage(t, name, swapped)).components.flatMap((c) => (c.kind === "feeds" ? [c.feed] : []));
+	assert.equal(feeds[0]?.connector, "mail", "照样接 mail，检查通过");
+	const letter = files.get([...files.keys()].find((path) => path.startsWith(`${feedDir}fixtures/`))!)!;
+	swapped.set(`${feedDir}fixtures/one-letter.json`, letter);
+	assert.ok(problemsOf(writePackage(t, name, swapped)).some((line) => line.includes("the handler threw on this fixture")), "遇到一封信就抛错，连接器不会把它当成处理成了");
+});
+
+test("考题的 uses 只列这道题必然用到的一两项，覆盖靠多道题；带这次 8 项的反例；工坊、模板和示例包的考题都不超过两项", () => {
+	const text = SKILL("write-evals");
+	assert.ok(text.includes("`uses` 只列这道题必然用到的一两项"));
+	assert.ok(text.includes("覆盖靠多道题"));
+	assert.ok(!text.includes("同时满足几条"), "不再鼓励把几条要求合进一道题");
+	assert.ok(text.includes("private-entry-external"), "带这次的反例");
+	assert.ok(text.includes("没覆盖的"), "道数装不下时汇报没覆盖的");
+	const templates = join(REPO, "src/modules/templates");
+	const bodies = [
+		...scanned().components.flatMap((c) => (c.kind === "evals" ? [readFileSync(join(BUILDER, "evals", `${c.name}.md`), "utf8")] : [])),
+		...["full/evals/cites-knowledge.md", "full/evals/uses-tool.md", "team/evals/cites-knowledge.md"].map((f) => readFileSync(join(templates, f), "utf8")),
+		...[...examplePackages(SKILL("package-layout")).values()].flatMap((pkg) => [...pkg].filter(([path]) => path.startsWith("evals/")).map(([, body]) => body)),
+	];
+	for (const body of bodies) {
+		const uses = body.match(/^uses: (.*)$/m)?.[1]?.split(",") ?? [];
+		assert.ok(uses.length <= 2, `考题 uses 不超过两项：${uses.join(",")}`);
+	}
+});
+
+test("预演之后改过包里任何文件，就对最终包再跑一次预演，汇报里的预演结果是最终包的", () => {
+	const text = SKILL("build-module");
+	assert.ok(text.includes("预演之后改过包里任何文件"));
+	assert.ok(text.includes("对最终包再跑一次预演"));
+	assert.ok(text.includes("汇报里写的预演结果必须是最终包的"));
+});
+
+test("题面不点名工具、专家或知识名，只给使用者会说的事实；带这次点名六样数据的反例", () => {
+	const text = SKILL("write-evals");
+	assert.ok(text.includes("不点名工具、专家或知识名"));
+	assert.ok(text.includes("结合正股实时与缓存价格、趋势关键位、近期信号、IV 和到期前财报"), "反例原句");
+	assert.ok(AGENT("eval-writer").includes("不点名工具、专家或知识名"), "出考题也照做");
+});

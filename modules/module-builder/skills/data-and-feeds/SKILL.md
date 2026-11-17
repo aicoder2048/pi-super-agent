@@ -28,7 +28,7 @@ description: 数据集合（data/）、feed（feeds/）和密钥怎么写，带�
 
 - 收：`items`（连接器送来的东西，例如 mail 的信）、`cursor`（上次交回的）、`now`（ISO 时间）、`settings`、`rows`（`reads` 的集合，每行 `{ id, from, fields }`，`id` 是宿主的行号）。
 - 回：`records`（写进 `into` 的行，其余键必须是 `into` 的字段。每行带文字 `id`，它是这个 feed 的去重键：同一个 `id` 只写第一次，以后再交回就跳过，不覆盖。`id` 不进任何字段，以后要在 `rows` 里认出这一行，把它另存进一个字段）、`notices`（`{ id, fields, thread }`，`fields` 的值都是文字，`thread` 可选）、`cursor`（文字，下次原样送回）。`alerts`、`problem` 见 stock-ta 的 `feeds/quotes/index.ts`。
-- 抛异常就是这一次失败，那句话只进宿主日志，使用者看不到。使用者要知道的事（缺 key、数据源坏了）回 `{ records: [], problem: { id, text } }`，`text` 写明缺什么、用什么命令补，见 stock-ta `feeds/quotes/index.ts` 的 `NO_KEY`。
+- 抛异常就是这一次失败，那句话只进宿主日志，使用者看不到。使用者要知道的事（缺 key、数据源坏了）回 `{ records: [], problem: { id, text } }`，`text` 写明缺什么、用什么命令补，见 stock-ta `feeds/quotes/index.ts` 的 `NO_KEY`。mail 连接器的 feed 不能拿 `problem` 代替处理信，见「解析还没做的 mail feed」。
 
 ### 样例：`feeds/<名字>/fixtures/<样例>.json`
 
@@ -46,6 +46,31 @@ description: 数据集合（data/）、feed（feeds/）和密钥怎么写，带�
 - `into` 必须是 `private` 集合。
 - `settings.senders` 写本模块一个集合的名字。那个集合要有文字字段 `address`（`a@example.com` 或 `@example.com`，不认通配符），可选 date 字段 `addedAt`、`removedAt`：划掉写 `removedAt`，不删行。不在包里直接写地址列表：包会进公开仓库。
 - 不点名 Gmail 的密钥，授权归连接器。
+
+### 解析还没做的 mail feed
+
+连接器一次给 handler 一封信。handler 回了对象，这封信就算处理成了，哪怕 `records` 是空的；整批处理成了，连接器的进度往前走，这批信不会再给这个 feed。回 `problem` 也算这一拍处理成了，挡不住进度，信等于被吞了。handler 抛错，进度不动，下一拍重给同一封信；同一封信试满 3 拍还抛错，连接器跳过它，在本机的 rejected 记录里留下编号和错误，再给使用者发一条「试了 3 次都没处理成，跳过了，信还在 Gmail 里」。试的次数只记在内存里，宿主重启后从头数。
+
+说明书写了接 mail、解析这一轮不做时，照说明书写 `"connector": "mail"`，handler 遇到信就抛一句固定的话，不引用信的内容：
+
+```ts
+export default function fills(input: { items: unknown[] }) {
+	if (input.items.length > 0) throw new Error("NOT_IMPLEMENTED：成交邮件解析还没做，这封信没有入账");
+	return { records: [] };
+}
+```
+
+有信的样例会抛错、检查不过，所以样例只放一份没有信的：
+
+```json
+{ "input": { "items": [] } }
+```
+
+发件人名单是空的，连接器一封信都不收，进度不动，也没有信被跳过。模块交出时名单留空，汇报里写给使用者三件事：
+
+- 模块打开后，宿主会挂一条告警「<名单标题>是空的，什么都不收」，叫你往名单里加地址。这是预期的，解析做好以前不要照它做。
+- 解析做好以前别往名单里加地址。加了的话，名单上每封信试 3 拍后跳过，每封一条提醒，信留在 Gmail 里，不入账；信接连进来时，feed 还会挂一条出错告警。
+- 解析做好以后再加地址。
 
 ## 密钥
 
