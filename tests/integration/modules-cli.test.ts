@@ -422,6 +422,43 @@ test("just module try：工具要密钥时，检查用假密钥跑用例，预�
 	assert.match(run.out, /^PASS bracket-uses-tool/m);
 });
 
+test("just module try：预演复制模块自己的 .env，工具拿到的是 modules-data/<模块>/.env 里的 key，不是全局 secretsFile 的", async (t) => {
+	const pkg = mkdtempSync(join(tmpdir(), "psa-keyed-"));
+	t.after(() => rmSync(pkg, { recursive: true, force: true }));
+	cpSync(join(SAMPLE, "personal-tax"), pkg, { recursive: true });
+	mkdirSync(join(pkg, "tools/probe"), { recursive: true });
+	writeFileSync(join(pkg, "tools/probe/tool.json"), JSON.stringify({ title: "probe", description: "echoes its key", effect: "read", input: { x: { type: "number", title: "x" } }, output: { key: { type: "text", title: "key" } }, secrets: ["PERSONAL_TAX__LAB_KEY"] }));
+	writeFileSync(join(pkg, "tools/probe/index.ts"), `export default async () => ({ key: process.env.PERSONAL_TAX__LAB_KEY ?? "none" });`);
+	let probed = "";
+	const run = await rehearse(
+		t,
+		{
+			router: [opensTaxTicket],
+			workers: [
+				worker(
+					"预演算税",
+					on("调探针", /^\[任务说明\]/, () => [domainTool("probe", { x: 1 })]),
+					on("调工具", /^\[模块工具\]/, (card) => ((probed = card), [domainTool("tax-bracket", { taxableIncome: 25000 })])),
+					on("汇报", /^\[模块工具\]/, () => [report("ready", "落在第 2 档，估算税额 4000 美元")]),
+				),
+			],
+		},
+		{
+			pkg,
+			secrets: "PERSONAL_TAX__LAB_KEY=global-file-value\n",
+			seed: (dir) => {
+				mkdirSync(join(dir, "modules-data/personal-tax"), { recursive: true });
+				writeFileSync(join(dir, "modules-data/personal-tax/.env"), "PERSONAL_TAX__LAB_KEY=test-module-env-key\n", { mode: 0o600 });
+			},
+		},
+	);
+	assert.equal(run.status, 0, run.out);
+	assert.match(probed, /test-module-env-key/);
+	assert.doesNotMatch(probed, /global-file-value/);
+	assert.equal(run.userDirChanged, false);
+	assert.deepEqual(run.leftover, []);
+});
+
 test("just module try：没调考题要的工具时判失败，写出没用到哪一项，以 1 退出", async (t) => {
 	const run = await rehearse(t, {
 		router: [opensTaxTicket],

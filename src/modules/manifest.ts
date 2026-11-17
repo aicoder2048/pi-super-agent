@@ -119,7 +119,7 @@ export interface ToolDescriptor {
 	cites?: string;
 	/** `read` looks something up outside. `write` changes something outside, so an inference ticket may not call it. Left out: `pure`, and `cases.json` is required. */
 	effect?: (typeof TOOL_EFFECTS)[number];
-	/** Names of secrets in the host's secrets file. The host sets each as an environment variable of the tool's process. */
+	/** Names of secrets in the module's own `.env`. The host sets each as an environment variable of the tool's process. */
 	secrets?: readonly string[];
 	runtime?: Runtime;
 	/** Requires the effect the port names. */

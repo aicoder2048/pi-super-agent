@@ -2,6 +2,8 @@
 
 2026-11-16 按使用者的决定拟定（`docs/modules/architecture/connectors-and-secrets-design.md` 第 1、2 节，分期的 C1）。取代 ADR-0019 归属表里的一行：`GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` 的主人从 `mail` 改成宿主。ADR-0019 的其余部分不变，模块自己的 `.env` 和归属表的去留是 C2。在 ADR-0026 的警报编号里加一种 `connector:<连接器>`。ADR-0018、ADR-0020 不变。
 
+> 2026-11-16 补（C2）：「包里点名它们，`just module check` 报错并写明主人」被 ADR-0031 取代：模块代码只读自己的 `.env`，点名身份类密钥只打印一行提醒。连接器从宿主 `secretsFile` 读授权这一点不变。
+
 ## 问题
 
 option-ta 要从券商的成交确认邮件里记成交。读 Gmail 的代码（`docs/modules/examples/mail/google.ts`）和读邮件的 token 都在 `mail` 模块里，按 ADR-0019 这三个密钥属于 `mail`，别的模块点不了。照这样，option-ta 只能再写一遍读 Gmail 的代码，再抄一份授权。

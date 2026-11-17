@@ -7,7 +7,7 @@ import type { CollectionDescriptor, Component, ComponentName, ConnectorId, FeedD
 import type { InstanceData } from "./registry.ts";
 import { BADGE_KEY_MAX, BADGE_TEXT_MAX, type Alert, type Badge, type Collected, type FeedAlert, type FeedInput, type Json, type Row } from "./protocol.ts";
 import { fill, release } from "./release.ts";
-import { fixtureSecrets, LIMIT_MS, runModuleCodeAsync, secretsFor } from "./run-code.ts";
+import { fixtureSecrets, LIMIT_MS, runModuleCodeAsync, secretsFor, type ModuleSecretLookup } from "./run-code.ts";
 
 export type FeedEntry = { source: string; module: ModuleName; dir: string; name: ComponentName; feed: FeedDescriptor; fixtures: readonly FeedFixture[]; components: readonly Component[]; private: boolean };
 
@@ -31,7 +31,7 @@ export interface FeedPorts {
 	problem(source: string, problem: FeedProblem | undefined): void;
 	/** A problem of the shared connector, not of the feed (an expired authorization, a long gap): the host says it once for all the connector's feeds. Undefined: the connector worked this beat. */
 	connectorProblem?(connector: ConnectorId, source: string, problem: FeedProblem | undefined): void;
-	secret(name: string): string | undefined;
+	secret: ModuleSecretLookup;
 	now(): number;
 	limitMs?: number;
 }
@@ -124,7 +124,7 @@ async function fromHandler({ module, source, feed, name, dir, components }: Feed
 	}, fixture);
 	const site = { packageDir: dir, component: join("feeds", name), dataDir: data.dir(module) };
 	const limitMs = feed.limit === undefined ? (ports.limitMs ?? LIMIT_MS) : everyMs(feed.limit);
-	const reply = await runModuleCodeAsync(site, handler, input, fixture ? fixtureSecrets(feed.secrets ?? []) : secretsFor(feed.secrets ?? [], ports.secret), { limitMs, ...(fixture && { responses: fixture.responses }), ...(signal && { signal }) });
+	const reply = await runModuleCodeAsync(site, handler, input, fixture ? fixtureSecrets(feed.secrets ?? []) : secretsFor(feed.secrets ?? [], (name) => ports.secret(module, name)), { limitMs, ...(fixture && { responses: fixture.responses }), ...(signal && { signal }) });
 	return reply.ok ? parseCollected(reply.output, into) : reply.note;
 }
 

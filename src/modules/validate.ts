@@ -7,7 +7,7 @@ import { mailFeedProblems } from "./connectors/mail.ts";
 import { feedInput, intoOf, nothingHeld, parseCollected } from "./feed-runner.ts";
 import { linkVenvs, lockOf, PY_DIR, venvDir, venvInstalled } from "./files.ts";
 import { fixtureSecrets, runModuleCode, runModuleCodeAsync, type CodeReply, type CodeSite, type RunOptions, type Secrets } from "./run-code.ts";
-import { secretRefusal } from "./secret-owners.ts";
+import { identityNote } from "./identity-secrets.ts";
 import { CONNECTORS, DATA_CLASSES, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS, TOOL_FETCHES, TOOL_PORTS, type ToolFetch } from "./manifest.ts";
 import { LINE_MAX_LINES, placeholders } from "./release.ts";
 import type {
@@ -15,12 +15,11 @@ import type {
 } from "./manifest.ts";
 
 const NAME = /^[a-z0-9][a-z0-9-]*$/;
-/** Single hyphens only, so no module's secret prefix (`prefixOf`) starts another's. */
 const MODULE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const moduleNameProblem = (name: string): string | undefined =>
 	MODULE_NAME.test(name) ? undefined : `"${name}" is not a usable module name (lowercase letters and digits, joined by single hyphens)`;
 const FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
-const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
+export const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
 const MAX_LIMIT_MS = 600_000;
 const FIELD_TYPES = ["text", "number", "date", "blob"] as const;
 
@@ -641,10 +640,6 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, d
 	const feeds = new Set(components.filter((item) => item.kind === "feeds").map((item) => item.name as string));
 	const rules = readRules(report, root, manifest.name, feeds);
 	crossCheck(report, manifest, components);
-	for (const { where, secret } of components.flatMap(namedSecrets)) {
-		const refusal = secretRefusal(manifest.name, secret);
-		if (refusal !== undefined) report(where, refusal);
-	}
 	for (const item of components) {
 		if (item.kind !== "tools" || item.tool.port === undefined) continue;
 		const only = TOOL_PORTS[item.tool.port].module;
@@ -662,12 +657,15 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, d
 			data.drop();
 		}
 	}
-	let notes: string[] = [];
+	const notes = components.flatMap(namedSecrets).flatMap(({ where, secret }) => {
+		const note = identityNote(secret);
+		return note === undefined ? [] : [`${where}: ${note}`];
+	});
 	if (previous !== undefined && problems.length === 0) {
 		const before = readComponents(() => undefined, resolve(previous));
 		const changes = structureChanges(before, components);
 		problems.push(...changes.problems);
-		notes = changes.notes;
+		notes.push(...changes.notes);
 	}
 	if (problems.length > 0) return rejected(manifest.name);
 	return { ok: true, scan: { dir: root, manifest, components, rules, digest: digestOf(root), notes } };

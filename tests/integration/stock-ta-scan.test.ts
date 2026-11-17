@@ -9,6 +9,7 @@ import { Modules } from "../../src/modules.ts";
 import { runFeed, type FeedNotice, type FeedPorts, type FeedProblem } from "../../src/modules/feed-runner.ts";
 import { lockOf, VENV_MARK, venvDir } from "../../src/modules/files.ts";
 import { instanceData } from "../../src/modules/instance-data.ts";
+import { moduleSecretLookup } from "../../src/secrets.ts";
 import { fakeTa, type DailyRow } from "../helpers/fake-ta.ts";
 import type { Alert, Badge } from "../../src/modules/protocol.ts";
 import { readHits, writeHits, type Hit } from "../../docs/modules/examples/stock-ta/hits.ts";
@@ -59,10 +60,16 @@ async function scanFeed(t: TestContext, { key = KEY, viaVenv = false, installed 
 	const alerts: Alert[] = [];
 	const badges: Badge[] = [];
 	const problems: (FeedProblem | undefined)[] = [];
-	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: (_, a) => alerts.push(a) > 0, badge: (_, b) => void badges.push(b), problem: (_, p) => void problems.push(p), secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : name === "FINNHUB_API_KEY" && finnhub !== "" ? finnhub : undefined), now: () => Date.now() };
+	const env = [key && `POLYGON_API_KEY=${key}`, finnhub && `FINNHUB_API_KEY=${finnhub}`].filter(Boolean);
+	if (env.length > 0) {
+		mkdirSync(dataDir, { recursive: true });
+		writeFileSync(join(dataDir, ".env"), `${env.join("\n")}\n`);
+	}
+	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: (_, a) => alerts.push(a) > 0, badge: (_, b) => void badges.push(b), problem: (_, p) => void problems.push(p), secret: moduleSecretLookup(state), now: () => Date.now() };
 	const live = join(dataDir, "files", "ta", "ta.sqlite");
 	return {
 		live,
+		state,
 		dataDir,
 		notices,
 		alerts,
@@ -339,6 +346,17 @@ test("venv 没装完（没有 .psa-lock）：不起 ta，报问题 scan-failed�
 	assert.deepEqual(feed.problems.map((p) => p?.id), ["scan-failed"]);
 	assert.equal(feed.runs()[0]?.fields["outcome"], "失败");
 	assert.match(String(feed.runs()[0]?.fields["errors"]), /先跑 just module setup stock-ta/);
+	assert.equal(feed.calls().length, 0);
+});
+
+test("密钥只取 stock-ta 自己的 .env：别的模块 .env 里的同名 key 不算，扫描照样报 no-key 不出错", async (t) => {
+	const feed = await scanFeed(t, { key: "" });
+	mkdirSync(join(feed.state, "modules-data", "mail"), { recursive: true });
+	writeFileSync(join(feed.state, "modules-data", "mail", ".env"), `POLYGON_API_KEY=${KEY}\n`);
+	feed.watch("NVDA");
+	assert.deepEqual(await feed.tick(), { ok: true, records: 0, notices: 0 });
+	assert.deepEqual(feed.problems.map((p) => p?.id), ["no-key"]);
+	assert.match(feed.problems[0]!.text, /modules-data\/stock-ta\/\.env/);
 	assert.equal(feed.calls().length, 0);
 });
 

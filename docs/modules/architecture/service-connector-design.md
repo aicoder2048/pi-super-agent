@@ -99,7 +99,7 @@ uses: knowledge, tools/chain, stock-ta/tools/structure, stock-ta/tools/signals
 
 2 到 4 任何一步不成立，回 `provider-absent`，原因按规则 6 的表。调用方的任务钉住的是它自己模块的版本，外部工具不跟着钉。
 
-**密钥。** 今天 `ports.secret(name)` 从全局 `secretsFile` 取值，外部调用照用即可：ADR-0019 的归属表让 stock-ta 点名的 `POLYGON_API_KEY`、`FINNHUB_API_KEY` 在全局文件里。C2 落地以后，宿主只从模块自己的 `.env` 给模块代码取密钥（`connectors-and-secrets-design.md` 第 3 节），`ports.secret` 要带模块名，外部调用传**提供方**的模块名，取提供方 `.env` 里的值。使用方的 `.env` 里不必有、也不该有提供方的密钥。
+**密钥。** C2 已落地（ADR-0031）：宿主只从模块自己的 `.env` 给模块代码取密钥，`ports.secret(module, name)` 带模块名，网关传的是被运行的副本的模块（`copy.module`）。外部调用运行的是提供方的副本，所以取的是提供方 `.env` 里的值。使用方的 `.env` 里不必有、也不该有提供方的密钥。
 
 **额度。** `earnings-date` 和 stock-ta 自己的任务、`scan` feed 共用一份 Finnhub 免费额度，`quote` 和 stock-ta 的 `quotes`、`scan` 两个 feed 共用 Massive 的额度。宿主不替它们排队（`design.md` 第 10 节「宿主不再统一管额度」）。option-ta 的会诊把一次问答变成几次外部调用，额度用得更快。先不加排队，额度真不够时再按密钥名加。
 
