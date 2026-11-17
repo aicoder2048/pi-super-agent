@@ -1,0 +1,193 @@
+{
+ "input": {
+  "now": "2026-11-19T21:40:00.000Z",
+  "rows": {
+   "watchlist": [
+    {
+     "id": "1",
+     "from": "fictional-fixture",
+     "fields": {
+      "symbol": "SPY",
+      "added_at": "2026-11-19T21:00:00.000Z"
+     }
+    }
+   ]
+  },
+  "settings": {
+   "requestsPerTick": 15
+  }
+ },
+ "responses": {
+  "https://api.massive.com/v2/aggs/ticker/SPY/range/1/day/2025-11-19/2026-11-19?adjusted=false&sort=asc&limit=50000": {
+   "ticker": "SPY",
+   "adjusted": false,
+   "results": [
+    {
+     "o": 660,
+     "h": 660,
+     "l": 660,
+     "c": 660,
+     "v": 1000000,
+     "t": 1763528400000
+    },
+    {
+     "o": 655,
+     "h": 655,
+     "l": 655,
+     "c": 655,
+     "v": 1000000,
+     "t": 1763614800000
+    },
+    {
+     "o": 650,
+     "h": 650,
+     "l": 650,
+     "c": 650,
+     "v": 1000000,
+     "t": 1763701200000
+    },
+    {
+     "o": 670,
+     "h": 670,
+     "l": 670,
+     "c": 670,
+     "v": 1000000,
+     "t": 1763960400000
+    }
+   ],
+   "status": "OK"
+  },
+  "https://api.massive.com/v3/reference/options/contracts?underlying_ticker=SPY&contract_type=put&expiration_date.gte=2025-12-10&expiration_date.lte=2026-01-03&strike_price.gte=627.00&strike_price.lte=693.00&expired=true&sort=expiration_date&order=asc&limit=250": {
+   "results": [
+    {
+     "ticker": "O:B1SPY251210P00001000",
+     "underlying_ticker": "SPY",
+     "contract_type": "put",
+     "exercise_style": "european",
+     "expiration_date": "2025-12-10",
+     "strike_price": 1,
+     "type": "binary"
+    },
+    {
+     "ticker": "O:SPY251210P00660000",
+     "underlying_ticker": "SPY",
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2025-12-10",
+     "strike_price": 660,
+     "shares_per_contract": 100
+    },
+    {
+     "ticker": "O:SPY251210P00661000",
+     "underlying_ticker": "SPY",
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2025-12-10",
+     "strike_price": 661,
+     "shares_per_contract": 100
+    },
+    {
+     "ticker": "O:SPY251210P00659000",
+     "underlying_ticker": "SPY",
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2025-12-10",
+     "strike_price": 659,
+     "shares_per_contract": 100
+    },
+    {
+     "ticker": "O:SPY251212P00660000",
+     "underlying_ticker": "SPY",
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2025-12-12",
+     "strike_price": 660,
+     "shares_per_contract": 100
+    }
+   ],
+   "status": "OK"
+  },
+  "https://api.massive.com/v2/aggs/ticker/O:SPY251210P00660000/range/1/day/2025-11-19/2025-11-19?adjusted=false": {
+   "ticker": "x",
+   "resultsCount": 0,
+   "status": "OK"
+  },
+  "https://api.massive.com/v2/aggs/ticker/O:SPY251210P00659000/range/1/day/2025-11-19/2025-11-19?adjusted=false": {
+   "ticker": "x",
+   "resultsCount": 1,
+   "results": [
+    {
+     "o": 9.5,
+     "h": 9.5,
+     "l": 9.5,
+     "c": 9.5,
+     "v": 10,
+     "t": 1763528400000
+    }
+   ],
+   "status": "OK"
+  },
+  "https://api.massive.com/v3/reference/options/contracts?underlying_ticker=SPY&contract_type=put&expiration_date.gte=2025-12-11&expiration_date.lte=2026-01-04&strike_price.gte=622.25&strike_price.lte=687.75&expired=true&sort=expiration_date&order=asc&limit=250": {
+   "results": [
+    {
+     "ticker": "O:SPY251211P00655000",
+     "underlying_ticker": "SPY",
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2025-12-11",
+     "strike_price": 655,
+     "shares_per_contract": 100
+    }
+   ],
+   "status": "OK"
+  },
+  "https://api.massive.com/v2/aggs/ticker/O:SPY251211P00655000/range/1/day/2025-11-20/2025-11-20?adjusted=false": {
+   "ticker": "x",
+   "resultsCount": 1,
+   "results": [
+    {
+     "o": 10,
+     "h": 10,
+     "l": 10,
+     "c": 10,
+     "v": 10,
+     "t": 1763614800000
+    }
+   ],
+   "status": "OK"
+  },
+  "https://api.massive.com/v3/reference/options/contracts?underlying_ticker=SPY&contract_type=put&expiration_date.gte=2025-12-12&expiration_date.lte=2026-01-05&strike_price.gte=617.50&strike_price.lte=682.50&expired=true&sort=expiration_date&order=asc&limit=250": {
+   "results": [],
+   "status": "OK"
+  },
+  "https://api.massive.com/v3/reference/options/contracts?underlying_ticker=SPY&contract_type=put&expiration_date.gte=2025-12-15&expiration_date.lte=2026-01-08&strike_price.gte=636.50&strike_price.lte=703.50&expired=true&sort=expiration_date&order=asc&limit=250": {
+   "results": [
+    {
+     "ticker": "O:SPY251215P00680000",
+     "underlying_ticker": "SPY",
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2025-12-15",
+     "strike_price": 680,
+     "shares_per_contract": 100
+    }
+   ],
+   "status": "OK"
+  },
+  "https://api.massive.com/v2/aggs/ticker/O:SPY251215P00680000/range/1/day/2025-11-24/2025-11-24?adjusted=false": {
+   "ticker": "x",
+   "resultsCount": 1,
+   "results": [
+    {
+     "o": 9,
+     "h": 9,
+     "l": 9,
+     "c": 9,
+     "v": 10,
+     "t": 1763960400000
+    }
+   ],
+   "status": "OK"
+  }
+ }
+}

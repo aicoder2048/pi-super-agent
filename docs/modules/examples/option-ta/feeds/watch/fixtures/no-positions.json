@@ -1,4 +1,9 @@
 {
-  "input": { "now": "2026-11-17T15:00:00.000Z", "cursor": "unchanged", "rows": { "fills": [], "chains": [] } },
-  "responses": {}
+ "input": {
+  "now": "2026-11-19T15:00:00.000Z",
+  "rows": {
+   "fills": []
+  }
+ },
+ "responses": {}
 }

@@ -1,0 +1,26 @@
+{
+ "input": {
+  "now": "2026-11-19T21:40:00.000Z",
+  "rows": {
+   "watchlist": [
+    {
+     "id": "1",
+     "from": "fictional-fixture",
+     "fields": {
+      "symbol": "SPY",
+      "added_at": "2026-11-19T21:00:00.000Z"
+     }
+    }
+   ]
+  },
+  "cursor": "{\"methodology\":\"option-ta-iv-close-v1\",\"done\":{\"SPY\":\"2026-11-18\"},\"failures\":0}"
+ },
+ "responses": {
+  "https://api.massive.com/v2/aggs/ticker/SPY/range/1/day/2026-11-19/2026-11-19?adjusted=false&sort=asc&limit=50000": {
+   "ticker": "SPY",
+   "adjusted": false,
+   "results": [],
+   "status": "OK"
+  }
+ }
+}

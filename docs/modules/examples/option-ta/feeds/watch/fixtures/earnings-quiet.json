@@ -1,0 +1,85 @@
+{
+ "input": {
+  "now": "2026-11-19T15:00:00.000Z",
+  "rows": {
+   "fills": [
+    {
+     "id": "15",
+     "from": "fictional-fixture",
+     "fields": {
+      "record_type": "FILL",
+      "fill_id": "NVDA261218P00150000:STO:2026-11-02:acct-1:cum1",
+      "order_key": "NVDA261218P00150000:STO:2026-11-02:acct-1",
+      "account_ref": "acct-1",
+      "underlying": "NVDA",
+      "option_symbol": "NVDA261218P00150000",
+      "right": "put",
+      "strike": 150,
+      "expiry": "2026-12-18",
+      "multiplier": 100,
+      "side": "STO",
+      "qty": 1,
+      "price": "2.0000",
+      "trade_date": "2026-11-02",
+      "source": "broker-email"
+     }
+    }
+   ]
+  }
+ },
+ "responses": {
+  "https://api.massive.com/v3/reference/dividends?ticker=NVDA&limit=10": {
+   "results": [
+    {
+     "cash_amount": 0.01,
+     "dividend_type": "CD",
+     "ex_dividend_date": "2026-09-11",
+     "frequency": 4,
+     "ticker": "NVDA"
+    }
+   ],
+   "status": "OK"
+  },
+  "https://finnhub.io/api/v1/calendar/earnings?from=2026-11-19&to=2027-03-19&symbol=NVDA": {
+   "earningsCalendar": [
+    {
+     "symbol": "NVDA",
+     "date": "2027-01-15",
+     "hour": "amc",
+     "epsActual": null
+    }
+   ]
+  },
+  "https://api.massive.com/v3/snapshot/options/NVDA/O:NVDA261218P00150000": {
+   "results": {
+    "details": {
+     "ticker": "O:NVDA261218P00150000",
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2026-12-18",
+     "strike_price": 150,
+     "shares_per_contract": 100
+    },
+    "last_quote": {
+     "bid": 1.15,
+     "ask": 1.25,
+     "midpoint": 1.2,
+     "last_updated": 1795100400000000000,
+     "timeframe": "REAL-TIME"
+    },
+    "last_trade": {},
+    "day": {},
+    "greeks": {},
+    "open_interest": 1000,
+    "underlying_asset": {
+     "price": 180,
+     "last_updated": 1795099440000000000,
+     "ticker": "NVDA",
+     "timeframe": "DELAYED"
+    }
+   },
+   "status": "OK",
+   "request_id": "fixture"
+  }
+ }
+}

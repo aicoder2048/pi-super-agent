@@ -1,28 +1,14 @@
 {
-  "title": "IV 原始输入安全占位",
+  "title": "IV 原始输入",
+  "description": "每 5 分钟看一次；每个交易日收盘 30 分钟后（按模块自己的日历，提前收盘日跟着提前）给期权自选的每个标的存一行 IV 原始输入：按 selectAtmContract 选期限 21 到 45 天里最近到期、离正股收盘价最近且当天有成交的 put，存它的日线收盘价、正股日线收盘价、到期日、行权价和取数时刻，日常再存收盘报价的中间价作对照。刚加进自选的标的先回填最近一年，每拍最多 requestsPerTick 次请求，分批做完。同一交易日只存一次；cursor 记每个标的存到哪一天，宿主停过也按同样的办法补上",
   "handler": "index.ts",
   "every": "5m",
-  "limit": "1m",
+  "limit": "5m",
   "reads": ["watchlist"],
   "settings": {
-    "methodology": "option-ta-iv-close-v1",
-    "zone": "America/New_York",
-    "afterCloseMinutes": 30,
-    "backfillCalendarDays": 365,
-    "targetDte": 30,
-    "minDte": 21,
-    "maxDte": 45,
-    "contractType": "put",
-    "exerciseStyle": "american",
-    "riskFreeRate": 0,
-    "dividendYield": 0,
-    "yearDays": 365,
-    "expiryTime": "16:00",
-    "seriesPrice": "contract-daily-close",
-    "hvSessions": 20,
-    "hvAnnualSessions": 252
+    "baseUrl": "https://api.massive.com",
+    "requestsPerTick": 60
   },
   "secrets": ["POLYGON_API_KEY"],
-  "into": "iv-snapshots",
-  "notice": "{{status}}：{{message}}"
+  "into": "iv-snapshots"
 }

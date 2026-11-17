@@ -1,0 +1,45 @@
+{
+ "input": {
+  "now": "2026-11-19T15:00:00.000Z",
+  "rows": {
+   "fills": [
+    {
+     "id": "22",
+     "from": "fictional-fixture",
+     "fields": {
+      "record_type": "FILL",
+      "fill_id": "SPY261218P00100000:STO:2026-11-02:acct-1:cum1",
+      "order_key": "SPY261218P00100000:STO:2026-11-02:acct-1",
+      "account_ref": "acct-1",
+      "underlying": "SPY",
+      "option_symbol": "SPY261218P00100000",
+      "right": "put",
+      "strike": 100,
+      "expiry": "2026-12-18",
+      "multiplier": 100,
+      "side": "STO",
+      "qty": 1,
+      "price": "2.0000",
+      "trade_date": "2026-11-02",
+      "source": "broker-email"
+     }
+    }
+   ]
+  },
+  "cursor": "{\"date\":\"2026-11-19\",\"decided\":[],\"events\":{},\"failures\":2}"
+ },
+ "responses": {
+  "https://api.massive.com/v3/reference/dividends?ticker=SPY&limit=10": {
+   "status": 502
+  },
+  "https://finnhub.io/api/v1/calendar/earnings?from=2026-11-19&to=2027-03-19&symbol=SPY": {
+   "earningsCalendar": []
+  },
+  "https://api.massive.com/v3/snapshot/options/SPY/O:SPY261218P00100000": {
+   "status": 503,
+   "body": {
+    "status": "ERROR"
+   }
+  }
+ }
+}
