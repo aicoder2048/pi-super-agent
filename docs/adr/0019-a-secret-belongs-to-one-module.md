@@ -2,6 +2,8 @@
 
 2026-11-13 在使用者授权的无人值守运行中拟定，使用者合并即确认。它是 Gmail 计划（`docs/multi-channel/gmail-plan.md`）的 M1。
 
+> 2026-11-16 补：表里 `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` 这一行被 ADR-0029 取代，主人改成宿主：读 Gmail 的是宿主的 `mail` 连接器，模块代码拿不到它们。模块自己的 `.env` 和这张表的去留在 C2（`docs/modules/architecture/connectors-and-secrets-design.md`）。
+
 ## 问题
 
 模块包在 `feed.json` 和 `tool.json` 的 `secrets` 里点名密钥，宿主就把 `secretsFile` 里同名的值放进模块代码的环境变量。今天点名不受限：任何一个包写 `"secrets": ["TELEGRAM_BOT_TOKEN"]`，它的代码就拿到 Telegram 机器人的 token。`mail` 要两个 Gmail token，读邮件的给 `mail` 模块，写草稿的（`gmail.compose`，也能发信）只在宿主手里（research.md 7.2 节）。点名不受限时，「写草稿的 token 不交给模块」就只是约定。

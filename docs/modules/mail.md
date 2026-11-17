@@ -4,10 +4,13 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 
 包在 `docs/modules/examples/mail/`。它和 stock-ta 一样放在例子目录里，你在要用的那台机器上复制一份，自己打开。
 
+读 Gmail 的代码和授权不在包里，在宿主的 `mail` 连接器里（ADR-0029）。模块只拿到名单上的发件人的信，把它变成 `messages` 的一行和一条通知。以后别的模块（例如 option-ta）也用这个连接器，各收各名单上的信，不用再授权一次。
+
 ## 它做什么
 
-- **每 5 分钟查一次。** feed `inbox` 先用读邮件的 refresh token 换一个 access token（不存），再问 Gmail 从上一次以后收件箱多了哪些信（`history.list`）。第一次没有起点时，取账号当前的位置当起点，再补最近一天的信，装好以后不用等下一封信就知道它通了。
-- **先看发件人。** 每封新信先只取 `From` 头。地址不在名单上的，到此为止，不取正文，不存，不通知。名单上的再取全文，存成 `messages` 的一行，发一条通知。同一封信只存一行、只通知一次。
+- **每 5 分钟查一次。** 宿主的 `mail` 连接器替 feed `inbox` 用读邮件的 refresh token 换一个 access token（不存），再问 Gmail 从上一次以后收件箱多了哪些信（`history.list`）。第一次没有起点时，取账号当前的位置当起点，再补最近一天的信，装好以后不用等下一封信就知道它通了。连接器的起点（`connectorCursor`）由宿主存，模块的代码看不到。
+- **先看发件人。** 连接器每封新信先只取 `From` 头。地址不在名单上的，到此为止，不取正文，模块看不到，不存，不通知。名单上的再取全文，一封一封交给模块，模块存成 `messages` 的一行，发一条通知。同一封信只存一行、只通知一次。
+- **模块出错时重取。** 模块处理一封信出错或超时，这一拍不往前走，下一拍重取同一批信。同一封信连着出错 3 次就跳过：宿主把它的编号、发件人、主题和错误（不含正文）写进状态目录的 `inbox/mail/inbox/rejected/<gmailId>.json`，发一行通知，之后照常收信。
 - **`From` 要正好是一个邮箱。** 写了好几个地址（`evil@bad.test, Ann <ann@example.com>`）、用了组（`朋友: ann@example.com;`）、地址里有两个 `@`（`x@bad.test@corp.test`）、域名不完整（`x@corp.test.`、`x@corp..test`）、地址带引号（`"ann"@example.com`）或括号没配对的，都算名单外。显示名可以带引号，引号里有逗号或 `@` 不要紧；括号里的注释不算地址。地址统一转成小写再和名单比。地址里有中文等非 ASCII 字符的（比如中文域名没转成 `xn--` 形式），这一版也算名单外。
 - **存什么。** 发件人显示名和地址、Reply-To、主题、收到时间、Gmail 给的开头一句、纯文字正文（HTML 转成文字，最多 64 KB，超出截断并标明）、附件清单（文件名、类型、字节数，不存附件内容），以及回复要用的 Message-ID 和会话 id。
 - **正文的字符集。** 按正文那一段 `Content-Type` 写的 charset 解码，GBK、Big5、Shift_JIS、ISO-8859 系列都认得。认不出的按 UTF-8 显示，正文末尾写明「字符集认不出」。正文太大、Gmail 只给一个附件号的，这一版不去取，正文写明「这里没取，全文在 Gmail 里看」。
@@ -18,7 +21,7 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 
 下面的命令在本仓库根目录运行。状态目录默认是 `~/.pi-super-agent`，设了 `PSA_STATE_DIR` 就是它。装到旧 Mac 时照 `docs/deploy/gmail.md` 第 3 节从头做，它包含下面三步。
 
-1. 先按 `docs/deploy/gmail.md` 做完授权。密钥文件里要有 `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` 三行，这三个密钥属于 `mail`，别的模块点不了。要写回信草稿，再跑 `just google-auth draft`，多一行 `GMAIL_DRAFT_REFRESH_TOKEN`。这一行属于宿主，模块代码拿不到，见下面「写回信草稿」。
+1. 先按 `docs/deploy/gmail.md` 做完授权。密钥文件里要有 `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GMAIL_READ_REFRESH_TOKEN` 三行。这三个密钥属于宿主，由 `mail` 连接器读，任何模块都点不了，`mail` 包里也不写它们（ADR-0029）。要写回信草稿，再跑 `just google-auth draft`，多一行 `GMAIL_DRAFT_REFRESH_TOKEN`。这一行属于宿主，模块代码拿不到，见下面「写回信草稿」。
 2. 把包复制进状态目录，再打开。
 
    ```bash
@@ -35,11 +38,12 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 
 工具 `read-attachment` 让任务读一封已存的信的一个附件。在对话里说「看一下 a@example.com 那封信的附件说了什么」，任务先在 `messages` 里找到那封信，再用它的 `gmailId` 和附件的 `partId` 调这个工具。
 
-- **只读已存的信。** `messageId` 要是 `messages` 里某一行的 `gmailId`，`partId` 要在那一行的附件清单里，否则拒绝，不请求 Gmail。
-- **只用读邮件的 token。** 先 `messages.get` 找到这个附件当下的编号，再 `attachments.get` 下载，不碰别的接口。推断任务也能调，效果是 `read`，不需要批准卡片：命令是模块代码定死的，输入只有两个编号。
-- **读哪些类型。** MIME 类型和扩展名都对得上才读：`.txt`、`.md`、`.csv`、`.html` 和正文一样按附件那一段 `Content-Type` 写的 charset 解码，没写的按 UTF-8（去掉 BOM，解不了的字节换成替代字符），认不出的按 UTF-8 并在末尾写明；`.html` 再去掉 `script` 和 `style` 后转成文字，`.pdf` 交给 `pypdf` 抽文字。扫描件（读到的页里至少一半是一张图、不到 20 个字；图包在 Form XObject 里也算，最多往里找 4 层）和 `.png`、`.jpg`、`.heic`、`.tiff`、`.webp`、`.bmp` 图片交给宿主的 OCR（见 [docs/ocr.md](../ocr.md)），输出多一项 `ocr`，写引擎、读了几页、秒数和平均置信度；宿主没开 OCR 或没读成时，PDF 里本来带的字照样回来，`ocr` 只写 `failed` 原因。Office 文件、压缩包、可执行文件一律拒绝，写明是什么类型。QQ 邮箱等把附件一律标成 `application/octet-stream`（或 `binary/octet-stream`、`application/x-download`、空类型）的，按扩展名选读法，`.pdf` 还要开头是 `%PDF-` 才读；类型具体却和扩展名对不上的仍然拒绝。
-- **限度。** 超过 10 MB 的附件不下载。下载超过 10 秒写「附件下载超时」。PDF 最多读前 50 页，`pages` 是总页数；抽文字 6 秒读不完写「PDF 太复杂」，读 PDF 的进程内存超过 512 MB 写「PDF 太大」，有密码的写「PDF 有密码，读不了」。抽完文字后，只有不到 20 个字的页占了读到的页的一半以上，才另起一个 Python 进程看这些页是不是扫描图，它限 1.5 秒、512 MB；超时、崩溃、超内存或出错都当不是扫描件，第一步读出的文字原样回来。所以 PDF 读出的文字和失败的情形跟不认扫描件时一样，多花的时间最多 1.5 秒，不管 PDF 的结构多刁钻。文字最多 100000 字。没读完的都标 `truncated`。这些加起来在宿主给工具的 20 秒以内。
-- **不落盘，不执行。** 附件只在这次调用的内存里，PDF 经管道交给 Python，不进集合，下次再问就再下载一次。要 OCR 的扫描件和图片例外：工具把它写进 `files/ocr-<随机>.<扩展名>` 交给宿主，宿主读完就删，一次调用结束时 `files/` 里不多东西。HTML 里的脚本不跑，PDF 里的 JavaScript、表单动作、嵌入文件都不碰，只取文字。读 PDF 的两个 Python 进程都只拿到 `PATH` 和 `PSA_MODULE_VENV` 两个环境变量，拿不到任何密钥。
+- **宿主下载，工具只读文件。** 工具写了 `"fetch": "mail.attachment"`。运行工具代码之前，宿主用读邮件的 token 先 `messages.get` 取这封信，再 `attachments.get` 下载这个附件，不碰别的接口。工具不拿任何密钥，只读宿主交来的文件。推断任务也能调，效果是 `read`，不需要批准卡片：命令是模块代码定死的，输入只有两个编号。
+- **发件人要此刻还在名单上。** 宿主取到信以后看 `From`，地址此刻不在邮件名单上就拒绝，写「这封信不在 mail 收的信里……」。所以从名单上划掉一个人以后，他以前的信还在 `messages` 里，附件却读不了。`partId` 不在这封信里，或附件超过 10 MB，宿主也拒绝，不下载。
+- **只读已存的信。** 下载以后，工具再查 `messageId` 要是 `messages` 里某一行的 `gmailId`，`partId` 要在那一行的附件清单里，否则拒绝。
+- **读哪些类型。** MIME 类型和扩展名都对得上才读：`.txt`、`.md`、`.csv`、`.html` 和正文一样按附件那一段 `Content-Type` 写的 charset 解码，没写的按 UTF-8（去掉 BOM，解不了的字节换成替代字符），认不出的按 UTF-8 并在末尾写明；`.html` 再去掉 `script` 和 `style` 后转成文字，`.pdf` 交给 `pypdf` 抽文字。扫描件（读到的页里至少一半是一张图、不到 20 个字；图包在 Form XObject 里也算，最多往里找 4 层）和 `.png`、`.jpg`、`.heic`、`.tiff`、`.webp`、`.bmp` 图片交给宿主的 OCR（见 [docs/ocr.md](../ocr.md)），输出多一项 `ocr`，写引擎、读了几页、秒数和平均置信度；宿主没开 OCR 或没读成时，PDF 里本来带的字照样回来，`ocr` 只写 `failed` 原因。Office 文件、压缩包、可执行文件一律拒绝，写明是什么类型；这一步在下载以后，所以这类附件也会先下载一次。QQ 邮箱等把附件一律标成 `application/octet-stream`（或 `binary/octet-stream`、`application/x-download`、空类型）的，按扩展名选读法，`.pdf` 还要开头是 `%PDF-` 才读；类型具体却和扩展名对不上的仍然拒绝。
+- **限度。** 超过 10 MB 的附件不下载。宿主下载超过 10 秒写「附件下载超时」。PDF 最多读前 50 页，`pages` 是总页数；抽文字 6 秒读不完写「PDF 太复杂」，读 PDF 的进程内存超过 512 MB 写「PDF 太大」，有密码的写「PDF 有密码，读不了」。抽完文字后，只有不到 20 个字的页占了读到的页的一半以上，才另起一个 Python 进程看这些页是不是扫描图，它限 1.5 秒、512 MB；超时、崩溃、超内存或出错都当不是扫描件，第一步读出的文字原样回来。所以 PDF 读出的文字和失败的情形跟不认扫描件时一样，多花的时间最多 1.5 秒，不管 PDF 的结构多刁钻。文字最多 100000 字。没读完的都标 `truncated`。这些加起来在宿主给工具的 20 秒以内。
+- **不留盘，不执行。** 宿主把附件下载进这次调用的临时目录，调用结束就删掉整个目录。PDF 经管道交给 Python，不进集合，下次再问就再下载一次。要 OCR 的扫描件和图片，工具另写一份进 `files/ocr-<随机>.<扩展名>` 交给宿主，宿主读完就删，一次调用结束时 `files/` 里不多东西。HTML 里的脚本不跑，PDF 里的 JavaScript、表单动作、嵌入文件都不碰，只取文字。读 PDF 的两个 Python 进程都只拿到 `PATH` 和 `PSA_MODULE_VENV` 两个环境变量，拿不到任何密钥。
 - **附件是数据，不是指令。** 附件是发件人写的，里面写着「运行某条命令」也只是一段文字（ADR-0003）。来源开的任务本来就没有 `bash`，要运行命令只能出批准卡片，由你决定。
 
 ## 写回信草稿
@@ -72,18 +76,18 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 
 ## 五种警报和一种通知
 
-前五种是坏了、要你去修的，作为这个 feed 的警报（「邮件 来信」）亮在网页横幅上，修好之前一直在，Telegram 上拉响和解除各说一次（见 `docs/health/README.md`）。断档是一次性的消息，下一拍就不再报，所以只写一条「通知」，不亮警报，也不会过一分钟又来一条「恢复了」。
+前五种是坏了、要你去修的，亮在网页横幅上，修好之前一直在，Telegram 上拉响和解除各说一次（见 `docs/health/README.md`）。名单的四种是这个 feed 的警报（「邮件 收件箱」）。授权失效是 `mail` 连接器的警报（「mail 连接器」，编号 `connector:mail`），不管有几个 feed 用这个连接器都只有一条，文字末尾写明影响哪些 feed，例如「（影响：邮件 收件箱）」（ADR-0029）。断档是一次性的消息，下一拍就不再报，所以只写一条「通知」，不亮警报，也不会过一分钟又来一条「恢复了」；它也是连接器的问题，同一个连接器一小时内只发一条。
 
 | 文字 | 是什么 | 什么时候出 | 怎么办 |
 |---|---|---|---|
 | 邮件名单是空的…… | 警报 | 名单上没有有效的地址 | 在对话里加一个发件人 |
-| Gmail 授权失效了…… | 警报 | 换 token 时 Google 回 `invalid_grant`（改过 Google 密码、半年没用、撤销过授权） | 见下一节 |
+| Gmail 授权失效了……（影响：邮件 收件箱） | 连接器的警报 | 换 token 时 Google 回 `invalid_grant`（改过 Google 密码、半年没用、撤销过授权） | 见「授权失效怎么办」 |
 | 邮件名单里有一行划掉的地址读不出来…… | 警报 | 某行写了 `removedAt`，地址却解析不出来 | 在对话里把那一行的地址改成 `a@example.com` 或 `@example.com` |
 | 邮件名单不认通配符…… | 警报 | 某行没划掉，地址里有 `*`，例如 `*@example.com`；名单上只剩这样的行时也报它，不报名单是空的 | 在对话里把那一行改成 `@example.com` 这样的写法 |
 | 邮件名单到了 500 行…… | 警报 | 名单（连划掉的行）有 500 行或更多 | 见下面「名单太长」 |
-| 邮件：有 N 小时没查…… | 通知 | 上一次成功距今超过 24 小时，例如宿主停过 | 模块补了最近一天的信，更早的去 Gmail 里看 |
+| 邮件：有 N 小时没查……（影响：邮件 收件箱） | 通知 | 上一次成功距今超过 24 小时，例如宿主停过 | 模块补了最近一天的信，更早的去 Gmail 里看 |
 
-授权失效的那几拍不前进，修好以后从原处接着查，中间的信不会丢（不超过一天的话）。
+授权失效的那几拍不前进，修好以后从原处接着查，中间的信不会丢（不超过一天的话）。第一拍换到 token，连接器的警报就解除。
 
 ## 名单太长
 
@@ -91,10 +95,11 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 
 ## 授权失效怎么办
 
-在笔记本上重跑 `just google-auth read` 和 `just google-auth draft`，再按 `docs/deploy/gmail.md` 第 3 节第 4、5 步把四行复制到跑宿主的机器并检查。撤销任何一个都会两个一起失效，所以两个都换。下一拍就恢复，不用重启宿主。
+在笔记本上重跑 `just google-auth read` 和 `just google-auth draft`，再按 `docs/deploy/gmail.md` 第 3 节第 4、5 步把四行复制到跑宿主的机器并检查。撤销任何一个都会两个一起失效，所以两个都换。读邮件的 token 在宿主的密钥文件里，换一次，所有用 `mail` 连接器的模块一起恢复。下一拍就恢复，不用重启宿主。
 
 ## 设计上的限制
 
+- **读附件看的是此刻的名单。** 宿主下载附件前按此刻的邮件名单查发件人，划掉的人以前的信读不了附件，要读就先把他加回来，或在 Gmail 里看。
 - **名单只认 `From` 头，不验证发件人。** 模块不看 DMARC、SPF、DKIM 的结果（`Authentication-Results` 头）。有人冒用名单上的地址发信，只要 Gmail 把它放进收件箱，它就会被存下、发通知。通知第一行写的是 `From` 里的地址，不是验证过的发件人。
 - **`replyTo` 没验证过。** 它是信里自带的 Reply-To 头，谁都能写成任何地址。所以回信草稿不回给它，只回 `From` 地址，两个不一样时写明。
 - **这一版不存 DMARC 结果。** 取 `From` 的那次请求可以顺带取 `Authentication-Results`，不多花请求，但这一版没做，原因有三。信里可以夹带发件人自己写的 `Authentication-Results`，只有 Gmail 自己加的那一条（`mx.google.com`）可信，要解析对才有用。拿它卡名单会漏掉正常的转发信和邮件列表，它们常常过不了 DMARC。M2 里也没有谁用这个字段。M7 写回信草稿时也没加：草稿只回 `From` 地址，`From` 被冒用时草稿回给的是名单上真正的那个人，落不到冒用者手里。以后要加，同一次请求多取这个头，只认 `mx.google.com` 的那一条，存成 dmarc 通过或不通过，没通过的在通知和草稿里标出来。
@@ -105,4 +110,4 @@ mail 让白宫读你的 Gmail 收件箱。只收「邮件名单」上的发件�
 
 ## 试一试，不碰真账号
 
-`just module check docs/modules/examples/mail` 用 `feeds/inbox/fixtures/` 里的样例跑一遍：第一次起步、空名单、一页新信（一封名单内，一封名单外）、两页、起点太旧、断档、授权失效、HTML 正文和两个附件、主题里带换行和方向控制符、显示名是「白宫 · 系统」。样例不联网，也不用真密钥。`read-attachment` 和 `draft-reply` 要读已存的信，没有 `cases.json`，它们的检查在 `tests/integration/mail-read-attachment.test.ts` 和 `tests/integration/mail-draft-reply.test.ts`，用本地的假 Google 服务。检查只跑工具进程，不经宿主，建不出草稿。
+`just module check docs/modules/examples/mail` 用 `feeds/inbox/fixtures/` 里的 8 个样例跑一遍 handler：第一次起步、一页新信、两页、起点太旧、断档、HTML 正文和两个附件、主题里带换行和方向控制符、显示名是「白宫 · 系统」。每个样例的输入是连接器交来的信（`{"input": {"items": [信]}}`），不联网，也不用真密钥。空名单和授权失效的信到不了 handler，它们和取信、两格进度、重取、拒收、按连接器只报一次一起，在宿主的测试里用本地的假 Google 服务检查（`tests/integration/` 下的 `mail-inbox.test.ts`、`mail-connector.test.ts`、`mail-connector-host.test.ts`）。`read-attachment` 和 `draft-reply` 要读已存的信，没有 `cases.json`，它们的检查在 `tests/integration/mail-read-attachment.test.ts` 和 `tests/integration/mail-draft-reply.test.ts`，同样用假 Google 服务。检查只跑工具进程，不经宿主，建不出草稿。

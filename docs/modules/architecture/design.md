@@ -88,6 +88,7 @@ export default function insulinSensitivity(input: { fastingGlucose: number; fast
 - 文件夹里可以放任何别的文件，例如更多代码、数据表和依赖。报税样例的 `tax-bracket` 把税率表放在 `rates-2025.json` 里由代码读取，实测用例通过。
 - 工具可以联网。它在 `tool.json` 里多写一个 `"effect"`。`"read"` 表示只向外查询，`"write"` 表示会改变外面的东西。不写就是只做计算，这时 `cases.json` 必须有，每次检查都跑。
 - 要用密钥就写名字，例如 `"secrets": ["MASSIVE_API_KEY"]`。值在宿主的密钥文件里，宿主把它作为环境变量交给这个工具的进程。实测，进程拿得到写了名字的密钥，拿不到宿主别的密钥。
+- 要读邮件附件的工具写 `"fetch": "mail.attachment"`，和 `"effect": "read"` 一起写，同一个模块里要有 `mail` 连接器的 feed。宿主在运行工具代码之前查发件人此刻还在这个模块的名单上，把附件下载进这次调用的临时目录，路径放在 `input.fetched` 里交给工具，调用结束就删。工具不需要任何密钥（ADR-0029）。
 - 有一种写由宿主替模块做：`"port": "gmail.createDraft"`。工具只拼好信，回 `{ draft: { raw, threadId } }`，宿主检查后用自己拿着的 token 建 Gmail 草稿，模块拿不到这个 token。`port` 只有这一个值，只许 `mail` 模块写，要和 `"effect": "write"` 一起写（ADR-0022）。
 - **模块的代码在子进程里运行，每次调用一个新进程（S1）。** 宿主把输入写成一行 JSON 交给它，读回一行 JSON。这样做是为了热插拔和不拖累宿主，不是为了安全。一次调用崩了只是这一次失败，换了新版本不用重启宿主，停用以后没有东西留着。进程是普通的 Node 进程，没有沙箱。实测，每次调用大约 43 毫秒，包括启动 Node 和加载一个 `.ts` 文件。和备忘相比这里答得轻，S1 只取了「不进宿主进程」，没有做隔离。
 - **模块的代码有一个自己能写的地方，`files/`。** 每个工具和 feed 的进程都拿到环境变量 `PSA_MODULE_DATA`，值是这个模块的实例数据目录 `<stateDir>/modules-data/<模块>/`。代码只往其中的 `files/` 写，宿主在调用前建好它。同一个目录里的 `data.db` 和 `knowledge/` 归宿主管，代码只读。`just module purge` 删整个目录，`files/` 跟着删。检查时跑的用例和 fixtures 拿到的是一个临时目录，跑完删掉，看不到真实数据；临时 `files/` 里只链着这个模块已装好的 venv。`just module try` 的临时状态目录里是真实 `files/` 的副本，预演只写副本。
@@ -135,18 +136,19 @@ uses: knowledge, data/lab-results
 
 外面世界的每一样东西，都是经一个 feed 进来的（K5 D4）。它分两层。
 
-**连接器属于宿主，和领域无关。** 它只管怎么够到一种外部服务，授权、限速、重试都归它。第一批有八个：`inbox`、`timer`、`rss`、`http-poll`、`literature-search`、`webhook`、`mail`、`google-drive`。连接器的授权存在 `<stateDir>/connectors/`，不属于任何模块。连接器先放在宿主源码里，以后要不要能单独安装，现在不定。
+**连接器属于宿主，和领域无关。** 它只管怎么够到一种外部服务，授权、限速、重试都归它。第一批有八个：`inbox`、`timer`、`rss`、`http-poll`、`literature-search`、`webhook`、`mail`、`google-drive`。连接器用的授权代表你本人，归宿主，不属于任何模块，模块代码拿不到。今天落地的 `mail` 连接器读宿主 `secretsFile` 里的 Gmail 授权（ADR-0029）。连接器先放在宿主源码里，以后要不要能单独安装，现在不定。
 
 **feed 属于模块，是一份声明。** `feed.json` 回答四个问题：看什么，多久看一次，要你填什么，结果去哪里。结果的去处是一类数据（`into`），或者一条给幕僚长的触发（`notice`），或者两样都有。
 
 ```json
-{ "title": "医院发来的邮件", "connector": "mail", "every": "15m",
-  "ask": { "senders": { "title": "哪些发件人是医院或体检机构", "type": "email-list" } },
-  "into": "documents", "notice": "邮箱里有一份医院发来的报告已经归档。" }
+{ "title": "网盘里的体检报告", "connector": "google-drive", "every": "1h",
+  "ask": { "folder": { "title": "体检报告放在哪个文件夹", "type": "drive-folder" } },
+  "into": "documents", "notice": "网盘里有一份新的体检报告已经归档。" }
 ```
 
 - 一个 feed 只属于一个模块，来源名是 `<模块>/<feed>`。几个模块可以用同一个连接器，各有各的设置和进度。
-- 给已有的连接器再加一个 feed，不写代码。多放一个 `feeds/<名字>/feed.json` 就行。医疗样例四个 feed 里有三个是纯声明。
+- 给已有的连接器再加一个 feed，不写代码。多放一个 `feeds/<名字>/feed.json` 就行。医疗样例四个 feed 里有两个是纯声明。`mail` 连接器例外，见下一条。
+- **`mail` 连接器的 feed 要带 handler（ADR-0029）。** feed 写 `"connector": "mail"`，还必须写 `handler`、`every`、写进私密集合的 `into`，和 `settings.senders`：一组地址和 `@域名`，或者本模块一个集合的名字（集合要有文字字段 `address`）。连接器只取名单内的信的正文，一次调用交给 handler 一封（`items: [letter]`），名单外的信 handler 看不到。所以几个模块共用这个连接器时，每个模块只收到自己名单上的信，隔离照旧（ADR-0018）。连接器的位置 `connectorCursor` 和 handler 的 `cursor` 分两格存，handler 看不到前一格。一批信全部处理完或拒收以后，`connectorCursor` 才往前走；handler 失败，下一拍重取同一批，同一封信失败 3 次就拒收。授权失效和隔了一天没查是连接器的问题，宿主只拉响一个警报 `connector:mail`，写明影响哪些 feed；名单写错这类是 feed 自己的问题，照旧按 feed 报。
 - **接一种宿主没有连接器的服务，模块自己带代码。** `feed.json` 写 `"handler": "index.ts"`，这段代码直接联网，私密数据也可以。报税样例的 `brokerage-statements` 就是这样去一个虚构的券商接口取交易记录，用到的密钥只写名字。实测，用样例应答代替网络运行这段代码，得到两行记录、一条触发和新的进度。
 - feed 的代码是一个「输入到输出」的函数。宿主的调度器到点调用它，把连接器给的内容、你填的设置、上次的进度交给它，拿回要存的行、要发的触发和新的进度。存、发、记进度都由宿主做。同一批内容跑两次，行和触发按 `id` 去重。
 - 一次调用默认最多 20 秒。要更久的 feed 在 `feed.json` 写 `"limit"`，例如 `"5m"`，最多 `"10m"`，调度器照这个时限停掉这一次调用。模块关掉或宿主停下时，调度器马上杀掉还在跑的调用的整个进程组。
