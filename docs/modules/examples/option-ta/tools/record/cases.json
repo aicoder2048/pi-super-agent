@@ -1,5 +1,25 @@
 [
-  { "name": "manual-fill-is-not-validated-or-written", "input": { "operation": "validate", "fill": "{\"fill_id\":\"fictional-1\",\"account_ref\":\"QRSTalfa\",\"qty\":1,\"price\":\"2.1000\"}" }, "responses": {}, "expect": { "status": "NOT_IMPLEMENTED", "reason": "成交/事件校验、fill_id查重、累计成交增量和冲销校验尚未实现；未读取数据库、未验证、未入账，领队不得据此写成交。" } },
-  { "name": "missing-fields-do-not-pass-validation", "input": { "fill": "{}" }, "responses": {}, "expect": { "status": "NOT_IMPLEMENTED", "reason": "成交/事件校验、fill_id查重、累计成交增量和冲销校验尚未实现；未读取数据库、未验证、未入账，领队不得据此写成交。" } },
-  { "name": "duplicate-check-does-not-claim-unique", "input": { "operation": "duplicate-check", "fill": "{\"fill_id\":\"fictional-1\"}" }, "responses": {}, "expect": { "status": "NOT_IMPLEMENTED", "reason": "成交/事件校验、fill_id查重、累计成交增量和冲销校验尚未实现；未读取数据库、未验证、未入账，领队不得据此写成交。" } }
+  { "name": "缺账户：不拼订单键，交回要问使用者的话", "data": "tools/ledger/fixtures/data",
+    "input": { "side": "STO", "underlying": "TSLA", "right": "call", "strike": "300", "expiry": "2026-12-18", "cum_qty": 2, "avg_price": "2.10", "trade_date": "2026-11-17" },
+    "expect": { "status": "needs-input", "missing": ["account_ref"], "ask": ["缺账户：问使用者记在哪个账户（账户短码）"] } },
+  { "name": "费用未知：照记，佣金和费用留空不当零", "data": "tools/ledger/fixtures/data",
+    "input": { "account_ref": "acct-blue", "side": "STO", "underlying": "TSLA", "right": "call", "strike": "300", "expiry": "2026-12-18", "cum_qty": 2, "avg_price": "2.10", "trade_date": "2026-11-17" },
+    "expect": { "status": "ok", "fill_id": "TSLA261218C00300000:STO:2026-11-17:acct-blue:cum2", "order_key": "TSLA261218C00300000:STO:2026-11-17:acct-blue", "qty": 2, "price": "2.1000",
+      "unknown": ["commission", "fees", "order_id", "trade_time"], "notes": ["费用未知：留空，不当零", "合约乘数按标准 100 记；调整合约要问清乘数和交割物"],
+      "row": { "record_type": "FILL", "fill_id": "TSLA261218C00300000:STO:2026-11-17:acct-blue:cum2", "account_ref": "acct-blue", "option_symbol": "TSLA261218C00300000", "right": "call", "strike": 300, "expiry": "2026-12-18", "multiplier": 100, "side": "STO", "qty": 2, "price": "2.1000", "cum_qty": 2, "partial_fill": "false", "commission": null, "fees": null, "source": "manual" } } },
+  { "name": "费用已知：按 4 位小数存", "data": "tools/ledger/fixtures/data",
+    "input": { "account_ref": "acct-blue", "side": "BTO", "underlying": "QQQ", "right": "put", "strike": "600", "expiry": "2026-12-18", "cum_qty": 1, "avg_price": "4.5", "trade_date": "2026-11-17", "commission": "0.65", "fees": "0.02" },
+    "expect": { "status": "ok", "unknown": ["order_id", "trade_time"], "row": { "commission": "0.6500", "fees": "0.0200", "price": "4.5000" } } },
+  { "name": "重复 fill_id：邮件已经记过这一单，不再记", "data": "tools/ledger/fixtures/data",
+    "input": { "account_ref": "QRSTalfa", "side": "STO", "underlying": "AAPL", "right": "call", "strike": "250", "expiry": "2026-03-20", "cum_qty": 12, "avg_price": "3.15", "trade_date": "2026-03-05" },
+    "expect": { "status": "duplicate", "fill_id": "AAPL260320C00250000:STO:2026-03-05:QRSTalfa:cum12", "existing_row": "5" } },
+  { "name": "部分成交合计：已记 5+3 张，累计到 10 张均价 12.10，只记 2 张", "data": "tools/ledger/fixtures/data",
+    "input": { "account_ref": "QRSTalfa", "side": "STO", "underlying": "MSFT", "right": "put", "strike": "400", "expiry": "2026-03-27", "cum_qty": 10, "avg_price": "12.10", "open_qty": 5, "trade_date": "2026-03-02" },
+    "expect": { "status": "ok", "fill_id": "MSFT260327P00400000:STO:2026-03-02:QRSTalfa:cum10", "qty": 2, "price": "12.2000", "row": { "qty": 2, "cum_qty": 10, "partial_fill": "true" } } },
+  { "name": "累计数没超过已记的张数：不用再记", "data": "tools/ledger/fixtures/data",
+    "input": { "account_ref": "QRSTalfa", "side": "STO", "underlying": "MSFT", "right": "put", "strike": "400", "expiry": "2026-03-27", "cum_qty": 6, "avg_price": "12.05", "trade_date": "2026-03-02" },
+    "expect": { "status": "covered", "fill_id": "MSFT260327P00400000:STO:2026-03-02:QRSTalfa:cum6" } },
+  { "name": "方向写错：不拼行，说哪里不对", "data": "tools/ledger/fixtures/data",
+    "input": { "account_ref": "acct-blue", "side": "SELL", "underlying": "TSLA", "right": "call", "strike": "300", "expiry": "2026-12-18", "cum_qty": 2, "avg_price": "2.10", "trade_date": "2026-11-17" },
+    "expect": { "status": "invalid", "problems": ["side 要是 STO、BTO、BTC 或 STC"] } }
 ]

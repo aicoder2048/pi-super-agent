@@ -1,13 +1,38 @@
 {
   "title": "成交校验与查重",
-  "description": "按 fill_id 校验和查重接口；当前固定 NOT_IMPLEMENTED，不声称已验证，不读写库或入账",
+  "description": "校验使用者口述的一笔期权成交，按订单键算累计增量、拼 fill_id、只读查重，交回领队用 data/fills 写的规整行；不写库",
   "effect": "read",
   "input": {
-    "fill": { "type": "text", "title": "拟记原始成交或事件的 JSON 文本" },
-    "operation": { "type": "text", "title": "validate 或 duplicate-check" }
+    "account_ref": { "type": "text", "title": "账户短码，缺就问使用者" },
+    "account_key": { "type": "text", "title": "匿名账户键，可不给" },
+    "side": { "type": "text", "title": "STO、BTO、BTC 或 STC" },
+    "underlying": { "type": "text", "title": "标的代码" },
+    "right": { "type": "text", "title": "put 或 call" },
+    "strike": { "type": "text", "title": "行权价，十进制文字，最多 3 位小数" },
+    "expiry": { "type": "text", "title": "到期日 YYYY-MM-DD" },
+    "cum_qty": { "type": "number", "title": "这一单到现在累计成交的张数；整单成交就是张数" },
+    "avg_price": { "type": "text", "title": "累计成交均价，每股 USD，最多 4 位小数" },
+    "open_qty": { "type": "number", "title": "还挂着没成交的张数，没有就不给" },
+    "trade_date": { "type": "text", "title": "成交日 YYYY-MM-DD（美东）" },
+    "settle_date": { "type": "text", "title": "交割日 YYYY-MM-DD，可不给" },
+    "multiplier": { "type": "number", "title": "合约乘数，标准合约不给（按 100）" },
+    "commission": { "type": "text", "title": "佣金 USD，不知道就不给，不要写 0" },
+    "fees": { "type": "text", "title": "其他费用 USD，不知道就不给，不要写 0" }
   },
   "output": {
-    "status": { "type": "text", "title": "固定 NOT_IMPLEMENTED" },
-    "reason": { "type": "text", "title": "未实现的校验及停止入账说明" }
+    "status": { "type": "text", "title": "ok、duplicate、covered、conflict、needs-input 或 invalid" },
+    "fill_id": { "type": "text", "title": "<订单键>:cum<累计张数>，原样照抄" },
+    "order_key": { "type": "text", "title": "<OCC>:<方向>:<成交日>:<账户短码>" },
+    "qty": { "type": "number", "title": "这次要记的增量张数" },
+    "price": { "type": "text", "title": "增量的每股价格，4 位小数" },
+    "row": { "type": "text", "title": "ok 时领队用 data/fills 原样写进去的一行" },
+    "missing": { "type": "text", "title": "needs-input 时缺的字段" },
+    "ask": { "type": "text", "title": "needs-input 时要问使用者的话" },
+    "problems": { "type": "text", "title": "invalid 时哪里不对" },
+    "existing_row": { "type": "text", "title": "duplicate 时已记那一行的行号" },
+    "unknown": { "type": "text", "title": "留空待确认的字段" },
+    "notes": { "type": "text", "title": "提醒，例如费用未知" },
+    "detail": { "type": "text", "title": "conflict 时的原因：recorded-rows、reversed-order、conflicts-with-recorded 或 nonpositive-increment" },
+    "note": { "type": "text", "title": "covered 时的说明" }
   }
 }
