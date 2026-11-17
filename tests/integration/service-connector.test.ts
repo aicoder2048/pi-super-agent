@@ -203,13 +203,13 @@ test("日志行：外部调用第一段写提供方、第二段写提供方的�
 	assert.match(logs[1]!, /^\[gateway\] beta tools\/own tkt_1 analyst request ok \d+ ms$/);
 });
 
-test("目录：专家的 domain_tool 照列 uses 里的外部工具；A 在时说明取自 A 的 tool.json，A 不在时写「现在用不了」", async (t) => {
+test("目录：专家的 domain_tool 照列 uses 里的外部工具；A 在时说明取自 A 的 tool.json，A 不在时写「现在用不了」；都带「以调用结果为准」", async (t) => {
 	const { gateway, caller, serving } = setup(t);
 	const line = (name: string) => gateway.catalogue(caller()).find((e) => e.name === name);
-	assert.deepEqual(line("alpha/tools/level"), { request: "tool", name: "alpha/tools/level", title: "价位", help: "价位的说明 输入：code（text，代码）。输出：level（number，价位）。" });
+	assert.deepEqual(line("alpha/tools/level"), { request: "tool", name: "alpha/tools/level", title: "价位", help: "价位的说明 输入：code（text，代码）。输出：level（number，价位）。说明取自启动时，以调用结果为准。" });
 	assert.equal(line("own")?.title, "本模块");
 	serving.delete("alpha");
-	assert.deepEqual(line("alpha/tools/level"), { request: "tool", name: "alpha/tools/level", title: "alpha/tools/level", help: "alpha 现在用不了，调用会回原因" });
+	assert.deepEqual(line("alpha/tools/level"), { request: "tool", name: "alpha/tools/level", title: "alpha/tools/level", help: "alpha 现在用不了，调用会回原因。说明取自启动时，以调用结果为准。" });
 	assert.equal(gateway.catalogue(caller({ member: "writer" })).some((e) => e.name.startsWith("alpha/")), false, "writer 的 uses 没写外部工具");
 });
 

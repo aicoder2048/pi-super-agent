@@ -128,6 +128,7 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 			serving: (module) => live.current().book.get(module)?.digest as Digest | undefined,
 			dataDir: (module) => moduleDataDir(config.stateDir, module),
 			rows,
+			toolCalls: rows,
 			secret: moduleSecret,
 			log,
 			fetch: { "mail.attachment": (module, components, input, dir) => fetchAttachment({ account: mail, rows, now: Date.now }, module, components, input, dir) },
