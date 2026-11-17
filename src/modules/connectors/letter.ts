@@ -127,7 +127,13 @@ const decode = (part: Part) => decodeText(Buffer.from(part.body?.data ?? "", "ba
 
 const inline = (parts: readonly Part[], mimeType: string) => parts.find((p) => !p.filename && p.body?.data && p.mimeType === mimeType);
 
-/** A cut that leaves half a tag or half a table row would hand a parser a row with a cell missing. */
+/** An open row longer than this is a layout table wrapping the whole letter, not a data row. */
+const ROW_BACKTRACK = 4 * 1024;
+
+/**
+ * A cut that leaves half a tag or half a table row would hand a parser a row with a cell missing.
+ * Known gaps: a `>` inside an attribute value hides a half tag, and a cut inside an entity such as `&amp;` keeps its first half.
+ */
 function clipHtml(html: string): string {
 	const clipped = clipBytes(html, HTML);
 	if (clipped === html) return html;
@@ -136,7 +142,7 @@ function clipHtml(html: string): string {
 	let end = kept.length;
 	if (lower.lastIndexOf("<") > lower.lastIndexOf(">")) end = lower.lastIndexOf("<");
 	const row = lower.lastIndexOf("<tr", end - 1);
-	if (row > lower.lastIndexOf("</tr>", end - 1)) end = row;
+	if (row > lower.lastIndexOf("</tr>", end - 1) && end - row <= ROW_BACKTRACK) end = row;
 	return kept.slice(0, end) + HTML.cut;
 }
 

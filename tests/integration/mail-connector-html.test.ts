@@ -149,3 +149,20 @@ test("HTML 最多 256 KB，比正文的 64 KB 宽：超出的按字截断，末�
 	const under: GmailMessage = { id: "m-wide", payload: { mimeType: "text/html", body: { data: b64(wide) } } };
 	assert.equal(letterOf(under, DESK_BOX).html, wide, "比正文的 64 KB 大、不到 256 KB 的 HTML 不截");
 });
+
+const CUT = "\n\n[HTML 超过 256 KB，后面截掉了，全文在 Gmail 里看]";
+const ROOM = 256 * 1024 - Buffer.byteLength(CUT);
+const htmlLetter = (html: string): GmailMessage => ({ id: "m-cut", payload: { mimeType: "text/html", body: { data: b64(html) } } });
+
+test("整封信包在一张外层布局表格里、超过 256 KB：截断只往回退到标签边界，不退到开头", () => {
+	const html = letterOf(htmlLetter(`<table><tr><td>${"<p>成交回报</p>".repeat(30_000)}</td></tr></table>`), DESK_BOX).html!;
+	assert.ok(Buffer.byteLength(html) > 250 * 1024, `只剩 ${Buffer.byteLength(html)} 字节`);
+	const kept = html.slice(0, -CUT.length);
+	assert.ok(kept.lastIndexOf("<") < kept.lastIndexOf(">"), `不留半个标签：${kept.slice(-40)}`);
+});
+
+test("表格外截在半个标签中间：退到那个标签前面，不留半个标签", () => {
+	const filler = `<div>${"a".repeat(ROOM - "<div>".length - "<p cla".length)}`;
+	const html = letterOf(htmlLetter(`${filler}<p class="z">tail</p>${"b".repeat(1024)}`), DESK_BOX).html!;
+	assert.equal(html, filler + CUT);
+});
