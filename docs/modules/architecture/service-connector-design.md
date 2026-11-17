@@ -146,7 +146,7 @@ stock-ta 今天有一个 `private` 集合 `holdings`（持仓，PR #146 加的�
 | 持仓提醒在 Telegram、网页上怎么显示 | 不变。宿主没有按集合 `class` 收起显示的代码。持仓提醒行带成本和止损价，今天就照全文到 Telegram，因为它是 `quotes` feed 的提醒；给幕僚长的触发不写持仓数字，是模块代码守的（`stock-ta-rules-design.md` 第 333 行） |
 | `data`、`watch` 的回复和 `domain_tool` 目录 | 回复里的 `class` 字段（`instance-data.ts`）和目录里集合的说明（`src/modules/gateway.ts` 第 198 行，「record，private」）从 `private` 变成 `shareable`。这是给模型看的字，没有代码按它分支。模型会不会因此对持仓少一分小心，没验证过，是猜测 |
 | `just module check` 的摘要行 | `data-classes=` 那一段从 `shareable:N,private:1` 变成 `shareable:N+1,private:0` |
-| 已存的行 | 不变。`structureChanges` 和 `data.check` 不比对 `class`，换版本不报问题、不迁移，行原样留着。包的 digest 变了，按普通升级走 |
+| 已存的行 | 不变。`structureChanges` 和 `data.check` 不比对 `class`，换版本不报问题，行原样留着。C4c 实测：`migrate` 照常跑一次，只把 `_structure` 里记的 `class` 改写成 `shareable`，表结构和行都不动；退回旧包时再改写回去。包的 digest 变了，按普通升级走 |
 | 备份 | 不变。宿主代码里没有按 `class` 区分的备份 |
 | 规则 7 和 C4c 的 `exports` | stock-ta 没有私密集合了，检查放行它的 `exports` |
 
