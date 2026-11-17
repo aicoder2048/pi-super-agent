@@ -220,14 +220,15 @@ test("技能 holdings：只照使用者亲口说的写，改动写整行，不�
 	assert.match(levels, /技能 `holdings`/);
 });
 
-/** Stands for the package the old Mac runs before C4c: holdings private, no exports. */
+/** Stands for the package the old Mac runs before C4c: the old class on the collection, no exports. */
+const OLD_CLASS = "private";
 function packageBeforeC4c(t: TestContext): string {
 	const root = mkdtempSync(join(tmpdir(), "psa-holdings-old-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const old = join(root, "stock-ta");
 	cpSync(PKG, old, { recursive: true });
 	const collection = join(old, "data/holdings/collection.json");
-	writeFileSync(collection, JSON.stringify({ ...JSON.parse(readFileSync(collection, "utf8")), class: "private" }));
+	writeFileSync(collection, JSON.stringify({ ...JSON.parse(readFileSync(collection, "utf8")), class: OLD_CLASS }));
 	const manifest = join(old, "module.json");
 	const { exports: _, ...before } = JSON.parse(readFileSync(manifest, "utf8"));
 	writeFileSync(manifest, JSON.stringify(before));
@@ -240,7 +241,7 @@ const componentsOf = (dir: string) => {
 	return result.scan.components;
 };
 
-test("升级：旧版（holdings 是 private）写下的持仓行，换成新包后原样在，数据结构检查不报问题，持仓规则照常命中；退回旧包也照常读", (t) => {
+test("升级：旧版（集合级别还是旧的）写下的持仓行，换成新包后原样在，数据结构检查不报问题，持仓规则照常命中；退回旧包也照常读", (t) => {
 	const state = mkdtempSync(join(tmpdir(), "psa-holdings-upgrade-"));
 	t.after(() => rmSync(state, { recursive: true, force: true }));
 	const data = instanceData(state);
@@ -266,5 +267,6 @@ test("升级：旧版（holdings 是 private）写下的持仓行，换成新包
 	assert.deepEqual(data.check(module, oldComponents), [], "退回旧包：检查也不报问题");
 	assert.deepEqual(data.migrate(module, oldComponents), { ok: true });
 	assert.deepEqual(stored(oldComponents), before);
-	assert.equal(data.query(module, oldComponents, "holdings", {}, "test").class, "private");
+	const back = data.query(module, oldComponents, "holdings", {}, "test");
+	assert.equal(back.class, OLD_CLASS);
 });

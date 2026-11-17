@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -55,8 +55,13 @@ test("用例带夹具数据目录：工具读到夹具里的文件；同一次�
 	assert.deepEqual(problems(root), []);
 });
 
-test("用例在夹具的一份副本上跑：工具改了数据目录，包里的夹具不变", (t) => {
-	const root = pkg(t, { reader: [FROM_FIXTURE] });
+test("用例在夹具的一份副本上跑：工具改了数据目录，包里的夹具不变；夹具里指向别处的链接不复制", (t) => {
+	const root = pkg(t, { reader: [FROM_FIXTURE, { ...WITHOUT_DATA, name: "链接到包外的文件不复制", data: "tools/reader/fixtures/linked" }] });
+	const outside = mkdtempSync(join(tmpdir(), "psa-check-real-level-"));
+	t.after(() => rmSync(outside, { recursive: true, force: true }));
+	writeFileSync(join(outside, "level.txt"), "99");
+	mkdirSync(join(root, "tools/reader/fixtures/linked"));
+	symlinkSync(outside, join(root, "tools/reader/fixtures/linked/files"));
 	assert.deepEqual(problems(root), []);
 	assert.equal(readFileSync(join(root, "tools/reader/fixtures/data/files/level.txt"), "utf8"), "42");
 });
@@ -80,6 +85,11 @@ test("夹具数据目录不在包里、不是目录：检查报错", (t) => {
 		const root = pkg(t, { reader: [{ ...FROM_FIXTURE, data }] });
 		assert.match(problems(root).join("\n"), /tools\/reader\/cases\.json: case "夹具里的价位" has "data" .* a folder of this package/, data);
 	}
+	const linked = pkg(t, { reader: [{ ...FROM_FIXTURE, data: "tools/reader/outside" }] });
+	const outside = mkdtempSync(join(tmpdir(), "psa-check-outside-"));
+	t.after(() => rmSync(outside, { recursive: true, force: true }));
+	symlinkSync(outside, join(linked, "tools/reader/outside"));
+	assert.match(problems(linked).join("\n"), /has "data" "tools\/reader\/outside", which is not a folder of this package/, "包里指向外面的链接");
 	const root = pkg(t, { fetcher: [{ ...REPLAYED, responses: ["x"] }] });
 	assert.match(problems(root).join("\n"), /case "回放的应答" has "responses" that is not an object/);
 });

@@ -17,7 +17,7 @@ import { describe, initialRecord, problemText, type Effect, type ModuleEvent, ty
 import { CopiesInUse, drive, liveRegistry, ModuleStore, switchEvent } from "../modules/live.ts";
 import { exportChanges, type Digest, type ModuleName, type PackageScan, type Problem, type ScanResult } from "../modules/manifest.ts";
 import type { LiveRegistry } from "../modules/registry.ts";
-import { digestOf, hasCases, runCasesAsync, scanPackage, secretNames } from "../modules/validate.ts";
+import { digestOf, exportedSide, hasCases, runCasesAsync, scanPackage, secretNames } from "../modules/validate.ts";
 import { watchModules, type Saved } from "../modules/watch.ts";
 
 const POLL_MS = 500;
@@ -137,8 +137,7 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 	const noteExportChanges = (name: string, scan: PackageScan) => {
 		const serving = servingOf(name);
 		if (serving === undefined || serving.digest === scan.digest || exportNotices.get(name)?.digest === scan.digest) return;
-		const old = scanPackage(store.dirOf(name as ModuleName, serving.digest), { runCases: false, folder: name });
-		const notices = old.ok ? exportChanges({ exports: old.scan.manifest.exports ?? [], components: old.scan.components }, { exports: scan.manifest.exports ?? [], components: scan.components }) : [];
+		const notices = exportChanges(exportedSide(store.dirOf(name as ModuleName, serving.digest), name), { exports: scan.manifest.exports ?? [], components: scan.components });
 		exportNotices.set(name, { digest: scan.digest, notices });
 	};
 	const check = (name: string, entry: Found, version: Version): ModuleEvent | "wait" => {

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { EVERY, everyMs } from "./connectors/timer.ts";
@@ -8,7 +8,7 @@ import { feedInput, intoOf, nothingHeld, parseCollected } from "./feed-runner.ts
 import { linkVenvs, lockOf, PY_DIR, venvDir, venvInstalled } from "./files.ts";
 import { fixtureSecrets, runModuleCode, runModuleCodeAsync, type CodeReply, type CodeSite, type RunOptions, type Secrets } from "./run-code.ts";
 import { identityNote } from "./identity-secrets.ts";
-import { CONNECTORS, DATA_CLASSES, externalTool, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, exportChanges, RUNTIMES, structureChanges, TOOL_EFFECTS, TOOL_FETCHES, TOOL_PORTS, toolEffect, type ToolFetch } from "./manifest.ts";
+import { CONNECTORS, DATA_CLASSES, externalTool, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, exportChanges, type ExportedSide, RUNTIMES, structureChanges, TOOL_EFFECTS, TOOL_FETCHES, TOOL_PORTS, toolEffect, type ToolFetch } from "./manifest.ts";
 import { LINE_MAX_LINES, placeholders } from "./release.ts";
 import type {
 	AgentDescriptor, CapabilityUse, CollectionDescriptor, Component, ComponentName, Digest, FeedDescriptor, FeedFixture, FieldDescriptor, KindDir, MemberTool, ModuleManifest, ModuleName, PackageScan, Problem, RuleRef, Runtime, ScanResult, ToolCase, ToolDescriptor, ToolPort,
@@ -333,7 +333,7 @@ function readTool(report: Report, root: string, name: string): Component | undef
 
 function isPackageFolder(root: string, path: string): boolean {
 	const full = resolve(root, path);
-	return full.startsWith(`${root}/`) && existsSync(full) && statSync(full).isDirectory();
+	return full.startsWith(`${root}/`) && existsSync(full) && statSync(full).isDirectory() && realpathSync(full).startsWith(`${realpathSync(root)}/`);
 }
 
 function readSkill(report: Report, root: string, name: string): Component | undefined {
@@ -616,7 +616,9 @@ type Scratch = { dir: string; drop(): void; explain(problem: Problem): Problem }
 /** A check never shows module code the module's real data: each fixture folder, and no fixture, gets its own data dir, deleted after the last case. */
 function scratchData(packageDir: string, module: string, realDataDir: string | undefined, seed: string | undefined): Scratch {
 	const dir = mkdtempSync(join(tmpdir(), "psa-check-data-"));
-	if (seed !== undefined) cpSync(join(packageDir, seed), dir, { recursive: true });
+	// A link inside the fixture could reach the module's real data; the copy leaves out what resolves outside the package.
+	const inPackage = `${realpathSync(packageDir)}/`;
+	if (seed !== undefined) cpSync(join(packageDir, seed), dir, { recursive: true, filter: (source) => realpathSync(source).startsWith(inPackage) });
 	if (realDataDir !== undefined) linkVenvs(realDataDir, dir);
 	const lock = lockOf(packageDir);
 	const noVenv = lock !== undefined && (realDataDir === undefined || !venvInstalled(realDataDir, lock));
@@ -748,15 +750,18 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, d
 		return note === undefined ? [] : [`${where}: ${note}`];
 	}));
 	if (previous !== undefined && problems.length === 0) {
-		const before = readComponents(() => undefined, resolve(previous));
-		const changes = structureChanges(before, components);
+		const before = exportedSide(resolve(previous), manifest.name);
+		const changes = structureChanges(before.components, components);
 		problems.push(...changes.problems);
 		notes.push(...changes.notes);
-		notes.push(...exportChanges({ exports: readManifest(() => undefined, resolve(previous), manifest.name)?.exports ?? [], components: before }, { exports: manifest.exports ?? [], components }));
+		notes.push(...exportChanges(before, { exports: manifest.exports ?? [], components }));
 	}
 	if (problems.length > 0) return rejected(manifest.name);
 	return { ok: true, scan: { dir: root, manifest, components, rules, digest: digestOf(root), notes } };
 }
+
+/** An older version as `exportChanges` reads it, without checking it again: the rules it was accepted under may have changed since. */
+export const exportedSide = (dir: string, module: string): ExportedSide => ({ exports: readManifest(() => undefined, dir, module)?.exports ?? [], components: readComponents(() => undefined, dir) });
 
 export const problemLine = (problem: Problem): string => `${problem.where}: ${problem.reason}`;
 

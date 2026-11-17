@@ -1590,6 +1590,9 @@ test("页面：开放了工具的模块卡写谁在用；这一版改了开放�
 	const [used, solo] = page.leftColumn(view, 0).modules;
 	assert.deepEqual(used.lines, ["技能 1", "谁在用 option-ta、mail", `提醒 ${notice}`]);
 	assert.deepEqual(solo.lines, ["技能 1"]);
+	const { notices: _n, usedBy: _u, ...older } = taxCard();
+	page.applyMessage(view, { ...board([]), modules: [older] } as HostToClient, 0);
+	assert.deepEqual(page.leftColumn(view, 0).modules[0].lines, ["技能 1"], "回退后旧宿主发的卡片没有这两个字段");
 });
 
 test("网关：POST /module 写开关，回 204；要 token、本机 Origin、JSON 正文；没发现的模块、不合格的正文 400；GET 405", async (t) => {

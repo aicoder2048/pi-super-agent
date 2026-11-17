@@ -145,3 +145,9 @@ test("谁在用：提供方 _tool_calls 里的调用方模块，不列提供方�
 	assert.deepEqual(data.callersOf("delta" as ModuleName), []);
 	assert.equal(existsSync(moduleDataDir(stateDir, "delta" as ModuleName)), false, "读谁在用不建数据目录");
 });
+
+test("谁在用：data.db 读不出来时回空，不抛异常（看板的定时刷新会调它）", (t) => {
+	const { stateDir } = setup(t);
+	mkdirSync(join(moduleDataDir(stateDir, "alpha" as ModuleName), "data.db"), { recursive: true });
+	assert.deepEqual(instanceData(stateDir).callersOf("alpha" as ModuleName), []);
+});
