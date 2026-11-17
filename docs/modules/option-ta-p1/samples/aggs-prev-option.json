@@ -1,0 +1,30 @@
+{
+ "recorded": {
+  "at": "2026-11-17T09:29Z 至 09:36Z（美东 04:29 至 04:36，周二盘前，上一个交易时段是 11-16 周一）",
+  "request": "GET https://api.massive.com/v2/aggs/ticker/O:SPY261120P00730000/prev",
+  "status": 200,
+  "note": "期权合约的上一交易日日线；原样"
+ },
+ "body": {
+  "ticker": "O:SPY261120P00730000",
+  "queryCount": 1,
+  "resultsCount": 1,
+  "adjusted": true,
+  "results": [
+   {
+    "T": "O:SPY261120P00730000",
+    "v": 26946,
+    "vw": 3.2043,
+    "o": 1.75,
+    "c": 3.72,
+    "h": 4.81,
+    "l": 1.75,
+    "t": 1794862800000,
+    "n": 3142
+   }
+  ],
+  "status": "OK",
+  "request_id": "655862c1592adf8a0d5a317e9d57707c",
+  "count": 1
+ }
+}

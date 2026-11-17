@@ -1,0 +1,30 @@
+{
+ "recorded": {
+  "at": "2026-11-17T09:29Z 至 09:36Z（美东 04:29 至 04:36，周二盘前，上一个交易时段是 11-16 周一）",
+  "request": "GET https://api.massive.com/v2/aggs/ticker/SPY/prev",
+  "status": 200,
+  "note": "正股上一交易日日线，用来和快照里的 underlying_asset.price 对照；原样"
+ },
+ "body": {
+  "ticker": "SPY",
+  "queryCount": 1,
+  "resultsCount": 1,
+  "adjusted": true,
+  "results": [
+   {
+    "T": "SPY",
+    "v": 69207282.0,
+    "vw": 743.5417,
+    "o": 749.66,
+    "c": 739.95,
+    "h": 749.82,
+    "l": 738.07,
+    "t": 1794819600000,
+    "n": 849956
+   }
+  ],
+  "status": "OK",
+  "request_id": "a90e69c757b7fd395aa79417c1816f17",
+  "count": 1
+ }
+}

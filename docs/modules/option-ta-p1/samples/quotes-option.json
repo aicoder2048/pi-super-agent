@@ -1,0 +1,35 @@
+{
+ "recorded": {
+  "at": "2026-11-17T09:29Z 至 09:36Z（美东 04:29 至 04:36，周二盘前，上一个交易时段是 11-16 周一）",
+  "request": "GET https://api.massive.com/v3/quotes/O:SPY261120P00730000?limit=2",
+  "status": 200,
+  "note": "逐笔报价历史，这个 key 能读；原样（第一版不用，留作证据）"
+ },
+ "body": {
+  "results": [
+   {
+    "ask_exchange": 307,
+    "ask_price": 3.75,
+    "ask_size": 11,
+    "bid_exchange": 316,
+    "bid_price": 3.72,
+    "bid_size": 42,
+    "sequence_number": 1745826007,
+    "sip_timestamp": 1794863697027749797
+   },
+   {
+    "ask_exchange": 301,
+    "ask_price": 3.72,
+    "ask_size": 12,
+    "bid_exchange": 300,
+    "bid_price": 3.7,
+    "bid_size": 15,
+    "sequence_number": 1745406570,
+    "sip_timestamp": 1794863690098464864
+   }
+  ],
+  "status": "OK",
+  "request_id": "039cf37ca3b9d80a94b7ba2232b7f029",
+  "next_url": "https://api.massive.com/v3/quotes/O:SPY261120P00730000?cursor=YXA9MTc0NTQwNjU3MCZhcz0mbGltaXQ9MiZvcmRlcj1kZXNjJnNvcnQ9dGltZXN0YW1wJnRpbWVzdGFtcC5sdGU9MjAyNi0xMS0xNlQyMSUzQTE0JTNBNTAuMDk4NDY0ODY0Wg"
+ }
+}

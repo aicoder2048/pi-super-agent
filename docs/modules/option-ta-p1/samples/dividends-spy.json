@@ -1,0 +1,39 @@
+{
+ "recorded": {
+  "at": "2026-11-17T09:29Z 至 09:36Z（美东 04:29 至 04:36，周二盘前，上一个交易时段是 11-16 周一）",
+  "request": "GET https://api.massive.com/v3/reference/dividends?ticker=SPY&limit=3",
+  "status": 200,
+  "note": "默认按除息日倒序；原 3 行留 2 行"
+ },
+ "body": {
+  "results": [
+   {
+    "cash_amount": 1.888834,
+    "currency": "USD",
+    "declaration_date": "2026-01-02",
+    "dividend_type": "CD",
+    "ex_dividend_date": "2026-09-18",
+    "frequency": 4,
+    "id": "Ee200185c7d52210a3545572d52692ac2d3ffce754c2016fba5b7951bbbd2b570",
+    "pay_date": "2026-10-30",
+    "record_date": "2026-09-18",
+    "ticker": "SPY"
+   },
+   {
+    "cash_amount": 1.903516,
+    "currency": "USD",
+    "declaration_date": "2026-01-02",
+    "dividend_type": "CD",
+    "ex_dividend_date": "2026-06-18",
+    "frequency": 4,
+    "id": "E5f8cb568f1ff3bfec9921c115d5ff8bc4c86def1dbc616a3c7e18e45e4ed7f06",
+    "pay_date": "2026-07-31",
+    "record_date": "2026-06-18",
+    "ticker": "SPY"
+   }
+  ],
+  "status": "OK",
+  "request_id": "dda75a72dd78cffee08062dc838641f7",
+  "next_url": "https://api.massive.com/v3/reference/dividends?cursor=YXA9MyZhcz0mbGltaXQ9MyZvcmRlcj1kZXNjJnNvcnQ9ZXhfZGl2aWRlbmRfZGF0ZSZ0aWNrZXI9U1BZ"
+ }
+}

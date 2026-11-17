@@ -1,0 +1,13 @@
+{
+ "recorded": {
+  "at": "2026-11-17T09:29Z 至 09:36Z（美东 04:29 至 04:36，周二盘前，上一个交易时段是 11-16 周一）",
+  "request": "GET https://api.massive.com/v3/reference/dividends?ticker=SPY&ex_dividend_date.gte=2026-11-17&limit=5",
+  "status": 200,
+  "note": "还没宣布的除息查不到：results 为空数组；原样"
+ },
+ "body": {
+  "results": [],
+  "status": "OK",
+  "request_id": "058d62a21ac7059b344e86fc15248ef7"
+ }
+}

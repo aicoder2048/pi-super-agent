@@ -1,0 +1,269 @@
+{
+ "recorded": {
+  "at": "2026-11-17T09:29Z 至 09:36Z（美东 04:29 至 04:36，周二盘前，上一个交易时段是 11-16 周一）",
+  "request": "GET https://api.massive.com/v3/snapshot/options/NVDA?limit=250",
+  "status": 200,
+  "note": "原应答 250 行（两个到期日混在一页，按 ticker 排序）且带 next_url；留 2 行正常、2 行 greeks 为空对象且没有 implied_volatility（深度价内或极度价外的近月合约）、1 行二元"
+ },
+ "body": {
+  "results": [
+   {
+    "break_even_price": 146.125,
+    "day": {
+     "change": 1.59,
+     "change_percent": 69.737,
+     "close": 3.87,
+     "high": 4.7,
+     "last_updated": 1794863702092000000,
+     "low": 2.41,
+     "open": 3.05,
+     "previous_close": 2.28,
+     "volume": 21875,
+     "vwap": 3.6049
+    },
+    "details": {
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2026-11-18",
+     "shares_per_contract": 100,
+     "strike_price": 150,
+     "ticker": "O:NVDA261118P00150000"
+    },
+    "greeks": {
+     "delta": -0.35597495834155657,
+     "gamma": 0.025011132230515983,
+     "theta": -1.7401376549303957,
+     "vega": 0.04039934102384771
+    },
+    "implied_volatility": 1.458885283196554,
+    "last_quote": {
+     "ask": 3.9,
+     "ask_size": 59,
+     "ask_exchange": 315,
+     "bid": 3.85,
+     "bid_size": 18,
+     "bid_exchange": 315,
+     "last_updated": 1794862799822524935,
+     "midpoint": 3.875,
+     "timeframe": "REAL-TIME"
+    },
+    "last_trade": {
+     "sip_timestamp": 1794863666622209745,
+     "conditions": [
+      248
+     ],
+     "price": 3.85,
+     "size": 1,
+     "exchange": 300,
+     "timeframe": "REAL-TIME"
+    },
+    "open_interest": 14695,
+    "underlying_asset": {
+     "change_to_break_even": -9.19,
+     "last_updated": 1794906894230038377,
+     "price": 155.32,
+     "ticker": "NVDA",
+     "timeframe": "DELAYED"
+    }
+   },
+   {
+    "break_even_price": 147.65,
+    "day": {
+     "change": 1.95,
+     "change_percent": 67.241,
+     "close": 4.85,
+     "high": 5.75,
+     "last_updated": 1794863702111000000,
+     "low": 3.05,
+     "open": 4.3,
+     "previous_close": 2.9,
+     "volume": 4910,
+     "vwap": 4.6192
+    },
+    "details": {
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2026-11-18",
+     "shares_per_contract": 100,
+     "strike_price": 152.5,
+     "ticker": "O:NVDA261118P00152500"
+    },
+    "greeks": {
+     "delta": -0.4207489814031615,
+     "gamma": 0.026667835223873306,
+     "theta": -1.7672624924665699,
+     "vega": 0.04074699532871481
+    },
+    "implied_volatility": 1.4242167042875629,
+    "last_quote": {
+     "ask": 4.9,
+     "ask_size": 177,
+     "ask_exchange": 300,
+     "bid": 4.8,
+     "bid_size": 93,
+     "bid_exchange": 301,
+     "last_updated": 1794862799904411028,
+     "midpoint": 4.85,
+     "timeframe": "REAL-TIME"
+    },
+    "last_trade": {
+     "sip_timestamp": 1794863681221208052,
+     "conditions": [
+      248
+     ],
+     "price": 4.6,
+     "size": 3,
+     "exchange": 302,
+     "timeframe": "REAL-TIME"
+    },
+    "open_interest": 4784,
+    "underlying_asset": {
+     "change_to_break_even": -7.67,
+     "last_updated": 1794906894230038377,
+     "price": 155.32,
+     "ticker": "NVDA",
+     "timeframe": "DELAYED"
+    }
+   },
+   {
+    "break_even_price": 295.005,
+    "day": {
+     "change": 0,
+     "change_percent": 0,
+     "close": 0.01,
+     "high": 0.01,
+     "last_updated": 1794594002088000000,
+     "low": 0.01,
+     "open": 0.01,
+     "previous_close": 0.01,
+     "volume": 2,
+     "vwap": 0.01
+    },
+    "details": {
+     "contract_type": "call",
+     "exercise_style": "american",
+     "expiration_date": "2026-11-18",
+     "shares_per_contract": 100,
+     "strike_price": 295,
+     "ticker": "O:NVDA261118C00295000"
+    },
+    "greeks": {},
+    "last_quote": {
+     "ask": 0.01,
+     "ask_size": 1015,
+     "ask_exchange": 322,
+     "bid": 0,
+     "bid_size": 0,
+     "bid_exchange": 307,
+     "last_updated": 1794839418134683646,
+     "midpoint": 0.005,
+     "timeframe": "REAL-TIME"
+    },
+    "last_trade": {
+     "sip_timestamp": 1794593983970772449,
+     "conditions": [
+      233
+     ],
+     "price": 0.01,
+     "size": 1,
+     "exchange": 302,
+     "timeframe": "REAL-TIME"
+    },
+    "open_interest": 6,
+    "underlying_asset": {
+     "change_to_break_even": 139.685,
+     "last_updated": 1794906894230038377,
+     "price": 155.32,
+     "ticker": "NVDA",
+     "timeframe": "DELAYED"
+    }
+   },
+   {
+    "break_even_price": 155.025,
+    "day": {
+     "change": 5.41,
+     "change_percent": 37.055,
+     "close": 20.01,
+     "high": 21.02,
+     "last_updated": 1794862802165000000,
+     "low": 15.46,
+     "open": 17.5,
+     "previous_close": 14.6,
+     "volume": 1389,
+     "vwap": 19.4919
+    },
+    "details": {
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2026-11-18",
+     "shares_per_contract": 100,
+     "strike_price": 175,
+     "ticker": "O:NVDA261118P00175000"
+    },
+    "greeks": {},
+    "last_quote": {
+     "ask": 20.15,
+     "ask_size": 239,
+     "ask_exchange": 312,
+     "bid": 19.8,
+     "bid_size": 98,
+     "bid_exchange": 303,
+     "last_updated": 1794862799694388478,
+     "midpoint": 19.975,
+     "timeframe": "REAL-TIME"
+    },
+    "last_trade": {
+     "sip_timestamp": 1794862786823366469,
+     "conditions": [
+      233
+     ],
+     "price": 20.01,
+     "size": 3,
+     "exchange": 309,
+     "timeframe": "REAL-TIME"
+    },
+    "open_interest": 3061,
+    "underlying_asset": {
+     "change_to_break_even": -0.295,
+     "last_updated": 1794906894230038377,
+     "price": 155.32,
+     "ticker": "NVDA",
+     "timeframe": "DELAYED"
+    }
+   },
+   {
+    "day": {},
+    "details": {
+     "contract_type": "call",
+     "exercise_style": "european",
+     "expiration_date": "2026-11-20",
+     "shares_per_contract": 100,
+     "strike_price": 150,
+     "ticker": "O:B1VDA261120C00150000"
+    },
+    "last_quote": {
+     "ask": 0.76,
+     "ask_size": 1,
+     "ask_exchange": 302,
+     "bid": 0.47,
+     "bid_size": 1,
+     "bid_exchange": 302,
+     "last_updated": 1794864243354383863,
+     "midpoint": 0.615,
+     "timeframe": "REAL-TIME"
+    },
+    "last_trade": {},
+    "open_interest": 0,
+    "underlying_asset": {
+     "last_updated": 1794906894230038377,
+     "price": 155.32,
+     "ticker": "NVDA",
+     "timeframe": "DELAYED"
+    }
+   }
+  ],
+  "status": "OK",
+  "request_id": "16ba1a93b9bccccf1f6e773f90c546c5",
+  "next_url": "https://api.massive.com/v3/snapshot/options/NVDA?cursor=YXA9TyUzQU5WREEyNjExMjBDMDAxMzUwMDAlM0ExMzUuMDAmYXM9JmV4cGlyYXRpb25fZGF0ZS5ndGU9MjAyNi0xMS0yMCZsaW1pdD0yNTAmc29ydD10aWNrZXI"
+ }
+}

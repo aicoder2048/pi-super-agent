@@ -1,0 +1,221 @@
+{
+ "recorded": {
+  "at": "2026-11-17T09:29Z 至 09:36Z（美东 04:29 至 04:36，周二盘前，上一个交易时段是 11-16 周一）",
+  "request": "GET https://api.massive.com/v3/snapshot/options/SPY?expiration_date=2026-11-20&contract_type=put&strike_price.gte=720&strike_price.lte=740&limit=50",
+  "status": 200,
+  "note": "原应答 26 行（二元 5 行 + 标准 21 行），没有 next_url；留 1 行二元（没有 greeks、IV、break_even，day 和 last_trade 是空对象）+ 3 行标准"
+ },
+ "body": {
+  "results": [
+   {
+    "day": {},
+    "details": {
+     "contract_type": "put",
+     "exercise_style": "european",
+     "expiration_date": "2026-11-20",
+     "shares_per_contract": 100,
+     "strike_price": 730,
+     "ticker": "O:B1SPY261120P00730000"
+    },
+    "last_quote": {
+     "ask": 0,
+     "ask_size": 0,
+     "ask_exchange": 300,
+     "bid": 0,
+     "bid_size": 0,
+     "bid_exchange": 300,
+     "last_updated": 1794862886099116037,
+     "midpoint": 0,
+     "timeframe": "REAL-TIME"
+    },
+    "last_trade": {},
+    "open_interest": 0,
+    "underlying_asset": {
+     "last_updated": 1794906927774734817,
+     "price": 736.172,
+     "ticker": "SPY",
+     "timeframe": "DELAYED"
+    }
+   },
+   {
+    "break_even_price": 722.34,
+    "day": {
+     "change": 1.55,
+     "change_percent": 140.909,
+     "close": 2.65,
+     "high": 3.61,
+     "last_updated": 1794863702074000000,
+     "low": 1.25,
+     "open": 1.27,
+     "previous_close": 1.1,
+     "volume": 32763,
+     "vwap": 2.3855
+    },
+    "details": {
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2026-11-20",
+     "shares_per_contract": 100,
+     "strike_price": 725,
+     "ticker": "O:SPY261120P00725000"
+    },
+    "greeks": {
+     "delta": -0.25448501438200943,
+     "gamma": 0.019036251783345486,
+     "theta": -0.7438292032589515,
+     "vega": 0.2506203277678555
+    },
+    "implied_volatility": 0.23184659917821696,
+    "last_quote": {
+     "ask": 2.68,
+     "ask_size": 113,
+     "ask_exchange": 308,
+     "bid": 2.64,
+     "bid_size": 152,
+     "bid_exchange": 308,
+     "last_updated": 1794863698577884611,
+     "midpoint": 2.66,
+     "timeframe": "REAL-TIME"
+    },
+    "last_trade": {
+     "sip_timestamp": 1794863651674389591,
+     "conditions": [
+      227
+     ],
+     "price": 2.65,
+     "size": 1,
+     "exchange": 308,
+     "timeframe": "REAL-TIME"
+    },
+    "open_interest": 66875,
+    "underlying_asset": {
+     "change_to_break_even": -13.8,
+     "last_updated": 1794906927774734817,
+     "price": 736.172,
+     "ticker": "SPY",
+     "timeframe": "DELAYED"
+    }
+   },
+   {
+    "break_even_price": 726.265,
+    "day": {
+     "change": 2.21,
+     "change_percent": 146.358,
+     "close": 3.72,
+     "high": 4.81,
+     "last_updated": 1794863702053000000,
+     "low": 1.75,
+     "open": 1.75,
+     "previous_close": 1.51,
+     "volume": 27340,
+     "vwap": 3.1914
+    },
+    "details": {
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2026-11-20",
+     "shares_per_contract": 100,
+     "strike_price": 730,
+     "ticker": "O:SPY261120P00730000"
+    },
+    "greeks": {
+     "delta": -0.3479708522342586,
+     "gamma": 0.023869388146822223,
+     "theta": -0.8079584426631415,
+     "vega": 0.28828110846355687
+    },
+    "implied_volatility": 0.21634176128194346,
+    "last_quote": {
+     "ask": 3.75,
+     "ask_size": 11,
+     "ask_exchange": 307,
+     "bid": 3.72,
+     "bid_size": 42,
+     "bid_exchange": 316,
+     "last_updated": 1794863697027749797,
+     "midpoint": 3.735,
+     "timeframe": "REAL-TIME"
+    },
+    "last_trade": {
+     "sip_timestamp": 1794863696622979846,
+     "conditions": [
+      209
+     ],
+     "price": 3.72,
+     "size": 1,
+     "exchange": 313,
+     "timeframe": "REAL-TIME"
+    },
+    "open_interest": 61605,
+    "underlying_asset": {
+     "change_to_break_even": -9.91,
+     "last_updated": 1794906927774734817,
+     "price": 736.172,
+     "ticker": "SPY",
+     "timeframe": "DELAYED"
+    }
+   },
+   {
+    "break_even_price": 729.79,
+    "day": {
+     "change": 3.1,
+     "change_percent": 148.325,
+     "close": 5.19,
+     "high": 6.41,
+     "last_updated": 1794863702068000000,
+     "low": 2.51,
+     "open": 2.52,
+     "previous_close": 2.09,
+     "volume": 13171,
+     "vwap": 4.7703
+    },
+    "details": {
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2026-11-20",
+     "shares_per_contract": 100,
+     "strike_price": 735,
+     "ticker": "O:SPY261120P00735000"
+    },
+    "greeks": {
+     "delta": -0.4701705822356307,
+     "gamma": 0.028534599311363425,
+     "theta": -0.7655876366877015,
+     "vega": 0.2904205863657187
+    },
+    "implied_volatility": 0.19362579785842868,
+    "last_quote": {
+     "ask": 5.23,
+     "ask_size": 64,
+     "ask_exchange": 322,
+     "bid": 5.19,
+     "bid_size": 55,
+     "bid_exchange": 300,
+     "last_updated": 1794863699391394607,
+     "midpoint": 5.21,
+     "timeframe": "REAL-TIME"
+    },
+    "last_trade": {
+     "sip_timestamp": 1794863697255899839,
+     "conditions": [
+      227
+     ],
+     "price": 5.19,
+     "size": 2,
+     "exchange": 302,
+     "timeframe": "REAL-TIME"
+    },
+    "open_interest": 24249,
+    "underlying_asset": {
+     "change_to_break_even": -6.38,
+     "last_updated": 1794906927774734817,
+     "price": 736.172,
+     "ticker": "SPY",
+     "timeframe": "DELAYED"
+    }
+   }
+  ],
+  "status": "OK",
+  "request_id": "db044621a781de562cb1aa9c9601a2fa"
+ }
+}
