@@ -1,13 +1,14 @@
 # option-ta · 期权分析
 
-期权研究组：领队加方向与价位、波动率与事件、策略计算、仓位研判、账本与税务和仅会诊上场的反方。路由、权限和原始事实模型已搭好；本轮是明确返回 `NOT_IMPLEMENTED` 的安全骨架，不是可计算、可收真实成交或可依赖的监控系统。没有移植 theta 代码、sidecar 或读取其私人资料。
+期权研究组：领队加方向与价位、波动率与事件、策略计算、仓位研判、账本与税务和仅会诊上场的反方。路由、权限和原始事实模型已搭好。`strategy` 已能按给定的腿算数（P3-a）；其余工具和 feed 仍明确返回 `NOT_IMPLEMENTED`，还不能收真实成交，也不是可依赖的监控系统。纯计算从 theta 移植，每个文件头写着出处；没有搬 sidecar，也没有读 theta 的私人资料。
 
 ## 文件与权限
 
 - `module.json`：中文标题、路由说明和团队；有私密集合，所以 `exports: []`。
 - `skills/option-lead/SKILL.md`：分档、共同快照、一次会诊、输出五段和领队独占写入。
 - `agents/{direction,volatility,strategy,position,ledger,critic}.md`：六位只读专家，最小 `uses`；只有需要者接触私密集合。领队不另建专家文件。
-- `tools/{chain,vol,strategy,record,ledger}/`：每个包含 `tool.json`、`index.ts`、`cases.json`。当前均只回固定 `status`、`reason`；不联网、不读写数据库、不返回伪数值。`record` 还不能校验、查重或返回可写成交，领队不得绕过它入账。
+- 包根目录的 `*.ts`：从 theta 移植的纯计算（BS 价格和反解 IV、首达概率、到期盈亏、方案经济、CC 收益、流动性、参考价、Roll 净收门槛、IV 压缩、GEX 墙、OI 期限结构、到期临近、交割物、IV rank 和 HV20）。不联网、不读写数据。门槛是命名常量，说明书没定的沿用 theta 的值，待使用者确认。
+- `tools/{chain,vol,strategy,record,ledger}/`：每个包含 `tool.json`、`index.ts`、`cases.json`。`strategy` 只算不取数：给定腿，回权利金、参考价、盈亏平衡、到期盈亏、年化、指派概率、流动性和三种 Roll 的净收付。其余四个当前只回固定 `status`、`reason`；不联网、不读写数据库、不返回伪数值。`record` 还不能校验、查重或返回可写成交，领队不得绕过它入账。
 - `data/{fills,chains,accounts,brokers}/collection.json`：四个 `private` 集合；`data/{watchlist,iv-snapshots}/collection.json`：两个 `shareable` 集合。全部初始为空。
 - `feeds/fills/`：接宿主 `mail` 连接器，只收私密名单 `brokers` 上的发件人，写进私密集合 `fills`。解析还没做：有信就抛「NOT_IMPLEMENTED：成交邮件解析还没做，这封信没有入账」，样例只有一份没有信的。
 - `feeds/{iv,watch}/`：两个有 handler 的占位 feed，各有离线 `fixtures/`；均 `records: []`、不返回 cursor，并发固定 `NOT_IMPLEMENTED` notice/problem。notice 去重键固定，不按每拍新建通知。
@@ -61,7 +62,7 @@ just -f "$PSA_REPO/justfile" module check "$STATE/modules/option-ta"
 PSA_STATE_DIR="$STATE" just -f "$PSA_REPO/justfile" module try option-ta
 ```
 
-cases 的现阶段断言只验证 `NOT_IMPLEMENTED`。chain/vol/strategy 的休市、缺字段、正文 ERROR、HTTP 429/503 应答是命名明确的预留回放素材，**桩不 fetch，不代表真实异常路径已测通**。record/ledger 为离线桩，没有 HTTP 路径。feed fixtures 只被检查交回格式；`fills` 只有一份没有信的样例，不证明解析正确。没有 `tests/` 或额外测试运行时。
+`strategy` 的 cases 用算出来的数断言，不联网，所以没有休市和 HTTP 用例。其余工具的 cases 现阶段只验证 `NOT_IMPLEMENTED`。chain/vol 的休市、缺字段、正文 ERROR、HTTP 429/503 应答是命名明确的预留回放素材，**桩不 fetch，不代表真实异常路径已测通**。record/ledger 为离线桩，没有 HTTP 路径。feed fixtures 只被检查交回格式；`fills` 只有一份没有信的样例，不证明解析正确。纯计算的单元测试在仓库的 `tests/unit/option-ta-*.test.ts`，由 `just test` 跑，包里不放测试文件。
 
 ## 范围与依据
 
