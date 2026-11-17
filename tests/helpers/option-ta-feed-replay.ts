@@ -15,11 +15,13 @@ export function fixtureOf(feed: string, name: string): { input: Record<string, u
 	return JSON.parse(readFileSync(join(PACKAGE, "feeds", feed, "fixtures", `${name}.json`), "utf8"));
 }
 
-/** `secrets` default to the check's: every named secret is "fixture". `change` edits the fixture's input before the run. */
-export async function replay(feed: string, name: string, { secrets, change }: { secrets?: Record<string, string>; change?: (input: Record<string, any>) => void } = {}): Promise<Replayed> {
+/** `secrets` default to the check's: every named secret is "fixture". `change` edits the fixture's input, `respond` its responses, before the run. */
+export async function replay(feed: string, name: string, { secrets, change, respond }: { secrets?: Record<string, string>; change?: (input: Record<string, any>) => void; respond?: (responses: Record<string, any>) => void } = {}): Promise<Replayed> {
 	const descriptor = JSON.parse(readFileSync(join(PACKAGE, "feeds", feed, "feed.json"), "utf8")) as FeedDescriptor;
 	const fixture = fixtureOf(feed, name);
 	change?.(fixture.input);
+	fixture.responses ??= {};
+	respond?.(fixture.responses);
 	const input = feedInput(descriptor, [], nothingHeld(Date.now()), { name, input: fixture.input, responses: fixture.responses ?? {} } as unknown as FeedFixture);
 	const named = descriptor.secrets ?? [];
 	const env = secrets ?? Object.fromEntries(named.map((s) => [s, "fixture"]));
