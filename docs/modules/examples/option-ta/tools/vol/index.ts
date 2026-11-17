@@ -1,10 +1,11 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { dataDbPath } from "../../data-db.ts";
 import { addDays, MARKET_NOTE, nyParts, nyStamp, parseChain, type ChainRow } from "../../chain-rows.ts";
 import { impliedVolPut } from "../../iv.ts";
 import { dteOn, ivPercentile, ivRank, IV_SERIES_TENOR } from "../../iv-history.ts";
-import { fail, MarketError, MISSING_KEY, prevClose, query, REQUEST_LIMIT_MS, snapshotPages, SYMBOL } from "../../massive.ts";
+import { fail, MarketError, MISSING_KEY, prevClose, query, REQUEST_LIMIT_MS, snapshotPages } from "../../massive.ts";
+import { isTicker } from "../../symbols.ts";
 import { classifyIvHvRatio, hv20 } from "../../vol-regime.ts";
 
 /** Term structure: the expiry nearest each of these calendar-day targets. */
@@ -28,7 +29,7 @@ const pick = (row: ChainRow) => ({ contract: row.contract, expiry: row.expiry, d
 export default async function vol(input: Record<string, unknown>) {
 	try {
 		const symbol = typeof input["symbol"] === "string" ? input["symbol"].trim().toUpperCase() : "";
-		if (!SYMBOL.test(symbol)) fail("INVALID_INPUT", "symbol 要是美股或 ETF 代码，例如 SPY");
+		if (!isTicker(symbol)) fail("INVALID_INPUT", "symbol 要是美股或 ETF 代码，例如 SPY");
 		const nowMs = input["now"] === undefined ? Date.now() : Date.parse(String(input["now"]));
 		if (Number.isNaN(nowMs)) fail("INVALID_INPUT", "now 要是 ISO 8601 时间，只在回放时填");
 		const key = process.env["POLYGON_API_KEY"] ?? "";
@@ -130,8 +131,8 @@ const methodology = (): string => JSON.parse(readFileSync(new URL("../../feeds/i
 function readHistory(symbol: string) {
 	const tag = methodology();
 	const none = { status: "NO_HISTORY", methodology: tag, reason: `iv-snapshots 里还没有 ${symbol} 的 IV 原始输入：标的加进期权自选后，iv feed 回填一年，之后每天收盘后存一行。IV rank、百分位和 HV20 没算` };
-	const file = join(process.env["PSA_MODULE_DATA"] ?? "", "data.db");
-	if (!existsSync(file)) return none;
+	const file = dataDbPath();
+	if (file === undefined) return none;
 	const db = new DatabaseSync(file, { readOnly: true });
 	let rows: SnapshotRow[];
 	try {
