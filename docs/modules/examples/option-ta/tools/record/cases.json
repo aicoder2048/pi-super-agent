@@ -1,0 +1,4 @@
+[
+  {"name":"不能绕过成交校验","input":{"fill":"{\"side\":\"STO\",\"qty\":2,\"price\":\"2.1000\"}"},"expect":{"status":"NOT_IMPLEMENTED"},"responses":{}},
+  {"name":"缺账户不假称入账","input":{"fill":"{}"},"expect":{"status":"NOT_IMPLEMENTED"},"responses":{}}
+]

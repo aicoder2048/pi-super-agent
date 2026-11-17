@@ -1,0 +1,5 @@
+{
+  "title":"交易链与税务视图", "description":"同一原始事实重算交易链金额与税务候选标记，不自动禁扣递延，不对账1099-B", "effect":"read",
+  "input":{"view":{"type":"text","title":"chain/tax/order"},"account_key":{"type":"text","title":"匿名账户键"},"chain_id":{"type":"text","title":"可选链键"},"year":{"type":"number","title":"可选税年"}},
+  "output":{"status":{"type":"text","title":"工具状态码，必须原样转述"}}
+}

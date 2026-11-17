@@ -1,0 +1,9 @@
+{
+  "title":"期权自选（与stock-ta名单独立）", "kind":"record", "class":"shareable",
+  "fields":{
+    "symbol":{"type":"text","title":"公共标的短代码"},
+    "added_at":{"type":"date","title":"加入时间"},
+    "removed_at":{"type":"date","title":"退出时间，保留历史"},
+    "backfill_status":{"type":"text","title":"一年原始输入回填状态，不含账户或仓位"}
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "input": {
+    "items": [
+      {
+        "id": "round",
+        "threadId": "thread-round",
+        "html": "<table><tr><td>Account</td><td>Side</td><td>Position</td><td>Security</td><td>Security Description</td><td>Exe Qty</td><td>Avg Price</td><td>Open Qty</td><td>Price Instructions</td><td>Trade Date</td><td>Settlement Date</td></tr><tr><td>TESTalfa</td><td>Sell Put</td><td>Open</td><td>AAPL</td><td>APPLE INC PUT 03/20/2026 @ 250</td><td>3</td><td>1.0001</td><td></td><td>2.00 Limit</td><td>05-Mar-2026</td><td>06-Mar-2026</td></tr></table>",
+        "body": "Fixture only",
+        "from": {
+          "name": "Synthetic Desk",
+          "address": "desk@example.net"
+        }
+      }
+    ],
+    "rows": {
+      "fills": [
+        {
+          "fields": {
+            "fill_id": "AAPL260320P00250000:STO:2026-03-05:TESTalfa:cum1",
+            "order_key": "AAPL260320P00250000:STO:2026-03-05:TESTalfa",
+            "qty": 1,
+            "price": "1.0000",
+            "cum_avg": "1.0000"
+          }
+        }
+      ]
+    },
+    "now": "2026-03-05T21:00:00.000Z",
+    "fixture_mode": "assert-parser-v1",
+    "fixture_expected": {
+      "fills": [
+        {
+          "fill_id": "AAPL260320P00250000:STO:2026-03-05:TESTalfa:cum3",
+          "order_key": "AAPL260320P00250000:STO:2026-03-05:TESTalfa",
+          "qty": 2,
+          "cum_qty": 3,
+          "price": "1.0002",
+          "partial_fill": false,
+          "instrument": {
+            "multiplier": null,
+            "deliverable": null
+          },
+          "commission": null,
+          "fees": null
+        }
+      ],
+      "skipped": [],
+      "notice_reasons": []
+    }
+  },
+  "responses": {}
+}

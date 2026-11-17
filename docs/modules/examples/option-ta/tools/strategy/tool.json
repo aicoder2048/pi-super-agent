@@ -1,0 +1,5 @@
+{
+  "title":"策略与Roll比较", "description":"按明确合约腿输入返回策略盈亏和三种Roll比较结果；数字由代码生成，状态原样转述", "effect":"read", "secrets":["POLYGON_API_KEY"],
+  "input":{"legs":{"type":"text","title":"明确合约腿JSON，不是下单请求"},"kind":{"type":"text","title":"CSP/CC/long-put/long-call/credit-vertical/debit-vertical/roll"}},
+  "output":{"status":{"type":"text","title":"工具状态码，必须原样转述"}}
+}

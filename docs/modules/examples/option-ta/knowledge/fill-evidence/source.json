@@ -1,0 +1,8 @@
+{
+  "title": "成交回信证据、增量与去重口径",
+  "version": "2026-11-17",
+  "published": "2026-11-17",
+  "authority": "reference",
+  "license": "bundled",
+  "origin": "使用者自有 option-ta-spec.md「成交邮件」及 option-ta-p1/mail-samples/README.md（均为 2026-11-17 口径）摘要，依书面说明打包。仅结构和规则；未复制真实邮件、虚构 eml 正文或私人账户资料。"
+}

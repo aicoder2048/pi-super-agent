@@ -1,0 +1,5 @@
+{
+  "title":"波动率状况", "description":"IV、HV、rank百分位及偏斜期限结构的紧凑结果，状态原样转述", "effect":"read", "secrets":["POLYGON_API_KEY"],
+  "input":{"symbol":{"type":"text","title":"标的短代码"},"expiry":{"type":"date","title":"可选到期日"}},
+  "output":{"status":{"type":"text","title":"工具状态码，必须原样转述"}}
+}

@@ -1,0 +1,17 @@
+{
+  "title":"IV日线原始输入", "kind":"series", "class":"shareable",
+  "fields":{
+    "symbol":{"type":"text","title":"公共标的代码"},
+    "session_date":{"type":"date","title":"美东交易日"},
+    "option_symbol":{"type":"text","title":"选中标准put的OCC代码"},
+    "strike":{"type":"number","title":"行权价","unit":"USD"},
+    "expiry":{"type":"date","title":"到期日"},
+    "option_close":{"type":"number","title":"合约日线收盘价，不用报价补","unit":"USD/share"},
+    "underlying_close":{"type":"number","title":"正股同日正式日线收盘价","unit":"USD/share"},
+    "quote_midpoint":{"type":"number","title":"日常报价中间价，仅对照，回填为空","unit":"USD/share"},
+    "fetched_at":{"type":"date","title":"取数时刻"},
+    "method":{"type":"text","title":"选约价格时间公式版本"},
+    "origin":{"type":"text","title":"backfill/daily"},
+    "status":{"type":"text","title":"原始输入有效性与无数据原因"}
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "title":"收盘IV原始输入与一年回填", "handler":"index.ts", "every":"15m", "limit":"2m",
+  "secrets":["POLYGON_API_KEY"], "reads":["watchlist","iv-snapshots"], "into":"iv-snapshots",
+  "settings":{"targetDte":30,"right":"put","riskFreeRate":0,"dividendYield":0,"dailyAfterEt":"16:30","method":"daily-close-put-30d-v1"}
+}

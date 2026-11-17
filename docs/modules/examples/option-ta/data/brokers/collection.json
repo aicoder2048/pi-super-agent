@@ -1,0 +1,8 @@
+{
+  "title":"交易台邮件发件人私密名单", "kind":"record", "class":"private",
+  "fields":{
+    "address":{"type":"text","title":"保留原发件人的交易台地址或@域名"},
+    "addedAt":{"type":"date","title":"加入时间，带时区完整ISO"},
+    "removedAt":{"type":"date","title":"移除时间，划掉不删行"}
+  }
+}

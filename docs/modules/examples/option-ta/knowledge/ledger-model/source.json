@@ -1,0 +1,8 @@
+{
+  "title": "原始事实模型与交易链、税务双视图",
+  "version": "2026-11-17",
+  "published": "2026-11-17",
+  "authority": "reference",
+  "license": "bundled",
+  "origin": "使用者自有材料摘要：option-ta-tax-memo.md 第 14.1、14.2、14.3 节（2026-11-16 口径）；option-ta-spec.md「成交邮件」、option-ta-glossary.md（2026-11-17 资料快照）。依书面说明打包；仅整理第一版事实模型和不变量。"
+}

@@ -1,0 +1,4 @@
+[
+  {"name":"链视图安全状态","input":{"view":"chain","year":2026},"expect":{"status":"NOT_IMPLEMENTED"},"responses":{}},
+  {"name":"税务视图不编金额","input":{"view":"tax","year":2026},"expect":{"status":"NOT_IMPLEMENTED"},"responses":{}}
+]

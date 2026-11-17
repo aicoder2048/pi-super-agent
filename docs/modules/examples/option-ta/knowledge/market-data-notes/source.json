@@ -1,0 +1,8 @@
+{
+  "title": "Massive 行情 P1 证据与数据口径陷阱",
+  "version": "2026-11-17",
+  "published": "2026-11-17",
+  "authority": "reference",
+  "license": "bundled",
+  "origin": "使用者自有 option-ta-p1/README.md（2026-11-17 美东 04:29 至 04:40 盘前实测摘要），配合 option-ta-spec.md「行情取数规则」「IV 历史」（2026-11-17 已定口径）。依书面说明打包；未读取 theta、密钥、原始行情样本或私人持仓。"
+}

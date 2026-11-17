@@ -1,0 +1,93 @@
+{
+  "input": {
+    "items": [
+      {
+        "id": "direction-0",
+        "threadId": "thread-direction-0",
+        "html": "<table><tr><td>Account</td><td>Side</td><td>Position</td><td>Security</td><td>Security Description</td><td>Exe Qty</td><td>Avg Price</td><td>Open Qty</td><td>Price Instructions</td><td>Trade Date</td><td>Settlement Date</td></tr><tr><td>TESTalfa</td><td>Buy Put</td><td>Open</td><td>AAPL</td><td>APPLE INC PUT 03/20/2026 @ 250</td><td>3</td><td>2.0000</td><td></td><td>2.00 Limit</td><td>05-Mar-2026</td><td>06-Mar-2026</td></tr></table>",
+        "body": "Fixture only",
+        "from": {
+          "name": "Synthetic Desk",
+          "address": "desk@example.net"
+        }
+      },
+      {
+        "id": "direction-1",
+        "threadId": "thread-direction-1",
+        "html": "<table><tr><td>Account</td><td>Side</td><td>Position</td><td>Security</td><td>Security Description</td><td>Exe Qty</td><td>Avg Price</td><td>Open Qty</td><td>Price Instructions</td><td>Trade Date</td><td>Settlement Date</td></tr><tr><td>TESTalfa</td><td>Sell Put</td><td>Close</td><td>AAPL</td><td>APPLE INC PUT 03/20/2026 @ 250</td><td>3</td><td>2.0000</td><td></td><td>2.00 Limit</td><td>05-Mar-2026</td><td>06-Mar-2026</td></tr></table>",
+        "body": "Fixture only",
+        "from": {
+          "name": "Synthetic Desk",
+          "address": "desk@example.net"
+        }
+      },
+      {
+        "id": "direction-2",
+        "threadId": "thread-direction-2",
+        "html": "<table><tr><td>Account</td><td>Side</td><td>Position</td><td>Security</td><td>Security Description</td><td>Exe Qty</td><td>Avg Price</td><td>Open Qty</td><td>Price Instructions</td><td>Trade Date</td><td>Settlement Date</td></tr><tr><td>TESTalfa</td><td>Buy Put</td><td>Close</td><td>AAPL</td><td>APPLE INC PUT 03/20/2026 @ 250</td><td>3</td><td>2.0000</td><td></td><td>2.00 Limit</td><td>05-Mar-2026</td><td>06-Mar-2026</td></tr></table>",
+        "body": "Fixture only",
+        "from": {
+          "name": "Synthetic Desk",
+          "address": "desk@example.net"
+        }
+      }
+    ],
+    "rows": {
+      "fills": []
+    },
+    "now": "2026-03-05T21:00:00.000Z",
+    "fixture_mode": "assert-parser-v1",
+    "fixture_expected": {
+      "fills": [
+        {
+          "fill_id": "AAPL260320P00250000:BTO:2026-03-05:TESTalfa:cum3",
+          "order_key": "AAPL260320P00250000:BTO:2026-03-05:TESTalfa",
+          "qty": 3,
+          "cum_qty": 3,
+          "price": "2.0000",
+          "partial_fill": false,
+          "instrument": {
+            "multiplier": null,
+            "deliverable": null
+          },
+          "commission": null,
+          "fees": null,
+          "side": "BTO"
+        },
+        {
+          "fill_id": "AAPL260320P00250000:STC:2026-03-05:TESTalfa:cum3",
+          "order_key": "AAPL260320P00250000:STC:2026-03-05:TESTalfa",
+          "qty": 3,
+          "cum_qty": 3,
+          "price": "2.0000",
+          "partial_fill": false,
+          "instrument": {
+            "multiplier": null,
+            "deliverable": null
+          },
+          "commission": null,
+          "fees": null,
+          "side": "STC"
+        },
+        {
+          "fill_id": "AAPL260320P00250000:BTC:2026-03-05:TESTalfa:cum3",
+          "order_key": "AAPL260320P00250000:BTC:2026-03-05:TESTalfa",
+          "qty": 3,
+          "cum_qty": 3,
+          "price": "2.0000",
+          "partial_fill": false,
+          "instrument": {
+            "multiplier": null,
+            "deliverable": null
+          },
+          "commission": null,
+          "fees": null,
+          "side": "BTC"
+        }
+      ],
+      "skipped": [],
+      "notice_reasons": []
+    }
+  },
+  "responses": {}
+}

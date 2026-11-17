@@ -1,0 +1,11 @@
+{
+  "title":"期权链快照", "description":"查询美式个股ETF期权链紧凑快照及OI/GEX等结构结果；状态原样转述", "effect":"read", "secrets":["POLYGON_API_KEY"],
+  "input":{
+    "symbol":{"type":"text","title":"标的短代码"},
+    "expiry":{"type":"date","title":"到期日"},
+    "right":{"type":"text","title":"put/call"},
+    "strike_min":{"type":"number","title":"最低行权价"},
+    "strike_max":{"type":"number","title":"最高行权价"}
+  },
+  "output":{"status":{"type":"text","title":"工具状态码，必须原样转述"}}
+}

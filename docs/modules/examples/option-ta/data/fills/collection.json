@@ -1,0 +1,33 @@
+{
+  "title": "原始成交与事件（只增不改）", "kind": "record", "class": "private",
+  "fields": {
+    "fill_id": {"type":"text","title":"稳定成交键，等于feed去重id"},
+    "order_key": {"type":"text","title":"OCC:方向:成交日:账户短码"},
+    "event_id": {"type":"text","title":"事件稳定键"},
+    "event_type": {"type":"text","title":"EXPIRE/ASSIGNED/EXERCISED/CASH_SETTLED"},
+    "event_date": {"type":"date","title":"券商确认的事件日"},
+    "order_id": {"type":"text","title":"券商订单编号，未知留空"},
+    "account_ref": {"type":"text","title":"邮件账户短码"},
+    "account_key": {"type":"text","title":"匿名账户键，未映射留空"},
+    "instrument": {"type":"text","title":"合约事实JSON，未知字段为null"},
+    "side": {"type":"text","title":"STO/BTO/BTC/STC；事件股票BUY/SELL"},
+    "qty": {"type":"number","title":"增量张数或股数"},
+    "cum_qty": {"type":"number","title":"本封邮件订单累计张数"},
+    "cum_avg": {"type":"text","title":"累计均价，四位小数","unit":"USD/share"},
+    "partial_fill": {"type":"text","title":"本行入账时是否部分成交，true/false"},
+    "price": {"type":"text","title":"每股价格，四位小数字符串","unit":"USD/share"},
+    "limit": {"type":"text","title":"邮件限价，四位小数","unit":"USD/share"},
+    "trade_date": {"type":"date","title":"美东成交日"},
+    "trade_time": {"type":"text","title":"成交时刻，未知留空"},
+    "settle_date": {"type":"date","title":"交割日"},
+    "executed_at": {"type":"date","title":"邮件Executed At，仅日期"},
+    "commission": {"type":"text","title":"佣金，未知留空","unit":"USD"},
+    "fees": {"type":"text","title":"费用明细JSON，未知留空","unit":"USD"},
+    "source": {"type":"text","title":"broker-email/manual/confirmation/statement"},
+    "source_message_id": {"type":"text","title":"连接器消息键"},
+    "caused_by_event": {"type":"text","title":"交割股票对应的指派或行权事件"},
+    "reverses_fill_id": {"type":"text","title":"冲销所指原记录"},
+    "correction_reason": {"type":"text","title":"冲销依据与原因"},
+    "unconfirmed": {"type":"text","title":"缺失的原始事实字段列表JSON"}
+  }
+}

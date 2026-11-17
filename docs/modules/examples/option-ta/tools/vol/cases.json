@@ -1,0 +1,4 @@
+[
+  {"name":"IV安全状态","input":{"symbol":"SPY"},"expect":{"status":"NOT_IMPLEMENTED"},"responses":{}},
+  {"name":"缺历史不编rank","input":{},"expect":{"status":"NOT_IMPLEMENTED"},"responses":{}}
+]

@@ -1,0 +1,4 @@
+[
+  {"name":"策略安全状态","input":{"kind":"roll","legs":"[]"},"expect":{"status":"NOT_IMPLEMENTED"},"responses":{}},
+  {"name":"缺腿不编盈亏","input":{},"expect":{"status":"NOT_IMPLEMENTED"},"responses":{}}
+]

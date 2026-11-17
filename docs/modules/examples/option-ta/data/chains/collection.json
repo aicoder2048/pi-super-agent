@@ -1,0 +1,21 @@
+{
+  "title":"交易链、Roll组与意图历史", "kind":"record", "class":"private",
+  "fields":{
+    "chain_id":{"type":"text","title":"交易链匿名键"},
+    "account_key":{"type":"text","title":"一条链仅一个匿名账户"},
+    "account_ref":{"type":"text","title":"映射前账户短码"},
+    "record_type":{"type":"text","title":"chain/leg/roll/intent-change/market-snapshot"},
+    "fill_id":{"type":"text","title":"链成员成交键"},
+    "event_id":{"type":"text","title":"链成员事件键"},
+    "seq":{"type":"number","title":"链成员顺序"},
+    "roll_id":{"type":"text","title":"Roll管理动作键"},
+    "roll_kind":{"type":"text","title":"Calendar/Diagonal/Combo"},
+    "close_fill_ids":{"type":"text","title":"平仓腿键JSON列表"},
+    "open_fill_ids":{"type":"text","title":"开仓腿键JSON列表"},
+    "intent":{"type":"text","title":"十个意图之一"},
+    "intent_pending":{"type":"text","title":"默认意图待确认true/false"},
+    "changed_at":{"type":"date","title":"意图或成员追加时间"},
+    "reason":{"type":"text","title":"事实来源或改意图原因"},
+    "market_snapshots":{"type":"text","title":"年末仍持有§1256与价差腿收盘价事实JSON"}
+  }
+}

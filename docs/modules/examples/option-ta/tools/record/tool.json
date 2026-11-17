@@ -1,0 +1,5 @@
+{
+  "title":"成交校验与查重", "description":"只校验成交或事件并按fill_id查重，不写集合；领队仅在得到允许写入的规整行后入账", "effect":"read",
+  "input":{"fill":{"type":"text","title":"原始成交或事件JSON，包含账户和累计数量"}},
+  "output":{"status":{"type":"text","title":"工具状态码，必须原样转述"}}
+}

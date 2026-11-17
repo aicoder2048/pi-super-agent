@@ -1,0 +1,6 @@
+{
+  "title":"已记持仓的风险阈值检查", "handler":"index.ts", "every":"5m", "limit":"2m", "when":"us-market-hours",
+  "secrets":["POLYGON_API_KEY","FINNHUB_API_KEY"], "reads":["fills","chains"],
+  "notice":"{{text}}",
+  "settings":{"expiryTradingDays":5,"expiryDistancePct":3,"expiryCheckAfterEt":"09:45","nearStrikePct":2,"premiumSilentPct":50,"premiumBellPct":80,"eventTradingDays":2}
+}

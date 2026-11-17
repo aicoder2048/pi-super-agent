@@ -1,0 +1,4 @@
+[
+  {"name":"链快照安全状态","input":{"symbol":"QQQ","expiry":"2026-11-20","right":"put","strike_min":590,"strike_max":610},"expect":{"status":"NOT_IMPLEMENTED"},"responses":{}},
+  {"name":"缺输入不编链","input":{},"expect":{"status":"NOT_IMPLEMENTED"},"responses":{}}
+]

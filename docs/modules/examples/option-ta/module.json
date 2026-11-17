@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "name": "option-ta",
+  "version": "0.1.0",
+  "title": "期权分析（简版）",
+  "description": "分析美股期权与策略盈亏，记录成交和交易链，提醒持仓风险；正股技术面归 stock-ta。",
+  "team": "期权研究组"
+}

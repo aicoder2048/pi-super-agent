@@ -1,0 +1,28 @@
+{
+  "input": {
+    "items": [
+      {
+        "id": "text-only",
+        "body": "Account\nSell Put\nambiguous"
+      }
+    ],
+    "rows": {
+      "fills": []
+    },
+    "now": "2026-03-05T21:00:00.000Z",
+    "fixture_mode": "assert-parser-v1",
+    "fixture_expected": {
+      "fills": [],
+      "skipped": [
+        {
+          "reason": "unparsed",
+          "detail": "HTML_REQUIRED_OR_UNAMBIGUOUS_TEXT_UNAVAILABLE"
+        }
+      ],
+      "notice_reasons": [
+        "unparsed"
+      ]
+    }
+  },
+  "responses": {}
+}

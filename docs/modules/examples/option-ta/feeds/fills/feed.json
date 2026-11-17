@@ -1,0 +1,7 @@
+{
+  "title":"交易台成交回信增量入账",
+  "connector":"mail", "handler":"index.ts", "every":"5m", "limit":"30s",
+  "settings":{"senders":"brokers"}, "reads":["fills"], "into":"fills",
+  "notice":"成交解析需核对：{{reason}}",
+  "line":"成交解析需核对：{{reason}}"
+}
