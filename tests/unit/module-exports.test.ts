@@ -58,13 +58,13 @@ test("有私密集合的模块写 exports：检查报错", () => {
 		"module.json": manifest("alpha", { exports: ["tools/quote"] }),
 		"tools/quote/tool.json": tool("read"),
 		"tools/quote/index.ts": "export default () => ({});",
-		"data/holdings/collection.json": collection("private"),
+		"data/journal/collection.json": collection("private"),
 	});
-	assert.ok(problems(root).some((p) => p.startsWith("module.json:") && p.includes("private") && p.includes("holdings")), problems(root).join("\n"));
+	assert.ok(problems(root).some((p) => p.startsWith("module.json:") && p.includes("private") && p.includes("journal")), problems(root).join("\n"));
 });
 
 test("有私密集合的模块写空的 exports：没开放任何工具，检查通过", () => {
-	const root = pkg("alpha", { "module.json": manifest("alpha", { exports: [] }), "data/holdings/collection.json": collection("private") });
+	const root = pkg("alpha", { "module.json": manifest("alpha", { exports: [] }), "data/journal/collection.json": collection("private") });
 	assert.deepEqual(problems(root), []);
 });
 

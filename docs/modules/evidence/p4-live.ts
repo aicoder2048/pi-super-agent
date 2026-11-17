@@ -4,7 +4,7 @@
  * A real temp host with a fake Massive (snapshot with day.o/h/l/v) and the repo's fake Bot API, as p2-live.ts. The clock comes
  * from proactive-clock-preload.mjs through NODE_OPTIONS, so the host and every process it starts (feeds, Workers) read Thursday
  * 2026-11-12. Each host gets a module daily-bar database with 260 days of history per symbol, shaped so that only the holding
- * rules can fire. Holdings rows are written into the private `holdings` collection while the host runs, as the Worker would.
+ * rules can fire. Holdings rows are written into the `holdings` collection while the host runs, as the Worker would.
  * fake  Lane 1: NVDA cost 150, stop 138, day low 137.50: one ringing line with 138.00 and a watch-task ticket on the holding
  *       thread whose trigger names holding-ask and carries no 150 or 138; the Worker asks with three buttons, the user taps
  *       「从持仓划掉」, the Worker writes a removedAt row, and a lower beat sends no new holding line.

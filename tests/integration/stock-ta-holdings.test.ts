@@ -22,13 +22,13 @@ const ctx = (over: Partial<Context> = {}): Context => ({ levels: parseRuleLevels
 const levels = (...fields: Record<string, unknown>[]) => parseRuleLevels(fields.map((f, i): LevelRow => ({ id: String(i + 1), fields: f }))).levels;
 const run = (day: DayState, c: Context, ...beats: Quote[][]) => beats.map((quotes) => watch(day, quotes, c));
 
-test("持仓集合：模块检查通过，holdings 是私密的 record 集合，字段是代码、成本、建仓日期、止损价、止损百分比、数量、原话和 removedAt", () => {
+test("持仓集合：模块检查通过，holdings 是可共享（shareable）的 record 集合，字段是代码、成本、建仓日期、止损价、止损百分比、数量、原话和 removedAt", () => {
 	const result = scanPackage(PKG);
 	assert.ok(result.ok, JSON.stringify(!result.ok && result.problems));
 	const data = result.scan.components.find((c) => c.kind === "data" && c.name === "holdings");
 	assert.ok(data?.kind === "data");
 	assert.equal(data.collection.kind, "record");
-	assert.equal(data.collection.class, "private");
+	assert.equal(data.collection.class, "shareable");
 	assert.deepEqual(Object.entries(data.collection.fields).map(([name, f]) => [name, f.type]), [
 		["symbol", "text"], ["cost", "number"], ["boughtAt", "date"], ["stopPrice", "number"], ["stopPct", "number"], ["quantity", "number"], ["note", "text"], ["removedAt", "date"],
 	]);

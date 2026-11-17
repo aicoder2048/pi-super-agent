@@ -1,7 +1,7 @@
 {
   "title": "持仓",
   "kind": "record",
-  "class": "private",
+  "class": "shareable",
   "fields": {
     "symbol": { "type": "text", "title": "代码，例如 NVDA；只有自选股里还在的票才盯持仓规则" },
     "cost": { "type": "number", "title": "平均成本，美元，必填；加仓后使用者自己说新的平均成本" },

@@ -147,7 +147,7 @@ test("A 没开放这个工具、或没有这个工具：B 拿到「alpha 现在�
 
 test("A 有私密集合、exports 写空列表：网关照常认这份副本，回「alpha 现在没有开放 level」而不是「没装或没开」", async (t) => {
 	const { fx, gateway, caller, serving } = setup(t);
-	const closed = { ...ALPHA, "module.json": JSON.stringify({ schema: 1, name: "alpha", version: "0.1.0", exports: [] }), "data/holdings/collection.json": JSON.stringify({ title: "持仓", kind: "record", class: "private", fields: { a: { type: "text", title: "a" } } }) };
+	const closed = { ...ALPHA, "module.json": JSON.stringify({ schema: 1, name: "alpha", version: "0.1.0", exports: [] }), "data/journal/collection.json": JSON.stringify({ title: "日记", kind: "record", class: "private", fields: { a: { type: "text", title: "a" } } }) };
 	serving.set("alpha", fx.keep("alpha", closed));
 	assert.deepEqual(await gateway.call(caller(), call("alpha/tools/level")), { ok: false, refusal: { code: "provider-absent", note: "alpha 现在没有开放 level" } });
 });
