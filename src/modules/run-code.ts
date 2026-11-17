@@ -10,7 +10,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { filesDir, lockOf, venvDir } from "./files.ts";
-import type { FeedFixture } from "./manifest.ts";
+import type { FeedFixture, ModuleName } from "./manifest.ts";
 import type { Json } from "./protocol.ts";
 
 // The encoding keeps a character split across two pipe chunks whole.
@@ -48,6 +48,9 @@ export type Responses = FeedFixture["responses"];
 export type RunOptions = { limitMs?: number; responses?: Responses; signal?: AbortSignal };
 
 export type SecretLookup = (name: string) => string | undefined;
+
+/** A value from `module`'s own `.env`. Module code gets secrets only this way (ADR-0031). */
+export type ModuleSecretLookup = (module: ModuleName, name: string) => string | undefined;
 
 export const secretsFor = (names: readonly string[], secret: SecretLookup): Secrets => Object.fromEntries(names.map((name) => [name, secret(name) ?? ""]));
 

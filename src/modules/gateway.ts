@@ -9,7 +9,7 @@ import { AUTHORITY, effectOf, senderOf, type Caller, type Gateway, type Refusal,
 import { writeDraft, type GooglePort } from "./google-port.ts";
 import { readForTool } from "./ocr-port.ts";
 import type { Ocr } from "../ocr/result.ts";
-import { LIMIT_MS, runModuleCodeAsync } from "./run-code.ts";
+import { LIMIT_MS, runModuleCodeAsync, type ModuleSecretLookup } from "./run-code.ts";
 import { scanPackage } from "./validate.ts";
 
 export interface GatewayPorts {
@@ -18,8 +18,8 @@ export interface GatewayPorts {
 	serving(module: ModuleName): Digest | undefined;
 	dataDir(module: ModuleName): string;
 	rows: ModuleRows;
-	/** A value from the host's secrets file. */
-	secret(name: string): string | undefined;
+	/** `module` is the module whose code runs, so a tool reads its own module's `.env`. */
+	secret: ModuleSecretLookup;
 	log(line: string): void;
 	limitMs?: number;
 	google?: GooglePort;
@@ -157,7 +157,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 	};
 	const runCode = async (copy: Copy, tool: Tool, input: Json): Promise<Reply> => {
 		const secrets = Object.fromEntries((tool.tool.secrets ?? []).flatMap((name) => {
-			const value = ports.secret(name);
+			const value = ports.secret(copy.module, name);
 			return value === undefined ? [] : [[name, value]];
 		}));
 		const ran = await runModuleCodeAsync({ packageDir: copy.dir, component: join("tools", tool.name), dataDir: ports.dataDir(copy.module) }, RUNTIMES[tool.tool.runtime ?? "node"], input, secrets, { limitMs: ports.limitMs ?? LIMIT_MS });

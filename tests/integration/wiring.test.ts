@@ -388,36 +388,59 @@ test("接线把模块表交给宿主时不拍快照：换表以后宿主的领�
 	assert.equal(options.domains!.kitFor("tax", "abc"), pinned);
 });
 
-async function envProbe(secretsText: string) {
+async function envProbe({ secretsText = "", moduleEnv = {} }: { secretsText?: string; moduleEnv?: Record<string, string> }) {
 	const { modelRuntime, provider } = await fauxRuntime(() => false);
 	const config = hostConfig(provider);
 	const pkg = join(mkdtempSync(join(tmpdir(), "psa-wire-pkg-")), "personal-tax");
 	cpSync(join(import.meta.dirname, "../../docs/modules/architecture/sample/personal-tax"), pkg, { recursive: true });
 	mkdirSync(join(pkg, "tools/env-probe"));
-	writeFileSync(join(pkg, "tools/env-probe/tool.json"), JSON.stringify({ title: "密钥", description: "回显密钥", effect: "read", secrets: ["PERSONAL_TAX__KEY"], input: { x: { type: "text", title: "x" } }, output: { named: { type: "text", title: "n" } } }));
-	writeFileSync(join(pkg, "tools/env-probe/index.ts"), "export default () => ({ named: process.env.PERSONAL_TAX__KEY ?? null });");
+	writeFileSync(join(pkg, "tools/env-probe/tool.json"), JSON.stringify({ title: "密钥", description: "回显密钥", effect: "read", secrets: ["PERSONAL_TAX__KEY", "POLYGON_API_KEY"], input: { x: { type: "text", title: "x" } }, output: { named: { type: "text", title: "n" }, polygon: { type: "text", title: "p" } } }));
+	writeFileSync(join(pkg, "tools/env-probe/index.ts"), "export default () => ({ named: process.env.PERSONAL_TAX__KEY ?? null, polygon: process.env.POLYGON_API_KEY ?? null });");
 	const secretsFile = join(config.stateDir, "secrets.env");
 	writeFileSync(secretsFile, secretsText);
+	for (const [module, text] of Object.entries(moduleEnv)) {
+		mkdirSync(join(config.stateDir, "modules-data", module), { recursive: true });
+		writeFileSync(join(config.stateDir, "modules-data", module, ".env"), text);
+	}
 	const modules = servedAsHost(Modules.load([join(pkg, "..")]));
 	const digest = modules.book.get("personal-tax")!.digest! as Digest;
 	new ModuleStore(join(config.stateDir, "module-store")).keep("personal-tax" as ModuleName, digest, pkg);
 	const logs: string[] = [];
 	const options = createHostOptions({ config: { ...config, secretsFile }, modules: fixed(modules), modelRuntime, log: (l) => logs.push(l) });
 	const caller = { who: "worker" as const, ticket: "tkt_1", pin: { module: "personal-tax" as ModuleName, digest }, basis: "request" as const, member: null, heardOthers: false };
-	return { reply: await options.gateway!.call(caller, { kind: "tool", name: "env-probe" as ComponentName, input: {} }), logs };
+	return { reply: await options.gateway!.call(caller, { kind: "tool", name: "env-probe" as ComponentName, input: {} }), logs, options };
 }
 
-test("入口：宿主的 Gateway 从状态目录的模块副本里跑工具，密钥值取自 secretsFile，每次调用记一行日志", async () => {
-	const { reply, logs } = await envProbe("PERSONAL_TAX__KEY=from-file\n");
-	assert.deepEqual(reply, { ok: true, output: { named: "from-file" } });
+test("入口：宿主的 Gateway 从状态目录的模块副本里跑工具，密钥值取自模块自己的 modules-data/<模块>/.env，每次调用记一行日志", async () => {
+	const { reply, logs } = await envProbe({ moduleEnv: { "personal-tax": "PERSONAL_TAX__KEY=from-module-env\nPOLYGON_API_KEY=tax-own-polygon\n" } });
+	assert.deepEqual(reply, { ok: true, output: { named: "from-module-env", polygon: "tax-own-polygon" } });
 	assert.ok(logs.some((l) => l.startsWith("[gateway] personal-tax tools/env-probe")), logs.join("\n"));
 });
 
-test("入口：宿主进程环境里的同名变量到不了模块代码，模块的密钥只取自 secretsFile", async (t) => {
+test("入口：模块代码拿不到全局 secretsFile 里的任何值，也拿不到宿主进程环境里的同名变量", async (t) => {
 	process.env.PERSONAL_TAX__KEY = "from-host-env";
 	t.after(() => delete process.env.PERSONAL_TAX__KEY);
-	assert.deepEqual((await envProbe("PERSONAL_TAX__KEY=from-file\n")).reply, { ok: true, output: { named: "from-file" } });
-	assert.deepEqual((await envProbe("OTHER=x\n")).reply, { ok: true, output: { named: null } });
+	const global = "PERSONAL_TAX__KEY=from-global-file\nPOLYGON_API_KEY=global-polygon\n";
+	assert.deepEqual((await envProbe({ secretsText: global })).reply, { ok: true, output: { named: null, polygon: null } });
+	assert.deepEqual((await envProbe({ secretsText: global, moduleEnv: { "personal-tax": "PERSONAL_TAX__KEY=from-module-env\n" } })).reply, { ok: true, output: { named: "from-module-env", polygon: null } });
+});
+
+test("入口：一个模块拿不到另一个模块 .env 里的 key", async () => {
+	const { reply } = await envProbe({ moduleEnv: { "stock-ta": "POLYGON_API_KEY=stock-ta-polygon\nPERSONAL_TAX__KEY=planted\n" } });
+	assert.deepEqual(reply, { ok: true, output: { named: null, polygon: null } });
+});
+
+test("入口：模块没有 .env 时工具照常跑、拿到空，不报错", async () => {
+	const { reply } = await envProbe({});
+	assert.deepEqual(reply, { ok: true, output: { named: null, polygon: null } });
+});
+
+test("入口：模块 feed 的密钥也按模块取，只读这个模块自己的 .env", async () => {
+	const { options } = await envProbe({ secretsText: "POLYGON_API_KEY=global-polygon\n", moduleEnv: { "stock-ta": "POLYGON_API_KEY=stock-ta-polygon\n" } });
+	const secret = options.moduleFeeds!.secret!;
+	assert.equal(secret("stock-ta" as ModuleName, "POLYGON_API_KEY"), "stock-ta-polygon");
+	assert.equal(secret("mail" as ModuleName, "POLYGON_API_KEY"), undefined);
+	assert.equal(secret("personal-tax" as ModuleName, "POLYGON_API_KEY"), undefined);
 });
 
 async function draftProbe(t: TestContext, feedFixtures: boolean, oauthUrl: (google: FakeGoogle) => string | undefined) {
@@ -446,7 +469,7 @@ async function draftProbe(t: TestContext, feedFixtures: boolean, oauthUrl: (goog
 	return { reply: await options.gateway!.call(caller, { kind: "tool", name: "echo" as ComponentName, input: {} }), google, sent };
 }
 
-test("入口：宿主的 Gateway 用 secretsFile 里写草稿的 token 经口子建草稿", async (t) => {
+test("入口：宿主的 Gateway 用全局 secretsFile 里写草稿的 token 经口子建草稿，模块没有 .env 也照常", async (t) => {
 	const { reply, google, sent } = await draftProbe(t, false, (g) => g.url);
 	assert.ok(reply.ok, JSON.stringify(reply));
 	assert.equal((reply.output as { draftId: string }).draftId, "r-1");

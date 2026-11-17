@@ -3,7 +3,7 @@ import { moduleDataDir } from "../modules/knowledge.ts";
 import { problemLine, scanPackage, summary } from "../modules/validate.ts";
 import { defaultStateDir } from "../state-dir.ts";
 
-const USAGE = "usage: just module check <packageDir> [--previous <packageDir>] | just module new <name> [--template notes|team|full] | just module try <name or packageDir> | just module on <name> | just module off <name> | just module import <name> <knowledge> <file or folder> | just module purge <name> [--confirm <name>] | just module setup <name>";
+const USAGE = "usage: just module check <packageDir> [--previous <packageDir>] | just module new <name> [--template notes|team|full] | just module try <name or packageDir> | just module on <name> | just module off <name> | just module import <name> <knowledge> <file or folder> | just module purge <name> [--confirm <name>] | just module setup <name> | just module secret <name> <SECRET_NAME>";
 
 const isFolder = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
 
@@ -32,6 +32,7 @@ else if ((command === "on" || command === "off") && target !== undefined && flag
 else if (command === "new" && target !== undefined && rest.length === 0 && (flag === undefined || (flag === "--template" && previous !== undefined))) process.exitCode = (await import("./module-new.ts")).newModule(target, previous ?? "notes");
 else if (command === "try" && target !== undefined && flag === undefined) process.exitCode = await (await import("./module-try.ts")).tryModule(target);
 else if (command === "import" && target !== undefined && flag !== undefined && previous !== undefined && rest.length === 0) process.exitCode = (await import("./module-import.ts")).importModuleKnowledge(target, flag, previous);
+else if (command === "secret" && target !== undefined && flag !== undefined && previous === undefined) process.exitCode = await (await import("./module-secret.ts")).setModuleSecret(target, flag);
 else if (command === "setup" && target !== undefined && flag === undefined) process.exitCode = (await import("./module-setup.ts")).setupModule(target);
 else if (command === "purge" && target !== undefined && rest.length === 0 && (flag === undefined || (flag === "--confirm" && previous !== undefined))) process.exitCode = await (await import("./module-purge.ts")).purgeModule(target, previous);
 else {

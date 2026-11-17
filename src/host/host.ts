@@ -27,6 +27,7 @@ import { loadToken } from "./web-token.ts";
 import type { TailnetName } from "./web-hosts.ts";
 import { MemberCap } from "./member-cap.ts";
 import { ConfigError } from "../config-error.ts";
+import type { ModuleSecretLookup } from "../modules/run-code.ts";
 import { OutputRoot } from "./output.ts";
 import { WorkerExecutor, type DispatchOptions, type WorkerModels, type WorkerSpawner } from "./workers.ts";
 import type { Domains } from "../modules.ts";
@@ -68,7 +69,7 @@ export interface HostOptions {
 	ruleAllows?: (ruleId: string, triggerSource: string) => boolean;
 	isMarketSource?: (source: string) => boolean;
 	/** `mail`: the host's Gmail read access; without it a feed on the mail connector waits. */
-	moduleFeeds?: { feeds(): readonly FeedEntry[]; fixtures: boolean; secret?: (name: string) => string | undefined; tickMs?: number; mail?: GmailAccount };
+	moduleFeeds?: { feeds(): readonly FeedEntry[]; fixtures: boolean; secret?: ModuleSecretLookup; tickMs?: number; mail?: GmailAccount };
 	/** The serving modules, asked each time. Without it no ticket has a domain. */
 	domains?: Domains;
 	gateway?: Gateway;

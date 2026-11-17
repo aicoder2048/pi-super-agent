@@ -7,6 +7,7 @@ import test, { type TestContext } from "node:test";
 import { Modules } from "../../src/modules.ts";
 import { runFeed, type FeedNotice, type FeedPorts, type FeedProblem } from "../../src/modules/feed-runner.ts";
 import { instanceData } from "../../src/modules/instance-data.ts";
+import { moduleSecretLookup } from "../../src/secrets.ts";
 import type { Alert, Badge } from "../../src/modules/protocol.ts";
 import { problemLine, scanPackage } from "../../src/modules/validate.ts";
 import { Kernel } from "../../src/kernel/kernel.ts";
@@ -29,6 +30,10 @@ async function quotesFeed(t: TestContext, key = "sk-test", settings: Record<stri
 	const state = mkdtempSync(join(tmpdir(), "psa-stock-ta-quotes-"));
 	t.after(() => rmSync(state, { recursive: true, force: true }));
 	const data = instanceData(state);
+	if (key !== "") {
+		mkdirSync(data.dir("stock-ta"), { recursive: true });
+		writeFileSync(join(data.dir("stock-ta"), ".env"), `POLYGON_API_KEY=${key}\n`);
+	}
 	const notices: FeedNotice[] = [];
 	const lines: Alert[] = [];
 	const badges: Badge[] = [];
@@ -40,7 +45,7 @@ async function quotesFeed(t: TestContext, key = "sk-test", settings: Record<stri
 		alert: (_, a) => !lines.some((l) => l.externalId === a.externalId) && lines.push(a) > 0,
 		badge: (_, b) => void badges.push(b),
 		problem: (_, p) => void problems.push(p),
-		secret: (name) => (name === "POLYGON_API_KEY" && key !== "" ? key : undefined),
+		secret: moduleSecretLookup(state),
 		now: () => clock.now,
 	};
 	const watch = (...symbols: string[]) => data.write("stock-ta", entry.components, "watchlist", symbols.map((symbol) => ({ symbol })), "使用者口述", "test");
@@ -112,6 +117,7 @@ test("缺密钥：不发请求，每一轮都报问题 no-key，一行说明去�
 	await feed.round();
 	assert.deepEqual(feed.problemIds(), ["no-key", "no-key"]);
 	assert.match(feed.problems[0]!.text, /没有设置 POLYGON_API_KEY/);
+	assert.match(feed.problems[0]!.text, /modules-data\/stock-ta\/\.env/);
 	assert.equal(feed.problems[0]!.text.split("\n").length, 1);
 	assert.equal(feed.massive.hits.length, 0, "没有密钥就不去敲行情服务的门");
 	assert.equal(feed.quotes().length, 0);
