@@ -1,14 +1,34 @@
 {
   "title": "策略计算",
-  "description": "给定腿的盈亏、参考价和三种 Roll 比较接口；当前固定 NOT_IMPLEMENTED，不用模型代算",
-  "effect": "read",
+  "description": "给定一组腿，算权利金、参考价、盈亏平衡、到期盈亏、年化、被指派概率、流动性，以及 Calendar、Diagonal、Combo 三种 Roll 的净收或净付。数由代码算，只读不写，不下单、不入账",
+  "cites": "BS 公式按利率 0、无股息；被指派概率 = 到期时落在价内的概率；年化 = 最大盈利 ÷ 占用资金 × 365 ÷ 剩余天数；Roll 净收 = 新腿收的 − 旧腿买回的",
   "input": {
     "kind": { "type": "text", "title": "CSP、CC、long-put、long-call、credit-vertical、debit-vertical、Calendar、Diagonal 或 Combo" },
-    "legs": { "type": "text", "title": "JSON 文本：方向、合约、张数、价格、乘数和时刻" },
-    "scenario_prices": { "type": "text", "title": "情景正股价 JSON 数组文本" }
+    "legs": { "type": "text", "title": "腿的 JSON 数组文本。每条腿：action（sell 或 buy）、type（put 或 call）、strike、expiration（YYYY-MM-DD）、contracts（默认 1）、price（每股美元；不给就取 bid 和 ask 的中间价），可选 bid、ask、iv（小数）、open_interest、volume、shares_per_contract；Roll 的腿还要 role（旧腿 close，新腿 open）" },
+    "spot": { "type": "number", "title": "正股价，美元；算被指派概率和反解 IV 要用，可不填" },
+    "asof": { "type": "date", "title": "按哪天算剩余天数，YYYY-MM-DD；不填按美东今天" },
+    "scenario_prices": { "type": "text", "title": "到期时正股价的情景，JSON 数组文本，例如 [90, 100, 110]；可不填" },
+    "cost_basis": { "type": "number", "title": "CC 的持股成本，每股美元；可不填" }
   },
   "output": {
-    "status": { "type": "text", "title": "固定 NOT_IMPLEMENTED" },
-    "reason": { "type": "text", "title": "未实现的计算及不入账说明" }
+    "status": { "type": "text", "title": "OK；INVALID_INPUT 是输入有问题；ADJUSTED_CONTRACT 是调整过的合约，不按 100 股算，拒算" },
+    "reason": { "type": "text", "title": "不是 OK 时的原因" },
+    "kind": { "type": "text", "title": "策略种类" },
+    "asof": { "type": "text", "title": "按哪天算的，YYYY-MM-DD" },
+    "dte": { "type": "number", "title": "剩余天数（日历日）；Roll 看每条腿的 dte" },
+    "net_premium": { "type": "number", "title": "整单净权利金，美元；正数是收，负数是付" },
+    "net_direction": { "type": "text", "title": "净收、净付或持平" },
+    "reference_price": { "type": "number", "title": "参考价，每股美元（多腿是每组净价）；正数是收，负数是付；缺报价时为空" },
+    "reference_total": { "type": "number", "title": "参考价折成整单的金额，美元" },
+    "reference_note": { "type": "text", "title": "参考价怎么来的，或为什么没算" },
+    "capital": { "type": "number", "title": "占用资金，美元；Roll 时为空" },
+    "max_profit": { "type": "number", "title": "到期最大盈利，美元；买 call 无上限时为空" },
+    "max_loss": { "type": "number", "title": "到期最大亏损，美元" },
+    "breakeven": { "type": "number", "title": "到期盈亏平衡的正股价，美元" },
+    "annualized_return": { "type": "number", "title": "年化收益，小数（0.2433 是 24.33%）；买方、到期日当天、Roll 时为空" },
+    "roll": { "type": "text", "title": "Roll 时才有：type（Calendar、Diagonal 或 Combo）、close_cost（买回旧腿，美元）、open_credit（新腿收入，美元）、net（净收为正，美元）、verdict（ROLL_OK、ROLL_FOR_PENNIES 或 DO_NOT_ROLL_TAKE_LOSS；买方 Roll 为空）、verdict_note、penny_threshold（净收门槛，美元）" },
+    "legs": { "type": "text", "title": "每条腿：dte（天）、iv（小数）、iv_source（给定、自算或无数据）、assignment_probability（卖出腿到期被指派的概率，小数）、touch_probability（到期前碰到行权价的概率，小数）、liquidity（score 0 到 1、tier 好/偏薄/差/很差、nbbo 有报价/缺报价）" },
+    "expiry_pl": { "type": "text", "title": "每个情景正股价的到期盈亏：spot（美元）、pl（整单美元）；Roll 时为空" },
+    "assumptions": { "type": "text", "title": "这次计算用到的假设" }
   }
 }
