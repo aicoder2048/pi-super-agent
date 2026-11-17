@@ -1,6 +1,6 @@
 # 从 full 模板生成的模块
 
-full 模板是 team 模板（知识、技能、专家、考题）再加一个工具。设计里的 full 还有数据和 feed，这两样框架还没做，所以模板里没有。每个文件夹放什么：
+full 模板是 team 模板（知识、技能、专家、考题）再加一个工具。数据集合（`data/`）和 feed（`feeds/`）模板里没有，要的话照仓库里的示例包写：`docs/modules/examples/mail/`（mail 连接器的 feed、私密集合、发件人名单），`docs/modules/examples/stock-ta/`（自己取数据的 feed、带密钥的工具）。每个文件夹放什么：
 
 - `knowledge/<名字>/`：一份知识。`source.json` 写标题、版本、出处和 `license`，正文是旁边的 Markdown，按 `##` 标题切段。受版权保护的资料写 `"license": "user-import"`，包里只放 `source.json`，全文用 `just module import <模块> <知识名> <文件或目录>` 导入。
 - `skills/<名字>/SKILL.md`：一份技能，开头写 `name` 和 `description`。
