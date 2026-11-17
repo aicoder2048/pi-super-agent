@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 import { EVERY, everyMs } from "./connectors/timer.ts";
 import { mailFeedProblems } from "./connectors/mail.ts";
 import { feedInput, intoOf, nothingHeld, parseCollected } from "./feed-runner.ts";
@@ -312,9 +312,24 @@ function readTool(report: Report, root: string, name: string): Component | undef
 		}
 		const testCase: ToolCase = { name: entryCase["name"], input: entryCase["input"], expect: entryCase["expect"] };
 		if (typeof entryCase["tolerance"] === "number") testCase.tolerance = entryCase["tolerance"];
+		const data = entryCase["data"];
+		if (data !== undefined) {
+			if (typeof data === "string" && isPackageFolder(root, data)) testCase.data = data;
+			else report(casesWhere, `case "${entryCase["name"]}" has "data" ${JSON.stringify(data)}, which is not a folder of this package (a path from the package root)`);
+		}
+		const responses = entryCase["responses"];
+		if (responses !== undefined) {
+			if (isObject(responses)) testCase.responses = responses;
+			else report(casesWhere, `case "${entryCase["name"]}" has "responses" that is not an object of address to reply`);
+		}
 		cases.push(testCase);
 	}
 	return { kind: "tools", name: name as ComponentName, tool, cases };
+}
+
+function isPackageFolder(root: string, path: string): boolean {
+	const full = resolve(root, path);
+	return full.startsWith(`${root}${sep}`) && statSync(full, { throwIfNoEntry: false })?.isDirectory() === true;
 }
 
 function readSkill(report: Report, root: string, name: string): Component | undefined {
@@ -528,7 +543,8 @@ function same(actual: Json | undefined, expected: Json, tolerance: number): bool
 	return actual === expected;
 }
 
-type CaseRun = { component: string; entry: string; secrets: Secrets; input: unknown; options: RunOptions; problem(reply: CodeReply): Problem | undefined };
+/** `data`: the package folder the case's data dir starts as a copy of; cases with the same one share that copy. */
+type CaseRun = { component: string; entry: string; secrets: Secrets; input: unknown; options: RunOptions; data?: string; problem(reply: CodeReply): Problem | undefined };
 
 function toolRun(component: Extract<Component, { kind: "tools" }>, item: ToolCase, index: number): CaseRun {
 	const where = `tools/${component.name}/cases.json`;
@@ -538,7 +554,8 @@ function toolRun(component: Extract<Component, { kind: "tools" }>, item: ToolCas
 		entry: RUNTIMES[component.tool.runtime ?? "node"],
 		secrets: fixtureSecrets(component.tool.secrets ?? []),
 		input: item.input,
-		options: {},
+		options: item.responses === undefined ? {} : { responses: item.responses },
+		...(item.data !== undefined && { data: item.data }),
 		problem: (reply) => {
 			if (!reply.ok) return { where, reason: `${label} threw: ${reply.note}` };
 			if (!same(reply.output as Json, item.expect as Json, item.tolerance ?? 1e-9)) return { where, reason: `${label} failed: expected ${JSON.stringify(item.expect)}, got ${JSON.stringify(reply.output)}` };
@@ -573,9 +590,12 @@ function caseRuns(components: readonly Component[]): CaseRun[] {
 
 export const hasCases = (scan: PackageScan): boolean => caseRuns(scan.components).length > 0;
 
-/** A check never shows module code the module's real data: every case of one check shares a data dir that is deleted after the last. */
-function scratchData(packageDir: string, module: string, realDataDir: string | undefined): { dir: string; drop(): void; explain(problem: Problem): Problem } {
+type Scratch = { dir: string; drop(): void; explain(problem: Problem): Problem };
+
+/** A check never shows module code the module's real data: each fixture folder, and no fixture, gets its own data dir, deleted after the last case. */
+function scratchData(packageDir: string, module: string, realDataDir: string | undefined, seed: string | undefined): Scratch {
 	const dir = mkdtempSync(join(tmpdir(), "psa-check-data-"));
+	if (seed !== undefined) cpSync(join(packageDir, seed), dir, { recursive: true });
 	if (realDataDir !== undefined) linkVenvs(realDataDir, dir);
 	const lock = lockOf(packageDir);
 	const noVenv = lock !== undefined && (realDataDir === undefined || !venvInstalled(realDataDir, lock));
@@ -588,18 +608,33 @@ function scratchData(packageDir: string, module: string, realDataDir: string | u
 	};
 }
 
+/** The scratch data dir of each case, made on first use; `drop` deletes them all. */
+function scratches(packageDir: string, module: string, realDataDir: string | undefined) {
+	const made = new Map<string | undefined, Scratch>();
+	return {
+		of(run: CaseRun): Scratch {
+			let scratch = made.get(run.data);
+			if (scratch === undefined) {
+				scratch = scratchData(packageDir, module, realDataDir, run.data);
+				made.set(run.data, scratch);
+			}
+			return scratch;
+		},
+		drop: () => made.forEach((scratch) => scratch.drop()),
+	};
+}
+
 const siteOf = (packageDir: string, run: CaseRun, dataDir: string): CodeSite => ({ packageDir, component: run.component, dataDir });
 
 /** For a package scanned with `runCases: false`. `realDataDir` is the module's instance data, whose venvs the cases may use. */
 export async function runCasesAsync(scan: PackageScan, realDataDir?: string): Promise<Problem[]> {
 	const problems: Problem[] = [];
-	const runs = caseRuns(scan.components);
-	if (runs.length === 0) return problems;
-	const data = scratchData(scan.dir, scan.manifest.name, realDataDir);
+	const data = scratches(scan.dir, scan.manifest.name, realDataDir);
 	try {
-		for (const run of runs) {
-			const problem = run.problem(await runModuleCodeAsync(siteOf(scan.dir, run, data.dir), run.entry, run.input, run.secrets, run.options));
-			if (problem) problems.push(data.explain(problem));
+		for (const run of caseRuns(scan.components)) {
+			const scratch = data.of(run);
+			const problem = run.problem(await runModuleCodeAsync(siteOf(scan.dir, run, scratch.dir), run.entry, run.input, run.secrets, run.options));
+			if (problem) problems.push(scratch.explain(problem));
 		}
 	} finally {
 		data.drop();
@@ -676,16 +711,15 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, d
 		if (only !== null && only !== manifest.name) report(`tools/${item.name}/tool.json`, `"port" ${item.tool.port} 只有模块 ${only} 能用`);
 	}
 	const runs = runCases && problems.length === 0 ? caseRuns(components) : [];
-	if (runs.length > 0) {
-		const data = scratchData(root, manifest.name, dataDirOf?.(manifest.name));
-		try {
-			for (const run of runs) {
-				const problem = run.problem(runModuleCode(siteOf(root, run, data.dir), run.entry, run.input, run.secrets, run.options));
-				if (problem) problems.push(data.explain(problem));
-			}
-		} finally {
-			data.drop();
+	const data = scratches(root, manifest.name, dataDirOf?.(manifest.name));
+	try {
+		for (const run of runs) {
+			const scratch = data.of(run);
+			const problem = run.problem(runModuleCode(siteOf(root, run, scratch.dir), run.entry, run.input, run.secrets, run.options));
+			if (problem) problems.push(scratch.explain(problem));
 		}
+	} finally {
+		data.drop();
 	}
 	notes.push(...components.flatMap(namedSecrets).flatMap(({ where, secret }) => {
 		const note = identityNote(secret);

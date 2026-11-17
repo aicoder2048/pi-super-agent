@@ -143,8 +143,12 @@ export interface ToolDescriptor {
 	fetch?: ToolFetch;
 }
 
-/** One entry of `cases.json`. `tolerance` is absolute, for numbers, default 1e-9. */
-export type ToolCase = { name: string; input: Readonly<Record<string, unknown>>; expect: Readonly<Record<string, unknown>>; tolerance?: number };
+/**
+ * One entry of `cases.json`. `tolerance` is absolute, for numbers, default 1e-9. `data`: a folder of the package, relative to its
+ * root, copied into the case's data dir, so a tool that reads its module's data runs on a fixture. `responses`: replies by
+ * address that the tool's `fetch` gets instead of the network, as in a feed fixture.
+ */
+export type ToolCase = { name: string; input: Readonly<Record<string, unknown>>; expect: Readonly<Record<string, unknown>>; tolerance?: number; data?: string; responses?: FeedFixture["responses"] };
 
 /**
  * `feeds/<name>/feed.json`. The source name on triggers is `<module>/<name>`.
