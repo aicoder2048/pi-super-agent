@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { createGateway, refusalText } from "../../src/modules/gateway.ts";
-import { ModuleStore } from "../../src/modules/live.ts";
+import { CopiesInUse, ModuleStore } from "../../src/modules/live.ts";
 import type { ComponentName, Digest, ModuleName } from "../../src/modules/manifest.ts";
 import type { Json, Request, WorkerCaller } from "../../src/modules/protocol.ts";
 import { scanPackage } from "../../src/modules/validate.ts";
@@ -143,6 +143,13 @@ test("A 没开放这个工具、或没有这个工具：B 拿到「alpha 现在�
 	assert.deepEqual(await gateway.call(caller({ member: null }), call("alpha/tools/missing")), { ok: false, refusal: { code: "provider-absent", note: "alpha 现在没有开放 missing" } });
 });
 
+test("A 有私密集合、exports 写空列表：网关照常认这份副本，回「alpha 现在没有开放 level」而不是「没装或没开」", async (t) => {
+	const { fx, gateway, caller, serving } = setup(t);
+	const closed = { ...ALPHA, "module.json": JSON.stringify({ schema: 1, name: "alpha", version: "0.1.0", exports: [] }), "data/holdings/collection.json": JSON.stringify({ title: "持仓", kind: "record", class: "private", fields: { a: { type: "text", title: "a" } } }) };
+	serving.set("alpha", fx.keep("alpha", closed));
+	assert.deepEqual(await gateway.call(caller(), call("alpha/tools/level")), { ok: false, refusal: { code: "provider-absent", note: "alpha 现在没有开放 level" } });
+});
+
 test("A 带 py/uv.lock 而环境没装：工具失败时换成「alpha 的运行环境还没装好」；不用环境的工具照常成", async (t) => {
 	const { fx, gateway, caller, serving, dataDir } = setup(t);
 	const withLock = { ...ALPHA, "py/pyproject.toml": '[project]\nname = "alpha"\nversion = "0.1.0"\n', "py/uv.lock": "version = 1\n" };
@@ -233,6 +240,31 @@ test("外部调用进行中，提供方的副本放进「进行中」集合；�
 	assert.deepEqual(held, [], "本模块调用不占");
 });
 
+test("外部调用时 runTool 自己抛异常：调用方拿到带提供方名的 provider-failed，副本的占用照样放开，之后 collect 删得掉旧副本", async (t) => {
+	const fx = fixture(t);
+	const serving = new Map<string, Digest>([["alpha", fx.keep("alpha", ALPHA)], ["beta", fx.keep("beta", BETA)]]);
+	const inUse = new CopiesInUse();
+	const gateway = createGateway({
+		copyDir: (module, digest) => fx.store.dirOf(module, digest),
+		serving: (module) => serving.get(module),
+		dataDir: (module) => join(fx.root, "data", module),
+		rows: undefined as never,
+		secret: (module) => {
+			if (module === "alpha") throw new Error("钥匙串读不出来");
+			return undefined;
+		},
+		log: () => {},
+		hold: inUse.hold,
+	});
+	const caller: WorkerCaller = { who: "worker", ticket: "tkt_1", pin: { module: "beta" as ModuleName, digest: serving.get("beta")! }, basis: "request", member: "analyst", heardOthers: false };
+	assert.deepEqual(await gateway.call(caller, call("alpha/tools/level")), { ok: false, refusal: { code: "provider-failed", note: "钥匙串读不出来", provider: "alpha" } });
+	assert.deepEqual(inUse.keys(), [], "抛异常后占用放开");
+	const old = serving.get("alpha")!;
+	serving.set("alpha", fx.keep("alpha", { ...ALPHA, "module.json": JSON.stringify({ schema: 1, name: "alpha", version: "0.2.0", exports: ["tools/level"] }) }));
+	fx.store.collect(new Set([...[...serving].map(([m, d]) => `${m}/${d}`), ...inUse.keys()]));
+	assert.equal(existsSync(fx.store.dirOf("alpha" as ModuleName, old)), false, "旧副本被 collect 删掉");
+});
+
 test("外部调用进行中 A 换了版本并跑 collect：旧副本在调用结束前不被删，结束后下一次 collect 删掉", async (t) => {
 	const { startLiveModules } = await import("../../src/host/live-modules.ts");
 	const { openStore, setModuleSwitch, moduleRows } = await import("../../src/kernel/store.ts");
@@ -256,9 +288,12 @@ test("外部调用进行中 A 换了版本并跑 collect：旧副本在调用结
 		const state = moduleRows(db).find((r) => r.name === name)?.record?.state;
 		return state?.at === "active" ? (state.serving.digest as Digest) : undefined;
 	};
-	await until(() => servingOf("alpha") !== undefined && servingOf("beta") !== undefined, "alpha 和 beta 在服务");
-	await new Promise((r) => setTimeout(r, 300));
 	const store = new ModuleStore(join(dir, "module-store"));
+	const ready = (name: string) => {
+		const digest = servingOf(name);
+		return digest !== undefined && modules.live.current().book.get(name)?.digest === digest && existsSync(store.dirOf(name as ModuleName, digest));
+	};
+	await until(() => ready("alpha") && ready("beta"), "alpha 和 beta 在服务，副本已放好");
 	const gateway = createGateway({
 		copyDir: (module, digest) => store.dirOf(module, digest),
 		serving: (module) => modules.live.current().book.get(module)?.digest as Digest | undefined,

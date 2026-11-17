@@ -63,6 +63,11 @@ test("有私密集合的模块写 exports：检查报错", () => {
 	assert.ok(problems(root).some((p) => p.startsWith("module.json:") && p.includes("private") && p.includes("holdings")), problems(root).join("\n"));
 });
 
+test("有私密集合的模块写空的 exports：没开放任何工具，检查通过", () => {
+	const root = pkg("alpha", { "module.json": manifest("alpha", { exports: [] }), "data/holdings/collection.json": collection("private") });
+	assert.deepEqual(problems(root), []);
+});
+
 test("exports 写了包里没有的工具、或不是工具：检查报错", () => {
 	const root = pkg("alpha", { "module.json": manifest("alpha", { exports: ["tools/none", "data/prices", "knowledge"] }), "data/prices/collection.json": collection("shareable") });
 	const found = problems(root);

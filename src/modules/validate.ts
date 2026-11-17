@@ -509,7 +509,7 @@ function crossCheck(report: Report, note: Report, manifest: ModuleManifest, comp
 		else report("module.json", `"uses" lists "${use}", but it names only other modules' tools, as <module>/tools/<name>: this module's tickets reach its own capabilities without it`);
 	}
 	const privateData = [...collections].flatMap(([name, collection]) => (collection.class === "private" ? [`data/${name}`] : []));
-	if (manifest.exports !== undefined && privateData.length > 0) {
+	if ((manifest.exports?.length ?? 0) > 0 && privateData.length > 0) {
 		report("module.json", `has "exports" but ${privateData.join(", ")} is private: an exported tool's code can read every collection of this module`);
 	}
 	for (const use of manifest.exports ?? []) {
