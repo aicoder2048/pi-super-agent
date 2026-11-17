@@ -18,7 +18,7 @@ theta 在 `LearnTypeScript2PiAgent/playground/theta/app`，下面记作 T。2026
 - **不自包含**：iv-history 依赖 T 本地三年的期权收盘缓存。option-ta 自己每天落盘 IV 快照，从零攒 IV rank。
 - **theta 的规则**（只作参考，不照搬）：13 个技能带阈值，比如 pre-sto、premium-richness、roll-decision、btc-decision（固定 50/80 止盈）、assignment-cc（CC 行权价不低于成本）、earnings-cross。它们就是这个模块的专家知识。
 - **知识文档**：`T/docs/research/digests/` 38 篇 digest，主要引用 tastylive 和 CBOE 并带链接；`scout-sources.md` 是信任源白名单。书籍只有署名加一两句意译，没有全文。
-- **私人数据，一样都不搬**：positions.json、accounts/、state/、book-roc/、reports/、briefs/、advisories/、theta-pb-email 技能。持仓只借数据形状（Position 带 roll 链和入场上下文）。
+- **私人数据，一样都不搬**：positions.json、accounts/、state/、book-roc/、reports/、briefs/、advisories/、本机私有的成交邮件样例目录。持仓只借数据形状（Position 带 roll 链和入场上下文）。
 - **T 自己的教训**：决策数学写成确定性代码，模型只叙事；阈值写成命名常量并注明出处；数据缺失标 UNRESOLVED，不静默通过；动态止盈回测输给固定 50%，已退回固定值。
 
 ## 名字
@@ -50,7 +50,7 @@ grill-with-docs 就是两个技能合用：grilling（按决策树一轮轮拷�
 - **完成标准**：每个打算用的字段都有实测样本。
 
 ### P2 模块工坊构建（真实产品路径）
-- **前置条件**：C2（模块自己的 `.env`，ADR-0031，已合并）、C4a、C4c、C4d 都合并以后才开工，分期见 `architecture/service-connector-design.md`。option-ta 的专家要调 stock-ta 开放的工具：C4a 之前包检查把外部 `uses` 当错误，C4c 之前 stock-ta 没有开放任何工具，C4d 之前工坊的技能不会写外部 `uses` 和「请对 stock-ta 说」的转述。
+- **前置条件**：C2（模块自己的 `.env`，ADR-0031，已合并）、C4a、C4b、C4c、C4d 都合并以后才开工，分期见 `architecture/service-connector-design.md`。option-ta 的专家要调 stock-ta 开放的工具：C4a 之前包检查把外部 `uses` 当错误；C4b 之前 `just module try` 的预演不带 stock-ta 的副本，外部调用全回 `provider-absent`，P3 用真模型跑 `module try` 就测不到专家调 stock-ta；C4c 之前 stock-ta 没有开放任何工具；C4d 之前工坊的技能不会写外部 `uses` 和「请对 stock-ta 说」的转述。
 - 工坊负责包的骨架、技能、专家、知识、考题。移植代码不交给工坊，那是 P3 的工程活。
 - 在临时 `PSA_STATE_DIR` 起宿主，对幕僚长说一句话，带上 `spec.md` 和术语表，任务开到 `module-builder`。
 - 记下工坊做到哪一步、哪里卡住、用了多少 token。工坊自己的毛病另开 PR 修，不在 option-ta 里绕开。
@@ -67,7 +67,7 @@ grill-with-docs 就是两个技能合用：grilling（按决策树一轮轮拷�
 ## 已定的第一版范围（拷问记录）
 
 - 意图、动作、价差范围见 `option-ta-glossary.md`；税务口径见 `option-ta-tax-memo.md`。
-- 第一版记期权成交（含到期、指派、行权），外加被指派产生的股票（2026-11-16 使用者选 B）。股票的其余买卖不记。按账户记、按合约汇总；不做仓位管理（现金、保证金、仓位大小、组合配置）。
+- 第一版记期权成交（含到期、指派、行权），外加被指派产生的股票和买方行权交割的股票（2026-11-16 使用者选 B）。股票的其余买卖不记。按账户记、按合约汇总；不做仓位管理（现金、保证金、仓位大小、组合配置）。
 - 要独立股票批次或持有期的税务判断（合格备兑 call、股票和期权的跨式、§1233 买 put 视为卖空、涉及股票的 wash sale）第一版一律标「待确认」。1099-B 导入、开 CC 时的行情快照、批次指定、跨式标识不进第一版。哪些判断降级、以后补要哪些数据，见 `option-ta-tax-memo.md` 第 14.3 节。
 - 一套原始成交，算出交易链和税务两种视图。和 1099-B 对账以后再做，要先能导入 1099-B。
 - 成交默认从券商成交邮件记，也接受使用者手动说；按合约、方向、成交日、张数去重，数以邮件为准，含糊就问。
