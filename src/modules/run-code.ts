@@ -53,15 +53,15 @@ type Replay = { status: number; headers: Readonly<Record<string, string>>; body?
 
 const REPLAY_KEYS = new Set(["status", "headers", "body"]);
 
-/** An object with "status" and no other keys than "headers" and "body". An API body that carries its own "status" has more keys, so it stays a body. */
-const isReplay = (reply: unknown): reply is { status: unknown; headers?: unknown; body?: unknown } =>
-	typeof reply === "object" && reply !== null && !Array.isArray(reply) && Object.hasOwn(reply, "status") && Object.keys(reply).every((key) => REPLAY_KEYS.has(key));
+/** An object with a numeric "status" and no other keys than "headers" and "body". An API body with a text "status" (`{ "status": "ERROR" }`) or with more keys stays a body. */
+const isReplay = (reply: unknown): reply is { status: number; headers?: unknown; body?: unknown } =>
+	typeof reply === "object" && reply !== null && !Array.isArray(reply) && typeof (reply as { status?: unknown }).status === "number" && Object.keys(reply).every((key) => REPLAY_KEYS.has(key));
 
 /** Why `reply` cannot be replayed, or undefined. `Response` takes only 200 to 599, the statuses `fetch` can resolve with. */
 export function replayProblem(reply: unknown): string | undefined {
 	if (!isReplay(reply)) return undefined;
 	const { status, headers } = reply;
-	if (typeof status !== "number" || !Number.isInteger(status) || status < 200 || status > 599) return `"status" ${JSON.stringify(status)}, which is not a whole number from 200 to 599`;
+	if (!Number.isInteger(status) || status < 200 || status > 599) return `"status" ${JSON.stringify(status)}, which is not a whole number from 200 to 599`;
 	const text = typeof headers === "object" && headers !== null && !Array.isArray(headers) && Object.values(headers).every((value) => typeof value === "string");
 	if (headers !== undefined && !text) return `"headers" that are not names to text`;
 	return undefined;

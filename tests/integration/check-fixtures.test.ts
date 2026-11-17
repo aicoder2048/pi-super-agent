@@ -22,7 +22,7 @@ const FETCHER = `export default async (input) => {
 
 const STATUS_READER = `export default async () => {
 	const reply = await fetch("https://quotes.example/v1/last?symbol=X");
-	return { status: reply.status, ok: reply.ok, retryAfter: reply.headers.get("Retry-After"), type: reply.headers.get("content-type"), body: await reply.json() };
+	return { status: reply.status, ok: reply.ok, retryAfter: reply.headers.get("Retry-After"), type: reply.headers.get("content-type"), text: await reply.text() };
 };`;
 
 const tool = (extra: object = {}) => JSON.stringify({ title: "t", description: "d", effect: "read", input: { symbol: { type: "text", title: "代码" } }, output: { level: { type: "number", title: "价位" } }, ...extra });
@@ -85,25 +85,41 @@ test("用例带 responses：工具的 fetch 按网址回放应答，不联网", 
 
 test("回放的应答可以带状态码和响应头：工具读到 429 和 retry-after，res.ok 是 false", (t) => {
 	const limited = { status: 429, headers: { "Retry-After": "30" }, body: { status: "ERROR", error: "too many" } };
-	const root = pkg(t, { status: [statusCase(limited, { status: 429, ok: false, retryAfter: "30", type: "application/json", body: { status: "ERROR", error: "too many" } })] });
+	const root = pkg(t, { status: [statusCase(limited, { status: 429, ok: false, retryAfter: "30", type: "application/json", text: JSON.stringify(limited.body) })] });
 	assert.deepEqual(problems(root), []);
 });
 
 test("只写应答体的旧写法照旧是 200；带 status 字段的接口应答体不当成状态码", (t) => {
 	const body = { status: "OK", tickers: [] };
-	const root = pkg(t, { status: [statusCase(body, { status: 200, ok: true, retryAfter: null, type: "application/json", body })] });
+	const root = pkg(t, { status: [statusCase(body, { status: 200, ok: true, retryAfter: null, type: "application/json", text: JSON.stringify(body) })] });
+	assert.deepEqual(problems(root), []);
+});
+
+test("应答体只有文字的 status（例如手写的 Massive 错误应答）仍是应答体，状态 200、原样回", (t) => {
+	const body = { status: "ERROR" };
+	const root = pkg(t, { status: [statusCase(body, { status: 200, ok: true, retryAfter: null, type: "application/json", text: JSON.stringify(body) })] });
+	assert.deepEqual(problems(root), []);
+});
+
+test("只有数字 status 的对象是新写法：回那个状态码，没有应答体", (t) => {
+	const root = pkg(t, { status: [statusCase({ status: 429 }, { status: 429, ok: false, retryAfter: null, type: "application/json", text: "" })] });
+	assert.deepEqual(problems(root), []);
+});
+
+test("204 这类不带应答体的状态码：写了 body 也回空应答", (t) => {
+	const root = pkg(t, { status: [statusCase({ status: 204, body: { ignored: true } }, { status: 204, ok: true, retryAfter: null, type: "application/json", text: "" })] });
 	assert.deepEqual(problems(root), []);
 });
 
 test("宿主跑用例时（runCasesAsync）回放的状态码也生效", async (t) => {
-	const root = pkg(t, { status: [statusCase({ status: 503, body: { down: true } }, { status: 503, ok: false, body: { down: true } })] });
+	const root = pkg(t, { status: [statusCase({ status: 503, body: { down: true } }, { status: 503, ok: false, text: JSON.stringify({ down: true }) })] });
 	const scan = scanPackage(root, { runCases: false });
 	assert.ok(scan.ok, JSON.stringify(scan));
 	assert.deepEqual(await runCasesAsync(scan.scan), []);
 });
 
 test("回放应答的 status 不是 200 到 599 的整数、headers 不是文字对文字：检查报错", (t) => {
-	for (const status of [42, 700, 429.5, "429", "OK"]) {
+	for (const status of [42, 700, 429.5]) {
 		const root = pkg(t, { status: [statusCase({ status, body: {} }, {})] });
 		assert.match(problems(root).join("\n"), /tools\/status\/cases\.json: case "回放状态码" replies to https:\/\/quotes\.example\/v1\/last\?symbol=X with "status" .*, which is not a whole number from 200 to 599/, String(status));
 	}

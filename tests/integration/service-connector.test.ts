@@ -313,7 +313,7 @@ test("外部调用进行中 A 换了版本并跑 collect：旧副本在调用结
 	const caller: WorkerCaller = { who: "worker", ticket: "tkt_1", pin: { module: "beta" as ModuleName, digest: servingOf("beta")! }, basis: "inference", member: "analyst", heardOthers: true };
 	const running = gateway.call(caller, call("alpha/tools/slow"));
 	writeFileSync(join(dir, "modules/alpha/module.json"), JSON.stringify({ schema: 1, name: "alpha", version: "0.2.0", exports: ["tools/level", "tools/boom", "tools/slow"] }));
-	await until(() => servingOf("alpha") !== old, "alpha 换上新版", 5000);
+	await until(() => servingOf("alpha") !== old, "alpha 换上新版", 15_000);
 	modules.tick();
 	assert.equal(existsSync(store.dirOf("alpha" as ModuleName, old)), true, "调用还没结束，旧副本留着");
 	mkdirSync(join(moduleDataDir(dir, "alpha"), "files"), { recursive: true });

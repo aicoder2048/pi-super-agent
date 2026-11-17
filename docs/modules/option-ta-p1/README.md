@@ -121,7 +121,7 @@
 
 - 20 个并发请求全部 200。所有应答头里都没有 `X-RateLimit-*`、`Retry-After` 这类头，只有 `x-request-id`、`x-item-count`、`link`（下一页）。
 - 没见到 429 的样子。T 的 `python/_http_helper.py` 对 429 退避 4、8、16 秒后放弃。stock-ta 的 `massive.ts` 只按应答体 `status: "ERROR"` 报错。
-- **回放夹具的限制**：宿主 `src/modules/run-code.ts` 的假 `fetch` 一律回 200，只能决定应答体。所以 `cases.json` 能测「应答体是 `{status: "ERROR", error: ...}`」，测不了「HTTP 状态是 429」。见「对计划和 spec 的影响」。
+- **回放夹具的状态码**：只写应答体时宿主 `src/modules/run-code.ts` 的假 `fetch` 回 200。要测「HTTP 状态是 429」，把应答写成 `{ "status": 429, "headers": { "retry-after": "30" }, "body": {...} }`（PR #171，写法见 `docs/modules/module-user-guide.md` 的「回放网络应答」）。应答体是 `{status: "ERROR", error: ...}` 照旧能测。
 - 回放按完整 URL 精确匹配。`encodeURIComponent("O:SPY...")` 会写成 `O%3ASPY...`，用例里的 URL 键要和代码拼出来的一字不差。
 
 ## 休市时字段还在不在
@@ -293,7 +293,7 @@ T 里的 `positions.json`、`accounts/`、`state/`、`book-roc/`、`reports/`、
 4. **除息提醒只能用已宣布的除息。**「记下仓位时到期前有除息就提醒」遇到还没宣布的除息会漏。可选做法：按 `frequency` 和上一次除息日推一个「预计除息日」，标「未宣布」。这需要使用者拍板。
 5. **期权链工具必须滤二元期权**，并且只取需要的行权价范围。整条链要翻页，`chain` 工具给专家的输出要压紧（spec 已要求专家只读工具算好的紧凑结果）。
 6. **缺 IV 和希腊值是常态**：近月深度价内、极度价外的合约经常没有。工具对这些行要么自己用 BS 算并标明「自算」，要么标「无数据」，不能当 0。
-7. **P3 的完成标准「`cases.json` 覆盖 429」做不到字面要求**，因为回放只能回 200。两个办法：在宿主的夹具里加可选的 HTTP 状态（宿主改动，另开 PR），或者把标准改成「覆盖应答体为 `status: ERROR`」。需要决定。
+7. **P3 的完成标准「`cases.json` 覆盖 429」**：宿主的夹具已能回 HTTP 状态（PR #171），用例把应答写成 `{ "status": 429, "headers": {...}, "body": {...} }` 即可，按字面要求做。
 8. **spec 的「除息日：Massive `/v3/reference/dividends`（P1 实测）」**已实测，字段够用，限制见第 4 条。
 9. **期权日线和快照的成交量不一致**（差约 1.5%）。「期权异常成交」只用一个来源。
 
