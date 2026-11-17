@@ -265,7 +265,7 @@ export class Host {
 					problem: (_: string, reported: FeedProblem | undefined) => (problem = reported),
 				};
 				const run = mail && entry.feed.connector === "mail" && fixture === undefined ? await mail.beat(entry, ports, signal) : await runFeed(entry, items, ports, fixture, signal);
-				if (dropped.notices + dropped.alerts > 0) this.#log(`[预演] ${entry.source} 样例 ${fixture?.name}：丢掉 ${dropped.notices} 条触发、${dropped.alerts} 条提醒，没交出去`);
+				if (dropped.notices + dropped.alerts > 0) this.#log(`[样例] ${entry.source} 样例 ${fixture?.name}：丢掉 ${dropped.notices} 条触发、${dropped.alerts} 条提醒，没交出去`);
 				this.#feedHealth(entry, run, problem);
 				const zone = intoOf(entry.feed, entry.components)?.watch?.zone;
 				this.#beats.set(entry.source, { module: entry.module, title: entry.feed.title, at: clock.now(), ...(zone && { zone }), ...(run.ok ? { ok: true, records: run.records } : { ok: false, note: entry.private ? PRIVATE_ERROR : scrub(run.note) }) });

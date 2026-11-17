@@ -26,7 +26,7 @@ const RELAY_MS = 60_000;
 const ACK_MS = 5_000;
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 // The host prefixes each log line with its ISO time.
-const DROPPED = /^\S+ (\[预演\] .*)$/;
+const DROPPED = /^\S+ (\[样例\] .*)$/;
 
 type Models = { router: string; worker: string; fallback: string };
 
