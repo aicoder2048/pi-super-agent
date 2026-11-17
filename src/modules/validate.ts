@@ -711,7 +711,7 @@ function readComponents(report: Report, root: string): Component[] {
 }
 
 /** Paths that exist on one machine only. A package may be published, so it says `<状态目录>`, `$STATE` or `$PSA_REPO` instead. */
-const LOCAL_PATH = /(?<![\w.\/-])(\/Users\/|\/home\/|\/private\/var\/|\/var\/folders\/)/;
+const LOCAL_PATH = /(?<![\w.\/}>-])(\/Users\/|\/home\/|\/private\/var\/|\/var\/folders\/|\/tmp\/)/;
 
 function localPathNotes(root: string): string[] {
 	return allFiles(root).flatMap((path) => {

@@ -28,7 +28,7 @@ function notes(root: string): string[] {
 const pathNotes = (root: string) => notes(root).filter((note) => note.includes("local absolute path"));
 
 test("包里的文本写了本机绝对路径：给一行提醒，写明文件、行号和开头，不挡检查", () => {
-	for (const [prefix, line] of [["/Users/", "/Users/someone/state/modules/alpha"], ["/home/", "cd /home/someone/psa"], ["/private/var/", "`/private/var/folders/x/T/tmp.1`"], ["/var/folders/", "STATE=/var/folders/ab/T/tmp.2"]] as const) {
+	for (const [prefix, line] of [["/Users/", "/Users/someone/state/modules/alpha"], ["/home/", "cd /home/someone/psa"], ["/private/var/", "`/private/var/folders/x/T/tmp.1`"], ["/var/folders/", "STATE=/var/folders/ab/T/tmp.2"], ["/tmp/", "mktemp 给的 /tmp/tmp.3"]] as const) {
 		const root = pkg({ "README.md": `# alpha\n\n${line}\n` });
 		assert.deepEqual(pathNotes(root), [`README.md: line 3 has a local absolute path starting "${prefix}"; write <状态目录>, $STATE or $PSA_REPO instead, a package may be published`]);
 	}
@@ -36,7 +36,7 @@ test("包里的文本写了本机绝对路径：给一行提醒，写明文件�
 
 test("网址里的 /home/、相对路径、占位符和二进制文件不提醒", () => {
 	const root = pkg({
-		"README.md": "见 https://example.com/home/docs 和 docs/home/x，状态目录写 <状态目录>/modules/alpha，或 $STATE/modules/alpha\n",
+		"README.md": "见 https://example.com/home/docs 和 docs/home/x，状态目录写 <状态目录>/home/alpha，或 ${STATE}/tmp/alpha\n",
 		"skills/how/blob.bin": Buffer.from([0, 47, 85, 115, 101, 114, 115, 47]),
 	});
 	assert.deepEqual(pathNotes(root), []);

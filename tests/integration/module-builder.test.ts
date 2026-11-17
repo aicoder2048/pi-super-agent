@@ -8,7 +8,7 @@ import { startLiveModules } from "../../src/host/live-modules.ts";
 import { moduleRows, openStore } from "../../src/kernel/store.ts";
 import { Modules } from "../../src/modules.ts";
 import { judge, type Attempt, type Exam } from "../../src/modules/rehearse.ts";
-import { scanPackage } from "../../src/modules/validate.ts";
+import { questionOf, scanPackage } from "../../src/modules/validate.ts";
 import { MEMBER_TOOLS, memberTools } from "../../src/worker/tools.ts";
 
 const REPO_MODULES = fileURLToPath(new URL("../../modules", import.meta.url));
@@ -207,7 +207,6 @@ test("示例包的 mail feed 改写进非私密集合，检查报错", (t) => {
 });
 
 const AGENT = (name: string) => readFileSync(join(BUILDER, "agents", `${name}.md`), "utf8");
-const bodyOf = (text: string) => text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
 
 test("考题题面是使用者的原话：write-evals 和出考题都叫人先用说明书的典型问题，不在题面里教答法；工坊自己的考题照做", () => {
 	const text = SKILL("write-evals");
@@ -217,7 +216,7 @@ test("考题题面是使用者的原话：write-evals 和出考题都叫人先�
 	assert.ok(AGENT("eval-writer").includes("典型问题"), "出考题先读典型问题");
 	for (const c of scanned().components) {
 		if (c.kind !== "evals") continue;
-		const body = bodyOf(readFileSync(join(BUILDER, "evals", `${c.name}.md`), "utf8"));
+		const body = questionOf(readFileSync(join(BUILDER, "evals", `${c.name}.md`), "utf8"));
 		assert.ok(body.length <= 150, `${c.name} 的题面 ${body.length} 字，超过 150`);
 	}
 });
@@ -228,7 +227,11 @@ test("expect 的判法写进技能，和 judge 一致：空格算字，所以「
 	assert.ok(text.includes("「QCC 待确认」和「QCC待确认」是两个短语"), "给出空格的例子");
 	const exam: Exam = { name: "tax", uses: [], expect: ["QCC 待确认"], question: "q" };
 	const attempt: Attempt = { opened: true, ticket: "T1", domain: "m", report: { status: "done", summary: "QCC待确认" }, gateway: [] };
-	assert.equal(judge("m", exam, attempt).pass, false, "judge 真的把少一个空格判成没有");
+	const said = (summary: string, phrase: string) => judge("m", { ...exam, expect: [phrase] }, { ...attempt, report: { status: "done", summary } }).pass;
+	assert.equal(said("QCC待确认", "QCC 待确认"), false, "judge 真的把少一个空格判成没有");
+	assert.equal(said("qcc 待确认", "QCC 待确认"), false, "区分大小写");
+	assert.equal(said("ＱＣＣ 待确认", "QCC 待确认"), false, "全角半角不同");
+	assert.equal(said("结论：QCC 待确认。", "QCC 待确认"), true, "一字不差就算找到");
 	assert.ok(text.includes("不为了过预演放宽 expect"), "不放宽");
 	assert.ok(text.includes("不拆开"), "不拆开");
 	assert.ok(text.includes("汇报里单列"), "改了的 expect 在汇报里单列");
@@ -262,5 +265,14 @@ test("专家的 uses 按最小需要列，私密集合只给要用的专家；�
 	assert.ok(layout.includes("领队本来就调得到本模块的"), "不为领队把能力塞进专家的 uses");
 	assert.ok(AGENT("scaffolder").includes("uses"), "搭结构对 uses 也只给要的");
 	assert.ok(layout.includes("包里不放测试文件"), "测试写成 cases.json 和样例");
+	assert.ok(layout.includes("不引用宿主源码路径"), "包里所有文件都不引用宿主源码");
 	assert.ok(AGENT("knowledge-curator").includes("不引用宿主源码路径"));
+});
+
+test("module check 不跑包里的测试文件：一个必然失败的 tests/*.test.ts 不挡检查，所以技能叫人把验证写进 cases.json", (t) => {
+	const [name, files] = examples().solo;
+	const withTest = new Map(files);
+	const skill = [...files.keys()].find((path) => path.startsWith("skills/"))!;
+	withTest.set(join(dirname(skill), "tests", "always-fails.test.ts"), 'import test from "node:test";\ntest("x", () => { throw new Error("ran"); });\n');
+	assert.deepEqual(problemsOf(writePackage(t, name, withTest)), []);
 });
