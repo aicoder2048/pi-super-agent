@@ -8,6 +8,8 @@ tools: read,write,edit,bash,grep,find,ls
 
 - 新模块：按 build-module 第 2 步查重名，有同名就停，回复「已有同名模块，没有覆盖」。没有就跑 `module new`，再按说明书改 `module.json`（title、description、team）、写技能和专家，删掉模板留下的示例技能、示例专家和 README.md 里不再适用的话。
 - 改已有模块：只在原文件夹里改，不重跑 `module new`。
-- 每个专家的 `tools` 只给它要的；写文件的才给 write、edit、bash。
+- 只做说明书列了的集合、feed 和工具，不增不减。觉得缺什么，回复领队，不自己加。
+- 每个专家的 `tools` 只给它要的；写文件的才给 write、edit、bash。`uses` 也一样，按技能 package-layout 的「`uses` 按最小需要列」。
+- `module.json` 的 `description` 照说明书那一句写（package-layout），不写施工进度。包里任何文件不写本机绝对路径。
 
 写完跑一次 `module check`。回复先写 check 打印的最后一行，再列你写了或改了哪些文件。

@@ -710,6 +710,37 @@ function readComponents(report: Report, root: string): Component[] {
 	return components;
 }
 
+/** Paths that exist on one machine only. A package may be published, so it says `<状态目录>`, `$STATE` or `$PSA_REPO` instead. */
+const LOCAL_PATH = /(?:(?<=file:\/\/)|(?<![\w.\/}>~-]))(\/Users\/|\/home\/|\/private\/var\/|\/private\/tmp\/|\/var\/folders\/|\/var\/tmp\/|\/tmp\/)/;
+/** A web address (any scheme but `file:`): its path and query belong to that site, not this machine. */
+const WEB_ADDRESS = /\b(?!file:)[a-z][a-z0-9+.-]*:\/\/\S*/gi;
+
+function localPathNotes(root: string): string[] {
+	return allFiles(root).flatMap((path) => {
+		const content = readFileSync(join(root, path));
+		if (content.includes(0)) return [];
+		const lines = content.toString("utf8").split("\n").map((line) => line.replace(WEB_ADDRESS, ""));
+		const index = lines.findIndex((line) => LOCAL_PATH.test(line));
+		if (index === -1) return [];
+		const prefix = LOCAL_PATH.exec(lines[index]!)![1];
+		return [`${path}: line ${index + 1} has a local absolute path starting "${prefix}"; write <状态目录>, $STATE or $PSA_REPO instead, a package may be published`];
+	});
+}
+
+const LONG_QUESTION = 300;
+
+/** An eval file's body: the question the rehearsal asks. */
+export const questionOf = (text: string): string => text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
+
+function longQuestionNotes(root: string, components: readonly Component[]): string[] {
+	return components.flatMap((item) => {
+		if (item.kind !== "evals") return [];
+		const where = `evals/${item.name}.md`;
+		const question = questionOf(readFileSync(join(root, where), "utf8"));
+		return question.length > LONG_QUESTION ? [`${where}: the question is ${question.length} characters; ask it in the user's words in a sentence or two, and leave how to answer to the members and skills`] : [];
+	});
+}
+
 /**
  * `runCases: false` skips the tools' test cases, which spawn a process each: the host does that when it finds a package.
  * A folder the readers trip over (a `SKILL.md` that is a directory) is one problem on that package, never a throw.
@@ -758,6 +789,7 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, d
 		const note = identityNote(secret);
 		return note === undefined ? [] : [`${where}: ${note}`];
 	}));
+	notes.push(...longQuestionNotes(root, components), ...localPathNotes(root));
 	if (previous !== undefined && problems.length === 0) {
 		const before = exportedSide(resolve(previous), manifest.name);
 		const changes = structureChanges(before.components, components);
