@@ -122,14 +122,30 @@ test("handler 读不懂、信被拒收：拒收记录里没有 HTML", async (t) 
 	assert.ok(!record.includes("挂单数量") && !record.includes("<table"), record);
 });
 
+const DESK_BOX = { name: "", address: "desk@broker.example.com" };
+const part = (mimeType: string, text: string) => ({ mimeType, filename: "", headers: [ct(`${mimeType}; charset=utf-8`)], body: { data: b64(text) } });
+const forwarded = { mimeType: "message/rfc822", filename: "", body: {}, parts: [{ mimeType: "multipart/alternative", parts: [part("text/plain", "ORDER 10"), part("text/html", "<td>ORDER 10</td>")] }] };
+
+test("转发进来的原信的 HTML 不算这封信的 html；这封信自己的 HTML 太大、只给附件号的，也不拿后面的顶替", () => {
+	const plainReply: GmailMessage = { id: "m-fwd", payload: { mimeType: "multipart/mixed", parts: [part("text/plain", "Filled 3"), forwarded] } };
+	assert.equal("html" in letterOf(plainReply, DESK_BOX), false, "只有纯文本的回信带着原单");
+	const bigHtml: GmailMessage = { id: "m-big-fwd", payload: { mimeType: "multipart/mixed", parts: [{ mimeType: "multipart/alternative", parts: [part("text/plain", "Filled 3"), { mimeType: "text/html", filename: "", body: { attachmentId: "att-html", size: 900_000 } }] }, forwarded] } };
+	assert.equal("html" in letterOf(bigHtml, DESK_BOX), false, "外层 HTML 只有附件号");
+	const own: GmailMessage = { id: "m-own", payload: { mimeType: "multipart/mixed", parts: [{ mimeType: "multipart/alternative", parts: [part("text/plain", "Filled 3"), part("text/html", "<td>FILLED 3</td>")] }, forwarded] } };
+	assert.equal(letterOf(own, DESK_BOX).html, "<td>FILLED 3</td>");
+});
+
 test("HTML 最多 256 KB，比正文的 64 KB 宽：超出的按字截断，末尾写明，整串不超过 256 KB", () => {
 	const big = `<p>${"成交".repeat(60_000)}</p>`;
 	const message: GmailMessage = { id: "m-big", payload: { mimeType: "multipart/alternative", parts: [{ mimeType: "text/html", headers: [ct("text/html; charset=utf-8")], body: { data: b64(big) } }] } };
-	const html = letterOf(message, { name: "", address: "desk@broker.example.com" }).html!;
+	const html = letterOf(message, DESK_BOX).html!;
 	assert.ok(Buffer.byteLength(html) <= 256 * 1024 && Buffer.byteLength(html) > 255 * 1024, String(Buffer.byteLength(html)));
-	assert.ok(html.startsWith("<p>成交成交"));
-	assert.match(html, /HTML 超过 256 KB，后面截掉了/);
+	assert.ok(html.startsWith("<p>成交成交") && !html.includes("\uFFFD"));
+	assert.ok(html.endsWith("\n\n[HTML 超过 256 KB，后面截掉了，全文在 Gmail 里看]"), html.slice(-80));
+	const rows = `<table>${'<tr><td class="q">1</td><td class="w">2</td></tr>'.repeat(9_000)}</table>`;
+	const cut = letterOf({ id: "m-rows", payload: { mimeType: "text/html", body: { data: b64(rows) } } }, DESK_BOX).html!;
+	assert.match(cut, /<\/tr>\n\n\[HTML 超过 256 KB/, "截在一行表格的后面，不留半行");
 	const wide = `<table>${"<tr><td>1</td><td></td></tr>".repeat(4_000)}</table>`;
 	const under: GmailMessage = { id: "m-wide", payload: { mimeType: "text/html", body: { data: b64(wide) } } };
-	assert.equal(letterOf(under, { name: "", address: "desk@broker.example.com" }).html, wide, "比正文的 64 KB 大、不到 256 KB 的 HTML 不截");
+	assert.equal(letterOf(under, DESK_BOX).html, wide, "比正文的 64 KB 大、不到 256 KB 的 HTML 不截");
 });

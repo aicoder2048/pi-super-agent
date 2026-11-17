@@ -1,5 +1,5 @@
 /**
- * A Gmail message as the mail connector hands it to a feed's handler: headers, plain-text body and the attachment list.
+ * A Gmail message as the mail connector hands it to a feed's handler: headers, plain-text body, the HTML as sent and the attachment list.
  * The mail module's tools still decode attachments and parse addresses themselves (module code cannot import the host's),
  * so parseFrom, decodeEntities and htmlToText repeat docs/modules/examples/mail/feeds/inbox/message.ts; tests/unit/mail-senders.test.ts holds the copies to the same answers.
  */
@@ -11,7 +11,8 @@ export type Mailbox = { name: string; address: string };
 
 /**
  * `id` is Gmail's message id. `body` is at most 64 KB of text, cut with a note; `date` is Gmail's receipt time as ISO, or empty.
- * `html` is the first text/html part as sent, decoded by its charset, at most 256 KB, cut with a note; absent when the letter has none inline.
+ * `html` is the letter's own first text/html part as sent, decoded by its charset, at most 256 KB, cut before an open tag or table row with a note;
+ * absent when that part is missing or Gmail keeps it apart. A forwarded letter's HTML is never this letter's.
  */
 export type Letter = { id: string; threadId: string; messageIdHeader: string; from: Mailbox; replyTo: string; subject: string; date: string; snippet: string; body: string; html?: string; attachments: Attachment[] };
 
@@ -107,6 +108,8 @@ function clipBytes(text: string, limit: { bytes: number; cut: string }): string 
 
 export const partsOf = (part: Part | undefined): Part[] => (part === undefined ? [] : [part, ...(part.parts ?? []).flatMap(partsOf)]);
 
+const ownParts = (part: Part | undefined): Part[] => (part === undefined ? [] : [part, ...(part.mimeType === "message/rfc822" ? [] : (part.parts ?? []).flatMap(ownParts))]);
+
 /** Gmail hands over a part's bytes as sent, in the charset its Content-Type names (GBK, Big5, Shift_JIS, ISO-8859-x). */
 function decodeText(bytes: Buffer, part: Part): string {
 	const contentType = part.headers?.find((h) => h.name.toLowerCase() === "content-type")?.value ?? "";
@@ -124,6 +127,24 @@ const decode = (part: Part) => decodeText(Buffer.from(part.body?.data ?? "", "ba
 
 const inline = (parts: readonly Part[], mimeType: string) => parts.find((p) => !p.filename && p.body?.data && p.mimeType === mimeType);
 
+/** A cut that leaves half a tag or half a table row would hand a parser a row with a cell missing. */
+function clipHtml(html: string): string {
+	const clipped = clipBytes(html, HTML);
+	if (clipped === html) return html;
+	const kept = clipped.slice(0, -HTML.cut.length);
+	const lower = kept.replace(/[A-Z]/g, (c) => c.toLowerCase());
+	let end = kept.length;
+	if (lower.lastIndexOf("<") > lower.lastIndexOf(">")) end = lower.lastIndexOf("<");
+	const row = lower.lastIndexOf("<tr", end - 1);
+	if (row > lower.lastIndexOf("</tr>", end - 1)) end = row;
+	return kept.slice(0, end) + HTML.cut;
+}
+
+function htmlOf(message: GmailMessage): string | undefined {
+	const own = ownParts(message.payload).find((p) => !p.filename && p.mimeType === "text/html");
+	return own?.body?.data ? clipHtml(decode(own)) : undefined;
+}
+
 function bodyText(parts: readonly Part[]): string {
 	const plain = inline(parts, "text/plain");
 	if (plain) return decode(plain);
@@ -137,7 +158,7 @@ export function letterOf(message: GmailMessage, from: Mailbox): Letter {
 	const attachments: Attachment[] = parts
 		.filter((p) => p.filename && p.body?.attachmentId)
 		.map((p) => ({ partId: p.partId ?? "", filename: p.filename!, mimeType: p.mimeType ?? "", size: p.body?.size ?? 0 }));
-	const html = inline(parts, "text/html");
+	const html = htmlOf(message);
 	const at = Number(message.internalDate);
 	return {
 		id: message.id,
@@ -149,7 +170,7 @@ export function letterOf(message: GmailMessage, from: Mailbox): Letter {
 		date: Number.isFinite(at) && at > 0 ? new Date(at).toISOString() : "",
 		snippet: decodeEntities(message.snippet ?? ""),
 		body: clipBytes(bodyText(parts), BODY),
-		...(html && { html: clipBytes(decode(html), HTML) }),
+		...(html !== undefined && { html }),
 		attachments,
 	};
 }
