@@ -18,9 +18,12 @@ test("宿主上的 mail 连接器：信经连接器进来成了通知；授权�
 	const stateDir = join(root, "state");
 	const box = new FakeInbox();
 	const google = await startFakeGoogle({ routes: box.routes, refreshTokens: { [REFRESH]: "https://www.googleapis.com/auth/gmail.readonly" } });
+	let stopHost = async () => {};
+	// node:test runs after-hooks in the order they were added, and one that throws skips the rest: the host stops first, or a failed rm leaves it beating and the process never exits.
 	t.after(async () => {
+		await stopHost();
 		await google.close();
-		rmSync(root, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true, maxRetries: 3 });
 	});
 	const mail = join(root, "modules", "mail");
 	cpSync(join(import.meta.dirname, "../../docs/modules/examples/mail"), mail, { recursive: true });
@@ -42,7 +45,7 @@ test("宿主上的 mail 连接器：信经连接器进来成了通知；授权�
 		workerModels: defaultWorkerModels(),
 		moduleFeeds: { feeds: () => modules.feeds(), fixtures: false, tickMs: 20, mail: gmailAccount({ secret: (name) => secrets[name], oauthUrl: google.url }) },
 	});
-	t.after(() => host.stop());
+	stopHost = () => host.stop();
 	const lines = () => host.kernel.conversation(500).filter((l) => l.who === "notice").map((l) => l.text);
 	await until(() => rows.feedState("mail" as never, "mail/inbox").connectorCursor !== null && rows.feedState("copy" as never, "copy/inbox").connectorCursor !== null, "两个 feed 都起了步");
 	box.deliver({ id: "m-1", from: "Ann Lee <ann@example.com>", subject: "季度对账单", snippet: "您好，附件是本季度的对账单", text: "您好" });
