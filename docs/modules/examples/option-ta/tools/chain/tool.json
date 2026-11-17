@@ -1,17 +1,32 @@
 {
   "title": "期权链快照",
-  "description": "期权链紧凑结果接口；当前固定返回 NOT_IMPLEMENTED，不联网、不返回伪报价或希腊值",
+  "description": "向 Massive 取某个标的的期权链快照：按到期日（或到期范围）、put/call、行权价范围过滤，跟分页，滤掉二元期权。回每个合约的买卖价、中间价、未平仓量、IV 和希腊值，缺的用中间价按 BS 自算并标「自算」，算不出标「无数据」，不当 0；休市时标「休市」，那时的 IV 不是收盘 IV。正股价延迟 15 分钟。只读，不下单",
   "effect": "read",
+  "secrets": ["POLYGON_API_KEY"],
   "input": {
-    "symbol": { "type": "text", "title": "标的代码" },
-    "expiry": { "type": "date", "title": "到期日" },
-    "right": { "type": "text", "title": "put 或 call" },
-    "strike_min": { "type": "number", "title": "行权价下界" },
-    "strike_max": { "type": "number", "title": "行权价上界" },
-    "operation": { "type": "text", "title": "snapshot、oi、gex、max-pain 或 unusual-volume" }
+    "symbol": { "type": "text", "title": "标的代码，例如 SPY" },
+    "expiry": { "type": "date", "title": "到期日 YYYY-MM-DD；和 expiry_from、expiry_to 二选一" },
+    "expiry_from": { "type": "date", "title": "到期范围起点 YYYY-MM-DD，和 expiry_to 一起给" },
+    "expiry_to": { "type": "date", "title": "到期范围终点 YYYY-MM-DD" },
+    "right": { "type": "text", "title": "put 或 call；不填两边都取" },
+    "strike_min": { "type": "number", "title": "行权价下界，美元；只看某个行权价附近时填，例如 600 附近填 590" },
+    "strike_max": { "type": "number", "title": "行权价上界，美元" },
+    "operation": { "type": "text", "title": "snapshot（默认）；oi、gex、max-pain、unusual-volume 还没做，回 NOT_IMPLEMENTED" },
+    "now": { "type": "text", "title": "只在回放时填：当作现在的时间（ISO 8601）；回答使用者时不填" }
   },
   "output": {
-    "status": { "type": "text", "title": "固定 NOT_IMPLEMENTED" },
-    "reason": { "type": "text", "title": "未实现的能力及无数据说明" }
+    "status": { "type": "text", "title": "OK；INVALID_INPUT 输入有问题；NO_KEY 没设 key（reason 里有补 key 的命令）；RATE_LIMITED 行情服务回 429；UPSTREAM_ERROR 行情服务出错；NO_DATA 没有符合条件的合约；NOT_IMPLEMENTED 这个 operation 还没做" },
+    "reason": { "type": "text", "title": "不是 OK 时的原因，一句话" },
+    "symbol": { "type": "text", "title": "标的代码" },
+    "fetched_at": { "type": "text", "title": "取数时刻，美东" },
+    "market": { "type": "text", "title": "盘中或休市" },
+    "market_note": { "type": "text", "title": "休市时才有：为什么这时的 IV 和希腊值不是收盘值" },
+    "underlying": { "type": "text", "title": "正股 price（美元）、at（数据时刻，美东）、delay（延迟 15 分钟）" },
+    "contracts": { "type": "text", "title": "每个合约：contract（合约代码）、right、strike、expiry、dte（天）、bid、ask、mid（没有双边报价为空）、quote_at、open_interest（张）、iv（小数）、iv_source（供应方、自算或无数据）、delta、gamma、theta、vega、greeks_source、break_even；按到期日、行权价排序" },
+    "rows_dropped": { "type": "number", "title": "超过 60 行时按离正股价远近去掉的行数" },
+    "skipped_binary": { "type": "number", "title": "滤掉的二元期权行数" },
+    "pages": { "type": "number", "title": "取了几页" },
+    "truncated": { "type": "text", "title": "true 是到了分页上限还有下一页，结果不全，缩小范围再查" },
+    "units": { "type": "text", "title": "各字段的单位" }
   }
 }
