@@ -18,8 +18,8 @@ test("卖出开仓的 put：张数合计，开仓均价按张数加权，开仓�
 	assert.deepEqual(view([fill("STO", 1, "2.0000", "2026-11-10"), fill("STO", 3, "3.0000", "2026-11-12")]), [{ account: "A1", occ: "SPY261218P00700000", side: "short", qty: 4, openPrice: 2.75, openedOn: "2026-11-10" }]);
 });
 
-test("买回平掉一部分，剩下的按先进先出仍是仓位；全部买回就没有了", () => {
-	assert.deepEqual(view([fill("STO", 2, "2.0000", "2026-11-10"), fill("STO", 1, "4.0000", "2026-11-11"), fill("BTC", 2, "0.5000", "2026-11-12")]), [{ account: "A1", occ: "SPY261218P00700000", side: "short", qty: 1, openPrice: 4, openedOn: "2026-11-11" }]);
+test("买回平掉一部分，剩下的按先进先出仍是仓位（开仓日仍是这一轮第一笔）；全部买回就没有了", () => {
+	assert.deepEqual(view([fill("STO", 2, "2.0000", "2026-11-10"), fill("STO", 1, "4.0000", "2026-11-11"), fill("BTC", 2, "0.5000", "2026-11-12")]), [{ account: "A1", occ: "SPY261218P00700000", side: "short", qty: 1, openPrice: 4, openedOn: "2026-11-10" }]);
 	assert.deepEqual(view([fill("STO", 2, "2.0000", "2026-11-10"), fill("BTC", 2, "0.5000", "2026-11-12")]), []);
 });
 
@@ -49,4 +49,12 @@ test("平掉以后同一合约再开仓，开仓日和均价从新的那笔算�
 	const [p] = openPositions(rows).positions;
 	assert.deepEqual({ openedOn: p!.openedOn, openPrice: p!.openPrice }, { openedOn: "2026-11-09", openPrice: 1 });
 	assert.notEqual(p!.key, first);
+});
+
+test("部分买回平掉最早那笔，仓位键不变（每仓位只发一次的提醒不会重发）", () => {
+	const opened = [fill("STO", 1, "2.0000", "2026-11-10"), fill("STO", 1, "3.0000", "2026-11-11")];
+	const before = openPositions(opened).positions[0]!.key;
+	const after = openPositions([...opened, fill("BTC", 1, "0.5000", "2026-11-12")]).positions[0]!;
+	assert.equal(after.qty, 1);
+	assert.equal(after.key, before);
 });
