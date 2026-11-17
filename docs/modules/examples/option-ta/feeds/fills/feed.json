@@ -5,5 +5,6 @@
   "every": "5m",
   "reads": ["fills"],
   "settings": { "senders": "brokers" },
-  "into": "fills"
+  "into": "fills",
+  "notice": "成交邮件 {{letter}} 有 {{count}} 行没有入账（{{reasons}}），请领队问使用者，原信在 Gmail 里"
 }
