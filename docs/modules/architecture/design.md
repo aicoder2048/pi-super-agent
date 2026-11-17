@@ -117,7 +117,7 @@ uses: knowledge, data/lab-results
 
 不管任务属于哪个模块，Worker 只多出四个工具：`domain_tool`、`knowledge`、`data`、`watch`。它们都走宿主里的同一个入口 `Gateway.call`。这个入口做四件事。
 
-1. 只在任务所属的模块、任务钉住的那个版本里找能力。别的模块的东西根本不在目录里。今天「拿到 `lookup` 就能查宿主上所有 feed」的缺口因此关上。
+1. 只在任务所属的模块、任务钉住的那个版本里找能力。别的模块的东西根本不在目录里。今天「拿到 `lookup` 就能查宿主上所有 feed」的缺口因此关上。例外是别的模块在 `exports` 里开放的只读工具：`uses` 里写了全名 `<模块>/tools/<名字>` 的，目录照列，宿主在提供方当前服务的副本里运行它（`service-connector-design.md`，ADR-0030）。
 2. 模块停用了就拒绝。
 3. 专家调用时，对照它的 `uses`。
 4. 对照下面这张表，然后交给宿主的默认实现（知识、数据、提醒条件）或模块的代码（工具），并在访问记录里记一笔。
@@ -258,7 +258,7 @@ stateDiagram-v2
 $ just module check ~/.pi-super-agent/modules/personal-tax
 ok personal-tax@0.1.0 | knowledge=0 data=1 tools=1 skills=1 feeds=1 agents=2 evals=1 | rules=1 | data-classes=shareable:0,private:1 | secrets=PERSONAL_TAX__BROKER_TOKEN | digest=20dbe9de7c92
 $ just module check sample/broken/unknown-key
-module.json: unknown key "descripton" (known keys: schema, name, version, title, description, team)
+module.json: unknown key "descripton" (known keys: schema, name, version, title, description, team, exports, uses)
 ```
 
 - **预演（B3）。** `just module try <名字>` 起一个临时状态目录，连接器换成读 `feeds/<feed>/fixtures/` 里的样例，Telegram 和提醒换成记录器，实例数据是空的。它把 `evals/` 里的每道考题当成一个任务跑一遍，核对用没用到该用的能力、答案里有没有该有的话。预演要调用模型，用的是你给 Worker 配的模型。

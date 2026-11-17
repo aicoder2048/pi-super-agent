@@ -152,6 +152,7 @@ test("模块 feed 开的任务：read secretsFile、grep 状态目录、web_get�
 		assert.match(result!.reason, /用 ask_to_run 请使用者批准/);
 	}
 	assert.equal(await toolCall("domain_tool", { name: "x", input: {} }, workdir), undefined, "模块工具照常");
+	assert.equal(await toolCall("domain_tool", { name: "stock-ta/tools/structure", input: {} }, workdir), undefined, "别的模块开放的工具也照常");
 	assert.equal(await toolCall("grep", { pattern: "笔记" }, workdir), undefined, "在自己的工作目录里 grep 照常");
 });
 

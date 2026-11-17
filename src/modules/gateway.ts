@@ -2,13 +2,14 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Fetched } from "./connectors/attachment.ts";
-import { RUNTIMES, toolEffect, type AgentDescriptor, type Component, type Digest, type FieldDescriptor, type ModuleName, type ToolEffect, type ToolFetch, type ToolPort } from "./manifest.ts";
+import { externalTool, RUNTIMES, toolEffect, type AgentDescriptor, type Component, type Digest, type ExternalTool, type FieldDescriptor, type ModuleName, type ToolEffect, type ToolFetch, type ToolPort } from "./manifest.ts";
 import { DataInputError, type ModuleRows, type WatchRequest } from "./instance-data.ts";
 import { catalogueText, foundText, searchKnowledge, type Knowledge, type KnowledgeBase } from "./knowledge.ts";
-import { AUTHORITY, effectOf, senderOf, type Caller, type Gateway, type Refusal, type Json, type Reply, type Request } from "./protocol.ts";
+import { AUTHORITY, effectOf, senderOf, type Caller, type Gateway, type Refusal, type Json, type Reply, type Request, type WorkerCaller } from "./protocol.ts";
 import { writeDraft, type GooglePort } from "./google-port.ts";
 import { readForTool } from "./ocr-port.ts";
 import type { Ocr } from "../ocr/result.ts";
+import { lockOf, venvInstalled } from "./files.ts";
 import { LIMIT_MS, runModuleCodeAsync, type ModuleSecretLookup } from "./run-code.ts";
 import { scanPackage } from "./validate.ts";
 
@@ -26,21 +27,48 @@ export interface GatewayPorts {
 	ocr?: Ocr;
 	/** What a tool's `fetch` names, fetched into `dir` before its code runs; a string is the refusal. `components` are the serving version's. */
 	fetch?: Partial<Record<ToolFetch, (module: ModuleName, components: readonly Component[], input: Json, dir: string) => Promise<Fetched | string>>>;
+	/** Marks another module's copy as in use while a call from outside runs in it, so the host does not collect it; the result releases it. */
+	hold?(module: ModuleName, digest: Digest): () => void;
 }
 
 type Tool = Extract<Component, { kind: "tools" }>;
 type Collection = Extract<Component, { kind: "data" }>;
-type Copy = { module: ModuleName; digest: Digest; dir: string; components: readonly Component[]; tools: readonly Tool[]; knowledge: readonly Knowledge[]; collections: readonly Collection[]; agents: readonly AgentDescriptor[]; feedSources: readonly string[] };
+type Copy = {
+	module: ModuleName;
+	digest: Digest;
+	dir: string;
+	components: readonly Component[];
+	tools: readonly Tool[];
+	knowledge: readonly Knowledge[];
+	collections: readonly Collection[];
+	agents: readonly AgentDescriptor[];
+	feedSources: readonly string[];
+	exports: readonly string[];
+	/** `module.json`'s `uses`: the external tools of a module without members. */
+	uses: readonly string[];
+};
 type Capability = { effect: ToolEffect; run: () => Promise<Reply> };
 
 const fieldsHelp = (fields: Readonly<Record<string, FieldDescriptor>>) =>
 	Object.entries(fields).map(([name, f]) => `${name}（${f.type}，${f.title}${f.unit ? `，${f.unit}` : ""}）`).join("、") || "无";
+
+const toolHelp = ({ tool }: Tool) => `${tool.description} 输入：${fieldsHelp(tool.input)}。输出：${fieldsHelp(tool.output)}。`;
 
 const useOf = (request: Request): string => (request.kind === "tool" ? `tools/${request.name}` : request.kind === "knowledge" ? "knowledge" : `${request.kind}/${request.collection}`);
 
 const whoOf = (caller: Caller) => (caller.who === "page" ? "page" : `${caller.ticket} ${caller.member ?? "helper"}`);
 
 const moduleOf = (caller: Caller) => (caller.who === "worker" ? caller.pin.module : caller.module);
+
+type ToolRequest = Extract<Request, { kind: "tool" }>;
+type ExternalCall = { caller: WorkerCaller; request: ToolRequest; target: ExternalTool };
+
+/** A Worker's tool call named `<module>/tools/<name>` for a module other than its ticket's. */
+const externalOf = (caller: Caller, request: Request): ExternalCall | undefined => {
+	if (caller.who !== "worker" || request.kind !== "tool") return undefined;
+	const target = externalTool(request.name);
+	return target === undefined || target.provider === caller.pin.module ? undefined : { caller, request, target };
+};
 
 export function createGateway(ports: GatewayPorts): Gateway {
 	// A kept copy never changes, so each one is scanned once. A copy not there yet is not remembered.
@@ -53,9 +81,11 @@ export function createGateway(ports: GatewayPorts): Gateway {
 		const dir = ports.copyDir(module, digest);
 		const scan = existsSync(dir) ? scanPackage(dir, { runCases: false, folder: module }) : undefined;
 		if (!scan?.ok) return undefined;
-		const { components } = scan.scan;
+		const { components, manifest } = scan.scan;
 		const copy = {
 			module, digest, dir, components,
+			exports: manifest.exports ?? [],
+			uses: manifest.uses ?? [],
 			tools: components.filter((c): c is Tool => c.kind === "tools"),
 			knowledge: components.filter((c): c is Knowledge => c.kind === "knowledge"),
 			collections: components.filter((c): c is Collection => c.kind === "data"),
@@ -70,6 +100,18 @@ export function createGateway(ports: GatewayPorts): Gateway {
 		if (caller.who === "page" || caller.member === null) return undefined;
 		const uses = copy.agents.find((a) => a.name === caller.member)?.uses ?? [];
 		return uses.some((u) => u === use) ? undefined : { code: "not-in-uses", member: caller.member };
+	};
+	/** A member's external tools are in its own `uses`; a caller with no member gets every external tool its module lists anywhere. */
+	const externalUses = (caller: WorkerCaller, copy: Copy): string[] => {
+		const uses = caller.member === null ? [...copy.uses, ...copy.agents.flatMap((a) => a.uses)] : (copy.agents.find((a) => a.name === caller.member)?.uses ?? []);
+		return [...new Set(uses.filter((use) => (externalTool(use)?.provider ?? copy.module) !== copy.module))];
+	};
+	/** Read on every call: the provider's serving version may change between two calls of one ticket. */
+	const provided = ({ provider, tool: name }: ExternalTool): { copy: Copy; tool: Tool } | { refusal: Refusal } => {
+		const copy = copyOf(provider, ports.serving(provider));
+		if (copy === undefined || !existsSync(copy.dir)) return { refusal: { code: "provider-absent", note: `${provider} 没装或没开` } };
+		const tool = copy.exports.includes(`tools/${name}`) ? copy.tools.find((t) => t.name === name) : undefined;
+		return tool ? { copy, tool } : { refusal: { code: "provider-absent", note: `${provider} 现在没有开放 ${name}` } };
 	};
 	const authorityRefusal = (caller: Caller, request: Request, tool: ToolEffect): Refusal | undefined => {
 		const effect = effectOf(request, tool);
@@ -102,6 +144,18 @@ export function createGateway(ports: GatewayPorts): Gateway {
 		if (serving === undefined) return { refusal: { code: "module-disabled" } };
 		const refusal = memberRefusal(caller, copy, useOf(request)) ?? authorityRefusal(caller, request, found.effect);
 		return refusal ? { refusal } : found;
+	};
+	/** Another module's exported tool: the caller's module and `uses` from its pinned copy, the tool from the provider's serving copy. */
+	const resolveExternal = ({ caller, request, target }: ExternalCall): { refusal: Refusal } | Capability => {
+		if (ports.serving(caller.pin.module) === undefined) return { refusal: { code: "module-disabled" } };
+		const own = copyOf(caller.pin.module, caller.pin.digest);
+		if (own === undefined) return { refusal: { code: "no-such-capability" } };
+		if (!externalUses(caller, own).includes(request.name)) return { refusal: { code: "not-in-uses", member: caller.member } };
+		const found = provided(target);
+		if ("refusal" in found) return found;
+		const effect = toolEffect(found.tool.tool);
+		const refusal = authorityRefusal(caller, request, effect);
+		return refusal ? { refusal } : { effect, run: () => runExternal(found.copy, found.tool, request.input) };
 	};
 	const knowledgeOf = (copy: Copy): KnowledgeBase => ({ module: copy.module, digest: copy.digest, copyDir: copy.dir, dataDir: ports.dataDir(copy.module), docs: copy.knowledge });
 
@@ -155,6 +209,22 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	};
+	/** A failure while the provider's lock has no installed environment is that, not the tool's own words, which speak to the provider's user. */
+	const runExternal = async (copy: Copy, tool: Tool, input: Json): Promise<Reply> => {
+		const release = ports.hold?.(copy.module, copy.digest);
+		let reply: Reply;
+		try {
+			reply = await runTool(copy, tool, input);
+		} catch (error) {
+			reply = { ok: false, refusal: { code: "provider-failed", note: String((error as Error)?.message ?? error) } };
+		} finally {
+			release?.();
+		}
+		if (reply.ok || reply.refusal.code !== "provider-failed") return reply;
+		const lock = lockOf(copy.dir);
+		if (lock !== undefined && !venvInstalled(ports.dataDir(copy.module), lock)) return { ok: false, refusal: { code: "provider-absent", note: `${copy.module} 的运行环境还没装好` } };
+		return { ok: false, refusal: { ...reply.refusal, provider: copy.module } };
+	};
 	const runCode = async (copy: Copy, tool: Tool, input: Json): Promise<Reply> => {
 		const secrets = Object.fromEntries((tool.tool.secrets ?? []).flatMap((name) => {
 			const value = ports.secret(copy.module, name);
@@ -174,15 +244,17 @@ export function createGateway(ports: GatewayPorts): Gateway {
 	return {
 		async call(caller, request) {
 			const started = Date.now();
+			const external = externalOf(caller, request);
 			let reply: Reply;
 			try {
-				const resolved = resolve(caller, request);
+				const resolved = external ? resolveExternal(external) : resolve(caller, request);
 				reply = "refusal" in resolved ? { ok: false, refusal: resolved.refusal } : await resolved.run();
 			} catch (error) {
 				reply = { ok: false, refusal: { code: "provider-failed", note: String((error as Error)?.message ?? error) } };
 			}
 			const who = caller.who === "page" ? "page" : `${whoOf(caller)} ${caller.basis}`;
-			ports.log(`[gateway] ${moduleOf(caller)} ${useOf(request)} ${who} ${reply.ok ? "ok" : reply.refusal.code} ${Date.now() - started} ms`);
+			const what = external ? `${external.target.provider} tools/${external.target.tool}` : `${moduleOf(caller)} ${useOf(request)}`;
+			ports.log(`[gateway] ${what} ${who} ${reply.ok ? "ok" : reply.refusal.code} ${Date.now() - started} ms${external ? ` from=${moduleOf(caller)}` : ""}`);
 			return reply;
 		},
 		catalogue(caller) {
@@ -191,7 +263,13 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			const probe = (t: Tool): Request => ({ kind: "tool", name: t.name, input: null });
 			const tools = copy.tools
 				.filter((t) => !memberRefusal(caller, copy, `tools/${t.name}`) && !authorityRefusal(caller, probe(t), toolEffect(t.tool)))
-				.map((t) => ({ request: "tool" as const, name: t.name, title: t.tool.title, help: `${t.tool.description} 输入：${fieldsHelp(t.tool.input)}。输出：${fieldsHelp(t.tool.output)}。` }));
+				.map((t) => ({ request: "tool" as const, name: t.name as string, title: t.tool.title, help: toolHelp(t) }));
+			const external = externalUses(caller, copy).map((name) => {
+				const found = provided(externalTool(name)!);
+				return "refusal" in found
+					? { request: "tool" as const, name, title: name, help: `${externalTool(name)!.provider} 现在用不了，调用会回原因` }
+					: { request: "tool" as const, name, title: found.tool.tool.title, help: toolHelp(found.tool) };
+			});
 			const knowledge = copy.knowledge.length > 0 && !memberRefusal(caller, copy, "knowledge") ? [{ request: "knowledge" as const, name: "knowledge", title: "模块知识", help: catalogueText(knowledgeOf(copy)) }] : [];
 			const data = copy.collections
 				.filter((c) => !memberRefusal(caller, copy, `data/${c.name}`))
@@ -199,7 +277,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			const watch = copy.collections.flatMap(({ name, collection: { title, watch } }) =>
 				watch === undefined || memberRefusal(caller, copy, `watch/${name}`) ? [] : [{ request: "watch" as const, name, title, help: `key 是 ${watch.key} 字段的值，盯 ${watch.value}，时间看 ${watch.at}` }],
 			);
-			return [...tools, ...knowledge, ...data, ...watch];
+			return [...tools, ...external, ...knowledge, ...data, ...watch];
 		},
 	};
 }
@@ -212,13 +290,16 @@ export function refusalText(refusal: Refusal): string {
 		case "module-disabled":
 			return "本任务所属模块已停用，它的工具和知识都用不了了。请用 report 汇报做到哪里，然后收尾";
 		case "not-in-uses":
-			return `成员 ${refusal.member} 的 uses 没有列这一项，用不了`;
+			return refusal.member === null ? "本模块没有在 uses 里列这个外部工具，用不了" : `成员 ${refusal.member} 的 uses 没有列这一项，用不了`;
+		case "provider-absent":
+			return `${refusal.note}，这部分没做。在汇报里写明哪部分没做、为什么，其余照常做完`;
 		case "not-allowed":
 			return refusal.sender === "inference"
 				? "推断开的任务只读，不能写模块数据、不能设或删提醒条件，也不能调会改变外面东西的工具。需要时请在汇报里请使用者在对话里提出"
 				: "只有使用者在对话里开、只听过使用者的话的任务才能做这件事。请在汇报里请使用者在对话里重新说一次";
 		case "bad-input":
-		case "provider-failed":
 			return `工具这一次出错：${refusal.note}`;
+		case "provider-failed":
+			return `${refusal.provider === undefined ? "" : `${refusal.provider} 的`}工具这一次出错：${refusal.note}`;
 	}
 }

@@ -4,8 +4,10 @@
  * A capability is a component that can be called: a tool, the knowledge base, a data
  * collection, a collection's conditions. Every call goes through `Gateway.call`. It
  * resolves the capability in the module and version the ticket pinned, so a ticket never
- * reaches another module. It narrows by the member's `uses`, asks `allowed`, calls the
- * provider and writes the access log.
+ * reaches another module's knowledge, data or conditions. The one exception is a read tool
+ * another module lists in `exports`: a ticket whose `uses` names it as `<module>/tools/<name>`
+ * runs it in that module's serving copy. It narrows by the member's `uses`, asks `allowed`,
+ * calls the provider and writes the access log.
  *
  * Skills and agent files are not capabilities. Pi reads them as files from the ticket's
  * pinned copy. Feeds are not either: only the host's scheduler runs them.
@@ -130,12 +132,16 @@ export function allowed(caller: Caller, request: Request, tool: ToolEffect): boo
 
 export type Refusal =
 	| { code: "no-such-capability" }
-	| { code: "not-in-uses"; member: string }
+	/** `member` null: a caller with no member file (a team's leader, a lone helper) and an external tool no `uses` of its module lists. */
+	| { code: "not-in-uses"; member: string | null }
 	| { code: "module-disabled" }
 	/** `allowed` said no. `note` says who may send this request. */
 	| { code: "not-allowed"; sender: Sender; note: string }
 	| { code: "bad-input"; note: string }
-	| { code: "provider-failed"; note: string };
+	/** `provider`: the module whose exported tool failed, on a call from another module. */
+	| { code: "provider-failed"; note: string; provider?: ModuleName }
+	/** Another module's tool is out of reach now. `note` is the fixed reason, naming that module. The caller's ticket goes on. */
+	| { code: "provider-absent"; note: string };
 
 /** One hit of a knowledge search, with the citation a skill asks the Worker to carry. */
 export type Passage = { doc: ComponentName; title: string; version: string; authority: "authoritative" | "reference"; section: string; text: string };

@@ -10,12 +10,12 @@ import type { HostToClient } from "../../src/client/protocol.ts";
 import { loadConfig } from "../../src/host/config.ts";
 import { Host } from "../../src/host/host.ts";
 import { createHostOptions } from "../../src/host/wiring.ts";
-import { liveRegistry } from "../../src/modules/live.ts";
+import { CopiesInUse, liveRegistry } from "../../src/modules/live.ts";
 import type { WorkerEvents, WorkerSpec } from "../../src/host/workers.ts";
 import { Modules } from "../../src/modules.ts";
 import { defaultWorkerModels, FakeSpawner, fauxRouter, ids, openOnConversation, startHost, tempStateDir, until, type Brain } from "../helpers/fakes.ts";
 
-const fixed = (modules: Modules) => ({ live: liveRegistry(modules), kitFor: (domain: string) => modules.kitFor(domain), cards: () => [], setSwitch: () => false, onChange: () => {} });
+const fixed = (modules: Modules) => ({ live: liveRegistry(modules), kitFor: (domain: string) => modules.kitFor(domain), cards: () => [], setSwitch: () => false, onChange: () => {}, copiesInUse: new CopiesInUse() });
 
 const replyOnReport: Brain = (cards) =>
 	cards.flatMap((card) => {

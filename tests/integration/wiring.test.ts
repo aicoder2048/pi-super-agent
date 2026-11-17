@@ -14,10 +14,10 @@ import { FINNHUB_KEY_NAMES, KEY_NAMES } from "../../src/sources/market/key.ts";
 import { servedAsHost, until } from "../helpers/fakes.ts";
 import { FakeInbox } from "../helpers/fake-gmail.ts";
 import { startFakeGoogle, type FakeGoogle } from "../helpers/fake-google.ts";
-import { liveRegistry, ModuleStore } from "../../src/modules/live.ts";
+import { CopiesInUse, liveRegistry, ModuleStore } from "../../src/modules/live.ts";
 import type { ComponentName, Digest, ModuleName } from "../../src/modules/manifest.ts";
 
-const fixed = (modules: Modules) => ({ live: liveRegistry(modules), kitFor: (domain: string) => modules.kitFor(domain), cards: () => [], setSwitch: () => false, onChange: () => {} });
+const fixed = (modules: Modules) => ({ live: liveRegistry(modules), kitFor: (domain: string) => modules.kitFor(domain), cards: () => [], setSwitch: () => false, onChange: () => {}, copiesInUse: new CopiesInUse() });
 
 const config = {
 	models: {
@@ -380,7 +380,7 @@ test("接线把模块表交给宿主时不拍快照：换表以后宿主的领�
 	const repo = servedAsHost(Modules.load([REPO_MODULES]));
 	const live = liveRegistry(empty);
 	const pinned = { skillsDir: "/copy/skills", prepare: undefined, crew: [], granted: [] };
-	const options = createHostOptions({ config: hostConfig(provider), modules: { live, kitFor: (domain, pin) => (pin === null ? live.current().kitFor(domain) : pinned) }, modelRuntime, log: () => {} });
+	const options = createHostOptions({ config: hostConfig(provider), modules: { live, kitFor: (domain, pin) => (pin === null ? live.current().kitFor(domain) : pinned), copiesInUse: new CopiesInUse() }, modelRuntime, log: () => {} });
 	assert.deepEqual([...options.domains!.book().keys()], []);
 	live.publish(repo);
 	assert.deepEqual([...options.domains!.book().keys()], ["module-builder", "pi-pi"]);
@@ -428,6 +428,32 @@ test("入口：模块代码拿不到全局 secretsFile 里的任何值，也拿�
 test("入口：一个模块拿不到另一个模块 .env 里的 key", async () => {
 	const { reply } = await envProbe({ moduleEnv: { "stock-ta": "POLYGON_API_KEY=stock-ta-polygon\nPERSONAL_TAX__KEY=planted\n" } });
 	assert.deepEqual(reply, { ok: true, output: { named: null, polygon: null } });
+});
+
+test("入口：B 调 A 开放的工具，A 的工具拿到 A 自己 .env 里的 key；日志行第一段是 A、末尾是 from=B", async () => {
+	const { modelRuntime, provider } = await fauxRuntime(() => false);
+	const config = hostConfig(provider);
+	const root = mkdtempSync(join(tmpdir(), "psa-wire-connector-"));
+	const write = (path: string, text: string) => {
+		mkdirSync(join(root, path, ".."), { recursive: true });
+		writeFileSync(join(root, path), text);
+	};
+	write("alpha/module.json", JSON.stringify({ schema: 1, name: "alpha", version: "0.1.0", exports: ["tools/key"] }));
+	write("alpha/tools/key/tool.json", JSON.stringify({ title: "密钥", description: "回显密钥", effect: "read", secrets: ["SHARED_KEY"], input: { code: { type: "text", title: "代码" } }, output: { key: { type: "text", title: "k" } } }));
+	write("alpha/tools/key/index.ts", "export default () => ({ key: process.env.SHARED_KEY ?? null });");
+	write("beta/module.json", JSON.stringify({ schema: 1, name: "beta", version: "0.1.0", uses: ["alpha/tools/key"] }));
+	for (const [module, text] of Object.entries({ alpha: "SHARED_KEY=alpha-key\n", beta: "SHARED_KEY=beta-key\n" })) {
+		mkdirSync(join(config.stateDir, "modules-data", module), { recursive: true });
+		writeFileSync(join(config.stateDir, "modules-data", module, ".env"), text);
+	}
+	const modules = servedAsHost(Modules.load([root]));
+	const store = new ModuleStore(join(config.stateDir, "module-store"));
+	for (const name of ["alpha", "beta"]) store.keep(name as ModuleName, modules.book.get(name)!.digest! as Digest, join(root, name));
+	const logs: string[] = [];
+	const options = createHostOptions({ config, modules: fixed(modules), modelRuntime, log: (l) => logs.push(l) });
+	const caller = { who: "worker" as const, ticket: "tkt_1", pin: { module: "beta" as ModuleName, digest: modules.book.get("beta")!.digest! as Digest }, basis: "inference" as const, member: null, heardOthers: true };
+	assert.deepEqual(await options.gateway!.call(caller, { kind: "tool", name: "alpha/tools/key" as ComponentName, input: {} }), { ok: true, output: { key: "alpha-key" } });
+	assert.ok(logs.some((l) => /^\[gateway\] alpha tools\/key tkt_1 helper inference ok \d+ ms from=beta$/.test(l)), logs.join("\n"));
 });
 
 test("入口：模块没有 .env 时工具照常跑、拿到空，不报错", async () => {
