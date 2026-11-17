@@ -39,7 +39,7 @@ description: 数据集合（data/）、feed（feeds/）和密钥怎么写，带�
 
 ## mail 连接器的 feed
 
-宿主的 `mail` 连接器读使用者的 Gmail（ADR-0029），只把名单上发件人的信交给 handler。`items` 每封信有 `id`、`threadId`、`messageIdHeader`、`from`（`name`、`address`）、`replyTo`、`subject`、`date`、`snippet`、`body`、`attachments`。检查要求：
+宿主的 `mail` 连接器读使用者的 Gmail（ADR-0029），只把名单上发件人的信交给 handler。`items` 每封信有 `id`、`threadId`、`messageIdHeader`、`from`（`name`、`address`）、`replyTo`、`subject`、`date`、`snippet`、`body`、`attachments`。`body` 是纯文字；信里有 HTML 时另带 `html`（按 charset 解好的原文，最多 256 KB，不剥标签），没有就不带这个键。表格里的空格子只在 `html` 里分得清。检查要求：
 
 - `"connector": "mail"`，必须有 `handler` 和 `every`。
 - `into` 必须是 `private` 集合。

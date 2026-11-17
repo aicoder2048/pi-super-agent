@@ -4,6 +4,8 @@
 
 > 2026-11-16 补（C2）：「包里点名它们，`just module check` 报错并写明主人」被 ADR-0031 取代：模块代码只读自己的 `.env`，点名身份类密钥只打印一行提醒。连接器从宿主 `secretsFile` 读授权这一点不变。
 
+> 2026-11-17 补：信多一个可选键 `html`，使用者 2026-11-17 同意。信里有 `text/html` 时交出它按 charset 解好的原文（最多 256 KB），给要读 HTML 表格的模块用（option-ta 的成交回信，纯文本里空格子会消失）。只有名单内的信取全文，`html` 也只在这时出现。`body` 和 `mail` 模块的行为不变。
+
 ## 问题
 
 option-ta 要从券商的成交确认邮件里记成交。读 Gmail 的代码（`docs/modules/examples/mail/google.ts`）和读邮件的 token 都在 `mail` 模块里，按 ADR-0019 这三个密钥属于 `mail`，别的模块点不了。照这样，option-ta 只能再写一遍读 Gmail 的代码，再抄一份授权。
