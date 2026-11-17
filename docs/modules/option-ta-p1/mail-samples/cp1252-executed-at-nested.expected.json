@@ -1,7 +1,9 @@
 {
   "fills": [
     {
-      "id": "IWM260320P00240000:STO:2026-03-09:5:QRSTalfa",
+      "id": "IWM260320P00240000:STO:2026-03-09:QRSTalfa:cum5",
+      "fill_id": "IWM260320P00240000:STO:2026-03-09:QRSTalfa:cum5",
+      "order_key": "IWM260320P00240000:STO:2026-03-09:QRSTalfa",
       "account_ref": "QRSTalfa",
       "side": "STO",
       "instrument": {
@@ -13,6 +15,7 @@
         "multiplier": 100
       },
       "qty": 5,
+      "partial_fill": false,
       "price": 3.07,
       "limit": 3.05,
       "trade_date": "2026-03-09",
@@ -25,7 +28,9 @@
       "source": "broker-email"
     },
     {
-      "id": "IWM260320P00240000:STO:2026-03-09:25:LMNObeta",
+      "id": "IWM260320P00240000:STO:2026-03-09:LMNObeta:cum25",
+      "fill_id": "IWM260320P00240000:STO:2026-03-09:LMNObeta:cum25",
+      "order_key": "IWM260320P00240000:STO:2026-03-09:LMNObeta",
       "account_ref": "LMNObeta",
       "side": "STO",
       "instrument": {
@@ -37,6 +42,7 @@
         "multiplier": 100
       },
       "qty": 25,
+      "partial_fill": false,
       "price": 3.07,
       "limit": 3.05,
       "trade_date": "2026-03-09",
@@ -49,7 +55,9 @@
       "source": "broker-email"
     },
     {
-      "id": "IWM260320P00240000:STO:2026-03-09:30:PERSgama",
+      "id": "IWM260320P00240000:STO:2026-03-09:PERSgama:cum30",
+      "fill_id": "IWM260320P00240000:STO:2026-03-09:PERSgama:cum30",
+      "order_key": "IWM260320P00240000:STO:2026-03-09:PERSgama",
       "account_ref": "PERSgama",
       "side": "STO",
       "instrument": {
@@ -61,6 +69,7 @@
         "multiplier": 100
       },
       "qty": 30,
+      "partial_fill": false,
       "price": 3.07,
       "limit": 3.05,
       "trade_date": "2026-03-09",

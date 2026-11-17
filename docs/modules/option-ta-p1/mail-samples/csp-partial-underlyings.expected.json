@@ -1,7 +1,9 @@
 {
   "fills": [
     {
-      "id": "AMZN260220P00210000:STO:2026-02-09:10:QRSTalfa",
+      "id": "AMZN260220P00210000:STO:2026-02-09:QRSTalfa:cum10",
+      "fill_id": "AMZN260220P00210000:STO:2026-02-09:QRSTalfa:cum10",
+      "order_key": "AMZN260220P00210000:STO:2026-02-09:QRSTalfa",
       "account_ref": "QRSTalfa",
       "side": "STO",
       "instrument": {
@@ -13,6 +15,7 @@
         "multiplier": 100
       },
       "qty": 10,
+      "partial_fill": false,
       "price": 4.25,
       "limit": 4.25,
       "trade_date": "2026-02-09",
@@ -25,7 +28,9 @@
       "source": "broker-email"
     },
     {
-      "id": "AMZN260220P00210000:STO:2026-02-09:7:LMNObeta",
+      "id": "AMZN260220P00210000:STO:2026-02-09:LMNObeta:cum7",
+      "fill_id": "AMZN260220P00210000:STO:2026-02-09:LMNObeta:cum7",
+      "order_key": "AMZN260220P00210000:STO:2026-02-09:LMNObeta",
       "account_ref": "LMNObeta",
       "side": "STO",
       "instrument": {
@@ -37,6 +42,7 @@
         "multiplier": 100
       },
       "qty": 7,
+      "partial_fill": false,
       "price": 4.25,
       "limit": 4.25,
       "trade_date": "2026-02-09",

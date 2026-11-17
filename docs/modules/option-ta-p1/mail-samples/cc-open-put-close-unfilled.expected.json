@@ -1,7 +1,9 @@
 {
   "fills": [
     {
-      "id": "AAPL260320C00250000:STO:2026-03-05:12:QRSTalfa",
+      "id": "AAPL260320C00250000:STO:2026-03-05:QRSTalfa:cum12",
+      "fill_id": "AAPL260320C00250000:STO:2026-03-05:QRSTalfa:cum12",
+      "order_key": "AAPL260320C00250000:STO:2026-03-05:QRSTalfa",
       "account_ref": "QRSTalfa",
       "side": "STO",
       "instrument": {
@@ -13,6 +15,7 @@
         "multiplier": 100
       },
       "qty": 12,
+      "partial_fill": false,
       "price": 3.15,
       "limit": 3.15,
       "trade_date": "2026-03-05",
@@ -25,7 +28,9 @@
       "source": "broker-email"
     },
     {
-      "id": "AAPL260320C00250000:STO:2026-03-05:8:LMNObeta",
+      "id": "AAPL260320C00250000:STO:2026-03-05:LMNObeta:cum8",
+      "fill_id": "AAPL260320C00250000:STO:2026-03-05:LMNObeta:cum8",
+      "order_key": "AAPL260320C00250000:STO:2026-03-05:LMNObeta",
       "account_ref": "LMNObeta",
       "side": "STO",
       "instrument": {
@@ -37,6 +42,7 @@
         "multiplier": 100
       },
       "qty": 8,
+      "partial_fill": false,
       "price": 3.15,
       "limit": 3.15,
       "trade_date": "2026-03-05",
@@ -49,7 +55,9 @@
       "source": "broker-email"
     },
     {
-      "id": "AAPL260320C00255000:STO:2026-03-05:10:QRSTalfa",
+      "id": "AAPL260320C00255000:STO:2026-03-05:QRSTalfa:cum10",
+      "fill_id": "AAPL260320C00255000:STO:2026-03-05:QRSTalfa:cum10",
+      "order_key": "AAPL260320C00255000:STO:2026-03-05:QRSTalfa",
       "account_ref": "QRSTalfa",
       "side": "STO",
       "instrument": {
@@ -61,6 +69,7 @@
         "multiplier": 100
       },
       "qty": 10,
+      "partial_fill": false,
       "price": 1.8,
       "limit": 1.8,
       "trade_date": "2026-03-05",
@@ -73,7 +82,9 @@
       "source": "broker-email"
     },
     {
-      "id": "AAPL260320C00255000:STO:2026-03-05:6:LMNObeta",
+      "id": "AAPL260320C00255000:STO:2026-03-05:LMNObeta:cum6",
+      "fill_id": "AAPL260320C00255000:STO:2026-03-05:LMNObeta:cum6",
+      "order_key": "AAPL260320C00255000:STO:2026-03-05:LMNObeta",
       "account_ref": "LMNObeta",
       "side": "STO",
       "instrument": {
@@ -85,6 +96,7 @@
         "multiplier": 100
       },
       "qty": 6,
+      "partial_fill": false,
       "price": 1.8,
       "limit": 1.8,
       "trade_date": "2026-03-05",

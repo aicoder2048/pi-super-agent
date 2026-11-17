@@ -9,7 +9,7 @@
 | `mixed-with-stock-and-working.eml` | 样例 3 | 股票行跳过；挂单不算成交；描述里带 `&` |
 | `cp1252-executed-at-nested.eml` | 样例 4 | windows-1252 和 quoted-printable；多一列 `Executed At`；表套表 |
 
-每封信配一份 `<名字>.expected.json`：期望解析出的成交行（`fills`）和跳过的行（`skipped`）。它是按虚构数据直接写出的草稿，不是解析器的输出。成交行的 `id` 按 spec 的业务键拼成。
+每封信配一份 `<名字>.expected.json`：期望解析出的成交行（`fills`）和跳过的行（`skipped`）。它是按虚构数据直接写出的草稿，不是解析器的输出。成交行的 `id` 按 spec「订单键和 `id`」拼成（`<订单键>:cum<累计成交张数>`）；这批样例都是整单成交、库里没有已记的行，所以每行的张数就是 `cum`，价格就是均价。
 
 ## 1. 这批邮件是什么
 
@@ -34,7 +34,7 @@ multipart/related
 | 3 | utf-8，base64 | CRLF | 4 张 jpeg + 1 张 png | 2 | 1 |
 | 4 | windows-1252，quoted-printable | LF | 1 张 png | 2 | 1（套在一张外层表里） |
 
-- 顶层头字段：`Received`、`Return-Path`、`From`、`To`、`Subject`、`Thread-Topic`、`Thread-Index`、`Date`、`Message-ID`、`References`、`In-Reply-To`、`Accept-Language`、`Content-Language`、`X-MS-*` 若干、`MIME-Version`、`Content-Type`。没有 DKIM、ARC（转发前是 Exchange 内部投递）。
+- 顶层头字段：`Received`、`Return-Path`、`From`、`To`、`Subject`、`Thread-Topic`、`Thread-Index`、`Date`、`Message-ID`、`References`、`In-Reply-To`、`Accept-Language`、`Content-Language`、`X-MS-*` 若干、`MIME-Version`、`Content-Type`。没有 DKIM、ARC。
 - 顶层 `From` 和 `To` 都是使用者自己。交易台的地址只出现在正文里的转发头中。
 - 样例 2 的 `Subject` 含长破折号，用 RFC 2047 的 B 编码。
 - 正文里的非 ASCII 字符：全角空格 U+2003（签名）、长破折号、弯引号（包括 `"…”` 这种左右不配对的写法）、项目符号 `•`。样例 4 用 windows-1252，这些字符按 cp1252 解码才对。
@@ -78,7 +78,7 @@ HTML 是微软邮件客户端生成的 `table.MsoNormalTable`，每格一个 `td
 | 有 | 空 | 成交（这批样例里都是整单成交） |
 | 空 | 有 | 挂单中，不是成交 |
 | 空 | 空 | 没成交、单已失效 |
-| 有 | 有 | 部分成交（样例里没见到，列的语义允许） |
+| 有 | 有 | 部分成交（样例里没见到，列的语义允许）。照记增量，见 spec「订单键和 `id`」 |
 
 ## 4. 每封的内容和动作（按术语表）
 
@@ -94,7 +94,7 @@ HTML 是微软邮件客户端生成的 `table.MsoNormalTable`，每格一个 `td
 ## 5. 解析要点和坑
 
 1. **纯文本分不清数量列。** 2026-11-17 时宿主 `mail` 连接器（`src/modules/connectors/letter.ts` 的 `bodyText`）有 `text/plain` 就只交纯文本。纯文本里交易表被压成一格一行，空格子直接没了，分不出一个数字是 `Exe Qty` 还是 `Open Qty`。使用者已定：连接器交出 HTML 版正文（宿主改动另有 PR），handler 优先按 HTML 的列名取值，纯文本只作后备。后备按规律推：描述行之后、`<价> Limit` 之前，两个值是「成交量 + 均价」，一个整数是「挂单量」，没有值是没成交，三个值是部分成交。一旦出现 `Market` 单或列顺序变了就会错，推不出来就进 `skipped`、问使用者。
-2. **一串往来里可能有好几张表**（样例 1 有「已挂单」和「最终」两张）。只取最新一张，也就是 HTML 文档顺序的第一张；旧表只作参考。再按业务键去重，防止同一张表进来两次。
+2. **一串往来里可能有好几张表**（样例 1 有「已挂单」和「最终」两张）。只取最新一张，也就是 HTML 文档顺序的第一张；旧表只作参考。再靠 `id`（订单键加累计成交量）去重，防止同一张表进来两次。
 3. **按列名取值，不按列号。** 样例 4 多一列 `Executed At`，以后可能还会多列或少列。
 4. **样例 4 的交易表套在外层表的一个格子里。** 找表时要找「第一行是 `Account` 的那张」，不能只看最外层。
 5. **转发包装。** 这几封样例的顶层 `From` 是使用者自己，不是交易台。`brokers` 名单按顶层 `From` 过滤，手动转发来的信一封都收不到。所以生产上走「重定向」（保留原发件人），名单写交易台的发信地址，见 spec。
@@ -105,7 +105,7 @@ HTML 是微软邮件客户端生成的 `table.MsoNormalTable`，每格一个 `td
 10. **行权价可能带小数**（如 `@ 252.5`），描述里的发行人名可能含空格、连字符和 `&`（HTML 里写成 `&amp;`）。按「最后一个 `PUT|CALL` + 日期 + `@`」从右往左切，比从左边猜发行人名稳。
 11. **OCC 代码只在使用者原信里出现**（`AAPL260320C00250000` 这种连写形状），表里没有。handler 应当由「标的 + 到期 + 方向 + 行权价」自己拼出 OCC 代码。
 12. **字符集。** 要按 part 的 `charset` 解码；样例 4 的 windows-1252 用 UTF-8 解会把 `•` 解坏。`letter.ts` 的 `decodeText` 已经按 charset 解码。
-13. **免责声明和签名很长**，正文 4 到 11 KB，HTML 35 到 93 KB，都在连接器 64 KB 正文上限以内（按纯文本算）。
+13. **免责声明和签名很长**，纯文本正文 4 到 11 KB，在连接器 64 KB 正文上限以内。原 HTML 正文 35 到 93 KB，样例 1 的 HTML 约 70 KB，超过 `letter.ts` 纯文本的 64 KB 上限。交 HTML 的宿主 PR 要单独定 HTML 的上限，或保证截断时留住第一张交易表。
 
 ## 6. 做成 `fills` feed fixtures 的建议形状
 
@@ -127,9 +127,9 @@ feeds/fills/fixtures/
 
 ```json
 {
-  "input": { "items": [ { "id": "s-1", "from": { "name": "EXB PB Trading", "address": "exb.pb.trading@example.net" }, "subject": "...", "body": "<cc-open-put-close-unfilled.eml 的 text/plain>", "attachments": [] } ] },
+  "input": { "items": [ { "id": "s-1", "from": { "name": "EXB Desk", "address": "exb.desk@example.net" }, "subject": "...", "body": "<cc-open-put-close-unfilled.eml 的 text/plain>", "attachments": [] } ] },
   "expect": {
-    "rows": [ { "id": "AAPL260320C00250000:STO:2026-03-05:12:QRSTalfa", "account_ref": "QRSTalfa", "side": "STO", "instrument": { "underlying": "AAPL", "option_symbol": "AAPL260320C00250000", "right": "call", "strike": 250, "expiry": "2026-03-20", "multiplier": 100 }, "qty": 12, "price": 3.15, "trade_date": "2026-03-05", "settle_date": "2026-03-06", "trade_time": null, "order_id": null, "commission": null, "fees": null, "source": "broker-email" } ],
+    "rows": [ { "id": "AAPL260320C00250000:STO:2026-03-05:QRSTalfa:cum12", "fill_id": "AAPL260320C00250000:STO:2026-03-05:QRSTalfa:cum12", "order_key": "AAPL260320C00250000:STO:2026-03-05:QRSTalfa", "account_ref": "QRSTalfa", "side": "STO", "instrument": { "underlying": "AAPL", "option_symbol": "AAPL260320C00250000", "right": "call", "strike": 250, "expiry": "2026-03-20", "multiplier": 100 }, "qty": 12, "partial_fill": false, "price": 3.15, "trade_date": "2026-03-05", "settle_date": "2026-03-06", "trade_time": null, "order_id": null, "commission": null, "fees": null, "source": "broker-email" } ],
     "skipped": [ { "reason": "not-filled", "account_ref": "LMNObeta" } ]
   }
 }
@@ -137,7 +137,8 @@ feeds/fills/fixtures/
 
 - 宿主的 feed 样例今天只认 `input` 和 `responses`，`module check` 只查 handler 不抛异常、交回的格式对，不比对期望。`expect` 由 P3 的测试读来断言。
 - 行字段对齐 tax memo 第 14.1 节的「成交（Fill）」表。`account_ref` 是邮件里的短码，映射成 `account_key` 是下一步的事。
-- `skipped` 把「为什么不是成交」写成断言（`working-order`、`not-filled`、`partial-fill`、`stock-trade-out-of-scope`，含义见 spec），这样漏判、多判都会让测试失败。
+- `id` 是 feed 交给宿主的去重键，宿主不把它存成字段。`fill_id` 是存进 `fills` 的文字字段，值和 `id` 相同，`record`、`ledger` 靠它认行。`order_key` 是 `id` 去掉 `:cum<n>` 的部分，handler 按它合计已记的张数和金额。`partial_fill` 是这一行在表里 `Open Qty` 还有没有值，这批样例都是 `false`。
+- `skipped` 把「为什么不是成交」写成断言（`working-order`、`not-filled`、`stock-trade-out-of-scope`、`duplicate-order-key`、`unparsed`，含义见 spec），这样漏判、多判都会让测试失败。
 - `<名字>.expected.json` 是按这个形状写的草稿，`fills` 一栏到时候改名成 feed 的 `records`。
 - 连接器交出 HTML 以后，HTML 版本放进它的字段（字段名等宿主那个 PR 定），期望不变。HTML 和纯文本各跑一遍，能直接比出纯文本推断法错在哪里。
 

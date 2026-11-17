@@ -1,7 +1,9 @@
 {
   "fills": [
     {
-      "id": "SPY251226P00660000:STO:2025-12-15:5:QRSTa1001",
+      "id": "SPY251226P00660000:STO:2025-12-15:QRSTa1001:cum5",
+      "fill_id": "SPY251226P00660000:STO:2025-12-15:QRSTa1001:cum5",
+      "order_key": "SPY251226P00660000:STO:2025-12-15:QRSTa1001",
       "account_ref": "QRSTa1001",
       "side": "STO",
       "instrument": {
@@ -13,6 +15,7 @@
         "multiplier": 100
       },
       "qty": 5,
+      "partial_fill": false,
       "price": 3.42,
       "limit": 3.42,
       "trade_date": "2025-12-15",
@@ -25,7 +28,9 @@
       "source": "broker-email"
     },
     {
-      "id": "SPY251226P00660000:STO:2025-12-15:18:LMNOb2002",
+      "id": "SPY251226P00660000:STO:2025-12-15:LMNOb2002:cum18",
+      "fill_id": "SPY251226P00660000:STO:2025-12-15:LMNOb2002:cum18",
+      "order_key": "SPY251226P00660000:STO:2025-12-15:LMNOb2002",
       "account_ref": "LMNOb2002",
       "side": "STO",
       "instrument": {
@@ -37,6 +42,7 @@
         "multiplier": 100
       },
       "qty": 18,
+      "partial_fill": false,
       "price": 3.42,
       "limit": 3.42,
       "trade_date": "2025-12-15",
@@ -49,7 +55,9 @@
       "source": "broker-email"
     },
     {
-      "id": "SPY251226P00660000:STO:2025-12-15:22:WXYZc3003",
+      "id": "SPY251226P00660000:STO:2025-12-15:WXYZc3003:cum22",
+      "fill_id": "SPY251226P00660000:STO:2025-12-15:WXYZc3003:cum22",
+      "order_key": "SPY251226P00660000:STO:2025-12-15:WXYZc3003",
       "account_ref": "WXYZc3003",
       "side": "STO",
       "instrument": {
@@ -61,6 +69,7 @@
         "multiplier": 100
       },
       "qty": 22,
+      "partial_fill": false,
       "price": 3.42,
       "limit": 3.42,
       "trade_date": "2025-12-15",
