@@ -114,8 +114,30 @@ test("卖出的 call 被指派：所得照算，交出的股票批次待确认�
 
 test("record：增量价格按万分之一四舍五入；代码和 put/call 的大小写都认", () => {
 	const recorded = [{ _id: 1, record_type: "FILL", order_key: "AAPL260320C00250000:STO:2026-03-05:A1", fill_id: "AAPL260320C00250000:STO:2026-03-05:A1:cum1", qty: 1, price: "1.0000" }];
-	const out = recordFill({ account_ref: "A1", side: "STO", underlying: "aapl", right: "CALL", strike: "250", expiry: "2026-03-20", cum_qty: 3, avg_price: "1.0001", trade_date: "2026-03-05" }, recorded) as { qty: number; price: string };
+	const out = recordFill({ account_ref: "A1", side: "STO", underlying: "aapl", right: "CALL", strike: "250", expiry: "2026-03-20", cum_qty: 3, avg_price: "1.0001", trade_date: "2026-03-05" }, { fills: recorded, accounts: [] }) as { qty: number; price: string };
 	assert.deepEqual([out.qty, out.price], [2, "1.0002"]);
+});
+
+const TSLA_CALL = { side: "STO", underlying: "TSLA", right: "call", strike: "300", expiry: "2026-12-18", cum_qty: 2, avg_price: "2.10", trade_date: "2026-11-17" };
+const emailed = [{ _id: 1, record_type: "FILL", account_ref: "QRSTalfa", fill_id: "x", order_key: "y" }, { _id: 2, record_type: "FILL", account_ref: "QRSTa1001", fill_id: "z", order_key: "w" }];
+
+test("record：账户短码不在 accounts 也不在已记的 fills 里，不拼行，列出已知短码要使用者确认", () => {
+	const out = recordFill({ ...TSLA_CALL, account_ref: "qrst-alfa" }, { fills: emailed, accounts: [{ _id: 1, account_ref: "IRA1" }] }) as Record<string, unknown>;
+	assert.equal(out["status"], "needs-input");
+	assert.deepEqual(out["missing"], ["account_ref"]);
+	assert.deepEqual(out["known_accounts"], ["IRA1", "QRSTa1001", "QRSTalfa"]);
+	assert.equal(out["row"], undefined);
+});
+
+test("record：短码在 accounts 或已记的 fills 里就照常记", () => {
+	assert.equal((recordFill({ ...TSLA_CALL, account_ref: "QRSTalfa" }, { fills: emailed, accounts: [] }) as { status: string }).status, "ok");
+	assert.equal((recordFill({ ...TSLA_CALL, account_ref: "IRA1" }, { fills: emailed, accounts: [{ _id: 1, account_ref: "IRA1" }] }) as { status: string }).status, "ok");
+});
+
+test("record：accounts 和 fills 都空（第一次用）照常记，回复里说这是第一个账户短码", () => {
+	const out = recordFill({ ...TSLA_CALL, account_ref: "acct-blue" }, { fills: [], accounts: [] }) as { status: string; notes: string[] };
+	assert.equal(out.status, "ok");
+	assert.ok(out.notes.some((n) => n.includes("这是第一个账户短码")), JSON.stringify(out.notes));
 });
 
 const owned = (data: ReturnType<typeof rows>, owner = "owner-1") => ({ ...data, accounts: ["A1", "A2"].map((account_ref) => ({ account_ref, tax_owner_key: owner })) });
