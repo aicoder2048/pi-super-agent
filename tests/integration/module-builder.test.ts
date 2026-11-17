@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -240,7 +241,7 @@ test("expect 的判法写进技能，和 judge 一致：空格算字，所以「
 
 test("description 照说明书那一句写，不写施工进度；说明书外的集合、feed、工具不加", () => {
 	const layout = SKILL("package-layout");
-	assert.ok(layout.includes("照说明书那一句原样写"), "description 照抄说明书");
+	assert.ok(layout.includes("原样复制说明书那一句"), "description 照抄说明书");
 	assert.ok(layout.includes("不写施工进度"), "不写施工进度");
 	assert.ok(SKILL("build-module").includes("说明书里没有的集合、feed、工具不加"), "不擅自加组成");
 });
@@ -294,10 +295,10 @@ test("工具字面量要专家写明原样照抄才能当 expect：出考题有�
 	assert.ok(SKILL("package-layout").includes("原样转述这个状态"), "专家原样转述固定状态");
 });
 
-test("write-evals 的正例一次答得完，固定中文用语只在说明书或技能写死、专家被要求原样照抄时才可用", () => {
+test("write-evals 的正例一次答得完，中文用语只取说明书或知识里逐字存在的", () => {
 	const text = SKILL("write-evals");
 	assert.ok(!text.includes("未扣费"), "不再拿模型会换说法的中文短语作例子");
-	assert.ok(text.includes("说明书或技能写死"), "中文固定用语有前提");
+	assert.ok(text.includes("说明书或知识里逐字存在的用语"), "中文用语有出处");
 	const good = text.slice(text.indexOf("正例："));
 	assert.ok(good.slice(0, good.indexOf("\n")).includes("腿"), "正例带上每条腿的价");
 });
@@ -320,4 +321,54 @@ test("模板考题：题面是使用者的原话，不教答法；工具题的 e
 	const literals = new Set(cases.flatMap((c) => Object.values(c.expect).map(String)));
 	for (const phrase of expect) assert.ok(literals.has(phrase), `expect「${phrase}」是工具输出的字面量`);
 	assert.ok(readFileSync(join(templates, "full", "agents", "advisor.md"), "utf8").includes("原样照抄"), "顾问照抄工具的数");
+});
+
+const OPTION_TA_SENTENCE = "美股期权链、隐含波动、希腊值、策略盈亏，记你的期权开仓、Roll、平仓、到期、指派；股价和技术面归 stock-ta";
+
+test("description 原样复制说明书那一句，长度交给 module check 判；技能给的量法数出的和检查一样；访谈不判断长度", (t) => {
+	const layout = SKILL("package-layout");
+	assert.ok(layout.includes("原样复制说明书那一句"), "照抄，不改写");
+	assert.ok(layout.includes("不自己数字数"), "不靠模型数字");
+	assert.ok(layout.includes("只有 `module check` 报 description 超长"), "检查报了才压缩");
+	const script = layout.match(/`node -e '([^']+)' "<句子>"`/)?.[1];
+	assert.ok(script, "技能给出量长度的命令");
+	const measure = (sentence: string) => Number(execFileSync(process.execPath, ["-e", script!, sentence], { encoding: "utf8" }).trim());
+	assert.equal(measure(OPTION_TA_SENTENCE), 58, "option-ta 说明书那句量出 58");
+	const [name, files] = examples().team;
+	const withDescription = (description: string) => {
+		const changed = new Map(files);
+		changed.set("module.json", JSON.stringify({ ...JSON.parse(files.get("module.json")!), description }));
+		return problemsOf(writePackage(t, name, changed)).filter((line) => line.includes("description"));
+	};
+	assert.deepEqual(withDescription(OPTION_TA_SENTENCE), [], "58 字检查收下");
+	const longer = `${OPTION_TA_SENTENCE}的期权`;
+	assert.equal(measure(longer), 61);
+	assert.equal(withDescription(longer).length, 1, "量出超过 60，检查也报");
+	const interviewer = AGENT("interviewer");
+	assert.ok(!interviewer.includes("超过 60 字"), "访谈不拿 60 字当冲突");
+	assert.ok(interviewer.includes("不判断 description 那一句的长度"));
+	assert.ok(AGENT("scaffolder").includes("不自己数字数"));
+});
+
+test("expect 只取工具字面量或说明书、知识里逐字存在的用语，不自造；FAIL 后不改给使用者看的措辞迁就考题，带 QCC 反例", () => {
+	const text = SKILL("write-evals");
+	assert.ok(text.includes("不能自造短语"));
+	assert.ok(text.includes("QCC待确认"), "反例写出自造的写法");
+	assert.ok(text.includes("不许为了让考题过而改"), "FAIL 后不改产品措辞");
+	assert.ok(!text.includes("技能规定一个固定标记"), "不再叫人先在技能里定标记");
+	assert.ok(!text.includes("先在技能里定一个固定用语"), "预演失败时也不再这样做");
+	const writer = AGENT("eval-writer");
+	assert.ok(writer.includes("不自造短语"));
+	assert.ok(writer.includes("只换 `expect`"), "因 FAIL 再派时只换 expect");
+	assert.ok(SKILL("build-module").includes("不为了过预演改专家、技能里给使用者看的措辞"));
+});
+
+test("考题覆盖：4 到 6 道，每位用外部工具的专家至少一道，核心意图各至少一道；工具没实现时 expect 用 NOT_IMPLEMENTED", () => {
+	const text = SKILL("write-evals");
+	assert.ok(text.includes("4 到 6 道"));
+	assert.ok(text.includes("每位用外部工具的专家至少一道"));
+	assert.ok(text.includes("核心意图"));
+	assert.ok(!text.includes("两三道题就够"));
+	assert.ok(!SKILL("build-module").includes("两三道"), "领队派活不再写两三道");
+	assert.ok(!AGENT("eval-writer").includes("两三道"));
 });

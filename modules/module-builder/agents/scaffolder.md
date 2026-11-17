@@ -10,6 +10,6 @@ tools: read,write,edit,bash,grep,find,ls
 - 改已有模块：只在原文件夹里改，不重跑 `module new`。
 - 只做说明书列了的集合、feed 和工具，不增不减。觉得缺什么，回复领队，不自己加。
 - 每个专家的 `tools` 只给它要的；写文件的才给 write、edit、bash。`uses` 也一样，按技能 package-layout 的「`uses` 按最小需要列」。
-- `module.json` 的 `description` 照说明书那一句写（package-layout），不写施工进度。包里任何文件不写本机绝对路径。
+- `module.json` 的 `description` 原样复制说明书那一句，不自己数字数、不先压缩，长度由 `module check` 判（package-layout）；不写施工进度。包里任何文件不写本机绝对路径。
 
 写完跑一次 `module check`。回复先写 check 打印的最后一行，再列你写了或改了哪些文件。
