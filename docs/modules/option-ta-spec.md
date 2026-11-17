@@ -12,10 +12,10 @@
 ## 管什么
 
 - 期权链快照：某个标的某个到期日附近的行权价、买卖价、IV、希腊值、未平仓量。
-- 波动率状况：平值 IV、IV 和历史波动率之比、期限结构、偏斜；每天收盘给关注的标的存一份 IV 快照，攒 IV 历史。
+- 波动率状况：平值 IV、IV 和历史波动率之比、期限结构、偏斜；每天收盘给期权自选的标的存一份 IV 快照，攒 IV 历史。
 - 策略计算：给定一组腿，算权利金、盈亏平衡、到期盈亏、年化收益、被指派概率。数字由代码算，模型只转述。
-- 期权成交记录：STO、BTO、BTC、STC、Roll（三种），以及到期、指派、行权。按账户记，按合约和交易链汇总。每笔仓位带意图（十个意图之一）。
-- 两种视图：交易链盈亏（成败看赢的金额），税务视图（只打 wash sale、跨式、合格备兑 call 的标记，不自动扣减）；和 1099-B 对账。
+- 期权成交记录：STO、BTO、BTC、STC、Roll（三种），以及到期、指派、行权，外加被指派产生的股票（第一版范围 B，2026-11-16 使用者定）。股票的其余买卖不记。按账户记，按合约和交易链汇总。每笔仓位带意图（十个意图之一）。
+- 两种视图：交易链盈亏（成败看赢的金额），税务视图（只打标记，不自动扣减）。第一版从记下的期权能判的照判：期权之间的 wash sale、价差两腿的跨式。要独立股票批次或持有期的判断（合格备兑 call、股票和期权的跨式、§1233 买 put 视为卖空、涉及股票的 wash sale）一律标「待确认」，以后补要哪些数据见 tax memo 第 14.3 节。和 1099-B 对账以后再做。
 - 主动提醒：到期临近、接近或穿过行权价、权利金达标、到期前的财报和除息（门槛见 build plan）。
 
 ## 不管什么
@@ -25,20 +25,21 @@
 - 下单：只给分析和提醒，不下单。
 - 裸卖 call、蝶式、铁鹰等多腿组合（第一版）。
 - 基于 IV 的机会提醒（第二版，等 IV 历史攒够）。
-- 报税本身：只给对账和标记，不是税务建议。
+- 报税本身：只给标记（和 1099-B 对账以后加），不是税务建议。
 
 ## 五个典型问题
 
 1. 「QQQ 下周五到期，600 附近的 put 现在什么价，IV 多少？」
 2. 「我那 10 张 SPY 650 put 现在赚了几成？要不要提前买回？」（按意图回答）
 3. 「把 NVDA 12 月 140 的 CSP 往后 Roll 一个月、行权价降到 135，净收多少？」
-4. 「卖了 2 张 TSLA 12/19 300 call，2.10，收租。」（记一笔成交）
+4. 「卖了 2 张 TSLA 12/18 300 call，2.10，收租。」（记一笔成交）
 5. 「今年到现在，期权一共赢了多少钱？按交易链列一下。」
 
 ## 事实从哪里来
 
-- **期权和正股行情**：Massive（Polygon）接口。期权链快照 `/v3/snapshot/options/<标的>`、合约列表 `/v3/reference/options/contracts`、合约日线 `/v2/aggs/ticker/O:...`。2026-11-14 实测使用者的 key 能读，带 greeks、IV、OI、报价。
-- **财报日**：Finnhub，同 stock-ta 的做法。
+- **期权行情**：Massive（Polygon）接口。期权链快照 `/v3/snapshot/options/<标的>`、合约列表 `/v3/reference/options/contracts`、合约日线 `/v2/aggs/ticker/O:...`。2026-11-14 实测使用者的 key 能读，带 greeks、IV、OI、报价。stock-ta 不开放期权数据，option-ta 自己取。
+- **正股趋势、关键价位、现价**：任务里的专家调 stock-ta 开放的工具（「外部工具」一节）。`watch` feed 要现价时自己调 Massive（「密钥」一节）。
+- **财报日**：任务里的专家调 stock-ta 开放的 `earnings-date`。`watch` feed 要财报日发提醒，自己调 Finnhub。
 - **除息日**：Massive `/v3/reference/dividends`（P1 实测）。
 - **成交**：券商的成交确认邮件（经宿主的 `mail` 连接器），加使用者手动说的。按合约、方向、成交日、张数去重，数以邮件为准，含糊就问。
 - **领域知识**：使用者自己的规则（意图表、门槛，来自拷问记录）、税务 memo；theta 的研究摘要只作参考，进包前逐篇查版权，只留转述和链接；公共规则引用 OCC、CBOE 等权威出处。
@@ -46,17 +47,30 @@
 
 ## 密钥
 
-按 `docs/modules/architecture/connectors-and-secrets-design.md`（C1、C2）：
-- Gmail 授权是身份类密钥，归宿主的 `mail` 连接器。option-ta 的 `fills` feed 用这个连接器，过滤券商发件人，不碰 Gmail 密钥。
-- Polygon/Massive、Finnhub 是业务类密钥，放 option-ta 自己的 `modules-data/option-ta/.env`，值可以和 stock-ta 的一样。
+按 `docs/modules/architecture/connectors-and-secrets-design.md`（C1、C2）、ADR-0029、ADR-0031：
+- Gmail 授权是身份类密钥，归宿主的 `mail` 连接器。option-ta 的 `fills` feed 用这个连接器，只收 `brokers` 名单上的发件人，不碰 Gmail 密钥，包里也不点名它。
+- Massive、Finnhub 是业务类密钥，放 option-ta 自己的 `modules-data/option-ta/.env`，用 `just module secret option-ta POLYGON_API_KEY`、`just module secret option-ta FINNHUB_API_KEY` 写进去。值可以和 stock-ta 的一样，两个模块各存一份。
+- 为什么 option-ta 要自带：期权链、合约日线、除息 stock-ta 不开放；`iv`、`watch` 两个 feed 要行情和财报日，可 feed 的处理代码不经网关，调不了外部工具（设计稿规则 11）。任务里的专家调 `stock-ta/tools/quote`、`earnings-date` 时，宿主按被运行的提供方取 key，用的是 stock-ta `.env` 里那一份（ADR-0031）。
+- 额度：Massive 和 Finnhub 各是一份额度。option-ta 自己的调用、经开放工具的调用、stock-ta 自己的 feed 和任务都从里面扣，宿主不排队（设计稿规则 4「额度」）。会诊把一次问答变成几次调用，额度用得更快。
 
 ## 模板
 
 `full`：要算东西、存数据、有 feed。
 
-- feeds：`fills`（用宿主的 `mail` 连接器，过滤券商发件人，handler 把成交确认邮件解析成成交行，不经过模型）、`iv`（收盘后存 IV 快照）、`watch`（交易时段按门槛检查记下的仓位，发提醒或开任务）。
-- data：`fills`（原始成交和事件，按账户）、`chains`（交易链和 Roll 组，意图和改意图的记录）、`iv-snapshots`、`watchlist`（待定）、`accounts`（匿名键，不存真实账号）。
-- tools：`chain`（期权链快照）、`vol`（波动率状况）、`strategy`（策略计算）、`record`（记一笔成交，去重）、`ledger`（交易链和税务视图、1099-B 对账）。每个工具带 `cases.json`。
+- feeds：
+  - `fills`：`"connector": "mail"`，`settings.senders` 写本模块的集合名 `"brokers"`。`brokers` 每行一个文字字段 `address`，写地址或 `@域名`，可选 `addedAt`、`removedAt`，写法同 `mail` 的邮件名单（ADR-0029）。不在包里直接写地址列表：包会进公开仓库，地址看得出在哪家券商开户。handler 把成交确认邮件解析成成交行，写进私密集合 `fills`，不经过模型。
+  - `iv`：收盘后给期权自选存 IV 快照，用 option-ta `.env` 里的 Massive 密钥。
+  - `watch`：交易时段按门槛检查记下的仓位，发提醒或开任务。现价、期权报价、除息用 Massive 密钥，财报日用 Finnhub 密钥，都自己取，因为 feed 调不了外部工具（设计稿规则 11）。
+- data（括号里先写集合的 `class`）：
+  - `fills`（`private`）：原始成交和事件，按账户。ADR-0029 要求 mail feed 的 `into` 是私密集合。被指派产生的股票也记在这里：`side` 是 BUY 或 SELL，`caused_by_event` 指向那次指派（tax memo 第 14.1 节），不另建股票集合。
+  - `chains`（`private`）：交易链和 Roll 组，意图和改意图的记录。
+  - `accounts`（`private`）：匿名键，不存真实账号。
+  - `brokers`（`private`）：成交邮件的发件人名单，见 `fills` feed。
+  - `iv-snapshots`、`watchlist`（期权自选，待定）。
+- 有 `private` 集合带来两条后果：
+  - option-ta 不能开放任何工具（设计稿规则 7）。别的模块调不了 `chain`、`vol`、`strategy`。
+  - option-ta 是私密使用方（ADR-0030「风险」）。它的任务可能把私密内容放进参数，调会联网的 `stock-ta/tools/quote`（发给 Massive）、`earnings-date`（发给 Finnhub），内容就出了本机。今天这两个工具只收股票代码，路很窄，宿主不检查参数。专家技能写明只给它们传标的代码。
+- tools：`chain`（期权链快照）、`vol`（波动率状况）、`strategy`（策略计算）、`record`（记一笔成交，去重）、`ledger`（交易链和税务视图；1099-B 对账以后加）。每个工具带 `cases.json`。
 
 ## 团队（2026-11-16 定）
 
@@ -65,11 +79,11 @@
 | 成员 | 负责 |
 |---|---|
 | 领队 | 分档、共同快照、派活、汇总、写入、对使用者输出 |
-| 方向与价位 | 正股趋势和关键价位：未平仓量墙、GEX、最大痛点、异常成交、日线趋势 |
+| 方向与价位 | 正股趋势和关键价位取自 stock-ta 开放工具；未平仓量墙、GEX、最大痛点、期权异常成交自己算 |
 | 波动率与事件 | IV、IV/HV、IV rank、偏斜、期限结构、预期波幅、财报和除息 |
 | 策略计算 | 行权价、到期日、张数；方案并排比较，含三种 Roll；流动性 |
 | 仓位研判 | 已有仓位按意图：买回、Roll、持有、接股 |
-| 账本与税务 | 交易链盈亏、税务视图、1099-B 对账、wash sale 和跨式标记 |
+| 账本与税务 | 交易链盈亏、税务视图、wash sale 和跨式标记（第一版范围见 tax memo 第 14.3 节）；1099-B 对账以后加 |
 | 反方 | 只在会诊时上场，挑领队汇总的错，不出观点 |
 
 **三档分流**：领队自答（一次工具调用或概念解释）；单专家（一个领域内多步解读）；全员会诊（开仓、Roll 这类要使用者决定的结论）。记成交由领队自己做。
@@ -79,6 +93,21 @@
 **输出五段**：结论、依据、分歧、作废条件、「这是分析，不是交易指令」。
 
 **什么时候改**：反方连续 20 次没改变结论也没实质异议 → 只在开仓类会诊上场；单专家档一半以上升级成会诊 → 收紧分档；某位专家常超上下文预算 → 拆细。
+
+## 外部工具（stock-ta 开放的只读工具）
+
+按 `docs/modules/architecture/service-connector-design.md`（C4）和 ADR-0030。C4a、C4c 合并以后才调得成（build plan P2 的前置条件）。
+
+| 专家 | `uses` 里的外部工具 | 用来 |
+|---|---|---|
+| 方向与价位 | `stock-ta/tools/structure`、`stock-ta/tools/signals`、`stock-ta/tools/prices`、`stock-ta/tools/quote` | 正股趋势、关键价位、日线、现价 |
+| 波动率与事件 | `stock-ta/tools/earnings-date` | 财报日 |
+
+- 外部工具写在专家文件的 `uses` 里，不写 `module.json` 的 `uses`。option-ta 带 `agents/`，写模块级 `uses` 检查报错（设计稿规则 3）。
+- 领队（以及没有派活台时的单个助手）能调的外部工具，是全部专家 `uses` 的并集，不另写。
+- `stock-ta/tools/note` 不开放（设计稿「使用者已定」第 4 条），option-ta 拿不到 `signals` 引用的笔记原文。
+- 拿不到原文，或标的不在 stock-ta 的自选股里（`structure` 回「把它加进自选股」），专家按设计稿规则 12 转成一句给使用者的话：「要看出处原文，请对 stock-ta 说」「要分析 TSLA 的结构，请对 stock-ta 说把它加进自选股」。option-ta 加不了 stock-ta 的自选股，那是 stock-ta 的写操作。
+- stock-ta 关着、没装、没开放某个工具时，调用回 `provider-absent` 和原因，专家在汇报里写明哪部分没做，其余照常做完（设计稿规则 6）。
 
 ## 还没定的
 
