@@ -279,6 +279,13 @@ test("检查和运行给 handler 的输入一样：reads 里的每个集合都�
 	assert.ok(scan.ok, scan.ok ? "" : scan.problems.map(problemLine).join("\n"));
 });
 
+test("feed 样例的回放应答也检查 status：不是 200 到 599 的整数就报错", (t) => {
+	const w = world(t, { lab: { count: { json: countReadings, handler: countHandler } } });
+	writeFixture(w.root, "lab", "count", "limited", { responses: { "https://example.test/rows": { status: 1000, body: {} } } });
+	const scan = scanPackage(join(w.root, "modules", "lab"));
+	assert.match(scan.ok ? "" : scan.problems.map(problemLine).join("\n"), /feeds\/count\/fixtures\/limited\.json: replies to https:\/\/example\.test\/rows with "status" 1000, which is not a whole number from 200 to 599/);
+});
+
 test("预演时样例给的 rows 交给 handler", async (t) => {
 	const w = world(t, { lab: { count: { json: countReadings, handler: countHandler } } }, { fixtures: true });
 	writeFixture(w.root, "lab", "count", "two", { input: { rows: { readings: [{ item: "CEA" }, { item: "CEA" }] } }, responses: {} });

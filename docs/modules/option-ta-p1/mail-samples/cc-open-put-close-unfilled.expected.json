@@ -1,0 +1,126 @@
+{
+  "fills": [
+    {
+      "id": "AAPL260320C00250000:STO:2026-03-05:QRSTalfa:cum12",
+      "fill_id": "AAPL260320C00250000:STO:2026-03-05:QRSTalfa:cum12",
+      "order_key": "AAPL260320C00250000:STO:2026-03-05:QRSTalfa",
+      "account_ref": "QRSTalfa",
+      "side": "STO",
+      "instrument": {
+        "underlying": "AAPL",
+        "option_symbol": "AAPL260320C00250000",
+        "right": "call",
+        "strike": 250.0,
+        "expiry": "2026-03-20",
+        "multiplier": 100
+      },
+      "qty": 12,
+      "partial_fill": false,
+      "price": 3.15,
+      "limit": 3.15,
+      "trade_date": "2026-03-05",
+      "trade_time": null,
+      "settle_date": "2026-03-06",
+      "executed_at": null,
+      "order_id": null,
+      "commission": null,
+      "fees": null,
+      "source": "broker-email"
+    },
+    {
+      "id": "AAPL260320C00250000:STO:2026-03-05:LMNObeta:cum8",
+      "fill_id": "AAPL260320C00250000:STO:2026-03-05:LMNObeta:cum8",
+      "order_key": "AAPL260320C00250000:STO:2026-03-05:LMNObeta",
+      "account_ref": "LMNObeta",
+      "side": "STO",
+      "instrument": {
+        "underlying": "AAPL",
+        "option_symbol": "AAPL260320C00250000",
+        "right": "call",
+        "strike": 250.0,
+        "expiry": "2026-03-20",
+        "multiplier": 100
+      },
+      "qty": 8,
+      "partial_fill": false,
+      "price": 3.15,
+      "limit": 3.15,
+      "trade_date": "2026-03-05",
+      "trade_time": null,
+      "settle_date": "2026-03-06",
+      "executed_at": null,
+      "order_id": null,
+      "commission": null,
+      "fees": null,
+      "source": "broker-email"
+    },
+    {
+      "id": "AAPL260320C00255000:STO:2026-03-05:QRSTalfa:cum10",
+      "fill_id": "AAPL260320C00255000:STO:2026-03-05:QRSTalfa:cum10",
+      "order_key": "AAPL260320C00255000:STO:2026-03-05:QRSTalfa",
+      "account_ref": "QRSTalfa",
+      "side": "STO",
+      "instrument": {
+        "underlying": "AAPL",
+        "option_symbol": "AAPL260320C00255000",
+        "right": "call",
+        "strike": 255.0,
+        "expiry": "2026-03-20",
+        "multiplier": 100
+      },
+      "qty": 10,
+      "partial_fill": false,
+      "price": 1.8,
+      "limit": 1.8,
+      "trade_date": "2026-03-05",
+      "trade_time": null,
+      "settle_date": "2026-03-06",
+      "executed_at": null,
+      "order_id": null,
+      "commission": null,
+      "fees": null,
+      "source": "broker-email"
+    },
+    {
+      "id": "AAPL260320C00255000:STO:2026-03-05:LMNObeta:cum6",
+      "fill_id": "AAPL260320C00255000:STO:2026-03-05:LMNObeta:cum6",
+      "order_key": "AAPL260320C00255000:STO:2026-03-05:LMNObeta",
+      "account_ref": "LMNObeta",
+      "side": "STO",
+      "instrument": {
+        "underlying": "AAPL",
+        "option_symbol": "AAPL260320C00255000",
+        "right": "call",
+        "strike": 255.0,
+        "expiry": "2026-03-20",
+        "multiplier": 100
+      },
+      "qty": 6,
+      "partial_fill": false,
+      "price": 1.8,
+      "limit": 1.8,
+      "trade_date": "2026-03-05",
+      "trade_time": null,
+      "settle_date": "2026-03-06",
+      "executed_at": null,
+      "order_id": null,
+      "commission": null,
+      "fees": null,
+      "source": "broker-email"
+    }
+  ],
+  "skipped": [
+    {
+      "reason": "not-filled",
+      "account_ref": "LMNObeta",
+      "description": "MICROSOFT CORP PUT 03/27/2026 @ 400",
+      "open_qty": null
+    },
+    {
+      "reason": "not-filled",
+      "account_ref": "QRSTalfa",
+      "description": "MICROSOFT CORP PUT 03/27/2026 @ 400",
+      "open_qty": null
+    }
+  ]
+}

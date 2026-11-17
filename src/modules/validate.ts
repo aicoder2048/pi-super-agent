@@ -6,7 +6,7 @@ import { EVERY, everyMs } from "./connectors/timer.ts";
 import { mailFeedProblems } from "./connectors/mail.ts";
 import { feedInput, intoOf, nothingHeld, parseCollected } from "./feed-runner.ts";
 import { linkVenvs, lockOf, PY_DIR, venvDir, venvInstalled } from "./files.ts";
-import { fixtureSecrets, runModuleCode, runModuleCodeAsync, type CodeReply, type CodeSite, type RunOptions, type Secrets } from "./run-code.ts";
+import { fixtureSecrets, replayProblem, runModuleCode, runModuleCodeAsync, type CodeReply, type CodeSite, type RunOptions, type Secrets } from "./run-code.ts";
 import { identityNote } from "./identity-secrets.ts";
 import { CONNECTORS, DATA_CLASSES, externalTool, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, exportChanges, type ExportedSide, RUNTIMES, structureChanges, TOOL_EFFECTS, TOOL_FETCHES, TOOL_PORTS, toolEffect, type ToolFetch } from "./manifest.ts";
 import { LINE_MAX_LINES, placeholders } from "./release.ts";
@@ -319,8 +319,10 @@ function readTool(report: Report, root: string, name: string): Component | undef
 		}
 		const responses = entryCase["responses"];
 		if (responses !== undefined) {
-			if (isObject(responses)) testCase.responses = responses;
-			else report(casesWhere, `case "${entryCase["name"]}" has "responses" that is not an object of address to reply`);
+			if (isObject(responses)) {
+				testCase.responses = responses;
+				for (const [url, why] of replayProblems(responses)) report(casesWhere, `case "${entryCase["name"]}" replies to ${url} with ${why}`);
+			} else report(casesWhere, `case "${entryCase["name"]}" has "responses" that is not an object of address to reply`);
 		}
 		const python = entryCase["python"];
 		if (python === true && lockOf(root) !== undefined) testCase.python = true;
@@ -402,6 +404,12 @@ function checkLine(report: Report, where: string, line: string, notice: string |
 	for (const name of placeholders(line)) if (!known.has(name)) report(where, `"line" names {{${name}}}, which "notice" does not; a line releases only the notice's fields`);
 }
 
+const replayProblems = (responses: JsonObject): [string, string][] =>
+	Object.entries(responses).flatMap(([url, reply]) => {
+		const why = replayProblem(reply);
+		return why === undefined ? [] : [[url, why]];
+	});
+
 function readFixtures(report: Report, root: string, dir: string): FeedFixture[] {
 	if (!existsSync(join(root, dir))) return [];
 	return entries(root, dir).files.flatMap((file): FeedFixture[] => {
@@ -417,6 +425,7 @@ function readFixtures(report: Report, root: string, dir: string): FeedFixture[] 
 			report(where, `"input" and "responses" must be objects`);
 			return [];
 		}
+		for (const [url, why] of replayProblems(responses)) report(where, `replies to ${url} with ${why}`);
 		return [{ name: file.slice(0, -5), input, responses }];
 	});
 }

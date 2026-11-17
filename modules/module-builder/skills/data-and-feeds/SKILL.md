@@ -33,6 +33,7 @@ description: 数据集合（data/）、feed（feeds/）和密钥怎么写，带�
 ### 样例：`feeds/<名字>/fixtures/<样例>.json`
 
 - 每个文件是 `{ "input": {...}, "responses": {...} }`。`input` 盖掉 handler 收到的同名键，`settings` 按键合并。`responses` 按完整 URL 回 `fetch`，没列的 URL 直接报错，所以样例不联网。
+- 每个应答只写应答体就是 200。要测限流、服务出错，写成 `{ "status": 429, "headers": { "retry-after": "30" }, "body": {...} }`：`status` 是 200 到 599 的整数，`headers`、`body` 可以不写。只有数字 `status`、没有别的键的对象才算这种写法，`{ "status": "ERROR" }` 仍是应答体。
 - `module check` 每次都跑全部样例：handler 抛异常或交回的格式不对，检查就不过。检查不强制有样例，工坊的规矩是每个带 handler 的 feed 至少一个。
 - 样例不给 `now` 就是跑检查的那一刻，用到 `now` 的 handler 样例都给 `now`。自己取数据的 feed 再给 `settings`、`rows` 和 `responses`，见 stock-ta 的 `feeds/quotes/fixtures/`。
 - 工具的 `cases.json` 一样：联网的工具每条用例都写 `responses`，不写就真联网。读模块文件的工具用 `data` 指包里的夹具文件夹，见 stock-ta 的 `tools/structure/cases.json`。

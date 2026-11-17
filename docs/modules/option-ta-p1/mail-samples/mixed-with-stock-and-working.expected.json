@@ -1,0 +1,141 @@
+{
+  "fills": [
+    {
+      "id": "SPY251226P00660000:STO:2025-12-15:QRSTa1001:cum5",
+      "fill_id": "SPY251226P00660000:STO:2025-12-15:QRSTa1001:cum5",
+      "order_key": "SPY251226P00660000:STO:2025-12-15:QRSTa1001",
+      "account_ref": "QRSTa1001",
+      "side": "STO",
+      "instrument": {
+        "underlying": "SPY",
+        "option_symbol": "SPY251226P00660000",
+        "right": "put",
+        "strike": 660.0,
+        "expiry": "2025-12-26",
+        "multiplier": 100
+      },
+      "qty": 5,
+      "partial_fill": false,
+      "price": 3.42,
+      "limit": 3.42,
+      "trade_date": "2025-12-15",
+      "trade_time": null,
+      "settle_date": "2025-12-16",
+      "executed_at": null,
+      "order_id": null,
+      "commission": null,
+      "fees": null,
+      "source": "broker-email"
+    },
+    {
+      "id": "SPY251226P00660000:STO:2025-12-15:LMNOb2002:cum18",
+      "fill_id": "SPY251226P00660000:STO:2025-12-15:LMNOb2002:cum18",
+      "order_key": "SPY251226P00660000:STO:2025-12-15:LMNOb2002",
+      "account_ref": "LMNOb2002",
+      "side": "STO",
+      "instrument": {
+        "underlying": "SPY",
+        "option_symbol": "SPY251226P00660000",
+        "right": "put",
+        "strike": 660.0,
+        "expiry": "2025-12-26",
+        "multiplier": 100
+      },
+      "qty": 18,
+      "partial_fill": false,
+      "price": 3.42,
+      "limit": 3.42,
+      "trade_date": "2025-12-15",
+      "trade_time": null,
+      "settle_date": "2025-12-16",
+      "executed_at": null,
+      "order_id": null,
+      "commission": null,
+      "fees": null,
+      "source": "broker-email"
+    },
+    {
+      "id": "SPY251226P00660000:STO:2025-12-15:WXYZc3003:cum22",
+      "fill_id": "SPY251226P00660000:STO:2025-12-15:WXYZc3003:cum22",
+      "order_key": "SPY251226P00660000:STO:2025-12-15:WXYZc3003",
+      "account_ref": "WXYZc3003",
+      "side": "STO",
+      "instrument": {
+        "underlying": "SPY",
+        "option_symbol": "SPY251226P00660000",
+        "right": "put",
+        "strike": 660.0,
+        "expiry": "2025-12-26",
+        "multiplier": 100
+      },
+      "qty": 22,
+      "partial_fill": false,
+      "price": 3.42,
+      "limit": 3.42,
+      "trade_date": "2025-12-15",
+      "trade_time": null,
+      "settle_date": "2025-12-16",
+      "executed_at": null,
+      "order_id": null,
+      "commission": null,
+      "fees": null,
+      "source": "broker-email"
+    }
+  ],
+  "skipped": [
+    {
+      "reason": "working-order",
+      "account_ref": "LMNOb2002",
+      "description": "ORACLE CORP CALL 12/19/2025 @ 190",
+      "open_qty": 20
+    },
+    {
+      "reason": "working-order",
+      "account_ref": "EFGHd4004",
+      "description": "ORACLE CORP CALL 12/19/2025 @ 190",
+      "open_qty": 15
+    },
+    {
+      "reason": "working-order",
+      "account_ref": "WXYZc3003",
+      "description": "ORACLE CORP CALL 12/19/2025 @ 190",
+      "open_qty": 12
+    },
+    {
+      "reason": "stock-trade-out-of-scope",
+      "account_ref": "QRSTa1001",
+      "symbol": "NIO",
+      "side": "SELL"
+    },
+    {
+      "reason": "stock-trade-out-of-scope",
+      "account_ref": "QRSTa1001",
+      "symbol": "BILI",
+      "side": "SELL"
+    },
+    {
+      "reason": "stock-trade-out-of-scope",
+      "account_ref": "WXYZc3003",
+      "symbol": "INTC",
+      "side": "SELL"
+    },
+    {
+      "reason": "stock-trade-out-of-scope",
+      "account_ref": "LMNOb2002",
+      "symbol": "INTC",
+      "side": "SELL"
+    },
+    {
+      "reason": "stock-trade-out-of-scope",
+      "account_ref": "LMNOb2002",
+      "symbol": "PFE",
+      "side": "SELL"
+    },
+    {
+      "reason": "stock-trade-out-of-scope",
+      "account_ref": "WXYZc3003",
+      "symbol": "PFE",
+      "side": "SELL"
+    }
+  ]
+}

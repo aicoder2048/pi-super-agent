@@ -23,8 +23,11 @@ if (call.responses) {
 	globalThis.fetch = async (url) => {
 		const key = String(url?.url ?? url);
 		if (!Object.hasOwn(call.responses, key)) throw new Error("the fixture has no response for " + key);
-		const body = call.responses[key];
-		return new Response(typeof body === "string" ? body : JSON.stringify(body), { headers: { "content-type": "application/json" } });
+		const { status, headers, body } = call.responses[key];
+		const head = new Headers({ "content-type": "application/json" });
+		for (const [name, value] of Object.entries(headers)) head.set(name, value);
+		const text = [204, 205, 304].includes(status) ? null : typeof body === "string" ? body : JSON.stringify(body);
+		return new Response(text, { status, headers: head });
 	};
 }
 let reply;
@@ -44,6 +47,28 @@ export type CodeReply = { ok: true; output: Json } | { ok: false; note: string }
 export type Secrets = Readonly<Record<string, string>>;
 
 export type Responses = FeedFixture["responses"];
+
+/** What the replaying `fetch` answers with. A fixture's reply is just the body, with status 200, or this shape with `status` given. */
+type Replay = { status: number; headers: Readonly<Record<string, string>>; body?: unknown };
+
+const REPLAY_KEYS = new Set(["status", "headers", "body"]);
+
+/** An object with a numeric "status" and no other keys than "headers" and "body". An API body with a text "status" (`{ "status": "ERROR" }`) or with more keys stays a body. */
+const isReplay = (reply: unknown): reply is { status: number; headers?: unknown; body?: unknown } =>
+	typeof reply === "object" && reply !== null && !Array.isArray(reply) && typeof (reply as { status?: unknown }).status === "number" && Object.keys(reply).every((key) => REPLAY_KEYS.has(key));
+
+/** Why `reply` cannot be replayed, or undefined. `Response` takes only 200 to 599, the statuses `fetch` can resolve with. */
+export function replayProblem(reply: unknown): string | undefined {
+	if (!isReplay(reply)) return undefined;
+	const { status, headers } = reply;
+	if (!Number.isInteger(status) || status < 200 || status > 599) return `"status" ${JSON.stringify(status)}, which is not a whole number from 200 to 599`;
+	const text = typeof headers === "object" && headers !== null && !Array.isArray(headers) && Object.values(headers).every((value) => typeof value === "string");
+	if (headers !== undefined && !text) return `"headers" that are not names to text`;
+	return undefined;
+}
+
+const replays = (responses: Responses | undefined): Record<string, Replay> | undefined =>
+	responses && Object.fromEntries(Object.entries(responses).map(([url, reply]) => [url, isReplay(reply) ? { headers: {}, ...reply } as Replay : { status: 200, headers: {}, body: reply }]));
 
 export type RunOptions = { limitMs?: number; responses?: Responses; signal?: AbortSignal };
 
@@ -86,7 +111,7 @@ function readReply(stdout: string, stderr: string, status: number | null, error:
 
 export function runModuleCode(site: CodeSite, entry: string, input: unknown, secrets: Secrets = {}, { responses }: Pick<RunOptions, "responses"> = {}): CodeReply {
 	const { args, options } = codeProcess(site, entry, secrets);
-	const run = spawnSync(process.execPath, args, { ...options, timeout: LIMIT_MS, encoding: "utf8", input: JSON.stringify({ input, responses }) });
+	const run = spawnSync(process.execPath, args, { ...options, timeout: LIMIT_MS, encoding: "utf8", input: JSON.stringify({ input, responses: replays(responses) }) });
 	return readReply(run.stdout, run.stderr, run.status, run.error);
 }
 
@@ -131,6 +156,6 @@ export function runModuleCodeAsync(site: CodeSite, entry: string, input: unknown
 		};
 		child.on("error", (error) => finish(readReply(stdout, stderr, null, error)));
 		child.on("close", (status) => finish(readReply(stdout, stderr, status, stopped === undefined ? undefined : new Error(stopped))));
-		child.stdin.end(JSON.stringify({ input, responses }));
+		child.stdin.end(JSON.stringify({ input, responses: replays(responses) }));
 	});
 }
