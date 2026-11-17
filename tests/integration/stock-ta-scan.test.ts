@@ -444,6 +444,18 @@ test("同一天再扫一次（加了自选股）：之前判过的命中留着�
 	assert.deepEqual(readHits(feed.dataDir, "2026-11-12", "scan").map((h) => h.id).sort(), ["R-MA-2-200:NVDA:2026-11-12", "R-MA-2-50:down:MSFT:2026-11-12"]);
 });
 
+test("当天的信号上次存进库却没判成（换上后出错）：重扫时 ta 不再报新信号，照样从 ta 存的信号里把当天的日线信号判一次；再扫一次不重复发", async (t) => {
+	const feed = await scannedOnce(t);
+	feed.setPlan({ kind: "ok", signals: [], stored: [ma("NVDA", 200, "bearish", "2026-11-12"), ma("AMD", 50, "bearish", "2026-11-12"), ma("NVDA", 50, "bearish", "2026-11-11")] });
+	await feed.tick();
+	feed.watch("MSFT");
+	await feed.tick();
+	assert.equal(feed.scans().length, 3, "第二拍因为加了自选股又扫了一次");
+	assert.deepEqual(feed.notices.map((n) => n.id), ["R-MA-2-200:NVDA:2026-11-12"]);
+	assert.deepEqual(feed.lines().map((a) => a.externalId), ["R-MA-2-50:down:AMD:2026-11-12"]);
+	assert.deepEqual(readHits(feed.dataDir, "2026-11-12", "scan").map((h) => h.id).sort(), ["R-MA-2-200:NVDA:2026-11-12", "R-MA-2-50:down:AMD:2026-11-12"]);
+});
+
 test("rule-levels 改了收盘规则，下一次扫描就按新的层级：跌破 50 日线改成 5 层开任务", async (t) => {
 	const feed = await scannedOnce(t);
 	feed.level({ rule: "R-MA-2-50:down", level: 5, note: "跌破 50 日线也开任务" });

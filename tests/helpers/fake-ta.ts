@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+/** `stored`: the signals in ta's database, which `ta signals` reads back; without it, this scan's `signals`. */
 export type ScanPlan =
-	| { kind: "ok"; rows?: number; signals?: number | Record<string, unknown>[]; bars?: DailyRow[] }
+	| { kind: "ok"; rows?: number; signals?: number | Record<string, unknown>[]; stored?: Record<string, unknown>[]; bars?: DailyRow[] }
 	| { kind: "partial"; failing: string[] }
 	| { kind: "down" }
 	| { kind: "dividends" }
@@ -35,6 +36,12 @@ if (cmd === "calendar") {
 	process.exit(0);
 }
 const plan = config.scan;
+if (cmd === "signals") {
+	const stored = plan.stored ?? (Array.isArray(plan.signals) ? plan.signals : []);
+	const inWindow = (s) => (input.timeframe === undefined || s.timeframe === input.timeframe) && (input.start === undefined || Date.parse(s.data_end) >= Date.parse(input.start)) && (input.end === undefined || Date.parse(s.data_end) < Date.parse(input.end));
+	out({ signals: stored.filter(inWindow).slice(0, input.limit ?? 1000) });
+	process.exit(0);
+}
 const invalid = input.symbols.find((s) => !/^[A-Z]{1,10}(?:\\.[A-Z]{1,2})?$/.test(String(s).trim().toUpperCase().replaceAll("-", ".")));
 if (invalid !== undefined) {
 	console.error(JSON.stringify({ error: { code: "INVALID_SYMBOL", message: "标的代码格式无效。" } }));
