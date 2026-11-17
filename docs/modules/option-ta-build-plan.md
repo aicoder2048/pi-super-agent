@@ -59,7 +59,7 @@ grill-with-docs 就是两个技能合用：grilling（按决策树一轮轮拷�
   2. 日线库：首选真实库的副本，把 `modules-data/stock-ta/files/ta/ta.sqlite` 复制到临时目录的同一路径。没有真实库时，复制合成夹具 `docs/modules/examples/stock-ta/tools/structure/fixtures/data/files/ta/ta.sqlite`（只有 NVDA、QQQ、SPY，价格是编的。它的同步日期旧了一天以上，`structure` 不算，回「把它加进自选股，等下一次 scan 扫完再问」，因为预演里没有自选股的行）。合成库只够判「用到了」，考题的 `expect` 别指望它的数。
   3. 密钥：`just module secret stock-ta POLYGON_API_KEY`、`just module secret stock-ta FINNHUB_API_KEY`，写进临时目录的 `modules-data/stock-ta/.env`。`quote`、`earnings-date` 在预演里真联网。
   4. `just module on stock-ta`，起宿主，用 `just modules` 确认 stock-ta 已经打开。工坊的预演开头没有「stock-ta 现在没开」或「在临时宿主里没有打开」，才算准备好。
-  5. 副作用：临时宿主里 stock-ta 的 feed 用真 key 跑，命中规则会发提醒、开任务，扣同一份额度。交易时段 `quotes` 每 60 秒调一次 Massive；`scan` 不分时段，临时目录里的 cursor 是空的，宿主一起来它就扫最近一个已收盘的交易日，之后到下一个交易日收盘 20 分钟后再扫。所以只说「收盘后做」避不开真 key 调用。首推在临时 `config.json` 里写 `"feedFixtures": true`（每个 feed 只把自己的样例跑一次，连接器都不跑）。不写的话，收盘后起宿主，等 `scan` 把当天扫完一次再开工。
+  5. 副作用：临时宿主里 stock-ta 的 feed 用真 key 跑，命中规则会发提醒、开任务，扣同一份额度。交易时段 `quotes` 每 60 秒调一次 Massive；`scan` 不分时段，临时目录里的 cursor 是空的，宿主一起来它就扫最近一个已收盘的交易日，之后到下一个交易日收盘 20 分钟后再扫。所以只说「收盘后做」避不开真 key 调用。首推在临时 `config.json` 里写 `"feedFixtures": "rows-only"`（每个 feed 只把自己的样例跑一次，连接器都不跑；样例的行照写，交回的触发和提醒不交给 Router，不开任务、不混进工坊的对话，PR #179）。不写的话，收盘后起宿主，等 `scan` 把当天扫完一次再开工。
   6. 用完删掉整个临时 `PSA_STATE_DIR`：里面 `modules-data/stock-ta/.env` 有真 key。
 - 记下工坊做到哪一步、哪里卡住、用了多少 token。工坊自己的毛病另开 PR 修，不在 option-ta 里绕开。
 - **完成标准**：工坊交出包和汇报，`module check` 打印 ok。工坊写不好的代码部分记下来交给 P3。
