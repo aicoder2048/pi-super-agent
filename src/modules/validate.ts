@@ -322,6 +322,10 @@ function readTool(report: Report, root: string, name: string): Component | undef
 			if (isObject(responses)) testCase.responses = responses;
 			else report(casesWhere, `case "${entryCase["name"]}" has "responses" that is not an object of address to reply`);
 		}
+		const python = entryCase["python"];
+		if (python === true && lockOf(root) !== undefined) testCase.python = true;
+		else if (python === true) report(casesWhere, `case "${entryCase["name"]}" has "python": true, but this package has no ${PY_DIR}/ project`);
+		else if (python !== undefined) report(casesWhere, `case "${entryCase["name"]}" has "python" ${JSON.stringify(python)}; write true or leave it out`);
 		cases.push(testCase);
 	}
 	return { kind: "tools", name: name as ComponentName, tool, cases };
@@ -544,18 +548,20 @@ function same(actual: Json | undefined, expected: Json, tolerance: number): bool
 }
 
 /** `data`: the package folder the case's data dir starts as a copy of; cases with the same one share that copy. */
-type CaseRun = { component: string; entry: string; secrets: Secrets; input: unknown; options: RunOptions; data?: string; problem(reply: CodeReply): Problem | undefined };
+type CaseRun = { where: string; component: string; entry: string; secrets: Secrets; input: unknown; options: RunOptions; data?: string; python?: true; problem(reply: CodeReply): Problem | undefined };
 
 function toolRun(component: Extract<Component, { kind: "tools" }>, item: ToolCase, index: number): CaseRun {
 	const where = `tools/${component.name}/cases.json`;
 	const label = `test case ${index + 1} "${item.name}"`;
 	return {
+		where,
 		component: join("tools", component.name),
 		entry: RUNTIMES[component.tool.runtime ?? "node"],
 		secrets: fixtureSecrets(component.tool.secrets ?? []),
 		input: item.input,
 		options: item.responses === undefined ? {} : { responses: item.responses },
 		...(item.data !== undefined && { data: item.data }),
+		...(item.python && { python: true as const }),
 		problem: (reply) => {
 			if (!reply.ok) return { where, reason: `${label} threw: ${reply.note}` };
 			if (!same(reply.output as Json, item.expect as Json, item.tolerance ?? 1e-9)) return { where, reason: `${label} failed: expected ${JSON.stringify(item.expect)}, got ${JSON.stringify(reply.output)}` };
@@ -567,6 +573,7 @@ function toolRun(component: Extract<Component, { kind: "tools" }>, item: ToolCas
 function feedRun({ name, feed }: Extract<Component, { kind: "feeds" }>, components: readonly Component[], fixture: FeedFixture): CaseRun {
 	const where = `feeds/${name}/fixtures/${fixture.name}.json`;
 	return {
+		where,
 		component: join("feeds", name),
 		entry: feed.handler!,
 		secrets: fixtureSecrets(feed.secrets ?? []),
@@ -589,6 +596,20 @@ function caseRuns(components: readonly Component[]): CaseRun[] {
 }
 
 export const hasCases = (scan: PackageScan): boolean => caseRuns(scan.components).length > 0;
+
+/** The runs to make where `realDataDir` holds the module's venvs, and the ones skipped because their Python environment is not installed there. */
+function runnable(packageDir: string, components: readonly Component[], realDataDir: string | undefined): { runs: CaseRun[]; skipped: CaseRun[] } {
+	const lock = lockOf(packageDir);
+	const noPython = lock !== undefined && (realDataDir === undefined || !venvInstalled(realDataDir, lock));
+	const all = caseRuns(components);
+	return { runs: all.filter((run) => !(noPython && run.python)), skipped: all.filter((run) => noPython && run.python) };
+}
+
+function skippedNotes(module: string, skipped: readonly CaseRun[]): string[] {
+	const counts = new Map<string, number>();
+	for (const run of skipped) counts.set(run.where, (counts.get(run.where) ?? 0) + 1);
+	return [...counts].map(([where, count]) => `${where}: ${count} test case(s) need the package's Python environment, which is not installed here; they were skipped (run \`just module setup ${module}\` and check again)`);
+}
 
 type Scratch = { dir: string; drop(): void; explain(problem: Problem): Problem };
 
@@ -631,7 +652,7 @@ export async function runCasesAsync(scan: PackageScan, realDataDir?: string): Pr
 	const problems: Problem[] = [];
 	const data = scratches(scan.dir, scan.manifest.name, realDataDir);
 	try {
-		for (const run of caseRuns(scan.components)) {
+		for (const run of runnable(scan.dir, scan.components, realDataDir).runs) {
 			const scratch = data.of(run);
 			const problem = run.problem(await runModuleCodeAsync(siteOf(scan.dir, run, scratch.dir), run.entry, run.input, run.secrets, run.options));
 			if (problem) problems.push(scratch.explain(problem));
@@ -710,7 +731,8 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, d
 		const only = TOOL_PORTS[item.tool.port].module;
 		if (only !== null && only !== manifest.name) report(`tools/${item.name}/tool.json`, `"port" ${item.tool.port} 只有模块 ${only} 能用`);
 	}
-	const runs = runCases && problems.length === 0 ? caseRuns(components) : [];
+	const { runs, skipped } = runCases && problems.length === 0 ? runnable(root, components, dataDirOf?.(manifest.name)) : { runs: [], skipped: [] };
+	notes.push(...skippedNotes(manifest.name, skipped));
 	const data = scratches(root, manifest.name, dataDirOf?.(manifest.name));
 	try {
 		for (const run of runs) {

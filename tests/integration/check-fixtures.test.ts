@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
+import { lockOf, VENV_MARK, venvDir } from "../../src/modules/files.ts";
 import { problemLine, runCasesAsync, scanPackage } from "../../src/modules/validate.ts";
 
 const READER = `import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -95,4 +96,43 @@ test("检查用完就删掉夹具的副本", (t) => {
 		process.env["TMPDIR"] = saved;
 	}
 	assert.deepEqual(readdirSync(temp), []);
+});
+
+function pyPkg(t: TestContext, cases: object[]): string {
+	const root = pkg(t, { reader: cases });
+	mkdirSync(join(root, "py"));
+	writeFileSync(join(root, "py/pyproject.toml"), "[project]\nname = \"alpha-py\"\nversion = \"0.1.0\"\n");
+	writeFileSync(join(root, "py/uv.lock"), "version = 1\n");
+	return root;
+}
+
+const NEEDS_PYTHON = { ...FROM_FIXTURE, name: "要 Python 环境", expect: { level: 7 }, python: true };
+
+test("用例写 python: true，而这里没装包的 Python 环境：检查跳过它，提醒一行怎么装；别的用例照跑", (t) => {
+	const root = pyPkg(t, [NEEDS_PYTHON, FROM_FIXTURE]);
+	const result = scanPackage(root);
+	assert.ok(result.ok, JSON.stringify(result));
+	assert.deepEqual(result.scan.notes, ["tools/reader/cases.json: 1 test case(s) need the package's Python environment, which is not installed here; they were skipped (run `just module setup alpha` and check again)"]);
+	const broken = pyPkg(t, [NEEDS_PYTHON, { ...FROM_FIXTURE, expect: { level: 1 } }]);
+	assert.match(problems(broken).join("\n"), /夹具里的价位" failed/);
+});
+
+test("python: true 的用例在装好环境的数据目录上照跑，宿主也一样；没装时宿主跳过它", async (t) => {
+	const root = pyPkg(t, [NEEDS_PYTHON]);
+	const data = mkdtempSync(join(tmpdir(), "psa-check-real-"));
+	t.after(() => rmSync(data, { recursive: true, force: true }));
+	const lock = lockOf(root)!;
+	mkdirSync(venvDir(data, lock), { recursive: true });
+	writeFileSync(join(venvDir(data, lock), VENV_MARK), lock);
+	const result = scanPackage(root, { dataDirOf: () => data });
+	assert.match(result.ok ? "" : result.problems.map(problemLine).join("\n"), /要 Python 环境" failed: expected \{"level":7\}, got \{"level":42\}/);
+	const scan = scanPackage(root, { runCases: false });
+	assert.ok(scan.ok);
+	assert.equal((await runCasesAsync(scan.scan, data)).length, 1);
+	assert.deepEqual(await runCasesAsync(scan.scan), []);
+});
+
+test("包里没有 py/ 却有用例写 python: true：检查报错", (t) => {
+	const root = pkg(t, { reader: [NEEDS_PYTHON] });
+	assert.match(problems(root).join("\n"), /case "要 Python 环境" has "python": true, but this package has no py\/ project/);
 });

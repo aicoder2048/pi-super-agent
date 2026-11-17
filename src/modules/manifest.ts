@@ -146,9 +146,10 @@ export interface ToolDescriptor {
 /**
  * One entry of `cases.json`. `tolerance` is absolute, for numbers, default 1e-9. `data`: a folder of the package, relative to its
  * root, copied into the case's data dir, so a tool that reads its module's data runs on a fixture. `responses`: replies by
- * address that the tool's `fetch` gets instead of the network, as in a feed fixture.
+ * address that the tool's `fetch` gets instead of the network, as in a feed fixture. `python`: the case runs code from the
+ * package's Python environment, so a check where `just module setup` has not installed it skips the case.
  */
-export type ToolCase = { name: string; input: Readonly<Record<string, unknown>>; expect: Readonly<Record<string, unknown>>; tolerance?: number; data?: string; responses?: FeedFixture["responses"] };
+export type ToolCase = { name: string; input: Readonly<Record<string, unknown>>; expect: Readonly<Record<string, unknown>>; tolerance?: number; data?: string; responses?: FeedFixture["responses"]; python?: true };
 
 /**
  * `feeds/<name>/feed.json`. The source name on triggers is `<module>/<name>`.
