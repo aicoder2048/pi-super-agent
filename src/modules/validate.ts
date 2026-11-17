@@ -8,7 +8,7 @@ import { feedInput, intoOf, nothingHeld, parseCollected } from "./feed-runner.ts
 import { linkVenvs, lockOf, PY_DIR, venvDir, venvInstalled } from "./files.ts";
 import { fixtureSecrets, runModuleCode, runModuleCodeAsync, type CodeReply, type CodeSite, type RunOptions, type Secrets } from "./run-code.ts";
 import { identityNote } from "./identity-secrets.ts";
-import { CONNECTORS, DATA_CLASSES, externalTool, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, RUNTIMES, structureChanges, TOOL_EFFECTS, TOOL_FETCHES, TOOL_PORTS, toolEffect, type ToolFetch } from "./manifest.ts";
+import { CONNECTORS, DATA_CLASSES, externalTool, FEED_WHEN, feedClass, KIND_DIRS, MEMBER_TOOLS, exportChanges, RUNTIMES, structureChanges, TOOL_EFFECTS, TOOL_FETCHES, TOOL_PORTS, toolEffect, type ToolFetch } from "./manifest.ts";
 import { LINE_MAX_LINES, placeholders } from "./release.ts";
 import type {
 	AgentDescriptor, CapabilityUse, CollectionDescriptor, Component, ComponentName, Digest, FeedDescriptor, FeedFixture, FieldDescriptor, KindDir, MemberTool, ModuleManifest, ModuleName, PackageScan, Problem, RuleRef, Runtime, ScanResult, ToolCase, ToolDescriptor, ToolPort,
@@ -752,6 +752,7 @@ function scanReadable(packageDir: string, { previous, runCases = true, folder, d
 		const changes = structureChanges(before, components);
 		problems.push(...changes.problems);
 		notes.push(...changes.notes);
+		notes.push(...exportChanges({ exports: readManifest(() => undefined, resolve(previous), manifest.name)?.exports ?? [], components: before }, { exports: manifest.exports ?? [], components }));
 	}
 	if (problems.length > 0) return rejected(manifest.name);
 	return { ok: true, scan: { dir: root, manifest, components, rules, digest: digestOf(root), notes } };
