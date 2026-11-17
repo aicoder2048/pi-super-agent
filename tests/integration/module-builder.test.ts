@@ -94,7 +94,10 @@ function checked(dir: string) {
 }
 
 function examples() {
-	const packages = [...examplePackages(SKILL("package-layout"))];
+	const text = SKILL("package-layout");
+	const packages = [...examplePackages(text)];
+	const marked = text.match(/^```\w* file=/gm)?.length ?? 0;
+	assert.equal(packages.reduce((sum, [, files]) => sum + files.size, 0), marked, "每个标了 file= 的代码块都完整取出（代码块要合上）");
 	assert.equal(packages.length, 2, "技能 package-layout 给两个示例包");
 	const team = packages.find(([, files]) => [...files.keys()].some((path) => path.startsWith("agents/")));
 	const solo = packages.find(([, files]) => ![...files.keys()].some((path) => path.startsWith("agents/")));
@@ -111,6 +114,8 @@ test("技能 package-layout 原文里的两个示例包写进目录，just modul
 	assert.deepEqual([...new Set(agents.flatMap((a) => a.uses))], [QUOTE], "外部工具写在专家的 uses 里");
 	const soloScan = checked(writePackage(t, ...solo));
 	assert.deepEqual(soloScan.manifest.uses, [QUOTE], "不带专家的包写在 module.json 的 uses 里");
+	const evalUses = [teamScan, soloScan].flatMap((scan) => scan.components.flatMap((c) => (c.kind === "evals" ? c.eval.uses : [])));
+	assert.ok(evalUses.every((use) => use === QUOTE), "考题的 uses 也只写 stock-ta/tools/quote 的全名");
 	for (const scan of [teamScan, soloScan]) assert.ok(scan.notes.some((n) => n.includes(`uses "${QUOTE}", another module's tool`)), `${scan.manifest.name} 的检查认出外部工具，只给提醒`);
 });
 
