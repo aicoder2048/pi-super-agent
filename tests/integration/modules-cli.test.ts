@@ -430,7 +430,7 @@ test("just module try：feed 样例的行写进临时集合，样例交回的触
 	);
 	assert.equal(run.status, 0, run.out);
 	assert.equal(stored, 2);
-	assert.match(run.out, /^\[预演\] personal-tax\/brokerage-statements 样例 two-trades：丢掉 1 条触发、0 条提醒，没交出去$/m);
+	assert.match(run.out, /^\[样例\] personal-tax\/brokerage-statements 样例 two-trades：丢掉 1 条触发、0 条提醒，没交出去$/m);
 	assert.deepEqual(router!.exchanges.flatMap((e) => e.cards).filter((card) => card.includes("brokerage-statements")), []);
 });
 
