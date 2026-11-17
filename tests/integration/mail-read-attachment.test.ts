@@ -160,9 +160,11 @@ test("读附件：信不存在、发件人不在名单上、partId 不属于这�
 	assert.ok(!stranger.ok);
 	assert.match(stranger.note, /没有 gmailId 为 m-404 的信/);
 	w.box.deliver({ id: "m-out", from: "Promo <deals@example.org>", subject: "大促", text: "x", attachments: [file("a.txt", "text/plain", "名单外的附件")] });
+	w.google.log.length = 0;
 	const outside = await w.call({ messageId: "m-out", partId: "1" });
 	assert.ok(!outside.ok);
 	assert.match(outside.note, /不在 mail 收的信里/, "名单外的发件人：宿主不下载，工具也不运行");
+	assert.ok(w.google.log.filter((line) => line.includes("m-out")).every((line) => line.includes("format=metadata")), `名单外的信只读 From：${JSON.stringify(w.google.log)}`);
 	const wrongPart = await w.call({ messageId: "m-1", partId: "0.0" });
 	assert.ok(!wrongPart.ok);
 	assert.match(wrongPart.note, /这封信没有 partId 为 0\.0 的附件.*1/);
@@ -461,7 +463,7 @@ test("读附件：只请求 messages.get 和 attachments.get，不碰别的接�
 	w.google.log.length = 0;
 	assert.ok((await w.call({ messageId: "m-1", partId: "1" })).ok);
 	assert.deepEqual(
-		w.google.log.map((line) => line.replace(/\?.*/, "")),
-		["POST /token", `GET ${GMAIL}/messages/m-1`, `GET ${GMAIL}/messages/m-1/attachments/att-m-1-1`],
+		w.google.log.map((line) => line.replace(/&.*/, "")),
+		["POST /token", `GET ${GMAIL}/messages/m-1?format=metadata`, `GET ${GMAIL}/messages/m-1?format=full`, `GET ${GMAIL}/messages/m-1/attachments/att-m-1-1`],
 	);
 });

@@ -9,7 +9,7 @@ import { join } from "node:path";
 import type { ModuleRows } from "../instance-data.ts";
 import type { Component, ModuleName } from "../manifest.ts";
 import type { Json } from "../protocol.ts";
-import { AUTH_TEXT, type GmailAccount } from "./gmail.ts";
+import { AUTH_TEXT, type Gmail, type GmailAccount } from "./gmail.ts";
 import { header, parseFrom, partsOf, type GmailMessage } from "./letter.ts";
 import { gateOf } from "./mail.ts";
 
@@ -40,19 +40,31 @@ export async function fetchAttachment({ account, rows, now, limits = FETCH_LIMIT
 	const ids = idsOf(input);
 	if (typeof ids === "string") return ids;
 	const gates = components.flatMap((c) => (c.kind === "feeds" && c.feed.connector === "mail" ? [gateOf({ module, feed: c.feed, components, source: `${module}/${c.name}` }, rows, now())] : []));
-	const gmail = await account.open();
-	if (gmail === undefined) return AUTH_TEXT;
-	const path = `/messages/${encodeURIComponent(ids.messageId)}`;
-	const message = await gmail(path, { format: "full" });
-	const notOurs = `这封信不在 ${module} 收的信里：没有 gmailId 为 ${ids.messageId} 的信`;
-	if (message.status === 404) return notOurs;
-	if (message.status !== 200) return `Gmail ${path} 返回 HTTP ${message.status}`;
-	const letter = message.body as GmailMessage;
-	const from = parseFrom(header(letter, "From"));
-	if (from === undefined || !gates.some((gate) => gate.kind === "open" && gate.accepts(from.address))) return notOurs;
+	const lookup = AbortSignal.timeout(limits.downloadMs);
+	try {
+		const gmail = await account.open(lookup);
+		if (gmail === undefined) return AUTH_TEXT;
+		const path = `/messages/${encodeURIComponent(ids.messageId)}`;
+		const notOurs = `这封信不在 ${module} 收的信里：没有 gmailId 为 ${ids.messageId} 的信`;
+		const meta = await gmail(path, { format: "metadata", metadataHeaders: "From" }, lookup);
+		if (meta.status === 404) return notOurs;
+		if (meta.status !== 200) return `Gmail ${path} 返回 HTTP ${meta.status}`;
+		const from = parseFrom(header(meta.body as GmailMessage, "From"));
+		if (from === undefined || !gates.some((gate) => gate.kind === "open" && gate.accepts(from.address))) return notOurs;
+		const message = await gmail(path, { format: "full" }, lookup);
+		if (message.status === 404) return notOurs;
+		if (message.status !== 200) return `Gmail ${path} 返回 HTTP ${message.status}`;
+		return await download(gmail, path, message.body as GmailMessage, ids.partId, limits, dir);
+	} catch (error) {
+		if ((error as Error).name === "TimeoutError") return "Gmail 没有及时回话，没取到这封信";
+		throw error;
+	}
+}
+
+async function download(gmail: Gmail, path: string, letter: GmailMessage, partId: string, limits: FetchLimits, dir: string): Promise<Fetched | string> {
 	const attached = partsOf(letter.payload).filter((p) => p.filename && p.body?.attachmentId);
-	const part = attached.find((p) => p.partId === ids.partId);
-	if (part === undefined) return `这封信没有 partId 为 ${ids.partId} 的附件，它的附件 partId 有：${attached.map((p) => p.partId).join("、") || "（没有附件）"}`;
+	const part = attached.find((p) => p.partId === partId);
+	if (part === undefined) return `这封信没有 partId 为 ${partId} 的附件，它的附件 partId 有：${attached.map((p) => p.partId).join("、") || "（没有附件）"}`;
 	const size = part.body?.size ?? 0;
 	if (size > limits.maxBytes) return `附件有 ${(size / 1024 / 1024).toFixed(1)} MB，超过 ${limits.maxBytes / 1024 / 1024} MB，不下载`;
 	try {

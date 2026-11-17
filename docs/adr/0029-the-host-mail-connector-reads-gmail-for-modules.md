@@ -20,9 +20,9 @@ option-ta 要从券商的成交确认邮件里记成交。读 Gmail 的代码（
 
 **mail feed 一律私密。** `into` 必须是 `private` 集合，不写或写了可分享的集合，检查报错。以前私密与否只看 `into`，现在连接器也要求它。哪些字段能出本机仍由 ADR-0020 定，只有 `line` 点名的几个。
 
-**问题分两层报。** 名单是空的、名单里有通配符、划掉的地址读不出来、名单到了 500 行，是这个 feed 自己的问题，照旧作为这个 feed 的警报，文字用集合的标题（`mail` 的是「邮件名单」，所以文字不变）。授权失效（Google 回 `invalid_grant`）和隔了 24 小时以上没查，是连接器的问题，handler 经 `FeedPorts.connectorProblem` 交给宿主。宿主（`src/host/host.ts` 的 `#connectorHealth`）只拉响一个警报 `connector:mail`，文字后面列出这个连接器上的全部 feed，例如「（影响：邮件 收件箱）」。哪一拍换到了 token，这个警报就解除。断档是一行通知，每个连接器一小时内只发一次。
+**问题分两层报。** 名单是空的、名单里有通配符、划掉的地址读不出来、名单到了 500 行，是这个 feed 自己的问题，照旧作为这个 feed 的警报，文字用集合的标题（`mail` 的是「邮件名单」，所以文字不变）。授权失效（Google 回 `invalid_grant`）和隔了 24 小时以上没查，是连接器的问题，handler 经 `FeedPorts.connectorProblem` 交给宿主。宿主（`src/host/host.ts` 的 `#connectorHealth`）只拉响一个警报 `connector:mail`，文字后面列出这个连接器上的全部 feed，例如「（影响：邮件 收件箱）」。哪一拍换到了 token，这个警报就解除。断档是一行通知，每个连接器一小时内只发一次。连接器这一侧的 Gmail 请求（换 token、查 history、取信）每拍合计限 1 分钟，超时这一拍算失败，`connectorCursor` 不动，下一拍重取。
 
-**工具读附件经 `fetch`。** 工具在 `tool.json` 写 `"fetch": "mail.attachment"`。它要和 `"effect": "read"` 一起写，同一个模块里要有一个 mail 连接器的 feed，可以再写 `"port": "ocr"`。运行工具代码之前，网关建一个临时目录，宿主（`src/modules/connectors/attachment.ts`）查输入里的 `messageId` 和 `partId`，取这封信，查它的 `From` 此刻能不能过本模块某个 mail feed 的名单，过不了就拒绝。附件不存在或超过 10 MB 也拒绝。下载限 10 秒，结果交给工具的 `input.fetched`：`{file, filename, mimeType, contentType, size}`。调用结束，临时目录删掉。工具不点名任何密钥，只读本地文件。
+**工具读附件经 `fetch`。** 工具在 `tool.json` 写 `"fetch": "mail.attachment"`。它要和 `"effect": "read"` 一起写，同一个模块里要有一个 mail 连接器的 feed，可以再写 `"port": "ocr"`。运行工具代码之前，网关建一个临时目录，宿主（`src/modules/connectors/attachment.ts`）查输入里的 `messageId` 和 `partId`，先只取这封信的 `From`，查它此刻能不能过本模块某个 mail feed 的名单，过不了就拒绝，正文不取；过了才取全文。换 token 和取信合计限 10 秒，附件不存在或超过 10 MB 也拒绝。下载附件另限 10 秒，结果交给工具的 `input.fetched`：`{file, filename, mimeType, contentType, size}`。调用结束，临时目录删掉。工具不点名任何密钥，只读本地文件。
 
 ## 没有采用的做法
 
