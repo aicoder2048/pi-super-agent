@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { judge, type Attempt, type Exam } from "../../src/modules/rehearse.ts";
 import { problemLine, scanPackage } from "../../src/modules/validate.ts";
 
+const temp = mkdtempSync(join(tmpdir(), "psa-exports-"));
+test.after(() => rmSync(temp, { recursive: true, force: true }));
+let made = 0;
+
 function pkg(name: string, tree: Record<string, string | object>): string {
-	const root = join(mkdtempSync(join(tmpdir(), "psa-exports-")), name);
+	const root = join(temp, String(++made), name);
 	for (const [path, content] of Object.entries(tree)) {
 		mkdirSync(join(root, path, ".."), { recursive: true });
 		writeFileSync(join(root, path), typeof content === "string" ? content : JSON.stringify(content));

@@ -450,10 +450,15 @@ test("入口：B 调 A 开放的工具，A 的工具拿到 A 自己 .env 里的 
 	const store = new ModuleStore(join(config.stateDir, "module-store"));
 	for (const name of ["alpha", "beta"]) store.keep(name as ModuleName, modules.book.get(name)!.digest! as Digest, join(root, name));
 	const logs: string[] = [];
-	const options = createHostOptions({ config, modules: fixed(modules), modelRuntime, log: (l) => logs.push(l) });
+	const inUse = new CopiesInUse();
+	const held: string[] = [];
+	const copiesInUse = { hold: (module: ModuleName, digest: Digest) => (held.push(`${module}/${digest}`), inUse.hold(module, digest)), keys: () => inUse.keys() } as unknown as CopiesInUse;
+	const options = createHostOptions({ config, modules: { ...fixed(modules), copiesInUse }, modelRuntime, log: (l) => logs.push(l) });
 	const caller = { who: "worker" as const, ticket: "tkt_1", pin: { module: "beta" as ModuleName, digest: modules.book.get("beta")!.digest! as Digest }, basis: "inference" as const, member: null, heardOthers: true };
 	assert.deepEqual(await options.gateway!.call(caller, { kind: "tool", name: "alpha/tools/key" as ComponentName, input: {} }), { ok: true, output: { key: "alpha-key" } });
 	assert.ok(logs.some((l) => /^\[gateway\] alpha tools\/key tkt_1 helper inference ok \d+ ms from=beta$/.test(l)), logs.join("\n"));
+	assert.deepEqual(held, [`alpha/${modules.book.get("alpha")!.digest}`], "宿主的网关在调用期间占着提供方的副本");
+	assert.deepEqual(inUse.keys(), [], "调用结束就放开");
 });
 
 test("入口：模块没有 .env 时工具照常跑、拿到空，不报错", async () => {

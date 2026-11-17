@@ -212,18 +212,20 @@ export function createGateway(ports: GatewayPorts): Gateway {
 	/** A failure while the provider's lock has no installed environment is that, not the tool's own words, which speak to the provider's user. */
 	const runExternal = async (copy: Copy, tool: Tool, input: Json): Promise<Reply> => {
 		const release = ports.hold?.(copy.module, copy.digest);
-		let reply: Reply;
 		try {
-			reply = await runTool(copy, tool, input);
-		} catch (error) {
-			reply = { ok: false, refusal: { code: "provider-failed", note: String((error as Error)?.message ?? error) } };
+			let reply: Reply;
+			try {
+				reply = await runTool(copy, tool, input);
+			} catch (error) {
+				reply = { ok: false, refusal: { code: "provider-failed", note: String((error as Error)?.message ?? error) } };
+			}
+			if (reply.ok || reply.refusal.code !== "provider-failed") return reply;
+			const lock = lockOf(copy.dir);
+			if (lock !== undefined && !venvInstalled(ports.dataDir(copy.module), lock)) return { ok: false, refusal: { code: "provider-absent", note: `${copy.module} 的运行环境还没装好` } };
+			return { ok: false, refusal: { ...reply.refusal, provider: copy.module } };
 		} finally {
 			release?.();
 		}
-		if (reply.ok || reply.refusal.code !== "provider-failed") return reply;
-		const lock = lockOf(copy.dir);
-		if (lock !== undefined && !venvInstalled(ports.dataDir(copy.module), lock)) return { ok: false, refusal: { code: "provider-absent", note: `${copy.module} 的运行环境还没装好` } };
-		return { ok: false, refusal: { ...reply.refusal, provider: copy.module } };
 	};
 	const runCode = async (copy: Copy, tool: Tool, input: Json): Promise<Reply> => {
 		const secrets = Object.fromEntries((tool.tool.secrets ?? []).flatMap((name) => {

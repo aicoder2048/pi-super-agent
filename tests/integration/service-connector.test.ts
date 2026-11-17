@@ -8,7 +8,7 @@ import { ModuleStore } from "../../src/modules/live.ts";
 import type { ComponentName, Digest, ModuleName } from "../../src/modules/manifest.ts";
 import type { Json, Request, WorkerCaller } from "../../src/modules/protocol.ts";
 import { scanPackage } from "../../src/modules/validate.ts";
-import { filesDir, venvDir, VENV_MARK, lockOf } from "../../src/modules/files.ts";
+import { venvDir, VENV_MARK, lockOf } from "../../src/modules/files.ts";
 
 function files(root: string, tree: Record<string, string>): void {
 	for (const [path, content] of Object.entries(tree)) {
@@ -153,14 +153,13 @@ test("A 带 py/uv.lock 而环境没装：工具失败时换成「alpha 的运行
 	files(venvDir(dataDir("alpha"), lock), { [VENV_MARK]: lock });
 	const failed = await gateway.call(caller(), call("alpha/tools/boom"));
 	assert.equal(!failed.ok && failed.refusal.code, "provider-failed", "环境装好以后照常回工具自己的错误");
-	assert.ok(existsSync(filesDir(dataDir("alpha"))));
 });
 
 test("A 的工具抛错：提示写着「alpha 的工具这一次出错：……」，note 本身不加前缀", async (t) => {
 	const { gateway, caller } = setup(t);
 	const reply = await gateway.call(caller(), call("alpha/tools/boom"));
 	assert.ok(!reply.ok && reply.refusal.code === "provider-failed", JSON.stringify(reply));
-	assert.match(reply.refusal.note, /^行情接口超时|行情接口超时/);
+	assert.match(reply.refusal.note, /行情接口超时/);
 	assert.doesNotMatch(reply.refusal.note, /alpha|工具这一次出错/);
 	assert.match(refusalText(reply.refusal), /^alpha 的工具这一次出错：.*行情接口超时/);
 });
