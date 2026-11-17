@@ -7,7 +7,7 @@ import { HostConnection } from "../client/connection.ts";
 import { exitOnConfigError } from "../config-error.ts";
 import { HOST_ENTRY } from "../heartbeat.ts";
 import { loadConfig, loadModules } from "../host/config.ts";
-import { moduleRows, openStore, setModuleSwitch } from "../kernel/store.ts";
+import { openStore, setModuleSwitch } from "../kernel/store.ts";
 import { cloneFiles } from "../modules/files.ts";
 import { moduleDataDir } from "../modules/knowledge.ts";
 import type { ModuleState } from "../modules/lifecycle.ts";
@@ -112,14 +112,19 @@ function copyEnv(realStateDir: string, stateDir: string, module: string): void {
 	chmodSync(temp, 0o600);
 }
 
-/** The copy `module` serves in the real host now. Undefined: not serving, or its copy is gone. */
+/**
+ * The copy `module` serves in the real host now. Undefined: not serving, or its copy is gone. A plain SELECT, not
+ * openStore, so a rehearsal never migrates the real state.db; not readOnly, which would leave WAL files behind.
+ */
 function servingCopy(realStateDir: string, module: ModuleName): string | undefined {
 	const file = join(realStateDir, "state.db");
 	if (!existsSync(file)) return undefined;
-	const db = openStore(file);
+	const db = new DatabaseSync(file);
 	let state: ModuleState | undefined;
 	try {
-		state = moduleRows(db).find((r) => r.name === module)?.record?.state;
+		db.exec("PRAGMA busy_timeout = 5000");
+		const row = db.prepare("SELECT record FROM module_records WHERE name = ?").get(module) as { record: string | null } | undefined;
+		state = row?.record ? (JSON.parse(row.record) as { state: ModuleState }).state : undefined;
 	} finally {
 		db.close();
 	}
@@ -184,7 +189,10 @@ async function rehearse(source: string, module: string, providers: readonly Modu
 				const at = stateOf(name);
 				return at?.at === "active" || invalidWhy(at) !== undefined ? at : undefined;
 			});
-			if (state?.at !== "active") return refuse(`${name} 在临时宿主里没有打开：${invalidWhy(state) ?? started.tail()}`);
+			if (state?.at === "active") continue;
+			const why = invalidWhy(state) ?? started.tail();
+			if (name === module) return refuse(`${module} 在临时宿主里没有打开：${why}`);
+			console.log(`${name} 在临时宿主里没有打开：${why}，预演里调不到它的工具`);
 		}
 
 		const replies: string[] = [];

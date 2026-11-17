@@ -253,6 +253,7 @@ export function createGateway(ports: GatewayPorts): Gateway {
 			const started = Date.now();
 			const external = externalOf(caller, request);
 			let reply: Reply;
+			// Resolved to a capability: its code was started, even if it then failed, so the call counts in _tool_calls.
 			let ran = false;
 			try {
 				const resolved = external ? resolveExternal(external) : resolve(caller, request);

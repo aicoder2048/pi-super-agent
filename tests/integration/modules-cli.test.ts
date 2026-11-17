@@ -586,13 +586,41 @@ test("just module try：只在 module.json 的 uses 写了 alpha 的模块，预
 	const run = await rehearse(t, { router: [userOf("gamma", /^\[对话\][\s\S]*NVDA 的价位/, "预演看价位")], workers: [callsAlpha("预演看价位")] }, { name: "gamma", pkg: gamma, seed: serveAlpha });
 	assert.equal(run.status, 0, run.out);
 	assert.match(run.out, /^PASS level/m);
+	assert.equal(run.userDirChanged, false);
 });
 
-test("just module try：alpha 不在服务时预演照跑，打印「alpha 现在没开」那一行，外部调用回 provider-absent", async (t) => {
-	const run = await rehearse(t, { router: [userOf("beta", /^\[对话\][\s\S]*NVDA 的价位/, "预演看价位")], workers: [callsAlpha("预演看价位")] }, { name: "beta", pkg: consumer(t, "beta", BETA_PKG) });
+async function switchOffAlpha(dir: string): Promise<void> {
+	await serveAlpha(dir);
+	assert.equal(cli("src/cli/module.ts", dir, ["off", "alpha"]).status, 0);
+	const db = openStore(join(dir, "state.db"));
+	const config = loadConfig(dir);
+	const modules = startLiveModules({ db, stateDir: dir, roots: config.modulesDirs, discovered: loadModules(config), configSwitches: config.moduleSwitches, log: () => {} });
+	await until(() => !modules.live.current().book.has("alpha"), "alpha 关掉", 15_000);
+	modules.stop();
+	db.close();
+}
+
+for (const [how, seed] of [["没装", undefined], ["装了但关着", switchOffAlpha]] as const) {
+	test(`just module try：alpha ${how}时预演照跑，打印「alpha 现在没开」那一行，外部调用回 provider-absent，使用者的状态目录不变`, async (t) => {
+		const run = await rehearse(t, { router: [userOf("beta", /^\[对话\][\s\S]*NVDA 的价位/, "预演看价位")], workers: [callsAlpha("预演看价位")] }, { name: "beta", pkg: consumer(t, "beta", BETA_PKG), ...(seed && { seed }) });
+		assert.equal(run.status, 1, run.out);
+		assert.match(run.out, /^alpha 现在没开，预演里调不到它的工具$/m);
+		assert.match(run.out, /^FAIL level：.*没用到 alpha\/tools\/level/m);
+		assert.match(run.out, /alpha 没装或没开，这部分没做/);
+		assert.equal(run.userDirChanged, false);
+		assert.deepEqual(run.leftover, []);
+	});
+}
+
+test("just module try：alpha 在真实宿主里服务、到临时宿主里没打开时，打印一行原因，预演照跑", async (t) => {
+	const seed = async (dir: string) => {
+		await serveAlpha(dir);
+		const copy = join(dir, "module-store", "alpha", readdirSync(join(dir, "module-store", "alpha"))[0]!);
+		writeFileSync(join(copy, "tools/level/cases.json"), JSON.stringify([{ name: "wrong", input: { code: "X" }, expect: { level: -1 } }]));
+	};
+	const run = await rehearse(t, { router: [userOf("beta", /^\[对话\][\s\S]*NVDA 的价位/, "预演看价位")], workers: [callsAlpha("预演看价位")] }, { name: "beta", pkg: consumer(t, "beta", BETA_PKG), seed });
 	assert.equal(run.status, 1, run.out);
-	assert.match(run.out, /^alpha 现在没开，预演里调不到它的工具$/m);
-	assert.match(run.out, /^FAIL level：.*没用到 alpha\/tools\/level/m);
-	assert.match(run.out, /alpha 没装或没开，这部分没做/);
+	assert.match(run.out, /^alpha 在临时宿主里没有打开：.*预演里调不到它的工具$/m);
+	assert.match(run.out, /^FAIL level：/m);
 	assert.deepEqual(run.leftover, []);
 });

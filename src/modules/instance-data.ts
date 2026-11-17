@@ -403,8 +403,10 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 		},
 		recordToolCall(module, { caller, ticket, member, basis, tool, outcome, ms }) {
 			mkdirSync(moduleDataDir(stateDir, module), { recursive: true });
-			const db = openData(pathOf(module));
+			// A short wait: the host writes this row on its own event loop, and a missed row costs less than a stalled host.
+			const db = new DatabaseSync(pathOf(module));
 			try {
+				db.exec("PRAGMA busy_timeout = 200");
 				db.exec(TOOL_CALLS);
 				db.prepare("INSERT INTO _tool_calls VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(new Date().toISOString(), caller, ticket, member, basis, tool, outcome, ms);
 			} finally {
