@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { externalTool, type EvalDescriptor, type ModuleName, type PackageScan } from "./manifest.ts";
+import { questionOf } from "./validate.ts";
 
 export type Exam = EvalDescriptor & { question: string };
 
@@ -14,7 +15,7 @@ export function examsOf(scan: PackageScan): Exam[] {
 	return scan.components.flatMap((c) => {
 		if (c.kind !== "evals") return [];
 		const text = readFileSync(join(scan.dir, "evals", `${c.name}.md`), "utf8");
-		return [{ ...c.eval, question: text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim() }];
+		return [{ ...c.eval, question: questionOf(text) }];
 	});
 }
 

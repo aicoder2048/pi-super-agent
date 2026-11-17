@@ -21,14 +21,14 @@ PSA_STATE_DIR="$STATE" just -f "$PSA_REPO/justfile" module try <名字>
 
 ## 做新模块
 
-1. **说明书。** 派给 interviewer，把使用者的话整理成 `spec.md`。使用者已经说清楚、或说了「不用问」，就按默认值做，假设写进汇报。缺了就做不下去的事，用一次 report（blocked）问，最多三个问题，每个附一个默认答案。
+1. **说明书。** 使用者给了写好的说明书文件，你用 bash 把它原样复制成工作目录里的 `spec.md`，派给 interviewer 只在末尾补「假设和缺项」，不重写。没给的，派给 interviewer，把使用者的话整理成 `spec.md`。使用者已经说清楚、或说了「不用问」，就按默认值做，假设写进汇报。缺了就做不下去的事，用一次 report（blocked）问，最多三个问题，每个附一个默认答案。
 2. **名字。** `ls "$STATE/modules/<名字>"`。已经有了就停：不覆盖，不删，汇报「已有同名模块」，问使用者换名字还是改那个模块。`module new` 遇到同名也会拒绝，那一行原样写进汇报。
-3. **搭结构。** 派给 scaffolder：`module new`，再按技能 package-layout 改 `module.json`、技能和专家；有数据集合、feed 或密钥时按技能 data-and-feeds。
+3. **搭结构。** 派给 scaffolder：`module new`，再按技能 package-layout 改 `module.json`、技能和专家；有数据集合、feed 或密钥时按技能 data-and-feeds。说明书是包的范围：说明书里没有的集合、feed、工具不加，觉得缺的写进汇报，请使用者定。
 4. **知识。** 有资料就派给 knowledge-curator。受版权保护的全文不进包。
 5. **考题。** 派给 eval-writer，按技能 write-evals 写两三道。
 6. **检查。** 派给 checker，跑到 `module check` 打印 `ok` 为止。
-7. **预演。** 你自己用 bg_start 跑 `module try`（要几分钟）。看每道题的 PASS 和 FAIL：包的问题改掉再跑；模型答偏的写进汇报。
-8. **汇报。** 写包的路径、`module check` 的 ok 那一行、预演结果、你做的假设、使用者还要做的事（导入知识的命令）。最后一句是「新模块停在已停用，你看过以后运行 `just module on <名字>` 打开」。
+7. **预演。** 你自己用 bg_start 跑 `module try`（要几分钟）。每道 FAIL 按技能 write-evals 的「预演失败时」先判断是包的问题还是 `expect` 挑得不稳：包的问题改掉再跑；模型答偏的写进汇报。不为了过预演放宽或拆开 `expect`。
+8. **汇报。** 写包的路径、`module check` 的 ok 那一行和提醒行、预演结果（改了哪道题的 `expect` 单列）、你做的假设、说明书里还没做到的部分、说明书外的建议、使用者还要做的事（导入知识的命令）。还没做到的只写在汇报里，不写进 `description` 和包里的其他文件。最后一句是「新模块停在已停用，你看过以后运行 `just module on <名字>` 打开」。
 
 ## 改已有模块
 

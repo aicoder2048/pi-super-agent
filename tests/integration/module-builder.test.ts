@@ -7,6 +7,7 @@ import test from "node:test";
 import { startLiveModules } from "../../src/host/live-modules.ts";
 import { moduleRows, openStore } from "../../src/kernel/store.ts";
 import { Modules } from "../../src/modules.ts";
+import { judge, type Attempt, type Exam } from "../../src/modules/rehearse.ts";
 import { scanPackage } from "../../src/modules/validate.ts";
 import { MEMBER_TOOLS, memberTools } from "../../src/worker/tools.ts";
 
@@ -203,4 +204,63 @@ test("示例包的 mail feed 改写进非私密集合，检查报错", (t) => {
 	const collectionPath = `data/${into}/collection.json`;
 	changed.set(collectionPath, files.get(collectionPath)!.replace(`"class": "private"`, `"class": "shareable"`));
 	assert.ok(problemsOf(writePackage(t, name, changed)).some((line) => line.includes("must write into a private collection")));
+});
+
+const AGENT = (name: string) => readFileSync(join(BUILDER, "agents", `${name}.md`), "utf8");
+const bodyOf = (text: string) => text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
+
+test("考题题面是使用者的原话：write-evals 和出考题都叫人先用说明书的典型问题，不在题面里教答法；工坊自己的考题照做", () => {
+	const text = SKILL("write-evals");
+	assert.ok(text.includes("说明书有「典型问题」"), "先用说明书的典型问题");
+	assert.ok(text.includes("使用者的口吻"), "题面用使用者的口吻");
+	assert.ok(text.includes("不在题面里教答法"), "题面不写调哪个工具、怎么排版");
+	assert.ok(AGENT("eval-writer").includes("典型问题"), "出考题先读典型问题");
+	for (const c of scanned().components) {
+		if (c.kind !== "evals") continue;
+		const body = bodyOf(readFileSync(join(BUILDER, "evals", `${c.name}.md`), "utf8"));
+		assert.ok(body.length <= 150, `${c.name} 的题面 ${body.length} 字，超过 150`);
+	}
+});
+
+test("expect 的判法写进技能，和 judge 一致：空格算字，所以「QCC 待确认」和「QCC待确认」是两个短语；预演失败不放宽、不拆开 expect", () => {
+	const text = SKILL("write-evals");
+	assert.ok(text.includes("区分大小写，空格算字"), "写明判法");
+	assert.ok(text.includes("「QCC 待确认」和「QCC待确认」是两个短语"), "给出空格的例子");
+	const exam: Exam = { name: "tax", uses: [], expect: ["QCC 待确认"], question: "q" };
+	const attempt: Attempt = { opened: true, ticket: "T1", domain: "m", report: { status: "done", summary: "QCC待确认" }, gateway: [] };
+	assert.equal(judge("m", exam, attempt).pass, false, "judge 真的把少一个空格判成没有");
+	assert.ok(text.includes("不为了过预演放宽 expect"), "不放宽");
+	assert.ok(text.includes("不拆开"), "不拆开");
+	assert.ok(text.includes("汇报里单列"), "改了的 expect 在汇报里单列");
+	assert.ok(SKILL("build-module").includes("write-evals 的「预演失败时」"), "领队预演失败时照 write-evals 判断");
+});
+
+test("description 照说明书那一句写，不写施工进度；说明书外的集合、feed、工具不加", () => {
+	const layout = SKILL("package-layout");
+	assert.ok(layout.includes("照说明书那一句原样写"), "description 照抄说明书");
+	assert.ok(layout.includes("不写施工进度"), "不写施工进度");
+	assert.ok(SKILL("build-module").includes("说明书里没有的集合、feed、工具不加"), "不擅自加组成");
+});
+
+test("包里不写本机绝对路径：package-layout 写明，检查专家查 module check 的提醒；工坊自己的包没有这类提醒", () => {
+	assert.ok(SKILL("package-layout").includes("包里的文件不写本机绝对路径"));
+	assert.ok(AGENT("checker").includes("本机绝对路径"));
+	assert.ok(!scanned().notes.some((note) => note.includes("local absolute path")), "module-builder 自己干净");
+});
+
+test("使用者给了说明书就原样采用：领队原样复制，访谈只在末尾补「假设和缺项」，不写这次怎么做", () => {
+	assert.ok(SKILL("build-module").includes("原样复制"), "领队复制说明书文件");
+	const interviewer = AGENT("interviewer");
+	assert.ok(interviewer.includes("一字不改"), "访谈不重写");
+	assert.ok(interviewer.includes("「假设和缺项」"), "只在末尾补假设和缺项");
+	assert.ok(interviewer.includes("不写这次怎么做"), "不掺过程信息");
+});
+
+test("专家的 uses 按最小需要列，私密集合只给要用的专家；包里不放测试文件；知识不引用宿主源码路径", () => {
+	const layout = SKILL("package-layout");
+	assert.ok(layout.includes("按最小需要列"));
+	assert.ok(layout.includes("领队本来就调得到本模块的"), "不为领队把能力塞进专家的 uses");
+	assert.ok(AGENT("scaffolder").includes("uses"), "搭结构对 uses 也只给要的");
+	assert.ok(layout.includes("包里不放测试文件"), "测试写成 cases.json 和样例");
+	assert.ok(AGENT("knowledge-curator").includes("不引用宿主源码路径"));
 });
