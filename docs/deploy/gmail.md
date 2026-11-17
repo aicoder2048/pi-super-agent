@@ -292,6 +292,8 @@ just modules
 
 旧代码不认 `mail` 包里的新字段，所以先关掉、挪出模块目录。stock-ta 包先删再从旧 SHA 复制，免得 R2b、R3 的文件留在旧包里；它的数据在 `modules-data/stock-ta/`，删包不删数据。`state.db` 和 stock-ta 的 `data.db` 这一次只多了一张表，不用恢复；它们坏了时才从第 1 步的备份恢复（先 `just service-uninstall`，`cp` 回去，再 `just service-install`）。密钥文件里新加的四行旧代码用不到，留着无害。修好以后回到 `main`：`git checkout main && just redeploy`，再从第 6 步做起。
 
+**从 mail 连接器（ADR-0029）退回去时，同样不用恢复数据库。** 连接器版本在每个模块的 `data.db` 里新建一张 `_feed_connectors`，记连接器在 Gmail 里的进度，`_feeds` 一列不加。旧代码不认识这张表，也不读它，照旧按三个值写 `_feeds`，所以所有模块的 feed 照常跑。连接器版本的 `mail/inbox` handler 不写自己的 `cursor`，`_feeds` 里留着的是上线前旧 handler 写的那格。退回去以后旧 handler 从那里接着读，隔了一天以上就补最近一天的信，行按 `id` 去重，不会多发通知。
+
 ## 4. 出问题怎么办
 
 | 看到的 | 原因 | 怎么办 |

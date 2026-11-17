@@ -112,7 +112,8 @@ async function start(label: string, repo: string, { fills, refresh }: { fills: b
 	};
 }
 
-const feedRow = (state: string, module: string, source: string) => query(join(state, `modules-data/${module}/data.db`), `SELECT * FROM _feeds WHERE source = '${source}'`)[0] ?? {};
+const feedRow = (state: string, module: string, source: string) =>
+	query(join(state, `modules-data/${module}/data.db`), `SELECT f.cursor, c.cursor AS connector_cursor FROM _feeds f LEFT JOIN _feed_connectors c USING (source) WHERE f.source = '${source}'`)[0] ?? {};
 const started = (state: string, module: string, source: string) => () => {
 	const row = feedRow(state, module, source);
 	return row["connector_cursor"] != null || row["cursor"] != null;

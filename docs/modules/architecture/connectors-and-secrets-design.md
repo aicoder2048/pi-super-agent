@@ -46,7 +46,7 @@ option-ta 要从券商的成交确认邮件里记成交。今天读 Gmail 的代
 
 - `mail/inbox` 改成 `"connector": "mail"` 加 handler，过滤条件是集合 `senders`。handler 里拼通知、分线程、裁剪的代码不变，只是不再自己取信。使用者看到的通知、三行摘要、线程、名单、问题提示都不变。
 - `read-attachment` 改成 `"fetch": "mail.attachment"` 加 `"port": "ocr"`。
-- `mail` 的 11 个样例（`fixtures/`）改成「连接器交来的信」的形状，继续给 handler 当用例，`just module check mail` 照旧跑它们。连接器本身的取信、进度、拒收，在宿主的测试里用假 Google 服务覆盖（复查 A1 附注）。
+- `mail` 的样例（`fixtures/`，main 上 10 个）改成「连接器交来的信」的形状，继续给 handler 当用例，`just module check mail` 照旧跑它们。实现（PR #158）留下 8 个 handler 样例，另有 10 个 parity 回放把 main 上的 10 个样例经连接器重放一遍，对照通知不变。连接器本身的取信、进度、拒收，在宿主的测试里用假 Google 服务覆盖（复查 A1 附注）。
 
 ### 3. 模块自己的 `.env`
 

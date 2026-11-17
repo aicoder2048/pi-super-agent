@@ -17,7 +17,7 @@ const EMPTY: Stored = { collections: {}, aliases: {} };
 const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 const literal = (text: string) => `'${text.replaceAll("'", "''")}'`;
 const CONDITIONS = "CREATE TABLE IF NOT EXISTS _conditions (id TEXT PRIMARY KEY, collection TEXT NOT NULL, key TEXT NOT NULL, kind TEXT NOT NULL, params TEXT NOT NULL, set_at TEXT NOT NULL, note TEXT)";
-const FEED_TABLES = "CREATE TABLE IF NOT EXISTS _feed_rows (source TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (source, id)); CREATE TABLE IF NOT EXISTS _feeds (source TEXT PRIMARY KEY, cursor TEXT, last_run_at INTEGER)";
+const FEED_TABLES = "CREATE TABLE IF NOT EXISTS _feed_rows (source TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (source, id)); CREATE TABLE IF NOT EXISTS _feeds (source TEXT PRIMARY KEY, cursor TEXT, last_run_at INTEGER); CREATE TABLE IF NOT EXISTS _feed_connectors (source TEXT PRIMARY KEY, cursor TEXT)";
 const column = (name: string, field: FieldDescriptor) => `${quote(name)} ${field.type === "number" ? "REAL" : "TEXT"}`;
 const plain = ({ was: _, ...field }: FieldDescriptor) => field;
 const renamed = (aliases: Record<string, string>, from: string, to: string) => ({
@@ -248,7 +248,6 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 		const db = openData(pathOf(module));
 		try {
 			db.exec(FEED_TABLES);
-			if (!(db.prepare("PRAGMA table_info(_feeds)").all() as { name: string }[]).some((c) => c.name === "connector_cursor")) db.exec("ALTER TABLE _feeds ADD COLUMN connector_cursor TEXT");
 			return use(db);
 		} finally {
 			db.close();
@@ -383,18 +382,16 @@ export function instanceData(stateDir: string): InstanceData & ModuleRows & Feed
 		},
 		feedState(module, source) {
 			return withFeeds(module, (db) => {
-				const row = db.prepare("SELECT cursor, connector_cursor, last_run_at FROM _feeds WHERE source = ?").get(source) as { cursor: string | null; connector_cursor: string | null; last_run_at: number | null } | undefined;
-				return { cursor: row?.cursor ?? null, connectorCursor: row?.connector_cursor ?? null, lastRunAt: row?.last_run_at ?? null };
+				const row = db.prepare("SELECT cursor, last_run_at FROM _feeds WHERE source = ?").get(source) as { cursor: string | null; last_run_at: number | null } | undefined;
+				const connector = db.prepare("SELECT cursor FROM _feed_connectors WHERE source = ?").get(source) as { cursor: string | null } | undefined;
+				return { cursor: row?.cursor ?? null, connectorCursor: connector?.cursor ?? null, lastRunAt: row?.last_run_at ?? null };
 			});
 		},
 		saveFeedState(module, source, { cursor, connectorCursor, lastRunAt }) {
-			withFeeds(module, (db) =>
-				db
-					.prepare(
-						"INSERT INTO _feeds (source, cursor, connector_cursor, last_run_at) VALUES (?, ?, ?, ?) ON CONFLICT (source) DO UPDATE SET cursor = COALESCE(excluded.cursor, cursor), connector_cursor = COALESCE(excluded.connector_cursor, connector_cursor), last_run_at = COALESCE(excluded.last_run_at, last_run_at)",
-					)
-					.run(source, cursor ?? null, connectorCursor ?? null, lastRunAt ?? null),
-			);
+			withFeeds(module, (db) => {
+				db.prepare("INSERT INTO _feeds (source, cursor, last_run_at) VALUES (?, ?, ?) ON CONFLICT (source) DO UPDATE SET cursor = COALESCE(excluded.cursor, cursor), last_run_at = COALESCE(excluded.last_run_at, last_run_at)").run(source, cursor ?? null, lastRunAt ?? null);
+				if (connectorCursor !== undefined) db.prepare("INSERT INTO _feed_connectors (source, cursor) VALUES (?, ?) ON CONFLICT (source) DO UPDATE SET cursor = excluded.cursor").run(source, connectorCursor);
+			});
 		},
 		watch(module, components, request, who) {
 			return withRows(module, components, { who, collection: request.collection, op: request.op === "list" ? "read" : "write" }, (db, stored) => {

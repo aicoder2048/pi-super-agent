@@ -241,8 +241,8 @@ export class Host {
 			new MailConnector({
 				account,
 				rejectedDir: (entry) => join(options.stateDir, "inbox", entry.module, entry.name, "rejected"),
-				rejected: (entry, note, tries) =>
-					void this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(`有一封信试了 ${tries} 次都没处理成，跳过了，信还在 Gmail 里：${scrub(note)}`, PROBLEM_MAX)) }),
+				rejected: (entry, gmailId, tries) =>
+					void this.#postHostLine(entry.source, { kind: "notice", text: this.kernel.moduleNotice(entry.source, oneLine(`${entry.feed.title}：Gmail 里编号 ${gmailId} 的信试了 ${tries} 次都没处理成，跳过了，信还在 Gmail 里，错误记在本机的 rejected 记录里`, PROBLEM_MAX)) }),
 			});
 		this.feedScheduler = createScheduler({
 			feeds: options.moduleFeeds?.feeds ?? (() => []),

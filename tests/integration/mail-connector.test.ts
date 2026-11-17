@@ -15,7 +15,7 @@ import { servedAsHost } from "../helpers/fakes.ts";
 const MAIL = join(import.meta.dirname, "../../docs/modules/examples/mail");
 const REFRESH = "1//fake-refresh-mail";
 
-/** A second module on the same connector, the way option-ta will read broker mail: its own list, written in feed.json. A subject with 坏 makes its handler throw. */
+/** A second module on the same connector, the way option-ta will read broker mail: its own list, written in feed.json. A subject with 坏 makes its handler throw. Each call's letter id goes to calls.log. */
 function fillsPackage(dir: string): void {
 	mkdirSync(join(dir, "feeds/fills"), { recursive: true });
 	mkdirSync(join(dir, "data/fills"), { recursive: true });
@@ -24,8 +24,10 @@ function fillsPackage(dir: string): void {
 	writeFileSync(join(dir, "feeds/fills/feed.json"), JSON.stringify({ title: "成交确认", connector: "mail", handler: "index.ts", every: "5m", settings: { senders: ["@broker.example.net"] }, into: "fills" }));
 	writeFileSync(
 		join(dir, "feeds/fills/index.ts"),
-		`export default (input) => {
+		`import { appendFileSync } from "node:fs";
+export default (input) => {
 	const [letter] = input.items;
+	appendFileSync(${JSON.stringify(join(dir, "calls.log"))}, letter.id + "\\n");
 	if (letter.subject.includes("坏")) throw new Error("读不懂这封确认信");
 	return { records: [{ id: letter.id, subject: letter.subject, seen: Object.keys(input).sort().join(",") }], cursor: "handler-" + letter.id };
 };\n`,
@@ -49,13 +51,14 @@ async function world(t: TestContext) {
 	const secrets: Record<string, string> = { GOOGLE_OAUTH_CLIENT_ID: google.client.id, GOOGLE_OAUTH_CLIENT_SECRET: google.client.secret, GMAIL_READ_REFRESH_TOKEN: REFRESH };
 	const notices: FeedNotice[] = [];
 	const connectorProblems: { source: string; problem: FeedProblem | undefined }[] = [];
-	const rejected: { source: string; note: string; tries: number }[] = [];
+	const rejected: { source: string; gmailId: string; tries: number }[] = [];
 	const ports: FeedPorts = { data, submit: (n) => void notices.push(n), alert: () => true, badge: () => {}, problem: () => {}, connectorProblem: (_, source, problem) => void connectorProblems.push({ source, problem }), secret: () => undefined, now: () => Date.now() };
 	const rejectedDir = join(root, "rejected");
-	const mail = new MailConnector({ account: gmailAccount({ secret: (name) => secrets[name], oauthUrl: google.url }), rejectedDir: (e) => join(rejectedDir, e.module, e.name), rejected: (e, note, tries) => void rejected.push({ source: e.source, note, tries }) });
+	const mail = new MailConnector({ account: gmailAccount({ secret: (name) => secrets[name], oauthUrl: google.url }), rejectedDir: (e) => join(rejectedDir, e.module, e.name), rejected: (e, gmailId, tries) => void rejected.push({ source: e.source, gmailId, tries }) });
 	const rows = (module: string, collection: string) => data.query(module as never, (module === "mail" ? inbox : fills).components, collection, {}, "test").rows;
 	const state = (entry: typeof inbox) => data.feedState(entry.module, entry.source);
-	return { box, google, mail, ports, inbox, fills, data, notices, connectorProblems, rejected, rejectedDir, rows, state, secrets };
+	const fillsCalls = () => readFileSync(join(root, "modules", "fills", "calls.log"), "utf8").split("\n").filter(Boolean);
+	return { box, google, mail, ports, inbox, fills, data, notices, connectorProblems, rejected, rejectedDir, rows, state, secrets, fillsCalls };
 }
 
 const ann = (id: string): Letter => ({ id, from: "Ann Lee <ann@example.com>", subject: "季度对账单", text: "您好" });
@@ -100,7 +103,8 @@ test("handler 失败：连接器进度不动，下一拍重取同一封信；同
 	assert.deepEqual(w.rows("fills", "fills").map((r) => r.fields["subject"]), ["成交确认 SPY 2026-12-18 600C"], "好的那封第一拍就存了，重取时不再交给 handler");
 	assert.deepEqual(await w.mail.beat(w.fills, w.ports), { ok: true, records: 0, notices: 0 });
 	assert.equal(JSON.parse(w.state(w.fills).connectorCursor!).historyId, w.box.historyId, "第 3 次失败后拒收，进度往前走");
-	assert.deepEqual(w.rejected.map(({ source, tries }) => ({ source, tries })), [{ source: "fills/fills", tries: 3 }]);
+	assert.deepEqual(w.rejected, [{ source: "fills/fills", gmailId: "m-bad", tries: 3 }]);
+	assert.deepEqual(w.fillsCalls().toSorted(), ["m-bad", "m-bad", "m-bad", "m-good"], "重取时处理过的 m-good 不再交给 handler");
 	const [file] = readdirSync(join(w.rejectedDir, "fills", "fills"));
 	const note = JSON.parse(readFileSync(join(w.rejectedDir, "fills", "fills", file!), "utf8"));
 	assert.equal(note.gmailId, "m-bad");

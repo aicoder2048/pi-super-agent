@@ -118,9 +118,10 @@ type Batch = { tries: Map<string, number>; done: Set<string> };
 
 export type MailOptions = {
 	account: GmailAccount;
-	/** Where a rejected letter's note goes: its ids, sender and subject, never its body. */
+	/** Where a rejected letter's record goes: its ids, sender, subject and the handler's error, which may quote the letter, so it stays local. */
 	rejectedDir(entry: FeedEntry): string;
-	rejected(entry: FeedEntry, note: string, tries: number): void;
+	/** Gets no error text, so what it posts cannot quote the letter. */
+	rejected(entry: FeedEntry, gmailId: string, tries: number): void;
 	/** How long the connector waits for Gmail in one beat, before any handler runs. Default one minute. */
 	fetchMs?: number;
 };
@@ -138,7 +139,7 @@ export class MailConnector {
 		mkdirSync(dir, { recursive: true });
 		const record = { gmailId: letter.id, threadId: letter.threadId, from: letter.from.address, subject: letter.subject, note, tries };
 		writeFileSync(join(dir, `${encodeURIComponent(letter.id)}.json`), `${JSON.stringify(record, null, 2)}\n`);
-		this.#o.rejected(entry, note, tries);
+		this.#o.rejected(entry, letter.id, tries);
 	}
 
 	async beat(entry: FeedEntry, ports: FeedPorts, signal?: AbortSignal): Promise<FeedRun> {
