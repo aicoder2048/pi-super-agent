@@ -25,7 +25,7 @@ PSA_STATE_DIR="$STATE" just -f "$PSA_REPO/justfile" module try <名字>
 2. **名字。** `ls "$STATE/modules/<名字>"`。已经有了就停：不覆盖，不删，汇报「已有同名模块」，问使用者换名字还是改那个模块。`module new` 遇到同名也会拒绝，那一行原样写进汇报。
 3. **搭结构。** 派给 scaffolder：`module new`，再按技能 package-layout 改 `module.json`、技能和专家；有数据集合、feed 或密钥时按技能 data-and-feeds。说明书是包的范围：说明书里没有的集合、feed、工具不加，觉得缺的写进汇报，请使用者定。使用者说这一轮只做一部分的，照他说的。
 
-   说明书写死的结构（`connector`、集合的 `class`、feed、工具、`uses`）不能擅自改，写死了就照写。觉得照写有风险，先看技能里有没有照写又不出事的做法，例如解析还没做的 mail feed（data-and-feeds）。还是要偏离，用一次 report（blocked）写明理由和你的默认做法，等使用者回答再做。「不用问」管的是说明书没写的缺项，不管说明书写死的东西。成员发现要偏离时回复你，不自己改。反例：option-ta 说明书写了 `fills` 接 `"connector": "mail"`，工坊怕空的成功回复推进进度、吞掉真信，`fills` 没接 `mail`，只在汇报里当默认值报了。顾虑成立，但该先问；照 data-and-feeds 的做法本来可以照写。
+   说明书写死的结构（`connector`、集合的 `class`、feed、工具、专家的 `uses`）不能擅自改，写死了就照写；说明书没写专家 `uses` 的，按最小需要列。觉得照写有风险，先看技能里有没有照写又不出事的做法，例如解析还没做的 mail feed（data-and-feeds）。还是要偏离，用一次 report（blocked）写明理由和你的默认做法，等使用者回答再做。「不用问」管的是说明书没写的缺项，不管说明书写死的东西。成员发现要偏离时回复你，不自己改。反例：option-ta 说明书写了 `fills` 接 `"connector": "mail"`，工坊怕空的成功回复推进进度、吞掉真信，`fills` 没接 `mail`，只在汇报里当默认值报了。顾虑成立，但该先问；照 data-and-feeds 的做法本来可以照写。
 4. **知识。** 有资料就派给 knowledge-curator。受版权保护的全文不进包。
 5. **考题。** 派给 eval-writer，按技能 write-evals 写，道数和覆盖照它的「覆盖」一节。
 6. **检查。** 派给 checker，跑到 `module check` 打印 `ok` 为止。

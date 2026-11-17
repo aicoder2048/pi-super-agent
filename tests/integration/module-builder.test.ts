@@ -390,13 +390,13 @@ test("考题覆盖：4 到 6 道，每位用外部工具的专家至少一道，
 
 test("说明书写死的结构不擅自改：要偏离先由领队用一次 report（blocked）说明理由和默认做法，「不用问」不算数；成员发现时回复领队", () => {
 	const text = SKILL("build-module");
-	assert.ok(text.includes("说明书写死的结构"), "点名说明书写死的结构");
-	for (const part of ["`connector`", "集合的 `class`", "feed", "工具", "`uses`"]) assert.ok(text.includes(part), `写死的结构包括 ${part}`);
+	const fixed = "说明书写死的结构（`connector`、集合的 `class`、feed、工具、专家的 `uses`）";
+	assert.ok(text.includes(fixed), "点名说明书写死的结构");
 	assert.ok(text.includes("不能擅自改"));
 	assert.ok(text.includes("用一次 report（blocked）写明理由和你的默认做法"), "领队先问再偏离");
 	assert.ok(text.includes("「不用问」管的是说明书没写的缺项"), "使用者说不用问也要问");
 	assert.ok(text.includes("`fills` 没接 `mail`"), "带这次的反例");
-	assert.ok(AGENT("scaffolder").includes("说明书写死的结构"), "搭结构发现要偏离时回复领队");
+	for (const member of ["scaffolder", "checker"]) assert.ok(AGENT(member).includes(fixed), `${member} 发现要偏离时回复领队`);
 });
 
 function section(text: string, heading: string): string {
@@ -414,6 +414,9 @@ test("解析还没做的 mail feed：照说明书接 mail，handler 遇到信就
 	assert.ok(recipe.includes("试满 3 拍"), "写明拒收前试几拍");
 	assert.ok(recipe.includes("名单是空的，连接器一封信都不收"), "名单空着就不收信");
 	assert.ok(/const TRIES = 3;/.test(readFileSync(join(REPO, "src/modules/connectors/mail.ts"), "utf8")), "mail.ts 拒收前试 3 次，和技能一致");
+	const skipped = "次都没处理成，跳过了，信还在 Gmail 里";
+	assert.ok(readFileSync(join(REPO, "src/host/host.ts"), "utf8").includes(skipped) && recipe.includes(`「试了 3 ${skipped}」`), "技能引的跳过提醒和 host.ts 一字不差");
+	assert.ok(readFileSync(join(REPO, "src/modules/connectors/senders.ts"), "utf8").includes("是空的，什么都不收") && recipe.includes("「<名单标题>是空的，什么都不收」"), "空名单的告警和 senders.ts 一致，技能说它是预期的");
 	const stub = FENCE(recipe, "ts");
 	const fixture = FENCE(recipe, "json");
 	assert.ok(stub && fixture, "这一节给出 handler 和样例");
