@@ -110,7 +110,7 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/integratio
 
 ## 配置
 
-宿主只从两处读行情密钥：进程的环境变量，或者 `config.json` 里 `secretsFile` 指向的文件。它不会自己去读仓库里的 `.env`。开机自动启动时，宿主由 launchd 拉起，`~/.zshrc` 里 `export` 的变量不存在，所以密钥必须写进 `secretsFile`。
+宿主自己的密钥（Telegram、Gmail 授权、`just market-smoke` 的行情密钥）只从两处读：进程的环境变量，或者 `config.json` 里 `secretsFile` 指向的文件。它不会自己去读仓库里的 `.env`。开机自动启动时，宿主由 launchd 拉起，`~/.zshrc` 里 `export` 的变量不存在，所以密钥必须写进 `secretsFile`。模块代码用的密钥不在这里，放在每个模块自己的 `.env` 里，见下文「模块自己的密钥」。
 
 1. 建状态目录和密钥文件：
 
@@ -122,7 +122,7 @@ node --import ./src/pi-runtime.mjs --test --test-timeout=120000 tests/integratio
 	open -e ~/.pi-super-agent/secrets.env
 	```
 
-2. 在 `secrets.env` 里写下面两行，等号后面换成你的密钥。股票技术分析模块（stock-ta）用 `POLYGON_API_KEY` 取报价和日线，用 `FINNHUB_API_KEY` 查下一次财报日，装法见 `docs/modules/stock-ta.md`。
+2. 在 `secrets.env` 里写下面两行，等号后面换成你的密钥。宿主的 `just market-smoke` 用它们试行情接口。股票技术分析模块（stock-ta）也要这两把，但它只读自己的 `modules-data/stock-ta/.env`，装好以后照「模块自己的密钥」再写一份，装法见 `docs/modules/stock-ta.md`。
 
 	```sh
 	POLYGON_API_KEY=<你的 Massive 密钥>
@@ -336,6 +336,37 @@ just redeploy
 从 us-market 退役以前的版本更新时，`config.json` 里的 `sources.us-market` 要先删掉，否则新代码拒绝启动，步骤见 `docs/modules/stock-ta.md` 的「旧 Mac 部署」。
 
 重启会让宿主停几秒，正在跑的任务会被停掉，所以挑没有任务在跑的时候做。只改了配置时，用 `just redeploy --no-pull`：不拉代码，只重装。
+
+## 模块自己的密钥
+
+模块的 feed 和工具只从模块自己的 `.env` 拿密钥：状态目录下的 `modules-data/<模块>/.env`（ADR-0031）。全局的 `secretsFile` 模块代码读不到。文件不存在时，模块照旧报「缺密钥」，宿主不出错。改了 `.env` 不用重启宿主，下一次调用就读新值。
+
+写一个密钥，输入不显示，同名的行替换，文件不存在会新建，权限 600：
+
+```sh
+cd ~/pi-super-agent
+just module secret stock-ta POLYGON_API_KEY
+```
+
+`secretsFile` 里已经有这把密钥时，用下面的命令复制，值不经过屏幕。全局里的那一行留着，宿主的 `just market-smoke` 还读它：
+
+```sh
+cd ~/pi-super-agent
+S=~/.pi-super-agent/secrets.env
+for k in POLYGON_API_KEY FINNHUB_API_KEY; do
+	node -e 'const v = require("node:util").parseEnv(require("node:fs").readFileSync(process.argv[1], "utf8"))[process.argv[2]]; if (v) process.stdout.write(v)' "$S" "$k" | just module secret stock-ta "$k"
+done
+```
+
+每把密钥打印一行「已把 … 写进 …（权限 600）」。`secretsFile` 里没有这把时打印「没有输入 … 的值，什么都没写」。
+
+### 从 C2 以前的版本更新
+
+C2 以前，stock-ta 从全局 `secretsFile` 读 `POLYGON_API_KEY` 和 `FINNHUB_API_KEY`。`just redeploy` 只拉代码、重装服务，不会复制密钥。按这个顺序做：
+
+1. 先用上面的复制命令把两把密钥复制进 `modules-data/stock-ta/.env`。
+2. 再 `just redeploy`。
+3. 打开网页，看 stock-ta 的 `quotes` 和 `scan` 两个 feed 有没有报「没有设置 POLYGON_API_KEY」。没报就成了。报了就查 `~/.pi-super-agent/modules-data/stock-ta/.env` 在不在、有没有这一行（`grep -c '^POLYGON_API_KEY=' <文件>` 只数行数，不打印值）。
 
 ## 换 token
 
