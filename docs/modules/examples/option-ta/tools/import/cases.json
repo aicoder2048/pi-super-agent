@@ -89,7 +89,9 @@
           "type": "EXPIRE",
           "event_date": "2026-10-23",
           "trade_date": "2026-10-23",
-          "source": "broker-export"
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
         },
         {
           "record_type": "EVENT",
@@ -105,7 +107,9 @@
           "type": "EXPIRE",
           "event_date": "2026-10-23",
           "trade_date": "2026-10-23",
-          "source": "broker-export"
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
         },
         {
           "record_type": "EVENT",
@@ -121,7 +125,9 @@
           "type": "EXPIRE",
           "event_date": "2026-10-23",
           "trade_date": "2026-10-23",
-          "source": "broker-export"
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
         },
         {
           "record_type": "FILL",
@@ -181,7 +187,9 @@
           "type": "EXPIRE",
           "event_date": "2026-10-16",
           "trade_date": "2026-10-16",
-          "source": "broker-export"
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
         },
         {
           "record_type": "FILL",
@@ -370,7 +378,9 @@
           "type": "ASSIGNED",
           "event_date": "2026-10-16",
           "trade_date": "2026-10-16",
-          "source": "broker-export"
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
         },
         {
           "record_type": "FILL",
@@ -385,7 +395,7 @@
           "settle_date": "2026-10-19",
           "order_id": null,
           "commission": "0.3200",
-          "fees": null,
+          "fees": "0.0000",
           "source": "broker-export",
           "caused_by_event": "NVDA261016C00190000:ASSIGNED:2026-10-16:eTrade-Orbit-5150",
           "underlying": "NVDA",
@@ -404,7 +414,7 @@
           "settle_date": "2026-10-19",
           "order_id": null,
           "commission": "3.3000",
-          "fees": null,
+          "fees": "0.0000",
           "source": "broker-export",
           "underlying": "SPY",
           "option_symbol": "SPY261023P00575000",
@@ -426,7 +436,7 @@
           "settle_date": "2026-10-15",
           "order_id": null,
           "commission": "1.9800",
-          "fees": null,
+          "fees": "0.0000",
           "source": "broker-export",
           "underlying": "SPY",
           "option_symbol": "SPY261016P00580000",
@@ -448,7 +458,7 @@
           "settle_date": "2026-10-12",
           "order_id": null,
           "commission": "1.9800",
-          "fees": null,
+          "fees": "0.0000",
           "source": "broker-export",
           "underlying": "SPY",
           "option_symbol": "SPY261016P00580000",
@@ -470,7 +480,7 @@
           "settle_date": "2026-10-05",
           "order_id": null,
           "commission": "1.3200",
-          "fees": null,
+          "fees": "0.0000",
           "source": "broker-export",
           "underlying": "NVDA",
           "option_symbol": "NVDA261016C00190000",
@@ -564,7 +574,9 @@
           "type": "EXPIRE",
           "event_date": "2026-10-23",
           "trade_date": "2026-10-23",
-          "source": "broker-export"
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
         },
         {
           "record_type": "EVENT",
@@ -580,7 +592,9 @@
           "type": "EXPIRE",
           "event_date": "2026-10-23",
           "trade_date": "2026-10-23",
-          "source": "broker-export"
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
         },
         {
           "record_type": "FILL",
@@ -618,7 +632,9 @@
           "type": "EXPIRE",
           "event_date": "2026-10-16",
           "trade_date": "2026-10-16",
-          "source": "broker-export"
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
         },
         {
           "record_type": "FILL",
@@ -1260,7 +1276,9 @@
           "type": "EXPIRE",
           "event_date": "2026-10-23",
           "trade_date": "2026-10-23",
-          "source": "broker-export"
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
         },
         {
           "record_type": "EVENT",
@@ -1276,7 +1294,9 @@
           "type": "EXPIRE",
           "event_date": "2026-10-23",
           "trade_date": "2026-10-23",
-          "source": "broker-export"
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
         },
         {
           "record_type": "EVENT",
@@ -1292,7 +1312,9 @@
           "type": "EXPIRE",
           "event_date": "2026-10-23",
           "trade_date": "2026-10-23",
-          "source": "broker-export"
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
         },
         {
           "record_type": "FILL",
@@ -1352,7 +1374,9 @@
           "type": "EXPIRE",
           "event_date": "2026-10-16",
           "trade_date": "2026-10-16",
-          "source": "broker-export"
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
         },
         {
           "record_type": "FILL",

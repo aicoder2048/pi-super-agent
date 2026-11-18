@@ -15,7 +15,9 @@
    "type": "ASSIGNED",
    "event_date": "2026-10-16",
    "trade_date": "2026-10-16",
-   "source": "broker-export"
+   "source": "broker-export",
+   "commission": "0.0000",
+   "fees": "0.0000"
   },
   {
    "line": 9,
@@ -42,7 +44,7 @@
    "executed_at": null,
    "order_id": null,
    "commission": "0.32",
-   "fees": null,
+   "fees": "0.0000",
    "source": "broker-export",
    "caused_by_event": "NVDA261016C00190000:ASSIGNED:2026-10-16:eTrade-Orbit-5150"
   },
@@ -71,7 +73,7 @@
    "executed_at": null,
    "order_id": null,
    "commission": "3.30",
-   "fees": null,
+   "fees": "0.0000",
    "source": "broker-export"
   },
   {
@@ -99,7 +101,7 @@
    "executed_at": null,
    "order_id": null,
    "commission": "1.98",
-   "fees": null,
+   "fees": "0.0000",
    "source": "broker-export"
   },
   {
@@ -127,7 +129,7 @@
    "executed_at": null,
    "order_id": null,
    "commission": "1.98",
-   "fees": null,
+   "fees": "0.0000",
    "source": "broker-export"
   },
   {
@@ -155,7 +157,7 @@
    "executed_at": null,
    "order_id": null,
    "commission": "1.32",
-   "fees": null,
+   "fees": "0.0000",
    "source": "broker-export"
   }
  ],

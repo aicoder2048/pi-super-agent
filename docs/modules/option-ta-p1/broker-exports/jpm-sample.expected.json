@@ -99,7 +99,9 @@
    "type": "EXPIRE",
    "event_date": "2026-10-23",
    "trade_date": "2026-10-23",
-   "source": "broker-export"
+   "source": "broker-export",
+   "commission": "0.0000",
+   "fees": "0.0000"
   },
   {
    "line": 8,
@@ -116,7 +118,9 @@
    "type": "EXPIRE",
    "event_date": "2026-10-23",
    "trade_date": "2026-10-23",
-   "source": "broker-export"
+   "source": "broker-export",
+   "commission": "0.0000",
+   "fees": "0.0000"
   },
   {
    "line": 9,
@@ -133,7 +137,9 @@
    "type": "EXPIRE",
    "event_date": "2026-10-23",
    "trade_date": "2026-10-23",
-   "source": "broker-export"
+   "source": "broker-export",
+   "commission": "0.0000",
+   "fees": "0.0000"
   },
   {
    "line": 13,
@@ -206,7 +212,9 @@
    "type": "EXPIRE",
    "event_date": "2026-10-16",
    "trade_date": "2026-10-16",
-   "source": "broker-export"
+   "source": "broker-export",
+   "commission": "0.0000",
+   "fees": "0.0000"
   },
   {
    "line": 16,
