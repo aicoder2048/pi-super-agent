@@ -24,6 +24,8 @@ export type ChainRow = {
 	mid: number | null;
 	quote_at: string | null;
 	open_interest: number | null;
+	/** Contracts traded in the session so far (the last session when closed); null when Massive gave none. */
+	volume: number | null;
 	iv: number | null;
 	iv_source: Source;
 	delta: number | null;
@@ -42,7 +44,7 @@ export type ParsedChain = { rows: ChainRow[]; skippedBinary: number; skippedAdju
 
 export const MARKET_NOTE = "休市：期权报价停在上一个交易时段收盘；供应方的 IV 和希腊值按盘前盘后的正股价和更短的剩余时间重算，不是收盘 IV";
 export const UNITS =
-	"价格、行权价、盈亏平衡是每股美元；IV 是小数（0.2163 是 21.63%）；delta、gamma 按每股；theta 是每天每股美元；vega 是 IV 变 1 个百分点每股美元；open_interest 是张；dte 是到到期日美东 16:00 的日历天数；正股价的延迟见 underlying.delay，期权报价实时";
+	"价格、行权价、盈亏平衡是每股美元；IV 是小数（0.2163 是 21.63%）；delta、gamma 按每股；theta 是每天每股美元；vega 是 IV 变 1 个百分点每股美元；open_interest、volume 是张；dte 是到到期日美东 16:00 的日历天数；正股价的延迟见 underlying.delay，期权报价实时";
 
 const r4 = (n: number | null) => (n === null ? null : Math.round(n * 10000) / 10000);
 const finite = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -149,6 +151,7 @@ export function parseChain(symbol: string, raw: readonly unknown[], nowMs: numbe
 			mid: r4(mid),
 			quote_at: quoteMs === null ? null : nyStamp(quoteMs),
 			open_interest: finite(r.open_interest),
+			volume: finite(object(r.day).volume),
 			...volatility(r, right, spot, strike, mid, dte),
 			break_even: finite(r.break_even_price),
 		});
