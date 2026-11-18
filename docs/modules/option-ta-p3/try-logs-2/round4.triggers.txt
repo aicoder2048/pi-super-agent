@@ -1,0 +1,6 @@
+opened_ticket|QQQ 2026-12-18 到期、行权
+opened_ticket|NVDA 2026-12-18 到期、行
+opened_ticket|把 NVDA 2026-12-18 到期
+opened_ticket|想卖 AAPL 2027-02-19 到
+opened_ticket|卖了 2 张 TSLA 2026-12-
+opened_ticket|把 AMD 加进期权自选。
