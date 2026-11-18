@@ -3,7 +3,8 @@
  * just turned rich (seller's environment), the VIX closing up through 25 or 35, and the VIX term structure turning inverted.
  * The series come from the module's own `iv-snapshots` and `vix-closes`, read straight from data.db: `reads` would give only
  * the latest 500 rows. Only events on the latest sessions are posted, so a host that was off does not replay old ones.
- * Cheap options are not pushed; tools/vol shows them. Every alert is information, not a trade signal.
+ * A symbol turning rich and the VIX reaching 35 ring (the user, 2026-11-18); the rest are silent. Cheap options are not pushed;
+ * tools/vol shows them. Every alert is information, not a trade signal.
  */
 import { readFileSync } from "node:fs";
 import { earningsOf, failedRequest, newYorkDate } from "../../feed-fetch.ts";
@@ -102,7 +103,7 @@ export default async function volAlerts(input: Input) {
 		if (!fresh(id)) continue;
 		const head = `${symbol} 期权偏贵：${entry.date} 收盘 IV ${pct(entry.iv)}%，在最近 ${entry.days} 个交易日里的 ${pct(entry.percentile)} 分位，IV/HV20 ${two(entry.ratio)}。`;
 		const tail = "偏卖方的环境：笔记里的做法是卖方分批、带保护（比如价差），买方单腿要防 IV 坍塌。";
-		found.push({ id, text: `${head}${await earningsLine(entry, symbol, input.settings.finnhubBaseUrl)}${tail}${NOTICE}`, push: "silent" });
+		found.push({ id, text: `${head}${await earningsLine(entry, symbol, input.settings.finnhubBaseUrl)}${tail}${NOTICE}` });
 	}
 
 	const at = new Date(tickMs).toISOString();
