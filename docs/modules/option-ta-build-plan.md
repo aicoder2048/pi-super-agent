@@ -83,6 +83,15 @@ grill-with-docs 就是两个技能合用：grilling（按决策树一轮轮拷�
 - 包放进 `docs/modules/examples/option-ta/`，开 PR，独立复查，合并，按常设授权部署老 Mac。
 - 打开开关 `just module on option-ta` 由使用者来做。
 
+### 上线之后：工坊改、Claude Code 带回仓库（2026-11-17 使用者定）
+
+option-ta 有两份：仓库的 `docs/modules/examples/option-ta/`，和老 Mac 状态目录里在服务的 `modules/option-ta/`。上线后的改动走工坊，工坊改的是老 Mac 那份，所以要定期带回仓库，免得两份越改越远。
+
+1. **改**：使用者对幕僚长说要改什么（门槛、措辞、知识、考题、意图），任务开到模块工坊。工坊改老 Mac 上的包，宿主检查通过就换上新版本，没通过旧版本继续服务。
+2. **带回**：工坊改完、使用者用过觉得对，由 Claude Code 只读地比对老 Mac 那份和仓库那份（`diff -r`，只看包文件，不碰 `modules-data/` 里的实例数据和 `.env`），把差异复制进一个新分支，跑 `just module check` 和 `tests/unit/option-ta-*.test.ts`，独立复查后开 PR 合并。合并后两份的 digest 应一致（`just module check` 打印的 digest），不一致就说明没带全。
+3. **先带回、再部署**：仓库这边也要改 option-ta（例如 Claude Code 修代码）时，先做第 2 步把老 Mac 上的改动带回来，再改、再按常设授权部署；部署前用 `rsync --dry-run` 确认不会覆盖老 Mac 上还没带回的改动。
+4. **工坊做不好的**：新的计算逻辑、解析规则这类代码，工坊做不好就记下来，先修工坊；工坊修不了的，由 Claude Code 在仓库里改，再走第 3 步部署。每次都在审计里记一行。
+
 ## 已定的第一版范围（拷问记录）
 
 - 意图、动作、价差范围见 `option-ta-glossary.md`；税务口径见 `option-ta-tax-memo.md`。
