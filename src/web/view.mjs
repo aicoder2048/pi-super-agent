@@ -698,7 +698,8 @@ function dispatchEntry(details) {
 		state: d.state,
 		stateText: DISPATCH_STATE[/** @type {DispatchState} */ (d.state)],
 		note: typeof d.note === "string" ? d.note : "",
-		tokens: tokensText((Number(d.tokensIn) || 0) + (Number(d.tokensOut) || 0), Number(d.tokensCached) || 0),
+		// No token fields (a dispatch the helper cut short itself): left empty, so the page counts the member's own messages instead.
+		tokens: d.tokensIn === undefined && d.tokensOut === undefined ? "" : tokensText((Number(d.tokensIn) || 0) + (Number(d.tokensOut) || 0), Number(d.tokensCached) || 0),
 		steps: [],
 		// A dispatch that never started (queue timeout, refusal) has ms 0 and no 「用时」.
 		clock: Number(d.ms) > 0 ? { phase: "ended", ranMs: Number(d.ms), limitMs: Number.isFinite(d.limitMs) ? d.limitMs : null } : null,
@@ -788,7 +789,10 @@ function append(steps, message, titles) {
 	step.state = message.isError ? "error" : "ok";
 	step.raw = clip(`${step.raw}\n\n→ ${textOf(message)}`, RAW_LIMIT);
 	if (!step.dispatch) return;
+	const sent = step.dispatch;
 	step.dispatch = dispatchEntry(message.details);
+	// A helper cut off from the host reports a stopped dispatch without the member's title; the page knew it when the call went out.
+	if (step.dispatch && !step.dispatch.title) step.dispatch.title = sent.title;
 	step.detail = step.dispatch ? dispatchDetail(step.dispatch) : "";
 	if (step.dispatch) step.state = DISPATCH_STEP_STATE[step.dispatch.state];
 }

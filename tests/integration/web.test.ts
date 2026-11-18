@@ -2140,6 +2140,17 @@ test("页面：还没结束的派活一开始就写成员的职称；状态跟�
 	assert.equal(w.steps[0].dispatch?.state, "queued", "liveSteps 不改动记录本身");
 });
 
+test("页面：派活时宿主断了，助手交回不带职称和 token 的「已停止」：写成员职称 · 已停止，token 按成员自己的记录算", () => {
+	const view = page.emptyView();
+	const w = page.emptyWatch("tkt_1");
+	const memberSaid = { role: "assistant", content: [{ type: "toolCall", id: "m1", name: "web_get", arguments: { url: "https://example.com/n" } }], usage: { input: 600, output: 100 } };
+	page.applyTranscript(w, teamHistory("tkt_1", [dispatchCall("c1", "news-researcher", "接着查")], { c1: [memberSaid] }));
+	page.applyTranscript(w, live("tkt_1", dispatchResult("c1", { kind: "dispatch", member: "news-researcher", task: "接着查", state: "stopped", note: "宿主断开了，这次派活被打断" })));
+	const steps = page.liveSteps(w, view);
+	assert.deepEqual(shown(steps), [["新闻研究员 · 已停止", "stopped"]]);
+	assert.deepEqual([steps[0].dispatch?.note, steps[0].dispatch?.tokens], ["宿主断开了，这次派活被打断", "700 tokens"]);
+});
+
 test("页面：任务被叫停后，没做完的步骤不再转圈：派活写成员职称和已停止，别的步骤也算已停止", () => {
 	const view = page.emptyView();
 	const w = page.emptyWatch("tkt_1");
