@@ -8,7 +8,7 @@
 - `skills/option-lead/SKILL.md`：分档、共同快照、一次会诊、输出五段和领队独占写入。
 - `agents/{direction,volatility,strategy,position,ledger,critic}.md`：六位只读专家，最小 `uses`；只有需要者接触私密集合。领队不另建专家文件。
 - 包根目录的 `massive.ts`（Massive 请求、分页、错误）和 `chain-rows.ts`（解析快照行、补算 IV 和希腊值）联网取行情，给 chain、vol 和 iv、watch 两个 feed 用。其余 `*.ts` 是纯计算：从 theta 移植（BS 价格和反解 IV、首达概率、到期盈亏、方案经济、CC 收益、流动性、参考价、Roll 净收门槛、IV 压缩、GEX 墙、OI 期限结构、到期临近、交割物、IV rank 和 HV20）。不联网、不读写数据。门槛是命名常量，说明书没定的沿用 theta 的值；Roll 净收不到平仓成本一成算「为几分钱 Roll」，使用者 2026-11-17 确认。
-- `tools/{chain,vol,strategy,record,ledger}/`：每个包含 `tool.json`、`index.ts`、`cases.json`。`strategy` 只算不取数：给定腿，回权利金、参考价、盈亏平衡、到期盈亏、年化、指派概率、流动性和三种 Roll 的净收付。`chain`、`vol` 向 Massive 取数（行情辅助在包根目录的 `massive.ts`、`chain-rows.ts`），滤掉二元期权、跟分页，缺 IV 或希腊值用中间价自算并标「自算」，算不出标「无数据」，休市标「休市」；`chain` 的 OI 墙、GEX、最大痛点、异常成交还回 `NOT_IMPLEMENTED`。`vol` 只读 `iv-snapshots`，没有行时 history 回 `NO_HISTORY`。`record`、`ledger`、`vol` 只读 `$PSA_MODULE_DATA/data.db`，没设这个变量就当库是空的，不写库。`record` 只认 `accounts` 和已记 `fills` 里有的账户短码，没见过的回 `needs-input` 并列出已知短码，防止手动记账和邮件因短码写法不同把同一笔记两遍；两处都空（第一次用）照常记，提示这是第一个短码。它们的用例共用 `tools/ledger/fixtures/data/data.db`，这份库由 `tools/ledger/fixtures/seed.json` 经 `tests/helpers/option-ta-ledger-db.ts` 生成，全是虚构数据。
+- `tools/{chain,vol,strategy,record,ledger}/`：每个包含 `tool.json`、`index.ts`、`cases.json`。`strategy` 只算不取数：给定腿，回权利金、参考价、盈亏平衡、到期盈亏、年化、指派概率、流动性和三种 Roll 的净收付。`chain`、`vol` 向 Massive 取数（行情辅助在包根目录的 `massive.ts`、`chain-rows.ts`），滤掉二元期权、跟分页，缺 IV 或希腊值用中间价自算并标「自算」，算不出标「无数据」，休市标「休市」；`chain` 的 `operation` 是 `oi`、`gex`、`max-pain`、`unusual-volume` 时回期权链结构（包根目录的 `chain-structure.ts`，复用 theta 的 `net-gamma-walls.ts`、`oi-term-structure.ts`），每个结果带 `note` 说明局限。`vol` 只读 `iv-snapshots`，没有行时 history 回 `NO_HISTORY`。`record`、`ledger`、`vol` 只读 `$PSA_MODULE_DATA/data.db`，没设这个变量就当库是空的，不写库。`record` 只认 `accounts` 和已记 `fills` 里有的账户短码，没见过的回 `needs-input` 并列出已知短码，防止手动记账和邮件因短码写法不同把同一笔记两遍；两处都空（第一次用）照常记，提示这是第一个短码。它们的用例共用 `tools/ledger/fixtures/data/data.db`，这份库由 `tools/ledger/fixtures/seed.json` 经 `tests/helpers/option-ta-ledger-db.ts` 生成，全是虚构数据。
 - `fills.ts`：feed 和 `record` 共用的订单键、`fill_id`、OCC 代码和累计增量（整数万分之一美元）。`symbols.ts`：标的代码的唯一规则（工具、两个 feed、成交共用），OCC 期权根去掉类别点（BRK.B 是 BRKB）。`data-db.ts`：工具只读打开 data.db。
 - `data/{fills,chains,accounts,brokers}/collection.json`：四个 `private` 集合；`data/{watchlist,iv-snapshots}/collection.json`：两个 `shareable` 集合。全部初始为空。
 - `feeds/fills/`：接宿主 `mail` 连接器，只收私密名单 `brokers` 上的发件人，写进私密集合 `fills`。`parse.ts` 是纯函数，`index.ts` 把结果交给宿主；样例是 P1 的四封虚构信和一份没有信的。
@@ -62,6 +62,7 @@
 
 - IV：口径 `option-ta-iv-close-v2`；收盘后 30 分钟开始尝试，含提前收盘日；每交易日一次，回填 365 日，上市不到一年的从上市日、且有合约可选的第一天起。取那天已挂牌（合约列表带 `as_of`）的标准美式 put，照 theta 的 `selectAtmContract`：期限 21—45 天里最近的到期日，再取离正股收盘价最近、当天有成交的行权价，一样近取较低的；探最近 3 个到期日各 2 张最近的行权价，行权价只查正股收盘价上下 5%。v1 的合约列表没带 `as_of`，把那天还没挂牌的周一到周四到期合约排在最前面，回填大量误记无数据，换口径从头存。无候选或当日合约日线记无数据，不补别日/供应方 IV。
 - 序列输入为合约日线收盘价；正股同日收盘、到期、行权价、抓取时刻同存。中间价仅日常对照，不进序列。BS 假设利率 0、连续股息率 0，剩余时间按 theta 的 `dteOn` 取日历天数 ÷ 365（不按到期日美东 16:00 细算）；均为近似、未计算，非 P1 已证实的就绪时刻。HV20 用 20 个交易日收盘对数收益率、样本标准差、252 日年化。口径变更整段重算，不混序列。
+- 期权链结构：OI 墙每边列前 `TOP_WALLS` 8 个；GEX 用 Gamma × 未平仓 × 100 × 正股价²，call 记正、put 记负，call 墙只在正股价及以上、put 墙只在正股价及以下找，未平仓合计不到 5000 张可信度标低，gamma 翻转点离正股超过 25% 不报，`near_spot` 列离正股最近的 `GEX_STRIKES_SHOWN` 12 个行权价；异常成交是当天成交量 ≥ 未平仓 `UNUSUAL_VOLUME_OI_RATIO` 2 倍且 ≥ `UNUSUAL_MIN_VOLUME` 500 张（未平仓为 0 也算），按量列前 15 个。oi、gex、max-pain 要两边一起算，不接受 `right`。
 - 提醒检查 5 分钟；到期前 5 个交易日静音；到期日 09:45 后首次检查离行权价小于 3% 响铃；卖方小于 2% 静音；权利金五成静音、八成响铃，不等于强制买回。价内卖 call 到期前有除息则前 2 个交易日响铃，预计但未宣布只静音。接近行权价每个仓位每个交易日发一次；其余每个仓位（财报、除息按那一天）只发一次。报价不对齐不判断。
 - 使用者 2026-11-17 定的三条：提醒正文带账户短码；穿过行权价只在刚穿过的那次响铃，之后一直在价内不再响，回到价外再穿过算新的一次；同一仓位同一天最多响一次铃，多出来的改成静音，到期日只有开盘离行权价不到 3% 那条响。同一拍里按到期、除息、穿价、财报、权利金的顺序占这一次。同一天里穿过、回到价外、再穿过，只记第一次（提醒 id 按天）。
 - 财报：到期前有财报静音提醒，财报前 2 个交易日响铃，使用者 2026-11-17 确认保持这样。
@@ -91,10 +92,10 @@ PSA_STATE_DIR="$STATE" just -f "$PSA_REPO/justfile" module try option-ta
 
 ## 考题
 
-`evals/` 六道题：报价（chain）、开仓会诊（stock-ta 的 structure）、Roll 净收（strategy）、到期前财报（stock-ta 的 earnings-date）、记成交（record）、加自选（data/watchlist）。现在没有考 `knowledge` 的题。题里的到期日写成完整日期（2026-12-18、2027-01-15），`expect` 里的合约代码和 fill_id 跟着这些日子；2026-12-18 以后这些合约到期，要换成那时还没到期的日子再预演。记成交那道题的成交日故意不写年份，考领队按今年理解。
+`evals/` 题：报价（chain）、期权链结构（chain 的 max-pain 和 oi）、开仓会诊（stock-ta 的 structure）、Roll 净收（strategy）、到期前财报（stock-ta 的 earnings-date）、记成交（record）、加自选（data/watchlist）。现在没有考 `knowledge` 的题。题里的到期日写成完整日期（2026-12-18、2027-01-15），`expect` 里的合约代码和 fill_id 跟着这些日子；2026-12-18 以后这些合约到期，要换成那时还没到期的日子再预演。记成交那道题的成交日故意不写年份，考领队按今年理解。
 
 ## 范围与依据
 
 本包结构依据任务说明书及其“假设和缺项”、`option-ta-build-plan.md`“已定的第一版范围”（2026-11-16、2026-11-17）、`option-ta-tax-memo.md` 第 14 节（范围决定 2026-11-16）、`option-ta-p1/README.md`（2026-11-17 美东 04:29—04:40）和 `option-ta-p1/mail-samples/` 的虚构结构样例（2026-11-17）。没有重新核验税法或盘中行情。fixtures 为依这些结构重新缩写的合成数据，不含真实邮件，不携带真实名单，不从 theta 导入私人资料。
 
-当前未完成 `chain` 的 OI 墙、GEX、最大痛点和异常成交、年末快照采集，也没有用真实接口验证过 `iv` 的取数时刻；不能生产使用。概念解释和 stock-ta 已开放接口可独立降级使用，提供方实际可用性以调用为准。模块保持停用；完整实现、检查与审阅前不要启用。
+当前未完成年末快照采集，也没有用真实接口验证过 `iv` 的取数时刻；不能生产使用。概念解释和 stock-ta 已开放接口可独立降级使用，提供方实际可用性以调用为准。模块保持停用；完整实现、检查与审阅前不要启用。
