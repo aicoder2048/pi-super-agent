@@ -102,7 +102,10 @@ export type ClientToHost =
 	| { type: "watch"; ticketId?: string };
 
 export type HostToClient =
-	| { type: "snapshot"; conversation: ConversationLine[]; cleared: Cleared | null; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; memberCap: MemberCapBoard; watching: WatchedSource[]; modules: ModuleCard[]; alerts: HostLine[] }
+	| { type: "snapshot"; conversation: ConversationLine[]; cleared: Cleared | null; board: DashboardRow[]; today: TodayCounts; duty: Duty; helpers: HelpersToday; routes: Routes; dispatching: Dispatching; memberCap: MemberCapBoard; watching: WatchedSource[]; modules: ModuleCard[]; alerts: HostLine[]; assistant?: AssistantLine[] }
+	/** The web page's AI assistant (ADR-0033): one question or answer, new or grown. Sent to the web page only. */
+	| { type: "assistant"; line: AssistantLine }
+	| { type: "assistant_cleared" }
 	| ({ type: "user" } & ConversationLine & { who: "user" })
 	| { type: "ack"; requestId: string; triggerId: string }
 	| { type: "refused"; requestId: string; reason: string }
@@ -137,3 +140,17 @@ export interface TranscriptMessage {
 	/** On an assistant message: what the model call used. */
 	usage?: { input?: number; output?: number; cacheRead?: number };
 }
+
+/**
+ * One line of the AI assistant (ADR-0033). `expert` is who answers, e.g. 期权研究组简报官. `about` is the sentence it was asked
+ * about: `picked` the selected words, `text` the start of the sentence. An answer grows while `state` is streaming.
+ */
+export type AssistantLine = {
+	id: string;
+	role: "user" | "assistant";
+	at: number;
+	expert: string;
+	text: string;
+	state: "streaming" | "done" | "failed";
+	about?: { picked?: string; text: string };
+};

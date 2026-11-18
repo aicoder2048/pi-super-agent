@@ -1,4 +1,5 @@
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Clock } from "../kernel/types.ts";
 import { ConfigError } from "../config-error.ts";
@@ -18,14 +19,26 @@ import { moduleSecretLookup, secretLookup } from "../secrets.ts";
 import { createGateway } from "../modules/gateway.ts";
 import { fetchAttachment } from "../modules/connectors/attachment.ts";
 import { fetchUpload } from "./uploads.ts";
+import { expertOf } from "./assistant/experts.ts";
+import { forgetAssistantSessions, openAssistantSession } from "./assistant/session.ts";
+import { edgeTts, pronounceTable, Speech } from "./assistant/speech.ts";
 import { gmailAccount } from "../modules/connectors/gmail.ts";
 import { googlePort } from "../modules/google-port.ts";
 import { createOcr } from "../ocr/ocr.ts";
 import { instanceData } from "../modules/instance-data.ts";
 import { moduleDataDir } from "../modules/knowledge.ts";
 import { ModuleStore } from "../modules/live.ts";
-import type { Digest } from "../modules/manifest.ts";
+import type { Digest, ModuleName } from "../modules/manifest.ts";
 import { telegramOptions } from "./telegram/options.ts";
+
+/** The host's glossary, which the AI assistant explains white-house words from (ADR-0033). Read per question, so an edit shows at once. */
+const hostGlossary = (): string => {
+	try {
+		return readFileSync(new URL("../../GLOSSARY.md", import.meta.url), "utf8");
+	} catch {
+		return "（宿主的术语表 GLOSSARY.md 不在。）";
+	}
+};
 
 export type ModelWiringConfig = Pick<HostConfig, "models" | "probePrimaryMinutes">;
 
@@ -111,6 +124,9 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 	const mail = gmailAccount({ secret, oauthUrl: process.env.PSA_GOOGLE_OAUTH_URL });
 	const rows = instanceData(config.stateDir);
 	const ocr = createOcr(config.ocr);
+	// PSA_TTS_COMMAND: a JSON array that stands in for the edge-tts command, as the e2e tests do; it gets the same arguments.
+	const ttsCommand = process.env.PSA_TTS_COMMAND ? (JSON.parse(process.env.PSA_TTS_COMMAND) as string[]) : undefined;
+	const speech = new Speech({ dir: join(config.stateDir, "tts"), synthesize: edgeTts(ttsCommand, log), table: () => pronounceTable(join(config.stateDir, "pronounce.json")) });
 	return {
 		stateDir: config.stateDir,
 		heartbeatMs: config.heartbeatSeconds * 1000,
@@ -146,6 +162,19 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 		watching: watchedSources(modules, timers),
 		feeds,
 		...(telegram && { telegram }),
+		assistant: {
+			open: (expert, fresh) => openAssistantSession({ modelRuntime, model: () => resolve(selectors.router.current().model), stateDir: config.stateDir }, expert, fresh),
+			expertFor: (domain) =>
+				expertOf(domain, {
+					packageDir: (name) => {
+						const digest = live.current().book.get(name)?.digest;
+						return digest === undefined ? undefined : store.dirOf(name as ModuleName, digest as Digest);
+					},
+					hostGlossary: hostGlossary(),
+				}),
+			speak: (text) => speech.speak(text),
+			forget: () => forgetAssistantSessions(config.stateDir),
+		},
 		workerModels: { selector: selectors.worker, fallbackDailyTokens: config.fallbackDailyTokens },
 		health: config.health,
 		outputDir: config.outputDir,
