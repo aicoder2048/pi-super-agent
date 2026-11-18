@@ -2,7 +2,7 @@
 
 import {
 	BAR_HINT, CLEAR_FAILED, SWITCH_FAILED, END_FAILED, endBody, followUpLine, followUpSentence, moduleBody, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
-	questionOf, choiceOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, fileSize, withAttachment, sayOutcome, settleSay, settleSending,
+	questionOf, choiceOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, fileSize, withAttachment, UPLOAD_MAX_BYTES, UPLOAD_TOO_LARGE, sayOutcome, settleSay, settleSending,
 	healthBanner, laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory, firstPanel, panelStep, overviewTabs, phoneScreen, panelText, savedPanel,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperLine, hostLineLabel } from "../client/board-format.mjs";
@@ -58,6 +58,9 @@ function mount(doc) {
 	let attached = null;
 	/** @type {string | null} the name of the file being uploaded */
 	let uploading = null;
+	/** Bumped by each new upload and by ✕: an upload that comes back under an older number is dropped. */
+	let uploadSeq = 0;
+	const attachButton = /** @type {HTMLButtonElement} */ ($("attach"));
 	const touch = matchMedia("(hover: none)");
 	/** @type {{ watch: ReturnType<typeof emptyWatch>, source: EventSource } | undefined} */
 	let watching;
@@ -641,10 +644,14 @@ function mount(doc) {
 		/** @type {HTMLElement} */ (attachStrip.querySelector(".quote-text")).textContent = uploading ? `${uploading} 上传中…` : attached ? `${attached.name}（${fileSize(attached.size)}）` : "";
 	};
 
-	/** @param {File} file */
+	/** The attachment already there stays until the new file is in. @param {File} file */
 	const upload = async (file) => {
+		attachInput.value = "";
+		if (file.size > UPLOAD_MAX_BYTES) return setSay("rejected", 413, UPLOAD_TOO_LARGE);
+		const seq = ++uploadSeq;
+		const current = () => seq === uploadSeq;
 		uploading = file.name;
-		attached = null;
+		attachButton.disabled = true;
 		renderAttachStrip();
 		try {
 			const res = await fetch(`/upload?${query}&name=${encodeURIComponent(file.name)}&type=${encodeURIComponent(file.type)}`, {
@@ -652,17 +659,23 @@ function mount(doc) {
 				headers: { "content-type": "application/octet-stream" },
 				body: file,
 				cache: "no-store",
-				signal: AbortSignal.timeout(60_000),
+				signal: AbortSignal.timeout(300_000),
 			});
+			if (!current()) return;
 			if (res.status === 401) setStatus("expired");
 			else if (!res.ok) setSay("rejected", res.status, await res.text().catch(() => "上传没有成功，请稍后再试。"));
-			else attached = await res.json();
+			else {
+				const done = await res.json();
+				if (current()) attached = done;
+			}
 		} catch {
-			setSay("rejected", undefined, "上传没有成功，请检查网络后再试。");
+			if (current()) setSay("rejected", undefined, "上传没有成功，请检查网络后再试。");
 		} finally {
-			uploading = null;
-			attachInput.value = "";
-			renderAttachStrip();
+			if (current()) {
+				uploading = null;
+				attachButton.disabled = false;
+				renderAttachStrip();
+			}
 		}
 	};
 
@@ -1120,13 +1133,16 @@ function mount(doc) {
 		void say();
 	});
 	$("quote-cancel").addEventListener("click", () => setQuote(null));
-	$("attach").addEventListener("click", () => attachInput.click());
+	attachButton.addEventListener("click", () => attachInput.click());
 	attachInput.addEventListener("change", () => {
 		const file = attachInput.files?.[0];
 		if (file) void upload(file);
 	});
 	$("attach-cancel").addEventListener("click", () => {
+		uploadSeq++;
+		uploading = null;
 		attached = null;
+		attachButton.disabled = false;
 		renderAttachStrip();
 		composer.focus();
 	});

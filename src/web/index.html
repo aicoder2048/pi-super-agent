@@ -259,8 +259,9 @@
 		.quote-strip[hidden] { display: none; }
 		.quote-strip .quote-who { flex: none; }
 		.quote-strip .quote-text { flex: 1; min-width: 0; }
-		#quote-cancel { flex: none; margin-left: 6px; padding: 0 4px; border: 0; background: none; font-size: 12px; line-height: 1.5; color: var(--muted); }
-		#quote-cancel:hover { color: var(--ink); }
+		#quote-cancel, #attach-cancel { flex: none; margin-left: 6px; padding: 0 4px; border: 0; background: none; font-size: 12px; line-height: 1.5; color: var(--muted); }
+		#quote-cancel:hover, #attach-cancel:hover { color: var(--ink); }
+		#attach:disabled { opacity: 0.5; cursor: default; }
 		.earlier { display: flex; flex-direction: column; gap: 16px; }
 		.earlier:empty { display: none; }
 		.earlier .line { opacity: 0.6; }

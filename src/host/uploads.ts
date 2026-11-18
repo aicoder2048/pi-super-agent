@@ -46,7 +46,7 @@ export function fetchUpload(stateDir: string, input: Json, dir: string): Fetched
 	const id = (input as Record<string, unknown> | null)?.["upload_id"];
 	if (typeof id !== "string" || id === "") return "要给 upload_id：使用者那句话里「附件：…（上传编号 up-…）」的编号";
 	const found = findUpload(stateDir, id);
-	if (found === undefined) return `没有上传编号为 ${id} 的文件：请使用者在网页上用附件按钮重新上传`;
+	if (found === undefined) return `没有上传编号为 ${id} 的文件：先核对任务说明里「附件：…」那一行的上传编号，原样再试；编号对上了还是没有，再请使用者在网页上用附件按钮重新上传`;
 	const file = join(dir, "upload");
 	copyFileSync(found.file, file);
 	const { name, type, size } = found.upload;

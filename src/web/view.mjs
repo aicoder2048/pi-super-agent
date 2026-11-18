@@ -1113,6 +1113,10 @@ export const sayBody = (said) => JSON.stringify(said.quoteOf ? { text: said.text
 
 /** @typedef {{ id: string, name: string, size: number }} Attached A file uploaded with POST /upload, not yet sent (ADR-0032). */
 
+/** The host refuses more with 413 (src/host/uploads.ts); the page checks first, since a refused upload often reaches it only as a reset connection. */
+export const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+export const UPLOAD_TOO_LARGE = "文件太大了，一次最多 10 MB。";
+
 /** @param {number} bytes */
 export function fileSize(bytes) {
 	if (bytes < 1024) return `${bytes} B`;

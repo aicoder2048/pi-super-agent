@@ -11,7 +11,7 @@
 ## Stage 2: 工具凭编号取文件
 **Goal**: `fetch: "upload.file"`：输入 `upload_id`，宿主把文件复制进调用的临时目录，加 `fetched`。
 **Success Criteria**: 存在的编号取到文件和元数据；不存在或格式不对的编号拒绝并说明；包检查不要求 feed。
-**Tests**: `tests/unit/upload-fetch.test.ts`，`tests/unit/` 里包检查的用例。
+**Tests**: `tests/unit/uploads.test.ts`，`tests/unit/mail-feed-check.test.ts` 里包检查的用例。
 **Status**: Complete
 
 ## Stage 3: 网页附件按钮和提示词

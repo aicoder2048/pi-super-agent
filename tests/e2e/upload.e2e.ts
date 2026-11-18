@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test, { after } from "node:test";
 import { on, reply } from "./fake-model.ts";
@@ -35,3 +35,34 @@ test("网页上传（ADR-0032）：点附件按钮选文件，输入框上方显
 			});
 		},
 	));
+
+test("网页上传：上传中点 ✕ 作废这次上传，传完也不挂上；上传期间附件按钮不能再点；超过 10 MB 的文件在页面里就说太大，不上传", (t) =>
+	story(t, { router: [] }, async ({ step, stateDir }) => {
+		await step("上传被拖慢时附件按钮禁用；点 ✕ 后附件条收起，传完也不再出现", async (page) => {
+			let release = () => {};
+			const held = new Promise<void>((done) => (release = done));
+			await page.route("**/upload?**", async (route) => {
+				await held;
+				await route.continue();
+			});
+			await page.locator("#attach-file").setInputFiles({ name: "wrong.csv", mimeType: "text/csv", buffer: CSV });
+			await page.locator("#attach-strip .quote-text", { hasText: "wrong.csv 上传中…" }).waitFor();
+			assert.equal(await page.locator("#attach").isDisabled(), true);
+			await page.locator("#attach-cancel").click();
+			assert.equal(await page.locator("#attach-strip").isHidden(), true);
+			assert.equal(await page.locator("#attach").isDisabled(), false);
+			release();
+			await page.waitForResponse("**/upload?**");
+			await page.waitForTimeout(200);
+			assert.equal(await page.locator("#attach-strip").isHidden(), true, "作废的上传回来后不挂上");
+			await page.unroute("**/upload?**");
+		});
+		await step("选一个 10 MB 多一点的文件：提示文件太大，不发请求", async (page) => {
+			const count = () => (existsSync(join(stateDir, "uploads")) ? readdirSync(join(stateDir, "uploads")).length : 0);
+			const before = count();
+			await page.locator("#attach-file").setInputFiles({ name: "big.csv", mimeType: "text/csv", buffer: Buffer.alloc(10 * 1024 * 1024 + 1) });
+			await page.locator("#say-status", { hasText: "文件太大" }).waitFor();
+			assert.equal(await page.locator("#attach-strip").isHidden(), true);
+			assert.equal(count(), before);
+		});
+	}));
