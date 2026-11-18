@@ -8,6 +8,7 @@ import { OPTIONS_MAX, refusalText, type AnswerRefusal } from "../kernel/question
 import type { HostToClient, TranscriptHistory, TranscriptMessage } from "../client/protocol.ts";
 import { hasVisibleText, HistoryEchoFilter, type AnswerResult, type Broadcast } from "./server.ts";
 import { UPLOAD_MAX_BYTES, type Upload } from "./uploads.ts";
+import { SPEAK_MAX_CHARS } from "./assistant/speech.ts";
 import { tokenMatches } from "./web-token.ts";
 import { webAddresses, type TailnetName, type WebAddresses } from "./web-hosts.ts";
 
@@ -26,6 +27,11 @@ export interface WebHost {
 	seen(ticketId: string): void;
 	/** Stores one file the user picked on the page (ADR-0032). */
 	upload(name: string, type: string, bytes: Buffer): Upload;
+	/** The AI assistant (ADR-0033). Null: `lineId` is not a shown line, or there is no assistant. */
+	ask(question: string, about: { lineId?: string; picked?: string }): string | null;
+	clearAssistant(): void;
+	/** One sentence of an answer as mp3, or null when it could not be read aloud. */
+	speak(text: string): Promise<Buffer | null>;
 }
 
 const SAY_MAX_BYTES = 32 * 1024;
@@ -56,7 +62,7 @@ const DENIED = {
 	401: "token 缺失或已失效，请用宿主日志里最新的网址打开。",
 	403: "只接受本机这个页面（127.0.0.1 或 localhost）或 config.json 的 webHosts 里列出的地址发来的请求。",
 	404: "没有这个页面。",
-	405: "这个地址不接受这种请求；发话用 POST /say，清屏用 POST /clear，开关模块用 POST /module，结束盯着的任务用 POST /end，上传文件用 POST /upload，其余只接受 GET。",
+	405: "这个地址不接受这种请求；发话用 POST /say，清屏用 POST /clear，开关模块用 POST /module，结束盯着的任务用 POST /end，上传文件用 POST /upload，问简报官用 POST /assist，清空简报官用 POST /assist/clear，朗读一句用 POST /speak，其余只接受 GET。",
 	409: "这个任务不在盯着的事里，不能这样结束：它可能还在干活，或在等你回答。",
 	413: "这句话太长了，请分几次说。",
 	415: "发话的正文要用 application/json；上传文件的正文要用 application/octet-stream。",
@@ -77,6 +83,9 @@ export class WebGateway {
 		["/clear", (body, res) => this.#clear(body, res)],
 		["/module", (body, res) => this.#switchModule(body, res)],
 		["/end", (body, res) => this.#endWatching(body, res)],
+		["/assist", (body, res) => this.#ask(body, res)],
+		["/assist/clear", (body, res) => this.#clearAssistant(body, res)],
+		["/speak", (body, res) => this.#speak(body, res)],
 	]);
 
 	constructor(host: WebHost, token: string, log: (line: string) => void, names: readonly TailnetName[] = []) {
@@ -110,6 +119,12 @@ export class WebGateway {
 	}
 
 	broadcast(message: Broadcast): void {
+		const frame = sseFrame(message);
+		for (const res of this.#streams) res.write(frame);
+	}
+
+	/** Frames only the web page reads, such as the AI assistant's lines. */
+	send(message: Extract<HostToClient, { type: "assistant" | "assistant_cleared" }>): void {
 		const frame = sseFrame(message);
 		for (const res of this.#streams) res.write(frame);
 	}
@@ -233,6 +248,36 @@ export class WebGateway {
 		res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ triggerId }));
 	}
 
+	#ask(text: string, res: ServerResponse): void {
+		const body = parseAskBody(text);
+		if (body === undefined) return deny(res, 400);
+		const id = this.#host.ask(body.question, { ...(body.lineId && { lineId: body.lineId }), ...(body.picked && { picked: body.picked }) });
+		if (id === null) return deny(res, 400);
+		res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ id }));
+	}
+
+	#speak(text: string, res: ServerResponse): void {
+		const parsed = parseObject(text) as { text?: unknown } | undefined;
+		if (!parsed || Object.keys(parsed).join() !== "text" || typeof parsed.text !== "string" || !hasVisibleText(parsed.text) || parsed.text.length > SPEAK_MAX_CHARS) return deny(res, 400);
+		this.#host.speak(parsed.text).then(
+			(bytes) => {
+				if (res.writableEnded) return;
+				if (bytes === null) return void res.writeHead(502, { ...NO_LEAK_HEADERS, "content-type": "text/plain; charset=utf-8" }).end("这句没合成出语音，页面会改用本机朗读。");
+				res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "audio/mpeg", "content-length": String(bytes.length) }).end(bytes);
+			},
+			(error: unknown) => {
+				this.#log(`[web] /speak 出错：${error instanceof Error ? error.message : String(error)}`);
+				if (!res.headersSent) res.writeHead(500, { ...NO_LEAK_HEADERS, "content-type": "text/plain; charset=utf-8" }).end(INTERNAL_ERROR);
+			},
+		);
+	}
+
+	#clearAssistant(body: string, res: ServerResponse): void {
+		if (!isEmptyObject(body)) return deny(res, 400);
+		this.#host.clearAssistant();
+		res.writeHead(204, NO_LEAK_HEADERS).end();
+	}
+
 	#clear(body: string, res: ServerResponse): void {
 		if (!isEmptyObject(body)) return deny(res, 400);
 		this.#host.clear();
@@ -277,6 +322,20 @@ function parseObject(body: string): object | undefined {
 		return undefined;
 	}
 	return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : undefined;
+}
+
+const ASK_MAX_CHARS = 2000;
+const PICKED_MAX_CHARS = 500;
+
+/** `{ question, lineId?, picked? }`: the AI assistant's question, about a conversation line and words picked in it. */
+function parseAskBody(body: string): { question: string; lineId?: string; picked?: string } | undefined {
+	const parsed = parseObject(body);
+	if (parsed === undefined) return undefined;
+	const { question, lineId, picked, ...rest } = parsed as { question?: unknown; lineId?: unknown; picked?: unknown };
+	if (Object.keys(rest).length > 0 || typeof question !== "string" || !hasVisibleText(question) || question.length > ASK_MAX_CHARS) return undefined;
+	if (lineId !== undefined && (typeof lineId !== "string" || lineId.length === 0 || lineId.length > LINE_ID_MAX_CHARS)) return undefined;
+	if (picked !== undefined && (typeof picked !== "string" || !hasVisibleText(picked) || picked.length > PICKED_MAX_CHARS || lineId === undefined)) return undefined;
+	return { question, ...(lineId !== undefined && { lineId }), ...(picked !== undefined && { picked }) };
 }
 
 function parseSayBody(body: string): SayBody | undefined {

@@ -26,6 +26,10 @@ _Avoid_：主 Agent、orchestrator、主 Session、Team Lead
 为一项任务而存在的执行者。它在隔离的上下文里完成任务，只向 Router 汇报，不直接与人交互。界面上叫「助手」，领域有团队的任务里叫「领队」（见 `docs/web-client/copy.md`）；设计文档里写 Worker。
 _Avoid_：subagent、专家、Executor、子进程
 
+**简报官（Assistant）**：
+网页右栏讲解对话里看不懂的词句的那位（ADR-0033）。按被问的那句话所属模块分身份，如「期权研究组简报官」；不属于模块时就叫「简报官」。它只解释，不调工具、不开任务、不给买卖建议，要查数据或做事请使用者问 Router。代码里叫 assistant。
+_Avoid_：AI 助理、助教、讲解员、顾问
+
 **客户端（Client）**：
 使用者自己的人机界面，例如终端界面、桌面端、手机端。它连接宿主，对宿主来说是一个来源加一个渠道。
 _Avoid_：前端、UI、TUI

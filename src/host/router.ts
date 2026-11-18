@@ -264,7 +264,7 @@ ${roster.trim() || "（没有可选的领域）"}
 ${rules.trim() || "（暂无规则）"}`;
 }
 
-function emptyResources(systemPrompt: string): ResourceLoader {
+export function emptyResources(systemPrompt: string): ResourceLoader {
 	return {
 		getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
 		getSkills: () => ({ skills: [], diagnostics: [] }),

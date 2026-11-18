@@ -46,6 +46,8 @@ import { inPollWindow } from "../sources/market/session.ts";
 import { TelegramClient, type TelegramOptions } from "./telegram/client.ts";
 import { causeOf, clearedText, Health, HEALTH_DEFAULTS, ModelHealth, raisedText, scrub, type HealthConfig } from "./health.ts";
 import type { FeedFixtures } from "./config.ts";
+import { Assistant, type AssistantSessionLike } from "./assistant/assistant.ts";
+import type { Expert, Said } from "./assistant/prompt.ts";
 
 export interface RouterLike {
 	inject(notice: RouterNotice, actionId: string): Promise<void> | void;
@@ -53,6 +55,9 @@ export interface RouterLike {
 	startOver(): void;
 	dispose(): void;
 }
+
+/** How far back 问简报官 finds the line it is about. */
+const ASK_LINES = 500;
 
 export interface HostDeps {
 	kernel: Kernel;
@@ -95,6 +100,8 @@ export interface HostOptions {
 	after?: (ms: number, run: () => void) => () => void;
 	telegram?: TelegramOptions;
 	health?: HealthConfig;
+	/** The web page's AI assistant (ADR-0033): opens an explainer's model session, and says who explains a module's sentences (null: no module). */
+	assistant?: { open(expert: Expert, fresh: boolean): Promise<AssistantSessionLike>; expertFor(domain: string | null): Expert; speak?(text: string): Promise<Buffer | null>; forget?(): void };
 }
 
 const afterRealTime: NonNullable<HostOptions["after"]> = (ms, run) => {
@@ -143,6 +150,7 @@ export class Host {
 	#web: WebGateway | undefined;
 	readonly #telegram: TelegramClient | undefined;
 	readonly #db: DatabaseSync;
+	readonly #assistant?: { core: Assistant; expertFor(domain: string | null): Expert; speak?(text: string): Promise<Buffer | null> };
 	readonly #watching: WatchedSource[];
 	readonly #clock: Clock;
 	readonly #kitFor: Domains["kitFor"] | undefined;
@@ -340,12 +348,16 @@ export class Host {
 		);
 		// Built before any client can say a line, so every line and reply reaches it; it touches the network only once started.
 		this.#telegram = options.telegram && new TelegramClient({ ...options.telegram, host: { say: (text, o) => this.say(text, o), sayQuoting: (text, lineId, o) => this.sayQuoting(text, lineId, o), answer: (reportId, option, o) => this.answer(reportId, option, o), board: () => ({ rows: this.kernel.listTickets(), memberCap: this.#memberCapBoard() }), originOf: (ticketId) => this.kernel.getTicket(ticketId)?.originTriggerId ?? null }, db: this.#db, clock, log: this.#log });
+		if (options.assistant) {
+			const { open, expertFor, speak, forget } = options.assistant;
+			this.#assistant = { core: new Assistant({ db: this.#db, open, publish: (frame) => this.#web?.send(frame), log: this.#log, now: () => clock.now(), ...(forget && { forget }) }), expertFor, ...(speak && { speak }) };
+		}
 	}
 
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), sayQuoting: (text, lineId) => host.sayQuoting(text, lineId), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation(), switchModule: (name, on) => host.switchModule(name, on), endWatching: (ticketId) => host.endWatching(ticketId), seen: (ticketId) => host.seen(ticketId), upload: (name, type, bytes) => saveUpload(options.stateDir, { name, type, bytes, at: Date.now() }) }, loadToken(options.stateDir, "web-token", host.#log), host.#log, options.webHosts ?? []);
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), sayQuoting: (text, lineId) => host.sayQuoting(text, lineId), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation(), switchModule: (name, on) => host.switchModule(name, on), endWatching: (ticketId) => host.endWatching(ticketId), seen: (ticketId) => host.seen(ticketId), upload: (name, type, bytes) => saveUpload(options.stateDir, { name, type, bytes, at: Date.now() }), ask: (question, about) => host.ask(question, about), clearAssistant: () => host.clearAssistant(), speak: (text) => host.speak(text) }, loadToken(options.stateDir, "web-token", host.#log), host.#log, options.webHosts ?? []);
 			await host.#web.listen(options.webPort);
 		}
 		try {
@@ -485,7 +497,7 @@ export class Host {
 
 	snapshot() {
 		const { rows, ...board } = this.#boardState();
-		return { conversation: this.kernel.conversation(CONVERSATION_LINES), cleared: this.kernel.cleared(CONVERSATION_LINES), board: rows, ...board };
+		return { conversation: this.kernel.conversation(CONVERSATION_LINES), cleared: this.kernel.cleared(CONVERSATION_LINES), board: rows, ...board, ...(this.#assistant && { assistant: this.#assistant.core.lines() }) };
 	}
 
 	/** The web page's 「结束」 on a ticket that only waits on its threads. */
@@ -505,6 +517,36 @@ export class Host {
 		if (!this.#modules?.setSwitch(name, on)) return false;
 		this.#changed();
 		return true;
+	}
+
+	/**
+	 * The assistant answers a question, about a conversation line when `lineId` names one. Null when `lineId` is not a shown line.
+	 * Returns the answer's id; the answer reaches the web page as `assistant` frames.
+	 */
+	ask(question: string, about: { lineId?: string; picked?: string } = {}): string | null {
+		if (!this.#assistant) return null;
+		// The page may show more than the snapshot's lines: those hidden by 清屏 and those it kept from earlier pushes.
+		const lines = [...(this.kernel.cleared(ASK_LINES)?.lines ?? []), ...this.kernel.conversation(ASK_LINES)].sort((x, y) => x.at - y.at);
+		const at = about.lineId === undefined ? -1 : lines.findIndex((l) => l.id === about.lineId);
+		if (about.lineId !== undefined && at < 0) return null;
+		const said = (l: (typeof lines)[number]): Said => ({ who: l.who, text: l.text });
+		const line = at < 0 ? undefined : lines[at]!;
+		const ticketId = line === undefined ? undefined : ("ticketId" in line && line.ticketId) || this.kernel.conversationRoutes(ASK_LINES)[line.id]?.ticketId;
+		// A module's alert or receipt names the module by its title only.
+		const fromModule = line !== undefined && "module" in line && line.module ? this.#moduleCards().find((c) => c.title === line.module!.title)?.name : undefined;
+		const domain = ticketId ? (this.kernel.getTicket(ticketId)?.domain ?? null) : (fromModule ?? null);
+		const around = line === undefined ? [] : [...lines.slice(Math.max(0, at - 3), at), ...lines.slice(at + 1, at + 2)].filter((l) => l.who === "user" || l.who === "router").map(said);
+		const expert = this.#assistant.expertFor(domain);
+		return this.#assistant.core.ask({ question, ...(about.picked && { picked: about.picked }), ...(line && { line: said(line), around }) }, expert);
+	}
+
+	clearAssistant(): void {
+		this.#assistant?.core.clear();
+	}
+
+	/** One sentence of an assistant answer as mp3; null when this host cannot read aloud or the synthesis failed. */
+	speak(text: string): Promise<Buffer | null> {
+		return this.#assistant?.speak?.(text) ?? Promise.resolve(null);
 	}
 
 	clearConversation(): void {
@@ -721,6 +763,7 @@ export class Host {
 		this.#stopping = true;
 		for (const run of this.#runs) run.kill();
 		await this.#telegram?.stop();
+		await this.#assistant?.core.close();
 		clearInterval(this.#heartbeat);
 		this.generic.stop();
 		this.timer.stop();

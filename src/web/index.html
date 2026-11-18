@@ -160,6 +160,31 @@
 		.tab-close { width: 26px; height: 26px; border: 0; background: none; color: var(--muted); font-size: 15px; line-height: 1; border-radius: 6px; }
 		.tab-close:hover { color: var(--ink); background: var(--track); }
 		.pane { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+		#assistant { gap: 10px; }
+		.as-head { display: flex; align-items: baseline; gap: 8px; }
+		#assistant-clear { margin-left: auto; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+		#assistant-lines { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+		#assistant-lines .empty { color: var(--muted); font-size: 13px; }
+		.as-q { align-self: flex-end; max-width: 92%; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+		.as-q .bubble { background: var(--accent); color: #fff; border-radius: 14px 14px 4px 14px; padding: 8px 12px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+		.as-q .quoted { font-size: 11px; }
+		.as-a { display: flex; flex-direction: column; gap: 4px; }
+		.as-a .who { font-size: 12px; color: var(--muted); }
+		.as-a .bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; padding: 8px 12px; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+		.as-a.streaming .bubble::after { content: "▍"; color: var(--muted); }
+		.as-a.failed .bubble { color: var(--warn-ink); }
+		.as-acts { display: flex; gap: 12px; }
+		.as-acts button { padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; }
+		.as-acts button:hover { color: var(--accent-ink); text-decoration: underline; }
+		#assistant-form { position: sticky; bottom: -18px; background: var(--bg); padding: 8px 0 0; }
+		.as-compose { display: flex; gap: 8px; align-items: flex-end; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px 8px 8px 12px; }
+		#assistant-input { flex: 1; border: 0; outline: none; resize: none; font: inherit; font-size: 13px; line-height: 1.5; background: transparent; color: var(--ink); max-height: 25vh; }
+		#assistant-send { flex: none; min-height: 36px; padding: 0 14px; border-radius: 10px; border: 0; background: var(--accent); color: #fff; font-weight: 600; }
+		#assistant-send:disabled { opacity: 0.6; }
+		#assistant-status { font-size: 12px; color: var(--warn-ink); min-height: 0; }
+		#assistant-about-cancel { flex: none; margin-left: 6px; padding: 0 4px; border: 0; background: none; font-size: 12px; line-height: 1.5; color: var(--muted); }
+		#ask-pick { position: fixed; z-index: 30; padding: 4px 10px; border-radius: 8px; border: 0; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; box-shadow: var(--shadow); }
+		#ask-pick[hidden] { display: none; }
 		.pane[hidden] { display: none; }
 		.box { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
 		.box .headline { font-size: 13px; font-weight: 600; }
@@ -244,13 +269,14 @@
 		.cleared-bar::before, .cleared-bar::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
 		.cleared-bar:hover { color: var(--accent-ink); }
 		.said { position: relative; }
-		.quote-btn { position: absolute; top: 100%; left: 0; padding: 0 4px; border: 0; background: none; font-size: 12px; line-height: 16px; color: var(--muted); opacity: 0; pointer-events: none; }
-		.router .quote-btn, .user .quote-btn { left: auto; right: 0; }
-		.router .quote-btn { padding-top: 7px; line-height: 12px; }
-		.quote-btn:hover { color: var(--accent-ink); text-decoration: underline; }
-		.quote-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
-		.line:hover .quote-btn, .line:focus-within .quote-btn, .line.picked .quote-btn { opacity: 1; pointer-events: auto; }
-		@media (hover: none) { .line:hover .quote-btn { opacity: 0; pointer-events: none; } .line.picked .quote-btn { opacity: 1; pointer-events: auto; } }
+		.quote-btn, .ask-btn { position: absolute; top: 100%; left: 0; padding: 0 4px; border: 0; background: none; font-size: 12px; line-height: 16px; color: var(--muted); opacity: 0; pointer-events: none; }
+		.router .quote-btn, .user .quote-btn, .router .ask-btn, .user .ask-btn { left: auto; right: 0; }
+		.router .quote-btn, .router .ask-btn { padding-top: 7px; line-height: 12px; }
+		.router .ask-btn, .user .ask-btn { right: 36px; }
+		.quote-btn:hover, .ask-btn:hover { color: var(--accent-ink); text-decoration: underline; }
+		.quote-btn:focus-visible, .ask-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+		.line:hover .quote-btn, .line:focus-within .quote-btn, .line.picked .quote-btn, .line:hover .ask-btn, .line:focus-within .ask-btn, .line.picked .ask-btn { opacity: 1; pointer-events: auto; }
+		@media (hover: none) { .line:hover .quote-btn, .line:hover .ask-btn { opacity: 0; pointer-events: none; } .line.picked .quote-btn, .line.picked .ask-btn { opacity: 1; pointer-events: auto; } }
 		.quoted, .quote-strip { font-size: 12px; line-height: 1.5; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
 		/* Clamp an inner element: a clamped box with padding would show part of the third line in its padding. */
 		.quote-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
@@ -424,7 +450,22 @@
 			<section id="sources" class="pane" role="tabpanel" aria-labelledby="tab-sources" hidden></section>
 			<section id="modules" class="pane" role="tabpanel" aria-labelledby="tab-modules" hidden></section>
 			<section id="done" class="pane" role="tabpanel" aria-labelledby="tab-done" hidden></section>
+			<section id="assistant" class="pane" role="tabpanel" aria-labelledby="tab-assistant" hidden>
+				<div class="as-head"><span class="label">简报官 · 讲解对话里看不懂的词句</span><button id="assistant-clear" type="button">清空</button></div>
+				<div id="assistant-lines"></div>
+				<div id="assistant-live" class="sr" aria-live="polite"></div>
+				<form id="assistant-form" autocomplete="off">
+					<div id="assistant-about" class="quote-strip" hidden><span class="quote-who">关于：</span><span class="quote-text"></span><button id="assistant-about-cancel" type="button" aria-label="不针对这句话">✕</button></div>
+					<div class="as-compose">
+						<label for="assistant-input" class="sr">问简报官</label>
+						<textarea id="assistant-input" rows="2" placeholder="问简报官一个词或一句话，例如：什么是 IV Rank？"></textarea>
+						<button id="assistant-send" type="submit">问</button>
+					</div>
+					<div id="assistant-status" role="status"></div>
+				</form>
+			</section>
 		</aside>
+		<button id="ask-pick" type="button" hidden>问简报官</button>
 	</div>
 	<nav id="bottom" aria-label="切换屏幕">
 		<button type="button" data-place="todo"><span class="icon" data-icon="inbox"></span>待办<span class="badge"></span></button>

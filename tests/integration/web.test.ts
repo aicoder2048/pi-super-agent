@@ -68,7 +68,7 @@ test("页面：未知消息类型被忽略，不改对话也不改左栏", () =>
 
 test("页面：每种消息只报告它改动的区域", () => {
 	const view = page.emptyView();
-	assert.deepEqual(page.applyMessage(view, snapshot(), 0), ["conversation", "left", "header"]);
+	assert.deepEqual(page.applyMessage(view, snapshot(), 0), ["conversation", "left", "header", "assistant"]);
 	assert.deepEqual(page.applyMessage(view, { type: "user", who: "user", id: "trg_1", text: "你好", at: 1 }, 0), ["conversation"]);
 	assert.deepEqual(page.applyMessage(view, { type: "reply", replyId: "rpl_1", text: "在", at: 2 }, 0), ["conversation"]);
 	assert.deepEqual(page.applyMessage(view, board([]), 0), ["conversation", "left", "header"], "看板带着对话里每句话的去向");
@@ -2647,7 +2647,7 @@ test("右栏刷新：没存过或存的东西读不懂，从「今天」开始",
 
 const hostAlert = (id: string, text: string) => ({ id, who: "alert" as const, text, at: 1 });
 
-test("右栏标签：今天 = 今日来源消息 + 今日提醒，来源、模块、已完成各带数字；有任务时任务标签排第一，写编号前 4 位", () => {
+test("右栏标签：今天 = 今日来源消息 + 今日提醒，来源、模块、已完成、助理各带数字；有任务时任务标签排第一，写编号前 4 位", () => {
 	const view = page.emptyView();
 	const today = zeroToday();
 	today.byDisposition.opened_ticket = 2;
@@ -2658,7 +2658,7 @@ test("右栏标签：今天 = 今日来源消息 + 今日提醒，来源、模�
 		alerts: [hostAlert("hln_1", "NVDA 涨了 5.3%")],
 	} as HostToClient, 0);
 	const tabs = (panel: ReturnType<typeof page.firstPanel>) => page.overviewTabs(view, panel).map((t) => [t.key, t.label, t.count, t.selected]);
-	assert.deepEqual(tabs(page.firstPanel()), [["today", "今天", 4, true], ["sources", "来源", 1, false], ["modules", "模块", 2, false], ["done", "已完成", 1, false]]);
+	assert.deepEqual(tabs(page.firstPanel()), [["today", "今天", 4, true], ["sources", "来源", 1, false], ["modules", "模块", 2, false], ["done", "已完成", 1, false], ["assistant", "简报官", 0, false]]);
 	assert.deepEqual(tabs(panelAfter({ kind: "open", ticketId: "tkt_9f3a77" }))[0], ["task", "任务 #9f3a", null, true]);
 });
 

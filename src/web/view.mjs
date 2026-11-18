@@ -80,7 +80,7 @@ const GROUP = {
 
 /** @returns {View} */
 export function emptyView() {
-	return { lines: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], modules: [], alerts: [], routes: {}, dispatching: {}, memberCap: null, health: NO_HEALTH, lastOnBoard: new Map(), cleared: null, showEarlier: false };
+	return { lines: new Map(), assistant: new Map(), rows: [], receivedAt: 0, today: undefined, duty: undefined, helpers: undefined, watching: [], modules: [], alerts: [], routes: {}, dispatching: {}, memberCap: null, health: NO_HEALTH, lastOnBoard: new Map(), cleared: null, showEarlier: false };
 }
 
 /** @type {HealthBoard} */
@@ -119,7 +119,7 @@ function applyBoard(view, board, now) {
 
 /**
  * @param {View} view @param {HostToClient} message @param {number} now
- * @returns {("conversation" | "left" | "header")[]}
+ * @returns {("conversation" | "left" | "header" | "assistant")[]}
  */
 export function applyMessage(view, message, now) {
 	switch (message.type) {
@@ -128,8 +128,15 @@ export function applyMessage(view, message, now) {
 			if (cleared?.at !== view.cleared?.at) resetConversation(view, message.conversation, cleared);
 			else for (const line of message.conversation) addLine(view, line);
 			applyBoard(view, { ...message, rows: message.board }, now);
-			return ["conversation", "left", "header"];
+			view.assistant = new Map((message.assistant ?? []).map((l) => [l.id, l]));
+			return ["conversation", "left", "header", "assistant"];
 		}
+		case "assistant":
+			view.assistant.set(message.line.id, message.line);
+			return ["assistant"];
+		case "assistant_cleared":
+			view.assistant = new Map();
+			return ["assistant"];
 		case "cleared":
 			resetConversation(view, message.conversation, message.cleared);
 			return ["conversation"];
@@ -432,7 +439,7 @@ function moduleCard(m, now) {
 	};
 }
 
-/** @typedef {"today" | "sources" | "modules" | "done"} OverviewTab */
+/** @typedef {"today" | "sources" | "modules" | "done" | "assistant"} OverviewTab */
 
 /** A phone shows one screen at a time; the bottom bar picks one. @typedef {"todo" | "chat" | "overview"} Place */
 
@@ -442,7 +449,7 @@ function moduleCard(m, now) {
  * @typedef {{ showing: OverviewTab | "task", task: string | null, last: OverviewTab, flash: string | null, place: Place, dot: boolean }} Panel
  */
 
-/** @typedef {{ kind: "pick", tab: OverviewTab | "task" } | { kind: "open", ticketId: string } | { kind: "close" } | { kind: "alert", lineId: string, ticketId?: string, phone?: boolean } | { kind: "place", place: Place }} PanelEvent */
+/** `ask`: 问简报官 on a conversation line opens the assistant (ADR-0033). @typedef {{ kind: "pick", tab: OverviewTab | "task" } | { kind: "open", ticketId: string } | { kind: "close" } | { kind: "alert", lineId: string, ticketId?: string, phone?: boolean } | { kind: "place", place: Place } | { kind: "ask" }} PanelEvent */
 
 /** @returns {Panel} */
 export const firstPanel = () => ({ showing: "today", task: null, last: "today", flash: null, place: "todo", dot: false });
@@ -468,10 +475,12 @@ export function panelStep(panel, event) {
 		}
 		case "place":
 			return { ...panel, place: event.place, showing: panel.showing === "task" ? panel.last : panel.showing, dot: event.place === "overview" ? false : panel.dot };
+		case "ask":
+			return { ...panel, showing: "assistant", last: "assistant", flash: null, place: "overview", dot: false };
 	}
 }
 
-const OVERVIEW_TABS = ["today", "sources", "modules", "done"];
+const OVERVIEW_TABS = ["today", "sources", "modules", "done", "assistant"];
 
 /** @param {Panel} panel */
 export const panelText = (panel) => JSON.stringify({ showing: panel.showing, task: panel.task, last: panel.last });
@@ -501,6 +510,7 @@ export function overviewTabs(view, panel) {
 		["sources", "来源", view.watching.length],
 		["modules", "模块", view.modules.length],
 		["done", "已完成", view.rows.filter((r) => groupOf(r) === "done").length],
+		["assistant", "简报官", [...view.assistant.values()].filter((l) => l.role === "assistant" && l.state === "done").length],
 	];
 	const tabs = overview.map(([key, label, count]) => ({ key, label, count, selected: panel.showing === key }));
 	return panel.task ? [{ key: "task", label: `任务 #${shortId(panel.task)}`, count: null, selected: panel.showing === "task" }, ...tabs] : tabs;
@@ -1333,4 +1343,59 @@ export function healthBanner(health, now) {
 		alarms: health.active.map((a) => ({ id: a.id, subject: a.subject, when: `${ago(now - a.since)}开始 · 连着 ${a.count} 次 · 最近一次 ${ago(now - a.lastAt)}`, error: a.lastError, advice: a.advice })),
 		recent,
 	};
+}
+
+/** What 问简报官 puts in the assistant's box (ADR-0033). @param {string | null} picked */
+export const suggestedQuestion = (picked) => (picked ? `「${picked}」是什么意思？在这句话里指什么？` : "这句话是什么意思？里面的术语和数字怎么理解？");
+
+const PICKED_MAX_CHARS = 500;
+
+/** The words selected in a line, as one line of text; null when nothing visible is selected. @param {string} selected */
+export function pickedText(selected) {
+	const text = selected.replace(/\s+/g, " ").trim();
+	return text === "" ? null : [...text].slice(0, PICKED_MAX_CHARS).join("");
+}
+
+/** @param {string} question @param {{ lineId: string, picked: string | null } | null} about */
+export const askBody = (question, about) => JSON.stringify({ question, ...(about && { lineId: about.lineId }), ...(about?.picked && { picked: about.picked }) });
+
+const CHUNK_MAX_CHARS = 120;
+const CHUNK_MIN_CHARS = 4;
+
+/** Split at commas into pieces of at most CHUNK_MAX_CHARS, keeping every character. @param {string} sentence */
+function splitLong(sentence) {
+	if ([...sentence].length <= CHUNK_MAX_CHARS) return [sentence];
+	const pieces = sentence.match(/[^，,、]*[，,、]?/g)?.filter(Boolean) ?? [sentence];
+	/** @type {string[]} */
+	const out = [];
+	for (const piece of pieces) {
+		const last = out.at(-1);
+		if (last !== undefined && [...last].length + [...piece].length <= CHUNK_MAX_CHARS) out[out.length - 1] = last + piece;
+		else out.push(...([...piece].length <= CHUNK_MAX_CHARS ? [piece] : (piece.match(new RegExp(`[\\s\\S]{1,${CHUNK_MAX_CHARS}}`, "gu")) ?? [])));
+	}
+	return out;
+}
+
+/**
+ * What the page reads aloud, one piece at a time (ADR-0033): the answer without Markdown marks, cut after each sentence or line,
+ * a very short piece joined to the one before, a long one cut again at commas. @param {string} markdown
+ */
+export function speechChunks(markdown) {
+	const plain = markdown
+		.replace(/```[\s\S]*?```/g, " ")
+		.replace(/^\s*(?:[-*+]|\d+[.)]|#{1,6}|>)\s+/gm, "")
+		.replace(/\*\*|__|`|\|/g, "")
+		.replace(/^[\s:-]+$/gm, "");
+	/** @type {string[]} */
+	const sentences = [];
+	for (const line of plain.split(/\n+/)) {
+		for (const s of line.match(/[^。！？；!?;]+[。！？；!?;]*|[。！？；!?;]+/g) ?? []) {
+			const trimmed = s.trim();
+			if (trimmed === "") continue;
+			const last = sentences.at(-1);
+			if (last !== undefined && [...trimmed].length < CHUNK_MIN_CHARS) sentences[sentences.length - 1] = last + trimmed;
+			else sentences.push(trimmed);
+		}
+	}
+	return sentences.flatMap(splitLong);
 }
