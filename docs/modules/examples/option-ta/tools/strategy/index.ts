@@ -226,10 +226,14 @@ function reference(legs: Leg[]) {
 }
 
 /** The four checks' numbers for the position the order leaves: a Roll's closing legs are gone after it. Needs the underlying price. */
-function greeksOf(legs: Leg[], spot: number | null, rolling: boolean) {
-	if (spot === null) return { status: "NO_SPOT", reason: "没给 spot（正股价），整单的 Delta、Gamma、Theta、Vega 和 IV ±10 点压力测试没算" };
+function greeksOf(legs: Leg[], spot: number | null, kind: string) {
+	if (spot === null || !(spot > 0)) return { status: "NO_SPOT", reason: "没给 spot（正股价），整单的 Delta、Gamma、Theta、Vega 和 IV ±10 点压力测试没算" };
+	const rolling = (ROLL_KINDS as readonly string[]).includes(kind);
 	const kept = rolling ? legs.filter((leg) => leg.role === "open") : legs;
-	return { status: "OK", ...portfolioGreeks(kept.map((leg) => ({ ...leg, iv: ivOf(leg, spot), shares: SHARES })), spot), ...(rolling && { scope: "只算 Roll 之后留下的新腿" }) };
+	// A CC is covered by stock: its shares carry Delta 1 each, or a net-long position reads as short.
+	const stock = kind === "CC" ? kept.reduce((n, leg) => n + leg.contracts * SHARES, 0) : 0;
+	const result = portfolioGreeks(kept.map((leg) => ({ ...leg, iv: ivOf(leg, spot), shares: SHARES })), spot, stock);
+	return { ...result, ...(rolling && { scope: "只算 Roll 之后留下的新腿，不含持有的正股" }) };
 }
 
 /** The leg's IV: given, else solved from its price (as legReport does). */
@@ -379,7 +383,7 @@ function compute(input: Input) {
 		roll: rolled,
 		legs: legs.map((leg) => legReport(leg, spot, rolling)),
 		expiry_pl: economics === null ? null : (scenarios as number[]).map((s) => ({ spot: s, pl: money(economics.plAt(s)) })),
-		greeks: greeksOf(legs, spot, rolling),
+		greeks: greeksOf(legs, spot, kind),
 		assumptions: [...ASSUMPTIONS, ...(economics?.assumption ? [economics.assumption] : []), ...(rolling ? ["Roll 只算这一次的净收付；新仓位的成本和盈亏平衡要连同整条交易链看账本"] : [])],
 	};
 }
