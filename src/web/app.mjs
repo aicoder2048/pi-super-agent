@@ -54,6 +54,12 @@ function mount(doc) {
 	const quoteStrip = $("quote-strip");
 	const attachStrip = $("attach-strip");
 	const askPick = /** @type {HTMLButtonElement} */ ($("ask-pick"));
+	/** Questions on their way to the host, so a double click asks once; and why the last question about a line did not go, by line id. */
+	const asking = new Set();
+	/** @type {Map<string, string>} */
+	const askProblem = new Map();
+	/** What the user has typed into a note's 再问 box, by note id: it survives the note being rebuilt. @type {Map<string, string>} */
+	const drafts = new Map();
 	const attachInput = /** @type {HTMLInputElement} */ ($("attach-file"));
 	/** A file uploaded and waiting to go with the next sentence (ADR-0032). @type {import("./view.mjs").Attached | null} */
 	let attached = null;
@@ -738,12 +744,21 @@ function mount(doc) {
 	 * line. @param {import("./view.mjs").ConversationLine} line @param {string | null} picked @param {string} [question]
 	 */
 	const askNow = async (line, picked, question = suggestedQuestion(picked)) => {
+		const key = `${line.id}\u0000${picked ?? ""}\u0000${question}`;
+		if (asking.has(key)) return;
+		asking.add(key);
+		askProblem.delete(line.id);
+		renderNotes();
 		try {
 			const res = await fetch(`/assist?${query}`, { method: "POST", headers: { "content-type": "application/json" }, body: askBody(question, { lineId: line.id, picked }), cache: "no-store", signal: AbortSignal.timeout(DEFAULT_ACK_TIMEOUT_MS) });
 			if (res.status === 401) setStatus("expired");
-			else if (!res.ok) setSay("rejected", res.status, "简报官没有收到，请稍后再试。");
+			else if (res.status === 400) askProblem.set(line.id, "这句话太早了，宿主已经找不到它，简报官没法针对它回答。");
+			else if (!res.ok) askProblem.set(line.id, "简报官没有收到，请稍后再试。");
 		} catch {
-			setSay("rejected", undefined, "简报官没有收到，请检查网络后再试。");
+			askProblem.set(line.id, "简报官没有收到，请检查网络后再试。");
+		} finally {
+			asking.delete(key);
+			renderNotes();
 		}
 	};
 
@@ -818,7 +833,10 @@ function mount(doc) {
 	/** @type {HTMLAudioElement | null} */
 	let audio = null;
 	/** The note being read aloud. `run` changes on every start and stop, so a stale loop knows to end. */
-	const player = { id: /** @type {string | null} */ (null), state: /** @type {"idle" | "playing" | "paused"} */ ("idle"), run: 0, local: false, finish: /** @type {((played: boolean) => void) | null} */ (null) };
+	const player = { id: /** @type {string | null} */ (null), state: /** @type {"idle" | "playing" | "paused"} */ ("idle"), run: 0, local: false, finish: /** @type {((played: boolean) => void) | null} */ (null), resumed: /** @type {(() => void) | null} */ (null) };
+
+	/** Resolves when the reader may start the next sentence: at once unless paused, then on 继续 or 停止. */
+	const notPaused = () => (player.state === "paused" ? new Promise((done) => (player.resumed = () => ((player.resumed = null), done(undefined)))) : Promise.resolve());
 
 	const unlockAudio = () => {
 		audio ??= new Audio();
@@ -831,8 +849,11 @@ function mount(doc) {
 		player.id = null;
 		player.state = "idle";
 		audio?.pause();
+		// A paused device voice stays paused after cancel(), and every later speak() is silent.
+		globalThis.speechSynthesis?.resume();
 		globalThis.speechSynthesis?.cancel();
 		player.finish?.(false);
+		player.resumed?.();
 		renderNotes();
 	};
 
@@ -847,7 +868,8 @@ function mount(doc) {
 	const resumePlayer = () => {
 		if (player.state !== "paused") return;
 		player.state = "playing";
-		if (player.local) globalThis.speechSynthesis?.resume();
+		if (player.resumed) player.resumed();
+		else if (player.local) globalThis.speechSynthesis?.resume();
 		else audio?.play().catch(() => player.finish?.(false));
 		renderNotes();
 	};
@@ -903,9 +925,17 @@ function mount(doc) {
 				if (url) URL.revokeObjectURL(url);
 				break;
 			}
+			// A pause pressed while this sentence was being fetched holds it until 继续.
+			await notPaused();
+			if (run !== player.run) {
+				if (url) URL.revokeObjectURL(url);
+				break;
+			}
 			const played = url ? await playUrl(url) : false;
 			if (url) URL.revokeObjectURL(url);
 			if (run !== player.run || played) continue;
+			await notPaused();
+			if (run !== player.run) break;
 			player.local = true;
 			await speakLocally(chunks[i]);
 			player.local = false;
@@ -951,7 +981,9 @@ function mount(doc) {
 		if (n.state === "done") {
 			const play = noteButton(PLAY_LABEL[player.id === n.id ? player.state : "idle"], () => togglePlay(n));
 			play.className = "note-play";
-			acts.append(play, noteButton("再问", () => {
+			acts.append(play);
+			if (player.id === n.id) acts.append(noteButton("■ 停止", stopPlayer));
+			acts.append(noteButton("再问", () => {
 				followUpOpen = followUpOpen === n.id ? null : n.id;
 				folded.delete(n.id);
 				renderNotes();
@@ -973,6 +1005,8 @@ function mount(doc) {
 			const box = /** @type {HTMLTextAreaElement} */ (el("textarea", ""));
 			box.rows = 2;
 			box.placeholder = "接着问，例如：那对我有什么影响？";
+			box.value = drafts.get(n.id) ?? "";
+			box.addEventListener("input", () => drafts.set(n.id, box.value));
 			const send = el("button", "", "问");
 			send.type = "submit";
 			form.append(box, send);
@@ -981,6 +1015,7 @@ function mount(doc) {
 				e.preventDefault();
 				const question = box.value.trim();
 				if (!question || !line) return;
+				drafts.delete(n.id);
 				followUpOpen = null;
 				renderNotes();
 				void askNow(line, n.about?.picked ?? null, question);
@@ -1002,6 +1037,9 @@ function mount(doc) {
 	/** The briefer's notes under their lines. Only a note that changed is rebuilt, so a selection or focus elsewhere survives. */
 	const renderNotes = () => {
 		if (player.id && !view.assistant.has(player.id)) stopPlayer();
+		for (const id of notesShown.keys()) if (!view.assistant.has(id)) notesShown.delete(id);
+		// A 再问 box being typed into is rebuilt when its note changes; put the caret back.
+		const typing = /** @type {HTMLElement | null} */ (doc.activeElement)?.closest?.(".note-again") ? /** @type {HTMLElement} */ (doc.activeElement).closest(".note")?.getAttribute("data-id") : null;
 		for (const slot of /** @type {NodeListOf<HTMLElement>} */ (thread.querySelectorAll(".notes[data-line]"))) {
 			const notes = notesFor(view, slot.dataset.line ?? "");
 			const ids = notes.map((n) => n.id).join();
@@ -1014,9 +1052,7 @@ function mount(doc) {
 						return node;
 					}),
 				);
-				continue;
-			}
-			for (const n of notes) {
+			} else for (const n of notes) {
 				const shown = notesShown.get(n.id);
 				const key = noteKey(n);
 				if (shown?.key === key && shown.node.isConnected) continue;
@@ -1025,6 +1061,23 @@ function mount(doc) {
 				else slot.append(node);
 				if (shown && shown.node.classList.contains("streaming") && n.state !== "streaming") $("notes-live").textContent = n.state === "done" ? `${n.expert}答完了` : `${n.expert}没答上来`;
 				notesShown.set(n.id, { node, key });
+			}
+			const lineId = slot.dataset.line ?? "";
+			const status = [...asking].some((k) => k.startsWith(`${lineId}\u0000`)) ? "正在问简报官…" : (askProblem.get(lineId) ?? "");
+			let statusNode = /** @type {HTMLElement | null} */ (slot.querySelector(":scope > .note-status"));
+			if (!status) statusNode?.remove();
+			else {
+				if (!statusNode) slot.append((statusNode = el("div", "note-status")));
+				else slot.append(statusNode);
+				statusNode.textContent = status;
+				statusNode.classList.toggle("problem", askProblem.has(lineId) && !status.startsWith("正在"));
+			}
+		}
+		if (typing) {
+			const box = /** @type {HTMLTextAreaElement | null} */ (thread.querySelector(`.note[data-id="${typing}"] textarea`));
+			if (box && doc.activeElement !== box) {
+				box.focus();
+				box.setSelectionRange(box.value.length, box.value.length);
 			}
 		}
 	};
@@ -1230,7 +1283,12 @@ function mount(doc) {
 			renderStepsIfMoved();
 		},
 		header: renderHeader,
-		assistant: () => renderNotes(),
+		assistant: () => {
+			const box = $("conversation");
+			const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+			renderNotes();
+			if (atBottom) box.scrollTop = box.scrollHeight;
+		},
 	};
 
 	/** @param {string} reportId @param {number} option */
@@ -1393,9 +1451,9 @@ function mount(doc) {
 	$("quote-cancel").addEventListener("click", () => setQuote(null));
 	// Space plays or pauses the note being read, unless the user is typing or on a button, where Space has its own job.
 	doc.addEventListener("keydown", (e) => {
-		if (e.code !== "Space" || !player.id || e.repeat) return;
+		if (e.code !== "Space" || !player.id || e.repeat || e.defaultPrevented) return;
 		const target = /** @type {HTMLElement} */ (e.target);
-		if (target.closest("input, textarea, button, select, [contenteditable]")) return;
+		if (target.closest("input, textarea, button, select, a, [contenteditable], [role=button], [tabindex]")) return;
 		e.preventDefault();
 		if (player.state === "playing") pausePlayer();
 		else resumePlayer();

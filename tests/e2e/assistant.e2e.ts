@@ -98,6 +98,7 @@ test("简报官朗读：批注上「▶ 朗读」按句交给宿主合成（先�
 			router: [
 				on("Router 回答 DIA 波动率", /^\[对话\][\s\S]*DIA 波动率贵不贵/, (c) => [reply(c, REPLY)]),
 				on("简报官讲整句", /^\[使用者在对话里点了一句话来问\][\s\S]*这句话是什么意思/, () => "**DIA** 的 IV Rank 是 71%。\n\n这说明期权偏贵。"),
+				on("简报官再讲一遍", /^\[使用者在对话里点了一句话来问\][\s\S]*问题：再说一遍/, () => "第二遍：近期贵。\n\n远期便宜。"),
 			],
 		},
 		async ({ step }) => {
@@ -110,10 +111,14 @@ test("简报官朗读：批注上「▶ 朗读」按句交给宿主合成（先�
 				await page.evaluate(() => {
 					const w = window as unknown as { heard: { ended: number; local: number } };
 					w.heard = { ended: 0, local: 0 };
-					// The page's audio element is not in the document, so its ended events are counted where it starts playing.
+					// The page's audio element is not in the document, so its ended events are counted on the element itself, once per element.
+					const watched = new WeakSet<HTMLMediaElement>();
 					const play = HTMLMediaElement.prototype.play;
 					HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
-						if (this.src.startsWith("blob:")) this.addEventListener("ended", () => w.heard.ended++, { once: true });
+						if (!watched.has(this)) {
+							watched.add(this);
+							this.addEventListener("ended", () => this.src.startsWith("blob:") && w.heard.ended++);
+						}
 						return play.call(this);
 					};
 					const speak = speechSynthesis.speak.bind(speechSynthesis);
@@ -130,10 +135,31 @@ test("简报官朗读：批注上「▶ 朗读」按句交给宿主合成（先�
 				assert.deepEqual(said(), ["D I A 的 I V 排名 是 71%。", "这说明期权偏贵。"]);
 				assert.deepEqual(await page.evaluate(() => (window as unknown as { heard: unknown }).heard), { ended: 2, local: 0 }, "两句都由宿主的音频放完，没有退回本机朗读");
 			});
-			await step("再读一次：两句都在缓存里，不再合成", async (page) => {
+			await step("再读一次：两句都在缓存里，不再合成；读的时候点「■ 停止」，回到「▶ 朗读」", async (page) => {
 				await play(page).click();
-				await play(page).filter({ hasText: "▶ 朗读" }).waitFor({ timeout: 15_000 });
+				await play(page).filter({ hasText: "⏸ 暂停" }).waitFor();
+				await notes(page).first().locator(".note-acts button", { hasText: "■ 停止" }).click();
+				await play(page).filter({ hasText: "▶ 朗读" }).waitFor();
 				assert.equal(said().length, 2);
+			});
+			await step("刚点「朗读」、第一句还在合成时就按暂停：合成回来也不出声，按「继续」才读，两句读完", async (page) => {
+				await page.evaluate(() => ((window as unknown as { heard: { ended: number } }).heard.ended = 0));
+				await page.locator("#composer").fill("");
+				const fresh = notes(page).first();
+				await fresh.locator(".note-acts button", { hasText: "再问" }).click();
+				await fresh.locator("textarea").fill("再说一遍");
+				await fresh.locator("textarea").press("Enter");
+				const again = notes(page).filter({ hasText: "第二遍" });
+				await again.waitFor();
+				const againPlay = again.locator(".note-play");
+				await againPlay.click();
+				await againPlay.click();
+				await againPlay.filter({ hasText: "▶ 继续" }).waitFor();
+				await page.waitForTimeout(1500);
+				assert.equal(await page.evaluate(() => (window as unknown as { heard: { ended: number } }).heard.ended), 0, "暂停时没有出声");
+				await againPlay.click();
+				await againPlay.filter({ hasText: "▶ 朗读" }).waitFor({ timeout: 15_000 });
+				assert.equal(await page.evaluate(() => (window as unknown as { heard: { ended: number } }).heard.ended), 2);
 			});
 		},
 		{ env: { PSA_TTS_COMMAND: JSON.stringify([process.execPath, join(import.meta.dirname, "fake-tts.mjs")]), PSA_TTS_LOG: log }, files: { "pronounce.json": JSON.stringify({ DIA: "D I A" }) } },
