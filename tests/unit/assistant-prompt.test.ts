@@ -31,3 +31,9 @@ test("提问卡片：选中的字、那句话是谁说的、前后几句和问�
 test("提问卡片：没有点哪句话时只有问题", () => {
 	assert.equal(questionCard({ question: "什么是跳空？" }), "问题：什么是跳空？");
 });
+
+test("讲法（使用者 2026-11-18 定）：先一句大白话说是什么，再打一个生活里的比方，只挑原句里最关键的一两个数字说意味着什么；不逐条复述、不列清单，150 字左右", () => {
+	const prompt = assistantSystemPrompt(OPTION);
+	for (const part of ["大白话", "比方", "一两个", "不逐条复述", "150 字"]) assert.ok(prompt.includes(part), part);
+	assert.ok(!prompt.includes("300 字"));
+});

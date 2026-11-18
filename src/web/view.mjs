@@ -439,7 +439,7 @@ function moduleCard(m, now) {
 	};
 }
 
-/** @typedef {"today" | "sources" | "modules" | "done" | "assistant"} OverviewTab */
+/** @typedef {"today" | "sources" | "modules" | "done"} OverviewTab */
 
 /** A phone shows one screen at a time; the bottom bar picks one. @typedef {"todo" | "chat" | "overview"} Place */
 
@@ -449,7 +449,7 @@ function moduleCard(m, now) {
  * @typedef {{ showing: OverviewTab | "task", task: string | null, last: OverviewTab, flash: string | null, place: Place, dot: boolean }} Panel
  */
 
-/** `ask`: 问简报官 on a conversation line opens the assistant (ADR-0033). @typedef {{ kind: "pick", tab: OverviewTab | "task" } | { kind: "open", ticketId: string } | { kind: "close" } | { kind: "alert", lineId: string, ticketId?: string, phone?: boolean } | { kind: "place", place: Place } | { kind: "ask" }} PanelEvent */
+/** @typedef {{ kind: "pick", tab: OverviewTab | "task" } | { kind: "open", ticketId: string } | { kind: "close" } | { kind: "alert", lineId: string, ticketId?: string, phone?: boolean } | { kind: "place", place: Place }} PanelEvent */
 
 /** @returns {Panel} */
 export const firstPanel = () => ({ showing: "today", task: null, last: "today", flash: null, place: "todo", dot: false });
@@ -475,12 +475,10 @@ export function panelStep(panel, event) {
 		}
 		case "place":
 			return { ...panel, place: event.place, showing: panel.showing === "task" ? panel.last : panel.showing, dot: event.place === "overview" ? false : panel.dot };
-		case "ask":
-			return { ...panel, showing: "assistant", last: "assistant", flash: null, place: "overview", dot: false };
 	}
 }
 
-const OVERVIEW_TABS = ["today", "sources", "modules", "done", "assistant"];
+const OVERVIEW_TABS = ["today", "sources", "modules", "done"];
 
 /** @param {Panel} panel */
 export const panelText = (panel) => JSON.stringify({ showing: panel.showing, task: panel.task, last: panel.last });
@@ -510,7 +508,6 @@ export function overviewTabs(view, panel) {
 		["sources", "来源", view.watching.length],
 		["modules", "模块", view.modules.length],
 		["done", "已完成", view.rows.filter((r) => groupOf(r) === "done").length],
-		["assistant", "简报官", [...view.assistant.values()].filter((l) => l.role === "assistant" && l.state === "done").length],
 	];
 	const tabs = overview.map(([key, label, count]) => ({ key, label, count, selected: panel.showing === key }));
 	return panel.task ? [{ key: "task", label: `任务 #${shortId(panel.task)}`, count: null, selected: panel.showing === "task" }, ...tabs] : tabs;
@@ -1399,3 +1396,6 @@ export function speechChunks(markdown) {
 	}
 	return sentences.flatMap(splitLong);
 }
+
+/** The briefer's answers about one conversation line, oldest first: the page shows them as notes under it (ADR-0033). @param {View} view @param {string} lineId */
+export const notesFor = (view, lineId) => [...view.assistant.values()].filter((l) => l.role === "assistant" && l.about?.lineId === lineId);

@@ -111,3 +111,11 @@ test("关掉简报官（宿主停机）：会话都关掉", async () => {
 
 const _typecheck: AssistantLine | undefined = undefined;
 void _typecheck;
+
+test("第一版建的表没有 question 列：升级后补上，旧的问答照常读出来", () => {
+	const db = openStore(":memory:");
+	db.exec("CREATE TABLE assistant_lines (id TEXT PRIMARY KEY, seq INTEGER NOT NULL, role TEXT NOT NULL, at INTEGER NOT NULL, expert TEXT NOT NULL, text TEXT NOT NULL, state TEXT NOT NULL, about TEXT)");
+	db.prepare("INSERT INTO assistant_lines VALUES ('a1', 1, 'assistant', 1, '简报官', '旧回答', 'done', NULL)").run();
+	const assistant = new Assistant({ db, open: async () => fakeSession("s", []), publish: () => {}, log: () => {}, now: () => 1 });
+	assert.deepEqual(assistant.lines().map((l) => [l.text, l.question]), [["旧回答", undefined]]);
+});

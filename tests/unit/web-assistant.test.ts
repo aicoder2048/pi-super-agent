@@ -16,20 +16,24 @@ test("简报官（ADR-0033）：快照带来问答；新帧按编号更新正在
 	assert.equal(view.assistant.size, 0);
 });
 
-test("简报官：没有简报官的宿主发来的快照不带 assistant，页面照常，简报官页是空的", () => {
+test("简报官：没有简报官的宿主发来的快照不带 assistant，页面照常，没有批注", () => {
 	const view = page.emptyView();
 	page.applyMessage(view, snapshot(), 0);
 	assert.equal(view.assistant.size, 0);
 });
 
-test("右栏多一个「简报官」标签，数字是答完的回答条数；点「问简报官」切到简报官页，手机上切到概况", () => {
+test("批注（ADR-0033）：一句话下面挂着关于它的回答，按先后；问题行和关于别的句子的回答都不算", () => {
 	const view = page.emptyView();
-	page.applyMessage(view, snapshot([line("q1", "user", "?"), line("a1", "assistant", "好")]), 0);
-	const tab = page.overviewTabs(view, page.firstPanel()).find((t) => t.key === "assistant");
-	assert.deepEqual(tab && { label: tab.label, count: tab.count }, { label: "简报官", count: 1 });
-	const asked = page.panelStep({ ...page.firstPanel(), place: "chat" }, { kind: "ask" });
-	assert.deepEqual([asked.showing, asked.last, asked.place], ["assistant", "assistant", "overview"]);
-	assert.equal(page.savedPanel(page.panelText(asked), new Set()).showing, "assistant");
+	const about = (lineId: string) => ({ lineId, text: "原句" });
+	page.applyMessage(view, snapshot([
+		{ ...line("q1", "user", "?"), about: about("rpl_1") },
+		{ ...line("a1", "assistant", "第一条"), about: about("rpl_1") },
+		{ ...line("a2", "assistant", "别的句子"), about: about("rpl_2") },
+		{ ...line("a3", "assistant", "第二条"), about: about("rpl_1") },
+		line("a4", "assistant", "不针对句子"),
+	]), 0);
+	assert.deepEqual(page.notesFor(view, "rpl_1").map((l) => l.text), ["第一条", "第二条"]);
+	assert.deepEqual(page.notesFor(view, "rpl_9"), []);
 });
 
 test("问简报官 预填的问题：选了字问这几个字在这句话里指什么；没选字问整句", () => {

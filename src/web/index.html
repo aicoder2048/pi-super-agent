@@ -160,29 +160,29 @@
 		.tab-close { width: 26px; height: 26px; border: 0; background: none; color: var(--muted); font-size: 15px; line-height: 1; border-radius: 6px; }
 		.tab-close:hover { color: var(--ink); background: var(--track); }
 		.pane { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
-		#assistant { gap: 10px; }
-		.as-head { display: flex; align-items: baseline; gap: 8px; }
-		#assistant-clear { margin-left: auto; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
-		#assistant-lines { flex: 1; display: flex; flex-direction: column; gap: 12px; }
-		#assistant-lines .empty { color: var(--muted); font-size: 13px; }
-		.as-q { align-self: flex-end; max-width: 92%; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-		.as-q .bubble { background: var(--accent); color: #fff; border-radius: 14px 14px 4px 14px; padding: 8px 12px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
-		.as-q .quoted { font-size: 11px; }
-		.as-a { display: flex; flex-direction: column; gap: 4px; }
-		.as-a .who { font-size: 12px; color: var(--muted); }
-		.as-a .bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; padding: 8px 12px; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
-		.as-a.streaming .bubble::after { content: "▍"; color: var(--muted); }
-		.as-a.failed .bubble { color: var(--warn-ink); }
-		.as-acts { display: flex; gap: 12px; }
-		.as-acts button { padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; }
-		.as-acts button:hover { color: var(--accent-ink); text-decoration: underline; }
-		#assistant-form { position: sticky; bottom: -18px; background: var(--bg); padding: 8px 0 0; }
-		.as-compose { display: flex; gap: 8px; align-items: flex-end; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px 8px 8px 12px; }
-		#assistant-input { flex: 1; border: 0; outline: none; resize: none; font: inherit; font-size: 13px; line-height: 1.5; background: transparent; color: var(--ink); max-height: 25vh; }
-		#assistant-send { flex: none; min-height: 36px; padding: 0 14px; border-radius: 10px; border: 0; background: var(--accent); color: #fff; font-weight: 600; }
-		#assistant-send:disabled { opacity: 0.6; }
-		#assistant-status { font-size: 12px; color: var(--warn-ink); min-height: 0; }
-		#assistant-about-cancel { flex: none; margin-left: 6px; padding: 0 4px; border: 0; background: none; font-size: 12px; line-height: 1.5; color: var(--muted); }
+		.line:has(> .notes:not(:empty)) { flex-wrap: wrap; }
+		.line > .notes { flex: 1 0 100%; display: flex; flex-direction: column; gap: 8px; margin-top: 14px; padding-left: 42px; }
+		.line.user > .notes { padding: 0 42px 0 0; }
+		.line > .notes:empty { display: none; }
+		.line.user > .notes { align-items: flex-end; }
+		.note { width: min(100%, 640px); margin-top: 6px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--panel); padding: 8px 12px 10px; font-size: 13px; line-height: 1.7; text-align: left; }
+		.note.failed { border-left-color: var(--warn-ink); }
+		.note-head { display: flex; align-items: baseline; gap: 10px; font-size: 12px; color: var(--muted); }
+		.note-who { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+		.note-acts { display: flex; gap: 12px; flex: none; }
+		.note-acts button { padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; }
+		.note-acts button:hover { color: var(--accent-ink); text-decoration: underline; }
+		.note-acts .note-play { color: var(--accent-ink); font-weight: 600; }
+		.note-q { margin-top: 4px; font-size: 12px; color: var(--muted); }
+		.note-body { margin-top: 4px; color: var(--ink); overflow-wrap: anywhere; }
+		.note.streaming .note-body::after { content: "▍"; color: var(--muted); }
+		.note.failed .note-body { color: var(--warn-ink); }
+		.note.folded { padding-bottom: 8px; }
+		.note-status { font-size: 12px; color: var(--muted); }
+		.note-status.problem { color: var(--warn-ink); }
+		.note-again { display: flex; gap: 8px; align-items: flex-end; margin-top: 8px; }
+		.note-again textarea { flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; background: var(--bg); color: var(--ink); resize: none; }
+		.note-again button { flex: none; min-height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; }
 		#ask-pick { position: fixed; z-index: 30; padding: 4px 10px; border-radius: 8px; border: 0; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; box-shadow: var(--shadow); }
 		#ask-pick[hidden] { display: none; }
 		.pane[hidden] { display: none; }
@@ -450,22 +450,9 @@
 			<section id="sources" class="pane" role="tabpanel" aria-labelledby="tab-sources" hidden></section>
 			<section id="modules" class="pane" role="tabpanel" aria-labelledby="tab-modules" hidden></section>
 			<section id="done" class="pane" role="tabpanel" aria-labelledby="tab-done" hidden></section>
-			<section id="assistant" class="pane" role="tabpanel" aria-labelledby="tab-assistant" hidden>
-				<div class="as-head"><span class="label">简报官 · 讲解对话里看不懂的词句</span><button id="assistant-clear" type="button">清空</button></div>
-				<div id="assistant-lines"></div>
-				<div id="assistant-live" class="sr" aria-live="polite"></div>
-				<form id="assistant-form" autocomplete="off">
-					<div id="assistant-about" class="quote-strip" hidden><span class="quote-who">关于：</span><span class="quote-text"></span><button id="assistant-about-cancel" type="button" aria-label="不针对这句话">✕</button></div>
-					<div class="as-compose">
-						<label for="assistant-input" class="sr">问简报官</label>
-						<textarea id="assistant-input" rows="2" placeholder="问简报官一个词或一句话，例如：什么是 IV Rank？"></textarea>
-						<button id="assistant-send" type="submit">问</button>
-					</div>
-					<div id="assistant-status" role="status"></div>
-				</form>
-			</section>
 		</aside>
 		<button id="ask-pick" type="button" hidden>问简报官</button>
+		<div id="notes-live" class="sr" aria-live="polite"></div>
 	</div>
 	<nav id="bottom" aria-label="切换屏幕">
 		<button type="button" data-place="todo"><span class="icon" data-icon="inbox"></span>待办<span class="badge"></span></button>

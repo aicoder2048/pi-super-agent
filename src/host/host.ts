@@ -530,6 +530,7 @@ export class Host {
 		const at = about.lineId === undefined ? -1 : lines.findIndex((l) => l.id === about.lineId);
 		if (about.lineId !== undefined && at < 0) return null;
 		const said = (l: (typeof lines)[number]): Said => ({ who: l.who, text: l.text });
+		const saidLine = (l: (typeof lines)[number]) => ({ ...said(l), id: l.id });
 		const line = at < 0 ? undefined : lines[at]!;
 		const ticketId = line === undefined ? undefined : ("ticketId" in line && line.ticketId) || this.kernel.conversationRoutes(ASK_LINES)[line.id]?.ticketId;
 		// A module's alert or receipt names the module by its title only.
@@ -537,7 +538,7 @@ export class Host {
 		const domain = ticketId ? (this.kernel.getTicket(ticketId)?.domain ?? null) : (fromModule ?? null);
 		const around = line === undefined ? [] : [...lines.slice(Math.max(0, at - 3), at), ...lines.slice(at + 1, at + 2)].filter((l) => l.who === "user" || l.who === "router").map(said);
 		const expert = this.#assistant.expertFor(domain);
-		return this.#assistant.core.ask({ question, ...(about.picked && { picked: about.picked }), ...(line && { line: said(line), around }) }, expert);
+		return this.#assistant.core.ask({ question, ...(about.picked && { picked: about.picked }), ...(line && { line: saidLine(line), around }) }, expert);
 	}
 
 	clearAssistant(): void {

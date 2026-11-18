@@ -152,5 +152,8 @@ export type AssistantLine = {
 	expert: string;
 	text: string;
 	state: "streaming" | "done" | "failed";
-	about?: { picked?: string; text: string };
+	/** `lineId` places an answer under its conversation line on the page. */
+	about?: { lineId?: string; picked?: string; text: string };
+	/** On an answer: the question it answers. */
+	question?: string;
 };
