@@ -43,6 +43,8 @@ test("Gamma 区：3 天内到期、行权价离正股不到 3% 的腿列出来�
 	assert.equal(out.legs_expired, 2);
 	const only = portfolioGreeks([leg({ dte: 0, strike: 101, contracts: 1 })], 100);
 	assert.equal(only.status === "OK" && only.delta_shares, 100, "卖出价内 put 当天到期：-1 × -100 股");
+	const call = portfolioGreeks([leg({ dte: 0, type: "call", action: "buy", strike: 99, contracts: 1 }), leg({ dte: 0, type: "call", action: "buy", strike: 101, contracts: 1 })], 100);
+	assert.equal(call.status === "OK" && call.delta_shares, 100, "买入价内 call 记 +1、价外记 0");
 });
 
 test("有腿没有 IV：回 PARTIAL，整单的数都不回，不把价差算成裸卖", () => {
