@@ -56,6 +56,19 @@ const bf = {
 	[barUrl(occ("2025-12-15", 680), "2025-11-24")]: optBar("2025-11-24", 9),
 };
 write("backfill-new-symbol", { now: iso(D, "16:40"), settings: { requestsPerTick: 15 }, responses: bf });
+// 按 2025-12-01 QQQ 的实测应答缩写：不带 as_of 的列表把那天还没挂牌的 12-22 周一到期也列出来，日线一根没有；那天挂牌的最近到期日是 12-26
+const Q = "2025-12-01";
+const qocc = (exp, k) => occ(exp, k).replace("O:SPY", "O:QQQ");
+const qcontract = (exp, k) => ({ ...contract(exp, k), ticker: qocc(exp, k), underlying_ticker: "QQQ" });
+const qcontracts = (extra) => `${B}/v3/reference/options/contracts?underlying_ticker=QQQ&contract_type=put&expiration_date.gte=2025-12-22&expiration_date.lte=2026-01-15&strike_price.gte=579.50&strike_price.lte=640.50${extra}&sort=expiration_date&order=asc&limit=250`;
+const qqq = {
+	[underlyingUrl(Q, D).replace("/SPY/", "/QQQ/")]: { ...stockBars({ [Q]: 610, "2025-12-02": 612 }), ticker: "QQQ" },
+	[qcontracts("&expired=true")]: list([610, 609, 611, 608].map((k) => qcontract("2025-12-22", k)).concat([qcontract("2025-12-26", 610)])),
+	...Object.fromEntries([610, 609, 611, 608].map((k) => [barUrl(qocc("2025-12-22", k), Q), optBar(Q, null)])),
+	[qcontracts(`&as_of=${Q}`)]: list([qcontract("2025-12-26", 610), qcontract("2025-12-26", 609), qcontract("2025-12-26", 611), qcontract("2025-12-31", 610)]),
+	[barUrl(qocc("2025-12-26", 610), Q)]: optBar(Q, 6.4),
+};
+write("backfill-unlisted-expiration", { now: iso(D, "16:40"), rows: { watchlist: [{ ...watch[0], fields: { ...watch[0].fields, symbol: "QQQ" } }] }, cursor: cursor({ QQQ: "2025-11-28" }), settings: { requestsPerTick: 10 }, responses: qqq });
 write("backfill-no-bars", { now: iso(D, "16:40"), responses: { [underlyingUrl(start, D)]: stockBars({}) } });
 // 429 和 5xx
 write("http-429", { now: iso(D, "16:40"), cursor: cursor({ SPY: "2026-11-18" }), responses: { [underlyingUrl(D, D)]: stockBars({ [D]: 740 }), [contractsUrl(D, 740, false)]: { status: 429, headers: { "retry-after": "30" }, body: { status: "ERROR", error: "too many requests" } } } });

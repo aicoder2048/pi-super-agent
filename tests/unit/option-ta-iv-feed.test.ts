@@ -101,3 +101,8 @@ test("要存的日子里一根正股日线都没有：不写一整年的无数�
 	assert.equal(output.problem?.id, "no-bars");
 	assert.deepEqual(done(output), {});
 });
+
+test("回填只看那天已挂牌的合约：最近的到期日那天还没挂牌，就用挂牌了的最近到期日，不记无数据", async () => {
+	const { output } = await replay("iv", "backfill-unlisted-expiration");
+	assert.deepEqual(output.records.map((r: Record<string, unknown>) => [r.trade_date, r.data_status, r.option_symbol ?? null, r.contract_close ?? null]), [["2025-12-01", "ok", "O:QQQ251226P00610000", 6.4]]);
+});
