@@ -123,11 +123,11 @@ function seed(lastIv = 0.3, last = "2026-11-18") {
 const EARNINGS = "https://finnhub.io/api/v1/calendar/earnings?from=2026-11-18&to=2027-03-18&symbol=SPY";
 const earnings = (date: string | null) => (r: Record<string, unknown>) => (r[EARNINGS] = { earningsCalendar: date === null ? [] : [{ symbol: "SPY", date, epsActual: null }] });
 
-test("feed：收盘 45 分钟后发 SPY 偏贵（静音，写到期前有财报会坍塌）、VIX 上穿 35（响铃）、倒挂（静音）；再跑一次不重发", async () => {
+test("feed：收盘 45 分钟后发 SPY 偏贵（响铃，写到期前有财报会坍塌）、VIX 上穿 35（响铃）、倒挂（静音）；再跑一次不重发", async () => {
 	seed();
 	const first = await replay("vol-alerts", "no-history", { respond: earnings("2026-12-10") });
 	const alerts = first.output.alerts as { id: string; text: string; push?: string }[];
-	assert.deepEqual(alerts.map((a) => [a.id, a.push ?? "bell"]), [["vix-35:2026-11-18", "bell"], ["vix-inverted:2026-11-18", "silent"], ["iv-rich:SPY:2026-11-18", "silent"]]);
+	assert.deepEqual(alerts.map((a) => [a.id, a.push ?? "bell"]), [["vix-35:2026-11-18", "bell"], ["vix-inverted:2026-11-18", "silent"], ["iv-rich:SPY:2026-11-18", "bell"]]);
 	const rich = alerts.at(-1)!.text;
 	assert.match(rich, /^SPY 期权偏贵：2026-11-18 收盘 IV 30%/);
 	assert.match(rich, /到 2026-12-18 到期前有财报（2026-12-10），这段高 IV 多半是财报撑的/);
