@@ -72,6 +72,7 @@ export default async function vix(input: Input) {
 	const fetchedAt = new Date(tickMs).toISOString();
 	const records: Row[] = [];
 	let problem: Problem | undefined;
+	let failed = false;
 	try {
 		for (const index of due) {
 			let closes;
@@ -91,6 +92,7 @@ export default async function vix(input: Input) {
 		cursor.failures = 0;
 	} catch (error) {
 		if (!(error instanceof CboeError)) throw error;
+		failed = true;
 		cursor.failures++;
 		if (cursor.failures >= FAILURES_BEFORE_PROBLEM) problem = failing(error.message);
 	}
@@ -103,7 +105,8 @@ export default async function vix(input: Input) {
 		return d;
 	};
 	const overdue = VIX_INDICES.filter((index) => (cursor.done[index] ?? "") < target).map((index) => ({ index, date: firstMissing(index) })).filter((m) => tickMs > closeOf(m.date) + LATE_MS);
-	if (problem === undefined && overdue.length > 0) {
+	// A failed request is not CBOE being late; it is counted above and reported after three in a row.
+	if (!failed && overdue.length > 0) {
 		const oldest = overdue.map((m) => m.date).sort()[0]!;
 		problem = late(oldest, overdue.filter((m) => m.date === oldest).map((m) => m.index));
 	}

@@ -115,6 +115,12 @@ test("vix feed：一个指数取到、下一个失败时，取到的行照存、
 	assert.equal(JSON.parse(ok.output.cursor).failures, 0);
 });
 
+test("vix feed：这次取数失败时不报 not-ready（那是取不到，不是 CBOE 没出），只记失败次数", async () => {
+	const { output } = await replay("vix", "http-5xx-third-beat", { change: (input) => ((input.now = "2026-11-20T22:00:00.000Z"), (input.cursor = JSON.stringify({ done: { VIX: "2026-11-16", VIX9D: "2026-11-16", VIX3M: "2026-11-16" }, failures: 0 }))) });
+	assert.equal(output.problem, undefined);
+	assert.equal(JSON.parse(output.cursor).failures, 1);
+});
+
 test("vix feed：缺的那天一直没补上，下一个交易日收盘后 not-ready 也不断，日期仍写缺的那天", async () => {
 	const { output } = await replay("vix", "not-published", { change: (input) => (input.now = "2026-11-18T22:00:00.000Z") });
 	assert.equal(output.problem?.id, "not-ready");
