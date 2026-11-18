@@ -39,6 +39,7 @@
 
 - 过滤参数实测可用：`underlying_ticker`、`expiration_date`、`contract_type`、`strike_price`、`strike_price.gte/.lte`、`limit`、`expired=true`。
 - 已到期的合约要带 `expired=true` 才查得到（样本 `contracts-spy-expired.json`）。
+- 补记（2026-11-17，iv 回填修复时实测）：不带 `as_of` 的列表含某天之后才挂牌的合约。QQQ 2025-12-01、到期 12-22 到 01-15 的 put，不带 `as_of` 时最前面是 12-22（周一）到期，它 12-08 才有第一根日线；带 `as_of=2025-12-01` 只列 12-26、12-31、01-02、01-09 四个当天挂牌的到期日，这时 `expired=true` 回空，`expired` 按 `as_of` 那天算。
 
 ### 期权链快照 `/v3/snapshot/options/<标的>`
 

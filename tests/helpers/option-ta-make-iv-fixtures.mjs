@@ -8,18 +8,21 @@ const B = "https://api.massive.com";
 const ny = (date, hm) => { const [h, m] = hm.split(":").map(Number); return Date.parse(`${date}T00:00:00Z`) + (h + 5) * 3600e3 + m * 60e3; };
 const iso = (date, hm) => new Date(ny(date, hm)).toISOString();
 const shift = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
-const occ = (exp, k) => `O:SPY${exp.slice(2).replaceAll("-", "")}P${String(Math.round(k * 1000)).padStart(8, "0")}`;
-const watch = [{ id: "1", from: "fictional-fixture", fields: { symbol: "SPY", added_at: "2026-11-19T21:00:00.000Z" } }];
-const stockBars = (bars) => ({ ticker: "SPY", adjusted: false, results: Object.entries(bars).map(([d, c]) => ({ o: c, h: c, l: c, c, v: 1000000, t: ny(d, "00:00") })), status: "OK" });
-const underlyingUrl = (from, to) => `${B}/v2/aggs/ticker/SPY/range/1/day/${from}/${to}?adjusted=false&sort=asc&limit=50000`;
+const occ = (exp, k, root = "SPY") => `O:${root}${exp.slice(2).replaceAll("-", "")}P${String(Math.round(k * 1000)).padStart(8, "0")}`;
+const watching = (symbol) => [{ id: "1", from: "fictional-fixture", fields: { symbol, added_at: "2026-11-19T21:00:00.000Z" } }];
+const watch = watching("SPY");
+const stockBars = (bars, ticker = "SPY") => ({ ticker, adjusted: false, results: Object.entries(bars).map(([d, c]) => ({ o: c, h: c, l: c, c, v: 1000000, t: ny(d, "00:00") })), status: "OK" });
+const underlyingUrl = (from, to, symbol = "SPY") => `${B}/v2/aggs/ticker/${symbol}/range/1/day/${from}/${to}?adjusted=false&sort=asc&limit=50000`;
 const band = (spot) => [(spot * 0.95).toFixed(2), (spot * 1.05).toFixed(2)];
-const contractsUrl = (d, spot, expired) => { const [lo, hi] = band(spot); return `${B}/v3/reference/options/contracts?underlying_ticker=SPY&contract_type=put&expiration_date.gte=${shift(d, 21)}&expiration_date.lte=${shift(d, 45)}&strike_price.gte=${lo}&strike_price.lte=${hi}${expired ? "&expired=true" : ""}&sort=expiration_date&order=asc&limit=250`; };
-const contract = (exp, k) => ({ ticker: occ(exp, k), underlying_ticker: "SPY", contract_type: "put", exercise_style: "american", expiration_date: exp, strike_price: k, shares_per_contract: 100 });
+const contractsUrl = (d, spot, symbol = "SPY") => { const [lo, hi] = band(spot); return `${B}/v3/reference/options/contracts?underlying_ticker=${symbol}&contract_type=put&expiration_date.gte=${shift(d, 21)}&expiration_date.lte=${shift(d, 45)}&strike_price.gte=${lo}&strike_price.lte=${hi}&as_of=${d}&sort=expiration_date&order=asc&limit=250`; };
+const tickerUrl = (symbol) => `${B}/v3/reference/tickers/${symbol}`;
+const listing = (symbol, list_date) => ({ results: { ticker: symbol, market: "stocks", active: true, list_date }, status: "OK" });
+const contract = (exp, k, root = "SPY") => ({ ticker: occ(exp, k, root), underlying_ticker: root, contract_type: "put", exercise_style: "american", expiration_date: exp, strike_price: k, shares_per_contract: 100 });
 const binary = (exp) => ({ ticker: `O:B1SPY${exp.slice(2).replaceAll("-", "")}P00001000`, underlying_ticker: "SPY", contract_type: "put", exercise_style: "european", expiration_date: exp, strike_price: 1, type: "binary" });
 const list = (rows) => ({ results: rows, status: "OK" });
 const barUrl = (ticker, d) => `${B}/v2/aggs/ticker/${ticker}/range/1/day/${d}/${d}?adjusted=false`;
 const optBar = (d, c) => ({ ticker: "x", resultsCount: c === null ? 0 : 1, ...(c === null ? {} : { results: [{ o: c, h: c, l: c, c, v: 10, t: ny(d, "00:00") }] }), status: "OK" });
-const cursor = (done, failures = 0) => JSON.stringify({ methodology: "option-ta-iv-close-v1", done, failures });
+const cursor = (done, failures = 0) => JSON.stringify({ methodology: "option-ta-iv-close-v2", done, failures });
 function write(name, { now, rows = { watchlist: watch }, cursor: c, settings, responses = {} }) {
 	const input = { now, rows };
 	if (c !== undefined) input.cursor = c;
@@ -35,7 +38,7 @@ write("before-close-wait", { now: iso("2026-11-19", "16:20"), cursor: cursor({ S
 const D = "2026-11-19";
 const daily = {
 	[underlyingUrl(D, D)]: stockBars({ [D]: 740 }),
-	[contractsUrl(D, 740, false)]: list([binary("2026-12-10"), contract("2026-12-10", 740), contract("2026-12-11", 740)]),
+	[contractsUrl(D, 740)]: list([binary("2026-12-10"), contract("2026-12-10", 740), contract("2026-12-11", 740)]),
 	[barUrl(occ("2026-12-10", 740), D)]: optBar(D, 12.3),
 	[`${B}/v3/snapshot/options/SPY/${occ("2026-12-10", 740)}`]: { results: { details: { ticker: occ("2026-12-10", 740) }, last_quote: { bid: 12.3, ask: 12.4, midpoint: 12.35, last_updated: ny(D, "16:14") * 1e6, timeframe: "REAL-TIME" } }, status: "OK" },
 };
@@ -45,19 +48,39 @@ write("daily-not-ready", { now: iso(D, "16:40"), cursor: cursor({ SPY: "2026-11-
 // 回填：新加的标的，每拍有请求上限，这一拍做完 4 个交易日
 const start = shift(D, -365); // 2025-11-19
 const bf = {
+	[tickerUrl("SPY")]: listing("SPY", "1993-01-29"),
 	[underlyingUrl(start, D)]: stockBars({ "2025-11-19": 660, "2025-11-20": 655, "2025-11-21": 650, "2025-11-24": 670 }),
-	[contractsUrl("2025-11-19", 660, true)]: list([binary("2025-12-10"), contract("2025-12-10", 660), contract("2025-12-10", 661), contract("2025-12-10", 659), contract("2025-12-12", 660)]),
+	[contractsUrl("2025-11-19", 660)]: list([binary("2025-12-10"), contract("2025-12-10", 660), contract("2025-12-10", 661), contract("2025-12-10", 659), contract("2025-12-12", 660)]),
 	[barUrl(occ("2025-12-10", 660), "2025-11-19")]: optBar("2025-11-19", null),
 	[barUrl(occ("2025-12-10", 659), "2025-11-19")]: optBar("2025-11-19", 9.5),
-	[contractsUrl("2025-11-20", 655, true)]: list([contract("2025-12-11", 655)]),
+	[contractsUrl("2025-11-20", 655)]: list([contract("2025-12-11", 655)]),
 	[barUrl(occ("2025-12-11", 655), "2025-11-20")]: optBar("2025-11-20", 10),
-	[contractsUrl("2025-11-21", 650, true)]: list([]),
-	[contractsUrl("2025-11-24", 670, true)]: list([contract("2025-12-15", 680)]),
+	[contractsUrl("2025-11-21", 650)]: list([]),
+	[contractsUrl("2025-11-24", 670)]: list([contract("2025-12-15", 680)]),
 	[barUrl(occ("2025-12-15", 680), "2025-11-24")]: optBar("2025-11-24", 9),
 };
-write("backfill-new-symbol", { now: iso(D, "16:40"), settings: { requestsPerTick: 15 }, responses: bf });
-write("backfill-no-bars", { now: iso(D, "16:40"), responses: { [underlyingUrl(start, D)]: stockBars({}) } });
+write("backfill-new-symbol", { now: iso(D, "16:40"), settings: { requestsPerTick: 16 }, responses: bf });
+// 按 2025-12-01 QQQ 的实测应答缩写：不带 as_of 的列表会把那天还没挂牌的 12-22 周一到期排在最前面；带 as_of 只列那天挂牌的，最近到期日是 12-26
+const Q = "2025-12-01";
+const qqq = {
+	[underlyingUrl(Q, D, "QQQ")]: stockBars({ [Q]: 610, "2025-12-02": 612 }, "QQQ"),
+	[contractsUrl(Q, 610, "QQQ")]: list([contract("2025-12-26", 610, "QQQ"), contract("2025-12-26", 609, "QQQ"), contract("2025-12-26", 611, "QQQ"), contract("2025-12-31", 610, "QQQ")]),
+	[barUrl(occ("2025-12-26", 610, "QQQ"), Q)]: optBar(Q, 6.4),
+};
+write("backfill-unlisted-expiration", { now: iso(D, "16:40"), rows: { watchlist: watching("QQQ") }, cursor: cursor({ QQQ: "2025-11-28" }), settings: { requestsPerTick: 10 }, responses: qqq });
+write("backfill-no-bars", { now: iso(D, "16:40"), responses: { [tickerUrl("SPY")]: listing("SPY", "1993-01-29"), [underlyingUrl(start, D)]: stockBars({}) } });
+write("backfill-unknown-symbol", { now: iso(D, "16:40"), rows: { watchlist: watching("ZZZZ") }, responses: { [tickerUrl("ZZZZ")]: { status: 404, body: { status: "NOT_FOUND", request_id: "fixture", message: "Ticker not found." } } } });
+// 上市不到一年：SPCX 这个代码以前是一只 ETF，2026-06-12 起是新上市的 SpaceX；期权 06-16 才有 21 到 45 天的合约
+const spcx = {
+	[tickerUrl("SPCX")]: listing("SPCX", "2026-06-12"),
+	[underlyingUrl("2026-06-12", D, "SPCX")]: stockBars({ "2026-06-12": 160.95, "2026-06-15": 158, "2026-06-16": 162 }, "SPCX"),
+	[contractsUrl("2026-06-12", 160.95, "SPCX")]: list([]),
+	[contractsUrl("2026-06-15", 158, "SPCX")]: list([]),
+	[contractsUrl("2026-06-16", 162, "SPCX")]: list([contract("2026-07-17", 160, "SPCX"), contract("2026-07-17", 165, "SPCX")]),
+	[barUrl(occ("2026-07-17", 160, "SPCX"), "2026-06-16")]: optBar("2026-06-16", 9.8),
+};
+write("backfill-new-listing", { now: iso(D, "16:40"), rows: { watchlist: watching("SPCX") }, settings: { requestsPerTick: 12 }, responses: spcx });
 // 429 和 5xx
-write("http-429", { now: iso(D, "16:40"), cursor: cursor({ SPY: "2026-11-18" }), responses: { [underlyingUrl(D, D)]: stockBars({ [D]: 740 }), [contractsUrl(D, 740, false)]: { status: 429, headers: { "retry-after": "30" }, body: { status: "ERROR", error: "too many requests" } } } });
+write("http-429", { now: iso(D, "16:40"), cursor: cursor({ SPY: "2026-11-18" }), responses: { [underlyingUrl(D, D)]: stockBars({ [D]: 740 }), [contractsUrl(D, 740)]: { status: 429, headers: { "retry-after": "30" }, body: { status: "ERROR", error: "too many requests" } } } });
 write("http-5xx-third-beat", { now: iso(D, "16:45"), cursor: cursor({ SPY: "2026-11-18" }, 2), responses: { [underlyingUrl(D, D)]: { status: 503 } } });
 console.log(readdirSync(dir).join("\n"));

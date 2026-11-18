@@ -13,7 +13,7 @@
     }
    ]
   },
-  "cursor": "{\"methodology\":\"option-ta-iv-close-v1\",\"done\":{\"SPY\":\"2026-11-25\"},\"failures\":0}"
+  "cursor": "{\"methodology\":\"option-ta-iv-close-v2\",\"done\":{\"SPY\":\"2026-11-25\"},\"failures\":0}"
  },
  "responses": {}
 }

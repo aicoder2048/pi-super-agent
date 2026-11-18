@@ -1,0 +1,27 @@
+{
+ "input": {
+  "now": "2026-11-19T21:40:00.000Z",
+  "rows": {
+   "watchlist": [
+    {
+     "id": "1",
+     "from": "fictional-fixture",
+     "fields": {
+      "symbol": "ZZZZ",
+      "added_at": "2026-11-19T21:00:00.000Z"
+     }
+    }
+   ]
+  }
+ },
+ "responses": {
+  "https://api.massive.com/v3/reference/tickers/ZZZZ": {
+   "status": 404,
+   "body": {
+    "status": "NOT_FOUND",
+    "request_id": "fixture",
+    "message": "Ticker not found."
+   }
+  }
+ }
+}
