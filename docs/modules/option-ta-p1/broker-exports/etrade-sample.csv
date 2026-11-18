@@ -1,0 +1,25 @@
+Trade Activity Activity Types
+
+Account Activity for  Orbit -5150 from LAST 30 Days
+
+Total:,45173.05
+
+Activity/Trade Date,Transaction Date,Settlement Date,Activity Type,Description,Symbol,Cusip,Quantity #,Price $,Amount $,Commission,Category,Note
+10/19/2026,10/19/2026,10/16/2026,Option Assigned,CALL NVDA   10/16/26   190.000,NVDA,--,2.0,,0.0,0.0,--,--
+10/19/2026,10/19/2026,10/19/2026,Sold,NVIDIA CORP,NVDA,--,-200.0,190.0,37999.68,0.32,--,--
+10/16/2026,10/16/2026,10/19/2026,Sold Short,PUT  SPY    10/23/26   575.000,SPY,--,-5.0,1.85,921.70,3.30,--,--
+10/14/2026,10/14/2026,10/15/2026,Bought To Cover,PUT  SPY    10/16/26   580.000,SPY,--,3.0,0.45,-136.98,1.98,--,--
+10/13/2026,10/13/2026,10/14/2026,Sold,MICROSOFT CORP,MSFT,--,-10.0,508.2,5081.95,0.05,--,--
+10/09/2026,10/09/2026,10/12/2026,Sold Short,PUT  SPY    10/16/26   580.000,SPY,--,-3.0,2.1,628.02,1.98,--,--
+10/02/2026,10/02/2026,10/05/2026,Sold Short,CALL NVDA   10/16/26   190.000,NVDA,--,-2.0,3.4,678.68,1.32,--,--
+
+
+
+"For all accounts, the activity shown here is provided for your convenience only. It is not an official record, and your account statement and trade confirmations govern; amounts may change before settlement."
+
+"The information provided with this download (""Data"") is fictional sample text made for a test fixture. It does not come from any broker, it is not advice, and it must not be relied on."
+
+EXAMPLE TRADING from Example Holdings is a fictional name used only in this sample. Nothing here is an offer or a solicitation of any security; this sentence only gives the line its shape.
+
+"Under the Sample Deposit Program, cash may be swept to example banks; this paragraph is fictional and exists only so the file ends with the same kind of long quoted disclaimer lines as a real export."
+

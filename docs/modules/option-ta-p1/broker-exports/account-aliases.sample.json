@@ -1,0 +1,111 @@
+{
+ "accounts": [
+  {
+   "account_ref": "JPM-NORT-4411",
+   "broker": "jpm",
+   "web_last4": "4411",
+   "aliases": [
+    {
+     "kind": "jpm-export",
+     "account_name": "NORTHWIND HARBOR LTD-MGN",
+     "account_type": "Margin",
+     "account_number": "...0101"
+    },
+    {
+     "kind": "email",
+     "code": "NORTx4411"
+    },
+    {
+     "kind": "email",
+     "code": "NORTxxxx"
+    }
+   ]
+  },
+  {
+   "account_ref": "JPM-BLUE-5522",
+   "broker": "jpm",
+   "web_last4": "5522",
+   "aliases": [
+    {
+     "kind": "jpm-export",
+     "account_name": "BLUEFIELD PARTNERS LIMITED - MGN",
+     "account_type": "Margin",
+     "account_number": "...0101"
+    },
+    {
+     "kind": "email",
+     "code": "BLUEx5522"
+    },
+    {
+     "kind": "email",
+     "code": "BLUExxxx"
+    }
+   ]
+  },
+  {
+   "account_ref": "JPM-BLUE-3301",
+   "broker": "jpm",
+   "web_last4": "3301",
+   "aliases": [
+    {
+     "kind": "jpm-export",
+     "account_name": "BLUEFIELD PARTNERS",
+     "account_type": "Asset",
+     "account_number": "...3301"
+    },
+    {
+     "kind": "email",
+     "code": "BLUEx3301"
+    },
+    {
+     "kind": "email",
+     "code": "BLUExxxx"
+    }
+   ]
+  },
+  {
+   "account_ref": "JPM-Personal-9902",
+   "broker": "jpm",
+   "web_last4": "9902",
+   "aliases": [
+    {
+     "kind": "jpm-export",
+     "account_name": "JORDAN SAMPLE",
+     "account_type": "Asset",
+     "account_number": "...9902"
+    },
+    {
+     "kind": "email",
+     "code": "JORDx9902"
+    },
+    {
+     "kind": "email",
+     "code": "JORDxxxx"
+    }
+   ]
+  },
+  {
+   "account_ref": "eTrade-Orbit-5150",
+   "broker": "etrade",
+   "web_last4": "5150",
+   "aliases": [
+    {
+     "kind": "etrade-export",
+     "account_label": "Orbit -5150"
+    }
+   ]
+  }
+ ],
+ "no_option_accounts": [
+  {
+   "account_name": "NORTHWIND HARBOR CAPITAL",
+   "account_type": "Invt Mgmt",
+   "account_number": "...6610"
+  },
+  {
+   "account_name": "RIVERSTONE LLC",
+   "account_type": "Asset",
+   "account_number": "...2205"
+  }
+ ]
+}
