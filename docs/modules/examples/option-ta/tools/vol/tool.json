@@ -1,6 +1,6 @@
 {
   "title": "波动率状况",
-  "description": "向 Massive 取期权链，回平值 IV（21 到 45 天内最近的到期、离正股价最近的 put）、IV/HV20、期限结构（约 7、30、60、90 天）、25 delta 偏斜；再读 iv-snapshots 的收盘原始输入，用同一个公式反解出 IV 序列，算 IV rank、IV 百分位和 HV20。iv-snapshots 里还没有这只的行时 history 回 NO_HISTORY，不编。缺的 IV 用中间价自算并标注，休市时标「休市」。只读",
+  "description": "向 Massive 取期权链，回平值 IV（21 到 45 天内最近的到期、离正股价最近的 put）、IV/HV20、期限结构（约 7、30、60、90 天）、25 delta 偏斜；再读 iv-snapshots 的收盘原始输入，用同一个公式反解出 IV 序列，算 IV rank、IV 百分位和 HV20。iv-snapshots 里还没有这只的行时 history 回 NO_HISTORY，不编。再读 vix-closes 回市场环境（VIX 档位、期限结构、一年分位），并把个股 IV 高低和 VIX 合成开仓前要看的环境 regime。缺的 IV 用中间价自算并标注，休市时标「休市」。只读",
   "effect": "read",
   "secrets": ["POLYGON_API_KEY"],
   "input": {
@@ -16,11 +16,13 @@
     "market_note": { "type": "text", "title": "休市时才有：为什么这时的 IV 不是收盘 IV" },
     "underlying": { "type": "text", "title": "正股 price（美元）、at（美东）、delay（延迟 15 分钟或实时，照抄）" },
     "atm": { "type": "text", "title": "平值合约 contract、expiry、dte、strike、iv（小数）、iv_source（供应方、自算或无数据）；21 到 45 天内没有到期日时为空，atm_note 说明" },
-    "iv_hv": { "type": "text", "title": "hv20（小数，来自 iv-snapshots 的正股收盘）、ratio（平值 IV ÷ HV20）、class（便宜、略便宜、合理、偏贵、很贵）；没有历史时为空" },
+    "iv_hv": { "type": "text", "title": "hv20（小数，来自 iv-snapshots 的正股收盘）、ratio（平值 IV ÷ HV20）、class（便宜 <0.8、略便宜 <0.95、合理 <1.2、偏贵 <2、很贵 ≥2）；没有历史时为空" },
     "term": { "type": "text", "title": "期限结构：每个到期日的平值 put 的 contract、expiry、dte、strike、iv、iv_source" },
     "skew": { "type": "text", "title": "平值那个到期日的 25 delta put 和 call（contract、strike、delta、iv、iv_source），put_minus_call 是两者 IV 之差；缺一边，或一边供应方一边自算时为空（note 说明）" },
     "term_note": { "type": "text", "title": "期限结构里 IV 来源不一致时才有" },
     "history": { "type": "text", "title": "status（OK 或 NO_HISTORY）、methodology（口径）、days（最近一年进序列的交易日数）、from、to、latest_iv（序列最新一天收盘价反解的 IV）、iv_rank、iv_percentile、hv20；NO_HISTORY 时有 reason" },
+    "vix": { "type": "text", "title": "市场环境，来自 vix-closes 的 CBOE 收盘：status（OK 或 NO_DATA）、date（最新一个有 VIX 收盘的交易日）、vix、level（平静 <15、正常 15—20、偏高 20—25、开始紧张 25—35、恐慌 35—50、危机 ≥50）、vix9d、vix3m、term（正常（远月高于近月）或倒挂；VIX ≥ VIX3M 算倒挂，同一天缺 VIX3M 时为空）、vix_over_vix3m、vix_percentile_1y（最近一年收盘里低于它的比例）、days、source；NO_DATA 时有 reason" },
+    "regime": { "type": "text", "title": "开仓前先问的波动率环境：iv（偏贵、偏便宜、中间、信号不一致；偏贵是一年 IV 百分位 ≥0.8 且 IV/HV ≥1.2，偏便宜是百分位 ≤0.2 且 IV/HV <0.8；缺一项、或 IV 历史不到 120 天时为空；分位来自收盘价反解的序列，IV/HV 用现在的平值 IV）、vix_level、notes（每档对买方卖方意味着什么，历史不足，VIX ≥35 的卖方风控线，期限结构倒挂，VIX 收盘过旧）。只是信息，不是交易指令" },
     "truncated": { "type": "text", "title": "true 是到了分页上限，期限结构或偏斜不全" },
     "units": { "type": "text", "title": "各字段的单位" }
   }

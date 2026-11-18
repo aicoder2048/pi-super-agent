@@ -1,0 +1,8 @@
+{
+  "title": "波动率环境：VIX、IV、HV 与按环境开仓离场",
+  "version": "2026-11-18",
+  "published": "2026-11-18",
+  "authority": "reference",
+  "license": "bundled",
+  "origin": "使用者资料整理。使用者 WatchAndLearn 笔记 lessons/（2026-11-16「期权波动率：VIX、IV、HV」和 2026-11-17「期权 × VIX 结构化交易」01—06），笔记的出处是期权坤哥的公开视频（YouTube 5ULswGsVL8I、KD31WbfKmxw、qECjYiqnJKs）。第 05 篇里笔记作者自己的系统化延伸单独标【延伸】，不是视频原话。视频里引用的研究数字（波动率溢价、90 分位回落概率）讲者没给原始出处，笔记作者也没有核实。本包把门槛落成命名常量时做的取舍标为【本包取舍】。只是分析框架，不是投资建议。"
+}
