@@ -1,4 +1,5 @@
 import { MARKET_NOTE, nyParts, nyStamp, parseChain, UNITS, type ChainRow, type Right } from "../../chain-rows.ts";
+import { gexStructure, maxPainByExpiry, oiStructure, unusualVolume } from "../../chain-structure.ts";
 import { fail, MarketError, MISSING_KEY, query, REQUEST_LIMIT_MS, snapshotPages } from "../../massive.ts";
 import { isTicker } from "../../symbols.ts";
 
@@ -6,15 +7,19 @@ import { isTicker } from "../../symbols.ts";
 const MAX_ROWS = 60;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const OPERATIONS = ["snapshot", "oi", "gex", "max-pain", "unusual-volume"] as const;
+type Operation = (typeof OPERATIONS)[number];
+/** These read both sides of the chain; a put-only or call-only request would give a wrong wall, P/C ratio or max pain. */
+const BOTH_SIDES: readonly Operation[] = ["oi", "gex", "max-pain"];
 
 type Request = { symbol: string; expiry?: string; from?: string; to?: string; right?: Right; strikeMin?: number; strikeMax?: number; nowMs: number };
 
 export default async function chain(input: Record<string, unknown>) {
 	try {
-		const operation = input["operation"] ?? "snapshot";
-		if (!OPERATIONS.includes(operation as never)) fail("INVALID_INPUT", `operation 只能是 ${OPERATIONS.join("、")}`);
-		if (operation !== "snapshot") return { status: "NOT_IMPLEMENTED", reason: "OI 墙、GEX、最大痛点和异常成交还没做；现在只回期权链快照（operation 写 snapshot）。" };
+		const operation = (input["operation"] === undefined || input["operation"] === "" ? "snapshot" : input["operation"]) as Operation;
+		if (!OPERATIONS.includes(operation)) fail("INVALID_INPUT", `operation 只能是 ${OPERATIONS.join("、")}`);
 		const request = parse(input);
+		if (BOTH_SIDES.includes(operation) && request.right !== undefined) fail("INVALID_INPUT", `${operation} 要 put 和 call 两边一起算，right 不填`);
+		if (BOTH_SIDES.includes(operation) && (request.strikeMin !== undefined || request.strikeMax !== undefined)) fail("INVALID_INPUT", `${operation} 要整条链的未平仓，截掉一段行权价会把墙和最大痛点推到范围边上，strike_min、strike_max 不填`);
 		const key = process.env["POLYGON_API_KEY"] ?? "";
 		if (key === "") fail("NO_KEY", MISSING_KEY);
 		const fetched = await snapshotPages(query(request.symbol, [
@@ -27,6 +32,7 @@ export default async function chain(input: Record<string, unknown>) {
 		]), key, AbortSignal.timeout(REQUEST_LIMIT_MS));
 		const parsed = parseChain(request.symbol, fetched.rows, request.nowMs);
 		if (parsed.rows.length === 0) fail("NO_DATA", `没有符合条件的 ${request.symbol} 标准期权合约（滤掉了 ${parsed.skippedBinary} 行二元期权），换个到期日或行权价范围再查`);
+		if (operation !== "snapshot") return structure(operation, request, parsed, fetched);
 		const contracts = compact(parsed.rows, parsed.underlying?.price ?? null);
 		return {
 			status: "OK",
@@ -47,6 +53,32 @@ export default async function chain(input: Record<string, unknown>) {
 		if (error instanceof MarketError) return error.failure;
 		throw error;
 	}
+}
+
+const TRUNCATED_NOTE = "期权链超过分页上限，只取到一部分：只给一个到期日再查";
+
+function structure(operation: Exclude<Operation, "snapshot">, request: Request, parsed: ReturnType<typeof parseChain>, fetched: { pages: number; truncated: boolean }) {
+	const spot = parsed.underlying?.price ?? null;
+	// knowledge/market-data-limits: a chain not fetched whole is not a whole chain for max pain, GEX or OI walls.
+	if (BOTH_SIDES.includes(operation) && fetched.truncated) fail("NO_DATA", `${TRUNCATED_NOTE}；这几种结构要整条链，没算`);
+	if (operation === "gex" && spot === null) fail("NO_DATA", `行情服务这次没给 ${request.symbol} 的正股价，GEX 要用正股价，稍后再查`);
+	const result = operation === "oi" ? oiStructure(parsed.rows, spot) : operation === "max-pain" ? maxPainByExpiry(parsed.rows, spot) : operation === "gex" ? gexStructure(parsed.rows, spot!) : unusualVolume(parsed.rows, parsed.market);
+	return {
+		status: "OK",
+		operation,
+		symbol: request.symbol,
+		fetched_at: nyStamp(request.nowMs),
+		market: parsed.market,
+		...(parsed.market === "休市" && { market_note: MARKET_NOTE }),
+		underlying: parsed.underlying,
+		expiries: [...new Set(parsed.rows.map((r) => r.expiry))].length,
+		rows: parsed.rows.length,
+		...result,
+		pages: fetched.pages,
+		truncated: fetched.truncated,
+		...(fetched.truncated && { truncated_note: TRUNCATED_NOTE }),
+		units: UNITS,
+	};
 }
 
 function compact(rows: ChainRow[], spot: number | null): ChainRow[] {
