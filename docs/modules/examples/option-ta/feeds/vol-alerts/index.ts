@@ -11,7 +11,7 @@ import { readIvSeries } from "../../iv-series.ts";
 import { isTradingDay, regularCloseAt, shiftDate } from "../../market-days.ts";
 import { richEntries, vixEvents, type RichEntry, type VixEvent } from "../../opportunity.ts";
 import { isTicker } from "../../symbols.ts";
-import { readVixSeries } from "../../vix.ts";
+import { readVixSeries, vixLevel } from "../../vix.ts";
 
 /** The iv feed stores a session from 30 minutes after its close; looking from 45 minutes gives it one beat. */
 export const ALERT_AFTER_CLOSE_MS = 45 * 60_000;
@@ -65,11 +65,12 @@ function readCursor(text: string | null): Cursor {
 }
 
 /** Whether the rich IV sits on an earnings date inside the contract's life: such IV collapses after the report. */
-async function earningsLine(entry: RichEntry, symbol: string, today: string, baseUrl: string): Promise<string> {
+async function earningsLine(entry: RichEntry, symbol: string, baseUrl: string): Promise<string> {
 	const key = process.env.FINNHUB_API_KEY ?? "";
 	if (key === "") return "财报日没查（没有设置 FINNHUB_API_KEY），要自己分清这段高 IV 是不是财报撑的。";
 	try {
-		const date = await earningsOf(baseUrl, key, symbol, today);
+		// From the rich session itself, reported or not: an after-close report that day is what lifted its IV.
+		const date = await earningsOf(baseUrl, key, symbol, entry.date, true);
 		if (date !== null && date <= entry.expiry) return `到 ${entry.expiry} 到期前有财报（${date}），这段高 IV 多半是财报撑的，财报后会坍塌。`;
 		return `到 ${entry.expiry} 到期前没有已宣布的财报，偏贵不是财报撑的。`;
 	} catch (error) {
@@ -79,14 +80,13 @@ async function earningsLine(entry: RichEntry, symbol: string, today: string, bas
 }
 
 function vixAlert(e: VixEvent): Omit<Alert, "at"> {
-	if (e.kind === "inverted") return { id: `vix-inverted:${e.date}`, text: `VIX 期限结构倒挂：${e.date} 收盘 VIX ${two(e.vix)}，高于等于 VIX3M ${two(e.vix3m)}。市场认为近期有事，近月期权更贵。${NOTICE}`, push: "silent" };
-	if (e.ring) return { id: `vix-${e.level}:${e.date}`, text: `VIX ${e.date} 收盘 ${two(e.vix)}，上穿 ${e.level}，到了卖方风控线。笔记的原则是已有卖方仓位考虑离场。${NOTICE}` };
-	return { id: `vix-${e.level}:${e.date}`, text: `VIX ${e.date} 收盘 ${two(e.vix)}，上穿 ${e.level}，进入「开始紧张」档。期权整体变贵；卖方要分批、带保护。${NOTICE}`, push: "silent" };
+	if (e.kind === "inverted") return { id: `vix-inverted:${e.date}`, text: `VIX 期限结构倒挂：${e.date} 收盘 VIX ${two(e.vix)}，不低于 VIX3M ${two(e.vix3m)}。市场认为近期有事，近月期权更贵。${NOTICE}`, push: "silent" };
+	if (e.ring) return { id: `vix-${e.level}:${e.date}`, text: `VIX ${e.date} 收盘 ${two(e.vix)}，上穿 ${e.level}，进入「${vixLevel(e.vix)}」档，到了卖方风控线。笔记里的做法是已有卖方仓位考虑离场。${NOTICE}` };
+	return { id: `vix-${e.level}:${e.date}`, text: `VIX ${e.date} 收盘 ${two(e.vix)}，上穿 ${e.level}，进入「${vixLevel(e.vix)}」档。期权整体变贵；笔记里的做法是卖方分批、带保护。${NOTICE}`, push: "silent" };
 }
 
 export default async function volAlerts(input: Input) {
 	const tickMs = Date.parse(input.now);
-	const today = newYorkDate(tickMs);
 	const recent = new Set(recentSessions(tickMs));
 	const cursor = readCursor(input.cursor);
 	const fresh = (id: string) => !cursor.sent.includes(id);
@@ -100,9 +100,9 @@ export default async function volAlerts(input: Input) {
 		if (entry === undefined || entry.date !== series.at(-1)?.date || !recent.has(entry.date)) continue;
 		const id = `iv-rich:${symbol}:${entry.date}`;
 		if (!fresh(id)) continue;
-		const head = `${symbol} 期权偏贵：${entry.date} 收盘 IV ${pct(entry.iv)}%，在一年里的 ${pct(entry.percentile)} 分位，IV/HV20 ${two(entry.ratio)}。`;
-		const tail = "偏卖方的环境：卖要分批、带保护（比如价差）；买方单腿要防 IV 坍塌。";
-		found.push({ id, text: `${head}${await earningsLine(entry, symbol, today, input.settings.finnhubBaseUrl)}${tail}${NOTICE}`, push: "silent" });
+		const head = `${symbol} 期权偏贵：${entry.date} 收盘 IV ${pct(entry.iv)}%，在最近 ${entry.days} 个交易日里的 ${pct(entry.percentile)} 分位，IV/HV20 ${two(entry.ratio)}。`;
+		const tail = "偏卖方的环境：笔记里的做法是卖方分批、带保护（比如价差），买方单腿要防 IV 坍塌。";
+		found.push({ id, text: `${head}${await earningsLine(entry, symbol, input.settings.finnhubBaseUrl)}${tail}${NOTICE}`, push: "silent" });
 	}
 
 	const at = new Date(tickMs).toISOString();

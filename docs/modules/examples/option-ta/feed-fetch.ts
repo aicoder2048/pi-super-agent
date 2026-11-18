@@ -44,11 +44,14 @@ export async function finnhubJson(url: string, key: string): Promise<Record<stri
 /** How far ahead the earnings calendar is asked. */
 const EARNINGS_AHEAD_DAYS = 120;
 
-/** The next unreported earnings date on Finnhub's calendar, read the way stock-ta's earnings.ts reads it; null when none is announced. */
-export async function earningsOf(baseUrl: string, key: string, symbol: string, today: string): Promise<string | null> {
+/**
+ * The next unreported earnings date on Finnhub's calendar from `today` on, read the way stock-ta's earnings.ts reads it; null
+ * when none is announced. `includeReported` keeps reports already out (vol-alerts asks from a past session, whose report may be in).
+ */
+export async function earningsOf(baseUrl: string, key: string, symbol: string, today: string, includeReported = false): Promise<string | null> {
 	const url = `${baseUrl}/calendar/earnings?from=${today}&to=${shiftDate(today, EARNINGS_AHEAD_DAYS)}&symbol=${encodeURIComponent(symbol)}`;
 	const rows = (await finnhubJson(url, key)).earningsCalendar;
 	if (!Array.isArray(rows)) throw new FinnhubError("Finnhub 的应答里没有财报日历");
-	const dates = rows.map(object).filter((r) => r.symbol === symbol && typeof r.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.date >= today && typeof r.epsActual !== "number");
+	const dates = rows.map(object).filter((r) => r.symbol === symbol && typeof r.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.date >= today && (includeReported || typeof r.epsActual !== "number"));
 	return dates.map((r) => r.date as string).sort()[0] ?? null;
 }

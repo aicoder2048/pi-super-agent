@@ -46,13 +46,50 @@ test("偏贵：一直高没回落到 0.7 以下，第二次冲高不再提醒", 
 	assert.deepEqual(richEntries(pointsFor(dates, ivs), closesFor(dates)).map((e) => e.date), [dates[130]]);
 });
 
+test("偏贵：HV20 只用当天及以前的收盘——进入之后正股大幅波动，不改变那天已经进入", () => {
+	const dates = weekdays("2026-11-18", 160);
+	const closes = Object.fromEntries(dates.map((d, i) => [d, 100 * Math.exp(i % 2 === 0 ? 0 : i > 140 ? 0.1 : 0.01)]));
+	const ivs = dates.map((_, i) => (i === 140 ? 0.3 : 0.15));
+	assert.deepEqual(richEntries(pointsFor(dates, ivs), closes).map((e) => e.date), [dates[140]]);
+});
+
+test("偏贵：分位只看最近 365 天，一年多以前的高 IV 不压低今天的分位", () => {
+	const dates = weekdays("2026-11-18", 400);
+	const ivs = dates.map((_, i) => (i < 130 ? 0.5 : i === 399 ? 0.3 : 0.15));
+	const entries = richEntries(pointsFor(dates, ivs), closesFor(dates));
+	assert.equal(entries.at(-1)?.date, dates[399]);
+	assert.ok(entries.at(-1)!.days < 400 && entries.at(-1)!.days > 250);
+});
+
+/** IVs of distinct baseline values, a spike at 140, the given dip at 145, another spike at 150. */
+function rearmCase(dipPercentile: number) {
+	const dates = weekdays("2026-11-18", 152);
+	const ivs: number[] = [];
+	for (let i = 0; i < 152; i++) {
+		if (i === 140) ivs.push(0.3);
+		else if (i === 150) ivs.push(0.31);
+		else if (i === 145) {
+			const sorted = [...ivs].sort((a, b) => a - b);
+			const k = Math.round(dipPercentile * (ivs.length + 1));
+			ivs.push((sorted[k - 1]! + sorted[k]!) / 2);
+		} else ivs.push(0.1 + 0.0004 * i);
+	}
+	return richEntries(pointsFor(dates, ivs), closesFor(dates)).map((e) => dates.indexOf(e.date));
+}
+
+test("偏贵：回落到分位 0.72 不算结束，再冲高不提醒；回落到 0.68 才算结束，再冲高提醒", () => {
+	assert.deepEqual(rearmCase(0.72), [140]);
+	assert.deepEqual(rearmCase(0.68), [140, 150]);
+});
+
 const vix = (rows: [string, number, number?][]) => ({ VIX: new Map(rows.map(([d, v]) => [d, v])), VIX9D: new Map<string, number>(), VIX3M: new Map(rows.filter((r) => r[2] !== undefined).map(([d, , m]) => [d, m!])) });
 
-test("VIX：收盘上穿 25 静音、上穿 35 响铃，一天跳过两条线两条都算；期限结构由正常转倒挂算一次，两天都要有 VIX3M", () => {
-	const events = vixEvents(vix([["2026-11-10", 20, 22], ["2026-11-11", 26, 25], ["2026-11-12", 24, 23], ["2026-11-13", 36, 30], ["2026-11-16", 40], ["2026-11-17", 20, 21], ["2026-11-18", 22, 21]]));
+test("VIX：收盘到 25 静音、到 35 响铃，一天跳过两条线只算高的那条；回到 20（25 线）、30（35 线）以下才重新生效；期限结构由正常转倒挂算一次，两天都要有 VIX3M", () => {
+	const events = vixEvents(vix([["2026-11-10", 20, 22], ["2026-11-11", 26, 25], ["2026-11-12", 24, 23], ["2026-11-13", 36, 30], ["2026-11-16", 40], ["2026-11-17", 19, 21], ["2026-11-18", 36, 34]]));
 	assert.deepEqual(events.map((e) => (e.kind === "level" ? `${e.date} ${e.level} ${e.ring}` : `${e.date} 倒挂`)), [
-		"2026-11-11 25 false", "2026-11-11 倒挂", "2026-11-13 25 false", "2026-11-13 35 true", "2026-11-18 倒挂",
+		"2026-11-11 25 false", "2026-11-11 倒挂", "2026-11-13 35 true", "2026-11-18 35 true", "2026-11-18 倒挂",
 	]);
+	assert.deepEqual(vixEvents(vix([["2026-11-10", 26], ["2026-11-11", 24], ["2026-11-12", 26]])), [], "第一天已在 25 以上，之后没回到 20 以下");
 });
 
 let dir = "";
@@ -114,7 +151,49 @@ test("feed：收盘 45 分钟内、或事件是两个交易日以前的（宿主
 	assert.deepEqual(late.output.alerts, []);
 });
 
-test("feed：没有 data.db、自选为空、被移出自选的标的都不发 IV 提醒", async () => {
+test("feed：当天盘后财报已经公布（Finnhub 带 epsActual）也算到期前的财报，从进入那天查起", async () => {
+	seed();
+	const reported = await replay("vol-alerts", "no-history", { respond: (r) => (r[EARNINGS] = { earningsCalendar: [{ symbol: "SPY", date: "2026-11-18", epsActual: 1.2 }, { symbol: "SPY", date: "2027-02-18", epsActual: null }] }) });
+	assert.match(reported.output.alerts.at(-1).text, /到期前有财报（2026-11-18）/);
+});
+
+test("feed：Finnhub 失败时照发并写没查到", async () => {
+	seed();
+	const down = await replay("vol-alerts", "no-history", { respond: (r) => (r[EARNINGS] = { status: 503, body: "down" }) });
+	assert.match(down.output.alerts.at(-1).text, /财报日没查到（Finnhub 返回 HTTP 503）/);
+});
+
+test("feed：进入偏贵的不是最新一天（后一天已存）不发；最新一天是无数据行时不算", async () => {
+	seed();
+	const db = new DatabaseSync(join(dir, "data.db"));
+	db.prepare(`INSERT INTO "iv-snapshots" (symbol, trade_date, strike, expiry, contract_close, underlying_close, methodology, data_status) VALUES ('SPY', '2026-11-19', 100, '2026-12-19', 2, 100, 'option-ta-iv-close-v2', 'ok')`).run();
+	db.close();
+	const later = await replay("vol-alerts", "no-history", { change: (input) => (input.now = "2026-11-19T22:00:00.000Z"), secrets: {} });
+	assert.ok(later.output.alerts.every((a: { id: string }) => !a.id.startsWith("iv-rich:")));
+	rmSync(join(dir, "data.db"));
+	seed();
+	const db2 = new DatabaseSync(join(dir, "data.db"));
+	db2.exec(`UPDATE "iv-snapshots" SET data_status = 'no-data' WHERE trade_date = '2026-11-18'`);
+	db2.close();
+	const noData = await replay("vol-alerts", "no-history", { secrets: {} });
+	assert.ok(noData.output.alerts.every((a: { id: string }) => !a.id.startsWith("iv-rich:")));
+});
+
+test("feed：周六、下周一早上照发上周五的事；感恩节那天发前一天的；提前收盘日 13:45 以后才发当天的", async () => {
+	const sent = async (last: string, now: string) => {
+		rmSync(join(dir, "data.db"), { force: true });
+		seed(0.3, last);
+		const out = await replay("vol-alerts", "no-history", { change: (input) => (input.now = now), secrets: {} });
+		return out.output.alerts.some((a: { id: string }) => a.id === `iv-rich:SPY:${last}`);
+	};
+	assert.equal(await sent("2026-11-20", "2026-11-21T18:00:00.000Z"), true, "周六");
+	assert.equal(await sent("2026-11-20", "2026-11-23T15:00:00.000Z"), true, "周一开盘前");
+	assert.equal(await sent("2026-11-25", "2026-11-26T22:00:00.000Z"), true, "感恩节");
+	assert.equal(await sent("2026-11-27", "2026-11-27T18:30:00.000Z"), false, "提前收盘 13:30");
+	assert.equal(await sent("2026-11-27", "2026-11-27T18:50:00.000Z"), true, "提前收盘 13:50");
+});
+
+test("feed：没有 data.db、被移出自选的标的都不发 IV 提醒", async () => {
 	assert.deepEqual((await replay("vol-alerts", "no-history")).output.alerts, []);
 	seed();
 	const removed = await replay("vol-alerts", "no-history", { change: (input) => (input.rows.watchlist = [{ id: "1", fields: { symbol: "SPY" } }, { id: "2", fields: { symbol: "SPY", removed_at: "2026-11-18T00:00:00Z" } }]) });

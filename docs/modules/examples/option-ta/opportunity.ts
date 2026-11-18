@@ -13,12 +13,15 @@ export const REARM_PERCENTILE = 0.7;
 /** Days of IV history a percentile needs before it counts as a one-year percentile (tools/vol uses the same floor). */
 export const MIN_PERCENTILE_DAYS = 120;
 const WINDOW_DAYS = 365;
-/** VIX closes crossing up through these alert once per crossing; the seller's risk line rings, the other is silent. */
-export const VIX_ALERT_LEVELS = [{ level: VIX_LEVELS.nervous, ring: false }, { level: VIX_LEVELS.panic, ring: true }] as const;
+/**
+ * VIX closes reaching these alert; the seller's risk line rings, the other is silent. A line alerts again only after the VIX
+ * closed below its `rearm`, so a VIX chopping around 25 does not alert every other day.
+ */
+export const VIX_ALERT_LEVELS = [{ level: VIX_LEVELS.nervous, ring: false, rearm: VIX_LEVELS.elevated }, { level: VIX_LEVELS.panic, ring: true, rearm: 30 }] as const;
 
 const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
-export type RichEntry = { date: string; percentile: number; ratio: number; iv: number; hv: number; expiry: string };
+export type RichEntry = { date: string; percentile: number; ratio: number; iv: number; hv: number; expiry: string; days: number };
 
 /**
  * Sessions on which the symbol entered the rich zone: one-year IV percentile ≥ RICH_PERCENTILE and close IV / HV20 ≥ RICH_RATIO,
@@ -37,7 +40,7 @@ export function richEntries(series: readonly IvPoint[], closes: Readonly<Record<
 		const hv = hv20(closes as Record<string, number>, closeDates, point.date);
 		const ratio = hv === null || hv <= 0 ? null : point.iv / hv;
 		if (armed && percentile >= RICH_PERCENTILE && ratio !== null && ratio >= RICH_RATIO) {
-			entries.push({ date: point.date, percentile, ratio, iv: point.iv, hv: hv!, expiry: point.expiry });
+			entries.push({ date: point.date, percentile, ratio, iv: point.iv, hv: hv!, expiry: point.expiry, days: window.length });
 			armed = false;
 		} else if (!armed && percentile < REARM_PERCENTILE) armed = true;
 	}
@@ -46,14 +49,24 @@ export function richEntries(series: readonly IvPoint[], closes: Readonly<Record<
 
 export type VixEvent = { kind: "level"; date: string; level: number; ring: boolean; vix: number } | { kind: "inverted"; date: string; vix: number; vix3m: number };
 
-/** Each VIX close that crossed up through an alert level from the session before, and each session the term structure turned inverted. */
+/**
+ * Each VIX close that reached an armed alert level (only the highest one when it jumped past two in a day), and each session the
+ * term structure turned inverted. The first stored close only sets the state: whether it was a crossing is unknown.
+ */
 export function vixEvents(s: VixSeries): VixEvent[] {
 	const dates = [...s.VIX.keys()].sort();
 	const events: VixEvent[] = [];
+	const armed = VIX_ALERT_LEVELS.map(({ level }) => dates.length > 0 && s.VIX.get(dates[0]!)! < level);
 	for (let i = 1; i < dates.length; i++) {
 		const [before, date] = [dates[i - 1]!, dates[i]!];
 		const [prev, vix] = [s.VIX.get(before)!, s.VIX.get(date)!];
-		for (const { level, ring } of VIX_ALERT_LEVELS) if (prev < level && vix >= level) events.push({ kind: "level", date, level, ring, vix });
+		const reached = VIX_ALERT_LEVELS.flatMap((line, j) => (armed[j] && vix >= line.level ? [j] : []));
+		for (const j of reached) armed[j] = false;
+		VIX_ALERT_LEVELS.forEach((line, j) => {
+			if (!armed[j] && vix < line.rearm) armed[j] = true;
+		});
+		const top = reached.at(-1);
+		if (top !== undefined) events.push({ kind: "level", date, level: VIX_ALERT_LEVELS[top]!.level, ring: VIX_ALERT_LEVELS[top]!.ring, vix });
 		const [prev3m, vix3m] = [s.VIX3M.get(before), s.VIX3M.get(date)];
 		if (prev3m !== undefined && vix3m !== undefined && !isInverted(prev, prev3m) && isInverted(vix, vix3m)) events.push({ kind: "inverted", date, vix, vix3m });
 	}
