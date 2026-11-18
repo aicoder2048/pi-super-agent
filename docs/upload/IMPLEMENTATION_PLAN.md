@@ -24,7 +24,7 @@
 **Goal**: `tools/import` 加 `upload_id`，`fetch: "upload.file"`；`csv` 文字只留给用例。领队技能改成请使用者在网页上传。
 **Success Criteria**: 原有 16 个用例照过；新测试用上传的样例文件经宿主取出后导入，结果和直接给文字一样。
 **Tests**: `tests/unit/option-ta-import-upload.test.ts`。
-**Status**: Not Started
+**Status**: Complete（真模型预演三道导入考题 3/3：领队把上传编号传给工具，工具读到的字节数与样例一致）
 
 ## Stage 5: 部署和实测
 **Goal**: 合并后部署老 Mac，使用者在网页上传真实导出走一遍。
