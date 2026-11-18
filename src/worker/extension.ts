@@ -27,6 +27,9 @@ function env(name: string): string {
 	return value;
 }
 
+/** The connection to the host closed or failed: the host stopped or was killed, not a refusal of the request. */
+class HostGone extends Error {}
+
 function hostClient(socketPath: string, hello: Record<string, string>) {
 	let socket: Socket | undefined;
 	let nextId = 1;
@@ -48,8 +51,8 @@ function hostClient(socketPath: string, hello: Record<string, string>) {
 			pending.clear();
 			socket = undefined;
 		};
-		s.on("error", fail);
-		s.on("close", () => fail(new Error("与宿主的连接已断开")));
+		s.on("error", (error) => fail(new HostGone(`与宿主的连接出错：${error.message}`)));
+		s.on("close", () => fail(new HostGone("与宿主的连接已断开")));
 		return s;
 	};
 	// The socket holds the process open only while a request waits: a member's `pi -p` exits by draining its event loop.
@@ -363,8 +366,18 @@ export default function workerExtension(pi: ExtensionAPI) {
 				task: Type.String({ description: "派给这位成员的一件具体的事，带上必要的背景" }),
 			}),
 			async execute(id, params) {
-				const result = (await call("worker.dispatch", { ...params, callId: id })) as { text: string; details: unknown };
-				return { content: [{ type: "text" as const, text: result.text }], details: result.details };
+				try {
+					const result = (await call("worker.dispatch", { ...params, callId: id })) as { text: string; details: unknown };
+					return { content: [{ type: "text" as const, text: result.text }], details: result.details };
+				} catch (error) {
+					if (!(error instanceof HostGone)) throw error;
+					// The host went away while the member worked (killed or restarted). The dispatch is cut short, not refused: the page shows
+					// it as stopped, and a restarted host ends the member it left behind.
+					return {
+						content: [{ type: "text" as const, text: "这次派活被打断了：等成员回复时宿主断开了（可能重启了）。这位成员没有交回回复，不要替它编；需要的话重新派一次。" }],
+						details: { kind: "dispatch", member: params.agent, task: params.task, state: "stopped", note: "宿主断开了，这次派活被打断" },
+					};
+				}
 			},
 		});
 	}

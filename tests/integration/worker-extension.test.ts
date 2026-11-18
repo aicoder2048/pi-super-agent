@@ -15,7 +15,7 @@ import { parseWatch } from "../../src/modules/conditions.ts";
 
 let loads = 0;
 
-async function load(basis: string, extra: Record<string, string> = {}, refuse?: string) {
+async function load(basis: string, extra: Record<string, string> = {}, refuse?: string, drop?: string) {
 	const dir = mkdtempSync(join(tmpdir(), "psa-wext-"));
 	const socketPath = join(dir, "host.sock");
 	const requests: any[] = [];
@@ -26,6 +26,8 @@ async function load(basis: string, extra: Record<string, string> = {}, refuse?: 
 			if (r.type !== "request") return;
 			requests.push(r);
 			if (r.method === refuse) return writeJsonLine(socket, { id: r.id, ok: false, error: "宿主没记下" });
+			// The host dies mid-call: the connection closes with no answer.
+			if (r.method === drop) return socket.destroy();
 			const result = r.method === "worker.dispatch" ? { text: "成员回复 · 行情分析师", details: { kind: "dispatch", title: "行情分析师", state: "done" } } : { recorded: true };
 			writeJsonLine(socket, { id: r.id, ok: true, result });
 		});
@@ -259,6 +261,20 @@ test("本队有成员的助手多一个 dispatch_agent：一次派给名册里�
 	assert.deepEqual([helper.requests.at(-1).method, helper.requests.at(-1).params], ["worker.dispatch", { agent: "market-analyst", task: "看盘面", callId: "call_7" }]);
 	assert.equal(result.content[0].text, "成员回复 · 行情分析师");
 	assert.deepEqual(result.details, { kind: "dispatch", title: "行情分析师", state: "done" });
+});
+
+test("派活等结果时宿主断了（被强杀）：这次派活交回「已停止」，写明被打断、成员没有回复，页面画成「职称 · 已停止」而不是一步出错", async (t) => {
+	const helper = await load("request", { PSA_CREW: "news-researcher" }, undefined, "worker.dispatch");
+	t.after(helper.close);
+	const result = await helper.run("dispatch_agent", { agent: "news-researcher", task: "接着查" }, "call_9");
+	assert.deepEqual(result.details, { kind: "dispatch", member: "news-researcher", task: "接着查", state: "stopped", note: "宿主断开了，这次派活被打断" });
+	assert.match(result.content[0].text, /被打断[\s\S]*没有交回回复/);
+});
+
+test("宿主明确拒绝的派活照旧是一次失败：工具抛出宿主给的原因", async (t) => {
+	const helper = await load("request", { PSA_CREW: "news-researcher" }, "worker.dispatch");
+	t.after(helper.close);
+	await assert.rejects(helper.run("dispatch_agent", { agent: "news-researcher", task: "查" }), /宿主没记下/);
 });
 
 test("成员只有宿主给它的那几个工具：不注册汇报、交回、读任务、派活和后台命令，清单外的一律拦截", async (t) => {
