@@ -50,8 +50,8 @@ export interface ModuleRecord {
 }
 
 export type ModuleEvent =
-	/** The watcher saw a package folder, new or changed. */
-	| { type: "package-found"; version: Version }
+	/** The watcher saw a package folder, new or changed. `recheck`: the host just started, so a version an older host judged invalid is checked again; an update whose migration failed (also invalid) gets one more migrate on each start. */
+	| { type: "package-found"; version: Version; recheck?: boolean }
 	| { type: "package-gone" }
 	/** The user switched the module on or off (web page, TUI or `just module on|off`). */
 	| { type: "enable" }
@@ -142,7 +142,7 @@ export function transition(record: ModuleRecord, event: ModuleEvent): { record: 
 		case "staging": {
 			const version = state.stage.version;
 			if (event.type === "package-found") {
-				if (event.version.digest === version.digest) return unchanged;
+				if (event.version.digest === version.digest && !(event.recheck && state.stage.at === "invalid")) return unchanged;
 				const [stage, effects] = check(event.version);
 				return to({ at: "staging", stage }, effects);
 			}
@@ -155,7 +155,8 @@ export function transition(record: ModuleRecord, event: ModuleEvent): { record: 
 		}
 		case "active": {
 			if (event.type === "package-found") {
-				if (event.version.digest === (state.update?.version.digest ?? state.serving.digest)) return unchanged;
+				const recheck = event.recheck === true && state.update?.at === "invalid";
+				if (event.version.digest === (state.update?.version.digest ?? state.serving.digest) && !recheck) return unchanged;
 				if (event.version.digest === state.serving.digest) return to({ at: "active", serving: state.serving, update: null });
 				const [stage, effects] = check(event.version);
 				return to({ at: "active", serving: state.serving, update: stage }, effects);

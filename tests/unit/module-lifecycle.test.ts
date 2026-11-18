@@ -99,3 +99,26 @@ test("fuzz: whatever the user and the folder do, the module ends up where the la
 		if (state.at === "active" && disk !== BAD) assert.deepEqual(state.serving, disk, "the last good save is what serves");
 	}
 });
+
+// A verdict is the checking host's: after an upgrade the same package may pass, so the host re-checks it once when it starts.
+const failedOnce = (record: ModuleRecord) => play([found(V2), { type: "checked", digest: V2.digest, problems: [{ where: "evals/q.md", reason: "front matter has unknown key" }] }], record);
+
+test("an update the old host judged invalid is checked again when the host starts, and goes live if it now passes", () => {
+	const invalid = failedOnce(serving());
+	assert.equal(invalid.state.at === "active" && invalid.state.update?.at, "invalid");
+	const restarted = play([{ type: "package-found", version: V2, recheck: true }], invalid);
+	assert.deepEqual(restarted.state, { at: "active", serving: V1, update: { at: "checking", version: V2 } });
+	assert.deepEqual(drive(restarted, V1).record.state, { at: "active", serving: V2, update: null });
+});
+
+test("a save that finds the same invalid package does not check it again", () => {
+	const invalid = failedOnce(serving());
+	assert.equal(transition(invalid, found(V2)).record, invalid);
+});
+
+test("a module never served whose package was judged invalid is checked again when the host starts", () => {
+	const staged = failedOnce(play([{ type: "enable" }], initialRecord("health" as ModuleName)));
+	assert.equal(staged.state.at === "staging" && staged.state.stage.at, "invalid");
+	const restarted = play([{ type: "package-found", version: V2, recheck: true }], staged);
+	assert.deepEqual(restarted.state, { at: "staging", stage: { at: "checking", version: V2 } });
+});

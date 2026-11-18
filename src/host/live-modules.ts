@@ -248,7 +248,8 @@ export function startLiveModules({ db, stateDir, roots, discovered, configSwitch
 		const done = scan.ok ? data.migrate(name as ModuleName, scan.scan.components) : { ok: false as const, reason: scan.problems.map(problemText).join("；") };
 		if (!done.ok) log(`[modules] ${name} 正在运行的版本补数据结构没成功：${done.reason}`);
 	}
-	for (const [name, { version }] of found) step(name, { type: "package-found", version });
+	// The check is this host's: a version an older host judged invalid may pass now (ADR-0032 shipped one that way).
+	for (const [name, { version }] of found) step(name, { type: "package-found", version, recheck: true });
 	for (const name of records.keys()) if (!found.has(name)) step(name, { type: "package-gone" });
 	reconcile();
 	const live = liveRegistry(table());
