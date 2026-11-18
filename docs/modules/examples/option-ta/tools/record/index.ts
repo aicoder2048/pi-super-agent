@@ -1,9 +1,10 @@
 /**
  * Checks one fill the user reports and hands back the row the lead writes with `data/fills`. Same keys and increment as the
  * `fills` feed (spec「订单键和 `id`」); reads data.db only to find what the order already has and which account short codes
- * are known. Writes nothing.
+ * are known. Resolves registered aliases in memory only; never changes historical mail rows. Writes nothing.
  */
 import { readCollections, type DbRow } from "../../data-db.ts";
+import { alignHistoricalAccounts, resolveAccount } from "../../account-aliases.ts";
 import { contractOf, count, fillId, increment, isIsoDate, orderKey, price4, units, type Right, type Side } from "../../fills.ts";
 
 type Input = Partial<Record<"account_ref" | "account_key" | "side" | "underlying" | "right" | "strike" | "expiry" | "avg_price" | "trade_date" | "settle_date" | "commission" | "fees", unknown>> & {
@@ -40,8 +41,14 @@ export function recordFill(input: Input, recorded: Recorded) {
 	const missing = REQUIRED.filter((name) => blank(input[name]));
 	if (missing.length > 0) return { status: "needs-input", missing, ask: missing.map((name) => ASK[name]) };
 	const problems: string[] = [];
-	const account = text(input.account_ref) ?? "";
-	if (!ACCOUNT.test(account)) problems.push("account_ref 只能是字母、数字、短横线和下划线");
+	const suppliedAccount = typeof input.account_ref === "string" ? input.account_ref : text(input.account_ref) ?? "";
+	// Old installations with no registry retain their exact historical codes; no alias is inferred.
+	const registered = recorded.accounts.filter((row) => typeof row.account_ref === "string" && row.account_ref !== "");
+	const legacyRegistry = registered.every((row) => blank(row.aliases));
+	const lookupAccounts = legacyRegistry ? [...registered, ...recorded.fills.map((row) => ({ account_ref: row.account_ref }))] : registered;
+	const resolution = resolveAccount(suppliedAccount, lookupAccounts);
+	const account = resolution.status === "matched" ? resolution.account_ref : suppliedAccount;
+	if (registered.length === 0 && !ACCOUNT.test(account)) problems.push("account_ref 只能是字母、数字、短横线和下划线");
 	const side = text(input.side)?.toUpperCase() as Side;
 	if (!SIDES.has(side)) problems.push("side 要是 STO、BTO、BTC 或 STC");
 	const right = text(input.right)?.toLowerCase() as Right;
@@ -64,15 +71,21 @@ export function recordFill(input: Input, recorded: Recorded) {
 	if (commission === undefined || fees === undefined) problems.push("commission、fees 要是不带符号的金额，最多 4 位小数；不知道就不给");
 	if (problems.length > 0 || contract === undefined || cum === undefined || avg === undefined) return { status: "invalid", problems };
 	const known = knownAccounts(recorded);
-	if (known.length > 0 && !known.includes(account)) {
-		return { status: "needs-input", missing: ["account_ref"], known_accounts: known, ask: [`账户短码 ${account} 没见过，已知的是 ${known.join("、")}：问使用者是其中哪一个；使用者确认是新账户，先用 data 往 accounts 写一行再记`] };
+	if ((registered.length > 0 && resolution.status !== "matched") || (registered.length === 0 && known.length > 0 && !known.includes(account))) {
+		const candidates = resolution.status === "matched" ? [] : resolution.candidates;
+		return { status: "needs-input", missing: ["account_ref"], pending: ["待确认账户"], reason: resolution.status === "ambiguous-account" ? "ambiguous-account" : "unknown-account", candidates,
+			known_accounts: registered.length > 0 && !legacyRegistry ? [...new Set(registered.map((row) => String(row.account_ref)))].sort() : known,
+			ask: [candidates.length > 1 ? `待确认账户：别名对应多个登记账户（${candidates.join("、")}），请使用者明确账户；不能自动合并` : "待确认账户：unknown-account，不猜账户；请使用者确认登记名或私密别名映射后重试"] };
 	}
 
 	const order_key = orderKey(contract, side, tradeDate, account);
 	const fill_id = fillId(order_key, cum);
-	const existing = recorded.fills.find((row) => row["fill_id"] === fill_id);
+	const history = registered.length > 0 ? alignHistoricalAccounts(recorded.fills, lookupAccounts, order_key) : { rows: recorded.fills, ambiguous: false, reversed: false };
+	if (history.ambiguous) return { status: "needs-input", missing: ["account_ref"], pending: ["待确认账户"], reason: "ambiguous-history", ask: ["待确认账户：相关历史账户或标识不能唯一对齐，请确认私密映射及冲销关系；未自动合并历史行"] };
+	if (history.reversed || history.rows.some((row) => row.order_key === order_key && row.record_type === "REVERSAL")) return { status: "conflict", fill_id, order_key, detail: "reversed-order" };
+	const existing = history.rows.find((row) => row["fill_id"] === fill_id);
 	if (existing !== undefined) return { status: "duplicate", fill_id, order_key, existing_row: String(existing["_id"]) };
-	const step = increment(order_key, cum, avg, recorded.fills);
+	const step = increment(order_key, cum, avg, history.rows);
 	if (step.kind === "covered") return { status: "covered", fill_id, order_key, note: "这一单已记的张数不少于这个累计数，不用再记" };
 	if (step.kind === "unparsed") return { status: "conflict", fill_id, order_key, detail: step.detail };
 	const unknown = [...(commission === null ? ["commission"] : []), ...(fees === null ? ["fees"] : []), "order_id", "trade_time"];
