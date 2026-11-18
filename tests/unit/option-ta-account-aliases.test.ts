@@ -126,3 +126,32 @@ test("没有登记别名的旧安装：盯盘照旧按 fills 里的账户分", (
 	const open = mailOpen("NORTx4411");
 	assert.deepEqual(openPositions(feedRows([open]), feedRows([{ account_ref: "NORTx4411" }])), openPositions(feedRows([open])));
 });
+
+test("同一单库里有短码行和登记名行，登记名那行被冲销：剩下的短码行仍算仓位", () => {
+	const reg = "DEMO-NORT-4411";
+	const mail = { ...mailOpen("NORTx4411"), qty: 5, cum_qty: 5, fill_id: `${OCC}:STO:2026-11-10:NORTx4411:cum5` };
+	const manual = { ...mailOpen(reg), _id: 2, qty: 5, cum_qty: 5, fill_id: `${OCC}:STO:2026-11-10:${reg}:cum5`, source: "manual" };
+	const reversal = { _id: 3, record_type: "REVERSAL", reversal_of: manual.fill_id, trade_date: "2026-11-11" };
+	const watch = openPositions(feedRows([mail, manual, reversal]), feedRows(CLOSE_ACCOUNTS));
+	assert.deepEqual(watch.positions.map((p) => [p.account, p.qty]), [[reg, 5]]);
+	const tax = ledgerView({ view: "tax", year: 2026 }, { fills: [mail, manual, reversal], chains: [], accounts: CLOSE_ACCOUNTS }, "2026-11-17") as { open: { account_ref: string; qty: number }[] };
+	assert.deepEqual(tax.open.map((o) => [o.account_ref, o.qty]), [[reg, 5]]);
+});
+
+test("交易链按邮件原短码的 fill_id 归过链：对齐后仍在那条链里", () => {
+	const open = mailOpen("NORTx4411");
+	const chains = [{ _id: 1, record_type: "CHAIN_LEG", chain_id: "CH-1", fill_id: open.fill_id }];
+	const out = ledgerView({ view: "chain", chain_id: "CH-1" }, { fills: [open], chains, accounts: CLOSE_ACCOUNTS }) as { chains: { chain_id: string; accounts: string[] }[] };
+	assert.deepEqual(out.chains.map((c) => [c.chain_id, c.accounts]), [["CH-1", ["DEMO-NORT-4411"]]]);
+});
+
+test("同一封信里同一单用同一账户的两种短码写了两行：只认第一行，第二行算 duplicate-order-key", () => {
+	const head = ["Account", "Side", "Position", "Security", "Security Description", "Exe Qty", "Avg Price", "Open Qty", "Price Instructions", "Trade Date", "Settlement Date"];
+	const cells = (row: readonly string[]) => row.map((c) => `<td>${c}</td>`).join("");
+	const line = (account: string, exe: string) => [account, "Sell Call", "Open", "AAPL", "APPLE INC CALL 03/20/2026 @ 250", exe, "3.10", "", "3.10 Limit", "05-Mar-2026", "06-Mar-2026"];
+	const html = `<table><tr>${cells(head)}</tr><tr>${cells(line("NORTx4411", "5"))}</tr><tr>${cells(line("NORTxxxx", "4"))}</tr></table>`;
+	const accounts = registry(["DEMO-NORT-4411", "NORTx4411", "NORTxxxx"]);
+	const out = fills({ items: [{ id: "m-1", html, body: "" }], rows: { fills: [], accounts: feedRows(accounts) } } as never);
+	assert.deepEqual(out.records.map((r) => [r.account_ref, r.qty]), [["DEMO-NORT-4411", 5]]);
+	assert.match(out.notices[0]?.fields.reasons ?? "", /duplicate-order-key 1 行/);
+});

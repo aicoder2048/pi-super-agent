@@ -5,9 +5,9 @@
   "input": {
     "view": { "type": "text", "title": "chain（交易链）或 tax（税务）" },
     "year": { "type": "number", "title": "税年，税务视图必给" },
-    "account_ref": { "type": "text", "title": "只看这个账户短码，不给就是全部账户" },
+    "account_ref": { "type": "text", "title": "只看这个账户：登记名或它的邮件短码，不给就是全部账户" },
     "account_key": { "type": "text", "title": "只看这个匿名账户键（按 accounts 映射到短码）" },
-    "chain_id": { "type": "text", "title": "只看这条链；没归链的写 未归链:<账户短码>:<OCC>" }
+    "chain_id": { "type": "text", "title": "只看这条链；没归链的写 未归链:<账户>:<OCC>，账户登记了别名时是登记名" }
   },
   "output": {
     "status": { "type": "text", "title": "ok 或 needs-input" },

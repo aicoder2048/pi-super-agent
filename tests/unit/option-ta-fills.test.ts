@@ -194,7 +194,7 @@ test("handler：unparsed 和 duplicate-order-key 发一条通知，只带原因�
 	const html = table(aapl("QRSTalfa", "5", "3.00", ""), aapl("QRSTalfa", "4", "3.05", ""), aapl("SECRETacct", "1", "1.00", "", "Sell Put"));
 	const out = fills({ items: [{ id: "m-9", threadId: "t-9", subject: "secret subject", html, body: "" }], rows: { fills: [] } });
 	assert.equal(out.records.length, 1);
-	assert.deepEqual(out.notices, [{ id: "m-9:skipped", thread: "t-9", fields: { letter: "m-9", count: "2", reasons: "duplicate-order-key 1 行、unparsed 1 行" } }]);
+	assert.deepEqual(out.notices, [{ id: "m-9:skipped", thread: "t-9", fields: { letter: "m-9", count: "2", reasons: "duplicate-order-key 1 行、unparsed 1 行没有入账" } }]);
 	assert.doesNotMatch(JSON.stringify(out.notices), /SECRET|secret|AAPL|QRST/);
 });
 

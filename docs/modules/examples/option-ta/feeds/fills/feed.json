@@ -3,8 +3,8 @@
   "connector": "mail",
   "handler": "index.ts",
   "every": "5m",
-  "reads": ["fills"],
+  "reads": ["fills", "accounts"],
   "settings": { "senders": "brokers" },
   "into": "fills",
-  "notice": "成交邮件 {{letter}} 有 {{count}} 行没有入账（{{reasons}}），请领队问使用者，原信在 Gmail 里"
+  "notice": "成交邮件 {{letter}} 有 {{count}} 行要确认（{{reasons}}），请领队问使用者，原信在 Gmail 里"
 }

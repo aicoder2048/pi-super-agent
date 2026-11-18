@@ -2,6 +2,8 @@
  * A trade desk's reply as `fills` rows (spec「成交邮件（`fills`）」). Pure: the letter and the rows already recorded in, rows and skips out.
  * Reads the first table whose first row starts with `Account`, by column name, from the HTML; the plain text is the fallback.
  */
+import { aliasRegistry, alignHistoricalAccounts, resolveAccount } from "../../account-aliases.ts";
+import type { DbRow } from "../../data-db.ts";
 import { contractOf, fillId, increment, isoDate, orderKey, price4, units, type Contract, type Recorded, type Right, type Side } from "../../fills.ts";
 
 export type FillLetter = { id: string; threadId?: string; subject?: string; body?: string; html?: string };
@@ -36,12 +38,15 @@ export type FillRow = {
 	fees: null;
 	source: "broker-email";
 	source_message_id: string;
+	/** The letter's own short code, only when it was recorded under the registered name it is an alias of. */
+	account_alias_seen?: string;
 };
 
 export type Skipped =
 	| { reason: "working-order" | "not-filled"; account_ref: string; description: string; open_qty: number | null }
 	| { reason: "stock-trade-out-of-scope"; account_ref: string; symbol: string; side: string }
 	| { reason: "duplicate-order-key"; account_ref: string; order_key: string }
+	| { reason: "ambiguous-account"; account_ref: string; order_key: string }
 	| { reason: "unparsed"; detail: string; account_ref?: string };
 
 export const HTML_CUT = "\n\n[HTML 超过 256 KB，后面截掉了，全文在 Gmail 里看]";
@@ -255,32 +260,56 @@ function rowOf(cells: Cells, executedAt: boolean, letterId: string): Row {
 
 const account = (s: Skipped) => ("account_ref" in s ? (s.account_ref ?? "") : "");
 
-export function parseFills(letter: FillLetter, recorded: readonly StoredRow[]): { fills: FillRow[]; skipped: Skipped[] } {
+/**
+ * `accounts` is the registry. Once it has aliases, a short code it knows is recorded under its registered name and checked against
+ * the order's rows under either name; a code it maps to several names is skipped; a code it does not know is recorded as written,
+ * so the fill is kept and lines up once the user registers the alias.
+ */
+export function parseFills(letter: FillLetter, recorded: readonly StoredRow[], accounts: readonly DbRow[] = []): { fills: FillRow[]; skipped: Skipped[] } {
 	const fills: FillRow[] = [];
 	const skipped: Skipped[] = [];
 	const table = tableOf(letter);
 	if (table === undefined) return { fills, skipped };
 	const known = recorded.map((row) => row.fields);
+	const registry = aliasRegistry(accounts);
 	const seen = new Set<string>();
+	/** A letter can write one account two ways, so a key repeats within the letter when it repeats under the registered name. */
+	const resolve = (key: string, code: string) => {
+		const resolution = registry.length === 0 ? undefined : resolveAccount(code, registry);
+		return { resolution, key: resolution?.status === "matched" ? key.slice(0, -code.length) + resolution.account_ref : key };
+	};
 	for (const cells of table.cells) {
 		const row = rowOf(cells, table.executedAt, letter.id);
 		if ("skipped" in row) {
-			if (row.key !== undefined && seen.has(row.key)) skipped.push({ reason: "duplicate-order-key", account_ref: account(row.skipped), order_key: row.key });
+			const key = row.key === undefined ? undefined : resolve(row.key, account(row.skipped)).key;
+			if (key !== undefined && seen.has(key)) skipped.push({ reason: "duplicate-order-key", account_ref: account(row.skipped), order_key: row.key! });
 			else skipped.push(row.skipped);
-			if (row.key !== undefined) seen.add(row.key);
+			if (key !== undefined) seen.add(key);
 			continue;
 		}
 		const { cum, avg, ...fill } = row.fill;
-		if (seen.has(fill.order_key)) {
-			skipped.push({ reason: "duplicate-order-key", account_ref: fill.account_ref, order_key: fill.order_key });
+		const code = fill.account_ref;
+		const { resolution, key: order_key } = resolve(fill.order_key, code);
+		if (seen.has(order_key)) {
+			skipped.push({ reason: "duplicate-order-key", account_ref: code, order_key: fill.order_key });
 			continue;
 		}
-		seen.add(fill.order_key);
-		const step = increment(fill.order_key, cum, avg, known);
-		if (step.kind === "unparsed") skipped.push({ reason: "unparsed", detail: step.detail, account_ref: fill.account_ref });
+		seen.add(order_key);
+		if (resolution?.status === "ambiguous-account") {
+			skipped.push({ reason: "ambiguous-account", account_ref: code, order_key: fill.order_key });
+			continue;
+		}
+		const registered = resolution?.status === "matched" ? resolution.account_ref : code;
+		const history = registry.length === 0 ? { rows: known, ambiguous: false, reversed: false } : alignHistoricalAccounts(known, registry, order_key);
+		if (history.ambiguous) {
+			skipped.push({ reason: "ambiguous-account", account_ref: code, order_key });
+			continue;
+		}
+		const step = history.reversed ? ({ kind: "unparsed", detail: "reversed-order" } as const) : increment(order_key, cum, avg, history.rows);
+		if (step.kind === "unparsed") skipped.push({ reason: "unparsed", detail: step.detail, account_ref: code });
 		if (step.kind !== "new") continue;
-		const id = fillId(fill.order_key, cum);
-		fills.push({ id, fill_id: id, ...fill, qty: step.qty, price: price4(step.price), cum_qty: cum });
+		const id = fillId(order_key, cum);
+		fills.push({ id, fill_id: id, ...fill, order_key, account_ref: registered, qty: step.qty, price: price4(step.price), cum_qty: cum, ...(registered !== code && { account_alias_seen: code }) });
 	}
 	if (table.problem !== undefined) skipped.push({ reason: "unparsed", detail: table.problem });
 	return { fills, skipped };
