@@ -2,6 +2,7 @@
  * What the iv and watch feeds share beyond massive.ts: Finnhub requests, timestamps and the one check for a failed request.
  * Keys go in headers, never in the URL, so a fixture's URL is the real one.
  */
+import { shiftDate } from "./market-days.ts";
 import { MarketError, object, REQUEST_LIMIT_MS } from "./massive.ts";
 
 export const positive = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined);
@@ -38,4 +39,16 @@ export async function finnhubJson(url: string, key: string): Promise<Record<stri
 	} catch {
 		throw new FinnhubError("Finnhub 的应答不是 JSON");
 	}
+}
+
+/** How far ahead the earnings calendar is asked. */
+const EARNINGS_AHEAD_DAYS = 120;
+
+/** The next unreported earnings date on Finnhub's calendar, read the way stock-ta's earnings.ts reads it; null when none is announced. */
+export async function earningsOf(baseUrl: string, key: string, symbol: string, today: string): Promise<string | null> {
+	const url = `${baseUrl}/calendar/earnings?from=${today}&to=${shiftDate(today, EARNINGS_AHEAD_DAYS)}&symbol=${encodeURIComponent(symbol)}`;
+	const rows = (await finnhubJson(url, key)).earningsCalendar;
+	if (!Array.isArray(rows)) throw new FinnhubError("Finnhub 的应答里没有财报日历");
+	const dates = rows.map(object).filter((r) => r.symbol === symbol && typeof r.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.date >= today && typeof r.epsActual !== "number");
+	return dates.map((r) => r.date as string).sort()[0] ?? null;
 }
