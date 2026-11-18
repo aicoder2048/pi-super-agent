@@ -5,7 +5,7 @@
  */
 import { exDivCallVerdict, extrinsicGauge } from "../../assignment-risk.ts";
 import { nextDividend, type NextDividend } from "../../dividends.ts";
-import { epochMs, failedRequest, finnhubJson, FinnhubError, positive, requestSignal } from "../../feed-fetch.ts";
+import { earningsOf, epochMs, failedRequest, positive, requestSignal } from "../../feed-fetch.ts";
 import { getJson, object } from "../../massive.ts";
 import { isTradingDay, nyTime, sessionAt, shiftDate } from "../../market-days.ts";
 import { pinRiskCheck } from "../../pin-risk-check.ts";
@@ -20,7 +20,6 @@ export const PROFIT_SILENT = 0.5;
 export const PROFIT_BELL = 0.8;
 export const EARNINGS_LEAD_TRADING_DAYS = 2;
 export const DIVIDEND_LEAD_TRADING_DAYS = 2;
-const EARNINGS_AHEAD_DAYS = 120;
 const FAILURES_BEFORE_PROBLEM = 3;
 
 interface Input {
@@ -135,15 +134,6 @@ async function quoteOf(baseUrl: string, key: string, p: Position, today: string)
 async function dividendOf(baseUrl: string, key: string, symbol: string, today: string): Promise<NextDividend> {
 	const body = await getJson(`${baseUrl}/v3/reference/dividends?ticker=${encodeURIComponent(symbol)}&limit=10`, key, requestSignal());
 	return nextDividend(Array.isArray(body.results) ? body.results : [], today);
-}
-
-/** The next unreported earnings date on Finnhub's calendar, read the way stock-ta's earnings.ts reads it; null when none is announced. */
-async function earningsOf(baseUrl: string, key: string, symbol: string, today: string): Promise<string | null> {
-	const url = `${baseUrl}/calendar/earnings?from=${today}&to=${shiftDate(today, EARNINGS_AHEAD_DAYS)}&symbol=${encodeURIComponent(symbol)}`;
-	const rows = (await finnhubJson(url, key)).earningsCalendar;
-	if (!Array.isArray(rows)) throw new FinnhubError("Finnhub 的应答里没有财报日历");
-	const dates = rows.map(object).filter((r) => r.symbol === symbol && typeof r.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.date >= today && typeof r.epsActual !== "number");
-	return dates.map((r) => r.date as string).sort()[0] ?? null;
 }
 
 const keyOf = (id: string) => id.split(":")[1]!;
