@@ -11,10 +11,10 @@ const row = (right: "put" | "call", strike: number, expiry: string, oi: number |
 });
 
 test("oi：每个到期日的 put、call 未平仓和 P/C 比，跨到期按行权价合计的墙，没有未平仓的行按 0 计并数出来", () => {
-	const rows = [row("put", 95, "2026-12-04", 1000, 0.02, 30), row("put", 100, "2026-12-04", 500, 0.03), row("call", 105, "2026-12-04", 400, 0.02), row("put", 95, "2026-12-11", 300, 0.01), row("call", 105, "2026-12-11", null, 0.01)];
+	const rows = [row("put", 95, "2026-12-04", 1000, 0.02, 30), row("put", 100, "2026-12-04", 500, 0.03), row("call", 105, "2026-12-04", 400, 0.02, 70), row("put", 95, "2026-12-11", 300, 0.01), row("call", 105, "2026-12-11", null, 0.01)];
 	const out = oiStructure(rows, 100);
 	assert.deepEqual(out.by_expiry, [
-		{ expiry: "2026-12-04", put_oi: 1500, call_oi: 400, pc_oi: 3.75, put_volume: 30, call_volume: 0, max_pain: 100 },
+		{ expiry: "2026-12-04", put_oi: 1500, call_oi: 400, pc_oi: 3.75, put_volume: 30, call_volume: 70, max_pain: 100 },
 		{ expiry: "2026-12-11", put_oi: 300, call_oi: 0, pc_oi: null, put_volume: 0, call_volume: 0, max_pain: 95 },
 	]);
 	assert.deepEqual(out.put_walls_below, [{ strike: 95, put_oi: 1300, call_oi: 0, vs_spot: -0.05 }, { strike: 100, put_oi: 500, call_oi: 0, vs_spot: 0 }]);
