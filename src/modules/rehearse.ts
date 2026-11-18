@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { externalTool, type EvalDescriptor, type ModuleName, type PackageScan } from "./manifest.ts";
 import { questionOf } from "./validate.ts";
+import { withAttachment } from "../web/view.mjs";
 
 export type Exam = EvalDescriptor & { question: string };
 
@@ -10,6 +11,17 @@ export type Attempt =
 	| { opened: true; ticket: string; domain: string | null; report: { status: string; summary: string } | null; gateway: readonly string[] };
 
 export type Verdict = { pass: boolean; reasons: readonly string[] };
+
+type Attached = { id: string; name: string; size: number };
+
+/**
+ * What a rehearsal says for one exam. An exam with `upload` first stores that package file as an upload, then ends with the
+ * same attachment line the web page adds (ADR-0032), so the lead sees what it would see from the user.
+ */
+export function askedWith(exam: Exam, packageDir: string, save: (name: string, bytes: Buffer) => Attached): string {
+	if (exam.upload === undefined) return exam.question;
+	return withAttachment(exam.question, save(basename(exam.upload), readFileSync(join(packageDir, exam.upload))));
+}
 
 export function examsOf(scan: PackageScan): Exam[] {
 	return scan.components.flatMap((c) => {

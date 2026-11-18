@@ -13,6 +13,6 @@ uses: knowledge, tools/ledger, tools/import, data/fills, data/chains, data/accou
 
 价差两腿跨式与期权间 wash sale 按 ledger 给的标记说，“实质相同”并未普遍证实；不自动禁扣、不自动递延。§1256 类别须可核实，不因链工具只取美式就把用户提供的指数记录误判；缺年末收盘快照时年末计价和跨年价差判断待确认。快照是 fills 的原始观察类型，派生税务结论不回写。1099-B 导入对账不做。
 
-券商导出交给 tools/import：broker 为 jpm 或 etrade，csv 为使用者完整文件文本，import_date 为导入日 YYYY-MM-DD。工具只预览、读取完整账户与成交，不写库。复核 reconciliation；fills 是待追加的 FILL/EVENT/REVERSAL，不是已入账，skipped 是范围外行。needs_confirmation 的原因、行号、候选与 suggested 原样交领队，不能自行选择账户或解除 conflict；suggested 仍须使用者确认。EXPIRE/到期指派按合约到期日记事件；JPM possible-assignment 不能补成确定指派。领队用 data write 一次把这批 fills 原样写入：行里没有 id，不要自己加（对 fills，带 id 是改那一行）；去重键是 fill_id/event_id，宿主不查重，所以写之前必须刚用当前库预览过；先冲销再替代，历史行不能改或删。有待确认也只保存工具明确列在 fills 的安全事实；不从待确认条目补造记录。重试须重新预览，以当前完整库查重。
+券商导出交给 tools/import：broker 为 jpm 或 etrade，upload_id 为任务说明里「附件：…（上传编号 up-…）」的编号，import_date 为导入日 YYYY-MM-DD；不把文件内容抄进 csv。工具只预览、读取完整账户与成交，不写库。复核 reconciliation；fills 是待追加的 FILL/EVENT/REVERSAL，不是已入账，skipped 是范围外行。needs_confirmation 的原因、行号、候选与 suggested 原样交领队，不能自行选择账户或解除 conflict；suggested 仍须使用者确认。EXPIRE/到期指派按合约到期日记事件；JPM possible-assignment 不能补成确定指派。领队用 data write 一次把这批 fills 原样写入：行里没有 id，不要自己加（对 fills，带 id 是改那一行）；去重键是 fill_id/event_id，宿主不查重，所以写之前必须刚用当前库预览过；先冲销再替代，历史行不能改或删。有待确认也只保存工具明确列在 fills 的安全事实；不从待确认条目补造记录。重试须重新预览，以当前完整库查重。
 
 交回结论、关键数字、资料章节、置信度、作废条件及缺项。只给标记，不是报税或税务建议；不编法律依据。

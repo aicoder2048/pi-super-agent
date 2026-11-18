@@ -213,7 +213,8 @@ export interface AgentDescriptor {
 export type CapabilityUse = string & { readonly __brand: "CapabilityUse" };
 
 /** Front matter of `evals/<name>.md`: the capabilities the answer must have called and the phrases it must contain. The body is the question a dry run asks. */
-export type EvalDescriptor = { name: string; uses: readonly CapabilityUse[]; expect: readonly string[] };
+/** `upload`: a file of the package that a rehearsal hands in as if the user had uploaded it on the web page (ADR-0032). */
+export type EvalDescriptor = { name: string; uses: readonly CapabilityUse[]; expect: readonly string[]; upload?: string };
 
 export type Component =
 	| { kind: "knowledge"; name: ComponentName; source: KnowledgeSource; texts: readonly string[] }
