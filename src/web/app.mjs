@@ -2,7 +2,7 @@
 
 import {
 	BAR_HINT, CLEAR_FAILED, SWITCH_FAILED, END_FAILED, endBody, followUpLine, followUpSentence, moduleBody, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
-	questionOf, choiceOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, fileSize, withAttachment, suggestedQuestion, pickedText, askBody, speechChunks, UPLOAD_MAX_BYTES, UPLOAD_TOO_LARGE, sayOutcome, settleSay, settleSending,
+	questionOf, choiceOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, fileSize, withAttachment, suggestedQuestion, pickedText, askBody, speechChunks, notesFor, UPLOAD_MAX_BYTES, UPLOAD_TOO_LARGE, sayOutcome, settleSay, settleSending,
 	healthBanner, laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory, firstPanel, panelStep, overviewTabs, phoneScreen, panelText, savedPanel,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperLine, hostLineLabel } from "../client/board-format.mjs";
@@ -53,11 +53,7 @@ function mount(doc) {
 	let browsing = { index: null, draft: "" };
 	const quoteStrip = $("quote-strip");
 	const attachStrip = $("attach-strip");
-	const assistantInput = /** @type {HTMLTextAreaElement} */ ($("assistant-input"));
-	const assistantSend = /** @type {HTMLButtonElement} */ ($("assistant-send"));
 	const askPick = /** @type {HTMLButtonElement} */ ($("ask-pick"));
-	/** The sentence the next question to the assistant is about (ADR-0033). @type {{ lineId: string, picked: string | null, text: string } | null} */
-	let asking = null;
 	const attachInput = /** @type {HTMLInputElement} */ ($("attach-file"));
 	/** A file uploaded and waiting to go with the next sentence (ADR-0032). @type {import("./view.mjs").Attached | null} */
 	let attached = null;
@@ -548,7 +544,7 @@ function mount(doc) {
 			$("tabs").replaceChildren(...tabs.map(tabNode));
 			if (focused) /** @type {HTMLElement | null} */ ($("tabs").querySelector(`.tab[data-tab="${focused}"]`))?.focus();
 		}
-		for (const pane of ["how", "today", "sources", "modules", "done", "assistant"]) $(pane).hidden = pane !== (panel.showing === "task" ? "how" : panel.showing);
+		for (const pane of ["how", "today", "sources", "modules", "done"]) $(pane).hidden = pane !== (panel.showing === "task" ? "how" : panel.showing);
 	};
 
 	const PLACE_NAME = { todo: "待办", chat: "对话", overview: "概况" };
@@ -737,15 +733,18 @@ function mount(doc) {
 		return button;
 	};
 
-	/** 问简报官 on a line, or on words picked in it: the assistant pane opens with a question in its box. @param {import("./view.mjs").ConversationLine} line @param {string | null} picked */
-	const askAbout = (line, picked) => {
-		asking = { lineId: line.id, picked, text: line.text };
-		assistantInput.value = suggestedQuestion(picked);
-		$("assistant-status").textContent = "";
-		showPanel(panelStep(panel, { kind: "ask" }));
-		renderAssistantAbout();
-		assistantInput.focus();
-		assistantInput.setSelectionRange(assistantInput.value.length, assistantInput.value.length);
+	/**
+	 * 问简报官 on a line, or on words picked in it (ADR-0033): the question goes at once, and the answer grows as a note under the
+	 * line. @param {import("./view.mjs").ConversationLine} line @param {string | null} picked @param {string} [question]
+	 */
+	const askNow = async (line, picked, question = suggestedQuestion(picked)) => {
+		try {
+			const res = await fetch(`/assist?${query}`, { method: "POST", headers: { "content-type": "application/json" }, body: askBody(question, { lineId: line.id, picked }), cache: "no-store", signal: AbortSignal.timeout(DEFAULT_ACK_TIMEOUT_MS) });
+			if (res.status === 401) setStatus("expired");
+			else if (!res.ok) setSay("rejected", res.status, "简报官没有收到，请稍后再试。");
+		} catch {
+			setSay("rejected", undefined, "简报官没有收到，请检查网络后再试。");
+		}
 	};
 
 	/** @param {import("./view.mjs").ConversationLine} line */
@@ -754,9 +753,16 @@ function mount(doc) {
 		button.type = "button";
 		button.addEventListener("click", (e) => {
 			e.stopPropagation();
-			askAbout(line, null);
+			void askNow(line, null);
 		});
 		return button;
+	};
+
+	/** Where the briefer's notes about a line go. @param {import("./view.mjs").ConversationLine} line */
+	const notesSlot = (line) => {
+		const slot = el("div", "notes");
+		slot.dataset.line = line.id;
+		return slot;
 	};
 
 	/** @param {import("./view.mjs").ConversationLine} line @param {boolean} withChoices */
@@ -779,14 +785,14 @@ function mount(doc) {
 				choices.dataset.line = line.id;
 				said.append(choices);
 			}
-			item.append(avatar, said);
+			item.append(avatar, said, notesSlot(line));
 		} else {
 			bubble.prepend(el("span", "sr", "你："));
 			const said = el("div", "said");
 			const slot = el("div", "route-slot");
 			slot.dataset.line = line.id;
 			said.append(bubble, ...(line.quote ? [quotedNode(line.quote)] : []), slot, askButton(line), quoteButton(line));
-			item.append(said, youMark.cloneNode(true));
+			item.append(said, youMark.cloneNode(true), notesSlot(line));
 		}
 		return item;
 	};
@@ -801,81 +807,49 @@ function mount(doc) {
 		return node;
 	};
 
-	const renderAssistantAbout = () => {
-		const strip = $("assistant-about");
-		strip.hidden = !asking;
-		/** @type {HTMLElement} */ (strip.querySelector(".quote-text")).textContent = asking ? (asking.picked ? `「${asking.picked}」· ${asking.text}` : asking.text) : "";
+	/** Folded notes and the note whose 再问 box is open: this page's own choices, kept until reload. */
+	const folded = new Set();
+	/** @type {string | null} */
+	let followUpOpen = null;
+
+	// One audio element plays every sentence. The click on 朗读 plays a silent clip on it first, which is what lets the browser
+	// play the later sentences: they start after a fetch, outside that click.
+	const SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+	/** @type {HTMLAudioElement | null} */
+	let audio = null;
+	/** The note being read aloud. `run` changes on every start and stop, so a stale loop knows to end. */
+	const player = { id: /** @type {string | null} */ (null), state: /** @type {"idle" | "playing" | "paused"} */ ("idle"), run: 0, local: false, finish: /** @type {((played: boolean) => void) | null} */ (null) };
+
+	const unlockAudio = () => {
+		audio ??= new Audio();
+		audio.src = SILENT;
+		audio.play().catch(() => {});
 	};
 
-	/** @param {import("../client/protocol.ts").AssistantLine} l */
-	const assistantNode = (l) => {
-		if (l.role === "user") {
-			const node = el("div", "as-q");
-			if (l.about) node.append(el("div", "quoted", l.about.picked ? `关于「${l.about.picked}」：${l.about.text}` : `关于：${l.about.text}`));
-			node.append(el("div", "bubble", l.text));
-			return node;
-		}
-		const node = el("div", `as-a ${l.state}`);
-		node.dataset.id = l.id;
-		node.append(el("div", "who", l.expert), l.text === "" ? el("div", "bubble", "正在想…") : md("bubble", l.text));
-		if (l.state === "done") {
-			const acts = el("div", "as-acts");
-			const read = el("button", "as-read", reading?.id === l.id ? "停止" : "朗读");
-			read.type = "button";
-			read.addEventListener("click", () => (reading?.id === l.id ? stopReading() : void readAloud(l)));
-			acts.append(read);
-			node.append(acts);
-		}
-		return node;
-	};
-
-	/** What a line's node shows; a node is rebuilt only when this changes. @param {import("../client/protocol.ts").AssistantLine} l */
-	const assistantKey = (l) => `${l.state}\u0000${reading?.id === l.id}\u0000${l.text}`;
-	/** @type {Map<string, { node: HTMLElement, key: string, state: string }>} */
-	let assistantShown = new Map();
-
-	/**
-	 * The briefer's questions and answers. A streaming answer replaces only its own node, so a selection or focus elsewhere in the
-	 * pane survives, and the screen reader hears one 答完了 instead of the whole pane every frame.
-	 */
-	const renderAssistant = () => {
-		if (reading && !view.assistant.has(reading.id)) stopReading();
-		const box = $("assistant-lines");
-		const pane = $("assistant");
-		const atBottom = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 60;
-		const lines = [...view.assistant.values()];
-		if (lines.length === 0) {
-			assistantShown = new Map();
-			box.replaceChildren(el("p", "empty", "在对话里点一句话旁边的「问简报官」，或选中几个字再点「问简报官」，也可以直接在下面问。"));
-			return;
-		}
-		const sameLines = lines.length === assistantShown.size && lines.every((l) => assistantShown.has(l.id));
-		if (!sameLines) {
-			assistantShown = new Map(lines.map((l) => [l.id, { node: assistantNode(l), key: assistantKey(l), state: l.state }]));
-			box.replaceChildren(...lines.map((l) => assistantShown.get(l.id)?.node ?? el("div", "")));
-		} else {
-			for (const l of lines) {
-				const shown = assistantShown.get(l.id);
-				if (!shown || shown.key === assistantKey(l)) continue;
-				const node = assistantNode(l);
-				shown.node.replaceWith(node);
-				if (shown.state === "streaming" && l.state !== "streaming") $("assistant-live").textContent = l.state === "done" ? `${l.expert}答完了` : `${l.expert}没答上来`;
-				assistantShown.set(l.id, { node, key: assistantKey(l), state: l.state });
-			}
-		}
-		if (atBottom) pane.scrollTop = pane.scrollHeight;
-	};
-
-	/** The answer being read aloud, sentence by sentence (ADR-0033). @type {{ id: string, stopped: boolean, audio: HTMLAudioElement | null } | null} */
-	let reading = null;
-
-	const stopReading = () => {
-		if (!reading) return;
-		reading.stopped = true;
-		reading.audio?.pause();
+	const stopPlayer = () => {
+		player.run++;
+		player.id = null;
+		player.state = "idle";
+		audio?.pause();
 		globalThis.speechSynthesis?.cancel();
-		reading = null;
-		renderAssistant();
+		player.finish?.(false);
+		renderNotes();
+	};
+
+	const pausePlayer = () => {
+		if (player.state !== "playing") return;
+		player.state = "paused";
+		if (player.local) globalThis.speechSynthesis?.pause();
+		else audio?.pause();
+		renderNotes();
+	};
+
+	const resumePlayer = () => {
+		if (player.state !== "paused") return;
+		player.state = "playing";
+		if (player.local) globalThis.speechSynthesis?.resume();
+		else audio?.play().catch(() => player.finish?.(false));
+		renderNotes();
 	};
 
 	/** One sentence as mp3 from the host; null when it could not, and the page reads that one itself. @param {string} text */
@@ -889,77 +863,169 @@ function mount(doc) {
 		}
 	};
 
-	/** @param {string} url @param {NonNullable<typeof reading>} run */
-	const playUrl = (url, run) =>
+	/** True when the sentence played to its end. @param {string} url */
+	const playUrl = (url) =>
 		new Promise((done) => {
-			const audio = new Audio(url);
-			run.audio = audio;
-			const finish = () => {
-				URL.revokeObjectURL(url);
-				done(undefined);
+			const a = (audio ??= new Audio());
+			const finish = (/** @type {boolean} */ played) => {
+				a.onended = a.onerror = null;
+				player.finish = null;
+				done(played);
 			};
-			audio.onended = finish;
-			audio.onerror = finish;
-			audio.onpause = () => run.stopped && finish();
-			audio.play().catch(finish);
+			player.finish = finish;
+			a.onended = () => finish(true);
+			a.onerror = () => finish(false);
+			a.src = url;
+			a.play().catch(() => finish(false));
 		});
 
-	/** The device's own voice, for a sentence the host could not read. @param {string} text */
+	/** The device's own voice, for a sentence the host could not read or the browser would not play. @param {string} text */
 	const speakLocally = (text) =>
 		new Promise((done) => {
 			if (!globalThis.speechSynthesis) return done(undefined);
 			const utterance = new SpeechSynthesisUtterance(text);
 			utterance.lang = "zh-CN";
-			utterance.onend = () => done(undefined);
-			utterance.onerror = () => done(undefined);
+			utterance.onend = utterance.onerror = () => done(undefined);
 			speechSynthesis.speak(utterance);
 		});
 
-	/** @param {import("../client/protocol.ts").AssistantLine} line */
-	const readAloud = async (line) => {
-		stopReading();
-		const run = { id: line.id, stopped: false, audio: /** @type {HTMLAudioElement | null} */ (null) };
-		reading = run;
-		renderAssistant();
-		const chunks = speechChunks(line.text);
+	/** Sentence by sentence, fetching the next while this one plays. @param {import("../client/protocol.ts").AssistantLine} note */
+	const readAloud = async (note) => {
+		const run = ++player.run;
+		Object.assign(player, { id: note.id, state: "playing", local: false });
+		renderNotes();
+		const chunks = speechChunks(note.text);
 		let next = chunks.length ? fetchSpeech(chunks[0]) : null;
-		for (let i = 0; i < chunks.length && !run.stopped; i++) {
+		for (let i = 0; i < chunks.length && run === player.run; i++) {
 			const url = await next;
-			// Fetch the next sentence while this one plays.
 			next = i + 1 < chunks.length ? fetchSpeech(chunks[i + 1]) : null;
-			if (run.stopped) {
+			if (run !== player.run) {
 				if (url) URL.revokeObjectURL(url);
 				break;
 			}
-			if (url) await playUrl(url, run);
-			else await speakLocally(chunks[i]);
+			const played = url ? await playUrl(url) : false;
+			if (url) URL.revokeObjectURL(url);
+			if (run !== player.run || played) continue;
+			player.local = true;
+			await speakLocally(chunks[i]);
+			player.local = false;
 		}
-		// A sentence fetched ahead and never played.
 		next?.then((url) => url && URL.revokeObjectURL(url));
-		if (reading === run) {
-			reading = null;
-			renderAssistant();
+		if (run === player.run) {
+			Object.assign(player, { id: null, state: "idle" });
+			renderNotes();
 		}
 	};
 
-	const askAssistant = async () => {
-		const question = assistantInput.value.trim();
-		if (question === "" || assistantSend.disabled) return;
-		assistantSend.disabled = true;
-		$("assistant-status").textContent = "";
-		try {
-			const res = await fetch(`/assist?${query}`, { method: "POST", headers: { "content-type": "application/json" }, body: askBody(question, asking && { lineId: asking.lineId, picked: asking.picked }), cache: "no-store", signal: AbortSignal.timeout(DEFAULT_ACK_TIMEOUT_MS) });
-			if (res.status === 401) setStatus("expired");
-			else if (!res.ok) $("assistant-status").textContent = res.status === 400 ? "这句话已经不在对话里了，或问题是空的；可以直接问，不针对那句话。" : "简报官没有收到，请稍后再试。";
-			else {
-				assistantInput.value = "";
-				asking = null;
-				renderAssistantAbout();
+	/** @param {import("../client/protocol.ts").AssistantLine} note */
+	const togglePlay = (note) => {
+		if (player.id === note.id) return player.state === "playing" ? pausePlayer() : resumePlayer();
+		stopPlayer();
+		unlockAudio();
+		void readAloud(note);
+	};
+
+	const PLAY_LABEL = { idle: "▶ 朗读", playing: "⏸ 暂停", paused: "▶ 继续" };
+
+	/** What a note shows; it is rebuilt only when this changes. @param {import("../client/protocol.ts").AssistantLine} n */
+	const noteKey = (n) => [n.state, n.text, folded.has(n.id), followUpOpen === n.id, player.id === n.id ? player.state : "idle"].join("\u0000");
+
+	/** @param {string} label @param {() => void} onClick */
+	const noteButton = (label, onClick) => {
+		const button = el("button", "", label);
+		button.type = "button";
+		button.addEventListener("click", (e) => {
+			e.stopPropagation();
+			onClick();
+		});
+		return button;
+	};
+
+	/** @param {import("../client/protocol.ts").AssistantLine} n */
+	const noteNode = (n) => {
+		const node = el("div", `note ${n.state}${folded.has(n.id) ? " folded" : ""}`);
+		node.dataset.id = n.id;
+		const head = el("div", "note-head");
+		head.append(el("span", "note-who", n.about?.picked ? `${n.expert} ·「${n.about.picked}」` : n.expert));
+		const acts = el("span", "note-acts");
+		if (n.state === "done") {
+			const play = noteButton(PLAY_LABEL[player.id === n.id ? player.state : "idle"], () => togglePlay(n));
+			play.className = "note-play";
+			acts.append(play, noteButton("再问", () => {
+				followUpOpen = followUpOpen === n.id ? null : n.id;
+				folded.delete(n.id);
+				renderNotes();
+				/** @type {HTMLTextAreaElement | null} */ (thread.querySelector(`.note[data-id="${n.id}"] textarea`))?.focus();
+			}));
+		}
+		acts.append(noteButton(folded.has(n.id) ? "展开" : "收起", () => {
+			if (folded.has(n.id)) folded.delete(n.id);
+			else folded.add(n.id);
+			renderNotes();
+		}));
+		head.append(acts);
+		node.append(head);
+		if (folded.has(n.id)) return node;
+		if (n.question && n.question !== suggestedQuestion(n.about?.picked ?? null)) node.append(el("div", "note-q", `问：${n.question}`));
+		node.append(n.text === "" ? el("div", "note-body", "正在想…") : md("note-body", n.text));
+		if (followUpOpen === n.id) {
+			const form = el("form", "note-again");
+			const box = /** @type {HTMLTextAreaElement} */ (el("textarea", ""));
+			box.rows = 2;
+			box.placeholder = "接着问，例如：那对我有什么影响？";
+			const send = el("button", "", "问");
+			send.type = "submit";
+			form.append(box, send);
+			const line = n.about?.lineId ? view.lines.get(n.about.lineId) ?? earlierLines(view).find((l) => l.id === n.about?.lineId) : undefined;
+			form.addEventListener("submit", (e) => {
+				e.preventDefault();
+				const question = box.value.trim();
+				if (!question || !line) return;
+				followUpOpen = null;
+				renderNotes();
+				void askNow(line, n.about?.picked ?? null, question);
+			});
+			box.addEventListener("keydown", (e) => {
+				if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+					e.preventDefault();
+					form.requestSubmit();
+				}
+			});
+			node.append(form);
+		}
+		return node;
+	};
+
+	/** @type {Map<string, { node: HTMLElement, key: string }>} */
+	const notesShown = new Map();
+
+	/** The briefer's notes under their lines. Only a note that changed is rebuilt, so a selection or focus elsewhere survives. */
+	const renderNotes = () => {
+		if (player.id && !view.assistant.has(player.id)) stopPlayer();
+		for (const slot of /** @type {NodeListOf<HTMLElement>} */ (thread.querySelectorAll(".notes[data-line]"))) {
+			const notes = notesFor(view, slot.dataset.line ?? "");
+			const ids = notes.map((n) => n.id).join();
+			if (slot.dataset.ids !== ids) {
+				slot.dataset.ids = ids;
+				slot.replaceChildren(
+					...notes.map((n) => {
+						const node = noteNode(n);
+						notesShown.set(n.id, { node, key: noteKey(n) });
+						return node;
+					}),
+				);
+				continue;
 			}
-		} catch {
-			$("assistant-status").textContent = "简报官没有收到，请检查网络后再试。";
-		} finally {
-			assistantSend.disabled = false;
+			for (const n of notes) {
+				const shown = notesShown.get(n.id);
+				const key = noteKey(n);
+				if (shown?.key === key && shown.node.isConnected) continue;
+				const node = noteNode(n);
+				if (shown?.node.isConnected) shown.node.replaceWith(node);
+				else slot.append(node);
+				if (shown && shown.node.classList.contains("streaming") && n.state !== "streaming") $("notes-live").textContent = n.state === "done" ? `${n.expert}答完了` : `${n.expert}没答上来`;
+				notesShown.set(n.id, { node, key });
+			}
 		}
 	};
 
@@ -988,6 +1054,7 @@ function mount(doc) {
 		rendered = view.lines.size;
 		renderRoutes();
 		renderChoices();
+		renderNotes();
 		if (atBottom) box.scrollTop = box.scrollHeight;
 		settleUnconfirmed();
 	};
@@ -1163,10 +1230,7 @@ function mount(doc) {
 			renderStepsIfMoved();
 		},
 		header: renderHeader,
-		assistant: () => {
-			renderAssistant();
-			renderTabs();
-		},
+		assistant: () => renderNotes(),
 	};
 
 	/** @param {string} reportId @param {number} option */
@@ -1327,28 +1391,14 @@ function mount(doc) {
 		void say();
 	});
 	$("quote-cancel").addEventListener("click", () => setQuote(null));
-	$("assistant-form").addEventListener("submit", (e) => {
+	// Space plays or pauses the note being read, unless the user is typing or on a button, where Space has its own job.
+	doc.addEventListener("keydown", (e) => {
+		if (e.code !== "Space" || !player.id || e.repeat) return;
+		const target = /** @type {HTMLElement} */ (e.target);
+		if (target.closest("input, textarea, button, select, [contenteditable]")) return;
 		e.preventDefault();
-		void askAssistant();
-	});
-	assistantInput.addEventListener("keydown", (e) => {
-		if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
-			e.preventDefault();
-			void askAssistant();
-		}
-	});
-	$("assistant-about-cancel").addEventListener("click", () => {
-		asking = null;
-		renderAssistantAbout();
-		assistantInput.focus();
-	});
-	$("assistant-clear").addEventListener("click", async () => {
-		try {
-			const res = await fetch(`/assist/clear?${query}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", cache: "no-store", signal: AbortSignal.timeout(DEFAULT_ACK_TIMEOUT_MS) });
-			if (res.status === 401) setStatus("expired");
-		} catch {
-			$("assistant-status").textContent = "没清空，请稍后再试。";
-		}
+		if (player.state === "playing") pausePlayer();
+		else resumePlayer();
 	});
 	// Words picked inside one bubble of the conversation: a small 问简报官 button floats above them.
 	/** @returns {{ line: import("./view.mjs").ConversationLine, picked: string, rect: DOMRect } | null} */
@@ -1392,7 +1442,7 @@ function mount(doc) {
 		const { line, picked } = chosen;
 		doc.getSelection()?.removeAllRanges();
 		askPick.hidden = true;
-		askAbout(line, picked);
+		void askNow(line, picked);
 	});
 	attachButton.addEventListener("click", () => attachInput.click());
 	attachInput.addEventListener("change", () => {

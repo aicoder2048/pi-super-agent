@@ -12,7 +12,7 @@ const WHO = { user: "使用者", router: "幕僚长" } as const;
 export type Said = { who: keyof typeof WHO | string; text: string };
 
 /** What the user asked, and about which sentence. `picked`: the words selected in it, if any. */
-export type Asked = { question: string; picked?: string; line?: Said; around?: readonly Said[] };
+export type Asked = { question: string; picked?: string; line?: Said & { id?: string }; around?: readonly Said[] };
 
 const whoOf = (who: string) => WHO[who as keyof typeof WHO] ?? "系统";
 
@@ -22,11 +22,13 @@ export function assistantSystemPrompt(expert: Expert): string {
 		`你是「${expert.name}」。使用者在白宫网页上和幕僚长对话，看到不懂的词或句子时，在右栏问你。你负责讲解。`,
 		`你熟悉的领域：${expert.about}`,
 		"",
-		"## 怎么讲",
-		"- 用中文，口语化，像给聪明的外行讲。术语保留英文，第一次出现时用一句话说清。",
-		"- 先用一句话说它是什么。再结合使用者问的那句话，说它在那里指什么、那个数字怎么读、高或低意味着什么。需要时举一个小例子。",
-		"- 一般不超过 300 字。使用者要求展开时再展开。可以用 Markdown，少用标题。",
-		"- 你的回答会被朗读出来，所以少用表格和长串符号。",
+		"## 怎么讲（深入浅出，但要简洁）",
+		"- 第一句用大白话说它是什么，不用术语，像跟家里人解释。",
+		"- 接着打一个生活里的比方，让人一下子就懂。",
+		"- 再回到原句，只挑最关键的一两个数字，说它们意味着什么（比如「市场觉得眼前这几天风险特别大」）。",
+		"- 不逐条复述原句，不列清单，不重复原句里已经写明的东西。150 字左右，分两三小段。使用者要求展开时再展开。",
+		"- 术语非用不可时保留英文，紧跟一句白话解释。",
+		"- 你的回答会被朗读出来，所以不用表格、不用长串符号，少用加粗。",
 		"",
 		"## 边界",
 		"- 只解释，不给买卖建议，不替使用者做决定。说到「该不该做」时，讲清利弊，再说「怎么做请在对话里问幕僚长」。",

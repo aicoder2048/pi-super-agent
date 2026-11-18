@@ -77,7 +77,8 @@ test("网页问简报官（ADR-0033）：问使用者开了期权任务的那句
 	assert.match(w.systems.at(-1)!, /期权研究组简报官/);
 	const lines = w.host.snapshot().assistant!;
 	assert.deepEqual(lines.map((l) => [l.role, l.expert]), [["user", "期权研究组简报官"], ["assistant", "期权研究组简报官"]]);
-	assert.deepEqual(lines[0]!.about, { picked: "贵", text: "DIA 贵不贵？" });
+	assert.deepEqual(lines[0]!.about, { lineId: userLine, picked: "贵", text: "DIA 贵不贵？" });
+	assert.deepEqual([lines[1]!.about, lines[1]!.question], [{ lineId: userLine, picked: "贵", text: "DIA 贵不贵？" }, "「贵」指什么？"], "回答记着关于哪句话、答的是什么问题，页面靠它挂到那句话下面");
 	assert.equal(answered(lines)[0]!.text, "讲解完毕。");
 });
 

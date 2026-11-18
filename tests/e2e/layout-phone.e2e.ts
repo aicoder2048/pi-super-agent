@@ -19,7 +19,7 @@ const screen = (page: Page) => page.evaluate(() => document.body.dataset.screen)
 const shot = (page: Page, file: string) => page.screenshot({ path: join(SHOTS, file) });
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 
-test("方案 D 手机：底部标签栏待办、对话、概况，概况里五段，任务推进详情和返回，提醒只切分段并带提醒点，深色，宽窄来回，桌面不受影响", async (t) => {
+test("方案 D 手机：底部标签栏待办、对话、概况，概况里四段，任务推进详情和返回，提醒只切分段并带提醒点，深色，宽窄来回，桌面不受影响", async (t) => {
 	const alerts = mkdtempSync(join(tmpdir(), "psa-ld2-alerts-"));
 	t.after(() => rmSync(alerts, { recursive: true, force: true }));
 	await story(
@@ -47,11 +47,11 @@ test("方案 D 手机：底部标签栏待办、对话、概况，概况里五�
 				assert.ok(await noSideScroll(page));
 				await shot(page, "ld2-todo.png");
 			});
-			await step("Lane 4. 「概况」屏：顶上五段，默认「今天」，切到「来源」「已完成」内容跟着变", async (page) => {
+			await step("Lane 4. 「概况」屏：顶上四段，默认「今天」，切到「来源」「已完成」内容跟着变", async (page) => {
 				await place(page, "overview").click();
 				assert.equal(await screen(page), "overview");
 				assert.equal(await selectedTab(page), "today");
-				assert.equal(await page.locator("#tabs .tab:visible").count(), 5);
+				assert.equal(await page.locator("#tabs .tab:visible").count(), 4);
 				await page.locator("#today .box").first().waitFor();
 				await shot(page, "ld2-overview.png");
 				await tab(page, "sources").click();

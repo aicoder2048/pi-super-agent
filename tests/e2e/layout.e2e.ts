@@ -32,10 +32,10 @@ test("方案 D 桌面布局：左栏收件箱，右栏带数字的标签，任�
 				await page.setViewportSize({ width: 1440, height: 900 });
 				await setUp(page);
 			});
-			await step("Lane 2. 1440 宽浅色没选任务：左栏只有两段，右栏停在「今天」，五个标签里前四个的数字和看板一致", async (page) => {
+			await step("Lane 2. 1440 宽浅色没选任务：左栏只有两段，右栏停在「今天」，四个标签的数字和看板一致", async (page) => {
 				assert.deepEqual(await page.locator("#left > section > h2").allTextContents(), ["待你处理 · 1", "进行中 · 1"]);
 				assert.equal(await selectedTab(page), "today");
-				assert.deepEqual(await tabKeys(page), ["today", "sources", "modules", "done", "assistant"]);
+				assert.deepEqual(await tabKeys(page), ["today", "sources", "modules", "done"]);
 				const { frame } = await firstFrame(host.url);
 				const today = Object.values((frame.today as { byDisposition: Record<string, number> }).byDisposition).reduce((a, b) => a + b, 0) + (frame.alerts as unknown[]).length;
 				const done = (frame.board as { stage: string }[]).filter((r) => r.stage === "closed" || r.stage === "stopped").length;
@@ -166,7 +166,7 @@ test("方案 D 桌面布局：左栏收件箱，右栏带数字的标签，任�
 				assert.equal(await page.evaluate(() => document.activeElement?.id), "tab-sources");
 				await page.keyboard.press("ArrowLeft");
 				await page.keyboard.press("ArrowLeft");
-				assert.equal(await selectedTab(page), "assistant", "从第一个往左绕到最后一个");
+				assert.equal(await selectedTab(page), "done");
 				await shot(page, "ld1-keyboard.png");
 			});
 		},

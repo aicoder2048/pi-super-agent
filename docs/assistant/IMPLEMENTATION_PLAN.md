@@ -1,4 +1,4 @@
-# 网页右栏的简报官
+# 简报官
 
 决定见 `docs/adr/0033-an-ai-assistant-explains-the-conversation-on-the-web-page.md`。
 
@@ -23,3 +23,9 @@
 ## Stage 4: 部署和实测
 **Goal**: 部署老 Mac，使用者用前面那两段期权回答试「问简报官」和朗读。之后再看 Telegram 怎么做。
 **Status**: Not Started
+
+## Stage 5: 改成就地批注（使用者用过第一版后）
+**Goal**: 右栏聊天页改成对话里的就地批注；讲法改成先打比方再点数字；修好朗读没声音（CSP 拦了音频），加播放/暂停和空格键。
+**Success Criteria**: e2e 里点「问简报官」批注出现在那句话下面、能收起、能再问；朗读时两句都由宿主的音频放完（没有退回本机朗读），空格键暂停、继续。
+**Tests**: `tests/e2e/assistant.e2e.ts`，`tests/unit/web-assistant.test.ts`，`tests/unit/assistant-prompt.test.ts`，`tests/unit/assistant-core.test.ts`。
+**Status**: Complete

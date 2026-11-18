@@ -15,7 +15,8 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS assistant_lines (
 	expert TEXT NOT NULL,
 	text TEXT NOT NULL,
 	state TEXT NOT NULL CHECK (state IN ('streaming', 'done', 'failed')),
-	about TEXT
+	about TEXT,
+	question TEXT
 )`;
 
 /** How many lines the page gets in its snapshot. */
@@ -38,7 +39,7 @@ export interface AssistantPorts {
 	forget?(): void;
 }
 
-type Row = { id: string; role: AssistantLine["role"]; at: number; expert: string; text: string; state: AssistantLine["state"]; about: string | null };
+type Row = { id: string; role: AssistantLine["role"]; at: number; expert: string; text: string; state: AssistantLine["state"]; about: string | null; question: string | null };
 
 function textOf(message: { content?: unknown } | undefined): string {
 	const content = message?.content;
@@ -60,20 +61,22 @@ export class Assistant {
 	constructor(ports: AssistantPorts) {
 		this.#o = ports;
 		ports.db.exec(SCHEMA);
+		// Added after the first deploy: a table made then has no question column.
+		if (!(ports.db.prepare("SELECT 1 FROM pragma_table_info('assistant_lines') WHERE name = 'question'").get())) ports.db.exec("ALTER TABLE assistant_lines ADD COLUMN question TEXT");
 		// An answer the last host was still writing never finishes: say so instead of 「正在想」 forever.
 		ports.db.prepare("UPDATE assistant_lines SET state = 'failed', text = ? WHERE state = 'streaming'").run(INTERRUPTED);
 	}
 
 	lines(limit = ASSISTANT_LINES): AssistantLine[] {
-		const rows = this.#o.db.prepare("SELECT id, role, at, expert, text, state, about FROM assistant_lines ORDER BY seq DESC LIMIT ?").all(limit) as Row[];
-		return rows.reverse().map(({ about, ...row }) => ({ ...row, ...(about !== null && { about: JSON.parse(about) as AssistantLine["about"] }) }));
+		const rows = this.#o.db.prepare("SELECT id, role, at, expert, text, state, about, question FROM assistant_lines ORDER BY seq DESC LIMIT ?").all(limit) as Row[];
+		return rows.reverse().map(({ about, question, ...row }) => ({ ...row, ...(about !== null && { about: JSON.parse(about) as AssistantLine["about"] }), ...(question !== null && { question }) }));
 	}
 
 	/** Returns the id of the answer line. The answer arrives later, as `assistant` frames. */
 	ask(asked: Asked, expert: Expert): string {
-		const about = asked.line && { ...(asked.picked && { picked: asked.picked }), text: [...asked.line.text].slice(0, ABOUT_TEXT_CHARS).join("") };
+		const about = asked.line && { ...(asked.line.id && { lineId: asked.line.id }), ...(asked.picked && { picked: asked.picked }), text: [...asked.line.text].slice(0, ABOUT_TEXT_CHARS).join("") };
 		this.#save({ id: randomUUID(), role: "user", at: this.#o.now(), expert: expert.name, text: asked.question, state: "done", ...(about && { about }) });
-		const answer: AssistantLine = { id: randomUUID(), role: "assistant", at: this.#o.now(), expert: expert.name, text: "", state: "streaming" };
+		const answer: AssistantLine = { id: randomUUID(), role: "assistant", at: this.#o.now(), expert: expert.name, text: "", state: "streaming", question: asked.question, ...(about && { about }) };
 		this.#save(answer);
 		const epoch = this.#epoch;
 		const before = this.#queues.get(expert.key) ?? Promise.resolve();
@@ -150,8 +153,8 @@ export class Assistant {
 
 	#save(line: AssistantLine): void {
 		this.#o.db
-			.prepare("INSERT INTO assistant_lines (id, seq, role, at, expert, text, state, about) VALUES (?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM assistant_lines), ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET text = excluded.text, state = excluded.state")
-			.run(line.id, line.role, line.at, line.expert, line.text, line.state, line.about ? JSON.stringify(line.about) : null);
+			.prepare("INSERT INTO assistant_lines (id, seq, role, at, expert, text, state, about, question) VALUES (?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM assistant_lines), ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET text = excluded.text, state = excluded.state")
+			.run(line.id, line.role, line.at, line.expert, line.text, line.state, line.about ? JSON.stringify(line.about) : null, line.question ?? null);
 		this.#o.publish({ type: "assistant", line: { ...line } });
 	}
 }
