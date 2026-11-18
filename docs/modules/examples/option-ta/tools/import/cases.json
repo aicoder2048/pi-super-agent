@@ -11,7 +11,6 @@
       "fills": [
         {
           "record_type": "FILL",
-          "id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
           "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
           "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",
@@ -34,7 +33,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522:cum30",
           "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522:cum30",
           "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522",
           "account_ref": "JPM-BLUE-5522",
@@ -57,7 +55,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
           "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
           "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902",
           "account_ref": "JPM-Personal-9902",
@@ -80,7 +77,6 @@
         },
         {
           "record_type": "EVENT",
-          "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-NORT-4411",
           "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",
           "underlying": "DIA",
@@ -97,7 +93,6 @@
         },
         {
           "record_type": "EVENT",
-          "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
           "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
           "account_ref": "JPM-BLUE-5522",
           "underlying": "DIA",
@@ -114,7 +109,6 @@
         },
         {
           "record_type": "EVENT",
-          "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
           "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
           "account_ref": "JPM-Personal-9902",
           "underlying": "DIA",
@@ -131,7 +125,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411:cum10",
           "fill_id": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411:cum10",
           "order_key": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",
@@ -154,7 +147,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
           "fill_id": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
           "order_key": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522",
           "account_ref": "JPM-BLUE-5522",
@@ -177,7 +169,6 @@
         },
         {
           "record_type": "EVENT",
-          "id": "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
           "event_id": "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
           "account_ref": "JPM-Personal-9902",
           "underlying": "AAPL",
@@ -194,7 +185,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
           "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
           "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",
@@ -217,7 +207,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
           "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
           "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522",
           "account_ref": "JPM-BLUE-5522",
@@ -240,7 +229,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301:cum5",
           "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301:cum5",
           "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301",
           "account_ref": "JPM-BLUE-3301",
@@ -263,7 +251,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
           "fill_id": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
           "order_key": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902",
           "account_ref": "JPM-Personal-9902",
@@ -286,7 +273,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10",
           "fill_id": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10",
           "order_key": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",
@@ -372,7 +358,6 @@
       "fills": [
         {
           "record_type": "EVENT",
-          "id": "NVDA261016C00190000:ASSIGNED:2026-10-16:eTrade-Orbit-5150",
           "event_id": "NVDA261016C00190000:ASSIGNED:2026-10-16:eTrade-Orbit-5150",
           "account_ref": "eTrade-Orbit-5150",
           "underlying": "NVDA",
@@ -389,7 +374,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "NVDA:SELL:2026-10-19:eTrade-Orbit-5150:cum200",
           "fill_id": "NVDA:SELL:2026-10-19:eTrade-Orbit-5150:cum200",
           "order_key": "NVDA:SELL:2026-10-19:eTrade-Orbit-5150",
           "account_ref": "eTrade-Orbit-5150",
@@ -409,7 +393,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "SPY261023P00575000:STO:2026-10-16:eTrade-Orbit-5150:cum5",
           "fill_id": "SPY261023P00575000:STO:2026-10-16:eTrade-Orbit-5150:cum5",
           "order_key": "SPY261023P00575000:STO:2026-10-16:eTrade-Orbit-5150",
           "account_ref": "eTrade-Orbit-5150",
@@ -432,7 +415,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "SPY261016P00580000:BTC:2026-10-14:eTrade-Orbit-5150:cum3",
           "fill_id": "SPY261016P00580000:BTC:2026-10-14:eTrade-Orbit-5150:cum3",
           "order_key": "SPY261016P00580000:BTC:2026-10-14:eTrade-Orbit-5150",
           "account_ref": "eTrade-Orbit-5150",
@@ -455,7 +437,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "SPY261016P00580000:STO:2026-10-09:eTrade-Orbit-5150:cum3",
           "fill_id": "SPY261016P00580000:STO:2026-10-09:eTrade-Orbit-5150:cum3",
           "order_key": "SPY261016P00580000:STO:2026-10-09:eTrade-Orbit-5150",
           "account_ref": "eTrade-Orbit-5150",
@@ -478,7 +459,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "NVDA261016C00190000:STO:2026-10-02:eTrade-Orbit-5150:cum2",
           "fill_id": "NVDA261016C00190000:STO:2026-10-02:eTrade-Orbit-5150:cum2",
           "order_key": "NVDA261016C00190000:STO:2026-10-02:eTrade-Orbit-5150",
           "account_ref": "eTrade-Orbit-5150",
@@ -522,14 +502,12 @@
       "fills": [
         {
           "record_type": "REVERSAL",
-          "id": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum20:reversed-by-export",
           "reversal_of": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum20",
           "trade_date": "2026-10-27",
           "source": "broker-export"
         },
         {
           "record_type": "FILL",
-          "id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
           "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
           "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",
@@ -552,7 +530,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
           "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
           "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902",
           "account_ref": "JPM-Personal-9902",
@@ -575,7 +552,6 @@
         },
         {
           "record_type": "EVENT",
-          "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
           "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
           "account_ref": "JPM-BLUE-5522",
           "underlying": "DIA",
@@ -592,7 +568,6 @@
         },
         {
           "record_type": "EVENT",
-          "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
           "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
           "account_ref": "JPM-Personal-9902",
           "underlying": "DIA",
@@ -609,7 +584,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
           "fill_id": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
           "order_key": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522",
           "account_ref": "JPM-BLUE-5522",
@@ -632,7 +606,6 @@
         },
         {
           "record_type": "EVENT",
-          "id": "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
           "event_id": "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
           "account_ref": "JPM-Personal-9902",
           "underlying": "AAPL",
@@ -649,7 +622,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
           "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
           "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",
@@ -672,7 +644,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
           "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
           "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522",
           "account_ref": "JPM-BLUE-5522",
@@ -695,7 +666,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
           "fill_id": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
           "order_key": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902",
           "account_ref": "JPM-Personal-9902",
@@ -718,7 +688,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10",
           "fill_id": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10",
           "order_key": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",
@@ -1000,7 +969,6 @@
       "fills": [
         {
           "record_type": "FILL",
-          "id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
           "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
           "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",
@@ -1052,21 +1020,18 @@
       "fills": [
         {
           "record_type": "REVERSAL",
-          "id": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum8:reversed-by-export",
           "reversal_of": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum8",
           "trade_date": "2026-10-27",
           "source": "broker-export"
         },
         {
           "record_type": "REVERSAL",
-          "id": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum20:reversed-by-export",
           "reversal_of": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum20",
           "trade_date": "2026-10-27",
           "source": "broker-export"
         },
         {
           "record_type": "FILL",
-          "id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
           "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
           "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",
@@ -1217,7 +1182,6 @@
       "fills": [
         {
           "record_type": "FILL",
-          "id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
           "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
           "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",
@@ -1240,7 +1204,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522:cum30",
           "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522:cum30",
           "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522",
           "account_ref": "JPM-BLUE-5522",
@@ -1263,7 +1226,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
           "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
           "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902",
           "account_ref": "JPM-Personal-9902",
@@ -1286,7 +1248,6 @@
         },
         {
           "record_type": "EVENT",
-          "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-NORT-4411",
           "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",
           "underlying": "DIA",
@@ -1303,7 +1264,6 @@
         },
         {
           "record_type": "EVENT",
-          "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
           "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
           "account_ref": "JPM-BLUE-5522",
           "underlying": "DIA",
@@ -1320,7 +1280,6 @@
         },
         {
           "record_type": "EVENT",
-          "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
           "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
           "account_ref": "JPM-Personal-9902",
           "underlying": "DIA",
@@ -1337,7 +1296,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411:cum10",
           "fill_id": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411:cum10",
           "order_key": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",
@@ -1360,7 +1318,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
           "fill_id": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
           "order_key": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522",
           "account_ref": "JPM-BLUE-5522",
@@ -1383,7 +1340,6 @@
         },
         {
           "record_type": "EVENT",
-          "id": "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
           "event_id": "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
           "account_ref": "JPM-Personal-9902",
           "underlying": "AAPL",
@@ -1400,7 +1356,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
           "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
           "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",
@@ -1423,7 +1378,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
           "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
           "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522",
           "account_ref": "JPM-BLUE-5522",
@@ -1446,7 +1400,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301:cum5",
           "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301:cum5",
           "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301",
           "account_ref": "JPM-BLUE-3301",
@@ -1469,7 +1422,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
           "fill_id": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
           "order_key": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902",
           "account_ref": "JPM-Personal-9902",
@@ -1492,7 +1444,6 @@
         },
         {
           "record_type": "FILL",
-          "id": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10",
           "fill_id": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10",
           "order_key": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411",
           "account_ref": "JPM-NORT-4411",

@@ -206,11 +206,12 @@ export function importBrokerCsv(input: BrokerImportInput) {
  const touched = new Set<Row>();
  const acceptedEvents = new Map<string, string>();
  const clean = (r: Row): Row => {
-  const { line, lines, activity_date, _amount, ...fields } = r;
+  // `id` is only a working key here: a lead's data write treats `id` as "update host row _id", so rows carry fill_id/event_id instead.
+  const { line, lines, activity_date, _amount, id, ...fields } = r;
   return fields;
  };
  const emit = (r: Row) => {
-  if (!history.some(h => factId(h) === r.id) && !fills.some(h => h.id === r.id)) fills.push(clean(r));
+  if (!history.some(h => factId(h) === r.id) && !fills.some(h => factId(h) === r.id)) fills.push(clean(r));
  };
  const dependencyLine = (r: Row) => r.caused_by_event ? Math.max(r.line, assigned.find(e => e.event_id === r.caused_by_event)?.line ?? r.line) + 0.1 : r.line;
  for (const r of candidates.sort((a, b) => dependencyLine(a) - dependencyLine(b))) {

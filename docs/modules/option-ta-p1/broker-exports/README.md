@@ -2,7 +2,7 @@
 
 使用者要把 JPM 门户和 eTrade 导出的交易记录 CSV 交给 option-ta，作为成交的最终账：补齐交易台邮件和手动记录缺的手续费、交割日、交易编号，补上到期和指派，不重复记账。本目录是给模块工坊的材料：两份虚构样例、期望结果、账户别名表样例和下面的规则。
 
-样例里的名称、账号、编号、金额、CUSIP 全是编的，原文件不进仓库。本文只描述结构，结构是对照使用者 2026-11 的真实导出量出来的。`fills` 的字段以 `../../examples/option-ta/data/fills/collection.json` 为准，成交行的 `id` 写法沿用 `../../option-ta-spec.md`「订单键和 `id`」。
+样例里的名称、账号、编号、金额、CUSIP 全是编的，原文件不进仓库。本文只描述结构，结构是对照使用者 2026-11 的真实导出量出来的。`fills` 的字段以 `../../examples/option-ta/data/fills/collection.json` 为准，成交行的键（`fill_id`）写法沿用 `../../option-ta-spec.md`「订单键和 `id`」。
 
 | 文件 | 内容 |
 |---|---|
@@ -143,13 +143,13 @@ option-ta 的 `accounts` 集合已登记的 `account_ref`（形如 `JPM-NORT-441
 
 | 情况 | 动作（`jpm-sample.reconcile.json` 里的名字） |
 |---|---|
-| 库里已有同 `id` 的行（上次导入过，或手动记的 EVENT 正好一样） | `already-recorded`，什么都不写 |
+| 库里已有同键（`fill_id` / `event_id`）的行（上次导入过，或手动记的 EVENT 正好一样） | `already-recorded`，什么都不写 |
 | 键全对上，库里的行缺手续费、交割日、交易编号或账户是邮件短码 | `enrich`：写一行 REVERSAL 冲销旧行，再写导出的完整行。成交行只追加、不改（spec「订单键和 `id`」），更正靠冲销（tax memo 第 14.1 节），`ledger` 已经会跳过被冲销的行 |
 | 合约、方向、日期、账户对上，但张数或价格不同 | `conflict`：两边都不写，进待确认，问使用者 |
 | 邮件行账户是「待确认账户」 | `account-unconfirmed`：附上建议账户，等使用者 |
 | 库里没有 | `add`：写导出行，`source` 是 `broker-export` |
 
-REVERSAL 行的 `id` 是 `<被冲销的 fill_id>:reversed-by-export`，`reversal_of` 指向旧行，`trade_date` 照旧行写，形状见 `jpm-sample.reconcile.json` 的 `reversal_example`。价格比较按万分之一美元的整数比，和邮件解析一样不经过浮点。
+REVERSAL 行的 `fill_id` 是 `<被冲销的 fill_id>:reversed-by-export`，`reversal_of` 指向旧行，`trade_date` 照旧行写，形状见 `jpm-sample.reconcile.json` 的 `reversal_example`。价格比较按万分之一美元的整数比，和邮件解析一样不经过浮点。
 
 反过来，库里有、导出里没有的行按第 6 节处理。
 
@@ -157,9 +157,10 @@ REVERSAL 行的 `id` 是 `<被冲销的 fill_id>:reversed-by-export`，`reversal
 
 同一份文件导两次，或者两份时间段重叠的导出，不能重复记账：
 
-- 导出行的 `id` 由内容决定：FILL 是 `<OCC>:<方向>:<成交日>:<account_ref>:cum<张数>`，EVENT 是 `event_id`，股票交割是 `<标的>:<SELL|BUY>:<成交日>:<account_ref>:cum<股数>`。和宿主的「同 `id` 只写第一次」配合，重导不会多出行。
-- 同一份文件里同一订单键有几行（同一天同一合约分几笔成交），先合并成一行：张数相加，价格按张数加权，佣金和费用相加。这样不管文件里怎么拆，`id` 都一样。
-- REVERSAL 的 `id` 也是确定的，重导不会冲销两次。
+- 导出行的键由内容决定：FILL 的 `fill_id` 是 `<OCC>:<方向>:<成交日>:<account_ref>:cum<张数>`，EVENT 是 `event_id`，股票交割的 `fill_id` 是 `<标的>:<SELL|BUY>:<成交日>:<account_ref>:cum<股数>`。
+- 查重靠工具，不靠宿主。宿主只在 feed 写入时按 `id` 去重；领队用 `data` 写的行没有这层保护，而且对 record 集合，行里带 `id` 的意思是「改宿主那一行 `_id`」。所以工具交出的行不带 `id`，键放在 `fill_id` / `event_id`；领队每次写之前都用当前的库重新预览，再用一次 `data write` 把这次的行全部写进去（一次写入是一个事务）。
+- 同一份文件里同一订单键有几行（同一天同一合约分几笔成交），先合并成一行：张数相加，价格按张数加权，佣金和费用相加。这样不管文件里怎么拆，键都一样。
+- REVERSAL 的 `fill_id` 也是确定的，重导不会冲销两次。
 - 测试要断言：把第一次导入写出的行加进库，再导一次同一文件，写出的行是空的（`jpm-sample.reconcile.json` 的 `rerun`）。
 
 ## 9. 输出和原因
