@@ -268,7 +268,9 @@ def write_etrade():
             side = "STO" if act == "Sold Short" else "BTC"
             fills.append({"line": line_no, **fill_row(ET_REF, side, und, expiry, right, strike, abs(qty), D(price), trade, settle, None, money(c), None)})
         elif act == "Option Assigned":
-            ev = event_row(ET_REF, "ASSIGNED", und, expiry, right, strike, qty, trade)
+            # Assigned at expiration (reported within a few days after expiry): the event date is the expiry, like EXPIRE; early assignment keeps its own date.
+            event_date = expiry if expiry <= trade and (trade - expiry).days <= 4 else trade
+            ev = event_row(ET_REF, "ASSIGNED", und, expiry, right, strike, qty, event_date)
             assigned[und] = (ev, D(strike), qty)
             fills.append({"line": line_no, **ev})
         elif act == "Sold" and und in assigned and abs(qty) == assigned[und][2] * 100 and D(price) == assigned[und][1]:

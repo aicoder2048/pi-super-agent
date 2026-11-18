@@ -99,7 +99,7 @@ option-ta 的 `accounts` 集合已登记的 `account_ref`（形如 `JPM-NORT-441
 这三种写 EVENT 行，形状照 `../../examples/option-ta/tools/ledger/fixtures/seed.json`：`event_id` = `<OCC>:<type>:<event_date>:<account_ref>`，`trade_date` 写成 `event_date`。
 
 - **到期（EXPIRE）。** `event_date` 写合约到期日，不写 JPM 的入账日。JPM 在到期后的下一个交易日（周一）入账，真实样本里三行都是这样。到期作废按税法视为在到期日卖出（tax memo 第 2 节第 3 条，第 3、4 节表格的「到期作废」行），年末那周的周五到期如果按周一入账日记，会记错税年。样例第 7 到 9 行：10/23 周五到期，10/26 周一入账，`event_date` 是 `2026-10-23`。
-- **指派（ASSIGNED）。** eTrade 有单独的 `Option Assigned` 行，后面跟一行交割股票的 `Sold`（被叫走）或 `Bought`（被行权买入）。`event_date` 写 `Option Assigned` 行的 `Activity/Trade Date`。交割股票写一行 FILL：`side` 是 SELL 或 BUY，`instrument` 没有期权字段、乘数 1，`caused_by_event` 指向那条 ASSIGNED。股票行认作交割的条件：同账户、同标的、股数 = 张数 × 100、价格 = 行权价、日期等于指派行。样例 `etrade-sample.csv` 第 8、9 行是一对；第 12 行是普通股票卖出，跳过。
+- **指派（ASSIGNED）。** eTrade 有单独的 `Option Assigned` 行，后面跟一行交割股票的 `Sold`（被叫走）或 `Bought`（被行权买入）。`event_date`：到期时被指派的（`Activity/Trade Date` 在合约到期日之后 4 天以内），写合约到期日，理由同 EXPIRE；提前被指派的（在到期日之前），写 `Activity/Trade Date`（使用者 2026-11-17 定）。交割股票写一行 FILL：`side` 是 SELL 或 BUY，`instrument` 没有期权字段、乘数 1，`caused_by_event` 指向那条 ASSIGNED。股票行认作交割的条件：同账户、同标的、股数 = 张数 × 100、价格 = 行权价、日期等于指派行。样例 `etrade-sample.csv` 第 8、9 行是一对；第 12 行是普通股票卖出，跳过。
 - **JPM 的指派。** 真实样本这个月没有指派，JPM 导出里指派怎么写还没见过。`Purchase`/`Sale` 股票行满足下面全部条件时，不跳过，进待确认（原因 `possible-assignment`），问使用者：同账户在导出或库里有一张这个标的的卖出期权；股票成交日就是这张期权的到期日；价格等于行权价；股数等于张数 × 100。样例第 11 行按这个假设形状造了一行（第 23 行是对应的卖开）。见到真实的 JPM 指派行以后，按它定正式规则。
 - **行权（EXERCISED）。** 第一版只卖期权，没有自己行权的行。见到了进待确认。
 
@@ -125,7 +125,7 @@ option-ta 的 `accounts` 集合已登记的 `account_ref`（形如 `JPM-NORT-441
 
 **金额。** 真实样本里每行都正好是 净额 = 总额 − `Commission`（卖）或 −(总额 + `Commission`)（买），没有另外的监管费。所以 `commission` 取 `Commission`，`fees` 留空。
 
-**日期的怪处。** 真实样本里 `Option Assigned` 行的 `Settlement Date` 比 `Activity/Trade Date` 早 3 天（看起来是到期那个周五），交割股票行两个日期相同。样例第 8 行照样复现。`event_date` 用哪个，列在第 9 节待确认。
+**日期的怪处。** 真实样本里 `Option Assigned` 行的 `Settlement Date` 比 `Activity/Trade Date` 早 3 天（看起来是到期那个周五），交割股票行两个日期相同。样例第 8 行照样复现。按第 4 节的规则，到期时被指派写合约到期日。
 
 ## 6. 待入账（Pending）
 
@@ -174,7 +174,6 @@ REVERSAL 行的 `id` 是 `<被冲销的 fill_id>:reversed-by-export`，`reversal
 
 ## 10. 待使用者确认
 
-1. EXPIRE 的 `event_date` 用合约到期日（本文的做法），不用 JPM 的入账日。
-2. eTrade 指派的 `event_date` 用 `Activity/Trade Date`，还是那一行更早的 `Settlement Date`。年末会影响税年；以后用 1099-B 核。
-3. 补齐用「REVERSAL + 新行」。另一个做法是给 `fills` 加一种只补字段的记录类型，要改 `ledger`。
-4. JPM 指派行的真实写法，见到第一份有指派的导出时再定。
+已定（使用者 2026-11-17）：EXPIRE 的 `event_date` 用合约到期日；到期时被指派的 ASSIGNED 用合约到期日，提前被指派的用实际日期；补齐用「REVERSAL + 新行」。
+
+还没定：JPM 指派行的真实写法，见到第一份有指派的导出时再定。

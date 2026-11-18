@@ -3,8 +3,8 @@
   {
    "line": 8,
    "record_type": "EVENT",
-   "id": "NVDA261016C00190000:ASSIGNED:2026-10-19:eTrade-Orbit-5150",
-   "event_id": "NVDA261016C00190000:ASSIGNED:2026-10-19:eTrade-Orbit-5150",
+   "id": "NVDA261016C00190000:ASSIGNED:2026-10-16:eTrade-Orbit-5150",
+   "event_id": "NVDA261016C00190000:ASSIGNED:2026-10-16:eTrade-Orbit-5150",
    "account_ref": "eTrade-Orbit-5150",
    "underlying": "NVDA",
    "option_symbol": "NVDA261016C00190000",
@@ -14,8 +14,8 @@
    "multiplier": 100,
    "qty": 2,
    "type": "ASSIGNED",
-   "event_date": "2026-10-19",
-   "trade_date": "2026-10-19",
+   "event_date": "2026-10-16",
+   "trade_date": "2026-10-16",
    "source": "broker-export"
   },
   {
@@ -46,7 +46,7 @@
    "commission": "0.32",
    "fees": null,
    "source": "broker-export",
-   "caused_by_event": "NVDA261016C00190000:ASSIGNED:2026-10-19:eTrade-Orbit-5150"
+   "caused_by_event": "NVDA261016C00190000:ASSIGNED:2026-10-16:eTrade-Orbit-5150"
   },
   {
    "line": 10,
