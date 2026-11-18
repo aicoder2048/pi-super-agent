@@ -7,7 +7,7 @@ import { bsPutPrice } from "../../docs/modules/examples/option-ta/options-math.t
  * Synthetic `iv-snapshots` rows for SPY with known IVs, so a test can derive the expected rank, percentile and HV20 from
  * these lists instead of from the code under test. Run this file to rewrite the vol tool's committed fixture database.
  */
-export const METHODOLOGY = "option-ta-iv-close-v1";
+export const METHODOLOGY = "option-ta-iv-close-v2";
 export const KNOWN_IV = [0.18, 0.19, 0.2, 0.22, 0.25, 0.3, 0.28, 0.26, 0.24, 0.22, 0.21, 0.2, 0.19, 0.18, 0.17, 0.16, 0.15, 0.16, 0.17, 0.18, 0.19, 0.2, 0.21, 0.22, 0.23];
 export const DAILY_RETURN = [0, 0.01, -0.005, 0.012, -0.008, 0.004, -0.011, 0.007, 0.003, -0.002, 0.009, -0.006, 0.005, -0.01, 0.006, 0.002, -0.004, 0.008, -0.007, 0.011, -0.003, 0.001, 0.004, -0.009, 0.006];
 /** The day whose contract had no daily bar: its IV is not in the series, its underlying close still is. */
@@ -43,7 +43,7 @@ export function historyRows() {
 			data_status: ok ? "ok" : "no-data",
 		};
 	});
-	const older = { ...rows[0]!, trade_date: "2026-09-01", expiry: "2026-10-01", contract_close: 40, methodology: "option-ta-iv-close-v0", data_status: "ok" };
+	const older = { ...rows[0]!, trade_date: "2026-09-01", expiry: "2026-10-01", contract_close: 40, methodology: "option-ta-iv-close-v1", data_status: "ok" };
 	const other = { ...rows.at(-1)!, symbol: "QQQ", contract_close: 60 };
 	return [older, ...rows, other];
 }

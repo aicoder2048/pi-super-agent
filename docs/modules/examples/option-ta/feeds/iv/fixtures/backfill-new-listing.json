@@ -1,0 +1,108 @@
+{
+ "input": {
+  "now": "2026-11-19T21:40:00.000Z",
+  "rows": {
+   "watchlist": [
+    {
+     "id": "1",
+     "from": "fictional-fixture",
+     "fields": {
+      "symbol": "SPCX",
+      "added_at": "2026-11-19T21:00:00.000Z"
+     }
+    }
+   ]
+  },
+  "settings": {
+   "requestsPerTick": 12
+  }
+ },
+ "responses": {
+  "https://api.massive.com/v3/reference/tickers/SPCX": {
+   "results": {
+    "ticker": "SPCX",
+    "market": "stocks",
+    "active": true,
+    "list_date": "2026-06-12"
+   },
+   "status": "OK"
+  },
+  "https://api.massive.com/v2/aggs/ticker/SPCX/range/1/day/2026-06-12/2026-11-19?adjusted=false&sort=asc&limit=50000": {
+   "ticker": "SPCX",
+   "adjusted": false,
+   "results": [
+    {
+     "o": 160.95,
+     "h": 160.95,
+     "l": 160.95,
+     "c": 160.95,
+     "v": 1000000,
+     "t": 1781240400000
+    },
+    {
+     "o": 158,
+     "h": 158,
+     "l": 158,
+     "c": 158,
+     "v": 1000000,
+     "t": 1781499600000
+    },
+    {
+     "o": 162,
+     "h": 162,
+     "l": 162,
+     "c": 162,
+     "v": 1000000,
+     "t": 1781586000000
+    }
+   ],
+   "status": "OK"
+  },
+  "https://api.massive.com/v3/reference/options/contracts?underlying_ticker=SPCX&contract_type=put&expiration_date.gte=2026-07-03&expiration_date.lte=2026-07-27&strike_price.gte=152.90&strike_price.lte=169.00&as_of=2026-06-12&sort=expiration_date&order=asc&limit=250": {
+   "results": [],
+   "status": "OK"
+  },
+  "https://api.massive.com/v3/reference/options/contracts?underlying_ticker=SPCX&contract_type=put&expiration_date.gte=2026-07-06&expiration_date.lte=2026-07-30&strike_price.gte=150.10&strike_price.lte=165.90&as_of=2026-06-15&sort=expiration_date&order=asc&limit=250": {
+   "results": [],
+   "status": "OK"
+  },
+  "https://api.massive.com/v3/reference/options/contracts?underlying_ticker=SPCX&contract_type=put&expiration_date.gte=2026-07-07&expiration_date.lte=2026-07-31&strike_price.gte=153.90&strike_price.lte=170.10&as_of=2026-06-16&sort=expiration_date&order=asc&limit=250": {
+   "results": [
+    {
+     "ticker": "O:SPCX260717P00160000",
+     "underlying_ticker": "SPCX",
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2026-07-17",
+     "strike_price": 160,
+     "shares_per_contract": 100
+    },
+    {
+     "ticker": "O:SPCX260717P00165000",
+     "underlying_ticker": "SPCX",
+     "contract_type": "put",
+     "exercise_style": "american",
+     "expiration_date": "2026-07-17",
+     "strike_price": 165,
+     "shares_per_contract": 100
+    }
+   ],
+   "status": "OK"
+  },
+  "https://api.massive.com/v2/aggs/ticker/O:SPCX260717P00160000/range/1/day/2026-06-16/2026-06-16?adjusted=false": {
+   "ticker": "x",
+   "resultsCount": 1,
+   "results": [
+    {
+     "o": 9.8,
+     "h": 9.8,
+     "l": 9.8,
+     "c": 9.8,
+     "v": 10,
+     "t": 1781586000000
+    }
+   ],
+   "status": "OK"
+  }
+ }
+}

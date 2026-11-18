@@ -13,7 +13,7 @@
     }
    ]
   },
-  "cursor": "{\"methodology\":\"option-ta-iv-close-v1\",\"done\":{\"SPY\":\"2026-11-18\"},\"failures\":0}"
+  "cursor": "{\"methodology\":\"option-ta-iv-close-v2\",\"done\":{\"SPY\":\"2026-11-18\"},\"failures\":0}"
  },
  "responses": {
   "https://api.massive.com/v2/aggs/ticker/SPY/range/1/day/2026-11-19/2026-11-19?adjusted=false&sort=asc&limit=50000": {
@@ -31,7 +31,7 @@
    ],
    "status": "OK"
   },
-  "https://api.massive.com/v3/reference/options/contracts?underlying_ticker=SPY&contract_type=put&expiration_date.gte=2026-12-10&expiration_date.lte=2027-01-03&strike_price.gte=703.00&strike_price.lte=777.00&sort=expiration_date&order=asc&limit=250": {
+  "https://api.massive.com/v3/reference/options/contracts?underlying_ticker=SPY&contract_type=put&expiration_date.gte=2026-12-10&expiration_date.lte=2027-01-03&strike_price.gte=703.00&strike_price.lte=777.00&as_of=2026-11-19&sort=expiration_date&order=asc&limit=250": {
    "status": 429,
    "headers": {
     "retry-after": "30"

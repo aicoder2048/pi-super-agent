@@ -45,6 +45,7 @@ export async function getJson(url: string, key: string, signal: AbortSignal): Pr
 		const why = said.error ?? said.message;
 		return fail("UPSTREAM_ERROR", `行情服务回 HTTP ${reply.status}${why ? `（${oneLine(why)}）` : ""}：key 无效，或套餐不含期权快照。换 key：just module secret option-ta POLYGON_API_KEY`);
 	}
+	if (reply.status === 404) return fail("NO_DATA", "行情服务回 HTTP 404：没有这个代码或合约");
 	if (!reply.ok) return fail("UPSTREAM_ERROR", `行情服务返回 HTTP ${reply.status}，稍后再查`);
 	const body = object(await reply.json().catch(() => fail("UPSTREAM_ERROR", "行情服务的应答不是 JSON，稍后再查")));
 	if (body.status === "ERROR") return fail("UPSTREAM_ERROR", `行情服务回了错误：${oneLine(body.error ?? body.message)}`);

@@ -13,7 +13,7 @@
     }
    ]
   },
-  "cursor": "{\"methodology\":\"option-ta-iv-close-v1\",\"done\":{\"QQQ\":\"2025-11-28\"},\"failures\":0}",
+  "cursor": "{\"methodology\":\"option-ta-iv-close-v2\",\"done\":{\"QQQ\":\"2025-11-28\"},\"failures\":0}",
   "settings": {
    "requestsPerTick": 10
   }
@@ -40,76 +40,6 @@
      "t": 1764651600000
     }
    ],
-   "status": "OK"
-  },
-  "https://api.massive.com/v3/reference/options/contracts?underlying_ticker=QQQ&contract_type=put&expiration_date.gte=2025-12-22&expiration_date.lte=2026-01-15&strike_price.gte=579.50&strike_price.lte=640.50&expired=true&sort=expiration_date&order=asc&limit=250": {
-   "results": [
-    {
-     "ticker": "O:QQQ251222P00610000",
-     "underlying_ticker": "QQQ",
-     "contract_type": "put",
-     "exercise_style": "american",
-     "expiration_date": "2025-12-22",
-     "strike_price": 610,
-     "shares_per_contract": 100
-    },
-    {
-     "ticker": "O:QQQ251222P00609000",
-     "underlying_ticker": "QQQ",
-     "contract_type": "put",
-     "exercise_style": "american",
-     "expiration_date": "2025-12-22",
-     "strike_price": 609,
-     "shares_per_contract": 100
-    },
-    {
-     "ticker": "O:QQQ251222P00611000",
-     "underlying_ticker": "QQQ",
-     "contract_type": "put",
-     "exercise_style": "american",
-     "expiration_date": "2025-12-22",
-     "strike_price": 611,
-     "shares_per_contract": 100
-    },
-    {
-     "ticker": "O:QQQ251222P00608000",
-     "underlying_ticker": "QQQ",
-     "contract_type": "put",
-     "exercise_style": "american",
-     "expiration_date": "2025-12-22",
-     "strike_price": 608,
-     "shares_per_contract": 100
-    },
-    {
-     "ticker": "O:QQQ251226P00610000",
-     "underlying_ticker": "QQQ",
-     "contract_type": "put",
-     "exercise_style": "american",
-     "expiration_date": "2025-12-26",
-     "strike_price": 610,
-     "shares_per_contract": 100
-    }
-   ],
-   "status": "OK"
-  },
-  "https://api.massive.com/v2/aggs/ticker/O:QQQ251222P00610000/range/1/day/2025-12-01/2025-12-01?adjusted=false": {
-   "ticker": "x",
-   "resultsCount": 0,
-   "status": "OK"
-  },
-  "https://api.massive.com/v2/aggs/ticker/O:QQQ251222P00609000/range/1/day/2025-12-01/2025-12-01?adjusted=false": {
-   "ticker": "x",
-   "resultsCount": 0,
-   "status": "OK"
-  },
-  "https://api.massive.com/v2/aggs/ticker/O:QQQ251222P00611000/range/1/day/2025-12-01/2025-12-01?adjusted=false": {
-   "ticker": "x",
-   "resultsCount": 0,
-   "status": "OK"
-  },
-  "https://api.massive.com/v2/aggs/ticker/O:QQQ251222P00608000/range/1/day/2025-12-01/2025-12-01?adjusted=false": {
-   "ticker": "x",
-   "resultsCount": 0,
    "status": "OK"
   },
   "https://api.massive.com/v3/reference/options/contracts?underlying_ticker=QQQ&contract_type=put&expiration_date.gte=2025-12-22&expiration_date.lte=2026-01-15&strike_price.gte=579.50&strike_price.lte=640.50&as_of=2025-12-01&sort=expiration_date&order=asc&limit=250": {

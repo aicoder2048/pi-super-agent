@@ -15,6 +15,15 @@
   }
  },
  "responses": {
+  "https://api.massive.com/v3/reference/tickers/SPY": {
+   "results": {
+    "ticker": "SPY",
+    "market": "stocks",
+    "active": true,
+    "list_date": "1993-01-29"
+   },
+   "status": "OK"
+  },
   "https://api.massive.com/v2/aggs/ticker/SPY/range/1/day/2025-11-19/2026-11-19?adjusted=false&sort=asc&limit=50000": {
    "ticker": "SPY",
    "adjusted": false,

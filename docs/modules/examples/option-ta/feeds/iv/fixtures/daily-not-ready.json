@@ -13,7 +13,7 @@
     }
    ]
   },
-  "cursor": "{\"methodology\":\"option-ta-iv-close-v1\",\"done\":{\"SPY\":\"2026-11-18\"},\"failures\":0}"
+  "cursor": "{\"methodology\":\"option-ta-iv-close-v2\",\"done\":{\"SPY\":\"2026-11-18\"},\"failures\":0}"
  },
  "responses": {
   "https://api.massive.com/v2/aggs/ticker/SPY/range/1/day/2026-11-19/2026-11-19?adjusted=false&sort=asc&limit=50000": {
