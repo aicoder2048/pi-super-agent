@@ -50,7 +50,7 @@ export interface ModuleRecord {
 }
 
 export type ModuleEvent =
-	/** The watcher saw a package folder, new or changed. `recheck`: the host just started, so a version an older host judged invalid is checked again. */
+	/** The watcher saw a package folder, new or changed. `recheck`: the host just started, so a version an older host judged invalid is checked again; an update whose migration failed (also invalid) gets one more migrate on each start. */
 	| { type: "package-found"; version: Version; recheck?: boolean }
 	| { type: "package-gone" }
 	/** The user switched the module on or off (web page, TUI or `just module on|off`). */
