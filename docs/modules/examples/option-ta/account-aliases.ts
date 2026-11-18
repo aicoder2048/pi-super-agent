@@ -63,7 +63,8 @@ export function alignHistoricalAccounts(fills: readonly DbRow[], accounts: reado
 	};
 	const idView = (value: unknown): string | undefined => {
 		if (typeof value !== "string") return undefined;
-		const m = /^(.*)(:cum\d+)$/.exec(value);
+		// An import replacement whose key the mail feed already owned ends in `:cum<n>:export` (broker-import.ts).
+		const m = /^(.*)(:cum\d+(?::export)?)$/.exec(value);
 		const key = keyView(m ? m[1] : value);
 		return key === undefined ? undefined : key + (m ? m[2] : "");
 	};

@@ -146,7 +146,7 @@ option-ta 的 `accounts` 集合已登记的 `account_ref`（形如 `JPM-NORT-441
 | 张数、价格对上，库里正好一行、账户是登记名，导出给得出的佣金、费用、交割日、交易编号它都有 | `already-recorded`，什么都不写（上次导入过，或手动记的 EVENT 正好一样） |
 | 张数、价格对上，但库里的行缺上面任何一项、账户是邮件短码，或同一订单分了几行（部分成交的增量） | `enrich`：每个旧行写一行 REVERSAL 冲销，再写一行导出的完整行。旧行的键已经被占（邮件按登记名记的最后一笔增量，键和导出合并行一样）时，替代行的 `fill_id` 用 `<键>:export`。替代行保留旧行的 `account_alias_seen`、`source_message_id`；旧行账户是短码时，短码记进 `account_alias_seen`。成交行只追加、不改（spec「订单键和 `id`」），更正靠冲销（tax memo 第 14.1 节），`ledger` 已经会跳过被冲销的行 |
 | 合约、方向、日期、账户对上，但张数或价格不同；或库里的佣金、费用、交割日、交易编号和导出不一致 | `conflict`：两边都不写，进待确认，问使用者 |
-| 同合约、同类型、同账户的 EVENT 库里已有，但日期不同（比如手动按 JPM 入账日记了到期） | `conflict`（`event-date-mismatch`）：不写第二条 EVENT，问使用者 |
+| 同合约、同账户的到期（EXPIRE）库里已有，但日期不同（比如手动按 JPM 入账日记了到期）；指派可以分几天，不比日期 | `conflict`（`event-date-mismatch`）：不写第二条 EVENT，问使用者 |
 | 邮件行账户是「待确认账户」 | `account-unconfirmed`：附上建议账户，等使用者 |
 | 库里没有 | `add`：写导出行，`source` 是 `broker-export` |
 

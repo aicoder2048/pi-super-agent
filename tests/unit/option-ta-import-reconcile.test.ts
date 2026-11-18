@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { importBrokerCsv } from "../../docs/modules/examples/option-ta/broker-import.ts";
+import { recordFill } from "../../docs/modules/examples/option-ta/tools/record/index.ts";
 import { PACKAGE } from "../helpers/option-ta-ledger-db.ts";
 
 /** The samples and their accounts are made up. */
@@ -87,4 +88,17 @@ test("eTrade 免责声明里有裸引号，不让整份文件作废", () => {
 
 test("库里有空行也不抛错", () => {
 	assert.doesNotThrow(() => importBrokerCsv({ broker: "jpm", csv: JPM, import_date: DAY, fills: [null], accounts: [...accounts, null] }));
+});
+
+test("导入补齐之后，同一单再用 record 报一次：认出是已被导出替代的订单，不当成账户认不出", () => {
+	const history = [mailed(1, 20, 20)];
+	const after = [...history, ...stored(run(history).fills, 100)];
+	const r = recordFill({ account_ref: "NORTx4411", side: "STO", underlying: "DIA", right: "put", strike: "470", expiry: "2026-10-30", cum_qty: 20, avg_price: "1.1500", trade_date: "2026-10-27" }, { fills: after, accounts }) as Row;
+	assert.deepEqual([r.status, r.detail], ["conflict", "reversed-order"], JSON.stringify(r));
+});
+
+test("eTrade 先提前指派一部分、到期再指派剩下的，是两条真实事件，不算日期冲突", () => {
+	const early = { _id: 1, underlying: "NVDA", option_symbol: "NVDA261016C00190000", right: "call", strike: 190, expiry: "2026-10-16", multiplier: 100, record_type: "EVENT", type: "ASSIGNED", event_id: "manual-assigned-1", event_date: "2026-10-14", trade_date: "2026-10-14", qty: 1, account_ref: "eTrade-Orbit-5150", source: "manual" };
+	const out = run([early], ETRADE, "etrade");
+	assert.deepEqual(out.needs_confirmation.filter((n: Row) => n.detail === "event-date-mismatch"), []);
 });

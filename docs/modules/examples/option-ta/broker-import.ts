@@ -256,7 +256,8 @@ export function importBrokerCsv(input: BrokerImportInput) {
    if (matches.length > 1 || (matches.length === 1 && Number(matches[0]!.qty) !== r.qty)) { action("conflict"); needs_confirmation.push({ line: r.line, reason: "conflict", existing: matches.map(factId), exported: clean(r) }); }
    else if (matches.length) { action("already-recorded"); acceptedEvents.set(r.id, String(matches[0]!.event_id || factId(matches[0]!))); }
    else if (history.some(h => factId(h) === r.id)) { action("conflict"); needs_confirmation.push({ line: r.line, reason: "conflict", detail: "event-id-already-reversed-or-inconsistent" }); }
-   else if (active.some(h => h.record_type === "EVENT" && h.option_symbol === r.option_symbol && h.type === r.type && h.event_date !== r.event_date && (resolution(h) as any).account_ref === r.account_ref)) {
+   // Expiry happens once; assignment can come in parts on different days, so only EXPIRE dates are compared.
+   else if (r.type === "EXPIRE" && active.some(h => h.record_type === "EVENT" && h.option_symbol === r.option_symbol && h.type === r.type && h.event_date !== r.event_date && (resolution(h) as any).account_ref === r.account_ref)) {
     action("conflict"); needs_confirmation.push({ line: r.line, reason: "conflict", detail: "event-date-mismatch", exported: clean(r) });
    }
    else { emit(r); action("add"); acceptedEvents.set(r.id, r.event_id); }
