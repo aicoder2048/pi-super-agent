@@ -1,0 +1,11 @@
+{
+  "title": "VIX 每日收盘",
+  "description": "每 30 分钟看一次；每个交易日收盘 30 分钟后（提前收盘日跟着提前）开始从 CBOE 的公开历史文件取 VIX、VIX9D、VIX3M 那天的开高低收，文件里有了就存一行，没有就下一次检查再取。第一次回填最近一年。不要 key：Massive 和 Finnhub 现在的订阅都拿不到 VIX。同一交易日只存一次；cursor 记每个指数存到哪一天，宿主停过也从文件里补上；收盘 18 小时后还没有那天的收盘就报 problem",
+  "handler": "index.ts",
+  "every": "30m",
+  "limit": "2m",
+  "settings": {
+    "baseUrl": "https://cdn.cboe.com/api/global/us_indices/daily_prices"
+  },
+  "into": "vix-closes"
+}

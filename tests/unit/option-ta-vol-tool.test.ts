@@ -99,6 +99,23 @@ test("有历史：用收盘价反解的序列算 rank、百分位，HV20 用正�
 	assert.equal(typeof out.iv_hv.class, "string");
 });
 
+test("市场环境：vix-closes 有收盘时回 VIX 档位和期限结构；VIX ≥35 和倒挂写进 regime 的提示，个股 IV 一档照常判", async () => {
+	writeHistory(dataDir);
+	const db = new DatabaseSync(join(dataDir, "data.db"));
+	db.exec(`CREATE TABLE "vix-closes" ("_id" INTEGER PRIMARY KEY, "_from" TEXT, "ticker" TEXT, "trade_date" TEXT, "close" REAL)`);
+	const insert = db.prepare(`INSERT INTO "vix-closes" ("_from", "ticker", "trade_date", "close") VALUES ('feed:vix', ?, ?, ?)`);
+	for (const [t, d, c] of [["VIX", "2026-11-16", 30], ["VIX", "2026-11-17", 36.2], ["VIX9D", "2026-11-17", 40.1], ["VIX3M", "2026-11-17", 31.5]] as const) insert.run(t, d, c);
+	db.close();
+	normal();
+	const out = await run({ symbol: "SPY", now: NOW });
+	assert.equal(out.vix.status, "OK");
+	assert.deepEqual([out.vix.date, out.vix.vix, out.vix.level, out.vix.term, out.vix.vix_percentile_1y], ["2026-11-17", 36.2, "恐慌", "倒挂", 0.5]);
+	assert.equal(out.regime.vix_level, "恐慌");
+	assert.equal(out.regime.iv, "中间", "百分位 0.79 不到 0.8，IV/HV 1.8 在偏贵，合起来不算偏贵");
+	assert.ok(out.regime.notes.some((n: string) => /卖方风控线 35/.test(n)), JSON.stringify(out.regime.notes));
+	assert.ok(out.regime.notes.some((n: string) => /倒挂/.test(n)));
+});
+
 test("没设 PSA_MODULE_DATA：history 回 NO_HISTORY，不去读当前目录下的 data.db", async () => {
 	writeHistory(dataDir);
 	delete process.env["PSA_MODULE_DATA"];

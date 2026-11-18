@@ -6,7 +6,8 @@ import { impliedVolPut } from "../../iv.ts";
 import { dteOn, ivPercentile, ivRank, IV_SERIES_TENOR } from "../../iv-history.ts";
 import { fail, MarketError, MISSING_KEY, prevClose, query, REQUEST_LIMIT_MS, snapshotPages } from "../../massive.ts";
 import { isTicker } from "../../symbols.ts";
-import { classifyIvHvRatio, hv20 } from "../../vol-regime.ts";
+import { marketRegime, readVixSeries, VIX_SELLER_RISK_LINE, type MarketRegime } from "../../vix.ts";
+import { classifyIvHvRatio, hv20, ivQuadrant, QUADRANT_HINT } from "../../vol-regime.ts";
 
 /** Term structure: the expiry nearest each of these calendar-day targets. */
 const TERM_TARGET_DAYS = [7, 30, 60, 90] as const;
@@ -21,7 +22,7 @@ const RANK_WINDOW_DAYS = 365;
 
 const CLASS_LABEL: Record<string, string> = { cheap: "便宜", slightly_cheap: "略便宜", fair: "合理", rich: "偏贵", very_rich: "很贵" };
 
-const UNITS = "IV、HV、rank、百分位、偏斜都是小数（0.2163 是 21.63%）；ratio 是 IV 除以 HV20；dte 是到到期日美东 16:00 的日历天数；正股价的延迟见 underlying.delay";
+const UNITS = "IV、HV、rank、百分位、偏斜都是小数（0.2163 是 21.63%）；VIX 是指数点（25.46 就是 25.46）；ratio 是 IV 除以 HV20；dte 是到到期日美东 16:00 的日历天数；正股价的延迟见 underlying.delay";
 
 const r4 = (n: number | null) => (n === null ? null : Math.round(n * 10000) / 10000);
 const pick = (row: ChainRow) => ({ contract: row.contract, expiry: row.expiry, dte: row.dte, strike: row.strike, iv: row.iv, iv_source: row.iv_source });
@@ -65,6 +66,7 @@ export default async function vol(input: Record<string, unknown>) {
 		const history = readHistory(symbol);
 		const hv = history.status === "OK" ? history.hv20 : null;
 		const ratio = atm?.iv != null && hv !== null && hv > 0 ? atm.iv / hv : null;
+		const market = marketRegime(readVixSeries());
 		return {
 			status: "OK",
 			symbol,
@@ -79,6 +81,8 @@ export default async function vol(input: Record<string, unknown>) {
 			...(new Set(termStructure(atmByExpiry).map((t) => t.iv_source)).size > 1 && { term_note: "期限结构里有的 IV 是供应方的、有的是自算的，口径不同，比较时看 iv_source" }),
 			skew: skewPages === null ? null : skew(parseChain(symbol, skewPages.rows, nowMs).rows, atm!.expiry),
 			history,
+			vix: market,
+			regime: regime(history.status === "OK" ? history.iv_percentile : null, r4(ratio), market),
 			truncated: termPages.truncated || (skewPages?.truncated ?? false),
 			units: UNITS,
 		};
@@ -121,6 +125,20 @@ function skew(rows: readonly ChainRow[], expiry: string) {
 		put_minus_call: comparable ? r4(put.iv! - call.iv!) : null,
 		...(put !== null && call !== null && !comparable && { note: "put 和 call 的 IV 一边是供应方的、一边是自算的，不相减" }),
 	};
+}
+
+/**
+ * The notes' first question before any strategy: is this symbol's IV high or low (one-year percentile and IV/HV20 together), and
+ * what is the market's VIX saying. Information for the experts, not an order.
+ */
+function regime(percentile: number | null, ratio: number | null, market: MarketRegime) {
+	const quadrant = ivQuadrant(percentile, ratio);
+	const notes = [
+		...(quadrant === null ? ["缺 IV 分位或 IV/HV，个股这一档没判"] : [QUADRANT_HINT[quadrant]]),
+		...(market.status === "OK" && market.vix >= VIX_SELLER_RISK_LINE ? [`VIX ${market.vix} 在卖方风控线 ${VIX_SELLER_RISK_LINE} 以上：卖方先考虑离场，不新开`] : []),
+		...(market.status === "OK" && market.term === "倒挂" ? ["VIX 期限结构倒挂：市场认为近期有事，近月期权更贵"] : []),
+	];
+	return { iv: quadrant, vix_level: market.status === "OK" ? market.level : null, notes };
 }
 
 type SnapshotRow = { trade_date: string; strike: number | null; expiry: string | null; contract_close: number | null; underlying_close: number | null; data_status: string | null };

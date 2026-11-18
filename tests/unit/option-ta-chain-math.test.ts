@@ -238,13 +238,13 @@ test("HV20：最近 20 个对数收益的样本标准差 × √252，不够 21 �
 	near(hv20(closes41, days41, days41[20]!), expected, 1e-9);
 });
 
-test("IV/HV 分档：0.85、1.0、1.15、1.4", () => {
-	assert.deepEqual(IV_HV_BANDS, { cheap: 0.85, slightlyCheap: 1.0, fair: 1.15, rich: 1.4 });
-	assert.equal(classifyIvHvRatio(0.8, 1.0), "cheap");
+test("IV/HV 分档照 knowledge/vol-regime：0.8、0.95、1.2、2.0", () => {
+	assert.deepEqual(IV_HV_BANDS, { cheap: 0.8, slightlyCheap: 0.95, fair: 1.2, rich: 2.0 });
+	assert.equal(classifyIvHvRatio(0.7, 1.0), "cheap");
 	assert.equal(classifyIvHvRatio(0.9, 1.0), "slightly_cheap");
 	assert.equal(classifyIvHvRatio(1.1, 1.0), "fair");
-	assert.equal(classifyIvHvRatio(1.3, 1.0), "rich");
-	assert.equal(classifyIvHvRatio(1.5, 1.0), "very_rich");
+	assert.equal(classifyIvHvRatio(1.5, 1.0), "rich");
+	assert.equal(classifyIvHvRatio(2.5, 1.0), "very_rich");
 	assert.equal(classifyIvHvRatio(0.5, 0), null);
 	assert.equal(classifyIvHvRatio(null, 1), null);
 });
