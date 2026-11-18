@@ -29,6 +29,7 @@
     "roll": { "type": "text", "title": "Roll 时才有：type（Calendar、Diagonal 或 Combo）、close_cash（旧腿的现金，美元，正数是收、负数是付）、open_cash（新腿的现金，同上）、net（净收为正，美元）、verdict（ROLL_OK、ROLL_FOR_PENNIES 或 DO_NOT_ROLL_TAKE_LOSS；买方 Roll 为空）、verdict_note、penny_threshold（净收门槛，美元）" },
     "legs": { "type": "text", "title": "每条腿：dte（天）、iv（小数）、iv_source（给定、自算或无数据）、assignment_probability（卖出腿到期被指派的概率，小数；缺 IV 或正股价、到期日当天为空）、touch_probability（到期前碰到行权价的概率，小数）、liquidity（score 0 到 1、tier 好/偏薄/差/很差、nbbo 有报价/缺报价）" },
     "expiry_pl": { "type": "text", "title": "每个情景正股价的到期盈亏：spot（美元）、pl（整单美元）；Roll 时为空" },
+    "greeks": { "type": "text", "title": "开仓前四项检查的数（需要 spot，没给或为 0 时 status 是 NO_SPOT；有腿没有 IV 时 status 是 PARTIAL，整单的数都不回，reason 说明）：delta_shares（整单相当于多少股正股，负是空头；CC 含持股，stock_shares 是股数）、gamma_shares_per_dollar、theta_per_day（整单每天美元）和 theta_side（收租、付租、持平）、vega_per_point（IV 变 1 个点整单美元）、iv_up_10 和 iv_down_10（IV 各加减 10 个点时整单的重估盈亏，美元）、gamma_zone（3 天内到期、离正股不到 3% 的腿）、legs_without_iv、legs_expired（当天到期的腿 Delta 按价内 ±1、价外 0 计）、note；Roll 只算留下的新腿，不含持有的正股（scope）。Black-Scholes 估算，不是券商的数" },
     "assumptions": { "type": "text", "title": "这次计算用到的假设" }
   }
 }

@@ -4,6 +4,7 @@ import { classifyDeliverable, STANDARD_SHARES_PER_CONTRACT } from "../../contrac
 import { impliedVolCall, impliedVolPut } from "../../iv.ts";
 import { recommendLimitPrice, recommendNetLimitPrice } from "../../limit-price.ts";
 import { scoreLiquidity, type LiquidityTier } from "../../liquidity.ts";
+import { portfolioGreeks } from "../../portfolio-greeks.ts";
 import { bsShortCallAssignProb, bsShortPutAssignProb } from "../../options-math.ts";
 import { ROLL_PENNY_FRACTION, rollCreditGate, type RollCreditVerdict } from "../../roll-credit-gate.ts";
 import {
@@ -224,6 +225,23 @@ function reference(legs: Leg[]) {
 	return { price: rec.netLimit, total: money(rec.netLimit * SHARES * unit), note: `净价差 ${rec.band}：每组的每股净参考价，正数是收，负数是付；整单 ${unit} 组` };
 }
 
+/** The four checks' numbers for the position the order leaves: a Roll's closing legs are gone after it. Needs the underlying price. */
+function greeksOf(legs: Leg[], spot: number | null, kind: string) {
+	if (spot === null || !(spot > 0)) return { status: "NO_SPOT", reason: "没给 spot（正股价），整单的 Delta、Gamma、Theta、Vega 和 IV ±10 点压力测试没算" };
+	const rolling = (ROLL_KINDS as readonly string[]).includes(kind);
+	const kept = rolling ? legs.filter((leg) => leg.role === "open") : legs;
+	// A CC is covered by stock: its shares carry Delta 1 each, or a net-long position reads as short.
+	const stock = kind === "CC" ? kept.reduce((n, leg) => n + leg.contracts * SHARES, 0) : 0;
+	const result = portfolioGreeks(kept.map((leg) => ({ ...leg, iv: ivOf(leg, spot), shares: SHARES })), spot, stock);
+	return { ...result, ...(rolling && { scope: "只算 Roll 之后留下的新腿，不含持有的正股" }) };
+}
+
+/** The leg's IV: given, else solved from its price (as legReport does). */
+function ivOf(leg: Leg, spot: number): number | null {
+	if (leg.iv !== null && leg.iv > 0) return leg.iv;
+	return leg.dte > 0 ? (leg.type === "put" ? impliedVolPut : impliedVolCall)(leg.price, spot, leg.strike, leg.dte) : null;
+}
+
 function legReport(leg: Leg, spot: number | null, rolling: boolean) {
 	const solve = leg.type === "put" ? impliedVolPut : impliedVolCall;
 	const given = leg.iv !== null && leg.iv > 0 ? leg.iv : null;
@@ -365,6 +383,7 @@ function compute(input: Input) {
 		roll: rolled,
 		legs: legs.map((leg) => legReport(leg, spot, rolling)),
 		expiry_pl: economics === null ? null : (scenarios as number[]).map((s) => ({ spot: s, pl: money(economics.plAt(s)) })),
+		greeks: greeksOf(legs, spot, kind),
 		assumptions: [...ASSUMPTIONS, ...(economics?.assumption ? [economics.assumption] : []), ...(rolling ? ["Roll 只算这一次的净收付；新仓位的成本和盈亏平衡要连同整条交易链看账本"] : [])],
 	};
 }
