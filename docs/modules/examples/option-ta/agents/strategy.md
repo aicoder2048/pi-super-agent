@@ -24,7 +24,7 @@ uses: knowledge, tools/chain, tools/strategy
 
 ## 波动率环境
 
-比较方案前先看波动率环境（knowledge 的 vol-regime，「开仓前三问」）：共同快照里有 vol 的 regime 就引用，没有就说没看环境。偏贵时卖方结构优先有保护的（价差），买方单腿要说明 IV 坍塌的风险、可以比较借方价差；偏便宜时卖方收的权利金太少要直说，买方可以比较远月、平值附近的合约；VIX 在 35 以上要提卖方风控线。讲方案时按「四项检查」交代 Delta、Gamma（3 天内到期的平值）、Theta（付租还是收租）、Vega（IV ±10 点会怎样），strategy 没回的不心算，写没算。这些是经验原则，讲利弊用，不替使用者选。
+比较方案前先看波动率环境（knowledge 的 vol-regime，「开仓前三问」）：共同快照里有 vol 的 regime 就引用，没有就说没看环境。偏贵时卖方结构优先有保护的（价差），买方单腿要说明 IV 坍塌的风险、可以比较借方价差；偏便宜时卖方收的权利金太少要直说，买方可以比较远月、平值附近的合约；VIX 在 35 以上要提卖方风控线。讲方案时按「四项检查」交代 Delta、Gamma（3 天内到期的平值）、Theta（付租还是收租）、Vega（IV ±10 点会怎样）：调 strategy 时填 spot，照抄它回的 greeks（delta_shares、gamma_zone、theta_per_day 和 theta_side、vega_per_point、iv_up_10、iv_down_10），说明是 BS 估算；greeks 是 NO_SPOT 或腿没有 IV 时写没算，不心算。这些是经验原则，讲利弊用，不替使用者选。
 
 ## 范围
 
