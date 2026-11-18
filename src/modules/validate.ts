@@ -519,7 +519,7 @@ function crossCheck(report: Report, note: Report, manifest: ModuleManifest, comp
 		}
 		if (item.kind === "tools" && item.tool.fetch !== undefined) {
 			const connector = TOOL_FETCHES[item.tool.fetch].connector;
-			if (!components.some((c) => c.kind === "feeds" && c.feed.connector === connector)) report(`tools/${item.name}/tool.json`, `"fetch" ${item.tool.fetch} needs a feed of this module on the ${connector} connector: the host fetches only what this module's feeds receive`);
+			if (connector !== null && !components.some((c) => c.kind === "feeds" && c.feed.connector === connector)) report(`tools/${item.name}/tool.json`, `"fetch" ${item.tool.fetch} needs a feed of this module on the ${connector} connector: the host fetches only what this module's feeds receive`);
 		}
 		if (item.kind === "agents" || item.kind === "evals") {
 			for (const use of item.kind === "agents" ? item.agent.uses : item.eval.uses) {

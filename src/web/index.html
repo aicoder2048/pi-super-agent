@@ -232,6 +232,8 @@
 		#composer { flex: 1; border: 0; outline: none; resize: none; font: inherit; font-size: 14px; line-height: 1.6; background: transparent; color: var(--ink); max-height: 30vh; }
 		#send { font-size: var(--send-size); font-weight: 600; min-height: 44px; padding: 0 var(--send-pad); border-radius: 12px; border: 0; background: var(--accent); color: #fff; }
 		#send:disabled { opacity: 0.6; cursor: default; }
+		#attach { flex: none; align-self: center; min-width: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 12px; background: none; color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+		#attach:hover { color: var(--ink); }
 		.say-row { display: flex; align-items: baseline; gap: 12px; margin-top: 8px; padding-right: calc(var(--composer-edge) + var(--send-pad)); }
 		#say-status { font-size: 12px; color: var(--muted); }
 		#clear { margin-left: auto; flex: none; padding: 0; border: 0; background: none; font: inherit; font-size: var(--send-size); color: var(--muted); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
@@ -389,7 +391,10 @@
 			<form id="say" autocomplete="off">
 				<label for="composer" class="sr">新任务</label>
 				<div id="quote-strip" class="quote-strip" hidden><span class="quote-who"></span><span class="quote-text"></span><button id="quote-cancel" type="button" aria-label="取消引用">✕</button></div>
+				<div id="attach-strip" class="quote-strip" hidden><span class="quote-who">附件：</span><span class="quote-text"></span><button id="attach-cancel" type="button" aria-label="取消附件">✕</button></div>
 				<div class="composer">
+					<button id="attach" type="button" aria-label="上传文件（最多 10 MB）" title="上传文件（最多 10 MB）"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"></path></svg></button>
+					<input id="attach-file" type="file" hidden>
 					<textarea id="composer" rows="2" placeholder="描述要做的事，例如：读取 example.com 的网页标题"></textarea>
 					<button id="send" type="submit">发送</button>
 				</div>

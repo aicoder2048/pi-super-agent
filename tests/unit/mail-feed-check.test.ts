@@ -72,6 +72,11 @@ function toolProblems(t: TestContext, tool: Record<string, unknown>, feed: Recor
 	return scan.ok ? [] : scan.problems.map((p) => `${p.where}: ${p.reason}`);
 }
 
+test("工具写 fetch: upload.file：要 effect read；网页上传的文件不经连接器，模块不用有 feed（ADR-0032）", (t) => {
+	assert.deepEqual(toolProblems(t, { effect: "read", fetch: "upload.file" }, undefined), []);
+	assert.match(toolProblems(t, { fetch: "upload.file" }, undefined).join("\n"), /"fetch" upload\.file needs "effect": "read"/);
+});
+
 test("工具写 fetch: mail.attachment：要 effect read，模块要有一个 mail 连接器的 feed；可以和 port: ocr 一起写", (t) => {
 	assert.deepEqual(toolProblems(t, { effect: "read", fetch: "mail.attachment", port: "ocr" }, GOOD), []);
 	assert.match(toolProblems(t, { fetch: "mail.attachment" }, GOOD).join("\n"), /"fetch" mail\.attachment needs "effect": "read"/);

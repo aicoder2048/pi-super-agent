@@ -17,6 +17,7 @@ import { Router, routerPreamble } from "./router.ts";
 import { moduleSecretLookup, secretLookup } from "../secrets.ts";
 import { createGateway } from "../modules/gateway.ts";
 import { fetchAttachment } from "../modules/connectors/attachment.ts";
+import { fetchUpload } from "./uploads.ts";
 import { gmailAccount } from "../modules/connectors/gmail.ts";
 import { googlePort } from "../modules/google-port.ts";
 import { createOcr } from "../ocr/ocr.ts";
@@ -131,7 +132,10 @@ export function createHostOptions({ config, modules: panel, modelRuntime, log, c
 			toolCalls: rows,
 			secret: moduleSecret,
 			log,
-			fetch: { "mail.attachment": (module, components, input, dir) => fetchAttachment({ account: mail, rows, now: Date.now }, module, components, input, dir) },
+			fetch: {
+				"mail.attachment": (module, components, input, dir) => fetchAttachment({ account: mail, rows, now: Date.now }, module, components, input, dir),
+				"upload.file": async (_module, _components, input, dir) => fetchUpload(config.stateDir, input, dir),
+			},
 			google: googlePort({ secret, oauthUrl: process.env.PSA_GOOGLE_OAUTH_URL, fixtures: config.feedFixtures !== false }),
 			ocr,
 			hold: panel.copiesInUse.hold,
