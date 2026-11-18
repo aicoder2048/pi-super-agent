@@ -3,6 +3,7 @@
  * option legs with marks. The tax view stays inside the first-version scope (tax memo 14.3): what needs stock lots, QCC or 1099-B
  * is marked 待确认, never decided. Reads data.db only.
  */
+import { aliasRegistry, alignAccounts, ambiguousNotes, resolveAccount } from "../../account-aliases.ts";
 import { readCollections, type DbRow } from "../../data-db.ts";
 import { divide, isIsoDate, price4, units } from "../../fills.ts";
 
@@ -116,7 +117,8 @@ function accountsOf(input: Input, accounts: readonly DbRow[]): Set<string> | und
 	const ref = text(input.account_ref);
 	const key = text(input.account_key);
 	if (ref === undefined && key === undefined) return undefined;
-	const refs = new Set<string>(ref === undefined ? [] : [ref]);
+	const resolved = ref === undefined ? undefined : resolveAccount(ref, aliasRegistry(accounts));
+	const refs = new Set<string>(ref === undefined ? [] : [resolved?.status === "matched" ? resolved.account_ref : ref]);
 	for (const a of accounts) if (key !== undefined && a["account_key"] === key && text(a["account_ref"])) refs.add(text(a["account_ref"])!);
 	return refs;
 }
@@ -333,14 +335,17 @@ export function ledgerView(input: Input, data: Collections, today = new Date().t
 	if (view !== "chain" && view !== "tax") return { status: "needs-input", missing: ["view"], ask: ["要哪种视图：chain（交易链）还是 tax（税务）"] };
 	const year = typeof input.year === "number" && Number.isSafeInteger(input.year) ? input.year : undefined;
 	if (view === "tax" && year === undefined) return { status: "needs-input", missing: ["year"], ask: ["税务视图要给税年"] };
-	const { items, notes } = facts(data.fills);
+	const aligned = alignAccounts(data.fills, data.accounts);
+	const { items, notes: factNotes } = facts(aligned.rows);
+	const notes = [...factNotes, ...ambiguousNotes(aligned.ambiguous)];
 	const wanted = accountsOf(input, data.accounts);
 	const mine = wanted === undefined ? items : items.filter((i) => wanted.has(i.account));
 	const scope = "第一版范围 B：只看期权记录和指派、行权；要股票批次、QCC 或 1099-B 的判断标待确认。只是标记，不是税务建议";
-	if (view === "chain") return { status: "ok", view, chains: chainView(mine, data.chains, text(input.chain_id)), notes: [...notes, "链盈亏不含指派后的股票，也不含费用未知的部分"] };
+	const chains = data.chains.map((c) => (typeof c["fill_id"] === "string" && aligned.renamed.has(c["fill_id"]) ? { ...c, fill_id: aligned.renamed.get(c["fill_id"]) } : c));
+	if (view === "chain") return { status: "ok", view, chains: chainView(mine, chains, text(input.chain_id)), notes: [...notes, "链盈亏不含指派后的股票，也不含费用未知的部分"] };
 	// Wash sales and straddles look across every account of a tax owner (tax memo 9.1, 11), so the filter applies to the output only.
 	const tax = taxView(items, year!, data.accounts, today, wanted);
-	return { status: "ok", view, year, scope, legs: tax.legs, stock: tax.stock, open: tax.open, pending: tax.pending, notes: [...notes, ...tax.notes] };
+	return { status: "ok", view, year, scope, legs: tax.legs, stock: tax.stock, open: tax.open, pending: aligned.ambiguous.length > 0 ? [...tax.pending, "待确认账户"].sort() : tax.pending, notes: [...notes, ...tax.notes] };
 }
 
 export default function ledger(input: Input) {

@@ -2,6 +2,7 @@
  * Open option positions from the `fills` rows the feed reads, through the ledger's own FIFO lots, so the two never disagree.
  * The host hands over the newest 500 rows by `trade_date`; an EVENT row carries `trade_date` = `event_date` to stay among them.
  */
+import { alignAccounts, ambiguousNotes } from "../../account-aliases.ts";
 import { facts, pieces } from "../../tools/ledger/index.ts";
 
 export type FeedRow = { id: string; fields: Readonly<Record<string, unknown>> };
@@ -54,8 +55,11 @@ function runStarts(all: Pieces): Map<string, string> {
 	return starts;
 }
 
-export function openPositions(rows: readonly FeedRow[]): { positions: Position[]; notes: string[] } {
-	const { items, notes } = facts(rows.map((r) => ({ ...r.fields, _id: Number(r.id) })));
+/** `accounts`: the registry rows, so a position recorded under an email short code and its registered name is one position. */
+export function openPositions(rows: readonly FeedRow[], accounts: readonly FeedRow[] = []): { positions: Position[]; notes: string[] } {
+	const aligned = alignAccounts(rows.map((r) => ({ ...r.fields, _id: Number(r.id) })), accounts.map((r) => r.fields));
+	const { items, notes: factNotes } = facts(aligned.rows);
+	const notes = [...factNotes, ...ambiguousNotes(aligned.ambiguous)];
 	const all = pieces(items, (account) => account).pieces;
 	const open = all.filter((p) => p.close === null);
 	const runStart = runStarts(all);

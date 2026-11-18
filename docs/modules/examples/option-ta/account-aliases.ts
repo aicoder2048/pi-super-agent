@@ -96,3 +96,47 @@ export function alignHistoricalAccounts(fills: readonly DbRow[], accounts: reado
 	if (fills.some((row) => row.record_type === "REVERSAL" && row.reversal_of != null && targetIds.has(String(row.reversal_of)))) reversed = true;
 	return { rows, ambiguous, reversed };
 }
+
+/** The registry rows when at least one has an alias. Older installs register none, so every view keeps the stored account. */
+export function aliasRegistry(accounts: readonly DbRow[]): DbRow[] {
+	const registered = accounts.filter((row) => nonempty(row.account_ref));
+	return registered.some((row) => accountAliases(row.aliases).length > 0) ? registered : [];
+}
+
+export type AmbiguousAccount = { account_ref: string; candidates: string[] };
+
+/**
+ * Read-only grouping view for positions, chains and tax: each row's account, and the account inside its order key and fill id, as
+ * the registered name. An unknown account stays as stored. A FILL or EVENT row whose account matches several registered names keeps
+ * its stored account, so it is never merged into one of them, and is listed in `ambiguous`. Reversals point at stored ids, so
+ * `reversal_of` is never renamed, and a fill id keeps its stored form when it, or its new form, is a reversal target: one
+ * reversal never takes out a second row. `renamed` maps each changed fill id from its stored form, for links such as chain legs.
+ */
+export function alignAccounts(rows: readonly DbRow[], accounts: readonly DbRow[]): { rows: DbRow[]; ambiguous: AmbiguousAccount[]; renamed: Map<string, string> } {
+	const registry = aliasRegistry(accounts);
+	const renamed = new Map<string, string>();
+	if (registry.length === 0) return { rows: [...rows], ambiguous: [], renamed };
+	const rekey = (value: unknown) => {
+		const m = typeof value === "string" ? /^([^:]+:(?:STO|BTO|BTC|STC):\d{4}-\d{2}-\d{2}:)(.+?)(:cum\d+)?$/.exec(value) : null;
+		const resolution = m ? resolveAccount(m[2], registry) : undefined;
+		return resolution?.status === "matched" ? m![1] + resolution.account_ref + (m![3] ?? "") : value;
+	};
+	const reversed = new Set(rows.filter((row) => row.record_type === "REVERSAL").map((row) => row.reversal_of));
+	const ambiguous = new Map<string, string[]>();
+	const aligned = rows.map((row): DbRow => {
+		const resolution = resolveAccount(row.account_ref, registry);
+		if (resolution.status === "ambiguous-account" && (row.record_type ?? "FILL") !== "REVERSAL") ambiguous.set(String(row.account_ref), resolution.candidates);
+		const out: Record<string, unknown> = { ...row, ...(resolution.status === "matched" && { account_ref: resolution.account_ref }) };
+		if ("order_key" in row) out.order_key = rekey(row.order_key);
+		const id = rekey(row.fill_id);
+		if (typeof id === "string" && id !== row.fill_id && !reversed.has(row.fill_id) && !reversed.has(id)) {
+			out.fill_id = id;
+			renamed.set(row.fill_id as string, id);
+		}
+		return out;
+	});
+	return { rows: aligned, ambiguous: [...ambiguous].sort(([a], [b]) => a.localeCompare(b)).map(([account_ref, candidates]) => ({ account_ref, candidates })), renamed };
+}
+
+export const ambiguousNotes = (ambiguous: readonly AmbiguousAccount[]): string[] =>
+	ambiguous.map((a) => `待确认账户：${a.account_ref} 对上多个登记账户（${a.candidates.join("、")}），这些行没有合并，按原账户单列，请使用者确认是哪个`);

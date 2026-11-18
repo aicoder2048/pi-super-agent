@@ -32,7 +32,7 @@
 
 `account-aliases.ts` 精确匹配登记名或 email/code；JPM 必须完整匹配 account_name、account_type、account_number 三元组，号码保持文字和前导零；E*TRADE 只匹配 account_label。不折叠大小写、不按尾号或相似度猜测。未知、重复别名和相关历史歧义交回确认。
 
-`record.account_ref` 可传登记名、email code 或上述来源对象的 JSON 文本。新事实使用登记名；历史邮件短码及其 account_ref/order_key/fill_id 不改写，仅在内存对齐用于去重、累计增量和冲销保护。旧库全部未配置 aliases 时保留精确历史短码兼容；配置后未知历史短码不能绕过登记映射。本轮没有 CSV importer，也不改 fills feed。record fixtures 的 Demo 名称、代码及号码均为虚构，真实映射仅由使用者确认后写私密 DB。
+`record.account_ref` 可传登记名、email code 或上述来源对象的 JSON 文本。新事实使用登记名；历史邮件短码及其 account_ref/order_key/fill_id 不改写，仅在内存对齐用于去重、累计增量和冲销保护。旧库全部未配置 aliases 时保留精确历史短码兼容；配置后未知历史短码不能绕过登记映射。本轮没有 CSV importer。fills feed、watch 和 ledger 读同一份 accounts：邮件短码认出唯一登记名时，新邮件行记登记名，原短码写进 `account_alias_seen`；认出多个不入账，记 `ambiguous-account` 并通知领队；登记了别名却认不出时照旧按短码入账并通知领队确认，登记别名后各视图自动对齐。watch 和 ledger 在内存里把历史行的账户和键对到登记名再分仓位、交易链和税务；有歧义的历史行不合并，按原账户单列并列进「待确认账户」。record fixtures 的 Demo 名称、代码及号码均为虚构，真实映射仅由使用者确认后写私密 DB。
 
 ## fills：成交邮件
 
@@ -42,7 +42,7 @@
 - 成交按订单键 `<OCC>:<方向>:<成交日>:<账户短码>` 记累计增量，`fill_id` 是 `<订单键>:cum<累计张数>`。价格按整数万分之一美元算，四舍五入后存 4 位小数文字。`Open Qty` 还有值的行 `partial_fill` 是 `"true"`。
 - 挂单、没成交、股票行、部分成交不打扰。`unparsed`、`duplicate-order-key` 每封信发一条通知，只带信的编号、行数和原因，不带信的内容。领队收到后问使用者。
 - 只有信的形状不对（没有编号）时 handler 才抛错，抛的话固定，不引用信的内容。
-- 佣金、费用、订单号、成交时间表里没有，留空待确认。账户先记短码 `account_ref`，映射到 `account_key` 是下一步。
+- 佣金、费用、订单号、成交时间表里没有，留空待确认。账户记 `account_ref`：没有登记别名时是邮件短码，登记了别名时是登记名（见上「账户别名」）；映射到 `account_key` 是下一步。
 
 **什么时候往 `brokers` 加地址。**名单交出时是空的，连接器一封信都不收（使用者 2026-11-17 定：解析做好之前名单留空）。解析在 P3-c 做好了，但地址仍然由使用者确认后再加：
 

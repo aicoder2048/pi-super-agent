@@ -26,7 +26,7 @@ const FAILURES_BEFORE_PROBLEM = 3;
 interface Input {
 	settings: { baseUrl: string; finnhubBaseUrl: string };
 	cursor: string | null;
-	rows: { fills?: FeedRow[] };
+	rows: { fills?: FeedRow[]; accounts?: FeedRow[] };
 	now: string;
 }
 
@@ -179,7 +179,7 @@ export default async function watch(input: Input) {
 	const nowMs = Date.parse(input.now);
 	const session = sessionAt(nowMs);
 	const today = session.nyDate;
-	const live = openPositions(input.rows.fills ?? []).positions.filter((p) => p.expiry >= today);
+	const live = openPositions(input.rows.fills ?? [], input.rows.accounts ?? []).positions.filter((p) => p.expiry >= today);
 	if (live.length === 0 || !isTradingDay(today) || session.phase !== "regular") return { records: [] };
 	const polygon = process.env.POLYGON_API_KEY ?? "";
 	if (polygon === "") return { records: [], problem: NO_POLYGON };
