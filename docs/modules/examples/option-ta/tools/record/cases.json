@@ -1,28 +1,976 @@
 [
-  { "name": "缺账户：不拼订单键，交回要问使用者的话", "data": "tools/ledger/fixtures/data",
-    "input": { "side": "STO", "underlying": "TSLA", "right": "call", "strike": "300", "expiry": "2026-12-18", "cum_qty": 2, "avg_price": "2.10", "trade_date": "2026-11-17" },
-    "expect": { "status": "needs-input", "missing": ["account_ref"], "ask": ["缺账户：问使用者记在哪个账户（账户短码）"] } },
-  { "name": "账户短码没见过：不拼订单键，列出已知短码要使用者确认", "data": "tools/ledger/fixtures/data",
-    "input": { "account_ref": "qrst-alfa", "side": "STO", "underlying": "TSLA", "right": "call", "strike": "300", "expiry": "2026-12-18", "cum_qty": 2, "avg_price": "2.10", "trade_date": "2026-11-17" },
-    "expect": { "status": "needs-input", "missing": ["account_ref"], "known_accounts": ["LMNObeta", "QRSTalfa"] } },
-  { "name": "费用未知：照记，佣金和费用留空不当零", "data": "tools/ledger/fixtures/data",
-    "input": { "account_ref": "QRSTalfa", "side": "STO", "underlying": "TSLA", "right": "call", "strike": "300", "expiry": "2026-12-18", "cum_qty": 2, "avg_price": "2.10", "trade_date": "2026-11-17" },
-    "expect": { "status": "ok", "fill_id": "TSLA261218C00300000:STO:2026-11-17:QRSTalfa:cum2", "order_key": "TSLA261218C00300000:STO:2026-11-17:QRSTalfa", "qty": 2, "price": "2.1000",
-      "unknown": ["commission", "fees", "order_id", "trade_time"], "notes": ["费用未知：留空，不当零", "合约乘数按标准 100 记；调整合约要问清乘数和交割物"],
-      "row": { "record_type": "FILL", "fill_id": "TSLA261218C00300000:STO:2026-11-17:QRSTalfa:cum2", "account_ref": "QRSTalfa", "option_symbol": "TSLA261218C00300000", "right": "call", "strike": 300, "expiry": "2026-12-18", "multiplier": 100, "side": "STO", "qty": 2, "price": "2.1000", "cum_qty": 2, "partial_fill": "false", "commission": null, "fees": null, "source": "manual" } } },
-  { "name": "费用已知：按 4 位小数存", "data": "tools/ledger/fixtures/data",
-    "input": { "account_ref": "LMNObeta", "side": "BTO", "underlying": "QQQ", "right": "put", "strike": "600", "expiry": "2026-12-18", "cum_qty": 1, "avg_price": "4.5", "trade_date": "2026-11-17", "commission": "0.65", "fees": "0.02" },
-    "expect": { "status": "ok", "unknown": ["order_id", "trade_time"], "row": { "commission": "0.6500", "fees": "0.0200", "price": "4.5000" } } },
-  { "name": "重复 fill_id：邮件已经记过这一单，不再记", "data": "tools/ledger/fixtures/data",
-    "input": { "account_ref": "QRSTalfa", "side": "STO", "underlying": "AAPL", "right": "call", "strike": "250", "expiry": "2026-03-20", "cum_qty": 12, "avg_price": "3.15", "trade_date": "2026-03-05" },
-    "expect": { "status": "duplicate", "fill_id": "AAPL260320C00250000:STO:2026-03-05:QRSTalfa:cum12", "existing_row": "5" } },
-  { "name": "部分成交合计：已记 5+3 张，累计到 10 张均价 12.10，只记 2 张", "data": "tools/ledger/fixtures/data",
-    "input": { "account_ref": "QRSTalfa", "side": "STO", "underlying": "MSFT", "right": "put", "strike": "400", "expiry": "2026-03-27", "cum_qty": 10, "avg_price": "12.10", "open_qty": 5, "trade_date": "2026-03-02" },
-    "expect": { "status": "ok", "fill_id": "MSFT260327P00400000:STO:2026-03-02:QRSTalfa:cum10", "qty": 2, "price": "12.2000", "row": { "qty": 2, "cum_qty": 10, "partial_fill": "true" } } },
-  { "name": "累计数没超过已记的张数：不用再记", "data": "tools/ledger/fixtures/data",
-    "input": { "account_ref": "QRSTalfa", "side": "STO", "underlying": "MSFT", "right": "put", "strike": "400", "expiry": "2026-03-27", "cum_qty": 6, "avg_price": "12.05", "trade_date": "2026-03-02" },
-    "expect": { "status": "covered", "fill_id": "MSFT260327P00400000:STO:2026-03-02:QRSTalfa:cum6" } },
-  { "name": "方向写错：不拼行，说哪里不对", "data": "tools/ledger/fixtures/data",
-    "input": { "account_ref": "acct-blue", "side": "SELL", "underlying": "TSLA", "right": "call", "strike": "300", "expiry": "2026-12-18", "cum_qty": 2, "avg_price": "2.10", "trade_date": "2026-11-17" },
-    "expect": { "status": "invalid", "problems": ["side 要是 STO、BTO、BTC 或 STC"] } }
+  {
+    "name": "缺账户：不拼订单键，交回要问使用者的话",
+    "data": "tools/ledger/fixtures/data",
+    "input": {
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.10",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "missing": [
+        "account_ref"
+      ],
+      "ask": [
+        "缺账户：问使用者记在哪个账户（账户短码）"
+      ]
+    }
+  },
+  {
+    "name": "账户短码没见过：不拼订单键，列出已知短码要使用者确认",
+    "data": "tools/ledger/fixtures/data",
+    "input": {
+      "account_ref": "qrst-alfa",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.10",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "missing": [
+        "account_ref"
+      ],
+      "known_accounts": [
+        "LMNObeta",
+        "QRSTalfa"
+      ]
+    }
+  },
+  {
+    "name": "费用未知：照记，佣金和费用留空不当零",
+    "data": "tools/ledger/fixtures/data",
+    "input": {
+      "account_ref": "QRSTalfa",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.10",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "ok",
+      "fill_id": "TSLA261218C00300000:STO:2026-11-17:QRSTalfa:cum2",
+      "order_key": "TSLA261218C00300000:STO:2026-11-17:QRSTalfa",
+      "qty": 2,
+      "price": "2.1000",
+      "unknown": [
+        "commission",
+        "fees",
+        "order_id",
+        "trade_time"
+      ],
+      "notes": [
+        "费用未知：留空，不当零",
+        "合约乘数按标准 100 记；调整合约要问清乘数和交割物"
+      ],
+      "row": {
+        "record_type": "FILL",
+        "fill_id": "TSLA261218C00300000:STO:2026-11-17:QRSTalfa:cum2",
+        "account_ref": "QRSTalfa",
+        "option_symbol": "TSLA261218C00300000",
+        "right": "call",
+        "strike": 300,
+        "expiry": "2026-12-18",
+        "multiplier": 100,
+        "side": "STO",
+        "qty": 2,
+        "price": "2.1000",
+        "cum_qty": 2,
+        "partial_fill": "false",
+        "commission": null,
+        "fees": null,
+        "source": "manual"
+      }
+    }
+  },
+  {
+    "name": "费用已知：按 4 位小数存",
+    "data": "tools/ledger/fixtures/data",
+    "input": {
+      "account_ref": "LMNObeta",
+      "side": "BTO",
+      "underlying": "QQQ",
+      "right": "put",
+      "strike": "600",
+      "expiry": "2026-12-18",
+      "cum_qty": 1,
+      "avg_price": "4.5",
+      "trade_date": "2026-11-17",
+      "commission": "0.65",
+      "fees": "0.02"
+    },
+    "expect": {
+      "status": "ok",
+      "unknown": [
+        "order_id",
+        "trade_time"
+      ],
+      "row": {
+        "commission": "0.6500",
+        "fees": "0.0200",
+        "price": "4.5000"
+      }
+    }
+  },
+  {
+    "name": "重复 fill_id：邮件已经记过这一单，不再记",
+    "data": "tools/ledger/fixtures/data",
+    "input": {
+      "account_ref": "QRSTalfa",
+      "side": "STO",
+      "underlying": "AAPL",
+      "right": "call",
+      "strike": "250",
+      "expiry": "2026-03-20",
+      "cum_qty": 12,
+      "avg_price": "3.15",
+      "trade_date": "2026-03-05"
+    },
+    "expect": {
+      "status": "duplicate",
+      "fill_id": "AAPL260320C00250000:STO:2026-03-05:QRSTalfa:cum12",
+      "existing_row": "5"
+    }
+  },
+  {
+    "name": "部分成交合计：已记 5+3 张，累计到 10 张均价 12.10，只记 2 张",
+    "data": "tools/ledger/fixtures/data",
+    "input": {
+      "account_ref": "QRSTalfa",
+      "side": "STO",
+      "underlying": "MSFT",
+      "right": "put",
+      "strike": "400",
+      "expiry": "2026-03-27",
+      "cum_qty": 10,
+      "avg_price": "12.10",
+      "open_qty": 5,
+      "trade_date": "2026-03-02"
+    },
+    "expect": {
+      "status": "ok",
+      "fill_id": "MSFT260327P00400000:STO:2026-03-02:QRSTalfa:cum10",
+      "qty": 2,
+      "price": "12.2000",
+      "row": {
+        "qty": 2,
+        "cum_qty": 10,
+        "partial_fill": "true"
+      }
+    }
+  },
+  {
+    "name": "累计数没超过已记的张数：不用再记",
+    "data": "tools/ledger/fixtures/data",
+    "input": {
+      "account_ref": "QRSTalfa",
+      "side": "STO",
+      "underlying": "MSFT",
+      "right": "put",
+      "strike": "400",
+      "expiry": "2026-03-27",
+      "cum_qty": 6,
+      "avg_price": "12.05",
+      "trade_date": "2026-03-02"
+    },
+    "expect": {
+      "status": "covered",
+      "fill_id": "MSFT260327P00400000:STO:2026-03-02:QRSTalfa:cum6"
+    }
+  },
+  {
+    "name": "方向写错：不拼行，说哪里不对",
+    "data": "tools/ledger/fixtures/data",
+    "input": {
+      "account_ref": "acct-blue",
+      "side": "SELL",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.10",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "invalid",
+      "problems": [
+        "side 要是 STO、BTO、BTC 或 STC"
+      ]
+    }
+  },
+  {
+    "name": "登记名允许空格并规范输出",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "Demo Alpha",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "ok",
+      "order_key": "TSLA261218C00300000:STO:2026-11-17:Demo Alpha",
+      "row": {
+        "account_ref": "Demo Alpha",
+        "fill_id": "TSLA261218C00300000:STO:2026-11-17:Demo Alpha:cum2"
+      }
+    }
+  },
+  {
+    "name": "email code 精确解析登记名",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "DEMO-A",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "ok",
+      "order_key": "TSLA261218C00300000:STO:2026-11-17:Demo Alpha",
+      "row": {
+        "account_ref": "Demo Alpha",
+        "fill_id": "TSLA261218C00300000:STO:2026-11-17:Demo Alpha:cum2"
+      }
+    }
+  },
+  {
+    "name": "来源限定 email code 对象",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "{\"kind\":\"email\",\"code\":\"DEMO-A\"}",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "ok",
+      "order_key": "TSLA261218C00300000:STO:2026-11-17:Demo Alpha",
+      "row": {
+        "account_ref": "Demo Alpha",
+        "fill_id": "TSLA261218C00300000:STO:2026-11-17:Demo Alpha:cum2"
+      }
+    }
+  },
+  {
+    "name": "JPM 完整三元组匹配",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "{\"kind\":\"jpm-export\",\"account_name\":\"Demo Portfolio\",\"account_type\":\"Individual\",\"account_number\":\"000042\"}",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "ok",
+      "order_key": "TSLA261218C00300000:STO:2026-11-17:Demo Alpha",
+      "row": {
+        "account_ref": "Demo Alpha",
+        "fill_id": "TSLA261218C00300000:STO:2026-11-17:Demo Alpha:cum2"
+      }
+    }
+  },
+  {
+    "name": "JPM 同名同类型不同号码区分账户",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "{\"kind\":\"jpm-export\",\"account_name\":\"Demo Portfolio\",\"account_type\":\"Individual\",\"account_number\":\"000043\"}",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "ok",
+      "row": {
+        "account_ref": "Demo Beta"
+      }
+    }
+  },
+  {
+    "name": "etrade account_label 匹配",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "{\"kind\":\"etrade-export\",\"account_label\":\"Demo Label A\"}",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "ok",
+      "order_key": "TSLA261218C00300000:STO:2026-11-17:Demo Alpha",
+      "row": {
+        "account_ref": "Demo Alpha",
+        "fill_id": "TSLA261218C00300000:STO:2026-11-17:Demo Alpha:cum2"
+      }
+    }
+  },
+  {
+    "name": "email 不忽略大小写",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "demo-a",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "unknown-account",
+      "missing": [
+        "account_ref"
+      ],
+      "pending": [
+        "待确认账户"
+      ],
+      "candidates": [],
+      "ask": [
+        "待确认账户：unknown-account，不猜账户；请使用者确认登记名或私密别名映射后重试"
+      ]
+    }
+  },
+  {
+    "name": "email 不剪裁空白",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": " DEMO-A ",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "unknown-account",
+      "missing": [
+        "account_ref"
+      ],
+      "pending": [
+        "待确认账户"
+      ],
+      "candidates": [],
+      "ask": [
+        "待确认账户：unknown-account，不猜账户；请使用者确认登记名或私密别名映射后重试"
+      ]
+    }
+  },
+  {
+    "name": "未知账户不猜",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "unknown-account",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "unknown-account",
+      "missing": [
+        "account_ref"
+      ],
+      "pending": [
+        "待确认账户"
+      ],
+      "candidates": [],
+      "ask": [
+        "待确认账户：unknown-account，不猜账户；请使用者确认登记名或私密别名映射后重试"
+      ]
+    }
+  },
+  {
+    "name": "JPM 不能仅凭名称",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "Demo Portfolio",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "unknown-account",
+      "missing": [
+        "account_ref"
+      ],
+      "pending": [
+        "待确认账户"
+      ],
+      "candidates": [],
+      "ask": [
+        "待确认账户：unknown-account，不猜账户；请使用者确认登记名或私密别名映射后重试"
+      ]
+    }
+  },
+  {
+    "name": "etrade label 不能无来源匹配",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "Demo Label A",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "unknown-account",
+      "missing": [
+        "account_ref"
+      ],
+      "pending": [
+        "待确认账户"
+      ],
+      "candidates": [],
+      "ask": [
+        "待确认账户：unknown-account，不猜账户；请使用者确认登记名或私密别名映射后重试"
+      ]
+    }
+  },
+  {
+    "name": "JPM 缺号码",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "{\"kind\":\"jpm-export\",\"account_name\":\"Demo Portfolio\",\"account_type\":\"Individual\"}",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "unknown-account",
+      "missing": [
+        "account_ref"
+      ],
+      "pending": [
+        "待确认账户"
+      ],
+      "candidates": [],
+      "ask": [
+        "待确认账户：unknown-account，不猜账户；请使用者确认登记名或私密别名映射后重试"
+      ]
+    }
+  },
+  {
+    "name": "JPM 类型不同不匹配",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "{\"kind\":\"jpm-export\",\"account_name\":\"Demo Portfolio\",\"account_type\":\"IRA\",\"account_number\":\"000042\"}",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "unknown-account",
+      "missing": [
+        "account_ref"
+      ],
+      "pending": [
+        "待确认账户"
+      ],
+      "candidates": [],
+      "ask": [
+        "待确认账户：unknown-account，不猜账户；请使用者确认登记名或私密别名映射后重试"
+      ]
+    }
+  },
+  {
+    "name": "JPM 号码不按尾数匹配",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "{\"kind\":\"jpm-export\",\"account_name\":\"Demo Portfolio\",\"account_type\":\"Individual\",\"account_number\":\"42\"}",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "unknown-account",
+      "missing": [
+        "account_ref"
+      ],
+      "pending": [
+        "待确认账户"
+      ],
+      "candidates": [],
+      "ask": [
+        "待确认账户：unknown-account，不猜账户；请使用者确认登记名或私密别名映射后重试"
+      ]
+    }
+  },
+  {
+    "name": "JPM 数值号码不接受",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "{\"kind\":\"jpm-export\",\"account_name\":\"Demo Portfolio\",\"account_type\":\"Individual\",\"account_number\":42}",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "unknown-account",
+      "missing": [
+        "account_ref"
+      ],
+      "pending": [
+        "待确认账户"
+      ],
+      "candidates": [],
+      "ask": [
+        "待确认账户：unknown-account，不猜账户；请使用者确认登记名或私密别名映射后重试"
+      ]
+    }
+  },
+  {
+    "name": "etrade 错误来源不匹配",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "{\"kind\":\"jpm-export\",\"account_label\":\"Demo Label A\"}",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "unknown-account",
+      "missing": [
+        "account_ref"
+      ],
+      "pending": [
+        "待确认账户"
+      ],
+      "candidates": [],
+      "ask": [
+        "待确认账户：unknown-account，不猜账户；请使用者确认登记名或私密别名映射后重试"
+      ]
+    }
+  },
+  {
+    "name": "损坏 JSON 不授予匹配",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "{broken",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "unknown-account",
+      "missing": [
+        "account_ref"
+      ],
+      "pending": [
+        "待确认账户"
+      ],
+      "candidates": [],
+      "ask": [
+        "待确认账户：unknown-account，不猜账户；请使用者确认登记名或私密别名映射后重试"
+      ]
+    }
+  },
+  {
+    "name": "损坏 aliases 不影响登记名",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "Demo Invalid",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "ok",
+      "row": {
+        "account_ref": "Demo Invalid"
+      }
+    }
+  },
+  {
+    "name": "重复 email 别名必须返回候选及提问",
+    "data": "tools/record/fixtures/registry",
+    "input": {
+      "account_ref": "DEMO-SHARED",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "ambiguous-account",
+      "pending": [
+        "待确认账户"
+      ],
+      "candidates": [
+        "Demo Alpha",
+        "Demo Beta"
+      ],
+      "ask": [
+        "待确认账户：别名对应多个登记账户（Demo Alpha、Demo Beta），请使用者明确账户；不能自动合并"
+      ]
+    }
+  },
+  {
+    "name": "历史邮件短码与新登记名查重",
+    "data": "tools/record/fixtures/history",
+    "input": {
+      "account_ref": "Demo Alpha",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "duplicate",
+      "fill_id": "TSLA261218C00300000:STO:2026-11-17:Demo Alpha:cum2",
+      "existing_row": "1"
+    }
+  },
+  {
+    "name": "历史邮件短码对齐累计增量",
+    "data": "tools/record/fixtures/history",
+    "input": {
+      "account_ref": "DEMO-A",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 4,
+      "avg_price": "2.50",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "ok",
+      "qty": 2,
+      "price": "3.0000",
+      "row": {
+        "account_ref": "Demo Alpha",
+        "cum_qty": 4,
+        "qty": 2,
+        "order_key": "TSLA261218C00300000:STO:2026-11-17:Demo Alpha"
+      }
+    }
+  },
+  {
+    "name": "历史短码覆盖较小累计数",
+    "data": "tools/record/fixtures/history",
+    "input": {
+      "account_ref": "Demo Alpha",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 1,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "covered"
+    }
+  },
+  {
+    "name": "历史不可唯一一致对齐阻止自动合并 ambiguous",
+    "data": "tools/record/fixtures/ambiguous",
+    "input": {
+      "account_ref": "Demo Alpha",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 4,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "ambiguous-history",
+      "pending": [
+        "待确认账户"
+      ],
+      "ask": [
+        "待确认账户：相关历史账户或标识不能唯一对齐，请确认私密映射及冲销关系；未自动合并历史行"
+      ]
+    }
+  },
+  {
+    "name": "历史不可唯一一致对齐阻止自动合并 inconsistent",
+    "data": "tools/record/fixtures/inconsistent",
+    "input": {
+      "account_ref": "Demo Alpha",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 4,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "ambiguous-history",
+      "pending": [
+        "待确认账户"
+      ],
+      "ask": [
+        "待确认账户：相关历史账户或标识不能唯一对齐，请确认私密映射及冲销关系；未自动合并历史行"
+      ]
+    }
+  },
+  {
+    "name": "历史不可唯一一致对齐阻止自动合并 badId",
+    "data": "tools/record/fixtures/badId",
+    "input": {
+      "account_ref": "Demo Alpha",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 4,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "needs-input",
+      "reason": "ambiguous-history",
+      "pending": [
+        "待确认账户"
+      ],
+      "ask": [
+        "待确认账户：相关历史账户或标识不能唯一对齐，请确认私密映射及冲销关系；未自动合并历史行"
+      ]
+    }
+  },
+  {
+    "name": "冲销关系先于查重与增量 reversed 2",
+    "data": "tools/record/fixtures/reversed",
+    "input": {
+      "account_ref": "Demo Alpha",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "conflict",
+      "detail": "reversed-order"
+    }
+  },
+  {
+    "name": "冲销关系先于查重与增量 reversed 4",
+    "data": "tools/record/fixtures/reversed",
+    "input": {
+      "account_ref": "Demo Alpha",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 4,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "conflict",
+      "detail": "reversed-order"
+    }
+  },
+  {
+    "name": "冲销关系先于查重与增量 reversedRow 2",
+    "data": "tools/record/fixtures/reversedRow",
+    "input": {
+      "account_ref": "Demo Alpha",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "conflict",
+      "detail": "reversed-order"
+    }
+  },
+  {
+    "name": "冲销关系先于查重与增量 reversedRow 4",
+    "data": "tools/record/fixtures/reversedRow",
+    "input": {
+      "account_ref": "Demo Alpha",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 4,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "conflict",
+      "detail": "reversed-order"
+    }
+  },
+  {
+    "name": "空 accounts 仅历史账户兼容",
+    "data": "tools/record/fixtures/legacy",
+    "input": {
+      "account_ref": "LEGACY-DEMO",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "duplicate",
+      "existing_row": "1"
+    }
+  },
+  {
+    "name": "完全空账户兼容首个短码",
+    "data": "tools/record/fixtures/empty",
+    "input": {
+      "account_ref": "FIRST-DEMO",
+      "side": "STO",
+      "underlying": "TSLA",
+      "right": "call",
+      "strike": "300",
+      "expiry": "2026-12-18",
+      "cum_qty": 2,
+      "avg_price": "2.00",
+      "trade_date": "2026-11-17"
+    },
+    "expect": {
+      "status": "ok",
+      "row": {
+        "account_ref": "FIRST-DEMO"
+      }
+    }
+  }
 ]

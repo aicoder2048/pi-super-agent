@@ -21,7 +21,7 @@ description: 期权分析领队在分流、会诊、记成交、改意图、维�
 
 所有专家只读。领队用 data 工具写 fills、chains、accounts、brokers、watchlist；iv-snapshots 的真实原始输入也只能经已验证路径写入。工具不写数据库。初始名单与账户全部为空，绝不从样例导入真实集合。
 
-手动成交先调 record：它校验、拼订单键和 fill_id、按订单算累计增量、查重，不写库。日期按这两条默认填好再调，不为年份追问：成交日没写年份按今年；到期日没写年份按今天以后最近的那个。复述里写「年份按今年理解」。持股覆盖、佣金、费用不知道不挡入账：照样调 record、照样写，复述里列成待确认。status 是 ok 时把它回的 row 原样用 data 工具写进 fills，再复述写入结果，fill_id 原样照抄。duplicate 是已经记过，covered 是这一单已记的张数不少于这个累计数，都不再写。needs-input 时按 ask 问使用者，例如缺账户就问记在哪个账户；只成交了一部分时问清到现在一共成交几张，填 cum_qty。账户短码没见过时 record 回 known_accounts：问使用者是其中哪一个；使用者确认是新账户，先用 data 往 accounts 写一行（account_ref、added_at、source 写「使用者确认的新账户」），再调 record。invalid、conflict 时说清哪里不对，不绕过工具直接 data 写入。标准合约乘数按 100 记；使用者说是调整合约时问清乘数和交割物。除了上面的默认，用户不用提问时只列待确认，不把缺项补成事实。
+手动成交先调 record：它校验、拼订单键和 fill_id、按订单算累计增量、查重，不写库。日期按这两条默认填好再调，不为年份追问：成交日没写年份按今年；到期日没写年份按今天以后最近的那个。复述里写「年份按今年理解」。持股覆盖、佣金、费用不知道不挡入账：照样调 record、照样写，复述里列成待确认。status 是 ok 时把它回的 row 原样用 data 工具写进 fills，再复述写入结果，fill_id 原样照抄。duplicate 是已经记过，covered 是这一单已记的张数不少于这个累计数，都不再写。needs-input 时按 ask 问使用者，例如缺账户就问记在哪个账户；只成交了一部分时问清到现在一共成交几张，填 cum_qty。账户先按私密 accounts 的登记名或 aliases 精确解析。record 回 needs-input 时原样转述 ask、pending 和 reason；candidates 多个就是歧义，必须待确认，不选第一个、不自动合并。unknown-account 不猜，也不因为期权行出现未知账户就自动登记。使用者明确确认新的期权账户后，才用 data 写 accounts 的 account_ref 登记名、added_at、source 及已确认 aliases，再调 record。invalid、conflict 时说清哪里不对，不绕过工具直接 data 写入。标准合约乘数按 100 记；使用者说是调整合约时问清乘数和交割物。除了上面的默认，用户不用提问时只列待确认，不把缺项补成事实。
 
 原始成交、事件和更正只追加。EVENT 行的 trade_date 写成 event_date：宿主按 trade_date 给 feed 最新 500 行，没写的事件排在最后，fills 多了以后盯盘就看不到。更正以新冲销记录关联 reversal_of，不覆盖旧行。BUY/SELL 股票只允许由 ASSIGNED/EXERCISED 产生且 caused_by_event 指向事件，普通股票买卖不记。到期、指派、行权不能仅凭日期或价内状态自动生成。年末期权收盘原始观察记 fills 中 MARKET_SNAPSHOT，不增集合；不保存派生盈亏、税务结论或股票批次成本。
 
@@ -31,7 +31,11 @@ chains 只记链成员、Roll 组和意图变更。每链属于一个账户；Ro
 
 意图十项为收租（卖 put）、折价接股、收租（卖 call）、溢价出货、买保险、看跌、看涨、替代持股、限定风险收租、限定成本看方向。默认分别为卖 put/call 收租、买 put 买保险、买 call 看涨、贷方价差限定风险收租、借方价差限定成本看方向，写入 chains 的意图确认字段标待确认，不把它当作已核实持股。允许 CSP、CC、单买 put/call、同类同到期垂直贷/借方价差和三种 Roll；不做裸卖 call、蝶式、铁鹰。CC 持股覆盖未知就待确认。成败看金额，不以胜率为主。
 
-账户短码只在私密 accounts 映射稳定匿名 account_key，税务归属与应税/IRA 未知留空。四个 private 集合不得对外导出，模块 exports 留空。对 stock-ta 只传必要标的代码及明确支持的短筛选参数，绝不传邮件、账户、张数、成本、仓位或使用者原话。提供方不在时说清缺项而继续有依据部分；需读内部出处或加自选时转述“请对 stock-ta 说……”。
+accounts.account_ref 存登记名，aliases 为私密 text JSON 列表（无配置按空列表）。别名格式为 {"kind":"email","code":"DEMO-CODE"}、{"kind":"jpm-export","account_name":"Demo Portfolio","account_type":"Individual","account_number":"000042"}、{"kind":"etrade-export","account_label":"Demo Label"}；这些仅为虚构格式，不可写入真实集合。登记名和 email/code 精确匹配；jpm-export 的 account_name/account_type/account_number 必须三者完整且全部一致，号码必须是保留前导零的文字；etrade-export 精确匹配 account_label。不按名字片段、号码尾数、大小写折叠或相似度猜账户，重复别名必须待确认。真实映射仅由使用者确认后写私密 DB，不放包、样例、测试或对外参数。稳定匿名 account_key、税务归属与应税/IRA 未知留空。
+
+record 的 account_ref 可传登记名、email code 或上述来源对象的 JSON 文本。新行用登记名；历史邮件短码、account_ref、order_key、fill_id 及冲销行绝不改写。record 只在内存把唯一可解析且一致的历史账户与键对齐，再查重和算累计增量；歧义历史不合并，相关不一致标识或冲销关系交回确认，冲销订单不自动补记。旧 accounts 为空或所有账户尚无 aliases 字段值时，保留精确历史短码兼容（连历史也为空时兼容首个短码），这不是猜测真实映射；一旦启用 aliases，则不能再用历史短码绕过登记映射。
+
+未来导入必须复用 account-aliases.ts 的 resolveAccount：先判别期权，非期权行先跳过，不登记这些行的账户；期权行再以完整来源别名解析。JPM 导出不拆开三元组匹配，E*TRADE 用 account_label；未知或歧义期权账户进入待确认，不导入、不自动新建账户。本轮没有完整 CSV importer，不能声称已有导入能力；fills feed 的现有邮件短码保持不变。四个 private 集合不得对外导出，模块 exports 留空。对 stock-ta 只传必要标的代码及明确支持的短筛选参数，绝不传邮件、账户、张数、成本、仓位或使用者原话。提供方不在时说清缺项而继续有依据部分；需读内部出处或加自选时转述“请对 stock-ta 说……”。
 
 fills 解析交易台的成交回信，成交直接入账。收到「有 N 行没有入账」的通知时按原因问使用者，补记走 record，不从邮件让模型补录。brokers 名单留空，等使用者确认交易台地址后再由领队写入；宿主提示名单为空在那以前是预期的。iv 分批回填一年，没做完不宣称数据已齐，不发通知，也不开基于 IV 的机会提醒（第二版）。watch 只盯 fills 里记下的仓位，无 into，提醒不经任务直接发，全文进使用者自己的 Telegram，不能误称只发匿名摘要；没提醒不表示仓位安全，提醒本身不是交易或写入授权。rules 不授权任何写操作。
 

@@ -16,7 +16,23 @@
 - `rules.md`：状态通知的处理边界，不授权写集合或交易。
 - `knowledge/` 和 `evals/` 由独立成员维护；检查与预演以最终包为准。
 
-专家不写文件，也不写集合。工具不写库。领队写原始事实，派生盈亏/税务视图不能反写事实。`fills` 复用记录类型 FILL、EVENT、MARKET_SNAPSHOT、REVERSAL；EVENT 行的 `trade_date` 写成 `event_date`，因为宿主按 `trade_date` 给 feed 最新 500 行，没写的事件排在最后，fills 多了以后 watch 看不到到期和指派（`ledger` 在 notes 里提醒没写的行）；保留指派/行权产生的股票和仍持有的 §1256/价差腿年末期权收盘观察；不增加股票或报税集合。价格、佣金、费用用十进制文本保精度；`partial_fill`、意图确认用文字，因为集合字段无 boolean。`instrument` 是合约 JSON 文本，兼有明确的合约事实字段；未来校验器须保证一致。未知费用留空，不当零。账户只存短码与匿名键，不存真实账号；税务归属和账户类型未知留空。
+专家不写文件，也不写集合。工具不写库。领队写原始事实，派生盈亏/税务视图不能反写事实。`fills` 复用记录类型 FILL、EVENT、MARKET_SNAPSHOT、REVERSAL；EVENT 行的 `trade_date` 写成 `event_date`，因为宿主按 `trade_date` 给 feed 最新 500 行，没写的事件排在最后，fills 多了以后 watch 看不到到期和指派（`ledger` 在 notes 里提醒没写的行）；保留指派/行权产生的股票和仍持有的 §1256/价差腿年末期权收盘观察；不增加股票或报税集合。价格、佣金、费用用十进制文本保精度；`partial_fill`、意图确认用文字，因为集合字段无 boolean。`instrument` 是合约 JSON 文本，兼有明确的合约事实字段；未来校验器须保证一致。未知费用留空，不当零。账户登记名、匿名键和经使用者确认的来源别名仅存私密 accounts；真实映射、账号不得放进包、fixtures 或对外参数。税务归属和账户类型未知留空。
+
+## 账户别名（本轮）
+
+`accounts.aliases` 是私密 text 字段，保存 JSON 列表。以下仅为虚构格式样例，不得据此登记真实账户：
+
+```json
+[
+  {"kind":"email","code":"DEMO-A"},
+  {"kind":"jpm-export","account_name":"Demo Portfolio","account_type":"Individual","account_number":"000042"},
+  {"kind":"etrade-export","account_label":"Demo Label A"}
+]
+```
+
+`account-aliases.ts` 精确匹配登记名或 email/code；JPM 必须完整匹配 account_name、account_type、account_number 三元组，号码保持文字和前导零；E*TRADE 只匹配 account_label。不折叠大小写、不按尾号或相似度猜测。未知、重复别名和相关历史歧义交回确认。
+
+`record.account_ref` 可传登记名、email code 或上述来源对象的 JSON 文本。新事实使用登记名；历史邮件短码及其 account_ref/order_key/fill_id 不改写，仅在内存对齐用于去重、累计增量和冲销保护。旧库全部未配置 aliases 时保留精确历史短码兼容；配置后未知历史短码不能绕过登记映射。本轮没有 CSV importer，也不改 fills feed。record fixtures 的 Demo 名称、代码及号码均为虚构，真实映射仅由使用者确认后写私密 DB。
 
 ## fills：成交邮件
 
