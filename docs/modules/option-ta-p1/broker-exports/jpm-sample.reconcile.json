@@ -144,7 +144,7 @@
   ],
   "reversal_example": {
    "record_type": "REVERSAL",
-   "id": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum20:reversed-by-export",
+   "fill_id": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum20:reversed-by-export",
    "reversal_of": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum20",
    "trade_date": "2026-10-27",
    "source": "broker-export"

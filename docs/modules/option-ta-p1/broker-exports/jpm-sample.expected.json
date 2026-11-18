@@ -3,7 +3,6 @@
   {
    "line": 4,
    "record_type": "FILL",
-   "id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
    "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
    "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411",
    "account_ref": "JPM-NORT-4411",
@@ -32,7 +31,6 @@
   {
    "line": 5,
    "record_type": "FILL",
-   "id": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522:cum30",
    "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522:cum30",
    "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522",
    "account_ref": "JPM-BLUE-5522",
@@ -61,7 +59,6 @@
   {
    "line": 6,
    "record_type": "FILL",
-   "id": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
    "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
    "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902",
    "account_ref": "JPM-Personal-9902",
@@ -90,7 +87,6 @@
   {
    "line": 7,
    "record_type": "EVENT",
-   "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-NORT-4411",
    "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-NORT-4411",
    "account_ref": "JPM-NORT-4411",
    "underlying": "DIA",
@@ -103,12 +99,13 @@
    "type": "EXPIRE",
    "event_date": "2026-10-23",
    "trade_date": "2026-10-23",
-   "source": "broker-export"
+   "source": "broker-export",
+   "commission": "0.0000",
+   "fees": "0.0000"
   },
   {
    "line": 8,
    "record_type": "EVENT",
-   "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
    "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
    "account_ref": "JPM-BLUE-5522",
    "underlying": "DIA",
@@ -121,12 +118,13 @@
    "type": "EXPIRE",
    "event_date": "2026-10-23",
    "trade_date": "2026-10-23",
-   "source": "broker-export"
+   "source": "broker-export",
+   "commission": "0.0000",
+   "fees": "0.0000"
   },
   {
    "line": 9,
    "record_type": "EVENT",
-   "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
    "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
    "account_ref": "JPM-Personal-9902",
    "underlying": "DIA",
@@ -139,12 +137,13 @@
    "type": "EXPIRE",
    "event_date": "2026-10-23",
    "trade_date": "2026-10-23",
-   "source": "broker-export"
+   "source": "broker-export",
+   "commission": "0.0000",
+   "fees": "0.0000"
   },
   {
    "line": 13,
    "record_type": "FILL",
-   "id": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411:cum10",
    "fill_id": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411:cum10",
    "order_key": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411",
    "account_ref": "JPM-NORT-4411",
@@ -173,7 +172,6 @@
   {
    "line": 14,
    "record_type": "FILL",
-   "id": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
    "fill_id": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
    "order_key": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522",
    "account_ref": "JPM-BLUE-5522",
@@ -202,7 +200,6 @@
   {
    "line": 15,
    "record_type": "EVENT",
-   "id": "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
    "event_id": "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
    "account_ref": "JPM-Personal-9902",
    "underlying": "AAPL",
@@ -215,12 +212,13 @@
    "type": "EXPIRE",
    "event_date": "2026-10-16",
    "trade_date": "2026-10-16",
-   "source": "broker-export"
+   "source": "broker-export",
+   "commission": "0.0000",
+   "fees": "0.0000"
   },
   {
    "line": 16,
    "record_type": "FILL",
-   "id": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
    "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
    "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411",
    "account_ref": "JPM-NORT-4411",
@@ -249,7 +247,6 @@
   {
    "line": 17,
    "record_type": "FILL",
-   "id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
    "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
    "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522",
    "account_ref": "JPM-BLUE-5522",
@@ -278,7 +275,6 @@
   {
    "line": 18,
    "record_type": "FILL",
-   "id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301:cum5",
    "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301:cum5",
    "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301",
    "account_ref": "JPM-BLUE-3301",
@@ -307,7 +303,6 @@
   {
    "line": 22,
    "record_type": "FILL",
-   "id": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
    "fill_id": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
    "order_key": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902",
    "account_ref": "JPM-Personal-9902",
@@ -336,7 +331,6 @@
   {
    "line": 23,
    "record_type": "FILL",
-   "id": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10",
    "fill_id": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10",
    "order_key": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411",
    "account_ref": "JPM-NORT-4411",

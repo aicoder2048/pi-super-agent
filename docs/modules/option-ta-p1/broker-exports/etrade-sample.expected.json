@@ -3,7 +3,6 @@
   {
    "line": 8,
    "record_type": "EVENT",
-   "id": "NVDA261016C00190000:ASSIGNED:2026-10-16:eTrade-Orbit-5150",
    "event_id": "NVDA261016C00190000:ASSIGNED:2026-10-16:eTrade-Orbit-5150",
    "account_ref": "eTrade-Orbit-5150",
    "underlying": "NVDA",
@@ -16,12 +15,13 @@
    "type": "ASSIGNED",
    "event_date": "2026-10-16",
    "trade_date": "2026-10-16",
-   "source": "broker-export"
+   "source": "broker-export",
+   "commission": "0.0000",
+   "fees": "0.0000"
   },
   {
    "line": 9,
    "record_type": "FILL",
-   "id": "NVDA:SELL:2026-10-19:eTrade-Orbit-5150:cum200",
    "fill_id": "NVDA:SELL:2026-10-19:eTrade-Orbit-5150:cum200",
    "order_key": "NVDA:SELL:2026-10-19:eTrade-Orbit-5150",
    "account_ref": "eTrade-Orbit-5150",
@@ -44,14 +44,13 @@
    "executed_at": null,
    "order_id": null,
    "commission": "0.32",
-   "fees": null,
+   "fees": "0.0000",
    "source": "broker-export",
    "caused_by_event": "NVDA261016C00190000:ASSIGNED:2026-10-16:eTrade-Orbit-5150"
   },
   {
    "line": 10,
    "record_type": "FILL",
-   "id": "SPY261023P00575000:STO:2026-10-16:eTrade-Orbit-5150:cum5",
    "fill_id": "SPY261023P00575000:STO:2026-10-16:eTrade-Orbit-5150:cum5",
    "order_key": "SPY261023P00575000:STO:2026-10-16:eTrade-Orbit-5150",
    "account_ref": "eTrade-Orbit-5150",
@@ -74,13 +73,12 @@
    "executed_at": null,
    "order_id": null,
    "commission": "3.30",
-   "fees": null,
+   "fees": "0.0000",
    "source": "broker-export"
   },
   {
    "line": 11,
    "record_type": "FILL",
-   "id": "SPY261016P00580000:BTC:2026-10-14:eTrade-Orbit-5150:cum3",
    "fill_id": "SPY261016P00580000:BTC:2026-10-14:eTrade-Orbit-5150:cum3",
    "order_key": "SPY261016P00580000:BTC:2026-10-14:eTrade-Orbit-5150",
    "account_ref": "eTrade-Orbit-5150",
@@ -103,13 +101,12 @@
    "executed_at": null,
    "order_id": null,
    "commission": "1.98",
-   "fees": null,
+   "fees": "0.0000",
    "source": "broker-export"
   },
   {
    "line": 13,
    "record_type": "FILL",
-   "id": "SPY261016P00580000:STO:2026-10-09:eTrade-Orbit-5150:cum3",
    "fill_id": "SPY261016P00580000:STO:2026-10-09:eTrade-Orbit-5150:cum3",
    "order_key": "SPY261016P00580000:STO:2026-10-09:eTrade-Orbit-5150",
    "account_ref": "eTrade-Orbit-5150",
@@ -132,13 +129,12 @@
    "executed_at": null,
    "order_id": null,
    "commission": "1.98",
-   "fees": null,
+   "fees": "0.0000",
    "source": "broker-export"
   },
   {
    "line": 14,
    "record_type": "FILL",
-   "id": "NVDA261016C00190000:STO:2026-10-02:eTrade-Orbit-5150:cum2",
    "fill_id": "NVDA261016C00190000:STO:2026-10-02:eTrade-Orbit-5150:cum2",
    "order_key": "NVDA261016C00190000:STO:2026-10-02:eTrade-Orbit-5150",
    "account_ref": "eTrade-Orbit-5150",
@@ -161,7 +157,7 @@
    "executed_at": null,
    "order_id": null,
    "commission": "1.32",
-   "fees": null,
+   "fees": "0.0000",
    "source": "broker-export"
   }
  ],

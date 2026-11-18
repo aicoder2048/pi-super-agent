@@ -1,0 +1,1592 @@
+[
+  {
+    "name": "jpm-empty",
+    "data": "tools/import/fixtures/jpm-empty",
+    "input": {
+      "broker": "jpm",
+      "csv": "﻿Trade Date,Post Date,Settlement Date,Account Name,Account Number,Account Type,Type,Description,Cusip,Ticker,Security Type,Local Currency,Price USD,Price Local,Quantity,Cost USD,Cost Local,G/L Short USD,G/L Short Local,G/L Long USDs,G/L Long Local,Amount USD,Amount Local,Income USD,Income Local,Balance,Commissions USD,Commissions Local,Tran Code,Tran Code Description,Broker,Check Number,Tax Withheld\r\n10/30/2026,10/30/2026,11/02/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Sale,\"MICROSOFT CORP @ 512.3400 51,234.00 SEC &/OR TAF FEE 1.28 EXAMPLE BROKER LLC EQUITIES TRADE DATE 10/30/26\",99990M104,MSFT,,USD,512.34,512.34,-100,-51232.72,-51232.72,0,0,0,0,51232.72,51232.72,,,,0,0,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/30/2026,11/02/2026,11/02/2026,BLUEFIELD PARTNERS,...3301,Asset,Sale,\"EXAMPLE PHARMA PLC - ADR @ 41.25 41,250.00 COMMISSION 123.75 SEC &/OR TAF 1.03 EXAMPLE BROKER LLC\",30212X106,EXPH,,USD,41.25,41.25,-1000,-41124.97,-41124.97,0,0,0,0,41124.97,41124.97,,,,124,124,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.15,1.15,-20,2239.58,2239.58,0,0,0,0,2239.58,2239.58,,,,60,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/27/2026,10/28/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027002,46432F1AB,DIA,,USD,1.15,1.15,-30,3359.37,3359.37,0,0,0,0,3359.37,3359.37,,,,90,90,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/28/2026,10/28/2026,JORDAN SAMPLE,...9902,Asset,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470 PUT JUNO: EXAMPLEABC20261027003,46432F1AB,DIA,,USD,1.15,1.15,-2,223.96,223.96,0,0,0,0,223.96,223.96,,,,6,6,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Expired option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/23/26 @ 475 PUT DIA 10/23/26 475,46432F1AC,DIA,,USD,0,0,20,-2800.00,-2800.00,2800.00,2800.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Expired option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/23/26 @ 475 PUT DIA 10/23/26 475,46432F1AC,DIA,,USD,0,0,30,-4200.00,-4200.00,4200.00,4200.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,JORDAN SAMPLE,...9902,Asset,Expired option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/23/26 @ 475 EXPIRE UNEXERCISED PUT,46432F1AC,DIA,,USD,475,475,2,-280.00,-280.00,280.00,280.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,BLUEFIELD PARTNERS,...3301,Asset,Purchase,EXAMPLE PRIME MM FUND - PREMIER FUND 911 @ 1.0000 TRADE DATE 10/26/26 YIELD 4.01,30213A207,EXPXX,,USD,1.0000,1.0000,12345.678,12345.68,12345.68,0,0,0,0,-12345.68,-12345.68,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n10/23/2026,10/23/2026,10/26/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Sale,\"APPLE INC @ 255.0000 255,000.00 SEC &/OR TAF FEE 6.38 EXAMPLE BROKER LLC EQUITIES TRADE DATE 10/23/26\",99990A100,AAPL,,USD,255.0000,255.0000,-1000,-254993.62,-254993.62,0,0,0,0,254993.62,254993.62,,,,0,0,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/22/2026,10/23/2026,10/23/2026,NORTHWIND HARBOR CAPITAL,...6610,Invt Mgmt,Purchase,SAMPLE ENERGY CO SR NTS 5.1% 06/01/2033 DTD 06/01/2023 @ 101.250 EXAMPLE BROKER LLC TRADE DATE 10/22/26,79588T9C1,,,USD,101.25,101.25,100000,101250.00,101250.00,0,0,0,0,-101250.00,-101250.00,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n10/20/2026,10/20/2026,10/21/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Buy back option,APPLE INC PUT 10/30/26 @ 230.0 JUNO: EXAMPLEABC20261020001,03783Q2AD,AAPL,,USD,0.85,0.85,10,1400.00,1400.00,519.79,519.79,0,0,-880.21,-880.21,,,,30,30,671,BB LIQ OPT F,EXAMPLE BROKER LLC/EXB,0,\r\n10/20/2026,10/20/2026,10/21/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Buy back option,APPLE INC PUT 10/30/26 @ 230.0 JUNO: EXAMPLEABC20261020002,03783Q2AD,AAPL,,USD,0.85,0.85,15,2100.00,2100.00,779.68,779.68,0,0,-1320.32,-1320.32,,,,45,45,671,BB LIQ OPT F,EXAMPLE BROKER LLC/EXB,0,\r\n10/19/2026,10/19/2026,10/19/2026,JORDAN SAMPLE,...9902,Asset,Expired option,APPLE INC PUT 10/16/26 @ 220 EXPIRE UNEXERCISED PUT,03783Q2AE,AAPL,,USD,220,220,1,-140.00,-140.00,140.00,140.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/16/2026,10/19/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,APPLE INC CALL 11/20/26 @ 270.0 CALL OPTION,03783Q2AF,AAPL,,USD,2.4,2.4,-10,2369.79,2369.79,0,0,0,0,2369.79,2369.79,,,,30,30,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/16/2026,10/19/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Write option,APPLE INC CALL 11/20/26 @ 270.0 CALL OPTION,03783Q2AF,AAPL,,USD,2.4,2.4,-15,3554.68,3554.68,0,0,0,0,3554.68,3554.68,,,,45,45,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/19/2026,10/19/2026,BLUEFIELD PARTNERS,...3301,Asset,Write option,APPLE INC CALL 11/20/26 @ 270 CALL OPTION JUNO: EXAMPLEABC20261016001,03783Q2AF,AAPL,,USD,2.4,2.4,-5,1184.90,1184.90,0,0,0,0,1184.90,1184.90,,,,15,15,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/16/2026,10/16/2026,BLUEFIELD PARTNERS,...3301,Asset,Sale,EXAMPLE PRIME MM FUND - PREMIER FUND 911 @ 1.0000 TRADE DATE 10/16/26 YIELD 4.02,30213A207,EXPXX,,USD,1.0000,1.0000,-2500.000,-2500.00,-2500.00,0,0,0,0,2500.00,2500.00,,,,0,0,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/14/2026,10/15/2026,10/15/2026,NORTHWIND HARBOR CAPITAL,...6610,Invt Mgmt,Purchase,EXAMPLE CORP SR NTS 4.250% 03/15/2031 DTD 03/15/2024 @ 99.125 EXAMPLE BROKER LLC TRADE DATE 10/14/26,30214B4D5,,,USD,99.125,99.125,250000,247812.50,247812.50,0,0,0,0,-247812.50,-247812.50,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n10/09/2026,10/09/2026,10/09/2026,JORDAN SAMPLE,...9902,Asset,Purchase,EXAMPLE US GOVT MM FUND - AGENCY FUND 3921 REINVEST @ 1.0000 EXAMPLE FUND,30215C301,EXGXX,,USD,1.0000,1.0000,842.17,842.17,842.17,0,0,0,0,-842.17,-842.17,,,,0,0,651,PRCHSE ASSET,,0,\r\n10/07/2026,10/07/2026,10/08/2026,JORDAN SAMPLE,...9902,Asset,Write option,PUT JUNO: EXAMPLEABC20261007001 APPLE INC PUT 10/16/26 @ 220.0,03783Q2AE,AAPL,,USD,1.3,1.3,-1,126.98,126.98,0,0,0,0,126.98,126.98,,,,3,3,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/05/2026,10/05/2026,10/06/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,APPLE INC CALL 10/23/26 @ 255.0 JUNO: EXAMPLEABC20261005001,03783Q2AG,AAPL,,USD,1.8,1.8,-10,1769.79,1769.79,0,0,0,0,1769.79,1769.79,,,,30,30,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/05/2026,10/05/2026,10/05/2026,RIVERSTONE LLC,...2205,Asset,Purchase,EXAMPLE PRIME MM FUND - PREMIER FUND 911 @ 1.0000 TRADE DATE 10/05/26 YIELD 4.03,30213A207,EXPXX,,USD,1.0000,1.0000,5000.000,5000.00,5000.00,0,0,0,0,-5000.00,-5000.00,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [
+        {
+          "record_type": "FILL",
+          "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
+          "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "side": "STO",
+          "qty": 20,
+          "partial_fill": "false",
+          "price": "1.1500",
+          "trade_date": "2026-10-27",
+          "settle_date": "2026-10-28",
+          "order_id": "EXAMPLEABC20261027001",
+          "commission": "60.0000",
+          "fees": "0.4200",
+          "source": "broker-export",
+          "underlying": "DIA",
+          "option_symbol": "DIA261030P00470000",
+          "right": "put",
+          "strike": 470.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522:cum30",
+          "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522",
+          "account_ref": "JPM-BLUE-5522",
+          "side": "STO",
+          "qty": 30,
+          "partial_fill": "false",
+          "price": "1.1500",
+          "trade_date": "2026-10-27",
+          "settle_date": "2026-10-28",
+          "order_id": "EXAMPLEABC20261027002",
+          "commission": "90.0000",
+          "fees": "0.6300",
+          "source": "broker-export",
+          "underlying": "DIA",
+          "option_symbol": "DIA261030P00470000",
+          "right": "put",
+          "strike": 470.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
+          "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902",
+          "account_ref": "JPM-Personal-9902",
+          "side": "STO",
+          "qty": 2,
+          "partial_fill": "false",
+          "price": "1.1500",
+          "trade_date": "2026-10-27",
+          "settle_date": "2026-10-28",
+          "order_id": "EXAMPLEABC20261027003",
+          "commission": "6.0000",
+          "fees": "0.0400",
+          "source": "broker-export",
+          "underlying": "DIA",
+          "option_symbol": "DIA261030P00470000",
+          "right": "put",
+          "strike": 470.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        },
+        {
+          "record_type": "EVENT",
+          "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "underlying": "DIA",
+          "option_symbol": "DIA261023P00475000",
+          "right": "put",
+          "strike": 475.0,
+          "expiry": "2026-10-23",
+          "multiplier": 100,
+          "qty": 20,
+          "type": "EXPIRE",
+          "event_date": "2026-10-23",
+          "trade_date": "2026-10-23",
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
+        },
+        {
+          "record_type": "EVENT",
+          "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
+          "account_ref": "JPM-BLUE-5522",
+          "underlying": "DIA",
+          "option_symbol": "DIA261023P00475000",
+          "right": "put",
+          "strike": 475.0,
+          "expiry": "2026-10-23",
+          "multiplier": 100,
+          "qty": 30,
+          "type": "EXPIRE",
+          "event_date": "2026-10-23",
+          "trade_date": "2026-10-23",
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
+        },
+        {
+          "record_type": "EVENT",
+          "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
+          "account_ref": "JPM-Personal-9902",
+          "underlying": "DIA",
+          "option_symbol": "DIA261023P00475000",
+          "right": "put",
+          "strike": 475.0,
+          "expiry": "2026-10-23",
+          "multiplier": 100,
+          "qty": 2,
+          "type": "EXPIRE",
+          "event_date": "2026-10-23",
+          "trade_date": "2026-10-23",
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411:cum10",
+          "order_key": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "side": "BTC",
+          "qty": 10,
+          "partial_fill": "false",
+          "price": "0.8500",
+          "trade_date": "2026-10-20",
+          "settle_date": "2026-10-21",
+          "order_id": "EXAMPLEABC20261020001",
+          "commission": "30.0000",
+          "fees": "0.2100",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261030P00230000",
+          "right": "put",
+          "strike": 230.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
+          "order_key": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522",
+          "account_ref": "JPM-BLUE-5522",
+          "side": "BTC",
+          "qty": 15,
+          "partial_fill": "false",
+          "price": "0.8500",
+          "trade_date": "2026-10-20",
+          "settle_date": "2026-10-21",
+          "order_id": "EXAMPLEABC20261020002",
+          "commission": "45.0000",
+          "fees": "0.3200",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261030P00230000",
+          "right": "put",
+          "strike": 230.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        },
+        {
+          "record_type": "EVENT",
+          "event_id": "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
+          "account_ref": "JPM-Personal-9902",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261016P00220000",
+          "right": "put",
+          "strike": 220.0,
+          "expiry": "2026-10-16",
+          "multiplier": 100,
+          "qty": 1,
+          "type": "EXPIRE",
+          "event_date": "2026-10-16",
+          "trade_date": "2026-10-16",
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
+          "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "side": "STO",
+          "qty": 10,
+          "partial_fill": "false",
+          "price": "2.4000",
+          "trade_date": "2026-10-16",
+          "settle_date": "2026-10-19",
+          "order_id": null,
+          "commission": "30.0000",
+          "fees": "0.2100",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261120C00270000",
+          "right": "call",
+          "strike": 270.0,
+          "expiry": "2026-11-20",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
+          "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522",
+          "account_ref": "JPM-BLUE-5522",
+          "side": "STO",
+          "qty": 15,
+          "partial_fill": "false",
+          "price": "2.4000",
+          "trade_date": "2026-10-16",
+          "settle_date": "2026-10-19",
+          "order_id": null,
+          "commission": "45.0000",
+          "fees": "0.3200",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261120C00270000",
+          "right": "call",
+          "strike": 270.0,
+          "expiry": "2026-11-20",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301:cum5",
+          "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301",
+          "account_ref": "JPM-BLUE-3301",
+          "side": "STO",
+          "qty": 5,
+          "partial_fill": "false",
+          "price": "2.4000",
+          "trade_date": "2026-10-16",
+          "settle_date": "2026-10-19",
+          "order_id": "EXAMPLEABC20261016001",
+          "commission": "15.0000",
+          "fees": "0.1000",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261120C00270000",
+          "right": "call",
+          "strike": 270.0,
+          "expiry": "2026-11-20",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
+          "order_key": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902",
+          "account_ref": "JPM-Personal-9902",
+          "side": "STO",
+          "qty": 1,
+          "partial_fill": "false",
+          "price": "1.3000",
+          "trade_date": "2026-10-07",
+          "settle_date": "2026-10-08",
+          "order_id": "EXAMPLEABC20261007001",
+          "commission": "3.0000",
+          "fees": "0.0200",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261016P00220000",
+          "right": "put",
+          "strike": 220.0,
+          "expiry": "2026-10-16",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10",
+          "order_key": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "side": "STO",
+          "qty": 10,
+          "partial_fill": "false",
+          "price": "1.8000",
+          "trade_date": "2026-10-05",
+          "settle_date": "2026-10-06",
+          "order_id": "EXAMPLEABC20261005001",
+          "commission": "30.0000",
+          "fees": "0.2100",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261023C00255000",
+          "right": "call",
+          "strike": 255.0,
+          "expiry": "2026-10-23",
+          "multiplier": 100
+        }
+      ],
+      "skipped": [
+        {
+          "line": 2,
+          "type": "Sale",
+          "reason": "stock-trade-out-of-scope"
+        },
+        {
+          "line": 3,
+          "type": "Sale",
+          "reason": "stock-trade-out-of-scope"
+        },
+        {
+          "line": 10,
+          "type": "Purchase",
+          "reason": "money-market-fund"
+        },
+        {
+          "line": 12,
+          "type": "Purchase",
+          "reason": "bond"
+        },
+        {
+          "line": 19,
+          "type": "Sale",
+          "reason": "money-market-fund"
+        },
+        {
+          "line": 20,
+          "type": "Purchase",
+          "reason": "bond"
+        },
+        {
+          "line": 21,
+          "type": "Purchase",
+          "reason": "money-market-fund"
+        },
+        {
+          "line": 24,
+          "type": "Purchase",
+          "reason": "money-market-fund"
+        }
+      ],
+      "needs_confirmation": [
+        {
+          "line": 11,
+          "type": "Sale",
+          "reason": "possible-assignment",
+          "account_ref": "JPM-NORT-4411"
+        }
+      ]
+    }
+  },
+  {
+    "name": "etrade-empty",
+    "data": "tools/import/fixtures/etrade-empty",
+    "input": {
+      "broker": "etrade",
+      "csv": "Trade Activity Activity Types\r\n\r\nAccount Activity for  Orbit -5150 from LAST 30 Days\r\n\r\nTotal:,45173.05\r\n\r\nActivity/Trade Date,Transaction Date,Settlement Date,Activity Type,Description,Symbol,Cusip,Quantity #,Price $,Amount $,Commission,Category,Note\r\n10/19/2026,10/19/2026,10/16/2026,Option Assigned,CALL NVDA   10/16/26   190.000,NVDA,--,2.0,,0.0,0.0,--,--\r\n10/19/2026,10/19/2026,10/19/2026,Sold,NVIDIA CORP,NVDA,--,-200.0,190.0,37999.68,0.32,--,--\r\n10/16/2026,10/16/2026,10/19/2026,Sold Short,PUT  SPY    10/23/26   575.000,SPY,--,-5.0,1.85,921.70,3.30,--,--\r\n10/14/2026,10/14/2026,10/15/2026,Bought To Cover,PUT  SPY    10/16/26   580.000,SPY,--,3.0,0.45,-136.98,1.98,--,--\r\n10/13/2026,10/13/2026,10/14/2026,Sold,MICROSOFT CORP,MSFT,--,-10.0,508.2,5081.95,0.05,--,--\r\n10/09/2026,10/09/2026,10/12/2026,Sold Short,PUT  SPY    10/16/26   580.000,SPY,--,-3.0,2.1,628.02,1.98,--,--\r\n10/02/2026,10/02/2026,10/05/2026,Sold Short,CALL NVDA   10/16/26   190.000,NVDA,--,-2.0,3.4,678.68,1.32,--,--\r\n\r\n\r\n\r\n\"For all accounts, the activity shown here is provided for your convenience only. It is not an official record, and your account statement and trade confirmations govern; amounts may change before settlement.\"\r\n\r\n\"The information provided with this download (\"\"Data\"\") is fictional sample text made for a test fixture. It does not come from any broker, it is not advice, and it must not be relied on.\"\r\n\r\nEXAMPLE TRADING from Example Holdings is a fictional name used only in this sample. Nothing here is an offer or a solicitation of any security; this sentence only gives the line its shape.\r\n\r\n\"Under the Sample Deposit Program, cash may be swept to example banks; this paragraph is fictional and exists only so the file ends with the same kind of long quoted disclaimer lines as a real export.\"\r\n\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [
+        {
+          "record_type": "EVENT",
+          "event_id": "NVDA261016C00190000:ASSIGNED:2026-10-16:eTrade-Orbit-5150",
+          "account_ref": "eTrade-Orbit-5150",
+          "underlying": "NVDA",
+          "option_symbol": "NVDA261016C00190000",
+          "right": "call",
+          "strike": 190.0,
+          "expiry": "2026-10-16",
+          "multiplier": 100,
+          "qty": 2,
+          "type": "ASSIGNED",
+          "event_date": "2026-10-16",
+          "trade_date": "2026-10-16",
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "NVDA:SELL:2026-10-19:eTrade-Orbit-5150:cum200",
+          "order_key": "NVDA:SELL:2026-10-19:eTrade-Orbit-5150",
+          "account_ref": "eTrade-Orbit-5150",
+          "side": "SELL",
+          "qty": 200,
+          "partial_fill": "false",
+          "price": "190.0000",
+          "trade_date": "2026-10-19",
+          "settle_date": "2026-10-19",
+          "order_id": null,
+          "commission": "0.3200",
+          "fees": "0.0000",
+          "source": "broker-export",
+          "caused_by_event": "NVDA261016C00190000:ASSIGNED:2026-10-16:eTrade-Orbit-5150",
+          "underlying": "NVDA",
+          "multiplier": 1
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "SPY261023P00575000:STO:2026-10-16:eTrade-Orbit-5150:cum5",
+          "order_key": "SPY261023P00575000:STO:2026-10-16:eTrade-Orbit-5150",
+          "account_ref": "eTrade-Orbit-5150",
+          "side": "STO",
+          "qty": 5,
+          "partial_fill": "false",
+          "price": "1.8500",
+          "trade_date": "2026-10-16",
+          "settle_date": "2026-10-19",
+          "order_id": null,
+          "commission": "3.3000",
+          "fees": "0.0000",
+          "source": "broker-export",
+          "underlying": "SPY",
+          "option_symbol": "SPY261023P00575000",
+          "right": "put",
+          "strike": 575.0,
+          "expiry": "2026-10-23",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "SPY261016P00580000:BTC:2026-10-14:eTrade-Orbit-5150:cum3",
+          "order_key": "SPY261016P00580000:BTC:2026-10-14:eTrade-Orbit-5150",
+          "account_ref": "eTrade-Orbit-5150",
+          "side": "BTC",
+          "qty": 3,
+          "partial_fill": "false",
+          "price": "0.4500",
+          "trade_date": "2026-10-14",
+          "settle_date": "2026-10-15",
+          "order_id": null,
+          "commission": "1.9800",
+          "fees": "0.0000",
+          "source": "broker-export",
+          "underlying": "SPY",
+          "option_symbol": "SPY261016P00580000",
+          "right": "put",
+          "strike": 580.0,
+          "expiry": "2026-10-16",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "SPY261016P00580000:STO:2026-10-09:eTrade-Orbit-5150:cum3",
+          "order_key": "SPY261016P00580000:STO:2026-10-09:eTrade-Orbit-5150",
+          "account_ref": "eTrade-Orbit-5150",
+          "side": "STO",
+          "qty": 3,
+          "partial_fill": "false",
+          "price": "2.1000",
+          "trade_date": "2026-10-09",
+          "settle_date": "2026-10-12",
+          "order_id": null,
+          "commission": "1.9800",
+          "fees": "0.0000",
+          "source": "broker-export",
+          "underlying": "SPY",
+          "option_symbol": "SPY261016P00580000",
+          "right": "put",
+          "strike": 580.0,
+          "expiry": "2026-10-16",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "NVDA261016C00190000:STO:2026-10-02:eTrade-Orbit-5150:cum2",
+          "order_key": "NVDA261016C00190000:STO:2026-10-02:eTrade-Orbit-5150",
+          "account_ref": "eTrade-Orbit-5150",
+          "side": "STO",
+          "qty": 2,
+          "partial_fill": "false",
+          "price": "3.4000",
+          "trade_date": "2026-10-02",
+          "settle_date": "2026-10-05",
+          "order_id": null,
+          "commission": "1.3200",
+          "fees": "0.0000",
+          "source": "broker-export",
+          "underlying": "NVDA",
+          "option_symbol": "NVDA261016C00190000",
+          "right": "call",
+          "strike": 190.0,
+          "expiry": "2026-10-16",
+          "multiplier": 100
+        }
+      ],
+      "skipped": [
+        {
+          "line": 12,
+          "type": "Sold",
+          "reason": "stock-trade-out-of-scope"
+        }
+      ],
+      "needs_confirmation": []
+    }
+  },
+  {
+    "name": "jpm-reconcile",
+    "data": "tools/import/fixtures/jpm-reconcile",
+    "input": {
+      "broker": "jpm",
+      "csv": "﻿Trade Date,Post Date,Settlement Date,Account Name,Account Number,Account Type,Type,Description,Cusip,Ticker,Security Type,Local Currency,Price USD,Price Local,Quantity,Cost USD,Cost Local,G/L Short USD,G/L Short Local,G/L Long USDs,G/L Long Local,Amount USD,Amount Local,Income USD,Income Local,Balance,Commissions USD,Commissions Local,Tran Code,Tran Code Description,Broker,Check Number,Tax Withheld\r\n10/30/2026,10/30/2026,11/02/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Sale,\"MICROSOFT CORP @ 512.3400 51,234.00 SEC &/OR TAF FEE 1.28 EXAMPLE BROKER LLC EQUITIES TRADE DATE 10/30/26\",99990M104,MSFT,,USD,512.34,512.34,-100,-51232.72,-51232.72,0,0,0,0,51232.72,51232.72,,,,0,0,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/30/2026,11/02/2026,11/02/2026,BLUEFIELD PARTNERS,...3301,Asset,Sale,\"EXAMPLE PHARMA PLC - ADR @ 41.25 41,250.00 COMMISSION 123.75 SEC &/OR TAF 1.03 EXAMPLE BROKER LLC\",30212X106,EXPH,,USD,41.25,41.25,-1000,-41124.97,-41124.97,0,0,0,0,41124.97,41124.97,,,,124,124,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.15,1.15,-20,2239.58,2239.58,0,0,0,0,2239.58,2239.58,,,,60,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/27/2026,10/28/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027002,46432F1AB,DIA,,USD,1.15,1.15,-30,3359.37,3359.37,0,0,0,0,3359.37,3359.37,,,,90,90,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/28/2026,10/28/2026,JORDAN SAMPLE,...9902,Asset,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470 PUT JUNO: EXAMPLEABC20261027003,46432F1AB,DIA,,USD,1.15,1.15,-2,223.96,223.96,0,0,0,0,223.96,223.96,,,,6,6,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Expired option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/23/26 @ 475 PUT DIA 10/23/26 475,46432F1AC,DIA,,USD,0,0,20,-2800.00,-2800.00,2800.00,2800.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Expired option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/23/26 @ 475 PUT DIA 10/23/26 475,46432F1AC,DIA,,USD,0,0,30,-4200.00,-4200.00,4200.00,4200.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,JORDAN SAMPLE,...9902,Asset,Expired option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/23/26 @ 475 EXPIRE UNEXERCISED PUT,46432F1AC,DIA,,USD,475,475,2,-280.00,-280.00,280.00,280.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,BLUEFIELD PARTNERS,...3301,Asset,Purchase,EXAMPLE PRIME MM FUND - PREMIER FUND 911 @ 1.0000 TRADE DATE 10/26/26 YIELD 4.01,30213A207,EXPXX,,USD,1.0000,1.0000,12345.678,12345.68,12345.68,0,0,0,0,-12345.68,-12345.68,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n10/23/2026,10/23/2026,10/26/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Sale,\"APPLE INC @ 255.0000 255,000.00 SEC &/OR TAF FEE 6.38 EXAMPLE BROKER LLC EQUITIES TRADE DATE 10/23/26\",99990A100,AAPL,,USD,255.0000,255.0000,-1000,-254993.62,-254993.62,0,0,0,0,254993.62,254993.62,,,,0,0,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/22/2026,10/23/2026,10/23/2026,NORTHWIND HARBOR CAPITAL,...6610,Invt Mgmt,Purchase,SAMPLE ENERGY CO SR NTS 5.1% 06/01/2033 DTD 06/01/2023 @ 101.250 EXAMPLE BROKER LLC TRADE DATE 10/22/26,79588T9C1,,,USD,101.25,101.25,100000,101250.00,101250.00,0,0,0,0,-101250.00,-101250.00,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n10/20/2026,10/20/2026,10/21/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Buy back option,APPLE INC PUT 10/30/26 @ 230.0 JUNO: EXAMPLEABC20261020001,03783Q2AD,AAPL,,USD,0.85,0.85,10,1400.00,1400.00,519.79,519.79,0,0,-880.21,-880.21,,,,30,30,671,BB LIQ OPT F,EXAMPLE BROKER LLC/EXB,0,\r\n10/20/2026,10/20/2026,10/21/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Buy back option,APPLE INC PUT 10/30/26 @ 230.0 JUNO: EXAMPLEABC20261020002,03783Q2AD,AAPL,,USD,0.85,0.85,15,2100.00,2100.00,779.68,779.68,0,0,-1320.32,-1320.32,,,,45,45,671,BB LIQ OPT F,EXAMPLE BROKER LLC/EXB,0,\r\n10/19/2026,10/19/2026,10/19/2026,JORDAN SAMPLE,...9902,Asset,Expired option,APPLE INC PUT 10/16/26 @ 220 EXPIRE UNEXERCISED PUT,03783Q2AE,AAPL,,USD,220,220,1,-140.00,-140.00,140.00,140.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/16/2026,10/19/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,APPLE INC CALL 11/20/26 @ 270.0 CALL OPTION,03783Q2AF,AAPL,,USD,2.4,2.4,-10,2369.79,2369.79,0,0,0,0,2369.79,2369.79,,,,30,30,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/16/2026,10/19/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Write option,APPLE INC CALL 11/20/26 @ 270.0 CALL OPTION,03783Q2AF,AAPL,,USD,2.4,2.4,-15,3554.68,3554.68,0,0,0,0,3554.68,3554.68,,,,45,45,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/19/2026,10/19/2026,BLUEFIELD PARTNERS,...3301,Asset,Write option,APPLE INC CALL 11/20/26 @ 270 CALL OPTION JUNO: EXAMPLEABC20261016001,03783Q2AF,AAPL,,USD,2.4,2.4,-5,1184.90,1184.90,0,0,0,0,1184.90,1184.90,,,,15,15,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/16/2026,10/16/2026,BLUEFIELD PARTNERS,...3301,Asset,Sale,EXAMPLE PRIME MM FUND - PREMIER FUND 911 @ 1.0000 TRADE DATE 10/16/26 YIELD 4.02,30213A207,EXPXX,,USD,1.0000,1.0000,-2500.000,-2500.00,-2500.00,0,0,0,0,2500.00,2500.00,,,,0,0,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/14/2026,10/15/2026,10/15/2026,NORTHWIND HARBOR CAPITAL,...6610,Invt Mgmt,Purchase,EXAMPLE CORP SR NTS 4.250% 03/15/2031 DTD 03/15/2024 @ 99.125 EXAMPLE BROKER LLC TRADE DATE 10/14/26,30214B4D5,,,USD,99.125,99.125,250000,247812.50,247812.50,0,0,0,0,-247812.50,-247812.50,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n10/09/2026,10/09/2026,10/09/2026,JORDAN SAMPLE,...9902,Asset,Purchase,EXAMPLE US GOVT MM FUND - AGENCY FUND 3921 REINVEST @ 1.0000 EXAMPLE FUND,30215C301,EXGXX,,USD,1.0000,1.0000,842.17,842.17,842.17,0,0,0,0,-842.17,-842.17,,,,0,0,651,PRCHSE ASSET,,0,\r\n10/07/2026,10/07/2026,10/08/2026,JORDAN SAMPLE,...9902,Asset,Write option,PUT JUNO: EXAMPLEABC20261007001 APPLE INC PUT 10/16/26 @ 220.0,03783Q2AE,AAPL,,USD,1.3,1.3,-1,126.98,126.98,0,0,0,0,126.98,126.98,,,,3,3,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/05/2026,10/05/2026,10/06/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,APPLE INC CALL 10/23/26 @ 255.0 JUNO: EXAMPLEABC20261005001,03783Q2AG,AAPL,,USD,1.8,1.8,-10,1769.79,1769.79,0,0,0,0,1769.79,1769.79,,,,30,30,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/05/2026,10/05/2026,10/05/2026,RIVERSTONE LLC,...2205,Asset,Purchase,EXAMPLE PRIME MM FUND - PREMIER FUND 911 @ 1.0000 TRADE DATE 10/05/26 YIELD 4.03,30213A207,EXPXX,,USD,1.0000,1.0000,5000.000,5000.00,5000.00,0,0,0,0,-5000.00,-5000.00,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [
+        {
+          "record_type": "REVERSAL",
+          "reversal_of": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum20",
+          "trade_date": "2026-10-27",
+          "source": "broker-export"
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
+          "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "side": "STO",
+          "qty": 20,
+          "partial_fill": "false",
+          "price": "1.1500",
+          "trade_date": "2026-10-27",
+          "settle_date": "2026-10-28",
+          "order_id": "EXAMPLEABC20261027001",
+          "commission": "60.0000",
+          "fees": "0.4200",
+          "source": "broker-export",
+          "underlying": "DIA",
+          "option_symbol": "DIA261030P00470000",
+          "right": "put",
+          "strike": 470.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
+          "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902",
+          "account_ref": "JPM-Personal-9902",
+          "side": "STO",
+          "qty": 2,
+          "partial_fill": "false",
+          "price": "1.1500",
+          "trade_date": "2026-10-27",
+          "settle_date": "2026-10-28",
+          "order_id": "EXAMPLEABC20261027003",
+          "commission": "6.0000",
+          "fees": "0.0400",
+          "source": "broker-export",
+          "underlying": "DIA",
+          "option_symbol": "DIA261030P00470000",
+          "right": "put",
+          "strike": 470.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        },
+        {
+          "record_type": "EVENT",
+          "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
+          "account_ref": "JPM-BLUE-5522",
+          "underlying": "DIA",
+          "option_symbol": "DIA261023P00475000",
+          "right": "put",
+          "strike": 475.0,
+          "expiry": "2026-10-23",
+          "multiplier": 100,
+          "qty": 30,
+          "type": "EXPIRE",
+          "event_date": "2026-10-23",
+          "trade_date": "2026-10-23",
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
+        },
+        {
+          "record_type": "EVENT",
+          "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
+          "account_ref": "JPM-Personal-9902",
+          "underlying": "DIA",
+          "option_symbol": "DIA261023P00475000",
+          "right": "put",
+          "strike": 475.0,
+          "expiry": "2026-10-23",
+          "multiplier": 100,
+          "qty": 2,
+          "type": "EXPIRE",
+          "event_date": "2026-10-23",
+          "trade_date": "2026-10-23",
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
+          "order_key": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522",
+          "account_ref": "JPM-BLUE-5522",
+          "side": "BTC",
+          "qty": 15,
+          "partial_fill": "false",
+          "price": "0.8500",
+          "trade_date": "2026-10-20",
+          "settle_date": "2026-10-21",
+          "order_id": "EXAMPLEABC20261020002",
+          "commission": "45.0000",
+          "fees": "0.3200",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261030P00230000",
+          "right": "put",
+          "strike": 230.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        },
+        {
+          "record_type": "EVENT",
+          "event_id": "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
+          "account_ref": "JPM-Personal-9902",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261016P00220000",
+          "right": "put",
+          "strike": 220.0,
+          "expiry": "2026-10-16",
+          "multiplier": 100,
+          "qty": 1,
+          "type": "EXPIRE",
+          "event_date": "2026-10-16",
+          "trade_date": "2026-10-16",
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
+          "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "side": "STO",
+          "qty": 10,
+          "partial_fill": "false",
+          "price": "2.4000",
+          "trade_date": "2026-10-16",
+          "settle_date": "2026-10-19",
+          "order_id": null,
+          "commission": "30.0000",
+          "fees": "0.2100",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261120C00270000",
+          "right": "call",
+          "strike": 270.0,
+          "expiry": "2026-11-20",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
+          "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522",
+          "account_ref": "JPM-BLUE-5522",
+          "side": "STO",
+          "qty": 15,
+          "partial_fill": "false",
+          "price": "2.4000",
+          "trade_date": "2026-10-16",
+          "settle_date": "2026-10-19",
+          "order_id": null,
+          "commission": "45.0000",
+          "fees": "0.3200",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261120C00270000",
+          "right": "call",
+          "strike": 270.0,
+          "expiry": "2026-11-20",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
+          "order_key": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902",
+          "account_ref": "JPM-Personal-9902",
+          "side": "STO",
+          "qty": 1,
+          "partial_fill": "false",
+          "price": "1.3000",
+          "trade_date": "2026-10-07",
+          "settle_date": "2026-10-08",
+          "order_id": "EXAMPLEABC20261007001",
+          "commission": "3.0000",
+          "fees": "0.0200",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261016P00220000",
+          "right": "put",
+          "strike": 220.0,
+          "expiry": "2026-10-16",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10",
+          "order_key": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "side": "STO",
+          "qty": 10,
+          "partial_fill": "false",
+          "price": "1.8000",
+          "trade_date": "2026-10-05",
+          "settle_date": "2026-10-06",
+          "order_id": "EXAMPLEABC20261005001",
+          "commission": "30.0000",
+          "fees": "0.2100",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261023C00255000",
+          "right": "call",
+          "strike": 255.0,
+          "expiry": "2026-10-23",
+          "multiplier": 100
+        }
+      ],
+      "skipped": [
+        {
+          "line": 2,
+          "type": "Sale",
+          "reason": "stock-trade-out-of-scope"
+        },
+        {
+          "line": 3,
+          "type": "Sale",
+          "reason": "stock-trade-out-of-scope"
+        },
+        {
+          "line": 10,
+          "type": "Purchase",
+          "reason": "money-market-fund"
+        },
+        {
+          "line": 12,
+          "type": "Purchase",
+          "reason": "bond"
+        },
+        {
+          "line": 19,
+          "type": "Sale",
+          "reason": "money-market-fund"
+        },
+        {
+          "line": 20,
+          "type": "Purchase",
+          "reason": "bond"
+        },
+        {
+          "line": 21,
+          "type": "Purchase",
+          "reason": "money-market-fund"
+        },
+        {
+          "line": 24,
+          "type": "Purchase",
+          "reason": "money-market-fund"
+        }
+      ],
+      "needs_confirmation": [
+        {
+          "line": 11,
+          "reason": "possible-assignment"
+        },
+        {
+          "line": 5,
+          "reason": "conflict"
+        },
+        {
+          "line": 18,
+          "reason": "account-unconfirmed",
+          "suggested": "JPM-BLUE-3301",
+          "candidates": [
+            "JPM-BLUE-3301",
+            "JPM-BLUE-5522"
+          ]
+        },
+        {
+          "reason": "missing-from-export",
+          "id": "AAPL261030P00225000:STO:2026-10-21:JPM-Personal-9902:cum1"
+        }
+      ],
+      "reconciliation": [
+        {
+          "line": 4,
+          "id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
+          "action": "enrich"
+        },
+        {
+          "line": 5,
+          "id": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522:cum30",
+          "action": "conflict"
+        },
+        {
+          "line": 6,
+          "id": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
+          "action": "add"
+        },
+        {
+          "line": 7,
+          "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-NORT-4411",
+          "action": "already-recorded"
+        },
+        {
+          "line": 8,
+          "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
+          "action": "add"
+        },
+        {
+          "line": 9,
+          "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
+          "action": "add"
+        },
+        {
+          "line": 13,
+          "id": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411:cum10",
+          "action": "already-recorded"
+        },
+        {
+          "line": 14,
+          "id": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
+          "action": "add"
+        },
+        {
+          "line": 15,
+          "id": "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
+          "action": "add"
+        },
+        {
+          "line": 16,
+          "id": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
+          "action": "add"
+        },
+        {
+          "line": 17,
+          "id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
+          "action": "add"
+        },
+        {
+          "line": 18,
+          "id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301:cum5",
+          "action": "account-unconfirmed"
+        },
+        {
+          "line": 22,
+          "id": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
+          "action": "add"
+        },
+        {
+          "line": 23,
+          "id": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10",
+          "action": "add"
+        },
+        {
+          "id": "AAPL261106P00215000:STO:2026-10-30:JPM-Personal-9902:cum1",
+          "action": "pending-settlement"
+        },
+        {
+          "id": "AAPL261030P00225000:STO:2026-10-21:JPM-Personal-9902:cum1",
+          "action": "missing-from-export"
+        },
+        {
+          "id": "AAPL261030P00230000:STO:2026-09-28:JPM-NORT-4411:cum10",
+          "action": "outside-export-window"
+        }
+      ]
+    }
+  },
+  {
+    "name": "jpm-rerun",
+    "data": "tools/import/fixtures/jpm-rerun",
+    "input": {
+      "broker": "jpm",
+      "csv": "﻿Trade Date,Post Date,Settlement Date,Account Name,Account Number,Account Type,Type,Description,Cusip,Ticker,Security Type,Local Currency,Price USD,Price Local,Quantity,Cost USD,Cost Local,G/L Short USD,G/L Short Local,G/L Long USDs,G/L Long Local,Amount USD,Amount Local,Income USD,Income Local,Balance,Commissions USD,Commissions Local,Tran Code,Tran Code Description,Broker,Check Number,Tax Withheld\r\n10/30/2026,10/30/2026,11/02/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Sale,\"MICROSOFT CORP @ 512.3400 51,234.00 SEC &/OR TAF FEE 1.28 EXAMPLE BROKER LLC EQUITIES TRADE DATE 10/30/26\",99990M104,MSFT,,USD,512.34,512.34,-100,-51232.72,-51232.72,0,0,0,0,51232.72,51232.72,,,,0,0,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/30/2026,11/02/2026,11/02/2026,BLUEFIELD PARTNERS,...3301,Asset,Sale,\"EXAMPLE PHARMA PLC - ADR @ 41.25 41,250.00 COMMISSION 123.75 SEC &/OR TAF 1.03 EXAMPLE BROKER LLC\",30212X106,EXPH,,USD,41.25,41.25,-1000,-41124.97,-41124.97,0,0,0,0,41124.97,41124.97,,,,124,124,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.15,1.15,-20,2239.58,2239.58,0,0,0,0,2239.58,2239.58,,,,60,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/27/2026,10/28/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027002,46432F1AB,DIA,,USD,1.15,1.15,-30,3359.37,3359.37,0,0,0,0,3359.37,3359.37,,,,90,90,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/28/2026,10/28/2026,JORDAN SAMPLE,...9902,Asset,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470 PUT JUNO: EXAMPLEABC20261027003,46432F1AB,DIA,,USD,1.15,1.15,-2,223.96,223.96,0,0,0,0,223.96,223.96,,,,6,6,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Expired option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/23/26 @ 475 PUT DIA 10/23/26 475,46432F1AC,DIA,,USD,0,0,20,-2800.00,-2800.00,2800.00,2800.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Expired option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/23/26 @ 475 PUT DIA 10/23/26 475,46432F1AC,DIA,,USD,0,0,30,-4200.00,-4200.00,4200.00,4200.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,JORDAN SAMPLE,...9902,Asset,Expired option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/23/26 @ 475 EXPIRE UNEXERCISED PUT,46432F1AC,DIA,,USD,475,475,2,-280.00,-280.00,280.00,280.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,BLUEFIELD PARTNERS,...3301,Asset,Purchase,EXAMPLE PRIME MM FUND - PREMIER FUND 911 @ 1.0000 TRADE DATE 10/26/26 YIELD 4.01,30213A207,EXPXX,,USD,1.0000,1.0000,12345.678,12345.68,12345.68,0,0,0,0,-12345.68,-12345.68,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n10/23/2026,10/23/2026,10/26/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Sale,\"APPLE INC @ 255.0000 255,000.00 SEC &/OR TAF FEE 6.38 EXAMPLE BROKER LLC EQUITIES TRADE DATE 10/23/26\",99990A100,AAPL,,USD,255.0000,255.0000,-1000,-254993.62,-254993.62,0,0,0,0,254993.62,254993.62,,,,0,0,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/22/2026,10/23/2026,10/23/2026,NORTHWIND HARBOR CAPITAL,...6610,Invt Mgmt,Purchase,SAMPLE ENERGY CO SR NTS 5.1% 06/01/2033 DTD 06/01/2023 @ 101.250 EXAMPLE BROKER LLC TRADE DATE 10/22/26,79588T9C1,,,USD,101.25,101.25,100000,101250.00,101250.00,0,0,0,0,-101250.00,-101250.00,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n10/20/2026,10/20/2026,10/21/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Buy back option,APPLE INC PUT 10/30/26 @ 230.0 JUNO: EXAMPLEABC20261020001,03783Q2AD,AAPL,,USD,0.85,0.85,10,1400.00,1400.00,519.79,519.79,0,0,-880.21,-880.21,,,,30,30,671,BB LIQ OPT F,EXAMPLE BROKER LLC/EXB,0,\r\n10/20/2026,10/20/2026,10/21/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Buy back option,APPLE INC PUT 10/30/26 @ 230.0 JUNO: EXAMPLEABC20261020002,03783Q2AD,AAPL,,USD,0.85,0.85,15,2100.00,2100.00,779.68,779.68,0,0,-1320.32,-1320.32,,,,45,45,671,BB LIQ OPT F,EXAMPLE BROKER LLC/EXB,0,\r\n10/19/2026,10/19/2026,10/19/2026,JORDAN SAMPLE,...9902,Asset,Expired option,APPLE INC PUT 10/16/26 @ 220 EXPIRE UNEXERCISED PUT,03783Q2AE,AAPL,,USD,220,220,1,-140.00,-140.00,140.00,140.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/16/2026,10/19/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,APPLE INC CALL 11/20/26 @ 270.0 CALL OPTION,03783Q2AF,AAPL,,USD,2.4,2.4,-10,2369.79,2369.79,0,0,0,0,2369.79,2369.79,,,,30,30,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/16/2026,10/19/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Write option,APPLE INC CALL 11/20/26 @ 270.0 CALL OPTION,03783Q2AF,AAPL,,USD,2.4,2.4,-15,3554.68,3554.68,0,0,0,0,3554.68,3554.68,,,,45,45,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/19/2026,10/19/2026,BLUEFIELD PARTNERS,...3301,Asset,Write option,APPLE INC CALL 11/20/26 @ 270 CALL OPTION JUNO: EXAMPLEABC20261016001,03783Q2AF,AAPL,,USD,2.4,2.4,-5,1184.90,1184.90,0,0,0,0,1184.90,1184.90,,,,15,15,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/16/2026,10/16/2026,BLUEFIELD PARTNERS,...3301,Asset,Sale,EXAMPLE PRIME MM FUND - PREMIER FUND 911 @ 1.0000 TRADE DATE 10/16/26 YIELD 4.02,30213A207,EXPXX,,USD,1.0000,1.0000,-2500.000,-2500.00,-2500.00,0,0,0,0,2500.00,2500.00,,,,0,0,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/14/2026,10/15/2026,10/15/2026,NORTHWIND HARBOR CAPITAL,...6610,Invt Mgmt,Purchase,EXAMPLE CORP SR NTS 4.250% 03/15/2031 DTD 03/15/2024 @ 99.125 EXAMPLE BROKER LLC TRADE DATE 10/14/26,30214B4D5,,,USD,99.125,99.125,250000,247812.50,247812.50,0,0,0,0,-247812.50,-247812.50,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n10/09/2026,10/09/2026,10/09/2026,JORDAN SAMPLE,...9902,Asset,Purchase,EXAMPLE US GOVT MM FUND - AGENCY FUND 3921 REINVEST @ 1.0000 EXAMPLE FUND,30215C301,EXGXX,,USD,1.0000,1.0000,842.17,842.17,842.17,0,0,0,0,-842.17,-842.17,,,,0,0,651,PRCHSE ASSET,,0,\r\n10/07/2026,10/07/2026,10/08/2026,JORDAN SAMPLE,...9902,Asset,Write option,PUT JUNO: EXAMPLEABC20261007001 APPLE INC PUT 10/16/26 @ 220.0,03783Q2AE,AAPL,,USD,1.3,1.3,-1,126.98,126.98,0,0,0,0,126.98,126.98,,,,3,3,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/05/2026,10/05/2026,10/06/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,APPLE INC CALL 10/23/26 @ 255.0 JUNO: EXAMPLEABC20261005001,03783Q2AG,AAPL,,USD,1.8,1.8,-10,1769.79,1769.79,0,0,0,0,1769.79,1769.79,,,,30,30,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/05/2026,10/05/2026,10/05/2026,RIVERSTONE LLC,...2205,Asset,Purchase,EXAMPLE PRIME MM FUND - PREMIER FUND 911 @ 1.0000 TRADE DATE 10/05/26 YIELD 4.03,30213A207,EXPXX,,USD,1.0000,1.0000,5000.000,5000.00,5000.00,0,0,0,0,-5000.00,-5000.00,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [],
+      "skipped": [
+        {
+          "line": 2,
+          "type": "Sale",
+          "reason": "stock-trade-out-of-scope"
+        },
+        {
+          "line": 3,
+          "type": "Sale",
+          "reason": "stock-trade-out-of-scope"
+        },
+        {
+          "line": 10,
+          "type": "Purchase",
+          "reason": "money-market-fund"
+        },
+        {
+          "line": 12,
+          "type": "Purchase",
+          "reason": "bond"
+        },
+        {
+          "line": 19,
+          "type": "Sale",
+          "reason": "money-market-fund"
+        },
+        {
+          "line": 20,
+          "type": "Purchase",
+          "reason": "bond"
+        },
+        {
+          "line": 21,
+          "type": "Purchase",
+          "reason": "money-market-fund"
+        },
+        {
+          "line": 24,
+          "type": "Purchase",
+          "reason": "money-market-fund"
+        }
+      ],
+      "needs_confirmation": [
+        {
+          "line": 11,
+          "reason": "possible-assignment"
+        },
+        {
+          "line": 5,
+          "reason": "conflict"
+        },
+        {
+          "line": 18,
+          "reason": "account-unconfirmed",
+          "suggested": "JPM-BLUE-3301",
+          "candidates": [
+            "JPM-BLUE-3301",
+            "JPM-BLUE-5522"
+          ]
+        },
+        {
+          "reason": "missing-from-export",
+          "id": "AAPL261030P00225000:STO:2026-10-21:JPM-Personal-9902:cum1"
+        }
+      ]
+    }
+  },
+  {
+    "name": "etrade-rerun",
+    "data": "tools/import/fixtures/etrade-rerun",
+    "input": {
+      "broker": "etrade",
+      "csv": "Trade Activity Activity Types\r\n\r\nAccount Activity for  Orbit -5150 from LAST 30 Days\r\n\r\nTotal:,45173.05\r\n\r\nActivity/Trade Date,Transaction Date,Settlement Date,Activity Type,Description,Symbol,Cusip,Quantity #,Price $,Amount $,Commission,Category,Note\r\n10/19/2026,10/19/2026,10/16/2026,Option Assigned,CALL NVDA   10/16/26   190.000,NVDA,--,2.0,,0.0,0.0,--,--\r\n10/19/2026,10/19/2026,10/19/2026,Sold,NVIDIA CORP,NVDA,--,-200.0,190.0,37999.68,0.32,--,--\r\n10/16/2026,10/16/2026,10/19/2026,Sold Short,PUT  SPY    10/23/26   575.000,SPY,--,-5.0,1.85,921.70,3.30,--,--\r\n10/14/2026,10/14/2026,10/15/2026,Bought To Cover,PUT  SPY    10/16/26   580.000,SPY,--,3.0,0.45,-136.98,1.98,--,--\r\n10/13/2026,10/13/2026,10/14/2026,Sold,MICROSOFT CORP,MSFT,--,-10.0,508.2,5081.95,0.05,--,--\r\n10/09/2026,10/09/2026,10/12/2026,Sold Short,PUT  SPY    10/16/26   580.000,SPY,--,-3.0,2.1,628.02,1.98,--,--\r\n10/02/2026,10/02/2026,10/05/2026,Sold Short,CALL NVDA   10/16/26   190.000,NVDA,--,-2.0,3.4,678.68,1.32,--,--\r\n\r\n\r\n\r\n\"For all accounts, the activity shown here is provided for your convenience only. It is not an official record, and your account statement and trade confirmations govern; amounts may change before settlement.\"\r\n\r\n\"The information provided with this download (\"\"Data\"\") is fictional sample text made for a test fixture. It does not come from any broker, it is not advice, and it must not be relied on.\"\r\n\r\nEXAMPLE TRADING from Example Holdings is a fictional name used only in this sample. Nothing here is an offer or a solicitation of any security; this sentence only gives the line its shape.\r\n\r\n\"Under the Sample Deposit Program, cash may be swept to example banks; this paragraph is fictional and exists only so the file ends with the same kind of long quoted disclaimer lines as a real export.\"\r\n\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [],
+      "skipped": [
+        {
+          "line": 12,
+          "type": "Sold",
+          "reason": "stock-trade-out-of-scope"
+        }
+      ],
+      "needs_confirmation": []
+    }
+  },
+  {
+    "name": "jpm-split",
+    "data": "tools/import/fixtures/jpm-split",
+    "input": {
+      "broker": "jpm",
+      "csv": "﻿Trade Date,Post Date,Settlement Date,Account Name,Account Number,Account Type,Type,Description,Cusip,Ticker,Security Type,Local Currency,Price USD,Price Local,Quantity,Cost USD,Cost Local,G/L Short USD,G/L Short Local,G/L Long USDs,G/L Long Local,Amount USD,Amount Local,Income USD,Income Local,Balance,Commissions USD,Commissions Local,Tran Code,Tran Code Description,Broker,Check Number,Tax Withheld\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.00,1.15,-8,2239.58,2239.58,0,0,0,0,775.83,2239.58,,,,24,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.25,1.15,-12,2239.58,2239.58,0,0,0,0,1463.75,2239.58,,,,36,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [
+        {
+          "record_type": "FILL",
+          "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
+          "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "side": "STO",
+          "qty": 20,
+          "partial_fill": "false",
+          "price": "1.1500",
+          "trade_date": "2026-10-27",
+          "settle_date": "2026-10-28",
+          "order_id": "EXAMPLEABC20261027001",
+          "commission": "60.0000",
+          "fees": "0.4200",
+          "source": "broker-export",
+          "underlying": "DIA",
+          "option_symbol": "DIA261030P00470000",
+          "right": "put",
+          "strike": 470.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        }
+      ],
+      "skipped": [],
+      "needs_confirmation": []
+    }
+  },
+  {
+    "name": "jpm-split-rerun",
+    "data": "tools/import/fixtures/jpm-split-rerun",
+    "input": {
+      "broker": "jpm",
+      "csv": "﻿Trade Date,Post Date,Settlement Date,Account Name,Account Number,Account Type,Type,Description,Cusip,Ticker,Security Type,Local Currency,Price USD,Price Local,Quantity,Cost USD,Cost Local,G/L Short USD,G/L Short Local,G/L Long USDs,G/L Long Local,Amount USD,Amount Local,Income USD,Income Local,Balance,Commissions USD,Commissions Local,Tran Code,Tran Code Description,Broker,Check Number,Tax Withheld\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.00,1.15,-8,2239.58,2239.58,0,0,0,0,775.83,2239.58,,,,24,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.25,1.15,-12,2239.58,2239.58,0,0,0,0,1463.75,2239.58,,,,36,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [],
+      "skipped": [],
+      "needs_confirmation": []
+    }
+  },
+  {
+    "name": "jpm-partial-enrich",
+    "data": "tools/import/fixtures/jpm-partial-enrich",
+    "input": {
+      "broker": "jpm",
+      "csv": "﻿Trade Date,Post Date,Settlement Date,Account Name,Account Number,Account Type,Type,Description,Cusip,Ticker,Security Type,Local Currency,Price USD,Price Local,Quantity,Cost USD,Cost Local,G/L Short USD,G/L Short Local,G/L Long USDs,G/L Long Local,Amount USD,Amount Local,Income USD,Income Local,Balance,Commissions USD,Commissions Local,Tran Code,Tran Code Description,Broker,Check Number,Tax Withheld\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.00,1.15,-8,2239.58,2239.58,0,0,0,0,775.83,2239.58,,,,24,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.25,1.15,-12,2239.58,2239.58,0,0,0,0,1463.75,2239.58,,,,36,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [
+        {
+          "record_type": "REVERSAL",
+          "reversal_of": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum8",
+          "trade_date": "2026-10-27",
+          "source": "broker-export"
+        },
+        {
+          "record_type": "REVERSAL",
+          "reversal_of": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum20",
+          "trade_date": "2026-10-27",
+          "source": "broker-export"
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
+          "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "side": "STO",
+          "qty": 20,
+          "partial_fill": "false",
+          "price": "1.1500",
+          "trade_date": "2026-10-27",
+          "settle_date": "2026-10-28",
+          "order_id": "EXAMPLEABC20261027001",
+          "commission": "60.0000",
+          "fees": "0.4200",
+          "source": "broker-export",
+          "underlying": "DIA",
+          "option_symbol": "DIA261030P00470000",
+          "right": "put",
+          "strike": 470.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        }
+      ],
+      "skipped": [],
+      "needs_confirmation": []
+    }
+  },
+  {
+    "name": "jpm-partial-enrich-rerun",
+    "data": "tools/import/fixtures/jpm-partial-enrich-rerun",
+    "input": {
+      "broker": "jpm",
+      "csv": "﻿Trade Date,Post Date,Settlement Date,Account Name,Account Number,Account Type,Type,Description,Cusip,Ticker,Security Type,Local Currency,Price USD,Price Local,Quantity,Cost USD,Cost Local,G/L Short USD,G/L Short Local,G/L Long USDs,G/L Long Local,Amount USD,Amount Local,Income USD,Income Local,Balance,Commissions USD,Commissions Local,Tran Code,Tran Code Description,Broker,Check Number,Tax Withheld\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.00,1.15,-8,2239.58,2239.58,0,0,0,0,775.83,2239.58,,,,24,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.25,1.15,-12,2239.58,2239.58,0,0,0,0,1463.75,2239.58,,,,36,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [],
+      "skipped": [],
+      "needs_confirmation": []
+    }
+  },
+  {
+    "name": "jpm-unknown-account",
+    "data": "tools/import/fixtures/jpm-unknown-account",
+    "input": {
+      "broker": "jpm",
+      "csv": "﻿Trade Date,Post Date,Settlement Date,Account Name,Account Number,Account Type,Type,Description,Cusip,Ticker,Security Type,Local Currency,Price USD,Price Local,Quantity,Cost USD,Cost Local,G/L Short USD,G/L Short Local,G/L Long USDs,G/L Long Local,Amount USD,Amount Local,Income USD,Income Local,Balance,Commissions USD,Commissions Local,Tran Code,Tran Code Description,Broker,Check Number,Tax Withheld\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.15,1.15,-20,2239.58,2239.58,0,0,0,0,2239.58,2239.58,,,,60,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [],
+      "skipped": [],
+      "needs_confirmation": [
+        {
+          "line": 2,
+          "reason": "unknown-account"
+        }
+      ]
+    }
+  },
+  {
+    "name": "jpm-ambiguous-export",
+    "data": "tools/import/fixtures/jpm-ambiguous-export",
+    "input": {
+      "broker": "jpm",
+      "csv": "﻿Trade Date,Post Date,Settlement Date,Account Name,Account Number,Account Type,Type,Description,Cusip,Ticker,Security Type,Local Currency,Price USD,Price Local,Quantity,Cost USD,Cost Local,G/L Short USD,G/L Short Local,G/L Long USDs,G/L Long Local,Amount USD,Amount Local,Income USD,Income Local,Balance,Commissions USD,Commissions Local,Tran Code,Tran Code Description,Broker,Check Number,Tax Withheld\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.15,1.15,-20,2239.58,2239.58,0,0,0,0,2239.58,2239.58,,,,60,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [],
+      "skipped": [],
+      "needs_confirmation": [
+        {
+          "line": 2,
+          "reason": "account-unconfirmed",
+          "candidates": [
+            "JPM-DEMO-duplicate",
+            "JPM-NORT-4411"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "jpm-amount-negative",
+    "data": "tools/import/fixtures/jpm-amount-negative",
+    "input": {
+      "broker": "jpm",
+      "csv": "﻿Trade Date,Post Date,Settlement Date,Account Name,Account Number,Account Type,Type,Description,Cusip,Ticker,Security Type,Local Currency,Price USD,Price Local,Quantity,Cost USD,Cost Local,G/L Short USD,G/L Short Local,G/L Long USDs,G/L Long Local,Amount USD,Amount Local,Income USD,Income Local,Balance,Commissions USD,Commissions Local,Tran Code,Tran Code Description,Broker,Check Number,Tax Withheld\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.15,1.15,-20,2239.58,2239.58,0,0,0,0,2300,2239.58,,,,60,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [],
+      "skipped": [],
+      "needs_confirmation": [
+        {
+          "line": 2,
+          "reason": "amount-mismatch"
+        }
+      ]
+    }
+  },
+  {
+    "name": "jpm-amount-over-limit",
+    "data": "tools/import/fixtures/jpm-amount-over-limit",
+    "input": {
+      "broker": "jpm",
+      "csv": "﻿Trade Date,Post Date,Settlement Date,Account Name,Account Number,Account Type,Type,Description,Cusip,Ticker,Security Type,Local Currency,Price USD,Price Local,Quantity,Cost USD,Cost Local,G/L Short USD,G/L Short Local,G/L Long USDs,G/L Long Local,Amount USD,Amount Local,Income USD,Income Local,Balance,Commissions USD,Commissions Local,Tran Code,Tran Code Description,Broker,Check Number,Tax Withheld\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.15,1.15,-20,2239.58,2239.58,0,0,0,0,2200,2239.58,,,,60,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [],
+      "skipped": [],
+      "needs_confirmation": [
+        {
+          "line": 2,
+          "reason": "amount-mismatch"
+        }
+      ]
+    }
+  },
+  {
+    "name": "jpm-type-code",
+    "data": "tools/import/fixtures/jpm-type-code",
+    "input": {
+      "broker": "jpm",
+      "csv": "﻿Trade Date,Post Date,Settlement Date,Account Name,Account Number,Account Type,Type,Description,Cusip,Ticker,Security Type,Local Currency,Price USD,Price Local,Quantity,Cost USD,Cost Local,G/L Short USD,G/L Short Local,G/L Long USDs,G/L Long Local,Amount USD,Amount Local,Income USD,Income Local,Balance,Commissions USD,Commissions Local,Tran Code,Tran Code Description,Broker,Check Number,Tax Withheld\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.15,1.15,-20,2239.58,2239.58,0,0,0,0,2239.58,2239.58,,,,60,60,671,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [],
+      "skipped": [],
+      "needs_confirmation": [
+        {
+          "line": 2,
+          "reason": "unknown-row-type"
+        }
+      ]
+    }
+  },
+  {
+    "name": "jpm-pending-weekend",
+    "data": "tools/import/fixtures/jpm-pending-weekend",
+    "input": {
+      "broker": "jpm",
+      "csv": "﻿Trade Date,Post Date,Settlement Date,Account Name,Account Number,Account Type,Type,Description,Cusip,Ticker,Security Type,Local Currency,Price USD,Price Local,Quantity,Cost USD,Cost Local,G/L Short USD,G/L Short Local,G/L Long USDs,G/L Long Local,Amount USD,Amount Local,Income USD,Income Local,Balance,Commissions USD,Commissions Local,Tran Code,Tran Code Description,Broker,Check Number,Tax Withheld\r\n10/30/2026,10/30/2026,11/02/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Sale,\"MICROSOFT CORP @ 512.3400 51,234.00 SEC &/OR TAF FEE 1.28 EXAMPLE BROKER LLC EQUITIES TRADE DATE 10/30/26\",99990M104,MSFT,,USD,512.34,512.34,-100,-51232.72,-51232.72,0,0,0,0,51232.72,51232.72,,,,0,0,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/30/2026,11/02/2026,11/02/2026,BLUEFIELD PARTNERS,...3301,Asset,Sale,\"EXAMPLE PHARMA PLC - ADR @ 41.25 41,250.00 COMMISSION 123.75 SEC &/OR TAF 1.03 EXAMPLE BROKER LLC\",30212X106,EXPH,,USD,41.25,41.25,-1000,-41124.97,-41124.97,0,0,0,0,41124.97,41124.97,,,,124,124,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/27/2026,10/28/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027001,46432F1AB,DIA,,USD,1.15,1.15,-20,2239.58,2239.58,0,0,0,0,2239.58,2239.58,,,,60,60,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/27/2026,10/28/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470.0 JUNO: EXAMPLEABC20261027002,46432F1AB,DIA,,USD,1.15,1.15,-30,3359.37,3359.37,0,0,0,0,3359.37,3359.37,,,,90,90,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/27/2026,10/28/2026,10/28/2026,JORDAN SAMPLE,...9902,Asset,Write option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/30/26 @ 470 PUT JUNO: EXAMPLEABC20261027003,46432F1AB,DIA,,USD,1.15,1.15,-2,223.96,223.96,0,0,0,0,223.96,223.96,,,,6,6,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Expired option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/23/26 @ 475 PUT DIA 10/23/26 475,46432F1AC,DIA,,USD,0,0,20,-2800.00,-2800.00,2800.00,2800.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Expired option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/23/26 @ 475 PUT DIA 10/23/26 475,46432F1AC,DIA,,USD,0,0,30,-4200.00,-4200.00,4200.00,4200.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,JORDAN SAMPLE,...9902,Asset,Expired option,SPDR DOW JONES INDUSTRIAL AVERAGE ETF TRUST PUT 10/23/26 @ 475 EXPIRE UNEXERCISED PUT,46432F1AC,DIA,,USD,475,475,2,-280.00,-280.00,280.00,280.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/26/2026,10/26/2026,10/26/2026,BLUEFIELD PARTNERS,...3301,Asset,Purchase,EXAMPLE PRIME MM FUND - PREMIER FUND 911 @ 1.0000 TRADE DATE 10/26/26 YIELD 4.01,30213A207,EXPXX,,USD,1.0000,1.0000,12345.678,12345.68,12345.68,0,0,0,0,-12345.68,-12345.68,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n10/23/2026,10/23/2026,10/26/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Sale,\"APPLE INC @ 255.0000 255,000.00 SEC &/OR TAF FEE 6.38 EXAMPLE BROKER LLC EQUITIES TRADE DATE 10/23/26\",99990A100,AAPL,,USD,255.0000,255.0000,-1000,-254993.62,-254993.62,0,0,0,0,254993.62,254993.62,,,,0,0,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/22/2026,10/23/2026,10/23/2026,NORTHWIND HARBOR CAPITAL,...6610,Invt Mgmt,Purchase,SAMPLE ENERGY CO SR NTS 5.1% 06/01/2033 DTD 06/01/2023 @ 101.250 EXAMPLE BROKER LLC TRADE DATE 10/22/26,79588T9C1,,,USD,101.25,101.25,100000,101250.00,101250.00,0,0,0,0,-101250.00,-101250.00,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n10/20/2026,10/20/2026,10/21/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Buy back option,APPLE INC PUT 10/30/26 @ 230.0 JUNO: EXAMPLEABC20261020001,03783Q2AD,AAPL,,USD,0.85,0.85,10,1400.00,1400.00,519.79,519.79,0,0,-880.21,-880.21,,,,30,30,671,BB LIQ OPT F,EXAMPLE BROKER LLC/EXB,0,\r\n10/20/2026,10/20/2026,10/21/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Buy back option,APPLE INC PUT 10/30/26 @ 230.0 JUNO: EXAMPLEABC20261020002,03783Q2AD,AAPL,,USD,0.85,0.85,15,2100.00,2100.00,779.68,779.68,0,0,-1320.32,-1320.32,,,,45,45,671,BB LIQ OPT F,EXAMPLE BROKER LLC/EXB,0,\r\n10/19/2026,10/19/2026,10/19/2026,JORDAN SAMPLE,...9902,Asset,Expired option,APPLE INC PUT 10/16/26 @ 220 EXPIRE UNEXERCISED PUT,03783Q2AE,AAPL,,USD,220,220,1,-140.00,-140.00,140.00,140.00,0,0,0,0,,,,0,0,668,EXPR WRT OPT,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/16/2026,10/19/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,APPLE INC CALL 11/20/26 @ 270.0 CALL OPTION,03783Q2AF,AAPL,,USD,2.4,2.4,-10,2369.79,2369.79,0,0,0,0,2369.79,2369.79,,,,30,30,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/16/2026,10/19/2026,BLUEFIELD PARTNERS LIMITED - MGN,...0101,Margin,Write option,APPLE INC CALL 11/20/26 @ 270.0 CALL OPTION,03783Q2AF,AAPL,,USD,2.4,2.4,-15,3554.68,3554.68,0,0,0,0,3554.68,3554.68,,,,45,45,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/19/2026,10/19/2026,BLUEFIELD PARTNERS,...3301,Asset,Write option,APPLE INC CALL 11/20/26 @ 270 CALL OPTION JUNO: EXAMPLEABC20261016001,03783Q2AF,AAPL,,USD,2.4,2.4,-5,1184.90,1184.90,0,0,0,0,1184.90,1184.90,,,,15,15,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/16/2026,10/16/2026,10/16/2026,BLUEFIELD PARTNERS,...3301,Asset,Sale,EXAMPLE PRIME MM FUND - PREMIER FUND 911 @ 1.0000 TRADE DATE 10/16/26 YIELD 4.02,30213A207,EXPXX,,USD,1.0000,1.0000,-2500.000,-2500.00,-2500.00,0,0,0,0,2500.00,2500.00,,,,0,0,151,SALE OF SEC,EXAMPLE BROKER LLC/EXB,0,\r\n10/14/2026,10/15/2026,10/15/2026,NORTHWIND HARBOR CAPITAL,...6610,Invt Mgmt,Purchase,EXAMPLE CORP SR NTS 4.250% 03/15/2031 DTD 03/15/2024 @ 99.125 EXAMPLE BROKER LLC TRADE DATE 10/14/26,30214B4D5,,,USD,99.125,99.125,250000,247812.50,247812.50,0,0,0,0,-247812.50,-247812.50,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n10/09/2026,10/09/2026,10/09/2026,JORDAN SAMPLE,...9902,Asset,Purchase,EXAMPLE US GOVT MM FUND - AGENCY FUND 3921 REINVEST @ 1.0000 EXAMPLE FUND,30215C301,EXGXX,,USD,1.0000,1.0000,842.17,842.17,842.17,0,0,0,0,-842.17,-842.17,,,,0,0,651,PRCHSE ASSET,,0,\r\n10/07/2026,10/07/2026,10/08/2026,JORDAN SAMPLE,...9902,Asset,Write option,PUT JUNO: EXAMPLEABC20261007001 APPLE INC PUT 10/16/26 @ 220.0,03783Q2AE,AAPL,,USD,1.3,1.3,-1,126.98,126.98,0,0,0,0,126.98,126.98,,,,3,3,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/05/2026,10/05/2026,10/06/2026,NORTHWIND HARBOR LTD-MGN,...0101,Margin,Write option,APPLE INC CALL 10/23/26 @ 255.0 JUNO: EXAMPLEABC20261005001,03783Q2AG,AAPL,,USD,1.8,1.8,-10,1769.79,1769.79,0,0,0,0,1769.79,1769.79,,,,30,30,166,WR OPT SE FU,EXAMPLE BROKER LLC/EXB,0,\r\n10/05/2026,10/05/2026,10/05/2026,RIVERSTONE LLC,...2205,Asset,Purchase,EXAMPLE PRIME MM FUND - PREMIER FUND 911 @ 1.0000 TRADE DATE 10/05/26 YIELD 4.03,30213A207,EXPXX,,USD,1.0000,1.0000,5000.000,5000.00,5000.00,0,0,0,0,-5000.00,-5000.00,,,,0,0,651,PRCHSE ASSET,EXAMPLE BROKER LLC/EXB,0,\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [
+        {
+          "record_type": "FILL",
+          "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
+          "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "side": "STO",
+          "qty": 20,
+          "partial_fill": "false",
+          "price": "1.1500",
+          "trade_date": "2026-10-27",
+          "settle_date": "2026-10-28",
+          "order_id": "EXAMPLEABC20261027001",
+          "commission": "60.0000",
+          "fees": "0.4200",
+          "source": "broker-export",
+          "underlying": "DIA",
+          "option_symbol": "DIA261030P00470000",
+          "right": "put",
+          "strike": 470.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522:cum30",
+          "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522",
+          "account_ref": "JPM-BLUE-5522",
+          "side": "STO",
+          "qty": 30,
+          "partial_fill": "false",
+          "price": "1.1500",
+          "trade_date": "2026-10-27",
+          "settle_date": "2026-10-28",
+          "order_id": "EXAMPLEABC20261027002",
+          "commission": "90.0000",
+          "fees": "0.6300",
+          "source": "broker-export",
+          "underlying": "DIA",
+          "option_symbol": "DIA261030P00470000",
+          "right": "put",
+          "strike": 470.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
+          "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902",
+          "account_ref": "JPM-Personal-9902",
+          "side": "STO",
+          "qty": 2,
+          "partial_fill": "false",
+          "price": "1.1500",
+          "trade_date": "2026-10-27",
+          "settle_date": "2026-10-28",
+          "order_id": "EXAMPLEABC20261027003",
+          "commission": "6.0000",
+          "fees": "0.0400",
+          "source": "broker-export",
+          "underlying": "DIA",
+          "option_symbol": "DIA261030P00470000",
+          "right": "put",
+          "strike": 470.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        },
+        {
+          "record_type": "EVENT",
+          "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "underlying": "DIA",
+          "option_symbol": "DIA261023P00475000",
+          "right": "put",
+          "strike": 475.0,
+          "expiry": "2026-10-23",
+          "multiplier": 100,
+          "qty": 20,
+          "type": "EXPIRE",
+          "event_date": "2026-10-23",
+          "trade_date": "2026-10-23",
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
+        },
+        {
+          "record_type": "EVENT",
+          "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
+          "account_ref": "JPM-BLUE-5522",
+          "underlying": "DIA",
+          "option_symbol": "DIA261023P00475000",
+          "right": "put",
+          "strike": 475.0,
+          "expiry": "2026-10-23",
+          "multiplier": 100,
+          "qty": 30,
+          "type": "EXPIRE",
+          "event_date": "2026-10-23",
+          "trade_date": "2026-10-23",
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
+        },
+        {
+          "record_type": "EVENT",
+          "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
+          "account_ref": "JPM-Personal-9902",
+          "underlying": "DIA",
+          "option_symbol": "DIA261023P00475000",
+          "right": "put",
+          "strike": 475.0,
+          "expiry": "2026-10-23",
+          "multiplier": 100,
+          "qty": 2,
+          "type": "EXPIRE",
+          "event_date": "2026-10-23",
+          "trade_date": "2026-10-23",
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411:cum10",
+          "order_key": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "side": "BTC",
+          "qty": 10,
+          "partial_fill": "false",
+          "price": "0.8500",
+          "trade_date": "2026-10-20",
+          "settle_date": "2026-10-21",
+          "order_id": "EXAMPLEABC20261020001",
+          "commission": "30.0000",
+          "fees": "0.2100",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261030P00230000",
+          "right": "put",
+          "strike": 230.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
+          "order_key": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522",
+          "account_ref": "JPM-BLUE-5522",
+          "side": "BTC",
+          "qty": 15,
+          "partial_fill": "false",
+          "price": "0.8500",
+          "trade_date": "2026-10-20",
+          "settle_date": "2026-10-21",
+          "order_id": "EXAMPLEABC20261020002",
+          "commission": "45.0000",
+          "fees": "0.3200",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261030P00230000",
+          "right": "put",
+          "strike": 230.0,
+          "expiry": "2026-10-30",
+          "multiplier": 100
+        },
+        {
+          "record_type": "EVENT",
+          "event_id": "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
+          "account_ref": "JPM-Personal-9902",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261016P00220000",
+          "right": "put",
+          "strike": 220.0,
+          "expiry": "2026-10-16",
+          "multiplier": 100,
+          "qty": 1,
+          "type": "EXPIRE",
+          "event_date": "2026-10-16",
+          "trade_date": "2026-10-16",
+          "source": "broker-export",
+          "commission": "0.0000",
+          "fees": "0.0000"
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
+          "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "side": "STO",
+          "qty": 10,
+          "partial_fill": "false",
+          "price": "2.4000",
+          "trade_date": "2026-10-16",
+          "settle_date": "2026-10-19",
+          "order_id": null,
+          "commission": "30.0000",
+          "fees": "0.2100",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261120C00270000",
+          "right": "call",
+          "strike": 270.0,
+          "expiry": "2026-11-20",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
+          "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522",
+          "account_ref": "JPM-BLUE-5522",
+          "side": "STO",
+          "qty": 15,
+          "partial_fill": "false",
+          "price": "2.4000",
+          "trade_date": "2026-10-16",
+          "settle_date": "2026-10-19",
+          "order_id": null,
+          "commission": "45.0000",
+          "fees": "0.3200",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261120C00270000",
+          "right": "call",
+          "strike": 270.0,
+          "expiry": "2026-11-20",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301:cum5",
+          "order_key": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301",
+          "account_ref": "JPM-BLUE-3301",
+          "side": "STO",
+          "qty": 5,
+          "partial_fill": "false",
+          "price": "2.4000",
+          "trade_date": "2026-10-16",
+          "settle_date": "2026-10-19",
+          "order_id": "EXAMPLEABC20261016001",
+          "commission": "15.0000",
+          "fees": "0.1000",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261120C00270000",
+          "right": "call",
+          "strike": 270.0,
+          "expiry": "2026-11-20",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
+          "order_key": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902",
+          "account_ref": "JPM-Personal-9902",
+          "side": "STO",
+          "qty": 1,
+          "partial_fill": "false",
+          "price": "1.3000",
+          "trade_date": "2026-10-07",
+          "settle_date": "2026-10-08",
+          "order_id": "EXAMPLEABC20261007001",
+          "commission": "3.0000",
+          "fees": "0.0200",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261016P00220000",
+          "right": "put",
+          "strike": 220.0,
+          "expiry": "2026-10-16",
+          "multiplier": 100
+        },
+        {
+          "record_type": "FILL",
+          "fill_id": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10",
+          "order_key": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411",
+          "account_ref": "JPM-NORT-4411",
+          "side": "STO",
+          "qty": 10,
+          "partial_fill": "false",
+          "price": "1.8000",
+          "trade_date": "2026-10-05",
+          "settle_date": "2026-10-06",
+          "order_id": "EXAMPLEABC20261005001",
+          "commission": "30.0000",
+          "fees": "0.2100",
+          "source": "broker-export",
+          "underlying": "AAPL",
+          "option_symbol": "AAPL261023C00255000",
+          "right": "call",
+          "strike": 255.0,
+          "expiry": "2026-10-23",
+          "multiplier": 100
+        }
+      ],
+      "needs_confirmation": [
+        {
+          "line": 11,
+          "type": "Sale",
+          "reason": "possible-assignment",
+          "account_ref": "JPM-NORT-4411"
+        }
+      ],
+      "reconciliation": [
+        {
+          "line": 4,
+          "id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
+          "action": "add"
+        },
+        {
+          "line": 5,
+          "id": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522:cum30",
+          "action": "add"
+        },
+        {
+          "line": 6,
+          "id": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
+          "action": "add"
+        },
+        {
+          "line": 7,
+          "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-NORT-4411",
+          "action": "add"
+        },
+        {
+          "line": 8,
+          "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
+          "action": "add"
+        },
+        {
+          "line": 9,
+          "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
+          "action": "add"
+        },
+        {
+          "line": 13,
+          "id": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411:cum10",
+          "action": "add"
+        },
+        {
+          "line": 14,
+          "id": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
+          "action": "add"
+        },
+        {
+          "line": 15,
+          "id": "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
+          "action": "add"
+        },
+        {
+          "line": 16,
+          "id": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
+          "action": "add"
+        },
+        {
+          "line": 17,
+          "id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
+          "action": "add"
+        },
+        {
+          "line": 18,
+          "id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301:cum5",
+          "action": "add"
+        },
+        {
+          "line": 22,
+          "id": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
+          "action": "add"
+        },
+        {
+          "line": 23,
+          "id": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10",
+          "action": "add"
+        },
+        {
+          "id": "pending-friday",
+          "action": "pending-settlement"
+        }
+      ]
+    }
+  },
+  {
+    "name": "jpm-empty-header",
+    "data": "tools/import/fixtures/jpm-empty-header",
+    "input": {
+      "broker": "jpm",
+      "csv": "﻿Trade Date,Post Date,Settlement Date,Account Name,Account Number,Account Type,Type,Description,Cusip,Ticker,Security Type,Local Currency,Price USD,Price Local,Quantity,Cost USD,Cost Local,G/L Short USD,G/L Short Local,G/L Long USDs,G/L Long Local,Amount USD,Amount Local,Income USD,Income Local,Balance,Commissions USD,Commissions Local,Tran Code,Tran Code Description,Broker,Check Number,Tax Withheld\r\n",
+      "import_date": "2026-11-02"
+    },
+    "expect": {
+      "fills": [],
+      "skipped": [],
+      "needs_confirmation": []
+    }
+  }
+]

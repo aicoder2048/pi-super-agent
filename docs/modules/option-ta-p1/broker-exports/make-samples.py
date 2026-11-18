@@ -69,7 +69,7 @@ def instrument(und, expiry, right, strike):
 def fill_row(ref, side, und, expiry, right, strike, qty, price, trade, settle, order_id, commission, fees):
     inst = instrument(und, expiry, right, strike)
     key = f"{inst['option_symbol']}:{side}:{trade.isoformat()}:{ref}"
-    return {"record_type": "FILL", "id": f"{key}:cum{qty}", "fill_id": f"{key}:cum{qty}", "order_key": key, "account_ref": ref, "side": side,
+    return {"record_type": "FILL", "fill_id": f"{key}:cum{qty}", "order_key": key, "account_ref": ref, "side": side,
             "instrument": inst, "qty": qty, "partial_fill": False, "price": float(price), "limit": None, "trade_date": trade.isoformat(),
             "trade_time": None, "settle_date": settle.isoformat(), "executed_at": None, "order_id": order_id,
             "commission": commission, "fees": fees, "source": "broker-export"}
@@ -78,8 +78,10 @@ def fill_row(ref, side, und, expiry, right, strike, qty, price, trade, settle, o
 def event_row(ref, kind, und, expiry, right, strike, qty, event_date):
     inst = instrument(und, expiry, right, strike)
     eid = f"{inst['option_symbol']}:{kind}:{event_date.isoformat()}:{ref}"
-    return {"record_type": "EVENT", "id": eid, "event_id": eid, "account_ref": ref, **{k: inst[k] for k in ("underlying", "option_symbol", "right", "strike", "expiry", "multiplier")},
-            "qty": qty, "type": kind, "event_date": event_date.isoformat(), "trade_date": event_date.isoformat(), "source": "broker-export"}
+    return {"record_type": "EVENT", "event_id": eid, "account_ref": ref, **{k: inst[k] for k in ("underlying", "option_symbol", "right", "strike", "expiry", "multiplier")},
+            "qty": qty, "type": kind, "event_date": event_date.isoformat(), "trade_date": event_date.isoformat(), "source": "broker-export",
+            # Every sample event shows no money and no commission: known-zero fees, not unknown (README §4).
+            "commission": "0.0000", "fees": "0.0000"}
 
 
 # ---------- JPM ----------
@@ -266,7 +268,7 @@ def write_etrade():
         lines.append(",".join([us(trade), us(trade), us(settle), act, desc, und, "--", f"{D(qty):.1f}", price or "", f"{amount}" if amount else "0.0", comm, "--", "--"]))
         if act in ("Sold Short", "Bought To Cover"):
             side = "STO" if act == "Sold Short" else "BTC"
-            fills.append({"line": line_no, **fill_row(ET_REF, side, und, expiry, right, strike, abs(qty), D(price), trade, settle, None, money(c), None)})
+            fills.append({"line": line_no, **fill_row(ET_REF, side, und, expiry, right, strike, abs(qty), D(price), trade, settle, None, money(c), "0.0000")})
         elif act == "Option Assigned":
             # Assigned at expiration (reported within a few days after expiry): the event date is the expiry, like EXPIRE; early assignment keeps its own date.
             event_date = expiry if expiry <= trade and (trade - expiry).days <= 4 else trade
@@ -276,10 +278,10 @@ def write_etrade():
         elif act == "Sold" and und in assigned and abs(qty) == assigned[und][2] * 100 and D(price) == assigned[und][1]:
             ev = assigned[und][0]
             key = f"{und}:SELL:{trade.isoformat()}:{ET_REF}"
-            fills.append({"line": line_no, "record_type": "FILL", "id": f"{key}:cum{abs(qty)}", "fill_id": f"{key}:cum{abs(qty)}", "order_key": key,
+            fills.append({"line": line_no, "record_type": "FILL", "fill_id": f"{key}:cum{abs(qty)}", "order_key": key,
                           "account_ref": ET_REF, "side": "SELL", "instrument": {"underlying": und, "option_symbol": None, "right": None, "strike": None, "expiry": None, "multiplier": 1},
                           "qty": abs(qty), "partial_fill": False, "price": float(price), "limit": None, "trade_date": trade.isoformat(), "trade_time": None,
-                          "settle_date": settle.isoformat(), "executed_at": None, "order_id": None, "commission": money(c), "fees": None,
+                          "settle_date": settle.isoformat(), "executed_at": None, "order_id": None, "commission": money(c), "fees": "0.0000",
                           "source": "broker-export", "caused_by_event": ev["event_id"]})
         else:
             skipped.append({"line": line_no, "type": act, "reason": "stock-trade-out-of-scope"})
@@ -311,13 +313,13 @@ def reconcile(jpm):
     expired = {k: by_line[7][k] for k in ("record_type", "event_id", "account_ref", "option_symbol", "qty", "type", "event_date", "trade_date")} | {"source": "manual"}
     imported = {k: by_line[13][k] for k in ("record_type", "fill_id", "order_key", "account_ref", "side", "qty", "trade_date", "settle_date", "commission", "fees", "order_id", "source")} | {"option_symbol": by_line[13]["instrument"]["option_symbol"], "price": "0.8500"}
     existing = [email_nort, manual_blue, email_blue, pending, missing, old, expired, imported]
-    reversal = {"record_type": "REVERSAL", "id": f"{email_nort['fill_id']}:reversed-by-export", "reversal_of": email_nort["fill_id"], "trade_date": "2026-10-27", "source": "broker-export"}
+    reversal = {"record_type": "REVERSAL", "fill_id": f"{email_nort['fill_id']}:reversed-by-export", "reversal_of": email_nort["fill_id"], "trade_date": "2026-10-27", "source": "broker-export"}
     held = {5: "conflict", 18: "account-unconfirmed"}
     known = {7: "already-recorded", 13: "already-recorded", 4: "enrich"}
     lines = []
     for line, f in sorted(by_line.items()):
-        lines.append({"line": line, "id": f["id"], "action": held.get(line) or known.get(line) or "add"})
-    write = [reversal["id"], by_line[4]["id"]] + [x["id"] for x in lines if x["action"] == "add"]
+        lines.append({"line": line, "id": f.get("fill_id") or f["event_id"], "action": held.get(line) or known.get(line) or "add"})
+    write = [reversal["fill_id"], by_line[4]["fill_id"]] + [x["id"] for x in lines if x["action"] == "add"]
     return {
         "input": {"file": "jpm-sample.csv", "imported_at": "2026-11-02", "existing": existing},
         "expected": {

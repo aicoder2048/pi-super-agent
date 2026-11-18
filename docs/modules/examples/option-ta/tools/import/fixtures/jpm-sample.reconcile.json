@@ -1,0 +1,284 @@
+{
+ "input": {
+  "file": "jpm-sample.csv",
+  "imported_at": "2026-11-02",
+  "existing": [
+   {
+    "record_type": "FILL",
+    "fill_id": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum20",
+    "order_key": "DIA261030P00470000:STO:2026-10-27:NORTxxxx",
+    "account_ref": "NORTxxxx",
+    "side": "STO",
+    "option_symbol": "DIA261030P00470000",
+    "qty": 20,
+    "price": "1.1500",
+    "trade_date": "2026-10-27",
+    "settle_date": null,
+    "commission": null,
+    "fees": null,
+    "order_id": null,
+    "source": "broker-email"
+   },
+   {
+    "record_type": "FILL",
+    "fill_id": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522:cum30",
+    "order_key": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522",
+    "account_ref": "JPM-BLUE-5522",
+    "side": "STO",
+    "option_symbol": "DIA261030P00470000",
+    "qty": 30,
+    "price": "1.1000",
+    "trade_date": "2026-10-27",
+    "settle_date": null,
+    "commission": null,
+    "fees": null,
+    "order_id": null,
+    "source": "manual"
+   },
+   {
+    "record_type": "FILL",
+    "fill_id": "AAPL261120C00270000:STO:2026-10-16:BLUExxxx:cum5",
+    "order_key": "AAPL261120C00270000:STO:2026-10-16:BLUExxxx",
+    "account_ref": "BLUExxxx",
+    "side": "STO",
+    "option_symbol": "AAPL261120C00270000",
+    "qty": 5,
+    "price": "2.4000",
+    "trade_date": "2026-10-16",
+    "settle_date": null,
+    "commission": null,
+    "fees": null,
+    "order_id": null,
+    "source": "broker-email"
+   },
+   {
+    "record_type": "FILL",
+    "fill_id": "AAPL261106P00215000:STO:2026-10-30:JPM-Personal-9902:cum1",
+    "order_key": "AAPL261106P00215000:STO:2026-10-30:JPM-Personal-9902",
+    "account_ref": "JPM-Personal-9902",
+    "side": "STO",
+    "option_symbol": "AAPL261106P00215000",
+    "qty": 1,
+    "price": "0.9500",
+    "trade_date": "2026-10-30",
+    "settle_date": "2026-11-02",
+    "commission": null,
+    "fees": null,
+    "order_id": null,
+    "source": "manual"
+   },
+   {
+    "record_type": "FILL",
+    "fill_id": "AAPL261030P00225000:STO:2026-10-21:JPM-Personal-9902:cum1",
+    "order_key": "AAPL261030P00225000:STO:2026-10-21:JPM-Personal-9902",
+    "account_ref": "JPM-Personal-9902",
+    "side": "STO",
+    "option_symbol": "AAPL261030P00225000",
+    "qty": 1,
+    "price": "1.0500",
+    "trade_date": "2026-10-21",
+    "settle_date": "2026-10-22",
+    "commission": null,
+    "fees": null,
+    "order_id": null,
+    "source": "manual"
+   },
+   {
+    "record_type": "FILL",
+    "fill_id": "AAPL261030P00230000:STO:2026-09-28:JPM-NORT-4411:cum10",
+    "order_key": "AAPL261030P00230000:STO:2026-09-28:JPM-NORT-4411",
+    "account_ref": "JPM-NORT-4411",
+    "side": "STO",
+    "option_symbol": "AAPL261030P00230000",
+    "qty": 10,
+    "price": "1.4000",
+    "trade_date": "2026-09-28",
+    "settle_date": "2026-09-29",
+    "commission": null,
+    "fees": null,
+    "order_id": null,
+    "source": "manual"
+   },
+   {
+    "record_type": "EVENT",
+    "event_id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-NORT-4411",
+    "account_ref": "JPM-NORT-4411",
+    "option_symbol": "DIA261023P00475000",
+    "qty": 20,
+    "type": "EXPIRE",
+    "event_date": "2026-10-23",
+    "trade_date": "2026-10-23",
+    "source": "manual"
+   },
+   {
+    "record_type": "FILL",
+    "fill_id": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411:cum10",
+    "order_key": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411",
+    "account_ref": "JPM-NORT-4411",
+    "side": "BTC",
+    "qty": 10,
+    "trade_date": "2026-10-20",
+    "settle_date": "2026-10-21",
+    "commission": "30.00",
+    "fees": "0.21",
+    "order_id": "EXAMPLEABC20261020001",
+    "source": "broker-export",
+    "option_symbol": "AAPL261030P00230000",
+    "price": "0.8500"
+   }
+  ]
+ },
+ "expected": {
+  "write": [
+   "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum20:reversed-by-export",
+   "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
+   "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
+   "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
+   "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
+   "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
+   "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
+   "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
+   "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
+   "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
+   "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10"
+  ],
+  "reversal_example": {
+   "record_type": "REVERSAL",
+   "fill_id": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum20:reversed-by-export",
+   "reversal_of": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum20",
+   "trade_date": "2026-10-27",
+   "source": "broker-export"
+  },
+  "lines": [
+   {
+    "line": 4,
+    "id": "DIA261030P00470000:STO:2026-10-27:JPM-NORT-4411:cum20",
+    "action": "enrich"
+   },
+   {
+    "line": 5,
+    "id": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522:cum30",
+    "action": "conflict"
+   },
+   {
+    "line": 6,
+    "id": "DIA261030P00470000:STO:2026-10-27:JPM-Personal-9902:cum2",
+    "action": "add"
+   },
+   {
+    "line": 7,
+    "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-NORT-4411",
+    "action": "already-recorded"
+   },
+   {
+    "line": 8,
+    "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-BLUE-5522",
+    "action": "add"
+   },
+   {
+    "line": 9,
+    "id": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-Personal-9902",
+    "action": "add"
+   },
+   {
+    "line": 13,
+    "id": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411:cum10",
+    "action": "already-recorded"
+   },
+   {
+    "line": 14,
+    "id": "AAPL261030P00230000:BTC:2026-10-20:JPM-BLUE-5522:cum15",
+    "action": "add"
+   },
+   {
+    "line": 15,
+    "id": "AAPL261016P00220000:EXPIRE:2026-10-16:JPM-Personal-9902",
+    "action": "add"
+   },
+   {
+    "line": 16,
+    "id": "AAPL261120C00270000:STO:2026-10-16:JPM-NORT-4411:cum10",
+    "action": "add"
+   },
+   {
+    "line": 17,
+    "id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-5522:cum15",
+    "action": "add"
+   },
+   {
+    "line": 18,
+    "id": "AAPL261120C00270000:STO:2026-10-16:JPM-BLUE-3301:cum5",
+    "action": "account-unconfirmed"
+   },
+   {
+    "line": 22,
+    "id": "AAPL261016P00220000:STO:2026-10-07:JPM-Personal-9902:cum1",
+    "action": "add"
+   },
+   {
+    "line": 23,
+    "id": "AAPL261023C00255000:STO:2026-10-05:JPM-NORT-4411:cum10",
+    "action": "add"
+   }
+  ],
+  "existing": [
+   {
+    "key": "DIA261030P00470000:STO:2026-10-27:NORTxxxx:cum20",
+    "action": "enrich",
+    "by_line": 4,
+    "fills_in": [
+     "account_ref",
+     "settle_date",
+     "order_id",
+     "commission",
+     "fees"
+    ]
+   },
+   {
+    "key": "DIA261030P00470000:STO:2026-10-27:JPM-BLUE-5522:cum30",
+    "action": "conflict",
+    "by_line": 5,
+    "detail": "price 1.1000 vs export 1.15"
+   },
+   {
+    "key": "AAPL261120C00270000:STO:2026-10-16:BLUExxxx:cum5",
+    "action": "account-unconfirmed",
+    "candidates": [
+     "JPM-BLUE-5522",
+     "JPM-BLUE-3301"
+    ],
+    "suggested": "JPM-BLUE-3301",
+    "by_line": 18
+   },
+   {
+    "key": "AAPL261106P00215000:STO:2026-10-30:JPM-Personal-9902:cum1",
+    "action": "pending-settlement"
+   },
+   {
+    "key": "AAPL261030P00225000:STO:2026-10-21:JPM-Personal-9902:cum1",
+    "action": "missing-from-export"
+   },
+   {
+    "key": "AAPL261030P00230000:STO:2026-09-28:JPM-NORT-4411:cum10",
+    "action": "outside-export-window"
+   },
+   {
+    "key": "DIA261023P00475000:EXPIRE:2026-10-23:JPM-NORT-4411",
+    "action": "already-recorded",
+    "by_line": 7
+   },
+   {
+    "key": "AAPL261030P00230000:BTC:2026-10-20:JPM-NORT-4411:cum10",
+    "action": "already-recorded",
+    "by_line": 13
+   }
+  ],
+  "ask": [
+   "line 5 / manual JPM-BLUE-5522 DIA 2026-10-30 470 put STO 2026-10-27 x30: price 1.10 recorded, export says 1.15",
+   "BLUExxxx AAPL 2026-11-20 270 call STO 2026-10-16 x5: JPM-BLUE-5522 or JPM-BLUE-3301? export line 18 matches JPM-BLUE-3301",
+   "manual JPM-Personal-9902 AAPL 2026-10-30 225 put STO 2026-10-21 x1: settled 2026-10-22 but not in the export",
+   "line 11 possible assignment: NORT AAPL 255 call expiring 2026-10-23, 1000 shares sold at 255"
+  ],
+  "rerun": "importing the same file again with existing + write yields write = []"
+ }
+}

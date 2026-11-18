@@ -2,7 +2,7 @@
 
 使用者要把 JPM 门户和 eTrade 导出的交易记录 CSV 交给 option-ta，作为成交的最终账：补齐交易台邮件和手动记录缺的手续费、交割日、交易编号，补上到期和指派，不重复记账。本目录是给模块工坊的材料：两份虚构样例、期望结果、账户别名表样例和下面的规则。
 
-样例里的名称、账号、编号、金额、CUSIP 全是编的，原文件不进仓库。本文只描述结构，结构是对照使用者 2026-11 的真实导出量出来的。`fills` 的字段以 `../../examples/option-ta/data/fills/collection.json` 为准，成交行的 `id` 写法沿用 `../../option-ta-spec.md`「订单键和 `id`」。
+样例里的名称、账号、编号、金额、CUSIP 全是编的，原文件不进仓库。本文只描述结构，结构是对照使用者 2026-11 的真实导出量出来的。`fills` 的字段以 `../../examples/option-ta/data/fills/collection.json` 为准，成交行的键（`fill_id`）写法沿用 `../../option-ta-spec.md`「订单键和 `id`」。
 
 | 文件 | 内容 |
 |---|---|
@@ -96,7 +96,7 @@ option-ta 的 `accounts` 集合已登记的 `account_ref`（形如 `JPM-NORT-441
 
 ## 4. 到期、指派、行权
 
-这三种写 EVENT 行，形状照 `../../examples/option-ta/tools/ledger/fixtures/seed.json`：`event_id` = `<OCC>:<type>:<event_date>:<account_ref>`，`trade_date` 写成 `event_date`。
+这三种写 EVENT 行，形状照 `../../examples/option-ta/tools/ledger/fixtures/seed.json`：`event_id` = `<OCC>:<type>:<event_date>:<account_ref>`，`trade_date` 写成 `event_date`。导出行净额和佣金都是 0 时，`commission`、`fees` 都写 `0.0000`（`ledger` 把 EVENT 的空 `fees` 当未知）。
 
 - **到期（EXPIRE）。** `event_date` 写合约到期日，不写 JPM 的入账日。JPM 在到期后的下一个交易日（周一）入账，真实样本里三行都是这样。到期作废按税法视为在到期日卖出（tax memo 第 2 节第 3 条，第 3、4 节表格的「到期作废」行），年末那周的周五到期如果按周一入账日记，会记错税年。样例第 7 到 9 行：10/23 周五到期，10/26 周一入账，`event_date` 是 `2026-10-23`。
 - **指派（ASSIGNED）。** eTrade 有单独的 `Option Assigned` 行，后面跟一行交割股票的 `Sold`（被叫走）或 `Bought`（被行权买入）。`event_date`：到期时被指派的（`Activity/Trade Date` 在合约到期日之后 4 天以内），写合约到期日，理由同 EXPIRE；提前被指派的（在到期日之前），写 `Activity/Trade Date`（使用者 2026-11-17 定）。交割股票写一行 FILL：`side` 是 SELL 或 BUY，`instrument` 没有期权字段、乘数 1，`caused_by_event` 指向那条 ASSIGNED。股票行认作交割的条件：同账户、同标的、股数 = 张数 × 100、价格 = 行权价、日期等于指派行。样例 `etrade-sample.csv` 第 8、9 行是一对；第 12 行是普通股票卖出，跳过。
@@ -123,7 +123,7 @@ option-ta 的 `accounts` 集合已登记的 `account_ref`（形如 `JPM-NORT-441
 
 **描述。** 期权是定宽的 `PUT  SPY    10/23/26   575.000`：PUT/CALL 占 5 格，标的占 7 格，然后到期日、3 个空格、3 位小数的行权价。按空白切成 4 段读，不按列位置。
 
-**金额。** 真实样本里每行都正好是 净额 = 总额 − `Commission`（卖）或 −(总额 + `Commission`)（买），没有另外的监管费。所以 `commission` 取 `Commission`，`fees` 留空。
+**金额。** 真实样本里每行都正好是 净额 = 总额 − `Commission`（卖）或 −(总额 + `Commission`)（买），没有另外的监管费。所以 `commission` 取 `Commission`，`fees` 写 `0.0000`（已经核实为零；留空在 `ledger` 里是「费用未知」）。股票交割行同样核实净额后写 `0.0000`。
 
 **日期的怪处。** 真实样本里 `Option Assigned` 行的 `Settlement Date` 比 `Activity/Trade Date` 早 3 天（看起来是到期那个周五），交割股票行两个日期相同。样例第 8 行照样复现。按第 4 节的规则，到期时被指派写合约到期日。
 
@@ -133,7 +133,7 @@ option-ta 的 `accounts` 集合已登记的 `account_ref`（形如 `JPM-NORT-441
 
 - 记录的交割日（没有就按成交日 + 1 个交易日算）不早于导入日：标「待入账」，不问，下次导入再核。
 - 交割日已经过了、导出里还是没有：进待确认，原因 `missing-from-export`，问使用者是没成交还是记错了。
-- 成交日早于这份导出最早的 `Trade Date`：不在这份导出覆盖的范围里，不比较（`outside-export-window`）。
+- 成交日早于这份导出最早的 `Trade Date`，或晚于最晚的那天：不在这份导出覆盖的范围里，不比较（`outside-export-window`）。十一月中导十月的文件，十一月的成交不算缺。
 
 ## 7. 和已记成交对账
 
@@ -143,13 +143,14 @@ option-ta 的 `accounts` 集合已登记的 `account_ref`（形如 `JPM-NORT-441
 
 | 情况 | 动作（`jpm-sample.reconcile.json` 里的名字） |
 |---|---|
-| 库里已有同 `id` 的行（上次导入过，或手动记的 EVENT 正好一样） | `already-recorded`，什么都不写 |
-| 键全对上，库里的行缺手续费、交割日、交易编号或账户是邮件短码 | `enrich`：写一行 REVERSAL 冲销旧行，再写导出的完整行。成交行只追加、不改（spec「订单键和 `id`」），更正靠冲销（tax memo 第 14.1 节），`ledger` 已经会跳过被冲销的行 |
-| 合约、方向、日期、账户对上，但张数或价格不同 | `conflict`：两边都不写，进待确认，问使用者 |
+| 张数、价格对上，库里正好一行、账户是登记名，导出给得出的佣金、费用、交割日、交易编号它都有 | `already-recorded`，什么都不写（上次导入过，或手动记的 EVENT 正好一样） |
+| 张数、价格对上，但库里的行缺上面任何一项、账户是邮件短码，或同一订单分了几行（部分成交的增量） | `enrich`：每个旧行写一行 REVERSAL 冲销，再写一行导出的完整行。旧行的键已经被占（邮件按登记名记的最后一笔增量，键和导出合并行一样）时，替代行的 `fill_id` 用 `<键>:export`。替代行保留旧行的 `account_alias_seen`、`source_message_id`；旧行账户是短码时，短码记进 `account_alias_seen`。成交行只追加、不改（spec「订单键和 `id`」），更正靠冲销（tax memo 第 14.1 节），`ledger` 已经会跳过被冲销的行 |
+| 合约、方向、日期、账户对上，但张数或价格不同；或库里的佣金、费用、交割日、交易编号和导出不一致 | `conflict`：两边都不写，进待确认，问使用者 |
+| 同合约、同账户的到期（EXPIRE）库里已有，但日期不同（比如手动按 JPM 入账日记了到期）；指派可以分几天，不比日期 | `conflict`（`event-date-mismatch`）：不写第二条 EVENT，问使用者 |
 | 邮件行账户是「待确认账户」 | `account-unconfirmed`：附上建议账户，等使用者 |
 | 库里没有 | `add`：写导出行，`source` 是 `broker-export` |
 
-REVERSAL 行的 `id` 是 `<被冲销的 fill_id>:reversed-by-export`，`reversal_of` 指向旧行，`trade_date` 照旧行写，形状见 `jpm-sample.reconcile.json` 的 `reversal_example`。价格比较按万分之一美元的整数比，和邮件解析一样不经过浮点。
+REVERSAL 行的 `fill_id` 是 `<被冲销的 fill_id>:reversed-by-export`，`reversal_of` 指向旧行，`trade_date` 照旧行写，形状见 `jpm-sample.reconcile.json` 的 `reversal_example`。价格比较按万分之一美元的整数比，和邮件解析一样不经过浮点。
 
 反过来，库里有、导出里没有的行按第 6 节处理。
 
@@ -157,9 +158,10 @@ REVERSAL 行的 `id` 是 `<被冲销的 fill_id>:reversed-by-export`，`reversal
 
 同一份文件导两次，或者两份时间段重叠的导出，不能重复记账：
 
-- 导出行的 `id` 由内容决定：FILL 是 `<OCC>:<方向>:<成交日>:<account_ref>:cum<张数>`，EVENT 是 `event_id`，股票交割是 `<标的>:<SELL|BUY>:<成交日>:<account_ref>:cum<股数>`。和宿主的「同 `id` 只写第一次」配合，重导不会多出行。
-- 同一份文件里同一订单键有几行（同一天同一合约分几笔成交），先合并成一行：张数相加，价格按张数加权，佣金和费用相加。这样不管文件里怎么拆，`id` 都一样。
-- REVERSAL 的 `id` 也是确定的，重导不会冲销两次。
+- 导出行的键由内容决定：FILL 的 `fill_id` 是 `<OCC>:<方向>:<成交日>:<account_ref>:cum<张数>`，EVENT 是 `event_id`，股票交割的 `fill_id` 是 `<标的>:<SELL|BUY>:<成交日>:<account_ref>:cum<股数>`。
+- 查重靠工具，不靠宿主。宿主只在 feed 写入时按 `id` 去重；领队用 `data` 写的行没有这层保护，而且对 record 集合，行里带 `id` 的意思是「改宿主那一行 `_id`」。所以工具交出的行不带 `id`，键放在 `fill_id` / `event_id`；领队每次写之前都用当前的库重新预览，再用一次 `data write` 把这次的行全部写进去（一次写入是一个事务）。
+- 同一份文件里同一订单键有几行（同一天同一合约分几笔成交），先合并成一行：张数相加，价格按张数加权，佣金和费用相加。这样不管文件里怎么拆，键都一样。
+- REVERSAL 的 `fill_id` 也是确定的，重导不会冲销两次。
 - 测试要断言：把第一次导入写出的行加进库，再导一次同一文件，写出的行是空的（`jpm-sample.reconcile.json` 的 `rerun`）。
 
 ## 9. 输出和原因
