@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { loadConfig, loadModules } from "../../src/host/config.ts";
 import { startLiveModules } from "../../src/host/live-modules.ts";
+import { scanPackage } from "../../src/modules/validate.ts";
 import { openStore } from "../../src/kernel/store.ts";
 import { KEY_NAMES } from "../../src/sources/market/key.ts";
 import { until } from "../helpers/fakes.ts";
@@ -250,6 +251,38 @@ test("just modules：运行中的新布局包写出正在服务的版本和摘�
 	assert.match(lineOf(bad, "personal-tax"), /新布局\s+运行中\s/);
 	assert.match(bad, new RegExp(`\\n  版本  0\\.1\\.0（${serving.slice(0, 12)}）\\n`));
 	assert.match(bad, /\n  说明  0\.1\.0 在运行；你刚改的版本无效：module\.json：is not valid JSON/);
+});
+
+test("宿主升级后启动：旧宿主判为无效、内容没变的新版本会再查一次，现在通过就换上（不用关开模块）", async (t) => {
+	const dir = stateDir(t);
+	const pkg = join(dir, "modules/personal-tax");
+	cpSync("docs/modules/architecture/sample/personal-tax", pkg, { recursive: true });
+	assert.equal(cli("src/cli/module.ts", dir, ["on", "personal-tax"]).status, 0);
+	const boot = async (want: string) => {
+		const db = openStore(join(dir, "state.db"));
+		const config = loadConfig(dir);
+		const modules = startLiveModules({ db, stateDir: dir, roots: config.modulesDirs, discovered: loadModules(config), configSwitches: config.moduleSwitches, log: () => {} });
+		await until(() => modules.live.current().book.get("personal-tax")?.digest === want || undefined, `personal-tax 在服务 ${want.slice(0, 12)}`, 15_000).finally(() => {
+			modules.stop();
+			db.close();
+		});
+	};
+	const digestOf = () => {
+		const scan = scanPackage(pkg, { runCases: false });
+		assert.ok(scan.ok, JSON.stringify(scan));
+		return scan.scan.digest;
+	};
+	const first = digestOf();
+	await boot(first);
+	writeFileSync(join(pkg, "module.json"), `${readFileSync(join(pkg, "module.json"), "utf8")}\n`);
+	const next = digestOf();
+	assert.notEqual(next, first);
+	const db = new DatabaseSync(join(dir, "state.db"));
+	const record = JSON.parse((db.prepare("SELECT record FROM module_records WHERE name = 'personal-tax'").get() as { record: string }).record);
+	record.state.update = { at: "invalid", version: { digest: next, label: "0.1.0" }, problems: [{ where: "evals/q.md", reason: "front matter has unknown key \"upload\"" }] };
+	db.prepare("UPDATE module_records SET record = ? WHERE name = 'personal-tax'").run(JSON.stringify(record));
+	db.close();
+	await boot(next);
 });
 
 const GUIDE = "2022-aha-acc-hfsa-hf";
