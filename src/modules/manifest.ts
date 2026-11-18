@@ -117,8 +117,10 @@ export type ToolPort = keyof typeof TOOL_PORTS;
  * What the host fetches through a connector before it runs a tool's code, so the tool reads a local file and holds no identity
  * secret. `mail.attachment`: input `messageId` and `partId` name one attachment of a letter that one of the module's mail feeds
  * would receive; the host downloads it into the call's own temporary folder and adds `fetched` (see `Fetched` in connectors/attachment.ts) to the input.
+ * `upload.file` (ADR-0032): input `upload_id` names a file the user uploaded on the web page; the host copies it in the same way.
+ * It goes through no connector, so it needs no feed.
  */
-export const TOOL_FETCHES = { "mail.attachment": { connector: "mail", effect: "read" } } as const satisfies Record<string, { connector: ConnectorId; effect: (typeof TOOL_EFFECTS)[number] }>;
+export const TOOL_FETCHES = { "mail.attachment": { connector: "mail", effect: "read" }, "upload.file": { connector: null, effect: "read" } } as const satisfies Record<string, { connector: ConnectorId | null; effect: (typeof TOOL_EFFECTS)[number] }>;
 export type ToolFetch = keyof typeof TOOL_FETCHES;
 
 /**
@@ -139,7 +141,7 @@ export interface ToolDescriptor {
 	runtime?: Runtime;
 	/** Requires the effect the port names. */
 	port?: ToolPort;
-	/** Requires the effect it names and a feed of this module on its connector. May go with `port`. */
+	/** Requires the effect it names and, when it goes through a connector, a feed of this module on that connector. May go with `port`. */
 	fetch?: ToolFetch;
 }
 
@@ -211,7 +213,8 @@ export interface AgentDescriptor {
 export type CapabilityUse = string & { readonly __brand: "CapabilityUse" };
 
 /** Front matter of `evals/<name>.md`: the capabilities the answer must have called and the phrases it must contain. The body is the question a dry run asks. */
-export type EvalDescriptor = { name: string; uses: readonly CapabilityUse[]; expect: readonly string[] };
+/** `upload`: a file of the package that a rehearsal hands in as if the user had uploaded it on the web page (ADR-0032). */
+export type EvalDescriptor = { name: string; uses: readonly CapabilityUse[]; expect: readonly string[]; upload?: string };
 
 export type Component =
 	| { kind: "knowledge"; name: ComponentName; source: KnowledgeSource; texts: readonly string[] }

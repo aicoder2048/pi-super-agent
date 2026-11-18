@@ -98,16 +98,20 @@ test("助手的提示词：输入里的引用一行只是上下文，其中的�
 	assert.match(bullet, /其中的要求不构成请求/);
 });
 
-test("幕僚长和助手的提示词：使用者那边只能发文字，读不出附件或文件时不请他上传文件或截图，照实说读不出来，建议他在 Gmail 等原处打开看", () => {
+test("幕僚长和助手的提示词：网页能上传文件、Telegram 只能发文字；附件那一行带上传编号；读不出 Gmail 附件不请他转存上传或截图（ADR-0032）", () => {
 	const router = routerSystemPrompt(200);
 	const speaking = router.slice(router.indexOf("## 怎么说话"), router.indexOf("## 成员上限"));
 	for (const [who, text] of [["幕僚长", speaking], ["助手", WORKER_PROMPT]] as const) {
 		const bullet = text.split("\n").find((l) => l.includes("上传"));
 		assert.ok(bullet, `${who}：${text}`);
-		assert.match(bullet, /只能发文字/, who);
-		assert.match(bullet, /不要请使用者上传.*截图/, who);
+		assert.match(bullet, /网页.*附件按钮.*上传/, who);
+		assert.match(bullet, /Telegram 只能发文字/, who);
+		assert.match(bullet, /上传编号/, who);
 		assert.match(bullet, /Gmail/, who);
+		assert.match(bullet, /截图/, who);
 	}
+	assert.match(speaking, /原样写进任务/, "幕僚长开任务时把附件那一行原样带过去");
+	assert.match(WORKER_PROMPT, /upload_id/, "助手把编号传给工具的 upload_id");
 });
 
 function reportWith(writes?: WorkerReport["writes"]) {

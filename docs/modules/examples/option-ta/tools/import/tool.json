@@ -1,16 +1,46 @@
 {
   "title": "券商 CSV 导入预览",
-  "description": "读取 JPM 或 eTrade 导出，与私密账户及成交对账；只返回待追加事实、冲销和待确认，不写数据库",
+  "description": "读取使用者在网页上传的 JPM 或 eTrade 导出（宿主凭上传编号取文件），与私密账户及成交对账；只返回待追加事实、冲销和待确认，不写数据库",
   "effect": "read",
   "input": {
-    "broker": { "type": "text", "title": "jpm 或 etrade" },
-    "csv": { "type": "text", "title": "使用者提供的完整原始 CSV 文本，包含表头和说明，不改写单元格" },
-    "import_date": { "type": "text", "title": "导入日 YYYY-MM-DD，判断待入账" }
+    "broker": {
+      "type": "text",
+      "title": "jpm 或 etrade"
+    },
+    "upload_id": {
+      "type": "text",
+      "title": "使用者那句话里「附件：文件名（上传编号 up-…，大小）」的上传编号，原样照抄"
+    },
+    "import_date": {
+      "type": "text",
+      "title": "导入日 YYYY-MM-DD，判断待入账"
+    },
+    "csv": {
+      "type": "text",
+      "title": "只给工具用例用；使用者的文件一律走 upload_id，不要把文件内容抄进来"
+    }
   },
   "output": {
-    "fills": { "type": "text", "title": "待追加原始事实数组，不带 id；fill_id/event_id 是去重键，宿主不查重。用 data write 一次原样写进 fills；REVERSAL 先于替代行" },
-    "skipped": { "type": "text", "title": "范围外非期权行及原因，不打扰使用者" },
-    "needs_confirmation": { "type": "text", "title": "待确认原因、CSV 行号、已有记录或建议账户，由领队问使用者，不据此猜写记录" },
-    "reconciliation": { "type": "text", "title": "add/enrich/already-recorded/conflict/account-unconfirmed/pending-settlement/outside-export-window/missing-from-export 等逐项对账动作" }
-  }
+    "fills": {
+      "type": "text",
+      "title": "待追加原始事实数组，不带 id；fill_id/event_id 是去重键，宿主不查重。用 data write 一次原样写进 fills；REVERSAL 先于替代行"
+    },
+    "skipped": {
+      "type": "text",
+      "title": "范围外非期权行及原因，不打扰使用者"
+    },
+    "needs_confirmation": {
+      "type": "text",
+      "title": "待确认原因、CSV 行号、已有记录或建议账户，由领队问使用者，不据此猜写记录"
+    },
+    "reconciliation": {
+      "type": "text",
+      "title": "add/enrich/already-recorded/conflict/account-unconfirmed/pending-settlement/outside-export-window/missing-from-export 等逐项对账动作"
+    },
+    "file": {
+      "type": "text",
+      "title": "读到的上传文件：文件名和字节数，给使用者核对是不是这份"
+    }
+  },
+  "fetch": "upload.file"
 }

@@ -14,7 +14,8 @@ import type { ModuleState } from "../modules/lifecycle.ts";
 import { ModuleStore } from "../modules/live.ts";
 import type { Digest, ModuleName } from "../modules/manifest.ts";
 import { formatModelRef, PAY_PER_USE_PROVIDERS, parseModelRef, type ModelRef } from "../models.ts";
-import { examsOf, judge, providersOf, verdictLine, type Attempt, type Exam } from "../modules/rehearse.ts";
+import { askedWith, examsOf, judge, providersOf, verdictLine, type Attempt, type Exam } from "../modules/rehearse.ts";
+import { saveUpload } from "../host/uploads.ts";
 import { problemLine, scanPackage } from "../modules/validate.ts";
 import { moduleEnvFile } from "../secrets.ts";
 
@@ -223,7 +224,8 @@ async function rehearse(source: string, module: string, providers: readonly Modu
 		const repliesTo = opened.prepare("SELECT text FROM reply_receipts WHERE cause IN (?, ?) ORDER BY created_at, rowid");
 		let failed = 0;
 		for (const exam of exams) {
-			const requestId = talk.say(exam.question);
+			const asked = askedWith(exam, source, (name, bytes) => saveUpload(stateDir, { name, type: "", bytes, at: Date.now() }));
+			const requestId = talk.say(asked);
 			const trigger = requestId === undefined ? undefined : await until(ACK_MS, () => answers.get(requestId));
 			const ticket = trigger ? await until(OPEN_MS, () => ticketOf.get(trigger) as { id: string; domain: string | null } | undefined) : undefined;
 			const report = ticket ? await until(REPORT_MS, () => reportOf.get(ticket.id) as { id: string; status: string; summary: string } | undefined) : undefined;
@@ -234,7 +236,7 @@ async function rehearse(source: string, module: string, providers: readonly Modu
 			const verdict = judge(module, exam, attempt);
 			if (!verdict.pass) failed++;
 			console.log(verdictLine(exam, verdict));
-			console.log(`  问：${exam.question}`);
+			console.log(`  问：${asked}`);
 			for (const text of replies) console.log(`  Router：${text}`);
 			if (report) console.log(`  汇报（${report.status}）：${report.summary}`);
 		}

@@ -7,6 +7,7 @@ import { isRunAskId } from "../kernel/run-ask.ts";
 import { OPTIONS_MAX, refusalText, type AnswerRefusal } from "../kernel/question.ts";
 import type { HostToClient, TranscriptHistory, TranscriptMessage } from "../client/protocol.ts";
 import { hasVisibleText, HistoryEchoFilter, type AnswerResult, type Broadcast } from "./server.ts";
+import { UPLOAD_MAX_BYTES, type Upload } from "./uploads.ts";
 import { tokenMatches } from "./web-token.ts";
 import { webAddresses, type TailnetName, type WebAddresses } from "./web-hosts.ts";
 
@@ -23,12 +24,16 @@ export interface WebHost {
 	/** False when the ticket is not one that only waits on its threads. */
 	endWatching(ticketId: string): boolean;
 	seen(ticketId: string): void;
+	/** Stores one file the user picked on the page (ADR-0032). */
+	upload(name: string, type: string, bytes: Buffer): Upload;
 }
 
 const SAY_MAX_BYTES = 32 * 1024;
 const TICKET_ID = /^tkt_[A-Za-z0-9_-]{1,64}$/;
 const REPORT_ID = /^rpt_[A-Za-z0-9_-]{1,64}$/;
 const LINE_ID_MAX_CHARS = 80;
+const UPLOAD_TOO_LARGE = `文件太大了，一次最多 ${UPLOAD_MAX_BYTES / 1024 / 1024} MB。`;
+const UPLOAD_NO_NAME = "上传要在地址里带 name（文件名），正文是文件本身，不能是空的。";
 
 const INDEX_HTML = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
 const SCRIPT = "text/javascript; charset=utf-8";
@@ -51,10 +56,10 @@ const DENIED = {
 	401: "token 缺失或已失效，请用宿主日志里最新的网址打开。",
 	403: "只接受本机这个页面（127.0.0.1 或 localhost）或 config.json 的 webHosts 里列出的地址发来的请求。",
 	404: "没有这个页面。",
-	405: "这个地址不接受这种请求；发话用 POST /say，清屏用 POST /clear，开关模块用 POST /module，结束盯着的任务用 POST /end，其余只接受 GET。",
+	405: "这个地址不接受这种请求；发话用 POST /say，清屏用 POST /clear，开关模块用 POST /module，结束盯着的任务用 POST /end，上传文件用 POST /upload，其余只接受 GET。",
 	409: "这个任务不在盯着的事里，不能这样结束：它可能还在干活，或在等你回答。",
 	413: "这句话太长了，请分几次说。",
-	415: "发话的正文要用 application/json。",
+	415: "发话的正文要用 application/json；上传文件的正文要用 application/octet-stream。",
 } as const;
 
 export class WebGateway {
@@ -143,6 +148,7 @@ export class WebGateway {
 		if (!this.#addresses.hosts.has(req.headers.host?.toLowerCase() ?? "")) return deny(res, 403);
 		const file = STATIC.get(url.pathname);
 		if (!file && !tokenMatches(url.searchParams.get("token") ?? "", this.#token)) return deny(res, 401);
+		if (url.pathname === "/upload") return req.method === "POST" ? this.#upload(req, res, url) : deny(res, 405);
 		const post = this.#posts.get(url.pathname);
 		if (post) return req.method === "POST" ? this.#post(req, res, post) : deny(res, 405);
 		if (req.method !== "GET") return deny(res, 405);
@@ -184,6 +190,30 @@ export class WebGateway {
 			this.#guard(req, res, () => {
 				if (res.headersSent) return;
 				handle(Buffer.concat(chunks).toString("utf8"), res);
+			}),
+		);
+	}
+
+	// Same checks as #post, but the body is the file itself: a cross-site form cannot send application/octet-stream.
+	#upload(req: IncomingMessage, res: ServerResponse, url: URL): void {
+		if (!this.#addresses.origins.has(req.headers.origin?.toLowerCase() ?? "")) return deny(res, 403);
+		if (req.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/octet-stream") return deny(res, 415);
+		const name = url.searchParams.get("name") ?? "";
+		if (name.trim() === "") return void res.writeHead(400, { ...NO_LEAK_HEADERS, "content-type": "text/plain; charset=utf-8" }).end(UPLOAD_NO_NAME);
+		if (Number(req.headers["content-length"] ?? 0) > UPLOAD_MAX_BYTES) return tooLarge(req, res, UPLOAD_TOO_LARGE);
+		const chunks: Buffer[] = [];
+		let size = 0;
+		req.on("data", (chunk: Buffer) => {
+			size += chunk.length;
+			if (size > UPLOAD_MAX_BYTES) return tooLarge(req, res, UPLOAD_TOO_LARGE);
+			chunks.push(chunk);
+		});
+		req.on("end", () =>
+			this.#guard(req, res, () => {
+				if (res.headersSent) return;
+				if (size === 0) return void res.writeHead(400, { ...NO_LEAK_HEADERS, "content-type": "text/plain; charset=utf-8" }).end(UPLOAD_NO_NAME);
+				const saved = this.#host.upload(name, url.searchParams.get("type") ?? "", Buffer.concat(chunks));
+				res.writeHead(200, { ...NO_LEAK_HEADERS, "content-type": "application/json; charset=utf-8" }).end(JSON.stringify({ id: saved.id, name: saved.name, size: saved.size }));
 			}),
 		);
 	}
@@ -285,9 +315,9 @@ function isEmptyObject(body: string): boolean {
 	return parsed !== undefined && Object.keys(parsed).length === 0;
 }
 
-function tooLarge(req: IncomingMessage, res: ServerResponse): void {
+function tooLarge(req: IncomingMessage, res: ServerResponse, text: string = DENIED[413]): void {
 	if (res.headersSent) return void req.destroy();
-	res.writeHead(413, { ...NO_LEAK_HEADERS, "content-type": "text/plain; charset=utf-8", connection: "close" }).end(DENIED[413], () => req.destroy());
+	res.writeHead(413, { ...NO_LEAK_HEADERS, "content-type": "text/plain; charset=utf-8", connection: "close" }).end(text, () => req.destroy());
 }
 
 function sseFrame(message: HostToClient): string {

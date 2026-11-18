@@ -23,6 +23,7 @@ import type { BoardState, Duty, FeedBeat, MemberCapBoard, ModuleCard, TodayCount
 import { readSessionEntries } from "../jsonl.ts";
 import { helperSessionDir, memberTranscripts } from "./dispatch.ts";
 import { WebGateway } from "./web.ts";
+import { saveUpload } from "./uploads.ts";
 import { loadToken } from "./web-token.ts";
 import type { TailnetName } from "./web-hosts.ts";
 import { MemberCap } from "./member-cap.ts";
@@ -344,7 +345,7 @@ export class Host {
 	static async start(options: HostOptions): Promise<Host> {
 		const host = new Host(options);
 		if (options.webPort !== undefined) {
-			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), sayQuoting: (text, lineId) => host.sayQuoting(text, lineId), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation(), switchModule: (name, on) => host.switchModule(name, on), endWatching: (ticketId) => host.endWatching(ticketId), seen: (ticketId) => host.seen(ticketId) }, loadToken(options.stateDir, "web-token", host.#log), host.#log, options.webHosts ?? []);
+			host.#web = new WebGateway({ snapshot: () => host.snapshot(), transcript: (ticketId) => host.transcript(ticketId), say: (text) => host.say(text), sayQuoting: (text, lineId) => host.sayQuoting(text, lineId), answer: (reportId, option) => host.answer(reportId, option), clear: () => host.clearConversation(), switchModule: (name, on) => host.switchModule(name, on), endWatching: (ticketId) => host.endWatching(ticketId), seen: (ticketId) => host.seen(ticketId), upload: (name, type, bytes) => saveUpload(options.stateDir, { name, type, bytes, at: Date.now() }) }, loadToken(options.stateDir, "web-token", host.#log), host.#log, options.webHosts ?? []);
 			await host.#web.listen(options.webPort);
 		}
 		try {

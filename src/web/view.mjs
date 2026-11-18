@@ -1111,6 +1111,29 @@ export function sayOutcome(outcome) {
 /** @param {Said} said */
 export const sayBody = (said) => JSON.stringify(said.quoteOf ? { text: said.text, quoteOf: said.quoteOf } : { text: said.text });
 
+/** @typedef {{ id: string, name: string, size: number }} Attached A file uploaded with POST /upload, not yet sent (ADR-0032). */
+
+/** The host refuses more with 413 (src/host/uploads.ts); the page checks first, since a refused upload often reaches it only as a reset connection. */
+export const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+export const UPLOAD_TOO_LARGE = "文件太大了，一次最多 10 MB。";
+
+/** @param {number} bytes */
+export function fileSize(bytes) {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** The line a module tool reads the upload id from. @param {Attached} a */
+export const attachmentLine = (a) => `附件：${a.name}（上传编号 ${a.id}，${fileSize(a.size)}）`;
+
+/** @param {string} text @param {Attached | null} a */
+export function withAttachment(text, a) {
+	if (!a) return text;
+	const said = text.trimEnd();
+	return said.trim() === "" ? attachmentLine(a) : `${said}\n${attachmentLine(a)}`;
+}
+
 /** @param {Said} sent @param {Said} now */
 export const sameAsSent = (sent, now) => now.text === sent.text && now.quoteOf === sent.quoteOf;
 

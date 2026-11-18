@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 import { EVERY, everyMs } from "./connectors/timer.ts";
 import { mailFeedProblems } from "./connectors/mail.ts";
 import { feedInput, intoOf, nothingHeld, parseCollected } from "./feed-runner.ts";
@@ -454,10 +454,15 @@ function readEval(report: Report, root: string, file: string): Component | undef
 	const where = `evals/${file}`;
 	if (!file.endsWith(".md")) return void report(where, "evals holds one Markdown file per question");
 	const name = file.slice(0, -3);
-	const meta = frontMatter(report, root, where, ["name", "uses", "expect"]);
+	const meta = frontMatter(report, root, where, ["name", "uses", "expect", "upload"]);
 	if (meta === undefined) return undefined;
 	if (meta["name"] !== name) report(where, `front matter name is "${meta["name"] ?? ""}" but the file is "${file}"`);
-	const described = { name, uses: commaList(meta["uses"]) as CapabilityUse[], expect: commaList(meta["expect"]) };
+	const upload = meta["upload"];
+	const described = { name, uses: commaList(meta["uses"]) as CapabilityUse[], expect: commaList(meta["expect"]), ...(upload ? { upload } : {}) };
+	if (upload) {
+		const target = resolve(root, upload);
+		if (!target.startsWith(resolve(root) + sep) || !existsSync(target) || !statSync(target).isFile()) report(where, `"upload" ${upload} is not a file in this package`);
+	}
 	if (described.uses.length === 0 && described.expect.length === 0) report(where, `needs "uses" or "expect", or it checks nothing`);
 	return { kind: "evals", name: name as ComponentName, eval: described };
 }
@@ -519,7 +524,7 @@ function crossCheck(report: Report, note: Report, manifest: ModuleManifest, comp
 		}
 		if (item.kind === "tools" && item.tool.fetch !== undefined) {
 			const connector = TOOL_FETCHES[item.tool.fetch].connector;
-			if (!components.some((c) => c.kind === "feeds" && c.feed.connector === connector)) report(`tools/${item.name}/tool.json`, `"fetch" ${item.tool.fetch} needs a feed of this module on the ${connector} connector: the host fetches only what this module's feeds receive`);
+			if (connector !== null && !components.some((c) => c.kind === "feeds" && c.feed.connector === connector)) report(`tools/${item.name}/tool.json`, `"fetch" ${item.tool.fetch} needs a feed of this module on the ${connector} connector: the host fetches only what this module's feeds receive`);
 		}
 		if (item.kind === "agents" || item.kind === "evals") {
 			for (const use of item.kind === "agents" ? item.agent.uses : item.eval.uses) {

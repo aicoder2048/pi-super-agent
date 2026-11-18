@@ -2,7 +2,7 @@
 
 import {
 	BAR_HINT, CLEAR_FAILED, SWITCH_FAILED, END_FAILED, endBody, followUpLine, followUpSentence, moduleBody, STAGE_PHRASE, BASIS_PHRASE, answerBody, answerRefusedCopy, applyMessage, applyTranscript, avatarOf, canSend, choicesInConversation, clearedBar, dutyLine, earlierLines, emptyView, emptyWatch,
-	questionOf, choiceOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, sayOutcome, settleSay, settleSending,
+	questionOf, choiceOf, helperStrip, isStale, knownLineIds, leftColumn, lifecycleLine, linesNotIn, liveSteps, parseMarkdown, quoteShown, resolveTheme, restartNotice, routeLine, sayBody, sayCopy, sameAsSent, fileSize, withAttachment, UPLOAD_MAX_BYTES, UPLOAD_TOO_LARGE, sayOutcome, settleSay, settleSending,
 	healthBanner, laneClock, smallPrint, stepGroups, stopSentence, toggleEarlier, toggleTheme, historyKey, historyStep, sentHistory, firstPanel, panelStep, overviewTabs, phoneScreen, panelText, savedPanel,
 } from "./view.mjs";
 import { DEFAULT_ACK_TIMEOUT_MS, helperLine, hostLineLabel } from "../client/board-format.mjs";
@@ -52,6 +52,15 @@ function mount(doc) {
 	/** @type {import("./view.mjs").Browsing} */
 	let browsing = { index: null, draft: "" };
 	const quoteStrip = $("quote-strip");
+	const attachStrip = $("attach-strip");
+	const attachInput = /** @type {HTMLInputElement} */ ($("attach-file"));
+	/** A file uploaded and waiting to go with the next sentence (ADR-0032). @type {import("./view.mjs").Attached | null} */
+	let attached = null;
+	/** @type {string | null} the name of the file being uploaded */
+	let uploading = null;
+	/** Bumped by each new upload and by ✕: an upload that comes back under an older number is dropped. */
+	let uploadSeq = 0;
+	const attachButton = /** @type {HTMLButtonElement} */ ($("attach"));
 	const touch = matchMedia("(hover: none)");
 	/** @type {{ watch: ReturnType<typeof emptyWatch>, source: EventSource } | undefined} */
 	let watching;
@@ -628,7 +637,47 @@ function mount(doc) {
 	};
 
 	/** @returns {import("./view.mjs").Said} */
-	const composed = () => ({ text: composer.value, quoteOf: quoting?.id ?? null });
+	const composed = () => ({ text: withAttachment(composer.value, attached), quoteOf: quoting?.id ?? null });
+
+	const renderAttachStrip = () => {
+		attachStrip.hidden = !attached && !uploading;
+		/** @type {HTMLElement} */ (attachStrip.querySelector(".quote-text")).textContent = uploading ? `${uploading} 上传中…` : attached ? `${attached.name}（${fileSize(attached.size)}）` : "";
+	};
+
+	/** The attachment already there stays until the new file is in. @param {File} file */
+	const upload = async (file) => {
+		attachInput.value = "";
+		if (file.size > UPLOAD_MAX_BYTES) return setSay("rejected", 413, UPLOAD_TOO_LARGE);
+		const seq = ++uploadSeq;
+		const current = () => seq === uploadSeq;
+		uploading = file.name;
+		attachButton.disabled = true;
+		renderAttachStrip();
+		try {
+			const res = await fetch(`/upload?${query}&name=${encodeURIComponent(file.name)}&type=${encodeURIComponent(file.type)}`, {
+				method: "POST",
+				headers: { "content-type": "application/octet-stream" },
+				body: file,
+				cache: "no-store",
+				signal: AbortSignal.timeout(300_000),
+			});
+			if (!current()) return;
+			if (res.status === 401) setStatus("expired");
+			else if (!res.ok) setSay("rejected", res.status, await res.text().catch(() => "上传没有成功，请稍后再试。"));
+			else {
+				const done = await res.json();
+				if (current()) attached = done;
+			}
+		} catch {
+			if (current()) setSay("rejected", undefined, "上传没有成功，请检查网络后再试。");
+		} finally {
+			if (current()) {
+				uploading = null;
+				attachButton.disabled = false;
+				renderAttachStrip();
+			}
+		}
+	};
 
 	const renderQuoteStrip = () => {
 		const box = $("conversation");
@@ -647,7 +696,9 @@ function mount(doc) {
 		if (!sameAsSent(sent, composed())) return;
 		composer.value = "";
 		quoting = null;
+		attached = null;
 		renderQuoteStrip();
+		renderAttachStrip();
 	};
 
 	const unpick = () => {
@@ -1035,7 +1086,7 @@ function mount(doc) {
 
 	const say = async () => {
 		const sent = composed();
-		if (!canSend(sent.text) || send.disabled) return;
+		if (!canSend(sent.text) || send.disabled || uploading) return;
 		send.disabled = true;
 		unconfirmed = undefined;
 		const idsAtSay = knownLineIds(view);
@@ -1082,6 +1133,19 @@ function mount(doc) {
 		void say();
 	});
 	$("quote-cancel").addEventListener("click", () => setQuote(null));
+	attachButton.addEventListener("click", () => attachInput.click());
+	attachInput.addEventListener("change", () => {
+		const file = attachInput.files?.[0];
+		if (file) void upload(file);
+	});
+	$("attach-cancel").addEventListener("click", () => {
+		uploadSeq++;
+		uploading = null;
+		attached = null;
+		attachButton.disabled = false;
+		renderAttachStrip();
+		composer.focus();
+	});
 	thread.addEventListener("click", (e) => {
 		const target = /** @type {Element} */ (e.target);
 		if (!touch.matches || target.closest(".choices, .route, a, button")) return;
