@@ -1,0 +1,15 @@
+{
+ "input": {
+  "now": "2026-11-18T01:00:00.000Z",
+  "cursor": "{\"done\": {\"VIX\": \"2026-11-16\", \"VIX9D\": \"2026-11-16\", \"VIX3M\": \"2026-11-16\"}, \"failures\": 0}"
+ },
+ "responses": {
+  "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv": {
+   "status": 200,
+   "headers": {
+    "content-type": "text/html"
+   },
+   "body": "<html>moved</html>"
+  }
+ }
+}

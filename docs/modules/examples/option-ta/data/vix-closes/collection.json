@@ -1,0 +1,15 @@
+{
+  "title": "VIX 每日收盘",
+  "kind": "record",
+  "class": "shareable",
+  "fields": {
+    "ticker": { "type": "text", "title": "VIX、VIX9D 或 VIX3M" },
+    "trade_date": { "type": "date", "title": "美东交易日，每个指数每日一行" },
+    "open": { "type": "number", "title": "开盘" },
+    "high": { "type": "number", "title": "最高" },
+    "low": { "type": "number", "title": "最低" },
+    "close": { "type": "number", "title": "收盘" },
+    "source": { "type": "text", "title": "公开行情出处" },
+    "fetched_at": { "type": "date", "title": "取数时刻" }
+  }
+}
