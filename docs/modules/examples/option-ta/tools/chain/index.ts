@@ -19,6 +19,7 @@ export default async function chain(input: Record<string, unknown>) {
 		if (!OPERATIONS.includes(operation)) fail("INVALID_INPUT", `operation 只能是 ${OPERATIONS.join("、")}`);
 		const request = parse(input);
 		if (BOTH_SIDES.includes(operation) && request.right !== undefined) fail("INVALID_INPUT", `${operation} 要 put 和 call 两边一起算，right 不填`);
+		if (BOTH_SIDES.includes(operation) && (request.strikeMin !== undefined || request.strikeMax !== undefined)) fail("INVALID_INPUT", `${operation} 要整条链的未平仓，截掉一段行权价会把墙和最大痛点推到范围边上，strike_min、strike_max 不填`);
 		const key = process.env["POLYGON_API_KEY"] ?? "";
 		if (key === "") fail("NO_KEY", MISSING_KEY);
 		const fetched = await snapshotPages(query(request.symbol, [
@@ -54,12 +55,14 @@ export default async function chain(input: Record<string, unknown>) {
 	}
 }
 
-const TRUNCATED_NOTE = "期权链超过分页上限，只取到一部分，结构不全：缩小到期范围或行权价范围再查";
+const TRUNCATED_NOTE = "期权链超过分页上限，只取到一部分：只给一个到期日再查";
 
 function structure(operation: Exclude<Operation, "snapshot">, request: Request, parsed: ReturnType<typeof parseChain>, fetched: { pages: number; truncated: boolean }) {
 	const spot = parsed.underlying?.price ?? null;
+	// knowledge/market-data-limits: a chain not fetched whole is not a whole chain for max pain, GEX or OI walls.
+	if (BOTH_SIDES.includes(operation) && fetched.truncated) fail("NO_DATA", `${TRUNCATED_NOTE}；这几种结构要整条链，没算`);
 	if (operation === "gex" && spot === null) fail("NO_DATA", `行情服务这次没给 ${request.symbol} 的正股价，GEX 要用正股价，稍后再查`);
-	const result = operation === "oi" ? oiStructure(parsed.rows, spot) : operation === "max-pain" ? maxPainByExpiry(parsed.rows, spot) : operation === "gex" ? gexStructure(parsed.rows, spot!) : unusualVolume(parsed.rows);
+	const result = operation === "oi" ? oiStructure(parsed.rows, spot) : operation === "max-pain" ? maxPainByExpiry(parsed.rows, spot) : operation === "gex" ? gexStructure(parsed.rows, spot!) : unusualVolume(parsed.rows, parsed.market);
 	return {
 		status: "OK",
 		operation,
