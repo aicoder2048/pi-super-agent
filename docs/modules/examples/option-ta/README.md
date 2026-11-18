@@ -13,6 +13,7 @@
 - `data/{fills,chains,accounts,brokers}/collection.json`：四个 `private` 集合；`data/{watchlist,iv-snapshots,vix-closes}/collection.json`：三个 `shareable` 集合。全部初始为空。
 - `feeds/fills/`：接宿主 `mail` 连接器，只收私密名单 `brokers` 上的发件人，写进私密集合 `fills`。`parse.ts` 是纯函数，`index.ts` 把结果交给宿主；样例是 P1 的四封虚构信和一份没有信的。
 - `feeds/iv/`：收盘 30 分钟后给期权自选每个标的存一行 IV 原始输入，新标的先回填一年，每拍最多 `requestsPerTick` 次请求；`feeds/watch/`：交易时段按门槛检查 `fills` 里的未平仓期权，仓位用 `ledger` 的先进先出算法汇总，提醒直接发（`alerts`），每条 id 固定、宿主只发一次。两者和 `chain`、`vol` 的盘中判断共用包根目录的 `market-days.ts`（宿主时段和 stock-ta 假日表的副本，`tests/unit/market-hours.test.ts` 保持三者一致。假日和提前收盘日只填到 2028 年底，同一个测试在 2028-10-02 以后失败，提醒补下一年）、`feed-fetch.ts`（Finnhub 请求和时间戳）、`dividends.ts`（预计除息日）。
+- `feeds/vol-alerts/`：收盘后读本模块的 `iv-snapshots`、`vix-closes`（直接读 data.db），按 `opportunity.ts` 发偏贵、VIX 上穿和倒挂的提醒（`alerts`），不写集合；`iv-series.ts` 是它和 `vol` 共用的 IV 序列读法。
 - `feeds/vix/`：收盘后从 CBOE 公开历史文件取 VIX、VIX9D、VIX3M 的日收盘存进 `vix-closes`，第一次回填一年；`vix.ts` 解析文件、分档、比期限结构，`vol` 读它回市场环境。
 - `rules.md`：状态通知的处理边界，不授权写集合或交易。
 - `knowledge/` 和 `evals/` 由独立成员维护；检查与预演以最终包为准。
@@ -66,6 +67,7 @@
 - 期权链结构：oi、gex、max-pain 要整条链，不接受 `right`、`strike_min`、`strike_max`，到了分页上限没取全回 `NO_DATA`（`knowledge/market-data-limits`）。OI 墙分边，正股价及以下的 put 墙、及以上的 call 墙各列前 `TOP_WALLS` 8 个；某个到期日未平仓全是 0 时最大痛点为空。GEX 用 Gamma × 未平仓 × 100 × 正股价² × 1%（正股变动 1% 的美元），call 记正、put 记负，call 墙只在正股价及以上、put 墙只在正股价及以下找，未平仓合计不到 5000 张或算不出 GEX 时可信度标低（算不出时正负档为空），gamma 翻转点离正股超过 25% 不报，`near_spot` 列离正股最近的 `GEX_STRIKES_SHOWN` 12 个行权价。异常成交是当天成交量 ≥ 未平仓 `UNUSUAL_VOLUME_OI_RATIO` 2 倍且 ≥ `UNUSUAL_MIN_VOLUME` 500 张，未平仓为 0 也算，没有未平仓的不判断，按量列前 15 个；休市时成交量是上一交易日的，说明里写明意思弱一些。
 - VIX：vix feed 每 30 分钟看一次，收盘 30 分钟后开始从 CBOE 公开历史文件（`VIX_History.csv`、`VIX9D_History.csv`、`VIX3M_History.csv`，免 key，跟随 307 重定向）取那天的开高低收，存进 `vix-closes`；第一次回填 365 日；收盘 18 小时后还没有那天的收盘报 problem。CBOE 一般在美东晚上更新，VIX 比 VIX9D、VIX3M 晚。档位 `VIX_LEVELS`：<15 平静、15—20 正常、20—25 偏高、25—35 开始紧张、35—50 恐慌、≥50 危机；卖方风控线 `VIX_SELLER_RISK_LINE` 35。期限结构用同一天的 VIX 和 VIX3M 比，VIX ≥ VIX3M 算倒挂；一年分位是最近 365 日收盘里低于最新值的比例。
 - IV/HV 分档 `IV_HV_BANDS` 0.8 / 0.95 / 1.2 / 2.0（便宜、略便宜、合理、偏贵、很贵），照 `knowledge/vol-regime` 从 theta 的 0.85 / 1.0 / 1.15 / 1.4 改过来。`vol` 的 `regime.iv`：一年 IV 分位 ≥ 0.8 且 IV/HV ≥ 1.2 为偏贵，分位 ≤ 0.2 且 IV/HV < 0.8 为偏便宜（`RICH_PERCENTILE`、`RICH_RATIO`、`CHEAP_PERCENTILE`、`CHEAP_RATIO`），一高一低为信号不一致，其余为中间。
+- 机会提醒（vol-alerts feed，每 30 分钟看一次，收盘 45 分钟后 `ALERT_AFTER_CLOSE_MS` 起）：期权自选的标的，收盘 IV 的一年分位 ≥ `RICH_PERCENTILE` 0.8 且收盘 IV/HV20 ≥ `RICH_RATIO` 1.2 的那天算进入偏贵，静音提醒一次，写明从进入那天到那天所选合约到期之间有没有财报（已公布的也算，所以当天盘后的财报算在内）；分位回到 `REARM_PERCENTILE` 0.7 以下以后再进入才算新的一次；IV 历史不到 `MIN_PERCENTILE_DAYS` 120 天不判。VIX 收盘到 25 静音、到 35（卖方风控线）响铃，一天跳过两条线只发高的那条，回到 20、30 以下才重新生效（`VIX_ALERT_LEVELS`）；同一天的 VIX 和 VIX3M 由正常转倒挂静音。只发最近两个交易日的事；偏便宜不推送，只在 `vol` 里看。状态完全由存下的序列推出，cursor 只记已发的 id。
 - 提醒检查 5 分钟；到期前 5 个交易日静音；到期日 09:45 后首次检查离行权价小于 3% 响铃；卖方小于 2% 静音；权利金五成静音、八成响铃，不等于强制买回。价内卖 call 到期前有除息则前 2 个交易日响铃，预计但未宣布只静音。接近行权价每个仓位每个交易日发一次；其余每个仓位（财报、除息按那一天）只发一次。报价不对齐不判断。
 - 使用者 2026-11-17 定的三条：提醒正文带账户短码；穿过行权价只在刚穿过的那次响铃，之后一直在价内不再响，回到价外再穿过算新的一次；同一仓位同一天最多响一次铃，多出来的改成静音，到期日只有开盘离行权价不到 3% 那条响。同一拍里按到期、除息、穿价、财报、权利金的顺序占这一次。同一天里穿过、回到价外、再穿过，只记第一次（提醒 id 按天）。
 - 财报：到期前有财报静音提醒，财报前 2 个交易日响铃，使用者 2026-11-17 确认保持这样。

@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
-import { dataDbPath } from "../../data-db.ts";
 import { addDays, MARKET_NOTE, nyParts, nyStamp, parseChain, type ChainRow } from "../../chain-rows.ts";
-import { impliedVolPut } from "../../iv.ts";
-import { dteOn, ivPercentile, ivRank, IV_SERIES_TENOR } from "../../iv-history.ts";
+import { ivPercentile, ivRank, IV_SERIES_TENOR } from "../../iv-history.ts";
+import { readIvSeries } from "../../iv-series.ts";
+import { MIN_PERCENTILE_DAYS } from "../../opportunity.ts";
 import { fail, MarketError, MISSING_KEY, prevClose, query, REQUEST_LIMIT_MS, snapshotPages } from "../../massive.ts";
 import { isTicker } from "../../symbols.ts";
 import { marketRegime, readVixSeries, VIX_SELLER_RISK_LINE, type MarketRegime } from "../../vix.ts";
@@ -19,8 +18,6 @@ const TERM_STRIKE_MIN_HALF_WIDTH = 5;
 const SKEW_STRIKE_BAND = 0.2;
 const SKEW_DELTA = 0.25;
 const RANK_WINDOW_DAYS = 365;
-/** Below this many days of IV history the percentile is not a one-year percentile; regime does not judge the symbol on it. */
-const MIN_PERCENTILE_DAYS = 120;
 /** A latest VIX close older than this many calendar days gets a note: the vix feed may have stopped. */
 const VIX_STALE_DAYS = 5;
 
@@ -151,34 +148,16 @@ function regime(history: ReturnType<typeof readHistory>, ratio: number | null, m
 	return { iv: quadrant, vix_level: market.status === "OK" ? market.level : null, notes };
 }
 
-type SnapshotRow = { trade_date: string; strike: number | null; expiry: string | null; contract_close: number | null; underlying_close: number | null; data_status: string | null };
-
 /** The iv feed's methodology tag; rows of another methodology are a different series and never mix in. */
 const methodology = (): string => JSON.parse(readFileSync(new URL("../../feeds/iv/feed.json", import.meta.url), "utf8")).settings.methodology;
 
 function readHistory(symbol: string) {
 	const tag = methodology();
 	const none = { status: "NO_HISTORY", methodology: tag, reason: `iv-snapshots 里还没有 ${symbol} 的 IV 原始输入：标的加进期权自选后，iv feed 回填一年，之后每天收盘后存一行。IV rank、百分位和 HV20 没算` };
-	const file = dataDbPath();
-	if (file === undefined) return none;
-	const db = new DatabaseSync(file, { readOnly: true });
-	let rows: SnapshotRow[];
-	try {
-		if (db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'iv-snapshots'`).get() === undefined) return none;
-		rows = db.prepare(`SELECT trade_date, strike, expiry, contract_close, underlying_close, data_status FROM "iv-snapshots" WHERE symbol = ? AND methodology = ? ORDER BY trade_date, "_id"`).all(symbol, tag) as SnapshotRow[];
-	} finally {
-		db.close();
-	}
-	const byDate = new Map(rows.filter((r) => typeof r.trade_date === "string").map((r) => [r.trade_date, r]));
-	const series = [...byDate.values()].flatMap((r) => {
-		if (r.data_status !== "ok" || r.contract_close === null || r.underlying_close === null || r.strike === null || r.expiry === null) return [];
-		const iv = impliedVolPut(r.contract_close, r.underlying_close, r.strike, dteOn(r.trade_date, r.expiry));
-		return iv === null ? [] : [{ date: r.trade_date, iv }];
-	});
+	const { series, closes } = readIvSeries(symbol, tag);
 	if (series.length === 0) return none;
 	const latest = series.at(-1)!;
 	const window = series.filter((p) => p.date >= addDays(latest.date, -RANK_WINDOW_DAYS)).map((p) => p.iv);
-	const closes = Object.fromEntries([...byDate].flatMap(([date, r]) => (r.underlying_close !== null && r.underlying_close > 0 ? [[date, r.underlying_close]] : [])));
 	return {
 		status: "OK",
 		methodology: tag,
@@ -188,6 +167,6 @@ function readHistory(symbol: string) {
 		latest_iv: r4(latest.iv),
 		iv_rank: r4(ivRank(latest.iv, window)),
 		iv_percentile: r4(ivPercentile(latest.iv, window)),
-		hv20: r4(hv20(closes, Object.keys(closes).sort(), [...byDate.keys()].sort().at(-1)!)),
+		hv20: r4(hv20(closes, Object.keys(closes).sort(), Object.keys(closes).sort().at(-1)!)),
 	};
 }
