@@ -22,7 +22,7 @@
     "term_note": { "type": "text", "title": "期限结构里 IV 来源不一致时才有" },
     "history": { "type": "text", "title": "status（OK 或 NO_HISTORY）、methodology（口径）、days（最近一年进序列的交易日数）、from、to、latest_iv（序列最新一天收盘价反解的 IV）、iv_rank、iv_percentile、hv20；NO_HISTORY 时有 reason" },
     "vix": { "type": "text", "title": "市场环境，来自 vix-closes 的 CBOE 收盘：status（OK 或 NO_DATA）、date（最新一个有 VIX 收盘的交易日）、vix、level（平静 <15、正常 15—20、偏高 20—25、开始紧张 25—35、恐慌 35—50、危机 ≥50）、vix9d、vix3m、term（正常（远月高于近月）或倒挂；VIX ≥ VIX3M 算倒挂，同一天缺 VIX3M 时为空）、vix_over_vix3m、vix_percentile_1y（最近一年收盘里低于它的比例）、days、source；NO_DATA 时有 reason" },
-    "regime": { "type": "text", "title": "开仓前先问的波动率环境：iv（偏贵、偏便宜、中间、信号不一致；偏贵是一年 IV 百分位 ≥0.8 且 IV/HV ≥1.2，偏便宜是百分位 ≤0.2 且 IV/HV <0.8；缺一项为空）、vix_level、notes（每档对买方卖方意味着什么，VIX ≥35 的卖方风控线，期限结构倒挂）。只是信息，不是交易指令" },
+    "regime": { "type": "text", "title": "开仓前先问的波动率环境：iv（偏贵、偏便宜、中间、信号不一致；偏贵是一年 IV 百分位 ≥0.8 且 IV/HV ≥1.2，偏便宜是百分位 ≤0.2 且 IV/HV <0.8；缺一项、或 IV 历史不到 120 天时为空；分位来自收盘价反解的序列，IV/HV 用现在的平值 IV）、vix_level、notes（每档对买方卖方意味着什么，历史不足，VIX ≥35 的卖方风控线，期限结构倒挂，VIX 收盘过旧）。只是信息，不是交易指令" },
     "truncated": { "type": "text", "title": "true 是到了分页上限，期限结构或偏斜不全" },
     "units": { "type": "text", "title": "各字段的单位" }
   }

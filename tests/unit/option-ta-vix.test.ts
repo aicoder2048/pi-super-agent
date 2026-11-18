@@ -88,11 +88,37 @@ test("vix feed：CBOE 还没出当天收盘，不写行、cursor 不动、不报
 	assert.match(late.output.problem.text, /2026-11-17/);
 });
 
-test("vix feed：周末取的是周五；交易时段里还没到当天收盘后 30 分钟，目标是前一个交易日", async () => {
-	const weekend = await replay("vix", "already-saved", { change: (input) => ((input.now = "2026-11-21T15:00:00.000Z"), (input.cursor = JSON.stringify({ done: { VIX: "2026-11-20", VIX9D: "2026-11-20", VIX3M: "2026-11-20" }, failures: 0 }))) });
-	assert.deepEqual(weekend.fetched, []);
-	const midday = await replay("vix", "already-saved", { change: (input) => (input.now = "2026-11-18T18:00:00.000Z") });
-	assert.deepEqual(midday.fetched, []);
+test("vix feed：周六晚上目标仍是周五；当天收盘后 15 分钟还不取，31 分钟开始取", async () => {
+	const fridayDone = JSON.stringify({ done: { VIX: "2026-11-20", VIX9D: "2026-11-20", VIX3M: "2026-11-20" }, failures: 0 });
+	const weekend = await replay("vix", "already-saved", { change: (input) => ((input.now = "2026-11-22T03:00:00.000Z"), (input.cursor = fridayDone)) });
+	assert.deepEqual(weekend.fetched, [], "周六 22:00 美东");
+	const early = await replay("vix", "already-saved", { change: (input) => ((input.now = "2026-11-17T21:15:00.000Z"), (input.cursor = JSON.stringify({ done: { VIX: "2026-11-16", VIX9D: "2026-11-16", VIX3M: "2026-11-16" }, failures: 0 }))) });
+	assert.deepEqual(early.fetched, [], "收盘后 15 分钟");
+	const after = await replay("vix", "daily", { change: (input) => (input.now = "2026-11-17T21:31:00.000Z") });
+	assert.equal(after.fetched.length, 3, "收盘后 31 分钟");
+	assert.deepEqual(after.output.records.map((r: Record<string, unknown>) => r.trade_date), ["2026-11-17", "2026-11-17", "2026-11-17"]);
+});
+
+test("vix feed：文件里休市日的行（CBOE 的 VIX 有盘后值）和目标日之后的行都不存", async () => {
+	const { output } = await replay("vix", "holiday-row");
+	assert.deepEqual(output.records.map((r: Record<string, unknown>) => r.id), ["VIX:2026-09-08", "VIX9D:2026-09-08", "VIX3M:2026-09-08"]);
+	assert.deepEqual(done(output), { VIX: "2026-09-08", VIX9D: "2026-09-08", VIX3M: "2026-09-08" });
+});
+
+test("vix feed：一个指数取到、下一个失败时，取到的行照存、它的 cursor 前移，其余不动；成功一次失败次数清零", async () => {
+	const { output } = await replay("vix", "partial-failure");
+	assert.deepEqual(output.records.map((r: Record<string, unknown>) => r.id), ["VIX:2026-11-17"]);
+	assert.deepEqual(done(output), { VIX: "2026-11-17", VIX9D: "2026-11-16", VIX3M: "2026-11-16" });
+	assert.equal(JSON.parse(output.cursor).failures, 3);
+	assert.equal(output.problem?.id, "data-down");
+	const ok = await replay("vix", "daily", { change: (input) => (input.cursor = JSON.stringify({ done: { VIX: "2026-11-16", VIX9D: "2026-11-16", VIX3M: "2026-11-16" }, failures: 2 })) });
+	assert.equal(JSON.parse(ok.output.cursor).failures, 0);
+});
+
+test("vix feed：缺的那天一直没补上，下一个交易日收盘后 not-ready 也不断，日期仍写缺的那天", async () => {
+	const { output } = await replay("vix", "not-published", { change: (input) => (input.now = "2026-11-18T22:00:00.000Z") });
+	assert.equal(output.problem?.id, "not-ready");
+	assert.match(output.problem.text, /^2026-11-17 收盘/);
 });
 
 test("vix feed：HTTP 5xx 或文件不是 CSV 只记次数，连着第三次报 data-down；已存的不受影响", async () => {

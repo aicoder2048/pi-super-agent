@@ -13,7 +13,7 @@ export type VixIndex = (typeof VIX_INDICES)[number];
  * to get nervous, around 35 panic, above 50 crisis. The notes leave 20 to 25 unnamed; it is called 偏高 here.
  */
 export const VIX_LEVELS = { normal: 15, elevated: 20, nervous: 25, panic: 35, crisis: 50 } as const;
-/** The seller's risk line in the notes: VIX closing above it means leave short premium or do not open new. */
+/** The seller's risk line in the notes: VIX breaking above it is the preset point to close short premium. */
 export const VIX_SELLER_RISK_LINE = VIX_LEVELS.panic;
 export const VIX_PERCENTILE_DAYS = 365;
 

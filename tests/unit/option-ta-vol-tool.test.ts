@@ -111,8 +111,10 @@ test("市场环境：vix-closes 有收盘时回 VIX 档位和期限结构；VIX 
 	assert.equal(out.vix.status, "OK");
 	assert.deepEqual([out.vix.date, out.vix.vix, out.vix.level, out.vix.term, out.vix.vix_percentile_1y], ["2026-11-17", 36.2, "恐慌", "倒挂", 0.5]);
 	assert.equal(out.regime.vix_level, "恐慌");
-	assert.equal(out.regime.iv, "中间", "百分位 0.79 不到 0.8，IV/HV 1.8 在偏贵，合起来不算偏贵");
-	assert.ok(out.regime.notes.some((n: string) => /卖方风控线 35/.test(n)), JSON.stringify(out.regime.notes));
+	assert.equal(out.regime.iv, null, "夹具只有 24 天 IV 历史，分位不算一年分位");
+	assert.ok(out.regime.notes.some((n: string) => /IV 历史只有 24 天/.test(n)), JSON.stringify(out.regime.notes));
+	assert.ok(out.regime.notes.some((n: string) => /卖方风控线 35.*已有卖方仓位考虑离场/.test(n)), JSON.stringify(out.regime.notes));
+	assert.ok(out.regime.notes.every((n: string) => !/不新开/.test(n)));
 	assert.ok(out.regime.notes.some((n: string) => /倒挂/.test(n)));
 });
 

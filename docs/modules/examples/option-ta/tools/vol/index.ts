@@ -19,6 +19,10 @@ const TERM_STRIKE_MIN_HALF_WIDTH = 5;
 const SKEW_STRIKE_BAND = 0.2;
 const SKEW_DELTA = 0.25;
 const RANK_WINDOW_DAYS = 365;
+/** Below this many days of IV history the percentile is not a one-year percentile; regime does not judge the symbol on it. */
+const MIN_PERCENTILE_DAYS = 120;
+/** A latest VIX close older than this many calendar days gets a note: the vix feed may have stopped. */
+const VIX_STALE_DAYS = 5;
 
 const CLASS_LABEL: Record<string, string> = { cheap: "便宜", slightly_cheap: "略便宜", fair: "合理", rich: "偏贵", very_rich: "很贵" };
 
@@ -82,7 +86,7 @@ export default async function vol(input: Record<string, unknown>) {
 			skew: skewPages === null ? null : skew(parseChain(symbol, skewPages.rows, nowMs).rows, atm!.expiry),
 			history,
 			vix: market,
-			regime: regime(history.status === "OK" ? history.iv_percentile : null, r4(ratio), market),
+			regime: regime(history, r4(ratio), market, today),
 			truncated: termPages.truncated || (skewPages?.truncated ?? false),
 			units: UNITS,
 		};
@@ -131,11 +135,17 @@ function skew(rows: readonly ChainRow[], expiry: string) {
  * The notes' first question before any strategy: is this symbol's IV high or low (one-year percentile and IV/HV20 together), and
  * what is the market's VIX saying. Information for the experts, not an order.
  */
-function regime(percentile: number | null, ratio: number | null, market: MarketRegime) {
-	const quadrant = ivQuadrant(percentile, ratio);
+function regime(history: ReturnType<typeof readHistory>, ratio: number | null, market: MarketRegime, today: string) {
+	const days = history.status === "OK" ? history.days : 0;
+	const enough = days >= MIN_PERCENTILE_DAYS;
+	const quadrant = ivQuadrant(enough && history.status === "OK" ? history.iv_percentile : null, ratio);
+	const stale = market.status === "OK" && market.date < addDays(today, -VIX_STALE_DAYS);
 	const notes = [
-		...(quadrant === null ? ["缺 IV 分位或 IV/HV，个股这一档没判"] : [QUADRANT_HINT[quadrant]]),
-		...(market.status === "OK" && market.vix >= VIX_SELLER_RISK_LINE ? [`VIX ${market.vix} 在卖方风控线 ${VIX_SELLER_RISK_LINE} 以上：卖方先考虑离场，不新开`] : []),
+		...(history.status === "OK" && !enough ? [`IV 历史只有 ${days} 天，不到 ${MIN_PERCENTILE_DAYS} 天，分位不算数，个股这一档没判`] : []),
+		...(quadrant === null ? (history.status === "OK" && !enough ? [] : ["缺 IV 分位或 IV/HV，个股这一档没判"]) : [QUADRANT_HINT[quadrant]]),
+		...(quadrant !== null ? ["个股这一档的分位来自收盘价反解的序列，IV/HV 用的是现在的平值 IV"] : []),
+		...(market.status === "OK" && market.vix >= VIX_SELLER_RISK_LINE ? [`VIX ${market.vix} 在卖方风控线 ${VIX_SELLER_RISK_LINE} 以上：笔记的原则是已有卖方仓位考虑离场`] : []),
+		...(stale ? [`最新的 VIX 收盘是 ${market.date}，已经过了好几天，vix feed 可能停了`] : []),
 		...(market.status === "OK" && market.term === "倒挂" ? ["VIX 期限结构倒挂：市场认为近期有事，近月期权更贵"] : []),
 	];
 	return { iv: quadrant, vix_level: market.status === "OK" ? market.level : null, notes };

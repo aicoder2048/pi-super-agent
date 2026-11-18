@@ -1,0 +1,29 @@
+{
+ "input": {
+  "now": "2026-09-09T01:00:00.000Z",
+  "cursor": "{\"done\": {\"VIX\": \"2026-09-04\", \"VIX9D\": \"2026-09-04\", \"VIX3M\": \"2026-09-04\"}, \"failures\": 0}"
+ },
+ "responses": {
+  "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv": {
+   "status": 200,
+   "headers": {
+    "content-type": "text/csv"
+   },
+   "body": "DATE,OPEN,HIGH,LOW,CLOSE\n09/04/2026,15.500000,17.000000,15.000000,16.000000\n09/07/2026,15.900000,17.400000,15.400000,16.400000\n09/08/2026,16.500000,18.000000,16.000000,17.000000\n09/09/2026,17.500000,19.000000,17.000000,18.000000\n"
+  },
+  "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX9D_History.csv": {
+   "status": 200,
+   "headers": {
+    "content-type": "text/csv"
+   },
+   "body": "DATE,OPEN,HIGH,LOW,CLOSE\n09/04/2026,14.500000,16.000000,14.000000,15.000000\n09/08/2026,15.500000,17.000000,15.000000,16.000000\n"
+  },
+  "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX3M_History.csv": {
+   "status": 200,
+   "headers": {
+    "content-type": "text/csv"
+   },
+   "body": "DATE,OPEN,HIGH,LOW,CLOSE\n09/04/2026,17.500000,19.000000,17.000000,18.000000\n09/08/2026,18.000000,19.500000,17.500000,18.500000\n"
+  }
+ }
+}

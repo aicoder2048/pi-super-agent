@@ -29,7 +29,7 @@ type Problem = { id: string; text: string };
 export class CboeError extends Error {}
 
 const failing = (reason: string): Problem => ({ id: "data-down", text: `连着 ${FAILURES_BEFORE_PROBLEM} 轮取不到 CBOE 的 VIX 历史（最近一次：${reason}），已存的不受影响，恢复后从停下的交易日接着存` });
-const late = (date: string, missing: string[]): Problem => ({ id: "not-ready", text: `${date} 收盘 18 小时后 CBOE 的历史文件里还没有 ${missing.join("、")} 那天的收盘，VIX 档位和期限结构停在前一天；CBOE 补上后自动存` });
+const late = (date: string, missing: string[]): Problem => ({ id: "not-ready", text: `${date} 收盘 18 小时后 CBOE 的历史文件里还没有 ${missing.join("、")} 那天的收盘，VIX 档位和期限结构停在之前；CBOE 补上后自动存` });
 
 const closeOf = (date: string) => regularCloseAt(Date.parse(`${date}T17:00:00Z`));
 
@@ -82,7 +82,8 @@ export default async function vix(input: Input) {
 			}
 			const after = cursor.done[index] ?? shiftDate(floor, -1);
 			for (const c of closes) {
-				if (c.date <= after || c.date > target) continue;
+				// CBOE's VIX file also has rows for some market holidays (after-hours values); VIX9D and VIX3M do not.
+				if (c.date <= after || c.date > target || !isTradingDay(c.date)) continue;
 				records.push({ id: `${index}:${c.date}`, ticker: index, trade_date: c.date, open: c.open, high: c.high, low: c.low, close: c.close, source: SOURCE, fetched_at: fetchedAt });
 				cursor.done[index] = c.date;
 			}
@@ -93,7 +94,18 @@ export default async function vix(input: Input) {
 		cursor.failures++;
 		if (cursor.failures >= FAILURES_BEFORE_PROBLEM) problem = failing(error.message);
 	}
-	const missing = VIX_INDICES.filter((index) => (cursor.done[index] ?? "") < target);
-	if (problem === undefined && missing.length > 0 && tickMs > closeOf(target) + LATE_MS) problem = late(target, missing);
+	// Judged by the oldest session still missing, so a session CBOE never filled keeps the problem up after the next close.
+	const firstMissing = (index: VixIndex) => {
+		const done = cursor.done[index];
+		if (done === undefined) return target;
+		let d = shiftDate(done, 1);
+		while (!isTradingDay(d)) d = shiftDate(d, 1);
+		return d;
+	};
+	const overdue = VIX_INDICES.filter((index) => (cursor.done[index] ?? "") < target).map((index) => ({ index, date: firstMissing(index) })).filter((m) => tickMs > closeOf(m.date) + LATE_MS);
+	if (problem === undefined && overdue.length > 0) {
+		const oldest = overdue.map((m) => m.date).sort()[0]!;
+		problem = late(oldest, overdue.filter((m) => m.date === oldest).map((m) => m.index));
+	}
 	return { records, cursor: JSON.stringify(cursor satisfies Cursor), ...(problem && { problem }) };
 }
