@@ -161,3 +161,37 @@ test("行情服务不认识这个代码：不写行，回 problem 提示代码�
 	assert.equal(fetched.length, 1);
 	assert.equal(JSON.parse(output.cursor).failures, 0, "不算行情服务出错");
 });
+
+test("上市日比第一根正股日线早：中间没日线的日子也不记行", async () => {
+	const bars = (from: string) => `https://api.massive.com/v2/aggs/ticker/SPCX/range/1/day/${from}/2026-11-19?adjusted=false&sort=asc&limit=50000`;
+	const { output } = await replay("iv", "backfill-new-listing", {
+		respond: (r) => {
+			r["https://api.massive.com/v3/reference/tickers/SPCX"] = { results: { ticker: "SPCX", list_date: "2026-06-11" }, status: "OK" };
+			r[bars("2026-06-11")] = r[bars("2026-06-12")];
+		},
+	});
+	assert.deepEqual(output.records.map((r: Record<string, unknown>) => [r.trade_date, r.data_status]), [["2026-06-16", "ok"]]);
+	assert.equal(output.problem, undefined);
+});
+
+test("老牌标的回填头一天没有可选的合约：照样记无数据，不跳过", async () => {
+	const { output } = await replay("iv", "backfill-new-symbol", {
+		respond: (r) => (r["https://api.massive.com/v3/reference/options/contracts?underlying_ticker=SPY&contract_type=put&expiration_date.gte=2025-12-10&expiration_date.lte=2026-01-03&strike_price.gte=627.00&strike_price.lte=693.00&as_of=2025-11-19&sort=expiration_date&order=asc&limit=250"] = { results: [], status: "OK" }),
+	});
+	assert.deepEqual(output.records[0] && [output.records[0].trade_date, output.records[0].data_status], ["2025-11-19", "no-data"]);
+	assert.match(output.records[0].reason, /没有挂牌的合约/);
+});
+
+test("口径变了，新上市标的的起点也重查", async () => {
+	const { fetched } = await replay("iv", "backfill-new-listing", { change: (input) => (input.cursor = JSON.stringify({ methodology: "old", done: {}, from: { SPCX: "2026-06-16" }, failures: 0 })) });
+	assert.ok(fetched.includes("https://api.massive.com/v3/reference/tickers/SPCX"));
+});
+
+test("不认识的代码不挡后面的标的", async () => {
+	const { output } = await replay("iv", "backfill-new-symbol", {
+		change: (input) => input.rows.watchlist.unshift({ id: "0", from: "x", fields: { symbol: "ZZZZ" } }),
+		respond: (r) => (r["https://api.massive.com/v3/reference/tickers/ZZZZ"] = { status: 404, body: { status: "NOT_FOUND", message: "Ticker not found." } }),
+	});
+	assert.equal(output.problem?.id, "unknown-symbol");
+	assert.ok(output.records.some((r: Record<string, unknown>) => r.symbol === "SPY" && r.data_status === "ok"));
+});

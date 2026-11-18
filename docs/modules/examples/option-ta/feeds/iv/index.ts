@@ -42,7 +42,8 @@ interface Input {
 }
 /**
  * `done`: each symbol's last stored session. Removed symbols keep theirs, so adding one back resumes where it stopped.
- * `from`: where a symbol's history starts before its first row: its listing date, moved past sessions with no contract to pick.
+ * `from`: only for a symbol listed inside the backfill year, until its first row: its listing date, moved past sessions with no
+ * underlying bar or no contract to pick yet.
  */
 type Cursor = { methodology: string; done: Record<string, string>; from: Record<string, string>; failures: number };
 type Row = { id: string; symbol: string; trade_date: string; underlying_close: number; fetched_at: string; source: string; methodology: string; data_status: "ok" | "no-data"; reason?: string; option_symbol?: string; strike?: number; expiry?: string; contract_close?: number; quote_midpoint?: number; quote_at?: string };
@@ -183,6 +184,7 @@ export default async function iv(input: Input) {
 
 	try {
 		outer: for (const { symbol, days: due } of work) {
+			if (Date.now() > deadline) break;
 			let days = due;
 			if (cursor.done[symbol] === undefined && cursor.from[symbol] === undefined) {
 				if (left < 2 + SESSION_REQUESTS) break;
@@ -191,10 +193,14 @@ export default async function iv(input: Input) {
 					problem = unknownSymbol(symbol);
 					continue;
 				}
-				cursor.from[symbol] = listedOn ?? days[0]!;
-				days = days.filter((d) => d >= cursor.from[symbol]!);
-				if (days.length === 0) continue;
+				if (listedOn !== undefined && listedOn > days[0]!) {
+					cursor.from[symbol] = listedOn;
+					days = days.filter((d) => d >= listedOn);
+					if (days.length === 0) continue;
+				}
 			}
+			/** A new listing before its first row: sessions without an underlying bar or a contract to pick only move `from`. */
+			const starting = () => cursor.from[symbol] !== undefined && cursor.done[symbol] === undefined;
 			if (left < 1 + SESSION_REQUESTS) break;
 			const bars = (await get(`${base}/v2/aggs/ticker/${symbol}/range/1/day/${days[0]}/${days.at(-1)}?adjusted=false&sort=asc&limit=50000`)).results;
 			const closes = new Map((Array.isArray(bars) ? bars : []).map(object).flatMap((b) => (positive(b.t) && positive(b.c) ? [[newYorkDate(b.t), b.c as number] as const] : [])));
@@ -206,13 +212,17 @@ export default async function iv(input: Input) {
 				if (left < SESSION_REQUESTS || Date.now() > deadline) break outer;
 				const spot = closes.get(date);
 				const waiting = date === target && tickMs <= closeOf(date) + READY_DEADLINE_MS;
+				if (spot === undefined && date !== target && starting()) {
+					cursor.from[symbol] = shiftDate(date, 1);
+					continue;
+				}
 				if (spot === undefined && date === target) {
 					if (!waiting) problem = notReady(date);
 					break;
 				}
 				const row = spot === undefined ? noData(symbol, date, "正股那天没有日线") : await rowOf(symbol, date, spot, date === target && today === target, waiting);
 				if (row === null) break;
-				if (row === "unlisted" && cursor.done[symbol] === undefined) {
+				if (row === "unlisted" && starting()) {
 					// Options list some days after the stock: the history starts at the first session with a contract to pick.
 					cursor.from[symbol] = shiftDate(date, 1);
 					continue;
