@@ -1,6 +1,7 @@
 /**
  * Checks one fill the user reports and hands back the row the lead writes with `data/fills`. Same keys and increment as the
- * `fills` feed (spec「订单键和 `id`」); reads data.db only to find what the order already has. Writes nothing.
+ * `fills` feed (spec「订单键和 `id`」); reads data.db only to find what the order already has and which account short codes
+ * are known. Writes nothing.
  */
 import { readCollections, type DbRow } from "../../data-db.ts";
 import { contractOf, count, fillId, increment, isIsoDate, orderKey, price4, units, type Right, type Side } from "../../fills.ts";
@@ -28,7 +29,14 @@ const ACCOUNT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
 const blank = (value: unknown) => value === undefined || value === null || value === "";
 const text = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? String(value) : typeof value === "string" ? value.trim() : undefined);
 
-export function recordFill(input: Input, recorded: readonly DbRow[]) {
+type Recorded = { fills: readonly DbRow[]; accounts: readonly DbRow[] };
+
+/** Short codes in `accounts` or in recorded fills. A code outside them is asked about, so a typo never opens a second account beside the emailed one. */
+function knownAccounts({ fills, accounts }: Recorded): string[] {
+	return [...new Set([...accounts, ...fills].map((row) => text(row["account_ref"])).filter((ref): ref is string => ref !== undefined && ref !== ""))].sort();
+}
+
+export function recordFill(input: Input, recorded: Recorded) {
 	const missing = REQUIRED.filter((name) => blank(input[name]));
 	if (missing.length > 0) return { status: "needs-input", missing, ask: missing.map((name) => ASK[name]) };
 	const problems: string[] = [];
@@ -55,12 +63,16 @@ export function recordFill(input: Input, recorded: readonly DbRow[]) {
 	const [commission, fees] = [input.commission, input.fees].map((value) => (blank(value) ? null : units(text(value))));
 	if (commission === undefined || fees === undefined) problems.push("commission、fees 要是不带符号的金额，最多 4 位小数；不知道就不给");
 	if (problems.length > 0 || contract === undefined || cum === undefined || avg === undefined) return { status: "invalid", problems };
+	const known = knownAccounts(recorded);
+	if (known.length > 0 && !known.includes(account)) {
+		return { status: "needs-input", missing: ["account_ref"], known_accounts: known, ask: [`账户短码 ${account} 没见过，已知的是 ${known.join("、")}：问使用者是其中哪一个；使用者确认是新账户，先用 data 往 accounts 写一行再记`] };
+	}
 
 	const order_key = orderKey(contract, side, tradeDate, account);
 	const fill_id = fillId(order_key, cum);
-	const existing = recorded.find((row) => row["fill_id"] === fill_id);
+	const existing = recorded.fills.find((row) => row["fill_id"] === fill_id);
 	if (existing !== undefined) return { status: "duplicate", fill_id, order_key, existing_row: String(existing["_id"]) };
-	const step = increment(order_key, cum, avg, recorded);
+	const step = increment(order_key, cum, avg, recorded.fills);
 	if (step.kind === "covered") return { status: "covered", fill_id, order_key, note: "这一单已记的张数不少于这个累计数，不用再记" };
 	if (step.kind === "unparsed") return { status: "conflict", fill_id, order_key, detail: step.detail };
 	const unknown = [...(commission === null ? ["commission"] : []), ...(fees === null ? ["fees"] : []), "order_id", "trade_time"];
@@ -72,7 +84,11 @@ export function recordFill(input: Input, recorded: readonly DbRow[]) {
 		qty: step.qty,
 		price: price4(step.price),
 		unknown,
-		notes: [...(commission === null || fees === null ? ["费用未知：留空，不当零"] : []), ...(blank(input.multiplier) ? ["合约乘数按标准 100 记；调整合约要问清乘数和交割物"] : [])],
+		notes: [
+			...(commission === null || fees === null ? ["费用未知：留空，不当零"] : []),
+			...(blank(input.multiplier) ? ["合约乘数按标准 100 记；调整合约要问清乘数和交割物"] : []),
+			...(known.length === 0 ? [`这是第一个账户短码（${account}），以后手动记账和邮件都要用同一个`] : []),
+		],
 		row: {
 			record_type: "FILL",
 			fill_id,
@@ -98,5 +114,5 @@ export function recordFill(input: Input, recorded: readonly DbRow[]) {
 }
 
 export default function record(input: Input) {
-	return recordFill(input ?? {}, readCollections(["fills"]).fills);
+	return recordFill(input ?? {}, readCollections(["fills", "accounts"]));
 }

@@ -1,4 +1,7 @@
-/** The session clock is a copy of src/sources/market/session.ts (module code cannot import the host's); tests/unit/market-hours.test.ts keeps the two equal. */
+/**
+ * The session clock is a copy of src/sources/market/session.ts and the trading days a copy of stock-ta's market-days.ts
+ * (module code cannot import the host's or another module's); tests/unit/market-hours.test.ts keeps the three equal.
+ */
 export type Phase = "pre" | "regular" | "post" | "closed";
 
 export interface Session {
@@ -13,8 +16,10 @@ const EARLY_CLOSE = 13 * 60;
 // NYSE 1:00 p.m. early closes as published on nyse.com/markets/hours-calendars.
 const EARLY_CLOSES = new Set(["2026-11-27", "2026-12-24", "2027-11-26", "2028-07-03", "2028-11-24"]);
 
+/** The last day both tables cover; tests/unit/market-hours.test.ts fails 90 days before it, so next year's calendar gets added in time. */
+export const CALENDAR_THROUGH = "2028-12-31";
 // NYSE full-day closures as published on nyse.com/markets/hours-calendars, the same horizon as the early closes above.
-const HOLIDAYS = new Set([
+export const HOLIDAYS: ReadonlySet<string> = new Set([
 	"2025-01-01", "2025-01-09", "2025-01-20", "2025-02-17", "2025-04-18", "2025-05-26", "2025-06-19", "2025-07-04", "2025-09-01", "2025-11-27", "2025-12-25",
 	"2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
 	"2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31", "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",

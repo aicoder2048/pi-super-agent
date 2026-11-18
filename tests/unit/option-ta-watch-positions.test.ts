@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { openPositions } from "../../docs/modules/examples/option-ta/feeds/watch/positions.ts";
+import { READ_LIMIT } from "../../src/modules/feed-runner.ts";
+import { instanceData } from "../../src/modules/instance-data.ts";
+import type { ModuleName } from "../../src/modules/manifest.ts";
+import { scanPackage } from "../../src/modules/validate.ts";
+import { PACKAGE } from "../helpers/option-ta-ledger-db.ts";
 
 let next = 0;
 const CONTRACT = { option_symbol: "SPY261218P00700000", underlying: "SPY", right: "put", strike: 700, expiry: "2026-12-18", multiplier: 100, account_ref: "A1" };
@@ -57,4 +65,23 @@ test("部分买回平掉最早那笔，仓位键不变（每仓位只发一次�
 	const after = openPositions([...opened, fill("BTC", 1, "0.5000", "2026-11-12")]).positions[0]!;
 	assert.equal(after.qty, 1);
 	assert.equal(after.key, before);
+});
+
+test("fills 超过 500 行时，带 trade_date（等于 event_date）的指派事件仍在 watch 读到的最新 500 行里，仓位按已平算", () => {
+	const scan = scanPackage(PACKAGE, { runCases: false });
+	assert.ok(scan.ok);
+	const state = mkdtempSync(join(tmpdir(), "psa-option-ta-events-"));
+	try {
+		const data = instanceData(state);
+		const module = "option-ta" as ModuleName;
+		const older = Array.from({ length: READ_LIMIT }, (_, i) => ({ ...CONTRACT, option_symbol: "QQQ260116P00500000", underlying: "QQQ", strike: 500, expiry: "2026-01-16", record_type: "FILL", fill_id: `old${i}`, order_key: `old${i}`, side: "STO", qty: 1, price: "1.0000", trade_date: "2025-12-01" }));
+		const opened = { ...CONTRACT, record_type: "FILL", fill_id: "open1", order_key: "open1", side: "STO", qty: 1, price: "2.0000", trade_date: "2026-11-02" };
+		const assigned = { ...CONTRACT, record_type: "EVENT", event_id: "SPY261218P00700000:ASSIGNED:2026-11-10:A1", type: "ASSIGNED", qty: 1, event_date: "2026-11-10", trade_date: "2026-11-10" };
+		data.write(module, scan.scan.components, "fills", [...older, opened, assigned], "虚构", "fixture");
+		const rows = data.query(module, scan.scan.components, "fills", { limit: READ_LIMIT }, "fixture").rows;
+		assert.equal(rows.length, READ_LIMIT);
+		assert.deepEqual(openPositions(rows).positions.filter((p) => p.occ === CONTRACT.option_symbol), []);
+	} finally {
+		rmSync(state, { recursive: true, force: true });
+	}
 });

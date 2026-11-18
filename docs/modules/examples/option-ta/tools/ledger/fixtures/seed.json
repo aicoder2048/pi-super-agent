@@ -37,6 +37,7 @@
    "qty": 10,
    "type": "EXPIRE",
    "event_date": "2026-02-20",
+   "trade_date": "2026-02-20",
    "source": "manual"
   },
   {
@@ -76,6 +77,7 @@
    "qty": 1,
    "type": "ASSIGNED",
    "event_date": "2026-02-20",
+   "trade_date": "2026-02-20",
    "source": "manual"
   },
   {

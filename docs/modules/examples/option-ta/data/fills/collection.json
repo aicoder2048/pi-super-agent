@@ -6,7 +6,7 @@
     "record_type": { "type": "text", "title": "FILL、EVENT、MARKET_SNAPSHOT 或 REVERSAL，只追加事实" },
     "fill_id": { "type": "text", "title": "成交去重键，等于 feed 的 id" },
     "order_key": { "type": "text", "title": "OCC:方向:成交日:账户短码" },
-    "trade_date": { "type": "date", "title": "美东成交日，决定税年；宿主按第一个日期字段排新旧，它排在 expiry 前面" },
+    "trade_date": { "type": "date", "title": "美东成交日，决定税年；EVENT 行写成 event_date。宿主按第一个日期字段排新旧，它排在 expiry 前面" },
     "executed_at": { "type": "date", "title": "邮件表 Executed At 列的日期，没有这一列留空" },
     "order_id": { "type": "text", "title": "券商订单编号，邮件未知留空" },
     "account_ref": { "type": "text", "title": "邮件里的账户短码，仅私密保存" },

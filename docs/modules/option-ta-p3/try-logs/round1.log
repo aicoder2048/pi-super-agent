@@ -1,0 +1,90 @@
+node --import ./src/pi-runtime.mjs src/cli/module.ts "$@"
+预演 option-ta：临时状态目录 <预演临时目录>，模型 openai-codex/gpt-6.1-terra（Router）、openai-codex/gpt-6.1-sol（Worker）
+[样例] stock-ta/quotes 样例 nvda-down-5：丢掉 1 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 earnings-before-expiry-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 earnings-quiet：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 earnings-soon-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 ex-div-expected-fires：丢掉 0 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 ex-div-fires：丢掉 0 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-near-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-open-before-0945：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-open-fires：丢掉 0 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-open-quiet：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 profit-50-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 profit-80-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 strike-crossed-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 strike-near-fires：丢掉 0 条触发、1 条提醒，没交出去
+PASS chain-put-quote
+  问：QQQ 12/18 到期，600 附近的 put 现在什么价，IV 多少？
+  Router：我来查 QQQ 12 月 18 日到期、600 附近的看跌期权价格和隐含波动率。
+  Router：QQQ 2026/12/18 到期 put（美元/股）：
+行权价595：买8.03／卖8.12，IV 39.18%
+行权价600：买8.81／卖8.88，IV 38.8%
+行权价605：买9.65／卖9.75，IV 37.9%
+报价截至11/17 15:19美东，来源 Massive，标注实时。
+  汇报（ready）：按 **2026-12-18 到期**查询，QQQ 600 附近 put 如下（价格为美元/股，IV 为小数）：
+
+| 合约代码 | 行权价 | 买价 bid | 卖价 ask | 中间价 mid | IV |
+|---|---:|---:|---:|---:|---:|
+| O:QQQ261218P00595000 | 595 | 8.03 | 8.12 | 8.075 | 0.3918 |
+| O:QQQ261218P00600000 | 600 | 8.81 | 8.88 | 8.845 | 0.388 |
+| O:QQQ261218P00605000 | 605 | 9.65 | 9.75 | 9.7 | 0.379 |
+
+**行情时间：**2026-11-17 15:19 美东，盘中；工具标注期权报价实时。中间价不是保证成交价。
+**数据来源：**Massive，由本模块 `chain` 工具查询；以上 IV 均为供应方提供，非自算。
+**正股参考：**QQQ 652.1 美元，数据时间 15:04 美东，延迟 15 分钟。
+PASS csp-entry
+  问：NVDA 12/18 135 的 CSP 现在适合开吗？
+  Router：我来评估这张 NVDA 135 CSP 的当前报价、收益和主要风险。
+  Router：这笔交易中，你愿意被指派后长期持有 NVDA，还是只想收权利金、不愿接股？
+  汇报（ready）：### 结论
+按 **2026-12-18 到期、135 put** 理解。**目前不能确认适合开仓，尤其不应把它当低风险收租。** 若不愿接股，这笔现金担保卖 put 不符合目标；愿意接股，也仍须接受财报跳空和接股后继续下跌。
+
+### 依据
+- `chain` 工具：2026-11-17 15:20 美东、盘中。合约 `O:NVDA261218P00135000`，bid **4.75**、ask **4.85**、mid **4.8**；IV **0.7048**，来源为供应方。期权报价时刻15:19；正股 **152.43**，时刻15:05，**延迟15分钟**。报价不保证成交。
+- `strategy` 工具按 bid **4.75**、1张标准100股计算：权利金及最大盈利 **475美元**；担保金额、被指派时买股付款 **13500美元**；到期盈亏平衡 **130.25**；最大亏损 **13025美元**。到期股价为100时，本单总亏损 **3025美元**。均不含未知手续费；130.25是扣除权利金后的经济成本，不代表税务成本。
+- `stock-ta/tools/earnings-date` 提示 **2026-11-17盘后财报**，未提供独立取数时刻，尚未用公司公告核实。若如期发布，当前卖出将承担财报跳空风险；现金担保不消除亏损。
+- `vol` 返回 **NO_HISTORY**，无法判断IV历史贵便宜；除息尚未核实。技术结构数据截止11/13，且与当前行情价格尺度冲突，不能据此确认135是可靠支撑。
+
+### 分歧
+三位专家无实质冲突：收益可计算，但事件风险、技术数据缺口和你的接股意愿，仍阻止“适合开仓”的结论。
+
+### 作废条件
+财报发布或报价、IV变化后须重新评估；卖方也可能提前被指派。不能因为尚未到期，就认为一定不会接股。
+
+### 性质
+这是分析，不是交易指令。
+PASS diagonal-roll
+  问：把 NVDA 12 月 140 的 CSP 往后 Roll 一个月、行权价降到 135，净收多少？2 张，12/18 到期的 140 put 买回 3.20，1/15 到期的 135 put 卖 4.15。
+  Router：我来计算这两张合约 Roll 的净收入。
+  Router：这次 Roll 净收 **190 美元**：买回支出 3.20 × 100 × 2＝640 美元，卖出收入 4.15 × 100 × 2＝830 美元。
+
+假设均为标准合约，未扣佣金等费用；这是本次 Roll 的现金净收入，不是整笔交易的总盈利。
+  汇报（ready）：Roll 净收入为 190 美元（strategy 工具计算）：
+- 买回旧仓：3.20 × 100 × 2＝640 美元支出。
+- 卖出新仓：4.15 × 100 × 2＝830 美元收入。
+- 净收：830 − 640＝190 美元。
+
+假设两腿均为2张标准合约，每张乘数100，报价单位为美元/股；未扣佣金及其他费用，扣费后净收＝190美元−两腿总费用。这是本次 Roll 的现金净收入，不是整条交易的总盈利。
+FAIL earnings-before-expiry：任务开在 stock-ta，不在 option-ta；没用到 stock-ta/tools/earnings-date
+  问：想卖 NVDA 12/18 到期的 put，到期前会碰上财报吗？
+  Router：我来核实 NVDA 在 12 月 18 日到期前的财报日期。
+  Router：会。NVIDIA 公司公告安排于 2026 年 11 月 17 日盘后约美东 16:20 发布财报，早于 12 月 18 日到期。核查时尚未发布，时间仍可能调整；卖 put 需承担财报后跳空风险。
+  汇报（ready）：已确认：有。NVIDIA 于 2026-10-28 的[公司投资者关系公告](https://investor.nvidia.com/news/press-release-details/2026/NVIDIA-Sets-Conference-Call-for-Third-Quarter-Financial-Results/default.aspx)明确安排：2027 财年第三季度财报于 **2026-11-17（周二）盘后、约美东 16:20** 公布；电话会为 **17:00 美东**。两者均早于你指定的 **2026-12-18** 到期日，因此该期限会跨越此次财报。
+
+这是公司已公告安排，不是推测日期；`earnings-date` 工具查询 Finnhub 也返回 11 月 17 日盘后。核查时尚未到计划发布时间，不能称已实际发布；公告中的时间为“约”，仍可能调整。
+
+核实记录：<预演临时目录>
+PASS record-fill
+  问：卖了 2 张 TSLA 12/18 300 call，2.10，收租。账户 acct-blue，11/17 成交，全部成交。
+  Router：我来记录这笔 TSLA 看涨期权成交。
+  Router：已记录：acct-blue 于 11 月 17 日卖出开仓 2 张 TSLA 12 月 18 日到期、行权价 300 的 call，成交价 2.10。持股覆盖及费用未知，未认定为备兑。
+  汇报（ready）：已按 record 工具校验并入账：acct-blue，2026-11-17 卖出开仓 TSLA 2026-12-18 300 call，2 张全部成交，价格 2.1000。意图「收租（卖 call）」已确认；持股覆盖、成本及佣金费用未知，未认定为备兑。
+来源：fills 第13行，from「使用者口述」；fill_id：TSLA261218C00300000:STO:2026-11-17:acct-blue:cum2。
+PASS watchlist-add
+  问：把 AMD 加进期权自选。
+  Router：我来把 AMD 加入期权自选。
+  Router：已将 AMD 加入期权自选。
+  汇报（ready）：已将 AMD 加入期权自选。
+5/6 道考题通过；临时状态目录已删
+error: recipe `module` failed on line 136 with exit code 1

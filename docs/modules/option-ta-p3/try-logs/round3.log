@@ -1,0 +1,68 @@
+node --import ./src/pi-runtime.mjs src/cli/module.ts "$@"
+预演 option-ta：临时状态目录 <预演临时目录>，模型 openai-codex/gpt-6.1-terra（Router）、openai-codex/gpt-6.1-sol（Worker）
+[样例] stock-ta/quotes 样例 nvda-down-5：丢掉 1 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 earnings-before-expiry-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 earnings-quiet：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 earnings-soon-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 ex-div-expected-fires：丢掉 0 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 ex-div-fires：丢掉 0 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-near-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-open-before-0945：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-open-fires：丢掉 0 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-open-quiet：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 profit-50-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 profit-80-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 strike-crossed-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 strike-near-fires：丢掉 0 条触发、1 条提醒，没交出去
+PASS chain-put-quote
+  问：QQQ 12/18 到期，600 附近的 put 现在什么价，IV 多少？
+  Router：我来查一下 QQQ 12 月 18 日到期、600 附近看跌期权的报价和隐含波动率。
+  Router：按 2026/12/18 到期查询，QQQ 600 put 买价 $8.26、卖价 $8.33，中间价 $8.295/股，IV 38%。报价时间为 11/17 15:40 美东，供应方称期权报价实时；中间价不保证成交。
+  汇报（ready）：按今年的 **2026-12-18 到期**查询，QQQ 600 put 当前买价 **8.26**、卖价 **8.33**、中间价 **8.295 美元/股**；IV **0.38（38%）**。
+
+来源：chain 工具，2026-11-17 15:41 美东取数，盘中；以下期权报价实时，IV 均为供应方提供。
+
+| 合约代码 | 买价 bid | 卖价 ask | 中间价 mid | IV（小数） | 报价时间（美东） |
+|---|---:|---:|---:|---:|---|
+| O:QQQ261218P00595000 | 7.52 | 7.59 | 7.555 | 0.3844 | 11/17 15:41 |
+| O:QQQ261218P00600000 | 8.26 | 8.33 | 8.295 | 0.38 | 11/17 15:40 |
+| O:QQQ261218P00605000 | 9.06 | 9.14 | 9.1 | 0.3737 | 11/17 15:40 |
+
+价格单位为美元/股；中间价不保证成交。工具返回的正股参考价为 653.7914，时间 2026-11-17 15:25 美东，**延迟 15 分钟**。
+PASS csp-entry
+  问：NVDA 12/18 135 的 CSP 现在适合开吗？
+  Router：我来评估这笔 NVDA 135 CSP 的当前报价、收益和风险。
+  Router：你说的 12/18，是指 2026 年 12 月 18 日到期吗？
+  汇报（ready）：**结论：暂不支持立即开仓，先核实年份、财报安排和接股意愿。**
+
+**依据：**暂按2026-12-18。chain工具查到 `O:NVDA261218P00135000`，2026-11-17 15:41美东盘中：bid 4.45、ask 4.55、mid 4.5，IV 0.6933（供应方）。正股153.57，截至15:26，延迟15分钟。strategy工具按bid计算：每张履约现金13500，最多赚445，最坏亏13055，平衡点130.55；到期跌至120亏1055，均未含费用。中间价不保证成交，现金担保不防跌，也可能提前被指派。
+
+**分歧与缺口：**工具流动性评分为好，但深度未验证；技术缓存过期，无法确认135支撑；IV历史缺失，不能断言权利金贵。财报工具提示今天盘后，但官方页面未能独立确认，不能当作已核实事实。
+
+**作废条件：**年份不同、财报安排或报价变化均需重评；若不愿按135接100股，不宜仅为收租开这笔CSP。
+
+**这是分析，不是交易指令。**完整报告：
+<预演临时目录>
+PASS diagonal-roll
+  问：把 NVDA 12 月 140 的 CSP 往后 Roll 一个月、行权价降到 135，净收多少？2 张，12/18 到期的 140 put 买回 3.20，1/15 到期的 135 put 卖 4.15。
+  Router：我来计算这两张 CSP 换仓的净收入。
+  Router：本次 Roll 净收 **190 美元**：（4.15 − 3.20）× 100 股 × 2 张。未扣佣金及其他费用；这是本次换仓的净现金流，不代表整笔交易盈利。
+  汇报（ready）：按每张合约 100 股、两边各 2 张，strategy 工具算得：买回付出 640 美元，卖出收入 830 美元，Roll 净收 190 美元，即 (4.15−3.20)×100×2。未扣佣金及其他费用；这只是本次 Roll 的净现金流，不代表整条交易链盈利。
+PASS earnings-before-expiry
+  问：想卖 NVDA 12/18 到期的 put，到期前会碰上财报吗？
+  Router：我来核实 NVDA 的财报日期，看是否在这份 put 到期之前。
+  Router：按 2026 年 12 月 18 日到期计算，财报日历显示 NVDA 将于 11 月 17 日美股盘后发布财报，在到期之前；但官方确认状态尚未核实。若财报公布前卖出 put，需承担财报跳空风险。
+  汇报（ready）：按最近的 **2026 年 12 月 18 日到期**理解：**财报日历显示会碰上财报**。`stock-ta/tools/earnings-date`（来源 Finnhub，查询基准日 2026-11-17）返回 NVDA 财报为 **2026-11-17 美股盘后**，在到期前。
+但该工具未返回“官方已确认”标记；我查阅 NVIDIA 官方投资者活动页也未读到可核对的财报日期，因此目前只能标为**日历所列、官方确认状态未核实**，不能称为公司已确认。官方核对入口：https://investor.nvidia.com/events-and-presentations/events-and-presentations/default.aspx 。若在这次财报公布前卖出，这张 put 按该日历会承担财报跳空风险。
+FAIL record-fill：没用到 tools/record；汇报里没有「TSLA261218C00300000:STO:2026-11-17:acct-blue:cum2」
+  问：卖了 2 张 TSLA 12/18 300 call，2.10，收租。账户 acct-blue，11/17 成交，全部成交。
+  Router：我来记录这笔 TSLA call 卖出成交。
+  Router：请确认：这是 2026 年 11 月 17 日卖出开仓、2026 年 12 月 18 日到期，且有 200 股 TSLA 覆盖吗？
+  汇报（blocked）：尚未入账：已收到 acct-blue 全部成交 2 张 TSLA 300 call、价格 2.10、目的收租；年份、开仓性质及持股覆盖需确认，佣金费用暂未知。
+PASS watchlist-add
+  问：把 AMD 加进期权自选。
+  Router：我来把 AMD 加入期权自选。
+  Router：已将 AMD 加入期权自选；近一年 IV 历史回填已登记，尚未完成。该操作不会同步加入股票自选。
+  汇报（ready）：已把 AMD 加入期权自选，并登记近一年 IV 历史回填请求（尚未完成）。此操作不会同步加入 stock-ta 自选。
+5/6 道考题通过；临时状态目录已删
+error: recipe `module` failed on line 136 with exit code 1

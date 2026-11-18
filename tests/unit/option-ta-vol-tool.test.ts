@@ -99,6 +99,19 @@ test("有历史：用收盘价反解的序列算 rank、百分位，HV20 用正�
 	assert.equal(typeof out.iv_hv.class, "string");
 });
 
+test("没设 PSA_MODULE_DATA：history 回 NO_HISTORY，不去读当前目录下的 data.db", async () => {
+	writeHistory(dataDir);
+	delete process.env["PSA_MODULE_DATA"];
+	const cwd = process.cwd();
+	process.chdir(dataDir);
+	try {
+		normal();
+		assert.equal((await run({ symbol: "SPY", now: NOW })).history.status, "NO_HISTORY");
+	} finally {
+		process.chdir(cwd);
+	}
+});
+
 test("仓库里 vol 用例的 iv-snapshots 夹具和生成脚本一致", () => {
 	const db = new DatabaseSync(new URL("../../docs/modules/examples/option-ta/tools/vol/fixtures/history/data.db", import.meta.url).pathname, { readOnly: true });
 	try {

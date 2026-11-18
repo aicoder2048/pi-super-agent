@@ -3,7 +3,7 @@
   "description": "校验使用者口述的一笔期权成交，按订单键算累计增量、拼 fill_id、只读查重，交回领队用 data/fills 写的规整行；不写库",
   "effect": "read",
   "input": {
-    "account_ref": { "type": "text", "title": "账户短码，缺就问使用者" },
+    "account_ref": { "type": "text", "title": "账户短码，缺就问使用者；写法要和 accounts、已记成交里的一样" },
     "account_key": { "type": "text", "title": "匿名账户键，可不给" },
     "side": { "type": "text", "title": "STO、BTO、BTC 或 STC" },
     "underlying": { "type": "text", "title": "标的代码" },
@@ -28,6 +28,7 @@
     "row": { "type": "text", "title": "ok 时领队用 data/fills 原样写进去的一行" },
     "missing": { "type": "text", "title": "needs-input 时缺的字段" },
     "ask": { "type": "text", "title": "needs-input 时要问使用者的话" },
+    "known_accounts": { "type": "text", "title": "账户短码没见过时，accounts 和已记 fills 里已有的短码" },
     "problems": { "type": "text", "title": "invalid 时哪里不对" },
     "existing_row": { "type": "text", "title": "duplicate 时已记那一行的行号" },
     "unknown": { "type": "text", "title": "留空待确认的字段" },

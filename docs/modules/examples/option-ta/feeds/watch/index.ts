@@ -1,6 +1,7 @@
 /**
  * Checks the open option positions recorded in `fills` against the first version's alert thresholds (build plan「已定的第一版范围」)
  * during the regular session. Every alert has an id the host posts only once, so a condition that holds on every beat alerts once.
+ * A position rings at most once a day (the user, 2026-11-17); on its expiry day only the opening 3% check rings.
  */
 import { exDivCallVerdict, extrinsicGauge } from "../../assignment-risk.ts";
 import { nextDividend, type NextDividend } from "../../dividends.ts";
@@ -34,10 +35,15 @@ type Alert = { id: string; text: string; at: string; push?: "silent" };
 type Quote = { spot: number | null; mid: number | null };
 /** `earnings`: the next earnings date, null when none is announced, absent when not yet known today. */
 type Events = { earnings?: string | null; dividend?: NextDividend };
-/** The session's state: expiry-day positions already checked from 09:45 on, the day's events by underlying, beats in a row with a failed request. */
-type Cursor = { date: string; decided: string[]; events: Record<string, Events>; failures: number };
+/**
+ * The session's state: expiry-day positions already checked from 09:45 on, the day's events by underlying, beats in a row
+ * with a failed request, and positions that rang today. Kept across days: short positions last seen in the money, and the
+ * ids already handed to the host, which posts each id once, so a repeat of one never counts as today's ring.
+ */
+/** `baseline`: the saved cursor had no `sent` (older or unreadable), so this beat only learns which ids the host already has. */
+type Cursor = { date: string; decided: string[]; events: Record<string, Events>; failures: number; rang: string[]; inTheMoney: string[]; sent: string[]; baseline?: true };
 
-type Check = { position: Position; quote: Quote; events: Events; today: string; firstOpenCheck: boolean };
+type Check = { position: Position; quote: Quote; events: Events; today: string; firstOpenCheck: boolean; wasInTheMoney: boolean };
 type Rule = (c: Check) => Omit<Alert, "at"> | undefined;
 
 const GUIDE = "docs/modules/examples/option-ta/README.md";
@@ -58,6 +64,7 @@ const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 const label = (p: Position) => `${p.underlying} ${p.expiry} ${p.strike} ${p.right} ${p.side === "short" ? "卖出" : "买入"} ${p.qty} 张（账户 ${p.account}）`;
 const inTheMoney = (p: Position, spot: number) => (p.right === "put" ? spot < p.strike : spot > p.strike);
 
+/** In this order a beat's alerts claim a position's one ring of the day. */
 const RULES: Rule[] = [
 	function expiryNear({ position: p, today }) {
 		const left = tradingDaysUntil(today, p.expiry);
@@ -70,28 +77,6 @@ const RULES: Rule[] = [
 		if (!pin.pin_risk) return undefined;
 		return { id: `expiry-open:${p.key}`, text: `${label(p)}：今天到期，开盘后正股 ${money(quote.spot)} 离行权价 ${pct(pin.distance_pct)}，不到 3%` };
 	},
-	function strike({ position: p, quote, today }) {
-		if (p.side !== "short" || quote.spot === null) return undefined;
-		if (inTheMoney(p, quote.spot)) return { id: `strike-crossed:${p.key}:${today}`, text: `${label(p)}：正股 ${money(quote.spot)} 已穿过行权价，进入价内` };
-		const distance = Math.abs(quote.spot - p.strike) / quote.spot;
-		if (distance >= NEAR_STRIKE) return undefined;
-		return { id: `strike-near:${p.key}:${today}`, text: `${label(p)}：正股 ${money(quote.spot)} 离行权价 ${pct(distance)}，不到 2%`, push: "silent" };
-	},
-	function profit({ position: p, quote }) {
-		if (p.side !== "short" || quote.mid === null || !(p.openPrice > 0)) return undefined;
-		const earned = (p.openPrice - quote.mid) / p.openPrice;
-		const text = `${label(p)}：开仓权利金 ${money(p.openPrice)}，现在中间价 ${money(quote.mid)}，赚到 ${pct(earned)}`;
-		if (earned >= PROFIT_BELL) return { id: `profit-80:${p.key}`, text };
-		if (earned >= PROFIT_SILENT) return { id: `profit-50:${p.key}`, text, push: "silent" };
-		return undefined;
-	},
-	function earnings({ position: p, events, today }) {
-		const date = events.earnings;
-		if (typeof date !== "string" || date < today || date > p.expiry) return undefined;
-		const left = tradingDaysUntil(today, date);
-		if (left <= EARNINGS_LEAD_TRADING_DAYS) return { id: `earnings-soon:${p.key}:${date}`, text: `${label(p)}：${date} 发财报，在到期前，还有 ${left} 个交易日` };
-		return { id: `earnings:${p.key}:${date}`, text: `${label(p)}：到期前有财报（${date}）`, push: "silent" };
-	},
 	function dividend({ position: p, quote, events, today }) {
 		const next = events.dividend;
 		if (p.side !== "short" || p.right !== "call" || quote.spot === null || next === undefined || next.kind === "none") return undefined;
@@ -103,6 +88,28 @@ const RULES: Rule[] = [
 		const head = `${label(p)}：价内，${next.exDate} 除息在到期前`;
 		if (next.kind === "announced") return { id: `ex-div:${p.key}:${next.exDate}`, text: `${head}${why}，有提前指派的风险` };
 		return { id: `ex-div-expected:${p.key}:${next.exDate}`, text: `${head}（预计、未宣布）${why}，有提前指派的风险`, push: "silent" };
+	},
+	function strike({ position: p, quote, today, wasInTheMoney }) {
+		if (p.side !== "short" || quote.spot === null) return undefined;
+		if (inTheMoney(p, quote.spot)) return wasInTheMoney ? undefined : { id: `strike-crossed:${p.key}:${today}`, text: `${label(p)}：正股 ${money(quote.spot)} 已穿过行权价，进入价内` };
+		const distance = Math.abs(quote.spot - p.strike) / quote.spot;
+		if (distance >= NEAR_STRIKE) return undefined;
+		return { id: `strike-near:${p.key}:${today}`, text: `${label(p)}：正股 ${money(quote.spot)} 离行权价 ${pct(distance)}，不到 2%`, push: "silent" };
+	},
+	function earnings({ position: p, events, today }) {
+		const date = events.earnings;
+		if (typeof date !== "string" || date < today || date > p.expiry) return undefined;
+		const left = tradingDaysUntil(today, date);
+		if (left <= EARNINGS_LEAD_TRADING_DAYS) return { id: `earnings-soon:${p.key}:${date}`, text: `${label(p)}：${date} 发财报，在到期前，还有 ${left} 个交易日` };
+		return { id: `earnings:${p.key}:${date}`, text: `${label(p)}：到期前有财报（${date}）`, push: "silent" };
+	},
+	function profit({ position: p, quote }) {
+		if (p.side !== "short" || quote.mid === null || !(p.openPrice > 0)) return undefined;
+		const earned = (p.openPrice - quote.mid) / p.openPrice;
+		const text = `${label(p)}：开仓权利金 ${money(p.openPrice)}，现在中间价 ${money(quote.mid)}，赚到 ${pct(earned)}`;
+		if (earned >= PROFIT_BELL) return { id: `profit-80:${p.key}`, text };
+		if (earned >= PROFIT_SILENT) return { id: `profit-50:${p.key}`, text, push: "silent" };
+		return undefined;
 	},
 ];
 
@@ -139,6 +146,22 @@ async function earningsOf(baseUrl: string, key: string, symbol: string, today: s
 	return dates.map((r) => r.date as string).sort()[0] ?? null;
 }
 
+const keyOf = (id: string) => id.split(":")[1]!;
+
+/** The host posts an id once. A new bell rings unless the position rang today, or it is the expiry day and this is not the opening check. */
+function ringOnce(alerts: Omit<Alert, "at">[], p: Position, today: string, cursor: Cursor): Omit<Alert, "at">[] {
+	return alerts.map((alert) => {
+		if (cursor.sent.includes(alert.id)) return alert;
+		cursor.sent.push(alert.id);
+		if (cursor.baseline) return alert;
+		if (alert.push === "silent") return alert;
+		const quiet = p.expiry === today ? !alert.id.startsWith("expiry-open:") : cursor.rang.includes(p.key);
+		if (quiet) return { ...alert, push: "silent" };
+		cursor.rang.push(p.key);
+		return alert;
+	});
+}
+
 function readCursor(text: string | null, today: string): Cursor {
 	let saved: Partial<Cursor> | undefined;
 	try {
@@ -147,8 +170,9 @@ function readCursor(text: string | null, today: string): Cursor {
 		saved = undefined;
 	}
 	const failures = typeof saved?.failures === "number" ? saved.failures : 0;
-	if (saved?.date !== today) return { date: today, decided: [], events: {}, failures };
-	return { date: today, decided: saved.decided ?? [], events: saved.events ?? {}, failures };
+	const kept = { failures, inTheMoney: saved?.inTheMoney ?? [], sent: saved?.sent ?? [], ...(text !== null && !Array.isArray(saved?.sent) && { baseline: true as const }) };
+	if (saved?.date !== today) return { date: today, decided: [], events: {}, rang: [], ...kept };
+	return { date: today, decided: saved.decided ?? [], events: saved.events ?? {}, rang: saved.rang ?? [], ...kept };
 }
 
 export default async function watch(input: Input) {
@@ -189,9 +213,16 @@ export default async function watch(input: Input) {
 		const quote = quotes[i] ?? { spot: null, mid: null };
 		const firstOpenCheck = position.expiry === today && openCheck && quote.spot !== null && !cursor.decided.includes(position.key);
 		if (firstOpenCheck) cursor.decided.push(position.key);
-		const check = { position, quote, events: cursor.events[position.underlying] ?? {}, today, firstOpenCheck };
-		return RULES.flatMap((rule) => rule(check) ?? []).map((alert) => ({ ...alert, at }));
+		const wasInTheMoney = cursor.inTheMoney.includes(position.key);
+		const check = { position, quote, events: cursor.events[position.underlying] ?? {}, today, firstOpenCheck, wasInTheMoney };
+		const fired = ringOnce(RULES.flatMap((rule) => rule(check) ?? []), position, today, cursor);
+		if (quote.spot !== null && inTheMoney(position, quote.spot) !== wasInTheMoney) cursor.inTheMoney = wasInTheMoney ? cursor.inTheMoney.filter((k) => k !== position.key) : [...cursor.inTheMoney, position.key];
+		return fired.map((alert) => ({ ...alert, at }));
 	});
+	const held = new Set(live.map((p) => p.key));
+	cursor.inTheMoney = cursor.inTheMoney.filter((k) => held.has(k));
+	cursor.sent = cursor.sent.filter((id) => held.has(keyOf(id)));
+	delete cursor.baseline;
 
 	cursor.failures = errors.length > 0 ? cursor.failures + 1 : 0;
 	const problem = cursor.failures >= FAILURES_BEFORE_PROBLEM ? failing(errors[0]!) : finnhub === "" ? NO_FINNHUB : undefined;

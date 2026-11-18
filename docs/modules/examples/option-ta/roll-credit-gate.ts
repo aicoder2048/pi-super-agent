@@ -14,7 +14,7 @@
  * Pure. Doesn't change basis/breakeven math — only maps an already-computed net to a verdict.
  */
 
-/** A positive roll netting less than this share of the close cost is "rolling for pennies". theta's value (its user, 2026-06-17); the option-ta user has not confirmed it. */
+/** A positive roll netting less than this share of the close cost is "rolling for pennies". theta's value (its user, 2026-06-17); the option-ta user confirmed it on 2026-11-17. */
 export const ROLL_PENNY_FRACTION = 0.1;
 
 export type RollCreditVerdict = "ROLL_OK" | "ROLL_FOR_PENNIES" | "DO_NOT_ROLL_TAKE_LOSS";

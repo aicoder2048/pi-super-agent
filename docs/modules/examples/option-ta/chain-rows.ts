@@ -5,6 +5,8 @@
 import { impliedVolCall, impliedVolPut } from "./iv.ts";
 import { normalCdf } from "./options-math.ts";
 import { object } from "./massive.ts";
+import { isTradingDay, sessionAt } from "./market-days.ts";
+import { occRoot } from "./symbols.ts";
 
 export type Source = "供应方" | "自算" | "无数据";
 export type Right = "put" | "call";
@@ -35,7 +37,8 @@ export type ChainRow = {
 export type Underlying = { price: number; at: string; delay: string };
 export type Market = "盘中" | "休市";
 
-export type ParsedChain = { rows: ChainRow[]; skippedBinary: number; underlying: Underlying | null; market: Market };
+/** `skippedBinary`: Massive's binary options; `skippedAdjusted`: contracts adjusted to another deliverable than 100 shares. */
+export type ParsedChain = { rows: ChainRow[]; skippedBinary: number; skippedAdjusted: number; underlying: Underlying | null; market: Market };
 
 export const MARKET_NOTE = "休市：期权报价停在上一个交易时段收盘；供应方的 IV 和希腊值按盘前盘后的正股价和更短的剩余时间重算，不是收盘 IV";
 export const UNITS =
@@ -69,13 +72,11 @@ export function expiryCloseMs(date: string): number {
 
 export const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
-/** Open only on a weekday between 09:30 and 16:00 New York with option quotes from today; a holiday's quotes are a day old. */
+/** Open only in a trading day's regular session (the module calendar: holidays and 13:00 early closes) with option quotes from today. */
 export function marketAt(nowMs: number, latestQuoteMs: number | null): Market {
-	const now = nyParts(nowMs);
-	const weekday = !["Sat", "Sun"].includes(now.weekday);
-	const regular = now.time >= "09:30" && now.time < "16:00";
-	const fresh = latestQuoteMs !== null && nyParts(latestQuoteMs).date === now.date;
-	return weekday && regular && fresh ? "盘中" : "休市";
+	const session = sessionAt(nowMs);
+	const fresh = latestQuoteMs !== null && sessionAt(latestQuoteMs).nyDate === session.nyDate;
+	return isTradingDay(session.nyDate) && session.phase === "regular" && fresh ? "盘中" : "休市";
 }
 
 type Greeks = { delta: number; gamma: number; theta: number; vega: number };
@@ -94,20 +95,32 @@ export function bsGreeks(right: Right, spot: number, strike: number, iv: number,
 	};
 }
 
-/** Massive mixes binary options (`O:B1…`, european, no IV) into the chain; only the underlying's American contracts stay. */
-export const isStandard = (symbol: string, ticker: string, style: unknown) => ticker.startsWith(`O:${symbol}`) && style === "american";
+const OCC_SUFFIX = /^\d{6}[CP]\d{8}$/;
+
+/**
+ * Massive mixes binary options (`O:B1…`, european, no IV) into the chain: only the underlying's own American contracts
+ * stay. Of those, a contract adjusted after a split or merger has a suffixed root and another deliverable than 100 shares.
+ */
+function kindOf(symbol: string, ticker: string, details: Record<string, any>): "standard" | "binary" | "adjusted" {
+	const root = occRoot(symbol);
+	if (!ticker.startsWith(`O:${root}`) || details.exercise_style !== "american") return "binary";
+	return OCC_SUFFIX.test(ticker.slice(2 + root.length)) && details.shares_per_contract === 100 ? "standard" : "adjusted";
+}
 
 export function parseChain(symbol: string, raw: readonly unknown[], nowMs: number): ParsedChain {
 	const rows: ChainRow[] = [];
 	let skippedBinary = 0;
+	let skippedAdjusted = 0;
 	let underlying: Underlying | null = null;
 	let latestQuoteMs: number | null = null;
 	for (const item of raw) {
 		const r = object(item);
 		const details = object(r.details);
 		const ticker = typeof details.ticker === "string" ? details.ticker : "";
-		if (!isStandard(symbol, ticker, details.exercise_style)) {
-			skippedBinary += 1;
+		const kind = kindOf(symbol, ticker, details);
+		if (kind !== "standard") {
+			if (kind === "binary") skippedBinary += 1;
+			else skippedAdjusted += 1;
 			continue;
 		}
 		const right = details.contract_type === "put" || details.contract_type === "call" ? (details.contract_type as Right) : null;
@@ -141,7 +154,7 @@ export function parseChain(symbol: string, raw: readonly unknown[], nowMs: numbe
 		});
 	}
 	rows.sort((a, b) => a.expiry.localeCompare(b.expiry) || a.strike - b.strike || a.right.localeCompare(b.right));
-	return { rows, skippedBinary, underlying, market: marketAt(nowMs, latestQuoteMs) };
+	return { rows, skippedBinary, skippedAdjusted, underlying, market: marketAt(nowMs, latestQuoteMs) };
 }
 
 type Vol = Pick<ChainRow, "iv" | "iv_source" | "delta" | "gamma" | "theta" | "vega" | "greeks_source">;

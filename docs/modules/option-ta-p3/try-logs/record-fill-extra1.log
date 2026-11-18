@@ -1,0 +1,24 @@
+node --import ./src/pi-runtime.mjs src/cli/module.ts "$@"
+预演 option-ta：临时状态目录 <预演临时目录>，模型 openai-codex/gpt-6.1-terra（Router）、openai-codex/gpt-6.1-sol（Worker）
+[样例] stock-ta/quotes 样例 nvda-down-5：丢掉 1 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 earnings-before-expiry-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 earnings-quiet：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 earnings-soon-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 ex-div-expected-fires：丢掉 0 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 ex-div-fires：丢掉 0 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-near-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-open-before-0945：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-open-fires：丢掉 0 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-open-quiet：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 profit-50-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 profit-80-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 strike-crossed-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 strike-near-fires：丢掉 0 条触发、1 条提醒，没交出去
+PASS record-fill
+  问：卖了 2 张 TSLA 12/18 300 call，2.10，收租。账户 acct-blue，11/17 成交，全部成交。
+  Router：好的，我来记录这笔 TSLA 期权交易。
+  Router：已入账：acct-blue 于 2026/11/17 卖出开仓 2 张 TSLA 2026/12/18 $300 call，成交价 $2.10，意图为收租。年份按今年理解；佣金、费用及持股覆盖情况尚未确认。
+  汇报（ready）：已通过 record 工具校验并入账：acct-blue，2026-11-17 卖出开仓 TSLA 2026-12-18 300 call，2 张，均价 2.1000，全部成交；意图已记为「收租（卖 call）」。年份按今年理解。
+成交键：TSLA261218C00300000:STO:2026-11-17:acct-blue:cum2。
+来源：fills 第 13 行，from「使用者口述」；意图见 chains 第 2 行，同一来源。佣金、费用及持股覆盖情况待确认，未视为零费用或已核实备兑。
+1/1 道考题通过；临时状态目录已删

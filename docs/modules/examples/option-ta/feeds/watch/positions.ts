@@ -1,4 +1,7 @@
-/** Open option positions from the `fills` rows the feed reads, through the ledger's own FIFO lots, so the two never disagree. */
+/**
+ * Open option positions from the `fills` rows the feed reads, through the ledger's own FIFO lots, so the two never disagree.
+ * The host hands over the newest 500 rows by `trade_date`; an EVENT row carries `trade_date` = `event_date` to stay among them.
+ */
 import { facts, pieces } from "../../tools/ledger/index.ts";
 
 export type FeedRow = { id: string; fields: Readonly<Record<string, unknown>> };

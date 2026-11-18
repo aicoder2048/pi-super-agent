@@ -25,6 +25,7 @@
     "contracts": { "type": "text", "title": "每个合约：contract（合约代码）、right、strike、expiry、dte（天）、bid、ask、mid（没有双边报价为空）、quote_at、open_interest（张）、iv（小数）、iv_source（供应方、自算或无数据）、delta、gamma、theta、vega、greeks_source、break_even；按到期日、行权价排序" },
     "rows_dropped": { "type": "number", "title": "超过 60 行时按离正股价远近去掉的行数" },
     "skipped_binary": { "type": "number", "title": "滤掉的二元期权行数" },
+    "skipped_adjusted": { "type": "number", "title": "滤掉的调整合约行数（交割物不是 100 股）" },
     "pages": { "type": "number", "title": "取了几页" },
     "truncated": { "type": "text", "title": "true 是到了分页上限还有下一页，结果不全，缩小范围再查" },
     "units": { "type": "text", "title": "各字段的单位" }

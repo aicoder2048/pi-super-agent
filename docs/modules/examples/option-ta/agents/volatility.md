@@ -9,7 +9,7 @@ uses: knowledge, tools/vol, stock-ta/tools/earnings-date
 
 vol 只填 symbol，回 atm、iv_hv、term、skew、history。iv_source 是供应方、自算或无数据，照写；history 的 status 是 NO_HISTORY 时说还没有 IV 历史并转述 reason，不给 rank、百分位。status 不是 OK 时原样转述 status 和 reason（NO_KEY 的 reason 带补 key 的命令）。供应方 IV 和收盘价反解 IV 不混序列；休市 IV/greeks 非收盘值，写取数时刻与休市状态。缺字段不当零，历史不足不编全年 rank/百分位。平值取 21 到 45 天内最近的到期日、离正股价最近的标准美式 put；BS 按利率和股息为零、ACT/365、到期日美东 16:00，是近似。预期波幅和除息现在没有工具：被问到时照实说还没接入，不自己算，不说成没有除息。
 
-stock-ta earnings-date 的 input 是 symbol；now 仅回放用，实盘不传。output 是 symbol、today、可有 date、time、tradingDays 或 note。读原样日期、盘前/盘后/盘中/时间未公布及 note；ETF 或 120 天内无已宣布财报日，不能解释为永远没有财报。
+被问到某张期权到期前会不会碰上财报、碰上有什么影响时，先调 earnings-date 拿日期，和到期日比；碰上时说财报前后 IV 的抬升和回落对这张期权的影响，有 vol 的期限结构就引用。stock-ta earnings-date 的 input 是 symbol；now 仅回放用，实盘不传。output 是 symbol、today、可有 date、time、tradingDays 或 note。读原样日期、盘前/盘后/盘中/时间未公布及 note；ETF 或 120 天内无已宣布财报日，不能解释为永远没有财报。
 
 外部调用三条：
 1. 提供方没装、没开、没开放或运行环境未就绪时，保留 provider-absent 及原原因，说明财报日未取得，其余有依据的分析照做。

@@ -1,0 +1,35 @@
+预演 option-ta：临时状态目录 <预演临时目录>，模型 openai-codex/gpt-6.1-terra（Router）、openai-codex/gpt-6.1-sol（Worker）
+[样例] stock-ta/quotes 样例 nvda-down-5：丢掉 1 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 earnings-before-expiry-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 earnings-quiet：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 earnings-soon-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 ex-div-expected-fires：丢掉 0 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 ex-div-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-near-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-open-before-0945：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-open-fires：丢掉 0 条触发、2 条提醒，没交出去
+[样例] option-ta/watch 样例 expiry-open-quiet：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 profit-50-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 profit-80-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 strike-crossed-fires：丢掉 0 条触发、1 条提醒，没交出去
+[样例] option-ta/watch 样例 strike-near-fires：丢掉 0 条触发、1 条提醒，没交出去
+PASS csp-entry
+  问：NVDA 2026-12-18 到期、行权价 135 的 CSP 现在适合开吗？
+  Router：我会评估这笔 NVDA CSP 当前的权利金、风险和开仓条件。
+  Router：结论：倾向暂缓，等交易时段重新核价并核实财报等事件。11月17日美东休市时，该期权买价/卖价为$3.90/$4.20，但与盘后正股报价不同步。按买价每张收$390、需备$13,500，盈亏平衡$131.10，最大亏损$13,110（不含费用）。仅适合愿以$135接股且能承受下跌的人；$135尚未确认是支撑。这是分析，不是交易指令。
+  汇报（ready）：**结论：倾向暂缓，等交易时段重新核价并核实事件后再决定。** 目前不能确认这张CSP有开仓优势；仅适合本来就愿意按135美元接股、并能承受继续下跌的人。
+
+**依据**（美东2026-11-17 20:26，休市）：`chain`返回合约 `O:NVDA261218P00135000`，bid 3.9、ask 4.2、mid 4.05；IV 0.8048，来源为供应方。期权报价停在15:59，正股162.94为19:59数据、延迟15分钟，二者不同步；休市IV按盘后股价和剩余时间重算，不是收盘IV。
+按`strategy`工具、每张标准100股计算：
+• 按3.9收入390美元，现金准备13500美元，盈亏平衡131.1美元，最大亏损13110美元。
+• 按4.05收入405美元，盈亏平衡130.95美元，最大亏损13095美元。
+均未含费用，mid不保证成交。即使按3.9成交，到期跌至120美元仍亏1110美元。当前技术数据存在未解释的价位断层，135不是已确认支撑；缺IV历史，无法证明高估；财报及除息日程未完成核验，不能排除事件跳空。
+
+**分歧：** 专家无实质冲突——算术上条件可行，不代表趋势、波动率或个人适用性已支持开仓。反方关于财报和计算口径的修正已采纳。
+
+**作废条件：** 报价、IV、事件日程或合约规格变化须重评；若不愿接股或不能准备相应现金，则不适用。
+
+**这是分析，不是交易指令。** 完整报告：
+<预演临时目录>/output/docs/analysis/20261117-nvda-135-csp.md
+1/1 道考题通过；临时状态目录已删
+exit=0 seconds=314
