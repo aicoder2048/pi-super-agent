@@ -2,8 +2,7 @@
  * The IV series of one symbol, read back from the iv feed's `iv-snapshots` and solved from each day's contract close with the
  * same formula (tools/vol and feeds/vol-alerts share it). Only rows of `methodology` count; a day without a usable row is left out.
  */
-import { DatabaseSync } from "node:sqlite";
-import { dataDbPath } from "./data-db.ts";
+import { dataDbPath, openReadOnly } from "./data-db.ts";
 import { impliedVolPut } from "./iv.ts";
 import { dteOn } from "./iv-history.ts";
 
@@ -17,7 +16,7 @@ export function readIvSeries(symbol: string, methodology: string): IvSeries {
 	const empty = { series: [], closes: {} };
 	const file = dataDbPath();
 	if (file === undefined) return empty;
-	const db = new DatabaseSync(file, { readOnly: true });
+	const db = openReadOnly(file);
 	let rows: SnapshotRow[];
 	try {
 		if (db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'iv-snapshots'`).get() === undefined) return empty;

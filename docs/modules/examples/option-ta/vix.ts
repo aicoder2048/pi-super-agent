@@ -2,8 +2,7 @@
  * The market's volatility regime from CBOE's VIX, VIX9D and VIX3M daily closes (knowledge/vol-regime): the VIX level band, the
  * term structure and the VIX's one-year percentile. The vix feed stores the closes in `vix-closes`; tools/vol reads them back.
  */
-import { DatabaseSync } from "node:sqlite";
-import { dataDbPath } from "./data-db.ts";
+import { dataDbPath, openReadOnly } from "./data-db.ts";
 
 export const VIX_INDICES = ["VIX", "VIX9D", "VIX3M"] as const;
 export type VixIndex = (typeof VIX_INDICES)[number];
@@ -54,7 +53,7 @@ export function readVixSeries(): VixSeries {
 	const series = Object.fromEntries(VIX_INDICES.map((i) => [i, new Map<string, number>()])) as VixSeries;
 	const file = dataDbPath();
 	if (file === undefined) return series;
-	const db = new DatabaseSync(file, { readOnly: true });
+	const db = openReadOnly(file);
 	try {
 		if (db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'vix-closes'`).get() === undefined) return series;
 		const rows = db.prepare(`SELECT ticker, trade_date, close FROM "vix-closes" ORDER BY trade_date, "_id"`).all() as { ticker: string; trade_date: string; close: number | null }[];
