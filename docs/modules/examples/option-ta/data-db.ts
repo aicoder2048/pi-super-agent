@@ -5,6 +5,16 @@ import { DatabaseSync } from "node:sqlite";
 
 export type DbRow = Readonly<Record<string, unknown>>;
 
+/**
+ * How long a read waits for the host's write to finish. data.db uses SQLite's rollback journal, so a reader opened while the
+ * host commits another feed's rows (feeds run together on the hour and half hour) is locked out; without a wait it failed with
+ * "database is locked" (vol-alerts, 2026-11-19).
+ */
+export const READ_WAIT_MS = 5_000;
+
+/** The module's data.db opened read-only, waiting up to READ_WAIT_MS for a writer. */
+export const openReadOnly = (path: string): DatabaseSync => new DatabaseSync(path, { readOnly: true, timeout: READ_WAIT_MS });
+
 /** The module's data.db, or undefined when the host gave no data folder or nothing was written yet; never a relative path. */
 export function dataDbPath(): string | undefined {
 	const folder = process.env["PSA_MODULE_DATA"];
@@ -18,7 +28,7 @@ export function readCollections<Name extends string>(names: readonly Name[]): Re
 	const empty = Object.fromEntries(names.map((name) => [name, []])) as unknown as Record<Name, DbRow[]>;
 	const path = dataDbPath();
 	if (path === undefined) return empty;
-	const db = new DatabaseSync(path, { readOnly: true });
+	const db = openReadOnly(path);
 	try {
 		const tables = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => t.name));
 		for (const name of names) {
